@@ -332,10 +332,16 @@ fn forward_latest(id: u64, url: String, mut topic: broadcast::Receiver<live::Mes
     })
 }
 
-/// Runs the requests about subscriptions, one after another, on a thread of the blocking pool.
+/// Runs `work` (requests of the app, one after another) where Roc's calls run: a thread of the
+/// blocking pool, given back when it is done. The one place this module starts Roc.
+fn in_roc<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> JoinHandle<T> {
+    tokio::task::spawn_blocking(work)
+}
+
+/// Runs the requests about subscriptions, one after another (`in_roc`).
 fn asked(asking: &Arc<Asking>, ops: Vec<Op>) -> JoinHandle<Vec<(Op, Answered)>> {
     let asking = asking.clone();
-    tokio::task::spawn_blocking(move || {
+    in_roc(move || {
         ops.into_iter()
             .map(|op| {
                 let (answered, headers) = match &op {
@@ -653,7 +659,7 @@ pub async fn send(request: Request<Incoming>, config: Arc<Config>) -> Response<B
         }
     }
     if !said.is_empty() {
-        let answers = tokio::task::spawn_blocking(move || said.into_iter().map(|(index, url, message)| (index, ask(&asking, "receive", "POST", &url, message))).collect::<Vec<_>>()).await.unwrap_or_default();
+        let answers = in_roc(move || said.into_iter().map(|(index, url, message)| (index, ask(&asking, "receive", "POST", &url, message))).collect::<Vec<_>>()).await.unwrap_or_default();
         for (index, (answered, headers)) in answers {
             if !(200..300).contains(&answered.status) {
                 refused.push(serde_json::json!({ "index": index, "status": answered.status, "why": answered.why(&headers) }));
