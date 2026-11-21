@@ -36,7 +36,9 @@ export const METHODS = ["get!", "post!", "put!", "patch!", "delete!", "events!"]
 export const CHANNEL = "channel!";
 
 /** A channel's hooks, each optional: what pages say on it (`receive!`), what a subscriber is sent
- * first (`on_open!`), and a subscription's end (`on_close!`). */
+ * first (`on_open!`), and a subscription's end (`on_close!`). Each is given the path's params, who
+ * the check said the subscriber is, its tab, and the channel itself (`channel`: its route file
+ * can't import `Api`, which imports it), to publish on. */
 export const CHANNEL_HOOKS = ["receive!", "on_open!", "on_close!"];
 
 /** The HTTP method a handler answers (`events!` answers a GET). */
@@ -380,9 +382,10 @@ export function routesModule(table, { sources, stories = null }) {
 	const hooked = (at, hook) => sources.get(at.server.file).channel.hooks.includes(hook);
 	const channelArm = (at) => {
 		const module = at.server.module;
-		const opened = hooked(at, "on_open!") ? `|who, tab| ${module}.on_open!({ params: params, who: who, tab: tab })` : "|_who, _tab| []";
+		const channel = `Api.${apiName(CHANNEL, at)}(params)`;
+		const opened = hooked(at, "on_open!") ? `|who, tab| ${module}.on_open!({ params: params, who: who, tab: tab, channel: ${channel} })` : "|_who, _tab| []";
 		const received = hooked(at, "receive!")
-			? `Endpoint.receiving(Api.${apiName(CHANNEL, at)}(params), |who, tab, said| ${module}.receive!({ params: params, who: who, tab: tab, said: said }))`
+			? `Endpoint.receiving(${channel}, |who, tab, said| ${module}.receive!({ params: params, who: who, tab: tab, said: said, channel: ${channel} }))`
 			: `|_who, _tab, _said| Err(Status(404, ${rocString(`${at.path} takes nothing pages say: its route has no receive!`)}))`;
 		const answer = (request, context) =>
 			`Endpoint.channel!(Api.${apiName(CHANNEL, at)}(params), ${request}, ${context}, { opened!: ${opened}, received!: ${received}, closes: ${hooked(at, "on_close!") ? "Bool.True" : "Bool.False"} })`;
@@ -404,7 +407,7 @@ export function routesModule(table, { sources, stories = null }) {
 		[
 			`if (${matchedBy(at)}) {`,
 			`\t\t\tparams = ${paramsOf(at)}`,
-			`\t\t\tEndpoint.closed!(Api.${apiName(CHANNEL, at)}(params), request, |who, tab, why| ${at.server.module}.on_close!({ params: params, who: who, tab: tab, why: why }))`,
+			`\t\t\tEndpoint.closed!(Api.${apiName(CHANNEL, at)}(params), request, |who, tab, why| ${at.server.module}.on_close!({ params: params, who: who, tab: tab, why: why, channel: Api.${apiName(CHANNEL, at)}(params) }))`,
 			"\t\t}",
 		].join("\n");
 	const closedFunction = closing.length
