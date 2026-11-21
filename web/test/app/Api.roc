@@ -1,4 +1,6 @@
 import pf.Call
+import pf.Endpoint
+import pf.Events
 
 ## The server's functions, as the browser calls them. (In the spike the test answers them; with
 ## rocx's `server!` they would be defined once, as on master.)
@@ -23,4 +25,13 @@ Api := [].{
 
 	rename! : Str => Str
 	rename! = |name| Call.server!("rename", name)
+
+	## GET /api/reads: what the reads page shows (D-023), an endpoint as the browser's copy has it,
+	## its method and URL.
+	reads : {} -> Endpoint({}, {}, { count : U64, weeks : Str })
+	reads = |{}| Endpoint.remote("GET", "/api/reads")
+
+	## GET /api/changes, its events: each says what the reads page shows has changed.
+	changes : {} -> Endpoint({}, {}, Events(Str))
+	changes = |{}| Endpoint.remote("GET", "/api/changes")
 }

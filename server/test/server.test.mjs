@@ -2028,6 +2028,68 @@ const plainPost = (path, fields, headers = {}) =>
 /** The `rocx-flash` cookie an answer sets, as a request sends it back (`name=value`). */
 const flashOf = (answer) => (answer.headers.get("set-cookie") ?? "").split(";")[0];
 
+// ---- Endpoint reads (D-023): a page's data from a GET endpoint, read as the server renders it ----
+
+/** What a page carries for the browser in its answers script: `[name, input, answer]`s. */
+const answersOf = (html) => JSON.parse(/<script type="application\/json" class="rocx-answers">(.*?)<\/script>/s.exec(html)[1]);
+
+test("endpoint reads: a page reads a GET endpoint as the server renders it, in-process, with the page's query, cookies and headers, and notes the answer under its URL, once, none from a <NoHydration>; nothing is left held", { skip }, async () => {
+	// A reload's conditions and a range are the page's: the in-process GET doesn't carry them.
+	const html = await text("/reads?weeks=1", { headers: { cookie: "member=Ada", "x-probe": "7", accept: "text/html", "if-none-match": '"v1"', range: "bytes=0-9" } });
+	assert.match(html, /<p class="data"><!--x-->1 Ada 7<!--\/x--><\/p>/, "the page's query, its cookie and its header, as the in-process GET carried them");
+	assert.match(html, /<p class="missing"><!--x-->Not found<!--\/x--><\/p>/, "a refusal, as a value (read!)");
+	assert.match(html, /<p class="refused"><!--x-->GET \/reads\/missing: Not found<!--\/x--><\/p>/, "and as a failure the <Errored> shows (get!)");
+	assert.match(html, /<p class="static">region<\/p>/, "read inside the <NoHydration> too");
+	const answers = answersOf(html);
+	assert.deepEqual(
+		answers.map(([name, input]) => [name, input]),
+		[
+			["GET /reads?weeks=1", ""],
+			["GET /reads/missing", ""],
+		],
+		"under the URL, its query and all; /reads/missing once, though two holes read it; nothing the <NoHydration> read",
+	);
+	const [data, missing] = answers.map(([, , answer]) => JSON.parse(answer));
+	assert.equal(data.status, 200);
+	assert.deepEqual(JSON.parse(data.body), { weeks: "1", member: "Ada", probe: "7" }, "the answer as the browser's GET would get it");
+	assert.deepEqual(missing, { status: 404, body: "Not found" }, "a refusal noted too, so the browser fails as the server did");
+	// The same URL, asked for JSON, is the endpoint; for HTML, the page.
+	const asked = await get("/reads?weeks=1", { headers: { cookie: "member=Ada", "x-probe": "7", accept: "application/json" } });
+	assert.equal(asked.headers.get("content-type"), "application/json");
+	assert.deepEqual(await asked.json(), { weeks: "1", member: "Ada", probe: "7" });
+	// Without the cookie, the page reads as nobody, and still renders.
+	assert.match(await text("/reads", { headers: { accept: "text/html" } }), /<p class="data"><!--x--> nobody <!--\/x--><\/p>/);
+	const before = await live();
+	for (let i = 0; i < 20; i++) await text("/reads?weeks=2", { headers: { cookie: "member=Ada", accept: "text/html" } });
+	assert.equal(await until(async () => (await live()) === before), true, `${await live()} allocations, ${before} before`);
+});
+
+test("endpoint reads: one its middleware redirects (a signed-out visitor), made as the page renders, makes the page that redirect, its cookies kept, as a server function's (D-019)", { skip }, async () => {
+	const out = await get("/reads-gated", { redirect: "manual" });
+	assert.equal(out.status, 303, "not a 500, nor the <Errored>'s fallback: the gate's redirect");
+	assert.equal(out.headers.get("location"), "/login");
+	assert.equal(out.headers.get("set-cookie"), "session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+	assert.equal(out.headers.get("x-page"), "yes", "the page's own headers kept");
+	assert.equal(await out.text(), "");
+	const signed = await get("/reads-gated", { headers: { cookie: "member=Ada", accept: "text/html" } });
+	assert.equal(signed.status, 200);
+	const html = await signed.text();
+	assert.match(html, /<header><!--x-->member Ada<!--\/x--><\/header>/);
+	assert.deepEqual(answersOf(html).map(([name]) => name), ["GET /reads/member"]);
+});
+
+test("endpoint reads: a handler that reads the flash (Server.flash!) reads the page's, when the page reads it as it renders; the page lets it go", { skip }, async () => {
+	const refused = await plainPost("/flash/join", { name: "Al" }, { referer: `${server.url}/reads-flash` });
+	assert.equal(refused.headers.get("location"), "/reads-flash");
+	const page = await get("/reads-flash", { headers: { cookie: flashOf(refused), accept: "text/html" } });
+	assert.equal(page.status, 200);
+	const html = await page.text();
+	assert.match(html, /<p class="flash"><!--x-->\/flash\/join 409 Al is taken<!--\/x--><\/p>/, "the in-process GET carried the page's cookie");
+	assert.deepEqual(answersOf(html), [["GET /reads/flash", "", JSON.stringify({ status: 200, body: JSON.stringify("/flash/join 409 Al is taken") })]], "noted under the URL, so the browser reads what the server did");
+	assert.equal(page.headers.get("set-cookie"), "rocx-flash=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax", "the page's answer lets it go: a reload doesn't show it again");
+	assert.match(await text("/reads-flash", { headers: { accept: "text/html" } }), /<p class="flash"><!--x-->no flash<!--\/x--><\/p>/);
+});
+
 test("form actions: a plain form's refusal goes back to the page it came from, with a flash: the page reads it (Server.flash!, use_submission!) with what was typed, notes it for the browser, and lets it go", { skip }, async () => {
 	const host = new URL(server.url).host;
 	const refused = await plainPost("/flash/join", { name: "Al" }, { referer: `${server.url}/flash/page?from=form#top` });

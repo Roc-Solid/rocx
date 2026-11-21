@@ -1,12 +1,16 @@
 import Server
 import Events
+import Call
+import Host
 
-## An HTTP endpoint: a method at a path, which a route's `+server.rocx` defines (`get!`, `post!`,
-## `put!`, `patch!`, `delete!`; `events!`, a stream of events, asked for with GET). Anyone may call it over HTTP. The app calls it through what rocx
-## writes from the routes (`Generated/Api.roc`), as a function: on the server it runs there and
-## then (`run!`); in the browser's copy it is a request, which a component sends from a handler
-## (`send!`, with the platform's `Call.fetch!`), or listens to (`listen!`). Either way, its answer, or
-## a `Server.Problem`.
+## An HTTP endpoint: a method at a path, which a route's `+server.roc` defines (`get!`, `post!`,
+## `put!`, `patch!`, `delete!`; `events!`, a stream of events, asked for with GET). Anyone may call
+## it over HTTP. The app calls it through what rocx writes from the routes (`Generated/Api.roc`), as
+## a function of its params. A component reads a GET endpoint as a plain value (`get!`, or `read!`
+## for its refusal too): while the server renders the page, the server answers it, and the page
+## carries the answer to the browser. It sends any endpoint from a handler (`send!`, with the
+## platform's `Call.fetch!`), or listens to one's events (`listen!`). On the server, `run!` runs
+## one there and then.
 ##
 ## A handler is given the request, the context its middleware handed on, its path's params and its
 ## body, and answers `Ok(result)`, sent as JSON with the status 200, or a `Refusal`: a status and
@@ -23,6 +27,60 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	## The browser's copy: its method and URL, and nothing it does.
 	remote : Str, Str -> Endpoint(context, arg, result)
 	remote = |method, url| { method: method, url: url, run: |_, _, _| crash "${method} ${url} runs on the server: send it with Endpoint.send!" }
+
+	## A GET endpoint's answer, as a plain value, for a component or a computation
+	## (`create_memo!(|| Endpoint.get!(Api.get_profile({ id })))`): one definition of a page's data,
+	## the endpoint's, read where the page renders.
+	##
+	## - While the server renders the page, the server answers it in-process. The GET goes through the
+	##   endpoint's route, as the browser's would, with `accept: application/json` and the page's
+	##   cookies and headers, behind the route's middleware. The answer is noted for the page.
+	## - Hydrating, the browser reads that answer from the page and asks nothing.
+	## - Asked again later (`refresh!`), the browser GETs the endpoint's URL.
+	##
+	## An answer that isn't 200 fails the computation: the nearest <Errored> shows its status and
+	## why. A redirect, while the page renders (a signed-out visitor sent to sign in), is the page's
+	## answer instead. `with_query` adds a query.
+	get! : Endpoint(context, {}, result) => result
+		where [result.Json.Parseable([InvalidJson(Str)])]
+	get! = |endpoint|
+		match Endpoint.read!(endpoint) {
+			Ok(result) => result
+			Err(problem) => {
+				Host.fail!("${endpoint.method} ${endpoint.url}: ${Server.explain(problem)}")
+				crash "unreachable: fail! doesn't return"
+			}
+		}
+
+	## A GET endpoint's answer, as `get!` reads it, with a refusal as a value: `Err(Refused(404, why))`,
+	## for a computation that shows it itself.
+	read! : Endpoint(context, {}, result) => Try(result, Server.Problem)
+		where [result.Json.Parseable([InvalidJson(Str)])]
+	read! = |endpoint|
+		if endpoint.method == "GET" {
+			answered = Call.fetch!({ method: "GET", url: endpoint.url, headers: [{ name: "accept", value: "application/json" }], body: "" })
+			Endpoint.answer(endpoint, Ok({ status: answered.status, headers: [], body: answered.body }))
+		} else {
+			Host.fail!("${endpoint.method} ${endpoint.url} isn't read: send it with Endpoint.send!, from a handler")
+			crash "unreachable: fail! doesn't return"
+		}
+
+	## The endpoint, asked with a query (`weeks=1`, as a URL writes it after the `?`): the page's own,
+	## to read the data for what it shows (`Endpoint.with_query(Api.get_board({}),
+	## Router.location!({}).query)`). Its handler reads it as `request.query`. It replaces a query the
+	## URL had; an empty one leaves the endpoint as it was.
+	with_query : Endpoint(context, arg, result), Str -> Endpoint(context, arg, result)
+	with_query = |endpoint, query|
+		if query.is_empty() {
+			endpoint
+		} else {
+			bare =
+				match endpoint.url.split_first("?") {
+					Ok({ before, .. }) => before
+					Err(_) => endpoint.url
+				}
+			{ ..endpoint, url: "${bare}?${query}" }
+		}
 
 	## From a component, in the browser: its answer, sent with the platform's `fetch!`, and read as
 	## a plain value (`Endpoint.send!(Api.post_api_shout({}), { word }, Call.fetch!)`).
@@ -279,6 +337,9 @@ expect Endpoint.to_request(shout, "hi") == { method: "POST", url: "/shout", head
 expect Endpoint.answer(shout, Ok({ status: 200, headers: [], body: "\"HI\"" })) == Ok("HI")
 expect Endpoint.answer(shout, Ok({ status: 400, headers: [], body: "say something" })) == Err(Refused(400, "say something"))
 expect Endpoint.refused(NotFound) == (404, "Not found")
+expect Endpoint.url_of(Endpoint.with_query(shout, "weeks=1")) == "/shout?weeks=1"
+expect Endpoint.url_of(Endpoint.with_query(Endpoint.with_query(shout, "weeks=1"), "weeks=2")) == "/shout?weeks=2"
+expect Endpoint.url_of(Endpoint.with_query(shout, "")) == "/shout"
 expect input_of(Server.from_http("POST", "/shout", "content-type: application/json", "\"hi\"".to_utf8())) == Read("\"hi\"")
 expect input_of(Server.from_http("POST", "/shout", "Content-Type: application/merge-patch+json; charset=utf-8", "{}".to_utf8())) == Read("{}")
 expect input_of(Server.from_http("POST", "/shout", "content-type: application/x-www-form-urlencoded", "said=hi".to_utf8())) == Read("{\"said\":\"hi\"}")

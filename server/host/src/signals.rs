@@ -104,8 +104,12 @@ struct Render {
     lists: HashMap<u64, List>,
     made: Vec<Made>,
     frames: Vec<Frame>,
-    /// Server functions' answers: name, input, answer (JSON).
+    /// Server functions' answers: name, input, answer (JSON); and endpoints' GETs (`GET <url>`, "",
+    /// `{"status":…,"body":…}`), each once.
     recorded: Vec<[String; 3]>,
+    /// Each GET of an endpoint the page made (`GET <url>`), and its answer: asked again, it is
+    /// answered from here, so a URL is asked once a render.
+    fetched: HashMap<String, String>,
     /// The flash a plain form's post came back with, if the page read it (`Server.flash!`).
     flash: Option<String>,
     /// The title the last `<Title>` rendered said, if one did (`Host.title!`): the page's `<head>`'s.
@@ -648,28 +652,44 @@ pub extern "C" fn roc_refresh(probe: Callable) {
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_call(name: RocStr, input: RocStr) -> RocStr {
     let (name, input) = (taken(name), taken(input));
-    let answered = call_route(&name, &input);
+    let answered = in_process(&name, "POST", &format!("/rocx/call/{name}"), "*/*", Some("application/json"), input.as_bytes());
     drop((name, input));
     match answered {
-        Ok(answer) => given(&answer),
+        Ok(InProcess { status: 200, text }) => given(&text),
+        Ok(InProcess { status, text }) => roc::fail(format!("{status}: {text}")),
         Err(message) => roc::fail(message),
     }
 }
 
-/// The answer the app's `respond!` gives `POST /rocx/call/<name>` with `input`: the request the
-/// running call answers made into the browser's call (its headers, cookies among them, and the
-/// context the server started with; `origin` this host, JSON sent, anything accepted). The page's
-/// render is set aside meanwhile: the call is a request of its own, and records nothing in it.
-fn call_route(name: &str, input: &str) -> Result<String, String> {
+/// What a request the server answered in-process, while a page renders, came to: its status and
+/// its body, as text.
+struct InProcess {
+    status: u16,
+    text: String,
+}
+
+/// The answer the app's `respond!` gives `method target` with `body`, as the browser's request: the
+/// request the running call answers made into it (its headers, cookies among them, but not its
+/// conditions or range; the context the server started with; `origin` this host; `accept` as
+/// given, and `content_type` if it sends one). The page's render is set aside meanwhile: the request is one of its own, and records
+/// nothing in it. A redirect (its middleware sending the visitor elsewhere) is noted as the page's
+/// answer, the first such. A crash is a 500 (why, under --dev), logged. `label` names the request in
+/// what goes wrong: an answer that is a stream, a page or a body from elsewhere isn't one to read.
+fn in_process(label: &str, method: &str, target: &str, accept: &str, content_type: Option<&str>, body: &[u8]) -> Result<InProcess, String> {
     let Some(page) = hosted::asked() else {
-        return Err(format!("{name} is called while the server answers no request"));
+        return Err(format!("{label} is asked while the server answers no request"));
     };
     let mut headers: Vec<String> = page
         .headers
         .lines()
         .filter(|line| {
             let header = line.split_once(':').map_or(*line, |(header, _)| header).trim().to_ascii_lowercase();
-            !matches!(header.as_str(), "accept" | "content-type" | "content-length" | "transfer-encoding" | "origin")
+            // Its own: what it accepts and sends. The page's conditions and range are the page's,
+            // not its data's (a 304 or a 206 isn't an answer to read).
+            !matches!(
+                header.as_str(),
+                "accept" | "content-type" | "content-length" | "transfer-encoding" | "origin" | "range" | "if-range" | "if-none-match" | "if-modified-since" | "if-match" | "if-unmodified-since"
+            )
         })
         .map(str::to_string)
         .collect();
@@ -677,11 +697,13 @@ fn call_route(name: &str, input: &str) -> Result<String, String> {
     if let Some(host) = host {
         headers.push(format!("origin: http://{host}"));
     }
-    headers.push("accept: */*".into());
-    headers.push("content-type: application/json".into());
-    let call = Asked::new("POST", format!("/rocx/call/{name}"), headers.join("\n"), Bytes::copy_from_slice(input.as_bytes()), page.started.clone(), page.dev);
+    headers.push(format!("accept: {accept}"));
+    if let Some(content_type) = content_type {
+        headers.push(format!("content-type: {content_type}"));
+    }
+    let asked = Asked::new(method, target.to_string(), headers.join("\n"), Bytes::copy_from_slice(body), page.started.clone(), page.dev);
     let render = RENDER.with(|slot| slot.borrow_mut().take());
-    let answered = hosted::call_asking(call.clone(), || roc::respond(&call.method, &call.target, &call.headers, &call.body, &call.started));
+    let answered = hosted::call_asking(asked.clone(), || roc::respond(&asked.method, &asked.target, &asked.headers, &asked.body, &asked.started));
     RENDER.with(|slot| *slot.borrow_mut() = render);
     match answered {
         Ok(answer) => {
@@ -711,16 +733,15 @@ fn call_route(name: &str, input: &str) -> Result<String, String> {
                 None => answer.body,
             };
             match answer.status {
-                200 if streams => Err(format!("{name} answered with a stream of events, not an answer")),
-                200 if page => Err(format!("{name} answered with a page, not an answer")),
-                200 if forwards => Err(format!("{name} answered with a body from elsewhere, not an answer")),
-                200 => Ok(text),
-                status => Err(format!("{status}: {text}")),
+                200 if streams => Err(format!("{label} answered with a stream of events, not an answer")),
+                200 if page => Err(format!("{label} answered with a page, not an answer")),
+                200 if forwards => Err(format!("{label} answered with a body from elsewhere, not an answer")),
+                status => Ok(InProcess { status, text }),
             }
         }
         Err(Crash(crashed)) => {
-            crate::logging::error("rocx server: Roc crashed", &[("method", "POST".into()), ("target", format!("/rocx/call/{name}").into()), ("in_process", true.into()), ("error", crashed.as_str().into())]);
-            Err(if page.dev { format!("500: Roc crashed: {crashed}") } else { "500: Something went wrong.".into() })
+            crate::logging::error("rocx server: Roc crashed", &[("method", method.into()), ("target", target.into()), ("in_process", true.into()), ("error", crashed.as_str().into())]);
+            Ok(InProcess { status: 500, text: if page.dev { format!("Roc crashed: {crashed}") } else { "Something went wrong.".into() } })
         }
     }
 }
@@ -839,12 +860,50 @@ pub extern "C" fn roc_context_get(id: u64) -> Callable {
     }
 }
 
-/// A request is a handler's, in the browser: never while the server renders.
+/// A component's request. While the server renders a page, a GET of one of the app's own endpoints
+/// (a path, `/…`: `Endpoint.get!`, `Endpoint.read!`) is answered in-process, by its route, as the
+/// browser's GET would be (`in_process`, with `accept: application/json`), whatever its status;
+/// the answer, `{"status":…,"body":…}`, is noted for the page under `GET <url>` (not inside a
+/// `<NoHydration>`: the browser never asks), so hydrating, the browser reads it there. Any other
+/// request is a handler's, sent from the browser: the server renders without it.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_fetch(method: RocStr, url: RocStr, headers: RocStr, body: RocStr) -> RocStr {
+    let (method, url) = (taken(method), taken(url));
     drop((taken(headers), taken(body)));
-    let message = format!("{} {} is sent from the browser (a handler's); the server renders without it", taken(method), taken(url));
-    roc::fail(message)
+    let rendering = with(|_| ()).is_some();
+    let own = url.starts_with('/') && !url.starts_with("//");
+    if !(rendering && method == "GET" && own) {
+        let message = if rendering && method == "GET" {
+            format!("GET {url}: while the server renders, a page reads only the app's own endpoints (a path, /…)")
+        } else {
+            format!("{method} {url} is sent from the browser (a handler's); the server renders without it")
+        };
+        drop((method, url));
+        roc::fail(message)
+    }
+    let label = format!("GET {url}");
+    let earlier = with(|render| render.fetched.get(&label).cloned()).flatten();
+    let answered = match earlier {
+        Some(json) => Ok(json),
+        None => in_process(&label, "GET", &url, "application/json", None, &[]).map(|InProcess { status, text }| format!("{{\"status\":{status},\"body\":{}}}", serde_json::to_string(&text).unwrap_or_else(|_| "\"\"".into()))),
+    };
+    drop((method, url));
+    match answered {
+        Ok(json) => {
+            with(|render| {
+                render.fetched.entry(label.clone()).or_insert_with(|| json.clone());
+                let region = render.frames.last().is_some_and(|frame| frame.scope.region);
+                if !region && !render.recorded.iter().any(|[name, input, _]| *name == label && input.is_empty()) {
+                    render.recorded.push([label, String::new(), json.clone()]);
+                }
+            });
+            given(&json)
+        }
+        Err(message) => {
+            drop(label);
+            roc::fail(message)
+        }
+    }
 }
 
 /// Listening is a handler's, in the browser: never while the server renders.

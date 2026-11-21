@@ -417,6 +417,9 @@ export class Runtime {
 		 * function is then answered from the page's recorded answers (`answers`), as the server
 		 * platform answered it. */
 		this.onServer = false;
+		/** While hydrating: what the page asked the server for that it didn't carry (`asked`), which
+		 * strict hydration refuses. */
+		this.hydrating = null;
 		/** The server function whose call is being answered (`Host.serve!`), and what its middleware
 		 * handed on (JSON): none here, since the server platform answers every call. */
 		this.serving = { name: "", context: "" };
@@ -827,6 +830,7 @@ export class Runtime {
 			this.notify("seeded", { name, input, value: answer.value });
 		}
 		if (!answer) {
+			this.hydrating?.asked.push(name);
 			answer = { state: "pending" };
 			const asked = performance.now();
 			this.notify("call", { name, input });
@@ -851,13 +855,29 @@ export class Runtime {
 	/**
 	 * An HTTP request for the running computation or handler (`Call.fetch!`): its answer, as
 	 * `{"status":…,"body":…}`, from its calls if in, or asked for now (and it waits, as for a server
-	 * function's).
+	 * function's). A GET the server made as it rendered the page (`Endpoint.get!`: noted under
+	 * `GET <url>`) is read from the page's answers, not asked again. Rendering as a server would, it
+	 * is the answer the page recorded (`renderToString({ answers })`), as for a server function.
 	 */
 	fetchFor(method, url, headerLines, body) {
+		if (this.onServer) {
+			const found = this.given?.find(([named, asked]) => named === `${method} ${url}` && asked === body);
+			if (!found) throw new Failed(`599: ${method} ${url} wasn't answered as the server rendered the page`);
+			// Noted once, as the server notes a GET once a render.
+			if (!this.current?.scope?.region && !this.recorded.includes(found)) this.recorded.push(found);
+			return this.give(found[2]);
+		}
 		const asking = this.current;
 		const key = `${method} ${url}\n${body}`;
 		let answer = asking.calls.get(key);
+		if (!answer && this.answers.has(key)) {
+			// The server answered it while rendering the page: read here, not asked again.
+			answer = { state: "ok", value: this.answers.get(key) };
+			asking.calls.set(key, answer);
+			this.notify("seeded", { method, url, value: answer.value });
+		}
 		if (!answer) {
+			this.hydrating?.asked.push(`${method} ${url}`);
 			answer = { state: "pending" };
 			const headers = Object.fromEntries(headerLines.split("\n").filter(Boolean).map((line) => [line.slice(0, line.indexOf(": ")), line.slice(line.indexOf(": ") + 2)]));
 			const asked = performance.now();
@@ -1974,10 +1994,12 @@ export class Runtime {
 	 * Hydrates the app the server rendered in `container`: reads the answers it put in the page
 	 * (server functions it called), then binds every computation to the server's nodes, running
 	 * each once. If the DOM isn't what the markup says, it renders the app again, and says so.
+	 * `strict` (the tests') throws if hydrating asked the server for anything the page didn't carry.
 	 */
-	hydrate(container) {
+	hydrate(container, { strict = false } = {}) {
 		this.seed(container);
 		const seeded = new Map(this.answers);
+		const hydrating = (this.hydrating = { asked: [] });
 		const start = [...container.childNodes].find((node) => node.nodeType === 8 && node.data === "app");
 		const end = [...container.childNodes].find((node) => node.nodeType === 8 && node.data === "/app");
 		this.root = new Computation(this, { kind: "root", owner: null, scope: {}, target: { start, end } });
@@ -1997,6 +2019,13 @@ export class Runtime {
 			});
 		}
 		this.answers.clear();
+		this.hydrating = null;
+		if (strict && hydrating.asked.length) throw Runtime.askedAgain(hydrating.asked);
+	}
+
+	/** What strict hydration throws when hydrating asked the server for what the page didn't carry. */
+	static askedAgain(asked) {
+		return new Error(`rocx: hydrating, the page asked the server again for ${asked.join(", ")}: the server didn't note it as it rendered the page`);
 	}
 
 	/**
@@ -2007,7 +2036,9 @@ export class Runtime {
 	 * isn't what the app renders (an extension added a node; the parser repaired the markup), it says
 	 * so and renders `<body>`'s children again, from the same answers, leaving `<head>` alone, since
 	 * rendering it again would run its scripts again and flash its styles. `strict` (the tests')
-	 * throws instead.
+	 * throws instead; and throws if hydrating asked the server for anything the page didn't carry
+	 * (a server function's call, an endpoint's GET), which the server should have answered as it
+	 * rendered the page.
 	 */
 	hydrateDocument(doc = document, { strict = false } = {}) {
 		this.page = doc;
@@ -2016,11 +2047,15 @@ export class Runtime {
 		const root = () => new Computation(this, { kind: "root", owner: null, scope: {}, target: { document: doc } });
 		this.root = root();
 		this.root.adopting = true;
+		const hydrating = (this.hydrating = { asked: [] });
+		const askedAgain = () => Runtime.askedAgain(hydrating.asked);
 		try {
 			this.run(this.root);
+			if (strict && hydrating.asked.length) throw askedAgain();
 		} catch (error) {
 			if (!(error instanceof Mismatch)) throw error;
 			this.dispose(this.root);
+			if (strict && hydrating.asked.length) throw askedAgain();
 			if (strict) throw new Error(`rocx: the page isn't what the app renders (${error.message})`);
 			console.warn(`rocx: the page isn't what the app renders (${error.message}); rendering <body> again`);
 			// Rendering again, the server's answers are still the ones to read.
@@ -2034,6 +2069,7 @@ export class Runtime {
 			}
 		} finally {
 			this.answers.clear();
+			this.hydrating = null;
 		}
 	}
 

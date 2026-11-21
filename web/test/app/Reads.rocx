@@ -1,0 +1,33 @@
+import pf.Html
+import pf.Solid exposing [create_memo!, refresh!]
+import pf.Router
+import pf.Endpoint
+import pf.Call
+import pf.Errored
+import Api
+
+## A page's data from a GET endpoint (D-023): read as the server renders the page, carried to the
+## browser in the page, and read again from the endpoint's URL when its events say it changed.
+Reads := [].{
+	view! : {} => Html
+	view! = |{}| {
+		data! = create_memo!(|| Endpoint.get!(Endpoint.with_query(Api.reads({}), Router.location!({}).query)))
+		listen! = || {
+			Endpoint.listen!(
+				Api.changes({}),
+				Call.listen!,
+				|heard|
+					match heard {
+						Event(_) => refresh!(data!)
+						_ => {}
+					},
+			)
+		}
+		<div class="reads">
+			<Errored fallback={|problem, _| <p class="problem">{problem}</p>}>
+				<p class="data">count {data!().count.to_str()}, weeks {data!().weeks}</p>
+			</Errored>
+			<button type="button" on:click={listen!}>Listen</button>
+		</div>
+	}
+}

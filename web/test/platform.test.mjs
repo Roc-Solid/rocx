@@ -66,6 +66,8 @@ if (!skip) {
 		["effects", join(out, "app-client", "effects_app.roc"), "size"],
 		["form-server", join(here, "app", "form_app.roc"), "dev"],
 		["form", join(out, "app-client", "form_app.roc"), "size"],
+		["reads-server", join(here, "app", "reads_app.roc"), "dev"],
+		["reads", join(out, "app-client", "reads_app.roc"), "size"],
 	]) {
 		run(roc, ["build", "--target=wasm32", `--opt=${opt}`, `--output=${join(out, `${name}.wasm`)}`, app]);
 	}
@@ -660,6 +662,82 @@ window.hydrated = true;
 });
 
 const textOf = (page, selector) => page.eval(`document.querySelector(${JSON.stringify(selector)})?.textContent ?? null`);
+
+// ---- Endpoint reads (D-023): a page's data from a GET endpoint, carried in the page ----
+
+/** What the server answered GET /api/reads?weeks=1 with as it rendered the reads page: noted under
+ * the URL, as the server platform notes an endpoint's GET (`[name, input, answer]`). */
+const READS = [["GET /api/reads?weeks=1", "", JSON.stringify({ status: 200, body: JSON.stringify({ count: 1, weeks: "1" }) })]];
+
+test("endpoint reads: rendered as the server would, from the GET it answered; hydrated strictly without asking again; its events make it read the endpoint's URL again", { skip }, async () => {
+	const server = await Runtime.load(readFileSync(join(out, "reads-server.wasm")));
+	assert.match(
+		server.renderToString({ path: "/reads?weeks=1" }).html,
+		/<p class="problem">599: GET \/api\/reads\?weeks=1 wasn&#39;t answered as the server rendered the page<\/p>/,
+		"rendering as a server, a GET is answered only from the answers it is given",
+	);
+	const { html, answers } = server.renderToString({ path: "/reads?weeks=1", answers: READS });
+	assert.match(html, /<p class="data">count <!--x-->1<!--\/x-->, weeks <!--x-->1<!--\/x--><\/p>/, "the page's query in the GET");
+	assert.deepEqual(answers, READS, "noted once, as the page has it");
+	let count = 1;
+	const asked = [];
+	const api = async (method, path, body, url, request) => {
+		if (path === "/api/reads") {
+			asked.push(`${method} ${url} ${request.headers.accept}`);
+			await sleep(20);
+			return json({ count, weeks: new URL(url, "http://x").searchParams.get("weeks") ?? "" });
+		}
+		if (path === "/api/changes") {
+			asked.push(`${method} ${url}`);
+			return {
+				status: 200,
+				headers: { "content-type": "text/event-stream" },
+				stream: (response) => {
+					count = 2;
+					response.write('data: "changed"\n\n');
+					setTimeout(() => response.end(), 50);
+				},
+			};
+		}
+		return null;
+	};
+	const page = (carried) => `<!doctype html><html><body><div id="app">${html}${Runtime.answersScript(carried)}</div>
+<script type="module">
+import { Runtime } from "/runtime.js";
+window.runtime = await Runtime.load(fetch("/reads.wasm"));
+try {
+	window.runtime.hydrate(document.getElementById("app"), { strict: true });
+} catch (error) {
+	window.problem = error.message;
+}
+window.hydrated = true;
+</script></body></html>`;
+	const dir = mkdtempSync(join(tmpdir(), "rocx-reads-"));
+	cpSync(join(web, "runtime.js"), join(dir, "runtime.js"));
+	cpSync(join(out, "reads.wasm"), join(dir, "reads.wasm"));
+	const site = await serve(dir, (path) => (path === "/reads" ? page(READS) : path === "/uncarried" ? page([]) : null), api);
+	try {
+		const tab = await browser.page();
+		await tab.goto(`${site.url}/reads?weeks=1`);
+		await tab.wait("window.hydrated === true", 3000);
+		assert.equal(await tab.eval("window.problem ?? null"), null, "strictly: nothing asked again");
+		assert.equal(await textOf(tab, ".data"), "count 1, weeks 1");
+		assert.deepEqual(asked, [], "the answer came with the page: no request");
+		// Its events say it changed: refresh! reads the endpoint's own URL, for JSON.
+		await tab.click("button");
+		await tab.wait("document.querySelector('.data').textContent === 'count 2, weeks 1'", 3000);
+		assert.deepEqual(asked, ["GET /api/changes", "GET /api/reads?weeks=1 application/json"]);
+		assert.deepEqual(tab.errors, []);
+		// A page that didn't carry the GET: hydrating asks again, and strict hydration says so.
+		const other = await browser.page();
+		await other.goto(`${site.url}/uncarried?weeks=1`);
+		await other.wait("window.hydrated === true", 3000);
+		assert.equal(await other.eval("window.problem ?? null"), "rocx: hydrating, the page asked the server again for GET /api/reads?weeks=1: the server didn't note it as it rendered the page");
+	} finally {
+		await site.close();
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
 
 test("contexts: a context with no default, provided by nothing, fails, and <Errored> says why", { skip }, async () => {
 	const wasm = readFileSync(join(out, "alone.wasm"));

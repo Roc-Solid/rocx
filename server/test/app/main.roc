@@ -589,6 +589,15 @@ route! = |request, context| {
 		}
 		("GET", path) if path.starts_with("/actors/count/") => answered_actor(Actor.ask!(counter, after(path, "/actors/count/"), Get))
 
+		# ---- Endpoint reads: a page reads GET endpoints as the server renders it (D-023) ----
+		("GET", "/reads") if !Server.wants_html(request) => Endpoint.respond!(reads_endpoint, request, {})
+		(_, "/reads") => page(reading!)
+		("GET", "/reads/member") => Middleware.run!(gate, request, { started: context }, |passed, handed| Endpoint.respond!(member_endpoint, passed, handed))
+		("GET", "/reads/missing") => Endpoint.respond!(missing_endpoint, request, {})
+		("GET", "/reads/flash") => Endpoint.respond!(flash_endpoint, request, {})
+		(_, "/reads-gated") => { status: 200, headers: [{ name: "x-page", value: "yes" }], body: Page(read_gated!) }
+		(_, "/reads-flash") => page(read_flash!)
+
 		# ---- Pages of components: the host renders them (any method; HEAD isn't rendered) ----
 		(_, "/probe") => page(probing!)
 		(_, "/page") => { status: 200, headers: [{ name: "x-page", value: "yes" }], body: Page(document!) }
@@ -1312,6 +1321,99 @@ gated! = |{}|
 			),
 		],
 	)
+
+# ---- Endpoint reads (D-023): a page's data from a GET endpoint, read as the server renders it ----
+
+## GET /reads, asked for JSON (a browser's GET of /reads is the page): what the page shows, from the
+## request the in-process GET is: the page's query, and its cookie and a header. Asked as a cache
+## asks (`if-none-match`), it answers 304, which a page's read would fail on.
+reads_endpoint : Endpoint({}, {}, { weeks : Str, member : Str, probe : Str })
+reads_endpoint = Endpoint.local(
+	"GET",
+	"/reads",
+	|request, {}, {}|
+		if Server.header(request, "if-none-match").is_ok() {
+			Err(Answer(Server.response(304, [], "")))
+		} else {
+			Ok({ weeks: param(request.query, "weeks"), member: Server.cookie(request, "member") ?? "nobody", probe: Server.header(request, "x-probe") ?? "" })
+		},
+)
+
+## GET /reads/member, behind the gate: who is signed in (a signed-out visitor is sent to /login).
+member_endpoint : Endpoint({ started : Str, member : Str }, {}, Str)
+member_endpoint = Endpoint.local("GET", "/reads/member", |_, handed, {}| Ok("member ${handed.member}"))
+
+## GET /reads/missing: a refusal, 404.
+missing_endpoint : Endpoint({}, {}, Str)
+missing_endpoint = Endpoint.local("GET", "/reads/missing", |_, {}, {}| Err(NotFound))
+
+## GET /reads/flash: the flash a plain form's post left in the page's cookie, as the handler reads it.
+flash_endpoint : Endpoint({}, {}, Str)
+flash_endpoint = Endpoint.local(
+	"GET",
+	"/reads/flash",
+	|_, {}, {}|
+		match Server.flash!({}) {
+			Ok(flash) => Ok("${flash.url} ${flash.status.to_str()} ${flash.body}")
+			Err(NoFlash) => Ok("no flash")
+		},
+)
+
+## A page that reads GET endpoints as the server renders it: its own data, with the page's query;
+## one that refuses, as a value (`read!`) and as a failure an <Errored> shows (`get!`), the same URL
+## asked once; and one inside a <NoHydration>, which isn't noted for the browser.
+reading! : {} => Html
+reading! = |{}| {
+	data! = Solid.create_memo!(|| Endpoint.get!(Endpoint.with_query(reads_endpoint, Router.location!({}).query)))
+	Html.element(
+		"html",
+		[],
+		[
+			Html.element(
+				"body",
+				[],
+				[
+					Html.element("p", [Html.attr("class", "data")], [Html.text_of(|| "${data!().weeks} ${data!().member} ${data!().probe}")]),
+					Html.element(
+						"p",
+						[Html.attr("class", "missing")],
+						[
+							Html.text_of(
+								||
+									match Endpoint.read!(missing_endpoint) {
+										Ok(found) => found
+										Err(problem) => Server.explain(problem)
+									},
+							),
+						],
+					),
+					Errored.view!({ fallback: |problem, _| Html.element("p", [Html.attr("class", "refused")], [Html.text_of(|| problem)]), children: [Html.text_of(|| Endpoint.get!(missing_endpoint))] }),
+					Html.no_hydration([Html.element("p", [Html.attr("class", "static")], [Html.text_of(|| Endpoint.get!(Endpoint.with_query(reads_endpoint, "weeks=region")).weeks)])]),
+				],
+			),
+		],
+	)
+}
+
+## A page whose layout reads an endpoint behind the gate, with an <Errored> around it: for a
+## signed-out visitor, the gate's redirect is the page's answer (D-019).
+read_gated! : {} => Html
+read_gated! = |{}|
+	Html.element(
+		"html",
+		[],
+		[
+			Html.element(
+				"body",
+				[],
+				[Errored.view!({ fallback: |problem, _| Html.text_of(|| problem), children: [Html.element("header", [], [Html.text_of(|| Endpoint.get!(member_endpoint))])] })],
+			),
+		],
+	)
+
+## A page that reads an endpoint whose handler reads the flash a plain form's post left.
+read_flash! : {} => Html
+read_flash! = |{}| Html.element("html", [], [Html.element("body", [], [Html.element("p", [Html.attr("class", "flash")], [Html.text_of(|| Endpoint.get!(flash_endpoint))])])])
 
 ## A page whose `<title>` and `<textarea>` (RCDATA: the parser reads markup there as text) hold
 ## holes: written without comments.
