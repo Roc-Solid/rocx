@@ -44,14 +44,14 @@ export function roc() {
 
 /**
  * rocx itself (bin/rocx), built from its Roc (src/*.roc, on basic-cli) when it is missing or older
- * than one of them: what the repo's scripts and tests run. `ROCX_OPT` picks the optimization
+ * than one of them or a file they embed (anything in src/ but the JavaScript): what the repo's scripts and tests run. `ROCX_OPT` picks the optimization
  * (`speed` unless it says `dev`). Builds wait for one another (bin/.rocx-building), since the
  * tests run in several processes at once.
  */
 export function rocxBinary() {
 	const out = join(root, "bin", "rocx");
 	const sources = join(root, "src");
-	const newest = () => Math.max(...readdirSync(sources).filter((name) => name.endsWith(".roc")).map((name) => statSync(join(sources, name)).mtimeMs));
+	const newest = () => Math.max(...readdirSync(sources).filter((name) => !name.endsWith(".mjs")).map((name) => statSync(join(sources, name)).mtimeMs));
 	const fresh = () => existsSync(out) && statSync(out).mtimeMs >= newest();
 	if (fresh()) return out;
 	const lock = join(root, "bin", ".rocx-building");
