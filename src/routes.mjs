@@ -2,8 +2,9 @@
 // the path its directory names (`routes/blog/[slug]/+page.rocx` is `/blog/:slug`), each
 // `+layout.rocx` above it wraps it, `+server.rocx` answers HTTP methods there (`get!`, `post!`,
 // `put!`, `patch!`, `delete!`: endpoints; `events!`: a stream of events; `respond!`: every method
-// the others don't, with a `Server.Response` of its own), and `+error.rocx` is what a path nothing
-// has shows. A route file names its `middleware`, which runs around it. Directories that start with
+// the others don't, with a `Server.Response` of its own; `channel!`: a channel, which pages subscribe
+// to over the tab's one stream, `/rocx/live`, with its hooks `receive!`, `on_open!` and `on_close!`),
+// and `+error.rocx` is what a path nothing has shows. A route file names its `middleware`, which runs around it. Directories that start with
 // a dot are skipped, but for `.well-known` (`routes/.well-known/openid-configuration/+server.roc`).
 //
 // A route file is bare: imports, a blank line, then its definitions (`meta`, `view`). Roc names a
@@ -28,6 +29,15 @@ export const ROUTE_FILE = /^\+(page|layout|error|server)\.(rocx|roc)$/;
 /** The methods a `+server.rocx` may answer, as it names them; `events!` is a stream of events
  * (server-sent events), for a GET that accepts them (`text/event-stream`). */
 export const METHODS = ["get!", "post!", "put!", "patch!", "delete!", "events!"];
+
+/** A channel (`Channel`), which a `+server.roc` defines beside its methods: its check. Not an HTTP
+ * method: pages subscribe to it over the tab's stream (`/rocx/live`, which the host answers), and
+ * the host asks its route about each subscription (`x-rocx-channel`). */
+export const CHANNEL = "channel!";
+
+/** A channel's hooks, each optional: what pages say on it (`receive!`), what a subscriber is sent
+ * first (`on_open!`), and a subscription's end (`on_close!`). */
+export const CHANNEL_HOOKS = ["receive!", "on_open!", "on_close!"];
 
 /** The HTTP method a handler answers (`events!` answers a GET). */
 const verbOf = (method) => (method === "events!" ? "GET" : method.replace("!", "").toUpperCase());
@@ -125,7 +135,9 @@ export function routeTable(paths) {
 
 /** The definitions a route file has, among `view`, `view!`, `meta`, `middleware` and the methods,
  * at the top of the file; what its middleware is, as written (for `rocx routes`); and what each
- * method's comment says (for its OpenAPI operation). `respond: true` if it defines `respond!`. */
+ * method's comment says (for its OpenAPI operation). `respond: true` if it defines `respond!`;
+ * `channel: { hooks }` if it defines `channel!` (`hooks`: those of `CHANNEL_HOOKS` it defines), or
+ * `hooks` alone if it defines hooks with no channel. */
 export function definitions(source) {
 	const defined = (name) => new RegExp(`^${name.replace("!", "\\!")}\\s*=`, "m").test(source);
 	const middleware = /^middleware\s*=\s*(.+)$/m.exec(source)?.[1].trim() ?? null;
@@ -145,7 +157,9 @@ export function definitions(source) {
 		const doc = comment(at) || (methods.length === 1 && first >= 0 ? comment(lines.findIndex((line, i) => i > first && !line.startsWith("##"))) : "");
 		if (doc) docs[method] = doc;
 	}
-	return { view: defined("view!") ? "view!" : defined("view") ? "view" : null, meta: defined("meta"), methods, middleware, docs, ...(defined("respond!") ? { respond: true } : {}) };
+	const channel = defined(CHANNEL) ? { hooks: CHANNEL_HOOKS.filter(defined) } : null;
+	const hooks = CHANNEL_HOOKS.filter(defined);
+	return { view: defined("view!") ? "view!" : defined("view") ? "view" : null, meta: defined("meta"), methods, middleware, docs, ...(defined("respond!") ? { respond: true } : {}), ...(channel ? { channel } : hooks.length ? { hooks } : {}) };
 }
 
 /**
@@ -356,10 +370,46 @@ export function routesModule(table, { sources, stories = null }) {
 	};
 	const missing = pages ? `if (wants_html) {\n\t\t\tRoutes.page(404)\n\t\t} else {\n\t\t\tRoutes.text(404, "nothing at \${request.path}")\n\t\t}` : `Routes.text(404, "nothing at \${request.path}")`;
 	// A page's module only for its middleware (`Root` renders it); an endpoint's, only for its
-	// middleware or its `respond!` (`Api` has its handlers).
-	const modules = [...table.pages.filter((entry) => sources.get(entry.file).middleware), ...table.servers.filter((entry) => sources.get(entry.file).middleware || sources.get(entry.file).respond)]
+	// middleware, its `respond!` or its channel's hooks (`Api` has its handlers).
+	const modules = [...table.pages.filter((entry) => sources.get(entry.file).middleware), ...table.servers.filter((entry) => sources.get(entry.file).middleware || sources.get(entry.file).respond || sources.get(entry.file).channel?.hooks.length)]
 		.map((entry) => entry.module)
 		.sort();
+	// The channels (`channel!`): the host asks about each subscription (`x-rocx-channel`), behind the
+	// route file's middleware, but its end (`closed!`), which the app answers outside it.
+	const channels = table.paths.filter((at) => at.server && sources.get(at.server.file).channel);
+	const hooked = (at, hook) => sources.get(at.server.file).channel.hooks.includes(hook);
+	const channelArm = (at) => {
+		const module = at.server.module;
+		const opened = hooked(at, "on_open!") ? `|who, tab| ${module}.on_open!({ params: params, who: who, tab: tab })` : "|_who, _tab| []";
+		const received = hooked(at, "receive!")
+			? `Endpoint.receiving(Api.${apiName(CHANNEL, at)}(params), |who, tab, said| ${module}.receive!({ params: params, who: who, tab: tab, said: said }))`
+			: `|_who, _tab, _said| Err(Status(404, ${rocString(`${at.path} takes nothing pages say: its route has no receive!`)}))`;
+		const answer = (request, context) =>
+			`Endpoint.channel!(Api.${apiName(CHANNEL, at)}(params), ${request}, ${context}, { opened!: ${opened}, received!: ${received}, closes: ${hooked(at, "on_close!") ? "Bool.True" : "Bool.False"} })`;
+		return [`if (${matchedBy(at)}) {`, `\t\t\tparams = ${paramsOf(at)}`, `\t\t\t${guarded(at.server, answer)}`, "\t\t}"].join("\n");
+	};
+	const noChannel = 'Routes.text(404, "no channel at ${request.path}")';
+	const channelFunction = channels.length
+		? [
+				"\t## A channel's subscription, as the host asks about it (`/rocx/live`; `x-rocx-channel` says",
+				"\t## what): its check, behind its route file's middleware, then its hooks. 404 where no channel is.",
+				"\tchannel! = |segments, request, context| {",
+				`\t\t${channels.map(channelArm).join(" else ")} else {\n\t\t\t${noChannel}\n\t\t}`,
+				"\t}",
+				"",
+			]
+		: [];
+	const closing = channels.filter((at) => hooked(at, "on_close!"));
+	const closedArm = (at) =>
+		[
+			`if (${matchedBy(at)}) {`,
+			`\t\t\tparams = ${paramsOf(at)}`,
+			`\t\t\tEndpoint.closed!(Api.${apiName(CHANNEL, at)}(params), request, |who, tab, why| ${at.server.module}.on_close!({ params: params, who: who, tab: tab, why: why }))`,
+			"\t\t}",
+		].join("\n");
+	const closedFunction = closing.length
+		? ["\tclosed! = |request| {", '\t\tsegments = request.path.split_on("/").keep_if(|segment| !segment.is_empty()).map(Server.decode_segment)', `\t\t${closing.map(closedArm).join(" else ")} else {\n\t\t\tServer.response(204, [], "")\n\t\t}`, "\t}"]
+		: ['\tclosed! = |_request| Server.response(204, [], "")'];
 	// A dev build's stories (`stories`, from rocx build --dev): the catalog, and each story, the app's
 	// page, which `Root` renders (as it renders a page), so the browser hydrates it.
 	const storied = stories !== null;
@@ -383,12 +433,17 @@ export function routesModule(table, { sources, stories = null }) {
 				"",
 			]
 		: [];
+	// The host's asks about a channel's subscriptions, first: whatever the path, nothing else answers
+	// them.
+	const asked = ["if (Endpoint.channel_asked(request) != \"\") {", `\t\t\t${channels.length ? "Routes.channel!(segments, request, context)" : noChannel}`, "\t\t}"].join("\n");
+	// A path a channel alone is at answers no HTTP request: nothing is there.
+	const answers = (at) => at.page || (at.server && (sources.get(at.server.file).methods.length || sources.get(at.server.file).respond));
 	// Last: no route can be at /__rocx/stories (a directory doesn't begin with `_`).
-	const branches = [...table.paths.map(branch), ...(storied ? [storyBranch] : [])];
+	const branches = [asked, ...table.paths.filter(answers).map(branch), ...(storied ? [storyBranch] : [])];
 	return [
 		"## Written by rocx build from the app's routes/: a page for each +page.rocx, in the +layout.rocx",
-		"## files above it; the endpoints each +server.rocx has; and +error.rocx where nothing is. Edit",
-		"## those files, not this one.",
+		"## files above it; the endpoints and channels each +server.rocx has; and +error.rocx where nothing",
+		"## is. Edit those files, not this one.",
 		"import pf.Server",
 		...(branches.some((branch) => branch.includes("Endpoint.")) ? ["import pf.Endpoint"] : []),
 		...([...routedEntries(table)].some((entry) => sources.get(entry.file).middleware) ? ["import pf.Middleware"] : []),
@@ -399,9 +454,10 @@ export function routesModule(table, { sources, stories = null }) {
 		"",
 		"Routes := [].{",
 		"\t## The answer to `request` (a `Server.Request`): a page, in its layouts, for a browser's GET; an",
-		"\t## endpoint's answer for its method; the error page (404) where nothing is. A file that names its",
-		"\t## `middleware` has it run around its page and endpoints. `context` is what the app's middleware",
-		"\t## handed on: each page, layout and endpoint is given it (or what its own middleware hands on).",
+		"\t## endpoint's answer for its method; a channel's, for the host's asks about its subscriptions",
+		"\t## (`channel!`); the error page (404) where nothing is. A file that names its `middleware` has it",
+		"\t## run around its page, endpoints and channel. `context` is what the app's middleware handed on:",
+		"\t## each page, layout, endpoint and channel is given it (or what its own middleware hands on).",
 		// `context` goes to each page's and endpoint's middleware or handler: an app whose routes use
 		// none names it `_context`, so the compiler doesn't warn.
 		`\trespond! = |request, ${branches.some((branch) => /\bcontext\b/.test(branch)) ? "context" : "_context"}| {`,
@@ -427,6 +483,11 @@ export function routesModule(table, { sources, stories = null }) {
 		"\t## `Server.Request`'s `route` is; a dev build's stories, their path; `\"\"` where nothing is.",
 		"\tpattern : Str -> Str",
 		...patternBody(table, storied),
+		"",
+		...channelFunction,
+		"\t## A channel's subscription has ended, as the host tells it (`x-rocx-channel: close`): its route's",
+		"\t## `on_close!`, outside the middleware (`App` answers it so). 204 where there is none.",
+		...closedFunction,
 		"",
 		"\ttext : U16, Str -> Server.Response",
 		'\ttext = |status, body| Server.response(status, [{ name: "content-type", value: "text/plain; charset=utf-8" }], body)',
@@ -512,6 +573,16 @@ export function apiModule(table, { sources, client = false, tags = [], title = "
 			return [`\t## ${what}, from routes/${server.file}`, `\t${apiName(method, server)} = |${takes_params}| ${made}`, ""];
 		}),
 	);
+	// Each channel (`channel!`): an endpoint whose answer is its check's, `CHANNEL` its method.
+	const channels = table.servers
+		.filter((server) => sources.get(server.file).channel)
+		.map((server) => {
+			const made = client
+				? `Endpoint.remote("CHANNEL", ${urlOf(server)})`
+				: `Endpoint.local("CHANNEL", ${urlOf(server)}, |request, context, {}| ${server.module}.channel!({ request: request, params: params, context: context }))`;
+			const takes_params = client && !server.params.length ? "_params" : "params";
+			return [`\t## The channel at ${server.path}, from routes/${server.file} (\`Endpoint.subscribe!\`, \`Endpoint.publish!\`)`, `\t${apiName(CHANNEL, server)} = |${takes_params}| ${made}`, ""];
+		});
 	return [
 		"## Written by rocx build from the app's routes/: each endpoint a +server.rocx has, as a function",
 		client
@@ -523,6 +594,7 @@ export function apiModule(table, { sources, client = false, tags = [], title = "
 		"",
 		"Api := [].{",
 		...endpoints.flat(),
+		...channels.flat(),
 		...(client ? [] : openApiDocument(table, { sources, tags, title })),
 		"}",
 		"",
@@ -786,6 +858,7 @@ export function appModule({ jobs = [], actors = [], migrations = [], endpoints =
 		"## the log's format is `Auto` (`ROCX_LOG`, or pretty on a terminal and JSON elsewhere), which the",
 		"## app may change: `program = { ..App.program({ … }), logs: { format: Json } }`.",
 		"import pf.Server",
+		"import pf.Endpoint",
 		"import pf.Middleware",
 		"import pf.OpenApi",
 		...(jobs.length ? ["import pf.Job"] : []),
@@ -815,15 +888,21 @@ export function appModule({ jobs = [], actors = [], migrations = [], endpoints =
 		"\t\t\tparsed = Server.from_http(method, target, headers, body)",
 		"\t\t\t# The route that answers it (`/blog/[slug]`), for the middleware: what a metric groups requests by.",
 		"\t\t\trequest = { ..parsed, route: Routes.pattern(parsed.path) }",
-		"\t\t\t# A page a browser asks for lets a plain form's flash go (`Server.flash!`): it has read it, or never will.",
+		"\t\t\t# The end of a channel's subscription, as the host tells it: its route's `on_close!`, outside",
+		"\t\t\t# the middleware (a subscriber refused at a beat ends too).",
+		'\t\t\tif (Endpoint.channel_asked(request) == "close") {',
+		"\t\t\t\tRoutes.closed!(request)",
+		"\t\t\t} else {",
+		"\t\t\t\t# A page a browser asks for lets a plain form's flash go (`Server.flash!`): it has read it, or never will.",
 		...(endpoints
 			? [
-					"\t\t\t# The app's middleware, then the endpoints' OpenAPI document and its page, as the app says",
-					"\t\t\t# (`OpenApi.middleware`), then the routes.",
-					"\t\t\tchain = config.middleware.then(OpenApi.middleware(config.openapi, Api.openapi))",
+					"\t\t\t\t# The app's middleware, then the endpoints' OpenAPI document and its page, as the app says",
+					"\t\t\t\t# (`OpenApi.middleware`), then the routes.",
+					"\t\t\t\tchain = config.middleware.then(OpenApi.middleware(config.openapi, Api.openapi))",
 				]
-			: ["\t\t\tchain = config.middleware"]),
-		"\t\t\tServer.clear_flash(request, Middleware.run!(chain, request, (config.context)(started), |passed, context| Routes.respond!(passed, context)))",
+			: ["\t\t\t\tchain = config.middleware"]),
+		"\t\t\t\tServer.clear_flash(request, Middleware.run!(chain, request, (config.context)(started), |passed, context| Routes.respond!(passed, context)))",
+		"\t\t\t}",
 		"\t\t},",
 		`\t\tmigrations: [${embedded.map(({ name, as }) => `{ name: ${rocString(name)}, sql: ${as} }`).join(", ")}],`,
 		`\t\tjobs: [${jobs.map((job) => `Job.handler(${alias(job)}.${job.define})`).join(", ")}],`,
@@ -876,6 +955,8 @@ export function routeList(table, sources) {
 		}
 		// `respond!`: whatever else comes.
 		if (at.server && sources.get(at.server.file).respond) rows.push({ method: "*", path: at.path, file: `routes/${at.server.file}`, middleware: sources.get(at.server.file).middleware });
+		// A channel: subscribed to over /rocx/live.
+		if (at.server && sources.get(at.server.file).channel) rows.push({ method: "CHANNEL", path: at.path, file: `routes/${at.server.file}`, middleware: sources.get(at.server.file).middleware });
 	}
 	if (table.error) rows.push({ method: "*", path: "(anything else)", file: `routes/${table.error.file}`, middleware: null });
 	return rows;

@@ -150,9 +150,9 @@ test("routes: Api.openapi, the endpoints' OpenAPI document, which App.program se
 	assert.doesNotMatch(routes, /openapi/, "the router doesn't serve it: App.program does, if the app says")
 	const app = appModule({ endpoints: true });
 	assert.match(app, /^import Api$/m);
-	assert.match(app, /\t\t\tchain = config\.middleware\.then\(OpenApi\.middleware\(config\.openapi, Api\.openapi\)\)\n\t\t\tServer\.clear_flash\(request, Middleware\.run!\(chain, request, \(config\.context\)\(started\), \|passed, context\| Routes\.respond!\(passed, context\)\)\)/, "with endpoints: the app's middleware, then the document and its page, as the app says, then the routes");
+	assert.match(app, /\t\t\t\tchain = config\.middleware\.then\(OpenApi\.middleware\(config\.openapi, Api\.openapi\)\)\n\t\t\t\tServer\.clear_flash\(request, Middleware\.run!\(chain, request, \(config\.context\)\(started\), \|passed, context\| Routes\.respond!\(passed, context\)\)\)/, "with endpoints: the app's middleware, then the document and its page, as the app says, then the routes");
 	assert.doesNotMatch(appModule({}), /import Api|OpenApi\.middleware/, "no endpoints, no document");
-	assert.match(appModule({}), /\t\t\tchain = config\.middleware\n/, "no endpoints: the app's middleware alone");
+	assert.match(appModule({}), /\t\t\t\tchain = config\.middleware\n/, "no endpoints: the app's middleware alone");
 });
 
 test("no server functions (D-023): Routes answers nothing at /rocx/call/, and imports no ServerFunctions", () => {
@@ -204,7 +204,7 @@ test("Routes: a component page's GET is Root's page, after its route file's midd
 	const sources = new Map(files.map((file) => [file, file.endsWith("+server.roc") ? { view: null, meta: false, methods: ["put!"], middleware: null, docs: {} } : component({ middleware: file === "members/+page.rocx" ? "Guards.member" : null })]));
 	const routes = routesModule(table, { sources });
 	assert.match(routes, /^import pf\.Server\nimport pf\.Endpoint\nimport pf\.Middleware\nimport Api\nimport Root\nimport MembersPage\n\nRoutes := /m, "no Html (no page is rendered here); a page's module only for its middleware");
-	assert.match(routes, /\t\tif \(segments == \["members"\]\) \{\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tMiddleware\.run!\(MembersPage\.middleware, request, context, \|_passed, _handed\| Routes\.page\(200\)\)\n/);
+	assert.match(routes, /\t\t\} else if \(segments == \["members"\]\) \{\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tMiddleware\.run!\(MembersPage\.middleware, request, context, \|_passed, _handed\| Routes\.page\(200\)\)\n/);
 	assert.match(routes, /\} else if \(segments == \[\]\) \{\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tRoutes\.page\(200\)\n/, "no params read: Root reads them");
 	assert.match(routes, /\} else if \(segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("blog"\)\) \{\n\t\t\tparams = \{ slug: segments\.get\(1\) \?\? "" \}\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tRoutes\.page\(200\)\n\t\t\t\} else if \(method == "PUT"\) \{\n\t\t\t\tEndpoint\.respond!\(Api\.put_blog_slug\(params\), request, context\)/, "a page and an endpoint at one path");
 	assert.match(routes, /\t\t\} else \{\n\t\t\tif \(wants_html\) \{\n\t\t\t\tRoutes\.page\(404\)\n\t\t\t\} else \{\n\t\t\t\tRoutes\.text\(404, "nothing at \$\{request\.path\}"\)\n\t\t\t\}\n\t\t\}/);
@@ -275,9 +275,9 @@ test("App: the program, with the jobs the app's modules define (found by rocx bu
 		);
 		assert.deepEqual(migrationsIn(dir), ["0002-first.sql", "0010_later.sql"]);
 		const app = appModule({ jobs, migrations: migrationsIn(dir) });
-		assert.match(app, /^import pf\.Server\nimport pf\.Middleware\nimport pf\.OpenApi\nimport pf\.Job\nimport Routes\nimport \.\.\/Jobs as Jobs\nimport MembersServer\nimport \.\.\/Server\/Mail as ServerMail\nimport "\.\.\/migrations\/0002-first\.sql" as m0002_first : Str\nimport "\.\.\/migrations\/0010_later\.sql" as m0010_later : Str\n\nApp := \[\]\.\{$/m);
+		assert.match(app, /^import pf\.Server\nimport pf\.Endpoint\nimport pf\.Middleware\nimport pf\.OpenApi\nimport pf\.Job\nimport Routes\nimport \.\.\/Jobs as Jobs\nimport MembersServer\nimport \.\.\/Server\/Mail as ServerMail\nimport "\.\.\/migrations\/0002-first\.sql" as m0002_first : Str\nimport "\.\.\/migrations\/0010_later\.sql" as m0010_later : Str\n\nApp := \[\]\.\{$/m);
 		assert.match(app, /\tConfig\(given, handed\) := \{\n\t\tcontext : Str -> given,\n\t\tmiddleware : Middleware\(given, handed\),\n\t\tcrons : List\(\{ name : Str, schedule : Str, job : Str, input : Str \}\),\n\t\topenapi : OpenApi\.Serving \?\? Off,\n\t\}/, "the app's config: openapi is Off unless it says");
-		assert.match(app, /\tprogram : Config\(_, _\) -> _\n\tprogram = \|config\| \{\n\t\trespond!: \|method, target, headers, body, started\| \{\n\t\t\tparsed = Server\.from_http\(method, target, headers, body\)\n\t\t\t# [^\n]*\n\t\t\trequest = \{ \.\.parsed, route: Routes\.pattern\(parsed\.path\) \}\n\t\t\t# [^\n]*\n\t\t\tchain = config\.middleware\n\t\t\tServer\.clear_flash\(request, Middleware\.run!\(chain, request, \(config\.context\)\(started\), \|passed, context\| Routes\.respond!\(passed, context\)\)\)\n\t\t\},\n/, "the request as the host gives it, with the route that answers it; a page view lets the flash go");
+		assert.match(app, /\tprogram : Config\(_, _\) -> _\n\tprogram = \|config\| \{\n\t\trespond!: \|method, target, headers, body, started\| \{\n\t\t\tparsed = Server\.from_http\(method, target, headers, body\)\n\t\t\t# [^\n]*\n\t\t\trequest = \{ \.\.parsed, route: Routes\.pattern\(parsed\.path\) \}\n\t\t\t# [^\n]*\n\t\t\t# [^\n]*\n\t\t\tif \(Endpoint\.channel_asked\(request\) == "close"\) \{\n\t\t\t\tRoutes\.closed!\(request\)\n\t\t\t\} else \{\n\t\t\t\t# [^\n]*\n\t\t\t\tchain = config\.middleware\n\t\t\t\tServer\.clear_flash\(request, Middleware\.run!\(chain, request, \(config\.context\)\(started\), \|passed, context\| Routes\.respond!\(passed, context\)\)\)\n\t\t\t\}\n\t\t\},\n/, "the request as the host gives it, with the route that answers it; a page view lets the flash go; a channel subscription's end, outside the middleware");
 		assert.match(app, /\t\tmigrations: \[\{ name: "0002-first\.sql", sql: m0002_first \}, \{ name: "0010_later\.sql", sql: m0010_later \}\],\n\t\tjobs: \[Job\.handler\(Jobs\.welcome\), Job\.handler\(Jobs\.nightly\), Job\.handler\(Jobs\.once\), Job\.handler\(ServerMail\.send\), Job\.handler\(MembersServer\.reminder\)\],\n\t\tcrons: config\.crons,\n\t\tactors: \[\],\n\t\tlogs: \{ format: Auto \},\n\t\}/, "the platform's program: these five, and no more (and no actors); the log's format Auto (ROCX_LOG, or the terminal's guess), which the app may change with a record update");
 		const none = appModule({});
 		assert.match(none, /\t\tmigrations: \[\],\n\t\tjobs: \[\],/);
@@ -494,4 +494,88 @@ test("routes: .well-known is routed, and no other directory starting with a dot;
 		routesModule(live, { sources: liveSources }),
 		/if \(segments == \["live"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tif \(method == "GET" and wants_html\) \{\n\t\t\t\tRoutes\.page\(200\)\n\t\t\t\} else \{\n\t\t\t\tLiveServer\.respond!\(\{ request: request, params: params, context: context \}\)\n\t\t\t\}/,
 	);
+});
+
+test("channels: a +server.roc's channel! is Api's channel_<path> (CHANNEL, its URL; the browser's copy that alone); Routes answers the host's asks about it behind the file's middleware, with its hooks, and App its end outside it; a path a channel alone is at answers no HTTP", () => {
+	const room = [
+		"import pf.Server",
+		"import pf.Endpoint",
+		"import pf.Channel",
+		"",
+		"middleware = Members.signed_in",
+		"",
+		"## Who is in the room.",
+		"channel! : { request : Server.Request, params : { room : Str }, context : Str } => Try(Channel(Str, Str, Str), Endpoint.Refusal)",
+		"channel! = |{ context, .. }| Ok(Channel.allow(context))",
+		"",
+		"receive! = |{ said, .. }| Ok({})",
+		"on_open! = |{ who, .. }| [who]",
+		"on_close! = |_| {}",
+		"",
+	].join("\n");
+	assert.deepEqual(definitions(room).channel, { hooks: ["receive!", "on_open!", "on_close!"] });
+	assert.deepEqual(definitions(room).methods, [], "a channel is no HTTP method");
+	assert.deepEqual(definitions("get! = |_| Ok(1)\n").channel, undefined);
+	assert.deepEqual(definitions("on_open! = |_| []\n").hooks, ["on_open!"], "a hook with no channel, for rocx build to refuse");
+	const table = routeTable(["+page.rocx", "rooms/[room]/+server.roc", "news/+server.roc", "news/+page.rocx"]);
+	const sources = new Map([
+		["+page.rocx", { view: "view!", meta: false, methods: [], middleware: null, docs: {} }],
+		["rooms/[room]/+server.roc", { view: null, meta: false, methods: [], middleware: "Members.signed_in", docs: {}, channel: { hooks: ["receive!", "on_open!", "on_close!"] } }],
+		["news/+server.roc", { view: null, meta: false, methods: ["get!"], middleware: null, docs: {}, channel: { hooks: [] } }],
+		["news/+page.rocx", { view: "view!", meta: false, methods: [], middleware: null, docs: {} }],
+	]);
+	const api = apiModule(table, { sources, title: "app" });
+	assert.match(api, /\t## The channel at \/rooms\/\[room\], from routes\/rooms\/\[room\]\/\+server\.roc \(`Endpoint\.subscribe!`, `Endpoint\.publish!`\)\n\tchannel_rooms_room = \|params\| Endpoint\.local\("CHANNEL", "\/rooms\/\$\{Server\.encode_segment\(params\.room\)\}", \|request, context, \{\}\| RoomsRoomServer\.channel!\(\{ request: request, params: params, context: context \}\)\)\n/);
+	assert.match(api, /\tchannel_news = \|params\| Endpoint\.local\("CHANNEL", "\/news", /);
+	assert.doesNotMatch(api, /OpenApi\.path\("\/rooms/, "a channel isn't in the OpenAPI document");
+	const browser = apiModule(table, { sources, client: true });
+	assert.match(browser, /\tchannel_rooms_room = \|params\| Endpoint\.remote\("CHANNEL", "\/rooms\/\$\{Server\.encode_segment\(params\.room\)\}"\)\n/);
+	assert.match(browser, /\tchannel_news = \|_params\| Endpoint\.remote\("CHANNEL", "\/news"\)\n/);
+	assert.doesNotMatch(browser, /RoomsRoomServer|on_open|receive/, "the browser's copy: its method and URL alone");
+	const routes = routesModule(table, { sources });
+	assert.match(routes, /^import RoomsRoomServer$/m, "the module whose hooks it calls");
+	assert.match(routes, /\t\tif \(Endpoint\.channel_asked\(request\) != ""\) \{\n\t\t\tRoutes\.channel!\(segments, request, context\)\n\t\t\} else if /, "the host's asks first, whatever the path");
+	assert.match(
+		routes,
+		/\tchannel! = \|segments, request, context\| \{\n\t\tif \(segments == \["news"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tEndpoint\.channel!\(Api\.channel_news\(params\), request, context, \{ opened!: \|_who, _tab\| \[\], received!: \|_who, _tab, _said\| Err\(Status\(404, "\/news takes nothing pages say: its route has no receive!"\)\), closes: Bool\.False \}\)\n\t\t\} else if \(segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("rooms"\)\) \{\n\t\t\tparams = \{ room: segments\.get\(1\) \?\? "" \}\n\t\t\tMiddleware\.run!\(RoomsRoomServer\.middleware, request, context, \|passed, handed\| Endpoint\.channel!\(Api\.channel_rooms_room\(params\), passed, handed, \{ opened!: \|who, tab\| RoomsRoomServer\.on_open!\(\{ params: params, who: who, tab: tab \}\), received!: Endpoint\.receiving\(Api\.channel_rooms_room\(params\), \|who, tab, said\| RoomsRoomServer\.receive!\(\{ params: params, who: who, tab: tab, said: said \}\)\), closes: Bool\.True \}\)\)\n\t\t\} else \{\n\t\t\tRoutes\.text\(404, "no channel at \$\{request\.path\}"\)\n\t\t\}\n\t\}/,
+		"each behind its file's middleware, the hooks it has, defaults for the others",
+	);
+	assert.match(
+		routes,
+		/\tclosed! = \|request\| \{\n\t\tsegments = [^\n]*\n\t\tif \(segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("rooms"\)\) \{\n\t\t\tparams = \{ room: segments\.get\(1\) \?\? "" \}\n\t\t\tEndpoint\.closed!\(Api\.channel_rooms_room\(params\), request, \|who, tab, why\| RoomsRoomServer\.on_close!\(\{ params: params, who: who, tab: tab, why: why \}\)\)\n\t\t\} else \{\n\t\t\tServer\.response\(204, \[\], ""\)\n\t\t\}\n\t\}/,
+		"on_close!, for the channels that have it, outside any middleware",
+	);
+	assert.doesNotMatch(routes, /if \(segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("rooms"\)\) \{\n\t\t\tparams = \{ room: segments\.get\(1\) \?\? "" \}\n\t\t\tif \(method/, "a path a channel alone is at answers no HTTP request: nothing is there");
+	assert.match(routes, /if \(segments == \["news"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tif \(method == "GET" and wants_html\)/, "a channel beside a page and an endpoint leaves them as they were");
+	const none = routesModule(routeTable(["+page.rocx"]), { sources: new Map([["+page.rocx", { view: "view!", meta: false, methods: [], middleware: null }]]) });
+	assert.match(none, /\t\tif \(Endpoint\.channel_asked\(request\) != ""\) \{\n\t\t\tRoutes\.text\(404, "no channel at \$\{request\.path\}"\)\n\t\t\} else /, "with no channels, every ask is a 404");
+	assert.doesNotMatch(none, /\tchannel! = /, "and no channel! to ask");
+	assert.match(none, /\tclosed! = \|_request\| Server\.response\(204, \[\], ""\)\n/);
+	assert.deepEqual(
+		routeList(table, sources).filter((row) => row.method === "CHANNEL"),
+		[
+			{ method: "CHANNEL", path: "/news", file: "routes/news/+server.roc", middleware: null },
+			{ method: "CHANNEL", path: "/rooms/[room]", file: "routes/rooms/[room]/+server.roc", middleware: "Members.signed_in" },
+		],
+	);
+	// rocx build: a +server.roc with a channel alone is fine; a hook with no channel isn't.
+	const dir = mkdtempSync(join(tmpdir(), "rocx-channels-"));
+	const put = (path, text) => {
+		mkdirSync(dirname(join(dir, path)), { recursive: true });
+		writeFileSync(join(dir, path), text);
+	};
+	try {
+		put("app/main.roc", 'app [program] { pf: platform "../server/platform/main.roc" }\n\nimport Generated/App\n');
+		put("app/routes/+page.rocx", "import pf.Html\n\nview! = |_| <p>Home</p>\n");
+		put("app/routes/rooms/[room]/+server.roc", room.replace("middleware = Members.signed_in\n\n", ""));
+		const said = [];
+		assert.equal(build([join(dir, "app")], { client: join(dir, "app", "build", "client"), cwd: dir, log: (line) => said.push(line) }), true, said.join("\n"));
+		assert.match(readFileSync(join(dir, "app", "build", "client", "Generated", "Api.roc"), "utf8"), /channel_rooms_room = \|params\| Endpoint\.remote\("CHANNEL"/);
+		put("app/routes/lobby/+server.roc", "import pf.Channel\n\non_open! = |_| []\n");
+		said.length = 0;
+		assert.equal(build([join(dir, "app")], { cwd: dir, log: (line) => said.push(line) }), false);
+		assert.match(said.join("\n"), /routes\/lobby\/\+server\.roc: on_open! is a channel's hook, and it defines no channel: define channel!, its check/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });

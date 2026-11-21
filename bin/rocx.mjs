@@ -399,8 +399,14 @@ export function build(dirs, { client, cwd = process.cwd(), log = console.error, 
 				}),
 			);
 			for (const server of table.servers) {
-				if (sources.get(server.file).methods.length || sources.get(server.file).respond) continue;
-				log(`✗ ${relative(cwd, join(routes, ...server.file.split("/")))}: a +server answers methods: define one of ${METHODS.join(", ")}, or respond!`);
+				const defined = sources.get(server.file);
+				const file = relative(cwd, join(routes, ...server.file.split("/")));
+				if (defined.hooks) {
+					log(`✗ ${file}: ${defined.hooks.join(", ")} ${defined.hooks.length === 1 ? "is a channel's hook" : "are a channel's hooks"}, and it defines no channel: define channel!, its check`);
+					failed = true;
+				}
+				if (defined.methods.length || defined.respond || defined.channel || defined.hooks) continue;
+				log(`✗ ${file}: a +server answers methods: define one of ${METHODS.join(", ")}, or respond!, or a channel (channel!)`);
 				failed = true;
 			}
 			for (const problem of viewProblems(table, sources)) {
