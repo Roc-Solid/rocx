@@ -9,10 +9,15 @@
 //! Starting: the address is taken (a port in use stops the server before anything starts); the
 //! database is connected, and a connection listens to it; the platform's start runs in Roc (its
 //! schedules checked, its tables and the app's migrations applied, the jobs a stop cut short queued
-//! again); its background loops start (the job workers, the schedules), each on a thread of its
-//! own; then it answers. Stopping (SIGTERM, or ^C): it stops listening, the loops end (a worker
-//! finishes the job it is running), and it waits for what is running (up to ten seconds) before it
-//! exits, its log flushed.
+//! again); its background loops start (the job workers, the schedules), each a call of its own
+//! that pauses while it waits; then it answers. Stopping (SIGTERM, or ^C): it stops listening, the
+//! loops end (a worker finishes the job it is running), and it waits for what is running (up to ten
+//! seconds) before it exits, its log flushed.
+//!
+//! Roc runs on threads of its own (`coroutine`, D-027), as many as the machine has cores
+//! (`--roc-threads`, or `ROCX_ROC_THREADS`, says otherwise): each call into Roc (a request, a stream, an actor's turn, a
+//! background loop) is a coroutine on one of them, which pauses whenever an effect waits, so any
+//! number of calls can be waiting at once, and none holds a thread while it does.
 //!
 //! Every line it logs, and every line Roc does, is an event on the log (`logging`): a level, a
 //! message and fields, written pretty or as JSON, as the app's `program` says, by a thread of its
@@ -24,6 +29,7 @@ mod abi;
 mod actors;
 mod channels;
 mod client;
+mod coroutine;
 mod db;
 mod hosted;
 mod http;
@@ -76,16 +82,11 @@ fn served(args: Vec<String>) -> c_int {
             return 2;
         }
     };
-    // Roc runs on blocking threads, whose stacks are as deep as Roc's own default (8 MiB): a page
-    // is a deep tree to render. (Stacks are reserved, not used: an idle thread costs little.) An
-    // open `events!` stream holds a thread for as long as it is open, so there may be many; a
-    // channel stream (`/rocx/live`) holds none (`channels`). `--blocking-threads` (1024) caps them.
-    let runtime = match tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .thread_stack_size(8 << 20)
-        .max_blocking_threads(config.blocking_threads)
-        .build()
-    {
+    // tokio's threads answer HTTP and drive every socket and timer. Roc runs on threads of its own
+    // (`coroutine`), each call a coroutine with a stack as deep as Roc's own default (8 MiB: a page
+    // is a deep tree to render), which pauses while it waits: a call that waits (an open stream's,
+    // say) holds no thread.
+    let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
         Ok(runtime) => runtime,
         Err(error) => {
             logging::error("rocx server: can't start", &[("error", error.to_string().into())]);
@@ -93,13 +94,20 @@ fn served(args: Vec<String>) -> c_int {
         }
     };
     hosted::set_runtime(runtime.handle().clone());
-    match runtime.block_on(run(config)) {
+    if let Err(message) = coroutine::start(config.roc_threads, runtime.handle().clone()) {
+        logging::error("rocx server: can't start", &[("error", message.into())]);
+        return 1;
+    }
+    let code = match runtime.block_on(run(config)) {
         Ok(()) => 0,
         Err(message) => {
             logging::error("rocx server: can't start", &[("error", message.into())]);
             1
         }
-    }
+    };
+    // Whatever Roc still runs (past the grace) is left where it is: the process exits.
+    coroutine::halt();
+    code
 }
 
 async fn run(config: http::Config) -> Result<(), String> {
@@ -135,17 +143,17 @@ async fn run(config: http::Config) -> Result<(), String> {
     let idle = (config.database_url.is_some() && config.actor_idle_ms > 0).then(|| Duration::from_millis(config.actor_idle_ms));
     actors::start(idle);
     // The platform's start, in Roc: a bad schedule or a migration that fails stops the server here.
-    let started = tokio::task::spawn_blocking(|| hosted::call(None, roc::init)).await.map_err(|_| "starting failed".to_string())?;
+    let started = coroutine::run(|| hosted::call(None, roc::init)).await.map_err(|_| "starting failed".to_string())?;
     match started {
         Ok(Ok(())) => {}
         Ok(Err(why)) => return Err(why),
         Err(crash) => return Err(format!("starting crashed: {}", crash.0)),
     }
-    let count = tokio::task::spawn_blocking(|| hosted::call(None, roc::background_count))
+    let count = coroutine::run(|| hosted::call(None, roc::background_count))
         .await
         .map_err(|_| "starting failed".to_string())?
         .map_err(|crash| format!("starting crashed: {}", crash.0))?;
-    let loops: Vec<_> = (0..count).map(|index| tokio::task::spawn_blocking(move || background(index))).collect();
+    let loops: Vec<_> = (0..count).map(|index| coroutine::run(move || background(index))).collect();
 
     let stop = std::sync::Arc::new(stop);
     let signalled = stop.clone();

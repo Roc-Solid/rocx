@@ -6,6 +6,9 @@
 // `roc_crashed`, jumps back to it, and `rocx_guarded` returns 1. The frames it skips are Roc's,
 // and the host's trampoline, which holds nothing to drop; hosted functions never call back into
 // Roc, so a crash never skips one of theirs.
+//
+// `current` is the thread's, but belongs to the call running on it: one that pauses swaps it out
+// (`rocx_guard_swap`), and back in when it resumes.
 #include <setjmp.h>
 #include <stddef.h>
 
@@ -30,4 +33,13 @@ int rocx_guard_active(void) {
 
 void rocx_guard_escape(void) {
     longjmp(*current, 1);
+}
+
+// The running call's jump target, swapped for `with`: a call into Roc that pauses (a coroutine:
+// coroutine.rs) takes its own out, so the calls that run on this thread meanwhile have theirs, and
+// puts it back when it resumes. Its target is on its own stack, so a crash never leaves it.
+void *rocx_guard_swap(void *with) {
+    jmp_buf *was = current;
+    current = (jmp_buf *)with;
+    return was;
 }

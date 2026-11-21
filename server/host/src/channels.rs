@@ -2,10 +2,10 @@
 //! here, on the async side, never by a thread of Roc's. A stream carries the channels its query
 //! names (`?tab=<id>&c=<url>&c=<url>…`); each is a route's `channel!`, at its URL.
 //!
-//! Roc runs only briefly, a call at a time, on a thread from the blocking pool that goes back when
-//! the call is done: a channel's check when the stream opens (with its route's `on_open!`), again
-//! on each beat, what a page says (`POST /rocx/live/send`, the route's `receive!`), and the end of a
-//! subscription (its `on_close!`). Each is a request the host makes of the app (`respond!`) for the
+//! Roc runs only briefly, a call at a time (`in_roc`: a coroutine on one of Roc's threads, which
+//! pauses while it waits): a channel's check when the stream opens (with its route's `on_open!`),
+//! again on each beat, what a page says (`POST /rocx/live/send`, the route's `receive!`), and the
+//! end of a subscription (its `on_close!`). Each is a request the host makes of the app (`respond!`) for the
 //! channel's URL, with the stream's headers (its cookies), so the app's middleware and the route's
 //! run as for any request to it, and `x-rocx-channel` saying what is asked: `open`, `check`,
 //! `receive`, or `close` (which the app answers outside its middleware). No request from outside
@@ -27,7 +27,7 @@
 //! ordered messages wait in their topics' backlogs, and its latest-wins ones replace each other.
 
 use crate::http::{Body, Config};
-use crate::{hosted, live, logging, roc};
+use crate::{coroutine, hosted, live, logging, roc};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited, StreamBody};
 use hyper::body::{Frame, Incoming};
@@ -92,8 +92,8 @@ impl Answered {
     }
 }
 
-/// Asks the app about the channel at `url` (`op`: `open`, `check`, `receive`, `close`), on this
-/// (blocking) thread, as a request of its own. A crash is a 500.
+/// Asks the app about the channel at `url` (`op`: `open`, `check`, `receive`, `close`), in this
+/// call into Roc (`in_roc`), as a request of its own. A crash is a 500.
 fn ask(asking: &Asking, op: &str, method: &str, url: &str, body: String) -> (Answered, String) {
     let mut headers = asking.headers.clone();
     for line in ["accept: application/json".to_string(), format!("x-rocx-channel: {op}"), format!("x-rocx-tab: {}", asking.tab)] {
@@ -332,14 +332,14 @@ fn forward_latest(id: u64, url: String, mut topic: broadcast::Receiver<live::Mes
     })
 }
 
-/// Runs `work` (requests of the app, one after another) where Roc's calls run: a thread of the
-/// blocking pool, given back when it is done. The one place this module starts Roc.
-fn in_roc<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> JoinHandle<T> {
-    tokio::task::spawn_blocking(work)
+/// Runs `work` (requests of the app, one after another) where Roc's calls run: a call of its own,
+/// a coroutine on one of Roc's threads (`coroutine`). The one place this module starts Roc.
+fn in_roc<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> coroutine::Running<T> {
+    coroutine::run(work)
 }
 
 /// Runs the requests about subscriptions, one after another (`in_roc`).
-fn asked(asking: &Arc<Asking>, ops: Vec<Op>) -> JoinHandle<Vec<(Op, Answered)>> {
+fn asked(asking: &Arc<Asking>, ops: Vec<Op>) -> coroutine::Running<Vec<(Op, Answered)>> {
     let asking = asking.clone();
     in_roc(move || {
         ops.into_iter()
@@ -357,7 +357,7 @@ fn asked(asking: &Arc<Asking>, ops: Vec<Op>) -> JoinHandle<Vec<(Op, Answered)>> 
 }
 
 /// Waits for the running requests, if there are any.
-async fn running(job: &mut Option<JoinHandle<Vec<(Op, Answered)>>>) -> Vec<(Op, Answered)> {
+async fn running(job: &mut Option<coroutine::Running<Vec<(Op, Answered)>>>) -> Vec<(Op, Answered)> {
     match job {
         Some(handle) => handle.await.unwrap_or_default(),
         None => std::future::pending().await,

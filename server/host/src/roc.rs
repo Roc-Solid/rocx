@@ -9,9 +9,10 @@
 //! everything in the list is freed: the request's arguments, whatever Roc had built, a stream's
 //! state, a page and what its components made.
 //!
-//! A value Roc makes in a call belongs to that call's thread until the call returns; after that the
-//! host owns it and moves it (a stream to the thread that sends it), but never shares it, so no two
-//! threads touch one value's counts at once.
+//! A value Roc makes in a call belongs to that call until the call returns (a call runs on one
+//! thread from its start to its end, pausing there while it waits: `coroutine`); after that the host
+//! owns it and moves it (a stream to the call that sends it), but never shares it, so no two calls
+//! touch one value's counts at once.
 
 use crate::abi::{self, RocHost, RocStr};
 use std::alloc::{Layout, alloc, dealloc};
@@ -43,6 +44,8 @@ pub fn live_allocations() -> i64 {
     LIVE.load(Ordering::Relaxed)
 }
 
+// The running call's, in its thread's thread-locals: a call that pauses takes them out (`stash`),
+// and puts them back when it resumes.
 thread_local! {
     /// The list the call running on this thread adds to (a `Ring`'s sentinel), or null between
     /// calls.
@@ -55,6 +58,37 @@ thread_local! {
     /// The list of the page being rendered on this thread (`Page::rendering`), which what its
     /// computations made and still hold joins when they return (`run`); or null.
     static KEEPING: Cell<*mut Header> = const { Cell::new(ptr::null_mut()) };
+}
+
+/// What the running call keeps in this thread's thread-locals (its list, the page it renders, why
+/// it crashed or failed, its guard's jump target), taken out while it is paused: other calls run on
+/// the thread meanwhile (`coroutine`). `unstash` puts it back when it resumes.
+pub struct Stash {
+    tracking: *mut Header,
+    keeping: *mut Header,
+    crash: Option<String>,
+    failure: Option<String>,
+    guard: *mut c_void,
+}
+
+/// Takes the running call's state out of the thread, leaving the thread as it is between calls.
+pub fn stash() -> Stash {
+    Stash {
+        tracking: TRACKING.with(|tracking| tracking.replace(ptr::null_mut())),
+        keeping: KEEPING.with(|keeping| keeping.replace(ptr::null_mut())),
+        crash: CRASH.with(|slot| slot.borrow_mut().take()),
+        failure: FAILURE.with(|slot| slot.borrow_mut().take()),
+        guard: unsafe { rocx_guard_swap(ptr::null_mut()) },
+    }
+}
+
+/// Puts a resumed call's state back (`stash`).
+pub fn unstash(stash: Stash) {
+    TRACKING.with(|tracking| tracking.set(stash.tracking));
+    KEEPING.with(|keeping| keeping.set(stash.keeping));
+    CRASH.with(|slot| *slot.borrow_mut() = stash.crash);
+    FAILURE.with(|slot| *slot.borrow_mut() = stash.failure);
+    unsafe { rocx_guard_swap(stash.guard) };
 }
 
 /// Ends the running call with a failure (not a crash): a host effect that can't answer, as the JS
@@ -305,6 +339,7 @@ unsafe extern "C" {
     fn rocx_guarded(call: extern "C" fn(*mut c_void), data: *mut c_void) -> i32;
     fn rocx_guard_active() -> i32;
     fn rocx_guard_escape() -> !;
+    fn rocx_guard_swap(with: *mut c_void) -> *mut c_void;
 }
 
 /// Why a call into Roc failed: the message it crashed with.

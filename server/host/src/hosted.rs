@@ -4,12 +4,12 @@
 //! timers (`actors`), named values, TCP and TLS, HTTP requests, random numbers, AES-GCM. Jobs,
 //! cron, migrations, actors' state and email are Roc, built on them (`server/platform`).
 //!
-//! Each runs on the thread of the call into Roc that asked for it, a thread from tokio's pool for
-//! blocking work, so it may wait (on Postgres, say) without holding up other requests: it blocks
-//! on the future there (`wait`). It must not panic into Roc, so each catches its own. One calls
-//! back into Roc, `isolated` (`roc::isolated`), as a guarded call of its own, so a crash in it comes
-//! back here, and never skips a frame of ours. An actor's turn (`actor_turn`) is a call of its own
-//! too, on the thread its actor's task runs it on.
+//! Each runs in the call into Roc that asked for it, a coroutine on one of Roc's threads
+//! (`coroutine`), so it may wait (on Postgres, say) without holding up other requests: the call
+//! pauses until the future is done, and its thread runs other calls meanwhile (`wait`). It must not
+//! panic into Roc, so each catches its own. One calls back into Roc, `isolated` (`roc::isolated`),
+//! as a guarded call of its own, so a crash in it comes back here, and never skips a frame of ours.
+//! An actor's turn (`actor_turn`) is a call of its own too, which its actor's task starts.
 //!
 //! Every call into Roc has a context (`call`): the request it answers (if any: `call_asking`), the
 //! stream it sends (if any), whether it is a background loop, its deadline (a job's time limit),
@@ -33,7 +33,7 @@ use crate::abi::{
     HostStoreGetResultPayload as TextPayload, HostStoreGetResultTag as TextTag, HostTcpReadExactlyResult as BytesResult,
     HostTcpReadExactlyResultPayload as BytesPayload, HostTcpReadExactlyResultTag as BytesTag, RocListWith, RocStr,
 };
-use crate::{actors, client, db, live, memory, outbox, roc, settings, tcp};
+use crate::{actors, client, coroutine, db, live, memory, outbox, roc, settings, signals, tcp};
 use bytes::Bytes;
 use futures_util::future::select_all;
 use std::cell::RefCell;
@@ -51,10 +51,43 @@ pub fn set_runtime(handle: tokio::runtime::Handle) {
     let _ = RUNTIME.set(handle);
 }
 
-/// Waits for `future` on this (blocking) thread; a panic becomes an error.
+/// Waits for `future`; a panic becomes an error. In a call into Roc (a coroutine), the call pauses
+/// until it is done, and other calls run on its thread meanwhile: what the call keeps in the
+/// thread's thread-locals is taken out first and put back after (`Stashed`). Anywhere else, it
+/// blocks the thread.
 pub fn wait<T>(future: impl Future<Output = Result<T, String>>) -> Result<T, String> {
+    if coroutine::in_call() {
+        let stashed = Stashed::take();
+        let waited = coroutine::pause(future);
+        stashed.put_back();
+        return waited.unwrap_or_else(|| Err("the host panicked".into()));
+    }
     let Some(runtime) = RUNTIME.get() else { return Err("no runtime".into()) };
     catch_unwind(AssertUnwindSafe(|| runtime.block_on(future))).unwrap_or_else(|_| Err("the host panicked".into()))
+}
+
+/// What a call keeps in its thread's thread-locals, out of them while it is paused: its context
+/// (`CALL`), Roc's (its list of allocations, the page whose render keeps what it makes, why it
+/// crashed or failed, its guard's jump target), the render it is doing, and its connections. A
+/// future must not touch any of them (it is polled while other calls run on the thread).
+struct Stashed {
+    call: Context,
+    roc: roc::Stash,
+    render: signals::Stash,
+    sockets: tcp::Stash,
+}
+
+impl Stashed {
+    fn take() -> Stashed {
+        Stashed { call: CALL.with(|context| context.take()), roc: roc::stash(), render: signals::stash(), sockets: tcp::stash() }
+    }
+
+    fn put_back(self) {
+        CALL.with(|context| *context.borrow_mut() = self.call);
+        roc::unstash(self.roc);
+        signals::unstash(self.render);
+        tcp::unstash(self.sockets);
+    }
 }
 
 // ---- Stopping ----
@@ -171,6 +204,8 @@ impl Context {
 }
 
 thread_local! {
+    /// The context of the call running on this thread: a call that pauses takes it out (`wait`), and
+    /// puts it back when it resumes.
     static CALL: RefCell<Context> = RefCell::new(Context::default());
 }
 
@@ -440,12 +475,13 @@ pub extern "C" fn roc_host_now_nanos() -> u64 {
     at.saturating_add(steady.elapsed().as_nanos() as u64)
 }
 
-/// Writes to the stream's response; false once its client has gone (or no stream is being sent).
+/// Writes to the stream's response, waiting while it is full (the client reads slower than the
+/// stream writes); false once its client has gone (or no stream is being sent).
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_send(data: RocStr) -> bool {
     let data = taken(data);
     let Some(out) = CALL.with(|context| context.borrow().out.clone()) else { return false };
-    out.blocking_send(Bytes::from(data)).is_ok()
+    wait(async move { Ok(out.send(Bytes::from(data)).await.is_ok()) }).unwrap_or(false)
 }
 
 /// Waits `ms` milliseconds; a stream's wait ends early when its client goes (its next `send!` then

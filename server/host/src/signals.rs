@@ -155,7 +155,20 @@ impl Render {
 }
 
 thread_local! {
+    /// The render the call running on this thread is doing, if any. A call that pauses takes it out
+    /// (`stash`), and puts it back when it resumes.
     static RENDER: RefCell<Option<Render>> = const { RefCell::new(None) };
+}
+
+/// The running call's render, taken out while it is paused (`coroutine`).
+pub struct Stash(Option<Render>);
+
+pub fn stash() -> Stash {
+    Stash(RENDER.with(|slot| slot.borrow_mut().take()))
+}
+
+pub fn unstash(stash: Stash) {
+    RENDER.with(|slot| *slot.borrow_mut() = stash.0);
 }
 
 /// Runs `with` on the render this thread is doing, if any. The borrow ends before it returns:

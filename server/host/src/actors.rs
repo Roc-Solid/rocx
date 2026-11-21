@@ -2,8 +2,8 @@
 //! order they came. Nothing is shared and nothing is locked. One task, the router, owns the table
 //! of the actors that are awake and the timers. Every ask, tell and timer is an order sent to it,
 //! and it passes each message on to its actor's mailbox. An actor is a task of its own: it takes
-//! its messages one at a time and runs each in a call into Roc (`actor_for_host!`, on a blocking
-//! thread), which keeps its state (in Postgres, with a database) and answers. The only things two
+//! its messages one at a time and runs each in a call into Roc (`actor_for_host!`, a coroutine on
+//! one of Roc's threads), which keeps its state (in Postgres, with a database) and answers. The only things two
 //! threads touch are the channels (`tokio::sync::mpsc`, unbounded, and `oneshot`: atomics, no
 //! lock) and the counter of timers.
 //!
@@ -26,7 +26,7 @@
 //! - Timers: a tell, later (`after`), until cancelled (`cancel`). They are in memory: a restart
 //!   loses the timers and the tells not yet handled (a job is for work that must survive one).
 
-use crate::{hosted, logging};
+use crate::{coroutine, hosted, logging};
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -251,7 +251,7 @@ async fn live(id: Id, life: u64, mut letters: mpsc::UnboundedReceiver<Letter>, r
             continue;
         }
         let turn = (id.clone(), kept.clone());
-        let ran = tokio::task::spawn_blocking(move || {
+        let ran = coroutine::run(move || {
             let (id, kept) = turn;
             hosted::actor_turn(&id, waiting, kept.as_deref(), &message)
         })

@@ -1,11 +1,12 @@
 //! The HTTP server: files from disk as they are, everything else answered by the Roc app. A call
-//! into Roc runs on a thread from tokio's blocking pool, so effects in it may wait; a page of
-//! components is rendered there, in the same call; a stream of events (`text/event-stream`) is a
-//! loop Roc runs on a thread of its own, writing to the response as it goes; a forwarded answer's
-//! body is fetched from elsewhere (`client::open`) and sent on as it comes, never through Roc.
+//! into Roc runs on one of Roc's threads, as a coroutine that pauses while its effects wait
+//! (`coroutine`); a page of components is rendered there, in the same call; a stream of events
+//! (`text/event-stream`) is a loop Roc runs in a call of its own, writing to the response as it
+//! goes; a forwarded answer's body is fetched from elsewhere (`client::open`) and sent on as it
+//! comes, never through Roc.
 
 use crate::roc::{self, Feed};
-use crate::{channels, client, hosted, logging, signals};
+use crate::{channels, client, coroutine, hosted, logging, signals};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited, StreamBody, combinators::BoxBody};
 use hyper::body::{Frame, Incoming};
@@ -61,8 +62,9 @@ pub struct Config {
     pub debug: bool,
     /// How often a channel stream (`/rocx/live`) beats: a comment, and its channels' checks again.
     pub live_beat: Duration,
-    /// The most threads Roc's calls run on at once (tokio's blocking pool).
-    pub blocking_threads: usize,
+    /// How many threads Roc runs on (`--roc-threads`, `ROCX_ROC_THREADS`; one a core unless they
+    /// say): a call that waits holds none (`coroutine`).
+    pub roc_threads: usize,
 }
 
 pub const USAGE: &str = "usage: <app> [options]
@@ -76,7 +78,7 @@ pub const USAGE: &str = "usage: <app> [options]
   --dev                                reload pages on restart, show crashes, the mailbox at /__rocx/mail
   --debug                              GET /__rocx/allocations, and the mailbox as JSON
   --live-beat-ms 15000                 how often a channel stream beats, and its checks run again
-  --blocking-threads 1024              the most threads Roc's calls run on at once";
+  --roc-threads N                      the threads Roc runs on (ROCX_ROC_THREADS; one a core)";
 
 impl Config {
     pub fn parse(args: Vec<String>) -> Result<Config, String> {
@@ -95,7 +97,10 @@ impl Config {
         let mut dev = false;
         let mut debug = false;
         let mut live_beat_ms: u64 = 15_000;
-        let mut blocking_threads: usize = 1024;
+        let mut roc_threads = match env("ROCX_ROC_THREADS") {
+            Some(given) => given.trim().parse().ok().filter(|count| *count > 0).ok_or_else(|| format!("ROCX_ROC_THREADS needs a number above 0, not {given:?}"))?,
+            None => crate::coroutine::default_threads(),
+        };
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
             let mut value = || args.next().ok_or_else(|| format!("{arg} needs a value"));
@@ -122,14 +127,15 @@ impl Config {
                 "--dev" => dev = true,
                 "--debug" => debug = true,
                 "--live-beat-ms" => live_beat_ms = value()?.parse().ok().filter(|ms| *ms > 0).ok_or("--live-beat-ms needs a number above 0")?,
-                "--blocking-threads" => blocking_threads = value()?.parse().ok().filter(|count| *count > 0).ok_or("--blocking-threads needs a number above 0")?,
+                "--roc-threads" => roc_threads = value()?.parse().ok().filter(|count| *count > 0).ok_or("--roc-threads needs a number above 0")?,
+                "--blocking-threads" => return Err("--blocking-threads is gone: a call into Roc holds no thread while it waits (D-027); --roc-threads (ROCX_ROC_THREADS) says how many threads Roc runs on".into()),
                 "--help" | "-h" => return Err(USAGE.into()),
                 other => return Err(format!("unknown argument {other} (--help lists them)")),
             }
         }
         let address = format!("{host}:{port}").parse().map_err(|error| format!("{host}:{port}: {error}"))?;
         let live_beat = Duration::from_millis(live_beat_ms);
-        Ok(Config { address, statics, files, context, database_url, job_workers, job_retry_ms, actor_idle_ms, smtp_url, mail_from, dev, debug, live_beat, blocking_threads })
+        Ok(Config { address, statics, files, context, database_url, job_workers, job_retry_ms, actor_idle_ms, smtp_url, mail_from, dev, debug, live_beat, roc_threads })
     }
 }
 
@@ -276,7 +282,7 @@ async fn from_roc(request: Request<Incoming>, config: Arc<Config>) -> Response<B
     let started = Instant::now();
     let asked = target.clone();
     let answering = hosted::Asked::new(method.as_str(), target, headers.trim_end_matches('\n').to_string(), body, config.context.clone(), config.dev);
-    let answered = tokio::task::spawn_blocking(move || {
+    let answered = coroutine::run(move || {
         hosted::call_asking(answering.clone(), || {
             let mut answer = roc::respond(&answering.method, &answering.target, &answering.headers, &answering.body, &answering.started)?;
             // A page of components: rendered for GET (and any other method), with the status it
@@ -442,11 +448,12 @@ async fn forwarded(upstream: roc::Upstream, own: &str, method: &Method, asked: &
     builder.body(StreamBody::new(frames).boxed()).unwrap()
 }
 
-/// Sends a stream: Roc runs it to its end on a blocking thread of its own, writing each event to
-/// the response as it goes (`hosted::call`, with the response), and waiting between them there. When the client
-/// goes, the stream's next `send!` says so, and a `sleep!` ends early.
+/// Sends a stream: Roc runs it to its end in a call of its own, writing each event to the response
+/// as it goes (`hosted::call`, with the response), and pausing between them (it holds no thread
+/// while it waits). When the client goes, the stream's next `send!` says so, and a `sleep!` ends
+/// early.
 async fn send_events(feed: Feed, out: mpsc::Sender<Bytes>) {
-    let sent = tokio::task::spawn_blocking(move || hosted::call(Some(out), || roc::stream(feed))).await;
+    let sent = coroutine::run(move || hosted::call(Some(out), || roc::stream(feed))).await;
     if let Ok(Err(crash)) = sent {
         logging::error("rocx server: a stream crashed", &[("error", crash.0.into())]);
     }

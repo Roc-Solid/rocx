@@ -1983,9 +1983,8 @@ test("channels: a subscriber behind its channel's backlog hears resync (and on_o
 	assert.equal(latest.messages.at(-1), 2000, "the newest comes");
 });
 
-test("channels: an open stream holds no thread: with 8 of them for Roc, 40 streams stay open, each hears what is published, and requests answer at once; 8 events! streams, for contrast, take them all", { skip }, async () => {
-	// No database: its job workers and schedules would each hold a thread for good.
-	const few = await start(["--blocking-threads", "8", "--live-beat-ms", "200"], app, { DATABASE_URL: "" });
+test("channels: an open stream holds no thread: with 2 of them for Roc, 40 streams stay open, each hears what is published, and requests answer at once; so do 8 events! streams, whose calls pause while they wait (D-027)", { skip }, async () => {
+	const few = await start(["--roc-threads", "2", "--live-beat-ms", "200"], app, { DATABASE_URL: "" });
 	const gone = new AbortController();
 	try {
 		const streams = await Promise.all(Array.from({ length: 40 }, (_, i) => channelStream(["/news/acme"], { tab: `${run}p${i}`, cookie: memberOf(`m${i}`, "acme"), signal: gone.signal, of: few })));
@@ -2001,14 +2000,15 @@ test("channels: an open stream holds no thread: with 8 of them for Roc, 40 strea
 		assert.equal(await few.text("/news/publish?org=acme&title=all&n=7", { method: "POST" }), "published");
 		for (const stream of streams) assert.deepEqual((await stream.next()).said, { n: 7, title: "all" });
 		gone.abort();
-		// An events! stream holds its thread while it is open: 8 of them hold all 8.
+		// An events! stream is a call that pauses while it waits: 8 of them hold neither thread.
 		const held = new AbortController();
 		const shouts = await Promise.all(Array.from({ length: 8 }, () => few.get("/shouts", { headers: { accept: "text/event-stream" }, signal: held.signal })));
 		assert.ok(shouts.every((response) => response.status === 200));
 		const waited = await Promise.race([few.text("/").then(() => "answered"), new Promise((resolve) => setTimeout(() => resolve("waiting"), 700))]);
-		assert.equal(waited, "waiting", "no thread left for a request");
+		assert.equal(waited, "answered", "a request is answered beside them");
 		held.abort();
-		assert.equal(await few.text("/"), "Hello from Roc, natively.", "until they go");
+		const refused = await start(["--blocking-threads", "8"], app, { DATABASE_URL: "" }).catch((error) => error);
+		assert.match(String(refused), /--blocking-threads is gone/, "the old cap is refused, saying what to use");
 	} finally {
 		gone.abort();
 		await few.stop();

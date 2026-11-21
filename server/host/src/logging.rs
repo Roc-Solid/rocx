@@ -130,9 +130,10 @@ fn given() -> &'static (Option<Format>, Option<String>) {
     })
 }
 
+static TERMINAL: OnceLock<bool> = OnceLock::new();
+
 /// Whether stderr is a terminal (a person reads it), asked once.
 fn terminal() -> bool {
-    static TERMINAL: OnceLock<bool> = OnceLock::new();
     *TERMINAL.get_or_init(|| unsafe { libc::isatty(libc::STDERR_FILENO) } == 1)
 }
 
@@ -146,6 +147,19 @@ fn format() -> Format {
         PRETTY => Format::Pretty,
         JSON => Format::Json,
         _ => auto(),
+    }
+}
+
+/// Whether the log is JSON, read without allocating or locking (a signal handler asks:
+/// `coroutine::overflowed`): the app's choice, or else `Auto`'s, as far as it is known yet.
+pub fn is_json() -> bool {
+    match FORMAT.load(Ordering::Relaxed) {
+        PRETTY => false,
+        JSON => true,
+        _ => match GIVEN.get().and_then(|given| given.0) {
+            Some(format) => format == Format::Json,
+            None => !matches!(TERMINAL.get(), Some(true)),
+        },
     }
 }
 
@@ -254,7 +268,10 @@ pub fn from_roc(level: u8, message: String, fields: String) {
 }
 
 /// Puts the event on the queue, waiting for room if it is full; with no writer to take it (not
-/// started yet, or this is it, or it has gone), writes it now.
+/// started yet, or this is it, or it has gone), writes it now. Waiting for room blocks the thread,
+/// even a Roc thread (whose other calls wait too, rather than pause): the writer is a thread of its
+/// own that never waits on Roc, so the queue soon has room, and a full one is rare (a burst of
+/// thousands of lines), and a brake on whatever logs that much.
 fn queued(record: Record) {
     let record = match QUEUE.get() {
         Some(queue) if !WRITER.with(Cell::get) => match queue.try_send(Message::Record(record)) {
