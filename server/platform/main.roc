@@ -13,7 +13,7 @@
 ##   once, into a document for the browser to hydrate, with the answers its endpoint reads got
 ##   and `/rocx/start.js` before `</body>` (a HEAD isn't rendered; `Host.status!`,
 ##   `<HttpStatusCode>`, sets the status); or a stream of events
-##   (server-sent events, `Events`): a loop the host runs on a thread of its own, to its end, with
+##   (server-sent events, `Events`): a loop the host runs as a call of its own, to its end, with
 ##   `{ send!, sleep! }`. `send!` writes to the response and says whether the client is still
 ##   there, `sleep!` waits that many milliseconds (and wakes early if the client goes).
 ## - `migrations`: the app's schema, applied once each, in order, when the server starts (each a
@@ -37,8 +37,9 @@
 ##   (`Server`, `Endpoint`, `Channel`, `Middleware`, `Events`, `OpenApi`), are the browser's platform's
 ##   (web/platform), copied here by the build, so the same code compiles on both.
 ##
-## Each call runs on a thread of its own from a pool, so an effect (`Db.all!`, a stream's
-## `sleep!`) may wait without holding up other requests. A crash (`crash`, an integer
+## Each call is a coroutine on one of a few threads of Roc's own (D-027), which pauses while an
+## effect (`Db.all!`, a stream's `sleep!`) waits, so it holds up no other request and holds no
+## thread. A crash (`crash`, an integer
 ## overflowing) ends that call only: the host answers 500 (or ends the stream, or the job's call, or
 ## the actor's turn), frees what the call had allocated, rolls back its transaction, and goes on.
 platform ""
@@ -284,7 +285,7 @@ init_for_host! = |{}| {
 	}
 }
 
-## What the server runs in the background, each loop on a thread of its own: the job workers and
+## What the server runs in the background, each loop a call of its own: the job workers and
 ## the schedules (with a database), and a look at the SMTP server (with one).
 Loop : [Work, Schedules, CheckMail]
 

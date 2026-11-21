@@ -9,7 +9,7 @@ FeatureGrid := [].{
 
 	<story name="Three">
 		<FeatureGrid>
-			<Feature title="Requests and streams" href="#"><p>Every request on a thread of its own.</p></Feature>
+			<Feature title="Requests and streams" href="#"><p>Every request a call of its own, paused while it waits.</p></Feature>
 			<Feature title="Postgres" href="#"><p>Queries, transactions and migrations.</p></Feature>
 			<Feature title="Jobs, cron and email"><p>Work that runs later, and again.</p></Feature>
 		</FeatureGrid>

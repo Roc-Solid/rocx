@@ -327,7 +327,7 @@ typed at both ends, which anything else that speaks HTTP may ask too.
   holding what was typed and the result or refusal, which the submission is then
   (`Server.flash!({})` reads it as it came). A redirect of the endpoint's own is followed either way.
 - **Events.** An endpoint's `events!` streams server-sent events: a loop that sends and sleeps,
-  on a thread of the server's own, ended by `?` when the client goes. A component listens with
+  a call of its own on the server, ended by `?` when the client goes. A component listens with
   `Endpoint.listen!(Api.events_…(params), Call.listen!, |event| …)`: each event runs the handler.
   Started in an effect (`create_effect!(|| org!(), |org| Endpoint.listen!(…))`), it listens while
   its component is there, again when what the effect read changes, and stops when it goes.
@@ -385,9 +385,10 @@ markup moves only with the code around it, and the text of a `<pre>` or `<textar
 ## The platform
 
 **The server** (`server/`): an app gives it a record (`respond!`, whose answer may be a page of
-components or a stream, `migrations`, `jobs` and `crons`). Each call into Roc runs on a
-thread from a pool, so an effect that waits holds up only its own call; a crash ends only its call
-(a 500, a stream ended, a job run again), its memory freed and its transaction rolled back. It
+components or a stream, `migrations`, `jobs` and `crons`). Each call into Roc is a coroutine on
+one of a few threads of Roc's own, paused while an effect waits, so a call that waits holds up
+nothing else and holds no thread (D-027); a crash ends only its call (a 500, a stream ended, a job
+run again), its memory freed and its transaction rolled back. It
 renders a page of components, byte for byte as the browser's runtime would. Postgres
 (`Db`, migrations, transactions), jobs and cron (options, keys, listing, and a jobs page an app
 mounts behind its own middleware), email (SMTP, or a dev mailbox at `/__rocx/mail`), requests to

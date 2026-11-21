@@ -77,8 +77,8 @@ view! = |_|
 			<FeatureGrid>
 				<Feature title="Requests and streams" href={Paths.platform_server}>
 					<p>
-						Every request, on a thread of its own; streams of events as loops that sleep; a crash that ends
-						one call, not the server, and frees what it held.
+						Every request a call of its own, which pauses while it waits; streams of events as loops that
+						sleep; a crash that ends one call, not the server, and frees what it held.
 					</p>
 				</Feature>
 				<Feature title="HTTP, both ways" href={Paths.platform_http}>
@@ -133,7 +133,7 @@ view! = |_|
 				started with (<code>--context-file</code>), and answers with a <code>Server.Response</code>:
 				<code>Server.from_http</code> makes the request, and the routes rocx writes answer it
 				(<a href={Paths.routing}>routing</a>). An answer that is a stream carries it: a function the host
-				runs on a thread of its own, with its <code>send!</code> and <code>sleep!</code>. <code>actors</code>
+				runs as a call of its own, with its <code>send!</code> and <code>sleep!</code>. <code>actors</code>
 				lists the app's kinds of actor, which <code>rocx build</code> finds, so the host can run one when
 				nobody waits on it (a tell, a timer). The browser's app is the islands alone:
 			</p>
@@ -143,8 +143,8 @@ view! = |_|
 			<Trace>
 				<li>
 					<Who kind="server">server</Who> hyper hands the host a request; the host reads its body
-					(16 MiB at most) and gives it to Roc on a thread of tokio's blocking pool, inside a guard that
-					catches a crash.
+					(16 MiB at most) and gives it to Roc, a call of its own on one of Roc's threads (it pauses
+					whenever an effect waits), inside a guard that catches a crash.
 				</li>
 				<li>
 					<Who kind="server">server</Who> The app's <code>respond!</code> runs its middleware and

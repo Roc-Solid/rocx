@@ -5,8 +5,8 @@ import Log
 import Registry
 import Setting
 
-## A job worker: a background loop the server runs `--job-workers` (4) of, each on a thread of its
-## own, until it stops.
+## A job worker: a background loop the server runs `--job-workers` (4) of, each a call of its own,
+## until it stops.
 ##
 ## A worker takes the next job that is due of a kind the app lists (another app may share the
 ## database) with `for update skip locked`, so no two take the same,

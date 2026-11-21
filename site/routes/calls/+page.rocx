@@ -254,8 +254,8 @@ view! = |_|
 				<li>
 					<strong>A stream is a loop.</strong> <code>Events.stream</code> is given <code>send!</code>, which
 					sends an event, and <code>sleep!</code>, which waits so many milliseconds; it sends, sleeps and goes
-					round again, and the stream ends when it returns. The server runs it on a thread of its own, so
-					its sleeps hold up no other request. When the page goes, <code>send!</code> says so
+					round again, and the stream ends when it returns. The server runs it as a call of its own, which
+					pauses while it sleeps, so its sleeps hold up no other request. When the page goes, <code>send!</code> says so
 					(<code>Err(Gone)</code>), a sleep ends early, and <code>?</code> ends the loop.
 					<code>Events.from_list(items, ms)</code> and <code>Events.map</code> make the simple ones.
 				</li>

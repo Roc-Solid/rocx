@@ -66,7 +66,7 @@ Server := [].{
 	##
 	## - 0, `text`;
 	## - 1, the page (`page`), which the host renders, as HTML unless the answer says otherwise;
-	## - 2, the stream (`feed`): a loop the host runs on a thread of its own, with its `send!` and
+	## - 2, the stream (`feed`): a loop the host runs as a call of its own, with its `send!` and
 	##   `sleep!`, which sends the events (`sent!`). A stream that has already ended is text: none;
 	## - 3, `bytes`, as they are;
 	## - 4, the `upstream` the host fetches the body from, and sends on (`forward`): its headers a

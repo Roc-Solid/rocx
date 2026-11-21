@@ -63,9 +63,9 @@ view! = |_|
 			<Code title={"${Sources.platform_shouts.file}, in part"} source={Sources.platform_shouts.rocx} numbers={Bool.False} />
 			<p>
 				A component listens to such a stream as to any endpoint's events
-				(<a href={"${Paths.calls}#events"}>events</a>). That holds one of the server's threads, and one of
-				the six connections a browser makes to a host, for as long as it is open. For what pages follow
-				live, a channel is better.
+				(<a href={"${Paths.calls}#events"}>events</a>). That is a call on the server, paused while it waits
+				(it holds no thread), and one of the six connections a browser makes to a host, for as long as it is
+				open. For what pages follow live, a channel is better.
 			</p>
 
 			<Heading id="channels">Channels: live data for pages</Heading>
@@ -165,10 +165,10 @@ view! = |_|
 			</TableWrap>
 			<ul>
 				<li>
-					<strong>No thread held.</strong> The host keeps the open streams and passes each channel's
+					<strong>No call held.</strong> The host keeps the open streams and passes each channel's
 					messages on; Roc runs only briefly, a call at a time: a check, a hook, a beat's checks. An
-					endpoint's <code>events!</code> stream holds one of the 1024 threads Roc's calls run on
-					(<code>--blocking-threads</code>) for as long as it is open.
+					endpoint's <code>events!</code> stream is a call for as long as it is open (paused while it
+					waits, so it holds no thread, but it keeps its stack), and one per page rather than one per tab.
 				</li>
 				<li>
 					<strong>Middleware.</strong> Each check is a request the host makes of the app for the channel's

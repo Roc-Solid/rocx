@@ -1139,3 +1139,100 @@ it, and it knows it before anything runs.
 
 **Reversible:** yes. Both are additions; a record that builds a `Server.Request` by hand gains
 `route`.
+
+## D-027 Roc calls on stackful coroutines
+
+**Context.** Roc's effects are synchronous calls into the host: a hosted function returns its
+answer. So the host ran each call into Roc (a request and the page it renders, a stream, an actor's
+turn, a background loop, the platform's start) on a thread of tokio's blocking pool, and a hosted
+function that waited (Postgres, a socket, another server, a sleep, an actor's answer) blocked that
+thread on its future. The pool held 1024 threads at most (`--blocking-threads`, 8 MiB stacks): at
+most 1024 calls in progress, waiting or not. An open `events!` stream held one for its whole life,
+as every background loop did, and past the cap requests queued for a thread. Channels (D-020) had
+already moved their streams off it.
+
+**Options.**
+1. Blocking threads, as they were, with a larger cap. Each is a kernel thread, with a stack and the
+   scheduler's attention: ten thousand open streams are ten thousand threads.
+2. Async Rust: hosted functions return futures. Impossible without Roc yielding: a Roc function in
+   the middle of its own frames can't be suspended when it calls an effect, and Roc has no async.
+3. Stackful coroutines in the Rust host: each call into Roc runs on a stack of its own, and a hosted
+   function that waits switches back to the thread, which runs other calls and resumes this one
+   when its future is done. Roc, the platform's API and apps don't change.
+4. A Zig host on Zig's `std.Io`, whose evented backends would do the same switching: unfinished as
+   of Zig 0.17.1, and a rewrite of the host (tokio, hyper, rustls, tokio-postgres) besides.
+
+**Choice.** 3, with `corosensei`, keeping tokio, hyper, rustls, tokio-postgres and deadpool.
+
+- Roc runs on threads of its own (`server/host/src/coroutine.rs`), as many as the machine has
+  cores, or `--roc-threads` (`ROCX_ROC_THREADS`). Each runs a small executor with the server's tokio
+  runtime entered, so the sockets, timers and tasks a call's futures make are tokio's, driven by its
+  threads, as they were when a blocking thread waited on them.
+- Each call is a coroutine with an 8 MiB stack (Roc's default, as the threads had; reserved, not
+  committed) above a 256 KiB guard; a thread keeps 64 stacks to reuse. New calls wait on one queue,
+  and whichever of Roc's threads is free starts the next. A call never moves after that: compiled
+  code may keep a thread-local's address across a call, so a call resumed on another thread could
+  read that thread's state. No coroutine is `Send`.
+- `hosted::wait` pauses: in a call, it hands its thread the future (on the call's own stack), which
+  the thread polls, and resumes the call when it is done; outside one, it blocks, as before. A panic
+  while polling is the call's error, as it was.
+- What the host keeps per call in thread-locals is taken out while the call is paused and put back
+  when it resumes: its context (`CALL`: the request, the stream, the deadline, the transaction,
+  rooms, the actor's turn), Roc's (its list of allocations, the page whose render keeps what it
+  makes, why it crashed or failed), the guard's jump target (`guard.c`'s `current`, through
+  `rocx_guard_swap`), the render (`RENDER`) and its sockets (`tcp.rs`'s table). The guard is set
+  inside the coroutine, so a crash's `longjmp` stays on the call's own stack. Roc's compiled code
+  keeps no thread-locals of its own (`nm` of the test app: only Rust crates' and the host's).
+- `send!` waits on the stream's channel through `wait` (it was `blocking_send`). `Tcp` is tokio's
+  sockets and tokio-rustls (it was blocking `std::net` and `rustls::StreamOwned`), with the same
+  timeouts, reads and errors.
+- Requests, streams, actor turns, channels' calls (`in_roc`), the platform's start and the
+  background loops all start through `coroutine::run`, which the async side awaits as it awaited a
+  `JoinHandle`. `--blocking-threads` is gone: given, it stops the server, saying what to use.
+- Unchanged: time limits (a call is cut off at its next wait past its deadline), the short `Mutex`
+  sections (never held across a wait), the platform's Roc API, the glue. A call that logs when the
+  log's queue is full still blocks its thread until there is room: rare, a brake on whatever floods
+  it, and the writer is a thread that never waits on Roc.
+
+Measured as `examples/echo/bench.sh` does (bombardier, `--opt=speed`, 10 s a level), master
+(7bb8926) and this branch each built from a clean checkout, run interleaved (master, coroutines,
+master, coroutines) on one busy machine: 10 cores, load average 14–25, Docker busy beside them.
+The sleeping rows are an echo that waits 10 ms or 100 ms (`Live.next!`) before it answers.
+
+| POST /echo                   | master: run 1 / run 2                 | coroutines: run 1 / run 2           |
+|------------------------------|---------------------------------------|-------------------------------------|
+| 1 connection                 | 14.9k / 11.0k req/s, p50 55 / 71 µs   | 15.3k / 15.8k, p50 54 / 53 µs        |
+| 16                           | 56.9k / 62.6k, p50 215 / 206 µs       | 72.8k / 74.0k, p50 183 / 187 µs      |
+| 64                           | 61.5k / 65.7k, p50 0.94 / 0.90 ms     | 58.2k / 62.5k, p50 0.86 / 0.77 ms    |
+| 256                          | 67.5k / 63.7k, p50 3.4 / 3.7 ms       | 77.7k / 57.6k, p50 2.6 / 3.2 ms      |
+| the server's threads         | 89–229                                | 22                                  |
+| waits 10 ms, 2,000 conns     | 38.0k / 37.4k, p50 44 / 47 ms         | 46.7k / 45.7k, p50 35 / 37 ms        |
+| waits 100 ms, 2,000 conns    | 10.1k / 10.0k, p50 202 / 202 ms       | 18.7k / 17.6k, p50 103 / 104 ms      |
+| threads, 2,000 waiting       | 1,036                                 | 22                                  |
+
+Roc's own time per echo (`server-timing`) is 30–50 µs in both. With 100 ms waits, master's 1024
+threads answer in two rounds; the coroutines answer every connection in one. At 256 connections and
+more, some connects are reset in both (macOS's listen queue holds 128).
+
+The tests (server/test, on two Roc threads): 2,000 requests that each wait a second answer in about
+a second; 2,000 open `events!` streams, and a request beside them answered at once; 600 calls
+interleaved (waits then crashes, pages that wait in a memo, in an `<Errored>`'s read and in a hole,
+refusals, TCP, crashes that don't wait), each answered as its own, nothing left allocated; a stack
+overflow that ends the process, saying so. The whole suite passes built `--opt=dev` and
+`--opt=speed`, and the test app built for `arm64musl` runs in an Alpine container.
+
+**Costs.** Roc that computes for long without an effect can't pause: the calls already on its
+thread wait for it (new ones go to the other threads). A paused call keeps its stack, though only
+the pages it touched cost memory: with 2,000 calls paused the server was about 150 MB resident,
+where 1,024 blocked threads were about 130 MB. Profilers and debuggers see calls on stacks of their
+own rather than threads. A stack overflow hits the guard and ends the process, as a thread's did;
+a handler on an alternate signal stack says so on stderr first (`rocx server: a call into Roc
+overflowed its stack (8 MiB): the process ends`, in the log's format).
+
+**Why.** Waiting is most of what a server's calls do, and a waiting call should cost a stack, not a
+kernel thread. This does it without Roc knowing, and keeps tokio, hyper and tokio-postgres, which
+work. Zig's evented I/O isn't there yet; a Zig host would have bought the same thing later, for a
+rewrite.
+
+**Reversible:** yes, entirely: it is the host's. `coroutine::run` back to `spawn_blocking` and
+`wait` back to `block_on` is the old model; apps and the platform's Roc never saw the change.

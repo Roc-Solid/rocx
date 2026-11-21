@@ -8,10 +8,10 @@ import ../../../Ui/PageHero
 
 meta = {
 	title: "The server",
-	description: "The rocx server platform: Roc compiled to native code in a Rust host. Every request on a thread of its own, streams as loops, crashes that end one call, and memory that comes back.",
+	description: "The rocx server platform: Roc compiled to native code in a Rust host. Every request a call of its own that pauses while it waits, streams as loops, crashes that end one call, and memory that comes back.",
 	toc: [
 		{ id: "layers", label: "What is Rust, what is Roc" },
-		{ id: "calls", label: "A call, on a thread of its own" },
+		{ id: "calls", label: "A call pauses while it waits" },
 		{ id: "streams", label: "Streams" },
 		{ id: "crashes", label: "A crash ends one call" },
 		{ id: "memory", label: "Memory" },
@@ -56,35 +56,47 @@ view! = |_|
 				</li>
 			</ul>
 
-			<Heading id="calls">A call, on a thread of its own</Heading>
+			<Heading id="calls">A call pauses while it waits</Heading>
 			<p>
-				Each call into Roc (a request, a stream, a background loop) runs on a thread from tokio's
-				blocking pool, with an 8 MiB stack, up to 1024 of them. So an effect may simply wait: a hosted
-				function blocks on its future there, and holds up nothing else. Eight requests that each wait 0.3 s
-				on Postgres take about 0.3 s together; the tests check it.
+				Roc runs on threads of its own, as many as the machine has cores (<code>--roc-threads</code>, or
+				<code>ROCX_ROC_THREADS</code>, says otherwise), beside tokio's, which answer HTTP and drive every
+				socket and timer. Each call into Roc (a request and the page it renders, a stream, an actor's turn,
+				a background loop) is a coroutine on one of them, with a stack of its own: 8 MiB, Roc's default,
+				reserved rather than used. When an effect waits (Postgres, a socket, another server, a sleep), the
+				call pauses: its stack stays as it is, its thread runs other calls meanwhile, and the call resumes
+				where it was, on the same thread, when what it waited on is done. So a call that waits holds no
+				thread, and any number of them can wait at once. Eight requests that each wait 0.3 s on Postgres
+				take about 0.3 s together, and 2,000 that each wait a second, on two threads, about a second; the
+				tests check both.
 			</p>
 			<p>
-				A value Roc makes belongs to its call's thread until the call returns; after that the host owns it
-				and moves it (a stream, to the thread that sends it), never sharing it. Calls nest: an isolated call
-				(a job) runs inside the one that made it, with its own context; an actor's turn is a call of its
-				own. Each call has a context: its transaction, the rooms it joined, the topics it listens to and its
-				sockets, all given back when it ends.
+				It has costs. Roc that computes for long without an effect (a long pure loop) can't pause, so the
+				calls on its thread wait for it; new calls go to Roc's other threads. A paused call keeps its stack,
+				though only the pages it touched cost memory. Profilers and debuggers see calls on stacks of their
+				own rather than threads. And a call that overflows its stack ends the process, as a thread's
+				overflow did, saying so on stderr first.
+			</p>
+			<p>
+				A value Roc makes belongs to its call until the call returns; after that the host owns it and moves
+				it (a stream, to the call that sends it), never sharing it. Calls nest: an isolated call (a job)
+				runs inside the one that made it, with its own context; an actor's turn is a call of its own. Each
+				call has a context: its transaction, the rooms it joined, the topics it listens to and its sockets,
+				all given back when it ends.
 			</p>
 
 			<Heading id="streams">Streams</Heading>
 			<p>
 				An endpoint's events are a loop (<code>{"Events.stream(|{ send!, sleep! }| …)"}</code>), and the host
-				runs it on a thread of its own for as long as it is open: <code>send!</code> writes an event to the
-				response, <code>sleep!</code> waits there, and wakes early if the client goes, so its next
-				<code>send!</code> answers <code>Err(Gone)</code> and <code>?</code> ends the loop. Fifty streams
-				sleeping at once hold up no page. <a href={"${Paths.calls}#events"}>Events</a> shows one, and a
-				component listening to it.
+				runs it as a call of its own for as long as it is open: <code>send!</code> writes an event to the
+				response, <code>sleep!</code> pauses, and wakes early if the client goes, so its next
+				<code>send!</code> answers <code>Err(Gone)</code> and <code>?</code> ends the loop. A stream holds no
+				thread while it sleeps: the tests keep 2,000 open on two threads, and a request beside them is
+				answered at once. <a href={"${Paths.calls}#events"}>Events</a> shows one, and a component listening
+				to it.
 			</p>
 			<p>
-				But each holds one of the pool's threads while it is open, and there are 1024
-				(<code>--blocking-threads</code>), the background loops' among them: past that, requests wait for a
-				stream to end. What pages follow live is better a <a href={"${Paths.platform_live}#channels"}>channel</a>:
-				a tab's channels share one stream, which the host keeps without a thread, and Roc runs only for a
+				What pages follow live is still better a <a href={"${Paths.platform_live}#channels"}>channel</a>: a
+				tab's channels share one stream, which the host keeps without a call, and Roc runs only for a
 				channel's check or hook, a call at a time.
 			</p>
 
@@ -149,7 +161,7 @@ view! = |_|
 			<Heading id="background">Background loops, isolated calls</Heading>
 			<p>
 				At start, the host asks the platform's Roc which loops to run in the background (the job workers,
-				cron's ticker, a look at the SMTP server) and runs each on a thread of its own until the server
+				cron's ticker, a look at the SMTP server) and runs each, a call of its own, until the server
 				stops. A loop sleeps with <code>Live.next!</code>, which wakes when what it listens to is published
 				(Postgres's <code>NOTIFY</code> is published on <code>pg:channel</code>), when its time is up, or
 				with <code>Gone</code> when the server stops. One that crashes is started again a second later.
@@ -158,7 +170,7 @@ view! = |_|
 				An isolated call runs Roc inside another call, guarded on its own: a crash in it ends it alone, and
 				the caller is told, with why. A worker runs each job that way, so a job that crashes is a job that
 				failed, and the worker goes on. An actor's turn is a guarded call of its own, which its mailbox in
-				the host runs on a thread of the pool with the kind, key, state and message as strings, so a crash
+				the host runs as a call of its own with the kind, key, state and message as strings, so a crash
 				frees all of them. No lock is taken anywhere: one task routes every message to its actor's mailbox,
 				and each actor handles its own, one at a time.
 			</p>
@@ -167,7 +179,7 @@ view! = |_|
 			<p>
 				<code>Tcp.connect!</code> (or <code>connect_tls!</code>, or <code>start_tls!</code> on an open one)
 				opens a socket for the call; <code>write_bytes!</code>, <code>read_exactly!</code>,
-				<code>read_up_to!</code> and <code>read_until!</code> use it, each waiting on the call's thread. TLS is
+				<code>read_up_to!</code> and <code>read_until!</code> use it, the call paused while each waits. TLS is
 				rustls, checked against the web's certificate authorities. A socket the call leaves open is closed
 				when it ends. <code>Random.seed_u64!</code> is the operating system's randomness. The platform's SMTP
 				client is written on these, and so is <a href={"${Paths.platform_postgres}#roc-pg"}>roc-pg</a>, a
@@ -177,7 +189,7 @@ view! = |_|
 			<Heading id="running">Running it</Heading>
 			<Code
 				title="The app's executable"
-				source={"<app> --port 8080 --host 127.0.0.1        where to listen (PORT)\n      --static DIR, --file /PATH=FILE     files served as they are\n      --context-file FILE                 what respond! is given besides each request\n      --database-url URL                  Postgres (DATABASE_URL): Db, migrations, jobs, cron, actors\n      --job-workers 4 --job-retry-ms 1000 jobs run at once; the first retry's wait, doubled after\n      --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in Postgres)\n      --smtp-url URL --mail-from ADDRESS  (SMTP_URL, MAIL_FROM); none: an outbox\n      --dev                               reload pages on restart, show crashes, GET /__rocx/mail\n      --debug                             GET /__rocx/allocations and /__rocx/mail"}
+				source={"<app> --port 8080 --host 127.0.0.1        where to listen (PORT)\n      --static DIR, --file /PATH=FILE     files served as they are\n      --context-file FILE                 what respond! is given besides each request\n      --database-url URL                  Postgres (DATABASE_URL): Db, migrations, jobs, cron, actors\n      --job-workers 4 --job-retry-ms 1000 jobs run at once; the first retry's wait, doubled after\n      --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in Postgres)\n      --smtp-url URL --mail-from ADDRESS  (SMTP_URL, MAIL_FROM); none: an outbox\n      --dev                               reload pages on restart, show crashes, GET /__rocx/mail\n      --debug                             GET /__rocx/allocations and /__rocx/mail\n      --live-beat-ms 15000                how often a channel stream beats, and its checks run again\n      --roc-threads N                     the threads Roc runs on (ROCX_ROC_THREADS; one a core)"}
 				numbers={Bool.False}
 				plain={Bool.True}
 			/>
@@ -234,7 +246,7 @@ view! = |_|
 					actors' state are in Postgres already).
 				</li>
 				<li><strong>HTTP/1.1, no TLS:</strong> put it behind a proxy.</li>
-				<li><strong>A stack overflow in Roc</strong> still ends the process.</li>
+				<li><strong>A stack overflow in Roc</strong> still ends the process (it says so first).</li>
 			</ul>
 			<Callout kind="note" title="Built on">
 				<p>

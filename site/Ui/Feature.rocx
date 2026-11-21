@@ -22,7 +22,7 @@ Feature := [].{
 
 	<story name="A link">
 		<Feature title="Requests and streams" href="#">
-			<p>Every request, on a thread of its own; streams of events as loops that sleep.</p>
+			<p>Every request a call of its own, paused while it waits; streams of events as loops that sleep.</p>
 		</Feature>
 	</story>
 

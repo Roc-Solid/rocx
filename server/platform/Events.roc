@@ -15,8 +15,8 @@
 ## })
 ## ```
 ##
-## Nothing in it runs until the server sends it, on a thread of its own, so a sleep holds up no
-## other request. `send!` says when the page has gone
+## Nothing in it runs until the server sends it, as a call of its own that pauses while it sleeps,
+## so a sleep holds up no other request. `send!` says when the page has gone
 ## (`Err(Gone)`): with `?`, the loop ends there, and nothing more runs.
 Events(a) :: [Ended, Open({ send! : a => Try({}, [Gone]), sleep! : U64 => {} } => Try({}, [Gone]))].{
 

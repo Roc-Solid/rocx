@@ -39,7 +39,7 @@ bytes as they came) and what the server was started with (`--context-file`), and
 `Server.Response`: `Server.from_http` makes the request (`site/server.roc` is a whole app). The
 response's body is text; bytes (`Server.bytes`, below); a body the host fetches from elsewhere and
 sends on (`Server.forward`, below); a page of components (`Page`), which the host renders (below); or
-a stream of `Events`, which the host runs on a thread of its own with `{ send!, sleep! }`.
+a stream of `Events`, which the host runs in a call of its own with `{ send!, sleep! }`.
 `Server.for_host` hands each over, flattened: `{ status, headers, kind, text, bytes, upstream, page,
 feed }`, `kind` 0 for `text`, 1 for the `page` (a box the host runs: `Html.serialize!` of the page's
 markup, made once per answer), 2 for the `feed`, 3 for the `bytes`, 4 for the `upstream` (its
@@ -263,7 +263,7 @@ which was `fetch!(request)`, `get`, `post_form`, `post_json`, `with_header`, `he
 still works, deprecated: each is `fetch!` underneath, and goes in a later release.
 
 The host makes it (`host/src/client.rs`): hyper's HTTP/1.1 client, a connection a request, over
-rustls checked against `webpki-roots`, waiting on the call's thread as `Db` and `Tcp` do. Redirects
+rustls checked against `webpki-roots`, the call paused while it waits, as `Db` and `Tcp` do. Redirects
 are followed as `fetch` follows them, twenty at most: a relative `location` against the URL it
 answered; a 303 (or a 301 or 302 to a POST) becomes a GET without its body; `authorization` and
 `cookie` don't go on to another origin. `host` and `content-length` are added unless given; nothing
@@ -398,11 +398,11 @@ file stays for what a request is given. `Env.dev!` says whether the server was s
 ### Sockets and randomness: `Tcp`, `Random`
 
 `Tcp.connect!(host, port)` (or `connect_tls!`, or `start_tls!` on an open one) opens a socket for the
-call; `write_bytes!`, `read_exactly!`, `read_up_to!` and `read_until!` use it, each waiting on the
-call's thread (10 s to connect, 60 s for each read or write). TLS is rustls, checked against
-`webpki-roots`. A socket the call leaves open is closed when it ends. A socket is the call's alone:
-the host keeps it in the table of the thread the call runs on, so nothing about it is locked or
-shared, and its id means nothing to another call. `Random.seed_u64!` and
+call; `write_bytes!`, `read_exactly!`, `read_up_to!` and `read_until!` use it, the call paused while each
+waits (10 s to connect, 60 s for each read or write): tokio's sockets, and tokio-rustls for TLS,
+checked against `webpki-roots`. A socket the call leaves open is closed when it ends. A socket is the
+call's alone: the host keeps it in the table of the thread the call runs on, taken out while the
+call is paused, so nothing about it is locked or shared, and its id means nothing to another call. `Random.seed_u64!` and
 `Random.bytes!(count)` are the operating system's randomness (`ring`); if it gives none, the call
 crashes rather than make a key of anything less.
 
@@ -554,7 +554,7 @@ handled (a job is for work that must survive one).
 ### Pages of components
 
 A route that answers `{ status, headers, body: Page(view!) }` has the host render the page for the
-request (`render_page` in `host/src/signals.rs`), on the thread that answered it: its box runs at
+request (`render_page` in `host/src/signals.rs`), in the call that answered it: its box runs at
 the root (`roc_run`), in a call guarded with the answer's own list of allocations, and the markup it
 gives is walked (`host/src/signals.rs`), as the browser's runtime (`web/runtime.js`, its
 `renderToString`) renders it, byte for byte (the site's tests compare the two): every hole run once, a memo computed when it is made,
@@ -649,18 +649,37 @@ couldn't start, before an abort (a crash outside a guarded call, out of memory),
 
 ## How a call runs
 
-Each call into Roc runs on a thread from tokio's blocking pool (8 MiB stacks, up to 1024 threads),
-so an effect may wait without holding up other requests: a hosted function blocks on its future
-there. Eight requests that each wait 0.3 s on Postgres take about 0.3 s together.
+Roc runs on threads of its own, as many as the machine has cores (`--roc-threads`, or
+`ROCX_ROC_THREADS`, says otherwise), beside tokio's, which answer HTTP and drive every socket and
+timer (D-027, `host/src/coroutine.rs`). Each call into Roc (a request and the page it renders, a
+stream, an actor's turn, a background loop, the platform's start) is a stackful coroutine on one
+of them, with a stack of its own (8 MiB, Roc's default, reserved rather than used, above a guard),
+started by whichever of Roc's threads is free and kept on it until it ends. When an effect waits
+(Postgres, a socket, another server, a sleep, an actor's answer), the call pauses: its stack stays
+as it is, its thread runs other calls, and tokio wakes it when what it waits on is done. So a call
+that waits holds no thread, and any number can wait at once: eight requests that each wait 0.3 s on
+Postgres take about 0.3 s together, and the tests answer 2,000 requests that each wait a second, on
+two threads, in about a second. What the host keeps per call in thread-locals (its context, Roc's
+list of allocations and jump target, the page it renders, its sockets) is taken out while it is
+paused and put back when it resumes; a call never moves to another thread (compiled code may keep a
+thread-local's address across a call).
 
-A stream of events is a loop (`Events.stream(|{ send!, sleep! }| …)`) on a thread of its own for as
-long as it is open: `send!` writes to the response, `sleep!` waits there, waking early if the client
-goes, so its next `send!` answers `Err(Gone)` and `?` ends the loop. Fifty streams sleeping at once
-hold up no page, but each holds one of the pool's threads (`--blocking-threads`, 1024) while it is
-open, as do the background loops: past that, requests wait for one to end. A channel stream
-(`/rocx/live`) holds none: the host keeps it, and Roc runs only for a check or a hook, a call at a
-time. The tests open 40 channel streams on 8 threads and requests still answer at once, where 8
-`events!` streams take every thread.
+A stream of events is a loop (`Events.stream(|{ send!, sleep! }| …)`), a call of its own for as
+long as it is open: `send!` writes to the response (pausing while the client reads slower than it
+writes), `sleep!` pauses, waking early if the client goes, so its next `send!` answers `Err(Gone)`
+and `?` ends the loop. An open stream, or a background loop, holds no thread while it waits: the
+tests hold 2,000 `events!` streams open on two threads and a request still answers at once. A
+channel stream (`/rocx/live`) isn't a call at all: the host keeps it, and Roc runs only for a check
+or a hook, a call at a time.
+
+What it costs: Roc that computes for long without an effect (a long pure loop) can't pause, so the
+calls on its thread wait for it (new calls go to Roc's other threads, which take them from one
+queue). A paused call keeps its stack: only the pages it touched cost memory, a few tens of KiB for
+most. Profilers and debuggers see calls on stacks of their own, not threads'. A call that overflows
+its stack hits the guard below it and the process ends, as a thread's overflow did; first it says
+so on stderr (`rocx server: a call into Roc overflowed its stack (8 MiB): the process ends`, in the
+log's format). Logging is the one wait that blocks a thread rather than pausing a call: when the
+log's queue is full, a call waits for room (above).
 
 A crash ends the call it happened in, not the server. Roc's ABI says `roc_crashed` must never
 return: it may end the process or `longjmp` out of the Roc code that called it. The guard
@@ -677,19 +696,19 @@ afterwards (`--debug`, `GET /__rocx/allocations`). Calls nest (an isolated call:
 a job inside its worker), each with its own list, jump target and context; the frames a crash skips
 are Roc's and a trampoline's, never the host's. What a call holds (a transaction, sockets, rooms) is
 given back when it ends. An isolated call is passed strings, which it copies, so a crash frees all
-it was given; so is an actor's turn (its kind, key, state and message), a call of its own on the
-thread its actor's task runs it on. An isolated call may be given a time limit
+it was given; so is an actor's turn (its kind, key, state and message), a call of its own that its
+actor's task starts. An isolated call may be given a time limit
 (a job's): the calls it runs share its deadline, and the first effect that waits past it ends the
 call as a crash would (`cut_off` in `host/src/hosted.rs`), so the only frame it skips that is the
 host's is that effect's own, which holds nothing by then.
 
 At start the host asks the platform's Roc which background loops to run (`roc_background_count`:
-the job workers, cron's ticker, and a look at the SMTP server) and runs each on a thread of its own
+the job workers, cron's ticker, and a look at the SMTP server) and runs each, a call of its own,
 until the server stops; one that crashes is started again a second later. `Live.next!` in one wakes
 with `Gone` when the server stops.
 
-A value Roc makes belongs to its call's thread until the call returns; after that the host owns it
-and moves it (a stream to the thread that sends it), never sharing it. Roc's reference counts are
+A value Roc makes belongs to its call until the call returns; after that the host owns it and moves
+it (a stream to the call that sends it), never sharing it. Roc's reference counts are
 atomic in LLVM builds anyway (`ldadd`/`ldaddal` in the app's object code).
 
 Starting, the host takes its address first: a port in use stops the server there (`Address already
@@ -721,6 +740,8 @@ built `--target=arm64musl` runs in a container against `just db`'s Postgres, eve
       --smtp-url URL --mail-from ADDRESS  (SMTP_URL, MAIL_FROM); none: an outbox
       --dev                               reload pages on restart, show crashes, the mailbox at /__rocx/mail, Env.dev!
       --debug                             GET /__rocx/allocations, and the mailbox as JSON
+      --live-beat-ms 15000                how often a channel stream beats, and its checks run again
+      --roc-threads N                     the threads Roc runs on (ROCX_ROC_THREADS; one a core)
 ```
 
 A request's body may be 16 MiB at most (413 beyond). `ROCX_LOG` (`pretty` or `json`) chooses the
@@ -759,8 +780,11 @@ an ETag and HEAD, keys S3
 refuses, a bucket or S3 that isn't there, a URL that can't be read), the `Set-Cookie` lines cookies make, endpoints
 that take and answer `F64`s (and refuse an infinity) and a tag union in a `Try`'s place, what the
 docs' platform pages show (`server/test/app/Samples.roc`, which the site's build picks its samples
-from: settings, crypto, cookies, bytes, other servers, forwards and storage), and a stop in the
-middle of a request. With
+from: settings, crypto, cookies, bytes, other servers, forwards and storage), calls that wait on two
+Roc threads (2,000 requests that wait a second each, answered in about a second; 2,000 open
+streams beside a request answered at once; waits, crashes, pages, refusals and sockets interleaved,
+each answered as its own, nothing left held; a stack overflow that ends the process saying so), and
+a stop in the middle of a request. With
 `DATABASE_URL` unset, what needs Postgres is skipped; with `STORAGE_URL` unset (a bucket the tests
 may write to: rustfs or MinIO in Docker, say, with a bucket made), what needs S3; a
 request over the internet runs only with `ROCX_TEST_INTERNET=1`; `ROCX_TEST_OPT=speed` builds the
