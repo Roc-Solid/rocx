@@ -111,6 +111,7 @@ Build := [].{
 				attempt =
 					match Transpile.transpile_module(source, file, server_copy) {
 						Err(Rocx(problem)) => Err(Build.rocx_message!(path, problem))
+						Err(Crash(message)) => Err("✗ ${message}")
 						Ok(made) =>
 							match Routes.route_module(made.code, place) {
 								Err(Problem(message)) => Err("✗ ${message}")
@@ -121,6 +122,7 @@ Build := [].{
 											Some(_) =>
 												match Transpile.transpile_module(source, file, { module_path, client: Bool.True, contexts, views, route: Bool.True }) {
 													Err(Rocx(problem)) => Err(Build.rocx_message!(path, problem))
+													Err(Crash(message)) => Err("✗ ${message}")
 													Ok(browser_made) =>
 														match Routes.route_module(browser_made.code, place) {
 															Ok(text) => Ok(Some(text))
@@ -174,6 +176,7 @@ Build := [].{
 							$said = $said.append(Build.rocx_message!(path, problem))
 							$failed = Bool.True
 						}
+						Err(Crash(message)) => return Err(Problem(message))
 						Ok(made) => {
 							$codes = $codes.append(made.code)
 							file_in_app = Fs.relative(dir, path)
@@ -191,6 +194,7 @@ Build := [].{
 												$said = $said.append(Build.rocx_message!(path, problem))
 												$failed = Bool.True
 											}
+											Err(Crash(message)) => return Err(Problem(message))
 										}
 									} else {
 										$browser = $browser.append({ key: path, value: made.code })
@@ -224,6 +228,7 @@ Build := [].{
 							$said = $said.append(Build.rocx_message!(path, problem))
 							$failed = Bool.True
 						}
+						Err(Crash(message)) => return Err(Problem(message))
 						Ok(made) => {
 							$codes = $codes.append(made.code)
 							file_in_app = Fs.relative(dir, path)

@@ -33,7 +33,9 @@ export function call(fn, ...args) {
 	const error = answer.error;
 	if (error.kind === "RocxError") throw new RocxError(error.reason, error.file, error.line, error.column);
 	if (error.kind === "FormatError") throw new FormatError(error.message);
-	throw new Error(error.message);
+	// Anything else an Error, with what else it says (scopeCss: the offset of the problem).
+	const { kind, message, ...rest } = error;
+	throw Object.assign(new Error(message), rest);
 }
 
 /** A Map's entries as an object, for JSON. */
@@ -51,7 +53,16 @@ export const viewsDefined = (source) => call("viewsDefined", source);
 export const contextsDefined = (source) => call("contextsDefined", source);
 export const pascalCase = (name) => call("pascalCase", name);
 export const scopeClass = (module) => call("scopeClass", module);
-export const scopeCss = (css, scope) => call("scopeCss", css, scope);
+/** `css` with every selector scoped to `scope`; `fail(reason, offset)` reports a problem at an
+ * offset into `css`, and must throw. */
+export function scopeCss(css, scope, fail = (reason) => { throw new Error(reason); }) {
+	try {
+		return call("scopeCss", css, scope);
+	} catch (error) {
+		if (error.offset === undefined) throw error;
+		return fail(error.message, error.offset);
+	}
+}
 /** Elements that are never styled, so get no class: what goes in <head>, and the raw-text ones. */
 export const UNSCOPED_ELEMENTS = new Set(["head", "meta", "title", "link", "base", "script", "style"]);
 
