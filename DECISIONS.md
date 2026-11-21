@@ -459,6 +459,8 @@ way to read an email.
   script runs; a link opens in a new tab), and the raw message as SMTP would have sent it.
 - With a database, messages are kept in `rocx_outbox` (platform migration `rocx/0002`; the last 500,
   for a week), so restarts keep them. Without one they stay in the server's memory (the last 100).
+  **Since D-028:** always in the server's memory (`Kv`, the last 100), database or not; `rocx/0003`
+  drops the table.
 - JSON stays for tests: `/__rocx/mail.json`, and `/__rocx/mail` with `accept: application/json`.
   `--debug` without `--dev` serves only the JSON. Without either flag, those paths are the app's.
 
@@ -1280,6 +1282,10 @@ Kv.list! : Str => Try(List(value), [BadValue(Str)])
 - Memory only: a restart forgets everything. What must last goes in Postgres.
 - The host's crate defines `main` for Roc, so `cargo test` can't run `kv.rs`'s unit tests; they
   are compiled alone (`rustc --test`) by the server's tests.
+
+- The dev mailbox keeps its last 100 messages under `rocx:mail` (ids from `rocx:mail:id`), database
+  or not, so a restart forgets them (the user, 2026-11-22: "always KV for this dev thing"); the
+  host's outbox (`outbox.rs`, three host functions) is gone, and `rocx/0003` drops `rocx_outbox`.
 
 **Why.** It is the smallest thing every one of those uses needs, it is Roc-shaped (typed values,
 `Try` for what can be missing), and it replaces the outbox's special host functions. One instance of

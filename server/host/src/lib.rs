@@ -3,7 +3,7 @@
 //! and catches its crashes (`roc`), and gives Roc general effects (`hosted`): Postgres (`db`), live
 //! topics and rooms (`live`), actors' mailboxes and timers (`actors`), named values (`memory`), TCP
 //! and TLS (`tcp`, `tls`), HTTP requests to other servers (`client`), the settings it was started
-//! with (`settings`), the outbox in memory (`outbox`); and it renders a page of components
+//! with (`settings`), values by key in memory (`kv`, for `Kv`); and it renders a page of components
 //! (`signals`). Jobs, cron, migrations, actors' state and email are the platform's Roc.
 //!
 //! Starting: the address is taken (a port in use stops the server before anything starts); the
@@ -37,7 +37,6 @@ mod kv;
 mod live;
 mod logging;
 mod memory;
-mod outbox;
 mod roc;
 mod settings;
 mod signals;

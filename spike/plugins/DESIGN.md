@@ -2,7 +2,7 @@
 
 > A design spec, 2026-11-21. Nothing here is built. It turns the app's side settled in
 > `CLIENT-API.md` into what a package, `rocx build` and the server platform do, in three phases.
-> When phase 1 lands it becomes a decision (D-027).
+> When phase 1 lands it becomes a decision of its own (D-027 and D-028 are taken).
 >
 > **Decided (the user, 2026-11-21):** plugins are listed in `App.program({ plugins: [...] })`; each
 > plugin declares what it needs as its own options type; two claims on one path stop the server at
@@ -337,9 +337,8 @@ another is a function the other exports.
   `components/*.roc`.
 - Audio moves (`packages/audio`). Push adopts a plugin: its endpoints, its table and job, its service
   worker at the root, its script; its README's six steps become one line.
-- Email moves once memory without a database is decided (below): its send job, the outbox table
-  (`create table if not exists rocx_outbox`, so a database the platform's `rocx/0002` made keeps its
-  rows), the mailbox as early routes, the SMTP check.
+- Email moves: its send job, the mailbox as early routes on `Kv` (D-028: no table), the SMTP
+  check.
 
 **Phase 3: endpoints and the rest.**
 - A plugin's endpoints in `/openapi.json` (tagged with the plugin's name) and readable from
@@ -368,15 +367,11 @@ another is a function the other exports.
 - **Flat imports.** Resolving one name to the server copy on one half and the package on the other
   is new in `rocx build`; a module name in two places of one package must stay an error, never a
   silent pick.
-- **The outbox's table.** Existing databases have `rocx_outbox` from the platform's `rocx/0002`;
-  email's migration adopts it rather than renaming it (migrations are append-only).
 - **Base paths.** Script and file URLs must follow start.js's base path, or the static docs break.
 
 ## 14. Open questions
 
-1. **Memory without a database** (email's mailbox without Postgres; guard's, presence's and otel's
-   state): a host store, actors that keep their state in memory (`keep: Memory`), or something else,
-   under the no-locks rule. Email waits on it.
+1. ~~Memory without a database~~: **`Kv`** (D-028), which the mailbox uses already.
 2. **Where the jobs page lives**: `packages/admin` beside the tables admin (assumed above), or a
    package of its own.
 3. **Plugin endpoints read from components**: a component of the plugin's builds its `Endpoint`

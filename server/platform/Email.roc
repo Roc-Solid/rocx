@@ -9,7 +9,7 @@ import Time
 
 ## Email. With `--smtp-url` (`smtp://user:password@host:587?tls=required`, or `smtps://…:465`
 ## for TLS from the start) the server sends it, from `--mail-from`, over SMTP (`Smtp`, on `Tcp`);
-## without, it keeps it in an outbox (in Postgres if the server has a database) and logs it: the dev
+## without, it keeps it in an outbox (in the server's memory, `Kv`) and logs it: the dev
 ## mailbox (`Outbox`, `/__rocx/mail` with `--dev`) shows it, so development sends nothing. Send
 ## from a job (`Job`), so a server that doesn't answer is tried again.
 Email := [].{

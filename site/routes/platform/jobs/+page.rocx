@@ -199,9 +199,9 @@ view! = |_|
 				<code>/__rocx/mail</code> itself, before the app: the email it kept, newest first (when, from, to,
 				subject), with a Clear button, and each one at <code>/__rocx/mail/&lt;id&gt;</code>: its headers, its
 				text, its HTML in a sandboxed frame (no script runs in it; a link opens a new tab), and the message
-				whole, as SMTP would have carried it. The list updates as mail comes. With a database the mail is kept
-				there (the last 500, for a week), so a restart keeps it; without one, in the server's memory (the last
-				100). <code>/__rocx/mail.json</code> is the same as JSON, for tests: with <code>--debug</code> alone,
+				whole, as SMTP would have carried it. The list updates as mail comes. The last 100 are kept in the
+				server's memory (<a href={"${Paths.platform_live}#kv"}><code>Kv</code></a>), so a restart forgets them.
+				<code>/__rocx/mail.json</code> is the same as JSON, for tests: with <code>--debug</code> alone,
 				only the JSON is served. Without <code>--dev</code> or <code>--debug</code>, those paths are the
 				app's.
 			</p>
@@ -217,7 +217,7 @@ view! = |_|
 					them a few times, and for good; crash them; cut them off at their time limit, on Postgres, a socket
 					and another server, leaving nothing held; queue, cancel and move them by key; list them; use the
 					jobs page's forms behind a guard; leave alone a job another app queued; run a schedule every
-					second; and send mail to an SMTP server the test runs, and to the mailbox, read after a restart.
+					second; and send mail to an SMTP server the test runs, and to the mailbox, forgotten by a restart.
 				</p>
 			</Callout>
 		</NoHydration>

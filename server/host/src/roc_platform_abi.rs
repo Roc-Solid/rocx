@@ -2838,15 +2838,6 @@ pub struct HostLogFormatArgs {
     pub arg0: u8,
 }
 
-/// Arguments for Host.outbox_keep!
-/// Roc signature: Str => {}
-/// Refcounted fields are owned by the hosted function.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct HostOutboxKeepArgs {
-    pub arg0: RocStr,
-}
-
 /// Arguments for Host.random_bytes!
 /// Roc signature: U64 => List(U8)
 /// Refcounted fields are owned by the hosted function.
@@ -4284,22 +4275,6 @@ unsafe extern "C" {
     /// Hosted symbol for Host.now_nanos!
     /// Roc signature: {} => U64
     pub fn roc_host_now_nanos() -> u64;
-
-    /// Hosted symbol for Host.outbox_clear!
-    /// Roc signature: {} => {}
-    pub fn roc_host_outbox_clear();
-
-    /// Hosted symbol for Host.outbox_keep!
-    /// Roc signature: Str => {}
-    /// Owned arguments. Release each exactly once before returning, unless it is
-    /// moved into storage or into the result:
-    ///     unsafe { arg0.decref(roc_host); }
-    pub fn roc_host_outbox_keep(arg0: RocStr);
-
-    /// Hosted symbol for Host.outbox_list!
-    /// Roc signature: {} => Str
-    /// The result is owned by Roc: return exactly one owned reference.
-    pub fn roc_host_outbox_list() -> RocStr;
 
     /// Hosted symbol for Host.random_bytes!
     /// Roc signature: U64 => List(U8)

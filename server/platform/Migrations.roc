@@ -64,6 +64,12 @@ Migrations := [].{
 				"\n",
 			),
 		},
+		{
+			# The dev mailbox keeps its mail in the server's memory (`Kv`), database or not (D-028):
+			# the table it had goes, with the mail of past runs.
+			name: "rocx/0003 the dev mailbox in memory",
+			sql: "drop table if exists rocx_outbox",
+		},
 	]
 
 	## Applies each of `migrations` the database hasn't seen, in order; the first that fails stops

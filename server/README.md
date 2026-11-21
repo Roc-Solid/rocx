@@ -86,7 +86,7 @@ parameters.
 (`import "migrations/0001_tables.sql" as tables : Str` reads a file when the app is compiled). When
 the server starts they are applied in the order listed, each once, each in a transaction (recorded
 by name in `rocx_migrations`); two servers starting at once take turns (an advisory lock). The
-platform's own tables (`rocx_jobs`, `rocx_actors`, `rocx_outbox`: `rocx/0001`, `rocx/0002`, …)
+platform's own tables (`rocx_jobs`, `rocx_actors`: `rocx/0001`, `rocx/0002`, …)
 come first; one that fails stops the server.
 
 Connections use TLS when the database offers it (or the URL's `sslmode` asks), checked against the
@@ -214,9 +214,8 @@ from, to, subject), a **Clear** button (`POST /__rocx/mail/clear`), and each mes
 `/__rocx/mail/<id>`: its headers, its text, its HTML in a sandboxed frame (`<iframe sandbox
 srcdoc>`: no script runs in it, a link opens in a new tab), and the message whole, as SMTP's DATA
 would have carried it. The list updates as mail comes (a stream of events, `/__rocx/mail?events`,
-on the live topic `rocx:mail`). With a database the outbox is the table `rocx_outbox` (the last
-500, for a week), so a restart (`just dev` restarts on every save) keeps it; without one it is in
-the server's memory (`host/src/outbox.rs`, the last 100). The JSON (oldest first: id, at, from, to,
+on the live topic `rocx:mail`). The last 100 are kept in the server's memory (`Kv`, under
+`rocx:mail`), database or not, so a restart forgets them (D-028). The JSON (oldest first: id, at, from, to,
 subject, text, html, raw) is at `/__rocx/mail.json`, and at `/__rocx/mail` when asked for
 (`accept: application/json`); with `--debug` alone (the tests), only the JSON is served. Without
 `--dev` or `--debug`, those paths are the app's.
@@ -786,7 +785,7 @@ Postgres, migrations, transactions, jobs (at once, later, retried, failing for g
 transaction, another app's left alone; attempts per kind, a time limit cutting a run off on
 Postgres, a socket and another server with nothing left held, keys unique while pending, cancel
 and move, listing), the jobs page (behind a guard; its forms; its stream), cron, email (an outbox,
-the dev mailbox after a restart and not without `--dev`, and SMTP to a server the test runs),
+the dev mailbox, forgotten by a restart, and not without `--dev`, and SMTP to a server the test runs),
 `Tcp`, roc-pg, the log (JSON with `ROCX_LOG=json` or unset on a pipe, pretty lines with
 `ROCX_LOG=pretty`, an app's fields beside `time`, `level` and `msg` and never in their place, a
 program's `Pretty` winning over `Auto` and `ROCX_LOG`, 200 requests logging at once with every line

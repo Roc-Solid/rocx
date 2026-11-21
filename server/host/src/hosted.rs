@@ -33,7 +33,7 @@ use crate::abi::{
     HostStoreGetResultPayload as TextPayload, HostStoreGetResultTag as TextTag, HostTcpReadExactlyResult as BytesResult,
     HostTcpReadExactlyResultPayload as BytesPayload, HostTcpReadExactlyResultTag as BytesTag, RocListWith, RocStr,
 };
-use crate::{actors, client, coroutine, db, kv, live, memory, outbox, roc, settings, signals, tcp};
+use crate::{actors, client, coroutine, db, kv, live, memory, roc, settings, signals, tcp};
 use bytes::Bytes;
 use futures_util::future::select_all;
 use std::cell::RefCell;
@@ -649,7 +649,7 @@ pub extern "C" fn roc_host_actor_cancel(timer: u64) {
     actors::cancel(timer);
 }
 
-// ---- Values, randomness, the outbox ----
+// ---- Values, randomness ----
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_store_get(name: RocStr) -> TextResult {
@@ -728,21 +728,6 @@ fn random(count: usize) -> Result<Vec<u8>, String> {
 pub extern "C" fn roc_host_env_var(name: RocStr) -> TextResult {
     let name = taken(name);
     text_or_error(guarded(|| std::env::var_os(&name).map(|value| value.to_string_lossy().into_owned()).ok_or_else(String::new)))
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn roc_host_outbox_keep(json: RocStr) {
-    outbox::keep(&taken(json));
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn roc_host_outbox_list() -> RocStr {
-    roc_str(&outbox::json())
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn roc_host_outbox_clear() {
-    outbox::clear();
 }
 
 // ---- Postgres ----

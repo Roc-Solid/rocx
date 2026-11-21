@@ -1,6 +1,6 @@
 import AdminHtml
-import Db
 import Host
+import Kv
 import Live
 import Server
 import Setting
@@ -8,9 +8,8 @@ import Setting
 ## The dev mailbox: email `Email.send!` keeps instead of sending (no `--smtp-url`), shown at
 ## `/__rocx/mail` under `--dev`: the messages, newest first; each one's headers, its text, its HTML
 ## (in a sandboxed frame: no script runs, links open elsewhere) and the message as SMTP would have
-## carried it. It updates as mail comes (a stream of events). With a database the messages are kept
-## in Postgres (`rocx_outbox`, the last 500, for a week), so a restart keeps them; without one, in
-## the server's memory (the last 100).
+## carried it. It updates as mail comes (a stream of events). The last 100 are kept in the server's
+## memory (`Kv`, under `rocx:mail`), database or not: a restart forgets them (D-028).
 ##
 ## The platform answers its paths before the app sees them (`main.roc`): with `--dev`,
 ## `GET /__rocx/mail` (JSON if asked for with `accept: application/json`), `GET /__rocx/mail/<id>`,
@@ -24,22 +23,13 @@ Outbox := [].{
 
 	keep! : Message => Try({}, Str)
 	keep! = |message| {
-		kept =
-			if Setting.database!({}) {
-				done = Db.run!(
-					"with kept as (insert into rocx_outbox (sent_at, from_address, to_address, subject, text, html, raw) values (to_timestamp($1::bigint / 1000.0), $2, $3, $4, $5, $6, $7) returning id) delete from rocx_outbox where sent_at < now() - interval '7 days' or id <= (select id - 500 from kept)",
-					[Text(message.at.to_str()), Text(message.from), Text(message.to), Text(message.subject), Text(message.text), Text(message.html), Text(message.raw)],
-				)
-				match done {
-					Ok(_) => Ok({})
-					Err(DbErr(why)) => Err("couldn't keep it in the outbox: ${why}")
-				}
-			} else {
-				Host.outbox_keep!(Json.to_str(message))
-				Ok({})
-			}
-		if (kept.is_ok()) Live.publish!("rocx:mail", message.subject) else {}
-		kept
+		# Ids keep counting after a clear, so a page open on an old one never shows another.
+		id = Kv.increment!("rocx:mail:id", 1, {}) ?? 0
+		kept : Kept
+		kept = { id, at: message.at, from: message.from, to: message.to, subject: message.subject, text: message.text, html: message.html, raw: message.raw }
+		Kv.push!("rocx:mail", kept, { keep: 100 })
+		Live.publish!("rocx:mail", message.subject)
+		Ok({})
 	}
 
 	## Whether the platform answers `target` (a path and its query), not the app.
@@ -102,30 +92,17 @@ path_of = |target|
 
 ## Every message kept, oldest first.
 all! : {} => Try(List(Kept), Str)
-all! = |{}|
-	if Setting.database!({}) {
-		found : Try(List(Kept), [DbErr(Str), BadRow(Str)])
-		found = Db.all!("select id, (extract(epoch from sent_at) * 1000)::int8 as at, from_address as \"from\", to_address as \"to\", subject, text, html, raw from rocx_outbox order by id", [])
-		match found {
-			Ok(messages) => Ok(messages)
-			Err(DbErr(why)) => Err(why)
-			Err(BadRow(why)) => Err(why)
-		}
-	} else {
-		match Json.parse(Host.outbox_list!({})) {
-			Ok(messages) => Ok(messages)
-			Err(InvalidJson(why)) => Err(why)
-		}
+all! = |{}| {
+	listed : Try(List(Kept), [BadValue(Str)])
+	listed = Kv.list!("rocx:mail")
+	match listed {
+		Ok(newest_first) => Ok(newest_first.fold([], |oldest_first, each| oldest_first.prepend(each)))
+		Err(BadValue(why)) => Err(why)
 	}
+}
 
 clear! : {} => {}
-clear! = |{}|
-	if Setting.database!({}) {
-		_ = Db.run!("delete from rocx_outbox", [])
-		{}
-	} else {
-		Host.outbox_clear!({})
-	}
+clear! = |{}| Kv.delete!("rocx:mail")
 
 json! : {} => Server.Response
 json! = |{}|
@@ -154,7 +131,7 @@ listed! = |{}| {
 					"<tr><td class=\"when\">${AdminHtml.relative(each.at, now)}</td><td>${AdminHtml.escape(each.from)}</td><td>${AdminHtml.escape(each.to)}</td><td class=\"last\"><a class=\"row-link\" href=\"${link}\"><strong>${AdminHtml.escape(subject)}</strong></a></td></tr>"
 				},
 			)
-			kept = if (Setting.database!({})) "in Postgres (the last 500, for a week)" else "in the server's memory (the last 100, until it stops)"
+			kept = "in the server's memory (the last 100, until it stops)"
 			table =
 				if rows.is_empty() {
 					AdminHtml.empty("mail", "No mail yet", "Email the app sends shows here as it is sent.")

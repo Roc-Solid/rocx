@@ -251,7 +251,7 @@ route! = |request, context| {
 
 		# ---- Postgres ----
 		("POST", "/reset") =>
-			match Db.script!("truncate notes, job_log, flaky restart identity; delete from rocx_jobs; delete from rocx_outbox") {
+			match Db.script!("truncate notes, job_log, flaky restart identity; delete from rocx_jobs") {
 				Ok(_) => text(200, "ready")
 				Err(DbErr(why)) => text(500, why)
 			}

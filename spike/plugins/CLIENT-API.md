@@ -377,11 +377,9 @@ Sketched only, to check that A is buildable:
   half's `Generated/<package>/` (as components are copied today), so `import email.Email` resolves on
   the server and never reaches the browser. The browser half's equivalent (`browser/*.roc`) carries
   modules that call `Browser.call!`, such as `Audio`.
-- **The platform's own pieces** that Email needs: a store that outlives a request without a
-  database (the mailbox keeps 100 messages in host memory today; guard, presence and otel ask for
-  memory-only state too, and the no-locks rule applies), the `--dev`/`--debug` flags readable by a
-  plugin, a public `AdminHtml` (the mailbox's and the jobs page's look), and moving the platform's
-  `rocx/0002` outbox table to a name the plugin owns without losing existing rows.
+- **The platform's own pieces** that Email needs: the `--dev`/`--debug` flags readable by a plugin,
+  and a public `AdminHtml` (the mailbox's and the jobs page's look). Its mail is kept in `Kv`
+  already (D-028).
 - **Background loops** are a fixed union in the platform today (`[Work, Schedules, CheckMail]`);
   plugins need to add their own.
 - **Typing the list.** A plugin's middleware for its own routes is `Middleware(ctx, ctx)`, so a

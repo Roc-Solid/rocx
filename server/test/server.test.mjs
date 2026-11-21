@@ -8,7 +8,7 @@
 // queued only if their transaction commits; a kind says how many times its jobs are tried and how
 // long each may take; a key is one pending job's, by which it is cancelled or moved; jobs are
 // listed and acted on, and the jobs page shows them behind the app's guard; cron queues its jobs;
-// email is kept in an outbox (the dev mailbox shows it, after a restart too), or sent over SMTP (to
+// email is kept in the dev mailbox (in memory: Kv), or sent over SMTP (to
 // a server this file runs); live rooms count who is in them; actors answer one message at a time,
 // take tells and timers, log what they do not take, and keep their state across a restart (and an
 // idle spell); `Http` asks servers this file runs (redirects, a timeout,
@@ -1142,7 +1142,7 @@ test("email: over SMTP, from a request and from a job, as text and HTML", { skip
 		assert.match(fromJob.data, new RegExp(`^Subject: From a job ${run}mail\\r$`, "m"));
 		assert.match(fromJob.data, /Content-Type: text\/plain/);
 	}
-	// (A server started with no SMTP server keeps what it sends in the same database's outbox.)
+	// (A server with no SMTP server keeps what it sends in its own mailbox; this one sent it.)
 	const kept = JSON.parse(await text("/__rocx/mail")).filter((mail) => mail.to === "grace@example.com" || mail.to === "lin@example.com");
 	assert.equal(kept.length, 0, "nothing kept: it was sent");
 	// A subject and a body that aren't ASCII: an encoded word, and base64.
@@ -1161,9 +1161,9 @@ test("email: over SMTP, from a request and from a job, as text and HTML", { skip
 	}
 });
 
-test("the dev mailbox: under --dev, each email kept is a page (headers, text, its HTML sandboxed, the raw message), there after a restart; not without --dev", { skip: skipDb }, async () => {
-	// A server with no SMTP server, under --dev, with no workers (the file's own server runs the jobs).
-	const flags = ["--database-url", database, "--dev", "--job-workers", "0"];
+test("the dev mailbox: under --dev, each email kept is a page (headers, text, its HTML sandboxed, the raw message), in memory: gone after a restart; not without --dev", { skip }, async () => {
+	// A server with no SMTP server, under --dev: database or not, its mail is in its memory (Kv).
+	const flags = ["--dev"];
 	let dev = await start(flags);
 	try {
 		assert.equal(await dev.text(`/mail?to=ada@example.com&run=${run}box`, { method: "POST", body: "Hi <b>there</b>" }), "sent");
@@ -1179,9 +1179,6 @@ test("the dev mailbox: under --dev, each email kept is a page (headers, text, it
 		assert.equal(json.headers.get("content-type"), "application/json");
 		assert.ok((await json.json()).some((mail) => mail.subject === `Hello ${run}box`));
 
-		// Restarted, it is still there.
-		await dev.stop();
-		dev = await start(flags);
 		const message = await (await dev.get(`/__rocx/mail/${id}`)).text();
 		assert.match(message, new RegExp(`<h1>Hello ${run}box</h1>`));
 		assert.match(message, /<dt>To<\/dt><dd>ada@example\.com<\/dd>/);
@@ -1206,12 +1203,18 @@ test("the dev mailbox: under --dev, each email kept is a page (headers, text, it
 		assert.equal(cleared.headers.get("location"), "/__rocx/mail");
 		assert.match(await dev.text("/__rocx/mail"), /No mail yet/);
 		assert.equal((await dev.get("/__rocx/mail/clear", { method: "POST", headers: { origin: "https://evil.example" } })).status, 403);
+
+		// Kept in memory: a restart forgets it.
+		assert.equal(await dev.text(`/mail?to=ada@example.com&run=${run}box3`, { method: "POST", body: "once more" }), "sent");
+		await dev.stop();
+		dev = await start(flags);
+		assert.match(await dev.text("/__rocx/mail"), /No mail yet/);
 	} finally {
 		await dev.stop();
 	}
 
 	// With neither --dev nor --debug, the app answers those paths; with --debug alone, only the JSON.
-	const plain = await start(["--database-url", database, "--job-workers", "0"], app, {}, { debug: false });
+	const plain = await start([], app, {}, { debug: false });
 	try {
 		for (const path of ["/__rocx/mail", "/__rocx/mail.json", `/__rocx/mail/1`]) {
 			const answer = await plain.get(path);
@@ -1221,7 +1224,7 @@ test("the dev mailbox: under --dev, each email kept is a page (headers, text, it
 	} finally {
 		await plain.stop();
 	}
-	const debug = await start(["--database-url", database, "--job-workers", "0"]);
+	const debug = await start([]);
 	try {
 		const answer = await debug.get("/__rocx/mail", { headers: { accept: "text/html" } });
 		assert.equal(answer.headers.get("content-type"), "application/json");

@@ -115,15 +115,6 @@ Host := [].{
 	## an `Err` means there was none: "timed out", "too large", or why.
 	http_send! : Str, Str, Str, List(U8), U64, U64, Bool => Try({ status : U16, headers : Str, body : List(U8) }, Str)
 
-	## Keeps a message (a JSON object) in the outbox in memory (a server with no database), giving it
-	## an `id`: the dev mailbox shows it (`Mailbox`).
-	outbox_keep! : Str => {}
-
-	## The outbox in memory, as a JSON array, oldest first.
-	outbox_list! : {} => Str
-
-	outbox_clear! : {} => {}
-
 	## The rows a statement reads, as a JSON array of objects (a column's name, its value), for
 	## the parameters in `params`, a JSON array of strings and nulls: Postgres reads each as the
 	## type its place in the statement wants.
