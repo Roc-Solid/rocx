@@ -1523,7 +1523,8 @@ to distribute, and for speed.
 
 - `src/` is rocx: `main.roc` (the command), `Transpile.roc`, `Styles.roc`, `Routes.roc`,
   `Stories.roc` (with `catalog.html`, the catalog page, embedded), `Remap.roc`, `Format.roc`,
-  `Commands.roc` (`check`, `lint`), `Build.roc` (`rocx build`), and the helpers they share: `Text`
+  `Commands.roc` (`check`, `lint`), `Build.roc` (`rocx build`), `ServerOnly.roc` (its warning where
+  the browser's copy reaches what only the server has), and the helpers they share: `Text`
   (JavaScript's whitespace, string literals and sort orders, columns in UTF-16 units), `Fs` (Node's
   path rules, a directory's entries sorted as Node gave them), `Value` (JSON).
 - `bin/rocx` is built from it whenever its Roc changes: `server/build.mjs`'s `rocxBinary()`, which

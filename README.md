@@ -59,7 +59,7 @@ just check   # type-check the site's two programs (reports at .rocx lines) and t
 
 | Where | What |
 |---|---|
-| `src/` | rocx, in Roc on basic-cli: the transpiler (`Transpile.roc`), scoped styles (`Styles.roc`), routing (`Routes.roc`), stories, error remapping, `rocx fmt` and the build (`Build.roc`), the command (`main.roc`); built into `bin/rocx` whenever its Roc changed (`server/build.mjs`'s `rocxBinary`, which every script uses). `src/rocx.mjs` calls its functions from the repo's JavaScript tests by name (`rocx internal`) |
+| `src/` | rocx, in Roc on basic-cli: the transpiler (`Transpile.roc`), scoped styles (`Styles.roc`), routing (`Routes.roc`), stories, error remapping, `rocx fmt`, the build (`Build.roc`) and its warning where the browser's copy reaches what only the server has (`ServerOnly.roc`), the command (`main.roc`); built into `bin/rocx` whenever its Roc changed (`server/build.mjs`'s `rocxBinary`, which every script uses). `src/rocx.mjs` calls its functions from the repo's JavaScript tests by name (`rocx internal`) |
 | `packages/charts` | bar, stacked bar, line, sparkline, donut, scatter and heatmap charts, styled by custom properties: their arithmetic a Roc package (scales, round ticks, SVG paths, in `Dec`), their components copied into each app by `rocx build`; see its README |
 | `packages/crypto` | SHA-256, HMAC, HKDF, Base64 and hex in plain Roc, on no platform, each checked against its RFC's vectors; see its README |
 | `packages/s3` | files in any S3: objects, multipart uploads, presigned URLs, and objects served as they stream, a bucket made from its URL and the server platform's `Http.send!`; see its README |

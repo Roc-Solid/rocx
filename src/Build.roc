@@ -7,6 +7,7 @@ import Text
 import Transpile
 import Routes
 import Stories
+import ServerOnly
 
 Build := [].{
 
@@ -387,7 +388,22 @@ Build := [].{
 		}
 		match options.client {
 			Some(client) => {
-				Build.write_client!(dir, Fs.resolve(cwd, [client]), $browser, $main, options.rocx)?
+				target = Fs.resolve(cwd, [client])
+				Build.write_client!(dir, target, $browser, $main, options.rocx)?
+				# What the browser's copy reaches but can't compile (a module that imports pf.Db): said
+				# where the import that reaches it is, before the browser's build fails far from it.
+				# From what the browser builds: the main.roc rocx wrote, or the copy's apps on the web
+				# platform.
+				web = Fs.join([options.rocx, "web", "platform", "main.roc"])
+				roots =
+					match $main {
+						Some(_) => [Fs.join([target, "main.roc"])]
+						None => ServerOnly.web_apps!(target, web)
+					}
+				server_only = ServerOnly.server_only_modules!(Fs.join([options.rocx, "server", "platform", "main.roc"]), web)
+				for reached in ServerOnly.server_only_reached!(target, roots, server_only) {
+					$said = $said.append(ServerOnly.warning!(target, here, reached))
+				}
 			}
 			None => {}
 		}
