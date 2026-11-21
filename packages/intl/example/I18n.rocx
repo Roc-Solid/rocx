@@ -1,0 +1,36 @@
+import pf.Html
+import pf.Server
+import intl.Intl
+import intl.Locale
+import intl.Locales
+import intl.Catalog
+import intl.Validation
+
+## The app's locales and words, and the locale a request is read in.
+I18n := [].{
+
+	## The locales the app is written in, its default first. Only these are compiled into it.
+	supported : List(Locales.Data)
+	supported = [Locales.en, Locales.pl, Locales.ar]
+
+	## Its words: a set of keyed messages for each locale, over the package's words for a form's
+	## issues.
+	catalog : Catalog
+	catalog = Catalog.merge(
+		Validation.catalog,
+		Catalog.new(
+			"en",
+			[
+				("en", [("title", "Your basket"), ("items", "{count, plural, =0 {Nothing in it yet} one {# thing} other {# things}}")]),
+				("pl", [("title", "Twój koszyk"), ("items", "{count, plural, =0 {Jeszcze nic} one {# rzecz} few {# rzeczy} many {# rzeczy} other {# rzeczy}}")]),
+				("ar", [("title", "سلتك"), ("items", "{count, plural, zero {لا شيء بعد} one {شيء واحد} two {شيئان} few {# أشياء} many {# شيئًا} other {# شيء}}")]),
+			],
+		),
+	)
+
+	## The request's locale: its `locale` cookie (the reader's own choice), else what its
+	## Accept-Language asks for, else English. A server function, so the browser hydrates in the
+	## locale the server rendered.
+	locale! : {} => Str
+	locale! = server!(|request, {}| Intl.choose(I18n.supported, Locale.wanted(request, "locale")).tag())
+}

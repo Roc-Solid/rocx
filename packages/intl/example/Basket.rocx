@@ -1,0 +1,23 @@
+import pf.Html
+import pf.Solid exposing [create_signal!, use_context!]
+import intl.Language
+
+## A basket: its title and how many things are in it, in the reader's language, and the picker
+## that switches it. Each hole that calls `intl!()` is written again when the reader picks another
+## locale; nothing else runs.
+Basket := [].{
+
+	view! : {} => Html
+	view! = |{}| {
+		{ intl!, .. } = use_context!(Language.language_context)
+		(count!, set_count!) = create_signal!(3)
+		<section class="basket">
+			<Language label="Language" />
+			<h1>{intl!().t("title", [])}</h1>
+			<p>{intl!().t("items", [("count", Int(count!()))])}</p>
+			<p>{intl!().currency(1234.5, "EUR")} · {intl!().date(1795273445000, Long)} · {intl!().relative(-2, Hour)}</p>
+			<p>{intl!().issue("too_short", [{ name: "min", value: count!().to_str() }])}</p>
+			<button on:click={|| set_count!(count!() + 1)}>+</button>
+		</section>
+	}
+}

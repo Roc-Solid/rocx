@@ -1,0 +1,63 @@
+import pf.Html
+import pf.Solid exposing [create_signal!, use_context!]
+import pf.Context
+import pf.For
+import intl.Intl
+import intl.Catalog
+import intl.Locales
+
+## The reader's language, for every component under it, as a Solid context: an `Intl` that changes
+## when the reader picks another locale, so each hole that reads it is written again in the new
+## language, and nothing else is. `<Language label="Language" />` is the picker.
+##
+##     # the root layout: the store, given to everything inside
+##     store = Language.store!({ supported, catalog, tag: I18n.locale!({}), remember!: |_| {} })
+##     { intl!, .. } = store
+##     <html lang={intl!().tag()} dir={intl!().direction()}>
+##         …<body><LanguageContext value={store}>{...children}</LanguageContext></body>
+##     </html>
+##
+##     # any component under it
+##     { intl!, .. } = use_context!(Language.language_context)
+##     <p>{intl!().t("cart.items", [("count", Int(count!()))])}</p>
+##
+## `tag` is the locale the server chose for the request (a server function's answer, so the browser
+## hydrates in the same one); `remember!` is called with a newly chosen tag, to keep it (a cookie).
+Language := [].{
+
+	## What the context holds: the reader's `Intl`, a way to choose another, and the choices.
+	Store : { intl! : () => Intl, choose! : Str => {}, supported : List(Locales.Data) }
+
+	language_context : Context(Store)
+	language_context = create_context()
+
+	## A store, in `tag`'s locale (the closest supported one).
+	store! : { supported : List(Locales.Data), catalog : Catalog, tag : Str, remember! : Str => {} } => Store
+	store! = |{ supported, catalog, tag, remember! }| {
+		(intl!, set_intl!) = create_signal!(Intl.for_tag(supported, tag).with_catalog(catalog))
+		choose! = |wanted| {
+			set_intl!(Intl.for_tag(supported, wanted).with_catalog(catalog))
+			remember!(wanted)
+		}
+		{ intl!: intl!, choose!: choose!, supported: supported }
+	}
+
+	## A picker of the supported locales, each named in its own language ("English", "polski",
+	## "العربية"), the reader's chosen. Picking one switches the page at once. `label` names it for
+	## screen readers.
+	view! : { label : Str } => Html
+	view! = |{ label }| {
+		{ intl!, choose!, supported } = use_context!(language_context)
+		<select class="language" aria-label={label} on:input.value={choose!}>
+			<For each!={supported} keyed={|data| data.tag}>
+				{|data!, _| <option value={data!().tag} lang={data!().tag} selected?={data!().tag == intl!().tag()}>{data!().name}</option>}
+			</For>
+		</select>
+	}
+
+	<style>
+		.language {
+			font: inherit;
+		}
+	</style>
+}

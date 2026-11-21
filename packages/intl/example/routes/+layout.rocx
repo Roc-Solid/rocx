@@ -1,0 +1,32 @@
+import pf.Html
+import pf.Context
+import pf.Endpoint
+import pf.Call
+import intl.Language
+import ../I18n
+import ../Generated/Styles
+import ../Generated/Api
+
+## The document, in the reader's language: `lang` and `dir` follow the store, and everything inside
+## reads it from the context.
+view! = |{ children, .. }| {
+	# A reader's pick is kept in the `locale` cookie (POST /locale), so the next page is in it too.
+	remember! = |tag| {
+		_kept = Endpoint.send!(Api.post_locale({}), { tag: tag }, Call.fetch!)
+		{}
+	}
+	store = Language.store!({ supported: I18n.supported, catalog: I18n.catalog, tag: I18n.locale!({}), remember! })
+	{ intl!, .. } = store
+	<>
+		<!doctype html>
+		<html lang={intl!().tag()} dir={intl!().direction()}>
+			<head>
+				<meta charset="utf-8" />
+				{=Styles.style}
+			</head>
+			<body>
+				<LanguageContext value={store}>{...children}</LanguageContext>
+			</body>
+		</html>
+	</>
+}
