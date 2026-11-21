@@ -9,8 +9,9 @@ browser, in three parts.
 - **The platform**, what an app runs on: on the server, Roc compiled to native code in a Rust host
   (`server/`), with Postgres, jobs, cron, email, live rooms and actors; in the browser, the
   components, compiled to WebAssembly (`web/`).
-- **The ecosystem**: packages of plain Roc and components that any app can use, starting with
-  `packages/charts`.
+- **The ecosystem**: packages of plain Roc and components that any app can use, in `packages/`:
+  charts, forms, Markdown, intl, an admin, guards, MCP, presence, Web Push, OpenTelemetry, S3,
+  crypto and testing.
 
 Pages are components, after Solid 2.0: a component runs once and makes signals; each hole in its
 markup that calls something named with `!` (a signal, a memo) is a computation that runs again when
@@ -47,12 +48,12 @@ fork of the pinned nightly with the compiler fixes rocx needs, which `just setup
 ```sh
 just setup   # the Roc fork rocx builds with, the pinned nightly, Zig and Rust if need be, into .tools/
 just compiler-bugs   # each Roc bug rocx has met, with the nightly and with the fork
-just test    # the transpiler, both platforms, the site in Chromium
+just test    # the transpiler, both platforms, every package, the site in Chromium
 just dev     # the docs site, its server (native) answering each page, rebuilt on save
 just db      # a Postgres in Docker for the server platform (prints its DATABASE_URL)
 just site    # the docs site as static files in site/dist, every page as its server answers it
 just deploy-pages  # build that and publish it to roc-solid.github.io (site/dist, one commit)
-just check   # type-check the site's two programs, reports at .rocx lines, and lint it
+just check   # type-check the site's two programs (reports at .rocx lines) and the packages' server modules, and lint it
 ```
 
 | Where | What |
@@ -61,10 +62,11 @@ just check   # type-check the site's two programs, reports at .rocx lines, and l
 | `packages/charts` | bar, stacked bar, line, sparkline, donut, scatter and heatmap charts, styled by custom properties: their arithmetic a Roc package (scales, round ticks, SVG paths, in `Dec`), their components copied into each app by `rocx build`; see its README |
 | `packages/crypto` | SHA-256, HMAC, HKDF, Base64 and hex in plain Roc, on no platform, each checked against its RFC's vectors; see its README |
 | `packages/s3` | files in any S3: objects, multipart uploads, presigned URLs, and objects served as they stream, a bucket made from its URL and the server platform's `Http.send!`; see its README |
+| `packages/*` | the other packages: `admin` (a Django-style admin for Postgres tables), `forms`, `guard` (rate limits, feature flags, request guards), `intl`, `markdown`, `mcp`, `otel` (OpenTelemetry metrics and logs), `presence`, `push` (Web Push) and `testing`; each has a README and a PROPOSALS.md of what it waits on, and each but `otel` a page on the docs site. A package's modules for the server alone are a package of their own, `server/main.roc`, which names the server platform |
 | `web/` | the browser's platform: the modules components are written with (`Html`, `Solid`, `Show`, `For`, …) and HTTP's (`Server`, requests and answers; `Endpoint`, `Events`, `Middleware`, `OpenApi`), which the server's platform has too; its Zig host, `runtime.js`; see `web/README.md` |
 | `server/` | the server's platform: native Roc in a Rust host (tokio, hyper, Postgres, jobs, email, actors), rendering pages of components; see `server/README.md` |
 | `site/` | the docs site: pages in `routes/`, the demos on them in `Demos/`, its program in `main.roc`, real examples in `examples/` |
-| `test/`, `web/test/`, `site/test/`, `server/test/` | the transpiler and routes; the browser's platform; the site in a browser; the server's platform |
+| `test/`, `web/test/`, `site/test/`, `server/test/`, `packages/testing/test/` | the transpiler and routes; the browser's platform; the site in a browser; the server's platform; the testing package's helpers |
 | `spike/suspense` | an experiment: how a read that has to wait can stop a computation in wasm |
 
 ## Pages and components
@@ -415,7 +417,8 @@ changes, and sends requests. `web/README.md` has how.
 
 `site/` is written in rocx and uses all of the above; its pages are `site/routes`: Roc Solid's
 front page (`/`), then three parts, rocx (`/rocx`, `/syntax`, `/routing`, `/components`, `/calls`,
-…), the platform (`/platform`, …) and the ecosystem (`/ecosystem`, `/ecosystem/charts`).
+…), the platform (`/platform`, …) and the ecosystem (`/ecosystem`, and a page for each package but
+otel: `/ecosystem/charts`, `/ecosystem/forms`, …).
 Its pages are components, and `site/main.roc` is its program (`App.program`, which rocx build
 writes). Its look is a design system: `site/static/site.css` is the tokens (`:root`: neon on near
 black, always dark; colours, one type scale and one space scale, radii, glow) and the base (elements
@@ -460,5 +463,7 @@ with the browser's build's own render, byte for byte outside its `<NoHydration>`
 the files GitHub Pages serves. `server/test/server.test.mjs` asks a small app on the server's
 platform over HTTP: crashes and memory, streams, pages of components, and, with `DATABASE_URL` set (`just db`),
 Postgres, transactions, migrations, jobs, cron, email over SMTP, live rooms, actors across a
-restart, and a graceful stop. The browser tests drive Chromium's headless shell over the DevTools
-protocol with no dependencies: `$CHROME`, or Playwright's cached one; without it they are skipped.
+restart, and a graceful stop. `roc test packages/<name>/main.roc` runs each package's `expect`s,
+and `packages/testing/test/` tests that package's helpers against an app it builds. The browser
+tests drive Chromium's headless shell over the DevTools protocol with no dependencies: `$CHROME`,
+or Playwright's cached one; without it they are skipped.

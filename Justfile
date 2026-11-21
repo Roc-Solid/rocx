@@ -195,30 +195,35 @@ deploy-pages: site
     echo "Published: https://roc-solid.github.io/ (Pages takes a minute to update)"
 
 # Everything: the transpiler and the routes; every Roc module's expects (the platform's modules, the
-# pages and their components, the highlighter: site/main.roc imports them all; and
-# packages/charts's); the web platform in Node and a browser; the site in a browser, served by the
-# native server; the server platform. One file at a time: the web platform's tests and the site's
-# both build its host. The browser tests need Chromium (see web/test/browser.mjs); the server
-# platform's Postgres, jobs, cron and actors tests, DATABASE_URL (`just db`).
+# pages and their components, the highlighter: site/main.roc imports them all; and every package's,
+# packages/*/main.roc); the web platform in Node and a browser; the site in a browser, served by the
+# native server; the server platform; packages/testing's own tests, against an app it builds (once
+# the server's host is). One file at a time: the web platform's tests and the site's both build its
+# host. The browser tests need Chromium (see web/test/browser.mjs); the server platform's Postgres,
+# jobs, cron and actors tests, and packages/testing's database tests, DATABASE_URL (`just db`).
 test:
     ROC={{ roc }} node --test 'test/*.test.mjs'
     node site/build.mjs --prepare
     {{ roc }} test site/main.roc
-    {{ roc }} test packages/charts/main.roc
+    for package in packages/*/main.roc; do echo "$package"; {{ roc }} test "$package" || exit 1; done
     ROC={{ roc }} node --test --test-concurrency=1 'web/test/*.test.mjs' 'site/test/*.test.mjs'
     ROC={{ roc }} node --test 'server/test/*.test.mjs'
+    ROC={{ roc }} node --test 'packages/testing/test/*.test.mjs'
 
 # Type-checks the site, both programs, with reports pointed into .rocx files, and lints its markup:
 # the server's, and the browser's, built from the copy of the site in which a route file has no
-# middleware and a <NoHydration> no children (site/build/client, whose main.roc rocx build writes). First, that everything is
-# formatted (`just fmt` formats it).
+# middleware and a <NoHydration> no children (site/build/client, whose main.roc rocx build writes).
+# Then each package's modules for the server (packages/*/server/main.roc, a package that names the
+# server platform), which no app here imports. First, that everything is formatted (`just fmt`
+# formats it).
 check: (fmt "--check")
     node site/build.mjs --prepare
     {{ rocx }} lint site web/test/app
     {{ rocx }} check -- {{ roc }} check site/main.roc
     {{ rocx }} check -- {{ roc }} check site/build/client/main.roc
+    for package in packages/*/server/main.roc; do {{ roc }} check "$package" || exit 1; done
 
-# Formats the Roc of the site, the packages (packages/charts) and the platforms with roc fmt: each
+# Formats the Roc of the site, the packages (packages/*) and the platforms with roc fmt: each
 # .rocx file's (its markup kept as written) and each hand-written .roc file. `just fmt --check`
 # only says which aren't formatted.
 fmt *args:
