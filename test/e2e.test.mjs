@@ -218,7 +218,7 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 
 		// As the server answers: a page, 200; a path no page has, the error page, 404 (text for a client
 		// that doesn't take HTML); a page that fails, the error page inside the layout, 500; a page
-		// behind its route file's middleware, refused without a cookie, its server function's answer in it with one.
+		// behind its route file's middleware, refused without a cookie, its endpoint's answer in it with one.
 		const get = async (path, headers = {}) => {
 			const response = await fetch(`${server.url}${path}`, { headers: { accept: "text/html", ...headers } });
 			return { status: response.status, app: response.headers.get("x-app"), html: await response.text() };
@@ -316,7 +316,7 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		await tab.wait("window.ready", 5000);
 		assert.deepEqual(tab.errors, []);
 		assert.equal(await tab.eval("document.querySelector('.who').textContent + ' | ' + document.querySelector('.again').textContent"), "Welcome, Ada | Welcome, Ada, said once");
-		assert.deepEqual((await asked(tab)).sort(), [...loads].sort(), "the server function's answer came with the page");
+		assert.deepEqual((await asked(tab)).sort(), [...loads].sort(), "the endpoint's answer came with the page");
 
 		// Under --dev, the reload script the server adds is marked as the host's, so hydrating passes over it.
 		const dev = await start(join(dir, "build", "server"), [...flags, "--dev"]);

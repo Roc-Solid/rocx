@@ -1,6 +1,6 @@
 // A static file server for tests: `dir` as a site, with the right content types (wasm streams
 // only as application/wasm), on a free port. `pages` may render a page per request, and `api`
-// answer other requests (a call of a server function a component sends, say).
+// answer other requests (an endpoint's GET a component sends, say).
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join, normalize, sep } from "node:path";

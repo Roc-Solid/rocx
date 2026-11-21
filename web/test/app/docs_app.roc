@@ -1,5 +1,5 @@
 ## The docs' demos, a whole document, a whole app, for the tests (`Docs.rocx`): the server's copy
-## renders it, from the answers its server functions gave (recorded); the browser's (built from
+## renders it, from the answers its endpoint reads got (recorded); the browser's (built from
 ## `rocx build --client`) hydrates it.
 app [main!] { pf: platform "../../platform/main.roc" }
 

@@ -931,8 +931,9 @@ board! = create_memo!(|| Endpoint.get!(Endpoint.with_query(Api.get_board({}), Ro
     the browser's copy along with the body. Once the body is an endpoint, the page's import of a
     module (for a type, say) stays in the browser's copy, and if that module imports what only the
     server has (`pf.Db`), the browser's build fails. The import belongs in the route's
-    `+server.roc`. (A `rocx build` warning for an import the browser's copy can't compile is still
-    to come.)
+    `+server.roc`. `rocx build --client` now warns of such an import, at the line that reaches it:
+    a module the browser's build reaches (from its `main.roc`) that imports what only the server
+    platform exposes.
   - **The shape of what tests read.** A page's data and its layout's are two answers now, the
     page's own GET and the layout's endpoint: a test that read them as one JSON reads two.
 

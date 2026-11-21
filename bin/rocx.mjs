@@ -3,7 +3,8 @@
 //                          turn every .rocx file under the directories into the .roc beside it,
 //                          and with --client write the browser's copy of the app to <out>: every
 //                          module, a <NoHydration>'s children gone (and a route file without its
-//                          `middleware`, the imports only those used gone)
+//                          `middleware`, the imports only those used gone), and a warning where it
+//                          reaches a module that imports what only the server has (pf.Db)
 //                          and, for an app with routes/ (+page.rocx, +layout.rocx, +error.rocx), a
 //                          module for each route file and Generated/Routes.roc, Paths.roc and App.roc,
 //                          its program (the jobs and actors its modules define, migrations/*.sql), which its
@@ -35,6 +36,7 @@ import { fileURLToPath } from "node:url";
 import { FormatError, formatRocx, rocFmt } from "../src/format.mjs";
 import { remap } from "../src/remap.mjs";
 import { STORIES_DIR, storiesModule, storyIds } from "../src/stories.mjs";
+import { serverOnlyModules, serverOnlyReached, warning, webApps } from "../src/browser.mjs";
 import { actorsIn, APP, apiModule, appModule, clientMainModule, definitions, findRouteFiles, GENERATED, hasPages, jobsIn, METHODS, migrationsIn, pathsModule, ROOT, rootModule, ROUTE_FILE, routeModule, routesModule, routesTable, routeTable, tagNames, viewProblems } from "../src/routes.mjs";
 import { contextsDefined, MARKER, pascalCase, RocxError, rocString, transpileModule, viewsDefined } from "../src/transpile.mjs";
 
@@ -475,7 +477,17 @@ export function build(dirs, { client, cwd = process.cwd(), log = console.error, 
 			const stale = !existsSync(path.replace(/\.roc$/, ".rocx")) || isRoute(path.replace(/\.roc$/, ".rocx")) || (storiesOnly(path) && !dev);
 			if (!routeOutputs.has(path) && stale && isGenerated(path)) unlinkSync(path);
 		}
-		if (client) writeClient(dir, resolve(cwd, client), browser, { main });
+		if (client) {
+			const target = resolve(cwd, client);
+			writeClient(dir, target, browser, { main });
+			// What the browser's copy reaches but can't compile (a module that imports pf.Db): said where
+			// the import that reaches it is, before the browser's build fails far from it. From what the
+			// browser builds: the main.roc rocx wrote, or the copy's apps on the web platform.
+			const web = join(ROCX, "web", "platform", "main.roc");
+			const roots = main ? [join(target, "main.roc")] : webApps(target, web);
+			const serverOnly = serverOnlyModules(join(ROCX, "server", "platform", "main.roc"), web);
+			for (const reached of serverOnlyReached(target, roots, serverOnly)) log(warning(target, relative(cwd, dir) || ".", reached));
+		}
 	}
 	if (written) log(`rocx: ${written} file${written === 1 ? "" : "s"} written`);
 	return !failed;

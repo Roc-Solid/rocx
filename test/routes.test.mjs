@@ -1,9 +1,10 @@
 // File-based routing, without the compiler: which routes there are, what rocx writes for them.
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { build } from "../bin/rocx.mjs";
 import { actorsIn, apiModule, appModule, clientMainModule, definitions, findRouteFiles, jobsIn, matches, migrationsIn, pathsModule, rootModule, routeList, routeModule, routesModule, routesTable, routeTable, tagNames, viewProblems } from "../src/routes.mjs";
 
@@ -426,8 +427,12 @@ test("rocx build --client: a route file's middleware, and the imports only it us
 				"",
 			].join("\n"),
 		);
+		// What only the middleware uses only the server has: the browser's copy leaves it out, so it warns of nothing.
+		put("app/Middlewares.roc", "import pf.Env\n\nMiddlewares := [].{\n\tmember = |request, context, next!| next!(request, context)\n}\n");
+		put("app/Db/Users.roc", "import pf.Db\n\nUsers := [].{\n\tknown! = |_| Bool.True\n}\n");
 		const said = [];
 		assert.equal(build([join(dir, "app")], { client: join(dir, "app", "build", "client"), cwd: dir, log: (line) => said.push(line) }), true, said.join("\n"));
+		assert.deepEqual(said.filter((line) => line.startsWith("⚠")), [], "nothing the browser's copy reaches is the server's alone");
 		const server = readFileSync(join(dir, "app", "Generated", "MembersPage.roc"), "utf8");
 		const browser = readFileSync(join(dir, "app", "build", "client", "Generated", "MembersPage.roc"), "utf8");
 		assert.match(server, /^import \.\.\/Middlewares\n/m, "the server's copy keeps it all");
@@ -437,6 +442,59 @@ test("rocx build --client: a route file's middleware, and the imports only it us
 		assert.equal(browser.split("\n").length, server.split("\n").length, "lines stay lines");
 		const at = (code) => code.split("\n").findIndex((line) => line.startsWith("view! = |_| Html.element(\"p\""));
 		assert.ok(at(browser) > 0 && at(browser) === at(server), "the view on its line in both");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("rocx build --client: a module the browser's copy reaches that imports what only the server has (pf.Db) is a warning, at the import its author wrote; what the browser doesn't reach isn't", () => {
+	const dir = mkdtempSync(join(tmpdir(), "rocx-client-server-only-"));
+	const put = (path, text) => {
+		mkdirSync(dirname(join(dir, path)), { recursive: true });
+		writeFileSync(join(dir, path), text);
+	};
+	try {
+		put("app/main.roc", 'app [program] { pf: platform "../server/platform/main.roc" }\n\nimport Generated/App\n');
+		put("app/Notes.roc", 'import pf.Db\n\nNotes := [].{\n\ttitle = "Notes"\n}\n');
+		put("app/Shelf.roc", "import Notes\n\nShelf := [].{\n\tname = Notes.title\n}\n");
+		put("app/routes/+page.rocx", "import pf.Html\nimport ../Shelf\n\nview! = |_| <p>{Shelf.name}</p>\n");
+		// Read only inside a <NoHydration>: the browser's copy leaves the import out, with what is inside.
+		put("app/routes/quiet/+page.rocx", "import pf.Html\nimport ../../Notes\n\nview! = |_|\n\t<NoHydration>\n\t\t<p>{Notes.title}</p>\n\t</NoHydration>\n");
+		// A page that imports it itself.
+		put("app/routes/direct/+page.rocx", "import pf.Html\nimport pf.Db\n\nview! = |_| <p>{Db.name}</p>\n");
+		// A module of components nothing imports: the browser never compiles it.
+		put("app/Unused.rocx", "import pf.Html\nimport pf.Db\n\nUnused := [].{\n\tview = |_| <p>unused</p>\n}\n");
+		const said = [];
+		assert.equal(build([join(dir, "app")], { client: join(dir, "app", "build", "client"), cwd: dir, log: (line) => said.push(line) }), true, "a warning, not a failure: the browser's build says the rest");
+		assert.deepEqual(said.filter((line) => line.startsWith("⚠")).sort(), [
+			"⚠ app/routes/+page.rocx:2: the browser's copy imports ../Shelf, which imports Notes, which imports pf.Db, which only the server has, so the browser's build can't compile it. Use it in an endpoint (+server.roc) or middleware, which the browser's copy leaves out.",
+			"⚠ app/routes/direct/+page.rocx:2: the browser's copy imports pf.Db, which only the server has, so the browser's build can't compile it. Use it in an endpoint (+server.roc) or middleware, which the browser's copy leaves out.",
+		]);
+		// Without --client, nothing to say.
+		const quiet = [];
+		build([join(dir, "app")], { cwd: dir, log: (line) => quiet.push(line) });
+		assert.deepEqual(quiet.filter((line) => line.startsWith("⚠")), []);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("rocx build --client: an app of components with no routes is checked from its own app on the web platform", () => {
+	const dir = mkdtempSync(join(tmpdir(), "rocx-client-components-"));
+	const put = (path, text) => {
+		mkdirSync(dirname(join(dir, path)), { recursive: true });
+		writeFileSync(join(dir, path), text);
+	};
+	try {
+		const web = relative(join(dir, "app"), join(dirname(fileURLToPath(import.meta.url)), "..", "web", "platform", "main.roc"));
+		put("app/widget_app.roc", `app [main!] { pf: platform "${web}" }\n\nimport pf.Html\nimport Widget\n\nmain! = |{}| Widget.view!({})\n`);
+		put("app/Secret.roc", 'import pf.Env\n\nSecret := [].{\n\tkey = "k"\n}\n');
+		put("app/Widget.rocx", "import pf.Html\nimport Secret\n\nWidget := [].{\n\tview! = |{}| <p>{Secret.key}</p>\n}\n");
+		const said = [];
+		assert.equal(build([join(dir, "app")], { client: join(dir, "out"), cwd: dir, log: (line) => said.push(line) }), true, said.join("\n"));
+		assert.deepEqual(said.filter((line) => line.startsWith("⚠")), [
+			"⚠ app/Widget.rocx:2: the browser's copy imports Secret, which imports pf.Env, which only the server has, so the browser's build can't compile it. Use it in an endpoint (+server.roc) or middleware, which the browser's copy leaves out.",
+		]);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

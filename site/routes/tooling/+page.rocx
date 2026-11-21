@@ -49,6 +49,9 @@ view! = |_|
 							<code>Api</code> is only its method and URL, a route file has no <code>middleware</code>, and
 							the imports only those used are gone; for components,
 							its <code>main.roc</code> and <code>static/rocx/</code>, where start.js loads the runtime and wasm.
+							If the browser's app reaches a module that imports what only the server has
+							(<code>pf.Db</code>, itself or through another module), the build warns at the import a page or
+							component makes, before the browser's build fails far from it.
 						</p>
 					</div>
 				</div>

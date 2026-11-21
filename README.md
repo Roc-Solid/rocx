@@ -254,6 +254,9 @@ writes more for it:
   `<out>/static/rocx/start.js` and `runtime.js`. Build the wasm beside them
   (`roc build --target=wasm32 --opt=size --output=<out>/static/rocx/app.wasm <out>/main.roc`) and
   serve the directory (`--static <out>/static`): the page's `/rocx/start.js` loads the other two.
+  A module the browser's app reaches that imports what only the server has (`pf.Db`, directly or
+  through another module) is a warning, at the import a page or component of the app's makes:
+  the browser's build couldn't compile it.
 
 Any app with routes, of components or not (endpoints alone too), gets its program:
 
@@ -364,7 +367,8 @@ rocx build <dir>…        # each .rocx under the directories becomes the .roc b
                          # App.roc (its program), and, for component route files, Root.roc
   --client <out>         # and the browser's copy of the app: an endpoint only its method and URL, a
                          # route file without its middleware, the imports only they used gone;
-                         # for component route files, its main.roc and static/rocx/
+                         # for component route files, its main.roc and static/rocx/; a warning
+                         # where it reaches a module that imports what only the server has (pf.Db)
   --dev                  # and the stories (`<story>`): their catalog at /__rocx/stories
 rocx check -- <command>  # run a command, its reports pointed into .rocx files
 rocx lint <dir>…         # refuse Html.source_text in hand-written .roc files
