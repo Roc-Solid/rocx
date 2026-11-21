@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { build } from "../bin/rocx.mjs";
-import { rootModule, routesModule, routeTable } from "../src/routes.mjs";
-import { catalogHtml, storyIds } from "../src/stories.mjs";
-import { RocxError, transpileModule } from "../src/transpile.mjs";
+import { build } from "../src/rocx.mjs";
+import { rootModule, routesModule, routeTable } from "../src/rocx.mjs";
+import { catalogHtml, storyIds } from "../src/rocx.mjs";
+import { RocxError, transpileModule } from "../src/rocx.mjs";
 
 const CALLOUT = `import pf.Html
 import pf.Router

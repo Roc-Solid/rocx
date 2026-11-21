@@ -7,9 +7,9 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, wr
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { roc as findRoc } from "../server/build.mjs";
-import { FormatError, formatRocx, rocFmt } from "../src/format.mjs";
-import { transpileModule } from "../src/transpile.mjs";
+import { roc as findRoc, rocxBinary } from "../server/build.mjs";
+import { FormatError, formatRocx, rocFmt } from "../src/rocx.mjs";
+import { transpileModule } from "../src/rocx.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -132,7 +132,7 @@ test("rocx fmt formats an app's .rocx and hand-written .roc files, leaves rocx's
 		const generated = "Page := [].{\n\tview = |_|    1\n}\n\n# rocx: generated from Page.rocx: edit that file, not this one. Line N here is line N there.\n";
 		writeFileSync(join(dir, "Gen.roc"), generated);
 		writeFileSync(join(dir, "Generated", "Routes.roc"), "x =    1\n");
-		const rocx = (...args) => spawnSync("node", [join(root, "bin", "rocx.mjs"), "fmt", ...args], { encoding: "utf8", env: { ...process.env, ROC: roc } });
+		const rocx = (...args) => spawnSync(rocxBinary(), ["fmt", ...args], { encoding: "utf8", env: { ...process.env, ROC: roc } });
 
 		const checked = rocx("--check", dir);
 		assert.equal(checked.status, 1);

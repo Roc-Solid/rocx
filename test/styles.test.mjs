@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { build } from "../bin/rocx.mjs";
-import { scopeClass, scopeCss } from "../src/styles.mjs";
-import { RocxError, transpileModule } from "../src/transpile.mjs";
+import { build } from "../src/rocx.mjs";
+import { scopeClass, scopeCss } from "../src/rocx.mjs";
+import { RocxError, transpileModule } from "../src/rocx.mjs";
 
 const scoped = (css) => scopeCss(css, "rx-t");
 

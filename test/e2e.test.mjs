@@ -10,12 +10,12 @@ import { createHash, randomBytes } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildApp, buildHost, hasRust, roc as findRoc, start, syncShared, zig } from "../server/build.mjs";
+import { buildApp, buildHost, hasRust, roc as findRoc, rocxBinary, start, syncShared, zig } from "../server/build.mjs";
 import { findChrome, launch } from "../web/test/browser.mjs";
 import { Runtime } from "../web/runtime.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const rocx = join(here, "..", "bin", "rocx.mjs");
+const rocx = rocxBinary();
 // The compiler `just setup` links (the fork rocx builds with), else $ROC: server/build.mjs's. Never
 // the `roc` on PATH, which may lack the fork's fixes.
 const roc = (() => {
@@ -35,7 +35,7 @@ function fixtureCopy(edit = (source) => source) {
 	return dir;
 }
 
-const run = (...args) => spawnSync("node", [rocx, ...args], { encoding: "utf8" });
+const run = (...args) => spawnSync(rocx, args, { encoding: "utf8" });
 
 test("the fixture page compiles and its expects pass", { skip: !hasRoc && "no Roc (run `just setup`, or set ROC)" }, () => {
 	const dir = fixtureCopy();

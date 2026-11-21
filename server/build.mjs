@@ -9,7 +9,7 @@
 // and libunwind.a, which Rust's std needs) comes from Rust's own musl target, which rustup adds,
 // and Zig compiles the host's C for it.
 import { spawn, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -40,6 +40,46 @@ export function roc() {
 	if (existsSync(active)) return realpathSync(active);
 	if (process.env.ROC) return process.env.ROC;
 	throw new Error("no Roc compiler: run `just setup` (or set ROC)");
+}
+
+/**
+ * rocx itself (bin/rocx), built from its Roc (src/*.roc, on basic-cli) when it is missing or older
+ * than one of them: what the repo's scripts and tests run. `ROCX_OPT` picks the optimization
+ * (`speed` unless it says `dev`). Builds wait for one another (bin/.rocx-building), since the
+ * tests run in several processes at once.
+ */
+export function rocxBinary() {
+	const out = join(root, "bin", "rocx");
+	const sources = join(root, "src");
+	const newest = () => Math.max(...readdirSync(sources).filter((name) => name.endsWith(".roc")).map((name) => statSync(join(sources, name)).mtimeMs));
+	const fresh = () => existsSync(out) && statSync(out).mtimeMs >= newest();
+	if (fresh()) return out;
+	const lock = join(root, "bin", ".rocx-building");
+	mkdirSync(dirname(lock), { recursive: true });
+	for (;;) {
+		try {
+			mkdirSync(lock);
+			break;
+		} catch {
+			// Another process is building it: wait for it, and take a lock left by one that died.
+			if (Date.now() - statSync(lock, { throwIfNoEntry: false })?.mtimeMs > 10 * 60 * 1000) rmSync(lock, { recursive: true, force: true });
+			Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
+			if (fresh()) return out;
+		}
+	}
+	try {
+		if (fresh()) return out;
+		const building = `${out}.building-${process.pid}`;
+		const opt = process.env.ROCX_OPT === "dev" ? "dev" : "speed";
+		const result = spawnSync(roc(), ["build", `--opt=${opt}`, `--output=${building}`, join(sources, "main.roc")], { encoding: "utf8" });
+		// 1: errors (the binary would crash where they are); 2: warnings only.
+		if (result.status === 1 || !existsSync(building)) throw new Error(`building rocx (src/main.roc) failed:\n${result.stdout}${result.stderr}`);
+		if (result.status === 2) process.stderr.write(`rocx (src/main.roc) built with warnings:\n${result.stdout}${result.stderr}`);
+		renameSync(building, out);
+		return out;
+	} finally {
+		rmSync(lock, { recursive: true, force: true });
+	}
 }
 
 let zigFound;

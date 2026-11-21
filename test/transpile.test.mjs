@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { RocxError, rocString, transpile, transpileModule, viewsDefined } from "../src/transpile.mjs";
-import { remap, TRY_HINT } from "../src/remap.mjs";
-import { scopeClass } from "../src/styles.mjs";
+import { RocxError, rocString, transpile, transpileModule, viewsDefined } from "../src/rocx.mjs";
+import { remap, TRY_HINT } from "../src/rocx.mjs";
+import { scopeClass } from "../src/rocx.mjs";
 
 /** The generated code without the closing note, which every output ends with. */
 const roc = (source) => transpile(source, "T.rocx").replace(/\n\n# rocx: generated from[^\n]*\n$/, "");

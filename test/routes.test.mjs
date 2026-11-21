@@ -5,8 +5,8 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
-import { build } from "../bin/rocx.mjs";
-import { actorsIn, apiModule, appModule, clientMainModule, definitions, findRouteFiles, jobsIn, matches, migrationsIn, pathsModule, rootModule, routeList, routeModule, routesModule, routesTable, routeTable, tagNames, viewProblems } from "../src/routes.mjs";
+import { build } from "../src/rocx.mjs";
+import { actorsIn, apiModule, appModule, clientMainModule, definitions, findRouteFiles, jobsIn, matches, migrationsIn, pathsModule, rootModule, routeList, routeModule, routesModule, routesTable, routeTable, tagNames, viewProblems } from "../src/rocx.mjs";
 
 const files = ["+layout.rocx", "+page.rocx", "+error.rocx", "blog/+layout.rocx", "blog/+page.rocx", "blog/[slug]/+page.rocx", "blog/[slug]/+server.rocx", "blog/new/+page.rocx", "getting-started/+page.rocx", "feed/+server.roc"];
 
