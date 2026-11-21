@@ -72,6 +72,8 @@ if (!skip) {
 		["channels", join(out, "app-client", "channels_app.roc"), "size"],
 		["pending-server", join(here, "app", "pending_app.roc"), "dev"],
 		["pending", join(out, "app-client", "pending_app.roc"), "size"],
+		["planner-server", join(here, "app", "planner_app.roc"), "dev"],
+		["planner", join(out, "app-client", "planner_app.roc"), "size"],
 	]) {
 		run(roc, ["build", "--target=wasm32", `--opt=${opt}`, `--output=${join(out, `${name}.wasm`)}`, app]);
 	}
@@ -1503,6 +1505,184 @@ test("forms: after a plain post, the flash is the submission: what was typed and
 		assert.equal(posted.length, count, "a submit a handler prevented is left alone");
 		assert.deepEqual(fresh.errors, []);
 	});
+});
+
+// ---- Drag and drop (D-029), actions and optimistic values (D-030), moves (D-031) ----
+
+test("a planner: a card dragged to another day (a real drag, in Chromium) moves at once, before the slow endpoint answers, and stays while it is on its way and while the board is read again, then is the server's, never showing where it was; two on their way at once, each on its own, the refused one back where it was, its refusal readable; cards glide between days (none with less motion asked for); a list with no drop handler takes no drop; a link's click taken over; hydrated strictly, rendered by the browser's build byte for byte, nothing left allocated", { skip }, async () => {
+	const server = await Runtime.load(readFileSync(join(out, "planner-server.wasm")));
+	/** The server's board: a day holds two cards at most. */
+	let board = [
+		{ id: "a", title: "Alpha", day: "mon" },
+		{ id: "b", title: "Beta", day: "mon" },
+		{ id: "c", title: "Gamma", day: "tue" },
+		{ id: "d", title: "Delta", day: "wed" },
+	];
+	const answered = (cards) => [["GET /api/board", "", JSON.stringify(json(cards))]];
+	const { html } = server.renderToString({ path: "/", answers: answered(board) });
+	assert.match(html, /<li class="card" draggable="true"><!--x-->Alpha<!--\/x--><\/li>/, "the server writes nothing for a handler, a key or a move");
+	const client = await Runtime.load(readFileSync(join(out, "planner.wasm")));
+	assert.equal(client.renderToString({ path: "/", answers: answered(board) }).html, html, "the browser's build renders the page byte for byte: nothing optimistic on the server");
+	// The scripted server: each move waits until the test lets it be answered (`release`), and is
+	// refused if its day is full; a read of the board may be held too (`holding`).
+	const posted = [];
+	const reads = [];
+	let holding = null;
+	const api = async (method, path, body, url, request) => {
+		if (path === "/api/board") {
+			const read = { at: posted.length };
+			reads.push(read);
+			if (holding) await holding;
+			return json(board);
+		}
+		if (path !== "/api/move") return null;
+		const move = { body: JSON.parse(body), headers: request.headers, answered: false };
+		posted.push(move);
+		await new Promise((resolve) => (move.release = resolve));
+		move.answered = true;
+		const { card, day } = move.body;
+		if (board.filter((each) => each.day === day && each.id !== card).length >= 2) return { status: 409, body: `${day} is full` };
+		board = board.map((each) => (each.id === card ? { ...each, day } : each));
+		return json("moved");
+	};
+	const page = `<!doctype html><html><head><style>.days { display: flex; gap: 24px } .day { width: 160px; min-height: 120px; margin: 0; padding: 8px; list-style: none } .card { height: 24px; margin: 4px 0 } .tray { min-height: 40px }</style></head><body><div id="app">${html}${Runtime.answersScript(answered(board))}</div>
+<script type="module">
+import { Runtime } from "/runtime.js";
+// What each day shows, each time the page changes: an old value showing again would be in it.
+window.seen = [];
+const days = () => [...document.querySelectorAll(".day")].map((day) => day.dataset.day + ":" + [...day.querySelectorAll(".card:not([inert])")].map((card) => card.textContent).join(",")).join(" ");
+new MutationObserver(() => { const now = days(); if (window.seen.at(-1) !== now) window.seen.push(now); }).observe(document.getElementById("app"), { subtree: true, childList: true, characterData: true });
+// Where the drag is, as the page's own listener sees it after the runtime's: accepted or not.
+document.addEventListener("dragover", (event) => { window.over = { day: event.target.closest(".day")?.dataset.day ?? event.target.closest("ul")?.className, prevented: event.defaultPrevented, effect: event.dataTransfer.dropEffect }; });
+window.drops = 0;
+document.addEventListener("drop", () => window.drops++);
+window.runtime = await Runtime.load(fetch("/planner.wasm"));
+try {
+	window.runtime.hydrate(document.getElementById("app"), { strict: true });
+} catch (error) {
+	window.problem = error.message;
+}
+window.hydrated = true;
+</script></body></html>`;
+	const dir = mkdtempSync(join(tmpdir(), "rocx-planner-"));
+	cpSync(join(web, "runtime.js"), join(dir, "runtime.js"));
+	cpSync(join(out, "planner.wasm"), join(dir, "planner.wasm"));
+	const site = await serve(dir, (path) => (path === "/" ? page : null), api);
+	try {
+		const tab = await browser.page();
+		await tab.send("Emulation.setDeviceMetricsOverride", { width: 1000, height: 800, deviceScaleFactor: 1, mobile: false });
+		await tab.goto(`${site.url}/`);
+		await tab.wait("window.hydrated === true", 3000);
+		assert.equal(await tab.eval("window.problem ?? null"), null, "hydrated strictly: the board came with the page");
+		assert.deepEqual(reads, [], "nothing asked");
+		const day = (name) => tab.eval(`[...document.querySelectorAll('.day[data-day=${name}] .card:not([inert])')].map((card) => card.textContent)`);
+		const card = (title) => `[...document.querySelectorAll('.card')].find((card) => card.textContent === ${JSON.stringify(title)} && !card.closest('[inert]'))`;
+		const gliding = (title) => tab.eval(`(${card(title)})?.getAnimations().filter((animation) => animation.effect.getKeyframes()[0]?.translate).length ?? -1`);
+		const centerOf = (title) => tab.eval(`(() => { const r = (${card(title)}).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+
+		// A drag from Monday, over Tuesday's card (a child of Tuesday's list), and Tuesday itself.
+		await tab.drag(".day[data-day=mon] .card", [".day[data-day=tue]", await centerOf("Gamma")], { drop: false });
+		assert.equal(await tab.eval("document.querySelector('.over')?.dataset.day ?? null"), "tue", "over Tuesday, its card included: its dragenter ran once, and no dragleave");
+		assert.deepEqual(await tab.eval("window.over"), { day: "tue", prevented: true, effect: "move" }, "a drop target: its dragover's default prevented, a move");
+		assert.equal(await tab.eval(`(${card("Alpha")}).classList.contains('dragged')`), true, "dragstart ran");
+		await tab.finish();
+		// Moved at once, while the server hasn't answered.
+		await tab.wait(`${card("Alpha")}?.closest('.day').dataset.day === 'tue'`, 2000);
+		assert.deepEqual(await day("mon"), ["Beta"]);
+		assert.deepEqual(await day("tue"), ["Alpha", "Gamma"], "in the board's order");
+		assert.equal(posted.length, 1);
+		assert.equal(posted[0].answered, false, "optimistic: the server hasn't answered");
+		assert.deepEqual(posted[0].body, { card: "a", day: "tue" }, "the action's arg, as JSON");
+		assert.equal(posted[0].headers["content-type"], "application/json");
+		assert.equal(posted[0].headers.accept, "application/json");
+		assert.equal(posted[0].headers["x-rocx-submission"], "1");
+		assert.equal(await textOf(tab, ".pending"), "1 on their way");
+		assert.equal(await tab.eval("document.querySelector('.over')"), null, "the drop left Tuesday: dragleave ran");
+		assert.equal(await tab.eval("document.querySelector('.dragged')"), null);
+		assert.equal(await gliding("Alpha"), 1, "the card glides from Monday to Tuesday");
+		assert.equal(await gliding("Beta"), 1, "Beta, below it on Monday, glides up into its place");
+		assert.equal(await gliding("Gamma"), 1, "Gamma, below it on Tuesday now, glides down");
+		// Answered: still on its way while the board is read again (held), then the server's.
+		let releaseRead;
+		holding = new Promise((resolve) => (releaseRead = resolve));
+		posted[0].release();
+		await until(() => reads.length === 1, 2000, "the board read again");
+		await sleep(50);
+		assert.deepEqual(await day("tue"), ["Alpha", "Gamma"], "kept while the board is read again");
+		assert.equal(await textOf(tab, ".pending"), "1 on their way", "on its way until the page's reads are in");
+		releaseRead();
+		holding = null;
+		await tab.wait("document.querySelector('.pending').textContent === '0 on their way'", 2000);
+		assert.deepEqual(await day("tue"), ["Alpha", "Gamma"], "the server's board now");
+		assert.deepEqual(await day("mon"), ["Beta"]);
+		const seen = await tab.eval("window.seen");
+		const moved = seen.findIndex((shown) => /tue:[^ ]*Alpha/.test(shown));
+		assert.ok(moved >= 0, "Alpha showed on Tuesday");
+		assert.deepEqual(seen.slice(moved).filter((shown) => /mon:[^ ]*Alpha/.test(shown)), [], "and never on Monday again: no flicker of the old board");
+
+		// Two at once: Beta to Wednesday (room for it), then Gamma too (full by then): each its own.
+		await tab.drag(`.day[data-day=mon] .card`, ".day[data-day=wed]");
+		await tab.wait(`${card("Beta")}?.closest('.day').dataset.day === 'wed'`, 2000);
+		await tab.drag(".day[data-day=tue] .card:last-child", ".day[data-day=wed]");
+		await tab.wait(`${card("Gamma")}?.closest('.day').dataset.day === 'wed'`, 2000);
+		assert.deepEqual(await day("wed"), ["Beta", "Gamma", "Delta"], "both shown at once");
+		assert.equal(await textOf(tab, ".pending"), "2 on their way");
+		assert.equal(posted.length, 3);
+		posted[1].release();
+		await tab.wait("document.querySelector('.pending').textContent === '1 on their way'", 2000);
+		assert.deepEqual(await day("wed"), ["Beta", "Gamma", "Delta"], "Gamma, still on its way, still shown on the server's board");
+		posted[2].release();
+		await tab.wait("document.querySelector('.refused .why')?.textContent === 'wed is full'", 2000);
+		assert.deepEqual(await day("wed"), ["Beta", "Delta"], "refused: back where the server has it");
+		assert.deepEqual(await day("tue"), ["Alpha", "Gamma"]);
+		assert.equal(await textOf(tab, ".pending"), "0 on their way");
+		assert.equal(await gliding("Gamma"), 1, "and it glides back");
+		await tab.click(".dismiss");
+		await tab.wait("document.querySelector('.refused') === null");
+
+		// The tray has no drop handler: a drag over it isn't accepted, and its drop never comes.
+		const before = posted.length;
+		const drops = await tab.eval("window.drops");
+		await tab.drag(".day[data-day=wed] .card:last-child", ".tray");
+		assert.deepEqual(await tab.eval("({ day: window.over.day, prevented: window.over.prevented })"), { day: "tray", prevented: false }, "its dragover's default isn't prevented");
+		assert.equal(await textOf(tab, ".note"), "over the tray", "its dragenter ran");
+		await sleep(50);
+		assert.equal(await tab.eval("window.drops"), drops, "no drop event: the browser saw no drop target");
+		assert.equal(posted.length, before);
+		assert.equal(await tab.eval("document.querySelector('.dragged')"), null, "dragend ran");
+
+		// With less motion asked for, nothing glides.
+		await tab.wait("document.getAnimations().length === 0", 3000);
+		await tab.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+		await tab.drag(".day[data-day=wed] .card:last-child", ".day[data-day=mon]");
+		await tab.wait(`${card("Delta")}?.closest('.day').dataset.day === 'mon'`, 2000);
+		assert.equal(await tab.eval("document.getAnimations().length"), 0);
+		posted.at(-1).release();
+		await tab.wait("document.querySelector('.pending').textContent === '0 on their way'", 2000);
+		await tab.send("Emulation.setEmulatedMedia", { features: [] });
+
+		// Moving a card there and back leaves nothing allocated behind.
+		await tab.wait("document.getAnimations().length === 0", 3000);
+		const settled = await tab.eval("window.runtime.live()");
+		for (const [from, to] of [["mon", "wed"], ["wed", "mon"]]) {
+			await tab.drag(`.day[data-day=${from}] .card:last-child`, `.day[data-day=${to}]`);
+			await tab.wait(`${card("Delta")}?.closest('.day').dataset.day === '${to}'`, 2000);
+			posted.at(-1).release();
+			await tab.wait("document.querySelector('.pending').textContent === '0 on their way'", 2000);
+		}
+		await tab.wait("document.getAnimations().length === 0", 3000);
+		assert.equal(await tab.eval("window.runtime.live()"), settled, "the rows that moved, and the reads read again, let go of");
+
+		// `.prevent`: the link's click is the page's.
+		await tab.click(".elsewhere");
+		await tab.wait("document.querySelector('.note').textContent === \"the page's\"", 2000);
+		assert.equal(await tab.eval("location.pathname"), "/");
+		assert.deepEqual(tab.errors, []);
+		assert.deepEqual(tab.console, []);
+	} finally {
+		await site.close();
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 // ---- Channels (D-020): the hub, one stream for a tab's subscriptions ----

@@ -1,0 +1,97 @@
+import pf.Html
+import pf.Solid exposing [create_signal!, create_memo!]
+import pf.Router exposing [use_action!, use_submissions!]
+import pf.Endpoint
+import pf.Server
+import pf.For
+import pf.Errored
+import pf.Transition
+
+## A planner, for the tests (D-029 to D-031): cards on days, each dragged from one day to another.
+## A move shows at once (the server's board with the moves on their way applied), is sent without
+## the handler waiting for it, and gives way to the server's board once that is read again; one the
+## server refuses goes back, its refusal shown until it is dismissed. Cards glide from day to day.
+## The tray has no drop handler, so it takes no drop; the link's click is the page's.
+Planner := [].{
+	Card : { id : Str, title : Str, day : Str }
+	Move : { card : Str, day : Str }
+
+	## GET /api/board: the cards, as the server has them.
+	board : {} -> Endpoint({}, {}, List(Card))
+	board = |{}| Endpoint.remote("GET", "/api/board")
+
+	## POST /api/move: a card to another day. The tests' server answers it when told to, and
+	## refuses a day that is full.
+	move : {} -> Endpoint({}, Move, Str)
+	move = |{}| Endpoint.remote("POST", "/api/move")
+
+	## The cards with a move applied: what the server will have once it has it.
+	moved : List(Card), Move -> List(Card)
+	moved = |cards, one| cards.map(|card| if (card.id == one.card) { ..card, day: one.day } else card)
+
+	## A refusal, as the page says it.
+	explained : Try(Server.Problem, [NoError]) -> Str
+	explained = |error|
+		match error {
+			Ok(Refused(_, why)) => why
+			Ok(problem) => Server.explain(problem)
+			Err(NoError) => ""
+		}
+
+	view! : {} => Html
+	view! = |{}| {
+		moves = use_submissions!(Planner.move({}))
+		move! = use_action!(Planner.move({}))
+		(dragging!, set_dragging!) = create_signal!("")
+		(over!, set_over!) = create_signal!("")
+		(note!, set_note!) = create_signal!("")
+		# The read first, its endpoint named outside: what a computation made before a read that isn't
+		# in yet is lost when the read unwinds it.
+		shared = Planner.board({})
+		cards! = create_memo!(|| {
+			server = Endpoint.get!(shared)
+			moves.pending_inputs!().fold(server, Planner.moved)
+		})
+		on_day! = |day| cards!().keep_if(|card| card.day == day)
+		dropped! = |day| {
+			card = dragging!()
+			set_dragging!("")
+			if (card.is_empty()) {} else move!({ card, day })
+		}
+		<main class="planner">
+			<Errored fallback={|problem, _| <p class="problem">{problem}</p>}>
+				<div class="days">
+					<ul class="day" data-day="mon" class:over={over!() == "mon"} on:dragenter={|| set_over!("mon")} on:dragleave={|| set_over!("")} on:drop={|| dropped!("mon")}>
+						<For each!={on_day!("mon")} keyed={|card| card.id}>
+							{|card!, _| <li class="card" key={card!().id} draggable="true" class:dragged={dragging!() == card!().id} transition:move={Transition.glide.ms(600)} on:dragstart={|| set_dragging!(card!().id)} on:dragend={|| set_dragging!("")}>{card!().title}</li>}
+						</For>
+					</ul>
+					<ul class="day" data-day="tue" class:over={over!() == "tue"} on:dragenter={|| set_over!("tue")} on:dragleave={|| set_over!("")} on:drop={|| dropped!("tue")}>
+						<For each!={on_day!("tue")} keyed={|card| card.id}>
+							{|card!, _| <li class="card" key={card!().id} draggable="true" class:dragged={dragging!() == card!().id} transition:move={Transition.glide.ms(600)} on:dragstart={|| set_dragging!(card!().id)} on:dragend={|| set_dragging!("")}>{card!().title}</li>}
+						</For>
+					</ul>
+					<ul class="day" data-day="wed" class:over={over!() == "wed"} on:dragenter={|| set_over!("wed")} on:dragleave={|| set_over!("")} on:drop={|| dropped!("wed")}>
+						<For each!={on_day!("wed")} keyed={|card| card.id}>
+							{|card!, _| <li class="card" key={card!().id} draggable="true" class:dragged={dragging!() == card!().id} transition:move={Transition.glide.ms(600)} on:dragstart={|| set_dragging!(card!().id)} on:dragend={|| set_dragging!("")}>{card!().title}</li>}
+						</For>
+					</ul>
+				</div>
+			</Errored>
+			<ul class="tray" on:dragenter={|| set_note!("over the tray")}>
+				<li>Nothing goes here</li>
+			</ul>
+			<p class="pending">{moves.all!().keep_if(|sent| sent.pending).len().to_str()} on their way</p>
+			<For each!={moves.all!().keep_if(|sent| sent.error.is_ok())} keyed={|sent| sent.id}>
+				{|sent!, _|
+					<p class="refused">
+						<span class="why">{Planner.explained(sent!().error)}</span>
+						<button class="dismiss" type="button" on:click={|| moves.clear!(sent!().id)}>Dismiss</button>
+					</p>
+				}
+			</For>
+			<a class="elsewhere" href="/elsewhere" on:click.prevent={|| set_note!("the page's")}>Elsewhere</a>
+			<p class="note">{note!()}</p>
+		</main>
+	}
+}

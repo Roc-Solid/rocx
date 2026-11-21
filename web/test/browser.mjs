@@ -75,11 +75,74 @@ class Page {
 		/** What the page logged and threw, for assertions. */
 		this.console = [];
 		this.errors = [];
+		/** Who waits for an event of the protocol's, by its method (`once`). */
+		this.waiting = [];
 		listeners.push((message) => {
 			if (message.sessionId !== sessionId) return;
 			if (message.method === "Runtime.consoleAPICalled") this.console.push({ type: message.params.type, text: message.params.args.map((arg) => arg.value ?? arg.description).join(" ") });
 			if (message.method === "Runtime.exceptionThrown") this.errors.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
+			for (const waiter of this.waiting.filter((each) => each.method === message.method)) {
+				this.waiting.splice(this.waiting.indexOf(waiter), 1);
+				waiter.resolve(message.params);
+			}
 		});
+	}
+
+	/** The next event of the protocol's with this method (`Input.dragIntercepted`), its params. */
+	once(method, timeout = 3000) {
+		return new Promise((resolve, reject) => {
+			const waiter = { method, resolve };
+			this.waiting.push(waiter);
+			setTimeout(() => {
+				if (!this.waiting.includes(waiter)) return;
+				this.waiting.splice(this.waiting.indexOf(waiter), 1);
+				reject(new Error(`no ${method} in ${timeout} ms`));
+			}, timeout);
+		});
+	}
+
+	/** The middle of an element, scrolled into view: where a real pointer would press it. */
+	center(selector) {
+		return this.eval(`(() => {
+			const element = document.querySelector(${JSON.stringify(selector)});
+			element.scrollIntoView({ block: "center" });
+			const r = element.getBoundingClientRect();
+			return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+		})()`);
+	}
+
+	/**
+	 * A drag, as a mouse does it, through the browser's own drag and drop: pressed on `from`, moved,
+	 * so the browser starts a drag (dragstart, with the data it sets), then over each of `over` (an
+	 * element's middle, or `{ x, y }`) and dropped on the last (dragenter, dragover, drop, then
+	 * dragend), unless `drop` is false (the drag stays over the last, for `finish`). The drag's data,
+	 * as the browser took it from dragstart: `{ items, dragOperationsMask }`.
+	 */
+	async drag(from, over, { drop = true } = {}) {
+		await this.send("Input.setInterceptDrags", { enabled: true });
+		const start = await this.center(from);
+		const intercepted = this.once("Input.dragIntercepted");
+		await this.send("Input.dispatchMouseEvent", { type: "mousePressed", x: start.x, y: start.y, button: "left", buttons: 1, clickCount: 1 });
+		await this.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: start.x + 12, y: start.y + 12, button: "left", buttons: 1 });
+		const { data } = await intercepted;
+		let at = start;
+		for (const target of [].concat(over)) {
+			at = typeof target === "string" ? await this.center(target) : target;
+			await this.send("Input.dispatchDragEvent", { type: "dragEnter", x: at.x, y: at.y, data });
+			await this.send("Input.dispatchDragEvent", { type: "dragOver", x: at.x, y: at.y, data });
+		}
+		this.dragging = { data, at };
+		if (drop) await this.finish();
+		return data;
+	}
+
+	/** The drag `drag` left over its last place, dropped there (or, `cancel`, called off). */
+	async finish({ cancel = false } = {}) {
+		const { data, at } = this.dragging;
+		this.dragging = null;
+		await this.send("Input.dispatchDragEvent", { type: cancel ? "dragCancel" : "drop", x: at.x, y: at.y, data });
+		await this.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: at.x, y: at.y, button: "left", buttons: 0, clickCount: 1 });
+		await this.send("Input.setInterceptDrags", { enabled: false });
 	}
 
 	async goto(url) {

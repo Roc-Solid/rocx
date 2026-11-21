@@ -141,7 +141,11 @@ test("on: a component's handlers are effects, given what the event says", () => 
 	assert.match(refused(`x = <b on:click />`), /on:click needs \{a handler\}/);
 	assert.match(refused(`x = <b on:click?={a} />`), /takes \{a handler\}/);
 	assert.match(refused(`x = <b on:Click={a} />`), /write on:event=\{a handler\}/);
-	assert.match(refused(`x = <b on:input.files={a} />`), /takes .value, .checked or .key, or a key's name \(.Enter, .ArrowUp, .w\), not .files/);
+	assert.match(refused(`x = <b on:input.files={a} />`), /takes .value, .checked or .key, a key's name \(.Enter, .ArrowUp, .w\), or .prevent, not .files/);
+	// Drag and drop are events as any other; `.prevent` takes over what the browser would do.
+	assert.equal(component(`x = <li draggable="true" on:dragstart={start!} on:dragend={stop!}>a</li>`), `x = Html.element("li", [Html.attr("draggable", "true"), Html.on("dragstart", start!), Html.on("dragend", stop!),], [Html.text("a"),])`);
+	assert.equal(component(`x = <ul on:dragenter={over!} on:dragleave={out!} on:drop={|| put!(day)} on:drop.value={dropped!} />`), `x = Html.element("ul", [Html.on("dragenter", over!), Html.on("dragleave", out!), Html.on("drop", || put!(day)), Html.on_value("drop", dropped!),], [])`);
+	assert.equal(component(`x = <a href="/next" on:click.prevent={go!}>Next</a>`), `x = Html.element("a", [Html.attr("href", "/next"), Html.on_prevent("click", go!),], [Html.text("Next"),])`);
 	assert.match(refused(`x = <b on:input.constructor={a} />`), /not .constructor/);
 	assert.match(refused(`x = <div on:frame={tick!} />`), /frames are on:frame.ms=\{…\}/);
 	assert.match(refused(`x = <div on:click.ms={tick!} />`), /frames are on:frame.ms/);
@@ -232,16 +236,20 @@ test("components: a hole or attribute that calls nothing named with ! is static"
 	assert.equal(reactive(`x = <Heading text!={user.name} level={2} />`), `x = Html.component(|| heading!({ text!: || user.name, level: 2, }))`);
 });
 
-test("components: transition, transition:in and transition:out are a Transition the element plays, computed if it reads anything", () => {
+test("components: transition, transition:in, transition:out and transition:move are a Transition the element plays, computed if it reads anything", () => {
 	const reactive = (source) => transpile(source, "T.rocx").replace(/\n\n# rocx: generated from[^\n]*\n$/, "");
 	assert.equal(
 		reactive(`x = <li transition={Transition.fade} transition:in={Transition.fly({ x: 0.0, y: 8.0 })} transition:out={Transition.fade.ms(100)}>Hi</li>`),
 		`x = Html.element("li", [Html.transition(Both, Transition.fade), Html.transition(In, Transition.fly({ x: 0.0, y: 8.0 })), Html.transition(Out, Transition.fade.ms(100)),], [Html.text("Hi"),])`,
 	);
 	assert.equal(reactive(`x = <rect transition:out={Transition.grow(if (bar!().value < 0.0) Top else Bottom)} />`), `x = Html.element("rect", [Html.transition_of(Out, || Transition.grow(if (bar!().value < 0.0) Top else Bottom)),], [])`);
+	// How it moves, with the key that makes it the same element in another list.
+	assert.equal(reactive(`x = <li key={card.id} transition:move={Transition.glide}>Hi</li>`), `x = Html.element("li", [Html.key(card.id), Html.transition(Move, Transition.glide),], [Html.text("Hi"),])`);
+	assert.equal(reactive(`x = <li key={card!().id} transition:move={Transition.glide}>Hi</li>`), `x = Html.element("li", [Html.key_of(|| card!().id), Html.transition(Move, Transition.glide),], [Html.text("Hi"),])`);
+	assert.equal(reactive(`x = <li transition:move={if (fast!()) Transition.glide.ms(100) else Transition.glide}>Hi</li>`), `x = Html.element("li", [Html.transition_of(Move, || if (fast!()) Transition.glide.ms(100) else Transition.glide),], [Html.text("Hi"),])`);
 	// A component's prop of that name is its own.
 	assert.equal(reactive(`x = <Card transition={t} />`), `x = Html.component(|| card!({ transition: t, }))`);
-	assert.match(failure(`x = <li transition:fade={Transition.fade}></li>`).reason, /write transition=\{…\} \(both ways\), transition:in=\{…\} or transition:out=\{…\}/);
+	assert.match(failure(`x = <li transition:fade={Transition.fade}></li>`).reason, /write transition=\{…\} \(both ways\), transition:in=\{…\}, transition:out=\{…\} or transition:move=\{…\}/);
 	assert.throws(() => reactive(`x = <li transition="fade"></li>`), /transition needs \{a Transition\}: write transition=\{Transition\.fade\}/);
 	assert.throws(() => reactive(`x = <li transition:out></li>`), /transition:out needs \{a Transition\}/);
 	assert.throws(() => reactive(`x = <li transition?={on}></li>`), /transition needs \{a Transition\}/);
