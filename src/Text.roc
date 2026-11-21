@@ -153,10 +153,11 @@ Text := [].{
 	## How many bytes the JavaScript whitespace character ending at `end` has, or 0.
 	space_before : List(U8), U64 -> U64
 	space_before = |bytes, end| {
-		b = Text.at(bytes, end - 1)
 		if end == 0 {
-			0
-		} else if b == ' ' or (b >= 0x09 and b <= 0x0D) {
+			return 0
+		}
+		b = Text.at(bytes, end - 1)
+		if b == ' ' or (b >= 0x09 and b <= 0x0D) {
 			1
 		} else if end >= 2 and Text.space_at(bytes, end - 2) == 2 {
 			2
