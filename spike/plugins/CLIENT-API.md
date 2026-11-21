@@ -5,7 +5,8 @@
 >
 > **Decided (the user, 2026-11-21):** A, plugins listed in the program; two routes at one path stop
 > the server at start, naming both; a plugin reads its documented environment variables unless the
-> app passes a function. Open: questions 4 and 5 below, and the package author's side.
+> app passes a function. Open: questions 4 and 5 below. The package author's side and the platform's
+> are specified in `DESIGN.md`.
 
 ## Why
 
