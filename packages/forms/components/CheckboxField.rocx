@@ -1,0 +1,58 @@
+import pf.Html
+import pf.For
+import LiveForm
+
+## A box to tick for a field of a `LiveForm` (`Form.checkbox`), its label beside it and its issues
+## under it, with the same attributes and ARIA as a `TextField`.
+##
+##     <CheckboxField live={live} name="terms" label="I accept the terms" />
+CheckboxField := [].{
+	view! : { live : LiveForm, name : Str, label : Str } => Html
+	view! = |{ live, name, label }| {
+		id = LiveForm.field_id(name)
+		said = "${id}-issues"
+		<div class="field" class:invalid={live.invalid!(name)}>
+			<label class="box">
+				<input
+					id={id}
+					type="checkbox"
+					name={name}
+					value="on"
+					checked?={live.checked!(name, "on")}
+					required?={live.attributes(name).required}
+					aria-invalid={if (live.invalid!(name)) "true" else "false"}
+					aria-describedby??={if (live.invalid!(name)) said else ""}
+					on:change.checked={|ticked| live.toggle!(name, "on", ticked)}
+					on:blur={|| live.leave!(name)}
+				/>
+				{label}
+			</label>
+			<ul id={said} class="issues" aria-live="polite">
+				<For each!={live.issues!(name)} keyed={|issue| issue.message}>
+					{|issue!, _| <li>{issue!().message}</li>}
+				</For>
+			</ul>
+		</div>
+	}
+
+	<style>
+		.field {
+			margin-block: 0 0.5rem;
+		}
+
+		.box {
+			display: flex;
+			gap: 0.5rem;
+			align-items: center;
+		}
+
+		/* A line kept for an issue, as a text field's: one that shows moves nothing under it. */
+		.issues {
+			min-height: 1lh;
+			margin: 0.25rem 0 0;
+			padding: 0;
+			list-style: none;
+			color: var(--form-invalid, #b3261e);
+		}
+	</style>
+}

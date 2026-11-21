@@ -1,0 +1,71 @@
+import pf.Html
+import pf.For
+import pf.Show
+import LiveForm
+
+## Once a `LiveForm` has been sent and has issues, a list of them above it, each a link to its
+## field (the form's own issues, at `""`, as they are), under `title`: so someone who can't see the
+## whole form at once learns what to fix and goes there. A screen reader reads it out (`role="alert"`).
+##
+##     <IssueSummary live={live} title="Fix these, then send it again" labels={[("name", "Name")]} />
+##
+## `labels` are the fields' labels, by name: a link says which field it is about ("Name: Fill this
+## in"), since a message alone ("Fill this in") may be several fields'. A field with none is its
+## message alone.
+IssueSummary := [].{
+	Props := { live : LiveForm, title : Str, labels : List((Str, Str)) ?? [] }
+
+	view! : IssueSummary.Props => Html
+	view! = |{ live, title, labels }|
+		<Show when!={live.sent!() and !live.all_issues!().is_empty()}>
+			<div class="issue-summary" role="alert">
+				<p class="title">{title}</p>
+				<ul>
+					<For each!={live.all_issues!().keep_if(|issue| issue.field.is_empty())} keyed={|issue| issue.message}>
+						{|issue!, _| <li>{issue!().message}</li>}
+					</For>
+					<For each!={live.all_issues!().drop_if(|issue| issue.field.is_empty())} keyed={|issue| "${issue.field}: ${issue.message}"}>
+						{|issue!, _| <li><a href={"#${LiveForm.field_id(issue!().field)}"}>{IssueSummary.said(issue!(), labels)}</a></li>}
+					</For>
+				</ul>
+			</div>
+		</Show>
+
+	## An issue as a link says it: its field's label first, when `labels` has one (a list item's,
+	## `tags[1]`, is its list's).
+	said : { field : Str, message : Str, .. }, List((Str, Str)) -> Str
+	said = |issue, labels| {
+		field =
+			match issue.field.split_first("[") {
+				Ok({ before, .. }) => before
+				Err(_) => issue.field
+			}
+		match labels.find_first(|(name, _)| name == field) {
+			Ok((_, label)) => "${label}: ${issue.message}"
+			Err(_) => issue.message
+		}
+	}
+
+	<style>
+		.issue-summary {
+			margin-block: 0 1.5rem;
+			padding: 0.75rem 1rem;
+			border: 2px solid var(--form-invalid, #b3261e);
+			border-radius: var(--form-radius, 4px);
+		}
+
+		.title {
+			margin: 0 0 0.5rem;
+			font-weight: 600;
+		}
+
+		ul {
+			margin: 0;
+			padding-inline-start: 1.25rem;
+		}
+
+		a {
+			color: var(--form-invalid, #b3261e);
+		}
+	</style>
+}

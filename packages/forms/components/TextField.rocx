@@ -1,0 +1,92 @@
+import pf.Html
+import pf.For
+import LiveForm
+
+## A field of a `LiveForm` to type in: its label, its input, and its issues under it. The input
+## has the attributes its value's checks give a browser (`type="email"`, `required`, `minlength`,
+## `pattern`, `min`…), so a browser without the runtime checks it the same way, and it says when it
+## is invalid (`aria-invalid`) and where why is written (`aria-describedby`), which a screen reader
+## reads with it. The form's `novalidate` leaves the saying to these.
+##
+##     <TextField live={live} name="email" label="Email" autocomplete="email" />
+##
+## `hint` is said under the label (and read with the input); `type` is the input's own, for one its
+## checks don't give (`tel`, `search`); `autocomplete`, what a browser may fill it with. A `Secret`
+## (a password) is never written back into the page.
+TextField := [].{
+	Props := { live : LiveForm, name : Str, label : Str, hint : Str ?? "", type : Str ?? "", autocomplete : Str ?? "" }
+
+	view! : TextField.Props => Html
+	view! = |{ live, name, label, hint, type, autocomplete }| {
+		id = LiveForm.field_id(name)
+		said = "${id}-issues"
+		told = "${id}-hint"
+		attributes = live.attributes(name)
+		described! = || Str.join_with([if (hint.is_empty()) "" else told, if (live.invalid!(name)) said else ""].keep_if(|part| !part.is_empty()), " ")
+		<div class="field" class:invalid={live.invalid!(name)}>
+			<label for={id}>{label}</label>
+			<p id={told} class="hint" hidden?={hint.is_empty()}>{hint}</p>
+			<input
+				id={id}
+				name={name}
+				type={if (type.is_empty()) attributes.type else type}
+				autocomplete??={autocomplete}
+				value={if (attributes.type == "password") "" else live.value!(name)}
+				required?={attributes.required}
+				minlength??={attributes.minlength}
+				maxlength??={attributes.maxlength}
+				pattern??={attributes.pattern}
+				min??={attributes.min}
+				max??={attributes.max}
+				step??={attributes.step}
+				aria-invalid={if (live.invalid!(name)) "true" else "false"}
+				aria-describedby??={described!()}
+				on:input.value={|typed| live.input!(name, typed)}
+				on:blur={|| live.leave!(name)}
+			/>
+			<ul id={said} class="issues" aria-live="polite">
+				<For each!={live.issues!(name)} keyed={|issue| issue.message}>
+					{|issue!, _| <li>{issue!().message}</li>}
+				</For>
+			</ul>
+		</div>
+	}
+
+	<style>
+		.field {
+			display: grid;
+			gap: 0.25rem;
+			margin-block: 0 0.5rem;
+		}
+
+		label {
+			font-weight: 600;
+		}
+
+		.hint {
+			margin: 0;
+			color: var(--form-muted, color-mix(in srgb, currentColor 65%, transparent));
+		}
+
+		input {
+			font: inherit;
+			padding: 0.4rem 0.5rem;
+			border: 1px solid var(--form-border, color-mix(in srgb, currentColor 40%, transparent));
+			border-radius: var(--form-radius, 4px);
+		}
+
+		.invalid input {
+			border-color: var(--form-invalid, #b3261e);
+		}
+
+		/* A line kept for an issue: one that shows as the field is left (on a press of Send, say)
+		   moves nothing under it, so the press still lands where it was aimed. */
+		.issues {
+			min-height: 1lh;
+			margin: 0;
+			padding: 0;
+			list-style: none;
+			color: var(--form-invalid, #b3261e);
+		}
+	</style>
+}

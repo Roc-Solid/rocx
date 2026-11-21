@@ -1,0 +1,270 @@
+import pf.Solid exposing [create_effect!, create_memo!, create_signal!]
+import pf.Router exposing [use_submission!]
+import pf.Endpoint
+import pf.Server
+import forms.Form
+import forms.Value
+import forms.Issues
+
+## A form in a component, checked as it is typed, with the same `Form` its endpoint reads it
+## with: what is typed in each field, which fields were left, whether it was sent, and what the
+## endpoint refused, and from those, the issues to show at each field.
+##
+##     live = LiveForm.of!(Signup.form, Api.post_signup({}))
+##     <form method="post" action={live.url()} novalidate>
+##         <TextField live={live} name="email" label="Email" />
+##     </form>
+##
+## A field's issues show once it has been left (`leave!`, on blur), and then as it is typed; all of
+## them once the form has been sent. The endpoint's issues show at their fields until a field is
+## typed in again, the browser's own from then on. The form goes to the endpoint whatever the
+## browser thinks of it (the endpoint has the last word, and refuses with the same issues), with
+## the runtime as without it (`Router.use_submission!`): after a plain post, what was typed and the
+## endpoint's issues come back with the page.
+LiveForm := {
+	url : Str,
+	check : List({ name : Str, value : Str }) -> List(Issues.Issue),
+	attributes_of : Str -> Value.Attributes,
+	typed : () => List({ name : Str, value : Str }),
+	set_typed : List({ name : Str, value : Str }) => {},
+	left : () => List(Str),
+	set_left : List(Str) => {},
+	sent : () => Bool,
+	set_sent : Bool => {},
+	edited : () => List(Str),
+	set_edited : List(Str) => {},
+	refused : () => List(Issues.Issue),
+	pending : () => Bool,
+}.{
+
+	## The live form for `form`, which posts to `endpoint`. Call it in a component, as a signal is
+	## made: once.
+	of! : Form(a), Endpoint(context, arg, result) => LiveForm
+	of! = |form, endpoint| {
+		submission = use_submission!(endpoint)
+		action = Endpoint.url_of(endpoint)
+		# After a plain post, the page comes back with what was typed, in the flash: a secret
+		# (a password) is typed again.
+		flashed =
+			match Server.flash!({}) {
+				Ok(flash) => if (flash.url == action) Ok(flash.fields.drop_if(|field| form.secrets().contains(field.name))) else Err(NoFlash)
+				Err(NoFlash) => Err(NoFlash)
+			}
+		(typed!, set_typed!) = create_signal!(flashed ?? [])
+		(left!, set_left!) = create_signal!([])
+		(was_sent!, set_sent!) = create_signal!(flashed.is_ok())
+		(edited!, set_edited!) = create_signal!([])
+		refused! = create_memo!(
+			||
+				match submission.error!() {
+					Ok(problem) => Issues.from_problem(problem)
+					Err(NoError) => []
+				},
+		)
+		waiting! = || submission.pending!()
+		# Sent with the runtime: every issue shows, and the endpoint's answer is the latest word.
+		create_effect!(
+			waiting!,
+			|pending|
+				if pending {
+					set_sent!(Bool.True)
+					set_edited!([])
+				} else {
+					{}
+				},
+		)
+		{
+			url: action,
+			check: |posted| form.issues(posted),
+			attributes_of: |name| form.attributes(name),
+			typed: typed!,
+			set_typed: set_typed!,
+			left: left!,
+			set_left: set_left!,
+			sent: was_sent!,
+			set_sent: set_sent!,
+			edited: edited!,
+			set_edited: set_edited!,
+			refused: refused!,
+			pending: waiting!,
+		}
+	}
+
+	## A live form that posts nowhere: checked as it is typed, as `of!`'s is, with no endpoint. For
+	## a form whose `on:submit` handler shows every issue (`show_all!`) and reads what is typed
+	## (`form.parse(live.fields!())`): one it sends itself (`Endpoint.send!`), or one only the
+	## browser reads. Its `url()` is `""`.
+	local! : Form(a) => LiveForm
+	local! = |form| {
+		(typed!, set_typed!) = create_signal!([])
+		(left!, set_left!) = create_signal!([])
+		(was_sent!, set_sent!) = create_signal!(Bool.False)
+		(edited!, set_edited!) = create_signal!([])
+		{
+			url: "",
+			check: |posted| form.issues(posted),
+			attributes_of: |name| form.attributes(name),
+			typed: typed!,
+			set_typed: set_typed!,
+			left: left!,
+			set_left: set_left!,
+			sent: was_sent!,
+			set_sent: set_sent!,
+			edited: edited!,
+			set_edited: set_edited!,
+			refused: || [],
+			pending: || Bool.False,
+		}
+	}
+
+	## Every field's issues show from now on, as after a send: from a form's `on:submit` (which
+	## the runtime doesn't send), before the handler reads it.
+	show_all! : LiveForm => {}
+	show_all! = |live| {
+		set_sent! = live.set_sent
+		set_sent!(Bool.True)
+	}
+
+	## What is typed, as the form would post it: `form.parse(live.fields!())` reads it in a handler.
+	fields! : LiveForm => List({ name : Str, value : Str })
+	fields! = |live| {
+		typed! = live.typed
+		typed!()
+	}
+
+	## The URL the form posts to: its `action`.
+	url : LiveForm -> Str
+	url = |live| live.url
+
+	## What a browser's constraint attributes say of the field `name` (`Value.Attributes`).
+	attributes : LiveForm, Str -> Value.Attributes
+	attributes = |live, name| {
+		of = live.attributes_of
+		of(name)
+	}
+
+	## What is typed in the field `name`: its value, or `""`.
+	value! : LiveForm, Str => Str
+	value! = |live, name| {
+		typed! = live.typed
+		match typed!().find_first(|field| field.name == name) {
+			Ok(found) => found.value
+			Err(_) => ""
+		}
+	}
+
+	## Every value of the field `name` (a list's: checkboxes that share a name).
+	values! : LiveForm, Str => List(Str)
+	values! = |live, name| {
+		typed! = live.typed
+		typed!().keep_if(|field| field.name == name).map(|field| field.value)
+	}
+
+	## Whether the box `name` is ticked: with `value`, for one of several boxes that share a name.
+	checked! : LiveForm, Str, Str => Bool
+	checked! = |live, name, value| LiveForm.values!(live, name).contains(value)
+
+	## From a field's `on:input.value`: what is typed in it now.
+	input! : LiveForm, Str, Str => {}
+	input! = |live, name, value| {
+		typed! = live.typed
+		set_typed! = live.set_typed
+		set_typed!(typed!().drop_if(|field| field.name == name).append({ name, value }))
+		LiveForm.edit!(live, name)
+	}
+
+	## From a box's `on:change.checked`: ticked with `value` (`"on"` for a lone box) or not.
+	toggle! : LiveForm, Str, Str, Bool => {}
+	toggle! = |live, name, value, ticked| {
+		typed! = live.typed
+		set_typed! = live.set_typed
+		others = typed!().drop_if(|field| field.name == name and field.value == value)
+		set_typed!(if (ticked) others.append({ name, value }) else others)
+		LiveForm.edit!(live, name)
+	}
+
+	## From a field's `on:blur`: it has been left, so its issues show from now on.
+	leave! : LiveForm, Str => {}
+	leave! = |live, name| {
+		left! = live.left
+		set_left! = live.set_left
+		if !left!().contains(name) {
+			set_left!(left!().append(name))
+		}
+	}
+
+	## The issues to show at the field `name` now: the endpoint's, until it is typed in again; and
+	## the browser's, once it has been left or the form sent. Its items' too (`tags[1]`).
+	issues! : LiveForm, Str => List(Issues.Issue)
+	issues! = |live, name| {
+		typed! = live.typed
+		left! = live.left
+		was_sent! = live.sent
+		edited! = live.edited
+		refused! = live.refused
+		check = live.check
+		field = base_name(name)
+		server = if (edited!().contains(field)) [] else Issues.under(refused!(), name)
+		shown = was_sent!() or left!().contains(field)
+		browser = if (shown) Issues.under(check(typed!()), name) else []
+		server.concat(browser.drop_if(|issue| server.any(|said| said.field == issue.field and said.code == issue.code)))
+	}
+
+	## Whether the field `name` has issues to show: what its `aria-invalid` says.
+	invalid! : LiveForm, Str => Bool
+	invalid! = |live, name| !LiveForm.issues!(live, name).is_empty()
+
+	## Every issue to show, field by field, and the form's own (at `""`) first: for a summary above
+	## the form.
+	all_issues! : LiveForm => List(Issues.Issue)
+	all_issues! = |live| {
+		typed! = live.typed
+		check = live.check
+		refused! = live.refused
+		fields = [""].concat(check(typed!()).concat(refused!()).map(|issue| issue.field))
+		names = fields.fold([], |kept, field| if (kept.contains(field)) kept else kept.append(field))
+		var $shown = []
+		for field in names {
+			$shown = $shown.concat(LiveForm.issues!(live, field).keep_if(|issue| issue.field == field))
+		}
+		$shown
+	}
+
+	## Whether the form has been sent (with the runtime, or posted and come back): every issue
+	## shows from then on.
+	sent! : LiveForm => Bool
+	sent! = |live| {
+		was_sent! = live.sent
+		was_sent!()
+	}
+
+	## The `id` of the field `name`'s input (`field-email`), which its label and a summary's link
+	## point at; a list item's is its list's.
+	field_id : Str -> Str
+	field_id = |name| "field-${base_name(name)}"
+
+	## Whether the form is on its way to the endpoint.
+	pending! : LiveForm => Bool
+	pending! = |live| {
+		waiting! = live.pending
+		waiting!()
+	}
+
+	## A field typed in: the endpoint's issues there no longer stand.
+	edit! : LiveForm, Str => {}
+	edit! = |live, name| {
+		edited! = live.edited
+		set_edited! = live.set_edited
+		if !edited!().contains(name) {
+			set_edited!(edited!().append(name))
+		}
+	}
+}
+
+## A list item's field (`tags[1]`) as the list's (`tags`): the name its inputs share.
+base_name : Str -> Str
+base_name = |field|
+	match field.split_first("[") {
+		Ok({ before, .. }) => before
+		Err(_) => field
+	}
