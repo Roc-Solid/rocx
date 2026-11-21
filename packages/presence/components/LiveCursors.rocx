@@ -1,0 +1,99 @@
+import pf.Html
+import pf.For
+import pf.Transition
+import presence.Cursors
+
+## Others' cursors over an area: what is inside (`children`), and over it, each cursor where its
+## member's pointer is, an arrow in their colour with their name beside it. A place is a share of
+## the area (`Cursors.place`), so the area may be any size on each screen. A cursor glides between
+## the places it is sent (sends are throttled: `Throttle`), fades when idle, and fades out when its
+## member leaves. The cursors take no pointer events: what is under them is clicked as before.
+LiveCursors := [].{
+
+	## A cursor, as drawn: whose, their name and colour, where (shares of the area), and whether it
+	## has been still a while.
+	Pointer : { key : Str, name : Str, color : Str, x : Dec, y : Dec, idle : Bool }
+
+	view! : { cursors! : () => List(LiveCursors.Pointer), children : List(Html) } => Html
+	view! = |{ cursors!, children }|
+		<div class="live-cursors">
+			{...children}
+			<div class="cursor-layer" aria-hidden="true">
+				<For each!={cursors!()} keyed={|cursor| cursor.key}>
+					{|cursor!, _|
+						<div
+							class="cursor"
+							class:idle={cursor!().idle}
+							style:--x={Cursors.percent(cursor!().x)}
+							style:--y={Cursors.percent(cursor!().y)}
+							style:--cursor-color={cursor!().color}
+							transition={Transition.fade}
+						>
+							<svg viewBox="0 0 16 20" width="16" height="20"><path d="M1 1 L1 16 L5 12 L8 19 L10.5 18 L7.5 11 L13 11 Z" /></svg>
+							<span class="cursor-name">{cursor!().name}</span>
+						</div>}
+				</For>
+			</div>
+		</div>
+
+	<story name="Two cursors">
+		<LiveCursors cursors!={|| [{ key: "ada", name: "Ada", color: "#b4235a", x: 0.25, y: 0.3, idle: Bool.False }, { key: "alan", name: "Alan", color: "#1f62b8", x: 0.7, y: 0.6, idle: Bool.True }]}>
+			<div style="height: 12rem; border: 1px dashed currentColor; border-radius: 8px"></div>
+		</LiveCursors>
+	</story>
+
+	<style>
+		.live-cursors {
+			position: relative;
+		}
+
+		.cursor-layer {
+			position: absolute;
+			inset: 0;
+			overflow: hidden;
+			pointer-events: none;
+		}
+
+		.cursor {
+			position: absolute;
+			left: var(--x);
+			top: var(--y);
+			display: flex;
+			align-items: flex-start;
+			gap: 2px;
+			transition: left var(--cursor-glide, 0.12s) linear, top var(--cursor-glide, 0.12s) linear, opacity 0.3s;
+			will-change: left, top;
+		}
+
+		.cursor svg {
+			fill: var(--cursor-color, #4f6bed);
+			stroke: #fff;
+			stroke-width: 1.2;
+			filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.25));
+		}
+
+		.cursor-name {
+			margin-top: 14px;
+			padding: 1px 6px;
+			border-radius: 4px;
+			background: var(--cursor-color, #4f6bed);
+			color: #fff;
+			/* Longhands, as in AvatarStack: with no --cursor-font, font-family inherits. */
+			font-family: var(--cursor-font);
+			font-size: 11px;
+			font-weight: 600;
+			line-height: 1.4;
+			white-space: nowrap;
+		}
+
+		.cursor.idle {
+			opacity: 0.35;
+		}
+
+		@media (prefers-reduced-motion: reduce) {
+			.cursor {
+				transition: opacity 0.3s;
+			}
+		}
+	</style>
+}

@@ -1,0 +1,217 @@
+import pf.Solid exposing [create_effect!, create_signal!, set_interval!]
+import presence.Cursors
+import presence.Mirror
+import presence.Room
+import presence.Typing
+import presence.Typist
+import presence.Wire
+
+## The browser's side of presence, as Solid primitives: each is called in a component (as
+## `create_signal!` is), keeps its state in signals the components read, and is fed what a stream
+## hears, however it is carried (an endpoint's events today; a channel's messages once there are
+## channels). Typing and cursors expire on a clock of their own: a timer that ticks every quarter
+## second, and only while something can expire.
+##
+## Call a store once a handler. A write applies when its handler is done (Solid 2.0's batching), so
+## a second call in the same handler sees the store as it was before the first, and the first is
+## lost: moving two cursors in one handler moves only the second. A stream hands each event to a
+## handler of its own, so a page fed by one never does; a page that makes several events at once
+## sends each from a handler of its own (`set_timeout!(0, …)`).
+Presence := [].{
+
+	## A room, as its stream says (`Wire.Event`, from `PresenceServer.stream` today): who is here
+	## (`members!`, `synced!`), this page's own key and tab (`me!`, from the stream's `Welcome`), the
+	## keys of who is typing (`typing!`), and others' cursors (`cursors!`). `heard!` takes each event,
+	## `lost!` says the stream dropped. Its own typing and cursor come back from the room, and are
+	## left out; one who leaves stops typing, and their cursor goes. A message after a missed one calls
+	## `on_gap!`.
+	create_room! : (() => {}) => { members! : () => List(Room.Here(meta)), synced! : () => Bool, me! : () => { key : Str, tab : Str }, typing! : () => List(Str), cursors! : () => List(Cursors.Shown), heard! : Wire.Event(meta) => {}, lost! : () => {} }
+		where [meta.is_eq : meta, meta -> Bool]
+	create_room! = |on_gap!| {
+		presence = Presence.create_presence!(on_gap!)
+		typing = Presence.create_typing!(typing_ttl)
+		cursors = Presence.create_cursors!({ idle: cursor_idle, forget: cursor_forget })
+		(me!, set_me!) = create_signal!({ key: "", tab: "" })
+		mine! = |key| key == me!().key
+		heard! = |event|
+			match event {
+				Welcome(you) => set_me!(you)
+				Presence(message) => {
+					(presence.receive!)(message)
+					match message {
+						Delta(delta) =>
+							match delta.change {
+								Left(here) => {
+									(typing.stopped!)(here.key)
+									(cursors.gone!)(here.key)
+								}
+								_ => {}
+							}
+						Snapshot(_) => {}
+					}
+				}
+				Typing(said) => if (mine!(said.key)) {} else if (said.typing) (typing.started!)(said.key) else (typing.stopped!)(said.key)
+				Moved(move) => if (mine!(move.key)) {} else (cursors.moved!)(move)
+				Away(key) => (cursors.gone!)(key)
+			}
+		{
+			members!: presence.members!,
+			synced!: presence.synced!,
+			me!,
+			typing!: typing.who!,
+			cursors!: cursors.shown!,
+			heard!,
+			lost!: presence.lost!,
+		}
+	}
+
+	## Who is here, as a presence stream says: `members!` (in the order they came), `synced!`
+	## (whether the copy follows the server), `receive!` for each message the stream sends, and
+	## `lost!` for when it drops (who was here stays on show until the next snapshot). A message
+	## after a missed one calls `on_gap!`, which should get a snapshot again (reconnect).
+	create_presence! : (() => {}) => { members! : () => List(Room.Here(meta)), synced! : () => Bool, receive! : Mirror.Message(meta) => {}, lost! : () => {} }
+		where [meta.is_eq : meta, meta -> Bool]
+	create_presence! = |on_gap!| {
+		(mirror!, set_mirror!) = create_signal!(Mirror.empty({}))
+		receive! = |message|
+			match mirror!().receive(message) {
+				Ok((next, _)) => set_mirror!(next)
+				Err(Gap) => {
+					set_mirror!(mirror!().unsynced())
+					on_gap!()
+				}
+			}
+		{
+			members!: || mirror!().members(),
+			synced!: || mirror!().is_synced(),
+			receive!,
+			lost!: || set_mirror!(mirror!().unsynced()),
+		}
+	}
+
+	## Who is typing, as others' pings say: `who!` (their keys, in the order they started),
+	## `started!(key)` for a ping, `stopped!(key)` for a stop (or a member who left). A ping lasts
+	## `ttl` milliseconds.
+	create_typing! : U64 => { who! : () => List(Str), started! : Str => {}, stopped! : Str => {} }
+	create_typing! = |ttl| {
+		(now!, set_now!) = create_signal!(0)
+		(typing!, set_typing!) = create_signal!(Typing.new(ttl))
+		(ticking!, set_ticking!) = create_signal!(Bool.False)
+		tick! = || {
+			next = now!() + tick
+			set_now!(next)
+			match typing!().deadline() {
+				Ok(at) if at <= next => {
+					swept = typing!().sweep(next)
+					set_typing!(swept)
+					if (swept.deadline().is_err()) set_ticking!(Bool.False) else {}
+				}
+				_ => {}
+			}
+		}
+		create_effect!(|| ticking!(), |on| clock!(on, tick!))
+		{
+			who!: || typing!().who(now!()),
+			started!: |key| {
+				set_typing!(typing!().started(key, now!()))
+				if (ticking!()) {} else set_ticking!(Bool.True)
+			},
+			stopped!: |key| set_typing!(typing!().stopped(key)),
+		}
+	}
+
+	## This page's typing, told to others with `send!`: `typed!()` on each key (a ping when typing
+	## starts, then at most every `every` milliseconds), `done!()` when the text is sent or cleared
+	## or the field is left (a stop, if it had pinged).
+	create_typist! : U64, ([Started, Stopped] => {}) => { typed! : () => {}, done! : () => {} }
+	create_typist! = |every, send!| {
+		(now!, set_now!) = create_signal!(0)
+		(typist!, set_typist!) = create_signal!(Typist.new(every))
+		(ticking!, set_ticking!) = create_signal!(Bool.False)
+		tick! = || {
+			next = now!() + tick
+			set_now!(next)
+			rested = typist!().rest(next)
+			if rested.is_pinging() {
+				{}
+			} else {
+				set_typist!(rested)
+				set_ticking!(Bool.False)
+			}
+		}
+		create_effect!(|| ticking!(), |on| clock!(on, tick!))
+		{
+			typed!: || {
+				(next, ping) = typist!().typed(now!())
+				set_typist!(next)
+				if ping {
+					send!(Started)
+					if (ticking!()) {} else set_ticking!(Bool.True)
+				} else {
+					{}
+				}
+			},
+			done!: || {
+				(next, stop) = typist!().done()
+				set_typist!(next)
+				if (stop) send!(Stopped) else {}
+			},
+		}
+	}
+
+	## Others' cursors, as their moves say: `shown!` (each idle once still for `idle` milliseconds),
+	## `moved!` for a move, `gone!(key)` for one whose pointer left the area, or who left. One still
+	## for `forget` milliseconds is forgotten.
+	create_cursors! : { idle : U64, forget : U64 } => { shown! : () => List(Cursors.Shown), moved! : Cursors.Move => {}, gone! : Str => {} }
+	create_cursors! = |{ idle, forget }| {
+		(now!, set_now!) = create_signal!(0)
+		(cursors!, set_cursors!) = create_signal!(Cursors.none)
+		(ticking!, set_ticking!) = create_signal!(Bool.False)
+		tick! = || {
+			next = now!() + tick
+			set_now!(next)
+			swept = cursors!().sweep(next, forget)
+			if swept.count() == cursors!().count() {
+				{}
+			} else {
+				set_cursors!(swept)
+				if (swept.count() == 0) set_ticking!(Bool.False) else {}
+			}
+		}
+		create_effect!(|| ticking!(), |on| clock!(on, tick!))
+		{
+			shown!: || cursors!().shown(now!(), idle),
+			moved!: |move| {
+				set_cursors!(cursors!().moved(move, now!()))
+				if (ticking!()) {} else set_ticking!(Bool.True)
+			},
+			gone!: |key| set_cursors!(cursors!().gone(key)),
+		}
+	}
+}
+
+## How long a typing ping lasts: twice a typist's 3 s (`create_typist!(3000, …)`), and a little
+## more for the way there.
+typing_ttl : U64
+typing_ttl = 7000
+
+## A cursor still for 5 s is idle (faded); one still for 30 s is forgotten.
+cursor_idle : U64
+cursor_idle = 5000
+
+cursor_forget : U64
+cursor_forget = 30000
+
+## A store's clock ticks this often, in milliseconds.
+tick : U64
+tick = 250
+
+## A store's clock: ticking while `on`, stopped (by the effect's cleanup) when not.
+clock! : Bool, (() => {}) => {}
+clock! = |on, tick!|
+	if on {
+		_ = set_interval!(tick, tick!)
+		{}
+	} else {
+		{}
+	}

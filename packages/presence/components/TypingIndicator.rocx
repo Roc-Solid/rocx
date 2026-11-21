@@ -1,0 +1,84 @@
+import pf.Html
+import pf.Show
+import presence.Typing
+
+## Who is typing, as a line under a conversation: three dots that bob, and `Ann is typing…`. It says
+## nothing (and takes no room's worth of change: its line keeps its height) when no one is. A screen
+## reader hears it as it changes (`aria-live`). `say` writes the sentence from the names:
+## `Typing.sentence`, in English, unless the app gives its own.
+TypingIndicator := [].{
+	Props := {
+		names! : () => List(Str),
+		say : (List(Str) -> Str) ?? Typing.sentence,
+	}
+
+	view! : Props => Html
+	view! = |{ names!, say }|
+		<p class="typing-indicator" aria-live="polite">
+			<Show when!={!names!().is_empty()}>
+				<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+				<span class="said">{say(names!())}</span>
+			</Show>
+		</p>
+
+	<story name="One">
+		<TypingIndicator names!={|| ["Ada"]} />
+	</story>
+
+	<story name="Several">
+		<TypingIndicator names!={|| ["Ada", "Alan", "Grace", "Edsger"]} />
+	</story>
+
+	<style>
+		.typing-indicator {
+			display: flex;
+			align-items: center;
+			gap: 0.5em;
+			min-height: 1.5em;
+			margin: 0;
+			color: var(--typing-color, color-mix(in srgb, currentColor 65%, transparent));
+			font-size: var(--typing-size, 0.875em);
+		}
+
+		.dots {
+			display: inline-flex;
+			gap: 0.2em;
+		}
+
+		.dots i {
+			width: 0.4em;
+			height: 0.4em;
+			border-radius: 50%;
+			background: currentColor;
+			animation: typing-bob 1.2s ease-in-out infinite;
+		}
+
+		.dots i:nth-child(2) {
+			animation-delay: 0.15s;
+		}
+
+		.dots i:nth-child(3) {
+			animation-delay: 0.3s;
+		}
+
+		@keyframes typing-bob {
+			0%,
+			60%,
+			100% {
+				transform: translateY(0);
+				opacity: 0.4;
+			}
+
+			30% {
+				transform: translateY(-0.25em);
+				opacity: 1;
+			}
+		}
+
+		@media (prefers-reduced-motion: reduce) {
+			.dots i {
+				animation: none;
+			}
+		}
+	</style>
+}
