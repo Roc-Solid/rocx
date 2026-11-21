@@ -1,0 +1,39 @@
+import pf.Server
+import pf.Endpoint
+import forms.Form
+import forms.Issues
+
+## The forms page's example (site/routes/ecosystem/forms): one schema, which the demo checks in the
+## browser as it is typed, and `post!` reads at an endpoint. In an app, the schema is a module of
+## its own, which a page and a route file both import, and `post!` is the route file's
+## (`routes/signup/+server.roc`). The page renders what `post!` answers, as the site is built.
+FormsSignup := [].{
+	Passwords : { password : Str, confirm : Str }
+
+	Account : { name : Str, email : Str, age : I64, passwords : FormsSignup.Passwords, terms : Bool }
+
+	## A password, typed twice: a form of its own, so the check across the two runs whenever both
+	## can be read, whatever the rest of the form says.
+	passwords : Form(FormsSignup.Passwords)
+	passwords = ({ password: Form.text("password", [Required, MinLength(8), Secret]), confirm: Form.text("confirm", [Required, Secret]) }.Form).check_at("confirm", |p| p.password == p.confirm, NotSame("password"))
+
+	## The sign-up form: each field by the name it is posted as, and its checks, in order.
+	form : Form(FormsSignup.Account)
+	form = {
+		name: Form.text("name", [Trim, Required, MaxLength(80)]),
+		email: Form.text("email", [Trim, Lowercase, Required, Email]),
+		age: Form.int("age", [Min(18), Max(130)]),
+		passwords: FormsSignup.passwords,
+		terms: Form.checkbox("terms", [Required]),
+	}.Form
+
+	## POST /signup: the account, or a 422 with each field's issues, the same the page shows as it
+	## is typed. Its `body` is `{}`: the form reads the body itself, so a box left unticked (which
+	## a browser doesn't send at all) is the form's to judge, not a 400.
+	post! : { request : Server.Request, params : {}, context : c, body : {} } => Try({ welcome : Str }, Endpoint.Refusal)
+	post! = |{ request, .. }|
+		match FormsSignup.form.parse_body(Server.text_of(request)) {
+			Ok(account) => Ok({ welcome: "Welcome, ${account.name}" })
+			Err(issues) => Err(Issues.refusal(issues))
+		}
+}

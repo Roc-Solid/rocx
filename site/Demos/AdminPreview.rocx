@@ -1,0 +1,166 @@
+import admin.Admin
+import admin.Catalog
+import admin.Form
+import admin.Listing
+import admin.Look
+import admin.Paging
+import admin.Sql
+import admin.View
+import AdminRoute
+
+## The admin's pages as the docs show them: rendered with the page, by the package's own `View`,
+## from a made-up catalog (what Postgres's would say of two tables, `books` and `authors`) and
+## made-up rows, with the options the docs show (`AdminRoute.admin`). Nothing here asks a database.
+AdminPreview := [].{
+
+	## The list of books, as a whole HTML document, for a sandboxed frame.
+	list_page : Str
+	list_page = {
+		state = Listing.read(books, Form.fields("table=books"))
+		filters = Admin.filterable(books).map(|column| { column, choices: known_choices(books, column) })
+		body = View.list_page(frame, { shown: books, state, page: Paging.of(23, 8, 1), rows: book_rows, filters, notice: "" })
+		framed(Look.document("Books · Database", body))
+	}
+
+	## A book's form, just saved, as a whole HTML document.
+	row_page : Str
+	row_page = {
+		values = [
+			("id", "21"),
+			("author_id", "3"),
+			("title", "A field guide to clouds"),
+			("state", "published"),
+			("price", "24.90"),
+			("in_print", "true"),
+			("published_at", "2026-03-14T09:30:00"),
+			("blurb", "Cumulus, stratus and the rest,\nwith a chapter on fog."),
+		]
+		body = View.row_page(
+			frame,
+			{
+				shown: books,
+				key: [("id", "21")],
+				values: values.map(|(name, value)| { name, value, null: Bool.False }),
+				options: [{ column: "author_id", options: [("3", "Ines Hart"), ("1", "Mara Quill"), ("2", "Tomas Reed")] }],
+				problem: "",
+				notice: View.notice("saved"),
+			},
+		)
+		framed(Look.document("A field guide to clouds · Database", body))
+	}
+
+	## The query the statements are for.
+	query : Str
+	query = "table=books&q=cloud&f.state=published&sort=-price&page=2"
+
+	## The two statements the list runs for `query`: how many rows there are, then the page's.
+	statements : Str
+	statements = {
+		state = Listing.read(books, Form.fields(AdminPreview.query))
+		conditions = Listing.conditions(books, state)
+		count = Sql.count("public", books.table, conditions)
+		page = Paging.of(120, books.options.per_page, state.page)
+		rows = Sql.rows(
+			"public",
+			books.table,
+			{ columns: Admin.listed(books), whole: Admin.key(books), conditions, order: Listing.order(books, state), limit: page.size, offset: Paging.offset(page), longest: 81 },
+		)
+		Str.join_with(["-- How many rows there are", said(count), "", "-- The page's rows (the count said 120)", said(rows)], "\n")
+	}
+}
+
+## A row as the catalog's statements answer it.
+row : List(Str) -> Catalog.Row
+row = |cells| { cells, nulls: [] }
+
+## Two tables, as `Catalog.read` gets them from Postgres: the tables, their columns, their enums'
+## labels, and their keys and checks.
+catalog : List(Catalog.Table)
+catalog =
+	Catalog.read(
+		"public",
+		{
+			tables: [row(["authors", "3", "People who write books"]), row(["books", "23", ""])],
+			columns: [
+				row(["authors", "id", "bigint", "int8", "N", "false", "true", "false", "", ""]),
+				row(["authors", "name", "text", "text", "S", "false", "false", "false", "", ""]),
+				row(["authors", "email", "character varying(120)", "varchar", "S", "true", "false", "false", "Where to reach them", ""]),
+				row(["authors", "password_hash", "text", "text", "S", "true", "false", "false", "", ""]),
+				row(["books", "id", "bigint", "int8", "N", "false", "true", "false", "", ""]),
+				row(["books", "author_id", "bigint", "int8", "N", "true", "false", "false", "", ""]),
+				row(["books", "title", "text", "text", "S", "false", "false", "false", "", ""]),
+				row(["books", "state", "text", "text", "S", "false", "true", "false", "", "'draft'::text"]),
+				row(["books", "price", "numeric(10,2)", "numeric", "N", "false", "true", "false", "", "0"]),
+				row(["books", "in_print", "boolean", "bool", "B", "false", "true", "false", "", "true"]),
+				row(["books", "published_at", "timestamp with time zone", "timestamptz", "D", "true", "false", "false", "", ""]),
+				row(["books", "blurb", "text", "text", "S", "true", "false", "false", "What the back cover says", ""]),
+			],
+			enums: [],
+			constraints: [
+				row(["authors", "authors_pkey", "p", "id", "", "", "", "1", "PRIMARY KEY (id)"]),
+				row(["books", "books_author_id_fkey", "f", "author_id", "authors", "public", "id", "1", "FOREIGN KEY (author_id) REFERENCES authors(id)"]),
+				row(["books", "books_pkey", "p", "id", "", "", "", "1", "PRIMARY KEY (id)"]),
+				row(["books", "books_state_check", "c", "state", "", "", "", "1", "CHECK ((state = ANY (ARRAY['draft'::text, 'published'::text, 'out of print'::text])))"]),
+			],
+		},
+	)
+
+## The tables the docs' admin shows, with its options.
+shown_tables : List(Admin.Shown)
+shown_tables = Admin.showing(AdminRoute.admin, catalog)
+
+books : Admin.Shown
+books = Admin.find(shown_tables, "books") ?? Admin.pair({ name: "books", comment: "", estimate: 0, columns: [], key: [] }, { name: "books" })
+
+## What each page knows: the admin's path, someone who may edit, and a form's token.
+frame : View.Frame
+frame = { mount: AdminRoute.admin.mount, title: AdminRoute.admin.title, tables: shown_tables, access: Edit, token: "3f9c0e7a51d24b8e9a6c2d417b0e85f1" }
+
+## The first page of books, as `Sql.rows` reads them: the listed columns, then the key.
+book_rows : List(Catalog.Row)
+book_rows =
+	[
+		["23", "The quiet garden", "1", "published", "18.50"],
+		["22", "Notes on rivers", "2", "draft", "12.00"],
+		["21", "A field guide to clouds", "3", "published", "24.90"],
+		["20", "Small machines", "1", "out of print", "9.99"],
+		["19", "The long winter", "", "draft", "15.00"],
+		["18", "Maps of nowhere", "2", "published", "21.00"],
+		["17", "Bread and salt", "3", "published", "14.25"],
+		["16", "Letters from the coast", "1", "draft", "0.00"],
+	].map(|cells| { cells: cells.append(cells.first() ?? ""), nulls: cells.map(|cell| cell.is_empty()).append(Bool.False) })
+
+## A filter's choices when the column's type says them: a boolean's, a check's or an enum's.
+known_choices : Admin.Shown, Catalog.Column -> List((Str, Str))
+known_choices = |shown, column|
+	match Admin.widget(shown, column) {
+		Checkbox | MaybeBool => [("true", "yes"), ("false", "no")]
+		Choice(values) => values.map(|value| (value, value))
+		_ => []
+	}
+
+## A page in a frame of its own: its links open nowhere (a sandboxed frame opens no window).
+framed : Str -> Str
+framed = |document| document.replace_first("<head>", "<head><base target=\"_blank\">")
+
+## A statement and its parameters, as SQL and a comment.
+said : Sql.Statement -> Str
+said = |statement| {
+	params = statement.params.map_with_index(|param, at| "$${(at + 1).to_str()} = ${param_text(param)}")
+	sql = statement.sql.replace_each(" from ", "\nfrom ").replace_each(" where ", "\nwhere ").replace_each(" order by ", "\norder by ").replace_each(" limit ", "\nlimit ")
+	"${sql}\n-- ${Str.join_with(params, ", ")}"
+}
+
+## A parameter as SQL would write it.
+param_text : Sql.Param -> Str
+param_text = |param|
+	match param {
+		Null => "null"
+		Text(text) => "'${text.replace_each("'", "''")}'"
+		Int(n) => n.to_str()
+		Bool(yes) => if (yes) "true" else "false"
+	}
+
+expect AdminPreview.list_page.contains("<h1>Books</h1>") and AdminPreview.list_page.contains("1–8 of 23")
+expect AdminPreview.row_page.contains("<h1>A field guide to clouds</h1>") and AdminPreview.row_page.contains("Saved.")
+expect AdminPreview.statements.contains("-- $1 = '%cloud%', $2 = 'published'")

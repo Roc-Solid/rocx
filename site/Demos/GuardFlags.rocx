@@ -1,0 +1,49 @@
+import pf.Html
+import guard.Flag
+import guard.Flags
+
+## A feature flag, and who has it on, in production and in development, as `Flags.is_on` decides,
+## with each user's bucket for it (`Flags.bucket`, 0 to 99: in a rollout of 25 when below 25). The
+## server renders the table once, when the site is built.
+GuardFlags := [].{
+
+	## On for ada, for anyone in staff, and for a quarter of everyone else who is signed in. In
+	## development, on for everyone.
+	new_checkout : Flag
+	new_checkout = Flag.define("new_checkout", "The one-page checkout", { ..Flags.rollout(25), users: ["ada"], groups: ["staff"] })
+		.in_env("dev", Flags.on)
+
+	people : List({ label : Str, who : Flags.Who })
+	people = [
+		{ label: "ada, listed", who: { user: "ada", groups: [] } },
+		{ label: "bea, in staff", who: { user: "bea", groups: ["staff"] } },
+		{ label: "cy", who: { user: "cy", groups: [] } },
+		{ label: "dee", who: { user: "dee", groups: [] } },
+		{ label: "jo", who: { user: "jo", groups: [] } },
+		{ label: "kai", who: { user: "kai", groups: [] } },
+		{ label: "max", who: { user: "max", groups: [] } },
+		{ label: "signed out", who: Flags.anyone },
+	]
+
+	view : {} -> Html
+	view = |{}|
+		<table>
+			<thead>
+				<tr><th>Who</th><th>Bucket</th><th>In production</th><th>In development</th></tr>
+			</thead>
+			<tbody>
+				{...GuardFlags.people.map(
+					|person|
+						<tr>
+							<td>{person.label}</td>
+							<td>{if (person.who.user.is_empty()) "none" else Flags.bucket("new_checkout", person.who.user).to_str()}</td>
+							<td>{on_or_off(Flags.is_on(GuardFlags.new_checkout, { env: "production", overrides: [] }, person.who))}</td>
+							<td>{on_or_off(Flags.is_on(GuardFlags.new_checkout, { env: "dev", overrides: [] }, person.who))}</td>
+						</tr>,
+				)}
+			</tbody>
+		</table>
+}
+
+on_or_off : Bool -> Str
+on_or_off = |on| if (on) "on" else "off"

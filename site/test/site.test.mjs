@@ -727,6 +727,303 @@ test("charts: each glides to other data and stops, Auto gives it more until pres
 	assert.deepEqual(page.errors, []);
 });
 
+// The admin package (packages/admin): its page, /ecosystem/admin.
+test("admin: its page shows the package's own pages, rendered with the page into sandboxed frames, and the statements a list runs", { skip }, async () => {
+	const html = await (await fetch(`${site.url}/ecosystem/admin`)).text();
+	assert.match(await (await fetch(`${site.url}/ecosystem`)).text(), /<ul class="page-cards[ "](?:(?!<\/ul>)[\s\S])*href="\/ecosystem\/admin"/, "a card on the ecosystem's overview");
+	// All of it is the server's: nothing on the page hydrates, so it costs the wasm nothing.
+	assert.deepEqual(html.split(/<!--nohydration-->[\s\S]*?<!--\/nohydration-->/).join("").match(/<iframe|<figure|<table/g), null, "every frame, listing and table is inside a <NoHydration>");
+	const frames = [...html.matchAll(/<iframe\s[^>]*>/g)].map(([tag]) => tag);
+	assert.equal(frames.length, 2, "the list of books, and a book's form");
+	const decoded = (text) => text.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+	const [list, row] = frames.map((tag) => {
+		assert.match(tag, /\ssandbox=""/, "sandboxed: no script runs, no form is sent, no link opens");
+		return decoded(/\ssrcdoc="([^"]*)"/.exec(tag)[1]);
+	});
+	// The package's View, from the made-up catalog (site/Demos/AdminPreview.rocx), as a whole document.
+	assert.match(list, /^<!doctype html>[\s\S]*<h1>Books<\/h1>[\s\S]*1–8 of 23/);
+	assert.match(list, /Filter[\s\S]*draft[\s\S]*out of print/, "the check's values, as a filter");
+	assert.match(row, /<h1>A field guide to clouds<\/h1>/);
+	assert.match(row, /Saved\./);
+	assert.match(row, /<select[^>]*name="v.author_id"[\s\S]*Ines Hart/, "a foreign key, as a select of the rows it may name");
+	// The statements Sql builds for a query, values only as parameters.
+	assert.match(decoded(html), /"title" ilike \$1 or "blurb" ilike \$1\) and "state" = \$2[\s\S]*-- \$1 = '%cloud%', \$2 = 'published'/);
+});
+
+test("forms: the page shows what the schema says and the endpoint answers, and the demo checks as it is typed and on Send, asking nothing", { skip }, async () => {
+	const page = await open("/ecosystem/forms");
+	// Rendered from the package as the site is built: the endpoint's refusal, read back, and each code's English.
+	const cells = (table) => page.eval(`[...document.querySelectorAll("#${table} tbody tr")].map((row) => [...row.cells].map((cell) => cell.textContent.trim()))`);
+	assert.deepEqual((await cells("forms-answer")).map(([field, code]) => `${field} ${code}`), ["name required", "email not_email", "age too_small", "password too_short", "confirm not_same", "terms unchecked"]);
+	assert.deepEqual((await cells("forms-codes")).find(([code]) => code === "TooShort(8)"), ["TooShort(8)", "too_short (min: 8)", "Use at least 8 characters"]);
+	assert.deepEqual((await cells("forms-regex")).at(-1).slice(2), ["no", "nowhere"], "the trap, a step per character");
+
+	const issues = (name) => page.eval(`[...document.querySelectorAll("#field-${name}-issues li")].map((li) => li.textContent)`);
+	const invalid = (name) => page.eval(`document.querySelector("#field-${name}").getAttribute("aria-invalid")`);
+	const leave = (name) => page.eval(`document.querySelector("#field-${name}").blur()`);
+	// The schema's attributes, on the inputs.
+	assert.equal(await page.eval(`document.querySelector("#field-email").type`), "email");
+	assert.equal(await page.eval(`document.querySelector("#field-password").type`), "password");
+	assert.equal(await page.eval(`document.querySelector("#field-age").getAttribute("min")`), "18");
+	// Typed, and not yet left: nothing said. Left: its issue, and the input says so. Typed on: gone.
+	await page.type("#field-email", "ada@");
+	assert.deepEqual(await issues("email"), []);
+	await leave("email");
+	await page.wait(`document.querySelector("#field-email").getAttribute("aria-invalid") === "true"`);
+	assert.deepEqual(await issues("email"), ["Enter an email address, like name@example.com"]);
+	assert.equal(await page.eval(`document.querySelector("#field-email").getAttribute("aria-describedby")`), "field-email-issues");
+	await page.type("#field-email", "Example.com");
+	await page.wait(`document.querySelector("#field-email").getAttribute("aria-invalid") === "false"`);
+	assert.deepEqual(await issues("email"), []);
+	// Send: every issue at its field, and in the summary; nothing read.
+	await page.click('[data-demo="forms"] button[type="submit"]');
+	await page.wait(`document.querySelector(".issue-summary") !== null`);
+	assert.deepEqual(await issues("name"), ["Fill this in"]);
+	assert.equal(await invalid("terms"), "true");
+	assert.deepEqual(await page.eval(`[...document.querySelectorAll(".issue-summary a")].map((a) => a.getAttribute("href"))`), ["#field-name", "#field-age", "#field-password", "#field-confirm", "#field-terms"]);
+	assert.equal(await text(page, ".issue-summary a"), "Name: Fill this in", "each link says which field it is about");
+	assert.equal(await text(page, "[data-demo=forms] .read"), "");
+	// The rest filled in, the passwords differing: the check across them, once both are there.
+	await page.type("#field-name", "  Ada ");
+	await page.type("#field-age", "36");
+	await page.type("#field-password", "correct horse");
+	await page.type("#field-confirm", "correct hose");
+	await page.click("#field-terms");
+	await page.wait(`document.querySelectorAll("#field-confirm-issues li").length === 1`);
+	assert.deepEqual(await issues("confirm"), ["These don't match"]);
+	await page.eval(`(() => { const input = document.querySelector("#field-confirm"); input.value = "correct horse"; input.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+	// Nothing wrong: the summary goes, and what the form reads shows, trimmed and lowercased.
+	await page.wait(`document.querySelector(".issue-summary") === null`);
+	assert.equal(await text(page, "[data-demo=forms] .read"), 'It reads: { name: "Ada", email: "ada@example.com", age: 36, terms: Bool.True, passwords: … }');
+	assert.equal(await page.eval("location.pathname"), "/ecosystem/forms", "the page stays");
+	assert.deepEqual((await asked(page)).filter((path) => !loads().includes(path)), [], "and asks for nothing");
+	assert.deepEqual(page.errors, []);
+});
+
+test("guard: its tables are the package's answers, and its limit runs in the browser with a clock moved by hand", { skip }, async () => {
+	const page = await open("/ecosystem/guard");
+	// Worked out by the package when the page was built.
+	const prose = await page.eval("document.querySelector('main').innerText");
+	assert.match(prose, /5\s+429, Retry-After: 7\s+429, Retry-After: 67/, "the sixth request at second 5, under each limit");
+	assert.match(prose, /Hops\(1\)\s+198\.51\.100\.4/, "behind one proxy, the address it saw");
+	assert.match(prose, /Hops\(2\)\s+6\.6\.6\.6/, "claiming two trusts what the client wrote");
+	assert.match(prose, /jo\s+8\s+on\s+on/, "jo falls in the quarter");
+	assert.match(prose, /cy\s+35\s+off\s+on/, "cy doesn't, but has it in development");
+	assert.match(prose, /The new checkout, for ada[\s\S]*The old checkout, for cy/, "<Flagged>, rendered for each");
+	assert.match(prose, /content-security-policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'/);
+
+	// The live demo: 5 at once, then one every 12 seconds.
+	const demo = "[data-demo=guard-limit]";
+	const said = () => page.eval(`[...document.querySelectorAll("${demo} .answers li")].map((li) => (li.classList.contains("refused") ? "refused " : "") + li.textContent.replace(/\\s+/g, " ").trim())`);
+	for (let i = 0; i < 6; i++) await page.click(`${demo} .send`);
+	const sixth = await said();
+	assert.equal(sixth[0], "refused Second 0 429 Too Many Requests, Retry-After: 12", "the sixth is refused");
+	assert.equal(sixth[1], "Second 0 200 OK, RateLimit-Remaining: 0", "the fifth was the last");
+	await page.click(`${demo} .actions button:nth-child(3)`);
+	await page.click(`${demo} .send`);
+	assert.equal((await said())[0], "Second 12 200 OK, RateLimit-Remaining: 0", "a token back after 12 seconds");
+	// A sliding window starts again, and lets nothing more through until the five weigh less.
+	await page.click(`${demo} .kinds button:nth-child(2)`);
+	assert.deepEqual(await said(), [], "switching starts again");
+	assert.equal(await text(page, `${demo} .clock`), "Second 0 · 5 a minute");
+	for (let i = 0; i < 6; i++) await page.click(`${demo} .send`);
+	assert.equal((await said())[0], "refused Second 0 429 Too Many Requests, Retry-After: 72");
+	await page.click(`${demo} .actions button:nth-child(4)`);
+	await page.click(`${demo} .send`);
+	assert.equal((await said())[0], "refused Second 60 429 Too Many Requests, Retry-After: 12", "a minute on, last minute's five still weigh");
+	assert.equal(await page.eval(`document.querySelectorAll("${demo} .answers li").length`), 6, "the last six answers, no more");
+	assert.deepEqual(page.errors, []);
+});
+
+test("intl: the picker writes the demo again in the language picked (right to left in Arabic), and n changes every line", { skip }, async () => {
+	const page = await open("/ecosystem/intl");
+	const demo = "[data-demo=intl]";
+	const said = () => page.eval(`[...document.querySelectorAll("${demo} dd")].map((dd) => dd.textContent)`);
+	const pick = async (tag) => {
+		await page.eval(`(() => { const select = document.querySelector("${demo} select.language"); select.value = ${JSON.stringify(tag)}; select.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+		await page.wait(`document.querySelector("${demo} dd").lang === ${JSON.stringify(tag)}`);
+	};
+	const press = async (button, times, n) => {
+		for (let i = 0; i < times; i++) await page.click(`${demo} .${button}`);
+		await page.wait(`document.querySelector("${demo} .count").textContent === "n = ${n}"`);
+	};
+
+	assert.deepEqual(await said(), ["3,703.5", "€59.97", "3 days ago", "Saturday, November 21, 2026"], "rendered in English");
+	await pick("pl");
+	assert.deepEqual(await said(), ["3703,5", "59,97\u00a0€", "3 dni temu", "sobota, 21 listopada 2026"], "in Polish, at once");
+	await press("more", 2, 5);
+	assert.equal((await said())[0], "6172,5");
+	await pick("ar");
+	assert.equal(await page.eval(`document.querySelector("${demo} dd").dir`), "rtl", "Arabic, right to left");
+	assert.equal((await said())[2], "قبل 5 أيام");
+	await pick("en");
+	await press("fewer", 5, 0);
+	assert.deepEqual(await said(), ["0", "€0.00", "today", "Saturday, November 21, 2026"]);
+	assert.equal(await page.eval(`document.querySelector("${demo} .fewer").disabled`), true, "no fewer than none");
+	// The rest of the page is written by the package as the site is built: the demo's message among it.
+	const files = await page.eval(`[...document.querySelectorAll("table.files tbody tr")].map((row) => [...row.cells].map((cell) => cell.textContent))`);
+	assert.equal(files.length, 8, "the message at eight counts");
+	assert.deepEqual(files.find((row) => row[0] === "22"), ["22", "22 files", "22 Dateien", "22 pliki", "22 ملفًا", "22 件のファイル"]);
+	assert.equal(files.find((row) => row[0] === "2")[4], "ملفان", "Arabic's dual");
+	assert.equal(await page.eval(`document.querySelectorAll("table.locales tbody tr").length`), 20, "ten locales, twice");
+	assert.equal(await page.eval(`document.querySelectorAll(".problems li").length`), 4, "the catalog's four problems");
+	assert.deepEqual(page.errors, []);
+});
+
+test("markdown: its examples are rendered when the site is built: headings with ids, a table, tasks, a table of contents, raw HTML as text, a javascript: link pointing nowhere, posts from their frontmatter", { skip }, async () => {
+	const html = await (await fetch(`${site.url}/ecosystem/markdown`, { headers: { accept: "text/html" } })).text();
+	// The first example: a heading with its id, a table's alignment, a tight task list.
+	assert.ok(html.includes('<h3 id="a-morning-by-the-river">A morning by the river</h3>'), "a heading, its id from its text");
+	assert.ok(html.includes('<th align="right">Seen</th>'), "a table's column, aligned as its delimiter row says");
+	assert.ok(html.includes('<li class="task"><input type="checkbox" checked disabled> Binoculars</li>'), "a done task, in a tight list");
+	// The table of contents: each heading a link to its id, a reading time.
+	for (const id of ["before-you-go", "what-to-bring", "on-the-path", "afterwards"]) {
+		assert.ok(html.includes(`href="#${id}"`) && html.includes(`id="${id}"`), `the contents link to #${id}, and it is there`);
+	}
+	assert.match(html, /\d+ min read · \d+ words/);
+	// The hooks: an anchor after a heading, a code block drawn by the site's <Code>, a link to another site in a new tab.
+	assert.ok(html.includes('href="#counting-what-you-see" aria-label="Link to this section">#</a>'), "the heading hook's anchor");
+	assert.match(html, /<figure class="code[^"]*">\s*<figcaption[^>]*>roc<\/figcaption>/, "the code hook's <Code>, titled with the block's language");
+	assert.ok(html.includes('href="https://www.roc-lang.org" target="_blank" rel="noopener"'), "the link hook");
+	// Safety: the script as text, never as a script; the javascript: link replaced.
+	assert.ok(html.includes("&lt;script&gt;alert(&quot;hello&quot;)&lt;/script&gt;"), "raw HTML shown as text");
+	assert.equal(html.includes('<script>alert("hello")'), false, "never as a script");
+	assert.ok(html.includes('href="about:invalid#rocx-unsafe-url"'), "the javascript: link points nowhere");
+	// The collection: each post's title and tags from its frontmatter; the draft says so.
+	assert.ok(html.includes("The heron on the far bank"), "a post's title, from its frontmatter");
+	assert.match(html, /2026-11-21 · 1 min · birds, garden · draft/, "a draft's date, reading time and tags");
+	// Rendered on the server alone: the browser's copy of the page has none of it (it is all in
+	// <NoHydration>), and the page hydrates strictly around what the server rendered.
+	assert.doesNotMatch(readFileSync(join(out, "client", "Generated", "EcosystemMarkdownPage.roc"), "utf8"), /Markdown(Demo|Toc|Hooks|Safety|Posts)/);
+	const page = await open("/ecosystem/markdown");
+	assert.equal(await page.eval("document.querySelectorAll('.markdown').length"), 5);
+	assert.deepEqual(page.errors, []);
+});
+
+test("mcp: the page shows what its server answered as the site was built, in both eras, and nothing on it hydrates", { skip }, async () => {
+	const page = await open("/ecosystem/mcp");
+	const exchanges = await page.eval(`[...document.querySelectorAll(".mcp-exchange")].map((exchange) => {
+		const [request, answer] = [...exchange.querySelectorAll("figure.code pre")].map((pre) => [...pre.querySelectorAll(".line")].map((line) => line.textContent).join("\\n"));
+		return { title: exchange.querySelector("summary").textContent.trim(), request, answer, open: exchange.open };
+	})`);
+	assert.equal(exchanges.length, 10);
+	assert.deepEqual(exchanges.map((exchange) => exchange.open), [true, ...Array(9).fill(false)], "the first one open");
+	const answer = (title) => exchanges.find((exchange) => exchange.title.startsWith(title))?.answer ?? "";
+	assert.match(answer("An earlier client"), /^200\n[\s\S]*"protocolVersion": "2025-11-25"/);
+	assert.match(answer("A current client"), /^200\n[\s\S]*"resultType": "complete"[\s\S]*"supportedVersions": \[\n\s*"2026-07-28"/);
+	assert.match(answer("The tools"), /"name": "convert"[\s\S]*"readOnlyHint": true/);
+	assert.match(answer("A tool, called"), /"structuredContent": \{\n\s*"fahrenheit": 98\.6/);
+	assert.match(answer("A refusal"), /below absolute zero[\s\S]*"isError": true/);
+	assert.match(answer("So do arguments"), /Invalid arguments for convert[\s\S]*"isError": true/);
+	assert.match(answer("A resource a template"), /"text": "78\.4 °C"/);
+	assert.match(answer("One no template has"), /"code": -32602,\n\s*"message": "Resource not found"/);
+	assert.match(answer("A prompt"), /Explain the Kelvin scale/);
+	assert.match(answer("Nothing is pushed"), /^405\n\nMCP is asked by POST here, not GET$/);
+	assert.match(exchanges[3].request, /^POST \/mcp\n[\s\S]*mcp-method: tools\/call\nmcp-name: convert\n\n\{/, "a current request's headers repeat its method and its tool");
+	assert.equal(await page.eval("document.querySelectorAll('[data-demo]').length"), 0, "no demo: the page is text, and the build's answers");
+	assert.deepEqual(page.errors, []);
+});
+
+test("presence: the room in the browser joins, types and leaves at a press, Auto moves the cursors, and the samples come rendered", { skip }, async () => {
+	const page = await open("/ecosystem/presence");
+	const demo = "[data-demo=presence]";
+	const here = async () => Number((await text(page, `${demo} .here`)).split(" ")[0]);
+	const typing = () => text(page, `${demo} .typing-indicator`);
+
+	// The samples, rendered at build time: seven faces in four places, the last one "+4".
+	assert.equal(await page.eval(`document.querySelectorAll(".sample .avatar-stack .avatar:not(.more)").length`), 3);
+	assert.equal(await page.eval(`document.querySelector(".sample .avatar.more").getAttribute("aria-label")`), "and 4 more");
+	assert.match(await text(page, ".sample .typing-indicator"), /^Ada Lovelace and Alan Turing are typing…$/);
+
+	// Auto is on from the start; pressed, it stops, and the room changes only at a press.
+	assert.equal(await page.eval(`document.querySelector("${demo} .auto").getAttribute("aria-pressed")`), "true");
+	await page.click(`${demo} .auto`);
+	assert.equal(await page.eval(`document.querySelector("${demo} .auto").getAttribute("aria-pressed")`), "false");
+	while ((await here()) > 3) await page.click(`${demo} .leave`);
+	while ((await here()) < 3) await page.click(`${demo} .join`);
+	assert.equal(await here(), 3);
+	const label = await page.eval(`document.querySelector("${demo} .avatar-stack").getAttribute("aria-label")`);
+	await page.click(`${demo} .join`);
+	assert.equal(await here(), 4, "someone joins");
+	assert.notEqual(await page.eval(`document.querySelector("${demo} .avatar-stack").getAttribute("aria-label")`), label, "and the stack says so");
+
+	// Someone types; the line runs out on its own, four seconds on.
+	await page.click(`${demo} .type`);
+	assert.match(await typing(), / typing…$/, "someone types");
+	await page.wait(`document.querySelector("${demo} .typing-indicator").textContent.trim() === ""`, 6000);
+
+	await page.click(`${demo} .leave`);
+	assert.equal(await here(), 3, "someone leaves");
+	while ((await here()) > 1) await page.click(`${demo} .leave`);
+	assert.equal(await page.eval(`document.querySelector("${demo} .leave").disabled`), true, "you never leave");
+
+	// Auto again, with three others here: a tick takes one away at most, and the others' cursors
+	// wander over the note.
+	for (let i = 0; i < 3; i++) await page.click(`${demo} .join`);
+	assert.equal(await here(), 4);
+	await page.click(`${demo} .auto`);
+	await page.wait(`document.querySelectorAll("${demo} .cursor").length > 0`, 5000);
+	await page.click(`${demo} .auto`);
+	assert.deepEqual(page.errors, []);
+});
+
+test("push: the button's states come from the package, and the notification demo shows what a server would send", { skip }, async () => {
+	const page = await open("/ecosystem/push");
+	// The states table, rendered on the server by the package's PushState.
+	const states = await page.eval(`[...document.querySelectorAll("table tbody tr")].filter((row) => row.cells[0].querySelector("code")?.textContent === "on").map((row) => row.cells[1].textContent)`);
+	assert.equal(states.length, 1, "a row for on");
+	assert.match(states[0], /^Turn notifications off\. Beside it: Notifications are on in this browser\.$/);
+	// The demo: the JSON and its size, the headers, and what Push.notify! would say.
+	const demo = (selector) => `[data-demo=push-compose] ${selector}`;
+	const read = () => page.eval(`({ size: Number(document.querySelector("${demo(".size")}").textContent), json: document.querySelector("${demo(".json")}").textContent, headers: document.querySelector("${demo(".headers")}").textContent, refused: document.querySelector("${demo(".verdict")}").classList.contains("refused") })`);
+	let now = await read();
+	assert.equal(now.json, '{"title":"Your export is ready","body":"orders.csv, 3 MB","url":"/exports/17"}');
+	assert.equal(now.size, Buffer.byteLength(now.json));
+	assert.equal(now.headers, "TTL: 86400\nUrgency: normal");
+	assert.equal(now.refused, false);
+	await page.click(demo(".urgency button:nth-of-type(4)"));
+	await page.click(demo(".ttl button:nth-of-type(1)"));
+	await page.type(demo("label:nth-of-type(4) input"), "café");
+	await page.type(demo("label:nth-of-type(5) input"), "order 17");
+	now = await read();
+	assert.equal(now.headers, "TTL: 0\nUrgency: high\nTopic: order 17");
+	assert.equal(now.refused, true, "a topic with a space is refused");
+	assert.ok(now.json.endsWith(',"tag":"café"}') && now.size === Buffer.byteLength(now.json), "the size is in bytes");
+	await page.eval(`document.querySelector("${demo("label:nth-of-type(5) input")}").select()`);
+	await page.type(demo("label:nth-of-type(5) input"), "order-17");
+	assert.equal((await read()).refused, false);
+	assert.equal(await page.eval(`document.querySelector("${demo(".urgency button:nth-of-type(4)")}").getAttribute("aria-pressed")`), "true");
+	assert.deepEqual(page.errors, []);
+});
+
+// The testing package's page (/ecosystem/testing), read with the package's own queries.
+test("testing: the page shows its inbox, and what the package's queries answered as it rendered", { skip }, async () => {
+	const { screen, within } = await import("../../packages/testing/dom.mjs");
+	const response = await fetch(`${site.url}/ecosystem/testing`, { headers: { accept: "text/html" } });
+	assert.equal(response.status, 200);
+	const page = screen(await response.text());
+	assert.equal(page.getByRole("heading", { level: 1 }).text, "Tests that read a page as a person does");
+	const inbox = within(page.getByRole("region", { name: "Ada's inbox" }));
+	assert.deepEqual(inbox.getAllByRole("link").map((link) => link.attr("href")), ["/mail/Lunch%3F", "/mail/Re%3A%20the%20plan"]);
+	assert.equal(inbox.getByLabelText("To").attr("type"), "email");
+	const answers = page.getAllByRole("table").find((table) => within(table).queryByRole("columnheader", { name: "Asked" }));
+	assert.deepEqual(
+		within(answers)
+			.getAllByRole("row")
+			.slice(1)
+			.map((row) => within(row).getAllByRole("cell").map((cell) => cell.text)),
+		[
+			['page.get(Role("heading"))', `Ok the <h3>: "Ada's inbox"`],
+			['page.get(Named("link", "Lunch?"))', 'Ok the <a>: "Lunch?"'],
+			['page.get(Label("To"))', "Ok the <input>"],
+			['page.get(TestId("unread"))', 'Ok the <p>: "2 unread"'],
+			['page.get(Role("link"))', "TooMany 2 elements are a link"],
+			['page.get(Named("button", "Send"))', 'NotFound nothing is a button named "Send"; the buttons here: "Write"'],
+		],
+	);
+	assert.equal(page.getAllByText("site/Demos/TestingInbox.rocx").length, 2, "the component and its expects, each picked from the demo's file");
+});
+
 test("the static build is every page as the server answers it, and what the pages load", { skip }, async () => {
 	for (const [route, file] of [...ROUTES.map((route) => [route, route === "/" ? "index.html" : `${route.slice(1)}/index.html`]), ["/404", "404.html"]]) {
 		const answered = await (await fetch(`${site.url}${route}`, { headers: { accept: "text/html" } })).text();

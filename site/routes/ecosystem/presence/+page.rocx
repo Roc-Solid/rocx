@@ -1,0 +1,359 @@
+import pf.Html
+import presence.AvatarStack
+import presence.LiveCursors
+import presence.Stack
+import presence.TypingIndicator
+import ../../../Demos/PresenceDemo
+import ../../../Ui/Callout
+import ../../../Ui/Code
+import ../../../Ui/Demo
+import ../../../Ui/Heading
+import ../../../Ui/PageHero
+import ../../../Ui/TableWrap
+import ../../../Generated/Sources
+import ../../../Generated/Paths
+
+## The presence package: a room kept in the browser first (this site has no server), then how an
+## app uses it, each component, how a room works, the stores, the modules, and what waits on the
+## platform.
+meta = {
+	title: "Presence",
+	description: "Who is here, who is typing and where they point, for Roc Solid apps: an avatar stack, a typing indicator and live cursors, over a room the server keeps in memory.",
+	toc: [
+		{ id: "room", label: "A room, in your browser" },
+		{ id: "use", label: "Using it" },
+		{ id: "stack", label: "<AvatarStack>" },
+		{ id: "typing", label: "<TypingIndicator>" },
+		{ id: "cursors", label: "<LiveCursors>" },
+		{ id: "how", label: "How a room works" },
+		{ id: "stores", label: "The stores" },
+		{ id: "modules", label: "The modules" },
+		{ id: "styling", label: "Styling" },
+		{ id: "status", label: "Status" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				kicker={[<>{"The ecosystem · "}</>, <code>packages/presence</code>]}
+				title="Who is here, who is typing, and where they point"
+			>
+				A room's presence: who is in it right now, with a name, a colour and a status each; who is
+				typing; and everyone's cursor over what they share. A member with two tabs open is one face, and
+				leaves when the last tab does. A tab that closes leaves at once; one that vanishes without a word,
+				a laptop shut or a network gone, is swept out when its heartbeats stop.
+			</PageHero>
+
+			<Heading id="room">A room, in your browser</Heading>
+			<p>
+				This site is static files, with no server to keep a room. So the demo plays the server's part: it
+				keeps a list of who is here, and tells the package's stores and components what a room's stream
+				would. Press a button, or let Auto, on from the start, do something every 1.5 seconds.
+			</p>
+		</NoHydration>
+		<Demo>
+			<div data-demo="presence"><PresenceDemo /></div>
+		</Demo>
+		<NoHydration>
+			<p>
+				A face that comes grows in, and one that goes fades out. A typing line runs out on its own after
+				four seconds, with no message to say it stopped. A cursor glides to each place it is sent, fades once
+				it has been still for three seconds (press Auto to stop them), and is forgotten after twenty.
+			</p>
+
+			<Heading id="use">Using it</Heading>
+			<p>
+				Name the package in the app's header, as any package (<a href={Paths.ecosystem}>the ecosystem</a>), and
+				import its components. Each takes its data as an accessor, so it shows whatever feeds it: a room's
+				stream in an app, or, here, the demo.
+			</p>
+			<Code title={"${Sources.presence_use.file}, in part"} source={Sources.presence_use.rocx} />
+			<p>
+				In an app, the server keeps each room. Its side is <code>PresenceServer</code>, in the package's
+				<code>server/</code>: a page's stream is an endpoint whose <code>events!</code> is
+				<code>PresenceServer.stream</code>, given the room and who the member is (their key and metadata, from
+				the middleware's context, never from the page):
+			</p>
+			<Code title={"${Sources.presence_stream.file}, in part"} source={Sources.presence_stream.rocx} />
+			<p>
+				The page listens to that endpoint (<a href={"${Paths.calls}#events"}><code>Endpoint.listen!</code></a>)
+				and hands each event to <code>Presence.create_room!</code>, which the components read. It beats every 15
+				seconds with a server function that calls <code>PresenceServer.join!</code>, and says it is typing with
+				another, <code>PresenceServer.typing!</code>. The package's README has the whole page; this site can't
+				run it, having no server.
+			</p>
+			<Callout kind="note" title="Copied in by hand, for now">
+				<p>
+					<code>PresenceServer</code> imports the server's <code>Actor</code> and <code>Live</code>, and
+					<code>rocx build</code> copies only a package's components into an app. Until it copies server
+					modules too, an app copies <code>server/PresenceServer.roc</code> beside its <code>main.roc</code>.
+				</p>
+			</Callout>
+
+			<Heading id="stack">{"<AvatarStack>"}</Heading>
+			<div class="sample">
+				<AvatarStack faces!={faces} max={4} />
+			</div>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Prop</th><th>Is</th></tr></thead>
+					<tbody>
+						<tr>
+							<td><code>{"faces! : () => List(Stack.Face)"}</code></td>
+							<td>
+								who is here, in order: <code>{"{ key, name, image, color, status }"}</code>
+								(<code>Wire.face</code> makes one from a member). A face whose <code>image</code> is empty shows
+								its initials on its <code>color</code>, or, when that is empty too, a colour its key always gets
+							</td>
+						</tr>
+						<tr><td><code>{"max : U64 ?? 5"}</code></td><td>how many places, the <code>+N</code> among them</td></tr>
+						<tr><td><code>{"label : Str ?? \"\""}</code></td><td>what a screen reader hears for the stack; empty, it says who is here: <code>"Ann, Bo and 2 others are here"</code></td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				A status (<code>away</code>, <code>busy</code>, any word) is a class, <code>status-away</code>, and a dot:
+				green, orange for <code>away</code>, red for <code>busy</code>. The <code>+N</code>'s tooltip names the
+				ones it stands for.
+			</p>
+
+			<Heading id="typing">{"<TypingIndicator>"}</Heading>
+			<div class="sample">
+				<TypingIndicator names!={["Ada Lovelace", "Alan Turing"]} />
+			</div>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Prop</th><th>Is</th></tr></thead>
+					<tbody>
+						<tr><td><code>{"names! : () => List(Str)"}</code></td><td>who is typing (<code>Wire.names(members, keys)</code> turns keys into names)</td></tr>
+						<tr><td><code>{"say : (List(Str) -> Str) ?? Typing.sentence"}</code></td><td>the sentence: <code>"Ann is typing…"</code>, <code>"Ann and Bo are typing…"</code>, <code>"Ann, Bo and 2 others are typing…"</code>; give your own for another language</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				Three dots that bob, and the sentence. With no one typing, its line keeps its height, so nothing under
+				it jumps; a screen reader hears it change (<code>aria-live="polite"</code>).
+			</p>
+
+			<Heading id="cursors">{"<LiveCursors>"}</Heading>
+			<div class="sample">
+				<LiveCursors cursors!={cursors}>
+					<div class="area"><p>What everyone points at</p></div>
+				</LiveCursors>
+			</div>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Prop</th><th>Is</th></tr></thead>
+					<tbody>
+						<tr>
+							<td><code>{"cursors! : () => List(LiveCursors.Pointer)"}</code></td>
+							<td>
+								others' cursors, <code>{"{ key, name, color, x, y, idle }"}</code>: <code>x</code> and <code>y</code>
+								are shares of the area, from 0 to 1, so a place is the same on a narrow screen and a wide one
+								(<code>Wire.pointers(members, cursors)</code> makes them)
+							</td>
+						</tr>
+						<tr><td><code>{"children : List(Html)"}</code></td><td>the area they point at</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				Each cursor is an arrow in its member's colour, with their name beside it. It glides to each place it
+				is sent, fades when idle, and takes no pointer events, so what is under it is clicked as before.
+				Drawing others' cursors works today; sending your own doesn't yet, since a handler isn't given where
+				the pointer is (see <a href="#status">Status</a>).
+			</p>
+
+			<Heading id="how">How a room works</Heading>
+			<p>
+				<strong>The room is the server's.</strong> One server instance, so a room is kept in memory, with no
+				broker. <code>Room</code> is its state: who is here, each with their metadata, since when, and from
+				which tabs. <code>join</code>, <code>leave</code>, <code>update</code> (new metadata) and
+				<code>sweep</code> answer the changes others should hear, <code>Joined</code>, <code>Left</code> and
+				<code>Changed</code>, and number the room's state with each one. Time is the caller's: its tests run on
+				a clock they are given, so a timeout is tested without waiting for one.
+			</p>
+			<Code title={"${Sources.presence_grace.file}, in part"} source={Sources.presence_grace.rocx} />
+			<ul>
+				<li>
+					<strong>Leaving has a grace.</strong> A tab whose stream ends leaves after five seconds, unless it is
+					back by then: a page that reconnects doesn't flicker out and in.
+				</li>
+				<li>
+					<strong>Vanishing has a timeout.</strong> A page beats every 15 seconds. A tab unheard for 75 seconds
+					is swept out: a browser may hold a hidden tab's timers back to once a minute, and 75 seconds is that
+					minute and a beat to spare.
+				</li>
+				<li>
+					<strong>Changes are numbered.</strong> A page's copy of the room (<code>Mirror</code>) takes a snapshot,
+					then each change in order. One older than its snapshot is no news; one that skips a number is a gap,
+					and the page asks for a snapshot again.
+				</li>
+				<li>
+					<strong>One message at a time.</strong> In an app, a room is an
+					<a href={"${Paths.platform_live}#actors"}>actor</a>, which handles one message at a time, so two tabs
+					that join at once both count. It publishes each change on the room's
+					<a href={Paths.platform_live}>live topic</a> as it makes it, so they go out in the order they were
+					numbered.
+				</li>
+			</ul>
+
+			<Heading id="stores">The stores</Heading>
+			<p>
+				The browser's side, as Solid primitives: each is called in a component, as
+				<code>create_signal!</code> is, keeps its state in signals, and is fed what a stream hears.
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Store</th><th>Gives</th></tr></thead>
+					<tbody>
+						<tr><td><code>{"Presence.create_room!(on_gap!)"}</code></td><td>all of them at once, fed a room's events with <code>heard!(event)</code>: <code>members!</code>, <code>synced!</code>, <code>me!</code>, <code>typing!</code> (your own left out), <code>cursors!</code> (others'), <code>lost!</code>; one who leaves stops typing, and their cursor goes</td></tr>
+						<tr><td><code>{"Presence.create_presence!(on_gap!)"}</code></td><td><code>members!</code>, <code>synced!</code>, <code>receive!(message)</code>, <code>lost!</code></td></tr>
+						<tr><td><code>{"Presence.create_typing!(ttl)"}</code></td><td><code>who!</code>, <code>started!(key)</code>, <code>stopped!(key)</code>; a ping lasts <code>ttl</code> milliseconds</td></tr>
+						<tr><td><code>{"Presence.create_typist!(every, send!)"}</code></td><td>your own typing: <code>typed!()</code> on each key, <code>done!()</code> when the text is sent or left; <code>send!</code> is given <code>Started</code> (at once, then at most every <code>every</code>) or <code>Stopped</code></td></tr>
+						<tr><td><code>{"Presence.create_cursors!({ idle, forget })"}</code></td><td><code>shown!</code>, <code>moved!(move)</code>, <code>gone!(key)</code></td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				A write applies when its handler is done, as in Solid 2.0, so call a store once a handler: a second
+				call in the same handler sees the store as it was before the first. A stream hands each event to a
+				handler of its own, so this is how a page uses them anyway. The browser has no clock yet, so a store
+				keeps its own, a timer that ticks every quarter second, and only while something can expire.
+			</p>
+			<p>
+				The demo above has no stream, so it does what one would: a press tells the stores what happened, once
+				each, and each cursor's move goes from a timeout of its own.
+			</p>
+			<Code title={"${Sources.presence_stores.file}, in part"} source={Sources.presence_stores.rocx} />
+
+			<Heading id="modules">The modules</Heading>
+			<p>
+				Plain Roc, on no platform, so the server's stream and the browser's stores run the same code.
+				<code>roc test packages/presence/main.roc</code> runs their <code>expect</code>s.
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Module</th><th>What it does</th></tr></thead>
+					<tbody>
+						<tr><td><code>Room</code></td><td>a room, as the server keeps it: <code>join</code>, <code>update</code>, <code>heartbeat</code>, <code>leave</code>, <code>sweep</code>, <code>signal</code>; <code>members</code>, <code>version</code>, <code>deadline</code> (when the next sweep could find someone); <code>save</code> and <code>load</code> for JSON; <code>Room.defaults</code>, and <code>beat_every</code></td></tr>
+						<tr><td><code>Mirror</code></td><td>a page's copy: <code>receive</code> a <code>Snapshot</code> or a numbered <code>Delta</code> (<code>Err(Gap)</code> when one was missed), <code>members</code>, <code>is_synced</code></td></tr>
+						<tr><td><code>Diff</code></td><td><code>between(before, after)</code>: who left, joined and changed; <code>apply</code> one change</td></tr>
+						<tr><td><code>Throttle</code></td><td>at most one send every <code>every</code> milliseconds, the first at once and the latest held until it is due: a cursor sent 20 times a second ends where the pointer stopped</td></tr>
+						<tr><td><code>Cursors</code></td><td><code>place</code> (a pointer's pixels as shares of the area), <code>moved</code>, <code>gone</code>, <code>shown</code>, <code>sweep</code>, <code>coalesce</code> (a burst, one move per member), <code>percent</code></td></tr>
+						<tr><td><code>Typing</code></td><td>who is typing: <code>started</code>, <code>stopped</code>, <code>who</code>, <code>deadline</code>, <code>sentence</code></td></tr>
+						<tr><td><code>Typist</code></td><td>your own typing: <code>typed(now)</code> says when to ping, <code>done</code> when to say it stopped</td></tr>
+						<tr><td><code>Stack</code></td><td><code>split</code> (who fits, and <code>+N</code>), <code>initials</code> (<code>"Ada Lovelace"</code> is <code>"AL"</code>), <code>color</code> (the same key, the same colour), <code>names</code>, <code>label</code></td></tr>
+						<tr><td><code>Wire</code></td><td>what a room's stream sends (<code>Event</code>: <code>Welcome</code>, <code>Presence</code>, <code>Typing</code>, <code>Moved</code>, <code>Away</code>), the metadata it carries (<code>Meta</code>: name, image, color, status), and <code>face</code>, <code>names</code>, <code>pointers</code> to feed the components</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+
+			<Heading id="styling">Styling</Heading>
+			<p>
+				The components take their sizes and colours from custom properties: <code>--avatar-size</code> (2rem),
+				<code>--avatar-overlap</code>, <code>--avatar-ring</code> (between faces: the page's background),
+				<code>--avatar-font</code>, <code>--avatar-more</code>, <code>--avatar-status</code>,
+				<code>--avatar-away</code>, <code>--avatar-busy</code>; <code>--typing-color</code>,
+				<code>--typing-size</code>; <code>--cursor-glide</code> (0.12s; the demo's is 1.4s) and
+				<code>--cursor-font</code>. Under <code>prefers-reduced-motion</code>, the dots stop bobbing and the
+				cursors jump instead of gliding.
+			</p>
+
+			<Heading id="status">Status</Heading>
+			<p>Works today:</p>
+			<ul>
+				<li>the modules, with their tests (<code>roc test packages/presence/main.roc</code>);</li>
+				<li>the three components and the stores, which <code>rocx build</code> copies into an app;</li>
+				<li>
+					<code>PresenceServer</code>, copied into an app by hand: in a test app on the native server, two
+					members in a browser each saw the other, saw the other typing, and saw a closed tab leave.
+				</li>
+			</ul>
+			<p>Waits on a proposal (the package's PROPOSALS.md has each of these, and a few more):</p>
+			<ul>
+				<li><code>rocx build</code> copying a package's <code>server/</code> modules into the server's half, so no copy by hand;</li>
+				<li>channels: one stream a tab for every room on a page, and messages from the page without a server function each;</li>
+				<li>sending your own cursor: a handler given where the pointer is (<code>on:pointermove.point</code>);</li>
+				<li>a clock in the browser, and knowing when a tab is hidden, to show it as away;</li>
+				<li>the app's own metadata on the wire, instead of <code>Wire.Meta</code>, once the compiler can carry it.</li>
+			</ul>
+			<details>
+				<summary>The demo: <code>{Sources.presence_demo.file}</code></summary>
+				<Code title={Sources.presence_demo.file} source={Sources.presence_demo.rocx} />
+			</details>
+			<details>
+				<summary>The avatar stack: <code>{Sources.presence_avatar_stack.file}</code></summary>
+				<Code title={Sources.presence_avatar_stack.file} source={Sources.presence_avatar_stack.rocx} />
+			</details>
+			<details>
+				<summary>The typing indicator: <code>{Sources.presence_typing_indicator.file}</code></summary>
+				<Code title={Sources.presence_typing_indicator.file} source={Sources.presence_typing_indicator.rocx} />
+			</details>
+			<details>
+				<summary>The cursors: <code>{Sources.presence_live_cursors.file}</code></summary>
+				<Code title={Sources.presence_live_cursors.file} source={Sources.presence_live_cursors.rocx} />
+			</details>
+			<details>
+				<summary>The stores: <code>{Sources.presence_stores_file.file}</code></summary>
+				<Code title={Sources.presence_stores_file.file} source={Sources.presence_stores_file.rocx} />
+			</details>
+			<details>
+				<summary>The server's side: <code>{Sources.presence_server.file}</code></summary>
+				<Code title={Sources.presence_server.file} source={Sources.presence_server.rocx} />
+			</details>
+		</NoHydration>
+	</>
+
+## The avatar stack's sample: seven here, four places.
+faces : List(Stack.Face)
+faces = [
+	face("ada", "Ada Lovelace", ""),
+	face("alan", "Alan Turing", "away"),
+	face("grace", "Grace Hopper", ""),
+	face("edsger", "Edsger Dijkstra", "busy"),
+	face("barbara", "Barbara Liskov", ""),
+	face("donald", "Donald Knuth", ""),
+	face("frances", "Frances Allen", ""),
+]
+
+face : Str, Str, Str -> Stack.Face
+face = |key, name, status| { key, name, image: "", color: "", status }
+
+## The cursors' sample: one moving, one still a while.
+cursors : List(LiveCursors.Pointer)
+cursors = [
+	{ key: "ada", name: "Ada", color: Stack.color("ada"), x: 0.22, y: 0.3, idle: Bool.False },
+	{ key: "alan", name: "Alan", color: Stack.color("alan"), x: 0.68, y: 0.55, idle: Bool.True },
+]
+
+<style>
+	.sample {
+		--avatar-ring: var(--bg);
+		--avatar-more: var(--rule-strong);
+		--avatar-status: var(--good);
+		--avatar-away: var(--warn);
+		--avatar-busy: var(--bad);
+		--typing-color: var(--text-muted);
+		margin: var(--space-4) 0;
+		padding: var(--space-4) var(--space-5);
+		border: 1px solid var(--rule);
+		border-radius: var(--radius);
+		background: var(--bg-sunken);
+	}
+
+	.area {
+		display: grid;
+		place-items: center;
+		min-height: 8rem;
+		border: 1px dashed var(--rule-strong);
+		border-radius: var(--radius-sm);
+		color: var(--text-faint);
+	}
+
+	.area p {
+		margin: 0;
+	}
+</style>

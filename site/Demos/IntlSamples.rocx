@@ -1,0 +1,78 @@
+import intl.Intl
+import intl.Locale
+import intl.Locales
+import intl.Catalog
+import intl.Message
+import intl.Validation
+
+## What the intl page shows, worked out by packages/intl when the site is built: each starter
+## locale's numbers and dates, the locale a header gets, the demo's message and others in a few
+## languages, a form's errors, and a catalog with mistakes in it. Only the page's `<NoHydration>`
+## parts use it, so none of it is in the browser's wasm.
+IntlSamples := [].{
+
+	## 2026-11-21 15:04:05 UTC, a Saturday.
+	moment : I64
+	moment = 1795273445000
+
+	en : Intl
+	en = Intl.new(Locales.en)
+
+	pl : Intl
+	pl = Intl.new(Locales.pl)
+
+	## A locale's numbers: a big one, a share, a compact one, money.
+	numbers : Locales.Data -> List(Str)
+	numbers = |data| {
+		intl = Intl.new(data)
+		[intl.number(-1234567.891), intl.percent(0.256, 1), intl.compact(1234567), intl.currency(1234.5, "EUR")]
+	}
+
+	## A locale's dates: the moment's date and time, three days ago, yesterday.
+	dates : Locales.Data -> List(Str)
+	dates = |data| {
+		intl = Intl.new(data)
+		[intl.date(IntlSamples.moment, Medium), intl.time(IntlSamples.moment, Short), intl.relative(-3, Day), intl.relative_day(-1)]
+	}
+
+	## The locale an app with `en`, `en-GB`, `pl` and `de` reads a request in, by its Accept-Language.
+	chosen : Str -> Str
+	chosen = |header| Intl.choose([Locales.en, Locales.en_gb, Locales.pl, Locales.de], Locale.accept_language(header)).tag()
+
+	## A message, with its arguments, as a locale writes it.
+	say : Intl, Str, List((Str, Message.Arg)) -> Str
+	say = |intl, source, args| intl.format(source, args)
+
+	## A form's issue, from packages/forms' key and params, as a locale writes it.
+	issue : Intl, Str, List({ name : Str, value : Str }) -> Str
+	issue = |intl, key, params| intl.with_catalog(Validation.catalog).issue(key, params)
+
+	## The demo's message, `files`, in each of its languages. The demo itself has none: a message
+	## would add about 13 KB to the site's wasm, so the page shows this one as it is written here,
+	## at build time.
+	files_catalog : Catalog
+	files_catalog = Catalog.new(
+		"en",
+		[
+			("en", [("files", "{count, plural, =0 {No files} one {# file} other {# files}}")]),
+			("de", [("files", "{count, plural, =0 {Keine Dateien} one {# Datei} other {# Dateien}}")]),
+			("pl", [("files", "{count, plural, =0 {Brak plików} one {# plik} few {# pliki} many {# plików} other {# pliku}}")]),
+			("ar", [("files", "{count, plural, zero {لا ملفات} one {ملف واحد} two {ملفان} few {# ملفات} many {# ملفًا} other {# ملف}}")]),
+			("ja", [("files", "{count, plural, other {# 件のファイル}}")]),
+		],
+	)
+
+	## The message `files` for `count` files, as `data`'s locale writes it.
+	files : Locales.Data, I64 -> Str
+	files = |data, count| Intl.new(data).with_catalog(IntlSamples.files_catalog).t("files", [("count", Int(count))])
+
+	## A catalog with mistakes in it: what `Catalog.problems` finds.
+	typos : Catalog
+	typos = Catalog.new(
+		"en",
+		[
+			("en", [("hello", "Hello, {name}!"), ("cart", "{count, plural, one {# item} other {# items}}"), ("colour", "Colour")]),
+			("pl", [("hello", "Cześć, {imie}!"), ("cart", "{count, plural, one {# produkt} few {# produkty} other {# produktów}"), ("extra", "Nadmiar")]),
+		],
+	)
+}

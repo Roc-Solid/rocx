@@ -1,0 +1,30 @@
+import pf.Db
+import pf.Random
+import pf.Server
+import admin.Admin
+import admin.AdminPage
+
+## An admin, as an app writes it in a route file (`routes/admin/db/+server.roc`), with the
+## middleware that says who is asking (`middleware = Middlewares.staff`). Here it is a module of the
+## docs site, so the compiler checks it with the site's server; no route answers with it, since the
+## site has no database.
+AdminRoute := [].{
+
+	## Who is asking, as the route's middleware hands it on.
+	Who : { user : Str, staff : Bool }
+
+	## Where the admin is, who may use it, and which tables it shows, how.
+	admin : Admin.Config(Who)
+	admin = {
+		mount: "/admin/db",
+		access: |who| if (who.staff) Edit else Refused,
+		tables: [
+			{ name: "books", list: ["id", "title", "author_id", "state", "price"], search: ["title", "blurb"], filters: ["state", "in_print"], ordering: ["-id"] },
+			{ name: "authors", title: "name", hidden: ["password_hash"], labels: [("email", "Email address")] },
+		],
+	}
+
+	## The route's answer: the request, handed to the admin with the effects it runs on.
+	respond! : { request : Server.Request, params : {}, context : Who } => Server.Response
+	respond! = |{ request, context, .. }| AdminPage.respond!(request, context, AdminRoute.admin, { all!: Db.all!, run!: Db.run!, random!: Random.bytes! })
+}

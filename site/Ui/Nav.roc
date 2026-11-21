@@ -52,8 +52,17 @@ Nav := [].{
 		pages: [
 			{ path: Paths.ecosystem, label: "Overview", blurb: "What a package is, and using one" },
 			{ path: Paths.ecosystem_charts, label: "Charts", blurb: "Seven kinds of chart that glide to their data, styled by CSS" },
+			{ path: Paths.ecosystem_admin, label: "Admin", blurb: "A Django-style admin for your Postgres tables" },
 			{ path: Paths.ecosystem_crypto, label: "Crypto", blurb: "SHA-256, HMAC, HKDF, Base64 and hex, in Roc" },
 			{ path: Paths.ecosystem_s3, label: "Files in S3", blurb: "Uploads, parts, signed links, streaming" },
+			{ path: Paths.ecosystem_forms, label: "Forms", blurb: "A form's rules written once, checked as it is typed and at the endpoint" },
+			{ path: Paths.ecosystem_guard, label: "Guard", blurb: "Rate limits, feature flags and request guards, as middleware" },
+			{ path: Paths.ecosystem_intl, label: "Intl", blurb: "Numbers, dates and translated messages, as each locale writes them" },
+			{ path: Paths.ecosystem_markdown, label: "Markdown", blurb: "CommonMark in Roc, a <Markdown> component, and typed frontmatter" },
+			{ path: Paths.ecosystem_mcp, label: "MCP", blurb: "An app's tools, resources and prompts, for AI agents" },
+			{ path: Paths.ecosystem_presence, label: "Presence", blurb: "Who is here, who is typing, and live cursors" },
+			{ path: Paths.ecosystem_push, label: "Push", blurb: "Web Push notifications: a button that subscribes, and jobs that send" },
+			{ path: Paths.ecosystem_testing, label: "Testing", blurb: "Find things in a page by role, name and label, from Roc and Node" },
 		],
 	}
 

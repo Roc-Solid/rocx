@@ -1,0 +1,10 @@
+import pf.Html
+import markdown.Markdown
+import "MarkdownFiles/walk.md" as walk : Str
+
+## The markdown page's first example: a short Markdown file, rendered by `<Markdown>` when the
+## site is built.
+MarkdownDemo := [].{
+	view : {} -> Html
+	view = |{}| <Markdown source={walk} />
+}

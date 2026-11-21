@@ -1,0 +1,72 @@
+import pf.Html
+import forms.LiveForm
+import forms.TextField
+import forms.CheckboxField
+import forms.IssueSummary
+import ../Ui/Button
+import FormsSignup
+
+## The forms page's demo: `FormsSignup.form`, checked in the browser as it is typed, by the same
+## code its endpoint reads it with. The site is static files, with no endpoint to send it to, so it
+## is a local form (`LiveForm.local!`): Send shows every issue, or, once there are none, what the
+## form reads. An app's page posts it instead (`LiveForm.of!(form, endpoint)`).
+FormsDemo := [].{
+	view! : {} => Html
+	view! = |{}| {
+		live = LiveForm.local!(FormsSignup.form)
+		<div class="forms-demo">
+			<IssueSummary live={live} title="Fix these, then send it again" labels={FormsDemo.labels} />
+			<form on:submit={|| live.show_all!()} novalidate>
+				<TextField live={live} name="name" label="Name" autocomplete="name" />
+				<TextField live={live} name="email" label="Email" autocomplete="email" />
+				<TextField live={live} name="age" label="Age" hint="18 or over." />
+				<TextField live={live} name="password" label="Password" autocomplete="new-password" />
+				<TextField live={live} name="confirm" label="Password, again" autocomplete="new-password" />
+				<CheckboxField live={live} name="terms" label="I accept the terms" />
+				<Button submit primary>Send</Button>
+			</form>
+			<p class="read" aria-live="polite">{if (live.sent!()) FormsDemo.read(FormsSignup.form.parse(live.fields!())) else ""}</p>
+		</div>
+	}
+
+	## Each field's label, by its name: the fields' and the summary's.
+	labels : List((Str, Str))
+	labels = [("name", "Name"), ("email", "Email"), ("age", "Age"), ("password", "Password"), ("confirm", "Password, again"), ("terms", "The terms")]
+
+	## What the form reads, as Roc writes the record (its passwords left out); nothing while it has
+	## issues, which the fields show.
+	read : Try(FormsSignup.Account, List(_)) -> Str
+	read = |parsed|
+		match parsed {
+			Ok(account) => "It reads: { name: \"${account.name}\", email: \"${account.email}\", age: ${account.age.to_str()}, terms: Bool.True, passwords: … }"
+			Err(_) => ""
+		}
+
+	<style>
+		/* The package's colours, from the site's tokens: its own red is for a light page. */
+		.forms-demo {
+			--form-invalid: var(--bad);
+			--form-border: var(--rule-strong);
+			--form-muted: var(--text-muted);
+			--form-radius: var(--radius-sm);
+			max-width: 30rem;
+		}
+
+		.forms-demo :global(input:not([type="checkbox"])) {
+			background: var(--fill);
+			color: var(--text);
+		}
+
+		.read {
+			margin: var(--space-4) 0 0;
+			color: var(--good);
+			font-family: var(--mono);
+			font-size: var(--size-sm);
+			overflow-wrap: anywhere;
+		}
+
+		.read:empty {
+			display: none;
+		}
+	</style>
+}

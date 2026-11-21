@@ -1,0 +1,165 @@
+import pf.Html
+import pf.Solid exposing [create_memo!, create_signal!]
+import push.Notification
+import push.Options
+import push.WebPush
+
+## A notification, and how a push service should treat it: what a server sends. The push page's
+## live demo, run by the package's own functions in the browser: `Notification.to_json` (the data
+## the service worker reads), `Options.headers` (what the push service reads), and the two checks
+## `Push.notify!` makes before it queues anything (`Options.check`, and `WebPush.max_data`).
+PushCompose := [].{
+
+	## How long a push service keeps the message for a browser that is offline.
+	ttls : List({ label : Str, seconds : U64 })
+	ttls = [
+		{ label: "Now or never", seconds: 0 },
+		{ label: "An hour", seconds: 3_600 },
+		{ label: "A day", seconds: 86_400 },
+		{ label: "Four weeks", seconds: 2_419_200 },
+	]
+
+	## How soon it must arrive: a phone on battery may hold the low ones back.
+	urgencies : List({ label : Str, urgency : [VeryLow, Low, Normal, High] })
+	urgencies = [
+		{ label: "Very low", urgency: VeryLow },
+		{ label: "Low", urgency: Low },
+		{ label: "Normal", urgency: Normal },
+		{ label: "High", urgency: High },
+	]
+
+	view! : {} => Html
+	view! = |{}| {
+		(title!, set_title!) = create_signal!("Your export is ready")
+		(body!, set_body!) = create_signal!("orders.csv, 3 MB")
+		(url!, set_url!) = create_signal!("/exports/17")
+		(tag!, set_tag!) = create_signal!("")
+		(ttl!, set_ttl!) = create_signal!(Options.defaults.ttl)
+		(urgency!, set_urgency!) = create_signal!(Options.defaults.urgency)
+		(topic!, set_topic!) = create_signal!("")
+		json! = create_memo!(|| { ..Notification.new(title!(), body!()), url: url!(), tag: tag!() }.to_json())
+		options! = create_memo!(|| { ttl: ttl!(), urgency: urgency!(), topic: topic!() })
+		size! = create_memo!(|| json!().to_utf8().len())
+		verdict! = create_memo!(|| verdict(options!(), size!()))
+		<div class="compose">
+			<div class="compose-fields">
+				<label>Title <input type="text" value={title!()} on:input.value={set_title!} /></label>
+				<label>Body <input type="text" value={body!()} on:input.value={set_body!} /></label>
+				<label>URL <input type="text" value={url!()} on:input.value={set_url!} /></label>
+				<label>Tag <input type="text" value={tag!()} on:input.value={set_tag!} /></label>
+				<label>Topic <input type="text" value={topic!()} on:input.value={set_topic!} /></label>
+			</div>
+			<fieldset class="ttl">
+				<legend>Kept for</legend>
+				{...ttls.map(|each|
+					<button type="button" aria-pressed={if (ttl!() == each.seconds) "true" else "false"} on:click={|| set_ttl!(each.seconds)}>
+						{each.label}
+					</button>
+				)}
+			</fieldset>
+			<fieldset class="urgency">
+				<legend>Urgency</legend>
+				{...urgencies.map(|each|
+					<button type="button" aria-pressed={if (urgency!() == each.urgency) "true" else "false"} on:click={|| set_urgency!(each.urgency)}>
+						{each.label}
+					</button>
+				)}
+			</fieldset>
+			<p class="compose-caption">
+				The data, <code>Notification.to_json</code>: <span class="size">{size!().to_str()}</span> of {WebPush.max_data.to_str()} bytes
+			</p>
+			<pre class="json"><code>{json!()}</code></pre>
+			<p class="compose-caption">The headers the push service reads, <code>Options.headers</code></p>
+			<pre class="headers"><code>{Str.join_with(options!().headers().map(|header| "${header.name}: ${header.value}"), "\n")}</code></pre>
+			<p class="verdict" class:refused={verdict!().refused} aria-live="polite">{verdict!().said}</p>
+		</div>
+	}
+
+	<style>
+		.compose-fields {
+			display: grid;
+			gap: var(--space-2);
+			margin-bottom: var(--space-4);
+		}
+
+		.compose-fields label {
+			display: grid;
+			grid-template-columns: 3.5rem 1fr;
+			align-items: center;
+			gap: var(--space-2);
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+		}
+
+		fieldset {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: var(--space-2);
+			margin: 0 0 var(--space-3);
+			padding: 0;
+			border: 0;
+		}
+
+		legend {
+			float: left;
+			width: 5.5rem;
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+		}
+
+		fieldset button {
+			padding: var(--space-1) var(--space-3);
+			border-radius: var(--pill);
+			background: var(--accent-soft);
+			color: var(--accent);
+			font-size: var(--size-sm);
+			font-weight: 500;
+		}
+
+		fieldset button[aria-pressed="true"],
+		fieldset button[aria-pressed="true"]:hover:not(:disabled) {
+			background: var(--accent);
+			color: var(--accent-text);
+		}
+
+		.compose-caption {
+			margin: var(--space-4) 0 var(--space-1);
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+		}
+
+		pre {
+			margin: 0;
+			white-space: pre-wrap;
+			overflow-wrap: anywhere;
+		}
+
+		.verdict {
+			margin: var(--space-4) 0 0;
+			padding: var(--space-2) var(--space-3);
+			border-radius: var(--radius-sm);
+			background: var(--good-soft);
+			color: var(--good);
+			font-size: var(--size-sm);
+		}
+
+		.verdict.refused {
+			background: var(--bad-soft);
+			color: var(--bad);
+		}
+	</style>
+}
+
+## What `Push.notify!` would do with them: queue it, or refuse it, and why.
+verdict : Options, U64 -> { refused : Bool, said : Str }
+verdict = |options, size|
+	match Options.check(options) {
+		Err(BadTopic) => { refused: Bool.True, said: "Push.notify! would refuse it: a topic is 32 characters at most, of letters, digits, - and _." }
+		Ok(_) =>
+			if size > WebPush.max_data {
+				{ refused: Bool.True, said: "Push.notify! would refuse it: a push message holds ${WebPush.max_data.to_str()} bytes at most." }
+			} else {
+				{ refused: Bool.False, said: "Push.notify! would queue it: a job for each of the user's browsers." }
+			}
+	}

@@ -5,7 +5,7 @@
 ## endpoints' OpenAPI document, with a page to read it in (`/openapi.json`, and `/openapi.html` in
 ## Swagger UI). The browser's half is the same pages, compiled to WebAssembly from the browser's copy
 ## of the site (`rocx build site --client site/build/client` writes its main.roc).
-app [program] { charts: "../packages/charts/main.roc", pf: platform "../server/platform/main.roc" }
+app [program] { admin: "../packages/admin/main.roc", charts: "../packages/charts/main.roc", forms: "../packages/forms/main.roc", guard: "../packages/guard/main.roc", intl: "../packages/intl/main.roc", markdown: "../packages/markdown/main.roc", mcp: "../packages/mcp/main.roc", pf: platform "../server/platform/main.roc", presence: "../packages/presence/main.roc", push: "../packages/push/main.roc", testing: "../packages/testing/main.roc" }
 
 import Generated/App
 import Middlewares

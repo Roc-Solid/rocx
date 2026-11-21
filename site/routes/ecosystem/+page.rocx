@@ -14,7 +14,7 @@ import ../../Ui/PageHero
 ## there are, as cards.
 meta = {
 	title: "The ecosystem",
-	description: "Packages for Roc Solid apps: plain Roc that the server, the browser and a test use alike, and components that rocx build copies into the app. The first one draws charts.",
+	description: "Packages for Roc Solid apps: plain Roc that the server, the browser and a test use alike, and components that rocx build copies into the app. Twelve so far: charts, crypto, files in S3, forms, Markdown, intl, an admin, guards, MCP, presence, Web Push and testing.",
 	toc: [
 		{ id: "packages", label: "The packages" },
 		{ id: "halves", label: "A package's two halves" },
@@ -35,7 +35,8 @@ view! = |_|
 				A Roc Solid package is a directory with two halves. One is plain Roc, on no platform, which the
 				server, the browser and a test all call alike. The other is components, <code>.rocx</code> files,
 				which <code>rocx build</code> copies into the app that names the package, so that each half of
-				the app compiles them on its own platform. So far there is one, and it draws charts.
+				the app compiles them on its own platform. There are twelve so far, each with a page: charts, crypto,
+				files in S3, forms, Markdown, intl, an admin, guards, MCP, presence, Web Push and testing.
 			</PageHero>
 
 			<Heading id="packages">The packages</Heading>

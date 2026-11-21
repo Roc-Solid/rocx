@@ -59,7 +59,7 @@ view! = |_| {
 			</Way>
 			<Way kind="Ecosystem" href={Paths.ecosystem} more="The ecosystem →" code={[<Code source={Sources.charts_use.rocx} numbers={Bool.False} />]}>
 				What it can use: packages of plain Roc and components, which work in both halves of an app.
-				The first one draws charts.
+				Twelve so far: charts, crypto, files in S3, forms, Markdown, intl, an admin, guards, MCP, presence, Web Push and testing.
 			</Way>
 
 

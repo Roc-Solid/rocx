@@ -1,0 +1,62 @@
+import pf.Html
+import testing.Dom
+import TestingInbox
+
+## What `page.get` answers for a few queries of Ada's inbox (two unread): the testing package's docs
+## page shows it, asked as the page renders, so what it shows is what the package says.
+TestingAnswers := [].{
+	view : {} -> Html
+	view = |{}|
+		<table>
+			<thead><tr><th>Asked</th><th>Answered</th></tr></thead>
+			<tbody>
+				{...answers.map(|row| <tr><td><code>{row.asked}</code></td><td><code>{row.kind}</code> {row.said}</td></tr>)}
+			</tbody>
+		</table>
+
+	<style>
+		/* Each query whole, on one line, and the answer readable: a narrow screen scrolls the table sideways. */
+		td:first-child code {
+			white-space: nowrap;
+		}
+
+		td:last-child {
+			min-width: 12rem;
+		}
+	</style>
+}
+
+## Each query, as it is written, and what `get` answered: `Ok` and the element, or why not.
+answers : List({ asked : Str, kind : Str, said : Str })
+answers = {
+	page = Dom.parse(Html.to_str(TestingInbox.view({ name: "Ada", unread: ["Lunch?", "Re: the plan"] })))
+	[Role("heading"), Named("link", "Lunch?"), Label("To"), TestId("unread"), Role("link"), Named("button", "Send")].map(
+		|query| {
+			asked = "page.get(${written(query)})"
+			match page.get(query) {
+				Ok(found) => { asked, kind: "Ok", said: if (found.text().is_empty()) "the <${found.tag()}>" else "the <${found.tag()}>: \"${found.text()}\"" }
+				Err(NotFound(why)) => { asked, kind: "NotFound", said: why }
+				Err(TooMany(why)) => { asked, kind: "TooMany", said: why }
+			}
+		},
+	)
+}
+
+## A query as Roc writes it.
+written : Dom.Query -> Str
+written = |query|
+	match query {
+		Role(role) => "Role(${quoted(role)})"
+		Named(role, name) => "Named(${quoted(role)}, ${quoted(name)})"
+		Text(text) => "Text(${quoted(text)})"
+		Label(text) => "Label(${quoted(text)})"
+		TestId(id) => "TestId(${quoted(id)})"
+		Tag(tag) => "Tag(${quoted(tag)})"
+		Attr(name, value) => "Attr(${quoted(name)}, ${quoted(value)})"
+	}
+
+quoted : Str -> Str
+quoted = |text| "\"${text}\""
+
+expect answers.map(|row| row.kind) == ["Ok", "Ok", "Ok", "Ok", "TooMany", "NotFound"]
+expect answers.get(5).map_ok(|row| row.said) == Ok("nothing is a button named \"Send\"; the buttons here: \"Write\"")

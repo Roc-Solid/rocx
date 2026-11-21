@@ -1,0 +1,21 @@
+import pf.Html
+import pf.Context
+import guard.Flags
+import guard.Flagged
+import GuardFlags
+
+## The page a visitor gets, with the new checkout or the old: the flags decided for them, in the
+## context `<Flagged>` reads. An app decides them in a server function (`FlagStore.values!`); here
+## they are decided where the page is rendered, when the site is built.
+GuardCheckout := [].{
+
+	view! : { who : Flags.Who } => Html
+	view! = |{ who }| {
+		flags = Flags.values([GuardFlags.new_checkout], { env: "production", overrides: [] }, who)
+		<FlagsContext value={flags}>
+			<Flagged name="new_checkout" fallback={<p>The old checkout, for {who.user}</p>}>
+				<p>The new checkout, for {who.user}</p>
+			</Flagged>
+		</FlagsContext>
+	}
+}

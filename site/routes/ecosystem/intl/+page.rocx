@@ -1,0 +1,451 @@
+import pf.Html
+import intl.Date
+import intl.Locales
+import intl.Plural
+import intl.Catalog
+import ../../../Demos/IntlDemo
+import ../../../Demos/IntlSamples
+import ../../../Ui/Code
+import ../../../Ui/Heading
+import ../../../Ui/Note
+import ../../../Generated/Sources
+import ../../../Generated/Paths
+import ../../../Ui/PageHero
+import ../../../Ui/TableWrap
+import ../../../Ui/Demo
+
+## The intl package: a live demo first (a language picker over numbers, money and dates), then the
+## same calls in each starter locale, how an app picks the reader's locale and hands it to its
+## components, the formatting functions, messages and catalogs (the demo's message among them,
+## written at build time), a form's errors, the modules, the data, and what works today. Every output on the page is written by the package as the site is
+## built; every listing is picked from a file that compiles.
+meta = {
+	title: "Intl",
+	description: "Numbers, money, dates, relative times and translated messages with plurals, as each locale writes them, for Roc Solid apps: the same text from the server and in the browser.",
+	toc: [
+		{ id: "demo", label: "A first look" },
+		{ id: "locales", label: "Ten locales" },
+		{ id: "locale", label: "The reader's locale" },
+		{ id: "language", label: "<Language>" },
+		{ id: "formatting", label: "Formatting" },
+		{ id: "messages", label: "Messages" },
+		{ id: "forms", label: "A form's errors" },
+		{ id: "modules", label: "The modules" },
+		{ id: "data", label: "Locale data and size" },
+		{ id: "status", label: "Status" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				kicker={[<>{"The ecosystem · "}</>, <code>packages/intl</code>]}
+				title="Every reader's language, written the same on the server and in the browser"
+			>
+				Numbers, money, dates, relative times and translated messages with plurals, as each locale writes
+				them. It is plain Roc, on no platform, so the server renders a page in the reader's language and the
+				browser hydrates the same text. The demo below runs in your browser: pick a language, or change
+				<code>n</code>, and watch every line follow.
+			</PageHero>
+
+			<Heading id="demo">A first look</Heading>
+		</NoHydration>
+		<Demo>
+			<div data-demo="intl"><IntlDemo /></div>
+		</Demo>
+		<NoHydration>
+			<p>
+				The demo makes a store with <code>Language.store!</code>: the reader's <code>Intl</code> in a signal,
+				for the locales it supports, with its catalog of messages. <code>{"<LanguageContext value={store}>"}</code>
+				gives it to everything inside, as a <a href={"${Paths.components}#contexts"}>context</a>, and
+				<code>{"<Language />"}</code> is the picker. Each hole that calls <code>intl!()</code> is written again
+				when the reader picks a language; nothing else runs. The site has no server, so here the choice isn't
+				kept: in an app, <code>remember!</code> sends it to an endpoint that sets a cookie.
+			</p>
+			<p>
+				The demo's catalog is empty. Translated messages run in the browser just the same, but they would
+				add about 13 KB to this site's wasm, which every page of the site loads. So the demo's message is
+				under <a href="#messages">Messages</a>, written by the package as this page was built.
+			</p>
+			<Code title={Sources.intl_demo_use.file} source={Sources.intl_demo_use.rocx} />
+			<details>
+				<summary>The whole demo: <code>{Sources.intl_demo.file}</code></summary>
+				<Code title={Sources.intl_demo.file} source={Sources.intl_demo.rocx} />
+			</details>
+
+			<Heading id="locales">Ten locales</Heading>
+			<p>
+				The package has data for ten locales: English (American and British), German, French, Spanish,
+				Polish, Czech, Russian, Arabic and Japanese. Here is what each writes for the same calls, as the
+				package wrote it when this page was built.
+			</p>
+			<TableWrap>
+				<table class="locales">
+					<thead>
+						<tr>
+							<th>Locale</th>
+							<th><code>number(-1234567.891)</code></th>
+							<th><code>percent(0.256, 1)</code></th>
+							<th><code>compact(1234567)</code></th>
+							<th><code>{"currency(1234.5, \"EUR\")"}</code></th>
+						</tr>
+					</thead>
+					<tbody>
+						{...Locales.all.map(
+							|data|
+								<tr lang={data.tag}>
+									<td><code>{data.tag}</code><span class="name">{data.name}</span></td>
+									{...IntlSamples.numbers(data).map(|said| <td><bdi>{said}</bdi></td>)}
+								</tr>,
+						)}
+					</tbody>
+				</table>
+			</TableWrap>
+			<TableWrap>
+				<table class="locales">
+					<thead>
+						<tr>
+							<th>Locale</th>
+							<th><code>date(moment, Medium)</code></th>
+							<th><code>time(moment, Short)</code></th>
+							<th><code>relative(-3, Day)</code></th>
+							<th><code>relative_day(-1)</code></th>
+						</tr>
+					</thead>
+					<tbody>
+						{...Locales.all.map(
+							|data|
+								<tr lang={data.tag}>
+									<td><code>{data.tag}</code><span class="name">{data.name}</span></td>
+									{...IntlSamples.dates(data).map(|said| <td><bdi>{said}</bdi></td>)}
+								</tr>,
+						)}
+					</tbody>
+				</table>
+			</TableWrap>
+			<Note>
+				The moment is 2026-11-21 15:04:05 UTC. The package's tests check each locale's output against
+				what JavaScript's <code>Intl</code> writes (ICU 78, CLDR 48) for the same input, and each plural
+				rule against <code>Intl.PluralRules</code>, number by number.
+			</Note>
+
+			<Heading id="locale">The reader's locale</Heading>
+			<p>
+				An app lists the locales it supports, its default first. A request is read in the locale of its
+				<code>locale</code> cookie (the reader's own choice, kept), else the one its
+				<code>Accept-Language</code> header asks for, else the default. <code>Locale.wanted(request,
+				"locale")</code> reads both, most wanted first, and <code>Intl.choose</code> takes the closest
+				supported locale: <code>pl-PL</code> takes <code>pl</code>, and in an app without plain
+				<code>en</code>, <code>en-US</code> takes <code>en-GB</code> rather than another language.
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Accept-Language</th><th>Read in, of en, en-GB, pl and de</th></tr></thead>
+					<tbody>
+						{...["pl-PL,pl;q=0.9,en;q=0.8", "en-GB,en;q=0.8", "en-US", "fr-CH, fr;q=0.9, de;q=0.7", "ja", ""].map(
+							|header| <tr><td><code>{if (header == "") "(none)" else header}</code></td><td><code>{IntlSamples.chosen(header)}</code></td></tr>,
+						)}
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				The app's locales, its words and the locale of a request go in a module of its own. The locale is
+				a <a href={"${Paths.calls}"}>server function</a>, so the server renders the page in it and the
+				browser, which reads the answer from the page, hydrates in the same one.
+			</p>
+			<Code title={Sources.intl_i18n.file} source={Sources.intl_i18n.rocx} />
+			<details>
+				<summary>How the closest locale is found: <code>Locale.best</code> and <code>Locale.wanted</code></summary>
+				<Code title={Sources.intl_best.file} source={Sources.intl_best.rocx} />
+			</details>
+
+			<Heading id="language">{"<Language>"}</Heading>
+			<p>
+				<code>components/Language.rocx</code> is the package's component. <code>rocx build</code> copies it
+				into each app that names the package, as it copies the <a href={Paths.ecosystem_charts}>charts</a>.
+				It holds the reader's <code>Intl</code> as a Solid context, and its view is a picker. The root layout
+				makes the store and provides it; <code>{"<html lang dir>"}</code> follow it:
+			</p>
+			<Code title={Sources.intl_layout.file} source={Sources.intl_layout.rocx} />
+			<p>A component reads the context, and calls <code>intl!()</code> in its holes:</p>
+			<Code title={Sources.intl_basket.file} source={Sources.intl_basket.rocx} />
+			<p>
+				Picking a language calls <code>remember!</code>, which here sends the tag to an endpoint of the
+				app's, which keeps it in the <code>locale</code> cookie for the next page:
+			</p>
+			<Code title={Sources.intl_endpoint.file} source={Sources.intl_endpoint.rocx} />
+			<TableWrap>
+				<table>
+					<thead><tr><th><code>Language</code></th><th>Is</th></tr></thead>
+					<tbody>
+						<tr><td><code>Store</code></td><td>what the context holds: <code>{"intl! : () => Intl"}</code>, the reader's; <code>{"choose! : Str => {}"}</code>, to choose another; and <code>supported : List(Locales.Data)</code>, the choices</td></tr>
+						<tr><td><code>language_context</code></td><td>the context: <code>{"<LanguageContext value={store}>"}</code> provides it, <code>use_context!(Language.language_context)</code> reads it</td></tr>
+						<tr><td><code>{"store!({ supported, catalog, tag, remember! })"}</code></td><td>a store in <code>tag</code>'s locale (the closest supported one); its <code>choose!(tag)</code> switches it and calls <code>remember!(tag)</code></td></tr>
+						<tr><td><code>{"<Language label={…} />"}</code></td><td>a <code>{"<select>"}</code> of the supported locales, each named in its own language ("English", "polski", "العربية"), the reader's chosen; <code>label</code> names it for screen readers; its class is <code>language</code></td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<Note>
+				These four files are a small app in the package, <code>packages/intl/example</code>, which builds on
+				both platforms. Run on the server, it rendered its page in Polish for
+				<code>Accept-Language: pl</code> and in Arabic, right to left, for a <code>locale=ar</code> cookie.
+			</Note>
+			<details>
+				<summary>The component: <code>{Sources.intl_language.file}</code></summary>
+				<Code title={Sources.intl_language.file} source={Sources.intl_language.rocx} />
+			</details>
+
+			<Heading id="formatting">Formatting</Heading>
+			<p>
+				<code>Intl</code> is one locale's way of writing things. <code>Intl.new(Locales.pl)</code> makes one
+				for a locale, and <code>Intl.choose(supported, wanted)</code> for the closest of several. Numbers are
+				<code>Dec</code>, Roc's decimal, rounded half away from zero; a moment is milliseconds since the
+				epoch, written in UTC or at a fixed offset (<code>intl.in_offset(60)</code>).
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Call</th><th>English</th><th>Polish</th></tr></thead>
+					<tbody>
+						<tr><td><code>number(1234.5)</code></td><td><code>{IntlSamples.en.number(1234.5)}</code></td><td><code>{IntlSamples.pl.number(1234.5)}</code> (from five digits, Polish groups them)</td></tr>
+						<tr><td><code>number(-1234567.891)</code></td><td><code>{IntlSamples.en.number(-1234567.891)}</code></td><td><code>{IntlSamples.pl.number(-1234567.891)}</code></td></tr>
+						<tr><td><code>fixed(2.5, 2)</code></td><td><code>{IntlSamples.en.fixed(2.5, 2)}</code></td><td><code>{IntlSamples.pl.fixed(2.5, 2)}</code></td></tr>
+						<tr><td><code>int(12345)</code></td><td><code>{IntlSamples.en.int(12345)}</code></td><td><code>{IntlSamples.pl.int(12345)}</code></td></tr>
+						<tr><td><code>percent(0.256, 1)</code></td><td><code>{IntlSamples.en.percent(0.256, 1)}</code></td><td><code>{IntlSamples.pl.percent(0.256, 1)}</code></td></tr>
+						<tr><td><code>compact(1234)</code>, <code>compact(12345678)</code></td><td><code>{IntlSamples.en.compact(1234)}</code>, <code>{IntlSamples.en.compact(12345678)}</code></td><td><code>{IntlSamples.pl.compact(1234)}</code>, <code>{IntlSamples.pl.compact(12345678)}</code></td></tr>
+						<tr><td><code>{"currency(1234.5, \"EUR\")"}</code></td><td><code>{IntlSamples.en.currency(1234.5, "EUR")}</code></td><td><code>{IntlSamples.pl.currency(1234.5, "EUR")}</code></td></tr>
+						<tr><td><code>{"currency(1234.5, \"PLN\")"}</code></td><td><code>{IntlSamples.en.currency(1234.5, "PLN")}</code></td><td><code>{IntlSamples.pl.currency(1234.5, "PLN")}</code></td></tr>
+						<tr><td><code>date(moment, Short)</code></td><td><code>{IntlSamples.en.date(IntlSamples.moment, Short)}</code></td><td><code>{IntlSamples.pl.date(IntlSamples.moment, Short)}</code></td></tr>
+						<tr><td><code>date(moment, Medium)</code></td><td><code>{IntlSamples.en.date(IntlSamples.moment, Medium)}</code></td><td><code>{IntlSamples.pl.date(IntlSamples.moment, Medium)}</code></td></tr>
+						<tr><td><code>date(moment, Long)</code></td><td><code>{IntlSamples.en.date(IntlSamples.moment, Long)}</code></td><td><code>{IntlSamples.pl.date(IntlSamples.moment, Long)}</code></td></tr>
+						<tr><td><code>date(moment, Full)</code></td><td><code>{IntlSamples.en.date(IntlSamples.moment, Full)}</code></td><td><code>{IntlSamples.pl.date(IntlSamples.moment, Full)}</code></td></tr>
+						<tr><td><code>time(moment, Short)</code></td><td><code>{IntlSamples.en.time(IntlSamples.moment, Short)}</code></td><td><code>{IntlSamples.pl.time(IntlSamples.moment, Short)}</code></td></tr>
+						<tr><td><code>date_time(moment, Long, Short)</code></td><td><code>{IntlSamples.en.date_time(IntlSamples.moment, Long, Short)}</code></td><td><code>{IntlSamples.pl.date_time(IntlSamples.moment, Long, Short)}</code></td></tr>
+						<tr><td><code>day(Date.ymd(2026, 1, 5), Long)</code>, a day with no time</td><td><code>{IntlSamples.en.day(Date.ymd(2026, 1, 5), Long)}</code></td><td><code>{IntlSamples.pl.day(Date.ymd(2026, 1, 5), Long)}</code></td></tr>
+						<tr><td><code>month_year(Date.ymd(2026, 11, 1))</code></td><td><code>{IntlSamples.en.month_year(Date.ymd(2026, 11, 1))}</code></td><td><code>{IntlSamples.pl.month_year(Date.ymd(2026, 11, 1))}</code></td></tr>
+						<tr><td><code>month_name(11)</code>, <code>weekday_name(6)</code></td><td><code>{IntlSamples.en.month_name(11)}</code>, <code>{IntlSamples.en.weekday_name(6)}</code></td><td><code>{IntlSamples.pl.month_name(11)}</code>, <code>{IntlSamples.pl.weekday_name(6)}</code></td></tr>
+						<tr><td><code>relative(-3, Day)</code></td><td><code>{IntlSamples.en.relative(-3, Day)}</code></td><td><code>{IntlSamples.pl.relative(-3, Day)}</code></td></tr>
+						<tr><td><code>relative(2, Hour)</code></td><td><code>{IntlSamples.en.relative(2, Hour)}</code></td><td><code>{IntlSamples.pl.relative(2, Hour)}</code></td></tr>
+						<tr><td><code>relative_day(-1)</code></td><td><code>{IntlSamples.en.relative_day(-1)}</code></td><td><code>{IntlSamples.pl.relative_day(-1)}</code></td></tr>
+						<tr><td><code>ago(then, now)</code>, five minutes apart</td><td><code>{IntlSamples.en.ago(IntlSamples.moment - 300000, IntlSamples.moment)}</code></td><td><code>{IntlSamples.pl.ago(IntlSamples.moment - 300000, IntlSamples.moment)}</code></td></tr>
+						<tr><td><code>plural(22)</code></td><td><code>{Plural.name(IntlSamples.en.plural(22))}</code></td><td><code>{Plural.name(IntlSamples.pl.plural(22))}</code></td></tr>
+						<tr><td><code>ordinal(23)</code></td><td><code>{Plural.name(IntlSamples.en.ordinal(23))}</code> ("23rd")</td><td><code>{Plural.name(IntlSamples.pl.ordinal(23))}</code></td></tr>
+						<tr><td><code>tag()</code>, <code>name()</code>, <code>direction()</code></td><td><code>{IntlSamples.en.tag()}</code>, <code>{IntlSamples.en.name()}</code>, <code>{IntlSamples.en.direction()}</code></td><td><code>{IntlSamples.pl.tag()}</code>, <code>{IntlSamples.pl.name()}</code>, <code>{IntlSamples.pl.direction()}</code></td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				<code>number_with(x, options)</code> takes the fraction digits and grouping
+				(<code>{"{ ..NumberFormat.defaults, min_fraction: 2 }"}</code>). <code>ago</code> says a difference
+				in the unit that suits it: seconds under a minute, then minutes, hours, days (under a week), weeks
+				(under 30 days), months and years. Arabic is written as CLDR 48 writes it: Latin digits, its marks
+				for right-to-left text, and its dual without a digit ("خلال ساعتين", "in two hours").
+			</p>
+
+			<Heading id="messages">Messages</Heading>
+			<p>
+				A catalog holds a set of keyed messages for each locale, one of them the default:
+				<code>{"Catalog.new(\"en\", [(\"en\", [(key, message), …]), (\"pl\", […])])"}</code>, as in
+				<code>I18n.rocx</code> above. <code>{"intl.t(key, args)"}</code> looks a key up in the reader's
+				locale, then in what it falls back to (<code>pl-PL</code>, then <code>pl</code>), then in the default.
+				So a regional set (<code>en-GB</code>) holds only what it says differently, and a missing
+				translation shows the default's words. A key no set has is shown as itself, so it is seen.
+			</p>
+			<p>
+				Here is the demo's message, <code>files</code>, in its five languages, and what
+				<code>{"t(\"files\", [(\"count\", Int(n))])"}</code> says for a few counts, as the package wrote it
+				when this page was built. Each language has its own plural categories: German two, Polish four
+				(and <code>=0</code>), Arabic six, Japanese one.
+			</p>
+			<Code title={Sources.intl_files.file} source={Sources.intl_files.rocx} />
+			<TableWrap>
+				<table class="files">
+					<thead>
+						<tr>
+							<th><code>n</code></th>
+							{...IntlDemo.supported.map(|data| <th><code>{data.tag}</code></th>)}
+						</tr>
+					</thead>
+					<tbody>
+						{...[0, 1, 2, 3, 5, 11, 22, 100].map(
+							|count|
+								<tr>
+									<td><code>{count.to_str()}</code></td>
+									{...IntlDemo.supported.map(|data| <td lang={data.tag}><bdi>{IntlSamples.files(data, count)}</bdi></td>)}
+								</tr>,
+						)}
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				Messages are written in a subset of ICU MessageFormat, which translators' tools read and write.
+				Arguments are a list of names and values: <code>{"(\"name\", Text(\"Ada\"))"}</code>,
+				<code>{"(\"count\", Int(3))"}</code>, <code>{"(\"price\", Num(9.99))"}</code> or
+				<code>{"(\"when\", Moment(ms))"}</code>.
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Message</th><th>With</th><th>Is</th></tr></thead>
+					<tbody>
+						<tr><td><code>{"Hello, {name}!"}</code></td><td><code>name: Ada</code></td><td>{IntlSamples.say(IntlSamples.en, "Hello, {name}!", [("name", Text("Ada"))])}</td></tr>
+						<tr><td><code>{"{count, plural, =0 {No files} one {# file} other {# files}}"}</code></td><td><code>count: 0</code>, <code>1</code>, <code>1234</code></td><td>{Str.join_with([0, 1, 1234].map(|n| IntlSamples.say(IntlSamples.en, "{count, plural, =0 {No files} one {# file} other {# files}}", [("count", Int(n))])), " · ")}</td></tr>
+						<tr><td><code>{"{place, selectordinal, one {#st} two {#nd} few {#rd} other {#th}}"}</code></td><td><code>place: 1</code>, <code>22</code>, <code>13</code></td><td>{Str.join_with([1, 22, 13].map(|n| IntlSamples.say(IntlSamples.en, "{place, selectordinal, one {#st} two {#nd} few {#rd} other {#th}}", [("place", Int(n))])), " · ")}</td></tr>
+						<tr><td><code>{"{role, select, admin {Administrator} other {Member}}"}</code></td><td><code>role: admin</code>, <code>guest</code></td><td>{Str.join_with(["admin", "guest"].map(|role| IntlSamples.say(IntlSamples.en, "{role, select, admin {Administrator} other {Member}}", [("role", Text(role))])), " · ")}</td></tr>
+						<tr><td><code>{"{guests, plural, offset:1 =0 {Nobody} =1 {{host}} one {{host} and # other} other {{host} and # others}}"}</code></td><td><code>host: Ada</code>, <code>guests: 3</code></td><td>{IntlSamples.say(IntlSamples.en, "{guests, plural, offset:1 =0 {Nobody} =1 {{host}} one {{host} and # other} other {{host} and # others}}", [("guests", Int(3)), ("host", Text("Ada"))])}</td></tr>
+						<tr><td><code>{"{total, number} · {share, number, percent}"}</code></td><td><code>total: 1234.5</code>, <code>share: 0.25</code></td><td>{IntlSamples.say(IntlSamples.en, "{total, number} · {share, number, percent}", [("total", Num(1234.5)), ("share", Num(0.25))])}</td></tr>
+						<tr><td><code>{"{when, date, long} at {when, time, short}"}</code></td><td><code>when: moment</code></td><td>{IntlSamples.say(IntlSamples.en, "{when, date, long} at {when, time, short}", [("when", Moment(IntlSamples.moment))])}</td></tr>
+						<tr><td><code>{"It''s '{literal}'"}</code></td><td></td><td>{IntlSamples.say(IntlSamples.en, "It''s '{literal}'", [])}</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				In a plural, each case is a category of the locale's plural rules (<code>zero</code>,
+				<code>one</code>, <code>two</code>, <code>few</code>, <code>many</code>, <code>other</code>), and
+				<code>other</code> is required. English has two; Polish four. For
+				<code>{"{count, plural, one {# plik} few {# pliki} many {# plików} other {# pliku}}"}</code>:
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>With</th><th>Is</th><th>Because</th></tr></thead>
+					<tbody>
+						{...[("1", "one"), ("3", "few: 2–4, 22–24…"), ("5", "many: the other whole numbers"), ("12", "many: 12–14 too"), ("22", "few"), ("2.5", "other: a fraction")].map(
+							|(n, why)| <tr><td><code>count: {n}</code></td><td>{IntlSamples.say(IntlSamples.pl, "{count, plural, one {# plik} few {# pliki} many {# plików} other {# pliku}}", [("count", Text(n))])}</td><td>{why}</td></tr>,
+						)}
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				<code>Catalog.problems(catalog)</code> lists what a translator still has to do: a key missing from a
+				locale, a key the default doesn't have, a message that can't be read (it is shown as written), and
+				one whose arguments aren't the default's. An app can <code>expect Catalog.problems(I18n.catalog) == []</code>
+				in a test. For this catalog:
+			</p>
+			<Code title={Sources.intl_typos.file} source={Sources.intl_typos.rocx} />
+			<ul class="problems">
+				{...Catalog.problems(IntlSamples.typos).map(|problem| <li>{Catalog.explain(problem)}</li>)}
+			</ul>
+
+			<Heading id="forms">A form's errors</Heading>
+			<p>
+				<a href={Paths.ecosystem_forms}><code>packages/forms</code></a> gives each issue a key and its parameters:
+				<code>Issues.key(code)</code> is <code>"too_short"</code>, and <code>Issues.params(code)</code> is
+				<code>{"[{ name: \"min\", value: \"3\" }]"}</code>. <code>intl.issue(key, params)</code> says them in
+				the reader's language, from <code>Validation.catalog</code>, which has words for all nineteen of
+				forms' keys in every starter locale, in forms' voice. Merge it under the app's own catalog
+				(<code>Catalog.merge(Validation.catalog, words)</code>), as <code>I18n.rocx</code> does; a key of the
+				app's own (<code>validation.not_postcode</code>) goes in its catalog.
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Key</th><th>Params</th><th>English</th><th>Polish</th></tr></thead>
+					<tbody>
+						{...[("required", "", ""), ("too_short", "min", "3"), ("too_short", "min", "5"), ("too_large", "max", "1500.5"), ("too_early", "min", "2026-01-31"), ("not_email", "", "")].map(
+							|(key, name, value)| {
+								params = if (name == "") [] else [{ name, value }]
+								<tr>
+									<td><code>{key}</code></td>
+									<td><code>{if (name == "") "(none)" else "${name}: ${value}"}</code></td>
+									<td>{IntlSamples.issue(IntlSamples.en, key, params)}</td>
+									<td>{IntlSamples.issue(IntlSamples.pl, key, params)}</td>
+								</tr>
+							},
+						)}
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				A number in the params picks the plural and is written the locale's way; a day
+				(<code>too_early</code>, <code>too_late</code>) as the locale writes dates.
+			</p>
+
+			<Heading id="modules">The modules</Heading>
+			<p>
+				Plain Roc, on no platform. <code>roc test packages/intl/main.roc</code> runs their
+				<code>expect</code>s.
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Module</th><th>What it does</th></tr></thead>
+					<tbody>
+						<tr><td><code>Intl</code></td><td>one locale's way of writing things, and its messages: the functions above, <code>t</code>, <code>issue</code>, <code>with_catalog</code>, <code>in_offset</code></td></tr>
+						<tr><td><code>Locale</code></td><td>a BCP 47 tag: <code>Locale.parse("EN_us")</code> is <code>en-US</code>; <code>fallbacks</code>; <code>accept_language(header)</code>; <code>best(wanted, supported, default)</code>; <code>wanted(request, cookie)</code></td></tr>
+						<tr><td><code>Locales</code></td><td>each starter locale's data: <code>en</code>, <code>en_gb</code>, <code>de</code>, <code>fr</code>, <code>es</code>, <code>pl</code>, <code>cs</code>, <code>ru</code>, <code>ar</code>, <code>ja</code>, and <code>all</code></td></tr>
+						<tr><td><code>Plural</code></td><td>CLDR's categories, each language's cardinal and ordinal rules, and <code>Forms</code>, a word for each category</td></tr>
+						<tr><td><code>NumberFormat</code></td><td>numbers by a locale's <code>Symbols</code>: grouping, fraction digits (<code>Options</code>, <code>defaults</code>), percent, compact, currency</td></tr>
+						<tr><td><code>Date</code></td><td>a day on the calendar: <code>Date.ymd(2026, 11, 21)</code>, days since 1970, weekdays, adding days and months, <code>parse_iso</code>, <code>to_iso</code></td></tr>
+						<tr><td><code>DateFormat</code></td><td>dates and times by CLDR's patterns (<code>d MMMM y</code>), in four styles</td></tr>
+						<tr><td><code>RelativeTime</code></td><td>"in 3 days", "3 dni temu"; <code>between(ms)</code>, the unit a difference is said in</td></tr>
+						<tr><td><code>Message</code></td><td>the ICU subset above: <code>parse</code>, <code>format</code>, <code>names</code>, <code>Arg</code></td></tr>
+						<tr><td><code>Catalog</code></td><td>messages for each locale: <code>new</code>, <code>add</code>, <code>merge</code>, <code>find</code>, <code>missing</code>, <code>problems</code>, <code>explain</code></td></tr>
+						<tr><td><code>Validation</code></td><td>the words for packages/forms' issues, in every starter locale</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+
+			<Heading id="data">Locale data and size</Heading>
+			<p>
+				<code>packages/intl/Locales.roc</code> is written by <code>tools/locales.mjs</code> from the CLDR in
+				Node's ICU: marks and patterns for numbers and money, currency symbols, compact patterns, month and
+				weekday names, date and time patterns, and relative-time words for each plural category. Plural rules
+				are code, in <code>Plural.roc</code>. To add a locale, add it to the script's list, run it, and format
+				the package.
+			</p>
+			<p>
+				An app's wasm holds only the locales it names, under 1 KB (brotli) each. The package's code is the
+				larger part, and grows with what an app calls: on a small app, numbers alone added 12.6 KB, all the
+				formatting 22.1 KB, and messages as well 34.5 KB. The demo at the top of this page adds about 17 KB to
+				this site's wasm: the store, the picker, numbers, money, dates and relative times, in five locales
+				(three would save 1.2 KB). A translated message in it would add about 13 KB more, which is why the
+				messages on this page are written at build time.
+			</p>
+
+			<Heading id="status">Status</Heading>
+			<p>
+				<strong>Works today</strong>, tested: locales and how one is chosen, plural rules, numbers, money,
+				compact numbers, dates and times, relative times, messages and catalogs, and a form's errors, for the
+				ten starter locales; the <code>{"<Language>"}</code> context and picker. The example app renders on the
+				server, hydrates, switches language in place, and keeps the choice in a cookie.
+			</p>
+			<p><strong>Waiting on a proposal</strong> (<code>packages/intl/PROPOSALS.md</code>):</p>
+			<ul>
+				<li>
+					The server's side (a middleware that picks the locale and sends <code>Content-Language</code>, and
+					the endpoint that keeps a choice) is written by the app, as above, until "server-only modules in
+					packages" lets the package ship it.
+				</li>
+				<li>
+					The picker can't be a component of its own until <code>rocx build</code> lets a package's component
+					import another of the same package, so it is <code>{"<Language />"}</code>.
+				</li>
+				<li>Keys are strings: the compiler doesn't check them until a build step writes a function for each from message files.</li>
+				<li>Time is UTC or a fixed offset: named time zones, with summer time, need a host primitive.</li>
+				<li>More locales and fuller data (parent locales, other digits, long compact forms) wait on a generator that reads cldr-json.</li>
+			</ul>
+		</NoHydration>
+	</>
+
+<style>
+	/* Code in a table wraps at its spaces, so a long call or message keeps the columns in view; and a
+	   heading's code is as it is written, not in capitals. */
+	td code,
+	th code {
+		white-space: normal;
+	}
+
+	th code {
+		text-transform: none;
+		letter-spacing: normal;
+	}
+
+	/* Each locale's name for itself, under its tag. */
+	.locales .name {
+		display: block;
+		color: var(--text-muted);
+		font-size: var(--size-xs);
+		white-space: nowrap;
+	}
+
+	.problems {
+		color: var(--text-muted);
+	}
+</style>

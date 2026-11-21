@@ -1,0 +1,97 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+import pf.Context
+import intl.Language
+import intl.Locales
+import intl.Catalog
+
+## The intl page's demo: numbers, money, a relative day and a date, in the language the picker says,
+## switched in place. Each hole calls `intl!()`, so picking a language writes them again, and
+## nothing else runs. Nothing here asks a server: the locales' data is in the browser's wasm, the
+## same as the server's that rendered the page. It has no messages (its catalog is empty): a
+## translated message would add about 13 KB to the site's wasm, so the page shows the demo's
+## message as it was written at build time instead (`IntlSamples.files`).
+IntlDemo := [].{
+
+	## The demo's languages, English first: the default.
+	supported : List(Locales.Data)
+	supported = [Locales.en, Locales.de, Locales.pl, Locales.ar, Locales.ja]
+
+	view! : {} => Html
+	view! = |{}| {
+		store = Language.store!({ supported: IntlDemo.supported, catalog: Catalog.empty("en"), tag: "en", remember!: |_| {} })
+		{ intl!, .. } = store
+		(count!, set_count!) = create_signal!(3)
+		<LanguageContext value={store}>
+			<div class="intl-demo">
+				<div class="controls">
+					<Language label="Language" />
+					<button type="button" class="fewer" aria-label="One fewer" on:click={|| set_count!(count!() - 1)} disabled?={count!() == 0}>−</button>
+					<output class="count">n = {intl!().int(count!())}</output>
+					<button type="button" class="more" aria-label="One more" on:click={|| set_count!(count!() + 1)}>+</button>
+				</div>
+				<dl>
+					<div><dt><code>{"number(n × 1234.5)"}</code></dt><dd lang={intl!().tag()} dir={intl!().direction()}>{intl!().number(count!().to_dec() * 1234.5)}</dd></div>
+					<div><dt><code>{"currency(n × 19.99, \"EUR\")"}</code></dt><dd lang={intl!().tag()} dir={intl!().direction()}>{intl!().currency(count!().to_dec() * 19.99, "EUR")}</dd></div>
+					<div><dt><code>{"relative_day(-n)"}</code></dt><dd lang={intl!().tag()} dir={intl!().direction()}>{intl!().relative_day(0 - count!())}</dd></div>
+					<div><dt><code>{"date(moment, Full)"}</code></dt><dd lang={intl!().tag()} dir={intl!().direction()}>{intl!().date(1795273445000, Full)}</dd></div>
+				</dl>
+			</div>
+		</LanguageContext>
+	}
+
+	<style>
+		.intl-demo {
+			display: grid;
+			gap: var(--space-3);
+		}
+
+		.controls {
+			display: flex;
+			flex-wrap: wrap;
+			gap: var(--space-2);
+			align-items: center;
+		}
+
+		.controls :global(select) {
+			min-height: 2.5rem;
+			padding: var(--space-2) var(--space-3);
+			border: 0;
+			border-radius: var(--radius-sm);
+			background: var(--fill);
+			color: var(--text);
+		}
+
+		.controls button {
+			min-width: 2.5rem;
+			min-height: 2.5rem;
+		}
+
+		dl {
+			display: grid;
+			grid-template-columns: max-content 1fr;
+			gap: var(--space-2) var(--space-4);
+			margin: 0;
+		}
+
+		dl div {
+			display: contents;
+		}
+
+		dt {
+			color: var(--text-muted);
+		}
+
+		dd {
+			margin: 0;
+			font-size: var(--size-lg);
+		}
+
+		.count {
+			min-width: 4.5rem;
+			text-align: center;
+			font-family: var(--mono);
+			color: var(--accent);
+		}
+	</style>
+}

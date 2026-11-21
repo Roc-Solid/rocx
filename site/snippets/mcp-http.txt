@@ -1,0 +1,18 @@
+# main.roc: the MCP server at /mcp, behind the middleware that decides who may ask
+program = App.program({
+	context: |started| { greeting: started },
+	middleware: Middlewares.signed_in.then(McpHttp.middleware("/mcp", Agents.server)),
+	crons: [],
+})
+
+# Agents.roc: an endpoint, a server function and a handler of the app's own, a tool each
+server : Mcp.Server(McpHttp.Caller(Context))
+server = {
+	name: "notes",
+	version: "1.0.0",
+	tools: [
+		McpHttp.endpoint(Api.post_api_convert({}), { name: "convert", description: "Celsius to Fahrenheit" }, McpHttp.openapi({})),
+		McpHttp.function(Echo.echo!, { name: "echo", description: "Says a message back" }, McpHttp.openapi({})),
+		McpHttp.tool({ name: "greet", description: "Greets someone" }, greet!, McpHttp.openapi({})),
+	],
+}

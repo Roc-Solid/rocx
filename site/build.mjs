@@ -208,6 +208,23 @@ function lines(name, path, pattern) {
 	return { name, file: path, rocx: dedent(found), roc: "", first: 1, call: "" };
 }
 
+/**
+ * The app header of `path` (`app [program] { … }`) with only the entries named in `keep`, "…" where
+ * others were left out: so a page can show the one package it is about, in the file that names it.
+ */
+function header(name, path, keep) {
+	const line = lines(name, path, /^app \[program\] \{/).rocx;
+	const entries = /\{ (.*) \}$/.exec(line)[1].split(/, (?=[a-z_]+: )/);
+	const shown = [];
+	for (const entry of entries) {
+		if (keep.includes(entry.slice(0, entry.indexOf(":")))) shown.push(entry);
+		else if (shown.at(-1) !== "…") shown.push("…");
+	}
+	const missing = keep.filter((wanted) => !entries.some((entry) => entry.startsWith(`${wanted}:`)));
+	if (missing.length) throw new Error(`${path}: the header names no ${missing.join(", ")}`);
+	return { name, file: path, rocx: `${line.slice(0, line.indexOf("{"))}{ ${shown.join(", ")} }`, roc: "", first: 1, call: "" };
+}
+
 /** Lines of a file that `pattern` matches, each without its indentation, "…" where lines were left out. */
 function excerpt(name, path, pattern) {
 	const all = readFileSync(join(root, path), "utf8").split("\n");
@@ -430,6 +447,130 @@ function sourcesModule() {
 		whole("chart_stacked", "packages/charts/components/StackedBarChart.rocx"),
 		whole("chart_sparkline", "packages/charts/components/Sparkline.rocx"),
 		whole("chart_heatmap", "packages/charts/components/Heatmap.rocx"),
+		// packages/admin (/ecosystem/admin): the header that names it, a route, the admin's own pages, and its SQL.
+		header("admin_header", "site/main.roc", ["admin", "pf"]),
+		whole("admin_route", "site/Demos/AdminRoute.rocx"),
+		whole("admin_preview", "site/Demos/AdminPreview.rocx"),
+		defined("admin_ident", "packages/admin/Sql.roc", ["ident", "qualified", "contains"]),
+		// packages/forms (/ecosystem/forms): the schema, its endpoint, the demo, and two of the package's components.
+		defined("forms_schema", "site/Demos/FormsSignup.rocx", ["Passwords", "Account", "passwords", "form"]),
+		defined("forms_endpoint", "site/Demos/FormsSignup.rocx", ["post!"]),
+		defined("forms_demo", "site/Demos/FormsDemo.rocx", ["view!", "labels"]),
+		whole("forms_demo_file", "site/Demos/FormsDemo.rocx"),
+		whole("forms_live_form", "packages/forms/components/LiveForm.rocx"),
+		whole("forms_text_field", "packages/forms/components/TextField.rocx"),
+		// packages/guard (/ecosystem/guard): its demos, its example app, and its server modules' API.
+		whole("guard_middlewares", "packages/guard/example/Middlewares.roc"),
+		whole("guard_route", "packages/guard/example/routes/login/+server.roc"),
+		picks("guard_limits", "site/Demos/GuardLimits.rocx", ["## A login form's limit", "login : RateLimit", "login = "], ["## The same 5 a minute", "strict : RateLimit", "strict = "], ["## What each request is answered", "answers : ", "answers = ", "var $state", "var $said", "for second in seconds {", "{ decision, state } = ", "$state = state", "$said = ", "}", "$said", "}"]),
+		whole("guard_playground", "site/Demos/GuardPlayground.rocx"),
+		picks("guard_flag", "site/Demos/GuardFlags.rocx", ["import guard.Flag", "import guard.Flags"], ["## On for ada, for anyone in staff", "## development, on for everyone.", "new_checkout : Flag", "new_checkout = ", ".in_env("]),
+		whole("guard_overrides", "packages/guard/example/routes/admin/flags/+server.roc"),
+		whole("guard_visitor", "packages/guard/example/Visitor.rocx"),
+		whole("guard_layout", "packages/guard/example/routes/+layout.rocx"),
+		whole("guard_page", "packages/guard/example/routes/+page.rocx"),
+		whole("guard_checkout", "site/Demos/GuardCheckout.rocx"),
+		lines("guard_middleware_api", "packages/guard/server/Guard.roc", /^\t[A-Za-z_]+(\(c\))? : /),
+		lines("guard_flagstore_api", "packages/guard/server/FlagStore.roc", /^\t[a-z_]+! : /),
+		// packages/intl (/ecosystem/intl): its demo, what the page writes at build time, and the package's example app.
+		picks("intl_demo_use", "site/Demos/IntlDemo.rocx", ["import intl.Language", "import intl.Locales", "import intl.Catalog"], ["store = Language.store!(", "{ intl!, .. } = store", "<LanguageContext value={store}>", "<Language label=", '<div><dt><code>{"number(', "</LanguageContext>"]),
+		whole("intl_demo", "site/Demos/IntlDemo.rocx"),
+		defined("intl_files", "site/Demos/IntlSamples.rocx", ["files_catalog", "files"]),
+		defined("intl_typos", "site/Demos/IntlSamples.rocx", ["typos"]),
+		whole("intl_i18n", "packages/intl/example/I18n.rocx"),
+		defined("intl_best", "packages/intl/Locale.roc", ["best", "wanted"]),
+		whole("intl_layout", "packages/intl/example/routes/+layout.rocx"),
+		whole("intl_basket", "packages/intl/example/Basket.rocx"),
+		whole("intl_endpoint", "packages/intl/example/routes/locale/+server.roc"),
+		whole("intl_language", "packages/intl/components/Language.rocx"),
+		// packages/markdown (/ecosystem/markdown): its examples, from its demos and their sample files.
+		whole("markdown_walk", "site/Demos/MarkdownFiles/walk.md"),
+		picks("markdown_use", "site/Demos/MarkdownDemo.rocx", ["import markdown.Markdown", "import \"MarkdownFiles/walk.md\""], ["view = |{}| <Markdown"]),
+		pick("markdown_toc", "site/Demos/MarkdownToc.rocx", ["doc = Md.parse(guide)", "<div class=\"guide\">", "<nav aria-label=", "<p class=\"time\">", "<ul>", "</nav>", "<Markdown doc={doc} />", "</div>"]),
+		whole("markdown_hooks_sample", "site/Demos/MarkdownFiles/hooks.md"),
+		pick("markdown_hooks", "site/Demos/MarkdownHooks.rocx", ["<Markdown", "source={sample}", "heading=", "code=", "link=", "/>"]),
+		whole("markdown_unsafe", "site/Demos/MarkdownFiles/unsafe.md"),
+		picks("markdown_safety", "site/Demos/MarkdownSafety.rocx", ["<Markdown source={unsafe} />"], ["<Markdown source={unsafe} raw={Drop} />"]),
+		whole("markdown_heron", "site/Demos/MarkdownFiles/posts/heron.md"),
+		picks("markdown_posts", "site/Demos/MarkdownPosts.rocx", ["import markdown.Collection", "import markdown.Md", "import \"MarkdownFiles/posts/heron.md\"", "import \"MarkdownFiles/posts/winter.md\""], ["Post := {", "parser_for : _", "}"], ["all : List(", "all =", "match Collection.load(", "Ok(entries) => entries", "Err(failed) => crash", "}"]),
+		whole("markdown_component", "packages/markdown/components/Markdown.rocx"),
+		whole("demo_markdown_demo", "site/Demos/MarkdownDemo.rocx"),
+		whole("demo_markdown_toc", "site/Demos/MarkdownToc.rocx"),
+		whole("demo_markdown_hooks", "site/Demos/MarkdownHooks.rocx"),
+		whole("demo_markdown_safety", "site/Demos/MarkdownSafety.rocx"),
+		whole("demo_markdown_posts", "site/Demos/MarkdownPosts.rocx"),
+		// packages/mcp (/ecosystem/mcp): the server it sends requests to as the site is built, its
+		// test, the HTTP side's sketch, and the files whole.
+		picks(
+			"mcp_server",
+			"site/Demos/McpTemperatures.rocx",
+			["import mcp.Mcp", "import mcp.Prompt", "import mcp.Resource", "import mcp.Template", "import mcp.Tool"],
+			["server : Mcp.Server({})", "server = {", "name:", "version:", "title:", "instructions:", "tools: [", "Tool.typed(", "],", "resources:", "templates:", "prompts:", "}"],
+			["convert! :", "convert! =", "if celsius", "Err(", "} else {", "Ok(", "}"],
+		),
+		pick("mcp_test", "site/Demos/McpTemperatures.rocx", ["## What MCP takes", "expect Mcp.problems("]),
+		whole("mcp_http_sketch", "site/snippets/mcp-http.txt"),
+		whole("mcp_demo", "site/Demos/McpTemperatures.rocx"),
+		whole("mcp_http", "packages/mcp/server/McpHttp.roc"),
+		// packages/presence (/ecosystem/presence): the demo, and the package's own files.
+		picks("presence_use", "site/Demos/PresenceDemo.rocx", ["import presence.AvatarStack", "import presence.Cursors", "import presence.LiveCursors", "import presence.TypingIndicator", "import presence.Presence", "import presence.Room", "import presence.Wire"], ["(members!, set_members!) = create_signal!(", "typing = Presence.create_typing!(", "cursors = Presence.create_cursors!("], ["<AvatarStack faces!="], ["<LiveCursors cursors!=", "<div class=\"note\"", "<p class=\"note-title\">", "<p class=\"line\">", "<p class=\"line short\">", "<p class=\"line\">", "<p class=\"line shorter\">", "</div>", "</LiveCursors>"], ["<TypingIndicator names!="]),
+		pick("presence_stores", "site/Demos/PresenceDemo.rocx", ["did! = |step| {", "set_members!(", "set_seed!(", "if (!step.typed", "if !step.left", "(typing.stopped!)(", "(cursors.gone!)(", "}", "var $after", "for move in step.moves {", "_ = set_timeout!(", "$after = $after + 150", "}", "}", "act! = |action| "]),
+		defined("presence_stream", "packages/presence/server/PresenceServer.roc", ["stream"]),
+		picks("presence_grace", "packages/presence/Room.roc", ["Meta : { name : Str, status : Str }"], ["ann : Meta", "ann = "], ["start : Room(Meta)", "start = Room.empty("], ["# Leaving with grace", "expect {", "(room, _) = start.join(", "(left, changes) = room.leave(", "(early, before) = left.sweep(", "(_, after) = early.sweep(", "changes == []", "}"]),
+		whole("presence_demo", "site/Demos/PresenceDemo.rocx"),
+		whole("presence_avatar_stack", "packages/presence/components/AvatarStack.rocx"),
+		whole("presence_typing_indicator", "packages/presence/components/TypingIndicator.rocx"),
+		whole("presence_live_cursors", "packages/presence/components/LiveCursors.rocx"),
+		whole("presence_stores_file", "packages/presence/components/Presence.rocx"),
+		whole("presence_server", "packages/presence/server/PresenceServer.roc"),
+		// packages/push (/ecosystem/push): its example app, its server glue, its button, and the page's demo.
+		whole("push_example_main", "packages/push/example/main.roc"),
+		whole("push_example_layout", "packages/push/example/routes/+layout.rocx"),
+		whole("push_example_page", "packages/push/example/routes/+page.rocx"),
+		whole("push_example_key", "packages/push/example/routes/push/key/+server.roc"),
+		whole("push_example_subscribe", "packages/push/example/routes/push/subscribe/+server.roc"),
+		whole("push_example_unsubscribe", "packages/push/example/routes/push/unsubscribe/+server.roc"),
+		defined("push_send", "packages/push/server/Push.roc", ["notify!", "broadcast!"]),
+		whole("push_button", "packages/push/components/PushButton.rocx"),
+		whole("push_compose", "site/Demos/PushCompose.rocx"),
+		// packages/testing (/ecosystem/testing): a pure component and its expects, and the package's own
+		// tests, which run against a small app it builds.
+		first("testing_inbox", "site/Demos/TestingInbox.rocx", 24),
+		lines("testing_inbox_expects", "site/Demos/TestingInbox.rocx", /^(## Ada's inbox|inbox |expect )/),
+		whole("testing_answers", "site/Demos/TestingAnswers.rocx"),
+		picks(
+			"testing_node_setup",
+			"packages/testing/test/app.test.mjs",
+			["before(async () => {", "if (skip) return;", "dir = writeFixture(", "const built = await buildForTests(", "if (!skipDb) db = await testDatabase();", "app = await startServer(", "browser = await launchBrowser();", "});"],
+			["after(async () => {", "await browser?.close();", "await app?.stop();", "await db?.drop();", "if (dir) rmSync(", "});"],
+		),
+		pick("testing_node_page", "packages/testing/test/app.test.mjs", [
+			'test("a page, found in by role', "const person = app.client();", 'const page = await person.get("/");', "assert.equal(page.status, 200);", "const { getByRole, getByLabelText, getByTestId } = page.dom;",
+			'assert.equal(getByRole("heading"', 'assert.ok(getByRole("region"', 'assert.equal(getByTestId("count")', 'assert.equal(getByRole("status"', 'assert.equal(getByLabelText("New note")', 'assert.deepEqual(page.dom.getAllByRole("button")',
+			'const missing = await person.get("/nowhere");', "assert.equal(missing.status, 404);", 'assert.equal(missing.dom.getByRole("alert")', "});",
+		]),
+		pick("testing_node_form", "packages/testing/test/app.test.mjs", [
+			'test("a form posted without the runtime', "const person = app.client();", 'await person.get("/");', 'const posted = await person.post("/notes"', "assert.equal(posted.status, 303);", 'assert.equal(posted.location, "/"', "assert.deepEqual(person.flash, {",
+			"assert.equal((await posted.follow()).status, 200);", "assert.equal(person.flash, null", 'const sent = await person.submit("/notes"', "assert.deepEqual([sent.status, sent.json()]", "});",
+			'test("a server function, an endpoint', "const person = app.client();", 'assert.equal(await person.call("Generated/RootPage.count"), 3);', 'const ticks = await person.events("/api/ticks");', "assert.deepEqual((await ticks.take(4))",
+			'["message", \'{"tick":1}\'],', '["message", \'{"tick":2}\'],', '["message", \'{"tick":3}\'],', '["end", ""],', "]);", "});",
+		]),
+		pick("testing_node_mail", "packages/testing/test/app.test.mjs", [
+			'test("the dev mailbox', "const before = (await app.mail()).length;", 'assert.equal((await app.client().json("/api/mail"', "const mail = await app.waitForMail(", "assert.equal(mail.from,", "assert.deepEqual(links(mail),", "assert.ok(app.logs().some(", "});",
+		]),
+		picks(
+			"testing_node_jobs",
+			"packages/testing/test/app.test.mjs",
+			["const person = app.client();", 'assert.equal((await person.json("/api/welcome"', "const ran = await db.settleJobs();", "assert.deepEqual(ran.map(", "const welcome = await app.waitForMail(", "assert.deepEqual(links(welcome)"],
+			['const id = await db.enqueue("welcome"', "assert.deepEqual((await db.settleJobs())"],
+			["// One that fails is tried again later", "// with `later`", 'const failing = await db.enqueue("welcome"', "const first = await db.settleJobs();", "assert.deepEqual(first.map(", "assert.match(first[0].last_error", "const spent = await db.settleJobs({ later: true });", "assert.deepEqual(spent.map(", 'assert.deepEqual((await db.jobs({ kind: "welcome" }))'],
+		),
+		pick("testing_node_browser", "packages/testing/test/app.test.mjs", [
+			'test("in Chromium', "if (!browser) return t.skip(", "const tab = await browser.open(", "try {", "assert.deepEqual(tab.errors, []);", "assert.deepEqual(tab.console, []);", "assert.ok((await tab.requested())",
+			'await (await tab.getByRole("button", { name: "Add one" })).click();', 'const count = await tab.findByText("2");', "assert.deepEqual([count.tag, count.name]", 'const field = await tab.getByLabelText("New note");', 'await field.fill("first");', 'await field.fill("second");',
+			'assert.equal(await field.value(), "second");', 'assert.equal((await tab.findByText("3 notes")).tag', 'await assert.rejects(tab.findByRole("button", { name: "Delete" }', "} finally {", "await tab.close();", "}",
+			"const story = await browser.open(", "try {", 'assert.equal((await story.getByRole("status"', 'await (await story.getByRole("button"', 'await story.findByText("11");', "assert.deepEqual(story.errors, []);", "} finally {", "await story.close();", "}", "});",
+		]),
 		whole("demo_shelf", "site/Demos/Shelf.rocx"),
 		whole("demo_bag", "site/Demos/Bag.rocx"),
 		whole("shared", "site/Demos/Bag.rocx"),

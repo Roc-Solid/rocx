@@ -1,0 +1,153 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+import pf.For
+import guard.RateLimit
+
+## A login form's limit, 5 a minute, run in the browser by the package's own `RateLimit.check`, with
+## a clock moved by hand: send requests, wait, and see what the server's middleware would answer.
+## Nothing is sent anywhere. Switching between a token bucket and a sliding window starts again.
+GuardPlayground := [].{
+
+	Answer : { id : U64, second : U64, allowed : Bool, text : Str }
+
+	view! : {} => Html
+	view! = |{}| {
+		(sliding!, set_sliding!) = create_signal!(Bool.False)
+		(now!, set_now!) = create_signal!(0)
+		(kept!, set_kept!) = create_signal!(nothing)
+		(said!, set_said!) = create_signal!(none)
+		send! = || {
+			limit = policy(sliding!())
+			at = now!()
+			{ decision, state } = limit.check(kept!() ?? limit.fresh(at), at)
+			set_kept!(Ok(state))
+			id =
+				match said!().first() {
+					Ok(last) => last.id + 1
+					Err(_) => 0
+				}
+			set_said!([{ id, second: at // 1000, allowed: decision.allowed, text: answer(limit, decision) }].concat(said!()).take_first(6))
+		}
+		wait! = |seconds| set_now!(now!() + seconds * 1000)
+		start! = |sliding| {
+			set_sliding!(sliding)
+			set_now!(0)
+			set_kept!(nothing)
+			set_said!(none)
+		}
+		<div class="playground">
+			<div class="kinds" role="group" aria-label="How the limit counts">
+				<button type="button" aria-pressed={if (sliding!()) "false" else "true"} on:click={|| start!(Bool.False)}>Token bucket</button>
+				<button type="button" aria-pressed={if (sliding!()) "true" else "false"} on:click={|| start!(Bool.True)}>Sliding window</button>
+			</div>
+			<div class="actions">
+				<button type="button" class="send" on:click={send!}>Send a request</button>
+				<button type="button" on:click={|| wait!(1)}>Wait 1 s</button>
+				<button type="button" on:click={|| wait!(12)}>Wait 12 s</button>
+				<button type="button" on:click={|| wait!(60)}>Wait a minute</button>
+			</div>
+			<p class="clock">Second <output>{(now!() // 1000).to_str()}</output> · 5 a minute</p>
+			<ol class="answers" aria-live="polite">
+				<For each!={said!()} keyed={|each| each.id}>
+					{|each!, _|
+						<li class:refused={!each!().allowed}>
+							<span class="at">{"Second ${each!().second.to_str()}"}</span>
+							<span>{each!().text}</span>
+						</li>
+					}
+				</For>
+			</ol>
+		</div>
+	}
+
+	<style>
+		.playground {
+			display: grid;
+			gap: var(--space-3);
+		}
+
+		.kinds,
+		.actions {
+			display: flex;
+			flex-wrap: wrap;
+			gap: var(--space-2);
+		}
+
+		button {
+			padding: var(--space-1) var(--space-3);
+			font-size: var(--size-sm);
+		}
+
+		.kinds button[aria-pressed="true"],
+		.send {
+			background: var(--accent-soft);
+			color: var(--accent);
+		}
+
+		.clock {
+			margin: 0;
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+		}
+
+		.answers {
+			display: grid;
+			gap: var(--space-1);
+			min-height: 9.5rem;
+			margin: 0;
+			padding: 0;
+			list-style: none;
+			font-family: var(--mono);
+			font-size: var(--size-sm);
+		}
+
+		.answers:not(:has(li))::before {
+			content: "No requests yet.";
+			color: var(--text-muted);
+		}
+
+		li {
+			display: flex;
+			flex-wrap: wrap;
+			gap: var(--space-3);
+			padding: var(--space-1) var(--space-2);
+			border-radius: var(--radius-sm);
+			background: var(--good-soft);
+		}
+
+		li.refused {
+			background: var(--bad-soft);
+		}
+
+		.at {
+			color: var(--text-muted);
+		}
+	</style>
+}
+
+## The limit: 5 a minute, as a token bucket or a sliding window.
+policy : Bool -> RateLimit
+policy = |sliding| if (sliding) RateLimit.per_minute(5).sliding() else RateLimit.per_minute(5)
+
+## What the server's middleware answers: its status, and the header a client reads.
+answer : RateLimit, RateLimit.Decision -> Str
+answer = |limit, decision| {
+	headers = RateLimit.headers(limit, decision)
+	header = |name|
+		match headers.find_first(|each| each.name == name) {
+			Ok(found) => found.value
+			Err(_) => "?"
+		}
+	if decision.allowed {
+		"200 OK, RateLimit-Remaining: ${header("ratelimit-remaining")}"
+	} else {
+		"429 Too Many Requests, Retry-After: ${header("retry-after")}"
+	}
+}
+
+## No state yet: the next request is the first.
+nothing : Try(RateLimit.State, [Fresh])
+nothing = Err(Fresh)
+
+none : List(GuardPlayground.Answer)
+none = []

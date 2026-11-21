@@ -1,0 +1,357 @@
+import pf.Html
+import ../../../Demos/GuardLimits
+import ../../../Demos/GuardPlayground
+import ../../../Demos/GuardClients
+import ../../../Demos/GuardFlags
+import ../../../Demos/GuardCheckout
+import ../../../Demos/GuardHeaders
+import ../../../Ui/Code
+import ../../../Ui/Heading
+import ../../../Ui/Note
+import ../../../Generated/Sources
+import ../../../Generated/Paths
+import ../../../Ui/PageHero
+import ../../../Ui/TableWrap
+import ../../../Ui/Demo
+
+## The guard package: rate limits, feature flags and small request guards, as middleware. Its
+## tables are the package's own answers, worked out by the server when the site is built; one
+## demo runs a rate limit in the browser, with a clock moved by hand.
+meta = {
+	title: "Guard",
+	description: "Rate limits, feature flags and request guards for Roc Solid apps, as middleware, decided by plain Roc that a test runs with a fake clock.",
+	toc: [
+		{ id: "first", label: "A first guard" },
+		{ id: "limits", label: "Rate limits" },
+		{ id: "try", label: "Try a limit" },
+		{ id: "proxies", label: "Behind a proxy" },
+		{ id: "flags", label: "Feature flags" },
+		{ id: "guards", label: "Other guards" },
+		{ id: "modules", label: "The modules" },
+		{ id: "status", label: "Status" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				kicker={[<>{"The ecosystem · "}</>, <code>packages/guard</code>]}
+				title="Rate limits, feature flags and guards, as middleware"
+			>
+				A login form takes 5 tries a minute from each address. A new checkout goes to staff first, then
+				to a quarter of everyone. Every answer carries security headers, and the whole site can go into
+				maintenance from an admin page. Each guard is middleware: it runs around a request, and lets it
+				go on or refuses it. What it decides is plain Roc, so the tables on this page are the package's
+				own answers, worked out when the site was built.
+			</PageHero>
+
+			<Heading id="first">A first guard</Heading>
+			<p>
+				A guard is <a href={"${Paths.routing}#middleware"}>middleware</a>. The app's default middleware
+				runs around every request, and a route file names its own, which runs around that route. Here
+				every answer gets security headers, a body over a megabyte is refused, the site can be put into
+				maintenance, everything under <code>/api</code> is limited for each user, and the login route
+				for each address:
+			</p>
+			<Code title={Sources.guard_middlewares.file} source={Sources.guard_middlewares.rocx} />
+			<Code title={Sources.guard_route.file} source={Sources.guard_route.rocx} />
+			<p>
+				The sixth try in a minute is answered <code>429 Too Many Requests</code>, with
+				<code>Retry-After</code> and the <code>RateLimit-*</code> headers. Every guard hands on the
+				context it is given, unchanged, so guards go anywhere in a chain.
+			</p>
+			<p>
+				Name the package in the app's header, as you name <a href={Paths.ecosystem_charts}>charts</a>:
+				<code>{"guard: \"../packages/guard/main.roc\""}</code>. The middleware itself (<code>Guard</code>,
+				<code>FlagStore</code> and <code>Kept</code>, in <code>packages/guard/server/</code>) is copied
+				into the app by hand for now, beside its <code>main.roc</code>: <a href="#status">Status</a> says
+				why. The code above is from <code>packages/guard/example/</code>, a whole app that builds once
+				they are copied in.
+			</p>
+
+			<Heading id="limits">Rate limits</Heading>
+			<p>
+				A limit says how many requests a client may send, and in how long.
+				<code>RateLimit.per_minute(5)</code> is a token bucket: a client may send 5 at once, then one
+				every 12 seconds. <code>.sliding()</code> counts the same limit in a sliding window: never more
+				than 5 in any minute. Both are plain functions. A client's state and the time go in; whether the
+				request may go on, and the next state, come out.
+			</p>
+			<Code title={Sources.guard_limits.file} source={Sources.guard_limits.rocx} numbers={Bool.False} />
+			<p>
+				Here are the same eleven requests under each limit, as <code>RateLimit.check</code> answered them
+				when this page was built. The clock is a list of seconds, as it is in the package's tests.
+			</p>
+			<TableWrap>
+				<GuardLimits />
+			</TableWrap>
+			<p>
+				The bucket lets the first five through, refuses the sixth, and gives a token back every 12
+				seconds. A refused request costs nothing, so hammering doesn't push the next allowed one back.
+				The sliding window refuses everything after the fifth until the five weigh less: a window's count
+				is this minute's requests plus the last minute's, weighted by how much of it the window still
+				covers. So it needs two numbers a client, however high the limit.
+			</p>
+
+			<Heading id="try">Try a limit</Heading>
+			<p>
+				The same <code>RateLimit.check</code>, in your browser, with a clock you move by hand. Nothing
+				is sent anywhere: each line is what the server's middleware would answer.
+			</p>
+		</NoHydration>
+		<Demo>
+			<div data-demo="guard-limit"><GuardPlayground /></div>
+		</Demo>
+		<NoHydration>
+			<details>
+				<summary>The demo: <code>{Sources.guard_playground.file}</code></summary>
+				<Code title={Sources.guard_playground.file} source={Sources.guard_playground.rocx} />
+			</details>
+
+			<h3>Who is counted</h3>
+			<p>
+				<code>Guard.rate_limit(name, limit, key)</code> counts each key apart. <code>name</code> keeps one
+				limit's counts apart from another's (<code>"login"</code>, <code>"api"</code>).
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Key</th><th>Counts</th></tr></thead>
+					<tbody>
+						<tr><td><code>Guard.ip(trust)</code></td><td>each address, as <a href="#proxies">trust</a> says to find it; an IPv6 address by its first 64 bits, the block one household is given</td></tr>
+						<tr><td><code>{"Guard.user(|context| context.user, trust)"}</code></td><td>each signed-in user, as the context names them; each address when signed out</td></tr>
+						<tr><td><code>Guard.route</code></td><td>each method and path</td></tr>
+						<tr><td><code>Guard.both(key, key)</code></td><td>each pair: <code>Guard.both(Guard.ip(trust), Guard.route)</code> is each address on each route</td></tr>
+						<tr><td><code>{"|request, context| …"}</code></td><td>whatever it says. A request whose key is <code>""</code> isn't limited</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+
+			<h3>What a client is told</h3>
+			<p>
+				An allowed request's answer says where the client stands: <code>RateLimit-Limit</code>,
+				<code>RateLimit-Remaining</code>, <code>RateLimit-Reset</code> (seconds until the whole limit is
+				back) and <code>RateLimit-Policy</code> (<code>5;w=60</code>: 5 in 60 seconds). A refused one is
+				a <code>429</code> with those, <code>Retry-After</code> (seconds until one more would be allowed,
+				exactly), and a line of text.
+			</p>
+
+			<h3>Memory stays bounded</h3>
+			<p>
+				Each limit keeps at most 10,000 clients (<code>Guard.rate_limit_with</code> says another number).
+				A client whose limit is whole again is forgotten first, which changes nothing. Past the limit, the
+				client seen longest ago is forgotten, and starts again. Each limit's clients are split into 64
+				tallies, so a request reads and writes about 150 at most. The counts live in an actor, which
+				takes one message at a time. When they can't be reached, the request goes on, and the log says
+				why.
+			</p>
+
+			<Heading id="proxies">Behind a proxy</Heading>
+			<p>
+				Most apps are served behind a proxy, which connects to the server for the client and adds the
+				address it saw to <code>X-Forwarded-For</code>. A client can write anything it likes in that
+				header too, so the header is read only as far as the app says its own proxies wrote it. Take one
+				request: it came from 10.0.0.2, the app's proxy, and its <code>X-Forwarded-For</code> is
+				<code>6.6.6.6, 198.51.100.4</code>. The client wrote the first address itself; the proxy added
+				the second, the address it saw. Here is who the client is, by each way to trust, as
+				<code>ClientIp.of</code> worked it out when this page was built:
+			</p>
+			<TableWrap>
+				<GuardClients />
+			</TableWrap>
+			<p>
+				<code>Hops(1)</code> says one proxy is in front, and finds the address it saw.
+				<code>Hops(2)</code> claims two, so it trusts what the client wrote. <code>Proxies</code> walks
+				the list from the right, past the app's own proxies (<code>Ip.private</code>: the loopback and
+				private ranges, or <code>{"Ip.cidrs([\"10.0.0.0/8\"])"}</code>). <code>Header(name)</code> reads
+				one header a proxy sets, such as <code>fly-client-ip</code> or <code>cf-connecting-ip</code>.
+			</p>
+			<p>
+				The table's request has the address it came from. The server platform doesn't hand that address to
+				Roc yet, so today <code>Direct</code> can't tell clients apart (it gives no key, so no limit), and
+				an app limits by address behind its proxy.
+			</p>
+
+			<Heading id="flags">Feature flags</Heading>
+			<p>
+				A flag is defined in code: its name, what it is for, and who has it on. A rule is on or off for
+				everyone (off is a kill switch), plus the users and groups listed, plus a share of everyone else
+				who is signed in. Each user falls in or out of a rollout the same way every time, by a hash of
+				the flag's name and theirs, so raising the share only adds people. An environment can have a rule
+				of its own.
+			</p>
+			<Code title={Sources.guard_flag.file} source={Sources.guard_flag.rocx} numbers={Bool.False} />
+			<p>
+				Here is who has it on, as <code>Flags.is_on</code> answered when this page was built. A user's
+				bucket, 0 to 99, is that hash (<code>Flags.bucket</code>): a rollout of 25 takes those below 25.
+			</p>
+			<TableWrap>
+				<GuardFlags />
+			</TableWrap>
+			<p>
+				ada is listed and bea is in staff, so they have it whatever their bucket. jo and max fall in the
+				quarter; cy, dee and kai don't. A visitor who isn't signed in has no id to be counted by, so a
+				rollout reaches them only at 100.
+				The environment is <code>APP_ENV</code> if it is set, or else <code>dev</code> when the server
+				was started with <code>--dev</code>, or else <code>production</code>.
+			</p>
+
+			<h3>Changed while the server runs</h3>
+			<p>
+				What the code says is the default. An admin page can set a rule in its place, until it is reset.
+				The server keeps it in an actor, which takes one message at a time.
+				The endpoint that sets it is for admins only: in the example, <code>Middlewares.admins</code>
+				answers anyone else <code>403</code>.
+			</p>
+			<Code title={Sources.guard_overrides.file} source={Sources.guard_overrides.rocx} />
+			<p>
+				On the server, <code>{"FlagStore.is_on!(flag, { user, groups })"}</code> answers in an endpoint,
+				and <code>Guard.feature(flag, who)</code> keeps a route from anyone who doesn't have the flag on:
+				they get a 404, as if it weren't there.
+			</p>
+
+			<h3>In a page</h3>
+			<p>
+				The server decides the flags once for the visitor, in a server function, and a
+				<code>{"<Flagged>"}</code> shows its children only when its flag is on. The server renders the
+				page with the flags and puts them in it, so the browser hydrates with the same values, without
+				asking again.
+			</p>
+			<Code title={Sources.guard_visitor.file} source={Sources.guard_visitor.rocx} />
+			<Code title={Sources.guard_layout.file} source={Sources.guard_layout.rocx} />
+			<Code title={Sources.guard_page.file} source={Sources.guard_page.rocx} />
+			<p>
+				This site has no server to ask, so the example below decides the flags where the page is
+				rendered, when the site is built. ada is listed for the new checkout; cy isn't, and isn't in the
+				quarter the rollout reaches:
+			</p>
+			<div class="guard-checkouts">
+				<GuardCheckout who={{ user: "ada", groups: [] }} />
+				<GuardCheckout who={{ user: "cy", groups: [] }} />
+			</div>
+			<Code title={Sources.guard_checkout.file} source={Sources.guard_checkout.rocx} />
+			<TableWrap>
+				<table>
+					<thead><tr><th>{"<Flagged>"} prop</th><th>Is</th></tr></thead>
+					<tbody>
+						<tr><td><code>name : Str</code></td><td>the flag's name</td></tr>
+						<tr><td><code>fallback : Html</code></td><td>what shows when the flag is off: nothing, unless given</td></tr>
+						<tr><td>children</td><td>what shows when the flag is on</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				<code>{"<FlagsContext value={…}>"}</code> provides the flags to every <code>{"<Flagged>"}</code>
+				under it, and needs <code>import pf.Context</code>. Where nothing provides them, every flag is
+				off. <code>Flags.enabled(values, name)</code> reads one flag where a <code>{"<Show>"}</code> reads
+				better.
+			</p>
+
+			<Heading id="guards">Other guards</Heading>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Guard</th><th>Does</th></tr></thead>
+					<tbody>
+						<tr><td><code>Guard.security_headers(Security.defaults)</code></td><td>every answer with the headers below, but those it sets itself</td></tr>
+						<tr><td><code>Guard.body_limit(bytes)</code></td><td>a larger body refused, <code>413</code></td></tr>
+						<tr><td><code>{"Guard.methods([\"GET\", \"POST\"])"}</code></td><td>any other method refused, <code>405</code>, with <code>Allow</code></td></tr>
+						<tr><td><code>{"Guard.hosts([\"example.com\", \"*.example.com\"])"}</code></td><td>any other <code>Host</code> refused, <code>400</code></td></tr>
+						<tr><td><code>{"Guard.ips({ allow, deny, trust })"}</code></td><td>an address in <code>deny</code>, or not in <code>allow</code> when it lists any, refused, <code>403</code></td></tr>
+						<tr><td><code>{"Guard.maintenance({ flag, message, retry_after_s, except })"}</code></td><td>while the flag is on, <code>503</code> with <code>Retry-After</code> and a small page, except under the paths in <code>except</code> (<code>/admin</code>, to turn it off again)</td></tr>
+						<tr><td><code>Guard.feature(flag, who)</code></td><td><code>404</code> for anyone who doesn't have the flag on</td></tr>
+						<tr><td><code>{"Guard.under(\"/api\", guard)"}</code></td><td><code>guard</code> for paths under <code>/api</code> only</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				<code>Security.defaults</code> adds these headers to every answer, as <code>Security.headers</code>
+				wrote them when this page was built:
+			</p>
+			<Code title="Security.headers(Security.defaults, { dev: Bool.False })" source={GuardHeaders.text} plain numbers={Bool.False} />
+			<p>
+				The Content-Security-Policy fits a Roc Solid app. Scripts and WebAssembly come from the site's
+				own origin: a page needs <code>'wasm-unsafe-eval'</code> to start its wasm under a CSP. Styles may
+				be inline too, as components write <code>{"style=\"…\""}</code>, and calls go to the site's own
+				server. <code>Security.directive</code> changes one directive. Under <code>--dev</code>, there is
+				no <code>Strict-Transport-Security</code>, and the CSP only reports, so the dev server's reload
+				script still runs.
+			</p>
+
+			<Heading id="modules">The modules</Heading>
+			<p>
+				The package is plain Roc, on no platform, so the server, the browser and a test decide alike.
+				<code>roc test packages/guard/main.roc</code> runs its <code>expect</code>s.
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Module</th><th>What it does</th></tr></thead>
+					<tbody>
+						<tr><td><code>RateLimit</code></td><td>a limit: <code>per_second</code>, <code>per_minute</code>, <code>per_hour</code>, <code>per(n, window_ms)</code>, <code>.sliding()</code>; <code>fresh</code>, <code>check(state, now)</code>, <code>idle</code>, <code>headers</code>, <code>explain</code></td></tr>
+						<tr><td><code>Tally</code></td><td>many clients' states by key, bounded: <code>Tally.hit(tally, limit, key, now, room)</code>; <code>to_str</code>, <code>from_str</code>, <code>shard</code></td></tr>
+						<tr><td><code>ClientIp</code></td><td><code>ClientIp.of(trust, peer, headers)</code>, by <code>Direct</code>, <code>Header(name)</code>, <code>Hops(n)</code> or <code>Proxies(cidrs)</code></td></tr>
+						<tr><td><code>Ip</code></td><td>IPv4 and IPv6 addresses and ranges: <code>parse</code>, <code>to_str</code>, <code>cidr</code>, <code>cidrs</code>, <code>within</code>, <code>within_any</code>, <code>key</code>, <code>private</code></td></tr>
+						<tr><td><code>Flag</code></td><td>a flag in code: <code>Flag.define(name, about, rule)</code>, <code>.in_env(env, rule)</code></td></tr>
+						<tr><td><code>Flags</code></td><td>rules (<code>on</code>, <code>off</code>, <code>rollout(percent)</code>, <code>only(users, groups)</code>), <code>is_on</code>, <code>values</code>, <code>enabled</code>, <code>set</code> and <code>reset</code> for overrides, <code>describe</code> for an admin page</td></tr>
+						<tr><td><code>Security</code></td><td>security headers: <code>defaults</code>, <code>directives</code>, <code>directive</code>, <code>csp</code>, <code>headers</code></td></tr>
+						<tr><td><code>Hash</code></td><td>a small, stable hash of text, the same on every machine: <code>of</code>, and <code>bucket</code>, which puts a user in or out of a rollout and a client in a tally</td></tr>
+						<tr><td><code>Checks</code></td><td>checks on a request: <code>methods</code>, <code>hosts</code>, <code>body_size</code>, <code>ips</code>, <code>maintenance</code></td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				The middleware is in <code>packages/guard/server/</code>, Roc that only the server half runs.
+				<code>Guard</code> holds the guards, and <code>FlagStore</code> holds the flags while the server
+				runs:
+			</p>
+			<Code title={Sources.guard_middleware_api.file} source={Sources.guard_middleware_api.rocx} numbers={Bool.False} />
+			<Code title={Sources.guard_flagstore_api.file} source={Sources.guard_flagstore_api.rocx} numbers={Bool.False} />
+
+			<Heading id="status">Status</Heading>
+			<p>
+				What works today, and is tested: every module of the package, by its <code>expect</code>s; and
+				the middleware, copied into <code>packages/guard/example/</code>, which builds and runs. Its login
+				limit answered <code>429</code> on the sixth try, with the headers above; its admin endpoint
+				answered <code>403</code> to anyone but an admin; and its page showed each user their checkout. Its
+				flags' overrides, its feature route and its maintenance mode worked while it ran, and a page with
+				<code>{"<Flagged>"}</code> hydrated in a browser under the default CSP.
+			</p>
+			<p>What waits on a proposal (<code>packages/guard/PROPOSALS.md</code>):</p>
+			<ul>
+				<li>
+					<strong>Server-only modules in packages.</strong> <code>rocx build</code> copies a package's
+					components into an app, but not its server-only modules. Until it does,
+					<code>packages/guard/server/*.roc</code> is copied into the app by hand.
+				</li>
+				<li>
+					<strong>The client's address.</strong> The server platform doesn't hand Roc the address a
+					connection came from. Until it does, <code>Direct</code> can't tell clients apart, and
+					<code>Proxies</code> can't check that a request came through the app's proxy.
+				</li>
+				<li>
+					<strong>Memory between requests.</strong> The guards keep their counts and the flags'
+					overrides in actors, which take one message at a time: a message for each limited request.
+					The proposal asks the platform for a plainer place to keep state between requests.
+				</li>
+			</ul>
+			<Note>
+				The server reads a request's body, up to 16 MiB, before any middleware runs, so
+				<code>Guard.body_limit</code> refuses a large body after it has come, not before.
+			</Note>
+		</NoHydration>
+	</>
+
+<style>
+	.guard-checkouts {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+		gap: var(--space-3);
+		margin: var(--space-4) 0;
+	}
+
+	.guard-checkouts p {
+		margin: 0;
+		padding: var(--space-3) var(--space-4);
+		border-radius: var(--radius);
+		background: var(--bg-raised);
+	}
+</style>

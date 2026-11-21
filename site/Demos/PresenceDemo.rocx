@@ -1,0 +1,277 @@
+import pf.Html
+import pf.Solid exposing [create_signal!, set_interval!, set_timeout!]
+import presence.AvatarStack
+import presence.Cursors
+import presence.LiveCursors
+import presence.TypingIndicator
+import presence.Presence
+import presence.Room
+import presence.Wire
+import Random
+
+## A room on the presence page, kept in the browser. The site is static files, with no server to keep
+## a room, so the demo plays the server's part: it keeps who is here as a page's copy of the room has
+## them (`Room.Here`, what `members!` gives), and tells the package's stores and components what a
+## room's stream would: someone joins, leaves or types at a press, or every 1.5 s with Auto, on from
+## the start; and the others' cursors wander over the note they share.
+PresenceDemo := [].{
+
+	## What a press or a tick did: who is here after it, the seed for the next pick, who started
+	## typing and who left (`""`: no one), and where the others' cursors go.
+	Step : { members : List(Room.Here(Wire.Meta)), seed : U64, typed : Str, left : Str, moves : List(Cursors.Move) }
+
+	Auto : [Off, On(() => {})]
+
+	view! : {} => Html
+	view! = |{}| {
+		(members!, set_members!) = create_signal!(cast.take_first(3))
+		(seed!, set_seed!) = create_signal!(2026)
+		typing = Presence.create_typing!(4000)
+		cursors = Presence.create_cursors!({ idle: 3000, forget: 20000 })
+		# A write applies when its handler is done, so a step is worked out first, then told to each
+		# store once; and each cursor's move goes as a stream would send it, an event a handler, a
+		# little after the one before.
+		did! = |step| {
+			set_members!(step.members)
+			set_seed!(step.seed)
+			if (!step.typed.is_empty()) (typing.started!)(step.typed)
+			if !step.left.is_empty() {
+				(typing.stopped!)(step.left)
+				(cursors.gone!)(step.left)
+			}
+			var $after = 0
+			for move in step.moves {
+				_ = set_timeout!($after, || (cursors.moved!)(move))
+				$after = $after + 150
+			}
+		}
+		act! = |action| did!(PresenceDemo.act(members!(), seed!(), action))
+		(auto!, set_auto!) = create_signal!(On(set_interval!(every, || act!(Tick))))
+		toggle! = ||
+			match auto!() {
+				On(clear!) => {
+					clear!()
+					set_auto!(off)
+				}
+				Off => set_auto!(On(set_interval!(every, || act!(Tick))))
+			}
+		<div class="presence-demo">
+			<div class="top">
+				<AvatarStack faces!={members!().map(Wire.face)} max={5} />
+				<p class="here">{"${members!().len().to_str()} here"}</p>
+			</div>
+			<LiveCursors cursors!={Wire.pointers(members!(), (cursors.shown!)())}>
+				<div class="note" aria-hidden="true">
+					<p class="note-title">Notes for Friday</p>
+					<p class="line"></p>
+					<p class="line short"></p>
+					<p class="line"></p>
+					<p class="line shorter"></p>
+				</div>
+			</LiveCursors>
+			<TypingIndicator names!={Wire.names(members!(), (typing.who!)())} />
+			<div class="buttons">
+				<button type="button" class="join" on:click={|| act!(Join)} disabled?={members!().len() >= cast.len()}>Someone joins</button>
+				<button type="button" class="leave" on:click={|| act!(Leave)} disabled?={members!().len() <= 1}>Someone leaves</button>
+				<button type="button" class="type" on:click={|| act!(Type)} disabled?={members!().len() <= 1}>Someone types</button>
+				<button type="button" class="auto" aria-pressed={if (PresenceDemo.is_on(auto!())) "true" else "false"} on:click={toggle!}>Auto</button>
+			</div>
+		</div>
+	}
+
+	## What `action` does to the room: the next of the cast who isn't here joins; one of the others
+	## (you are first, and never go), picked at random, leaves or types; or, for Auto, one of these
+	## (typing three times in ten, joining two, leaving two, or nothing), then the others' cursors
+	## wander.
+	act : List(Room.Here(Wire.Meta)), U64, [Join, Leave, Type, Tick] -> PresenceDemo.Step
+	act = |members, seed, action| {
+		others = members.drop_first(1)
+		roll = Random.below(seed, U64.max(others.len(), 1))
+		picked =
+			match others.get(roll.value) {
+				Ok(member) => member.key
+				Err(_) => ""
+			}
+		same = { members, seed: roll.seed, typed: "", left: "", moves: [] }
+		match action {
+			Join =>
+				match cast.find_first(|member| !members.any(|here| here.key == member.key)) {
+					Ok(member) => { ..same, members: members.append(member) }
+					Err(_) => same
+				}
+			Leave => { ..same, members: members.drop_if(|member| member.key == picked), left: picked }
+			Type => { ..same, typed: picked }
+			Tick => {
+				dice = Random.below(roll.seed, 10)
+				acted =
+					if dice.value < 3 {
+						PresenceDemo.act(members, dice.seed, Type)
+					} else if dice.value < 5 {
+						PresenceDemo.act(members, dice.seed, Join)
+					} else if dice.value < 7 {
+						PresenceDemo.act(members, dice.seed, Leave)
+					} else {
+						{ ..same, seed: dice.seed }
+					}
+				PresenceDemo.wander(acted)
+			}
+		}
+	}
+
+	## A new place on the note for each of the others' cursors: in its top left, so that a name, to the
+	## right of and under its arrow, is never cut off, even on a phone.
+	wander : PresenceDemo.Step -> PresenceDemo.Step
+	wander = |step| {
+		var $seed = step.seed
+		var $moves = []
+		for member in step.members.drop_first(1) {
+			x = Random.below($seed, 560)
+			y = Random.below(x.seed, 620)
+			$seed = y.seed
+			$moves = $moves.append({ key: member.key, x: 0.04 + x.value.to_dec() / 1000.0, y: 0.08 + y.value.to_dec() / 1000.0 })
+		}
+		{ ..step, seed: $seed, moves: $moves }
+	}
+
+	is_on : PresenceDemo.Auto -> Bool
+	is_on = |auto|
+		match auto {
+			On(_) => Bool.True
+			Off => Bool.False
+		}
+
+	<style>
+		.presence-demo {
+			--avatar-ring: var(--bg-raised);
+			--avatar-more: var(--rule-strong);
+			--avatar-status: var(--good);
+			--avatar-away: var(--warn);
+			--avatar-busy: var(--bad);
+			--typing-color: var(--text-muted);
+			--cursor-glide: 1.4s;
+			display: grid;
+			gap: var(--space-3);
+		}
+
+		.top {
+			display: flex;
+			align-items: center;
+			gap: var(--space-3);
+		}
+
+		.here {
+			margin: 0;
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+		}
+
+		.note {
+			display: grid;
+			gap: var(--space-3);
+			min-height: 11rem;
+			padding: var(--space-4) var(--space-5);
+			border: 1px solid var(--rule-strong);
+			border-radius: var(--radius);
+			background: var(--bg-sunken);
+		}
+
+		.note-title {
+			margin: 0;
+			font-weight: 600;
+		}
+
+		.line {
+			height: 0.6rem;
+			margin: 0;
+			border-radius: var(--pill);
+			background: var(--fill-strong);
+		}
+
+		.short {
+			width: 70%;
+		}
+
+		.shorter {
+			width: 45%;
+		}
+
+		.buttons {
+			display: flex;
+			flex-wrap: wrap;
+			gap: var(--space-2);
+		}
+
+		button {
+			padding: var(--space-1) var(--space-3);
+			font-size: var(--size-sm);
+		}
+
+		.auto[aria-pressed="true"] {
+			background: var(--accent-soft);
+			color: var(--accent);
+		}
+	</style>
+}
+
+## How often Auto does something, in milliseconds.
+every : U64
+every = 1500
+
+off : PresenceDemo.Auto
+off = Off
+
+## Who may be here, in the order they come: you, here from the start and never leaving, then Ada and
+## Alan, also here from the start, then the others.
+cast : List(Room.Here(Wire.Meta))
+cast = [
+	member("you", "You", "#2e8fa3", ""),
+	member("ada", "Ada Lovelace", "", ""),
+	member("alan", "Alan Turing", "", "away"),
+	member("grace", "Grace Hopper", "", ""),
+	member("edsger", "Edsger Dijkstra", "", "busy"),
+	member("barbara", "Barbara Liskov", "", ""),
+	member("donald", "Donald Knuth", "", ""),
+]
+
+member : Str, Str, Str, Str -> Room.Here(Wire.Meta)
+member = |key, name, color, status| { key, meta: { name, image: "", color, status }, since: 0 }
+
+keys : PresenceDemo.Step -> List(Str)
+keys = |step| step.members.map(|here| here.key)
+
+start : PresenceDemo.Step
+start = { members: cast.take_first(3), seed: 2026, typed: "", left: "", moves: [] }
+
+then : PresenceDemo.Step, [Join, Leave, Type, Tick] -> PresenceDemo.Step
+then = |step, action| PresenceDemo.act(step.members, step.seed, action)
+
+expect keys(then(start, Join)) == ["you", "ada", "alan", "grace"]
+
+# Leaving takes one of the others, never you; once only you are here, no one leaves.
+expect {
+	one = then(start, Leave)
+	two = then(one, Leave)
+	three = then(two, Leave)
+	one.left != "" and two.left != "" and three.left == "" and keys(three) == ["you"]
+}
+
+# Typing is one of the others, and changes no one.
+expect {
+	typed = then(start, Type)
+	typed.typed != "" and typed.typed != "you" and keys(typed) == keys(start)
+}
+
+# Everyone in the cast here, the next join is no change.
+expect {
+	full = [1, 2, 3, 4, 5].fold(start, |step, _| then(step, Join))
+	keys(full) == ["you", "ada", "alan", "grace", "edsger", "barbara", "donald"] and keys(then(full, Join)) == keys(full)
+}
+
+# Auto, many times over: you are always here, someone comes or goes, and each of the others' cursors
+# goes somewhere on the note, with room for its name.
+expect {
+	steps = List.repeat({}, 40).fold([start], |seen, _| seen.append(then(seen.last() ?? start, Tick)))
+	here = steps.all(|step| keys(step).first() == Ok("you") and step.members.len() <= 7) and steps.any(|step| step.members.len() != 3)
+	moved = steps.drop_first(1).all(|step| step.moves.map(|move| move.key) == keys(step).drop_first(1) and step.moves.all(|move| move.x >= 0.04 and move.x <= 0.6 and move.y >= 0.08 and move.y <= 0.7))
+	here and moved
+}

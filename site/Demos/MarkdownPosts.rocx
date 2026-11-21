@@ -1,0 +1,60 @@
+import pf.Html
+import markdown.Collection
+import markdown.Md
+import "MarkdownFiles/posts/heron.md" as heron : Str
+import "MarkdownFiles/posts/winter.md" as winter : Str
+
+## The markdown page's collection: two Markdown files whose frontmatter is a `Post`, read when the
+## site is built, so a file whose frontmatter is wrong fails the build, naming the file and the
+## field. Each post shows its title, date, tags and reading time; a draft says so.
+MarkdownPosts := [].{
+	Post := { title : Str, date : Str, tags : List(Str) ?? [], draft : Bool ?? Bool.False }.{
+		parser_for : _
+	}
+
+	all : List(Collection.Entry(MarkdownPosts.Post))
+	all =
+		match Collection.load([{ path: "heron.md", source: heron }, { path: "winter.md", source: winter }]) {
+			Ok(entries) => entries
+			Err(failed) => crash Collection.describe(failed)
+		}
+
+	view : {} -> Html
+	view = |{}|
+		<ul class="posts">
+			{...MarkdownPosts.all.map(|post| <li><p class="title">{post.data.title}</p><p class="meta">{post.data.date} · {Md.reading_minutes(post.doc).to_str()} min · {Str.join_with(post.data.tags, ", ")}{if (post.data.draft) " · draft" else ""}</p><p class="id"><code>{post.id}</code></p></li>)}
+		</ul>
+
+	<style>
+		.posts {
+			display: grid;
+			gap: var(--space-3);
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		li {
+			padding: var(--space-3) var(--space-4);
+			border-radius: var(--radius);
+			background: var(--bg-raised);
+		}
+
+		p {
+			margin: 0;
+		}
+
+		.title {
+			font-weight: 600;
+		}
+
+		.meta {
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+		}
+
+		.id {
+			font-size: var(--size-xs);
+		}
+	</style>
+}

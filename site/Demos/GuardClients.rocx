@@ -1,0 +1,52 @@
+import pf.Html
+import guard.ClientIp
+import guard.Ip
+
+## Who sent one request, by each way an app can say whom it trusts, as `ClientIp.of` decides. The
+## request came to the server from 10.0.0.2, the app's proxy. The proxy added the address it saw
+## (198.51.100.4) to `X-Forwarded-For`, after what the client had written there itself (6.6.6.6),
+## and set `X-Real-IP` to it.
+GuardClients := [].{
+
+	peer : Str
+	peer = "10.0.0.2"
+
+	headers : List({ name : Str, value : Str })
+	headers = [
+		{ name: "x-forwarded-for", value: "6.6.6.6, 198.51.100.4" },
+		{ name: "x-real-ip", value: "198.51.100.4" },
+	]
+
+	view : {} -> Html
+	view = |{}|
+		<table>
+			<thead>
+				<tr><th>Trust</th><th>The client is</th></tr>
+			</thead>
+			<tbody>
+				{...trusts.map(
+					|(name, trust)|
+						<tr>
+							<td><code>{name}</code></td>
+							<td>{shown(ClientIp.of(trust, GuardClients.peer, GuardClients.headers))}</td>
+						</tr>,
+				)}
+			</tbody>
+		</table>
+}
+
+trusts : List((Str, ClientIp.Trust))
+trusts = [
+	("Direct", Direct),
+	("Header(\"x-real-ip\")", Header("x-real-ip")),
+	("Hops(1)", Hops(1)),
+	("Hops(2)", Hops(2)),
+	("Proxies(Ip.private)", Proxies(Ip.private)),
+]
+
+shown : Try(Ip, [Unknown]) -> Str
+shown = |found|
+	match found {
+		Ok(ip) => Ip.to_str(ip)
+		Err(Unknown) => "unknown"
+	}

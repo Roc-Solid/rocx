@@ -1,0 +1,36 @@
+import pf.Html
+import pf.Server
+import testing.Dom
+
+## Someone's inbox, as a card: whose it is, how many messages are unread,
+## a link to each, and a form to write one. A pure component (`view`, no
+## `!`): its markup comes from its props alone, so a test renders it with
+## `Html.to_str` and finds things in it as a person would (`testing.Dom`).
+TestingInbox := [].{
+	view : { name : Str, unread : List(Str) } -> Html
+	view = |{ name, unread }|
+		<section class="inbox" aria-labelledby="inbox-title">
+			<h3 id="inbox-title">{name}'s inbox</h3>
+			<p data-testid="unread">{unread.len().to_str()} unread</p>
+			<ul aria-label="Unread">
+				{...unread.map(|subject| <li><a href={"/mail/${Server.encode_segment(subject)}"}>{subject}</a></li>)}
+			</ul>
+			<form method="post" action="/mail">
+				<label for="inbox-to">To</label>
+				<input id="inbox-to" name="to" type="email" />
+				<button>Write</button>
+			</form>
+		</section>
+}
+
+## Ada's inbox, as a test reads it: rendered to HTML, then parsed.
+inbox : List(Str) -> Dom
+inbox = |unread| Dom.parse(Html.to_str(TestingInbox.view({ name: "Ada", unread })))
+
+expect inbox([]).text_of(Role("heading")) == Ok("Ada's inbox")
+expect inbox(["Lunch?", "Re: the plan"]).texts(Role("link")) == ["Lunch?", "Re: the plan"]
+expect inbox(["Lunch?"]).get(Named("link", "Lunch?")).map_ok(|link| link.attr("href")) == Ok(Ok("/mail/Lunch%3F"))
+expect inbox(["Lunch?", "Re: the plan"]).text_of(TestId("unread")) == Ok("2 unread")
+expect inbox([]).get(Label("To")).map_ok(|field| field.attr("type")) == Ok(Ok("email"))
+expect inbox([]).contains(Named("button", "Write"))
+expect !inbox([]).contains(Named("button", "Send"))

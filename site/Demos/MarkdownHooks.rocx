@@ -1,0 +1,31 @@
+import pf.Html
+import markdown.Markdown
+import "MarkdownFiles/hooks.md" as sample : Str
+import ../Ui/Code
+
+## The markdown page's hooks: each heading with an anchor after it, each code block drawn by the
+## site's own `<Code>` (coloured by the docs' highlighter), and links to other sites opened in a new
+## tab, the rest as `Markdown.link` draws them.
+MarkdownHooks := [].{
+	view : {} -> Html
+	view = |{}|
+		<Markdown
+			source={sample}
+			heading={|h| Html.element("h${h.level.to_str()}", [Html.attr("id", h.id)], h.children.append(<a class="anchor" href={"#${h.id}"} aria-label="Link to this section">#</a>))}
+			code={|block| <Code title={block.lang} source={block.text.drop_suffix("\n")} markup={block.lang == "html"} numbers={Bool.False} />}
+			link={|l| if (l.url.starts_with("https://")) <a href={l.url} target="_blank" rel="noopener">{...l.children}</a> else Markdown.link(l)}
+		/>
+
+	<style>
+		.anchor {
+			margin-left: var(--space-2);
+			color: var(--text-faint);
+			text-decoration: none;
+		}
+
+		.anchor:hover,
+		.anchor:focus {
+			color: var(--accent-strong);
+		}
+	</style>
+}

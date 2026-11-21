@@ -1,0 +1,147 @@
+import mcp.JsonValue
+import mcp.Mcp
+import mcp.Prompt
+import mcp.Resource
+import mcp.Template
+import mcp.Tool
+
+## An MCP server, for the ecosystem's MCP page: a tool that converts temperatures, a resource about
+## the scales, a family of resources (a substance's boiling point), and a prompt. The site is static
+## files, so nothing serves it over HTTP: the page sends it requests while the site is built
+## (`exchanges!`), and shows what it answered.
+McpTemperatures := [].{
+
+	## What the server offers. Its context (`{}`) is what each handler is given when it runs: over HTTP,
+	## `McpHttp.Caller`, the request and what the middleware handed on.
+	server : Mcp.Server({})
+	server = {
+		name: "temperatures",
+		version: "1.0.0",
+		title: "Temperatures",
+		instructions: "Converts temperatures, and knows when a few things boil.",
+		tools: [
+			Tool.typed("convert", "Celsius to Fahrenheit", celsius_schema, convert!).answers(fahrenheit_schema).read_only(),
+		],
+		resources: [Resource.text("temperatures://scales", "scales", "text/markdown", scales!)],
+		templates: [Template.new("temperatures://boiling/{substance}", "boiling", boiling!).described("Where a substance boils, at sea level")],
+		prompts: [Prompt.new("explain", "Explains a temperature scale", [Prompt.argument("scale", "Celsius, Fahrenheit or Kelvin"), Prompt.optional("audience", "Who it is for")], explain!)],
+	}
+
+	## A request (its method, headers and body, as an MCP client sends them), and the server's answer,
+	## each as the page shows it: what it is, the request, the answer.
+	exchanges! : {} => List({ title : Str, request : Str, answer : Str })
+	exchanges! = |{}| {
+		var $shown = []
+		for ask in asked {
+			answered = Mcp.handle!(server, { method: ask.method, headers: ask.headers, body: ask.body }, {})
+			request = Str.join_with(["${ask.method} /mcp"].concat(ask.headers.map(|header| "${header.name}: ${header.value}")), "\n")
+			$shown = $shown.append({
+				title: ask.title,
+				request: if (ask.body.is_empty()) request else "${request}\n\n${pretty(ask.body)}",
+				answer: if (answered.body.is_empty()) answered.status.to_str() else "${answered.status.to_str()}\n\n${pretty(answered.body)}",
+			})
+		}
+		$shown
+	}
+}
+
+## Celsius to Fahrenheit; below absolute zero is refused, as the model's to fix.
+convert! : { celsius : Dec }, {} => Try({ fahrenheit : Dec }, Str)
+convert! = |{ celsius }, _|
+	if celsius < -273.15 {
+		Err("${celsius.to_str()} °C is below absolute zero")
+	} else {
+		Ok({ fahrenheit: celsius * 9.0 / 5.0 + 32.0 })
+	}
+
+## The JSON Schemas of what `convert!` reads and answers. Over HTTP, `McpHttp.tool` writes them from
+## its types, as the platform writes /openapi.json's.
+celsius_schema : Str
+celsius_schema = "{\"type\":\"object\",\"properties\":{\"celsius\":{\"type\":\"number\"}},\"required\":[\"celsius\"]}"
+
+fahrenheit_schema : Str
+fahrenheit_schema = "{\"type\":\"object\",\"properties\":{\"fahrenheit\":{\"type\":\"number\"}},\"required\":[\"fahrenheit\"]}"
+
+scales! : {} => Try(Str, Str)
+scales! = |_| Ok("# Scales\n\nWater freezes at 0 °C, 32 °F and 273.15 K.")
+
+boiling! : Dict(Str, Str), Str, {} => Try(List(Resource.Contents), [NotFound, Failed(Str)])
+boiling! = |values, uri, _| {
+	point : Try(Str, [NotFound])
+	point =
+		match values.get("substance") ?? "" {
+			"water" => Ok("100 °C")
+			"ethanol" => Ok("78.4 °C")
+			"nitrogen" => Ok("-195.8 °C")
+			_ => Err(NotFound)
+		}
+	point.map_ok(|said| [Resource.contents(uri, "text/plain", Text(said))])
+}
+
+explain! : Dict(Str, Str), {} => Try(Prompt.Got, Str)
+explain! = |args, _| {
+	scale = args.get("scale") ?? ""
+	audience = args.get("audience") ?? "a curious ten-year-old"
+	Ok({ description: "The ${scale} scale", messages: [Prompt.user("Explain the ${scale} scale to ${audience}, in three sentences.")] })
+}
+
+## What the page asks: an earlier client's handshake, then current MCP's requests (each with its
+## version and capabilities in `_meta`, and headers that repeat what it asks for).
+asked : List({ title : Str, method : Str, headers : List({ name : Str, value : Str }), body : Str })
+asked = [
+	{ title: "An earlier client starts with initialize", method: "POST", headers: earlier, body: "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"an-agent\",\"version\":\"1.0.0\"}}}" },
+	current("A current client asks what the server offers", "server/discover", "", ""),
+	current("The tools, with their schemas", "tools/list", "", ""),
+	current("A tool, called", "tools/call", "convert", "\"name\":\"convert\",\"arguments\":{\"celsius\":37}"),
+	current("A refusal goes back to the model, to act on", "tools/call", "convert", "\"name\":\"convert\",\"arguments\":{\"celsius\":-300}"),
+	current("So do arguments that don't fit the type", "tools/call", "convert", "\"name\":\"convert\",\"arguments\":{\"celsius\":\"warm\"}"),
+	current("A resource a template matches", "resources/read", "temperatures://boiling/ethanol", "\"uri\":\"temperatures://boiling/ethanol\""),
+	current("One no template has", "resources/read", "temperatures://boiling/lava", "\"uri\":\"temperatures://boiling/lava\""),
+	current("A prompt, with its argument", "prompts/get", "explain", "\"name\":\"explain\",\"arguments\":{\"scale\":\"Kelvin\"}"),
+	{ title: "Nothing is pushed: GET is refused", method: "GET", headers: [{ name: "accept", value: "text/event-stream" }], body: "" },
+]
+
+earlier : List({ name : Str, value : Str })
+earlier = [{ name: "content-type", value: "application/json" }, { name: "accept", value: "application/json, text/event-stream" }]
+
+## A request of current MCP: its method, the name `Mcp-Name` repeats (`""` for none), and its params
+## (`_meta` added).
+current : Str, Str, Str, Str -> { title : Str, method : Str, headers : List({ name : Str, value : Str }), body : Str }
+current = |title, method, name, params| {
+	meta = "\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\",\"io.modelcontextprotocol/clientCapabilities\":{}}"
+	given = if (params.is_empty()) meta else "${params},${meta}"
+	headers = earlier.concat([{ name: "mcp-protocol-version", value: "2026-07-28" }, { name: "mcp-method", value: method }]).concat(if (name.is_empty()) [] else [{ name: "mcp-name", value: name }])
+	{ title: title, method: "POST", headers: headers, body: "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"${method}\",\"params\":{${given}}}" }
+}
+
+## JSON, indented two spaces a level, for reading; text that isn't JSON, as it is.
+pretty : Str -> Str
+pretty = |text|
+	match JsonValue.parse(text) {
+		Ok(value) => indented(value, "")
+		Err(_) => text
+	}
+
+indented : JsonValue, Str -> Str
+indented = |value, at| {
+	inner = "${at}  "
+	match value {
+		Array(items) if !items.is_empty() => "[\n${Str.join_with(items.map(|item| "${inner}${indented(item, inner)}"), ",\n")}\n${at}]"
+		Object(fields) if !fields.is_empty() => "{\n${Str.join_with(fields.map(|(key, item)| "${inner}${Json.to_str(key)}: ${indented(item, inner)}"), ",\n")}\n${at}}"
+		_ => JsonValue.to_str(value)
+	}
+}
+
+## What MCP takes: tool names, each once, schemas that are JSON.
+expect Mcp.problems(McpTemperatures.server) == []
+
+## The tools a client lists: the one, read-only.
+expect {
+	listed = Mcp.receive(McpTemperatures.server, { method: "POST", headers: earlier.append({ name: "mcp-protocol-version", value: "2025-11-25" }), body: "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\"}" })
+	match listed {
+		Reply(answer) => answer.status == 200 and answer.body.contains("\"name\":\"convert\"") and answer.body.contains("\"readOnlyHint\":true")
+		Run(_) => Bool.False
+	}
+}
+
+expect pretty("{\"a\":[1,{}],\"b\":\"x\"}") == "{\n  \"a\": [\n    1,\n    {}\n  ],\n  \"b\": \"x\"\n}"

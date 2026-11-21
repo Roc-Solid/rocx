@@ -1,0 +1,9 @@
+import guard.Security
+
+## What `Security.defaults` adds to every answer, as `Security.headers` writes it for a server
+## that isn't started with `--dev`: a header a line.
+GuardHeaders := [].{
+
+	text : Str
+	text = Str.join_with(Security.headers(Security.defaults, { dev: Bool.False }).map(|header| "${header.name}: ${header.value}"), "\n")
+}

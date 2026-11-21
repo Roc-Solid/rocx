@@ -1,0 +1,16 @@
+import pf.Html
+import markdown.Markdown
+import "MarkdownFiles/unsafe.md" as unsafe : Str
+
+## The markdown page's safety: Markdown with raw HTML and a `javascript:` link in it, rendered as
+## `<Markdown>` does by default (the HTML shown as text, the link pointing nowhere) or with
+## `raw={Drop}` (the HTML left out).
+MarkdownSafety := [].{
+	view : { drop : Bool } -> Html
+	view = |{ drop }|
+		if drop {
+			<Markdown source={unsafe} raw={Drop} />
+		} else {
+			<Markdown source={unsafe} />
+		}
+}

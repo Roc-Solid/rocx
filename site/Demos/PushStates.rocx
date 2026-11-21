@@ -1,0 +1,35 @@
+import pf.Html
+import push.PushState
+
+## Every state a `<PushButton>` can be in, as the page's script says it in a `pushstate` event, and
+## what the button shows then: its label, whether a click can do anything, and the note beside it.
+## Rendered once, on the server, by the package's own `PushState`, so the table says what the button
+## says. The push page's table body.
+PushStates := [].{
+
+	## What the script says, and when it says it.
+	states : List({ value : Str, when : Str })
+	states = [
+		{ value: "", when: "until the script has looked" },
+		{ value: "off", when: "the browser can, and hasn't subscribed" },
+		{ value: "working", when: "after a click: asking, subscribing, telling the server" },
+		{ value: "on", when: "subscribed, and the server has it" },
+		{ value: "blocked", when: "the user said no to the prompt" },
+		{ value: "unsupported", when: "no service worker or Push API here, or not a secure page" },
+		{ value: "failed:no network", when: "a click went wrong: failed:, then why" },
+	]
+
+	view : {} -> Html
+	view = |{}|
+		<tbody>
+			{...states.map(|each| {
+				state = PushState.parse(each.value)
+				<tr>
+					<td><code>{if (each.value.is_empty()) "\"\"" else each.value}</code>: {each.when}</td>
+					<td>
+						<strong>{state.label()}</strong>{if (state.is_stuck()) ", disabled" else ""}{if (state.note().is_empty()) "" else ". Beside it: ${state.note()}"}
+					</td>
+				</tr>
+			})}
+		</tbody>
+}

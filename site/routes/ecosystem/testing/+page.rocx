@@ -1,0 +1,312 @@
+import pf.Html
+import ../../../Demos/TestingInbox
+import ../../../Demos/TestingAnswers
+import ../../../Ui/Code
+import ../../../Ui/Feature
+import ../../../Ui/FeatureGrid
+import ../../../Ui/Heading
+import ../../../Ui/PageHero
+import ../../../Ui/Specimen
+import ../../../Ui/TableWrap
+import ../../../Generated/Sources
+
+## The testing package: a first test in Roc (a pure component, its expects, and what the queries
+## answer, asked as this page renders), the four ways to test an app, the queries, then the same
+## queries from Node against the app's server, a database of a test's own and a real browser; the
+## API; and what waits on the platform. Static: nothing on it hydrates.
+meta = {
+	title: "Testing",
+	description: "Tests that find things in a page as a person does, by role and name, label and text: in Roc expects, and from node:test against the app's server, a database of the test's own and a real browser.",
+	toc: [
+		{ id: "first", label: "A first test" },
+		{ id: "ways", label: "Four ways to test" },
+		{ id: "queries", label: "The queries" },
+		{ id: "dom", label: "Dom, in Roc" },
+		{ id: "node", label: "From Node" },
+		{ id: "database", label: "A database, and jobs" },
+		{ id: "browser", label: "In a browser" },
+		{ id: "javascript", label: "The JavaScript" },
+		{ id: "status", label: "Status" },
+	],
+}
+
+view! = |_|
+	<NoHydration>
+		<PageHero
+			kicker={[<>{"The ecosystem · "}</>, <code>packages/testing</code>]}
+			title="Tests that read a page as a person does"
+		>
+			Helpers for testing a Roc Solid app. A test finds a heading, a link by its name and a field by its
+			label, as someone using the page finds them, not by the page's classes. In Roc, an
+			<code>expect</code> renders a component and asks it. From Node, a test builds the app, starts its
+			server, asks it as a browser would, reads the mail it sent, gives itself a database, and uses the
+			page in a real browser.
+		</PageHero>
+
+		<Heading id="first">A first test</Heading>
+		<p>
+			A pure component (<code>view</code>, no <code>!</code>) makes its markup from its props alone. So an
+			<code>expect</code> can render it to HTML with <code>Html.to_str</code>, read that with
+			<code>Dom.parse</code>, and ask it what a person would see. Here is a small inbox, and the inbox as
+			it renders:
+		</p>
+		<Specimen file={Sources.testing_inbox.file} code={[<Code source={Sources.testing_inbox.rocx} numbers={Bool.False} />]} label="As it renders (a picture: it does nothing here)">
+			<div inert><TestingInbox name="Ada" unread={["Lunch?", "Re: the plan"]} /></div>
+		</Specimen>
+		<p>
+			Its tests are in the same file, under it. <code>roc test</code> runs them with every other
+			<code>expect</code> the app has, and this site's tests run these:
+		</p>
+		<Code title={Sources.testing_inbox_expects.file} source={Sources.testing_inbox_expects.rocx} numbers={Bool.False} />
+		<p>The app names the package in its header, by its directory's name, as it names any package:</p>
+		<Code source={"app [program] { testing: \"../packages/testing/main.roc\", pf: platform \"…\" }"} numbers={Bool.False} />
+		<p>
+			A query that finds one element answers <code>Ok</code> with it. One that finds none, or more than one,
+			says so, and says what there is instead, so a failing test tells you what went wrong. This is what
+			<code>page.get</code> answers for a few queries of the inbox above, asked as this page was rendered:
+		</p>
+		<TableWrap><TestingAnswers /></TableWrap>
+		<details>
+			<summary>How the table is made: <code>{Sources.testing_answers.file}</code></summary>
+			<Code title={Sources.testing_answers.file} source={Sources.testing_answers.rocx} />
+		</details>
+
+		<Heading id="ways">Four ways to test</Heading>
+		<FeatureGrid>
+			<Feature title="Rules and pure components, in Roc">
+				<p>
+					An <code>expect</code> beside the code. <code>Html.to_str</code> renders a pure component, and
+					<code>Dom.parse</code> reads it. Fast, typed, and run by <code>roc test</code>.
+				</p>
+			</Feature>
+			<Feature title="The app, over HTTP, from Node">
+				<p>
+					<code>node:test</code> builds the app as a deploy does, starts its server on a port of its own,
+					and asks it as a browser would: pages, forms, server functions, events, the mail it sent.
+				</p>
+			</Feature>
+			<Feature title="Its database and its jobs">
+				<p>
+					Each test gets a Postgres database of its own, which the server migrates. A test waits until the
+					jobs it caused have run, and sees how each ended.
+				</p>
+			</Feature>
+			<Feature title="A real browser">
+				<p>
+					Chromium's headless shell. A page hydrates strictly, and a test clicks and types in it as a person
+					does. A component with signals is tested through its story.
+				</p>
+			</Feature>
+		</FeatureGrid>
+
+		<Heading id="queries">The queries</Heading>
+		<p>
+			The same queries in Roc and in JavaScript, with the same rules. The JavaScript ones have Testing
+			Library's names, so a test reads as one written for React or Solid would.
+		</p>
+		<TableWrap>
+			<table>
+				<thead><tr><th>In Roc</th><th>In JavaScript</th><th>Finds</th></tr></thead>
+				<tbody>
+					<tr>
+						<td><code>Role(role)</code></td>
+						<td><code>getByRole(role)</code></td>
+						<td>
+							elements with that ARIA role: their own (<code>role="tab"</code>), or their tag's: a
+							<code>{"<button>"}</code> is a button, an <code>{"<a href>"}</code> a link, an <code>{"<h2>"}</code> a
+							heading, a <code>{"<ul>"}</code> a list, an <code>{"<input type=\"checkbox\">"}</code> a checkbox
+						</td>
+					</tr>
+					<tr>
+						<td><code>Named(role, name)</code></td>
+						<td><code>{"getByRole(role, { name })"}</code></td>
+						<td>
+							and whose accessible name is <code>name</code>: its <code>aria-labelledby</code>, its
+							<code>aria-label</code>, its <code>{"<label>"}</code>, its <code>alt</code>, its text (a button's, a
+							link's, a heading's), its <code>title</code>
+						</td>
+					</tr>
+					<tr><td><code>Text(text)</code></td><td><code>getByText(text)</code></td><td>elements whose own text is <code>text</code>, not their children's</td></tr>
+					<tr>
+						<td><code>Label(text)</code></td>
+						<td><code>getByLabelText(text)</code></td>
+						<td>
+							the field a <code>{"<label>"}</code> with that text names (by <code>for</code>, or around it), or
+							whose <code>aria-label</code> or <code>aria-labelledby</code> says it
+						</td>
+					</tr>
+					<tr><td><code>TestId(id)</code></td><td><code>getByTestId(id)</code></td><td>the element with <code>data-testid</code> set to <code>id</code></td></tr>
+					<tr><td><code>Tag(tag)</code>, <code>Attr(name, value)</code></td><td></td><td>elements by tag, or by an attribute's value, hidden or not</td></tr>
+				</tbody>
+			</table>
+		</TableWrap>
+		<p>
+			Text is compared as a reader sees it: whitespace collapsed, and trimmed. Roles, names, text and labels
+			skip what a reader can't see: an element that is <code>hidden</code>, <code>aria-hidden="true"</code>
+			or <code>display: none</code> in its <code>style</code>, and what is inside it; <code>{"<head>"}</code>,
+			<code>{"<script>"}</code>, <code>{"<style>"}</code>, <code>{"<template>"}</code>. In JavaScript a name or a text may also be a
+			<code>RegExp</code>, and <code>getByRole</code> takes a heading's <code>level</code>.
+		</p>
+
+		<Heading id="dom">Dom, in Roc</Heading>
+		<p>
+			<code>Dom.parse(html)</code> reads HTML into a tree. It reads HTML that closes its elements, as Roc Solid
+			writes it and a browser serializes it. A query on an element looks inside that element, and two
+			<code>Dom</code>s compare with <code>==</code>.
+		</p>
+		<TableWrap>
+			<table>
+				<thead><tr><th>Function</th><th>Gives</th></tr></thead>
+				<tbody>
+					<tr><td><code>page.get(query)</code></td><td><code>{"Try(Dom, [NotFound(Str), TooMany(Str)])"}</code>: the one element, or why not</td></tr>
+					<tr><td><code>page.first(query)</code>, <code>page.all(query)</code></td><td>the first; every one, in the page's order</td></tr>
+					<tr><td><code>page.contains(query)</code>, <code>page.count(query)</code></td><td>whether it finds any; how many</td></tr>
+					<tr><td><code>page.text_of(query)</code>, <code>page.texts(query)</code></td><td>the text of the one; of each</td></tr>
+					<tr><td><code>node.text()</code></td><td>what a reader reads in it, whitespace collapsed</td></tr>
+					<tr><td><code>node.attr(name)</code>, <code>node.tag()</code>, <code>node.has_class(class)</code></td><td>an attribute (<code>Err(Missing)</code> when it has none); its tag; whether it has a class</td></tr>
+					<tr><td><code>page.roles()</code></td><td>every role and name a reader can reach, to print with <code>dbg</code> when a query finds nothing</td></tr>
+				</tbody>
+			</table>
+		</TableWrap>
+
+		<Heading id="node">From Node</Heading>
+		<p>
+			<code>buildForTests</code> builds the app as a deploy does: <code>rocx build</code>, the browser's wasm
+			and the server. <code>startServer</code> starts that server on a free port. A test file starts one for
+			all its tests, and stops it at the end:
+		</p>
+		<Code title={Sources.testing_node_setup.file} source={Sources.testing_node_setup.rocx} numbers={Bool.False} />
+		<p>
+			<code>app.client()</code> is someone at a browser, with a cookie jar of their own. Each answer has its
+			<code>status</code>, its <code>text</code>, and a <code>dom</code> with the queries:
+		</p>
+		<Code title={Sources.testing_node_page.file} source={Sources.testing_node_page.rocx} numbers={Bool.False} />
+		<p>
+			<code>post</code> sends a form as a browser does without the runtime: the endpoint answers with a redirect
+			back to the page, and a flash that holds its result. A test sees the redirect, and reads the flash.
+			<code>submit</code> sends the form as the runtime does, and gets the endpoint's answer.
+			<code>call</code> calls a server function by its name, as <code>rocx routes</code> lists it, and
+			<code>events</code> reads an endpoint's events as they come.
+		</p>
+		<Code title={Sources.testing_node_form.file} source={Sources.testing_node_form.rocx} numbers={Bool.False} />
+		<p>
+			With no <code>--smtp-url</code> the server keeps the mail it sends. <code>waitForMail</code> waits for a
+			message, and <code>links</code> finds the links in it:
+		</p>
+		<Code title={Sources.testing_node_mail.file} source={Sources.testing_node_mail.rocx} numbers={Bool.False} />
+
+		<Heading id="database">A database, and jobs</Heading>
+		<p>
+			<code>testDatabase()</code> makes a database of the test's own, in the Postgres at
+			<code>DATABASE_URL</code>, and <code>drop()</code> removes it. The server runs its migrations into it when
+			it starts. <code>settleJobs()</code> waits until every job that is due has run, and the jobs those
+			queued, and answers how each ended. A job that fails is tried again later; <code>{"{ later: true }"}</code>
+			tries it now, until its attempts are spent. <code>enqueue</code> queues a job as a cron would at its time.
+		</p>
+		<Code title={Sources.testing_node_jobs.file} source={Sources.testing_node_jobs.rocx} numbers={Bool.False} />
+
+		<Heading id="browser">In a browser</Heading>
+		<p>
+			<code>launchBrowser()</code> starts Chromium's headless shell, or gives <code>null</code> when there is
+			none, so the test can skip. A tab waits until the page has hydrated, strictly: a page that isn't what the
+			browser's half renders throws. Its queries are the same, and each element it finds can be clicked, typed
+			in and filled, through the browser's own input. <code>findBy…</code> looks again until the page shows
+			what it asks for.
+		</p>
+		<Code title={Sources.testing_node_browser.file} source={Sources.testing_node_browser.rocx} numbers={Bool.False} />
+		<p>
+			<code>Html.to_str</code> can't render a component with signals: its holes run in the runtime. Its
+			<code>{"<story>"}</code> can be tested instead. <code>{"buildForTests(dir, { dev: true })"}</code> serves
+			each story as a page, at <code>{"storyPath(\"Counter\", \"At ten\")"}</code>, to fetch or to open.
+		</p>
+
+		<Heading id="javascript">The JavaScript</Heading>
+		<p>
+			Plain <code>.mjs</code> files with no dependencies, each usable on its own; <code>index.mjs</code> has all
+			of them.
+		</p>
+		<TableWrap>
+			<table>
+				<thead><tr><th>Module</th><th>Gives a test</th></tr></thead>
+				<tbody>
+					<tr>
+						<td><code>dom.mjs</code></td>
+						<td>
+							<code>screen(html)</code>, or <code>parse(html)</code> and <code>within(node)</code>: the queries, each as <code>getBy…</code>
+							(one, or it throws), <code>queryBy…</code> (one, or <code>null</code>), <code>getAllBy…</code> and
+							<code>queryAllBy…</code>. A node has <code>text</code>, <code>attr(name)</code>, <code>role</code>,
+							<code>name</code>, <code>hasClass(name)</code>
+						</td>
+					</tr>
+					<tr>
+						<td><code>server.mjs</code></td>
+						<td>
+							<code>{"startServer(executable, { statics, database, dev, flags, env })"}</code>; its
+							<code>client()</code>, with <code>get</code>, <code>post</code>, <code>submit</code>,
+							<code>json</code>, <code>put</code>, <code>call</code>, <code>events</code> and <code>flash</code>;
+							<code>mail()</code>, <code>waitForMail</code>, <code>logs()</code>, <code>stop()</code>; and
+							<code>links</code>, <code>until</code>, <code>storyPath</code>
+						</td>
+					</tr>
+					<tr>
+						<td><code>postgres.mjs</code></td>
+						<td>
+							<code>testDatabase()</code>: <code>url</code>, <code>query</code>, <code>{"sql`…\${value}`"}</code>
+							(each value written as a literal), <code>jobs</code>, <code>enqueue</code>, <code>settleJobs</code>,
+							<code>drop</code>. A client of its own, over Node's sockets
+						</td>
+					</tr>
+					<tr>
+						<td><code>browser.mjs</code></td>
+						<td>
+							<code>launchBrowser()</code>, <code>{"browser.open(url, { strict, cookies })"}</code>: a tab with the
+							queries, <code>findBy…</code>, <code>waitFor</code>, <code>errors</code>, <code>console</code>,
+							<code>screenshot</code>; elements with <code>click</code>, <code>fill</code>, <code>type</code>,
+							<code>press</code>, <code>value</code>
+						</td>
+					</tr>
+					<tr><td><code>build.mjs</code></td><td><code>{"buildForTests(dir, { client, dev, opt })"}</code>: the app built; its server and the directories it serves</td></tr>
+				</tbody>
+			</table>
+		</TableWrap>
+
+		<Heading id="status">Status</Heading>
+		<p>
+			What is above works today, and the package tests it: <code>roc test packages/testing/main.roc</code> runs
+			<code>Dom</code>'s <code>expect</code>s, and <code>node --test</code> runs its JavaScript against a small app
+			it builds, with Postgres and Chromium when they are there. Each of these waits on a change to the
+			platform, written up in <code>packages/testing/PROPOSALS.md</code>:
+		</p>
+		<ul>
+			<li>a clock a test sets, and randomness it seeds: a test mode for the server;</li>
+			<li>outbound requests (<code>Http</code>, and <code>S3</code> from packages/s3 through it) answered by stubs, so a test makes no network calls;</li>
+			<li>jobs and crons run by a request, with no SQL (today <code>settleJobs</code> waits on the database);</li>
+			<li>emptying the dev mailbox between tests (today <code>waitForMail</code> skips the messages already there);</li>
+			<li>endpoints, pages and server functions tested in Roc, answered inside the server, and a component with signals rendered in a Roc test;</li>
+			<li>helpers in this package that run on the server, until a package can hold server-only modules.</li>
+		</ul>
+		<p>Limits, for now:</p>
+		<ul>
+			<li>The tabs of one browser share cookies, so <code>open</code> clears them first.</li>
+			<li>
+				<code>Dom.parse</code> doesn't close elements that HTML leaves open: <code>{"<p>one<p>two"}</code> is
+				one paragraph inside another.
+			</li>
+			<li>
+				The JavaScript finds the Roc Solid repository it is in, or the one <code>ROCX_ROOT</code> names: it builds
+				with its compiler and drives Chromium with its driver.
+			</li>
+		</ul>
+	</NoHydration>
+
+<style>
+	/* A narrow screen scrolls a table sideways (TableWrap) rather than breaking a name or a call in two,
+	   or squeezing what it says into a word a line. */
+	td:not(:last-child) code {
+		white-space: nowrap;
+	}
+
+	td:last-child {
+		min-width: 14rem;
+	}
+</style>

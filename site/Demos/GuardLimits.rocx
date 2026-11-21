@@ -1,0 +1,68 @@
+import pf.Html
+import guard.RateLimit
+
+## The same requests under two limits of 5 a minute, a token bucket and a sliding window, and what
+## each answers, as the package's own `RateLimit.check` decides it. The server renders the table
+## once, when the site is built; the clock is a list of seconds, as in a test.
+GuardLimits := [].{
+
+	## A login form's limit: 5 at once, then one every 12 seconds.
+	login : RateLimit
+	login = RateLimit.per_minute(5)
+
+	## The same 5 a minute, never more in any minute.
+	strict : RateLimit
+	strict = RateLimit.per_minute(5).sliding()
+
+	## When the requests come, in seconds: the window the sliding one counts in starts at 0.
+	seconds : List(U64)
+	seconds = [0, 1, 2, 3, 4, 5, 12, 13, 24, 60, 72]
+
+	view : {} -> Html
+	view = |{}| {
+		bucket = answers(GuardLimits.login, GuardLimits.seconds)
+		window = answers(GuardLimits.strict, GuardLimits.seconds)
+		<table class="guard-limits">
+			<thead>
+				<tr><th>Second</th><th>Token bucket</th><th>Sliding window</th></tr>
+			</thead>
+			<tbody>
+				{...GuardLimits.seconds.map_with_index(
+					|second, at|
+						<tr>
+							<td>{second.to_str()}</td>
+							<td>{bucket.get(at) ?? ""}</td>
+							<td>{window.get(at) ?? ""}</td>
+						</tr>,
+				)}
+			</tbody>
+		</table>
+	}
+}
+
+## What each request is answered, each checked as the one before it left the limit.
+answers : RateLimit, List(U64) -> List(Str)
+answers = |policy, seconds| {
+	var $state = policy.fresh(0)
+	var $said = []
+	for second in seconds {
+		{ decision, state } = policy.check($state, second * 1000)
+		$state = state
+		$said = $said.append(answer(policy, decision))
+	}
+	$said
+}
+
+## `200, 3 left`, or `429, Retry-After: 7`: the status, and the header a client reads.
+answer : RateLimit, RateLimit.Decision -> Str
+answer = |policy, decision|
+	if decision.allowed {
+		"200, ${decision.remaining.to_str()} left"
+	} else {
+		retry =
+			match RateLimit.headers(policy, decision).find_first(|header| header.name == "retry-after") {
+				Ok(found) => found.value
+				Err(_) => "?"
+			}
+		"429, Retry-After: ${retry}"
+	}
