@@ -70,7 +70,7 @@ PushCompose := [].{
 			</p>
 			<pre class="json"><code>{json!()}</code></pre>
 			<p class="compose-caption">The headers the push service reads, <code>Options.headers</code></p>
-			<pre class="headers"><code>{Str.join_with(options!().headers().map(|header| "${header.name}: ${header.value}"), "\n")}</code></pre>
+			<pre class="headers"><code>{Str.join_with(options!().headers().map(|(name, value)| "${name}: ${value}"), "\n")}</code></pre>
 			<p class="verdict" class:refused={verdict!().refused} aria-live="polite">{verdict!().said}</p>
 		</div>
 	}
