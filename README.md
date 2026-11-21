@@ -59,6 +59,8 @@ just check   # type-check the site's two programs, reports at .rocx lines, and l
 |---|---|
 | `src/transpile.mjs`, `src/styles.mjs`, `src/remap.mjs`, `src/routes.mjs`, `bin/rocx.mjs` | the transpiler, scoped styles, error remapping, routing, the command |
 | `packages/charts` | bar, stacked bar, line, sparkline, donut, scatter and heatmap charts, styled by custom properties: their arithmetic a Roc package (scales, round ticks, SVG paths, in `Dec`), their components copied into each app by `rocx build`; see its README |
+| `packages/crypto` | SHA-256, HMAC, HKDF, Base64 and hex in plain Roc, on no platform, each checked against its RFC's vectors; see its README |
+| `packages/s3` | files in any S3: objects, multipart uploads, presigned URLs, and objects served as they stream, a bucket made from its URL and the server platform's `Http.send!`; see its README |
 | `web/` | the browser's platform: the modules components are written with (`Html`, `Solid`, `Show`, `For`, …) and HTTP's (`Server`, requests and answers; `Endpoint`, `Events`, `Middleware`, `OpenApi`), which the server's platform has too; its Zig host, `runtime.js`; see `web/README.md` |
 | `server/` | the server's platform: native Roc in a Rust host (tokio, hyper, Postgres, jobs, email, actors), rendering pages of components; see `server/README.md` |
 | `site/` | the docs site: pages in `routes/`, the demos on them in `Demos/`, its program in `main.roc`, real examples in `examples/` |
@@ -392,10 +394,10 @@ thread from a pool, so an effect that waits holds up only its own call; a crash 
 renders a page of components, byte for byte as the browser's runtime would. Postgres
 (`Db`, migrations, transactions), jobs and cron (options, keys, listing, and a jobs page an app
 mounts behind its own middleware), email (SMTP, or a dev mailbox at `/__rocx/mail`), requests to
-other servers (`Http`), files in S3 (`Storage`), bodies as bytes and from elsewhere
-(`Server.forward`), cookies, settings (`Env`), crypto (`Sha256`, `Hmac`, `Hkdf`, `AesGcm`,
-`Base64`, `Hex`), live topics and rooms, and actors (typed asks, tells and timers, one message at a
-time, their state kept in Postgres). The Rust host gives general things (HTTP, Postgres connections,
+other servers (`Http`), bodies as bytes and from elsewhere (`Server.forward`), cookies, settings
+(`Env`), encryption (`AesGcm`) and random bytes, live topics and rooms, and actors (typed asks,
+tells and timers, one message at a time, their state kept in Postgres). Files in S3 and the crypto
+written in Roc are packages (`packages/s3`, `packages/crypto`). The Rust host gives general things (HTTP, Postgres connections,
 TCP and TLS, background loops, isolated calls, actors' mailboxes and timers); jobs, cron,
 migrations, email and actors' state are the platform's Roc, written on them, and so is
 [roc-pg](https://github.com/niclas-ahden/roc-pg), whose queries are checked at build, which runs on

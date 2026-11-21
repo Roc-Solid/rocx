@@ -458,6 +458,7 @@ function sourcesModule() {
 		defined("platform_tokens", "server/test/app/Samples.roc", ["token!", "digest"]),
 		defined("platform_links", "server/test/app/Samples.roc", ["signed_link!", "link_member!", "link_key!", "app_secret!"]),
 		defined("platform_sealed", "server/test/app/Samples.roc", ["seal!", "unseal!", "sealing_key!"]),
+		defined("platform_files", "server/test/app/Samples.roc", ["files!"]),
 		defined("platform_avatar", "server/test/app/Samples.roc", ["save_avatar!", "avatar_size!", "take_avatar!"]),
 		defined("platform_upload_link", "server/test/app/Samples.roc", ["upload_link!"]),
 		defined("platform_parts", "server/test/app/Samples.roc", ["save_in_parts!"]),

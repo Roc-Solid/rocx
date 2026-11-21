@@ -1,6 +1,5 @@
 import pf.Actor
 import pf.Events
-import pf.Hex
 import pf.Live
 import pf.Random
 import pf.Time
@@ -97,7 +96,7 @@ PresenceServer := [].{
 	stream = |room, { key, meta }|
 		Events.stream(
 			|{ send!, .. }| {
-				tab = Hex.encode(Random.bytes!(8))
+				tab = hex(Random.bytes!(8))
 				# Listening first: what changes after the snapshot is heard, and what changed before it
 				# is older than it, which the page's copy (`Mirror`) leaves out.
 				Live.listen!(Wire.topic(room))
@@ -127,4 +126,15 @@ PresenceServer := [].{
 				Ok({})
 			},
 		)
+}
+
+## Bytes in lowercase hex: a tab's id, from random ones.
+hex : List(U8) -> Str
+hex = |bytes| {
+	digits = "0123456789abcdef".to_utf8()
+	var $out = []
+	for byte in bytes {
+		$out = $out.append(digits.get((byte // 16).to_u64()) ?? '0').append(digits.get((byte % 16).to_u64()) ?? '0')
+	}
+	Str.from_utf8_lossy($out)
 }

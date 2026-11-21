@@ -3,28 +3,28 @@
 ## (with attempts, time limits and keys, listed and acted on, and the jobs page behind a guard) and
 ## cron, email, live topics and rooms, actors, pages of components, with server functions answered
 ## by their routes, requests to other servers, the environment, AES-GCM, random
-## bytes, the crypto written in Roc, S3 storage, and cookies; and what the docs show of them
+## bytes, the crypto written in Roc (packages/crypto), S3 storage (packages/s3), and cookies; and what the docs show of them
 ## (`Samples.roc`), as an app would write it.
-app [program] { pf: platform "../../platform/main.roc" }
+app [program] { pf: platform "../../platform/main.roc", crypto: "../../../packages/crypto/main.roc", s3: "../../../packages/s3/main.roc" }
 
+import crypto.Base64
+import crypto.Hex
+import crypto.Hkdf
+import crypto.Hmac
+import crypto.Sha256
+import s3.S3
 import pf.Actor
 import pf.AesGcm
-import pf.Base64
 import pf.Cron
 import pf.Db
 import pf.Email
 import pf.Env
-import pf.Hex
-import pf.Hkdf
-import pf.Hmac
 import pf.Http
 import pf.Job
 import pf.JobsPage
 import pf.Live
 import pf.Log
 import pf.Random
-import pf.Sha256
-import pf.Storage
 import pf.Tcp
 import pf.Time
 import pf.Html
@@ -701,47 +701,8 @@ route! = |request, context| {
 			}
 		("GET", "/random") => text(200, numbers(Random.bytes!(U64.from_str(param(request.query, "count")) ?? 0)))
 
-		# ---- Storage: S3 (the key, and the rest, in the query; bytes as numbers with `as=numbers`) ----
-		("POST", "/storage/put") => {
-			bytes = if (param(request.query, "as") == "numbers") from_numbers(Server.text_of(request)) else request.body
-			answered_storage(Storage.put!(param(request.query, "key"), bytes, { content_type: param(request.query, "type") }), |{}| "stored")
-		}
-		("POST", "/storage/fill") =>
-		# `size` bytes, each `fill`: an object larger than a request's body carries well as numbers.
-			answered_storage(Storage.put!(param(request.query, "key"), filled(request.query), { content_type: "application/octet-stream" }), |{}| "stored")
-		("GET", "/storage/get") => answered_storage(Storage.get!(param(request.query, "key")), |bytes| shown_bytes(request.query, bytes))
-		("GET", "/storage/sha") => answered_storage(Storage.get!(param(request.query, "key")), |bytes| Sha256.hex(bytes))
-		("GET", "/storage/range") => {
-			range = { offset: number(request.query, "offset"), length: number(request.query, "length") }
-			answered_storage(Storage.get_range!(param(request.query, "key"), range), |got| "${got.size.to_str()} ${shown_bytes(request.query, got.bytes)}")
-		}
-		("GET", "/storage/head") => answered_storage(Storage.head!(param(request.query, "key")), |info| "${info.size.to_str()} ${info.content_type} ${info.etag}")
-		(_, "/storage/serve") => {
-			# `whole=1`: the request's range dropped from the record, so the whole object is sent.
-			served = if (param(request.query, "whole") == "1") { ..request, headers: request.headers.keep_if(|each| each.name != "range") } else request
-			Storage.serve!(param(request.query, "key"), served, { content_type: param(request.query, "type"), cache_control: param(request.query, "cache") })
-		}
-		("POST", "/storage/delete") => answered_storage(Storage.delete!(param(request.query, "key")), |{}| "deleted")
-		("POST", "/storage/start") => answered_storage(Storage.start_upload!(param(request.query, "key"), { content_type: param(request.query, "type") }), |upload| upload)
-		("POST", "/storage/part") => answered_storage(Storage.upload_part!(param(request.query, "key"), param(request.query, "upload"), number(request.query, "number"), filled(request.query)), |etag| etag)
-		("POST", "/storage/finish") => {
-			# The parts, a `number etag` a line.
-			parts = Server.text_of(request).split_on("\n").keep_if(|line| !line.is_empty()).map(
-				|line|
-					match line.split_first(" ") {
-						Ok({ before: written, after: etag }) => { number: U64.from_str(written) ?? 0, etag }
-						Err(_) => { number: 0, etag: line }
-					},
-			)
-			answered_storage(Storage.finish_upload!(param(request.query, "key"), param(request.query, "upload"), parts), |{}| "finished")
-		}
-		("POST", "/storage/abort") => answered_storage(Storage.abort_upload!(param(request.query, "key"), param(request.query, "upload")), |{}| "aborted")
-		("GET", "/storage/signed") =>
-			match Storage.signed_url!(param(request.query, "key"), { method: param(request.query, "method"), expires_s: number(request.query, "expires") }) {
-				Ok(url) => text(200, url)
-				Err(BadExpiry) => text(400, "BadExpiry")
-				Err(StorageErr(why)) => text(503, "StorageErr ${why}")
-			}
+		# ---- Storage: S3, from packages/s3, in the bucket STORAGE_URL names (`stored!`) ----
+		(_, path) if path.starts_with("/storage/") => stored!(request)
 
 		# ---- Cookies: each kind the platform writes ----
 		("GET", "/cookies") => {
@@ -878,6 +839,72 @@ answered_storage = |result, said|
 		Err(NotFound) => text(404, "NotFound")
 		Err(S3Err({ status, code, message })) => text(502, "S3Err ${status.to_str()} ${code}: ${message}")
 		Err(StorageErr(why)) => text(503, "StorageErr ${why}")
+	}
+
+## The bucket STORAGE_URL names, made as an app makes one: its URL, and the platform's effects.
+bucket! : {} => Try(S3.Bucket, [StorageErr(Str)])
+bucket! = |{}| S3.from_url(Env.var!("STORAGE_URL") ?? "", { send!: Http.send!, now!: Time.now_millis! })
+
+## The storage routes (the key, and the rest, in the query; bytes as numbers with `as=numbers`).
+## Without a bucket (no STORAGE_URL, or one that can't be read), each says why: a 503.
+stored! : Server.Request => Server.Response
+stored! = |request|
+	match bucket!({}) {
+		Err(StorageErr(why)) => text(503, "StorageErr ${why}")
+		Ok(bucket) => in_bucket!(bucket, request)
+	}
+
+in_bucket! : S3.Bucket, Server.Request => Server.Response
+in_bucket! = |bucket, request|
+	match (request.method, request.path) {
+		("POST", "/storage/put") => {
+			bytes = if (param(request.query, "as") == "numbers") from_numbers(Server.text_of(request)) else request.body
+			answered_storage(S3.put!(bucket, param(request.query, "key"), bytes, { content_type: param(request.query, "type") }), |{}| "stored")
+		}
+		("POST", "/storage/fill") =>
+		# `size` bytes, each `fill`: an object larger than a request's body carries well as numbers.
+			answered_storage(S3.put!(bucket, param(request.query, "key"), filled(request.query), { content_type: "application/octet-stream" }), |{}| "stored")
+		("GET", "/storage/get") => answered_storage(S3.get!(bucket, param(request.query, "key")), |bytes| shown_bytes(request.query, bytes))
+		("GET", "/storage/sha") => answered_storage(S3.get!(bucket, param(request.query, "key")), |bytes| Sha256.hex(bytes))
+		("GET", "/storage/range") => {
+			range = { offset: number(request.query, "offset"), length: number(request.query, "length") }
+			answered_storage(S3.get_range!(bucket, param(request.query, "key"), range), |got| "${got.size.to_str()} ${shown_bytes(request.query, got.bytes)}")
+		}
+		("GET", "/storage/head") => answered_storage(S3.head!(bucket, param(request.query, "key")), |info| "${info.size.to_str()} ${info.content_type} ${info.etag}")
+		(_, "/storage/serve") => {
+			# `whole=1`: the request's range dropped from the record, so the whole object is sent.
+			served = if (param(request.query, "whole") == "1") { ..request, headers: request.headers.keep_if(|each| each.name != "range") } else request
+			S3.serve!(bucket, param(request.query, "key"), served, { content_type: param(request.query, "type"), cache_control: param(request.query, "cache") })
+		}
+		("POST", "/storage/delete") => answered_storage(S3.delete!(bucket, param(request.query, "key")), |{}| "deleted")
+		("POST", "/storage/start") => answered_storage(S3.start_upload!(bucket, param(request.query, "key"), { content_type: param(request.query, "type") }), |upload| upload)
+		("POST", "/storage/part") => answered_storage(S3.upload_part!(bucket, param(request.query, "key"), param(request.query, "upload"), number(request.query, "number"), filled(request.query)), |etag| etag)
+		("POST", "/storage/finish") => {
+			# The parts, a `number etag` a line.
+			parts = Server.text_of(request).split_on("\n").keep_if(|line| !line.is_empty()).map(
+				|line|
+					match line.split_first(" ") {
+						Ok({ before: written, after: etag }) => { number: U64.from_str(written) ?? 0, etag }
+						Err(_) => { number: 0, etag: line }
+					},
+			)
+			answered_storage(S3.finish_upload!(bucket, param(request.query, "key"), param(request.query, "upload"), parts), |{}| "finished")
+		}
+		("POST", "/storage/abort") => answered_storage(S3.abort_upload!(bucket, param(request.query, "key"), param(request.query, "upload")), |{}| "aborted")
+		("GET", "/storage/signed") =>
+			match S3.signed_url!(bucket, param(request.query, "key"), { method: param(request.query, "method"), expires_s: number(request.query, "expires") }) {
+				Ok(url) => text(200, url)
+				Err(BadExpiry) => text(400, "BadExpiry")
+				Err(StorageErr(why)) => text(503, "StorageErr ${why}")
+			}
+		# Whether S3 answers, with these keys, for this bucket (what an app's health check asks).
+		("GET", "/storage/check") =>
+			match S3.check!(bucket) {
+				Ok({}) => text(200, "S3 answers, and the bucket is there")
+				Err(S3Err(refused)) => text(502, "S3Err ${S3.said(refused)}")
+				Err(StorageErr(why)) => text(503, "StorageErr ${why}")
+			}
+		_ => text(404, "no such storage route")
 	}
 
 ## Bytes as text, or as numbers (`as=numbers`).

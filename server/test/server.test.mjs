@@ -13,8 +13,9 @@
 // take tells and timers, log what they do not take, and keep their state across a restart (and an
 // idle spell); `Http` asks servers this file runs (redirects, a timeout,
 // a body too large, TLS that fails); `Env` reads the environment from a request and a job; AES-GCM
-// seals as Node's does, and SHA-256, HMAC, HKDF and Base64 in Roc agree with Node's; `Storage`
-// keeps objects in S3, whole and in parts, serves them streamed, and signs URLs Node's fetch uses;
+// seals as Node's does, and packages/crypto's SHA-256, HMAC, HKDF and Base64 agree with Node's;
+// packages/s3 keeps objects in S3, whole and in parts, serves them streamed, and signs URLs Node's
+// fetch uses;
 // cookies are set as their options say; a stop lets the request being answered finish.
 //
 // ROCX_TEST_OPT=speed builds the app optimized (`--opt=speed`) instead.
@@ -1421,7 +1422,7 @@ test("samples: what the docs show of storage runs as they say: an avatar kept, d
 });
 
 test("storage: an object kept, read whole, in part and described, replaced, and deleted", { skip: skipStorage }, async () => {
-	await logs(/rocx storage: S3 answers, and the bucket is there/);
+	assert.deepEqual(await stored("/storage/check"), [200, "S3 answers, and the bucket is there"]);
 	const key = keyed("notes/a b+ł?.txt");
 	const said = "Hello, storage ✓";
 	const size = Buffer.byteLength(said);
@@ -1518,7 +1519,7 @@ test("storage: presigned URLs, a PUT and a GET made by Node's fetch; a changed o
 	assert.deepEqual(await stored(`/storage/delete?key=${key}`, { method: "POST" }), [200, "deleted"]);
 });
 
-test("storage: serve! answers with an object the server streams from S3: whole, a range, 304 for its ETag, HEAD, 404; without storage, a 500", { skip: skipStorage }, async () => {
+test("storage: serve! answers with an object the server streams from S3: whole, a range, 304 for its ETag, HEAD, 404; without a bucket, the docs' sample a 500", { skip: skipStorage }, async () => {
 	const key = keyed("served/clip.mp4");
 	const bytes = Buffer.from(Array.from({ length: 70_000 }, (_, i) => (i * 13 + 7) % 256));
 	assert.deepEqual(await stored(`/storage/put?key=${key}&type=application/octet-stream`, { method: "POST", body: bytes }), [200, "stored"], "the bytes as they came");
@@ -1550,15 +1551,16 @@ test("storage: serve! answers with an object the server streams from S3: whole, 
 	assert.equal(await missing.text(), "Not Found", "not S3's XML");
 	const none = await start([], app, { DATABASE_URL: "", STORAGE_URL: "" });
 	try {
-		const answered = await none.get(`/storage/serve?key=${key}`);
-		assert.equal(answered.status, 500);
-		await logs(/rocx storage: no storage: start the server with --storage-url/, none);
+		const answered = await none.get(`/samples/video?key=${key}`);
+		assert.deepEqual([answered.status, await answered.text()], [500, "Something went wrong."]);
+		await logs(/no storage/, none);
+		await logs(/no S3 URL/, none);
 	} finally {
 		await none.stop();
 	}
 });
 
-test("storage: keys S3 doesn't take are refused, with its code; a bucket that isn't there, S3 that isn't, or no storage at all, say so", { skip: skipStorage }, async () => {
+test("storage: keys S3 doesn't take are refused, with its code; a bucket that isn't there, S3 that isn't, a URL that can't be read, or none, say so", { skip: skipStorage }, async () => {
 	// The tests' own STORAGE_URL, changed: s3://KEY:SECRET@HOST/BUCKET?… (the secret may hold a `/` or an `@`).
 	const [, key, secret, rest] = /^s3:\/\/([^:]*):(.*)@([^@]*)$/.exec(storage);
 	const [place, query] = rest.split("?");
@@ -1571,7 +1573,7 @@ test("storage: keys S3 doesn't take are refused, with its code; a bucket that is
 		typo: `s3://${key}:${secret}@${rest}&stlye=path`,
 	};
 	const servers = Object.fromEntries(
-		await Promise.all(Object.entries(variants).map(async ([name, url]) => [name, await start(["--storage-url", url], app, { DATABASE_URL: "", STORAGE_URL: "" })])),
+		await Promise.all(Object.entries(variants).map(async ([name, url]) => [name, await start([], app, { DATABASE_URL: "", STORAGE_URL: url })])),
 	);
 	const none = await start([], app, { DATABASE_URL: "", STORAGE_URL: "" });
 	try {
@@ -1583,19 +1585,17 @@ test("storage: keys S3 doesn't take are refused, with its code; a bucket that is
 		const secretPut = await put(servers.secret);
 		assert.equal(secretPut[0], 502);
 		assert.match(secretPut[1], /^S3Err 403 SignatureDoesNotMatch: /, "a wrong secret");
-		await logs(/rocx storage: S3 refused: 403 SignatureDoesNotMatch: /, servers.secret);
+		assert.match((await ask(servers.secret, "/storage/check"))[1], /^S3Err 403 SignatureDoesNotMatch: /, "check! says so too");
 		assert.deepEqual(await ask(servers.secret, `/storage/head?key=${keyed("refused")}`), [502, "S3Err 403 : HTTP 403, no body"], "a HEAD's refusal has no body to say why");
 		const keyPut = await put(servers.key);
 		assert.match(keyPut[1], /^S3Err 403 InvalidAccessKeyId: /, "a key S3 doesn't know");
-		await logs(/rocx storage: S3 refused: 403 InvalidAccessKeyId: /, servers.key);
+		assert.match((await ask(servers.key, "/storage/check"))[1], /^S3Err 403 InvalidAccessKeyId: /);
 		assert.match((await ask(servers.bucket, `/storage/get?key=${keyed("x")}`))[1], /^S3Err 404 NoSuchBucket: /, "NoSuchBucket is not NotFound");
-		await logs(/rocx storage: S3 refused: 404 NoSuchBucket: /, servers.bucket);
+		assert.match((await ask(servers.bucket, "/storage/check"))[1], /^S3Err 404 NoSuchBucket: /, "check! tells a missing bucket from a missing object");
 		assert.match((await put(servers.port))[1], /^StorageErr PUT .+: no answer from S3: 127\.0\.0\.1:9: /);
-		await logs(/rocx storage: GET rocx-storage-check: no answer from S3: /, servers.port);
-		assert.deepEqual(await put(servers.typo), [503, "StorageErr --storage-url: stlye isn't one of its parameters (region, style, tls)"]);
-		await logs(/rocx storage: --storage-url: stlye isn't one of its parameters/, servers.typo);
-		assert.deepEqual(await put(none), [503, "StorageErr no storage: start the server with --storage-url (or STORAGE_URL)"]);
-		assert.doesNotMatch(none.logged(), /rocx storage/, "and no look at S3 at start");
+		assert.match((await ask(servers.port, "/storage/check"))[1], /^StorageErr GET rocx-storage-check: no answer from S3: /);
+		assert.deepEqual(await put(servers.typo), [503, "StorageErr the S3 URL: stlye isn't one of its parameters (region, style, tls)"]);
+		assert.deepEqual(await put(none), [503, "StorageErr no storage: no S3 URL (s3://KEY:SECRET@HOST/BUCKET?region=…)"]);
 		assert.doesNotMatch(Object.values(servers).map((each) => each.logged()).join(""), new RegExp(secret.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the secret never logged");
 	} finally {
 		await Promise.all([...Object.values(servers), none].map((each) => each.stop()));

@@ -1,0 +1,83 @@
+import pf.Html
+import ../../../Ui/Heading
+import ../../../Ui/Code
+import ../../../Generated/Sources
+import ../../../Generated/Paths
+import ../../../Ui/PageHero
+import ../../../Ui/TableWrap
+
+## The crypto package: installing it, a signed link as an app writes one, the modules, and what they
+## are checked against. Static: the sample is server/test/app/Samples.roc's, which the server's
+## tests run.
+meta = {
+	title: "Crypto",
+	description: "The crypto package for Roc Solid apps: SHA-256, HMAC-SHA256, HKDF-SHA256, Base64 and hex, in plain Roc on no platform, each checked against its RFC's test vectors.",
+	toc: [
+		{ id: "install", label: "Installing" },
+		{ id: "links", label: "A signed link" },
+		{ id: "modules", label: "The modules" },
+		{ id: "checked", label: "Checked against" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				kicker={[<>{"The ecosystem · "}</>, <code>packages/crypto</code>]}
+				title="Hashes, signatures and keys, in Roc"
+			>
+				SHA-256, HMAC, HKDF, Base64 and hex: what an app keeps a token's digest with, signs a link with, and
+				derives one key from another with. Plain Roc on no platform, so the server, a page in the browser and
+				an <code>expect</code> use the same code.
+			</PageHero>
+
+			<Heading id="install">Installing</Heading>
+			<Code
+				title="main.roc's header"
+				source={"app [program] { pf: platform \"../server/platform/main.roc\", crypto: \"../packages/crypto/main.roc\" }"}
+				numbers={Bool.False}
+			/>
+			<p>
+				Then <code>import crypto.Hmac</code>, <code>import crypto.Base64</code> and so on, where they are used.
+				What needs the host stays on the server platform: <code>AesGcm</code> (encryption) and
+				<code>Random</code> (bytes from the operating system); see <a href={Paths.platform_secrets}>settings and
+				crypto</a>.
+			</p>
+
+			<Heading id="links">A signed link</Heading>
+			<Code title={"${Sources.platform_links.file}, in part"} source={Sources.platform_links.rocx} numbers={Bool.False} />
+			<p>
+				The link-signing key is derived from the app's <code>APP_SECRET</code> with HKDF, for that use alone;
+				what the link says is signed with HMAC-SHA256 and written in Base64's URL alphabet.
+				<code>Hmac.verify_sha256</code> compares in constant time, so how long it takes doesn't tell a forger
+				how much of a signature was right.
+			</p>
+
+			<Heading id="modules">The modules</Heading>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Module</th><th>What</th></tr></thead>
+					<tbody>
+						<tr><td><code>Sha256</code></td><td><code>hash</code>: 32 bytes; <code>hex</code>: 64 hex digits; <code>chunks</code>: the digest of pieces, without joining them</td></tr>
+						<tr><td><code>Hmac</code></td><td><code>sha256(key, message)</code>; <code>verify_sha256(key, message, signature)</code> and <code>equal</code>, in constant time</td></tr>
+						<tr><td><code>Hkdf</code></td><td><code>sha256(key, salt, info, length)</code>, <code>TooLong</code> past 8160 bytes; its two steps, <code>extract</code> and <code>expand</code></td></tr>
+						<tr><td><code>Base64</code></td><td><code>encode</code>, <code>decode</code>; <code>url_encode</code> (unpadded), <code>url_decode</code>; <code>encode_unpadded</code>, <code>url_encode_padded</code>; <code>lines</code> (MIME's 76-character lines)</td></tr>
+						<tr><td><code>Hex</code></td><td><code>encode</code> (lowercase), <code>decode</code> (either case)</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				Decoding is strict, so one text means one value: only the alphabet asked for, no spaces or line
+				breaks, padding left out or exactly right, and the unused bits of the last character zero.
+			</p>
+
+			<Heading id="checked">Checked against</Heading>
+			<p>
+				Each module's <code>expect</code>s hold it to its published vectors: NIST's SHA-256 examples, every test
+				case of RFC 4231 (HMAC), RFC 5869's SHA-256 cases (HKDF), and RFC 4648's (Base64, hex).
+				<code>Sha256</code> wraps Roc's builtin <code>Crypto.SHA256</code>. The server platform's tests also
+				check each against Node's <code>crypto</code>, from a running server.
+			</p>
+		</NoHydration>
+	</>

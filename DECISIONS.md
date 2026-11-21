@@ -186,6 +186,9 @@ Hex.decode : Str -> Try(List(U8), [InvalidHex])
 **Why.** Only AES needs the host. The rest is deterministic and testable with `expect`s, and large
 upload parts are never hashed in Roc (D-005 sends parts unsigned). **Reversible:** yes.
 
+**Since D-025:** `Sha256`, `Hmac`, `Hkdf`, `Base64` and `Hex` are `packages/crypto`, the same
+functions; `AesGcm` and `Random` stay here.
+
 ## D-005 Storage: an S3 client in Roc
 
 **Context.** There was no blob storage. The target is any S3: rustfs or MinIO in development, R2 or
@@ -250,6 +253,9 @@ it reads the setting and the clock to sign.
 primitives under it were needed anyway, there is no SDK, and SigV4's published worked examples
 became `expect`s (`S3Sign.roc`, internal). Every app with uploads wants this (Rails' Active
 Storage). **Reversible:** yes. Apps see `Storage`; its inside can move into the host unchanged.
+
+**Since D-025:** `Storage` is `packages/s3`'s `S3`, each operation taking a bucket first;
+`--storage-url` and the check at start are gone.
 
 ## D-006 App settings readable everywhere: `Env`
 
@@ -819,3 +825,59 @@ The render, hydration and later reads all meet the same handler.
 **Changed from SolidStart.** No `query` wrapper or cache key: the endpoint's URL is the key, and a
 memo is the cache. **Reversible:** reads, yes; removing server functions, once done, only by
 bringing them back.
+
+## D-025 S3 and the crypto written in Roc are packages
+
+**Context.** `Storage` (D-005) and the crypto (D-004) were the platform's, but neither needs the
+host: S3 is Roc on `Http.send!` and `Time.now_millis!`, and SHA-256, HMAC, HKDF, Base64 and hex are
+Roc with no effect at all. The rule above says nothing goes into the platform that only some apps
+need, and a platform module costs every app (its reference, its build) and every package: a package
+can't import a platform's modules, so `packages/push` and `packages/mcp` kept copies of Base64 and
+HMAC/HKDF of their own. A browser page couldn't use the crypto either, being on the other platform.
+
+**Options.**
+1. Leave them in the platform.
+2. Packages on no platform: `packages/crypto` as it was, and `packages/s3` taking the two effects it
+   needs as functions, as `packages/admin` takes `Db`'s.
+3. Packages that name the server platform, copied into an app by hand until packages can ship
+   server modules.
+
+**Choice.** 2. A platform module stays only if it needs the host or the transpiler.
+
+```roc
+# app [program] { pf: platform "…", crypto: "…/packages/crypto/main.roc", s3: "…/packages/s3/main.roc" }
+import crypto.Hmac                               # Sha256, Hmac, Hkdf, Base64, Hex: as they were
+import s3.S3
+
+S3.from_url : Str, S3.Effects -> Try(S3.Bucket, [StorageErr(Str)])
+S3.Effects : { send! : S3.Request, S3.Opts => Try(S3.Response, [HttpErr(Str), TimedOut, TooLarge]), now! : {} => U64 }
+
+bucket = S3.from_url(Env.var!("STORAGE_URL") ?? "", { send!: Http.send!, now!: Time.now_millis! })?
+S3.put!(bucket, key, bytes, { content_type })?   # every Storage operation, with the bucket first
+S3.serve!(bucket, key, request, opts)            # a Forward, as Server.forward makes one
+S3.check! : S3.Bucket => Try({}, [S3Err(S3.Refusal), StorageErr(Str)])
+```
+
+- `S3.Request`, `S3.Response` and `S3.Opts` are `Http`'s records, written out, so `Http.send!` is
+  passed as it is; `serve!`'s answer is a record whose body is `[Forward(…), Text(Str), ..others]`,
+  which is a `Server.Response`. The request it takes is any record with `method` and `headers`.
+- The URL is the app's to read (an environment variable, `STORAGE_URL`, say): the server's
+  `--storage-url` is gone, and with it the look at S3 at start. `S3.check!` is that look, for an
+  app's health check. A missing or unreadable URL is `StorageErr` from `from_url`; an empty key is
+  `StorageErr` from each operation, and a 404 from `serve!`.
+- `S3Sign` is `SigV4`, exposed. It keeps its own few lines of the calendar (`Calendar` is the
+  platform's, for cron and email).
+- Email (`Smtp`, MIME) still needs Base64, so the platform keeps a private one, `encode` and `lines`
+  only, until email moves too.
+
+**Not moved yet.** `Email` and `Audio` would move the same way, but each needs what a package can't
+give an app yet: email's dev mailbox keeps mail in the host's memory without a database and is
+answered at `/__rocx/mail` (which `packages/testing` reads), and `Audio`'s player is the runtime's
+JavaScript. They move once packages can ship server modules, migrations and static files.
+
+**Why.** The platform is what needs the host; the rest is an app's choice. Two modules that were
+copied into packages become one package they can name, a page can hash and sign in the browser, and
+a second store (another S3-like API, the local disk) is a sibling package rather than a platform
+change.
+
+**Reversible:** yes; the platform could expose them again unchanged.

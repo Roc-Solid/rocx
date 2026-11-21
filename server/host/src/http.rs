@@ -53,8 +53,6 @@ pub struct Config {
     pub actor_idle_ms: u64,
     pub smtp_url: Option<String>,
     pub mail_from: String,
-    /// S3 storage (`Storage`): `s3://KEY:SECRET@HOST[:PORT]/BUCKET?region=…&style=path&tls=no`.
-    pub storage_url: Option<String>,
     /// Pages reload when the server restarts (after a rebuild); crashes show their message; the
     /// platform's Roc shows the dev mailbox at `GET /__rocx/mail` (`Outbox.roc`).
     pub dev: bool,
@@ -71,7 +69,6 @@ pub const USAGE: &str = "usage: <app> [options]
   --job-workers 4 --job-retry-ms 1000  jobs run at once; the first retry's wait, doubled after
   --actor-idle-ms 900000               an actor idle this long is let go (0: never; kept in Postgres)
   --smtp-url URL --mail-from ADDRESS   where email goes (SMTP_URL, MAIL_FROM); none: an outbox
-  --storage-url URL                    S3 storage (STORAGE_URL): s3://KEY:SECRET@HOST/BUCKET?region=…
   --dev                                reload pages on restart, show crashes, the mailbox at /__rocx/mail
   --debug                              GET /__rocx/allocations, and the mailbox as JSON";
 
@@ -89,7 +86,6 @@ impl Config {
         let mut actor_idle_ms = 15 * 60 * 1000;
         let mut smtp_url = env("SMTP_URL");
         let mut mail_from = env("MAIL_FROM").unwrap_or_else(|| "rocx <rocx@localhost>".into());
-        let mut storage_url = env("STORAGE_URL");
         let mut dev = false;
         let mut debug = false;
         let mut args = args.into_iter();
@@ -115,7 +111,6 @@ impl Config {
                 "--actor-idle-ms" => actor_idle_ms = value()?.parse().map_err(|_| "--actor-idle-ms needs a number".to_string())?,
                 "--smtp-url" => smtp_url = Some(value()?),
                 "--mail-from" => mail_from = value()?,
-                "--storage-url" => storage_url = Some(value()?),
                 "--dev" => dev = true,
                 "--debug" => debug = true,
                 "--help" | "-h" => return Err(USAGE.into()),
@@ -123,7 +118,7 @@ impl Config {
             }
         }
         let address = format!("{host}:{port}").parse().map_err(|error| format!("{host}:{port}: {error}"))?;
-        Ok(Config { address, statics, files, context, database_url, job_workers, job_retry_ms, actor_idle_ms, smtp_url, mail_from, storage_url, dev, debug })
+        Ok(Config { address, statics, files, context, database_url, job_workers, job_retry_ms, actor_idle_ms, smtp_url, mail_from, dev, debug })
     }
 }
 

@@ -36,7 +36,6 @@ Nav := [].{
 			{ path: Paths.platform_server, label: "The server", blurb: "Native Roc in a Rust host" },
 			{ path: Paths.platform_http, label: "HTTP", blurb: "Other servers, bodies, forwards, cookies" },
 			{ path: Paths.platform_postgres, label: "Postgres", blurb: "Queries, transactions, migrations" },
-			{ path: Paths.platform_storage, label: "Files in S3", blurb: "Uploads, parts, signed links, streaming" },
 			{ path: Paths.platform_secrets, label: "Settings and crypto", blurb: "Env, signed links, sealed secrets" },
 			{ path: Paths.platform_jobs, label: "Jobs, cron and email", blurb: "Work that runs later, and again" },
 			{ path: Paths.platform_live, label: "Live and actors", blurb: "State that outlives a request" },
@@ -53,6 +52,8 @@ Nav := [].{
 		pages: [
 			{ path: Paths.ecosystem, label: "Overview", blurb: "What a package is, and using one" },
 			{ path: Paths.ecosystem_charts, label: "Charts", blurb: "Seven kinds of chart that glide to their data, styled by CSS" },
+			{ path: Paths.ecosystem_crypto, label: "Crypto", blurb: "SHA-256, HMAC, HKDF, Base64 and hex, in Roc" },
+			{ path: Paths.ecosystem_s3, label: "Files in S3", blurb: "Uploads, parts, signed links, streaming" },
 		],
 	}
 

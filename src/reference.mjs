@@ -96,10 +96,10 @@ export function undocumented(modules) {
  */
 export const GROUPS = [
 	{ id: "requests", name: "Requests and HTTP", modules: ["Server", "Endpoint", "Middleware", "Router", "Http", "Events", "Call", "Submission", "OpenApi"] },
-	{ id: "data", name: "Data", modules: ["Db", "Storage"] },
+	{ id: "data", name: "Data", modules: ["Db"] },
 	{ id: "background", name: "Background", modules: ["Job", "JobsPage", "Cron", "Actor", "Live"] },
 	{ id: "mail", name: "Mail", modules: ["Email"] },
-	{ id: "crypto", name: "Crypto and encoding", modules: ["Hmac", "Hkdf", "Sha256", "AesGcm", "Base64", "Hex", "Random"] },
+	{ id: "crypto", name: "Crypto", modules: ["AesGcm", "Random"] },
 	{ id: "system", name: "System", modules: ["Env", "Time", "Log", "Tcp"] },
 	{ id: "components", name: "Components and reactivity", modules: ["Solid", "Html", "Show", "For", "Loading", "Errored", "Context", "Transition", "Title", "HttpStatusCode", "Browser", "Audio"] },
 ];

@@ -87,16 +87,10 @@ view! = |_|
 						and passed on as they come; cookies with every attribute.
 					</p>
 				</Feature>
-				<Feature title="Files in S3" href={Paths.platform_storage}>
-					<p>
-						Any S3: files kept, read and described, large ones in parts, links that sign themselves, videos
-						streamed to the browser with their ranges.
-					</p>
-				</Feature>
 				<Feature title="Settings and crypto" href={Paths.platform_secrets}>
 					<p>
-						The environment, a dev server's own paths, and the crypto an app signs and seals with: SHA-256,
-						HMAC, HKDF, AES-GCM.
+						The environment, a dev server's own paths, random bytes and AES-GCM, and the crypto package an
+						app signs with: SHA-256, HMAC, HKDF.
 					</p>
 				</Feature>
 				<Feature title="Postgres" href={Paths.platform_postgres}>

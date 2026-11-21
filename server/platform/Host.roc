@@ -24,7 +24,7 @@ Host := [].{
 	now_millis! : {} => U64
 
 	## A setting the server was started with: `database` ("yes" with one), `job-workers`,
-	## `job-retry-ms`, `smtp-url`, `mail-from`, `storage-url`, `dev` ("yes" with `--dev`), `debug`
+	## `job-retry-ms`, `smtp-url`, `mail-from`, `dev` ("yes" with `--dev`), `debug`
 	## ("yes" with `--debug`). Empty when it wasn't given.
 	setting! : Str => Str
 

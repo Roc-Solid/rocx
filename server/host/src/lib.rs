@@ -111,9 +111,6 @@ async fn run(config: http::Config) -> Result<(), String> {
     if let Some(url) = &config.smtp_url {
         given.insert("smtp-url".to_string(), url.clone());
     }
-    if let Some(url) = &config.storage_url {
-        given.insert("storage-url".to_string(), url.clone());
-    }
     if config.dev {
         given.insert("dev".to_string(), "yes".to_string());
     }

@@ -1,0 +1,147 @@
+import pf.Html
+import ../../../Ui/Heading
+import ../../../Ui/Code
+import ../../../Generated/Sources
+import ../../../Generated/Paths
+import ../../../Ui/PageHero
+
+## The s3 package: which S3, a bucket made from a URL and the platform's effects, keeping a file,
+## a large one in parts, presigned links, serving one as it streams, and the errors. Static: the
+## samples are server/test/app/Samples.roc's, which the server's tests run against a real bucket.
+meta = {
+	title: "Files in S3",
+	description: "The s3 package for Roc Solid apps: files kept in any S3 (rustfs or MinIO while developing, R2 or AWS in production), put, read, described and deleted, uploaded in parts, linked to with presigned URLs, and served to the browser as they stream from S3.",
+	toc: [
+		{ id: "bucket", label: "A bucket" },
+		{ id: "objects", label: "Keeping a file" },
+		{ id: "parts", label: "A large file, in parts" },
+		{ id: "signed", label: "Links that sign themselves" },
+		{ id: "serve", label: "Serving one" },
+		{ id: "errors", label: "Errors" },
+		{ id: "limits", label: "Not yet" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				kicker={[<>{"The ecosystem · "}</>, <code>packages/s3</code>]}
+				title="Files in S3, from Roc"
+			>
+				Uploads, avatars, videos: what doesn't belong in Postgres goes to an S3 bucket. This package keeps a
+				file, reads it back whole or in part, uploads a large one in parts, hands out a link the browser
+				uploads or downloads with itself, and serves a file of any size to the browser as it streams from S3,
+				ranges and all.
+			</PageHero>
+			<p>
+				It is plain Roc, on no platform: each request signed with AWS's SigV4 (<code>SigV4</code>, held to
+				AWS's worked examples by its <code>expect</code>s) and sent with the server platform's
+				<code>Http.send!</code> (<a href={"${Paths.platform_http}#out"}>other servers</a>), which the app hands
+				it. The samples are from <code>server/test/app/Samples.roc</code>, which the platform's tests run
+				against a real bucket.
+			</p>
+
+			<Heading id="bucket">A bucket</Heading>
+			<Code
+				title="main.roc's header"
+				source={"app [program] { pf: platform \"../server/platform/main.roc\", s3: \"../packages/s3/main.roc\" }"}
+				numbers={Bool.False}
+			/>
+			<Code title={"${Sources.platform_files.file}, in part"} source={Sources.platform_files.rocx} numbers={Bool.False} />
+			<p>
+				A bucket is where S3 is, the keys to it, and the two effects that reach it, the server platform's
+				own: <code>Http.send!</code> for the requests, <code>Time.now_millis!</code> for the time each is signed
+				at. <code>S3.from_url</code> reads the URL and asks nothing of S3 yet; an app keeps the URL in its
+				environment and makes its bucket where it needs one.
+			</p>
+			<Code
+				title="STORAGE_URL"
+				source={"s3://KEY:SECRET@127.0.0.1:9000/uploads?region=us-east-1&style=path&tls=no   # rustfs or MinIO, here\ns3://KEY:SECRET@<account>.r2.cloudflarestorage.com/uploads?region=auto       # R2\ns3://KEY:SECRET@s3.eu-west-1.amazonaws.com/uploads?region=eu-west-1          # AWS"}
+				numbers={Bool.False}
+				plain={Bool.True}
+			/>
+			<p>
+				The bucket is the URL's path. <code>region</code> is what the keys sign for (<code>us-east-1</code>
+				unless given, <code>auto</code> for R2); <code>style=path</code> puts the bucket in the path, as rustfs
+				and MinIO want, and without it the bucket is in the host's name, as AWS and R2 prefer;
+				<code>tls=no</code> is plain <code>http</code>. A character the URL would read otherwise is
+				<code>%XX</code>. <code>S3.check!(bucket)</code> asks the bucket for a file that isn't there, and says
+				whether S3 answers, with these keys, for this bucket: a health check's question.
+			</p>
+
+			<Heading id="objects">Keeping a file</Heading>
+			<Code title={"${Sources.platform_avatar.file}, in part"} source={Sources.platform_avatar.rocx} numbers={Bool.False} />
+			<ul>
+				<li>
+					<code>{"S3.put!(bucket, key, bytes, { content_type })"}</code> keeps a file under a key (a name, slashes
+					and all), replacing what was there. Its body's SHA-256 is signed with it.
+				</li>
+				<li>
+					<code>S3.get!(bucket, key)</code> reads it whole (64 MiB at most);
+					<code>{"S3.get_range!(bucket, key, { offset, length })"}</code> reads a piece, and says the file's size,
+					for one larger. <code>S3.head!(bucket, key)</code> describes it without its bytes: its size, its type
+					and its ETag.
+				</li>
+				<li>
+					<code>S3.delete!(bucket, key)</code> deletes it; a file that isn't there is deleted already, an
+					<code>Ok</code>.
+				</li>
+			</ul>
+
+			<Heading id="parts">A large file, in parts</Heading>
+			<Code title={"${Sources.platform_parts.file}, in part"} source={Sources.platform_parts.rocx} numbers={Bool.False} />
+			<p>
+				A video upload in parts goes as S3's multipart upload: <code>S3.start_upload!</code> answers the
+				upload's id, <code>S3.upload_part!</code> sends a part by its number (from 1) and answers its ETag, and
+				<code>S3.finish_upload!</code> puts the parts together, in the order of their numbers, into one file.
+				Each part but the last is 5 MiB or more (S3's <code>EntityTooSmall</code> otherwise).
+				<code>S3.abort_upload!</code> drops an upload and what was sent of it. A part goes as
+				<code>UNSIGNED-PAYLOAD</code>, TLS keeping it whole; a request carrying one may take five minutes.
+			</p>
+
+			<Heading id="signed">Links that sign themselves</Heading>
+			<Code title={"${Sources.platform_upload_link.file}, in part"} source={Sources.platform_upload_link.rocx} numbers={Bool.False} />
+			<p>
+				<code>{"S3.signed_url!(bucket, key, { method, expires_s })"}</code> is a presigned URL: anyone holding it
+				makes that request (a <code>PUT</code> of any content type, a <code>GET</code>) until it runs out, a week at
+				most (<code>BadExpiry</code> past that, or at 0). The browser uploads to S3, or downloads from it, and the
+				app's server never holds the bytes. It signs only the host, so keep it as a secret's due: whoever has it
+				may use it.
+			</p>
+
+			<Heading id="serve">Serving one</Heading>
+			<Code title={"${Sources.platform_serve.file}, in part"} source={Sources.platform_serve.rocx} numbers={Bool.False} />
+			<p>
+				<code>{"S3.serve!(bucket, key, request, { content_type, cache_control })"}</code> answers a request with a
+				file of any size: a forward to S3 (<a href={"${Paths.platform_http}#forward"}>a body from elsewhere</a>),
+				signed for a GET (or a HEAD), which the server streams to the client as it comes, never through Roc.
+				The request's <code>Range</code>, <code>If-Range</code>, <code>If-None-Match</code> and
+				<code>If-Modified-Since</code> go to S3 as the request record has them, so a video player's ranges are
+				206s and a browser's cache gets its 304s. An app may change the record first: drop a range, as above,
+				to send the whole file. A file that isn't there is a 404, with nothing of what S3 said.
+			</p>
+
+			<Heading id="errors">Errors</Heading>
+			<ul>
+				<li><code>NotFound</code>: no such file, or no such upload.</li>
+				<li>
+					<code>{"S3Err({ status, code, message })"}</code>: what S3's <code>{"<Error>"}</code> said
+					(<code>AccessDenied</code>, <code>SignatureDoesNotMatch</code>, <code>NoSuchBucket</code>,
+					<code>EntityTooSmall</code>, <code>InvalidRange</code>…). An answer to a HEAD has no body, so its code is
+					empty, and a 404 is <code>NotFound</code>. <code>S3.said(refusal)</code> writes one as a line.
+				</li>
+				<li>
+					<code>StorageErr(why)</code>: S3 didn't answer, or too late (30 s; five minutes for a file or a part); an
+					empty key. From <code>S3.from_url</code>: no URL, or one that can't be read.
+				</li>
+			</ul>
+
+			<Heading id="limits">Not yet</Heading>
+			<ul>
+				<li><strong>Whole bodies:</strong> a file put or read is in memory whole; read a large one with <code>get_range!</code>, or serve it.</li>
+				<li><strong>No listing</strong> of a bucket's files, and no copying one to another key.</li>
+				<li><strong>Static keys</strong> only: no session tokens.</li>
+			</ul>
+		</NoHydration>
+	</>

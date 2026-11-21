@@ -53,7 +53,7 @@ platform ""
 			logs : { format : [Auto, Pretty, Json] },
 		}
 	}
-	exposes [Actor, AesGcm, Audio, Base64, Browser, Call, Context, Cron, Db, Email, Endpoint, Env, Errored, Events, For, Hex, Hkdf, Hmac, Html, Http, HttpStatusCode, Job, JobsPage, Live, Loading, Log, Middleware, OpenApi, Random, Router, Server, Sha256, Show, Solid, Storage, Submission, Tcp, Time, Title, Transition]
+	exposes [Actor, AesGcm, Audio, Browser, Call, Context, Cron, Db, Email, Endpoint, Env, Errored, Events, For, Html, Http, HttpStatusCode, Job, JobsPage, Live, Loading, Log, Middleware, OpenApi, Random, Router, Server, Show, Solid, Submission, Tcp, Time, Title, Transition]
 	packages {}
 	provides {
 		"roc_actor": actor_for_host!,
@@ -164,7 +164,6 @@ import Actor
 import ActorTurn
 import AesGcm
 import Audio
-import Base64
 import Browser
 import Call
 import Context
@@ -177,9 +176,6 @@ import Env
 import Errored
 import Events
 import For
-import Hex
-import Hkdf
-import Hmac
 import Host
 import Html
 import Http
@@ -199,10 +195,8 @@ import Registry
 import Router
 import Server
 import Setting
-import Sha256
 import Show
 import Solid
-import Storage
 import Submission
 import Tcp
 import Time
@@ -291,8 +285,8 @@ init_for_host! = |{}| {
 }
 
 ## What the server runs in the background, each loop on a thread of its own: the job workers and
-## the schedules (with a database), and a look at the SMTP server and at S3 (with them).
-Loop : [Work, Schedules, CheckMail, CheckStorage]
+## the schedules (with a database), and a look at the SMTP server (with one).
+Loop : [Work, Schedules, CheckMail]
 
 loops! : {} => List(Loop)
 loops! = |{}| {
@@ -300,22 +294,20 @@ loops! = |{}| {
 	workers = if (database and !program.jobs.is_empty()) List.repeat(Work, Setting.number!("job-workers", 4)) else []
 	schedules = if (database and !program.crons.is_empty()) [Schedules] else []
 	mail = if (Setting.text!("smtp-url").is_empty()) [] else [CheckMail]
-	storage = if (Setting.text!("storage-url").is_empty()) [] else [CheckStorage]
-	workers.concat(schedules).concat(mail).concat(storage)
+	workers.concat(schedules).concat(mail)
 }
 
 background_count_for_host! : {} => U64
 background_count_for_host! = |{}| loops!({}).len()
 
 ## Runs the background loop at `index` to its end: a worker or the schedules, until the server
-## stops; the mail and storage checks, once.
+## stops; the mail check, once.
 background_for_host! : U64 => {}
 background_for_host! = |index|
 	match loops!({}).get(index) {
 		Ok(Work) => JobWorker.run!(Registry.kinds!({}))
 		Ok(Schedules) => CronTicker.run!(program.crons)
 		Ok(CheckMail) => Email.check!({})
-		Ok(CheckStorage) => Storage.check!({})
 		Err(_) => {}
 	}
 

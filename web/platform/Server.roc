@@ -37,7 +37,7 @@ Server := [].{
 	Body : [Text(Str), Bytes(List(U8)), Page({} => Html), Events(Events(Str)), Forward(Upstream)]
 
 	## Where a forwarded answer's body comes from (`Server.forward`): the request the server makes
-	## for it, its method, URL and headers (keys and all: `Storage.serve!` signs one).
+	## for it, its method, URL and headers (keys and all: packages/s3's `S3.serve!` signs one).
 	Upstream : { method : Str, url : Str, headers : List({ name : Str, value : Str }) }
 
 	## What asking an endpoint can come to instead of its answer: none (`HttpErr`, from the
@@ -117,7 +117,7 @@ Server := [].{
 	bytes = |status, headers, sent| { status: status, headers: headers, body: Bytes(sent) }
 
 	## An answer whose body the server fetches from `upstream` and sends on as it comes, never
-	## through Roc: a file in S3 (`Storage.serve!`), a video of 500 MB. Upstream's status is the
+	## through Roc: a file in S3 (packages/s3's `S3.serve!`), a video of 500 MB. Upstream's status is the
 	## answer's (200, 206 for a range, 304, 404…), with its `content-type`, `content-length`,
 	## `content-range`, `accept-ranges`, `etag` and `last-modified`; `headers` are added, or replace
 	## those. The answer's own `status` (200) is a stand-in. Upstream is sent `upstream.headers` and
@@ -131,7 +131,7 @@ Server := [].{
 
 	## What a forwarded GET or HEAD passes on of the request: its `Range`, `If-Range`,
 	## `If-None-Match` and `If-Modified-Since`, as the request record has them (none it hasn't), for
-	## `upstream.headers` (`Storage.serve!` adds them).
+	## `upstream.headers` (`S3.serve!` adds them).
 	passed_on : Request -> List({ name : Str, value : Str })
 	passed_on = |asked| asked.headers.keep_if(|each| ["range", "if-range", "if-none-match", "if-modified-since"].contains(each.name))
 

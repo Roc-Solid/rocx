@@ -105,7 +105,7 @@ view! = |_|
 					closes the client's connection, so it is never passed off as whole.
 				</li>
 				<li>
-					<code>Storage.serve!</code> is a forward to S3 (<a href={"${Paths.platform_storage}#serve"}>files in
+					<code>S3.serve!</code> is a forward to S3 (<a href={"${Paths.ecosystem_s3}#serve"}>files in
 					S3</a>).
 				</li>
 			</ul>

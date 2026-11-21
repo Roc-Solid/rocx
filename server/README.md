@@ -9,8 +9,10 @@ The host (`host/`, Rust) gives Roc general things: HTTP, threads, a pool of Post
 and one that listens, TCP and TLS sockets, requests to other servers, live topics and rooms,
 background loops that sleep until woken, isolated calls, actors' mailboxes and timers, a store in
 memory, the environment, secure random numbers, AES-GCM, and rendering components. Migrations, the
-jobs queue and its workers, cron, email (an SMTP client, MIME), actors' state and storage (an S3
-client) are the platform's Roc (`platform/*.roc`), written on those.
+jobs queue and its workers, cron, email (an SMTP client, MIME) and actors' state are the platform's
+Roc (`platform/*.roc`), written on those. Files in S3 and the crypto written in Roc (SHA-256, HMAC,
+HKDF, Base64, hex) are packages an app names, on no platform (`packages/s3`, `packages/crypto`:
+D-025).
 
 ```sh
 just dev        # the docs site on it: http://localhost:8080, rebuilt on save
@@ -44,8 +46,8 @@ markup, made once per answer), 2 for the `feed`, 3 for the `bytes`, 4 for the `u
 method, URL and headers); the boxes an answer doesn't send do nothing, and the host releases them.
 `program.actors` lists the app's kinds of actor (`Actor.handler`), so the host can run an actor's
 turn when nobody waits on it (a tell, a timer). The platform exposes `Db`, `Job`, `Cron`, `Email`,
-`Live`, `Actor`, `Log`, `Time`, `Tcp`, `Http`, `Storage`, `Env`, `Random`, and the crypto
-(`Sha256`, `Hmac`, `Hkdf`, `AesGcm`, `Base64`, `Hex`); the jobs page (`JobsPage`); the modules
+`Live`, `Actor`, `Log`, `Time`, `Tcp`, `Http`, `Env`, `Random`, and `AesGcm`; the jobs page
+(`JobsPage`); the modules
 components are written with (`Html`, `Solid`, `Show`, `For`, `Loading`, `Errored`, `Context`,
 `Call`); and HTTP's (`Server`, `Endpoint`, `Middleware`, `Events`, `OpenApi`). Those last
 two kinds are the web platform's too: their source is in `web/platform`, and the build copies them
@@ -247,62 +249,28 @@ answered; a 303 (or a 301 or 302 to a POST) becomes a GET without its body; `aut
 is decompressed (send `accept-encoding` and the body is as the server sent it). An answer to a HEAD
 has no body, so its `content-length` is never too large.
 
-### Files in S3: `Storage`
+### Files in S3: `packages/s3`
+
+Any S3 (rustfs or MinIO in development, R2 or AWS in production) is a package, on no platform
+(D-025). An app makes a bucket from a URL it keeps in its environment and the two effects the
+package needs, the platform's own:
 
 ```roc
-Storage.put!("images/${id}", bytes, { content_type: "image/jpeg" })?      # Try({}, [S3Err(…), StorageErr(Str)])
-cover = Storage.get!("covers/${post}")?                                   # List(U8); NotFound
-piece = Storage.get_range!("videos/${id}", { offset: 0, length: 4_194_304 })?   # { bytes, size }
-info = Storage.head!("videos/${id}")?                                     # { size, content_type, etag }
-Storage.delete!("images/${id}")?                                          # gone already: Ok
-
-upload = Storage.start_upload!("videos/${id}", { content_type: "video/mp4" })?
-etag = Storage.upload_part!("videos/${id}", upload, 1, part)?             # 5 MiB or more, but the last
-Storage.finish_upload!("videos/${id}", upload, [{ number: 1, etag }])?    # or abort_upload!(key, upload)
-
-link = Storage.signed_url!("videos/${id}", { method: "GET", expires_s: 3600 })?   # a week at most: BadExpiry
-
-Storage.serve!("videos/${id}", request, { content_type: "video/mp4", cache_control: "private" })   # an answer
+# main.roc's header: s3: "../packages/s3/main.roc"
+bucket = S3.from_url(Env.var!("STORAGE_URL") ?? "", { send!: Http.send!, now!: Time.now_millis! })?
+S3.put!(bucket, "images/${id}", bytes, { content_type: "image/jpeg" })?
+S3.serve!(bucket, "videos/${id}", request, { content_type: "video/mp4", cache_control: "private" })   # an answer
 ```
 
-With `--storage-url` (or `STORAGE_URL`), any S3: rustfs or MinIO in development, R2 or AWS in
-production. The bucket is the URL's path; `region` is what the keys sign for (`us-east-1` unless
-given, `auto` for R2); `style=path` puts the bucket in the path, as rustfs and MinIO want, and
-without it the bucket is in the host name (virtual-hosted, as AWS and R2 prefer); `tls=no` is plain
-`http`. A character the URL would read otherwise is `%XX` (a `/` in the secret may stay):
-
-```
-s3://KEY:SECRET@127.0.0.1:9000/uploads?region=us-east-1&style=path&tls=no
-s3://KEY:SECRET@<account>.r2.cloudflarestorage.com/uploads?region=auto
-s3://KEY:SECRET@s3.eu-west-1.amazonaws.com/uploads?region=eu-west-1
-```
-
-An error is S3's or no answer: `NotFound` (no such object, or no such upload), `S3Err({ status,
-code, message })` (what S3's `<Error>` said: `AccessDenied`, `SignatureDoesNotMatch`,
-`InvalidAccessKeyId`, `NoSuchBucket`, `EntityTooSmall`, `InvalidPart`, `InvalidRange`, …; an
-answer to HEAD has no body, so its code is empty and a 404 is `NotFound`), `StorageErr(why)` (S3
-didn't answer, or answered too late; no `--storage-url`, or one that can't be read; an empty key).
-`delete!` and `abort_upload!` of what isn't there are `Ok`. A `CompleteMultipartUpload` that fails
-after S3 has answered 200 says so in its body, and `finish_upload!` reads it as the error it is.
-
-It is Roc (`platform/Storage.roc`), on `Http`: each request signed with SigV4 (`S3Sign.roc`, held
-to AWS's worked examples by its expects) and sent as it was signed, not following redirects.
-`put!` signs its body's SHA-256 (8 MB: about 50 ms); a part goes as `UNSIGNED-PAYLOAD`, TLS keeping
-it whole. A presigned URL signs only the host: anyone holding it makes that request until it
-expires, a PUT with any content type. Bytes are read and sent whole: `get!` reads 64 MiB at most,
-`get_range!` more, a piece at a time; `serve!` answers a request with an object of any size, which
-the server streams from S3 to the client (`Server.forward`, below), signed for a GET (or a HEAD), and
-the request's `Range`, `If-Range`, `If-None-Match` and `If-Modified-Since` passed on as the request
-record has them (`Server.passed_on`): an app may drop or change a range before it asks (one past
-the end, say, to send the whole file), and with none, none goes. Requests wait
-30 s, or 5 minutes for one carrying an object or a part. At start the server asks S3 for an object that isn't there, and logs whether it
-answers, with these keys, for this bucket.
+`S3.serve!` answers with a `Forward` (below), so the server streams the object from S3 and it never
+comes into Roc. `packages/s3/README.md` has the rest: the URL, every operation, the errors, and the
+limits.
 
 ### Bytes: `request.body`, `Server.bytes`
 
 ```roc
 Server.text_of(request)                  # the body as text (UTF-8; U+FFFD where it isn't): JSON, a form
-Storage.put!("images/${id}", request.body, { content_type: "image/jpeg" })?     # the bytes as they came
+S3.put!(bucket, "images/${id}", request.body, { content_type: "image/jpeg" })?  # the bytes as they came
 Server.bytes(200, [{ name: "content-type", value: "image/jpeg" }], cover)       # sent as they are
 ```
 
@@ -341,7 +309,7 @@ URL that isn't `http` or `https`, or a redirect that can't be followed, is a 502
 without its head). Those are logged, without the URL's query (a presigned URL's signature is
 there), as is an error upstream other than a 404 or a 416. Once the body flows, a piece may take 60
 s to come; if upstream stops short, the client's connection is closed, so a cut body is never
-passed off as whole. `Storage.serve!` is a `Forward` to S3.
+passed off as whole. packages/s3's `S3.serve!` is a `Forward` to S3.
 
 ### Cookies: `Server.set_cookie`
 
@@ -417,23 +385,21 @@ shared, and its id means nothing to another call. `Random.seed_u64!` and
 `Random.bytes!(count)` are the operating system's randomness (`ring`); if it gives none, the call
 crashes rather than make a key of anything less.
 
-### Crypto: `Sha256`, `Hmac`, `Hkdf`, `AesGcm`, `Base64`, `Hex`
+### Crypto: `AesGcm`, and `packages/crypto`
 
 ```roc
-digest = Sha256.hash(token.to_utf8())                              # 32 bytes; Sha256.hex: 64 digits
-key = Hkdf.sha256(secret, salt, "links".to_utf8(), 32)?            # Try(List(U8), [TooLong])
-signature = Hmac.sha256(key, message)                              # Hmac.verify_sha256: constant time
 sealed = AesGcm.seal!(app_key, plaintext)?                         # nonce ++ ciphertext ++ tag
 opened = AesGcm.open!(app_key, sealed)                             # Try(List(U8), [BadKey, Forged])
-link = Base64.url_encode(Random.bytes!(32))                        # url_decode, encode, decode
-Hex.encode(digest)                                                 # Hex.decode
 ```
 
-All but `AesGcm` are Roc, with no effect, checked by `expect`s against published vectors (NIST,
-RFC 4231, RFC 4648, RFC 5869): `Sha256` wraps Roc's builtin `Crypto.SHA256`; HMAC and HKDF are
-written on it. Decoding is strict: one text, one value. `AesGcm` is the host's (`ring`'s
-AES-256-GCM): a 32-byte key (`BadKey` otherwise) and a fresh random 12-byte nonce each seal; what it
-seals is Web Crypto's output with the nonce in front, so either opens the other's.
+`AesGcm` is the host's (`ring`'s AES-256-GCM): a 32-byte key (`BadKey` otherwise) and a fresh
+random 12-byte nonce each seal; what it seals is Web Crypto's output with the nonce in front, so
+either opens the other's. Its key comes from `Random.bytes!`, or from the app's secret through HKDF.
+
+The rest is Roc with no effect, so it is a package on no platform (`packages/crypto`, D-025), which a
+page in the browser may use too: `Sha256`, `Hmac` (with a comparison in constant time), `Hkdf`,
+`Base64` (both alphabets, strict) and `Hex`, each checked by `expect`s against its published vectors
+(NIST, RFC 4231, RFC 4648, RFC 5869).
 
 ### Live: `Live`
 
@@ -643,7 +609,7 @@ call as a crash would (`cut_off` in `host/src/hosted.rs`), so the only frame it 
 host's is that effect's own, which holds nothing by then.
 
 At start the host asks the platform's Roc which background loops to run (`roc_background_count`:
-the job workers, cron's ticker, a look at the SMTP server and one at S3) and runs each on a thread of its own
+the job workers, cron's ticker, and a look at the SMTP server) and runs each on a thread of its own
 until the server stops; one that crashes is started again a second later. `Live.next!` in one wakes
 with `Gone` when the server stops.
 
@@ -678,7 +644,6 @@ built `--target=arm64musl` runs in a container against `just db`'s Postgres, eve
       --job-workers 4 --job-retry-ms 1000 jobs run at once; the first retry's wait, doubled after
       --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in Postgres)
       --smtp-url URL --mail-from ADDRESS  (SMTP_URL, MAIL_FROM); none: an outbox
-      --storage-url URL                   S3 storage (STORAGE_URL): s3://KEY:SECRET@HOST/BUCKET?region=…
       --dev                               reload pages on restart, show crashes, the mailbox at /__rocx/mail, Env.dev!
       --debug                             GET /__rocx/allocations, and the mailbox as JSON
 ```
@@ -712,11 +677,11 @@ whole and each request's in order, and the queue flushed at a stop), live rooms 
 (one message at a time, a crash, asking another, itself or one waiting on it, tells in order,
 timers and a cancelled one, a message an actor doesn't take and a kind the app has none of, logged,
 a restart, one idle let go and woken as Postgres has it), `Http` (to servers the test runs: redirects, a timeout, a body too large, TLS
-that fails), `Env` (from a request and a job), AES-GCM and the crypto in Roc against Node's, random
-bytes, `Storage` (objects whole and in part, missing ones, a multipart upload of three parts and
+that fails), `Env` (from a request and a job), AES-GCM and packages/crypto against Node's, random
+bytes, packages/s3 (objects whole and in part, missing ones, a multipart upload of three parts and
 an aborted one, presigned URLs Node's fetch uses, `serve!` with a range (and one the app dropped),
 an ETag and HEAD, keys S3
-refuses, a bucket or S3 that isn't there), the `Set-Cookie` lines cookies make, server functions
+refuses, a bucket or S3 that isn't there, a URL that can't be read), the `Set-Cookie` lines cookies make, server functions
 that take and answer `F64`s (and refuse an infinity) and a tag union in a `Try`'s place, what the
 docs' platform pages show (`server/test/app/Samples.roc`, which the site's build picks its samples
 from: settings, crypto, cookies, bytes, other servers, forwards and storage), and a stop in the
@@ -737,13 +702,11 @@ browser runtime's own render.
 - Actors' timers are in memory: durable ones (Orleans' reminders) would be rows, as jobs are.
 - A job's time limit cuts it off only at an effect that waits: Roc that loops without one holds
   its worker until it ends.
-- The platform's Roc (jobs, cron, mail, storage, migrations) logs with `Log.line!`: a message at
+- The platform's Roc (jobs, cron, mail, migrations) logs with `Log.line!`: a message at
   info, its details in the text, not yet a level and fields of their own.
 - Email: no attachments, Cc or Bcc.
 - `Http`: HTTP/1.1, a connection a request (none kept alive), no proxy; an answer's body comes into
   Roc whole.
-- `Storage`: objects come into Roc whole (`serve!` streams one to a client without it); no
-  listing; static keys only (no session tokens).
 - `Forward`: an upstream's body only, not the other way (a request's body streamed to S3 as it
   comes: an upload is still read whole, 16 MiB at most); one connection a request.
 - A stack overflow in Roc still ends the process.

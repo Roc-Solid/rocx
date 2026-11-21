@@ -369,7 +369,7 @@ test("routes, served natively: each page in its layouts, a param a page's, a pat
 	);
 	put(
 		"routes/uploads/[name]/+server.roc",
-		"import pf.Server\nimport pf.Endpoint\nimport pf.Sha256\n\n## An upload, as it came.\nput! : { request : Server.Request, params : { name : Str }, context : c, body : {} } => Try({ name : Str, size : U64, sha : Str }, Endpoint.Refusal)\nput! = |{ request, params, .. }| Ok({ name: params.name, size: request.body.len(), sha: Sha256.hex(request.body) })\n",
+		"import pf.Server\nimport pf.Endpoint\nimport crypto.Sha256\n\n## An upload, as it came.\nput! : { request : Server.Request, params : { name : Str }, context : c, body : {} } => Try({ name : Str, size : U64, sha : Str }, Endpoint.Refusal)\nput! = |{ request, params, .. }| Ok({ name: params.name, size: request.body.len(), sha: Sha256.hex(request.body) })\n",
 	);
 	put(
 		"routes/mcp/+server.roc",
@@ -379,7 +379,7 @@ test("routes, served natively: each page in its layouts, a param a page's, a pat
 	// itself does: `OpenApi.respond` first, then the routes.
 	put(
 		"main.roc",
-		'app [program] { pf: platform "../../../server/platform/main.roc" }\n\nimport pf.Server\nimport pf.OpenApi\nimport Generated/Api\nimport Generated/Routes\n\nprogram = {\n\trespond!: |method, target, headers, body, context| {\n\t\trequest = Server.from_http(method, target, headers, body)\n\t\tmatch OpenApi.respond(request, Document, Api.openapi) {\n\t\t\tOk(served) => served\n\t\t\tErr(NotHere) => Routes.respond!(request, context)\n\t\t}\n\t},\n\tmigrations: [],\n\tjobs: [],\n\tcrons: [],\n\tactors: [],\n\tlogs: { format: Auto },\n}\n',
+		'app [program] { pf: platform "../../../server/platform/main.roc", crypto: "../../../packages/crypto/main.roc" }\n\nimport pf.Server\nimport pf.OpenApi\nimport Generated/Api\nimport Generated/Routes\n\nprogram = {\n\trespond!: |method, target, headers, body, context| {\n\t\trequest = Server.from_http(method, target, headers, body)\n\t\tmatch OpenApi.respond(request, Document, Api.openapi) {\n\t\t\tOk(served) => served\n\t\t\tErr(NotHere) => Routes.respond!(request, context)\n\t\t}\n\t},\n\tmigrations: [],\n\tjobs: [],\n\tcrons: [],\n\tactors: [],\n\tlogs: { format: Auto },\n}\n',
 	);
 	mkdirSync(join(dir, "routes", ".hidden"));
 	writeFileSync(join(dir, "routes", ".hidden", "+page.rocx"), "import pf.Html\n\nview! = |_| <p>hidden</p>\n");
