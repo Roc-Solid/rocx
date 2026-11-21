@@ -195,6 +195,7 @@ test("endpoint reads: what the demos read as the pages render is an endpoint's G
 	assert.equal(await json("/api/echo/hi%20there"), "Echo: hi there", "a param, decoded");
 	assert.deepEqual((await json("/api/shelf")).map((thing) => thing.name), ["Roc bird sticker", "rocx mug", "Lambda pin"]);
 	assert.equal(await json("/api/reader"), "Ada");
+	assert.deepEqual((await json("/api/planner")).map((plan) => `${plan.id}:${plan.day}`), ["standup:mon", "notes:mon", "review:tue", "dentist:wed", "demo:thu", "groceries:thu"], "the planner's week, with no cookie");
 	assert.match(await json("/api/facts"), /^client_brotli=/m, "the layout's data, at a path of its own: the facts the default middleware hands on");
 	const calls = await json("/calls");
 	assert.deepEqual(calls.asked.map(({ method, status }) => `${method} ${status}`), ["GET 200", "POST 200", "POST 400", "POST 400"], "the calls page's data, at its own URL");
@@ -304,7 +305,7 @@ test("endpoints: GET /openapi.json is their OpenAPI document, each schema its ty
 	assert.equal(response.headers.get("content-type"), "application/json");
 	const doc = await response.json();
 	assert.equal(doc.openapi, "3.2.0");
-	assert.deepEqual(Object.keys(doc.paths).sort(), ["/api/count/{to}", "/api/echo/{message}", "/api/facts", "/api/reader", "/api/shelf", "/api/shout", "/api/shout/{word}", "/calls", "/members", "/members/join", "/members/leave"]);
+	assert.deepEqual(Object.keys(doc.paths).sort(), ["/api/count/{to}", "/api/echo/{message}", "/api/facts", "/api/planner", "/api/planner/move", "/api/reader", "/api/shelf", "/api/shout", "/api/shout/{word}", "/calls", "/members", "/members/join", "/members/leave"]);
 	const answer = (operation) => operation.responses["200"].content["application/json"].schema;
 	const word = { type: "object", properties: { bytes: { type: "integer", minimum: 0 }, shouted: { type: "string" }, word: { type: "string" } }, required: ["bytes", "shouted", "word"] };
 	assert.deepEqual(answer(doc.paths["/api/shout/{word}"].get), word, "a handler with no annotation: its inferred type");
@@ -443,6 +444,40 @@ test("endpoints: a demo asks one through Api, and the page asked them as it rend
 	await page.click(".shout button:nth-of-type(1)");
 	await page.wait("document.querySelector('.shout output').textContent === 'ROCX: 4 bytes'");
 	assert.deepEqual(page.errors, []);
+});
+
+test("the planner: a plan dragged to another day moves at once and goes in, the server's week read again taking its place (kept across a reload); one moved with its menu too; the dentist, and a full day, refuse, and the plan goes back saying why", { skip }, async () => {
+	const page = await open("/components");
+	const plans = (day) => page.eval(`[...document.querySelectorAll('[data-demo=planner] .day[data-day=${day}] .plan:not([inert]) .title')].map((title) => title.textContent)`);
+	const status = () => text(page, "[data-demo=planner] .status");
+	assert.deepEqual(await plans("mon"), ["Team stand-up", "Release notes"]);
+	assert.equal(await status(), "Every move is in.");
+	// Dragged to Tuesday: there at once, while the endpoint takes its 800 ms; then in.
+	await page.drag("[data-demo=planner] .day[data-day=mon] .plan:nth-child(2)", "[data-demo=planner] .day[data-day=tue]");
+	await page.wait("document.querySelector('[data-demo=planner] .status').textContent === '1 move on its way…'", 2000);
+	assert.deepEqual(await plans("tue"), ["Release notes", "Review the parser"]);
+	assert.deepEqual(await plans("mon"), ["Team stand-up"]);
+	await page.wait("document.querySelector('[data-demo=planner] .status').textContent === 'Every move is in.'", 5000);
+	assert.deepEqual(await plans("tue"), ["Release notes", "Review the parser"], "the server's week, read again");
+	// The week is the server's: a reload shows it, hydrated strictly.
+	const again = await open("/components");
+	assert.deepEqual(await again.eval("[...document.querySelectorAll('[data-demo=planner] .day[data-day=tue] .plan .title')].map((title) => title.textContent)"), ["Release notes", "Review the parser"]);
+	assert.deepEqual(again.console, []);
+	// Its menu moves one too (a keyboard's and a touch screen's way): Thursday is full then.
+	await page.eval("(() => { const select = document.querySelector('[data-demo=planner] .day[data-day=mon] .plan select'); select.value = 'thu'; select.dispatchEvent(new Event('change', { bubbles: true })); })()");
+	await page.wait("document.querySelector('[data-demo=planner] .status').textContent === 'Every move is in.'", 5000);
+	assert.deepEqual(await plans("thu"), ["Team stand-up", "Demo day prep", "Groceries"]);
+	await page.drag("[data-demo=planner] .day[data-day=tue] .plan:nth-child(1)", "[data-demo=planner] .day[data-day=thu]");
+	await page.wait("document.querySelector('[data-demo=planner] .refused span')?.textContent === 'Thursday is full: three plans a day at most.'", 5000);
+	assert.deepEqual(await plans("tue"), ["Release notes", "Review the parser"], "refused: back where it was");
+	await page.click("[data-demo=planner] .refused button");
+	await page.wait("document.querySelector('[data-demo=planner] .refused') === null");
+	// The dentist doesn't move.
+	await page.drag("[data-demo=planner] .day[data-day=wed] .plan", "[data-demo=planner] .day[data-day=mon]");
+	await page.wait("document.querySelector('[data-demo=planner] .refused span')?.textContent.startsWith('The dentist won')", 5000);
+	assert.deepEqual(await plans("wed"), ["Dentist, 9:30"]);
+	assert.deepEqual(page.errors, []);
+	assert.deepEqual(page.console, []);
 });
 
 test("the cheat sheet filters as you type", { skip }, async () => {
@@ -1132,6 +1167,12 @@ test("the static build for GitHub Pages: files alone, under /rocx/, every page h
 		assert.deepEqual((await asked(live)).filter((path) => path.startsWith("/rocx/rocx/live")).length, 1, "asked once");
 		assert.ok(!(await asked(live)).some((path) => !path.startsWith("/rocx/")), "nothing outside /rocx/");
 		assert.deepEqual(live.errors, []);
+		// The planner's move, where no server answers it: shown at once, then back, saying why.
+		const planner = await open("/rocx/components", pages.url);
+		await planner.drag("[data-demo=planner] .day[data-day=mon] .plan:nth-child(2)", "[data-demo=planner] .day[data-day=tue]");
+		await planner.wait("document.querySelector('[data-demo=planner] .refused span')?.textContent.startsWith('No server answers moves here')", 5000);
+		assert.equal(await planner.eval("document.querySelectorAll('[data-demo=planner] .day[data-day=mon] .plan:not([inert])').length"), 2, "back on Monday");
+		assert.deepEqual(planner.errors, []);
 		const page = await open("/rocx/calls", pages.url);
 		await page.click("form.echo > button:nth-of-type(3)");
 		await page.wait("document.querySelector('form.echo output').textContent === 'Echo: this site, as files'");

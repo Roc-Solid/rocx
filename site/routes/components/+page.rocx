@@ -2,6 +2,7 @@ import pf.Html
 import pf.Context
 import ../../Demos/Bag
 import ../../Demos/Picks
+import ../../Demos/Planner
 import ../../Demos/Shelf
 import ../../Demos/Tally
 import ../../Demos/Todos
@@ -29,8 +30,10 @@ meta = {
 		{ id: "primitives", label: "Signals, memos and holes" },
 		{ id: "passing", label: "Passing them on" },
 		{ id: "handlers", label: "Handlers" },
+		{ id: "drag", label: "Drag and drop" },
 		{ id: "effects", label: "Effects, cleanups and timers" },
 		{ id: "forms", label: "Forms and submissions" },
+		{ id: "actions", label: "Actions and optimistic values" },
 		{ id: "title", label: "The document's title" },
 		{ id: "control", label: "Show and For" },
 		{ id: "transitions", label: "Transitions" },
@@ -226,8 +229,10 @@ view! = |_|
 				A handler is an effect: <code>{"on:click={|| set_count!(count!() + 1)}"}</code>. It is given what
 				the event says, if it asks: <code>on:input.value</code> the field's value, <code>on:change.checked</code>
 				whether it is ticked, <code>on:keydown.key</code> the key; <code>on:keydown.Escape</code> runs for that
-				key only, and <code>on:frame.ms</code> every animation frame, with the time since the last. What it
-				writes is applied when it is done, and what reads it runs again then, once.
+				key only, and <code>on:frame.ms</code> every animation frame, with the time since the last.
+				<code>on:click.prevent</code> takes over what the browser would do: a link's click goes where the
+				handler says, not to its <code>href</code>. What a handler writes is applied when it is done, and what
+				reads it runs again then, once.
 			</p>
 			<p>
 				A handler can run later, too, on the browser's timers: <code>set_interval!(ms, tick!)</code> runs one
@@ -260,6 +265,39 @@ view! = |_|
 				page still there, and says whether it is on its way and what came back
 				(<a href={"${Paths.calls}#forms"}>forms</a>, on the server page).
 			</p>
+
+			<Heading id="drag">Drag and drop</Heading>
+			<p>
+				The browser's drag and drop are events like any other: <code>on:dragstart</code> and
+				<code>on:dragend</code> on what is dragged (<code>draggable="true"</code>), and
+				<code>on:dragenter</code>, <code>on:dragleave</code> and <code>on:drop</code> where it goes. What is
+				dragged is the app's to say, through closures as usual: a signal its dragstart handler sets, and its
+				drop handler reads. The <a href="#actions">planner below</a> is built this way.
+			</p>
+			<Code title={"${Sources.components_planner_day.file}, in part"} source={Sources.components_planner_day.rocx} numbers={Bool.False} />
+			<ul>
+				<li>
+					<strong>An element with a drop handler is a drop target.</strong> The runtime accepts a drag over it
+					(it prevents dragover's default, which is how the browser is told, and says it is a move), and keeps
+					a dropped link or file from opening. Where there is no drop handler, a drag isn't accepted, and no
+					drop comes.
+				</li>
+				<li>
+					<strong>Its dragenter and dragleave are the element's own</strong>, as mouseenter and mouseleave
+					are: crossing a child inside it fires neither, and a drop, or the drag's end, leaves it. So a day
+					lit while a card is over it stays lit over its cards, and goes dark when the card is dropped.
+				</li>
+				<li>
+					<strong>A drag starts in every browser:</strong> Firefox starts one only with data on it, and the
+					runtime puts some there (<code>application/x-rocx</code>). <code>on:drop.value</code> is the text
+					dropped from elsewhere: another page's link, a word from another program.
+				</li>
+				<li>
+					<strong>On a touch screen</strong> it works where the browser turns a long press into a drag (Safari
+					on iPad and iPhone does; many other mobile browsers don't). A pointer's drag of the app's own isn't
+					the platform's: give touch and keyboard users another way to move a thing, as the planner's menus do.
+				</li>
+			</ul>
 
 			<Heading id="effects">Effects, cleanups and timers</Heading>
 			<p>
@@ -330,6 +368,56 @@ view! = |_|
 				<code>{"Ok({ url, fields, status, body })"}</code>, or <code>NoFlash</code>. The details, and redirects:
 				<a href={"${Paths.calls}#forms"}>forms</a>, on the server page.
 			</p>
+
+			<Heading id="actions">Actions and optimistic values</Heading>
+			<p>
+				A handler can send an endpoint without a form, and without waiting for its answer:
+				<code>use_action!(endpoint)</code> (Solid Router's <code>useAction</code>) is a function a handler
+				calls with the endpoint's arg, and each call is a submission of its own.
+				<code>use_submissions!(endpoint)</code> (<code>useSubmissions</code>) lists them, each as it is now:
+				whether it is on its way, what it sent, and the result or the refusal. An optimistic value is the
+				server's, with what the submissions on their way sent applied to it. Drag a plan to another day:
+				it moves at once, though the server takes 800 ms to answer, and says no to a full day or the dentist.
+			</p>
+		</NoHydration>
+		<Demo inspect="planner" title="What the runtime did, newest first" stacked>
+			<div data-demo="planner"><Planner /></div>
+		</Demo>
+		<NoHydration>
+			<Code title={"${Sources.components_planner.file}, in part"} source={Sources.components_planner.rocx} numbers={Bool.False} />
+			<ul>
+				<li>
+					<strong>It shows at once, and stays while it is on its way.</strong> The memo reads the server's
+					week and the moves on their way (<code>pending_inputs!()</code>); a drop adds one, and the week the
+					page shows has the plan where it was dropped.
+				</li>
+				<li>
+					<strong>It gives way to the server's without a flicker.</strong> A submission answered with a
+					result has the page's reads read again (Solid Router's revalidation: every endpoint the page read),
+					and stays on its way until they are in. Then the server's week, which has the move, and the move's
+					end show together: the plan never goes back to where it was.
+				</li>
+				<li>
+					<strong>A refusal puts it back</strong>, and says why: a refused submission isn't on its way, so its
+					move isn't applied, and its <code>error</code> is the refusal (<code>Refused(409, why)</code>), until
+					<code>moves.clear!(id)</code> forgets it.
+				</li>
+				<li>
+					<strong>Several are on their way at once</strong>, each answered on its own: drag two plans quickly,
+					and one may be refused while the other goes in. What is applied should be a value (a plan's day),
+					not a step (one more): the server's data, read again, may already have a move still on its way.
+				</li>
+				<li>
+					<strong>Nothing optimistic exists on the server.</strong> It renders the server's week, with no
+					submission, as the browser hydrates it. Submissions are kept by the endpoint's URL, so what varies
+					goes in the body, not the path.
+				</li>
+				<li>
+					<strong>Read first.</strong> A read that isn't in yet stops its computation, and what the
+					computation made before it is lost: the memo reads the week before the moves, its endpoint named
+					outside it.
+				</li>
+			</ul>
 
 			<Heading id="title">The document's title</Heading>
 			<p>
@@ -432,8 +520,17 @@ view! = |_|
 						says: take a month away from <a href={"${Paths.ecosystem_charts}#live"}>the rain</a>.
 					</li>
 					<li>
+						<strong><code>{"transition:move={Transition.glide}"}</code> is how it moves.</strong> When a change of
+						the page moves it (its row put in another order, pushed by one that comes or goes), it glides from
+						where it was to where it is: the runtime measures it before the change and after, and plays the
+						difference back (FLIP). With a <code>{"key={…}"}</code>, it is the same element wherever it is on the
+						page: one with that key taken out of one list as another comes into a second glides from the first's
+						place, and neither plays its transition in or out. The <a href="#actions">planner's plans</a> glide
+						from day to day.
+					</li>
+					<li>
 						<strong>For someone who asked their system for less motion</strong>, none plays: what goes, goes
-						at once.
+						at once, and what moves is where it goes.
 					</li>
 				</ul>
 				<p>
@@ -653,6 +750,11 @@ view! = |_|
 						<tr><td>any other browser API, called in a handler</td><td><code>{"Browser.call!(\"vibrate\", arg)"}</code>, the page's own function</td></tr>
 						<tr><td><code>{"<Title>{post().title}</Title>"}</code> (@solidjs/meta)</td><td><code>{"<Title>{post!().title}</Title>"}</code> (<code>import pf.Title</code>)</td></tr>
 						<tr><td><code>{"<form action={join} method=\"post\">"}</code>, <code>useSubmission(join)</code> (Solid Router)</td><td><code>{"<form action={Endpoint.url_of(join)} method=\"post\">"}</code>, <code>use_submission!(join)</code></td></tr>
+						<tr><td><code>{"const move = useAction(moveAction); move(card, day)"}</code></td><td><code>{"move! = use_action!(Api.post_move({}))"}</code>, <code>{"move!({ card, day })"}</code>, in a handler</td></tr>
+						<tr><td><code>useSubmissions(moveAction)</code></td><td><code>{"moves = use_submissions!(Api.post_move({}))"}</code>, <code>{"moves.all!()"}</code> as records</td></tr>
+						<tr><td><code>{"createOptimistic(() => board())"}</code>, written in the action</td><td><code>{"create_memo!(|| moves.pending_inputs!().fold(Endpoint.get!(board), moved))"}</code></td></tr>
+						<tr><td><code>{"onClick={(e) => { e.preventDefault(); go() }}"}</code></td><td><code>{"on:click.prevent={go!}"}</code></td></tr>
+						<tr><td><code>{"animate:flip"}</code>, <code>crossfade</code> (Svelte)</td><td><code>{"transition:move={Transition.glide}"}</code>, with <code>{"key={…}"}</code> across lists</td></tr>
 						<tr><td><code>{"<Heading text={user().name} />"}</code></td><td><code>{"<Heading text!={user!().name} />"}</code></td></tr>
 						<tr><td>a component that only renders its props</td><td>a pure one: <code>view</code>, no <code>!</code>, called where it is written</td></tr>
 						<tr><td><code>{"<Show when={…} fallback={…}>"}</code></td><td><code>{"<Show when!={…} fallback={…}>"}</code></td></tr>
@@ -772,6 +874,9 @@ view! = |_|
 						<li>Sound files, from a handler: <code>Audio.play!</code>; and the page's own functions: <code>Browser.call!</code></li>
 						<li>Effects, split as Solid 2.0's; <code>on_cleanup!</code>, <code>on_settled!</code></li>
 						<li>Forms sent by the runtime, their submissions, and a flash without it</li>
+						<li>Actions without a form (<code>use_action!</code>), every submission (<code>use_submissions!</code>), optimistic values that give way to the server's</li>
+						<li>Drag and drop; <code>.prevent</code></li>
+						<li>Moves: <code>transition:move</code>, and a <code>key</code> across lists</li>
 						<li>The document's title: <code>{"<Title>"}</code></li>
 						<li>Endpoints, read as plain values where a page renders; their events</li>
 						<li>Server rendering, natively; hydration</li>
@@ -789,13 +894,13 @@ view! = |_|
 				<div class="roadmap-later">
 					<h3>Later, or not yet</h3>
 					<ul>
-						<li>Optimistic writes, and the rest of the router's actions (<code>useSubmissions</code>, <code>useAction</code>)</li>
+						<li>The rest of the router's actions: <code>.with</code>, <code>retry</code>, saying which reads a result reads again</li>
 						<li>Props for an island from its page (today the root gives each its own)</li>
 						<li>
 							Two rules the runtime enforces: read async values in holes, not in a component's body, and
 							write signals in handlers
 						</li>
-						<li>An abort leaks what the aborted run held: one allocation, optimized, in the tests</li>
+						<li>An abort loses what the aborted run made before the read that stopped it (read first; the host lets go of its own part)</li>
 					</ul>
 				</div>
 			</div>

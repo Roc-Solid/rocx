@@ -1,0 +1,109 @@
+import pf.Html
+import pf.Solid exposing [create_memo!, create_signal!]
+import pf.Router exposing [use_action!, use_submissions!]
+import pf.Endpoint
+import pf.Server
+import pf.For
+import pf.Submissions
+import PlannerDay
+import ../Generated/Api
+
+## A week's plans, dragged from day to day (D-029 to D-031). A move shows at once: the week is the
+## server's (`GET /api/planner`), with the moves on their way applied (`use_submissions!`). It is
+## sent without the handler waiting (`use_action!`) to an endpoint that takes 800 ms and refuses a
+## full day or the dentist; once it is in, the week is read again, and the server's takes the place
+## of the one shown. A refused move goes back, and says why. Plans glide from day to day.
+Planner := [].{
+
+	## Why a move was refused, as the page says it.
+	why : Try(Server.Problem, [NoError]) -> Str
+	why = |error|
+		match error {
+			Ok(Refused(404, _)) | Ok(Refused(405, _)) => "No server answers moves here (a static copy of the site): the plan goes back."
+			Ok(Refused(_, said)) => said
+			Ok(problem) => Server.explain(problem)
+			Err(NoError) => ""
+		}
+
+	## How many moves are on their way, as the page says it.
+	status : U64 -> Str
+	status = |count| if (count == 0) "Every move is in." else if (count == 1) "1 move on its way…" else "${count.to_str()} moves on their way…"
+
+	view! : {} => Html
+	view! = |{}| {
+		# Its types said: in the browser's copy an endpoint has none (its route file isn't there).
+		moves : Submissions(PlannerDay.Move, Str)
+		moves = use_submissions!(Api.post_api_planner_move({}))
+		move! = use_action!(Api.post_api_planner_move({}))
+		(dragging!, set_dragging!) = create_signal!("")
+		(over!, set_over!) = create_signal!("")
+		# The read first, its endpoint named outside it: what a computation made before a read that
+		# isn't in yet would be lost when that read stops it.
+		week = Api.get_api_planner({})
+		plans! = create_memo!(
+			|| {
+				server = Endpoint.get!(week)
+				moves.pending_inputs!().fold(server, PlannerDay.moved)
+			},
+		)
+		board = { plans!, dragging!, set_dragging!, over!, set_over!, move! }
+		<div class="planner">
+			<div class="week">
+				<For each!={PlannerDay.days} keyed={|day| day.id}>
+					{|day!, _| <PlannerDay day={day!()} board={board} />}
+				</For>
+			</div>
+			<p class="status" class:saving={moves.pending!()}>{Planner.status(moves.all!().keep_if(|sent| sent.pending).len())}</p>
+			<For each!={moves.all!().keep_if(|sent| sent.error.is_ok())} keyed={|sent| sent.id}>
+				{|sent!, _|
+					<p class="refused">
+						<span>{Planner.why(sent!().error)}</span>
+						<button type="button" on:click={|| moves.clear!(sent!().id)}>Dismiss</button>
+					</p>
+				}
+			</For>
+		</div>
+	}
+
+	<style>
+		.week {
+			display: grid;
+			grid-template-columns: repeat(4, minmax(0, 1fr));
+			gap: var(--space-2);
+		}
+
+		.status {
+			margin: var(--space-3) 0 0;
+			font-size: var(--size-sm);
+			color: var(--text-muted);
+		}
+
+		.status.saving {
+			color: var(--warn);
+		}
+
+		.refused {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: var(--space-2);
+			margin: var(--space-2) 0 0;
+			padding: var(--space-2) var(--space-3);
+			border-radius: var(--radius-sm);
+			background: var(--bad-soft);
+			color: var(--bad);
+			font-size: var(--size-sm);
+		}
+
+		button {
+			padding: var(--space-1) var(--space-3);
+			font-size: var(--size-xs);
+		}
+
+		@media (max-width: 40rem) {
+			.week {
+				grid-template-columns: repeat(2, minmax(0, 1fr));
+			}
+		}
+	</style>
+}

@@ -13,8 +13,8 @@ document.addEventListener("rocx:ready", ({ detail: { runtime, ms } }) => {
 	const demos = [...document.querySelectorAll("[data-demo]")];
 	const watchers = new Map(demos.map((element) => [element.dataset.demo, watchDemo(element)]));
 	const demoOf = (node) => (node instanceof Element ? node : node?.parentElement)?.closest?.("[data-demo]")?.dataset.demo;
-	// A key, a click or a submit in a demo begins a turn: what it does, in every demo.
-	for (const type of ["input", "click", "submit", "keydown"]) {
+	// A key, a click, a submit or a drop in a demo begins a turn: what it does, in every demo.
+	for (const type of ["input", "click", "submit", "keydown", "drop"]) {
 		document.addEventListener(
 			type,
 			({ target }) => {
@@ -23,7 +23,7 @@ document.addEventListener("rocx:ready", ({ detail: { runtime, ms } }) => {
 				last = demo;
 				const button = target.closest?.("button");
 				if (type === "keydown" || (type === "click" && !button)) return;
-				begin(type === "click" ? `click “${button.textContent.trim()}”` : `${type} on ${tagOf(target)}`, demo);
+				begin(type === "click" ? `click “${button.textContent.trim()}”` : type === "drop" ? `drop on ${tagOf(target.closest?.("section, ul") ?? target)}` : `${type} on ${tagOf(target)}`, demo);
 			},
 			{ capture: true },
 		);
@@ -56,6 +56,7 @@ const READS = [
 	["/api/echo/", "echo"],
 	["/api/shelf", "shelf"],
 	["/api/reader", "bag"],
+	["/api/planner", "planner"],
 ];
 
 /** The demo a GET the page carried was read by (`GET /api/echo/hello`: `echo`), if a demo read it. */
@@ -164,6 +165,15 @@ function watchDemo(element) {
 			line(error ? `✗ ${error}` : `← ${status} ${brief(body)}`, "wire");
 		},
 		listen: ({ url }) => line(`→ GET ${url}, listening to its events`, "wire"),
+		submit: ({ method, url, input }) => line(`→ ${method ?? "POST"} ${url} ${brief(input)}, not waited for`, "wire"),
+		submitted: ({ url, status, body, redirect, error, ms }) => {
+			begin(`${url} answered in ${ms.toFixed(0)} ms`, name);
+			line(error ? `✗ ${error}` : redirect ? `← ${status}, to ${redirect}` : `← ${status} ${brief(body)}`, "wire");
+		},
+		revalidate: ({ reads }) => line(`reading the page's ${reads === 1 ? "read" : `${reads} reads`} again, then the move is in`, "wire"),
+		glide: ({ key }) => {
+			if (awake) line(`glided${key ? ` ${key}` : ""} from its old place`);
+		},
 		effect: ({ name: called, arg }) => {
 			document.dispatchEvent(new CustomEvent("rocx:effect", { detail: { demo: name, name: called, arg: JSON.parse(arg) } }));
 			line(`called the page's ${called}(${brief(arg)})`, "wire");

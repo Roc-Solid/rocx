@@ -1,0 +1,128 @@
+import pf.Html
+import pf.For
+import pf.Transition
+
+## A day of the planner (`Planner.rocx`): its plans, each dragged to another day or moved with its
+## menu, and a drop target for the others. Its dragenter and dragleave are the day's own (a plan
+## inside it is no other place), so it is lit while a drag is over it.
+PlannerDay := [].{
+	Plan : { id : Str, title : Str, day : Str }
+	Move : { plan : Str, day : Str }
+	Day : { id : Str, name : Str }
+
+	## What the days share: the week as it shows (the server's, with the moves on their way), the plan
+	## being dragged, the day a drag is over, and how a plan moves.
+	Board : {
+		plans! : () => List(Plan),
+		dragging! : () => Str,
+		set_dragging! : Str => {},
+		over! : () => Str,
+		set_over! : Str => {},
+		move! : Move => {},
+	}
+
+	days : List(Day)
+	days = [
+		{ id: "mon", name: "Monday" },
+		{ id: "tue", name: "Tuesday" },
+		{ id: "wed", name: "Wednesday" },
+		{ id: "thu", name: "Thursday" },
+	]
+
+	## The week with a move applied: what the server will have once it takes it.
+	moved : List(Plan), Move -> List(Plan)
+	moved = |plans, one| plans.map(|plan| if (plan.id == one.plan) { ..plan, day: one.day } else plan)
+
+	view! : { day : Day, board : Board } => Html
+	view! = |{ day, board }| {
+		{ plans!, dragging!, set_dragging!, over!, set_over!, move! } = board
+		here! = || plans!().keep_if(|plan| plan.day == day.id)
+
+		# A plan dropped here, unless it is here already.
+		dropped! = || {
+			plan = dragging!()
+			set_dragging!("")
+			if (plan.is_empty() or here!().any(|each| each.id == plan)) {} else move!({ plan, day: day.id })
+		}
+		<section class="day" data-day={day.id} class:over={over!() == day.id} on:dragenter={|| set_over!(day.id)} on:dragleave={|| if (over!() == day.id) set_over!("") else {}} on:drop={dropped!}>
+			<h4>{day.name}</h4>
+			<ul>
+				<For each!={here!()} keyed={|plan| plan.id} fallback={<li class="free">Free</li>}>
+					{|plan!, _|
+						<li class="plan" key={plan!().id} draggable="true" class:dragged={dragging!() == plan!().id} transition:move={Transition.glide.ms(320)} on:dragstart={|| set_dragging!(plan!().id)} on:dragend={|| set_dragging!("")}>
+							<span class="title">{plan!().title}</span>
+							<select aria-label={"Move ${plan!().title} to another day"} on:change.value={|to| move!({ plan: plan!().id, day: to })}>
+								{...PlannerDay.days.map(|other| <option value={other.id} selected?={other.id == plan!().day}>{other.name}</option>)}
+							</select>
+						</li>
+					}
+				</For>
+			</ul>
+		</section>
+	}
+
+	<style>
+		.day {
+			min-width: 0;
+			padding: var(--space-2);
+			border: 1px dashed var(--rule-strong);
+			border-radius: var(--radius);
+			background: var(--bg-sunken);
+			transition: border-color 120ms, background 120ms;
+		}
+
+		.day.over {
+			border-color: var(--accent);
+			background: var(--accent-soft);
+		}
+
+		h4 {
+			margin: 0 0 var(--space-2);
+			font-size: var(--size-sm);
+			color: var(--text-muted);
+		}
+
+		ul {
+			display: flex;
+			flex-direction: column;
+			gap: var(--space-2);
+			min-height: 7.5rem;
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		.plan {
+			display: flex;
+			flex-direction: column;
+			gap: var(--space-1);
+			padding: var(--space-2);
+			border: 1px solid var(--rule-strong);
+			border-radius: var(--radius-sm);
+			background: var(--bg-raised);
+			cursor: grab;
+		}
+
+		.plan.dragged {
+			opacity: 0.4;
+		}
+
+		.title {
+			font-size: var(--size-sm);
+		}
+
+		select {
+			font-size: var(--size-xs);
+			color: var(--text-muted);
+			background: transparent;
+			border: 1px solid var(--rule);
+			border-radius: var(--radius-sm);
+		}
+
+		.free {
+			padding: var(--space-2);
+			font-size: var(--size-xs);
+			color: var(--text-faint);
+		}
+	</style>
+}

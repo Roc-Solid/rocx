@@ -169,12 +169,16 @@ view! = |_|
 				memo, a prop that is an accessor) is a computation, which runs again when a signal it read
 				changes; one that calls nothing so named can't change, and is written once, as a page's is. And
 				<code>on:click={"{…}"}</code> is a handler, an effect, run when the event
-				reaches the element. <code>.value</code>, <code>.checked</code> and <code>.key</code> give it what
-				the event says; a key's name (<code>on:keydown.Escape</code>) runs it for that key only. Handlers are
+				reaches the element (<code>on:drop</code> and the rest of <a href={"${Paths.components}#drag"}>drag and drop</a> among them).
+				<code>.value</code>, <code>.checked</code> and <code>.key</code> give it what the event says; a key's
+				name (<code>on:keydown.Escape</code>) runs it for that key only; <code>.prevent</code> prevents the
+				event's default first (<code>on:click.prevent</code>: a link the page takes over). Handlers are
 				Roc functions, so the server renders nothing for them, and a page, which runs nothing in the
 				browser, can't have one: rocx refuses it, at its line. <code>transition={"{…}"}</code>,
 				<code>transition:in={"{…}"}</code> and <code>transition:out={"{…}"}</code> are a component's too: an
-				animation the element plays as its row or part comes and goes (<a href={"${Paths.components}#transitions"}>transitions</a>).
+				animation the element plays as its row or part comes and goes; <code>transition:move={"{…}"}</code>,
+				how it glides when it moves, and <code>key={"{…}"}</code>, its name on the page, by which one taken out
+				of one list and put in another is the same element (<a href={"${Paths.components}#transitions"}>transitions</a>).
 				<a href={Paths.components}>Components</a> has the rest.
 			</p>
 			<Example source={Sources.events} renders={Bool.False} />
