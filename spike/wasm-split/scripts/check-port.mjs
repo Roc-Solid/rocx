@@ -1,0 +1,27 @@
+import { analyse, moveData, binaryen, chunkFile } from "/tmp/rocx-split/repo/src/split.mjs";
+import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { brotliCompressSync, constants } from "node:zlib";
+const br = (b) => brotliCompressSync(b, { params: { [constants.BROTLI_PARAM_QUALITY]: 11 } }).length;
+const wasm = "/tmp/rocx-split/out/marked3.wasm";
+const text = execFileSync(binaryen("wasm-dis"), [wasm], { encoding: "utf8", maxBuffer: 1 << 30 });
+const t0 = performance.now();
+const plan = analyse({ object: readFileSync("/tmp/rocx-split/out/marked-ar/roc_app_llvm_wasm32_size.o"), wasm: readFileSync(wasm), text });
+console.log("analysed in", Math.round(performance.now() - t0), "ms; base", plan.base, "pages", plan.pages.length);
+console.log("functions by owner", Object.fromEntries([...plan.functions].map(([o, f]) => [o, f.length])));
+const dir = "/tmp/rocx-split/out/port"; rmSync(dir, { recursive: true, force: true }); mkdirSync(dir);
+writeFileSync(`${dir}/manifest.txt`, [...plan.functions].map(([o, n]) => `${o}\n${n.sort().join("\n")}`).join("\n\n") + "\n");
+execFileSync(binaryen("wasm-split"), ["--multi-split", wasm, "--manifest", `${dir}/manifest.txt`, "--out-prefix", `${dir}/`, "-o", `${dir}/primary.wasm`, "--strip-debug"], { stdio: "inherit" });
+const chunks = new Map(readdirSync(dir).filter((f) => f.endsWith(".wasm") && f !== "primary.wasm").map((f) => [f.slice(0, -5), readFileSync(`${dir}/${f}`)]));
+const done = moveData(readFileSync(`${dir}/primary.wasm`), chunks, plan.data);
+writeFileSync(`${dir}/out-primary.wasm`, done.primary);
+for (const [o, b] of done.chunks) writeFileSync(`${dir}/out-${o}.wasm`, b);
+// Instantiate everything in Node: main, then every chunk, against its memory and table.
+const env = new Proxy({}, { get: () => () => 0 });
+const placeholders = {};
+const mod = await WebAssembly.compile(done.primary);
+for (const imp of WebAssembly.Module.imports(mod)) if (imp.module.startsWith("placeholder.")) (placeholders[imp.module] ??= {})[imp.name] = () => { throw new Error("placeholder " + imp.module); };
+const main = await WebAssembly.instantiate(mod, { env, ...placeholders });
+for (const [o, b] of done.chunks) await WebAssembly.instantiate(b, { primary: main.exports, env });
+console.log("main", (br(done.primary) / 1024).toFixed(1), "KB br; all", done.chunks.size, "chunks instantiate");
+for (const p of ["SyntaxPage", "ShowcasePage", "RoutingPage"]) console.log(p, plan.needs.get(p), ((br(done.primary) + plan.needs.get(p).reduce((s, o) => s + br(done.chunks.get(o)), 0)) / 1024).toFixed(1), "KB br first load");

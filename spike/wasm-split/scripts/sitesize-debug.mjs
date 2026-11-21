@@ -1,0 +1,18 @@
+import { analyse, moveData, binaryen } from "/tmp/rocx-split/out/split.debug.mjs";
+import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { brotliCompressSync, constants } from "node:zlib";
+const br = (b) => brotliCompressSync(b, { params: { [constants.BROTLI_PARAM_QUALITY]: 11 } }).length;
+const wasm = "/tmp/rocx-split/repo/site/build/app-split.wasm";
+const text = execFileSync(binaryen("wasm-dis"), [wasm], { encoding: "utf8", maxBuffer: 1 << 30 });
+const plan = analyse({ object: readFileSync("/tmp/rocx-split/out/site-ar/roc_app_llvm_wasm32_size.o"), wasm: readFileSync(wasm), text });
+const dir = "/tmp/rocx-split/out/sitesize"; rmSync(dir, { recursive: true, force: true }); mkdirSync(dir);
+writeFileSync(`${dir}/manifest.txt`, [...plan.functions].map(([o, n]) => `${o}\n${n.sort().join("\n")}`).join("\n\n") + "\n");
+execFileSync(binaryen("wasm-split"), ["--multi-split", wasm, "--manifest", `${dir}/manifest.txt`, "--out-prefix", `${dir}/`, "-o", `${dir}/primary.wasm`, "--strip-debug"], { stdio: "ignore" });
+const chunks = new Map(readdirSync(dir).filter((f) => f.endsWith(".wasm") && f !== "primary.wasm").map((f) => [f.slice(0, -5), readFileSync(`${dir}/${f}`)]));
+const done = moveData(readFileSync(`${dir}/primary.wasm`), chunks, plan.data);
+const kb = (n) => (n / 1024).toFixed(1);
+console.log("main", kb(br(done.primary)), "KB br; functions by owner", Object.fromEntries([...plan.functions].map(([o, f]) => [o, f.length]).filter(([, n]) => n > 1)));
+const sizes = new Map([...done.chunks].map(([o, b]) => [o, br(b)]));
+console.log("Unreached", kb(sizes.get("Unreached") ?? 0), "Shared", kb(sizes.get("Shared") ?? 0));
+for (const [p, owners] of [...plan.needs].sort()) console.log(p.padEnd(22), kb(br(done.primary) + owners.reduce((s, o) => s + (sizes.get(o) ?? 0), 0)), owners.join("+"));
