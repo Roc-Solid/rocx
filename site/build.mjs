@@ -17,7 +17,7 @@
 //      (site/build/client), in which a route file has no middleware, with its main.roc
 //   2. site/Generated/Sources.roc: the sources, refusals and report the pages show; and, before
 //      step 1 copies the site, site/Generated/PlatformReference.roc: every module the server
-//      platform exposes, read from its source (src/reference.mjs), for the reference page
+//      platform exposes, read from its source (site/reference.mjs), for the reference page
 //   3. the browser's wasm: the same pages, on the web platform (its Zig host), built from the
 //      browser's copy (site/build/client/main.roc) into site/build/client/static/rocx/app.wasm,
 //      beside the start.js and runtime.js rocx build put there: a page loads all three from /rocx/
@@ -32,7 +32,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { brotliCompressSync, constants, gzipSync } from "node:zlib";
 import { definitions, findRouteFiles, pathsModule, build as rocxBuild, RocxError, routesTable, routeTable, transpile } from "../src/rocx.mjs";
-import { platformReference, referenceModule, rocString } from "../src/reference.mjs";
+import { platformReference, referenceModule, rocString } from "./reference.mjs";
 import { Runtime } from "../web/runtime.js";
 import { buildApp, buildHost, rocxBinary, start, syncShared, zig } from "../server/build.mjs";
 
@@ -821,7 +821,7 @@ async function measure({ compare }) {
  * route file has no middleware. */
 export function prepare({ dev = false } = {}) {
 	return exclusive(dev ? "a dev build" : "a build", () => {
-		// The platform's reference, read from its modules (src/reference.mjs): before rocx build, which
+		// The platform's reference, read from its modules (site/reference.mjs): before rocx build, which
 		// copies it into the browser's copy of the site with the rest.
 		writeIfChanged(join(site, "Generated", "PlatformReference.roc"), referenceModule(platformReference()));
 		// rocx build, in this process: three more Node processes would cost a rebuild a third of a second.

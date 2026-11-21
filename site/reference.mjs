@@ -200,7 +200,7 @@ export function referenceModule(modules) {
 	const groups = grouped(modules);
 	const count = (key) => modules.reduce((sum, m) => sum + m[key].length, 0);
 	return [
-		"## Written by site/build.mjs (src/reference.mjs): every module the server platform exposes, each",
+		"## Written by site/build.mjs (site/reference.mjs): every module the server platform exposes, each",
 		"## with its doc comment and its items', read from the platform's sources. Edit those (their `##`",
 		"## comments), not this one.",
 		"PlatformReference := [].{",
