@@ -1,0 +1,83 @@
+import pf.Html
+import pf.Show
+import pf.For
+import pf.Endpoint
+import pf.Solid exposing [create_effect!, create_signal!]
+import ../Generated/Api
+
+## The lobby (`routes/platform/live/lobby/+server.roc`, a channel): join it, and every tab on this
+## page that has joined sees each wave as it is made. Open the page in a second tab to see it.
+Lobby := [].{
+
+	view! : {} => Html
+	view! = |{}| {
+		(joined!, set_joined!) = create_signal!(Bool.False)
+		<div class="lobby">
+			<Show when!={joined!()} fallback={<button type="button" class="join" on:click={|| set_joined!(Bool.True)}>Join the lobby</button>}>
+				<Room leave!={|| set_joined!(Bool.False)} />
+			</Show>
+		</div>
+	}
+
+	<style>
+		.lobby {
+			display: grid;
+			gap: var(--space-2);
+		}
+
+		button {
+			justify-self: start;
+		}
+	</style>
+}
+
+## In the lobby: subscribed from an effect, until it goes (Leave).
+Room := [].{
+
+	view! : { leave! : () => {} } => Html
+	view! = |{ leave! }| {
+		(state!, set_state!) = create_signal!("Joining…")
+		(waves!, set_waves!) = create_signal!([])
+		lobby = Api.channel_platform_live_lobby({})
+		create_effect!(
+			|| {},
+			|{}|
+				Endpoint.subscribe!(
+					lobby,
+					|event|
+						match event {
+							Resync => set_state!("In the lobby. Open this page in another tab, join there too, and wave.")
+							Message(wave) => set_waves!(waves!().take_last(5).append("${wave.hand} from ${wave.from}"))
+							Refused(_, why) => set_state!("No lobby here: ${why}")
+							Ended(why) => set_state!("Left: ${why}")
+						},
+				),
+		)
+		<div class="room">
+			<p class="state" aria-live="polite">{state!()}</p>
+			<p class="hands">
+				<For each!={["👋", "🎉", "🙌"]} keyed={|hand| hand}>
+					{|hand!, _| <button type="button" class="wave" on:click={|| Endpoint.say!(lobby, Wave(hand!()))}>{hand!()}</button>}
+				</For>
+				<button type="button" class="leave" on:click={leave!}>Leave</button>
+			</p>
+			<ol class="waves">
+				<For each!={waves!()} keyed={|wave| wave}>
+					{|wave!, _| <li>{wave!()}</li>}
+				</For>
+			</ol>
+		</div>
+	}
+
+	<style>
+		.hands {
+			display: flex;
+			gap: var(--space-2);
+		}
+
+		.waves {
+			margin: 0;
+			min-height: 6em;
+		}
+	</style>
+}

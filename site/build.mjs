@@ -388,7 +388,8 @@ function sourcesModule() {
 		pick("route_layout", "site/routes/+layout.rocx", ["import pf.Html", "import pf.Router", "import ../Facts", "import ../Ui/Nav", "import ../Generated/Paths", "## The document around", "## this part's pages", "## page's (its title", "## the facts the build", "view! = |{ meta, children, .. }| {", "path = Router.location!({}).path", "facts = Facts.facts!({})"]),
 		pick("route_routes", "site/Generated/Routes.roc", [
 			"Routes := [].{", "respond! = |request, context| {", "segments = ", "method = ", "wants_html = ",
-			"if (segments == [\"api\", \"facts\"])", "params = {}", "if (method == \"GET\")", "Endpoint.respond!(Api.get_api_facts", "} else {", "Endpoint.not_allowed", "}",
+			"if (Endpoint.channel_asked(request) != \"\")", "Routes.channel!(segments, request, context)",
+			"} else if (segments == [\"api\", \"facts\"])", "params = {}", "if (method == \"GET\")", "Endpoint.respond!(Api.get_api_facts", "} else {", "Endpoint.not_allowed", "}",
 			"} else if (segments == [\"api\", \"shout\"])", "params = {}", "if (method == \"POST\")", "Endpoint.respond!(Api.post_api_shout", "} else {", "Endpoint.not_allowed", "}",
 			"} else if (segments == [\"calls\"])", "if (method == \"GET\")", "Routes.page(200)", "} else {", "Endpoint.not_allowed", "}",
 			"} else {", "if (wants_html)", "Routes.page(404)", "} else {", "Routes.text(404,", "}", "}", "}",
@@ -617,6 +618,8 @@ function sourcesModule() {
 		pick("platform_ask", "server/test/app/main.roc", ["(\"POST\", path) if path.starts_with(\"/actors/count/\") => {", "by : I64", "by = I64.from_str(", "answered_actor(Actor.ask!(counter,"]),
 		pick("platform_tell", "server/test/app/main.roc", ["(\"POST\", \"/actors/tell\") => {", "Actor.tell!(counter, run,", "text(200, \"told\")", "}"]),
 		pick("platform_ticker", "server/test/app/main.roc", ["## Counts its own ticks", "## (`Actor.after!`)", "ticker : Actor.Kind", "ticker = Actor.define({", "name: \"ticker\",", "initial:", "receive!: |me, state, message|", "match message {", "Start(ms) =>", "Tick(ms) =>", "if (state.on) {", "{ state: { ticks: state.ticks + 1", "} else {", "{ state, reply: state.ticks }", "}", "Stop => {", "Actor.cancel!(state.timer)", "{ state: { ticks: state.ticks, timer: 0", "}", "Ticks =>", "},", "})"]),
+		whole("channel_lobby", "site/routes/platform/live/lobby/+server.roc"),
+		pick("demo_lobby", "site/Demos/Lobby.rocx", ["lobby = Api.channel_platform_live_lobby({})", "create_effect!(", "|| {},", "|{}|", "Endpoint.subscribe!(", "lobby,", "|event|", "match event {", "Resync =>", "Message(wave) =>", "Refused(_, why) =>", "Ended(why) =>", "},", "),", ")", "{|hand!, _| <button type=\"button\" class=\"wave\""]),
 		pick("bag_reader", "site/Demos/Bag.rocx", ["## Who is reading", "## The server renders", "## again.", "reader! :", "reader! ="]),
 		whole("endpoint_reader", "site/routes/api/reader/+server.roc"),
 		whole("endpoint_echo", "site/routes/api/echo/[message]/+server.roc"),

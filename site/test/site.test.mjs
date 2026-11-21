@@ -415,6 +415,25 @@ test("events: an endpoint streams them as it makes them, and lets go of a page t
 	assert.ok(!(await (await fetch(`${site.url}/calls`, { headers: { accept: "text/html" } })).text()).includes('class="count"'));
 });
 
+test("channels: two tabs join the lobby, each greeted by its on_open!; a wave in one is heard in both, and a hand it doesn't take is refused", { skip }, async () => {
+	const [one, two] = [await open("/platform/live"), await open("/platform/live")];
+	for (const page of [one, two]) {
+		await page.click("[data-demo=lobby] .join");
+		await page.wait("document.querySelector('[data-demo=lobby] .state')?.textContent.startsWith('In the lobby')", 5000);
+		await page.wait("document.querySelector('[data-demo=lobby] .waves li')?.textContent.startsWith('👋 from the lobby, to tab ')", 5000);
+	}
+	await one.click("[data-demo=lobby] .wave:nth-child(2)");
+	const tab = await one.eval("sessionStorage.getItem('rocx-tab').slice(0, 4)");
+	for (const page of [one, two]) await page.wait(`[...document.querySelectorAll('[data-demo=lobby] .waves li')].some((li) => li.textContent === '🎉 from ${tab}')`, 5000);
+	const refused = await fetch(`${site.url}/rocx/live/send?tab=t1`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify([{ channel: "/platform/live/lobby", message: { Wave: "🦆" } }]) });
+	assert.deepEqual(await refused.json(), { refused: [{ index: 0, status: 400, why: "wave 👋, 🎉 or 🙌" }] });
+	assert.equal((await fetch(`${site.url}/platform/live/lobby`)).status, 404, "a channel alone answers no HTTP");
+	await two.click("[data-demo=lobby] .leave");
+	await two.wait("document.querySelector('[data-demo=lobby] .join') !== null");
+	assert.deepEqual([...one.errors, ...two.errors], []);
+	assert.deepEqual([...one.console, ...two.console], []);
+});
+
 test("endpoints: a demo asks one through Api, and the page asked them as it rendered", { skip }, async () => {
 	const page = await open("/calls");
 	assert.match(await page.eval("document.querySelector('table.http').textContent"), /GET \/api\/shout\/rocx.*200.*"shouted":"ROCX"/s, "the answers the page got, rendered");
@@ -1099,6 +1118,14 @@ test("the static build for GitHub Pages: files alone, under /rocx/, every page h
 			assert.deepEqual(page.errors, [], `${route} threw nothing`);
 			assert.deepEqual((await asked(page)).filter((path) => !loads("/rocx/").includes(path) && path !== "/rocx/roc-bird.svg"), [], `${route}: asked for nothing else`);
 		}
+		// The lobby, asked once where no server answers channels: it says so.
+		const live = await open("/rocx/platform/live", pages.url);
+		await live.click("[data-demo=lobby] .join");
+		await live.wait("document.querySelector('[data-demo=lobby] .state')?.textContent.startsWith('No lobby here')", 5000);
+		await new Promise((resolve) => setTimeout(resolve, 300));
+		assert.deepEqual((await asked(live)).filter((path) => path.startsWith("/rocx/rocx/live")).length, 1, "asked once");
+		assert.ok(!(await asked(live)).some((path) => !path.startsWith("/rocx/")), "nothing outside /rocx/");
+		assert.deepEqual(live.errors, []);
 		const page = await open("/rocx/calls", pages.url);
 		await page.click("form.echo > button:nth-of-type(3)");
 		await page.wait("document.querySelector('form.echo output').textContent === 'Echo: this site, as files'");
