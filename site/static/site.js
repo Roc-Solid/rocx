@@ -29,20 +29,20 @@ document.addEventListener("rocx:ready", ({ detail: { runtime, ms } }) => {
 		);
 	}
 	// What the runtime does, told to the demo it happened in: where the node it touched is; for a
-	// call, a fetch or a stream, the demo that asked, which its answer is told to as well.
+	// fetch or a stream, the demo that asked, which its answer is told to as well.
 	const asking = new Map();
-	const keyOf = (detail) => (detail.name !== undefined ? `${detail.name}\n${detail.input}` : detail.url);
+	const keyOf = (detail) => detail.url;
 	const demoFor = (kind, detail) => {
 		const here = [detail.node, ...(detail.nodes ?? [])].map(demoOf).find(Boolean);
 		if (here) {
 			if (kind === "frame") last = here;
 			return here;
 		}
-		if (["call", "fetch", "listen"].includes(kind)) {
+		if (["fetch", "listen"].includes(kind)) {
 			asking.set(keyOf(detail), last);
 			return last;
 		}
-		if (["answer", "fetched", "heard", "unlisten"].includes(kind)) return asking.get(keyOf(detail)) ?? last;
+		if (["fetched", "heard", "unlisten"].includes(kind)) return asking.get(keyOf(detail)) ?? last;
 		return last;
 	};
 	runtime.observer = new Proxy({}, { get: (_, kind) => (detail) => watchers.get(demoFor(kind, detail))?.[kind]?.(detail) });
@@ -154,19 +154,10 @@ function watchDemo(element) {
 		turn.item.append(span);
 		turn.lines.set(text, { element: span, count: 1 });
 	};
-	const show = (value) => {
-		const text = JSON.stringify(value);
-		return text.length > 48 ? `${text.slice(0, 47)}…"` : text;
-	};
 	const brief = (text) => (text.length > 48 ? `${text.slice(0, 47)}…` : text);
 
 	return {
 		frame: (detail) => frame(name, detail),
-		call: ({ name, input }) => line(`→ POST /rocx/call/${name} ${show(JSON.parse(input))}`, "wire"),
-		answer: ({ name: called, value, error, ms }) => {
-			begin(`${called} answered in ${ms.toFixed(0)} ms`, name);
-			line(error ? `✗ ${error}` : `← ${show(JSON.parse(value))}`, "wire");
-		},
 		fetch: ({ method, url, body }) => line(`→ ${method} ${url}${body ? ` ${brief(body)}` : ""}`, "wire"),
 		fetched: ({ method, url, status, body, error, ms }) => {
 			begin(`${method} ${url} answered in ${ms.toFixed(0)} ms`, name);

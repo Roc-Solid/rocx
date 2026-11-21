@@ -3,12 +3,14 @@ import pf.Solid exposing [create_signal!, create_memo!]
 import pf.Loading
 import pf.Errored
 import pf.Server
+import pf.Endpoint
 
 ## The echo, Solid-style: what you type, the server says back.
 Echo := [].{
-	## Says a message back: run on the server, asked for by the browser.
+	## Says a message back: `GET /api/echo/{message}`, which the server answers as it renders the
+	## page, and the browser asks for a message the page didn't carry.
 	echo! : Str => Str
-	echo! = server!(|_request, message| "Echo: ${message}")
+	echo! = |message| Endpoint.get!(Endpoint.remote("GET", "/api/echo/${Server.encode_segment(message)}"))
 
 	view! : {} => Html
 	view! = |{}| {

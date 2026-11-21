@@ -1,8 +1,8 @@
 ## A small app on the server platform, for its tests (`server/test/server.test.mjs`): a page, a
 ## crash and an overflow, bytes each way, streams of events, Postgres and its transactions, jobs
 ## (with attempts, time limits and keys, listed and acted on, and the jobs page behind a guard) and
-## cron, email, live topics and rooms, actors, pages of components, with server functions answered
-## by their routes, requests to other servers, the environment, AES-GCM, random
+## cron, email, live topics and rooms, actors, pages of components, with the endpoints they read
+## answered by their routes, requests to other servers, the environment, AES-GCM, random
 ## bytes, the crypto written in Roc (packages/crypto), S3 storage (packages/s3), and cookies; and what the docs show of them
 ## (`Samples.roc`), as an app would write it.
 app [program] { pf: platform "../../platform/main.roc", crypto: "../../../packages/crypto/main.roc", s3: "../../../packages/s3/main.roc" }
@@ -818,8 +818,13 @@ route! = |request, context| {
 		(_, "/samples/cdn") => Samples.from_cdn(request, param(request.query, "url"))
 		("GET", "/samples/cookies") => Samples.signed_out(Samples.reviewing(Samples.signed_in(text(200, "cookies"), "token"), "review", 1_795_000_000_000))
 
-		# ---- Server functions: their routes ----
-		(_, path) if path.starts_with("/rocx/call/") => call!(request, context)
+		# ---- The probes' endpoints, which its pages read ----
+		("GET", path) if path.starts_with("/probe/shout/") => Endpoint.respond!(shout_at(""), request, {})
+		("GET", "/probe/member") => Middleware.run!(members_only, request, { started: context }, |passed, handed| Endpoint.respond!(member_probe, passed, handed))
+		("GET", "/probe/signed_in") => Middleware.run!(gate, request, { started: context }, |passed, handed| Endpoint.respond!(signed_in_probe, passed, handed))
+		("POST", "/probe/measure") => Endpoint.respond!(measure_endpoint, request, {})
+		("POST", "/probe/length") => Endpoint.respond!(length_endpoint, request, {})
+		("POST", "/probe/award") => Middleware.run!(badged, request, { started: context }, |passed, handed| Endpoint.respond!(award_endpoint, passed, handed))
 
 		_ => text(404, "No page at ${request.path}.")
 	}
@@ -1265,25 +1270,34 @@ ticker = Actor.define({
 		},
 })
 
-# ---- Components the server renders, and the server functions they call ----
+# ---- Components the server renders, and the endpoints they read ----
 
 ## The probe, on a page of its own, with the page's text after it.
 probing! : {} => Html
 probing! = |{}| Html.element("html", [], [Html.element("body", [], [Html.component(|| probe!({})), Html.element("p", [], [Html.text("after")])])])
 
-## A server function the probe calls while the server renders it.
+## GET /probe/shout/:word: the word, shouted. The probe reads it while the server renders it.
+shout_at : Str -> Endpoint({}, {}, Str)
+shout_at = |word| Endpoint.local("GET", "/probe/shout/${Server.encode_segment(word)}", |request, {}, {}| Ok(Server.decode_segment(request.path.drop_prefix("/probe/shout/")).with_ascii_uppercased()))
+
 shout! : Str => Str
-shout! = Server.local("Probe.shout", |_request, word| word.with_ascii_uppercased())
+shout! = |word| Endpoint.get!(shout_at(word))
 
-## A server function behind a middleware of its own (`members_only`), as one a route file defines
-## runs behind the file's: who the member is, from what the middleware handed on.
+## GET /probe/member, behind a middleware of its own (`members_only`), as a route file's endpoint
+## is behind the file's: who the member is, from what the middleware handed on, and the request.
+member_probe : Endpoint({ started : Str, member : Str }, {}, Str)
+member_probe = Endpoint.local("GET", "/probe/member", |request, handed, {}| Ok("member ${handed.member}, ${request.method} ${request.path}"))
+
 member! : {} => Str
-member! = Server.local("Probe.member", |request, {}| "member ${Server.context!({}).member}, ${request.method} ${request.path}")
+member! = |{}| Endpoint.get!(member_probe)
 
-## Who is signed in, behind a gate that sends anyone else to sign in (303), forgetting their stale
-## session: what a layout's call meets for a signed-out visitor.
+## GET /probe/signed_in: who is signed in, behind a gate that sends anyone else to sign in (303),
+## forgetting their stale session: what a layout's read meets for a signed-out visitor.
+signed_in_probe : Endpoint({ started : Str, member : Str }, {}, Str)
+signed_in_probe = Endpoint.local("GET", "/probe/signed_in", |_, handed, {}| Ok("signed in as ${handed.member}"))
+
 signed_in! : {} => Str
-signed_in! = Server.local("Probe.signed_in", |_request, {}| "signed in as ${Server.context!({}).member}")
+signed_in! = |{}| Endpoint.get!(signed_in_probe)
 
 ## The gate: a member goes on; anyone else is sent to `/login`, their `session` cookie cleared.
 gate : Middleware({ started : Str }, { started : Str, member : Str })
@@ -1295,14 +1309,14 @@ gate = Middleware.make(
 		},
 )
 
-## One that takes and answers `F64`s, which JSON writes as numbers: a number it can't (an
-## infinity, dividing by zero) is a 500 that says so.
-measure! : { seconds : F64, parts : F64 } => { seconds : F64, each : F64 }
-measure! = Server.local("Probe.measure", |_request, { seconds, parts }| { seconds, each: seconds / parts })
+## POST /probe/measure: takes and answers `F64`s, which JSON writes as numbers: a number it can't
+## (an infinity, dividing by zero) is a 500 that says so.
+measure_endpoint : Endpoint({}, { seconds : F64, parts : F64 }, { seconds : F64, each : F64 })
+measure_endpoint = Endpoint.local("POST", "/probe/measure", |_, {}, { seconds, parts }| Ok({ seconds, each: seconds / parts }))
 
-## One that answers what a `Try` would, as a tag union: the builtin `Try` can't go as JSON.
-length! : Str => [Ok(U64), Err([Empty])]
-length! = Server.local("Probe.length", |_request, word| if (word.is_empty()) Err(Empty) else Ok(word.count_utf8_bytes()))
+## POST /probe/length: answers what a `Try` would, as a tag union: the builtin `Try` can't go as JSON.
+length_endpoint : Endpoint({}, Str, [Ok(U64), Err([Empty])])
+length_endpoint = Endpoint.local("POST", "/probe/length", |_, {}, word| Ok(if (word.is_empty()) Err(Empty) else Ok(word.count_utf8_bytes())))
 
 ## A badge: a nominal type whose JSON encoder and parser are derived, as an app's own types are.
 Badge := { name : Str }.{
@@ -1313,19 +1327,16 @@ Badge := { name : Str }.{
 ## Someone as `badged` hands them on: a badge beside other fields, one an `F64`.
 Holder : { name : Str, badge : Badge, since : F64 }
 
-## One whose context, input and answer each hold a nominal type with a derived encoder beside
-## other fields, and an `F64`: the platform writes each with `Json.to_str_try`, which crashes the
-## compiler for such a value unless its error type is named (test/compiler-bugs/json-to-str-try-nominal).
-award! : { badge : Badge, points : F64 } => { badge : Badge, points : F64, holder : Holder }
-award! = Server.local("Probe.award", |_request, { badge, points }| { badge, points: points * 2, holder: Server.context!({}).holder })
+## POST /probe/award: its context, body and answer each hold a nominal type with a derived encoder
+## beside other fields, and an `F64`: the platform writes the answer with `Json.to_str_try`, which
+## crashes the compiler for such a value unless its error type is named
+## (test/compiler-bugs/json-to-str-try-nominal).
+award_endpoint : Endpoint({ started : Str, holder : Holder }, { badge : Badge, points : F64 }, { badge : Badge, points : F64, holder : Holder })
+award_endpoint = Endpoint.local("POST", "/probe/award", |_, handed, { badge, points }| Ok({ badge, points: points * 2, holder: handed.holder }))
 
 ## Hands on a holder with a badge.
 badged : Middleware({ started : Str }, { started : Str, holder : Holder })
 badged = Middleware.make(|request, context, next!| next!(request, { started: context.started, holder: { name: "Ada", badge: { name: "admin" }, since: 0.5 } }))
-
-## One that reads a context no middleware in front of it hands on: a 500, naming it.
-unguarded! : {} => Str
-unguarded! = Server.local("Probe.unguarded", |_request, {}| Server.context!({}).member)
 
 ## A member: whoever the `member` cookie names, handed on as `member`; anyone else is refused (401).
 members_only : Middleware({ started : Str }, { started : Str, member : Str })
@@ -1337,38 +1348,11 @@ members_only = Middleware.make(
 		},
 )
 
-## The server functions' routes, as `rocx build` writes them (`Routes`' `/rocx/call/` branch, and
-## `Generated/ServerFunctions`): POST only, behind each one's middleware, given what the app handed on.
-call! : Server.Request, Str => Server.Response
-call! = |request, started| {
-	called = Server.decode_segment(request.path.drop_prefix("/rocx/call/"))
-	context = { started: started }
-	if request.method != "POST" {
-		Endpoint.not_allowed(request, ["POST"])
-	} else if called == "Probe.shout" {
-		Server.serve!(called, request, context, shout!)
-	} else if called == "Probe.member" {
-		Middleware.run!(members_only, request, context, |passed, handed| Server.serve!(called, passed, handed, member!))
-	} else if called == "Probe.signed_in" {
-		Middleware.run!(gate, request, context, |passed, handed| Server.serve!(called, passed, handed, signed_in!))
-	} else if called == "Probe.unguarded" {
-		Server.serve!(called, request, context, unguarded!)
-	} else if called == "Probe.measure" {
-		Server.serve!(called, request, context, measure!)
-	} else if called == "Probe.length" {
-		Server.serve!(called, request, context, length!)
-	} else if called == "Probe.award" {
-		Middleware.run!(badged, request, context, |passed, handed| Server.serve!(called, passed, handed, award!))
-	} else {
-		Server.refused(404, "no server function is called ${called}")
-	}
-}
-
 ## A context nothing provides: reading it fails, and <Errored> shows why.
 missing : Context({ name : Str })
 missing = Context.required("Probe.missing")
 
-## Signals, memos, a server function, a keyed <For>, a <Show>, an <Errored> that catches, and
+## Signals, memos, an endpoint read, a keyed <For>, a <Show>, an <Errored> that catches, and
 ## attributes of each kind.
 probe! : {} => Html
 probe! = |{}| {
@@ -1401,8 +1385,8 @@ probe! = |{}| {
 				children: [Html.element("p", [], [Html.text_of(|| Solid.use_context!(missing).name)])],
 			}),
 			Html.void("input", [Html.flag("disabled", Bool.True), Html.attr("value", "a & b")]),
-			# A server function behind its middleware, called while the server renders: answered by
-			# its route, in-process, with the page's cookies; refused, the <Errored> shows why.
+			# An endpoint behind its middleware, read while the server renders: answered by its route,
+			# in-process, with the page's cookies; refused, the <Errored> shows why.
 			Errored.view!({
 				fallback: |problem, _| Html.element("p", [Html.attr("class", "refused")], [Html.text_of(|| problem)]),
 				children: [Html.element("p", [Html.attr("class", "member")], [Html.text_of(|| member!({}))])],
@@ -1426,7 +1410,7 @@ where! = |{}| {
 
 # ---- Pages of components: what a route answers with `Page`, which the host renders ----
 
-## A page whose "layout" asks who is signed in, behind a gate (a server function's middleware),
+## A page whose "layout" asks who is signed in, behind a gate (an endpoint's middleware),
 ## with an <Errored> around it, and one around nothing: for a signed-out visitor, the gate's redirect
 ## is the page's answer, caught or not.
 gated! : {} => Html
@@ -1556,8 +1540,8 @@ rcdata! = |{}| {
 
 ## A page with a `<NoHydration>`, which the browser never hydrates: static markup between its
 ## markers, with none inside (a hole, a `<Show>`, a `<For>`, an `<Errored>` that failed, a component,
-## one inside another); the server function it calls isn't recorded for the page, the same one
-## called outside it is.
+## one inside another); the GET it reads isn't recorded for the page, the same one read outside it
+## is.
 region! : {} => Html
 region! = |{}| {
 	(count!, _set_count!) = Solid.create_signal!(3.U64)
@@ -1694,9 +1678,9 @@ joining! = |{}| {
 page : ({} => Html) -> Server.Response
 page = |view!| { status: 200, headers: [], body: Page(view!) }
 
-## A document with no doctype (the host writes one): a signal, a memo that calls a server function,
-## a <Loading> (on the server what is inside renders), an <Errored> that catches a failure, one
-## around a server function behind its middleware (refused without a cookie), and where it is.
+## A document with no doctype (the host writes one): a signal, a memo that reads an endpoint, a
+## <Loading> (on the server what is inside renders), an <Errored> that catches a failure, one around
+## an endpoint behind its middleware (refused without a cookie), and where it is.
 document! : {} => Html
 document! = |{}| {
 	(count!, _set_count!) = Solid.create_signal!(1.U64)

@@ -1,25 +1,11 @@
 import Host
-import Call
 import Html
 import Events
 
 ## The server: what it knows about a request, and how it answers. An app's `respond!` gets each
 ## request from its platform (`from_http`) and gives back the answer; its routes, endpoints and
-## middleware (rocx writes them from `routes/`) take and make these in between.
-##
-## And its functions. A function that runs on the server, in a .rocx file, is one definition:
-##
-##     echo! : Str => Str
-##     echo! = server!(|request, message| "Echo: ${message}")
-##
-## and it is called as a function everywhere. `rocx build` names it after its module and definition
-## (`Demos/Echo.echo`), and the app's routes answer `POST /rocx/call/Demos/Echo.echo` with it
-## (`serve!`), behind the middleware that guards it. Its body runs there, given the request; what
-## its middleware handed on is `Server.context!({})`. Called anywhere else, it is that request: from
-## the browser (`remote`) over HTTP, its answer read as a plain value (a computation waits for it, a
-## failure shows the nearest <Errored>); on the server (`local`), while a component renders, the same
-## request answered in-process, its answer noted for the page, so the browser's first run reads it
-## there instead of asking again.
+## middleware (rocx writes them from `routes/`) take and make these in between. A component talks to
+## the server through endpoints (`Endpoint`).
 Server := [].{
 
 	## What the server knows about a request: its method, its path and query, its headers (cookies
@@ -28,9 +14,8 @@ Server := [].{
 	##
 	## `route` is the route that answers it, as its route file's directory names it (`/blog/[slug]`,
 	## `/` for routes/ itself), whatever the params: what a metric or a log line groups requests by,
-	## where the path would make a group for every post. A call of a server function is
-	## `/rocx/call/<name>` (`/rocx/call/Demos/Echo.echo`); a request nothing answers (the error page,
-	## a server function the app hasn't), `""`. The server sets it before the app's middleware runs;
+	## where the path would make a group for every post. A request nothing answers (the error page)
+	## has `""`. The server sets it before the app's middleware runs;
 	## a request made by hand (`from_http`), and the browser's, have `""`.
 	Request : { method : Str, path : Str, query : Str, headers : List({ name : Str, value : Str }), body : List(U8), route : Str }
 
@@ -378,89 +363,11 @@ Server := [].{
 		}
 
 	## The request being answered: on the server, the one the host is answering (a page's, an
-	## endpoint's, a server function's call); empty, a GET of `/`, anywhere else. The host hands it
+	## endpoint's, a GET a page reads as it renders); empty, a GET of `/`, anywhere else. The host hands it
 	## over as text, so a body that isn't UTF-8 comes with U+FFFD where it isn't: an endpoint is
 	## given its request's bytes as they came.
 	request! : {} => Request
 	request! = |{}| from_wire(Host.request!({}))
-
-	## What the middleware in front of the server function being answered handed on (its
-	## `context`), read as the type its body reads: `Server.context!({}).member`. Only a server
-	## function's body has one, as the server answers its call: read anywhere else (a component, the
-	## browser), it crashes. A context that isn't that type (a field the middleware doesn't hand on)
-	## crashes too, naming the function: the server answers 500.
-	context! : {} => c where [c.Json.Parseable([InvalidJson(Str)])]
-	context! = |{}| {
-		called = Host.serving!({})
-		if called.is_empty() {
-			crash "Server.context! is read in a server function's body, as the server answers its call: not in a component, nor in the browser"
-		} else {
-			match Json.parse(Host.context!({})) {
-				Ok(context) => context
-				Err(InvalidJson(why)) => crash "${called}: the context its middleware handed on isn't what it reads (${why})"
-			}
-		}
-	}
-
-	## The server's copy of a server function (`server!`), called `called`. Answering its own route
-	## (`serve!`), it runs: the implementation, given the request. Anywhere else (a component the
-	## server renders) it is a call of that route, which the host answers in-process, as the browser's
-	## request would be answered: the same middleware, the same answer, noted for the page. An answer
-	## that isn't 200 fails the caller, and the nearest <Errored> shows its status and text.
-	local : Str, (Request, arg => result) -> (arg => result) where [arg.Json.Encodable(e), result.Json.Encodable(f), result.Json.Parseable([InvalidJson(Str)])]
-	local = |called, implementation|
-		|arg|
-			if Host.serving!({}) == called {
-				implementation(Server.request!({}), arg)
-			} else {
-				input =
-					match Json.to_str_try(arg) {
-						Ok(json) => json
-						Err(_) => {
-							Host.fail!("${called}: ${Server.unwritable}")
-							crash "unreachable: fail! doesn't return"
-						}
-					}
-				answer = Host.call!(called, input)
-				match Json.parse(answer) {
-					Ok(result) => {
-						Host.record!(called, input, answer)
-						result
-					}
-					Err(InvalidJson(why)) => {
-						Host.fail!("${called} answered something else: ${why}")
-						crash "unreachable: fail! doesn't return"
-					}
-				}
-			}
-
-	## The browser's copy: a request, by its name.
-	remote : Str -> (arg => result) where [arg.Json.Encodable(e), result.Json.Parseable([InvalidJson(Str)])]
-	remote = |called| |arg| Call.server!(called, arg)
-
-	## The answer to a call of the server function `called` (`POST /rocx/call/<called>`, its input
-	## the request's body, as JSON), past its middleware, which handed on `context`: 200 and its
-	## answer, as JSON; 400 for input it can't read. The host is told which function it is serving
-	## and the context (as JSON), so the function runs its body (`local`), and `context!` reads it.
-	## rocx writes the calls (`Generated/ServerFunctions`).
-	serve! : Str, Request, c, (arg => result) => Response where [c.Json.Encodable(e), arg.Json.Parseable([InvalidJson(Str)]), result.Json.Encodable(f)]
-	serve! = |called, asked, context, function|
-		match Json.parse(Server.text_of(asked)) {
-			Err(InvalidJson(why)) => Server.refused(400, "${called} can't read its input: ${why}")
-			Ok(arg) =>
-				match Json.to_str_try(context) {
-					Err(_) => Server.refused(500, "${called}: the context its middleware handed on: ${Server.unwritable}")
-					Ok(handed) => {
-						Host.serve!(called, handed)
-						result = function(arg)
-						Host.serve!("", "")
-						match Json.to_str_try(result) {
-							Ok(json) => Server.response(200, [{ name: "content-type", value: "application/json" }], json)
-							Err(_) => Server.refused(500, "${called}'s answer: ${Server.unwritable}")
-						}
-					}
-				}
-		}
 
 	## Why a value can't be sent as JSON: it holds a number JSON has no way to write (an `F64` that is
 	## NaN or an infinity). Any other `F64` is sent as a number, and read back as one.

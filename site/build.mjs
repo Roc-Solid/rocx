@@ -14,14 +14,14 @@
 // The steps, which `serve.mjs` runs too before it starts the server:
 //   1. .rocx → .roc (rocx build): the pages (site/routes), their components (site/Ui, site/Demos)
 //      and the program (site/Generated/App.roc), and the browser's copy of the site
-//      (site/build/client), in which a server function is only its name, with its main.roc
+//      (site/build/client), in which a route file has no middleware, with its main.roc
 //   2. site/Generated/Sources.roc: the sources, refusals and report the pages show; and, before
 //      step 1 copies the site, site/Generated/PlatformReference.roc: every module the server
 //      platform exposes, read from its source (src/reference.mjs), for the reference page
 //   3. the browser's wasm: the same pages, on the web platform (its Zig host), built from the
 //      browser's copy (site/build/client/main.roc) into site/build/client/static/rocx/app.wasm,
 //      beside the start.js and runtime.js rocx build put there: a page loads all three from /rocx/
-//   4. the server: site/main.roc, every page, endpoint and server function, natively, on the server
+//   4. the server: site/main.roc, every page and endpoint, natively, on the server
 //      platform (its Rust host), one executable (site/build/server)
 //   5. facts: what the wasm weighs, how long rendering a page takes in it; for the pages, in
 //      site/build/context.txt, which the server is started with
@@ -388,7 +388,7 @@ function sourcesModule() {
 		pick("route_layout", "site/routes/+layout.rocx", ["import pf.Html", "import pf.Router", "import ../Facts", "import ../Ui/Nav", "import ../Generated/Paths", "## The document around", "## this part's pages", "## page's (its title", "## the facts the build", "view! = |{ meta, children, .. }| {", "path = Router.location!({}).path", "facts = Facts.facts!({})"]),
 		pick("route_routes", "site/Generated/Routes.roc", [
 			"Routes := [].{", "respond! = |request, context| {", "segments = ", "method = ", "wants_html = ",
-			"if (request.path.starts_with(\"/rocx/call/\"))", "if (request.method == \"POST\")", "ServerFunctions.respond!(", "} else {", "Endpoint.not_allowed", "}",
+			"if (segments == [\"api\", \"facts\"])", "params = {}", "if (method == \"GET\")", "Endpoint.respond!(Api.get_api_facts", "} else {", "Endpoint.not_allowed", "}",
 			"} else if (segments == [\"api\", \"shout\"])", "params = {}", "if (method == \"POST\")", "Endpoint.respond!(Api.post_api_shout", "} else {", "Endpoint.not_allowed", "}",
 			"} else if (segments == [\"calls\"])", "if (method == \"GET\")", "Routes.page(200)", "} else {", "Endpoint.not_allowed", "}",
 			"} else {", "if (wants_html)", "Routes.page(404)", "} else {", "Routes.text(404,", "}", "}", "}",
@@ -552,7 +552,7 @@ function sourcesModule() {
 		pick("testing_node_form", "packages/testing/test/app.test.mjs", [
 			'test("a form posted without the runtime', "const person = app.client();", 'await person.get("/");', 'const posted = await person.post("/notes"', "assert.equal(posted.status, 303);", 'assert.equal(posted.location, "/"', "assert.deepEqual(person.flash, {",
 			"assert.equal((await posted.follow()).status, 200);", "assert.equal(person.flash, null", 'const sent = await person.submit("/notes"', "assert.deepEqual([sent.status, sent.json()]", "});",
-			'test("a server function, an endpoint', "const person = app.client();", 'assert.equal(await person.call("Generated/RootPage.count"), 3);', 'const ticks = await person.events("/api/ticks");', "assert.deepEqual((await ticks.take(4))",
+			'test("an endpoint the page reads, an endpoint', "const person = app.client();", 'assert.equal(await person.read("/notes"), 3);', 'const ticks = await person.events("/api/ticks");', "assert.deepEqual((await ticks.take(4))",
 			'["message", \'{"tick":1}\'],', '["message", \'{"tick":2}\'],', '["message", \'{"tick":3}\'],', '["end", ""],', "]);", "});",
 		]),
 		pick("testing_node_mail", "packages/testing/test/app.test.mjs", [
@@ -738,7 +738,7 @@ const MEASURED = "/";
 
 /**
  * The page at `path` as the site's server answers it, and what the browser's build needs to render
- * it the same way (decision D): the server functions' answers it recorded, and what it has inside
+ * it the same way (decision D): the answers its reads got, and what it has inside
  * each `<NoHydration>`.
  */
 export async function nativePage(url, path, headers = {}) {
@@ -814,7 +814,7 @@ async function measure({ compare }) {
 }
 
 /** Steps 1 and 2: the Roc the compiler checks, and the browser's copy of the site, in which a
- * server function is only its name. */
+ * route file has no middleware. */
 export function prepare({ dev = false } = {}) {
 	return exclusive(dev ? "a dev build" : "a build", () => {
 		// The platform's reference, read from its modules (src/reference.mjs): before rocx build, which

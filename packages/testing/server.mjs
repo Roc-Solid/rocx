@@ -1,12 +1,12 @@
 // A Roc Solid app's server under test: started on a port of its own, asked as a browser asks it (a
-// cookie jar, forms, JSON, server functions, events), its dev mailbox read, its log parsed. The
+// cookie jar, forms, JSON, endpoint reads, events), its dev mailbox read, its log parsed. The
 // server is the app as built (`node server/build.mjs main.roc build/server`, after `rocx build`).
 //
 //   const app = await startServer("build/server", { database: db.url });
 //   const browser = app.client();
 //   const page = await browser.get("/");
 //   page.dom.getByRole("heading", { name: "Notes" });
-//   assert.equal(await browser.call("Notes.add", "Buy milk"), 1);
+//   assert.equal(await browser.read("/notes/count"), 1);
 //   const mail = await app.waitForMail({ to: "ada@example.com" });
 //   after(() => app.stop());
 import { spawn } from "node:child_process";
@@ -211,13 +211,13 @@ export class Client {
 	}
 
 	/**
-	 * Calls the server function `name` (`Notes.add`, as `rocx routes` lists it) with `input`, as the
-	 * browser's runtime does (`POST /rocx/call/<name>`, JSON): its answer, parsed. An answer that
-	 * isn't a 200 throws, with its status and text.
+	 * Reads a GET endpoint as a page does (`Endpoint.get!`: `accept: application/json`, with the
+	 * cookies): its answer, parsed. An answer that isn't a 200 throws a ReadError, with its status
+	 * and text.
 	 */
-	async call(name, input = {}) {
-		const answer = await this.json(`/rocx/call/${name}`, input);
-		if (answer.status !== 200) throw new CallError(name, answer.status, answer.text);
+	async read(target, headers = {}) {
+		const answer = await this.request(target, { headers: { accept: "application/json", ...headers } });
+		if (answer.status !== 200) throw new ReadError(target, answer.status, answer.text);
 		return answer.json();
 	}
 
@@ -239,12 +239,12 @@ export class Client {
 	}
 }
 
-/** A call of a server function that answered something other than a 200. */
-export class CallError extends Error {
-	name = "CallError";
+/** A read of an endpoint that answered something other than a 200. */
+export class ReadError extends Error {
+	name = "ReadError";
 
-	constructor(called, status, text) {
-		super(`${called}: ${status} ${text}`);
+	constructor(target, status, text) {
+		super(`GET ${target}: ${status} ${text}`);
 		this.status = status;
 		this.text = text;
 	}

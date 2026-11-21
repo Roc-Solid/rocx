@@ -22,7 +22,6 @@ const js = struct {
     extern "env" fn js_memo_done(value: usize) void;
     extern "env" fn js_memo_get(id: u32) usize;
     extern "env" fn js_refresh(probe: usize) void;
-    extern "env" fn js_call(name_ptr: [*]const u8, name_len: usize, input_ptr: [*]const u8, input_len: usize) usize;
     extern "env" fn js_fail(ptr: [*]const u8, len: usize) void;
     extern "env" fn js_event_value() usize;
     extern "env" fn js_boundary() u32;
@@ -36,15 +35,11 @@ const js = struct {
     extern "env" fn js_context_value(value: usize) u32;
     extern "env" fn js_context_find(name_ptr: [*]const u8, name_len: usize) u32;
     extern "env" fn js_context_get(id: u32) usize;
-    extern "env" fn js_record(name_ptr: [*]const u8, name_len: usize, input_ptr: [*]const u8, input_len: usize, answer_ptr: [*]const u8, answer_len: usize) void;
     extern "env" fn js_fetch(method_ptr: [*]const u8, method_len: usize, url_ptr: [*]const u8, url_len: usize, headers_ptr: [*]const u8, headers_len: usize, body_ptr: [*]const u8, body_len: usize) usize;
     extern "env" fn js_listen(url_ptr: [*]const u8, url_len: usize, handler: usize) void;
     extern "env" fn js_timer(ms: u32, repeat: u32, handler: usize) u32;
     extern "env" fn js_clear_timer(id: u32) void;
     extern "env" fn js_browser_call(name_ptr: [*]const u8, name_len: usize, arg_ptr: [*]const u8, arg_len: usize) void;
-    extern "env" fn js_serve(name_ptr: [*]const u8, name_len: usize, context_ptr: [*]const u8, context_len: usize) void;
-    extern "env" fn js_serving() usize;
-    extern "env" fn js_context() usize;
     extern "env" fn js_location() usize;
     extern "env" fn js_status(code: u32) void;
     extern "env" fn js_effect_new(callable: usize) void;
@@ -176,14 +171,6 @@ fn hostedRefresh(probe: Callable) callconv(.c) void {
     js.js_refresh(address(probe));
 }
 
-fn hostedCall(name: RocStr, input: RocStr) callconv(.c) RocStr {
-    defer name.decref(host());
-    defer input.decref(host());
-    const n = name.asSlice();
-    const i = input.asSlice();
-    return taken(js.js_call(n.ptr, n.len, i.ptr, i.len));
-}
-
 fn hostedFail(why: RocStr) callconv(.c) void {
     const text = why.asSlice();
     js.js_fail(text.ptr, text.len);
@@ -207,16 +194,6 @@ fn hostedRetry(id: u64) callconv(.c) void {
 
 fn hostedRequest() callconv(.c) RocStr {
     return taken(js.js_request());
-}
-
-fn hostedRecord(name: RocStr, input: RocStr, answered: RocStr) callconv(.c) void {
-    defer name.decref(host());
-    defer input.decref(host());
-    defer answered.decref(host());
-    const n = name.asSlice();
-    const i = input.asSlice();
-    const a = answered.asSlice();
-    js.js_record(n.ptr, n.len, i.ptr, i.len, a.ptr, a.len);
 }
 
 fn hostedForNew() callconv(.c) u64 {
@@ -307,24 +284,8 @@ fn hostedBrowserCall(name: RocStr, arg: RocStr) callconv(.c) void {
     js.js_browser_call(n.ptr, n.len, a.ptr, a.len);
 }
 
-// Serving a server function's call, and the page's location and status: the runtime's, which keeps
-// them while it renders as a server would (in Node), and gives the browser's location.
-
-fn hostedServe(name: RocStr, context: RocStr) callconv(.c) void {
-    defer name.decref(host());
-    defer context.decref(host());
-    const n = name.asSlice();
-    const c = context.asSlice();
-    js.js_serve(n.ptr, n.len, c.ptr, c.len);
-}
-
-fn hostedServing() callconv(.c) RocStr {
-    return taken(js.js_serving());
-}
-
-fn hostedContext() callconv(.c) RocStr {
-    return taken(js.js_context());
-}
+// The page's location and status: the runtime's, which keeps them while it renders as a server would
+// (in Node), and gives the browser's location.
 
 fn hostedLocation() callconv(.c) RocStr {
     return taken(js.js_location());
@@ -421,14 +382,12 @@ comptime {
     @export(&hostedMemoDone, .{ .name = "roc_memo_done", .visibility = hidden });
     @export(&hostedMemoGet, .{ .name = "roc_memo_get", .visibility = hidden });
     @export(&hostedRefresh, .{ .name = "roc_refresh", .visibility = hidden });
-    @export(&hostedCall, .{ .name = "roc_call", .visibility = hidden });
     @export(&hostedFail, .{ .name = "roc_fail", .visibility = hidden });
     @export(&hostedEventValue, .{ .name = "roc_event_value", .visibility = hidden });
     @export(&hostedBoundary, .{ .name = "roc_boundary", .visibility = hidden });
     @export(&hostedProblem, .{ .name = "roc_problem", .visibility = hidden });
     @export(&hostedRetry, .{ .name = "roc_retry", .visibility = hidden });
     @export(&hostedRequest, .{ .name = "roc_request", .visibility = hidden });
-    @export(&hostedRecord, .{ .name = "roc_record", .visibility = hidden });
     @export(&hostedForNew, .{ .name = "roc_for_new", .visibility = hidden });
     @export(&hostedRowIndex, .{ .name = "roc_row_index", .visibility = hidden });
     @export(&hostedRowSet, .{ .name = "roc_row_set", .visibility = hidden });
@@ -442,9 +401,6 @@ comptime {
     @export(&hostedInterval, .{ .name = "roc_interval", .visibility = hidden });
     @export(&hostedClearTimer, .{ .name = "roc_clear_timer", .visibility = hidden });
     @export(&hostedBrowserCall, .{ .name = "roc_browser_call", .visibility = hidden });
-    @export(&hostedServe, .{ .name = "roc_serve", .visibility = hidden });
-    @export(&hostedServing, .{ .name = "roc_serving", .visibility = hidden });
-    @export(&hostedContext, .{ .name = "roc_context", .visibility = hidden });
     @export(&hostedLocation, .{ .name = "roc_location", .visibility = hidden });
     @export(&hostedStatus, .{ .name = "roc_status", .visibility = hidden });
     @export(&hostedEffectNew, .{ .name = "roc_effect_new", .visibility = hidden });

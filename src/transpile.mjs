@@ -175,12 +175,10 @@ class Transpiler {
 		this.src = source;
 		this.file = file;
 		this.pos = 0;
-		/** The module's name for its server functions (`Demos/Echo`): their calls are named after it. */
+		/** The module's name (`Demos/Echo`): its contexts are named after it. */
 		this.module = module ?? file.split("/").pop().replace(/\.rocx$/, "");
-		/** Whether this is the browser's copy, in which a server function is only its name. */
+		/** Whether this is the browser's copy, in which a `<NoHydration>` has no children. */
 		this.client = client;
-		/** The server functions defined here (`name = server!(…)`): their names and lines. */
-		this.serverFunctions = [];
 		/** The file's <style>s, scoped (styles.mjs): each `{ css, line, component, scope, from, to }`,
 		 * where `from` and `to` are the offsets of the markup it styles: its component's block, or,
 		 * at the file's top level, the whole file. */
@@ -291,11 +289,6 @@ class Transpiler {
 				out += c;
 				this.pos++;
 				last = condition === true ? "(" : c;
-				// The browser's copy of a server function is its name: the call, its lines kept as lines.
-				if (condition?.server && this.client) {
-					const lines = out.slice(condition.at).split("\n").length - 1;
-					out = `${out.slice(0, condition.at)}Server.remote(${rocString(condition.server)})${"\n".repeat(lines)}`;
-				}
 			} else if (c === "{" || c === "[") {
 				if (c === "{") {
 					depth++;
@@ -355,12 +348,7 @@ class Transpiler {
 					continue;
 				}
 				if (word === "server!" && this.src[this.pos] === "(") {
-					const at = out.length;
-					out += this.serverFunction(out, begin);
-					parens.push({ server: `${this.module}.${this.serverFunctions.at(-1).call}`, at });
-					this.pos++;
-					last = "(";
-					continue;
+					this.fail("server!(…) is gone (D-023): define a GET endpoint (get! in a route's +server.roc) and read it with Endpoint.get!(Api.get_…(params))", begin);
 				}
 				if (/^[A-Z]/.test(word) && /^[ \t]*(\([^)\n]*\))?[ \t]*:=/.test(this.src.slice(this.pos))) declared = word;
 				if (word.endsWith("!")) this.effects++;
@@ -374,75 +362,6 @@ class Transpiler {
 		}
 		if (insideBraces) this.fail("this { is never closed", start - 1);
 		return out;
-	}
-
-	/**
-	 * `name = server!(implementation)`: a function that runs on the server, named after its
-	 * module and definition (`Demos/Echo.echo`) for calls from the browser. Returns what it begins
-	 * with in Roc (`Server.local("Demos/Echo.echo", `); the implementation and `)` follow as written.
-	 */
-	serverFunction(out, begin) {
-		const line = out.slice(out.lastIndexOf("\n") + 1);
-		const defined = /^\s*([a-z_][A-Za-z0-9_]*!?)\s*=\s*$/.exec(line);
-		if (!defined) this.fail("server!(…) defines a server function: write it as a definition, `name = server!(|request, input| …)`", begin);
-		const imported = /^import\s+([a-z_][a-z0-9_]*)\.Server\b/m.exec(this.src);
-		if (!imported) this.fail("server!(…) needs `import pf.Server` in this file", begin);
-		this.refuseTry(defined[1], begin);
-		// Reactive, it is a function (`echo!`), called the same on both sides; its call is named without the `!`.
-		const call = defined[1].replace(/!$/, "");
-		this.serverFunctions.push({ name: defined[1], call, line: this.location(begin)[0], package: imported[1] });
-		return `Server.local(${rocString(`${this.module}.${call}`)}, `;
-	}
-
-	/**
-	 * A server function's input and answer go as JSON, and the builtin `Try` has neither an encoder
-	 * nor a parser on this Roc (no `encoder_for`, no `parser_for`, and nothing outside the builtins
-	 * can give it one). A server function whose annotation (the lines above its definition) takes or
-	 * answers one is refused here, at its line, with what to write instead: a tag union, matched as a
-	 * `Try` is. One with no annotation meets the compiler's report, which `rocx check` adds the same
-	 * hint to (remap.mjs).
-	 */
-	refuseTry(name, begin) {
-		const lines = this.src.slice(0, this.src.lastIndexOf("\n", begin) + 1).split("\n").slice(0, -1);
-		const definitionLine = this.location(begin)[0];
-		const head = new RegExp(`^(\\s*)${name.replace("!", "\\!")}\\s*:(?!=)`);
-		// Its annotation is right above it: a line naming it, then any lines indented deeper (an
-		// annotation that goes on).
-		const indent = /^\s*/.exec(this.src.slice(this.src.lastIndexOf("\n", begin) + 1))[0].length;
-		let i = lines.length - 1;
-		while (i >= 0 && !head.test(lines[i]) && lines[i].trim() && /^\s*/.exec(lines[i])[0].length > indent) i--;
-		if (i >= 0 && head.test(lines[i])) {
-			const annotation = lines.slice(i).join("\n").replace(/#.*$/gm, "");
-			const at = /\bTry\(/.exec(annotation);
-			if (!at) return;
-			let depth = 0;
-			let end = at.index + 3;
-			do {
-				if (annotation[end] === "(") depth++;
-				else if (annotation[end] === ")") depth--;
-				end++;
-			} while (depth > 0 && end < annotation.length);
-			const written = annotation.slice(at.index, end).replace(/\s+/g, " ");
-			const inner = written.slice(4, -1);
-			let split = -1;
-			for (let j = 0, d = 0; j < inner.length; j++) {
-				if ("([{".includes(inner[j])) d++;
-				else if (")]}".includes(inner[j])) d--;
-				else if (inner[j] === "," && d === 0) {
-					split = j;
-					break;
-				}
-			}
-			const union = split < 0 ? "[Ok(a), Err(e)]" : `[Ok(${inner.slice(0, split).trim()}), Err(${inner.slice(split + 1).trim()})]`;
-			const line = i + 1 + (annotation.slice(0, at.index).match(/\n/g) ?? []).length;
-			const column = lines[line - 1].indexOf("Try(") + 1;
-			throw new RocxError(
-				`${name} is a server function, and what it takes and answers goes as JSON, which the builtin ${written} can't be on this Roc (Try has no encoder or parser): use a tag union instead, ${union}, which a match reads as it reads a Try`,
-				this.file,
-				line < definitionLine ? line : definitionLine,
-				column > 0 ? column : 1,
-			);
-		}
 	}
 
 	/**
@@ -1055,11 +974,11 @@ export function transpile(source, file = "input.rocx", options = {}) {
 }
 
 /**
- * `transpile`, and the server functions the file defines (`{ name, line }`). `module` names them
- * (`Demos/Echo`, the file's path in its app without `.rocx`; the file's name by default); with
- * `client`, the code is the browser's copy, in which each is its name and nothing it does, each
- * `<NoHydration>` has no children (and, for a `route` file, there is no `middleware`), the imports
- * only those used dropped (`regions`: how many `<NoHydration>`s the file has). Every file is
+ * `transpile`, and what the file has besides its code. `module` names it (`Demos/Echo`, the file's
+ * path in its app without `.rocx`; the file's name by default); with `client`, the code is the
+ * browser's copy, in which each `<NoHydration>` has no children (and, for a `route` file, there is
+ * no `middleware`), the imports only those used dropped (`regions`: how many `<NoHydration>`s the
+ * file has). Every file is
  * components (`import pf.Html`): holes that call something named with `!` are computations, the
  * others static, and handlers effects. `contexts` are the contexts other modules define, by their providers' tags (`{ PicksContext:
  * "Picks.picks_context" }`), and `views` how other modules' components are called (`{ Heading:
@@ -1069,7 +988,7 @@ export function transpile(source, file = "input.rocx", options = {}) {
  * names their classes too, so both copies have the same.
  */
 /**
- * The browser's copy without the imports only server functions (a `<NoHydration>`'s children, or a
+ * The browser's copy without the imports only what it drops (a `<NoHydration>`'s children, or a
  * route file's middleware) used
  * (`import pf.Db`, which the browser's platform hasn't): each such line left empty, so lines stay
  * lines. `server` is the server's copy; an import its code doesn't use either is kept, for the
@@ -1127,8 +1046,8 @@ export function transpileModule(source, file = "input.rocx", { module, client = 
 	if (scopes.length) body = transpiler.code(false);
 	// The browser's copy of a route file has no middleware: only the server runs it.
 	const kept = client && route ? withoutMiddleware(body) : body;
-	if (client && (transpiler.serverFunctions.length || transpiler.regions || kept !== body)) body = withoutServerImports(kept, new Transpiler(source, file, { module, contexts, views, scopes }).code(false));
+	if (client && (transpiler.regions || kept !== body)) body = withoutServerImports(kept, new Transpiler(source, file, { module, contexts, views, scopes }).code(false));
 	const name = file.split("/").pop();
 	const code = `${body.replace(/\n*$/, "")}\n\n${MARKER} ${name}: edit that file, not this one. Line N here is line N there.\n`;
-	return { code, serverFunctions: transpiler.serverFunctions, regions: transpiler.regions, styles: styles.map(({ css, line, component }) => ({ css, line, component })), stories: first.stories };
+	return { code, regions: transpiler.regions, styles: styles.map(({ css, line, component }) => ({ css, line, component })), stories: first.stories };
 }

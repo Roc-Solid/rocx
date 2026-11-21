@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { build } from "../bin/rocx.mjs";
-import { actorsIn, apiModule, appModule, clientMainModule, definitions, findRouteFiles, jobsIn, matches, migrationsIn, pathsModule, rootModule, routeList, routeModule, routesModule, routesTable, routeTable, serverFunctionsIn, serverFunctionsModule, tagNames, viewProblems } from "../src/routes.mjs";
+import { actorsIn, apiModule, appModule, clientMainModule, definitions, findRouteFiles, jobsIn, matches, migrationsIn, pathsModule, rootModule, routeList, routeModule, routesModule, routesTable, routeTable, tagNames, viewProblems } from "../src/routes.mjs";
 
 const files = ["+layout.rocx", "+page.rocx", "+error.rocx", "blog/+layout.rocx", "blog/+page.rocx", "blog/[slug]/+page.rocx", "blog/[slug]/+server.rocx", "blog/new/+page.rocx", "getting-started/+page.rocx", "feed/+server.roc"];
 
@@ -155,62 +155,14 @@ test("routes: Api.openapi, the endpoints' OpenAPI document, which App.program se
 	assert.match(appModule({}), /\t\t\tchain = config\.middleware\n/, "no endpoints: the app's middleware alone");
 });
 
-test("server functions: Routes gives POST /rocx/call/<name> to ServerFunctions (405 for another method), which runs each behind its route file's middleware", () => {
+test("no server functions (D-023): Routes answers nothing at /rocx/call/, and imports no ServerFunctions", () => {
 	const table = routeTable(files);
-	const sources = new Map(files.map((file) => [file, { view: "view!", meta: false, methods: file.endsWith("+server.rocx") || file.endsWith("+server.roc") ? ["get!"] : [], middleware: file === "blog/new/+page.rocx" ? "Guards.writer" : null }]));
+	const sources = new Map(files.map((file) => [file, { view: "view!", meta: false, methods: file.endsWith("+server.rocx") || file.endsWith("+server.roc") ? ["get!"] : [], middleware: null }]));
 	const routes = routesModule(table, { sources });
-	assert.match(routes, /^import ServerFunctions$/m);
-	assert.match(
-		routes,
-		/\t\tif \(request\.path\.starts_with\("\/rocx\/call\/"\)\) \{\n\t\t\tif \(request\.method == "POST"\) \{\n\t\t\t\tServerFunctions\.respond!\(Server\.decode_segment\(request\.path\.drop_prefix\("\/rocx\/call\/"\)\), request, context\)\n\t\t\t\} else \{\n\t\t\t\tEndpoint\.not_allowed\(request, \["POST"\]\)\n\t\t\t\}\n\t\t\} else if /,
-		"tried first: no route file is at /rocx/call/",
-	);
-	const functions = [
-		{ module: "Demos/Echo", name: "echo!", call: "echo", route: null },
-		{ module: "Generated/BlogNewPage", name: "drafts!", call: "drafts", route: { module: "BlogNewPage", middleware: true } },
-		{ module: "Generated/BlogPage", name: "count!", call: "count", route: { module: "BlogPage", middleware: false } },
-	];
-	const module = serverFunctionsModule(functions, { dir: "app" });
-	assert.match(module, /^import pf\.Server\nimport pf\.Middleware\nimport BlogNewPage\nimport BlogPage\nimport \.\.\/Demos\/Echo as DemosEcho\n\nServerFunctions := \[\]\.\{$/m, "a route file's module beside it; another, by its path from Generated/");
-	assert.match(module, /\trespond! = \|called, request, context\|\n/);
-	assert.match(module, /\t\tif \(called == "Demos\/Echo\.echo"\) \{\n\t\t\tServer\.serve!\(called, request, context, DemosEcho\.echo!\)\n/, "behind the app's default only (it ran before, around every request)");
-	assert.match(module, /\t\t\} else if \(called == "Generated\/BlogNewPage\.drafts"\) \{\n\t\t\tMiddleware\.run!\(BlogNewPage\.middleware, request, context, \|passed, handed\| Server\.serve!\(called, passed, handed, BlogNewPage\.drafts!\)\)\n/, "behind its route file's middleware");
-	assert.match(module, /\t\t\} else if \(called == "Generated\/BlogPage\.count"\) \{\n\t\t\tServer\.serve!\(called, request, context, BlogPage\.count!\)\n/, "a route file that names no middleware");
-	assert.match(module, /\t\t\} else \{\n\t\t\tServer\.refused\(404, "no server function is called \$\{called\}"\)\n\t\t\}\n\}/);
-	const none = serverFunctionsModule([], { dir: "app" });
-	assert.match(none, /\trespond! = \|called, _request, _context\| Server\.refused\(404, /, "an app with routes and no server functions: every call is a 404");
-	assert.doesNotMatch(none, /Middleware|import \./);
-	const browser = serverFunctionsModule(functions, { client: true, dir: "app" });
-	assert.doesNotMatch(browser, /DemosEcho|BlogNewPage|serve!|^import \.\./m, "the browser's copy answers none, and imports no server function");
-});
-
-test("server functions: rocx routes lists each, a POST to /rocx/call/<module>.<name>, with its file and its route file's middleware", () => {
-	const dir = mkdtempSync(join(tmpdir(), "rocx-routes-"));
-	const put = (path, text) => {
-		mkdirSync(dirname(join(dir, path)), { recursive: true });
-		writeFileSync(join(dir, path), text);
-	};
-	try {
-		put("routes/+page.rocx", "import pf.Html\n\nview! = |_| <p>Home</p>\n");
-		put("routes/members/+server.roc", "import pf.Server\nimport pf.Html\nimport ../../Guards\n\nmiddleware = Guards.member\n\nget! = |_| Ok(1)\n\nwho! = server!(|_request, {}| Server.context!({}).member)\n");
-		put("Demos/Echo.rocx", "import pf.Html\nimport pf.Server\n\nEcho := [].{\n\techo! : Str => Str\n\techo! = server!(|_request, message| message)\n\t# not = server!( this one\n}\n");
-		put("build/Copy.rocx", "x! = server!(|_, m| m)\n");
-		const table = routeTable(["+page.rocx", "members/+server.roc"]);
-		const sources = new Map([
-			["+page.rocx", definitions("view! = |_| x")],
-			["members/+server.roc", definitions("middleware = Guards.member\n\nget! = |_| Ok(1)\n")],
-		]);
-		assert.deepEqual(serverFunctionsIn(dir, table, sources), [
-			{ name: "Demos/Echo.echo", file: "Demos/Echo.rocx", middleware: null },
-			{ name: "Generated/MembersServer.who", file: "routes/members/+server.roc", middleware: "Guards.member" },
-		]);
-		const listed = routesTable(dir).split("\n");
-		assert.ok(listed.some((line) => /^POST\s+\/rocx\/call\/Demos\/Echo\.echo\s+Demos\/Echo\.rocx\s+-$/.test(line)), listed.join("\n"));
-		assert.ok(listed.some((line) => /^POST\s+\/rocx\/call\/Generated\/MembersServer\.who\s+routes\/members\/\+server\.roc\s+Guards\.member$/.test(line)), listed.join("\n"));
-		assert.deepEqual(listed.map((line) => line.split(/\s+/)[1]), ["PATH", "/", "/members", "/rocx/call/Demos/Echo.echo", "/rocx/call/Generated/MembersServer.who"], "in their places by path");
-	} finally {
-		rmSync(dir, { recursive: true, force: true });
-	}
+	assert.doesNotMatch(routes, /ServerFunctions|rocx\/call/);
+	assert.match(routes, /^import pf\.Endpoint$/m, "its endpoints use Endpoint");
+	const pagesOnly = routesModule(routeTable(["+page.rocx"]), { sources: new Map([["+page.rocx", { view: "view!", meta: false, methods: [], middleware: null }]]) });
+	assert.match(pagesOnly, /^\trespond! = \|request, _context\| \{$/m, "an app whose routes use no context names it _context, so the compiler doesn't warn");
 });
 
 // ---- Route files are components (`import pf.Html`, `view!`): Root, Routes' page answers, App ----
@@ -251,8 +203,8 @@ test("Routes: a component page's GET is Root's page, after its route file's midd
 	const table = routeTable(files);
 	const sources = new Map(files.map((file) => [file, file.endsWith("+server.roc") ? { view: null, meta: false, methods: ["put!"], middleware: null, docs: {} } : component({ middleware: file === "members/+page.rocx" ? "Guards.member" : null })]));
 	const routes = routesModule(table, { sources });
-	assert.match(routes, /^import pf\.Server\nimport pf\.Endpoint\nimport pf\.Middleware\nimport Api\nimport Root\nimport ServerFunctions\nimport MembersPage\n\nRoutes := /m, "no Html (no page is rendered here); a page's module only for its middleware");
-	assert.match(routes, /\} else if \(segments == \["members"\]\) \{\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tMiddleware\.run!\(MembersPage\.middleware, request, context, \|_passed, _handed\| Routes\.page\(200\)\)\n/);
+	assert.match(routes, /^import pf\.Server\nimport pf\.Endpoint\nimport pf\.Middleware\nimport Api\nimport Root\nimport MembersPage\n\nRoutes := /m, "no Html (no page is rendered here); a page's module only for its middleware");
+	assert.match(routes, /\t\tif \(segments == \["members"\]\) \{\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tMiddleware\.run!\(MembersPage\.middleware, request, context, \|_passed, _handed\| Routes\.page\(200\)\)\n/);
 	assert.match(routes, /\} else if \(segments == \[\]\) \{\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tRoutes\.page\(200\)\n/, "no params read: Root reads them");
 	assert.match(routes, /\} else if \(segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("blog"\)\) \{\n\t\t\tparams = \{ slug: segments\.get\(1\) \?\? "" \}\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tRoutes\.page\(200\)\n\t\t\t\} else if \(method == "PUT"\) \{\n\t\t\t\tEndpoint\.respond!\(Api\.put_blog_slug\(params\), request, context\)/, "a page and an endpoint at one path");
 	assert.match(routes, /\t\t\} else \{\n\t\t\tif \(wants_html\) \{\n\t\t\t\tRoutes\.page\(404\)\n\t\t\t\} else \{\n\t\t\t\tRoutes\.text\(404, "nothing at \$\{request\.path\}"\)\n\t\t\t\}\n\t\t\}/);
@@ -264,15 +216,15 @@ test("Routes.pattern: the route that answers a path, as its directory names it, 
 	const files = ["+page.rocx", "+error.rocx", "blog/+page.rocx", "blog/new/+page.rocx", "blog/[slug]/+page.rocx", "api/items/[id]/+server.roc"];
 	const table = routeTable(files);
 	const sources = new Map(files.map((file) => [file, file.endsWith("+server.roc") ? { view: null, meta: false, methods: ["get!"], middleware: null, docs: {} } : component()]));
-	const routes = routesModule(table, { sources, functions: ["Demos/Echo.echo"] });
+	const routes = routesModule(table, { sources });
 	const pattern = routes.slice(routes.indexOf("\tpattern = |path| {"), routes.indexOf("\ttext : U16"));
-	assert.match(pattern, /\t\tif \(path\.starts_with\("\/rocx\/call\/"\)\) \{\n\t\t\tname = Server\.decode_segment\(path\.drop_prefix\("\/rocx\/call\/"\)\)\n\t\t\tif \(\["Demos\/Echo\.echo"\]\.contains\(name\)\) "\/rocx\/call\/\$\{name\}" else ""\n\t\t\}/, "a server function's call, only for the app's own: any other name would be a group of its own");
-	assert.match(pattern, /\} else if \(segments == \["blog", "new"\]\) \{\n\t\t\t"\/blog\/new"\n\t\t\} else if \(segments == \["blog"\]\) \{\n\t\t\t"\/blog"\n/, "fixed paths, in the order Routes.respond! tries them");
+	assert.match(pattern, /\t\tif \(segments == \["blog", "new"\]\) \{\n\t\t\t"\/blog\/new"\n\t\t\} else if \(segments == \["blog"\]\) \{\n\t\t\t"\/blog"\n/, "fixed paths, in the order Routes.respond! tries them");
 	assert.match(pattern, /\} else if \(segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("blog"\)\) \{\n\t\t\t"\/blog\/\[slug\]"\n/, "a param's route, whatever the param");
 	assert.match(pattern, /\} else if \(segments == \[\]\) \{\n\t\t\t"\/"\n/, "routes/ itself");
 	assert.match(pattern, /"\/api\/items\/\[id\]"/, "an endpoint's route");
 	assert.match(pattern, /\t\t\} else \{\n\t\t\t""\n\t\t\}\n\t\}/, "nothing answers: no route");
-	assert.match(routesModule(table, { sources }), /\t\tif \(path\.starts_with\("\/rocx\/call\/"\)\) \{\n\t\t\t""\n\t\t\}/, "an app with no server functions has no call routes");
+	assert.doesNotMatch(routes, /rocx\/call/, "no server functions, no call routes (D-023)");
+	assert.match(routesModule(routeTable([]), { sources: new Map() }), /\tpattern = \|_path\| ""\n/, "no routes: none, and no unused variable");
 });
 
 test("route files' views: a page, a layout and the error page are components, which define view!", () => {
@@ -445,7 +397,7 @@ test("rocx build --client, for an app of component pages: the browser's main.roc
 	}
 });
 
-test("rocx build --client: a route file's middleware, and the imports only it or a server function used, aren't in the browser's copy; the module's line goes after the last import kept", () => {
+test("rocx build --client: a route file's middleware, and the imports only it used, aren't in the browser's copy; the module's line goes after the last import kept", () => {
 	const dir = mkdtempSync(join(tmpdir(), "rocx-client-middleware-"));
 	const put = (path, text) => {
 		mkdirSync(dirname(join(dir, path)), { recursive: true });
@@ -467,13 +419,10 @@ test("rocx build --client: a route file's middleware, and the imports only it or
 				"## Members only.",
 				"middleware : Middleware({ started : Str }, { started : Str, member : Str })",
 				"middleware = Middleware.make(",
-				"\t|request, context, next!| Middlewares.member(request, context, next!),",
+				"\t|request, context, next!| if Users.known!(request) Middlewares.member(request, context, next!) else Server.refused(401, \"no\"),",
 				")",
 				"",
-				"who! : {} => Str",
-				"who! = server!(|_request, {}| Users.name!({}))",
-				"",
-				"view! = |_| <p><Badge /> {who!({})}</p>",
+				"view! = |_| <p><Badge /> {Server.encode_segment(\"a b\")}</p>",
 				"",
 			].join("\n"),
 		);
@@ -483,9 +432,8 @@ test("rocx build --client: a route file's middleware, and the imports only it or
 		const browser = readFileSync(join(dir, "app", "build", "client", "Generated", "MembersPage.roc"), "utf8");
 		assert.match(server, /^import \.\.\/Middlewares\n/m, "the server's copy keeps it all");
 		assert.match(server, /^middleware = Middleware\.make\($/m);
-		assert.doesNotMatch(browser, /middleware|Middlewares|Users/, "no middleware, and none of what only it and the server function used");
+		assert.doesNotMatch(browser, /middleware|Middlewares|Users/, "no middleware, and none of what only it used");
 		assert.match(browser, /^import pf\.Server\n\n\n\nimport \.\.\/Ui\/Badge\nMembersPage := \[\]\.\{$/m, "the module's line after the last import kept, not on a line a dropped import left");
-		assert.match(browser, /^who! = Server\.remote\("Generated\/MembersPage\.who"\)$/m);
 		assert.equal(browser.split("\n").length, server.split("\n").length, "lines stay lines");
 		const at = (code) => code.split("\n").findIndex((line) => line.startsWith("view! = |_| Html.element(\"p\""));
 		assert.ok(at(browser) > 0 && at(browser) === at(server), "the view on its line in both");

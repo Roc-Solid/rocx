@@ -4,8 +4,8 @@
 // and patches only its own node. An async read whose value isn't in yet throws (NotReady) through
 // the Roc frames: the computation stops, the nearest <Loading> shows its fallback until the first
 // values are in, and the computation runs again once its value is. A failure (Failed) shows the
-// nearest <Errored>. Handlers run as effects; one that waits for a server function is run again
-// when the answer is in, its writes dropped meanwhile (writes apply when a handler is done).
+// nearest <Errored>. Handlers run as effects; one that waits for an answer from the server is run
+// again when the answer is in, its writes dropped meanwhile (writes apply when a handler is done).
 // A component runs where it is rendered, once, its reads untracked (as in Solid), so it sees the
 // contexts provided above it; a signal belongs to the run that made it, and goes with it, as do its
 // effects (Solid 2.0's split ones: a tracked compute, then an apply after the flush), cleanups,
@@ -33,15 +33,6 @@ export class Failed extends Error {
 	}
 }
 
-/** How a server function is called: POST /rocx/call/name (under the site's base) with the input as
- * JSON; the answer as text. */
-async function callServer(name, input, base = "/") {
-	const response = await fetch(`${base}rocx/call/${name}`, { method: "POST", headers: { "content-type": "application/json" }, body: input });
-	const text = await response.text();
-	if (!response.ok) throw new Error(`${response.status}: ${text}`);
-	return text;
-}
-
 /** A request as the host passes it to Roc (`Host.request!`), as HTTP writes it: `METHOD target`, a
  * header a line, a blank line, then its body. */
 const wire = (method, target, headers, body) => [`${method} ${target}`, ...headers.map(([name, value]) => `${name}: ${value}`)].join("\n") + `\n\n${body}`;
@@ -66,7 +57,7 @@ class Computation {
 		this.observers = new Set();
 		/** What the last complete run made: child computations, boxes kept for them, cleanups. */
 		this.made = { children: [], kept: [], cleanups: [] };
-		/** Server functions' answers, by name and input: a run again reads them. */
+		/** Its requests' answers, by method, URL and body: a run again reads them. */
 		this.calls = new Map();
 		this.disposed = false;
 		owner?.adopt(this);
@@ -331,28 +322,27 @@ const within = (node, scope) => (node.tag === "svg" && !scope.svg ? { ...scope, 
 export class Runtime {
 	/**
 	 * `base` is the path the site is served under (`/`, or `/rocx/` for a copy at
-	 * `example.github.io/rocx/`): a URL Roc gives that begins with `/` (a server function's, an
-	 * endpoint's) is asked for under it.
+	 * `example.github.io/rocx/`): a URL Roc gives that begins with `/` (an endpoint's) is asked for
+	 * under it.
 	 */
 	/**
 	 * The runtime, its app's wasm loaded from `source`. `effects` are the page's own functions Roc's
 	 * handlers may call (`Browser.call!(name, arg)`), by name, each given the argument, parsed; one
 	 * not there is looked for on `window.rocxEffects` too, for a page start.js wakes up.
 	 */
-	static async load(source, { base = "/", call = (name, input) => callServer(name, input, base), effects = {} } = {}) {
+	static async load(source, { base = "/", effects = {} } = {}) {
 		let runtime;
 		const env = new Proxy({}, { get: (_, name) => (...args) => runtime.imports[name](...args) });
 		const resolved = await source;
 		const bytes = resolved instanceof Response ? await resolved.arrayBuffer() : resolved;
 		const { instance } = await WebAssembly.instantiate(bytes, { env });
-		runtime = new Runtime(instance.exports, call, base);
+		runtime = new Runtime(instance.exports, base);
 		runtime.effects = effects;
 		return runtime;
 	}
 
-	constructor(exports, call, base = "/") {
+	constructor(exports, base = "/") {
 		this.ex = exports;
-		this.callServer = call;
 		/** The path the site is served under, ending with `/`. */
 		this.base = base.endsWith("/") ? base : `${base}/`;
 		/** Boxes kept for Roc, by id: computations, handlers, fallbacks. */
@@ -420,9 +410,6 @@ export class Runtime {
 		/** While hydrating: what the page asked the server for that it didn't carry (`asked`), which
 		 * strict hydration refuses. */
 		this.hydrating = null;
-		/** The server function whose call is being answered (`Host.serve!`), and what its middleware
-		 * handed on (JSON): none here, since the server platform answers every call. */
-		this.serving = { name: "", context: "" };
 		/** The status the page is answered with (`<HttpStatusCode>`), rendering as a server would. */
 		this.status = 200;
 		/** The page the runtime is on: where it listens for forms' submits. */
@@ -534,7 +521,6 @@ export class Runtime {
 				}
 				for (const memo of probe.memos) this.later({ refresh: memo });
 			},
-			js_call: (namePtr, nameLen, inputPtr, inputLen) => this.call(text(namePtr, nameLen), text(inputPtr, inputLen)),
 			js_fail: (ptr, len) => {
 				throw new Failed(text(ptr, len));
 			},
@@ -543,10 +529,6 @@ export class Runtime {
 			js_problem: () => this.give(this.current.boundary.failed ?? ""),
 			js_retry: (id) => this.later({ retry: this.boundaries.get(id) }),
 			js_request: () => this.give(this.request),
-			// A server copy's call, answered (`Server.local`): rendering as a server would, `call`
-			// recorded it already, from the page's answers (and not inside a <NoHydration>, which the
-			// browser never hydrates). The server platform's host records its own.
-			js_record: () => {},
 			js_for_new: () => {
 				const id = ++ids;
 				this.lists.set(id, { id, rows: new Map(), indexes: new Map(), items: new Map() });
@@ -591,11 +573,6 @@ export class Runtime {
 				if (handler?.kind !== "handler") throw new Failed(`Browser.call!("${name}") is a handler's: call it from an event, a frame or a timer, not while computing`);
 				handler.writes.push({ effect: name, arg: text(ap, al) });
 			},
-			js_serve: (np, nl, cp, cl) => {
-				this.serving = { name: text(np, nl), context: text(cp, cl) };
-			},
-			js_serving: () => this.give(this.serving.name),
-			js_context: () => this.give(this.serving.context),
 			js_location: () => this.give(this.location()),
 			js_status: (code) => {
 				if (this.onServer) this.status = code;
@@ -807,57 +784,12 @@ export class Runtime {
 	}
 
 	/**
-	 * A server function's answer, for the running computation or handler: from its calls if in, or
-	 * asked for now. Rendering as a server would, it is the answer the page recorded
-	 * (`renderToString({ answers })`): the server platform answers a call by its route, natively.
-	 */
-	call(name, input) {
-		if (this.onServer) {
-			// Rendering from a page's answers: only those, recorded as the page has them; any other is a
-			// call the server didn't make, a 599.
-			const found = this.given?.find(([named, asked]) => named === name && asked === input);
-			if (!found) throw new Failed(`599: ${name}(${input}) wasn't answered as the server rendered the page`);
-			if (!this.current?.scope?.region) this.recorded.push(found);
-			return this.give(found[2]);
-		}
-		const asking = this.current;
-		const key = `${name}\n${input}`;
-		let answer = asking.calls.get(key);
-		if (!answer && this.answers.has(key)) {
-			// The server answered it while rendering the page: read here, not asked again.
-			answer = { state: "ok", value: this.answers.get(key) };
-			asking.calls.set(key, answer);
-			this.notify("seeded", { name, input, value: answer.value });
-		}
-		if (!answer) {
-			this.hydrating?.asked.push(name);
-			answer = { state: "pending" };
-			const asked = performance.now();
-			this.notify("call", { name, input });
-			answer.promise = this.callServer(name, input).then(
-				(value) => {
-					Object.assign(answer, { state: "ok", value });
-					this.notify("answer", { name, input, value, ms: performance.now() - asked });
-				},
-				(error) => {
-					Object.assign(answer, { state: "failed", error: `${name} failed: ${error.message ?? error}` });
-					this.notify("answer", { name, input, error: answer.error, ms: performance.now() - asked });
-				},
-			);
-			asking.calls.set(key, answer);
-		}
-		asking.used?.add(key);
-		if (answer.state === "pending") throw new NotReady(answer.promise);
-		if (answer.state === "failed") throw new Failed(answer.error);
-		return this.give(answer.value);
-	}
-
-	/**
 	 * An HTTP request for the running computation or handler (`Call.fetch!`): its answer, as
 	 * `{"status":…,"body":…}`, from its calls if in, or asked for now (and it waits, as for a server
-	 * function's). A GET the server made as it rendered the page (`Endpoint.get!`: noted under
+	 * read's). A GET the server made as it rendered the page (`Endpoint.get!`: noted under
 	 * `GET <url>`) is read from the page's answers, not asked again. Rendering as a server would, it
-	 * is the answer the page recorded (`renderToString({ answers })`), as for a server function.
+	 * is the answer the page recorded (`renderToString({ answers })`): the server platform answers a
+	 * GET by its route, natively, and anything else is a 599.
 	 */
 	fetchFor(method, url, headerLines, body) {
 		if (this.onServer) {
@@ -1415,7 +1347,7 @@ export class Runtime {
 		}
 	}
 
-	/** Runs a handler (the id of its box). If it waits for a server function's answer, its writes are
+	/** Runs a handler (the id of its box). If it waits for an answer from the server, its writes are
 	 * dropped, and it runs again once the answer is in. Its `owner` is the computation a timer it
 	 * starts belongs to; an effect's apply passes its `cleanups`, where what it starts goes (dropped
 	 * too, run, if it waits); `done`, if any, is called once it has run (or failed). */
@@ -1992,7 +1924,7 @@ export class Runtime {
 
 	/**
 	 * Hydrates the app the server rendered in `container`: reads the answers it put in the page
-	 * (server functions it called), then binds every computation to the server's nodes, running
+	 * (the GETs its reads made), then binds every computation to the server's nodes, running
 	 * each once. If the DOM isn't what the markup says, it renders the app again, and says so.
 	 * `strict` (the tests') throws if hydrating asked the server for anything the page didn't carry.
 	 */
@@ -2037,7 +1969,7 @@ export class Runtime {
 	 * so and renders `<body>`'s children again, from the same answers, leaving `<head>` alone, since
 	 * rendering it again would run its scripts again and flash its styles. `strict` (the tests')
 	 * throws instead; and throws if hydrating asked the server for anything the page didn't carry
-	 * (a server function's call, an endpoint's GET), which the server should have answered as it
+	 * (an endpoint's GET), which the server should have answered as it
 	 * rendered the page.
 	 */
 	hydrateDocument(doc = document, { strict = false } = {}) {
@@ -2210,7 +2142,7 @@ export class Runtime {
 			case "f":
 				return all(node.c);
 			case "loading":
-				// On the server every server function is a call: nothing waits, and what is inside renders.
+				// On the server every read is answered as it is made: nothing waits, and what is inside renders.
 				return mark("loading", all(node.c));
 			case "show": {
 				const holds = JSON.parse(this.once(node.r, owner, scope));
@@ -2287,14 +2219,14 @@ export class Runtime {
 
 	/**
 	 * On the server: the app's markup as HTML for a request (`path`, `headers` as `[name, value]`
-	 * pairs), and the answers its server functions gave, for the page to carry to the browser. All it
+	 * pairs), and the answers its reads got, for the page to carry to the browser. All it
 	 * made is let go of afterwards. Markup with `<html>` at its top is a whole document, answered as
 	 * the server platform answers a page (`Runtime.documentOf`); any other is an app's range
 	 * (`<!--app-->…<!--/app-->`, for `hydrate`).
 	 *
 	 * Rendered against a page the server rendered (the browser's build, as hydrating it would),
-	 * `answers` are that page's (`[[name, input, answer]]`, its answers script): each call is
-	 * answered from them and recorded as the page has it, and a call the server didn't make fails
+	 * `answers` are that page's (`[[name, input, answer]]`, its answers script): each GET is
+	 * answered from them and recorded as the page has it, and one the server didn't make fails
 	 * (599). `regions` are what the page has inside each `<NoHydration>`, in order
 	 * (`Runtime.regionsOf`): each is written as it is there, since the browser's build has a
 	 * placeholder in its place; without them, a placeholder renders empty.

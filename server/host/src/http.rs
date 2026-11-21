@@ -233,7 +233,7 @@ fn content_type(path: &Path) -> &'static str {
     }
 }
 
-/// The Roc app's answer: a page, an endpoint, a call to a server function.
+/// The Roc app's answer: a page or an endpoint.
 async fn from_roc(request: Request<Incoming>, config: Arc<Config>) -> Response<Body> {
     let method = request.method().clone();
     let target = target(request.uri());
@@ -267,7 +267,7 @@ async fn from_roc(request: Request<Incoming>, config: Arc<Config>) -> Response<B
                             answer.body = body;
                             answer.status = hosted::status().unwrap_or(answer.status);
                         }
-                        // A server function's call its middleware redirected: the page is that
+                        // A read the page made, its middleware redirected: the page is that
                         // redirect, with the cookies it set, and the page's own headers but its type.
                         signals::Rendered::Redirect(redirect) => {
                             let own = answer.headers.lines().filter(|line| !line.to_ascii_lowercase().starts_with("content-type:"));

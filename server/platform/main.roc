@@ -4,13 +4,13 @@
 ## TLS. Jobs, cron, migrations, actors' state and email are Roc, here, built on them. The browser's
 ## platform is `web/platform`, wasm; an app is two programs, one on each, talking over HTTP.
 ##
-## - `respond!(method, target, headers, body, context)` answers a request: a page, an endpoint, a
-##   call to a server function. `target` is the path and the query; `headers` a `name: value` a
+## - `respond!(method, target, headers, body, context)` answers a request: a page or an endpoint.
+##   `target` is the path and the query; `headers` a `name: value` a
 ##   line; `body` the bytes as they came; `context` what the server was started with
 ##   (`--context-file`). Its answer is a `Server.Response`, whose body is text; bytes, sent as they
 ##   are; a body the host fetches from elsewhere and sends on as it comes, never through Roc
 ##   (`Forward`); a page of components (`Page`), which the host renders for the request, every hole run
-##   once, into a document for the browser to hydrate, with the answers its server functions gave
+##   once, into a document for the browser to hydrate, with the answers its endpoint reads got
 ##   and `/rocx/start.js` before `</body>` (a HEAD isn't rendered; `Host.status!`,
 ##   `<HttpStatusCode>`, sets the status); or a stream of events
 ##   (server-sent events, `Events`): a loop the host runs on a thread of its own, to its end, with
@@ -31,9 +31,8 @@
 ## - Under `--dev`, the platform answers `/__rocx/mail` itself: the dev mailbox (`Outbox`), email
 ##   kept rather than sent.
 ## - A page's components are Solid-style (web/runtime.js hydrates the document in the browser). A
-##   server function is a route `respond!` answers (`POST /rocx/call/<name>`, `Server.serve!`); a
-##   component that calls one while the host renders the page is answered by that route,
-##   in-process (`Host.call!`). The modules components are written with (`Html`, `Solid`, `Show`,
+##   GET endpoint a component reads while the host renders the page (`Endpoint.get!`) is answered by
+##   its route, in-process (`Host.fetch!`). The modules components are written with (`Html`, `Solid`, `Show`,
 ##   `For`, `Loading`, `Errored`, `Context`, `Call`, `Router`, `HttpStatusCode`), and HTTP's
 ##   (`Server`, `Endpoint`, `Middleware`, `Events`, `OpenApi`), are the browser's platform's
 ##   (web/platform), copied here by the build, so the same code compiles on both.
@@ -70,10 +69,8 @@ platform ""
 		"roc_action": Host.action!,
 		"roc_boundary": Host.boundary!,
 		"roc_browser_call": Host.browser_call!,
-		"roc_call": Host.call!,
 		"roc_cleanup": Host.cleanup!,
 		"roc_clear_timer": Host.clear_timer!,
-		"roc_context": Host.context!,
 		"roc_context_find": Host.context_find!,
 		"roc_context_get": Host.context_get!,
 		"roc_context_value": Host.context_value!,
@@ -135,15 +132,12 @@ platform ""
 		"roc_memo_get": Host.memo_get!,
 		"roc_memo_new": Host.memo_new!,
 		"roc_problem": Host.problem!,
-		"roc_record": Host.record!,
 		"roc_refresh": Host.refresh!,
 		"roc_request": Host.request!,
 		"roc_retry": Host.retry!,
 		"roc_row_get": Host.row_get!,
 		"roc_row_index": Host.row_index!,
 		"roc_row_set": Host.row_set!,
-		"roc_serve": Host.serve!,
-		"roc_serving": Host.serving!,
 		"roc_signal_get": Host.signal_get!,
 		"roc_signal_new": Host.signal_new!,
 		"roc_signal_set": Host.signal_set!,

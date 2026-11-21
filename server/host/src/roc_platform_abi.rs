@@ -2471,16 +2471,6 @@ pub struct HostBrowserCallArgs {
     pub arg1: RocStr,
 }
 
-/// Arguments for Host.call!
-/// Roc signature: Str, Str => Str
-/// Refcounted fields are owned by the hosted function.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct HostCallArgs {
-    pub arg0: RocStr,
-    pub arg1: RocStr,
-}
-
 /// Arguments for Host.cleanup!
 /// Roc signature: Box({} => Str) => {}
 /// Refcounted fields are owned by the hosted function.
@@ -2966,17 +2956,6 @@ pub struct HostMemoNewArgs {
     pub arg0: RocErasedCallable,
 }
 
-/// Arguments for Host.record!
-/// Roc signature: Str, Str, Str => {}
-/// Refcounted fields are owned by the hosted function.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct HostRecordArgs {
-    pub arg0: RocStr,
-    pub arg1: RocStr,
-    pub arg2: RocStr,
-}
-
 /// Arguments for Host.refresh!
 /// Roc signature: Box({} => Str) => {}
 /// Refcounted fields are owned by the hosted function.
@@ -3024,16 +3003,6 @@ pub struct HostRowSetArgs {
     pub arg0: u64,
     pub arg1: RocStr,
     pub arg2: RocErasedCallable,
-}
-
-/// Arguments for Host.serve!
-/// Roc signature: Str, Str => {}
-/// Refcounted fields are owned by the hosted function.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct HostServeArgs {
-    pub arg0: RocStr,
-    pub arg1: RocStr,
 }
 
 /// Arguments for Host.signal_get!
@@ -3892,15 +3861,6 @@ unsafe extern "C" {
     ///     unsafe { arg1.decref(roc_host); }
     pub fn roc_browser_call(arg0: RocStr, arg1: RocStr);
 
-    /// Hosted symbol for Host.call!
-    /// Roc signature: Str, Str => Str
-    /// Owned arguments. Release each exactly once before returning, unless it is
-    /// moved into storage or into the result:
-    ///     unsafe { arg0.decref(roc_host); }
-    ///     unsafe { arg1.decref(roc_host); }
-    /// The result is owned by Roc: return exactly one owned reference.
-    pub fn roc_call(arg0: RocStr, arg1: RocStr) -> RocStr;
-
     /// Hosted symbol for Host.cleanup!
     /// Roc signature: Box({} => Str) => {}
     /// Owned arguments. Release each exactly once before returning, unless it is
@@ -3911,11 +3871,6 @@ unsafe extern "C" {
     /// Hosted symbol for Host.clear_timer!
     /// Roc signature: U64 => {}
     pub fn roc_clear_timer(arg0: u64);
-
-    /// Hosted symbol for Host.context!
-    /// Roc signature: {} => Str
-    /// The result is owned by Roc: return exactly one owned reference.
-    pub fn roc_context() -> RocStr;
 
     /// Hosted symbol for Host.context_find!
     /// Roc signature: Str => U64
@@ -4323,15 +4278,6 @@ unsafe extern "C" {
     /// The result is owned by Roc: return exactly one owned reference.
     pub fn roc_problem() -> RocStr;
 
-    /// Hosted symbol for Host.record!
-    /// Roc signature: Str, Str, Str => {}
-    /// Owned arguments. Release each exactly once before returning, unless it is
-    /// moved into storage or into the result:
-    ///     unsafe { arg0.decref(roc_host); }
-    ///     unsafe { arg1.decref(roc_host); }
-    ///     unsafe { arg2.decref(roc_host); }
-    pub fn roc_record(arg0: RocStr, arg1: RocStr, arg2: RocStr);
-
     /// Hosted symbol for Host.refresh!
     /// Roc signature: Box({} => Str) => {}
     /// Owned arguments. Release each exactly once before returning, unless it is
@@ -4370,19 +4316,6 @@ unsafe extern "C" {
     ///     unsafe { arg1.decref(roc_host); }
     ///     unsafe { decref_erased_callable(arg2, roc_host); }
     pub fn roc_row_set(arg0: u64, arg1: RocStr, arg2: RocErasedCallable);
-
-    /// Hosted symbol for Host.serve!
-    /// Roc signature: Str, Str => {}
-    /// Owned arguments. Release each exactly once before returning, unless it is
-    /// moved into storage or into the result:
-    ///     unsafe { arg0.decref(roc_host); }
-    ///     unsafe { arg1.decref(roc_host); }
-    pub fn roc_serve(arg0: RocStr, arg1: RocStr);
-
-    /// Hosted symbol for Host.serving!
-    /// Roc signature: {} => Str
-    /// The result is owned by Roc: return exactly one owned reference.
-    pub fn roc_serving() -> RocStr;
 
     /// Hosted symbol for Host.signal_get!
     /// Roc signature: U64 => Box({} -> rigid)

@@ -295,7 +295,6 @@ test("endpoints: a route's +server.rocx answers its methods over HTTP, as JSON, 
 	assert.equal(wrong.status, 405);
 	assert.equal(wrong.allow, "POST");
 	assert.equal((await ask("POST", "/api/shout", '"hi"', { origin: "https://elsewhere.example" })).status, 403, "from another site's page");
-	assert.equal((await ask("POST", "/rocx/call/Demos/Echo.echo", '"hi"', { origin: "https://elsewhere.example" })).status, 403, "a server function too");
 	assert.equal((await ask("GET", "/api/nothing")).status, 404);
 });
 

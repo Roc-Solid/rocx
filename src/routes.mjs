@@ -14,11 +14,9 @@
 // any, so a link to a page that isn't there doesn't compile; and `Generated/Api.roc` has each
 // endpoint, a function of its params, called directly on the server and over HTTP in the browser,
 // and their OpenAPI document (`Api.openapi`), which `GET /openapi.json` answers with if the app says
-// (`App.program`'s `openapi`: `OpenApi.Serving`, `Off` unless it does). The app's server
-// functions (`server!`) are routes too: `Generated/ServerFunctions.roc` answers
-// `POST /rocx/call/<module>.<name>` with each, behind the middleware of the route file that defines
-// it. They stay out of the OpenAPI document: they are the app's own calls, named after its modules,
-// not an API.
+// (`App.program`'s `openapi`: `OpenApi.Serving`, `Off` unless it does). A component reads an
+// endpoint where it renders (`Endpoint.get!`), and sends one from a handler: endpoints are how an
+// app talks to its server (D-023).
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { MARKER, rocString } from "./transpile.mjs";
@@ -269,89 +267,6 @@ const urlOf = (at) =>
 const openApiPath = (at) => `/${at.parts.map((part) => (part.startsWith("[") ? `{${part.slice(1, -1)}}` : part)).join("/")}`;
 
 
-/** Where a server function's calls go: `POST /rocx/call/Demos/Echo.echo`, its input as JSON. */
-export const CALL_PATH = "/rocx/call/";
-
-/** The module `rocx build` writes the server functions' routes in (`Generated/ServerFunctions.roc`). */
-export const SERVER_FUNCTIONS = "ServerFunctions";
-
-/**
- * `Generated/ServerFunctions.roc`: the answer to a call of each server function (`functions`: `{
- * module, name, call, route }`, `route` the route file that defines it, with whether it names
- * `middleware`, or null), as `Routes.respond!` gives it every POST to `/rocx/call/<name>`: its input
- * read, its body run, its answer as JSON (`Server.serve!`), behind its route file's middleware if
- * it is defined in one (the app's default ran before, as for every request); 404 for a name none
- * has. `client`: the browser's copy, which has none (the browser answers no calls).
- */
-export function serverFunctionsModule(functions, { client = false, dir = "." } = {}) {
-	const alias = (f) => (f.route ? f.route.module : f.module.split("/").join(""));
-	const named = (f) => `${f.module}.${f.call}`;
-	const listed = client ? [] : [...functions].sort((a, b) => (named(a) < named(b) ? -1 : named(a) > named(b) ? 1 : 0));
-	const imports = [...new Map(listed.map((f) => [alias(f), f.route ? `import ${f.route.module}` : `import ../${f.module} as ${alias(f)}`])).entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([, line]) => line);
-	const guarded = listed.some((f) => f.route?.middleware);
-	const served = (f, request, context) => `Server.serve!(called, ${request}, ${context}, ${alias(f)}.${f.name})`;
-	const answer = (f) => (f.route?.middleware ? `Middleware.run!(${f.route.module}.middleware, request, context, |passed, handed| ${served(f, "passed", "handed")})` : served(f, "request", "context"));
-	const missing = 'Server.refused(404, "no server function is called ${called}")';
-	const body = listed.length
-		? [
-				"\trespond! = |called, request, context|",
-				...listed.map((f, i) => `\t\t${i ? "} else " : ""}if (called == ${JSON.stringify(named(f))}) {\n\t\t\t${answer(f)}`),
-				`\t\t} else {\n\t\t\t${missing}\n\t\t}`,
-			]
-		: [`\trespond! = |called, _request, _context| ${missing}`];
-	return [
-		client
-			? `## The browser's copy of ${dir}/${GENERATED}/${SERVER_FUNCTIONS}.roc: it answers no calls, and imports`
-			: `## Every server function (\`server!\`) under ${dir}, as the server answers its calls:`,
-		client
-			? "## no server function. Written by rocx build --client."
-			: "## `Routes.respond!` gives it every `POST /rocx/call/<name>`. Written by rocx build: edit the functions.",
-		"import pf.Server",
-		...(guarded ? ["import pf.Middleware"] : []),
-		...imports,
-		"",
-		`${SERVER_FUNCTIONS} := [].{`,
-		"\t## The answer to a call of the server function `called` (`POST /rocx/call/Demos/Echo.echo`, its",
-		"\t## input the request's body, as JSON), given what the app's middleware handed on (`context`):",
-		"\t## 200 and its answer, as JSON; 400 for input it can't read; 404 for a name no function has. A",
-		"\t## function a route file defines runs behind that file's middleware too.",
-		...body,
-		"}",
-		"",
-		`${MARKER} the server functions under ${dir}: rocx build writes it.`,
-		"",
-	].join("\n");
-}
-
-/**
- * The server functions under the app `dir` (`name = server!(…)` in a .rocx file, or in a route
- * file), as `rocx routes` lists them: each's name (`Demos/Echo.echo`), its file (relative to `dir`)
- * and its route file's middleware, if a route file that names one defines it. `table` and `sources`
- * are the routes'.
- */
-export function serverFunctionsIn(dir, table, sources) {
-	const routes = new Map(routedEntries(table).map((entry) => [`routes/${entry.file}`, entry]));
-	const found = [];
-	const walk = (at) => {
-		for (const entry of readdirSync(at).sort()) {
-			if ((entry.startsWith(".") && entry !== WELL_KNOWN) || /^(build|dist|Generated|node_modules)$/.test(entry)) continue;
-			const path = join(at, entry);
-			if (statSync(path).isDirectory()) walk(path);
-			else {
-				const file = relative(dir, path).split(sep).join("/");
-				const route = routes.get(file);
-				if (!file.endsWith(".rocx") && !route) continue;
-				const module = route ? `${GENERATED}/${route.module}` : file.replace(/\.rocx$/, "");
-				for (const [, name] of readFileSync(path, "utf8").matchAll(/^[ \t]*([a-z_][A-Za-z0-9_]*!?)[ \t]*=[ \t]*server!\(/gm)) {
-					found.push({ name: `${module}.${name.replace(/!$/, "")}`, file, middleware: route ? (sources.get(route.file)?.middleware ?? null) : null });
-				}
-			}
-		}
-	};
-	if (existsSync(dir)) walk(dir);
-	return found.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-}
-
 /** What a path's segments are checked against, as Roc (`segments == ["blog"]`, or its length and fixed parts). */
 const matchedBy = (at) =>
 	at.params.length
@@ -380,6 +295,22 @@ export function viewProblems(table, sources) {
 		.map((entry) => `routes/${entry.file}: ${entry.kind === "error" ? "an error page" : `a ${entry.kind}`} is a component, which defines view!: \`${takes[entry.kind]}\``);
 }
 
+/** `Routes.pattern`'s lines: each path's route, tried as `respond!` tries them, and a dev build's
+ * stories; `""` where nothing is. */
+function patternBody(table, storied) {
+	const arms = [
+		...table.paths.map((at) => [matchedBy(at), JSON.stringify(at.path)]),
+		...(storied ? [[`path == ${JSON.stringify(STORIES_PATH)} or path.starts_with(${JSON.stringify(`${STORIES_PATH}/`)})`, JSON.stringify(STORIES_PATH)]] : []),
+	];
+	if (!arms.length) return ['\tpattern = |_path| ""'];
+	return [
+		"\tpattern = |path| {",
+		...(table.paths.length ? ['\t\tsegments = path.split_on("/").keep_if(|segment| !segment.is_empty()).map(Server.decode_segment)'] : []),
+		`\t\t${arms.map(([condition, route], i) => `${i ? " else " : ""}if (${condition}) {\n\t\t\t${route}\n\t\t}`).join("")} else {\n\t\t\t""\n\t\t}`,
+		"\t}",
+	];
+}
+
 /**
  * `Generated/Routes.roc`: the answer to a request. A path's page for a GET a browser sends (one
  * that accepts HTML): `Root`'s, a page the host renders (`Routes.page`), after the route file's
@@ -387,7 +318,7 @@ export function viewProblems(table, sources) {
  * method it doesn't; and, where nothing is, the error page for a browser (404, `Root`'s), in an
  * app with pages, or text.
  */
-export function routesModule(table, { sources, stories = null, functions = [] }) {
+export function routesModule(table, { sources, stories = null }) {
 	// A file's middleware, if it names one, around what answers for it.
 	const guarded = (entry, answer) =>
 		sources.get(entry.file).middleware ? `Middleware.run!(${entry.module}.middleware, request, context, |passed, handed| ${answer("passed", "handed")})` : answer("request", "context");
@@ -429,17 +360,6 @@ export function routesModule(table, { sources, stories = null, functions = [] })
 	const modules = [...table.pages.filter((entry) => sources.get(entry.file).middleware), ...table.servers.filter((entry) => sources.get(entry.file).middleware || sources.get(entry.file).respond)]
 		.map((entry) => entry.module)
 		.sort();
-	// A call of a server function: `Generated/ServerFunctions`, with POST only. No route file can be
-	// at its path either (it begins with `/rocx/call/`, which only rocx answers).
-	const calls = [
-		`if (request.path.starts_with(${JSON.stringify(CALL_PATH)})) {`,
-		'\t\t\tif (request.method == "POST") {',
-		`\t\t\t\tServerFunctions.respond!(Server.decode_segment(request.path.drop_prefix(${JSON.stringify(CALL_PATH)})), request, context)`,
-		"\t\t\t} else {",
-		'\t\t\t\tEndpoint.not_allowed(request, ["POST"])',
-		"\t\t\t}",
-		"\t\t}",
-	].join("\n");
 	// A dev build's stories (`stories`, from rocx build --dev): the catalog, and each story, the app's
 	// page, which `Root` renders (as it renders a page), so the browser hydrates it.
 	const storied = stories !== null;
@@ -464,27 +384,27 @@ export function routesModule(table, { sources, stories = null, functions = [] })
 			]
 		: [];
 	// Last: no route can be at /__rocx/stories (a directory doesn't begin with `_`).
-	const branches = [calls, ...table.paths.map(branch), ...(storied ? [storyBranch] : [])];
+	const branches = [...table.paths.map(branch), ...(storied ? [storyBranch] : [])];
 	return [
 		"## Written by rocx build from the app's routes/: a page for each +page.rocx, in the +layout.rocx",
-		"## files above it; the endpoints each +server.rocx has; the app's server functions",
-		"## (`ServerFunctions`); and +error.rocx where nothing is. Edit those files, not this one.",
+		"## files above it; the endpoints each +server.rocx has; and +error.rocx where nothing is. Edit",
+		"## those files, not this one.",
 		"import pf.Server",
-		"import pf.Endpoint",
+		...(branches.some((branch) => branch.includes("Endpoint.")) ? ["import pf.Endpoint"] : []),
 		...([...routedEntries(table)].some((entry) => sources.get(entry.file).middleware) ? ["import pf.Middleware"] : []),
 		...(table.servers.length ? ["import Api"] : []),
 		...(pages ? [`import ${ROOT}`] : []),
-		"import ServerFunctions",
 		...modules.map((module) => `import ${module}`),
 		...(storied ? ["import Stories"] : []),
 		"",
 		"Routes := [].{",
 		"\t## The answer to `request` (a `Server.Request`): a page, in its layouts, for a browser's GET; an",
-		"\t## endpoint's answer for its method; a server function's, for a POST to `/rocx/call/<name>`; the",
-		"\t## error page (404) where nothing is. A file that names its `middleware` has it run around its",
-		"\t## page, endpoints and server functions. `context` is what the app's middleware handed on: each",
-		"\t## page, layout, endpoint and server function is given it (or what its own middleware hands on).",
-		"\trespond! = |request, context| {",
+		"\t## endpoint's answer for its method; the error page (404) where nothing is. A file that names its",
+		"\t## `middleware` has it run around its page and endpoints. `context` is what the app's middleware",
+		"\t## handed on: each page, layout and endpoint is given it (or what its own middleware hands on).",
+		// `context` goes to each page's and endpoint's middleware or handler: an app whose routes use
+		// none names it `_context`, so the compiler doesn't warn.
+		`\trespond! = |request, ${branches.some((branch) => /\bcontext\b/.test(branch)) ? "context" : "_context"}| {`,
 		'\t\tsegments = request.path.split_on("/").keep_if(|segment| !segment.is_empty()).map(Server.decode_segment)',
 		'\t\tmethod = if (request.method == "HEAD") "GET" else request.method',
 		...(branches.some((branch) => branch.includes("wants_html")) || missing.includes("wants_html") ? ['\t\twants_html = (Server.header(request, "accept") ?? "").contains("text/html")'] : []),
@@ -504,27 +424,9 @@ export function routesModule(table, { sources, stories = null, functions = [] })
 			: []),
 		...storyFunction,
 		"\t## The route that answers `path`, as its route file's directory names it (`/blog/[slug]`): what",
-		"\t## `Server.Request`'s `route` is. A server function's call is `/rocx/call/<name>`, for the app's",
-		"\t## own; a dev build's stories, their path; `\"\"` where nothing is.",
+		"\t## `Server.Request`'s `route` is; a dev build's stories, their path; `\"\"` where nothing is.",
 		"\tpattern : Str -> Str",
-		"\tpattern = |path| {",
-		...(table.paths.length ? ['\t\tsegments = path.split_on("/").keep_if(|segment| !segment.is_empty()).map(Server.decode_segment)'] : []),
-		[
-			[
-				`\t\tif (path.starts_with(${JSON.stringify(CALL_PATH)})) {`,
-				...(functions.length
-					? [
-							`\t\t\tname = Server.decode_segment(path.drop_prefix(${JSON.stringify(CALL_PATH)}))`,
-							`\t\t\tif ([${functions.map((name) => JSON.stringify(name)).join(", ")}].contains(name)) "${CALL_PATH}\${name}" else ""`,
-						]
-					: ['\t\t\t""']),
-				"\t\t}",
-			].join("\n"),
-			...table.paths.map((at) => ` else if (${matchedBy(at)}) {\n\t\t\t${JSON.stringify(at.path)}\n\t\t}`),
-			...(storied ? [` else if (path == ${JSON.stringify(STORIES_PATH)} or path.starts_with(${JSON.stringify(`${STORIES_PATH}/`)})) {\n\t\t\t${JSON.stringify(STORIES_PATH)}\n\t\t}`] : []),
-			' else {\n\t\t\t""\n\t\t}',
-		].join(""),
-		"\t}",
+		...patternBody(table, storied),
 		"",
 		"\ttext : U16, Str -> Server.Response",
 		'\ttext = |status, body| Server.response(status, [{ name: "content-type", value: "text/plain; charset=utf-8" }], body)',
@@ -962,10 +864,9 @@ export function clientMainModule({ web, packages = [], dir = "." }) {
 /**
  * Every route, as `rocx routes` prints it, by path: each method a path answers, the file that answers
  * it (relative to the app), and the middleware that file names (the app's default runs before it,
- * for every request); each server function in `functions` (`serverFunctionsIn`), a POST to
- * `/rocx/call/<name>`; and, with endpoints, their OpenAPI document (no file: rocx writes it).
+ * for every request); and, with endpoints, their OpenAPI document (no file: rocx writes it).
  */
-export function routeList(table, sources, functions = []) {
+export function routeList(table, sources) {
 	const rows = [];
 	// By path, so a directory's routes are together, as its files are.
 	for (const at of [...table.paths].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))) {
@@ -976,22 +877,16 @@ export function routeList(table, sources, functions = []) {
 		// `respond!`: whatever else comes.
 		if (at.server && sources.get(at.server.file).respond) rows.push({ method: "*", path: at.path, file: `routes/${at.server.file}`, middleware: sources.get(at.server.file).middleware });
 	}
-	// The server functions (`serverFunctionsIn`), each a POST to its own path, in their place by path.
-	for (const f of functions) {
-		const row = { method: "POST", path: `${CALL_PATH}${f.name}`, file: f.file, middleware: f.middleware };
-		const at = rows.findIndex((other) => other.path > row.path);
-		rows.splice(at < 0 ? rows.length : at, 0, row);
-	}
 	if (table.error) rows.push({ method: "*", path: "(anything else)", file: `routes/${table.error.file}`, middleware: null });
 	return rows;
 }
 
-/** `rocx routes`: the routes of the app in `dir` (its `routes/`, and its server functions), a line each, in columns. */
+/** `rocx routes`: the routes of the app in `dir` (its `routes/`), a line each, in columns. */
 export function routesTable(dir) {
 	const routes = join(dir, "routes");
 	const table = routeTable(findRouteFiles(routes));
 	const sources = new Map(routedEntries(table).map((entry) => [entry.file, definitions(readFileSync(join(routes, ...entry.file.split("/")), "utf8"))]));
-	const rows = routeList(table, sources, serverFunctionsIn(dir, table, sources)).map((row) => [row.method, row.path, row.file, row.middleware ?? "-"]);
+	const rows = routeList(table, sources).map((row) => [row.method, row.path, row.file, row.middleware ?? "-"]);
 	const header = ["METHOD", "PATH", "FILE", "MIDDLEWARE (after the app's default)"];
 	const widths = header.map((title, i) => Math.max(title.length, ...rows.map((row) => row[i].length)));
 	return [header, ...rows].map((row) => row.map((cell, i) => (i === row.length - 1 ? cell : cell.padEnd(widths[i]))).join("  ")).join("\n");

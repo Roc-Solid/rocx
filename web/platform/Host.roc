@@ -22,11 +22,6 @@ Host := [].{
 	## Runs it once, noting the memos it reads, and computes those again, asking the server again.
 	refresh! : Box(() => Str) => {}
 
-	## A server function's answer (JSON): its route's 200 body. In the browser, a request (the caller
-	## aborts until it is in); on the server, the same request answered in-process. Any other
-	## answer fails the caller with its status and text.
-	call! : Str, Str => Str
-
 	## Fails the caller, with why: the nearest <Errored> shows it.
 	fail! : Str => {}
 
@@ -55,19 +50,6 @@ Host := [].{
 	## On the server: the request being answered, as HTTP writes it: `METHOD target`, a header a
 	## line (`name: value`), a blank line, then its body.
 	request! : {} => Str
-
-	## On the server: a server function's answer, noted for the page (name, input, answer: JSON).
-	record! : Str, Str, Str => {}
-
-	## On the server: the request being answered is a call of the server function named here, and
-	## its middleware handed on this context (JSON). In the browser it is never called.
-	serve! : Str, Str => {}
-
-	## The server function whose call is being answered, or "": never one in the browser.
-	serving! : {} => Str
-
-	## What its middleware handed on (JSON), while a server function's call is answered.
-	context! : {} => Str
 
 	## Where the page is: its path, and a query after a `?`, a trailing slash dropped. On the server,
 	## the request's; in the browser, `location.pathname` and `location.search`.

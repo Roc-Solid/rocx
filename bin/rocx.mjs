@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 // rocx build <dir>… [--client <out>] [--dev]
 //                          turn every .rocx file under the directories into the .roc beside it,
-//                          answer their server functions (`server!`) in <dir>/Generated/ServerFunctions.roc,
 //                          and with --client write the browser's copy of the app to <out>: every
-//                          module, a server function only its name (and a route file without its
+//                          module, a <NoHydration>'s children gone (and a route file without its
 //                          `middleware`, the imports only those used gone)
 //                          and, for an app with routes/ (+page.rocx, +layout.rocx, +error.rocx), a
 //                          module for each route file and Generated/Routes.roc, Paths.roc and App.roc,
@@ -23,7 +22,7 @@
 //                          and the app's stories/ (modules of stories alone), which another build skips
 // rocx check -- <command>  run a command (`roc check app/main.roc`) with its reports pointed into .rocx files
 // rocx lint <dir>…         refuse Html.source_text in hand-written .roc files
-// rocx routes <dir>        every route the app's routes/ has, and its server functions: its methods,
+// rocx routes <dir>        every route the app's routes/ has: its methods,
 //                          its file, its middleware
 // rocx fmt [--check] <path>…
 //                          format the .rocx files, and the hand-written .roc files, under each directory
@@ -36,7 +35,7 @@ import { fileURLToPath } from "node:url";
 import { FormatError, formatRocx, rocFmt } from "../src/format.mjs";
 import { remap } from "../src/remap.mjs";
 import { STORIES_DIR, storiesModule, storyIds } from "../src/stories.mjs";
-import { actorsIn, APP, apiModule, appModule, clientMainModule, definitions, findRouteFiles, GENERATED, hasPages, jobsIn, METHODS, migrationsIn, pathsModule, ROOT, rootModule, ROUTE_FILE, routeModule, routesModule, routesTable, routeTable, SERVER_FUNCTIONS, serverFunctionsModule, tagNames, viewProblems } from "../src/routes.mjs";
+import { actorsIn, APP, apiModule, appModule, clientMainModule, definitions, findRouteFiles, GENERATED, hasPages, jobsIn, METHODS, migrationsIn, pathsModule, ROOT, rootModule, ROUTE_FILE, routeModule, routesModule, routesTable, routeTable, tagNames, viewProblems } from "../src/routes.mjs";
 import { contextsDefined, MARKER, pascalCase, RocxError, rocString, transpileModule, viewsDefined } from "../src/transpile.mjs";
 
 /** Where rocx is: the browser's platform (web/platform) and what a page loads (web/start.js, web/runtime.js) are beside it. */
@@ -109,12 +108,11 @@ function moveHeader(code, from, to) {
 
 /**
  * The browser's copy of the app under `dir`, in `out`: every .roc file, at the same place, but a
- * server function is only its name (`Server.remote`), so what it does is never compiled for the
- * browser; and a Generated/ServerFunctions.roc that answers none. `client` holds the browser's code
- * for each .rocx file.
+ * `<NoHydration>` has no children and a route file no middleware, so what only the server runs is
+ * never compiled for the browser. `client` holds the browser's code for each .rocx file.
  * Build output (`build/`, `dist/`) stays out.
  */
-function writeClient(dir, out, client, listed, { main = null } = {}) {
+function writeClient(dir, out, client, { main = null } = {}) {
 	const root = resolve(dir);
 	const target = resolve(out);
 	if (target === root || relative(target, root).split(sep)[0] !== "..") throw new Error(`--client ${out}: it would hold ${dir} itself`);
@@ -125,10 +123,7 @@ function writeClient(dir, out, client, listed, { main = null } = {}) {
 	// build replaces it.
 	clear(target, (path) => dirname(path) === join("static", "rocx") && path.endsWith(".wasm"));
 	const skip = (path) => resolve(path) === target || /^(build|dist)$/.test(path.split(sep).pop());
-	// An app that is its own browser app too (a test's) still finds the module: one that answers none.
-	write(join(target, GENERATED, `${SERVER_FUNCTIONS}.roc`), serverFunctionsModule([], { client: true, dir: listed }));
 	for (const path of files(dir, ".roc", skip)) {
-		if (path === join(dir, GENERATED, `${SERVER_FUNCTIONS}.roc`)) continue;
 		const to = join(target, relative(dir, path));
 		const code = client.get(path.replace(/\.roc$/, ".rocx")) ?? readFileSync(path, "utf8");
 		write(to, moveHeader(code, path, to));
@@ -264,7 +259,6 @@ export function build(dirs, { client, cwd = process.cwd(), log = console.error, 
 	// or error page.
 	for (const given of dirs) {
 		const dir = resolve(cwd, given);
-		const found = [];
 		const browser = new Map();
 		// The app's Roc, as rocx writes it from each .rocx file, for the names that could be tags.
 		const codes = [];
@@ -321,13 +315,10 @@ export function build(dirs, { client, cwd = process.cwd(), log = console.error, 
 				const file = relative(cwd, path);
 				const module = `${GENERATED}/${entry.module}`;
 				const where = { name: entry.module, source: path, generated: out };
-				const { code, serverFunctions, styles: styled } = transpileModule(source, file, { module, contexts, views });
-				// A function a route file defines runs behind that file's middleware.
-				const route = { module: entry.module, middleware: Boolean(definitions(source).middleware) };
-				found.push(...serverFunctions.map(({ name, call }) => ({ module, name, call, route })));
+				const { code, styles: styled } = transpileModule(source, file, { module, contexts, views });
 				codes.push(code);
 				styles.push(...styled.map((style) => ({ file: relative(dir, path).split(sep).join("/"), ...style })));
-				// The browser's copy: a server function only its name, no middleware, and the imports only they used gone.
+				// The browser's copy: no middleware, no <NoHydration>'s children, and the imports only they used gone.
 				if (client) browser.set(out.replace(/\.roc$/, ".rocx"), routeModule(transpileModule(source, file, { module, client: true, route: true, contexts, views }).code, where));
 				if (write(out, routeModule(code, where))) written++;
 			} catch (error) {
@@ -353,12 +344,11 @@ export function build(dirs, { client, cwd = process.cwd(), log = console.error, 
 				const source = linkComponents(readFileSync(path, "utf8"), path, dir, packages);
 				const file = relative(cwd, path);
 				const module = relative(dir, path).replace(/\.rocx$/, "").split(sep).join("/");
-				const { code, serverFunctions, regions, styles: styled, stories: told } = transpileModule(source, file, { module, contexts, views });
-				found.push(...serverFunctions.map(({ name, call }) => ({ module, name, call, route: null })));
+				const { code, regions, styles: styled, stories: told } = transpileModule(source, file, { module, contexts, views });
 				codes.push(code);
 				styles.push(...styled.map((style) => ({ file: relative(dir, path).split(sep).join("/"), ...style })));
 				stories.push(...told.map((story) => ({ file: relative(dir, path).split(sep).join("/"), module, ...story })));
-				if (client) browser.set(path, serverFunctions.length || regions ? transpileModule(source, file, { module, client: true, contexts, views }).code : code);
+				if (client) browser.set(path, regions ? transpileModule(source, file, { module, client: true, contexts, views }).code : code);
 				if (write(out, code)) written++;
 			} catch (error) {
 				if (!(error instanceof RocxError)) throw error;
@@ -398,20 +388,6 @@ export function build(dirs, { client, cwd = process.cwd(), log = console.error, 
 			}
 		}
 		if (failed) continue;
-		const listed = join(dir, GENERATED, `${SERVER_FUNCTIONS}.roc`);
-		if (existsSync(listed) && !isGenerated(listed)) {
-			log(`✗ ${relative(cwd, listed)} exists and was not written by rocx; rename it`);
-			failed = true;
-			continue;
-		}
-		// Server functions are deprecated (D-023): a page's data is a GET endpoint, read with
-		// `Endpoint.get!`. Each still works, until they are removed; the build says which to move.
-		for (const { module, name } of found) {
-			log(`⚠ ${module}.${name.replace(/!$/, "")}: server!(…) is deprecated. Define it as a GET endpoint (get! in a route's +server.roc) and read it with Endpoint.get!(Api.…) (D-023)`);
-		}
-		// The server functions' routes: for an app with any, or with routes/ (whose Routes answers
-		// `/rocx/call/…` with it), or that had it (an app may import it).
-		if ((found.length || routeFiles.length || existsSync(listed)) && write(listed, serverFunctionsModule(found, { dir: relative(cwd, dir) || "." }))) written++;
 		// The browser's app, for an app of component pages (`--client`): written with its copy.
 		let main = null;
 		// The routes: which page or endpoint a request is for, every page's path, every endpoint.
@@ -459,7 +435,7 @@ export function build(dirs, { client, cwd = process.cwd(), log = console.error, 
 				if (failed) continue;
 			}
 			const generated = [
-				["Routes", routesModule(table, { sources, stories: placed, functions: found.map((f) => `${f.module}.${f.call}`) })],
+				["Routes", routesModule(table, { sources, stories: placed })],
 				...(placed ? [["Stories", storiesModule(placed, { title: basename(dir), root: dir })]] : []),
 				["Paths", pathsModule(table)],
 				["Styles", stylesModule(styles)],
@@ -487,18 +463,19 @@ export function build(dirs, { client, cwd = process.cwd(), log = console.error, 
 		if (!routeFiles.length && styles.length) log(`rocx: ${relative(cwd, dir) || "."} has <style>s (${[...new Set(styles.map((style) => style.file))].join(", ")}) but no routes/, so no layout to put them in`);
 		// A .roc file rocx wrote for a .rocx file that is gone is stale, and so is a route's that is gone.
 		// (A route file's .roc beside it, from a rocx before routes, is stale too: its module is under Generated/.)
-		// So is a story module's, but in a dev build.
+		// So is a story module's, but in a dev build; and Generated/ServerFunctions.roc, from a rocx
+		// with server functions (D-023).
 		for (const path of files(dir, ".roc")) {
 			const stale = !existsSync(path.replace(/\.roc$/, ".rocx")) || isRoute(path.replace(/\.roc$/, ".rocx")) || (storiesOnly(path) && !dev);
-			if (path !== listed && !routeOutputs.has(path) && stale && isGenerated(path)) unlinkSync(path);
+			if (!routeOutputs.has(path) && stale && isGenerated(path)) unlinkSync(path);
 		}
-		if (client) writeClient(dir, resolve(cwd, client), browser, relative(cwd, dir) || ".", { main });
+		if (client) writeClient(dir, resolve(cwd, client), browser, { main });
 	}
 	if (written) log(`rocx: ${written} file${written === 1 ? "" : "s"} written`);
 	return !failed;
 }
 
-/** `rocx routes <dir>`: every route the app's routes/ has, and its server functions: the methods each answers, and the middleware each file names. */
+/** `rocx routes <dir>`: every route the app's routes/ has: the methods each answers, and the middleware each file names. */
 function routes(dir) {
 	console.log(routesTable(resolve(dir)));
 }

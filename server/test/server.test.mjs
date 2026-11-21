@@ -2,7 +2,7 @@
 // natively and run, asked over HTTP. A crash is a 500 and the server goes on, leaving nothing
 // allocated; a body is the bytes as they came, and an answer may be bytes; a forwarded answer is
 // fetched from a server this file runs and sent on as it comes, ranges and all; a page of
-// components is rendered whole, a document with its server functions' answers; a stream is a loop,
+// components is rendered whole, a document with the answers its endpoint reads got; a stream is a loop,
 // sent as it runs and stopped when its client goes; Postgres reads rows into records, in
 // transactions that roll back on an error or a crash; jobs run, retry and fail for good, and are
 // queued only if their transaction commits; a kind says how many times its jobs are tried and how
@@ -1907,10 +1907,13 @@ test("actors: one idle for --actor-idle-ms is let go, and the next message wakes
 	}
 });
 
-// ---- Components the server renders, and server functions as routes ----
+// ---- Components the server renders, and the endpoints they read ----
 
-/** The probe as the server renders it on its page: `member` is what its call of `Probe.member`
- * (behind `members_only`) renders, inside its <Errored>. */
+/** A GET a page read as the server rendered it, as the page's answers script has it. */
+const carried = (url, status, body) => [`GET ${url}`, "", JSON.stringify({ status, body })];
+
+/** The probe as the server renders it on its page: `member` is what its read of `GET
+ * /probe/member` (behind `members_only`) renders, inside its <Errored>. */
 const probe = (member) =>
 	'<div class="probe big" title="count 41"><p><!--x-->42<!--/x--></p><p><!--x-->82<!--/x--></p><p><!--x-->HELLO<!--/x--></p>' +
 	"<ul><!--for--><!--row--><li><!--x-->0 ada<!--/x--></li><!--/row--><!--row--><li><!--x-->1 grace<!--/x--></li><!--/row--><!--/for--></ul>" +
@@ -1924,67 +1927,62 @@ const probe = (member) =>
 	"</div>";
 
 test("pages of components: signals, memos, a keyed <For>, a <Show>, an <Errored> that catches, every kind of attribute, raw text and a doctype, as the browser's runtime renders them", { skip }, async () => {
+	const shouted = carried("/probe/shout/hello", 200, '"HELLO"');
+	const refused = carried("/probe/member", 401, "members only");
 	assert.equal(
 		await text("/probe?from=probe"),
-		`<!doctype html><html><body>${probe('<!--errored:failed--><p class="refused"><!--x-->401: members only<!--/x--></p><!--/errored-->')}<p>after</p>` +
-			'<script type="application/json" class="rocx-answers">[["Probe.shout","\\"hello\\"","\\"HELLO\\""]]</script><script type="module" data-rocx src="/rocx/start.js"></script></body></html>',
-		"its server functions' answers before </body>; the refused call isn't among them",
+		`<!doctype html><html><body>${probe('<!--errored:failed--><p class="refused"><!--x-->GET /probe/member: 401: members only<!--/x--></p><!--/errored-->')}<p>after</p>` +
+			`<script type="application/json" class="rocx-answers">${JSON.stringify([shouted, refused])}</script><script type="module" data-rocx src="/rocx/start.js"></script></body></html>`,
+		"its reads' answers before </body>, the refused one too, so the browser fails where the server did",
 	);
 });
 
-test("server functions: a call while the server renders is answered by the function's route, in-process, behind its middleware, and noted for the page", { skip }, async () => {
+test("endpoint reads: a read while the server renders is answered by the endpoint's route, in-process, behind its middleware, and noted for the page", { skip }, async () => {
 	const page = await text("/probe?from=probe", { headers: { cookie: "member=Ada" } });
-	assert.ok(page.includes(probe('<!--errored--><p class="member"><!--x-->member Ada, POST /rocx/call/Probe.member<!--/x--></p><!--/errored-->')), page);
+	assert.ok(page.includes(probe('<!--errored--><p class="member"><!--x-->member Ada, GET /probe/member<!--/x--></p><!--/errored-->')), page);
+	const answers = [carried("/probe/shout/hello", 200, '"HELLO"'), carried("/probe/member", 200, '"member Ada, GET /probe/member"')];
 	assert.ok(
-		page.endsWith('<script type="application/json" class="rocx-answers">[["Probe.shout","\\"hello\\"","\\"HELLO\\""],["Probe.member","{}","\\"member Ada, POST /rocx/call/Probe.member\\""]]</script><script type="module" data-rocx src="/rocx/start.js"></script></body></html>'),
+		page.endsWith(`<script type="application/json" class="rocx-answers">${JSON.stringify(answers)}</script><script type="module" data-rocx src="/rocx/start.js"></script></body></html>`),
 		"its answer, byte for byte what the browser would get, beside the page",
 	);
 });
 
-test("server functions: the browser's POST is answered by the function's route, behind its middleware; anything else is refused", { skip }, async () => {
-	const call = (name, body, init = {}) => get(`/rocx/call/${name}`, { method: "POST", body, ...init });
-	const shouted = await call("Probe.shout", '"psst"');
+test("endpoints: what a page reads is answered over HTTP too, behind its middleware; JSON both ways (F64s, a tag union, nominal types); and /rocx/call/ is gone", { skip }, async () => {
+	const shouted = await get("/probe/shout/psst", { headers: { accept: "application/json" } });
 	assert.equal(shouted.status, 200);
 	assert.equal(shouted.headers.get("content-type"), "application/json");
 	assert.equal(await shouted.text(), '"PSST"');
-	const member = await call("Probe.member", "{}", { headers: { cookie: "member=Grace" } });
+	const member = await get("/probe/member", { headers: { cookie: "member=Grace" } });
 	assert.equal(member.status, 200);
-	assert.equal(await member.text(), '"member Grace, POST /rocx/call/Probe.member"', "its body ran, given the request and what the middleware handed on");
-	const refused = await call("Probe.member", "{}");
+	assert.equal(await member.text(), '"member Grace, GET /probe/member"', "its handler ran, given the request and what the middleware handed on");
+	const refused = await get("/probe/member");
 	assert.equal(refused.status, 401, "refused: the middleware's status");
 	assert.equal(await refused.text(), "members only");
-	const got = await get("/rocx/call/Probe.shout");
-	assert.equal(got.status, 405);
-	assert.equal(got.headers.get("allow"), "POST");
-	assert.equal((await call("Probe.nope", '"x"')).status, 404);
-	const unread = await call("Probe.shout", "7");
-	assert.equal(unread.status, 400, "input it can't read");
-	assert.match(await unread.text(), /^Probe\.shout can't read its input/);
-	assert.equal((await call("Probe.unguarded", "{}")).status, 500, "a context its middleware doesn't hand on");
-	const measured = await call("Probe.measure", '{"seconds":1.5,"parts":4}');
+	const posted = (path, body) => get(path, { method: "POST", body, headers: { "content-type": "application/json" } });
+	const measured = await posted("/probe/measure", '{"seconds":1.5,"parts":4}');
 	assert.deepEqual([measured.status, await measured.text()], [200, '{"each":0.375,"seconds":1.5}'], "F64s, each way, as JSON numbers");
-	const infinite = await call("Probe.measure", '{"seconds":1.5,"parts":0}');
+	const infinite = await posted("/probe/measure", '{"seconds":1.5,"parts":0}');
 	assert.equal(infinite.status, 500, "an answer with a number JSON can't write");
-	assert.equal(await infinite.text(), "Probe.measure's answer: it holds a number JSON can't write (an F64 that is NaN or an infinity)");
-	assert.deepEqual([await (await call("Probe.length", '"Roc"')).text(), await (await call("Probe.length", '""')).text()], ['{"Ok":3}', '{"Err":"Empty"}'], "a tag union in Try's place, as JSON");
-	const awarded = await call("Probe.award", '{"badge":{"name":"gold"},"points":1.25}');
+	assert.equal(await infinite.text(), "POST /probe/measure's answer: it holds a number JSON can't write (an F64 that is NaN or an infinity)");
+	assert.deepEqual([await (await posted("/probe/length", '"Roc"')).text(), await (await posted("/probe/length", '""')).text()], ['{"Ok":3}', '{"Err":"Empty"}'], "a tag union in Try's place, as JSON");
+	const awarded = await posted("/probe/award", '{"badge":{"name":"gold"},"points":1.25}');
 	assert.deepEqual(
 		[awarded.status, await awarded.text()],
 		[200, '{"badge":{"name":"gold"},"holder":{"badge":{"name":"admin"},"name":"Ada","since":0.5},"points":2.5}'],
-		"a nominal type with a derived encoder beside other fields, and an F64, in the context, the input and the answer",
+		"a nominal type with a derived encoder beside other fields, and an F64, in the context, the body and the answer",
 	);
-	await logsEvent({ msg: "rocx server: Roc crashed", method: "POST", target: "/rocx/call/Probe.unguarded", error: /^Probe\.unguarded: the context its middleware handed on isn't what it reads/ });
+	assert.equal((await get("/rocx/call/Probe.shout", { method: "POST", body: '"x"' })).status, 404, "no server functions: nothing answers /rocx/call/");
 });
 
-test("components and server functions: rendering, calling, failing and crashing again and again leaves nothing allocated", { skip }, async () => {
+test("components and endpoint reads: rendering, reading, failing and crashing again and again leaves nothing allocated", { skip }, async () => {
 	await text("/probe?from=probe");
 	for (let i = 0; i < 50; i++) {
 		await Promise.all([
 			text("/probe?from=probe"),
 			text("/probe?from=probe", { headers: { cookie: "member=Ada" } }),
-			post("/rocx/call/Probe.shout", '"x"'),
-			text("/rocx/call/Probe.member", { method: "POST", body: "{}" }),
-			text("/rocx/call/Probe.unguarded", { method: "POST", body: "{}" }),
+			text("/probe/shout/x"),
+			text("/probe/member"),
+			post("/probe/measure", '{"seconds":1,"parts":0}'),
 		]);
 	}
 	// The background loops (workers, the cron ticker) allocate for a moment now and then, so a single
@@ -1998,8 +1996,9 @@ test("components and server functions: rendering, calling, failing and crashing 
  * before `</body>`. */
 const scripts = (answers) => `<script type="application/json" class="rocx-answers">${answers}</script><script type="module" data-rocx src="/rocx/start.js"></script>`;
 
-/** The test app's `document!` as the host renders it: `member` is what its call of `Probe.member`
- * (behind `members_only`) renders, inside its <Errored>; `answers`, the calls the render recorded. */
+/** The test app's `document!` as the host renders it: `member` is what its read of `GET
+ * /probe/member` (behind `members_only`) renders, inside its <Errored>; `answers`, the GETs the
+ * render recorded. */
 const documentPage = (member, answers) =>
 	'<!doctype html><html lang="en"><head><title>A page</title></head><body>' +
 	'<p class="count"><!--x-->1<!--/x--></p>' +
@@ -2010,7 +2009,7 @@ const documentPage = (member, answers) =>
 	scripts(answers) +
 	"</body></html>";
 
-const shoutAnswer = '["Probe.shout","\\"page\\"","\\"PAGE\\""]';
+const shoutAnswer = carried("/probe/shout/page", 200, '"PAGE"');
 
 test("pages of components: rendered whole, every hole once, a doctype first, the answers and start.js before </body>", { skip }, async () => {
 	const answer = await get("/page?from=test");
@@ -2019,18 +2018,15 @@ test("pages of components: rendered whole, every hole once, a doctype first, the
 	assert.equal(answer.headers.get("x-page"), "yes", "the answer's own headers");
 	assert.equal(
 		await answer.text(),
-		documentPage('<!--errored:failed--><p class="refused"><!--x-->401: members only<!--/x--></p><!--/errored-->', `[${shoutAnswer}]`),
-		"<Loading> renders what is inside it, a memo is computed as it is made, an <Errored> catches its failure; the refused call isn't among the answers",
+		documentPage('<!--errored:failed--><p class="refused"><!--x-->GET /probe/member: 401: members only<!--/x--></p><!--/errored-->', JSON.stringify([shoutAnswer, carried("/probe/member", 401, "members only")])),
+		"<Loading> renders what is inside it, a memo is computed as it is made, an <Errored> catches its failure; the refusal is among the answers",
 	);
 });
 
-test("pages of components: a server function behind its middleware, called as the page renders, is answered by its route and noted for the page", { skip }, async () => {
+test("pages of components: an endpoint behind its middleware, read as the page renders, is answered by its route and noted for the page", { skip }, async () => {
 	assert.equal(
 		await text("/page?from=test", { headers: { cookie: "member=Ada" } }),
-		documentPage(
-			'<!--errored--><p class="member"><!--x-->member Ada, POST /rocx/call/Probe.member<!--/x--></p><!--/errored-->',
-			`[${shoutAnswer},["Probe.member","{}","\\"member Ada, POST /rocx/call/Probe.member\\""]]`,
-		),
+		documentPage('<!--errored--><p class="member"><!--x-->member Ada, GET /probe/member<!--/x--></p><!--/errored-->', JSON.stringify([shoutAnswer, carried("/probe/member", 200, '"member Ada, GET /probe/member"')])),
 	);
 });
 
@@ -2106,10 +2102,10 @@ test("pages of components: a hole in <title> or <textarea> (RCDATA, read as text
 	);
 });
 
-test("pages of components: a <NoHydration> is static markup between its markers, with none inside; what it calls isn't recorded; a handler inside is refused", { skip }, async () => {
+test("pages of components: a <NoHydration> is static markup between its markers, with none inside; what it reads isn't recorded; a handler inside is refused", { skip }, async () => {
 	assert.equal(
 		await text("/page-region"),
-		`<!doctype html><html><body><p class="count"><!--x-->3<!--/x--></p><!--nohydration--><p>3 &amp; QUIET</p>many<ul><li>ada</li><li>grace</li></ul><i>nothing above provides Probe.missing: render this under its provider</i><b>made once</b>nested<!--/nohydration--><p class="loud"><!--x-->PAGE<!--/x--></p>${scripts('[["Probe.shout","\\"page\\"","\\"PAGE\\""]]')}</body></html>`,
+		`<!doctype html><html><body><p class="count"><!--x-->3<!--/x--></p><!--nohydration--><p>3 &amp; QUIET</p>many<ul><li>ada</li><li>grace</li></ul><i>nothing above provides Probe.missing: render this under its provider</i><b>made once</b>nested<!--/nohydration--><p class="loud"><!--x-->PAGE<!--/x--></p>${scripts(JSON.stringify([carried("/probe/shout/page", 200, '"PAGE"')]))}</body></html>`,
 	);
 	const refused = await get("/page-region-handler");
 	assert.equal(refused.status, 500);
@@ -2119,7 +2115,7 @@ test("pages of components: a <NoHydration> is static markup between its markers,
 	assert.equal(await until(async () => (await live()) === before), true, `${await live()} allocations, ${before} before`);
 });
 
-test("pages of components: a server function's call its middleware redirects (a signed-out visitor), made as the page renders, makes the page that redirect, its cookies kept; nothing is left held", { skip }, async () => {
+test("pages of components: a read its middleware redirects (a signed-out visitor), made as the page renders, makes the page that redirect, its cookies kept; nothing is left held", { skip }, async () => {
 	const out = await get("/page-gated", { redirect: "manual" });
 	assert.equal(out.status, 303, "not a 500: the gate's redirect");
 	assert.equal(out.headers.get("location"), "/login");
@@ -2154,7 +2150,7 @@ test("endpoint reads: a page reads a GET endpoint as the server renders it, in-p
 	const html = await text("/reads?weeks=1", { headers: { cookie: "member=Ada", "x-probe": "7", accept: "text/html", "if-none-match": '"v1"', range: "bytes=0-9" } });
 	assert.match(html, /<p class="data"><!--x-->1 Ada 7<!--\/x--><\/p>/, "the page's query, its cookie and its header, as the in-process GET carried them");
 	assert.match(html, /<p class="missing"><!--x-->Not found<!--\/x--><\/p>/, "a refusal, as a value (read!)");
-	assert.match(html, /<p class="refused"><!--x-->GET \/reads\/missing: Not found<!--\/x--><\/p>/, "and as a failure the <Errored> shows (get!)");
+	assert.match(html, /<p class="refused"><!--x-->GET \/reads\/missing: 404: Not found<!--\/x--><\/p>/, "and as a failure the <Errored> shows (get!)");
 	assert.match(html, /<p class="static">region<\/p>/, "read inside the <NoHydration> too");
 	const answers = answersOf(html);
 	assert.deepEqual(
@@ -2180,7 +2176,7 @@ test("endpoint reads: a page reads a GET endpoint as the server renders it, in-p
 	assert.equal(await until(async () => (await live()) === before), true, `${await live()} allocations, ${before} before`);
 });
 
-test("endpoint reads: one its middleware redirects (a signed-out visitor), made as the page renders, makes the page that redirect, its cookies kept, as a server function's (D-019)", { skip }, async () => {
+test("endpoint reads: one its middleware redirects (a signed-out visitor), made as the page renders, makes the page that redirect, its cookies kept (D-019)", { skip }, async () => {
 	const out = await get("/reads-gated", { redirect: "manual" });
 	assert.equal(out.status, 303, "not a 500, nor the <Errored>'s fallback: the gate's redirect");
 	assert.equal(out.headers.get("location"), "/login");

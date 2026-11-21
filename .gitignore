@@ -18,7 +18,6 @@ web/test/app/*.roc
 !web/test/app/main.roc
 !web/test/app/*_app.roc
 web/test/app/Generated/
-site/ServerFunctions.roc
 
 # Written by site/build.mjs and the tests
 site/Generated/

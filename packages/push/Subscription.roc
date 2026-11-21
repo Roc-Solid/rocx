@@ -18,7 +18,7 @@ Subscription := { endpoint : Str, p256dh : List(U8), auth : List(U8) }.{
 	is_eq : Subscription, Subscription -> Bool
 	is_eq = |left, right| left.endpoint == right.endpoint and left.p256dh == right.p256dh and left.auth == right.auth
 
-	## The JSON the page posts, as a server function's or an endpoint's body reads it (other
+	## The JSON the page posts, as an endpoint's body reads it (other
 	## fields, `expirationTime`, are ignored).
 	Body : { endpoint : Str, keys : { p256dh : Str, auth : Str } }
 

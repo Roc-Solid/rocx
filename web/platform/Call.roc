@@ -1,14 +1,16 @@
 import Host
 
-## A server function, called from the browser: its answer, read as a plain value. While it is on
-## its way, the computation or handler that called stops, and runs again once it is in; if the
-## call fails, the nearest <Errored> shows why.
+## Requests from a component: an HTTP request (`fetch!`), its answer read as a plain value, and a
+## stream of events (`listen!`). While an answer is on its way, the computation or handler that
+## asked stops, and runs again once it is in; if there is none, the nearest <Errored> shows why.
+## `Endpoint` reads and sends an app's endpoints with them.
 Call := [].{
 
 	## An HTTP request from the browser (an endpoint's, say: `Endpoint.send!`): its answer, read as a
 	## plain value. A handler or computation that asks stops until it is in, and runs again then; no
-	## answer at all (offline) shows the nearest <Errored>. On the server it fails: a request is a
-	## handler's.
+	## answer at all (offline) shows the nearest <Errored>. On the server, while a page renders, a
+	## GET of one of the app's own paths is answered in-process and noted for the page
+	## (`Endpoint.get!`); any other request is a handler's, and fails there.
 	fetch! : { method : Str, url : Str, headers : List({ name : Str, value : Str }), body : Str } => { status : U16, body : Str }
 	fetch! = |request| {
 		lines = Str.join_with(request.headers.map(|header| "${header.name}: ${header.value}"), "\n")
@@ -38,29 +40,5 @@ Call := [].{
 			""
 		}
 		Host.listen!(url, Box.box(each!))
-	}
-
-	## Calls the server function `name` with `arg` (`POST /rocx/call/<name>`, as JSON): its answer,
-	## read as a plain value. The caller stops until it is in, as with `fetch!`; on the server, the
-	## same route answers in-process. An answer it can't read fails the caller. `Server.remote`'s,
-	## the browser's copy of a server function.
-	server! : Str, arg => result where [arg.Json.Encodable(e), result.Json.Parseable([InvalidJson(Str)])]
-	server! = |name, arg| {
-		input =
-			match Json.to_str_try(arg) {
-				Ok(json) => json
-				Err(_) => {
-					Host.fail!("${name}: its input holds a number JSON can't write (an F64 that is NaN or an infinity)")
-					crash "unreachable: fail! doesn't return"
-				}
-			}
-		answer = Host.call!(name, input)
-		match Json.parse(answer) {
-			Ok(result) => result
-			Err(InvalidJson(why)) => {
-				Host.fail!("${name} answered something else: ${why}")
-				crash "unreachable: fail! doesn't return"
-			}
-		}
 	}
 }

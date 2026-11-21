@@ -1,6 +1,6 @@
 // The helpers against a real app (fixture.mjs), built as a deploy builds it (buildForTests) and
 // served by its server (startServer): a page found in by role and name, a form's post and its
-// flash, a server function, JSON, events, the dev mailbox; with DATABASE_URL, a database of the
+// flash, an endpoint the page reads, JSON, events, the dev mailbox; with DATABASE_URL, a database of the
 // test's own and jobs run to their end; with Chromium, a page hydrated strictly, clicked, typed in,
 // and a component's story. Needs the toolchain (`just setup`, and the platforms' hosts built, as
 // `just test` builds them).
@@ -56,7 +56,7 @@ test("a page, found in by role, name, label and test id; the error page", { skip
 	const { getByRole, getByLabelText, getByTestId } = page.dom;
 	assert.equal(getByRole("heading", { level: 1, name: "Notes" }).tag, "h1");
 	assert.ok(getByRole("region", { name: "Notes" }), "the section, named by its heading");
-	assert.equal(getByTestId("count").text, "3 notes", "the server function's answer, rendered");
+	assert.equal(getByTestId("count").text, "3 notes", "the endpoint's answer, read as the page rendered");
 	assert.equal(getByRole("status", { name: "Count" }).text, "1");
 	assert.equal(getByLabelText("New note").attr("name"), "body");
 	assert.deepEqual(page.dom.getAllByRole("button").map((button) => button.name), ["Add one", "Add"]);
@@ -82,10 +82,10 @@ test("a form posted without the runtime goes back to its page with a flash; the 
 	assert.deepEqual([refused.status, refused.text], [400, "a note has words"]);
 });
 
-test("a server function, an endpoint's JSON, and a stream of events", { skip }, async () => {
+test("an endpoint the page reads, an endpoint's JSON, and a stream of events", { skip }, async () => {
 	const person = app.client();
-	assert.equal(await person.call("Generated/RootPage.count"), 3);
-	await assert.rejects(person.call("Generated/RootPage.nothing"), { name: "CallError", status: 404 });
+	assert.equal(await person.read("/notes"), 3);
+	await assert.rejects(person.read("/nothing"), { name: "ReadError", status: 404 });
 	const echoed = await person.json("/api/echo", { word: "héllo" });
 	assert.deepEqual([echoed.status, echoed.json()], [200, { said: "héllo", length: 6 }]);
 	const ticks = await person.events("/api/ticks");

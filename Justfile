@@ -209,8 +209,8 @@ test:
     ROC={{ roc }} node --test 'server/test/*.test.mjs'
 
 # Type-checks the site, both programs, with reports pointed into .rocx files, and lints its markup:
-# the server's, and the browser's, built from the copy of the site in which a server function is
-# only its name (site/build/client, whose main.roc rocx build writes). First, that everything is
+# the server's, and the browser's, built from the copy of the site in which a route file has no
+# middleware and a <NoHydration> no children (site/build/client, whose main.roc rocx build writes). First, that everything is
 # formatted (`just fmt` formats it).
 check: (fmt "--check")
     node site/build.mjs --prepare

@@ -39,7 +39,7 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	## - Asked again later (`refresh!`), the browser GETs the endpoint's URL.
 	##
 	## An answer that isn't 200 fails the computation: the nearest <Errored> shows its status and
-	## why. A redirect, while the page renders (a signed-out visitor sent to sign in), is the page's
+	## why (`GET /api/likes: 500: the database is down`). A redirect, while the page renders (a signed-out visitor sent to sign in), is the page's
 	## answer instead. `with_query` adds a query.
 	get! : Endpoint(context, {}, result) => result
 		where [result.Json.Parseable([InvalidJson(Str)])]
@@ -47,7 +47,12 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 		match Endpoint.read!(endpoint) {
 			Ok(result) => result
 			Err(problem) => {
-				Host.fail!("${endpoint.method} ${endpoint.url}: ${Server.explain(problem)}")
+				why =
+					match problem {
+						Refused(status, said) => "${status.to_str()}: ${said}"
+						_ => Server.explain(problem)
+					}
+				Host.fail!("${endpoint.method} ${endpoint.url}: ${why}")
 				crash "unreachable: fail! doesn't return"
 			}
 		}

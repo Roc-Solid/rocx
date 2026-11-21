@@ -3,18 +3,19 @@ import pf.Solid exposing [create_memo!, create_signal!]
 import pf.Loading
 import pf.Router
 import pf.Server
+import pf.Endpoint
 import Aside
 
 ## A whole document, for the tests (`document_app.roc`): a doctype and `<html>`; a `<head>` with a
-## style and a script; a `<body>` with a counter, a server function's answer, where the page is
+## style and a script; a `<body>` with a counter, an endpoint's answer, where the page is
 ## (`Router.location!`), a drawing, and a `<NoHydration>`: prose, a pure component only it uses, and
-## holes that read a signal and call the server function, which the server renders once and the
-## browser never hydrates.
+## holes that read a signal and the endpoint, which the server renders once and the browser never
+## hydrates.
 Document := [].{
 
-	## Says a word back: run on the server, asked for by the browser.
+	## Says a word back: `GET /api/say/{word}`, read as a plain value.
 	say! : Str => Str
-	say! = server!(|_request, word| "Said: ${word}")
+	say! = |word| Endpoint.get!(Endpoint.remote("GET", "/api/say/${Server.encode_segment(word)}"))
 
 	view! : {} => Html
 	view! = |{}| {

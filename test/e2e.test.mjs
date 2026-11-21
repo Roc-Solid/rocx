@@ -200,8 +200,7 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		// A dev build: the stories too (Counter's and Badge's), which change no page of the app's.
 		const built = run("build", dir, "--client", client, "--dev");
 		assert.equal(built.status, 0, built.stderr);
-		// Its server function still works, and the build says to move it (D-023).
-		assert.match(built.stderr, /⚠ Generated\/MembersPage\.who: server!\(…\) is deprecated\. Define it as a GET endpoint/);
+		assert.ok(!existsSync(join(dir, "Generated", "ServerFunctions.roc")), "no server functions (D-023): rocx writes no ServerFunctions");
 		const app = readFileSync(join(dir, "Generated", "App.roc"), "utf8");
 		assert.match(app, /\t\tjobs: \[Job\.handler\(Jobs\.welcome\)\],/, "the job, found in Jobs.roc");
 		assert.match(app, /\t\tmigrations: \[\{ name: "0001_e2e_notes\.sql", sql: m0001_e2e_notes \}, \{ name: "0002_e2e_note_index\.sql", sql: m0002_e2e_note_index \}\],/, "the migrations, in order");
@@ -245,8 +244,10 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		assert.deepEqual([(await get("/members")).status, (await get("/members")).html], [401, "members only"]);
 		const member = await get("/members", { cookie: "member=Ada" });
 		assert.equal(member.status, 200);
-		assert.match(member.html, /<p class="who"><!--x-->Welcome, Ada<!--\/x--><\/p>.*<script type="application\/json" class="rocx-answers">\[\["Generated\/MembersPage\.who","\{\}","\\"Welcome, Ada\\""\]\]<\/script>/, "its server function, answered by its route behind the file's middleware, in-process, and recorded");
-		assert.match(member.html, /<!--nohydration--><p class="again">Welcome, Ada, said once<\/p><!--\/nohydration-->/, "called inside a <NoHydration> too, answered, and not recorded: the browser never calls it there");
+		assert.match(member.html, /<p class="who"><!--x-->Welcome, Ada<!--\/x--><\/p>/, "its endpoint, read as the page renders, answered by its route behind the file's middleware, in-process");
+		const carried = JSON.parse(/<script type="application\/json" class="rocx-answers">(.*?)<\/script>/s.exec(member.html)[1]);
+		assert.deepEqual(carried, [["GET /members", "", JSON.stringify({ status: 200, body: JSON.stringify("Welcome, Ada") })]], "and recorded, once, though read twice");
+		assert.match(member.html, /<!--nohydration--><p class="again">Welcome, Ada, said once<\/p><!--\/nohydration-->/, "read inside a <NoHydration> too: the browser never reads it there");
 		// A component's story is the app's page: Root renders it in the root layout, with the front
 		// page's meta; the catalog lists every story; one that isn't there is 404.
 		const catalog = await get("/__rocx/stories");
@@ -257,9 +258,9 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		assert.match(story.html, /<title>Home<\/title>.*<main><!--errored--><button class="count" type="button">Clicked <!--x-->10<!--\/x--><\/button><!--\/errored--><\/main> <footer class="at"><!--x-->\/__rocx\/stories\/Counter\/at-ten<!--\/x--><\/footer>/);
 		assert.match((await get("/__rocx/stories/Ui/Badge/label")).html, /<main><!--errored--><span class="badge">story<\/span><!--\/errored--><\/main>/);
 		assert.equal((await get("/__rocx/stories/Counter/nothing")).status, 404);
-		const call = await fetch(`${server.url}/rocx/call/Generated/MembersPage.who`, { method: "POST", body: "{}", headers: { cookie: "member=Grace" } });
-		assert.deepEqual([call.status, await call.text()], [200, '"Welcome, Grace"']);
-		assert.equal((await fetch(`${server.url}/rocx/call/Generated/MembersPage.who`, { method: "POST", body: "{}" })).status, 401);
+		const answered = await fetch(`${server.url}/members`, { headers: { accept: "application/json", cookie: "member=Grace" } });
+		assert.deepEqual([answered.status, await answered.text()], [200, '"Welcome, Grace"'], "the same endpoint, over HTTP, for JSON");
+		assert.equal((await fetch(`${server.url}/members`, { headers: { accept: "application/json" } })).status, 401);
 
 		// A <NoHydration>'s children, and the import only they used, are the server's alone.
 		const wasmBytes = readFileSync(join(client, "static", "rocx", "app.wasm"));

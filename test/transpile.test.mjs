@@ -150,89 +150,20 @@ test("on: a component's handlers are effects, given what the event says", () => 
 	assert.match(refused(`x = <a onclick="go()">x</a>`), /inline event handlers \(onclick\) aren't allowed: in a component, write on:click=\{…\}/);
 });
 
-test("server!: a function on the server, named after its module, and only its name in the browser's copy", () => {
-	const source = [
-		"import pf.Server",
-		"",
-		"Echo := [].{",
-		"\techo! : Str => Str",
-		"\techo! = server!(|request, message|",
-		'\t\t# not this server!( or ")" ',
-		'\t\t"Echo: ${message} (${Str.join_with([")", "("], ",")})")',
-		"\tview! = |{}| <p>Hi</p>",
-		"}",
-	].join("\n");
-	const server = transpileModule(source, "site/Demos/Echo.rocx", { module: "Demos/Echo" });
-	assert.deepEqual(server.serverFunctions, [{ name: "echo!", call: "echo", line: 5, package: "pf" }]);
-	const lines = server.code.split("\n");
-	assert.equal(lines[4], '\techo! = Server.local("Demos/Echo.echo", |request, message|');
-	assert.equal(lines[6], '\t\t"Echo: ${message} (${Str.join_with([")", "("], ",")})")', "the implementation as written");
-	const browser = transpileModule(source, "site/Demos/Echo.rocx", { module: "Demos/Echo", client: true }).code.split("\n");
-	assert.equal(browser[4], '\techo! = Server.remote("Demos/Echo.echo")');
-	assert.deepEqual(browser.slice(5, 7), ["", ""], "its lines stay, empty");
-	assert.equal(browser[7], lines[7], "the rest is as on the server");
-	assert.equal(browser.length, lines.length);
-	// Without a module, the file's name names it.
-	assert.match(transpile(source, "Echo.rocx"), /Server\.local\("Echo\.echo", /);
+test("server! is gone (D-023): refused at its line, saying what to write instead", () => {
+	try {
+		transpile("import pf.Server\n\necho! = server!(|_, m| m)\n", "Echo.rocx");
+		assert.fail("expected server! to be refused");
+	} catch (error) {
+		assert.ok(error instanceof RocxError, `expected a RocxError, got ${error}`);
+		assert.deepEqual(
+			{ reason: error.reason, line: error.line, column: error.column },
+			{ reason: "server!(…) is gone (D-023): define a GET endpoint (get! in a route's +server.roc) and read it with Endpoint.get!(Api.get_…(params))", line: 3, column: 9 },
+		);
+	}
 });
 
-test("server!: what only a server function uses leaves the browser's copy with it, imports too", () => {
-	const source = ["import pf.Html", "import pf.Server", "import pf.Db", "import Unused", "", "Notes := [].{", "\tcount! : {} => I64", "\tcount! = server!(|_request, {}|", '\t\tDb.count!("notes"))', "\tview! = |{}| <p>{count!({}).to_str()}</p>", "}"].join("\n");
-	const server = transpileModule(source, "Notes.rocx", { module: "Notes" }).code.split("\n");
-	const browser = transpileModule(source, "Notes.rocx", { module: "Notes", client: true }).code.split("\n");
-	assert.equal(server[2], "import pf.Db");
-	assert.equal(browser[2], "", "the browser's platform has no Db: the line stays, empty");
-	assert.equal(browser[3], "import Unused", "an import nothing uses stays, for the compiler to warn about");
-	assert.deepEqual(browser.slice(0, 2), ["import pf.Html", "import pf.Server"]);
-	assert.equal(browser.length, server.length);
-});
-
-test("server!: a function, the same call on both sides", () => {
-	const source = ["import pf.Server", "", "Echo := [].{", "\techo! : Str => Str", "\techo! = server!(|_request, message|", '\t\t"Echo: ${message}")', "}"].join("\n");
-	const server = transpileModule(source, "Echo.rocx", { module: "Echo" });
-	assert.deepEqual(server.serverFunctions, [{ name: "echo!", call: "echo", line: 5, package: "pf" }]);
-	assert.equal(server.code.split("\n")[4], '\techo! = Server.local("Echo.echo", |_request, message|');
-	const browser = transpileModule(source, "Echo.rocx", { module: "Echo", client: true }).code.split("\n");
-	assert.deepEqual(browser.slice(4, 6), ['\techo! = Server.remote("Echo.echo")', ""]);
-});
-
-test("server! is refused outside a definition, or without the Server module", () => {
-	const component = (source) => {
-		try {
-			transpile(source, "T.rocx");
-		} catch (error) {
-			return { reason: error.reason, line: error.line, column: error.column };
-		}
-		assert.fail("expected the source to be refused");
-	};
-	assert.deepEqual(component("import pf.Server\nx = run(server!(|_, m| m))"), { reason: "server!(…) defines a server function: write it as a definition, `name = server!(|request, input| …)`", line: 2, column: 9 });
-	assert.deepEqual(component("x! = server!(|_, m| m)"), { reason: "server!(…) needs `import pf.Server` in this file", line: 1, column: 6 });
-});
-
-test("server!: one that takes or answers a Try is refused at its annotation, naming the tag union to write; the compiler's report says so too", () => {
-	const refused = (source) => {
-		try {
-			transpile(source, "Finder.rocx");
-		} catch (error) {
-			assert.ok(error instanceof RocxError, `expected a RocxError, got ${error}`);
-			return { reason: error.reason, line: error.line, column: error.column };
-		}
-		assert.fail("expected the source to be refused");
-	};
-	const lines = ["import pf.Html", "import pf.Server", "", "Finder := [].{", "\t## Finds it.", "\tfind! : Str => Try(Str, [NotFound])", '\tfind! = server!(|_, id| if (id == "") Err(NotFound) else Ok(id))', "}"];
-	assert.deepEqual(refused(lines.join("\n")), {
-		reason: "find! is a server function, and what it takes and answers goes as JSON, which the builtin Try(Str, [NotFound]) can't be on this Roc (Try has no encoder or parser): use a tag union instead, [Ok(Str), Err([NotFound])], which a match reads as it reads a Try",
-		line: 6,
-		column: 17,
-	});
-	// Held in a record, on the annotation's next line, it is still a Try.
-	const nested = ["import pf.Html", "import pf.Server", "", "Finder := [].{", "\tfind! :", "\t\t{ id : Str }", "\t\t=> { found : Try(U64, Str) }", "\tfind! = server!(|_, { id }| { found: Ok(id.count_utf8_bytes()) })", "}"];
-	assert.match(refused(nested.join("\n")).reason, /builtin Try\(U64, Str\) can't be on this Roc.*\[Ok\(U64\), Err\(Str\)\]/);
-	assert.equal(refused(nested.join("\n")).line, 7);
-	// A tag union is fine, and so is a Try another definition's annotation names.
-	const fine = ["import pf.Html", "import pf.Server", "", "Finder := [].{", "\tparse : Str -> Try(U64, [Bad])", "\tparse = |_| Err(Bad)", "", "\tfind! : Str => [Ok(Str), Err([NotFound])]", "\tfind! = server!(|_, id| Ok(id))", "}"];
-	assert.match(transpile(fine.join("\n"), "Finder.rocx"), /find! = Server\.local\("Finder\.find", \|_, id\| Ok\(id\)\)/);
-	// With no annotation, the compiler's report that Try has no parser_for gets the hint.
+test("the compiler's report that Try has no parser_for (an endpoint's body or answer) gets a hint: the tag union to write", () => {
 	const report = ["── ✗ missing method ──── Finder.roc:7:2", "", "A where clause requires the parser_for method here, but the type being used", "doesn't have that method.", "", "The value's type, which does not have a method named parser_for, is:", "", "    Try(Str, [NotFound])", "", "Hint: For this to work, the type would need a method named parser_for."].join("\n");
 	const hinted = remap(report).split("\n");
 	assert.deepEqual(hinted.slice(7, 10), ["    Try(Str, [NotFound])", "", TRY_HINT]);

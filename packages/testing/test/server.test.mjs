@@ -8,7 +8,7 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { repo } from "../build.mjs";
-import { CallError, Server, links, storyPath, until } from "../server.mjs";
+import { ReadError, Server, links, storyPath, until } from "../server.mjs";
 
 let http;
 let server;
@@ -31,9 +31,9 @@ before(async () => {
 				return send(200, { "content-type": "text/html; charset=utf-8", "set-cookie": ["a=1; Path=/", "b=two%20words; Path=/; HttpOnly"] }, '<main><h1>Home</h1><a href="/b">B</a></main>');
 			case "POST /form":
 				return send(303, { location: "/", "set-cookie": ["rocx-flash=%7B%22status%22%3A400%2C%22body%22%3A%22no%22%7D; Path=/; Max-Age=60", "a=; Path=/; Max-Age=0"] });
-			case "POST /rocx/call/Notes.count":
-				return send(200, { "content-type": "application/json" }, JSON.stringify({ n: JSON.parse(body).n + 1 }));
-			case "POST /rocx/call/Notes.secret":
+			case "GET /notes/count":
+				return send(200, { "content-type": "application/json" }, JSON.stringify({ n: 2 }));
+			case "GET /notes/secret":
 				return send(401, { "content-type": "text/plain" }, "members only");
 			case "GET /ticks":
 				response.writeHead(200, { "content-type": "text/event-stream" });
@@ -88,11 +88,11 @@ test("client: cookies kept and cleared, Origin on what changes, Referer from the
 	assert.throws(() => answer.follow(), /a 404 isn't a redirect/);
 });
 
-test("client: a server function's answer, parsed; a refusal, thrown with its status", async () => {
+test("client: an endpoint read as a page reads it, its answer parsed; a refusal, thrown with its status", async () => {
 	const browser = server.client();
-	assert.deepEqual(await browser.call("Notes.count", { n: 1 }), { n: 2 });
-	assert.equal(asked[0].url, "/rocx/call/Notes.count");
-	await assert.rejects(browser.call("Notes.secret"), (error) => error instanceof CallError && error.status === 401 && error.message === "Notes.secret: 401 members only");
+	assert.deepEqual(await browser.read("/notes/count"), { n: 2 });
+	assert.deepEqual([asked[0].method, asked[0].url, asked[0].headers.accept], ["GET", "/notes/count", "application/json"]);
+	await assert.rejects(browser.read("/notes/secret"), (error) => error instanceof ReadError && error.status === 401 && error.message === "GET /notes/secret: 401 members only");
 });
 
 test("client: server-sent events, as they come, until the stream ends", async () => {

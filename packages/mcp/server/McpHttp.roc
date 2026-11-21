@@ -9,7 +9,7 @@ import mcp.Tool
 
 ## The HTTP side of an app's MCP server, on the server platform: the route that serves it
 ## (`respond!`, or `middleware`), and tools made from what the app has already, in a line each: an
-## endpoint (`endpoint`), a server function (`function`), a handler of its own (`tool`). Their
+## endpoint (`endpoint`), a function of the app's (`function`), a handler of its own (`tool`). Their
 ## arguments' and answers' JSON Schemas are the platform's, written from their types as
 ## /openapi.json's are (`OpenApi`).
 ##
@@ -108,10 +108,10 @@ McpHttp := [].{
 		Tool.typed(about.name, about.description, describe_body(api, about.tags), run!).answers(answer_schema(describe_answer(api, about.tags))).titled(about.title)
 	}
 
-	## A server function as a tool (`McpHttp.function(Notes.add!, { name: "add_note", description:
-	## "Adds a note" }, McpHttp.openapi)`): its argument is the tool's (an object's `input` field,
-	## when it isn't a record), its answer the tool's. It is called as a page calls it on the server:
-	## through its route, behind its middleware, with the MCP request's cookies.
+	## A function of the app's own as a tool (`McpHttp.function(Notes.add!, { name: "add_note",
+	## description: "Adds a note" }, McpHttp.openapi)`): its argument is the tool's (an object's
+	## `input` field, when it isn't a record), its answer the tool's. It runs in the MCP request,
+	## behind the MCP route's middleware.
 	function : (arg => result), About, Schemas(c, arg, result) -> Tool(Caller(c))
 		where [arg.Json.Parseable([InvalidJson(Str)]), result.Json.Encodable(e)]
 	function = |called!, about, schemas| McpHttp.endpoint(Endpoint.local("POST", "/", |_, _, arg| Ok(called!(arg))), about, schemas)

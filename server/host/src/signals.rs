@@ -5,9 +5,10 @@
 //! A page's markup arrives as JSON (`Html.serialize!`, when the host runs the page's box), every
 //! hole a computation Roc gave the host to keep (`keep!`). Rendering walks it (`html`), running each
 //! hole once (`once`), with no tracking and nothing waiting: a memo is computed when it is made, and
-//! a server function's call is answered by its route, in-process (`roc_call`: the app's `respond!`,
-//! as for the browser's request), its answer noted for the page (`record!`). The answers go in a
-//! script before `</body>`, with the script that starts the browser's side (`/rocx/start.js`).
+//! a GET of one of the app's endpoints (`Endpoint.get!`) is answered by its route, in-process
+//! (`roc_fetch`: the app's `respond!`, as for the browser's request), its answer noted for the page.
+//! The answers go in a script before `</body>`, with the script that starts the browser's side
+//! (`/rocx/start.js`).
 //!
 //! A failure (`fail!`, or reading a memo that failed) ends the computation that met it, as the JS
 //! runtime throws `Failed`: the host jumps back to that computation's guard (`roc::fail`), and the
@@ -20,8 +21,8 @@
 //! `<!--fallback-->`, `<!--loading-->`, `<!--errored-->` (`<!--errored:failed-->` once it has).
 //! A `<NoHydration>` is `<!--nohydration-->…<!--/nohydration-->`, and inside it there are none:
 //! the browser never hydrates what is there, so it needs no markers, and finds the region's end by
-//! the first `<!--/nohydration-->`. A server function called inside one isn't recorded for the
-//! page: the browser never calls it.
+//! the first `<!--/nohydration-->`. A GET read inside one isn't recorded for the page: the browser
+//! never asks it.
 
 use crate::abi::{RocErasedCallable as Callable, RocStr};
 use crate::hosted::{self, Asked};
@@ -83,7 +84,7 @@ enum Made {
 }
 
 /// A redirect (a status from 300 to 399, with its `location` and the cookies it sets, `name: value`
-/// lines), which a page's render met in a server function's call, and answers with instead.
+/// lines), which a page's render met in a GET it read, and answers with instead.
 pub struct Redirect {
     pub status: u16,
     pub headers: String,
@@ -104,8 +105,7 @@ struct Render {
     lists: HashMap<u64, List>,
     made: Vec<Made>,
     frames: Vec<Frame>,
-    /// Server functions' answers: name, input, answer (JSON); and endpoints' GETs (`GET <url>`, "",
-    /// `{"status":…,"body":…}`), each once.
+    /// The GETs of endpoints the page read (`GET <url>`, "", `{"status":…,"body":…}`), each once.
     recorded: Vec<[String; 3]>,
     /// Each GET of an endpoint the page made (`GET <url>`), and its answer: asked again, it is
     /// answered from here, so a URL is asked once a render.
@@ -114,7 +114,7 @@ struct Render {
     flash: Option<String>,
     /// The title the last `<Title>` rendered said, if one did (`Host.title!`): the page's `<head>`'s.
     title: Option<String>,
-    /// The first redirect a server function's call was answered with as the page rendered (its
+    /// The first redirect a GET the page read was answered with as it rendered (its
     /// middleware sending the visitor elsewhere): the page's answer instead.
     redirect: Option<Redirect>,
 }
@@ -179,12 +179,11 @@ const START: &str = r#"<script type="module" data-rocx src="/rocx/start.js"></sc
 
 /// A page of components, rendered for the request the call answers (`hosted::asked`): the
 /// document, `<!doctype html>` first (unless the page's markup begins with it), the answers its
-/// server functions gave and the script that starts the browser's side just before `</body>`. Its
+/// reads got and the script that starts the browser's side just before `</body>`. Its
 /// box is run at the root (`Page::mount`), its markup walked, and everything the render made
 /// released, the page among it. A crash, or a failure no `<Errored>` catches, is the render's. A
-/// server function's call that its middleware answered with a redirect (a signed-out visitor sent
-/// to sign in) makes the page that redirect, caught or not, as SolidStart answers a redirect
-/// thrown while it renders.
+/// read that its middleware answered with a redirect (a signed-out visitor sent to sign in) makes
+/// the page that redirect, caught or not, as SolidStart answers a redirect thrown while it renders.
 pub fn render_page(page: roc::Page) -> Result<Rendered, Crash> {
     begin(Render::default());
     let root = Scope::default();
@@ -645,22 +644,6 @@ pub extern "C" fn roc_refresh(probe: Callable) {
 // A host effect that fails jumps out of its own frame too: what it holds that needs dropping is
 // dropped first (`fail` takes the message by value).
 
-/// A server function called while the server renders (`Server.local`): its route answers it, in
-/// the app's `respond!`, in-process, as it answers the browser's `POST /rocx/call/<name>`. Its 200
-/// answer is the call's; any other answer fails the caller with its status and text, which the
-/// nearest `<Errored>` shows.
-#[unsafe(no_mangle)]
-pub extern "C" fn roc_call(name: RocStr, input: RocStr) -> RocStr {
-    let (name, input) = (taken(name), taken(input));
-    let answered = in_process(&name, "POST", &format!("/rocx/call/{name}"), "*/*", Some("application/json"), input.as_bytes());
-    drop((name, input));
-    match answered {
-        Ok(InProcess { status: 200, text }) => given(&text),
-        Ok(InProcess { status, text }) => roc::fail(format!("{status}: {text}")),
-        Err(message) => roc::fail(message),
-    }
-}
-
 /// What a request the server answered in-process, while a page renders, came to: its status and
 /// its body, as text.
 struct InProcess {
@@ -770,17 +753,6 @@ pub extern "C" fn roc_problem() -> RocStr {
 /// A retry is a handler's: never on the server.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_retry(_id: u64) {}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn roc_record(name: RocStr, input: RocStr, answer: RocStr) {
-    let noted = [taken(name), taken(input), taken(answer)];
-    // Called inside a <NoHydration>: the browser never calls it, so the page needn't carry it.
-    with(|render| {
-        if !render.frames.last().is_some_and(|frame| frame.scope.region) {
-            render.recorded.push(noted)
-        }
-    });
-}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_for_new() -> u64 {

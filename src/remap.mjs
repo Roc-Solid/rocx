@@ -42,10 +42,10 @@ function mapColumn(generatedLine, sourceLine, column, width) {
 }
 
 /** What `rocx check` adds to the compiler's report that the builtin `Try` has no JSON encoder or
- * parser: it can't go as JSON on this Roc (a server function's input or answer, an endpoint's, a
+ * parser: it can't go as JSON on this Roc (an endpoint's body or answer, a
  * `Browser.call!`'s argument), and a tag union can. */
 export const TRY_HINT =
-	"Hint: the builtin Try can't go as JSON on this Roc (it has no encoder_for or parser_for, and nothing outside the builtins can give it one): what a server function, an endpoint or Browser.call! takes or answers can't be one, or hold one. Use a tag union instead, [Ok(a), Err(e)], which a match reads as it reads a Try.";
+	"Hint: the builtin Try can't go as JSON on this Roc (it has no encoder_for or parser_for, and nothing outside the builtins can give it one): what an endpoint or Browser.call! takes or answers can't be one, or hold one. Use a tag union instead, [Ok(a), Err(e)], which a match reads as it reads a Try.";
 
 /** Adds TRY_HINT after each report that `Try(…)` has no `encoder_for` or `parser_for`. */
 function hintTry(lines) {

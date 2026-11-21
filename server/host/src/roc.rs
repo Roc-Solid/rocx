@@ -400,7 +400,7 @@ impl Page {
 }
 
 /// Lets go of a page: rendered (after the host released what the render registered), or not (an
-/// answer to HEAD; a server function's call answered with one). Its box is released, and what the
+/// answer to HEAD; a GET a page read, answered with one). Its box is released, and what the
 /// answer and the render still hold is freed: the request is over, and nothing outlives it.
 pub fn drop_page(page: Page) {
     if !page.freed.get() {
@@ -440,8 +440,8 @@ fn copied(text: RocStr, host: &RocHost) -> String {
     copy
 }
 
-/// The app's answer to a request (`respond!`). A call during another (a server function's, from a
-/// component the host renders: `signals::roc_call`) has a list and a guard of its own.
+/// The app's answer to a request (`respond!`). A call during another (a GET a component the host
+/// renders reads: `signals::in_process`) has a list and a guard of its own.
 pub fn respond(method: &str, target: &str, headers: &str, body: &[u8], context: &str) -> Result<Answer, Crash> {
     let host = host();
     let host = &host;

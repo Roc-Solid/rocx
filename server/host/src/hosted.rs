@@ -84,8 +84,7 @@ async fn stopped() {
 // ---- A call's context ----
 
 /// The request a call into Roc answers (`Host.request!`, `Host.location!`), and what it has said
-/// about it: the server function whose call it is (`Host.serve!`), with the context its middleware
-/// handed on; the status its page is to be answered with (`Host.status!`).
+/// about it: the status its page is to be answered with (`Host.status!`).
 #[derive(Default, Clone)]
 pub struct Asked {
     pub method: String,
@@ -99,8 +98,6 @@ pub struct Asked {
     pub started: String,
     /// Whether crashes show their message (`--dev`).
     pub dev: bool,
-    serving: String,
-    context: String,
     /// The status a page rendered for it is answered with, if the page set one
     /// (`<HttpStatusCode>`).
     status: Option<u16>,
@@ -466,7 +463,7 @@ pub extern "C" fn roc_host_sleep(ms: u64) {
     let _ = in_time(slept);
 }
 
-// ---- The request: what it is, the server function it calls, where its page is ----
+// ---- The request: what it is, where its page is ----
 
 /// The request, as HTTP writes it: `METHOD target`, a header a line, a blank line, its body (as
 /// text: a byte that isn't UTF-8 is U+FFFD; `respond!` was given the bytes). A call that answers
@@ -482,30 +479,6 @@ pub extern "C" fn roc_request() -> RocStr {
     roc_str(&written.unwrap_or_default())
 }
 
-/// The request is a call of the server function `name`, its middleware's context `context` (JSON).
-#[unsafe(no_mangle)]
-pub extern "C" fn roc_serve(name: RocStr, context: RocStr) {
-    let (name, handed) = (taken(name), taken(context));
-    CALL.with(|context| {
-        if let Some(asked) = context.borrow_mut().asked.as_mut() {
-            asked.serving = name;
-            asked.context = handed;
-        }
-    });
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn roc_serving() -> RocStr {
-    let serving = CALL.with(|context| context.borrow().asked.as_ref().map(|asked| asked.serving.clone()));
-    roc_str(&serving.unwrap_or_default())
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn roc_context() -> RocStr {
-    let handed = CALL.with(|context| context.borrow().asked.as_ref().map(|asked| asked.context.clone()));
-    roc_str(&handed.unwrap_or_default())
-}
-
 /// The request's path and query (`Router.location!`): "/" for a call that answers none.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_location() -> RocStr {
@@ -514,7 +487,7 @@ pub extern "C" fn roc_location() -> RocStr {
 }
 
 /// The status the page being rendered is to be answered with (`<HttpStatusCode code>`): the last
-/// one set wins. A server function's call, answered in-process, has a request of its own.
+/// one set wins. A GET a page reads as it renders, answered in-process, has a request of its own.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_status(code: u16) {
     CALL.with(|context| {

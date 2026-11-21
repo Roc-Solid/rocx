@@ -1,5 +1,5 @@
 // A small app on Roc Solid, for testing the helpers against a real server and a real browser: a
-// page with a counter, a form posted to an endpoint, a server function, JSON, a stream of events,
+// page with a counter, a form posted to an endpoint, an endpoint the page reads, JSON, a stream of events,
 // email, and a job that sends one. app.test.mjs writes it into a directory of its own and builds it.
 import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
@@ -95,9 +95,9 @@ import ../Generated/Api
 
 meta = { title: "Notes" }
 
-## How many notes there are, asked of the server.
+## How many notes there are: GET /notes, read as the page renders.
 count! : {} => U64
-count! = server!(|_request, {}| 3)
+count! = |{}| Endpoint.get!(Api.get_notes({}))
 
 view! = |_|
 	<section aria-labelledby="title">
@@ -113,6 +113,10 @@ view! = |_|
 `,
 		"routes/notes/+server.roc": `import pf.Server
 import pf.Endpoint
+
+## GET /notes: how many notes there are.
+get! : { request : Server.Request, params : {}, context : c } => Try(U64, Endpoint.Refusal)
+get! = |_| Ok(3)
 
 ## POST /notes, from the page's form: a note with words in it.
 post! : { request : Server.Request, params : {}, context : c, body : { body : Str } } => Try(Str, Endpoint.Refusal)

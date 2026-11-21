@@ -1,10 +1,10 @@
 // The web platform in Chromium and in Node: the test app (web/test/app, Solid-style components in
 // rocx) built on it, against a scripted server (answers after a delay; told which calls fail): the
 // profile, mounted; the picks and the echo, rendered by the runtime as the server would
-// (`renderToString`, from the answers the server's functions gave) and hydrated; whole documents
+// (`renderToString`, from the answers the server gave their reads) and hydrated; whole documents
 // (the docs' demos among them), rendered as the server platform answers a page and hydrated by
 // start.js, under a base path too. Builds what it needs
-// first: the app through rocx, the browser's copy of it (a server function only its name), the host,
+// first: the app through rocx, the browser's copy of it (no <NoHydration>'s children), the host,
 // and each app. Needs the toolchain (`just setup`) and Chromium (browser.mjs).
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -79,26 +79,40 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const server = { delay: 60, fail: {}, name: "Ada", calls: [] };
 const json = (value) => ({ status: 200, body: JSON.stringify(value) });
 
-/** The test app's server functions (`server!`), as the server platform answers them: the native
- * server renders a page with their answers, recorded for the browser, and answers the browser's
- * calls (`POST /rocx/call/<name>`). Here, scripted, as JS. */
-const SERVER_FUNCTIONS = { "Document.say": (word) => `Said: ${word}`, "Echo.echo": (message) => `Echo: ${message}` };
+/** The test app's endpoints that its pages read (`Endpoint.get!`): `GET /api/<name>/<arg>`, the
+ * arg a path segment. The native server answers them as it renders a page, recording the answers
+ * for the browser, and answers the browser's GETs. Here, scripted, as JS. */
+const READS = { say: (word) => `Said: ${word}`, echo: (message) => `Echo: ${message}` };
 
-/** A call's answer, as the server gives it: 200 and the answer as JSON, or 404. */
-const serverAnswer = (name, input) => (SERVER_FUNCTIONS[name] ? json(SERVER_FUNCTIONS[name](JSON.parse(input))) : { status: 404, body: `no server function is called ${name}` });
+/** A read's answer, as the server gives it: 200 and the answer as JSON, or 404. */
+const readAnswer = (name, arg) => (READS[name] ? json(READS[name](arg)) : { status: 404, body: `nothing at /api/${name}` });
 
-/** The answers the server's functions gave as it rendered the test app's pages (`[[name, input,
- * answer]]`, as a page's answers script has them): what `renderToString({ answers })` answers each
- * call from, as the server platform would have answered it. */
+/** The GET a read is, as a page's answers script names it (`GET /api/say/hello`). */
+const readKey = (name, arg) => `GET /api/${name}/${encodeURIComponent(arg)}`;
+
+/** A read of `path` (`/api/say/hello`, under `base`, decoded), if it is one. */
+const readOf = (path, base = "/") => {
+	const found = new RegExp(`^${base}api/(\\w+)/(.*)$`).exec(path);
+	return found ? { name: found[1], arg: found[2] } : null;
+};
+
+/** The answers the server gave the test app's reads as it rendered its pages (`[[name, input,
+ * answer]]`, as a page's answers script has them, each answer `{"status":…,"body":…}`): what
+ * `renderToString({ answers })` answers each GET from, as the server platform would have. */
 const RENDERED = [
-	["Document.say", "hello"],
-	["Document.say", "quiet"],
-	["Echo.echo", "the page, rendered on the server"],
-].map(([name, input]) => [name, JSON.stringify(input), serverAnswer(name, JSON.stringify(input)).body]);
+	["say", "hello"],
+	["say", "quiet"],
+	["echo", "the page, rendered on the server"],
+].map(([name, arg]) => {
+	const answered = readAnswer(name, arg);
+	return [readKey(name, arg), "", JSON.stringify({ status: answered.status, body: answered.body })];
+});
 
+/** The profile's endpoints, scripted: `GET /api/<name>` (`/api/posts_of/<id>`) and
+ * `POST /api/rename`. */
 async function answer(method, path, body) {
-	const name = /^\/rocx\/call\/(.+)$/.exec(path)?.[1];
-	if (!name) return null;
+	const [, name, arg] = /^\/api\/(\w+)(?:\/(.*))?$/.exec(path) ?? [];
+	if (!name || READS[name]) return null;
 	server.calls.push(name);
 	await sleep(name === "rename" ? 20 : server.delay);
 	if (server.fail[name] > 0) {
@@ -106,15 +120,15 @@ async function answer(method, path, body) {
 		return { status: 500, body: "the database is down" };
 	}
 	if (name === "current_user") return json({ id: 7, name: server.name });
-	if (name === "posts_of") return json(JSON.parse(body) === 7 ? [{ title: "Roc" }, { title: "rocx" }] : []);
+	if (name === "posts_of") return json(Number(arg) === 7 ? [{ title: "Roc" }, { title: "rocx" }] : []);
 	if (name === "friends") return json(["Grace", "Katherine"]);
 	if (name === "likes") return json(42);
 	if (name === "notifications") return json(3);
-	if (name === "rename") {
+	if (name === "rename" && method === "POST") {
 		server.name = JSON.parse(body).trim() || server.name;
 		return json(server.name);
 	}
-	return { status: 404, body: `no server function is called ${name}` };
+	return { status: 404, body: `nothing at ${path}` };
 }
 
 let browser;
@@ -186,7 +200,7 @@ window.runtime.mount(document.getElementById("app"));
 		const page = await open();
 		await page.wait("document.querySelector('h1')", 3000);
 		await page.wait("document.querySelector('.friends .problem')");
-		assert.equal(await text(page, ".friends .problem"), "No friends: friends failed: 500: the database is down Again");
+		assert.equal(await text(page, ".friends .problem"), "No friends: GET /api/friends: 500: the database is down Again");
 		assert.deepEqual(await texts(page, ".posts li"), ["Roc", "rocx"], "the rest renders");
 		await page.click(".friends .problem button");
 		await page.wait("document.querySelectorAll('.friends li').length === 2", 3000);
@@ -199,7 +213,7 @@ window.runtime.mount(document.getElementById("app"));
 		server.fail.likes = 1;
 		const page = await open();
 		await page.wait("document.querySelector('.page-problem')", 3000);
-		assert.match(await text(page, ".page-problem"), /^The page failed: likes failed: 500/);
+		assert.match(await text(page, ".page-problem"), /^The page failed: GET \/api\/likes: 500: the database is down/);
 		assert.equal(await text(page, "h1"), null);
 		await page.click(".page-problem button");
 		await page.wait("document.querySelector('.stats')?.textContent === '42 likes · 3 new'", 3000);
@@ -602,20 +616,20 @@ window.mounted = true;
 
 // ---- The echo: rendered on the server, hydrated in the browser ----
 
-test("echo: rendered as the server would, from the answer echo! gave, and hydrated without asking again; typing asks the server", { skip }, async () => {
+test("echo: rendered as the server would, from the GET it answered, and hydrated without asking again; typing asks the server", { skip }, async () => {
 	const server = await Runtime.load(readFileSync(join(out, "echo-server.wasm")));
 	const calls = [];
-	const answerCall = async (method, path, body) => {
-		const name = /^\/rocx\/call\/(.+)$/.exec(path)?.[1];
-		if (!name) return null;
-		calls.push(name);
+	const answerCall = async (method, path) => {
+		const read = readOf(path);
+		if (!read) return null;
+		calls.push(read.name);
 		await sleep(40);
-		return serverAnswer(name, body);
+		return readAnswer(read.name, read.arg);
 	};
 	assert.match(
 		server.renderToString({ path: "/" }).html,
-		/<!--errored:failed--><output class="echo-answer failed">599: Echo\.echo\(&quot;the page, rendered on the server&quot;\) wasn&#39;t answered as the server rendered the page /,
-		"rendering as a server, a call is answered only from the answers it is given: the runtime answers none itself",
+		/<!--errored:failed--><output class="echo-answer failed">599: GET \/api\/echo\/the%20page%2C%20rendered%20on%20the%20server wasn&#39;t answered as the server rendered the page /,
+		"rendering as a server, a GET is answered only from the answers it is given: the runtime answers none itself",
 	);
 	const page = (mismatch = false) => {
 		const { html, answers } = server.renderToString({ path: "/", answers: RENDERED });
@@ -645,7 +659,7 @@ window.hydrated = true;
 		await tab.eval("document.querySelector('input').select()");
 		await tab.type("input", "hello & <b>you</b>");
 		await tab.wait("document.querySelector('output').textContent === 'Echo: hello & <b>you</b>'", 3000);
-		assert.ok(calls.length >= 1 && calls.every((name) => name === "Echo.echo"), "typing asks the server");
+		assert.ok(calls.length >= 1 && calls.every((name) => name === "echo"), "typing asks the server");
 		assert.equal(await tab.eval("window.output === document.querySelector('output')"), true, "the answer patched the server's node");
 		assert.deepEqual(tab.errors, []);
 		assert.deepEqual(tab.console, []);
@@ -667,7 +681,7 @@ const textOf = (page, selector) => page.eval(`document.querySelector(${JSON.stri
 
 /** What the server answered GET /api/reads?weeks=1 with as it rendered the reads page: noted under
  * the URL, as the server platform notes an endpoint's GET (`[name, input, answer]`). */
-const READS = [["GET /api/reads?weeks=1", "", JSON.stringify({ status: 200, body: JSON.stringify({ count: 1, weeks: "1" }) })]];
+const READS_PAGE = [["GET /api/reads?weeks=1", "", JSON.stringify({ status: 200, body: JSON.stringify({ count: 1, weeks: "1" }) })]];
 
 test("endpoint reads: rendered as the server would, from the GET it answered; hydrated strictly without asking again; its events make it read the endpoint's URL again", { skip }, async () => {
 	const server = await Runtime.load(readFileSync(join(out, "reads-server.wasm")));
@@ -676,9 +690,9 @@ test("endpoint reads: rendered as the server would, from the GET it answered; hy
 		/<p class="problem">599: GET \/api\/reads\?weeks=1 wasn&#39;t answered as the server rendered the page<\/p>/,
 		"rendering as a server, a GET is answered only from the answers it is given",
 	);
-	const { html, answers } = server.renderToString({ path: "/reads?weeks=1", answers: READS });
+	const { html, answers } = server.renderToString({ path: "/reads?weeks=1", answers: READS_PAGE });
 	assert.match(html, /<p class="data">count <!--x-->1<!--\/x-->, weeks <!--x-->1<!--\/x--><\/p>/, "the page's query in the GET");
-	assert.deepEqual(answers, READS, "noted once, as the page has it");
+	assert.deepEqual(answers, READS_PAGE, "noted once, as the page has it");
 	let count = 1;
 	const asked = [];
 	const api = async (method, path, body, url, request) => {
@@ -715,7 +729,7 @@ window.hydrated = true;
 	const dir = mkdtempSync(join(tmpdir(), "rocx-reads-"));
 	cpSync(join(web, "runtime.js"), join(dir, "runtime.js"));
 	cpSync(join(out, "reads.wasm"), join(dir, "reads.wasm"));
-	const site = await serve(dir, (path) => (path === "/reads" ? page(READS) : path === "/uncarried" ? page([]) : null), api);
+	const site = await serve(dir, (path) => (path === "/reads" ? page(READS_PAGE) : path === "/uncarried" ? page([]) : null), api);
 	try {
 		const tab = await browser.page();
 		await tab.goto(`${site.url}/reads?weeks=1`);
@@ -835,13 +849,13 @@ window.mounted = true;
 const DOCUMENT_PAGE =
 	'<!doctype html> <html lang="en"><head><meta charset="utf-8"> <title>A document</title> <style>.count { color: red }</style> <script>window.ran = (window.ran ?? 0) + 1</script></head> <body class="page"><h1>A document</h1> <p class="at"><!--x-->/inner/page<!--/x--> ? <!--x-->x=1<!--/x--></p> <button class="count">Clicked <!--x-->0<!--/x--> times</button> <!--loading--><output class="said"><!--x-->Said: hello<!--/x--></output><!--/loading--> <button class="again">Again</button> <svg class="dot" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"></circle></svg> ' +
 	'<!--nohydration--><section class="prose"><aside class="aside"><h2>Unhydrated</h2> <p>Words the browser never hydrates.</p></aside> <p class="once">Rendered once: 0, Said: quiet</p></section><!--/nohydration-->' +
-	'<script type="application/json" class="rocx-answers">[["Document.say","\\"hello\\"","\\"Said: hello\\""]]</script><script type="module" data-rocx src="/rocx/start.js"></script></body></html>';
+	`${Runtime.answersScript([RENDERED[0]])}<script type="module" data-rocx src="/rocx/start.js"></script></body></html>`;
 
 test("a document: renderToString renders it whole, as the server platform answers a page", { skip }, async () => {
 	const server = await Runtime.load(readFileSync(join(out, "document-server.wasm")));
 	const { html, answers } = server.renderToString({ path: "/inner/page?x=1", answers: RENDERED });
 	assert.equal(html, DOCUMENT_PAGE, "the doctype, <html>, holes' comments, and the answers and start.js before </body>; no <!--app-->; the <NoHydration> static, in its markers, with none inside");
-	assert.deepEqual(answers, [["Document.say", '"hello"', '"Said: hello"']], "what the <NoHydration> called isn't recorded: the browser never calls it");
+	assert.deepEqual(answers, [RENDERED[0]], "what the <NoHydration> read isn't recorded: the browser never reads it");
 	const start = '<script type="module" data-rocx src="/rocx/start.js"></script>';
 	assert.equal(Runtime.documentOf("<html><body><p>hi</p></body></html>", []), `<!doctype html><html><body><p>hi</p><script type="application/json" class="rocx-answers">[]</script>${start}</body></html>`, "a doctype when the markup has none");
 	assert.equal(Runtime.documentOf("<!DOCTYPE html><html>", []), `<!DOCTYPE html><html><script type="application/json" class="rocx-answers">[]</script>${start}`, "no </body>: at the end");
@@ -858,13 +872,13 @@ test("a document: <NoHydration> is the server's alone: the browser's copy and wa
 	assert.equal(readFileSync(join(out, "document.wasm")).includes("Words the browser never hydrates"), false, "nor in the browser's wasm");
 	assert.equal(readFileSync(join(out, "document-server.wasm")).includes("Words the browser never hydrates"), true, "the server's has it");
 	const browser = await Runtime.load(readFileSync(join(out, "document.wasm")));
-	const answers = [["Document.say", '"hello"', '"Said: hello"']];
+	const answers = [RENDERED[0]];
 	const path = "/inner/page?x=1";
 	assert.equal(browser.renderToString({ path, answers }).html, DOCUMENT_PAGE.replace(/<!--nohydration-->.*<!--\/nohydration-->/, "<!--nohydration--><!--/nohydration-->"), "the browser's build leaves the placeholder");
 	const { html, answers: recorded } = browser.renderToString({ path, answers, regions: Runtime.regionsOf(DOCUMENT_PAGE) });
 	assert.equal(html, DOCUMENT_PAGE, "from the page's answers and regions, the page byte for byte");
-	assert.deepEqual(recorded, answers, "each call answered from the page's, recorded as it has it");
-	assert.throws(() => browser.renderToString({ path, answers: [] }), /599: Document\.say\("hello"\) wasn't answered as the server rendered the page/, "a call the server didn't make");
+	assert.deepEqual(recorded, answers, "each GET answered from the page's, recorded as it has it");
+	assert.throws(() => browser.renderToString({ path, answers: [] }), /599: GET \/api\/say\/hello wasn't answered as the server rendered the page/, "a GET the server didn't make");
 	assert.throws(() => browser.renderToString({ path, answers, regions: [] }), /the app renders more <NoHydration>s than the page has/);
 	assert.throws(() => browser.renderToString({ path, answers, regions: ["a", "b"] }), /the page has 1 <NoHydration> more than the app renders/);
 	assert.deepEqual(Runtime.regionsOf('<p><!--nohydration--><b>x</b><!--/nohydration--></p><!--nohydration--><!--/nohydration-->'), ["<b>x</b>", ""]);
@@ -884,8 +898,8 @@ const documentPage = (render, target, { after = "", tamper = (html) => html } = 
 
 /**
  * The document app (or `app`): its server half renders pages (`pages`: path to page), from the
- * answers its server functions gave (`RENDERED`), and the browser's calls are answered as the server
- * answers them (`serverAnswer`); start.js, the runtime and the browser's wasm are files at
+ * answers its reads got (`RENDERED`), and the browser's GETs are answered as the server answers
+ * them (`readAnswer`); start.js, the runtime and the browser's wasm are files at
  * `${base}rocx/`, as an app's build would put them (start.js's URL in the page moved there, as the
  * static build does). Every URL asked for is noted. `api` may answer a request first (an
  * endpoint's), as serve's does.
@@ -898,11 +912,11 @@ async function withDocument({ base = "/", pages, app = "document", api = () => n
 		asked.push(url);
 		const answered = await api(method, path, body, url, request);
 		if (answered) return answered;
-		if (!path.startsWith(`${base}rocx/call/`)) return null;
-		const name = path.slice(`${base}rocx/call/`.length);
-		calls.push(name);
+		const read = readOf(path, base);
+		if (!read) return null;
+		calls.push(read.name);
 		await sleep(30);
-		return serverAnswer(name, body);
+		return readAnswer(read.name, read.arg);
 	};
 	const dir = mkdtempSync(join(tmpdir(), "rocx-document-"));
 	const files = join(dir, base, "rocx");
@@ -958,7 +972,7 @@ test("a document: start.js hydrates it without asking, the server's nodes kept, 
 				assert.equal(await tab.eval("document.querySelector('.once').textContent"), "Rendered once: 0, Said: quiet", "never patched: the browser never ran it");
 				await tab.click(".again");
 				await tab.wait("document.querySelector('.said').textContent === 'Said: again'", 3000);
-				assert.deepEqual(calls, ["Document.say"], "a new word asks the server");
+				assert.deepEqual(calls, ["say"], "a new word asks the server");
 				assert.equal(await tab.eval("window.before.said === document.querySelector('.said')"), true, "the answer patched the server's node");
 				assert.deepEqual(tab.errors, []);
 			}
@@ -1048,8 +1062,8 @@ test("a document under a base path: start.js fetches nothing outside it, and Rou
 		assert.deepEqual(located, ["/a/b?q=1", "/", "/", "/rocxy/z", "/inner/page?x=1"]);
 		await tab.click(".again");
 		await tab.wait("document.querySelector('.said').textContent === 'Said: again'", 3000);
-		assert.deepEqual(calls, ["Document.say"]);
-		assert.deepEqual([...asked].sort(), ["/rocx/inner/page?x=1", "/rocx/rocx/app.wasm", "/rocx/rocx/call/Document.say", "/rocx/rocx/runtime.js", "/rocx/rocx/start.js"], "everything under /rocx/");
+		assert.deepEqual(calls, ["say"]);
+		assert.deepEqual([...asked].sort(), ["/rocx/api/say/again", "/rocx/inner/page?x=1", "/rocx/rocx/app.wasm", "/rocx/rocx/runtime.js", "/rocx/rocx/start.js"], "everything under /rocx/");
 		assert.deepEqual(tab.errors, []);
 	});
 });
@@ -1068,7 +1082,7 @@ test("a document inside an <Errored>, as a generated root renders it: the host's
 		assert.equal(await tab.eval("window.before.h1 === document.querySelector('h1') && window.before.said === document.querySelector('.said')"), true, "the server's nodes, kept");
 		await tab.click(".again");
 		await tab.wait("document.querySelector('.said').textContent === 'Said: again'", 3000);
-		assert.deepEqual(calls, ["Document.say"]);
+		assert.deepEqual(calls, ["say"]);
 	});
 });
 
@@ -1081,7 +1095,7 @@ test("the docs' demos: one document, its parts far apart, hydrated strictly at o
 		const { html, answers } = server.renderToString({ path: "/", answers: RENDERED });
 		assert.match(html, /<section class="part-tally"><h2>tally<\/h2><p>Static text between the demos\.<\/p><aside class="tally"><p class="tally-count"><!--x-->3<!--\/x--> picks<\/p>/, "the tally, from the store the page made");
 		assert.match(html, /<section class="part-picks">.*<!--x-->Roc<!--\/x-->/);
-		assert.deepEqual(answers.map(([name]) => name), ["Echo.echo"], "one page's answers, for every part");
+		assert.deepEqual(answers.map(([name]) => name), [readKey("echo", "the page, rendered on the server")], "one page's answers, for every part");
 		const tab = await strictTab();
 		await tab.goto(`${site.url}/`);
 		await tab.wait("window.ready", 3000);
@@ -1104,7 +1118,7 @@ test("the docs' demos: one document, its parts far apart, hydrated strictly at o
 		await tab.eval("document.querySelector('input').select()");
 		await tab.type("input", "one app");
 		await tab.wait("document.querySelector('output').textContent === 'Echo: one app'", 3000);
-		assert.ok(calls.length > 0 && calls.every((name) => name === "Echo.echo"));
+		assert.ok(calls.length > 0 && calls.every((name) => name === "echo"));
 		assert.deepEqual(tab.errors, []);
 		const before = server.live();
 		for (let i = 0; i < 50; i++) server.renderToString({ path: "/", answers: RENDERED });

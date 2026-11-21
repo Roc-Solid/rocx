@@ -8,7 +8,7 @@
 //   node site/serve.mjs [--watch] [--port 8080] [--database-url URL]
 import { spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync, watch } from "node:fs";
-import { basename, join, relative } from "node:path";
+import { join, relative } from "node:path";
 import { root, server, serverFlags } from "./build.mjs";
 import { SHARED_MODULES } from "../server/build.mjs";
 import { MARKER } from "../src/transpile.mjs";
@@ -91,12 +91,10 @@ if (watching) {
 	};
 	for (const dir of dirs) walk(dir);
 	// What the build writes itself: a .roc rocx wrote (beside its .rocx, or a story's; or one it
-	// deletes, which it wrote), the lists of server functions, and the server platform's copies of
-	// the modules both platforms have. Everything else it writes is under build/, dist/, Generated/
-	// or targets/.
+	// deletes, which it wrote), and the server platform's copies of the modules both platforms have.
+	// Everything else it writes is under build/, dist/, Generated/ or targets/.
 	const written = (path) =>
 		(path.endsWith(".roc") && (existsSync(join(root, `${path}x`)) || rocxWrote(path) || seen.get(path)?.rocx)) ||
-		basename(path) === "ServerFunctions.roc" ||
 		SHARED_MODULES.some((name) => path === `server/platform/${name}.roc`);
 	const changed = (path) => {
 		if (!path || ignored(path) || !source(path)) return;

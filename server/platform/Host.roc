@@ -186,11 +186,6 @@ Host := [].{
 	memo_get! : U64 => Box(() -> a)
 	refresh! : Box(() => Str) => {}
 
-	## A server function's answer (JSON), called while the server renders (`Server.local`): the host
-	## answers `POST /rocx/call/<name>` in-process, as the browser's request would be, with the
-	## page's headers and the context the server started with. Any answer but 200 fails the caller.
-	call! : Str, Str => Str
-
 	## Fails the caller, with why: the nearest <Errored> shows it.
 	fail! : Str => {}
 	event_value! : {} => Str
@@ -216,19 +211,6 @@ Host := [].{
 	## The request being answered, as HTTP writes it: `METHOD target`, a header a line
 	## (`name: value`), a blank line, then its body.
 	request! : {} => Str
-
-	## A server function's answer, noted for the page (name, input, answer: JSON).
-	record! : Str, Str, Str => {}
-
-	## The request being answered is a call of the server function named here, and its middleware
-	## handed on this context (JSON): `Server.serve!`.
-	serve! : Str, Str => {}
-
-	## The server function whose call is being answered, or "".
-	serving! : {} => Str
-
-	## What the middleware in front of it handed on (JSON), while a server function's call is answered.
-	context! : {} => Str
 
 	## The request's path, and its query after a `?`, a trailing slash dropped: `Router.location!`.
 	location! : {} => Str

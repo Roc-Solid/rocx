@@ -9,7 +9,7 @@ import guard.Flags
 ## context: the server renders the page with them and puts them in it, so the browser shows the
 ## same.
 ##
-##     <FlagsContext value={flags!({})}>          # in the layout: `flags!` is the app's server function
+##     <FlagsContext value={flags!({})}>          # in the layout: `flags!` reads the app's GET /flags
 ##         …
 ##         <Flagged name="new_checkout" fallback={<OldCheckout />}>
 ##             <NewCheckout />

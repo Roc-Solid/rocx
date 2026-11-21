@@ -61,8 +61,8 @@ FlagStore := [].{
 	is_on! : Flag, Flags.Who => Bool
 	is_on! = |flag, who| Flags.is_on(flag, FlagStore.settings!({}), who)
 
-	## Each of `flags`, decided for `who` now: what a page sends the browser (a server function's
-	## answer), so the browser shows what the server rendered.
+	## Each of `flags`, decided for `who` now: what a page sends the browser (a GET endpoint's
+	## answer, which the page reads as it renders), so the browser shows what the server rendered.
 	values! : List(Flag), Flags.Who => Flags.Values
 	values! = |flags, who| Flags.values(flags, FlagStore.settings!({}), who)
 

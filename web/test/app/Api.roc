@@ -1,30 +1,36 @@
 import pf.Call
 import pf.Endpoint
 import pf.Events
+import pf.Server
 
-## The server's functions, as the browser calls them. (In the spike the test answers them; with
-## rocx's `server!` they would be defined once, as on master.)
+## The server's endpoints, as the browser's copy has them (a method and a URL): what the profile
+## reads (`GET /api/<name>`), and what it sends (`POST /api/rename`). The tests answer them.
 Api := [].{
 	User : { id : U64, name : Str }
 	Post : { title : Str }
 
 	current_user! : {} => User
-	current_user! = |{}| Call.server!("current_user", {})
+	current_user! = |{}| Endpoint.get!(Endpoint.remote("GET", "/api/current_user"))
 
 	posts_of! : U64 => List(Post)
-	posts_of! = |id| Call.server!("posts_of", id)
+	posts_of! = |id| Endpoint.get!(Endpoint.remote("GET", "/api/posts_of/${id.to_str()}"))
 
 	friends! : {} => List(Str)
-	friends! = |{}| Call.server!("friends", {})
+	friends! = |{}| Endpoint.get!(Endpoint.remote("GET", "/api/friends"))
 
 	likes! : {} => U64
-	likes! = |{}| Call.server!("likes", {})
+	likes! = |{}| Endpoint.get!(Endpoint.remote("GET", "/api/likes"))
 
 	notifications! : {} => U64
-	notifications! = |{}| Call.server!("notifications", {})
+	notifications! = |{}| Endpoint.get!(Endpoint.remote("GET", "/api/notifications"))
 
+	## Renames who you are, from a handler: the new name, or why there is none.
 	rename! : Str => Str
-	rename! = |name| Call.server!("rename", name)
+	rename! = |name|
+		match Endpoint.send!(Endpoint.remote("POST", "/api/rename"), name, Call.fetch!) {
+			Ok(renamed) => renamed
+			Err(problem) => Server.explain(problem)
+		}
 
 	## GET /api/reads: what the reads page shows (D-023), an endpoint as the browser's copy has it,
 	## its method and URL.

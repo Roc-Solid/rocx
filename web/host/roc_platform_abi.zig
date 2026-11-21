@@ -800,14 +800,6 @@ pub const HostBrowser_callArgs = extern struct {
     arg1: RocStr,
 };
 
-/// Arguments for Host.call!
-/// Roc signature: Str, Str => Str
-/// Refcounted fields are owned by the hosted function.
-pub const HostCallArgs = extern struct {
-    arg0: RocStr,
-    arg1: RocStr,
-};
-
 /// Arguments for Host.cleanup!
 /// Roc signature: Box({} => Str) => {}
 /// Refcounted fields are owned by the hosted function.
@@ -918,15 +910,6 @@ pub const HostMemo_newArgs = extern struct {
     arg0: RocErasedCallable,
 };
 
-/// Arguments for Host.record!
-/// Roc signature: Str, Str, Str => {}
-/// Refcounted fields are owned by the hosted function.
-pub const HostRecordArgs = extern struct {
-    arg0: RocStr,
-    arg1: RocStr,
-    arg2: RocStr,
-};
-
 /// Arguments for Host.refresh!
 /// Roc signature: Box({} => Str) => {}
 /// Refcounted fields are owned by the hosted function.
@@ -964,14 +947,6 @@ pub const HostRow_setArgs = extern struct {
     arg0: u64,
     arg1: RocStr,
     arg2: RocErasedCallable,
-};
-
-/// Arguments for Host.serve!
-/// Roc signature: Str, Str => {}
-/// Refcounted fields are owned by the hosted function.
-pub const HostServeArgs = extern struct {
-    arg0: RocStr,
-    arg1: RocStr,
 };
 
 /// Arguments for Host.signal_get!
@@ -1081,15 +1056,6 @@ pub extern fn roc_boundary() callconv(.c) u64;
 ///     arg1.decref(roc_host);
 pub extern fn roc_browser_call(arg0: RocStr, arg1: RocStr) callconv(.c) void;
 
-/// Hosted symbol for Host.call!
-/// Roc signature: Str, Str => Str
-/// Owned arguments. Release each exactly once before returning, unless it is
-/// moved into storage or into the result:
-///     arg0.decref(roc_host);
-///     arg1.decref(roc_host);
-/// The result is owned by Roc: return exactly one owned reference.
-pub extern fn roc_call(arg0: RocStr, arg1: RocStr) callconv(.c) RocStr;
-
 /// Hosted symbol for Host.cleanup!
 /// Roc signature: Box({} => Str) => {}
 /// Owned arguments. Release each exactly once before returning, unless it is
@@ -1100,11 +1066,6 @@ pub extern fn roc_cleanup(arg0: RocErasedCallable) callconv(.c) void;
 /// Hosted symbol for Host.clear_timer!
 /// Roc signature: U64 => {}
 pub extern fn roc_clear_timer(arg0: u64) callconv(.c) void;
-
-/// Hosted symbol for Host.context!
-/// Roc signature: {} => Str
-/// The result is owned by Roc: return exactly one owned reference.
-pub extern fn roc_context() callconv(.c) RocStr;
 
 /// Hosted symbol for Host.context_find!
 /// Roc signature: Str => U64
@@ -1218,15 +1179,6 @@ pub extern fn roc_memo_new(arg0: RocErasedCallable) callconv(.c) u64;
 /// The result is owned by Roc: return exactly one owned reference.
 pub extern fn roc_problem() callconv(.c) RocStr;
 
-/// Hosted symbol for Host.record!
-/// Roc signature: Str, Str, Str => {}
-/// Owned arguments. Release each exactly once before returning, unless it is
-/// moved into storage or into the result:
-///     arg0.decref(roc_host);
-///     arg1.decref(roc_host);
-///     arg2.decref(roc_host);
-pub extern fn roc_record(arg0: RocStr, arg1: RocStr, arg2: RocStr) callconv(.c) void;
-
 /// Hosted symbol for Host.refresh!
 /// Roc signature: Box({} => Str) => {}
 /// Owned arguments. Release each exactly once before returning, unless it is
@@ -1265,19 +1217,6 @@ pub extern fn roc_row_index(arg0: u64, arg1: RocStr) callconv(.c) u64;
 ///     arg1.decref(roc_host);
 ///     decrefErasedCallable(arg2, roc_host);
 pub extern fn roc_row_set(arg0: u64, arg1: RocStr, arg2: RocErasedCallable) callconv(.c) void;
-
-/// Hosted symbol for Host.serve!
-/// Roc signature: Str, Str => {}
-/// Owned arguments. Release each exactly once before returning, unless it is
-/// moved into storage or into the result:
-///     arg0.decref(roc_host);
-///     arg1.decref(roc_host);
-pub extern fn roc_serve(arg0: RocStr, arg1: RocStr) callconv(.c) void;
-
-/// Hosted symbol for Host.serving!
-/// Roc signature: {} => Str
-/// The result is owned by Roc: return exactly one owned reference.
-pub extern fn roc_serving() callconv(.c) RocStr;
 
 /// Hosted symbol for Host.signal_get!
 /// Roc signature: U64 => Box({} -> rigid)
