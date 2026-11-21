@@ -200,6 +200,8 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		// A dev build: the stories too (Counter's and Badge's), which change no page of the app's.
 		const built = run("build", dir, "--client", client, "--dev");
 		assert.equal(built.status, 0, built.stderr);
+		// Its server function still works, and the build says to move it (D-023).
+		assert.match(built.stderr, /⚠ Generated\/MembersPage\.who: server!\(…\) is deprecated\. Define it as a GET endpoint/);
 		const app = readFileSync(join(dir, "Generated", "App.roc"), "utf8");
 		assert.match(app, /\t\tjobs: \[Job\.handler\(Jobs\.welcome\)\],/, "the job, found in Jobs.roc");
 		assert.match(app, /\t\tmigrations: \[\{ name: "0001_e2e_notes\.sql", sql: m0001_e2e_notes \}, \{ name: "0002_e2e_note_index\.sql", sql: m0002_e2e_note_index \}\],/, "the migrations, in order");

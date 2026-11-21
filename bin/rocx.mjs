@@ -404,6 +404,11 @@ export function build(dirs, { client, cwd = process.cwd(), log = console.error, 
 			failed = true;
 			continue;
 		}
+		// Server functions are deprecated (D-023): a page's data is a GET endpoint, read with
+		// `Endpoint.get!`. Each still works, until they are removed; the build says which to move.
+		for (const { module, name } of found) {
+			log(`⚠ ${module}.${name.replace(/!$/, "")}: server!(…) is deprecated. Define it as a GET endpoint (get! in a route's +server.roc) and read it with Endpoint.get!(Api.…) (D-023)`);
+		}
 		// The server functions' routes: for an app with any, or with routes/ (whose Routes answers
 		// `/rocx/call/…` with it), or that had it (an app may import it).
 		if ((found.length || routeFiles.length || existsSync(listed)) && write(listed, serverFunctionsModule(found, { dir: relative(cwd, dir) || "." }))) written++;
