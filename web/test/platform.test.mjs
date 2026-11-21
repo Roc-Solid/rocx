@@ -68,6 +68,8 @@ if (!skip) {
 		["form", join(out, "app-client", "form_app.roc"), "size"],
 		["reads-server", join(here, "app", "reads_app.roc"), "dev"],
 		["reads", join(out, "app-client", "reads_app.roc"), "size"],
+		["channels-server", join(here, "app", "channels_app.roc"), "dev"],
+		["channels", join(out, "app-client", "channels_app.roc"), "size"],
 	]) {
 		run(roc, ["build", "--target=wasm32", `--opt=${opt}`, `--output=${join(out, `${name}.wasm`)}`, app]);
 	}
@@ -1360,5 +1362,143 @@ test("forms: after a plain post, the flash is the submission: what was typed and
 		await sleep(100);
 		assert.equal(posted.length, count, "a submit a handler prevented is left alone");
 		assert.deepEqual(fresh.errors, []);
+	});
+});
+
+// ---- Channels (D-020): the hub, one stream for a tab's subscriptions ----
+
+/**
+ * A scripted `/rocx/live` (and `/rocx/live/send`), as the server answers them: each stream sends
+ * every channel it carries `resync` (or `refused`, for `/news/beta`), and `live.streams` keeps the
+ * open ones, to send them messages or cut them off; `dropping` cuts each new one off once it has
+ * resynced. A resync asked for is sent on the tab's open stream. `missing`: no server answers (404).
+ */
+function liveServer() {
+	const live = { connects: [], said: [], streams: [], dropping: false, missing: false };
+	const frame = (event, url, said) => `event: ${event}\ndata: ${url}\n${said === undefined ? "" : `data: ${JSON.stringify(said)}\n`}\n`;
+	live.send = (url, said) => {
+		for (const stream of live.streams) if (stream.urls.includes(url)) stream.response.write(frame("message", url, said));
+	};
+	live.api = (method, path, body, url) => {
+		const query = new URL(url, "http://x").searchParams;
+		if (path === "/rocx/live/send") {
+			live.said.push({ tab: query.get("tab"), items: JSON.parse(body) });
+			for (const item of JSON.parse(body)) {
+				if (!item.resync) continue;
+				for (const stream of live.streams) if (stream.tab === query.get("tab") && stream.urls.includes(item.channel)) stream.response.write(frame("resync", item.channel));
+			}
+			return { status: 204, body: "" };
+		}
+		if (path !== "/rocx/live") return null;
+		if (live.missing) {
+			live.connects.push({ at: performance.now(), tab: query.get("tab"), urls: query.getAll("c") });
+			return { status: 404, body: "not found" };
+		}
+		return {
+			status: 200,
+			headers: { "content-type": "text/event-stream", "cache-control": "no-store" },
+			stream: (response) => {
+				const stream = { tab: query.get("tab"), urls: query.getAll("c"), response, closed: false };
+				live.connects.push({ at: performance.now(), tab: stream.tab, urls: stream.urls });
+				for (const url of stream.urls) response.write(url === "/news/beta" ? frame("refused", url, { status: 403, why: "Forbidden" }) : frame("resync", url));
+				if (live.dropping) return response.end();
+				live.streams.push(stream);
+				response.on("close", () => {
+					stream.closed = true;
+					live.streams.splice(live.streams.indexOf(stream), 1);
+				});
+			},
+		};
+	};
+	return live;
+}
+
+test("channels: two components on one channel share one stream with a third's; each hears resync, then what is published, in order; a refused channel is told so and the others go on; what a handler says goes in one post; a new subscriber to an open channel gets a resync without a reconnect; a change of channels reconnects once; a drop, again, a little later each time, with a resync", { skip }, async () => {
+	const live = liveServer();
+	await withDocument({ app: "channels", api: live.api, pages: { "/": (render) => documentPage(render, "/") } }, async ({ site, server }) => {
+		const { html } = server.renderToString({ path: "/" });
+		assert.match(html, /<p class="feed first"><!--x--><!--\/x--><\/p>/, "on the server, nothing is subscribed to");
+		const before = server.live();
+		for (let i = 0; i < 10; i++) server.renderToString({ path: "/" });
+		assert.equal(server.live(), before, "and what would have subscribed is let go of");
+		const tab = await strictTab();
+		await tab.goto(`${site.url}/`);
+		await tab.wait("window.ready", 3000);
+		assert.deepEqual(tab.console, [], "hydrated strictly");
+		const feeds = () => tab.eval("[...document.querySelectorAll('.feed')].map((feed) => feed.className.slice(5) + ': ' + feed.textContent)");
+		await tab.wait("document.querySelector('.feed.beta').textContent === 'refused 403' && document.querySelector('.feed.second').textContent === 'resync acme'", 3000);
+		assert.deepEqual(await feeds(), ["first: resync acme", "second: resync acme", "beta: refused 403"]);
+		assert.equal(live.connects.length, 1, "one stream for the page's three subscriptions");
+		const [{ tab: id, urls }] = live.connects;
+		assert.deepEqual(urls, ["/news/acme", "/news/beta"], "each channel once, whoever subscribes to it");
+		assert.match(id, /^[0-9a-f]{24}$/, "the tab's id");
+		assert.equal(await tab.eval("sessionStorage.getItem('rocx-tab')"), id, "kept for the tab");
+		// Published: both subscribers hear it, in order; the refused channel hears nothing.
+		for (let n = 1; n <= 3; n++) live.send("/news/acme", { title: "news", n });
+		await tab.wait("document.querySelector('.feed.second').textContent.endsWith('news 3')", 3000);
+		assert.deepEqual(await feeds(), ["first: resync acme, news 1, news 2, news 3", "second: resync acme, news 1, news 2, news 3", "beta: refused 403"]);
+		// What a handler says: in one post, in order.
+		await tab.click(".say");
+		await until(() => live.said.length === 1);
+		await sleep(100);
+		assert.deepEqual(live.said, [{ tab: id, items: [{ channel: "/news/acme", message: { Hello: "one" } }, { channel: "/news/acme", message: { Hello: "two" } }] }]);
+		// The second goes: the first still subscribes, so the stream goes on as it is.
+		await tab.click(".toggle");
+		await tab.wait("document.querySelector('.feed.second') === null");
+		await sleep(100);
+		assert.equal(live.connects.length, 1, "the same set: no reconnect");
+		// It comes back: a new subscriber to a channel the stream has open asks for its resync.
+		await tab.click(".toggle");
+		await tab.wait("document.querySelector('.feed.second')?.textContent === 'resync acme'", 3000);
+		assert.equal(live.connects.length, 1, "still no reconnect");
+		assert.deepEqual(live.said.at(-1).items, [{ channel: "/news/acme", resync: true }]);
+		assert.equal(await tab.eval("document.querySelector('.feed.first').textContent"), "resync acme, news 1, news 2, news 3, resync acme", "everyone on the channel hears it");
+		// A resync asked for (Endpoint.resync!).
+		await tab.click(".resync");
+		await tab.wait("document.querySelector('.feed.second').textContent === 'resync acme, resync acme'", 3000);
+		// Switching the org: both feeds' effects run again, the set changes: one reconnect.
+		await tab.click(".switch");
+		await tab.wait("document.querySelector('.feed.second').textContent.endsWith('resync zeta')", 3000);
+		await sleep(150);
+		assert.equal(live.connects.length, 2, "exactly one reconnect for the change");
+		assert.deepEqual(live.connects[1].urls, ["/news/beta", "/news/zeta"]);
+		assert.equal(live.connects[1].tab, id, "the same tab");
+		assert.equal(live.streams.length, 1, "the old stream is closed");
+		assert.equal(await tab.eval("document.querySelector('.feed.beta').textContent"), "refused 403, refused 403", "beta, refused on each stream");
+		// Cut off: the hub opens it again, a little later each time it drops at once, and every
+		// subscriber hears resync each time.
+		await tab.eval("window.ready.runtime.hub.first = 80");
+		live.dropping = true;
+		const cut = performance.now();
+		live.streams[0].response.end();
+		await until(() => live.connects.length >= 6, 5000, "four reconnects");
+		live.dropping = false;
+		await until(() => live.connects.length >= 7, 5000, "a stream that stays");
+		const gaps = live.connects.slice(2, 7).map((connect, i) => connect.at - (i ? live.connects[1 + i].at : cut));
+		assert.ok(gaps[0] >= 75 && gaps[0] < 400, `the first after ~80 ms: ${gaps.map(Math.round)}`);
+		for (let i = 1; i < gaps.length; i++) assert.ok(gaps[i] > gaps[i - 1] * 1.4, `each wait about twice the last: ${gaps.map(Math.round)}`);
+		assert.ok(live.connects.every((connect) => connect.tab === id), "one tab throughout");
+		await tab.wait("document.querySelector('.feed.first').textContent.split('resync zeta').length === 7", 3000);
+		assert.deepEqual(tab.errors, []);
+		assert.deepEqual(tab.console, []);
+	});
+});
+
+test("channels: where no server answers them (a static copy), every subscriber hears Refused(404) and the hub asks once", { skip }, async () => {
+	const live = liveServer();
+	live.missing = true;
+	await withDocument({ app: "channels", api: live.api, pages: { "/": (render) => documentPage(render, "/") } }, async ({ site }) => {
+		const tab = await strictTab();
+		await tab.goto(`${site.url}/`);
+		await tab.wait("window.ready", 3000);
+		await tab.wait("[...document.querySelectorAll('.feed')].every((feed) => feed.textContent === 'refused 404')", 3000);
+		await tab.click(".switch");
+		await tab.click(".say");
+		await sleep(400);
+		assert.equal(live.connects.length, 1, "asked once, and no more");
+		assert.equal(live.said.length, 0, "nothing said where nobody hears");
+		assert.equal(await tab.eval("document.querySelector('.feed.first').textContent"), "refused 404, refused 404", "a new subscription is told at once");
+		assert.deepEqual(tab.errors, []);
+		assert.deepEqual(tab.console, []);
 	});
 });

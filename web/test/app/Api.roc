@@ -1,5 +1,6 @@
 import pf.Call
 import pf.Endpoint
+import pf.Channel
 import pf.Events
 import pf.Server
 
@@ -36,6 +37,13 @@ Api := [].{
 	## its method and URL.
 	reads : {} -> Endpoint({}, {}, { count : U64, weeks : Str })
 	reads = |{}| Endpoint.remote("GET", "/api/reads")
+
+	## What an org's news carries (D-020).
+	News : { title : Str, n : U64 }
+
+	## The channel at /news/<org>, as the browser's copy has it: its method and URL.
+	news : { org : Str } -> Endpoint({}, {}, Channel(Str, News, [Hello(Str)]))
+	news = |{ org }| Endpoint.remote("CHANNEL", "/news/${org}")
 
 	## GET /api/changes, its events: each says what the reads page shows has changed.
 	changes : {} -> Endpoint({}, {}, Events(Str))
