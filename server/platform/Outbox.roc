@@ -134,46 +134,55 @@ json! = |{}|
 		Err(why) => Server.refused(500, why)
 	}
 
+## The mailbox's sidebar: its one list, and how many messages it has.
+mail_side : U64, Bool -> Str
+mail_side = |count, on| {
+	inbox = AdminHtml.nav_link({ href: "/__rocx/mail", icon: "mail", tone: "accent", label: "Inbox", count: count.to_str(), on })
+	AdminHtml.side({ name: "Mailbox", note: "Mail kept, not sent", home: "/__rocx/mail", nav: inbox, foot: "Under --dev, with no --smtp-url, the server keeps each email here instead of sending it." })
+}
+
 listed! : {} => Server.Response
-listed! = |{}|
+listed! = |{}| {
+	now = Host.now_millis!({}).to_i64_wrap()
 	match all!({}) {
-		Err(why) => AdminHtml.page(500, { title: "Mailbox", events: "", body: "<h1>Mailbox</h1><p class=\"problem\">${AdminHtml.escape(why)}</p>" })
+		Err(why) => AdminHtml.page(500, { title: "Mailbox", events: "", now, side: mail_side(0, Bool.True), body: "${AdminHtml.header({ eyebrow: "Dev mailbox", title: "Mailbox", actions: "" })}<section class=\"panel\"><p class=\"problem\">${AdminHtml.escape(why)}</p></section>" })
 		Ok(messages) => {
-			now = Host.now_millis!({}).to_i64_wrap()
 			rows = messages.fold([], |newest_first, each| newest_first.prepend(each)).map(
 				|each| {
 					link = "/__rocx/mail/${each.id.to_str()}"
 					subject = if (each.subject.is_empty()) "(no subject)" else each.subject
-					"<tr><td>${AdminHtml.relative(each.at, now)}</td><td>${AdminHtml.escape(each.from)}</td><td>${AdminHtml.escape(each.to)}</td><td><a href=\"${link}\">${AdminHtml.escape(subject)}</a></td></tr>"
+					"<tr><td class=\"when\">${AdminHtml.relative(each.at, now)}</td><td>${AdminHtml.escape(each.from)}</td><td>${AdminHtml.escape(each.to)}</td><td class=\"last\"><a class=\"row-link\" href=\"${link}\"><strong>${AdminHtml.escape(subject)}</strong></a></td></tr>"
 				},
 			)
 			kept = if (Setting.database!({})) "in Postgres (the last 500, for a week)" else "in the server's memory (the last 100, until it stops)"
 			table =
 				if rows.is_empty() {
-					"<p class=\"muted\">No mail yet.</p>"
+					AdminHtml.empty("mail", "No mail yet", "Email the app sends shows here as it is sent.")
 				} else {
-					"<table><thead><tr><th>When</th><th>From</th><th>To</th><th>Subject</th></tr></thead><tbody>${Str.join_with(rows, "")}</tbody></table>"
+					"<div class=\"table-wrap\"><table class=\"mail\"><thead><tr><th>When</th><th>From</th><th>To</th><th>Subject</th></tr></thead><tbody>${Str.join_with(rows, "")}</tbody></table></div>"
 				}
-			clear = if (rows.is_empty()) "" else AdminHtml.button("/__rocx/mail/clear", [], "Clear")
+			clear = if (rows.is_empty()) "" else AdminHtml.button_with("act-danger", "stop", "/__rocx/mail/clear", [], "Clear")
 			body = Str.join_with(
 				[
-					"<div class=\"bar\"><h1>Mailbox</h1><span>${clear} <a href=\"/__rocx/mail\">Refresh</a></span></div>",
-					"<p class=\"muted\">Email the server kept rather than sent (it has no <code>--smtp-url</code>), ${kept}.</p>",
-					table,
+					AdminHtml.header({ eyebrow: "Dev mailbox", title: "Mailbox", actions: "${clear}${AdminHtml.live(now, "/__rocx/mail")}" }),
+					AdminHtml.panel({ eyebrow: "Newest first", title: "Inbox", aside: "<span>${rows.len().to_str()} kept</span>", body: "<div class=\"callout tone-accent\">${AdminHtml.icon("mail")}<div><span>Email the server kept rather than sent (it has no <code>--smtp-url</code>), ${kept}.</span></div></div>${table}", class: "" }),
 				],
 				"",
 			)
-			AdminHtml.page(200, { title: "Mailbox", events: "/__rocx/mail?events", body })
+			AdminHtml.page(200, { title: "Mailbox", events: "/__rocx/mail?events", now, side: mail_side(rows.len(), Bool.True), body })
 		}
 	}
+}
 
 one! : I64 => Server.Response
-one! = |id|
+one! = |id| {
+	now = Host.now_millis!({}).to_i64_wrap()
+	back = "<a class=\"btn\" href=\"/__rocx/mail\">${AdminHtml.icon("back")}Mailbox</a>"
 	match all!({}) {
-		Err(why) => AdminHtml.page(500, { title: "Mailbox", events: "", body: "<p class=\"problem\">${AdminHtml.escape(why)}</p>" })
+		Err(why) => AdminHtml.page(500, { title: "Mailbox", events: "", now, side: mail_side(0, Bool.False), body: "${AdminHtml.header({ eyebrow: "Dev mailbox", title: "Mailbox", actions: back })}<section class=\"panel\"><p class=\"problem\">${AdminHtml.escape(why)}</p></section>" })
 		Ok(messages) =>
 			match messages.find_first(|each| each.id == id) {
-				Err(_) => AdminHtml.page(404, { title: "Mailbox", events: "", body: "<p><a href=\"/__rocx/mail\">Mailbox</a></p><h1>No message #${id.to_str()}</h1>" })
+				Err(_) => AdminHtml.page(404, { title: "Mailbox", events: "", now, side: mail_side(messages.len(), Bool.False), body: "${AdminHtml.header({ eyebrow: "Dev mailbox", title: "No message #${id.to_str()}", actions: back })}<section class=\"panel\">${AdminHtml.empty("mail", "No message #${id.to_str()}", "It may have been cleared, or kept more than a week ago.")}</section>" })
 				Ok(message) => {
 					subject = if (message.subject.is_empty()) "(no subject)" else message.subject
 					html =
@@ -181,22 +190,22 @@ one! = |id|
 							""
 						} else {
 							# A frame of its own, sandboxed: no script runs in it, and a link opens elsewhere.
-							"<h2>HTML</h2><iframe sandbox=\"allow-popups allow-popups-to-escape-sandbox\" referrerpolicy=\"no-referrer\" srcdoc=\"${AdminHtml.escape("<base target=\"_blank\">${message.html}")}\"></iframe>"
+							"<section class=\"panel\"><h2>HTML</h2><iframe sandbox=\"allow-popups allow-popups-to-escape-sandbox\" referrerpolicy=\"no-referrer\" srcdoc=\"${AdminHtml.escape("<base target=\"_blank\">${message.html}")}\"></iframe></section>"
 						}
 					body = Str.join_with(
 						[
-							"<p><a href=\"/__rocx/mail\">Mailbox</a></p>",
-							"<h1>${AdminHtml.escape(subject)}</h1>",
-							"<dl><dt>From</dt><dd>${AdminHtml.escape(message.from)}</dd><dt>To</dt><dd>${AdminHtml.escape(message.to)}</dd><dt>Subject</dt><dd>${AdminHtml.escape(message.subject)}</dd><dt>Date</dt><dd>${AdminHtml.moment(message.at)}</dd></dl>",
+							AdminHtml.header({ eyebrow: "Message #${id.to_str()}", title: AdminHtml.escape(subject), actions: back }),
+							"<section class=\"panel\"><dl class=\"plain\"><dt>From</dt><dd>${AdminHtml.escape(message.from)}</dd><dt>To</dt><dd>${AdminHtml.escape(message.to)}</dd><dt>Subject</dt><dd>${AdminHtml.escape(message.subject)}</dd><dt>Date</dt><dd>${AdminHtml.moment(message.at)} <span class=\"muted\">(${AdminHtml.relative(message.at, now)})</span></dd></dl></section>",
 							html,
-							"<h2>Text</h2><pre>${AdminHtml.escape(message.text)}</pre>",
-							"<details><summary>The message as SMTP would carry it</summary><pre>${AdminHtml.escape(message.raw)}</pre></details>",
+							"<section class=\"panel\"><h2>Text</h2><pre>${AdminHtml.escape(message.text)}</pre></section>",
+							"<section class=\"panel\"><details><summary>The message as SMTP would carry it</summary><pre>${AdminHtml.escape(message.raw)}</pre></details></section>",
 						],
 						"",
 					)
-					AdminHtml.page(200, { title: subject, events: "", body })
+					AdminHtml.page(200, { title: subject, events: "", now, side: mail_side(messages.len(), Bool.False), body })
 				}
 			}
 	}
+}
 
 expect path_of("/__rocx/mail?events") == "/__rocx/mail"

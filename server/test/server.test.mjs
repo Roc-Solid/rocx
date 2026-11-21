@@ -845,7 +845,7 @@ test("jobs: listed newest first, by state and kind, a page at a time; one read b
 	for (const n of [1, 3]) assert.equal(await post(`/jobs/cancel?key=${run}list${n}`), "1");
 });
 
-test("the jobs page: behind the app's guard; the states, kinds, schedules and jobs; retry, cancel and run now as forms; one job; its stream of changes", { skip: skipDb }, async () => {
+test("the jobs page: behind the app's guard; the states, the last hour, failures, kinds, schedules and jobs; retry, cancel and run now as forms; one job in a drawer; its stream of changes", { skip: skipDb }, async () => {
 	const admin = { "x-admin": "yes" };
 	const page = (query = "", init = {}) => get(`/admin/jobs${query}`, { ...init, headers: { ...admin, ...init.headers }, redirect: "manual" });
 	const form = (fields, headers = {}) => page("", { method: "POST", body: new URLSearchParams(fields).toString(), headers: { "content-type": "application/x-www-form-urlencoded", ...headers } });
@@ -857,23 +857,27 @@ test("the jobs page: behind the app's guard; the states, kinds, schedules and jo
 	assert.equal(listed.headers.get("content-type"), "text/html; charset=utf-8");
 	const html = await listed.text();
 	assert.match(html, /<h1>Jobs<\/h1>/);
-	assert.match(html, /<main data-events="\/admin\/jobs\?events=1">/);
-	assert.match(html, /<a class="on" href="\/admin\/jobs">All \d+<\/a>/);
-	assert.match(html, /<td><a href="\/admin\/jobs\?kind=twice"><code>twice<\/code><\/a><\/td><td>2<\/td><td>none<\/td>/, "a kind, its attempts and time limit");
-	assert.match(html, /kind=slow"><code>slow<\/code><\/a><\/td><td>2<\/td><td>300 ms<\/td>/);
-	assert.match(html, /<td><code>\* \* \* \* \* \*<\/code><\/td><td><a href="\/admin\/jobs\?kind=tick"><code>tick<\/code><\/a><\/td><td><time datetime="\d+" title="[^"]+ UTC">(in \d+ m?s|now)<\/time><\/td>/, "a schedule, and when it runs next");
+	assert.match(html, /<div class="shell" data-events="\/admin\/jobs\?events=1" data-now="\d+">/);
+	assert.match(html, /<a class="metric" href="\/admin\/jobs" aria-current="page"><span class="metric-label">All<\/span><strong>\d+<\/strong><\/a>/);
+	assert.match(html, /<h2>Finished jobs<\/h2>/, "the last hour");
+	assert.match(html, /<h2>Failures<\/h2>/, "the latest failures");
+	assert.match(html, /<a class="kind-name" href="\/admin\/jobs\?kind=twice"><code>twice<\/code><\/a><span class="kind-meta">2 attempts · no time limit<\/span>/, "a kind, its attempts and time limit");
+	assert.match(html, /kind=slow"><code>slow<\/code><\/a><span class="kind-meta">2 attempts · 300 ms limit<\/span>/);
+	assert.match(html, /kind=tick"><code>tick<\/code><\/a><form[\s\S]*?<span class="cron"><code>\* \* \* \* \* \*<\/code>every second<\/span><span class="next">next <time datetime="\d+" title="[^"]+ UTC">(in \d+ s|now)<\/time><\/span>/, "a schedule, in words, and when it runs next");
 
 	// The failed job of a kind tried twice, with its last error and a Retry button.
 	const failed = await (await page("?state=failed&kind=twice")).text();
-	const [, id] = /href="\/admin\/jobs\?id=(\d+)">#\d+<\/a><\/td><td><code>twice<\/code><\/td><td><span class="state state-failed">failed<\/span><\/td><td>2 of 2<\/td>/.exec(failed) ?? [];
+	const [, id] = /href="\/admin\/jobs\?state=failed&amp;kind=twice&amp;id=(\d+)"><strong>twice<\/strong><span>#\d+<\/span><\/a><span class="err" title="fails every time [^"]*">[^<]*<\/span><\/td><td><span class="state state-failed">failed<\/span><\/td><td class="n"><span class="tries">2<small> of 2<\/small><\/span><\/td>/.exec(failed) ?? [];
 	assert.ok(id, failed);
 	assert.match(failed, new RegExp(`fails every time \\(${run}twice\\)`));
 	assert.match(failed, new RegExp(`<input type="hidden" name="action" value="retry"><input type="hidden" name="id" value="${id}"><input type="hidden" name="back" value="state=failed&amp;kind=twice"><button>Retry</button>`));
-	const one = await (await page(`?id=${id}`)).text();
-	assert.match(one, new RegExp(`<h1>Job #${id}</h1>`));
+	const one = await (await page(`?state=failed&kind=twice&id=${id}`)).text();
+	assert.match(one, new RegExp(`<p class="eyebrow">Job #${id}</p><h2 id="job-title"><code>twice</code></h2>`), "in a drawer over the list");
+	assert.match(one, /<a class="icon-btn" href="\/admin\/jobs\?state=failed&amp;kind=twice" data-close/, "closed back to the list");
 	assert.match(one, /<dt>Tried<\/dt><dd>2 of 2 times<\/dd>/);
-	assert.match(one, new RegExp(`<h2>Input</h2><pre>\\{&quot;run&quot;:&quot;${run}twice&quot;\\}</pre>`));
-	assert.match(one, new RegExp(`<h2>Last error</h2><pre class="problem">fails every time \\(${run}twice\\)</pre>`));
+	assert.match(one, new RegExp(`<h3>Input <small>JSON</small></h3><pre class="json">\\{\n  <span class="j-key">&quot;run&quot;</span>: <span class="j-str">&quot;${run}twice&quot;</span>\n\\}</pre>`));
+	assert.match(one, new RegExp(`<h3>Last error</h3><pre class="problem">fails every time \\(${run}twice\\)</pre>`));
+	assert.equal((await page("?id=999999999")).status, 404, "a job that isn't there");
 
 	// Retry: back where it was, and it runs again (and fails again, twice).
 	const retried = await form({ action: "retry", id, back: "state=failed&kind=twice" });
@@ -1035,7 +1039,7 @@ test("the dev mailbox: under --dev, each email kept is a page (headers, text, it
 		const listed = await dev.get("/__rocx/mail", { headers: { accept: "text/html" } });
 		assert.equal(listed.headers.get("content-type"), "text/html; charset=utf-8");
 		const list = await listed.text();
-		const [, id] = new RegExp(`<a href="/__rocx/mail/(\\d+)">Hello ${run}box</a>`).exec(list) ?? [];
+		const [, id] = new RegExp(`<a class="row-link" href="/__rocx/mail/(\\d+)"><strong>Hello ${run}box</strong></a>`).exec(list) ?? [];
 		assert.ok(id, list);
 		assert.match(list, /<td>rocx &lt;rocx@localhost&gt;<\/td><td>ada@example\.com<\/td>/);
 		assert.match(list, /data-events="\/__rocx\/mail\?events"/);

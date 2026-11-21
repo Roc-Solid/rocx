@@ -136,10 +136,17 @@ view! = |_|
 			<Code title="routes/admin/jobs/+server.roc" source={"import pf.JobsPage\nimport ../../../Middlewares\n\nmiddleware = Middlewares.admin\n\nrespond! = |{ request, .. }| JobsPage.respond!(request, { mount: \"/admin/jobs\" })"} numbers={Bool.False} />
 			<ul>
 				<li>
-					<strong>What it shows.</strong> How many jobs are queued, running, failed, done and canceled, of each
-					kind, with its attempts and time limit; the schedules and when each comes round next; the jobs, fifty
-					a page, newest first, each with its state, attempts, times, key and last error;
-					<code>?id=…</code> one job whole, its input and its last error.
+					<strong>What it shows.</strong> A console of the queue: how many jobs are queued, running, failed,
+					done and canceled; what finished in each five minutes of the last hour (done, done after a retry,
+					failed); the latest failures, with why; each kind, with its attempts, its time limit and its jobs
+					in each state; the schedules, in words where it can (<code>0 3 * * *</code>: daily at 03:00), and
+					when each comes round next; and the jobs, fifty a page, newest first, each with its state,
+					attempts, times, key and last error. The sidebar narrows it to a state or a kind.
+				</li>
+				<li>
+					<strong>One job</strong> (<code>?id=…</code>) opens in a drawer over the list: its input (the JSON,
+					laid out), its last error, its attempts, time limit and key, and its timeline, from queued to
+					finished.
 				</li>
 				<li>
 					<strong>What it does.</strong> Retry, cancel and run now are plain forms posting to
@@ -148,9 +155,10 @@ view! = |_|
 				</li>
 				<li>
 					<strong>As jobs change</strong>, it refreshes itself, over a stream of events
-					(<code>mount?events</code>); without script it is the same page, with a Refresh link. It needs no
-					components and no hydration, so it works whatever the app's pages are made of; its stylesheet is its
-					own.
+					(<code>mount?events</code>), and its times count on (<code>3 s ago</code>); Escape closes the
+					drawer. Without script it is the same page, with a button that refreshes it. It follows the
+					reader's light or dark scheme, and fits a phone. It needs no components and no hydration, so it
+					works whatever the app's pages are made of; its stylesheet is its own.
 				</li>
 			</ul>
 
