@@ -101,6 +101,22 @@ same components natively; this one hydrates them.
   runs again; an effect's apply's before the next apply. `on_cleanup!` in an event handler fails,
   since nothing would run it. A listen (`Call.listen!`) started in an owner is aborted when that
   owner is cleaned up; from a handler it runs to the stream's end.
+- **Channels** (D-020): `Endpoint.subscribe!(Api.channel_org_org_news({ org }), heard!)`, from an
+  effect, subscribes to a route's `channel!` (server/README.md) until the effect runs again or its
+  component goes; `heard!` is given `Resync` (read your data again: on each connect and reconnect,
+  when the server saw it fall behind, and on `Endpoint.resync!`), then `Message(message)`, in order,
+  one at a time (the next once its handler is done, waiting or not), or `Refused(status, why)` /
+  `Ended(why)`. The runtime's hub (`Hub` in `runtime.js`) keeps every subscription in the tab on one
+  stream, `GET /rocx/live?tab=…&c=<url>…`; two subscribers to one channel share it. When the set of
+  channels changes, it opens the stream again once the render that changed it is done, and only if
+  the set did change; when the stream drops, after 0.5 s, doubled each time up to 30 s, starting
+  over once a stream has stayed up 10 s. A new subscriber to a channel the stream has open asks the
+  server for its resync. `Endpoint.say!(channel, said)` (from a handler) goes, with the frame's other
+  sayings, in one `POST /rocx/live/send`; a refusal is a warning in the console. The tab's id is
+  random, kept in `sessionStorage` (a reload keeps it; a duplicated tab copies it). Where no server
+  answers (a static copy: a 404, a 405, or no stream), every subscriber hears `Refused(404, …)`, and
+  the hub asks for nothing more. Subscribing from a handler fails: nothing would end it. On the
+  server, nothing is subscribed to. `Endpoint.publish!` is the server's: in the browser it fails.
 - **Timers**: `set_interval!(ms, tick!)` is `setInterval`, `set_timeout!(ms, done!)` `setTimeout`
   (`Host.interval!`, `Host.timeout!`), their handlers run as a click's; each answers its `clear!`
   (`Host.clear_timer!`). A timer started in a component or a computation (an effect's compute too),
@@ -235,8 +251,9 @@ same components natively; this one hydrates them.
   plays.
 - **An observer** (`runtime.observer`: `seeded`, `call`, `answer`, `fetch`, `fetched`, `listen`,
   `heard`, `unlisten`, `patch`, `row`, `show`, `frame`, `effect` (a call of the page's own
-  function), `apply` (an effect's apply), `submit`, `submitted`) is told what the runtime does: the
-  docs' inspectors and the showcase's frame meter. Hydrating isn't a patch.
+  function), `apply` (an effect's apply), `submit`, `submitted`, and the hub's `subscribe`,
+  `unsubscribe`, `connect`, `dropped`) is told what the runtime does: the docs' inspectors and the
+  showcase's frame meter. Hydrating isn't a patch.
 
 ## The tests (`test/platform.test.mjs`)
 
@@ -251,8 +268,9 @@ store through a context; the tally
 with nothing to provide its store; and a whole document (`Document.rocx`; inside an `<Errored>`,
 `Wrapped.rocx`), rendered in Node as the server platform answers a page and hydrated by
 `start.js`; effects, a cleanup, a timer and a listen (`Effects.rocx`); a form's submission
-(`Form.rocx`); props read in a hole and outside one, and an accessor (`Props.rocx`); and `<Title>`s
-(`Titles.rocx`). In Chromium, against a scripted server: what shows while answers come, what a click
+(`Form.rocx`); props read in a hole and outside one, and an accessor (`Props.rocx`); `<Title>`s
+(`Titles.rocx`); and channels (`Channels.rocx`: two feeds on one org's news, a third on another's).
+In Chromium, against a scripted server (a scripted `/rocx/live` too): what shows while answers come, what a click
 patches, failures and retries, rows kept and moved, rows and parts that stay until their
 transitions are over (and none with less motion asked for), hydration without a request, a tampered document's `<body>` rendered again (and strictly, a throw), the
 host's `data-rocx` elements passed over, `start.js` under `/rocx/` asking for nothing outside it,
@@ -262,7 +280,10 @@ listen stopping with their component, a flash hydrated as the server rendered it
 prop it read changes, the document's title kept to the last `<Title>` there (hydrated strictly, the
 server's `<title data-rocx>` first in `<head>`), a `<NoHydration>` the browser's wasm hasn't (its
 nodes kept, strictly and after `<body>` is rendered again; the browser's build rendered against
-the page's answers and regions, byte for byte), and no allocation left behind.
+the page's answers and regions, byte for byte), one channel stream for three subscriptions (one
+refused), messages in order, a frame's sayings in one post, a late subscriber resynced without a
+reconnect, one reconnect for a change, waits that double after drops, a host with no server asked
+once, and no allocation left behind.
 
 ## Not yet
 

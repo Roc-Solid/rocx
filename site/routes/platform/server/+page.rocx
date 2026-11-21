@@ -80,6 +80,13 @@ view! = |_|
 				sleeping at once hold up no page. <a href={"${Paths.calls}#events"}>Events</a> shows one, and a
 				component listening to it.
 			</p>
+			<p>
+				But each holds one of the pool's threads while it is open, and there are 1024
+				(<code>--blocking-threads</code>), the background loops' among them: past that, requests wait for a
+				stream to end. What pages follow live is better a <a href={"${Paths.platform_live}#channels"}>channel</a>:
+				a tab's channels share one stream, which the host keeps without a thread, and Roc runs only for a
+				channel's check or hook, a call at a time.
+			</p>
 
 			<Heading id="crashes">A crash ends one call</Heading>
 			<p>

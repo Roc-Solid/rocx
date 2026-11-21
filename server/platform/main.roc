@@ -34,7 +34,7 @@
 ##   GET endpoint a component reads while the host renders the page (`Endpoint.get!`) is answered by
 ##   its route, in-process (`Host.fetch!`). The modules components are written with (`Html`, `Solid`, `Show`,
 ##   `For`, `Loading`, `Errored`, `Context`, `Call`, `Router`, `HttpStatusCode`), and HTTP's
-##   (`Server`, `Endpoint`, `Middleware`, `Events`, `OpenApi`), are the browser's platform's
+##   (`Server`, `Endpoint`, `Channel`, `Middleware`, `Events`, `OpenApi`), are the browser's platform's
 ##   (web/platform), copied here by the build, so the same code compiles on both.
 ##
 ## Each call runs on a thread of its own from a pool, so an effect (`Db.all!`, a stream's

@@ -656,6 +656,109 @@ boundary around the whole document can't work), so nothing caught it, and the pa
 
 **Reversible:** yes. Since D-023 a page reads endpoints instead, and the same holds for them.
 
+## D-020 Channels: typed live updates over one stream per tab
+
+**Context.** A page that follows something live (an org's news, who is in a room, where the others'
+cursors are) listened to an endpoint's events (`Endpoint.listen!`): a `fetch` of its own per
+listener, so a page with seven of them waited for a connection (a browser opens six per host over
+HTTP/1.1). Two components couldn't share one, a page couldn't change what it listened to without a
+new one, what was published between the page's render and its listening was lost, a stream that
+dropped never came back, and the check that let a listener in ran once, so someone who lost access
+kept hearing. And each open stream held one of the server's 1024 threads for Roc, so a thousand open
+tabs would stop it answering.
+
+**Options.**
+1. Keep `events!`, and fix each problem in the app: a stream per page, its own reconnects and checks.
+2. WebSockets: one connection both ways. A second protocol, its own upgrade path through proxies,
+   and state per connection on the server; the browser's pages say little, and plain HTTP posts do.
+3. Channels the app defines (a check, a message type, what pages may say), carried over one
+   server-sent-events stream per tab that the host keeps without a thread, a hub in the runtime
+   that reconnects it, and plain posts for what pages say.
+
+**Choice.** 3.
+
+```roc
+# routes/org/[org]/news/+server.roc, behind the route's middleware
+channel! : { request : Server.Request, params : { org : Str }, context : Member } => Try(Channel(Str, News, [Hello(Str)]), Endpoint.Refusal)
+channel! = |{ params, context, .. }| if context.org == params.org Ok(Channel.allow(context.name)) else Err(Forbidden)
+receive! = |{ who, said, channel, .. }| …       # optional: what pages say, after the same check
+on_open! = |{ who, tab, channel, .. }| [welcome] # optional: sent first, after each Resync
+on_close! = |{ who, tab, why, channel, .. }| …   # optional: why is Gone or Refused(Str)
+
+# a component, from an effect
+create_effect!(|| org!(), |org| Endpoint.subscribe!(Api.channel_org_org_news({ org }), heard!))
+Endpoint.say!(Api.channel_org_org_news({ org }), Hello("hi"))   # from a handler
+Endpoint.resync!(Api.channel_org_org_news({ org }))
+
+# the server: a request, a job, an actor
+Endpoint.publish!(Api.channel_org_org_news({ org: "acme" }), news)
+Endpoint.publish_latest!(Api.channel_rooms_room({ room }), member, cursor)
+
+Channel(who, message, said)                       # what channel! answers: Channel.allow(who)
+Channel.Event(message) : [Message(message), Resync, Refused(U16, Str), Ended(Str)]
+```
+
+- **A channel is a route's `channel!`**, at a path the app chose, as an endpoint is (D-023): its
+  identity is that path with its params. `rocx build` writes it into `Generated/Api` as
+  `channel_<path>(params)`, an `Endpoint` whose method is `CHANNEL`; the browser's copy is its URL.
+  A path a channel alone is at answers no HTTP request. A page reads the channel's data as the
+  server renders it from a `get!` on the same path.
+- **One stream per tab, `GET /rocx/live?tab=<id>&c=<url>…`**, server-sent events, answered by the
+  host on the async side (`server/host/src/channels.rs`). Roc runs only briefly, a call at a time on
+  the blocking pool: each channel's check as the stream opens, again on each beat, a hook. The
+  tests keep 40 streams open on 8 threads while requests answer at once.
+- **The check is a request** the host makes of the app for the channel's own path, with the
+  stream's headers, `accept: application/json` and `x-rocx-channel: open`, through the app's
+  middleware and the route's: the route's middleware guards its channel as it guards its endpoints,
+  and its context is the check's `context`. The host drops `x-rocx-channel` from every request it is
+  sent. `/rocx/live` itself never reaches the app's middleware, so a sign-in guard has nothing to
+  let through (as it had for `/rocx/call/`).
+- **Refusal is per channel**: a refused one gets `event: refused` (its status and why), and the
+  stream goes on for the others.
+- **Checked again on every beat** (`: beat`, every 15 s, `--live-beat-ms`): one that now refuses
+  gets `event: ended` and its `on_close!` is told `Refused(why)`. A server error (500) ends nothing.
+- **Resync**: a channel let in gets `event: resync`, then its `on_open!` messages, then what is
+  published. Its topic is listened to before its check runs, so nothing published meanwhile is
+  missed. A subscriber that falls behind (256 messages) is resynced instead of being sent what it
+  missed; a page may ask (`Endpoint.resync!`), and a new subscriber to a channel already open
+  does, through `POST /rocx/live/send`, without a reconnect.
+- **The hub** (`runtime.js`) keeps the tab's subscriptions, two subscribers to a channel sharing
+  it. When the set changes it opens the stream again once the render that changed it is done, and
+  only if the set changed; when the stream drops, after 0.5 s, doubled each time to 30 s. Each
+  subscriber hears its events one at a time, in order. A tab's id, random, kept in sessionStorage,
+  names it to the hooks. Where no server answers (a static copy), every subscriber hears
+  `Refused(404, …)`, asked once.
+- **What pages say** goes in `POST /rocx/live/send?tab=<id>`, a frame's sayings in one JSON list,
+  each through the channel's middleware and check, then `receive!`: 204, or each refusal. JSON
+  only, so another site's form can't post it.
+- **Hooks** are given the path's params, who the check said, the tab's id, and the channel (a route
+  file can't import `Api`). `who` is JSON, kept by the host for `on_close!`, which runs outside the
+  middleware: the subscriber's access may be what ended it.
+- **Order**: a channel's messages arrive in the order they were published. `publish_latest!`
+  messages are a topic of their own: a subscriber behind gets only the newest per key, never a
+  resync, and they aren't ordered with the others.
+- **Dead clients**: a 20 s deadline on what the server sent going unacknowledged
+  (`TCP_USER_TIMEOUT`, `TCP_RXT_CONNDROPTIME`) ends a stream whose client vanished about 35 s
+  later, at a beat, and `on_close!` is told `Gone`.
+- Publishing is `Live`'s (topics `channel:<url>`, `latest:<url>`), in one server's memory. A
+  Postgres `listen`/`notify` backend could carry it later behind the same `publish!`.
+
+**Why.** One connection per tab whatever the page follows, a check that keeps applying, no gap a
+subscriber can't see (it is told to read again), and servers that hold no thread per open tab. The
+server keeps nothing per stream but the stream itself, so reconnecting with the new set works
+through any proxy; a connection id with subscribe and unsubscribe posts is the fallback if
+reconnects ever cost too much. No second protocol: what pages say is a post.
+
+**Changed while building.** Channels were first a `channel!` construct inside components, like
+`server!`; after D-023 they are a route's, as endpoints are. A subscription's end can't say
+`Unsubscribed`: a change of what a tab subscribes to opens its stream again, and the old stream's
+end is `Gone`. `/rocx/live` has no route pattern (`Server.Request.route`, D-026): the host answers
+it, so a metric in the app's middleware never sees it; each check is labelled by its channel's
+route.
+
+**Reversible:** the API, with an edit at each channel and subscription; the transport (one stream,
+the hub), freely: it is the platform's.
+
 ## D-021 Actors: registered kinds, mailboxes, typed tells and timers, no locks
 
 **Context.** An actor was a named lock (`Host.lock!`, a `tokio::sync::Mutex` per key) around a read

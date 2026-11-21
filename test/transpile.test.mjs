@@ -411,3 +411,28 @@ test("unsafe or unclear markup is refused at its line and column", () => {
 	assert.equal(roc(`x = <a rel??={r} />`), `x = Html.element("a", [Html.optional("rel", r),], [])`);
 	assert.match(failure(`x = <a rel??="x" />`).reason, /always there/);
 });
+
+test("a channel's route file (channel! and its hooks, plain Roc) is left as it is, but for the browser's copy, which drops its middleware and the imports only that used", () => {
+	const source = [
+		"import pf.Server",
+		"import pf.Endpoint",
+		"import pf.Channel",
+		"import ../../Members",
+		"",
+		"middleware = Members.signed_in",
+		"",
+		"## An org's news.",
+		"channel! : { request : Server.Request, params : { org : Str }, context : { org : Str, name : Str } } => Try(Channel(Str, { title : Str }, []), Endpoint.Refusal)",
+		"channel! = |{ params, context, .. }| if context.org == params.org Ok(Channel.allow(context.name)) else Err(Forbidden)",
+		"",
+		"on_open! = |{ who, .. }| [{ title: \"welcome, ${who}\" }]",
+		"",
+	].join("\n");
+	const file = "routes/org/[org]/news/+server.roc";
+	const server = transpileModule(source, file, { module: "Generated/OrgOrgNewsServer" }).code;
+	assert.match(server, /^middleware = Members\.signed_in$/m);
+	assert.match(server, /^channel! = \|\{ params, context, \.\. \}\| if context\.org == params\.org Ok\(Channel\.allow\(context\.name\)\) else Err\(Forbidden\)$/m, "the check, as written");
+	const browser = transpileModule(source, file, { module: "Generated/OrgOrgNewsServer", client: true, route: true }).code;
+	assert.doesNotMatch(browser, /middleware|import \.\.\/\.\.\/Members/, "no middleware, nor what only it imported");
+	assert.match(browser, /^on_open! = \|\{ who, \.\. \}\| \[\{ title: "welcome, \$\{who\}" \}\]$/m, "the hooks, as written: nothing in the browser calls them");
+});

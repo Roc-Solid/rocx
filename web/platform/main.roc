@@ -12,8 +12,8 @@
 ## The modules both platforms have are written here, and the server platform's build copies them:
 ## the components' (`Html`, `Solid`, `Show`, `For`, `Transition`, `Loading`, `Errored`, `Context`,
 ## `Call`, `Router`, `Submission`, `Title`, `HttpStatusCode`) and HTTP's (`Server`, `Endpoint`,
-## `Middleware`, `Events`, `OpenApi`). Roc compiles only what a program reaches, so what only the
-## server uses (`Middleware`, `OpenApi`) costs the browser's wasm nothing.
+## `Channel`, `Middleware`, `Events`, `OpenApi`). Roc compiles only what a program reaches, so what
+## only the server uses (`Middleware`, `OpenApi`) costs the browser's wasm nothing.
 platform ""
 	requires {
 		main! : {} => Html

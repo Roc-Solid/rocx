@@ -442,6 +442,66 @@ rooms count who is in them (`Live.join!`, `Live.count!`), and tell those in them
 What a call joins or listens to lasts until it ends: a stream's, until its client goes, or it
 crashes. It is all in the server's memory: one server.
 
+### Channels: `channel!`, `Endpoint.subscribe!`, `Endpoint.publish!` (D-020)
+
+```roc
+# routes/org/[org]/news/+server.roc: behind the route's middleware, which hands on who is asking
+channel! : { request : Server.Request, params : { org : Str }, context : Member } => Try(Channel(Str, News, [Hello(Str)]), Endpoint.Refusal)
+channel! = |{ params, context, .. }| if context.org == params.org Ok(Channel.allow(context.name)) else Err(Forbidden)
+
+receive! = |{ who, said, channel, .. }|        # what a page says: Endpoint.say!(channel, Hello("hi"))
+    match said {
+        Hello(words) => Ok(Endpoint.publish!(channel, { title: "${who} says ${words}" }))
+    }
+on_open! = |{ who, .. }| [{ title: "welcome, ${who}" }]   # sent first, after each Resync
+on_close! = |{ who, tab, why, .. }| Log.info!("left", { who, tab })   # why: Gone, or Refused(why)
+
+# anywhere on the server: a request, a job, an actor
+Endpoint.publish!(Api.channel_org_org_news({ org: "acme" }), { title: "Launch" })
+Endpoint.publish_latest!(Api.channel_rooms_room({ room }), member, cursor)   # only the newest per key
+```
+
+A channel is a route's `channel!` (`Channel(who, message, said)`): its check answers who the
+subscriber is, or a refusal. `rocx build` puts it in `Generated/Api` (`Api.channel_<path>(params)`,
+method `CHANNEL`), and pages subscribe to it with `Endpoint.subscribe!` (web/README.md). Its hooks,
+each optional: `receive!`, what pages say, after the same middleware and check; `on_open!`, what a
+subscriber is sent first, each time it subscribes; `on_close!`, told when a subscription ends,
+outside the middleware. Each is given the path's params, `who`, the tab's id, and the channel.
+
+The host answers the tab's stream itself, on the async side, holding no thread of Roc's
+(`host/src/channels.rs`): `GET /rocx/live?tab=<id>&c=<url>&c=<url>…`, as server-sent events.
+
+- Each channel's check runs as the stream opens: a request the host makes of the app for the
+  channel's own path, with the stream's headers (its cookies), `accept: application/json` and
+  `x-rocx-channel: open`, behind the app's middleware and the route's, as a GET of it would be. A
+  refused one is `event: refused` and the stream goes on for the others. One let in is
+  `event: resync`, then its `on_open!` messages, then what is published on it. Its topic is listened
+  to before its check runs, so nothing published meanwhile is missed (a message may come twice
+  around a resync: a subscriber reads its data again on `Resync` anyway).
+- Every beat (`--live-beat-ms`, 15 s) the stream sends `: beat` and runs each channel's check again
+  (`x-rocx-channel: check`); one that now refuses is `event: ended`, and its `on_close!` is told
+  `Refused(why)`. A server error (500) at a beat ends nothing.
+- `POST /rocx/live/send?tab=<id>`, a JSON list of `{"channel":"<url>","message":…}` (the route's
+  `receive!`, after its middleware and check: `x-rocx-channel: receive`) and
+  `{"channel":"<url>","resync":true}` (the tab's stream resyncs that channel): 204, or 200 with
+  `{"refused":[{"index":…,"status":…,"why":…}]}`. JSON only, so a form from another site can't send
+  it without asking first.
+- A subscription's end (the client gone, the server stopping, or refused at a beat) is
+  `x-rocx-channel: close`, its body who the check said it was and why: `App` answers it outside the
+  middleware, with the route's `on_close!`.
+- The host drops `x-rocx-channel` and `x-rocx-tab` from every request it is sent, so only it asks.
+- `/rocx/live` never reaches the app's middleware: an auth middleware that lets `/rocx/call/`
+  through had to; a channel is guarded by its own path's middleware instead, nothing to let through.
+- Order: a channel's messages arrive in the order they were published (`Live`'s order per topic, one
+  queue per stream). One that falls behind its topic's backlog (256) gets `resync` instead of what it
+  missed. `publish_latest!` messages are a topic of their own, `latest:<url>`: a subscriber behind
+  gets only the newest per key, never a resync, and they aren't ordered with the others.
+- A client whose network went: the host sets a 20 s deadline on what it sent going unacknowledged
+  (`TCP_USER_TIMEOUT` on Linux, `TCP_RXT_CONNDROPTIME` on macOS), so a beat's write ends the stream
+  about 35 s after the client vanished, and `on_close!` is told `Gone`.
+- Published on `Live` topics (`channel:<url>`): one server, in memory. A Postgres `listen`/`notify`
+  backend could carry them later, behind the same `publish!`.
+
 ### Actors: `Actor`
 
 ```roc
@@ -596,7 +656,11 @@ there. Eight requests that each wait 0.3 s on Postgres take about 0.3 s together
 A stream of events is a loop (`Events.stream(|{ send!, sleep! }| …)`) on a thread of its own for as
 long as it is open: `send!` writes to the response, `sleep!` waits there, waking early if the client
 goes, so its next `send!` answers `Err(Gone)` and `?` ends the loop. Fifty streams sleeping at once
-hold up no page.
+hold up no page, but each holds one of the pool's threads (`--blocking-threads`, 1024) while it is
+open, as do the background loops: past that, requests wait for one to end. A channel stream
+(`/rocx/live`) holds none: the host keeps it, and Roc runs only for a check or a hook, a call at a
+time. The tests open 40 channel streams on 8 threads and requests still answer at once, where 8
+`events!` streams take every thread.
 
 A crash ends the call it happened in, not the server. Roc's ABI says `roc_crashed` must never
 return: it may end the process or `longjmp` out of the Roc code that called it. The guard
@@ -708,8 +772,11 @@ browser runtime's own render.
 
 - `Db`'s queries aren't checked at build (rows are decoded by the record each caller annotates);
   roc-pg's are.
-- Several servers: live rooms, topics and actors' mailboxes are in one server's memory (jobs and
-  actors' state are in Postgres already).
+- Several servers: live rooms, topics, channels and actors' mailboxes are in one server's memory
+  (jobs and actors' state are in Postgres already).
+- Channels: a change of what a tab subscribes to opens its stream again, so `on_close!` can't tell
+  a subscription the page dropped from a tab that went (both are `Gone`); a connection id with
+  subscribe and unsubscribe posts would, if reconnects ever cost too much.
 - Actors' timers are in memory: durable ones (Orleans' reminders) would be rows, as jobs are.
 - A job's time limit cuts it off only at an effect that waits: Roc that loops without one holds
   its worker until it ends.
