@@ -56,7 +56,9 @@ and import it from there (`import ../PresenceServer` in a route file).
 
 ## Wiring a room, today
 
-A room is an endpoint that streams its events, two server functions, and a component.
+A room is an endpoint that streams its events, two server functions, and a component. Server
+functions are deprecated (D-023): `beat!` and `typing!` would each better be a `post!` in a
+`+server.roc` of its own, sent from the handler with `Endpoint.send!`.
 
 ```roc
 # routes/presence/[room]/+server.roc: this tab is in the room, as the member the middleware says
@@ -224,7 +226,7 @@ Works today:
 Waits on a proposal (PROPOSALS.md):
 
 - `rocx build` copying `server/` into the server's half (Server-only modules in packages);
-- one stream for every room on a page, and messages from the page without server functions
+- one stream for every room on a page, and messages from the page without a request each
   (channels: C1 to C9);
 - sending your own cursor (W1), a clock in the browser (W2), `away` when a tab is hidden (W3);
 - presence without a database write per beat (S1);

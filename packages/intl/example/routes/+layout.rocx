@@ -15,7 +15,9 @@ view! = |{ children, .. }| {
 		_kept = Endpoint.send!(Api.post_locale({}), { tag: tag }, Call.fetch!)
 		{}
 	}
-	store = Language.store!({ supported: I18n.supported, catalog: I18n.catalog, tag: I18n.locale!({}), remember! })
+	# The reader's locale: GET /locale, answered as the server renders the page, carried in it.
+	tag = Endpoint.get!(Api.get_locale({}))
+	store = Language.store!({ supported: I18n.supported, catalog: I18n.catalog, tag, remember! })
 	{ intl!, .. } = store
 	<>
 		<!doctype html>

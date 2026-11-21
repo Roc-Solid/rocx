@@ -185,14 +185,22 @@ a route only some may reach (anyone else gets 404):
 middleware = Middlewares.beta
 ```
 
-**In a page**: the server decides the flags once for the visitor, in a server function, and the
-page shows a part only when its flag is on. The server renders the page with them and puts the
-answer in it, so the browser hydrates with the same values, without asking again.
+**In a page**: the server decides the flags once for the visitor, and the page shows a part only
+when its flag is on. The server renders the page with them and puts the answer in it, so the
+browser hydrates with the same values, without asking again. The flags are a GET endpoint at a
+path of its own, its handler reading the visitor from its `context`, which the layout reads with
+`Endpoint.get!` (D-023):
 
 ```roc
-# Visitor.rocx: the app's own server function (its body runs on the server only)
+# routes/flags/+server.roc: GET /flags (its handler runs on the server only)
+get! : { request : Server.Request, params : {}, context : Middlewares.Context } => Try(Flags.Values, Endpoint.Refusal)
+get! = |{ context, .. }| Ok(FlagStore.values!(Features.all, { user: context.user, groups: [] }))
+```
+
+```roc
+# Visitor.rocx: read as the page renders, and carried in the page
 flags! : {} => Flags.Values
-flags! = server!(|_request, {}| FlagStore.values!(Features.all, { user: Server.context!({}).user, groups: [] }))
+flags! = |{}| Endpoint.get!(Api.get_flags({}))
 ```
 
 ```roc

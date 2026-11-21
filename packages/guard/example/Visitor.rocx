@@ -1,14 +1,13 @@
-import pf.Server
+import pf.Endpoint
 import guard.Flags
-import FlagStore
-import Features
+import Generated/Api
 
 ## Who is visiting, as the server knows them.
 Visitor := [].{
 
-	## The app's flags, decided on the server for whoever is signed in (the `user` its middleware
-	## handed on). A page's call is answered as the server renders it, and the answer is put in the
-	## page, so the browser's first run reads the same values instead of asking again.
+	## The app's flags, decided on the server for whoever is signed in: `GET /flags`
+	## (`routes/flags/+server.roc`), which the server answers as it renders the page, and the page
+	## carries, so the browser's first run reads the same values instead of asking again.
 	flags! : {} => Flags.Values
-	flags! = server!(|_request, {}| FlagStore.values!(Features.all, { user: Server.context!({}).user, groups: [] }))
+	flags! = |{}| Endpoint.get!(Api.get_flags({}))
 }

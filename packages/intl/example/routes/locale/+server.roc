@@ -1,6 +1,14 @@
 import pf.Server
 import pf.Endpoint
+import intl.Intl
 import intl.Locale
+import ../../I18n
+
+## GET /locale: the request's locale: its `locale` cookie (the reader's own choice), else what its
+## Accept-Language asks for, else English. The layout reads it as each page renders, so the browser
+## hydrates in the locale the server rendered.
+get! : { request : Server.Request, params : {}, context : c } => Try(Str, Endpoint.Refusal)
+get! = |{ request, .. }| Ok(Intl.choose(I18n.supported, Locale.wanted(request, "locale")).tag())
 
 ## POST /locale, `tag=pl` (a form) or `{"tag":"pl"}` (the picker): keeps the reader's choice in the
 ## `locale` cookie for a year. A form's post goes back to the page it came from.

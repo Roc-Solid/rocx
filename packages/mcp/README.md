@@ -73,7 +73,7 @@ app [program] { mcp: "../packages/mcp/main.roc", pf: platform "../server/platfor
 | `middleware(path, server)` | the MCP server as a middleware: it answers `path`, and hands every other request on. Put it after the middleware that decides who may ask |
 | `respond!(server, request, context)` | the answer to a request to the MCP route; a route file's `respond!` can call it (`routes/mcp/+server.roc`), for a server whose tools aren't `Api`'s (a route file can't import `Api` yet: PROPOSALS.md) |
 | `endpoint(Api.x({}), about, McpHttp.openapi({}))` | an endpoint as a tool: its body is the arguments, its answer the tool's; run as `Endpoint.run!` runs it; a refusal goes back to the model |
-| `function(Module.name!, about, McpHttp.openapi({}))` | a server function as a tool, called as a page calls it on the server: through its route, behind its middleware |
+| `function(Module.name!, about, McpHttp.openapi({}))` | a server function as a tool, called as a page calls it on the server: through its route, behind its middleware. Server functions are deprecated (D-023): prefer `endpoint` |
 | `tool(about, handler!, McpHttp.openapi({}))` | a handler of the app's own, `arg, Caller(c) => Try(result, Str)`, its schemas from its types |
 | `Caller(c)` | what a tool is given: `{ request, context, progress! }`. `context` is what the middleware handed on: who is asking |
 | `About` | `{ name, description }`, and `title`, `tags` if wanted |

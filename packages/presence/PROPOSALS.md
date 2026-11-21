@@ -24,13 +24,15 @@ Delta)`, `Typing`, `Moved` and `Away`. The ask list is ordered by how much it ma
 ### C1. Messages from the page to the server, over a channel
 
 **Problem.** Typing pings, cursor moves and heartbeats go from a page to the room. Without
-WebSockets, today that is a server function per message (`beat!`, `typing!`, a `moved!` 20 times a
-second), each its own POST, named and checked separately from the channel the room's events come
-on: two permission checks to keep in step, and the room's name trusted from the page twice.
+WebSockets, today that is a POST per message (`beat!`, `typing!`, a `moved!` 20 times a second).
+They are server functions in today's glue; those are deprecated (D-023), so each is better a
+`post!` endpoint, sent with `Endpoint.send!`. Either way each is named and checked separately from
+the channel the room's events come on: two permission checks to keep in step, and the room's name
+trusted from the page twice.
 
 **Options.**
-1. Server functions, as today: works, but each is checked on its own, and a cursor is a request per
-   move.
+1. A POST per message, as today: works, but each is checked on its own, and a cursor is a request
+   per move.
 2. `Channel.send!(chan, params, message)` in the browser: a POST to `/rocx/live/send` with the
    channel's name, its params and the message, checked by the channel's own check, and handed to a
    handler the channel defines. The hub may batch a frame's sends into one POST.
@@ -60,7 +62,7 @@ Wire: `POST /rocx/live/send`, body `[{ "channel": "lobby.lobby", "params": {…}
 
 **Depends on it.** `Wire.Said` (to add, small), the stores' `typed!`/beats, the sending side of
 `<LiveCursors>`.
-**Undo.** Remove the route and `Channel.send!`; pages go back to server functions.
+**Undo.** Remove the route and `Channel.send!`; pages go back to a POST per message.
 
 ### C2. Who is here, on every (re)subscribe: a snapshot hook
 
@@ -69,8 +71,8 @@ means "send me who is here now", on the same stream, before any change that come
 page's copy can't tell old changes from new ones.
 
 **Options.**
-1. The page calls a server function for the snapshot on `Resync`. Racy: changes published between
-   the snapshot's read and the stream's (re)open are lost or doubled, unless every message is
+1. The page reads an endpoint for the snapshot on `Resync` (`refresh!`). Racy: changes published
+   between the snapshot's read and the stream's (re)open are lost or doubled, unless every message is
    numbered and the page buffers (which `Mirror` can do, but only if the snapshot carries a
    version and arrives after listening started).
 2. A channel hook the server runs when a subscription opens, after it listens: its answer is sent
@@ -131,7 +133,8 @@ and `receive!` are given it. `who` stays on the server; the page learns its own 
 presence snapshot or a `Welcome`.
 
 **Depends on it.** `PresenceServer` today takes the key and metadata from the endpoint's context.
-**Undo.** Each hook reads `Server.context!({})` itself.
+**Undo.** Each hook reads who the subscriber is from the middleware's context itself, as an
+endpoint's handler does (its `context`).
 
 ### C6. Lagging subscribers get `Resync`, never a silent gap
 
@@ -207,12 +210,12 @@ web/platform, the server's on server/platform), so a package can't `import pf.Li
 2. `rocx build` copies a package's `server/*.roc` (and `server/*.rocx`) into the **server half only**:
    `Generated/<alias>/<Module>.roc`, linked as components are (`import presence.PresenceServer` →
    `import ../Generated/presence/PresenceServer`). The browser's copy (`--client`) leaves them out.
-   A page may import one for its server functions and route files' server parts: the browser's copy
-   already drops imports that only stripped code used (checked in the scratch app: `import
-   ../PresenceServer` in `+page.rocx`, used only inside `server!(…)`, is gone from the browser's
-   copy, and the browser's half type-checks). An import that the browser's copy still uses is an
-   error, said by rocx build: "presence.PresenceServer is the server's: use it in a server function,
-   an endpoint or middleware".
+   A route file may import one for its server parts (its endpoints, its middleware): the browser's
+   copy already drops imports that only stripped code used (checked in the scratch app: `import
+   ../PresenceServer` in `+page.rocx`, used only inside a server function, `server!(…)`, now
+   deprecated, is gone from the browser's copy, and the browser's half type-checks). An import that
+   the browser's copy still uses is an error, said by rocx build: "presence.PresenceServer is the
+   server's: use it in an endpoint or middleware".
 3. Make the platforms one package the compiler can name from both halves: a compiler change, much
    bigger, and not needed for this.
 4. Separate packages per half (`presence-server`): two packages to version and name in two headers,
@@ -234,8 +237,8 @@ found.set(name, { name, own, paths, serverPaths, modules: new Set([...paths, ...
 ```
 
 A test beside test/packages.test.mjs's: a package with `server/Glue.roc` importing `pf.Live`; the
-app's server half has `Generated/plots/Glue.roc`, its browser copy doesn't, and a page that imports
-it outside a server function fails the build with the message.
+app's server half has `Generated/plots/Glue.roc`, its browser copy doesn't, and a page that uses
+it where the browser's copy keeps it fails the build with the message.
 
 **Depends on it.** `server/PresenceServer.roc` (copied by hand today).
 **Undo.** Remove the second list; apps copy by hand again. Nothing else changes.
@@ -374,4 +377,6 @@ topic in its turn; a page's endpoint `events!` is `PresenceServer.stream(room, {
 (`PresenceServer.typing!`), and `Presence.create_room!` takes the events. Checked in a scratch app
 (rocx build, both halves type-checked, the native server and the wasm built, two pages in headless
 Chromium): each member saw the other, a typing ping arrived and ran out, a closed tab's `Left` came
-after the grace, and (over curl) a tab that beat once was swept out after the timeout.
+after the grace, and (over curl) a tab that beat once was swept out after the timeout. Server
+functions have been deprecated since (D-023): a `post!` endpoint for each, sent with
+`Endpoint.send!`, does the same.

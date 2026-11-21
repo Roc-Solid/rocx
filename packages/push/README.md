@@ -9,7 +9,7 @@ import push.Notification
 import push.Options
 import Push
 
-# Somewhere on the server: a job, a server function, an endpoint.
+# Somewhere on the server: a job, an endpoint.
 Push.notify!(user_id, { ..Notification.new("New reply", "Ada answered your question"), url: "/questions/42" }, Options.defaults)
 ```
 

@@ -55,9 +55,6 @@ both are supported.
 ```roc
 # I18n.rocx, a module of the app's
 import pf.Html
-import pf.Server
-import intl.Intl
-import intl.Locale
 import intl.Locales
 import intl.Catalog
 import intl.Validation
@@ -79,11 +76,22 @@ I18n := [].{
 			],
 		),
 	)
-
-	## The request's locale: a server function, so the browser hydrates in the one the server chose.
-	locale! : {} => Str
-	locale! = server!(|request, {}| Intl.choose(I18n.supported, Locale.wanted(request, "locale")).tag())
 }
+```
+
+The request's locale is a GET endpoint's answer, which the layout reads as the page renders, so
+the browser hydrates in the one the server chose (D-023):
+
+```roc
+# routes/locale/+server.roc: GET /locale (beside its POST, which keeps a reader's pick)
+import pf.Server
+import pf.Endpoint
+import intl.Intl
+import intl.Locale
+import ../../I18n
+
+get! : { request : Server.Request, params : {}, context : c } => Try(Str, Endpoint.Refusal)
+get! = |{ request, .. }| Ok(Intl.choose(I18n.supported, Locale.wanted(request, "locale")).tag())
 ```
 
 `Locale.wanted` takes the platform's `Server.Request` (or any record with its `headers`), so it
@@ -111,7 +119,9 @@ view! = |{ children, .. }| {
 		_kept = Endpoint.send!(Api.post_locale({}), { tag: tag }, Call.fetch!)
 		{}
 	}
-	store = Language.store!({ supported: I18n.supported, catalog: I18n.catalog, tag: I18n.locale!({}), remember! })
+	# The reader's locale: GET /locale, answered as the server renders the page, carried in it.
+	tag = Endpoint.get!(Api.get_locale({}))
+	store = Language.store!({ supported: I18n.supported, catalog: I18n.catalog, tag, remember! })
 	{ intl!, .. } = store
 	<>
 		<!doctype html>

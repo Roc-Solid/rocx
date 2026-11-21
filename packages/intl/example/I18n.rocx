@@ -1,7 +1,4 @@
 import pf.Html
-import pf.Server
-import intl.Intl
-import intl.Locale
 import intl.Locales
 import intl.Catalog
 import intl.Validation
@@ -27,10 +24,4 @@ I18n := [].{
 			],
 		),
 	)
-
-	## The request's locale: its `locale` cookie (the reader's own choice), else what its
-	## Accept-Language asks for, else English. A server function, so the browser hydrates in the
-	## locale the server rendered.
-	locale! : {} => Str
-	locale! = server!(|request, {}| Intl.choose(I18n.supported, Locale.wanted(request, "locale")).tag())
 }

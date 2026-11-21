@@ -93,7 +93,8 @@ test("a welcome is mailed", async () => {
 });
 ```
 
-`rocx routes <dir>` lists the server functions' names (`Generated/RootPage.count`).
+`rocx routes <dir>` lists the server functions' names (`Generated/RootPage.count`). Server functions
+are deprecated (D-023): a page's data is better a GET endpoint, asked as any other request.
 
 **3. Its database and its jobs.** `testDatabase()` makes a database of the test's own in the
 Postgres at `DATABASE_URL`, and `drop()` removes it. The server runs its migrations into it when it
