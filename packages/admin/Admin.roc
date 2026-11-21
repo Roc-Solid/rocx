@@ -1,0 +1,277 @@
+import Catalog
+import Sql
+import Widget
+
+## What the app says about its admin: where it is, who may use it and how, and which tables it
+## shows, each with its options. Only `name` is needed for a table, `mount` and `access` for the
+## admin; the rest have defaults.
+##
+## ```roc
+## admin : Admin.Config({ user : Str, staff : Bool })
+## admin = {
+##     mount: "/admin/db",
+##     access: |context| if (context.staff) Edit else Refused,
+##     tables: [
+##         { name: "books", list: ["id", "title", "state", "price"], search: ["title"], filters: ["state"], ordering: ["-id"] },
+##         { name: "authors", title: "name", hidden: ["password_hash"] },
+##     ],
+## }
+## ```
+Admin := [].{
+
+	## A table's options. Columns are named as the table names them; a name it doesn't have is
+	## ignored.
+	##
+	## - `label`: what the pages call it ("" — its name, readable: `book_tags` is "Book tags").
+	## - `list`: the columns its list of rows shows ([] — the first seven it has).
+	## - `search`: the columns the search box looks in, for the text anywhere, in any case ([] — no
+	##   search box).
+	## - `filters`: a filter for each, beside the list: a boolean's yes and no, an enum's or a
+	##   check's values, or the values the column has (the first 50).
+	## - `ordering`: the list's order, `"-created_at"` descending ([] — its primary key, newest
+	##   first). A click on a column's heading sorts by it instead.
+	## - `read_only`: shown on its form, never written; `hidden`: never read, shown or written
+	##   (a password's hash).
+	## - `labels`: what to call its columns (`[("email", "Email address")]`).
+	## - `title`: the column that names a row: its page's heading, and a foreign key's choice ("" —
+	##   its first text column that isn't its key, else its key).
+	## - `per_page`: rows a page (50).
+	## - `widgets`: another widget for a column than its type's (`[("body", LongText)]`).
+	## - `create`, `delete`: whether rows may be added or deleted here (yes).
+	Table := {
+		name : Str,
+		label : Str ?? "",
+		list : List(Str) ?? [],
+		search : List(Str) ?? [],
+		filters : List(Str) ?? [],
+		ordering : List(Str) ?? [],
+		read_only : List(Str) ?? [],
+		hidden : List(Str) ?? [],
+		labels : List((Str, Str)) ?? [],
+		title : Str ?? "",
+		per_page : U64 ?? 50,
+		widgets : List((Str, Widget.Kind)) ?? [],
+		create : Bool ?? Bool.True,
+		delete : Bool ?? Bool.True,
+	}
+
+	## What someone may do here, as the app decides from its middleware's context: `Edit` (add,
+	## change, delete), `ReadOnly` (look), or nothing (`Refused`: a 403).
+	Access : [Edit, ReadOnly, Refused]
+
+	## The admin:
+	##
+	## - `mount`: the path it is at (the route file's: `routes/admin/db/+server.roc` is
+	##   `"/admin/db"`). Its pages are that path and a query (`?table=books&k.id=7`).
+	## - `access`: what someone may do, from the context the route's middleware hands on.
+	## - `tables`: the tables it shows, in order, with their options; `include: All` shows every
+	##   other table of the schema too, with no options (but the platform's own, `rocx_…`, unless
+	##   listed). `Listed` by default: a table no one listed (one of passwords) stays out.
+	## - `schema`: the tables' schema (`public`); `title`: what its pages call it (`Database`).
+	Config(context) := {
+		mount : Str,
+		access : context -> Access,
+		tables : List(Table) ?? [],
+		include : [Listed, All] ?? Listed,
+		schema : Str ?? "public",
+		title : Str ?? "Database",
+	}
+
+	## A table the admin shows: what the catalog says of it, and the app's options.
+	Shown : { table : Catalog.Table, options : Table }
+
+	## The tables the admin shows: those listed that the schema has, in order; with `include: All`,
+	## then every other table of the schema, but the platform's (`rocx_…`), by name.
+	showing : Config(context), List(Catalog.Table) -> List(Shown)
+	showing = |config, tables| {
+		named = config.tables.keep_oks(
+			|options|
+				match Catalog.table(tables, options.name) {
+					Ok(table) => Ok({ table, options })
+					Err(NotFound) => Err(NotFound)
+				},
+		)
+		match config.include {
+			Listed => named
+			All => {
+				others = tables.keep_if(|table| !table.name.starts_with("rocx_") and !config.tables.any(|options| options.name == table.name))
+				named.concat(others.map(|table| Admin.pair(table, { name: table.name })))
+			}
+		}
+	}
+
+	## A table and its options.
+	pair : Catalog.Table, Table -> Shown
+	pair = |table, options| { table, options }
+
+	## The table the admin shows called `name`.
+	find : List(Shown), Str -> Try(Shown, [NotFound])
+	find = |all, name|
+		match all.find_first(|each| each.table.name == name) {
+			Ok(found) => Ok(found)
+			Err(_) => Err(NotFound)
+		}
+
+	## What the pages call a table.
+	label : Shown -> Str
+	label = |shown| if (shown.options.label.is_empty()) readable(shown.table.name) else shown.options.label
+
+	## What the pages call a column of a table.
+	column_label : Shown, Str -> Str
+	column_label = |shown, name|
+		match shown.options.labels.find_first(|(column, _)| column == name) {
+			Ok((_, said)) => said
+			Err(_) => readable(name)
+		}
+
+	## The columns of a table that may be read: all but the `hidden`.
+	visible : Shown -> List(Catalog.Column)
+	visible = |shown| shown.table.columns.keep_if(|column| !shown.options.hidden.contains(column.name))
+
+	## The columns a table's list of rows shows.
+	listed : Shown -> List(Catalog.Column)
+	listed = |shown| {
+		chosen = picked(shown, shown.options.list)
+		if (chosen.is_empty()) Admin.visible(shown).take_first(7) else chosen
+	}
+
+	## The columns a table's search looks in.
+	searchable : Shown -> List(Catalog.Column)
+	searchable = |shown| picked(shown, shown.options.search)
+
+	## The columns a table's list can be filtered by.
+	filterable : Shown -> List(Catalog.Column)
+	filterable = |shown| picked(shown, shown.options.filters)
+
+	## The columns of a table's primary key, in order ([] if it has none: its rows can be listed,
+	## not opened).
+	key : Shown -> List(Catalog.Column)
+	key = |shown| shown.table.key.keep_oks(|name| Catalog.column(shown.table, name))
+
+	## A column's widget: the app's choice, else its type's.
+	widget : Shown, Catalog.Column -> Widget.Kind
+	widget = |shown, column|
+		match shown.options.widgets.find_first(|(name, _)| name == column.name) {
+			Ok((_, kind)) => kind
+			Err(_) => Widget.of(column)
+		}
+
+	## Whether a column is written by a table's form: someone who may `Edit`, a column that isn't
+	## read only (the app's `read_only`, or its widget's), and a key's column only in a new row.
+	writable : Shown, Access, Catalog.Column, [Creating, Editing] -> Bool
+	writable = |shown, access, column, doing|
+		access == Edit
+			and !shown.options.read_only.contains(column.name)
+			and !shown.options.hidden.contains(column.name)
+			and Admin.widget(shown, column) != ReadOnly
+			and (doing == Creating or !shown.table.key.contains(column.name))
+
+	## The column that names a row of a table.
+	title : Shown -> Try(Catalog.Column, [NoTitle])
+	title = |shown| {
+		readable_columns = Admin.visible(shown)
+		named = readable_columns.find_first(|column| column.name == shown.options.title)
+		text = readable_columns.find_first(|column| ["text", "varchar", "citext", "bpchar"].contains(column.base) and !shown.table.key.contains(column.name))
+		match (named, text, Admin.key(shown).first()) {
+			(Ok(column), _, _) => Ok(column)
+			(_, Ok(column), _) => Ok(column)
+			(_, _, Ok(column)) => Ok(column)
+			_ => Err(NoTitle)
+		}
+	}
+
+	## A table's list's order when it isn't sorted by a column: the app's `ordering`, else its key,
+	## newest first (else its first column).
+	ordering : Shown -> List(Sql.Order)
+	ordering = |shown| {
+		asked = shown.options.ordering.keep_oks(
+			|each| {
+				descending = each.starts_with("-")
+				match Catalog.column(shown.table, each.drop_prefix("-")) {
+					Ok(column) if !shown.options.hidden.contains(column.name) => Ok({ column, descending })
+					_ => Err(NotFound)
+				}
+			},
+		)
+		if !asked.is_empty() {
+			asked
+		} else if !shown.table.key.is_empty() {
+			Admin.key(shown).map(|column| { column, descending: Bool.True })
+		} else {
+			Admin.visible(shown).take_first(1).map(|column| { column, descending: Bool.False })
+		}
+	}
+}
+
+## The visible columns of `names`, in that order.
+picked : Admin.Shown, List(Str) -> List(Catalog.Column)
+picked = |shown, names| names.keep_oks(|name| if (shown.options.hidden.contains(name)) Err(NotFound) else Catalog.column(shown.table, name))
+
+## `book_tags` as `Book tags`.
+readable : Str -> Str
+readable = |name| {
+	spaced = name.replace_each("_", " ").trim()
+	bytes = spaced.to_utf8()
+	match bytes.first() {
+		Ok(first) if first >= 'a' and first <= 'z' => Str.from_utf8_lossy(bytes.drop_first(1).prepend(first - 32))
+		_ => spaced
+	}
+}
+
+test_column : Catalog.Column
+test_column = { name: "", type: "", base: "", category: "", nullable: Bool.False, defaulted: Bool.False, generated: Bool.False, comment: "", default: "", labels: [], choices: [], refers: Nothing }
+
+column_of : Str, Str -> Catalog.Column
+column_of = |name, base| { ..test_column, name, type: base, base }
+
+books : Catalog.Table
+books = {
+	name: "books",
+	comment: "",
+	estimate: 10,
+	columns: [column_of("id", "int8"), column_of("title", "text"), column_of("secret", "text"), column_of("state", "text"), { ..column_of("len", "int4"), generated: Bool.True }],
+	key: ["id"],
+}
+
+tables : List(Catalog.Table)
+tables = [books, { ..books, name: "authors" }, { ..books, name: "rocx_jobs" }, { ..books, name: "tags" }]
+
+expect {
+	config : Admin.Config({})
+	config = { mount: "/db", access: |_| Edit, tables: [{ name: "tags" }, { name: "nope" }, { name: "books", label: "Our books" }] }
+	Admin.showing(config, tables).map(|each| each.table.name) == ["tags", "books"]
+}
+expect {
+	config : Admin.Config({})
+	config = { mount: "/db", access: |_| Edit, tables: [{ name: "tags" }], include: All }
+	Admin.showing(config, tables).map(|each| each.table.name) == ["tags", "books", "authors"]
+}
+expect {
+	shown = Admin.pair(books, { name: "books", label: "Our books", labels: [("len", "Title's length")] })
+	Admin.label(shown) == "Our books" and Admin.label(Admin.pair({ ..books, name: "book_tags" }, { name: "book_tags" })) == "Book tags" and Admin.column_label(shown, "len") == "Title's length" and Admin.column_label(shown, "created_at") == "Created at"
+}
+expect {
+	shown = Admin.pair(books, { name: "books", hidden: ["secret"], list: ["title", "secret", "nope", "id"], search: ["secret", "title"] })
+	Admin.listed(shown).map(|c| c.name) == ["title", "id"] and Admin.searchable(shown).map(|c| c.name) == ["title"] and Admin.visible(shown).len() == 4
+}
+expect {
+	shown = Admin.pair(books, { name: "books", hidden: ["secret"] })
+	Admin.listed(shown).map(|c| c.name) == ["id", "title", "state", "len"] and Admin.key(shown).map(|c| c.name) == ["id"]
+}
+expect {
+	shown = Admin.pair(books, { name: "books", read_only: ["state"], widgets: [("title", LongText)] })
+	title = column_of("title", "text")
+	Admin.writable(shown, Edit, title, Editing)
+		and !Admin.writable(shown, ReadOnly, title, Editing)
+		and !Admin.writable(shown, Edit, column_of("state", "text"), Editing)
+		and !Admin.writable(shown, Edit, column_of("id", "int8"), Editing)
+		and Admin.writable(shown, Edit, column_of("id", "int8"), Creating)
+		and !Admin.writable(shown, Edit, { ..column_of("len", "int4"), generated: Bool.True }, Creating)
+		and Admin.widget(shown, title) == LongText
+}
+expect Admin.title(Admin.pair(books, { name: "books" })).map_ok(|c| c.name) == Ok("title")
+expect Admin.title(Admin.pair(books, { name: "books", title: "state" })).map_ok(|c| c.name) == Ok("state")
+expect Admin.title(Admin.pair({ ..books, columns: [column_of("id", "int8")] }, { name: "books" })).map_ok(|c| c.name) == Ok("id")
+expect Admin.ordering(Admin.pair(books, { name: "books" })) == [{ column: column_of("id", "int8"), descending: Bool.True }]
+expect Admin.ordering(Admin.pair({ ..books, key: [] }, { name: "books", hidden: ["id"] })) == [{ column: column_of("title", "text"), descending: Bool.False }]
+expect Admin.ordering(Admin.pair(books, { name: "books", ordering: ["-state", "nope", "title"] })) == [{ column: column_of("state", "text"), descending: Bool.True }, { column: column_of("title", "text"), descending: Bool.False }]
