@@ -1,0 +1,176 @@
+import pf.Html
+import markdown.Block
+import markdown.Inline
+import markdown.Md
+
+## `source`, Markdown, as markup: `<Markdown source={post.body} />`. It renders where the page
+## renders (on the server, and in the browser when a page is built there), and runs nothing after.
+##
+## Safe by default: raw HTML in the source is shown as text (`raw={Drop}` leaves it out), and a link
+## whose URL could run script (`javascript:`) points nowhere, as the platform's `Html` has every
+## `href`. Give `doc` instead of `source` when you have parsed it already (to make a table of
+## contents from the same parse).
+##
+## Each kind of node that an app may want drawn its own way has a hook, given what the node says
+## and its children already rendered: `heading` (an anchor beside it), `code` (highlighting:
+## `Markdown.highlight`), `link` (outside links in a new tab) and `image` (lazy loading). The
+## defaults are `Markdown.heading`, `Markdown.code`, `Markdown.link` and `Markdown.image`, for a hook
+## to fall back on.
+Markdown := [].{
+	Props := {
+		source : Str ?? "",
+		doc : List(Block) ?? [],
+		raw : [Escape, Drop] ?? Escape,
+		class : Str ?? "markdown",
+		heading : (Markdown.Heading -> Html) ?? Markdown.heading,
+		code : (Markdown.Code -> Html) ?? Markdown.code,
+		link : (Markdown.Link -> Html) ?? Markdown.link,
+		image : (Markdown.Image -> Html) ?? Markdown.image,
+	}
+
+	## A heading: its level (1 to 6), its id (unique in the document), its text, and its content.
+	Heading : { level : U64, id : Str, text : Str, children : List(Html) }
+
+	## A code block: its language (the info string's first word, `""` for none), the whole info
+	## string, and the code.
+	Code : { lang : Str, info : Str, text : Str }
+
+	Link : { url : Str, title : Str, children : List(Html) }
+
+	Image : { url : Str, title : Str, alt : Str }
+
+	## A highlighter's token: the kind of thing it is (`keyword`, `string`; `""` for plain), and its
+	## text. `site/Ui/Highlight.roc`'s tokens are these.
+	Token : { kind : Str, text : Str }
+
+	view : Markdown.Props -> Html
+	view = |props| {
+		blocks = if (props.doc.is_empty()) Md.parse(props.source) else props.doc
+		<div class={props.class}>{...render_blocks(blocks, props)}</div>
+	}
+
+	## `<h2 id="…">…</h2>`.
+	heading : Markdown.Heading -> Html
+	heading = |found| Html.element("h${found.level.to_str()}", [Html.optional("id", found.id)], found.children)
+
+	## `<pre><code class="language-roc">…</code></pre>`.
+	code : Markdown.Code -> Html
+	code = |block| <pre><code class??={language(block.lang)}>{block.text}</code></pre>
+
+	## `<a href="…" title="…">…</a>`.
+	link : Markdown.Link -> Html
+	link = |found| <a href={Md.href(found.url)} title??={found.title}>{...found.children}</a>
+
+	## `<img src="…" alt="…">`.
+	image : Markdown.Image -> Html
+	image = |found| <img src={Md.href(found.url)} alt={found.alt} title??={found.title} />
+
+	## A `code` hook that colours code with a highlighter: `lines(text, lang)` is the code's lines,
+	## each a list of tokens, and each token that has a kind is a `<span class="t-kind">`. A
+	## highlighter that doesn't know the language can give each line as one plain token.
+	##
+	##     <Markdown source={text} code={Markdown.highlight(|text, _| Highlight.lines(text, Code))} />
+	highlight : (Str, Str -> List(List(Markdown.Token))) -> (Markdown.Code -> Html)
+	highlight = |lines| |block| {
+		found = lines(block.text.drop_suffix("\n"), block.lang)
+		last = found.len()
+		<pre><code class??={language(block.lang)}>{...found.map_with_index(|tokens, index| line(tokens, index + 1 == last))}</code></pre>
+	}
+
+	<story name="Prose">
+		<Markdown source={"# A heading\n\nSome *emphasis*, some **strong**, `code` and a [link](https://example.com).\n\n- one\n- two\n\n> A quote."} />
+	</story>
+
+	<story name="Tables and tasks">
+		<Markdown source={"| Name | Count |\n|:-----|------:|\n| Apples | 3 |\n| Pears | 12 |\n\n- [x] parse\n- [ ] render"} />
+	</story>
+
+	<story name="Raw HTML, escaped">
+		<Markdown source={"<script>alert(1)</script>\n\nA <b>bold</b> claim, and [a bad link](javascript:alert(1))."} />
+	</story>
+}
+
+language : Str -> Str
+language = |lang| if (lang.is_empty()) "" else "language-${lang}"
+
+## One line of highlighted code, and its line ending unless it is the last.
+line : List(Markdown.Token), Bool -> Html
+line = |tokens, last| <>{...tokens.map(token)}{=if (last) Html.empty({}) else Html.text("\n")}</>
+
+token : Markdown.Token -> Html
+token = |{ kind, text }| if (kind.is_empty()) Html.text(text) else <span class={"t-${kind}"}>{text}</span>
+
+render_blocks : List(Block), Markdown.Props -> List(Html)
+render_blocks = |blocks, props| blocks.map(|block| render_block(block, props))
+
+render_block : Block, Markdown.Props -> Html
+render_block = |block, props|
+	match block {
+		Paragraph(content) => <p>{...inlines(content, props)}</p>
+		Heading(found) => (props.heading)({ level: found.level, id: found.id, text: Inline.plain(found.content), children: inlines(found.content, props) })
+		Code(found) => (props.code)({ lang: found.lang, info: found.info, text: found.text })
+		Quote(inner) => <blockquote>{...render_blocks(inner, props)}</blockquote>
+		Unordered(list) => <ul>{...list.items.map(|item| render_item(item, list.tight, props))}</ul>
+		Ordered(list) => <ol start??={if (list.start == 1) "" else list.start.to_str()}>{...list.items.map(|item| render_item(item, list.tight, props))}</ol>
+		Table(table) => {
+			cell = |tag, index, content| Html.element(tag, [Html.optional("align", align(table.align.get(index) ?? Default))], inlines(content, props))
+			row = |tag, cells| <tr>{...cells.map_with_index(|content, index| cell(tag, index, content))}</tr>
+			body = if (table.rows.is_empty()) Html.empty({}) else <tbody>{...table.rows.map(|cells| row("td", cells))}</tbody>
+			<table><thead>{=row("th", table.head)}</thead>{=body}</table>
+		}
+		Raw(html) =>
+			match props.raw {
+				Escape => <p>{html}</p>
+				Drop => Html.empty({})
+			}
+		Rule => <hr />
+	}
+
+## An item: in a tight list, its paragraphs without their `<p>`; a task's box first.
+render_item : Block.Item, Bool, Markdown.Props -> Html
+render_item = |item, tight, props| {
+	box = match item.task {
+		None => []
+		Open => [<input type="checkbox" disabled />, Html.text(" ")]
+		Done => [<input type="checkbox" checked disabled />, Html.text(" ")]
+	}
+	content = item.blocks.join_map(
+		|block|
+			match block {
+				Paragraph(inner) if tight => inlines(inner, props)
+				_ => [render_block(block, props)]
+			},
+	)
+	<li class:task={item.task != None}>{...box.concat(content)}</li>
+}
+
+align : [Default, Left, Center, Right] -> Str
+align = |way|
+	match way {
+		Default => ""
+		Left => "left"
+		Center => "center"
+		Right => "right"
+	}
+
+inlines : List(Inline), Markdown.Props -> List(Html)
+inlines = |content, props| content.map(|inline| render_inline(inline, props))
+
+render_inline : Inline, Markdown.Props -> Html
+render_inline = |inline, props|
+	match inline {
+		Text(text) => Html.text(text)
+		Code(code) => <code>{code}</code>
+		Emph(inner) => <em>{...inlines(inner, props)}</em>
+		Strong(inner) => <strong>{...inlines(inner, props)}</strong>
+		Strike(inner) => <del>{...inlines(inner, props)}</del>
+		Link(found) => (props.link)({ url: found.url, title: found.title, children: inlines(found.content, props) })
+		Image(found) => (props.image)({ url: found.url, title: found.title, alt: found.alt })
+		Raw(html) =>
+			match props.raw {
+				Escape => Html.text(html)
+				Drop => Html.empty({})
+			}
+		Break => <br />
+		SoftBreak => Html.text("\n")
+	}
