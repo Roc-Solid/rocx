@@ -1502,3 +1502,63 @@ too.
 inside a box that clips (`overflow: auto`) is clipped as it crosses into another. Each flush that
 changes structure while something glides costs two layout reads. A text change alone (a card's
 title growing) moves nothing. **Reversible:** yes.
+
+## D-032 rocx is Roc
+
+**Context.** rocx, the transpiler and the command (`rocx build`, `check`, `lint`, `routes`, `fmt`),
+was JavaScript on Node: `bin/rocx.mjs` and `src/*.mjs`, about 3,800 lines. Node was the only tool
+an app needed besides Roc, and the plan was to ship rocx on npm. On 2026-11-21 it was to stay
+JavaScript until its output settled; on 2026-11-22 the user asked for it in Roc now, for one binary
+to distribute, and for speed.
+
+**Options.**
+1. Keep the JavaScript and ship it on npm: every user needs Node.
+2. The JavaScript as one executable (Node's single executable applications, `bun build --compile`):
+   50 to 100 MB, and no faster.
+3. rocx in Roc on basic-cli: one native executable a target, each built from one machine
+   (`roc build --target=…`; static for Linux).
+4. rocx in Roc on a platform of the repo's own: more to keep, for nothing basic-cli lacks.
+
+**Choice.** 3, on basic-cli 0.28.1, with the Roc fork the repo builds with (the Justfile pins it).
+
+- `src/` is rocx: `main.roc` (the command), `Transpile.roc`, `Styles.roc`, `Routes.roc`,
+  `Stories.roc` (with `catalog.html`, the catalog page, embedded), `Remap.roc`, `Format.roc`,
+  `Commands.roc` (`check`, `lint`), `Build.roc` (`rocx build`), and the helpers they share: `Text`
+  (JavaScript's whitespace, string literals and sort orders, columns in UTF-16 units), `Fs` (Node's
+  path rules, a directory's entries sorted as Node gave them), `Value` (JSON).
+- `bin/rocx` is built from it whenever its Roc changes: `server/build.mjs`'s `rocxBinary()`, which
+  every script and test uses (`--opt=speed`; `ROCX_OPT=dev` for a quick build while working on it).
+- rocx finds the repo from where it is (`bin/..`): `web/platform`, `web/start.js` and
+  `web/runtime.js` are read when it runs, so a change to them needs no new rocx. A release can
+  embed them (`import "…" as x : Str` works on this compiler).
+- The tests didn't change: `src/rocx.mjs` exports the old functions' names, each a call of the
+  binary (`rocx internal`, its arguments and answer as JSON), so the JavaScript's tests test the Roc.
+- Port, not redesign: every output is what the JavaScript wrote, byte for byte. Checked on 18 runs
+  over the repo's apps, its package examples and a large app of its own (`build` with and without
+  `--client` and `--dev`, `routes`, `lint`, `fmt --check`, `check`), dev and `--opt=speed` builds
+  alike; and, while porting, on 35,000 mutated `.rocx` files (code, errors, lines and columns), 400
+  compiler reports for `check`, and every `<style>` here.
+
+Measured on the same files, interleaved, the machine loaded by other work (medians):
+
+| | JavaScript | Roc (`--opt=speed`) | |
+|---|---|---|---|
+| `rocx build site --client` | 587 ms | 240 ms | 2.4× |
+| `rocx build` of a large app | 508 ms | 232 ms | 2.2× |
+| `rocx routes site` | 94 ms | 17 ms | 5.7× |
+| `rocx lint site web/test/app` | 87 ms | 17 ms | 5.1× |
+| starting, and nothing else | 65 ms | 8 ms | 8× |
+
+`bin/rocx` is 5.9 MB for macOS (arm64); the same Roc cross-builds to 3.5 MB static Linux binaries.
+
+**Costs.** An optimized rocx takes about a minute and a half to build (a dev build, seconds); the
+binary rebuilds when `src/` changes. Roc keeps more words than JavaScript (`module`, `packages`,
+`where`, `platform` can't be names), and the compiler's bugs are rocx's now too. basic-cli has no
+file watcher (rocx needs none: `site/serve.mjs` watches). The repo's own scripts, its tests and the
+testing package's helpers are still JavaScript on Node; an app no longer needs Node to build.
+
+**Why.** One small executable for each platform, built from one machine, and faster than the
+JavaScript at everything it does.
+
+**Reversible:** yes. The JavaScript is in the history (up to the commit that removed bin/rocx.mjs), and the tests still call
+rocx by the JavaScript's names (`src/rocx.mjs`).
