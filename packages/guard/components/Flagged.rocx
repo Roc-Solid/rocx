@@ -1,0 +1,31 @@
+import pf.Html
+import pf.Show
+import pf.Context
+import pf.Solid exposing [use_context!]
+import guard.Flags
+
+## What is inside it, for a visitor who has the flag called `name` on; `fallback` (nothing, unless
+## given) for anyone else. The flags come from the server, decided once for the visitor, in a
+## context: the server renders the page with them and puts them in it, so the browser shows the
+## same.
+##
+##     <FlagsContext value={flags!({})}>          # in the layout: `flags!` is the app's server function
+##         …
+##         <Flagged name="new_checkout" fallback={<OldCheckout />}>
+##             <NewCheckout />
+##         </Flagged>
+Flagged := [].{
+
+	## The flags decided for this visitor (`Flags.Values`), for every `<Flagged>` under it. None,
+	## where nothing provides them: every flag off.
+	flags_context : Context(Flags.Values)
+	flags_context = create_context([])
+
+	Props := { name : Str, fallback : Html ?? Html.empty({}), children : List(Html) }
+
+	view! : Props => Html
+	view! = |props| {
+		flags = use_context!(flags_context)
+		<Show when!={Flags.enabled(flags, props.name)} fallback={props.fallback}>{...props.children}</Show>
+	}
+}

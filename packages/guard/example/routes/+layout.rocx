@@ -1,0 +1,17 @@
+import pf.Html
+import pf.Context
+import guard.Flagged
+import ../Visitor
+
+view! = |{ children, .. }|
+	<html lang="en">
+		<head>
+			<meta charset="utf-8" />
+			<title>guard</title>
+		</head>
+		<body>
+			<FlagsContext value={Visitor.flags!({})}>
+				<main>{...children}</main>
+			</FlagsContext>
+		</body>
+	</html>

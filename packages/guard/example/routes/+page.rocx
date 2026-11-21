@@ -1,0 +1,9 @@
+import pf.Html
+import guard.Flagged
+
+view! = |_|
+	<section>
+		<Flagged name="new_checkout" fallback={<p id="old">The old checkout</p>}>
+			<p id="new">The new checkout</p>
+		</Flagged>
+	</section>
