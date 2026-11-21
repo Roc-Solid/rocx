@@ -1,7 +1,11 @@
 # Plugins, from the app's side
 
-> Ideation, 2026-11-21, branch `plugins`. Nothing here is built. It starts from what an app's author
-> writes, and only then asks what packages and the platform must do to make that work.
+> Ideation, 2026-11-21. Nothing here is built. It starts from what an app's author writes, and only
+> then asks what packages and the platform must do to make that work.
+>
+> **Decided (the user, 2026-11-21):** A, plugins listed in the program; two routes at one path stop
+> the server at start, naming both; a plugin reads its documented environment variables unless the
+> app passes a function. Open: questions 4 and 5 below, and the package author's side.
 
 ## Why
 
@@ -268,12 +272,11 @@ Sketched only, to check that A is buildable:
 - **Endpoints a component calls** (`<PushButton>` asks `/push/key`): the component takes the
   plugin's prefix as a prop with the same default.
 
-## Questions for you
+## Questions
 
-1. **A, B or C?** (A recommended: a `plugins` list in the program.)
-2. **Route clashes:** stop at start naming both (recommended), or the app's route wins?
-3. **Secrets:** a plugin reads its documented environment variables unless the app passes a
-   function (recommended), or the app always passes them?
+1. ~~A, B or C?~~ **A.**
+2. ~~Route clashes~~: **stop at start, naming both.**
+3. ~~Secrets~~: **the plugin's documented environment variables, unless the app passes a function.**
 4. **Browser scripts:** on every page (recommended: few and small), or only on pages whose layout
    asks?
 5. **Build-time plugins** (content collections, message keys): design them next, or later?
