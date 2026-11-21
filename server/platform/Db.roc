@@ -4,13 +4,76 @@ import Host
 ##
 ## A statement's parameters are `$1`, `$2`, …, given as `Value`s; Postgres reads each as the type
 ## its place wants (`where id = $1` reads `Int(7)` as an integer). Rows come back as records:
-## `all!` decodes each row's columns, by name, into the record its caller wants.
+## `all!` decodes each row's columns, by name, into the record its caller wants. A column that may
+## be null is read as `Nullable(a)`:
+##
+## ```roc
+## notes : Try(List({ id : I64, body : Str, note : Db.Nullable(Str) }), [DbErr(Str), BadRow(Str)])
+## notes = Db.all!("select id, body, note from notes", [])
+##
+## match note.note {
+##     Null => "-"
+##     Some(text) => text
+## }
+## ```
 Db := [].{
+
+	## A column that may be null: `Null`, or `Some(value)`. In JSON, `null` or the value as it is,
+	## both ways, so a row (or anything else) holding one is read and written as JSON has it.
+	Nullable(a) := [Null, Some(a)].{
+
+		parser_for : encoding -> (state -> Try({ value : Nullable(a), rest : state }, err))
+			where [
+				a.parser_for : encoding -> (state -> Try({ value : a, rest : state }, err)),
+				encoding.parse_null : encoding, state -> Try(state, err),
+			]
+		parser_for = |encoding| {
+			Format : encoding
+			Inner : a
+			inner = Inner.parser_for(encoding)
+			|state|
+				match Format.parse_null(encoding, state) {
+					Ok(rest) => Ok({ value: Null, rest })
+					Err(_) => {
+						parsed = inner(state)?
+						Ok({ value: Some(parsed.value), rest: parsed.rest })
+					}
+				}
+		}
+
+		## Both `Null`, or both `Some` of equal values.
+		is_eq : Nullable(a), Nullable(a) -> Bool
+			where [a.is_eq : a, a -> Bool]
+		is_eq = |one, other|
+			match (one, other) {
+				(Null, Null) => Bool.True
+				(Some(x), Some(y)) => x == y
+				_ => Bool.False
+			}
+
+		encoder_for : encoding -> (Nullable(a), state -> Try(state, err))
+			where [
+				a.encoder_for : encoding -> (a, state -> Try(state, err)),
+				encoding.encode_null : state -> Try(state, err),
+			]
+		encoder_for = |encoding| {
+			Format : encoding
+			Inner : a
+			inner = Inner.encoder_for(encoding)
+			|value, state|
+				match value {
+					Null => Format.encode_null(state)
+					Some(present) => inner(present, state)
+				}
+		}
+	}
 
 	## A parameter.
 	Value : [Null, Text(Str), Int(I64), Bool(Bool)]
 
-	## Every row a statement reads, each a record of its columns.
+	## Every row a statement reads, each a record of its columns, by name. `BadRow` when a row
+	## doesn't fit the record: a column it lacks, a value of another type, or a null in a column the
+	## record doesn't read as `Nullable(a)` (the error names it).
 	all! : Str, List(Value) => Try(List(row), [DbErr(Str), BadRow(Str)])
 		where [row.Json.Parseable([InvalidJson(Str)])]
 	all! = |sql, params|
@@ -18,7 +81,7 @@ Db := [].{
 			Ok(rows) =>
 				match Json.parse(rows) {
 					Ok(decoded) => Ok(decoded)
-					Err(InvalidJson(why)) => Err(BadRow(why))
+					Err(InvalidJson(why)) => Err(BadRow(misread(rows, why)))
 				}
 			Err(why) => Err(DbErr(why))
 		}
@@ -61,6 +124,26 @@ Db := [].{
 					}
 				}
 		}
+}
+
+## Why the rows (as the host wrote them: compact JSON) didn't decode: `why`, and, when a column was
+## null in some row, which, since a column read as a plain value can't be.
+misread : Str, Str -> Str
+misread = |rows, why| {
+	segments = rows.split_on("\":null")
+	nulls = segments.take_first(segments.len() - 1).keep_oks(
+		|segment| {
+			quoted = segment.split_on("\"")
+			quoted.get(quoted.len() - 1)
+		},
+	)
+	unique = nulls.fold([], |seen, name| if (seen.contains(name)) seen else seen.append(name))
+	if unique.is_empty() {
+		why
+	} else {
+		named = Str.join_with(unique.map(|name| "`${name}`"), ", ")
+		"${why}: ${named} is null in a row; a column that may be null is read as Db.Nullable(a)"
+	}
 }
 
 ## The parameters as the host takes them: a JSON array of strings and nulls.

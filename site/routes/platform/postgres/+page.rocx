@@ -54,10 +54,10 @@ view! = |_|
 			</p>
 			<ul>
 				<li>
-					<strong>Nulls are typed.</strong> A column that may be null (the table says so, or its name ends with
-					<code>?</code>) is <code>{"[Null, Some(a)]"}</code>; a name ending with <code>!</code> says it never is
-					(<code>{"count(*) as \"total!\""}</code>). A null in a column nothing marked is an error that says how
-					to mark it.
+					<strong>Nulls are typed.</strong> A column that may be null is read as <code>Db.Nullable(a)</code>:
+					<code>Null</code> or <code>Some(a)</code>, matched like any tag union. The record says what may be
+					null, not the column's name or the table; a null in a column the record reads as a plain value is
+					<code>BadRow</code>, which names the column.
 				</li>
 				<li>
 					<strong>What is read:</strong> booleans, integers, floats, text, <code>json</code> and

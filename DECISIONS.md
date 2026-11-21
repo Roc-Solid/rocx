@@ -713,3 +713,48 @@ supervision and remote actors one server doesn't need.
 
 **Reversible:** the API, with an edit at every call site (`define`'s record, `receive!`'s `me`); the
 runtime, freely.
+
+## D-022 Nulls are the reader's to say; sockets are their call's
+
+**Context.** Postgres doesn't say in a statement's result whether a column may be null, and a
+column that may be was read as `[Null, Some(a)]`, whose JSON (`"Null"`, `{"Some": a}`) isn't a
+plain value's. So the host looked each column up in the catalog (`pg_attribute.attnotnull`), kept
+the answers in a map shared by every call (a `Mutex`), forgot them after a script, and let a column's
+name say otherwise (`"x?"` may be null, `"x!"` never is). The record a caller decodes rows into
+already says which of its fields may be null; the host was guessing what the reader knew. And
+`Tcp`'s sockets sat in a global table behind two `Mutex`es (the table's, and each socket's), though a
+socket only ever belongs to the call that opened it, on one thread.
+
+**Options.**
+1. Keep both: they work, and neither lock is contended.
+2. Rows as JSON has them (`null`, or the value), and a nominal `Db.Nullable(a)` that reads `null`
+   as `Null` and anything else as `Some(a)` (its own `parser_for` and `encoder_for`); sockets in the
+   thread's own table.
+3. A Postgres client in Roc (roc-pg) that checks queries at build: types and nullability known
+   before the server runs. A bigger change, for later.
+
+**Choice.** 2.
+
+```roc
+notes : Try(List({ id : I64, body : Str, note : Db.Nullable(Str) }), [DbErr(Str), BadRow(Str)])
+
+match row.note {
+    Null => "-"
+    Some(text) => text
+}
+```
+
+- `Db.Nullable(a) := [Null, Some(a)]`, matched and built with `Null` and `Some(a)` as before; in
+  JSON, `null` or the value, both ways, nested too (a list of them, a `jsonb` column's fields).
+- A null in a field the record reads as a plain value is `BadRow`, naming the column ("`note` is
+  null in a row; a column that may be null is read as Db.Nullable(a)").
+- A column named `x?` or `x!` is refused, with how to say it now.
+- `Job.Row`'s `key`, `locked_at`, `finished_at` and `last_error` are `Db.Nullable`.
+- `tcp.rs`: a thread-local table; ids stay unique across threads (one atomic counter), so an id
+  from another call is a closed connection, as it was once that call had ended.
+
+**Why.** The type is where Roc says what may be missing, and the decoder follows it as sqlx's
+`Option<T>` does: no catalog round trip, no shared cache, no rule about names. Sockets were never
+shared, so the locks guarded nothing.
+
+**Reversible:** yes; the API change is a type at each nullable column.

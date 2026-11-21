@@ -11,7 +11,7 @@
 use deadpool_postgres::{Manager, ManagerConfig, Pool, RecyclingMethod};
 use futures_util::StreamExt;
 use serde_json::{Map, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::error::Error;
 use std::sync::{Mutex, OnceLock};
 use tokio_postgres::types::{Format, IsNull, ToSql, Type, to_sql_checked};
@@ -27,9 +27,6 @@ static CHANNELS: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 fn tls() -> MakeRustlsConnect {
     MakeRustlsConnect::new((*crate::tls::client_config()).clone())
 }
-
-/// Whether a table's column may be null, by (table, column), as the catalog says.
-static NULLABLE: OnceLock<Mutex<HashMap<(u32, i16), bool>>> = OnceLock::new();
 
 /// Connects the pool to `url` (connections open as they are first needed).
 pub fn connect(url: &str) -> Result<(), String> {
@@ -141,49 +138,31 @@ pub fn described(error: tokio_postgres::Error) -> String {
     }
 }
 
-/// The rows `sql` reads, as a JSON array of objects. A column that may be null (the catalog says
-/// so, or its name ends with `?`) is `"Null"` or `{"Some": value}`, as Roc's `Json` writes
-/// `[Null, Some(a)]`; any other column is its value, and a null in one is an error that says how to
-/// mark it. A name ending with `!` says a column is never null.
+/// The rows `sql` reads, as a JSON array of objects, each column by its name: a null is `null`,
+/// anything else its value. Whether a column may be null is the reader's to say, in the record it
+/// decodes a row into (`Db.Nullable(a)`), not the host's to look up.
 pub async fn query(client: &Client, sql: &str, params: &str) -> Result<String, String> {
     let params = parameters(params)?;
     let statement = client.prepare_cached(sql).await.map_err(described)?;
     let refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|param| param as &(dyn ToSql + Sync)).collect();
     let rows = client.query(&statement, &refs).await.map_err(described)?;
 
-    let mut columns = Vec::new();
+    let mut keys = Vec::new();
     for column in statement.columns() {
         let name = column.name();
-        let (key, nullable) = if let Some(key) = name.strip_suffix('?') {
-            (key, true)
-        } else if let Some(key) = name.strip_suffix('!') {
-            (key, false)
-        } else {
-            let nullable = match (column.table_oid(), column.column_id()) {
-                (Some(table), Some(id)) => nullable(client, table, id).await?,
-                _ => false,
-            };
-            (name, nullable)
-        };
-        columns.push((key.to_string(), nullable));
+        if let Some(key) = name.strip_suffix('?').or_else(|| name.strip_suffix('!')) {
+            return Err(format!(
+                "column `{name}`: a name doesn't say whether it may be null any more: call it `{key}`, and read it as `Db.Nullable(a)` if it may be"
+            ));
+        }
+        keys.push(name.to_string());
     }
 
     let mut out = Vec::with_capacity(rows.len());
     for row in &rows {
         let mut object = Map::new();
-        for (index, (key, nullable)) in columns.iter().enumerate() {
-            let value = read(row, index)?;
-            let value = match (value, nullable) {
-                (Some(value), true) => Value::Object(Map::from_iter([("Some".to_string(), value)])),
-                (None, true) => Value::String("Null".into()),
-                (Some(value), false) => value,
-                (None, false) => {
-                    return Err(format!(
-                        "column `{key}` is null, but nothing says it may be: name it `{key}?` (`as \"{key}?\"`) and read it as [Null, Some(a)]"
-                    ));
-                }
-            };
-            object.insert(key.clone(), value);
+        for (index, key) in keys.iter().enumerate() {
+            object.insert(key.clone(), read(row, index)?.unwrap_or(Value::Null));
         }
         out.push(Value::Object(object));
     }
@@ -211,7 +190,6 @@ pub async fn script(client: &Client, in_transaction: bool, sql: &str) -> Result<
         }
         client.batch_execute("commit").await.map_err(described)?;
     }
-    forget_nullability();
     Ok(())
 }
 
@@ -238,30 +216,6 @@ pub async fn commit(client: &Client) -> Result<(), String> {
 
 pub async fn rollback(client: &Client) {
     let _ = client.batch_execute("rollback").await;
-}
-
-/// A table made or changed may change which of its columns can be null.
-fn forget_nullability() {
-    if let Some(known) = NULLABLE.get() {
-        known.lock().unwrap().clear();
-    }
-}
-
-/// Whether column `column` of table `table` may be null, as the catalog says: asked once per
-/// column, and kept (until a script may have changed the schema).
-async fn nullable(client: &Client, table: u32, column: i16) -> Result<bool, String> {
-    let known = NULLABLE.get_or_init(Default::default);
-    if let Some(answer) = known.lock().unwrap().get(&(table, column)) {
-        return Ok(*answer);
-    }
-    let statement = client
-        .prepare_cached("select not attnotnull from pg_attribute where attrelid = $1 and attnum = $2")
-        .await
-        .map_err(described)?;
-    let row = client.query_opt(&statement, &[&table, &column]).await.map_err(described)?;
-    let answer = row.map(|row| row.get::<_, bool>(0)).unwrap_or(true);
-    known.lock().unwrap().insert((table, column), answer);
-    Ok(answer)
 }
 
 /// Column `index` of `row` as JSON (None for a null), from the type Postgres says it is. A type

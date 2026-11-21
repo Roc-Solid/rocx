@@ -105,11 +105,11 @@ Job := [].{
 		state : Str,
 		attempts : U64,
 		max_attempts : U64,
-		key : [Null, Some(Str)],
+		key : Db.Nullable(Str),
 		run_at : I64,
-		locked_at : [Null, Some(I64)],
-		finished_at : [Null, Some(I64)],
-		last_error : [Null, Some(Str)],
+		locked_at : Db.Nullable(I64),
+		finished_at : Db.Nullable(I64),
+		last_error : Db.Nullable(Str),
 		created_at : I64,
 	}
 
@@ -138,7 +138,7 @@ Job := [].{
 	counts! : {} => Try(List({ kind : Str, state : Str, count : U64 }), [JobErr(Str)])
 	counts! = |{}| {
 		counted : Try(List({ kind : Str, state : Str, count : U64 }), [DbErr(Str), BadRow(Str)])
-		counted = Db.all!("select kind, state, count(*) as \"count!\" from rocx_jobs group by kind, state order by kind, state", [])
+		counted = Db.all!("select kind, state, count(*) as count from rocx_jobs group by kind, state order by kind, state", [])
 		match counted {
 			Ok(counts) => Ok(counts)
 			Err(DbErr(why)) => Err(JobErr(why))
@@ -187,7 +187,7 @@ at = |when|
 
 ## A row of `rocx_jobs` as `Job.Row` reads it: times in milliseconds.
 columns : Str
-columns = "select id, kind, input, state, attempts, max_attempts, unique_key as key, (extract(epoch from run_at) * 1000)::int8 as \"run_at!\", (extract(epoch from locked_at) * 1000)::int8 as \"locked_at?\", (extract(epoch from finished_at) * 1000)::int8 as \"finished_at?\", last_error, (extract(epoch from created_at) * 1000)::int8 as \"created_at!\" from rocx_jobs"
+columns = "select id, kind, input, state, attempts, max_attempts, unique_key as key, (extract(epoch from run_at) * 1000)::int8 as run_at, (extract(epoch from locked_at) * 1000)::int8 as locked_at, (extract(epoch from finished_at) * 1000)::int8 as finished_at, last_error, (extract(epoch from created_at) * 1000)::int8 as created_at from rocx_jobs"
 
 rows! : Str, List(Db.Value) => Try(List(Job.Row), [JobErr(Str)])
 rows! = |sql, params| {

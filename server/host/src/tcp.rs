@@ -3,12 +3,17 @@
 //! asked, as the host's other effects do. A connection belongs to the call that opened it: the host
 //! closes what a call left open when it ends. A call with a deadline (a job's time limit) waits no
 //! longer than that for any of it.
+//!
+//! Nothing here is locked or shared: a call runs on one thread from its start to its end (and the
+//! calls it runs inside it, too), so the connections it opens are kept in that thread's own table.
+//! An id another thread opened is, here, a connection that is closed. Ids are unique across threads
+//! (one atomic counter), so one is never taken for another.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 /// How long a connection may take to be made, and a read or a write to make progress.
@@ -70,17 +75,19 @@ struct Connection {
     buffered: Vec<u8>,
 }
 
-type Connections = Mutex<HashMap<u64, Arc<Mutex<Connection>>>>;
-
-fn connections() -> &'static Connections {
-    static CONNECTIONS: OnceLock<Connections> = OnceLock::new();
-    CONNECTIONS.get_or_init(Default::default)
+thread_local! {
+    /// The connections the calls on this thread have open, by id.
+    static CONNECTIONS: RefCell<HashMap<u64, Connection>> = RefCell::new(HashMap::new());
 }
 
 static NEXT: AtomicU64 = AtomicU64::new(1);
 
-fn get(id: u64) -> Result<Arc<Mutex<Connection>>, String> {
-    connections().lock().unwrap().get(&id).cloned().ok_or_else(|| "the connection is closed".to_string())
+/// Does `act` with the connection `id`, which this thread's call opened.
+fn with<T>(id: u64, act: impl FnOnce(&mut Connection) -> Result<T, String>) -> Result<T, String> {
+    CONNECTIONS.with(|connections| match connections.borrow_mut().get_mut(&id) {
+        Some(connection) => act(connection),
+        None => Err("the connection is closed".to_string()),
+    })
 }
 
 fn tls_over(stream: TcpStream, host: &str, deadline: Option<Instant>) -> Result<Stream, String> {
@@ -115,34 +122,34 @@ pub fn connect(host: &str, port: u16, tls: bool, deadline: Option<Instant>) -> R
     stream.set_nodelay(true).ok();
     let stream = if tls { tls_over(stream, host, deadline)? } else { Stream::Plain(stream) };
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
-    connections().lock().unwrap().insert(id, Arc::new(Mutex::new(Connection { stream, buffered: Vec::new() })));
+    CONNECTIONS.with(|connections| connections.borrow_mut().insert(id, Connection { stream, buffered: Vec::new() }));
     Ok(id)
 }
 
 /// Goes on over TLS (STARTTLS).
 pub fn start_tls(id: u64, host: &str, deadline: Option<Instant>) -> Result<(), String> {
-    let connection = get(id)?;
-    let mut connection = connection.lock().unwrap();
-    if !connection.buffered.is_empty() {
-        return Err("the server sent more before TLS began".into());
-    }
-    match std::mem::replace(&mut connection.stream, Stream::Gone) {
-        Stream::Plain(stream) => {
-            connection.stream = tls_over(stream, host, deadline)?;
-            Ok(())
+    with(id, |connection| {
+        if !connection.buffered.is_empty() {
+            return Err("the server sent more before TLS began".into());
         }
-        other => {
-            connection.stream = other;
-            Err("the connection is over TLS already".into())
+        match std::mem::replace(&mut connection.stream, Stream::Gone) {
+            Stream::Plain(stream) => {
+                connection.stream = tls_over(stream, host, deadline)?;
+                Ok(())
+            }
+            other => {
+                connection.stream = other;
+                Err("the connection is over TLS already".into())
+            }
         }
-    }
+    })
 }
 
 pub fn write(id: u64, bytes: &[u8], deadline: Option<Instant>) -> Result<(), String> {
-    let connection = get(id)?;
-    let mut connection = connection.lock().unwrap();
-    connection.stream.bound(deadline);
-    connection.stream.write_all(bytes).map_err(|error| error.to_string())
+    with(id, |connection| {
+        connection.stream.bound(deadline);
+        connection.stream.write_all(bytes).map_err(|error| error.to_string())
+    })
 }
 
 /// Reads more into the buffer: false once the other end has closed.
@@ -155,46 +162,48 @@ fn fill(connection: &mut Connection) -> Result<bool, String> {
 
 /// Exactly `count` bytes; `Err("eof")` if the connection ends first.
 pub fn read_exactly(id: u64, count: usize, deadline: Option<Instant>) -> Result<Vec<u8>, String> {
-    let connection = get(id)?;
-    let mut connection = connection.lock().unwrap();
-    connection.stream.bound(deadline);
-    while connection.buffered.len() < count {
-        if !fill(&mut connection)? {
-            return Err("eof".into());
+    with(id, |connection| {
+        connection.stream.bound(deadline);
+        while connection.buffered.len() < count {
+            if !fill(connection)? {
+                return Err("eof".into());
+            }
         }
-    }
-    Ok(connection.buffered.drain(..count).collect())
+        Ok(connection.buffered.drain(..count).collect())
+    })
 }
 
 /// What there is, up to `count` bytes, waiting for some; nothing once the connection has ended.
 pub fn read_up_to(id: u64, count: usize, deadline: Option<Instant>) -> Result<Vec<u8>, String> {
-    let connection = get(id)?;
-    let mut connection = connection.lock().unwrap();
-    connection.stream.bound(deadline);
-    if connection.buffered.is_empty() {
-        fill(&mut connection)?;
-    }
-    let take = count.min(connection.buffered.len());
-    Ok(connection.buffered.drain(..take).collect())
+    with(id, |connection| {
+        connection.stream.bound(deadline);
+        if connection.buffered.is_empty() {
+            fill(connection)?;
+        }
+        let take = count.min(connection.buffered.len());
+        Ok(connection.buffered.drain(..take).collect())
+    })
 }
 
 /// Up to and including the next `byte`; `Err("eof")` if the connection ends first.
 pub fn read_until(id: u64, byte: u8, deadline: Option<Instant>) -> Result<Vec<u8>, String> {
-    let connection = get(id)?;
-    let mut connection = connection.lock().unwrap();
-    connection.stream.bound(deadline);
-    let mut searched = 0;
-    loop {
-        if let Some(at) = connection.buffered[searched..].iter().position(|each| *each == byte) {
-            return Ok(connection.buffered.drain(..searched + at + 1).collect());
+    with(id, |connection| {
+        connection.stream.bound(deadline);
+        let mut searched = 0;
+        loop {
+            if let Some(at) = connection.buffered[searched..].iter().position(|each| *each == byte) {
+                return Ok(connection.buffered.drain(..searched + at + 1).collect());
+            }
+            searched = connection.buffered.len();
+            if !fill(connection)? {
+                return Err("eof".into());
+            }
         }
-        searched = connection.buffered.len();
-        if !fill(&mut connection)? {
-            return Err("eof".into());
-        }
-    }
+    })
 }
 
+/// Closes the connection `id` (one this thread's call opened; any other is nothing to close).
 pub fn close(id: u64) {
-    connections().lock().unwrap().remove(&id);
+    let closed = CONNECTIONS.with(|connections| connections.borrow_mut().remove(&id));
+    drop(closed);
 }

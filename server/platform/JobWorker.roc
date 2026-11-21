@@ -168,7 +168,7 @@ due_in! : List(Str) => U64
 due_in! = |kinds| {
 	due : Try(List({ ms : U64 }), [DbErr(Str), BadRow(Str)])
 	due = Db.all!(
-		"select coalesce(greatest(0, ceil(extract(epoch from (min(run_at) - now())) * 1000)), 60000)::int8 as \"ms!\" from rocx_jobs where state = 'queued' and kind = any(string_to_array($1, E'\\n'))",
+		"select coalesce(greatest(0, ceil(extract(epoch from (min(run_at) - now())) * 1000)), 60000)::int8 as ms from rocx_jobs where state = 'queued' and kind = any(string_to_array($1, E'\\n'))",
 		[listed(kinds)],
 	)
 	match due {

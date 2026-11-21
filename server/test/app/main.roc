@@ -216,7 +216,7 @@ route! = |request, context| {
 				Err(DbErr(why)) => text(500, why)
 			}
 		("GET", "/notes") => {
-			found : Try(List({ id : I64, body : Str, note : [Null, Some(Str)] }), [DbErr(Str), BadRow(Str)])
+			found : Try(List({ id : I64, body : Str, note : Db.Nullable(Str) }), [DbErr(Str), BadRow(Str)])
 			found = Db.all!("select id, body, note from notes order by id", [])
 			match found {
 				Ok(notes) => text(200, Str.join_with(notes.map(|each| "${each.id.to_str()} ${each.body} ${noted(each.note)}"), "\n"))
@@ -238,6 +238,26 @@ route! = |request, context| {
 			found = Db.all!("select null::text as maybe", [])
 			match found {
 				Ok(_) => text(200, "read a null as text")
+				Err(DbErr(why)) => text(500, why)
+				Err(BadRow(why)) => text(500, why)
+			}
+		}
+		("GET", "/nullable-marked") => {
+			# The old way of saying a column may be null, in its name: refused, with how to say it now.
+			found : Try(List({ maybe : Db.Nullable(Str) }), [DbErr(Str), BadRow(Str)])
+			found = Db.all!("select null::text as \"maybe?\"", [])
+			match found {
+				Ok(_) => text(200, "read it")
+				Err(DbErr(why)) => text(500, why)
+				Err(BadRow(why)) => text(500, why)
+			}
+		}
+		("GET", "/nullables") => {
+			# Nulls and values in the same columns, nested in JSON too, and written back as JSON has them.
+			found : Try(List({ n : Db.Nullable(I64), tags : Db.Nullable(List(Str)), doc : Db.Nullable({ a : Db.Nullable(I64) }) }), [DbErr(Str), BadRow(Str)])
+			found = Db.all!("select * from (values (1::int8, '[\"x\",\"y\"]'::jsonb, '{\"a\":null}'::jsonb), (null, null, null)) as t(n, tags, doc)", [])
+			match found {
+				Ok(rows) => text(200, Json.to_str(rows))
 				Err(DbErr(why)) => text(500, why)
 				Err(BadRow(why)) => text(500, why)
 			}
@@ -384,7 +404,7 @@ route! = |request, context| {
 		}
 		("GET", "/jobs/state") => {
 			found : Try(List({ state : Str, attempts : I32, error : Str }), [DbErr(Str), BadRow(Str)])
-			found = Db.all!("select state, attempts, coalesce(last_error, '') as \"error!\" from rocx_jobs where input like $1 order by id", [Text("%\"${run}\"%")])
+			found = Db.all!("select state, attempts, coalesce(last_error, '') as error from rocx_jobs where input like $1 order by id", [Text("%\"${run}\"%")])
 			match found {
 				Ok(rows) => text(200, Str.join_with(rows.map(|row| "${row.state} ${row.attempts.to_str()} ${row.error}"), "\n"))
 				Err(DbErr(why)) => text(500, why)
@@ -455,7 +475,7 @@ route! = |request, context| {
 		# Postgres's backends still running the slow job's statement.
 		("GET", "/jobs/sleepers") => {
 			found : Try(List({ sleepers : I64 }), [DbErr(Str), BadRow(Str)])
-			found = Db.all!("select count(*) as \"sleepers!\" from pg_stat_activity where state = 'active' and query like '%pg_sleep(30)%' and pid <> pg_backend_pid()", [])
+			found = Db.all!("select count(*) as sleepers from pg_stat_activity where state = 'active' and query like '%pg_sleep(30)%' and pid <> pg_backend_pid()", [])
 			match found {
 				Ok(rows) => text(200, Str.join_with(rows.map(|row| row.sleepers.to_str()), ""))
 				Err(DbErr(why)) => text(500, why)
@@ -466,7 +486,7 @@ route! = |request, context| {
 		(_, "/admin/jobs") => Middleware.run!(admins_only, request, {}, |passed, _| JobsPage.respond!(passed, { mount: "/admin/jobs" }))
 		("GET", "/jobs/ticks") => {
 			found : Try(List({ ticks : I64 }), [DbErr(Str), BadRow(Str)])
-			found = Db.all!("select count(*) as \"ticks!\" from job_log where kind = 'tick'", [])
+			found = Db.all!("select count(*) as ticks from job_log where kind = 'tick'", [])
 			match found {
 				Ok(rows) => text(200, Str.join_with(rows.map(|row| row.ticks.to_str()), ""))
 				Err(DbErr(why)) => text(500, why)
@@ -898,7 +918,7 @@ answered_actor = |result|
 		Err(ActorErr(why)) => text(500, why)
 	}
 
-noted : [Null, Some(Str)] -> Str
+noted : Db.Nullable(Str) -> Str
 noted = |note|
 	match note {
 		Null => "-"

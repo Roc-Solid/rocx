@@ -54,7 +54,7 @@ here.
 ### Postgres: `Db`
 
 ```roc
-notes : Try(List({ id : I64, body : Str, note : [Null, Some(Str)] }), [DbErr(Str), BadRow(Str)])
+notes : Try(List({ id : I64, body : Str, note : Db.Nullable(Str) }), [DbErr(Str), BadRow(Str)])
 notes = Db.all!("select id, body, note from notes where author = $1", [Int(author)])
 
 added = Db.run!("insert into notes (body) values ($1)", [Text(body)])     # rows changed
@@ -68,10 +68,12 @@ Db.transaction!(|{}| {
 
 A parameter is `Null`, `Text`, `Int` or `Bool`, sent as text: Postgres reads it as the type its
 place wants. Rows come back as JSON and `Json.parse` decodes each into the record the caller
-annotated, by column name. A column that may be null (the table says so, or its name ends with `?`)
-is `[Null, Some(a)]`; a name ending with `!` says it never is; a null in a column nothing marked is
-an error that says how to mark it. Booleans, integers, floats, text, `json`/`jsonb`, `uuid`,
-timestamps and dates are read; anything else asks for a cast (`::text`).
+annotated, by column name: a null is JSON's `null`, any other value itself. A column that may be
+null is read as `Db.Nullable(a)` (`Null` or `Some(a)`, matched as a tag union; `null` or the value in
+JSON, both ways); a null in a column read as a plain value is `BadRow`, which names the column. The
+record says what may be null, so the host asks the catalog nothing (D-022). Booleans, integers,
+floats, text, `json`/`jsonb`, `uuid`, timestamps and dates are read; anything else asks for a cast
+(`::text`).
 
 `Db.transaction!` keeps one connection for the call: what the body writes, and the jobs it queues,
 stay only if it returns `Ok`. An `Err`, a failing statement or a crash rolls it all back, and a call
@@ -409,7 +411,9 @@ file stays for what a request is given. `Env.dev!` says whether the server was s
 `Tcp.connect!(host, port)` (or `connect_tls!`, or `start_tls!` on an open one) opens a socket for the
 call; `write_bytes!`, `read_exactly!`, `read_up_to!` and `read_until!` use it, each waiting on the
 call's thread (10 s to connect, 60 s for each read or write). TLS is rustls, checked against
-`webpki-roots`. A socket the call leaves open is closed when it ends. `Random.seed_u64!` and
+`webpki-roots`. A socket the call leaves open is closed when it ends. A socket is the call's alone:
+the host keeps it in the table of the thread the call runs on, so nothing about it is locked or
+shared, and its id means nothing to another call. `Random.seed_u64!` and
 `Random.bytes!(count)` are the operating system's randomness (`ring`); if it gives none, the call
 crashes rather than make a key of anything less.
 
