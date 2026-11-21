@@ -13,17 +13,27 @@ import Format
 import Routes
 import Stories
 import Remap
+import Commands
 
 main! = |args| {
 	words = args.map(|arg| OsStr.to_str_try(arg) ?? "")
 	match words.first() {
 		Ok("internal") => internal!({})
+		Ok("check") => {
+			given = words.drop_first(1)
+			exit_with(Commands.check!(if (given.first() == Ok("--")) given.drop_first(1) else given))
+		}
+		Ok("lint") if words.len() > 1 => exit_with(Commands.lint!(words.drop_first(1)))
 		_ => {
 			Stderr.line!("usage: rocx build <dir>… [--client <out>] [--dev] | rocx check -- <command>… | rocx lint <dir>… | rocx routes <dir> | rocx fmt [--check] <path>…")?
 			Err(Exit(2))
 		}
 	}
 }
+
+## Ends with `code`: 0 is success.
+exit_with : I32 -> Try({}, [Exit(I32)])
+exit_with = |code| if (code == 0) Ok({}) else Err(Exit(code))
 
 ## `rocx internal`: a call from the repo's JavaScript (src/rocx.mjs), `{ "fn": …, "args": […] }` on
 ## stdin, answered on stdout with `{ "ok": … }` or `{ "error": { "kind", "message", … } }`.
