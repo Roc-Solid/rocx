@@ -1236,3 +1236,51 @@ rewrite.
 
 **Reversible:** yes, entirely: it is the host's. `coroutine::run` back to `spawn_blocking` and
 `wait` back to `block_on` is the old model; apps and the platform's Roc never saw the change.
+
+## D-028 Values in memory: `Kv`
+
+**Context.** The dev mailbox kept email in host memory (a `Mutex` around a queue in `outbox.rs`)
+or in Postgres, with its own three host functions. guard (rate limits), presence and otel (state
+that needn't be written to Postgres), and any app with a cache or a one-time token (OAuth's state)
+want the same thing: values by key, in memory, some for a while. The host's value store
+(`memory.rs`) only grows: it is for what the platform keeps at start.
+
+**Options.**
+1. A key-value store in the host: one map behind one lock, with deadlines and a size limit; a Roc
+   module over it with typed values (JSON) and a few atomic operations.
+2. Actors whose state isn't written (`keep: Memory`): one message at a time per key, but a call of
+   its own and JSON both ways for every read.
+3. One owner thread and a channel per call (as actors' mailboxes are), to avoid the lock.
+
+**Choice.** 1. The "no mutex" line of D-021 was about actors, not a rule for the host (the user,
+2026-11-22): each operation is a few map and tree steps with nothing awaited while the lock is
+held, so a call waits microseconds at most, and every operation is atomic without more machinery.
+
+```roc
+Kv.Opts := { ttl_ms : U64 ?? 0 }                                  # 0: until the server stops
+Kv.ListOpts := { keep : U64, ttl_ms : U64 ?? 0 }
+
+Kv.set! : Str, value, Kv.Opts => {}                               # value: Json.Encodable
+Kv.get! : Str => Try(value, [NotFound, BadValue(Str)])            # value: Json.Parseable
+Kv.delete! : Str => {}
+Kv.take! : Str => Try(value, [NotFound, BadValue(Str)])           # read and forgotten: once
+Kv.add! : Str, value, Kv.Opts => Try({}, [Exists])                # only if nothing is there
+Kv.increment! : Str, I64, Kv.Opts => Try(I64, [NotAnInteger(Str)])
+Kv.push! : Str, value, Kv.ListOpts => {}                          # newest first, the newest `keep`
+Kv.list! : Str => Try(List(value), [BadValue(Str)])
+```
+
+- A value is JSON in the host; Roc encodes it and decodes it as its reader's type. A counter is a
+  JSON number, so `Kv.get!` reads it as an `I64`.
+- A time to live is set by `set!` and `add!` (replacing the old one); a new counter's or list's
+  starts when it is made, and later `increment!`s and `push!`es don't move it, so a counter counts
+  in windows.
+- Expired entries go at the next operation, oldest deadline first. Past `--kv-max-mb` (64, or
+  `KV_MAX_MB`) the least recently read or written go, never the one just written.
+- Memory only: a restart forgets everything. What must last goes in Postgres.
+- The host's crate defines `main` for Roc, so `cargo test` can't run `kv.rs`'s unit tests; they
+  are compiled alone (`rustc --test`) by the server's tests.
+
+**Why.** It is the smallest thing every one of those uses needs, it is Roc-shaped (typed values,
+`Try` for what can be missing), and it replaces the outbox's special host functions. One instance of
+an app means one store. **Reversible:** yes.

@@ -53,7 +53,7 @@ platform ""
 			logs : { format : [Auto, Pretty, Json] },
 		}
 	}
-	exposes [Actor, AesGcm, Audio, Browser, Call, Channel, Context, Cron, Db, Email, Endpoint, Env, Errored, Events, For, Html, Http, HttpResponse, HttpStatusCode, Job, JobsPage, Live, Loading, Log, Middleware, OpenApi, Random, Router, Server, Show, Solid, Submission, Tcp, Time, Title, Transition]
+	exposes [Actor, AesGcm, Audio, Browser, Call, Channel, Context, Cron, Db, Email, Endpoint, Env, Errored, Events, For, Html, Http, HttpResponse, HttpStatusCode, Job, JobsPage, Kv, Live, Loading, Log, Middleware, OpenApi, Random, Router, Server, Show, Solid, Submission, Tcp, Time, Title, Transition]
 	packages {}
 	provides {
 		"roc_actor": actor_for_host!,
@@ -98,6 +98,13 @@ platform ""
 		"roc_host_env_var": Host.env_var!,
 		"roc_host_http_send": Host.http_send!,
 		"roc_host_isolated": Host.isolated!,
+		"roc_host_kv_add": Host.kv_add!,
+		"roc_host_kv_delete": Host.kv_delete!,
+		"roc_host_kv_get": Host.kv_get!,
+		"roc_host_kv_increment": Host.kv_increment!,
+		"roc_host_kv_push": Host.kv_push!,
+		"roc_host_kv_set": Host.kv_set!,
+		"roc_host_kv_take": Host.kv_take!,
 		"roc_host_live_count": Host.live_count!,
 		"roc_host_live_join": Host.live_join!,
 		"roc_host_live_listen": Host.live_listen!,
@@ -184,6 +191,7 @@ import HttpStatusCode
 import Job
 import JobsPage
 import JobWorker
+import Kv
 import Live
 import Loading
 import Log

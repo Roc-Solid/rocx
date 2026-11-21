@@ -36,7 +36,7 @@ import { createServer as createHttpsServer } from "node:https";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildApp, buildHost, hasRust, roc, root } from "../build.mjs";
+import { buildApp, buildHost, hasRust, hostUnitTests, roc, root } from "../build.mjs";
 
 
 let hasRoc = true;
@@ -1873,6 +1873,102 @@ test("storage: keys S3 doesn't take are refused, with its code; a bucket that is
 		assert.doesNotMatch(Object.values(servers).map((each) => each.logged()).join(""), new RegExp(secret.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the secret never logged");
 	} finally {
 		await Promise.all([...Object.values(servers), none].map((each) => each.stop()));
+	}
+});
+
+// ---- The key-value store: Kv ----
+
+/** The app's kv route `path`: its status and its text. */
+const kv = async (path, of = server) => {
+	const response = await of.get(`/kv/${path}`);
+	return [response.status, await response.text()];
+};
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test("kv: the store's own unit tests (kv.rs, compiled alone): expiry, eviction, atomic increments from many threads", { skip }, () => {
+	const ran = hostUnitTests("kv.rs", join(dir, "kv-unit-tests"));
+	assert.equal(ran.status, 0, ran.stdout + ran.stderr);
+	assert.match(ran.stdout, /test result: ok\. 6 passed/);
+});
+
+test("kv: a value kept, read, taken once, deleted; a JSON number reads back as an I64, a string doesn't", { skip }, async () => {
+	const key = `${run}-kv-a`;
+	assert.deepEqual(await kv(`set?key=${key}&value=${encodeURIComponent("Hello, ✓")}`), [200, "set"]);
+	assert.deepEqual(await kv(`get?key=${key}`), [200, "Hello, ✓"]);
+	assert.match((await kv(`count?key=${key}`))[1], /^BadValue /, "a string isn't an I64");
+	assert.deepEqual(await kv(`take?key=${key}`), [200, "Hello, ✓"]);
+	assert.deepEqual(await kv(`take?key=${key}`), [404, "NotFound"], "taken once");
+	await kv(`set?key=${key}&value=again`);
+	assert.deepEqual(await kv(`delete?key=${key}`), [200, "deleted"]);
+	assert.deepEqual(await kv(`get?key=${key}`), [404, "NotFound"]);
+	assert.deepEqual(await kv(`delete?key=${key}`), [200, "deleted"], "deleting what isn't there");
+	assert.deepEqual(await kv(`increment?key=${key}-n&by=41`), [200, "41"]);
+	assert.deepEqual(await kv(`count?key=${key}-n`), [200, "41"], "a counter is a JSON number");
+});
+
+test("kv: a value's time to live; add lets one in until it expires; a counter's window", { skip }, async () => {
+	const key = `${run}-kv-t`;
+	await kv(`set?key=${key}&value=soon&ttl=150`);
+	assert.deepEqual(await kv(`get?key=${key}`), [200, "soon"]);
+	assert.deepEqual(await kv(`add?key=${key}-claim&value=me&ttl=150`), [200, "added"]);
+	assert.deepEqual(await kv(`add?key=${key}-claim&value=you`), [409, "Exists"]);
+	assert.deepEqual(await kv(`increment?key=${key}-n&ttl=150`), [200, "1"]);
+	assert.deepEqual(await kv(`increment?key=${key}-n&ttl=150`), [200, "2"], "the window's own deadline");
+	await sleep(250);
+	assert.deepEqual(await kv(`get?key=${key}`), [404, "NotFound"], "expired");
+	assert.deepEqual(await kv(`add?key=${key}-claim&value=you`), [200, "added"], "free again");
+	assert.deepEqual(await kv(`increment?key=${key}-n&ttl=150`), [200, "1"], "a new window");
+	assert.match((await kv(`increment?key=${key}-claim`))[1], /^NotAnInteger /);
+});
+
+test("kv: 200 increments at once all count, and each gets its own number", { skip }, async () => {
+	const key = `${run}-kv-race`;
+	const answers = await Promise.all(Array.from({ length: 200 }, () => kv(`increment?key=${key}`)));
+	assert.deepEqual(
+		answers.map(([, said]) => Number(said)).sort((a, b) => a - b),
+		Array.from({ length: 200 }, (_, at) => at + 1),
+	);
+	const claims = await Promise.all(Array.from({ length: 50 }, (_, at) => kv(`add?key=${key}-claim&value=${at}`)));
+	assert.equal(claims.filter(([status]) => status === 200).length, 1, "one add gets in");
+});
+
+test("samples: what the docs show of Kv runs as they say: five tries a minute, a sign-in's state good once", { skip }, async () => {
+	const address = `${run}-203.0.113.7`;
+	const tries = [];
+	for (let at = 0; at < 7; at++) tries.push(await text(`/samples/try?address=${address}`, { method: "POST" }));
+	assert.deepEqual(tries, ["go on", "go on", "go on", "go on", "go on", "wait", "wait"]);
+	assert.equal(await text(`/samples/try?address=${address}-other`, { method: "POST" }), "go on", "another address, its own count");
+	const state = await text("/samples/sign-in", { method: "POST" });
+	assert.match(state, /^[A-Za-z0-9_-]{22}$/);
+	const back = async () => {
+		const answer = await get(`/samples/sign-in/back?state=${state}`);
+		return [answer.status, await answer.text()];
+	};
+	assert.deepEqual(await back(), [200, "signed in"]);
+	assert.deepEqual(await back(), [400, "UnknownState"], "good once");
+});
+
+test("kv: a capped list, newest first", { skip }, async () => {
+	const key = `${run}-kv-l`;
+	for (const each of ["a", "b", "c", "d"]) await kv(`push?key=${key}&value=${each}&keep=3`);
+	assert.deepEqual(await kv(`list?key=${key}`), [200, "d,c,b"]);
+	assert.deepEqual(await kv(`list?key=${key}-none`), [200, ""], "none is empty");
+});
+
+test("kv: past --kv-max-mb, the least recently used values go, a value just read stays", { skip }, async () => {
+	const small = await start(["--kv-max-mb", "1"]);
+	try {
+		const key = (at) => `${run}-kv-full-${at}`;
+		for (let at = 0; at < 8; at++) await kv(`set?key=${key(at)}&size=100000`, small);
+		await kv(`get?key=${key(0)}`, small);
+		for (let at = 8; at < 16; at++) await kv(`set?key=${key(at)}&size=100000`, small);
+		const kept = await Promise.all(Array.from({ length: 16 }, async (_, at) => (await kv(`get?key=${key(at)}`, small))[0] === 200));
+		assert.equal(kept[0], true, "read since: used recently");
+		assert.equal(kept[1], false, "the least recently used went");
+		assert.equal(kept[15], true, "the newest stays");
+		assert.ok(kept.filter(Boolean).length <= 10, `about 1 MiB of 100 kB values: ${kept.filter(Boolean).length} kept`);
+	} finally {
+		await small.stop();
 	}
 });
 

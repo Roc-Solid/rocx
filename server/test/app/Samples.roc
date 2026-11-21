@@ -9,6 +9,7 @@ import pf.Env
 import pf.Http
 import pf.HttpResponse
 import pf.Job
+import pf.Kv
 import pf.Log
 import pf.Random
 import pf.Server
@@ -230,6 +231,35 @@ Samples := [].{
 	from_cdn = |request, url| {
 		upstream = { method: "GET", url, headers: Server.passed_on(request) }
 		Server.forward(upstream, [{ name: "cache-control", value: "public, max-age=86400" }])
+	}
+
+	# ---- Values in memory: Kv ----
+
+	## Five sign-in tries a minute from each address: the count is the store's, a window a minute
+	## long from the first try.
+	may_try! : Str => Bool
+	may_try! = |address| {
+		tries = Kv.increment!("login:${address}", 1, { ttl_ms: 60_000 }) ?? 0
+		tries <= 5
+	}
+
+	## A sign-in with another site begins: a random state it will send back, kept ten minutes.
+	begin_sign_in! : {} => Str
+	begin_sign_in! = |{}| {
+		state = Base64.url_encode(Random.bytes!(16))
+		Kv.set!("oauth:${state}", Time.now_millis!({}), { ttl_ms: 600_000 })
+		state
+	}
+
+	## The state comes back: good once, within ten minutes. A second use finds nothing.
+	finish_sign_in! : Str => Try({}, [UnknownState])
+	finish_sign_in! = |state| {
+		started : Try(U64, [NotFound, BadValue(Str)])
+		started = Kv.take!("oauth:${state}")
+		match started {
+			Ok(_) => Ok({})
+			Err(_) => Err(UnknownState)
+		}
 	}
 
 	# ---- Cookies ----

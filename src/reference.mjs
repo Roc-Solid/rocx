@@ -96,7 +96,7 @@ export function undocumented(modules) {
  */
 export const GROUPS = [
 	{ id: "requests", name: "Requests and HTTP", modules: ["Server", "Endpoint", "Middleware", "Router", "Http", "HttpResponse", "Events", "Call", "Submission", "OpenApi"] },
-	{ id: "data", name: "Data", modules: ["Db"] },
+	{ id: "data", name: "Data", modules: ["Db", "Kv"] },
 	{ id: "background", name: "Background", modules: ["Job", "JobsPage", "Cron", "Actor", "Live"] },
 	{ id: "mail", name: "Mail", modules: ["Email"] },
 	{ id: "crypto", name: "Crypto", modules: ["AesGcm", "Random"] },

@@ -33,7 +33,7 @@ use crate::abi::{
     HostStoreGetResultPayload as TextPayload, HostStoreGetResultTag as TextTag, HostTcpReadExactlyResult as BytesResult,
     HostTcpReadExactlyResultPayload as BytesPayload, HostTcpReadExactlyResultTag as BytesTag, RocListWith, RocStr,
 };
-use crate::{actors, client, coroutine, db, live, memory, outbox, roc, settings, signals, tcp};
+use crate::{actors, client, coroutine, db, kv, live, memory, outbox, roc, settings, signals, tcp};
 use bytes::Bytes;
 use futures_util::future::select_all;
 use std::cell::RefCell;
@@ -659,6 +659,43 @@ pub extern "C" fn roc_host_store_get(name: RocStr) -> TextResult {
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_store_set(name: RocStr, value: RocStr) {
     memory::set(&taken(name), &taken(value));
+}
+
+// ---- The key-value store (`Kv`) ----
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_kv_get(key: RocStr) -> TextResult {
+    text_or_error(kv::get(&taken(key)).ok_or_else(String::new))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_kv_set(key: RocStr, text: RocStr, ttl_ms: u64) {
+    kv::set(&taken(key), &taken(text), ttl_ms);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_kv_delete(key: RocStr) {
+    kv::delete(&taken(key));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_kv_take(key: RocStr) -> TextResult {
+    text_or_error(kv::take(&taken(key)).ok_or_else(String::new))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_kv_add(key: RocStr, text: RocStr, ttl_ms: u64) -> bool {
+    kv::add(&taken(key), &taken(text), ttl_ms)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_kv_increment(key: RocStr, by: i64, ttl_ms: u64) -> TextResult {
+    text_or_error(kv::increment(&taken(key), by, ttl_ms).map(|now| now.to_string()))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_kv_push(key: RocStr, text: RocStr, keep: u64, ttl_ms: u64) {
+    kv::push(&taken(key), &taken(text), keep, ttl_ms);
 }
 
 #[unsafe(no_mangle)]

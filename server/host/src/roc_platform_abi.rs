@@ -2700,6 +2700,78 @@ pub struct HostIsolatedArgs {
     pub arg2: u64,
 }
 
+/// Arguments for Host.kv_add!
+/// Roc signature: Str, Str, U64 => Bool
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostKvAddArgs {
+    pub arg0: RocStr,
+    pub arg1: RocStr,
+    pub arg2: u64,
+}
+
+/// Arguments for Host.kv_delete!
+/// Roc signature: Str => {}
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostKvDeleteArgs {
+    pub arg0: RocStr,
+}
+
+/// Arguments for Host.kv_get!
+/// Roc signature: Str => Try(Str, Str)
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostKvGetArgs {
+    pub arg0: RocStr,
+}
+
+/// Arguments for Host.kv_increment!
+/// Roc signature: Str, I64, U64 => Try(Str, Str)
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostKvIncrementArgs {
+    pub arg0: RocStr,
+    pub arg1: i64,
+    pub arg2: u64,
+}
+
+/// Arguments for Host.kv_push!
+/// Roc signature: Str, Str, U64, U64 => {}
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostKvPushArgs {
+    pub arg0: RocStr,
+    pub arg1: RocStr,
+    pub arg2: u64,
+    pub arg3: u64,
+}
+
+/// Arguments for Host.kv_set!
+/// Roc signature: Str, Str, U64 => {}
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostKvSetArgs {
+    pub arg0: RocStr,
+    pub arg1: RocStr,
+    pub arg2: u64,
+}
+
+/// Arguments for Host.kv_take!
+/// Roc signature: Str => Try(Str, Str)
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostKvTakeArgs {
+    pub arg0: RocStr,
+}
+
 /// Arguments for Host.live_count!
 /// Roc signature: Str => U64
 /// Refcounted fields are owned by the hosted function.
@@ -3130,6 +3202,15 @@ pub type HostEnvVarResultPayload = HostActorAskResultPayload;
 pub type HostEnvVarResultTag = HostActorAskResultTag;
 pub type HostHttpSendOk = AnonStruct3ed536693d8b85f3;
 pub type HostIsolated = AnonStruct2e6fc7635560c0c3;
+pub type HostKvGetResult = HostActorAskResult;
+pub type HostKvGetResultPayload = HostActorAskResultPayload;
+pub type HostKvGetResultTag = HostActorAskResultTag;
+pub type HostKvIncrementResult = HostActorAskResult;
+pub type HostKvIncrementResultPayload = HostActorAskResultPayload;
+pub type HostKvIncrementResultTag = HostActorAskResultTag;
+pub type HostKvTakeResult = HostActorAskResult;
+pub type HostKvTakeResultPayload = HostActorAskResultPayload;
+pub type HostKvTakeResultTag = HostActorAskResultTag;
 pub type HostLiveNext = AnonStructFa59a42fc999ca94;
 pub type HostStoreGetResult = HostActorAskResult;
 pub type HostStoreGetResultPayload = HostActorAskResultPayload;
@@ -3725,7 +3806,7 @@ impl AnonStruct8f4fc9623a0f6755 {
     pub unsafe fn decref(self, roc_host: &RocHost) {
         let value = self;
         unsafe { value.bytes.decref(roc_host); }
-        unsafe { decref_box_with(value.feed as RocBox, core::mem::align_of::<AnonStruct608867a33f852b1e>(), true, Some(decref_box_payload_type69), roc_host); }
+        unsafe { decref_box_with(value.feed as RocBox, core::mem::align_of::<AnonStruct608867a33f852b1e>(), true, Some(decref_box_payload_type70), roc_host); }
         unsafe { value.headers.decref(roc_host); }
         unsafe { decref_erased_callable(value.page, roc_host); }
         unsafe { value.text.decref(roc_host); }
@@ -3789,7 +3870,7 @@ unsafe impl RocRelease<AnonStructC1c0196657ba1ea1> for AnonStructC1c0196657ba1ea
     }
 }
 
-extern "C" fn decref_box_payload_type55(data_ptr: *mut c_void, roc_host: *mut RocHost) {
+extern "C" fn decref_box_payload_type56(data_ptr: *mut c_void, roc_host: *mut RocHost) {
     if data_ptr.is_null() || roc_host.is_null() {
         return;
     }
@@ -3798,7 +3879,7 @@ extern "C" fn decref_box_payload_type55(data_ptr: *mut c_void, roc_host: *mut Ro
     unsafe { payload.decref(roc_host); }
 }
 
-extern "C" fn decref_box_payload_type69(data_ptr: *mut c_void, roc_host: *mut RocHost) {
+extern "C" fn decref_box_payload_type70(data_ptr: *mut c_void, roc_host: *mut RocHost) {
     if data_ptr.is_null() || roc_host.is_null() {
         return;
     }
@@ -4094,6 +4175,61 @@ unsafe extern "C" {
     ///     unsafe { arg1.decref(roc_host); }
     /// The result is owned by Roc: return exactly one owned reference.
     pub fn roc_host_isolated(arg0: RocStr, arg1: RocStr, arg2: u64) -> AnonStruct2e6fc7635560c0c3;
+
+    /// Hosted symbol for Host.kv_add!
+    /// Roc signature: Str, Str, U64 => Bool
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    ///     unsafe { arg1.decref(roc_host); }
+    pub fn roc_host_kv_add(arg0: RocStr, arg1: RocStr, arg2: u64) -> bool;
+
+    /// Hosted symbol for Host.kv_delete!
+    /// Roc signature: Str => {}
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    pub fn roc_host_kv_delete(arg0: RocStr);
+
+    /// Hosted symbol for Host.kv_get!
+    /// Roc signature: Str => Try(Str, Str)
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_kv_get(arg0: RocStr) -> HostActorAskResult;
+
+    /// Hosted symbol for Host.kv_increment!
+    /// Roc signature: Str, I64, U64 => Try(Str, Str)
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_kv_increment(arg0: RocStr, arg1: i64, arg2: u64) -> HostActorAskResult;
+
+    /// Hosted symbol for Host.kv_push!
+    /// Roc signature: Str, Str, U64, U64 => {}
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    ///     unsafe { arg1.decref(roc_host); }
+    pub fn roc_host_kv_push(arg0: RocStr, arg1: RocStr, arg2: u64, arg3: u64);
+
+    /// Hosted symbol for Host.kv_set!
+    /// Roc signature: Str, Str, U64 => {}
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    ///     unsafe { arg1.decref(roc_host); }
+    pub fn roc_host_kv_set(arg0: RocStr, arg1: RocStr, arg2: u64);
+
+    /// Hosted symbol for Host.kv_take!
+    /// Roc signature: Str => Try(Str, Str)
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_kv_take(arg0: RocStr) -> HostActorAskResult;
 
     /// Hosted symbol for Host.live_count!
     /// Roc signature: Str => U64

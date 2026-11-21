@@ -139,6 +139,15 @@ export function buildHost({ target = nativeTarget() } = {}) {
 	}
 }
 
+/** The unit tests of a host module that uses only Rust's standard library (`kv.rs`), compiled on
+ * their own (`rustc --test` into `out`) and run: the host's crate defines `main` for Roc, so `cargo
+ * test` can't run them. Its status and what it printed. */
+export function hostUnitTests(module, out) {
+	const edition = /^edition = "(\d+)"/m.exec(readFileSync(join(hostDir, "Cargo.toml"), "utf8"))?.[1] ?? "2024";
+	run("rustc", ["--edition", edition, "--test", join(hostDir, "src", module), "-o", out], { env: rustEnv() });
+	return spawnSync(out, [], { encoding: "utf8" });
+}
+
 /** Starts a server built on the platform, with `flags`; resolves when it listens: its URL, what it
  * has logged, and how to stop it (SIGTERM; resolves to its exit code). */
 export async function start(executable, flags = []) {

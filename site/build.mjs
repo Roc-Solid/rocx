@@ -608,6 +608,8 @@ function sourcesModule() {
 		defined("platform_digest", "server/test/app/Samples.roc", ["upload_digest"]),
 		defined("platform_cdn", "server/test/app/Samples.roc", ["from_cdn"]),
 		defined("platform_cookies", "server/test/app/Samples.roc", ["signed_in", "reviewing", "signed_out"]),
+		defined("platform_kv_limit", "server/test/app/Samples.roc", ["may_try!"]),
+		defined("platform_kv_once", "server/test/app/Samples.roc", ["begin_sign_in!", "finish_sign_in!"]),
 		defined("platform_job_options", "server/test/app/Samples.roc", ["reminder", "remind_tomorrow!", "forget_reminder!", "remind_sooner!"]),
 		defined("platform_job_list", "server/test/app/Samples.roc", ["failed_reminders!"]),
 		pick("platform_jobs_page", "server/test/app/main.roc", ["(_, \"/admin/jobs\") => Middleware.run!(admins_only"]),

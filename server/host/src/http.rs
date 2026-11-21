@@ -54,6 +54,8 @@ pub struct Config {
     pub actor_idle_ms: u64,
     pub smtp_url: Option<String>,
     pub mail_from: String,
+    /// The most the key-value store (`Kv`) keeps, in MiB, before the least recently used goes.
+    pub kv_max_mb: u64,
     /// Pages reload when the server restarts (after a rebuild); crashes show their message; the
     /// platform's Roc shows the dev mailbox at `GET /__rocx/mail` (`Outbox.roc`).
     pub dev: bool,
@@ -75,6 +77,7 @@ pub const USAGE: &str = "usage: <app> [options]
   --job-workers 4 --job-retry-ms 1000  jobs run at once; the first retry's wait, doubled after
   --actor-idle-ms 900000               an actor idle this long is let go (0: never; kept in Postgres)
   --smtp-url URL --mail-from ADDRESS   where email goes (SMTP_URL, MAIL_FROM); none: an outbox
+  --kv-max-mb 64                       the key-value store's limit (KV_MAX_MB): the least recently used goes past it
   --dev                                reload pages on restart, show crashes, the mailbox at /__rocx/mail
   --debug                              GET /__rocx/allocations, and the mailbox as JSON
   --live-beat-ms 15000                 how often a channel stream beats, and its checks run again
@@ -94,6 +97,7 @@ impl Config {
         let mut actor_idle_ms = 15 * 60 * 1000;
         let mut smtp_url = env("SMTP_URL");
         let mut mail_from = env("MAIL_FROM").unwrap_or_else(|| "rocx <rocx@localhost>".into());
+        let mut kv_max_mb = env("KV_MAX_MB").and_then(|text| text.parse().ok()).unwrap_or(64);
         let mut dev = false;
         let mut debug = false;
         let mut live_beat_ms: u64 = 15_000;
@@ -124,6 +128,7 @@ impl Config {
                 "--actor-idle-ms" => actor_idle_ms = value()?.parse().map_err(|_| "--actor-idle-ms needs a number".to_string())?,
                 "--smtp-url" => smtp_url = Some(value()?),
                 "--mail-from" => mail_from = value()?,
+                "--kv-max-mb" => kv_max_mb = value()?.parse().map_err(|_| "--kv-max-mb needs a number".to_string())?,
                 "--dev" => dev = true,
                 "--debug" => debug = true,
                 "--live-beat-ms" => live_beat_ms = value()?.parse().ok().filter(|ms| *ms > 0).ok_or("--live-beat-ms needs a number above 0")?,
@@ -135,7 +140,7 @@ impl Config {
         }
         let address = format!("{host}:{port}").parse().map_err(|error| format!("{host}:{port}: {error}"))?;
         let live_beat = Duration::from_millis(live_beat_ms);
-        Ok(Config { address, statics, files, context, database_url, job_workers, job_retry_ms, actor_idle_ms, smtp_url, mail_from, dev, debug, live_beat, roc_threads })
+        Ok(Config { address, statics, files, context, database_url, job_workers, job_retry_ms, actor_idle_ms, smtp_url, mail_from, kv_max_mb, dev, debug, live_beat, roc_threads })
     }
 }
 

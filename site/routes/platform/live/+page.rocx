@@ -21,6 +21,7 @@ meta = {
 		{ id: "actors", label: "Actors" },
 		{ id: "asking", label: "Asking and telling" },
 		{ id: "timers", label: "Timers" },
+		{ id: "kv", label: "Values in memory: Kv" },
 		{ id: "which", label: "Which to use" },
 		{ id: "limits", label: "Not yet" },
 	],
@@ -250,6 +251,34 @@ view! = |_|
 				job, another actor.
 			</p>
 
+			<Heading id="kv">Values in memory: Kv</Heading>
+			<p>
+				<code>Kv</code> keeps values by key in the server's memory, for as long as you say or until it stops:
+				never written anywhere, so a restart forgets them. For what is cheap to lose and read on every
+				request: a rate limit's counts, a cache, a one-time token. A value is any type JSON can write, read
+				back as the type its reader asks for.
+			</p>
+			<Code title={"${Sources.platform_kv_limit.file}, in part"} source={Sources.platform_kv_limit.rocx} numbers={Bool.False} />
+			<Code title={"${Sources.platform_kv_once.file}, in part"} source={Sources.platform_kv_once.rocx} numbers={Bool.False} />
+			<ul>
+				<li>
+					<code>{"Kv.set!(key, value, { ttl_ms })"}</code> and <code>Kv.get!(key)</code>; <code>Kv.delete!(key)</code>.
+					A time to live of 0, the default, keeps it until the server stops.
+				</li>
+				<li>
+					Each operation is atomic. <code>Kv.increment!</code> counts every request (a new counter's time to
+					live starts with it, so it counts in windows); <code>Kv.add!</code> lets one request in (a claim, an
+					idempotency key); <code>Kv.take!</code> gives a value once.
+				</li>
+				<li>
+					<code>{"Kv.push!(key, value, { keep })"}</code> and <code>Kv.list!(key)</code>: a capped list, newest first.
+				</li>
+				<li>
+					It holds 64 MiB (<code>--kv-max-mb</code>); past that the least recently used values go. Keys name
+					their owner first (<code>login:…</code>, <code>email:outbox</code>), so a package's never meet an app's.
+				</li>
+			</ul>
+
 			<Heading id="which">Which to use</Heading>
 			<TableWrap>
 				<table>
@@ -258,6 +287,7 @@ view! = |_|
 						<tr><td>who is here, now</td><td>a room (<code>Live.join!</code>, <code>Live.count!</code>)</td><td>while the calls in it last</td></tr>
 						<tr><td>telling everyone listening</td><td>a topic (<code>Live.publish!</code>, <code>Live.listen!</code>)</td><td>while the listeners last</td></tr>
 						<tr><td>live data for pages, checked</td><td>a channel (<code>channel!</code>, <code>Endpoint.subscribe!</code>, <code>Endpoint.publish!</code>)</td><td>while the subscribers last</td></tr>
+						<tr><td>a count, a cache, a token used once</td><td>a value in memory (<code>Kv.increment!</code>, <code>Kv.set!</code>, <code>Kv.take!</code>)</td><td>its time to live, or until a restart</td></tr>
 						<tr><td>state many requests change, one at a time</td><td>an actor (<code>Actor.ask!</code>, <code>Actor.tell!</code>)</td><td>in Postgres: restarts too</td></tr>
 						<tr><td>data, queried every way</td><td>a table (<a href={Paths.platform_postgres}><code>Db</code></a>)</td><td>in Postgres</td></tr>
 						<tr><td>work that may fail and should run again</td><td>a job (<a href={Paths.platform_jobs}><code>Job.enqueue!</code></a>)</td><td>in Postgres, until done</td></tr>

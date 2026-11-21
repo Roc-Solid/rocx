@@ -23,6 +23,7 @@ import pf.Http
 import pf.HttpResponse
 import pf.Job
 import pf.JobsPage
+import pf.Kv
 import pf.Live
 import pf.Log
 import pf.Random
@@ -816,6 +817,9 @@ route! = |request, context| {
 		# ---- Storage: S3, from packages/s3, in the bucket STORAGE_URL names (`stored!`) ----
 		(_, path) if path.starts_with("/storage/") => stored!(request)
 
+		# ---- The key-value store (the key, a value as text, `ttl` and `keep` in the query) ----
+		(_, path) if path.starts_with("/kv/") => kept!(request)
+
 		# ---- Cookies: each kind the platform writes ----
 		("GET", "/cookies") => {
 			given = Server.redirect("/")
@@ -882,6 +886,13 @@ route! = |request, context| {
 		(_, "/samples/video/whole") => Samples.serve_whole!(param(request.query, "key"), request)
 		("POST", "/samples/digest") => Samples.upload_digest(request)
 		(_, "/samples/cdn") => Samples.from_cdn(request, param(request.query, "url"))
+		("POST", "/samples/try") => text(200, if (Samples.may_try!(param(request.query, "address"))) "go on" else "wait")
+		("POST", "/samples/sign-in") => text(200, Samples.begin_sign_in!({}))
+		("GET", "/samples/sign-in/back") =>
+			match Samples.finish_sign_in!(param(request.query, "state")) {
+				Ok({}) => text(200, "signed in")
+				Err(UnknownState) => text(400, "UnknownState")
+			}
 		("GET", "/samples/cookies") => Samples.signed_out(Samples.reviewing(Samples.signed_in(text(200, "cookies"), "token"), "review", 1_795_000_000_000))
 
 		# ---- The probes' endpoints, which its pages read ----
@@ -1972,3 +1983,63 @@ mount_crashing! = |{}| {
 ## A page with a failure no <Errored> catches.
 unhandled! : {} => Html
 unhandled! = |{}| Html.element("html", [], [Html.element("body", [], [Html.element("p", [], [Html.text_of(|| Solid.use_context!(missing).name)])])])
+
+## The key-value store's routes: each operation, a text value (`value`), its time to live (`ttl`)
+## and a list's length (`keep`) in the query; what came back, as text.
+kept! : Server.Request => Server.Response
+kept! = |request| {
+	key = param(request.query, "key")
+	opts = { ttl_ms: number(request.query, "ttl") }
+	# `size`: that many x's, for values too large for a query.
+	size = number(request.query, "size")
+	value = if (size > 0) Str.repeat("x", size) else param(request.query, "value")
+	match request.path {
+		"/kv/set" => {
+			Kv.set!(key, value, opts)
+			text(200, "set")
+		}
+		"/kv/get" =>
+			match Kv.get!(key) {
+				Ok(found) => text(200, found)
+				Err(NotFound) => text(404, "NotFound")
+				Err(BadValue(why)) => text(500, "BadValue ${why}")
+			}
+		"/kv/take" =>
+			match Kv.take!(key) {
+				Ok(found) => text(200, found)
+				Err(NotFound) => text(404, "NotFound")
+				Err(BadValue(why)) => text(500, "BadValue ${why}")
+			}
+		"/kv/delete" => {
+			Kv.delete!(key)
+			text(200, "deleted")
+		}
+		"/kv/add" =>
+			match Kv.add!(key, value, opts) {
+				Ok({}) => text(200, "added")
+				Err(Exists) => text(409, "Exists")
+			}
+		"/kv/increment" =>
+			match Kv.increment!(key, I64.from_str(param(request.query, "by")) ?? 1, opts) {
+				Ok(now) => text(200, now.to_str())
+				Err(NotAnInteger(why)) => text(409, "NotAnInteger ${why}")
+			}
+		"/kv/push" => {
+			Kv.push!(key, value, { keep: number(request.query, "keep"), ttl_ms: number(request.query, "ttl") })
+			text(200, "pushed")
+		}
+		"/kv/list" =>
+			match Kv.list!(key) {
+				Ok(values) => text(200, Str.join_with(values, ","))
+				Err(BadValue(why)) => text(500, "BadValue ${why}")
+			}
+		"/kv/count" =>
+			# A number kept as JSON reads back as one; a string doesn't.
+			match Kv.get!(key) {
+				Ok(count) => text(200, (count + 0.I64).to_str())
+				Err(NotFound) => text(404, "NotFound")
+				Err(BadValue(why)) => text(500, "BadValue ${why}")
+			}
+		_ => text(404, "no such kv route")
+	}
+}

@@ -69,6 +69,29 @@ Host := [].{
 
 	store_set! : Str, Str => {}
 
+	## The text under a key in the server's key-value store (`Kv`), a list as a JSON array; an `Err`
+	## when there is none, or it has expired.
+	kv_get! : Str => Try(Str, Str)
+
+	## Keeps text under a key for so many milliseconds (0: until the server stops).
+	kv_set! : Str, Str, U64 => {}
+
+	## Forgets a key.
+	kv_delete! : Str => {}
+
+	## The text under a key, forgotten as it is read: one caller gets it.
+	kv_take! : Str => Try(Str, Str)
+
+	## Keeps text under a key only if nothing is there: whether it did.
+	kv_add! : Str, Str, U64 => Bool
+
+	## Adds to the integer under a key (0 if none, its time to live starting then): the new value,
+	## as text, or why it can't (what is there isn't an integer).
+	kv_increment! : Str, I64, U64 => Try(Str, Str)
+
+	## Puts text at the front of the list under a key, keeping so many of the newest.
+	kv_push! : Str, Str, U64, U64 => {}
+
 	## A random number from the operating system.
 	random_u64! : {} => U64
 

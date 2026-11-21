@@ -33,6 +33,7 @@ mod coroutine;
 mod db;
 mod hosted;
 mod http;
+mod kv;
 mod live;
 mod logging;
 mod memory;
@@ -128,6 +129,7 @@ async fn run(config: http::Config) -> Result<(), String> {
         given.insert("debug".to_string(), "yes".to_string());
     }
     settings::set(given);
+    kv::set_limit(usize::try_from(config.kv_max_mb).unwrap_or(usize::MAX).saturating_mul(1024 * 1024));
 
     // The address first: a server that can't listen starts nothing (no loops to leave running into
     // a runtime that is shutting down).

@@ -46,7 +46,7 @@ markup, made once per answer), 2 for the `feed`, 3 for the `bytes`, 4 for the `u
 method, URL and headers); the boxes an answer doesn't send do nothing, and the host releases them.
 `program.actors` lists the app's kinds of actor (`Actor.handler`), so the host can run an actor's
 turn when nobody waits on it (a tell, a timer). The platform exposes `Db`, `Job`, `Cron`, `Email`,
-`Live`, `Actor`, `Log`, `Time`, `Tcp`, `Http`, `Env`, `Random`, and `AesGcm`; the jobs page
+`Kv`, `Live`, `Actor`, `Log`, `Time`, `Tcp`, `Http`, `Env`, `Random`, and `AesGcm`; the jobs page
 (`JobsPage`); the modules
 components are written with (`Html`, `Solid`, `Show`, `For`, `Loading`, `Errored`, `Context`,
 `Call`); and HTTP's (`Server`, `Endpoint`, `Middleware`, `Events`, `OpenApi`). Those last
@@ -422,6 +422,26 @@ page in the browser may use too: `Sha256`, `Hmac` (with a comparison in constant
 `Base64` (both alphabets, strict) and `Hex`, each checked by `expect`s against its published vectors
 (NIST, RFC 4231, RFC 4648, RFC 5869).
 
+### Values in memory: `Kv`
+
+```roc
+Kv.set!("cache:${url}", page, { ttl_ms: 60_000 })                  # any type JSON writes; 0: until a stop
+page = Kv.get!("cache:${url}")?                                     # Try(value, [NotFound, BadValue(Str)])
+tries = Kv.increment!("login:${address}", 1, { ttl_ms: 60_000 })?   # a window a minute long
+Kv.add!("seen:${request_id}", {}, { ttl_ms: 86_400_000 })?          # Err(Exists): one request gets in
+state = Kv.take!("oauth:${given}")?                                 # good once
+Kv.push!("email:outbox", message, { keep: 100 })                    # a capped list, newest first
+Kv.list!("email:outbox")?
+```
+
+Values by key, kept in the server's memory for as long as `ttl_ms` says (0, the default: until it
+stops), never written anywhere: for what is cheap to lose and read on every request. A value is kept
+as JSON and read back as the type its reader asks for. Each operation is atomic, and a new counter's
+or list's time to live starts with it (later increments and pushes don't move it). The host keeps one
+map behind one lock (`host/src/kv.rs`; nothing is awaited while it is held), expired entries going at
+the next operation; past `--kv-max-mb` (64) the least recently read or written go, never the one
+just written. Keys name their owner first, by convention (`email:outbox`).
+
 ### Live: `Live`
 
 ```roc
@@ -738,6 +758,7 @@ built `--target=arm64musl` runs in a container against `just db`'s Postgres, eve
       --job-workers 4 --job-retry-ms 1000 jobs run at once; the first retry's wait, doubled after
       --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in Postgres)
       --smtp-url URL --mail-from ADDRESS  (SMTP_URL, MAIL_FROM); none: an outbox
+      --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it
       --dev                               reload pages on restart, show crashes, the mailbox at /__rocx/mail, Env.dev!
       --debug                             GET /__rocx/allocations, and the mailbox as JSON
       --live-beat-ms 15000                how often a channel stream beats, and its checks run again
