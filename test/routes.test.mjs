@@ -393,6 +393,18 @@ test("rocx build --client, for an app of component pages: the browser's main.roc
 		assert.equal(readFileSync(join(out, "Generated", "Root.roc"), "utf8"), readFileSync(join(dir, "app", "Generated", "Root.roc"), "utf8"), "Root: the same in both copies");
 		assert.match(readFileSync(join(dir, "app", "Generated", "App.roc"), "utf8"), /jobs: \[Job\.handler\(Jobs\.daily\)\]/);
 		assert.ok(!existsSync(join(dir, "app", "reference.roc")) && !existsSync(join(out, "reference.roc")), "no reference.roc: the browser's copy renders from the answers the server's page recorded");
+		// Built again: what rocx wrote before goes (a page since removed), but the wasm built from it
+		// stays as it was, served until its own build replaces it, so a running server's pages hydrate.
+		const wasm = join(out, "static", "rocx", "app.wasm");
+		writeFileSync(wasm, "the wasm built before");
+		put("app/routes/old/+page.rocx", "import pf.Html\n\nview! = |_| <p>Old</p>\n");
+		assert.equal(build([join(dir, "app")], { client: out, cwd: dir, log: (line) => said.push(line) }), true, said.join("\n"));
+		assert.ok(existsSync(join(out, "Generated", "OldPage.roc")), "the page's browser module, written");
+		rmSync(join(dir, "app", "routes", "old"), { recursive: true });
+		assert.equal(build([join(dir, "app")], { client: out, cwd: dir, log: (line) => said.push(line) }), true, said.join("\n"));
+		assert.equal(readFileSync(wasm, "utf8"), "the wasm built before", "app.wasm, untouched by a rebuild");
+		assert.ok(!existsSync(join(out, "Generated", "OldPage.roc")), "what rocx wrote for a page that is gone, gone");
+		assert.ok(existsSync(join(out, "static", "rocx", "start.js")) && existsSync(join(out, "main.roc")), "and the rest, written again");
 		// A route file with the html package's Html is refused at its import: every page is a component.
 		put("site/routes/+page.rocx", "import html.Html\n\nview = |_| <p>Home</p>\n");
 		said.length = 0;

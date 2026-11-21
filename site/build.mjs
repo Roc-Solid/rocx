@@ -27,7 +27,7 @@
 //      site/build/context.txt, which the server is started with
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { brotliCompressSync, constants, gzipSync } from "node:zlib";
@@ -561,8 +561,12 @@ function host() {
  * measures all three, and the browser platform's page shows them. */
 export const CLIENT_OPT = ["--opt=size", "--specialize=yes"];
 
+/** Builds `app` into `output`: beside it first, then moved into its place in one step, so a server
+ * serving the one before (`just dev`) serves it whole until it serves the new one whole. */
 function wasm(app, output, opts) {
-	run(roc(), ["build", "--target=wasm32", ...opts, `--output=${output}`, app]);
+	const building = `${output}.building`;
+	run(roc(), ["build", "--target=wasm32", ...opts, `--output=${building}`, app]);
+	renameSync(building, output);
 }
 
 // ---- 4. Facts ----

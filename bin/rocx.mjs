@@ -13,7 +13,8 @@
 //                          for an app with pages (every route file a component: `import pf.Html`,
 //                          `view!`), Generated/Root.roc, its page; and with
 //                          --client, <out>/main.roc, the browser's app, and <out>/static/rocx/start.js
-//                          and runtime.js, beside which the wasm built from it goes (app.wasm): serve
+//                          and runtime.js, beside which the wasm built from it goes (app.wasm, which a
+//                          rebuild leaves in place until its own build replaces it): serve
 //                          that directory (`--static <out>/static`);
 //                          and the components of each package its headers name (a package's
 //                          components/*.rocx) into Generated/<package>/, for `import charts.BarChart`;
@@ -119,7 +120,10 @@ function writeClient(dir, out, client, listed, { main = null } = {}) {
 	if (target === root || relative(target, root).split(sep)[0] !== "..") throw new Error(`--client ${out}: it would hold ${dir} itself`);
 	const ours = join(target, ".rocx-client");
 	if (existsSync(target) && !existsSync(ours)) throw new Error(`--client ${out}: it exists and rocx didn't write it`);
-	rmSync(target, { recursive: true, force: true });
+	// What rocx wrote before goes, but the wasm built from it stays (`static/rocx/*.wasm`): rocx doesn't
+	// build it, so a server serving the app goes on serving pages that hydrate until the wasm's own
+	// build replaces it.
+	clear(target, (path) => dirname(path) === join("static", "rocx") && path.endsWith(".wasm"));
 	const skip = (path) => resolve(path) === target || /^(build|dist)$/.test(path.split(sep).pop());
 	// An app that is its own browser app too (a test's) still finds the module: one that answers none.
 	write(join(target, GENERATED, `${SERVER_FUNCTIONS}.roc`), serverFunctionsModule([], { client: true, dir: listed }));
@@ -137,6 +141,20 @@ function writeClient(dir, out, client, listed, { main = null } = {}) {
 		for (const name of ["start.js", "runtime.js"]) write(join(target, "static", "rocx", name), readFileSync(join(ROCX, "web", name), "utf8"));
 	}
 	writeFileSync(ours, "The browser's copy of an app, written by rocx build --client: don't edit.\n");
+}
+
+/** Empties `dir` but for the files `keep` says to keep (by their path inside it), which stay where
+ * they are; a directory left empty goes. */
+function clear(dir, keep, inside = "") {
+	if (!existsSync(dir)) return;
+	for (const entry of readdirSync(dir, { withFileTypes: true })) {
+		const path = join(dir, entry.name);
+		const named = inside ? join(inside, entry.name) : entry.name;
+		if (entry.isDirectory()) {
+			clear(path, keep, named);
+			if (readdirSync(path).length === 0) rmSync(path, { recursive: true, force: true });
+		} else if (!keep(named)) rmSync(path, { force: true });
+	}
 }
 
 /** A path as Roc resolves it, through symbolic links (`/tmp` is `/private/tmp` on macOS): its
