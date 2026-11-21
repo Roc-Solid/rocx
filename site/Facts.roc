@@ -1,0 +1,34 @@
+import pf.Html
+import pf.Server
+
+## What the build measured, as `key=value` lines (`site/build.mjs`): the wasm's sizes, how long
+## rendering a page takes, the compiler. The server is started with them (`--context-file`), and the
+## site's default middleware hands them on. A page asks for them (`facts!`) and shows them; it never
+## computes them.
+Facts := [].{
+
+	## The facts, from the server that was started with them: a server function, so the browser
+	## reads them from the page the server rendered with them, and asks nothing.
+	facts! : {} => Str
+	facts! = Server.local("Facts.facts", |_request, {}| Server.context!({}).facts)
+
+	## One of the facts, by its key (`"client_brotli"`): "?" if the build measured none.
+	fact! : Str => Str
+	fact! = |key| get(facts!({}), key)
+
+	get : Str, Str -> Str
+	get = |facts, key|
+		facts.split_on("\n").fold(
+			"?",
+			|found, line|
+				match line.split_first("=") {
+					Ok({ before, after }) if before == key => after
+					_ => found
+				},
+		)
+}
+
+expect Facts.get("a=1\nb=x=y", "b") == "x=y"
+expect Facts.get("a=1", "c") == "?"
+
+# rocx: generated from Facts.rocx: edit that file, not this one. Line N here is line N there.

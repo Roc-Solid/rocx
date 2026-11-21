@@ -1,0 +1,881 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+import pf.Audio
+import pf.For
+import pf.Show
+import Random
+
+## Snake. Arrow keys or WASD steer, Space pauses, M mutes. Four levels: Easy, Medium and Hard each
+## keep one speed; on Impossible, every fruit makes the snake faster. Roc runs the game: the game is a signal,
+## and `update` (pure, tested by `roc test`) makes the next one from what the player did. Every
+## frame adds the time that passed to another signal, which nothing on the page reads, so a frame
+## patches nothing until a step's worth has passed, and the snake moves one cell. A step's sound is
+## part of the next game too (`update` can't play it); the handler plays it, with `Audio.play!`.
+Snake := [].{
+	Cell : { x : I64, y : I64 }
+	Part : { x : I64, y : I64, id : U64 }
+	Direction : [Up, Down, Left, Right]
+	Phase : [Ready, Playing, Paused, Over]
+	Level : [Easy, Medium, Hard, Impossible]
+
+	## The best score on each level, kept from game to game.
+	Bests : { easy : U64, medium : U64, hard : U64, impossible : U64 }
+	Model : {
+		body : List(Part),
+		heading : Direction,
+		turns : List(Direction),
+		food : Cell,
+		phase : Phase,
+		score : U64,
+		bests : Bests,
+		level : Level,
+		step : F64,
+		seed : U64,
+		next : U64,
+
+		## The sound the last step made: the name of its file in site/static/sounds, or "" for none.
+		sound : Str,
+		muted : Bool,
+	}
+	Msg : [Turn(Direction), Toggle, Click, Mute, Pick(Level)]
+
+	## The game, ready to start; `seed` says where the food goes.
+	view! : { seed : U64 } => Html
+	view! = |{ seed }| {
+		(game!, set_game!) = create_signal!(Snake.init(seed))
+		(waited!, set_waited!) = create_signal!(0.0)
+		# The game goes on to `next`, and plays the sound that step made, unless it is muted.
+		go! = |next| {
+			set_game!(next)
+			if (!next.muted and !next.sound.is_empty()) Audio.play!("/sounds/${next.sound}.wav") else {}
+		}
+		send! = |msg| go!(Snake.update(game!(), msg))
+		frame! = |ms| {
+			next = advance(game!(), waited!(), ms)
+			set_waited!(next.waited)
+			if (next.moved) go!(next.model) else {}
+		}
+		<div
+			class="snake"
+			on:keydown.ArrowUp={|| send!(Turn(Up))}
+			on:keydown.ArrowDown={|| send!(Turn(Down))}
+			on:keydown.ArrowLeft={|| send!(Turn(Left))}
+			on:keydown.ArrowRight={|| send!(Turn(Right))}
+			on:keydown.w={|| send!(Turn(Up))}
+			on:keydown.s={|| send!(Turn(Down))}
+			on:keydown.a={|| send!(Turn(Left))}
+			on:keydown.d={|| send!(Turn(Right))}
+			on:keydown.Space={|| send!(Toggle)}
+			on:keydown.p={|| send!(Toggle)}
+			on:keydown.m={|| send!(Mute)}
+		>
+			<div class="snake-bar">
+				<span class="snake-stat"><small>Score</small><b>{game!().score.to_str()}</b></span>
+				<span class="snake-stat"><small>Best</small><b>{best(game!()).to_str()}</b></span>
+				<span class="snake-stat"><small>Length</small><b>{game!().body.len().to_str()}</b></span>
+				<span class="snake-stat"><small>Speed</small><b>{speed(game!().step)}</b><span class="snake-unit">cells/s</span></span>
+				<button type="button" class="snake-mute" on:click={|| send!(Mute)} aria-pressed={if (game!().muted) "true" else "false"}>{if (game!().muted) "Sound off" else "Sound on"}</button>
+			</div>
+			<div class="snake-levels" role="group" aria-label="Level">
+				<small>Level</small>
+				<For each!={levels} keyed={Bool.False}>
+					{|level!, _|
+						<button
+							type="button"
+							aria-pressed={if (game!().level == level!()) "true" else "false"}
+							on:click={|| send!(Pick(level!()))}
+						>
+							{level_name(level!())}
+						</button>
+					}
+				</For>
+			</div>
+			<div
+				class="board"
+				class:playing={game!().phase == Playing}
+				class:paused={game!().phase == Paused}
+				class:over={game!().phase == Over}
+				style:--step={step_ms(game!().step)}
+				tabindex="0"
+				aria-label="The board: arrow keys or WASD steer, Space pauses"
+				on:click={|| send!(Click)}
+			>
+				{# A row per place along the snake: when it moves, each slides into the cell of the one ahead
+				   of it (a CSS transition as long as a step), and eating adds a row at the tail. }
+				<div class="board-snake" style:--n={game!().body.len().to_str()}>
+					<For each!={game!().body} keyed={Bool.False}>
+						{|part!, index|
+							<i
+								class={part_class(index == 0, game!().heading)}
+								style:--x={part!().x.to_str()}
+								style:--y={part!().y.to_str()}
+								style:--i={index.to_str()}
+							></i>
+						}
+					</For>
+				</div>
+				{# The food, keyed by where it is: a new place is a new element, which pops in. }
+				<For each!={[game!().food]} keyed={|cell| "${cell.x.to_str()},${cell.y.to_str()}"}>
+					{|cell!, _| <i class="food" style:--x={cell!().x.to_str()} style:--y={cell!().y.to_str()}></i>}
+				</For>
+				<Show when!={game!().phase != Playing}>{=message(game!())}</Show>
+			</div>
+			<div class="pad" aria-label="Steer">
+				<button type="button" class="pad-up" on:click={|| send!(Turn(Up))} aria-label="Up">▲</button>
+				<button type="button" class="pad-left" on:click={|| send!(Turn(Left))} aria-label="Left">◀</button>
+				<button type="button" class="pad-toggle" on:click={|| send!(Toggle)}>{if (game!().phase == Playing) "Pause" else "Play"}</button>
+				<button type="button" class="pad-right" on:click={|| send!(Turn(Right))} aria-label="Right">▶</button>
+				<button type="button" class="pad-down" on:click={|| send!(Turn(Down))} aria-label="Down">▼</button>
+			</div>
+			<div class="effects" hidden>
+				{# While the game runs, this element takes the frames; paused or over, there is none, and
+				   so no frames: time stands still. }
+				<Show when!={game!().phase == Playing}>
+					<i on:frame.ms={frame!}></i>
+				</Show>
+			</div>
+		</div>
+	}
+
+	init : U64 -> Model
+	init = |seed| fresh(seed, no_bests, Medium, Bool.False)
+
+	update : Model, Msg -> Model
+	update = |last, msg| {
+		# A step makes its own sound, if any: the last one's doesn't carry over.
+		model = { ..last, sound: "" }
+		match msg {
+			Turn(direction) =>
+				match model.phase {
+					Playing => turn(model, direction)
+					Over => model
+					_ => start(turn(model, direction))
+				}
+			Toggle =>
+				match model.phase {
+					Playing => { ..model, phase: Paused }
+					Over => start(again(model, model.level))
+					_ => start(model)
+				}
+			Click =>
+				match model.phase {
+					Playing => model
+					Over => start(again(model, model.level))
+					_ => start(model)
+				}
+			Mute => { ..model, muted: !model.muted }
+			# Another level starts over, ready, at its speed (the one it is already ready at stays).
+			Pick(level) => if (level == model.level and model.phase == Ready) model else again(model, level)
+		}
+	}
+
+	<style>
+		/* The game's own colours: a violet snake on a dark floor, and a golden fruit. */
+		.snake {
+			--game-bg: #110e22;
+			--game-bg-glow: #241c46;
+			--game-check: rgb(255 255 255 / 0.028);
+			--game-text: #f1ecff;
+			--game-danger: #ff6b81;
+			--snake: #8c52ff;
+			--snake-head: #c9b0ff;
+			--snake-tail: #3d2680;
+			--food: #f5b942;
+			--food-light: #fff1c9;
+			--leaf: #5fd38d;
+			display: grid;
+			gap: var(--space-3);
+		}
+
+		.snake-bar {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: var(--space-2) var(--space-5);
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+		}
+
+		.snake-stat {
+			display: inline-flex;
+			align-items: baseline;
+			gap: var(--space-2);
+			padding: var(--space-1) var(--space-3);
+			border-radius: var(--pill);
+			background: var(--bg-sunken);
+		}
+
+		.snake-stat > small,
+		.snake-levels > small {
+			color: var(--text-faint);
+			font-size: var(--size-2xs);
+			font-weight: 600;
+			letter-spacing: 0.06em;
+			text-transform: uppercase;
+		}
+
+		.snake-stat b {
+			color: var(--text);
+			font-variant-numeric: tabular-nums;
+		}
+
+		.snake-unit {
+			margin-left: -0.2rem;
+			color: var(--text-muted);
+			font-size: var(--size-xs);
+		}
+
+		.snake-mute {
+			margin-left: auto;
+			padding: var(--space-1) var(--space-3);
+			font-size: var(--size-sm);
+		}
+
+		.snake-mute[aria-pressed="true"] {
+			color: var(--text-faint);
+		}
+
+		/* The levels: a row of pills, the one played lit in the snake's colour. */
+		.snake-levels {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: var(--space-2);
+		}
+
+		.snake-levels > small {
+			margin-right: var(--space-1);
+		}
+
+		.snake-levels button {
+			padding: var(--space-1) var(--space-3);
+			border-radius: var(--pill);
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+			font-weight: 500;
+		}
+
+		.snake-levels button[aria-pressed="true"] {
+			background: color-mix(in srgb, var(--snake) 32%, transparent);
+			box-shadow: 0 0 14px -4px var(--snake);
+			color: var(--text);
+			font-weight: 600;
+		}
+
+		/* The board is 24 by 15 cells; a cell is a 24th of its width, in container units. A checkered
+		   floor, lit from the middle; a ring of light while a game runs, and a shake when it ends. */
+		.board {
+			--cell: calc(100cqw / 24);
+			position: relative;
+			aspect-ratio: 24 / 15;
+			container-type: inline-size;
+			overflow: hidden;
+			border-radius: var(--radius-lg);
+			background:
+				repeating-conic-gradient(var(--game-check) 0 25%, transparent 0 50%) 0 0 / calc(200% / 24) calc(200% / 15),
+				radial-gradient(ellipse 80% 70% at 50% 45%, var(--game-bg-glow), var(--game-bg));
+			box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.06), inset 0 0 60px rgb(0 0 0 / 0.45);
+			cursor: pointer;
+			transition: box-shadow 0.4s;
+		}
+
+		.board.playing {
+			box-shadow:
+				inset 0 0 0 1px color-mix(in srgb, var(--snake) 45%, transparent),
+				inset 0 0 60px rgb(0 0 0 / 0.45),
+				0 0 36px -10px var(--snake);
+		}
+
+		.board.over {
+			animation: board-shake 0.45s;
+		}
+
+		@keyframes board-shake {
+			20% {
+				translate: -7px 0;
+			}
+
+			40% {
+				translate: 6px 0;
+			}
+
+			60% {
+				translate: -4px 0;
+			}
+
+			80% {
+				translate: 2px 0;
+			}
+		}
+
+		.board:focus-visible {
+			outline: 3px solid var(--accent);
+			outline-offset: 3px;
+		}
+
+		/* A place is a cell of the board: `--x` 24ths of its width across, `--y` 15ths of its height down.
+		   In percentages, not the board's container units, which Firefox works out only once the board
+		   is laid out (the snake would slide in from the corner on every load). And with left and top,
+		   not translate: a translate slides on the compositor, and when a step starts the next slide
+		   before the last has ended, the browser may start it from where the page last thought the
+		   part was, behind where it was drawn, so the snake jerks back. */
+		.part,
+		.food {
+			position: absolute;
+			top: calc(var(--y) * 100% / 15);
+			left: calc(var(--x) * 100% / 24);
+			width: var(--cell);
+			height: var(--cell);
+		}
+
+		/* A segment per place along the snake (--i from the head, --n of them): it slides into the next
+		   cell over a step, and fades from the head's colour to the tail's. */
+		.part {
+			border-radius: 30%;
+			background: color-mix(in oklab, var(--snake) calc(100% - var(--i) * 70% / var(--n)), var(--snake-tail));
+			box-shadow: 0 0 calc(var(--cell) * 0.3) color-mix(in srgb, var(--snake) 35%, transparent);
+			scale: calc(0.94 - var(--i) * 0.2 / var(--n));
+			transition:
+				left var(--step, 150ms) linear,
+				top var(--step, 150ms) linear;
+		}
+
+		.part.head {
+			z-index: 1;
+			border-radius: 38%;
+			background: radial-gradient(circle at 35% 30%, #fff 0, var(--snake-head) 35%, var(--snake) 100%);
+			box-shadow: 0 0 calc(var(--cell) * 0.7) color-mix(in srgb, var(--snake-head) 65%, transparent);
+			scale: 1.06;
+		}
+
+		/* Eyes, white with a pupil, looking where the snake goes. */
+		.part.head::before,
+		.part.head::after {
+			content: "";
+			position: absolute;
+			width: 26%;
+			height: 26%;
+			border-radius: 50%;
+			background: radial-gradient(circle, var(--game-bg) 0 42%, #fff 46%);
+		}
+
+		.part.head.right::before {
+			top: 16%;
+			right: 14%;
+		}
+
+		.part.head.right::after {
+			right: 14%;
+			bottom: 16%;
+		}
+
+		.part.head.left::before {
+			top: 16%;
+			left: 14%;
+		}
+
+		.part.head.left::after {
+			bottom: 16%;
+			left: 14%;
+		}
+
+		.part.head.up::before {
+			top: 14%;
+			left: 16%;
+		}
+
+		.part.head.up::after {
+			top: 14%;
+			right: 16%;
+		}
+
+		.part.head.down::before {
+			bottom: 14%;
+			left: 16%;
+		}
+
+		.part.head.down::after {
+			right: 16%;
+			bottom: 14%;
+		}
+
+		.board.over .part {
+			background: color-mix(in oklab, var(--game-danger) calc(70% - var(--i) * 50% / var(--n)), var(--game-bg-glow));
+			box-shadow: none;
+		}
+
+		.board.over .part.head {
+			background: var(--game-danger);
+		}
+
+		/* The food: a glowing fruit with a leaf, which pops in where it lands. */
+		.food {
+			animation: food-in 0.4s cubic-bezier(0.3, 1.7, 0.5, 1);
+		}
+
+		.food::before {
+			content: "";
+			position: absolute;
+			inset: 18%;
+			border-radius: 50%;
+			background: radial-gradient(circle at 35% 30%, var(--food-light), var(--food) 45%, #c4790f);
+			box-shadow: 0 0 calc(var(--cell) * 0.7) var(--food);
+			animation: glow 0.9s ease-in-out infinite alternate;
+		}
+
+		.food::after {
+			content: "";
+			position: absolute;
+			top: 6%;
+			left: 52%;
+			width: 26%;
+			height: 16%;
+			border-radius: 100% 0;
+			background: var(--leaf);
+			rotate: -25deg;
+		}
+
+		@keyframes food-in {
+			from {
+				scale: 0;
+			}
+		}
+
+		@keyframes glow {
+			to {
+				scale: 0.85;
+				opacity: 0.85;
+			}
+		}
+
+		/* What the board says when the game isn't running, above the snake, on a dimmed, blurred board:
+		   `message` makes it, outside the block, so it is global here, under the board. */
+		.board :global(.board-message) {
+			position: absolute;
+			inset: 0;
+			z-index: 2;
+			display: grid;
+			place-content: center;
+			justify-items: center;
+			gap: var(--space-2);
+			padding: var(--space-4);
+			background: radial-gradient(ellipse at center, rgb(10 8 22 / 0.55), rgb(10 8 22 / 0.82));
+			backdrop-filter: blur(3px);
+			color: var(--game-text);
+			text-align: center;
+		}
+
+		.board :global(.board-message p) {
+			margin: 0;
+		}
+
+		.board :global(.board-title) {
+			background: linear-gradient(100deg, var(--snake-head), var(--food));
+			-webkit-background-clip: text;
+			background-clip: text;
+			color: transparent;
+			font: 800 clamp(1.5rem, 6.5cqw, 3rem) / 1.1 var(--font);
+			letter-spacing: -0.03em;
+		}
+
+		.over :global(.board-title) {
+			background-image: linear-gradient(100deg, var(--game-danger), var(--food));
+		}
+
+		.board :global(.board-lede) {
+			color: rgb(241 236 255 / 0.8);
+		}
+
+		.board :global(.board-score) {
+			font-size: var(--size-lg);
+		}
+
+		.board :global(.board-score b) {
+			font-size: var(--size-xl);
+			font-variant-numeric: tabular-nums;
+		}
+
+		.board :global(.board-best) {
+			padding: 0.15rem var(--space-2);
+			border-radius: var(--pill);
+			background: color-mix(in srgb, var(--food) 22%, transparent);
+			color: var(--food);
+			font-size: var(--size-xs);
+			font-weight: 700;
+		}
+
+		.board :global(.board-keys) {
+			display: flex;
+			align-items: center;
+			gap: var(--space-1);
+			color: rgb(241 236 255 / 0.65);
+			font-size: var(--size-sm);
+		}
+
+		.board :global(.board-keys span) {
+			margin: 0 var(--space-1);
+		}
+
+		.board :global(.board-message kbd) {
+			display: inline-grid;
+			place-items: center;
+			min-width: 1.7em;
+			height: 1.7em;
+			padding: 0 0.35em;
+			border: 1px solid rgb(255 255 255 / 0.22);
+			border-bottom-width: 2px;
+			border-radius: var(--radius-sm);
+			background: rgb(255 255 255 / 0.07);
+			color: var(--game-text);
+			font: 600 var(--size-xs) / 1 var(--mono);
+		}
+
+		.board :global(.board-cta) {
+			margin-top: var(--space-1);
+			padding: var(--space-2) var(--space-5);
+			border-radius: var(--pill);
+			background: var(--snake);
+			box-shadow: 0 6px 20px -6px var(--snake);
+			color: #fff;
+			font-weight: 700;
+			animation: cta 1.6s ease-in-out infinite;
+		}
+
+		@keyframes cta {
+			50% {
+				scale: 1.05;
+				box-shadow: 0 8px 28px -6px var(--snake);
+			}
+		}
+
+		.board :global(.board-hint) {
+			color: rgb(241 236 255 / 0.6);
+			font-size: var(--size-xs);
+		}
+
+		.pad {
+			display: grid;
+			grid-template-columns: repeat(3, 3rem);
+			grid-template-areas: ". up ." "left toggle right" ". down .";
+			justify-content: center;
+			gap: var(--space-1);
+		}
+
+		.pad button {
+			height: 2.5rem;
+			padding: 0;
+			font-size: var(--size-sm);
+		}
+
+		.pad-up {
+			grid-area: up;
+		}
+
+		.pad-left {
+			grid-area: left;
+		}
+
+		.pad-toggle {
+			grid-area: toggle;
+		}
+
+		.pad-right {
+			grid-area: right;
+		}
+
+		.pad-down {
+			grid-area: down;
+		}
+
+		@media (prefers-reduced-motion: reduce) {
+			.part {
+				transition: none;
+			}
+
+			.board.over,
+			.food,
+			.food::before,
+			.board :global(.board-cta) {
+				animation: none;
+			}
+		}
+	</style>
+}
+
+columns : I64
+columns = 24
+
+rows : I64
+rows = 15
+
+## How many cells the board has: `columns` times `rows`.
+cells : U64
+cells = 360
+
+## A new game on `level`: a snake of four in the middle, heading right, and food somewhere. The best
+## scores, the sound setting and the random numbers go on from the last game.
+fresh : U64, Snake.Bests, Snake.Level, Bool -> Snake.Model
+fresh = |seed, bests, level, muted| {
+	body = [{ x: 9, y: 7, id: 3 }, { x: 8, y: 7, id: 2 }, { x: 7, y: 7, id: 1 }, { x: 6, y: 7, id: 0 }]
+	placed = place(seed, body)
+	{
+		body,
+		heading: Right,
+		turns: [],
+		food: placed.cell,
+		phase: Ready,
+		score: 0,
+		bests,
+		level,
+		step: first_step(level),
+		seed: placed.seed,
+		next: 4,
+		sound: "",
+		muted,
+	}
+}
+
+## Another game after `model`, on `level`, ready to start.
+again : Snake.Model, Snake.Level -> Snake.Model
+again = |model, level| fresh(model.seed, model.bests, level, model.muted)
+
+start : Snake.Model -> Snake.Model
+start = |model| { ..model, phase: Playing, sound: "start" }
+
+## A turn waits its turn: up to two are kept, so a quick double turn isn't lost, and none may go
+## straight back into the snake.
+turn : Snake.Model, Snake.Direction -> Snake.Model
+turn = |model, direction| {
+	last = model.turns.last() ?? model.heading
+	if (direction == last or direction == opposite(last) or model.turns.len() >= 2) model else { ..model, turns: model.turns.append(direction) }
+}
+
+opposite : Snake.Direction -> Snake.Direction
+opposite = |direction|
+	match direction {
+		Up => Down
+		Down => Up
+		Left => Right
+		Right => Left
+	}
+
+## A frame: `ms` more since the snake last moved, after `waited`. Once a step's worth has passed,
+## it moves one cell.
+advance : Snake.Model, F64, F64 -> { model : Snake.Model, waited : F64, moved : Bool }
+advance = |model, waited, ms|
+	if model.phase != Playing {
+		{ model, waited, moved: Bool.False }
+	} else if waited + ms < model.step {
+		{ model, waited: waited + ms, moved: Bool.False }
+	} else {
+		{ model: move(model), waited: F64.min(waited + ms - model.step, model.step), moved: Bool.True }
+	}
+
+move : Snake.Model -> Snake.Model
+move = |model| {
+	heading = model.turns.first() ?? model.heading
+	turns = model.turns.drop_first(1)
+	head = model.body.first() ?? { x: 0, y: 0, id: 0 }
+	ahead = step_from(head, heading)
+	eats = ahead.x == model.food.x and ahead.y == model.food.y
+	# Unless it eats, the tail moves on as the head does, so the head may take its cell.
+	rest = if (eats) model.body else model.body.drop_last(1)
+	crashed = ahead.x < 0 or ahead.x >= columns or ahead.y < 0 or ahead.y >= rows or rest.any(|part| part.x == ahead.x and part.y == ahead.y)
+	if crashed {
+		{ ..model, heading, turns, phase: Over, sound: "die" }
+	} else {
+		body = [{ x: ahead.x, y: ahead.y, id: model.next }].concat(rest)
+		moved = { ..model, body, heading, turns, next: model.next + 1, sound: "" }
+		if eats {
+			score = model.score + 1
+			placed = place(model.seed, body)
+			tone = if (score % 5 == 0) "level" else "eat"
+			# The best moves with the score, as it is beaten, not once the game is over.
+			{ ..moved, score, bests: with_best(model.bests, model.level, score), food: placed.cell, seed: placed.seed, step: next_step(model.level, model.step), sound: tone }
+		} else {
+			moved
+		}
+	}
+}
+
+step_from : Snake.Part, Snake.Direction -> Snake.Cell
+step_from = |part, direction|
+	match direction {
+		Up => { x: part.x, y: part.y - 1 }
+		Down => { x: part.x, y: part.y + 1 }
+		Left => { x: part.x - 1, y: part.y }
+		Right => { x: part.x + 1, y: part.y }
+	}
+
+## Food on a free cell: a few random tries, then the first free one.
+place : U64, List(Snake.Part) -> { cell : Snake.Cell, seed : U64 }
+place = |seed, body| {
+	free = |cell| !body.any(|part| part.x == cell.x and part.y == cell.y)
+	var $seed = seed
+	var $cell = { x: 0.I64, y: 0.I64 }
+	var $found = Bool.False
+	var $tries = 0.U64
+	while $tries < 40 and !$found {
+		picked = Random.below($seed, cells)
+		$seed = picked.seed
+		index = picked.value.to_i64_wrap()
+		$cell = { x: index % columns, y: index // columns }
+		$found = free($cell)
+		$tries = $tries + 1
+	}
+	var $index = 0.I64
+	while !$found and $index < columns * rows {
+		$cell = { x: $index % columns, y: $index // columns }
+		$found = free($cell)
+		$index = $index + 1
+	}
+	{ cell: $cell, seed: $seed }
+}
+
+levels : List(Snake.Level)
+levels = [Easy, Medium, Hard, Impossible]
+
+level_name : Snake.Level -> Str
+level_name = |level|
+	match level {
+		Easy => "Easy"
+		Medium => "Medium"
+		Hard => "Hard"
+		Impossible => "Impossible"
+	}
+
+## How long a step takes when a game starts: 5 cells a second on Easy, 6.7 on Medium, 10 on Hard and,
+## at first, on Impossible.
+first_step : Snake.Level -> F64
+first_step = |level|
+	match level {
+		Easy => 200.0
+		Medium => 150.0
+		Hard => 100.0
+		Impossible => 100.0
+	}
+
+## The step after a fruit is eaten: the same, but on Impossible, 5 ms shorter, down to 50 ms (20 cells
+## a second).
+next_step : Snake.Level, F64 -> F64
+next_step = |level, step|
+	match level {
+		Impossible => F64.max(50.0, step - 5.0)
+		_ => step
+	}
+
+no_bests : Snake.Bests
+no_bests = { easy: 0, medium: 0, hard: 0, impossible: 0 }
+
+## The best score on the game's level.
+best : Snake.Model -> U64
+best = |model|
+	match model.level {
+		Easy => model.bests.easy
+		Medium => model.bests.medium
+		Hard => model.bests.hard
+		Impossible => model.bests.impossible
+	}
+
+## The bests, with `score` the best on `level` if it beats it.
+with_best : Snake.Bests, Snake.Level, U64 -> Snake.Bests
+with_best = |bests, level, score|
+	match level {
+		Easy => { ..bests, easy: U64.max(bests.easy, score) }
+		Medium => { ..bests, medium: U64.max(bests.medium, score) }
+		Hard => { ..bests, hard: U64.max(bests.hard, score) }
+		Impossible => { ..bests, impossible: U64.max(bests.impossible, score) }
+	}
+
+## A part of the snake's classes: the head's say where it looks.
+part_class : Bool, Snake.Direction -> Str
+part_class = |head, heading| if (head) "part head ${direction_name(heading)}" else "part"
+
+direction_name : Snake.Direction -> Str
+direction_name = |direction|
+	match direction {
+		Up => "up"
+		Down => "down"
+		Left => "left"
+		Right => "right"
+	}
+
+## How long a step takes, for the transition that slides the snake along: `150ms`.
+step_ms : F64 -> Str
+step_ms = |step| "${(step.round_to_i64_try() ?? 150).to_str()}ms"
+
+message : Snake.Model -> Html
+message = |model|
+	match model.phase {
+		Playing => Html.empty({})
+		Ready =>
+			<div class="board-message">
+				<p class="board-title">Snake, in Roc</p>
+				<p class="board-lede">Eat, grow, and don't bite yourself.</p>
+				<p class="board-keys">
+					<kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd>
+					<span>or</span>
+					<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
+				</p>
+				<p class="board-cta">Click to play</p>
+				<p class="board-hint"><kbd>Space</kbd> pauses · <kbd>M</kbd> mutes</p>
+			</div>
+		Paused =>
+			<div class="board-message">
+				<p class="board-title">Paused</p>
+				<p class="board-cta">Click to go on</p>
+				<p class="board-hint"><kbd>Space</kbd> works too</p>
+			</div>
+		Over =>
+			<div class="board-message">
+				<p class="board-title">Game over</p>
+				<p class="board-score"><b>{model.score.to_str()}</b> {if (model.score == 1) "point" else "points"}</p>
+				{=if (model.score > 0 and model.score >= best(model)) <p class="board-best">Your best yet</p> else Html.empty({})}
+				<p class="board-cta">Click to play again</p>
+				<p class="board-hint"><kbd>Space</kbd> works too</p>
+			</div>
+	}
+
+speed : F64 -> Str
+speed = |step| {
+	tenths = (10000.0 / step).round_to_i64_try() ?? 0
+	"${(tenths // 10).to_str()}.${(tenths % 10).to_str()}"
+}
+
+expect Snake.init(7).phase == Ready
+expect Snake.update(Snake.init(7), Toggle).phase == Playing
+expect {
+	moving = Snake.update(Snake.init(7), Toggle)
+	first = advance(moving, 0.0, 100.0)
+	second = advance(first.model, first.waited, 60.0)
+	!first.moved and second.moved and (second.model.body.first() ?? { x: 0, y: 0, id: 0 }).x == 10 and second.model.body.len() == 4
+}
+# Straight back into itself isn't a turn.
+expect Snake.update(Snake.update(Snake.init(7), Toggle), Turn(Left)).turns == []
+expect speed(150.0) == "6.7"
+# A fruit right ahead: eaten on the first step, the best goes up with the score, and only on
+# Impossible does the snake get faster.
+expect {
+	ahead = |level| {
+		ready = { ..fresh(7, no_bests, level, Bool.False), food: { x: 10, y: 7 } }
+		advance(Snake.update(ready, Toggle), 0.0, first_step(level)).model
+	}
+	medium = ahead(Medium)
+	impossible = ahead(Impossible)
+	medium.score == 1 and best(medium) == 1 and step_ms(medium.step) == "150ms" and best(impossible) == 1 and step_ms(impossible.step) == "95ms" and medium.sound == "eat"
+}
+# A step's sound is its own: starting makes one, and the steps after it make none unless they eat.
+expect {
+	playing = Snake.update(Snake.init(7), Toggle)
+	moved = advance(playing, 0.0, 150.0)
+	playing.sound == "start" and Snake.update(playing, Turn(Up)).sound == "" and moved.moved and moved.model.sound == ""
+}
+expect step_ms(next_step(Impossible, 50.0)) == "50ms" and step_ms(next_step(Easy, 200.0)) == "200ms"
+# Another level starts over, ready, keeping each level's best; the same one, ready, changes nothing.
+expect {
+	playing = Snake.update(Snake.init(7), Toggle)
+	picked = Snake.update({ ..playing, bests: { ..no_bests, medium: 3 } }, Pick(Easy))
+	again_picked = Snake.update(picked, Pick(Easy))
+	picked.phase == Ready and picked.level == Easy and step_ms(picked.step) == "200ms" and best(picked) == 0 and picked.bests.medium == 3 and again_picked.food == picked.food and again_picked.seed == picked.seed
+}
+expect step_ms(70.0) == "70ms"

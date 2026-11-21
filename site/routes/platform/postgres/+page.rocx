@@ -1,0 +1,144 @@
+import pf.Html
+import ../../../Ui/Heading
+import ../../../Ui/Callout
+import ../../../Ui/Code
+import ../../../Generated/Sources
+import ../../../Generated/Paths
+import ../../../Ui/PageHero
+
+meta = {
+	title: "Postgres",
+	description: "Postgres on the rocx server platform: queries whose rows decode into the record you annotate, transactions that take jobs with them, migrations built into the app, and roc-pg, a client in Roc whose queries are checked when the app is built.",
+	toc: [
+		{ id: "query", label: "A query" },
+		{ id: "rows", label: "Rows, as records" },
+		{ id: "write", label: "Writing" },
+		{ id: "transactions", label: "Transactions" },
+		{ id: "migrations", label: "Migrations" },
+		{ id: "where", label: "Where it can be used" },
+		{ id: "roc-pg", label: "roc-pg: queries checked at build" },
+		{ id: "limits", label: "Not yet" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				eyebrow="The platform · Postgres"
+				title="One database, and the types you say"
+			>
+				The server platform is opinionated: an app's data is in Postgres. <code>Db</code> runs a statement
+				with its parameters and gives back the rows, decoded into the record the caller annotated; a
+				transaction keeps one connection for a call; migrations run once each, when the server starts.
+				The jobs queue and the actors' state live there too.
+			</PageHero>
+
+			<Heading id="query">A query</Heading>
+			<p>
+				<code>Db.all!</code> runs a statement with its parameters and answers its rows. The type says what a
+				row is; the platform's tests' app:
+			</p>
+			<Code title={"${Sources.platform_notes.file}, in part"} source={Sources.platform_notes.rocx} numbers={Bool.False} />
+			<p>
+				A parameter is <code>Null</code>, <code>Text</code>, <code>Int</code> or <code>Bool</code>, sent as
+				text: Postgres reads it as the type its place wants (<code>$1</code> in <code>where id = $1</code> is
+				a <code>bigint</code>). A statement is never put together from strings: its values go as parameters.
+			</p>
+
+			<Heading id="rows">Rows, as records</Heading>
+			<p>
+				The host reads each row's columns, as Postgres typed them, and hands Roc the rows as JSON;
+				<code>Json.parse</code> decodes each into the record the caller annotated, by column name. A row
+				that doesn't fit is <code>BadRow</code>, saying why.
+			</p>
+			<ul>
+				<li>
+					<strong>Nulls are typed.</strong> A column that may be null (the table says so, or its name ends with
+					<code>?</code>) is <code>{"[Null, Some(a)]"}</code>; a name ending with <code>!</code> says it never is
+					(<code>{"count(*) as \"total!\""}</code>). A null in a column nothing marked is an error that says how
+					to mark it.
+				</li>
+				<li>
+					<strong>What is read:</strong> booleans, integers, floats, text, <code>json</code> and
+					<code>jsonb</code>, <code>uuid</code>, timestamps and dates (as text). Anything else asks for a cast
+					(<code>::text</code>).
+				</li>
+			</ul>
+
+			<Heading id="write">Writing</Heading>
+			<p>
+				<code>Db.run!</code> runs a statement and answers how many rows it changed; <code>Db.script!</code> runs
+				statements with no parameters, one after another, in one transaction (or in the call's, if it has
+				one open).
+			</p>
+			<Code title={"${Sources.platform_insert.file}, in part"} source={Sources.platform_insert.rocx} numbers={Bool.False} />
+
+			<Heading id="transactions">Transactions</Heading>
+			<p>
+				<code>Db.transaction!</code> keeps one connection for the call: what its body writes, and the jobs it
+				queues, stay only if it returns <code>Ok</code>. An <code>Err</code>, a failing statement or a crash
+				rolls it all back, and a call that ends with a transaction still open has it rolled back.
+			</p>
+			<Code title={"${Sources.platform_transaction.file}, in part"} source={Sources.platform_transaction.rocx} numbers={Bool.False} />
+			<p>
+				A job queued in a transaction is a row in it, so it runs only if the transaction commits, and the
+				workers are woken when it does (<a href={Paths.platform_jobs}>jobs</a>).
+			</p>
+
+			<Heading id="migrations">Migrations</Heading>
+			<p>
+				An app's migrations are in its executable: <code>program.migrations</code> lists them, each a name and
+				its SQL, which Roc reads from a <code>.sql</code> file when the app is compiled. When the server
+				starts, the platform's Roc applies them in the order listed, each once, each in a transaction,
+				recorded by name in <code>rocx_migrations</code>; two servers starting at once take turns (an
+				advisory lock). The platform's own tables (<code>rocx_jobs</code>, <code>rocx_actors</code>) come
+				first. One that fails stops the server, saying why.
+			</p>
+			<Code title={"${Sources.platform_migrations.file}, in part"} source={Sources.platform_migrations.rocx} numbers={Bool.False} />
+			<Code title={Sources.platform_migration.file} source={Sources.platform_migration.rocx} numbers={Bool.False} plain={Bool.True} />
+
+			<Heading id="where">Where it can be used</Heading>
+			<p>
+				Anywhere on the server: a page as it renders, an endpoint, a job, an actor, a stream. And a component's
+				server function: its body runs only on the server, so it may query, and the browser's copy of the
+				module has neither the body nor the import (<a href={"${Paths.calls}#user"}>who is asking</a>). A
+				statement takes a connection from a pool of 16, and gives it back; a transaction keeps one until it
+				ends. Statements are prepared once per connection, and kept.
+			</p>
+			<p>
+				<code>just db</code> runs a Postgres in Docker and prints its URL; the server takes it as
+				<code>--database-url</code> or <code>DATABASE_URL</code>. With none, a query answers that there is no
+				database, and the server's other parts work. Connections use TLS when the database offers it (or the
+				URL's <code>sslmode</code> asks for it), checked against the web's certificate authorities.
+			</p>
+
+			<Heading id="roc-pg">roc-pg: queries checked at build</Heading>
+			<p>
+				<a href="https://github.com/niclas-ahden/roc-pg">roc-pg</a> is a Postgres client written in Roc. It
+				speaks Postgres's protocol over a socket the platform gives it (<code>Tcp</code>), logs in with the
+				platform's <code>Random</code>, and checks each query against a schema when the app is compiled: a
+				column that isn't there, a parameter of the wrong type, a column that may be null read as one that
+				can't, each fails the build. The platform's example (<code>server/examples/roc-pg</code>) uses the
+				same <code>schema.sql</code> as its migration, so what roc-pg checks against is what the server
+				applied.
+			</p>
+			<Code title={"${Sources.platform_rocpg.file}, in part"} source={Sources.platform_rocpg.rocx} numbers={Bool.False} />
+			<p>
+				Use either, or both. <code>Db</code> has a pool, transactions that take jobs with them, and rows
+				decoded into the record you annotate; roc-pg has queries the compiler checks, and a connection per
+				use (it has no pool). Checking the example takes under a second from cold, and an optimized build
+				about six; the platform's tests build it and run it against Postgres.
+			</p>
+
+			<Heading id="limits">Not yet</Heading>
+			<ul>
+				<li>
+					<strong><code>Db</code>'s queries aren't checked at build:</strong> a row is decoded by the record
+					each caller annotates, and a mistake shows when the query runs. roc-pg's are checked.
+				</li>
+				<li><strong>Parameters</strong> are four kinds; arrays and bytes aren't yet.</li>
+				<li><strong>No cursors or streaming:</strong> a query's rows come back whole.</li>
+			</ul>
+		</NoHydration>
+	</>

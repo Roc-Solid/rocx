@@ -1,0 +1,45 @@
+import pf.Html
+
+## Who does a step, as a badge: `kind` is `server`, `browser`, `js`, `zig`, `roc` or `build`, each
+## its colour; what is inside is what it says.
+Who := [].{
+	view : { kind : Str, children : List(Html) } -> Html
+	view = |{ kind, children }| <span class={"who ${kind}"}>{...children}</span>
+
+	<story name="Every kind">
+		<p>
+			<Who kind="server">server</Who> <Who kind="browser">browser</Who> <Who kind="js">JavaScript</Who>
+			<Who kind="zig">Zig</Who> <Who kind="roc">Roc</Who> <Who kind="build">rocx build</Who>
+		</p>
+	</story>
+
+	<style>
+		.who {
+			display: inline-block;
+			margin-right: 0.1rem;
+			padding: 0.05rem var(--space-2);
+			border-radius: var(--pill);
+			background: var(--fill);
+			color: var(--text-muted);
+			font: 600 var(--size-2xs) / 1.5 var(--mono);
+			vertical-align: 0.1rem;
+		}
+
+		.js,
+		.browser {
+			background: var(--warn-soft);
+			color: var(--warn);
+		}
+
+		.zig,
+		.server {
+			background: var(--good-soft);
+			color: var(--good);
+		}
+
+		.roc {
+			background: var(--accent-soft);
+			color: var(--accent);
+		}
+	</style>
+}

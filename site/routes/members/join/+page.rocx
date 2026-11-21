@@ -1,0 +1,48 @@
+import pf.Html
+import pf.Endpoint
+import ../../../Middlewares
+import ../../../Generated/Api
+import ../../../Ui/PageHero
+import ../../../Ui/Button
+
+## The joining page: `Middlewares.visitor` sends a member on to the members' page instead.
+middleware = Middlewares.visitor
+
+meta = {
+	title: "Join",
+	description: "Join the members, by a name: a form that posts to a typed endpoint.",
+	toc: [],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				eyebrow="Members"
+				title="Join"
+			>
+				Members see a page you don't, yet. Pick a name: the form posts it to an endpoint, which sets a
+				cookie and sends you on.
+			</PageHero>
+			<form class="join" method="post" action={Endpoint.url_of(Api.post_members_join({}))}>
+				<input type="text" name="name" placeholder="A name" aria-label="Your name" required />
+				<Button submit primary>Join</Button>
+			</form>
+		</NoHydration>
+	</>
+
+<style>
+	/* A name, and the button that sends it. */
+	.join {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+		max-width: 28rem;
+		margin-top: var(--space-6);
+	}
+
+	.join input {
+		flex: 1;
+		min-width: 12rem;
+	}
+</style>

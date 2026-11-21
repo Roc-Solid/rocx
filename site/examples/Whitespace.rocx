@@ -1,0 +1,20 @@
+import pf.Html
+
+Whitespace := [].{
+	# example
+	view : { name : Str } -> Html
+	view = |{ name }|
+		<div>
+			<p>
+				Prose breaks lines anywhere: next to a
+				<a href="/links">link</a> or a value like
+				{name}, and each break is one space.
+			</p>
+			<pre>kept   as
+  written</pre>
+		</div>
+	# /example
+
+	demo : {} -> Html
+	demo = |{}| view({ name: "Grace" })
+}

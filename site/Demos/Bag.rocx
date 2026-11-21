@@ -1,0 +1,99 @@
+import pf.Html
+import pf.Server
+import pf.Solid exposing [create_signal!, use_context!]
+import pf.Context
+import pf.For
+import pf.Show
+
+## The bag the shelf puts things in, and an island that shows it. The bag is a store: signals in a
+## context, which the islands' root provides (`<BagContext>`), so the shelf and the bag, apart on
+## the page, read and write the same one.
+Bag := [].{
+	Thing : { name : Str, price : U64 }
+
+	## What is in the bag, as an accessor and a setter.
+	Store : { things! : () => List(Thing), set_things! : List(Thing) => {} }
+
+	bag_context : Context(Store)
+	bag_context = create_context()
+
+	## An empty bag.
+	store! : {} => Store
+	store! = |{}| {
+		(things!, set_things!) = create_signal!([])
+		{ things!: things!, set_things!: set_things! }
+	}
+
+	## Who is reading: what a session would say, on the server (here, always Ada). The server renders
+	## the bag with it, and puts the answer in the page, so the browser doesn't ask again.
+	reader! : {} => Str
+	reader! = server!(|_request, {}| "Ada")
+
+	view! : {} => Html
+	view! = |{}| {
+		{ things!, set_things! } = use_context!(bag_context)
+		<div class="bag">
+			<p class="bag-title">{reader!({})}'s bag</p>
+			<Show when!={!things!().is_empty()} fallback={<p class="bag-empty">Nothing yet.</p>}>
+				<ul>
+					<For each!={things!()} keyed={|thing| thing.name}>
+						{|thing!, _| <li>{thing!().name}</li>}
+					</For>
+				</ul>
+			</Show>
+			<p class="bag-total">{total(things!())}</p>
+			<button type="button" on:click={|| set_things!([])} disabled?={things!().is_empty()}>Empty the bag</button>
+		</div>
+	}
+
+	<style>
+		.bag {
+			padding: var(--space-3) var(--space-4);
+			border-radius: var(--radius);
+			background: var(--bg-sunken);
+		}
+
+		.bag-title {
+			margin: 0 0 var(--space-2);
+			font-weight: 600;
+		}
+
+		ul {
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		li {
+			padding: 0.15rem 0;
+		}
+
+		.bag-empty {
+			margin: var(--space-2) 0;
+			color: var(--text-muted);
+		}
+
+		.bag-total {
+			margin: var(--space-2) 0;
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+		}
+
+		button {
+			padding: var(--space-1) var(--space-3);
+			font-size: var(--size-sm);
+			white-space: nowrap;
+		}
+	</style>
+}
+
+## How many things, and what they cost.
+total : List(Bag.Thing) -> Str
+total = |things| {
+	count = things.len()
+	price = things.fold(0, |sum, thing| sum + thing.price)
+	"${count.to_str()} ${if (count == 1) "thing" else "things"} · ${price.to_str()} €"
+}
+
+expect total([]) == "0 things · 0 €"
+expect total([{ name: "mug", price: 9 }]) == "1 thing · 9 €"

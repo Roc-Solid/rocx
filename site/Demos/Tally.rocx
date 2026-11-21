@@ -1,0 +1,64 @@
+import pf.Html
+import pf.Solid exposing [use_context!]
+import Picks
+
+## The picks, counted: another island, elsewhere on the page, given the
+## same store by the <PicksContext> above every island. What it adds shows in
+## the picks, and what they change shows here.
+Tally := [].{
+	view! : {} => Html
+	view! = |{}| {
+		{ picks!, set_picks!, next!, set_next! } = use_context!(Picks.picks_context)
+		add! = || {
+			set_picks!(picks!().append({ id: next!(), name: "Zig" }))
+			set_next!(next!() + 1)
+		}
+		<aside class="tally">
+			<p class="tally-count">{picks!().len().to_str()} picks</p>
+			<p class="tally-names">{names(picks!())}</p>
+			<button class="tally-add" on:click={add!}>Add Zig</button>
+		</aside>
+	}
+
+	<style>
+		.tally {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) auto;
+			align-items: center;
+			gap: var(--space-1) var(--space-4);
+			padding: var(--space-4);
+			border-radius: var(--radius);
+			background: var(--bg-sunken);
+		}
+
+		p {
+			margin: 0;
+		}
+
+		.tally-count {
+			width: fit-content;
+			font: 700 var(--size-xl) / 1.1 var(--font);
+			letter-spacing: -0.02em;
+			white-space: nowrap;
+		}
+
+		.tally-names {
+			color: var(--text-muted);
+			font: var(--size-sm) / 1.4 var(--mono);
+		}
+
+		.tally-add {
+			grid-row: 1 / span 2;
+			grid-column: 2;
+			background: var(--accent);
+			color: var(--accent-text);
+		}
+
+		.tally-add:hover:not(:disabled) {
+			background: var(--accent-strong);
+		}
+	</style>
+}
+
+names : List(Picks.Pick) -> Str
+names = |picks| if (picks.is_empty()) "none yet" else Str.join_with(picks.map(|pick| pick.name), ", ")

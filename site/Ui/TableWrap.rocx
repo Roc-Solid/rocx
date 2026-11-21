@@ -1,0 +1,28 @@
+import pf.Html
+
+## A table, which scrolls sideways on a narrow screen rather than squeezing its columns. The table is
+## what is inside, written as HTML's.
+TableWrap := [].{
+	view : { children : List(Html) } -> Html
+	view = |{ children }| <div class="table-wrap">{...children}</div>
+
+	<story name="Three columns">
+		<TableWrap>
+			<table>
+				<thead><tr><th>Write</th><th>Means</th><th>Where</th></tr></thead>
+				<tbody>
+					<tr><td><code>{"{expr}"}</code></td><td>text, escaped</td><td>pages and components</td></tr>
+					<tr><td><code>{"{=expr}"}</code></td><td>one Html value, as it is</td><td>pages and components</td></tr>
+					<tr><td><code>on:click</code></td><td>a handler, an effect</td><td>components</td></tr>
+				</tbody>
+			</table>
+		</TableWrap>
+	</story>
+
+	<style>
+		.table-wrap {
+			margin: var(--space-4) 0;
+			overflow-x: auto;
+		}
+	</style>
+}

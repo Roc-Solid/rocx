@@ -1,0 +1,84 @@
+import pf.Html
+import Code
+
+## A way into a part of the docs, as a card that is a link: what it is (`kind`), a line about it
+## (what is inside), where it goes (`more`), and beside it a few real lines of it (`code`, a
+## `<Code>`). Several stack, one under the other.
+Way := [].{
+	Props := {
+		kind : Str,
+		href : Str,
+		more : Str,
+		code : List(Html),
+		children : List(Html),
+	}
+
+	view : Props -> Html
+	view = |props|
+		<a class="way" href={props.href}>
+			<div>
+				<p class="kind">{props.kind}</p>
+				<p>{...props.children}</p>
+				<span class="more">{props.more}</span>
+			</div>
+			{...props.code}
+		</a>
+
+	<story name="Two, stacked">
+		<Way kind="Pages" href="#" more="Routing →" code={[<Code source={"view! = |_|\n\t<h1>Hello, world</h1>"} numbers={Bool.False} />]}>
+			A page is a file, <code>routes/…/+page.rocx</code>: markup the server renders once per request.
+		</Way>
+		<Way kind="Components" href="#" more="Components →" code={[<Code source={"(count!, set_count!) =\n\tcreate_signal!(start)"} numbers={Bool.False} />]}>
+			A component runs once and makes signals; its holes that read them patch their own nodes.
+		</Way>
+	</story>
+
+	<style>
+		.way {
+			display: grid;
+			grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+			align-items: center;
+			gap: var(--space-5);
+			margin: var(--space-3) 0;
+			padding: var(--space-5);
+			border-radius: var(--radius-lg);
+			background: var(--bg-raised);
+			color: var(--text);
+			text-decoration: none;
+			transition: background 0.15s, box-shadow 0.15s;
+		}
+
+		.way:hover {
+			background: var(--bg-hover);
+			box-shadow: var(--glow);
+		}
+
+		p {
+			margin: 0 0 var(--space-2);
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+		}
+
+		.kind {
+			color: var(--text);
+			font-size: var(--size-lg);
+			font-weight: 700;
+		}
+
+		.more {
+			color: var(--accent);
+			font-size: var(--size-sm);
+			font-weight: 600;
+		}
+
+		.way > :global(.code) {
+			margin: 0;
+		}
+
+		@media (max-width: 52rem) {
+			.way {
+				grid-template-columns: minmax(0, 1fr);
+			}
+		}
+	</style>
+}

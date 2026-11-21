@@ -1,0 +1,37 @@
+import pf.Html
+import pf.Show
+import pf.Title
+import pf.Solid exposing [create_signal!]
+
+## The document's title from `<Title>`s, for the tests (`titles_app.roc`), a whole document: the
+## layout's own `<title>`; a `<Title>` that counts, inside a `<Show>`; and one rendered after it,
+## inside another, which is the title while it shows.
+Titles := [].{
+
+	view! : {} => Html
+	view! = |{}| {
+		(count!, set_count!) = create_signal!(1.U64)
+		(outer!, set_outer!) = create_signal!(Bool.True)
+		(inner!, set_inner!) = create_signal!(Bool.True)
+		<>
+			<!doctype html>
+			<html lang="en">
+				<head>
+					<meta charset="utf-8" />
+					<title>The layout's</title>
+				</head>
+				<body>
+					<Show when!={outer!()}>
+						<Title>{count!().to_str()} &amp; counting</Title>
+					</Show>
+					<Show when!={inner!()}>
+						<p class="inner"><Title>Inner <b>{count!().to_str()}</b></Title>inner</p>
+					</Show>
+					<button class="more" on:click={|| set_count!(count!() + 1)}>More</button>
+					<button class="toggle-outer" on:click={|| set_outer!(!outer!())}>Outer</button>
+					<button class="toggle-inner" on:click={|| set_inner!(!inner!())}>Inner</button>
+				</body>
+			</html>
+		</>
+	}
+}

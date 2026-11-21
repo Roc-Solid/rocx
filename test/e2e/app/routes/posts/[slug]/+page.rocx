@@ -1,0 +1,14 @@
+import pf.Html
+import pf.Title
+import ../../../Counter
+import ../../../Generated/Paths
+
+meta = { title: "A post" }
+
+view! = |{ params }|
+	<article class="post">
+		<Title>Post {params.slug}</Title>
+		<h1>Post {params.slug}</h1>
+		<a href={Paths.posts_slug({ slug: "other" })}>The other one</a>
+		<Counter start={10} />
+	</article>

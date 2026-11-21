@@ -1,0 +1,139 @@
+import pf.Html
+import ../../../Demos/Rainfall
+import ../../../Ui/Code
+import ../../../Ui/Heading
+import ../../../Generated/Sources
+import ../../../Generated/Paths
+import ../../../Ui/PageHero
+import ../../../Ui/TableWrap
+import ../../../Ui/Demo
+
+## The charts package: a live bar chart, then its components' props, their styling, and the
+## modules the arithmetic is in.
+meta = {
+	title: "Charts",
+	description: "Bar and line charts for Roc Solid apps, drawn as SVG: rendered on the server, hydrated in the browser, gliding to new data a frame at a time.",
+	toc: [
+		{ id: "live", label: "A live chart" },
+		{ id: "bar", label: "<BarChart>" },
+		{ id: "line", label: "<LineChart>" },
+		{ id: "styling", label: "Styling" },
+		{ id: "modules", label: "The arithmetic" },
+		{ id: "limits", label: "Limits, for now" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				eyebrow="The ecosystem · <code>packages/charts</code>"
+				title="Charts that glide to their data, and then stop"
+			>
+				Bar and line charts, drawn as SVG. The server renders them into the page, and the browser
+				hydrates them like any component. When the data changes, the bars and the axis glide to their
+				new places, a frame at a time, in Roc; once they get there, nothing runs.
+			</PageHero>
+
+			<Heading id="live">A live chart</Heading>
+		</NoHydration>
+		<Demo game meter="rainfall" idle="Roc is idle: the bars are where the data says.">
+			<div data-demo="rainfall"><Rainfall /></div>
+		</Demo>
+		<NoHydration>
+			<Code title={Sources.charts_use.file} source={Sources.charts_use.rocx} />
+			<p>
+				The <a href={Paths.showcase}>showcase</a> has a line chart too, fed 40 values a second.
+			</p>
+
+			<Heading id="bar">{"<BarChart>"}</Heading>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Prop</th><th>Is</th></tr></thead>
+					<tbody>
+						<tr>
+							<td><code>{"data! : () => List({ label : Str, value : Dec })"}</code></td>
+							<td>
+								a bar for each, in order, kept by its label: a new value glides its bar there; a new bar grows from
+								the axis as the others make room; one whose label is gone shrinks into the axis as it fades (its
+								<code>{"<rect>"}</code>'s <a href={"${Paths.components}#transitions"}><code>transition:out</code></a>)
+								while the others close up; a new order slides each bar to its place
+							</td>
+						</tr>
+						<tr><td><code>label : Str</code></td><td>what the chart shows, for screen readers</td></tr>
+						<tr><td><code>{"format : Dec -> Str"}</code></td><td>a value's text: the ticks', and a bar's when it is pointed at or focused</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				The axis goes from zero (or the least value, when one is negative) to the greatest value, widened
+				to round numbers. Each bar can be reached with Tab, and has its label and value for a screen reader.
+			</p>
+
+			<Heading id="line">{"<LineChart>"}</Heading>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Prop</th><th>Is</th></tr></thead>
+					<tbody>
+						<tr><td><code>{"data! : () => List(Dec)"}</code></td><td>the values, left to right, evenly spaced</td></tr>
+						<tr><td><code>label : Str</code></td><td>what the chart shows, for screen readers</td></tr>
+						<tr><td><code>{"format : Dec -> Str"}</code></td><td>a value's text: the ticks', and the one under the pointer</td></tr>
+						<tr><td><code>smooth : Bool</code></td><td>monotone curves through the values instead of straight segments</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				The axis goes from the least value to the greatest, widened to round numbers. The columns the
+				pointer finds a value by are laid out by CSS, so a chart whose values change every frame costs
+				only its path and its axis.
+			</p>
+
+			<Heading id="styling">Styling</Heading>
+			<p>
+				Each chart is <code>width: 100%</code>, in a 640 by 320 viewBox, and takes its colours from custom
+				properties, falling back to the text's colour where they aren't set: <code>--chart-color</code> (bars,
+				the line), <code>--chart-active</code> (a pointed-at bar, the point), <code>--chart-grid</code>,
+				<code>--chart-axis</code>, <code>--chart-muted</code> (tick and bar labels), <code>--chart-surface</code>
+				(behind the point), <code>--chart-font</code>.
+			</p>
+
+			<Heading id="modules">The arithmetic</Heading>
+			<p>
+				Plain Roc, on no platform, in <code>Dec</code>, Roc's decimal: the ticks from 0 to 1 are 0.2, 0.4, 0.6
+				and 0.8, exactly. <code>roc test packages/charts/main.roc</code> runs their <code>expect</code>s.
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Module</th><th>What it does</th></tr></thead>
+					<tbody>
+						<tr><td><code>Scale</code></td><td><code>Scale.linear(domain, range)</code>: <code>scale.at(value)</code> is a place, <code>scale.invert(place)</code> a value; <code>.nice(count)</code> widens the domain to round numbers, <code>.ticks(count)</code> lists them</td></tr>
+						<tr><td><code>Band</code></td><td><code>Band.band(count, range, padding)</code>: a slot for each bar; <code>.at(slot)</code>, <code>.width()</code>, <code>.center(slot)</code>; a count and a slot may be fractions, as they are while a chart glides</td></tr>
+						<tr><td><code>Ticks</code></td><td>about <code>count</code> ticks at 1, 2 or 5 times a power of ten</td></tr>
+						<tr><td><code>Path</code></td><td>SVG path data: <code>line</code>, <code>smooth</code> (monotone curves), <code>area</code>, <code>smooth_area</code>, <code>arc</code></td></tr>
+						<tr><td><code>Format</code></td><td><code>num(x, places)</code> (<code>"2.5"</code>, not <code>"2.50"</code>), <code>short</code> (<code>"1.3k"</code>), <code>percent</code>, <code>coord</code></td></tr>
+						<tr><td><code>Ease</code></td><td><code>toward(from, to, ms, close)</code>: one frame's share of a glide, which ends</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+
+			<Heading id="limits">Limits, for now</Heading>
+			<ul>
+				<li>
+					Values are <code>Dec</code>. Roc has no <code>F64</code> to <code>Dec</code> conversion yet;
+					<code>(x * 1000.0).round_to_i64_try()</code> then <code>.to_dec() / 1000.0</code> makes one.
+				</li>
+				<li>
+					rocx writes HTML tags in lower case, so SVG's camel-cased elements (<code>{"<linearGradient>"}</code>,
+					<code>{"<clipPath>"}</code>) can't be written yet.
+				</li>
+			</ul>
+			<details>
+				<summary>The bar chart: <code>{Sources.chart_bar.file}</code></summary>
+				<Code title={Sources.chart_bar.file} source={Sources.chart_bar.rocx} />
+			</details>
+			<details>
+				<summary>The line chart: <code>{Sources.chart_line.file}</code></summary>
+				<Code title={Sources.chart_line.file} source={Sources.chart_line.rocx} />
+			</details>
+		</NoHydration>
+	</>

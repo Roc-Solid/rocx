@@ -1,0 +1,16 @@
+import pf.Html
+
+Attributes := [].{
+	# example
+	view : { email : Str, required : Bool, rel : Str, active : Bool, size : Str } -> Html
+	view = |{ email, required, rel, active, size }|
+		<div class="signup">
+			<input type="email" name="email" value={email} required?={required} autofocus />
+			<a href="/terms" rel??={rel}>Terms</a>
+			<button type="button" class="primary" class:active={active} style:--size={size}>Join</button>
+		</div>
+	# /example
+
+	demo : {} -> Html
+	demo = |{}| view({ email: "ada@example.com", required: Bool.True, rel: "", active: Bool.True, size: "1.25rem" })
+}

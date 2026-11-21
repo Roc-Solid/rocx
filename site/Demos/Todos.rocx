@@ -1,0 +1,181 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+import pf.For
+import pf.Show
+
+## A to-do list: a form, rows that come and go (each kept by its id: moved, never rewritten),
+## checkboxes, a key, and filters. Its state is four signals; each hole reads the ones it needs.
+Todos := [].{
+	Item : { id : U64, text : Str, done : Bool }
+	Filter : [All, Active, Completed]
+
+	view! : { first : List({ text : Str, done : Bool }) } => Html
+	view! = |{ first }| {
+		(items!, set_items!) = create_signal!(first.map_with_index(|item, index| { id: index, text: item.text, done: item.done }))
+		(draft!, set_draft!) = create_signal!("")
+		(filter!, set_filter!) = create_signal!(everything)
+		(next!, set_next!) = create_signal!(first.len())
+		add! = || {
+			text = draft!().trim()
+			if (text.is_empty()) {} else {
+				set_items!(items!().append({ id: next!(), text, done: Bool.False }))
+				set_next!(next!() + 1)
+				set_draft!("")
+			}
+		}
+		tick! = |id, done| set_items!(items!().map(|item| if (item.id == id) { ..item, done: done } else item))
+		remove! = |id| set_items!(items!().drop_if(|item| item.id == id))
+		<div class="todos">
+			<form on:submit={add!}>
+				<input
+					type="text"
+					placeholder="What needs doing?"
+					aria-label="New item"
+					value={draft!()}
+					on:input.value={set_draft!}
+					on:keydown.Escape={|| set_draft!("")}
+				/>
+				<button type="submit" disabled?={draft!().trim().is_empty()}>Add</button>
+			</form>
+			<ul>
+				<For each!={shown(items!(), filter!())} keyed={|item| item.id}>
+					{|item!, _|
+						<li class:done={item!().done}>
+							<label>
+								<input type="checkbox" checked?={item!().done} on:change.checked={|done| tick!(item!().id, done)} />
+								{item!().text}
+							</label>
+							<button type="button" class="remove" aria-label={"Remove ${item!().text}"} on:click={|| remove!(item!().id)}>×</button>
+						</li>
+					}
+				</For>
+			</ul>
+			<footer>
+				<span class="left">{left(items!())}</span>
+				<span class="filters">
+					<button type="button" class:selected={filter!() == All} on:click={|| set_filter!(All)}>All</button>
+					<button type="button" class:selected={filter!() == Active} on:click={|| set_filter!(Active)}>Active</button>
+					<button type="button" class:selected={filter!() == Completed} on:click={|| set_filter!(Completed)}>Done</button>
+				</span>
+				<Show when!={items!().any(|item| item.done)}>
+					<button type="button" class="clear" on:click={|| set_items!(items!().drop_if(|item| item.done))}>Clear done</button>
+				</Show>
+			</footer>
+		</div>
+	}
+
+	<style>
+		.todos form {
+			display: flex;
+			gap: var(--space-2);
+		}
+
+		.todos form input {
+			flex: 1;
+		}
+
+		button[type="submit"] {
+			background: var(--accent);
+			color: var(--accent-text);
+		}
+
+		button[type="submit"]:hover:not(:disabled) {
+			background: var(--accent-strong);
+		}
+
+		ul {
+			margin: var(--space-4) 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		li {
+			display: flex;
+			align-items: center;
+			padding: var(--space-2) 0;
+			border-bottom: 1px solid var(--rule);
+		}
+
+		label {
+			flex: 1;
+			display: flex;
+			align-items: center;
+			gap: var(--space-2);
+			cursor: pointer;
+		}
+
+		.done label {
+			color: var(--text-faint);
+			text-decoration: line-through;
+		}
+
+		.remove,
+		.remove:hover:not(:disabled) {
+			padding: 0 var(--space-2);
+			background: none;
+			color: var(--text-faint);
+			font-size: var(--size-lg);
+			line-height: 1;
+		}
+
+		.remove:hover:not(:disabled) {
+			color: var(--bad);
+		}
+
+		footer {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: var(--space-3);
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+		}
+
+		.filters {
+			display: inline-flex;
+			gap: var(--space-1);
+		}
+
+		.filters button {
+			padding: var(--space-1) var(--space-3);
+			background: none;
+			color: var(--text-muted);
+		}
+
+		.filters .selected,
+		.filters .selected:hover:not(:disabled) {
+			background: var(--accent-soft);
+			color: var(--accent);
+		}
+
+		.clear {
+			margin-left: auto;
+			padding: var(--space-1) var(--space-3);
+			font-size: var(--size-sm);
+		}
+	</style>
+}
+
+everything : Todos.Filter
+everything = All
+
+## The items the filter shows.
+shown : List(Todos.Item), Todos.Filter -> List(Todos.Item)
+shown = |items, filter|
+	items.keep_if(
+		|item|
+			match filter {
+				All => Bool.True
+				Active => !item.done
+				Completed => item.done
+			},
+	)
+
+left : List(Todos.Item) -> Str
+left = |items| {
+	count = items.count_if(|item| !item.done)
+	"${count.to_str()} ${if (count == 1) "item" else "items"} left"
+}
+
+expect left([{ id: 0, text: "a", done: Bool.False }, { id: 1, text: "b", done: Bool.True }]) == "1 item left"
+expect shown([{ id: 0, text: "a", done: Bool.True }], Active) == []

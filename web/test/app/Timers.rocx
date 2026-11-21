@@ -1,0 +1,81 @@
+import pf.Html
+import pf.Solid exposing [create_signal!, set_interval!, set_timeout!, on_settled!]
+import pf.Browser
+import pf.Audio
+import pf.Show
+import Ticker
+
+## Timers, for the tests: a ticker in a <Show>, whose interval goes with it; an interval a button
+## stops with its `clear!`; one that clears itself on its third tick; and a timeout a button
+## starts, and another calls off. And calls of the page's own functions (`Browser.call!`): one the
+## page has, and one it hasn't; and a sound file, played (`Audio.play_with!`).
+Timers := [].{
+	Running : [Idle, Running(() => {})]
+
+	view! : {} => Html
+	view! = |{}| {
+		(shown!, set_shown!) = create_signal!(Bool.True)
+		(ticks!, set_ticks!) = create_signal!(0.U64)
+		(counting!, set_counting!) = create_signal!(idle)
+		(counted!, set_counted!) = create_signal!(0.U64)
+		(alarm!, set_alarm!) = create_signal!(idle)
+		(rang!, set_rang!) = create_signal!(0.U64)
+		(three!, set_three!) = create_signal!(idle)
+		(thrice!, set_thrice!) = create_signal!(0.U64)
+		start! = || set_counting!(Running(set_interval!(20, || set_counted!(counted!() + 1))))
+		stop! = || {
+			clear!(counting!())
+			set_counting!(Idle)
+		}
+		ring! = || set_alarm!(Running(set_timeout!(60, || set_rang!(rang!() + 1))))
+		call_off! = || clear!(alarm!())
+		# How many times `on_settled!` ran: never on the server, once in the browser.
+		(settled!, set_settled!) = create_signal!(0.U64)
+		on_settled!(|| set_settled!(settled!() + 1))
+		(notes!, set_notes!) = create_signal!(0.U64)
+		note! = || {
+			set_notes!(notes!() + 1)
+			Browser.call!("noted", { count: notes!() + 1 })
+		}
+		count_to_three! = || {
+			stop_three! = set_interval!(
+				20,
+				|| {
+					set_thrice!(thrice!() + 1)
+					if (thrice!() + 1 >= 3) clear!(three!()) else {}
+				},
+			)
+			set_three!(Running(stop_three!))
+		}
+		<div class="timers">
+			<button class="toggle" on:click={|| set_shown!(!shown!())}>Toggle</button>
+			<Show when!={shown!()}>
+				<Ticker tick!={|| set_ticks!(ticks!() + 1)} />
+			</Show>
+			<p class="ticks">{ticks!().to_str()}</p>
+			<button class="start" on:click={start!}>Start</button>
+			<button class="stop" on:click={stop!}>Stop</button>
+			<p class="counted">{counted!().to_str()}</p>
+			<button class="ring" on:click={ring!}>Ring</button>
+			<button class="call-off" on:click={call_off!}>Call off</button>
+			<p class="rang">{rang!().to_str()}</p>
+			<button class="three" on:click={count_to_three!}>Three</button>
+			<p class="thrice">{thrice!().to_str()}</p>
+			<p class="settled">{settled!().to_str()}</p>
+			<button class="note" on:click={note!}>Note</button>
+			<p class="notes">{notes!().to_str()}</p>
+			<button class="nowhere" on:click={|| Browser.call!("nowhere", { why: "nothing has it" })}>Nowhere</button>
+			<button class="play" on:click={|| Audio.play_with!("/beep.wav", { volume: 0.5, rate: 2.0 })}>Play</button>
+		</div>
+	}
+}
+
+idle : Timers.Running
+idle = Idle
+
+clear! : Timers.Running => {}
+clear! = |running|
+	match running {
+		Running(stop!) => stop!()
+		Idle => {}
+	}

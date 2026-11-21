@@ -1,0 +1,442 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+import pf.Audio
+import pf.For
+import pf.Show
+import Random
+
+## A flock of Roc birds: say how many (type it, or ±1, ±5), and the newest come or go. Every
+## frame, Roc moves them, bounces them off the walls and off each other, and the flock's signal
+## changes: each bird's row (kept by its id) patches its place, and the count of bounces its text.
+## How many there should be is a signal of its own, which frames don't touch, so the field isn't
+## written over while you type in it. A step's sound (a pop, a bump) is part of the next flock, and
+## the handler plays it, with `Audio.play_with!`: the same file, faster for a higher note.
+Birds := [].{
+	Bird : { id : U64, x : F64, y : F64, vx : F64, vy : F64 }
+
+	## The sound the last step made: its file in site/static/sounds ("" for none), and how fast it plays:
+	## 2.0 is twice as fast, and an octave up.
+	Sound : { tone : Str, rate : F64 }
+	Model : { birds : List(Bird), next : U64, seed : U64, bounces : U64, sound : Sound, quiet : F64, muted : Bool }
+	Msg : [Resize(U64), Frame(F64), Shake, Mute]
+
+	## The flock, with `count` birds in it.
+	view! : { count : U64 } => Html
+	view! = |{ count }| {
+		(flock!, set_flock!) = create_signal!(Birds.init(count))
+		(wanted!, set_wanted!) = create_signal!(U64.min(count, most))
+		# The flock goes on to the next, and plays the sound that step made, unless muted.
+		send! = |msg| {
+			next = Birds.update(flock!(), msg)
+			set_flock!(next)
+			if (!next.muted and !next.sound.tone.is_empty()) Audio.play_with!("/sounds/${next.sound.tone}.wav", { volume: 1.0, rate: next.sound.rate }) else {}
+		}
+		resize! = |n| {
+			size = U64.min(n, most)
+			set_wanted!(size)
+			send!(Resize(size))
+		}
+		<div class="flock">
+			<div class="flock-bar">
+				<div class="flock-size" role="group" aria-label="How many birds">
+					<button type="button" class="round" on:click={|| resize!(less(wanted!(), 5))} disabled?={wanted!() == 0} aria-label="Five birds fewer">−5</button>
+					<button type="button" class="round" on:click={|| resize!(less(wanted!(), 1))} disabled?={wanted!() == 0} aria-label="One bird fewer">−1</button>
+					<input
+						class="flock-count"
+						type="number"
+						inputmode="numeric"
+						min="0"
+						max={most.to_str()}
+						aria-label="Birds"
+						value={wanted!().to_str()}
+						on:input.value={|text|
+							match U64.from_str(text.trim()) {
+								Ok(n) => resize!(n)
+								Err(_) => {}
+							}}
+						on:change={|| set_wanted!(wanted!())}
+					/>
+					<button type="button" class="round" on:click={|| resize!(wanted!() + 1)} disabled?={wanted!() >= most} aria-label="One more bird">+1</button>
+					<button type="button" class="round" on:click={|| resize!(wanted!() + 5)} disabled?={wanted!() >= most} aria-label="Five more birds">+5</button>
+				</div>
+				<span class="flock-label">{if (wanted!() == 1) "bird" else "birds"} · {flock!().bounces.to_str()} bounces</span>
+				<span class="flock-actions">
+					<button type="button" on:click={|| send!(Shake)} disabled?={wanted!() == 0}>Shake</button>
+					<button type="button" on:click={|| send!(Mute)} aria-pressed={if (flock!().muted) "true" else "false"}>{if (flock!().muted) "Sound off" else "Sound on"}</button>
+				</span>
+			</div>
+			{# Time flows only while there are birds: an empty arena has no frame handler, so no frames. }
+			<Show
+				when!={wanted!() > 0}
+				fallback={<div class="arena"><p class="arena-empty">Empty sky. Press +1 to let a bird in.</p></div>}
+			>
+				<div class="arena" on:frame.ms={|ms| send!(Frame(ms))}>
+					<For each!={flock!().birds} keyed={|b| b.id.to_str()}>
+						{|bird!, _| <span class="bird" class:left={bird!().vx < 0.0} style:--x={css(bird!().x)} style:--y={css(bird!().y)}></span>}
+					</For>
+				</div>
+			</Show>
+		</div>
+	}
+
+	init : U64 -> Model
+	init = |count| {
+		var $model = { birds: [], next: 0, seed: 2026, bounces: 0, sound: silent, quiet: 0.0, muted: Bool.False }
+		var $left = count
+		while $left > 0 {
+			$model = arrive($model)
+			$left = $left - 1
+		}
+		# No sound for the birds that were there when the page came.
+		{ ..$model, sound: silent }
+	}
+
+	update : Model, Msg -> Model
+	update = |last, msg| {
+		# A step makes its own sound, if any: the last one's doesn't carry over.
+		model = { ..last, sound: silent }
+		match msg {
+			Resize(count) => resize(model, count)
+			Frame(ms) => fly(model, ms)
+			Shake => shake(model)
+			Mute => { ..model, muted: !model.muted }
+		}
+	}
+
+	<style>
+		.flock {
+			display: grid;
+			gap: var(--space-3);
+		}
+
+		.flock-bar {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: var(--space-2) var(--space-5);
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+		}
+
+		/* How many birds: a number to type, between −5 −1 and +1 +5. */
+		.flock-size {
+			display: flex;
+			align-items: center;
+			gap: var(--space-2);
+		}
+
+		.round {
+			width: 2.5rem;
+			height: 2.5rem;
+			padding: 0;
+			border-radius: 50%;
+			font-size: var(--size-sm);
+			font-weight: 700;
+			line-height: 1;
+		}
+
+		.round:hover:not(:disabled) {
+			background: var(--accent-soft);
+			color: var(--accent);
+		}
+
+		input.flock-count {
+			width: 3.2em;
+			height: 2.5rem;
+			padding: 0 var(--space-1);
+			border-radius: var(--radius);
+			font: 700 var(--size-lg) / 1 var(--font);
+			font-variant-numeric: tabular-nums;
+			text-align: center;
+			appearance: textfield;
+			-moz-appearance: textfield;
+		}
+
+		.flock-count::-webkit-inner-spin-button,
+		.flock-count::-webkit-outer-spin-button {
+			margin: 0;
+			-webkit-appearance: none;
+		}
+
+		.flock-actions {
+			display: flex;
+			gap: var(--space-2);
+			margin-left: auto;
+		}
+
+		.flock-actions button {
+			padding: var(--space-1) var(--space-3);
+			font-size: var(--size-sm);
+		}
+
+		.flock-actions [aria-pressed="true"] {
+			color: var(--text-faint);
+		}
+
+		/* The arena is 100 units wide (and 56.25 high): a unit is 1cqw, so Roc's numbers are the places. */
+		.arena {
+			position: relative;
+			aspect-ratio: 16 / 9;
+			container-type: inline-size;
+			overflow: hidden;
+			border-radius: var(--radius-lg);
+			background: linear-gradient(#221a3d, #120f1d);
+			box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.05);
+		}
+
+		.arena-empty {
+			position: absolute;
+			inset: 0;
+			display: grid;
+			place-items: center;
+			margin: 0;
+			color: var(--text-faint);
+		}
+
+		.bird {
+			position: absolute;
+			top: 0;
+			left: 0;
+			width: 3.5cqw;
+			height: 3.5cqw;
+			translate: calc(var(--x) * 1cqw - 1.75cqw) calc(var(--y) * 1cqw - 1.75cqw);
+			animation: arrive 0.4s cubic-bezier(0.3, 1.6, 0.5, 1);
+		}
+
+		.bird::before {
+			content: "";
+			position: absolute;
+			inset: 0;
+			/* Roc's bird (static/roc-bird.svg), in the CSS: this stylesheet is in the page, so a relative URL
+			   would be the page's, and a page may be under a base (/rocx/). */
+			background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-1.25 0 53 53'%3E%3Cpolygon points='0,0 23.8834,3.21052 37.2438,19.0101 45.9665,16.6324 50.5,22 45,22 44.0315,26.3689 26.4673,39.3424 27.4527,45.2132 17.655,53 23.6751,22.7086' fill='%237c38f5'/%3E%3C/svg%3E") center / contain no-repeat;
+			animation: flap 0.45s ease-in-out infinite alternate;
+		}
+
+		.bird.left::before {
+			scale: -1 1;
+		}
+
+		@keyframes arrive {
+			from {
+				opacity: 0;
+				scale: 0;
+			}
+		}
+
+		@keyframes flap {
+			to {
+				rotate: -9deg;
+			}
+		}
+
+		@media (prefers-reduced-motion: reduce) {
+			.bird,
+			.bird::before {
+				animation: none;
+			}
+		}
+	</style>
+}
+
+## `count` birds, at most `most`: the newest go, or new ones come.
+resize : Birds.Model, U64 -> Birds.Model
+resize = |model, count| {
+	wanted = U64.min(count, most)
+	if wanted < model.birds.len() {
+		{ ..model, birds: model.birds.drop_last(model.birds.len() - wanted), sound: pop(330) }
+	} else {
+		var $model = model
+		while $model.birds.len() < wanted {
+			$model = arrive($model)
+		}
+		$model
+	}
+}
+
+## `n` fewer, but not below none.
+less : U64, U64 -> U64
+less = |count, n| if (count > n) count - n else 0
+
+## The arena is 100 units wide and 56.25 high (16:9, as its box); a bird is 3.5 across, and as
+## many as 200 fly in it.
+width : F64
+width = 100.0
+
+height : F64
+height = 56.25
+
+radius : F64
+radius = 1.75
+
+most : U64
+most = 200
+
+silent : Birds.Sound
+silent = { tone: "", rate: 1.0 }
+
+## A pop at `pitch` hertz: pop.wav is at 440.
+pop : U64 -> Birds.Sound
+pop = |pitch| { tone: "pop", rate: pitch.to_f64() / 440.0 }
+
+## A bump at `pitch` hertz: bonk.wav is at 220.
+bonk : U64 -> Birds.Sound
+bonk = |pitch| { tone: "bonk", rate: pitch.to_f64() / 220.0 }
+
+## Hundredths are plenty for a place on the screen, and keep patches short. Written with whole
+## numbers: `F64.to_str` would put Roc's float printer, some 12 KB compressed, in the wasm.
+css : F64 -> Str
+css = |value| {
+	hundredths = (value * 100.0).round_to_i64_try() ?? 0
+	whole = I64.abs(hundredths)
+	cents = whole % 100
+	"${if (hundredths < 0) "-" else ""}${(whole // 100).to_str()}.${if (cents < 10) "0" else ""}${cents.to_str()}"
+}
+
+## A bird somewhere in the arena, flying in some direction at some speed.
+arrive : Birds.Model -> Birds.Model
+arrive = |model|
+	if model.birds.len() >= most {
+		model
+	} else {
+		x = Random.float(model.seed)
+		y = Random.float(x.seed)
+		course = direction(y.seed)
+		speed = Random.float(course.seed)
+		velocity = 16.0 + speed.value * 16.0
+		newcomer = {
+			id: model.next,
+			x: radius + x.value * (width - 2.0 * radius),
+			y: radius + y.value * (height - 2.0 * radius),
+			vx: velocity * course.x,
+			vy: velocity * course.y,
+		}
+		{ ..model, birds: model.birds.append(newcomer), next: model.next + 1, seed: speed.seed, sound: pop(440 + model.birds.len() * 20) }
+	}
+
+## A direction, as a vector one unit long: a random point in the square, scaled to the circle.
+## (Without sine and cosine, which would add some 5 KB to the wasm; a square root is one wasm
+## instruction.)
+direction : U64 -> { x : F64, y : F64, seed : U64 }
+direction = |seed| {
+	across = Random.float(seed)
+	down = Random.float(across.seed)
+	x = across.value * 2.0 - 1.0
+	y = down.value * 2.0 - 1.0
+	length = F64.sqrt(x * x + y * y)
+	if (length < 0.05) { x: 1.0, y: 0.0, seed: down.seed } else { x: x / length, y: y / length, seed: down.seed }
+}
+
+## Every bird a kick in a new direction.
+shake : Birds.Model -> Birds.Model
+shake = |model| {
+	kicked = model.birds.fold(
+		{ birds: [], seed: model.seed },
+		|state, b| {
+			course = direction(state.seed)
+			{ birds: state.birds.append({ ..b, vx: 30.0 * course.x, vy: 30.0 * course.y }), seed: course.seed }
+		},
+	)
+	{ ..model, birds: kicked.birds, seed: kicked.seed, sound: pop(660) }
+}
+
+## `ms` of flight: everyone moves, the walls send them back, and birds that meet bounce apart.
+fly : Birds.Model, F64 -> Birds.Model
+fly = |model, ms| {
+	seconds = ms / 1000.0
+	walled = model.birds.map(|b| wall({ ..b, x: b.x + b.vx * seconds, y: b.y + b.vy * seconds }))
+	met = meet(walled.map(|w| w.bird))
+	hits = walled.count_if(|w| w.hit) + met.hits
+	quiet = model.quiet + ms
+	# A bump makes a sound, at most one every 90 ms, so a crowd doesn't become a buzz.
+	if met.hits > 0 and quiet >= 90.0 {
+		{ ..model, birds: met.birds, bounces: model.bounces + hits, quiet: 0.0, sound: bonk(180 + met.hits * 40) }
+	} else {
+		{ ..model, birds: met.birds, bounces: model.bounces + hits, quiet }
+	}
+}
+
+wall : Birds.Bird -> { bird : Birds.Bird, hit : Bool }
+wall = |b| {
+	left = b.x < radius
+	right = b.x > width - radius
+	top = b.y < radius
+	bottom = b.y > height - radius
+	vx = if (left) F64.abs(b.vx) else if (right) F64.negate(F64.abs(b.vx)) else b.vx
+	vy = if (top) F64.abs(b.vy) else if (bottom) F64.negate(F64.abs(b.vy)) else b.vy
+	x = F64.max(radius, F64.min(width - radius, b.x))
+	y = F64.max(radius, F64.min(height - radius, b.y))
+	{ bird: { ..b, x, y, vx, vy }, hit: left or right or top or bottom }
+}
+
+## Every pair that overlaps is pushed apart, and if they were closing in, they swap their speeds
+## along the line between them: an elastic collision of equal masses.
+meet : List(Birds.Bird) -> { birds : List(Birds.Bird), hits : U64 }
+meet = |start| {
+	count = start.len()
+	var $birds = start
+	var $hits = 0.U64
+	var $i = 0.U64
+	while $i < count {
+		var $j = $i + 1
+		while $j < count {
+			met = bounce($birds, $i, $j)
+			$birds = met.birds
+			$hits = $hits + met.hits
+			$j = $j + 1
+		}
+		$i = $i + 1
+	}
+	{ birds: $birds, hits: $hits }
+}
+
+bounce : List(Birds.Bird), U64, U64 -> { birds : List(Birds.Bird), hits : U64 }
+bounce = |birds, i, j|
+	match (birds.get(i), birds.get(j)) {
+		(Ok(a), Ok(b)) => {
+			dx = b.x - a.x
+			dy = b.y - a.y
+			apart = dx * dx + dy * dy
+			reach = 2.0 * radius
+			if apart >= reach * reach or apart == 0.0 {
+				{ birds, hits: 0 }
+			} else {
+				distance = F64.sqrt(apart)
+				nx = dx / distance
+				ny = dy / distance
+				push = (reach - distance) / 2.0
+				closing = F64.min(0.0, (b.vx - a.vx) * nx + (b.vy - a.vy) * ny)
+				moved_a = { ..a, x: a.x - nx * push, y: a.y - ny * push, vx: a.vx + closing * nx, vy: a.vy + closing * ny }
+				moved_b = { ..b, x: b.x + nx * push, y: b.y + ny * push, vx: b.vx - closing * nx, vy: b.vy - closing * ny }
+				with_a = birds.set(i, moved_a) ?? birds
+				{ birds: with_a.set(j, moved_b) ?? with_a, hits: if (closing < 0.0) 1 else 0 }
+			}
+		}
+		_ => { birds, hits: 0 }
+	}
+
+expect Birds.init(5).birds.len() == 5
+expect Birds.init(5).sound.tone == ""
+# A step's sound is its own: a bird more pops, and the next step (muting, here) makes none.
+expect {
+	more = Birds.update(Birds.init(2), Resize(3))
+	more.sound.tone == "pop" and Birds.update(more, Mute).sound == silent
+}
+expect Birds.update(Birds.init(2), Resize(3)).birds.len() == 3
+expect Birds.update(Birds.init(2), Resize(999)).birds.len() == 200
+expect (Birds.update(Birds.init(5), Resize(2)).birds.map(|b| b.id)) == [0, 1]
+expect Birds.update(Birds.init(1), Resize(0)).birds.len() == 0
+expect less(3, 5) == 0
+expect wall({ id: 0, x: -1.0, y: 10.0, vx: -5.0, vy: 0.0 }).bird == { id: 0, x: 1.75, y: 10.0, vx: 5.0, vy: 0.0 }
+# Head on, at the same speed: they swap, and fly apart.
+expect {
+	met = meet([{ id: 0, x: 10.0, y: 10.0, vx: 5.0, vy: 0.0 }, { id: 1, x: 13.0, y: 10.0, vx: -5.0, vy: 0.0 }])
+	met.hits == 1 and (met.birds.get(0) ?? { id: 9, x: 0.0, y: 0.0, vx: 0.0, vy: 0.0 }).vx == -5.0
+}
+expect css(12.3456) == "12.35"
+expect css(-0.5) == "-0.50"
+expect css(3.0) == "3.00"
+expect {
+	course = direction(99)
+	F64.abs(course.x * course.x + course.y * course.y - 1.0) < 0.000001
+}

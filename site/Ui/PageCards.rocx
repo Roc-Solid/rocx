@@ -1,0 +1,64 @@
+import pf.Html
+
+## The pages of a part, as cards: each its name and what it is about, a link to it.
+PageCards := [].{
+	view : { pages : List({ path : Str, label : Str, blurb : Str }) } -> Html
+	view = |{ pages }|
+		<ul class="page-cards">
+			{...pages.map(|page| <li><a href={page.path}><strong>{page.label}</strong><span>{page.blurb}</span></a></li>)}
+		</ul>
+
+	<story name="A part's pages">
+		<PageCards
+			pages={[
+				{ path: "#", label: "Syntax", blurb: "Markup wherever an expression can stand" },
+				{ path: "#", label: "Routing", blurb: "A page is a file: +page.rocx, +layout.rocx" },
+				{ path: "#", label: "Components", blurb: "Signals, and the pages that hydrate" },
+				{ path: "#", label: "Tooling", blurb: "Build, check, lint, and errors at your lines" },
+			]}
+		/>
+	</story>
+
+	<style>
+		.page-cards {
+			display: grid;
+			grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr));
+			gap: var(--space-3);
+			max-width: none;
+			margin: var(--space-6) 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		a {
+			display: block;
+			height: 100%;
+			padding: var(--space-4) var(--space-5);
+			border-radius: var(--radius);
+			background: var(--bg-raised);
+			color: var(--text);
+			text-decoration: none;
+			transition: background 0.15s, box-shadow 0.15s;
+		}
+
+		a:hover {
+			background: var(--bg-hover);
+			box-shadow: var(--glow);
+		}
+
+		strong,
+		span {
+			display: block;
+		}
+
+		strong {
+			color: var(--accent);
+		}
+
+		span {
+			margin-top: var(--space-1);
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+		}
+	</style>
+}

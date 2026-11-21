@@ -1,0 +1,31 @@
+import pf.Html
+import pf.Title
+import pf.Solid exposing [create_signal!]
+
+meta = { title: "Local" }
+
+## A page with components of its own, defined below it: one that may make signals, and a pure one.
+view! = |_| {
+	(count!, set_count!) = create_signal!(0.U64)
+	<section class="local">
+		<Title>Local {count!().to_str()}</Title>
+		<Board count!={count!} />
+		<Tag text="its own" />
+		<button class="bump" type="button" on:click={|| set_count!(count!() + 1)}>Bump</button>
+	</section>
+}
+
+## The count, as a board shows it.
+Board := [].{
+	view! : { count! : () => U64 } => Html
+	view! = |{ count! }| <p class="board">{count!().to_str()}</p>
+
+	<style>
+		.board { font-weight: bold }
+	</style>
+}
+
+Tag := [].{
+	view : { text : Str } -> Html
+	view = |{ text }| <span class="tag">{text}</span>
+}

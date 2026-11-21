@@ -1,0 +1,13 @@
+import pf.Html
+import pf.Errored
+import Tally
+
+## The tally with nothing above it to provide its store, for the tests: a
+## context with no default, provided by nothing, fails, and <Errored> says why.
+Alone := [].{
+	view! : {} => Html
+	view! = |{}|
+		<Errored fallback={|problem, _| <p class="problem">{problem}</p>}>
+			<Tally />
+		</Errored>
+}

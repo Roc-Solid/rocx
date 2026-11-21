@@ -1,0 +1,154 @@
+import pf.Html
+import ../../Demos/EscapeLab
+import ../../Ui/Heading
+import ../../Ui/Callout
+import ../../Ui/Code
+import ../../Generated/Sources
+import ../../Generated/Paths
+import ../../Ui/PageHero
+import ../../Ui/TableWrap
+import ../../Ui/Feature
+import ../../Ui/FeatureGrid
+import ../../Ui/Demo
+import ../../Ui/UrlChecks
+import ../../Ui/Refusals
+
+meta = {
+	title: "Safety",
+	description: "How rocx keeps data out of markup: an opaque Html type, escaping, safe URLs, refused attributes, and handlers that are never script.",
+	toc: [
+		{ id: "opaque", label: "Html is opaque" },
+		{ id: "lab", label: "Try to break it" },
+		{ id: "urls", label: "URLs" },
+		{ id: "refused", label: "What the build refuses" },
+		{ id: "handlers", label: "Handlers aren't script" },
+		{ id: "origin", label: "Requests from other sites" },
+		{ id: "lint", label: "rocx lint" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				eyebrow="Safety"
+				title="Data can't become markup"
+			>
+				Not because you remembered to escape it, but because there is no way to say otherwise. The
+				only markup a page can contain is the markup written in its <code>.rocx</code> files.
+			</PageHero>
+
+			<Heading id="opaque">Html is opaque</Heading>
+			<p>
+				Outside its module, nothing can wrap a string as <code>Html</code>. It is built only from escaped
+				text, from elements whose tags and attribute names come from a <code>.rocx</code> file, and from the
+				text of the <code>{"<script>"}</code> and <code>{"<style>"}</code> written there. So every value you
+				put in a page goes through one of these doors:
+			</p>
+			<FeatureGrid>
+				<Feature title="Text and attributes">
+					<p>Escaped: <code>{"< > & \" '"}</code> come out as entities, in text and in attribute values.</p>
+				</Feature>
+				<Feature title="URLs">
+					<p>
+						<code>href</code>, <code>src</code>, <code>action</code>, <code>formaction</code>,
+						<code>poster</code> and <code>cite</code> take only <a href="#urls">safe URLs</a>.
+					</p>
+				</Feature>
+				<Feature title="Custom properties">
+					<p>A value for <code>style:--size</code> is dropped if it could end the declaration.</p>
+				</Feature>
+				<Feature title="Tags and script">
+					<p>Tags, attribute names and script come only from the file, never from a value.</p>
+				</Feature>
+			</FeatureGrid>
+
+			<Heading id="lab">Try to break it</Heading>
+			<p>
+				This island renders <code>{"<a href={url} title={text}>{text}</a>"}</code> with whatever you type,
+				twice: as a page would, with <code>Html.render</code>, the same function, compiled to WebAssembly,
+				that rendered this page on the server, which shows the markup it made; and live, as a component,
+				whose holes the runtime sets as text and attributes, never as markup.
+			</p>
+		</NoHydration>
+		<Demo><div data-demo="escape-lab"><EscapeLab /></div></Demo>
+
+		<NoHydration>
+			<Heading id="urls">URLs</Heading>
+			<p>
+				In a URL attribute, a relative URL passes, and so does one whose scheme is <code>http</code>,
+				<code>https</code>, <code>mailto</code> or <code>tel</code>. Anything else becomes
+				<code>about:invalid#rocx-unsafe-url</code>. Browsers ignore tabs, line breaks and leading spaces in a
+				scheme (<code>{"java\\tscript:"}</code> runs), so those are dropped before looking. The check runs
+				when the value becomes an attribute, in a page's <code>Html</code> and in a component's alike, so the
+				server's markup and the browser's patches get the same answer. Here is what Roc rendered for these, as this page was rendered:
+			</p>
+			<TableWrap>
+				<UrlChecks urls={urls} />
+			</TableWrap>
+
+			<Heading id="refused">What the build refuses</Heading>
+			<p>
+				Some markup is refused before the compiler ever sees it, at its line and column. These are rocx's
+				own messages, produced when this page was built:
+			</p>
+			<TableWrap>
+				<Refusals refusals={Sources.refusals} />
+			</TableWrap>
+
+			<Heading id="handlers">Handlers aren't script</Heading>
+			<p>
+				<code>onclick="…"</code> is refused: it is script in an attribute, the very thing escaping exists
+				to prevent. A component's <code>on:click={"{…}"}</code> is a Roc function. The server renders nothing
+				for it, the browser never sees it as text, and when it fires, Roc decides what happens. The runtime
+				builds elements with <code>createElement</code> and sets text and attributes as such, never by
+				parsing markup, so a value can't become a tag. A page has no handlers at all: rocx refuses one there.
+			</p>
+			<Callout kind="note" title="What the server sends the browser is data too">
+				<p>
+					The answers the server's functions gave, at the end of a page, are JSON in a
+					<code>{"<script type=\"application/json\">"}</code>, with every <code>{"<"}</code> written as
+					<code>\u003c</code>, so no answer can end the script. The runtime parses them; nothing evaluates
+					them.
+				</p>
+			</Callout>
+
+			<Heading id="origin">Requests from other sites</Heading>
+			<p>
+				A page of another site can make a browser send a request here, with this site's cookies: a form that
+				posts, a script that fetches. <code>{"Middleware.same_origin({})"}</code> refuses a request that may
+				change something (a call to a <a href={Paths.calls}>server function</a>, or a POST, PUT, PATCH or
+				DELETE to an <a href={"${Paths.calls}#endpoints"}>endpoint</a>), 403, when the browser says another
+				site's page sent it: its <code>Origin</code> isn't this server. A client that isn't a page
+				(<code>curl</code>, another server) sends no <code>Origin</code>, and is answered; a GET changes
+				nothing, and is answered from anywhere.
+			</p>
+			<p>
+				It is middleware, so an app puts it in front of every request, in its default
+				(<a href={"${Paths.routing}#middleware"}>this site's</a>, with headers that tell a browser not to
+				guess a file's type); an app that leaves it out has no such check. The cookies this site sets
+				(<code>Server.with_cookie</code>) are <code>HttpOnly</code>, so no script reads them, and
+				<code>SameSite=Lax</code>, so another site's form doesn't get them sent along.
+			</p>
+
+			<Heading id="lint">rocx lint</Heading>
+			<p>
+				<code>Html.source_text</code> is how rocx writes a <code>{"<script>"}</code>'s text, as written in
+				the file. In hand-written Roc it would put any string in a page as markup, so
+				<code>rocx lint</code> refuses it there. Run it in CI, beside <code>rocx check</code>.
+			</p>
+			<Code source={"$ rocx lint app\n✗ app/Sneaky.roc:1: Html.source_text puts text in a page as markup; only rocx may write it"} numbers={Bool.False} plain />
+		</NoHydration>
+	</>
+
+## URLs to render, as the table shows them.
+urls : List({ shown : Str, url : Str })
+urls = [
+	{ shown: "/syntax#holes", url: "/syntax#holes" },
+	{ shown: "https://roc-lang.org", url: "https://roc-lang.org" },
+	{ shown: "mailto:ada@example.com", url: "mailto:ada@example.com" },
+	{ shown: "javascript:alert(1)", url: "javascript:alert(1)" },
+	{ shown: " JavaScript:alert(1)", url: " JavaScript:alert(1)" },
+	{ shown: "java\\tscript:alert(1)", url: "java\tscript:alert(1)" },
+	{ shown: "data:text/html,<b>hi</b>", url: "data:text/html,<b>hi</b>" },
+]

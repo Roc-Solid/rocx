@@ -1,0 +1,31 @@
+import pf.Html
+
+## The first thing on every page, out of sight until the keyboard reaches it: a way past the bar and
+## the side, straight to the page's content (`#content`).
+SkipLink := [].{
+	view : {} -> Html
+	view = |{}| <a class="skip" href="#content">Skip to the content</a>
+
+	<story name="Focused">
+		<SkipLink />
+		<p>Press Tab: the link shows in the corner.</p>
+	</story>
+
+	<style>
+		.skip {
+			position: absolute;
+			left: -999px;
+		}
+
+		.skip:focus {
+			top: var(--space-4);
+			left: var(--space-4);
+			z-index: 10;
+			padding: var(--space-2) var(--space-4);
+			border-radius: var(--radius-sm);
+			background: var(--accent);
+			color: var(--accent-text);
+			font-weight: 600;
+		}
+	</style>
+}

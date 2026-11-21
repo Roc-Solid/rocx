@@ -1,0 +1,13 @@
+import pf.Html
+
+## A pure component the document (`Document.rocx`) renders only inside its `<NoHydration>`: the
+## browser's copy of the document doesn't import it, so none of it is in the browser's wasm.
+Aside := [].{
+
+	view : { title : Str } -> Html
+	view = |{ title }|
+		<aside class="aside">
+			<h2>{title}</h2>
+			<p>Words the browser never hydrates.</p>
+		</aside>
+}

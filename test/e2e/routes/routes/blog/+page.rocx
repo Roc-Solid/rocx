@@ -1,0 +1,3 @@
+import pf.Html
+
+view! = |_| <h2>The blog</h2>

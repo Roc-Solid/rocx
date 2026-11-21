@@ -1,0 +1,40 @@
+import pf.Html
+import pf.Solid exposing [create_signal!, create_memo!]
+import pf.Loading
+import pf.Errored
+import pf.Server
+
+## The echo, Solid-style: what you type, the server says back.
+Echo := [].{
+	## Says a message back: run on the server, asked for by the browser.
+	echo! : Str => Str
+	echo! = server!(|_request, message| "Echo: ${message}")
+
+	view! : {} => Html
+	view! = |{}| {
+		(draft!, set_draft!) = create_signal!("the page, rendered on the server")
+		# A call on the server; in the browser, a request. A plain value in both.
+		said! = create_memo!(|| echo!(draft!()))
+		<form class="echo" on:submit={|| {}}>
+			<input
+				name="message"
+				aria-label="Message"
+				value={draft!()}
+				on:input.value={set_draft!}
+			/>
+			<Errored fallback={|problem, retry|
+				<output class="echo-answer failed">
+					{problem} <button type="button" on:click={retry}>Again</button>
+				</output>
+			}>
+				<Loading fallback={<output class="echo-answer">…</output>}>
+					<Answer said!={said!} />
+				</Loading>
+			</Errored>
+		</form>
+	}
+}
+
+## What the server said. Given the memo's accessor, it can only read it.
+answer! : { said! : () => Str } => Html
+answer! = |{ said! }| <output class="echo-answer">{said!()}</output>

@@ -1,0 +1,63 @@
+import pf.Html
+
+## What is on this page, down its right side: a link to each section. A narrower screen hasn't the
+## room, and leaves it out.
+Toc := [].{
+	view = |{ links }|
+		<aside class="toc" aria-label="On this page">
+			<p class="title">On this page</p>
+			<ul>{...links.map(|link| <li><a href={"#${link.id}"}>{link.label}</a></li>)}</ul>
+		</aside>
+
+	<story name="Sections">
+		<Toc links={[{ id: "a", label: "At a glance" }, { id: "b", label: "Elements and text" }, { id: "c", label: "Attributes" }, { id: "d", label: "Scoped styles" }]} />
+	</story>
+
+	<style>
+		.toc {
+			position: sticky;
+			top: var(--bar);
+			align-self: start;
+			max-height: calc(100vh - var(--bar));
+			overflow-y: auto;
+			padding: var(--space-7) 0;
+			scrollbar-width: thin;
+		}
+
+		ul {
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		.title {
+			margin: 0 0 var(--space-2);
+			color: var(--text-faint);
+			font-size: var(--size-2xs);
+			font-weight: 700;
+			letter-spacing: 0.08em;
+			text-transform: uppercase;
+		}
+
+		a {
+			display: block;
+			padding: var(--space-1) 0 var(--space-1) var(--space-3);
+			box-shadow: inset 2px 0 0 var(--rule-strong);
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+			line-height: 1.4;
+			text-decoration: none;
+		}
+
+		a:hover {
+			box-shadow: inset 2px 0 0 var(--accent);
+			color: var(--text);
+		}
+
+		@media (max-width: 75rem) {
+			.toc {
+				display: none;
+			}
+		}
+	</style>
+}

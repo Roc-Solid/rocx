@@ -1,0 +1,44 @@
+import pf.Html
+import pf.Show
+import pf.Endpoint
+import pf.Server
+import pf.Router exposing [use_submission!]
+
+## A form posting to an endpoint, for the tests (`form_app.roc`), a whole document: what was typed,
+## whether it is on its way, and the endpoint's result or refusal, as its submission says
+## (`use_submission!`): from the flash after a plain post, or from the runtime's fetch.
+Form := [].{
+
+	## The endpoint the form posts to: `{ name }`, answering a welcome (the test's server answers it).
+	join : Endpoint({}, { name : Str }, Str)
+	join = Endpoint.remote("POST", "/join")
+
+	view! : {} => Html
+	view! = |{}| {
+		submission = use_submission!(Form.join)
+		typed! = ||
+			match submission.input!() {
+				Ok(fields) => "typed ${fields.name}"
+				Err(NoInput) => "nothing typed"
+			}
+		<>
+			<!doctype html>
+			<html lang="en">
+				<head>
+					<meta charset="utf-8" />
+					<title>A form</title>
+				</head>
+				<body>
+					<form class="join" method="post" action={Endpoint.url_of(Form.join)}>
+						<input name="name" value={submission.field!("name")} />
+						<button type="submit" disabled?={submission.pending!()}>{if (submission.pending!()) "Joining…" else "Join"}</button>
+					</form>
+					<p class="typed">{typed!()}</p>
+					<Show when!={submission.result!()}>{|welcome!| <p class="welcome">{welcome!()}</p>}</Show>
+					<Show when!={submission.error!()}>{|problem!| <p class="problem">{Server.explain(problem!())}</p>}</Show>
+					<button class="clear" on:click={|| submission.clear!()}>Clear</button>
+				</body>
+			</html>
+		</>
+	}
+}

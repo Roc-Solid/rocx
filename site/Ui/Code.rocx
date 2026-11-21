@@ -1,0 +1,150 @@
+import pf.Html
+import Highlight
+
+## A block of code, coloured by `Highlight` (which runs while the page renders), numbered from
+## `first` so a part of a file keeps the file's line numbers.
+Code := [].{
+	Props := {
+		title : Str ?? "",
+		source : Str,
+		markup : Bool ?? Bool.False,
+		first : U64 ?? 1,
+		numbers : Bool ?? Bool.True,
+		plain : Bool ?? Bool.False,
+	}
+
+	view : Props -> Html
+	view = |props| {
+		lines = if (props.plain) props.source.split_on("\n").map(|text| [{ kind: "", text }]) else Highlight.lines(props.source, if (props.markup) Markup else Code)
+		last = lines.len()
+		<figure class="code" class:numbered={props.numbers}>
+			{=if (props.title.is_empty()) Html.empty({}) else <figcaption>{props.title}</figcaption>}
+			<pre style:--first={(if (props.first > 0) props.first - 1 else 0).to_str()}><code>{...lines.map_with_index(|line, index| row(line, index + 1 == last))}</code></pre>
+		</figure>
+	}
+
+	<story name="Roc">
+		<Code title="Counter.rocx" source={"view! = |{ start }| {\n\t(count!, set_count!) = create_signal!(start)\n\t<output>{count!().to_str()}</output>\n}"} />
+	</story>
+
+	<story name="Markup">
+		<Code title="What it renders" source={"<div class=\"counter\"><output>3</output></div>"} markup numbers={Bool.False} />
+	</story>
+
+	<story name="Part of a file">
+		<Code title="From line 42" source={"\t## The answer to a request.\n\trespond! = |request, context|\n\t\tRoutes.respond!(request, context)"} first={42} />
+	</story>
+
+	<story name="Plain">
+		<Code source={"just setup    # the toolchain\njust dev      # this site, rebuilt on save"} plain numbers={Bool.False} />
+	</story>
+
+	<style>
+		.code {
+			min-width: 0;
+			margin: var(--space-4) 0;
+			border-radius: var(--radius);
+			background: var(--bg-code);
+			overflow: hidden;
+		}
+
+		figcaption {
+			padding: var(--space-2) var(--space-4);
+			background: var(--fill);
+			color: var(--text-muted);
+			font: 600 var(--size-xs) var(--mono);
+		}
+
+		pre {
+			margin: 0;
+			padding: var(--space-3) var(--space-4);
+			overflow-x: auto;
+			font-size: var(--size-sm);
+			line-height: 1.6;
+			tab-size: 2;
+			counter-reset: line var(--first, 0);
+			/* A long line wraps, its rest indented under it, rather than running out of sight. */
+			white-space: pre-wrap;
+			overflow-wrap: anywhere;
+		}
+
+		/* A line and its tokens are made by `row` and `token`, outside the block: global, under it. */
+		.code :global(.line) {
+			display: inline-block;
+			max-width: 100%;
+			padding-left: 2ch;
+			text-indent: -2ch;
+			vertical-align: top;
+		}
+
+		.numbered :global(.line) {
+			padding-left: 5.5ch;
+			text-indent: -5.5ch;
+		}
+
+		.numbered :global(.line::before) {
+			counter-increment: line;
+			content: counter(line);
+			display: inline-block;
+			width: 2.25ch;
+			margin-right: 1.25ch;
+			color: var(--text-faint);
+			text-align: right;
+			opacity: 0.7;
+			user-select: none;
+		}
+
+		.code :global(.t-keyword) {
+			color: var(--t-keyword);
+			font-weight: 600;
+		}
+
+		.code :global(.t-type) {
+			color: var(--t-type);
+		}
+
+		.code :global(.t-string) {
+			color: var(--t-string);
+		}
+
+		.code :global(.t-comment) {
+			color: var(--t-comment);
+			font-style: italic;
+		}
+
+		.code :global(.t-tag) {
+			color: var(--t-tag);
+		}
+
+		.code :global(.t-attr) {
+			color: var(--t-attr);
+		}
+
+		.code :global(.t-hole) {
+			color: var(--t-hole);
+			font-weight: 700;
+		}
+
+		.code :global(.t-number),
+		.code :global(.t-entity) {
+			color: var(--t-number);
+		}
+
+		.code :global(.t-call) {
+			color: var(--t-call);
+		}
+
+		.code :global(.t-op),
+		.code :global(.t-punct) {
+			color: var(--t-op);
+		}
+	</style>
+}
+
+row : List(Highlight.Token), Bool -> Html
+
+## One line on one line of source: a break between the span and the newline would be a space.
+row = |tokens, last| <><span class="line">{...tokens.map(token)}</span>{=if (last) Html.empty({}) else Html.text("\n")}</>
+
+token : Highlight.Token -> Html
+token = |{ kind, text }| if (kind.is_empty()) Html.text(text) else <span class={"t-${kind}"}>{text}</span>

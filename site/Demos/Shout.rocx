@@ -1,0 +1,97 @@
+import pf.Html
+import pf.Call
+import pf.For
+import pf.Solid exposing [create_signal!]
+import pf.Endpoint
+import pf.Server as Http
+import ../Generated/Api
+
+## Asks an endpoint, `GET /api/shout/{word}`, which a route's `+server.roc` answers, for the word
+## clicked. `Api.get_api_shout_word` is what rocx wrote for it: on the server, the handler; in the
+## browser's copy, its method and URL. A handler that asks the server waits for the answer: it runs
+## again once the answer is in, and only that run's writes are kept. A copy of the site as files has
+## these words' answers as files, which the server wrote as the site was built.
+Shout := [].{
+	Answer : [Nothing, Shouted(Str), Failed(Str)]
+
+	## The words there are buttons for.
+	words : List(Str)
+	words = ["rocx", "hello", "static"]
+
+	view! : {} => Html
+	view! = |{}| {
+		(answer!, set_answer!) = create_signal!(nothing)
+		shout! = |word| {
+			sent : Try({ word : Str, shouted : Str, bytes : U64 }, Http.Problem)
+			sent = Endpoint.send!(Api.get_api_shout_word({ word: word }), {}, Call.fetch!)
+			match sent {
+				Ok(shouted) => set_answer!(Shouted("${shouted.shouted}: ${shouted.bytes.to_str()} bytes"))
+				Err(problem) => set_answer!(Failed(explain(problem)))
+			}
+		}
+		<div class="echo shout">
+			<For each!={words} keyed={|word| word}>
+				{|word!, _| <button type="button" on:click={|| shout!(word!())}>{"Shout “${word!()}”"}</button>}
+			</For>
+			<output class="echo-answer" class:failed={failed(answer!())}>{said(answer!())}</output>
+		</div>
+	}
+
+	<style>
+		.echo {
+			display: flex;
+			flex-wrap: wrap;
+			gap: var(--space-2);
+		}
+
+		button {
+			background: var(--accent);
+			color: var(--accent-text);
+		}
+
+		button:hover:not(:disabled) {
+			background: var(--accent-strong);
+		}
+
+		.echo-answer {
+			flex-basis: 100%;
+			min-height: 1.5em;
+			padding: var(--space-3) var(--space-4);
+			border-radius: var(--radius-sm);
+			background: var(--bg-sunken);
+			font: var(--size-sm) var(--mono);
+		}
+
+		.failed {
+			background: var(--bad-soft);
+			color: var(--bad);
+		}
+	</style>
+}
+
+nothing : Shout.Answer
+nothing = Nothing
+
+said : Shout.Answer -> Str
+said = |answer|
+	match answer {
+		Nothing => ""
+		Shouted(shouted) => shouted
+		Failed(why) => why
+	}
+
+failed : Shout.Answer -> Bool
+failed = |answer|
+	match answer {
+		Failed(_) => Bool.True
+		_ => Bool.False
+	}
+
+explain : Http.Problem -> Str
+explain = |problem|
+	match problem {
+		HttpErr(why) => "No answer: ${why}"
+		Refused(404, _) => "No server here: this copy of the site is static files. With just dev, Roc answers."
+		Refused(status, text) => "Refused (${status.to_str()}): ${text}"
+		BadAnswer(why) => "The answer wasn't a Str: ${why}"
+	}

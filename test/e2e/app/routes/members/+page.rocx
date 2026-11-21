@@ -1,0 +1,19 @@
+import pf.Html
+import pf.Server
+import ../../Middlewares
+
+meta = { title: "Members" }
+
+middleware = Middlewares.member
+
+## Who is asking: run on the server, behind this file's middleware, which says who.
+who! : {} => Str
+who! = server!(|_request, {}| "Welcome, ${Server.context!({}).member}")
+
+view! = |_|
+	<>
+		<p class="who">{who!({})}</p>
+		<NoHydration>
+			<p class="again">{who!({})}, said once</p>
+		</NoHydration>
+	</>

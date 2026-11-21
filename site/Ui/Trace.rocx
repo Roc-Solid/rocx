@@ -1,0 +1,77 @@
+import pf.Html
+import Who
+import Code
+
+## A sequence, step by step down a line, each step numbered: what is inside is its steps, an `<li>`
+## each (who does it, a `<Who>`, and what; a `<Code>` under it if it shows some).
+Trace := [].{
+	view : { children : List(Html) } -> Html
+	view = |{ children }| <ol class="trace">{...children}</ol>
+
+	<story name="A request">
+		<Trace>
+			<li><Who kind="server">server</Who> The component runs, as the server renders the page.</li>
+			<li><Who kind="server">server</Who> The page goes out with every answer in a script at its end.</li>
+			<li><Who kind="browser">browser</Who> Hydrating, the same component runs, and asks nothing.</li>
+		</Trace>
+	</story>
+
+	<story name="With code">
+		<Trace>
+			<li>
+				<p><strong>Names it</strong> after its module and definition:</p>
+				<Code source={"echo! = |message| Server.remote(\"Demos/Echo.echo\", message)"} numbers={Bool.False} />
+			</li>
+			<li><p><strong>Routes it</strong>, past the app's middleware.</p></li>
+		</Trace>
+	</story>
+
+	<style>
+		.trace {
+			max-width: none;
+			margin: var(--space-5) 0;
+			padding: 0;
+			list-style: none;
+			counter-reset: trace;
+		}
+
+		/* The steps are the page's markup: global, under the list. */
+		.trace > :global(li) {
+			position: relative;
+			padding: 0 0 var(--space-4) 2.6rem;
+			counter-increment: trace;
+		}
+
+		.trace > :global(li::before) {
+			content: counter(trace);
+			position: absolute;
+			top: 0;
+			left: 0;
+			display: grid;
+			place-items: center;
+			width: 1.7rem;
+			height: 1.7rem;
+			border-radius: 50%;
+			background: var(--accent-soft);
+			color: var(--accent);
+			font: 700 var(--size-xs) var(--mono);
+		}
+
+		.trace > :global(li:not(:last-child)::after) {
+			content: "";
+			position: absolute;
+			top: 1.95rem;
+			bottom: 0.2rem;
+			left: calc(0.85rem - 1px);
+			border-left: 2px solid var(--rule-strong);
+		}
+
+		.trace > :global(li) > :global(:first-child) {
+			margin-top: 0.15rem;
+		}
+
+		.trace :global(.code) {
+			margin: var(--space-2) 0 0;
+		}
+	</style>
+}

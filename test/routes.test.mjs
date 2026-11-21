@@ -1,0 +1,481 @@
+// File-based routing, without the compiler: which routes there are, what rocx writes for them.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { build } from "../bin/rocx.mjs";
+import { apiModule, appModule, clientMainModule, definitions, findRouteFiles, jobsIn, matches, migrationsIn, pathsModule, rootModule, routeList, routeModule, routesModule, routesTable, routeTable, serverFunctionsIn, serverFunctionsModule, tagNames, viewProblems } from "../src/routes.mjs";
+
+const files = ["+layout.rocx", "+page.rocx", "+error.rocx", "blog/+layout.rocx", "blog/+page.rocx", "blog/[slug]/+page.rocx", "blog/[slug]/+server.rocx", "blog/new/+page.rocx", "getting-started/+page.rocx", "feed/+server.roc"];
+
+test("routes: each page's path, params, name and layouts; the fixed tried before params", () => {
+	const table = routeTable(files);
+	assert.deepEqual(
+		table.pages.map((page) => [page.path, page.name, page.module, page.layouts.map((layout) => layout.module)]),
+		[
+			["/blog/new", "blog_new", "BlogNewPage", ["RootLayout", "BlogLayout"]],
+			["/blog", "blog", "BlogPage", ["RootLayout", "BlogLayout"]],
+			["/getting-started", "getting_started", "GettingStartedPage", ["RootLayout"]],
+			["/", "root", "RootPage", ["RootLayout"]],
+			["/blog/[slug]", "blog_slug", "BlogSlugPage", ["RootLayout", "BlogLayout"]],
+		],
+	);
+	assert.deepEqual(table.pages.at(-1).params, [{ name: "slug", at: 1 }]);
+	assert.equal(table.error.module, "RootError");
+	assert.throws(() => routeTable(["Blog/+page.rocx"]), /a directory is a path's part in lower case/);
+	assert.deepEqual(routeTable(["if/+page.rocx", "platform/+page.rocx", "all/+page.rocx"]).pages.map((page) => page.name).sort(), ["all_", "if_", "platform_"], "a word Roc keeps (or Paths.all) gets a _");
+	assert.throws(() => routeTable(["a-b/+page.rocx", "a_b/+page.rocx"]), /would both be/);
+	assert.throws(() => routeTable(["blog/+error.rocx"]), /an error page is the app's/);
+	assert.throws(() => routeTable(["feed/+server.roc", "feed/+server.rocx"]), /the same route: keep one/);
+});
+
+test("routes: what a route file defines; a path matched against a route", () => {
+	assert.deepEqual(definitions("import pf.Html\n\nmeta = {}\n\nview! = |_| x"), { view: "view!", meta: true, methods: [], middleware: null, docs: {} });
+	assert.deepEqual(definitions("view = |_| x"), { view: "view", meta: false, methods: [], middleware: null, docs: {} });
+	assert.deepEqual(definitions("middleware = Guards.member\n\nget! = |_| Ok(1)\n\ndelete! = |_| Ok({})\n\nhelper = 1"), { view: null, meta: false, methods: ["get!", "delete!"], middleware: "Guards.member", docs: {} });
+	assert.ok(matches("/blog/[slug]", "/blog/rocx"));
+	assert.ok(matches("/", "/"));
+	assert.ok(!matches("/blog/[slug]", "/blog"));
+	assert.ok(!matches("/blog/new", "/blog/old"));
+});
+
+test("routes: a route file's module keeps its lines: imports moved, the module's line on the blank one", () => {
+	const code = "import pf.Html\nimport ../../Ui/Card\n\nview! = |_| x\n\n# rocx: generated from +page.rocx: edit that file\n";
+	const module = routeModule(code, { name: "BlogPage", source: "/app/routes/blog/+page.rocx", generated: "/app/Generated/BlogPage.roc" });
+	assert.deepEqual(module.split("\n").slice(0, 5), ["import pf.Html", "import ../Ui/Card", "BlogPage := [].{", "view! = |_| x", "}"]);
+	assert.match(module, /# rocx: generated from \.\.\/routes\/blog\/\+page\.rocx: edit that file/);
+	assert.throws(() => routeModule("import pf.Html\nview! = |_| x\n", { name: "X", source: "/a/routes/+page.rocx", generated: "/a/Generated/X.roc" }), /leave a blank line/);
+});
+
+test("routes: a route file's own components are types beside its module, not in its block, where their view! would be the page's again", () => {
+	const where = { name: "LocalPage", source: "/app/routes/local/+page.rocx", generated: "/app/Generated/LocalPage.roc" };
+	const after = ["import pf.Html", "", "meta = { title: \"Local\" }", "", "view! = |_|", "\t<p>x</p>", "", "## A board.", "Board := [].{", "\tview! = |_| y", "}", "", "Tag := [].{", "\tview = |_| z", "}", ""];
+	assert.deepEqual(routeModule(after.join("\n"), where).split("\n").slice(0, 15), ["import pf.Html", "LocalPage := [].{", "meta = { title: \"Local\" }", "", "view! = |_|", "\t<p>x</p>", "}", "## A board.", "Board := [].{", "\tview! = |_| y", "}", "", "Tag := [].{", "\tview = |_| z", "}"], "closed on the blank line before the first, its comment with it; lines kept");
+	const before = ["import pf.Html", "", "Board := [].{", "\tview! = |_| y", "}", "", "view! = |_| x", ""];
+	assert.deepEqual(routeModule(before.join("\n"), where).split("\n").slice(0, 8), ["import pf.Html", "", "Board := [].{", "\tview! = |_| y", "}", "LocalPage := [].{", "view! = |_| x", "}"], "opened on the blank line after them");
+	const tight = ["import pf.Html", "", "view! = |_| x", "Board := [].{", "\tview! = |_| y", "}"];
+	assert.equal(routeModule(tight.join("\n"), where).split("\n")[3], "} Board := [].{", "no blank line: closed at the start of the component's");
+	assert.throws(() => routeModule(["import pf.Html", "", "meta = 1", "Board := [].{", "\tview! = |_| y", "}", "view! = |_| x"].join("\n"), where), /local\/\+page\.rocx:7: put the file's own components \(Board\) before its definitions or after them, not between/);
+});
+
+test("routes: Routes answers a request: a page (Root's) for a browser's GET; an endpoint for its method; 405, 404", () => {
+	const table = routeTable(files);
+	const methods = { "blog/[slug]/+server.rocx": ["get!", "put!"], "feed/+server.roc": ["get!"] };
+	const middleware = { "blog/new/+page.rocx": "Guards.writer", "blog/[slug]/+server.rocx": "Guards.member" };
+	const sources = new Map(files.map((file) => [file, { view: "view!", meta: file.endsWith("+page.rocx"), methods: methods[file] ?? [], middleware: middleware[file] ?? null }]));
+	const routes = routesModule(table, { sources });
+	assert.match(routes, /if \(segments == \["blog", "new"\]\) \{\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tMiddleware\.run!\(BlogNewPage\.middleware, request, context, \|_passed, _handed\| Routes\.page\(200\)\)/, "a page's middleware, before Root renders it");
+	assert.match(routes, /else if \(segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("blog"\)\) \{\n\t\t\tparams = \{ slug: segments\.get\(1\) \?\? "" \}/);
+	// A page and endpoints at one path: a GET a browser sends is the page's.
+	assert.match(routes, /if \(method == "GET" and wants_html\) \{\n\t\t\t\tRoutes\.page\(200\)\n\t\t\t\} else if \(method == "GET"\) \{\n\t\t\t\tMiddleware\.run!\(BlogSlugServer\.middleware, request, context, \|passed, handed\| Endpoint\.respond!\(Api\.get_blog_slug\(params\), passed, handed\)\)\n\t\t\t\} else if \(method == "PUT"\) \{\n\t\t\t\tMiddleware\.run!\(BlogSlugServer\.middleware, request, context, \|passed, handed\| Endpoint\.respond!\(Api\.put_blog_slug\(params\), passed, handed\)\)\n\t\t\t\} else \{\n\t\t\t\tEndpoint\.not_allowed\(request, \["GET", "PUT"\]\)/);
+	assert.match(routes, /if \(segments == \["feed"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tEndpoint\.respond!\(Api\.get_feed\(params\), request, context\)/, "an endpoint with no page, and no middleware of its own");
+	assert.match(routes, /if \(wants_html\) \{\n\t\t\t\tRoutes\.page\(404\)/);
+	assert.match(routes, /^import Api$/m);
+	assert.match(routes, /^import pf\.Server\nimport pf\.Endpoint\nimport pf\.Middleware\nimport Api\nimport Root\n/m, "the platform's modules; no Html: no page is rendered here");
+	assert.match(routes, /^import BlogSlugServer$/m, "an endpoint's module, for its middleware");
+	assert.doesNotMatch(routes, /^import FeedServer$/m);
+	assert.deepEqual(
+		routeList(table, sources).map((row) => Object.values(row).join(" ")),
+		["GET / routes/+page.rocx ", "GET /blog routes/blog/+page.rocx ", "GET /blog/[slug] routes/blog/[slug]/+page.rocx ", "GET /blog/[slug] routes/blog/[slug]/+server.rocx Guards.member", "PUT /blog/[slug] routes/blog/[slug]/+server.rocx Guards.member", "GET /blog/new routes/blog/new/+page.rocx Guards.writer", "GET /feed routes/feed/+server.roc ", "GET /getting-started routes/getting-started/+page.rocx ", "* (anything else) routes/+error.rocx "],
+	);
+	const paths = pathsModule(table);
+	assert.match(paths, /^import pf\.Server$/m);
+	assert.match(paths, /\tblog_slug : \{ slug : Str \} -> Str\n\tblog_slug = \|params\| "\/blog\/\$\{Server\.encode_segment\(params\.slug\)\}"/);
+	assert.match(paths, /\tgetting_started = "\/getting-started"/);
+	assert.match(paths, /\tall = \["\/blog\/new", "\/blog", "\/getting-started", "\/"\]/);
+	assert.doesNotMatch(paths, /feed/, "an endpoint isn't a page to link to");
+	// Api: each endpoint, the handler on the server, its method and URL in the browser.
+	const api = apiModule(table, { sources });
+	assert.match(api, /\tput_blog_slug = \|params\| Endpoint\.local\("PUT", "\/blog\/\$\{Server\.encode_segment\(params\.slug\)\}", \|request, context, body\| BlogSlugServer\.put!\(\{ request: request, params: params, context: context, body: body \}\)\)/);
+	assert.match(api, /\tget_feed = \|params\| Endpoint\.local\("GET", "\/feed", \|request, context, \{\}\| FeedServer\.get!\(\{ request: request, params: params, context: context \}\)\)/);
+	assert.match(api, /^import BlogSlugServer$/m);
+	assert.match(api, /^import pf\.Endpoint\nimport pf\.Server\nimport pf\.OpenApi$/m);
+	const browser = apiModule(table, { sources, client: true });
+	assert.match(browser, /^import pf\.Endpoint\nimport pf\.Server\n\n/m);
+	assert.match(browser, /\tput_blog_slug = \|params\| Endpoint\.remote\("PUT", "\/blog\/\$\{Server\.encode_segment\(params\.slug\)\}"\)/);
+	assert.doesNotMatch(browser, /BlogSlugServer/, "nothing a handler does, in the browser's copy");
+});
+
+test("routes: events! answers a GET that asks for events; beside a page and get!, each GET goes to what it accepts", () => {
+	const table = routeTable(["+page.rocx", "live/+page.rocx", "live/+server.roc", "ticks/+server.roc"]);
+	const methods = { "live/+server.roc": ["get!", "events!"], "ticks/+server.roc": ["events!"] };
+	const sources = new Map(["+page.rocx", "live/+page.rocx", "live/+server.roc", "ticks/+server.roc"].map((file) => [file, { view: "view!", meta: false, methods: methods[file] ?? [], middleware: null }]));
+	const routes = routesModule(table, { sources });
+	assert.match(
+		routes,
+		/if \(method == "GET" and wants_html\) \{\n\t\t\t\tRoutes\.page\(200\)\n\t\t\t\} else if \(method == "GET" and wants_events\) \{\n\t\t\t\tEndpoint\.stream!\(Api\.events_live\(params\), request, context\)\n\t\t\t\} else if \(method == "GET"\) \{\n\t\t\t\tEndpoint\.respond!\(Api\.get_live\(params\), request, context\)\n\t\t\t\} else \{\n\t\t\t\tEndpoint\.not_allowed\(request, \["GET"\]\)/,
+	);
+	assert.match(routes, /if \(segments == \["ticks"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tEndpoint\.stream!\(Api\.events_ticks\(params\), request, context\)/, "alone, events! answers any GET");
+	assert.match(routes, /\t\twants_events = \(Server\.header\(request, "accept"\) \?\? ""\)\.contains\("text\/event-stream"\)/);
+	assert.doesNotMatch(routesModule(routeTable(["feed/+server.roc"]), { sources: new Map([["feed/+server.roc", { view: null, meta: false, methods: ["get!"], middleware: null }]]) }), /wants_events|wants_html/, "neither, where nothing reads them");
+	const api = apiModule(table, { sources });
+	assert.match(api, /\tevents_ticks = \|params\| Endpoint\.local\("GET", "\/ticks", \|request, context, \{\}\| TicksServer\.events!\(\{ request: request, params: params, context: context \}\)\)/);
+	assert.deepEqual(routeList(table, sources).map((row) => `${row.method} ${row.path}`), ["GET /", "GET /live", "GET /live", "EVENTS /live", "EVENTS /ticks"]);
+});
+
+test("routes: what each method's comment says: the ## lines right above it, or, with one method, the file's", () => {
+	const source = "import pf.Server\n\n## Who you are.\nmiddleware = Guards.member\n\n## What the post is.\n## In **markdown**.\nget! : {} => Try(Str, Refusal)\nget! = |_| Ok(\"\")\n\nput! = |_| Ok({})\n";
+	assert.deepEqual(definitions(source).docs, { "get!": "What the post is.\nIn **markdown**." }, "a method with no comment right above it has none");
+	assert.deepEqual(definitions("## GET /words: the words.\n\nget! = |_| Ok([])\n").docs, { "get!": "GET /words: the words." }, "one method: the file's comment, at its top");
+	assert.deepEqual(definitions("import pf.Server\n\n## The member.\nmiddleware = Guards.member\n\nget! = |_| Ok(1)\n").docs, { "get!": "The member." }, "one method: the file's first comment");
+});
+
+test("routes: the names that could be tags: capitalized, outside comments and strings, not before a `.`", () => {
+	const code = [
+		"import pf.Server",
+		"## Says Hello, in a Comment",
+		'paint : Colour -> Try(Str, [BadRequest(Str), Gone]) # not Here',
+		'paint = |colour| match colour { Red => Ok("Not \\"A\\" Tag") \n Rgb(r, _, _) => Err(Server.Unseen) }',
+		"\\\\ A Multiline String",
+	].join("\n");
+	assert.deepEqual(tagNames([code, "x = [Red, Blue]"]), ["BadRequest", "Blue", "Colour", "Err", "Gone", "Ok", "Red", "Rgb", "Str", "Try", "Unseen"]);
+});
+
+test("routes: Api.openapi, the endpoints' OpenAPI document, which App.program serves if the app says", () => {
+	const table = routeTable(["+page.rocx", "live/+page.rocx", "live/+server.roc", "blog/[slug]/+server.roc"]);
+	const sources = new Map([
+		["+page.rocx", { view: "view!", meta: false, methods: [], middleware: null, docs: {} }],
+		["live/+page.rocx", { view: "view!", meta: false, methods: [], middleware: null, docs: {} }],
+		["live/+server.roc", { view: null, meta: false, methods: ["get!", "events!"], middleware: null, docs: { "get!": "The count.", "events!": "Each tick, as it comes." } }],
+		["blog/[slug]/+server.roc", { view: null, meta: false, methods: ["put!", "delete!"], middleware: null, docs: { "put!": 'The post, "edited": ${not code}.' } }],
+	]);
+	const api = apiModule(table, { sources, tags: ["Gone", "Red"], title: "blog" });
+	assert.match(api, /^import pf\.OpenApi$/m);
+	assert.match(api, /\topenapi : Str\n\topenapi = \{\n\t\ttags = \[\n\t\t\t"Gone", "Red",\n\t\t\]\n\t\tOpenApi\.document\("blog", \[/);
+	assert.match(api, /\t\t\tOpenApi\.path\("\/live", \[\], \[\n\t\t\t\tOpenApi\.operation\("get", "The count\.\\n\\nEach tick, as it comes\.", "", \[OpenApi\.answer\(Api\.get_live\(\{\}\), tags\), OpenApi\.events\(Api\.events_live\(\{\}\), tags\)\]\),\n\t\t\t\]\),/, "get! and events! are one GET");
+	assert.match(api, /\t\t\tOpenApi\.path\("\/blog\/\{slug\}", \["slug"\], \[\n\t\t\t\tOpenApi\.operation\("put", "The post, \\"edited\\": \\\$\{not code\}\.", OpenApi\.body\(Api\.put_blog_slug\(\{ slug: "" \}\), tags\), \[OpenApi\.answer\(Api\.put_blog_slug\(\{ slug: "" \}\), tags\)\]\),\n\t\t\t\tOpenApi\.operation\("delete", "", "", \[OpenApi\.answer\(Api\.delete_blog_slug\(\{ slug: "" \}\), tags\)\]\),/);
+	assert.doesNotMatch(apiModule(table, { sources, client: true }), /OpenApi|openapi/, "the browser's copy has no document");
+	const routes = routesModule(table, { sources });
+	assert.doesNotMatch(routes, /openapi/, "the router doesn't serve it: App.program does, if the app says")
+	const app = appModule({ endpoints: true });
+	assert.match(app, /^import Api$/m);
+	assert.match(app, /\t\t\tanswer! = \|passed, context\|\n\t\t\t\tmatch OpenApi\.respond\(passed, config\.openapi, Api\.openapi\) \{\n\t\t\t\t\tOk\(served\) => served\n\t\t\t\t\tErr\(NotHere\) => Routes\.respond!\(passed, context\)\n/, "with endpoints: the document and its page, as the app says, behind its middleware, then the routes");
+	assert.doesNotMatch(appModule({}), /import Api|OpenApi\.respond/, "no endpoints, no document");
+});
+
+test("server functions: Routes gives POST /rocx/call/<name> to ServerFunctions (405 for another method), which runs each behind its route file's middleware", () => {
+	const table = routeTable(files);
+	const sources = new Map(files.map((file) => [file, { view: "view!", meta: false, methods: file.endsWith("+server.rocx") || file.endsWith("+server.roc") ? ["get!"] : [], middleware: file === "blog/new/+page.rocx" ? "Guards.writer" : null }]));
+	const routes = routesModule(table, { sources });
+	assert.match(routes, /^import ServerFunctions$/m);
+	assert.match(
+		routes,
+		/\t\tif \(request\.path\.starts_with\("\/rocx\/call\/"\)\) \{\n\t\t\tif \(request\.method == "POST"\) \{\n\t\t\t\tServerFunctions\.respond!\(Server\.decode_segment\(request\.path\.drop_prefix\("\/rocx\/call\/"\)\), request, context\)\n\t\t\t\} else \{\n\t\t\t\tEndpoint\.not_allowed\(request, \["POST"\]\)\n\t\t\t\}\n\t\t\} else if /,
+		"tried first: no route file is at /rocx/call/",
+	);
+	const functions = [
+		{ module: "Demos/Echo", name: "echo!", call: "echo", route: null },
+		{ module: "Generated/BlogNewPage", name: "drafts!", call: "drafts", route: { module: "BlogNewPage", middleware: true } },
+		{ module: "Generated/BlogPage", name: "count!", call: "count", route: { module: "BlogPage", middleware: false } },
+	];
+	const module = serverFunctionsModule(functions, { dir: "app" });
+	assert.match(module, /^import pf\.Server\nimport pf\.Middleware\nimport BlogNewPage\nimport BlogPage\nimport \.\.\/Demos\/Echo as DemosEcho\n\nServerFunctions := \[\]\.\{$/m, "a route file's module beside it; another, by its path from Generated/");
+	assert.match(module, /\trespond! = \|called, request, context\|\n/);
+	assert.match(module, /\t\tif \(called == "Demos\/Echo\.echo"\) \{\n\t\t\tServer\.serve!\(called, request, context, DemosEcho\.echo!\)\n/, "behind the app's default only (it ran before, around every request)");
+	assert.match(module, /\t\t\} else if \(called == "Generated\/BlogNewPage\.drafts"\) \{\n\t\t\tMiddleware\.run!\(BlogNewPage\.middleware, request, context, \|passed, handed\| Server\.serve!\(called, passed, handed, BlogNewPage\.drafts!\)\)\n/, "behind its route file's middleware");
+	assert.match(module, /\t\t\} else if \(called == "Generated\/BlogPage\.count"\) \{\n\t\t\tServer\.serve!\(called, request, context, BlogPage\.count!\)\n/, "a route file that names no middleware");
+	assert.match(module, /\t\t\} else \{\n\t\t\tServer\.refused\(404, "no server function is called \$\{called\}"\)\n\t\t\}\n\}/);
+	const none = serverFunctionsModule([], { dir: "app" });
+	assert.match(none, /\trespond! = \|called, _request, _context\| Server\.refused\(404, /, "an app with routes and no server functions: every call is a 404");
+	assert.doesNotMatch(none, /Middleware|import \./);
+	const browser = serverFunctionsModule(functions, { client: true, dir: "app" });
+	assert.doesNotMatch(browser, /DemosEcho|BlogNewPage|serve!|^import \.\./m, "the browser's copy answers none, and imports no server function");
+});
+
+test("server functions: rocx routes lists each, a POST to /rocx/call/<module>.<name>, with its file and its route file's middleware", () => {
+	const dir = mkdtempSync(join(tmpdir(), "rocx-routes-"));
+	const put = (path, text) => {
+		mkdirSync(dirname(join(dir, path)), { recursive: true });
+		writeFileSync(join(dir, path), text);
+	};
+	try {
+		put("routes/+page.rocx", "import pf.Html\n\nview! = |_| <p>Home</p>\n");
+		put("routes/members/+server.roc", "import pf.Server\nimport pf.Html\nimport ../../Guards\n\nmiddleware = Guards.member\n\nget! = |_| Ok(1)\n\nwho! = server!(|_request, {}| Server.context!({}).member)\n");
+		put("Demos/Echo.rocx", "import pf.Html\nimport pf.Server\n\nEcho := [].{\n\techo! : Str => Str\n\techo! = server!(|_request, message| message)\n\t# not = server!( this one\n}\n");
+		put("build/Copy.rocx", "x! = server!(|_, m| m)\n");
+		const table = routeTable(["+page.rocx", "members/+server.roc"]);
+		const sources = new Map([
+			["+page.rocx", definitions("view! = |_| x")],
+			["members/+server.roc", definitions("middleware = Guards.member\n\nget! = |_| Ok(1)\n")],
+		]);
+		assert.deepEqual(serverFunctionsIn(dir, table, sources), [
+			{ name: "Demos/Echo.echo", file: "Demos/Echo.rocx", middleware: null },
+			{ name: "Generated/MembersServer.who", file: "routes/members/+server.roc", middleware: "Guards.member" },
+		]);
+		const listed = routesTable(dir).split("\n");
+		assert.ok(listed.some((line) => /^POST\s+\/rocx\/call\/Demos\/Echo\.echo\s+Demos\/Echo\.rocx\s+-$/.test(line)), listed.join("\n"));
+		assert.ok(listed.some((line) => /^POST\s+\/rocx\/call\/Generated\/MembersServer\.who\s+routes\/members\/\+server\.roc\s+Guards\.member$/.test(line)), listed.join("\n"));
+		assert.deepEqual(listed.map((line) => line.split(/\s+/)[1]), ["PATH", "/", "/members", "/rocx/call/Demos/Echo.echo", "/rocx/call/Generated/MembersServer.who"], "in their places by path");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+// ---- Route files are components (`import pf.Html`, `view!`): Root, Routes' page answers, App ----
+
+/** A page's, layout's or error page's definitions, as rocx build reads them. */
+const component = (extra = {}) => ({ view: "view!", meta: false, methods: [], middleware: null, docs: {}, ...extra });
+
+test("Root: the page at where it is, in its layouts, the root layout's <Errored> around the rest, the error page for 404 and 500", () => {
+	const files = ["+layout.rocx", "+page.rocx", "+error.rocx", "blog/+layout.rocx", "blog/[slug]/+page.rocx", "blog/new/+page.rocx", "feed/+server.roc"];
+	const table = routeTable(files);
+	const sources = new Map(files.map((file) => [file, file.endsWith("+server.roc") ? { view: null, meta: false, methods: ["get!"], middleware: null, docs: {} } : component({ meta: file === "blog/[slug]/+page.rocx" || file === "+error.rocx" })]));
+	const root = rootModule(table, { sources });
+	assert.match(root, /^import pf\.Html\nimport pf\.Router\nimport pf\.Server\nimport pf\.Errored\nimport pf\.HttpStatusCode\nimport BlogLayout\nimport BlogNewPage\nimport BlogSlugPage\nimport RootError\nimport RootLayout\nimport RootPage\n\nRoot := \[\]\.\{$/m, "the component route files; no endpoint");
+	assert.match(root, /\tview! = \|\{\}\| \{\n\t\tpath = Router\.location!\(\{\}\)\.path\n\t\tsegments = path\.split_on\("\/"\)\.keep_if\(\|segment\| !segment\.is_empty\(\)\)\.map\(Server\.decode_segment\)\n\t\tif \(segments == \["blog", "new"\]\) \{/, "matched as Routes matches, the fixed first");
+	assert.match(
+		root,
+		/\} else if \(segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("blog"\)\) \{\n\t\t\tparams = \{ slug: segments\.get\(1\) \?\? "" \}\n\t\t\tHtml\.component\(\|\| RootLayout\.view!\(\{ params: params, meta: BlogSlugPage\.meta, children: \[Root\.guarded!\(\[Html\.component\(\|\| BlogLayout\.view!\(\{ params: params, meta: BlogSlugPage\.meta, children: \[Html\.component\(\|\| BlogSlugPage\.view!\(\{ params: params \}\)\)\] \}\)\)\]\)\] \}\)\)\n/,
+		"the root layout, then the <Errored>, then the layouts inside it and the page, each given the params and the page's meta",
+	);
+	assert.match(root, /\} else if \(segments == \[\]\) \{\n\t\t\tparams = \{\}\n\t\t\tHtml\.component\(\|\| RootLayout\.view!\(\{ params: params, meta: \{\}, children: \[Root\.guarded!\(\[Html\.component\(\|\| RootPage\.view!\(\{ params: params \}\)\)\]\)\] \}\)\)/, "a page with no meta: {}");
+	assert.match(root, /\t\t\} else \{\n\t\t\tparams = \{\}\n\t\t\tHtml\.component\(\|\| RootLayout\.view!\(\{ params: params, meta: RootError\.meta, children: \[Root\.failed\(404, "nothing at \$\{path\}"\)\] \}\)\)\n\t\t\}/, "no page: the error page, in the root layout");
+	assert.match(root, /\tguarded! = \|children\| Errored\.view!\(\{ fallback: \|problem, _retry\| Root\.failed\(500, problem\), children: children \}\)/);
+	assert.match(root, /\tfailed = \|status, problem\| Html\.join\(\[Html\.component\(\|\| HttpStatusCode\.view!\(\{ code: status \}\)\), Html\.component\(\|\| RootError\.view!\(\{ status: status, problem: problem \}\)\)\]\)/);
+	assert.doesNotMatch(root, /document|Styles/, "the root layout is the document");
+	// No root layout, no error page: a default document, and a default error page.
+	const bare = routeTable(["+page.rocx", "blog/+layout.rocx", "blog/+page.rocx"]);
+	const bareSources = new Map(["+page.rocx", "blog/+layout.rocx", "blog/+page.rocx"].map((file) => [file, component()]));
+	const plain = rootModule(bare, { sources: bareSources });
+	assert.match(plain, /\t\t\tRoot\.document\(\[Root\.guarded!\(\[Html\.component\(\|\| BlogLayout\.view!\(\{ params: params, meta: \{\}, children: \[Html\.component\(\|\| BlogPage\.view!\(\{ params: params \}\)\)\] \}\)\)\]\)\]\)/);
+	assert.match(plain, /\t\t\} else \{\n\t\t\tRoot\.document\(\[Root\.failed\(404, "nothing at \$\{path\}"\)\]\)\n\t\t\}/);
+	assert.match(plain, /Html\.element\("main", \[\], \[Html\.element\("h1", \[\], \[Html\.text\(status\.to_str\(\)\)\]\), Html\.element\("p", \[\], \[Html\.text\(problem\)\]\)\]\)/);
+	assert.match(plain, /\tdocument : List\(Html\) -> Html\n\tdocument = \|children\|\n\t\tHtml\.join\(\n\t\t\t\[\n\t\t\t\tHtml\.doctype\(\{\}\),\n\t\t\t\tHtml\.element\("html", \[Html\.attr\("lang", "en"\)\], \[\n\t\t\t\t\tHtml\.element\("head", \[\], \[Html\.void\("meta", \[Html\.attr\("charset", "utf-8"\)\]\), Html\.void\("meta", \[Html\.attr\("name", "viewport"\), Html\.attr\("content", "width=device-width, initial-scale=1"\)\]\), Styles\.style\]\),\n\t\t\t\t\tHtml\.element\("body", \[\], children\),/);
+	assert.match(plain, /^import Styles$/m, "the app's stylesheet, in the default document's <head>");
+});
+
+test("Routes: a component page's GET is Root's page, after its route file's middleware; a path nothing has, Root's 404 for a browser", () => {
+	const files = ["+layout.rocx", "+page.rocx", "+error.rocx", "members/+page.rocx", "blog/[slug]/+page.rocx", "blog/[slug]/+server.roc"];
+	const table = routeTable(files);
+	const sources = new Map(files.map((file) => [file, file.endsWith("+server.roc") ? { view: null, meta: false, methods: ["put!"], middleware: null, docs: {} } : component({ middleware: file === "members/+page.rocx" ? "Guards.member" : null })]));
+	const routes = routesModule(table, { sources });
+	assert.match(routes, /^import pf\.Server\nimport pf\.Endpoint\nimport pf\.Middleware\nimport Api\nimport Root\nimport ServerFunctions\nimport MembersPage\n\nRoutes := /m, "no Html (no page is rendered here); a page's module only for its middleware");
+	assert.match(routes, /\} else if \(segments == \["members"\]\) \{\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tMiddleware\.run!\(MembersPage\.middleware, request, context, \|_passed, _handed\| Routes\.page\(200\)\)\n/);
+	assert.match(routes, /\} else if \(segments == \[\]\) \{\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tRoutes\.page\(200\)\n/, "no params read: Root reads them");
+	assert.match(routes, /\} else if \(segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("blog"\)\) \{\n\t\t\tparams = \{ slug: segments\.get\(1\) \?\? "" \}\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tRoutes\.page\(200\)\n\t\t\t\} else if \(method == "PUT"\) \{\n\t\t\t\tEndpoint\.respond!\(Api\.put_blog_slug\(params\), request, context\)/, "a page and an endpoint at one path");
+	assert.match(routes, /\t\t\} else \{\n\t\t\tif \(wants_html\) \{\n\t\t\t\tRoutes\.page\(404\)\n\t\t\t\} else \{\n\t\t\t\tRoutes\.text\(404, "nothing at \$\{request\.path\}"\)\n\t\t\t\}\n\t\t\}/);
+	assert.match(routes, /\tpage : U16 -> Server\.Response\n\tpage = \|status\| \{ status: status, headers: \[\], body: Page\(Root\.view!\) \}/);
+	assert.doesNotMatch(routes, /Routes\.html|\thtml :|RootLayout|RootError/);
+});
+
+test("route files' views: a page, a layout and the error page are components, which define view!", () => {
+	const files = ["+layout.rocx", "+page.rocx", "+error.rocx", "old/+page.rocx"];
+	const table = routeTable(files);
+	const sources = new Map([
+		["+layout.rocx", component({ view: "view" })],
+		["+page.rocx", component()],
+		["+error.rocx", component({ view: null })],
+		["old/+page.rocx", component()],
+	]);
+	assert.deepEqual(viewProblems(table, sources), [
+		"routes/+layout.rocx: a layout is a component, which defines view!: `view! = |{ meta, children, params }| …`",
+		"routes/+error.rocx: an error page is a component, which defines view!: `view! = |{ status, problem }| …`",
+	]);
+	assert.deepEqual(viewProblems(table, new Map(files.map((file) => [file, component()]))), []);
+});
+
+test("App: the program, with the jobs the app's modules define (found by rocx build) and its migrations, in order", () => {
+	const dir = mkdtempSync(join(tmpdir(), "rocx-app-"));
+	const put = (path, text) => {
+		mkdirSync(dirname(join(dir, path)), { recursive: true });
+		writeFileSync(join(dir, path), text);
+	};
+	try {
+		put("Jobs.roc", 'import pf.Job\n\nJobs := [].{\n\twelcome : Job.Kind({ member : I64 })\n\twelcome = Job.define(\n\t\t"welcome",\n\t\t|_| Ok({}),\n\t)\n\n\tnightly = Job.define("nightly", |{}| Ok({}))\n\n\tonce = Job.define_with("once", { attempts: 1, timeout_ms: 60_000 }, |{}| Ok({}))\n}\n');
+		put("Server/Mail.rocx", 'import pf.Job\n\nMail := [].{\n\t# old = Job.define("old", |{}| Ok({}))\n\tsend = Job.define("mail", |{}| Ok({}))\n}\n');
+		put("Server/Mail.roc", 'Mail := [].{\n\tsend = Job.define("mail", |{}| Ok({}))\n}\n\n# rocx: generated from Mail.rocx: edit that file\n');
+		put("routes/members/+server.roc", 'import pf.Job\n\nreminder = Job.define("reminder", |{}| Ok({}))\n\nget! = |_| Ok(1)\n');
+		put("Generated/Copy.roc", 'Copy := [].{\n\tx = Job.define("welcome", |{}| Ok({}))\n}\n');
+		put("build/client/Jobs.roc", 'Jobs := [].{\n\twelcome = Job.define("welcome", |{}| Ok({}))\n}\n');
+		put("migrations/0010_later.sql", "select 2;");
+		put("migrations/0002-first.sql", "select 1;");
+		put("migrations/README.md", "not a migration");
+		const table = routeTable(["members/+server.roc"]);
+		const { jobs, problems } = jobsIn(dir, table);
+		assert.deepEqual(problems, []);
+		assert.deepEqual(
+			jobs.map(({ name, define, module, file, line }) => [name, define, module, file, line]),
+			[
+				["welcome", "welcome", "Jobs", "Jobs.roc", 5],
+				["nightly", "nightly", "Jobs", "Jobs.roc", 10],
+				["once", "once", "Jobs", "Jobs.roc", 12],
+				["mail", "send", "Server/Mail", "Server/Mail.rocx", 5],
+				["reminder", "reminder", "Generated/MembersServer", "routes/members/+server.roc", 3],
+			],
+			"a route file's top is its module's block; Generated/, build/ and the .roc a .rocx file became are rocx's; Job.define_with's kinds too",
+		);
+		assert.deepEqual(migrationsIn(dir), ["0002-first.sql", "0010_later.sql"]);
+		const app = appModule({ jobs, migrations: migrationsIn(dir) });
+		assert.match(app, /^import pf\.Server\nimport pf\.Middleware\nimport pf\.OpenApi\nimport pf\.Job\nimport Routes\nimport \.\.\/Jobs as Jobs\nimport MembersServer\nimport \.\.\/Server\/Mail as ServerMail\nimport "\.\.\/migrations\/0002-first\.sql" as m0002_first : Str\nimport "\.\.\/migrations\/0010_later\.sql" as m0010_later : Str\n\nApp := \[\]\.\{$/m);
+		assert.match(app, /\tConfig\(given, handed\) := \{\n\t\tcontext : Str -> given,\n\t\tmiddleware : Middleware\(given, handed\),\n\t\tcrons : List\(\{ name : Str, schedule : Str, job : Str, input : Str \}\),\n\t\topenapi : OpenApi\.Serving \?\? Off,\n\t\}/, "the app's config: openapi is Off unless it says");
+		assert.match(app, /\tprogram : Config\(_, _\) -> _\n\tprogram = \|config\| \{\n\t\trespond!: \|method, target, headers, body, started\| \{\n\t\t\trequest = Server\.from_http\(method, target, headers, body\)\n\t\t\t# [^\n]*\n\t\t\tanswer! = \|passed, context\| Routes\.respond!\(passed, context\)\n\t\t\tServer\.clear_flash\(request, Middleware\.run!\(config\.middleware, request, \(config\.context\)\(started\), answer!\)\)\n\t\t\},\n/, "the request passed through as the host gives it; a page view lets the flash go");
+		assert.match(app, /\t\tmigrations: \[\{ name: "0002-first\.sql", sql: m0002_first \}, \{ name: "0010_later\.sql", sql: m0010_later \}\],\n\t\tjobs: \[Job\.handler\(Jobs\.welcome\), Job\.handler\(Jobs\.nightly\), Job\.handler\(Jobs\.once\), Job\.handler\(ServerMail\.send\), Job\.handler\(MembersServer\.reminder\)\],\n\t\tcrons: config\.crons,\n\t\}/, "the platform's program: these four, and no more");
+		const none = appModule({});
+		assert.match(none, /\t\tmigrations: \[\],\n\t\tjobs: \[\],/);
+		assert.doesNotMatch(none, /pf\.Job|import "/);
+		// A job outside its module's block, or inside a definition, can't be named; two with one name are refused.
+		put("Loose.roc", 'import pf.Job\n\nloose = Job.define("loose", |{}| Ok({}))\n\nLoose := [].{\n\tmake = |{}| {\n\t\tdeep = Job.define("deep", |{}| Ok({}))\n\t\tdeep\n\t}\n}\n');
+		put("Again.roc", 'Again := [].{\n\tagain = Job.define("welcome", |{}| Ok({}))\n}\n');
+		assert.deepEqual(jobsIn(dir, table).problems, [
+			'Loose.roc:3: the job "loose" is defined outside its module\'s block: define it at the top of `Loose := [].{ … }`, as `\tloose = Job.define(…)`, so Generated/App can name it (`Loose.loose`)',
+			'Loose.roc:7: the job "deep" is defined inside a definition: define it at the top of `Loose := [].{ … }`, as `\tdeep = Job.define(…)`, so Generated/App can name it (`Loose.deep`)',
+			'Jobs.roc:5: there is a job called "welcome" already (Again.roc:2): the workers find a job by its name, so give each its own',
+		]);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("rocx build --client, for an app of component pages: the browser's main.roc and what a page loads; Root in both copies, App in the server's", () => {
+	const dir = mkdtempSync(join(tmpdir(), "rocx-client-"));
+	const put = (path, text) => {
+		mkdirSync(dirname(join(dir, path)), { recursive: true });
+		writeFileSync(join(dir, path), text);
+	};
+	try {
+		put("app/main.roc", 'app [program] { charts: "../packages/charts/main.roc", pf: platform "../server/platform/main.roc" }\n\nimport Generated/App\n\nprogram = App.program({ context: |s| s, middleware: M.none, crons: [] })\n');
+		put("app/routes/+page.rocx", "import pf.Html\n\nview! = |_| <p>Home</p>\n");
+		put("app/Jobs.roc", 'import pf.Job\n\nJobs := [].{\n\tdaily = Job.define("daily", |{}| Ok({}))\n}\n');
+		const said = [];
+		assert.equal(build([join(dir, "app")], { client: join(dir, "app", "build", "client"), cwd: dir, log: (line) => said.push(line) }), true, said.join("\n"));
+		const out = join(dir, "app", "build", "client");
+		const main = readFileSync(join(out, "main.roc"), "utf8");
+		const web = join(dirname(new URL(import.meta.url).pathname), "..", "web", "platform", "main.roc");
+		assert.match(main, /^app \[main!\] \{ charts: "\.\.\/\.\.\/\.\.\/packages\/charts\/main\.roc", pf: platform "(\.\.\/)+[^"]*web\/platform\/main\.roc" \}$/m, "the server's packages, and the web platform, from there");
+		assert.ok(existsSync(join(out, /pf: platform "([^"]+)"/.exec(main)[1])) === existsSync(web), "rocx's own web platform");
+		assert.match(main, /^import pf\.Html\nimport Generated\/Root\n\nmain! : \{\} => Html\nmain! = \|\{\}\| Root\.view!\(\{\}\)\n/m);
+		assert.doesNotMatch(main, /answer!/, "the web platform requires main! alone: the browser answers no calls");
+		assert.equal(main, clientMainModule({ web: /pf: platform "([^"]+)"/.exec(main)[1], packages: ['charts: "../../../packages/charts/main.roc"'], dir: "app" }));
+		assert.equal(readFileSync(join(out, "static", "rocx", "start.js"), "utf8"), readFileSync(join(dirname(web), "..", "start.js"), "utf8"));
+		assert.equal(readFileSync(join(out, "static", "rocx", "runtime.js"), "utf8"), readFileSync(join(dirname(web), "..", "runtime.js"), "utf8"));
+		assert.equal(readFileSync(join(out, "Generated", "Root.roc"), "utf8"), readFileSync(join(dir, "app", "Generated", "Root.roc"), "utf8"), "Root: the same in both copies");
+		assert.match(readFileSync(join(dir, "app", "Generated", "App.roc"), "utf8"), /jobs: \[Job\.handler\(Jobs\.daily\)\]/);
+		assert.ok(!existsSync(join(dir, "app", "reference.roc")) && !existsSync(join(out, "reference.roc")), "no reference.roc: the browser's copy renders from the answers the server's page recorded");
+		// A route file with the html package's Html is refused at its import: every page is a component.
+		put("site/routes/+page.rocx", "import html.Html\n\nview = |_| <p>Home</p>\n");
+		said.length = 0;
+		assert.equal(build([join(dir, "site")], { client: join(dir, "site", "build", "client"), cwd: dir, log: (line) => said.push(line) }), false);
+		assert.match(said.join("\n"), /site\/routes\/\+page\.rocx:1:8: import html\.Html: markup is components, written with the platform's Html, which the server renders and the browser hydrates: import pf\.Html/);
+		assert.ok(!existsSync(join(dir, "site", "Generated", "Root.roc")) && !existsSync(join(dir, "site", "build", "client", "main.roc")));
+		// One written with pf.Html, but `view` (pure): a page is a component, which defines view!.
+		put("site/routes/+page.rocx", "import pf.Html\n\nview = |_| <p>Home</p>\n");
+		said.length = 0;
+		assert.equal(build([join(dir, "site")], { cwd: dir, log: (line) => said.push(line) }), false);
+		assert.match(said.join("\n"), /site\/routes\/\+page\.rocx: a page is a component, which defines view!: `view! = \|\{ params \}\| …`/);
+		// An app of endpoints alone: its program, with its jobs (Job.define_with's too) and migrations.
+		put("api/routes/notes/+server.roc", "import pf.Server\n\nget! = |_| Ok(1)\n");
+		put("api/Jobs.roc", 'import pf.Job\n\nJobs := [].{\n\tdaily = Job.define_with("daily", { attempts: 1, timeout_ms: 0 }, |{}| Ok({}))\n}\n');
+		put("api/migrations/0001_notes.sql", "create table notes (id bigint);");
+		assert.equal(build([join(dir, "api")], { cwd: dir, log: (line) => said.push(line) }), true, said.join("\n"));
+		const api = readFileSync(join(dir, "api", "Generated", "App.roc"), "utf8");
+		assert.match(api, /jobs: \[Job\.handler\(Jobs\.daily\)\]/);
+		assert.match(api, /migrations: \[\{ name: "0001_notes\.sql", sql: m0001_notes \}\]/);
+		assert.ok(!existsSync(join(dir, "api", "Generated", "Root.roc")));
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("rocx build --client: a route file's middleware, and the imports only it or a server function used, aren't in the browser's copy; the module's line goes after the last import kept", () => {
+	const dir = mkdtempSync(join(tmpdir(), "rocx-client-middleware-"));
+	const put = (path, text) => {
+		mkdirSync(dirname(join(dir, path)), { recursive: true });
+		writeFileSync(join(dir, path), text);
+	};
+	try {
+		put("app/main.roc", 'app [program] { pf: platform "../server/platform/main.roc" }\n\nimport Generated/App\n');
+		put("app/routes/+page.rocx", "import pf.Html\n\nview! = |_| <p>Home</p>\n");
+		put(
+			"app/routes/members/+page.rocx",
+			[
+				"import pf.Html",
+				"import pf.Server",
+				"import pf.Middleware",
+				"import ../../Middlewares",
+				"import ../../Db/Users",
+				"import ../../Ui/Badge",
+				"",
+				"## Members only.",
+				"middleware : Middleware({ started : Str }, { started : Str, member : Str })",
+				"middleware = Middleware.make(",
+				"\t|request, context, next!| Middlewares.member(request, context, next!),",
+				")",
+				"",
+				"who! : {} => Str",
+				"who! = server!(|_request, {}| Users.name!({}))",
+				"",
+				"view! = |_| <p><Badge /> {who!({})}</p>",
+				"",
+			].join("\n"),
+		);
+		const said = [];
+		assert.equal(build([join(dir, "app")], { client: join(dir, "app", "build", "client"), cwd: dir, log: (line) => said.push(line) }), true, said.join("\n"));
+		const server = readFileSync(join(dir, "app", "Generated", "MembersPage.roc"), "utf8");
+		const browser = readFileSync(join(dir, "app", "build", "client", "Generated", "MembersPage.roc"), "utf8");
+		assert.match(server, /^import \.\.\/Middlewares\n/m, "the server's copy keeps it all");
+		assert.match(server, /^middleware = Middleware\.make\($/m);
+		assert.doesNotMatch(browser, /middleware|Middlewares|Users/, "no middleware, and none of what only it and the server function used");
+		assert.match(browser, /^import pf\.Server\n\n\n\nimport \.\.\/Ui\/Badge\nMembersPage := \[\]\.\{$/m, "the module's line after the last import kept, not on a line a dropped import left");
+		assert.match(browser, /^who! = Server\.remote\("Generated\/MembersPage\.who"\)$/m);
+		assert.equal(browser.split("\n").length, server.split("\n").length, "lines stay lines");
+		const at = (code) => code.split("\n").findIndex((line) => line.startsWith("view! = |_| Html.element(\"p\""));
+		assert.ok(at(browser) > 0 && at(browser) === at(server), "the view on its line in both");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("routes: .well-known is routed, and no other directory starting with a dot; respond! answers every method nothing else at its path does", () => {
+	const dir = mkdtempSync(join(tmpdir(), "rocx-routes-"));
+	try {
+		for (const file of [".well-known/oauth-authorization-server/+server.roc", ".hidden/+page.rocx", "mcp/+server.roc", "+page.rocx"]) {
+			mkdirSync(dirname(join(dir, file)), { recursive: true });
+			writeFileSync(join(dir, file), "");
+		}
+		assert.deepEqual(findRouteFiles(dir), ["+page.rocx", ".well-known/oauth-authorization-server/+server.roc", "mcp/+server.roc"]);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+	assert.throws(() => routeTable([".hidden/+page.rocx"]), /a directory is a path's part in lower case/);
+	const files = [".well-known/oauth-authorization-server/+server.roc", "mcp/+server.roc", "mounted/+page.rocx", "mounted/+server.roc"];
+	const table = routeTable(files);
+	const known = table.servers.find((server) => server.file.startsWith(".well-known"));
+	assert.deepEqual([known.path, known.name, known.module], ["/.well-known/oauth-authorization-server", "well_known_oauth_authorization_server", "WellKnownOauthAuthorizationServerServer"]);
+
+	assert.deepEqual(definitions("import pf.Server\n\nmiddleware = Guards.bearer\n\nrespond! = |{ request, .. }| Server.redirect(\"/\")\n"), { view: null, meta: false, methods: [], middleware: "Guards.bearer", docs: {}, respond: true });
+	const sources = new Map([
+		[files[0], { view: null, meta: false, methods: ["get!"], middleware: null, docs: {} }],
+		[files[1], { view: null, meta: false, methods: ["post!"], middleware: "Guards.bearer", docs: {}, respond: true }],
+		[files[2], { view: "view!", meta: false, methods: [], middleware: null, docs: {} }],
+		[files[3], { view: null, meta: false, methods: [], middleware: null, docs: {}, respond: true }],
+	]);
+	const routes = routesModule(table, { sources });
+	assert.match(routes, /if \(segments == \["\.well-known", "oauth-authorization-server"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tEndpoint\.respond!\(Api\.get_well_known_oauth_authorization_server\(params\), request, context\)/);
+	assert.match(
+		routes,
+		/if \(segments == \["mcp"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tif \(method == "POST"\) \{\n[^\n]*Api\.post_mcp[^\n]*\n\t\t\t\} else \{\n\t\t\t\tMiddleware\.run!\(McpServer\.middleware, request, context, \|passed, handed\| McpServer\.respond!\(\{ request: passed, params: params, context: handed \}\)\)\n\t\t\t\}/,
+		"post! for a POST; every other method, respond!, behind the file's middleware",
+	);
+	assert.match(
+		routes,
+		/if \(segments == \["mounted"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tif \(method == "GET" and wants_html\) \{\n\t\t\t\tRoutes\.page\(200\)\n\t\t\t\} else \{\n\t\t\t\tMountedServer\.respond!\(\{ request: request, params: params, context: context \}\)\n\t\t\t\}/,
+		"beside a page, a browser's GET is the page's, and anything else respond!'s",
+	);
+	assert.match(routes, /^import McpServer\nimport MountedServer$/m, "a file with respond! is imported; a page, only for its middleware");
+	assert.deepEqual(
+		routeList(table, sources).map((row) => `${row.method} ${row.path} ${row.middleware ?? "-"}`),
+		["GET /.well-known/oauth-authorization-server -", "POST /mcp Guards.bearer", "* /mcp Guards.bearer", "GET /mounted -", "* /mounted -"],
+	);
+	assert.doesNotMatch(apiModule(table, { sources }), /respond/, "respond! isn't an endpoint in Api");
+	// Beside a component page (Root renders it), a browser's GET is Root's page; anything else respond!'s.
+	const live = routeTable(["live/+page.rocx", "live/+server.roc"]);
+	const liveSources = new Map([
+		["live/+page.rocx", component()],
+		["live/+server.roc", { view: null, meta: false, methods: [], middleware: null, docs: {}, respond: true }],
+	]);
+	assert.match(
+		routesModule(live, { sources: liveSources }),
+		/if \(segments == \["live"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tif \(method == "GET" and wants_html\) \{\n\t\t\t\tRoutes\.page\(200\)\n\t\t\t\} else \{\n\t\t\t\tLiveServer\.respond!\(\{ request: request, params: params, context: context \}\)\n\t\t\t\}/,
+	);
+});

@@ -1,0 +1,88 @@
+import pf.Html
+import pf.Server
+import pf.Solid exposing [create_memo!, use_context!]
+import pf.For
+import pf.Loading
+import Bag
+
+## A shelf of things to put in the bag: what is on it is a server function's answer, which the
+## server renders the shelf with; what is in the bag is the store the islands share, so a thing put
+## in it shows in the bag, another island, and the bag emptied shows here.
+Shelf := [].{
+
+	## What is on the shelf: on the server, from wherever a shop keeps it (here, a list).
+	stock! : {} => List(Bag.Thing)
+	stock! = server!(
+		|_request, {}|
+			[
+				{ name: "Roc bird sticker", price: 2 },
+				{ name: "rocx mug", price: 9 },
+				{ name: "Lambda pin", price: 3 },
+			],
+	)
+
+	view! : {} => Html
+	view! = |{}| {
+		{ things!, set_things! } = use_context!(Bag.bag_context)
+		shelved! = create_memo!(|| stock!({}))
+		taken! = |thing| things!().any(|in_bag| in_bag.name == thing.name)
+		put! = |thing| if (taken!(thing)) {} else set_things!(things!().append(thing))
+		<div class="shelf">
+			<Loading fallback={<p class="shelf-note">Fetching the shelf…</p>}>
+				<ul>
+					<For each!={shelved!()} keyed={|thing| thing.name}>
+						{|thing!, _|
+							<li class:taken={taken!(thing!())}>
+								<span class="shelf-name">{thing!().name}</span>
+								<span class="shelf-price">{thing!().price.to_str()} €</span>
+								<button type="button" on:click={|| put!(thing!())} disabled?={taken!(thing!())}>
+									{if (taken!(thing!())) "In the bag" else "Put in the bag"}
+								</button>
+							</li>
+						}
+					</For>
+				</ul>
+			</Loading>
+		</div>
+	}
+
+	<style>
+		ul {
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		li {
+			display: flex;
+			align-items: center;
+			gap: var(--space-2);
+			padding: var(--space-2) 0;
+			border-bottom: 1px solid var(--rule);
+		}
+
+		.shelf-name {
+			flex: 1;
+		}
+
+		.shelf-price {
+			color: var(--text-muted);
+			font-variant-numeric: tabular-nums;
+		}
+
+		.taken .shelf-name {
+			color: var(--text-faint);
+		}
+
+		button {
+			padding: var(--space-1) var(--space-3);
+			font-size: var(--size-sm);
+			white-space: nowrap;
+		}
+
+		.shelf-note {
+			margin: var(--space-2) 0;
+			color: var(--text-muted);
+		}
+	</style>
+}

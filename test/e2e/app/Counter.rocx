@@ -1,0 +1,15 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+
+## A count you can add to: a signal, read in a hole, set by a handler.
+Counter := [].{
+	view! : { start : U64 } => Html
+	view! = |{ start }| {
+		(count!, set_count!) = create_signal!(start)
+		<button class="count" type="button" on:click={|| set_count!(count!() + 1)}>Clicked {count!().to_str()}</button>
+	}
+
+	<story name="At ten">
+		<Counter start={10} />
+	</story>
+}

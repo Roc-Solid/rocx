@@ -1,0 +1,38 @@
+# The pinned toolchain (`just setup`)
+.tools/
+
+# Written by rocx build (the fixture is built by the tests, from copies)
+test/e2e/fixture/*.roc
+!test/e2e/fixture/main.roc
+test/e2e/run-*/
+site/Ui/*.roc
+!site/Ui/Highlight.roc
+!site/Ui/Nav.roc
+site/Demos/*.roc
+!site/Demos/Random.roc
+site/Islands.roc
+site/examples/*.roc
+web/test/app/*.roc
+!web/test/app/Api.roc
+!web/test/app/main.roc
+!web/test/app/*_app.roc
+web/test/app/Generated/
+site/ServerFunctions.roc
+
+# Written by site/build.mjs and the tests
+site/Generated/
+site/build/
+site/dist/
+web/platform/targets/
+web/test/build/
+
+# The server platform's builds: the Rust host, and the libraries Roc links apps against
+server/host/target/
+server/platform/targets/
+server/test/build/
+
+.DS_Store
+
+# The spike's builds
+spike/*/platform/targets/
+spike/*/*.wasm

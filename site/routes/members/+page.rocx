@@ -1,0 +1,43 @@
+import pf.Html
+import pf.Endpoint
+import pf.Server
+import ../../Middlewares
+import ../../Generated/Api
+import ../../Generated/Paths
+import ../../Ui/Note
+import ../../Ui/Button
+import ../../Ui/PageHero
+
+## Members only: `Middlewares.member` runs before this page, and hands on who the member is.
+middleware = Middlewares.member
+
+meta = {
+	title: "Members",
+	description: "A page behind middleware: only members see it.",
+	toc: [],
+}
+
+## Who the member is: run on the server, behind this file's middleware, which read the cookie and
+## handed on the name (`Server.context!`).
+member! : {} => Str
+member! = server!(|_request, {}| Server.context!({}).member)
+
+view! = |_| {
+	member = member!({})
+	<>
+		<PageHero
+			eyebrow="Members"
+			title={"Welcome, ${member}"}
+		>
+			This page is behind <code>Middlewares.member</code>, which read your <code>member</code> cookie
+			and handed on your name. The same middleware is in front of this path's endpoint, so a script
+			asking <code>GET {Paths.members}</code> for JSON gets the same answer, or a 401.
+		</PageHero>
+		<form method="post" action={Endpoint.url_of(Api.post_members_leave({}))}>
+			<Button submit>Leave</Button>
+		</form>
+		<Note>
+			Back to <a href={"${Paths.routing}#middleware"}>middleware</a>, on the routing page.
+		</Note>
+	</>
+}

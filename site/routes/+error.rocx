@@ -1,0 +1,30 @@
+import pf.Html
+import pf.Router
+import ../Ui/Nav
+import ../Generated/Paths
+import ../Ui/PageCards
+import ../Ui/PageHero
+
+## What a path no page has shows (404): the pages of the part of the docs it is in, as cards, and
+## the ways to the other parts and the front page. A page that failed (500) says why instead.
+meta = {
+	title: "Not found",
+	description: "There is no page here.",
+	toc: [],
+}
+
+view! = |{ status, problem }| {
+	path = Router.location!({}).path
+	here = Nav.section_of(path)
+	others = Nav.sections.drop_if(|section| section.name == here.name)
+	<>
+		<PageHero eyebrow={status.to_str()} heading={if (status == 404) [<>{"Nothing at "}</>, <code>{path}</code>] else [<>This page failed</>]}>
+			{if (status == 404) "No page has that address." else problem} These are the pages of the {here.name} docs:
+		</PageHero>
+		<PageCards pages={here.pages} />
+		<p>
+			Or another part: {...others.map_with_index(|section, i| <>{if (i == 0) "" else ", "}<a href={section.home}>the {section.name} docs</a></>)},
+			or the <a href={Paths.root}>front page</a>.
+		</p>
+	</>
+}

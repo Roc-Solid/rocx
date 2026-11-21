@@ -1,0 +1,199 @@
+import pf.Html
+import ../Demos/Counter
+import ../Ui/Code
+import ../Ui/Heading
+import ../Ui/PageHero
+import ../Ui/Button
+import ../Ui/Specimen
+import ../Ui/Steps
+import ../Ui/Stats
+import ../Ui/Way
+import ../Generated/Sources
+import ../Facts
+import ../Generated/Paths
+
+## The front page: Roc Solid as a whole, and the way into each of its parts. It is in none of them,
+## so it has no sidebar.
+meta = {
+	title: "Roc Solid: web apps in Roc, from the database to the browser",
+	description: "Roc Solid is a small web framework for Roc: pages and components written in rocx, a native server with Postgres, jobs and email, and components that hydrate in the browser, in Roc compiled to WebAssembly.",
+	toc: [],
+}
+
+view! = |_| {
+	# Once, here, outside every <NoHydration>: the browser's copy asks the same, from what the page
+	# recorded, and uses it in the steps, which it hydrates. A call in a prop inside a <NoHydration>
+	# would be made by the server alone.
+	facts = Facts.facts!({})
+	<>
+		<NoHydration>
+			<PageHero
+				eyebrow="Roc Solid"
+				title="Roc, from the database to the browser."
+				centered
+				actions={[
+					<Button href={Paths.rocx} primary>Read the guide</Button>,
+					<Button href={Paths.platform_}>The platform</Button>,
+					<Button href={Paths.showcase}>Play Snake, watch the birds</Button>,
+				]}
+			>
+				One language for the whole app: the pages, the server, its jobs, and the components that run in
+				your browser.
+			</PageHero>
+		</NoHydration>
+		<Specimen file="Counter.rocx" code={[<NoHydration><Code source={Sources.home_update.rocx} numbers={Bool.False} /></NoHydration>]}>
+			<div data-demo="counter"><Counter start={3} /></div>
+			<NoHydration><p class="awake" data-stat="hydrated">Waiting for the counter to wake up…</p></NoHydration>
+		</Specimen>
+		<Steps
+			steps={[
+				{ title: "Write", text: "Markup wherever a Roc expression can stand." },
+				{ title: "Build", text: "Plain Roc, line for line, for the compiler to check." },
+				{ title: "Run", text: "Native on the server; ${Facts.get(facts, "client_brotli")} of wasm in the browser." },
+			]}
+		/>
+		<NoHydration>
+
+			<Heading id="parts">Three parts</Heading>
+			<Way kind="rocx" href={Paths.rocx} more="rocx →" code={[<Code source={Sources.home_update.rocx} numbers={Bool.False} />]}>
+				What an app is written in: Roc in which markup may stand wherever an expression can. Pages,
+				layouts and components are files, and <code>rocx build</code> turns each into plain Roc, line
+				for line, so the compiler checks every value put in a page.
+			</Way>
+			<Way kind="Platform" href={Paths.platform_} more="The platform →" code={[<Code source={Sources.platform_job.rocx} numbers={Bool.False} />]}>
+				What it runs on. On the server, Roc compiled to native code in a Rust host, with Postgres,
+				jobs and cron, email, live rooms and actors. In the browser, the components, compiled to
+				WebAssembly, and a page of JavaScript.
+			</Way>
+			<Way kind="Ecosystem" href={Paths.ecosystem} more="The ecosystem →" code={[<Code source={Sources.charts_use.rocx} numbers={Bool.False} />]}>
+				What it can use: packages of plain Roc and components, which work in both halves of an app.
+				The first one draws charts.
+			</Way>
+
+
+			<Heading id="pipeline">One app, two programs</Heading>
+			<ol class="pipeline">
+				<li>
+					<span class="pipeline-file">Counter.rocx</span>
+					<span class="pipeline-step">markup in Roc</span>
+				</li>
+				<li>
+					<span class="pipeline-file">Counter.roc</span>
+					<span class="pipeline-step"><code>rocx build</code>: plain Roc, same lines</span>
+				</li>
+				<li class="pipeline-fork">
+					<div>
+						<span class="pipeline-file">server</span>
+						<span class="pipeline-step">native: pages, endpoints, server functions, islands rendered</span>
+					</div>
+					<div>
+						<span class="pipeline-file">client.wasm</span>
+						<span class="pipeline-step">the islands only: the browser hydrates and runs them</span>
+					</div>
+				</li>
+			</ol>
+			<p>
+				An app is two programs on two platforms, talking over HTTP. The server's is Roc compiled to native
+				code in a Rust host, which also runs jobs and cron, sends email, and keeps live rooms and actors,
+				with Postgres beneath it. The browser's is the islands, compiled to WebAssembly with a small Zig
+				host, and a page of JavaScript that hydrates them and applies what they change. The
+				<a href={Paths.platform_}>platform docs</a> describe both.
+			</p>
+
+			<Heading id="numbers">The numbers, measured on this build</Heading>
+			<Stats
+				stats={[
+					{ label: "Wasm for the whole site", value: Facts.get(facts, "client_brotli"), note: "brotli; ${Facts.get(facts, "client_gzip")} gzip, ${Facts.get(facts, "client_bytes")} raw" },
+					{ label: "JavaScript runtime", value: Facts.get(facts, "runtime_gzip"), note: "gzip; no framework, no dependencies" },
+					{ label: "The front page, rendered", value: "${Facts.get(facts, "client_render_us")} µs", note: "every component and hole run once, by the browser's wasm, in Node" },
+					{ label: "The server", value: Facts.get(facts, "server_bytes"), note: "one executable: every page, and its Rust host" },
+				]}
+			/>
+
+			<Heading id="start">Getting started</Heading>
+			<Code
+				title="In this repository"
+				source={"just setup    # the pinned Roc nightly, Zig and Rust, into .tools/\njust test     # the transpiler, both platforms, this site in a browser\njust dev      # this site at http://localhost:8080, rebuilt on save\njust db       # a Postgres in Docker, for the server platform's tests and apps"}
+				numbers={Bool.False}
+			/>
+			<p>
+				Then read <a href={Paths.rocx}>rocx</a>, or open <code>site/routes/</code>: these pages are
+				<code>.rocx</code> files, and every example in them is a real file the build compiles.
+			</p>
+		</NoHydration>
+	</>
+}
+
+<style>
+	/* One app, two programs: a file, the Roc it becomes, and the two builds it goes into. */
+	.pipeline {
+		max-width: none;
+		display: grid;
+		grid-template-columns: 1fr 1fr 2fr;
+		align-items: center;
+		gap: var(--space-3);
+		padding: 0;
+		list-style: none;
+	}
+
+	.pipeline > li {
+		position: relative;
+		padding: var(--space-4);
+		border-radius: var(--radius);
+		background: var(--bg-raised);
+	}
+
+	.pipeline > li:not(:last-child)::after {
+		content: "→";
+		position: absolute;
+		top: 50%;
+		right: -0.7rem;
+		translate: 0 -50%;
+		color: var(--accent);
+		font-weight: 700;
+		text-shadow: var(--glow-text);
+	}
+
+	.pipeline-fork {
+		display: grid;
+		gap: var(--space-3);
+	}
+
+	.pipeline-fork > div + div {
+		padding-top: var(--space-3);
+		border-top: 1px dashed var(--rule-strong);
+	}
+
+	.pipeline-file {
+		display: block;
+		color: var(--accent);
+		font: 700 var(--size-sm) var(--mono);
+	}
+
+	.pipeline-step {
+		display: block;
+		color: var(--text-muted);
+		font-size: var(--size-sm);
+	}
+
+	/* How long the counter took to wake up: site.js writes it, and marks it awake. */
+	.awake {
+		margin: var(--space-3) 0 0;
+		color: var(--text-faint);
+		font-size: var(--size-xs);
+	}
+
+	@media (max-width: 52rem) {
+		.pipeline {
+			grid-template-columns: 1fr;
+		}
+
+		.pipeline > li:not(:last-child)::after {
+			content: "↓";
+			top: auto;
+			right: 50%;
+			bottom: -1.1rem;
+			translate: 50% 0;
+		}
+	}
+</style>

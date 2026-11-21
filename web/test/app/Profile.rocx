@@ -1,0 +1,91 @@
+import pf.Html
+import pf.Solid exposing [create_signal!, create_memo!, refresh!]
+import pf.Loading
+import pf.Errored
+import pf.For
+import pf.Context
+import Api
+import Picks
+
+## A profile that needs five answers from the server: who you are, your posts
+## (which need who you are), your friends, your likes and your notifications.
+## One spinner until they are all in; posts and friends fail on their own, and
+## anything else failing fails the page.
+Profile := [].{
+	view! : {} => Html
+	view! = |{}| {
+		# Made first, so every request starts at once; read as plain values.
+		user! = create_memo!(|| Api.current_user!({}))
+		posts! = create_memo!(|| Api.posts_of!(user!().id))
+		friends! = create_memo!(|| Api.friends!({}))
+		likes! = create_memo!(|| Api.likes!({}))
+		notifications! = create_memo!(|| Api.notifications!({}))
+		(count!, set_count!) = create_signal!(0.U64)
+		(draft!, set_draft!) = create_signal!("")
+		rename! = || {
+			_ = Api.rename!(draft!())
+			refresh!(user!)
+		}
+		<main>
+			<Errored fallback={|problem, retry|
+				<p class="page-problem">
+					The page failed: {problem} <button on:click={retry}>Again</button>
+				</p>
+			}>
+				<Loading fallback={<p class="spinner">Loading…</p>}>
+					<Heading text!={user!().name} />
+					<Stats likes!={likes!} notifications!={notifications!} />
+					<button class="count" on:click={|| set_count!(count!() + 1)}>
+						Clicked {count!().to_str()} times
+					</button>
+					<form class="rename" on:submit={rename!}>
+						<input name="name" on:input.value={set_draft!} />
+						<button type="submit">Rename</button>
+					</form>
+					<section class="posts">
+						<Errored fallback={|problem, retry|
+							<p class="problem">
+								No posts: {problem} <button on:click={retry}>Again</button>
+							</p>
+						}>
+							<ul>
+								<For each!={posts!()} keyed={|post| post.title}>
+									{|post!, _| <li>{post!().title}</li>}
+								</For>
+							</ul>
+						</Errored>
+					</section>
+					<section class="friends">
+						<Errored fallback={|problem, retry|
+							<p class="problem">
+								No friends: {problem} <button on:click={retry}>Again</button>
+							</p>
+						}>
+							<ul>
+								<For each!={friends!()} keyed={|friend| friend}>
+									{|friend!, _| <li>{friend!()}</li>}
+								</For>
+							</ul>
+						</Errored>
+					</section>
+				</Loading>
+			</Errored>
+			<PicksContext value={Picks.store!({})}><Picks /></PicksContext>
+		</main>
+	}
+}
+
+## The likes and notifications. It is given their accessors, so it reads them
+## (and is patched when they change), and can't write them; a signal's
+## accessor, a memo's or any `|| …` would do.
+stats! : { likes! : () => U64, notifications! : () => U64 } => Html
+stats! = |{ likes!, notifications! }|
+	<p class="stats">
+		{likes!().to_str()} likes · {notifications!().to_str()} new
+	</p>
+
+## The page's heading. `text!={user!().name}` gives it an accessor, as Solid's
+## compiler makes a prop a getter: it reads the name in its hole, and only that
+## text is patched when the user changes.
+heading! : { text! : () => Str } => Html
+heading! = |{ text! }| <h1>{text!()}</h1>

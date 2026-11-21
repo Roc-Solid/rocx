@@ -1,0 +1,14 @@
+import pf.Html
+
+Hello := [].{
+	# example
+	view : { name : Str, link : Str } -> Html
+	view = |{ name, link }|
+		<p class="greeting">
+			Hello, <a href={link} title="Their profile">{name}</a>!
+		</p>
+	# /example
+
+	demo : {} -> Html
+	demo = |{}| view({ name: "Ada <Lovelace>", link: "/people/ada?tab=notes&sort=new" })
+}

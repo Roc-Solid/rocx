@@ -1,0 +1,196 @@
+import pf.Html
+import pf.Call
+import pf.Solid exposing [create_signal!]
+import pf.For
+import pf.Endpoint
+import pf.Server as Http
+import ../Generated/Api
+
+## Listens to an endpoint's events, `GET /api/count/[to]` (a route's `events!`): Start, and the
+## server sends each count as it makes it; the island shows each as it comes, says when the server
+## stopped sending (it ended the stream), and can start again. `Api.events_api_count_to` is what
+## rocx wrote for it: on the server, the handler; in the browser's copy, its URL.
+Count := [].{
+	Counted : { count : U64, of : U64, square : U64 }
+	State : [Idle, Listening, Done, Failed(Str)]
+
+	view! : {} => Html
+	view! = |{}| {
+		(to!, set_to!) = create_signal!("5")
+		(heard!, set_heard!) = create_signal!(nothing_heard)
+		(state!, set_state!) = create_signal!(idle)
+		# Each event is a handler's run: what it writes is applied, as a click's is.
+		start! = || {
+			set_heard!([])
+			set_state!(Listening)
+			Endpoint.listen!(
+				Api.events_api_count_to({ to: to!() }),
+				Call.listen!,
+				|event|
+					match event {
+						Event(counted) => set_heard!(heard!().append(counted))
+						Ended => set_state!(Done)
+						Failed(problem) => set_state!(Failed(explain(problem)))
+					},
+			)
+		}
+		<div class="count">
+			<form class="echo" on:submit={start!}>
+				<label class="count-to">
+					Count to
+					<input type="number" aria-label="Count to (1 to 20: the server refuses others)" value={to!()} on:input.value={set_to!} />
+				</label>
+				<button type="submit" disabled?={state!() == Listening}>{button(state!())}</button>
+				<output class={"echo-answer stream ${kind(state!())}"}>{status(state!(), heard!().len())}</output>
+			</form>
+			<ol class="counted" aria-live="polite">
+				<For each!={heard!()} keyed={|counted| counted.count.to_str()}>
+					{|counted!, _| <li>{counted!().count.to_str()} of {counted!().of.to_str()}: squared, {counted!().square.to_str()}</li>}
+				</For>
+			</ol>
+		</div>
+	}
+
+	<style>
+		.echo {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: var(--space-2);
+		}
+
+		.count-to {
+			display: flex;
+			align-items: center;
+			gap: var(--space-2);
+		}
+
+		input {
+			width: 5rem;
+			min-width: 0;
+		}
+
+		button {
+			background: var(--accent);
+			color: var(--accent-text);
+		}
+
+		button:hover:not(:disabled) {
+			background: var(--accent-strong);
+		}
+
+		.echo-answer {
+			flex-basis: 100%;
+			min-height: 1.5em;
+			font: var(--size-sm) var(--mono);
+		}
+
+		/* Whether the stream is open: a dot that pulses while it is, a square once the server stopped. */
+		.stream::before {
+			content: "";
+			display: inline-block;
+			width: 0.6em;
+			height: 0.6em;
+			margin-right: 0.5em;
+			border-radius: 50%;
+			background: currentColor;
+			opacity: 0.35;
+			vertical-align: 0.05em;
+		}
+
+		.stream.live::before {
+			background: var(--good);
+			box-shadow: 0 0 8px var(--good);
+			opacity: 1;
+			animation: live 1s ease-in-out infinite alternate;
+		}
+
+		.stream.stopped::before {
+			border-radius: 2px;
+			opacity: 0.7;
+		}
+
+		.stream.failed::before {
+			background: var(--bad);
+			opacity: 1;
+		}
+
+		@keyframes live {
+			to {
+				opacity: 0.3;
+			}
+		}
+
+		.counted {
+			margin: var(--space-2) 0 0;
+			padding-left: var(--space-6);
+			font: var(--size-sm) var(--mono);
+		}
+
+		.counted li {
+			animation: counted 0.3s ease-out;
+		}
+
+		@keyframes counted {
+			from {
+				opacity: 0;
+				transform: translateY(-0.25rem);
+			}
+		}
+
+		@media (prefers-reduced-motion: reduce) {
+			.stream.live::before,
+			.counted li {
+				animation: none;
+			}
+		}
+	</style>
+}
+
+idle : Count.State
+idle = Idle
+
+## What the browser's copy knows of the events' type: what this says. (Its copy of the endpoint is
+## a URL, no handler to learn it from.)
+nothing_heard : List(Count.Counted)
+nothing_heard = []
+
+button : Count.State -> Str
+button = |state|
+	match state {
+		Idle => "Start"
+		Listening => "Streaming…"
+		_ => "Start again"
+	}
+
+kind : Count.State -> Str
+kind = |state|
+	match state {
+		Idle => ""
+		Listening => "live"
+		Done => "stopped"
+		Failed(_) => "failed"
+	}
+
+status : Count.State, U64 -> Str
+status = |state, count| {
+	received = "${count.to_str()} ${if (count == 1) "count" else "counts"}"
+	match state {
+		Idle => "Not listening: Start, and the server sends a count every 300 ms."
+		Listening => "Live: ${received} so far, the stream is open"
+		Done => "Stopped: the server sent ${received} and ended the stream"
+		Failed(why) => why
+	}
+}
+
+explain : Http.Problem -> Str
+explain = |problem|
+	match problem {
+		HttpErr(why) => "No answer: ${why}"
+		Refused(404, _) => "No server here: this copy of the site is static files. With just dev, Roc answers."
+		Refused(status_code, text) => "Refused (${status_code.to_str()}): ${text}"
+		BadAnswer(why) => "An event wasn't a count: ${why}"
+	}
+
+expect status(Listening, 1) == "Live: 1 count so far, the stream is open"
+expect status(Done, 3) == "Stopped: the server sent 3 counts and ended the stream"

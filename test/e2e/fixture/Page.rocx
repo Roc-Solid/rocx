@@ -1,0 +1,48 @@
+import pf.Html
+
+## A page as an app might write one: pure components (`view`, functions of their props), a list, a
+## match, text and attributes. Line breaks between elements are spaces, as in HTML.
+Page := [].{
+	Post : { title : Str, link : Str, status : [Scheduled, Published(Str), Failed(Str)], pinned : Bool }
+
+	view : { title : Str, posts : List(Post) } -> Html
+	view = |{ title, posts }|
+		<>
+			<!doctype html>
+			<h1 class="title">{title}</h1>
+			{# The list is empty until the first post is scheduled. }
+			<ul>
+				{...posts.map(|post|
+					<li class="post" class:pinned={post.pinned}>
+						<a href={post.link}>{post.title}</a> <StatusPill status={post.status} />
+					</li>
+				)}
+			</ul>
+			<p>{if (posts.len() < 2) "Few posts" else "Many posts"} &middot; {posts.len().to_str()}</p>
+			<form method="post">
+				<input type="checkbox" name="notify" checked?={posts.is_empty()} required />
+				<Button label="Save" />
+			</form>
+			<script>
+				document.querySelector("form").addEventListener("submit", () => { console.log("sent") })
+			</script>
+		</>
+}
+
+status_pill : { status : [Scheduled, Published(Str), Failed(Str)] } -> Html
+status_pill = |{ status }|
+	match status {
+		Scheduled => <span class="pill">Scheduled</span>
+		Published(at) => <span class="pill done">Published {at}</span>
+		Failed(reason) => <span class="pill failed" title={reason}>Failed</span>
+	}
+
+button : { label : Str } -> Html
+button = |{ label }| <button type="submit">{label}</button>
+
+expect {
+	page = Page.view({ title: "Posts & more", posts: [{ title: "<b>hi</b>", link: "javascript:alert(1)", status: Failed("token \"expired\""), pinned: True }] })
+	page.to_str() == "<!doctype html> <h1 class=\"title\">Posts &amp; more</h1> <ul><li class=\"post pinned\"><a href=\"about:invalid#rocx-unsafe-url\">&lt;b&gt;hi&lt;/b&gt;</a> <span class=\"pill failed\" title=\"token &quot;expired&quot;\">Failed</span></li></ul> <p>Few posts · 1</p> <form method=\"post\"><input type=\"checkbox\" name=\"notify\" required> <button type=\"submit\">Save</button></form> <script>\n\t\t\t\tdocument.querySelector(\"form\").addEventListener(\"submit\", () => { console.log(\"sent\") })\n\t\t\t</script>"
+}
+
+expect status_pill({ status: Published("today") }).to_str() == "<span class=\"pill done\">Published today</span>"

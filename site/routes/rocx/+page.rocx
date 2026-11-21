@@ -1,0 +1,103 @@
+import pf.Html
+import ../../Ui/Code
+import ../../Ui/Heading
+import ../../Ui/Nav
+import ../../Generated/Sources
+import ../../Generated/Paths
+import ../../Ui/Button
+import ../../Ui/Feature
+import ../../Ui/FeatureGrid
+import ../../Ui/PageCards
+import ../../Ui/PageHero
+import ../../Ui/Way
+
+## rocx's overview: what the markup is, why it is shaped the way it is, and its pages, as cards.
+meta = {
+	title: "rocx: markup in Roc",
+	description: "rocx is Roc Solid's markup: Roc in which markup may stand wherever an expression can. rocx build turns each file into the plain Roc beside it, line for line, so the compiler checks every value put in a page.",
+	toc: [
+		{ id: "why", label: "Why rocx" },
+		{ id: "kinds", label: "Pages, components, the server" },
+		{ id: "build", label: "A file, and the Roc it becomes" },
+		{ id: "pages", label: "rocx's pages" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				eyebrow="rocx · Roc Solid's markup"
+				title="Write pages and components in Roc. Render them on the server. Run them in the browser."
+				actions={[
+					<Button href={Paths.syntax} primary>Learn the syntax</Button>,
+					<Button href={Paths.components}>Components</Button>,
+				]}
+			>
+				A <code>.rocx</code> file is Roc in which markup may stand wherever an expression can.
+				<code>rocx build</code> turns it into the plain Roc beside it, line for line, so the Roc
+				compiler checks every value you put in a page. Pages are rendered on the server, once. The
+				parts that answer the reader are components, as in Solid: the server renders them into the
+				page, and in the browser the same Roc, compiled to WebAssembly, takes them over.
+			</PageHero>
+
+			<Heading id="why">Why rocx</Heading>
+			<FeatureGrid>
+				<Feature title="Checked by Roc">
+					<p>
+						Every <code>{"{hole}"}</code> is a Roc expression, and the compiler checks it: text must be
+						a <code>Str</code>, a list a <code>List(Html)</code>, a handler an effect of the right type.
+						Mistakes are reported at your <code>.rocx</code> line, quoting your code.
+					</p>
+				</Feature>
+				<Feature title="Safe by construction">
+					<p>
+						<code>Html</code> is opaque: nothing outside it can turn a string into markup. Text and
+						attributes are escaped, URLs that would run script are replaced, and handlers are Roc
+						functions, never script in an attribute.
+					</p>
+				</Feature>
+				<Feature title="Line for line">
+					<p>
+						Line <var>N</var> of the generated Roc is line <var>N</var> of your file, so compiler
+						reports, <code>dbg</code> and stack traces already point to the right place. No source
+						maps to break.
+					</p>
+				</Feature>
+				<Feature title="Fine-grained islands">
+					<p>
+						Pages are plain HTML. Only the islands hydrate, and in them a component runs once: a change
+						runs only the holes that read what changed, and each patches its own node. Nothing is
+						rendered twice to find out what changed.
+					</p>
+				</Feature>
+			</FeatureGrid>
+
+			<Heading id="kinds">Pages, components, the server</Heading>
+			<Way kind="Pages" href={Paths.routing} more="Routing →" code={[<Code source={Sources.hello.rocx} numbers={Bool.False} />]}>
+				A page is a file, <code>routes/…/+page.rocx</code>: markup the server renders once per
+				request, with layouts around it. It runs nothing in the browser.
+			</Way>
+			<Way kind="Components" href={Paths.components} more="Components →" code={[<Code source={Sources.home_update.rocx} numbers={Bool.False} />]}>
+				Solid 2.0's model: a component runs once and makes signals; its holes that read them are
+				computations that patch their own nodes. A page puts one where it wants it, as an island.
+			</Way>
+			<Way kind="Server functions" href={Paths.calls} more="Talking to the server →" code={[<Code source={Sources.echo_server.rocx} numbers={Bool.False} />]}>
+				Defined once, beside the component that calls them: run where they are on the server, a
+				request from the browser, read as a plain value, and nothing of what they do in the
+				download.
+			</Way>
+
+			<Heading id="build">A file, and the Roc it becomes</Heading>
+			<p>
+				The counter on the <a href={Paths.root}>front page</a> is this file. <code>rocx build</code> writes
+				<code>Counter.roc</code> beside it, with the markup turned into calls to <code>Html</code> and every
+				line where it was; the <a href={Paths.tooling}>tooling</a> page shows what it writes, and what it
+				refuses.
+			</p>
+			<Code title={Sources.demo_counter.file} source={Sources.demo_counter.rocx} />
+
+			<Heading id="pages">rocx's pages</Heading>
+			<PageCards pages={Nav.rocx_docs.pages.drop_if(|page| page.path == Paths.rocx)} />
+		</NoHydration>
+	</>

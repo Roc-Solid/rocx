@@ -1,0 +1,434 @@
+# Roc Solid
+
+A small web framework for [Roc](https://www.roc-lang.org): one app, from the database to the
+browser, in three parts.
+
+- **rocx**, the markup. A `.rocx` file is Roc in which markup may stand wherever an expression can;
+  `rocx build` turns it into the plain `.roc` file beside it, line for line, so the compiler checks
+  every value put in a page, and reports at your lines. `rocx` is the command-line tool, too.
+- **The platform**, what an app runs on: on the server, Roc compiled to native code in a Rust host
+  (`server/`), with Postgres, jobs, cron, email, live rooms and actors; in the browser, the
+  components, compiled to WebAssembly (`web/`).
+- **The ecosystem**: packages of plain Roc and components that any app can use, starting with
+  `packages/charts`.
+
+Pages are components, after Solid 2.0: a component runs once and makes signals; each hole in its
+markup that calls something named with `!` (a signal, a memo) is a computation that runs again when
+what it read changes, and patches its own node, and the others are written once. The server renders
+the whole page, and in the browser the same Roc, compiled to WebAssembly, hydrates it.
+
+```roc
+import pf.Html
+import pf.Solid exposing [create_signal!]
+
+Counter := [].{
+	view! : { start : I64 } => Html
+	view! = |{ start }| {
+		(count!, set_count!) = create_signal!(start)
+		<p class="counter" class:negative={count!() < 0}>
+			<button on:click={|| set_count!(count!() - 1)}>−</button>
+			<output>{count!().to_str()}</output>
+			<button on:click={|| set_count!(count!() + 1)}>+</button>
+		</p>
+	}
+}
+```
+
+An app is two programs, one on each platform, talking over HTTP. The docs site in `site/` is one:
+written in rocx, with a front page for Roc Solid and a part for each of rocx, the platform and the
+ecosystem. `just dev`, then http://localhost:8080.
+
+## Quick start
+
+```sh
+just setup   # the pinned Roc nightly, Zig and Rust, into .tools/
+just test    # the transpiler, both platforms, the site in Chromium
+just dev     # the docs site, its server (native) answering each page, rebuilt on save
+just db      # a Postgres in Docker for the server platform (prints its DATABASE_URL)
+just site    # the docs site as static files in site/dist, every page as its server answers it
+just deploy-pages  # build that and publish it to roc-solid.github.io (site/dist, one commit)
+just check   # type-check the site's two programs, reports at .rocx lines, and lint it
+```
+
+| Where | What |
+|---|---|
+| `src/transpile.mjs`, `src/styles.mjs`, `src/remap.mjs`, `src/routes.mjs`, `bin/rocx.mjs` | the transpiler, scoped styles, error remapping, routing, the command |
+| `packages/charts` | bar and line charts: their arithmetic a Roc package (scales, round ticks, SVG paths, in `Dec`), their components copied into each app by `rocx build`; see its README |
+| `web/` | the browser's platform: the modules components are written with (`Html`, `Solid`, `Show`, `For`, …) and HTTP's (`Server`, requests and answers; `Endpoint`, `Events`, `Middleware`, `OpenApi`), which the server's platform has too; its Zig host, `runtime.js`; see `web/README.md` |
+| `server/` | the server's platform: native Roc in a Rust host (tokio, hyper, Postgres, jobs, email, actors), rendering pages of components; see `server/README.md` |
+| `site/` | the docs site: pages in `routes/`, the demos on them in `Demos/`, its program in `main.roc`, real examples in `examples/` |
+| `test/`, `web/test/`, `site/test/`, `server/test/` | the transpiler and routes; the browser's platform; the site in a browser; the server's platform |
+| `spike/suspense` | an experiment: how a read that has to wait can stop a computation in wasm |
+
+## Pages and components
+
+Every `.rocx` file is components, written with the platform's `Html` (`import pf.Html`): its holes
+are computations, its handlers effects, and it runs on the server and in the browser. Pages,
+layouts and the error page are components too, so a page puts a component where it wants it, as
+`<Todos first={…} />`, under the contexts it provides.
+
+A component's view is pure or effectful, and Roc checks which. `view!` may make signals, read a
+context or call a server function, so it runs once, where it is rendered
+(`Html.component(|| Counter.view!({ start: 3 }))`). `view`, without the `!`, can't: it makes markup
+from its props, so it is called where it is written (`Heading.view({ id: "why", children: […] })`).
+Its holes may still read accessors it was given; those are computations, as anywhere. `rocx build`
+writes whichever call fits, so callers don't change when a component does.
+
+## Styles
+
+A `<style>` in a component's block, beside its definitions, styles that component's markup and
+nothing else, as Svelte's does: rocx gives each element written in the block a class named after
+the component (`rx-49lxy6`), and adds it to each selector, so `.card .title` is
+`.card.rx-49lxy6 .title:where(.rx-49lxy6)`, one class more specific than written. Two components'
+`.card` never meet, even in one file, and a component's styles don't reach into the components it
+renders. A page or a layout has no block: its `<style>` goes at the file's top level, for the whole
+file. `:global(…)`, `.a :global .b` and `:global { … }` are left as written; a component's
+`@keyframes` are its own (`-global-name` for everyone's). `rocx build` puts every `<style>` in one
+stylesheet, `Generated/Styles.roc`, which the root layout puts in its `<head>` with
+`{=Styles.style}`. A file may define several components (`Stepper := [].{ … }`), and `<Stepper />`
+calls the file's own.
+
+```roc
+Counter := [].{
+	view! = |{ start }| <div class="counter">…</div>
+
+	<style>
+		.counter { display: flex }
+		.counter.negative output { color: crimson }
+	</style>
+}
+```
+
+## Stories
+
+A component's stories are the ways it looks, written beside it, as Storybook's are: a
+`<story name="Tip">…</story>` in its block, among its definitions. Each becomes a definition in
+its place, so every build checks it against the component, and only a dev build calls it:
+`rocx build --dev` (`just dev`) adds a catalog at `/__rocx/stories`, with each story down the side
+(which folds away), the one picked in a frame that can fill the window, and a component's stories
+side by side. A story is `story_tip! = |{}| …`, the app's page at its path, which `Root` renders in the root
+layout and the browser hydrates; it can tell it is a story by its path (`/__rocx/stories/…`). An app's
+`stories/` directory holds modules of stories alone, drafts side by side, each a component with its
+own `<style>`; only a dev build has it, so nothing in it, its styles neither, is published
+(`site/stories/Landing.rocx`: the front page as it is, and drafts of it in six themes).
+
+```roc
+Callout := [].{
+	view = |{ kind, title, children }| <aside class={"callout callout-${kind}"}>…</aside>
+
+	<story name="Tip">
+		<Callout kind="tip" title="Name holes by what they hold"><p>…</p></Callout>
+	</story>
+}
+```
+
+## Packages with components
+
+A Roc package can't hold components for a rocx app. The compiler lets a package name a platform,
+but only the very one the app names, and an app is two apps on two platforms. So a package may
+keep components in a `components/` directory beside its `main.roc`, and when an app's header names
+the package (`charts: "../packages/charts/main.roc"`), `rocx build` copies each one into the app
+(`Generated/charts/BarChart.roc`), where `pf` is each half's own platform. In a `.rocx` file,
+`import charts.BarChart` imports that copy. Its `<style>` joins the app's stylesheet, and the
+compiler's reports point at the package's file. `packages/charts` is one: its `Scale`, `Ticks`,
+`Path` and `Format` are plain Roc, and `<BarChart>` and `<LineChart>` are its components.
+
+```roc
+import charts.BarChart
+import charts.Format
+
+<BarChart data!={rain!()} label="Rain each month" format={|mm| Format.num(mm, 0)} />
+```
+
+## Syntax
+
+| Write | Means |
+|---|---|
+| `<tag attr="text" other={expr}>…</tag>` | an element; `{expr}` must be a `Str` |
+| `<input type="checkbox" checked?={bool} required />` | `?=` sets a boolean attribute when true; a bare name is always on |
+| `<a rel??={str}>` | `??=` sets an attribute unless the string is empty (Svelte leaves out an undefined one) |
+| `<li class="row" class:active={bool}>` | `class:name` adds a class when true; all of them end up in one `class` |
+| `<span style:--size={str}>` | sets a CSS custom property; joins any static `style`; a value with characters that could end the declaration is left out |
+| `{expr}` among children | text: `expr` is a `Str`, escaped |
+| `{=expr}` | one `Html` value, as it is |
+| `{...expr}` | a `List(Html)`, joined |
+| `{# a comment }`, `<!-- a comment -->` | nothing |
+| `<StatusPill status={s} />` | a component: `StatusPill.view({ status: s })` when the file imports a module `StatusPill`, otherwise the local `status_pill(…)`; in a component's file `StatusPill.view!`, run where it is rendered; children become a `children : List(Html)` prop |
+| `<>…</>`, `<!doctype html>` | a fragment; the doctype |
+| `<script>…</script>`, `<style>…</style>` in markup | their text as written (braces too), never with values in it |
+| `<style>…</style>` beside a component's definitions | CSS for that component's markup only, scoped as Svelte scopes it (above); a page's or a layout's goes at the file's top level |
+| `<story name="Tip">…</story>` beside a component's definitions | one way it looks, for a dev build's catalog at `/__rocx/stories` (above) |
+| `&amp;`, `&middot;`, `&#x2014;` | the character |
+
+In a component only:
+
+| Write | Means |
+|---|---|
+| `(count!, set_count!) = create_signal!(0)` | a signal: an accessor and a setter (`import pf.Solid exposing [create_signal!, create_memo!, create_effect!, on_cleanup!, on_settled!, set_interval!, set_timeout!, refresh!, use_context!]`) |
+| `total! = create_memo!(\|\| …)` | a value computed from others, again when they change; one that asks the server is async, read as a plain value |
+| `create_effect!(\|\| room!(), \|room\| …)` | Solid 2.0's split effect: the first half tracked, the second run once the page shows it, and again on a change (never on the server) |
+| `on_cleanup!(\|\| …)` | run before what is running runs again (an effect's next run), and when it goes |
+| `on_settled!(\|\| …)` | once, in the browser, once the component is on the page (Solid 2.0's `onSettled`, `onMount` before it); never on the server |
+| `stop! = set_interval!(1000, \|\| set_seconds!(seconds!() + 1))` | the browser's timer, run as a handler; `set_timeout!(ms, done!)` runs once. Each answers its `clear!`, and stops with the cleanups of what started it (its component going, its effect's next apply) |
+| `<button on:click={\|\| set_count!(1)}>` | a handler: an effect, run when the event reaches the element |
+| `<input on:input.value={set_draft!}>` | the handler is given the value (`Str => {}`); `.checked` whether it is ticked, `.key` the key's name |
+| `<div on:keydown.ArrowUp={up!}>` | for that key only (`.Space`, `.w`), keeping it from scrolling the page |
+| `<i on:frame.ms={tick!}>` | every animation frame while the element is on the page, given the milliseconds since the last (`F64 => {}`) |
+| `<li transition={Transition.fade}>` | an animation the element plays as its `<For>` row or `<Show>` part comes and goes (`transition:in`, `transition:out`: one way); one that goes stays until it has (`import pf.Transition`: `fade`, `fly`, `scale`, `grow`, `style`) |
+| `stop! = set_interval!(1000, tick!)` | a handler every second (`set_timeout!(400, done!)`: once, 400 ms from now), in the browser only; `stop!()` clears it, and it is cleared anyway when what started it goes (`import pf.Solid exposing [set_interval!, set_timeout!]`) |
+| `Audio.play!("/sounds/eat.wav")` | in a handler: plays a sound file, any the browser can, once the handler is done (`Audio.play_with!(url, { volume, rate })`; `import pf.Audio`) |
+| `Browser.call!("vibrate", { ms: 50 })` | in a handler: the page's own function `vibrate` (given to the runtime: `Runtime.load(wasm, { effects })`), with the argument as JSON, called once the handler is done and the page patched (`import pf.Browser`) |
+| `<Heading text!={user!().name} />` | a prop named as an effect is an accessor: rocx passes `\|\| user!().name`, read in the child's holes, patched there |
+| `<Shows label={word!()} />` | a value prop read from a signal: read where the component is rendered, before it runs (`Html.component_with`); in a hole, which renders it anew when the value changes; elsewhere, once |
+| `<Title>{post!().title} · Notes</Title>` | the document's title, from anywhere in the page: the last one rendered that is still there, put first in `<head>` by the server, kept by the browser (`import pf.Title`) |
+| `<Show when!={…} fallback={…}>` | what is inside while the condition holds; with a function child, `when!` is a `Try` it narrows |
+| `<For each!={…} keyed={\|row\| row.id}>{\|row!, index!\| …}</For>` | a row per key, kept and moved; `keyed={Bool.False}` a row per position |
+| `<Loading fallback={…}>`, `<Errored fallback={\|problem, retry\| …}>` | while answers are on their way; when something inside failed |
+| `picks_context = create_context()`, `<PicksContext value={…}>` | Solid's context, named by rocx after its module and definition |
+| `echo! = server!(\|request, input\| …)` | a server function: a call on the server, a request from the browser |
+| `submission = use_submission!(Api.post_join({}))` | the latest submission of a form to an endpoint: `pending!()`, `input!()`, `field!(name)`, `result!()`, `error!()` (`import pf.Router exposing [use_submission!]`) |
+
+Whitespace in text follows HTML, as Svelte has it, not JSX: each run of spaces, tabs and line breaks
+is one space, and whitespace at the start and end of an element's children goes. Inside `<pre>` and
+`<textarea>` text stays as written. Write a literal `<`, `>`, `{` or `}` in text as an entity or
+`{"<"}`. `<` starts markup only where an expression can begin (after `=`, `(`, `[`, `,`, `=>`, a
+lambda's `|…|`, an `if (…)` condition, `else`, `return`, or first on its line) and only when a
+letter or `>` follows; after a value on the same line (`a < b`) it is the comparison.
+
+`{x}` is text and `{=x}` is markup because a hole's type isn't known when the file is turned into
+Roc: the syntax says which, and the compiler checks it. A page's markup has no handlers and no
+keys (rocx refuses them at their line: a page runs nothing in the browser); a component's names
+end in `!` where Roc's effects do (`count!()`, `Picks.view!`). The docs' Syntax and Components
+pages have it all, with every example a real file the build compiles.
+
+## Routing
+
+Under an app's `routes/`, a `+page.rocx` is a page at the path its directory names, each
+`+layout.rocx` above it wraps it, a `+server.roc` answers HTTP methods there (endpoints), and
+`+error.rocx` is what a path nothing answers shows (404), as in SvelteKit:
+
+```
+routes/+layout.rocx              view = |{ meta, children, .. }| <html>…{...children}…</html>
+routes/+page.rocx                /
+routes/blog/[slug]/+page.rocx    /blog/:slug, its view given params : { slug : Str }
+routes/blog/[slug]/+server.roc   get! = |{ params, .. }| …, put! = |{ params, body, .. }| …
+routes/+error.rocx               where nothing is
+```
+
+rocx writes each route file as a module under `Generated/` (its lines kept), and
+`Generated/Routes.roc`, whose `Routes.respond!(request, context)` answers a request: a page in its
+layouts for a GET a browser sends, the endpoint for the method otherwise, a 405 with `Allow`, or
+the error page; `Generated/Paths.roc`, a path for every page (`Paths.blog_slug({ slug })`, so a
+link to a page that isn't there doesn't compile; a name Roc keeps gets a `_`: `Paths.platform_`);
+and `Generated/Api.roc`, a function for every endpoint, which runs its handler on the server and is
+its method and URL in the browser's copy. Middleware (the platform's `Middleware`) runs around answers:
+the app's default around every request, and the one a route file names around its own (its page,
+endpoints and server functions).
+
+A route file may define components of its own (`Board := [].{ view! = … }`) before its
+definitions or after them, not between: rocx writes them as types beside its module, where their
+`view` isn't the page's, and `<Board />` calls the file's own.
+
+A route file that imports the platform's `Html` (`import pf.Html`) is a component: a page
+`view! = |{ params }| …`, a layout `view! = |{ meta, children, params }| …`, the error page
+`view! = |{ status, problem }| …` (Roc's record patterns are closed: write `..` for what a view
+doesn't read). Its page is a document the server renders and the browser hydrates, and rocx build
+writes more for it:
+
+- `Generated/Root.roc`, in both copies: `Root.view!` reads `Router.location!`, matches it as
+  `Routes` does, and renders the page in its layouts. The root layout is the document (with none, a
+  default one). Inside it, around the rest, an `<Errored>`: a failure nothing else catches is the
+  error page with `<HttpStatusCode code={500}/>`. A path no page has is the error page with
+  `<HttpStatusCode code={404}/>`.
+- In `Routes`, a component page's GET runs its route file's middleware, then answers `Root`'s page
+  (`Routes.page(200)`); a path nothing has is `Routes.page(404)` for a browser, text otherwise.
+- With `--client <out>`, `<out>/main.roc`, the browser's app (`Root.view!`), and
+  `<out>/static/rocx/start.js` and `runtime.js`. Build the wasm beside them
+  (`roc build --target=wasm32 --opt=size --output=<out>/static/rocx/app.wasm <out>/main.roc`) and
+  serve the directory (`--static <out>/static`): the page's `/rocx/start.js` loads the other two.
+
+Any app with routes, of components or not (endpoints alone too), gets its program:
+
+- `Generated/App.roc`: `App.program({ context, middleware, crons })` is the platform's `program`.
+  Every request is answered by `Routes.respond!` behind `middleware`, which is given
+  `context(started)` (`--context-file`), and a page a browser asks for lets a plain form's flash go
+  (`Server.clear_flash`). The jobs are the ones the app's modules define, each at the top of its
+  module's block (`\twelcome = Job.define("welcome", …)`, or `Job.define_with`; one outside it, or two
+  with one name, fail the build). The migrations are `migrations/*.sql`, embedded, in the order of
+  their names.
+
+A pure component, one whose `view` has no `!` (`Heading.view`), is called where it is written,
+not put off as a component that may read a context. What the author writes besides the route files
+and their modules is main.roc:
+
+```roc
+app [program] { pf: platform "../server/platform/main.roc" }
+
+import pf.Cron
+import Generated/App
+import Middlewares
+import Jobs
+
+program = App.program({
+	context: |started| { facts: started },
+	middleware: Middlewares.default,
+	crons: [Cron.every("0 3 * * *", Jobs.nightly, {})],
+})
+```
+
+## Talking to the server
+
+- **Server functions.** `echo! = server!(|request, message| "Echo: ${message}")`, beside the
+  component that calls it. Each is a route, `POST /rocx/call/Demos/Echo.echo` with the input as
+  JSON, which `rocx build` writes in `Generated/ServerFunctions.roc` and the app's `Routes` answers,
+  behind the app's default middleware and, for a function a route file defines, that file's. Its
+  body is given the request; what its middleware handed on is `Server.context!({})`, read as the
+  type the body reads (`Server.context!({}).member`). Read outside a server function's body (a
+  component, the browser), it crashes, and a context its middleware doesn't hand on is a 500 naming
+  the function. On the server, a component's call is `Server.local`: that request, answered
+  in-process as the page renders (the same middleware, the same answer), and put in the page for the
+  browser. In the browser's copy it is `Server.remote`, the request over HTTP. The browser's copy of
+  the module has no body, and none of the imports only the body used, so a body may use what only the
+  server has (`Db`, `Job`). Server functions stay out of `/openapi.json`: they are the app's own
+  calls, not an API. What one takes and answers goes as JSON: an `F64` as a number (one JSON can't
+  write, NaN or an infinity, is a 500 that says so). The builtin `Try` has no JSON encoder or parser
+  on this Roc, so rocx refuses a server function whose annotation takes or answers one, at its line,
+  naming the tag union to write instead (`[Ok(Str), Err([NotFound])]`, which a `match` reads as it
+  reads a `Try`); `rocx check` says the same under the compiler's report for one with no annotation.
+- **Endpoints.** A route's `+server.roc` answers HTTP at a path; a component asks one from a
+  handler with `Endpoint.send!(Api.post_api_shout({}), draft!(), Call.fetch!)`.
+- **Forms.** A `<form method="post" action={Endpoint.url_of(join)}>` posts to an endpoint, which reads
+  its fields as a record of strings. `submission = use_submission!(join)` is its latest submission,
+  as Solid Router's `useSubmission`: `submission.pending!()`, `input!()` (what was typed, as the
+  endpoint reads it), `field!("name")`, `result!()`, `error!()`, `clear!()`. With the runtime the
+  form is sent with `fetch` and the page stays; without it (before it loads, or with no JavaScript)
+  it posts, and the endpoint sends the browser back to the page with a flash, a short-lived cookie
+  holding what was typed and the result or refusal, which the submission is then
+  (`Server.flash!({})` reads it as it came). A redirect of the endpoint's own is followed either way.
+- **Events.** An endpoint's `events!` streams server-sent events: a loop that sends and sleeps,
+  on a thread of the server's own, ended by `?` when the client goes. A component listens with
+  `Endpoint.listen!(Api.events_…(params), Call.listen!, |event| …)`: each event runs the handler.
+  Started in an effect (`create_effect!(|| org!(), |org| Endpoint.listen!(…))`), it listens while
+  its component is there, again when what the effect read changes, and stops when it goes.
+- **OpenAPI.** An app can serve its endpoints' OpenAPI 3.2 document, which rocx writes
+  (`Api.openapi`): each path and its params, each method and its handler's comment, and the JSON
+  Schemas of what it is sent and answers, from the handlers' types, written down or inferred. It is
+  off unless `App.program` says: `openapi: Document` serves `GET /openapi.json`; `Page(Swagger)` or
+  `Page(Scalar)` serves that and `GET /openapi.html`, the document in Swagger UI or Scalar (pinned on
+  jsDelivr, checked against its hash, told not to call home). Roc has no reflection, but a type's
+  parser works with any format: the platform's `OpenApi` is a format that reads nothing and writes
+  the schema of each shape it's asked to read. A tag union's tags are whichever names in the app's
+  code the union turns out to have.
+
+## Safety
+
+`Html` is opaque: nothing outside it can wrap a string as markup. Text and attribute values are
+escaped; `href`, `src`, `action`, `formaction`, `poster` and `cite` take only relative URLs or
+http, https, mailto and tel ones (`java\tscript:` included), anything else becomes
+`about:invalid#rocx-unsafe-url`; inline handlers (`onclick=`), a computed `style` and unquoted
+values are refused when building; handlers are Roc functions, never text in the page. The browser's
+runtime builds elements with `createElement` and sets text and attributes as such. `rocx lint`
+refuses `Html.source_text` in hand-written `.roc` files. The site's default middleware refuses a
+change another site's page sends (`Middleware.same_origin`).
+
+## Commands
+
+```sh
+rocx build <dir>…        # each .rocx under the directories becomes the .roc beside it,
+                         # their server functions answered in <dir>/Generated/ServerFunctions.roc;
+                         # an app's routes/ become Generated/Routes.roc, Paths.roc, Api.roc and
+                         # App.roc (its program), and, for component route files, Root.roc
+  --client <out>         # and the browser's copy of the app: a server function only its name, a route
+                         # file without its middleware, the imports only they used gone;
+                         # for component route files, its main.roc and static/rocx/
+  --dev                  # and the stories (`<story>`): their catalog at /__rocx/stories
+rocx check -- <command>  # run a command, its reports pointed into .rocx files
+rocx lint <dir>…         # refuse Html.source_text in hand-written .roc files
+rocx routes <dir>        # list an app's routes and server functions: method, path, file, middleware
+rocx fmt <path>…         # format the Roc in .rocx files and hand-written .roc files with roc fmt
+  --check                # only say which files aren't formatted
+```
+
+`build` writes a file only when its content changes, deletes `.roc` files it wrote whose `.rocx`
+is gone, and stops at the first markup problem with its line and column. Because the lines match,
+the compiler's reports are already at the right line; `check` rewrites `Page.roc:22:48` to the
+`.rocx` file and column, quotes the `.rocx` line, and moves the caret onto the same code there.
+`fmt` runs `roc fmt` (`$ROC`, or roc on the PATH) on each `.rocx` file under the paths and each
+`.roc` file rocx didn't write. Markup, and the Roc in its holes, are left as written: each piece of
+markup moves only with the code around it, and the text of a `<pre>` or `<textarea>` never moves.
+`just fmt` formats this repository, and `just check` fails on a file that isn't formatted.
+
+## The platform
+
+**The server** (`server/`): an app gives it a record (`respond!`, whose answer may be a page of
+components or a stream, `migrations`, `jobs` and `crons`). Each call into Roc runs on a
+thread from a pool, so an effect that waits holds up only its own call; a crash ends only its call
+(a 500, a stream ended, a job run again), its memory freed and its transaction rolled back. It
+renders a page of components, byte for byte as the browser's runtime would. Postgres
+(`Db`, migrations, transactions), jobs and cron (options, keys, listing, and a jobs page an app
+mounts behind its own middleware), email (SMTP, or a dev mailbox at `/__rocx/mail`), requests to
+other servers (`Http`), files in S3 (`Storage`), bodies as bytes and from elsewhere
+(`Server.forward`), cookies, settings (`Env`), crypto (`Sha256`, `Hmac`, `Hkdf`, `AesGcm`,
+`Base64`, `Hex`), live topics and rooms, and actors whose state is kept in Postgres. The Rust host gives general things
+(HTTP, Postgres connections, TCP and TLS, background loops, isolated calls, locks); jobs, cron,
+migrations, email and actors are the platform's Roc, written on them, and so is
+[roc-pg](https://github.com/niclas-ahden/roc-pg), whose queries are checked at build, which runs on
+the platform's `Tcp`. `--target=arm64musl` cross-compiles one static Linux executable.
+`server/README.md` has every module's API.
+
+**The browser** (`web/`): the app's page, one wasm module, with a Zig host that passes each of
+Roc's effects to `web/runtime.js`, which keeps the graph of signals, memos and computations,
+hydrates the document from the server's nodes and answers, runs holes again when what they read
+changes, and sends requests. `web/README.md` has how.
+
+## The docs site
+
+`site/` is written in rocx and uses all of the above; its pages are `site/routes`: Roc Solid's
+front page (`/`), then three parts, rocx (`/rocx`, `/syntax`, `/routing`, `/components`, `/calls`,
+…), the platform (`/platform`, …) and the ecosystem (`/ecosystem`, `/ecosystem/charts`).
+Its pages are components, and `site/main.roc` is its program (`App.program`, which rocx build
+writes). Its look is a design system: `site/static/site.css` is the tokens (`:root`: neon on near
+black, always dark; colours, one type scale and one space scale, radii, glow) and the base (elements
+only, no classes); the components in `site/Ui` (`PageHero`, `Button`, `Feature`, `Demo`, `Specimen`,
+`Topbar`, `Sidebar`, …) and the demos in `site/Demos` each have their own scoped `<style>`, and the
+components their stories, which `just dev` shows at `/__rocx/stories` (`Ui/Tokens.rocx` shows the
+tokens). A page is written with them, not with classes of the site's; what only one page has is in
+a `<style>` at the top of its file. Its demos are `site/Demos`, each in the page that shows it (a counter, a to-do list, a
+shelf and a bag sharing a store, Snake and a flock of birds, frame by frame, with sounds: their
+handlers play the files in `site/static/sounds`, which `site/sounds.mjs` makes, with
+`Audio.play!`); the docs' prose and listings are `<NoHydration>`. `site/build.mjs` builds it: `.rocx`
+to `.roc`; `site/Generated/Sources.roc`, the sources the pages show; the browser's wasm, `app.wasm`
+(from the copy in `site/build/client`, beside the `start.js` and `runtime.js` a page loads); the
+server, native; then measures the wasm (sizes, rendering a page, and with `just site` the same
+wasm built other ways). `just site` starts the server and writes every page it answers into
+`site/dist`, with what the demos ask for besides pages (the shout's words, `/openapi.json` and
+`/openapi.html`) as files: a copy of the site that is only files, and works as one. Its demos need
+no server: the echo's answers came with the page, the server rendered them as the site was built;
+the count, which streams, is code only. `node site/build.mjs --base=/rocx/` builds it for a host
+that serves it under a path (`/rocx/`, as a GitHub project site would): every URL in a page begins
+with it, and the runtime asks under it. `just deploy-pages` publishes `just site`'s copy to
+https://roc-solid.github.io/, from this machine only: site/dist alone, no source, as the one commit
+of the `main` branch of Roc-Solid/roc-solid.github.io, force-pushed. `just dev` (`site/serve.mjs`)
+builds with Roc's dev backend, in a process of its own each save, and restarts the server; open
+pages reload.
+
+## Tests
+
+```sh
+just test
+```
+
+`test/transpile.test.mjs` covers the syntax; `test/routes.test.mjs` the
+routing; `test/e2e.test.mjs` builds an app with routes and checks where a type error is reported.
+`roc test site/main.roc` runs every Roc module's `expect`s: `Html`, `Server`, the demos' rules
+(the snake, the flock's physics), the highlighter. `web/test/platform.test.mjs` builds components on
+the browser's platform, renders them as a server would in Node, and hydrates and uses them in
+Chromium (signals, `<For>` and `<Show>`, boundaries, contexts, documents, memory).
+`site/test/site.test.mjs` builds the docs site, starts its server, and hydrates every page strictly
+and uses every demo in Chromium, the game with real keys; it compares every page the server renders
+with the browser's build's own render, byte for byte outside its `<NoHydration>`s, natively and as
+the files GitHub Pages serves. `server/test/server.test.mjs` asks a small app on the server's
+platform over HTTP: crashes and memory, streams, pages of components, and, with `DATABASE_URL` set (`just db`),
+Postgres, transactions, migrations, jobs, cron, email over SMTP, live rooms, actors across a
+restart, and a graceful stop. The browser tests drive Chromium's headless shell over the DevTools
+protocol with no dependencies: `$CHROME`, or Playwright's cached one; without it they are skipped.

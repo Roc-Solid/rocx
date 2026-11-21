@@ -1,0 +1,74 @@
+import pf.Html
+import ../../Ui/Code
+import ../../Ui/Heading
+import ../../Ui/Nav
+import ../../Generated/Sources
+import ../../Generated/Paths
+import ../../Ui/Button
+import ../../Ui/Feature
+import ../../Ui/FeatureGrid
+import ../../Ui/PageCards
+import ../../Ui/PageHero
+
+## The ecosystem's overview: what a Roc Solid package is, how an app uses one, and the packages
+## there are, as cards.
+meta = {
+	title: "The ecosystem",
+	description: "Packages for Roc Solid apps: plain Roc that the server, the browser and a test use alike, and components that rocx build copies into the app. The first one draws charts.",
+	toc: [
+		{ id: "packages", label: "The packages" },
+		{ id: "halves", label: "A package's two halves" },
+		{ id: "use", label: "Using one" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				eyebrow="The ecosystem"
+				title="Packages: plain Roc, and components, for any Roc Solid app"
+				actions={[
+					<Button href={Paths.ecosystem_charts} primary>Charts</Button>,
+				]}
+			>
+				A Roc Solid package is a directory with two halves. One is plain Roc, on no platform, which the
+				server, the browser and a test all call alike. The other is components, <code>.rocx</code> files,
+				which <code>rocx build</code> copies into the app that names the package, so that each half of
+				the app compiles them on its own platform. So far there is one, and it draws charts.
+			</PageHero>
+
+			<Heading id="packages">The packages</Heading>
+			<PageCards pages={Nav.ecosystem_docs.pages.drop_if(|page| page.path == Paths.ecosystem)} />
+
+			<Heading id="halves">A package's two halves</Heading>
+			<FeatureGrid>
+				<Feature title="The arithmetic is a Roc package">
+					<p>
+						<code>main.roc</code> is an ordinary Roc package, on no platform: it can't render or fetch,
+						so a page rendered once, a component in the browser and the server's code use the same
+						functions, and every one is an <code>expect</code> away from a test.
+					</p>
+				</Feature>
+				<Feature title="The components are copied in">
+					<p>
+						A component imports the platform's <code>Html</code> and <code>Solid</code>. A Roc package
+						may name only the very platform its app names, and an app is two programs on two platforms.
+						So <code>rocx build</code> copies <code>components/*.rocx</code> into the app, where
+						<code>pf</code> means each half's own.
+					</p>
+				</Feature>
+			</FeatureGrid>
+
+			<Heading id="use">Using one</Heading>
+			<p>Name the package in both of the app's headers, by its directory's name:</p>
+			<Code source={"app [...] { charts: \"../packages/charts/main.roc\", pf: platform \"…\" }"} numbers={Bool.False} />
+			<p>
+				Then <code>rocx build</code> writes each of its components to the app's
+				<code>Generated/charts/</code>, and in a <code>.rocx</code> file, <code>import charts.BarChart</code>
+				imports that copy. Its <code>{"<style>"}</code> goes into the app's stylesheet with the others, and the
+				compiler's reports point at the package's own file.
+			</p>
+			<Code source={Sources.charts_use.rocx} numbers={Bool.False} />
+		</NoHydration>
+	</>

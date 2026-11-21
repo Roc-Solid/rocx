@@ -1,0 +1,47 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+import pf.For
+import pf.Show
+import pf.Transition
+
+## Transitions, for the tests: a list whose rows fade in and out, the same list with none, and a
+## <Show> whose panel flies in and out (slowly or quickly, as a signal says), with a list in it whose
+## rows take two seconds to go, which they do only when they go alone.
+Fades := [].{
+	view! : {} => Html
+	view! = |{}| {
+		(items!, set_items!) = create_signal!(["a", "b", "c"])
+		(next!, set_next!) = create_signal!(0.U64)
+		(open!, set_open!) = create_signal!(Bool.True)
+		(slow!, set_slow!) = create_signal!(Bool.True)
+		add! = || {
+			set_items!(items!().append("n${next!().to_str()}"))
+			set_next!(next!() + 1)
+		}
+		<section class="fades">
+			<button class="add" on:click={add!}>Add</button>
+			<button class="drop" on:click={|| set_items!(items!().drop_first(1))}>Drop</button>
+			<button class="toggle" on:click={|| set_open!(!open!())}>Toggle</button>
+			<button class="quick" on:click={|| set_slow!(Bool.False)}>Quick</button>
+			<ul class="faded">
+				<For each!={items!()} keyed={|item| item}>
+					{|item!, _| <li transition={Transition.fade.ms(300)}>{item!()}</li>}
+				</For>
+			</ul>
+			<ul class="plain">
+				<For each!={items!()} keyed={|item| item}>
+					{|item!, _| <li>{item!()}</li>}
+				</For>
+			</ul>
+			<Show when!={open!()} fallback={<p class="closed" transition:in={Transition.fade}>Closed</p>}>
+				<div class="panel" transition:in={Transition.fly({ x: 0.0, y: 8.0 })} transition:out={if (slow!()) Transition.fly({ x: 0.0, y: 8.0 }).ms(300) else Transition.fade.ms(30)}>
+					<ul class="inner">
+						<For each!={items!()} keyed={|item| item}>
+							{|item!, _| <li transition:out={Transition.scale(0.5).ms(2000)}>{item!()}</li>}
+						</For>
+					</ul>
+				</div>
+			</Show>
+		</section>
+	}
+}

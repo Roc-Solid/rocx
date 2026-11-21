@@ -1,0 +1,56 @@
+import pf.Html
+
+## What Roc renders for each URL in an `href`, as a page is rendered: the value, the markup, and
+## whether the URL was kept or replaced. The link is made by `link`, outside the block, so the
+## markup shown is Roc's alone, without this component's scope class. Put it in `<TableWrap>`.
+UrlChecks := [].{
+	view : { urls : List({ shown : Str, url : Str }) } -> Html
+	view = |{ urls }|
+		<table class="urls">
+			<thead><tr><th>The value</th><th>Renders</th><th></th></tr></thead>
+			<tbody>
+				{...urls.map(|{ shown, url }| {
+					rendered = link(url)
+					safe = !rendered.contains("rocx-unsafe-url")
+					<tr>
+						<td><code>{shown}</code></td>
+						<td><code>{rendered}</code></td>
+						<td>{=if (safe) <span class="ok">kept</span> else <span class="no">replaced</span>}</td>
+					</tr>
+				})}
+			</tbody>
+		</table>
+
+	<story name="Kept and replaced">
+		<UrlChecks urls={[{ shown: "/syntax#holes", url: "/syntax#holes" }, { shown: "javascript:alert(1)", url: "javascript:alert(1)" }]} />
+	</story>
+
+	<style>
+		td code {
+			white-space: pre-wrap;
+			overflow-wrap: anywhere;
+		}
+
+		td:last-child {
+			width: 1%;
+		}
+
+		.ok,
+		.no {
+			font-weight: 600;
+			white-space: nowrap;
+		}
+
+		.ok {
+			color: var(--good);
+		}
+
+		.no {
+			color: var(--bad);
+		}
+	</style>
+}
+
+## A link to `url`, rendered: what Roc writes for its `href`.
+link : Str -> Str
+link = |url| Html.to_str(<a href={url}>x</a>)

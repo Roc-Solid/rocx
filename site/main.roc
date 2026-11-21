@@ -1,0 +1,25 @@
+## The site's program, on the server platform (`server/platform`: native code, in a Rust host). rocx
+## build writes nearly all of it from site/routes (`Generated/App`: every page, endpoint and server
+## function, behind the site's default middleware); this says what only the site can: what its
+## middleware is given, which middleware that is, its schedules (none), and that it serves its
+## endpoints' OpenAPI document, with a page to read it in (`/openapi.json`, and `/openapi.html` in
+## Swagger UI). The browser's half is the same pages, compiled to WebAssembly from the browser's copy
+## of the site (`rocx build site --client site/build/client` writes its main.roc).
+app [program] { charts: "../packages/charts/main.roc", pf: platform "../server/platform/main.roc" }
+
+import Generated/App
+import Middlewares
+
+# The count (Demos/Count.rocx) is on no page: a copy of the site as files can't stream its events.
+# The calls page shows its code, so the server's program imports it, and the compiler checks it.
+import Demos/Count
+
+## Every request: the site's default middleware, given the facts the build measured (what the
+## server was started with, `--context-file`); then the routes. The site has no database tables,
+## jobs or schedules.
+program = App.program({
+	context: |started| { facts: started },
+	middleware: Middlewares.default,
+	crons: [],
+	openapi: Page(Swagger),
+})

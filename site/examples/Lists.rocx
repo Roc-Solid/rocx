@@ -1,0 +1,27 @@
+import pf.Html
+
+Lists := [].{
+	# example
+	Post : { title : Str, status : [Draft, Published(Str)] }
+
+	view : List(Post) -> Html
+	view = |posts|
+		<section>
+			<h3>{if (posts.is_empty()) "No posts yet" else "${posts.len().to_str()} posts"}</h3>
+			<ul>
+				{...posts.map(|post|
+					<li>
+						{post.title}
+						{=match post.status {
+							Draft => <em>draft</em>
+							Published(day) => <time>{day}</time>
+						}}
+					</li>
+				)}
+			</ul>
+		</section>
+	# /example
+
+	demo : {} -> Html
+	demo = |{}| view([{ title: "Hello, rocx", status: Published("Nov 19") }, { title: "Islands", status: Draft }])
+}

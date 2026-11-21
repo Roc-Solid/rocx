@@ -1,0 +1,215 @@
+import pf.Html
+import pf.Solid exposing [create_signal!, set_interval!, set_timeout!]
+import pf.For
+import pf.Show
+import Clock
+
+## The browser's timers, from Roc. `set_interval!` and `set_timeout!` run a handler later, and
+## answer its `clear!`. The stopwatch keeps its interval's `clear!` in a signal, and Stop calls it.
+## The search waits for a pause in the typing: each key clears the last key's timeout, and starts
+## its own. And the clock in the <Show> clears nothing: its interval stops when the clock goes.
+Timers := [].{
+	Watch : [Stopped, Running(() => {})]
+	Search : [Idle, Waiting(() => {})]
+
+	view! : {} => Html
+	view! = |{}| {
+		# The stopwatch: tenths of a second, and, while it runs, its interval's clear!.
+		(tenths!, set_tenths!) = create_signal!(0.U64)
+		(watch!, set_watch!) = create_signal!(stopped)
+		toggle! = ||
+			match watch!() {
+				Running(clear!) => {
+					clear!()
+					set_watch!(Stopped)
+				}
+				Stopped => set_watch!(Running(set_interval!(100, || set_tenths!(tenths!() + 1))))
+			}
+
+		# The search: what is typed, what was searched for once the typing paused, and the
+		# timeout waiting for that pause.
+		(draft!, set_draft!) = create_signal!("")
+		(query!, set_query!) = create_signal!("")
+		(search!, set_search!) = create_signal!(idle)
+		(keys!, set_keys!) = create_signal!(0.U64)
+		(searches!, set_searches!) = create_signal!(0.U64)
+		typed! = |text| {
+			match search!() {
+				Waiting(cancel!) => cancel!()
+				Idle => {}
+			}
+			set_draft!(text)
+			set_keys!(keys!() + 1)
+			wait = set_timeout!(
+				400,
+				|| {
+					set_query!(text)
+					set_searches!(searches!() + 1)
+					set_search!(Idle)
+				},
+			)
+			set_search!(Waiting(wait))
+		}
+
+		# The clock: whether it shows, and the ticks heard from it.
+		(clock!, set_clock!) = create_signal!(Bool.True)
+		(ticks!, set_ticks!) = create_signal!(0.U64)
+
+		<div class="timers">
+			<section class="timer">
+				<h3><code>set_interval!</code>, stopped by its <code>clear!</code></h3>
+				<p class="timer-face"><b>{watch_time(tenths!())}</b> s</p>
+				<div class="timer-actions">
+					<button type="button" class:running={running(watch!())} on:click={toggle!}>{if (running(watch!())) "Stop" else "Start"}</button>
+					<button type="button" on:click={|| set_tenths!(0)} disabled?={tenths!() == 0}>Reset</button>
+				</div>
+			</section>
+			<section class="timer">
+				<h3><code>set_timeout!</code>, cleared at each key</h3>
+				<input type="search" placeholder="Search the birds" aria-label="Search the birds" value={draft!()} on:input.value={typed!} />
+				<p class="timer-note">{waiting_note(search!(), query!())}</p>
+				<p class="timer-note">{counted(keys!(), "key")}, {counted(searches!(), "search")}</p>
+				<ul class="timer-birds">
+					<For each!={matches(query!())} keyed={|bird| bird}>
+						{|bird!, _| <li>{bird!()}</li>}
+					</For>
+				</ul>
+			</section>
+			<section class="timer">
+				<h3>Gone with its part</h3>
+				<label class="timer-check">
+					<input type="checkbox" checked?={clock!()} on:change.checked={set_clock!} />
+					Show the clock
+				</label>
+				<Show when!={clock!()} fallback={<p class="timer-note">No clock, so no interval: the ticks stop.</p>}>
+					<Clock tick!={|| set_ticks!(ticks!() + 1)} />
+				</Show>
+				<p class="timer-note">{counted(ticks!(), "tick")} heard</p>
+			</section>
+		</div>
+	}
+
+	<style>
+		.timers {
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+			gap: var(--space-4);
+		}
+
+		.timer {
+			display: grid;
+			align-content: start;
+			gap: var(--space-2);
+			padding: var(--space-4);
+			border-radius: var(--radius);
+			background: var(--bg-sunken);
+		}
+
+		.timer h3 {
+			margin: 0;
+			font-size: var(--size-md);
+		}
+
+		.timer-face {
+			margin: 0;
+			color: var(--text-muted);
+		}
+
+		.timer-face b {
+			color: var(--text);
+			font: 700 2rem/1.2 var(--font);
+			font-variant-numeric: tabular-nums;
+		}
+
+		.timer-actions {
+			display: flex;
+			gap: var(--space-2);
+		}
+
+		.timer button {
+			padding: var(--space-1) var(--space-4);
+			font-size: var(--size-sm);
+		}
+
+		.timer button.running {
+			background: var(--accent-soft);
+			color: var(--accent);
+		}
+
+		.timer-note {
+			margin: 0;
+			color: var(--text-faint);
+			font-size: var(--size-sm);
+		}
+
+		.timer-check {
+			display: flex;
+			align-items: center;
+			gap: var(--space-2);
+		}
+
+		.timer-birds {
+			display: flex;
+			flex-wrap: wrap;
+			gap: var(--space-1);
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		.timer-birds li {
+			padding: 0.1rem var(--space-2);
+			border-radius: var(--pill);
+			background: var(--accent-soft);
+			color: var(--accent);
+			font-size: var(--size-sm);
+		}
+	</style>
+}
+
+stopped : Timers.Watch
+stopped = Stopped
+
+idle : Timers.Search
+idle = Idle
+
+running : Timers.Watch -> Bool
+running = |watch|
+	match watch {
+		Running(_) => Bool.True
+		Stopped => Bool.False
+	}
+
+## Tenths of a second, as the stopwatch shows them: `12.3`.
+watch_time : U64 -> Str
+watch_time = |tenths| "${(tenths // 10).to_str()}.${(tenths % 10).to_str()}"
+
+waiting_note : Timers.Search, Str -> Str
+waiting_note = |search, query|
+	match search {
+		Waiting(_) => "Waiting for a pause in the typing…"
+		Idle => if (query.is_empty()) "Type, and the search runs once you pause." else "Searched for “${query}”."
+	}
+
+## A number of things: `1 key`, `2 searches`.
+counted : U64, Str -> Str
+counted = |n, thing| {
+	plural = if (thing.ends_with("ch")) "${thing}es" else "${thing}s"
+	"${n.to_str()} ${if (n == 1) thing else plural}"
+}
+
+birds : List(Str)
+birds = ["albatross", "blackbird", "cormorant", "crane", "dove", "eagle", "falcon", "finch", "flamingo", "gull", "heron", "hummingbird", "kestrel", "kingfisher", "magpie", "nightingale", "osprey", "owl", "parrot", "pelican", "puffin", "raven", "robin", "sparrow", "starling", "swallow", "swan", "swift", "tern", "wren"]
+
+## The birds whose names have the query in them; all of them for none.
+matches : Str -> List(Str)
+matches = |query| {
+	wanted = query.trim().with_ascii_lowercased()
+	birds.keep_if(|bird| bird.contains(wanted))
+}
+
+expect watch_time(123) == "12.3"
+expect watch_time(0) == "0.0"
+expect matches("sw") == ["swallow", "swan", "swift"]
+expect matches("").len() == birds.len()
+expect counted(1, "search") == "1 search" and counted(2, "search") == "2 searches" and counted(0, "tick") == "0 ticks"

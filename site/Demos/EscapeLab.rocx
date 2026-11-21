@@ -1,0 +1,107 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+
+## Try to break out of the markup: whatever goes in is escaped, as text and as an attribute's value,
+## by `Html.to_str` (which writes markup as the server does, running here, in your browser) and by
+## the runtime, which only ever sets text and attributes; a URL that would run script never reaches
+## the page.
+EscapeLab := [].{
+	presets : List({ label : Str, text : Str, url : Str })
+	presets = [
+		{ label: "A script tag", text: "<script>alert(1)</script>", url: "/docs" },
+		{ label: "javascript: URL", text: "Click me", url: "javascript:alert(1)" },
+		{ label: "Scheme with a tab", text: "Click me", url: " java\tscript:alert(1)" },
+		{ label: "Breaking out of the quotes", text: "\"><img src=x>", url: "\" onmouseover=\"alert(1)" },
+		{ label: "Harmless", text: "Tom & Jerry's", url: "https://www.roc-lang.org/?a=1&b=2" },
+	]
+
+	view! : {} => Html
+	view! = |{}| {
+		(text!, set_text!) = create_signal!("<script>alert(1)</script>")
+		(url!, set_url!) = create_signal!("javascript:alert(1)")
+		<div class="lab">
+			<div class="lab-presets">
+				{...presets.map(|preset|
+					<button
+						type="button"
+						on:click={|| {
+							set_text!(preset.text)
+							set_url!(preset.url)
+						}}
+					>
+						{preset.label}
+					</button>
+				)}
+			</div>
+			<div class="lab-fields">
+				<label>Text <input type="text" value={text!()} on:input.value={set_text!} /></label>
+				<label>URL <input type="text" value={url!()} on:input.value={set_url!} /></label>
+			</div>
+			<p class="lab-caption"><code>{"<a href={url} title={text}>{text}</a>"}</code> renders as</p>
+			<pre class="lab-markup"><code>{rendered(url!(), text!())}</code></pre>
+			<p class="lab-caption">and here it is, live:</p>
+			<div class="lab-live"><a href={url!()} title={text!()}>{text!()}</a></div>
+		</div>
+	}
+
+	<style>
+		.lab-presets {
+			display: flex;
+			flex-wrap: wrap;
+			gap: var(--space-2);
+		}
+
+		.lab-presets button {
+			padding: var(--space-1) var(--space-3);
+			border-radius: var(--pill);
+			font-size: var(--size-sm);
+			font-weight: 500;
+		}
+
+		.lab-fields {
+			display: grid;
+			gap: var(--space-2);
+			margin: var(--space-4) 0;
+		}
+
+		.lab-fields label {
+			display: grid;
+			grid-template-columns: 3rem 1fr;
+			align-items: center;
+			gap: var(--space-2);
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+		}
+
+		.lab-caption {
+			margin: var(--space-3) 0 var(--space-1);
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+		}
+
+		.lab-markup {
+			margin: 0;
+			padding: var(--space-3) var(--space-4);
+			border-radius: var(--radius-sm);
+			background: var(--bg-code);
+			font-size: var(--size-xs);
+			white-space: pre-wrap;
+			word-break: break-all;
+		}
+
+		.lab-live {
+			padding: var(--space-3) var(--space-4);
+			border-radius: var(--radius-sm);
+			background: var(--bg-sunken);
+			box-shadow: inset 0 0 0 1px var(--accent-soft);
+		}
+	</style>
+}
+
+## The link as the server writes it, from the same values: the text escaped in the link's text and
+## in an attribute, the URL checked.
+rendered : Str, Str -> Str
+rendered = |url, text| Html.to_str(Html.element("a", [Html.attr("href", url), Html.attr("title", text)], [Html.text(text)]))
+
+expect rendered("javascript:alert(1)", "<b>") == "<a href=\"about:invalid#rocx-unsafe-url\" title=\"&lt;b&gt;\">&lt;b&gt;</a>"
+expect rendered("/docs", "\"><img src=x>") == "<a href=\"/docs\" title=\"&quot;&gt;&lt;img src=x&gt;\">&quot;&gt;&lt;img src=x&gt;</a>"

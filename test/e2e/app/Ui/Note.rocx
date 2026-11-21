@@ -1,0 +1,8 @@
+import pf.Html
+
+## Prose, set apart. It is pure, and only the home page's `<NoHydration>` uses it, so the browser's
+## copy of the app doesn't import it: none of it is in the browser's wasm.
+Note := [].{
+	view : { children : List(Html) } -> Html
+	view = |{ children }| <aside class="note">{...children}</aside>
+}

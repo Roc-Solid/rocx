@@ -1,0 +1,36 @@
+import pf.Html
+
+## What rocx refuses, and what it says, as a compiler would: each piece of markup, and rocx's own
+## message for it. Put it in `<TableWrap>`.
+Refusals := [].{
+	view = |{ refusals }|
+		<table class="refusals">
+			<thead><tr><th>You write</th><th>rocx says</th></tr></thead>
+			<tbody>
+				{...refusals.map(|refusal| <tr><td><code>{refusal.source}</code></td><td>{refusal.reason}</td></tr>)}
+			</tbody>
+		</table>
+
+	<story name="Two">
+		<Refusals refusals={[{ source: "<br>", reason: "<br> has no children or closing tag: write <br />" }, { source: "<DIV>Hi</DIV>", reason: "write HTML tags in lower case: <div>" }]} />
+	</story>
+
+	<style>
+		td:first-child {
+			width: 38%;
+		}
+
+		td code {
+			white-space: pre-wrap;
+		}
+
+		td:last-child {
+			color: var(--bad);
+			font: var(--size-xs) / 1.5 var(--mono);
+		}
+
+		td:last-child::before {
+			content: "✗ ";
+		}
+	</style>
+}

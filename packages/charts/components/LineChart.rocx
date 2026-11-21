@@ -1,0 +1,230 @@
+import pf.Html
+import pf.Solid exposing [create_memo!, create_signal!]
+import pf.For
+import pf.Show
+import charts.Ease
+import charts.Format
+import charts.Path
+import charts.Scale
+import charts.Ticks
+
+## A line through `data!`'s values, left to right and evenly spaced, the area under it shaded, on
+## an axis around them widened to round numbers. With `smooth`, it curves through them, and never
+## past one (a monotone curve). When the values outgrow the axis, its ends glide to new round
+## numbers, a frame at a time. Pointing along the chart shows the value under the pointer.
+##
+## `label` names the chart for screen readers, and `format` writes a value.
+LineChart := [].{
+	view! : { data! : () => List(Dec), label : Str, format : Dec -> Str, smooth : Bool } => Html
+	view! = |{ data!, label, format, smooth }| {
+		goal! = create_memo!(|| LineChart.domain(data!()))
+		(drawn!, set_drawn!) = create_signal!(goal!())
+		(hover!, set_hover!) = create_signal!(Err(None))
+		y! = create_memo!(|| Scale.linear(drawn!(), (bottom, top)))
+		x! = create_memo!(|| Scale.linear((0.0, Dec.max(data!().len().to_dec() - 1.0, 1.0)), (left, right)))
+		points! = create_memo!(
+			|| {
+				(across, up) = (x!(), y!())
+				data!().map_with_index(|value, i| (across.at(i.to_dec()), up.at(value)))
+			},
+		)
+		# The point under the pointer, and its value.
+		spot! = || {
+			index = match hover!() {
+				Ok(i) => i
+				Err(_) => data!().len()
+			}
+			match (points!().get(index), data!().get(index)) {
+				(Ok(point), Ok(value)) => Ok((point, value))
+				_ => Err(None)
+			}
+		}
+		spotted! = || {
+			match spot!() {
+				Ok(_) => Bool.True
+				Err(_) => Bool.False
+			}
+		}
+		spot_x! = || {
+			match spot!() {
+				Ok(((px, _), _)) => px
+				Err(_) => left
+			}
+		}
+		spot_y! = || {
+			match spot!() {
+				Ok(((_, py), _)) => py
+				Err(_) => bottom
+			}
+		}
+		spot_text! = || {
+			match spot!() {
+				Ok((_, value)) => format(value)
+				Err(_) => ""
+			}
+		}
+		<figure class="line-chart">
+			<svg viewBox="0 0 640 320" role="img" aria-label={label}>
+				<g class="ticks" aria-hidden="true">
+					<For each!={LineChart.ticks(goal!())} keyed={|tick| Format.num(tick, 9)}>
+						{|tick!, _|
+							<g class:out={LineChart.outside(drawn!(), tick!())}>
+								<line x1={Format.coord(left)} x2={Format.coord(right)} y1={Format.coord(y!().at(tick!()))} y2={Format.coord(y!().at(tick!()))} />
+								<text x={Format.coord(left - 8.0)} y={Format.coord(y!().at(tick!()))} dy="0.32em">{format(tick!())}</text>
+							</g>}
+					</For>
+				</g>
+				<path class="area" d={if (smooth) Path.smooth_area(points!(), bottom) else Path.area(points!(), bottom)} />
+				<path class="line" d={if (smooth) Path.smooth(points!()) else Path.line(points!())} />
+				<g class="spot" class:shown={spotted!()} aria-hidden="true">
+					<line x1={Format.coord(spot_x!())} x2={Format.coord(spot_x!())} y1={Format.coord(top)} y2={Format.coord(bottom)} />
+					<circle cx={Format.coord(spot_x!())} cy={Format.coord(spot_y!())} r="4.5" />
+					<text x={Format.coord(spot_x!())} y={Format.coord(top - 8.0)}>{spot_text!()}</text>
+				</g>
+			</svg>
+			{# A column for each point, which the pointer finds it by: laid out by CSS, not Roc, so a
+			 chart whose values change every frame doesn't move them. }
+			<div class="columns" style:--gaps={Dec.max(data!().len().to_dec() - 1.0, 1.0).to_str()} on:pointerleave={|| set_hover!(Err(None))}>
+				<For each!={data!()} keyed={Bool.False}>
+					{|_, i| <span on:pointerenter={|| set_hover!(Ok(i))}></span>}
+				</For>
+			</div>
+			{# Frames only while the axis moves: once its ends are where the data says, none. }
+			<Show when!={drawn!() != goal!()}>
+				<span hidden on:frame.ms={|ms| set_drawn!(LineChart.glide(drawn!(), goal!(), ms))}></span>
+			</Show>
+		</figure>
+	}
+
+	## The axis's ends: the least and the greatest value, widened to round numbers.
+	domain : List(Dec) -> (Dec, Dec)
+	domain = |values| {
+		(low, high) = Scale.extent(values)
+		if low == high {
+			(low - 1.0, high + 1.0)
+		} else {
+			Ticks.nice(low, high, tick_count)
+		}
+	}
+
+	## A frame's way from the axis's ends to the data's.
+	glide : (Dec, Dec), (Dec, Dec), F64 -> (Dec, Dec)
+	glide = |(d0, d1), (g0, g1), ms| {
+		# Within a five-hundredth of the axis is there: under a pixel.
+		close = (g1 - g0) / 500.0
+		(Ease.toward(d0, g0, ms, close), Ease.toward(d1, g1, ms, close))
+	}
+
+	## The axis's ticks.
+	ticks : (Dec, Dec) -> List(Dec)
+	ticks = |(from, to)| Ticks.between(from, to, tick_count)
+
+	## Whether a tick is off the axis as drawn: one the axis is gliding toward, faded until it is on.
+	outside : (Dec, Dec), Dec -> Bool
+	outside = |(from, to), tick| tick < Dec.min(from, to) or tick > Dec.max(from, to)
+
+	<style>
+		.line-chart {
+			position: relative;
+			margin: 0;
+		}
+
+		svg {
+			display: block;
+			width: 100%;
+			height: auto;
+			overflow: visible;
+			font: 12px/1 var(--chart-font, inherit);
+		}
+
+		.ticks line {
+			stroke: var(--chart-grid, color-mix(in srgb, currentColor 12%, transparent));
+		}
+
+		.ticks g {
+			transition: opacity 0.2s;
+		}
+
+		.ticks .out {
+			opacity: 0;
+		}
+
+		.ticks text {
+			fill: var(--chart-muted, color-mix(in srgb, currentColor 60%, transparent));
+			text-anchor: end;
+			font-variant-numeric: tabular-nums;
+		}
+
+		.line {
+			fill: none;
+			stroke: var(--chart-color, #4f6bed);
+			stroke-width: 2.5;
+			stroke-linejoin: round;
+			stroke-linecap: round;
+		}
+
+		.area {
+			fill: var(--chart-color, #4f6bed);
+			opacity: 0.12;
+		}
+
+		.spot {
+			opacity: 0;
+			transition: opacity 0.15s;
+			pointer-events: none;
+		}
+
+		.spot.shown {
+			opacity: 1;
+		}
+
+		.spot line {
+			stroke: var(--chart-axis, color-mix(in srgb, currentColor 45%, transparent));
+			stroke-dasharray: 3 3;
+		}
+
+		.spot circle {
+			fill: var(--chart-active, #2f49c4);
+			stroke: var(--chart-surface, white);
+			stroke-width: 2;
+		}
+
+		.spot text {
+			text-anchor: middle;
+			font-weight: 600;
+			fill: currentColor;
+			font-variant-numeric: tabular-nums;
+		}
+
+		/* Over the plot (48 to 632 of the SVG's 640 across, 24 to 304 of its 320 down), each column
+		   as wide as the room between two points, and centred on its point. */
+		.columns {
+			position: absolute;
+			display: flex;
+			top: 7.5%;
+			bottom: 5%;
+			left: calc(7.5% - 91.25% / var(--gaps) / 2);
+			right: calc(1.25% - 91.25% / var(--gaps) / 2);
+		}
+
+		.columns span {
+			flex: 1;
+		}
+	</style>
+}
+
+## The plot's edges in the SVG's units (640 by 320): room on the left for the ticks' labels.
+left : Dec
+left = 48.0
+
+right : Dec
+right = 632.0
+
+top : Dec
+top = 24.0
+
+bottom : Dec
+bottom = 304.0
+
+tick_count : U64
+tick_count = 5

@@ -1,0 +1,143 @@
+// rocx fmt: a .rocx file's Roc through `roc fmt`, its markup as written. Needs `roc`: $ROC, or roc
+// on the PATH.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { FormatError, formatRocx, rocFmt } from "../src/format.mjs";
+import { transpileModule } from "../src/transpile.mjs";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const root = join(here, "..");
+const roc = process.env.ROC ?? "roc";
+const hasRoc = spawnSync(roc, ["version"]).status === 0;
+const needsRoc = { skip: !hasRoc && "no roc on the PATH (set ROC)" };
+const format = (source, file = "Page.rocx") => formatRocx(source, file, { roc });
+
+test("the Roc around markup is formatted, and the markup, holes too, is kept as written", needsRoc, () => {
+	const written = [
+		"import pf.Html",
+		"Card := [].{",
+		"\tview! : { name : Str } => Html",
+		"\tview! = |{ name }| {",
+		'\t\tgreeting =    "Hello, ${name}"',
+		'\t\t<div class="card">',
+		'\t\t\t<p>{ if (name.is_empty()) "nobody" else    greeting }</p>',
+		"\t\t</div>",
+		"\t}",
+		"}",
+		"",
+	];
+	const expected = written.with(4, '\t\tgreeting = "Hello, ${name}"');
+	assert.deepEqual(format(written.join("\n")).split("\n"), expected);
+});
+
+test("markup on lines of its own stays on them, moved with the code it is in; a comma after it stays", needsRoc, () => {
+	const written = [
+		"List := [].{",
+		"\tview = |items|   Html.fragment(",
+		"\t\t\t<ul>",
+		"\t\t\t\t{items.map(|item| <li>{item}</li>)}",
+		"\t\t\t</ul>",
+		"\t\t)",
+		"",
+		"\trows = [",
+		"\t\t<li>",
+		"\t\t\tone",
+		"\t\t</li>,",
+		"\t\t<li>two</li>,",
+		"\t]",
+		"}",
+		"",
+	].join("\n");
+	assert.equal(
+		format(written),
+		[
+			"List := [].{",
+			"\tview = |items| Html.fragment(",
+			"\t\t<ul>",
+			"\t\t\t{items.map(|item| <li>{item}</li>)}",
+			"\t\t</ul>",
+			"\t)",
+			"",
+			"\trows = [",
+			"\t\t<li>",
+			"\t\t\tone",
+			"\t\t</li>,",
+			"\t\t<li>two</li>,",
+			"\t]",
+			"}",
+			"",
+		].join("\n"),
+	);
+});
+
+test("markup straight after an if's condition keeps the parentheses that make it markup", needsRoc, () => {
+	const written = "Badge := [].{\n\tview = |ok| if (ok) <b>yes</b> else <i>no</i>\n}\n";
+	assert.equal(format(written), written);
+	assert.match(transpileModule(format(written), "Badge.rocx").code, /Html\.element\("b"/);
+});
+
+test("a <pre>'s text stays where it is when the markup around it moves", needsRoc, () => {
+	const written = "Page := [].{\n\tview = |_|\n\t\t\t<div>\n\t\t\t\t<pre>\n\t\t\t\t\tkeep\n\t\t\t\t</pre>\n\t\t\t</div>\n}\n";
+	assert.equal(format(written), "Page := [].{\n\tview = |_|\n\t\t<div>\n\t\t\t<pre>\n\t\t\t\t\tkeep\n\t\t\t\t</pre>\n\t\t</div>\n}\n");
+});
+
+test("a file's and a component's <style> are kept as written", needsRoc, () => {
+	const written = "import pf.Html\n\n<style>\n  p { color: red; }\n</style>\n\nCard := [].{\n\t<style>\n\t\t.card { padding: 1em; }\n\t</style>\n\n\tview! = |_|    <p class=\"card\">hi</p>\n}\n";
+	assert.equal(format(written), written.replace("|_|    <p", "|_| <p"));
+});
+
+test("what roc can't read is reported at the file's line, past markup that took several", needsRoc, () => {
+	const written = "Page := [].{\n\tview = |_| Html.fragment(<div>\n\t\t<p>hi</p>\n\t</div>)\n\tbroken = = 1\n}\n";
+	assert.throws(() => format(written, "Broken.rocx"), (error) => error instanceof FormatError && /^Broken\.rocx:5:\d+: /.test(error.message));
+});
+
+test("every .rocx file here: formatting it keeps its code, and formatting it again changes nothing", needsRoc, () => {
+	const rocxFiles = (dir) =>
+		readdirSync(dir).flatMap((entry) => {
+			const path = join(dir, entry);
+			if (statSync(path).isDirectory()) return /^(build|dist|Generated|node_modules|run-.*)$/.test(entry) ? [] : rocxFiles(path);
+			return path.endsWith(".rocx") ? [path] : [];
+		});
+	const files = ["site", "web/test/app", "test/e2e"].flatMap((dir) => rocxFiles(join(root, dir)));
+	assert.ok(files.length > 20);
+	for (const file of files) {
+		const source = readFileSync(file, "utf8");
+		const formatted = format(source, file);
+		const code = (text) => rocFmt(transpileModule(text, file).code, { roc });
+		assert.equal(code(formatted), code(source), `${file}: its code changed`);
+		assert.equal(format(formatted, file), formatted, `${file}: formatted twice, it changed again`);
+	}
+});
+
+test("rocx fmt formats an app's .rocx and hand-written .roc files, leaves rocx's own, and --check says which aren't", needsRoc, () => {
+	const dir = mkdtempSync(join(tmpdir(), "rocx-fmt-"));
+	try {
+		mkdirSync(join(dir, "Generated"));
+		writeFileSync(join(dir, "Page.rocx"), "Page := [].{\n\tview = |_|    <p>hi</p>\n}\n");
+		writeFileSync(join(dir, "Util.roc"), "Util := [].{\n\ttwice = |x|    x * 2\n}\n");
+		const generated = "Page := [].{\n\tview = |_|    1\n}\n\n# rocx: generated from Page.rocx: edit that file, not this one. Line N here is line N there.\n";
+		writeFileSync(join(dir, "Gen.roc"), generated);
+		writeFileSync(join(dir, "Generated", "Routes.roc"), "x =    1\n");
+		const rocx = (...args) => spawnSync("node", [join(root, "bin", "rocx.mjs"), "fmt", ...args], { encoding: "utf8", env: { ...process.env, ROC: roc } });
+
+		const checked = rocx("--check", dir);
+		assert.equal(checked.status, 1);
+		assert.match(checked.stderr, /Page\.rocx: not formatted/);
+		assert.match(checked.stderr, /Util\.roc: not formatted/);
+		assert.doesNotMatch(checked.stderr, /Gen\.roc|Routes\.roc/);
+
+		assert.equal(rocx(dir).status, 0);
+		assert.equal(readFileSync(join(dir, "Page.rocx"), "utf8"), "Page := [].{\n\tview = |_| <p>hi</p>\n}\n");
+		assert.equal(readFileSync(join(dir, "Util.roc"), "utf8"), "Util := [].{\n\ttwice = |x| x * 2\n}\n");
+		assert.equal(readFileSync(join(dir, "Gen.roc"), "utf8"), generated);
+		assert.equal(readFileSync(join(dir, "Generated", "Routes.roc"), "utf8"), "x =    1\n");
+		assert.equal(rocx("--check", dir).status, 0);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});

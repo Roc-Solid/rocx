@@ -1,0 +1,70 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+
+## The smallest island: a number, and buttons that change it. The number is a signal; what reads it
+## (the text, the class, the Reset button's `disabled`) runs again when it changes, and patches its
+## own node. The component itself runs once. Its styles are its own: the `<style>` in its block is
+## scoped to its markup, so `.counter button` here is no other component's button.
+Counter := [].{
+	view! : { start : I64 } => Html
+	view! = |{ start }| {
+		(count!, set_count!) = create_signal!(start)
+		<div class="counter" class:negative={count!() < 0}>
+			<button type="button" on:click={|| set_count!(count!() - 1)} aria-label="One less">−</button>
+			<output>{count!().to_str()}</output>
+			<button type="button" on:click={|| set_count!(count!() + 1)} aria-label="One more">+</button>
+			<button type="button" class="reset" on:click={|| set_count!(0)} disabled?={count!() == 0}>
+				Reset
+			</button>
+		</div>
+	}
+
+	<style>
+		.counter {
+			display: flex;
+			align-items: center;
+			gap: var(--space-3);
+		}
+
+		.counter button {
+			min-width: 2.75rem;
+			height: 2.75rem;
+			padding: 0;
+			border: 0;
+			border-radius: var(--radius);
+			background: var(--fill);
+			color: var(--text);
+			font-size: var(--size-lg);
+			font-weight: 600;
+			cursor: pointer;
+		}
+
+		.counter button:hover:not(:disabled) {
+			background: var(--accent-soft);
+			color: var(--accent);
+		}
+
+		.counter button:disabled {
+			opacity: 0.4;
+			cursor: default;
+		}
+
+		.counter .reset {
+			margin-left: auto;
+			padding: 0 var(--space-4);
+			font-size: var(--size-sm);
+		}
+
+		.counter output {
+			min-width: 3ch;
+			font: 700 2.5rem/1 var(--font);
+			font-variant-numeric: tabular-nums;
+			letter-spacing: -0.03em;
+			text-align: center;
+		}
+
+		.counter.negative output {
+			color: var(--bad);
+		}
+	</style>
+}

@@ -1,0 +1,71 @@
+import pf.Html
+import Code
+
+## A component as it is written (`code`, from `file`: a `<Code>`, which a page wraps in
+## `<NoHydration>` so the browser needn't carry it) and, under it, as it runs (what is inside): the
+## front page's way of showing what rocx is.
+Specimen := [].{
+	Props := {
+		file : Str,
+		code : List(Html),
+		label : Str ?? "Live",
+		children : List(Html),
+	}
+
+	view : Props -> Html
+	view = |props|
+		<figure class="specimen">
+			<figcaption>{props.file}</figcaption>
+			{...props.code}
+			<div class="stage">
+				<p class="label">{props.label}</p>
+				{...props.children}
+			</div>
+		</figure>
+
+	<story name="Code and what it renders">
+		<Specimen file="Hello.rocx" code={[<Code source={"view = |{ name }|\n\t<p class=\"hello\">Hello, {name}!</p>"} numbers={Bool.False} />]}>
+			<p>Hello, Ada!</p>
+		</Specimen>
+	</story>
+
+	<style>
+		.specimen {
+			max-width: 40rem;
+			margin: var(--space-8) auto;
+			overflow: hidden;
+			border-radius: var(--radius-lg);
+			background: var(--bg-raised);
+			box-shadow: var(--shadow), 0 0 80px -40px rgb(169 155 255 / 0.45);
+		}
+
+		figcaption {
+			padding: var(--space-4) var(--space-5) 0;
+			color: var(--text-faint);
+			font: 600 var(--size-sm) var(--mono);
+		}
+
+		/* The code is a <Code>, passed in: global, under the specimen. */
+		.specimen :global(.code) {
+			margin: 0;
+			border-radius: 0;
+			background: var(--bg-raised);
+		}
+
+		.specimen :global(.code pre) {
+			padding: var(--space-3) var(--space-5) var(--space-5);
+		}
+
+		.stage {
+			padding: var(--space-4) var(--space-5) var(--space-5);
+			background: var(--bg-sunken);
+		}
+
+		.label {
+			margin: 0 0 var(--space-3);
+			color: var(--magenta);
+			font-size: var(--size-sm);
+			font-weight: 600;
+		}
+	</style>
+}

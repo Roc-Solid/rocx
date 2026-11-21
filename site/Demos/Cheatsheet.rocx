@@ -1,0 +1,124 @@
+import pf.Html
+import pf.Solid exposing [create_memo!, create_signal!]
+import pf.For
+import pf.Show
+
+## The syntax at a glance, filtered as you type: a <For> whose rows come and go as the query
+## changes, each kept by what it says.
+Cheatsheet := [].{
+	Row : { write : Str, means : Str }
+
+	rows : List(Row)
+	rows = [
+		{ write: "<tag attr=\"text\" other={expr}>…</tag>", means: "An element; {expr} must be a Str, and is escaped." },
+		{ write: "{expr}", means: "Text among children: a Str, escaped. In a component, it runs again when a signal it read changes, and patches its text." },
+		{ write: "{=expr}", means: "One Html value, as it is: a component's result, say." },
+		{ write: "{...expr}", means: "A List(Html), joined: what .map makes." },
+		{ write: "checked?={bool}", means: "A boolean attribute, there when true." },
+		{ write: "required", means: "A boolean attribute that is always on." },
+		{ write: "rel??={str}", means: "An attribute left out when the string is empty." },
+		{ write: "class:active={bool}", means: "Adds a class when true; all classes end up in one class attribute." },
+		{ write: "style:--size={str}", means: "Sets a CSS custom property; unsafe values are left out." },
+		{ write: "on:click={|| …}", means: "In a component: runs the handler, an effect, when the event happens." },
+		{ write: "on:input.value={set_draft!}", means: "Gives the handler the target's value (a Str)." },
+		{ write: "on:change.checked={|done| …}", means: "Gives the handler whether the target is checked (a Bool)." },
+		{ write: "on:keydown.key={|key| …}", means: "Gives the handler the key's name (Enter, Escape…)." },
+		{ write: "on:keydown.ArrowUp={|| …}", means: "Runs for that key only, and keeps the key from scrolling the page. .Space is the space bar." },
+		{ write: "on:frame.ms={|ms| …}", means: "Runs every animation frame, given the milliseconds since the last, while the element is on the page." },
+		{ write: "transition={Transition.fade}", means: "Plays as the element's row or part comes and goes; transition:in and transition:out play one way. A row that goes stays until it has." },
+		{ write: "(count!, set_count!) = create_signal!(0)", means: "A signal: an accessor, which whatever reads it subscribes to, and a setter." },
+		{ write: "total! = create_memo!(|| …)", means: "A value computed from signals once per change, for everything that reads it." },
+		{ write: "<Show when!={…} fallback={…}>", means: "What is inside while the condition holds; the fallback otherwise." },
+		{ write: "<For each!={…} keyed={|row| row.id}>", means: "A row per key, kept and moved as the list changes; keyed={Bool.False} keeps rows by position." },
+		{ write: "<Loading fallback={…}>", means: "What shows while an answer from the server is on its way." },
+		{ write: "<Errored fallback={|problem, retry| …}>", means: "What shows when something inside failed, and a way to try again." },
+		{ write: "name! = server!(|request, input| …)", means: "A server function: it runs on the server; the browser's copy asks for it over HTTP." },
+		{ write: "Server.context!({}).member", means: "In a server function's body: what its middleware handed on, read as the type the body reads." },
+		{ write: "<StatusPill status={s} />", means: "A component: StatusPill.view!({ status: s }), run once, where it is rendered." },
+		{ write: "<Card>children</Card>", means: "Children become a children : List(Html) prop." },
+		{ write: "<>…</>", means: "A fragment: its children, joined." },
+		{ write: "<!doctype html>", means: "The doctype." },
+		{ write: "{# a comment }", means: "A comment that never reaches the page." },
+		{ write: "<!-- a comment -->", means: "Also a comment that never reaches the page." },
+		{ write: "<script>…</script>", means: "Script or style text, kept as written; never with values in it." },
+		{ write: "<style>…</style> beside a component's definitions", means: "CSS for that component's markup only, scoped as Svelte scopes it." },
+		{ write: "&amp; &middot; &#x2014;", means: "Entities: the character." },
+	]
+
+	view! : {} => Html
+	view! = |{}| {
+		(query!, set_query!) = create_signal!("")
+		shown! = create_memo!(|| matching(query!()))
+		<div class="cheatsheet">
+			<input type="search" placeholder="Filter: class, list, signal, component, key…" aria-label="Filter the syntax" value={query!()} on:input.value={set_query!} />
+			<div class="cheatsheet-rows">
+				<table>
+					<thead><tr><th>Write</th><th>Means</th></tr></thead>
+					<tbody>
+						<For each!={shown!()} keyed={|row| row.write}>
+							{|row!, _| <tr><td><code>{row!().write}</code></td><td>{row!().means}</td></tr>}
+						</For>
+					</tbody>
+				</table>
+			</div>
+			<p class="cheatsheet-count">
+				{shown!().len().to_str()} of {rows.len().to_str()}
+				<Show when!={shown!().is_empty()}><b>— nothing matches “{query!()}”</b></Show>
+			</p>
+		</div>
+	}
+
+	<style>
+		input {
+			width: 100%;
+			margin-bottom: var(--space-2);
+		}
+
+		table {
+			font-size: var(--size-sm);
+		}
+
+		/* The rows scroll under their heading, so the sheet stays a glance. */
+		.cheatsheet-rows {
+			max-height: 26rem;
+			overflow-y: auto;
+			border-radius: var(--radius-sm);
+			background: var(--bg-sunken);
+		}
+
+		th {
+			position: sticky;
+			top: 0;
+			z-index: 1;
+			background: var(--bg-raised);
+		}
+
+		td {
+			padding: var(--space-2) var(--space-3);
+		}
+
+		td:first-child {
+			width: 45%;
+		}
+
+		td code {
+			white-space: pre-wrap;
+		}
+
+		.cheatsheet-count {
+			margin: var(--space-2) 0 0;
+			color: var(--text-faint);
+			font-size: var(--size-xs);
+		}
+	</style>
+}
+
+## The rows that say what is asked for, in what they show or what they mean.
+matching : Str -> List(Cheatsheet.Row)
+matching = |query| {
+	words = query.trim().with_ascii_lowercased()
+	Cheatsheet.rows.keep_if(|row| words.is_empty() or row.write.with_ascii_lowercased().contains(words) or row.means.with_ascii_lowercased().contains(words))
+}
+
+expect matching("class").len() == 1
+expect matching("").len() == Cheatsheet.rows.len()

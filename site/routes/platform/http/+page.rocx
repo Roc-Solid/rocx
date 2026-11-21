@@ -1,0 +1,165 @@
+import pf.Html
+import ../../../Ui/Heading
+import ../../../Ui/Code
+import ../../../Generated/Sources
+import ../../../Generated/Paths
+import ../../../Ui/PageHero
+
+meta = {
+	title: "HTTP: other servers, bodies, cookies",
+	description: "The Roc Solid server platform and HTTP: requests to other servers with Http, bodies as bytes, answers the server fetches from elsewhere and sends on, cookies and their attributes, and route files for .well-known paths and every method.",
+	toc: [
+		{ id: "out", label: "Asking another server" },
+		{ id: "limits-out", label: "Limits and errors" },
+		{ id: "bytes", label: "Bodies are bytes" },
+		{ id: "forward", label: "A body from elsewhere" },
+		{ id: "cookies", label: "Cookies" },
+		{ id: "routes", label: ".well-known, and every method" },
+		{ id: "limits", label: "Not yet" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				eyebrow="The platform · HTTP"
+				title="Other servers, bodies as they came, and cookies"
+			>
+				The server answers HTTP, and asks it too: an API's JSON, a token from a sign-in provider, a page
+				someone links to. A request's body reaches the app as the bytes the client sent; an answer can be
+				bytes, or a body the server fetches from elsewhere and passes on without Roc ever holding it.
+			</PageHero>
+			<p>
+				Every sample on this page is from <code>server/test/app/Samples.roc</code>, which the server
+				platform's tests compile and run.
+			</p>
+
+			<Heading id="out">Asking another server</Heading>
+			<Code title={"${Sources.platform_forecast.file}, in part"} source={Sources.platform_forecast.rocx} numbers={Bool.False} />
+			<p>
+				A request (<code>Http.Request</code>) is a method, a URL, headers and a body of bytes; so is an answer
+				(<code>Http.Response</code>), with its status. <code>Http.get</code>, <code>Http.post_form</code> (a form's
+				fields, encoded) and <code>Http.post_json</code> make one, <code>Http.with_header</code> adds a header;
+				<code>Http.header</code> (in any case) and <code>Http.text</code> read an answer. <code>Http.fetch!</code>
+				sends it and waits, on the call's thread, as a query to Postgres waits: the rest of the server goes on.
+				Any status is an answer, an <code>Ok</code>; an <code>Err</code> means there was none.
+			</p>
+
+			<Heading id="limits-out">Limits and errors</Heading>
+			<Code title={"${Sources.platform_preview.file}, in part"} source={Sources.platform_preview.rocx} numbers={Bool.False} />
+			<p>
+				<code>Http.fetch!</code> sends with <code>Http.defaults</code>: 30 seconds, 64 MiB, redirects followed.
+				<code>{"Http.send!(request, { timeout_ms, max_bytes, follow_redirects })"}</code> says otherwise (0: no
+				limit), as for a URL a stranger gave. The errors are <code>HttpErr(why)</code> (the address, the
+				connection, TLS, HTTP itself), <code>TimedOut</code> (no whole answer in time, from connecting to the
+				body's last byte) and <code>TooLarge</code> (a body past the limit, refused by its
+				<code>content-length</code> or as it passes it).
+			</p>
+			<ul>
+				<li>
+					<strong>Redirects</strong> are followed as a browser's <code>fetch</code> follows them, twenty at
+					most: a 303 (or a 301 or 302 to a POST) becomes a GET without its body, and
+					<code>authorization</code> and <code>cookie</code> don't go on to another origin.
+				</li>
+				<li>
+					<strong>TLS</strong> is rustls, checked against the web's certificate authorities. Nothing is
+					decompressed: ask for <code>accept-encoding</code> and the body is as the server sent it.
+				</li>
+			</ul>
+
+			<Heading id="bytes">Bodies are bytes</Heading>
+			<Code title={"${Sources.platform_digest.file}, in part"} source={Sources.platform_digest.rocx} numbers={Bool.False} />
+			<p>
+				A request's <code>body</code> is a <code>List(U8)</code>, never decoded on the way: an upload is what
+				the client sent. <code>Server.text_of(request)</code> reads it as text (UTF-8, U+FFFD where it isn't),
+				and an endpoint's JSON or form is read through it. An endpoint reads its body only when it says it is
+				JSON (<code>application/json</code>, or a type ending <code>+json</code>) or a form; an upload of any
+				other type gives its handler <code>{"{}"}</code>, and the handler reads <code>request.body</code>.
+				<code>{"Server.bytes(status, headers, bytes)"}</code> answers with bytes as they are; a body may be
+				16 MiB at most coming in.
+			</p>
+
+			<Heading id="forward">A body from elsewhere</Heading>
+			<Code title={"${Sources.platform_cdn.file}, in part"} source={Sources.platform_cdn.rocx} numbers={Bool.False} />
+			<p>
+				<code>{"Server.forward(upstream, headers)"}</code> is an answer whose body never passes through Roc:
+				the host asks <code>upstream</code> and sends what comes as it comes, so a video of 500 MB costs Roc
+				nothing and starts at once. Upstream's status is the answer's (200, 206 for a range, 304, 404), with
+				what describes its body (<code>content-type</code>, <code>content-length</code>,
+				<code>content-range</code>, <code>accept-ranges</code>, <code>etag</code>, <code>last-modified</code>);
+				the headers given are added, or replace those.
+			</p>
+			<ul>
+				<li>
+					<strong>Only what Roc says goes upstream.</strong> The host adds nothing of the request: its cookies
+					stay here. <code>Server.passed_on(request)</code> is the request's <code>Range</code>,
+					<code>If-Range</code>, <code>If-None-Match</code> and <code>If-Modified-Since</code>, as the request
+					record has them, for upstream's headers; an app that changes the record first (drops a range that
+					doesn't fit) changes what is asked.
+				</li>
+				<li>
+					<strong>An error upstream</strong> (400 or more) is answered with its status and its reason as text,
+					never with what upstream said, which might name a bucket. No answer at all is a 502 (a 504 after
+					30 s), logged without the URL's query, where a presigned URL keeps its signature. A body cut short
+					closes the client's connection, so it is never passed off as whole.
+				</li>
+				<li>
+					<code>Storage.serve!</code> is a forward to S3 (<a href={"${Paths.platform_storage}#serve"}>files in
+					S3</a>).
+				</li>
+			</ul>
+
+			<Heading id="cookies">Cookies</Heading>
+			<Code title={"${Sources.platform_cookies.file}, in part"} source={Sources.platform_cookies.rocx} numbers={Bool.False} />
+			<p>
+				<code>{"Server.set_cookie(answer, name, value, options)"}</code> adds a <code>Set-Cookie</code>;
+				<code>Server.CookieOpts</code> is its attributes, and <code>Server.cookie_defaults</code> the usual ones,
+				which a record update changes: <code>path</code> <code>/</code>, <code>http_only</code>,
+				<code>same_site: Lax</code>, this host alone, until the browser closes, over HTTP too.
+			</p>
+			<ul>
+				<li>
+					<code>max_age_s</code> (<code>Max-Age</code>) and <code>expires_ms</code> (<code>Expires</code>, a moment
+					in milliseconds since the epoch) are left out at 0; with neither, the cookie ends with the browser.
+				</li>
+				<li>
+					<code>secure</code>, <code>http_only</code>, <code>same_site</code> (<code>Lax</code>,
+					<code>Strict</code>, <code>None</code>), <code>path</code> and <code>domain</code>, each left out when
+					empty. A <code>__Host-</code> cookie needs <code>secure</code>, the path <code>/</code> and no domain;
+					<code>SameSite=None</code> needs <code>secure</code>: browsers drop one without.
+				</li>
+				<li>
+					<code>Server.clear_cookie</code> is given the path, domain and <code>secure</code> it was set with.
+					<code>Server.with_cookie</code> and <code>Server.without_cookie</code> set and clear one with the
+					defaults. The value is <code>%XX</code>-encoded, and <code>Server.cookie(request, name)</code> decodes
+					it.
+				</li>
+			</ul>
+
+			<Heading id="routes">.well-known, and every method</Heading>
+			<Code
+				title="routes/"
+				source={".well-known/oauth-authorization-server/+server.roc   # GET /.well-known/oauth-authorization-server\nuploads/[name]/+server.roc                             # put!: an upload, its body the bytes\nmcp/+server.roc                                        # respond!: every method, as it likes"}
+				numbers={Bool.False}
+				plain={Bool.True}
+			/>
+			<p>
+				A directory named <code>.well-known</code> is a path's part like any other, so the documents other
+				servers look for there (an OAuth server's metadata, <code>security.txt</code>) are route files; any
+				other directory beginning with a dot isn't routed. A <code>+server.roc</code> that defines
+				<code>respond!</code> answers every method its file doesn't name with a <code>Server.Response</code> of
+				its own, given the request, the params and the context: a protocol that speaks over POST and GET at
+				one URL, a page the platform draws (<a href={"${Paths.platform_jobs}#page"}>the jobs page</a>). It isn't
+				an endpoint, so it stays out of <code>/openapi.json</code>
+				(<a href={"${Paths.routing}#endpoints"}>endpoints</a>).
+			</p>
+			<Code source={"## Every method, as it comes.\nrespond! : { request : Server.Request, params : {}, context : c } => Server.Response\nrespond! = |{ request, .. }| Server.response(200, [{ name: \"content-type\", value: \"text/plain\" }], \"\${request.method} \${Server.text_of(request)}\")"} numbers={Bool.False} />
+
+			<Heading id="limits">Not yet</Heading>
+			<ul>
+				<li><strong>HTTP/1.1</strong> each way, a connection a request: no HTTP/2, no keeping a connection to reuse.</li>
+				<li><strong>Bodies are whole</strong> in Roc, coming or going (a forward aside): no streaming a request's body as it comes.</li>
+			</ul>
+		</NoHydration>
+	</>

@@ -1,0 +1,159 @@
+import pf.Html
+import Code
+import ../Generated/Sources
+
+## A real example from `site/examples`: the `.rocx` lines, the Roc rocx wrote for them (the same
+## line numbers: rocx keeps lines), what it renders, and the result live. What it renders is
+## `Html.to_str`'s, so an example's markup is static: nothing in it to run (a function component of
+## its own is pure, and called where it is written). With `renders` false, the two sources alone:
+## for an example whose markup needs the browser (handlers).
+Example := [].{
+	Props := {
+		source : Sources.Source,
+		output : Html ?? Html.empty({}),
+		live : Bool ?? Bool.False,
+		renders : Bool ?? Bool.True,
+	}
+
+	view : Props -> Html
+	view = |{ source, output, live, renders }|
+		<div class="example">
+			<div class="sources">
+				<Code title={source.file} source={source.rocx} first={source.first} />
+				<Code title="What rocx writes: the same lines, in Roc" source={source.roc} first={source.first} />
+			</div>
+			{=if (renders)
+				<div class="result" class:alone={!live}>
+					<Code title={"${source.call} renders"} source={Html.to_str(output)} markup numbers={Bool.False} />
+					{=if (live) <div class="preview"><p class="label">Live</p>{=output}</div> else Html.empty({})}
+				</div>
+			else Html.empty({})}
+		</div>
+
+	<style>
+		.example {
+			display: grid;
+			gap: var(--space-3);
+			margin: var(--space-5) 0 var(--space-8);
+			padding: var(--space-3);
+			border-radius: var(--radius-lg);
+			background: var(--bg-sunken);
+		}
+
+		.example :global(.code) {
+			margin: 0;
+			background: var(--bg-raised);
+		}
+
+		/* The two sources one above the other, full width: their lines are long, and their numbers match. */
+		.sources {
+			display: grid;
+			gap: var(--space-3);
+		}
+
+		.result {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+			gap: var(--space-3);
+		}
+
+		.alone {
+			grid-template-columns: minmax(0, 1fr);
+		}
+
+		.result :global(pre) {
+			white-space: pre-wrap;
+			word-break: break-word;
+		}
+
+		.preview {
+			padding: var(--space-3) var(--space-4) var(--space-4);
+			border-radius: var(--radius);
+			background: var(--bg-raised);
+			box-shadow: inset 0 0 0 1px var(--accent-soft);
+		}
+
+		.label {
+			margin: 0 0 var(--space-2);
+			color: var(--magenta);
+			font: 600 var(--size-2xs) var(--mono);
+			letter-spacing: 0.06em;
+			text-transform: uppercase;
+		}
+
+		@media (max-width: 60rem) {
+			.result {
+				grid-template-columns: minmax(0, 1fr);
+			}
+		}
+
+		/* What the examples render (site/examples), shown live: their markup is theirs, so global here. */
+		.preview :global(.greeting a),
+		.preview :global(.card h4) {
+			font-weight: 600;
+		}
+
+		.preview :global(.card) {
+			padding: var(--space-3) var(--space-4);
+			border-radius: var(--radius-sm);
+			background: var(--fill);
+		}
+
+		.preview :global(.card h4) {
+			margin: 0 0 var(--space-1);
+		}
+
+		.preview :global(.badge) {
+			padding: 0.1rem var(--space-2);
+			border-radius: var(--pill);
+			background: var(--accent);
+			color: var(--accent-text);
+			font-size: var(--size-2xs);
+			font-weight: 700;
+		}
+
+		.preview :global(.badge.zero) {
+			background: var(--fill-strong);
+			color: var(--text-muted);
+		}
+
+		.preview :global(.signup) {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: var(--space-3);
+		}
+
+		.preview :global(.signup button) {
+			padding: var(--space-2) var(--space-4);
+			border: 0;
+			border-radius: var(--radius-sm);
+			background: var(--fill);
+			color: var(--text);
+			font-size: var(--size, 1rem);
+			font-weight: 600;
+		}
+
+		.preview :global(.signup button.primary) {
+			background: var(--accent);
+			color: var(--accent-text);
+		}
+
+		.preview :global(.signup button.active) {
+			outline: 2px solid var(--magenta);
+			outline-offset: 2px;
+		}
+
+		.preview :global(time) {
+			margin-left: var(--space-2);
+			color: var(--good);
+			font-size: var(--size-sm);
+		}
+
+		.preview :global(em) {
+			margin-left: var(--space-2);
+			color: var(--warn);
+			font-size: var(--size-sm);
+		}
+	</style>
+}

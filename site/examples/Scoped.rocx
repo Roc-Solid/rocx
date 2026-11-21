@@ -1,0 +1,32 @@
+import pf.Html
+
+Scoped := [].{
+	demo : {} -> Html
+	demo = |{}| view({ title: "Scoped", note: "This p is styled; the page's other paragraphs aren't." })
+
+	# example
+	view : { title : Str, note : Str } -> Html
+	view = |{ title, note }|
+		<figure class="card">
+			<p class="title">{title}</p>
+			<p>{note}</p>
+		</figure>
+
+	<style>
+		.card {
+			margin: 0;
+			padding: 0.75rem 1rem;
+			border-left: 3px solid var(--accent);
+		}
+
+		.card .title {
+			font-weight: 700;
+		}
+
+		p {
+			margin: 0.25rem 0 0;
+			font-style: italic;
+		}
+	</style>
+	# /example
+}

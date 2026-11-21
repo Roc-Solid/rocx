@@ -1,0 +1,19 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+
+Events := [].{
+	# example
+	view! : {} => Html
+	view! = |{}| {
+		(draft!, set_draft!) = create_signal!("Hello")
+		(agreed!, set_agreed!) = create_signal!(Bool.False)
+		(saved!, set_saved!) = create_signal!("")
+		<form on:submit={|| set_saved!(draft!())}>
+			<input value={draft!()} on:input.value={set_draft!} on:keydown.Escape={|| set_draft!("")} />
+			<input type="checkbox" checked?={agreed!()} on:change.checked={set_agreed!} />
+			<button disabled?={!agreed!()}>Save</button>
+			<output>{saved!()}</output>
+		</form>
+	}
+	# /example
+}

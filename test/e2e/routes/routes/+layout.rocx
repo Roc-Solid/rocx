@@ -1,0 +1,4 @@
+import pf.Html
+
+## Every page, in a <main>.
+view! = |{ children, .. }| <main>{...children}</main>

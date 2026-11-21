@@ -1,0 +1,258 @@
+import pf.Html
+
+## A demo, live on the page, in a frame: what is inside (`<div data-demo="…">` around the component,
+## which site.js watches, and a note under it in `<NoHydration>`). With `inspect`, the demo's name,
+## an inspector beside it says what the runtime did, newest first (site.js writes it); `stacked` puts
+## it under instead, for a demo that needs the width. `meter` is a demo's name whose frames site.js
+## measures, in a line under it (`idle` until it runs). `legend` says what each highlight means, for
+## a demo with `data-flash`. `pair`: two demos side by side. `game`: a game's frame, tighter.
+## Everything but the frame is the server's: the browser carries none of it.
+Demo := [].{
+	Props := {
+		inspect : Str ?? "",
+		title : Str ?? "What the runtime did, newest first",
+		waiting : Str ?? "Waking up…",
+		stacked : Bool ?? Bool.False,
+		meter : Str ?? "",
+		idle : Str ?? "Measuring…",
+		legend : Bool ?? Bool.False,
+		pair : Bool ?? Bool.False,
+		game : Bool ?? Bool.False,
+		children : List(Html),
+	}
+
+	view : Props -> Html
+	view = |props|
+		<div class="demo" class:inspected={!props.inspect.is_empty()} class:stacked={props.stacked} class:game={props.game}>
+			<div class="live" class:pair={props.pair}>
+				{...props.children}
+				{=if (props.legend)
+					<NoHydration>
+						<p class="legend">
+							<span class="patched">text patched</span>
+							<span class="moved">row moved</span>
+							<span class="made">row made</span>
+							<span class="shown">{"<Show> switched"}</span>
+						</p>
+					</NoHydration>
+				else Html.empty({})}
+				{=if (props.meter.is_empty()) Html.empty({}) else <NoHydration><p class="meter" data-perf={props.meter}>{props.idle}</p></NoHydration>}
+			</div>
+			{=if (props.inspect.is_empty())
+				Html.empty({})
+			else
+				<NoHydration>
+					<div class="inspector" data-inspect-signals={props.inspect}>
+						<p class="title">{props.title}</p>
+						<ol><li class="empty">{props.waiting}</li></ol>
+					</div>
+				</NoHydration>}
+		</div>
+
+	<story name="Alone">
+		<Demo><p>The component, live: a counter, a game, a form.</p></Demo>
+	</story>
+
+	<story name="With its inspector">
+		<Demo inspect="story" waiting="Nothing yet: click something.">
+			<p>The component, live.</p>
+		</Demo>
+	</story>
+
+	<story name="Highlights explained">
+		<Demo inspect="story" legend>
+			<p>A demo whose patches flash where they land.</p>
+		</Demo>
+	</story>
+
+	<story name="A game, measured">
+		<Demo game meter="story" idle="Roc is idle until you start: no frames run while the game waits.">
+			<div class="board-stand-in">The board</div>
+		</Demo>
+	</story>
+
+	<style>
+		.demo {
+			margin: var(--space-6) 0;
+			padding: var(--space-5);
+			border-radius: var(--radius-lg);
+			background: var(--bg-raised);
+			box-shadow: var(--shadow);
+		}
+
+		.inspected {
+			display: grid;
+			grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+			gap: var(--space-5);
+		}
+
+		.inspected.stacked {
+			grid-template-columns: minmax(0, 1fr);
+		}
+
+		.game {
+			padding: var(--space-4);
+		}
+
+		.live {
+			display: grid;
+			align-content: start;
+			gap: var(--space-4);
+			min-width: 0;
+		}
+
+		.pair {
+			grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+			align-items: start;
+		}
+
+		.live > :global(.note) {
+			margin: 0;
+		}
+
+		.meter {
+			margin: 0;
+			color: var(--text-faint);
+			font: var(--size-2xs) / 1.5 var(--mono);
+		}
+
+		.legend {
+			display: flex;
+			flex-wrap: wrap;
+			gap: var(--space-2) var(--space-4);
+			margin: 0;
+			color: var(--text-muted);
+			font-size: var(--size-xs);
+		}
+
+		.legend span::before {
+			content: "";
+			display: inline-block;
+			width: 0.65rem;
+			height: 0.65rem;
+			margin-right: var(--space-2);
+			border: 2px solid var(--flash);
+			border-radius: 3px;
+			vertical-align: -0.05rem;
+		}
+
+		.patched {
+			--flash: var(--accent);
+		}
+
+		.moved {
+			--flash: var(--warn);
+		}
+
+		.made {
+			--flash: var(--good);
+		}
+
+		.shown {
+			--flash: var(--t-tag);
+		}
+
+		.inspector {
+			min-width: 0;
+			padding: var(--space-3) var(--space-4);
+			border-radius: var(--radius);
+			background: var(--bg-code);
+			font: var(--size-2xs) / 1.5 var(--mono);
+		}
+
+		.title {
+			margin: 0 0 var(--space-2);
+			color: var(--magenta);
+			font-weight: 700;
+		}
+
+		ol {
+			max-height: 20rem;
+			margin: 0;
+			padding: 0;
+			overflow-y: auto;
+			list-style: none;
+		}
+
+		/* A turn of the runtime's, and its lines: site.js makes them, so they are global here. */
+		ol > :global(li) {
+			padding: var(--space-2) 0;
+			border-top: 1px solid var(--rule);
+		}
+
+		.empty {
+			color: var(--text-faint);
+		}
+
+		.inspector :global(.event) {
+			color: var(--accent-strong);
+			font-weight: 700;
+		}
+
+		.inspector :global(.patch),
+		.inspector :global(.wire) {
+			display: block;
+			overflow-wrap: anywhere;
+			color: var(--text-muted);
+		}
+
+		.inspector :global(.wire) {
+			color: var(--t-string);
+		}
+
+		@media (max-width: 60rem) {
+			.inspected,
+			.pair {
+				grid-template-columns: minmax(0, 1fr);
+			}
+		}
+
+		/* What the runtime did, where it did it (a demo with `data-flash`): site.js puts a class on the
+		   node for a moment, a ring that fades in the colour of what happened. */
+		:global {
+			[data-demo][data-flash] {
+				display: block;
+			}
+
+			.signals-flash-patch,
+			.signals-flash-moved,
+			.signals-flash-made,
+			.signals-flash-show {
+				--flash: var(--accent);
+				animation: 1.1s ease-out signals-flash;
+			}
+
+			.signals-flash-moved {
+				--flash: var(--warn);
+			}
+
+			.signals-flash-made {
+				--flash: var(--good);
+			}
+
+			.signals-flash-show {
+				--flash: var(--t-tag);
+			}
+
+			@media (prefers-reduced-motion: reduce) {
+				.signals-flash-patch,
+				.signals-flash-moved,
+				.signals-flash-made,
+				.signals-flash-show {
+					animation-duration: 2s;
+					animation-timing-function: steps(1, end);
+				}
+			}
+		}
+
+		@keyframes -global-signals-flash {
+			from {
+				box-shadow: 0 0 0 2px var(--flash);
+			}
+
+			to {
+				box-shadow: 0 0 0 2px transparent;
+			}
+		}
+	</style>
+}

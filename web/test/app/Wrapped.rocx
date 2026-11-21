@@ -1,0 +1,13 @@
+import pf.Html
+import pf.Errored
+import Document
+
+## The document inside an `<Errored>`, as an app's generated root renders a page: the boundary's
+## comments outside `<html>`, the host's doctype before them.
+Wrapped := [].{
+	view! : {} => Html
+	view! = |{}|
+		<Errored fallback={|problem, _retry| <p class="problem">{problem}</p>}>
+			<Document />
+		</Errored>
+}

@@ -1,0 +1,35 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+
+## Props, for the tests (`props_app.roc`): a value prop read from a signal, in a hole and outside
+## one, given to an effectful component; and the same signal as an accessor prop.
+Props := [].{
+	view! : {} => Html
+	view! = |{}| {
+		(word!, set_word!) = create_signal!("one")
+		<div>
+			<button class="set" on:click={|| set_word!("two")}>Set</button>
+			<p class="hole">{=<Shows label={word!()} />}</p>
+			<p class="once"><Shows label={word!()} /></p>
+			<p class="getter"><Getter label!={word!()} /></p>
+		</div>
+	}
+}
+
+## Shows its label, a value, and how many times it was clicked, a signal of its own.
+Shows := [].{
+	view! : { label : Str } => Html
+	view! = |{ label }| {
+		(clicks!, set_clicks!) = create_signal!(0.U64)
+		<button class="shows" on:click={|| set_clicks!(clicks!() + 1)}>{label} {clicks!().to_str()}</button>
+	}
+}
+
+## Shows its label, an accessor, read in its hole.
+Getter := [].{
+	view! : { label! : () => Str } => Html
+	view! = |{ label! }| {
+		(clicks!, set_clicks!) = create_signal!(0.U64)
+		<button class="getter" on:click={|| set_clicks!(clicks!() + 1)}>{label!()} {clicks!().to_str()}</button>
+	}
+}

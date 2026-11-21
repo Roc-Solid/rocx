@@ -1,0 +1,9 @@
+import pf.Html
+import ../../../Generated/Paths
+
+## A post, by its slug.
+view! = |{ params }|
+	<>
+		<h2>Post {params.slug}</h2>
+		<a href={Paths.blog_slug({ slug: "other" })}>The other one</a>
+	</>

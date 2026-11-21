@@ -1,0 +1,3 @@
+import pf.Html
+
+view! = |_| <h1>Home</h1>

@@ -1,0 +1,127 @@
+import pf.Html
+
+## A part of the docs and its pages, down the side: each page's name and what it is about, the one at
+## `path` marked. It stays in view as the page scrolls; on a phone, it is a row above the page.
+Sidebar := [].{
+	view = |{ title, pages, path }|
+		<nav class="sidebar" aria-label={"${title}: its pages"}>
+			<p class="title">{title}</p>
+			<ul>
+				{...pages.map(|page|
+					<li>
+						<a href={page.path} class:current={page.path == path} aria-current??={if (page.path == path) "page" else ""}>
+							<span class="label">{page.label}</span>
+							<span class="blurb">{page.blurb}</span>
+						</a>
+					</li>
+				)}
+			</ul>
+		</nav>
+
+	<story name="A part">
+		<Sidebar
+			title="rocx"
+			path="/syntax"
+			pages={[
+				{ path: "/rocx", label: "Overview", blurb: "What rocx is, in one page" },
+				{ path: "/syntax", label: "Syntax", blurb: "Markup wherever an expression can stand" },
+				{ path: "/routing", label: "Routing", blurb: "A page is a file: +page.rocx, +layout.rocx" },
+				{ path: "/components", label: "Components", blurb: "Signals, and the pages that hydrate" },
+			]}
+		/>
+	</story>
+
+	<style>
+		.sidebar {
+			position: sticky;
+			top: var(--bar);
+			align-self: start;
+			max-height: calc(100vh - var(--bar));
+			overflow-y: auto;
+			padding: var(--space-7) 0;
+			scrollbar-width: thin;
+		}
+
+		ul {
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		.title {
+			margin: 0 0 var(--space-2);
+			padding: 0 var(--space-3);
+			color: var(--magenta);
+			font-size: var(--size-2xs);
+			font-weight: 700;
+			letter-spacing: 0.08em;
+			text-transform: uppercase;
+		}
+
+		a {
+			display: block;
+			margin-bottom: 0.2rem;
+			padding: var(--space-2) var(--space-3);
+			border-radius: var(--radius-sm);
+			color: var(--text);
+			line-height: 1.35;
+			text-decoration: none;
+		}
+
+		a:hover {
+			background: var(--fill);
+		}
+
+		.current,
+		.current:hover {
+			background: var(--accent-soft);
+			box-shadow: inset 2px 0 0 var(--accent);
+		}
+
+		.label {
+			display: block;
+			font-size: var(--size-sm);
+			font-weight: 600;
+		}
+
+		.current .label {
+			color: var(--accent);
+		}
+
+		.blurb {
+			display: block;
+			color: var(--text-muted);
+			font-size: var(--size-xs);
+		}
+
+		/* Narrower: a row of the part's pages above the page, which scrolls sideways. */
+		@media (max-width: 52rem) {
+			.sidebar {
+				position: static;
+				max-height: none;
+				padding: var(--space-4) 0 0;
+			}
+
+			ul {
+				display: flex;
+				gap: var(--space-1);
+				overflow-x: auto;
+				scrollbar-width: none;
+			}
+
+			a {
+				margin: 0;
+				white-space: nowrap;
+			}
+
+			.current,
+			.current:hover {
+				box-shadow: none;
+			}
+
+			.blurb {
+				display: none;
+			}
+		}
+	</style>
+}

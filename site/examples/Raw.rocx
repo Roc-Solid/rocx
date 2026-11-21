@@ -1,0 +1,19 @@
+import pf.Html
+
+Raw := [].{
+	# example
+	view : {} -> Html
+	view = |{}|
+		<>
+			{# For whoever reads this file: it never reaches the page. }
+			<style>.raw-demo b { letter-spacing: 0.05em }</style>
+			<p class="raw-demo">
+				<b>Tom &amp; Jerry</b> &middot; 1&ndash;2 &#x2192; {"{braces}"} and &lt;tags&gt;
+			</p>
+			<!-- Nor does this. -->
+		</>
+	# /example
+
+	demo : {} -> Html
+	demo = |{}| view({})
+}

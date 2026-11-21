@@ -1,0 +1,12 @@
+import pf.Html
+import pf.Solid exposing [set_interval!]
+
+## A ticker, for the tests: it starts an interval and never clears it. The interval is the
+## ticker's: when the ticker goes, the interval stops.
+Ticker := [].{
+	view! : { tick! : () => {} } => Html
+	view! = |{ tick! }| {
+		_ = set_interval!(20, tick!)
+		<p class="ticker">ticking</p>
+	}
+}

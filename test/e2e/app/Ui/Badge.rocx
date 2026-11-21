@@ -1,0 +1,12 @@
+import pf.Html
+
+## A label. It is pure (`view`, no `!`): markup from its props and nothing else, so it is called where
+## it is written, not put off as a component that might read a context.
+Badge := [].{
+	view : { text : Str } -> Html
+	view = |{ text }| <span class="badge">{text}</span>
+
+	<story name="Label">
+		<Badge text="story" />
+	</story>
+}

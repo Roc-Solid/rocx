@@ -1,0 +1,4 @@
+import pf.Html
+
+## What a path no page has shows, and a page that failed: its status, and why.
+view! = |{ status, problem }| <p>{status.to_str()}: {problem}</p>

@@ -1,0 +1,25 @@
+import pf.Html
+import pf.Solid exposing [use_context!]
+import Picks
+
+## The picks, counted: another part of the page, far from the picks, given
+## the same store by the <PicksContext> above both. What it adds shows in the
+## picks, and what they change shows here.
+Tally := [].{
+	view! : {} => Html
+	view! = |{}| {
+		{ picks!, set_picks!, next!, set_next! } = use_context!(Picks.picks_context)
+		add! = || {
+			set_picks!(picks!().append({ id: next!(), name: "Zig" }))
+			set_next!(next!() + 1)
+		}
+		<aside class="tally">
+			<p class="tally-count">{picks!().len().to_str()} picks</p>
+			<p class="tally-names">{names(picks!())}</p>
+			<button class="tally-add" on:click={add!}>Add Zig</button>
+		</aside>
+	}
+}
+
+names : List(Picks.Pick) -> Str
+names = |picks| if (picks.is_empty()) "none yet" else Str.join_with(picks.map(|pick| pick.name), ", ")

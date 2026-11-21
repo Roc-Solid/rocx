@@ -1,0 +1,132 @@
+import pf.Html
+import Actions
+import Button
+
+## The top of a page: what part it is in (`eyebrow`), its line in the site's gradient (`title`, or
+## `heading` when it has markup in it), what it is about (what is inside), and the ways on (`actions`,
+## `<Button>`s). `centered` for the front page, where the line is bigger and everything is in the
+## middle.
+PageHero := [].{
+	Props := {
+		eyebrow : Str,
+		title : Str ?? "",
+		heading : List(Html) ?? [],
+		actions : List(Html) ?? [],
+		centered : Bool ?? Bool.False,
+		children : List(Html),
+	}
+
+	view : Props -> Html
+	view = |props|
+		<section class="hero" class:centered={props.centered}>
+			<p class="eyebrow">{props.eyebrow}</p>
+			<h1>{...if (props.heading.is_empty()) [Html.text(props.title)] else props.heading}</h1>
+			<p class="lede">{...props.children}</p>
+			{=if (props.actions.is_empty()) Html.empty({}) else <Actions centered={props.centered}>{...props.actions}</Actions>}
+		</section>
+
+	<story name="A docs page">
+		<PageHero
+			eyebrow="The platform"
+			title="Two platforms, one app: native on the server, wasm in the browser"
+			actions={[<Button href="#" primary>The server</Button>, <Button href="#">The browser</Button>]}
+		>
+			A Roc program runs on a platform: the host that gives it the effects it may have. A rocx app is
+			two programs, which talk over HTTP.
+		</PageHero>
+	</story>
+
+	<story name="The front page">
+		<PageHero
+			eyebrow="Roc Solid"
+			title="Roc, from the database to the browser."
+			centered
+			actions={[<Button href="#" primary>Read the guide</Button>, <Button href="#">See it run</Button>]}
+		>
+			One language for the whole app: the pages, the server, its jobs, and the components that run in
+			your browser.
+		</PageHero>
+	</story>
+
+	<story name="Markup in its line">
+		<PageHero eyebrow="404" heading={[<>{"Nothing at "}</>, <code>/nowhere</code>]}>
+			No page has that address. These are the pages of the rocx docs:
+		</PageHero>
+	</story>
+
+	<story name="No actions">
+		<PageHero eyebrow="Safety" title="What can't reach the page, and why">
+			Text is escaped wherever it goes; a string never becomes a tag.
+		</PageHero>
+	</story>
+
+	<style>
+		.hero {
+			padding: var(--space-6) 0 var(--space-2);
+		}
+
+		.eyebrow {
+			margin: 0;
+			color: var(--magenta);
+			font-size: var(--size-sm);
+			font-weight: 600;
+		}
+
+		/* As wide as its text, so the whole gradient shows on a short line too. */
+		h1 {
+			width: fit-content;
+			max-width: 48rem;
+			margin: var(--space-2) 0 var(--space-4);
+			background: var(--gradient);
+			-webkit-background-clip: text;
+			background-clip: text;
+			color: transparent;
+			font-size: var(--size-2xl);
+			letter-spacing: -0.03em;
+			line-height: 1.12;
+		}
+
+		/* Code in the line keeps its colour: the gradient is the text's, and code is text too. */
+		h1 :global(code) {
+			padding: 0;
+			background: none;
+			color: var(--accent);
+			-webkit-text-fill-color: var(--accent);
+			font-size: 0.85em;
+			white-space: normal;
+		}
+
+		.lede {
+			max-width: var(--measure);
+			margin: 0;
+			color: var(--text-muted);
+			font-size: var(--size-lg);
+		}
+
+		.centered {
+			padding: var(--space-9) 0 var(--space-4);
+			text-align: center;
+		}
+
+		.centered .eyebrow {
+			display: inline-block;
+			padding: var(--space-1) var(--space-4);
+			border-radius: var(--pill);
+			background: var(--accent-soft);
+			color: var(--accent);
+		}
+
+		.centered h1 {
+			max-width: 15ch;
+			margin: var(--space-4) auto var(--space-5);
+			font-size: var(--size-3xl);
+			letter-spacing: -0.04em;
+			line-height: 1.02;
+		}
+
+		.centered .lede {
+			max-width: 34rem;
+			margin: 0 auto;
+		}
+	</style>
+}

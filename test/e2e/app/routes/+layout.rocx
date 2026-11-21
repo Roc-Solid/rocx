@@ -1,0 +1,20 @@
+import pf.Html
+import pf.Router
+import ../Ui/Badge
+
+## The document around every page: its title is the page's, and its footer says where it is.
+view! = |{ meta, children, .. }|
+	<>
+		<!doctype html>
+		<html lang="en">
+			<head>
+				<meta charset="utf-8" />
+				<title>{meta.title}</title>
+			</head>
+			<body>
+				<nav><a href="/">Home</a> <a href="/posts/hello">A post</a> <Badge text="e2e" /></nav>
+				<main>{...children}</main>
+				<footer class="at">{Router.location!({}).path}</footer>
+			</body>
+		</html>
+	</>

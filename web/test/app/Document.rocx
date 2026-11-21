@@ -1,0 +1,54 @@
+import pf.Html
+import pf.Solid exposing [create_memo!, create_signal!]
+import pf.Loading
+import pf.Router
+import pf.Server
+import Aside
+
+## A whole document, for the tests (`document_app.roc`): a doctype and `<html>`; a `<head>` with a
+## style and a script; a `<body>` with a counter, a server function's answer, where the page is
+## (`Router.location!`), a drawing, and a `<NoHydration>`: prose, a pure component only it uses, and
+## holes that read a signal and call the server function, which the server renders once and the
+## browser never hydrates.
+Document := [].{
+
+	## Says a word back: run on the server, asked for by the browser.
+	say! : Str => Str
+	say! = server!(|_request, word| "Said: ${word}")
+
+	view! : {} => Html
+	view! = |{}| {
+		(count!, set_count!) = create_signal!(0.U64)
+		(word!, set_word!) = create_signal!("hello")
+		said! = create_memo!(|| say!(word!()))
+		<>
+			<!doctype html>
+			<html lang="en">
+				<head>
+					<meta charset="utf-8" />
+					<title>A document</title>
+					<style>.count { color: red }</style>
+					<script>window.ran = (window.ran ?? 0) + 1</script>
+				</head>
+				<body class="page">
+					<h1>A document</h1>
+					<p class="at">{Router.location!({}).path} ? {Router.location!({}).query}</p>
+					<button class="count" on:click={|| set_count!(count!() + 1)}>
+						Clicked {count!().to_str()} times
+					</button>
+					<Loading fallback={<output class="said">…</output>}>
+						<output class="said">{said!()}</output>
+					</Loading>
+					<button class="again" on:click={|| set_word!("again")}>Again</button>
+					<svg class="dot" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" /></svg>
+					<NoHydration>
+						<section class="prose">
+							<Aside title="Unhydrated" />
+							<p class="once">Rendered once: {count!().to_str()}, {say!("quiet")}</p>
+						</section>
+					</NoHydration>
+				</body>
+			</html>
+		</>
+	}
+}

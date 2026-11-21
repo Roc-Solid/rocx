@@ -1,0 +1,126 @@
+import pf.Html
+import ../../../Ui/Heading
+import ../../../Ui/Callout
+import ../../../Ui/Code
+import ../../../Generated/Sources
+import ../../../Generated/Paths
+import ../../../Ui/PageHero
+import ../../../Ui/TableWrap
+
+meta = {
+	title: "Live and actors",
+	description: "State that outlives a request on the rocx server platform: live topics and rooms that streams share, and actors that answer one message at a time, their state kept in Postgres.",
+	toc: [
+		{ id: "rooms", label: "Rooms: who is here" },
+		{ id: "topics", label: "Topics: what was said" },
+		{ id: "actors", label: "Actors" },
+		{ id: "asking", label: "Asking one" },
+		{ id: "which", label: "Which to use" },
+		{ id: "limits", label: "Not yet" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				eyebrow="The platform · live and actors"
+				title="State that outlives a request"
+			>
+				A request comes and goes; some state has to stay. How many people are on a page right now, what
+				someone just said to all of them: that is live state, in the server's memory, which streams share.
+				A cart, a counter, a game's room: that is an actor, a piece of state that answers one message at a
+				time, kept in Postgres so it is there after a restart.
+			</PageHero>
+
+			<Heading id="rooms">Rooms: who is here</Heading>
+			<p>
+				A room counts who is in it. A call joins one with <code>Live.join!</code>, and is in it until the call
+				ends: a stream's, until its client goes, or it crashes. <code>Live.count!</code> says how many are in
+				one, from anywhere. This stream sends the count when it starts, and again whenever someone comes or
+				goes:
+			</p>
+			<Code title={"${Sources.platform_online.file}, in part"} source={Sources.platform_online.rocx} numbers={Bool.False} />
+			<p>
+				<code>Live.next!(ms)</code> waits for what the call hears: <code>Heard</code> (a message, or that
+				someone joined or left a room it is in), <code>Quiet</code> once <code>ms</code> have passed with
+				nothing, or <code>Gone</code> when the client has gone. So a loop like this one sleeps until there is
+				something to say, and ends with its client.
+			</p>
+
+			<Heading id="topics">Topics: what was said</Heading>
+			<p>
+				A topic carries messages to every call listening to it. <code>Live.listen!</code> starts listening (for
+				as long as the call lasts), and <code>Live.publish!</code>, from any request, a job or an actor, sends
+				a message to everyone listening:
+			</p>
+			<Code title={"${Sources.platform_shouts.file}, in part"} source={Sources.platform_shouts.rocx} numbers={Bool.False} />
+			<p>
+				A component listens to such a stream as to any endpoint's events
+				(<a href={"${Paths.calls}#events"}>events</a>), so a chat, a presence count or a progress bar is a
+				stream on the server and a handler in the browser.
+			</p>
+
+			<Heading id="actors">Actors</Heading>
+			<p>
+				An actor is a kind and a key: the cart of member 7, the counter called <code>visits</code>. A kind
+				says how one starts, from its key, and what it does with a message: its next state, and its reply.
+			</p>
+			<Code title={"${Sources.platform_counter.file}, in part"} source={Sources.platform_counter.rocx} numbers={Bool.False} />
+			<ul>
+				<li>
+					<strong>Called into being</strong> by its first message (<code>init(key)</code>), or loaded from
+					<code>rocx_actors</code>, where its state is written after each message, as JSON.
+				</li>
+				<li>
+					<strong>One message at a time.</strong> A hundred asks at once each see the state the one before
+					left: no lost updates, no locks to write.
+				</li>
+				<li>
+					<strong>A crash is the asker's error</strong>, and the actor's state stays as it was before the
+					message.
+				</li>
+			</ul>
+
+			<Heading id="asking">Asking one</Heading>
+			<Code title={"${Sources.platform_ask.file}, in part"} source={Sources.platform_ask.rocx} numbers={Bool.False} />
+			<p>
+				<code>Actor.ask!(kind, key, message)</code> answers the reply, typed as the kind says, or
+				<code>ActorErr</code> with why. The app doesn't list its kinds: <code>ask!</code> is given the kind,
+				and runs its <code>receive!</code> in a call of its own (<code>Host.isolated_call!</code>). An actor
+				may ask another; one that asks itself is refused, and one kept waiting 30 s (asking one that waits on
+				it) is an error, not a hang.
+			</p>
+
+			<Heading id="which">Which to use</Heading>
+			<TableWrap>
+				<table>
+					<thead><tr><th>For</th><th>Use</th><th>Lasts</th></tr></thead>
+					<tbody>
+						<tr><td>who is here, now</td><td>a room (<code>Live.join!</code>, <code>Live.count!</code>)</td><td>while the calls in it last</td></tr>
+						<tr><td>telling everyone listening</td><td>a topic (<code>Live.publish!</code>, <code>Live.listen!</code>)</td><td>while the listeners last</td></tr>
+						<tr><td>state many requests change, one at a time</td><td>an actor (<code>Actor.ask!</code>)</td><td>in Postgres: restarts too</td></tr>
+						<tr><td>data, queried every way</td><td>a table (<a href={Paths.platform_postgres}><code>Db</code></a>)</td><td>in Postgres</td></tr>
+						<tr><td>work that may fail and should run again</td><td>a job (<a href={Paths.platform_jobs}><code>Job.enqueue!</code></a>)</td><td>in Postgres, until done</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+
+			<Heading id="limits">Not yet</Heading>
+			<ul>
+				<li>
+					<strong>One server.</strong> Rooms, topics and actors' turns are in its memory; with two servers,
+					each would have its own. Postgres's <code>listen</code>/<code>notify</code> could carry them between
+					servers later.
+				</li>
+				<li><strong>An actor's state is JSON</strong> in one row, written after each message: fine for a cart, not for a ledger.</li>
+			</ul>
+			<Callout kind="tip" title="Tested">
+				<p>
+					The platform's tests open streams that join a room and count each other, publish to listeners,
+					ask an actor a hundred times at once, crash one, have one ask another and itself, and restart the
+					server to find an actor's state where it was.
+				</p>
+			</Callout>
+		</NoHydration>
+	</>

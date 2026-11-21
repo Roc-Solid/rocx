@@ -1,0 +1,27 @@
+import pf.Html
+import pf.Show
+import pf.Solid exposing [create_signal!]
+
+## A doctype, and a <style> and a <script> in markup, for the tests: the server writes their text as
+## the file has it, hydrating takes it without comparing, and the browser builds it (a <script> it
+## builds doesn't run, as in Solid). Its static holes and attributes have no closures.
+RawText := [].{
+	view! : {} => Html
+	view! = |{}| {
+		(more!, set_more!) = create_signal!(Bool.False)
+		label = "static"
+		<>
+			<!doctype html>
+			<section class="raw" title={label} class:plain={Bool.True} class:gone={Bool.False} data-none??={""} data-some??={label}>
+				<style>.raw p > b { color: red }</style>
+				<script>window.ran = (window.ran ?? 0) + 1</script>
+				<p>A {label} hole and a <b>{if (more!()) "computed" else "hidden"}</b> one</p>
+				<button class="more" on:click={|| set_more!(!more!())}>More</button>
+				<Show when!={more!()}>
+					<style>.later { color: blue }</style>
+					<script>window.later = 1</script>
+				</Show>
+			</section>
+		</>
+	}
+}

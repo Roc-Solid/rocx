@@ -1,0 +1,387 @@
+import pf.Html
+import ../../Ui/Heading
+import ../../Ui/Callout
+import ../../Ui/Code
+import ../../Generated/Sources
+import ../../Generated/Paths
+import ../../Ui/PageHero
+import ../../Ui/TableWrap
+import ../../Ui/Versus
+
+## File-based routing, as SvelteKit has it: this site's own pages are routed this way.
+meta = {
+	title: "Routing",
+	description: "File-based routing in rocx: +page.rocx, +layout.rocx, +server.roc and +error.rocx under routes/, params typed by their directories, middleware named by the file it guards, a typed path for every page, a typed function for every endpoint, and their OpenAPI document.",
+	toc: [
+		{ id: "files", label: "The files" },
+		{ id: "page", label: "A page" },
+		{ id: "written", label: "What rocx writes for it" },
+		{ id: "layouts", label: "Layouts" },
+		{ id: "params", label: "Params, and typed links" },
+		{ id: "endpoints", label: "Endpoints: +server.roc" },
+		{ id: "openapi", label: "Their OpenAPI document" },
+		{ id: "middleware", label: "Middleware: what runs, in what order" },
+		{ id: "router", label: "The router, and the app" },
+		{ id: "error", label: "Where no page is" },
+		{ id: "limits", label: "Not yet" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				eyebrow="Routing"
+				title="A page is a file"
+			>
+				Under an app's <code>routes/</code>, a <code>+page.rocx</code> is a page at the path its
+				directory names, each <code>+layout.rocx</code> above it wraps it, a <code>+server.roc</code>
+				answers HTTP methods there, and <code>+error.rocx</code> shows where nothing is, as in SvelteKit.
+				A file names the middleware it runs behind. rocx writes the router, a path for every page and a
+				function for every endpoint, so a link to a page that isn't there, or a call to an endpoint that
+				isn't, doesn't compile.
+			</PageHero>
+
+			<Heading id="files">The files</Heading>
+			<p>These are this site's: every page you can open here is one of them.</p>
+			<Code title={Sources.route_tree.file} source={Sources.route_tree.rocx} numbers={Bool.False} plain />
+			<TableWrap>
+				<table>
+					<thead><tr><th>File</th><th>Is</th></tr></thead>
+					<tbody>
+						<tr><td><code>routes/+page.rocx</code></td><td>the page at <code>/</code></td></tr>
+						<tr><td><code>routes/blog/+page.rocx</code></td><td>the page at <code>/blog</code></td></tr>
+						<tr><td><code>routes/blog/[slug]/+page.rocx</code></td><td>the page at <code>/blog/anything</code>, given <code>{"params.slug"}</code></td></tr>
+						<tr><td><code>+layout.rocx</code></td><td>around every page in its directory and below</td></tr>
+						<tr><td><code>routes/blog/+server.roc</code></td><td>the endpoints at <code>/blog</code>: <code>get!</code>, <code>post!</code>, <code>put!</code>, <code>patch!</code>, <code>delete!</code>, and <code>events!</code>, a stream; <code>respond!</code>, any other method, answered as it likes</td></tr>
+						<tr><td><code>routes/.well-known/…</code></td><td>routed, as RFC 8615 has it; another directory starting with a dot isn't</td></tr>
+						<tr><td><code>routes/+error.rocx</code></td><td>what a path nothing answers shows, with the status 404</td></tr>
+						<tr><td><code>middleware = …</code></td><td>in a page or a <code>+server</code>: what it runs behind</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+
+			<Heading id="page">A page</Heading>
+			<p>
+				A route file is bare: its imports, a blank line, and its definitions. <code>view</code> renders the
+				page; <code>meta</code>, if it has one, is given to its layouts (here, the title, the description and
+				what the sidebar on the right lists).
+			</p>
+			<Code title={Sources.route_page.file} source={Sources.route_page.rocx} />
+			<ul>
+				<li>
+					<strong><code>view</code> is given a record:</strong> <code>request</code> (its path and headers,
+					cookies among them), <code>params</code> (<code>{"{}"}</code> on a page without), and
+					<code>context</code>, what <a href="#middleware">middleware</a> handed on (this site's default
+					hands on the facts its build measured). Take what you need, and <code>..</code> for the rest.
+				</li>
+				<li>
+					<strong><code>view!</code></strong>, a page that does something as it renders (a query, an endpoint
+					asked there and then): the <a href={Paths.calls}>talking to the server</a> page is one.
+				</li>
+				<li>
+					<strong>Imports are relative to the file</strong>, as everywhere in rocx: this one is two directories
+					down, so the site's parts are <code>../../Ui</code>.
+				</li>
+				<li>
+					<strong>Components of its own</strong>, as any <code>.rocx</code> file may have
+					(<code>{"Board := [].{ view! = … }"}</code>), go before its definitions or after them, not between:
+					rocx writes them as types beside the page's module, where their <code>view</code> isn't the page's
+					(<a href={"${Paths.components}#title"}>an example</a>). <code>{"<Board />"}</code> calls the file's own.
+				</li>
+			</ul>
+
+			<Heading id="written">What rocx writes for it</Heading>
+			<p>
+				Roc names a module after its file, and <code>+page</code> isn't a name, so rocx writes each route file
+				as a module of its own under <code>Generated/</code>, named after its path
+				(<code>ShowcasePage</code>). Its imports are moved to where it is, and the module's line goes on the
+				blank line, so line <var>N</var> is still line <var>N</var> of the route file, and the compiler's
+				reports point into it:
+			</p>
+			<Code title={Sources.route_page_generated.file} source={Sources.route_page_generated.rocx} />
+
+			<Heading id="layouts">Layouts</Heading>
+			<p>
+				A <code>+layout.rocx</code> is around every page in its directory and below, the outermost first. Its
+				<code>view</code> is given the request, the context, the page's <code>meta</code>, and the page (or the
+				next layout) as <code>children</code>. This site has one, the document around every page:
+			</p>
+			<Code title={"${Sources.route_layout.file}, in part"} source={Sources.route_layout.rocx} numbers={Bool.False} />
+
+			<Heading id="params">Params, and typed links</Heading>
+			<p>
+				A directory in brackets is a param: <code>routes/blog/[slug]/+page.rocx</code> is the page at any
+				<code>/blog/…</code>, given <code>{"params : { slug : Str }"}</code>. A path with a fixed part is
+				tried before one with a param there, so <code>/blog/new</code> can be a page of its own. This page,
+				from the app the tests build:
+			</p>
+			<Code title="test/e2e/routes/routes/blog/[slug]/+page.rocx" source={Sources.route_fixture_page.rocx} />
+			<p>
+				rocx also writes <code>Paths</code>: a path for every page, a function of its params if it has any.
+				Link to a page through it, and a link to one that isn't there, or with the wrong params, doesn't
+				compile, and the compiler says so at your line (<code>{"Paths.blog_slug({ slg: \"x\" })"}</code>:
+				<em>Maybe slg should be slug?</em>).
+			</p>
+			<Code title={"What rocx writes for that app: ${Sources.route_fixture_paths.file}"} source={Sources.route_fixture_paths.rocx} numbers={Bool.False} />
+			<p>This site's sidebar is a list of them:</p>
+			<Code title={"${Sources.route_nav.file}, in part"} source={Sources.route_nav.rocx} numbers={Bool.False} />
+
+			<Heading id="endpoints">Endpoints: +server.roc</Heading>
+			<p>
+				A <code>+server.roc</code>, plain Roc (<code>+server.rocx</code> if it has markup), answers HTTP
+				methods at its path: <code>get!</code>, <code>post!</code>, <code>put!</code>, <code>patch!</code> and
+				<code>delete!</code>, each given the request, the params, the context and (with a body) the body, read
+				when it says it is JSON (<code>application/json</code>) or a form. A body of any other type, an
+				upload, isn't read: the handler takes <code>{"{}"}</code> and reads <code>request.body</code>, the bytes as
+				they came. A handler answers a result, sent as JSON, or a refusal, sent as its status (or an answer
+				of its own: <code>Err(Answer(Server.redirect(…)))</code>). A form a browser posts without the
+				runtime gets neither: it goes back to the page it came from, with a flash that page reads
+				(<a href={"${Paths.calls}#forms"}>forms</a>). A <code>respond!</code>, given the
+				request, the params and the context, answers every method the file doesn't name with a
+				<code>Server.Response</code> of its own: a page mounted from elsewhere, a JSON-RPC endpoint. <code>events!</code> answers a GET
+				that asks for events with a stream of them, sent as they are made. Beside a page, a GET a browser
+				sends is the page's, and every other request the endpoints'. rocx writes
+				<code>Generated/Api.roc</code>, a function for each, which the app calls: the handler on the server, a
+				request in the browser. <a href={"${Paths.calls}#endpoints"}>Talking to the server</a> has this site's,
+				live, and <a href={"${Paths.calls}#events"}>a stream</a> too. This one answers a form, and sets a
+				cookie:
+			</p>
+			<Code title={Sources.members_join_server.file} source={Sources.members_join_server.rocx} />
+
+			<Heading id="openapi">Their OpenAPI document</Heading>
+			<p>
+				An app can serve its endpoints' OpenAPI document (3.2): each path and its params, each method and
+				what the comment above its handler says, and the JSON Schemas of what it is sent and what it
+				answers. A schema is the handler's type, as the compiler has it, so one nobody wrote down is there
+				too: this site's <code>{"GET /api/shout/{word}"}</code> has no annotation, and its document says it
+				answers <code>{"{ word : Str, shouted : Str, bytes : U64 }"}</code>. Server functions aren't in it:
+				they are the app's own calls, named after its modules, not an API.
+			</p>
+			<h3>Turning it on</h3>
+			<p>It is off unless the app says so, with <code>openapi</code> in its <code>App.program</code>:</p>
+			<Code title="main.roc" source={"program = App.program({\n\tcontext: |started| { started },\n\tmiddleware: Middlewares.default,\n\tcrons: [],\n\topenapi: Page(Swagger),\n})"} numbers={Bool.False} />
+			<TableWrap>
+				<table>
+					<thead><tr><th><code>openapi:</code></th><th>The app serves</th></tr></thead>
+					<tbody>
+						<tr><td><code>Off</code>, or no <code>openapi</code></td><td>neither</td></tr>
+						<tr><td><code>Document</code></td><td><code>GET /openapi.json</code>: the document, for a client generator</td></tr>
+						<tr><td><code>Page(Swagger)</code>, <code>Page(Scalar)</code></td><td>that, and <code>GET /openapi.html</code>: the document in Swagger UI, or in Scalar</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<ul>
+				<li>
+					<strong>Behind the app's middleware</strong>, as every answer is: a guard that keeps a page
+					from strangers keeps these from them too.
+				</li>
+				<li>
+					<strong>The page loads its viewer from jsDelivr</strong>, pinned to one version and checked
+					against its hash, and tells it not to call home: no validator for Swagger UI; no telemetry, fonts,
+					developer tools or agent for Scalar. Bundled instead, a viewer would add 2 to 5 MB to every app's
+					server.
+				</li>
+				<li>
+					<strong>An app that writes its own <code>program</code></strong> asks <code>OpenApi.respond</code>
+					first, before its routes, as this site's does (<a href="#middleware">below</a>).
+				</li>
+			</ul>
+			<p>
+				This site serves both: <a href="/openapi.html">its API, in Swagger UI</a>, and
+				<a href="/openapi.json">the document</a>.
+			</p>
+			<h3>Who makes it, and when</h3>
+			<p>
+				Neither platform: rocx writes Roc that asks for it, the compiler works it out, and the server only
+				sends it.
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>When</th><th>What runs</th><th>What it does</th></tr></thead>
+					<tbody>
+						<tr>
+							<td><code>rocx build</code></td>
+							<td>rocx, in Node (<code>src/routes.mjs</code>), as it writes the router</td>
+							<td>
+								Writes Roc, and knows no types. <code>Generated/Api.roc</code> gets <code>openapi</code>: each
+								path, its params and its methods, with their comments, and for each endpoint a call that asks
+								<code>OpenApi</code> for the schemas of its body and its answer; and <code>tags</code>, every name
+								in the app's code that could be a tag. <code>Generated/Routes.roc</code> gets <code>/openapi.json</code>.
+							</td>
+						</tr>
+						<tr>
+							<td><code>roc build</code>, the server's</td>
+							<td>the Roc compiler</td>
+							<td>
+								Infers each endpoint's types; writes, for each, a parser for the format <code>OpenApi.Schema</code>,
+								as it writes one for <code>Json</code> to read the endpoint's body; and, <code>openapi</code> being a
+								constant, works it out as it compiles. The server's binary holds the document, as text.
+							</td>
+						</tr>
+						<tr>
+							<td><code>GET /openapi.json</code></td>
+							<td>the server (native)</td>
+							<td>Sends that text, if the app turned it on, behind its middleware, like every answer.</td>
+						</tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				The browser's build (wasm) has none of it: its copy of <code>Api</code> is each endpoint's method and
+				URL, and no document. What rocx writes for this site, in part:
+			</p>
+			<Code title={"${Sources.openapi_api.file}, in part"} source={Sources.openapi_api.rocx} numbers={Bool.False} />
+			<h3>A parser that writes</h3>
+			<p>
+				Roc has no reflection: no code can ask what a type is. But the parser the compiler writes for a type
+				isn't JSON's: it is one for any format, which it calls, shape by shape, to read each part (a record,
+				its next field, a string, a number), and it hands a record's format the names of its fields.
+				<code>OpenApi.Schema</code> is a format that reads nothing: each part it is asked to read, it writes
+				the schema of, as <code>Json</code> writes that part, and gives back a value nothing looks at.
+				<code>OpenApi.body</code> asks the compiler for the parser of what the endpoint is sent, for
+				<code>Schema</code>, and runs it:
+			</p>
+			<Code title={"${Sources.openapi_format.file}, in part"} source={Sources.openapi_format.rocx} numbers={Bool.False} />
+			<p>
+				So for <code>{"GET /api/shout/{word}"}</code>'s answer, <code>{"{ word : Str, shouted : Str, bytes : U64 }"}</code>,
+				the parser and <code>Schema</code> go:
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>The parser calls</th><th><code>Schema</code> writes</th></tr></thead>
+					<tbody>
+						<tr><td><code>parse_record_start</code></td><td><code>{"{\"type\":\"object\",\"properties\":{"}</code></td></tr>
+						<tr><td><code>parse_record_field</code>, given the names <code>bytes</code>, <code>shouted</code>, <code>word</code>: it hands back <code>bytes</code></td><td><code>{"\"bytes\":"}</code></td></tr>
+						<tr><td><code>parse_u64</code>, as <code>bytes</code> is a <code>U64</code></td><td><code>{"{\"type\":\"integer\",\"minimum\":0}"}</code></td></tr>
+						<tr><td><code>parse_record_field</code> and <code>parse_str</code>, for <code>shouted</code>, then <code>word</code></td><td><code>{",\"shouted\":{\"type\":\"string\"}"}</code>, and <code>word</code>'s</td></tr>
+						<tr><td><code>parse_record_field</code>, with no name left: it says <code>Done</code></td><td><code>{"},\"required\":[\"bytes\",\"shouted\",\"word\"]}"}</code></td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				A tag union's parser is the one part that doesn't say what it has: it asks the format for a tag's
+				name, then reads that tag's payloads. So rocx gives the document <code>tags</code>, every name in the
+				app's code that could be one (its own, and its packages' and platforms'), and <code>Schema</code>
+				answers each in turn: a name that isn't one of the union's, the parser turns down; one that is, it
+				reads the payloads of, and <code>Schema</code> writes their schemas. <code>{"[Red, Rgb(U8, U8, U8)]"}</code>
+				is a string, <code>"Red"</code>, or an object, <code>{"{ \"Rgb\": [r, g, b] }"}</code>, as <code>Json</code>
+				writes them.
+			</p>
+			<ul>
+				<li>
+					<strong>A GET with events</strong> (<code>events!</code>) answers <code>text/event-stream</code>
+					too: each event's data is JSON, with its schema, and an <code>end</code> event ends the stream.
+				</li>
+				<li>
+					<strong>A refusal</strong> is every method's default answer: its status, and why, as text.
+				</li>
+				<li>
+					<strong>A type of your own</strong> (<code>{"Email := Str.{ parser_for : _ }"}</code>) is described as
+					<code>Json</code> reads it. Write its own parser for any format (<code>encoding.parse_str</code>), not
+					for JSON alone, and the document can describe it too.
+				</li>
+			</ul>
+
+			<Heading id="middleware">Middleware: what runs, in what order</Heading>
+			<p>
+				Middleware is code that runs around an answer. It is given the request, the context so far and what
+				comes next (<code>next!</code>), and may answer itself (a guard: a redirect, a 401), pass the request
+				on with more context (who is asking), or change the answer that comes back (a header). A guard, a
+				session, headers, a log: one idea, and <code>a.then(b)</code> is <code>a</code>, then <code>b</code>.
+			</p>
+			<Code title={"${Sources.middleware_type.file}, in part"} source={Sources.middleware_type.rocx} numbers={Bool.False} />
+			<p>
+				Two places name middleware, and nothing else runs any. The app's default runs around every request,
+				in its <code>respond!</code>:
+			</p>
+			<Code title={Sources.route_main.file} source={Sources.route_main.rocx} numbers={Bool.False} />
+			<p>
+				A route file names its own, <code>middleware = …</code>, which runs after the default, around that
+				file's page, endpoints and server functions, and hands on the context they are given (a server
+				function reads it with <code>{"Server.context!({})"}</code>). This site's:
+			</p>
+			<Code title={Sources.site_middlewares.file} source={Sources.site_middlewares.rocx} />
+			<Versus>
+				<Code title={"${Sources.members_page.file}, in part"} source={Sources.members_page.rocx} numbers={Bool.False} />
+				<Code title={Sources.members_server.file} source={Sources.members_server.rocx} numbers={Bool.False} />
+			</Versus>
+			<p>
+				So a request to <code>/members</code> goes through the app's default, then
+				<code>Middlewares.member</code>, then the page (for a browser) or <code>get!</code>; the answer goes
+				back out through them, gathering the default's headers. <code>rocx routes</code> lists every route
+				(each server function too, a <code>POST /rocx/call/…</code>), the file that answers it, and what it
+				runs behind:
+			</p>
+			<Code title="A terminal" source={Sources.route_list.rocx} numbers={Bool.False} plain />
+			<ul>
+				<li>
+					<strong>The context is typed.</strong> <code>member</code> is a
+					<code>{"Middleware({ facts : Str }, { facts : Str, member : Str })"}</code>, so the members' page
+					reads <code>context.member</code>; a page that read it without that middleware wouldn't compile. A
+					layout reads only what every page's context has (<code>{"{ facts, .. }"}</code>).
+				</li>
+				<li>
+					<strong>Each file names its own.</strong> A page's middleware doesn't guard the endpoints beside it,
+					or the pages below: <code>members/+server.roc</code> names <code>Middlewares.member</code> too.
+					What guards a route is in its file, and <code>rocx routes</code> shows them all, together.
+				</li>
+				<li>
+					<strong>Try it, with <code>just dev</code>.</strong> <a href={Paths.members}>/members</a> sends you
+					to join; join, and it greets you by the name you gave. A copy of this site as files has no server
+					to ask, so these pages aren't in it.
+				</li>
+			</ul>
+
+			<Heading id="router">The router, and the app</Heading>
+			<p>
+				<code>Generated/Routes.roc</code> has one function: the answer to a request. A
+				<code>POST /rocx/call/…</code> is a server function's (<code>Generated/ServerFunctions.roc</code>;
+				any other method, a 405). Otherwise it takes the path apart and tries each, the fixed before the
+				params; there, the page for a browser's GET, in its layouts, or the endpoint for the method, or a
+				405; and the error page where nothing is:
+			</p>
+			<Code title={"${Sources.route_routes.file}, in part"} source={Sources.route_routes.rocx} numbers={Bool.False} />
+			<p>
+				The app's server answers every request with it, behind its default middleware (<a href="#middleware">above</a>),
+				a call to a server function too. A file that names middleware has its page, endpoints and server
+				functions wrapped in <code>Middleware.run!</code>, given what the middleware passes on:
+			</p>
+			<Code title={"${Sources.route_members.file}, in part"} source={Sources.route_members.rocx} numbers={Bool.False} />
+
+			<Heading id="error">Where no page is</Heading>
+			<p>
+				<code>routes/+error.rocx</code> renders what a path nothing answers shows, in the layouts at the root,
+				for a browser, and the status is 404. This site's lists the pages of the part of the docs the path is in (try <a href="/nowhere">/nowhere</a>, or <a href="/platform/nowhere">/platform/nowhere</a>):
+			</p>
+			<Code title={Sources.route_error.file} source={Sources.route_error.rocx} />
+
+			<Heading id="limits">Not yet</Heading>
+			<Callout kind="note" title="Navigation is a page load">
+				<p>
+					A link loads the next page from the server, its islands with it, as on any page of plain HTML.
+					Navigating in the browser, without a page load, is next.
+				</p>
+			</Callout>
+			<ul>
+				<li>
+					<strong>A static build writes the pages without params</strong> (<code>Paths.all</code>); one with
+					params would need a list of the ones to write.
+				</li>
+				<li>
+					<strong>One error page</strong>, the app's, at the root of <code>routes/</code>; and layouts aren't
+					given the params.
+				</li>
+				<li>
+					<strong>No rest params</strong> (<code>[...path]</code>) or groups (<code>(marketing)</code>) yet,
+					and no middleware for a whole directory: each file names its own.
+				</li>
+				<li>
+					<strong>The OpenAPI document</strong> calls every field required, describes a type that holds
+					itself (a tree) only so deep, and has no <code>$ref</code>s; it is titled after the app's
+					directory. A tag union's tags come from the names in the code until Roc's parser says them, as it
+					says a record's fields.
+				</li>
+			</ul>
+		</NoHydration>
+	</>

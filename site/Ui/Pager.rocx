@@ -1,0 +1,61 @@
+import pf.Html
+
+## The page before this one and the one after, in its part: `Ok(page)` for each there is.
+Pager := [].{
+	view = |{ previous, next }|
+		<nav class="pager" aria-label="Previous and next page">
+			{=match previous {
+				Ok(page) => <a class="previous" href={page.path}><span>Previous</span>{page.label}</a>
+				Err(_) => <span></span>
+			}}
+			{=match next {
+				Ok(page) => <a class="next" href={page.path}><span>Next</span>{page.label}</a>
+				Err(_) => <span></span>
+			}}
+		</nav>
+
+	<story name="Both">
+		<Pager previous={Ok({ path: "#", label: "Syntax" })} next={Ok({ path: "#", label: "Components" })} />
+	</story>
+
+	<story name="The first page">
+		<Pager previous={Err(OutOfBounds)} next={Ok({ path: "#", label: "Showcase" })} />
+	</story>
+
+	<style>
+		.pager {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: var(--space-4);
+			margin-top: var(--space-9);
+		}
+
+		a {
+			display: block;
+			padding: var(--space-4) var(--space-5);
+			border-radius: var(--radius);
+			background: var(--bg-raised);
+			color: var(--accent);
+			font-weight: 600;
+			text-decoration: none;
+			transition: background 0.15s, box-shadow 0.15s;
+		}
+
+		a:hover {
+			background: var(--bg-hover);
+			box-shadow: var(--glow);
+		}
+
+		a span {
+			display: block;
+			color: var(--text-muted);
+			font-size: var(--size-xs);
+			font-weight: 400;
+		}
+
+		.next {
+			grid-column: 2;
+			text-align: right;
+		}
+	</style>
+}

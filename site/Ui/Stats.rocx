@@ -1,0 +1,63 @@
+import pf.Html
+
+## Numbers worth knowing, as tiles: each what it is, the number, and a note on how it was measured.
+Stats := [].{
+	view : { stats : List({ label : Str, value : Str, note : Str }) } -> Html
+	view = |{ stats }|
+		<dl class="stats">
+			{...stats.map(|stat| <div><dt>{stat.label}</dt><dd class="value">{stat.value}</dd><dd class="note">{stat.note}</dd></div>)}
+		</dl>
+
+	<story name="The build's">
+		<Stats
+			stats={[
+				{ label: "Wasm for the whole site", value: "143.0 KB", note: "brotli; 181.3 KB gzip" },
+				{ label: "JavaScript runtime", value: "24.1 KB", note: "gzip; no framework" },
+				{ label: "The front page, rendered", value: "250 µs", note: "by the browser's wasm, in Node" },
+				{ label: "The server", value: "17.5 MB", note: "one executable" },
+			]}
+		/>
+	</story>
+
+	<style>
+		.stats {
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+			gap: var(--space-4);
+			margin: var(--space-6) 0;
+		}
+
+		.stats > div {
+			padding: var(--space-4) var(--space-5);
+			border-radius: var(--radius);
+			background: var(--bg-raised);
+		}
+
+		dt {
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+		}
+
+		dd {
+			margin: 0;
+		}
+
+		.value {
+			width: fit-content;
+			margin-top: var(--space-1);
+			background: var(--gradient);
+			-webkit-background-clip: text;
+			background-clip: text;
+			color: transparent;
+			font-size: var(--size-xl);
+			font-weight: 800;
+			font-variant-numeric: tabular-nums;
+			letter-spacing: -0.02em;
+		}
+
+		.note {
+			color: var(--text-faint);
+			font-size: var(--size-xs);
+		}
+	</style>
+}

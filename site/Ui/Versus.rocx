@@ -1,0 +1,29 @@
+import pf.Html
+import Code
+
+## Two pieces of code to compare (what is inside: `<Code>`s), one above the other: side by side,
+## their lines would be cut.
+Versus := [].{
+	view : { children : List(Html) } -> Html
+	view = |{ children }| <div class="versus">{...children}</div>
+
+	<story name="Solid and rocx">
+		<Versus>
+			<Code title="Solid" source={"const [count, setCount] = createSignal(0);"} numbers={Bool.False} />
+			<Code title="rocx" source={"(count!, set_count!) = create_signal!(0)"} numbers={Bool.False} />
+		</Versus>
+	</story>
+
+	<style>
+		.versus {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr);
+			gap: var(--space-3);
+			margin: var(--space-4) 0;
+		}
+
+		.versus > :global(.code) {
+			margin: 0;
+		}
+	</style>
+}

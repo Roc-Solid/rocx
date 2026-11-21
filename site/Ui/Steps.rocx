@@ -1,0 +1,61 @@
+import pf.Html
+
+## How something goes, in a few numbered steps side by side: each a title and a line.
+Steps := [].{
+	view : { steps : List({ title : Str, text : Str }) } -> Html
+	view = |{ steps }|
+		<ol class="how">
+			{...steps.map_with_index(|step, index| <li><span class="num">{"0${(index + 1).to_str()}"}</span><strong>{step.title}</strong><p>{step.text}</p></li>)}
+		</ol>
+
+	<story name="Write, build, run">
+		<Steps
+			steps={[
+				{ title: "Write", text: "Markup wherever a Roc expression can stand." },
+				{ title: "Build", text: "Plain Roc, line for line, for the compiler to check." },
+				{ title: "Run", text: "Native on the server; WebAssembly in the browser." },
+			]}
+		/>
+	</story>
+
+	<style>
+		.how {
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+			gap: var(--space-7);
+			max-width: none;
+			margin: 0;
+			padding: 0;
+			list-style: none;
+			text-align: center;
+		}
+
+		li {
+			display: grid;
+			justify-items: center;
+			gap: var(--space-1);
+			margin: 0;
+			padding: 0;
+		}
+
+		.num {
+			background: var(--gradient);
+			-webkit-background-clip: text;
+			background-clip: text;
+			color: transparent;
+			font-size: var(--size-xl);
+			font-weight: 800;
+			letter-spacing: -0.02em;
+		}
+
+		strong {
+			font-size: var(--size-lg);
+		}
+
+		p {
+			max-width: 18rem;
+			margin: 0;
+			color: var(--text-muted);
+		}
+	</style>
+}

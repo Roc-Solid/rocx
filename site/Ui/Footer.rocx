@@ -1,0 +1,69 @@
+import pf.Html
+import ../Facts
+
+## The end of every page: what the site is written in and runs on, with what the build measured
+## (`facts`, the build's `key=value` lines).
+Footer := [].{
+	view = |{ facts }|
+		<footer class="footer">
+			<p>
+				This site is written in rocx. Its server, Roc compiled to native code in a Rust host, renders
+				every page; your browser runs the same components as WebAssembly: {Facts.get(facts, "client_bytes")}
+				of wasm, {Facts.get(facts, "client_brotli")} with brotli, plus {Facts.get(facts, "runtime_gzip")}
+				of JavaScript to run it.
+				<span class="live" data-stat="ready"></span>
+			</p>
+			<p class="meta">Built {Facts.get(facts, "built")} with Roc {Facts.get(facts, "roc")}.</p>
+			{=if (Facts.get(facts, "dev") == "yes")
+				<p class="meta">
+					A development build: the components run on Roc's dev backend, and the numbers are the ones
+					<code>just site</code> last measured.
+				</p>
+			else Html.empty({})}
+		</footer>
+
+	<story name="Measured">
+		<Footer facts={"client_bytes=563.7 KB\nclient_brotli=143.0 KB\nruntime_gzip=24.1 KB\nbuilt=2026-11-21\nroc=nightly"} />
+	</story>
+
+	<story name="A dev build">
+		<Footer facts={"client_bytes=563.7 KB\nclient_brotli=143.0 KB\nruntime_gzip=24.1 KB\nbuilt=2026-11-21\nroc=nightly\ndev=yes"} />
+	</story>
+
+	<style>
+		.footer {
+			margin-top: var(--space-8);
+			padding: var(--space-7) var(--space-6) var(--space-8);
+			background: linear-gradient(var(--bg), var(--bg-sunken));
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+			text-align: center;
+		}
+
+		/* A thread of the site's gradient, lit, where the page ends. */
+		.footer::before {
+			content: "";
+			display: block;
+			width: min(24rem, 60%);
+			height: 1px;
+			margin: 0 auto var(--space-7);
+			background: var(--gradient);
+			box-shadow: var(--glow);
+			opacity: 0.6;
+		}
+
+		p {
+			max-width: 48rem;
+			margin: var(--space-2) auto;
+		}
+
+		.live:not(:empty)::before {
+			content: " ";
+		}
+
+		.meta {
+			color: var(--text-faint);
+			font-size: var(--size-xs);
+		}
+	</style>
+}

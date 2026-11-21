@@ -1,0 +1,64 @@
+import pf.Html
+
+## A link that looks like a button: the way to somewhere the page means you to go. `primary` for the
+## one it most means (cyan); the others are quiet surfaces. Put several in `<Actions>`. With `submit`,
+## it is a form's button instead, which sends the form it is in.
+Button := [].{
+	Props := {
+		href : Str ?? "",
+		primary : Bool ?? Bool.False,
+		submit : Bool ?? Bool.False,
+		children : List(Html),
+	}
+
+	view : Props -> Html
+	view = |props|
+		if (props.submit)
+			<button class="button" class:primary={props.primary} type="submit">{...props.children}</button>
+		else
+			<a class="button" class:primary={props.primary} href={props.href}>{...props.children}</a>
+
+	<story name="Primary">
+		<Button href="#" primary>Read the guide</Button>
+	</story>
+
+	<story name="Secondary">
+		<Button href="#">See it run</Button>
+	</story>
+
+	<story name="A form's">
+		<form method="post" action="#"><Button submit>Leave</Button></form>
+	</story>
+
+	<style>
+		.button {
+			display: inline-flex;
+			align-items: center;
+			gap: var(--space-2);
+			padding: var(--space-2) var(--space-5);
+			border: 0;
+			border-radius: var(--radius);
+			background: var(--fill);
+			color: var(--text);
+			font: inherit;
+			font-weight: 600;
+			text-decoration: none;
+			cursor: pointer;
+			transition: background 0.15s, box-shadow 0.15s;
+		}
+
+		.button:hover {
+			background: var(--fill-strong);
+		}
+
+		.primary {
+			background: var(--accent);
+			color: var(--accent-text);
+		}
+
+		.primary:hover {
+			background: var(--accent-strong);
+			box-shadow: var(--glow);
+		}
+	</style>
+}

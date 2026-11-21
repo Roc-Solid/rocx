@@ -1,0 +1,123 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+import charts.Format
+import charts.BarChart
+import Random
+
+## A year of rain, a bar a month, drawn by the charts package's `<BarChart>`. Another year rolls
+## new amounts; Sort puts the wettest month first; − and + take a month away or bring one back.
+## The bars glide to their new heights and places, and the axis to its new round numbers, a frame
+## at a time; a month taken away shrinks into the axis as it fades. Once they are there, nothing
+## runs.
+Rainfall := [].{
+	Year : { seed : U64, rain : List(Dec) }
+
+	view! : {} => Html
+	view! = |{}| {
+		(year!, set_year!) = create_signal!({ seed: 2026, rain: typical })
+		(months!, set_months!) = create_signal!(12)
+		(sorted!, set_sorted!) = create_signal!(Bool.False)
+		<div class="rainfall">
+			<div class="chart-bar">
+				<button type="button" on:click={|| set_year!(Rainfall.another(year!()))}>Another year</button>
+				<button type="button" aria-pressed={if (sorted!()) "true" else "false"} on:click={|| set_sorted!(!sorted!())}>Wettest first</button>
+				<span class="months" role="group" aria-label="Months">
+					<button type="button" class="round" aria-label="One month fewer" disabled?={months!() <= 1} on:click={|| set_months!(months!() - 1)}>−</button>
+					<output>{months!().to_str()} {if (months!() == 1) "month" else "months"}</output>
+					<button type="button" class="round" aria-label="One month more" disabled?={months!() >= 12} on:click={|| set_months!(months!() + 1)}>+</button>
+				</span>
+			</div>
+			<BarChart data!={Rainfall.bars(year!().rain, months!(), sorted!())} label="Rain each month, in millimetres" format={|mm| Format.num(mm, 0)} />
+		</div>
+	}
+
+	<style>
+		.rainfall {
+			--chart-color: var(--accent);
+			--chart-active: var(--accent-strong);
+			--chart-grid: var(--rule);
+			--chart-axis: var(--rule-strong);
+			--chart-muted: var(--text-faint);
+			--chart-surface: var(--bg-raised);
+			display: grid;
+			gap: var(--space-3);
+		}
+
+		.chart-bar {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: var(--space-2) var(--space-4);
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+		}
+
+		.chart-bar > button {
+			padding: var(--space-1) var(--space-3);
+			font-size: var(--size-sm);
+		}
+
+		.chart-bar > button[aria-pressed="true"] {
+			background: var(--accent-soft);
+			color: var(--accent);
+		}
+
+		.months {
+			display: inline-flex;
+			align-items: center;
+			gap: var(--space-2);
+			margin-left: auto;
+		}
+
+		.months output {
+			min-width: 5.5rem;
+			font-variant-numeric: tabular-nums;
+			text-align: center;
+		}
+
+		.round {
+			width: 2rem;
+			height: 2rem;
+			padding: 0;
+			border-radius: 50%;
+			font-size: var(--size-lg);
+			line-height: 1;
+		}
+
+		.round:hover:not(:disabled) {
+			background: var(--accent-soft);
+			color: var(--accent);
+		}
+	</style>
+
+	## The first `count` months' bars, in the calendar's order or the wettest first.
+	bars : List(Dec), U64, Bool -> List({ label : Str, value : Dec })
+	bars = |rain, count, sorted| {
+		months = List.map2(names, rain, |label, value| { label, value }).take_first(count)
+		if sorted {
+			months.sort_with(|a, b| if (a.value > b.value) Before else if (a.value < b.value) After else Same)
+		} else {
+			months
+		}
+	}
+
+	## Another year: each month somewhere from 40% to 160% of what it usually gets.
+	another : Rainfall.Year -> Rainfall.Year
+	another = |year| {
+		var $seed = year.seed
+		var $rain = []
+		for usual in typical {
+			roll = Random.below($seed, 121)
+			$seed = roll.seed
+			$rain = $rain.append(Dec.round(usual * (40.0 + roll.value.to_dec()) / 100.0))
+		}
+		{ seed: $seed, rain: $rain }
+	}
+}
+
+names : List(Str)
+names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+## A typical year's rain in a temperate city, in millimetres.
+typical : List(Dec)
+typical = [56.0, 41.0, 42.0, 44.0, 49.0, 45.0, 45.0, 50.0, 49.0, 69.0, 59.0, 55.0]

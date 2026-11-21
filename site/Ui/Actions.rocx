@@ -1,0 +1,41 @@
+import pf.Html
+import Button
+
+## The ways on from a part of a page: buttons in a row, which wraps; centred under a centred hero.
+Actions := [].{
+	Props := {
+		centered : Bool ?? Bool.False,
+		children : List(Html),
+	}
+
+	view : Props -> Html
+	view = |props| <p class="actions" class:centered={props.centered}>{...props.children}</p>
+
+	<story name="Two">
+		<Actions>
+			<Button href="#" primary>The server</Button>
+			<Button href="#">The browser</Button>
+		</Actions>
+	</story>
+
+	<story name="Centred">
+		<Actions centered>
+			<Button href="#" primary>Read the guide</Button>
+			<Button href="#">See it run</Button>
+			<Button href="#">Play Snake</Button>
+		</Actions>
+	</story>
+
+	<style>
+		.actions {
+			display: flex;
+			flex-wrap: wrap;
+			gap: var(--space-3);
+			margin: var(--space-6) 0 0;
+		}
+
+		.centered {
+			justify-content: center;
+		}
+	</style>
+}

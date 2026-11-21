@@ -1,0 +1,14 @@
+view! = |{}| {
+	(shown!, set_shown!) = create_signal!(3.U64)
+	friends! = create_memo!(|| Api.friends!({}))
+	<Loading fallback={<p>Loading…</p>}>
+		<ul>
+			<For each!={friends!().take_first(shown!())} keyed={|f| f.id}>
+				{|friend!, _| <li>{friend!().name}</li>}
+			</For>
+		</ul>
+		<Show when!={friends!().len() > shown!()}>
+			<button on:click={|| set_shown!(shown!() + 3)}>More</button>
+		</Show>
+	</Loading>
+}

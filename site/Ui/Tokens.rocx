@@ -1,0 +1,255 @@
+import pf.Html
+import Code
+
+## The design tokens the site and its components are drawn with (site/static/site.css, `:root`),
+## shown. A component never writes a colour: it writes the token's role (`var(--accent)`), so the
+## whole site changes in one place.
+Tokens := [].{
+	<story name="Colours">
+		<Palette
+			groups={[
+				{ name: "Surfaces", tokens: [("bg", "the page"), ("bg-sunken", "what sits under a card"), ("bg-code", "a block of code"), ("bg-raised", "cards, frames"), ("bg-hover", "a card pointed at"), ("fill", "a quiet button, inline code"), ("fill-strong", "the same, pointed at")] },
+				{ name: "Text", tokens: [("text", "what is read"), ("text-muted", "what supports it"), ("text-faint", "labels, numbers"), ("rule", "a line that means something"), ("rule-strong", "a thread, a frame")] },
+				{ name: "Neon", tokens: [("accent", "links, the main button, what is current"), ("accent-strong", "the same, pointed at"), ("accent-soft", "under what is current"), ("magenta", "where you are, labels"), ("magenta-soft", "under it"), ("violet", "between the two")] },
+				{ name: "Signals", tokens: [("good", "a tip, a pass"), ("warn", "a warning"), ("bad", "a failure, below zero")] },
+			]}
+		/>
+	</story>
+
+	<story name="The gradient">
+		<p class="gradient">Roc, from the database to the browser.</p>
+	</story>
+
+	<story name="Glow">
+		<div class="glows">
+			<div class="surface glow"><code>--glow</code><span>what is lit: the main button, a card pointed at</span></div>
+			<div class="surface glow-magenta"><code>--glow-magenta</code><span>the mark</span></div>
+			<div class="surface shadow"><code>--shadow</code><span>what floats: a demo, the specimen</span></div>
+		</div>
+	</story>
+
+	<story name="Code colours">
+		<Code title="Counter.rocx" source={"## A count you can add to.\nview! = |{ start }| {\n\t(count!, set_count!) = create_signal!(start)\n\t<button class=\"count\" on:click={|| set_count!(count!() + 1)}>Clicked {count!().to_str()}</button>\n}"} />
+	</story>
+
+	<story name="Type">
+		<div class="type">
+			<p class="size-3xl gradient">3xl · the front page</p>
+			<p class="size-2xl gradient">2xl · a page's line</p>
+			<p class="size-xl">xl · a section's heading</p>
+			<p class="size-lg">lg · a card's title, a lede</p>
+			<p class="size-md">md · what is read: the body of a page, in the system's sans</p>
+			<p class="size-sm">sm · what supports it, and code</p>
+			<p class="size-xs">xs · notes, captions</p>
+			<p class="size-2xs">2xs · labels and badges</p>
+			<p class="size-md"><code>code, in the system's monospace</code></p>
+		</div>
+	</story>
+
+	<story name="Space and shape">
+		<div class="spaces">
+			{...["1", "2", "3", "4", "5", "6", "7", "8", "9"].map(|step| <div class="space"><span class="bar" style:--step={"var(--space-${step})"}></span><code>{"--space-${step}"}</code></div>)}
+		</div>
+		<div class="surfaces">
+			<div class="surface radius-sm"><code>--radius-sm</code></div>
+			<div class="surface radius"><code>--radius</code></div>
+			<div class="surface radius-lg"><code>--radius-lg</code></div>
+			<div class="surface pill"><code>--pill</code></div>
+		</div>
+	</story>
+
+	<style>
+		.gradient {
+			margin: 0;
+			background: var(--gradient);
+			-webkit-background-clip: text;
+			background-clip: text;
+			color: transparent;
+			font-size: var(--size-2xl);
+			font-weight: 800;
+			letter-spacing: -0.03em;
+			line-height: 1.1;
+		}
+
+		.type p {
+			margin: 0 0 var(--space-3);
+		}
+
+		.size-3xl {
+			font-size: var(--size-3xl);
+			letter-spacing: -0.04em;
+		}
+
+		.size-2xl {
+			font-size: var(--size-2xl);
+		}
+
+		.size-xl {
+			font-size: var(--size-xl);
+			font-weight: 700;
+		}
+
+		.size-lg {
+			font-size: var(--size-lg);
+			font-weight: 700;
+		}
+
+		.size-md {
+			font-size: var(--size-md);
+		}
+
+		.size-sm {
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+		}
+
+		.size-xs {
+			color: var(--text-muted);
+			font-size: var(--size-xs);
+		}
+
+		.size-2xs {
+			color: var(--text-faint);
+			font-size: var(--size-2xs);
+			font-weight: 600;
+			letter-spacing: 0.06em;
+			text-transform: uppercase;
+		}
+
+		.glows,
+		.surfaces {
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+			gap: var(--space-6);
+			margin-top: var(--space-6);
+		}
+
+		.surface {
+			display: grid;
+			align-content: end;
+			gap: var(--space-1);
+			min-height: 6rem;
+			padding: var(--space-3);
+			border-radius: var(--radius);
+			background: var(--bg-raised);
+			color: var(--text-muted);
+			font-size: var(--size-xs);
+		}
+
+		.surface code {
+			justify-self: start;
+		}
+
+		.glow {
+			box-shadow: var(--glow);
+		}
+
+		.glow-magenta {
+			box-shadow: var(--glow-magenta);
+		}
+
+		.shadow {
+			box-shadow: var(--shadow);
+		}
+
+		.radius-sm {
+			border-radius: var(--radius-sm);
+		}
+
+		.radius-lg {
+			border-radius: var(--radius-lg);
+		}
+
+		.pill {
+			border-radius: var(--pill);
+			min-height: 3rem;
+			align-content: center;
+			padding: var(--space-3) var(--space-5);
+		}
+
+		.spaces {
+			display: grid;
+			gap: var(--space-2);
+		}
+
+		.space {
+			display: flex;
+			align-items: center;
+			gap: var(--space-3);
+		}
+
+		.bar {
+			width: var(--step);
+			height: 0.75rem;
+			border-radius: 2px;
+			background: var(--accent);
+			box-shadow: var(--glow);
+		}
+	</style>
+}
+
+## Swatches, a row to a group: each token's colour, its name, and what it is for.
+Palette := [].{
+	view = |{ groups }|
+		<div class="palette">
+			{...groups.map(|group|
+				<section>
+					<h3>{group.name}</h3>
+					<ul>
+						{...group.tokens.map(|(token, use)|
+							<li>
+								<span class="chip" style:--chip={"var(--${token})"}></span>
+								<code>{"--${token}"}</code>
+								<span class="use">{use}</span>
+							</li>
+						)}
+					</ul>
+				</section>
+			)}
+		</div>
+
+	<style>
+		.palette {
+			display: grid;
+			gap: 1.5rem;
+		}
+
+		h3 {
+			margin: 0 0 0.6rem;
+			font-size: 1rem;
+		}
+
+		ul {
+			display: grid;
+			grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+			gap: 0.75rem;
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		li {
+			display: grid;
+			gap: 0.3rem;
+			padding: 0.6rem;
+			border-radius: var(--radius);
+			background: var(--bg-raised);
+		}
+
+		.chip {
+			height: 3rem;
+			border-radius: 7px;
+			background: var(--chip);
+			box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.06);
+		}
+
+		code {
+			font-size: 0.8rem;
+		}
+
+		.use {
+			color: var(--text-muted);
+			font-size: 0.8rem;
+		}
+	</style>
+}

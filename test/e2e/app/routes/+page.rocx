@@ -1,0 +1,16 @@
+import pf.Html
+import ../Counter
+import ../Ui/Badge
+import ../Ui/Note
+
+meta = { title: "Home" }
+
+view! = |_|
+	<section class="home">
+		<h1>Home</h1>
+		<Badge text="pure" />
+		<Counter start={1} />
+		<NoHydration>
+			<Note>Prose the browser never hydrates, with a <Badge text="badge" /> in it.</Note>
+		</NoHydration>
+	</section>

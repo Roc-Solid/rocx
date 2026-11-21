@@ -1,0 +1,31 @@
+import pf.Html
+import Feature
+
+## Cards side by side: two to a row at most, so a line of their prose holds more than a few words;
+## one on a phone. A last card alone in its row takes the whole row.
+FeatureGrid := [].{
+	view : { children : List(Html) } -> Html
+	view = |{ children }| <div class="features">{...children}</div>
+
+	<story name="Three">
+		<FeatureGrid>
+			<Feature title="Requests and streams" href="#"><p>Every request on a thread of its own.</p></Feature>
+			<Feature title="Postgres" href="#"><p>Queries, transactions and migrations.</p></Feature>
+			<Feature title="Jobs, cron and email"><p>Work that runs later, and again.</p></Feature>
+		</FeatureGrid>
+	</story>
+
+	<style>
+		.features {
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+			gap: var(--space-4);
+			margin: var(--space-5) 0;
+		}
+
+		/* A last card alone in its row takes the whole row. */
+		.features > :global(.feature:last-child:nth-child(odd)) {
+			grid-column: 1 / -1;
+		}
+	</style>
+}

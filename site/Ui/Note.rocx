@@ -1,0 +1,19 @@
+import pf.Html
+
+## A small aside under something: what it shows, or how to try it.
+Note := [].{
+	view : { children : List(Html) } -> Html
+	view = |{ children }| <p class="note">{...children}</p>
+
+	<story name="Under a demo">
+		<Note>Click a count, then look at what the inspector says it patched.</Note>
+	</story>
+
+	<style>
+		.note {
+			max-width: var(--measure);
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+		}
+	</style>
+}

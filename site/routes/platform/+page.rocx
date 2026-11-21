@@ -1,0 +1,217 @@
+import pf.Html
+import ../../Ui/Heading
+import ../../Ui/Callout
+import ../../Ui/Code
+import ../../Generated/Sources
+import ../../Generated/Paths
+import ../../Ui/Button
+import ../../Ui/Feature
+import ../../Ui/FeatureGrid
+import ../../Ui/PageHero
+import ../../Ui/Trace
+import ../../Ui/Who
+import ../../Ui/Arch
+import ../../Ui/ArchBox
+
+meta = {
+	title: "The platform",
+	description: "What a rocx app runs on: a server platform, Roc compiled to native code in a Rust host with Postgres, jobs, email and actors; and a browser platform, the islands in WebAssembly.",
+	toc: [
+		{ id: "two", label: "Two platforms, one app" },
+		{ id: "server", label: "What the server gives" },
+		{ id: "app", label: "An app" },
+		{ id: "request", label: "A request, all the way" },
+		{ id: "build", label: "Building and running" },
+		{ id: "why", label: "Why this shape" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				eyebrow="The platform"
+				title="Two platforms, one app: native on the server, wasm in the browser"
+				actions={[
+					<Button href={Paths.platform_server} primary>The server</Button>,
+					<Button href={Paths.platform_browser}>The browser</Button>,
+				]}
+			>
+				A Roc program runs on a platform: the host that gives it the effects it may have. A rocx app is
+				two programs. The server's is Roc compiled to native code, linked with a Rust host into one
+				executable, which answers HTTP and does what a single server does: Postgres, jobs, cron, email,
+				state that outlives a request. The browser's is the app's islands, compiled to WebAssembly, with a
+				small Zig host and a page of JavaScript. The two talk over HTTP.
+			</PageHero>
+
+			<Heading id="two">Two platforms, one app</Heading>
+			<Arch
+				left={[
+					<ArchBox kind="roc" name={[<code>server/</code>, <>: native</>]}>
+						<p>
+							Roc compiled to machine code, in a Rust host (tokio, hyper). Pages, endpoints, server functions,
+							the islands rendered into pages; Postgres, jobs and cron, email, live rooms, actors. One
+							executable, one server.
+						</p>
+					</ArchBox>,
+				]}
+				wire="HTTP"
+				right={[
+					<ArchBox kind="wasm" name={[<code>web/</code>, <>: wasm</>]}>
+						<p>
+							The islands only, compiled to WebAssembly with a Zig host, and <code>web/runtime.js</code>, which
+							hydrates them, runs their holes again when signals change, and sends their requests.
+						</p>
+					</ArchBox>,
+				]}
+			/>
+			<p>
+				The same components compile on both: the modules they are written with (<code>Html</code>,
+				<code>Solid</code>, <code>Show</code>, <code>For</code>, <code>Loading</code>, <code>Errored</code>,
+				<code>Context</code>, <code>Island</code>, <code>Server</code>, <code>Call</code>) are the browser
+				platform's, and the build copies them into the server platform, whose host renders them as the
+				browser's runtime would, byte for byte.
+			</p>
+
+			<Heading id="server">What the server gives</Heading>
+			<FeatureGrid>
+				<Feature title="Requests and streams" href={Paths.platform_server}>
+					<p>
+						Every request, on a thread of its own; streams of events as loops that sleep; a crash that ends
+						one call, not the server, and frees what it held.
+					</p>
+				</Feature>
+				<Feature title="HTTP, both ways" href={Paths.platform_http}>
+					<p>
+						Requests to other servers, with limits; bodies as the bytes they were; answers fetched from elsewhere
+						and passed on as they come; cookies with every attribute.
+					</p>
+				</Feature>
+				<Feature title="Files in S3" href={Paths.platform_storage}>
+					<p>
+						Any S3: files kept, read and described, large ones in parts, links that sign themselves, videos
+						streamed to the browser with their ranges.
+					</p>
+				</Feature>
+				<Feature title="Settings and crypto" href={Paths.platform_secrets}>
+					<p>
+						The environment, a dev server's own paths, and the crypto an app signs and seals with: SHA-256,
+						HMAC, HKDF, AES-GCM.
+					</p>
+				</Feature>
+				<Feature title="Postgres" href={Paths.platform_postgres}>
+					<p>
+						Queries whose rows decode into the record you annotate, transactions, migrations built into the
+						app; or roc-pg, whose queries are checked at build.
+					</p>
+				</Feature>
+				<Feature title="Jobs, cron and email" href={Paths.platform_jobs}>
+					<p>
+						Work queued in Postgres and run by workers, again if it fails; schedules; email over SMTP, or an
+						outbox while developing.
+					</p>
+				</Feature>
+				<Feature title="Live and actors" href={Paths.platform_live}>
+					<p>
+						Topics and rooms streams share (who is here, what was said), and actors: state one message at a
+						time, kept in Postgres.
+					</p>
+				</Feature>
+			</FeatureGrid>
+			<p>
+				It is opinionated on purpose: one server, Roc and Postgres. The host, in Rust, gives Roc general
+				things: HTTP, Postgres connections, sockets with TLS, background loops that sleep until woken, calls
+				isolated from their caller, locks. Jobs, cron, migrations, email and actors are the platform's Roc,
+				written on those (<a href={"${Paths.platform_server}#layers"}>what is Rust, what is Roc</a>).
+			</p>
+
+			<Heading id="app">An app</Heading>
+			<p>
+				On the server platform an app is a record: how it answers a request, its migrations, the kinds of
+				job its workers run, its schedules, and its islands. The platform's tests' app has all of them:
+			</p>
+			<Code title={"${Sources.platform_program.file}, in part"} source={Sources.platform_program.rocx} numbers={Bool.False} />
+			<p>This site has pages, endpoints and islands, and none of the rest:</p>
+			<Code title={"${Sources.platform_site_program.file}, in part"} source={Sources.platform_site_program.rocx} numbers={Bool.False} />
+			<p>
+				<code>respond!</code> takes a request's method, target, headers, body and what the server was
+				started with (<code>--context-file</code>), and answers with a <code>Server.Response</code>:
+				<code>Server.from_http</code> makes the request, and the routes rocx writes answer it
+				(<a href={Paths.routing}>routing</a>). An answer that is a stream carries it: a function the host
+				runs on a thread of its own, with its <code>send!</code> and <code>sleep!</code>. Actors aren't
+				listed: <code>Actor.ask!</code> is given the kind it asks. The browser's app is the islands alone:
+			</p>
+			<Code title={Sources.client_app.file} source={Sources.client_app.rocx} />
+
+			<Heading id="request">A request, all the way</Heading>
+			<Trace>
+				<li>
+					<Who kind="server">server</Who> hyper hands the host a request; the host reads its body
+					(16 MiB at most) and gives it to Roc on a thread of tokio's blocking pool, inside a guard that
+					catches a crash.
+				</li>
+				<li>
+					<Who kind="server">server</Who> The app's <code>respond!</code> runs its middleware and
+					routes, and renders the page: plain HTML, with a <code>{"<rocx-island data-island=\"todos\">"}</code>
+					where an island goes. Its effects (a query, a job queued) block that thread, and no other.
+				</li>
+				<li>
+					<Who kind="server">server</Who> The host sees the page has islands, and runs the app's
+					islands' root: each island the page has is rendered into its place, its server functions called
+					there and then, and their answers put at the end of the page.
+				</li>
+				<li>
+					<Who kind="browser">browser</Who> The page shows at once, islands and all. Its script
+					finds the islands, fetches the wasm, and hydrates them: the same components run again, bound to the
+					server's nodes, reading the answers from the page instead of asking.
+				</li>
+				<li>
+					<Who kind="browser">browser</Who> A click writes a signal; what reads it runs again and
+					patches its own node. A server function's call is a <code>POST /rocx/call/…</code>, which the
+					server's app answers with the same function.
+				</li>
+			</Trace>
+
+			<Heading id="build">Building and running</Heading>
+			<Code
+				title="In this repository"
+				source={"just db        # a Postgres in Docker; prints its DATABASE_URL\njust dev       # this site on it: http://localhost:8080, rebuilt on save\nnode server/build.mjs app.roc out/app [--opt=speed] [--target=arm64musl]"}
+				numbers={Bool.False}
+			/>
+			<p>
+				<code>server/build.mjs</code> builds the host with cargo into
+				<code>server/platform/targets/</code>, then the app with <code>roc build</code>, which links the two
+				into one executable. On macOS it links against the system; <code>--target=arm64musl</code> (or
+				<code>x64musl</code>) makes a static Linux executable, cross-compiled, to copy into a container. The
+				executable takes its port, its database and the rest as flags or environment
+				(<a href={"${Paths.platform_server}#running"}>running</a>).
+			</p>
+
+			<Heading id="why">Why this shape</Heading>
+			<ul>
+				<li>
+					<strong>Native on the server.</strong> Roc compiles to machine code, so the server runs it as such:
+					threads for every request, effects that block a thread and nothing else, and Rust where Roc can't
+					reach (sockets, TLS, threads). No wasm runtime between them.
+				</li>
+				<li>
+					<strong>Wasm in the browser.</strong> The browser runs WebAssembly, and only the islands go there:
+					no page's markup, no endpoint, no server function's body.
+				</li>
+				<li>
+					<strong>One component model.</strong> Islands are Solid-style components on both, so the server
+					renders what the browser will hydrate, with the answers it will need.
+				</li>
+				<li>
+					<strong>One server.</strong> Live rooms, topics and actors' turns are in its memory; jobs and
+					actors' state are in Postgres already. Several servers are on the roadmap, not here yet.
+				</li>
+			</ul>
+			<Callout kind="note" title="A working prototype">
+				<p>
+					Both platforms are tested, together and apart: the server's against Postgres, crashes and all; the
+					browser's in Chromium; this site on both. Each page here says what isn't there yet.
+				</p>
+			</Callout>
+		</NoHydration>
+	</>

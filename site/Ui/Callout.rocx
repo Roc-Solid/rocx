@@ -1,0 +1,95 @@
+import pf.Html
+
+## A note beside the text: `tip`, `note` or `warning`.
+Callout := [].{
+	view : { kind : Str, title : Str, children : List(Html) } -> Html
+	view = |{ kind, title, children }|
+		<aside class={"callout callout-${kind}"}>
+			<p class="callout-title">{title}</p>
+			{...children}
+		</aside>
+
+	<story name="Tip">
+		<Callout kind="tip" title="Name holes by what they hold">
+			<p>A hole is text, <code>{"{=…}"}</code> is markup, and <code>{"{...}"}</code> is a list of it.</p>
+		</Callout>
+	</story>
+
+	<story name="Note">
+		<Callout kind="note" title="Lines stay lines">
+			<p>Line N of the Roc rocx writes is line N of the <code>.rocx</code> file.</p>
+		</Callout>
+	</story>
+
+	<story name="Warning">
+		<Callout kind="warning" title="Never build markup from strings">
+			<p>Text is escaped wherever it goes; a string never becomes a tag.</p>
+		</Callout>
+	</story>
+
+	<story name="Long">
+		<Callout kind="note" title="A callout with more in it">
+			<p>
+				It takes any children: paragraphs, lists and code. Text wraps at the callout's width, and the
+				title stays one line above it.
+			</p>
+			<ul>
+				<li>a paragraph</li>
+				<li>a list</li>
+				<li>a line of <code>code</code></li>
+			</ul>
+		</Callout>
+	</story>
+
+	<style>
+		.callout {
+			max-width: var(--measure);
+			margin: var(--space-6) 0;
+			padding: var(--space-4) var(--space-5);
+			border-radius: var(--radius);
+			background: var(--accent-soft);
+			box-shadow: inset 3px 0 0 var(--accent);
+		}
+
+		.callout-warning {
+			background: var(--warn-soft);
+			box-shadow: inset 3px 0 0 var(--warn);
+		}
+
+		.callout-tip {
+			background: var(--good-soft);
+			box-shadow: inset 3px 0 0 var(--good);
+		}
+
+		.callout-title {
+			margin: 0 0 var(--space-1);
+			font-weight: 700;
+		}
+
+		.callout-note .callout-title {
+			color: var(--accent);
+		}
+
+		.callout-warning .callout-title {
+			color: var(--warn);
+		}
+
+		.callout-tip .callout-title {
+			color: var(--good);
+		}
+
+		/* What is inside is the page's: global, under the callout. */
+		.callout > :global(p) {
+			margin: var(--space-2) 0;
+		}
+
+		.callout > :global(ul) {
+			margin: var(--space-2) 0;
+			padding-left: var(--space-5);
+		}
+
+		.callout > :global(:last-child) {
+			margin-bottom: 0;
+		}
+	</style>
+}

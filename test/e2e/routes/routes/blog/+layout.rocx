@@ -1,0 +1,3 @@
+import pf.Html
+
+view! = |{ children, .. }| <section class="blog">{...children}</section>

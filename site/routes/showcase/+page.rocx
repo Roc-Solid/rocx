@@ -1,0 +1,251 @@
+import pf.Html
+import ../../Demos/Birds
+import ../../Demos/Rainfall
+import ../../Demos/Snake
+import ../../Demos/Ticker
+import ../../Demos/Timers
+import ../../Ui/Heading
+import ../../Ui/Callout
+import ../../Ui/Code
+import ../../Generated/Sources
+import ../../Generated/Paths
+import ../../Ui/Feature
+import ../../Ui/FeatureGrid
+import ../../Ui/Note
+import ../../Ui/PageHero
+import ../../Ui/Demo
+
+meta = {
+	title: "Showcase",
+	description: "A game of Snake, a flock of bouncing Roc birds, and charts that glide to their data: components that Roc, compiled to WebAssembly, runs frame by frame in your browser.",
+	toc: [
+		{ id: "snake", label: "Snake" },
+		{ id: "flock", label: "A flock of Roc birds" },
+		{ id: "how", label: "How they work" },
+		{ id: "sound", label: "Sound, from a handler" },
+		{ id: "timers", label: "Timers" },
+		{ id: "charts", label: "Charts" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				eyebrow="Showcase"
+				title="A game, a flock and charts, run by Roc"
+			>
+				They are islands like the rest: the server rendered them, and your browser woke them up. But
+				these run on time, not only on clicks. Every animation frame goes to Roc, which moves things;
+				only the holes that read what moved run again, and patch the few attributes that changed.
+			</PageHero>
+
+			<Heading id="snake">Snake</Heading>
+			<p>
+				Click the board, then steer with the arrow keys or WASD; Space pauses, M mutes. The arrows don't
+				scroll the page while you play, and Tab still takes you out of the game. Pick a level: Easy, Medium
+				and Hard each keep one speed, and on Impossible every fruit makes the snake faster.
+			</p>
+		</NoHydration>
+		<Demo game meter="snake" idle="Roc is idle until you start: no frames run while the game waits.">
+			<div data-demo="snake"><Snake seed={7} /></div>
+		</Demo>
+
+		<NoHydration>
+			<Heading id="flock">A flock of Roc birds</Heading>
+			<p>
+				Say how many birds, by typing a number or with −5, −1, +1 and +5: new ones come in, or the newest
+				fly away. Each one flies in its own direction,
+				bounces off the walls and off the others, and squeaks when it bumps into one (once you've
+				clicked something: browsers keep pages quiet until then).
+			</p>
+		</NoHydration>
+		<Demo game meter="birds" idle="Measuring…">
+			<div data-demo="birds"><Birds count={4} /></div>
+		</Demo>
+		<NoHydration>
+			<Note>
+				The line under each is measured as it runs, here: each frame is a handler that moves every bird and
+				settles every pair that meets, then the holes that read the flock, each bird's place among them,
+				and the patches they make.
+			</Note>
+
+			<Heading id="how">How they work</Heading>
+			<FeatureGrid>
+				<Feature title="Time is a handler">
+					<p>
+						<code>on:frame.ms={"{|ms| send!(Frame(ms))}"}</code> runs its handler every animation frame,
+						given the time since the last, while its element is on the page. The snake keeps it on an
+						element inside a <code>{"<Show>"}</code> that holds only while you play, so a paused game
+						costs nothing; an empty sky has none either.
+					</p>
+				</Feature>
+				<Feature title="Keys that do one thing">
+					<p>
+						<code>on:keydown.ArrowUp={"{|| send!(Turn(Up))}"}</code> runs for that key only, and keeps it
+						from scrolling the page. Keys nobody named, Tab among them, do what they always do.
+					</p>
+				</Feature>
+				<Feature title="Rows that stay, so little changes">
+					<p>
+						Birds are <code>{"<For>"}</code> rows keyed by id: a bird keeps its element, and its move is
+						two custom properties, which the stylesheet turns into a translation. The snake's segments are
+						rows by position (<code>{"keyed={Bool.False}"}</code>): when it moves, each takes the cell of
+						the one ahead, and a transition as long as a step slides it there.
+					</p>
+				</Feature>
+				<Feature title="Pure, so it replays">
+					<p>
+						The rules are a plain <code>update</code>, which the component keeps the game's signal with.
+						Roc has no hidden randomness: the food's next place and a new bird's heading come from a seed
+						in the game (<code>Demos/Random.roc</code>). The same moves give the same game, and every rule is
+						an <code>expect</code> away from a test.
+					</p>
+				</Feature>
+				<Feature title="What isn't shown isn't read">
+					<p>
+						The snake moves one cell every step's worth of frames. The time since its last move is a signal
+						of its own, which nothing on the page reads: a frame that only adds to it runs no hole, and
+						patches nothing.
+					</p>
+				</Feature>
+			</FeatureGrid>
+			<details>
+				<summary>The snake: <code>{Sources.demo_snake.file}</code></summary>
+				<Code title={Sources.demo_snake.file} source={Sources.demo_snake.rocx} />
+			</details>
+			<details>
+				<summary>The flock: <code>{Sources.demo_birds.file}</code></summary>
+				<Code title={Sources.demo_birds.file} source={Sources.demo_birds.rocx} />
+			</details>
+
+			<Heading id="sound">Sound, from a handler</Heading>
+			<p>
+				The game's rules are pure: <code>update</code> can't make a sound, only the next game. So the next
+				game says what its step sounded like (<code>"eat"</code>, <code>"die"</code>, or nothing), which a
+				test can check, and the handler that keeps the game's signal plays it, with
+				<code>Audio.play!</code>:
+			</p>
+			<Code title={Sources.demo_snake.file} source={"go! = |next| {\n\tset_game!(next)\n\tif (!next.muted and !next.sound.is_empty()) Audio.play!(\"/sounds/\${next.sound}.wav\") else {}\n}"} numbers={Bool.False} />
+			<p>
+				It plays any file the browser can, WAV, MP3 or Ogg, from the site or anywhere else, with nothing
+				prepared in advance: the browser fetches a file the first time, and keeps it. These are a few KB
+				each, chiptune notes made by a script (<code>site/sounds.mjs</code>). The flock plays one pop at
+				every pitch, with <code>{"Audio.play_with!(url, { volume, rate })"}</code>: a bird more is a higher note,
+				the same file a little faster.
+			</p>
+			<p>
+				A sound plays once the handler is done and the page is patched with what it wrote, and a handler
+				that waits for the server and runs again plays it once. Only a handler plays: while computing, and on
+				the server, it fails. For what the platform has no module for (a vibration, the clipboard), a handler
+				calls the page's own JavaScript with <code>{"Browser.call!(name, arg)"}</code>, as Elm's ports do;
+				an effect that answers back is a request (see <a href={Paths.calls}>talking to the server</a>).
+			</p>
+			<Callout kind="tip" title="Watch it happen">
+				<p>
+					Open your browser's element inspector on a bird while it flies: its <code>style</code> is the
+					only thing that changes, frame after frame, and only in the hundredths Roc rounds it to.
+				</p>
+			</Callout>
+
+			<Heading id="timers">Timers</Heading>
+			<p>
+				A frame is the clock for motion. For “every tenth of a second” and “once the typing stops”, a
+				component has the browser's timers, from <code>pf.Solid</code>: <code>set_interval!(ms, tick!)</code>
+				and <code>set_timeout!(ms, done!)</code> run a handler later, as a click runs one, and answer its
+				<code>clear!</code>, which stops it.
+			</p>
+		</NoHydration>
+		<Demo game>
+			<div data-demo="timers"><Timers /></div>
+		</Demo>
+		<NoHydration>
+			<p>
+				The stopwatch keeps its interval's <code>clear!</code> in a signal, as JavaScript keeps an interval's id,
+				and Stop calls it:
+			</p>
+			<Code title={Sources.demo_timers.file} source={"(watch!, set_watch!) = create_signal!(stopped)\ntoggle! = ||\n\tmatch watch!() {\n\t\tRunning(clear!) => {\n\t\t\tclear!()\n\t\t\tset_watch!(Stopped)\n\t\t}\n\t\tStopped => set_watch!(Running(set_interval!(100, || set_tenths!(tenths!() + 1))))\n\t}"} numbers={Bool.False} />
+			<p>
+				The search clears the last key's timeout at each key, and starts its own, so it runs once, 400 ms
+				after the last. And the clock clears nothing. In Solid, a component stops its own timer with
+				<code>{"onCleanup(() => clearInterval(id))"}</code>; here that is built in. A timer belongs to what
+				started it: a component's, to the component; a handler's, to the part its element is in. When that
+				goes, as the clock does when the <code>{"<Show>"}</code> around it hides it, its timers stop, and the
+				ticks heard stop with them.
+			</p>
+			<Callout kind="note" title="The server starts none">
+				<p>
+					While the server renders the page, no timer runs: the clock is rendered at 0, and the browser,
+					waking the island up, starts its interval.
+				</p>
+			</Callout>
+			<details>
+				<summary>The timers, and the clock: <code>{Sources.demo_timers.file}</code>, <code>{Sources.demo_clock.file}</code></summary>
+				<Code title={Sources.demo_timers.file} source={Sources.demo_timers.rocx} />
+				<Code title={Sources.demo_clock.file} source={Sources.demo_clock.rocx} />
+			</details>
+
+			<Heading id="charts">Charts</Heading>
+			<p>
+				A bar chart and a line chart, from <code>packages/charts</code>, <a href={Paths.ecosystem_charts}>the chart package</a> that
+				comes with Roc Solid: components like the rest, drawn as SVG, which the server rendered into this page. Give them other
+				data and they glide to it, a frame at a time, in Roc; once they get there, nothing runs.
+			</p>
+		</NoHydration>
+		<Demo game meter="rainfall" idle="Roc is idle: the bars are where the data says.">
+			<div data-demo="rainfall"><Rainfall /></div>
+		</Demo>
+		<NoHydration>
+			<p>
+				A price that wanders: press Play, and a new value comes 40 times a second, the oldest dropping off the
+				left. Point along the line for a value.
+			</p>
+		</NoHydration>
+		<Demo game meter="ticker" idle="Paused: no frames run.">
+			<div data-demo="ticker"><Ticker /></div>
+		</Demo>
+		<NoHydration>
+			<FeatureGrid>
+				<Feature title="The arithmetic is a package">
+					<p>
+						Scales, round ticks, SVG paths and number formats are plain Roc, on no platform:
+						<code>Scale.linear((0.0, 120.0), (288.0, 16.0)).at(60.0)</code> is 152, on the server and in the
+						browser alike, and every one is an <code>expect</code> away from a test.
+					</p>
+				</Feature>
+				<Feature title="Decimals, so 0.3 is 0.3">
+					<p>
+						Its numbers are Roc's <code>Dec</code>: the ticks from 0 to 1 are 0.2, 0.4, 0.6 and 0.8, exactly,
+						and no label reads 0.30000000000000004.
+					</p>
+				</Feature>
+				<Feature title="A glide is a handler, for a while">
+					<p>
+						A chart keeps what it has drawn in a signal. While that isn't what the data says, a
+						<code>{"<Show>"}</code> holds an <code>on:frame.ms</code> handler, which moves it a share of the way
+						each frame; when it gets there, the <code>{"<Show>"}</code> closes, and the frames stop.
+					</p>
+				</Feature>
+				<Feature title="Copied in, since a package can't be both">
+					<p>
+						The components import the platform's <code>Html</code>, and an app is two programs on two platforms.
+						So <code>rocx build</code> copies them into the app (<code>Generated/charts/</code>), where
+						<code>pf</code> is each half's own, and <code>import charts.BarChart</code> imports the copy.
+					</p>
+				</Feature>
+			</FeatureGrid>
+			<details>
+				<summary>The bar chart: <code>{Sources.chart_bar.file}</code></summary>
+				<Code title={Sources.chart_bar.file} source={Sources.chart_bar.rocx} />
+			</details>
+			<details>
+				<summary>The line chart: <code>{Sources.chart_line.file}</code></summary>
+				<Code title={Sources.chart_line.file} source={Sources.chart_line.rocx} />
+			</details>
+			<details>
+				<summary>The rain, and the walk: <code>{Sources.demo_rainfall.file}</code>, <code>{Sources.demo_ticker.file}</code></summary>
+				<Code title={Sources.demo_rainfall.file} source={Sources.demo_rainfall.rocx} />
+				<Code title={Sources.demo_ticker.file} source={Sources.demo_ticker.rocx} />
+			</details>
+		</NoHydration>
+	</>

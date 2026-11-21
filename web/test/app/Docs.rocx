@@ -1,0 +1,26 @@
+import pf.Html
+import pf.Context
+import Echo
+import Picks
+import Tally
+
+## The docs' demos, a whole document: the echo, the picks and the tally, far apart, with the page's
+## own text between them, all under one <PicksContext>, so the picks and the tally read and write
+## the same store.
+Docs := [].{
+	view! : {} => Html
+	view! = |{}|
+		<>
+			<!doctype html>
+			<html lang="en">
+				<head><meta charset="utf-8" /><title>The docs</title></head>
+				<body>
+					<PicksContext value={Picks.store!({})}>
+						<section class="part-echo"><h2>echo</h2><p>Static text between the demos.</p><Echo /></section>
+						<section class="part-picks"><h2>picks</h2><p>Static text between the demos.</p><Picks /></section>
+						<section class="part-tally"><h2>tally</h2><p>Static text between the demos.</p><Tally /></section>
+					</PicksContext>
+				</body>
+			</html>
+		</>
+}

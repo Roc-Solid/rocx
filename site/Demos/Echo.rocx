@@ -1,0 +1,107 @@
+import pf.Html
+import pf.Solid exposing [create_memo!, create_signal!]
+import pf.For
+import pf.Loading
+import pf.Errored
+import pf.Server
+
+## The echo, Solid-style: pick a message, and see what the server said back. The server says each
+## back as it renders the page, so every answer comes with it: picking asks nothing, and works on a
+## copy of the site that is only files.
+Echo := [].{
+
+	## Says a message back: run on the server, asked for by the browser.
+	echo! : Str => Str
+	echo! = server!(|_request, message| "Echo: ${message}")
+
+	## What there is to say.
+	messages : List(Str)
+	messages = ["the page, rendered on the server", "hello", "this site, as files"]
+
+	view! : {} => Html
+	view! = |{}| {
+		(draft!, set_draft!) = create_signal!("the page, rendered on the server")
+		# A call per message, on the server; in the browser, read from the page. Plain values in both.
+		answers! = create_memo!(|| said_to!(messages))
+		said! = create_memo!(|| answer_to(answers!(), draft!()))
+		<form class="echo" on:submit={|| {}}>
+			<For each!={messages} keyed={|message| message}>
+				{|message!, _|
+					<button
+						type="button"
+						aria-pressed={if (message!() == draft!()) "true" else "false"}
+						on:click={|| set_draft!(message!())}
+					>
+						{message!()}
+					</button>
+				}
+			</For>
+			<Errored fallback={|problem, retry|
+				<output class="echo-answer failed">
+					{problem} <button type="button" on:click={retry}>Again</button>
+				</output>
+			}>
+				<Loading fallback={<output class="echo-answer">…</output>}>
+					<Answer said!={said!} />
+				</Loading>
+			</Errored>
+		</form>
+	}
+
+	<style>
+		.echo {
+			display: flex;
+			flex-wrap: wrap;
+			gap: var(--space-2);
+		}
+
+		/* The messages: the one picked is filled. */
+		button {
+			background: var(--accent-soft);
+			color: var(--accent);
+		}
+
+		button[aria-pressed="true"],
+		button[aria-pressed="true"]:hover:not(:disabled) {
+			background: var(--accent);
+			color: var(--accent-text);
+		}
+
+		/* What the server said (`answer!`, outside the block, makes one too: global, under the form). */
+		.echo :global(.echo-answer) {
+			flex-basis: 100%;
+			min-height: 1.5em;
+			padding: var(--space-3) var(--space-4);
+			border-radius: var(--radius-sm);
+			background: var(--bg-sunken);
+			font: var(--size-sm) var(--mono);
+		}
+
+		.echo :global(.echo-answer.failed) {
+			background: var(--bad-soft);
+			color: var(--bad);
+		}
+	</style>
+}
+
+## What the server says to each message: `echo!` called for each, in order.
+said_to! : List(Str) => List({ message : Str, said : Str })
+said_to! = |all| {
+	var $answers = []
+	for message in all {
+		$answers = $answers.append({ message, said: Echo.echo!(message) })
+	}
+	$answers
+}
+
+## What the server said to `message`.
+answer_to : List({ message : Str, said : Str }), Str -> Str
+answer_to = |answers, message|
+	match answers.find_first(|answer| answer.message == message) {
+		Ok(found) => found.said
+		Err(_) => ""
+	}
+
+## What the server said. Given the memo's accessor, it can only read it.
+answer! : { said! : () => Str } => Html
+answer! = |{ said! }| <output class="echo-answer">{said!()}</output>

@@ -1,0 +1,245 @@
+import pf.Html
+import ../../Ui/Heading
+import ../../Ui/Callout
+import ../../Ui/Code
+import ../../Generated/Sources
+import ../../Generated/Paths
+import ../../Ui/PageHero
+import ../../Ui/TableWrap
+
+meta = {
+	title: "Tooling",
+	description: "rocx build, check, lint, routes and fmt; compiler errors reported at your .rocx lines; setting up an app.",
+	toc: [
+		{ id: "commands", label: "Commands" },
+		{ id: "errors", label: "Errors at your lines" },
+		{ id: "stories", label: "Stories" },
+		{ id: "setup", label: "Setting up an app" },
+		{ id: "repository", label: "This repository" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				eyebrow="Tooling"
+				title="Three commands, and the compiler you already have"
+			>
+				rocx is a transpiler with no dependencies: one file of JavaScript turns markup into Roc, and the
+				Roc compiler does the rest. The tooling is about keeping that invisible.
+			</PageHero>
+
+			<Heading id="commands">Commands</Heading>
+			<div class="commands">
+				<div class="command">
+					<p class="command-usage">rocx build {"<dir>…"}<span>--client {"<out>"}</span></p>
+					<div>
+						<p>
+							Each <code>.rocx</code> under the directories becomes the <code>.roc</code> beside it: a page's
+							markup (<code>import html.Html</code>) rendered once, a component's (<code>import pf.Html</code>)
+							with computations and handlers. Their server functions are answered by
+							<code>Generated/ServerFunctions.roc</code>; an app's <code>routes/</code> become
+							<code>Generated/Routes.roc</code> (which gives it the calls), <code>Paths.roc</code>, with
+							endpoints, <code>Api.roc</code>, and <code>Generated/App.roc</code>, the program its
+							<code>main.roc</code> gives what only it can say (<code>App.program</code>, with the jobs the app
+							defines and its <code>migrations/*.sql</code>). Route files that are components
+							(<code>import pf.Html</code>, <code>view!</code>) also get <code>Generated/Root.roc</code>, the page
+							at where it is in its layouts.
+							<code>--client</code> also writes the browser's copy of the app, where a
+							server function is only its name, a route file has no <code>middleware</code>, and the imports
+							only those used are gone; for components,
+							its <code>main.roc</code> and <code>static/rocx/</code>, where start.js loads the runtime and wasm.
+						</p>
+					</div>
+				</div>
+				<div class="command">
+					<p class="command-usage">rocx check -- {"<command>"}</p>
+					<p>
+						Runs a command (<code>roc check</code>, <code>roc build</code>) with its reports pointed into
+						the <code>.rocx</code> files: <a href="#errors">errors at your lines</a>.
+					</p>
+				</div>
+				<div class="command">
+					<p class="command-usage">rocx lint {"<dir>…"}</p>
+					<p>
+						Refuses <code>Html.source_text</code> in hand-written <code>.roc</code> files, where it would
+						put any string in a page as markup (<a href={"${Paths.safety}#lint"}>why</a>).
+					</p>
+				</div>
+				<div class="command">
+					<p class="command-usage">rocx routes {"<dir>"}</p>
+					<p>
+						Lists an app's routes: each method a path answers, the file that answers it, and the
+						middleware that file runs behind, after the app's default
+						(<a href={"${Paths.routing}#middleware"}>what runs, in what order</a>).
+					</p>
+				</div>
+				<div class="command">
+					<p class="command-usage">rocx fmt {"<path>…"}<span>--check</span></p>
+					<p>
+						Formats the Roc in each <code>.rocx</code> file, and each <code>.roc</code> file rocx didn't
+						write, with <code>roc fmt</code>. Markup, and the Roc in its holes, stay as written: a piece
+						of markup moves only with the code around it, and a <code>{"<pre>"}</code>'s text never moves.
+						<code>--check</code> only says which files aren't formatted.
+					</p>
+				</div>
+			</div>
+			<p>
+				<code>build</code> writes a file only when its content changes, so a watcher that sees it doesn't
+				build forever; deletes the <code>.roc</code> files it wrote whose <code>.rocx</code> is gone; and stops
+				at the first markup problem with its line and column. Generated files end with a
+				<code># rocx: generated from …</code> line, and stay out of version control.
+			</p>
+
+			<Heading id="errors">Errors at your lines</Heading>
+			<p>
+				Because line <var>N</var> of the generated file is line <var>N</var> of yours, the compiler's reports
+				already name the right line. <code>rocx check</code> makes them read as if the compiler had seen
+				your file: it rewrites the location, quotes your line instead of the generated one, and moves the
+				caret onto the same code. Here is a mistake, a number where text belongs:
+			</p>
+			<Code title="Posts.rocx" source={Sources.check_source} />
+			<p>and what <code>rocx check -- roc check Posts.roc</code> printed when this page was built:</p>
+			<div class="report"><Code title="The compiler, through rocx check" source={Sources.check_report} numbers={Bool.False} plain /></div>
+			<Callout kind="tip" title="The fix">
+				<p>
+					<code>{"{posts.len().to_str()}"}</code>: a text hole takes a <code>Str</code>, and Roc never turns
+					a number into one by itself.
+				</p>
+			</Callout>
+			<p>
+				It adds what the compiler can't know about the platform. A report that the builtin <code>Try</code> has
+				no <code>encoder_for</code> or <code>parser_for</code>, met when a server function takes or answers one,
+				gets a hint after it: a <code>Try</code> can't go as JSON on this Roc, and a tag union,
+				<code>{"[Ok(a), Err(e)]"}</code>, can. (With an annotation, <code>rocx build</code> says so first, at its
+				line.)
+			</p>
+
+			<Heading id="stories">Stories</Heading>
+			<p>
+				A component's stories are the ways it looks, written beside it: a <code>{"<story name=\"…\">"}</code>
+				in its block, among its definitions, holds the markup of one. Each becomes a definition in its
+				place (<code>story_tip</code>), so every build checks it against the component, and only a dev
+				build calls it. With <code>just dev</code> (<code>rocx build --dev</code>), the server has a
+				catalog of them at <code>/__rocx/stories</code>: every story down the side, which folds away
+				(<kbd>S</kbd>); the one picked in a frame, with the line it is written at, which can fill the
+				window (<kbd>F</kbd>, and <kbd>Esc</kbd> to come back); and a component's stories side by side.
+				A component's story is the app's page at its path, which the browser hydrates; one of
+				<code>html.Html</code> markup is shown in the front page's layouts, which can tell it by its
+				path (<code>/__rocx/stories/…</code>): this site's shows it on its own. The site's own build,
+				and what <code>just site</code> publishes, has no stories at all.
+			</p>
+			<Code title={Sources.ui_callout.file} source={Sources.ui_callout.rocx} />
+			<p>
+				A story may use the page (<code>page.request</code>, <code>page.context</code>). An app's
+				<code>stories/</code> directory holds modules of stories alone: drafts of something new, each a
+				component with its own <code>{"<style>"}</code>, side by side in the catalog. Only a dev build
+				has it, so nothing in it is published, its styles neither. This site's
+				<code>site/stories/Landing.rocx</code> has the front page as it is, and drafts of it in six
+				themes.
+			</p>
+
+			<Heading id="setup">Setting up an app</Heading>
+			<p>
+				<code>html/</code> is a Roc package: the <code>Html</code> pages are written with. Add it to your
+				app's headers, run <code>rocx build</code> before <code>roc build</code>, and <code>rocx check</code>
+				instead of <code>roc check</code>. An app is two
+				programs (<a href={Paths.platform_}>the platform</a>): the server's, on the server platform (native, in
+				a Rust host), and the browser's, its islands, on the web platform (wasm). With pages in
+				<code>routes/</code> (<a href={Paths.routing}>routing</a>), the server's app answers every request
+				through the router rocx writes (its server functions' calls too), behind its default middleware, and
+				gives the platform its islands' root:
+			</p>
+			<Code
+				title="server.roc"
+				source={"app [program] {\n\tpf: platform \"../server/platform/main.roc\",\n\thtml: \"../html/main.roc\",\n}\n\nimport pf.Server\nimport pf.Middleware\nimport Generated/Routes\nimport Islands\n\nprogram = {\n\trespond!,\n\tmigrations: [],\n\tjobs: [],\n\tcrons: [],\n\tsignals: { main!: Islands.view! },\n}\n\nrespond! = |method, target, headers, body, facts| {\n\trequest = Server.from_http(method, target, headers, body)\n\tMiddleware.same_origin({}).run!(request, { facts: facts }, |passed, context|\n\t\tRoutes.respond!(passed, context))\n}"}
+			/>
+			<Code title={Sources.client_app.file} source={Sources.client_app.rocx} />
+			<Code
+				title="Justfile"
+				source={"build:\n\tnode rocx/bin/rocx.mjs build app --client build/client\n\troc build --target=wasm32 --opt=size --specialize=yes --output=build/client.wasm build/client/client.roc\n\tnode rocx/server/build.mjs app/server.roc build/server --opt=speed\n\ncheck:\n\tnode rocx/bin/rocx.mjs lint app\n\tnode rocx/bin/rocx.mjs check -- roc check app/server.roc"}
+				numbers={Bool.False}
+				plain
+			/>
+			<p>
+				Pages alone need no particular platform: the <code>html</code> package renders strings on any.
+				Requests, routes, endpoints, events and middleware are both platforms' (<code>pf.Server</code>,
+				<code>pf.Endpoint</code>, <code>pf.Middleware</code>, <code>pf.Events</code>, <code>pf.OpenApi</code>).
+				Islands need the <code>web/</code> platform in the browser, and a server that renders them (the
+				server platform does, natively); jobs, cron, email, Postgres, live rooms and actors are the server
+				platform's.
+			</p>
+
+			<Heading id="repository">This repository</Heading>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Where</th><th>What</th></tr></thead>
+					<tbody>
+						<tr><td><code>src/transpile.mjs</code>, <code>bin/rocx.mjs</code></td><td>the transpiler and the command</td></tr>
+						<tr><td><code>html/</code></td><td>the package pages are written with: markup, rendering, safety</td></tr>
+						<tr><td><code>web/</code></td><td>the browser's platform: its Roc header, the modules both platforms have (components'; and requests, endpoints, events, middleware), the Zig host, the runtime</td></tr>
+						<tr><td><code>server/</code></td><td>the server's platform: its Roc header and modules, the Rust host, the build</td></tr>
+						<tr><td><code>site/</code></td><td>this site: its pages in <code>routes/</code>, in rocx; <code>build.mjs</code> builds them, <code>serve.mjs</code> serves them</td></tr>
+						<tr><td><code>spike/</code></td><td>experiments: <code>spike/suspense</code>, how a read that has to wait can stop a computation in wasm</td></tr>
+						<tr><td><code>test/</code>, <code>web/test/</code>, <code>site/test/</code>, <code>server/test/</code></td><td>the transpiler, the browser's platform, the site in a real browser, the server's platform</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<Code
+				source={"just setup   # the pinned Roc nightly, Zig and Rust, into .tools/\njust db      # a Postgres in Docker, for the server platform\njust test    # everything: the transpiler, both platforms, the site in Chromium\njust dev     # this site, rendered per request, rebuilt and reloaded on save\njust site    # the static site, in site/dist"}
+				numbers={Bool.False}
+			/>
+		</NoHydration>
+	</>
+
+<style>
+	/* The commands, a card each: how it is written, and what it does. */
+	.commands {
+		display: grid;
+		gap: var(--space-3);
+		margin: var(--space-4) 0;
+	}
+
+	.command {
+		display: grid;
+		grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+		gap: var(--space-4);
+		padding: var(--space-4) var(--space-5);
+		border-radius: var(--radius);
+		background: var(--bg-raised);
+	}
+
+	.command-usage {
+		margin: 0;
+		color: var(--accent);
+		font: 600 var(--size-sm) / 1.6 var(--mono);
+	}
+
+	.command-usage span {
+		display: block;
+		color: var(--text-muted);
+		font-weight: 400;
+	}
+
+	.command p:not(.command-usage) {
+		margin: 0;
+		color: var(--text-muted);
+		font-size: var(--size-sm);
+	}
+
+	.command p:not(.command-usage) + p {
+		margin-top: var(--space-2);
+	}
+
+	/* The compiler's report, as it prints it: its lines aren't wrapped. */
+	.report :global(pre) {
+		white-space: pre;
+	}
+
+	@media (max-width: 52rem) {
+		.command {
+			grid-template-columns: minmax(0, 1fr);
+		}
+	}
+</style>

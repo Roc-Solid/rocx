@@ -1,0 +1,11 @@
+import pf.Html
+import pf.Context
+import pf.Solid exposing [use_context!]
+
+meta = { title: "Broken" }
+
+## A context no one provides: reading it fails, and the page with it.
+missing : Context({ name : Str })
+missing = create_context()
+
+view! = |_| <p class="broken">{use_context!(missing).name}</p>

@@ -1,0 +1,231 @@
+import pf.Html
+import ../../../Ui/Heading
+import ../../../Ui/Callout
+import ../../../Ui/Code
+import ../../../Generated/Sources
+import ../../../Facts
+import ../../../Generated/Paths
+import ../../../Ui/PageHero
+import ../../../Ui/TableWrap
+import ../../../Ui/Trace
+import ../../../Ui/Who
+import ../../../Ui/Arch
+import ../../../Ui/ArchBox
+
+meta = {
+	title: "The browser",
+	description: "The rocx browser platform: an app's islands compiled to WebAssembly, a Zig host, and a JavaScript runtime that hydrates them and runs their holes again when signals change. With the numbers this build measured.",
+	toc: [
+		{ id: "parts", label: "The parts" },
+		{ id: "header", label: "The header" },
+		{ id: "click", label: "One click, all the way" },
+		{ id: "hydration", label: "Hydration" },
+		{ id: "waiting", label: "Waiting, in wasm" },
+		{ id: "numbers", label: "The numbers" },
+		{ id: "memory", label: "Memory" },
+	],
+}
+
+view! = |_| {
+	<>
+		<NoHydration>
+			<PageHero
+				eyebrow="The platform · the browser"
+				title="The islands in WebAssembly, a Zig host, and a page of JavaScript"
+			>
+				The browser's half of an app is its islands: the components, compiled to one wasm module. Roc
+				decides what each hole shows and what each handler does; a runtime in JavaScript keeps the
+				graph of what reads what, runs holes again when what they read changes, and touches the DOM.
+			</PageHero>
+
+			<Heading id="parts">The parts</Heading>
+			<Arch
+				left={[
+					<ArchBox kind="js" name={[<code>web/runtime.js</code>]}>
+						<p>
+							JavaScript. Hydrates the islands, keeps the signals, memos, effects and computations, and who
+							owns what, runs a hole's Roc again when what it read changes, patches its node, runs effects once
+							the page shows their markup, starts timers, sends requests and forms, and listens to streams.
+						</p>
+					</ArchBox>,
+				]}
+				wire="ids and strings"
+				right={[
+					<ArchBox kind="wasm" label="One wasm module">
+						<ArchBox kind="zig" name={[<code>web/host/host.zig</code>]}>
+							<p>Zig, inside the wasm: Roc's memory, and each of the platform's effects passed on to the runtime.</p>
+						</ArchBox>
+						<ArchBox kind="roc" name={[<>{"The app, on "}</>, <code>web/platform</code>]}>
+							<p>
+								Roc: the components, their markup with holes as closures, escaping and safe URLs, server
+								functions as requests (<code>Html</code>, <code>Solid</code>, <code>Show</code>,
+								<code>For</code>, <code>Loading</code>, <code>Errored</code>, <code>Context</code>,
+								<code>Island</code>, <code>Server</code>, <code>Call</code>).
+							</p>
+						</ArchBox>
+					</ArchBox>,
+				]}
+			/>
+			<p>
+				A component's markup reaches the runtime as JSON: elements, text, and the holes that read signals,
+				each a Roc closure the runtime keeps as a boxed value by id. Running a hole is calling the app's
+				<code>run</code> with that box; its answer is JSON again, a text, an attribute's value, or markup.
+				The server platform renders the same JSON natively (<a href={"${Paths.platform_server}#islands"}>islands, rendered here</a>).
+			</p>
+
+			<Heading id="header">The header</Heading>
+			<p>What an app gives the platform, and what the platform gives the host:</p>
+			<Code title={"${Sources.platform_requires.file}, in part"} source={Sources.platform_requires.rocx} numbers={Bool.False} />
+			<p>
+				<code>main!</code> is the islands' root; <code>answer!</code> answers calls to server functions,
+				for a runtime that renders on a server (Node, in the tests: the browser's copy answers none). There,
+				a component's call is answered by it, in-process, as the server platform's routes answer it. The
+				host provides three functions: mount the root, run a kept box, answer a call. The rest of the
+				header is what Roc may ask of the runtime: keep a box, make, read or write a signal, make or read a
+				memo, call a server function, fetch, listen to a stream, provide or find a context, where the page
+				is (<code>Router.location!</code>), and the like. Each is a call into JavaScript.
+			</p>
+			<details>
+				<summary>The whole header: <code>{Sources.platform_header.file}</code></summary>
+				<Code title={Sources.platform_header.file} source={Sources.platform_header.rocx} />
+			</details>
+
+			<Heading id="click">One click, all the way</Heading>
+			<p>You press <b>+</b> on the counter on the <a href={Paths.root}>front page</a>. Then:</p>
+			<Trace>
+				<li>
+					<Who kind="js">JavaScript</Who> The button's listener, bound when the island hydrated,
+					has the id of the handler's box. The runtime opens a turn and asks the host to run it.
+				</li>
+				<li>
+					<Who kind="roc">Roc</Who> <code>{"|| set_count!(count!() + 1)"}</code> runs:
+					<code>count!()</code> asks the runtime for the signal's value (3), and <code>set_count!</code>
+					hands it the next (4), boxed.
+				</li>
+				<li>
+					<Who kind="js">JavaScript</Who> The handler done, its writes apply: the signal holds 4,
+					and the three computations that read it are due: the <code>{"<output>"}</code>'s text, the
+					<code>negative</code> class, the Reset button's <code>disabled</code>.
+				</li>
+				<li>
+					<Who kind="roc">Roc</Who> Each runs again: the text is <code>"4"</code>, the class still
+					off, <code>disabled</code> still false.
+				</li>
+				<li>
+					<Who kind="js">JavaScript</Who> Only the text changed, so only its node is set; a value a
+					node already has isn't a patch. Nothing else ran. (Reset to 0 would patch the button too.)
+				</li>
+			</Trace>
+
+			<Heading id="hydration">Hydration</Heading>
+			<Trace>
+				<li>
+					<Who kind="js">JavaScript</Who> The site's script finds the page's
+					<code>{"<rocx-island>"}</code> elements. A page with none stops here, and loads no wasm.
+				</li>
+				<li>
+					<Who kind="js">JavaScript</Who> It fetches and compiles the wasm
+					({Facts.fact!("client_brotli")} with brotli, for this site's islands), once for every island on the page,
+					and reads the answers the server put at the end of it.
+				</li>
+				<li>
+					<Who kind="roc">Roc</Who> The root runs; each <code>{"<Island name>"}</code> the page has
+					a place for runs what is inside it, components and all.
+				</li>
+				<li>
+					<Who kind="js">JavaScript</Who> The runtime walks the server's nodes beside the markup
+					Roc made, and binds each computation to its own node: comments mark where each computed hole,
+					row and <code>{"<Show>"}</code> is (<code>{"<!--x-->…<!--/x-->"}</code>). A server function asked for an
+					answer the page has gets it from there, not over the network.
+				</li>
+				<li>
+					<Who kind="js">JavaScript</Who> An island whose markup isn't what its components make
+					(the HTML parser moved a <code>{"<div>"}</code> out of a <code>{"<p>"}</code>) is rendered again,
+					alone, with a warning. The rest keep the server's nodes.
+				</li>
+			</Trace>
+
+			<Heading id="waiting">Waiting, in wasm</Heading>
+			<p>
+				A memo waiting for the server is read as a plain value. Until it is in, the read throws, in
+				JavaScript, through the Roc frames that asked: the runtime catches it where it ran the computation,
+				puts Roc's stack pointer back where it was, and runs the computation again when the answer comes.
+				No JSPI, no async in Roc. A <code>{"<Loading>"}</code> above shows its fallback meanwhile, the first
+				time; after that, what was shown stays until the new value is in.
+			</p>
+
+			<Heading id="numbers">The numbers</Heading>
+			<p>
+				Measured by <code>site/build.mjs</code> in Node {Facts.fact!("node")}: this site's islands, built three
+				ways (the other two on {Facts.fact!("compared")}, when <code>node site/build.mjs</code> last compared them).
+				Rendering is the eight islands that need no server, every component and hole run once, as a server
+				would, by the wasm, after warming up.
+			</p>
+			<TableWrap>
+				<table class="compare">
+					<thead><tr><th>Built with</th><th>Raw</th><th>gzip</th><th>brotli</th><th>Rendering</th></tr></thead>
+					<tbody>
+						<tr><td><code>--opt=size</code></td><td>{Facts.fact!("size_bytes")}</td><td>{Facts.fact!("size_gzip")}</td><td>{Facts.fact!("size_brotli")}</td><td>{Facts.fact!("size_render_us")} µs</td></tr>
+						<tr><td><code>--opt=speed</code></td><td>{Facts.fact!("speed_bytes")}</td><td>{Facts.fact!("speed_gzip")}</td><td>{Facts.fact!("speed_brotli")}</td><td>{Facts.fact!("speed_render_us")} µs</td></tr>
+						<tr class="chosen"><td><code>--opt=size --specialize=yes</code> <span class="chosen-mark">this site</span></td><td>{Facts.fact!("client_bytes")}</td><td>{Facts.fact!("client_gzip")}</td><td>{Facts.fact!("client_brotli")}</td><td>{Facts.fact!("client_render_us")} µs</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				Specializing Roc's lambda sets makes this site's islands the smallest download of the three;
+				<code>--opt=speed</code> renders a little faster, and is the biggest raw. Compiling this site's
+				wasm took {Facts.fact!("client_compile_ms")} ms in Node. The runtime is
+				{Facts.fact!("runtime_gzip")} of JavaScript, gzipped. The <a href={Paths.showcase}>showcase</a> measures
+				itself as it runs: frames a second, and what each costs, Roc and the patches together.
+			</p>
+			<p>
+				What weighs most is Roc's float code. Parsing a float from a string costs about 18 KB
+				compressed, printing one about 12 KB, and sine and cosine about 5 KB, measured by building
+				the islands with and without them. So the runtime sends frame times as whole microseconds,
+				the flock prints its positions with whole numbers, and a bird's heading is a random vector
+				scaled by a square root, which is a single wasm instruction.
+			</p>
+			<Callout kind="note" title="For scale">
+				<p>A frame at 60 Hz is 16,667 µs.</p>
+			</Callout>
+
+			<Heading id="memory">Memory</Heading>
+			<p>
+				A page keeps its wasm instance, so memory has to come back. The host allocates through Roc's
+				allocator and counts what is live. A box the runtime keeps (a hole's closure, a signal's value) is
+				released when what made it goes: a row dropped, a <code>{"<Show>"}</code> switched, a value
+				replaced. The tests click, type, add and drop rows, and render and hydrate islands again and again,
+				and check that the count of live allocations doesn't move.
+			</p>
+		</NoHydration>
+	</>
+}
+
+<style>
+	/* The builds compared: numbers line up, and the site's is marked. */
+	.compare td,
+	.compare th {
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
+
+	.compare td:first-child {
+		white-space: normal;
+	}
+
+	.compare tr.chosen td {
+		background: var(--accent-soft);
+		font-weight: 600;
+	}
+
+	.chosen-mark {
+		display: inline-block;
+		padding: 0 var(--space-2);
+		border-radius: var(--pill);
+		background: var(--accent);
+		box-shadow: var(--glow);
+		color: var(--accent-text);
+		font-size: var(--size-2xs);
+		font-weight: 700;
+	}
+</style>

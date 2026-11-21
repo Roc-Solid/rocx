@@ -1,0 +1,99 @@
+import pf.Html
+import Code
+
+## A card: a title and what is inside it (a paragraph, a list, code). With `href` the whole card is a
+## link, which lights up when pointed at. A title with markup in it (code) is a `heading` instead.
+Feature := [].{
+	Props := {
+		title : Str ?? "",
+		heading : List(Html) ?? [],
+		href : Str ?? "",
+		children : List(Html),
+	}
+
+	view : Props -> Html
+	view = |props| {
+		heading = if (props.heading.is_empty()) [Html.text(props.title)] else props.heading
+		if (props.href.is_empty())
+			<div class="feature"><h3>{...heading}</h3>{...props.children}</div>
+		else
+			<a class="feature link" href={props.href}><h3>{...heading}</h3>{...props.children}</a>
+	}
+
+	<story name="A link">
+		<Feature title="Requests and streams" href="#">
+			<p>Every request, on a thread of its own; streams of events as loops that sleep.</p>
+		</Feature>
+	</story>
+
+	<story name="Code in its title">
+		<Feature heading={[<code>view!</code>, <>: effectful</>]}>
+			<p>Runs where it is rendered, and may make signals and read contexts.</p>
+		</Feature>
+	</story>
+
+	<story name="With code">
+		<Feature title="A signal">
+			<Code source={"(title!, set_title!) =\n\tcreate_signal!(\"Hi\")"} numbers={Bool.False} />
+			<p>An accessor and a setter, as Solid has them.</p>
+		</Feature>
+	</story>
+
+	<style>
+		.feature {
+			display: block;
+			padding: var(--space-5) var(--space-6);
+			border-radius: var(--radius-lg);
+			background: var(--bg-raised);
+			color: var(--text);
+		}
+
+		.link {
+			text-decoration: none;
+			transition: background 0.15s, box-shadow 0.15s;
+		}
+
+		.link:hover {
+			background: var(--bg-hover);
+			box-shadow: var(--glow);
+		}
+
+		h3 {
+			margin: 0 0 var(--space-2);
+			font-size: var(--size-lg);
+		}
+
+		.link h3 {
+			color: var(--accent);
+		}
+
+		/* What is inside is the page's: global, under the card. */
+		.feature > :global(p) {
+			margin: 0;
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+		}
+
+		.feature > :global(p + p) {
+			margin-top: var(--space-2);
+		}
+
+		.feature > :global(ul) {
+			margin: var(--space-2) 0 0;
+			padding-left: var(--space-5);
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+		}
+
+		.feature :global(:not(pre) > code) {
+			white-space: normal;
+			overflow-wrap: anywhere;
+			-webkit-box-decoration-break: clone;
+			box-decoration-break: clone;
+		}
+
+		.feature > :global(.code) {
+			margin: 0 0 var(--space-3);
+		}
+	</style>
+}
