@@ -1,8 +1,8 @@
 // Through the real compiler: the fixture page (pure components, in an app on the web platform)
 // builds, its `expect`s pass, and a mistake in it is reported at the .rocx line, with the .rocx code
 // quoted; the routes fixture's links are checked, and its pages served natively; an app whose route
-// files are components (test/e2e/app) is built by rocx build, served natively and hydrated in Chromium. Needs `roc`:
-// $ROC, or roc on the PATH; the app, the toolchain (`just setup`) and Chromium (web/test/browser.mjs).
+// files are components (test/e2e/app) is built by rocx build, served natively and hydrated in Chromium. Needs Roc:
+// the one `just setup` links, else $ROC; the app, the toolchain (`just setup`) and Chromium (web/test/browser.mjs).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -10,14 +10,22 @@ import { createHash, randomBytes } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildApp, buildHost, hasRust, start, syncShared } from "../server/build.mjs";
+import { buildApp, buildHost, hasRust, roc as findRoc, start, syncShared, zig } from "../server/build.mjs";
 import { findChrome, launch } from "../web/test/browser.mjs";
 import { Runtime } from "../web/runtime.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const rocx = join(here, "..", "bin", "rocx.mjs");
-const roc = process.env.ROC ?? "roc";
-const hasRoc = spawnSync(roc, ["version"]).status === 0;
+// The compiler `just setup` links (the fork rocx builds with), else $ROC: server/build.mjs's. Never
+// the `roc` on PATH, which may lack the fork's fixes.
+const roc = (() => {
+	try {
+		return findRoc();
+	} catch {
+		return "";
+	}
+})();
+const hasRoc = roc !== "" && spawnSync(roc, ["version"]).status === 0;
 
 /** A copy of the fixture beside it, so that the platform's path (../../../web/platform) still holds. */
 function fixtureCopy(edit = (source) => source) {
@@ -29,7 +37,7 @@ function fixtureCopy(edit = (source) => source) {
 
 const run = (...args) => spawnSync("node", [rocx, ...args], { encoding: "utf8" });
 
-test("the fixture page compiles and its expects pass", { skip: !hasRoc && "no roc on the PATH (set ROC)" }, () => {
+test("the fixture page compiles and its expects pass", { skip: !hasRoc && "no Roc (run `just setup`, or set ROC)" }, () => {
 	const dir = fixtureCopy();
 	try {
 		assert.equal(run("build", dir).status, 0);
@@ -41,7 +49,7 @@ test("the fixture page compiles and its expects pass", { skip: !hasRoc && "no ro
 	}
 });
 
-test("a type error is reported at the .rocx line, quoting the .rocx code", { skip: !hasRoc && "no roc on the PATH (set ROC)" }, () => {
+test("a type error is reported at the .rocx line, quoting the .rocx code", { skip: !hasRoc && "no Roc (run `just setup`, or set ROC)" }, () => {
 	const dir = fixtureCopy((source) => source.replace("<a href={post.link}>{post.title}</a>", "<a href={post.link}>{post.status}</a>"));
 	try {
 		assert.equal(run("build", dir).status, 0);
@@ -104,7 +112,7 @@ function routesCopy(edit = (path, source) => source) {
 	return dir;
 }
 
-test("routes: each route file a module, its page in Root, a path for every page, a function of its params", { skip: !hasRoc && "no roc on the PATH (set ROC)" }, () => {
+test("routes: each route file a module, its page in Root, a path for every page, a function of its params", { skip: !hasRoc && "no Roc (run `just setup`, or set ROC)" }, () => {
 	const dir = routesCopy();
 	try {
 		const built = run("build", dir);
@@ -120,7 +128,7 @@ test("routes: each route file a module, its page in Root, a path for every page,
 	}
 });
 
-test("routes: a link with the wrong params doesn't compile, and is reported at the route file's line", { skip: !hasRoc && "no roc on the PATH (set ROC)" }, () => {
+test("routes: a link with the wrong params doesn't compile, and is reported at the route file's line", { skip: !hasRoc && "no Roc (run `just setup`, or set ROC)" }, () => {
 	const dir = routesCopy((path, source) => source.replace('Paths.blog_slug({ slug: "other" })', 'Paths.blog_slug({ slg: "other" })'));
 	try {
 		assert.equal(run("build", dir).status, 0);
@@ -157,8 +165,7 @@ test("routes: a route file with no blank line before its definitions, or a direc
 // ---- An app of components: test/e2e/app, its route files components (`import pf.Html`, `view!`) ----
 
 const root = join(here, "..");
-const zig = join(root, ".tools", "zig", "zig");
-const appSkip = (!hasRoc && "no roc on the PATH (set ROC)") || (!existsSync(zig) && "no Zig (run `just setup`)") || (!hasRust() && "no Rust (run `just setup`)") || (!findChrome() && "no Chromium (set CHROME)");
+const appSkip = (!hasRoc && "no Roc (run `just setup`, or set ROC)") || (spawnSync(zig(), ["version"]).status !== 0 && "no Zig (run `just setup`)") || (!hasRust() && "no Rust (run `just setup`)") || (!findChrome() && "no Chromium (set CHROME)");
 
 /** The web platform's host, built if it isn't, or is older than its sources. */
 function webHost() {
@@ -166,7 +173,7 @@ function webHost() {
 	const sources = [join(root, "web", "host", "host.zig"), join(root, "web", "host", "roc_platform_abi.zig")];
 	if (existsSync(object) && sources.every((source) => statSync(object).mtimeMs >= statSync(source).mtimeMs)) return;
 	mkdirSync(dirname(object), { recursive: true });
-	const built = spawnSync(zig, ["build-obj", sources[0], "-target", "wasm32-freestanding", "-O", "ReleaseSmall", "-fcompiler-rt", `-femit-bin=${object}`], { encoding: "utf8" });
+	const built = spawnSync(zig(), ["build-obj", sources[0], "-target", "wasm32-freestanding", "-O", "ReleaseSmall", "-fcompiler-rt", `-femit-bin=${object}`], { encoding: "utf8" });
 	assert.equal(built.status, 0, built.stderr);
 }
 
@@ -323,7 +330,7 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 	}
 });
 
-test("an app of components: rocx build refuses a job outside its module's block, two jobs with one name, and a page with the html package's Html", { skip: !hasRoc && "no roc on the PATH (set ROC)" }, () => {
+test("an app of components: rocx build refuses a job outside its module's block, two jobs with one name, and a page with the html package's Html", { skip: !hasRoc && "no Roc (run `just setup`, or set ROC)" }, () => {
 	const attempt = (edit) => {
 		const dir = mkdtempSync(join(here, "e2e", "run-"));
 		cpSync(join(here, "e2e", "app"), dir, { recursive: true });
@@ -348,7 +355,7 @@ test("an app of components: rocx build refuses a job outside its module's block,
 	assert.match(old.stderr, /routes\/old\/\+page\.rocx:1:8: import html\.Html: markup is components, written with the platform's Html, which the server renders and the browser hydrates: import pf\.Html/);
 });
 
-test("routes, served natively: each page in its layouts, a param a page's, a path no page has the error page's; /.well-known/… is routed, an upload reaches its put! as the bytes it was, and respond! answers every other method", { skip: (!hasRoc && "no roc on the PATH (set ROC)") || (!hasRust() && "no Rust (run `just setup`)") }, async () => {
+test("routes, served natively: each page in its layouts, a param a page's, a path no page has the error page's; /.well-known/… is routed, an upload reaches its put! as the bytes it was, and respond! answers every other method", { skip: (!hasRoc && "no Roc (run `just setup`, or set ROC)") || (!hasRust() && "no Rust (run `just setup`)") }, async () => {
 	const dir = routesCopy();
 	const put = (path, text) => {
 		mkdirSync(dirname(join(dir, path)), { recursive: true });
@@ -370,7 +377,7 @@ test("routes, served natively: each page in its layouts, a param a page's, a pat
 	// itself does: `OpenApi.respond` first, then the routes.
 	put(
 		"main.roc",
-		'app [program] { pf: platform "../../../server/platform/main.roc" }\n\nimport pf.Server\nimport pf.OpenApi\nimport Generated/Api\nimport Generated/Routes\n\nprogram = {\n\trespond!: |method, target, headers, body, context| {\n\t\trequest = Server.from_http(method, target, headers, body)\n\t\tmatch OpenApi.respond(request, Document, Api.openapi) {\n\t\t\tOk(served) => served\n\t\t\tErr(NotHere) => Routes.respond!(request, context)\n\t\t}\n\t},\n\tmigrations: [],\n\tjobs: [],\n\tcrons: [],\n}\n',
+		'app [program] { pf: platform "../../../server/platform/main.roc" }\n\nimport pf.Server\nimport pf.OpenApi\nimport Generated/Api\nimport Generated/Routes\n\nprogram = {\n\trespond!: |method, target, headers, body, context| {\n\t\trequest = Server.from_http(method, target, headers, body)\n\t\tmatch OpenApi.respond(request, Document, Api.openapi) {\n\t\t\tOk(served) => served\n\t\t\tErr(NotHere) => Routes.respond!(request, context)\n\t\t}\n\t},\n\tmigrations: [],\n\tjobs: [],\n\tcrons: [],\n\tactors: [],\n\tlogs: { format: Auto },\n}\n',
 	);
 	mkdirSync(join(dir, "routes", ".hidden"));
 	writeFileSync(join(dir, "routes", ".hidden", "+page.rocx"), "import pf.Html\n\nview! = |_| <p>hidden</p>\n");

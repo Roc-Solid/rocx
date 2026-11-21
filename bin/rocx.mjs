@@ -7,7 +7,7 @@
 //                          `middleware`, the imports only those used gone)
 //                          and, for an app with routes/ (+page.rocx, +layout.rocx, +error.rocx), a
 //                          module for each route file and Generated/Routes.roc, Paths.roc and App.roc,
-//                          its program (the jobs its modules define, migrations/*.sql), which its
+//                          its program (the jobs and actors its modules define, migrations/*.sql), which its
 //                          main.roc gives what only it can say
 //                          (`program = App.program({ context, middleware, crons })`);
 //                          for an app with pages (every route file a component: `import pf.Html`,
@@ -35,7 +35,7 @@ import { fileURLToPath } from "node:url";
 import { FormatError, formatRocx, rocFmt } from "../src/format.mjs";
 import { remap } from "../src/remap.mjs";
 import { STORIES_DIR, storiesModule, storyIds } from "../src/stories.mjs";
-import { APP, apiModule, appModule, clientMainModule, definitions, findRouteFiles, GENERATED, hasPages, jobsIn, METHODS, migrationsIn, pathsModule, ROOT, rootModule, ROUTE_FILE, routeModule, routesModule, routesTable, routeTable, SERVER_FUNCTIONS, serverFunctionsModule, tagNames, viewProblems } from "../src/routes.mjs";
+import { actorsIn, APP, apiModule, appModule, clientMainModule, definitions, findRouteFiles, GENERATED, hasPages, jobsIn, METHODS, migrationsIn, pathsModule, ROOT, rootModule, ROUTE_FILE, routeModule, routesModule, routesTable, routeTable, SERVER_FUNCTIONS, serverFunctionsModule, tagNames, viewProblems } from "../src/routes.mjs";
 import { contextsDefined, MARKER, pascalCase, RocxError, rocString, transpileModule, viewsDefined } from "../src/transpile.mjs";
 
 /** Where rocx is: the browser's platform (web/platform) and what a page loads (web/start.js, web/runtime.js) are beside it. */
@@ -408,11 +408,12 @@ export function build(dirs, { client, cwd = process.cwd(), log = console.error, 
 				log(`✗ ${relative(cwd, dir) || "."}/${problem}`);
 				failed = true;
 			}
-			// Any app with routes: its program (`App`), with the jobs its modules define (an app of
+			// Any app with routes: its program (`App`), with the jobs and kinds of actor its modules define (an app of
 			// endpoints alone too); an app with pages: its page (`Root`).
 			const pages = hasPages(table);
-			const { jobs, problems } = jobsIn(dir, table);
-			for (const problem of problems) {
+			const { jobs, problems: jobProblems } = jobsIn(dir, table);
+			const { actors, problems: actorProblems } = actorsIn(dir, table);
+			for (const problem of [...jobProblems, ...actorProblems]) {
 				log(`✗ ${relative(cwd, dir) || "."}/${problem}`);
 				failed = true;
 			}
@@ -441,7 +442,7 @@ export function build(dirs, { client, cwd = process.cwd(), log = console.error, 
 				["Styles", stylesModule(styles)],
 				...(table.servers.length ? [["Api", apiModule(table, { sources, tags: tagNames([...codes, ...rocCode(dir)]), title: basename(dir) })]] : []),
 				...(pages ? [[ROOT, rootModule(table, { sources, stories: placed ?? [] })]] : []),
-				[APP, appModule({ jobs, migrations: migrationsIn(dir), endpoints: table.servers.length > 0 })],
+				[APP, appModule({ jobs, actors, migrations: migrationsIn(dir), endpoints: table.servers.length > 0 })],
 			];
 			if (pages && client) {
 				const web = (out) => {
@@ -512,6 +513,7 @@ function lint(dirs) {
 /**
  * `rocx fmt`: each .rocx file, and each .roc file but rocx's (generated, or under build/, dist/ or
  * Generated/), under the directories or named, through `roc fmt`; a .rocx file's markup as written.
+ * Its `roc` is $ROC, else the `roc` on PATH: right for an app outside this repo (in it, `just` sets ROC).
  */
 function fmt(paths, { check = false, roc = process.env.ROC ?? "roc" } = {}) {
 	const skip = (path) => /^(build|dist|Generated)$/.test(path.split(sep).pop());

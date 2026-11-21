@@ -23,4 +23,6 @@ program = {
 	migrations: [],
 	jobs: [],
 	crons: [],
+	actors: [],
+	logs: { format: Auto },
 }

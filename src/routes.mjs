@@ -736,6 +736,12 @@ export function rootModule(table, { sources, stories = [] }) {
  * and the job's name. */
 const JOB_DEFINITION = /^([ \t]*)([a-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*Job\.define(?:_with)?\(\s*"([^"]+)"/gm;
 
+/** A kind of actor's definition in a module (`cart = Actor.define({ name: "cart", … })`, or a
+ * function of `{}` that answers one, `mirror = |{}| Actor.define({ … })`): its indentation, its name
+ * in the module, whether it is such a function, and the kind's name (none: `name` isn't the first
+ * field). */
+const ACTOR_DEFINITION = /^([ \t]*)([a-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*(\|\{\}\|\s*)?Actor\.define\((?:\s*\{\s*name:\s*"([^"]+)")?/gm;
+
 /**
  * The jobs the app under `dir` defines (`Job.define`, `Job.define_with`), for `Generated/App`'s `program.jobs`: each
  * `{ name, define, module, file, line }`, `module` the one `App` imports (`Jobs`; a route file's,
@@ -747,8 +753,39 @@ const JOB_DEFINITION = /^([ \t]*)([a-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*Job\.define(?
  * says what isn't so, a line each.
  */
 export function jobsIn(dir, table) {
+	const { found, problems } = definedIn(dir, table, JOB_DEFINITION, (match) => ({ indent: match[1], define: match[2], name: match[3] }), {
+		misplaced: (found, type, route) => `the job "${found.name}" is defined ${found.indent ? "inside a definition" : "outside its module's block"}: define it at the top of \`${type} := [].{ … }\`, as \`${route ? "" : "\t"}${found.define} = Job.define(…)\`, so Generated/App can name it (\`${type}.${found.define}\`)`,
+		twice: (found) => `there is a job called "${found.name}" already`,
+		why: "the workers find a job by its name, so give each its own",
+	});
+	return { jobs: found, problems };
+}
+
+/**
+ * The kinds of actor the app under `dir` defines (`Actor.define`), for `Generated/App`'s
+ * `program.actors`, read as `jobsIn` reads jobs: each `{ name, define, thunk, module, file, line }`
+ * (`thunk`: the definition is a function of `{}`). A kind is defined at the top of its module's
+ * block, its `name` the first field (`\tcart = Actor.define({ name: "cart", … })`), and no two kinds
+ * have one name: the host finds an actor's kind by it, and its state is kept under it.
+ */
+export function actorsIn(dir, table) {
+	const { found, problems } = definedIn(dir, table, ACTOR_DEFINITION, (match) => ({ indent: match[1], define: match[2], thunk: Boolean(match[3]), name: match[4] }), {
+		misplaced: (found, type, route) =>
+			found.name === undefined
+				? `the kind of actor \`${found.define}\` doesn't start with its name: define it as \`${found.define} = Actor.define({ name: "…", initial, receive! })\`, so rocx build can list it`
+				: `the kind of actor "${found.name}" is defined ${found.indent ? "inside a definition" : "outside its module's block"}: define it at the top of \`${type} := [].{ … }\`, as \`${route ? "" : "\t"}${found.define} = Actor.define({ … })\`, so Generated/App can name it (\`${type}.${found.define}\`)`,
+		misnamed: (found) => found.name === undefined,
+		twice: (found) => `there is a kind of actor called "${found.name}" already`,
+		why: "the host finds an actor's kind by its name, and keeps its state under it, so give each its own",
+	});
+	return { actors: found, problems };
+}
+
+/** What `jobsIn` and `actorsIn` share: every definition `pattern` finds in the app's modules (as
+ * `read` makes it of a match), each where `Generated/App` can name it, and no two with one name. */
+function definedIn(dir, table, pattern, read, say) {
 	const routes = new Map(routedEntries(table).map((entry) => [`routes/${entry.file}`, entry]));
-	const jobs = [];
+	const found = [];
 	const problems = [];
 	const walk = (at) => {
 		for (const entry of readdirSync(at).sort()) {
@@ -763,26 +800,26 @@ export function jobsIn(dir, table) {
 			if (entry.endsWith(".roc") && (existsSync(`${path}x`) || source.trimEnd().split("\n").pop().startsWith(MARKER))) continue;
 			const file = relative(dir, path).split(sep).join("/");
 			const route = routes.get(file);
-			for (const match of source.matchAll(JOB_DEFINITION)) {
-				const [, indent, define, name] = match;
+			for (const match of source.matchAll(pattern)) {
+				const definition = read(match);
 				const line = source.slice(0, match.index).split("\n").length;
 				// A route file's definitions are its module's: rocx puts them in its block.
 				const module = route ? `${GENERATED}/${route.module}` : file.replace(/\.rocx?$/, "");
 				const type = module.split("/").pop();
-				if (indent !== (route ? "" : "\t")) {
-					problems.push(`${file}:${line}: the job "${name}" is defined ${indent ? "inside a definition" : "outside its module's block"}: define it at the top of \`${type} := [].{ … }\`, as \`${route ? "" : "\t"}${define} = Job.define(…)\`, so Generated/App can name it (\`${type}.${define}\`)`);
-				} else jobs.push({ name, define, module, file, line, route: route?.module ?? null });
+				if (definition.indent !== (route ? "" : "\t") || say.misnamed?.(definition)) {
+					problems.push(`${file}:${line}: ${say.misplaced(definition, type, route)}`);
+				} else found.push({ ...definition, indent: undefined, module, file, line, route: route?.module ?? null });
 			}
 		}
 	};
 	if (existsSync(dir)) walk(dir);
 	const named = new Map();
-	for (const job of jobs) {
-		const other = named.get(job.name);
-		if (other) problems.push(`${job.file}:${job.line}: there is a job called "${job.name}" already (${other.file}:${other.line}): the workers find a job by its name, so give each its own`);
-		else named.set(job.name, job);
+	for (const each of found) {
+		const other = named.get(each.name);
+		if (other) problems.push(`${each.file}:${each.line}: ${say.twice(each)} (${other.file}:${other.line}): ${say.why}`);
+		else named.set(each.name, each);
 	}
-	return { jobs, problems };
+	return { found: found.map(({ indent, ...each }) => each), problems };
 }
 
 /** The app's migrations, `migrations/*.sql` under `dir`, in the order of their names. */
@@ -801,12 +838,12 @@ export const APP = "App";
  * `Generated/App.roc`, the server's: `App.program({ context, middleware, crons })`, the platform's
  * `program` from what only the author can say: every request answered by `Routes.respond!`, behind
  * `middleware`, which is given `context(started)` (`started`: what the server was started with,
- * `--context-file`), a page view letting a plain form's flash go (`Server.clear_flash`); the jobs found (`jobsIn`), each `Job.handler(Module.name)`; the migrations
+ * `--context-file`), a page view letting a plain form's flash go (`Server.clear_flash`); the jobs found (`jobsIn`), each `Job.handler(Module.name)`; the kinds of actor found (`actorsIn`), each `Actor.handler(Module.name)`; the migrations
  * (`migrationsIn`: names), embedded, in order; and `crons` as given.
  */
-export function appModule({ jobs = [], migrations = [], endpoints = false } = {}) {
-	const alias = (job) => (job.route ? job.route : job.module.split("/").join(""));
-	const imports = [...new Map(jobs.map((job) => [alias(job), job.route ? `import ${job.route}` : `import ../${job.module} as ${alias(job)}`])).entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([, line]) => line);
+export function appModule({ jobs = [], actors = [], migrations = [], endpoints = false } = {}) {
+	const alias = (found) => (found.route ? found.route : found.module.split("/").join(""));
+	const imports = [...new Map([...jobs, ...actors].map((found) => [alias(found), found.route ? `import ${found.route}` : `import ../${found.module} as ${alias(found)}`])).entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([, line]) => line);
 	const names = new Set();
 	const embedded = migrations.map((name) => {
 		const base = `m${name.replace(/\.sql$/, "").toLowerCase().replace(/[^a-z0-9_]+/g, "_")}`;
@@ -819,12 +856,15 @@ export function appModule({ jobs = [], migrations = [], endpoints = false } = {}
 		"## Written by rocx build: the app's `program`, for its main.roc, which says what only it can",
 		"## (`program = App.program({ context, middleware, crons })`, and `openapi` if it serves its",
 		"## endpoints' OpenAPI document). Every request is answered by the routes (`Routes.respond!`),",
-		"## behind the app's middleware; the jobs are the ones its modules define (`Job.define`); the",
-		"## migrations, migrations/*.sql, in the order of their names.",
+		"## behind the app's middleware; the jobs and the kinds of actor are the ones its modules define",
+		"## (`Job.define`, `Actor.define`); the migrations, migrations/*.sql, in the order of their names;",
+		"## the log's format is `Auto` (`ROCX_LOG`, or pretty on a terminal and JSON elsewhere), which the",
+		"## app may change: `program = { ..App.program({ … }), logs: { format: Json } }`.",
 		"import pf.Server",
 		"import pf.Middleware",
 		"import pf.OpenApi",
 		...(jobs.length ? ["import pf.Job"] : []),
+		...(actors.length ? ["import pf.Actor"] : []),
 		...(endpoints ? ["import Api"] : []),
 		"import Routes",
 		...imports,
@@ -851,20 +891,18 @@ export function appModule({ jobs = [], migrations = [], endpoints = false } = {}
 		"\t\t\t# A page a browser asks for lets a plain form's flash go (`Server.flash!`): it has read it, or never will.",
 		...(endpoints
 			? [
-					"\t\t\t# Behind the app's middleware: the endpoints' OpenAPI document and its page, as the app says",
-					"\t\t\t# (`OpenApi.respond`), then the routes.",
-					"\t\t\tanswer! = |passed, context|",
-					"\t\t\t\tmatch OpenApi.respond(passed, config.openapi, Api.openapi) {",
-					"\t\t\t\t\tOk(served) => served",
-					"\t\t\t\t\tErr(NotHere) => Routes.respond!(passed, context)",
-					"\t\t\t\t}",
+					"\t\t\t# The app's middleware, then the endpoints' OpenAPI document and its page, as the app says",
+					"\t\t\t# (`OpenApi.middleware`), then the routes.",
+					"\t\t\tchain = config.middleware.then(OpenApi.middleware(config.openapi, Api.openapi))",
 				]
-			: ["\t\t\tanswer! = |passed, context| Routes.respond!(passed, context)"]),
-		"\t\t\tServer.clear_flash(request, Middleware.run!(config.middleware, request, (config.context)(started), answer!))",
+			: ["\t\t\tchain = config.middleware"]),
+		"\t\t\tServer.clear_flash(request, Middleware.run!(chain, request, (config.context)(started), |passed, context| Routes.respond!(passed, context)))",
 		"\t\t},",
 		`\t\tmigrations: [${embedded.map(({ name, as }) => `{ name: ${rocString(name)}, sql: ${as} }`).join(", ")}],`,
 		`\t\tjobs: [${jobs.map((job) => `Job.handler(${alias(job)}.${job.define})`).join(", ")}],`,
 		"\t\tcrons: config.crons,",
+		`\t\tactors: [${actors.map((actor) => `Actor.handler(${alias(actor)}.${actor.define}${actor.thunk ? "({})" : ""})`).join(", ")}],`,
+		"\t\tlogs: { format: Auto },",
 		"\t}",
 		"}",
 		"",

@@ -1,5 +1,5 @@
-// rocx fmt: a .rocx file's Roc through `roc fmt`, its markup as written. Needs `roc`: $ROC, or roc
-// on the PATH.
+// rocx fmt: a .rocx file's Roc through `roc fmt`, its markup as written. Needs Roc: the one `just
+// setup` links, else $ROC.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -7,14 +7,23 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, wr
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { roc as findRoc } from "../server/build.mjs";
 import { FormatError, formatRocx, rocFmt } from "../src/format.mjs";
 import { transpileModule } from "../src/transpile.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
-const roc = process.env.ROC ?? "roc";
-const hasRoc = spawnSync(roc, ["version"]).status === 0;
-const needsRoc = { skip: !hasRoc && "no roc on the PATH (set ROC)" };
+// The compiler `just setup` links (the fork rocx builds with), else $ROC: server/build.mjs's. Never
+// the `roc` on PATH, which may lack the fork's fixes.
+const roc = (() => {
+	try {
+		return findRoc();
+	} catch {
+		return "";
+	}
+})();
+const hasRoc = roc !== "" && spawnSync(roc, ["version"]).status === 0;
+const needsRoc = { skip: !hasRoc && "no Roc (run `just setup`, or set ROC)" };
 const format = (source, file = "Page.rocx") => formatRocx(source, file, { roc });
 
 test("the Roc around markup is formatted, and the markup, holes too, is kept as written", needsRoc, () => {

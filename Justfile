@@ -7,16 +7,35 @@
 roc_nightly := "nightly-2026-11-18-a520eed"
 roc_commit := "a520eeda6c3745f2543fcdd0fb836d3d1336c5ac"
 zig_version := "0.17.1"
+# Rust: any 1.85 or newer builds the server's host (edition 2024). The system's, on PATH (e.g. from
+# Nix), when it is; else rustup installs rust_version into .tools/rust.
+rust_minimum := "1.85"
 rust_version := "1.100.0"
 
-roc := `ls -d .tools/roc/roc_nightly-*/roc 2>/dev/null || echo roc`
-zig := ".tools/zig/zig"
+# Until the compiler fixes rocx needs are in a nightly, rocx builds with a fork of the nightly's
+# commit that has them: the `rocx` branch of the fork in ~/roc-fork (ROC_FORK names another),
+# local only until they are upstream. `just setup` builds its commit into .tools/roc-fork/<commit>/
+# and links it as .tools/roc-active: the compiler every script uses (`roc` here; site/build.mjs,
+# server/build.mjs and the tests), or, without it, the one ROC names; never the `roc` on PATH,
+# which may lack the fixes. test/compiler-bugs/ has each bug it fixes, and `just compiler-bugs`
+# shows which the nightly still has. The nightly stays in .tools/roc/.
+roc_fork := env_var_or_default("ROC_FORK", env_var("HOME") + "/roc-fork")
+roc_fork_commit := "3f66e242eafd37bad5c95e910e25f357d48bb7b2"
+
+# Variables are worked out when a recipe uses them: `just setup` needs no compiler yet.
+set lazy
+
+roc := if path_exists(".tools/roc-active") == "true" { ".tools/roc-active" } else if env("ROC", "") != "" { env("ROC") } else { error("no Roc compiler: run `just setup` (or set ROC)") }
+# Zig: the system's, on PATH (e.g. from Nix), when it is zig_version; else the one in .tools.
+zig := if `zig version 2>/dev/null || true` == zig_version { "zig" } else { justfile_directory() / ".tools/zig/zig" }
 rocx := "node bin/rocx.mjs"
 
 default:
     @just --list
 
-# Downloads the pinned Roc nightly, Zig and Rust into .tools/, and the glue spec for `just glue`.
+# The toolchain, into .tools/: Zig and Rust, unless the system's (on PATH, e.g. from Nix) will do;
+# the pinned Roc nightly and the glue spec for `just glue`; then the Roc fork rocx builds with
+# (`roc_fork_commit`), built and linked as .tools/roc-active.
 setup:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -27,7 +46,9 @@ setup:
         Linux-aarch64) roc_os=linux_arm64; zig_os=aarch64-linux; rust_os=aarch64-unknown-linux-gnu ;;
         *) echo "No pinned toolchain for $(uname -s) $(uname -m)" >&2; exit 1 ;;
     esac
-    if [ ! -x .tools/zig/zig ]; then
+    if [ "{{ zig }}" = zig ]; then
+        echo "Zig {{ zig_version }}: the system's, $(command -v zig)"
+    elif [ ! -x .tools/zig/zig ]; then
         mkdir -p .tools/download .tools/zig
         curl -fsSL -o .tools/download/zig.tar.xz "https://ziglang.org/download/{{ zig_version }}/zig-$zig_os-{{ zig_version }}.tar.xz"
         expected=$(curl -fsSL https://ziglang.org/download/index.json | python3 -I -c "import json, sys; print(json.load(sys.stdin)['{{ zig_version }}']['$zig_os']['shasum'])")
@@ -50,8 +71,19 @@ setup:
         cp -R .tools/roc-src/src/glue/src .tools/roc-src/src/glue/platform .tools/glue/
         rm -rf .tools/roc-src
     fi
-    if [ ! -x .tools/rust/cargo/bin/cargo ]; then
-        # The server platform's host (server/host) is Rust: rustup, kept in .tools, not on PATH.
+    # The server platform's host (server/host) is Rust: the system's cargo and rustc when both are
+    # rust_minimum or newer, else rustup's rust_version, kept in .tools, not on PATH.
+    system_rust() {
+        IFS=. read -r least_major least_minor <<< "{{ rust_minimum }}"
+        for tool in cargo rustc; do
+            version=$("$tool" --version 2>/dev/null | awk '{ print $2 }')
+            IFS=. read -r major minor _ <<< "${version:-0.0}"
+            [ "$major" -gt "$least_major" ] || { [ "$major" -eq "$least_major" ] && [ "$minor" -ge "$least_minor" ]; } || return 1
+        done
+    }
+    if system_rust; then
+        echo "Rust $(rustc --version | awk '{ print $2 }'): the system's, $(command -v cargo)"
+    elif [ ! -x .tools/rust/cargo/bin/cargo ]; then
         mkdir -p .tools/download
         curl -fsSL -o .tools/download/rustup-init "https://static.rust-lang.org/rustup/dist/$rust_os/rustup-init"
         echo "$(curl -fsSL "https://static.rust-lang.org/rustup/dist/$rust_os/rustup-init.sha256" | cut -d' ' -f1)  .tools/download/rustup-init" | shasum -a 256 -c -
@@ -59,7 +91,38 @@ setup:
         RUSTUP_HOME="$PWD/.tools/rust/rustup" CARGO_HOME="$PWD/.tools/rust/cargo" .tools/download/rustup-init -y --no-modify-path --profile minimal --default-toolchain {{ rust_version }}
     fi
     rm -rf .tools/download
-    "$(ls -d .tools/roc/roc_nightly-*/roc)" version
+    commit={{ roc_fork_commit }}
+    if [ ! -x ".tools/roc-fork/$commit/bin/roc" ]; then
+        # The fork's compiler, from a clone that shares the fork's objects (its checkouts are left
+        # as they are), built as the nightlies are: 10 to 20 minutes, and the network once, for Zig
+        # to fetch LLVM.
+        if ! git -C "{{ roc_fork }}" cat-file -e "$commit^{commit}" 2>/dev/null; then
+            echo "rocx builds with a fork of Roc: no commit $commit in {{ roc_fork }} (ROC_FORK)" >&2
+            exit 1
+        fi
+        rm -rf .tools/roc-fork/src
+        mkdir -p .tools/roc-fork
+        git clone -q --shared --no-checkout "{{ roc_fork }}" .tools/roc-fork/src
+        git -C .tools/roc-fork/src checkout -q "$commit"
+        (cd .tools/roc-fork/src && "{{ zig }}" build build-release -Dcompiler-version="rocx-fork-${commit:0:10}" --prefix "$OLDPWD/.tools/roc-fork/$commit")
+        rm -rf .tools/roc-fork/src
+    fi
+    ln -sfn "roc-fork/$commit/bin/roc" .tools/roc-active
+    .tools/roc-active version
+
+# Each Roc compiler bug rocx has met (test/compiler-bugs/*/repro.sh), with the pinned nightly and
+# with the fork rocx builds with: what the fork fixes, and, with a newer nightly, what it still needs.
+compiler-bugs:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    nightly="$PWD/$(ls -d .tools/roc/roc_nightly-*/roc)"
+    for repro in test/compiler-bugs/*/repro.sh; do
+        echo "== ${repro%/repro.sh}"
+        echo "-- the nightly ($("$nightly" version))"
+        ROC="$nightly" "$repro"
+        echo "-- the fork ($(.tools/roc-active version))"
+        ROC="$PWD/.tools/roc-active" "$repro"
+    done
 
 # The docs site at http://localhost:8080: its server (site/main.roc, native, on the server
 # platform) answering every page as it is asked for, rebuilt, restarted and reloaded on save. With
@@ -90,10 +153,28 @@ site:
 # Never a gh-pages branch of this repo: its Pages would take over /rocx/* of the site. Nothing is
 # pushed if a file holds this machine's home directory, or matches a pattern in
 # .git/info/private-words (one extended regex a line, matched without case; kept out of the repo, so
-# the words aren't published either).
+# the words aren't published either). Nor is a dev build's site (`just dev`'s, Roc's dev backend):
+# its wasm is four times the size, and its pages say what it is.
 deploy-pages: site
     #!/usr/bin/env bash
     set -euo pipefail
+    # What is published is checked, site/dist itself: its wasm, and its pages' footers.
+    wasm=site/dist/rocx/app.wasm
+    if [ ! -s site/dist/index.html ] || [ ! -s "$wasm" ]; then
+        echo "Not published: site/dist has no site in it (no index.html, or no rocx/app.wasm). Run just site." >&2
+        exit 1
+    fi
+    bytes=$(wc -c < "$wasm" | tr -d ' ')
+    if [ "$bytes" -gt 1500000 ]; then
+        echo "Not published: site/dist/rocx/app.wasm is $((bytes / 1024)) KB, a dev build's (just site's is about 700 KB)." >&2
+        echo "A dev build (just dev) wrote site/build while just site copied it: stop just dev, or restart it, then try again." >&2
+        exit 1
+    fi
+    if dev=$(grep -rlE 'class="meta[^"]*">[[:space:]]*A development build' site/dist --include='*.html'); then
+        echo "Not published: these pages are a dev build's (site/build/context.txt said dev=yes when they were rendered):" >&2
+        echo "$dev" | head -5 >&2
+        exit 1
+    fi
     remote=https://github.com/Roc-Solid/roc-solid.github.io.git
     words="$(git rev-parse --git-common-dir)/info/private-words"
     leaks=$( { grep -rlF "${HOME:?}" site/dist; [ ! -s "$words" ] || grep -rliE -f "$words" site/dist; } | sort -u || true)
