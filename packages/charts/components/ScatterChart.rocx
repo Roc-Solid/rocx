@@ -1,0 +1,268 @@
+import pf.Html
+import pf.Solid exposing [create_memo!, create_signal!]
+import pf.For
+import pf.Show
+import pf.Transition
+import charts.Ease
+import charts.Format
+import charts.Keys
+import charts.Scale
+import charts.Ticks
+
+## A dot for each of `data!`'s points, across by its `x` and up by its `y`, on two axes around them
+## widened to round numbers. When the data changes, the dots and the axes glide to where they go,
+## a frame at a time: a dot is its label's, so a new `x` or `y` moves it; a new one swells from
+## nothing where it goes, and one whose label is gone shrinks to nothing as it fades. Once they
+## are there, nothing runs. Pointing at a dot, or reaching it with Tab, shows its label and values.
+##
+## `label` names the chart for screen readers; `format_x` and `format_y` write the values across
+## and up.
+ScatterChart := [].{
+	Dot : { label : Str, x : Dec, y : Dec }
+
+	## A dot and its key: its label, numbered when another dot before it has the same one.
+	Row : { key : Str, dot : ScatterChart.Dot }
+
+	## A dot as drawn, on its way to the data's place for it.
+	Placed : { key : Str, x : Dec, y : Dec }
+
+	## What is drawn: the dots, and the axes' ends.
+	Drawn : { dots : List(ScatterChart.Placed), across : (Dec, Dec), up : (Dec, Dec) }
+
+	view! : { data! : () => List(ScatterChart.Dot), label : Str, format_x : Dec -> Str, format_y : Dec -> Str } => Html
+	view! = |{ data!, label, format_x, format_y }| {
+		rows! = create_memo!(|| ScatterChart.keyed(data!()))
+		goal! = create_memo!(|| ScatterChart.place(rows!()))
+		(drawn!, set_drawn!) = create_signal!(goal!())
+		(hover!, set_hover!) = create_signal!(Err(None))
+		x! = create_memo!(|| Scale.linear(drawn!().across, (left, right)))
+		y! = create_memo!(|| Scale.linear(drawn!().up, (bottom, top)))
+		placed! = |key| ScatterChart.placed(drawn!(), goal!(), key)
+		dot_x! = |key| x!().at(placed!(key).x)
+		dot_y! = |key| y!().at(placed!(key).y)
+		said! = |dot| "${dot.label}: ${format_x(dot.x)}, ${format_y(dot.y)}"
+		# The dot pointed at: its label and values, over it.
+		pointed! = || {
+			at = hover!()
+			rows!().find_first(|row| at == Ok(row.key))
+		}
+		spot! = |at|
+			match pointed!() {
+				Ok(row) => at(row)
+				Err(_) => 0.0
+			}
+		<figure class="scatter-chart">
+			<svg viewBox="0 0 640 320" role="group" aria-label={label}>
+				<g class="ticks" aria-hidden="true">
+					<For each!={Ticks.between(goal!().up.0, goal!().up.1, tick_count)} keyed={|tick| Format.num(tick, 9)}>
+						{|tick!, _|
+							<g class:out={ScatterChart.outside(drawn!().up, tick!())}>
+								<line x1={Format.coord(left)} x2={Format.coord(right)} y1={Format.coord(y!().at(tick!()))} y2={Format.coord(y!().at(tick!()))} />
+								<text class="up" x={Format.coord(left - 8.0)} y={Format.coord(y!().at(tick!()))} dy="0.32em">{format_y(tick!())}</text>
+							</g>}
+					</For>
+					<For each!={Ticks.between(goal!().across.0, goal!().across.1, tick_count)} keyed={|tick| Format.num(tick, 9)}>
+						{|tick!, _|
+							<g class:out={ScatterChart.outside(drawn!().across, tick!())}>
+								<line x1={Format.coord(x!().at(tick!()))} x2={Format.coord(x!().at(tick!()))} y1={Format.coord(top)} y2={Format.coord(bottom)} />
+								<text class="across" x={Format.coord(x!().at(tick!()))} y={Format.coord(bottom + 20.0)}>{format_x(tick!())}</text>
+							</g>}
+					</For>
+				</g>
+				<For each!={rows!()} keyed={|row| row.key}>
+					{|row!, _|
+						<circle
+							class="dot"
+							class:active={hover!() == Ok(row!().key)}
+							cx={Format.coord(dot_x!(row!().key))}
+							cy={Format.coord(dot_y!(row!().key))}
+							r="6"
+							role="img"
+							tabindex="0"
+							aria-label={said!(row!().dot)}
+							on:pointerenter={|| set_hover!(Ok(row!().key))}
+							on:pointerleave={|| set_hover!(Err(None))}
+							on:focus={|| set_hover!(Ok(row!().key))}
+							on:blur={|| set_hover!(Err(None))}
+							transition={Transition.scale(0.0)}
+						/>}
+				</For>
+				<text
+					class="spot"
+					class:shown={hover!() != Err(None)}
+					x={Format.coord(spot!(|row| dot_x!(row.key)))}
+					y={Format.coord(spot!(|row| dot_y!(row.key)) - 14.0)}
+					aria-hidden="true"
+				>
+					{match pointed!() {
+						Ok(row) => said!(row.dot)
+						Err(_) => ""
+					}}
+				</text>
+			</svg>
+			{# Frames only while something moves: once the dots are where the data says, none. }
+			<Show when!={drawn!() != goal!()}>
+				<span hidden on:frame.ms={|ms| set_drawn!(ScatterChart.glide(drawn!(), goal!(), ms))}></span>
+			</Show>
+		</figure>
+	}
+
+	## Each dot with its key: its label, or, after the first dot with that label, the label
+	## numbered (`Wren#1`), so each dot keeps a row of its own.
+	keyed : List(ScatterChart.Dot) -> List(ScatterChart.Row)
+	keyed = |dots| List.map2(Keys.unique(dots.map(|dot| dot.label)), dots, |key, dot| { key, dot })
+
+	## Where the dots go, on axes from the least value to the greatest, widened to round numbers.
+	place : List(ScatterChart.Row) -> ScatterChart.Drawn
+	place = |rows| {
+		{
+			dots: rows.map(|row| { key: row.key, x: row.dot.x, y: row.dot.y }),
+			across: ends(rows.map(|row| row.dot.x)),
+			up: ends(rows.map(|row| row.dot.y)),
+		}
+	}
+
+	## Where the dot with `key` is drawn now: as drawn, or, not drawn yet, where it goes.
+	placed : ScatterChart.Drawn, ScatterChart.Drawn, Str -> ScatterChart.Placed
+	placed = |drawn, goal, key|
+		match drawn.dots.find_first(|dot| dot.key == key) {
+			Ok(dot) => dot
+			Err(_) => goal.dots.find_first(|dot| dot.key == key) ?? { key, x: 0.0, y: 0.0 }
+		}
+
+	## A frame's way from `drawn` toward `goal`: each dot toward its place, and the axes' ends
+	## toward theirs. A new dot is where it goes at once (it swells there); one that has gone is gone.
+	glide : ScatterChart.Drawn, ScatterChart.Drawn, F64 -> ScatterChart.Drawn
+	glide = |drawn, goal, ms| {
+		(a0, a1) = drawn.across
+		(ga0, ga1) = goal.across
+		(u0, u1) = drawn.up
+		(gu0, gu1) = goal.up
+		# Within a five-hundredth of an axis is there: under a pixel.
+		near_x = (ga1 - ga0) / 500.0
+		near_y = (gu1 - gu0) / 500.0
+		{
+			dots: goal.dots.map(
+				|dot| {
+					from = ScatterChart.placed(drawn, goal, dot.key)
+					{ key: dot.key, x: Ease.toward(from.x, dot.x, ms, near_x), y: Ease.toward(from.y, dot.y, ms, near_y) }
+				},
+			),
+			across: (Ease.toward(a0, ga0, ms, near_x), Ease.toward(a1, ga1, ms, near_x)),
+			up: (Ease.toward(u0, gu0, ms, near_y), Ease.toward(u1, gu1, ms, near_y)),
+		}
+	}
+
+	## Whether a tick is off its axis as drawn: one the axis is gliding toward, faded until it is on.
+	outside : (Dec, Dec), Dec -> Bool
+	outside = |(from, to), tick| tick < Dec.min(from, to) or tick > Dec.max(from, to)
+
+	<style>
+		.scatter-chart {
+			margin: 0;
+		}
+
+		svg {
+			display: block;
+			width: 100%;
+			height: auto;
+			overflow: visible;
+			font: 12px/1 var(--chart-font, inherit);
+		}
+
+		.ticks line {
+			stroke: var(--chart-grid, color-mix(in srgb, currentColor 12%, transparent));
+			stroke-dasharray: var(--chart-grid-dash, none);
+		}
+
+		.ticks g {
+			transition: opacity 0.2s;
+		}
+
+		.ticks .out {
+			opacity: 0;
+		}
+
+		.ticks text {
+			fill: var(--chart-muted, color-mix(in srgb, currentColor 60%, transparent));
+			font-variant-numeric: tabular-nums;
+		}
+
+		.ticks .up {
+			text-anchor: end;
+		}
+
+		.ticks .across {
+			text-anchor: middle;
+		}
+
+		.dot {
+			r: var(--chart-dot, 6px);
+			fill: var(--chart-color, #4f6bed);
+			fill-opacity: var(--chart-fill, 0.85);
+			stroke: var(--chart-stroke, var(--chart-surface, white));
+			stroke-width: var(--chart-stroke-width, 2);
+			filter: var(--chart-glow, none);
+			outline: none;
+			cursor: default;
+			transition: fill 0.15s, r 0.15s;
+		}
+
+		.dot.active {
+			fill: var(--chart-active, #2f49c4);
+			fill-opacity: 1;
+			r: calc(var(--chart-dot, 6px) + 2px);
+		}
+
+		.dot:focus-visible {
+			stroke: var(--chart-active, #2f49c4);
+		}
+
+		.spot {
+			text-anchor: middle;
+			font-weight: 600;
+			fill: currentColor;
+			paint-order: stroke;
+			stroke: var(--chart-surface, white);
+			stroke-width: 4px;
+			stroke-linejoin: round;
+			opacity: 0;
+			transition: opacity 0.15s;
+			pointer-events: none;
+			font-variant-numeric: tabular-nums;
+		}
+
+		.spot.shown {
+			opacity: 1;
+		}
+	</style>
+}
+
+## The plot's edges in the SVG's units (640 by 320): room on the left for the ticks' labels, and
+## below for the ones across.
+left : Dec
+left = 48.0
+
+right : Dec
+right = 620.0
+
+top : Dec
+top = 16.0
+
+bottom : Dec
+bottom = 288.0
+
+tick_count : U64
+tick_count = 5
+
+## An axis's ends: the least value and the greatest, widened to round numbers; one value alone,
+## a unit either side of it.
+ends : List(Dec) -> (Dec, Dec)
+ends = |values| {
+	(low, high) = Scale.extent(values)
+	if low == high {
+		(low - 1.0, high + 1.0)
+	} else {
+		Ticks.nice(low, high, tick_count)
+	}
+}

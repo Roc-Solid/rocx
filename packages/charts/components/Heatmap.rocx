@@ -1,0 +1,172 @@
+import pf.Html
+import pf.Solid exposing [create_memo!, create_signal!]
+import pf.For
+import charts.Format
+
+## A grid of cells, a row for each of `rows` and a column for each of `columns`, each cell coloured
+## by its value in `data!` (a list for each row): from `--chart-heat-low` at zero to
+## `--chart-heat-high` at the greatest value, one hue getting stronger. Under it, the scale, and
+## the cell pointed at: its row, its column and its value. When the data changes, the browser
+## fades each cell to its new colour (a CSS transition), so Roc runs no frames at all.
+##
+## `label` names the chart for screen readers, and `format` writes a value. Every column's label is
+## in the readout; along the bottom, with more columns than room, only every second or third is.
+Heatmap := [].{
+	view! : { data! : () => List(List(Dec)), rows : List(Str), columns : List(Str), label : Str, format : Dec -> Str } => Html
+	view! = |{ data!, rows, columns, label, format }| {
+		(hover!, set_hover!) = create_signal!(Err(None))
+		most! = create_memo!(|| data!().fold(0.0, |most, row| row.fold(most, |m, value| Dec.max(m, value))))
+		value! = |r, c| (data!().get(r) ?? []).get(c) ?? 0.0
+		# How strong a cell is: its share of the greatest value, 0 to 1.
+		strength! = |r, c| if (most!() > 0.0) Format.num(Dec.max(value!(r, c), 0.0) / most!(), 3) else "0"
+		# Each cell, a row and a column, row by row.
+		cells = rows.map_with_index(|_, r| r).join_map(|r| columns.map_with_index(|_, c| (r, c)))
+		width = (right - left) / Dec.max(columns.len().to_dec(), 1.0)
+		height = (bottom - top) / Dec.max(rows.len().to_dec(), 1.0)
+		said! = ||
+			match hover!() {
+				Ok((r, c)) => "${rows.get(r) ?? ""} ${columns.get(c) ?? ""} — ${format(value!(r, c))}"
+				Err(_) => ""
+			}
+		# Where the cell pointed at is, row and column: its outline is drawn over the grid, since a
+		# cell's own would be under the cells after it, to its right and below.
+		pointed! = |at|
+			match hover!() {
+				Ok(cell) => at(cell)
+				Err(_) => 0.0
+			}
+		# Along the bottom, a label every `step` columns: about eight at most.
+		step = U64.max((columns.len() + 7) // 8, 1)
+		<figure class="heatmap">
+			<svg viewBox="0 0 640 260" role="img" aria-label={label} on:pointerleave={|| set_hover!(Err(None))}>
+				<For each!={rows} keyed={Bool.False}>
+					{|row!, r| <text class="row" x={Format.coord(left - 8.0)} y={Format.coord(top + height * (r.to_dec() + 0.5))} dy="0.32em">{row!()}</text>}
+				</For>
+				<For each!={cells} keyed={Bool.False}>
+					{|cell!, _|
+						<rect
+							class="cell"
+							x={Format.coord(left + width * cell!().1.to_dec())}
+							y={Format.coord(top + height * cell!().0.to_dec())}
+							width={Format.coord(width)}
+							height={Format.coord(height)}
+							style:--strength={strength!(cell!().0, cell!().1)}
+							on:pointerenter={|| set_hover!(Ok(cell!()))}
+						/>}
+				</For>
+				<rect
+					class="pointed"
+					class:shown={hover!() != Err(None)}
+					x={Format.coord(left + width * pointed!(|(_, c)| c.to_dec()))}
+					y={Format.coord(top + height * pointed!(|(r, _)| r.to_dec()))}
+					width={Format.coord(width)}
+					height={Format.coord(height)}
+				/>
+				<For each!={columns} keyed={Bool.False}>
+					{|column!, c|
+						<text class="column" x={Format.coord(left + width * (c.to_dec() + 0.5))} y={Format.coord(bottom + 18.0)}>
+							{if (c % step == 0) column!() else ""}
+						</text>}
+				</For>
+			</svg>
+			<figcaption aria-hidden="true">
+				<span class="scale">
+					{format(0.0)}
+					<span class="ramp"></span>
+					{format(most!())}
+				</span>
+				<span class="said">{said!()}</span>
+			</figcaption>
+		</figure>
+	}
+
+	<style>
+		.heatmap {
+			display: grid;
+			gap: 0.5rem;
+			margin: 0;
+		}
+
+		svg {
+			display: block;
+			width: 100%;
+			height: auto;
+			overflow: visible;
+			font: 12px/1 var(--chart-font, inherit);
+		}
+
+		.cell {
+			fill: color-mix(in oklab, var(--chart-heat-high, currentColor) calc(var(--strength) * 100%), var(--chart-heat-low, transparent));
+			stroke: var(--chart-surface, white);
+			stroke-width: 2;
+			transition: fill 0.6s;
+		}
+
+		/* Over the grid, so all four sides show: a cell's own outline is under its neighbours. */
+		.pointed {
+			fill: none;
+			stroke: var(--chart-active, currentColor);
+			stroke-width: 2;
+			opacity: 0;
+			pointer-events: none;
+		}
+
+		.pointed.shown {
+			opacity: 1;
+		}
+
+		text {
+			fill: var(--chart-muted, color-mix(in srgb, currentColor 60%, transparent));
+		}
+
+		.row {
+			text-anchor: end;
+		}
+
+		.column {
+			text-anchor: middle;
+		}
+
+		figcaption {
+			display: flex;
+			flex-wrap: wrap;
+			justify-content: space-between;
+			gap: 0.5rem 1rem;
+			color: var(--chart-muted, color-mix(in srgb, currentColor 60%, transparent));
+			font: 0.8rem/1.4 var(--chart-font, inherit);
+			font-variant-numeric: tabular-nums;
+		}
+
+		.scale {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.5rem;
+		}
+
+		.ramp {
+			width: 7rem;
+			height: 0.6rem;
+			border-radius: 3px;
+			background: linear-gradient(to right, var(--chart-heat-low, transparent), var(--chart-heat-high, currentColor));
+		}
+
+		.said {
+			color: currentColor;
+			font-weight: 600;
+		}
+	</style>
+}
+
+## The grid's edges in the SVG's units (640 by 260): room on the left for the rows' labels, and
+## below for the columns'.
+left : Dec
+left = 48.0
+
+right : Dec
+right = 632.0
+
+top : Dec
+top = 4.0
+
+bottom : Dec
+bottom = 236.0

@@ -1,0 +1,308 @@
+import pf.Html
+import pf.Solid exposing [create_memo!, create_signal!]
+import pf.For
+import pf.Show
+import pf.Transition
+import charts.Ease
+import charts.Format
+import charts.Keys
+import charts.Path
+
+## A ring cut into a slice for each of `data!`'s values, each as big a share of the ring as its
+## value is of them all, and a legend beside it: each slice's colour, label, value and share. The
+## middle says the total, or, while a slice or its line in the legend is pointed at or focused,
+## that slice's share. When the data changes, the slices glide to their new sizes, a frame at a
+## time: a new one grows from nothing, one whose label is gone shrinks to nothing where it was,
+## and once they are there, nothing runs.
+##
+## A slice is its label's, and keeps its colour while others come and go: five colours
+## (`--chart-1` to `--chart-5`), so a sixth slice shares one; fold the smallest into "Other".
+## `label` names the chart for screen readers, `format` writes a value, `total` is the word under
+## the total ("Total" unless said), and `thickness` is the ring's, in the SVG's units, of its 150
+## radius (52 unless said; 150 is a pie).
+DonutChart := [].{
+	Slice : { label : Str, value : Dec }
+
+	## A slice and its key: its label, numbered when another slice before it has the same one.
+	Row : { key : Str, slice : DonutChart.Slice }
+
+	## A slice as drawn: its value, on its way to the data's.
+	Placed : { key : Str, value : Dec }
+
+	## What is drawn: the slices, in the ring's order (one that is going too, until it has shrunk
+	## to nothing), and each slice's colour.
+	Drawn : { slices : List(DonutChart.Placed), slots : List((Str, U64)) }
+
+	## Where a slice is drawn, in turns: 0 is twelve o'clock, 1 all the way round.
+	Arc : { key : Str, from : Dec, to : Dec }
+
+	Props := { data! : () => List(DonutChart.Slice), label : Str, format : Dec -> Str, total : Str ?? "Total", thickness : Dec ?? 52.0 }
+
+	view! : Props => Html
+	view! = |props| {
+		data! = props.data!
+		format = props.format
+		rows! = create_memo!(|| DonutChart.keyed(data!()))
+		goal! = create_memo!(|| rows!().map(|row| { key: row.key, value: Dec.max(row.slice.value, 0.0) }))
+		(drawn!, set_drawn!) = create_signal!({ slices: goal!(), slots: Keys.slots([], goal!().map(|slice| slice.key)) })
+		(hover!, set_hover!) = create_signal!(Err(None))
+		# The slices drawn: the data's, and each that is going until it has shrunk to nothing.
+		keys! = create_memo!(|| Keys.merge(drawn!().slices.map(|slice| slice.key), goal!().map(|slice| slice.key)))
+		slots! = create_memo!(|| Keys.slots(drawn!().slots, keys!()))
+		arcs! = create_memo!(|| DonutChart.arcs(drawn!().slices))
+		total! = create_memo!(|| goal!().fold(0.0, |sum, slice| sum + slice.value))
+		slot! = |key| (Keys.slot_of(slots!(), key) % colors).to_str()
+		share! = |value| Format.percent(if (total!() > 0.0) value / total!() else 0.0, 0)
+		said! = |row| "${row.slice.label}: ${format(row.slice.value)}, ${share!(Dec.max(row.slice.value, 0.0))}"
+		row_of! = |key| rows!().find_first(|row| row.key == key)
+		# The middle: the slice pointed at, or the total.
+		pointed! = || {
+			at = hover!()
+			rows!().find_first(|row| at == Ok(row.key))
+		}
+		big! = ||
+			match pointed!() {
+				Ok(row) => share!(Dec.max(row.slice.value, 0.0))
+				Err(_) => format(total!())
+			}
+		small! = ||
+			match pointed!() {
+				Ok(row) => row.slice.label
+				Err(_) => props.total
+			}
+		<figure class="donut-chart">
+			<svg viewBox="0 0 320 320" role="group" aria-label={props.label}>
+				<For each!={keys!()} keyed={|key| key}>
+					{|key!, _|
+						<path
+							class="slice"
+							class:active={hover!() == Ok(key!())}
+							data-slot={slot!(key!())}
+							d={DonutChart.path(arcs!(), key!(), Dec.max(outer - props.thickness, 0.0))}
+							role="img"
+							tabindex="0"
+							aria-label={
+								match row_of!(key!()) {
+									Ok(row) => said!(row)
+									Err(_) => key!()
+								}
+							}
+							on:pointerenter={|| set_hover!(Ok(key!()))}
+							on:pointerleave={|| set_hover!(Err(None))}
+							on:focus={|| set_hover!(Ok(key!()))}
+							on:blur={|| set_hover!(Err(None))}
+						/>}
+				</For>
+				{# The middle, when the ring leaves room for it: a pie has none. }
+				<g class="middle" class:gone={props.thickness > 90.0} aria-hidden="true">
+					<text class="big" x="160" y="160">{big!()}</text>
+					<text class="small" x="160" y="160" dy="1.9em">{small!()}</text>
+				</g>
+			</svg>
+			<ul class="legend" aria-hidden="true">
+				<For each!={rows!()} keyed={|row| row.key}>
+					{|row!, _|
+						<li
+							class:active={hover!() == Ok(row!().key)}
+							data-slot={slot!(row!().key)}
+							on:pointerenter={|| set_hover!(Ok(row!().key))}
+							on:pointerleave={|| set_hover!(Err(None))}
+							transition={Transition.fade}
+						>
+							<span class="swatch"></span>
+							<span class="name">{row!().slice.label}</span>
+							<span class="amount">{format(row!().slice.value)}</span>
+							<span class="share">{share!(Dec.max(row!().slice.value, 0.0))}</span>
+						</li>}
+				</For>
+			</ul>
+			{# Frames only while something moves: once the slices are where the data says, none. }
+			<Show when!={drawn!().slices != goal!()}>
+				<span hidden on:frame.ms={|ms| set_drawn!(DonutChart.glide(drawn!(), goal!(), ms))}></span>
+			</Show>
+		</figure>
+	}
+
+	## Each slice with its key: its label, or, after the first slice with that label, the label
+	## numbered (`Other#1`), so each slice keeps a row of its own.
+	keyed : List(DonutChart.Slice) -> List(DonutChart.Row)
+	keyed = |slices| List.map2(Keys.unique(slices.map(|slice| slice.label)), slices, |key, slice| { key, slice })
+
+	## Where each slice is drawn: the ring shared out by value, in order. All of them nothing is no
+	## ring at all.
+	arcs : List(DonutChart.Placed) -> List(DonutChart.Arc)
+	arcs = |slices| {
+		total = slices.fold(0.0, |sum, slice| sum + slice.value)
+		var $at = 0.0
+		var $arcs = []
+		for slice in slices {
+			share = if (total > 0.0) slice.value / total else 0.0
+			$arcs = $arcs.append({ key: slice.key, from: $at, to: $at + share })
+			$at = $at + share
+		}
+		$arcs
+	}
+
+	## The slice with `key`'s path: nothing until it is drawn.
+	path : List(DonutChart.Arc), Str, Dec -> Str
+	path = |drawn, key, inner|
+		match drawn.find_first(|arc| arc.key == key) {
+			Ok(arc) => Path.arc({ x: 160.0, y: 160.0, inner, outer, from: arc.from, to: arc.to })
+			Err(_) => ""
+		}
+
+	## A frame's way from `drawn` toward `goal`: each slice's value toward its own. A new slice
+	## starts at nothing; one that has gone shrinks to nothing where it was, and then is gone.
+	glide : DonutChart.Drawn, List(DonutChart.Placed), F64 -> DonutChart.Drawn
+	glide = |drawn, goal, ms| {
+		keys = goal.map(|slice| slice.key)
+		# Within a thousandth of the whole is there: under a pixel round the ring.
+		close = goal.fold(0.0, |sum, slice| sum + slice.value) / 1000.0
+		var $slices = []
+		for key in Keys.merge(drawn.slices.map(|slice| slice.key), keys) {
+			was = value_of(drawn.slices, key)
+			next = Ease.toward(was, value_of(goal, key), ms, close)
+			if next != 0.0 or keys.contains(key) {
+				$slices = $slices.append({ key, value: next })
+			}
+		}
+		{ slices: $slices, slots: Keys.slots(drawn.slots, $slices.map(|slice| slice.key)) }
+	}
+
+	<style>
+		.donut-chart {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 1.5rem 2rem;
+			margin: 0;
+		}
+
+		svg {
+			display: block;
+			flex: 0 1 280px;
+			min-width: 200px;
+			height: auto;
+			overflow: visible;
+			font: 12px/1 var(--chart-font, inherit);
+		}
+
+		[data-slot="0"] {
+			--slice: var(--chart-1, #2a78d6);
+		}
+
+		[data-slot="1"] {
+			--slice: var(--chart-2, #eb6834);
+		}
+
+		[data-slot="2"] {
+			--slice: var(--chart-3, #1baf7a);
+		}
+
+		[data-slot="3"] {
+			--slice: var(--chart-4, #eda100);
+		}
+
+		[data-slot="4"] {
+			--slice: var(--chart-5, #e87ba4);
+		}
+
+		/* A gap of the surface's colour between slices; outlined (`--chart-outline: 1`), the slice's. */
+		.slice {
+			fill: var(--slice);
+			fill-opacity: var(--chart-fill, 1);
+			stroke: color-mix(in srgb, var(--slice) calc(var(--chart-outline, 0) * 100%), var(--chart-surface, white));
+			stroke-width: var(--chart-stroke-width, 2);
+			stroke-linejoin: round;
+			outline: none;
+			transform-box: view-box;
+			transform-origin: 160px 160px;
+			transition: fill 0.3s, opacity 0.15s, scale 0.15s;
+		}
+
+		svg:has(.active) .slice:not(.active) {
+			opacity: 0.45;
+		}
+
+		.slice.active {
+			scale: 1.04;
+		}
+
+		.slice:focus-visible {
+			stroke: var(--chart-active, currentColor);
+		}
+
+		.gone {
+			display: none;
+		}
+
+		.big {
+			text-anchor: middle;
+			font-size: 34px;
+			font-weight: 700;
+			fill: currentColor;
+			font-variant-numeric: tabular-nums;
+		}
+
+		.small {
+			text-anchor: middle;
+			font-size: 14px;
+			fill: var(--chart-muted, color-mix(in srgb, currentColor 60%, transparent));
+		}
+
+		.legend {
+			display: grid;
+			flex: 1 1 220px;
+			grid-template-columns: auto minmax(0, 1fr) auto auto;
+			gap: 0.15rem 0.75rem;
+			margin: 0;
+			padding: 0;
+			list-style: none;
+			font-variant-numeric: tabular-nums;
+		}
+
+		.legend li {
+			display: grid;
+			grid-column: 1 / -1;
+			grid-template-columns: subgrid;
+			align-items: center;
+			padding: 0.3rem 0.5rem;
+			border-radius: 6px;
+			transition: background 0.15s;
+		}
+
+		.legend li.active {
+			background: color-mix(in srgb, currentColor 8%, transparent);
+		}
+
+		.swatch {
+			width: 0.75rem;
+			height: 0.75rem;
+			border-radius: 3px;
+			background: var(--slice);
+			transition: background 0.3s;
+		}
+
+		.amount,
+		.share {
+			text-align: right;
+		}
+
+		.share {
+			color: var(--chart-muted, color-mix(in srgb, currentColor 60%, transparent));
+		}
+	</style>
+}
+
+## The ring's outer radius, around the middle of the SVG's 320 by 320: a slice is the band from
+## there to `thickness` inside it, or, as thick as that or more, a pie's slice.
+outer : Dec
+outer = 150.0
+
+## How many colours the slices have (`--chart-1` to `--chart-5`).
+colors : U64
+colors = 5
+
+## The value of the slice with `key`: nothing when there is none.
+value_of : List(DonutChart.Placed), Str -> Dec
+value_of = |slices, key| slices.find_first(|slice| slice.key == key).map_ok(|slice| slice.value) ?? 0.0

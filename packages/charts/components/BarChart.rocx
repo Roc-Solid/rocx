@@ -6,6 +6,7 @@ import pf.Transition
 import charts.Band
 import charts.Ease
 import charts.Format
+import charts.Keys
 import charts.Scale
 import charts.Ticks
 
@@ -17,8 +18,9 @@ import charts.Ticks
 ## axis as it fades (`transition:out`) while the others close up, and sorted, each slides to its
 ## place. Pointing at a bar, or reaching it with Tab, shows its value.
 ##
-## `label` names the chart for screen readers, and `format` writes a value: `Format.short`, or
-## `|mm| "${Format.num(mm, 0)} mm"`.
+## `label` names the chart for screen readers, `format` writes a value (`Format.short`, or
+## `|mm| "${Format.num(mm, 0)} mm"`), and `padding` is the share of each bar's slot left empty
+## (0.3 unless said).
 BarChart := [].{
 	Bar : { label : Str, value : Dec }
 
@@ -31,14 +33,18 @@ BarChart := [].{
 	## What is drawn: the bars, how many slots there are, and the axis's ends.
 	Drawn : { bars : List(BarChart.Placed), count : Dec, domain : (Dec, Dec) }
 
-	view! : { data! : () => List(BarChart.Bar), label : Str, format : Dec -> Str } => Html
-	view! = |{ data!, label, format }| {
+	Props := { data! : () => List(BarChart.Bar), label : Str, format : Dec -> Str, padding : Dec ?? 0.3 }
+
+	view! : Props => Html
+	view! = |props| {
+		data! = props.data!
+		format = props.format
 		rows! = create_memo!(|| BarChart.keyed(data!()))
 		goal! = create_memo!(|| BarChart.place(rows!()))
 		(drawn!, set_drawn!) = create_signal!(goal!())
 		(hover!, set_hover!) = create_signal!(Err(None))
 		y! = create_memo!(|| Scale.linear(drawn!().domain, (bottom, top)))
-		x! = create_memo!(|| Band.band(drawn!().count, (left, right), 0.3))
+		x! = create_memo!(|| Band.band(drawn!().count, (left, right), props.padding))
 		placed! = |key| BarChart.placed(drawn!(), goal!(), key)
 		value! = |key| placed!(key).value
 		# A bar goes from the axis's zero to its value, up or down.
@@ -47,7 +53,7 @@ BarChart := [].{
 		# Its value over its end: above a bar that goes up, below one that goes down.
 		value_y! = |key| if (value!(key) < 0.0) bar_top!(key) + bar_height!(key) + 18.0 else bar_top!(key) - 8.0
 		<figure class="bar-chart">
-			<svg viewBox="0 0 640 320" role="group" aria-label={label}>
+			<svg viewBox="0 0 640 320" role="group" aria-label={props.label}>
 				<g class="ticks" aria-hidden="true">
 					<For each!={BarChart.ticks(goal!())} keyed={|tick| Format.num(tick, 9)}>
 						{|tick!, _|
@@ -95,16 +101,7 @@ BarChart := [].{
 	## Each bar with its key: its label, or, after the first bar with that label, the label numbered
 	## (`Jan#1`), so each bar keeps a row of its own.
 	keyed : List(BarChart.Bar) -> List(BarChart.Row)
-	keyed = |bars| {
-		var $seen = []
-		var $rows = []
-		for bar in bars {
-			count = $seen.count_if(|label| label == bar.label)
-			$seen = $seen.append(bar.label)
-			$rows = $rows.append({ key: if (count == 0) bar.label else "${bar.label}#${count.to_str()}", bar })
-		}
-		$rows
-	}
+	keyed = |bars| List.map2(Keys.unique(bars.map(|bar| bar.label)), bars, |key, bar| { key, bar })
 
 	## Where the bars go: each to its value, in its slot, on an axis from zero (or below it) to the
 	## greatest value, widened to round numbers.
@@ -186,6 +183,7 @@ BarChart := [].{
 
 		.ticks line {
 			stroke: var(--chart-grid, color-mix(in srgb, currentColor 12%, transparent));
+			stroke-dasharray: var(--chart-grid-dash, none);
 		}
 
 		.ticks g {
@@ -213,11 +211,17 @@ BarChart := [].{
 
 		.bar rect {
 			fill: var(--chart-color, #4f6bed);
-			transition: fill 0.15s;
+			fill-opacity: var(--chart-fill, 1);
+			stroke: var(--chart-stroke, none);
+			stroke-width: var(--chart-stroke-width, 0);
+			rx: var(--chart-radius, 3px);
+			filter: var(--chart-glow, none);
+			transition: fill 0.15s, fill-opacity 0.15s;
 		}
 
 		.bar.active rect {
 			fill: var(--chart-active, #2f49c4);
+			fill-opacity: 1;
 		}
 
 		.bar:focus-visible rect {

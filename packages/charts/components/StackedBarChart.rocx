@@ -1,0 +1,341 @@
+import pf.Html
+import pf.Solid exposing [create_memo!, create_signal!]
+import pf.For
+import pf.Show
+import pf.Transition
+import charts.Band
+import charts.Ease
+import charts.Format
+import charts.Keys
+import charts.Scale
+import charts.Ticks
+
+## A column for each of `data!`'s entries, its values stacked from the axis up, one for each of
+## `series` (the first at the bottom), each series in its own colour, named in a legend over the
+## chart. The axis goes from zero to the tallest column, widened to round numbers. When the data
+## changes, each part of each column glides to its new size, a frame at a time: a column is its
+## label's, so a new one grows from the axis as the others make room, and one whose label is gone
+## shrinks into the axis as it fades. Once they are there, nothing runs. Pointing at a column, or
+## reaching it with Tab, shows its total.
+##
+## `label` names the chart for screen readers, `format` writes a value, and `padding` is the share
+## of each column's slot left empty (0.3 unless said). Five colours (`--chart-1` to `--chart-5`):
+## a sixth series shares one. A value below zero counts as zero.
+StackedBarChart := [].{
+	Column : { label : Str, values : List(Dec) }
+
+	## A column and its key: its label, numbered when another column before it has the same one.
+	Row : { key : Str, column : StackedBarChart.Column }
+
+	## A column as drawn: its values, and its slot (0 for the first), on their way to the data's.
+	Placed : { key : Str, values : List(Dec), slot : Dec }
+
+	## What is drawn: the columns, how many slots there are, and the axis's ends.
+	Drawn : { columns : List(StackedBarChart.Placed), count : Dec, domain : (Dec, Dec) }
+
+	Props := { data! : () => List(StackedBarChart.Column), series : List(Str), label : Str, format : Dec -> Str, padding : Dec ?? 0.3 }
+
+	view! : Props => Html
+	view! = |props| {
+		data! = props.data!
+		format = props.format
+		parts = props.series.len()
+		rows! = create_memo!(|| StackedBarChart.keyed(data!(), parts))
+		goal! = create_memo!(|| StackedBarChart.place(rows!()))
+		(drawn!, set_drawn!) = create_signal!(goal!())
+		(hover!, set_hover!) = create_signal!(Err(None))
+		y! = create_memo!(|| Scale.linear(drawn!().domain, (bottom, top)))
+		x! = create_memo!(|| Band.band(drawn!().count, (left, right), props.padding))
+		placed! = |key| StackedBarChart.placed(drawn!(), goal!(), key, parts)
+		# A part goes from what is under it to that and its own value.
+		under! = |key, part| placed!(key).values.take_first(part).fold(0.0, |sum, value| sum + value)
+		own! = |key, part| placed!(key).values.get(part) ?? 0.0
+		part_top! = |key, part| y!().at(under!(key, part) + own!(key, part))
+		part_height! = |key, part| y!().at(under!(key, part)) - part_top!(key, part)
+		total! = |key| placed!(key).values.fold(0.0, |sum, value| sum + value)
+		said! = |row| {
+			parted = List.map2(props.series, row.column.values, |name, value| "${name} ${format(value)}")
+			"${row.column.label}: ${Str.join_with(parted, ", ")}"
+		}
+		<figure class="stacked-chart">
+			<ul class="legend" aria-hidden="true">
+				<For each!={props.series} keyed={Bool.False}>
+					{|name!, i| <li data-slot={(i % colors).to_str()}><span class="swatch"></span>{name!()}</li>}
+				</For>
+			</ul>
+			<svg viewBox="0 0 640 320" role="group" aria-label={props.label}>
+				<g class="ticks" aria-hidden="true">
+					<For each!={StackedBarChart.ticks(goal!())} keyed={|tick| Format.num(tick, 9)}>
+						{|tick!, _|
+							<g class:out={StackedBarChart.outside(drawn!().domain, tick!())}>
+								<line x1={Format.coord(left)} x2={Format.coord(right)} y1={Format.coord(y!().at(tick!()))} y2={Format.coord(y!().at(tick!()))} />
+								<text x={Format.coord(left - 8.0)} y={Format.coord(y!().at(tick!()))} dy="0.32em">{format(tick!())}</text>
+							</g>}
+					</For>
+				</g>
+				{# Each part of each column: kept by its column's key and its place in the column. }
+				<For each!={StackedBarChart.pieces(rows!(), parts)} keyed={|piece| "${piece.key}|${piece.part.to_str()}"}>
+					{|piece!, _|
+						<rect
+							class="part"
+							class:active={hover!() == Ok(piece!().key)}
+							data-slot={(piece!().part % colors).to_str()}
+							x={Format.coord(x!().at(placed!(piece!().key).slot))}
+							y={Format.coord(part_top!(piece!().key, piece!().part))}
+							width={Format.coord(x!().width())}
+							height={Format.coord(Dec.max(part_height!(piece!().key, piece!().part), 0.0))}
+							transition:out={Transition.grow(Bottom).plus(Transition.fade)}
+						/>}
+				</For>
+				{# Each column: what the pointer and Tab find it by, its total and its label. }
+				<For each!={rows!()} keyed={|row| row.key}>
+					{|row!, _|
+						<g
+							class="column"
+							class:active={hover!() == Ok(row!().key)}
+							role="img"
+							tabindex="0"
+							aria-label={said!(row!())}
+							on:pointerenter={|| set_hover!(Ok(row!().key))}
+							on:pointerleave={|| set_hover!(Err(None))}
+							on:focus={|| set_hover!(Ok(row!().key))}
+							on:blur={|| set_hover!(Err(None))}
+							transition:out={Transition.fade}
+						>
+							<rect class="hit" x={Format.coord(x!().at(placed!(row!().key).slot))} y={Format.coord(top)} width={Format.coord(x!().width())} height={Format.coord(bottom - top)} />
+							<text class="total" x={Format.coord(x!().center(placed!(row!().key).slot))} y={Format.coord(y!().at(total!(row!().key)) - 8.0)}>{format(total!(row!().key))}</text>
+							<text class="label" x={Format.coord(x!().center(placed!(row!().key).slot))} y={Format.coord(bottom + 20.0)}>{row!().column.label}</text>
+						</g>}
+				</For>
+				<line class="axis" x1={Format.coord(left)} x2={Format.coord(right)} y1={Format.coord(bottom)} y2={Format.coord(bottom)} />
+			</svg>
+			{# Frames only while something moves: once the columns are where the data says, none. }
+			<Show when!={drawn!() != goal!()}>
+				<span hidden on:frame.ms={|ms| set_drawn!(StackedBarChart.glide(drawn!(), goal!(), ms, parts))}></span>
+			</Show>
+		</figure>
+	}
+
+	## Each column with its key, and as many values as there are series (a missing one is zero, a
+	## value below zero counts as zero).
+	keyed : List(StackedBarChart.Column), U64 -> List(StackedBarChart.Row)
+	keyed = |columns, parts| {
+		fitted = columns.map(|column| { label: column.label, values: List.repeat(0.0, parts).map_with_index(|_, i| Dec.max(column.values.get(i) ?? 0.0, 0.0)) })
+		List.map2(Keys.unique(fitted.map(|column| column.label)), fitted, |key, column| { key, column })
+	}
+
+	## Each column's parts, the first (the bottom one) first.
+	pieces : List(StackedBarChart.Row), U64 -> List({ key : Str, part : U64 })
+	pieces = |rows, parts| rows.join_map(|row| List.repeat(row.key, parts).map_with_index(|key, part| { key, part }))
+
+	## Where the columns go: each in its slot, on an axis from zero to the tallest, widened to round
+	## numbers.
+	place : List(StackedBarChart.Row) -> StackedBarChart.Drawn
+	place = |rows| {
+		tallest = rows.fold(0.0, |most, row| Dec.max(most, row.column.values.fold(0.0, |sum, value| sum + value)))
+		domain = if (tallest > 0.0) Ticks.nice(0.0, tallest, tick_count) else (0.0, 1.0)
+		{
+			columns: rows.map_with_index(|row, i| { key: row.key, values: row.column.values, slot: i.to_dec() }),
+			count: rows.len().to_dec(),
+			domain,
+		}
+	}
+
+	## Where the column with `key` is drawn now: as drawn, or, not drawn yet, nothing in its slot.
+	placed : StackedBarChart.Drawn, StackedBarChart.Drawn, Str, U64 -> StackedBarChart.Placed
+	placed = |drawn, goal, key, parts|
+		match drawn.columns.find_first(|column| column.key == key) {
+			Ok(column) => column
+			Err(_) => {
+				slot = goal.columns.find_first(|column| column.key == key).map_ok(|column| column.slot) ?? 0.0
+				{ key, values: List.repeat(0.0, parts), slot }
+			}
+		}
+
+	## A frame's way from `drawn` toward `goal`: each part toward its value, each column toward its
+	## slot, and the axis toward its ends.
+	glide : StackedBarChart.Drawn, StackedBarChart.Drawn, F64, U64 -> StackedBarChart.Drawn
+	glide = |drawn, goal, ms, parts| {
+		(d0, d1) = drawn.domain
+		(g0, g1) = goal.domain
+		# Within a five-hundredth of the axis is there: under a pixel. So is a hundredth of a slot.
+		close = (g1 - g0) / 500.0
+		near = 0.01
+		{
+			columns: goal.columns.map(
+				|column| {
+					from = StackedBarChart.placed(drawn, goal, column.key, parts)
+					{
+						key: column.key,
+						values: List.map2(from.values, column.values, |was, value| Ease.toward(was, value, ms, close)),
+						slot: Ease.toward(from.slot, column.slot, ms, near),
+					}
+				},
+			),
+			count: Ease.toward(drawn.count, goal.count, ms, near),
+			domain: (Ease.toward(d0, g0, ms, close), Ease.toward(d1, g1, ms, close)),
+		}
+	}
+
+	## The axis's ticks.
+	ticks : StackedBarChart.Drawn -> List(Dec)
+	ticks = |drawn| {
+		(from, to) = drawn.domain
+		Ticks.between(from, to, tick_count)
+	}
+
+	## Whether a tick is off the axis as drawn: one the axis is gliding toward, faded until it is on.
+	outside : (Dec, Dec), Dec -> Bool
+	outside = |(from, to), tick| tick < Dec.min(from, to) or tick > Dec.max(from, to)
+
+	<style>
+		.stacked-chart {
+			display: grid;
+			gap: 0.75rem;
+			margin: 0;
+		}
+
+		svg {
+			display: block;
+			width: 100%;
+			height: auto;
+			overflow: visible;
+			font: 12px/1 var(--chart-font, inherit);
+		}
+
+		.ticks line {
+			stroke: var(--chart-grid, color-mix(in srgb, currentColor 12%, transparent));
+			stroke-dasharray: var(--chart-grid-dash, none);
+		}
+
+		.ticks g {
+			transition: opacity 0.2s;
+		}
+
+		.ticks .out {
+			opacity: 0;
+		}
+
+		.ticks text {
+			fill: var(--chart-muted, color-mix(in srgb, currentColor 60%, transparent));
+			text-anchor: end;
+			font-variant-numeric: tabular-nums;
+		}
+
+		.axis {
+			stroke: var(--chart-axis, color-mix(in srgb, currentColor 45%, transparent));
+		}
+
+		[data-slot="0"] {
+			--part: var(--chart-1, #2a78d6);
+		}
+
+		[data-slot="1"] {
+			--part: var(--chart-2, #eb6834);
+		}
+
+		[data-slot="2"] {
+			--part: var(--chart-3, #1baf7a);
+		}
+
+		[data-slot="3"] {
+			--part: var(--chart-4, #eda100);
+		}
+
+		[data-slot="4"] {
+			--part: var(--chart-5, #e87ba4);
+		}
+
+		.column {
+			outline: none;
+			cursor: default;
+		}
+
+		/* A gap of the surface's colour between parts; outlined (`--chart-outline: 1`), the part's. */
+		.part {
+			fill: var(--part);
+			fill-opacity: var(--chart-fill, 1);
+			stroke: color-mix(in srgb, var(--part) calc(var(--chart-outline, 0) * 100%), var(--chart-surface, white));
+			stroke-width: var(--chart-stroke-width, 1.5);
+			filter: var(--chart-glow, none);
+			transition: fill-opacity 0.15s;
+		}
+
+		svg:has(.part.active) .part:not(.active) {
+			fill-opacity: calc(var(--chart-fill, 1) * 0.45);
+		}
+
+		.hit {
+			fill: transparent;
+		}
+
+		.column:focus-visible .hit {
+			stroke: var(--chart-active, currentColor);
+			stroke-width: 2;
+		}
+
+		.column text {
+			text-anchor: middle;
+			fill: currentColor;
+		}
+
+		.label {
+			fill: var(--chart-muted, color-mix(in srgb, currentColor 60%, transparent));
+		}
+
+		.total {
+			font-weight: 600;
+			opacity: 0;
+			transition: opacity 0.15s;
+			font-variant-numeric: tabular-nums;
+		}
+
+		.column.active .total {
+			opacity: 1;
+		}
+
+		.legend {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.25rem 1rem;
+			margin: 0;
+			padding: 0;
+			list-style: none;
+			font-size: 0.875em;
+		}
+
+		.legend li {
+			display: flex;
+			align-items: center;
+			gap: 0.4rem;
+		}
+
+		.swatch {
+			width: 0.75rem;
+			height: 0.75rem;
+			border-radius: 3px;
+			background: var(--part);
+		}
+	</style>
+}
+
+## The plot's edges in the SVG's units (640 by 320): room on the left for the ticks' labels, and
+## below for the columns'.
+left : Dec
+left = 48.0
+
+right : Dec
+right = 632.0
+
+top : Dec
+top = 16.0
+
+bottom : Dec
+bottom = 288.0
+
+tick_count : U64
+tick_count = 5
+
+## How many colours the series have (`--chart-1` to `--chart-5`).
+colors : U64
+colors = 5

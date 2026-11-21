@@ -10,22 +10,27 @@ import charts.Ticks
 
 ## A line through `data!`'s values, left to right and evenly spaced, the area under it shaded, on
 ## an axis around them widened to round numbers. With `smooth`, it curves through them, and never
-## past one (a monotone curve). When the values outgrow the axis, its ends glide to new round
-## numbers, a frame at a time. Pointing along the chart shows the value under the pointer.
+## past one (a monotone curve). When the values change, the line glides to them, and the axis's
+## ends to new round numbers, a frame at a time; once they are there, nothing runs. Pointing along
+## the chart shows the value under the pointer.
 ##
 ## `label` names the chart for screen readers, and `format` writes a value.
 LineChart := [].{
+
+	## What is drawn: the values, and the axis's ends, on their way to the data's.
+	Drawn : { values : List(Dec), domain : (Dec, Dec) }
+
 	view! : { data! : () => List(Dec), label : Str, format : Dec -> Str, smooth : Bool } => Html
 	view! = |{ data!, label, format, smooth }| {
-		goal! = create_memo!(|| LineChart.domain(data!()))
+		goal! = create_memo!(|| { values: data!(), domain: LineChart.domain(data!()) })
 		(drawn!, set_drawn!) = create_signal!(goal!())
 		(hover!, set_hover!) = create_signal!(Err(None))
-		y! = create_memo!(|| Scale.linear(drawn!(), (bottom, top)))
-		x! = create_memo!(|| Scale.linear((0.0, Dec.max(data!().len().to_dec() - 1.0, 1.0)), (left, right)))
+		y! = create_memo!(|| Scale.linear(drawn!().domain, (bottom, top)))
+		x! = create_memo!(|| Scale.linear((0.0, Dec.max(drawn!().values.len().to_dec() - 1.0, 1.0)), (left, right)))
 		points! = create_memo!(
 			|| {
 				(across, up) = (x!(), y!())
-				data!().map_with_index(|value, i| (across.at(i.to_dec()), up.at(value)))
+				drawn!().values.map_with_index(|value, i| (across.at(i.to_dec()), up.at(value)))
 			},
 		)
 		# The point under the pointer, and its value.
@@ -66,9 +71,9 @@ LineChart := [].{
 		<figure class="line-chart">
 			<svg viewBox="0 0 640 320" role="img" aria-label={label}>
 				<g class="ticks" aria-hidden="true">
-					<For each!={LineChart.ticks(goal!())} keyed={|tick| Format.num(tick, 9)}>
+					<For each!={LineChart.ticks(goal!().domain)} keyed={|tick| Format.num(tick, 9)}>
 						{|tick!, _|
-							<g class:out={LineChart.outside(drawn!(), tick!())}>
+							<g class:out={LineChart.outside(drawn!().domain, tick!())}>
 								<line x1={Format.coord(left)} x2={Format.coord(right)} y1={Format.coord(y!().at(tick!()))} y2={Format.coord(y!().at(tick!()))} />
 								<text x={Format.coord(left - 8.0)} y={Format.coord(y!().at(tick!()))} dy="0.32em">{format(tick!())}</text>
 							</g>}
@@ -89,7 +94,7 @@ LineChart := [].{
 					{|_, i| <span on:pointerenter={|| set_hover!(Ok(i))}></span>}
 				</For>
 			</div>
-			{# Frames only while the axis moves: once its ends are where the data says, none. }
+			{# Frames only while something moves: once the line and the axis are where the data says, none. }
 			<Show when!={drawn!() != goal!()}>
 				<span hidden on:frame.ms={|ms| set_drawn!(LineChart.glide(drawn!(), goal!(), ms))}></span>
 			</Show>
@@ -107,12 +112,21 @@ LineChart := [].{
 		}
 	}
 
-	## A frame's way from the axis's ends to the data's.
-	glide : (Dec, Dec), (Dec, Dec), F64 -> (Dec, Dec)
-	glide = |(d0, d1), (g0, g1), ms| {
+	## A frame's way from what is drawn toward the data: each value toward its own, and the axis's
+	## ends toward theirs. When there are more values or fewer, the line is the data's at once.
+	glide : LineChart.Drawn, LineChart.Drawn, F64 -> LineChart.Drawn
+	glide = |drawn, goal, ms| {
+		(d0, d1) = drawn.domain
+		(g0, g1) = goal.domain
 		# Within a five-hundredth of the axis is there: under a pixel.
 		close = (g1 - g0) / 500.0
-		(Ease.toward(d0, g0, ms, close), Ease.toward(d1, g1, ms, close))
+		values =
+			if drawn.values.len() == goal.values.len() {
+				List.map2(drawn.values, goal.values, |from, to| Ease.toward(from, to, ms, close))
+			} else {
+				goal.values
+			}
+		{ values, domain: (Ease.toward(d0, g0, ms, close), Ease.toward(d1, g1, ms, close)) }
 	}
 
 	## The axis's ticks.
@@ -139,6 +153,7 @@ LineChart := [].{
 
 		.ticks line {
 			stroke: var(--chart-grid, color-mix(in srgb, currentColor 12%, transparent));
+			stroke-dasharray: var(--chart-grid-dash, none);
 		}
 
 		.ticks g {
@@ -158,14 +173,15 @@ LineChart := [].{
 		.line {
 			fill: none;
 			stroke: var(--chart-color, #4f6bed);
-			stroke-width: 2.5;
+			stroke-width: var(--chart-line-width, 2.5);
+			filter: var(--chart-glow, none);
 			stroke-linejoin: round;
 			stroke-linecap: round;
 		}
 
 		.area {
 			fill: var(--chart-color, #4f6bed);
-			opacity: 0.12;
+			opacity: var(--chart-area, 0.12);
 		}
 
 		.spot {

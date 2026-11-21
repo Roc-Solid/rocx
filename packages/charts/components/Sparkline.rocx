@@ -1,0 +1,94 @@
+import pf.Html
+import pf.Solid exposing [create_memo!, create_signal!]
+import pf.Show
+import charts.Ease
+import charts.Format
+import charts.Path
+import charts.Scale
+
+## A small line through `data!`'s values, with no axis, the area under it shaded and a dot on the
+## last: for beside a number, in a line of text or a tile. It spans its values' range, so it shows
+## their shape, not their size. When the values change, the line glides to them, a frame at a time,
+## and once it is there, nothing runs.
+##
+## `label!` says what it shows, for screen readers: the trend, since there is no number to read. It
+## is an accessor, as `data!` is, since it changes with the data.
+Sparkline := [].{
+	view! : { data! : () => List(Dec), label! : () => Str } => Html
+	view! = |{ data!, label! }| {
+		(drawn!, set_drawn!) = create_signal!(data!())
+		points! = create_memo!(
+			|| {
+				values = drawn!()
+				(low, high) = Scale.extent(values)
+				up = Scale.linear(if (low == high) (low - 1.0, high + 1.0) else (low, high), (bottom, top))
+				across = Scale.linear((0.0, Dec.max(values.len().to_dec() - 1.0, 1.0)), (left, right))
+				values.map_with_index(|value, i| (across.at(i.to_dec()), up.at(value)))
+			},
+		)
+		last! = || points!().last() ?? (right, bottom)
+		<svg class="sparkline" viewBox="0 0 120 32" role="img" aria-label={label!()}>
+			<path class="area" d={Path.smooth_area(points!(), 32.0)} />
+			<path class="line" d={Path.smooth(points!())} />
+			<circle cx={Format.coord(last!().0)} cy={Format.coord(last!().1)} r="2.5" />
+			{# Frames only while the line moves. }
+			<Show when!={drawn!() != data!()}>
+				<g on:frame.ms={|ms| set_drawn!(Sparkline.glide(drawn!(), data!(), ms))}></g>
+			</Show>
+		</svg>
+	}
+
+	## A frame's way from the values drawn toward the data's: each toward its own. When there are
+	## more values or fewer, the line is the data's at once.
+	glide : List(Dec), List(Dec), F64 -> List(Dec)
+	glide = |drawn, goal, ms| {
+		(low, high) = Scale.extent(goal)
+		# Within a two-hundredth of the range is there: under a pixel, this small.
+		close = Dec.max(high - low, 1.0) / 200.0
+		if drawn.len() == goal.len() {
+			List.map2(drawn, goal, |from, to| Ease.toward(from, to, ms, close))
+		} else {
+			goal
+		}
+	}
+
+	<style>
+		.sparkline {
+			display: block;
+			width: 100%;
+			height: auto;
+			overflow: visible;
+		}
+
+		.line {
+			fill: none;
+			stroke: var(--chart-color, currentColor);
+			stroke-width: calc(var(--chart-line-width, 2.5) * 0.6);
+			stroke-linejoin: round;
+			stroke-linecap: round;
+			filter: var(--chart-glow, none);
+		}
+
+		.area {
+			fill: var(--chart-color, currentColor);
+			opacity: var(--chart-area, 0.12);
+		}
+
+		circle {
+			fill: var(--chart-active, currentColor);
+		}
+	</style>
+}
+
+## The line's edges in the SVG's units (120 by 32), leaving room for the dot.
+left : Dec
+left = 2.0
+
+right : Dec
+right = 116.0
+
+top : Dec
+top = 3.0
+
+bottom : Dec
+bottom = 29.0
