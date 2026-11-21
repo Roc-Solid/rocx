@@ -404,6 +404,137 @@ test("an open stream holds up nothing else: many sleep at once, and pages are an
 	assert.deepEqual(new Set(sent), new Set(["data: 1\n\ndata: 2\n\ndata: 3\n\nevent: end\ndata: \n\n"]));
 });
 
+// ---- Calls that wait hold no thread (D-027): each call into Roc is a coroutine on one of a few
+// threads of Roc's own, and pauses while an effect waits. Two threads make the point. ----
+
+/** `ask(i)` for `count` requests, all of them at once, but connecting a hundred every few
+ * milliseconds: a listen queue holds 128 connections not yet accepted (macOS's `somaxconn`), and
+ * one past that is reset. */
+async function atOnce(count, ask) {
+	const asked = [];
+	for (let i = 0; i < count; i++) {
+		if (i > 0 && i % 100 === 0) await new Promise((resolve) => setTimeout(resolve, 5));
+		asked.push(ask(i));
+	}
+	return Promise.all(asked);
+}
+
+/** Starts the app on two Roc threads (`ROCX_ROC_THREADS=2`), with `flags`; and what Roc holds once
+ * it has settled (its background loops' own). */
+async function onTwoThreads(flags = []) {
+	const two = await start(flags, app, { ROCX_ROC_THREADS: "2" });
+	const allocations = async () => Number(await two.text("/__rocx/allocations"));
+	let settled = -1;
+	for (let previous = -2; settled !== previous; ) {
+		previous = settled;
+		await new Promise((resolve) => setTimeout(resolve, 200));
+		settled = await allocations();
+	}
+	return { ...two, allocations, settled };
+}
+
+test("many calls wait at once on two Roc threads: 2,000 requests that each wait 1 s are all answered in about 1 s (blocking a thread each, they took 2,000 threads)", { skip }, async () => {
+	const two = await onTwoThreads();
+	try {
+		const started = performance.now();
+		const statuses = await atOnce(2000, () => two.get("/wait?ms=1000").then((response) => response.status));
+		const took = performance.now() - started;
+		assert.deepEqual(new Set(statuses), new Set([200]));
+		assert.ok(took < 1800, `2,000 waits of 1 s took ${Math.round(took)} ms on two threads`);
+		assert.equal(await until(async () => (await two.allocations()) === two.settled), true, "and nothing is left held");
+	} finally {
+		await two.stop();
+	}
+	const refused = await start([], app, { ROCX_ROC_THREADS: "none" }).catch((error) => error);
+	assert.match(String(refused), /ROCX_ROC_THREADS needs a number above 0/, "a count that isn't one stops the server");
+});
+
+test("streams hold no thread: 2,000 open streams on two Roc threads, waiting, and a request is answered promptly meanwhile; they end when their clients go", { skip }, async () => {
+	const two = await onTwoThreads();
+	const gone = new AbortController();
+	try {
+		const streams = await atOnce(2000, () => two.get("/wait/stream?ms=30000", { headers: { accept: "text/event-stream" }, signal: gone.signal }));
+		const readers = streams.map((response) => response.body.pipeThrough(new TextDecoderStream()).getReader());
+		const first = await Promise.all(readers.map((reader) => reader.read().then((read) => read.value)));
+		assert.deepEqual(new Set(first), new Set(["data: open\n\n"]), "every stream is open, and waiting");
+		const started = performance.now();
+		assert.equal(await two.text("/"), "Hello from Roc, natively.");
+		assert.equal(await two.text("/wait?ms=50"), "waited");
+		const took = performance.now() - started;
+		assert.ok(took < 500, `a request and a wait of 50 ms took ${Math.round(took)} ms beside 2,000 streams`);
+		gone.abort();
+		assert.equal(await until(async () => (await two.allocations()) === two.settled, 10000), true, `the streams their clients left were released: ${await two.allocations()} allocations, ${two.settled} once started`);
+	} finally {
+		gone.abort();
+		await two.stop();
+	}
+});
+
+test("calls taking turns on two Roc threads keep their own state: waits, then crashes, refusals, pages, TCP and crashes that don't wait, interleaved, each answered as its own; nothing left held", { skip }, async () => {
+	const tcpServer = createServer((socket) => {
+		socket.setEncoding("utf8");
+		let buffered = "";
+		socket.on("data", (chunk) => {
+			buffered += chunk;
+			const end = buffered.indexOf("\n");
+			if (end >= 0) socket.write(`${buffered.slice(0, end).toUpperCase()}\nend`);
+		});
+	});
+	await new Promise((resolve) => tcpServer.listen(0, "127.0.0.1", resolve));
+	const port = tcpServer.address().port;
+	const two = await onTwoThreads(["--dev"]);
+	try {
+		const ms = () => 1 + Math.floor(Math.random() * 30);
+		const asks = Array.from({ length: 600 }, (_, id) => {
+			switch (id % 6) {
+				case 0:
+					return two.get(`/wait/crash?id=${id}&ms=${ms()}`).then(async (response) => [response.status, await response.text(), [500, `Roc crashed: crash ${id} after waiting`]]);
+				case 1:
+					return two.text(`/wait/page?id=${id}&ms=${ms()}`).then((html) => {
+						const holes = [/class="waited"><!--x-->([^<]*)</, /class="refused"><!--x-->[^<]*: 409: ([^<]*)</, /class="after"><!--x-->([^<]*)</].map((hole) => hole.exec(html)?.[1]);
+						return [200, holes.join(" | "), [200, `waited ${id} | refused ${id} | after ${id}`]];
+					});
+				case 2:
+					return two.get(`/wait/page?id=${id}&ms=${ms()}&crash=yes`).then(async (response) => [response.status, await response.text(), [500, `Roc crashed: crash ${id} as it rendered`]]);
+				case 3:
+					return two.get(`/wait/tcp?id=${id}&ms=${ms()}&port=${port}`, { method: "POST" }).then(async (response) => [response.status, await response.text(), [200, `${id} end`]]);
+				case 4:
+					return two.get(`/big?${id}`).then(async (response) => [response.status, await response.text(), [500, `Roc crashed: after allocating ${2000 + String(id).length} strings`]]);
+				default:
+					return two.get(`/overflow?${"x".repeat(1 + (id % 5))}`).then(async (response) => [response.status, (await response.text()).includes("Integer subtraction overflowed"), [500, true]]);
+			}
+		});
+		for (const [status, said, [expectedStatus, expected]] of await Promise.all(asks)) {
+			assert.equal(status, expectedStatus, String(said));
+			assert.equal(said, expected);
+		}
+		for (const id of [0, 6, 300, 594]) {
+			await logsEvent({ level: "error", msg: "rocx server: Roc crashed", target: new RegExp(`^/wait/crash\\?id=${id}&`), error: `crash ${id} after waiting` }, two);
+		}
+		assert.equal(await until(async () => (await two.allocations()) === two.settled), true, `every call let go of what it held: ${await two.allocations()} allocations, ${two.settled} once started`);
+	} finally {
+		await two.stop();
+		await new Promise((resolve) => tcpServer.close(resolve));
+	}
+});
+
+test("a call that overflows its stack (8 MiB) ends the process, which says so on stderr first", { skip }, async () => {
+	const deep = await start([], app, { ROCX_ROC_THREADS: "2" });
+	const ended = new Promise((resolve) => deep.child.once("exit", (code, signal) => resolve({ code, signal })));
+	await deep.get("/deep?n=100000000").catch(() => "gone");
+	const { signal } = await ended;
+	assert.ok(["SIGSEGV", "SIGBUS"].includes(signal), `ended by ${signal}`);
+	assert.match(deep.logged(), /a call into Roc overflowed its stack \(8 MiB\): the process ends/);
+	assert.equal(await (await get("/deep?n=1000")).text(), String(deep1000()), "a stack not so deep is fine");
+});
+
+/** What `/deep?n=1000` answers (`deep` in the app). */
+function deep1000() {
+	let below = 0;
+	for (let n = 1; n <= 1000; n++) below = below > 1000 ? below - 1000 : below + 7;
+	return below;
+}
+
 test("a body over 16 MiB is refused before Roc sees it", { skip }, async () => {
 	const response = await get("/echo", { method: "POST", body: "x".repeat((16 << 20) + 1) });
 	assert.equal(response.status, 413);

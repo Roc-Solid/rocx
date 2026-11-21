@@ -215,6 +215,39 @@ route! = |request, context| {
 				),
 			)
 
+		# ---- Calls that wait: each pauses, and holds no thread meanwhile (D-027) ----
+		# `Live.next!` with no topic to hear is a sleep: `ms` of quiet.
+		("GET", "/wait") => {
+			_ = Live.next!(number(request.query, "ms"))
+			text(200, "waited")
+		}
+		("GET", "/wait/crash") => {
+			_ = Live.next!(number(request.query, "ms"))
+			crash "crash ${param(request.query, "id")} after waiting"
+		}
+		# A stream that says it is open, then waits `ms` (or until its client goes) before it ends.
+		("GET", "/wait/stream") => {
+			ms = number(request.query, "ms")
+			Server.events(
+				Events.stream(
+					|{ send!, sleep! }| {
+						send!("open")?
+						sleep!(ms)
+						send!("done")?
+						Ok({})
+					},
+				),
+			)
+		}
+		(_, "/wait/page") => page(waiting!)
+		("GET", "/wait/refuse") => Endpoint.respond!(refusing_endpoint, request, {})
+		("POST", "/wait/tcp") => {
+			_ = Live.next!(number(request.query, "ms"))
+			answered(tcp_round!(U16.from_str(param(request.query, "port")) ?? 0, param(request.query, "id")))
+		}
+		# A stack `n` calls deep: a large `n` overflows it.
+		("GET", "/deep") => text(200, deep(number(request.query, "n")).to_str())
+
 		# ---- Postgres ----
 		("POST", "/reset") =>
 			match Db.script!("truncate notes, job_log, flaky restart identity; delete from rocx_jobs; delete from rocx_outbox") {
@@ -1814,6 +1847,70 @@ joining! = |{}| {
 }
 
 ## A page of components, answered 200 unless it says otherwise (`<HttpStatusCode>`).
+## A page that waits as it renders: in a memo, in a read its <Errored> catches (the endpoint refuses,
+## after waiting too), and in a hole after them, which crashes after its wait with `crash=yes`. Each
+## says which request it is (`id`), so a test can tell them apart when many render at once.
+waiting! : {} => Html
+waiting! = |{}| {
+	at = Router.location!({})
+	id = param(at.query, "id")
+	ms = number(at.query, "ms")
+	waited! = Solid.create_memo!(
+		|| {
+			_ = Live.next!(ms)
+			"waited ${id}"
+		},
+	)
+	Html.element(
+		"html",
+		[],
+		[
+			Html.element(
+				"body",
+				[],
+				[
+					Html.element("p", [Html.attr("class", "waited")], [Html.text_of(|| waited!())]),
+					Errored.view!({
+						fallback: |problem, _| Html.element("p", [Html.attr("class", "refused")], [Html.text_of(|| problem)]),
+						children: [Html.text_of(|| Endpoint.get!(Endpoint.with_query(refusing_endpoint, at.query)))],
+					}),
+					Html.element(
+						"p",
+						[Html.attr("class", "after")],
+						[
+							Html.text_of(
+								|| {
+									_ = Live.next!(ms)
+									if (param(at.query, "crash") == "yes") crash "crash ${id} as it rendered" else "after ${id}"
+								},
+							),
+						],
+					),
+				],
+			),
+		],
+	)
+}
+
+## Refuses (409) after waiting `ms`, saying which request it was (`id`).
+refusing_endpoint : Endpoint({}, {}, Str)
+refusing_endpoint = Endpoint.local(
+	"GET",
+	"/wait/refuse",
+	|request, {}, {}| {
+		_ = Live.next!(number(request.query, "ms"))
+		Err(Conflict("refused ${param(request.query, "id")}"))
+	},
+)
+
+## `n` calls deep, each doing something with what the one below it gave back (so it can't be a loop).
+deep : U64 -> U64
+deep = |n|
+	if (n == 0) 0 else {
+		below = deep(n - 1)
+		if (below > 1000) below - 1000 else below + 7
+	}
+
 page : ({} => Html) -> Server.Response
 page = |view!| { status: 200, headers: [], body: Page(view!) }
 
