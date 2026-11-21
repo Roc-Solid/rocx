@@ -134,9 +134,8 @@ view! = |_|
 				started with, and the same answer the browser would get. Each URL is asked once a render, and its
 				answer is noted whatever its status, unless it was read inside a <code>{"<NoHydration>"}</code>, whose
 				reads the browser never makes. An answer that isn't 200 fails the read, and the nearest
-				<code>{"<Errored>"}</code> shows its status and text; a redirect makes the page that redirect. A
-				server function (deprecated) is answered the same way, as <code>POST /rocx/call/…</code>
-				(<code>Host.call!</code>). The site's tests compare what the host renders with what the browser's
+				<code>{"<Errored>"}</code> shows its status and text; a redirect makes the page that redirect. The
+				site's tests compare what the host renders with what the browser's
 				runtime renders, byte for byte, on every page with islands.
 			</p>
 

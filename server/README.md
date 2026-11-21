@@ -540,16 +540,6 @@ POST, another site's URL) is a handler's, sent from the browser: the render fail
 (`Router.location!`), and `Host.status!` the status its page is to be answered with
 (`<HttpStatusCode>`, for pages of components).
 
-Server functions (`server!`) are deprecated (D-023), and still work. Each is a route the app's
-`respond!` answers, `POST /rocx/call/<name>` (`rocx build` writes `Generated/ServerFunctions`, and
-its `Routes` gives it the calls, 405 for another method), behind the app's middleware.
-`Server.serve!` reads the input, tells the host which function it is serving and the context its
-middleware handed on, as JSON (`Host.serve!`), and answers with the function's answer: its body runs
-(`Server.local`, seeing `Host.serving!`), and reads the context with `Server.context!({})`. Called
-while the host renders, a function is that request, made in-process the same way (`Host.call!`,
-`roc_call`), with its input as JSON; a 200 is the call's answer, noted for the page, and any other
-answer fails the call.
-
 The modules components are written with are the browser's platform's (`web/platform`), copied into
 this one by the build (`server/build.mjs`), so the same components compile on both. An endpoint's
 handler runs only here, so it may use `Db`, `Job` and the rest: in the browser's copy, `Api` is each
@@ -679,7 +669,7 @@ bytes each way (every byte there and back, a 16 MiB body, bytes made in Roc), `F
 server the test runs: whole, a range, a 304, HEAD, a redirect, 40 MiB with nothing held, errors
 not passed on, a body cut short, no answer, no range or cache question the request record doesn't
 pass on), streams, pages of components (a whole document with its answers and start.js, `<Loading>`,
-`<Errored>`, a server function behind middleware, `<HttpStatusCode>`, HEAD, crashes, effects that
+`<Errored>`, an endpoint read behind middleware, `<HttpStatusCode>`, HEAD, crashes, effects that
 don't run, holes in `<title>` and `<textarea>`, a call redirected by its middleware, no leaks),
 endpoint reads (answered in-process as a page renders, with its query, cookies and headers, noted
 once and none from a `<NoHydration>`; one its middleware redirects; a handler reading the page's
@@ -702,7 +692,7 @@ that fails), `Env` (from a request and a job), AES-GCM and packages/crypto again
 bytes, packages/s3 (objects whole and in part, missing ones, a multipart upload of three parts and
 an aborted one, presigned URLs Node's fetch uses, `serve!` with a range (and one the app dropped),
 an ETag and HEAD, keys S3
-refuses, a bucket or S3 that isn't there, a URL that can't be read), the `Set-Cookie` lines cookies make, server functions
+refuses, a bucket or S3 that isn't there, a URL that can't be read), the `Set-Cookie` lines cookies make, endpoints
 that take and answer `F64`s (and refuse an infinity) and a tag union in a `Try`'s place, what the
 docs' platform pages show (`server/test/app/Samples.roc`, which the site's build picks its samples
 from: settings, crypto, cookies, bytes, other servers, forwards and storage), and a stop in the

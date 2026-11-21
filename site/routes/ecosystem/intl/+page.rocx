@@ -150,9 +150,10 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				The app's locales, its words and the locale of a request go in a module of its own. The locale is
-				a <a href={"${Paths.calls}"}>server function</a>, so the server renders the page in it and the
-				browser, which reads the answer from the page, hydrates in the same one.
+				The app's locales and its words go in a module of its own. The locale of a request is a GET
+				endpoint's answer, which the layout <a href={"${Paths.calls}"}>reads</a> as the page renders, so the
+				server renders the page in it and the browser, which reads the answer from the page, hydrates in
+				the same one.
 			</p>
 			<Code title={Sources.intl_i18n.file} source={Sources.intl_i18n.rocx} />
 			<details>

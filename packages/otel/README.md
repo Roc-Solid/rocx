@@ -31,7 +31,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 OTEL_SERVICE_NAME=shop ./serve
 name it: `http.server.request.duration`, a histogram in seconds, by
 - `http.request.method` (`_OTHER` for a method HTTP doesn't define),
 - `http.route`, the route's pattern (`/posts/[id]`, never `/posts/42`, so a post isn't a series of
-  its own; `/rocx/call/<name>` for a server function; none when nothing answered), from
+  its own; none when nothing answered), from
   `Server.Request`'s `route`,
 - `http.response.status_code`.
 

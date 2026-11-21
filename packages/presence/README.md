@@ -56,9 +56,8 @@ and import it from there (`import ../PresenceServer` in a route file).
 
 ## Wiring a room, today
 
-A room is an endpoint that streams its events, two server functions, and a component. Server
-functions are deprecated (D-023): `beat!` and `typing!` would each better be a `post!` in a
-`+server.roc` of its own, sent from the handler with `Endpoint.send!`.
+A room is an endpoint that streams its events, two that take a page's posts (its beat, and who is
+typing), and a component, which sends those from its handlers with `Endpoint.send!`.
 
 ```roc
 # routes/presence/[room]/+server.roc: this tab is in the room, as the member the middleware says
@@ -74,9 +73,35 @@ events! = |{ params, context, .. }|
 ```
 
 ```roc
+# routes/presence/[room]/beat/+server.roc: this tab is still here (and, if the room had swept it
+# out, here again)
+import pf.Server
+import pf.Endpoint
+import ../../../../PresenceServer
+
+post! : { request : Server.Request, params : { room : Str }, context : { member : Str }, body : { tab : Str } } => Try({}, Endpoint.Refusal)
+post! = |{ params, context, body, .. }| {
+    _ = PresenceServer.join!(params.room, { key: context.member, tab: body.tab, meta: { name: context.member, image: "", color: "", status: "" } })
+    Ok({})
+}
+```
+
+```roc
+# routes/presence/[room]/typing/+server.roc: this page's member is typing, or stopped
+import pf.Server
+import pf.Endpoint
+import ../../../../PresenceServer
+
+post! : { request : Server.Request, params : { room : Str }, context : { member : Str }, body : { typing : Bool } } => Try({}, Endpoint.Refusal)
+post! = |{ params, context, body, .. }| {
+    PresenceServer.typing!(params.room, context.member, body.typing)
+    Ok({})
+}
+```
+
+```roc
 # routes/rooms/[room]/+page.rocx
 import pf.Html
-import pf.Server
 import pf.Call
 import pf.Endpoint
 import pf.Solid exposing [set_interval!, on_settled!]
@@ -87,31 +112,27 @@ import presence.Presence
 import presence.Room
 import presence.Wire
 import ../../../Generated/Api
-import ../../../PresenceServer
 
-## A page's beat: this tab is still here (and, if the room had swept it out, here again).
-beat! : { room : Str, tab : Str } => {}
-beat! = server!(|_, { room, tab }| {
-    context : { member : Str }
-    context = Server.context!({})
-    _ = PresenceServer.join!(room, { key: context.member, tab, meta: { name: context.member, image: "", color: "", status: "" } })
+## A page's beat, from its timer: this tab is still here.
+beat! : Str, Str => {}
+beat! = |room, tab| {
+    _sent = Endpoint.send!(Api.post_presence_room_beat({ room: room }), { tab: tab }, Call.fetch!)
     {}
-})
+}
 
-## This page's member is typing, or stopped.
-typing! : { room : Str, typing : Bool } => {}
-typing! = server!(|_, { room, typing }| {
-    context : { member : Str }
-    context = Server.context!({})
-    PresenceServer.typing!(room, context.member, typing)
-})
+## This page's member is typing, or stopped, from a handler.
+typing! : Str, Bool => {}
+typing! = |room, typing| {
+    _sent = Endpoint.send!(Api.post_presence_room_typing({ room: room }), { typing: typing }, Call.fetch!)
+    {}
+}
 
 view! = |{ params }| {
     room = params.room
     here = Presence.create_room!(|| {})
     heard! : Wire.Event(Wire.Meta) => {}
     heard! = here.heard!
-    typist = Presence.create_typist!(3000, |said| typing!({ room, typing: said == Started }))
+    typist = Presence.create_typist!(3000, |said| typing!(room, said == Started))
     on_settled!(|| Endpoint.listen!(Api.events_presence_room({ room: room }), Call.listen!, |event|
         match event {
             Event(said) => heard!(said)
@@ -119,7 +140,7 @@ view! = |{ params }| {
             Failed(_) => (here.lost!)()
         }))
     on_settled!(|| {
-        _ = set_interval!(Room.beat_every(Room.defaults), || beat!({ room, tab: (here.me!)().tab }))
+        _ = set_interval!(Room.beat_every(Room.defaults), || beat!(room, (here.me!)().tab))
         {}
     })
     <section>
@@ -135,8 +156,8 @@ view! = |{ params }| {
 `heard!` is annotated because the browser's copy of an endpoint is only its URL: the events' type is
 what the page says it is. (`{ room: room }`, not `{ room }`, which on its own is a block.)
 
-Who a member is (their key, their name) is always the server's say: the endpoint and the server
-functions read it from the middleware's context. The page's tab id comes from the stream
+Who a member is (their key, their name) is always the server's say: the endpoints read it from the
+middleware's context. The page's tab id comes from the stream
 (`Welcome`), and only names a tab of the member the server says.
 
 How it holds together: the room is an actor (one message at a time, so two tabs joining at once
@@ -146,9 +167,9 @@ topic as it makes it; each page's stream listens, sends a snapshot, then the cha
 whose beats stop is swept out 75 s after the last (a browser may hold a hidden tab's timers back to
 once a minute).
 
-**With channels** (D-020, coming), the endpoint and the server functions become one channel, and
-nothing in the components or the stores changes: `Channel.subscribe!(lobby, { room }, |event| …)`
-feeds `heard!`, `Channel.send!` replaces the server functions. PROPOSALS.md lists what presence asks
+**With channels** (D-020, coming), the three endpoints become one channel, and nothing in the
+components or the stores changes: `Channel.subscribe!(lobby, { room }, |event| …)` feeds `heard!`,
+and `Channel.send!` replaces the posts. PROPOSALS.md lists what presence asks
 of channels.
 
 ## `<AvatarStack>`

@@ -126,7 +126,7 @@ view! = |_|
 				<code>--static packages/push/static</code>. Then the service worker is <code>/push-sw.js</code>, and
 				it covers the whole site.
 			</p>
-			<p><strong>5. The page</strong>: the button, and a server function that notifies everyone.</p>
+			<p><strong>5. The page</strong>: the button, and a handler that asks an endpoint to notify everyone.</p>
 			<Code title={Sources.push_example_page.file} source={Sources.push_example_page.rocx} />
 			<p>
 				<strong>6. Three endpoints</strong>, where <code>{"<PushButton api=\"/push\">"}</code> looks for them.
@@ -246,7 +246,7 @@ view! = |_|
 
 			<Heading id="sending">Sending</Heading>
 			<p>
-				On the server, a job, a server function or an endpoint calls one of these. Each checks the
+				On the server, a job or an endpoint calls one of these. Each checks the
 				notification and its options, then queues a <code>push.deliver</code> job for each subscription, in
 				the caller's transaction when there is one, and answers how many.
 			</p>

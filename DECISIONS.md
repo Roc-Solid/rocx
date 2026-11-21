@@ -40,7 +40,7 @@ Server.body_text : Response -> Str                     # an answer's text; a Byt
 
 The host passes the bytes it read and sends a `Bytes` answer as it is; a 16 MiB body reaches Roc
 whole. `Endpoint` reads JSON and forms through `text_of`, so endpoints that take JSON didn't change.
-One exception stays text: `Server.request!({})`, the request a page or a server function reads,
+One exception stays text: `Server.request!({})`, the request a page or an endpoint reads,
 comes from the host as `Str` on both platforms, so its body has U+FFFD where it isn't UTF-8. An
 endpoint is given the request `respond!` got, bytes intact.
 
@@ -654,7 +654,7 @@ boundary around the whole document can't work), so nothing caught it, and the pa
 - Native rendering only: `renderToString` (the Node runtime) has no answer headers to read a
   `location` from, and renders the failure.
 
-**Reversible:** yes.
+**Reversible:** yes. Since D-023 a page reads endpoints instead, and the same holds for them.
 
 ## D-021 Actors: registered kinds, mailboxes, typed tells and timers, no locks
 
@@ -768,7 +768,7 @@ shared, so the locks guarded nothing.
 
 **Reversible:** yes; the API change is a type at each nullable column.
 
-## D-023 Endpoints are how an app talks to its server; server functions are deprecated
+## D-023 Endpoints are how an app talks to its server; server functions are gone
 
 **Context.** An app had two ways to reach its server. A server function (`name! = server!(…)`) was
 answered at `POST /rocx/call/<Module>.<name>`, in-process while the server rendered, and recorded
@@ -782,7 +782,7 @@ And the server functions' URLs were rocx's, not the app's: unchosen, and absent 
 1. Keep both, and document when to use which.
 2. Give server functions URLs the app chooses: still a second way to say what an endpoint says.
 3. Let a component read a GET endpoint where it renders, as it called a server function, and
-   deprecate server functions (SvelteKit's `load` and SolidStart's `query` read data the same way:
+   remove server functions (SvelteKit's `load` and SolidStart's `query` read data the same way:
    one definition, read on the server first, its answer serialized for the browser).
 
 **Choice.** 3.
@@ -812,22 +812,31 @@ board! = create_memo!(|| Endpoint.get!(Endpoint.with_query(Api.get_board({}), Ro
   path, the page answering a browser's GET and `get!` the rest. A layout, which many paths share,
   reads an endpoint at a path of its own (the docs site's footer reads `GET /api/facts`).
 - Middleware context is the handler's `context`, not `Server.context!`.
-- `server!` still works, and `rocx build` warns at each one. Once no app uses them, server
-  functions go, with `/rocx/call/`, `Generated/ServerFunctions`, `Server.local`/`remote`/`serve!`/
-  `context!` and the host's `call!`/`record!`/`serve!`/`serving!`/`context!`.
+- Server functions are gone (removed the same day, once the apps that used them had moved): with
+  them `/rocx/call/`, `Generated/ServerFunctions`, `Server.local`/`remote`/`serve!`/`context!`,
+  `Call.server!` and the hosts' `call!`/`record!`/`serve!`/`serving!`/`context!`. `server!(…)` is a
+  build error at its line that says what to write instead.
 - No new host effect: a read is the platform's `Call.fetch!`. On the server, `Host.fetch!` answers a
   GET of a path in-process while a page renders, and fails as before otherwise (a POST, another
   site's URL, no page being rendered). In the browser and in Node's `renderToString`, a fetch whose
   key the page's answers have is answered from them.
 - The static export needs nothing new: a prerendered page carries the GETs it read.
+- Moving an app off server functions, two things met it:
+  - **An import only a server function's body used.** `rocx build` dropped such an import from
+    the browser's copy along with the body. Once the body is an endpoint, the page's import of a
+    module (for a type, say) stays in the browser's copy, and if that module imports what only the
+    server has (`pf.Db`), the browser's build fails. The import belongs in the route's
+    `+server.roc`. (A `rocx build` warning for an import the browser's copy can't compile is still
+    to come.)
+  - **The shape of what tests read.** A page's data and its layout's are two answers now, the
+    page's own GET and the layout's endpoint: a test that read them as one JSON reads two.
 
 **Why.** One definition of a page's data, at a URL the app chose, typed by the same `Api`, in the
 OpenAPI document, behind the same middleware for the page's render, the browser and anyone else.
 The render, hydration and later reads all meet the same handler.
 
 **Changed from SolidStart.** No `query` wrapper or cache key: the endpoint's URL is the key, and a
-memo is the cache. **Reversible:** reads, yes; removing server functions, once done, only by
-bringing them back.
+memo is the cache. **Reversible:** reads, yes; server functions only by bringing them back.
 
 ## D-024 Http as fetch
 

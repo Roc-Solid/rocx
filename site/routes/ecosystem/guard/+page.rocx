@@ -212,7 +212,7 @@ view! = |_|
 
 			<h3>In a page</h3>
 			<p>
-				The server decides the flags once for the visitor, in a server function, and a
+				The server decides the flags once for the visitor, in a GET endpoint the layout reads, and a
 				<code>{"<Flagged>"}</code> shows its children only when its flag is on. The server renders the
 				page with the flags and puts them in it, so the browser hydrates with the same values, without
 				asking again.

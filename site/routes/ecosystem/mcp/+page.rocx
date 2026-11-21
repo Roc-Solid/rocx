@@ -78,7 +78,7 @@ view! = |_|
 			The protocol is plain Roc, on no platform. Its HTTP side, <code>McpHttp</code>, is a module on the
 			server platform, in the package's <code>server/</code> folder. It serves the MCP server at a path,
 			behind the middleware that decides who may ask, and makes tools from what the app already has: an
-			endpoint, a server function, a handler of its own.
+			endpoint, a function of its own, a handler of its own.
 		</p>
 		<Code title="A sketch (this site serves no MCP): main.roc, and the server" source={Sources.mcp_http_sketch.rocx} />
 		<TableWrap>
@@ -88,7 +88,7 @@ view! = |_|
 					<tr><td><code>middleware(path, server)</code></td><td>the MCP server as a middleware: it answers <code>path</code>, and hands every other request on</td></tr>
 					<tr><td><code>respond!(server, request, context)</code></td><td>the answer to a request to the MCP route, for a route file's <code>respond!</code></td></tr>
 					<tr><td><code>endpoint(Api.x({"{}"}), about, McpHttp.openapi({"{}"}))</code></td><td>an endpoint as a tool: its body is the arguments, its answer the tool's, a refusal goes back to the model</td></tr>
-					<tr><td><code>function(Module.name!, about, McpHttp.openapi({"{}"}))</code></td><td>a server function as a tool, called as a page calls it on the server: through its route, behind its middleware</td></tr>
+					<tr><td><code>function(Module.name!, about, McpHttp.openapi({"{}"}))</code></td><td>a function of the app's own as a tool, run in the MCP request, behind the MCP route's middleware</td></tr>
 					<tr><td><code>tool(about, handler!, McpHttp.openapi({"{}"}))</code></td><td>a handler of the app's own, its schemas from its types</td></tr>
 					<tr><td><code>Caller(c)</code></td><td>what a handler is given: <code>{"{ request, context, progress! }"}</code>; <code>context</code> is what the middleware handed on, who is asking</td></tr>
 					<tr><td><code>About</code></td><td><code>{"{ name, description }"}</code>, and <code>title</code> and <code>tags</code> if wanted</td></tr>
@@ -208,7 +208,7 @@ view! = |_|
 				The protocol, both eras: 150 <code>expect</code>s. And over HTTP, in an app built with
 				<code>rocx build</code> on the server platform, with the official clients: the MCP Inspector's
 				command line (2.16.0, which speaks 2025-11-25), and the TypeScript SDK's client (2.4.0) on 2026-07-28.
-				Tools from an endpoint, a server function and handlers, refusals, resources, a template, a prompt,
+				Tools from an endpoint, a function and handlers, refusals, resources, a template, a prompt,
 				and a tool's progress, streamed as events.
 			</li>
 		</ul>

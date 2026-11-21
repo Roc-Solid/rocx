@@ -44,8 +44,7 @@ view! = |_|
 							<code>main.roc</code> gives what only it can say (<code>App.program</code>, with the jobs the app
 							defines and its <code>migrations/*.sql</code>). Route files that are components
 							(<code>import pf.Html</code>, <code>view!</code>) also get <code>Generated/Root.roc</code>, the page
-							at where it is in its layouts. A server function (<code>server!</code>, deprecated) is
-							answered by <code>Generated/ServerFunctions.roc</code>, and the build warns at each one.
+							at where it is in its layouts.
 							<code>--client</code> also writes the browser's copy of the app, where an endpoint in
 							<code>Api</code> is only its method and URL, a route file has no <code>middleware</code>, and
 							the imports only those used are gone; for components,
@@ -112,8 +111,7 @@ view! = |_|
 				It adds what the compiler can't know about the platform. A report that the builtin <code>Try</code> has
 				no <code>encoder_for</code> or <code>parser_for</code>, met when an endpoint takes or answers one,
 				gets a hint after it: a <code>Try</code> can't go as JSON on this Roc, and a tag union,
-				<code>{"[Ok(a), Err(e)]"}</code>, can. (For a deprecated server function with an annotation,
-				<code>rocx build</code> says so first, at its line.)
+				<code>{"[Ok(a), Err(e)]"}</code>, can.
 			</p>
 
 			<Heading id="stories">Stories</Heading>

@@ -25,8 +25,8 @@ Delta)`, `Typing`, `Moved` and `Away`. The ask list is ordered by how much it ma
 
 **Problem.** Typing pings, cursor moves and heartbeats go from a page to the room. Without
 WebSockets, today that is a POST per message (`beat!`, `typing!`, a `moved!` 20 times a second).
-They are server functions in today's glue; those are deprecated (D-023), so each is better a
-`post!` endpoint, sent with `Endpoint.send!`. Either way each is named and checked separately from
+They are `post!` endpoints in today's glue, sent with `Endpoint.send!` (server functions are gone,
+D-023). Each is named and checked separately from
 the channel the room's events come on: two permission checks to keep in step, and the room's name
 trusted from the page twice.
 
@@ -212,8 +212,8 @@ web/platform, the server's on server/platform), so a package can't `import pf.Li
    `import ../Generated/presence/PresenceServer`). The browser's copy (`--client`) leaves them out.
    A route file may import one for its server parts (its endpoints, its middleware): the browser's
    copy already drops imports that only stripped code used (checked in the scratch app: `import
-   ../PresenceServer` in `+page.rocx`, used only inside a server function, `server!(…)`, now
-   deprecated, is gone from the browser's copy, and the browser's half type-checks). An import that
+   ../PresenceServer` in `+page.rocx`, used only inside a server function (since removed, D-023),
+   was gone from the browser's copy, and the browser's half type-checks). An import that
    the browser's copy still uses is an error, said by rocx build: "presence.PresenceServer is the
    server's: use it in an endpoint or middleware".
 3. Make the platforms one package the compiler can name from both halves: a compiler change, much
@@ -378,5 +378,5 @@ topic in its turn; a page's endpoint `events!` is `PresenceServer.stream(room, {
 (rocx build, both halves type-checked, the native server and the wasm built, two pages in headless
 Chromium): each member saw the other, a typing ping arrived and ran out, a closed tab's `Left` came
 after the grace, and (over curl) a tab that beat once was swept out after the timeout. Server
-functions have been deprecated since (D-023): a `post!` endpoint for each, sent with
-`Endpoint.send!`, does the same.
+functions are gone since (D-023): a `post!` endpoint for each, sent with `Endpoint.send!`, does the
+same (the README's glue).

@@ -27,16 +27,14 @@ same components natively; this one hydrates them.
   `on_cleanup!`, `on_settled!`, `refresh!`, `use_context!`, and the browser's timers, `set_interval!` and
   `set_timeout!`, each owned by the run that started it), `Audio` (`play!`, `play_with!`: a sound
   file, from a handler), `Browser` (`call!`: the page's own JavaScript function, from a handler),
-  `Show`, `For`, `Loading`, `Errored`, `Context`, `Call` (`fetch!`, `listen!`; `server!`,
-  deprecated), `Router` (`location!`: the page's path and query; `use_submission!`: the latest
+  `Show`, `For`, `Loading`, `Errored`, `Context`, `Call` (`fetch!`, `listen!`), `Router` (`location!`: the page's path and query; `use_submission!`: the latest
   submission of a form to an endpoint), `Submission` (its `pending!`, `input!`, `field!`,
   `result!`, `error!`, `clear!`), `Title` (`<Title>`: the document's title, from anywhere in the
   page) and `HttpStatusCode` (the status a page is answered with); and HTTP's: `Server` (a request,
   its body the bytes as they came, which `text_of` reads as text, and its answer: text, bytes, a
   page, events, or a body the server fetches from elsewhere and sends on, `forward`, with what of
   the request it passes on, `passed_on`; cookies and redirects; the flash a plain form's post comes
-  back with, `flash!`, `flash_back`, `clear_flash`;
-  and the deprecated server functions' `local`, `remote`, `serve!` and `context!`), `Endpoint` (a
+  back with, `flash!`, `flash_back`, `clear_flash`), `Endpoint` (a
   GET endpoint read as a plain value, `get!` or `read!`, with a query, `with_query`; any endpoint
   sent from a handler, `send!`, or listened to, `listen!`), `Events`, `Middleware` and `OpenApi`. The server platform's build copies them into `server/platform`, so the same code
   compiles on both.
@@ -144,13 +142,12 @@ same components natively; this one hydrates them.
   `<title>` as the fallback, holes and all. The cost: with a `<Title>`, a page's `<head>` has two
   `<title>`s, the first the one browsers and crawlers use.
 - **JSON.** What crosses as JSON (an endpoint's body, result and events, `Browser.call!`'s
-  argument; a deprecated server function's input and answer) is written with `Json.to_str_try`, so
+  argument) is written with `Json.to_str_try`, so
   an `F64` goes as a number; one JSON can't write (NaN, an infinity) fails the call (an endpoint's
   result is a 500 that says so). Their where clauses read `Json.Encodable(e)`. The builtin `Try`
   has no `encoder_for` or `parser_for` on this Roc, and nothing outside the builtins can give it
   one: `rocx check` adds a hint under the compiler's report, naming the tag union to write instead
-  (`[Ok(a), Err(e)]`, read by a `match` as a `Try` is), and `rocx build` refuses a server function
-  whose annotation takes or answers one, at its line.
+  (`[Ok(a), Err(e)]`, read by a `match` as a `Try` is).
 - **On a server**, nothing waits: every hole runs once, no effect or timer runs and no cleanup is
   kept, an endpoint's read (noted under `GET <url>`) is answered from the answers given
   (`renderToString({ answers })`, a page's answers script; one not there fails with 599), and the HTML

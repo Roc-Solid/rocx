@@ -80,8 +80,8 @@ view! = |_|
 			<p>
 				The page listens to that endpoint (<a href={"${Paths.calls}#events"}><code>Endpoint.listen!</code></a>)
 				and hands each event to <code>Presence.create_room!</code>, which the components read. It beats every 15
-				seconds with a server function that calls <code>PresenceServer.join!</code>, and says it is typing with
-				another, <code>PresenceServer.typing!</code>. The package's README has the whole page; this site can't
+				seconds with a POST to an endpoint that calls <code>PresenceServer.join!</code>, and says it is typing
+				with another, <code>PresenceServer.typing!</code>. The package's README has the whole page; this site can't
 				run it, having no server.
 			</p>
 			<Callout kind="note" title="Copied in by hand, for now">
@@ -275,7 +275,7 @@ view! = |_|
 			<p>Waits on a proposal (the package's PROPOSALS.md has each of these, and a few more):</p>
 			<ul>
 				<li><code>rocx build</code> copying a package's <code>server/</code> modules into the server's half, so no copy by hand;</li>
-				<li>channels: one stream a tab for every room on a page, and messages from the page without a server function each;</li>
+				<li>channels: one stream a tab for every room on a page, and messages from the page without an endpoint each;</li>
 				<li>sending your own cursor: a handler given where the pointer is (<code>on:pointermove.point</code>);</li>
 				<li>a clock in the browser, and knowing when a tab is hidden, to show it as away;</li>
 				<li>the app's own metadata on the wire, instead of <code>Wire.Meta</code>, once the compiler can carry it.</li>

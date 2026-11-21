@@ -19,8 +19,8 @@ Trace := [].{
 	<story name="With code">
 		<Trace>
 			<li>
-				<p><strong>Names it</strong> after its module and definition:</p>
-				<Code source={"echo! = |message| Server.remote(\"Demos/Echo.echo\", message)"} numbers={Bool.False} />
+				<p><strong>Names it</strong> after its method and path:</p>
+				<Code source={"post_api_shout = |_params| Endpoint.remote(\"POST\", \"/api/shout\")"} numbers={Bool.False} />
 			</li>
 			<li><p><strong>Routes it</strong>, past the app's middleware.</p></li>
 		</Trace>

@@ -340,12 +340,10 @@ typed at both ends, which anything else that speaks HTTP may ask too.
   parser works with any format: the platform's `OpenApi` is a format that reads nothing and writes
   the schema of each shape it's asked to read. A tag union's tags are whichever names in the app's
   code the union turns out to have.
-- **`server!`, deprecated.** Server functions (`echo! = server!(|request, message| …)`, called at
-  `POST /rocx/call/<Module>.<name>`, answered by `Generated/ServerFunctions.roc`, their middleware's
-  context read with `Server.context!({})`) still work, and `rocx build` warns at each one; they will
-  be removed. To move one, put its body in a `get!` in a route's `+server.roc`, read its input from
-  the path's params or the query and what its middleware handed on from the handler's `context`, and
-  call `Endpoint.get!(Api.get_…(params))` where it was called (DECISIONS.md, D-023).
+- **No server functions.** `server!` is gone (DECISIONS.md, D-023), and `rocx build` refuses it at
+  its line. What one did is a `get!` in a route's `+server.roc`, its input the path's params or the
+  query and its middleware's context the handler's `context`, read with
+  `Endpoint.get!(Api.get_…(params))` where it was called.
 
 ## Safety
 
@@ -363,15 +361,14 @@ change another site's page sends (`Middleware.same_origin`).
 ```sh
 rocx build <dir>…        # each .rocx under the directories becomes the .roc beside it;
                          # an app's routes/ become Generated/Routes.roc, Paths.roc, Api.roc and
-                         # App.roc (its program), and, for component route files, Root.roc;
-                         # server functions (deprecated, each warned of) answered in ServerFunctions.roc
+                         # App.roc (its program), and, for component route files, Root.roc
   --client <out>         # and the browser's copy of the app: an endpoint only its method and URL, a
                          # route file without its middleware, the imports only they used gone;
                          # for component route files, its main.roc and static/rocx/
   --dev                  # and the stories (`<story>`): their catalog at /__rocx/stories
 rocx check -- <command>  # run a command, its reports pointed into .rocx files
 rocx lint <dir>…         # refuse Html.source_text in hand-written .roc files
-rocx routes <dir>        # list an app's routes (and any server functions): method, path, file, middleware
+rocx routes <dir>        # list an app's routes: method, path, file, middleware
 rocx fmt <path>…         # format the Roc in .rocx files and hand-written .roc files with roc fmt
   --check                # only say which files aren't formatted
 ```

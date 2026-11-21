@@ -82,7 +82,7 @@ view! = |_|
 			<Feature title="The app, over HTTP, from Node">
 				<p>
 					<code>node:test</code> builds the app as a deploy does, starts its server on a port of its own,
-					and asks it as a browser would: pages, forms, server functions, events, the mail it sent.
+					and asks it as a browser would: pages, forms, endpoints, events, the mail it sent.
 				</p>
 			</Feature>
 			<Feature title="Its database and its jobs">
@@ -185,7 +185,7 @@ view! = |_|
 			<code>post</code> sends a form as a browser does without the runtime: the endpoint answers with a redirect
 			back to the page, and a flash that holds its result. A test sees the redirect, and reads the flash.
 			<code>submit</code> sends the form as the runtime does, and gets the endpoint's answer.
-			<code>call</code> calls a server function by its name, as <code>rocx routes</code> lists it, and
+			<code>read</code> reads a GET endpoint as a page reads it, and
 			<code>events</code> reads an endpoint's events as they come.
 		</p>
 		<Code title={Sources.testing_node_form.file} source={Sources.testing_node_form.rocx} numbers={Bool.False} />
@@ -282,7 +282,7 @@ view! = |_|
 			<li>outbound requests (<code>Http</code>, and <code>S3</code> from packages/s3 through it) answered by stubs, so a test makes no network calls;</li>
 			<li>jobs and crons run by a request, with no SQL (today <code>settleJobs</code> waits on the database);</li>
 			<li>emptying the dev mailbox between tests (today <code>waitForMail</code> skips the messages already there);</li>
-			<li>endpoints, pages and server functions tested in Roc, answered inside the server, and a component with signals rendered in a Roc test;</li>
+			<li>endpoints and pages tested in Roc, answered inside the server, and a component with signals rendered in a Roc test;</li>
 			<li>helpers in this package that run on the server, until a package can hold server-only modules.</li>
 		</ul>
 		<p>Limits, for now:</p>

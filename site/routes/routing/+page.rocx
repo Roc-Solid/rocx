@@ -156,7 +156,7 @@ view! = |_|
 				answers. A schema is the handler's type, as the compiler has it, so one nobody wrote down is there
 				too: this site's <code>{"GET /api/shout/{word}"}</code> has no annotation, and its document says it
 				answers <code>{"{ word : Str, shouted : Str, bytes : U64 }"}</code>. The endpoints a page reads are in
-				it too, since a page's data is an endpoint as any other; a server function (deprecated) isn't.
+				it too, since a page's data is an endpoint as any other.
 			</p>
 			<h3>Turning it on</h3>
 			<p>It is off unless the app says so, with <code>openapi</code> in its <code>App.program</code>:</p>
@@ -337,9 +337,7 @@ view! = |_|
 
 			<Heading id="router">The router, and the app</Heading>
 			<p>
-				<code>Generated/Routes.roc</code> has one function: the answer to a request. A
-				<code>POST /rocx/call/…</code> is a server function's, which are deprecated
-				(<code>Generated/ServerFunctions.roc</code>; any other method, a 405). Otherwise it takes the path
+				<code>Generated/Routes.roc</code> has one function: the answer to a request. It takes the path
 				apart and tries each, the fixed before the params; there, the page for a browser's GET, in its
 				layouts, or the endpoint for the method, or a 405; and the error page where nothing is:
 			</p>
