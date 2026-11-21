@@ -1,4 +1,4 @@
-import Base64Url
+import crypto.Base64
 
 ## VAPID (RFC 8292): how a push service knows a message comes from the server the browser
 ## subscribed with. The server has a P-256 key pair; the page subscribes with its public key; and
@@ -22,8 +22,8 @@ Vapid := [].{
 	## one is.
 	from_text : { public_key : Str, private_key : Str, subject : Str } -> Try(Keys, [BadPublicKey, BadPrivateKey, BadSubject])
 	from_text = |{ public_key, private_key, subject }| {
-		public = Base64Url.decode(public_key.trim()) ?? []
-		private = Base64Url.decode(private_key.trim()) ?? []
+		public = Base64.url_decode(public_key.trim()) ?? []
+		private = Base64.url_decode(private_key.trim()) ?? []
 		if !(public.len() == 65 and public.first() == Ok(4)) {
 			Err(BadPublicKey)
 		} else if private.len() != 32 or private.all(|each| each == 0) {
@@ -90,25 +90,25 @@ Vapid := [].{
 
 	## What is signed: the header and the claims, each base64url, a `.` between them.
 	signing_input : Claims -> Str
-	signing_input = |said| "${Base64Url.encode(Vapid.header_json.to_utf8())}.${Base64Url.encode(Vapid.claims_json(said).to_utf8())}"
+	signing_input = |said| "${Base64.url_encode(Vapid.header_json.to_utf8())}.${Base64.url_encode(Vapid.claims_json(said).to_utf8())}"
 
 	## The JWT: the signing input, a `.`, and the signature, which is ES256's 64 bytes (`r` then
 	## `s`, 32 bytes each, as JWS writes them; not DER). `BadSignature` for another length.
 	token : Str, List(U8) -> Try(Str, [BadSignature])
 	token = |input, signature|
 		if signature.len() == 64 {
-			Ok("${input}.${Base64Url.encode(signature)}")
+			Ok("${input}.${Base64.url_encode(signature)}")
 		} else {
 			Err(BadSignature)
 		}
 
 	## The `Authorization` header's value for a token and the public key it is checked with.
 	authorization : Str, List(U8) -> Str
-	authorization = |jwt, public_key| "vapid t=${jwt}, k=${Base64Url.encode(public_key)}"
+	authorization = |jwt, public_key| "vapid t=${jwt}, k=${Base64.url_encode(public_key)}"
 }
 
 b64 : Str -> List(U8)
-b64 = |text| Base64Url.decode(text) ?? []
+b64 = |text| Base64.url_decode(text) ?? []
 
 # RFC 8292, section 2.4 and 3.1's example (its signature checks against its key: Node's crypto.verify).
 rfc_claims : Vapid.Claims

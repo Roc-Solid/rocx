@@ -44,6 +44,12 @@ test case of RFC 4231 (HMAC), RFC 5869's SHA-256 cases (HKDF), and RFC 4648's (B
 `roc test packages/crypto/main.roc` runs them; `server/test/server.test.mjs` also checks them
 against Node's `crypto` from a running server.
 
+## Used by
+
+`packages/s3` (its signatures), `packages/push` (Web Push's HKDF and base64url keys) and
+`packages/mcp` (images, audio and blobs as Base64): each names this package itself, so an app that
+names one of them doesn't name this one too.
+
 ## Not here
 
 What needs the host stays on the server platform: `AesGcm` (AES-256-GCM, `ring`'s) and `Random`

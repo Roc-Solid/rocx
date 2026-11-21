@@ -881,3 +881,8 @@ a second store (another S3-like API, the local disk) is a sibling package rather
 change.
 
 **Reversible:** yes; the platform could expose them again unchanged.
+
+**Since:** `packages/push` (its `Kdf` and `Base64Url`) and `packages/mcp` (its `Base64`) name
+`packages/crypto` instead of keeping copies. mcp decoded more loosely (an `=` anywhere, bits left
+over); its one decode, a client's `=?base64?…?=` header, falls back to the text as it came, so
+input that isn't Base64 is now shown as it came rather than half decoded.

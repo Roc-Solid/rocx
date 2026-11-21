@@ -47,7 +47,8 @@ What waits on a proposal (PROPOSALS.md):
 ## Three parts
 
 **The pure package** (`main.roc`): plain Roc on no platform. `roc test packages/push/main.roc`
-runs its `expect`s.
+runs its `expect`s. HKDF, HMAC and base64url are `packages/crypto`'s, which this package names
+itself: an app names `push` alone.
 
 | Module | What it does |
 |---|---|
@@ -58,8 +59,6 @@ runs its `expect`s.
 | `Vapid` | RFC 8292: `Keys` and `from_text` (from `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`), `audience` (the endpoint's origin), `claims` (12 hours), `signing_input`, `token`, `authorization` (`vapid t=…, k=…`) |
 | `WebPush` | RFC 8291: `key_info`, `input_keys`, `prepare` (everything before the AES: the header, the key, the nonce, the record), `body` (the header and the sealed record), `max_data` (3993 bytes) |
 | `Ece` | RFC 8188's `aes128gcm` coding: `header`, `parse_header`, `pad`, `unpad`, `keys`, `nonce` (record `n`'s) |
-| `Kdf` | HMAC-SHA-256 and HKDF-SHA-256 on Roc's builtin SHA-256 (the server platform's `Hmac` and `Hkdf`, which a package can't import) |
-| `Base64Url` | `encode` (unpadded) and `decode` (padded or not, strict) |
 | `PushState` | Where a browser stands (`On`, `Off`, `Blocked`, `Unsupported`, `Working`, `Failed(why)`), as the page's script says it; what `<PushButton>` shows |
 
 **The server's glue** (`server/`): modules that import the server platform (`Db`, `Http`, `Job`,

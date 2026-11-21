@@ -1,5 +1,5 @@
-import Base64Url
-import Kdf
+import crypto.Base64
+import crypto.Hkdf
 
 ## The "aes128gcm" content coding (RFC 8188), which Web Push's messages are written in: a header,
 ## then records. The header is a salt (16 bytes), the record size (4 bytes, big-endian), a key id's
@@ -80,10 +80,10 @@ Ece := [].{
 	## material and the header's salt.
 	keys : List(U8), List(U8) -> { key : List(U8), nonce : List(U8) }
 	keys = |input, salt| {
-		pseudorandom_key = Kdf.extract(salt, input)
+		pseudorandom_key = Hkdf.extract(input, salt)
 		{
-			key: Kdf.expand(pseudorandom_key, Ece.key_info, 16) ?? [],
-			nonce: Kdf.expand(pseudorandom_key, Ece.nonce_info, 12) ?? [],
+			key: Hkdf.expand(pseudorandom_key, Ece.key_info, 16) ?? [],
+			nonce: Hkdf.expand(pseudorandom_key, Ece.nonce_info, 12) ?? [],
 		}
 	}
 
@@ -107,7 +107,7 @@ Ece := [].{
 
 ## The bytes of base64url text, for the RFC's examples.
 b64 : Str -> List(U8)
-b64 = |text| Base64Url.decode(text) ?? []
+b64 = |text| Base64.url_decode(text) ?? []
 
 # RFC 8188, section 3.1: one record of 4096, no key id.
 expect Ece.keys(b64("yqdlZ-tYemfogSmv7Ws5PQ"), b64("I1BsxtFttlv3u_Oo94xnmw")) == { key: b64("_wniytB-ofscZDh4tbSjHw"), nonce: b64("Bcs8gkIRKLI8GeI8") }

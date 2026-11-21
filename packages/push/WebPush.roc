@@ -1,6 +1,6 @@
-import Base64Url
+import crypto.Base64
+import crypto.Hkdf
 import Ece
-import Kdf
 
 ## A push message's encryption (RFC 8291): only the browser that subscribed can read it, and the
 ## push service in between sees bytes. For each message the server makes a new ECDH key pair on
@@ -38,7 +38,7 @@ WebPush := [].{
 	## salted with the auth secret, with `key_info` as its info.
 	input_keys : { ecdh_secret : List(U8), auth_secret : List(U8), ua_public : List(U8), as_public : List(U8) } -> List(U8)
 	input_keys = |{ ecdh_secret, auth_secret, ua_public, as_public }|
-		Kdf.hkdf(auth_secret, ecdh_secret, WebPush.key_info(ua_public, as_public), 32) ?? []
+		Hkdf.sha256(ecdh_secret, auth_secret, WebPush.key_info(ua_public, as_public), 32) ?? []
 
 	## A message ready for AES-128-GCM: the header that goes before it, the key and the nonce to
 	## seal with, and the record to seal (the data, the delimiter, `padding` zeros).
@@ -76,7 +76,7 @@ point = |key| key.len() == 65 and key.first() == Ok(4)
 
 ## RFC 8291, appendix A: its keys, salt and message, in base64url, as it gives them.
 b64 : Str -> List(U8)
-b64 = |text| Base64Url.decode(text) ?? []
+b64 = |text| Base64.url_decode(text) ?? []
 
 ua_public_example : List(U8)
 ua_public_example = b64("BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4")
@@ -101,11 +101,11 @@ combining = { ecdh_secret: example.ecdh_secret, auth_secret: example.auth_secret
 expect WebPush.key_info(ua_public_example, as_public_example) == b64("V2ViUHVzaDogaW5mbwAEJXGyvs3942BVGq8e0PTNNmwRzr5VX4m8t7GGpTM5FzFo7OLr4BhZe9MEebhuPI-OztV3ylkYfpJGmQ22ggCLDgT-M_SrDepxkU21WCP3O1SUj0EwbZIHMtu5pZpTKGSCIA5Zent7wmC6HCJ5mFgJkuk5cwAvMBKiiujwa7t45ewP")
 
 # The key combining's PRK, then the IKM.
-expect Kdf.extract(example.auth_secret, example.ecdh_secret) == b64("Snr3JMxaHVDXHWJn5wdC52WjpCtd2EIEGBykDcZW32k")
+expect Hkdf.extract(example.ecdh_secret, example.auth_secret) == b64("Snr3JMxaHVDXHWJn5wdC52WjpCtd2EIEGBykDcZW32k")
 expect WebPush.input_keys(combining) == b64("S4lYMb_L0FxCeq0WhDx813KgSYqU26kOyzWUdsXYyrg")
 
 # The content coding's PRK, its two infos, the CEK and the nonce.
-expect Kdf.extract(example.salt, WebPush.input_keys(combining)) == b64("09_eUZGrsvxChDCGRCdkLiDXrReGOEVeSCdCcPBSJSc")
+expect Hkdf.extract(WebPush.input_keys(combining), example.salt) == b64("09_eUZGrsvxChDCGRCdkLiDXrReGOEVeSCdCcPBSJSc")
 expect Ece.key_info == b64("Q29udGVudC1FbmNvZGluZzogYWVzMTI4Z2NtAA")
 expect Ece.nonce_info == b64("Q29udGVudC1FbmNvZGluZzogbm9uY2UA")
 expect

@@ -53,7 +53,8 @@ messages through it.
 | `JsonValue` | any JSON, read a field at a time; `decode` into a Roc type and `encode` from one, through `Json`. A number keeps the text it came as, so an id or an `I64` goes back exactly |
 | `Rpc` | JSON-RPC 2.0: `read` one message, write a `result`, an `error` or a `notification`; the error codes |
 
-`roc test packages/mcp/main.roc` runs their `expect`s.
+`roc test packages/mcp/main.roc` runs their `expect`s. Base64 is `packages/crypto`'s, which this
+package names itself: an app names `mcp` alone.
 
 **The HTTP side is a module on the server platform** (`server/McpHttp.roc`). It imports the
 platform's `Server`, `Endpoint`, `OpenApi`, `Events`, `Middleware` and `Log`, and a package can't

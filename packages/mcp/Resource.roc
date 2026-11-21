@@ -1,4 +1,4 @@
-import Base64
+import crypto.Base64
 import JsonValue
 
 ## What an agent can read from the app, by URI (`notes://index`): reading one gives its contents,

@@ -1,4 +1,4 @@
-import Base64
+import crypto.Base64
 import JsonValue
 import Resource
 

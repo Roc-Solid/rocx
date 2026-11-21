@@ -1,4 +1,4 @@
-import Base64Url
+import crypto.Base64
 import Vapid
 
 ## A browser's push subscription: where to send (`endpoint`, a URL at its push service) and its
@@ -46,8 +46,8 @@ Subscription := { endpoint : Str, p256dh : List(U8), auth : List(U8) }.{
 	## A subscription from its three texts (a row of the subscriptions table).
 	from_text : { endpoint : Str, p256dh : Str, auth : Str } -> Try(Subscription, [BadEndpoint, BadP256dh, BadAuth])
 	from_text = |{ endpoint, p256dh, auth }| {
-		key = Base64Url.decode(p256dh) ?? []
-		secret = Base64Url.decode(auth) ?? []
+		key = Base64.url_decode(p256dh) ?? []
+		secret = Base64.url_decode(auth) ?? []
 		if !(endpoint_ok(endpoint)) {
 			Err(BadEndpoint)
 		} else if !(key.len() == 65 and key.first() == Ok(4)) {
@@ -61,7 +61,7 @@ Subscription := { endpoint : Str, p256dh : List(U8), auth : List(U8) }.{
 
 	## Its keys as base64url text again, for the table or the page.
 	to_text : Subscription -> { endpoint : Str, p256dh : Str, auth : Str }
-	to_text = |subscription| { endpoint: subscription.endpoint, p256dh: Base64Url.encode(subscription.p256dh), auth: Base64Url.encode(subscription.auth) }
+	to_text = |subscription| { endpoint: subscription.endpoint, p256dh: Base64.url_encode(subscription.p256dh), auth: Base64.url_encode(subscription.auth) }
 
 	## The page's JSON again.
 	to_json : Subscription -> Str
