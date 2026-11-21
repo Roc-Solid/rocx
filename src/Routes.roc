@@ -479,7 +479,7 @@ Routes := [].{
 	undoc : Str -> Str
 	undoc = |line| {
 		bytes = line.to_utf8()
-		if line.starts_with("##") Text.rest(bytes, 2 + Text.space_at(bytes, 2)) else line
+		if (line.starts_with("##")) Text.rest(bytes, 2 + Text.space_at(bytes, 2)) else line
 	}
 
 	## The `##` lines right above line `end`, as one text, trimmed.
@@ -864,7 +864,7 @@ Routes := [].{
 			if Text.at(bytes, name_end) == '(' {
 				match Text.index_of_byte(bytes, ')', name_end) {
 					Ok(close) =>
-						if Text.slice(bytes, name_end, close).contains('\n') name_end else close + 1
+						if (Text.slice(bytes, name_end, close).contains('\n')) name_end else close + 1
 					Err(_) => name_end
 				}
 			} else {
@@ -913,12 +913,12 @@ Routes := [].{
 	has_pages : Table -> Bool
 	has_pages = |table|
 		!table.pages.is_empty()
-		or (
-			match table.error {
-				Some(_) => Bool.True
-				None => Bool.False
-			}
-		)
+			or (
+				match table.error {
+					Some(_) => Bool.True
+					None => Bool.False
+				}
+			)
 
 	## What is wrong with an app's route files' views, a line each.
 	view_problems : Table, List(Source) -> List(Str)
@@ -1034,8 +1034,8 @@ Routes := [].{
 						None => []
 					}
 				)
-				.concat(if (methods.contains("events!")) [{ accepts: "wants_events", then: endpoint(at, "events!") }] else [])
-				.concat(if (methods.contains("get!")) [{ accepts: "", then: endpoint(at, "get!") }] else [])
+					.concat(if (methods.contains("events!")) [{ accepts: "wants_events", then: endpoint(at, "events!") }] else [])
+					.concat(if (methods.contains("get!")) [{ accepts: "", then: endpoint(at, "get!") }] else [])
 			get_arms = gets.map_with_index(|get, i| { test: if (!get.accepts.is_empty() and (i + 1 < gets.len() or respond)) "method == \"GET\" and ${get.accepts}" else "method == \"GET\"", then: get.then })
 			other_arms = methods.keep_if(|method| Routes.verb_of(method) != "GET").map(|method| { test: "method == ${Text.json_string(Routes.verb_of(method))}", then: endpoint(at, method) })
 			server = Routes.server_of(at)
@@ -1158,15 +1158,13 @@ Routes := [].{
 					"\t\t\tServer.response(200, [{ name: \"content-type\", value: \"text/html; charset=utf-8\" }], Stories.catalog)",
 				]
 					.concat(told.join_map(|story| ["\t\t} else if (id == ${Text.json_string(story.id)}) {", "\t\t\tRoutes.page(200)"]))
-					.concat(
-						[
-							"\t\t} else {",
-							"\t\t\tRoutes.text(404, \"no story at \${request.path}\")",
-							"\t\t}",
-							"\t}",
-							"",
-						],
-					)
+					.concat([
+						"\t\t} else {",
+						"\t\t\tRoutes.text(404, \"no story at \${request.path}\")",
+						"\t\t}",
+						"\t}",
+						"",
+					])
 			} else {
 				[]
 			}
@@ -1196,14 +1194,13 @@ Routes := [].{
 				"## is. Edit those files, not this one.",
 				"import pf.Server",
 			]
-			.concat(if (branches.any(|each| each.contains("Endpoint."))) ["import pf.Endpoint"] else [])
-			.concat(if (uses_middleware) ["import pf.Middleware"] else [])
-			.concat(if (table.servers.is_empty()) [] else ["import Api"])
-			.concat(if (pages) ["import ${Routes.root_name}"] else [])
-			.concat(modules.map(|module_name| "import ${module_name}"))
-			.concat(if (storied) ["import Stories"] else [])
-			.concat(
-				[
+				.concat(if (branches.any(|each| each.contains("Endpoint."))) ["import pf.Endpoint"] else [])
+				.concat(if (uses_middleware) ["import pf.Middleware"] else [])
+				.concat(if (table.servers.is_empty()) [] else ["import Api"])
+				.concat(if (pages) ["import ${Routes.root_name}"] else [])
+				.concat(modules.map(|module_name| "import ${module_name}"))
+				.concat(if (storied) ["import Stories"] else [])
+				.concat([
 					"",
 					"Routes := [].{",
 					"\t## The answer to `request` (a `Server.Request`): a page, in its layouts, for a browser's GET; an",
@@ -1214,45 +1211,39 @@ Routes := [].{
 					"\trespond! = |request, ${context_name}| {",
 					"\t\tsegments = request.path.split_on(\"/\").keep_if(|segment| !segment.is_empty()).map(Server.decode_segment)",
 					"\t\tmethod = if (request.method == \"HEAD\") \"GET\" else request.method",
-				],
-			)
-			.concat(if (wants_html) ["\t\twants_html = (Server.header(request, \"accept\") ?? \"\").contains(\"text/html\")"] else [])
-			.concat(if (wants_events) ["\t\twants_events = (Server.header(request, \"accept\") ?? \"\").contains(\"text/event-stream\")"] else [])
-			.concat([chained, "\t}", ""])
-			.concat(
-				if pages {
-					[
-						"\t## The app's page (`Root`), which the host renders for the request, every hole run once, as a",
-						"\t## document for the browser to hydrate: the page at the request's path, in its layouts, or the",
-						"\t## error page.",
-						"\tpage : U16 -> Server.Response",
-						"\tpage = |status| { status: status, headers: [], body: Page(${Routes.root_name}.view!) }",
-						"",
-					]
-				} else {
-					[]
-				},
-			)
-			.concat(story_function)
-			.concat(
-				[
+				])
+				.concat(if (wants_html) ["\t\twants_html = (Server.header(request, \"accept\") ?? \"\").contains(\"text/html\")"] else [])
+				.concat(if (wants_events) ["\t\twants_events = (Server.header(request, \"accept\") ?? \"\").contains(\"text/event-stream\")"] else [])
+				.concat([chained, "\t}", ""])
+				.concat(
+					if pages {
+						[
+							"\t## The app's page (`Root`), which the host renders for the request, every hole run once, as a",
+							"\t## document for the browser to hydrate: the page at the request's path, in its layouts, or the",
+							"\t## error page.",
+							"\tpage : U16 -> Server.Response",
+							"\tpage = |status| { status: status, headers: [], body: Page(${Routes.root_name}.view!) }",
+							"",
+						]
+					} else {
+						[]
+					},
+				)
+				.concat(story_function)
+				.concat([
 					"\t## The route that answers `path`, as its route file's directory names it (`/blog/[slug]`): what",
 					"\t## `Server.Request`'s `route` is; a dev build's stories, their path; `\"\"` where nothing is.",
 					"\tpattern : Str -> Str",
-				],
-			)
-			.concat(Routes.pattern_body(table, storied))
-			.concat([""])
-			.concat(channel_function)
-			.concat(
-				[
+				])
+				.concat(Routes.pattern_body(table, storied))
+				.concat([""])
+				.concat(channel_function)
+				.concat([
 					"\t## A channel's subscription has ended, as the host tells it (`x-rocx-channel: close`): its route's",
 					"\t## `on_close!`, outside the middleware (`App` answers it so). 204 where there is none.",
-				],
-			)
-			.concat(closed_function)
-			.concat(
-				[
+				])
+				.concat(closed_function)
+				.concat([
 					"",
 					"\ttext : U16, Str -> Server.Response",
 					"\ttext = |status, body| Server.response(status, [{ name: \"content-type\", value: \"text/plain; charset=utf-8\" }], body)",
@@ -1260,8 +1251,7 @@ Routes := [].{
 					"",
 					"${Routes.marker} the routes: rocx build writes it.",
 					"",
-				],
-			)
+				])
 		Str.join_with(lines, "\n")
 	}
 
@@ -1363,12 +1353,12 @@ Routes := [].{
 				"import pf.Endpoint",
 				"import pf.Server",
 			]
-			.concat(if (client) [] else ["import pf.OpenApi"].concat(server_imports))
-			.concat(["", "Api := [].{"])
-			.concat(endpoints)
-			.concat(channels)
-			.concat(if (client) [] else Routes.open_api_document(table, sources, options.tags, options.title))
-			.concat(["}", "", "${Routes.marker} the routes: rocx build writes it.", ""])
+				.concat(if (client) [] else ["import pf.OpenApi"].concat(server_imports))
+				.concat(["", "Api := [].{"])
+				.concat(endpoints)
+				.concat(channels)
+				.concat(if (client) [] else Routes.open_api_document(table, sources, options.tags, options.title))
+				.concat(["}", "", "${Routes.marker} the routes: rocx build writes it.", ""])
 		Str.join_with(lines, "\n")
 	}
 
@@ -1389,11 +1379,10 @@ Routes := [].{
 				"## Written by rocx build from the app's routes/: a path for every page, so a link to a page that",
 				"## isn't there doesn't compile. Edit the routes, not this file.",
 			]
-			.concat(if (any_params) ["import pf.Server", ""] else [])
-			.concat(["Paths := [].{"])
-			.concat(table.pages.sort_with(|a, b| Text.locale_order(a.path, b.path)).join_map(|page| definition(page).append("")))
-			.concat(
-				[
+				.concat(if (any_params) ["import pf.Server", ""] else [])
+				.concat(["Paths := [].{"])
+				.concat(table.pages.sort_with(|a, b| Text.locale_order(a.path, b.path)).join_map(|page| definition(page).append("")))
+				.concat([
 					"\t## Every page with no params: what a static build writes.",
 					"\tall : List(Str)",
 					"\tall = [${Str.join_with(statics, ", ")}]",
@@ -1401,8 +1390,7 @@ Routes := [].{
 					"",
 					"${Routes.marker} the routes: rocx build writes it.",
 					"",
-				],
-			)
+				])
 		Str.join_with(lines, "\n")
 	}
 
@@ -1462,15 +1450,15 @@ Routes := [].{
 		branches = storied.concat(pages.map(branch))
 		story_modules =
 			stories
-			.fold(
-				[],
-				|so_far, story|
-					match so_far.find_first_index(|each| each.module_path == story.module_path) {
-						Ok(i) => so_far.update(i, |each| { ..each, alias: story.alias }) ?? so_far
-						Err(_) => so_far.append({ module_path: story.module_path, alias: story.alias })
-					},
-			)
-			.sort_with(|a, b| Text.order("${a.module_path},${a.alias}", "${b.module_path},${b.alias}"))
+				.fold(
+					[],
+					|so_far, story|
+						match so_far.find_first_index(|each| each.module_path == story.module_path) {
+							Ok(i) => so_far.update(i, |each| { ..each, alias: story.alias }) ?? so_far
+							Err(_) => so_far.append({ module_path: story.module_path, alias: story.alias })
+						},
+				)
+				.sort_with(|a, b| Text.order("${a.module_path},${a.alias}", "${b.module_path},${b.alias}"))
 		error =
 			match table.error {
 				Some(entry) => "Html.component(|| ${entry.module_name}.view!({ status: status, problem: problem }))"
@@ -1496,13 +1484,12 @@ Routes := [].{
 				"import pf.Html",
 				"import pf.Router",
 			]
-			.concat(if (pages.is_empty()) [] else ["import pf.Server"])
-			.concat(["import pf.Errored", "import pf.HttpStatusCode"])
-			.concat(modules.map(|module_name| "import ${module_name}"))
-			.concat(story_modules.map(|each| "import ../${each.module_path} as ${each.alias}"))
-			.concat(if (has_root) [] else ["import Styles"])
-			.concat(
-				[
+				.concat(if (pages.is_empty()) [] else ["import pf.Server"])
+				.concat(["import pf.Errored", "import pf.HttpStatusCode"])
+				.concat(modules.map(|module_name| "import ${module_name}"))
+				.concat(story_modules.map(|each| "import ../${each.module_path} as ${each.alias}"))
+				.concat(if (has_root) [] else ["import Styles"])
+				.concat([
 					"",
 					"${Routes.root_name} := [].{",
 					"\t## The page at where it is (`Router.location!`: the request's path on the server; in the browser,",
@@ -1511,11 +1498,9 @@ Routes := [].{
 					"\tview! : {} => Html",
 					"\tview! = |{}| {",
 					"\t\tpath = Router.location!({}).path",
-				],
-			)
-			.concat(if (pages.is_empty()) [] else ["\t\tsegments = path.split_on(\"/\").keep_if(|segment| !segment.is_empty()).map(Server.decode_segment)"])
-			.concat(
-				[
+				])
+				.concat(if (pages.is_empty()) [] else ["\t\tsegments = path.split_on(\"/\").keep_if(|segment| !segment.is_empty()).map(Server.decode_segment)"])
+				.concat([
 					view_body,
 					"\t}",
 					"",
@@ -1527,30 +1512,29 @@ Routes := [].{
 					"\t## answers with (`<HttpStatusCode>`), and why.",
 					"\tfailed : U16, Str -> Html",
 					"\tfailed = |status, problem| Html.join([Html.component(|| HttpStatusCode.view!({ code: status })), ${error}])",
-				],
-			)
-			.concat(
-				if has_root {
-					[]
-				} else {
-					[
-						"",
-						"\t## The document, for an app with no root layout (routes/+layout.rocx).",
-						"\tdocument : List(Html) -> Html",
-						"\tdocument = |children|",
-						"\t\tHtml.join(",
-						"\t\t\t[",
-						"\t\t\t\tHtml.doctype({}),",
-						"\t\t\t\tHtml.element(\"html\", [Html.attr(\"lang\", \"en\")], [",
-						"\t\t\t\t\tHtml.element(\"head\", [], [Html.void(\"meta\", [Html.attr(\"charset\", \"utf-8\")]), Html.void(\"meta\", [Html.attr(\"name\", \"viewport\"), Html.attr(\"content\", \"width=device-width, initial-scale=1\")]), Styles.style]),",
-						"\t\t\t\t\tHtml.element(\"body\", [], children),",
-						"\t\t\t\t]),",
-						"\t\t\t],",
-						"\t\t)",
-					]
-				},
-			)
-			.concat(["}", "", "${Routes.marker} the routes: rocx build writes it.", ""])
+				])
+				.concat(
+					if has_root {
+						[]
+					} else {
+						[
+							"",
+							"\t## The document, for an app with no root layout (routes/+layout.rocx).",
+							"\tdocument : List(Html) -> Html",
+							"\tdocument = |children|",
+							"\t\tHtml.join(",
+							"\t\t\t[",
+							"\t\t\t\tHtml.doctype({}),",
+							"\t\t\t\tHtml.element(\"html\", [Html.attr(\"lang\", \"en\")], [",
+							"\t\t\t\t\tHtml.element(\"head\", [], [Html.void(\"meta\", [Html.attr(\"charset\", \"utf-8\")]), Html.void(\"meta\", [Html.attr(\"name\", \"viewport\"), Html.attr(\"content\", \"width=device-width, initial-scale=1\")]), Styles.style]),",
+							"\t\t\t\t\tHtml.element(\"body\", [], children),",
+							"\t\t\t\t]),",
+							"\t\t\t],",
+							"\t\t)",
+						]
+					},
+				)
+				.concat(["}", "", "${Routes.marker} the routes: rocx build writes it.", ""])
 		Str.join_with(lines, "\n")
 	}
 
@@ -1838,34 +1822,34 @@ Routes := [].{
 			}
 		import_lines =
 			input.jobs
-			.concat(input.actors)
-			.fold(
-				[],
-				|so_far, found|
-					match so_far.find_first_index(|each| each.key == alias(found)) {
-						Ok(i) => so_far.update(i, |each| { ..each, value: import_line(found) }) ?? so_far
-						Err(_) => so_far.append({ key: alias(found), value: import_line(found) })
-					},
-			)
-			.sort_with(|a, b| if (Text.order(a.key, b.key) == Before) Before else After)
-			.map(|each| each.value)
+				.concat(input.actors)
+				.fold(
+					[],
+					|so_far, found|
+						match so_far.find_first_index(|each| each.key == alias(found)) {
+							Ok(i) => so_far.update(i, |each| { ..each, value: import_line(found) }) ?? so_far
+							Err(_) => so_far.append({ key: alias(found), value: import_line(found) })
+						},
+				)
+				.sort_with(|a, b| if (Text.order(a.key, b.key) == Before) Before else After)
+				.map(|each| each.value)
 		embedded =
 			input.migrations
-			.fold(
-				[],
-				|so_far, name| {
-					base = Routes.migration_name(name)
-					second : U64
-					second = 2
-					var $as = base
-					var $i = second
-					while so_far.any(|each| each.as_name == $as) {
-						$as = "${base}_${$i.to_str()}"
-						$i = $i + 1
-					}
-					so_far.append({ name, as_name: $as })
-				},
-			)
+				.fold(
+					[],
+					|so_far, name| {
+						base = Routes.migration_name(name)
+						second : U64
+						second = 2
+						var $as = base
+						var $i = second
+						while so_far.any(|each| each.as_name == $as) {
+							$as = "${base}_${$i.to_str()}"
+							$i = $i + 1
+						}
+						so_far.append({ name, as_name: $as })
+					},
+				)
 		lines =
 			[
 				"## Written by rocx build: the app's `program`, for its main.roc, which says what only it can",
@@ -1880,14 +1864,13 @@ Routes := [].{
 				"import pf.Middleware",
 				"import pf.OpenApi",
 			]
-			.concat(if (input.jobs.is_empty()) [] else ["import pf.Job"])
-			.concat(if (input.actors.is_empty()) [] else ["import pf.Actor"])
-			.concat(if (input.endpoints) ["import Api"] else [])
-			.concat(["import Routes"])
-			.concat(import_lines)
-			.concat(embedded.map(|each| "import ${Text.roc_string("../migrations/${each.name}")} as ${each.as_name} : Str"))
-			.concat(
-				[
+				.concat(if (input.jobs.is_empty()) [] else ["import pf.Job"])
+				.concat(if (input.actors.is_empty()) [] else ["import pf.Actor"])
+				.concat(if (input.endpoints) ["import Api"] else [])
+				.concat(["import Routes"])
+				.concat(import_lines)
+				.concat(embedded.map(|each| "import ${Text.roc_string("../migrations/${each.name}")} as ${each.as_name} : Str"))
+				.concat([
 					"",
 					"${Routes.app_name} := [].{",
 					"\t## What only the app can say: `context`, what its middleware is given from what the server was",
@@ -1915,21 +1898,19 @@ Routes := [].{
 					"\t\t\t\tRoutes.closed!(request)",
 					"\t\t\t} else {",
 					"\t\t\t\t# A page a browser asks for lets a plain form's flash go (`Server.flash!`): it has read it, or never will.",
-				],
-			)
-			.concat(
-				if input.endpoints {
-					[
-						"\t\t\t\t# The app's middleware, then the endpoints' OpenAPI document and its page, as the app says",
-						"\t\t\t\t# (`OpenApi.middleware`), then the routes.",
-						"\t\t\t\tchain = config.middleware.then(OpenApi.middleware(config.openapi, Api.openapi))",
-					]
-				} else {
-					["\t\t\t\tchain = config.middleware"]
-				},
-			)
-			.concat(
-				[
+				])
+				.concat(
+					if input.endpoints {
+						[
+							"\t\t\t\t# The app's middleware, then the endpoints' OpenAPI document and its page, as the app says",
+							"\t\t\t\t# (`OpenApi.middleware`), then the routes.",
+							"\t\t\t\tchain = config.middleware.then(OpenApi.middleware(config.openapi, Api.openapi))",
+						]
+					} else {
+						["\t\t\t\tchain = config.middleware"]
+					},
+				)
+				.concat([
 					"\t\t\t\tServer.clear_flash(request, Middleware.run!(chain, request, (config.context)(started), |passed, context| Routes.respond!(passed, context)))",
 					"\t\t\t}",
 					"\t\t},",
@@ -1943,8 +1924,7 @@ Routes := [].{
 					"",
 					"${Routes.marker} the app: rocx build writes it.",
 					"",
-				],
-			)
+				])
 		Str.join_with(lines, "\n")
 	}
 
@@ -2100,31 +2080,27 @@ Routes := [].{
 
 	entry_value : Entry -> Value
 	entry_value = |entry|
-		Object(
-			[
-				{ key: "file", value: Text(entry.file) },
-				{ key: "kind", value: Text(entry.kind) },
-				{ key: "parts", value: Value.strs(entry.parts) },
-				{ key: "module", value: Text(entry.module_name) },
-				{ key: "name", value: Text(entry.name) },
-				{ key: "path", value: Text(entry.path) },
-				{ key: "params", value: Array(entry.params.map(Routes.param_value)) },
-				{ key: "layouts", value: Array(entry.layouts.map(Routes.layout_value)) },
-			],
-		)
+		Object([
+			{ key: "file", value: Text(entry.file) },
+			{ key: "kind", value: Text(entry.kind) },
+			{ key: "parts", value: Value.strs(entry.parts) },
+			{ key: "module", value: Text(entry.module_name) },
+			{ key: "name", value: Text(entry.name) },
+			{ key: "path", value: Text(entry.path) },
+			{ key: "params", value: Array(entry.params.map(Routes.param_value)) },
+			{ key: "layouts", value: Array(entry.layouts.map(Routes.layout_value)) },
+		])
 
 	error_value : Entry -> Value
 	error_value = |entry|
-		Object(
-			[
-				{ key: "file", value: Text(entry.file) },
-				{ key: "kind", value: Text(entry.kind) },
-				{ key: "parts", value: Value.strs(entry.parts) },
-				{ key: "module", value: Text(entry.module_name) },
-				{ key: "name", value: Text(entry.name) },
-				{ key: "layouts", value: Array(entry.layouts.map(Routes.layout_value)) },
-			],
-		)
+		Object([
+			{ key: "file", value: Text(entry.file) },
+			{ key: "kind", value: Text(entry.kind) },
+			{ key: "parts", value: Value.strs(entry.parts) },
+			{ key: "module", value: Text(entry.module_name) },
+			{ key: "name", value: Text(entry.name) },
+			{ key: "layouts", value: Array(entry.layouts.map(Routes.layout_value)) },
+		])
 
 	at_value : At -> Value
 	at_value = |at| {
@@ -2143,22 +2119,20 @@ Routes := [].{
 
 	table_value : Table -> Value
 	table_value = |table|
-		Object(
-			[
-				{ key: "pages", value: Array(table.pages.map(Routes.entry_value)) },
-				{ key: "servers", value: Array(table.servers.map(Routes.entry_value)) },
-				{ key: "layouts", value: Array(table.layouts.map(Routes.layout_value)) },
-				{
-					key: "error",
-					value: match table.error {
-						Some(entry) => Routes.error_value(entry)
-						None => Null
-					},
+		Object([
+			{ key: "pages", value: Array(table.pages.map(Routes.entry_value)) },
+			{ key: "servers", value: Array(table.servers.map(Routes.entry_value)) },
+			{ key: "layouts", value: Array(table.layouts.map(Routes.layout_value)) },
+			{
+				key: "error",
+				value: match table.error {
+					Some(entry) => Routes.error_value(entry)
+					None => Null
 				},
-				{ key: "paths", value: Array(table.paths.map(Routes.at_value)) },
-				{ key: "files", value: Value.strs(table.files) },
-			],
-		)
+			},
+			{ key: "paths", value: Array(table.paths.map(Routes.at_value)) },
+			{ key: "files", value: Value.strs(table.files) },
+		])
 
 	defs_value : Defs -> Value
 	defs_value = |defs| {
@@ -2187,15 +2161,13 @@ Routes := [].{
 		Object(
 			[{ key: "define", value: Text(found.define) }]
 				.concat(thunk)
-				.concat(
-					[
-						{ key: "name", value: Text(found.name) },
-						{ key: "module", value: Text(found.module_path) },
-						{ key: "file", value: Text(found.file) },
-						{ key: "line", value: Value.count(found.line) },
-						{ key: "route", value: Value.text_or_null(found.route) },
-					],
-				),
+				.concat([
+					{ key: "name", value: Text(found.name) },
+					{ key: "module", value: Text(found.module_path) },
+					{ key: "file", value: Text(found.file) },
+					{ key: "line", value: Value.count(found.line) },
+					{ key: "route", value: Value.text_or_null(found.route) },
+				]),
 		)
 	}
 

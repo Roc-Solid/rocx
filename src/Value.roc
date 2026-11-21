@@ -111,16 +111,14 @@ Value := [
 	## A RocxError (a problem in a .rocx file, at a line and column), as `rocx internal` answers it.
 	rocx_problem : { reason : Str, file : Str, line : U64, column : U64 } -> Value
 	rocx_problem = |e|
-		Object(
-			[
-				{ key: "kind", value: Text("RocxError") },
-				{ key: "message", value: Text("${e.file}:${e.line.to_str()}:${e.column.to_str()}: ${e.reason}") },
-				{ key: "reason", value: Text(e.reason) },
-				{ key: "file", value: Text(e.file) },
-				{ key: "line", value: Value.count(e.line) },
-				{ key: "column", value: Value.count(e.column) },
-			],
-		)
+		Object([
+			{ key: "kind", value: Text("RocxError") },
+			{ key: "message", value: Text("${e.file}:${e.line.to_str()}:${e.column.to_str()}: ${e.reason}") },
+			{ key: "reason", value: Text(e.reason) },
+			{ key: "file", value: Text(e.file) },
+			{ key: "line", value: Value.count(e.line) },
+			{ key: "column", value: Value.count(e.column) },
+		])
 
 	## A FormatError (`roc fmt` couldn't read the code), as `rocx internal` answers it.
 	format_problem : Str -> Value

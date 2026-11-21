@@ -146,17 +146,15 @@ Stories := [].{
 	catalog_data = |stories, root| {
 		draft = |file| file.starts_with("${Stories.stories_dir}/")
 		entry = |story|
-			Object(
-				[
-					{ key: "id", value: Text(story.id) },
-					{ key: "file", value: Text(story.file) },
-					{ key: "component", value: Text(story.component) },
-					{ key: "name", value: Text(story.name) },
-					{ key: "line", value: Value.count(story.line) },
-					{ key: "kind", value: Text(if (draft(story.file)) "draft" else "component") },
-					{ key: "path", value: Text("${root}/${story.file}") },
-				],
-			)
+			Object([
+				{ key: "id", value: Text(story.id) },
+				{ key: "file", value: Text(story.file) },
+				{ key: "component", value: Text(story.component) },
+				{ key: "name", value: Text(story.name) },
+				{ key: "line", value: Value.count(story.line) },
+				{ key: "kind", value: Text(if (draft(story.file)) "draft" else "component") },
+				{ key: "path", value: Text("${root}/${story.file}") },
+			])
 		drafts = stories.keep_if(|story| draft(story.file)).map(entry)
 		others = stories.keep_if(|story| !draft(story.file)).map(entry)
 		Value.encode(Array(drafts.concat(others))).replace_each("<", "\\u003c")

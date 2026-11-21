@@ -62,15 +62,13 @@ Remap := [].{
 					if first_end > $end + 1 and Text.at(bytes, first_end) == ':' {
 						second_end = Text.run_end(bytes, first_end + 1, Text.is_digit)
 						if second_end > first_end + 1 {
-							return Ok(
-								{
-									file,
-									line_number: Remap.number(Text.cut(bytes, $end + 1, first_end)).to_u64_wrap(),
-									column: Remap.number(Text.cut(bytes, first_end + 1, second_end)),
-									start,
-									end: second_end,
-								},
-							)
+							return Ok({
+								file,
+								line_number: Remap.number(Text.cut(bytes, $end + 1, first_end)).to_u64_wrap(),
+								column: Remap.number(Text.cut(bytes, first_end + 1, second_end)),
+								start,
+								end: second_end,
+							})
 						}
 					}
 				}
@@ -192,13 +190,11 @@ Remap := [].{
 		match rocx {
 			Some(path) if last.starts_with(Remap.marker) and Fs.exists!(path) => {
 				relative = Fs.relative(cwd, Fs.resolve(cwd, [path]))
-				Some(
-					{
-						rocx: if (relative.is_empty()) path else relative,
-						generated: text.split_on("\n"),
-						source: Fs.read_or_empty!(path).split_on("\n"),
-					},
-				)
+				Some({
+					rocx: if (relative.is_empty()) path else relative,
+					generated: text.split_on("\n"),
+					source: Fs.read_or_empty!(path).split_on("\n"),
+				})
 			}
 			_ => None
 		}

@@ -229,7 +229,7 @@ check: (fmt "--check")
 # .rocx file's (its markup kept as written) and each hand-written .roc file. `just fmt --check`
 # only says which aren't formatted.
 fmt *args:
-    ROC={{ roc }} {{ rocx }} fmt {{ args }} site packages web/platform server/platform
+    ROC={{ roc }} {{ rocx }} fmt {{ args }} src site packages web/platform server/platform
 
 # Regenerates the platforms' glue after a change to a header: web/host/roc_platform_abi.zig, and
 # server/host/src/roc_platform_abi.rs.

@@ -322,7 +322,21 @@ Build := [].{
 				} else {
 					[]
 				}
-			root_page = if (pages) [{ name: Build.root_module_name, content: Routes.root_module(table, sources, (match placed { Some(ids) => ids, None => [] })) }] else []
+			root_page = if (pages) [
+				{
+					name: Build.root_module_name,
+					content: Routes.root_module(
+						table,
+						sources,
+						(
+							match placed {
+								Some(ids) => ids
+								None => []
+							}
+						),
+					),
+				},
+			] else []
 			modules_written =
 				[{ name: "Routes", content: Routes.routes_module(table, sources, placed) }]
 					.concat(stories_page)

@@ -63,12 +63,12 @@ build! = |rest| {
 	dirs = rest.map_with_index(|arg, i| { arg, i }).keep_if(
 		|each|
 			each.arg != "--dev"
-			and (
-				match client_at {
-					Ok(at) => each.i != at and each.i != at + 1
-					Err(_) => Bool.True
-				}
-			),
+				and (
+					match client_at {
+						Ok(at) => each.i != at and each.i != at + 1
+						Err(_) => Bool.True
+					}
+				),
 	).map(|each| each.arg)
 	match client {
 		Given(_) if dirs.len() > 1 => {
@@ -78,7 +78,10 @@ build! = |rest| {
 		Missing => usage!({})
 		_ if dirs.is_empty() => usage!({})
 		_ => {
-			given = match client { Given(out) => Some(out), _ => None }
+			given = match client {
+				Given(out) => Some(out)
+				_ => None
+			}
 			match Build.build!(dirs, { client: given, cwd: Fs.cwd!(), dev, rocx: rocx_home!({}) }) {
 				Ok(built) => {
 					for message in built.said {

@@ -136,7 +136,7 @@ Text := [].{
 		} else if b == 0xE2 {
 			c = Text.at(bytes, i + 1)
 			d = Text.at(bytes, i + 2)
-			if (c == 0x80 and ((d >= 0x80 and d <= 0x8A) or d == 0xA8 or d == 0xA9 or d == 0xAF)) or (c == 0x81 and d == 0x9F) 3 else 0
+			if ((c == 0x80 and ((d >= 0x80 and d <= 0x8A) or d == 0xA8 or d == 0xA9 or d == 0xAF)) or (c == 0x81 and d == 0x9F)) 3 else 0
 		} else if b == 0xE3 and Text.at(bytes, i + 1) == 0x80 and Text.at(bytes, i + 2) == 0x80 {
 			3
 		} else if b == 0xEF and Text.at(bytes, i + 1) == 0xBB and Text.at(bytes, i + 2) == 0xBF {
