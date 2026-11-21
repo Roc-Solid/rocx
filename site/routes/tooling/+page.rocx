@@ -159,7 +159,7 @@ view! = |_|
 			<Code title={Sources.client_app.file} source={Sources.client_app.rocx} />
 			<Code
 				title="Justfile"
-				source={"build:\n\tnode rocx/bin/rocx.mjs build app --client build/client\n\troc build --target=wasm32 --opt=size --specialize=yes --output=build/client.wasm build/client/client.roc\n\tnode rocx/server/build.mjs app/server.roc build/server --opt=speed\n\ncheck:\n\tnode rocx/bin/rocx.mjs lint app\n\tnode rocx/bin/rocx.mjs check -- roc check app/server.roc"}
+				source={"build:\n\trocx/bin/rocx build app --client build/client\n\troc build --target=wasm32 --opt=size --specialize=yes --output=build/client.wasm build/client/client.roc\n\tnode rocx/server/build.mjs app/server.roc build/server --opt=speed\n\ncheck:\n\trocx/bin/rocx lint app\n\trocx/bin/rocx check -- roc check app/server.roc"}
 				numbers={Bool.False}
 				plain
 			/>
@@ -177,7 +177,7 @@ view! = |_|
 				<table>
 					<thead><tr><th>Where</th><th>What</th></tr></thead>
 					<tbody>
-						<tr><td><code>src/transpile.mjs</code>, <code>bin/rocx.mjs</code></td><td>the transpiler and the command</td></tr>
+						<tr><td><code>src/</code></td><td>rocx: the transpiler and the command, in Roc on basic-cli, built into <code>bin/rocx</code></td></tr>
 						<tr><td><code>html/</code></td><td>the package pages are written with: markup, rendering, safety</td></tr>
 						<tr><td><code>web/</code></td><td>the browser's platform: its Roc header, the modules both platforms have (components'; and requests, endpoints, events, middleware), the Zig host, the runtime</td></tr>
 						<tr><td><code>server/</code></td><td>the server's platform: its Roc header and modules, the Rust host, the build</td></tr>

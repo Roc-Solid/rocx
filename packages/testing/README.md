@@ -198,5 +198,5 @@ Limits, for now:
 
 - Tabs of one browser share cookies: `open` clears them first.
 - `Dom.parse` doesn't close elements HTML leaves open (`<p>one<p>two` nests).
-- The JavaScript imports the repository (`server/build.mjs`, `web/test/browser.mjs`, `bin/rocx.mjs`) by
+- The JavaScript imports the repository (`server/build.mjs`, `web/test/browser.mjs`, and `bin/rocx` through `server/build.mjs`'s `rocxBinary`) by
   path, or from `ROCX_ROOT`.

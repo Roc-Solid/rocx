@@ -5,7 +5,8 @@ browser, in three parts.
 
 - **rocx**, the markup. A `.rocx` file is Roc in which markup may stand wherever an expression can;
   `rocx build` turns it into the plain `.roc` file beside it, line for line, so the compiler checks
-  every value put in a page, and reports at your lines. `rocx` is the command-line tool, too.
+  every value put in a page, and reports at your lines. `rocx` is the command-line tool, too: Roc
+  itself, on [basic-cli](https://github.com/roc-lang/basic-cli), one native executable.
 - **The platform**, what an app runs on: on the server, Roc compiled to native code in a Rust host
   (`server/`), with Postgres, jobs, cron, email, live rooms and actors; in the browser, the
   components, compiled to WebAssembly (`web/`).
@@ -58,7 +59,7 @@ just check   # type-check the site's two programs (reports at .rocx lines) and t
 
 | Where | What |
 |---|---|
-| `src/transpile.mjs`, `src/styles.mjs`, `src/remap.mjs`, `src/routes.mjs`, `bin/rocx.mjs` | the transpiler, scoped styles, error remapping, routing, the command |
+| `src/` | rocx, in Roc on basic-cli: the transpiler (`Transpile.roc`), scoped styles (`Styles.roc`), routing (`Routes.roc`), stories, error remapping, `rocx fmt` and the build (`Build.roc`), the command (`main.roc`); built into `bin/rocx` whenever its Roc changed (`server/build.mjs`'s `rocxBinary`, which every script uses). `src/rocx.mjs` calls its functions from the repo's JavaScript tests by name (`rocx internal`) |
 | `packages/charts` | bar, stacked bar, line, sparkline, donut, scatter and heatmap charts, styled by custom properties: their arithmetic a Roc package (scales, round ticks, SVG paths, in `Dec`), their components copied into each app by `rocx build`; see its README |
 | `packages/crypto` | SHA-256, HMAC, HKDF, Base64 and hex in plain Roc, on no platform, each checked against its RFC's vectors; see its README |
 | `packages/s3` | files in any S3: objects, multipart uploads, presigned URLs, and objects served as they stream, a bucket made from its URL and the server platform's `Http.send!`; see its README |
