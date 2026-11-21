@@ -57,10 +57,10 @@ view! = |_| {
 						</ArchBox>
 						<ArchBox kind="roc" name={[<>{"The app, on "}</>, <code>web/platform</code>]}>
 							<p>
-								Roc: the components, their markup with holes as closures, escaping and safe URLs, server
-								functions as requests (<code>Html</code>, <code>Solid</code>, <code>Show</code>,
+								Roc: the components, their markup with holes as closures, escaping and safe URLs, endpoints
+								as requests (<code>Html</code>, <code>Solid</code>, <code>Show</code>,
 								<code>For</code>, <code>Loading</code>, <code>Errored</code>, <code>Context</code>,
-								<code>Island</code>, <code>Server</code>, <code>Call</code>).
+								<code>Island</code>, <code>Server</code>, <code>Endpoint</code>, <code>Call</code>).
 							</p>
 						</ArchBox>
 					</ArchBox>,
@@ -77,13 +77,13 @@ view! = |_| {
 			<p>What an app gives the platform, and what the platform gives the host:</p>
 			<Code title={"${Sources.platform_requires.file}, in part"} source={Sources.platform_requires.rocx} numbers={Bool.False} />
 			<p>
-				<code>main!</code> is the islands' root; <code>answer!</code> answers calls to server functions,
-				for a runtime that renders on a server (Node, in the tests: the browser's copy answers none). There,
-				a component's call is answered by it, in-process, as the server platform's routes answer it. The
-				host provides three functions: mount the root, run a kept box, answer a call. The rest of the
-				header is what Roc may ask of the runtime: keep a box, make, read or write a signal, make or read a
-				memo, call a server function, fetch, listen to a stream, provide or find a context, where the page
-				is (<code>Router.location!</code>), and the like. Each is a call into JavaScript.
+				<code>main!</code> is the islands' root. The host provides two functions: mount the root, and run a
+				kept box. The browser answers nothing itself: an endpoint a component reads is the server's to
+				answer, and a runtime that renders as a server would (Node, in the tests) answers each read from the
+				answers the page recorded. The rest of the header is what Roc may ask of the runtime: keep a box,
+				make, read or write a signal, make or read a memo, fetch (an endpoint's read is a GET), listen to a
+				stream, provide or find a context, where the page is (<code>Router.location!</code>), and the like.
+				Each is a call into JavaScript.
 			</p>
 			<details>
 				<summary>The whole header: <code>{Sources.platform_header.file}</code></summary>
@@ -135,8 +135,9 @@ view! = |_| {
 				<li>
 					<Who kind="js">JavaScript</Who> The runtime walks the server's nodes beside the markup
 					Roc made, and binds each computation to its own node: comments mark where each computed hole,
-					row and <code>{"<Show>"}</code> is (<code>{"<!--x-->…<!--/x-->"}</code>). A server function asked for an
-					answer the page has gets it from there, not over the network.
+					row and <code>{"<Show>"}</code> is (<code>{"<!--x-->…<!--/x-->"}</code>). A read of an endpoint
+					whose answer the page has (under <code>GET</code> and its URL) gets it from there, not over the
+					network.
 				</li>
 				<li>
 					<Who kind="js">JavaScript</Who> An island whose markup isn't what its components make

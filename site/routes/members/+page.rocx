@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Endpoint
-import pf.Server
 import ../../Middlewares
 import ../../Generated/Api
 import ../../Generated/Paths
@@ -17,10 +16,11 @@ meta = {
 	toc: [],
 }
 
-## Who the member is: run on the server, behind this file's middleware, which read the cookie and
-## handed on the name (`Server.context!`).
+## Who the member is: this path's own endpoint (`GET /members`, for JSON), behind the same
+## middleware, which read the cookie and handed on the name. The server answers it as it renders
+## the page, and the page carries the answer.
 member! : {} => Str
-member! = server!(|_request, {}| Server.context!({}).member)
+member! = |{}| Endpoint.get!(Api.get_members({})).member
 
 view! = |_| {
 	member = member!({})

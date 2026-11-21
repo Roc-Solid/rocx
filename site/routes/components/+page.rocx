@@ -117,7 +117,7 @@ view! = |_|
 				</Feature>
 				<Feature heading={[<code>view!</code>, <>: effectful</>]}>
 					<p>
-						It may make signals and memos, read a context, call a server function. So it runs where it is
+						It may make signals and memos, read a context, read an endpoint. So it runs where it is
 						rendered, once, as in Solid: <code>{"<Counter start_value={3} />"}</code> becomes
 						<code>{"Html.component(|| Counter.view!({ start_value: 3 }))"}</code>, which the runtime calls at its
 						place in the tree, under the contexts provided above it.
@@ -247,8 +247,8 @@ view! = |_|
 				parsed, as Elm's ports do. Either goes once the handler is done and the page patched.
 			</p>
 			<p>
-				A handler may ask the server (a server function, an endpoint) and use the answer: until the answer
-				is in it waits, and runs again once it is. The run that waited drops its writes, and the answer is
+				A handler may ask the server (send an endpoint) and use the answer: until the answer is in it
+				waits, and runs again once it is. The run that waited drops its writes, and the answer is
 				kept for the run that finishes, so the request is sent once.
 			</p>
 			<Code title={"${Sources.signals_rename.file}, in part"} source={Sources.signals_rename.rocx} numbers={Bool.False} />
@@ -497,8 +497,8 @@ view! = |_|
 		<NoHydration>
 			<p>
 				And a shelf and a bag, two more islands sharing a store. The shelf's stock and who is reading are
-				server functions' answers: the server rendered both islands with them, and put them in the page, so
-				the browser asked for neither.
+				GET endpoints' answers (<code>/api/shelf</code>, <code>/api/reader</code>): the server read both as
+				it rendered the islands, and put the answers in the page, so the browser asked for neither.
 			</p>
 		</NoHydration>
 		<BagContext value={Bag.store!({})}>
@@ -526,8 +526,8 @@ view! = |_|
 				</li>
 				<li>
 					<strong>Only the page's islands run.</strong> The server renders the islands the page has places
-					for, and nothing in the others: on a page without the shelf, its server function isn't called. The
-					answers they gave go once, at the end of the page, and the browser hydrates every island at once.
+					for, and nothing in the others: on a page without the shelf, its endpoint isn't read. The answers
+					go once, at the end of the page, and the browser hydrates every island at once.
 					A page with no islands loads no wasm.
 				</li>
 				<li>
@@ -575,9 +575,9 @@ view! = |_|
 				</li>
 			</ul>
 			<p>
-				On the server nothing waits: a server function is a call there, so an island is rendered with its
-				answers in. <a href={Paths.calls}>Talking to the server</a> follows one, from the server's render to a
-				key in the browser.
+				On the server nothing waits: an endpoint read there is answered in-process, there and then, so an
+				island is rendered with its answers in. <a href={Paths.calls}>Talking to the server</a> follows one,
+				from the server's render to a key in the browser.
 			</p>
 			<details>
 				<summary>The whole component: <code>{Sources.signals_profile.file}</code></summary>
@@ -648,9 +648,9 @@ view! = |_|
 					may not be there, where Solid's narrows what isn't null.
 				</li>
 				<li>
-					<strong>rocx names a context</strong> after its module and definition, as it names a server
-					function: there is no identity to tell two apart. <code>create_context</code> has no
-					<code>!</code>: it makes nothing until it is provided, so it can be a module's constant.
+					<strong>rocx names a context</strong> after its module and definition: there is no identity to
+					tell two apart. <code>create_context</code> has no <code>!</code>: it makes nothing until it is
+					provided, so it can be a module's constant.
 				</li>
 				<li>
 					<strong>An effect's <code>apply</code> calls <code>on_cleanup!</code></strong> where Solid's returns
@@ -688,8 +688,8 @@ view! = |_|
 				<li>
 					<strong>On the server, nothing waits</strong>
 					<span>
-						A server function is a call, so each island renders with every answer in, comments where its
-						holes are, into its place on the page, and the answers go at the end of it.
+						An endpoint read there is answered in-process, so each island renders with every answer in,
+						comments where its holes are, into its place on the page, and the answers go at the end of it.
 					</span>
 				</li>
 				<li>
@@ -729,7 +729,7 @@ view! = |_|
 						<li>Effects, split as Solid 2.0's; <code>on_cleanup!</code>, <code>on_settled!</code></li>
 						<li>Forms sent by the runtime, their submissions, and a flash without it</li>
 						<li>The document's title: <code>{"<Title>"}</code></li>
-						<li>Server functions, endpoints and their events</li>
+						<li>Endpoints, read as plain values where a page renders; their events</li>
 						<li>Server rendering, natively; hydration</li>
 					</ul>
 				</div>

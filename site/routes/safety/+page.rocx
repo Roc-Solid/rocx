@@ -106,7 +106,7 @@ view! = |_|
 			</p>
 			<Callout kind="note" title="What the server sends the browser is data too">
 				<p>
-					The answers the server's functions gave, at the end of a page, are JSON in a
+					The answers the server gave the page's reads, at the end of a page, are JSON in a
 					<code>{"<script type=\"application/json\">"}</code>, with every <code>{"<"}</code> written as
 					<code>\u003c</code>, so no answer can end the script. The runtime parses them; nothing evaluates
 					them.
@@ -117,11 +117,11 @@ view! = |_|
 			<p>
 				A page of another site can make a browser send a request here, with this site's cookies: a form that
 				posts, a script that fetches. <code>{"Middleware.same_origin({})"}</code> refuses a request that may
-				change something (a call to a <a href={Paths.calls}>server function</a>, or a POST, PUT, PATCH or
-				DELETE to an <a href={"${Paths.calls}#endpoints"}>endpoint</a>), 403, when the browser says another
-				site's page sent it: its <code>Origin</code> isn't this server. A client that isn't a page
-				(<code>curl</code>, another server) sends no <code>Origin</code>, and is answered; a GET changes
-				nothing, and is answered from anywhere.
+				change something (a POST, PUT, PATCH or DELETE to an
+				<a href={"${Paths.calls}#endpoints"}>endpoint</a>), 403, when the browser says another site's page
+				sent it: its <code>Origin</code> isn't this server. A client that isn't a page (<code>curl</code>,
+				another server) sends no <code>Origin</code>, and is answered; a GET changes nothing, and is answered
+				from anywhere.
 			</p>
 			<p>
 				It is middleware, so an app puts it in front of every request, in its default

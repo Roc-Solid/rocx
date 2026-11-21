@@ -76,7 +76,9 @@ const text = (page, selector) => page.eval(`document.querySelector(${JSON.string
 
 test("every page renders, and hydrates strictly as the server left it, asking for nothing but app.wasm and what it loads", { skip }, async () => {
 	for (const route of ROUTES) {
-		const response = await fetch(`${site.url}${route}`);
+		// As a browser asks (accepting HTML): a path with a page and a get! (/calls, /members) answers
+		// anything else with its data, as JSON.
+		const response = await fetch(`${site.url}${route}`, { headers: { accept: "text/html" } });
 		assert.equal(response.status, 200, route);
 		const html = await response.text();
 		assert.match(html, /^<!doctype html> <html lang="en">/, route);
@@ -160,11 +162,12 @@ test("the to-do list adds, ticks, filters and removes, moving keyed rows", { ski
 
 test("the shelf comes with its stock, and the bag, another demo, shows what goes in", { skip }, async () => {
 	const html = await (await fetch(`${site.url}/components`)).text();
-	assert.match(html, /<span class="shelf-name rx-\w+"><!--x-->rocx mug<!--\/x--><\/span>/, "the server renders the shelf with what its server function answered");
-	assert.match(html, /<p class="bag-title rx-\w+"><!--x-->Ada<!--\/x-->/, "and the bag with who is reading");
-	assert.match(html, /class="rocx-answers">\[.*"Demos\/Shelf\.stock"/, "the answers beside them, for the browser");
+	assert.match(html, /<span class="shelf-name rx-\w+"><!--x-->rocx mug<!--\/x--><\/span>/, "the server renders the shelf with what GET /api/shelf answered");
+	assert.match(html, /<p class="bag-title rx-\w+"><!--x-->Ada<!--\/x-->/, "and the bag with who is reading, GET /api/reader");
+	assert.match(html, /class="rocx-answers">\[.*"GET \/api\/shelf"/, "the answers beside them, for the browser, under their URLs");
+	assert.match(html, /class="rocx-answers">\[.*"GET \/api\/reader"/);
 	const page = await open("/components");
-	assert.equal(await page.eval("performance.getEntriesByType('resource').filter((entry) => entry.name.includes('/rocx/call/')).length"), 0, "the browser read the answers from the page");
+	assert.equal(await page.eval("performance.getEntriesByType('resource').filter((entry) => entry.name.includes('/api/')).length"), 0, "the browser read the answers from the page");
 	assert.equal(await page.eval("document.querySelectorAll('.shelf li').length"), 3);
 	assert.equal(await text(page, ".bag-title"), "Ada's bag");
 	assert.equal(await text(page, ".bag-total"), "0 things · 0 €");
@@ -182,31 +185,38 @@ test("the shelf comes with its stock, and the bag, another demo, shows what goes
 	assert.deepEqual(page.errors, []);
 });
 
-test("server functions: the server answers a call with POST, from this site, in the function's types", { skip }, async () => {
-	const call = (name, body, { method = "POST", headers = {} } = {}) => fetch(`${site.url}/rocx/call/${name}`, { method, headers, body: method === "POST" ? body : undefined });
-	const answered = await call("Demos/Echo.echo", '"hi"');
-	assert.equal(answered.status, 200);
-	assert.equal(answered.headers.get("content-type"), "application/json");
-	assert.equal(await answered.text(), '"Echo: hi"');
-	assert.equal((await call("Demos/Echo.nope", '"hi"')).status, 404);
-	assert.equal((await call("Demos/Echo.echo", "7")).status, 400, "input of the wrong type");
-	const got = await call("Demos/Echo.echo", "", { method: "GET" });
-	assert.equal(got.status, 405);
-	assert.equal(got.headers.get("allow"), "POST");
-	assert.equal((await call("Demos/Echo.echo", '"hi"', { headers: { origin: "https://elsewhere.example" } })).status, 403, "another site's page: the middleware refuses it");
+test("endpoint reads: what the demos read as the pages render is an endpoint's GET, answered over HTTP too, as JSON in its types", { skip }, async () => {
+	const json = async (path, headers = {}) => {
+		const answered = await fetch(`${site.url}${path}`, { headers: { accept: "application/json", ...headers } });
+		assert.equal(answered.status, 200, path);
+		assert.equal(answered.headers.get("content-type"), "application/json", path);
+		return answered.json();
+	};
+	assert.equal(await json("/api/echo/hi%20there"), "Echo: hi there", "a param, decoded");
+	assert.deepEqual((await json("/api/shelf")).map((thing) => thing.name), ["Roc bird sticker", "rocx mug", "Lambda pin"]);
+	assert.equal(await json("/api/reader"), "Ada");
+	assert.match(await json("/api/facts"), /^client_brotli=/m, "the layout's data, at a path of its own: the facts the default middleware hands on");
+	const calls = await json("/calls");
+	assert.deepEqual(calls.asked.map(({ method, status }) => `${method} ${status}`), ["GET 200", "POST 200", "POST 400", "POST 400"], "the calls page's data, at its own URL");
+	assert.equal(calls.shouted, "ROCX, 4 bytes");
+	assert.equal((await fetch(`${site.url}/members`, { headers: { accept: "application/json" } })).status, 401, "the members' data, behind the page's middleware");
+	assert.deepEqual(await json("/members", { cookie: "member=Ada%20L" }), { member: "Ada L" });
+	const posted = await fetch(`${site.url}/api/echo/hi`, { method: "POST", body: "{}" });
+	assert.equal(posted.status, 405);
+	assert.equal(posted.headers.get("allow"), "GET");
+	assert.equal((await fetch(`${site.url}/rocx/call/Demos/Echo.echo`, { method: "POST", body: '"hi"' })).status, 404, "no server functions are left");
 });
 
-test("the browser's app is built from a copy of the site in which a server function is its name", { skip }, () => {
-	const echo = readFileSync(join(out, "client", "Demos", "Echo.roc"), "utf8");
-	assert.match(echo, /^\techo! = Server\.remote\("Demos\/Echo\.echo"\)$/m);
-	assert.doesNotMatch(echo, /Echo: /, "what it does is gone");
-	assert.equal(echo.split("\n").length, readFileSync(join(root, "site", "Demos", "Echo.roc"), "utf8").split("\n").length, "line for line");
-	assert.ok(readFileSync(join(dir, "rocx", "app.wasm")).includes("Demos/Echo.echo"), "the wasm has its name, to call it");
+test("the browser's app is built from a copy of the site in which an endpoint is its method and URL", { skip }, () => {
+	const api = readFileSync(join(out, "client", "Generated", "Api.roc"), "utf8");
+	assert.match(api, /^\tget_api_echo_message = \|params\| Endpoint\.remote\("GET", "\/api\/echo\/\$\{Server\.encode_segment\(params\.message\)\}"\)$/m);
+	assert.doesNotMatch(api, /^import (Api|Calls|Members)\w*Server$/m, "what the handlers do is gone");
+	assert.doesNotMatch(readFileSync(join(dir, "rocx", "app.wasm")).toString("latin1"), /Echo: \$/, "and isn't in the wasm");
 });
 
 test("the echo comes rendered with the server's answers, hydrates without asking, and a click asks nothing", { skip }, async () => {
-	const html = await (await fetch(`${site.url}/calls`)).text();
-	assert.match(html, /<output class="echo-answer"><!--x-->Echo: the page, rendered on the server<!--\/x--><\/output>/, "rendered with echo! called on the server");
+	const html = await (await fetch(`${site.url}/calls`, { headers: { accept: "text/html" } })).text();
+	assert.match(html, /<output class="echo-answer"><!--x-->Echo: the page, rendered on the server<!--\/x--><\/output>/, "rendered with GET /api/echo/… read on the server");
 	const answers = html.slice(html.indexOf('<script type="application/json" class="rocx-answers">'));
 	for (const message of ["the page, rendered on the server", "hello", "this site, as files"]) {
 		assert.ok(answers.includes(`Echo: ${message}`), `and its answer to "${message}" beside it`);
@@ -215,12 +225,12 @@ test("the echo comes rendered with the server's answers, hydrates without asking
 	const echo = "form.echo";
 	await page.eval(`window.output = document.querySelector('${echo} output')`);
 	const echoCalls = () =>
-		page.eval("performance.getEntriesByType('resource').filter((entry) => new URL(entry.name).pathname === '/rocx/call/Demos/Echo.echo').map((entry) => entry.responseStatus)");
+		page.eval("performance.getEntriesByType('resource').filter((entry) => new URL(entry.name).pathname.startsWith('/api/echo/')).map((entry) => entry.responseStatus)");
 	assert.deepEqual(await echoCalls(), [], "the browser read the server's answers: no request");
 	assert.equal(await text(page, `${echo} output`), "Echo: the page, rendered on the server");
 	const woke = await text(page, '[data-inspect-signals="echo"] li');
 	assert.match(woke, /^hydrated with the page in .* ms/);
-	assert.ok(woke.includes('read Demos/Echo.echo("hello") from the page: not asked'), woke);
+	assert.ok(woke.includes("read GET /api/echo/hello from the page: not asked"), woke);
 	const fetched = await page.eval("performance.getEntriesByType('resource').map((entry) => new URL(entry.name).pathname).filter((path) => path.endsWith('.wasm'))");
 	assert.deepEqual(fetched, ["/rocx/app.wasm"], "the whole site, from one wasm");
 	await page.click(`${echo} > button:nth-of-type(2)`);
@@ -295,7 +305,7 @@ test("endpoints: GET /openapi.json is their OpenAPI document, each schema its ty
 	assert.equal(response.headers.get("content-type"), "application/json");
 	const doc = await response.json();
 	assert.equal(doc.openapi, "3.2.0");
-	assert.deepEqual(Object.keys(doc.paths).sort(), ["/api/count/{to}", "/api/shout", "/api/shout/{word}", "/members", "/members/join", "/members/leave"]);
+	assert.deepEqual(Object.keys(doc.paths).sort(), ["/api/count/{to}", "/api/echo/{message}", "/api/facts", "/api/reader", "/api/shelf", "/api/shout", "/api/shout/{word}", "/calls", "/members", "/members/join", "/members/leave"]);
 	const answer = (operation) => operation.responses["200"].content["application/json"].schema;
 	const word = { type: "object", properties: { bytes: { type: "integer", minimum: 0 }, shouted: { type: "string" }, word: { type: "string" } }, required: ["bytes", "shouted", "word"] };
 	assert.deepEqual(answer(doc.paths["/api/shout/{word}"].get), word, "a handler with no annotation: its inferred type");
@@ -358,23 +368,24 @@ test("middleware, in the server built with --opt=speed as the site ships: every 
 	const headersOf = (response) => ({ sniff: response.headers.get("x-content-type-options"), referrer: response.headers.get("referrer-policy") });
 	const both = { sniff: "nosniff", referrer: "same-origin" };
 	for (const path of ["/", "/api/shout/rocx", "/nowhere", "/openapi.json"]) assert.deepEqual(headersOf(await fetch(`${site.url}${path}`)), both, `${path}: the default's last step`);
-	const call = (name, headers = {}) => fetch(`${site.url}/rocx/call/${name}`, { method: "POST", body: "{}", headers });
-	const elsewhere = await call("Facts.facts", { origin: "https://elsewhere.example" });
+	const elsewhere = await fetch(`${site.url}/api/shout`, { method: "POST", body: '"hi"', headers: { "content-type": "application/json", origin: "https://elsewhere.example" } });
 	assert.equal(elsewhere.status, 403, "its first step: another site's page is refused, before the second");
-	// A server function behind the default alone: given the context it hands on (the build's facts).
-	const facts = await call("Facts.facts");
+	// An endpoint behind the default alone: given the context it hands on (the build's facts).
+	const facts = await fetch(`${site.url}/api/facts`, { headers: { accept: "application/json" } });
 	assert.equal(facts.status, 200);
-	assert.match(JSON.parse(await facts.text()), /^client_brotli=/m);
-	// The members' page, its endpoint and its server function: behind the route's middleware too.
-	for (const [method, path] of [["GET", "/members"], ["POST", "/rocx/call/Generated/MembersPage.member"]]) {
-		const refused = await fetch(`${site.url}${path}`, { method, body: method === "POST" ? "{}" : undefined, headers: { accept: "application/json" } });
-		assert.equal(refused.status, 401, `${method} ${path}, without the cookie`);
-		assert.deepEqual(headersOf(refused), both, `${method} ${path}: the default's steps around the route's`);
-	}
-	const member = await call("Generated/MembersPage.member", { cookie: "member=Ada%20L" });
+	assert.match(await facts.json(), /^client_brotli=/m);
+	assert.deepEqual(headersOf(facts), both);
+	// The members' page and its endpoint: behind the route's middleware too.
+	const refused = await fetch(`${site.url}/members`, { headers: { accept: "application/json" } });
+	assert.equal(refused.status, 401, "GET /members, without the cookie");
+	assert.deepEqual(headersOf(refused), both, "GET /members: the default's steps around the route's");
+	const member = await fetch(`${site.url}/members`, { headers: { accept: "application/json", cookie: "member=Ada%20L" } });
 	assert.equal(member.status, 200);
-	assert.equal(await member.text(), '"Ada L"', "the name the route's middleware handed on");
+	assert.deepEqual(await member.json(), { member: "Ada L" }, "the name the route's middleware handed on");
 	assert.deepEqual(headersOf(member), both);
+	// The page reads it as it renders, with the page's cookie: the same name.
+	const page = await (await fetch(`${site.url}/members`, { headers: { accept: "text/html", cookie: "member=Ada%20L" } })).text();
+	assert.match(page, /Welcome, Ada L/);
 	const sent = await fetch(`${site.url}/members/join`, { headers: { accept: "text/html", cookie: "member=Ada%20L" }, redirect: "manual" });
 	assert.deepEqual([sent.status, sent.headers.get("location")], [303, "/members"], "the joining page's own: a member is sent on");
 });
@@ -402,7 +413,7 @@ test("events: an endpoint streams them as it makes them, and lets go of a page t
 	gone.abort();
 	assert.equal((await fetch(`${site.url}/api/shout/rocx`)).status, 200);
 	// The count's component is code only: a copy of the site as files can't stream.
-	assert.ok(!(await (await fetch(`${site.url}/calls`)).text()).includes('class="count"'));
+	assert.ok(!(await (await fetch(`${site.url}/calls`, { headers: { accept: "text/html" } })).text()).includes('class="count"'));
 });
 
 test("endpoints: a demo asks one through Api, and the page asked them as it rendered", { skip }, async () => {

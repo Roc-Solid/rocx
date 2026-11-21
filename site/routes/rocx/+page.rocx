@@ -82,10 +82,10 @@ view! = |_|
 				Solid 2.0's model: a component runs once and makes signals; its holes that read them are
 				computations that patch their own nodes. A page puts one where it wants it, as an island.
 			</Way>
-			<Way kind="Server functions" href={Paths.calls} more="Talking to the server →" code={[<Code source={Sources.echo_server.rocx} numbers={Bool.False} />]}>
-				Defined once, beside the component that calls them: run where they are on the server, a
-				request from the browser, read as a plain value, and nothing of what they do in the
-				download.
+			<Way kind="Endpoints" href={Paths.calls} more="Talking to the server →" code={[<Code source={Sources.way_endpoint.rocx} numbers={Bool.False} />]}>
+				A route's <code>+server.roc</code>: a method at a URL, typed at both ends. A component reads a
+				GET as a plain value; the server answers it as it renders the page, and the page carries the
+				answer. Nothing of what a handler does is in the download.
 			</Way>
 
 			<Heading id="build">A file, and the Roc it becomes</Heading>

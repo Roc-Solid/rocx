@@ -14,9 +14,9 @@
 </div>
 …
 <script type="application/json" class="rocx-answers">
-  [["Facts.facts", "{}", "…"],
-   ["Demos/Echo.echo", "\"the page, …\"", "\"Echo: the page, …\""],
-   ["Demos/Echo.echo", "\"hello\"", "\"Echo: hello\""],
-   ["Demos/Echo.echo", "\"this site, as files\"", "\"Echo: this site, as files\""]]
+  [["GET /api/facts", "", "…"],
+   ["GET /api/echo/the%20page%2C%20…", "", "{\"status\":200,\"body\":\"\\\"Echo: the page, …\\\"\"}"],
+   ["GET /api/echo/hello", "", "{\"status\":200,\"body\":\"\\\"Echo: hello\\\"\"}"],
+   ["GET /api/echo/this%20site%2C%20as%20files", "", "{\"status\":200,\"body\":\"\\\"Echo: this site, as files\\\"\"}"]]
 </script>
 <script type="module" data-rocx src="/rocx/start.js"></script>

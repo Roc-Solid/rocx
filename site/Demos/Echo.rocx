@@ -3,16 +3,18 @@ import pf.Solid exposing [create_memo!, create_signal!]
 import pf.For
 import pf.Loading
 import pf.Errored
-import pf.Server
+import pf.Endpoint
+import ../Generated/Api
 
-## The echo, Solid-style: pick a message, and see what the server said back. The server says each
-## back as it renders the page, so every answer comes with it: picking asks nothing, and works on a
-## copy of the site that is only files.
+## The echo, Solid-style: pick a message, and see what the server said back. Each answer is a GET
+## endpoint's (`routes/api/echo/[message]/+server.roc`), which the server answers as it renders the
+## page, so every answer comes with it: picking asks nothing, and works on a copy of the site that
+## is only files.
 Echo := [].{
 
-	## Says a message back: run on the server, asked for by the browser.
+	## What the server says back to a message: `GET /api/echo/{message}`, read as a plain value.
 	echo! : Str => Str
-	echo! = server!(|_request, message| "Echo: ${message}")
+	echo! = |message| Endpoint.get!(Api.get_api_echo_message({ message: message }))
 
 	## What there is to say.
 	messages : List(Str)
@@ -21,7 +23,7 @@ Echo := [].{
 	view! : {} => Html
 	view! = |{}| {
 		(draft!, set_draft!) = create_signal!("the page, rendered on the server")
-		# A call per message, on the server; in the browser, read from the page. Plain values in both.
+		# A GET per message, answered as the server renders; in the browser, read from the page.
 		answers! = create_memo!(|| said_to!(messages))
 		said! = create_memo!(|| answer_to(answers!(), draft!()))
 		<form class="echo" on:submit={|| {}}>

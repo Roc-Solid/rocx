@@ -4,8 +4,9 @@
 // wasm, hydrates the document and tells the page, `rocx:ready`). Each demo sits in an element that
 // says which it is (`<div data-demo="echo">`); its inspector is `[data-inspect-signals="echo"]`.
 
-// What the server answered as it rendered the page (`[[name, input, answer]]`), read before the
-// runtime takes it out of the page: an inspector says which of its calls were read from there.
+// What the server answered as it rendered the page (`[[name, input, answer]]`: an endpoint's GET is
+// `["GET /api/shelf", "", …]`), read before the runtime takes it out of the page: an inspector says
+// which of its reads were answered from there.
 const answered = JSON.parse(document.querySelector("script.rocx-answers")?.textContent || "[]");
 
 document.addEventListener("rocx:ready", ({ detail: { runtime, ms } }) => {
@@ -50,14 +51,15 @@ document.addEventListener("rocx:ready", ({ detail: { runtime, ms } }) => {
 	awake(performance.now());
 });
 
-/** The demo a server function is called from: its module's (`Demos/Echo.echo`: `echo`;
- * `Demos/EscapeLab.x`: `escape-lab`). */
-const demoNamed = (called) =>
-	called
-		.split(".")[0]
-		.split("/")
-		.pop()
-		.replace(/[A-Z]/g, (c, i) => (i ? "-" : "") + c.toLowerCase());
+/** Which demo reads which endpoint as the page renders: the start of its URL, and the demo. */
+const READS = [
+	["/api/echo/", "echo"],
+	["/api/shelf", "shelf"],
+	["/api/reader", "bag"],
+];
+
+/** The demo a GET the page carried was read by (`GET /api/echo/hello`: `echo`), if a demo read it. */
+const demoNamed = (called) => READS.find(([start]) => called.startsWith(`GET ${start}`))?.[1] ?? null;
 
 /** The demo the reader last used, or that last ran a frame: what a call or an effect is told to
  * when nothing else says. */
@@ -202,7 +204,7 @@ function watchDemo(element) {
 			if (!list) return;
 			begin(`hydrated with the page in ${ms.toFixed(1)} ms`, name);
 			line("the server's nodes, kept", "patch");
-			for (const [called, input] of seeded) line(`read ${called}(${show(JSON.parse(input))}) from the page: not asked`, "wire");
+			for (const [called] of seeded) line(`read ${called} from the page: not asked`, "wire");
 		},
 	};
 }

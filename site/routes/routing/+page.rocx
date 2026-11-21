@@ -155,8 +155,8 @@ view! = |_|
 				what the comment above its handler says, and the JSON Schemas of what it is sent and what it
 				answers. A schema is the handler's type, as the compiler has it, so one nobody wrote down is there
 				too: this site's <code>{"GET /api/shout/{word}"}</code> has no annotation, and its document says it
-				answers <code>{"{ word : Str, shouted : Str, bytes : U64 }"}</code>. Server functions aren't in it:
-				they are the app's own calls, named after its modules, not an API.
+				answers <code>{"{ word : Str, shouted : Str, bytes : U64 }"}</code>. The endpoints a page reads are in
+				it too, since a page's data is an endpoint as any other; a server function (deprecated) isn't.
 			</p>
 			<h3>Turning it on</h3>
 			<p>It is off unless the app says so, with <code>openapi</code> in its <code>App.program</code>:</p>
@@ -300,8 +300,8 @@ view! = |_|
 			<Code title={Sources.route_main.file} source={Sources.route_main.rocx} numbers={Bool.False} />
 			<p>
 				A route file names its own, <code>middleware = …</code>, which runs after the default, around that
-				file's page, endpoints and server functions, and hands on the context they are given (a server
-				function reads it with <code>{"Server.context!({})"}</code>). This site's:
+				file's page or endpoints, and hands on the context they are given (an endpoint's handler reads it
+				as <code>context</code>: <code>{"get! = |{ context, .. }| …"}</code>). This site's:
 			</p>
 			<Code title={Sources.site_middlewares.file} source={Sources.site_middlewares.rocx} />
 			<Versus>
@@ -311,16 +311,16 @@ view! = |_|
 			<p>
 				So a request to <code>/members</code> goes through the app's default, then
 				<code>Middlewares.member</code>, then the page (for a browser) or <code>get!</code>; the answer goes
-				back out through them, gathering the default's headers. <code>rocx routes</code> lists every route
-				(each server function too, a <code>POST /rocx/call/…</code>), the file that answers it, and what it
-				runs behind:
+				back out through them, gathering the default's headers. The page reads <code>GET /members</code> as
+				it renders, and the server answers that the same way, behind the same middleware.
+				<code>rocx routes</code> lists every route, the file that answers it, and what it runs behind:
 			</p>
 			<Code title="A terminal" source={Sources.route_list.rocx} numbers={Bool.False} plain />
 			<ul>
 				<li>
 					<strong>The context is typed.</strong> <code>member</code> is a
-					<code>{"Middleware({ facts : Str }, { facts : Str, member : Str })"}</code>, so the members' page
-					reads <code>context.member</code>; a page that read it without that middleware wouldn't compile. A
+					<code>{"Middleware({ facts : Str }, { facts : Str, member : Str })"}</code>, so the members' endpoint
+					reads <code>context.member</code>; one that read it without that middleware wouldn't compile. A
 					layout reads only what every page's context has (<code>{"{ facts, .. }"}</code>).
 				</li>
 				<li>
@@ -338,16 +338,16 @@ view! = |_|
 			<Heading id="router">The router, and the app</Heading>
 			<p>
 				<code>Generated/Routes.roc</code> has one function: the answer to a request. A
-				<code>POST /rocx/call/…</code> is a server function's (<code>Generated/ServerFunctions.roc</code>;
-				any other method, a 405). Otherwise it takes the path apart and tries each, the fixed before the
-				params; there, the page for a browser's GET, in its layouts, or the endpoint for the method, or a
-				405; and the error page where nothing is:
+				<code>POST /rocx/call/…</code> is a server function's, which are deprecated
+				(<code>Generated/ServerFunctions.roc</code>; any other method, a 405). Otherwise it takes the path
+				apart and tries each, the fixed before the params; there, the page for a browser's GET, in its
+				layouts, or the endpoint for the method, or a 405; and the error page where nothing is:
 			</p>
 			<Code title={"${Sources.route_routes.file}, in part"} source={Sources.route_routes.rocx} numbers={Bool.False} />
 			<p>
 				The app's server answers every request with it, behind its default middleware (<a href="#middleware">above</a>),
-				a call to a server function too. A file that names middleware has its page, endpoints and server
-				functions wrapped in <code>Middleware.run!</code>, given what the middleware passes on:
+				the GETs it makes as a page renders too. A file that names middleware has its page and its
+				endpoints wrapped in <code>Middleware.run!</code>, given what the middleware passes on:
 			</p>
 			<Code title={"${Sources.route_members.file}, in part"} source={Sources.route_members.rocx} numbers={Bool.False} />
 

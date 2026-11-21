@@ -76,7 +76,7 @@ view! = |_| {
 				<li class="pipeline-fork">
 					<div>
 						<span class="pipeline-file">server</span>
-						<span class="pipeline-step">native: pages, endpoints, server functions, islands rendered</span>
+						<span class="pipeline-step">native: pages, endpoints, islands rendered</span>
 					</div>
 					<div>
 						<span class="pipeline-file">client.wasm</span>

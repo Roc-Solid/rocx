@@ -120,20 +120,24 @@ view! = |_|
 				When a page the app answers has <code>{"<rocx-island data-island=\"name\">"}</code> elements, the host
 				renders those islands into them (<code>server/host/src/signals.rs</code>), as the browser's runtime
 				would: every component run once, every hole once, nothing tracked and nothing waiting, a memo
-				computed when it is made, a server function's call answered by its route, in-process. The answers those functions gave go in
-				a script at the end of the page, so the browser reads them instead of asking. An island the page
-				hasn't isn't run.
+				computed when it is made, an endpoint a component reads answered by its route, in-process. The
+				answers go in a script at the end of the page, each under its URL, so the browser reads them instead
+				of asking. An island the page hasn't isn't run.
 			</p>
 			<p>
 				A failure (a context nothing provides, a memo that failed) shows the nearest
 				<code>{"<Errored>"}</code>'s fallback, as in the browser; a crash leaves the islands empty, and the
-				browser renders them itself. A server function is a route the app's <code>respond!</code> answers,
-				<code>POST /rocx/call/…</code>, behind its middleware. Called while the host renders, it is that
-				request, made in-process (<code>Host.call!</code>): the page's headers, cookies among them, the
-				context the server started with, and the same answer the browser would get. An answer that isn't 200
-				fails the call, and the nearest <code>{"<Errored>"}</code> shows its status and text. The site's
-				tests compare what the host renders with what the browser's runtime renders, byte for byte, on every
-				page with islands.
+				browser renders them itself. A read (<code>Endpoint.get!</code>) is a GET of one of the app's own
+				paths, which the app's <code>respond!</code> answers, behind the route's middleware. While the host
+				renders, it is that request, made in-process (<code>Host.fetch!</code>):
+				<code>accept: application/json</code>, the page's headers, cookies among them, the context the server
+				started with, and the same answer the browser would get. Each URL is asked once a render, and its
+				answer is noted whatever its status, unless it was read inside a <code>{"<NoHydration>"}</code>, whose
+				reads the browser never makes. An answer that isn't 200 fails the read, and the nearest
+				<code>{"<Errored>"}</code> shows its status and text; a redirect makes the page that redirect. A
+				server function (deprecated) is answered the same way, as <code>POST /rocx/call/…</code>
+				(<code>Host.call!</code>). The site's tests compare what the host renders with what the browser's
+				runtime renders, byte for byte, on every page with islands.
 			</p>
 
 			<Heading id="background">Background loops, isolated calls</Heading>

@@ -1,16 +1,18 @@
 import pf.Html
-import pf.Server
+import pf.Endpoint
+import Generated/Api
 
 ## What the build measured, as `key=value` lines (`site/build.mjs`): the wasm's sizes, how long
 ## rendering a page takes, the compiler. The server is started with them (`--context-file`), and the
-## site's default middleware hands them on. A page asks for them (`facts!`) and shows them; it never
+## site's default middleware hands them on, and `GET /api/facts` answers with them
+## (`routes/api/facts/+server.roc`). The layout reads them (`facts!`) and shows them; it never
 ## computes them.
 Facts := [].{
 
-	## The facts, from the server that was started with them: a server function, so the browser
-	## reads them from the page the server rendered with them, and asks nothing.
+	## The facts, from the server that was started with them: `GET /api/facts`, which the server
+	## answers as it renders the page, so the browser reads them from the page, and asks nothing.
 	facts! : {} => Str
-	facts! = Server.local("Facts.facts", |_request, {}| Server.context!({}).facts)
+	facts! = |{}| Endpoint.get!(Api.get_api_facts({}))
 
 	## One of the facts, by its key (`"client_brotli"`): "?" if the build measured none.
 	fact! : Str => Str

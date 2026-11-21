@@ -100,9 +100,10 @@ view! = |_|
 
 			<Heading id="where">Where it can be used</Heading>
 			<p>
-				Anywhere on the server: a page as it renders, an endpoint, a job, an actor, a stream. And a component's
-				server function: its body runs only on the server, so it may query, and the browser's copy of the
-				module has neither the body nor the import (<a href={"${Paths.calls}#user"}>who is asking</a>). A
+				Anywhere on the server: a page as it renders, an endpoint, a job, an actor, a stream. So a component
+				reads its data from a database through a GET endpoint: the handler runs only on the server, so it
+				may query, and the browser's copy has only the endpoint's method and URL
+				(<a href={"${Paths.calls}#user"}>who is asking</a>). A
 				statement takes a connection from a pool of 16, and gives it back; a transaction keeps one until it
 				ends. Statements are prepared once per connection, and kept.
 			</p>

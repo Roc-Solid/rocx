@@ -1,9 +1,10 @@
 import pf.Html
-import pf.Server
+import pf.Endpoint
 import pf.Solid exposing [create_signal!, use_context!]
 import pf.Context
 import pf.For
 import pf.Show
+import ../Generated/Api
 
 ## The bag the shelf puts things in, and an island that shows it. The bag is a store: signals in a
 ## context, which the islands' root provides (`<BagContext>`), so the shelf and the bag, apart on
@@ -24,10 +25,11 @@ Bag := [].{
 		{ things!: things!, set_things!: set_things! }
 	}
 
-	## Who is reading: what a session would say, on the server (here, always Ada). The server renders
-	## the bag with it, and puts the answer in the page, so the browser doesn't ask again.
+	## Who is reading: `GET /api/reader`, what a session would say on the server (here, always Ada).
+	## The server renders the bag with it, and puts the answer in the page, so the browser doesn't ask
+	## again.
 	reader! : {} => Str
-	reader! = server!(|_request, {}| "Ada")
+	reader! = |{}| Endpoint.get!(Api.get_api_reader({}))
 
 	view! : {} => Html
 	view! = |{}| {
