@@ -50,6 +50,10 @@ program = {
 	migrations: [{ name: "0001_tables.sql", sql: tables }, { name: "0002_note_index.sql", sql: note_index }],
 	jobs: [Job.handler(note_job), Job.handler(flaky_job), Job.handler(crash_job), Job.handler(mail_job), Job.handler(tick_job), Job.handler(env_job), Job.handler(twice_job), Job.handler(slow_job)],
 	crons: [Cron.every("* * * * * *", tick_job, {})],
+	# The kinds of actor (`rocx build` lists them for an app it builds).
+	actors: [Actor.handler(counter), Actor.handler(mirror({})), Actor.handler(bouncer({})), Actor.handler(ticker)],
+	# The log's format: `ROCX_LOG` if it's set, or else pretty on a terminal and JSON elsewhere.
+	logs: { format: Auto },
 }
 
 respond! : Str, Str, Str, List(U8), Str => Server.Response
@@ -136,6 +140,25 @@ route! = |request, context| {
 		("GET", "/log") => {
 			Log.line!("a line from Roc")
 			text(200, "logged")
+		}
+		# ---- The log: events with fields, at each level ----
+		("GET", "/log/fields") => {
+			Log.info!("an event from Roc", { path: request.path, count: 3.U64, ok: Bool.True, note: "two words", msg: "not the message", level: "not the level" })
+			# One field: `{ run }` alone would be a block (`run`), not a record.
+			Log.warn!("a warning from Roc", { run: run })
+			Log.error!("an error from Roc", {})
+			Log.debug!("a detail from Roc", { nested: { list: [1.U64, 2] } })
+			text(200, "logged")
+		}
+		# `lines` events, numbered, for the request `run`: the log keeps their order.
+		("GET", "/log/burst") => {
+			lines = number(request.query, "lines")
+			var $line = 1.U64
+			while $line <= lines {
+				Log.info!("burst", { run, line: $line })
+				$line = $line + 1
+			}
+			text(200, "logged ${lines.to_str()}")
 		}
 		("GET", "/count") =>
 		# A stream is a loop: send, sleep, round again.
@@ -509,6 +532,36 @@ route! = |request, context| {
 		("POST", "/actors/boom") => answered_actor(Actor.ask!(counter, run, Boom))
 		("POST", "/actors/self") => answered_actor(Actor.ask!(mirror({}), run, Itself(run)))
 		("POST", "/actors/relay") => answered_actor(Actor.ask!(mirror({}), run, Relay(run)))
+		("POST", "/actors/cycle") => answered_actor(Actor.ask!(mirror({}), run, Cycle(run)))
+		("POST", "/actors/tell") => {
+			Actor.tell!(counter, run, Add(I64.from_str(param(request.query, "by")) ?? 1))
+			text(200, "told")
+		}
+		("POST", "/actors/later") => {
+			ms = U64.from_str(param(request.query, "ms")) ?? 100
+			timer = Actor.tell_after!(counter, run, ms, Add(I64.from_str(param(request.query, "by")) ?? 1))
+			text(200, timer.to_str())
+		}
+		("POST", "/actors/cancel") => {
+			Actor.cancel!(U64.from_str(param(request.query, "timer")) ?? 0)
+			text(200, "cancelled")
+		}
+		("POST", "/actors/wrong") => answered_actor(Actor.ask!(stale_counter, run, Reset("to what?")))
+		("POST", "/actors/wrong-tell") => {
+			Actor.tell!(stale_counter, run, Reset("to what?"))
+			text(200, "told")
+		}
+		("POST", "/actors/ghost") => answered_actor(Actor.ask!(ghost, run, Add(1)))
+		("POST", "/actors/tick/start") => answered_actor(Actor.ask!(ticker, run, Start(U64.from_str(param(request.query, "ms")) ?? 20)))
+		("POST", "/actors/tick/stop") => answered_actor(Actor.ask!(ticker, run, Stop))
+		("GET", "/actors/tick") => answered_actor(Actor.ask!(ticker, run, Ticks))
+		("POST", "/actors/poke") =>
+			# The counter's state, written to Postgres behind its back: an actor that is awake keeps
+			# the state it has; one let go reads this when it wakes.
+			match Db.run!("update rocx_actors set state = $1 where kind = 'counter' and key = $2", [Text("{\"count\":${param(request.query, "count")}}"), Text(run)]) {
+				Ok(_) => text(200, "poked")
+				Err(DbErr(why)) => text(500, why)
+			}
 		("POST", path) if path.starts_with("/actors/count/") => {
 			by : I64
 			by = I64.from_str(param(request.query, "by")) ?? 1
@@ -975,23 +1028,33 @@ slow_job = Job.define_with(
 
 ## A count, one per key, that outlives requests and restarts.
 counter : Actor.Kind({ count : I64 }, [Add(I64), Get, Boom], I64)
-counter = Actor.define(
-	"counter",
-	|_key| { count: 0 },
-	|state, message|
+counter = Actor.define({
+	name: "counter",
+	initial: |_key| { count: 0 },
+	receive!: |_me, state, message|
 		match message {
 			Add(by) => { state: { count: state.count + by }, reply: state.count + by }
 			Get => { state, reply: state.count }
 			Boom => if (state.count >= 0) crash "an actor that crashed" else { state, reply: 0 }
 		},
-)
+})
 
-## Asks others: the counter of the same key (`Relay`), or itself (`Itself`), which it can't.
-mirror : {} -> Actor.Kind({}, [Relay(Str), Itself(Str)], I64)
-mirror = |{}| Actor.define("mirror", |_key| {}, mirror_receive!)
+## The counter as a caller built against an older version of it would see it: the same name, a
+## message it doesn't take. Not in `program.actors`: the counter gets the message.
+stale_counter : Actor.Kind({ count : I64 }, [Reset(Str)], I64)
+stale_counter = Actor.define({ name: "counter", initial: |_key| { count: 0 }, receive!: |_me, state, _message| { state, reply: state.count } })
 
-mirror_receive! : {}, [Relay(Str), Itself(Str)] => { state : {}, reply : I64 }
-mirror_receive! = |state, message|
+## A kind the app doesn't list: the host refuses a message to it.
+ghost : Actor.Kind({}, [Add(I64)], I64)
+ghost = Actor.define({ name: "ghost", initial: |_key| {}, receive!: |_me, state, _message| { state, reply: 0 } })
+
+## Asks others: the counter of the same key (`Relay`), itself (`Itself`, which it can't), or the
+## bouncer, which asks it back (`Cycle`, which the bouncer can't).
+mirror : {} -> Actor.Kind({}, [Relay(Str), Itself(Str), Cycle(Str)], I64)
+mirror = |{}| Actor.define({ name: "mirror", initial: |_key| {}, receive!: mirror_receive! })
+
+mirror_receive! : Actor.Me([Relay(Str), Itself(Str), Cycle(Str)]), {}, [Relay(Str), Itself(Str), Cycle(Str)] => { state : {}, reply : I64 }
+mirror_receive! = |_me, state, message|
 	match message {
 		Relay(key) =>
 			match Actor.ask!(counter, key, Get) {
@@ -1003,7 +1066,51 @@ mirror_receive! = |state, message|
 				Ok(count) => { state, reply: count }
 				Err(ActorErr(why)) => crash why
 			}
+		Cycle(key) =>
+			match Actor.ask!(bouncer({}), key, Back(key)) {
+				Ok(count) => { state, reply: count }
+				Err(ActorErr(why)) => crash why
+			}
 	}
+
+## Asks the mirror of the same key: asked by it, that waits forever, so it is refused.
+bouncer : {} -> Actor.Kind({}, [Back(Str)], I64)
+bouncer = |{}|
+	Actor.define({
+		name: "bouncer",
+		initial: |_key| {},
+		receive!: |_me, state, message|
+			match message {
+				Back(key) =>
+					match Actor.ask!(mirror({}), key, Relay(key)) {
+						Ok(count) => { state, reply: count }
+						Err(ActorErr(why)) => crash why
+					}
+			},
+	})
+
+## Counts its own ticks: `Start(ms)` sets a timer for itself, and each tick sets the next
+## (`Actor.after!`) until `Stop` cancels the one waiting (`Actor.cancel!`).
+ticker : Actor.Kind({ ticks : I64, timer : U64, on : Bool }, [Start(U64), Tick(U64), Stop, Ticks], I64)
+ticker = Actor.define({
+	name: "ticker",
+	initial: |_key| { ticks: 0, timer: 0, on: Bool.False },
+	receive!: |me, state, message|
+		match message {
+			Start(ms) => { state: { ticks: state.ticks, timer: Actor.after!(me, ms, Tick(ms)), on: Bool.True }, reply: state.ticks }
+			Tick(ms) =>
+				if (state.on) {
+					{ state: { ticks: state.ticks + 1, timer: Actor.after!(me, ms, Tick(ms)), on: Bool.True }, reply: state.ticks + 1 }
+				} else {
+					{ state, reply: state.ticks }
+				}
+			Stop => {
+				Actor.cancel!(state.timer)
+				{ state: { ticks: state.ticks, timer: 0, on: Bool.False }, reply: state.ticks }
+			}
+			Ticks => { state, reply: state.ticks }
+		},
+})
 
 # ---- Components the server renders, and the server functions they call ----
 

@@ -16,6 +16,9 @@ import Html
 For := [].{
 	PropsKeyed(a, k) := { each! : () => List(a), keyed : a -> k, fallback : Html ?? Html.empty({}), children : (() => a), (() => U64) -> Html }
 
+	## What `<For keyed={|item| …}>` is: a row per key, made once, moved as the list changes, and
+	## dropped with its key; the child gets accessors of its item and its index. The fallback while
+	## the list is empty.
 	view_with_keyed! : PropsKeyed(a, k) => Html
 	view_with_keyed! = |props| {
 		each! = props.each!
@@ -38,6 +41,8 @@ For := [].{
 
 	PropsUnkeyed(a) := { each! : () => List(a), fallback : Html ?? Html.empty({}), children : (() => a), U64 -> Html }
 
+	## What `<For keyed={Bool.False}>` is: a row per position; the child gets an accessor of the
+	## item there and its index. The fallback while the list is empty.
 	view_with_unkeyed! : PropsUnkeyed(a) => Html
 	view_with_unkeyed! = |props| {
 		each! = props.each!

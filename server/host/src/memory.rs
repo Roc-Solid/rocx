@@ -1,82 +1,44 @@
-//! What the server keeps in its memory for Roc: named locks (`Host.lock!`: an actor's one message
-//! at a time) and named values (`Host.store_get!`: an actor's state, between messages).
-//!
-//! A lock belongs to the call that took it, and goes when that call ends, if not before. A call
-//! that asks for a lock it holds already, or one a call it runs inside holds (an actor asking
-//! itself), is told so, instead of waiting for itself forever.
+//! Named values the server keeps in its memory for Roc (`Host.store_get!`, `Host.store_set!`):
+//! what the platform's start keeps for the modules that can't see the app's `program` (`Registry`:
+//! the kinds of job, the schedules). Set a handful of times, read often, never locked: a list that
+//! only grows at its head, one compare-and-swap a value. A value set again is put in front of the
+//! one before, which stays (unread) for as long as the server runs: this is for what is set at the
+//! start, not for state that changes.
 
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
-use tokio::sync::{Mutex as Lock, OwnedMutexGuard};
+use std::ptr;
+use std::sync::atomic::{AtomicPtr, Ordering};
 
-type Locks = Mutex<HashMap<String, Arc<Lock<()>>>>;
-
-fn locks() -> &'static Locks {
-    static LOCKS: OnceLock<Locks> = OnceLock::new();
-    LOCKS.get_or_init(Default::default)
-}
-
-thread_local! {
-    /// The locks the calls on this thread hold now (a call, and the calls it runs inside).
-    static HELD: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
-}
-
-/// A lock a call holds.
-pub struct Held {
+struct Value {
     name: String,
-    _guard: OwnedMutexGuard<()>,
+    value: String,
+    /// The value set before it (of any name), or null.
+    before: *const Value,
 }
 
-impl Drop for Held {
-    fn drop(&mut self) {
-        HELD.with(|held| {
-            let mut held = held.borrow_mut();
-            if let Some(at) = held.iter().rposition(|each| each == &self.name) {
-                held.remove(at);
-            }
-        });
-    }
-}
+/// The value set last, or null.
+static LAST: AtomicPtr<Value> = AtomicPtr::new(ptr::null_mut());
 
-pub enum Taken {
-    Got(Held),
-    Busy,
-    Reentrant,
-}
-
-/// Takes the lock called `name`, waiting `patience` at most.
-pub fn lock(name: &str, patience: Duration) -> Result<Taken, String> {
-    if HELD.with(|held| held.borrow().iter().any(|each| each == name)) {
-        return Ok(Taken::Reentrant);
-    }
-    let lock = locks().lock().unwrap().entry(name.to_string()).or_insert_with(|| Arc::new(Lock::new(()))).clone();
-    let taken = crate::hosted::wait(async { Ok(tokio::time::timeout(patience, lock.lock_owned()).await.ok()) })?;
-    Ok(match taken {
-        Some(guard) => {
-            HELD.with(|held| held.borrow_mut().push(name.to_string()));
-            Taken::Got(Held { name: name.to_string(), _guard: guard })
-        }
-        None => Taken::Busy,
-    })
-}
-
-impl Held {
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-}
-
-fn values() -> &'static Mutex<HashMap<String, String>> {
-    static VALUES: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
-    VALUES.get_or_init(Default::default)
-}
-
+/// The value called `name`: the one set last.
 pub fn get(name: &str) -> Option<String> {
-    values().lock().unwrap().get(name).cloned()
+    let mut at = LAST.load(Ordering::Acquire) as *const Value;
+    // Each value is set whole before it is put at the head, and never changed or freed after.
+    while let Some(value) = unsafe { at.as_ref() } {
+        if value.name == name {
+            return Some(value.value.clone());
+        }
+        at = value.before;
+    }
+    None
 }
 
 pub fn set(name: &str, value: &str) {
-    values().lock().unwrap().insert(name.to_string(), value.to_string());
+    let new = Box::into_raw(Box::new(Value { name: name.to_string(), value: value.to_string(), before: ptr::null() }));
+    let mut last = LAST.load(Ordering::Acquire);
+    loop {
+        unsafe { (*new).before = last };
+        match LAST.compare_exchange_weak(last, new, Ordering::AcqRel, Ordering::Acquire) {
+            Ok(_) => return,
+            Err(now) => last = now,
+        }
+    }
 }

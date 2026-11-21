@@ -40,7 +40,11 @@ Call := [].{
 		Host.listen!(url, Box.box(each!))
 	}
 
-	server! : Str, arg => result where [arg.Json.Encodable([Infinity, NaN, NegativeInfinity, ..]), result.Json.Parseable([InvalidJson(Str)])]
+	## Calls the server function `name` with `arg` (`POST /rocx/call/<name>`, as JSON): its answer,
+	## read as a plain value. The caller stops until it is in, as with `fetch!`; on the server, the
+	## same route answers in-process. An answer it can't read fails the caller. `Server.remote`'s,
+	## the browser's copy of a server function.
+	server! : Str, arg => result where [arg.Json.Encodable(e), result.Json.Parseable([InvalidJson(Str)])]
 	server! = |name, arg| {
 		input =
 			match Json.to_str_try(arg) {

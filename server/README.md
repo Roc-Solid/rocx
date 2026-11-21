@@ -7,10 +7,10 @@ each, talking over HTTP. The docs site's platform pages (`/platform`) say all th
 
 The host (`host/`, Rust) gives Roc general things: HTTP, threads, a pool of Postgres connections
 and one that listens, TCP and TLS sockets, requests to other servers, live topics and rooms,
-background loops that sleep until woken, isolated calls, named locks and a store in memory, the
-environment, secure random numbers, AES-GCM, and rendering components. Migrations, the jobs queue
-and its workers, cron, email (an SMTP client, MIME), actors and storage (an S3 client) are the
-platform's Roc (`platform/*.roc`), written on those.
+background loops that sleep until woken, isolated calls, actors' mailboxes and timers, a store in
+memory, the environment, secure random numbers, AES-GCM, and rendering components. Migrations, the
+jobs queue and its workers, cron, email (an SMTP client, MIME), actors' state and storage (an S3
+client) are the platform's Roc (`platform/*.roc`), written on those.
 
 ```sh
 just dev        # the docs site on it: http://localhost:8080, rebuilt on save
@@ -28,6 +28,7 @@ program = {
     migrations: [{ name: "0001_tables.sql", sql: tables }],   # import "0001_tables.sql" as tables : Str
     jobs: [Job.handler(welcome)],               # what the job workers run
     crons: [Cron.every("0 3 * * *", nightly, {})],
+    logs: { format: Auto },                     # the log's format: Auto, Pretty or Json (below)
 }
 ```
 
@@ -40,8 +41,9 @@ a stream of `Events`, which the host runs on a thread of its own with `{ send!, 
 `Server.for_host` hands each over, flattened: `{ status, headers, kind, text, bytes, upstream, page,
 feed }`, `kind` 0 for `text`, 1 for the `page` (a box the host runs: `Html.serialize!` of the page's
 markup, made once per answer), 2 for the `feed`, 3 for the `bytes`, 4 for the `upstream` (its
-method, URL and headers); the boxes an answer doesn't send do nothing, and the host releases them. Actors aren't
-listed: `Actor.ask!` is given the kind it asks. The platform exposes `Db`, `Job`, `Cron`, `Email`,
+method, URL and headers); the boxes an answer doesn't send do nothing, and the host releases them.
+`program.actors` lists the app's kinds of actor (`Actor.handler`), so the host can run an actor's
+turn when nobody waits on it (a tell, a timer). The platform exposes `Db`, `Job`, `Cron`, `Email`,
 `Live`, `Actor`, `Log`, `Time`, `Tcp`, `Http`, `Storage`, `Env`, `Random`, and the crypto
 (`Sha256`, `Hmac`, `Hkdf`, `AesGcm`, `Base64`, `Hex`); the jobs page (`JobsPage`); the modules
 components are written with (`Html`, `Solid`, `Show`, `For`, `Loading`, `Errored`, `Context`,
@@ -123,11 +125,12 @@ the server stopped runs again at the next start; done jobs are kept for a week.
 **A time limit** (`timeout_ms`, 0 for none) is a deadline on the job's isolated call
 (`Host.isolated!` is given it). The first effect that waits past it ends the call, wherever the job
 is: a Postgres statement (cancelled, and its connection closed rather than given back to the pool, a
-transaction on it with it), a socket's read or write, a request to another server, a lock, a live
-topic. The effect doesn't return an error the job could ignore: it jumps back to the call's guard,
-as a crash does, so what the call allocated is freed and what it held (its transaction, sockets,
-locks) is given back. The job fails with `timed out after <limit> ms`, and is tried again if it has
-attempts left. An actor it asks shares its deadline. Roc that loops without an effect isn't cut off.
+transaction on it with it), a socket's read or write, a request to another server, an actor's
+answer, a live topic. The effect doesn't return an error the job could ignore: it jumps back to the
+call's guard, as a crash does, so what the call allocated is freed and what it held (its
+transaction, sockets, rooms) is given back. The job fails with `timed out after <limit> ms`, and is
+tried again if it has attempts left. An actor it asks doesn't share its deadline: the actor's turn
+is its own, and ends as it would. Roc that loops without an effect isn't cut off.
 
 **A key** (`enqueue_keyed!`) is one pending job's: while a job with it is queued or running,
 queueing another with it does nothing and answers `Exists`; once that one is done, failed or
@@ -452,22 +455,50 @@ crashes. It is all in the server's memory: one server.
 
 ```roc
 cart : Actor.Kind({ items : List(Str) }, [Add(Str), Clear], U64)
-cart = Actor.define("cart", |_key| { items: [] }, |state, message|
-    match message {
-        Add(item) => { state: { items: state.items.append(item) }, reply: state.items.len() + 1 }
-        Clear => { state: { items: [] }, reply: 0 }
-    })
+cart = Actor.define({
+    name: "cart",
+    initial: |_key| { items: [] },
+    receive!: |_me, state, message|
+        match message {
+            Add(item) => { state: { items: state.items.append(item) }, reply: state.items.len() + 1 }
+            Clear => { state: { items: [] }, reply: 0 }
+        },
+})
 
-count = Actor.ask!(cart, member, Add("a book"))?
+count = Actor.ask!(cart, member, Add("a book"))?   # waits for the reply
+Actor.tell!(cart, member, Clear)                    # doesn't
+timer = Actor.tell_after!(cart, member, 60_000, Clear)
+Actor.cancel!(timer)
 ```
 
-An actor is a kind and a key, called into being by its first message (`init(key)`). It answers one
-message at a time (a hundred asks at once each see the one before), and its state is written to
-Postgres (`rocx_actors`) after each, so it is there after a restart. A crash in it is the asker's
-error, and its state stays as it was. An actor may ask another; one that asks itself is refused,
-and one busy for 30 s (waiting on one waiting on it) is an error, not a hang. The app doesn't list
-its kinds: `ask!` is given the kind, and runs its `receive!` in a call of its own
-(`Host.isolated_call!`, a function and its input).
+An actor is a kind and a key, and nobody makes or ends one: a message to any key finds it as its
+last message left it, or new (`initial(key)`, the kind's starting state: no message of its own). It
+handles one message at a time, in the order they came: each actor that is awake has a mailbox in
+the host (`host/src/actors.rs`). One task, the router, owns the table of actors that are awake and
+the timers, and passes every ask, tell and timer to its actor's mailbox; each actor is a task of its
+own that runs its turns one after another, each a call into Roc of its own (`actor_for_host!`).
+Nothing in it is locked: the router's table is its alone, and the tasks talk over channels
+(`tokio::sync::mpsc`, unbounded, and `oneshot`). So what one sender sends an actor is handled in
+the order it was sent, and a hundred asks at once each see the state the one before left.
+
+`receive!` is given the actor itself (`Me`): its key (`Actor.key_of`), and its own timers
+(`Actor.after!(me, ms, message)`, typed as the kind's messages are; a timer every so often is one
+that sets the next). `rocx build` lists the kinds an app's modules define (`Actor.define`, at the top
+of a module's block, `name` first) in `program.actors`; the host refuses a message to a kind not
+there. Messages, replies and state cross to the host as JSON: a message an actor doesn't take (it
+doesn't parse as its kind's: a caller built against an older kind, say), a kind the app has none
+of, and a crash in `receive!` are logged as errors (`rocx actor: a message failed`, with `actor`,
+`key` and `error`) and told to the asker, and the actor goes on with its state as it was.
+
+With a database, an actor's state is read from Postgres (`rocx_actors`) by its first turn and
+written after each turn that changes it, so it is there after a restart. An actor idle for
+`--actor-idle-ms` (15 minutes) is let go: it tells the router, which lets it go if nothing was sent
+to it meanwhile, and the next message wakes it as Postgres has it. Without a database, its state is
+in its task alone, and it stays awake. An actor may ask another: one that asks itself, or any actor
+whose turn waits on its answer up the chain of asks, is refused at once; an ask not answered in
+30 s (a cycle through two mailboxes) is given up on, and a message whose asker gave up before its
+turn came is dropped, with a warning. Tells and timers are in memory: a restart loses those not yet
+handled (a job is for work that must survive one).
 
 ### Pages of components
 
@@ -523,6 +554,48 @@ this one by the build (`server/build.mjs`), so the same components compile on bo
 function's body runs only here, so it may use `Db`, `Job` and the rest: rocx leaves the body, and
 the imports only it used, out of the browser's copy.
 
+### The log: `Log`
+
+```roc
+Log.info!("gate failed", { path: request.path, error: why })   # also debug!, warn!, error!
+Log.line!("migrated")                                          # a message alone, at info
+```
+
+```
+14:03:12 INFO  gate failed error="no session" path=/admin
+{"time":"2026-11-21T13:03:12.345Z","level":"info","msg":"gate failed","error":"no session","path":"/admin"}
+```
+
+Every line the server writes to stderr is an event: a level, a message and fields. The host's own
+lines (`rocx server: http://… (Roc, native)`, stopping, a crash with its `method`, `target` and
+`error`, forwarding, a background loop that crashed), the platform's Roc's (jobs, cron, mail,
+storage, migrations: `Log.line!` for now) and the app's all go through one formatter in the host.
+The fields are any record (`Json.Encodable`), written as JSON; `{}` is none; one record with a
+single field has to say its name twice (`{ id: id }`: `{ id }` alone is a block, which is `id`).
+
+The format is the app's to choose: `program.logs`, `{ format: Auto }`, `Pretty` or `Json`
+(`App.program` says `Auto`; `{ ..App.program({ … }), logs: { format: Json } }` says otherwise).
+`Auto` is `ROCX_LOG` (`pretty` or `json`) if it is set, or else pretty when stderr is a terminal
+and JSON when it isn't (a server whose log is collected). The host starts in `Auto`, so what it
+logs before the platform starts (a server that can't) follows it, and takes the app's format at
+`init_for_host!` (`Host.log_format!`). Pretty: the local time, the level (coloured on a terminal),
+the message, then `key=value`, a value quoted when it has a space, a quote, an `=` or a control
+character in it, or is empty (objects and lists are their JSON). JSON: `time` (RFC 3339, UTC),
+`level` and `msg`, then the fields beside them; a field named `time`, `level` or `msg` is written
+`fields.time` (and so on) in both, so it can't take their place. A line is always one line.
+
+Logging is off the request path. `Host.log!` (Roc's level, message and fields' JSON) and the host's
+own calls put a record on one queue and return; one thread takes them in order, formats them (Roc's
+fields are parsed there), and writes them through a 64 KiB buffer that it flushes whenever the queue
+is empty: a line is out at once on a quiet server, and lines go out together on a busy one. One
+queue, first in first out, so a request's lines come out in the order it logged them, and whole.
+The queue holds 64k events; when it is full, a call that logs waits for room rather than dropping a
+line (a log that loses lines when the server is busiest loses the ones most worth reading; one that
+grows without bound turns a flood of lines into a server out of memory), which slows callers to
+what stderr takes. The queue is flushed before the process exits: after a stop, after a server that
+couldn't start, before an abort (a crash outside a guarded call, out of memory), and on a panic
+(itself an event, `rocx server: the host panicked`). `--help` prints its usage as it is.
+
 ## How a call runs
 
 Each call into Roc runs on a thread from tokio's blocking pool (8 MiB stacks, up to 1024 threads),
@@ -546,18 +619,11 @@ to the box it ran, in Roc's optimized code: the list frees that box anyway); if 
 everything in its list is freed. The tests crash 200
 requests at once, half after allocating 2,000 strings, and check that Roc holds no allocations
 afterwards (`--debug`, `GET /__rocx/allocations`). Calls nest (an isolated call: `Host.isolated!`,
-a job inside its worker; `Host.isolated_call!`, an actor's message inside the request that asked
-it), each with its own list, jump target and context; the frames a crash skips are Roc's and a
-trampoline's, never the host's. What a call holds (a transaction, locks, sockets, rooms) is given
-back when it ends. An isolated call is passed strings, which it copies, so a crash frees all it
-was given; `Host.isolated_call!`'s function is the caller's, and what it captures stays the
-caller's, so the actor's key, state and message go in its input. The box holding that function is
-handed to the host with one reference, which the call into Roc takes and lets go of as it runs it
-(`Actor.ask!` makes the box for that call alone). Optimized code (`--opt=speed`) lets go of it only
-after the function returns, so when the call crashes the host lets go of it instead: once, by its
-count, and only if the call hadn't, the box being still in the caller's list (`isolated_call` in
-`host/src/roc.rs`); otherwise the box, made by the caller, would outlive it. A box shared with
-anything else is left as it is. An isolated call may be given a time limit
+a job inside its worker), each with its own list, jump target and context; the frames a crash skips
+are Roc's and a trampoline's, never the host's. What a call holds (a transaction, sockets, rooms) is
+given back when it ends. An isolated call is passed strings, which it copies, so a crash frees all
+it was given; so is an actor's turn (its kind, key, state and message), a call of its own on the
+thread its actor's task runs it on. An isolated call may be given a time limit
 (a job's): the calls it runs share its deadline, and the first effect that waits past it ends the
 call as a crash would (`cut_off` in `host/src/hosted.rs`), so the only frame it skips that is the
 host's is that effect's own, which holds nothing by then.
@@ -596,13 +662,15 @@ built `--target=arm64musl` runs in a container against `just db`'s Postgres, eve
       --context-file FILE                 what respond! is given besides each request
       --database-url URL                  Postgres (DATABASE_URL): Db, migrations, jobs, cron, actors
       --job-workers 4 --job-retry-ms 1000 jobs run at once; the first retry's wait, doubled after
+      --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in Postgres)
       --smtp-url URL --mail-from ADDRESS  (SMTP_URL, MAIL_FROM); none: an outbox
       --storage-url URL                   S3 storage (STORAGE_URL): s3://KEY:SECRET@HOST/BUCKET?region=…
       --dev                               reload pages on restart, show crashes, the mailbox at /__rocx/mail, Env.dev!
       --debug                             GET /__rocx/allocations, and the mailbox as JSON
 ```
 
-A request's body may be 16 MiB at most (413 beyond).
+A request's body may be 16 MiB at most (413 beyond). `ROCX_LOG` (`pretty` or `json`) chooses the
+log's format when the app's `program` says `Auto` (above).
 
 ## Tests
 
@@ -620,8 +688,13 @@ transaction, another app's left alone; attempts per kind, a time limit cutting a
 Postgres, a socket and another server with nothing left held, keys unique while pending, cancel
 and move, listing), the jobs page (behind a guard; its forms; its stream), cron, email (an outbox,
 the dev mailbox after a restart and not without `--dev`, and SMTP to a server the test runs),
-`Tcp`, roc-pg, live rooms and topics, actors (one message at a time, a crash, asking another or
-itself, a restart), `Http` (to servers the test runs: redirects, a timeout, a body too large, TLS
+`Tcp`, roc-pg, the log (JSON with `ROCX_LOG=json` or unset on a pipe, pretty lines with
+`ROCX_LOG=pretty`, an app's fields beside `time`, `level` and `msg` and never in their place, a
+program's `Pretty` winning over `Auto` and `ROCX_LOG`, 200 requests logging at once with every line
+whole and each request's in order, and the queue flushed at a stop), live rooms and topics, actors
+(one message at a time, a crash, asking another, itself or one waiting on it, tells in order,
+timers and a cancelled one, a message an actor doesn't take and a kind the app has none of, logged,
+a restart, one idle let go and woken as Postgres has it), `Http` (to servers the test runs: redirects, a timeout, a body too large, TLS
 that fails), `Env` (from a request and a job), AES-GCM and the crypto in Roc against Node's, random
 bytes, `Storage` (objects whole and in part, missing ones, a multipart upload of three parts and
 an aborted one, presigned URLs Node's fetch uses, `serve!` with a range (and one the app dropped),
@@ -642,10 +715,13 @@ browser runtime's own render.
 
 - `Db`'s queries aren't checked at build (rows are decoded by the record each caller annotates);
   roc-pg's are.
-- Several servers: live rooms, topics and actors' turns are in one server's memory (jobs and actors'
-  state are in Postgres already).
+- Several servers: live rooms, topics and actors' mailboxes are in one server's memory (jobs and
+  actors' state are in Postgres already).
+- Actors' timers are in memory: durable ones (Orleans' reminders) would be rows, as jobs are.
 - A job's time limit cuts it off only at an effect that waits: Roc that loops without one holds
   its worker until it ends.
+- The platform's Roc (jobs, cron, mail, storage, migrations) logs with `Log.line!`: a message at
+  info, its details in the text, not yet a level and fields of their own.
 - Email: no attachments, Cc or Bcc.
 - `Http`: HTTP/1.1, a connection a request (none kept alive), no proxy; an answer's body comes into
   Roc whole.

@@ -400,7 +400,7 @@ Server := [].{
 	## server renders) it is a call of that route, which the host answers in-process, as the browser's
 	## request would be answered: the same middleware, the same answer, noted for the page. An answer
 	## that isn't 200 fails the caller, and the nearest <Errored> shows its status and text.
-	local : Str, (Request, arg => result) -> (arg => result) where [arg.Json.Encodable([Infinity, NaN, NegativeInfinity, ..]), result.Json.Encodable([Infinity, NaN, NegativeInfinity, ..]), result.Json.Parseable([InvalidJson(Str)])]
+	local : Str, (Request, arg => result) -> (arg => result) where [arg.Json.Encodable(e), result.Json.Encodable(f), result.Json.Parseable([InvalidJson(Str)])]
 	local = |called, implementation|
 		|arg|
 			if Host.serving!({}) == called {
@@ -428,7 +428,7 @@ Server := [].{
 			}
 
 	## The browser's copy: a request, by its name.
-	remote : Str -> (arg => result) where [arg.Json.Encodable([Infinity, NaN, NegativeInfinity, ..]), result.Json.Parseable([InvalidJson(Str)])]
+	remote : Str -> (arg => result) where [arg.Json.Encodable(e), result.Json.Parseable([InvalidJson(Str)])]
 	remote = |called| |arg| Call.server!(called, arg)
 
 	## The answer to a call of the server function `called` (`POST /rocx/call/<called>`, its input
@@ -436,7 +436,7 @@ Server := [].{
 	## answer, as JSON; 400 for input it can't read. The host is told which function it is serving
 	## and the context (as JSON), so the function runs its body (`local`), and `context!` reads it.
 	## rocx writes the calls (`Generated/ServerFunctions`).
-	serve! : Str, Request, c, (arg => result) => Response where [c.Json.Encodable([Infinity, NaN, NegativeInfinity, ..]), arg.Json.Parseable([InvalidJson(Str)]), result.Json.Encodable([Infinity, NaN, NegativeInfinity, ..])]
+	serve! : Str, Request, c, (arg => result) => Response where [c.Json.Encodable(e), arg.Json.Parseable([InvalidJson(Str)]), result.Json.Encodable(f)]
 	serve! = |called, asked, context, function|
 		match Json.parse(Server.text_of(asked)) {
 			Err(InvalidJson(why)) => Server.refused(400, "${called} can't read its input: ${why}")
@@ -457,13 +457,6 @@ Server := [].{
 
 	## Why a value can't be sent as JSON: it holds a number JSON has no way to write (an `F64` that is
 	## NaN or an infinity). Any other `F64` is sent as a number, and read back as one.
-	##
-	## What crosses is `Json.Encodable([Infinity, NaN, NegativeInfinity, ..])` here, in `Call`,
-	## `Endpoint` and `Browser`: an open union that already names the floats' failures, not a type
-	## variable (`Encodable(e)`) or `[..]`. On this Roc, `Json.to_str_try` of a record or tuple
-	## holding a nominal type with a derived `encoder_for` beside another field crashes the
-	## compiler (`boxy_lowering`) unless the error type is given so
-	## (test/compiler-bugs/json-to-str-try-nominal).
 	unwritable : Str
 	unwritable = "it holds a number JSON can't write (an F64 that is NaN or an infinity)"
 }

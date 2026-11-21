@@ -9,8 +9,9 @@
 // long each may take; a key is one pending job's, by which it is cancelled or moved; jobs are
 // listed and acted on, and the jobs page shows them behind the app's guard; cron queues its jobs;
 // email is kept in an outbox (the dev mailbox shows it, after a restart too), or sent over SMTP (to
-// a server this file runs); live rooms count who is in them; actors answer one message at a time
-// and keep their state across a restart; `Http` asks servers this file runs (redirects, a timeout,
+// a server this file runs); live rooms count who is in them; actors answer one message at a time,
+// take tells and timers, log what they do not take, and keep their state across a restart (and an
+// idle spell); `Http` asks servers this file runs (redirects, a timeout,
 // a body too large, TLS that fails); `Env` reads the environment from a request and a job; AES-GCM
 // seals as Node's does, and SHA-256, HMAC, HKDF and Base64 in Roc agree with Node's; `Storage`
 // keeps objects in S3, whole and in parts, serves them streamed, and signs URLs Node's fetch uses;
@@ -69,7 +70,8 @@ const run = `t${Date.now().toString(36)}`;
  * and `environment` besides this process's (an empty variable counts as unset); resolves when it
  * listens. */
 async function start(flags = [], executable = app, environment = {}, { debug = true } = {}) {
-	const env = { ...process.env, ROCX_TEST_SETTING: SETTING, ...environment };
+	// `ROCX_LOG` unset (empty) unless given: stderr is a pipe, so the log is JSON.
+	const env = { ...process.env, ROCX_LOG: "", ROCX_TEST_SETTING: SETTING, ...environment };
 	const child = spawn(executable, ["--port", "0", ...(debug ? ["--debug"] : []), "--context-file", join(dir, "context.txt"), ...flags], { stdio: ["ignore", "ignore", "pipe"], env });
 	let logged = "";
 	const url = await new Promise((resolve, reject) => {
@@ -133,6 +135,25 @@ const until = async (check, ms = 5000) => {
 	}
 };
 
+/** The events on a server's log so far, each line parsed: with `ROCX_LOG` unset and stderr a pipe,
+ * the log is JSON, an object a line (a line still arriving isn't one yet). */
+function events(of = server) {
+	const lines = of.logged().split("\n");
+	return lines.slice(0, -1).map((line) => JSON.parse(line));
+}
+
+/** Whether `event` has these fields: a value as it is, or text a RegExp matches. */
+const has = (event, fields) => Object.entries(fields).every(([key, value]) => (value instanceof RegExp ? typeof event[key] === "string" && value.test(event[key]) : event[key] === value));
+
+/** Waits for an event on the server's log with these fields (`has`). */
+async function logsEvent(fields, of = server) {
+	await until(() => events(of).some((event) => has(event, fields)));
+	assert.ok(
+		events(of).some((event) => has(event, fields)),
+		`an event with ${JSON.stringify(fields, (_, value) => (value instanceof RegExp ? String(value) : value))}:\n${of.logged()}`,
+	);
+}
+
 /** Waits for the server's log to say `pattern` (it comes down a pipe of its own, and may arrive a
  * moment after the answer that followed it). */
 async function logs(pattern, of = server) {
@@ -181,13 +202,143 @@ test("Roc answers: the request's method, path, query, body and the server's cont
 	await logs(/a line from Roc/);
 });
 
+// ---- The log ----
+
+/** A pretty line: the local time, the level (as wide as each other), the message and its fields. */
+const PRETTY = /^\d\d:\d\d:\d\d (DEBUG|INFO |WARN |ERROR) \S/;
+
+/** Waits for a stopped server's stderr to end: everything it wrote, read. */
+const ended = (of) => new Promise((resolve) => (of.child.stderr.readableEnded ? resolve() : of.child.stderr.once("end", resolve)));
+
+test("the log, with ROCX_LOG unset and stderr not a terminal, is JSON: every line an object with time, level and msg, the host's and Roc's; Log.line! is a message at info", { skip }, async () => {
+	assert.equal(await text("/log"), "logged");
+	await logsEvent({ msg: "a line from Roc" });
+	const all = events();
+	assert.ok(all.length > 0);
+	for (const event of all) {
+		assert.deepEqual(Object.keys(event).slice(0, 3), ["time", "level", "msg"], JSON.stringify(event));
+		assert.match(event.time, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/, "RFC 3339, UTC");
+		assert.ok(["debug", "info", "warn", "error"].includes(event.level), event.level);
+	}
+	assert.match(all[0].msg, /^rocx server: http:\/\/127\.0\.0\.1:\d+ \(Roc, native\)$/, "the host's own lines too");
+	const line = all.find((event) => event.msg === "a line from Roc");
+	assert.deepEqual(Object.keys(line), ["time", "level", "msg"], "no fields");
+	assert.equal(line.level, "info");
+	// A value of ROCX_LOG it doesn't know is said, and the format guessed.
+	const unknown = await start([], app, { ROCX_LOG: "loud" });
+	await unknown.stop();
+	await ended(unknown);
+	const [first] = events(unknown);
+	assert.deepEqual({ ...first, time: "" }, { time: "", level: "warn", msg: "rocx server: ROCX_LOG is pretty or json; the log's format is guessed instead", ROCX_LOG: "loud" });
+});
+
+test("ROCX_LOG=json: the server's lines and an app's events, with their fields beside time, level and msg (a field can't take their place), each a line of JSON", { skip }, async () => {
+	const json = await start([], app, { ROCX_LOG: "json" });
+	assert.equal(await json.text("/log/fields?run=r1"), "logged");
+	assert.equal((await json.get("/crash")).status, 500);
+	await json.stop();
+	await ended(json);
+	const lines = json.logged().trimEnd().split("\n");
+	const all = lines.map((line) => JSON.parse(line));
+	for (const event of all) {
+		assert.deepEqual(Object.keys(event).slice(0, 3), ["time", "level", "msg"]);
+		assert.match(event.time, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
+		assert.ok(Math.abs(Date.parse(event.time) - Date.now()) < 60_000, "now");
+	}
+	const without = (event) => ({ ...event, time: undefined });
+	const find = (msg) => without(all.find((event) => event.msg === msg));
+	assert.match(all[0].msg, /^rocx server: http:\/\/127\.0\.0\.1:\d+ \(Roc, native\)$/);
+	assert.deepEqual(find("an event from Roc"), {
+		time: undefined,
+		level: "info",
+		msg: "an event from Roc",
+		count: 3,
+		"fields.level": "not the level",
+		"fields.msg": "not the message",
+		note: "two words",
+		ok: true,
+		path: "/log/fields",
+	});
+	assert.deepEqual(find("a warning from Roc"), { time: undefined, level: "warn", msg: "a warning from Roc", run: "r1" });
+	assert.deepEqual(find("an error from Roc"), { time: undefined, level: "error", msg: "an error from Roc" }, "{} is no fields");
+	assert.deepEqual(find("a detail from Roc"), { time: undefined, level: "debug", msg: "a detail from Roc", nested: { list: [1, 2] } });
+	assert.deepEqual(find("rocx server: Roc crashed"), { time: undefined, level: "error", msg: "rocx server: Roc crashed", method: "GET", target: "/crash", error: "on purpose" });
+	assert.deepEqual(without(all.at(-1)), { time: undefined, level: "info", msg: "rocx server: stopping" });
+});
+
+test("ROCX_LOG=pretty: a line each, the local time, the level (no colour: stderr isn't a terminal), the message and key=value fields, quoted where they need it", { skip }, async () => {
+	const pretty = await start([], app, { ROCX_LOG: "pretty" });
+	assert.equal(await pretty.text("/log/fields?run=r1"), "logged");
+	assert.equal((await pretty.get("/crash")).status, 500);
+	await pretty.stop();
+	await ended(pretty);
+	const lines = pretty.logged().trimEnd().split("\n");
+	for (const line of lines) {
+		assert.match(line, PRETTY);
+		assert.doesNotMatch(line, /\x1b/, "no colour");
+		assert.throws(() => JSON.parse(line));
+	}
+	const [hours, minutes, seconds] = lines[0].slice(0, 8).split(":").map(Number);
+	const now = new Date();
+	const apart = Math.abs(hours * 3600 + minutes * 60 + seconds - (now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds()));
+	assert.ok(Math.min(apart, 86_400 - apart) < 60, `the local time: ${lines[0].slice(0, 8)}, now ${now.toTimeString()}`);
+	const shown = lines.map((line) => line.slice(9));
+	assert.match(shown[0], /^INFO  rocx server: http:\/\/127\.0\.0\.1:\d+ \(Roc, native\)$/);
+	assert.deepEqual(shown.slice(1), [
+		'INFO  an event from Roc count=3 fields.level="not the level" fields.msg="not the message" note="two words" ok=true path=/log/fields',
+		"WARN  a warning from Roc run=r1",
+		"ERROR an error from Roc",
+		'DEBUG a detail from Roc nested="{\\"list\\":[1,2]}"',
+		'ERROR rocx server: Roc crashed method=GET target=/crash error="on purpose"',
+		"INFO  rocx server: stopping",
+	]);
+});
+
+test("a program's `logs: { format: Pretty }` wins over what Auto would guess (JSON, stderr a pipe), and over ROCX_LOG", { skip }, async () => {
+	const executable = join(dir, "pretty");
+	buildApp(join(root, "server", "test", "pretty", "main.roc"), executable, { opt: process.env.ROCX_TEST_OPT ?? "dev" });
+	for (const environment of [{}, { ROCX_LOG: "json" }]) {
+		const pretty = await start([], executable, environment);
+		assert.equal(await pretty.text("/hello"), "logged");
+		await pretty.stop();
+		await ended(pretty);
+		const shown = pretty.logged().trimEnd().split("\n").map((line) => (assert.match(line, PRETTY), line.slice(9)));
+		assert.match(shown[0], /^INFO  rocx server: http:\/\/127\.0\.0\.1:\d+ \(Roc, native\)$/, JSON.stringify(environment));
+		assert.deepEqual(shown.slice(1), ['INFO  an event from Roc note="two words" target=/hello', "INFO  rocx server: stopping"]);
+	}
+});
+
+test("the log is written off the request path, in order: 200 requests at once, logging 5 lines each, every line there, whole, each request's in the order it logged them", { skip }, async () => {
+	const runs = Array.from({ length: 200 }, (_, i) => `${run}-p${i}`);
+	const answers = await Promise.all(runs.map((each) => text(`/log/burst?run=${each}&lines=5`)));
+	assert.deepEqual(new Set(answers), new Set(["logged 5"]));
+	const ours = () => events().filter((event) => event.msg === "burst" && event.run.startsWith(`${run}-p`));
+	await until(() => ours().length >= 1000);
+	// `events` parses every line: one interleaved with another wouldn't be JSON.
+	const seen = new Map(runs.map((each) => [each, []]));
+	for (const event of ours()) seen.get(event.run).push(event.line);
+	for (const [each, lines] of seen) assert.deepEqual(lines, [1, 2, 3, 4, 5], each);
+});
+
+test("what is logged just before a stop is written before the process exits: the log's queue is flushed", { skip }, async () => {
+	const stopping = await start([], app);
+	assert.equal(await stopping.text(`/log/burst?run=${run}-stop&lines=20000`), "logged 20000");
+	assert.equal(await stopping.stop(), 0);
+	await ended(stopping);
+	const all = events(stopping);
+	const lines = all.filter((event) => event.msg === "burst").map((event) => event.line);
+	assert.equal(lines.length, 20000, "every line");
+	assert.deepEqual(lines, Array.from({ length: 20000 }, (_, i) => i + 1), "in order");
+	assert.equal(all.at(-1).msg, "rocx server: stopping", "and the stop after them");
+});
+
 test("a crash, an overflow, or a crash after allocating is a 500; the server goes on, holding nothing", { skip }, async () => {
 	for (const path of ["/crash", "/overflow?x", "/big"]) {
 		const response = await get(path);
 		assert.equal(response.status, 500, path);
 		assert.equal(await response.text(), "Something went wrong.", "the crash isn't shown outside dev");
 	}
-	await logs(/GET \/crash: Roc crashed: on purpose/);
+	await logsEvent({ level: "error", msg: "rocx server: Roc crashed", method: "GET", target: "/crash", error: "on purpose" });
 	await logs(/Integer subtraction overflowed/);
 	assert.equal(await text("/overflow"), "0", "the same route, not overflowing");
 	const answers = await Promise.all(Array.from({ length: 200 }, (_, i) => get(i % 2 ? `/big?${i}` : "/overflow?x").then((r) => r.status)));
@@ -218,7 +369,7 @@ test("a stream is a loop: each event sent as it is made, then `end`; it stops wh
 
 	const crashed = await get("/stream-crash");
 	assert.equal(await crashed.text(), "data: step 0\n\ndata: step 1\n\n", "a crash ends the stream");
-	await logs(/a stream crashed: a stream's third step/);
+	await logsEvent({ level: "error", msg: "rocx server: a stream crashed", error: /a stream's third step/ });
 	assert.equal(await settled(), before, "and frees all it held, from before it began too");
 });
 
@@ -404,16 +555,19 @@ test("forward: an error upstream is its status and reason, never its body; a bod
 		const broken = await get(at("/broken"));
 		assert.equal(broken.status, 500);
 		assert.equal(await broken.text(), "Internal Server Error");
-		await logs(/GET \/forward\?url=\S+: forwarding to http:\/\/127\.0\.0\.1:\d+\/broken: answered 500 Internal Server Error/);
-		assert.doesNotMatch(server.logged(), /\/missing: answered/, "a 404 is the client's to hear about, not the log's");
+		await logsEvent({ level: "warn", msg: "rocx server: forwarded an error", method: "GET", target: /^\/forward\?url=/, upstream: /^http:\/\/127\.0\.0\.1:\d+\/broken$/, status: 500 });
+		assert.ok(!events().some((event) => has(event, { msg: "rocx server: forwarded an error", upstream: /\/missing$/ })), "a 404 is the client's to hear about, not the log's");
 
 		await assert.rejects(get(at("/cut")).then((response) => response.arrayBuffer()), "a body that stops short ends the connection, not the body");
 
 		const nowhere = await get(`/forward?url=${encodeURIComponent("http://127.0.0.1:9/file?X-Amz-Signature=sesame")}`);
 		assert.equal(nowhere.status, 502);
 		assert.equal(await nowhere.text(), "Bad Gateway");
-		await logs(/forwarding to http:\/\/127\.0\.0\.1:9\/file: /);
-		assert.doesNotMatch(server.logged(), /forwarding to [^\n]*sesame/, "the upstream's query (a presigned URL's signature) never logged");
+		await logsEvent({ level: "error", msg: "rocx server: forwarding failed", upstream: "http://127.0.0.1:9/file" });
+		assert.ok(
+			events().every((event) => !/forward/.test(event.msg) || !/sesame/.test(`${event.upstream} ${event.error}`)),
+			"the upstream's query (a presigned URL's signature) never logged",
+		);
 		const refused = await get(`/forward?url=${encodeURIComponent("ftp://127.0.0.1/file")}`);
 		assert.equal(refused.status, 502, "a URL that isn't http's");
 		assert.equal(await until(async () => (await live()) === baseline), true, `nothing held: ${await live()} allocations, ${baseline} once started`);
@@ -424,14 +578,15 @@ test("forward: an error upstream is its status and reason, never its body; a bod
 
 test("a port in use: the server says so and exits, having started nothing (no job workers, no schedules), so nothing panics on its way out", { skip: skipDb }, async () => {
 	const port = new URL(server.url).port;
-	const child = spawn(app, ["--port", port, "--context-file", join(dir, "context.txt"), ...dbFlags()], { stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, ROCX_TEST_SETTING: SETTING } });
+	const child = spawn(app, ["--port", port, "--context-file", join(dir, "context.txt"), ...dbFlags()], { stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, ROCX_LOG: "", ROCX_TEST_SETTING: SETTING } });
 	let logged = "";
 	child.stderr.on("data", (chunk) => (logged += chunk));
 	const code = await new Promise((resolve) => child.on("exit", resolve));
 	// What the loops would have logged, had they started, comes a moment later.
 	await new Promise((resolve) => setTimeout(resolve, 300));
 	assert.equal(code, 1, logged);
-	assert.match(logged, /rocx server: 127\.0\.0\.1:\d+: Address already in use/);
+	const said = logged.trimEnd().split("\n").map((line) => JSON.parse(line));
+	assert.ok(said.some((event) => has(event, { level: "error", msg: "rocx server: can't start", error: /^127\.0\.0\.1:\d+: Address already in use/ })), logged);
 	assert.doesNotMatch(logged, /panicked|Tokio|error connecting/, logged);
 	assert.equal(await text("/"), "Hello from Roc, natively.", "the server on that port goes on");
 });
@@ -1526,7 +1681,7 @@ test("actors: one message at a time per key, a crash leaves the state as it was,
 	assert.match(await itself.text(), /asked itself: it would wait for its own answer forever/);
 });
 
-test("actors: a crash in receive!, or an actor asking itself, again and again, lets go of everything, the box its receive! ran from among it (built with --opt=dev, and with ROCX_TEST_OPT=speed)", { skip }, async () => {
+test("actors: a crash in receive!, or an actor asking itself, again and again, lets go of everything the turn made (built with --opt=dev, and with ROCX_TEST_OPT=speed)", { skip }, async () => {
 	const key = `${run}crashes`;
 	assert.equal(await post(`/actors/count/${key}?by=1`), "1");
 	for (let i = 0; i < 25; i++) {
@@ -1545,6 +1700,60 @@ test("actors: many asks answered, and relayed from one actor to another, leave n
 	assert.equal(await until(async () => (await live()) === baseline), true, `${await live()} allocations, ${baseline} once started: neither more (held) nor fewer (freed twice)`);
 });
 
+test("actors: a tell is handled after the messages before it, and an ask after tells sees them all", { skip }, async () => {
+	const key = `${run}told`;
+	for (let i = 0; i < 20; i++) assert.equal(await post(`/actors/tell?run=${key}&by=1`), "told");
+	assert.equal(await text(`/actors/count/${key}`), "20");
+	const told = await Promise.all(Array.from({ length: 30 }, () => post(`/actors/tell?run=${key}&by=1`)));
+	assert.deepEqual(new Set(told), new Set(["told"]));
+	assert.equal(await until(async () => (await text(`/actors/count/${key}`)) === "50"), true, "every tell handled, none twice");
+});
+
+test("actors: one that asks an actor whose turn waits on it is refused at once, rather than waiting 30 s", { skip }, async () => {
+	const started = performance.now();
+	const cycle = await get(`/actors/cycle?run=${run}cycle`, { method: "POST" });
+	assert.equal(cycle.status, 500);
+	assert.match(await cycle.text(), new RegExp(`bouncer ${run}cycle asked mirror ${run}cycle, whose turn waits on its answer: it would wait forever`));
+	assert.ok(performance.now() - started < 5000, "at once");
+});
+
+test("actors: a message an actor doesn't take, or a kind the app has none of, is an error on the log and to its asker, not a crash: the actor goes on as it was", { skip }, async () => {
+	const key = `${run}stale`;
+	assert.equal(await post(`/actors/count/${key}?by=3`), "3");
+	const wrong = await get(`/actors/wrong?run=${key}`, { method: "POST" });
+	assert.equal(wrong.status, 500);
+	assert.match(await wrong.text(), new RegExp(`^counter ${key}: a message it doesn't take: `));
+	assert.equal(await post(`/actors/wrong-tell?run=${key}`), "told");
+	await logsEvent({ level: "error", msg: "rocx actor: a message failed", actor: "counter", key, error: /a message it doesn't take/ });
+	const failures = () => events().filter((event) => event.msg === "rocx actor: a message failed" && event.key === key).length;
+	assert.equal(await until(async () => failures() === 2), true, `the ask's, and the tell's: ${failures()}`);
+	assert.equal(await text(`/actors/count/${key}`), "3", "as it was");
+	assert.equal(await post(`/actors/count/${key}?by=1`), "4", "and goes on");
+	const ghost = await get(`/actors/ghost?run=${key}`, { method: "POST" });
+	assert.equal(ghost.status, 500);
+	assert.match(await ghost.text(), /^no kind of actor is called ghost/);
+	await logsEvent({ level: "error", msg: "rocx actor: a message failed", actor: "ghost", key });
+	assert.equal(await until(async () => (await live()) === baseline), true, `${await live()} allocations, ${baseline} once started`);
+});
+
+test("actors: timers: a tell later (tell_after!), one cancelled before it fires (cancel!), and an actor's own (after!), each tick setting the next until it stops", { skip }, async () => {
+	const key = `${run}later`;
+	assert.match(await post(`/actors/later?run=${key}&by=5&ms=100`), /^\d+$/);
+	assert.equal(await text(`/actors/count/${key}`), "0", "not yet");
+	const timer = await post(`/actors/later?run=${key}&by=7&ms=150`);
+	assert.equal(await post(`/actors/cancel?timer=${timer}`), "cancelled");
+	assert.equal(await until(async () => (await text(`/actors/count/${key}`)) === "5"), true, "the first fired");
+	await new Promise((resolve) => setTimeout(resolve, 300));
+	assert.equal(await text(`/actors/count/${key}`), "5", "the cancelled one never did");
+	const ticks = `${run}ticks`;
+	assert.equal(await post(`/actors/tick/start?run=${ticks}&ms=20`), "0");
+	assert.equal(await until(async () => Number(await text(`/actors/tick?run=${ticks}`)) >= 5), true, "it ticks");
+	const stopped = Number(await post(`/actors/tick/stop?run=${ticks}`));
+	await new Promise((resolve) => setTimeout(resolve, 200));
+	assert.equal(Number(await text(`/actors/tick?run=${ticks}`)), stopped, "and stops");
+	assert.equal(await until(async () => (await live()) === baseline), true, `${await live()} allocations, ${baseline} once started`);
+});
+
 test("actors: their state is in Postgres, there after a restart", { skip: skipDb }, async () => {
 	const key = `${run}kept`;
 	assert.equal(await post(`/actors/count/${key}?by=41`), "41");
@@ -1553,6 +1762,25 @@ test("actors: their state is in Postgres, there after a restart", { skip: skipDb
 		assert.equal(await restarted.text(`/actors/count/${key}`, { method: "POST" }), "42");
 	} finally {
 		assert.equal(await restarted.stop(), 0);
+	}
+});
+
+test("actors: one idle for --actor-idle-ms is let go, and the next message wakes it as Postgres has it; one awake keeps the state it has", { skip: skipDb }, async () => {
+	const idle = await start([...dbFlags(), "--actor-idle-ms", "200"]);
+	try {
+		const key = `${run}idle`;
+		const ask = (path) => idle.text(path, { method: "POST" });
+		assert.equal(await ask(`/actors/count/${key}?by=1`), "1");
+		// Awake: Postgres changed behind its back changes nothing it has.
+		assert.equal(await ask(`/actors/poke?run=${key}&count=100`), "poked");
+		assert.equal(await ask(`/actors/count/${key}?by=1`), "2");
+		// Idle for longer than 200 ms: let go, and read again when a message wakes it.
+		await new Promise((resolve) => setTimeout(resolve, 700));
+		assert.equal(await ask(`/actors/poke?run=${key}&count=100`), "poked");
+		assert.equal(await idle.text(`/actors/count/${key}`), "100");
+		assert.equal(await ask(`/actors/count/${key}?by=1`), "101");
+	} finally {
+		assert.equal(await idle.stop(), 0);
 	}
 });
 
@@ -1622,7 +1850,7 @@ test("server functions: the browser's POST is answered by the function's route, 
 		[200, '{"badge":{"name":"gold"},"holder":{"badge":{"name":"admin"},"name":"Ada","since":0.5},"points":2.5}'],
 		"a nominal type with a derived encoder beside other fields, and an F64, in the context, the input and the answer",
 	);
-	await logs(/POST \/rocx\/call\/Probe\.unguarded: Roc crashed: Probe\.unguarded: the context its middleware handed on isn't what it reads/);
+	await logsEvent({ msg: "rocx server: Roc crashed", method: "POST", target: "/rocx/call/Probe.unguarded", error: /^Probe\.unguarded: the context its middleware handed on isn't what it reads/ });
 });
 
 test("components and server functions: rendering, calling, failing and crashing again and again leaves nothing allocated", { skip }, async () => {
@@ -1698,8 +1926,8 @@ test("pages of components: HEAD isn't rendered: the answer's status and headers,
 	const crashing = await get("/page-crash", { method: "HEAD" });
 	assert.equal(crashing.status, 200, "a page that would crash, not rendered");
 	assert.equal((await get("/page-crash")).status, 500, "the same page, rendered");
-	await logs(/GET \/page-crash: Roc crashed: a page that crashed/);
-	assert.doesNotMatch(server.logged(), /HEAD \/page-crash/);
+	await logsEvent({ msg: "rocx server: Roc crashed", method: "GET", target: "/page-crash", error: /^a page that crashed/ });
+	assert.ok(!events().some((event) => has(event, { method: "HEAD", target: "/page-crash" })));
 });
 
 test("pages of components: one that crashes, as it is made or as it renders, or fails with no <Errored> around it, is a 500 (with why under --dev)", { skip }, async () => {
@@ -1709,8 +1937,8 @@ test("pages of components: one that crashes, as it is made or as it renders, or 
 		assert.equal(response.headers.get("content-type"), "text/plain; charset=utf-8");
 		assert.equal(await response.text(), "Something went wrong.", "the crash isn't shown outside dev");
 	}
-	await logs(/GET \/page-mount-crash: Roc crashed: a page that crashed as it was made, after 317 strings/);
-	await logs(/GET \/page-unhandled: Roc crashed: nothing above provides Probe\.missing: render this under its provider \(with no <Errored> around it\)/);
+	await logsEvent({ msg: "rocx server: Roc crashed", method: "GET", target: "/page-mount-crash", error: /^a page that crashed as it was made, after 317 strings/ });
+	await logsEvent({ msg: "rocx server: Roc crashed", method: "GET", target: "/page-unhandled", error: /^nothing above provides Probe\.missing: render this under its provider \(with no <Errored> around it\)/ });
 	const dev = await start(["--dev"]);
 	try {
 		const crashed = await dev.get("/page-crash");
@@ -1762,7 +1990,7 @@ test("pages of components: a <NoHydration> is static markup between its markers,
 	);
 	const refused = await get("/page-region-handler");
 	assert.equal(refused.status, 500);
-	await logs(/GET \/page-region-handler: Roc crashed: rocx: <button on:click> is inside <NoHydration>, which the browser never hydrates, so its handler would never run: render what has it outside <NoHydration>/);
+	await logsEvent({ msg: "rocx server: Roc crashed", method: "GET", target: "/page-region-handler", error: "rocx: <button on:click> is inside <NoHydration>, which the browser never hydrates, so its handler would never run: render what has it outside <NoHydration>" });
 	const before = await live();
 	for (let i = 0; i < 20; i++) await Promise.all([text("/page-region"), text("/page-region-handler")]);
 	assert.equal(await until(async () => (await live()) === before), true, `${await live()} allocations, ${before} before`);

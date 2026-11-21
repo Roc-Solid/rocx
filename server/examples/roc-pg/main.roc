@@ -29,6 +29,8 @@ program = {
 	migrations: [{ name: "roc-pg example: planets", sql: schema_sql }],
 	jobs: [],
 	crons: [],
+	actors: [],
+	logs: { format: Auto },
 }
 
 respond! = |_method, _target, _headers, _body, url|

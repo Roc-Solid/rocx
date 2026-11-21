@@ -11,6 +11,8 @@ Router := [].{
 	## The page's path (`/blog/rocx`) and its query (`page=2`, with no `?`; "" with none).
 	Location : { path : Str, query : Str }
 
+	## Where the page is: on the server, the request's path and query; in the browser,
+	## `location`'s.
 	location! : {} => Location
 	location! = |{}| Router.parse(Host.location!({}))
 

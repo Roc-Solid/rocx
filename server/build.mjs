@@ -3,12 +3,13 @@
 //
 //   node server/build.mjs <app.roc> <output> [--opt=dev|speed] [--target=arm64mac|x64mac|arm64musl|x64musl]
 //
-// The host is built with cargo from .tools/rust (`just setup`), or the cargo on PATH; Roc links
-// the app against it (server/platform/targets/<target>/libhost.a). A musl target is a static
-// Linux executable; the C runtime it links (rcrt1.o, libc.a, and libunwind.a, which Rust's std
-// needs) comes from Rust's own musl target, and Zig compiles the host's C for it.
+// The host is built with the cargo on PATH (the system's, e.g. from Nix), or else the one `just
+// setup` put in .tools/rust; Roc links the app against it (server/platform/targets/<target>/
+// libhost.a). A musl target is a static Linux executable; the C runtime it links (rcrt1.o, libc.a,
+// and libunwind.a, which Rust's std needs) comes from Rust's own musl target, which rustup adds,
+// and Zig compiles the host's C for it.
 import { spawn, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -30,24 +31,42 @@ export function nativeTarget() {
 	return process.platform === "darwin" ? `${arch}mac` : `${arch}musl`;
 }
 
-/** The Roc compiler: $ROC, or the pinned one in .tools. */
+/** The Roc compiler: the one `just setup` links in .tools (the fork rocx builds with), else $ROC. */
 export function roc() {
+	// The fork rocx builds with, which `just setup` builds and links (the Justfile says why), as the
+	// file it links to: a new pin is a new path. Else $ROC; never the `roc` on PATH, which may lack
+	// the fork's fixes.
+	const active = join(root, ".tools", "roc-active");
+	if (existsSync(active)) return realpathSync(active);
 	if (process.env.ROC) return process.env.ROC;
-	const dir = join(root, ".tools", "roc");
-	const nightly = existsSync(dir) && readdirSync(dir).find((name) => name.startsWith("roc_nightly-"));
-	if (!nightly) throw new Error("no Roc compiler: run `just setup`, or set ROC");
-	return join(dir, nightly, "roc");
+	throw new Error("no Roc compiler: run `just setup` (or set ROC)");
 }
 
-/** Whether there is a Rust toolchain to build the host with (`just setup` puts one in .tools). */
+let zigFound;
+
+/** Zig, for the browser's host and the C in a musl host: the system's (`zig` on PATH, e.g. from
+ * Nix) when it is the Justfile's `zig_version`, else the one `just setup` put in .tools. */
+export function zig() {
+	if (zigFound) return zigFound;
+	const pinned = /^zig_version := "(.*)"$/m.exec(readFileSync(join(root, "Justfile"), "utf8"))?.[1];
+	const system = spawnSync("zig", ["version"], { encoding: "utf8" });
+	zigFound = system.status === 0 && system.stdout.trim() === pinned ? "zig" : join(root, ".tools", "zig", "zig");
+	return zigFound;
+}
+
+/** Whether there is a Rust toolchain to build the host with: the system's, or the one `just setup`
+ * puts in .tools. */
 export function hasRust() {
 	return run("cargo", ["--version"], { env: rustEnv(), check: false }).status === 0;
 }
 
-/** cargo's environment: the toolchain in .tools/rust if there is one. */
-function rustEnv() {
+const onPath = (command) => spawnSync(command, ["--version"], { stdio: "ignore" }).status === 0;
+
+/** cargo's environment: the system's toolchain (the cargo on PATH) if there is one, else the one in
+ * .tools/rust. A musl target takes the system's only with rustup on PATH too, to add the target. */
+function rustEnv({ musl = false } = {}) {
 	const tools = join(root, ".tools", "rust");
-	if (!existsSync(join(tools, "cargo", "bin", "cargo"))) return process.env;
+	if ((onPath("cargo") && (!musl || onPath("rustup"))) || !existsSync(join(tools, "cargo", "bin", "cargo"))) return { ...process.env };
 	return {
 		...process.env,
 		RUSTUP_HOME: join(tools, "rustup"),
@@ -96,14 +115,13 @@ export function buildHost({ target = nativeTarget() } = {}) {
 	syncShared();
 	const triple = RUST_TARGETS[target];
 	if (!triple) throw new Error(`no host for the target ${target}: one of ${Object.keys(RUST_TARGETS).join(", ")}`);
-	const env = rustEnv();
+	const env = rustEnv({ musl: target.endsWith("musl") });
 	if (target.endsWith("musl")) {
 		// A C compiler for the guard (src/guard.c) and for crates with C in them: Zig's, for any
-		// target, from .tools.
-		const zig = join(root, ".tools", "zig", "zig");
-		const cc = `${zig} cc -target ${triple.replace("-unknown-", "-")}`;
+		// target.
+		const cc = `${zig()} cc -target ${triple.replace("-unknown-", "-")}`;
 		env[`CC_${triple.replaceAll("-", "_")}`] = cc;
-		env[`AR_${triple.replaceAll("-", "_")}`] = `${zig} ar`;
+		env[`AR_${triple.replaceAll("-", "_")}`] = `${zig()} ar`;
 		// cc-rs would add clang's `--target=…`, which Zig spells `-target`, given above; without its
 		// defaults, the flags are these (Zig's own default would sanitize, needing a runtime).
 		env.CRATE_CC_NO_DEFAULTS = "1";

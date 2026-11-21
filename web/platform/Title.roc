@@ -10,6 +10,8 @@ import Html
 ## puts the title in the page's `<head>`, first (`<title data-rocx>`), and the browser keeps
 ## `document.title` to it, from hydration on; hydrating, nothing in the layout's `<head>` changes.
 Title := [].{
+
+	## What `<Title>` is: its children are the document's title, while it is rendered.
 	view! : { children : List(Html) } => Html
 	view! = |{ children }| Html.document_title(children)
 }

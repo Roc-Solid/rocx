@@ -11,11 +11,14 @@ import Html
 Show := [].{
 	Props := { when! : () => Bool, fallback : Html ?? Html.empty({}), children : List(Html) }
 
+	## What `<Show when!={…}>` is: the children while `when!` holds, the fallback otherwise.
 	view! : Props => Html
 	view! = |props| Html.shown(props.when!, props.children, props.fallback)
 
 	PropsWith(a, e) := { when! : () => Try(a, e), fallback : Html ?? Html.empty({}), children : (() => a) -> Html }
 
+	## What `<Show>` with a function child is: `when!` is a Try, and while it is `Ok`, the child
+	## gets an accessor of the value inside; the fallback otherwise.
 	view_with! : PropsWith(a, e) => Html
 	view_with! = |props| {
 		when! = props.when!

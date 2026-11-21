@@ -27,7 +27,7 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	## From a component, in the browser: its answer, sent with the platform's `fetch!`, and read as
 	## a plain value (`Endpoint.send!(Api.post_api_shout({}), { word }, Call.fetch!)`).
 	send! : Endpoint(context, arg, result), arg, ({ method : Str, url : Str, headers : List({ name : Str, value : Str }), body : Str } => { status : U16, body : Str }) => Try(result, Server.Problem)
-		where [arg.Json.Encodable([Infinity, NaN, NegativeInfinity, ..]), result.Json.Parseable([InvalidJson(Str)])]
+		where [arg.Json.Encodable(e), result.Json.Parseable([InvalidJson(Str)])]
 	send! = |endpoint, arg, fetch!| {
 		answered = fetch!(Endpoint.to_request(endpoint, arg))
 		Endpoint.answer(endpoint, Ok({ status: answered.status, headers: [], body: answered.body }))
@@ -76,7 +76,7 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	## The request the browser sends for it: `arg` as JSON in its body (with POST, PUT and PATCH;
 	## the others have none).
 	to_request : Endpoint(context, arg, result), arg -> { method : Str, url : Str, headers : List({ name : Str, value : Str }), body : Str }
-		where [arg.Json.Encodable([Infinity, NaN, NegativeInfinity, ..])]
+		where [arg.Json.Encodable(e)]
 	to_request = |endpoint, arg|
 		if has_body(endpoint.method) {
 			body =
@@ -122,7 +122,7 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	## `x-rocx-redirect` (fetch would follow it before anyone could read it), for the runtime to go
 	## there. An answer of its own is otherwise sent as it is.
 	respond! : Endpoint(context, arg, result), Server.Request, context => Server.Response
-		where [arg.Json.Parseable([InvalidJson(Str)]), result.Json.Encodable([Infinity, NaN, NegativeInfinity, ..])]
+		where [arg.Json.Parseable([InvalidJson(Str)]), result.Json.Encodable(e)]
 	respond! = |endpoint, request, context| {
 		read = input_of(request)
 		input =
@@ -168,7 +168,7 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	## `accept: text/event-stream`), given the context its middleware handed on: a stream, each event
 	## sent as JSON as it comes; a refusal as its status and why, or as the answer it is.
 	stream! : Endpoint(context, {}, Events(event)), Server.Request, context => Server.Response
-		where [event.Json.Encodable([Infinity, NaN, NegativeInfinity, ..])]
+		where [event.Json.Encodable(e)]
 	stream! = |endpoint, request, context| {
 		handler = endpoint.run
 		match handler(request, context, {}) {

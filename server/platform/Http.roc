@@ -24,6 +24,8 @@ Http := [].{
 	defaults : Opts
 	defaults = { timeout_ms: 30_000, max_bytes: 67_108_864, follow_redirects: Bool.True }
 
+	## Makes `request`, as `opts` say, and reads its answer whole: any status is `Ok`. A header
+	## that can't be sent (a line break in it, or a colon in its name) is `HttpErr`.
 	send! : Request, Opts => Try(Response, [HttpErr(Str), TimedOut, TooLarge])
 	send! = |request, opts|
 		match header_lines(request.headers) {

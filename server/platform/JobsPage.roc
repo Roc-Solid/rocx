@@ -23,6 +23,10 @@ import Time
 ## cancel|run_now` with `id=`, or `action=run_schedule` with `name=`). A POST from another site's
 ## page is refused (403), as `Middleware.same_origin` would.
 JobsPage := [].{
+
+	## Answers a request to the jobs page at `mount`: a GET draws it (or streams its changes), a
+	## POST retries, cancels or runs a job, or runs a schedule, and redirects back; any other method
+	## is a 405.
 	respond! : Server.Request, { mount : Str } => Server.Response
 	respond! = |request, { mount }|
 		if request.method == "POST" {

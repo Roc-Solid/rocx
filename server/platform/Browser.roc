@@ -13,7 +13,10 @@ import Host
 ## nothing. Only a handler calls: while computing (a hole, a memo, a component's body), and on the
 ## server, it fails. Names beginning with `rocx:` are the runtime's own (`rocx:audio` is `Audio.play!`).
 Browser := [].{
-	call! : Str, arg => {} where [arg.Json.Encodable([Infinity, NaN, NegativeInfinity, ..])]
+
+	## Calls the page's function `name` with `arg`, as JSON, once the handler is done. It fails
+	## outside a handler, on the server, and for an argument JSON can't write.
+	call! : Str, arg => {} where [arg.Json.Encodable(e)]
 	call! = |name, arg|
 		match Json.to_str_try(arg) {
 			Ok(json) => Host.browser_call!(name, json)

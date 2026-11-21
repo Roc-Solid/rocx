@@ -9,10 +9,11 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { roc as findRoc, zig } from "../../server/build.mjs";
 import { findChrome, launch } from "./browser.mjs";
 import { serve } from "./serve.mjs";
 import { Runtime } from "../runtime.js";
@@ -21,9 +22,15 @@ const here = dirname(fileURLToPath(import.meta.url));
 const web = join(here, "..");
 const root = join(web, "..");
 const out = join(here, "build");
-const rocDir = join(root, ".tools", "roc");
-const roc = process.env.ROC ?? (existsSync(rocDir) ? join(rocDir, readdirSync(rocDir).find((name) => name.startsWith("roc_nightly-")) ?? "", "roc") : "roc");
-const skip = (spawnSync(roc, ["version"]).status !== 0 && "no roc (run `just setup`, or set ROC)") || (!findChrome() && "no Chromium (set CHROME)");
+// The compiler `just setup` links (the fork rocx builds with), else $ROC: server/build.mjs's.
+const roc = (() => {
+	try {
+		return findRoc();
+	} catch {
+		return "";
+	}
+})();
+const skip = ((!roc || spawnSync(roc, ["version"]).status !== 0) && "no roc (run `just setup`, or set ROC)") || (!findChrome() && "no Chromium (set CHROME)");
 
 function run(command, args) {
 	const result = spawnSync(command, args, { cwd: root, encoding: "utf8" });
@@ -35,7 +42,7 @@ function run(command, args) {
 if (!skip) {
 	run("node", [join(root, "bin", "rocx.mjs"), "build", join(here, "app"), "--client", join(out, "app-client")]);
 	mkdirSync(join(web, "platform", "targets", "wasm32"), { recursive: true });
-	run(join(root, ".tools", "zig", "zig"), ["build-obj", join(web, "host", "host.zig"), "-target", "wasm32-freestanding", "-O", "ReleaseSmall", "-fcompiler-rt", `-femit-bin=${join(web, "platform", "targets", "wasm32", "host.wasm")}`]);
+	run(zig(), ["build-obj", join(web, "host", "host.zig"), "-target", "wasm32-freestanding", "-O", "ReleaseSmall", "-fcompiler-rt", `-femit-bin=${join(web, "platform", "targets", "wasm32", "host.wasm")}`]);
 	for (const [name, app, opt] of [
 		["app-dev", join(here, "app", "main.roc"), "dev"],
 		["app-size", join(here, "app", "main.roc"), "size"],
@@ -1089,7 +1096,13 @@ test("effects: one runs once the page is hydrated, and again on a change, after 
 						});
 					},
 				};
-	await withDocument({ app: "effects", api, pages: { "/": (render) => documentPage(render, "/") } }, async ({ site, server }) => {
+	// What is patched, noted in the page from `rocx:ready` on: how many patches hydrating made, read
+	// as start.js tells the page it is done (the effect's first flush is a microtask later), then the
+	// element of each patch after it (its class, or its tag). The ticker's interval patches `.mine`
+	// and `.ticks` every 20 ms from hydrating on, and the tab is polled every 25 ms, so a count read
+	// after polling would race it.
+	const noting = `<script data-rocx>document.addEventListener("rocx:ready", ({ detail: { runtime } }) => { window.hydrating = runtime.stats.patches; window.patched = []; runtime.observer = { patch: ({ node }) => { const at = node.nodeType === 1 ? node : node.parentElement; window.patched.push(at?.className || at?.localName || node.nodeName); } }; });</script>`;
+	await withDocument({ app: "effects", api, pages: { "/": (render) => documentPage(render, "/", { after: noting }) } }, async ({ site, server }) => {
 		const { html } = server.renderToString({ path: "/" });
 		assert.match(html, /<title>0 effects<\/title>/, "a hole in <title>, RCDATA, without comments, which would show");
 		assert.match(html, /<p class="log"><!--x--><!--\/x--><\/p>/, "on the server, no effect runs");
@@ -1104,7 +1117,13 @@ test("effects: one runs once the page is hydrated, and again on a change, after 
 		assert.deepEqual(tab.errors, []);
 		await tab.wait("document.querySelector('.log').textContent === 'ran 0'");
 		assert.equal(await tab.eval("document.title"), "0 effects", "the title's hole bound to its text, strictly");
-		assert.equal(await tab.eval("window.ready.runtime.stats.patches"), 1, "nothing patched in hydrating (the title neither): the one patch is the effect's write to the log");
+		// Read at once, so no tick comes between them.
+		const { hydrating, patched, patches } = await tab.eval("({ hydrating: window.hydrating, patched: window.patched, patches: window.ready.runtime.stats.patches })");
+		assert.equal(hydrating, 0, "nothing patched in hydrating (the title neither)");
+		assert.equal(patched[0], "log", "the first patch is the effect's write to the log: its apply runs in the flush right after hydrating, before any timer can fire");
+		assert.deepEqual(patched.filter((at) => at !== "mine" && at !== "ticks"), ["log"], "and the only one but the ticker's timer's");
+		assert.equal(patches, hydrating + patched.length, "every patch was noted");
+		await tab.eval("window.ready.runtime.observer = null");
 		// The page's `seen`, which the effect's apply calls (Browser.call!): it notes what the page shows then.
 		await tab.eval("window.seen = []; window.rocxEffects = { seen: ({ count }) => window.seen.push([count, document.querySelector('.log').textContent, document.title]) }");
 		await tab.click(".more");

@@ -1,27 +1,33 @@
 //! The server platform's host (`server/platform`): Roc compiled to native code, linked with this
 //! library into one executable. It answers HTTP with tokio and hyper (`http`), keeps Roc's memory
 //! and catches its crashes (`roc`), and gives Roc general effects (`hosted`): Postgres (`db`), live
-//! topics and rooms (`live`), named locks and values (`memory`), TCP and TLS (`tcp`, `tls`), HTTP
-//! requests to other servers (`client`), the settings it was started with (`settings`), the
-//! outbox in memory (`outbox`); and it renders a page of components (`signals`). Jobs, cron,
-//! migrations, actors and email are the platform's Roc.
+//! topics and rooms (`live`), actors' mailboxes and timers (`actors`), named values (`memory`), TCP
+//! and TLS (`tcp`, `tls`), HTTP requests to other servers (`client`), the settings it was started
+//! with (`settings`), the outbox in memory (`outbox`); and it renders a page of components
+//! (`signals`). Jobs, cron, migrations, actors' state and email are the platform's Roc.
 //!
 //! Starting: the address is taken (a port in use stops the server before anything starts); the
 //! database is connected, and a connection listens to it; the platform's start runs in Roc (its
 //! schedules checked, its tables and the app's migrations applied, the jobs a stop cut short queued
 //! again); its background loops start (the job workers, the schedules), each on a thread of its
-//! own; then it answers. Stopping (SIGTERM, or ^C): it stops listening, the loops
-//! end (a worker finishes the job it is running), and it waits for what is running (up to ten
-//! seconds) before it exits.
+//! own; then it answers. Stopping (SIGTERM, or ^C): it stops listening, the loops end (a worker
+//! finishes the job it is running), and it waits for what is running (up to ten seconds) before it
+//! exits, its log flushed.
+//!
+//! Every line it logs, and every line Roc does, is an event on the log (`logging`): a level, a
+//! message and fields, written pretty or as JSON, as the app's `program` says, by a thread of its
+//! own.
 
 #[path = "roc_platform_abi.rs"]
 #[allow(unsafe_op_in_unsafe_fn)]
 mod abi;
+mod actors;
 mod client;
 mod db;
 mod hosted;
 mod http;
 mod live;
+mod logging;
 mod memory;
 mod outbox;
 mod roc;
@@ -48,10 +54,24 @@ pub extern "C" fn main(argc: c_int, argv: *const *const c_char) -> c_int {
     let args = (1..argc.max(1) as usize)
         .map(|index| unsafe { CStr::from_ptr(*argv.add(index)) }.to_string_lossy().into_owned())
         .collect();
+    logging::start();
+    let code = served(args);
+    // What is still on the log's queue is written before the process exits.
+    logging::flush();
+    code
+}
+
+/// The server, from its arguments to its stop: the process's exit code.
+fn served(args: Vec<String>) -> c_int {
     let config = match http::Config::parse(args) {
         Ok(config) => config,
-        Err(message) => {
+        // What it was asked for, for a person to read, as it is.
+        Err(message) if message == http::USAGE => {
             eprintln!("{message}");
+            return 2;
+        }
+        Err(message) => {
+            logging::error("rocx server: can't start", &[("error", message.into())]);
             return 2;
         }
     };
@@ -66,7 +86,7 @@ pub extern "C" fn main(argc: c_int, argv: *const *const c_char) -> c_int {
     {
         Ok(runtime) => runtime,
         Err(error) => {
-            eprintln!("rocx server: {error}");
+            logging::error("rocx server: can't start", &[("error", error.to_string().into())]);
             return 1;
         }
     };
@@ -74,7 +94,7 @@ pub extern "C" fn main(argc: c_int, argv: *const *const c_char) -> c_int {
     match runtime.block_on(run(config)) {
         Ok(()) => 0,
         Err(message) => {
-            eprintln!("rocx server: {message}");
+            logging::error("rocx server: can't start", &[("error", message.into())]);
             1
         }
     }
@@ -111,6 +131,10 @@ async fn run(config: http::Config) -> Result<(), String> {
         db::connect(url)?;
         db::start_listening(url).await?;
     }
+    // Actors: their router, before the platform's start tells it the app's kinds. Kept in Postgres,
+    // an actor idle for long enough is let go; without it, its task is all it has.
+    let idle = (config.database_url.is_some() && config.actor_idle_ms > 0).then(|| Duration::from_millis(config.actor_idle_ms));
+    actors::start(idle);
     // The platform's start, in Roc: a bad schedule or a migration that fails stops the server here.
     let started = tokio::task::spawn_blocking(|| hosted::call(None, roc::init)).await.map_err(|_| "starting failed".to_string())?;
     match started {
@@ -132,7 +156,7 @@ async fn run(config: http::Config) -> Result<(), String> {
             _ = tokio::signal::ctrl_c() => {}
             _ = terminate.recv() => {}
         }
-        eprintln!("rocx server: stopping");
+        logging::info("rocx server: stopping", &[]);
         let _ = signalled.send(true);
     });
 
@@ -142,7 +166,7 @@ async fn run(config: http::Config) -> Result<(), String> {
     let _ = stop.send(true);
     let finished = futures_util::future::join_all(loops);
     if tokio::time::timeout(GRACE, finished).await.is_err() {
-        eprintln!("rocx server: stopped with jobs still running: they run again at the next start");
+        logging::warn("rocx server: stopped with jobs still running: they run again at the next start", &[]);
     }
     served
 }
@@ -154,7 +178,7 @@ fn background(index: u64) {
         match hosted::call_background(index) {
             Ok(()) => return,
             Err(crash) => {
-                eprintln!("rocx: a background loop crashed, and starts again in a second: {}", crash.0);
+                logging::error("rocx server: a background loop crashed, and starts again in a second", &[("error", crash.0.into())]);
                 if hosted::pause(Duration::from_secs(1)) {
                     return;
                 }

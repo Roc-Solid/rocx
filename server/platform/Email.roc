@@ -17,6 +17,9 @@ Email := [].{
 	## A message: `html` may be empty, for text alone.
 	Message : { to : Str, subject : Str, text : Str, html : Str }
 
+	## Sends `message` from `--mail-from`: over SMTP with `--smtp-url`; without, kept in the outbox
+	## and logged. `EmailErr` if an address can't be read, the SMTP server refuses it or can't be
+	## reached, or the outbox can't keep it.
 	send! : Message => Try({}, [EmailErr(Str)])
 	send! = |message| {
 		from_text = sender!({})

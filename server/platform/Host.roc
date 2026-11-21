@@ -4,8 +4,14 @@
 ## `Cron`, `Actor`, `Email`, the migrations). An error here is the host's message.
 Host := [].{
 
-	## A line on the server's log (stderr).
-	log! : Str => {}
+	## An event on the server's log (stderr, `Log`): its level (0 debug, 1 info, 2 warn, 3 error),
+	## its message, and its fields as JSON (an object), or "" with none. The host formats it, as
+	## it does its own lines, pretty or as JSON (`log_format!`), on a thread of its own.
+	log! : U8, Str, Str => {}
+
+	## The log's format, as the app's `program` says (`logs.format`), given as the platform starts:
+	## 0 `Auto` (`ROCX_LOG`, or else pretty on a terminal and JSON elsewhere), 1 `Pretty`, 2 `Json`.
+	log_format! : U8 => {}
 
 	## Writes to the response of the stream this thread is sending; whether its client is still
 	## there to read it.
@@ -28,24 +34,33 @@ Host := [].{
 	## Runs a part of the app (`job:<kind>`) in a call of its own, as `isolated_for_host!`, within
 	## `limit_ms` milliseconds (0: no limit): its answer (status 0), why it failed (1), the crash
 	## that ended it (2), or "timed out after …" (3: the first effect that waited past the limit cut
-	## it off). The call has its own context (its transaction, its locks), and what it allocated is
+	## it off). The call has its own context (its transaction, its rooms), and what it allocated is
 	## freed if it crashes or is cut off.
 	isolated! : Str, Str, U64 => { status : U8, out : Str }
 
-	## Runs `run!` with `input` in a call of its own (an actor's `receive!`), as
-	## `isolated_call_for_host!`: as `isolated!`, its answer (status 0), why it failed (1), or the
-	## crash that ended it (2). What `run!` needs to know comes in `input`: what it captures was
-	## allocated by the caller, so a crash can't free it.
-	isolated_call! : Box(Str => Try(Str, Str)), Str => { status : U8, out : Str }
+	## The app's kinds of actor (`program.actors`), a name a line, given as the platform starts: a
+	## message to any other kind is refused.
+	actor_kinds! : Str => {}
 
-	## Takes the lock called `name`, waiting `ms` milliseconds at most: 0 when it has it, 1 when
-	## another held it all that time, 2 when this call (or one it runs inside) holds it already. The
-	## call keeps it until `unlock!`, or until it ends.
-	lock! : Str, U64 => U8
+	## Asks the actor of kind `kind` called `key`, its message as JSON: its reply (JSON), once it has
+	## handled the messages before it (`actor_for_host!` runs its turn); or why there is none: the
+	## message isn't one it takes, it crashed, it is waiting on this call's actor (refused at once),
+	## or it hasn't answered in 30 s.
+	actor_ask! : Str, Str, Str => Try(Str, Str)
 
-	unlock! : Str => {}
+	## Sends the actor of kind `kind` called `key` a message (JSON), answered by no one: one it
+	## doesn't take is logged as an error.
+	actor_tell! : Str, Str, Str => {}
 
-	## A value the server keeps in its memory, by name (an `Err` when it has none).
+	## Sends the actor of kind `kind` called `key` a message (JSON) in `ms` milliseconds: the timer's
+	## number (`actor_cancel!`). Timers are in the server's memory: a restart loses them.
+	actor_after! : Str, Str, U64, Str => U64
+
+	## Stops a timer that hasn't fired.
+	actor_cancel! : U64 => {}
+
+	## A value the server keeps in its memory, by name (an `Err` when it has none): what the
+	## platform's start keeps (`Registry`). Set a handful of times: each value set stays.
 	store_get! : Str => Try(Str, Str)
 
 	store_set! : Str, Str => {}

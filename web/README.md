@@ -145,15 +145,11 @@ same components natively; this one hydrates them.
 - **JSON.** What crosses as JSON (a server function's input and answer, an endpoint's body, result
   and events, `Browser.call!`'s argument) is written with `Json.to_str_try`, so an `F64` goes as a
   number; one JSON can't write (NaN, an infinity) fails the call (a server function's answer is a
-  500 that says so). Their where clauses read
-  `Json.Encodable([Infinity, NaN, NegativeInfinity, ..])`, not `Encodable(e)`: on this Roc,
-  `Json.to_str_try` of a record holding a type with a derived `encoder_for` beside another field
-  crashes the compiler unless the error type is named
-  (`test/compiler-bugs/json-to-str-try-nominal`). The builtin `Try` has no `encoder_for` or
-  `parser_for` on this Roc, and nothing outside the builtins can give it one: rocx refuses a
-  server function whose annotation takes or answers one, at its line, naming the tag union to
-  write instead (`[Ok(a), Err(e)]`, read by a `match` as a `Try` is), and `rocx check` adds that
-  hint under the compiler's report for one without an annotation.
+  500 that says so). Their where clauses read `Json.Encodable(e)`. The builtin `Try` has no
+  `encoder_for` or `parser_for` on this Roc, and nothing outside the builtins can give it one:
+  rocx refuses a server function whose annotation takes or answers one, at its line, naming the
+  tag union to write instead (`[Ok(a), Err(e)]`, read by a `match` as a `Try` is), and
+  `rocx check` adds that hint under the compiler's report for one without an annotation.
 - **On a server**, nothing waits: every hole runs once, no effect or timer runs and no cleanup is
   kept, a server function's call is answered from the answers given (`renderToString({ answers })`,
   a page's answers script; one not there fails with 599), and the HTML

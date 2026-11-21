@@ -25,6 +25,7 @@ Tcp :: [Connection(U64)].{
 			Err(why) => Err(TcpErr(why))
 		}
 
+	## Sends `bytes`, all of them, waiting until they are written.
 	write_bytes! : Tcp, List(U8) => Try({}, [TcpErr(Str)])
 	write_bytes! = |tcp, bytes|
 		match Host.tcp_write!(id_of(tcp), bytes) {
@@ -32,6 +33,7 @@ Tcp :: [Connection(U64)].{
 			Err(why) => Err(TcpErr(why))
 		}
 
+	## Sends `text`, as UTF-8.
 	write_utf8! : Tcp, Str => Try({}, [TcpErr(Str)])
 	write_utf8! = |tcp, text| tcp.write_bytes!(text.to_utf8())
 
@@ -61,6 +63,7 @@ Tcp :: [Connection(U64)].{
 			Err(why) => Err(TcpErr(why))
 		}
 
+	## Closes the connection. Using it after is a `TcpErr`.
 	close! : Tcp => {}
 	close! = |tcp| Host.tcp_close!(id_of(tcp))
 }

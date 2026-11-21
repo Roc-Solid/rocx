@@ -1,6 +1,6 @@
 //! Roc's side of the host: the memory Roc allocates, what happens when it crashes, and the calls
 //! into the app (`respond`, `stream`, `drop_feed`, a page's `mount`; `init`, `background`,
-//! `isolated`, `isolated_call`; `run`).
+//! `isolated`, `actor`; `run`).
 //!
 //! Every call into Roc is guarded (`guarded`): it runs with a jump target set (`guard.c`), and
 //! what it allocates is linked into a list (`Ring`). If the call returns, what it still holds lives
@@ -18,7 +18,7 @@ use std::alloc::{Layout, alloc, dealloc};
 use std::cell::{Cell, RefCell, UnsafeCell};
 use std::ffi::c_void;
 use std::ptr::{self, NonNull};
-use std::sync::atomic::{AtomicI64, AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicI64, Ordering};
 
 // ---- Memory ----
 
@@ -62,7 +62,8 @@ thread_local! {
 /// guarded call tells the two apart (`take_failure`). The calling frame must hold nothing to drop.
 pub fn fail(message: String) -> ! {
     if unsafe { rocx_guard_active() } == 0 {
-        eprintln!("rocx: a failure outside a call the host guards: {message}");
+        crate::logging::error("rocx server: a failure outside a call the host guards", &[("error", message.into())]);
+        crate::logging::flush();
         std::process::abort();
     }
     FAILURE.with(|slot| *slot.borrow_mut() = Some(message.clone()));
@@ -73,7 +74,8 @@ pub fn fail(message: String) -> ! {
 /// Ends the running call with a crash: one a host effect saw in a call it made, passed on.
 pub fn crash_outward(message: String) -> ! {
     if unsafe { rocx_guard_active() } == 0 {
-        eprintln!("rocx: Roc crashed outside a call the host guards: {message}");
+        crate::logging::error("rocx server: Roc crashed outside a call the host guards", &[("error", message.into())]);
+        crate::logging::flush();
         std::process::abort();
     }
     CRASH.with(|slot| *slot.borrow_mut() = Some(message));
@@ -156,7 +158,8 @@ fn offset_for(align: usize) -> usize {
 }
 
 fn out_of_memory() -> ! {
-    eprintln!("rocx: out of memory");
+    crate::logging::error("rocx server: out of memory", &[]);
+    crate::logging::flush();
     std::process::abort()
 }
 
@@ -236,12 +239,12 @@ pub extern "C" fn roc_realloc(ptr: *mut c_void, length: usize, alignment: usize)
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_dbg(bytes: *const u8, len: usize) {
-    eprintln!("[roc dbg] {}", text(bytes, len));
+    crate::logging::debug("dbg", &[("value", text(bytes, len).into())]);
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_expect_failed(bytes: *const u8, len: usize) {
-    eprintln!("[roc expect failed] {}", text(bytes, len));
+    crate::logging::error("expect failed", &[("expect", text(bytes, len).into())]);
 }
 
 /// A crash ends the call it happened in: the message is kept for the guard, which this jumps back
@@ -250,7 +253,8 @@ pub extern "C" fn roc_expect_failed(bytes: *const u8, len: usize) {
 pub extern "C" fn roc_crashed(bytes: *const u8, len: usize) {
     let message = text(bytes, len);
     if unsafe { rocx_guard_active() } == 0 {
-        eprintln!("rocx: Roc crashed outside a call the host guards: {message}");
+        crate::logging::error("rocx server: Roc crashed outside a call the host guards", &[("error", message.into())]);
+        crate::logging::flush();
         std::process::abort();
     }
     CRASH.with(|slot| *slot.borrow_mut() = Some(message));
@@ -324,7 +328,7 @@ fn guarded<F: FnOnce() -> R, R>(ring: &Ring, call: F) -> Result<R, Crash> {
         }
     }
 
-    // A call may run inside another (an actor's, from a request's hosted `ask!`): it has a list
+    // A call may run inside another (a job's, from a worker's hosted `isolated!`): it has a list
     // and a jump target of its own, and the outer call's come back when it ends. A crash in it
     // jumps back to its own guard, inside the hosted function, which goes on.
     let outer = TRACKING.with(|tracking| tracking.replace(ring.sentinel()));
@@ -530,68 +534,29 @@ pub fn isolated(what: &str, input: &str) -> Result<Result<String, String>, Crash
     Ok(answered(done, host))
 }
 
-/// Runs a function Roc gave the host (`isolated_call_for_host!`: an actor's `receive!`) with
-/// `input`, in a call of its own, as `isolated` runs a part of the app. `input` is made in the call,
-/// so a crash frees it; what the function captured was made by the caller, and stays the caller's.
-///
-/// Who owns the box: Roc hands it to the host with one reference, the host's (`Actor.ask!` makes a
-/// box for this call alone, so it is the only one), and the call into Roc takes that reference:
-/// Roc lets go of it as it runs the function. Code built with `--opt=dev` has let go of it before a
-/// crash in the function can come; optimized code (`--opt=speed`) lets go only after the function
-/// returns, so a crash skips that, and the box, made by the calling call and in its list, would
-/// outlive it, as a page's box would (`Page`, whose list frees it). So on a crash, and only then,
-/// the host lets go of the reference the call took, if the call didn't: when the box was held alone
-/// as it was handed over, and is still a block in the calling call's list (a box let go of is
-/// freed, which takes it out). Once, by its count, as Roc would have on return: what it captured is
-/// let go of with it. A box shared with anything else, or static, is left as it is.
-pub fn isolated_call(callable: abi::RocErasedCallable, input: &str) -> Result<Result<String, String>, Crash> {
+/// Runs an actor's turn (`actor_for_host!`): its kind and key, its state as its last turn left it
+/// (none: the turn reads it), and the message (JSON). Its next state and its reply (JSON), or why it
+/// has none; a crash in it ends this call only, and frees what it allocated.
+pub fn actor(kind: &str, key: &str, kept: Option<&str>, message: &str) -> Result<Result<(String, String), String>, Crash> {
     let host = host();
     let host = &host;
-    let alone = references(callable) == 1;
-    let caller = TRACKING.with(Cell::get);
     let made = Ring::new();
-    let done = match guarded(&made, || unsafe { abi::roc_isolated_call(callable, RocStr::from_str(input, host)) }) {
-        Ok(done) => done,
-        Err(crash) => {
-            if alone && holds(caller, block_of(callable)) {
-                release(callable);
-            }
-            return Err(crash);
+    let done = guarded(&made, || unsafe {
+        abi::roc_actor(
+            RocStr::from_str(kind, host),
+            RocStr::from_str(key, host),
+            kept.is_some(),
+            RocStr::from_str(kept.unwrap_or(""), host),
+            RocStr::from_str(message, host),
+        )
+    })?;
+    Ok(match done.tag {
+        abi::ActorForHostResultTag::Ok => {
+            let answer = unsafe { core::mem::ManuallyDrop::into_inner(done.payload.ok) };
+            Ok((copied(answer.state, host), copied(answer.reply, host)))
         }
-    };
-    Ok(answered(done, host))
-}
-
-/// How many references a boxed function (`Box(a => b)`) has: its count, just before its payload
-/// (the glue's `allocate_box`); 0 for a static one.
-fn references(callable: abi::RocErasedCallable) -> isize {
-    unsafe { (*((callable as *mut u8).sub(std::mem::size_of::<isize>()) as *const AtomicIsize)).load(Ordering::Acquire) }
-}
-
-/// The block a boxed function lives in: its payload after its count, padded to the payload's
-/// alignment (the glue's `allocate_box`, and `free_box_allocation`, which frees it so), and the
-/// block's header before that (`allocate`). Only its address: nothing there is read.
-fn block_of(callable: abi::RocErasedCallable) -> *mut Header {
-    let header_bytes = abi::ROC_ERASED_CALLABLE_PAYLOAD_ALIGNMENT.max(std::mem::size_of::<usize>());
-    unsafe { header_of((callable as *mut u8).sub(header_bytes) as *mut c_void) }
-}
-
-/// Whether the list whose sentinel is `ring` (none: null) holds the block `block`, by its address:
-/// only the list's own blocks are read.
-fn holds(ring: *mut Header, block: *mut Header) -> bool {
-    if ring.is_null() {
-        return false;
-    }
-    unsafe {
-        let mut each = (*ring).next;
-        while each != ring {
-            if each == block {
-                return true;
-            }
-            each = (*each).next;
-        }
-    }
-    false
+        abi::ActorForHostResultTag::Err => Err(copied(unsafe { core::mem::ManuallyDrop::into_inner(done.payload.err) }, host)),
+    })
 }
 
 /// An isolated call's answer, or why it failed, copied out and released.

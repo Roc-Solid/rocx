@@ -1,36 +1,39 @@
 //! What the host does for Roc: the functions `server/platform/Host.roc` declares, each exported
 //! under the name the platform's `hosted` section gives it. They are general: Postgres, time, live
-//! topics and rooms, settings and the environment, calls run in isolation, named locks and values,
-//! TCP and TLS, HTTP requests, random numbers, AES-GCM. Jobs, cron, migrations, actors and email
-//! are Roc, built on them (`server/platform`).
+//! topics and rooms, settings and the environment, calls run in isolation, actors' mailboxes and
+//! timers (`actors`), named values, TCP and TLS, HTTP requests, random numbers, AES-GCM. Jobs,
+//! cron, migrations, actors' state and email are Roc, built on them (`server/platform`).
 //!
 //! Each runs on the thread of the call into Roc that asked for it, a thread from tokio's pool for
 //! blocking work, so it may wait (on Postgres, say) without holding up other requests: it blocks
-//! on the future there (`wait`). It must not panic into Roc, so each catches its own. Two call
-//! back into Roc, `isolated` (`roc::isolated`) and `isolated_call` (`roc::isolated_call`), each as a
-//! guarded call of its own, so a crash in it comes back here, and never skips a frame of ours.
+//! on the future there (`wait`). It must not panic into Roc, so each catches its own. One calls
+//! back into Roc, `isolated` (`roc::isolated`), as a guarded call of its own, so a crash in it comes
+//! back here, and never skips a frame of ours. An actor's turn (`actor_turn`) is a call of its own
+//! too, on the thread its actor's task runs it on.
 //!
 //! Every call into Roc has a context (`call`): the request it answers (if any: `call_asking`), the
 //! stream it sends (if any), whether it is a background loop, its deadline (a job's time limit),
-//! the transaction it began, the topics it listens to, the rooms it is in, the locks it holds, the
-//! connections it opened. When the call ends, however it ends, the transaction is rolled back if
-//! still open, it leaves its rooms, lets its locks go and closes its connections.
+//! the transaction it began, the topics it listens to, the rooms it is in, the connections it
+//! opened, and, in an actor's turn, the actor and the ones waiting on it (`Turn`). When the call
+//! ends, however it ends, the transaction is rolled back if still open, it leaves its rooms and
+//! closes its connections.
 //!
 //! A call with a deadline (`Host.isolated!` given a time limit: a job's) is cut off by the first
-//! effect that waits past it (Postgres, a socket, a request to another server, a sleep, a lock, a
-//! live topic): the effect stops waiting, lets go of what it holds (a statement is cancelled and
-//! its connection closed), and jumps back to the call's guard, as a crash does (`cut_off`), so the
-//! call can't carry on past its limit whatever it does with errors. Calls it runs inside it (an
-//! actor's) share its deadline. Roc that loops without an effect isn't cut off.
+//! effect that waits past it (Postgres, a socket, a request to another server, a sleep, an
+//! actor's answer, a live topic): the effect stops waiting, lets go of what it holds (a statement
+//! is cancelled and its connection closed), and jumps back to the call's guard, as a crash does
+//! (`cut_off`), so the call can't carry on past its limit whatever it does with errors. Calls it
+//! runs inside it share its deadline; an actor it asks doesn't (its turn is its own, and ends as
+//! it would). Roc that loops without an effect isn't cut off.
 
 use crate::abi::{
     AnonStruct2e6fc7635560c0c3 as Isolated, AnonStruct3ed536693d8b85f3 as Answered, AnonStructFa59a42fc999ca94 as Heard, HostDbExecuteResult,
     HostDbExecuteResultPayload, HostHttpSendResult, HostHttpSendResultPayload, HostHttpSendResultTag,
     HostDbExecuteResultTag, HostDbScriptResult, HostDbScriptResultPayload, HostDbScriptResultTag, HostStoreGetResult as TextResult,
     HostStoreGetResultPayload as TextPayload, HostStoreGetResultTag as TextTag, HostTcpReadExactlyResult as BytesResult,
-    HostTcpReadExactlyResultPayload as BytesPayload, HostTcpReadExactlyResultTag as BytesTag, RocErasedCallable, RocListWith, RocStr,
+    HostTcpReadExactlyResultPayload as BytesPayload, HostTcpReadExactlyResultTag as BytesTag, RocListWith, RocStr,
 };
-use crate::{client, db, live, memory, outbox, roc, settings, tcp};
+use crate::{actors, client, db, live, memory, outbox, roc, settings, tcp};
 use bytes::Bytes;
 use futures_util::future::select_all;
 use std::cell::RefCell;
@@ -127,21 +130,29 @@ struct Context {
     transaction: Option<db::Client>,
     listening: Vec<broadcast::Receiver<live::Message>>,
     rooms: Vec<String>,
-    locks: Vec<memory::Held>,
     sockets: Vec<u64>,
+    /// In an actor's turn, and the calls it runs: the actor, and the ones waiting on it.
+    turn: Option<Turn>,
+}
+
+/// The actor whose turn a call is (`id`), and the actors whose turns wait on its answer
+/// (`waiting`: it was asked in theirs). An ask from it to any of them would wait forever.
+#[derive(Clone)]
+struct Turn {
+    id: actors::Id,
+    waiting: Vec<actors::Id>,
 }
 
 impl Context {
     /// What a call leaves when it ends.
     fn end(mut self) {
         if let Some(client) = self.transaction.take() {
-            eprintln!("rocx: a call ended with its transaction open: rolled back");
+            crate::logging::warn("rocx server: a call ended with its transaction open: rolled back", &[]);
             rolled_back(client);
         }
         for room in self.rooms.drain(..) {
             live::leave(&room);
         }
-        self.locks.clear();
         for id in self.sockets.drain(..) {
             tcp::close(id);
         }
@@ -167,17 +178,21 @@ thread_local! {
 }
 
 /// Runs `run` (a call into Roc) with `context`, which keeps the deadline of the call it runs inside,
-/// if that comes sooner. The outer call's context comes back when it ends. Its result, and the
-/// time limit that cut it off, if its deadline did (the outer call, sharing it, is told).
+/// if that comes sooner, and its actor's turn, if it has none of its own. The outer call's context
+/// comes back when it ends. Its result, and the time limit that cut it off, if its deadline did
+/// (the outer call, sharing it, is told).
 fn in_context<T>(mut context: Context, run: impl FnOnce() -> T) -> (T, Option<u64>) {
     let outer = CALL.with(|current| {
-        let (deadline, limit_ms) = {
+        let (deadline, limit_ms, turn) = {
             let current = current.borrow();
-            (current.deadline, current.limit_ms)
+            (current.deadline, current.limit_ms, current.turn.clone())
         };
         if let Some(sooner) = deadline.filter(|outer| context.deadline.is_none_or(|own| *outer < own)) {
             context.deadline = Some(sooner);
             context.limit_ms = limit_ms;
+        }
+        if context.turn.is_none() {
+            context.turn = turn;
         }
         current.replace(context)
     });
@@ -399,9 +414,18 @@ fn rolled_back(client: db::Client) {
 
 // ---- Log, time, streams ----
 
+/// An event on the log (`Log.info!` and the others): its level (0 debug, 1 info, 2 warn, 3 error),
+/// its message, and its fields as JSON, or "" (`logging::from_roc`). It is queued, and written by
+/// the log's own thread.
 #[unsafe(no_mangle)]
-pub extern "C" fn roc_host_log(line: RocStr) {
-    eprintln!("{}", taken(line));
+pub extern "C" fn roc_host_log(level: u8, message: RocStr, fields: RocStr) {
+    crate::logging::from_roc(level, taken(message), taken(fields));
+}
+
+/// The log's format, as the app's `program` says (`logs.format`): 0 `Auto`, 1 `Pretty`, 2 `Json`.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_log_format(format: u8) {
+    crate::logging::choose(format);
 }
 
 #[unsafe(no_mangle)]
@@ -490,7 +514,7 @@ pub extern "C" fn roc_status(code: u16) {
     });
 }
 
-// ---- Settings, isolation, locks, values, randomness, the outbox ----
+// ---- Settings, isolation ----
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_setting(name: RocStr) -> RocStr {
@@ -511,16 +535,6 @@ pub extern "C" fn roc_host_isolated(what: RocStr, input: RocStr, limit_ms: u64) 
     isolated_answer(ran)
 }
 
-/// Runs a function Roc gave (an actor's `receive!`) with `input` in a call of its own, as
-/// `roc_host_isolated` runs a part of the app: its answer (0), why it failed (1), or the crash that
-/// ended it (2). The function is the host's to release: the call into Roc takes it.
-#[unsafe(no_mangle)]
-pub extern "C" fn roc_host_isolated_call(callable: RocErasedCallable, input: RocStr) -> Isolated {
-    let input = taken(input);
-    let ran = catch_unwind(AssertUnwindSafe(|| call_within(0, || roc::isolated_call(callable, &input))));
-    isolated_answer(ran)
-}
-
 /// What an isolated call came to, for Roc: its status and what it said. One its deadline cut off is
 /// 3, with the crash's "timed out after …", even if it went on to answer.
 fn isolated_answer(ran: std::thread::Result<(Result<Result<String, String>, roc::Crash>, Option<u64>)>) -> Isolated {
@@ -534,36 +548,89 @@ fn isolated_answer(ran: std::thread::Result<(Result<Result<String, String>, roc:
     Isolated { out: roc_str(&out), status }
 }
 
-/// Takes a named lock for this call: 0 taken, 1 busy for all of `ms`, 2 held already by this call
-/// or one it runs inside.
-#[unsafe(no_mangle)]
-pub extern "C" fn roc_host_lock(name: RocStr, ms: u64) -> u8 {
-    let taken = {
-        let name = taken(name);
-        let patience = Duration::from_millis(ms);
-        let patience = deadline().map_or(patience, |at| patience.min(at.saturating_duration_since(Instant::now())));
-        match guarded(|| memory::lock(&name, patience)) {
-            Ok(memory::Taken::Got(held)) => {
-                CALL.with(|context| context.borrow_mut().locks.push(held));
-                Ok(0)
-            }
-            Ok(memory::Taken::Busy) | Err(_) if past_deadline() => Err(Late),
-            Ok(memory::Taken::Busy) | Err(_) => Ok(1),
-            Ok(memory::Taken::Reentrant) => Ok(2),
-        }
-    };
-    in_time(taken)
+// ---- Actors ----
+
+/// How long an ask waits for its answer.
+const ASK_PATIENCE: Duration = Duration::from_secs(30);
+
+/// Runs an actor's turn: `message` (JSON) to the actor `id`, its state as its last turn left it
+/// (`kept`: none until a turn has read it, from Postgres), in a call of its own (`actor_for_host!`),
+/// whose asks know whose turns wait on it (`waiting`, and the actor itself). Its next state and its
+/// reply (JSON), or why it has none: the message isn't one it takes, its kind is none of the app's,
+/// it crashed (what the turn allocated is freed, and its state stays as it was).
+pub fn actor_turn(id: &actors::Id, waiting: Vec<actors::Id>, kept: Option<&str>, message: &str) -> Result<(String, String), String> {
+    let context = Context { turn: Some(Turn { id: id.clone(), waiting }), ..Context::default() };
+    let ran = catch_unwind(AssertUnwindSafe(|| in_context(context, || roc::actor(&id.kind, &id.key, kept, message)).0));
+    match ran {
+        Ok(Ok(answered)) => answered,
+        Ok(Err(crash)) => Err(format!("{} crashed: {}", id.who(), crash.0)),
+        Err(_) => Err("the host panicked".to_string()),
+    }
 }
 
+/// The kinds of actor the app has (`program.actors`), a name a line, as the platform starts.
 #[unsafe(no_mangle)]
-pub extern "C" fn roc_host_unlock(name: RocStr) {
-    let name = taken(name);
-    let released = CALL.with(|context| {
-        let mut context = context.borrow_mut();
-        context.locks.iter().rposition(|held| held.name() == name).map(|at| context.locks.remove(at))
-    });
-    drop(released);
+pub extern "C" fn roc_host_actor_kinds(names: RocStr) {
+    let names = taken(names);
+    actors::kinds(names.lines().filter(|name| !name.is_empty()).map(str::to_string));
 }
+
+/// Asks the actor of kind `kind` called `key` (its message as JSON): its reply (JSON), once it has
+/// handled the messages before it; or why there is none. An actor asking one whose turn waits on it
+/// is refused at once; an ask not answered in 30 s (or by the call's deadline) is given up on.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_actor_ask(kind: RocStr, key: RocStr, message: RocStr) -> TextResult {
+    let answered = {
+        let to = actors::Id { kind: taken(kind), key: taken(key) };
+        let message = taken(message);
+        let waiting = CALL.with(|context| {
+            context.borrow().turn.as_ref().map(|turn| {
+                let mut waiting = turn.waiting.clone();
+                waiting.push(turn.id.clone());
+                waiting
+            })
+        });
+        let waiting = waiting.unwrap_or_default();
+        if waiting.last() == Some(&to) {
+            Ok(Err(format!("{} asked itself: it would wait for its own answer forever", to.who())))
+        } else if let (true, Some(asker)) = (waiting.contains(&to), waiting.last()) {
+            Ok(Err(format!("{} asked {}, whose turn waits on its answer: it would wait forever", asker.who(), to.who())))
+        } else {
+            match actors::ask(to.clone(), message, waiting) {
+                Err(why) => Ok(Err(why)),
+                Ok(answer) => within(async move {
+                    match tokio::time::timeout(ASK_PATIENCE, answer).await {
+                        Ok(Ok(reply)) => reply,
+                        Ok(Err(_)) => Err(format!("{} didn't answer: the server is stopping", to.who())),
+                        Err(_) => Err(format!("{} hasn't answered in 30 s (is it waiting on one that is waiting on it?)", to.who())),
+                    }
+                }),
+            }
+        }
+    };
+    text_or_error(in_time(answered))
+}
+
+/// Sends the actor of kind `kind` called `key` a message (JSON), answered by no one.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_actor_tell(kind: RocStr, key: RocStr, message: RocStr) {
+    actors::tell(actors::Id { kind: taken(kind), key: taken(key) }, taken(message));
+}
+
+/// Sends the actor of kind `kind` called `key` a message (JSON) in `ms` milliseconds: the timer's
+/// number, for `roc_host_actor_cancel`.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_actor_after(kind: RocStr, key: RocStr, ms: u64, message: RocStr) -> u64 {
+    actors::after(actors::Id { kind: taken(kind), key: taken(key) }, ms, taken(message))
+}
+
+/// Stops a timer that hasn't fired.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_actor_cancel(timer: u64) {
+    actors::cancel(timer);
+}
+
+// ---- Values, randomness, the outbox ----
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_store_get(name: RocStr) -> TextResult {

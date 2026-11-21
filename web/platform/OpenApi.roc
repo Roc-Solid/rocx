@@ -1,5 +1,6 @@
 import Endpoint
 import Events
+import Middleware
 import Server
 
 ## An app's endpoints as an OpenAPI document (3.2), which the server answers `GET /openapi.json`
@@ -73,13 +74,15 @@ OpenApi := [].{
 
 	## The answer to a request for the document (`json`, the app's `Api.openapi`) or its page, as
 	## `serving` says: JSON, or HTML; 405 for a method but GET. Any other request, or one for what
-	## `serving` doesn't serve, is `NotHere`: the routes answer it. `App.program` asks it first, behind
-	## the app's middleware; a program an app writes itself does the same:
+	## `serving` doesn't serve, is `NotHere`: the routes answer it. A program an app writes itself can
+	## ask it before its routes:
 	##
 	##     match OpenApi.respond(request, Page(Swagger), Api.openapi) {
 	##         Ok(served) => served
 	##         Err(NotHere) => Routes.respond!(request, context)
 	##     }
+	##
+	## or put `middleware` at the end of its chain, as `App.program` does.
 	respond : Server.Request, Serving, Str -> Try(Server.Response, [NotHere])
 	respond = |request, serving, json| {
 		reading = request.method == "GET" or request.method == "HEAD"
@@ -107,6 +110,21 @@ OpenApi := [].{
 				}
 		}
 	}
+
+	## The document and its page as a middleware: it answers what `respond` serves, and hands every
+	## other request on, unchanged. `App.program` puts it last in the app's chain, behind the app's
+	## own middleware, so a guard there guards the document too:
+	##
+	##     Middlewares.default.then(OpenApi.middleware(Page(Swagger), Api.openapi))
+	middleware : Serving, Str -> Middleware(context, context)
+	middleware = |serving, json|
+		Middleware.make(
+			|request, context, next!|
+				match respond(request, serving, json) {
+					Ok(served) => served
+					Err(NotHere) => next!(request, context)
+				},
+		)
 }
 
 ## The page that shows the document, `openapi.json` beside it (so a copy under a base path, as

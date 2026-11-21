@@ -1,8 +1,8 @@
 ## The server's platform: Roc compiled to native code, in a Rust host (`server/host`). The host
 ## answers HTTP with tokio and hyper and gives Roc a few general effects: Postgres, time, live
-## topics and rooms, background loops, calls run in isolation, named locks, TCP and TLS. Jobs, cron,
-## migrations, actors and email are Roc, here, built on them. The browser's platform is
-## `web/platform`, wasm; an app is two programs, one on each, talking over HTTP.
+## topics and rooms, background loops, calls run in isolation, actors' mailboxes and timers, TCP and
+## TLS. Jobs, cron, migrations, actors' state and email are Roc, here, built on them. The browser's
+## platform is `web/platform`, wasm; an app is two programs, one on each, talking over HTTP.
 ##
 ## - `respond!(method, target, headers, body, context)` answers a request: a page, an endpoint, a
 ##   call to a server function. `target` is the path and the query; `headers` a `name: value` a
@@ -19,9 +19,15 @@
 ## - `migrations`: the app's schema, applied once each, in order, when the server starts (each a
 ##   name and its SQL: `import "migrations/0001_notes.sql" as notes : Str` embeds a file).
 ## - `jobs`: the kinds of job the server's workers run (`Job.handler(kind)`: each with its attempts
-##   and time limit); `crons`: jobs on a schedule (`Cron.every`). Actors aren't listed: `Actor.ask!`
-##   is given the kind it asks. The jobs page (`JobsPage`) is the app's to mount, behind its own
-##   middleware.
+##   and time limit); `crons`: jobs on a schedule (`Cron.every`). The jobs page (`JobsPage`) is the
+##   app's to mount, behind its own middleware.
+## - `actors`: the kinds of actor the app defines (`Actor.handler(kind)`), which `rocx build` lists:
+##   the host runs their turns (`actor_for_host!`), one message at a time each, and refuses a
+##   message to a kind that isn't here.
+## - `logs`: the format of the server's log (`Log`), the host's lines and the app's: `{ format: Auto }`
+##   (`ROCX_LOG`, `pretty` or `json`, if it is set; or else pretty when stderr is a terminal, and JSON
+##   when it isn't), `Pretty` or `Json`. `App.program` says `Auto`; an app says otherwise with
+##   `{ ..App.program(…), logs: { format: Json } }`.
 ## - Under `--dev`, the platform answers `/__rocx/mail` itself: the dev mailbox (`Outbox`), email
 ##   kept rather than sent.
 ## - A page's components are Solid-style (web/runtime.js hydrates the document in the browser). A
@@ -34,9 +40,8 @@
 ##
 ## Each call runs on a thread of its own from a pool, so an effect (`Db.all!`, a stream's
 ## `sleep!`) may wait without holding up other requests. A crash (`crash`, an integer
-## overflowing) ends that call only: the host answers 500 (or ends the stream, or ends the isolated
-## call a job or an actor ran in), frees what the call had allocated, rolls back its transaction,
-## and goes on.
+## overflowing) ends that call only: the host answers 500 (or ends the stream, or the job's call, or
+## the actor's turn), frees what the call had allocated, rolls back its transaction, and goes on.
 platform ""
 	requires {
 		program : {
@@ -44,17 +49,19 @@ platform ""
 			migrations : List({ name : Str, sql : Str }),
 			jobs : List({ name : Str, attempts : U64, timeout_ms : U64, run! : Str => Try({}, Str) }),
 			crons : List({ name : Str, schedule : Str, job : Str, input : Str }),
+			actors : List({ name : Str, run! : Str, Str, Str => Try({ state : Str, reply : Str }, Str) }),
+			logs : { format : [Auto, Pretty, Json] },
 		}
 	}
 	exposes [Actor, AesGcm, Audio, Base64, Browser, Call, Context, Cron, Db, Email, Endpoint, Env, Errored, Events, For, Hex, Hkdf, Hmac, Html, Http, HttpStatusCode, Job, JobsPage, Live, Loading, Log, Middleware, OpenApi, Random, Router, Server, Sha256, Show, Solid, Storage, Submission, Tcp, Time, Title, Transition]
 	packages {}
 	provides {
+		"roc_actor": actor_for_host!,
 		"roc_background": background_for_host!,
 		"roc_background_count": background_count_for_host!,
 		"roc_drop_feed": drop_feed_for_host,
 		"roc_init": init_for_host!,
 		"roc_isolated": isolated_for_host!,
-		"roc_isolated_call": isolated_call_for_host!,
 		"roc_respond": respond_for_host!,
 		"roc_run": run_for_host!,
 		"roc_stream": stream_for_host!,
@@ -76,6 +83,11 @@ platform ""
 		"roc_fetch": Host.fetch!,
 		"roc_flash": Host.flash!,
 		"roc_for_new": Host.for_new!,
+		"roc_host_actor_after": Host.actor_after!,
+		"roc_host_actor_ask": Host.actor_ask!,
+		"roc_host_actor_cancel": Host.actor_cancel!,
+		"roc_host_actor_kinds": Host.actor_kinds!,
+		"roc_host_actor_tell": Host.actor_tell!,
 		"roc_host_aes_gcm_open": Host.aes_gcm_open!,
 		"roc_host_aes_gcm_seal": Host.aes_gcm_seal!,
 		"roc_host_db_begin": Host.db_begin!,
@@ -88,14 +100,13 @@ platform ""
 		"roc_host_env_var": Host.env_var!,
 		"roc_host_http_send": Host.http_send!,
 		"roc_host_isolated": Host.isolated!,
-		"roc_host_isolated_call": Host.isolated_call!,
 		"roc_host_live_count": Host.live_count!,
 		"roc_host_live_join": Host.live_join!,
 		"roc_host_live_listen": Host.live_listen!,
 		"roc_host_live_next": Host.live_next!,
 		"roc_host_live_publish": Host.live_publish!,
-		"roc_host_lock": Host.lock!,
 		"roc_host_log": Host.log!,
+		"roc_host_log_format": Host.log_format!,
 		"roc_host_now_millis": Host.now_millis!,
 		"roc_host_outbox_clear": Host.outbox_clear!,
 		"roc_host_outbox_keep": Host.outbox_keep!,
@@ -115,7 +126,6 @@ platform ""
 		"roc_host_tcp_read_up_to": Host.tcp_read_up_to!,
 		"roc_host_tcp_start_tls": Host.tcp_start_tls!,
 		"roc_host_tcp_write": Host.tcp_write!,
-		"roc_host_unlock": Host.unlock!,
 		"roc_interval": Host.interval!,
 		"roc_keep": Host.keep!,
 		"roc_listen": Host.listen!,
@@ -151,6 +161,7 @@ platform ""
 	}
 
 import Actor
+import ActorTurn
 import AesGcm
 import Audio
 import Base64
@@ -245,15 +256,26 @@ stream_for_host! = |boxed| {
 drop_feed_for_host : Box(Feed) -> {}
 drop_feed_for_host = |_| {}
 
-## The server is starting, connected to its database if it has one: the kinds of job and the
-## schedules are kept for the modules that read them (`Registry`); the schedules are checked (a bad
+## The server is starting, connected to its database if it has one: the log takes the app's format
+## (before anything is logged: a migration, a bad schedule), the kinds of job and the schedules are
+## kept for the modules that read them (`Registry`), the host is told the kinds of actor; the
+## schedules are checked (a bad
 ## one, or one naming a job the app doesn't list, stops it here), then the platform's tables and the
 ## app's migrations are applied, and the jobs a stop cut short are queued again.
 init_for_host! : {} => Try({}, Str)
 init_for_host! = |{}| {
-	kinds = kinds_of!({})
+	Host.log_format!(
+		match program.logs.format {
+			Auto => 0
+			Pretty => 1
+			Json => 2
+		},
+	)
+	# The kinds of job the app runs (names, attempts, time limits): its workers take only these.
+	kinds = program.jobs.map(|job| { name: job.name, attempts: job.attempts, timeout_ms: job.timeout_ms })
 	names = kinds.map(|kind| kind.name)
 	Registry.keep!(kinds, program.crons)
+	Host.actor_kinds!(Str.join_with(program.actors.map(|actor| actor.name), "\n"))
 	match Cron.check(program.crons, names) {
 		Err(why) => Err(why)
 		Ok({}) =>
@@ -267,29 +289,6 @@ init_for_host! = |{}| {
 			}
 	}
 }
-
-## The kinds of job the app runs (their names, attempts and time limits): its workers take only
-## these. Read through `isolated_for_host!` ("kinds") because, for an app with no jobs (`jobs: []`),
-## going over `program.jobs` anywhere else (`map`, `fold`, a loop, `find_first`) crashes Roc's
-## optimizer (nightly-2026-11-18, `--opt=speed`, in lambda_solve). There it doesn't, on every shape
-## of the site tried.
-kinds_of! : {} => List(Registry.Kind)
-kinds_of! = |{}|
-	match isolated_for_host!("kinds", "") {
-		Ok(lines) =>
-			if lines.is_empty() {
-				[]
-			} else {
-				Str.split_on(lines, "\n").keep_oks(
-					|line|
-						match Str.split_on(line, "\t") {
-							[name, attempts, timeout_ms] => Ok({ name, attempts: U64.from_str(attempts) ?? 5, timeout_ms: U64.from_str(timeout_ms) ?? 0 })
-							_ => Err(Unreadable)
-						},
-				)
-			}
-		Err(_) => []
-	}
 
 ## What the server runs in the background, each loop on a thread of its own: the job workers and
 ## the schedules (with a database), and a look at the SMTP server and at S3 (with them).
@@ -334,21 +333,20 @@ isolated_for_host! = |what, input|
 				}
 			Err(_) => Err("no job is called ${name}: list it in the app's `jobs`")
 		}
-	} else if what == "kinds" {
-		# The app's kinds of job, one a line: name, attempts and time limit (`kinds_of!`).
-		Ok(Str.join_with(program.jobs.map(|job| "${job.name}\t${job.attempts.to_str()}\t${job.timeout_ms.to_str()}"), "\n"))
 	} else {
 		Err("nothing in the app is called ${what}")
 	}
 
-## Runs `run!` with `input` in a call of its own (`Host.isolated_call!`): an actor's `receive!`,
-## with its key, state and message. What it answers, or why it failed; a crash in it ends this call
-## only.
-isolated_call_for_host! : Box(Str => Try(Str, Str)), Str => Try(Str, Str)
-isolated_call_for_host! = |boxed, input| {
-	run! = Box.unbox(boxed)
-	run!(input)
-}
+## An actor's turn, which its mailbox in the host runs (`actors.rs`): the actor of kind `kind`
+## called `key`, its state as its last turn left it (`kept`, when `loaded`; else it is read), and
+## the message, as JSON. Its next state and its reply, or why it has none: its kind isn't the app's,
+## or it doesn't take the message. A crash in it ends the turn only.
+actor_for_host! : Str, Str, Bool, Str, Str => Try({ state : Str, reply : Str }, Str)
+actor_for_host! = |kind, key, loaded, kept, message|
+	match program.actors.find_first(|actor| actor.name == kind) {
+		Ok(actor) => ActorTurn.run!(actor, key, loaded, kept, message)
+		Err(_) => Err("no kind of actor is called ${kind}: the app defines none (`Actor.define`)")
+	}
 
 ## Runs a box the host keeps: a page's (its markup), a hole, a memo, a fallback; its answer as JSON.
 run_for_host! : Box(() => Str) => Str

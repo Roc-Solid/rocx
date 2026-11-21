@@ -10,6 +10,8 @@ import Host
 ## and on the server, it fails. Browsers keep a page quiet until the reader has done something on
 ## it: until then, nothing plays. A file that can't be played is told on the console.
 Audio := [].{
+
+	## Plays the sound file at `url`, at its own volume and speed.
 	play! : Str => {}
 	play! = |url| Audio.play_with!(url, { volume: 1.0, rate: 1.0 })
 

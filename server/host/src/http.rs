@@ -5,7 +5,7 @@
 //! body is fetched from elsewhere (`client::open`) and sent on as it comes, never through Roc.
 
 use crate::roc::{self, Feed};
-use crate::{client, hosted, signals};
+use crate::{client, hosted, logging, signals};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited, StreamBody, combinators::BoxBody};
 use hyper::body::{Frame, Incoming};
@@ -49,6 +49,8 @@ pub struct Config {
     pub database_url: Option<String>,
     pub job_workers: usize,
     pub job_retry_ms: u64,
+    /// How long an actor waits with nothing to do before it is let go (0: never), with a database.
+    pub actor_idle_ms: u64,
     pub smtp_url: Option<String>,
     pub mail_from: String,
     /// S3 storage (`Storage`): `s3://KEY:SECRET@HOST[:PORT]/BUCKET?region=…&style=path&tls=no`.
@@ -67,6 +69,7 @@ pub const USAGE: &str = "usage: <app> [options]
   --context-file FILE                  what respond! is given besides each request
   --database-url URL                   Postgres (DATABASE_URL): Db, migrations, jobs, cron, actors
   --job-workers 4 --job-retry-ms 1000  jobs run at once; the first retry's wait, doubled after
+  --actor-idle-ms 900000               an actor idle this long is let go (0: never; kept in Postgres)
   --smtp-url URL --mail-from ADDRESS   where email goes (SMTP_URL, MAIL_FROM); none: an outbox
   --storage-url URL                    S3 storage (STORAGE_URL): s3://KEY:SECRET@HOST/BUCKET?region=…
   --dev                                reload pages on restart, show crashes, the mailbox at /__rocx/mail
@@ -83,6 +86,7 @@ impl Config {
         let mut database_url = env("DATABASE_URL");
         let mut job_workers = 4;
         let mut job_retry_ms = 1000;
+        let mut actor_idle_ms = 15 * 60 * 1000;
         let mut smtp_url = env("SMTP_URL");
         let mut mail_from = env("MAIL_FROM").unwrap_or_else(|| "rocx <rocx@localhost>".into());
         let mut storage_url = env("STORAGE_URL");
@@ -108,17 +112,18 @@ impl Config {
                 "--migrations" => return Err("--migrations is gone: an app embeds its migrations (`program.migrations`, `import \"migrations/0001_notes.sql\" as notes : Str`)".into()),
                 "--job-workers" => job_workers = value()?.parse().map_err(|_| "--job-workers needs a number".to_string())?,
                 "--job-retry-ms" => job_retry_ms = value()?.parse().map_err(|_| "--job-retry-ms needs a number".to_string())?,
+                "--actor-idle-ms" => actor_idle_ms = value()?.parse().map_err(|_| "--actor-idle-ms needs a number".to_string())?,
                 "--smtp-url" => smtp_url = Some(value()?),
                 "--mail-from" => mail_from = value()?,
                 "--storage-url" => storage_url = Some(value()?),
                 "--dev" => dev = true,
                 "--debug" => debug = true,
                 "--help" | "-h" => return Err(USAGE.into()),
-                other => return Err(format!("unknown argument {other}\n{USAGE}")),
+                other => return Err(format!("unknown argument {other} (--help lists them)")),
             }
         }
         let address = format!("{host}:{port}").parse().map_err(|error| format!("{host}:{port}: {error}"))?;
-        Ok(Config { address, statics, files, context, database_url, job_workers, job_retry_ms, smtp_url, mail_from, storage_url, dev, debug })
+        Ok(Config { address, statics, files, context, database_url, job_workers, job_retry_ms, actor_idle_ms, smtp_url, mail_from, storage_url, dev, debug })
     }
 }
 
@@ -131,7 +136,8 @@ pub async fn bind(config: &Config) -> Result<TcpListener, String> {
 /// Answers requests on `listener` (`bind`) until `stop` says so; then stops listening and waits (up
 /// to `grace`) for the requests and streams being answered.
 pub async fn serve(listener: TcpListener, config: Config, mut stop: watch::Receiver<bool>, grace: Duration) -> std::io::Result<()> {
-    eprintln!("rocx server: http://{} (Roc, native)", listener.local_addr()?);
+    // The address in the message itself: what starts the server reads it there.
+    logging::info(&format!("rocx server: http://{} (Roc, native)", listener.local_addr()?), &[]);
     let config = Arc::new(config);
     let graceful = GracefulShutdown::new();
     loop {
@@ -152,7 +158,7 @@ pub async fn serve(listener: TcpListener, config: Config, mut stop: watch::Recei
     drop(listener);
     tokio::select! {
         _ = graceful.shutdown() => {}
-        _ = tokio::time::sleep(grace) => eprintln!("rocx server: stopped with requests still being answered"),
+        _ = tokio::time::sleep(grace) => logging::warn("rocx server: stopped with requests still being answered", &[]),
     }
     Ok(())
 }
@@ -286,7 +292,7 @@ async fn from_roc(request: Request<Incoming>, config: Arc<Config>) -> Response<B
     let answer = match answered {
         Ok(Ok(answer)) => answer,
         Ok(Err(crash)) => {
-            eprintln!("rocx server: {method} {asked}: Roc crashed: {}", crash.0);
+            logging::error("rocx server: Roc crashed", &[("method", method.as_str().into()), ("target", asked.as_str().into()), ("error", crash.0.as_str().into())]);
             let shown = if config.dev { format!("Roc crashed: {}", crash.0) } else { "Something went wrong.".into() };
             return full(StatusCode::INTERNAL_SERVER_ERROR, "text/plain; charset=utf-8", shown);
         }
@@ -355,7 +361,7 @@ async fn forwarded(upstream: roc::Upstream, own: &str, method: &Method, asked: &
     let shown = upstream.url.split('?').next().unwrap_or_default().to_string();
     let failed = |status: StatusCode, why: String| {
         let why = why.replace(&upstream.url, &shown);
-        eprintln!("rocx server: {method} {asked}: forwarding to {shown}: {why}");
+        logging::error("rocx server: forwarding failed", &[("method", method.as_str().into()), ("target", asked.into()), ("upstream", shown.as_str().into()), ("error", why.as_str().into())]);
         let said = if config.dev { format!("forwarding to {shown}: {why}") } else { status.canonical_reason().unwrap_or("Bad Gateway").to_string() };
         full(status, "text/plain; charset=utf-8", said)
     };
@@ -375,7 +381,7 @@ async fn forwarded(upstream: roc::Upstream, own: &str, method: &Method, asked: &
     if status.is_client_error() || status.is_server_error() {
         // A missing object, or a range past its end, is the client's to hear about, not the log's.
         if status != StatusCode::NOT_FOUND && status != StatusCode::RANGE_NOT_SATISFIABLE {
-            eprintln!("rocx server: {method} {asked}: forwarding to {shown}: answered {status}");
+            logging::warn("rocx server: forwarded an error", &[("method", method.as_str().into()), ("target", asked.into()), ("upstream", shown.as_str().into()), ("status", status.as_u16().into())]);
         }
         let mut refused = full(status, "text/plain; charset=utf-8", status.canonical_reason().unwrap_or("Refused"));
         if let Some(range) = response.headers().get(hyper::header::CONTENT_RANGE).filter(|_| status == StatusCode::RANGE_NOT_SATISFIABLE) {
@@ -424,7 +430,7 @@ async fn forwarded(upstream: roc::Upstream, own: &str, method: &Method, asked: &
 async fn send_events(feed: Feed, out: mpsc::Sender<Bytes>) {
     let sent = tokio::task::spawn_blocking(move || hosted::call(Some(out), || roc::stream(feed))).await;
     if let Ok(Err(crash)) = sent {
-        eprintln!("rocx server: a stream crashed: {}", crash.0);
+        logging::error("rocx server: a stream crashed", &[("error", crash.0.into())]);
     }
 }
 

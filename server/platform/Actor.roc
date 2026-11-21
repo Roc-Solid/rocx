@@ -1,169 +1,143 @@
-import Db
 import Host
-import Setting
 
-## State that outlives a request: an actor is called by its kind and a key (`cart` and a member's
-## id), handles one message at a time, and keeps its state in Postgres, so it is there after a
-## restart. There is no making one: the first message to a key finds it new (`init(key)`).
+## State that outlives a request, changed one message at a time: an actor is a kind and a key (the
+## cart of member 7, the counter called `visits`). Nobody makes one or ends one: a message to any
+## key finds it as its last message left it, or new (`initial(key)`), and it handles its messages
+## one at a time, in the order they came. With a database, its state is kept in Postgres
+## (`rocx_actors`), so it is there after a restart.
 ##
 ## ```roc
 ## cart : Actor.Kind({ items : List(Str) }, [Add(Str), Clear], U64)
-## cart = Actor.define("cart", |_key| { items: [] }, |state, message|
-##     match message {
-##         Add(item) => { state: { items: state.items.append(item) }, reply: state.items.len() + 1 }
-##         Clear => { state: { items: [] }, reply: 0 }
-##     })
+## cart = Actor.define({
+##     name: "cart",
+##     initial: |_key| { items: [] },
+##     receive!: |_me, state, message|
+##         match message {
+##             Add(item) => { state: { items: state.items.append(item) }, reply: state.items.len() + 1 }
+##             Clear => { state: { items: [] }, reply: 0 }
+##         },
+## })
 ##
 ## count = Actor.ask!(cart, member, Add("a book"))?
+## Actor.tell!(cart, member, Clear)
 ## ```
 ##
-## An app doesn't list its kinds of actor: `ask!` is given the kind, and runs it. It takes the
-## actor's lock (`Host.lock!`: one message at a time; an actor asking itself is refused, and one
-## busy for 30 s is an error, not a hang), reads its state (from the server's memory, or Postgres,
-## or `init(key)`), runs its `receive!` in a call of its own (`Host.isolated_call!`, so a crash in it
-## is the asker's error and the state stays as it was), writes the next state to Postgres and to
-## memory, and lets the lock go. Without a database, the state is in memory only. State, messages
-## and replies are kept and passed as JSON.
+## `rocx build` lists the kinds an app's modules define (`program.actors`, each `Actor.handler`), so
+## the server can run an actor when nobody waits on it: a tell, a timer. Each actor has a mailbox in
+## the host, and its turns run one after another, each in a call of its own. Messages, replies and
+## state go to the host as JSON: a message an actor doesn't take, or a crash in its `receive!`, is
+## logged as an error and told to its asker, and the actor goes on, its state as it was.
 Actor := [].{
 
-	## A kind of actor: its name, its state when new, and how it answers a message: its next state,
-	## and a reply.
+	## A kind of actor: its name, its state when it is new (from its key), and how it handles a
+	## message: its next state, and its reply (`ask!`'s; a tell's goes nowhere). `receive!` is given
+	## the actor itself (`Me`), for its key and the timers it sets.
 	Kind(state, message, reply) : {
 		name : Str,
-		init : Str -> state,
-		receive! : state, message => { state : state, reply : reply },
+		initial : Str -> state,
+		receive! : Me(message), state, message => { state : state, reply : reply },
 	}
 
-	define : Str, (Str -> state), (state, message => { state : state, reply : reply }) -> Kind(state, message, reply)
-	define = |name, init, receive!| { name, init, receive! }
+	## The actor whose turn it is, as its `receive!` is given it: its key (`key_of`), and the messages
+	## it sends itself later (`after!`), typed as its kind takes them.
+	Me(message) := { kind : Str, key : Str }
 
-	## The reply of the actor of `kind` called `key` to `message`, once it has handled the ones
-	## before it.
+	## A timer's number (`after!`, `tell_after!`), to stop it with (`cancel!`); an actor may keep it
+	## in its state. Timers are in the server's memory: a restart loses them (a job is for what must
+	## happen even so).
+	Timer : U64
+
+	## A kind of actor as the platform runs it, its types erased (`handler`): its name, and its turn
+	## on JSON: its key, its state ("" when it is new) and the message, to its next state and its
+	## reply.
+	Handler : { name : Str, run! : Str, Str, Str => Try({ state : Str, reply : Str }, Str) }
+
+	## A kind of actor, by name: `name`, unique in the app (its actors' state is kept under it);
+	## `initial`, the state of one that is new, from its key; `receive!`, what it does with a message.
+	define : Kind(state, message, reply) -> Kind(state, message, reply)
+	define = |kind| kind
+
+	## The key of the actor whose turn it is.
+	key_of : Me(message) -> Str
+	key_of = |me| {
+		{ key, kind: _ } = me
+		key
+	}
+
+	## The reply of the actor of `kind` called `key` to `message`, once it has handled the messages
+	## before it; or `ActorErr` with why there is none: it doesn't take the message, it crashed, it
+	## is waiting on the asker's answer (an actor asking itself, or one up its chain of asks: refused
+	## at once), or it hasn't answered in 30 s.
 	ask! : Kind(state, message, reply), Str, message => Try(reply, [ActorErr(Str)])
-		where [state.Json.Encodable([]), state.Json.Parseable([InvalidJson(Str)]), message.Json.Encodable([]), message.Json.Parseable([InvalidJson(Str)]), reply.Json.Encodable([]), reply.Json.Parseable([InvalidJson(Str)])]
-	ask! = |kind, key, message| {
-		who = "${kind.name} ${key}"
-		lock = "actor:${kind.name}:${key}"
-		match Host.lock!(lock, 30000) {
-			2 => Err(ActorErr("${who} asked itself: it would wait for its own answer forever"))
-			1 => Err(ActorErr("${who} has been busy for 30 s (is it waiting on one that is waiting on it?)"))
-			_ => {
-				answered = answer!(kind.name, key, lock, Json.to_str(message), Box.box(|input| receive!(kind, input)))
-				Host.unlock!(lock)
-				match answered {
-					Ok(replied) =>
-						match Json.parse(replied) {
-							Ok(reply) => Ok(reply)
-							Err(InvalidJson(why)) => Err(ActorErr("${kind.name}: its reply isn't what was asked for: ${why}"))
-						}
-					Err(why) => Err(ActorErr(why))
+		where [message.Json.Encodable([]), reply.Json.Parseable([InvalidJson(Str)])]
+	ask! = |kind, key, message|
+		match Host.actor_ask!(kind.name, key, Json.to_str(message)) {
+			Ok(replied) =>
+				match Json.parse(replied) {
+					Ok(reply) => Ok(reply)
+					Err(InvalidJson(why)) => Err(ActorErr("${kind.name} ${key}: its reply isn't what was asked for: ${why}"))
 				}
-			}
+			Err(why) => Err(ActorErr(why))
 		}
+
+	## Sends the actor of `kind` called `key` a message, and goes on: it is handled after the ones
+	## before it, its reply goes nowhere, and what goes wrong is logged.
+	tell! : Kind(state, message, reply), Str, message => {}
+		where [message.Json.Encodable([])]
+	tell! = |kind, key, message| Host.actor_tell!(kind.name, key, Json.to_str(message))
+
+	## Sends the actor of `kind` called `key` a message in `ms` milliseconds, as `tell!` would then:
+	## the timer, to stop it with (`cancel!`).
+	tell_after! : Kind(state, message, reply), Str, U64, message => Timer
+		where [message.Json.Encodable([])]
+	tell_after! = |kind, key, ms, message| Host.actor_after!(kind.name, key, ms, Json.to_str(message))
+
+	## Sends the actor whose turn it is a message in `ms` milliseconds (a sweep, a reminder, a tick):
+	## the timer, to stop it with (`cancel!`). A timer every so often is one that sets the next.
+	after! : Me(message), U64, message => Timer
+		where [message.Json.Encodable([])]
+	after! = |me, ms, message| {
+		{ kind, key } = me
+		Host.actor_after!(kind, key, ms, Json.to_str(message))
 	}
+
+	## Stops a timer that hasn't fired. One that has, or never was, is nothing to stop.
+	cancel! : Timer => {}
+	cancel! = |timer| Host.actor_cancel!(timer)
+
+	## `kind`, as the platform runs it: what `rocx build` lists in `program.actors`.
+	handler : Kind(state, message, reply) -> Handler
+		where [state.Json.Encodable([]), state.Json.Parseable([InvalidJson(Str)]), message.Json.Parseable([InvalidJson(Str)]), reply.Json.Encodable([])]
+	handler = |kind| { name: kind.name, run!: |key, kept, sent| turn!(kind, key, kept, sent) }
 }
 
-## The actor's reply (JSON) to `message` (JSON), its lock held: its state read, `receives!` (its
-## kind's `receive!`, as `receive!` runs it) run in a call of its own, its next state kept.
-answer! : Str, Str, Str, Str, Box(Str => Try(Str, Str)) => Try(Str, Str)
-answer! = |kind, key, lock, message, receives!| {
-	kept =
-		match Host.store_get!(lock) {
-			Ok(state) => Ok(state)
-			Err(_) => load!(kind, key)
-		}
-	match kept {
-		Err(why) => Err(why)
-		Ok(state) => {
-			ran = Host.isolated_call!(receives!, Json.to_str({ key, state, message }))
-			match ran.status {
-				0 => {
-					answered : Try({ state : Str, reply : Str }, [InvalidJson(Str)])
-					answered = Json.parse(ran.out)
-					match answered {
-						Ok(answer) =>
-							match save!(kind, key, answer.state) {
-								Ok({}) => {
-									Host.store_set!(lock, answer.state)
-									Ok(answer.reply)
-								}
-								Err(why) => Err(why)
-							}
-						Err(InvalidJson(why)) => Err("${kind} ${key}: ${why}")
-					}
-				}
-				1 => Err(ran.out)
-				_ => Err("${kind} ${key} crashed: ${ran.out}")
-			}
-		}
-	}
-}
-
-## How an actor of `kind` answers a message, in the call of its own `answer!` runs it in: `input`
-## is the key, the state it keeps and the message, as JSON (passed in, rather than captured, so
-## that what a crash leaves is that call's to free); its answer is its next state and its reply, as
-## JSON.
-receive! : Actor.Kind(state, message, reply), Str => Try(Str, Str)
+## A turn of an actor of `kind` called `key`: its state (`kept`: JSON, "" when it is new) and the
+## message (JSON), to its next state and its reply (JSON); or why not, and it stays as it was.
+turn! : Actor.Kind(state, message, reply), Str, Str, Str => Try({ state : Str, reply : Str }, Str)
 	where [state.Json.Encodable([]), state.Json.Parseable([InvalidJson(Str)]), message.Json.Parseable([InvalidJson(Str)]), reply.Json.Encodable([])]
-receive! = |kind, input| {
-	asked : Try({ key : Str, state : Str, message : Str }, [InvalidJson(Str)])
-	asked = Json.parse(input)
-	match asked {
-		Err(InvalidJson(why)) => Err("${kind.name}: ${why}")
-		Ok({ key, state: kept, message: sent }) => {
-			state =
-				if kept.is_empty() {
-					Ok((kind.init)(key))
-				} else {
-					match Json.parse(kept) {
-						Ok(parsed) => Ok(parsed)
-						Err(InvalidJson(why)) => Err("${kind.name} ${key}: its state isn't what it keeps: ${why}")
-					}
-				}
-			message =
-				match Json.parse(sent) {
-					Ok(parsed) => Ok(parsed)
-					Err(InvalidJson(why)) => Err("${kind.name}: the message isn't one it takes: ${why}")
-				}
-			match (state, message) {
-				(Ok(now), Ok(said)) => {
-					answered = (kind.receive!)(now, said)
-					Ok(Json.to_str({ state: Json.to_str(answered.state), reply: Json.to_str(answered.reply) }))
-				}
-				(Err(why), _) => Err(why)
-				(_, Err(why)) => Err(why)
+turn! = |kind, key, kept, sent| {
+	state =
+		if kept.is_empty() {
+			Ok((kind.initial)(key))
+		} else {
+			match Json.parse(kept) {
+				Ok(parsed) => Ok(parsed)
+				Err(InvalidJson(why)) => Err("${kind.name} ${key}: its state isn't what its kind keeps: ${why}")
 			}
 		}
+	message =
+		match Json.parse(sent) {
+			Ok(parsed) => Ok(parsed)
+			Err(InvalidJson(why)) => Err("${kind.name} ${key}: a message it doesn't take: ${why}")
+		}
+	match (state, message) {
+		(Ok(now), Ok(said)) => {
+			me : Actor.Me(message)
+			me = { kind: kind.name, key }
+			answered = (kind.receive!)(me, now, said)
+			Ok({ state: Json.to_str(answered.state), reply: Json.to_str(answered.reply) })
+		}
+		(Err(why), _) => Err(why)
+		(_, Err(why)) => Err(why)
 	}
 }
-
-## The state Postgres keeps for the actor (empty when it is new, or there is no database).
-load! : Str, Str => Try(Str, Str)
-load! = |kind, key|
-	if Setting.database!({}) {
-		found : Try(List({ state : Str }), [DbErr(Str), BadRow(Str)])
-		found = Db.all!("select state from rocx_actors where kind = $1 and key = $2", [Text(kind), Text(key)])
-		match found {
-			Ok([row]) => Ok(row.state)
-			Ok(_) => Ok("")
-			Err(DbErr(why)) => Err(why)
-			Err(BadRow(why)) => Err(why)
-		}
-	} else {
-		Ok("")
-	}
-
-save! : Str, Str, Str => Try({}, Str)
-save! = |kind, key, state|
-	if Setting.database!({}) {
-		saved = Db.run!(
-			"insert into rocx_actors (kind, key, state) values ($1, $2, $3) on conflict (kind, key) do update set state = excluded.state, updated_at = now()",
-			[Text(kind), Text(key), Text(state)],
-		)
-		match saved {
-			Ok(_) => Ok({})
-			Err(DbErr(why)) => Err(why)
-		}
-	} else {
-		Ok({})
-	}

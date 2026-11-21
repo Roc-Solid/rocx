@@ -719,7 +719,7 @@ fn call_route(name: &str, input: &str) -> Result<String, String> {
             }
         }
         Err(Crash(crashed)) => {
-            eprintln!("rocx server: POST /rocx/call/{name} (in-process): Roc crashed: {crashed}");
+            crate::logging::error("rocx server: Roc crashed", &[("method", "POST".into()), ("target", format!("/rocx/call/{name}").into()), ("in_process", true.into()), ("error", crashed.as_str().into())]);
             Err(if page.dev { format!("500: Roc crashed: {crashed}") } else { "500: Something went wrong.".into() })
         }
     }

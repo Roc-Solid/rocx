@@ -125,6 +125,7 @@ Job := [].{
 			[Text(filter.state), Text(filter.kind), Int(filter.before_id), Int(filter.limit.to_i64_wrap())],
 		)
 
+	## The job with this id; `NotFound` if there is none.
 	get! : I64 => Try(Row, [NotFound, JobErr(Str)])
 	get! = |id|
 		match rows!("${columns} where id = $1", [Int(id)]) {

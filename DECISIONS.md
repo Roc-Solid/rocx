@@ -646,3 +646,70 @@ boundary around the whole document can't work), so nothing caught it, and the pa
   `location` from, and renders the failure.
 
 **Reversible:** yes.
+
+## D-021 Actors: registered kinds, mailboxes, typed tells and timers, no locks
+
+**Context.** An actor was a named lock (`Host.lock!`, a `tokio::sync::Mutex` per key) around a read
+of its state, its `receive!` run in the asker's call (`Host.isolated_call!`, a box the asker made),
+and a write to Postgres. Asks were ordered (the mutex is first-in first-out), but nothing could run
+an actor when nobody was waiting: no tell, no timer. Every key ever asked stayed in memory, its lock
+and its state, until a restart. And "called into being by its first message (`init(key)`)" read as
+if `init` were a message.
+
+**Options.**
+1. Keep the lock; add a tell as a background ask, and idle eviction. A tell would hold a thread for
+   as long as it waits for the lock, and still nothing could run a kind on its own.
+2. An actor library (kameo, ractor): a mailbox and a task per actor, supervision, remote actors.
+   Virtual actors (woken by a message, let go when idle) and the bridge to Roc calls would still be
+   ours; supervision adds little when a crash already leaves the state as it was; one server needs
+   no remote actors.
+3. Our own, on tokio's channels: kinds registered by `rocx build`, a mailbox per actor, one router.
+
+**Choice.** 3.
+
+```roc
+counter : Actor.Kind({ count : I64 }, [Add(I64), Get], I64)
+counter = Actor.define({
+    name: "counter",
+    initial: |_key| { count: 0 },
+    receive!: |me, state, message| …,
+})
+
+Actor.ask! : Kind(s, m, r), Str, m => Try(r, [ActorErr(Str)])
+Actor.tell! : Kind(s, m, r), Str, m => {}
+Actor.tell_after! : Kind(s, m, r), Str, U64, m => Timer
+Actor.after! : Me(m), U64, m => Timer     # an actor's own, typed by its kind's messages
+Actor.cancel! : Timer => {}
+Actor.key_of : Me(m) -> Str
+```
+
+- `define` takes a record (named fields); `init` is now `initial`, the state a new actor starts
+  from, which no message is.
+- `rocx build` finds `Actor.define` at the top of a module's block (`name` first, a function of `{}`
+  too) and lists each in `program.actors` (`Actor.handler`), as it lists jobs. The host refuses a
+  message to a kind not listed.
+- The host (`server/host/src/actors.rs`): one router task owns the table of awake actors and the
+  timers; each awake actor is a task with an unbounded mailbox, running its turns one at a time,
+  each a guarded call into Roc of its own (`actor_for_host!`). No mutex anywhere: the table is the
+  router's alone; tasks talk over `tokio::sync::mpsc` (unbounded) and `oneshot`; timer numbers are
+  an atomic counter. `memory.rs`, the store `Registry` uses, became a list that grows at its head by
+  compare-and-swap. `Host.lock!`, `Host.unlock!` and `Host.isolated_call!` are gone.
+- Order: one router, one mailbox each, both first-in first-out.
+- A message an actor doesn't take (it doesn't parse as its kind's), a kind the app has none of, and a
+  crash in `receive!` are logged at error (`rocx actor: a message failed`, with `actor`, `key`,
+  `error`) and told to an asker; the actor goes on, its state as it was.
+- An ask from a turn to an actor up its own chain of asks (itself included) is refused at once; an
+  ask not answered in 30 s is given up on, and its message dropped if its turn hasn't come.
+- With a database: state read by an actor's first turn, written after each turn that changes it;
+  an actor idle for `--actor-idle-ms` (15 minutes) is let go when nothing was sent to it meanwhile,
+  and woken as Postgres has it. Without one, its state is its task's, and it stays awake.
+- Timers and tells are in memory: a restart loses those not yet handled (jobs are for work that must
+  survive one).
+
+**Why.** Tells and timers need the server to run a kind with no asker, which needs the kinds
+registered; once they are, a mailbox per actor is the natural shape, and it orders tells and asks
+alike. The runtime is ~300 lines on channels tokio already gives us, over a library whose
+supervision and remote actors one server doesn't need.
+
+**Reversible:** the API, with an edit at every call site (`define`'s record, `receive!`'s `me`); the
+runtime, freely.

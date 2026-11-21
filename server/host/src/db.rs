@@ -57,7 +57,7 @@ pub async fn start_listening(url: &str) -> Result<(), String> {
                 Ok(AsyncMessage::Notification(notice)) => crate::live::publish(&format!("pg:{}", notice.channel()), notice.payload()),
                 Ok(_) => {}
                 Err(error) => {
-                    eprintln!("rocx: the connection that listens to Postgres failed: {}", described(error));
+                    crate::logging::error("rocx server: the connection that listens to Postgres failed", &[("error", described(error).into())]);
                     break;
                 }
             }
