@@ -319,6 +319,269 @@ const camel = (property) => property.replace(/-([a-z])/g, (_, letter) => letter.
  * a <Show>'s part made inside one later, in the browser, is SVG too. */
 const within = (node, scope) => (node.tag === "svg" && !scope.svg ? { ...scope, svg: true } : scope);
 
+/**
+ * The tab's channels (`Endpoint.subscribe!`, `say!`, `resync!`): every subscription in the tab on
+ * one stream, `GET /rocx/live?tab=…&c=<url>&c=<url>…` (server-sent events), whatever its number,
+ * so a page's channels take one of the six connections a browser makes to a host. Two subscribers
+ * to one channel share it.
+ *
+ * - What the page subscribes to changes as effects run and components go. Once the render that
+ *   changed it is done, the hub opens the stream again with the new set, only if the set did change
+ *   (the server keeps nothing per stream, so this works through any proxy).
+ * - Each time it opens, the server sends each channel `resync` (then the route's `on_open!`
+ *   messages), or `refused`; then the channel's messages as they are published (`message`), and
+ *   `ended` for one its check refuses at a beat (`: beat` comments, every 15 s).
+ * - When the stream drops, the hub opens it again after a wait that doubles each time (from 0.5 s
+ *   to 30 s), and once it has stayed up 10 s, starts over at 0.5 s.
+ * - Each subscriber hears its events one at a time, in order: the next once its handler is done
+ *   (a handler waiting for an answer runs again first).
+ * - What the page says (`say!`), and its asks for a resync (`resync!`, a new subscriber to a channel
+ *   already open), go in one `POST /rocx/live/send` a frame.
+ * - The tab's id (`tab`, random, kept in sessionStorage, so a reload keeps it) names the tab to the
+ *   server's hooks.
+ * - Where no server answers (a static copy of the site: a 404, a 405, or a page that isn't a
+ *   stream), every subscriber hears `Refused(404, …)` and the hub asks for nothing more.
+ */
+class Hub {
+	constructor(runtime) {
+		this.runtime = runtime;
+		/** By URL: `{ subscribers, open, refused, ended }`, `open` once this stream sent its resync. */
+		this.channels = new Map();
+		/** The stream: the URLs it carries (sorted, a line each), how to stop it, when it opened. */
+		this.stream = null;
+		this.reconciling = null;
+		this.retrying = null;
+		/** Drops in a row: the next wait is `first` doubled that many times, `most` at the most. */
+		this.drops = 0;
+		this.first = 500;
+		this.most = 30000;
+		/** How long a stream stays up before a drop starts the waits over. */
+		this.steady = 10000;
+		/** `[status, why]` once no server answers channels here. */
+		this.unavailable = null;
+		this.outbox = [];
+		this.flushing = false;
+		this.tabId = null;
+		this.stats = { connects: 0, posts: 0 };
+	}
+
+	/** The tab's id: random, made once per tab, kept in sessionStorage (a reload keeps it). */
+	tab() {
+		if (this.tabId) return this.tabId;
+		const fresh = () => [...crypto.getRandomValues(new Uint8Array(12))].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+		try {
+			this.tabId = sessionStorage.getItem("rocx-tab") || fresh();
+			sessionStorage.setItem("rocx-tab", this.tabId);
+		} catch {
+			this.tabId = fresh();
+		}
+		return this.tabId;
+	}
+
+	/** A subscription (`Host.subscribe!`) for the running component, computation or effect: its
+	 * handler kept until that owner is cleaned up. */
+	subscribe(url, ptr) {
+		const runtime = this.runtime;
+		if (runtime.onServer) return runtime.ex.release(ptr);
+		const cleanups = runtime.cleanupsOf(runtime.current);
+		if (!cleanups) {
+			runtime.ex.release(ptr);
+			throw new Failed(`Endpoint.subscribe!(${url}) is called in a component, a computation or an effect, not in a handler: nothing would end it`);
+		}
+		const id = ++ids;
+		runtime.kept.set(id, ptr);
+		const subscriber = { id, url, scope: runtime.current?.scope ?? null, owner: runtime.owner(), queue: [], busy: false, gone: false };
+		let channel = this.channels.get(url);
+		const fresh = !channel;
+		if (fresh) {
+			channel = { subscribers: new Map(), open: false, refused: null, ended: null };
+			this.channels.set(url, channel);
+		}
+		channel.subscribers.set(id, subscriber);
+		cleanups.push(() => this.unsubscribe(subscriber));
+		runtime.notify("subscribe", { url });
+		// What the others on this channel heard that still holds: told once this run is done.
+		const told = this.unavailable ? { Refused: this.unavailable } : channel.refused ? { Refused: channel.refused } : channel.ended !== null ? { Ended: channel.ended } : null;
+		if (told) queueMicrotask(() => this.deliver(subscriber, told));
+		// A new subscriber to a channel the stream has open: the server sends it its resync (and
+		// `on_open!`'s messages) again.
+		else if (channel.open) this.post(`{"channel":${JSON.stringify(url)},"resync":true}`);
+		if (fresh) this.changed();
+	}
+
+	unsubscribe(subscriber) {
+		subscriber.gone = true;
+		subscriber.queue.length = 0;
+		// After the handler running now, which may be its own.
+		queueMicrotask(() => this.runtime.releaseKept(subscriber.id));
+		this.runtime.notify("unsubscribe", { url: subscriber.url });
+		const channel = this.channels.get(subscriber.url);
+		if (!channel?.subscribers.delete(subscriber.id) || channel.subscribers.size) return;
+		this.channels.delete(subscriber.url);
+		this.changed();
+	}
+
+	/** What the page says on a channel (`Host.say!`), for the next post. */
+	say(url, json) {
+		if (this.runtime.onServer) return;
+		this.post(`{"channel":${JSON.stringify(url)},"message":${json}}`);
+	}
+
+	/** A resync of a channel the tab subscribes to (`Host.resync!`), asked of the server. */
+	resync(url) {
+		if (this.channels.get(url)?.open) this.post(`{"channel":${JSON.stringify(url)},"resync":true}`);
+	}
+
+	/** The set changed: once the render that changed it is done, the stream follows it. */
+	changed() {
+		if (this.reconciling) return;
+		this.reconciling = setTimeout(() => {
+			this.reconciling = null;
+			this.reconcile();
+		}, 0);
+	}
+
+	reconcile() {
+		// A wait before the next try is under way: it opens the stream with the set as it is then.
+		if (this.unavailable || this.retrying) return;
+		const urls = [...this.channels.keys()].sort();
+		const key = urls.join("\n");
+		if ((this.stream?.key ?? "") === key) return;
+		this.stream?.controller.abort();
+		this.stream = null;
+		if (urls.length) this.connect(urls, key);
+	}
+
+	async connect(urls, key) {
+		const controller = new AbortController();
+		const stream = { key, controller, opened: performance.now() };
+		this.stream = stream;
+		for (const channel of this.channels.values()) Object.assign(channel, { open: false, refused: null, ended: null });
+		this.stats.connects++;
+		this.runtime.notify("connect", { urls });
+		const query = [`tab=${encodeURIComponent(this.tab())}`, ...urls.map((url) => `c=${encodeURIComponent(url)}`)].join("&");
+		try {
+			const response = await fetch(this.runtime.under(`/rocx/live?${query}`), { headers: { accept: "text/event-stream" }, cache: "no-store", signal: controller.signal });
+			if (!(response.headers.get("content-type") ?? "").startsWith("text/event-stream")) {
+				response.body?.cancel();
+				// A 5xx (a proxy while the server restarts, say) is tried again; anything else says no
+				// server answers channels here.
+				if (response.status < 500) return this.giveUp(stream);
+				throw new Error(`${response.status}`);
+			}
+			const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+			let buffer = "";
+			for (;;) {
+				const { value, done } = await reader.read();
+				if (done || this.stream !== stream) break;
+				buffer += value.replaceAll("\r\n", "\n");
+				// An event ends at a blank line: its `event:` name, and its `data:` lines (the channel's
+				// URL, then what it says). A comment (`: beat`) is the server saying it is there.
+				for (let end = buffer.indexOf("\n\n"); end >= 0; end = buffer.indexOf("\n\n")) {
+					const lines = buffer.slice(0, end).split("\n");
+					buffer = buffer.slice(end + 2);
+					const field = (name) => lines.filter((line) => line.startsWith(`${name}:`)).map((line) => line.slice(name.length + 1).replace(/^ /, ""));
+					const data = field("data");
+					if (data.length && this.stream === stream) this.dispatch(field("event")[0] ?? "message", data[0], data.slice(1).join("\n"));
+				}
+			}
+		} catch {
+			// Offline, or cut off: tried again, below. Aborted: replaced, or gone.
+		}
+		if (this.stream !== stream) return;
+		this.stream = null;
+		this.drops = performance.now() - stream.opened >= this.steady ? 0 : this.drops + 1;
+		const wait = Math.min(this.most, this.first * 2 ** Math.max(0, this.drops - 1)) * (1 + Math.random() / 4);
+		this.runtime.notify("dropped", { wait });
+		this.retrying = setTimeout(() => {
+			this.retrying = null;
+			this.reconcile();
+		}, wait);
+	}
+
+	/** No server answers channels here: every subscriber is told, and nothing more is asked. */
+	giveUp(stream) {
+		if (this.stream === stream) this.stream = null;
+		this.unavailable = [404, "no server answers channels here (a static copy of the site?)"];
+		for (const channel of this.channels.values()) for (const subscriber of channel.subscribers.values()) this.deliver(subscriber, { Refused: this.unavailable });
+	}
+
+	/** An event of the stream, for the channel at `url`. */
+	dispatch(kind, url, said) {
+		const channel = this.channels.get(url);
+		if (!channel) return;
+		let heard;
+		if (kind === "resync") {
+			Object.assign(channel, { open: true, refused: null, ended: null });
+			heard = "Resync";
+		} else if (kind === "message") heard = { Message: said };
+		else if (kind === "refused") {
+			const { status, why } = JSON.parse(said);
+			channel.refused = [status, why];
+			heard = { Refused: channel.refused };
+		} else if (kind === "ended") {
+			Object.assign(channel, { open: false, ended: JSON.parse(said) });
+			heard = { Ended: channel.ended };
+		} else return;
+		this.runtime.notify("heard", { url, heard });
+		for (const subscriber of channel.subscribers.values()) this.deliver(subscriber, heard);
+	}
+
+	/** Its subscriber hears it after what it heard before: one at a time, each once the handler
+	 * before is done. */
+	deliver(subscriber, heard) {
+		if (subscriber.gone) return;
+		subscriber.queue.push(heard);
+		this.pump(subscriber);
+	}
+
+	pump(subscriber) {
+		while (!subscriber.busy && !subscriber.gone && subscriber.queue.length && this.runtime.kept.has(subscriber.id)) {
+			const heard = subscriber.queue.shift();
+			subscriber.busy = true;
+			let returned = false;
+			this.runtime.handle(subscriber.id, JSON.stringify(heard), subscriber.scope, {
+				owner: subscriber.owner,
+				done: () => {
+					subscriber.busy = false;
+					if (returned) this.pump(subscriber);
+				},
+			});
+			returned = true;
+		}
+	}
+
+	/** An item for the next post (`POST /rocx/live/send`): sent once this frame is done. */
+	post(item) {
+		if (this.unavailable) return;
+		this.outbox.push(item);
+		if (this.flushing) return;
+		this.flushing = true;
+		const go = () => {
+			this.flushing = false;
+			this.send();
+		};
+		if (typeof requestAnimationFrame === "function" && document.visibilityState === "visible") requestAnimationFrame(go);
+		else setTimeout(go, 0);
+	}
+
+	async send() {
+		const items = this.outbox.splice(0);
+		if (!items.length) return;
+		this.stats.posts++;
+		try {
+			const response = await fetch(this.runtime.under(`/rocx/live/send?tab=${encodeURIComponent(this.tab())}`), { method: "POST", headers: { "content-type": "application/json" }, body: `[${items.join(",")}]` });
+			if (response.status === 200) {
+				const { refused = [] } = await response.json();
+				for (const { index, status, why } of refused) console.warn(`rocx: ${JSON.parse(items[index]).channel} refused what was said: ${status} ${why}`);
+			} else if (response.status === 404 || response.status === 405) this.unavailable ??= [404, "no server answers channels here (a static copy of the site?)"];
+			else if (!response.ok) console.warn(`rocx: what was said wasn't heard: ${response.status} ${await response.text()}`);
+		} catch {
+			// Offline: what was said is lost, as it would be if the tab closed.
+		}
+	}
+}
+
 export class Runtime {
 	/**
 	 * `base` is the path the site is served under (`/`, or `/rocx/` for a copy at
@@ -417,8 +680,10 @@ export class Runtime {
 		/** Whoever wants to see what the runtime does, as it does it (the docs' inspector): an object
 		 * with any of `seeded`, `call`, `answer`, `fetch`, `fetched`, `listen`, `heard`, `patch`,
 		 * `row`, `show`, `frame`, `effect` (a call of the page's own function), `apply` (an effect's
-		 * apply) and `submit`. */
+		 * apply), `submit`, and the hub's `subscribe`, `unsubscribe`, `connect` and `dropped`. */
 		this.observer = null;
+		/** The tab's channels (`Endpoint.subscribe!`): one stream for all of them. */
+		this.hub = new Hub(this);
 		this.imports = this.makeImports();
 	}
 
@@ -564,6 +829,12 @@ export class Runtime {
 			js_context_get: (id) => this.kept.get(id),
 			js_fetch: (mp, ml, up, ul, hp, hl, bp, bl) => this.fetchFor(text(mp, ml), text(up, ul), text(hp, hl), text(bp, bl)),
 			js_listen: (up, ul, ptr) => this.listenTo(text(up, ul), ptr),
+			js_subscribe: (up, ul, ptr) => this.hub.subscribe(text(up, ul), ptr),
+			js_say: (up, ul, sp, sl) => this.hub.say(text(up, ul), text(sp, sl)),
+			js_resync: (up, ul) => this.hub.resync(text(up, ul)),
+			js_live_publish: () => {
+				throw new Failed("Endpoint.publish! is the server's: a page says things on a channel with Endpoint.say!");
+			},
 			js_timer: (ms, repeat, ptr) => this.startTimer(ms, repeat === 1, ptr),
 			js_clear_timer: (id) => this.clearTimer(id),
 			js_browser_call: (np, nl, ap, al) => {
