@@ -1,0 +1,27 @@
+import pf.Html
+import pf.Server
+import pf.Solid exposing [create_signal!]
+import push.Notification
+import push.Options
+import push.PushButton
+import ../Push
+
+## Queues a notification for every browser that subscribed: how many, or why not.
+announce! : {} => Str
+announce! = server!(
+	|_request, {}|
+		match Push.broadcast!({ ..Notification.new("Hello", "A notification from the example"), url: "/" }, Options.defaults) {
+			Ok(count) => "Queued: ${count.to_str()}"
+			Err(why) => why
+		},
+)
+
+view! = |_| {
+	(said!, set_said!) = create_signal!("")
+	<main>
+		<h1>Push</h1>
+		<PushButton api="/push" />
+		<button type="button" on:click={|| set_said!(announce!({}))}>Notify everyone</button>
+		<p>{said!()}</p>
+	</main>
+}

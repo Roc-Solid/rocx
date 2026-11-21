@@ -1,0 +1,44 @@
+import pf.Html
+import pf.Browser
+import pf.Solid exposing [create_memo!, create_signal!]
+import push.PushState
+
+## A button that turns this browser's notifications on, and off again. Its click asks the
+## browser's permission (a browser asks only on a click, a key or a tap, so the prompt comes from
+## this one), subscribes at the browser's push service with the server's VAPID key, and posts the
+## subscription to the app; turning them off unsubscribes, and tells the app. The page's script,
+## `static/push.js`, does the browser's part (`Browser.call!("push:subscribe", { api: api })`) and says
+## how it went with a `pushstate` event, which every `<PushButton>` on the page hears
+## (`PushState`).
+##
+## `api` is where the app's push endpoints are: with `"/push"`, `GET /push/key` (the public key),
+## `POST /push/subscribe` and `POST /push/unsubscribe`.
+PushButton := [].{
+	view! : { api : Str } => Html
+	view! = |{ api }| {
+		(said!, set_said!) = create_signal!("")
+		state! = create_memo!(|| PushState.parse(said!()))
+		<span class="push-button" data-push-state on:pushstate.value={set_said!}>
+			<button
+				type="button"
+				disabled?={state!().is_stuck()}
+				aria-pressed={if (state!().is_on()) "true" else "false"}
+				on:click={|| Browser.call!(if (state!().is_on()) "push:unsubscribe" else "push:subscribe", { api: api })}
+			>
+				{state!().label()}
+			</button>
+			<small aria-live="polite">{state!().note()}</small>
+		</span>
+	}
+
+	<style>
+		.push-button {
+			display: inline-flex;
+			flex-direction: column;
+			gap: 0.25rem;
+		}
+		small:empty {
+			display: none;
+		}
+	</style>
+}
