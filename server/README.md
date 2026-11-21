@@ -380,7 +380,11 @@ With the runtime, a form whose page reads its submission is sent with `fetch` in
 refusal, and an answer of the endpoint's own that redirects comes back as 200 with
 `x-rocx-redirect` (fetch would follow a 303 before the runtime could read it), its cookies kept,
 for the runtime to go there. A script's post (JSON, or a form not for a page) gets the endpoint's
-answer as always.
+answer as always. So does an action (`Router.use_action!`, D-030): the browser's runtime sends its
+arg as JSON, with `x-rocx-submission: 1`, and a result has it read the page's reads again
+(`Endpoint.get!`'s GETs); the server sees plain requests, and an endpoint that answers one with its
+own `Err(Answer(…))` (a cookie set along with its JSON, as the docs site's planner keeps a reader's
+week) is sent as it is.
 
 ### Settings: `Env`
 
@@ -393,6 +397,12 @@ if (Env.dev!({})) dev_sign_in else Server.refused(404, "No page here.")     # st
 read alike in a request, a job or a schedule (twelve-factor; Phoenix's `runtime.exs`). The context
 file stays for what a request is given. `Env.dev!` says whether the server was started with
 `--dev`. The platform's own settings stay flags or their variables (`DATABASE_URL`, `SMTP_URL`, …).
+
+### Time: `Time`
+
+`Time.now_millis!` and `Time.now_nanos!` (D-026) read the clock. `Time.sleep!(ms)` waits: the call
+pauses and holds no thread (D-027), so a request that waits on purpose (a retry's pause, a demo's
+slow endpoint) holds up only itself; a job's time limit ends its wait.
 
 ### Sockets and randomness: `Tcp`, `Random`
 

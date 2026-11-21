@@ -1291,3 +1291,213 @@ Kv.list! : Str => Try(List(value), [BadValue(Str)])
 **Why.** It is the smallest thing every one of those uses needs, it is Roc-shaped (typed values,
 `Try` for what can be missing), and it replaces the outbox's special host functions. One instance of
 an app means one store. **Reversible:** yes.
+
+## D-029 Drag and drop in the browser
+
+**Context.** A planner moves an item to another day by dragging it, a kanban board a card to
+another column. Handlers were `on:<event>={…}` for any event, so `on:dragstart` and `on:drop`
+could be written, but a drop never came: the browser drops only on an element whose dragover's
+default is prevented, and the runtime prevented a default only for `submit` and a key's handler.
+Firefox starts no drag without data on it. And dragenter and dragleave fire again each time a drag
+crosses a child, so "a drag is over this column" took a counter of the app's own.
+
+**Options.**
+1. Leave it to the page's JavaScript (`Browser.call!`): the runtime would know nothing of drags.
+2. A generic way to prevent any event's default (`on:dragover.prevent`), and nothing more: every
+   drop target writes `on:dragover.prevent={|| {}}`, sets no `dropEffect`, and counts its own
+   enters and leaves.
+3. The browser's drag and drop as events, with the runtime doing what a drop target always needs:
+   accepting the drag, data on it for Firefox, enter and leave as the element's own. Plus `.prevent`
+   for any other default (a link's click).
+4. A pointer-events drag of the platform's own (`solid-dnd`, `dnd-kit`): it works by touch, but it
+   is a library's worth of code (hit testing, scrolling, a ghost, keyboard sensors) for every page.
+
+**Choice.** 3.
+
+```rocx
+(dragging!, set_dragging!) = create_signal!("")
+
+<li draggable="true" on:dragstart={|| set_dragging!(card.id)} on:dragend={|| set_dragging!("")}>{card.title}</li>
+
+<ul class:over={over!()} on:dragenter={|| set_over!(Bool.True)} on:dragleave={|| set_over!(Bool.False)}
+	on:drop={|| move!({ card: dragging!(), day })}>…</ul>
+
+<a href="/next" on:click.prevent={go!}>Next</a>      # Html.on_prevent: the default prevented first
+<ul on:drop.value={|text| add!(text)}>…</ul>        # the text dropped from elsewhere
+```
+
+- An element with a drop handler is a drop target. The runtime prevents its dragenter's and
+  dragover's default (how the browser is told), sets `dropEffect` to a move (a copy or a link if
+  the drag allows only that), and prevents its drop's (a dropped link or file doesn't open). Where
+  there is no drop handler, nothing is accepted, and no drop comes.
+- An element's dragenter handlers run when a drag comes over it from outside, its dragleave
+  handlers when the drag leaves it for outside, is dropped on it, or ends (a listener on the page):
+  as mouseenter and mouseleave, counted from the browser's enters and leaves, not once per child.
+- An element with a dragstart handler gets data on its drag (`application/x-rocx`), so Firefox starts
+  one. What is dragged is the app's, through closures as usual: a signal the dragstart handler sets,
+  the drop handler reads. `on:drop.value` is the drag's `text/plain`.
+- `.prevent` on any handler (`["onp",…]`) prevents the event's default before it runs, so a
+  component takes over a link's click (client-side navigation, when it comes, needs it).
+- The server renders nothing for any of it; inside `<NoHydration>` rocx refuses a handler, as before.
+
+**Touch.** A touch user gets what the browser gives: Safari on iPad and iPhone turns a long press
+into a drag and drop, which works here; many other mobile browsers start no drag from a touch. An
+app gives touch and
+keyboard users another way to move a thing (the docs' planner has a menu on each plan), which it
+needs for keyboards anyway. A pointer drag of the platform's own is option 4, not done.
+
+**Changed from Solid, where the browser forces it.** Solid binds `onDragEnter` as the browser fires
+it; here dragenter and dragleave are the element's own, since that is what a drop target's
+highlight needs and the browser has no `dragenter` that doesn't bubble. A drag source the drop
+removes (its row moved to another list) gets no dragend handler run, its box gone with its row:
+the drop handler clears what dragstart set. **Reversible:** yes; `.prevent` stays either way.
+
+## D-030 Actions without a form, every submission, optimistic values
+
+**Context.** From a drop, a planner sends the move to its endpoint and shows it at once, before the
+server answers; keeps it while the request is on its way; gives way to the server's data when it
+succeeds, with no frame of the old position; puts it back when it is refused, saying why; and
+lets two moves be on their way at once. The platform had `use_submission!` (D-018): the latest
+submission of a form, and only a form. A handler could send an endpoint (`Endpoint.send!`), but one
+that waits on the server drops its writes and runs again once the answer is in, so a signal written
+before the call didn't show until the server answered: no optimistic UI.
+
+**Options.**
+1. Solid 2.0's `createOptimistic` / `createOptimisticStore`: a value whose writes, made inside an
+   action, show at once and are undone when the action's transition ends; the action is a generator
+   that holds the transition open across `yield`, and refreshes its source before it ends. A rocx
+   handler that waits doesn't pause: it runs again from the top, so its optimistic write would be
+   applied twice (`moved(board!(), …)` over a board already moved) or need its first run's writes
+   kept and its reads replayed, and the "transition" would be the runtime's guess.
+2. Solid Router's actions, as its docs write optimistic UI: `useAction(action)` sends it,
+   `useSubmissions(action)` lists every submission, and the optimistic value is derived, the
+   server's data with the inputs of the submissions on their way applied. A submission stays pending
+   until the router's revalidation after it is in. Pure, so a handler that runs again is no problem;
+   each request is its own submission; a refusal undoes it by not being pending.
+3. A signal the app writes before sending and writes back on a refusal, by hand: every app gets the
+   flicker on success wrong (the old data shows between the answer and the refreshed read).
+
+**Choice.** 2, in Solid Router's names, on both platforms; Solid 2.0's names where they fit
+(`isPending` is its own decision).
+
+```roc
+import pf.Router exposing [use_action!, use_submissions!]
+
+Router.use_action! : Endpoint(context, arg, result) => (arg => {})               # from a handler
+Router.use_submissions! : Endpoint(context, arg, result) => Submissions(arg, result)
+Submissions.all! : Submissions(arg, result) => List(Sent(arg, result))
+Submissions.Sent(arg, result) : { id : U64, pending : Bool, input : Try(arg, [NoInput]), result : Try(result, [NoResult]), error : Try(Server.Problem, [NoError]) }
+Submissions.pending! : Submissions(arg, result) => Bool                            # any on its way
+Submissions.pending_inputs! : Submissions(arg, result) => List(arg)                # what those on their way sent
+Submissions.clear! : Submissions(arg, result), U64 => {}                           # forgets one, from a handler
+Time.sleep! : U64 => {}                                                            # the server's: a call that waits on purpose
+```
+
+```rocx
+moves = use_submissions!(Api.post_planner_move({}))
+move! = use_action!(Api.post_planner_move({}))
+week = Api.get_planner({})
+plans! = create_memo!(|| {
+	server = Endpoint.get!(week)
+	moves.pending_inputs!().fold(server, moved)          # the server's, with the moves on their way
+})
+
+<section on:drop={|| move!({ plan: dragging!(), day })}>…</section>
+<p class:saving={moves.pending!()}>…</p>
+<For each!={moves.all!().keep_if(|sent| sent.error.is_ok())} keyed={|sent| sent.id}>
+	{|sent!, _| <p>{why(sent!().error)} <button on:click={|| moves.clear!(sent!().id)}>Dismiss</button></p>}
+</For>
+```
+
+- `use_action!`'s function, called in a handler, queues a submission with the handler's writes
+  (`Host.submit!`), so a handler that waits and runs again sends it once. It is sent as
+  `Endpoint.send!` sends one: the arg as JSON, `x-rocx-submission: 1`, `accept: application/json`.
+  Nothing waits for it. Called anywhere else it fails; on the server no handler runs.
+- The runtime keeps every submission to an endpoint's URL, forms' (D-018) and actions' alike,
+  oldest first, until forgotten. `use_submissions!(endpoint)` reads them; `all!` gives records, not
+  methods, so `keep_if` and `<For>` take them (Roc's list functions take pure functions).
+- A submission answered 200 has the page's reads read again: every computation that read a GET
+  (`Endpoint.get!`, `read!`) has its answers cleared and runs again, its last value shown meanwhile,
+  and the submission is done in the run of the last one to have its answer (or fail, or go). What
+  reads both the data and the submissions sees the server's new data and the submission's end in
+  one flush, so the optimistic value gives way with nothing of the old in between. A refusal, or no
+  answer, is done at once: its input is no longer applied, and its `error` says why.
+- Several may be on their way; each is answered on its own. An input still on its way is applied to
+  data read again for another, which may already have it: applying one should be idempotent (a
+  plan's day, not one more).
+- On the server there are no submissions (`all!` is a plain form's flash, as `use_submission!`'s
+  is, or none) and nothing is applied, so the page the browser hydrates is the one rendered.
+- Submissions are kept by URL, so an endpoint with params in its path has a list per URL: what
+  varies goes in the body.
+
+**Changed in D-018.** A form's submissions are a list now: the latest is what `use_submission!`
+reads, as before, and an earlier one's answer, which was dropped, is kept on it. A form's result
+reads the page's reads again too (Solid Router revalidates after every action), where an app called
+`refresh!` itself before. `Submission.clear!` forgets the latest, as before; `Submissions.clear!`
+one by id.
+
+**Changed from Solid, where Roc forces it.** `useSubmissions` gives objects with getters; `all!`
+gives records as they are now (a computation reading them runs again when one changes), and
+`clear!` takes an id. No `createOptimistic`: the optimistic value is a memo over the server's data
+and `pending_inputs!`. No `.with` and no `retry` yet; revalidation is of every GET the page read,
+with no keys to narrow it.
+
+**Found while building.** A read that isn't in yet unwinds its computation by a JavaScript throw,
+which skips Roc's drops: what the run made before the read is lost, and revalidation makes such
+runs common. The host's own part is fixed (`js_fetch` answers "waits" and `js_waits` throws once the
+host has let go of the request's text), `Endpoint.read!` passes its header as text rather than a
+list, and `Endpoint.remote`'s `run` captures nothing; the rest is the app's to keep in mind: read
+first, and name the endpoint outside the computation. In an app's browser copy an endpoint has no
+types (its route file isn't there), so a submission's result nothing reads stays a type variable,
+and the compiler can't specialize `all!` for it (`--specialize=yes`, as the site builds: a missing
+`parser_for` in a small app, a crash of the fork's compiler in the site's): the app says the
+submissions' types (`moves : Submissions(Move, Str)`). The docs' planner needed a slow endpoint:
+`Time.sleep!` exposes the host's sleep, which pauses the call and holds no thread (D-027).
+**Reversible:** yes.
+
+## D-031 An element that moves glides
+
+**Context.** A card dragged from Monday's list to Tuesday's leaves one `<For>` and enters another:
+two rows, one dropped and one made, and nothing moved the eye from where it was to where it is.
+Within one keyed `<For>`, a row put elsewhere jumped there, and the rows a new one pushed jumped
+too.
+
+**Options.**
+1. The View Transitions API (`document.startViewTransition`): the browser snapshots the page,
+   applies the change, and cross-fades, with `view-transition-name` pairing elements. It freezes the
+   whole page for the transition (no input meanwhile), names must be unique on the page, Firefox
+   has it only in its newest releases, and a row that comes and one that goes at the same moment
+   can't each keep their own transitions (`transition:in`, `transition:out`).
+2. Svelte's `animate:flip` (reorders within a keyed each) and `crossfade` (`send`/`receive`, an
+   element leaving one list flying to where its pair arrives): two directives and a pair of
+   functions an app makes.
+3. FLIP in the runtime, for elements that ask: measured before the flush first changes the page's
+   structure and after it, the difference played back with `element.animate`; and a page-wide `key`
+   that makes an element leaving one place and one arriving in another the same one.
+
+**Choice.** 3: Svelte's two ideas in one attribute, the runtime's.
+
+```rocx
+<li key={card!().id} transition:move={Transition.glide}>…</li>   # Transition.glide: 250 ms, easing out
+<li transition:move={Transition.glide.ms(400)}>…</li>               # glides as its list changes around it
+```
+
+- `transition:move={…}` (`Html.transition(Move, …)`; computed, `transition_of`) marks an element as
+  one that glides; only the transition's pace counts (`ms`, `delay`, `easing`). `key={…}`
+  (`Html.key`, or `Html.key_of` when it reads an accessor, as a row's item is) names it on the page.
+- Before a flush first changes the page's structure (a row comes, goes or moves; a part switches; a
+  hole's markup is made anew), the runtime reads where each such element is; after the flush, one
+  that moved plays from there to its place with `translate` (so its own `transform` stays its own).
+- One with a key that appears in the flush as one with the same key went (taken away, or on its way
+  out) glides from the other's place: neither plays its transition in or out, and the other, if it
+  was leaving, goes at once. Rows reordered within one `<For>`, and rows pushed by one that comes
+  or goes, glide too: the same element measured twice.
+- An element inside another that glides moves with it, not on its own as well. A glide playing is
+  stopped, and the next starts from where the element is seen. With `prefers-reduced-motion:
+  reduce`, nothing glides. Hydrating and mounting measure nothing, and the server renders nothing for
+  it: hydration is unchanged.
+
+**Limits.** It translates; it doesn't scale an element from its old size to its new one. One
+inside a box that clips (`overflow: auto`) is clipped as it crosses into another. Each flush that
+changes structure while something glides costs two layout reads. A text change alone (a card's
+title growing) moves nothing. **Reversible:** yes.

@@ -8,7 +8,10 @@ its computation, which runs again once it is. The nearest `<Loading>` shows its 
 everything inside has its first values; a failure shows the nearest `<Errored>`. A context gives a
 value to everything under its provider. An effect runs once the markup is on the page, and again
 when what it read changes, after its cleanup; a timer ticks until its component goes. A form posting
-to an endpoint a component reads the submission of is sent with `fetch`, and the page stays. An app
+to an endpoint a component reads the submission of is sent with `fetch`, and the page stays; a
+handler sends one without a form or waiting (an action), and the page shows it before the server
+answers (an optimistic value), then the server's data, read again. Elements are dragged and dropped
+with the browser's events, and glide when a change moves them. An app
 whose root renders a whole document hydrates the page
 the server sent, from `<html>` down (`start.js`). The server's platform (`server/`) renders the
 same components natively; this one hydrates them.
@@ -28,8 +31,9 @@ same components natively; this one hydrates them.
   `set_timeout!`, each owned by the run that started it), `Audio` (`play!`, `play_with!`: a sound
   file, from a handler), `Browser` (`call!`: the page's own JavaScript function, from a handler),
   `Show`, `For`, `Loading`, `Errored`, `Context`, `Call` (`fetch!`, `listen!`), `Router` (`location!`: the page's path and query; `use_submission!`: the latest
-  submission of a form to an endpoint), `Submission` (its `pending!`, `input!`, `field!`,
-  `result!`, `error!`, `clear!`), `Title` (`<Title>`: the document's title, from anywhere in the
+  submission to an endpoint; `use_submissions!`: all of them; `use_action!`: one a handler sends
+  without a form), `Submission` (its `pending!`, `input!`, `field!`, `result!`, `error!`,
+  `clear!`), `Submissions` (`all!`, as records, `pending!`, `pending_inputs!`, `clear!`), `Title` (`<Title>`: the document's title, from anywhere in the
   page) and `HttpStatusCode` (the status a page is answered with); and HTTP's: `Server` (a request,
   its body the bytes as they came, which `text_of` reads as text, and its answer: text, bytes, a
   page, events, or a body the server fetches from elsewhere and sends on, `forward`, with what of
@@ -72,6 +76,12 @@ same components natively; this one hydrates them.
 - **Waiting.** A read whose value isn't in throws, in JavaScript, through Roc's frames; the runtime
   restores Roc's stack pointer and runs the computation again when the value comes. A handler that
   waits drops its writes and runs again; its calls' answers are kept, so a command is sent once.
+  The throw skips Roc's drops: what the run made before the read that waits is never let go of. So
+  a computation reads first, and names its endpoint outside itself (`week = Api.get_week({})`, then
+  `create_memo!(|| Endpoint.get!(week) …)`): `Endpoint.read!` passes its header as the host takes
+  it, `Endpoint.remote` captures nothing, and the host's `js_fetch` answers "waits" and has
+  `js_waits` throw only once it has let go of the request's text, so a read made that way loses
+  nothing.
 - **Pending** (`is_pending!`, Solid 2.0's `isPending`). A memo whose run waits while it has a value
   (not failed) is `refreshing`, from the flush that started that run until it settles or fails; it
   is `stale` if it is refreshing or a memo it reads is, set again after each run and passed down to
@@ -135,15 +145,36 @@ same components natively; this one hydrates them.
   `on_cleanup!(clear!)`: before the computation runs again, before the effect's next apply, when
   what made it goes. One started in an event handler belongs to the run that made the handler's
   element. `runtime.timers` holds the ones running; on the server none starts (the id is 0).
-- **Forms**: `use_submission!(endpoint)` registers the endpoint's URL with the runtime, by
-  its path without the site's base, while its component is there. A `submit` on the page (the
-  runtime listens once) of a `method="post"` form to that URL, on this site, not multipart, that no
-  handler prevented, is sent with `fetch`: its fields URL-encoded, `accept: application/json`,
-  `x-rocx-submission: 1`. The latest submission to each URL is a source computations read
-  (`Host.submission!`): pending, then the answer's status and body (status 0 and why with none).
-  `x-rocx-redirect` (an endpoint's own redirect, which `Endpoint.respond!` gives the runtime as
-  200), or a redirect fetch followed, sends the browser there. An answer to a submission that isn't
-  the latest is dropped. Without a submission in the browser, `Submission` reads the flash.
+- **Forms**: `use_submission!(endpoint)` (or `use_submissions!`) registers the endpoint's URL with
+  the runtime, by its path without the site's base, while its component is there. A `submit` on the
+  page (the runtime listens once) of a `method="post"` form to that URL, on this site, not
+  multipart, that no handler prevented, is sent with `fetch`: its fields URL-encoded,
+  `accept: application/json`, `x-rocx-submission: 1`. The submissions to each URL are a list, a
+  source computations read (`Host.submission!`, the latest; `Host.submissions!`, all): each pending,
+  then the answer's status and body (status 0 and why with none). `x-rocx-redirect` (an endpoint's
+  own redirect, which `Endpoint.respond!` gives the runtime as 200), or a redirect fetch followed,
+  sends the browser there. The latest one forgotten (`clear!`), there is none until the next, nor
+  the flash. Without a submission in the browser, `Submission` reads the flash.
+- **Actions and optimistic values** (D-030): `use_action!(endpoint)` is a function a handler calls
+  with the endpoint's arg (`Host.submit!`): queued with the handler's writes, so a handler that
+  waits and runs again sends it once, then sent as `Endpoint.send!` sends it (JSON, with
+  `x-rocx-submission: 1`), a new submission in the endpoint's list; nothing waits for it.
+  `use_submissions!(endpoint)` reads the list: `all!` (records: `id`, `pending`, `input`, `result`,
+  `error`), `pending!`, `pending_inputs!` (what those on their way sent, parsed as the endpoint
+  reads it), and `clear!(id)`. An optimistic value is a memo of the server's data with the inputs on
+  their way applied: `create_memo!(|| moves.pending_inputs!().fold(Endpoint.get!(board), moved))`.
+  A submission answered 200 isn't done at once: the runtime reads the page's reads again
+  (`revalidate`: every computation that read a GET, `Endpoint.get!` or `read!`, has its calls
+  cleared and runs again, its last value shown meanwhile), and marks it done in the run of the last
+  one to have its answer (or fail, or go), so what reads both sees the server's new data and the
+  submission's end in one flush: the optimistic value gives way with no frame of the old data. A
+  refusal (any other status, or none) is done at once: the input isn't applied any more, and the
+  value is the server's again, the refusal in `error`. Several may be on their way, each answered on
+  its own; an input still on its way is applied to the data read again, so applying one should be
+  idempotent (a card's day, not one more). On the server, there are no submissions: `all!` is the
+  flash or none, and nothing is applied, so the page hydrates as rendered. In an app's browser copy
+  an endpoint has no types, so a component says its submissions' (`moves : Submissions(Move, Str)`):
+  a result nothing reads would stay a type variable, which the compiler can't specialize `all!` for.
 - **The flash**: on the server, `Server.flash!` reads the `rocx-flash` cookie a plain form's post came
   back with, and the runtime notes what the page read (`Host.flash!`). The page carries it in
   `<script type="application/json" class="rocx-flash">`, before the answers, which hydration reads
@@ -250,7 +281,18 @@ same components natively; this one hydrates them.
   `<!--app-->…<!--/app-->`, for `hydrate(container)`.
 - **Events**: `on:click` runs a handler; `.value`, `.checked`, `.key` give it what the event says; a
   key's name (`on:keydown.ArrowUp`) runs it for that key only and prevents its default;
+  `.prevent` (`["onp",…]`) prevents its default first (a link's click taken over);
   `on:frame.ms` runs it every animation frame while its element is on the page.
+- **Drag and drop** (D-029) are events too (`dragAndDrop`): an element with a drop handler is a drop
+  target, its dragenter's and dragover's default prevented, `dropEffect` a move (unless the drag
+  allows only a copy or a link), and its drop's (a dropped link or file doesn't open);
+  `on:drop.value` is the dropped text (`text/plain`). An element's dragenter and dragleave handlers
+  run when a drag comes over it from outside and leaves it for outside, as mouseenter and
+  mouseleave do (a count of the browser's enters and leaves), and dragleave's when a drop or the
+  drag's end (a listener on the page, once) leaves it. An element with a dragstart handler gets
+  data on its drag (`application/x-rocx`), which Firefox needs to start one. What is dragged is the
+  app's: a signal its handlers set. A source removed by the drop (its row moved elsewhere) gets no
+  dragend handler run (its box went with its row): clear what dragstart set in the drop handler too.
 - **Transitions** (`transition`, `transition:in`, `transition:out`, a `Transition` from
   `Transition.roc`): a `<For>`'s new row, or a `<Show>`'s new part, plays its own elements'
   transitions in once the flush that made it is on the page (none the first time a `<For>` or a
@@ -260,11 +302,22 @@ same components natively; this one hydrates them.
   is removed. A `<For>` putting its rows in order passes over the rows leaving; `<For>`s inside a part
   that is leaving keep their rows until it goes. With `prefers-reduced-motion: reduce`, nothing
   plays.
+- **Moves** (D-031; `transition:move`, `key`): an element with a move transition is measured
+  (`getBoundingClientRect`) before a flush first changes the page's structure (a row comes, goes or
+  moves, a part switches, a hole's markup is made anew: `measure`), and after it (`glide`): one that
+  moved plays the difference back with `translate`, at the transition's pace (FLIP). An element with
+  a key (`["k",…]`, or `["ko",…]` computed) that appears in the flush as one with the same key went
+  (taken away, or on its way out) is that one moved: it glides from the other's box, its transition
+  in doesn't play, and the other, if leaving, goes at once. An element inside another that glides
+  moves with it; a glide playing is stopped and the next starts from where the element is seen.
+  Hydrating and mounting measure nothing; with `prefers-reduced-motion: reduce`, nothing glides.
+  The server writes nothing for them.
 - **An observer** (`runtime.observer`: `seeded`, `call`, `answer`, `fetch`, `fetched`, `listen`,
   `heard`, `unlisten`, `patch`, `row`, `show`, `frame`, `effect` (a call of the page's own
-  function), `apply` (an effect's apply), `submit`, `submitted`, and the hub's `subscribe`,
-  `unsubscribe`, `connect`, `dropped`) is told what the runtime does: the docs' inspectors and the
-  showcase's frame meter. Hydrating isn't a patch.
+  function), `apply` (an effect's apply), `submit`, `submitted`, `revalidate` (a result reading the
+  page's reads again), `glide` (an element moving), and the hub's `subscribe`, `unsubscribe`,
+  `connect`, `dropped`) is told what the runtime does: the docs' inspectors and the showcase's frame
+  meter. Hydrating isn't a patch.
 
 ## The tests (`test/platform.test.mjs`)
 
@@ -280,7 +333,9 @@ with nothing to provide its store; and a whole document (`Document.rocx`; inside
 `Wrapped.rocx`), rendered in Node as the server platform answers a page and hydrated by
 `start.js`; effects, a cleanup, a timer and a listen (`Effects.rocx`); a form's submission
 (`Form.rocx`); props read in a hole and outside one, and an accessor (`Props.rocx`); `<Title>`s
-(`Titles.rocx`); and channels (`Channels.rocx`: two feeds on one org's news, a third on another's).
+(`Titles.rocx`); channels (`Channels.rocx`: two feeds on one org's news, a third on another's); and a
+planner (`Planner.rocx`: cards dragged between days, moved optimistically with `use_action!` and
+`use_submissions!`, gliding).
 In Chromium, against a scripted server (a scripted `/rocx/live` too): what shows while answers come, what a click
 patches, failures and retries, rows kept and moved, rows and parts that stay until their
 transitions are over (and none with less motion asked for), hydration without a request, a tampered document's `<body>` rendered again (and strictly, a throw), the
@@ -294,16 +349,27 @@ nodes kept, strictly and after `<body>` is rendered again; the browser's build r
 the page's answers and regions, byte for byte), one channel stream for three subscriptions (one
 refused), messages in order, a frame's sayings in one post, a late subscriber resynced without a
 reconnect, one reconnect for a change, waits that double after drops, a host with no server asked
-once, and no allocation left behind.
+once, a card dragged to another day (a real drag, CDP's `Input.dispatchDragEvent`) shown there before
+the slow endpoint answers and kept while the board is read again, never shown where it was; two on
+their way at once, the refused one back with its refusal; a list with no drop handler taking no drop;
+glides (none with less motion asked for); a link's click taken over; and no allocation left behind.
 
 ## Not yet
 
 - **The rest of Solid 2.0:** keyed `<Show>`, `<Switch>`/`<Match>`, `<Repeat>`,
   `untrack`, `createRenderEffect`, an effect's `error` handler, stores as `createStore` makes them.
-- **The rest of Solid Router's actions:** `useSubmissions`, `useAction`, `.with`, revalidating after
-  one (call `refresh!` from an effect on `result!`), and multipart forms (sent as the browser sends
-  them).
-- **Pending state for later updates** (`isPending`, `latest`, optimistic writes).
+- **The rest of Solid Router's actions:** `.with`, a submission's `retry`, saying which reads a
+  result reads again (Solid Router's `revalidate` keys: today every GET the page read), and
+  multipart forms (sent as the browser sends them). Solid 2.0's `createOptimistic` (writes undone
+  when their action's transition ends) isn't there: an optimistic value is the server's with the
+  submissions on their way applied (D-030).
+- **`latest`** (Solid 2.0's): a memo already shows its last value while it is read again, and
+  `is_pending!` says it is.
+- **Dragging by touch or pointer:** only the browser's drag and drop (a long press on Safari for
+  iPad and iPhone; many other mobile browsers start none from a touch); files dropped (`dataTransfer.files`), a drag image of the app's, and data other
+  than text for other pages to read.
+- **Moves that resize:** a glide moves an element (`translate`), it doesn't scale it from its old
+  size; one inside a box that clips (`overflow`) is clipped as it crosses into another.
 - **The rest of @solidjs/meta:** `<Meta>`, `<Link>`, `<Style>`; only `<Title>` is there. And a
   value prop of an effectful component patched in place: Roc's types can't make it a getter, so it
   is an accessor (`label!={…}`) or rendered anew.
