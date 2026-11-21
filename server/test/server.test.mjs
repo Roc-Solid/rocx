@@ -1116,7 +1116,9 @@ async function httpServer(tls) {
 		response.setHeader("x-from", "node");
 		if (pathname === "/hello") return response.end("hello");
 		if (pathname === "/missing") return (response.statusCode = 404), response.end("not here");
-		if (pathname === "/echo") return response.end(JSON.stringify({ method: request.method, headers: request.headers, body: body.toString() }));
+		if (pathname === "/echo") return response.end(JSON.stringify({ method: request.method, url: request.url, headers: request.headers, raw: request.rawHeaders, body: body.toString() }));
+		if (pathname === "/json") return response.setHeader("content-type", "application/json"), response.end('{"tomorrow":"sunny","high":21}');
+		if (pathname === "/json-wrong") return response.setHeader("content-type", "application/json"), response.end('{"tomorrow":"sunny","high":"warm"}');
 		if (pathname === "/bytes") return response.end(Buffer.concat([body, Buffer.from([0, 255])]));
 		if (pathname === "/redirect") return redirect(302, "chain/one");
 		if (pathname === "/chain/one") return redirect(301, "/hello");
@@ -1147,31 +1149,35 @@ function selfSigned() {
 	return made.status === 0 ? { key: readFileSync(key), cert: readFileSync(cert) } : null;
 }
 
-/** The app asks `url` (`/http`, with `options`: method, timeout, max, follow): its answer's status, its
- * `location` and `x-from`, and its body; or why there was none. */
-const ask = (url, options = {}, body) => {
+/** The app asks `url` with `Http.fetch!` (`/http`, with `options`: method, send, type, query, timeout,
+ * max, follow): its answer's status, its `location` and `x-from`, and its body; or why there was none.
+ * `route` asks through another route of the app's: `/http/old`, the deprecated API's. */
+const ask = (url, options = {}, body, route = "/http") => {
 	const query = new URLSearchParams({ url, ...options });
-	return get(`/http?${query}`, { method: "POST", body });
+	return get(`${route}?${query}`, { method: "POST", body });
 };
+
+/** What `/echo` saw of a request the app made (`ask`'s answer, after its first line). */
+const echoed = async (answer) => JSON.parse((await answer.text()).split("\n").slice(1).join("\n"));
 
 test("http: a GET and a POST to another server, any status an answer, bytes each way", { skip }, async () => {
 	const node = await httpServer();
 	try {
 		assert.equal(await (await ask(`${node.url}/hello`)).text(), "200 - node\nhello");
 		assert.equal(await (await ask(`${node.url}/missing`)).text(), "404 - node\nnot here", "a 404 is an answer");
-		const posted = await (await ask(`${node.url}/echo`, { method: "POST" }, '{"a":1}')).text();
-		assert.match(posted, /^200 - node\n/);
-		const echoed = JSON.parse(posted.split("\n").slice(1).join("\n"));
-		assert.equal(echoed.method, "POST");
-		assert.equal(echoed.body, '{"a":1}');
-		assert.equal(echoed.headers["content-type"], "application/json");
-		assert.equal(echoed.headers["content-length"], "7");
-		assert.equal(echoed.headers["x-rocx"], "yes");
-		assert.equal(echoed.headers.authorization, "Bearer sesame");
-		assert.equal(echoed.headers.host, node.url.replace("http://", ""));
-		const form = JSON.parse((await post(`/http/form?url=${encodeURIComponent(`${node.url}/echo`)}`)).split("\n").slice(1).join("\n"));
-		assert.equal(form.headers["content-type"], "application/x-www-form-urlencoded");
-		assert.deepEqual(Object.fromEntries(new URLSearchParams(form.body)), { name: "Ada Lovelace", says: "a&b=c ✓" });
+		const posted = await ask(`${node.url}/echo`, { method: "POST", send: "json" });
+		assert.equal(posted.status, 200);
+		const seen = await echoed(posted);
+		assert.equal(seen.method, "POST");
+		assert.equal(seen.body, '{"a":1}');
+		assert.equal(seen.headers["content-type"], "application/json");
+		assert.equal(seen.headers["content-length"], "7");
+		assert.equal(seen.headers["x-rocx"], "yes");
+		assert.equal(seen.headers.authorization, "Bearer sesame");
+		assert.equal(seen.headers.host, node.url.replace("http://", ""));
+		for (const method of ["PUT", "PATCH", "DELETE", "OPTIONS", "PURGE"]) {
+			assert.equal((await echoed(await ask(`${node.url}/echo`, { method }))).method, method, `${method}, as written`);
+		}
 		assert.equal(await post(`/http/bytes?url=${encodeURIComponent(`${node.url}/bytes`)}`), "0,255,13,10,128,0,255", "bytes sent and read as they are");
 		const nowhere = await ask("http://127.0.0.1:9/");
 		assert.equal(nowhere.status, 502);
@@ -1182,17 +1188,114 @@ test("http: a GET and a POST to another server, any status an answer, bytes each
 	}
 });
 
+test("http: fetch!(url, {}) is a GET with no body, redirects followed; ok is a 2xx", { skip }, async () => {
+	const node = await httpServer();
+	try {
+		const seen = JSON.parse((await post(`/http/plain?url=${encodeURIComponent(`${node.url}/echo`)}`)).split("\n").slice(1).join("\n"));
+		assert.equal(seen.method, "GET");
+		assert.equal(seen.url, "/echo", "no query added");
+		assert.equal(seen.body, "");
+		assert.equal(seen.headers["content-type"], undefined, "no body, no content-type");
+		assert.deepEqual(Object.keys(seen.headers).sort(), ["host"], "nothing but the host");
+		assert.equal(await post(`/http/plain?url=${encodeURIComponent(`${node.url}/redirect`)}`), "200 ok\nhello", "a redirect followed, two of them");
+		assert.equal(await post(`/http/plain?url=${encodeURIComponent(`${node.url}/missing`)}`), "404 not ok\nnot here", "a 404 is an answer, not ok");
+		assert.equal(await post(`/http/plain?url=${encodeURIComponent(`${node.url}/nothing`)}`), "500 not ok\nnothing at /nothing");
+		assert.equal(await post(`/http/plain?url=${encodeURIComponent(`${node.url}/big`)}`), `200 ok\n${"x".repeat(1000)}`, "within the default 64 MiB");
+	} finally {
+		await node.close();
+	}
+});
+
+test("http: query pairs, percent-encoded, after a ? or after the URL's own query with an &", { skip }, async () => {
+	const node = await httpServer();
+	try {
+		const pairs = "city=S%C3%A3o%20Paulo&a%26b=c%3Dd%20%E2%9C%93";
+		assert.equal((await echoed(await ask(`${node.url}/echo`, { query: "yes" }))).url, `/echo?${pairs}`);
+		assert.equal((await echoed(await ask(`${node.url}/echo?x=1`, { query: "yes" }))).url, `/echo?x=1&${pairs}`, "the URL's query kept, the pairs after an &");
+		assert.equal((await echoed(await ask(`${node.url}/echo?`, { query: "yes" }))).url, `/echo?${pairs}`, "a URL ending in ? takes the pairs as they are");
+		const read = Object.fromEntries(new URL(`http://x${(await echoed(await ask(`${node.url}/echo?x=1`, { query: "yes" }))).url}`).searchParams);
+		assert.deepEqual(read, { x: "1", city: "São Paulo", "a&b": "c=d ✓" }, "read back as they were given");
+	} finally {
+		await node.close();
+	}
+});
+
+test("http: each body's content-type, and a content-type header that overrides it", { skip }, async () => {
+	const node = await httpServer();
+	try {
+		const json = await echoed(await ask(`${node.url}/echo`, { method: "POST", send: "json" }));
+		assert.equal(json.headers["content-type"], "application/json");
+		assert.equal(json.body, '{"a":1}');
+		const form = await echoed(await ask(`${node.url}/echo`, { method: "POST", send: "form" }));
+		assert.equal(form.headers["content-type"], "application/x-www-form-urlencoded");
+		assert.deepEqual(Object.fromEntries(new URLSearchParams(form.body)), { name: "Ada Lovelace", says: "a&b=c ✓" });
+		const text = await echoed(await ask(`${node.url}/echo`, { method: "POST", send: "text" }, "héllo ✓"));
+		assert.equal(text.headers["content-type"], "text/plain; charset=utf-8");
+		assert.equal(text.body, "héllo ✓");
+		assert.equal(text.headers["content-length"], String(Buffer.byteLength("héllo ✓")));
+		const bytes = await echoed(await ask(`${node.url}/echo`, { method: "POST", send: "bytes" }));
+		assert.equal(bytes.headers["content-type"], undefined, "bytes: no content-type, as fetch sends a Uint8Array");
+		assert.equal(bytes.headers["content-length"], "5");
+		const given = await echoed(await ask(`${node.url}/echo`, { method: "POST", send: "json", type: "application/merge-patch+json" }));
+		assert.equal(given.headers["content-type"], "application/merge-patch+json", "a content-type given wins, in any case");
+		const types = given.raw.filter((name, i) => i % 2 === 0 && name.toLowerCase() === "content-type");
+		assert.equal(types.length, 1, "and is the only one sent");
+		assert.equal(given.body, '{"a":1}');
+	} finally {
+		await node.close();
+	}
+});
+
+test("http: res.json() reads a body as a type, and is an error when it isn't that", { skip }, async () => {
+	const node = await httpServer();
+	try {
+		assert.equal(await post(`/http/json?url=${encodeURIComponent(`${node.url}/json`)}`), "sunny 21");
+		assert.match(await post(`/http/json?url=${encodeURIComponent(`${node.url}/json-wrong`)}`), /^not JSON of that shape: /, "a field of another type");
+		assert.match(await post(`/http/json?url=${encodeURIComponent(`${node.url}/hello`)}`), /^not JSON of that shape: /, "not JSON at all");
+		assert.equal(await post("/http/json?url=http%3A%2F%2F127.0.0.1%3A9%2F"), "no answer");
+	} finally {
+		await node.close();
+	}
+});
+
+test("http: the deprecated API (send!, send_request!, get, post_json, post_form, with_header, header, text) still answers", { skip }, async () => {
+	const node = await httpServer();
+	const old = (url, options = {}, body) => ask(url, options, body, "/http/old");
+	try {
+		assert.equal(await (await old(`${node.url}/hello`)).text(), "200 - node\nhello");
+		assert.equal(await (await old(`${node.url}/missing`)).text(), "404 - node\nnot here");
+		const seen = await echoed(await old(`${node.url}/echo`, { method: "POST" }, '{"a":1}'));
+		assert.equal(seen.method, "POST");
+		assert.equal(seen.body, '{"a":1}');
+		assert.equal(seen.headers["content-type"], "application/json");
+		assert.equal(seen.headers["x-rocx"], "yes");
+		assert.equal(seen.headers.authorization, "Bearer sesame");
+		assert.equal(await (await old(`${node.url}/redirect`)).text(), "200 - node\nhello", "redirects followed, as Http.defaults says");
+		assert.equal(await (await old(`${node.url}/redirect`, { follow: "no" })).text(), "302 chain/one node\n", "or not");
+		assert.equal(await (await old(`${node.url}/slow`, { timeout: 200 })).text(), "timed out");
+		assert.equal(await (await old(`${node.url}/big`, { max: 500 })).text(), "too large");
+		assert.equal(await (await old(`${node.url}/big`, { max: 500, method: "HEAD" })).text(), "200 - node\n");
+		const form = JSON.parse((await post(`/http/old/form?url=${encodeURIComponent(`${node.url}/echo`)}`)).split("\n").slice(1).join("\n"));
+		assert.equal(form.headers["content-type"], "application/x-www-form-urlencoded");
+		assert.deepEqual(Object.fromEntries(new URLSearchParams(form.body)), { name: "Ada Lovelace", says: "a&b=c ✓" });
+		assert.equal(await post(`/http/old/bytes?url=${encodeURIComponent(`${node.url}/bytes`)}`), "0,255,13,10,128,0,255");
+		assert.match(await (await old("http://127.0.0.1:9/")).text(), /^no answer: 127\.0\.0\.1:9: /);
+	} finally {
+		await node.close();
+	}
+});
+
 test("http: redirects followed (relative ones, a 303 as a GET, no credentials to another origin) or not; a loop ends", { skip }, async () => {
 	const [node, other] = await Promise.all([httpServer(), httpServer()]);
 	try {
 		assert.equal(await (await ask(`${node.url}/redirect`)).text(), "200 - node\nhello", "302 to a relative path, then 301 to an absolute one");
 		assert.equal(await (await ask(`${node.url}/redirect`, { follow: "no" })).text(), "302 chain/one node\n", "not followed: the redirect is the answer");
-		const seen = JSON.parse((await (await ask(`${node.url}/see-other`, { method: "POST" }, "{}")).text()).split("\n").slice(1).join("\n"));
+		const seen = await echoed(await ask(`${node.url}/see-other`, { method: "POST", send: "json" }));
 		assert.equal(seen.method, "GET", "a 303 after a POST is a GET");
 		assert.equal(seen.body, "");
 		assert.equal(seen.headers["content-type"], undefined, "without the body's headers");
 		assert.equal(seen.headers.authorization, "Bearer sesame", "credentials go on to the same origin");
-		const away = JSON.parse((await (await ask(`${node.url}/away?to=${encodeURIComponent(`${other.url}/echo`)}`)).text()).split("\n").slice(1).join("\n"));
+		const away = await echoed(await ask(`${node.url}/away?to=${encodeURIComponent(`${other.url}/echo`)}`));
 		assert.equal(away.headers.host, other.url.replace("http://", ""));
 		assert.equal(away.headers["x-rocx"], "yes");
 		assert.equal(away.headers.authorization, undefined, "but not to another");
@@ -1372,11 +1475,17 @@ test("samples: what the docs show (Samples.roc) runs as they say: settings, cryp
 	]);
 	const bytes = Buffer.from([0, 255, 13, 10, 128]);
 	assert.equal(await text("/samples/digest", { method: "POST", body: bytes }), sha256(bytes), "the bytes as they came");
-	// Another server: a forecast asked with a token, a preview not following a redirect, a file sent on.
+	// Another server: a forecast asked with a token, an order sent as JSON and cancelled, a preview
+	// not following a redirect, a file sent on.
 	const asked = [];
-	const other = createHttpServer((request, response) => {
-		asked.push({ url: request.url, authorization: request.headers.authorization });
+	const other = createHttpServer(async (request, response) => {
+		const chunks = [];
+		for await (const chunk of request) chunks.push(chunk);
+		const body = Buffer.concat(chunks).toString();
+		asked.push({ method: request.method, url: request.url, authorization: request.headers.authorization, type: request.headers["content-type"], body });
 		if (request.url.startsWith("/forecast?")) return response.writeHead(200, { "content-type": "application/json" }).end('{"tomorrow":"sunny"}');
+		if (request.method === "POST" && request.url === "/shop/orders") return response.writeHead(201, { "content-type": "application/json" }).end('{"id":"o-17"}');
+		if (request.method === "DELETE" && request.url === "/shop/orders/o-17") return response.writeHead(204).end();
 		if (request.url === "/moved") return response.writeHead(302, { location: "/elsewhere" }).end();
 		response.writeHead(404).end();
 	});
@@ -1384,9 +1493,16 @@ test("samples: what the docs show (Samples.roc) runs as they say: settings, cryp
 	const upstream = await upstreamServer();
 	try {
 		const api = `http://127.0.0.1:${other.address().port}`;
-		assert.equal(await text(`/samples/forecast?api=${encodeURIComponent(api)}&city=${encodeURIComponent("São Paulo")}`), '{"tomorrow":"sunny"}');
-		assert.deepEqual(asked.at(-1), { url: "/forecast?city=S%C3%A3o%20Paulo", authorization: "Bearer none" }, "the city in the URL, the token (none set) in a header");
+		assert.equal(await text(`/samples/forecast?api=${encodeURIComponent(api)}&city=${encodeURIComponent("São Paulo")}`), "sunny", "its JSON, read as a record");
+		assert.deepEqual(asked.at(-1), { method: "GET", url: "/forecast?city=S%C3%A3o%20Paulo", authorization: "Bearer none", type: undefined, body: "" }, "the city in the URL's query, the token (none set) in a header");
 		assert.equal(await text(`/samples/forecast?api=${encodeURIComponent(`${api}/nowhere`)}&city=x`), "refused: 404");
+		assert.equal(await text(`/samples/forecast?api=${encodeURIComponent(`${api}/moved`)}&city=x`), "refused: 404", "a 404 at the end of a redirect followed");
+		assert.equal(await post(`/samples/order?shop=${encodeURIComponent(`${api}/shop`)}&token=t0k`), "ordered and cancelled o-17");
+		assert.deepEqual(asked.slice(-2), [
+			{ method: "POST", url: "/shop/orders", authorization: "Bearer t0k", type: "application/json", body: '{"count":2,"item":"tea"}' },
+			{ method: "DELETE", url: "/shop/orders/o-17", authorization: "Bearer t0k", type: undefined, body: "" },
+		], "the order as JSON, then a DELETE with the same token (a record update of one Http.Init)");
+		assert.equal(await post(`/samples/order?shop=${encodeURIComponent(`${api}/closed`)}&token=t0k`), "no order id", "a 404's body isn't an order's JSON");
 		assert.equal(await text(`/samples/preview?url=${encodeURIComponent(`${api}/moved`)}`), "302 /elsewhere", "a redirect, the answer");
 		const part = await get(`/samples/cdn?url=${encodeURIComponent(`${upstream.url}/file`)}`, { headers: { range: "bytes=10-19", cookie: "session=secret" } });
 		assert.equal(part.status, 206, "the range, passed on");

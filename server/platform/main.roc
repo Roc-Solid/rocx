@@ -53,7 +53,7 @@ platform ""
 			logs : { format : [Auto, Pretty, Json] },
 		}
 	}
-	exposes [Actor, AesGcm, Audio, Browser, Call, Context, Cron, Db, Email, Endpoint, Env, Errored, Events, For, Html, Http, HttpStatusCode, Job, JobsPage, Live, Loading, Log, Middleware, OpenApi, Random, Router, Server, Show, Solid, Submission, Tcp, Time, Title, Transition]
+	exposes [Actor, AesGcm, Audio, Browser, Call, Context, Cron, Db, Email, Endpoint, Env, Errored, Events, For, Html, Http, HttpResponse, HttpStatusCode, Job, JobsPage, Live, Loading, Log, Middleware, OpenApi, Random, Router, Server, Show, Solid, Submission, Tcp, Time, Title, Transition]
 	packages {}
 	provides {
 		"roc_actor": actor_for_host!,
@@ -180,6 +180,7 @@ import For
 import Host
 import Html
 import Http
+import HttpResponse
 import HttpStatusCode
 import Job
 import JobsPage

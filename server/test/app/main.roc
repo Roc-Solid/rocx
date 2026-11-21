@@ -20,6 +20,7 @@ import pf.Db
 import pf.Email
 import pf.Env
 import pf.Http
+import pf.HttpResponse
 import pf.Job
 import pf.JobsPage
 import pf.Live
@@ -634,6 +635,52 @@ route! = |request, context| {
 
 		# ---- HTTP: requests to other servers ----
 		("POST", "/http") => {
+			# `url`, asked with `Http.fetch!`: `method` (GET unless it says), a header of its own and a
+			# token, a `content-type` if `type` says one, query pairs if `query=yes`, the body `send`
+			# says, and `timeout`, `max` and `follow=no` if given (the defaults if not).
+			asked = request.query
+			given_type = if (param(asked, "type").is_empty()) [] else [("Content-Type", param(asked, "type"))]
+			init : Http.Init
+			init = {
+				method: method_of(param(asked, "method")),
+				headers: [("x-rocx", "yes"), ("authorization", "Bearer sesame")].concat(given_type),
+				query: if (param(asked, "query") == "yes") [("city", "São Paulo"), ("a&b", "c=d ✓")] else [],
+				body: body_of(param(asked, "send"), Server.text_of(request)),
+			}
+			timed = match U64.from_str(param(asked, "timeout")) {
+				Ok(ms) => { ..init, timeout_ms: ms }
+				Err(_) => init
+			}
+			limited = match U64.from_str(param(asked, "max")) {
+				Ok(bytes) => { ..timed, max_bytes: bytes }
+				Err(_) => timed
+			}
+			directed = if (param(asked, "follow") == "no") { ..limited, redirect: Manual } else limited
+			answered_fetch(Http.fetch!(param(asked, "url"), directed))
+		}
+		("POST", "/http/plain") =>
+		# `Http.fetch!(url, {})`: a GET, with every default.
+			match Http.fetch!(param(request.query, "url"), {}) {
+				Ok(res) => text(200, "${res.status.to_str()} ${if (res.ok) "ok" else "not ok"}\n${res.text()}")
+				Err(_) => text(502, "no answer")
+			}
+		("POST", "/http/json") => {
+			# A forecast read as JSON of a type: what it says, or why it isn't that.
+			match weather!(param(request.query, "url")) {
+				Ok({ tomorrow, high }) => text(200, "${tomorrow} ${high.to_str()}")
+				Err(InvalidJson(why)) => text(200, "not JSON of that shape: ${why}")
+				Err(_) => text(502, "no answer")
+			}
+		}
+		("POST", "/http/bytes") =>
+		# Bytes each way: these sent, and the answer's as numbers.
+			match Http.fetch!(param(request.query, "url"), { method: Put, headers: [("content-type", "application/octet-stream")], body: Http.bytes([0, 255, 13, 10, 128]) }) {
+				Ok(response) => text(200, numbers(response.bytes()))
+				Err(_) => text(502, "no answer")
+			}
+
+		# ---- HTTP, the deprecated API (D-024): each `fetch!` underneath, still answering ----
+		("POST", "/http/old") => {
 			# GET `url` (or POST it this request's body as JSON, `method=POST`; or HEAD it), with a
 			# header of its own, as `opts` says.
 			url = param(request.query, "url")
@@ -650,10 +697,9 @@ route! = |request, context| {
 				}
 			answered_http(Http.send!(Http.with_header(Http.with_header(outgoing, "x-rocx", "yes"), "authorization", "Bearer sesame"), opts))
 		}
-		("POST", "/http/form") => answered_http(Http.fetch!(Http.post_form(param(request.query, "url"), [("name", "Ada Lovelace"), ("says", "a&b=c ✓")])))
-		("POST", "/http/bytes") =>
-		# Bytes each way: these sent, and the answer's as numbers.
-			match Http.fetch!({ method: "PUT", url: param(request.query, "url"), headers: [{ name: "content-type", value: "application/octet-stream" }], body: [0, 255, 13, 10, 128] }) {
+		("POST", "/http/old/form") => answered_http(Http.send_request!(Http.post_form(param(request.query, "url"), [("name", "Ada Lovelace"), ("says", "a&b=c ✓")])))
+		("POST", "/http/old/bytes") =>
+			match Http.send_request!({ method: "PUT", url: param(request.query, "url"), headers: [{ name: "content-type", value: "application/octet-stream" }], body: [0, 255, 13, 10, 128] }) {
 				Ok(response) => text(200, numbers(response.body))
 				Err(_) => text(502, "no answer")
 			}
@@ -718,13 +764,21 @@ route! = |request, context| {
 		# ---- What the docs show (Samples.roc), run ----
 		("GET", "/samples/forecast") =>
 			match Samples.forecast!(param(request.query, "api"), param(request.query, "city")) {
-				Ok(said) => text(200, said)
+				Ok(said) => text(200, said.tomorrow)
 				Err(Refused(status)) => text(502, "refused: ${status.to_str()}")
+				Err(InvalidJson(_)) => text(502, "not a forecast")
+				Err(_) => text(504, "no answer")
+			}
+		("POST", "/samples/order") =>
+			match Samples.order!(param(request.query, "shop"), param(request.query, "token"), { item: "tea", count: 2 }) {
+				Ok(id) => text(200, "ordered and cancelled ${id}")
+				Err(Refused(status)) => text(502, "refused: ${status.to_str()}")
+				Err(InvalidJson(_)) => text(502, "no order id")
 				Err(_) => text(504, "no answer")
 			}
 		("GET", "/samples/preview") =>
 			match Samples.preview!(param(request.query, "url")) {
-				Ok(answer) => text(200, "${answer.status.to_str()} ${Http.header(answer, "location") ?? "-"}")
+				Ok(answer) => text(200, "${answer.status.to_str()} ${answer.header("location") ?? "-"}")
 				Err(TooLarge) => text(502, "too large")
 				Err(_) => text(504, "no answer")
 			}
@@ -818,8 +872,51 @@ tcp_round! = |port, said|
 		}
 	}
 
-## What another server answered (its status, its `location` and `x-from`, its body), or why there
-## was no answer.
+## What another server answered `Http.fetch!` (its status, its `location` and `x-from`, its body), or
+## why there was no answer.
+answered_fetch : Try(HttpResponse, [HttpErr(Str), TimedOut, TooLarge]) -> Server.Response
+answered_fetch = |result|
+	match result {
+		Ok(res) => {
+			shown = |name| res.header(name) ?? "-"
+			text(200, "${res.status.to_str()} ${shown("location")} ${shown("x-from")}\n${res.text()}")
+		}
+		Err(TimedOut) => text(504, "timed out")
+		Err(TooLarge) => text(502, "too large")
+		Err(HttpErr(why)) => text(502, "no answer: ${why}")
+	}
+
+## Tomorrow's weather from `url`, read as JSON of that type.
+weather! : Str => Try({ tomorrow : Str, high : I64 }, [HttpErr(Str), TimedOut, TooLarge, InvalidJson(Str)])
+weather! = |url| Http.fetch!(url, {})?.json()
+
+## A method as `/http`'s `method` names it: GET if it names none.
+method_of : Str -> Http.Method
+method_of = |named|
+	match named {
+		"" | "GET" => Get
+		"POST" => Post
+		"PUT" => Put
+		"PATCH" => Patch
+		"DELETE" => Delete
+		"HEAD" => Head
+		"OPTIONS" => Options
+		_ => Other(named)
+	}
+
+## A body as `/http`'s `send` names it, with `said` (the request's text) for `text`: none if it
+## names none.
+body_of : Str, Str -> Http.Body
+body_of = |named, said|
+	match named {
+		"json" => Http.json({ a: 1.I64 })
+		"form" => Http.form([("name", "Ada Lovelace"), ("says", "a&b=c ✓")])
+		"text" => Http.plain_text(said)
+		"bytes" => Http.bytes([0, 255, 13, 10, 128])
+		_ => Empty
+	}
+
+## What another server answered the deprecated `Http.send!` (as `answered_fetch` shows it).
 answered_http : Try(Http.Response, [HttpErr(Str), TimedOut, TooLarge]) -> Server.Response
 answered_http = |result|
 	match result {
@@ -1060,7 +1157,7 @@ slow_job = Job.define_with(
 			_ = slept
 			{}
 		} else if on == "http" {
-			_ = Http.fetch!(Http.get(url))
+			_ = Http.fetch!(url, {})
 			{}
 		} else if on == "tcp" {
 			match Tcp.connect!("127.0.0.1", U16.from_str(url) ?? 0) {

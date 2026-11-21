@@ -197,7 +197,7 @@ seeded by the caller needs nothing (the docs site's `Demos/Random.roc` is one).
 
 ## 5. Outbound requests stubbed: `Http`, and `Storage` through it
 
-**Problem.** An app that asks another server (`Http.send!`: a payment provider, an OAuth token
+**Problem.** An app that asks another server (`Http.fetch!`: a payment provider, an OAuth token
 endpoint) or keeps files in S3 (`Storage`, an S3 client written on `Http`) can't be tested without
 that server: a test makes real network calls, or doesn't test that path. Email needs nothing: with
 no `--smtp-url` it is kept in the mailbox already.

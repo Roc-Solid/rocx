@@ -141,6 +141,9 @@ read as bodiless (`Storage.head!` found it).
 **Why.** One tested implementation for Roc and for `Forward`, waiting on the call's thread as `Tcp`
 and `Db` do. **Reversible:** yes.
 
+**Since D-024** the API is `Http.fetch!(url, init)`, as JS's `fetch`; this one is kept, deprecated,
+over it (`fetch!(request)` is `send_request!` now). The host is the same.
+
 ## D-004 Crypto: `Sha256`, `Hmac`, `Hkdf`, `AesGcm`, `Base64`, `Hex`, `Random.bytes!`
 
 **Context.** An app that signs links keeps SHA256 digests of its session and invite tokens, signs
@@ -825,6 +828,110 @@ The render, hydration and later reads all meet the same handler.
 **Changed from SolidStart.** No `query` wrapper or cache key: the endpoint's URL is the key, and a
 memo is the cache. **Reversible:** reads, yes; removing server functions, once done, only by
 bringing them back.
+
+## D-024 Http as fetch
+
+**Context.** D-003's client is a request record and builders around it:
+`Http.fetch!(Http.with_header(Http.get(url), "authorization", "Bearer …"))`, `post_form` and
+`post_json` for bodies, `send!(request, opts)` restating all three limits to change one, and
+`Http.header(res, name)` and `Http.text(res)` to read the answer. A query was written by hand
+(`Server.encode_segment` on each value), JSON both ways by hand (`Json.to_str`,
+`Json.parse(Http.text(res))`), and each header was one more nested call. Everyone who writes for
+the web knows `fetch(url, init)`. The user decided (2026-11-21) that the client is `fetch!`-like,
+as in JS, and that it is the one way.
+
+**Options.**
+1. fetch-like: one effect, `Http.fetch!(url, init)`, where `init` is a record whose every field has
+   a default, and an answer with methods.
+2. A builder: methods on a nominal request (`Http.get(url).header(name, value).query(pairs)`) and a
+   last `send!`.
+3. Both.
+
+**Choice.** 1. The API before it stays, deprecated, as thin wrappers over `fetch!` (an app outside
+this repo uses `send!`, `defaults`, `Request` and `Response`, and `packages/s3` is given `send!`);
+it goes in a later release.
+
+```roc
+Http.Method : [Get, Post, Put, Patch, Delete, Head, Options, Other(Str)]
+Http.Body := [Empty, Json(Str), Form(List((Str, Str))), PlainText(Str), Bytes(List(U8))]
+Http.Init := {
+    method : Method ?? Get,
+    headers : List((Str, Str)) ?? [],
+    query : List((Str, Str)) ?? [],
+    body : Body ?? Empty,
+    timeout_ms : U64 ?? 30_000,           # 0: no limit
+    max_bytes : U64 ?? 67_108_864,        # 0: any size
+    redirect : [Follow, Manual] ?? Follow,
+}
+Http.fetch! : Str, Init => Try(HttpResponse, [HttpErr(Str), TimedOut, TooLarge])
+
+Http.json : a -> Body where [a.Json.Encodable([])]   # application/json
+Http.form : List((Str, Str)) -> Body                  # application/x-www-form-urlencoded
+Http.plain_text : Str -> Body                         # text/plain; charset=utf-8
+Http.bytes : List(U8) -> Body                         # no content-type, as fetch sends a Uint8Array
+
+HttpResponse := { status : U16, ok : Bool, headers : List((Str, Str)), body : List(U8) }
+HttpResponse.header : HttpResponse, Str -> Try(Str, [Missing])          # in any case
+HttpResponse.text : HttpResponse -> Str                                  # UTF-8, lossy
+HttpResponse.json : HttpResponse -> Try(a, [InvalidJson(Str)])           # as Json.parse reads it
+HttpResponse.bytes : HttpResponse -> List(U8)
+HttpResponse.new : U16, List((Str, Str)), List(U8) -> HttpResponse      # ok from the status
+```
+
+```roc
+weather = Http.fetch!("${api}/forecast", { query: [("city", city)] })?.json()?
+Http.fetch!(token_url, { method: Post, body: Http.form([("grant_type", "authorization_code"), ("code", code)]) })?
+authed : Http.Init
+authed = { headers: [("authorization", "Bearer ${token}")] }
+res = Http.fetch!(url, { ..authed, method: Delete })?
+if (res.ok) res.text() else …
+```
+
+- `{}` is a GET with every default. A record literal becomes an `Init` wherever one is expected, as
+  `App.Config`'s does. A record kept to build on needs its annotation (`authed : Http.Init`): a
+  record update can't add a field to a plain record, and `{ ..authed, method: Delete }` composes
+  once `authed` is an `Init`.
+- `query`: each name and value percent-encoded (all but letters, digits and `-._~`), joined by `&`,
+  after a `?`, or after an `&` when the URL has a query already (after nothing when it ends in `?`
+  or `&`), and before a `#fragment`.
+- A body's `content-type` is added unless `headers` has one, in any case: the caller's is the only
+  one sent.
+- `ok` is a 2xx. The answer's header names are lower case (hyper's).
+- Errors as in D-003. A header with a line break, or a name with a colon, is `HttpErr`.
+- The host is unchanged: an `Init` becomes the same `Host.http_send!` call as a `Request` did.
+
+**Names.**
+- `HttpResponse` is a module of its own, not a type inside `Http`. A type's methods share its
+  module's scope, so `Http.Response`'s `text` and `header` would clash with the deprecated
+  `Http.text` and `Http.header`. And `Http.Response` stays the deprecated record, which an app outside
+  this repo names. Once the deprecated API is gone, `Http.Response` can become another name for
+  `HttpResponse`.
+- The body helpers are `Http.json`, `Http.form` and `Http.bytes`, as planned: `res.json()` and
+  `res.bytes()` are `HttpResponse`'s, so there is no clash (as JS has `Response.json(data)` beside
+  `res.json()`). Text is `Http.plain_text`, because `Http.text` is the deprecated reader.
+- `fetch!` is the new shape's name, so the old `fetch!(request)` is `send_request!` now, deprecated.
+
+**Deprecated** (each with a `## deprecated: use Http.fetch!` doc, each `fetch!` underneath):
+`Request`, `Response`, `Opts`, `defaults`, `send!`, `send_request!` (was `fetch!`), `get`,
+`post_form`, `post_json`, `with_header`, `header`, `text`. `send!` passes a request's method as
+written (`"PURGE"` is `Other("PURGE")`), and its body as bytes with its own headers, so the same
+request goes out as before.
+
+**Migrated:** packages/push (`Push.send!`, with `Delivery`'s and `Options`'s headers as
+`(name, value)` pairs), the server's test app and the docs' samples, server/README.md and the HTTP
+page. **Not migrated:** `packages/s3` (D-025) is on no platform, so it can't name `Http.Init` or
+`HttpResponse`; it is given `Http.send!`, whose records it writes out, and stays on it until a
+package can be handed `fetch!` in a shape it can name.
+
+**Why.** It is the client every web developer knows, so the docs don't have to teach one: a query, a
+body and a typed answer are each a field or a method, not a builder chain and an encoder by hand.
+Defaults in the type keep `{}` and `{ method: Post, body: … }` short, and options are a value to
+name and update (`authed`). A builder (2) needs a nominal request with a method for each option and
+a last `send!`, which record defaults make unnecessary. Both (3) are two ways to teach and to read.
+
+**Reversible:** yes. The host didn't change, and the old API is still there, so going back is an
+edit at each call site. Removing the deprecated wrappers later is an edit at each caller left, and
+needs a shape `packages/s3` can take instead of `send!`.
 
 ## D-025 S3 and the crypto written in Roc are packages
 

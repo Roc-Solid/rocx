@@ -157,7 +157,7 @@ checks each token: issued for it (audience), not expired, the scopes the call ne
 **Options considered.**
 
 - **a. An external authorization server** (an identity provider the app already uses). The app's
-  middleware checks tokens by introspection (RFC 7662: `Http.send!` to the provider, cached for the
+  middleware checks tokens by introspection (RFC 7662: `Http.fetch!` to the provider, cached for the
   token's life), or as JWTs against the provider's keys, which needs RS256 or ES256 verification: a
   host primitive the platform doesn't have (it has `Hmac`, `Sha256`, `AesGcm`).
 - **b. The app as its own authorization server**, a package (`packages/oauth`) on the platform's

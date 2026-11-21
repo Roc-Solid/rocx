@@ -138,8 +138,8 @@ Push := [].{
 			}
 		body = if (data.is_empty()) [] else encrypted!(primitives, subscription, data)?
 		request = Delivery.request({ endpoint: subscription.endpoint, authorization: Vapid.authorization(jwt, keys.public_key), body, options })
-		match Http.send!(request, { timeout_ms: 30_000, max_bytes: 65_536, follow_redirects: Bool.False }) {
-			Ok(response) => Ok(Delivery.outcome(response, Time.now_millis!({})))
+		match Http.fetch!(request.url, { method: Post, headers: request.headers, body: Http.bytes(request.body), timeout_ms: 30_000, max_bytes: 65_536, redirect: Manual }) {
+			Ok(res) => Ok(Delivery.outcome({ status: res.status, headers: res.headers, body: res.body }, Time.now_millis!({})))
 			Err(TimedOut) => Ok(Retry("the push service didn't answer within 30 seconds"))
 			Err(TooLarge) => Ok(Retry("the push service's answer was too large to read"))
 			Err(HttpErr(why)) => Ok(Retry("couldn't reach the push service: ${why}"))

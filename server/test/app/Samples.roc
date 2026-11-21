@@ -7,6 +7,7 @@ import s3.S3
 import pf.AesGcm
 import pf.Env
 import pf.Http
+import pf.HttpResponse
 import pf.Job
 import pf.Log
 import pf.Random
@@ -21,19 +22,30 @@ Samples := [].{
 	# ---- Requests to other servers: Http ----
 
 	## Tomorrow's forecast for a city, from a JSON API another server answers, with a token from the
-	## environment: its text, or why there is none.
-	forecast! : Str, Str => Try(Str, [HttpErr(Str), TimedOut, TooLarge, Refused(U16)])
+	## environment: what it says, or why it says nothing.
+	forecast! : Str, Str => Try({ tomorrow : Str }, [HttpErr(Str), TimedOut, TooLarge, InvalidJson(Str), Refused(U16)])
 	forecast! = |api, city| {
 		token = Env.var!("FORECAST_TOKEN") ?? "none"
-		asked = Http.get("${api}/forecast?city=${Server.encode_segment(city)}")
-		answer = Http.fetch!(Http.with_header(asked, "authorization", "Bearer ${token}"))?
-		if (answer.status == 200) Ok(Http.text(answer)) else Err(Refused(answer.status))
+		res = Http.fetch!("${api}/forecast", { query: [("city", city)], headers: [("authorization", "Bearer ${token}")] })?
+		if (res.ok) Ok(res.json()?) else Err(Refused(res.status))
+	}
+
+	## An order sent to a shop's API as JSON, with a token, then cancelled with the same token: the
+	## order's id, which the shop's answer gave.
+	order! : Str, Str, { item : Str, count : U64 } => Try(Str, [HttpErr(Str), TimedOut, TooLarge, InvalidJson(Str), Refused(U16)])
+	order! = |shop, token, order| {
+		authed : Http.Init
+		authed = { headers: [("authorization", "Bearer ${token}")] }
+		placed : { id : Str }
+		placed = Http.fetch!("${shop}/orders", { ..authed, method: Post, body: Http.json(order) })?.json()?
+		res = Http.fetch!("${shop}/orders/${placed.id}", { ..authed, method: Delete })?
+		if (res.ok) Ok(placed.id) else Err(Refused(res.status))
 	}
 
 	## A page someone else names (a link's preview): 5 s at most, 64 KiB at most, and a redirect is
 	## the answer, not followed.
-	preview! : Str => Try(Http.Response, [HttpErr(Str), TimedOut, TooLarge])
-	preview! = |url| Http.send!(Http.get(url), { timeout_ms: 5_000, max_bytes: 65_536, follow_redirects: Bool.False })
+	preview! : Str => Try(HttpResponse, [HttpErr(Str), TimedOut, TooLarge])
+	preview! = |url| Http.fetch!(url, { timeout_ms: 5_000, max_bytes: 65_536, redirect: Manual })
 
 	# ---- Settings: Env ----
 

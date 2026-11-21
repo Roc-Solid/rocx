@@ -224,22 +224,43 @@ subject, text, html, raw) is at `/__rocx/mail.json`, and at `/__rocx/mail` when 
 ### Requests to other servers: `Http`
 
 ```roc
-me = Http.fetch!(Http.with_header(Http.get("https://api.example.com/me"), "authorization", "Bearer ${token}"))?
-if (me.status == 200) Json.parse(Http.text(me)) else …
+weather = Http.fetch!("${api}/forecast", { query: [("city", city)] })?.json()?
 
-token = Http.fetch!(Http.post_form("https://oauth2.example.com/token", [("grant_type", "authorization_code"), ("code", code)]))?
+granted : { access_token : Str }
+granted = Http.fetch!("https://oauth2.example.com/token", { method: Post, body: Http.form([("grant_type", "authorization_code"), ("code", code)]) })?.json()?
+
+authed : Http.Init
+authed = { headers: [("authorization", "Bearer ${granted.access_token}")] }
+placed = Http.fetch!("${shop}/orders", { ..authed, method: Post, body: Http.json(order) })?
+res = Http.fetch!("${shop}/orders/${id}", { ..authed, method: Delete })?
+if (res.ok) res.text() else …
 
 # a document someone else names: 5 s, 5 KiB, a redirect is the answer
-doc = Http.send!(Http.get(url), { timeout_ms: 5_000, max_bytes: 5_120, follow_redirects: Bool.False })
+doc = Http.fetch!(url, { timeout_ms: 5_000, max_bytes: 5_120, redirect: Manual })
 ```
 
-A request is a method, a URL, headers and a body (bytes); so is an answer, with its status.
-`Http.fetch!` sends one with `Http.defaults` (30 s, 64 MiB, redirects followed), `Http.send!` with
-the limits given (0: none). Any status is an answer (`Ok`); an `Err` means there was none:
-`HttpErr(why)` (the address, the connection, TLS, HTTP itself), `TimedOut` (no whole answer in
-time, from connecting to the body's last byte), `TooLarge` (a body over the limit: refused by its
-`content-length`, or as it passes it). `Http.get`, `post_form`, `post_json` and `with_header` make
-requests; `Http.header` (in any case) and `Http.text` read answers.
+`Http.fetch!(url, init)` is JS's `fetch`, waiting for the whole answer (D-024). `init` (an
+`Http.Init`) has a default for every field, so `{}` is a GET: `method` (`Get`, `Post`, `Put`,
+`Patch`, `Delete`, `Head`, `Options`, `Other(Str)`), `headers` (`(name, value)` pairs), `query`
+(pairs percent-encoded onto the URL, after an `&` if it has a query already), `body` (`Empty`),
+`timeout_ms` (30 s; 0: none), `max_bytes` (64 MiB; 0: any) and `redirect` (`Follow`, or `Manual`:
+the redirect is the answer). A record kept to build on is annotated `Http.Init`, so a record update
+can add to it. The body's helpers set its `content-type` unless `headers` has one:
+`Http.json(value)` (`application/json`), `Http.form(pairs)` (`application/x-www-form-urlencoded`),
+`Http.plain_text(text)` (`text/plain; charset=utf-8`) and `Http.bytes(list)` (none, as `fetch`
+sends a `Uint8Array`).
+
+Any status is an answer (`Ok`), an `HttpResponse`: `res.status`, `res.ok` (2xx), `res.headers`
+(names in lower case), `res.header(name)` (in any case), `res.text()` (UTF-8, lossy),
+`res.json()` (the type wanted, as `Json.parse` reads it: `Err(InvalidJson(why))` if it isn't) and
+`res.bytes()`. An `Err` means there was none: `HttpErr(why)` (the address, the connection, TLS, HTTP
+itself, a header with a line break), `TimedOut` (no whole answer in time, from connecting to the
+body's last byte), `TooLarge` (a body over the limit: refused by its `content-length`, or as it
+passes it).
+
+The API before `fetch!` (`Http.Request`, `Response`, `Opts`, `defaults`, `send!`, `send_request!`,
+which was `fetch!(request)`, `get`, `post_form`, `post_json`, `with_header`, `header`, `text`)
+still works, deprecated: each is `fetch!` underneath, and goes in a later release.
 
 The host makes it (`host/src/client.rs`): hyper's HTTP/1.1 client, a connection a request, over
 rustls checked against `webpki-roots`, waiting on the call's thread as `Db` and `Tcp` do. Redirects

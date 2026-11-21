@@ -16,8 +16,9 @@ import WebPush
 ## wrong, and every subscription would go for a mistake in the server's settings.
 Delivery := [].{
 
-	## A request, shaped as the server platform's `Http.Request`.
-	Request : { method : Str, url : Str, headers : List({ name : Str, value : Str }), body : List(U8) }
+	## A POST to make, as the server platform's `Http.fetch!` takes it: its URL, its headers (each
+	## `(name, value)`) and its body.
+	Request : { url : Str, headers : List((Str, Str)), body : List(U8) }
 
 	## The POST to a subscription's endpoint: its `Authorization` (`Vapid.authorization`), the
 	## encrypted message (`WebPush.body`; none for a push with no data) and the options' headers.
@@ -27,12 +28,11 @@ Delivery := [].{
 			if body.is_empty() {
 				[]
 			} else {
-				[{ name: "Content-Encoding", value: "aes128gcm" }, { name: "Content-Type", value: "application/octet-stream" }]
+				[("Content-Encoding", "aes128gcm"), ("Content-Type", "application/octet-stream")]
 			}
 		{
-			method: "POST",
 			url: endpoint,
-			headers: [{ name: "Authorization", value: authorization }].concat(options.headers()).concat(content),
+			headers: [("Authorization", authorization)].concat(options.headers()).concat(content),
 			body,
 		}
 	}
@@ -40,14 +40,15 @@ Delivery := [].{
 	## What an answer means.
 	Outcome : [Delivered, Gone, RetryAfter(U64), Retry(Str), Refused(Str)]
 
-	## What the push service's answer means, at `now_ms` (for a `Retry-After` that is a date).
-	outcome : { status : U16, headers : List({ name : Str, value : Str }), body : List(U8) }, U64 -> Outcome
+	## What the push service's answer means (its status, its headers, each `(name, value)`, and its
+	## body), at `now_ms` (for a `Retry-After` that is a date).
+	outcome : { status : U16, headers : List((Str, Str)), body : List(U8) }, U64 -> Outcome
 	outcome = |{ status, headers, body }, now_ms| {
 		said = excerpt(body)
 		why = if (said.is_empty()) "the push service answered ${status.to_str()}" else "the push service answered ${status.to_str()}: ${said}"
 		later =
-			match headers.find_first(|each| each.name.with_ascii_lowercased() == "retry-after") {
-				Ok(header) => Delivery.retry_after(header.value, now_ms).map_err(|_| {})
+			match headers.find_first(|(name, _)| name.with_ascii_lowercased() == "retry-after") {
+				Ok((_, value)) => Delivery.retry_after(value, now_ms).map_err(|_| {})
 				Err(_) => Err({})
 			}
 		if status >= 200 and status < 300 {
@@ -134,37 +135,36 @@ days_from_civil = |year, month, day| {
 	era * 146_097 + day_of_era - 719_468
 }
 
-answer : U16, List({ name : Str, value : Str }), Str -> { status : U16, headers : List({ name : Str, value : Str }), body : List(U8) }
+answer : U16, List((Str, Str)), Str -> { status : U16, headers : List((Str, Str)), body : List(U8) }
 answer = |status, headers, body| { status, headers, body: body.to_utf8() }
 
 # The request.
 expect
 	Delivery.request({ endpoint: "https://push.example.net/s/1", authorization: "vapid t=x, k=y", body: [1, 2], options: { ttl: 60, urgency: High, topic: "t1" } })
 		== {
-			method: "POST",
 			url: "https://push.example.net/s/1",
 			headers: [
-				{ name: "Authorization", value: "vapid t=x, k=y" },
-				{ name: "TTL", value: "60" },
-				{ name: "Urgency", value: "high" },
-				{ name: "Topic", value: "t1" },
-				{ name: "Content-Encoding", value: "aes128gcm" },
-				{ name: "Content-Type", value: "application/octet-stream" },
+				("Authorization", "vapid t=x, k=y"),
+				("TTL", "60"),
+				("Urgency", "high"),
+				("Topic", "t1"),
+				("Content-Encoding", "aes128gcm"),
+				("Content-Type", "application/octet-stream"),
 			],
 			body: [1, 2],
 		}
 expect Delivery.request({ endpoint: "https://push.example.net/s/1", authorization: "vapid t=x, k=y", body: [], options: Options.defaults }).headers.len() == 3
 
 # Answers.
-expect Delivery.outcome(answer(201, [{ name: "Location", value: "https://push.example.net/m/1" }], ""), 0) == Delivered
+expect Delivery.outcome(answer(201, [("Location", "https://push.example.net/m/1")], ""), 0) == Delivered
 expect Delivery.outcome(answer(200, [], ""), 0) == Delivered
 expect Delivery.outcome(answer(202, [], ""), 0) == Delivered
 expect Delivery.outcome(answer(404, [], ""), 0) == Gone
 expect Delivery.outcome(answer(410, [], "push subscription has unsubscribed or expired."), 0) == Gone
-expect Delivery.outcome(answer(429, [{ name: "Retry-After", value: "120" }], ""), 0) == RetryAfter(120_000)
-expect Delivery.outcome(answer(503, [{ name: "retry-after", value: "Wed, 21 Oct 2015 07:28:00 GMT" }], ""), 1_445_412_470_000) == RetryAfter(10_000)
+expect Delivery.outcome(answer(429, [("Retry-After", "120")], ""), 0) == RetryAfter(120_000)
+expect Delivery.outcome(answer(503, [("retry-after", "Wed, 21 Oct 2015 07:28:00 GMT")], ""), 1_445_412_470_000) == RetryAfter(10_000)
 expect Delivery.outcome(answer(429, [], "slow down"), 0) == Retry("the push service answered 429: slow down")
-expect Delivery.outcome(answer(429, [{ name: "Retry-After", value: "soon" }], ""), 0) == Retry("the push service answered 429")
+expect Delivery.outcome(answer(429, [("Retry-After", "soon")], ""), 0) == Retry("the push service answered 429")
 expect Delivery.outcome(answer(500, [], ""), 0) == Retry("the push service answered 500")
 expect Delivery.outcome(answer(502, [], "<html>\n\tbad gateway\n</html>"), 0) == Retry("the push service answered 502: <html>  bad gateway </html>")
 expect Delivery.outcome(answer(408, [], ""), 0) == Retry("the push service answered 408")

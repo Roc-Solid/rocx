@@ -593,7 +593,7 @@ function sourcesModule() {
 		pick("platform_mail_job", "server/test/app/main.roc", ["## Sends an email.", "mail_job : Job.Kind", "mail_job = Job.define(", "\"mail\",", "|{ to, run }|", "match Email.send!(", "Ok({}) => Ok({})", "Err(EmailErr(why)) => Err(why)", "},", ")"]),
 		pick("components_form", "web/test/app/Form.rocx", ["view! = |{}| {", "submission = use_submission!(Form.join)", "<form class=\"join\"", "<input name=\"name\"", "<button type=\"submit\"", "</form>", "<Show when!={submission.result!()}>", "<Show when!={submission.error!()}>", "<button class=\"clear\""]),
 		whole("routes_local", "test/e2e/app/routes/local/+page.rocx"),
-		defined("platform_forecast", "server/test/app/Samples.roc", ["forecast!"]),
+		defined("platform_forecast", "server/test/app/Samples.roc", ["forecast!", "order!"]),
 		defined("platform_preview", "server/test/app/Samples.roc", ["preview!"]),
 		defined("platform_settings", "server/test/app/Samples.roc", ["origin!", "dev_sign_in!"]),
 		defined("platform_tokens", "server/test/app/Samples.roc", ["token!", "digest"]),

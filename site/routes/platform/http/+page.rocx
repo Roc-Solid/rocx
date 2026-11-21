@@ -38,23 +38,56 @@ view! = |_|
 			<Heading id="out">Asking another server</Heading>
 			<Code title={"${Sources.platform_forecast.file}, in part"} source={Sources.platform_forecast.rocx} numbers={Bool.False} />
 			<p>
-				A request (<code>Http.Request</code>) is a method, a URL, headers and a body of bytes; so is an answer
-				(<code>Http.Response</code>), with its status. <code>Http.get</code>, <code>Http.post_form</code> (a form's
-				fields, encoded) and <code>Http.post_json</code> make one, <code>Http.with_header</code> adds a header;
-				<code>Http.header</code> (in any case) and <code>Http.text</code> read an answer. <code>Http.fetch!</code>
-				sends it and waits, on the call's thread, as a query to Postgres waits: the rest of the server goes on.
-				Any status is an answer, an <code>Ok</code>; an <code>Err</code> means there was none.
+				<code>{"Http.fetch!(url, init)"}</code> is JS's <code>fetch</code>: it sends a request and waits for
+				the whole answer, on the call's thread, as a query to Postgres waits: the rest of the server goes on.
+				<code>init</code> (an <code>Http.Init</code>) has a default for every field, so <code>{"{}"}</code> is
+				a GET:
+			</p>
+			<ul>
+				<li>
+					<code>method</code>: <code>Get</code>, <code>Post</code>, <code>Put</code>, <code>Patch</code>,
+					<code>Delete</code>, <code>Head</code>, <code>Options</code>, or <code>{"Other(\"PROPFIND\")"}</code>,
+					sent as written;
+				</li>
+				<li><code>headers</code>: <code>{"(name, value)"}</code> pairs, sent as given;</li>
+				<li>
+					<code>query</code>: pairs, each percent-encoded, added to the URL's query (after an
+					<code>&amp;</code> if it has one already);
+				</li>
+				<li>
+					<code>body</code>: <code>Empty</code>, or <code>{"Http.json(value)"}</code>,
+					<code>{"Http.form(pairs)"}</code>, <code>{"Http.plain_text(text)"}</code> or
+					<code>{"Http.bytes(list)"}</code>, each with its <code>content-type</code> (none for bytes, as
+					<code>fetch</code> sends a <code>Uint8Array</code>) unless <code>headers</code> has one;
+				</li>
+				<li><code>timeout_ms</code>, <code>max_bytes</code> and <code>redirect</code>: the limits, below.</li>
+			</ul>
+			<p>
+				A record literal is an <code>Http.Init</code> where one is wanted. One kept to build on is annotated,
+				as <code>authed</code> is, so that a record update can add to it: <code>{"{ ..authed, method: Delete }"}</code>.
+				Any status is an answer, an <code>Ok</code> holding an <code>HttpResponse</code>:
+				<code>res.status</code>, <code>res.ok</code> (a 2xx), <code>res.headers</code>,
+				<code>{"res.header(name)"}</code> (in any case), <code>{"res.text()"}</code>,
+				<code>{"res.json()"}</code> (read as the type wanted, or <code>InvalidJson(why)</code>) and
+				<code>{"res.bytes()"}</code>. An <code>Err</code> means there was no answer.
+			</p>
+			<p>
+				The API before <code>fetch!</code> (<code>Http.get</code>, <code>post_form</code>,
+				<code>post_json</code>, <code>with_header</code>, <code>{"send!(request, opts)"}</code>,
+				<code>send_request!</code>, <code>Http.header</code>, <code>Http.text</code>) still works, deprecated:
+				each is <code>fetch!</code> underneath.
 			</p>
 
 			<Heading id="limits-out">Limits and errors</Heading>
 			<Code title={"${Sources.platform_preview.file}, in part"} source={Sources.platform_preview.rocx} numbers={Bool.False} />
 			<p>
-				<code>Http.fetch!</code> sends with <code>Http.defaults</code>: 30 seconds, 64 MiB, redirects followed.
-				<code>{"Http.send!(request, { timeout_ms, max_bytes, follow_redirects })"}</code> says otherwise (0: no
-				limit), as for a URL a stranger gave. The errors are <code>HttpErr(why)</code> (the address, the
-				connection, TLS, HTTP itself), <code>TimedOut</code> (no whole answer in time, from connecting to the
-				body's last byte) and <code>TooLarge</code> (a body past the limit, refused by its
-				<code>content-length</code> or as it passes it).
+				By default a request may take 30 seconds (<code>timeout_ms</code>), its answer's body may be 64 MiB
+				(<code>max_bytes</code>), and a redirect is followed (<code>redirect: Follow</code>). A URL a stranger
+				gave asks for less, as above (0: no limit; <code>Manual</code>: the redirect is the answer). The errors
+				are <code>HttpErr(why)</code> (the address, the connection, TLS, HTTP itself, a header with a line
+				break in it), <code>TimedOut</code> (no whole answer in time, from connecting to the body's last byte)
+				and <code>TooLarge</code> (a body past the limit, refused by its <code>content-length</code> or as it
+				passes it).
 			</p>
 			<ul>
 				<li>

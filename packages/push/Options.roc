@@ -30,7 +30,7 @@ Options := { ttl : U64, urgency : [VeryLow, Low, Normal, High], topic : Str }.{
 	}
 
 	## The request's headers: `TTL` and `Urgency` always, `Topic` when there is one.
-	headers : Options -> List({ name : Str, value : Str })
+	headers : Options -> List((Str, Str))
 	headers = |options| {
 		urgency =
 			match options.urgency {
@@ -39,8 +39,8 @@ Options := { ttl : U64, urgency : [VeryLow, Low, Normal, High], topic : Str }.{
 				Normal => "normal"
 				High => "high"
 			}
-		[{ name: "TTL", value: U64.min(options.ttl, Options.max_ttl).to_str() }, { name: "Urgency", value: urgency }]
-			.concat(if (options.topic.is_empty()) [] else [{ name: "Topic", value: options.topic }])
+		[("TTL", U64.min(options.ttl, Options.max_ttl).to_str()), ("Urgency", urgency)]
+			.concat(if (options.topic.is_empty()) [] else [("Topic", options.topic)])
 	}
 
 	## The options for sending at `now_ms` a message queued at `queued_ms`: its `ttl` less the
@@ -57,14 +57,14 @@ Options := { ttl : U64, urgency : [VeryLow, Low, Normal, High], topic : Str }.{
 	}
 }
 
-expect Options.defaults.headers() == [{ name: "TTL", value: "86400" }, { name: "Urgency", value: "normal" }]
+expect Options.defaults.headers() == [("TTL", "86400"), ("Urgency", "normal")]
 expect
 	Options.headers({ ttl: 60, urgency: VeryLow, topic: "order-17" })
-		== [{ name: "TTL", value: "60" }, { name: "Urgency", value: "very-low" }, { name: "Topic", value: "order-17" }]
-expect { ..Options.defaults, urgency: High }.headers().get(1) == Ok({ name: "Urgency", value: "high" })
-expect { ..Options.defaults, urgency: Low }.headers().get(1) == Ok({ name: "Urgency", value: "low" })
-expect { ..Options.defaults, ttl: 99_999_999 }.headers().first() == Ok({ name: "TTL", value: "2419200" })
-expect { ..Options.defaults, ttl: 0 }.headers().first() == Ok({ name: "TTL", value: "0" })
+		== [("TTL", "60"), ("Urgency", "very-low"), ("Topic", "order-17")]
+expect { ..Options.defaults, urgency: High }.headers().get(1) == Ok(("Urgency", "high"))
+expect { ..Options.defaults, urgency: Low }.headers().get(1) == Ok(("Urgency", "low"))
+expect { ..Options.defaults, ttl: 99_999_999 }.headers().first() == Ok(("TTL", "2419200"))
+expect { ..Options.defaults, ttl: 0 }.headers().first() == Ok(("TTL", "0"))
 
 expect Options.check({ ..Options.defaults, topic: "order-17_a" }).is_ok()
 expect Options.check({ ..Options.defaults, topic: Str.repeat("a", 32) }).is_ok()
