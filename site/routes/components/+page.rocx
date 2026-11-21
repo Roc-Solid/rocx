@@ -37,6 +37,7 @@ meta = {
 		{ id: "contexts", label: "Contexts" },
 		{ id: "islands", label: "Islands: one app, many places" },
 		{ id: "waiting", label: "Waiting and failing" },
+		{ id: "pending", label: "Loading again: is_pending!" },
 		{ id: "solid", label: "Coming from Solid" },
 		{ id: "how", label: "Under the hood" },
 		{ id: "roadmap", label: "Roadmap" },
@@ -154,7 +155,7 @@ view! = |_|
 			</details>
 
 			<Heading id="primitives">Signals, memos and holes</Heading>
-			<Code source={"import pf.Solid exposing [create_signal!, create_memo!, refresh!, use_context!]"} numbers={Bool.False} />
+			<Code source={"import pf.Solid exposing [create_signal!, create_memo!, refresh!, is_pending!, use_context!]"} numbers={Bool.False} />
 			<FeatureGrid>
 				<Feature title="A signal">
 					<Code source={"(title!, set_title!) =\n\tcreate_signal!(\"Hi\")"} numbers={Bool.False} />
@@ -190,6 +191,8 @@ view! = |_|
 			<p>
 				<code>refresh!(user!)</code> computes a memo again, asking the server again. Functions can't be
 				compared in Roc, so it finds the memos by running the accessor once and noting what it reads.
+				While the answer is on its way, the old value stays on screen, and
+				<a href="#pending"><code>is_pending!(user!)</code></a> says so.
 			</p>
 
 			<Heading id="passing">Passing them on</Heading>
@@ -584,6 +587,46 @@ view! = |_|
 				<Code title={Sources.signals_profile.file} source={Sources.signals_profile.rocx} />
 			</details>
 
+			<Heading id="pending">Loading again: is_pending!</Heading>
+			<p>
+				A memo that has a value and is reading again (a <code>refresh!</code>, or a change of what its URL
+				is built from) keeps showing the old value until the new one is in. No spinner comes back, which
+				is right, but the reader can't tell that what they see is on its way out. Solid 2.0's
+				<code>isPending</code> is how a component says so, and here it is <code>is_pending!</code>. The rule
+				is Solid's: the first load is <code>{"<Loading>"}</code>'s; loading again is
+				<code>is_pending!</code>'s.
+			</p>
+			<Code source={"import pf.Solid exposing [create_signal!, create_memo!, refresh!, is_pending!]\n\n(page!, set_page!) = create_signal!(1.U64)\nposts! = create_memo!(|| Endpoint.get!(Endpoint.with_query(Api.get_posts({}), \"page=\${page!().to_str()}\")))\n\n<Loading fallback={<p>Loading…</p>}>\n\t<ul class:stale={is_pending!(posts!)}>\n\t\t<For each!={posts!()} keyed={|post| post.id}>\n\t\t\t{|post!, _| <li>{post!().title}</li>}\n\t\t</For>\n\t</ul>\n</Loading>\n<button on:click={|| refresh!(posts!)}>Refresh</button>\n<button on:click={|| set_page!(page!() + 1)}>Next page</button>\n<Show when!={is_pending!(posts!)}><p>Updating…</p></Show>"} numbers={Bool.False} />
+			<ul>
+				<li>
+					<strong>True</strong> while a memo the accessor reads has a value and waits for a new one, from
+					the flush the click started until the answer is in; then false, with the new value on screen.
+					A memo that reads one that is reading again is pending too: <code>is_pending!(count!)</code>, where
+					<code>count!</code> counts <code>posts!()</code>.
+				</li>
+				<li>
+					<strong>False</strong> on the first load, when there is nothing to show yet: that is
+					<code>{"<Loading>"}</code>'s. False for a read that failed, too: that is
+					<code>{"<Errored>"}</code>'s. And false on the server, which renders final values, so hydrating
+					sees false and asks for nothing.
+				</li>
+				<li>
+					<strong>One function</strong>, as Solid's has since 2.0's beta.14: an accessor already is one,
+					<code>is_pending!(posts!)</code>, and several are <code>{"is_pending!(|| (user!(), posts!()))"}</code>,
+					true while any is.
+				</li>
+				<li>
+					<strong>It never waits or fails</strong>, and it doesn't make what calls it depend on the values
+					it reads: a hole, a memo or an effect that calls it runs again when its answer changes, and only
+					then: a <code>class:stale</code> is patched twice a refresh, on and then off.
+				</li>
+			</ul>
+			<p>
+				It is a code sample, not a live demo: this site's static copy answers its reads from files, at
+				once, so there would be nothing to see. <code>Submission</code>'s <code>pending!</code> is another
+				thing: whether a form's submission is on its way (<a href="#forms">forms</a>).
+			</p>
+
 			<Heading id="solid">Coming from Solid</Heading>
 			<p>
 				Solid 2.0 is the map: its primitives, its control flow and its boundaries, with Roc's names for
@@ -600,6 +643,7 @@ view! = |_|
 						<tr><td><code>{"const [n, setN] = createSignal(0)"}</code></td><td><code>{"(n!, set_n!) = create_signal!(0)"}</code></td></tr>
 						<tr><td><code>{"const user = createMemo(() => …)"}</code></td><td><code>{"user! = create_memo!(|| …)"}</code></td></tr>
 						<tr><td><code>refresh(user)</code></td><td><code>refresh!(user!)</code></td></tr>
+						<tr><td><code>{"isPending(() => user())"}</code></td><td><code>is_pending!(user!)</code></td></tr>
 						<tr><td><code>{"createEffect(() => room(), (room) => { …; return () => … })"}</code></td><td><code>{"create_effect!(|| room!(), |room| { …; on_cleanup!(|| …) })"}</code></td></tr>
 						<tr><td><code>{"onCleanup(() => …)"}</code></td><td><code>{"on_cleanup!(|| …)"}</code></td></tr>
 						<tr><td><code>{"onSettled(() => …)"}</code> (<code>onMount</code>, before 2.0)</td><td><code>{"on_settled!(|| …)"}</code></td></tr>

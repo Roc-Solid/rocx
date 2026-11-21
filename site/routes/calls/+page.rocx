@@ -107,7 +107,8 @@ view! = |_|
 					signal an <code>{"<input>"}</code> writes, say), or one read again with
 					<code>refresh!(memo!)</code>, is a GET of the endpoint's own URL, for JSON. Until the answer is
 					in, the memo keeps its last value, so what is shown stays; <code>{"<Loading>"}</code> only waits for
-					first values. Answers may come back in any order: the memo only takes the one for what it asked
+					first values, and <a href={"${Paths.components}#pending"}><code>is_pending!(memo!)</code></a> is
+					true meanwhile. Answers may come back in any order: the memo only takes the one for what it asked
 					last.
 				</li>
 			</Trace>

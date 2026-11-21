@@ -1,5 +1,5 @@
 import pf.Html
-import pf.Solid exposing [create_signal!, create_memo!, create_effect!, refresh!, is_pending!]
+import pf.Solid exposing [create_effect!, create_memo!, create_signal!, is_pending!, refresh!]
 import pf.Loading
 import pf.Errored
 import pf.Endpoint

@@ -24,7 +24,7 @@ same components natively; this one hydrates them.
   page reads as it renders among them.
 - `platform/*.roc`, what components are written with: `Html` (markup whose holes are closures,
   escaping, safe URLs), `Solid` (`create_signal!`, `create_memo!`, `create_effect!`,
-  `on_cleanup!`, `on_settled!`, `refresh!`, `use_context!`, and the browser's timers, `set_interval!` and
+  `on_cleanup!`, `on_settled!`, `refresh!`, `is_pending!`, `use_context!`, and the browser's timers, `set_interval!` and
   `set_timeout!`, each owned by the run that started it), `Audio` (`play!`, `play_with!`: a sound
   file, from a handler), `Browser` (`call!`: the page's own JavaScript function, from a handler),
   `Show`, `For`, `Loading`, `Errored`, `Context`, `Call` (`fetch!`, `listen!`), `Router` (`location!`: the page's path and query; `use_submission!`: the latest
@@ -72,6 +72,17 @@ same components natively; this one hydrates them.
 - **Waiting.** A read whose value isn't in throws, in JavaScript, through Roc's frames; the runtime
   restores Roc's stack pointer and runs the computation again when the value comes. A handler that
   waits drops its writes and runs again; its calls' answers are kept, so a command is sent once.
+- **Pending** (`is_pending!`, Solid 2.0's `isPending`). A memo whose run waits while it has a value
+  (not failed) is `refreshing`, from the flush that started that run until it settles or fails; it
+  is `stale` if it is refreshing or a memo it reads is, set again after each run and passed down to
+  the memos that read it. `is_pending!(read!)` runs `read!` once as a probe (as `refresh!` does: its
+  reads untracked, a wait or a failure only stopping it) and answers whether a memo it read is
+  stale. The caller tracks each one's `pending` node, not its value, and keeps the probe: when one
+  changes (it flips, settles or fails), the caller is put in the flush as a recheck, which runs the
+  probe again and runs the caller only if the answer, or the memos read, changed. So a reader runs
+  again when its answer changes, and only then, and a memo that becomes pending again before the
+  reader's turn (one that reads another that just settled) doesn't make it flicker. The server
+  answers false.
 - **Components run where they are rendered:** rocx writes `<Picks />` as
   `Html.component(|| Picks.view!({}))`, and the runtime runs it as it builds that place, once, its
   reads untracked, so it sees the contexts provided above it. A signal belongs to the run that made
