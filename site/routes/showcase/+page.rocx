@@ -1,8 +1,6 @@
 import pf.Html
 import ../../Demos/Birds
-import ../../Demos/Rainfall
 import ../../Demos/Snake
-import ../../Demos/Ticker
 import ../../Demos/Timers
 import ../../Ui/Heading
 import ../../Ui/Callout
@@ -17,14 +15,13 @@ import ../../Ui/Demo
 
 meta = {
 	title: "Showcase",
-	description: "A game of Snake, a flock of bouncing Roc birds, and charts that glide to their data: components that Roc, compiled to WebAssembly, runs frame by frame in your browser.",
+	description: "A game of Snake and a flock of bouncing Roc birds: components that Roc, compiled to WebAssembly, runs frame by frame in your browser.",
 	toc: [
 		{ id: "snake", label: "Snake" },
 		{ id: "flock", label: "A flock of Roc birds" },
 		{ id: "how", label: "How they work" },
 		{ id: "sound", label: "Sound, from a handler" },
 		{ id: "timers", label: "Timers" },
-		{ id: "charts", label: "Charts" },
 	],
 }
 
@@ -33,7 +30,7 @@ view! = |_|
 		<NoHydration>
 			<PageHero
 				eyebrow="Showcase"
-				title="A game, a flock and charts, run by Roc"
+				title="A game and a flock, run by Roc"
 			>
 				They are islands like the rest: the server rendered them, and your browser woke them up. But
 				these run on time, not only on clicks. Every animation frame goes to Roc, which moves things;
@@ -183,69 +180,6 @@ view! = |_|
 				<summary>The timers, and the clock: <code>{Sources.demo_timers.file}</code>, <code>{Sources.demo_clock.file}</code></summary>
 				<Code title={Sources.demo_timers.file} source={Sources.demo_timers.rocx} />
 				<Code title={Sources.demo_clock.file} source={Sources.demo_clock.rocx} />
-			</details>
-
-			<Heading id="charts">Charts</Heading>
-			<p>
-				A bar chart and a line chart, from <code>packages/charts</code>, <a href={Paths.ecosystem_charts}>the chart package</a> that
-				comes with Roc Solid: components like the rest, drawn as SVG, which the server rendered into this page. Give them other
-				data and they glide to it, a frame at a time, in Roc; once they get there, nothing runs.
-			</p>
-		</NoHydration>
-		<Demo game meter="rainfall" idle="Roc is idle: the bars are where the data says.">
-			<div data-demo="rainfall"><Rainfall /></div>
-		</Demo>
-		<NoHydration>
-			<p>
-				A price that wanders: press Play, and a new value comes 40 times a second, the oldest dropping off the
-				left. Point along the line for a value.
-			</p>
-		</NoHydration>
-		<Demo game meter="ticker" idle="Paused: no frames run.">
-			<div data-demo="ticker"><Ticker /></div>
-		</Demo>
-		<NoHydration>
-			<FeatureGrid>
-				<Feature title="The arithmetic is a package">
-					<p>
-						Scales, round ticks, SVG paths and number formats are plain Roc, on no platform:
-						<code>Scale.linear((0.0, 120.0), (288.0, 16.0)).at(60.0)</code> is 152, on the server and in the
-						browser alike, and every one is an <code>expect</code> away from a test.
-					</p>
-				</Feature>
-				<Feature title="Decimals, so 0.3 is 0.3">
-					<p>
-						Its numbers are Roc's <code>Dec</code>: the ticks from 0 to 1 are 0.2, 0.4, 0.6 and 0.8, exactly,
-						and no label reads 0.30000000000000004.
-					</p>
-				</Feature>
-				<Feature title="A glide is a handler, for a while">
-					<p>
-						A chart keeps what it has drawn in a signal. While that isn't what the data says, a
-						<code>{"<Show>"}</code> holds an <code>on:frame.ms</code> handler, which moves it a share of the way
-						each frame; when it gets there, the <code>{"<Show>"}</code> closes, and the frames stop.
-					</p>
-				</Feature>
-				<Feature title="Copied in, since a package can't be both">
-					<p>
-						The components import the platform's <code>Html</code>, and an app is two programs on two platforms.
-						So <code>rocx build</code> copies them into the app (<code>Generated/charts/</code>), where
-						<code>pf</code> is each half's own, and <code>import charts.BarChart</code> imports the copy.
-					</p>
-				</Feature>
-			</FeatureGrid>
-			<details>
-				<summary>The bar chart: <code>{Sources.chart_bar.file}</code></summary>
-				<Code title={Sources.chart_bar.file} source={Sources.chart_bar.rocx} />
-			</details>
-			<details>
-				<summary>The line chart: <code>{Sources.chart_line.file}</code></summary>
-				<Code title={Sources.chart_line.file} source={Sources.chart_line.rocx} />
-			</details>
-			<details>
-				<summary>The rain, and the walk: <code>{Sources.demo_rainfall.file}</code>, <code>{Sources.demo_ticker.file}</code></summary>
-				<Code title={Sources.demo_rainfall.file} source={Sources.demo_rainfall.rocx} />
-				<Code title={Sources.demo_ticker.file} source={Sources.demo_ticker.rocx} />
 			</details>
 		</NoHydration>
 	</>

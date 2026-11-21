@@ -118,8 +118,8 @@ view! = |_|
 				<Feature heading={[<code>view!</code>, <>: effectful</>]}>
 					<p>
 						It may make signals and memos, read a context, call a server function. So it runs where it is
-						rendered, once, as in Solid: <code>{"<Counter start={3} />"}</code> becomes
-						<code>{"Html.component(|| Counter.view!({ start: 3 }))"}</code>, which the runtime calls at its
+						rendered, once, as in Solid: <code>{"<Counter start_value={3} />"}</code> becomes
+						<code>{"Html.component(|| Counter.view!({ start_value: 3 }))"}</code>, which the runtime calls at its
 						place in the tree, under the contexts provided above it.
 					</p>
 				</Feature>

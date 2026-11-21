@@ -9,12 +9,13 @@ import ../../../Ui/TableWrap
 
 meta = {
 	title: "Live and actors",
-	description: "State that outlives a request on the rocx server platform: live topics and rooms that streams share, and actors that answer one message at a time, their state kept in Postgres.",
+	description: "State that outlives a request on the rocx server platform: live topics and rooms that streams share, and actors that handle one message at a time, in order, with typed asks, tells and timers, their state kept in Postgres.",
 	toc: [
 		{ id: "rooms", label: "Rooms: who is here" },
 		{ id: "topics", label: "Topics: what was said" },
 		{ id: "actors", label: "Actors" },
-		{ id: "asking", label: "Asking one" },
+		{ id: "asking", label: "Asking and telling" },
+		{ id: "timers", label: "Timers" },
 		{ id: "which", label: "Which to use" },
 		{ id: "limits", label: "Not yet" },
 	],
@@ -29,8 +30,8 @@ view! = |_|
 			>
 				A request comes and goes; some state has to stay. How many people are on a page right now, what
 				someone just said to all of them: that is live state, in the server's memory, which streams share.
-				A cart, a counter, a game's room: that is an actor, a piece of state that answers one message at a
-				time, kept in Postgres so it is there after a restart.
+				A cart, a counter, a game's room: that is an actor, a piece of state that handles one message at a
+				time, in the order they came, kept in Postgres so it is there after a restart.
 			</PageHero>
 
 			<Heading id="rooms">Rooms: who is here</Heading>
@@ -64,32 +65,63 @@ view! = |_|
 			<Heading id="actors">Actors</Heading>
 			<p>
 				An actor is a kind and a key: the cart of member 7, the counter called <code>visits</code>. A kind
-				says how one starts, from its key, and what it does with a message: its next state, and its reply.
+				says its name, its state when it is new (<code>initial</code>, from its key), and what it does with
+				a message (<code>receive!</code>): its next state, and its reply.
 			</p>
 			<Code title={"${Sources.platform_counter.file}, in part"} source={Sources.platform_counter.rocx} numbers={Bool.False} />
 			<ul>
 				<li>
-					<strong>Called into being</strong> by its first message (<code>init(key)</code>), or loaded from
-					<code>rocx_actors</code>, where its state is written after each message, as JSON.
+					<strong>Nobody makes one, or ends one.</strong> A message to any key finds its actor as its last
+					message left it, or new: <code>initial(key)</code> is where its state starts, not a message.
 				</li>
 				<li>
-					<strong>One message at a time.</strong> A hundred asks at once each see the state the one before
-					left: no lost updates, no locks to write.
+					<strong>One message at a time, in the order they came.</strong> Each actor has a mailbox in the
+					server, and handles what is in it one message after another: a hundred asks at once each see
+					the state the one before left, with no lost updates and no locks to write.
 				</li>
 				<li>
-					<strong>A crash is the asker's error</strong>, and the actor's state stays as it was before the
-					message.
+					<strong>A message it doesn't take is an error, not a crash.</strong> Messages are typed, so this
+					is rare (a caller built against an older kind); it, a crash in <code>receive!</code>, and a kind
+					the app has none of are logged as errors and told to the asker. The actor's state stays as it
+					was, and it goes on with its next message.
+				</li>
+				<li>
+					<strong>Kept in Postgres</strong> (<code>rocx_actors</code>), read by its first turn and written
+					after each turn that changes it. One idle for 15 minutes (<code>--actor-idle-ms</code>) is let
+					go, and the next message wakes it as Postgres has it.
 				</li>
 			</ul>
+			<p>
+				<code>rocx build</code> lists the kinds an app's modules define (<code>Actor.define</code>, at the
+				top of a module's block, its <code>name</code> first), so the server can run an actor when nobody
+				is waiting on it: a tell, a timer.
+			</p>
 
-			<Heading id="asking">Asking one</Heading>
+			<Heading id="asking">Asking and telling</Heading>
 			<Code title={"${Sources.platform_ask.file}, in part"} source={Sources.platform_ask.rocx} numbers={Bool.False} />
 			<p>
-				<code>Actor.ask!(kind, key, message)</code> answers the reply, typed as the kind says, or
-				<code>ActorErr</code> with why. The app doesn't list its kinds: <code>ask!</code> is given the kind,
-				and runs its <code>receive!</code> in a call of its own (<code>Host.isolated_call!</code>). An actor
-				may ask another; one that asks itself is refused, and one kept waiting 30 s (asking one that waits on
-				it) is an error, not a hang.
+				<code>Actor.ask!(kind, key, message)</code> waits for the reply, typed as the kind says, or
+				<code>ActorErr</code> with why there is none. <code>Actor.tell!(kind, key, message)</code> doesn't
+				wait: the message is handled after the ones before it, and its reply goes nowhere.
+			</p>
+			<Code title={"${Sources.platform_tell.file}, in part"} source={Sources.platform_tell.rocx} numbers={Bool.False} />
+			<p>
+				An actor may ask another. One that asks itself, or any actor whose turn is waiting on its answer,
+				is refused at once: it would wait forever. An ask not answered in 30 s is given up on, and its
+				message is dropped if its turn hasn't come.
+			</p>
+
+			<Heading id="timers">Timers</Heading>
+			<p>
+				<code>receive!</code> is given the actor itself (<code>me</code>): its key
+				(<code>Actor.key_of(me)</code>), and its own timers. <code>Actor.after!(me, ms, message)</code>
+				sends it a message later, typed as its kind's messages are, and answers the timer, which
+				<code>Actor.cancel!</code> stops. A timer every so often is one that sets the next:
+			</p>
+			<Code title={"${Sources.platform_ticker.file}, in part"} source={Sources.platform_ticker.rocx} numbers={Bool.False} />
+			<p>
+				<code>Actor.tell_after!(kind, key, ms, message)</code> does the same from anywhere: a request, a
+				job, another actor.
 			</p>
 
 			<Heading id="which">Which to use</Heading>
@@ -99,7 +131,7 @@ view! = |_|
 					<tbody>
 						<tr><td>who is here, now</td><td>a room (<code>Live.join!</code>, <code>Live.count!</code>)</td><td>while the calls in it last</td></tr>
 						<tr><td>telling everyone listening</td><td>a topic (<code>Live.publish!</code>, <code>Live.listen!</code>)</td><td>while the listeners last</td></tr>
-						<tr><td>state many requests change, one at a time</td><td>an actor (<code>Actor.ask!</code>)</td><td>in Postgres: restarts too</td></tr>
+						<tr><td>state many requests change, one at a time</td><td>an actor (<code>Actor.ask!</code>, <code>Actor.tell!</code>)</td><td>in Postgres: restarts too</td></tr>
 						<tr><td>data, queried every way</td><td>a table (<a href={Paths.platform_postgres}><code>Db</code></a>)</td><td>in Postgres</td></tr>
 						<tr><td>work that may fail and should run again</td><td>a job (<a href={Paths.platform_jobs}><code>Job.enqueue!</code></a>)</td><td>in Postgres, until done</td></tr>
 					</tbody>
@@ -109,17 +141,22 @@ view! = |_|
 			<Heading id="limits">Not yet</Heading>
 			<ul>
 				<li>
-					<strong>One server.</strong> Rooms, topics and actors' turns are in its memory; with two servers,
+					<strong>One server.</strong> Rooms, topics and actors' mailboxes are in its memory; with two servers,
 					each would have its own. Postgres's <code>listen</code>/<code>notify</code> could carry them between
 					servers later.
 				</li>
-				<li><strong>An actor's state is JSON</strong> in one row, written after each message: fine for a cart, not for a ledger.</li>
+				<li><strong>An actor's state is JSON</strong> in one row, written after each message that changes it: fine for a cart, not for a ledger.</li>
+				<li>
+					<strong>Timers and tells are in memory.</strong> A restart loses those not yet handled: a job is
+					for work that must survive one.
+				</li>
 			</ul>
 			<Callout kind="tip" title="Tested">
 				<p>
 					The platform's tests open streams that join a room and count each other, publish to listeners,
-					ask an actor a hundred times at once, crash one, have one ask another and itself, and restart the
-					server to find an actor's state where it was.
+					ask an actor a hundred times at once, crash one, have one ask another, itself and one waiting on
+					it, tell one in order, set and cancel timers, send one a message it doesn't take, let one go
+					when idle and wake it, and restart the server to find an actor's state where it was.
 				</p>
 			</Callout>
 		</NoHydration>

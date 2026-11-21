@@ -1,0 +1,46 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+import charts.Format
+import charts.StackedBarChart
+import Random
+import Shuffle
+
+## A town's electricity, a column for each month and a part for each source: the charts page's
+## `<StackedBarChart>`. Another half-year moves each part to its new size; a half-year whose data
+## stops early takes its last months away, and they shrink into the axis.
+StackDemo := [].{
+	Half : { seed : U64, months : List({ label : Str, values : List(Dec) }) }
+
+	view! : {} => Html
+	view! = |{}| {
+		(half!, set_half!) = create_signal!(StackDemo.half(3))
+		(look!, set_look!) = create_signal!(Shuffle.first)
+		<Shuffle roll!={|| set_half!(StackDemo.half(half!().seed))} look!={look!} set_look!={set_look!}>
+			{=<StackedBarChart data!={half!().months} series={sources} label="A town's electricity each month, by source, in gigawatt-hours" format={|gwh| Format.num(gwh, 0)} padding={Shuffle.pick(look!(), 0.3, 0.55, 0.12)} />}
+		</Shuffle>
+	}
+
+	## A half-year: four to six months, each source making 5 to 60 gigawatt-hours of them.
+	half : U64 -> StackDemo.Half
+	half = |seed| {
+		length = Random.below(seed, 3)
+		var $seed = length.seed
+		var $months = []
+		for month in names.take_first(4 + length.value) {
+			var $values = []
+			for _ in sources {
+				made = Random.below($seed, 56)
+				$seed = made.seed
+				$values = $values.append((5 + made.value).to_dec())
+			}
+			$months = $months.append({ label: month, values: $values })
+		}
+		{ seed: $seed, months: $months }
+	}
+}
+
+sources : List(Str)
+sources = ["Solar", "Wind", "Hydro"]
+
+names : List(Str)
+names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"]

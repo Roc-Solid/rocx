@@ -12,6 +12,7 @@ site/Demos/*.roc
 !site/Demos/Random.roc
 site/Islands.roc
 site/examples/*.roc
+site/stories/*.roc
 web/test/app/*.roc
 !web/test/app/Api.roc
 !web/test/app/main.roc

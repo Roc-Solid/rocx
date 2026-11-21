@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { appWasm, build, nativePage, out, pageFile, prerender, roc, root, ROUTES, STATIC_GETS, startServer, underBase } from "../build.mjs";
 import { hasRust } from "../../server/build.mjs";
+import { blocks, platformReference, undocumented } from "../../src/reference.mjs";
 import { Runtime } from "../../web/runtime.js";
 import { findChrome, launch } from "../../web/test/browser.mjs";
 import { serve } from "../../web/test/serve.mjs";
@@ -581,52 +582,137 @@ test("the flock flies, grows and shrinks by its buttons or a number typed, and s
 	assert.deepEqual(page.errors, []);
 });
 
-test("charts: the bars glide to another year and stop, a month more grows a bar, and the walk runs only while it plays", { skip }, async () => {
-	const page = await open("/showcase");
-	const bars = () => page.eval("[...document.querySelectorAll('.rainfall .bar rect')].map((rect) => Number(rect.getAttribute('height')))");
-	const ticks = () => page.eval("[...document.querySelectorAll('.rainfall .ticks text')].map((text) => text.textContent)");
+test("charts: each glides to other data and stops, Auto gives it more until pressed, bars, slices and dots come and go, and three looks restyle them", { skip }, async () => {
+	const page = await open("/ecosystem/charts");
+	const demos = ["chart-bar", "chart-stacked", "chart-line", "chart-sparkline", "chart-donut", "chart-scatter", "chart-heatmap"];
+	const all = (selector) => `[...document.querySelectorAll(${JSON.stringify(selector)})]`;
 	const settled = async (demo) => {
 		// A glide is over in well under a second; then no frames at all.
 		await new Promise((resolve) => setTimeout(resolve, 900));
 		assert.equal(await frames(page, demo, 300), 0, `${demo}: no frames once it is there`);
 	};
+	const roll = async (demo) => {
+		await page.click(`[data-demo="${demo}"] .roll`);
+		assert.ok((await frames(page, demo, 150)) > 3, `${demo}: frames while it glides`);
+	};
 
-	assert.equal((await bars()).length, 12, "a bar a month, from the server");
-	assert.deepEqual(await ticks(), ["0", "10", "20", "30", "40", "50", "60", "70"], "round ticks, from zero");
-	assert.equal(await frames(page, "rainfall", 300), 0, "no frames while the bars are where the data says");
+	// Auto is on from the start; pressed, it stops, and the charts stay where they are.
+	assert.deepEqual(await page.eval(`${all(".auto")}.map((button) => button.getAttribute("aria-pressed"))`), demos.map(() => "true"));
+	for (const demo of demos) await page.click(`[data-demo="${demo}"] .auto`);
+	assert.deepEqual(await page.eval(`${all(".auto")}.map((button) => button.getAttribute("aria-pressed"))`), demos.map(() => "false"));
+	for (const demo of demos) await settled(demo);
 
-	const before = await bars();
-	await page.click(".rainfall .chart-bar button");
-	assert.ok((await frames(page, "rainfall", 200)) > 3, "frames while they glide");
-	await settled("rainfall");
-	assert.notDeepEqual(await bars(), before, "another year's heights");
-
-	await page.click('[aria-label="One month fewer"]');
-	assert.deepEqual(await page.eval("[...document.querySelectorAll('.rainfall .bar[inert] .label')].map((label) => label.textContent)"), ["Dec"], "the month taken away stays until it has shrunk into the axis");
-	assert.equal(await page.eval("document.querySelector('.rainfall .bar[inert] rect').getAnimations().length"), 1, "its transition out plays");
-	await settled("rainfall");
-	assert.equal((await bars()).length, 11);
-	assert.equal(await page.eval("document.querySelectorAll('.rainfall .bar[inert]').length"), 0, "and then it is gone");
-	await page.click('[aria-label="One month more"]');
-	await settled("rainfall");
-	assert.equal((await bars()).length, 12);
-	assert.equal(await page.eval("[...document.querySelectorAll('.rainfall .bar rect')].every((rect) => rect instanceof SVGRectElement && rect.getBBox().height > 0)"), true, "a bar made in the browser is SVG, and drawn");
-
-	await page.click(".rainfall [aria-pressed]");
-	await settled("rainfall");
-	const sorted = await bars();
-	assert.deepEqual(sorted, [...sorted].sort((a, b) => b - a), "the wettest first");
-	const xs = await page.eval("[...document.querySelectorAll('.rainfall .bar rect')].map((rect) => Number(rect.getAttribute('x')))");
+	// Bars: from the server, the most first; another morning glides them, sorted still, each slid to
+	// its place; a kind not seen shrinks into the axis, and is gone once it has.
+	const heights = () => page.eval(`${all("[data-demo=chart-bar] .bar:not([inert]) rect")}.map((rect) => Number(rect.getAttribute("height")))`);
+	const before = await heights();
+	assert.ok(before.length >= 4, "a bar for each kind seen, from the server");
+	assert.deepEqual(before, [...before].sort((a, b) => b - a), "the most first");
+	let going = 0;
+	for (let i = 0; i < 6 && !going; i++) {
+		await roll("chart-bar");
+		going = await page.eval(`${all("[data-demo=chart-bar] .bar[inert]")}.length`);
+		if (going) assert.equal(await page.eval(`document.querySelector("[data-demo=chart-bar] .bar[inert] rect").getAnimations().length`), 1, "a bar going plays its transition out");
+		await settled("chart-bar");
+	}
+	assert.ok(going > 0, "a kind not seen shrinks into the axis");
+	assert.equal(await page.eval(`${all("[data-demo=chart-bar] .bar[inert]")}.length`), 0, "and then it is gone");
+	const sorted = await heights();
+	assert.notDeepEqual(sorted, before, "other counts");
+	assert.deepEqual(sorted, [...sorted].sort((a, b) => b - a), "the most first, still");
+	const xs = await page.eval(`${all("[data-demo=chart-bar] .bar rect")}.map((rect) => Number(rect.getAttribute("x")))`);
 	assert.deepEqual(xs, [...xs].sort((a, b) => a - b), "each bar slid to its place, left to right");
+	assert.equal(await page.eval(`${all("[data-demo=chart-bar] .bar rect")}.every((rect) => rect instanceof SVGRectElement && rect.getBBox().height > 0)`), true, "a bar made in the browser is SVG, and drawn");
 
-	const line = () => page.eval("document.querySelector('.ticker path.line').getAttribute('d')");
-	const still = await line();
-	assert.equal(await frames(page, "ticker", 300), 0, "paused: no frames");
-	await page.click(".ticker .chart-bar button");
-	assert.ok((await frames(page, "ticker", 300)) > 5, "frames while it plays");
-	assert.notEqual(await line(), still, "the line moves");
-	await page.click(".ticker .chart-bar button");
-	await settled("ticker");
+	// The line glides to another day's values, through the frames between.
+	const line = () => page.eval(`document.querySelector("[data-demo=chart-line] path.line").getAttribute("d")`);
+	const day = await line();
+	await page.click("[data-demo=chart-line] .roll");
+	await new Promise((resolve) => setTimeout(resolve, 50));
+	const between = await line();
+	await settled("chart-line");
+	assert.notEqual(between, day, "the line moves");
+	assert.notEqual(await line(), between, "a frame at a time");
+
+	// Slices: a slice keeps its colour; one whose language is gone shrinks to nothing, and goes.
+	const slices = () => page.eval(`Object.fromEntries(${all("[data-demo=chart-donut] .slice")}.map((slice) => [slice.getAttribute("aria-label").split(":")[0], slice.dataset.slot]))`);
+	const colours = await slices();
+	assert.deepEqual(Object.keys(colours), ["Roc", "Zig", "Rust", "JavaScript", "CSS"], "a slice a language, from the server");
+	let shrank = false;
+	for (let i = 0; i < 8 && !shrank; i++) {
+		await roll("chart-donut");
+		const legend = await page.eval(`${all("[data-demo=chart-donut] .legend li:not([inert]) .name")}.map((name) => name.textContent)`);
+		if (!legend.includes("CSS")) {
+			assert.equal(await page.eval(`${all("[data-demo=chart-donut] .slice")}.length`), 5, "the slice going is still there, shrinking");
+			await settled("chart-donut");
+			assert.equal(await page.eval(`${all("[data-demo=chart-donut] .slice")}.length`), 4, "and then it is gone");
+			shrank = true;
+		} else await settled("chart-donut");
+		for (const [language, slot] of Object.entries(await slices())) assert.equal(slot, colours[language], `${language} keeps its colour`);
+	}
+	assert.ok(shrank, "a project without CSS");
+	assert.match(await text(page, "[data-demo=chart-donut] .big"), /^\d+(\.\d)?k?$/, "the total in the middle");
+
+	// Dots: another catch moves them, a dot for each bird caught.
+	const dots = () => page.eval(`${all("[data-demo=chart-scatter] .dot")}.map((dot) => dot.getAttribute("cx") + "," + dot.getAttribute("cy"))`);
+	const caught = await dots();
+	await roll("chart-scatter");
+	await settled("chart-scatter");
+	assert.notDeepEqual(await dots(), caught, "the dots moved");
+	assert.equal(await page.eval(`${all("[data-demo=chart-scatter] .dot")}.every((dot) => dot instanceof SVGCircleElement && dot.getBBox().width > 0)`), true, "a dot made in the browser is SVG, and drawn");
+
+	// Stacked: a part for each source in each month, before and after another half-year.
+	const parts = () => page.eval(`${all("[data-demo=chart-stacked] .part:not([inert])")}.length`);
+	const months = () => page.eval(`${all("[data-demo=chart-stacked] .column:not([inert])")}.length`);
+	assert.equal(await parts(), (await months()) * 3, "three parts a month, from the server");
+	await roll("chart-stacked");
+	await settled("chart-stacked");
+	assert.equal(await parts(), (await months()) * 3, "three parts a month, another half-year");
+
+	// Sparklines glide to another day.
+	const sparks = () => page.eval(`${all("[data-demo=chart-sparkline] .sparkline .line")}.map((line) => line.getAttribute("d"))`);
+	const spark = await sparks();
+	assert.equal(spark.length, 3, "a line a tile");
+	await roll("chart-sparkline");
+	await settled("chart-sparkline");
+	assert.notDeepEqual(await sparks(), spark, "the lines moved");
+
+	// The heatmap's cells take another week's strengths, and the browser fades them: no frames.
+	const strengths = () => page.eval(`${all("[data-demo=chart-heatmap] rect.cell")}.map((cell) => cell.style.getPropertyValue("--strength"))`);
+	const week = await strengths();
+	assert.equal(week.length, 7 * 24, "a cell an hour, a row a day");
+	await page.click("[data-demo=chart-heatmap] .roll");
+	assert.equal(await frames(page, "chart-heatmap", 300), 0, "no frames: a CSS transition");
+	assert.notDeepEqual(await strengths(), week, "another week");
+
+	// Looks: Blueprint outlines thin bars in monospace, Paper sets wide ones in a serif, and makes
+	// the donut a pie, with no middle.
+	const bar = () =>
+		page.eval(`(() => {
+			const rect = document.querySelector("[data-demo=chart-bar] .bar rect");
+			return { width: Number(rect.getAttribute("width")), fill: getComputedStyle(rect).fillOpacity, font: getComputedStyle(rect.closest("svg")).fontFamily };
+		})()`);
+	const neon = await bar();
+	await page.click("[data-demo=chart-bar] .looks button:nth-child(2)");
+	assert.equal(await page.eval(`document.querySelector("[data-demo=chart-bar] .stage").dataset.look`), "blueprint");
+	const blueprint = await bar();
+	assert.ok(blueprint.width < neon.width, "thinner bars");
+	assert.equal(blueprint.fill, "0.2", "outlined, barely filled");
+	assert.match(blueprint.font, /mono/i);
+	await page.click("[data-demo=chart-bar] .looks button:nth-child(3)");
+	const paper = await bar();
+	assert.ok(paper.width > neon.width, "wider bars");
+	assert.match(paper.font, /Georgia/);
+	assert.equal(await page.eval(`getComputedStyle(document.querySelector("[data-demo=chart-donut] .middle")).display`), "inline", "a ring has a middle");
+	await page.click("[data-demo=chart-donut] .looks button:nth-child(3)");
+	assert.equal(await page.eval(`getComputedStyle(document.querySelector("[data-demo=chart-donut] .middle")).display`), "none", "a pie has none");
+
+	// Auto again: a new day comes by itself, 3.3 seconds on.
+	await page.click("[data-demo=chart-line] .auto");
+	const now = await line();
+	await new Promise((resolve) => setTimeout(resolve, 3700));
+	assert.notEqual(await line(), now, "Auto gave the line another day");
+	await page.click("[data-demo=chart-line] .auto");
 	assert.deepEqual(page.errors, []);
 });
 
@@ -641,6 +727,45 @@ test("the static build is every page as the server answers it, and what the page
 	for (const asset of ["rocx/start.js", "rocx/runtime.js", "rocx/app.wasm", "site.js"]) {
 		assert.ok(readFileSync(join(dir, asset)).length > 0, asset);
 	}
+});
+
+// The platform's reference (/platform/reference) is read from the platform's modules
+// (src/reference.mjs): every effect they expose is on it, and each has a doc comment to say there.
+
+test("the platform reference: every effect the server platform exposes has a doc comment", () => {
+	const missing = undocumented(platformReference());
+	assert.deepEqual(missing, [], `effects with no \`##\` doc comment above them (write one, in the plain style of the others):\n${missing.join("\n")}`);
+});
+
+test("the platform reference: the page has every module the server platform exposes, and each effect's type and doc", { skip }, async () => {
+	const html = await (await fetch(`${site.url}/platform/reference`, { headers: { accept: "text/html" } })).text();
+	const entities = { amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'", "#x27": "'" };
+	const squeeze = (text) => text.replace(/\s+/g, " ").trim();
+	// What HTML says, as text: its tags gone, its entities read.
+	const plain = (part) => squeeze(part.replace(/<[^>]*>/g, "").replace(/&(amp|lt|gt|quot|#39|#x27);/g, (_, name) => entities[name]));
+	// A doc's first block, as the page shows it: a paragraph's text, a list's first item, code.
+	const opening = (doc) => {
+		const [first] = blocks(doc);
+		if (first.kind === "Sample") return first.code;
+		return (first.kind === "Para" ? first.inlines : first.items[0]).map((piece) => piece.text).join("");
+	};
+	const missing = [];
+	for (const module of platformReference()) {
+		if (!html.includes(`id="${module.name}"`)) missing.push(`${module.name}: not on the page`);
+		for (const effect of module.effects) {
+			const name = `${module.name}.${effect.name}`;
+			const at = html.indexOf(`id="${name}"`);
+			if (at < 0) {
+				missing.push(`${name}: not on the page`);
+				continue;
+			}
+			const ends = ['<div class="effect', "<article", "</section"].map((tag) => html.indexOf(tag, at)).filter((end) => end > 0);
+			const shown = plain(html.slice(at, Math.min(...ends)));
+			if (!shown.includes(squeeze(`${name} : ${effect.type}`))) missing.push(`${name}: its type isn't shown`);
+			if (!effect.doc || !shown.includes(squeeze(opening(effect.doc)).slice(0, 80))) missing.push(`${name}: its doc isn't shown`);
+		}
+	}
+	assert.deepEqual(missing, [], `the reference page misses:\n${missing.join("\n")}`);
 });
 
 test("the static build for GitHub Pages: files alone, under /rocx/, every page hydrates strictly as the browser's build renders it, and its demos work", { skip }, async () => {

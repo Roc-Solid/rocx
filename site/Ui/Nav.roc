@@ -41,6 +41,7 @@ Nav := [].{
 			{ path: Paths.platform_jobs, label: "Jobs, cron and email", blurb: "Work that runs later, and again" },
 			{ path: Paths.platform_live, label: "Live and actors", blurb: "State that outlives a request" },
 			{ path: Paths.platform_browser, label: "The browser", blurb: "Wasm, a Zig host, a runtime" },
+			{ path: Paths.platform_reference, label: "Reference", blurb: "Every module and effect, from the source" },
 		],
 	}
 
@@ -51,7 +52,7 @@ Nav := [].{
 		home: Paths.ecosystem,
 		pages: [
 			{ path: Paths.ecosystem, label: "Overview", blurb: "What a package is, and using one" },
-			{ path: Paths.ecosystem_charts, label: "Charts", blurb: "Bar and line charts that glide to their data" },
+			{ path: Paths.ecosystem_charts, label: "Charts", blurb: "Seven kinds of chart that glide to their data, styled by CSS" },
 		],
 	}
 

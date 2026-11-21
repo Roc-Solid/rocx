@@ -1,0 +1,42 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+import charts.BarChart
+import charts.Format
+import Random
+import Shuffle
+
+## Birds counted on a morning walk, a bar for each kind, the most first: the charts page's
+## `<BarChart>`. Another morning moves each bar to its new count and slides it to its new place; a
+## kind not seen this time shrinks into the axis, and one seen again grows back out of it.
+BarDemo := [].{
+	Walk : { seed : U64, birds : List({ label : Str, value : Dec }) }
+
+	view! : {} => Html
+	view! = |{}| {
+		(walk!, set_walk!) = create_signal!(BarDemo.walk(2026))
+		(look!, set_look!) = create_signal!(Shuffle.first)
+		<Shuffle roll!={|| set_walk!(BarDemo.walk(walk!().seed))} look!={look!} set_look!={set_look!}>
+			{=<BarChart data!={walk!().birds} label="Birds counted on a morning walk, by kind" format={|count| Format.num(count, 0)} padding={Shuffle.pick(look!(), 0.3, 0.55, 0.12)} />}
+		</Shuffle>
+	}
+
+	## A morning's counts: each kind seen 5 to 120 times, or, one morning in six, not at all; the
+	## most first.
+	walk : U64 -> BarDemo.Walk
+	walk = |seed| {
+		var $seed = seed
+		var $birds = []
+		for kind in kinds {
+			seen = Random.below($seed, 6)
+			count = Random.below(seen.seed, 116)
+			$seed = count.seed
+			if seen.value > 0 {
+				$birds = $birds.append({ label: kind, value: (5 + count.value).to_dec() })
+			}
+		}
+		{ seed: $seed, birds: $birds.sort_with(|a, b| if (a.value > b.value) Before else if (a.value < b.value) After else Same) }
+	}
+}
+
+kinds : List(Str)
+kinds = ["Robin", "Wren", "Finch", "Crow", "Owl", "Swift", "Heron", "Kite"]

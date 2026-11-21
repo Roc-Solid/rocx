@@ -1,0 +1,49 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+import charts.Format
+import charts.ScatterChart
+import Random
+import Shuffle
+
+## Birds measured, a dot for each: across by its wingspan, up by its weight: the charts page's
+## `<ScatterChart>`. Other birds move each dot to its place; one not caught this time shrinks away,
+## and one caught again swells back.
+ScatterDemo := [].{
+	Catch : { seed : U64, birds : List({ label : Str, x : Dec, y : Dec }) }
+
+	view! : {} => Html
+	view! = |{}| {
+		(catch!, set_catch!) = create_signal!(ScatterDemo.catch(5))
+		(look!, set_look!) = create_signal!(Shuffle.first)
+		<Shuffle roll!={|| set_catch!(ScatterDemo.catch(catch!().seed))} look!={look!} set_look!={set_look!}>
+			<ScatterChart
+				data!={catch!().birds}
+				label="Birds, by wingspan and weight"
+				format_x={|cm| "${Format.num(cm, 0)} cm"}
+				format_y={|kg| "${Format.num(kg, 2)} kg"}
+			/>
+		</Shuffle>
+	}
+
+	## Birds caught and measured: each 15 to 190 cm across the wings, and 3 to 8 grams for each of
+	## those centimetres; one in seven not caught.
+	catch : U64 -> ScatterDemo.Catch
+	catch = |seed| {
+		var $seed = seed
+		var $birds = []
+		for kind in kinds {
+			span = Random.below($seed, 176)
+			heft = Random.below(span.seed, 6)
+			caught = Random.below(heft.seed, 7)
+			$seed = caught.seed
+			if caught.value > 0 {
+				cm = (15 + span.value).to_dec()
+				$birds = $birds.append({ label: kind, x: cm, y: cm * (3 + heft.value).to_dec() / 1000.0 })
+			}
+		}
+		{ seed: $seed, birds: $birds }
+	}
+}
+
+kinds : List(Str)
+kinds = ["Robin", "Wren", "Finch", "Crow", "Owl", "Swift", "Heron", "Kite", "Gull", "Jay"]

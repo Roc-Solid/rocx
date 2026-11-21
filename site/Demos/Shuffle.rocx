@@ -1,0 +1,202 @@
+import pf.Html
+import pf.Solid exposing [create_signal!, set_interval!]
+
+## A chart on the charts page, with buttons over it. Randomize gives it other data (`roll!`), and
+## Auto, on from the start, does every 3.3 seconds, so the chart keeps gliding to new data until
+## Auto is pressed again: the interval is Auto's, cleared when it is pressed, and stopped with the
+## chart. Neon, Blueprint and Paper restyle it (`look!`, `set_look!`). A look is custom properties
+## the chart components read (colours, a font, outlines, a dashed grid, corners, a glow), set here
+## on the stage under the buttons, and a prop or two the demo gives its chart by the look
+## (`Shuffle.pick`: wider bars, a straight line, a thinner ring).
+Shuffle := [].{
+	Auto : [Off, On(() => {})]
+	Look : [Neon, Blueprint, Paper]
+
+	view! : { roll! : () => {}, look! : () => Shuffle.Look, set_look! : Shuffle.Look => {}, children : List(Html) } => Html
+	view! = |{ roll!, look!, set_look!, children }| {
+		(auto!, set_auto!) = create_signal!(On(set_interval!(every, roll!)))
+		toggle! = ||
+			match auto!() {
+				On(clear!) => {
+					clear!()
+					set_auto!(off)
+				}
+				Off => set_auto!(On(set_interval!(every, roll!)))
+			}
+		<div class="shuffle">
+			<div class="buttons">
+				<button type="button" class="roll" on:click={roll!}>Randomize</button>
+				<button type="button" class="auto" aria-pressed={pressed(on(auto!()))} on:click={toggle!}>Auto</button>
+				<span class="looks" role="group" aria-label="Style">
+					<button type="button" aria-pressed={pressed(look!() == Neon)} on:click={|| set_look!(Neon)}>Neon</button>
+					<button type="button" aria-pressed={pressed(look!() == Blueprint)} on:click={|| set_look!(Blueprint)}>Blueprint</button>
+					<button type="button" aria-pressed={pressed(look!() == Paper)} on:click={|| set_look!(Paper)}>Paper</button>
+				</span>
+			</div>
+			<div class="stage" data-look={Shuffle.name(look!())}>{...children}</div>
+		</div>
+	}
+
+	## The look a demo starts with: the site's.
+	first : Shuffle.Look
+	first = Neon
+
+	## One of three, by the look: for a prop that changes with it.
+	pick : Shuffle.Look, a, a, a -> a
+	pick = |look, neon, blueprint, paper|
+		match look {
+			Neon => neon
+			Blueprint => blueprint
+			Paper => paper
+		}
+
+	## The look's name, as the stage's `data-look` has it.
+	name : Shuffle.Look -> Str
+	name = |look| Shuffle.pick(look, "neon", "blueprint", "paper")
+
+	<style>
+		.shuffle {
+			display: grid;
+			gap: var(--space-3);
+		}
+
+		.buttons {
+			display: flex;
+			flex-wrap: wrap;
+			gap: var(--space-2);
+		}
+
+		button {
+			padding: var(--space-1) var(--space-3);
+			font-size: var(--size-sm);
+		}
+
+		button[aria-pressed="true"] {
+			background: var(--accent-soft);
+			color: var(--accent);
+		}
+
+		.looks {
+			display: inline-flex;
+			gap: 2px;
+			margin-left: auto;
+			padding: 2px;
+			border-radius: var(--radius-sm);
+			background: var(--fill);
+		}
+
+		.looks button {
+			background: transparent;
+		}
+
+		.looks button[aria-pressed="true"] {
+			background: var(--accent-soft);
+		}
+
+		.stage {
+			padding: var(--space-4);
+			border-radius: var(--radius-md);
+			transition: background-color 0.3s, color 0.3s;
+		}
+
+		/* The site's own: neon on the dark, and a glow. */
+		[data-look="neon"] {
+			--chart-color: var(--accent);
+			--chart-active: var(--accent-strong);
+			--chart-grid: var(--rule);
+			--chart-axis: var(--rule-strong);
+			--chart-muted: var(--text-faint);
+			--chart-surface: var(--bg-raised);
+			--chart-glow: drop-shadow(0 0 5px rgb(46 232 255 / 0.45));
+			--chart-1: #2ee8ff;
+			--chart-2: #ff4fd0;
+			--chart-3: #b6ff4a;
+			--chart-4: #7b6bff;
+			--chart-5: #ff8a3d;
+			--chart-heat-low: rgb(46 232 255 / 0.05);
+			--chart-heat-high: #2ee8ff;
+			--chart-up: var(--good);
+			--chart-down: var(--bad);
+		}
+
+		/* A drawing on blue paper: outlines, a dashed grid, square corners, monospace. */
+		[data-look="blueprint"] {
+			background-color: #0d2a4a;
+			background-image: linear-gradient(rgb(159 211 255 / 0.07) 1px, transparent 1px), linear-gradient(90deg, rgb(159 211 255 / 0.07) 1px, transparent 1px);
+			background-size: 16px 16px;
+			color: #e6f1ff;
+			font-family: var(--mono);
+			--chart-font: var(--mono);
+			--chart-color: #9fd3ff;
+			--chart-active: #ffffff;
+			--chart-grid: rgb(159 211 255 / 0.25);
+			--chart-axis: rgb(159 211 255 / 0.7);
+			--chart-muted: #9fb8d6;
+			--chart-surface: #0d2a4a;
+			--chart-fill: 0.2;
+			--chart-stroke: #9fd3ff;
+			--chart-stroke-width: 1.5;
+			--chart-outline: 1;
+			--chart-radius: 0px;
+			--chart-grid-dash: 4 4;
+			--chart-line-width: 1.5;
+			--chart-area: 0.1;
+			--chart-dot: 5px;
+			--chart-1: #5ab0f0;
+			--chart-2: #ffc94d;
+			--chart-3: #ff7aa2;
+			--chart-4: #8fdc7a;
+			--chart-5: #b49cff;
+			--chart-heat-low: #0d2a4a;
+			--chart-heat-high: #9fd3ff;
+			--chart-up: #8fdc7a;
+			--chart-down: #ff7aa2;
+		}
+
+		/* A newspaper's: ink on cream, a serif, a dotted grid, no area, flat colours. */
+		[data-look="paper"] {
+			background-color: #f4efe6;
+			color: #1d1b18;
+			font-family: Georgia, "Iowan Old Style", "Times New Roman", serif;
+			--chart-font: Georgia, "Iowan Old Style", "Times New Roman", serif;
+			--chart-color: #c8452c;
+			--chart-active: #7f2716;
+			--chart-grid: rgb(29 27 24 / 0.14);
+			--chart-axis: #1d1b18;
+			--chart-muted: #6b645a;
+			--chart-surface: #f4efe6;
+			--chart-radius: 0px;
+			--chart-grid-dash: 1 3;
+			--chart-line-width: 2;
+			--chart-area: 0;
+			--chart-dot: 5px;
+			--chart-1: #c8452c;
+			--chart-2: #1c63b8;
+			--chart-3: #c98a0b;
+			--chart-4: #8a4cb0;
+			--chart-5: #2f8a43;
+			--chart-heat-low: #f4efe6;
+			--chart-heat-high: #1c63b8;
+			--chart-up: #2f8a43;
+			--chart-down: #c8452c;
+		}
+	</style>
+}
+
+## How often Auto gives the chart other data, in milliseconds.
+every : U64
+every = 3300
+
+off : Shuffle.Auto
+off = Off
+
+on : Shuffle.Auto -> Bool
+on = |auto|
+	match auto {
+		On(_) => Bool.True
+		Off => Bool.False
+	}
+
+## A button's `aria-pressed`.
+pressed : Bool -> Str
+pressed = |yes| if (yes) "true" else "false"

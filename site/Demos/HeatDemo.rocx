@@ -1,0 +1,59 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+import charts.Format
+import charts.Heatmap
+import Random
+import Shuffle
+
+## A week of commits, a row for each day and a column for each hour: the charts page's
+## `<Heatmap>`. Another week recolours each cell, a CSS transition the browser plays.
+HeatDemo := [].{
+	Week : { seed : U64, commits : List(List(Dec)) }
+
+	view! : {} => Html
+	view! = |{}| {
+		(week!, set_week!) = create_signal!(HeatDemo.week(9))
+		(look!, set_look!) = create_signal!(Shuffle.first)
+		<Shuffle roll!={|| set_week!(HeatDemo.week(week!().seed))} look!={look!} set_look!={set_look!}>
+			<Heatmap data!={week!().commits} rows={days} columns={hours} label="Commits in a week, by day and hour" format={|count| Format.num(count, 0)} />
+		</Shuffle>
+	}
+
+	## A week's commits: busy in working hours on weekdays, in the evening at the weekend, each
+	## hour somewhere from nothing to twice its usual.
+	week : U64 -> HeatDemo.Week
+	week = |seed| {
+		var $seed = seed
+		var $commits = []
+		for day in List.repeat(0, 7).map_with_index(|_, i| i) {
+			var $row = []
+			for hour in List.repeat(0, 24).map_with_index(|_, i| i) {
+				roll = Random.below($seed, 201)
+				$seed = roll.seed
+				$row = $row.append(Dec.round(usual(day, hour) * roll.value.to_dec() / 100.0))
+			}
+			$commits = $commits.append($row)
+		}
+		{ seed: $seed, commits: $commits }
+	}
+}
+
+## How many commits an hour usually has: weekdays (0 to 4) from nine to six, the weekend in the
+## evening, a few at night.
+usual : U64, U64 -> Dec
+usual = |day, hour|
+	if day < 5 and hour >= 9 and hour < 18 {
+		if (hour == 12 or hour == 13) 5.0 else 9.0
+	} else if day >= 5 and hour >= 18 and hour < 23 {
+		6.0
+	} else if hour >= 7 and hour < 23 {
+		2.0
+	} else {
+		0.5
+	}
+
+days : List(Str)
+days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+hours : List(Str)
+hours = List.repeat(0, 24).map_with_index(|_, hour| "${hour.to_str()}:00")

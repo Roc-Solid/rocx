@@ -19,6 +19,7 @@ meta = {
 		{ id: "background", label: "Background loops, isolated calls" },
 		{ id: "tcp", label: "Tcp and Random" },
 		{ id: "running", label: "Running it" },
+		{ id: "logging", label: "The log" },
 		{ id: "deploying", label: "Deploying" },
 		{ id: "limits", label: "Not yet" },
 	],
@@ -45,12 +46,13 @@ view! = |_|
 			<ul>
 				<li>
 					<strong>Rust:</strong> HTTP (tokio, hyper), a pool of Postgres connections and one that listens,
-					TCP and TLS sockets, live topics and rooms, background loops, isolated calls, named locks and a
-					store in memory, secure random numbers, rendering islands.
+					TCP and TLS sockets, live topics and rooms, background loops, isolated calls, actors' mailboxes
+					and timers, a store in memory, secure random numbers, rendering islands.
 				</li>
 				<li>
 					<strong>Roc</strong> (<code>server/platform/*.roc</code>): migrations, the jobs queue and its
-					workers, cron (its parser too), email (an SMTP client, MIME), actors, <code>Db</code>'s decoding.
+					workers, cron (its parser too), email (an SMTP client, MIME), actors' state and messages,
+					<code>Db</code>'s decoding.
 				</li>
 			</ul>
 
@@ -64,9 +66,9 @@ view! = |_|
 			<p>
 				A value Roc makes belongs to its call's thread until the call returns; after that the host owns it
 				and moves it (a stream, to the thread that sends it), never sharing it. Calls nest: an isolated call
-				(a job, an actor's message) runs inside the one that made it, with its own context. Each call has
-				one: its transaction, the rooms it joined, the topics it listens to, its locks and its sockets,
-				all given back when it ends.
+				(a job) runs inside the one that made it, with its own context; an actor's turn is a call of its
+				own. Each call has a context: its transaction, the rooms it joined, the topics it listens to and its
+				sockets, all given back when it ends.
 			</p>
 
 			<Heading id="streams">Streams</Heading>
@@ -90,7 +92,7 @@ view! = |_|
 				<li><strong>A request</strong> is answered 500, with the message under <code>--dev</code>.</li>
 				<li><strong>A stream</strong> ends.</li>
 				<li><strong>A job</strong> runs again later, as one that failed.</li>
-				<li><strong>An actor's message</strong> is the asker's error, and the actor's state stays as it was.</li>
+				<li><strong>An actor's turn</strong> is logged and told to the asker, and the actor's state stays as it was.</li>
 				<li><strong>A transaction</strong> the call had open is rolled back.</li>
 			</ul>
 			<p>
@@ -145,10 +147,10 @@ view! = |_|
 			<p>
 				An isolated call runs Roc inside another call, guarded on its own: a crash in it ends it alone, and
 				the caller is told, with why. A worker runs each job that way, so a job that crashes is a job that
-				failed, and the worker goes on. An actor's message is run that way too, as a function the asker
-				gives the host (<code>Host.isolated_call!</code>) with the key, state and message as its input, so
-				a crash frees all of them. A named lock is held until its call ends, a crash too; a lock asked
-				for again by the call that holds it is refused at once, not waited for.
+				failed, and the worker goes on. An actor's turn is a guarded call of its own, which its mailbox in
+				the host runs on a thread of the pool with the kind, key, state and message as strings, so a crash
+				frees all of them. No lock is taken anywhere: one task routes every message to its actor's mailbox,
+				and each actor handles its own, one at a time.
 			</p>
 
 			<Heading id="tcp">Tcp and Random</Heading>
@@ -165,7 +167,7 @@ view! = |_|
 			<Heading id="running">Running it</Heading>
 			<Code
 				title="The app's executable"
-				source={"<app> --port 8080 --host 127.0.0.1        where to listen (PORT)\n      --static DIR, --file /PATH=FILE     files served as they are\n      --context-file FILE                 what respond! is given besides each request\n      --database-url URL                  Postgres (DATABASE_URL): Db, migrations, jobs, cron, actors\n      --job-workers 4 --job-retry-ms 1000 jobs run at once; the first retry's wait, doubled after\n      --smtp-url URL --mail-from ADDRESS  (SMTP_URL, MAIL_FROM); none: an outbox\n      --storage-url URL                   S3 (STORAGE_URL): Storage\n      --dev                               reload pages on restart, show crashes, GET /__rocx/mail\n      --debug                             GET /__rocx/allocations and /__rocx/mail"}
+				source={"<app> --port 8080 --host 127.0.0.1        where to listen (PORT)\n      --static DIR, --file /PATH=FILE     files served as they are\n      --context-file FILE                 what respond! is given besides each request\n      --database-url URL                  Postgres (DATABASE_URL): Db, migrations, jobs, cron, actors\n      --job-workers 4 --job-retry-ms 1000 jobs run at once; the first retry's wait, doubled after\n      --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in Postgres)\n      --smtp-url URL --mail-from ADDRESS  (SMTP_URL, MAIL_FROM); none: an outbox\n      --storage-url URL                   S3 (STORAGE_URL): Storage\n      --dev                               reload pages on restart, show crashes, GET /__rocx/mail\n      --debug                             GET /__rocx/allocations and /__rocx/mail"}
 				numbers={Bool.False}
 				plain={Bool.True}
 			/>
@@ -175,6 +177,34 @@ view! = |_|
 				nothing is left running. Stopping (SIGTERM, or ^C), the server stops
 				listening and taking jobs, and waits up to ten seconds for the requests, streams and jobs still
 				running. Without a database, what needs one says so when it is used; the rest works.
+			</p>
+
+			<Heading id="logging">The log</Heading>
+			<p>
+				Every line the server writes is an event: a level, a message and fields. The host's own lines
+				(starting, stopping, a crash with its method, target and error, forwarding) and the app's go through
+				one formatter, in the host. An app logs with <code>Log.info!</code>, and <code>debug!</code>,
+				<code>warn!</code> and <code>error!</code>, its fields a record written as JSON;
+				<code>Log.line!</code> is a message alone. The format is the app's to choose, in its program:
+			</p>
+			<Code
+				title="An event, and the log's format"
+				source={"Log.info!(\"gate failed\", { path: request.path, error: why })\n\nprogram = {\n\t..App.program({ context, middleware, crons }),\n\tlogs: { format: Auto }, # or Pretty, or Json\n}"}
+			/>
+			<Code
+				title="The line, pretty and as JSON"
+				source={"14:03:12 INFO  gate failed error=\"no session\" path=/admin\n{\"time\":\"2026-11-21T13:03:12.345Z\",\"level\":\"info\",\"msg\":\"gate failed\",\"error\":\"no session\",\"path\":\"/admin\"}"}
+				numbers={Bool.False}
+				plain={Bool.True}
+			/>
+			<p>
+				<code>Auto</code>, which <code>App.program</code> says, is <code>ROCX_LOG</code>
+				(<code>pretty</code> or <code>json</code>) if it is set, or else pretty when stderr is a terminal,
+				the level in colour, and JSON when it isn't: a server whose log is collected. A field can't take
+				the place of <code>time</code>, <code>level</code> or <code>msg</code> (it is written
+				<code>fields.msg</code>). Logging doesn't wait for stderr: the event goes on a queue, and a thread of
+				its own writes the lines in order, flushing when the queue is empty, and before the process exits. A
+				full queue (64k events) makes the caller wait rather than lose a line.
 			</p>
 
 			<Heading id="deploying">Deploying</Heading>
@@ -190,7 +220,7 @@ view! = |_|
 			<Heading id="limits">Not yet</Heading>
 			<ul>
 				<li>
-					<strong>One server.</strong> Live rooms, topics and actors' turns are in its memory (jobs and
+					<strong>One server.</strong> Live rooms, topics and actors' mailboxes are in its memory (jobs and
 					actors' state are in Postgres already).
 				</li>
 				<li><strong>HTTP/1.1, no TLS:</strong> put it behind a proxy.</li>

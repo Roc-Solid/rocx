@@ -1,0 +1,40 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+import charts.Format
+import charts.LineChart
+import Random
+import Shuffle
+
+## A day of visits to a site, hour by hour: the charts page's `<LineChart>`. Another day moves each
+## hour's value, and the line glides to them; the axis glides to new round numbers when it has to.
+LineDemo := [].{
+	Day : { seed : U64, visits : List(Dec) }
+
+	view! : {} => Html
+	view! = |{}| {
+		(day!, set_day!) = create_signal!(LineDemo.day(7))
+		(look!, set_look!) = create_signal!(Shuffle.first)
+		<Shuffle roll!={|| set_day!(LineDemo.day(day!().seed))} look!={look!} set_look!={set_look!}>
+			{=<LineChart data!={day!().visits} label="Visits to a site, hour by hour" format={Format.short} smooth={look!() != Blueprint} />}
+		</Shuffle>
+	}
+
+	## A day's visits: a quiet or a busy day (60% to 140% of a usual one), and each hour of it 80%
+	## to 120% of that.
+	day : U64 -> LineDemo.Day
+	day = |seed| {
+		busy = Random.below(seed, 81)
+		var $seed = busy.seed
+		var $visits = []
+		for usual in hourly {
+			roll = Random.below($seed, 41)
+			$seed = roll.seed
+			$visits = $visits.append(Dec.round(usual * (60.0 + busy.value.to_dec()) * (80.0 + roll.value.to_dec()) / 10000.0))
+		}
+		{ seed: $seed, visits: $visits }
+	}
+}
+
+## A usual day's visits, from midnight: quiet at night, busy in the morning and the afternoon.
+hourly : List(Dec)
+hourly = [120.0, 80.0, 50.0, 40.0, 40.0, 70.0, 180.0, 420.0, 700.0, 880.0, 950.0, 920.0, 860.0, 900.0, 980.0, 940.0, 840.0, 760.0, 700.0, 640.0, 520.0, 400.0, 280.0, 180.0]

@@ -1,5 +1,11 @@
 import pf.Html
-import ../../../Demos/Rainfall
+import ../../../Demos/BarDemo
+import ../../../Demos/LineDemo
+import ../../../Demos/DonutDemo
+import ../../../Demos/ScatterDemo
+import ../../../Demos/StackDemo
+import ../../../Demos/SparkDemo
+import ../../../Demos/HeatDemo
 import ../../../Ui/Code
 import ../../../Ui/Heading
 import ../../../Generated/Sources
@@ -8,16 +14,22 @@ import ../../../Ui/PageHero
 import ../../../Ui/TableWrap
 import ../../../Ui/Demo
 
-## The charts package: a live bar chart, then its components' props, their styling, and the
-## modules the arithmetic is in.
+## The charts package: each component, live first (with buttons that give it other data, do so
+## every few seconds, and restyle it three ways), then its props; how they move, how they are
+## styled, and the modules the arithmetic is in.
 meta = {
 	title: "Charts",
-	description: "Bar and line charts for Roc Solid apps, drawn as SVG: rendered on the server, hydrated in the browser, gliding to new data a frame at a time.",
+	description: "Bar, stacked bar, line, sparkline, donut, scatter and heatmap charts for Roc Solid apps, drawn as SVG: rendered on the server, hydrated in the browser, gliding to new data a frame at a time, and styled by custom properties.",
 	toc: [
-		{ id: "live", label: "A live chart" },
 		{ id: "bar", label: "<BarChart>" },
+		{ id: "stacked", label: "<StackedBarChart>" },
 		{ id: "line", label: "<LineChart>" },
-		{ id: "styling", label: "Styling" },
+		{ id: "sparkline", label: "<Sparkline>" },
+		{ id: "donut", label: "<DonutChart>" },
+		{ id: "scatter", label: "<ScatterChart>" },
+		{ id: "heatmap", label: "<Heatmap>" },
+		{ id: "moving", label: "How they move" },
+		{ id: "styling", label: "Styling, three ways" },
 		{ id: "modules", label: "The arithmetic" },
 		{ id: "limits", label: "Limits, for now" },
 	],
@@ -27,26 +39,23 @@ view! = |_|
 	<>
 		<NoHydration>
 			<PageHero
-				eyebrow="The ecosystem · <code>packages/charts</code>"
+				kicker={[<>{"The ecosystem · "}</>, <code>packages/charts</code>]}
 				title="Charts that glide to their data, and then stop"
 			>
-				Bar and line charts, drawn as SVG. The server renders them into the page, and the browser
-				hydrates them like any component. When the data changes, the bars and the axis glide to their
-				new places, a frame at a time, in Roc; once they get there, nothing runs.
+				Bar, stacked bar, line, sparkline, donut, scatter and heatmap charts, drawn as SVG. The server
+				renders them into the page, and the browser hydrates them like any component. When the data
+				changes, they glide to it, a frame at a time, in Roc; once they get there, nothing runs. Each one
+				below is live: Randomize gives it other data, and Auto, on from the start, does it every 3.3
+				seconds. Neon, Blueprint and Paper restyle it: the same component, given other custom properties.
 			</PageHero>
 
-			<Heading id="live">A live chart</Heading>
+			<Heading id="bar">{"<BarChart>"}</Heading>
 		</NoHydration>
-		<Demo game meter="rainfall" idle="Roc is idle: the bars are where the data says.">
-			<div data-demo="rainfall"><Rainfall /></div>
+		<Demo game meter="chart-bar" idle="Roc is idle: the bars are where the data says.">
+			<div data-demo="chart-bar"><BarDemo /></div>
 		</Demo>
 		<NoHydration>
 			<Code title={Sources.charts_use.file} source={Sources.charts_use.rocx} />
-			<p>
-				The <a href={Paths.showcase}>showcase</a> has a line chart too, fed 40 values a second.
-			</p>
-
-			<Heading id="bar">{"<BarChart>"}</Heading>
 			<TableWrap>
 				<table>
 					<thead><tr><th>Prop</th><th>Is</th></tr></thead>
@@ -62,6 +71,7 @@ view! = |_|
 						</tr>
 						<tr><td><code>label : Str</code></td><td>what the chart shows, for screen readers</td></tr>
 						<tr><td><code>{"format : Dec -> Str"}</code></td><td>a value's text: the ticks', and a bar's when it is pointed at or focused</td></tr>
+						<tr><td><code>{"padding : Dec ?? 0.3"}</code></td><td>the share of each bar's slot left empty: Blueprint's thin bars, Paper's wide ones</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
@@ -70,12 +80,55 @@ view! = |_|
 				to round numbers. Each bar can be reached with Tab, and has its label and value for a screen reader.
 			</p>
 
-			<Heading id="line">{"<LineChart>"}</Heading>
+			<Heading id="stacked">{"<StackedBarChart>"}</Heading>
+		</NoHydration>
+		<Demo game meter="chart-stacked" idle="Roc is idle: the columns are where the data says.">
+			<div data-demo="chart-stacked"><StackDemo /></div>
+		</Demo>
+		<NoHydration>
+			<Code title={Sources.charts_use_stacked.file} source={Sources.charts_use_stacked.rocx} />
 			<TableWrap>
 				<table>
 					<thead><tr><th>Prop</th><th>Is</th></tr></thead>
 					<tbody>
-						<tr><td><code>{"data! : () => List(Dec)"}</code></td><td>the values, left to right, evenly spaced</td></tr>
+						<tr>
+							<td><code>{"data! : () => List({ label : Str, values : List(Dec) })"}</code></td>
+							<td>
+								a column for each, its values stacked from the axis up, one for each series, kept by its label: each
+								part glides to its new size; a new column grows from the axis as the others make room; one whose
+								label is gone shrinks into it as it fades. A value below zero counts as zero
+							</td>
+						</tr>
+						<tr><td><code>{"series : List(Str)"}</code></td><td>the series' names, the bottom one first, each in its colour, in the legend over the chart</td></tr>
+						<tr><td><code>label : Str</code></td><td>what the chart shows, for screen readers</td></tr>
+						<tr><td><code>{"format : Dec -> Str"}</code></td><td>a value's text: the ticks', and a column's total when it is pointed at or focused</td></tr>
+						<tr><td><code>{"padding : Dec ?? 0.3"}</code></td><td>the share of each column's slot left empty</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				The axis goes from zero to the tallest column, widened to round numbers. Each column can be reached
+				with Tab, and has its label and each series' value for a screen reader.
+			</p>
+
+			<Heading id="line">{"<LineChart>"}</Heading>
+		</NoHydration>
+		<Demo game meter="chart-line" idle="Roc is idle: the line is where the data says.">
+			<div data-demo="chart-line"><LineDemo /></div>
+		</Demo>
+		<NoHydration>
+			<Code title={Sources.charts_use_line.file} source={Sources.charts_use_line.rocx} />
+			<TableWrap>
+				<table>
+					<thead><tr><th>Prop</th><th>Is</th></tr></thead>
+					<tbody>
+						<tr>
+							<td><code>{"data! : () => List(Dec)"}</code></td>
+							<td>
+								the values, left to right, evenly spaced: new values glide the line to them (as many as before;
+								more or fewer are drawn at once)
+							</td>
+						</tr>
 						<tr><td><code>label : Str</code></td><td>what the chart shows, for screen readers</td></tr>
 						<tr><td><code>{"format : Dec -> Str"}</code></td><td>a value's text: the ticks', and the one under the pointer</td></tr>
 						<tr><td><code>smooth : Bool</code></td><td>monotone curves through the values instead of straight segments</td></tr>
@@ -88,14 +141,170 @@ view! = |_|
 				only its path and its axis.
 			</p>
 
-			<Heading id="styling">Styling</Heading>
+			<Heading id="sparkline">{"<Sparkline>"}</Heading>
+		</NoHydration>
+		<Demo game meter="chart-sparkline" idle="Roc is idle: the lines are where the data says.">
+			<div data-demo="chart-sparkline"><SparkDemo /></div>
+		</Demo>
+		<NoHydration>
+			<Code title={Sources.charts_use_sparkline.file} source={Sources.charts_use_sparkline.rocx} />
+			<TableWrap>
+				<table>
+					<thead><tr><th>Prop</th><th>Is</th></tr></thead>
+					<tbody>
+						<tr><td><code>{"data! : () => List(Dec)"}</code></td><td>the values, left to right: new values glide the line to them</td></tr>
+						<tr><td><code>{"label! : () => Str"}</code></td><td>what it shows, for screen readers: the trend, since there is no axis to read (an accessor, as it changes with the data)</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
 			<p>
-				Each chart is <code>width: 100%</code>, in a 640 by 320 viewBox, and takes its colours from custom
-				properties, falling back to the text's colour where they aren't set: <code>--chart-color</code> (bars,
-				the line), <code>--chart-active</code> (a pointed-at bar, the point), <code>--chart-grid</code>,
-				<code>--chart-axis</code>, <code>--chart-muted</code> (tick and bar labels), <code>--chart-surface</code>
-				(behind the point), <code>--chart-font</code>.
+				A small line with no axis, the area under it shaded and a dot on the last value, for beside a
+				number: it spans its values' range, so it shows their shape, not their size. The tiles around these
+				are the demo's, not the package's.
 			</p>
+
+			<Heading id="donut">{"<DonutChart>"}</Heading>
+		</NoHydration>
+		<Demo game meter="chart-donut" idle="Roc is idle: the slices are where the data says.">
+			<div data-demo="chart-donut"><DonutDemo /></div>
+		</Demo>
+		<NoHydration>
+			<Code title={Sources.charts_use_donut.file} source={Sources.charts_use_donut.rocx} />
+			<TableWrap>
+				<table>
+					<thead><tr><th>Prop</th><th>Is</th></tr></thead>
+					<tbody>
+						<tr>
+							<td><code>{"data! : () => List({ label : Str, value : Dec })"}</code></td>
+							<td>
+								a slice for each, clockwise from twelve o'clock, as big a share of the ring as its value is of
+								them all, kept by its label: a new value glides its slice to its new share; a new slice grows
+								from nothing as the others make room; one whose label is gone shrinks to nothing where it was.
+								A value below zero counts as zero
+							</td>
+						</tr>
+						<tr><td><code>label : Str</code></td><td>what the chart shows, for screen readers</td></tr>
+						<tr><td><code>{"format : Dec -> Str"}</code></td><td>a value's text: the total's, and each slice's in the legend</td></tr>
+						<tr><td><code>{"total : Str ?? \"Total\""}</code></td><td>the word under the total</td></tr>
+						<tr><td><code>{"thickness : Dec ?? 52"}</code></td><td>the ring's, of its 150 radius: Blueprint's 24 is a thin ring, Paper's 150 a pie (and a pie has no middle)</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				The middle says the total, or, while a slice is pointed at or focused (each can be reached with
+				Tab), or its line in the legend is pointed at, that slice's share. A slice keeps its colour while
+				others come and go, and a new one takes a colour no slice has.
+			</p>
+
+			<Heading id="scatter">{"<ScatterChart>"}</Heading>
+		</NoHydration>
+		<Demo game meter="chart-scatter" idle="Roc is idle: the dots are where the data says.">
+			<div data-demo="chart-scatter"><ScatterDemo /></div>
+		</Demo>
+		<NoHydration>
+			<Code title={Sources.charts_use_scatter.file} source={Sources.charts_use_scatter.rocx} />
+			<TableWrap>
+				<table>
+					<thead><tr><th>Prop</th><th>Is</th></tr></thead>
+					<tbody>
+						<tr>
+							<td><code>{"data! : () => List({ label : Str, x : Dec, y : Dec })"}</code></td>
+							<td>
+								a dot for each, across by its <code>x</code> and up by its <code>y</code>, kept by its label: new
+								values glide it to its place; a new dot swells from nothing where it goes, and one whose label is
+								gone shrinks away (a <a href={"${Paths.components}#transitions"}><code>transition</code></a> both
+								ways)
+							</td>
+						</tr>
+						<tr><td><code>label : Str</code></td><td>what the chart shows, for screen readers</td></tr>
+						<tr><td><code>{"format_x : Dec -> Str"}</code></td><td>a value across: the ticks along the bottom, and a dot's when it is pointed at or focused</td></tr>
+						<tr><td><code>{"format_y : Dec -> Str"}</code></td><td>a value up: the ticks up the side, and a dot's</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				Each axis goes from its least value to its greatest, widened to round numbers. Each dot can be
+				reached with Tab, and has its label and values for a screen reader.
+			</p>
+
+			<Heading id="heatmap">{"<Heatmap>"}</Heading>
+		</NoHydration>
+		<Demo game meter="chart-heatmap" idle="Roc is idle: the browser fades the cells.">
+			<div data-demo="chart-heatmap"><HeatDemo /></div>
+		</Demo>
+		<NoHydration>
+			<Code title={Sources.charts_use_heatmap.file} source={Sources.charts_use_heatmap.rocx} />
+			<TableWrap>
+				<table>
+					<thead><tr><th>Prop</th><th>Is</th></tr></thead>
+					<tbody>
+						<tr><td><code>{"data! : () => List(List(Dec))"}</code></td><td>a list of values for each row, one for each column: each cell's colour, from <code>--chart-heat-low</code> at zero to <code>--chart-heat-high</code> at the greatest value</td></tr>
+						<tr><td><code>{"rows : List(Str)"}</code></td><td>the rows' labels, down the side</td></tr>
+						<tr><td><code>{"columns : List(Str)"}</code></td><td>the columns' labels: each in the readout, and about eight along the bottom (every second or third, when there are more)</td></tr>
+						<tr><td><code>label : Str</code></td><td>what the chart shows, for screen readers</td></tr>
+						<tr><td><code>{"format : Dec -> Str"}</code></td><td>a value's text: the scale's ends, and the cell pointed at</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				Under the grid, the scale, and the cell the pointer is on: its row, its column and its value; its
+				outline is drawn over the grid, so no neighbour covers a side of it. A new
+				value changes a cell's strength (a custom property), and the browser fades it to its new colour, a
+				CSS transition: the line under the demo stays at zero frames. The cells can't be reached with Tab;
+				the chart is one image to a screen reader, named by its label.
+			</p>
+
+			<Heading id="moving">How they move</Heading>
+			<p>
+				A chart keeps what it has drawn in a signal. While that isn't what the data says, a
+				<code>{"<Show>"}</code> holds an <code>on:frame.ms</code> handler, which moves it a share of the way
+				each frame (<code>Ease.toward</code>); when it gets there, the <code>{"<Show>"}</code> closes, and the
+				frames stop. The line under each demo counts them. A bar, a slice or a dot is its label's, so new data
+				moves it rather than making another; what comes or goes as an element plays a
+				<a href={"${Paths.components}#transitions"}>transition</a>, which the browser plays. The heatmap
+				leaves even the glide to the browser: its cells' colours are a CSS transition.
+			</p>
+			<p>
+				The buttons are the demos', not the package's: Randomize sets the signal the data is in, and Auto
+				starts <a href={"${Paths.showcase}#timers"}><code>set_interval!</code></a>, keeping the
+				<code>clear!</code> it answers in a signal, so that pressing it again stops it.
+			</p>
+			<details>
+				<summary>The buttons and the looks, and the demos' data: <code>{Sources.demo_shuffle.file}</code> and the seven demos</summary>
+				<Code title={Sources.demo_shuffle.file} source={Sources.demo_shuffle.rocx} />
+				<Code title={Sources.demo_bars.file} source={Sources.demo_bars.rocx} />
+				<Code title={Sources.demo_stacked.file} source={Sources.demo_stacked.rocx} />
+				<Code title={Sources.demo_line.file} source={Sources.demo_line.rocx} />
+				<Code title={Sources.demo_sparkline.file} source={Sources.demo_sparkline.rocx} />
+				<Code title={Sources.demo_donut.file} source={Sources.demo_donut.rocx} />
+				<Code title={Sources.demo_scatter.file} source={Sources.demo_scatter.rocx} />
+				<Code title={Sources.demo_heatmap.file} source={Sources.demo_heatmap.rocx} />
+			</details>
+
+			<Heading id="styling">Styling, three ways</Heading>
+			<p>
+				Each chart is <code>width: 100%</code> (a donut and its legend share the width, and wrap when it is
+				narrow) and draws itself from custom properties, falling back to the text's colour, or to a plain
+				default, where one isn't set. So a look is a few lines of CSS on anything around the charts. Neon,
+				Blueprint and Paper above are three: each is one rule on the demo's stage, and a prop or two the demo
+				gives its chart by the look (bars' <code>padding</code>, the line's <code>smooth</code>, the donut's
+				<code>thickness</code>).
+			</p>
+			<Code title={Sources.charts_look.file} source={Sources.charts_look.rocx} />
+			<TableWrap>
+				<table>
+					<thead><tr><th>Property</th><th>Is</th></tr></thead>
+					<tbody>
+						<tr><td><code>--chart-color</code>, <code>--chart-active</code></td><td>bars, the lines, dots; a pointed-at bar or dot, the point</td></tr>
+						<tr><td><code>--chart-1</code> to <code>--chart-5</code></td><td>the slices', the series': a colour that stays with its slice or series</td></tr>
+						<tr><td><code>--chart-heat-low</code>, <code>--chart-heat-high</code></td><td>a heatmap's ends: zero, and the greatest value</td></tr>
+						<tr><td><code>--chart-fill</code>, <code>--chart-stroke</code>, <code>--chart-stroke-width</code>, <code>--chart-outline</code></td><td>marks' fill opacity and outline; with <code>--chart-outline: 1</code>, a slice or a part is outlined in its own colour instead of the surface's</td></tr>
+						<tr><td><code>--chart-radius</code>, <code>--chart-dot</code>, <code>--chart-line-width</code>, <code>--chart-area</code></td><td>bars' corners, dots' radius, lines' width, the shade under a line (0 for none)</td></tr>
+						<tr><td><code>--chart-grid</code>, <code>--chart-grid-dash</code>, <code>--chart-axis</code>, <code>--chart-muted</code></td><td>the grid and its dashes, the axis, ticks' and labels' text</td></tr>
+						<tr><td><code>--chart-surface</code>, <code>--chart-font</code>, <code>--chart-glow</code></td><td>behind the marks (the gaps between slices and parts), the font, a <code>filter</code> on the marks (Neon's <code>drop-shadow</code>)</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
 
 			<Heading id="modules">The arithmetic</Heading>
 			<p>
@@ -109,9 +318,10 @@ view! = |_|
 						<tr><td><code>Scale</code></td><td><code>Scale.linear(domain, range)</code>: <code>scale.at(value)</code> is a place, <code>scale.invert(place)</code> a value; <code>.nice(count)</code> widens the domain to round numbers, <code>.ticks(count)</code> lists them</td></tr>
 						<tr><td><code>Band</code></td><td><code>Band.band(count, range, padding)</code>: a slot for each bar; <code>.at(slot)</code>, <code>.width()</code>, <code>.center(slot)</code>; a count and a slot may be fractions, as they are while a chart glides</td></tr>
 						<tr><td><code>Ticks</code></td><td>about <code>count</code> ticks at 1, 2 or 5 times a power of ten</td></tr>
-						<tr><td><code>Path</code></td><td>SVG path data: <code>line</code>, <code>smooth</code> (monotone curves), <code>area</code>, <code>smooth_area</code>, <code>arc</code></td></tr>
+						<tr><td><code>Path</code></td><td>SVG path data: <code>line</code>, <code>smooth</code> (monotone curves), <code>area</code>, <code>smooth_area</code>, <code>arc</code> (a donut's slice)</td></tr>
 						<tr><td><code>Format</code></td><td><code>num(x, places)</code> (<code>"2.5"</code>, not <code>"2.50"</code>), <code>short</code> (<code>"1.3k"</code>), <code>percent</code>, <code>coord</code></td></tr>
 						<tr><td><code>Ease</code></td><td><code>toward(from, to, ms, close)</code>: one frame's share of a glide, which ends</td></tr>
+						<tr><td><code>Keys</code></td><td>what keeps a mark its own: <code>unique</code> (a key per label, <code>Jan#1</code> for a second <code>Jan</code>), <code>merge</code> (the new keys, with the ones going where they were), <code>slots</code> (a colour that stays with its key)</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
@@ -121,6 +331,15 @@ view! = |_|
 				<li>
 					Values are <code>Dec</code>. Roc has no <code>F64</code> to <code>Dec</code> conversion yet;
 					<code>(x * 1000.0).round_to_i64_try()</code> then <code>.to_dec() / 1000.0</code> makes one.
+				</li>
+				<li>
+					A donut and a stacked bar chart have five colours: a sixth slice or series shares one. Fold the
+					smallest into "Other". When the data puts a donut's slices in another order, they take their new
+					places at once.
+				</li>
+				<li>
+					A heatmap's cells, and the sparkline's points, can't be reached with Tab: each is one image to a
+					screen reader, named by its label.
 				</li>
 				<li>
 					rocx writes HTML tags in lower case, so SVG's camel-cased elements (<code>{"<linearGradient>"}</code>,
@@ -134,6 +353,26 @@ view! = |_|
 			<details>
 				<summary>The line chart: <code>{Sources.chart_line.file}</code></summary>
 				<Code title={Sources.chart_line.file} source={Sources.chart_line.rocx} />
+			</details>
+			<details>
+				<summary>The donut chart: <code>{Sources.chart_donut.file}</code></summary>
+				<Code title={Sources.chart_donut.file} source={Sources.chart_donut.rocx} />
+			</details>
+			<details>
+				<summary>The scatter chart: <code>{Sources.chart_scatter.file}</code></summary>
+				<Code title={Sources.chart_scatter.file} source={Sources.chart_scatter.rocx} />
+			</details>
+			<details>
+				<summary>The stacked bar chart: <code>{Sources.chart_stacked.file}</code></summary>
+				<Code title={Sources.chart_stacked.file} source={Sources.chart_stacked.rocx} />
+			</details>
+			<details>
+				<summary>The sparkline: <code>{Sources.chart_sparkline.file}</code></summary>
+				<Code title={Sources.chart_sparkline.file} source={Sources.chart_sparkline.rocx} />
+			</details>
+			<details>
+				<summary>The heatmap: <code>{Sources.chart_heatmap.file}</code></summary>
+				<Code title={Sources.chart_heatmap.file} source={Sources.chart_heatmap.rocx} />
 			</details>
 		</NoHydration>
 	</>

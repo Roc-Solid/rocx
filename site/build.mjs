@@ -15,7 +15,9 @@
 //   1. .rocx → .roc (rocx build): the pages (site/routes), their components (site/Ui, site/Demos)
 //      and the program (site/Generated/App.roc), and the browser's copy of the site
 //      (site/build/client), in which a server function is only its name, with its main.roc
-//   2. site/Generated/Sources.roc: the sources, refusals and report the pages show
+//   2. site/Generated/Sources.roc: the sources, refusals and report the pages show; and, before
+//      step 1 copies the site, site/Generated/PlatformReference.roc: every module the server
+//      platform exposes, read from its source (src/reference.mjs), for the reference page
 //   3. the browser's wasm: the same pages, on the web platform (its Zig host), built from the
 //      browser's copy (site/build/client/main.roc) into site/build/client/static/rocx/app.wasm,
 //      beside the start.js and runtime.js rocx build put there: a page loads all three from /rocx/
@@ -25,15 +27,16 @@
 //      site/build/context.txt, which the server is started with
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, relative } from "node:path";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { brotliCompressSync, constants, gzipSync } from "node:zlib";
 import { build as rocxBuild } from "../bin/rocx.mjs";
 import { definitions, findRouteFiles, pathsModule, routesTable, routeTable } from "../src/routes.mjs";
 import { RocxError, rocString, transpile } from "../src/transpile.mjs";
+import { platformReference, referenceModule } from "../src/reference.mjs";
 import { Runtime } from "../web/runtime.js";
-import { buildApp, buildHost, start, syncShared } from "../server/build.mjs";
+import { buildApp, buildHost, start, syncShared, zig } from "../server/build.mjs";
 
 export const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const site = join(root, "site");
@@ -54,11 +57,13 @@ export const ROUTES = pages()
 
 
 export function roc() {
+	// The fork rocx builds with, which `just setup` builds and links (the Justfile says why), as the
+	// file it links to: a new pin is a new path. Else $ROC; never the `roc` on PATH, which may lack
+	// the fork's fixes.
+	const active = join(root, ".tools", "roc-active");
+	if (existsSync(active)) return realpathSync(active);
 	if (process.env.ROC) return process.env.ROC;
-	const dir = join(root, ".tools", "roc");
-	const nightly = existsSync(dir) && readdirSync(dir).find((name) => name.startsWith("roc_nightly-"));
-	if (!nightly) throw new Error("no Roc compiler: run `just setup`, or set ROC");
-	return join(dir, nightly, "roc");
+	throw new Error("no Roc compiler: run `just setup` (or set ROC)");
 }
 
 function run(command, args, { cwd = root } = {}) {
@@ -77,6 +82,88 @@ function writeIfChanged(path, content) {
 }
 
 const newer = (path, than) => existsSync(path) && than.every((other) => statSync(path).mtimeMs >= statSync(other).mtimeMs);
+
+// ---- One build at a time ----
+//
+// Builds share site/build: `just dev`'s watcher, `just site`, `just check` and the tests each write
+// it. Two at once mix their output, and `just site` once published a dev build's wasm that a
+// rebuild wrote while it was copying site/build into site/dist. So a build holds site/build's lock
+// (site/build/building.lock: its process and what it is) while it writes it, and another waits.
+
+const lockFile = join(out, "building.lock");
+let held = 0;
+
+const alive = (pid) => {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (error) {
+		return error.code === "EPERM";
+	}
+};
+
+const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+/** Takes site/build's lock, waiting while another process (alive) holds it; again in the same
+ * process, it only counts. */
+function acquire(what) {
+	if (held++ > 0) return;
+	mkdirSync(out, { recursive: true });
+	let told = false;
+	for (;;) {
+		try {
+			writeFileSync(lockFile, JSON.stringify({ pid: process.pid, what }), { flag: "wx" });
+			return;
+		} catch (error) {
+			if (error.code !== "EEXIST") throw error;
+		}
+		let holder = null;
+		try {
+			holder = JSON.parse(readFileSync(lockFile, "utf8"));
+		} catch {
+			// Being written, or gone already; or left half-written by a process that died.
+			if (existsSync(lockFile) && Date.now() - statSync(lockFile).mtimeMs > 2000) rmSync(lockFile, { force: true });
+		}
+		if (holder && !alive(holder.pid)) rmSync(lockFile, { force: true });
+		else if (holder && !told) {
+			console.error(`rocx site: waiting for the build in process ${holder.pid} (${holder.what}) to finish`);
+			told = true;
+		}
+		sleepSync(200);
+	}
+}
+
+function release() {
+	if (--held > 0) return;
+	if (ours()) rmSync(lockFile, { force: true });
+}
+
+const ours = () => {
+	try {
+		return JSON.parse(readFileSync(lockFile, "utf8")).pid === process.pid;
+	} catch {
+		return false;
+	}
+};
+
+process.on("exit", () => {
+	if (held > 0 && ours()) rmSync(lockFile, { force: true });
+});
+
+/** `act()`, holding site/build's lock; it resolves, or returns, as `act` does. */
+function exclusive(what, act) {
+	acquire(what);
+	let result;
+	try {
+		result = act();
+	} catch (error) {
+		release();
+		throw error;
+	}
+	if (result instanceof Promise) return result.finally(release);
+	release();
+	return result;
+}
 
 // ---- 2. What the pages show ----
 
@@ -311,20 +398,38 @@ function sourcesModule() {
 		whole("route_error", "site/routes/+error.rocx"),
 		whole("route_fixture_page", "test/e2e/routes/routes/blog/[slug]/+page.rocx"),
 		fixturePaths(),
-		pick("home_update", "site/Demos/Counter.rocx", ["view! = |{ start }| {", "(count!, set_count!) = create_signal!(start)", "<div class=\"counter\"", "<button type=\"button\" on:click={|| set_count!(count!() - 1)}", "<output>", "<button type=\"button\" on:click={|| set_count!(count!() + 1)}", "</div>", "}"]),
+		pick("home_update", "site/Demos/Counter.rocx", ["view! = |{ start_value }| {", "(count!, set_count!) = create_signal!(start_value)", "<div class=\"counter\"", "<button type=\"button\" on:click={|| set_count!(count!() - 1)}", "<output>", "<button type=\"button\" on:click={|| set_count!(count!() + 1)}", "</div>", "}"]),
 		excerpt("home_signals", "site/Demos/Echo.rocx", /^\techo! = |^\t\tsaid! =|<Answer said!/),
 		whole("demo_todos", "site/Demos/Todos.rocx"),
 		whole("demo_escape_lab", "site/Demos/EscapeLab.rocx"),
 		whole("demo_snake", "site/Demos/Snake.rocx"),
 		whole("demo_birds", "site/Demos/Birds.rocx"),
-		whole("demo_rainfall", "site/Demos/Rainfall.rocx"),
-		whole("demo_ticker", "site/Demos/Ticker.rocx"),
 		whole("demo_timers", "site/Demos/Timers.rocx"),
 		whole("demo_clock", "site/Demos/Clock.rocx"),
-		picks("charts_use", "site/Demos/Rainfall.rocx", ["import charts.Format", "import charts.BarChart"], ["<BarChart data!="]),
+		picks("charts_use", "site/Demos/BarDemo.rocx", ["import charts.BarChart", "import charts.Format"], ["{=<BarChart data!="]),
+		picks("charts_use_line", "site/Demos/LineDemo.rocx", ["import charts.Format", "import charts.LineChart"], ["{=<LineChart data!="]),
+		picks("charts_use_donut", "site/Demos/DonutDemo.rocx", ["import charts.DonutChart", "import charts.Format"], ["{=<DonutChart data!="]),
+		picks("charts_use_stacked", "site/Demos/StackDemo.rocx", ["import charts.Format", "import charts.StackedBarChart"], ["{=<StackedBarChart data!="]),
+		picks("charts_use_sparkline", "site/Demos/SparkDemo.rocx", ["import charts.Format", "import charts.Sparkline"], ["<Sparkline data!="]),
+		picks("charts_use_heatmap", "site/Demos/HeatDemo.rocx", ["import charts.Format", "import charts.Heatmap"], ["<Heatmap data!="]),
+		picks("charts_use_scatter", "site/Demos/ScatterDemo.rocx", ["import charts.Format", "import charts.ScatterChart"], ["<ScatterChart", "data!=", "label=", "format_x=", "format_y=", "/>"]),
+		whole("demo_shuffle", "site/Demos/Shuffle.rocx"),
+		pick("charts_look", "site/Demos/Shuffle.rocx", ["/* A newspaper's: ink on cream, a serif, a dotted grid, no area, flat colours. */", "[data-look=\"paper\"] {", "background-color: #f4efe6;", "color: #1d1b18;", "font-family: Georgia, \"Iowan Old Style\", \"Times New Roman\", serif;", "--chart-font: Georgia, \"Iowan Old Style\", \"Times New Roman\", serif;", "--chart-color: #c8452c;", "--chart-active: #7f2716;", "--chart-grid: rgb(29 27 24 / 0.14);", "--chart-axis: #1d1b18;", "--chart-muted: #6b645a;", "--chart-surface: #f4efe6;", "--chart-radius: 0px;", "--chart-grid-dash: 1 3;", "--chart-line-width: 2;", "--chart-area: 0;", "--chart-dot: 5px;", "--chart-1: #c8452c;", "--chart-2: #1c63b8;", "--chart-3: #c98a0b;", "--chart-4: #8a4cb0;", "--chart-5: #2f8a43;", "--chart-heat-low: #f4efe6;", "--chart-heat-high: #1c63b8;", "--chart-up: #2f8a43;", "--chart-down: #c8452c;", "}"]),
+		whole("demo_bars", "site/Demos/BarDemo.rocx"),
+		whole("demo_line", "site/Demos/LineDemo.rocx"),
+		whole("demo_donut", "site/Demos/DonutDemo.rocx"),
+		whole("demo_scatter", "site/Demos/ScatterDemo.rocx"),
+		whole("demo_stacked", "site/Demos/StackDemo.rocx"),
+		whole("demo_sparkline", "site/Demos/SparkDemo.rocx"),
+		whole("demo_heatmap", "site/Demos/HeatDemo.rocx"),
 		whole("ui_heading", "site/Ui/Heading.rocx"),
 		whole("chart_bar", "packages/charts/components/BarChart.rocx"),
 		whole("chart_line", "packages/charts/components/LineChart.rocx"),
+		whole("chart_donut", "packages/charts/components/DonutChart.rocx"),
+		whole("chart_scatter", "packages/charts/components/ScatterChart.rocx"),
+		whole("chart_stacked", "packages/charts/components/StackedBarChart.rocx"),
+		whole("chart_sparkline", "packages/charts/components/Sparkline.rocx"),
+		whole("chart_heatmap", "packages/charts/components/Heatmap.rocx"),
 		whole("demo_shelf", "site/Demos/Shelf.rocx"),
 		whole("demo_bag", "site/Demos/Bag.rocx"),
 		whole("shared", "site/Demos/Bag.rocx"),
@@ -333,7 +438,7 @@ function sourcesModule() {
 		lines("echo_generated", "site/Demos/Echo.roc", /^\techo! = /),
 		lines("echo_browser", "site/build/client/Demos/Echo.roc", /^\techo! = /),
 		whole("server_functions", "site/Generated/ServerFunctions.roc"),
-		pick("platform_program", "server/test/app/main.roc", ["program = {", "respond!,", "# The app's schema", "migrations: [", "jobs: [", "crons: [", "}"]),
+		pick("platform_program", "server/test/app/main.roc", ["program = {", "respond!,", "# The app's schema", "migrations: [", "jobs: [", "crons: [", "# The kinds of actor", "actors: [", "}"]),
 		pick("platform_site_program", "site/main.roc", ["program = App.program({", "context:", "middleware:", "crons:", "openapi:", "})"]),
 		pick("platform_notes", "server/test/app/main.roc", ["(\"GET\", \"/notes\") => {", "found : Try(", "found = Db.all!(", "match found {", "Ok(notes) =>", "Err(DbErr(why))", "Err(BadRow(why))", "}", "}"]),
 		pick("platform_insert", "server/test/app/main.roc", ["(\"POST\", \"/notes\") =>", "match Db.run!(", "Ok(count) =>", "Err(DbErr(why))", "}"]),
@@ -365,8 +470,10 @@ function sourcesModule() {
 		defined("platform_admins_only", "server/test/app/main.roc", ["admins_only"]),
 		pick("platform_online", "server/test/app/main.roc", ["(\"GET\", \"/online\") =>", "# Who is here", "Server.events(", "Events.stream(", "|{ send!, .. }| {", "Live.join!(\"online\")", "var $open", "while $open {", "send!(Live.count!", "$open = Live.next!", "}", "Ok({})", "},", "),", ")"]),
 		pick("platform_shouts", "server/test/app/main.roc", ["(\"GET\", \"/shouts\") =>", "Server.events(", "Events.stream(", "|{ send!, .. }| {", "Live.listen!(\"shouts\")", "send!(\"listening\")?", "var $open", "while $open {", "match Live.next!(15_000) {", "Heard({ message, .. }) =>", "Quiet =>", "Gone => {", "$open = Bool.False", "}", "}", "}", "Ok({})", "},", "),", ")", "(\"POST\", \"/shout\") => {", "Live.publish!(\"shouts\", Server.text_of(request))"]),
-		pick("platform_counter", "server/test/app/main.roc", ["## A count, one per key", "counter : Actor.Kind", "counter = Actor.define(", "\"counter\",", "|_key| { count: 0 },", "|state, message|", "match message {", "Add(by) =>", "Get =>", "Boom =>", "},", ")"]),
+		pick("platform_counter", "server/test/app/main.roc", ["## A count, one per key", "counter : Actor.Kind", "counter = Actor.define({", "name: \"counter\",", "initial: |_key| { count: 0 },", "receive!: |_me, state, message|", "match message {", "Add(by) =>", "Get =>", "Boom =>", "},", "})"]),
 		pick("platform_ask", "server/test/app/main.roc", ["(\"POST\", path) if path.starts_with(\"/actors/count/\") => {", "by : I64", "by = I64.from_str(", "answered_actor(Actor.ask!(counter,"]),
+		pick("platform_tell", "server/test/app/main.roc", ["(\"POST\", \"/actors/tell\") => {", "Actor.tell!(counter, run,", "text(200, \"told\")", "}"]),
+		pick("platform_ticker", "server/test/app/main.roc", ["## Counts its own ticks", "## (`Actor.after!`)", "ticker : Actor.Kind", "ticker = Actor.define({", "name: \"ticker\",", "initial:", "receive!: |me, state, message|", "match message {", "Start(ms) =>", "Tick(ms) =>", "if (state.on) {", "{ state: { ticks: state.ticks + 1", "} else {", "{ state, reply: state.ticks }", "}", "Stop => {", "Actor.cancel!(state.timer)", "{ state: { ticks: state.ticks, timer: 0", "}", "Ticks =>", "},", "})"]),
 		pick("bag_reader", "site/Demos/Bag.rocx", ["## Who is reading", "## the bag with it", "reader! :", "reader! ="]),
 		whole("test_session", "web/test/app/Profile.rocx"),
 		whole("signals_echo", "site/Demos/Echo.rocx"),
@@ -446,7 +553,7 @@ function host() {
 	const sources = [join(root, "web", "host", "host.zig"), join(root, "web", "host", "roc_platform_abi.zig")];
 	if (newer(object, sources)) return;
 	mkdirSync(dirname(object), { recursive: true });
-	run(join(root, ".tools", "zig", "zig"), ["build-obj", sources[0], "-target", "wasm32-freestanding", "-O", "ReleaseSmall", "-fcompiler-rt", `-femit-bin=${object}`]);
+	run(zig(), ["build-obj", sources[0], "-target", "wasm32-freestanding", "-O", "ReleaseSmall", "-fcompiler-rt", `-femit-bin=${object}`]);
 }
 
 /** How the browser's wasm is built: optimized for size, with lambda sets specialized. For this
@@ -531,6 +638,8 @@ async function measure({ compare }) {
 		roc: run(roc(), ["version"]).trim().replace(/^Roc compiler version /, ""),
 		node: process.version,
 		built: new Date().toISOString().slice(0, 10),
+		// Not a dev build's: `just deploy-pages` publishes only a build that says so.
+		dev: "no",
 	};
 	// The comparison takes two more builds, so only `node site/build.mjs` makes it; a build that
 	// doesn't keeps the last one it finds (marked as such on the page by its own date).
@@ -558,19 +667,24 @@ async function measure({ compare }) {
 /** Steps 1 and 2: the Roc the compiler checks, and the browser's copy of the site, in which a
  * server function is only its name. */
 export function prepare({ dev = false } = {}) {
-	// rocx build, in this process: three more Node processes would cost a rebuild a third of a second.
-	// A dev build has the stories too (the catalog at /__rocx/stories); `just site` and the tests don't.
-	const said = [];
-	const log = (line) => said.push(line);
-	if (!rocxBuild(["site"], { client: relative(root, client), cwd: root, log, dev })) throw new Error(`rocx build failed:\n${said.join("\n")}`);
-	// The server platform's copy of the modules both platforms have, for `roc check`.
-	syncShared();
-	// The sources the pages show, which quote what rocx build wrote, so they come after it; and the
-	// browser's copy of the site gets them too, since rocx build copied the site before they were
-	// written (on a fresh checkout, before there were any).
-	const sources = sourcesModule();
-	writeIfChanged(join(site, "Generated", "Sources.roc"), sources);
-	writeIfChanged(join(client, "Generated", "Sources.roc"), sources);
+	return exclusive(dev ? "a dev build" : "a build", () => {
+		// The platform's reference, read from its modules (src/reference.mjs): before rocx build, which
+		// copies it into the browser's copy of the site with the rest.
+		writeIfChanged(join(site, "Generated", "PlatformReference.roc"), referenceModule(platformReference()));
+		// rocx build, in this process: three more Node processes would cost a rebuild a third of a second.
+		// A dev build has the stories too (the catalog at /__rocx/stories); `just site` and the tests don't.
+		const said = [];
+		const log = (line) => said.push(line);
+		if (!rocxBuild(["site"], { client: relative(root, client), cwd: root, log, dev })) throw new Error(`rocx build failed:\n${said.join("\n")}`);
+		// The server platform's copy of the modules both platforms have, for `roc check`.
+		syncShared();
+		// The sources the pages show, which quote what rocx build wrote, so they come after it; and the
+		// browser's copy of the site gets them too, since rocx build copied the site before they were
+		// written (on a fresh checkout, before there were any).
+		const sources = sourcesModule();
+		writeIfChanged(join(site, "Generated", "Sources.roc"), sources);
+		writeIfChanged(join(client, "Generated", "Sources.roc"), sources);
+	});
 }
 
 /** The server's executable, and what it is started with. */
@@ -602,7 +716,8 @@ export function startServer(options = {}, extra = []) {
  * backend, is neither as small nor as fast as what was measured. */
 function lastFacts() {
 	const saved = join(out, "facts.txt");
-	return `${existsSync(saved) ? `${readFileSync(saved, "utf8")}\n` : ""}dev=yes`;
+	const measured = existsSync(saved) ? readFileSync(saved, "utf8").split("\n").filter((line) => line && !line.startsWith("dev=")) : [];
+	return [...measured, "dev=yes"].join("\n");
 }
 
 /**
@@ -612,7 +727,11 @@ function lastFacts() {
  * pages' components then run about half as fast, which editing doesn't notice; the pages show the numbers
  * the last full build measured.
  */
-export async function build({ log = console.error, compare = false, dev = false } = {}) {
+export function build({ log = console.error, compare = false, dev = false } = {}) {
+	return exclusive(dev ? "a dev build" : "a build", () => buildUnlocked({ log, compare, dev }));
+}
+
+async function buildUnlocked({ log, compare, dev }) {
 	const started = performance.now();
 	prepare({ dev });
 	host();
@@ -657,6 +776,11 @@ export function underBase(html, base) {
  */
 export async function prerender(dir, { base = "/" } = {}) {
 	if (!base.startsWith("/") || !base.endsWith("/")) throw new Error(`a base begins and ends with /: ${base}`);
+	// site/dist is what `just deploy-pages` publishes: only `just site` writes it, from its own
+	// build, never a dev build's (`just dev`, `site/build.mjs --dev`).
+	if (resolve(dir) === resolve(dist) && !/^dev=no$/m.test(existsSync(context) ? readFileSync(context, "utf8") : "")) {
+		throw new Error(`rocx site: site/build is a dev build (${relative(root, context)} doesn't say dev=no), and site/dist is published: only \`just site\` writes it`);
+	}
 	const running = await startServer();
 	try {
 		rmSync(dir, { recursive: true, force: true });
@@ -681,10 +805,15 @@ export async function prerender(dir, { base = "/" } = {}) {
 
 async function main() {
 	const base = process.argv.find((arg) => arg.startsWith("--base="))?.slice("--base=".length) ?? "/";
-	const facts = await build({ compare: true });
-	await prerender(dist, { base });
-	console.error(`rocx site: ${ROUTES.length} pages in ${relative(process.cwd(), dist)}${base === "/" ? "" : `, for ${base}`}`);
-	console.error(facts);
+	// The lock held from the build to the last file in site/dist, so nothing builds in between.
+	await exclusive("just site", async () => {
+		const facts = await build({ compare: true });
+		const built = readFileSync(appWasm);
+		await prerender(dist, { base });
+		if (!readFileSync(join(dist, "rocx", "app.wasm")).equals(built)) throw new Error("rocx site: site/dist/rocx/app.wasm isn't the wasm this build made: something else wrote site/build meanwhile");
+		console.error(`rocx site: ${ROUTES.length} pages in ${relative(process.cwd(), dist)}${base === "/" ? "" : `, for ${base}`}`);
+		console.error(facts);
+	});
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

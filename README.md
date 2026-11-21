@@ -22,9 +22,9 @@ import pf.Html
 import pf.Solid exposing [create_signal!]
 
 Counter := [].{
-	view! : { start : I64 } => Html
-	view! = |{ start }| {
-		(count!, set_count!) = create_signal!(start)
+	view! : { start_value : I64 } => Html
+	view! = |{ start_value }| {
+		(count!, set_count!) = create_signal!(start_value)
 		<p class="counter" class:negative={count!() < 0}>
 			<button on:click={|| set_count!(count!() - 1)}>−</button>
 			<output>{count!().to_str()}</output>
@@ -40,8 +40,13 @@ ecosystem. `just dev`, then http://localhost:8080.
 
 ## Quick start
 
+Zig 0.17.1 and Rust ≥1.85 from your system (e.g. Nix), or `just setup` downloads them. Roc is a
+fork of the pinned nightly with the compiler fixes rocx needs, which `just setup` builds into
+.tools/ (the Justfile says why); never the `roc` on your PATH.
+
 ```sh
-just setup   # the pinned Roc nightly, Zig and Rust, into .tools/
+just setup   # the Roc fork rocx builds with, the pinned nightly, Zig and Rust if need be, into .tools/
+just compiler-bugs   # each Roc bug rocx has met, with the nightly and with the fork
 just test    # the transpiler, both platforms, the site in Chromium
 just dev     # the docs site, its server (native) answering each page, rebuilt on save
 just db      # a Postgres in Docker for the server platform (prints its DATABASE_URL)
@@ -53,7 +58,7 @@ just check   # type-check the site's two programs, reports at .rocx lines, and l
 | Where | What |
 |---|---|
 | `src/transpile.mjs`, `src/styles.mjs`, `src/remap.mjs`, `src/routes.mjs`, `bin/rocx.mjs` | the transpiler, scoped styles, error remapping, routing, the command |
-| `packages/charts` | bar and line charts: their arithmetic a Roc package (scales, round ticks, SVG paths, in `Dec`), their components copied into each app by `rocx build`; see its README |
+| `packages/charts` | bar, stacked bar, line, sparkline, donut, scatter and heatmap charts, styled by custom properties: their arithmetic a Roc package (scales, round ticks, SVG paths, in `Dec`), their components copied into each app by `rocx build`; see its README |
 | `web/` | the browser's platform: the modules components are written with (`Html`, `Solid`, `Show`, `For`, …) and HTTP's (`Server`, requests and answers; `Endpoint`, `Events`, `Middleware`, `OpenApi`), which the server's platform has too; its Zig host, `runtime.js`; see `web/README.md` |
 | `server/` | the server's platform: native Roc in a Rust host (tokio, hyper, Postgres, jobs, email, actors), rendering pages of components; see `server/README.md` |
 | `site/` | the docs site: pages in `routes/`, the demos on them in `Demos/`, its program in `main.roc`, real examples in `examples/` |
@@ -69,7 +74,7 @@ layouts and the error page are components too, so a page puts a component where 
 
 A component's view is pure or effectful, and Roc checks which. `view!` may make signals, read a
 context or call a server function, so it runs once, where it is rendered
-(`Html.component(|| Counter.view!({ start: 3 }))`). `view`, without the `!`, can't: it makes markup
+(`Html.component(|| Counter.view!({ start_value: 3 }))`). `view`, without the `!`, can't: it makes markup
 from its props, so it is called where it is written (`Heading.view({ id: "why", children: […] })`).
 Its holes may still read accessors it was given; those are computations, as anywhere. `rocx build`
 writes whichever call fits, so callers don't change when a component does.
@@ -90,7 +95,7 @@ calls the file's own.
 
 ```roc
 Counter := [].{
-	view! = |{ start }| <div class="counter">…</div>
+	view! = |{ start_value }| <div class="counter">…</div>
 
 	<style>
 		.counter { display: flex }
@@ -131,7 +136,8 @@ the package (`charts: "../packages/charts/main.roc"`), `rocx build` copies each 
 (`Generated/charts/BarChart.roc`), where `pf` is each half's own platform. In a `.rocx` file,
 `import charts.BarChart` imports that copy. Its `<style>` joins the app's stylesheet, and the
 compiler's reports point at the package's file. `packages/charts` is one: its `Scale`, `Ticks`,
-`Path` and `Format` are plain Roc, and `<BarChart>` and `<LineChart>` are its components.
+`Path` and `Format` are plain Roc, and `<BarChart>`, `<StackedBarChart>`, `<LineChart>`,
+`<Sparkline>`, `<DonutChart>`, `<ScatterChart>` and `<Heatmap>` are its components.
 
 ```roc
 import charts.BarChart
@@ -255,7 +261,11 @@ Any app with routes, of components or not (endpoints alone too), gets its progra
   (`Server.clear_flash`). The jobs are the ones the app's modules define, each at the top of its
   module's block (`\twelcome = Job.define("welcome", …)`, or `Job.define_with`; one outside it, or two
   with one name, fail the build). The migrations are `migrations/*.sql`, embedded, in the order of
-  their names.
+  their names. The log's format is `Auto` (`ROCX_LOG`, `pretty` or `json`, if it is set; or else
+  pretty on a terminal and JSON elsewhere); `program = { ..App.program({ … }), logs: { format: Json } }`
+  (or `Pretty`) says otherwise. The server's lines and the app's (`Log.info!("gate failed", { path:
+  request.path, error: why })`, and `debug!`, `warn!`, `error!`) are events with fields, written in
+  that format (server/README.md, "The log").
 
 A pure component, one whose `view` has no `!` (`Heading.view`), is called where it is written,
 not put off as a component that may read a context. What the author writes besides the route files
@@ -369,9 +379,10 @@ renders a page of components, byte for byte as the browser's runtime would. Post
 mounts behind its own middleware), email (SMTP, or a dev mailbox at `/__rocx/mail`), requests to
 other servers (`Http`), files in S3 (`Storage`), bodies as bytes and from elsewhere
 (`Server.forward`), cookies, settings (`Env`), crypto (`Sha256`, `Hmac`, `Hkdf`, `AesGcm`,
-`Base64`, `Hex`), live topics and rooms, and actors whose state is kept in Postgres. The Rust host gives general things
-(HTTP, Postgres connections, TCP and TLS, background loops, isolated calls, locks); jobs, cron,
-migrations, email and actors are the platform's Roc, written on them, and so is
+`Base64`, `Hex`), live topics and rooms, and actors (typed asks, tells and timers, one message at a
+time, their state kept in Postgres). The Rust host gives general things (HTTP, Postgres connections,
+TCP and TLS, background loops, isolated calls, actors' mailboxes and timers); jobs, cron,
+migrations, email and actors' state are the platform's Roc, written on them, and so is
 [roc-pg](https://github.com/niclas-ahden/roc-pg), whose queries are checked at build, which runs on
 the platform's `Tcp`. `--target=arm64musl` cross-compiles one static Linux executable.
 `server/README.md` has every module's API.

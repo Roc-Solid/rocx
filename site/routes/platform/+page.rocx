@@ -121,8 +121,9 @@ view! = |_|
 			<p>
 				It is opinionated on purpose: one server, Roc and Postgres. The host, in Rust, gives Roc general
 				things: HTTP, Postgres connections, sockets with TLS, background loops that sleep until woken, calls
-				isolated from their caller, locks. Jobs, cron, migrations, email and actors are the platform's Roc,
-				written on those (<a href={"${Paths.platform_server}#layers"}>what is Rust, what is Roc</a>).
+				isolated from their caller, actors' mailboxes and timers. Jobs, cron, migrations, email and actors'
+				state are the platform's Roc, written on those
+				(<a href={"${Paths.platform_server}#layers"}>what is Rust, what is Roc</a>).
 			</p>
 
 			<Heading id="app">An app</Heading>
@@ -138,8 +139,9 @@ view! = |_|
 				started with (<code>--context-file</code>), and answers with a <code>Server.Response</code>:
 				<code>Server.from_http</code> makes the request, and the routes rocx writes answer it
 				(<a href={Paths.routing}>routing</a>). An answer that is a stream carries it: a function the host
-				runs on a thread of its own, with its <code>send!</code> and <code>sleep!</code>. Actors aren't
-				listed: <code>Actor.ask!</code> is given the kind it asks. The browser's app is the islands alone:
+				runs on a thread of its own, with its <code>send!</code> and <code>sleep!</code>. <code>actors</code>
+				lists the app's kinds of actor, which <code>rocx build</code> finds, so the host can run one when
+				nobody waits on it (a tell, a timer). The browser's app is the islands alone:
 			</p>
 			<Code title={Sources.client_app.file} source={Sources.client_app.rocx} />
 
@@ -203,7 +205,7 @@ view! = |_|
 					renders what the browser will hydrate, with the answers it will need.
 				</li>
 				<li>
-					<strong>One server.</strong> Live rooms, topics and actors' turns are in its memory; jobs and
+					<strong>One server.</strong> Live rooms, topics and actors' mailboxes are in its memory; jobs and
 					actors' state are in Postgres already. Several servers are on the roadmap, not here yet.
 				</li>
 			</ul>

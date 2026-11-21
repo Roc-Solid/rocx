@@ -1,0 +1,40 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+import charts.DonutChart
+import charts.Format
+import Random
+import Shuffle
+
+## A project's code, a slice for each language: the charts page's `<DonutChart>`. Another project
+## grows or shrinks each slice to its new share; CSS isn't in every one, so its slice comes and goes.
+DonutDemo := [].{
+	Project : { seed : U64, lines : List({ label : Str, value : Dec }) }
+
+	view! : {} => Html
+	view! = |{}| {
+		(project!, set_project!) = create_signal!(DonutDemo.project(16))
+		(look!, set_look!) = create_signal!(Shuffle.first)
+		<Shuffle roll!={|| set_project!(DonutDemo.project(project!().seed))} look!={look!} set_look!={set_look!}>
+			{=<DonutChart data!={project!().lines} label="A project's lines of code, by language" format={Format.short} total="lines" thickness={Shuffle.pick(look!(), 52.0, 24.0, 150.0)} />}
+		</Shuffle>
+	}
+
+	## A project's lines: 200 to 3,000 of each language, and CSS in two projects of three.
+	project : U64 -> DonutDemo.Project
+	project = |seed| {
+		var $seed = seed
+		var $lines = []
+		for language in languages {
+			lines = Random.below($seed, 2801)
+			css = Random.below(lines.seed, 3)
+			$seed = css.seed
+			if language != "CSS" or css.value > 0 {
+				$lines = $lines.append({ label: language, value: (200 + lines.value).to_dec() })
+			}
+		}
+		{ seed: $seed, lines: $lines }
+	}
+}
+
+languages : List(Str)
+languages = ["Roc", "Zig", "Rust", "JavaScript", "CSS"]

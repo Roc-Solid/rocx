@@ -1,0 +1,182 @@
+import pf.Html
+import ../../../Ui/Heading
+import ../../../Ui/Code
+import ../../../Ui/PageHero
+import ../../../Generated/PlatformReference
+import ../../../Generated/Paths
+
+meta = {
+	title: "Platform reference",
+	description: "Every module the Roc Solid server platform exposes, and every effect in each: its type and what it does, read from the platform's own source.",
+	toc: PlatformReference.toc,
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				eyebrow="The platform · reference"
+				title="Platform reference"
+			>
+				Every module the server platform exposes, and every effect in each: its type, and what it does.
+				The build reads them from the modules themselves (their types, and the <code>##</code> comments above
+				them), so this page says what the code says, and a new effect is here as soon as it is.
+			</PageHero>
+			<p>
+				{PlatformReference.module_count.to_str()} modules, {PlatformReference.effect_count.to_str()} effects, and {PlatformReference.function_count.to_str()} pure functions,
+				listed under each module. An effect is a
+				function whose name ends in <code>!</code>: it does something (reads the database, sends a request,
+				makes a signal), so only another effect calls it. A module marked
+				<span class="shared">browser too</span> is the browser's as well (<code>web/platform</code>, copied
+				into the server's by the build): the same code, on either side. The pages before this one show the
+				effects at work: <a href={Paths.platform_http}>HTTP</a>, <a href={Paths.platform_postgres}>Postgres</a>,
+				<a href={Paths.platform_jobs}>jobs</a>, <a href={Paths.platform_live}>live topics</a>.
+			</p>
+			<nav class="index" aria-label="Modules">{...PlatformReference.groups.map(index_entry)}</nav>
+			{...PlatformReference.groups.map(group_view)}
+		</NoHydration>
+	</>
+
+## A group in the index: its name, and a link to each of its modules.
+index_entry = |group|
+	<div>
+		<a class="group" href={"#${group.id}"}>{group.name}</a>
+		<ul>{...group.modules.map(|entry| <li><a href={"#${entry.name}"}>{entry.name}</a></li>)}</ul>
+	</div>
+
+group_view = |group|
+	<section>
+		<Heading id={group.id}>{group.name}</Heading>
+		{...group.modules.map(module_view)}
+	</section>
+
+## A module: its name, its file, its doc comment, then each effect (its type and its doc), and its
+## pure functions, folded away.
+module_view = |entry|
+	<article class="module" id={entry.name}>
+		<h3>
+			{entry.name}
+			{=if (entry.shared) <span class="shared" title="The browser's platform has it too">browser too</span> else Html.empty({})}
+		</h3>
+		<p class="file"><code>{entry.file}</code></p>
+		{...doc_view(entry.doc)}
+		{=if (entry.effects.is_empty()) <p class="none">No effects: pure functions alone.</p> else Html.empty({})}
+		{...entry.effects.map(|effect| effect_view(entry.name, effect))}
+		{=if (entry.functions.is_empty()) Html.empty({}) else functions_view(entry.functions)}
+	</article>
+
+effect_view = |owner, effect|
+	<div class="effect" id={"${owner}.${effect.name}"}>
+		<Code source={if (effect.type.is_empty()) "${owner}.${effect.name}" else "${owner}.${effect.name} : ${effect.type}"} numbers={Bool.False} />
+		{...doc_view(effect.doc)}
+	</div>
+
+functions_view = |functions|
+	<details class="functions">
+		<summary>{if (functions.len() == 1) "1 pure function" else "${functions.len().to_str()} pure functions"}</summary>
+		<Code source={Str.join_with(functions.map(|function| "${function.name} : ${function.type}"), "\n")} numbers={Bool.False} />
+	</details>
+
+## A doc comment's blocks: paragraphs, lists, and code.
+doc_view = |blocks|
+	blocks.map(
+		|block|
+			match block {
+				Para(pieces) => <p>{...pieces.map(inline_view)}</p>
+				Sample(source) => <Code source={source} numbers={Bool.False} />
+				Bullets(items) => <ul>{...items.map(|pieces| <li>{...pieces.map(inline_view)}</li>)}</ul>
+			},
+	)
+
+inline_view = |piece|
+	match piece {
+		Text(text) => Html.text(text)
+		Mono(code) => <code>{code}</code>
+	}
+
+<style>
+	/* The index: each group, and its modules. */
+	.index {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+		gap: var(--space-4) var(--space-6);
+		margin: var(--space-6) 0;
+		padding: var(--space-5);
+		border-radius: var(--radius);
+		background: var(--bg-raised);
+	}
+
+	.index .group {
+		font-weight: 600;
+	}
+
+	.index ul {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0 var(--space-3);
+		margin: var(--space-1) 0 0;
+		padding: 0;
+		list-style: none;
+		font: var(--size-sm) var(--mono);
+	}
+
+	/* A module: its name, whether the browser has it too, its file. */
+	.module {
+		margin-top: var(--space-8);
+	}
+
+	.module h3 {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: var(--space-2);
+		margin-bottom: var(--space-1);
+		font-family: var(--mono);
+	}
+
+	.shared {
+		display: inline-block;
+		padding: 0.05rem var(--space-2);
+		border-radius: var(--pill);
+		background: var(--warn-soft);
+		color: var(--warn);
+		font: 600 var(--size-2xs) / 1.5 var(--mono);
+		white-space: nowrap;
+	}
+
+	.file {
+		margin-top: 0;
+		color: var(--text-faint);
+		font-size: var(--size-xs);
+	}
+
+	.none {
+		color: var(--text-muted);
+	}
+
+	/* An effect: its type, then what it does. */
+	.effect {
+		margin: var(--space-5) 0;
+		padding-left: var(--space-4);
+		border-left: 2px solid var(--accent-soft);
+	}
+
+	.effect > :global(figure) {
+		margin-top: 0;
+	}
+
+	.effect p,
+	.module > p {
+		max-width: var(--measure);
+	}
+
+	/* Code in a sentence may be long (a type, a call): it wraps rather than run off a phone's screen. */
+	.module p code {
+		white-space: normal;
+		overflow-wrap: anywhere;
+	}
+
+	.functions {
+		margin-top: var(--space-5);
+	}
+</style>

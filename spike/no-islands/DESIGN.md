@@ -729,23 +729,36 @@ measured in step 6a, with `<NoHydration>` only if it is too big. Step 0 has land
   - **Follow-up:** the scoped CSS is inlined in every page (the front page went from 6.1 to
     15.0 KB gzip). The real fix is rocx build writing the styles as a cached file.
   - The report is /tmp/rocx-ds/REPORT.md.
+- **No wasm size budget for now** (the user, 2026-11-21: "drop the limits completely. We first want
+  to provide functionality and worry about bundle size later"). Earlier the same day it was raised
+  from 150 KB to 250 KB brotli for more live chart demos. Size is still reported, and wasm
+  splitting is being built behind a flag. After rocx-9a's charts rework (Donut, Scatter, and Bar/Line demos with
+  Randomize/Auto), the site is 158.3 KB.
+- **The fork-compiler switch landed (2026-11-21).**
+  - rocx builds with `.tools/roc-active`, the fork at 3cf64982c7. Failing that it uses `ROC`, and
+    otherwise stops with an error: it never uses the `roc` on PATH.
+  - Zig and Rust come from the system when they match (Zig 0.17.1, Rust 1.85 or newer), and from
+    .tools/ otherwise.
+  - `just compiler-bugs` runs the repros.
+  - `kinds_of!` and the `Json.Encodable([Infinity, NaN, NegativeInfinity, ..])` where clauses are
+    gone (Browser, Call, Endpoint, Server, Log).
+  - The report is /tmp/rocx-ec/REPORT.md.
 - **The repo will build with a forked Roc compiler** (the user's decision, 2026-11-21) until the
   fixes are upstream. The fork carries the minimal fixes for the `boxy_lowering`, `lambda_solve` and
   skipped-middleware bugs.
   - After step 7, the Justfile builds the fork's integration commit into .tools/roc-fork/, and
     .github/workflows/pages.yml becomes manual.
-  - Then the workarounds come out, each once its repro passes on the fork build: `kinds_of!`, the
-    `Json.Encodable([Infinity, NaN, NegativeInfinity, ..])` where clauses, OpenAPI answered inside
-    respond!, and the two-step middleware rule.
-  - Until then, every step keeps them.
-- **A silent miscompile under `--opt=speed`** (found by rocx-ac). A chain of three or more effectful
-  closures composed by `then` (`a.then(b).then(c)`, e.g. Middleware) skips its last step, with no
-  error. Two steps are fine.
-  - Repro: test/compiler-bugs/middleware-skipped-opt-speed/.
-  - Until the compiler fork fixes it, keep every middleware chain, hand-written or generated, at
-    two steps or fewer, and test guarded routes in an `--opt=speed` build.
-  - That's also why there's no `OpenApi.middleware`: `App.program` answers OpenAPI inside its
-    generated respond!.
+  - The workarounds are out (2026-11-21), each once its repro passed on the fork build:
+    `kinds_of!` and the `Json.Encodable([Infinity, NaN, NegativeInfinity, ..])` where clauses
+    (rocx-ec, on 3cf64982c7); OpenAPI answered inside respond!, and the two-step middleware rule
+    (rocx-72, on 3f66e242ea).
+- **A silent miscompile under `--opt=speed` and `--opt=size`, fixed in the fork** (found by
+  rocx-ac). A chain of three or more closures composed by `then` (`a.then(b).then(c)`, e.g.
+  Middleware) skipped its last step, with no error. SpecConstr bound an inlined closure's captures
+  before copying the call's arguments. Upstream fixed it in 55d1a82983 (PR #13202); the fork has it
+  as 3f66e242ea, pinned since 2026-11-21. The two-step rule is gone, and `App.program` chains
+  `OpenApi.middleware` after the app's middleware again. Repro, kept:
+  test/compiler-bugs/middleware-skipped-opt-speed/.
 - **Step 6n landed (2026-11-21): `<NoHydration>`.**
   - **Browser copy:** the transpiler drops its children, and the imports only they use. It refuses
     `on:`, `key=` or `transition` written inside.

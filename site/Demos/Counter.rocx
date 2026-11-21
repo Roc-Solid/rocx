@@ -6,9 +6,9 @@ import pf.Solid exposing [create_signal!]
 ## own node. The component itself runs once. Its styles are its own: the `<style>` in its block is
 ## scoped to its markup, so `.counter button` here is no other component's button.
 Counter := [].{
-	view! : { start : I64 } => Html
-	view! = |{ start }| {
-		(count!, set_count!) = create_signal!(start)
+	view! : { start_value : I64 } => Html
+	view! = |{ start_value }| {
+		(count!, set_count!) = create_signal!(start_value)
 		<div class="counter" class:negative={count!() < 0}>
 			<button type="button" on:click={|| set_count!(count!() - 1)} aria-label="One less">−</button>
 			<output>{count!().to_str()}</output>
@@ -20,8 +20,11 @@ Counter := [].{
 	}
 
 	<style>
+		/* In the middle of where it is put, Reset too, which wraps under the rest when they don't fit. */
 		.counter {
 			display: flex;
+			flex-wrap: wrap;
+			justify-content: center;
 			align-items: center;
 			gap: var(--space-3);
 		}
@@ -50,7 +53,7 @@ Counter := [].{
 		}
 
 		.counter .reset {
-			margin-left: auto;
+			margin-left: var(--space-3);
 			padding: 0 var(--space-4);
 			font-size: var(--size-sm);
 		}

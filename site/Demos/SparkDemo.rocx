@@ -1,0 +1,114 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+import pf.For
+import charts.Format
+import charts.Sparkline
+import Random
+import Shuffle
+
+## Three numbers a site watches, each in a tile with how it changed and its last day by the hour:
+## the charts page's `<Sparkline>`. Another day moves each line, and the numbers with them.
+SparkDemo := [].{
+	Tile : { name : Str, values : List(Dec) }
+	Day : { seed : U64, tiles : List(SparkDemo.Tile) }
+
+	view! : {} => Html
+	view! = |{}| {
+		(day!, set_day!) = create_signal!(SparkDemo.day(4))
+		(look!, set_look!) = create_signal!(Shuffle.first)
+		<Shuffle roll!={|| set_day!(SparkDemo.day(day!().seed))} look!={look!} set_look!={set_look!}>
+			<div class="tiles">
+				<For each!={day!().tiles} keyed={|tile| tile.name}>
+					{|tile!, _|
+						<div class="tile">
+							<span class="name">{tile!().name}</span>
+							<span class="now">{Format.short(tile!().values.last() ?? 0.0)}</span>
+							<span class="change" class:down={SparkDemo.change(tile!().values) < 0.0}>
+								{if (SparkDemo.change(tile!().values) < 0.0) "▼ " else "▲ "}
+								{Format.percent(Dec.abs(SparkDemo.change(tile!().values)), 0)}
+							</span>
+							<Sparkline data!={tile!().values} label!={"${tile!().name}, ${SparkDemo.trend(tile!().values)} over the day"} />
+						</div>}
+				</For>
+			</div>
+		</Shuffle>
+	}
+
+	## A day of each: a walk from where it usually is, each hour up or down by as much as a tenth.
+	day : U64 -> SparkDemo.Day
+	day = |seed| {
+		var $seed = seed
+		var $tiles = []
+		for (name, usual) in watched {
+			var $value = usual
+			var $values = []
+			for _ in List.repeat(0, 24).map_with_index(|_, i| i) {
+				roll = Random.below($seed, 201)
+				$seed = roll.seed
+				$value = Dec.max($value * (900.0 + roll.value.to_dec()) / 1000.0, 1.0)
+				$values = $values.append(Dec.round($value))
+			}
+			$tiles = $tiles.append({ name, values: $values })
+		}
+		{ seed: $seed, tiles: $tiles }
+	}
+
+	## How much the last value is above the first, as a share of it.
+	change : List(Dec) -> Dec
+	change = |values| {
+		first = values.first() ?? 0.0
+		if (first == 0.0) 0.0 else ((values.last() ?? 0.0) - first) / first
+	}
+
+	## Up or down, for a screen reader.
+	trend : List(Dec) -> Str
+	trend = |values| if (SparkDemo.change(values) < 0.0) "down ${Format.percent(Dec.abs(SparkDemo.change(values)), 0)}" else "up ${Format.percent(SparkDemo.change(values), 0)}"
+
+	<style>
+		.tiles {
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+			gap: var(--space-4);
+		}
+
+		.tile {
+			display: grid;
+			grid-template-columns: 1fr auto;
+			align-items: baseline;
+			gap: var(--space-1) var(--space-3);
+			padding: var(--space-3) var(--space-4);
+			border-radius: var(--radius-sm);
+			background: color-mix(in srgb, currentColor 5%, transparent);
+		}
+
+		.name {
+			grid-column: 1 / -1;
+			color: var(--chart-muted);
+			font-size: var(--size-sm);
+		}
+
+		.now {
+			font-size: var(--size-xl);
+			font-weight: 700;
+			font-variant-numeric: tabular-nums;
+		}
+
+		.change {
+			color: var(--chart-up);
+			font-size: var(--size-sm);
+			font-variant-numeric: tabular-nums;
+		}
+
+		.change.down {
+			color: var(--chart-down);
+		}
+
+		.tile > :global(svg) {
+			grid-column: 1 / -1;
+		}
+	</style>
+}
+
+## What the tiles watch, and where each usually is.
+watched : List((Str, Dec))
+watched = [("Visitors", 1200.0), ("Sign-ups", 80.0), ("Orders", 300.0)]

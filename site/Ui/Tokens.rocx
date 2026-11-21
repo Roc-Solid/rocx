@@ -29,7 +29,7 @@ Tokens := [].{
 	</story>
 
 	<story name="Code colours">
-		<Code title="Counter.rocx" source={"## A count you can add to.\nview! = |{ start }| {\n\t(count!, set_count!) = create_signal!(start)\n\t<button class=\"count\" on:click={|| set_count!(count!() + 1)}>Clicked {count!().to_str()}</button>\n}"} />
+		<Code title="Counter.rocx" source={"## A count you can add to.\nview! = |{ start_value }| {\n\t(count!, set_count!) = create_signal!(start_value)\n\t<button class=\"count\" on:click={|| set_count!(count!() + 1)}>Clicked {count!().to_str()}</button>\n}"} />
 	</story>
 
 	<story name="Type">

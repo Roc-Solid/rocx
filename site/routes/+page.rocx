@@ -5,7 +5,6 @@ import ../Ui/Heading
 import ../Ui/PageHero
 import ../Ui/Button
 import ../Ui/Specimen
-import ../Ui/Steps
 import ../Ui/Stats
 import ../Ui/Way
 import ../Generated/Sources
@@ -22,8 +21,8 @@ meta = {
 
 view! = |_| {
 	# Once, here, outside every <NoHydration>: the browser's copy asks the same, from what the page
-	# recorded, and uses it in the steps, which it hydrates. A call in a prop inside a <NoHydration>
-	# would be made by the server alone.
+	# recorded, and uses it in the numbers, which it hydrates. A call inside a <NoHydration> would be
+	# made by the server alone, and recorded for a copy that never asks.
 	facts = Facts.facts!({})
 	<>
 		<NoHydration>
@@ -42,16 +41,9 @@ view! = |_| {
 			</PageHero>
 		</NoHydration>
 		<Specimen file="Counter.rocx" code={[<NoHydration><Code source={Sources.home_update.rocx} numbers={Bool.False} /></NoHydration>]}>
-			<div data-demo="counter"><Counter start={3} /></div>
+			<div data-demo="counter"><Counter start_value={3} /></div>
 			<NoHydration><p class="awake" data-stat="hydrated">Waiting for the counter to wake up…</p></NoHydration>
 		</Specimen>
-		<Steps
-			steps={[
-				{ title: "Write", text: "Markup wherever a Roc expression can stand." },
-				{ title: "Build", text: "Plain Roc, line for line, for the compiler to check." },
-				{ title: "Run", text: "Native on the server; ${Facts.get(facts, "client_brotli")} of wasm in the browser." },
-			]}
-		/>
 		<NoHydration>
 
 			<Heading id="parts">Three parts</Heading>
@@ -101,22 +93,24 @@ view! = |_| {
 			</p>
 
 			<Heading id="numbers">The numbers, measured on this build</Heading>
-			<Stats
-				stats={[
-					{ label: "Wasm for the whole site", value: Facts.get(facts, "client_brotli"), note: "brotli; ${Facts.get(facts, "client_gzip")} gzip, ${Facts.get(facts, "client_bytes")} raw" },
-					{ label: "JavaScript runtime", value: Facts.get(facts, "runtime_gzip"), note: "gzip; no framework, no dependencies" },
-					{ label: "The front page, rendered", value: "${Facts.get(facts, "client_render_us")} µs", note: "every component and hole run once, by the browser's wasm, in Node" },
-					{ label: "The server", value: Facts.get(facts, "server_bytes"), note: "one executable: every page, and its Rust host" },
-				]}
-			/>
-
+		</NoHydration>
+		<Stats
+			stats={[
+				{ label: "Wasm for the whole site", value: Facts.get(facts, "client_brotli"), note: "brotli; ${Facts.get(facts, "client_gzip")} gzip, ${Facts.get(facts, "client_bytes")} raw" },
+				{ label: "JavaScript runtime", value: Facts.get(facts, "runtime_gzip"), note: "gzip; no framework, no dependencies" },
+				{ label: "The front page, rendered", value: "${Facts.get(facts, "client_render_us")} µs", note: "every component and hole run once, by the browser's wasm, in Node" },
+				{ label: "The server", value: Facts.get(facts, "server_bytes"), note: "one executable: every page, and its Rust host" },
+			]}
+		/>
+		<NoHydration>
 			<Heading id="start">Getting started</Heading>
 			<Code
 				title="In this repository"
-				source={"just setup    # the pinned Roc nightly, Zig and Rust, into .tools/\njust test     # the transpiler, both platforms, this site in a browser\njust dev      # this site at http://localhost:8080, rebuilt on save\njust db       # a Postgres in Docker, for the server platform's tests and apps"}
+				source={"just setup    # the Roc fork rocx builds with, the pinned nightly, Zig and Rust if need be, into .tools/\njust test     # the transpiler, both platforms, this site in a browser\njust dev      # this site at http://localhost:8080, rebuilt on save\njust db       # a Postgres in Docker, for the server platform's tests and apps"}
 				numbers={Bool.False}
 			/>
 			<p>
+				Zig 0.17.1 and Rust ≥1.85 from your system (e.g. Nix), or <code>just setup</code> downloads them.
 				Then read <a href={Paths.rocx}>rocx</a>, or open <code>site/routes/</code>: these pages are
 				<code>.rocx</code> files, and every example in them is a real file the build compiles.
 			</p>
@@ -176,11 +170,13 @@ view! = |_| {
 		font-size: var(--size-sm);
 	}
 
-	/* How long the counter took to wake up: site.js writes it, and marks it awake. */
+	/* How long the counter took to wake up: site.js writes it, and marks it awake. Under the
+	   counter, in the middle, as the counter is. */
 	.awake {
 		margin: var(--space-3) 0 0;
 		color: var(--text-faint);
 		font-size: var(--size-xs);
+		text-align: center;
 	}
 
 	@media (max-width: 52rem) {

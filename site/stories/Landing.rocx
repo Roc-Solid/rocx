@@ -65,7 +65,7 @@ Midnight := [].{
 				<Code source={Sources.home_update.rocx} numbers={Bool.False} />
 				<div class="stage">
 					<p class="label">Rendered on the server, awake in your browser</p>
-					<div data-demo="counter"><Counter start={3} /></div>
+					<div data-demo="counter"><Counter start_value={3} /></div>
 				</div>
 			</figure>
 			<div class="trio">
@@ -250,7 +250,7 @@ Paper := [].{
 			</section>
 			<figure class="specimen">
 				<Code source={Sources.home_update.rocx} numbers={Bool.False} />
-				<div class="stage"><div data-demo="counter"><Counter start={3} /></div></div>
+				<div class="stage"><div data-demo="counter"><Counter start_value={3} /></div></div>
 				<figcaption><b>Fig. 1</b> A counter, as it is written in <i>Counter.rocx</i>, and as it runs.</figcaption>
 			</figure>
 			<div class="trio">
@@ -431,7 +431,7 @@ Neon := [].{
 				<Code source={Sources.home_update.rocx} numbers={Bool.False} />
 				<div class="stage">
 					<p class="label">Live</p>
-					<div data-demo="counter"><Counter start={3} /></div>
+					<div data-demo="counter"><Counter start_value={3} /></div>
 				</div>
 			</figure>
 			<div class="trio">
@@ -634,7 +634,7 @@ Swiss := [].{
 				<Code source={Sources.home_update.rocx} numbers={Bool.False} />
 				<div class="stage">
 					<p class="label">Output</p>
-					<div data-demo="counter"><Counter start={3} /></div>
+					<div data-demo="counter"><Counter start_value={3} /></div>
 				</div>
 			</figure>
 			<div class="trio">
@@ -837,7 +837,7 @@ Phosphor := [].{
 				<Code source={Sources.home_update.rocx} numbers={Bool.False} />
 				<div class="stage">
 					<p class="label">A:\&gt; RUN COUNTER</p>
-					<div data-demo="counter"><Counter start={3} /></div>
+					<div data-demo="counter"><Counter start_value={3} /></div>
 				</div>
 			</figure>
 			<div class="trio">
@@ -1038,7 +1038,7 @@ Pastel := [].{
 				<Code source={Sources.home_update.rocx} numbers={Bool.False} />
 				<div class="stage">
 					<p class="label">and here it is, running</p>
-					<div data-demo="counter"><Counter start={3} /></div>
+					<div data-demo="counter"><Counter start_value={3} /></div>
 				</div>
 			</figure>
 			<div class="trio">

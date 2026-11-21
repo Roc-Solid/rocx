@@ -183,8 +183,10 @@ view! = |_|
 					server.
 				</li>
 				<li>
-					<strong>An app that writes its own <code>program</code></strong> asks <code>OpenApi.respond</code>
-					first, before its routes, as this site's does (<a href="#middleware">below</a>).
+					<strong>An app that writes its own <code>program</code></strong> puts
+					<code>OpenApi.middleware(Page(Swagger), Api.openapi)</code> at the end of its middleware chain,
+					as <code>App.program</code> does, or asks <code>OpenApi.respond</code> before its routes, as this
+					site's does (<a href="#middleware">below</a>).
 				</li>
 			</ul>
 			<p>

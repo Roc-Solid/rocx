@@ -2,13 +2,15 @@ import pf.Html
 import Actions
 import Button
 
-## The top of a page: what part it is in (`eyebrow`), its line in the site's gradient (`title`, or
-## `heading` when it has markup in it), what it is about (what is inside), and the ways on (`actions`,
-## `<Button>`s). `centered` for the front page, where the line is bigger and everything is in the
-## middle.
+## The top of a page: what part it is in (`eyebrow`, or `kicker` when it has markup in it), its line
+## in the site's gradient (`title`, or `heading` when it has markup in it), what it is about (what is
+## inside), and the ways on (`actions`, `<Button>`s). `centered` for the front page, where the line is
+## bigger and everything is in the middle. A string is text wherever it goes, so markup in either
+## line is passed as markup, never inside a string.
 PageHero := [].{
 	Props := {
-		eyebrow : Str,
+		eyebrow : Str ?? "",
+		kicker : List(Html) ?? [],
 		title : Str ?? "",
 		heading : List(Html) ?? [],
 		actions : List(Html) ?? [],
@@ -19,7 +21,7 @@ PageHero := [].{
 	view : Props -> Html
 	view = |props|
 		<section class="hero" class:centered={props.centered}>
-			<p class="eyebrow">{props.eyebrow}</p>
+			<p class="eyebrow">{...if (props.kicker.is_empty()) [Html.text(props.eyebrow)] else props.kicker}</p>
 			<h1>{...if (props.heading.is_empty()) [Html.text(props.title)] else props.heading}</h1>
 			<p class="lede">{...props.children}</p>
 			{=if (props.actions.is_empty()) Html.empty({}) else <Actions centered={props.centered}>{...props.actions}</Actions>}
@@ -51,6 +53,12 @@ PageHero := [].{
 	<story name="Markup in its line">
 		<PageHero eyebrow="404" heading={[<>{"Nothing at "}</>, <code>/nowhere</code>]}>
 			No page has that address. These are the pages of the rocx docs:
+		</PageHero>
+	</story>
+
+	<story name="Markup in its eyebrow">
+		<PageHero kicker={[<>{"The ecosystem · "}</>, <code>packages/charts</code>]} title="Charts that glide to their data, and then stop">
+			A package's page: the eyebrow names the directory it is in, as code.
 		</PageHero>
 	</story>
 

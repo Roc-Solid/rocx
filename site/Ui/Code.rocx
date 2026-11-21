@@ -24,7 +24,7 @@ Code := [].{
 	}
 
 	<story name="Roc">
-		<Code title="Counter.rocx" source={"view! = |{ start }| {\n\t(count!, set_count!) = create_signal!(start)\n\t<output>{count!().to_str()}</output>\n}"} />
+		<Code title="Counter.rocx" source={"view! = |{ start_value }| {\n\t(count!, set_count!) = create_signal!(start_value)\n\t<output>{count!().to_str()}</output>\n}"} />
 	</story>
 
 	<story name="Markup">

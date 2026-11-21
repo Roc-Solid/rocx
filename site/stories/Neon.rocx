@@ -55,7 +55,7 @@ Riso := [].{
 				<Code source={Sources.home_update.rocx} numbers={Bool.False} />
 				<div class="stage">
 					<p class="label">and the same, running</p>
-					<div data-demo="counter"><Counter start={3} /></div>
+					<div data-demo="counter"><Counter start_value={3} /></div>
 				</div>
 			</figure>
 			<div class="trio">
@@ -245,7 +245,7 @@ Highlighter := [].{
 				<Code source={Sources.home_update.rocx} numbers={Bool.False} />
 				<div class="stage">
 					<p class="label"><mark class="pink">it runs</mark> right here, in your browser:</p>
-					<div data-demo="counter"><Counter start={3} /></div>
+					<div data-demo="counter"><Counter start_value={3} /></div>
 				</div>
 			</figure>
 			<div class="trio">
@@ -432,7 +432,7 @@ Pop := [].{
 				<Code source={Sources.home_update.rocx} numbers={Bool.False} />
 				<div class="stage">
 					<p class="label">Try it</p>
-					<div data-demo="counter"><Counter start={3} /></div>
+					<div data-demo="counter"><Counter start_value={3} /></div>
 				</div>
 			</figure>
 			<div class="trio">
@@ -624,7 +624,7 @@ Flat := [].{
 				<Code source={Sources.home_update.rocx} numbers={Bool.False} />
 				<div class="stage">
 					<p class="label">Live</p>
-					<div data-demo="counter"><Counter start={3} /></div>
+					<div data-demo="counter"><Counter start_value={3} /></div>
 				</div>
 			</figure>
 			<div class="trio">
@@ -821,7 +821,7 @@ Poster := [].{
 				<Code source={Sources.home_update.rocx} numbers={Bool.False} />
 				<div class="stage">
 					<p class="label">Running</p>
-					<div data-demo="counter"><Counter start={3} /></div>
+					<div data-demo="counter"><Counter start_value={3} /></div>
 				</div>
 			</figure>
 			<div class="trio">
