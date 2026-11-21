@@ -31,12 +31,10 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync,
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { brotliCompressSync, constants, gzipSync } from "node:zlib";
-import { build as rocxBuild } from "../bin/rocx.mjs";
-import { definitions, findRouteFiles, pathsModule, routesTable, routeTable } from "../src/routes.mjs";
-import { RocxError, rocString, transpile } from "../src/transpile.mjs";
-import { platformReference, referenceModule } from "../src/reference.mjs";
+import { definitions, findRouteFiles, pathsModule, build as rocxBuild, RocxError, routesTable, routeTable, transpile } from "../src/rocx.mjs";
+import { platformReference, referenceModule, rocString } from "../src/reference.mjs";
 import { Runtime } from "../web/runtime.js";
-import { buildApp, buildHost, start, syncShared, zig } from "../server/build.mjs";
+import { buildApp, buildHost, rocxBinary, start, syncShared, zig } from "../server/build.mjs";
 
 export const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const site = join(root, "site");
@@ -44,7 +42,6 @@ export const out = join(site, "build");
 export const dist = join(site, "dist");
 /** The browser's copy of the site (`rocx build --client`), which the browser's app is built from. */
 export const client = join(out, "client");
-const rocxBin = join(root, "bin", "rocx.mjs");
 
 /** The pages, from site/routes (`/`, `/syntax`; `/blog/[slug]` would be one too). */
 const pages = () => routeTable(findRouteFiles(join(site, "routes"))).pages;
@@ -348,7 +345,7 @@ function refusals() {
  * a compiler run, so it is kept, and made again only when what makes it changes. */
 function checkReport() {
 	const source = ["import pf.Html", "", "Posts := [].{", "\tview : List(Str) -> Html", "\tview = |posts|", '\t\t<p class="count">', "\t\t\tYou have {posts.len()} posts", "\t\t</p>", "}", ""].join("\n");
-	const inputs = [source, roc(), ...["src/transpile.mjs", "src/remap.mjs", "bin/rocx.mjs", "web/platform/Html.roc"].map((path) => readFileSync(join(root, path), "utf8"))];
+	const inputs = [source, roc(), ...["src/Transpile.roc", "src/Remap.roc", "src/main.roc", "web/platform/Html.roc"].map((path) => readFileSync(join(root, path), "utf8"))];
 	const key = createHash("sha256").update(inputs.join("\0")).digest("hex");
 	const kept = join(out, "check-report.json");
 	if (existsSync(kept)) {
@@ -368,8 +365,8 @@ function makeCheckReport(source) {
 	// An app on the web platform, whose main! renders the posts: `roc check Posts.roc` checks it.
 	writeFileSync(join(dir, "main.roc"), `app [main!] { pf: platform ${JSON.stringify(relative(dir, join(root, "web", "platform", "main.roc")))} }\n\nimport pf.Html\nimport Posts\n\nmain! : {} => Html\nmain! = |{}| Posts.view([])\n`);
 	writeFileSync(join(dir, "Posts.rocx"), source);
-	run("node", [rocxBin, "build", "."], { cwd: dir });
-	const checked = spawnSync("node", [rocxBin, "check", "--", roc(), "check", "Posts.rocx".replace(".rocx", ".roc")], { cwd: dir, encoding: "utf8" });
+	run(rocxBinary(), ["build", "."], { cwd: dir });
+	const checked = spawnSync(rocxBinary(), ["check", "--", roc(), "check", "Posts.rocx".replace(".rocx", ".roc")], { cwd: dir, encoding: "utf8" });
 	const report = `${checked.stdout}`.trim();
 	return { source: readFileSync(join(dir, "Posts.rocx"), "utf8").trimEnd(), report: report || "(the compiler said nothing)" };
 }

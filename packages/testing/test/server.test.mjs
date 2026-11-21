@@ -130,7 +130,7 @@ test("until: the first truthy value, or a timeout that says what it waited for",
 });
 
 test("storyPath: a story's path, as rocx build names it", async () => {
-	const { storyIds, STORIES_PATH } = await import(pathToFileURL(join(repo, "src", "stories.mjs")).href);
+	const { storyIds, STORIES_PATH } = await import(pathToFileURL(join(repo, "src", "rocx.mjs")).href);
 	const stories = [
 		{ file: "Ui/Callout.rocx", module: "Ui/Callout", component: "Callout", name: "Tip", def: "story_tip", line: 6 },
 		{ file: "stories/Landing.rocx", module: "stories/Landing", component: "Split", name: "Wide hero!", def: "story_wide_hero", line: 9 },

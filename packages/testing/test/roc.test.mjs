@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { repo, serverBuild } from "../build.mjs";
 
 const pkg = join(dirname(fileURLToPath(import.meta.url)), "..");
-const { roc } = await serverBuild();
+const { roc, rocxBinary } = await serverBuild();
 const compiler = (() => {
 	try {
 		return roc();
@@ -71,13 +71,13 @@ main! = |{}| Greeting.view({ name: "Ada", unread: [] })
 		mkdirSync(dirname(join(dir, path)), { recursive: true });
 		writeFileSync(join(dir, path), content);
 	}
-	const built = spawnSync(process.execPath, [join(repo, "bin", "rocx.mjs"), "build", dir], { encoding: "utf8" });
+	const built = spawnSync(rocxBinary(), ["build", dir], { encoding: "utf8" });
 	assert.equal(built.status, 0, built.stderr);
 	return dir;
 }
 
 /** `roc test` on the app, its reports pointed at the .rocx files (`rocx check`). */
-const rocTest = (dir) => spawnSync(process.execPath, [join(repo, "bin", "rocx.mjs"), "check", "--", compiler, "test", join(dir, "main.roc")], { encoding: "utf8", env: { ...process.env, ROC: compiler } });
+const rocTest = (dir) => spawnSync(rocxBinary(), ["check", "--", compiler, "test", join(dir, "main.roc")], { encoding: "utf8", env: { ...process.env, ROC: compiler } });
 
 test("an app's expects render a component and find in it by role, name and label", { skip }, () => {
 	const dir = app(GREETING);

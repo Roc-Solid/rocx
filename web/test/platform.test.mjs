@@ -13,7 +13,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { roc as findRoc, zig } from "../../server/build.mjs";
+import { roc as findRoc, rocxBinary, zig } from "../../server/build.mjs";
 import { findChrome, launch } from "./browser.mjs";
 import { serve } from "./serve.mjs";
 import { Runtime } from "../runtime.js";
@@ -40,7 +40,7 @@ function run(command, args) {
 /** The app through rocx, and the browser's copy; the host; then each app, the profile from the dev
  * backend and optimized, the others as the server's half (dev backend) or the browser's (for size). */
 if (!skip) {
-	run("node", [join(root, "bin", "rocx.mjs"), "build", join(here, "app"), "--client", join(out, "app-client")]);
+	run(rocxBinary(), ["build", join(here, "app"), "--client", join(out, "app-client")]);
 	mkdirSync(join(web, "platform", "targets", "wasm32"), { recursive: true });
 	run(zig(), ["build-obj", join(web, "host", "host.zig"), "-target", "wasm32-freestanding", "-O", "ReleaseSmall", "-fcompiler-rt", `-femit-bin=${join(web, "platform", "targets", "wasm32", "host.wasm")}`]);
 	for (const [name, app, opt] of [

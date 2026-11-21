@@ -8,7 +8,8 @@ root=$(cd "$(dirname "$0")/../.." && pwd)
 out=${TMPDIR:-/tmp}/rocx-echo
 mkdir -p "$out"
 cd "$root"
-node bin/rocx.mjs build examples/echo
+rocx=$(node --input-type=module -e "import { rocxBinary } from './server/build.mjs'; console.log(rocxBinary())")
+"$rocx" build examples/echo
 node server/build.mjs examples/echo/main.roc "$out/echo" --opt=speed
 "$out/echo" --port "$port" --host 127.0.0.1 > "$out/server.log" 2>&1 &
 server=$!

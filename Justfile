@@ -28,7 +28,9 @@ set lazy
 roc := if path_exists(".tools/roc-active") == "true" { ".tools/roc-active" } else if env("ROC", "") != "" { env("ROC") } else { error("no Roc compiler: run `just setup` (or set ROC)") }
 # Zig: the system's, on PATH (e.g. from Nix), when it is zig_version; else the one in .tools.
 zig := if `zig version 2>/dev/null || true` == zig_version { "zig" } else { justfile_directory() / ".tools/zig/zig" }
-rocx := "node bin/rocx.mjs"
+# rocx itself: bin/rocx, built from its Roc (src/*.roc, on basic-cli) when that changed
+# (server/build.mjs rocxBinary).
+rocx := `node --input-type=module -e "import { rocxBinary } from './server/build.mjs'; console.log(rocxBinary())"`
 
 default:
     @just --list

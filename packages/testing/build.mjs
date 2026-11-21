@@ -28,10 +28,10 @@ function run(command, args, options = {}) {
  * at `storyPath(…)`; `opt` is the server's optimization (`dev`, quick to build, or `speed`).
  */
 export async function buildForTests(dir, { out = join(dir, "build", "test"), client = true, dev = false, opt = "dev" } = {}) {
-	const { buildApp, nativeTarget, roc } = await serverBuild();
+	const { buildApp, nativeTarget, roc, rocxBinary } = await serverBuild();
 	const compiler = roc();
 	const clientDir = join(out, "client");
-	run(process.execPath, [join(repo, "bin", "rocx.mjs"), "build", dir, ...(client ? ["--client", clientDir] : []), ...(dev ? ["--dev"] : [])], { env: { ...process.env, ROC: compiler } });
+	run(rocxBinary(), ["build", dir, ...(client ? ["--client", clientDir] : []), ...(dev ? ["--dev"] : [])], { env: { ...process.env, ROC: compiler } });
 	if (client) {
 		const host = join(repo, "web", "platform", "targets", "wasm32", "host.wasm");
 		if (!existsSync(host)) throw new Error(`the browser's host isn't built (${host}): \`just test\` builds it`);

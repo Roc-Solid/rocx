@@ -4,9 +4,6 @@
 	"description": "Roc Solid, a small web ecosystem for Roc: rocx markup (.rocx files become plain Roc, line for line), pages rendered on a native server, and Solid-style components hydrated in the browser on Roc compiled to WebAssembly.",
 	"private": true,
 	"type": "module",
-	"bin": {
-		"rocx": "bin/rocx.mjs"
-	},
 	"scripts": {
 		"test": "node --test 'test/*.test.mjs'",
 		"site": "node site/build.mjs",

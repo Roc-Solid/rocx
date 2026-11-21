@@ -7,7 +7,24 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { root, SHARED_MODULES } from "../server/build.mjs";
-import { rocString } from "./transpile.mjs";
+/** A Roc string literal holding `text` exactly: the site's own, for the modules it writes (rocx's is
+ * Text.roc_string; this runs too often to go through the binary). */
+export function rocString(text) {
+	let out = '"';
+	for (let i = 0; i < text.length; i++) {
+		const c = text[i];
+		const code = c.charCodeAt(0);
+		if (c === "\\") out += "\\\\";
+		else if (c === '"') out += '\\"';
+		else if (c === "$" && text[i + 1] === "{") out += "\\$";
+		else if (c === "\n") out += "\\n";
+		else if (c === "\r") out += "\\r";
+		else if (c === "\t") out += "\\t";
+		else if (code < 0x20 || code === 0x7f) out += `\\u(${code.toString(16)})`;
+		else out += c;
+	}
+	return out + '"';
+}
 
 /** The modules server/platform/main.roc exposes, in its order. */
 export function exposedModules(base = root) {

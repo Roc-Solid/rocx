@@ -4,7 +4,7 @@
 // (Plural.roc), named here by language.
 //
 //     node packages/intl/tools/locales.mjs > packages/intl/Locales.roc
-//     ROC=.tools/roc-active node bin/rocx.mjs fmt packages/intl
+//     ROC=.tools/roc-active bin/rocx fmt packages/intl
 //
 // Run it only to add a locale or move to a newer CLDR; the output is checked in, and the package's
 // expects say what it must give.

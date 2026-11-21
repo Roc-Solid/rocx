@@ -11,7 +11,7 @@ import { existsSync, readdirSync, readFileSync, statSync, watch } from "node:fs"
 import { join, relative } from "node:path";
 import { root, server, serverFlags } from "./build.mjs";
 import { SHARED_MODULES } from "../server/build.mjs";
-import { MARKER } from "../src/transpile.mjs";
+import { MARKER } from "../src/rocx.mjs";
 
 const args = process.argv.slice(2);
 const value = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
