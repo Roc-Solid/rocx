@@ -55,13 +55,13 @@ Build := [].{
 		var $styles = []
 		var $stories = []
 		var $contexts = []
-		packages = Build.component_packages!(dir)
+		pkgs = Build.component_packages!(dir)
 		var $views = []
 		output = |path| {
 			last = Fs.basename(path)
 			last == "build" or last == "dist"
 		}
-		package_paths = packages.join_map(|pkg| pkg.paths)
+		package_paths = pkgs.join_map(|pkg| pkg.paths)
 		for path in Fs.files!(dir, ".rocx", output).concat(package_paths) {
 			module_name = Fs.basename(Fs.relative(dir, path).drop_suffix(".rocx"))
 			source = Fs.read_or_empty!(path)
@@ -97,22 +97,22 @@ Build := [].{
 		for each in routed {
 			path = each.path
 			entry = each.entry
-			out = Fs.join([dir, Build.generated, "${entry.module}.roc"])
+			out = Fs.join([dir, Build.generated, "${entry.module_name}.roc"])
 			$route_outputs = $route_outputs.append(out)
 			if Fs.exists!(out) and !Build.is_generated!(out) {
 				$said = $said.append("✗ ${Fs.relative(cwd, path)}: ${Fs.relative(cwd, out)} exists and was not written by rocx; rename one of them")
 				$failed = Bool.True
 			} else {
-				source = Build.link_components(Fs.read_or_empty!(path), path, dir, packages)
+				source = Build.link_components(Fs.read_or_empty!(path), path, dir, pkgs)
 				file = Fs.relative(cwd, path)
-				module_path = "${Build.generated}/${entry.module}"
-				where = { name: entry.module, source: path, generated: out }
+				module_path = "${Build.generated}/${entry.module_name}"
+				place = { name: entry.module_name, source: path, generated: out }
 				server_copy = { module_path, client: Bool.False, contexts, views, route: Bool.False }
 				attempt =
 					match Transpile.transpile_module(source, file, server_copy) {
 						Err(Rocx(problem)) => Err(Build.rocx_message!(path, problem))
 						Ok(made) =>
-							match Routes.route_module(made.code, where) {
+							match Routes.route_module(made.code, place) {
 								Err(Problem(message)) => Err("✗ ${message}")
 								Ok(server_module) => {
 									browser_module =
@@ -122,7 +122,7 @@ Build := [].{
 												match Transpile.transpile_module(source, file, { module_path, client: Bool.True, contexts, views, route: Bool.True }) {
 													Err(Rocx(problem)) => Err(Build.rocx_message!(path, problem))
 													Ok(browser_made) =>
-														match Routes.route_module(browser_made.code, where) {
+														match Routes.route_module(browser_made.code, place) {
 															Ok(text) => Ok(Some(text))
 															Err(Problem(message)) => Err("✗ ${message}")
 														}
@@ -166,7 +166,7 @@ Build := [].{
 					$said = $said.append("✗ ${Fs.relative(cwd, path)}: ${Fs.relative(cwd, out)} exists and was not written by rocx; rename one of them")
 					$failed = Bool.True
 				} else {
-					source = Build.link_components(Fs.read_or_empty!(path), path, dir, packages)
+					source = Build.link_components(Fs.read_or_empty!(path), path, dir, pkgs)
 					file = Fs.relative(cwd, path)
 					module_path = Fs.relative(dir, path).drop_suffix(".rocx")
 					match Transpile.transpile_module(source, file, { module_path, client: Bool.False, contexts, views, route: Bool.False }) {
@@ -207,7 +207,7 @@ Build := [].{
 		# Each package's components, copied into the app (`Generated/charts/BarChart.roc`): imported by
 		# the name the app's header gives the package, its <style> in the app's stylesheet, and the
 		# compiler's reports pointed at the package's file.
-		for pkg in packages {
+		for pkg in pkgs {
 			for path in pkg.paths {
 				name = Fs.basename_without(path, ".rocx")
 				out = Fs.join([dir, Build.generated, pkg.name, "${name}.roc"])
@@ -243,7 +243,11 @@ Build := [].{
 		# The browser's app, for an app of component pages (`--client`): written with its copy.
 		var $main = None
 		if !route_files.is_empty() {
-			sources = Routes.entries(table).map(|entry| { file: entry.file, defs: Routes.definitions(Fs.read_or_empty!(Fs.join([routes].concat(entry.file.split_on("/"))))) })
+			var $sources = []
+			for entry in Routes.entries(table) {
+				$sources = $sources.append({ file: entry.file, defs: Routes.definitions(Fs.read_or_empty!(Fs.join([routes].concat(entry.file.split_on("/"))))) })
+			}
+			sources = $sources
 			for server in table.servers {
 				defined = Routes.defs_of(sources, server.file)
 				file = Fs.relative(cwd, Fs.join([routes].concat(server.file.split_on("/"))))
@@ -253,8 +257,13 @@ Build := [].{
 					$said = $said.append("✗ ${file}: ${hooks} ${are}, and it defines no channel: define channel!, its check")
 					$failed = Bool.True
 				}
-				if defined.methods.is_empty() and !defined.respond and !defined.channel and defined.hooks.is_empty() {
-					$said = $said.append("✗ ${file}: a +server answers methods: define one of ${Str.join_with(Routes.methods, ", ")}, or respond!, or a channel (channel!)")
+				has_channel =
+					match defined.channel {
+						Some(_) => Bool.True
+						None => Bool.False
+					}
+				if defined.methods.is_empty() and !defined.respond and !has_channel and defined.hooks.is_empty() {
+					$said = $said.append("✗ ${file}: a +server answers methods: define one of ${Str.join_with(Routes.method_names, ", ")}, or respond!, or a channel (channel!)")
 					$failed = Bool.True
 				}
 			}
@@ -308,7 +317,7 @@ Build := [].{
 				} else {
 					[]
 				}
-			root_page = if (pages) [{ name: Build.root_module_name, content: Routes.root_module(table, sources, placed ?? []) }] else []
+			root_page = if (pages) [{ name: Build.root_module_name, content: Routes.root_module(table, sources, (match placed { Some(ids) => ids, None => [] })) }] else []
 			modules_written =
 				[{ name: "Routes", content: Routes.routes_module(table, sources, placed) }]
 					.concat(stories_page)
@@ -631,7 +640,7 @@ Build := [].{
 		# a page loads beside the wasm built from it (`static/rocx/`, served at /rocx/).
 		match main {
 			Some(shown_dir) => {
-				main_module = Routes.client_main_module({ web: Build.web_platform!(target, rocx), packages: Build.header_packages!(dir, target), dir: shown_dir })
+				main_module = Routes.client_main_module({ web: Build.web_platform!(target, rocx), package_lines: Build.header_packages!(dir, target), dir: shown_dir })
 				_ = Build.write!(Fs.join([target, "main.roc"]), main_module)
 				for name in ["start.js", "runtime.js"] {
 					_ = Build.write!(Fs.join([target, "static", "rocx", name]), Fs.read_or_empty!(Fs.join([rocx, "web", name])))
@@ -687,13 +696,13 @@ Build := [].{
 	}
 
 	## The `{ … }` of the first `app [program] { … }` header in `code` (`program` only, or any `[…]`).
-	app_header : Str, Bool -> [Some(Str), None]
+	app_header : Str, Bool -> Try(Str, [NotFound])
 	app_header = |code, program_only| {
 		bytes = code.to_utf8()
 		var $at = 0
 		while $at <= bytes.len() {
 			match Build.app_header_at(bytes, $at, program_only) {
-				Some(found) => return Some(found)
+				Some(found) => return Ok(found)
 				None => {}
 			}
 			$at =
@@ -702,7 +711,7 @@ Build := [].{
 					Err(_) => bytes.len() + 1
 				}
 		}
-		None
+		Err(NotFound)
 	}
 
 	## `^app\s*\[\s*program\s*\]\s*\{([^}]*)\}` (or `\[[^\]]*\]`) at `at`.
@@ -741,7 +750,7 @@ Build := [].{
 
 	## Each `name: "path"` in a header (`platform` ones only with `platform` before the string when
 	## `with_platform`; without, those don't match at all), as `{ name, platform, path }`.
-	named_paths : Str, Bool -> List({ name : Str, platform : Bool, path : Str })
+	named_paths : Str, Bool -> List({ name : Str, is_platform : Bool, path : Str })
 	named_paths = |header, with_platform| {
 		bytes = header.to_utf8()
 		var $found = []
@@ -761,7 +770,7 @@ Build := [].{
 	}
 
 	## `([a-z_][a-z0-9_]*)\s*:\s*(platform\s+)?"([^"]+)"` at `i`.
-	named_path_at : List(U8), U64, Bool -> [Some({ found : { name : Str, platform : Bool, path : Str }, end : U64 }), None]
+	named_path_at : List(U8), U64, Bool -> [Some({ found : { name : Str, is_platform : Bool, path : Str }, end : U64 }), None]
 	named_path_at = |bytes, i, with_platform| {
 		first = Text.at(bytes, i)
 		if !(Text.is_lower(first) or first == '_') {
@@ -781,7 +790,7 @@ Build := [].{
 			return None
 		}
 		match Text.index_of_byte(bytes, '"', quote + 1) {
-			Ok(close) if close > quote + 1 => Some({ found: { name: Text.cut(bytes, i, name_end), platform: is_platform, path: Text.cut(bytes, quote + 1, close) }, end: close + 1 })
+			Ok(close) if close > quote + 1 => Some({ found: { name: Text.cut(bytes, i, name_end), is_platform, path: Text.cut(bytes, quote + 1, close) }, end: close + 1 })
 			_ => None
 		}
 	}
@@ -793,18 +802,21 @@ Build := [].{
 		named = if (Fs.exists!(Fs.join([dir, "main.roc"]))) ["main.roc"] else Fs.entries!(dir).keep_if(|entry| entry.ends_with(".roc"))
 		for entry in named {
 			match Build.app_header(Fs.read_or_empty!(Fs.join([dir, entry])), Bool.True) {
-				None => {}
-				Some(header) =>
-					return Build.named_paths(header, Bool.True).keep_if(|each| !each.platform).map(
-						|each| {
+				Err(_) => {}
+				Ok(header) => {
+					var $lines = []
+					for each in Build.named_paths(header, Bool.True) {
+						if !each.is_platform {
 							if !(each.path.starts_with("./") or each.path.starts_with("../")) {
-								"${each.name}: ${Text.json_string(each.path)}"
+								$lines = $lines.append("${each.name}: ${Text.json_string(each.path)}")
 							} else {
 								moved = Fs.relative(Build.real!(out), Build.real!(Fs.resolve(dir, [each.path])))
-								"${each.name}: ${Text.json_string(if (moved.starts_with(".")) moved else "./${moved}")}"
+								$lines = $lines.append("${each.name}: ${Text.json_string(if (moved.starts_with(".")) moved else "./${moved}")}")
 							}
-						},
-					)
+						}
+					}
+					return $lines
+				}
 			}
 		}
 		[]
@@ -904,8 +916,8 @@ Build := [].{
 	## `import charts.BarChart`, a package's component, as an import of the app's copy of it
 	## (`import ../Generated/charts/BarChart`), relative to the file at `path`: a line for a line.
 	link_components : Str, Str, Str, List({ name : Str, own : Str, paths : List(Str), modules : List(Str) }) -> Str
-	link_components = |source, path, dir, packages| {
-		if packages.is_empty() {
+	link_components = |source, path, dir, pkgs| {
+		if pkgs.is_empty() {
 			return source
 		}
 		Str.join_with(
@@ -933,7 +945,7 @@ Build := [].{
 					}
 					name = Text.cut(bytes, name_at, name_end)
 					component_name = Text.cut(bytes, name_end + 1, module_end)
-					if packages.any(|pkg| pkg.name == name and pkg.modules.contains(component_name)) {
+					if pkgs.any(|pkg| pkg.name == name and pkg.modules.contains(component_name)) {
 						"import ${Fs.relative(Fs.dirname(path), Fs.join([dir, Build.generated, name, component_name]))}${Text.rest(bytes, module_end)}"
 					} else {
 						line
