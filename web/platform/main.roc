@@ -38,6 +38,7 @@ platform ""
 		"roc_for_new": Host.for_new!,
 		"roc_host_live_publish": Host.live_publish!,
 		"roc_interval": Host.interval!,
+		"roc_is_pending": Host.is_pending!,
 		"roc_keep": Host.keep!,
 		"roc_listen": Host.listen!,
 		"roc_location": Host.location!,

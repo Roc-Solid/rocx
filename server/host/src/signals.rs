@@ -654,6 +654,14 @@ pub extern "C" fn roc_refresh(probe: Callable) {
     roc::release(probe);
 }
 
+/// On the server nothing is pending: it renders final values, so the browser, hydrating, sees
+/// false too.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_is_pending(probe: Callable) -> bool {
+    roc::release(probe);
+    false
+}
+
 // A host effect that fails jumps out of its own frame too: what it holds that needs dropping is
 // dropped first (`fail` takes the message by value).
 

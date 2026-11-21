@@ -2973,6 +2973,15 @@ pub struct HostIntervalArgs {
     pub arg1: RocErasedCallable,
 }
 
+/// Arguments for Host.is_pending!
+/// Roc signature: Box({} => Str) => Bool
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostIsPendingArgs {
+    pub arg0: RocErasedCallable,
+}
+
 /// Arguments for Host.keep!
 /// Roc signature: Box({} => Str) => U64
 /// Refcounted fields are owned by the hosted function.
@@ -4373,6 +4382,13 @@ unsafe extern "C" {
     /// moved into storage or into the result:
     ///     unsafe { decref_erased_callable(arg1, roc_host); }
     pub fn roc_interval(arg0: u64, arg1: RocErasedCallable) -> u64;
+
+    /// Hosted symbol for Host.is_pending!
+    /// Roc signature: Box({} => Str) => Bool
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { decref_erased_callable(arg0, roc_host); }
+    pub fn roc_is_pending(arg0: RocErasedCallable) -> bool;
 
     /// Hosted symbol for Host.keep!
     /// Roc signature: Box({} => Str) => U64

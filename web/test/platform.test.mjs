@@ -70,6 +70,8 @@ if (!skip) {
 		["reads", join(out, "app-client", "reads_app.roc"), "size"],
 		["channels-server", join(here, "app", "channels_app.roc"), "dev"],
 		["channels", join(out, "app-client", "channels_app.roc"), "size"],
+		["pending-server", join(here, "app", "pending_app.roc"), "dev"],
+		["pending", join(out, "app-client", "pending_app.roc"), "size"],
 	]) {
 		run(roc, ["build", "--target=wasm32", `--opt=${opt}`, `--output=${join(out, `${name}.wasm`)}`, app]);
 	}
@@ -749,6 +751,144 @@ window.hydrated = true;
 		await other.goto(`${site.url}/uncarried?weeks=1`);
 		await other.wait("window.hydrated === true", 3000);
 		assert.equal(await other.eval("window.problem ?? null"), "rocx: hydrating, the page asked the server again for GET /api/reads?weeks=1: the server didn't note it as it rendered the page");
+	} finally {
+		await site.close();
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+// ---- is_pending!: Solid 2.0's isPending, a read revalidating with its old value shown ----
+
+/** A slow endpoint for the pending page: `GET /api/slow?page=N` answers `{ page, version }` after
+ * `delay` ms, `version` counting the answers; `fail` fails the next ones (500). */
+function slowApi() {
+	const slow = { delay: 300, fail: 0, version: 0, asked: [] };
+	slow.api = async (method, path, body, url) => {
+		if (path !== "/api/slow") return null;
+		slow.asked.push(`${method} ${url}`);
+		await sleep(slow.delay);
+		if (slow.fail > 0) {
+			slow.fail--;
+			return { status: 500, body: "the database is down" };
+		}
+		return json({ page: Number(new URL(url, "http://x").searchParams.get("page")), version: ++slow.version });
+	};
+	return slow;
+}
+
+/** The pending page's script: the runtime, its `pending` function noting each answer the effect's
+ * compute got (`window.seen`), mounted or hydrated (strictly). */
+const pendingScript = (how) => `<script type="module">
+import { Runtime } from "/runtime.js";
+window.seen = [];
+window.runtime = await Runtime.load(fetch("/pending.wasm"), { effects: { pending: (answer) => window.seen.push(answer) } });
+try {
+	${how === "hydrate" ? 'window.runtime.hydrate(document.getElementById("app"), { strict: true });' : 'window.runtime.mount(document.getElementById("app"));'}
+} catch (error) {
+	window.problem = error.message;
+}
+window.started = true;
+</script>`;
+
+/** Clicks a button and reads the page on the next microtask: after the flush the click started. */
+const clickThenRead = (selector, read) =>
+	`(() => { document.querySelector(${JSON.stringify(selector)}).click(); return new Promise((resolve) => queueMicrotask(() => resolve(${read}))); })()`;
+
+test("is_pending!: false on the first load (<Loading> shows); a refresh or a new page keeps the old answer, pending from that flush until the new one; a memo that reads it is pending too; a failed read is not, and <Errored> shows; its reader runs only when the answer changes", { skip }, async () => {
+	const slow = slowApi();
+	const dir = mkdtempSync(join(tmpdir(), "rocx-pending-"));
+	cpSync(join(web, "runtime.js"), join(dir, "runtime.js"));
+	cpSync(join(out, "pending.wasm"), join(dir, "pending.wasm"));
+	writeFileSync(join(dir, "index.html"), `<!doctype html><html><body><div id="app"></div>${pendingScript("mount")}</body></html>`);
+	const site = await serve(dir, () => null, slow.api);
+	try {
+		const tab = await browser.page();
+		await tab.goto(`${site.url}/`);
+		await tab.wait("window.started === true", 3000);
+		const state = () =>
+			tab.eval(`(() => {
+				const q = (selector) => document.querySelector(selector);
+				return { outside: q(".outside")?.textContent ?? null, loading: q(".loading")?.textContent ?? null, item: q(".item")?.textContent.trim() ?? null, stale: q(".item")?.classList.contains("stale") ?? null, label: q(".label")?.textContent ?? null, derived: q(".derived")?.textContent ?? null, problem: q(".problem")?.textContent.trim() ?? null };
+			})()`);
+		// 1. The first load: <Loading>'s fallback, and nothing pending (there is no value yet).
+		assert.deepEqual(await state(), { outside: "settled", loading: "Loading…", item: null, stale: null, label: null, derived: null, problem: null });
+		await tab.wait("document.querySelector('.item') !== null", 3000);
+		assert.deepEqual(await state(), { outside: "settled", loading: null, item: "page 1, version 1", stale: false, label: "page 1, version 1", derived: "derived settled", problem: null });
+		assert.deepEqual(await tab.eval("window.seen"), [false], "its value coming in changes no answer: the effect didn't run again");
+		// 2. refresh!: pending from the flush the click started, the old answer still shown, and a
+		// memo that reads it (4.) pending too.
+		assert.equal(await tab.eval(clickThenRead(".refresh", "document.querySelector('.outside').textContent")), "pending", "in the click's flush");
+		assert.deepEqual(await state(), { outside: "pending", loading: null, item: "page 1, version 1", stale: true, label: "page 1, version 1", derived: "derived pending", problem: null });
+		await tab.wait("document.querySelector('.item').textContent.includes('version 2')", 3000);
+		assert.deepEqual(await state(), { outside: "settled", loading: null, item: "page 1, version 2", stale: false, label: "page 1, version 2", derived: "derived settled", problem: null });
+		assert.deepEqual(await tab.eval("window.seen"), [false, true, false]);
+		// 3. A signal the read's URL depends on: the same, the old page shown until the new one is in.
+		assert.equal(await tab.eval(clickThenRead(".next", "document.querySelector('.outside').textContent")), "pending");
+		assert.deepEqual(await state(), { outside: "pending", loading: null, item: "page 1, version 2", stale: true, label: "page 1, version 2", derived: "derived pending", problem: null });
+		await tab.wait("document.querySelector('.item').textContent.includes('page 2')", 3000);
+		assert.deepEqual(await state(), { outside: "settled", loading: null, item: "page 2, version 3", stale: false, label: "page 2, version 3", derived: "derived settled", problem: null });
+		// 6. The effect's compute ran once a change of answer, and only then.
+		assert.deepEqual(await tab.eval("window.seen"), [false, true, false, true, false]);
+		assert.deepEqual(slow.asked, ["GET /api/slow?page=1", "GET /api/slow?page=1", "GET /api/slow?page=2"]);
+		// Refreshing again and again: the probes its readers keep go with the runs that made them.
+		const kept = await tab.eval("window.runtime.kept.size");
+		for (let i = 0; i < 3; i++) {
+			await tab.click(".refresh");
+			await tab.wait(`document.querySelector('.item').textContent.includes('version ${4 + i}')`, 3000);
+			await tab.wait("document.querySelector('.outside').textContent === 'settled'", 3000);
+		}
+		assert.equal(await tab.eval("window.runtime.kept.size"), kept, "no probe kept beyond its run");
+		// 5. A refresh that fails: pending until it does, then not, and <Errored> shows; trying again,
+		// the old answer shows, pending, until the new one is in.
+		slow.fail = 1;
+		await tab.click(".refresh");
+		await tab.wait("document.querySelector('.outside').textContent === 'pending'", 3000);
+		await tab.wait("document.querySelector('.problem') !== null", 3000);
+		assert.deepEqual(await state(), { outside: "settled", loading: null, item: null, stale: null, label: null, derived: null, problem: "GET /api/slow?page=2: 500: the database is down Again" });
+		await tab.click(".again");
+		await tab.wait("document.querySelector('.item') !== null", 3000);
+		assert.deepEqual(await state(), { outside: "pending", loading: null, item: "page 2, version 6", stale: true, label: "page 2, version 6", derived: "derived pending", problem: null });
+		await tab.wait("document.querySelector('.outside').textContent === 'settled'", 3000);
+		assert.deepEqual(await state(), { outside: "settled", loading: null, item: "page 2, version 7", stale: false, label: "page 2, version 7", derived: "derived settled", problem: null });
+		assert.deepEqual(await tab.eval("window.seen"), [false, ...Array(7).fill([true, false]).flat()], "a change of answer a run: two for each of the seven reads again");
+		assert.deepEqual(tab.errors, []);
+		assert.deepEqual(tab.console, []);
+	} finally {
+		await site.close();
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("is_pending!: rendered as the server would, false; hydrated strictly, no mismatch and nothing asked; then a refresh is pending", { skip }, async () => {
+	const server = await Runtime.load(readFileSync(join(out, "pending-server.wasm")));
+	const rendered = [["GET /api/slow?page=1", "", JSON.stringify({ status: 200, body: JSON.stringify({ page: 1, version: 1 }) })]];
+	const { html, answers } = server.renderToString({ path: "/", answers: rendered });
+	assert.match(html, /<p class="outside"><!--x-->settled<!--\/x--><\/p>/);
+	assert.match(html, /<p class="item">\s*page <!--x-->1<!--\/x-->, version <!--x-->1<!--\/x-->\s*<\/p>/, "no stale class");
+	assert.match(html, /<p class="derived"><!--x-->derived settled<!--\/x--><\/p>/);
+	assert.deepEqual(answers, rendered);
+	const slow = slowApi();
+	const dir = mkdtempSync(join(tmpdir(), "rocx-pending-hydrate-"));
+	cpSync(join(web, "runtime.js"), join(dir, "runtime.js"));
+	cpSync(join(out, "pending.wasm"), join(dir, "pending.wasm"));
+	const page = `<!doctype html><html><body><div id="app">${html}${Runtime.answersScript(rendered)}</div>${pendingScript("hydrate")}</body></html>`;
+	const site = await serve(dir, (path) => (path === "/" ? page : null), slow.api);
+	try {
+		const tab = await browser.page();
+		await tab.goto(`${site.url}/`);
+		await tab.wait("window.started === true", 3000);
+		assert.equal(await tab.eval("window.problem ?? null"), null, "strictly: no mismatch, nothing asked");
+		assert.deepEqual(slow.asked, [], "the answer came with the page");
+		assert.equal(await textOf(tab, ".outside"), "settled");
+		assert.deepEqual(await tab.eval("window.seen"), [false]);
+		await tab.click(".refresh");
+		await tab.wait("document.querySelector('.item').classList.contains('stale')", 3000);
+		assert.equal(await textOf(tab, ".outside"), "pending");
+		await tab.wait("document.querySelector('.outside').textContent === 'settled'", 3000);
+		assert.match(await textOf(tab, ".item"), /page 1, version 1/, "the slow API's own count: its first answer");
+		assert.deepEqual(await tab.eval("window.seen"), [false, true, false]);
+		assert.deepEqual(tab.errors, []);
+		assert.deepEqual(tab.console, []);
 	} finally {
 		await site.close();
 		rmSync(dir, { recursive: true, force: true });

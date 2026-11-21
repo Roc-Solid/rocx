@@ -48,4 +48,9 @@ Api := [].{
 	## GET /api/changes, its events: each says what the reads page shows has changed.
 	changes : {} -> Endpoint({}, {}, Events(Str))
 	changes = |{}| Endpoint.remote("GET", "/api/changes")
+
+	## GET /api/slow: a read the tests answer slowly, with the page it was asked for (`?page=`) and
+	## how many times it has been asked (`version`).
+	slow : {} -> Endpoint({}, {}, { page : U64, version : U64 })
+	slow = |{}| Endpoint.remote("GET", "/api/slow")
 }

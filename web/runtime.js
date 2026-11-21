@@ -40,8 +40,9 @@ const wire = (method, target, headers, body) => [`${method} ${target}`, ...heade
 let ids = 0;
 
 /** What a run makes, as it makes it: child computations, boxes kept for them, what it reads,
- * signals, and cleanups (a kept box's id, or the runtime's own function). */
-const making_ = () => ({ children: [], kept: [], sources: new Set(), signals: [], cleanups: [] });
+ * signals, cleanups (a kept box's id, or the runtime's own function), and what its `is_pending!`
+ * calls answered (`queries`). */
+const making_ = () => ({ children: [], kept: [], sources: new Set(), signals: [], cleanups: [], queries: [] });
 
 /** A hole, attribute, memo, fallback or the root: a box Roc made, run again when what it read changes. */
 class Computation {
@@ -754,6 +755,10 @@ export class Runtime {
 				const memo = new Computation(this, { kind: "memo", runner: ptr, owner: this.current, scope: this.current?.scope ?? {} });
 				memo.state = "pending";
 				memo.value = 0;
+				// Whether it has a value and waits for a new one (`refreshing`), or it or a memo it reads
+				// does (`stale`): what is_pending! answers, its readers tracking `pending`.
+				memo.refreshing = memo.stale = false;
+				memo.pending = { observers: new Set() };
 				this.memos.set(memo.id, memo);
 				this.run(memo);
 				return memo.id;
@@ -773,18 +778,41 @@ export class Runtime {
 			},
 			js_refresh: (ptr) => {
 				// The memos the accessor reads, found by running it once (functions can't be compared).
-				const probe = { kind: "probe", memos: new Set(), calls: new Map() };
-				const previous = this.current;
-				this.current = probe;
+				let memos;
 				try {
-					this.enter(() => this.ex.run(ptr));
-				} catch (error) {
-					if (!(error instanceof NotReady || error instanceof Failed)) throw error;
+					memos = this.probe(ptr);
 				} finally {
-					this.current = previous;
 					this.ex.release(ptr);
 				}
-				for (const memo of probe.memos) this.later({ refresh: memo });
+				for (const memo of memos) this.later({ refresh: memo });
+			},
+			// Whether a memo the accessor reads is pending (`pending`). A computation that asks tracks
+			// each one's `pending`, not its value, and keeps the probe: when one changes, it is run
+			// again only if the probe, run again, answers otherwise (`answersChanged`).
+			js_is_pending: (ptr) => {
+				if (this.onServer) {
+					this.ex.release(ptr);
+					return 0;
+				}
+				let memos;
+				try {
+					memos = this.probe(ptr);
+				} catch (error) {
+					this.ex.release(ptr);
+					throw error;
+				}
+				const answer = this.pending(memos);
+				const making = this.current?.making;
+				if (!making) {
+					this.ex.release(ptr);
+					return answer ? 1 : 0;
+				}
+				const id = ++ids;
+				this.kept.set(id, ptr);
+				making.kept.push(id);
+				making.queries.push({ probe: id, memos, answer });
+				for (const memo of memos) this.track(memo.pending);
+				return answer ? 1 : 0;
 			},
 			js_fail: (ptr, len) => {
 				throw new Failed(text(ptr, len));
@@ -1272,6 +1300,12 @@ export class Runtime {
 	 * keeps it. The last complete run's cleanups run first, as Solid runs them before a run again. */
 	run(computation) {
 		if (computation.disposed) return;
+		if (computation.recheck) {
+			// Here only because a memo an `is_pending!` it called reads changed: run only if that
+			// would answer otherwise now.
+			computation.recheck = false;
+			if (!this.answersChanged(computation)) return;
+		}
 		this.cleanUp(computation.made.cleanups);
 		const making = making_();
 		const previous = this.current;
@@ -1309,6 +1343,7 @@ export class Runtime {
 				// now, so disposing it lets go of all of it.
 				const old = computation.made;
 				computation.made = making;
+				computation.queries = making.queries;
 				computation.making = null;
 				this.drop(old);
 			}
@@ -1331,6 +1366,71 @@ export class Runtime {
 				if (computation.kind !== "reaction") computation.scope.loading?.wait(computation);
 			} else this.failed(computation, failure);
 		}
+		if (computation.kind === "memo") {
+			// Waiting for a new value with one to show (and not failed): pending, from this flush on.
+			computation.refreshing = outcome === "pending" && computation.value !== 0 && computation.state !== "failed";
+			this.restale(computation);
+			// A value, or a failure: a probe that stopped at it may now read further.
+			if (outcome !== "pending") this.recheckReaders(computation);
+		}
+	}
+
+	/**
+	 * Whether a memo, or a memo it reads (all the way up), has a value and waits for a new one: set
+	 * again after it runs. When that changes, the computations whose `is_pending!` read it are
+	 * rechecked, and the memos that read it set theirs again. A failed memo is not pending.
+	 */
+	restale(memo) {
+		if (memo.disposed) return;
+		let stale = memo.refreshing;
+		if (memo.state !== "failed") for (const source of memo.sources) if (source.kind === "memo" && source.stale) stale = true;
+		if (stale === memo.stale) return;
+		memo.stale = stale;
+		this.recheckReaders(memo);
+		for (const observer of memo.observers) if (observer.kind === "memo") this.restale(observer);
+	}
+
+	/** What `is_pending!` answers for the memos its probe read. */
+	pending(memos) {
+		return memos.some((memo) => memo.stale);
+	}
+
+	/** The computations whose `is_pending!` read the memo, rechecked in the flush. */
+	recheckReaders(memo) {
+		for (const reader of memo.pending.observers) {
+			if (reader.disposed || this.dirty.has(reader)) continue;
+			reader.recheck = true;
+			this.dirty.add(reader);
+			this.wake();
+		}
+	}
+
+	/** Whether an `is_pending!` the computation's last run called answers otherwise now, or reads
+	 * other memos: each one's probe, run again. */
+	answersChanged(computation) {
+		for (const { probe, memos, answer } of computation.queries ?? []) {
+			const ptr = this.kept.get(probe);
+			if (!ptr) return true;
+			const now = this.probe(ptr);
+			if (this.pending(now) !== answer || now.length !== memos.length || now.some((memo, i) => memo !== memos[i])) return true;
+		}
+		return false;
+	}
+
+	/** Runs an accessor once (`refresh!`'s probe, `is_pending!`'s), its reads untracked: the memos it
+	 * reads, in order. A read that waits or fails only stops it. */
+	probe(ptr) {
+		const probe = { kind: "probe", memos: new Set(), calls: new Map() };
+		const previous = this.current;
+		this.current = probe;
+		try {
+			this.enter(() => this.ex.run(ptr));
+		} catch (error) {
+			if (!(error instanceof NotReady || error instanceof Failed)) throw error;
+		} finally {
+			this.current = previous;
+		}
+		return [...probe.memos];
 	}
 
 	/** A complete run's answer, applied: the node patched, or the memo's value set. */
@@ -1479,6 +1579,7 @@ export class Runtime {
 
 	schedule(computation) {
 		if (computation.disposed) return;
+		computation.recheck = false;
 		this.dirty.add(computation);
 		this.wake();
 	}

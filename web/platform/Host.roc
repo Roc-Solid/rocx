@@ -22,6 +22,11 @@ Host := [].{
 	## Runs it once, noting the memos it reads, and computes those again, asking the server again.
 	refresh! : Box(() => Str) => {}
 
+	## Runs it once, noting the memos it reads (its reads untracked, a wait or a failure caught):
+	## whether one of them, or a memo one of them reads, has a value and waits for a new one. The
+	## caller runs again when that answer changes.
+	is_pending! : Box(() => Str) => Bool
+
 	## Fails the caller, with why: the nearest <Errored> shows it.
 	fail! : Str => {}
 

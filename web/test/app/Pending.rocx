@@ -1,0 +1,40 @@
+import pf.Html
+import pf.Solid exposing [create_signal!, create_memo!, create_effect!, refresh!, is_pending!]
+import pf.Loading
+import pf.Errored
+import pf.Endpoint
+import pf.Browser
+import Api
+
+## A slow endpoint read (D-023) and what is_pending! says of it: false while it loads the first
+## time (<Loading>'s fallback shows), true while it is read again with the old answer still shown (a
+## refresh, or the next page), false with the new one. A memo that reads it (`label!`) is pending
+## while it is. An effect tells the page (`pending`) each answer its compute gets, so the tests can
+## count its runs.
+Pending := [].{
+	view! : {} => Html
+	view! = |{}| {
+		(page!, set_page!) = create_signal!(1.U64)
+		item! = create_memo!(|| Endpoint.get!(Endpoint.with_query(Api.slow({}), "page=${page!().to_str()}")))
+		label! = create_memo!(|| "page ${item!().page.to_str()}, version ${item!().version.to_str()}")
+		create_effect!(|| is_pending!(item!), |pending| Browser.call!("pending", pending))
+		<div class="pending">
+			<p class="outside">{if (is_pending!(item!)) "pending" else "settled"}</p>
+			<Errored fallback={|problem, retry|
+				<p class="problem">
+					{problem} <button class="again" on:click={retry}>Again</button>
+				</p>
+			}>
+				<Loading fallback={<p class="loading">Loading…</p>}>
+					<p class="item" class:stale={is_pending!(item!)}>
+						page {item!().page.to_str()}, version {item!().version.to_str()}
+					</p>
+					<p class="label">{label!()}</p>
+					<p class="derived">{if (is_pending!(label!)) "derived pending" else "derived settled"}</p>
+				</Loading>
+			</Errored>
+			<button class="refresh" on:click={|| refresh!(item!)}>Refresh</button>
+			<button class="next" on:click={|| set_page!(page!() + 1)}>Next</button>
+		</div>
+	}
+}

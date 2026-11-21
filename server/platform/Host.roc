@@ -200,6 +200,9 @@ Host := [].{
 	memo_get! : U64 => Box(() -> a)
 	refresh! : Box(() => Str) => {}
 
+	## False: the server renders final values, so nothing it renders is computed again.
+	is_pending! : Box(() => Str) => Bool
+
 	## Fails the caller, with why: the nearest <Errored> shows it.
 	fail! : Str => {}
 	event_value! : {} => Str

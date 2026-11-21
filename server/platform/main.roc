@@ -130,6 +130,7 @@ platform ""
 		"roc_host_tcp_start_tls": Host.tcp_start_tls!,
 		"roc_host_tcp_write": Host.tcp_write!,
 		"roc_interval": Host.interval!,
+		"roc_is_pending": Host.is_pending!,
 		"roc_keep": Host.keep!,
 		"roc_listen": Host.listen!,
 		"roc_location": Host.location!,

@@ -882,6 +882,13 @@ pub const HostIntervalArgs = extern struct {
     arg1: RocErasedCallable,
 };
 
+/// Arguments for Host.is_pending!
+/// Roc signature: Box({} => Str) => Bool
+/// Refcounted fields are owned by the hosted function.
+pub const HostIs_pendingArgs = extern struct {
+    arg0: RocErasedCallable,
+};
+
 /// Arguments for Host.keep!
 /// Roc signature: Box({} => Str) => U64
 /// Refcounted fields are owned by the hosted function.
@@ -1173,6 +1180,13 @@ pub extern fn roc_host_live_publish(arg0: RocStr, arg1: RocStr) callconv(.c) voi
 /// moved into storage or into the result:
 ///     decrefErasedCallable(arg1, roc_host);
 pub extern fn roc_interval(arg0: u64, arg1: RocErasedCallable) callconv(.c) u64;
+
+/// Hosted symbol for Host.is_pending!
+/// Roc signature: Box({} => Str) => Bool
+/// Owned arguments. Release each exactly once before returning, unless it is
+/// moved into storage or into the result:
+///     decrefErasedCallable(arg0, roc_host);
+pub extern fn roc_is_pending(arg0: RocErasedCallable) callconv(.c) bool;
 
 /// Hosted symbol for Host.keep!
 /// Roc signature: Box({} => Str) => U64

@@ -6,7 +6,7 @@ import Context
 ## changes. The browser's timers are here too (`set_interval!`, `set_timeout!`), each stopped by
 ## the `clear!` it answers, or when what started it goes.
 ##
-##     import pf.Solid exposing [create_signal!, create_memo!, create_effect!, on_cleanup!, on_settled!, refresh!, use_context!, set_interval!]
+##     import pf.Solid exposing [create_signal!, create_memo!, create_effect!, on_cleanup!, on_settled!, refresh!, is_pending!, use_context!, set_interval!]
 ##
 ##     (count!, set_count!) = create_signal!(0.U64)
 ##     doubled! = create_memo!(|| count!() * 2)
@@ -52,6 +52,25 @@ Solid := [].{
 			""
 		}
 		Host.refresh!(Box.box(probe!))
+	}
+
+	## Whether what the accessor reads is being computed again while it shows its last value
+	## (Solid 2.0's `isPending`): true while a memo it reads (or a memo that one reads, all the way
+	## up) has a value and waits for a new one, after a `refresh!` or after what it reads changed.
+	## False while there is no value yet, the first load, which `<Loading>` covers; and false for a
+	## memo that failed, which `<Errored>` covers. Calling it never waits or fails, and doesn't make
+	## the caller depend on the values the accessor reads: a hole, a memo or an effect that calls it
+	## runs again when the answer changes. On the server it is false: the server renders final values.
+	##
+	##     <p class:stale={is_pending!(user!)}>{user!().name}</p>
+	##     <Show when!={is_pending!(|| (user!(), posts!()))}><p>Refreshing…</p></Show>
+	is_pending! : (() => a) => Bool
+	is_pending! = |read!| {
+		probe! = || {
+			_ = read!()
+			""
+		}
+		Host.is_pending!(Box.box(probe!))
 	}
 
 	## The value of a context (`useContext`): what the nearest provider above gives, or its default.

@@ -22,6 +22,7 @@ const js = struct {
     extern "env" fn js_memo_done(value: usize) void;
     extern "env" fn js_memo_get(id: u32) usize;
     extern "env" fn js_refresh(probe: usize) void;
+    extern "env" fn js_is_pending(probe: usize) u32;
     extern "env" fn js_fail(ptr: [*]const u8, len: usize) void;
     extern "env" fn js_event_value() usize;
     extern "env" fn js_boundary() u32;
@@ -173,6 +174,10 @@ fn hostedMemoGet(id: u64) callconv(.c) Callable {
 
 fn hostedRefresh(probe: Callable) callconv(.c) void {
     js.js_refresh(address(probe));
+}
+
+fn hostedIsPending(probe: Callable) callconv(.c) bool {
+    return js.js_is_pending(address(probe)) != 0;
 }
 
 fn hostedFail(why: RocStr) callconv(.c) void {
@@ -418,6 +423,7 @@ comptime {
     @export(&hostedMemoDone, .{ .name = "roc_memo_done", .visibility = hidden });
     @export(&hostedMemoGet, .{ .name = "roc_memo_get", .visibility = hidden });
     @export(&hostedRefresh, .{ .name = "roc_refresh", .visibility = hidden });
+    @export(&hostedIsPending, .{ .name = "roc_is_pending", .visibility = hidden });
     @export(&hostedFail, .{ .name = "roc_fail", .visibility = hidden });
     @export(&hostedEventValue, .{ .name = "roc_event_value", .visibility = hidden });
     @export(&hostedBoundary, .{ .name = "roc_boundary", .visibility = hidden });

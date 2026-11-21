@@ -1650,9 +1650,10 @@ flash_endpoint = Endpoint.local(
 		},
 )
 
-## A page that reads GET endpoints as the server renders it: its own data, with the page's query;
-## one that refuses, as a value (`read!`) and as a failure an <Errored> shows (`get!`), the same URL
-## asked once; and one inside a <NoHydration>, which isn't noted for the browser.
+## A page that reads GET endpoints as the server renders it: its own data, with the page's query,
+## never pending (`is_pending!`: the server renders final values); one that refuses, as a value
+## (`read!`) and as a failure an <Errored> shows (`get!`), the same URL asked once; and one inside a
+## <NoHydration>, which isn't noted for the browser.
 reading! : {} => Html
 reading! = |{}| {
 	data! = Solid.create_memo!(|| Endpoint.get!(Endpoint.with_query(reads_endpoint, Router.location!({}).query)))
@@ -1665,6 +1666,20 @@ reading! = |{}| {
 				[],
 				[
 					Html.element("p", [Html.attr("class", "data")], [Html.text_of(|| "${data!().weeks} ${data!().member} ${data!().probe}")]),
+					Html.element(
+						"p",
+						[Html.attr("class", "pending")],
+						[
+							Html.text_of(
+								||
+									if Solid.is_pending!(data!) {
+										"pending"
+									} else {
+										"settled"
+									},
+							),
+						],
+					),
 					Html.element(
 						"p",
 						[Html.attr("class", "missing")],
