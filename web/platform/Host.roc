@@ -68,6 +68,22 @@ Host := [].{
 	## cleaned up.
 	listen! : Str, Box(() => Str) => {}
 
+	## In the browser: subscribes the handler to the channel at a URL, on the tab's one stream
+	## (`/rocx/live`). The handler runs for each thing it hears, in order, `event_value!` what
+	## (`"Resync"`, `{"Message":"…"}`, `{"Refused":[403,"…"]}`, `{"Ended":"…"}`), until its owner (a
+	## component, a computation, an effect's apply) is cleaned up.
+	subscribe! : Str, Box(() => Str) => {}
+
+	## In the browser: says something (JSON) on the channel at a URL: sent with what else is said in
+	## this frame (`POST /rocx/live/send`).
+	say! : Str, Str => {}
+
+	## In the browser: asks for a `Resync` of the channel at a URL, on the tab's stream.
+	resync! : Str => {}
+
+	## Publishing on a `Live` topic is the server's: in the browser, it fails.
+	live_publish! : Str, Str => {}
+
 	## In the browser: runs the handler after `ms` milliseconds (`timeout!`), or every `ms`
 	## (`interval!`), until `clear_timer!` with the id they answer, or until what made it is cleaned
 	## up (a component, a computation, an effect's apply: as its cleanups run). On the server,

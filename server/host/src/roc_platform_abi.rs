@@ -2965,6 +2965,15 @@ pub struct HostRefreshArgs {
     pub arg0: RocErasedCallable,
 }
 
+/// Arguments for Host.resync!
+/// Roc signature: Str => {}
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostResyncArgs {
+    pub arg0: RocStr,
+}
+
 /// Arguments for Host.retry!
 /// Roc signature: U64 => {}
 /// Refcounted fields are owned by the hosted function.
@@ -3003,6 +3012,16 @@ pub struct HostRowSetArgs {
     pub arg0: u64,
     pub arg1: RocStr,
     pub arg2: RocErasedCallable,
+}
+
+/// Arguments for Host.say!
+/// Roc signature: Str, Str => {}
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostSayArgs {
+    pub arg0: RocStr,
+    pub arg1: RocStr,
 }
 
 /// Arguments for Host.signal_get!
@@ -3058,6 +3077,16 @@ pub struct HostSubmissionArgs {
 #[derive(Clone, Copy)]
 pub struct HostSubmissionClearArgs {
     pub arg0: RocStr,
+}
+
+/// Arguments for Host.subscribe!
+/// Roc signature: Str, Box({} => Str) => {}
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostSubscribeArgs {
+    pub arg0: RocStr,
+    pub arg1: RocErasedCallable,
 }
 
 /// Arguments for Host.timeout!
@@ -4290,6 +4319,13 @@ unsafe extern "C" {
     /// The result is owned by Roc: return exactly one owned reference.
     pub fn roc_request() -> RocStr;
 
+    /// Hosted symbol for Host.resync!
+    /// Roc signature: Str => {}
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    pub fn roc_resync(arg0: RocStr);
+
     /// Hosted symbol for Host.retry!
     /// Roc signature: U64 => {}
     pub fn roc_retry(arg0: u64);
@@ -4316,6 +4352,14 @@ unsafe extern "C" {
     ///     unsafe { arg1.decref(roc_host); }
     ///     unsafe { decref_erased_callable(arg2, roc_host); }
     pub fn roc_row_set(arg0: u64, arg1: RocStr, arg2: RocErasedCallable);
+
+    /// Hosted symbol for Host.say!
+    /// Roc signature: Str, Str => {}
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    ///     unsafe { arg1.decref(roc_host); }
+    pub fn roc_say(arg0: RocStr, arg1: RocStr);
 
     /// Hosted symbol for Host.signal_get!
     /// Roc signature: U64 => Box({} -> rigid)
@@ -4354,6 +4398,14 @@ unsafe extern "C" {
     /// moved into storage or into the result:
     ///     unsafe { arg0.decref(roc_host); }
     pub fn roc_submission_clear(arg0: RocStr);
+
+    /// Hosted symbol for Host.subscribe!
+    /// Roc signature: Str, Box({} => Str) => {}
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    ///     unsafe { decref_erased_callable(arg1, roc_host); }
+    pub fn roc_subscribe(arg0: RocStr, arg1: RocErasedCallable);
 
     /// Hosted symbol for Host.timeout!
     /// Roc signature: U64, Box({} => Str) => U64

@@ -18,7 +18,7 @@ platform ""
 	requires {
 		main! : {} => Html
 	}
-	exposes [Audio, Browser, Call, Context, Endpoint, Errored, Events, For, Html, HttpStatusCode, Loading, Middleware, OpenApi, Router, Server, Show, Solid, Submission, Title, Transition]
+	exposes [Audio, Browser, Call, Channel, Context, Endpoint, Errored, Events, For, Html, HttpStatusCode, Loading, Middleware, OpenApi, Router, Server, Show, Solid, Submission, Title, Transition]
 	packages {}
 	provides { "roc_mount": mount_for_host!, "roc_run": run_for_host! }
 	hosted {
@@ -36,6 +36,7 @@ platform ""
 		"roc_fetch": Host.fetch!,
 		"roc_flash": Host.flash!,
 		"roc_for_new": Host.for_new!,
+		"roc_host_live_publish": Host.live_publish!,
 		"roc_interval": Host.interval!,
 		"roc_keep": Host.keep!,
 		"roc_listen": Host.listen!,
@@ -46,16 +47,19 @@ platform ""
 		"roc_problem": Host.problem!,
 		"roc_refresh": Host.refresh!,
 		"roc_request": Host.request!,
+		"roc_resync": Host.resync!,
 		"roc_retry": Host.retry!,
 		"roc_row_get": Host.row_get!,
 		"roc_row_index": Host.row_index!,
 		"roc_row_set": Host.row_set!,
+		"roc_say": Host.say!,
 		"roc_signal_get": Host.signal_get!,
 		"roc_signal_new": Host.signal_new!,
 		"roc_signal_set": Host.signal_set!,
 		"roc_status": Host.status!,
 		"roc_submission": Host.submission!,
 		"roc_submission_clear": Host.submission_clear!,
+		"roc_subscribe": Host.subscribe!,
 		"roc_timeout": Host.timeout!,
 		"roc_title": Host.title!,
 	}
@@ -79,6 +83,7 @@ import For
 import Loading
 import Errored
 import Call
+import Channel
 import Server
 import Context
 import Endpoint

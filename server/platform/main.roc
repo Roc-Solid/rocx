@@ -52,7 +52,7 @@ platform ""
 			logs : { format : [Auto, Pretty, Json] },
 		}
 	}
-	exposes [Actor, AesGcm, Audio, Browser, Call, Context, Cron, Db, Email, Endpoint, Env, Errored, Events, For, Html, Http, HttpResponse, HttpStatusCode, Job, JobsPage, Live, Loading, Log, Middleware, OpenApi, Random, Router, Server, Show, Solid, Submission, Tcp, Time, Title, Transition]
+	exposes [Actor, AesGcm, Audio, Browser, Call, Channel, Context, Cron, Db, Email, Endpoint, Env, Errored, Events, For, Html, Http, HttpResponse, HttpStatusCode, Job, JobsPage, Live, Loading, Log, Middleware, OpenApi, Random, Router, Server, Show, Solid, Submission, Tcp, Time, Title, Transition]
 	packages {}
 	provides {
 		"roc_actor": actor_for_host!,
@@ -134,16 +134,19 @@ platform ""
 		"roc_problem": Host.problem!,
 		"roc_refresh": Host.refresh!,
 		"roc_request": Host.request!,
+		"roc_resync": Host.resync!,
 		"roc_retry": Host.retry!,
 		"roc_row_get": Host.row_get!,
 		"roc_row_index": Host.row_index!,
 		"roc_row_set": Host.row_set!,
+		"roc_say": Host.say!,
 		"roc_signal_get": Host.signal_get!,
 		"roc_signal_new": Host.signal_new!,
 		"roc_signal_set": Host.signal_set!,
 		"roc_status": Host.status!,
 		"roc_submission": Host.submission!,
 		"roc_submission_clear": Host.submission_clear!,
+		"roc_subscribe": Host.subscribe!,
 		"roc_timeout": Host.timeout!,
 		"roc_title": Host.title!,
 	}
@@ -161,6 +164,7 @@ import AesGcm
 import Audio
 import Browser
 import Call
+import Channel
 import Context
 import Cron
 import CronTicker

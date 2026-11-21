@@ -37,6 +37,10 @@ const js = struct {
     extern "env" fn js_context_get(id: u32) usize;
     extern "env" fn js_fetch(method_ptr: [*]const u8, method_len: usize, url_ptr: [*]const u8, url_len: usize, headers_ptr: [*]const u8, headers_len: usize, body_ptr: [*]const u8, body_len: usize) usize;
     extern "env" fn js_listen(url_ptr: [*]const u8, url_len: usize, handler: usize) void;
+    extern "env" fn js_subscribe(url_ptr: [*]const u8, url_len: usize, handler: usize) void;
+    extern "env" fn js_say(url_ptr: [*]const u8, url_len: usize, said_ptr: [*]const u8, said_len: usize) void;
+    extern "env" fn js_resync(url_ptr: [*]const u8, url_len: usize) void;
+    extern "env" fn js_live_publish(topic_ptr: [*]const u8, topic_len: usize, message_ptr: [*]const u8, message_len: usize) void;
     extern "env" fn js_timer(ms: u32, repeat: u32, handler: usize) u32;
     extern "env" fn js_clear_timer(id: u32) void;
     extern "env" fn js_browser_call(name_ptr: [*]const u8, name_len: usize, arg_ptr: [*]const u8, arg_len: usize) void;
@@ -254,6 +258,38 @@ fn hostedListen(url: RocStr, handler: Callable) callconv(.c) void {
     js.js_listen(u.ptr, u.len, address(handler));
 }
 
+// Channels: the runtime's hub, one stream for the tab (`/rocx/live`), keeps each subscription's
+// handler until its owner is cleaned up; what is said goes with the frame's other sayings.
+// Publishing is the server's: the runtime fails it.
+
+fn hostedSubscribe(url: RocStr, handler: Callable) callconv(.c) void {
+    defer url.decref(host());
+    const u = url.asSlice();
+    js.js_subscribe(u.ptr, u.len, address(handler));
+}
+
+fn hostedSay(url: RocStr, said: RocStr) callconv(.c) void {
+    defer url.decref(host());
+    defer said.decref(host());
+    const u = url.asSlice();
+    const s = said.asSlice();
+    js.js_say(u.ptr, u.len, s.ptr, s.len);
+}
+
+fn hostedResync(url: RocStr) callconv(.c) void {
+    defer url.decref(host());
+    const u = url.asSlice();
+    js.js_resync(u.ptr, u.len);
+}
+
+fn hostedLivePublish(topic: RocStr, message: RocStr) callconv(.c) void {
+    defer topic.decref(host());
+    defer message.decref(host());
+    const t = topic.asSlice();
+    const m = message.asSlice();
+    js.js_live_publish(t.ptr, t.len, m.ptr, m.len);
+}
+
 // A component's timers: the browser's (setTimeout, setInterval), its handler kept by the runtime
 // until it is cleared, done, or what made it goes. A wait longer than the browser's (2^31 - 1 ms,
 // some 24 days) is that long.
@@ -397,6 +433,10 @@ comptime {
     @export(&hostedContextGet, .{ .name = "roc_context_get", .visibility = hidden });
     @export(&hostedFetch, .{ .name = "roc_fetch", .visibility = hidden });
     @export(&hostedListen, .{ .name = "roc_listen", .visibility = hidden });
+    @export(&hostedSubscribe, .{ .name = "roc_subscribe", .visibility = hidden });
+    @export(&hostedSay, .{ .name = "roc_say", .visibility = hidden });
+    @export(&hostedResync, .{ .name = "roc_resync", .visibility = hidden });
+    @export(&hostedLivePublish, .{ .name = "roc_host_live_publish", .visibility = hidden });
     @export(&hostedTimeout, .{ .name = "roc_timeout", .visibility = hidden });
     @export(&hostedInterval, .{ .name = "roc_interval", .visibility = hidden });
     @export(&hostedClearTimer, .{ .name = "roc_clear_timer", .visibility = hidden });

@@ -1,6 +1,7 @@
 import Server
 import Events
 import Call
+import Channel
 import Host
 
 ## An HTTP endpoint: a method at a path, which a route's `+server.roc` defines (`get!`, `post!`,
@@ -116,6 +117,156 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 					Failed(why) => heard!(Failed(HttpErr(why)))
 				},
 		)
+
+	## From a component, in the browser: subscribes to a channel (a route's `channel!`), from an
+	## effect, until the effect runs again or its component goes
+	## (`create_effect!(|| org!(), |org| Endpoint.subscribe!(Api.channel_org_org_news({ org }), heard!))`).
+	## `heard!` is given what its subscription hears (`Channel.Event`), in order, one at a time:
+	## `Resync` when it should read its data again, then each `Message`; or why it hears nothing.
+	##
+	## Every subscription in a tab shares one stream (`/rocx/live`), which the runtime opens once the
+	## page has rendered, opens again when what the page subscribes to changes, and opens again, a
+	## little later each time, when it drops. Two components on one channel share its subscription. A
+	## message it can't read as `message` is a `Resync`. On a host with no server (a static copy), it
+	## is `Refused(404, …)`, asked for once. On the server, it does nothing.
+	subscribe! : Endpoint(context, {}, Channel(who, message, said)), (Channel.Event(message) => {}) => {}
+		where [message.Json.Parseable([InvalidJson(Str)])]
+	subscribe! = |endpoint, heard!| {
+		each! = || {
+			heard!(heard_of(Host.event_value!({})))
+			""
+		}
+		Host.subscribe!(endpoint.url, Box.box(each!))
+	}
+
+	## From a component, in the browser: says `said` on a channel, to the server, where its route's
+	## `receive!` hears it, if its check lets the page in (`Endpoint.say!(Api.channel_rooms_room({
+	## room }), Moved({ x, y }))`). What a page says in one frame goes in one request
+	## (`POST /rocx/live/send`); nothing waits for it, and a refusal is a warning in the console. Not
+	## on the server.
+	say! : Endpoint(context, {}, Channel(who, message, said)), said => {}
+		where [said.Json.Encodable(e)]
+	say! = |endpoint, said|
+		match Json.to_str_try(said) {
+			Ok(json) => Host.say!(endpoint.url, json)
+			Err(_) => crash "${endpoint.url}: what is said ${Server.unwritable}"
+		}
+
+	## From a component, in the browser: asks the server for a `Resync` on a channel this tab
+	## subscribes to (and the route's `on_open!` messages after it), as when the page saw it missed
+	## something (a gap in the numbers its messages carry). Every subscriber to it in the tab hears
+	## it. Not on the server.
+	resync! : Endpoint(context, {}, Channel(who, message, said)) => {}
+	resync! = |endpoint| Host.resync!(endpoint.url)
+
+	## On the server: publishes `message` to every page subscribed to a channel
+	## (`Endpoint.publish!(Api.channel_org_org_news({ org: "acme" }), news)`), from a request, a
+	## job or an actor: only those subscribed with the same params hear it. A subscriber hears the
+	## messages on a channel in the order they were published; one that falls too far behind (256)
+	## hears `Resync` instead of what it missed. In the server's memory (`Live`): published while
+	## nobody listens, it is gone.
+	publish! : Endpoint(context, {}, Channel(who, message, said)), message => {}
+		where [message.Json.Encodable(e)]
+	publish! = |endpoint, message|
+		match Json.to_str_try(message) {
+			Ok(json) => Host.live_publish!("channel:${topic_of(endpoint.url)}", json)
+			Err(_) => crash "${endpoint.url}: a message ${Server.unwritable}"
+		}
+
+	## On the server: publishes `message` as `publish!` does, but only the latest with each `key`
+	## matters (where each member's cursor is, say: its key, the member). A subscriber behind gets
+	## only the newest with each key, and never a `Resync` for these: what it missed is replaced.
+	## They aren't ordered with the channel's other messages.
+	publish_latest! : Endpoint(context, {}, Channel(who, message, said)), Str, message => {}
+		where [message.Json.Encodable(e)]
+	publish_latest! = |endpoint, key, message|
+		match Json.to_str_try(message) {
+			Ok(json) => Host.live_publish!("latest:${topic_of(endpoint.url)}", "${Json.to_str(key)}\n${json}")
+			Err(_) => crash "${endpoint.url}: a message ${Server.unwritable}"
+		}
+
+	## On the server: the answer to the host's question about a subscription (`/rocx/live`), as the
+	## generated routes give it, behind the route's middleware: its check, given the context that
+	## handed on; then, as the host asks (`x-rocx-channel`), who it let in and what it is sent first
+	## (`open`), who it is now (`check`), or what a page said, for `received!` (`receive`). A refusal
+	## is its status and why, or the answer it is (a redirect).
+	##
+	## Its hooks: `opened!`, the messages a subscriber is sent first; `received!`, what a page said, as
+	## JSON (`receiving` reads it as the channel's `said`); `closes`, whether the host tells the route
+	## when a subscription ends.
+	channel! : Endpoint(context, {}, Channel(who, message, said)), Server.Request, context, { opened! : who, Str => List(message), received! : who, Str, Str => Try({}, Refusal), closes : Bool } => Server.Response
+		where [who.Json.Encodable(e), message.Json.Encodable(f)]
+	channel! = |endpoint, request, context, hooks| {
+		asked = Server.header(request, "x-rocx-channel") ?? ""
+		tab = Server.header(request, "x-rocx-tab") ?? ""
+		handler = endpoint.run
+		match handler(request, context, {}) {
+			Ok(channel) => {
+				who = Channel.who_of(channel)
+				if asked == "open" {
+					opened! = hooks.opened!
+					# Each part encoded on its own: a record holding `who` isn't, while `who` is a type
+					# variable (the fork's compiler, 3f66e242ea).
+					match (Json.to_str_try(who), messages_json(opened!(who, tab))) {
+						(Ok(who_json), Ok(opened)) => json_answer("{\"url\":${Json.to_str(topic_of(endpoint.url))},\"who\":${who_json},\"opened\":${opened},\"closes\":${if (hooks.closes) "true" else "false"}}")
+						_ => text(500, "${endpoint.url}: who the subscriber is, or a message, ${Server.unwritable}")
+					}
+				} else if asked == "receive" {
+					received! = hooks.received!
+					match received!(who, tab, Server.text_of(request)) {
+						Ok({}) => Server.response(204, [], "")
+						Err(Answer(own)) => own
+						Err(refusal) => {
+							(status, why) = Endpoint.refused(refusal)
+							text(status, why)
+						}
+					}
+				} else {
+					match Json.to_str_try(who) {
+						Ok(who_json) => json_answer("{\"who\":${who_json}}")
+						Err(_) => text(500, "${endpoint.url}: who the subscriber is ${Server.unwritable}")
+					}
+				}
+			}
+			Err(Answer(own)) => own
+			Err(refusal) => {
+				(status, why) = Endpoint.refused(refusal)
+				text(status, why)
+			}
+		}
+	}
+
+	## On the server: a channel's `receive!` (`received!`), for `channel!`, given what a page said as
+	## JSON: read as the channel's `said`, or refused (400) when it isn't one.
+	receiving : Endpoint(context, {}, Channel(who, message, said)), (who, Str, said => Try({}, Refusal)) -> (who, Str, Str => Try({}, Refusal))
+		where [said.Json.Parseable([InvalidJson(Str)])]
+	receiving = |endpoint, received!| |who, tab, json|
+		match Json.parse(json) {
+			Ok(said) => received!(who, tab, said)
+			Err(InvalidJson(why)) => Err(BadRequest("${endpoint.url} can't read what was said: ${why}"))
+		}
+
+	## On the server: a subscription has ended, as the host tells it (`x-rocx-channel: close`, its
+	## body who the check said it was and why it ended): the route's `on_close!`, given them. Its
+	## middleware doesn't run, nor its check: a subscription refused at a beat ends too.
+	closed! : Endpoint(context, {}, Channel(who, message, said)), Server.Request, (who, Str, Channel.Closed => {}) => Server.Response
+		where [who.Json.Parseable([InvalidJson(Str)])]
+	closed! = |endpoint, request, on_close!| {
+		tab = Server.header(request, "x-rocx-tab") ?? ""
+		match closing(Server.text_of(request)) {
+			Ok({ who, why }) => {
+				on_close!(who, tab, why)
+				Server.response(204, [], "")
+			}
+			Err(InvalidJson(why)) => text(400, "${endpoint.url} can't read who the subscriber was: ${why}")
+		}
+	}
+
+	## What the host asks of a channel's route about a subscription (`x-rocx-channel`: `open`,
+	## `check`, `receive` or `close`), or "": a request from anyone else, whose headers the host never
+	## passes on with that name.
+	channel_asked : Server.Request -> Str
+	channel_asked = |request| Server.header(request, "x-rocx-channel") ?? ""
 
 	## Its URL: where a form posts to it, say.
 	url_of : Endpoint(context, arg, result) -> Str
@@ -276,6 +427,57 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 			"${request.path} takes ${Str.join_with(allowed, ", ")}, not ${request.method}",
 		)
 }
+
+## What a subscription heard, as the runtime tells it (`Host.event_value!`): `"Resync"`,
+## `{"Message":"<the message's JSON>"}`, `{"Refused":[403,"why"]}`, `{"Ended":"why"}`. A message it
+## can't read as the channel's, or anything else, is a `Resync`: the subscriber reads its data again.
+heard_of : Str -> Channel.Event(message) where [message.Json.Parseable([InvalidJson(Str)])]
+heard_of = |value| {
+	told : Try([Message(Str), Resync, Refused(U16, Str), Ended(Str)], [InvalidJson(Str)])
+	told = Json.parse(value)
+	match told {
+		Ok(Message(data)) =>
+			match Json.parse(data) {
+				Ok(message) => Message(message)
+				Err(InvalidJson(_)) => Resync
+			}
+		Ok(Resync) => Resync
+		Ok(Refused(status, why)) => Refused(status, why)
+		Ok(Ended(why)) => Ended(why)
+		Err(InvalidJson(_)) => Resync
+	}
+}
+
+## A channel's topic in `Live`: its URL's path, without a query.
+topic_of : Str -> Str
+topic_of = |url|
+	match url.split_first("?") {
+		Ok({ before, .. }) => before
+		Err(_) => url
+	}
+
+## The messages, as a JSON list.
+messages_json : List(message) -> Try(Str, [Unwritable]) where [message.Json.Encodable(e)]
+messages_json = |messages| {
+	var $written = []
+	for message in messages {
+		match Json.to_str_try(message) {
+			Ok(json) => {
+				$written = $written.append(json)
+			}
+			Err(_) => return Err(Unwritable)
+		}
+	}
+	Ok("[${Str.join_with($written, ",")}]")
+}
+
+## An answer to the host: JSON.
+json_answer : Str -> Server.Response
+json_answer = |json| Server.response(200, [{ name: "content-type", value: "application/json" }], json)
+
+## What the host says when a subscription ends: who it was, and why it ended.
+closing : Str -> Try({ who : who, why : Channel.Closed }, [InvalidJson(Str)]) where [who.Json.Parseable([InvalidJson(Str)])]
+closing = |body| Json.parse(body)
 
 ## What an endpoint's arg is read from, as JSON: the body, when it says it is JSON; a form's fields;
 ## `{}` for no body. A body of any other type isn't read (`Unread`, with its type): an upload, which

@@ -886,6 +886,25 @@ pub extern "C" fn roc_listen(url: RocStr, handler: Callable) {
     roc::fail("events are listened to from the browser (a handler's); the server renders without them".into())
 }
 
+/// A channel's subscription is the browser's (`Endpoint.subscribe!`, from an effect, which the
+/// server never runs): rendering, the server subscribes to nothing, and lets its handler go.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_subscribe(url: RocStr, handler: Callable) {
+    drop(taken(url));
+    roc::release(handler);
+}
+
+/// What a page says on a channel, and asking for a resync, are the browser's: on the server, nothing.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_say(url: RocStr, said: RocStr) {
+    drop((taken(url), taken(said)));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_resync(url: RocStr) {
+    drop(taken(url));
+}
+
 /// A timer is the browser's: rendering, the server starts none. Its handler is let go of, the
 /// id is 0, and clearing it does nothing, so a component that starts one renders as it would.
 #[unsafe(no_mangle)]

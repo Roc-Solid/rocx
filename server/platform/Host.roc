@@ -223,6 +223,12 @@ Host := [].{
 	fetch! : Str, Str, Str, Str => Str
 	listen! : Str, Box(() => Str) => {}
 
+	## A channel's subscription, what is said on it, a resync: the browser's (`Endpoint.subscribe!`,
+	## `say!`, `resync!`); on the server, nothing (its box is let go of).
+	subscribe! : Str, Box(() => Str) => {}
+	say! : Str, Str => {}
+	resync! : Str => {}
+
 	## A component's timers: the browser's. Rendering, the server starts none (the id is 0), and
 	## clearing one does nothing.
 	timeout! : U64, Box(() => Str) => U64
