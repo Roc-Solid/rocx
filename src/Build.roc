@@ -63,11 +63,11 @@ Build := [].{
 		}
 		package_paths = packages.join_map(|pkg| pkg.paths)
 		for path in Fs.files!(dir, ".rocx", output).concat(package_paths) {
-			module = Fs.basename(Fs.relative(dir, path).drop_suffix(".rocx"))
+			module_name = Fs.basename(Fs.relative(dir, path).drop_suffix(".rocx"))
 			source = Fs.read_or_empty!(path)
 			for found in Transpile.contexts_defined(source) {
 				if found.shared {
-					$contexts = Build.put($contexts, Transpile.pascal_case(found.name), "${module}.${found.name}")
+					$contexts = Build.put($contexts, Transpile.pascal_case(found.name), "${module_name}.${found.name}")
 				}
 			}
 			$views = Build.views_of($views, source)
@@ -105,9 +105,9 @@ Build := [].{
 			} else {
 				source = Build.link_components(Fs.read_or_empty!(path), path, dir, packages)
 				file = Fs.relative(cwd, path)
-				module = "${Build.generated}/${entry.module}"
+				module_path = "${Build.generated}/${entry.module}"
 				where = { name: entry.module, source: path, generated: out }
-				server_copy = { module, client: Bool.False, contexts, views, route: Bool.False }
+				server_copy = { module_path, client: Bool.False, contexts, views, route: Bool.False }
 				attempt =
 					match Transpile.transpile_module(source, file, server_copy) {
 						Err(Rocx(problem)) => Err(Build.rocx_message!(path, problem))
@@ -119,7 +119,7 @@ Build := [].{
 										match options.client {
 											None => Ok(None)
 											Some(_) =>
-												match Transpile.transpile_module(source, file, { module, client: Bool.True, contexts, views, route: Bool.True }) {
+												match Transpile.transpile_module(source, file, { module_path, client: Bool.True, contexts, views, route: Bool.True }) {
 													Err(Rocx(problem)) => Err(Build.rocx_message!(path, problem))
 													Ok(browser_made) =>
 														match Routes.route_module(browser_made.code, where) {
@@ -168,8 +168,8 @@ Build := [].{
 				} else {
 					source = Build.link_components(Fs.read_or_empty!(path), path, dir, packages)
 					file = Fs.relative(cwd, path)
-					module = Fs.relative(dir, path).drop_suffix(".rocx")
-					match Transpile.transpile_module(source, file, { module, client: Bool.False, contexts, views, route: Bool.False }) {
+					module_path = Fs.relative(dir, path).drop_suffix(".rocx")
+					match Transpile.transpile_module(source, file, { module_path, client: Bool.False, contexts, views, route: Bool.False }) {
 						Err(Rocx(problem)) => {
 							$said = $said.append(Build.rocx_message!(path, problem))
 							$failed = Bool.True
@@ -178,12 +178,12 @@ Build := [].{
 							$codes = $codes.append(made.code)
 							file_in_app = Fs.relative(dir, path)
 							$styles = $styles.concat(made.styles.map(|style| { file: file_in_app, line: style.line, component: style.component, css: style.css }))
-							$stories = $stories.concat(made.stories.map(|story| { file: file_in_app, module, component: story.component, name: story.name, def: story.def, line: story.line }))
+							$stories = $stories.concat(made.stories.map(|story| { file: file_in_app, module_path, component: story.component, name: story.name, def: story.def, line: story.line }))
 							match options.client {
 								None => {}
 								Some(_) =>
 									if made.regions > 0 {
-										match Transpile.transpile_module(source, file, { module, client: Bool.True, contexts, views, route: Bool.False }) {
+										match Transpile.transpile_module(source, file, { module_path, client: Bool.True, contexts, views, route: Bool.False }) {
 											Ok(browser_made) => {
 												$browser = $browser.append({ key: path, value: browser_made.code })
 											}
@@ -219,7 +219,7 @@ Build := [].{
 					read = Fs.read_or_empty!(path)
 					# Its own package, which it imports by the package's directory's name, as the app names it.
 					source = if (pkg.own != pkg.name) Build.rename_package_imports(read, pkg.own, pkg.name) else read
-					match Transpile.transpile_module(source, Fs.relative(cwd, path), { module: "${Build.generated}/${pkg.name}/${name}", client: Bool.False, contexts, views, route: Bool.False }) {
+					match Transpile.transpile_module(source, Fs.relative(cwd, path), { module_path: "${Build.generated}/${pkg.name}/${name}", client: Bool.False, contexts, views, route: Bool.False }) {
 						Err(Rocx(problem)) => {
 							$said = $said.append(Build.rocx_message!(path, problem))
 							$failed = Bool.True
@@ -423,7 +423,7 @@ Build := [].{
 		lines = Text.lines(code)
 		# The marker's line, then the empty one after the code's last newline.
 		count = lines.len()
-		last = lines.get(count - 2) ?? ""
+		last = if (count >= 2) lines.get(count - 2) ?? "" else ""
 		if count >= 2 and last.starts_with("${Transpile.marker} ") and (lines.get(count - 1) ?? "") == "" {
 			Str.join_with(lines.take_first(count - 2).append("${Transpile.marker} ${from}: edit that file, not this one. Line N here is line N there.").append(""), "\n")
 		} else {
@@ -932,9 +932,9 @@ Build := [].{
 						return line
 					}
 					name = Text.cut(bytes, name_at, name_end)
-					module = Text.cut(bytes, name_end + 1, module_end)
-					if packages.any(|pkg| pkg.name == name and pkg.modules.contains(module)) {
-						"import ${Fs.relative(Fs.dirname(path), Fs.join([dir, Build.generated, name, module]))}${Text.rest(bytes, module_end)}"
+					component_name = Text.cut(bytes, name_end + 1, module_end)
+					if packages.any(|pkg| pkg.name == name and pkg.modules.contains(component_name)) {
+						"import ${Fs.relative(Fs.dirname(path), Fs.join([dir, Build.generated, name, component_name]))}${Text.rest(bytes, module_end)}"
 					} else {
 						line
 					}
