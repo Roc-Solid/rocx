@@ -330,7 +330,8 @@ view! = |_|
 				<li>
 					<strong>Memory between requests.</strong> The guards keep their counts and the flags'
 					overrides in actors, which take one message at a time: a message for each limited request.
-					The proposal asks the platform for a plainer place to keep state between requests.
+					The platform has a plainer place for it now, <code>Kv</code>; the guards haven't moved
+					onto it yet.
 				</li>
 			</ul>
 			<Note>

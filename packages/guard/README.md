@@ -257,8 +257,11 @@ Waits on a proposal (PROPOSALS.md):
 
 - **Server-only modules in packages**: until then, `server/*.roc` is copied into the app by hand.
 - **The client's address**: until then, `Direct` can't tell clients apart.
-- **Memory: state between requests**: until then, the guards keep their state as actors' state, a
-  message per limited request (about a millisecond, in a dev build); with a database, the platform
-  also writes each to Postgres, and a flag read costs a write.
+- **Memory: state between requests**: the platform has a place for it now, `Kv` (D-028), but the
+  guards haven't moved onto it. Until they do, they keep their state as actors' state, a message
+  for each limited request and each read of the flags. With a database, the platform writes an
+  actor's state to Postgres only when a message changes it (D-021): a limited request moves a
+  tally, so it costs a write; a flag read changes nothing and writes nothing (setting or resetting
+  an override does).
 - The server reads a body (up to 16 MiB) before any middleware runs, so `body_limit` refuses a large
   body after it has come, not before (DECISIONS.md, D-014).

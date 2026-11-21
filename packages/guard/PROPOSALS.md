@@ -129,8 +129,8 @@ and `"roc_peer": Host.peer!` in both platforms' `hosted` lists. In the package, 
 ## Memory: state between requests
 
 **Problem.** A rate limit keeps a count for each client, and flags keep their overrides, between
-requests. The only state a request can reach that outlives it is an actor's (`Actor.ask!`). That
-works (the package uses it, in `server/Kept.roc`), but each message:
+requests. Until D-028, the only state a request could reach that outlived it was an actor's
+(`Actor.ask!`). That works (the package uses it, in `server/Kept.roc`), but each message:
 
 - goes through the actor's mailbox, runs its turn in a call of its own, and passes its state, the
   message and the reply as JSON: about a millisecond for a limited request, in a dev build, with 64
@@ -139,13 +139,15 @@ works (the package uses it, in `server/Kept.roc`), but each message:
   it: a write for every limited request (each moves a tally). A read of the flags' overrides
   changes nothing, so since D-021 it writes nothing.
 
-**Since D-021** (2026-11-21) the host has no locks at all: `Host.lock!` and `Host.unlock!` are gone,
-and the user ruled out mutexes for this state. Option 1's sketch below is built on them and needs
-redoing: on the mailbox runtime, the natural shape is option 2 as a field of the kind
-(`keep : [Postgres, Memory]` in `Actor.define`'s record, which presence's S1 asks for too), or a
-`Memory` whose `update!` is an actor's turn. The host's value store is now a list that only grows
-(it is for what the platform keeps at start), so it isn't a base for per-client values either. (The
-package splits each limit into 64 shards, a fixed set of names, so memory stays bounded either way.)
+**Since D-028** (2026-11-22) the platform has it: `Kv`, values in the server's memory by key, one
+map behind one lock in the host, never written to Postgres, with a time to live, atomic increments
+and a size limit past which the least recently used go (DECISIONS.md). That is option 1 as built,
+but with no `update!`: a tally can't be read, changed and written back in one step, so `Kept` can't
+move over as the sketch below has it. What is left is the package's own: each client's count as a
+counter (`Kv.increment!` under a key for the client and the window, living as long as the window:
+a fixed window; a sliding one weighs the window before too), in place of the tallies and their
+shards. The flags' overrides must outlive a restart, so they stay an actor's state, of which `Kv`
+could keep a copy for reads. The sketch below is from before D-021 took the host's locks away.
 
 **Options.**
 

@@ -6,10 +6,10 @@ import guard.Tally
 ## `shards` pieces (a hit reads and writes one, a few hundred clients at most), each an actor's
 ## state, so one request at a time changes it.
 ##
-## Today an actor is the only state a request can reach that outlives it. With a database, the
-## platform also writes an actor's state to Postgres (`rocx_actors`) after every message that changes
-## it: correct, but a write per limited request (each moves a tally). PROPOSALS.md ("Memory: state between requests") asks the
-## platform for its memory instead; only this module would change.
+## With a database, the platform also writes an actor's state to Postgres (`rocx_actors`) after
+## every message that changes it: correct, but a write per limited request (each moves a tally).
+## The server's memory, `Kv` (D-028), would do without the writes: PROPOSALS.md ("Memory: state
+## between requests"); only this module would change.
 Kept := [].{
 
 	## A tally, kept as text (`Tally.to_str`), answering hits (`rocx build` lists it in the app's
