@@ -886,3 +886,37 @@ change.
 `packages/crypto` instead of keeping copies. mcp decoded more loosely (an `=` anywhere, bits left
 over); its one decode, a client's `=?base64?…?=` header, falls back to the text as it came, so
 input that isn't Base64 is now shown as it came rather than half decoded.
+
+## D-026 A finer clock, and the route that answers a request
+
+**Context.** OpenTelemetry metrics (`packages/otel`) time every request and label it by its route.
+`Time.now_millis!` makes most of a fast server's requests, and nearly every query, 0 ms. And a
+middleware has only the request's path, so `/posts/42` and `/posts/43` would be a series each: one
+per post, with no end to them.
+
+**Options.**
+1. Leave both to the app: it passes its own clock and its route to each measurement.
+2. `Time.now_nanos!`; and `route` on `Server.Request`, the route's pattern, set before the app's
+   middleware runs, from a `Routes.pattern` that `rocx build` writes beside `Routes.respond!`.
+3. A response header the router adds, which the middleware reads after `next!`. It works without a
+   new field, but it is a header no one asked for.
+
+**Choice.** 2.
+
+```roc
+started = Time.now_nanos!({})
+answer = next!(request, context)
+took = Time.now_nanos!({}) - started   # request.route: "/posts/[id]"
+```
+
+- `now_nanos!`: Unix nanoseconds, the system clock's when first read plus a steady clock's time
+  since, so two readings never go back.
+- `route`: the route file's directory (`/blog/[slug]`, `/` for routes/ itself);
+  `/rocx/call/<name>` for a server function the app has; a dev build's stories, their path; `""`
+  where nothing answers, in a request made by hand (`from_http`), and in the browser.
+
+**Why.** A route's pattern is what every metric and log groups requests by. Only the router knows
+it, and it knows it before anything runs.
+
+**Reversible:** yes. Both are additions; a record that builds a `Server.Request` by hand gains
+`route`.

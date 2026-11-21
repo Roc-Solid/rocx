@@ -433,6 +433,16 @@ pub extern "C" fn roc_host_now_millis() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|since| since.as_millis() as u64).unwrap_or(0)
 }
 
+/// Nanoseconds since the Unix epoch: the system clock's reading when first asked, plus a steady
+/// clock's time since, so a duration measured with it is never negative, even when the system clock
+/// is set back.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_now_nanos() -> u64 {
+    static START: OnceLock<(u64, Instant)> = OnceLock::new();
+    let (at, steady) = START.get_or_init(|| (SystemTime::now().duration_since(UNIX_EPOCH).map(|since| since.as_nanos() as u64).unwrap_or(0), Instant::now()));
+    at.saturating_add(steady.elapsed().as_nanos() as u64)
+}
+
 /// Writes to the stream's response; false once its client has gone (or no stream is being sent).
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_send(data: RocStr) -> bool {

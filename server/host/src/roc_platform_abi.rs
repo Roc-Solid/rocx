@@ -4161,6 +4161,10 @@ unsafe extern "C" {
     /// Roc signature: {} => U64
     pub fn roc_host_now_millis() -> u64;
 
+    /// Hosted symbol for Host.now_nanos!
+    /// Roc signature: {} => U64
+    pub fn roc_host_now_nanos() -> u64;
+
     /// Hosted symbol for Host.outbox_clear!
     /// Roc signature: {} => {}
     pub fn roc_host_outbox_clear();

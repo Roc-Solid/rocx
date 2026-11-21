@@ -108,6 +108,7 @@ platform ""
 		"roc_host_log": Host.log!,
 		"roc_host_log_format": Host.log_format!,
 		"roc_host_now_millis": Host.now_millis!,
+		"roc_host_now_nanos": Host.now_nanos!,
 		"roc_host_outbox_clear": Host.outbox_clear!,
 		"roc_host_outbox_keep": Host.outbox_keep!,
 		"roc_host_outbox_list": Host.outbox_list!,

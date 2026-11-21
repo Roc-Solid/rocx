@@ -459,7 +459,7 @@ export function build(dirs, { client, cwd = process.cwd(), log = console.error, 
 				if (failed) continue;
 			}
 			const generated = [
-				["Routes", routesModule(table, { sources, stories: placed })],
+				["Routes", routesModule(table, { sources, stories: placed, functions: found.map((f) => `${f.module}.${f.call}`) })],
 				...(placed ? [["Stories", storiesModule(placed, { title: basename(dir), root: dir })]] : []),
 				["Paths", pathsModule(table)],
 				["Styles", stylesModule(styles)],

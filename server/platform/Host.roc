@@ -23,6 +23,10 @@ Host := [].{
 	## Milliseconds since the Unix epoch.
 	now_millis! : {} => U64
 
+	## Nanoseconds since the Unix epoch, on a clock that doesn't go back while the server runs: the
+	## system clock's when the server started, plus a steady clock's time since.
+	now_nanos! : {} => U64
+
 	## A setting the server was started with: `database` ("yes" with one), `job-workers`,
 	## `job-retry-ms`, `smtp-url`, `mail-from`, `dev` ("yes" with `--dev`), `debug`
 	## ("yes" with `--debug`). Empty when it wasn't given.

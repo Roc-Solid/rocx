@@ -387,7 +387,7 @@ export function viewProblems(table, sources) {
  * method it doesn't; and, where nothing is, the error page for a browser (404, `Root`'s), in an
  * app with pages, or text.
  */
-export function routesModule(table, { sources, stories = null }) {
+export function routesModule(table, { sources, stories = null, functions = [] }) {
 	// A file's middleware, if it names one, around what answers for it.
 	const guarded = (entry, answer) =>
 		sources.get(entry.file).middleware ? `Middleware.run!(${entry.module}.middleware, request, context, |passed, handed| ${answer("passed", "handed")})` : answer("request", "context");
@@ -503,6 +503,29 @@ export function routesModule(table, { sources, stories = null }) {
 				]
 			: []),
 		...storyFunction,
+		"\t## The route that answers `path`, as its route file's directory names it (`/blog/[slug]`): what",
+		"\t## `Server.Request`'s `route` is. A server function's call is `/rocx/call/<name>`, for the app's",
+		"\t## own; a dev build's stories, their path; `\"\"` where nothing is.",
+		"\tpattern : Str -> Str",
+		"\tpattern = |path| {",
+		...(table.paths.length ? ['\t\tsegments = path.split_on("/").keep_if(|segment| !segment.is_empty()).map(Server.decode_segment)'] : []),
+		[
+			[
+				`\t\tif (path.starts_with(${JSON.stringify(CALL_PATH)})) {`,
+				...(functions.length
+					? [
+							`\t\t\tname = Server.decode_segment(path.drop_prefix(${JSON.stringify(CALL_PATH)}))`,
+							`\t\t\tif ([${functions.map((name) => JSON.stringify(name)).join(", ")}].contains(name)) "${CALL_PATH}\${name}" else ""`,
+						]
+					: ['\t\t\t""']),
+				"\t\t}",
+			].join("\n"),
+			...table.paths.map((at) => ` else if (${matchedBy(at)}) {\n\t\t\t${JSON.stringify(at.path)}\n\t\t}`),
+			...(storied ? [` else if (path == ${JSON.stringify(STORIES_PATH)} or path.starts_with(${JSON.stringify(`${STORIES_PATH}/`)})) {\n\t\t\t${JSON.stringify(STORIES_PATH)}\n\t\t}`] : []),
+			' else {\n\t\t\t""\n\t\t}',
+		].join(""),
+		"\t}",
+		"",
 		"\ttext : U16, Str -> Server.Response",
 		'\ttext = |status, body| Server.response(status, [{ name: "content-type", value: "text/plain; charset=utf-8" }], body)',
 		"}",
@@ -887,7 +910,9 @@ export function appModule({ jobs = [], actors = [], migrations = [], endpoints =
 		"\tprogram : Config(_, _) -> _",
 		"\tprogram = |config| {",
 		"\t\trespond!: |method, target, headers, body, started| {",
-		"\t\t\trequest = Server.from_http(method, target, headers, body)",
+		"\t\t\tparsed = Server.from_http(method, target, headers, body)",
+		"\t\t\t# The route that answers it (`/blog/[slug]`), for the middleware: what a metric groups requests by.",
+		"\t\t\trequest = { ..parsed, route: Routes.pattern(parsed.path) }",
 		"\t\t\t# A page a browser asks for lets a plain form's flash go (`Server.flash!`): it has read it, or never will.",
 		...(endpoints
 			? [

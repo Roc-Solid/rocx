@@ -260,6 +260,21 @@ test("Routes: a component page's GET is Root's page, after its route file's midd
 	assert.doesNotMatch(routes, /Routes\.html|\thtml :|RootLayout|RootError/);
 });
 
+test("Routes.pattern: the route that answers a path, as its directory names it, for Server.Request's route", () => {
+	const files = ["+page.rocx", "+error.rocx", "blog/+page.rocx", "blog/new/+page.rocx", "blog/[slug]/+page.rocx", "api/items/[id]/+server.roc"];
+	const table = routeTable(files);
+	const sources = new Map(files.map((file) => [file, file.endsWith("+server.roc") ? { view: null, meta: false, methods: ["get!"], middleware: null, docs: {} } : component()]));
+	const routes = routesModule(table, { sources, functions: ["Demos/Echo.echo"] });
+	const pattern = routes.slice(routes.indexOf("\tpattern = |path| {"), routes.indexOf("\ttext : U16"));
+	assert.match(pattern, /\t\tif \(path\.starts_with\("\/rocx\/call\/"\)\) \{\n\t\t\tname = Server\.decode_segment\(path\.drop_prefix\("\/rocx\/call\/"\)\)\n\t\t\tif \(\["Demos\/Echo\.echo"\]\.contains\(name\)\) "\/rocx\/call\/\$\{name\}" else ""\n\t\t\}/, "a server function's call, only for the app's own: any other name would be a group of its own");
+	assert.match(pattern, /\} else if \(segments == \["blog", "new"\]\) \{\n\t\t\t"\/blog\/new"\n\t\t\} else if \(segments == \["blog"\]\) \{\n\t\t\t"\/blog"\n/, "fixed paths, in the order Routes.respond! tries them");
+	assert.match(pattern, /\} else if \(segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("blog"\)\) \{\n\t\t\t"\/blog\/\[slug\]"\n/, "a param's route, whatever the param");
+	assert.match(pattern, /\} else if \(segments == \[\]\) \{\n\t\t\t"\/"\n/, "routes/ itself");
+	assert.match(pattern, /"\/api\/items\/\[id\]"/, "an endpoint's route");
+	assert.match(pattern, /\t\t\} else \{\n\t\t\t""\n\t\t\}\n\t\}/, "nothing answers: no route");
+	assert.match(routesModule(table, { sources }), /\t\tif \(path\.starts_with\("\/rocx\/call\/"\)\) \{\n\t\t\t""\n\t\t\}/, "an app with no server functions has no call routes");
+});
+
 test("route files' views: a page, a layout and the error page are components, which define view!", () => {
 	const files = ["+layout.rocx", "+page.rocx", "+error.rocx", "old/+page.rocx"];
 	const table = routeTable(files);
@@ -310,7 +325,7 @@ test("App: the program, with the jobs the app's modules define (found by rocx bu
 		const app = appModule({ jobs, migrations: migrationsIn(dir) });
 		assert.match(app, /^import pf\.Server\nimport pf\.Middleware\nimport pf\.OpenApi\nimport pf\.Job\nimport Routes\nimport \.\.\/Jobs as Jobs\nimport MembersServer\nimport \.\.\/Server\/Mail as ServerMail\nimport "\.\.\/migrations\/0002-first\.sql" as m0002_first : Str\nimport "\.\.\/migrations\/0010_later\.sql" as m0010_later : Str\n\nApp := \[\]\.\{$/m);
 		assert.match(app, /\tConfig\(given, handed\) := \{\n\t\tcontext : Str -> given,\n\t\tmiddleware : Middleware\(given, handed\),\n\t\tcrons : List\(\{ name : Str, schedule : Str, job : Str, input : Str \}\),\n\t\topenapi : OpenApi\.Serving \?\? Off,\n\t\}/, "the app's config: openapi is Off unless it says");
-		assert.match(app, /\tprogram : Config\(_, _\) -> _\n\tprogram = \|config\| \{\n\t\trespond!: \|method, target, headers, body, started\| \{\n\t\t\trequest = Server\.from_http\(method, target, headers, body\)\n\t\t\t# [^\n]*\n\t\t\tchain = config\.middleware\n\t\t\tServer\.clear_flash\(request, Middleware\.run!\(chain, request, \(config\.context\)\(started\), \|passed, context\| Routes\.respond!\(passed, context\)\)\)\n\t\t\},\n/, "the request passed through as the host gives it; a page view lets the flash go");
+		assert.match(app, /\tprogram : Config\(_, _\) -> _\n\tprogram = \|config\| \{\n\t\trespond!: \|method, target, headers, body, started\| \{\n\t\t\tparsed = Server\.from_http\(method, target, headers, body\)\n\t\t\t# [^\n]*\n\t\t\trequest = \{ \.\.parsed, route: Routes\.pattern\(parsed\.path\) \}\n\t\t\t# [^\n]*\n\t\t\tchain = config\.middleware\n\t\t\tServer\.clear_flash\(request, Middleware\.run!\(chain, request, \(config\.context\)\(started\), \|passed, context\| Routes\.respond!\(passed, context\)\)\)\n\t\t\},\n/, "the request as the host gives it, with the route that answers it; a page view lets the flash go");
 		assert.match(app, /\t\tmigrations: \[\{ name: "0002-first\.sql", sql: m0002_first \}, \{ name: "0010_later\.sql", sql: m0010_later \}\],\n\t\tjobs: \[Job\.handler\(Jobs\.welcome\), Job\.handler\(Jobs\.nightly\), Job\.handler\(Jobs\.once\), Job\.handler\(ServerMail\.send\), Job\.handler\(MembersServer\.reminder\)\],\n\t\tcrons: config\.crons,\n\t\tactors: \[\],\n\t\tlogs: \{ format: Auto \},\n\t\}/, "the platform's program: these five, and no more (and no actors); the log's format Auto (ROCX_LOG, or the terminal's guess), which the app may change with a record update");
 		const none = appModule({});
 		assert.match(none, /\t\tmigrations: \[\],\n\t\tjobs: \[\],/);

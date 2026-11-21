@@ -25,7 +25,14 @@ Server := [].{
 	## What the server knows about a request: its method, its path and query, its headers (cookies
 	## among them) and its body, the bytes as they came (`text_of` reads them as text: JSON, a form).
 	## A page has the request it was rendered for; an endpoint, the request it came in.
-	Request : { method : Str, path : Str, query : Str, headers : List({ name : Str, value : Str }), body : List(U8) }
+	##
+	## `route` is the route that answers it, as its route file's directory names it (`/blog/[slug]`,
+	## `/` for routes/ itself), whatever the params: what a metric or a log line groups requests by,
+	## where the path would make a group for every post. A call of a server function is
+	## `/rocx/call/<name>` (`/rocx/call/Demos/Echo.echo`); a request nothing answers (the error page,
+	## a server function the app hasn't), `""`. The server sets it before the app's middleware runs;
+	## a request made by hand (`from_http`), and the browser's, have `""`.
+	Request : { method : Str, path : Str, query : Str, headers : List({ name : Str, value : Str }), body : List(U8), route : Str }
 
 	## The server's answer to a request: its status, its headers and its body.
 	Response : { status : U16, headers : List({ name : Str, value : Str }), body : Body }
@@ -66,7 +73,7 @@ Server := [].{
 				Ok({ before, after }) => (before, after)
 				Err(_) => (target, "")
 			}
-		{ method: method.with_ascii_uppercased(), path: path, query: query, headers: headers, body: body }
+		{ method: method.with_ascii_uppercased(), path: path, query: query, headers: headers, body: body, route: "" }
 	}
 
 	## The answer as the server platform's host takes it: its headers a `name: value` a line, and its
@@ -643,7 +650,7 @@ hex_value = |digit|
 		Err(NotHex)
 	}
 
-expect Server.from_host("/p?q=1", "Cookie: a=1; user=Grace%20Hopper\nx-empty: \nbroken") == { method: "GET", path: "/p", query: "q=1", headers: [{ name: "cookie", value: "a=1; user=Grace%20Hopper" }, { name: "x-empty", value: "" }], body: [] }
+expect Server.from_host("/p?q=1", "Cookie: a=1; user=Grace%20Hopper\nx-empty: \nbroken") == { method: "GET", path: "/p", query: "q=1", headers: [{ name: "cookie", value: "a=1; user=Grace%20Hopper" }, { name: "x-empty", value: "" }], body: [], route: "" }
 expect Server.from_http("post", "/rocx/call/x", "", "{}".to_utf8()).method == "POST"
 expect Server.text_of(Server.from_http("POST", "/", "", [0x22, 0xC3, 0xA9, 0xFF, 0x22])) == "\"é\u(FFFD)\""
 expect Server.same_origin(Server.from_http("POST", "/", "origin: http://localhost:8080\nhost: localhost:8080", []))
@@ -698,6 +705,6 @@ expect Server.for_host({ status: 200, headers: [{ name: "Content-Type", value: "
 expect Server.body_text(Server.refused(401, "members only")) == "members only"
 expect Server.body_text(Server.events(Events.none({}))) == ""
 expect Server.body_text(Server.bytes(200, [], "ok".to_utf8())) == "ok"
-expect from_wire("POST /rocx/call/Demos/Echo.echo?x=1\ncookie: member=Ada\ncontent-type: application/json\n\n\"hi\"\n\nmore") == { method: "POST", path: "/rocx/call/Demos/Echo.echo", query: "x=1", headers: [{ name: "cookie", value: "member=Ada" }, { name: "content-type", value: "application/json" }], body: "\"hi\"\n\nmore".to_utf8() }
-expect from_wire("GET /about") == { method: "GET", path: "/about", query: "", headers: [], body: [] }
-expect from_wire("") == { method: "GET", path: "/", query: "", headers: [], body: [] }
+expect from_wire("POST /rocx/call/Demos/Echo.echo?x=1\ncookie: member=Ada\ncontent-type: application/json\n\n\"hi\"\n\nmore") == { method: "POST", path: "/rocx/call/Demos/Echo.echo", query: "x=1", headers: [{ name: "cookie", value: "member=Ada" }, { name: "content-type", value: "application/json" }], body: "\"hi\"\n\nmore".to_utf8(), route: "" }
+expect from_wire("GET /about") == { method: "GET", path: "/about", query: "", headers: [], body: [], route: "" }
+expect from_wire("") == { method: "GET", path: "/", query: "", headers: [], body: [], route: "" }
