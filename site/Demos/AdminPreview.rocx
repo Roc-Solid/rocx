@@ -13,12 +13,13 @@ import AdminRoute
 ## made-up rows, with the options the docs show (`AdminRoute.admin`). Nothing here asks a database.
 AdminPreview := [].{
 
-	## The list of books, as a whole HTML document, for a sandboxed frame.
+	## The list of books with a filter on, `price` from 10, as a whole HTML document, for a
+	## sandboxed frame: the made-up rows it keeps, and their count.
 	list_page : Str
 	list_page = {
-		state = Listing.read(books, Form.fields("table=books"))
-		filters = Admin.filterable(books).map(|column| { column, choices: known_choices(books, column) })
-		body = View.list_page(frame, { shown: books, state, page: Paging.of(23, 8, 1), rows: book_rows, filters, notice: "" })
+		state = Listing.read(books, Form.fields("table=books&from.price=10"))
+		kept = book_rows.keep_if(|each| (Dec.from_str(Catalog.cell(each, 4)) ?? 0) >= 10)
+		body = View.list_page(frame, { shown: books, state, page: Paging.of(kept.len(), 8, 1), rows: kept, notice: "" })
 		framed(Look.document("Books · Database", body))
 	}
 
@@ -51,7 +52,7 @@ AdminPreview := [].{
 
 	## The query the statements are for.
 	query : Str
-	query = "table=books&q=cloud&f.state=published&sort=-price&page=2"
+	query = "table=books&q=cloud&f.state=published&from.price=10&sort=-price&page=2"
 
 	## The two statements the list runs for `query`: how many rows there are, then the page's.
 	statements : Str
@@ -130,15 +131,6 @@ book_rows =
 		["16", "Letters from the coast", "1", "draft", "0.00"],
 	].map(|cells| { cells: cells.append(cells.first() ?? ""), nulls: cells.map(|cell| cell.is_empty()).append(Bool.False) })
 
-## A filter's choices when the column's type says them: a boolean's, a check's or an enum's.
-known_choices : Admin.Shown, Catalog.Column -> List((Str, Str))
-known_choices = |shown, column|
-	match Admin.widget(shown, column) {
-		Checkbox | MaybeBool => [("true", "yes"), ("false", "no")]
-		Choice(values) => values.map(|value| (value, value))
-		_ => []
-	}
-
 ## A page in a frame of its own: its links open nowhere (a sandboxed frame opens no window).
 framed : Str -> Str
 framed = |document| document.replace_first("<head>", "<head><base target=\"_blank\">")
@@ -161,6 +153,6 @@ param_text = |param|
 		Bool(yes) => if (yes) "true" else "false"
 	}
 
-expect AdminPreview.list_page.contains("<h1>Books</h1>") and AdminPreview.list_page.contains("1–8 of 23")
+expect AdminPreview.list_page.contains("<h1>Books</h1>") and AdminPreview.list_page.contains("1–6 of 6") and AdminPreview.list_page.contains("name=\"from.price\" value=\"10\"")
 expect AdminPreview.row_page.contains("<h1>A field guide to clouds</h1>") and AdminPreview.row_page.contains("Saved.")
-expect AdminPreview.statements.contains("-- $1 = '%cloud%', $2 = 'published'")
+expect AdminPreview.statements.contains("\"price\" >= $3::numeric") and AdminPreview.statements.contains("-- $1 = '%cloud%', $2 = 'published', $3 = '10'")

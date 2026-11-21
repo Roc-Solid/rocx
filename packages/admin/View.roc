@@ -29,9 +29,9 @@ View := [].{
 		"<div class=\"bar\"><h1>${Look.escape(frame.title)}</h1></div>${table}"
 	}
 
-	## A table's rows, a page of them, with its search, its filters (`filters`: each column's
-	## choices, a value and what to call it) and its pages.
-	list_page : Frame, { shown : Admin.Shown, state : Listing.State, page : Paging.Page, rows : List(Catalog.Row), filters : List({ column : Catalog.Column, choices : List((Str, Str)) }), notice : Str } -> Str
+	## A table's rows, a page of them, with its search, a filter under each column's heading (a
+	## form of them, with a button that sends it), and its pages.
+	list_page : Frame, { shown : Admin.Shown, state : Listing.State, page : Paging.Page, rows : List(Catalog.Row), notice : Str } -> Str
 	list_page = |frame, listing| {
 		shown = listing.shown
 		state = listing.state
@@ -46,6 +46,7 @@ View := [].{
 				"<th><a${if (arrow.is_empty()) "" else " class=\"on\""} href=\"${at(Listing.sorted_by(state, column.name))}\">${Look.escape(Admin.column_label(shown, column.name))}${arrow}</a></th>"
 			},
 		)
+		filter_cells = columns.map(|column| "<td>${filter_html(shown, state, column)}</td>")
 		lines = listing.rows.map(
 			|row| {
 				cells = columns.map_with_index(
@@ -67,7 +68,17 @@ View := [].{
 				"<tr>${Str.join_with(cells, "")}</tr>"
 			},
 		)
-		rows_html = if (lines.is_empty()) "<p class=\"muted\">No rows${if (state.search.is_empty() and state.filters.is_empty()) "" else " like that"}.</p>" else "<table><thead><tr>${Str.join_with(heads, "")}</tr></thead><tbody>${Str.join_with(lines, "")}</tbody></table>"
+		filtering = !state.filters.is_empty() or !state.invalid.is_empty()
+		none = "<tr><td class=\"none\" colspan=\"${columns.len().to_str()}\">No rows${if (state.search.is_empty() and !filtering) "" else " like that"}.</td></tr>"
+		body_rows = if (lines.is_empty()) none else Str.join_with(lines, "")
+		# The filters' form keeps the table, the search and the sort; a filter changed is the first page.
+		kept = Listing.params(name, { ..state, filters: [], page: 1 }).keep_if(|(_, value)| !value.is_empty()).map(|(field, value)| "<input type=\"hidden\" name=\"${Look.escape(field)}\" value=\"${Look.escape(value)}\">")
+		rows_html =
+			if columns.is_empty() {
+				"<p class=\"muted\">No columns to show.</p>"
+			} else {
+				"<form id=\"filters\" class=\"filters\" method=\"get\" action=\"${Look.escape(frame.mount)}\">${Str.join_with(kept, "")}<div class=\"rows\"><table><thead><tr>${Str.join_with(heads, "")}</tr><tr class=\"filter\">${Str.join_with(filter_cells, "")}</tr></thead><tbody>${body_rows}</tbody></table></div></form>"
+			}
 		pager =
 			if listing.page.pages <= 1 {
 				""
@@ -87,26 +98,18 @@ View := [].{
 			if Admin.searchable(shown).is_empty() {
 				""
 			} else {
-				kept = Listing.params(name, { ..state, search: "", page: 1 }).keep_if(|(_, value)| !value.is_empty()).map(|(field, value)| "<input type=\"hidden\" name=\"${Look.escape(field)}\" value=\"${Look.escape(value)}\">")
+				searched_kept = Listing.params(name, { ..state, search: "", page: 1 }).keep_if(|(_, value)| !value.is_empty()).map(|(field, value)| "<input type=\"hidden\" name=\"${Look.escape(field)}\" value=\"${Look.escape(value)}\">")
 				searched_in = Str.join_with(Admin.searchable(shown).map(|column| Admin.column_label(shown, column.name)), ", ")
 				clear = if (state.search.is_empty()) "" else " <a href=\"${at({ ..state, search: "", page: 1 })}\">Clear</a>"
-				"<form class=\"search\" method=\"get\" action=\"${Look.escape(frame.mount)}\">${Str.join_with(kept, "")}<input type=\"search\" name=\"q\" value=\"${Look.escape(state.search)}\" aria-label=\"Search\" placeholder=\"${Look.escape(searched_in)}\"><button>Search</button>${clear}</form>"
+				"<form class=\"search\" method=\"get\" action=\"${Look.escape(frame.mount)}\">${Str.join_with(searched_kept, "")}<input type=\"search\" name=\"q\" value=\"${Look.escape(state.search)}\" aria-label=\"Search\" placeholder=\"${Look.escape(searched_in)}\"><button>Search</button>${clear}</form>"
 			}
-		aside =
-			if listing.filters.is_empty() {
+		# The filters' button is the form's (`form="filters"`), so it sits beside the search.
+		filter_button =
+			if columns.is_empty() {
 				""
 			} else {
-				groups = listing.filters.map(
-					|{ column, choices }| {
-						now = state.filters.find_first(|each| each.column == column.name)
-						item = |label, is, on| "<li><a${if (on) " class=\"on\"" else ""} href=\"${at(Listing.filtered(state, column.name, is))}\">${Look.escape(label)}</a></li>"
-						all = item("All", Err(All), now.is_err())
-						values = choices.map(|(value, label)| item(label, Ok(Equal(value)), now == Ok({ column: column.name, is: Equal(value) })))
-						nulls = if (column.nullable) [item("null", Ok(Null), now == Ok({ column: column.name, is: Null })), item("not null", Ok(Set), now == Ok({ column: column.name, is: Set }))] else []
-						"<h3>By ${Look.escape(Admin.column_label(shown, column.name))}</h3><ul>${all}${Str.join_with(values.concat(nulls), "")}</ul>"
-					},
-				)
-				"<aside><h2>Filter</h2>${Str.join_with(groups, "")}</aside>"
+				clear = if (filtering) " <a href=\"${at({ ..state, filters: [], invalid: [], page: 1 })}\">Clear filters</a>" else ""
+				"<span class=\"filtering\"><button form=\"filters\">Filter</button>${clear}</span>"
 			}
 		add = if (may_create(frame, shown)) "<a href=\"${Look.escape(Form.link(frame.mount, [("table", name), ("new", "1")]))}\">Add</a>" else ""
 		about = if (shown.table.comment.is_empty()) "" else "<p class=\"muted\">${Look.escape(shown.table.comment)}</p>"
@@ -116,8 +119,10 @@ View := [].{
 				notice_html(listing.notice),
 				"<div class=\"bar\"><h1>${Look.escape(Admin.label(shown))}</h1><span>${add}</span></div>",
 				about,
-				search,
-				"<div class=\"listing${if (aside.is_empty()) " alone" else ""}\"><div class=\"rows\">${rows_html}${pager}${counted}</div>${aside}</div>",
+				if (search.is_empty() and filter_button.is_empty()) "" else "<div class=\"tools\">${search}${filter_button}</div>",
+				rows_html,
+				pager,
+				counted,
 			],
 			"",
 		)
@@ -235,6 +240,94 @@ View := [].{
 may_create : View.Frame, Admin.Shown -> Bool
 may_create = |frame, shown| frame.access == Edit and shown.options.create and Admin.visible(shown).any(|column| Admin.writable(shown, Edit, column, Creating))
 
+## A column's filter, under its heading, from its type (`Listing.kind`): an input of a text it
+## contains, a range's two (from, to), a select of a boolean's or a choice's values, or an input of
+## the value it is (a foreign key); and, for a column that may be null, empty and not empty. A value
+## the list ignored stays in its input, marked, with a note of what it should be.
+filter_html : Admin.Shown, Listing.State, Catalog.Column -> Str
+filter_html = |shown, state, column| {
+	name = column.name
+	label = Admin.column_label(shown, name)
+	equal = filter_value(state, name, Equal)
+	nulls = if (state.filters.contains({ column: name, is: Null })) "null" else if (state.filters.contains({ column: name, is: Set })) "set" else ""
+	input = |field, attributes, value, described, placeholder| {
+		bad = state.invalid.find_first(|each| each.field == field)
+		(said, marked) =
+			match bad {
+				Ok(invalid) => (invalid.value, " aria-invalid=\"true\"")
+				Err(_) => (value, "")
+			}
+		hint = if (placeholder.is_empty()) "" else " placeholder=\"${Look.escape(placeholder)}\""
+		"<input ${attributes} name=\"${Look.escape(field)}\" value=\"${Look.escape(said)}\" aria-label=\"${Look.escape(described)}\"${hint}${marked}>"
+	}
+	select = |field, class, options, selected, described| {
+		# A value no option is (a check's value since taken away) is kept, as an option of its own.
+		kept = if (selected.is_empty() or options.any(|(value, _)| value == selected)) options else options.append((selected, selected))
+		listed = kept.map(|(value, text)| "<option value=\"${Look.escape(value)}\"${if (value == selected) " selected" else ""}>${Look.escape(text)}</option>")
+		marked = if (state.invalid.any(|each| each.field == field)) " aria-invalid=\"true\"" else ""
+		"<select${class} name=\"${Look.escape(field)}\" aria-label=\"${Look.escape(described)}\"${marked}><option value=\"\">any</option>${Str.join_with(listed, "")}</select>"
+	}
+	empties = [("null", "empty"), ("set", "not empty")]
+	nullable = if (column.nullable) select("is.${name}", " class=\"nulls\"", empties, nulls, "${label}: empty or not") else ""
+	# A select of values, with empty and not empty among them (`is.`) for a column that may be null;
+	# unless a value is called null or set, which then has a select of its own.
+	choose = |values| {
+		together = column.nullable and !values.any(|(value, _)| value == "null" or value == "set")
+		if together {
+			select("is.${name}", "", values.concat(empties), equal ?? nulls, label)
+		} else {
+			"${select("f.${name}", "", values, equal ?? "", label)}${nullable}"
+		}
+	}
+	control =
+		match Listing.kind(shown, column) {
+			Contains =>
+				match equal {
+					# An equal's value (`f.title=…`, from a link) has an input of its own.
+					Ok(value) => "${input("f.${name}", "type=\"text\"", value, "${label} is", "equals")}${nullable}"
+					Err(_) => "${input("has.${name}", "type=\"text\"", filter_value(state, name, Contains) ?? "", "${label} contains", "contains")}${nullable}"
+				}
+			Exact => "${input("f.${name}", "type=\"text\"", equal ?? "", "${label} is", "equals")}${nullable}"
+			Range(scale) => {
+				attributes =
+					match scale {
+						Integer => "type=\"number\" step=\"1\""
+						Decimal => "type=\"number\" step=\"any\""
+						Day => "type=\"date\""
+						Moment => "type=\"datetime-local\" step=\"1\""
+						Time => "type=\"time\" step=\"1\""
+					}
+				# An equal's value (`f.price=…`, from a link) is a range of one.
+				from = filter_value(state, name, AtLeast) ?? (equal ?? "")
+				to = filter_value(state, name, AtMost) ?? (equal ?? "")
+				"<div class=\"range\"><span>from</span>${input("from.${name}", attributes, from, "${label} from", "")}<span>to</span>${input("to.${name}", attributes, to, "${label} to", "")}</div>${nullable}"
+			}
+			YesNo => choose([("true", "yes"), ("false", "no")])
+			OneOf(values) => choose(values.map(|value| (value, value)))
+		}
+	notes = state.invalid.keep_if(|each| each.column == name).map(|each| "Ignored: not ${each.expected}").fold([], |seen, note| if (seen.contains(note)) seen else seen.append(note))
+	"${control}${Str.join_with(notes.map(|note| "<span class=\"note\">${Look.escape(note)}</span>"), "")}"
+}
+
+## The value of a column's filter of one kind, if it has one.
+filter_value : Listing.State, Str, [Equal, Contains, AtLeast, AtMost] -> Try(Str, [None])
+filter_value = |state, column, wanted| {
+	found = state.filters.keep_oks(
+		|each|
+			match (each.is, wanted) {
+				(Equal(value), Equal) if each.column == column => Ok(value)
+				(Contains(value), Contains) if each.column == column => Ok(value)
+				(AtLeast(value), AtLeast) if each.column == column => Ok(value)
+				(AtMost(value), AtMost) if each.column == column => Ok(value)
+				_ => Err(None)
+			},
+	)
+	match found.first() {
+		Ok(value) => Ok(value)
+		Err(_) => Err(None)
+	}
+}
+
 crumbs : View.Frame, List((Str, Str)) -> Str
 crumbs = |frame, trail| {
 	links = [(frame.title, frame.mount)].concat(trail).map(|(label, href)| "<a href=\"${Look.escape(href)}\">${Look.escape(label)}</a>")
@@ -316,7 +409,49 @@ books = {
 }
 
 frame_of : Admin.Access -> View.Frame
-frame_of = |access| { mount: "/db", title: "Database", tables: [Admin.pair(books, { name: "books", search: ["title"], filters: ["in_print"] }), Admin.pair(authors, { name: "authors" })], access, token: "t0k" }
+frame_of = |access| { mount: "/db", title: "Database", tables: [Admin.pair(books, { name: "books", search: ["title"] }), Admin.pair(authors, { name: "authors" }), shelf], access, token: "t0k" }
+
+## A table of each kind of filter: text, a foreign key, a boolean, an enum and a check (each may be
+## null, or not), a number, a moment and a day; a hidden column, and one the list doesn't show.
+shelf : Admin.Shown
+shelf = {
+	table = {
+		name: "shelf",
+		comment: "",
+		estimate: 9,
+		columns: [
+			column_of("id", "int8"),
+			column_of("title", "text"),
+			{ ..column_of("author_id", "int8"), nullable: Bool.True, refers: To({ table: "authors", column: "id" }) },
+			column_of("in_print", "bool"),
+			{ ..column_of("mood", "mood"), nullable: Bool.True, labels: ["happy", "sad"] },
+			{ ..column_of("state", "text"), choices: ["draft", "published"] },
+			{ ..column_of("price", "numeric"), nullable: Bool.True },
+			column_of("published_at", "timestamptz"),
+			column_of("born", "date"),
+			column_of("secret", "text"),
+			column_of("note", "text"),
+		],
+		key: ["id"],
+	}
+	Admin.pair(table, { name: "shelf", list: ["id", "title", "author_id", "in_print", "mood", "state", "price", "published_at", "born", "secret"], hidden: ["secret"] })
+}
+
+## The list of shelf, for a query, with no rows.
+shelf_page : Str -> Str
+shelf_page = |query| View.list_page(frame_of(Edit), { shown: shelf, state: Listing.read(shelf, Form.fields(query)), page: Paging.of(120, 50, 1), rows: [], notice: "" })
+
+## The row of filters, in a list's HTML.
+filter_row : Str -> Str
+filter_row = |html|
+	match html.split_first("<tr class=\"filter\">") {
+		Ok({ after, .. }) =>
+			match after.split_first("</tr>") {
+				Ok({ before, .. }) => before
+				Err(_) => ""
+			}
+		Err(_) => ""
+	}
 
 expect {
 	html = View.index_page(frame_of(Edit))
@@ -325,8 +460,8 @@ expect {
 expect !View.index_page(frame_of(ReadOnly)).contains(">Add<")
 expect {
 	frame = frame_of(Edit)
-	shown = Admin.pair(books, { name: "books", search: ["title"], filters: ["in_print"] })
-	state = { search: "dune", filters: [], sort: [{ column: "title", descending: Bool.False }], page: 1 }
+	shown = Admin.pair(books, { name: "books", search: ["title"] })
+	state = { search: "dune", filters: [], invalid: [], sort: [{ column: "title", descending: Bool.False }], page: 1 }
 	html = View.list_page(
 		frame,
 		{
@@ -334,15 +469,17 @@ expect {
 			state,
 			page: Paging.of(120, 50, 1),
 			rows: [{ cells: ["7", "Dune <1>", "1", "true", "7"], nulls: [Bool.False, Bool.False, Bool.False, Bool.False, Bool.False] }, { cells: ["8", "", "", "false", "8"], nulls: [Bool.False, Bool.False, Bool.True, Bool.False, Bool.False] }],
-			filters: [{ column: { ..column_of("in_print", "bool"), nullable: Bool.False }, choices: [("true", "yes"), ("false", "no")] }],
 			notice: "Deleted.",
 		},
 	)
 	html.contains("<td><a href=\"/db?table=books&amp;k.id=7\">7</a></td><td>Dune &lt;1&gt;</td><td><a href=\"/db?table=authors&amp;k.id=1\">1</a></td><td>yes</td>")
 		and html.contains("<td class=\"null\">null</td>")
 		and html.contains("<a class=\"on\" href=\"/db?table=books&amp;q=dune&amp;sort=-title\">Title ▲</a>")
-		and html.contains("<a href=\"/db?table=books&amp;q=dune&amp;f.in_print=false&amp;sort=title\">no</a>")
 		and html.contains("<input type=\"hidden\" name=\"table\" value=\"books\"><input type=\"hidden\" name=\"sort\" value=\"title\"><input type=\"search\" name=\"q\" value=\"dune\"")
+		and html.contains("<form id=\"filters\" class=\"filters\" method=\"get\" action=\"/db\"><input type=\"hidden\" name=\"table\" value=\"books\"><input type=\"hidden\" name=\"q\" value=\"dune\"><input type=\"hidden\" name=\"sort\" value=\"title\"><div class=\"rows\"><table><thead><tr><th>")
+		and html.contains("<span class=\"filtering\"><button form=\"filters\">Filter</button></span>")
+		and !html.contains("Clear filters")
+		and !html.contains("<aside")
 		and html.contains("<a class=\"on\" aria-current=\"page\" href=\"/db?table=books&amp;q=dune&amp;sort=title\">1</a><a href=\"/db?table=books&amp;q=dune&amp;sort=title&amp;page=2\">2</a>")
 		and html.contains("1–50 of 120")
 		and html.contains("<p class=\"notice\" role=\"status\">Deleted.</p>")
@@ -385,10 +522,57 @@ expect {
 expect {
 	html = View.list_page(
 		frame_of(Edit),
-		{ shown: Admin.pair(books, { name: "books", list: ["author_id", "title"] }), state: { search: "", filters: [], sort: [], page: 1 }, page: Paging.of(1, 50, 1), rows: [{ cells: ["1", "Dune", "7"], nulls: [Bool.False, Bool.False, Bool.False] }], filters: [], notice: "" },
+		{ shown: Admin.pair(books, { name: "books", list: ["author_id", "title"] }), state: { search: "", filters: [], invalid: [], sort: [], page: 1 }, page: Paging.of(1, 50, 1), rows: [{ cells: ["1", "Dune", "7"], nulls: [Bool.False, Bool.False, Bool.False] }], notice: "" },
 	)
 	# A foreign key in the first column: the row's link, not a link in a link.
 	html.contains("<td><a href=\"/db?table=books&amp;k.id=7\">1</a></td><td>Dune</td>")
+}
+# A filter under each listed column, from its type; none for a hidden column, or one not listed.
+expect {
+	row = filter_row(shelf_page("table=shelf"))
+	row.split_on("<td>").len() == 10
+		and row.contains("<td><div class=\"range\"><span>from</span><input type=\"number\" step=\"1\" name=\"from.id\" value=\"\" aria-label=\"Id from\"><span>to</span><input type=\"number\" step=\"1\" name=\"to.id\" value=\"\" aria-label=\"Id to\"></div></td>")
+		and row.contains("<td><input type=\"text\" name=\"has.title\" value=\"\" aria-label=\"Title contains\" placeholder=\"contains\"></td>")
+		and row.contains("<td><input type=\"text\" name=\"f.author_id\" value=\"\" aria-label=\"Author id is\" placeholder=\"equals\"><select class=\"nulls\" name=\"is.author_id\" aria-label=\"Author id: empty or not\"><option value=\"\">any</option><option value=\"null\">empty</option><option value=\"set\">not empty</option></select></td>")
+		and row.contains("<td><select name=\"f.in_print\" aria-label=\"In print\"><option value=\"\">any</option><option value=\"true\">yes</option><option value=\"false\">no</option></select></td>")
+		and row.contains("<td><select name=\"is.mood\" aria-label=\"Mood\"><option value=\"\">any</option><option value=\"happy\">happy</option><option value=\"sad\">sad</option><option value=\"null\">empty</option><option value=\"set\">not empty</option></select></td>")
+		and row.contains("<td><select name=\"f.state\" aria-label=\"State\"><option value=\"\">any</option><option value=\"draft\">draft</option><option value=\"published\">published</option></select></td>")
+		and row.contains("<input type=\"number\" step=\"any\" name=\"from.price\"")
+		and row.contains("</div><select class=\"nulls\" name=\"is.price\"")
+		and row.contains("<input type=\"datetime-local\" step=\"1\" name=\"to.published_at\"")
+		and row.contains("<input type=\"date\" name=\"from.born\"")
+		and !row.contains("secret")
+		and !row.contains("note")
+}
+# Filters on: each in its control, a value ignored marked and noted; links and the form keep them.
+expect {
+	html = shelf_page("table=shelf&has.title=dune&f.author_id=2&f.in_print=false&is.mood=null&from.price=lots&to.price=20&from.published_at=2026-11-01T09%3A30&sort=title")
+	row = filter_row(html)
+	row.contains("name=\"has.title\" value=\"dune\"")
+		and row.contains("name=\"f.author_id\" value=\"2\"")
+		and row.contains("<option value=\"false\" selected>no</option>")
+		and row.contains("<option value=\"null\" selected>empty</option><option value=\"set\">not empty</option></select></td>")
+		and row.contains("<input type=\"number\" step=\"any\" name=\"from.price\" value=\"lots\" aria-label=\"Price from\" aria-invalid=\"true\"><span>to</span><input type=\"number\" step=\"any\" name=\"to.price\" value=\"20\" aria-label=\"Price to\">")
+		and row.contains("<span class=\"note\">Ignored: not a number</span></td>")
+		and row.contains("name=\"from.published_at\" value=\"2026-11-01T09:30\"")
+		and html.contains("<a href=\"/db?table=shelf&amp;sort=title\">Clear filters</a>")
+		and html.contains("<form id=\"filters\" class=\"filters\" method=\"get\" action=\"/db\"><input type=\"hidden\" name=\"table\" value=\"shelf\"><input type=\"hidden\" name=\"sort\" value=\"title\"><div class=\"rows\">")
+		and html.contains("href=\"/db?table=shelf&amp;has.title=dune&amp;f.author_id=2&amp;f.in_print=false&amp;is.mood=null&amp;to.price=20&amp;from.published_at=2026-11-01T09%3A30&amp;sort=title&amp;page=2\">2</a>")
+		and html.contains("<a class=\"on\" href=\"/db?table=shelf&amp;has.title=dune&amp;f.author_id=2&amp;f.in_print=false&amp;is.mood=null&amp;to.price=20&amp;from.published_at=2026-11-01T09%3A30&amp;sort=-title\">Title ▲</a>")
+		and html.contains("<tbody><tr><td class=\"none\" colspan=\"9\">No rows like that.</td></tr></tbody>")
+}
+# Only a value ignored: still a way to clear it.
+expect shelf_page("table=shelf&to.born=soon").contains(">Clear filters</a>") and shelf_page("table=shelf&to.born=soon").contains("Ignored: not a date: YYYY-MM-DD")
+# An equal's value (from a link) on a text column has an input of its own; on a range, both ends.
+expect {
+	row = filter_row(shelf_page("table=shelf&f.title=Dune&f.price=9.5"))
+	row.contains("<input type=\"text\" name=\"f.title\" value=\"Dune\" aria-label=\"Title is\" placeholder=\"equals\">") and row.contains("name=\"from.price\" value=\"9.5\"") and row.contains("name=\"to.price\" value=\"9.5\"")
+}
+# A choice called set, in a column that may be null: empty and not empty in a select of their own.
+expect {
+	odd = Admin.pair({ ..shelf.table, columns: [column_of("id", "int8"), { ..column_of("flag", "text"), nullable: Bool.True, choices: ["set", "unset"] }] }, { name: "shelf" })
+	html = View.list_page(frame_of(Edit), { shown: odd, state: Listing.read(odd, Form.fields("f.flag=set")), page: Paging.of(0, 50, 1), rows: [], notice: "" })
+	html.contains("<select name=\"f.flag\" aria-label=\"Flag\"><option value=\"\">any</option><option value=\"set\" selected>set</option><option value=\"unset\">unset</option></select><select class=\"nulls\" name=\"is.flag\"")
 }
 expect View.row_title(Admin.pair(books, { name: "books" }), [("id", "7")], [{ name: "title", value: "", null: Bool.False }]) == "#7"
 expect View.notice("saved") == "Saved." and View.notice("<script>") == ""

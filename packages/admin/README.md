@@ -1,7 +1,8 @@
 # admin
 
 A Django-style admin for a Roc Solid app's Postgres tables: an index of tables, each table's rows
-with search, filters, sorting and pages, a form for each row, adding and deleting rows. It reads
+with a search, a filter in every column, sorting and pages, a form for each row, adding and deleting
+rows. It reads
 the tables from Postgres's catalog when a page is asked for, so there is nothing to generate and
 nothing to keep in step with the schema. It looks like the platform's jobs page and dev mailbox,
 and is mounted the same way: one route file, behind the app's own middleware.
@@ -25,7 +26,7 @@ admin = {
     mount: "/admin/db",
     access: |context| if (context.staff) Edit else Refused,
     tables: [
-        { name: "books", list: ["id", "title", "author_id", "state", "price"], search: ["title"], filters: ["state", "author_id"], ordering: ["-published_at"] },
+        { name: "books", list: ["id", "title", "author_id", "state", "price"], search: ["title"], ordering: ["-published_at"] },
         { name: "authors", title: "name", hidden: ["password_hash"] },
         { name: "tags" },
     ],
@@ -72,7 +73,7 @@ was given, which the admin keeps in a cookie (`rocx_admin_csrf`: for the admin's
 | Query | Page |
 |---|---|
 | (none) | the tables, each with about how many rows it has (Postgres's estimate), its comment, and a link to add a row |
-| `?table=books` | its rows, 50 a page (`page=2`), counted and paged in Postgres (`limit`, `offset`); a search box (`q=`), filters beside the list (`f.state=draft`, `is.mood=null`, `is.mood=set`), and a click on a column's heading sorts by it (`sort=title`, `sort=-title`) |
+| `?table=books` | its rows, 50 a page (`page=2`), counted and paged in Postgres (`limit`, `offset`); a search box (`q=`), a filter under each column's heading (`has.title=dune`, `from.price=10`, `f.state=draft`, `is.mood=null`: [Filters](#filters)), and a click on a column's heading sorts by it (`sort=title`, `sort=-title`) |
 | `?table=books&k.id=7` | a row's form; `k.<column>` for each column of its primary key, so a table whose key is two columns works too |
 | `?table=books&new` | a new row's form, its constant defaults filled in (`true`, `'draft'`, `0`) |
 | `?table=books&k.id=7&delete` | the question before a row is deleted |
@@ -82,6 +83,41 @@ An update writes only the columns that changed. When Postgres refuses (a value t
 a foreign key a row still needs), the form comes back with what was sent and Postgres's reason.
 
 A table without a primary key is listed, not opened.
+
+## Filters
+
+Each column a table's list shows has a filter, in a row under the column headings; a hidden column
+never has one. Which filter is the column's type's (as the catalog says it; a generated column's
+too):
+
+| Column | Filter | Query |
+|---|---|---|
+| `text`, `varchar`, `uuid`, `json` and any other type | the text it contains, in any case (`ilike`; `%`, `_` and `\` match themselves) | `has.title=dune` |
+| `smallint`, `integer`, `bigint`, `numeric`, `real`, `double precision` | from, to, or both, inclusive | `from.price=10&to.price=20` |
+| `date`, `timestamp`, `timestamptz` (in UTC, as the admin shows it), `time` | from, to, or both, inclusive, with the browser's pickers | `from.published_at=2026-11-01T00:00` |
+| `boolean` | a select: any, yes, no | `f.in_print=true` |
+| an enum; a check that it is one of a few values; the app's `Choice` widget for it | a select of its values | `f.state=draft` |
+| a foreign key | the value it is | `f.author_id=2` |
+| any of these, if it may be null | empty (null) and not empty too: in its select, or a small select under its inputs | `is.mood=null`, `is.mood=set` |
+
+The filters are one GET form, without JavaScript: Enter in any of them sends it, and so does the
+Filter button beside the search. It keeps the search and the sort, and starts again at the first
+page; Clear filters drops them all. The pages' links, a heading's sort and the search keep them.
+
+`f.<column>=<value>` (equal) works for any column the list shows, and wins over the column's other
+filters. `is.<column>` is `null`, `set`, or a value the column equals: a select of values with empty
+and not empty among them sends it (`is.mood=happy`). Empty says it all: the column's other filters
+go; not empty goes with them.
+
+A filter's value is checked in Roc before it reaches SQL: a number for a number (a whole one, in its
+type's range, for an integer), `2026-11-21` for a date (one that is), `2026-11-21T14:05` (seconds
+if wanted) for a moment, `14:05` for a time, `true` or `false` for a boolean, a UUID's 36
+characters, one of an enum's labels. A value that isn't is ignored, and its filter says so
+("Ignored: not a number"); the page is never an error. A range's value is cast to its column's type
+(`"price" >= $1::numeric`).
+
+There is no option for which columns have a filter: every column the list shows has one, and
+filtering a column the list shows says nothing a visitor can't see. To filter by a column, list it.
 
 ## Options
 
@@ -103,9 +139,8 @@ have is ignored.
 |---|---|---|
 | `name : Str` | | the table |
 | `label : Str` | its name, readable (`book_tags`: "Book tags") | what the pages call it |
-| `list : List(Str)` | its first seven columns | the columns of its list of rows |
+| `list : List(Str)` | its first seven columns | the columns of its list of rows, each with a filter ([Filters](#filters)) |
 | `search : List(Str)` | none: no search box | where the search looks, for the text anywhere in any case (`ilike`) |
-| `filters : List(Str)` | none | a filter for each: a boolean's yes and no, an enum's or a check's values, or the values the column has (the first 50); null and not null for a column that may be null |
 | `ordering : List(Str)` | its key, newest first | the list's order: `["-published_at", "title"]` |
 | `read_only : List(Str)` | | shown on the form, never written |
 | `hidden : List(Str)` | | never read, shown or written: a password's hash |
@@ -139,7 +174,10 @@ in a new row, the column's default for a column that has one.
 
 - A table or a column a request names is looked up in the catalog, among the tables and columns
   the app lets the admin show; only the catalog's names are written into SQL, double-quoted.
-- Every value is a parameter (`$1`); a search's `%` and `_` are matched as themselves.
+- Every value is a parameter (`$1`); a search's or a filter's `%` and `_` are matched as
+  themselves. A filter's value is checked in Roc first, and a range's is cast to its column's type,
+  whose name comes from a fixed list (`::numeric`, `::date`, …), never from the catalog or the
+  request.
 - A hidden column is never selected.
 - Pages are sent with `Content-Security-Policy: default-src 'none'` (no script, nothing loaded from
   elsewhere, forms only to this site), `X-Frame-Options: DENY` and `Cache-Control: no-store`, and
@@ -152,14 +190,14 @@ packages/admin/main.roc` runs their `expect`s.
 
 | Module | What it does |
 |---|---|
-| `Admin` | the options (`Config`, `Table`, `Access`), and what they mean for a table: `showing`, `listed`, `searchable`, `filterable`, `writable`, `title`, `ordering`, `widget` |
+| `Admin` | the options (`Config`, `Table`, `Access`), and what they mean for a table: `showing`, `listed`, `searchable`, `writable`, `title`, `ordering`, `widget` |
 | `AdminPage` | `respond!(request, context, config, effects)`: the access check, the token, the catalog, then the page or the form |
 | `Catalog` | the statements that read the schema from `pg_catalog`, and `Catalog.read`, their rows as tables, columns, keys, foreign keys, enums and a check's values |
-| `Sql` | `ident` (a quoted name), `contains` (a search's pattern), and the statements: `rows`, `count`, `one`, `insert`, `update`, `delete`, `distinct`, `titles` |
+| `Sql` | `ident` (a quoted name), `contains` (a search's or a filter's pattern), the conditions (`Equals`, `IsNull`, `NotNull`, `Contains`, `AtLeast`, `AtMost`, `Search`), and the statements: `rows`, `count`, `one`, `insert`, `update`, `delete`, `titles` |
 | `Widget` | a column's widget from its type (`of`), its input (`input`), what a form's text writes (`param`), whether it changed (`same`), a new row's value (`initial`) |
-| `Listing` | a list's search, filters, sort and page from the query, and back (`read`, `params`, `conditions`, `order`) |
+| `Listing` | a list's search, filters, sort and page from the query, and back (`read`, `params`, `conditions`, `order`); each column's filter (`kind`) and the check of its values (`check`) |
 | `Paging` | `of(total, size, asked)`, `offset`, `shows`, `links` (Django's: the first two, three each side, the last two) |
-| `View` | each page's HTML |
+| `View` | each page's HTML, and a list's row of filters |
 | `Look` | the page around it: the jobs page's stylesheet, and the headers |
 | `Form` | a query's or a form's fields, decoded; links, encoded |
 
@@ -170,7 +208,8 @@ Every statement answers with rows of one shape (each cell as text, and which wer
 
 Works today, without any change to the platform: everything above, proved in a scratch app against
 Postgres 18 (`/tmp/rocx-pkg-admin`: a schema with an enum, a check, foreign keys, a composite key,
-generated and identity columns, and 137 rows; an end-to-end test of every page and form).
+generated and identity columns, and 137 rows; an end-to-end test of every page and form, and of
+each kind of filter, with the search, a sort and pages).
 
 Waits on a proposal (PROPOSALS.md):
 
@@ -183,7 +222,8 @@ Waits on a proposal (PROPOSALS.md):
 
 - A list counts its rows (`count(*)`) and pages with `offset`: fine for thousands of rows, slow for
   millions.
-- A foreign key shows its value in a list, not the row's title; its filter lists values.
+- A foreign key shows its value in a list, not the row's title; its filter takes a value.
+- A filter that contains a text reads every row (`ilike '%…%'` uses no index), as the search does.
 - A foreign key or a check over several columns gives no widget; each column is edited alone.
 - No actions on several rows at once, and no history of changes.
 - The catalog is read for each request (four small statements).

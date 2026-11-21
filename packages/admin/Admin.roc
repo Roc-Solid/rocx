@@ -12,7 +12,7 @@ import Widget
 ##     mount: "/admin/db",
 ##     access: |context| if (context.staff) Edit else Refused,
 ##     tables: [
-##         { name: "books", list: ["id", "title", "state", "price"], search: ["title"], filters: ["state"], ordering: ["-id"] },
+##         { name: "books", list: ["id", "title", "state", "price"], search: ["title"], ordering: ["-id"] },
 ##         { name: "authors", title: "name", hidden: ["password_hash"] },
 ##     ],
 ## }
@@ -23,11 +23,10 @@ Admin := [].{
 	## ignored.
 	##
 	## - `label`: what the pages call it ("" — its name, readable: `book_tags` is "Book tags").
-	## - `list`: the columns its list of rows shows ([] — the first seven it has).
+	## - `list`: the columns its list of rows shows ([] — the first seven it has), each with a
+	##   filter under its heading, chosen from its type (`Listing.kind`).
 	## - `search`: the columns the search box looks in, for the text anywhere, in any case ([] — no
 	##   search box).
-	## - `filters`: a filter for each, beside the list: a boolean's yes and no, an enum's or a
-	##   check's values, or the values the column has (the first 50).
 	## - `ordering`: the list's order, `"-created_at"` descending ([] — its primary key, newest
 	##   first). A click on a column's heading sorts by it instead.
 	## - `read_only`: shown on its form, never written; `hidden`: never read, shown or written
@@ -43,7 +42,6 @@ Admin := [].{
 		label : Str ?? "",
 		list : List(Str) ?? [],
 		search : List(Str) ?? [],
-		filters : List(Str) ?? [],
 		ordering : List(Str) ?? [],
 		read_only : List(Str) ?? [],
 		hidden : List(Str) ?? [],
@@ -128,7 +126,7 @@ Admin := [].{
 	visible : Shown -> List(Catalog.Column)
 	visible = |shown| shown.table.columns.keep_if(|column| !shown.options.hidden.contains(column.name))
 
-	## The columns a table's list of rows shows.
+	## The columns a table's list of rows shows, each with its filter.
 	listed : Shown -> List(Catalog.Column)
 	listed = |shown| {
 		chosen = picked(shown, shown.options.list)
@@ -138,10 +136,6 @@ Admin := [].{
 	## The columns a table's search looks in.
 	searchable : Shown -> List(Catalog.Column)
 	searchable = |shown| picked(shown, shown.options.search)
-
-	## The columns a table's list can be filtered by.
-	filterable : Shown -> List(Catalog.Column)
-	filterable = |shown| picked(shown, shown.options.filters)
 
 	## The columns of a table's primary key, in order ([] if it has none: its rows can be listed,
 	## not opened).

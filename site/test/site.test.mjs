@@ -759,13 +759,19 @@ test("admin: its page shows the package's own pages, rendered with the page into
 		return decoded(/\ssrcdoc="([^"]*)"/.exec(tag)[1]);
 	});
 	// The package's View, from the made-up catalog (site/Demos/AdminPreview.rocx), as a whole document.
-	assert.match(list, /^<!doctype html>[\s\S]*<h1>Books<\/h1>[\s\S]*1–8 of 23/);
-	assert.match(list, /Filter[\s\S]*draft[\s\S]*out of print/, "the check's values, as a filter");
+	assert.match(list, /^<!doctype html>[\s\S]*<h1>Books<\/h1>[\s\S]*1–6 of 6/);
+	// A filter under each column's heading, one of them on; the check's values as a select.
+	const filters = /<tr class="filter">([\s\S]*?)<\/tr>/.exec(list)?.[1] ?? "";
+	assert.equal(filters.split("<td>").length - 1, 5, "id, title, author_id, state, price");
+	assert.match(filters, /name="from.price" value="10"/, "a filter on");
+	assert.match(filters, /<select name="f.state" aria-label="State"><option value="">any<\/option><option value="draft">draft<\/option><option value="published">published<\/option><option value="out of print">out of print<\/option><\/select>/, "the check's values, as a filter");
+	assert.match(list, /<button form="filters">Filter<\/button>/);
+	assert.doesNotMatch(list, /<aside/, "no panel beside the rows");
 	assert.match(row, /<h1>A field guide to clouds<\/h1>/);
 	assert.match(row, /Saved\./);
 	assert.match(row, /<select[^>]*name="v.author_id"[\s\S]*Ines Hart/, "a foreign key, as a select of the rows it may name");
 	// The statements Sql builds for a query, values only as parameters.
-	assert.match(decoded(html), /"title" ilike \$1 or "blurb" ilike \$1\) and "state" = \$2[\s\S]*-- \$1 = '%cloud%', \$2 = 'published'/);
+	assert.match(decoded(html), /"title" ilike \$1 or "blurb" ilike \$1\) and "state" = \$2 and "price" >= \$3::numeric[\s\S]*-- \$1 = '%cloud%', \$2 = 'published', \$3 = '10'/);
 });
 
 test("forms: the page shows what the schema says and the endpoint answers, and the demo checks as it is typed and on Send, asking nothing", { skip }, async () => {

@@ -1,7 +1,7 @@
 ## The admin's pages look as the platform's own do (the jobs page, the dev mailbox: the server
 ## platform's `AdminHtml`): whole HTML documents under one class, `rocx-admin`, with its
-## stylesheet, and a few more rules for forms, filters and pages of rows. The stylesheet is a copy
-## of `AdminHtml`'s, which apps can't import yet (PROPOSALS.md).
+## stylesheet, and a few more rules for forms, a list's filters and its pages of rows. The
+## stylesheet is a copy of `AdminHtml`'s, which apps can't import yet (PROPOSALS.md).
 Look := [].{
 
 	## Text as HTML has it, in an element or an attribute's quotes.
@@ -50,18 +50,25 @@ Look := [].{
 				".rocx-admin .bar{display:flex;gap:1rem;align-items:baseline;justify-content:space-between}",
 				# The admin's own.
 				".rocx-admin .crumbs{margin:0 0 .5rem;color:#59636e}",
-				".rocx-admin .listing{display:grid;grid-template-columns:minmax(0,1fr) 14rem;gap:1rem;align-items:start}",
-				".rocx-admin .listing.alone{grid-template-columns:minmax(0,1fr)}",
-				"@media (max-width:52rem){.rocx-admin .listing{grid-template-columns:minmax(0,1fr)}}",
-				".rocx-admin .rows{overflow-x:auto}",
+				# The list: its search and the filters' button above it; the table scrolls sideways, its
+				# row of filters with it, each input as wide as its column (and at least as its kind needs).
+				".rocx-admin .tools{display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:center;margin:0 0 .75rem}",
+				".rocx-admin form.search{display:flex;gap:.4rem;align-items:center;margin:0;flex:1 1 18rem;max-width:32rem}.rocx-admin form.search input{flex:1;min-width:0}",
+				".rocx-admin .filtering{display:flex;gap:.75rem;align-items:center;margin-left:auto}",
+				".rocx-admin form.filters{display:block;margin:0}",
+				".rocx-admin .rows{overflow-x:auto;border:1px solid #d0d7de;border-radius:6px;background:#fff}.rocx-admin .rows table{border:0;border-radius:0}",
 				".rocx-admin td{overflow-wrap:break-word}.rocx-admin td.null,.rocx-admin dd.null{color:#8c959f;font-style:italic}",
 				".rocx-admin th a{color:inherit}.rocx-admin th a.on{color:#1f2328}",
-				".rocx-admin aside{background:#fff;border:1px solid #d0d7de;border-radius:6px;padding:.5rem .75rem}",
-				".rocx-admin aside h2{margin:.25rem 0 .25rem}",
-				".rocx-admin aside h3{font-size:.75rem;margin:.75rem 0 .25rem;color:#59636e;text-transform:uppercase;letter-spacing:.03em}",
-				".rocx-admin aside ul{list-style:none;margin:0;padding:0}.rocx-admin aside li{margin:.15rem 0;overflow-wrap:anywhere}",
-				".rocx-admin aside a.on{font-weight:600;color:#1f2328}",
-				".rocx-admin form.search{display:flex;gap:.4rem;align-items:center;margin:0 0 .75rem}",
+				".rocx-admin tr.filter td{background:#f6f8fa;padding:.3rem .45rem .45rem;border-bottom:1px solid #d0d7de}",
+				".rocx-admin tr.filter input,.rocx-admin tr.filter select{display:block;width:100%;min-width:6rem;font-size:.8rem;padding:.2rem .35rem}",
+				".rocx-admin tr.filter input[type=number]{min-width:4.5rem}.rocx-admin tr.filter input[type=date]{min-width:8.5rem}",
+				".rocx-admin tr.filter input[type=datetime-local]{min-width:12rem}.rocx-admin tr.filter input[type=time]{min-width:6rem}",
+				".rocx-admin tr.filter .range{display:grid;grid-template-columns:max-content 1fr;gap:.2rem .35rem;align-items:center}",
+				".rocx-admin tr.filter .range span{font-size:.7rem;color:#59636e}",
+				".rocx-admin tr.filter select.nulls{margin-top:.2rem}",
+				".rocx-admin tr.filter [aria-invalid=true]{border-color:#cf222e}",
+				".rocx-admin tr.filter .note{display:block;margin-top:.15rem;color:#cf222e;font-size:.75rem;white-space:normal}",
+				".rocx-admin td.none{padding:1rem;color:#59636e;text-align:center}",
 				".rocx-admin input,.rocx-admin select,.rocx-admin textarea{font:inherit;padding:.3rem .45rem;border:1px solid #d0d7de;border-radius:4px;background:#fff;color:inherit;box-sizing:border-box}",
 				".rocx-admin textarea{width:100%;min-height:5rem}.rocx-admin textarea.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.85rem}",
 				".rocx-admin form.edit{display:block}",

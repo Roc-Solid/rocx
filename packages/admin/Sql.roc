@@ -13,8 +13,10 @@ Sql := [].{
 	Statement : { sql : Str, params : List(Param) }
 
 	## What rows must be: a column equal to a value (as Postgres reads the value for its type),
-	## null, or not null; or one of several columns containing a text, in any case.
-	Condition : [Equals(Catalog.Column, Str), IsNull(Catalog.Column), NotNull(Catalog.Column), Search(List(Catalog.Column), Str)]
+	## null, not null, containing a text (in any case), at least a value or at most one (the
+	## value cast to the column's type, for a number, a date or a time); or one of several columns
+	## containing a text, in any case.
+	Condition : [Equals(Catalog.Column, Str), IsNull(Catalog.Column), NotNull(Catalog.Column), Contains(Catalog.Column, Str), AtLeast(Catalog.Column, Str), AtMost(Catalog.Column, Str), Search(List(Catalog.Column), Str)]
 
 	## A column to sort by.
 	Order : { column : Catalog.Column, descending : Bool }
@@ -123,17 +125,6 @@ Sql := [].{
 		{ sql: "delete from ${Sql.qualified(schema, table.name)}${filtered.sql}", params: filtered.params }
 	}
 
-	## The values `column` of `table` has (not null), in order, at most `limit` of them: a filter's
-	## choices.
-	distinct : Str, Catalog.Table, Catalog.Column, U64 -> Statement
-	distinct = |schema, table, column, limit| {
-		name = Sql.ident(column.name)
-		{
-			sql: "select array_to_json(array[${Sql.text_of(column, "value")}]) as \"cells\", '[]'::json as \"nulls\" from (select distinct ${name} as value from ${Sql.qualified(schema, table.name)} where ${name} is not null order by 1 limit $1) as found",
-			params: [Int(limit.to_i64_wrap())],
-		}
-	}
-
 	## Each row of `table` as `key` (its value) and `title` (what names it), in order of their
 	## titles, at most `limit` of them: the choices of a foreign key.
 	titles : Str, Catalog.Table, Catalog.Column, Catalog.Column, U64 -> Statement
@@ -156,7 +147,8 @@ where_clause = |conditions, first| {
 		at = "$${(first + $params.len()).to_str()}"
 		match condition {
 			Equals(column, value) => {
-				compared = if (column.base == "json") "${Sql.ident(column.name)}::text" else Sql.ident(column.name)
+				# JSON has no equality (json), or one Postgres reads the value for (jsonb): its text.
+				compared = if (column.base == "json" or column.base == "jsonb") "${Sql.ident(column.name)}::text" else Sql.ident(column.name)
 				$parts = $parts.append("${compared} = ${at}")
 				$params = $params.append(Text(value))
 			}
@@ -166,9 +158,21 @@ where_clause = |conditions, first| {
 			NotNull(column) => {
 				$parts = $parts.append("${Sql.ident(column.name)} is not null")
 			}
+			Contains(column, text) => {
+				$parts = $parts.append("${as_text(column)} ilike ${at}")
+				$params = $params.append(Text(Sql.contains(text)))
+			}
+			AtLeast(column, value) => {
+				$parts = $parts.append("${Sql.ident(column.name)} >= ${at}${cast(column)}")
+				$params = $params.append(Text(value))
+			}
+			AtMost(column, value) => {
+				$parts = $parts.append("${Sql.ident(column.name)} <= ${at}${cast(column)}")
+				$params = $params.append(Text(value))
+			}
 			Search(columns, text) =>
 				if !columns.is_empty() {
-					found = columns.map(|column| "${if (is_text(column)) Sql.ident(column.name) else "${Sql.ident(column.name)}::text"} ilike ${at}")
+					found = columns.map(|column| "${as_text(column)} ilike ${at}")
 					$parts = $parts.append("(${Str.join_with(found, " or ")})")
 					$params = $params.append(Text(Sql.contains(text)))
 				} else {
@@ -181,6 +185,29 @@ where_clause = |conditions, first| {
 
 is_text : Catalog.Column -> Bool
 is_text = |column| ["text", "varchar", "bpchar", "citext"].contains(column.base)
+
+## A column as `ilike` reads it: a text as it is, anything else as its text.
+as_text : Catalog.Column -> Str
+as_text = |column| if (is_text(column)) Sql.ident(column.name) else "${Sql.ident(column.name)}::text"
+
+## The cast of a range's value to its column's type (` ::numeric`), for the types a range is for;
+## none for any other (Postgres reads the value as the column's type). Only these names are written.
+cast : Catalog.Column -> Str
+cast = |column|
+	match column.base {
+		"int2" => "::int2"
+		"int4" => "::int4"
+		"int8" => "::int8"
+		"oid" => "::oid"
+		"numeric" => "::numeric"
+		"float4" => "::float4"
+		"float8" => "::float8"
+		"date" => "::date"
+		"timestamp" => "::timestamp"
+		"timestamptz" => "::timestamptz"
+		"time" => "::time"
+		_ => ""
+	}
 
 test_column : Str, Str -> Catalog.Column
 test_column = |name, base| { name, type: base, base, category: "S", nullable: Bool.True, defaulted: Bool.False, generated: Bool.False, comment: "", default: "", labels: [], choices: [], refers: Nothing }
@@ -228,5 +255,28 @@ expect {
 }
 expect Sql.delete("public", test_table, [(test_column("id", "int8"), "7")]) == { sql: "delete from \"public\".\"books\" where \"id\" = $1", params: [Text("7")] }
 expect Sql.one("public", test_table, [test_column("id", "int8")], [(test_column("id", "int8"), "7")]).params == [Text("7")]
-expect Sql.distinct("public", test_table, test_column("state", "text"), 50).sql == "select array_to_json(array[value::text]) as \"cells\", '[]'::json as \"nulls\" from (select distinct \"state\" as value from \"public\".\"books\" where \"state\" is not null order by 1 limit $1) as found"
+# A filter's conditions: a text it contains (its `%`, `_` and `\` as themselves), a range's ends cast to the column's type.
+expect {
+	statement = Sql.count(
+		"public",
+		test_table,
+		[
+			Contains(test_column("title", "text"), "50%_off\\"),
+			Contains(test_column("isbn", "uuid"), "0e5f"),
+			AtLeast(test_column("price", "numeric"), "1.5"),
+			AtMost(test_column("price", "numeric"), "20"),
+			AtLeast(test_column("published_at", "timestamptz"), "2026-11-01T09:30+00"),
+			AtMost(test_column("born", "date"), "2026-02-28"),
+			AtLeast(test_column("pages", "int2"), "100"),
+			AtMost(test_column("odd", "inet"), "x"),
+			Equals(test_column("details", "jsonb"), "{}"),
+			NotNull(test_column("mood", "mood")),
+		],
+	)
+	statement.sql
+		== "select array_to_json(array[count(*)::text]) as \"cells\", '[]'::json as \"nulls\" from \"public\".\"books\" where \"title\" ilike $1 and \"isbn\"::text ilike $2 and \"price\" >= $3::numeric and \"price\" <= $4::numeric and \"published_at\" >= $5::timestamptz and \"born\" <= $6::date and \"pages\" >= $7::int2 and \"odd\" <= $8 and \"details\"::text = $9 and \"mood\" is not null"
+		and statement.params == [Text("%50\\%\\_off\\\\%"), Text("%0e5f%"), Text("1.5"), Text("20"), Text("2026-11-01T09:30+00"), Text("2026-02-28"), Text("100"), Text("x"), Text("{}")]
+}
+# A column's name, quoted, in a range too.
+expect Sql.count("s", test_table, [AtLeast(test_column("a\"b", "int4"), "1")]).sql == "select array_to_json(array[count(*)::text]) as \"cells\", '[]'::json as \"nulls\" from \"s\".\"books\" where \"a\"\"b\" >= $1::int4"
 expect Sql.titles("public", test_table, test_column("id", "int8"), test_column("title", "text"), 201).sql == "select array_to_json(array[\"id\"::text, coalesce(\"title\"::text, \"id\"::text)]) as \"cells\", '[]'::json as \"nulls\" from \"public\".\"books\" order by coalesce(\"title\"::text, \"id\"::text), \"id\" limit $1"

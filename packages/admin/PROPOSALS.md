@@ -80,9 +80,10 @@ of its stylesheet and its document: two copies of "the platform's admin look" th
 1. Keep the copy (today's).
 2. Expose `AdminHtml` from the server platform, and add the admin's rules to its stylesheet: forms
    (`.fields`, inputs, selects, text areas, `.help`, `.buttons`, `button.primary`,
-   `button.danger`), the list's filters (`aside`), its search (`form.search`), the pager
-   (`nav.pager`), `.notice`, `.crumbs`, `td.null`, `th a.on`: about 30 short rules, those after
-   "The admin's own" in `Look.roc`. Its CSP-friendly pages need nothing else.
+   `button.danger`), the list's search and its row of filters (`.tools`, `form.search`,
+   `tr.filter`), the pager (`nav.pager`), `.notice`, `.crumbs`, `td.null`, `th a.on`: about 35
+   short rules, those after "The admin's own" in `Look.roc`. Its CSP-friendly pages need nothing
+   else.
 3. Move the look into a package both use: the platform can't import an app's package (the types
    would be two packages' types).
 

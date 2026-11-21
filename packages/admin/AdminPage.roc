@@ -232,22 +232,7 @@ list! = |query, frame, schema, shown, effects| {
 	match read {
 		Err(why) => page(400, frame, Admin.label(shown), View.problem_page(frame, Admin.label(shown), "Its rows can't be read: ${why}"))
 		Ok((paged, found)) => {
-			var $filters = []
-			for column in Admin.filterable(shown) {
-				choices =
-					match Admin.widget(shown, column) {
-						Checkbox | MaybeBool => [("true", "yes"), ("false", "no")]
-						Choice(values) => values.map(|value| (value, value))
-						_ =>
-							match rows!(effects, Sql.distinct(schema, shown.table, column, 50)) {
-								Ok(values) => values.map(|row| (Catalog.cell(row, 0), Widget.cut(Catalog.cell(row, 0), 40)))
-								Err(_) => []
-							}
-					}
-				$filters = $filters.append({ column, choices })
-			}
-			filters = $filters
-			body = View.list_page(frame, { shown, state, page: paged, rows: found, filters, notice: View.notice(Form.get(query, "done")) })
+			body = View.list_page(frame, { shown, state, page: paged, rows: found, notice: View.notice(Form.get(query, "done")) })
 			page(200, frame, Admin.label(shown), body)
 		}
 	}

@@ -19,7 +19,7 @@ AdminRoute := [].{
 		mount: "/admin/db",
 		access: |who| if (who.staff) Edit else Refused,
 		tables: [
-			{ name: "books", list: ["id", "title", "author_id", "state", "price"], search: ["title", "blurb"], filters: ["state", "in_print"], ordering: ["-id"] },
+			{ name: "books", list: ["id", "title", "author_id", "state", "price"], search: ["title", "blurb"], ordering: ["-id"] },
 			{ name: "authors", title: "name", hidden: ["password_hash"], labels: [("email", "Email address")] },
 		],
 	}

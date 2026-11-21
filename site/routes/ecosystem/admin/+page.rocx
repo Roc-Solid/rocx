@@ -11,15 +11,16 @@ import ../../../Ui/TableWrap
 
 ## The admin package: what it is for, a first admin (code the site's server compiles), its pages as
 ## the package renders them (from made-up tables, while this page renders), who may use it, its
-## options and widgets, how it works, its modules, and what works today. All of it is static: the
+## filters, options and widgets, how it works, its modules, and what works today. All of it is static: the
 ## browser runs nothing here.
 meta = {
 	title: "Admin",
-	description: "A Django-style admin for a Roc Solid app's Postgres tables: each table's rows with a search, filters, sorting and pages, and a form for each row, read from Postgres's own catalog.",
+	description: "A Django-style admin for a Roc Solid app's Postgres tables: each table's rows with a search, a filter in every column, sorting and pages, and a form for each row, read from Postgres's own catalog.",
 	toc: [
 		{ id: "first", label: "A first admin" },
 		{ id: "looks", label: "What it looks like" },
 		{ id: "pages", label: "Its pages" },
+		{ id: "filters", label: "Filters" },
 		{ id: "access", label: "Who may use it" },
 		{ id: "options", label: "Options" },
 		{ id: "widgets", label: "Widgets" },
@@ -36,8 +37,8 @@ view! = |_|
 				kicker={[<>{"The ecosystem · "}</>, <code>packages/admin</code>]}
 				title="An admin for your tables, read from Postgres itself"
 			>
-				Django's admin, for a Roc Solid app: a page for each table, its rows with a search, filters,
-				sorting and pages, a form for each row, and a way to add and delete rows. It reads the tables from
+				Django's admin, for a Roc Solid app: a page for each table, its rows with a search, a filter in
+				every column, sorting and pages, a form for each row, and a way to add and delete rows. It reads the tables from
 				Postgres's own catalog when a page is asked for, so there is nothing to generate, and nothing to keep
 				in step with the schema. It looks like the platform's <a href={"${Paths.platform_jobs}#page"}>jobs page</a>,
 				and is mounted the same way: one route file, behind the app's own middleware.
@@ -78,9 +79,10 @@ view! = |_|
 			<figure class="admin-preview">
 				<iframe class="list" title="The admin's list of books, as the package renders it" srcdoc={AdminPreview.list_page} sandbox="" loading="lazy"></iframe>
 				<figcaption>
-					A table's rows: sorted by a column's heading, searched in <code>title</code> and <code>blurb</code>,
-					filtered by <code>state</code> (a check's three values) and <code>in_print</code> (a boolean). A foreign
-					key links to its row.
+					A table's rows, filtered by <code>price</code> from 10: under each heading, a filter from its column's
+					type (a range of numbers, the text a title contains, the value a foreign key is, a select of the
+					check's three values for <code>state</code>), sent by Enter or the Filter button. A heading sorts by its
+					column, the search looks in <code>title</code> and <code>blurb</code>, and a foreign key links to its row.
 				</figcaption>
 			</figure>
 			<figure class="admin-preview">
@@ -110,8 +112,9 @@ view! = |_|
 							<td><code>?table=books</code></td>
 							<td>
 								its rows, 50 a page (<code>page=2</code>), counted and paged in Postgres; a search
-								(<code>q=cloud</code>), filters (<code>f.state=draft</code>, <code>is.blurb=null</code>,
-								<code>is.blurb=set</code>), and a sort (<code>sort=title</code>, <code>sort=-price</code>)
+								(<code>q=cloud</code>), a filter in each column (<code>has.title=cloud</code>,
+								<code>from.price=10</code>, <code>f.state=draft</code>, <code>is.author_id=null</code>: see
+								<a href="#filters">Filters</a>), and a sort (<code>sort=title</code>, <code>sort=-price</code>)
 							</td>
 						</tr>
 						<tr><td><code>?table=books&amp;k.id=21</code></td><td>a row's form: <code>k.</code> and a column for each column of its primary key, so a key of two columns works too</td></tr>
@@ -125,6 +128,35 @@ view! = |_|
 				update writes only the columns that changed. When Postgres refuses (a price that isn't a number, an
 				author that books still name), the form comes back with what was sent and Postgres's reason. A table
 				without a primary key is listed, not opened.
+			</p>
+
+			<Heading id="filters">Filters</Heading>
+			<p>
+				Each column a list shows has a filter, in a row under the column headings, chosen from its type; a hidden
+				column never has one. Filtering a column the list shows tells a visitor nothing they can't see, so there
+				is no option for it: to filter by a column, list it.
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Column</th><th>Filter</th><th>Query</th></tr></thead>
+					<tbody>
+						<tr><td><code>text</code>, <code>varchar</code>, <code>uuid</code>, <code>json</code> and any other type</td><td>the text it contains, in any case; <code>%</code> and <code>_</code> match themselves</td><td><code>has.title=cloud</code></td></tr>
+						<tr><td>a number: <code>integer</code>, <code>bigint</code>, <code>numeric</code>, <code>real</code>, …</td><td>from, to, or both, inclusive</td><td><code>from.price=10&amp;to.price=20</code></td></tr>
+						<tr><td><code>date</code>, <code>timestamp</code>, <code>timestamptz</code> (in UTC), <code>time</code></td><td>from, to, or both, inclusive, with the browser's pickers</td><td><code>from.published_at=2026-03-01T00:00</code></td></tr>
+						<tr><td><code>boolean</code></td><td>a select: any, yes, no</td><td><code>f.in_print=true</code></td></tr>
+						<tr><td>an enum, or a check that it is one of a few values</td><td>a select of its values</td><td><code>f.state=draft</code></td></tr>
+						<tr><td>a foreign key</td><td>the value it is</td><td><code>f.author_id=3</code></td></tr>
+						<tr><td>any of these, if it may be null</td><td>empty and not empty too: in its select, or a small select under its inputs</td><td><code>is.blurb=null</code>, <code>is.blurb=set</code></td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				The filters are one GET form, with no JavaScript: Enter in any of them sends it, or the Filter button
+				beside the search. It keeps the search and the sort and goes back to the first page, and the pages' links
+				and the sort keep the filters. A filter's value is checked in Roc before it reaches SQL (a number for a
+				number, <code>2026-03-14</code> for a date, one of an enum's labels), then a range's is cast to its
+				column's type (<code>{"\"price\" >= $3::numeric"}</code>). A value that isn't one is ignored, and its
+				filter says so (Ignored: not a number): the page is never an error.
 			</p>
 
 			<Heading id="access">Who may use it</Heading>
@@ -174,9 +206,8 @@ view! = |_|
 					<tbody>
 						<tr><td><code>name : Str</code></td><td></td><td>the table</td></tr>
 						<tr><td><code>label : Str</code></td><td>its name, readable: <code>book_tags</code> is Book tags</td><td>what the pages call it</td></tr>
-						<tr><td><code>list : List(Str)</code></td><td>its first seven columns</td><td>the columns its list of rows shows</td></tr>
+						<tr><td><code>list : List(Str)</code></td><td>its first seven columns</td><td>the columns its list of rows shows, each with a filter</td></tr>
 						<tr><td><code>search : List(Str)</code></td><td>no search box</td><td>where the search looks, for the text anywhere, in any case</td></tr>
-						<tr><td><code>filters : List(Str)</code></td><td>none</td><td>a filter for each: a boolean's yes and no, an enum's or a check's values, or the first 50 values the column has; null and not null for a column that may be null</td></tr>
 						<tr><td><code>ordering : List(Str)</code></td><td>its key, newest first</td><td>the list's order: <code>["-published_at", "title"]</code></td></tr>
 						<tr><td><code>read_only : List(Str)</code></td><td></td><td>shown on the form, never written</td></tr>
 						<tr><td><code>hidden : List(Str)</code></td><td></td><td>never read, shown or written: a password's hash</td></tr>
@@ -247,12 +278,12 @@ view! = |_|
 				<table>
 					<thead><tr><th>Module</th><th>What it does</th></tr></thead>
 					<tbody>
-						<tr><td><code>Admin</code></td><td>the options (<code>Config</code>, <code>Table</code>, <code>Access</code>), and what they mean for a table: <code>showing</code>, <code>listed</code>, <code>searchable</code>, <code>filterable</code>, <code>writable</code>, <code>title</code>, <code>ordering</code>, <code>widget</code></td></tr>
+						<tr><td><code>Admin</code></td><td>the options (<code>Config</code>, <code>Table</code>, <code>Access</code>), and what they mean for a table: <code>showing</code>, <code>listed</code>, <code>searchable</code>, <code>writable</code>, <code>title</code>, <code>ordering</code>, <code>widget</code></td></tr>
 						<tr><td><code>AdminPage</code></td><td><code>respond!(request, context, config, effects)</code>: the access check, the token, the catalog, then the page or the form</td></tr>
 						<tr><td><code>Catalog</code></td><td>the statements that read the schema, and <code>read</code>, their rows as tables</td></tr>
-						<tr><td><code>Sql</code></td><td><code>ident</code>, <code>contains</code> (a search's pattern), and the statements: <code>rows</code>, <code>count</code>, <code>one</code>, <code>insert</code>, <code>update</code>, <code>delete</code>, <code>distinct</code>, <code>titles</code></td></tr>
+						<tr><td><code>Sql</code></td><td><code>ident</code>, <code>contains</code> (a search's or a filter's pattern), the conditions a list's rows meet, and the statements: <code>rows</code>, <code>count</code>, <code>one</code>, <code>insert</code>, <code>update</code>, <code>delete</code>, <code>titles</code></td></tr>
 						<tr><td><code>Widget</code></td><td>a column's widget from its type (<code>of</code>), its input (<code>input</code>), what a form's text writes (<code>param</code>), whether it changed (<code>same</code>), a new row's value (<code>initial</code>)</td></tr>
-						<tr><td><code>Listing</code></td><td>a list's search, filters, sort and page from the query, and back (<code>read</code>, <code>params</code>, <code>conditions</code>, <code>order</code>, <code>key</code>)</td></tr>
+						<tr><td><code>Listing</code></td><td>a list's search, filters, sort and page from the query, and back (<code>read</code>, <code>params</code>, <code>conditions</code>, <code>order</code>, <code>key</code>), each column's filter (<code>kind</code>) and the check of its values (<code>check</code>)</td></tr>
 						<tr><td><code>Paging</code></td><td><code>of(total, size, asked)</code>, <code>offset</code>, <code>shows</code>, <code>links</code>: the first two pages, three each side of this one, the last two</td></tr>
 						<tr><td><code>View</code></td><td>each page's HTML: <code>index_page</code>, <code>list_page</code>, <code>row_page</code>, <code>delete_page</code>, <code>problem_page</code></td></tr>
 						<tr><td><code>Look</code></td><td>the document around a page, its stylesheet (the jobs page's), and the headers it is sent with</td></tr>
@@ -286,7 +317,7 @@ view! = |_|
 			<p>Not yet:</p>
 			<ul>
 				<li>A list counts its rows (<code>count(*)</code>) and pages with <code>offset</code>: fine for thousands of rows, slow for millions.</li>
-				<li>A foreign key in a list shows its value, linked to its row, not the row's title; its filter lists values.</li>
+				<li>A foreign key in a list shows its value, linked to its row, not the row's title; its filter takes a value.</li>
 				<li>A foreign key or a check over several columns gives no widget: each column is edited alone.</li>
 				<li>No actions on several rows at once, and no history of who changed what.</li>
 			</ul>
@@ -312,10 +343,15 @@ view! = |_|
 		background: #f6f8fa;
 	}
 
-	/* On a phone, the list's filters go under its rows. */
+	/* The list of books, its filters in its table, is shorter than a book's form; on a phone, its
+	   titles take two lines. */
+	.admin-preview iframe.list {
+		height: 38rem;
+	}
+
 	@media (max-width: 40rem) {
 		.admin-preview iframe.list {
-			height: 68rem;
+			height: 44rem;
 		}
 	}
 
