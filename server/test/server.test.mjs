@@ -104,7 +104,8 @@ before(async () => {
 	buildApp(join(root, "server", "test", "app", "main.roc"), app, { opt: process.env.ROCX_TEST_OPT ?? "dev" });
 	writeFileSync(join(dir, "context.txt"), "facts=yes");
 	smtp = await smtpServer();
-	server = await start(dbFlags());
+	// A short beat, so the channel tests see a stream's re-checks soon (`--live-beat-ms`).
+	server = await start([...dbFlags(), "--live-beat-ms", "300"]);
 	if (database) assert.equal(await server.text("/reset", { method: "POST" }), "ready");
 	// The loops settle (a worker's first look at the queue), then what they hold is the baseline.
 	const allocations = async () => Number(await server.text("/__rocx/allocations"));
@@ -126,6 +127,16 @@ const get = (path, options) => server.get(path, options);
 const text = (path, options) => server.text(path, options);
 const post = (path, body) => text(path, { method: "POST", body });
 const live = async () => Number(await text("/__rocx/allocations"));
+/** What Roc holds once the background loops have settled (a worker's look at the queue allocates
+ * for a moment): the same count twice, 200 ms apart. */
+const steady = async () => {
+	for (let previous = -1; ; ) {
+		const now = await live();
+		if (now === previous) return now;
+		previous = now;
+		await new Promise((resolve) => setTimeout(resolve, 200));
+	}
+};
 const until = async (check, ms = 5000) => {
 	const started = performance.now();
 	for (;;) {
@@ -208,6 +219,10 @@ test("Roc answers: the request's method, path, query, body and the server's cont
 /** A pretty line: the local time, the level (as wide as each other), the message and its fields. */
 const PRETTY = /^\d\d:\d\d:\d\d (DEBUG|INFO |WARN |ERROR) \S/;
 
+/** What the platform may say as a server starts, whatever a test does: a migration applied, jobs a
+ * stop cut short queued again, a look at S3 (`STORAGE_URL`). */
+const STARTING = /^\S+\s+(rocx server: migrated:|rocx jobs:|rocx storage:)/;
+
 /** Waits for a stopped server's stderr to end: everything it wrote, read. */
 const ended = (of) => new Promise((resolve) => (of.child.stderr.readableEnded ? resolve() : of.child.stderr.once("end", resolve)));
 
@@ -221,7 +236,9 @@ test("the log, with ROCX_LOG unset and stderr not a terminal, is JSON: every lin
 		assert.match(event.time, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/, "RFC 3339, UTC");
 		assert.ok(["debug", "info", "warn", "error"].includes(event.level), event.level);
 	}
-	assert.match(all[0].msg, /^rocx server: http:\/\/127\.0\.0\.1:\d+ \(Roc, native\)$/, "the host's own lines too");
+	// Not necessarily first: on a new database, a migration's line comes before it, and a job a stop
+	// cut short is said to be queued again.
+	assert.ok(all.some((event) => /^rocx server: http:\/\/127\.0\.0\.1:\d+ \(Roc, native\)$/.test(event.msg)), "the host's own lines too");
 	const line = all.find((event) => event.msg === "a line from Roc");
 	assert.deepEqual(Object.keys(line), ["time", "level", "msg"], "no fields");
 	assert.equal(line.level, "info");
@@ -248,7 +265,7 @@ test("ROCX_LOG=json: the server's lines and an app's events, with their fields b
 	}
 	const without = (event) => ({ ...event, time: undefined });
 	const find = (msg) => without(all.find((event) => event.msg === msg));
-	assert.match(all[0].msg, /^rocx server: http:\/\/127\.0\.0\.1:\d+ \(Roc, native\)$/);
+	assert.ok(all.some((event) => /^rocx server: http:\/\/127\.0\.0\.1:\d+ \(Roc, native\)$/.test(event.msg)));
 	assert.deepEqual(find("an event from Roc"), {
 		time: undefined,
 		level: "info",
@@ -283,7 +300,8 @@ test("ROCX_LOG=pretty: a line each, the local time, the level (no colour: stderr
 	const now = new Date();
 	const apart = Math.abs(hours * 3600 + minutes * 60 + seconds - (now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds()));
 	assert.ok(Math.min(apart, 86_400 - apart) < 60, `the local time: ${lines[0].slice(0, 8)}, now ${now.toTimeString()}`);
-	const shown = lines.map((line) => line.slice(9));
+	// The lines this test made: not the platform's own at a start (a migration, a job queued again).
+	const shown = lines.map((line) => line.slice(9)).filter((line) => !STARTING.test(line));
 	assert.match(shown[0], /^INFO  rocx server: http:\/\/127\.0\.0\.1:\d+ \(Roc, native\)$/);
 	assert.deepEqual(shown.slice(1), [
 		'INFO  an event from Roc count=3 fields.level="not the level" fields.msg="not the message" note="two words" ok=true path=/log/fields',
@@ -303,7 +321,12 @@ test("a program's `logs: { format: Pretty }` wins over what Auto would guess (JS
 		assert.equal(await pretty.text("/hello"), "logged");
 		await pretty.stop();
 		await ended(pretty);
-		const shown = pretty.logged().trimEnd().split("\n").map((line) => (assert.match(line, PRETTY), line.slice(9)));
+		const shown = pretty
+			.logged()
+			.trimEnd()
+			.split("\n")
+			.map((line) => (assert.match(line, PRETTY), line.slice(9)))
+			.filter((line) => !STARTING.test(line));
 		assert.match(shown[0], /^INFO  rocx server: http:\/\/127\.0\.0\.1:\d+ \(Roc, native\)$/, JSON.stringify(environment));
 		assert.deepEqual(shown.slice(1), ['INFO  an event from Roc note="two words" target=/hello', "INFO  rocx server: stopping"]);
 	}
@@ -1782,6 +1805,213 @@ test("live: what is published on a topic reaches every stream listening to it", 
 	gone.abort();
 });
 
+// ---- Channels (D-020): one stream per tab, at /rocx/live, held by the host ----
+
+/** A tab's stream of its channels (`GET /rocx/live?tab=…&c=…`), as `of` answers it: `next()`
+ * resolves to its next event, `{ event, url, said }` (`said` parsed), or `": beat"` for a beat (with
+ * `beats`), or null once it ends. */
+async function channelStream(urls, { tab = "", cookie = "", signal, of = server, beats = false } = {}) {
+	const query = [...(tab ? [`tab=${tab}`] : []), ...urls.map((url) => `c=${encodeURIComponent(url)}`)].join("&");
+	const response = await of.get(`/rocx/live?${query}`, { headers: { accept: "text/event-stream", cookie }, signal });
+	const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+	let buffered = "";
+	return {
+		response,
+		async next() {
+			for (;;) {
+				const end = buffered.indexOf("\n\n");
+				if (end >= 0) {
+					const block = buffered.slice(0, end);
+					buffered = buffered.slice(end + 2);
+					if (block.startsWith(":")) {
+						if (beats && block === ": beat") return block;
+						continue;
+					}
+					const lines = block.split("\n");
+					const field = (name) => lines.filter((line) => line.startsWith(`${name}: `)).map((line) => line.slice(name.length + 2));
+					const [url, ...rest] = field("data");
+					return { event: field("event")[0], url, said: rest.length ? JSON.parse(rest.join("\n")) : null };
+				}
+				const read = await reader.read();
+				if (read.done) return null;
+				buffered += read.value;
+			}
+		},
+	};
+}
+
+/** A member of `org`, as the test app's middleware reads them, until `until` (ms) if given. */
+const memberOf = (name, org, until) => `member=${name}; org=${org}${until ? `; until=${until}` : ""}`;
+
+/** Says things on channels, as a tab's hub posts them (`POST /rocx/live/send`): the answer. */
+const say = (items, { tab = "", cookie = "", of = server } = {}) =>
+	of.get(`/rocx/live/send${tab ? `?tab=${tab}` : ""}`, { method: "POST", headers: { "content-type": "application/json", cookie }, body: JSON.stringify(items) });
+
+test("channels: one stream carries a tab's channels, each checked as it opens: one refused is told so and the rest go on; one let in hears resync, then its on_open! messages, then what is published with its own params, in order; beats", { skip }, async () => {
+	const gone = new AbortController();
+	const tab = `${run}t1`;
+	const stream = await channelStream(["/news/acme", "/news/beta", "/clock", "/nowhere", "/news/acme"], { tab, cookie: memberOf("ada", "acme"), signal: gone.signal, beats: true });
+	assert.equal(stream.response.status, 200);
+	assert.equal(stream.response.headers.get("content-type"), "text/event-stream");
+	assert.deepEqual(await stream.next(), { event: "resync", url: "/news/acme", said: null }, "its check let it in (twice named, once subscribed)");
+	assert.deepEqual(await stream.next(), { event: "message", url: "/news/acme", said: { n: 0, title: "welcome, ada (a tab)" } }, "on_open!'s, before anything published");
+	assert.deepEqual(await stream.next(), { event: "refused", url: "/news/beta", said: { status: 403, why: "Forbidden" } }, "another org's: refused, by its own check");
+	assert.deepEqual(await stream.next(), { event: "resync", url: "/clock", said: null });
+	assert.deepEqual(await stream.next(), { event: "refused", url: "/nowhere", said: { status: 404, why: "no channel at /nowhere" } });
+	// Published for another org first: only acme's comes.
+	assert.equal(await text("/news/publish?org=beta&title=theirs&n=1", { method: "POST" }), "published");
+	for (let n = 1; n <= 3; n++) assert.equal(await text(`/news/publish?org=acme&title=ours&n=${n}`, { method: "POST" }), "published");
+	for (let n = 1; n <= 3; n++) assert.deepEqual(await stream.next(), { event: "message", url: "/news/acme", said: { n, title: "ours" } }, "its params' only, in the order published");
+	assert.equal(await text("/clock/publish", { method: "POST" }), "published");
+	const tick = await stream.next();
+	assert.equal(tick.url, "/clock");
+	assert.ok(tick.said > 1_700_000_000_000);
+	assert.equal(await stream.next(), ": beat", "the stream beats (--live-beat-ms), checking its channels again");
+	gone.abort();
+	// The host's ask, from anyone else, is no ask: a request with x-rocx-channel is answered as any.
+	const forged = await get("/news/acme", { headers: { cookie: memberOf("ada", "acme"), "x-rocx-channel": "open", "x-rocx-tab": tab } });
+	assert.equal(forged.status, 404);
+	assert.doesNotMatch(await forged.text(), /who/);
+	assert.equal((await get("/rocx/live/send")).status, 405);
+	assert.equal((await get("/rocx/live?c=%2Fclock", { method: "POST" })).status, 405);
+	await logsEvent({ msg: "channel closed", channel: "/news/acme", who: "ada", tab, why: "gone" });
+});
+
+test("channels: what a page says goes to its channel's receive!, through the same check, a post at a time; what is refused says why; a tab's ask for a resync sends resync and on_open!'s again on its own stream", { skip }, async () => {
+	const gone = new AbortController();
+	const tab = `${run}t2`;
+	const cookie = memberOf("grace", "acme");
+	const stream = await channelStream(["/news/acme"], { tab, cookie, signal: gone.signal });
+	assert.equal((await stream.next()).event, "resync");
+	assert.equal((await stream.next()).said.title, "welcome, grace (a tab)");
+	const answer = await say(
+		[
+			{ channel: "/news/acme", message: { Hello: "hi" } },
+			{ channel: "/news/acme", message: "Fail" },
+			{ channel: "/news/beta", message: { Hello: "hi" } },
+			{ channel: "/clock", message: 1 },
+			{ message: 1 },
+			{ channel: "/news/acme", message: { Nope: 1 } },
+			{ channel: "/news/acme" },
+		],
+		{ tab, cookie },
+	);
+	assert.equal(answer.status, 200);
+	const { refused } = await answer.json();
+	assert.deepEqual(refused.slice(0, 4), [
+		{ index: 1, status: 400, why: "not that" },
+		{ index: 2, status: 403, why: "Forbidden" },
+		{ index: 3, status: 404, why: "/clock takes nothing pages say" },
+		{ index: 4, status: 400, why: 'which channel? ("channel": its URL)' },
+	]);
+	assert.equal(refused[4].index, 5);
+	assert.match(refused[4].why, /^\/news\/acme can't read what was said/, "what isn't the channel's `said`");
+	assert.deepEqual(refused[5], { index: 6, status: 400, why: "say a message, or ask for a resync" });
+	assert.equal(refused.length, 6, "the hello was taken");
+	assert.deepEqual(await stream.next(), { event: "message", url: "/news/acme", said: { n: 0, title: "grace says hi" } }, "receive! published it");
+	const all = await say([{ channel: "/news/acme", message: { Hello: "again" } }], { tab, cookie });
+	assert.equal(all.status, 204, "nothing refused");
+	assert.deepEqual((await stream.next()).said, { n: 0, title: "grace says again" });
+	// Signed out: the channel's middleware refuses what is said, as it would anything.
+	assert.deepEqual((await (await say([{ channel: "/news/acme", message: { Hello: "x" } }])).json()).refused, [{ index: 0, status: 401, why: "sign in" }]);
+	assert.equal((await get("/rocx/live/send", { method: "POST", body: "[]", headers: { "content-type": "text/plain" } })).status, 415, "JSON only: a form from elsewhere can't post it");
+	assert.equal((await say({ channel: "/news/acme" })).status, 400, "a list");
+	// The tab asks for a resync: its stream checks the channel again, then resync and on_open!'s.
+	assert.equal((await say([{ channel: "/news/acme", resync: true }], { tab, cookie })).status, 204);
+	assert.deepEqual(await stream.next(), { event: "resync", url: "/news/acme", said: null });
+	assert.equal((await stream.next()).said.title, "welcome, grace (a tab)");
+	gone.abort();
+	await logsEvent({ msg: "channel closed", who: "grace", tab, why: "gone" });
+});
+
+test("channels: a check that starts failing ends its subscription at the next beat (ended, and why), and on_close! is told it was refused; the stream goes on", { skip }, async () => {
+	const gone = new AbortController();
+	const tab = `${run}t3`;
+	const lapses = Date.now() + 700;
+	const stream = await channelStream(["/news/acme", "/clock"], { tab, cookie: memberOf("cy", "acme", lapses), signal: gone.signal });
+	assert.equal((await stream.next()).event, "resync");
+	assert.equal((await stream.next()).event, "message");
+	assert.equal((await stream.next()).url, "/clock");
+	const ended = await stream.next();
+	assert.deepEqual(ended, { event: "ended", url: "/news/acme", said: "the session has ended" });
+	assert.ok(Date.now() >= lapses && Date.now() < lapses + 2000, "at the first beat (300 ms) after it lapsed");
+	await logsEvent({ msg: "channel closed", channel: "/news/acme", who: "cy", tab, why: "refused: the session has ended" });
+	await text("/news/publish?org=acme&title=late&n=9", { method: "POST" });
+	assert.equal(await text("/clock/publish", { method: "POST" }), "published");
+	assert.equal((await stream.next()).url, "/clock", "the stream goes on, without the ended channel");
+	gone.abort();
+	assert.equal(await until(async () => (await live()) === baseline), true, `the streams' checks and hooks held nothing: ${await live()} allocations, ${baseline} once started`);
+});
+
+test("channels: a subscriber behind its channel's backlog hears resync (and on_open!'s) instead of what it missed; latest-wins messages replace each other, with no resync", { skip }, async () => {
+	const flood = async (latest) => {
+		const gone = new AbortController();
+		const response = await get(`/rocx/live?tab=${run}t4&c=%2Fnews%2Facme`, { headers: { accept: "text/event-stream", cookie: memberOf("dee", "acme") }, signal: gone.signal });
+		const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+		let text_ = "";
+		while (!text_.includes("welcome")) text_ += (await reader.read()).value;
+		// 2000 of 4 KB each, published while the stream isn't read: far more than its backlog and buffers.
+		assert.equal(await text(`/news/flood?org=acme&count=2000&size=4000${latest ? "&latest=yes" : ""}`, { method: "POST" }), "flooded");
+		// Read until the last comes (the stream beats meanwhile, so it is never quiet for long).
+		const last = /"n":2000[,}].*\n\n/;
+		const deadline = Date.now() + 10_000;
+		while (!last.test(text_) && Date.now() < deadline) {
+			const read = await Promise.race([reader.read(), new Promise((resolve) => setTimeout(() => resolve(null), deadline - Date.now()))]);
+			if (!read) break;
+			assert.equal(read.done, false, `the stream goes on:\n${text_.slice(-300)}`);
+			text_ += read.value;
+		}
+		gone.abort();
+		// Whole events only: the last may still be arriving.
+		const events = text_.split("\n\n").slice(0, -1).filter((block) => block.startsWith("event: "));
+		const messages = events.filter((block) => block.startsWith("event: message")).map((block) => JSON.parse(block.split("\n")[2].slice(6)).n);
+		return { resyncs: events.filter((block) => block.startsWith("event: resync")).length, messages };
+	};
+	const ordered = await flood(false);
+	assert.equal(ordered.resyncs, 2, "the first, and one for falling behind");
+	assert.ok(ordered.messages.length < 1500, `what it missed isn't sent (${ordered.messages.length})`);
+	assert.equal(ordered.messages.at(-1), 2000, "and it hears on from where it is");
+	const skips = ordered.messages.filter((n) => n > 0);
+	assert.ok(skips.every((n, i) => i === 0 || n > skips[i - 1]), "in order");
+	const latest = await flood(true);
+	assert.equal(latest.resyncs, 1, "no resync for latest-wins messages");
+	assert.ok(latest.messages.length < 1000, `the older ones replaced (${latest.messages.length})`);
+	assert.equal(latest.messages.at(-1), 2000, "the newest comes");
+});
+
+test("channels: an open stream holds no thread: with 8 of them for Roc, 40 streams stay open, each hears what is published, and requests answer at once; 8 events! streams, for contrast, take them all", { skip }, async () => {
+	// No database: its job workers and schedules would each hold a thread for good.
+	const few = await start(["--blocking-threads", "8", "--live-beat-ms", "200"], app, { DATABASE_URL: "" });
+	const gone = new AbortController();
+	try {
+		const streams = await Promise.all(Array.from({ length: 40 }, (_, i) => channelStream(["/news/acme"], { tab: `${run}p${i}`, cookie: memberOf(`m${i}`, "acme"), signal: gone.signal, of: few })));
+		for (const stream of streams) assert.equal((await stream.next()).event, "resync");
+		for (const stream of streams) assert.equal((await stream.next()).said.title.startsWith("welcome"), true);
+		// Beats come and go, each checking every channel again, in a call of its own.
+		await new Promise((resolve) => setTimeout(resolve, 500));
+		for (let i = 0; i < 20; i++) {
+			const started = performance.now();
+			assert.equal(await few.text("/"), "Hello from Roc, natively.");
+			assert.ok(performance.now() - started < 1000, `answered in ${Math.round(performance.now() - started)} ms`);
+		}
+		assert.equal(await few.text("/news/publish?org=acme&title=all&n=7", { method: "POST" }), "published");
+		for (const stream of streams) assert.deepEqual((await stream.next()).said, { n: 7, title: "all" });
+		gone.abort();
+		// An events! stream holds its thread while it is open: 8 of them hold all 8.
+		const held = new AbortController();
+		const shouts = await Promise.all(Array.from({ length: 8 }, () => few.get("/shouts", { headers: { accept: "text/event-stream" }, signal: held.signal })));
+		assert.ok(shouts.every((response) => response.status === 200));
+		const waited = await Promise.race([few.text("/").then(() => "answered"), new Promise((resolve) => setTimeout(() => resolve("waiting"), 700))]);
+		assert.equal(waited, "waiting", "no thread left for a request");
+		held.abort();
+		assert.equal(await few.text("/"), "Hello from Roc, natively.", "until they go");
+	} finally {
+		gone.abort();
+		await few.stop();
+	}
+});
+
+// ---- Actors ----
 // ---- Actors ----
 
 test("actors: one message at a time per key, a crash leaves the state as it was, and one may ask another", { skip }, async () => {
@@ -2090,7 +2320,7 @@ test("pages of components: an effect, a cleanup and a timer don't run on the ser
 	const page = await get("/page-effects");
 	assert.equal(page.status, 200);
 	assert.equal(await page.text(), `<!doctype html><html><body><p class="said"><!--x-->not run<!--/x--></p>${scripts("[]")}</body></html>`);
-	const before = await live();
+	const before = await steady();
 	for (let i = 0; i < 20; i++) await text("/page-effects");
 	assert.equal(await until(async () => (await live()) === before), true, `${await live()} allocations, ${before} before`);
 });
@@ -2110,7 +2340,7 @@ test("pages of components: a <NoHydration> is static markup between its markers,
 	const refused = await get("/page-region-handler");
 	assert.equal(refused.status, 500);
 	await logsEvent({ msg: "rocx server: Roc crashed", method: "GET", target: "/page-region-handler", error: "rocx: <button on:click> is inside <NoHydration>, which the browser never hydrates, so its handler would never run: render what has it outside <NoHydration>" });
-	const before = await live();
+	const before = await steady();
 	for (let i = 0; i < 20; i++) await Promise.all([text("/page-region"), text("/page-region-handler")]);
 	assert.equal(await until(async () => (await live()) === before), true, `${await live()} allocations, ${before} before`);
 });
@@ -2126,7 +2356,7 @@ test("pages of components: a read its middleware redirects (a signed-out visitor
 	const signed = await get("/page-gated", { headers: { cookie: "member=Ada" } });
 	assert.equal(signed.status, 200);
 	assert.match(await signed.text(), /<header><!--x-->signed in as Ada<!--\/x--><\/header>/);
-	const before = await live();
+	const before = await steady();
 	for (let i = 0; i < 20; i++) await text("/page-gated");
 	assert.equal(await until(async () => (await live()) === before), true, `${await live()} allocations, ${before} before`);
 });
@@ -2171,7 +2401,7 @@ test("endpoint reads: a page reads a GET endpoint as the server renders it, in-p
 	assert.deepEqual(await asked.json(), { weeks: "1", member: "Ada", probe: "7" });
 	// Without the cookie, the page reads as nobody, and still renders.
 	assert.match(await text("/reads", { headers: { accept: "text/html" } }), /<p class="data"><!--x--> nobody <!--\/x--><\/p>/);
-	const before = await live();
+	const before = await steady();
 	for (let i = 0; i < 20; i++) await text("/reads?weeks=2", { headers: { cookie: "member=Ada", accept: "text/html" } });
 	assert.equal(await until(async () => (await live()) === before), true, `${await live()} allocations, ${before} before`);
 });
@@ -2274,7 +2504,7 @@ test("form actions: a script's post, or the runtime's, gets the endpoint's answe
 	assert.equal(plain.status, 303, "a plain form gets the endpoint's own answer as it is");
 	assert.equal(plain.headers.get("location"), "/members");
 	const flashed = encodeURIComponent(JSON.stringify({ url: "/flash/join", input: "name=Al", status: 409, body: "Al is taken" }));
-	const before = await live();
+	const before = await steady();
 	for (let i = 0; i < 20; i++) await text("/flash/page", { headers: { cookie: `rocx-flash=${flashed}`, accept: "text/html" } });
 	assert.equal(await until(async () => (await live()) === before), true, `${await live()} allocations, ${before} before`);
 });

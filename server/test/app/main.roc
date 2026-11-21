@@ -38,6 +38,7 @@ import pf.HttpStatusCode
 import pf.Context
 import pf.Server
 import pf.Endpoint
+import pf.Channel
 import pf.Middleware
 import pf.Events
 import pf.Router
@@ -60,8 +61,17 @@ program = {
 respond! : Str, Str, Str, List(U8), Str => Server.Response
 respond! = |method, target, headers, body, context| {
 	request = Server.from_http(method, target, headers, body)
-	# A page view lets a plain form's flash go, as `App.program` does.
-	Server.clear_flash(request, route!(request, context))
+	# The host's asks about a channel's subscriptions (`/rocx/live`), as `App.program` and
+	# `Generated/Routes` answer them: a subscription's end outside any middleware, the rest behind it.
+	asked = Endpoint.channel_asked(request)
+	if asked == "close" {
+		channel_closed!(request)
+	} else if asked != "" {
+		channel!(request)
+	} else {
+		# A page view lets a plain form's flash go, as `App.program` does.
+		Server.clear_flash(request, route!(request, context))
+	}
 }
 
 text : U16, Str -> Server.Response
@@ -547,6 +557,29 @@ route! = |request, context| {
 		("POST", "/shout") => {
 			Live.publish!("shouts", Server.text_of(request))
 			text(200, "shouted")
+		}
+
+		# ---- Channels: published from a request (a job or an actor would do the same) ----
+		("POST", "/news/publish") => {
+			Endpoint.publish!(org_news(param(request.query, "org")), { title: param(request.query, "title"), n: number(request.query, "n") })
+			text(200, "published")
+		}
+		("POST", "/news/flood") => {
+			# `count` messages of `size` bytes, as fast as they go: ordered, or latest-wins (one key).
+			news = org_news(param(request.query, "org"))
+			filler = Str.repeat("x", number(request.query, "size"))
+			latest = param(request.query, "latest") == "yes"
+			var $n = 1
+			while $n <= number(request.query, "count") {
+				said = { title: filler, n: $n }
+				if latest Endpoint.publish_latest!(news, "one", said) else Endpoint.publish!(news, said)
+				$n = $n + 1
+			}
+			text(200, "flooded")
+		}
+		("POST", "/clock/publish") => {
+			Endpoint.publish!(clock, Time.now_millis!({}))
+			text(200, "published")
 		}
 
 		# ---- Actors ----
@@ -1290,6 +1323,112 @@ member_probe = Endpoint.local("GET", "/probe/member", |request, handed, {}| Ok("
 
 member! : {} => Str
 member! = |{}| Endpoint.get!(member_probe)
+
+## ---- Channels (D-020), as `Generated/Api` and `Generated/Routes` would answer them ----
+
+## A member, as their cookies say: their name, their org, and when their session ends (`until`, ms
+## since the epoch; none: never).
+Member : { name : Str, org : Str, until : U64 }
+
+## What is published on an org's news.
+News : { title : Str, n : U64 }
+
+## What a page may say on an org's news.
+Said : [Hello(Str), Fail]
+
+## The members' middleware: their cookies, or 401.
+member_of : Middleware(Str, Member)
+member_of = Middleware.make(
+	|request, _context, next!|
+		match Server.cookie(request, "member") {
+			Ok(name) => next!(request, { name, org: Server.cookie(request, "org") ?? "", until: U64.from_str(Server.cookie(request, "until") ?? "") ?? 9_999_999_999_999 })
+			Err(Missing) => Server.refused(401, "sign in")
+		},
+)
+
+## An org's news, at /news/<org>: its check lets in a member of the org, as who they are, while
+## their session lasts.
+org_news : Str -> Endpoint(Member, {}, Channel(Str, News, Said))
+org_news = |org|
+	Endpoint.local(
+		"CHANNEL",
+		"/news/${Server.encode_segment(org)}",
+		|_request, member, {}|
+			if member.org != org {
+				Err(Forbidden)
+			} else if Time.now_millis!({}) > member.until {
+				Err(Status(401, "the session has ended"))
+			} else {
+				Ok(Channel.allow(member.name))
+			},
+	)
+
+## The clock, at /clock: anyone, no hooks.
+clock : Endpoint(Str, {}, Channel({}, U64, []))
+clock = Endpoint.local("CHANNEL", "/clock", |_request, _context, {}| Ok(Channel.allow({})))
+
+## The host's asks about a subscription: each channel's check behind its middleware, then its hooks.
+## An org's news sends a subscriber a welcome first (`on_open!`), and hears what pages say
+## (`receive!`): a hello is published to the org, `Fail` is refused.
+channel! : Server.Request => Server.Response
+channel! = |request| {
+	segments = request.path.split_on("/").keep_if(|segment| !segment.is_empty()).map(Server.decode_segment)
+	if segments.len() == 2 and segments.get(0) == Ok("news") {
+		org = segments.get(1) ?? ""
+		Middleware.run!(
+			member_of,
+			request,
+			"",
+			|passed, member|
+				Endpoint.channel!(
+					org_news(org),
+					passed,
+					member,
+					{
+						opened!: |who, tab| [{ title: "welcome, ${who} (${if (tab.is_empty()) "no tab" else "a tab"})", n: 0 }],
+						received!: Endpoint.receiving(
+							org_news(org),
+							|who, _tab, said|
+								match said {
+									Hello(words) => {
+										Endpoint.publish!(org_news(org), { title: "${who} says ${words}", n: 0 })
+										Ok({})
+									}
+									Fail => Err(BadRequest("not that"))
+								},
+						),
+						closes: Bool.True,
+					},
+				),
+		)
+	} else if segments == ["clock"] {
+		Endpoint.channel!(clock, request, "", { opened!: |_who, _tab| [], received!: |_who, _tab, _said| Err(Status(404, "/clock takes nothing pages say")), closes: Bool.False })
+	} else {
+		text(404, "no channel at ${request.path}")
+	}
+}
+
+## A subscription has ended: an org's news logs who, from which tab, and why (its `on_close!`).
+channel_closed! : Server.Request => Server.Response
+channel_closed! = |request| {
+	segments = request.path.split_on("/").keep_if(|segment| !segment.is_empty()).map(Server.decode_segment)
+	if segments.len() == 2 and segments.get(0) == Ok("news") {
+		Endpoint.closed!(
+			org_news(segments.get(1) ?? ""),
+			request,
+			|who, tab, why| {
+				reason =
+					match why {
+						Gone => "gone"
+						Refused(said) => "refused: ${said}"
+					}
+				Log.info!("channel closed", { channel: request.path, who, tab, why: reason })
+			},
+		)
+	} else {
+		Server.response(204, [], "")
+	}
+}
 
 ## GET /probe/signed_in: who is signed in, behind a gate that sends anyone else to sign in (303),
 ## forgetting their stale session: what a layout's read meets for a signed-out visitor.
