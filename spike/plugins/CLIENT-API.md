@@ -38,11 +38,14 @@ what that looks like for the app's author.
    different behaviour at one route turns that route off and mounts its own.
 7. **The browser side comes with it.** A plugin's scripts and browser effects reach every page; no
    `<script>` tag, no second `--static`.
+8. **A powerful page has no default access.** A plugin whose pages act on the app's data (the jobs
+   page, an admin) takes the app's own guard as a required option: forgetting it doesn't compile.
 
 ## The same app, three ways
 
 An app with email (send from jobs, a dev mailbox), push (a button, endpoints, a table, a job, a
-service worker), MCP (one route and its OAuth metadata) and audio (a sound from a click handler).
+service worker), MCP (one route and its OAuth metadata), audio (a sound from a click handler) and
+the jobs page (what is queued, running and failed, for the app's admins only).
 
 ### A. Plugins listed in the program (recommended)
 
@@ -54,13 +57,16 @@ app [program] {
 	push: "../packages/push/main.roc",
 	mcp: "../packages/mcp/main.roc",
 	audio: "../packages/audio/main.roc",
+	admin: "../packages/admin/main.roc",
 }
 
 import email.Email
 import push.Push
 import mcp.Mcp
 import audio.Audio
+import admin.JobsPage
 import Generated/App
+import Middlewares
 import Tools
 
 program = App.program({
@@ -69,6 +75,7 @@ program = App.program({
 		Push.plugin({ at: "/push" }),                               # VAPID_* from the environment
 		Mcp.plugin({ at: "/mcp", tools: Tools.all }),
 		Audio.plugin,
+		JobsPage.plugin({ at: "/admin/jobs", guard: Middlewares.admin }),   # no default guard
 	],
 })
 ```
@@ -92,6 +99,7 @@ What each plugin adds, without another line:
 | `Push.plugin` | the subscriptions table; the delivery job; `GET /push/key`, `POST /push/subscribe`, `POST /push/unsubscribe`; `/push-sw.js` at the root (a service worker's scope); the page's script on every page |
 | `Mcp.plugin` | `POST`/`GET /mcp`; `/.well-known/oauth-protected-resource` |
 | `Audio.plugin` | the player script on every page (the effect `Audio.play!` calls) |
+| `JobsPage.plugin` | `GET`/`POST /admin/jobs` (its views, its retry, cancel and run-now forms) and its live updates, behind the app's default middleware and then `guard`; pages, so not in `/openapi.json` |
 
 ### B. Installed by naming it in the header (auto-discovery)
 
@@ -238,6 +246,63 @@ Push.plugin({ at: "/push", routes: Off })   # the table, the job and the scripts
 post! = |{ body, context, .. }| Push.subscribe!(body, context.user)   # with the signed-in user
 ```
 
+## Worked example: the jobs page
+
+The jobs page (D-011) is drawn by the platform today and mounted by the app behind its own check:
+
+```roc
+# routes/admin/jobs/+server.roc
+middleware = Middlewares.admin
+respond! = |{ request, .. }| JobsPage.respond!(request, { mount: "/admin/jobs" })   # the path, twice
+```
+
+That is two lines already, so the plugin is not about saving lines. It is about the page leaving the
+platform (it needs neither the host nor the transpiler: D-025's rule), the path written once, and a
+guard the compiler insists on.
+
+### The app's side
+
+```roc
+JobsPage.plugin({ at: "/admin/jobs", guard: Middlewares.admin })
+```
+
+- **`guard` is the app's own middleware**, the one its other admin pages use. It already knows who
+  is an admin, and can send a stranger to sign in rather than only refuse. A predicate (`allowed: |c| …`)
+  would be shorter but could only answer 403. The page needs nothing from what the guard hands on,
+  so any `Middleware(ctx, _)` fits: the plugin wraps its routes in it and ignores the result.
+- **`guard` has no default.** A jobs page that is public because someone forgot an option is the
+  failure this API must make impossible: the record without `guard` doesn't type-check. A plugin
+  whose pages are only for development (the mailbox) needs no guard, because it exists only under
+  `--dev`.
+- **Its requests pass the app's default middleware first** (sessions, same-origin checks), then
+  `guard`, then the page. Its forms post to the same path, and its live updates are an event stream
+  at the same path (`?events`), so `at` is the only path the app ever writes.
+- **It's pages, not endpoints**: HTML and plain forms, no components, no hydration, so it works
+  whatever the app's pages are made of, and it isn't listed in `/openapi.json`. A plugin's routes say
+  which they are.
+- **Taking it over:** `JobsPage.respond!(request, { mount })` stays exported, so today's route file
+  keeps working, and an app with its own idea of the page uses D-010's `Job.list!`, `Job.retry!`
+  and the rest, as it can now.
+
+### What it asks of the platform
+
+Little, which makes it a good first plugin to build:
+
+- **The kinds of job** (their attempts and time limits): `Registry.kinds!` is the platform's own
+  today; it becomes public (`Job.kinds!`).
+- **The live topic** the workers announce changes on (`rocx:jobs`): documented, as a constant
+  (`Job.changes`), so a plugin listens without knowing a string.
+- **Its look** (`AdminHtml`: the page frame, buttons, times, the live-update script) moves with it.
+  The dev mailbox uses the same look, so whichever of the two leaves the platform second takes it
+  from the first.
+- Everything else it uses is public already: `Job.list!`, `get!`, `retry!`, `cancel_id!`,
+  `run_now!`, `Cron.schedules!`, `Live`, `Server`.
+
+It also exercises most of what the plugin type must carry: a guard from the app, the app's context
+passed through, `GET` and `POST` at one path, an event stream, and pages that live in production.
+Email then adds what it doesn't: tables, a job, dev-only paths before the app, memory without a
+database.
+
 ## Not covered: plugins for the build
 
 Some packages want work done when the app is built, not when it runs: markdown's content
@@ -269,6 +334,8 @@ Sketched only, to check that A is buildable:
   `List(Plugin(ctx))` has one type. Chaining middleware with `then` has hit an `--opt=speed`
   miscompile before (test/compiler-bugs/), and walking a list of records holding functions has
   crashed `--opt=speed` builds when the list is empty; both need checking early.
+- **Route kinds**: a plugin's route is a page or an endpoint, so `/openapi.json` lists only the
+  endpoints. Its guard is `Middleware(ctx, _)`, its output ignored, so the list keeps one type.
 - **Endpoints a component calls** (`<PushButton>` asks `/push/key`): the component takes the
   plugin's prefix as a prop with the same default.
 
@@ -280,3 +347,5 @@ Sketched only, to check that A is buildable:
 4. **Browser scripts:** on every page (recommended: few and small), or only on pages whose layout
    asks?
 5. **Build-time plugins** (content collections, message keys): design them next, or later?
+6. **Where the jobs page lives:** in `packages/admin` beside the tables admin (one package for an
+   app's admin pages, sharing the look; recommended), or a package of its own?
