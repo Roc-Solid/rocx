@@ -39,7 +39,7 @@ what that looks like for the app's author.
 7. **The browser side comes with it.** A plugin's scripts and browser effects reach every page; no
    `<script>` tag, no second `--static`.
 8. **A powerful page has no default access.** A plugin whose pages act on the app's data (the jobs
-   page, an admin) takes the app's own guard as a required option: forgetting it doesn't compile.
+   page, an admin) declares a `guard` with no default in its options: forgetting it doesn't compile.
 
 ## The same app, three ways
 
@@ -72,7 +72,7 @@ import Tools
 program = App.program({
 	plugins: [
 		Email.plugin({ from: "Acme <hello@example.com>" }),   # SMTP_URL; without it, the outbox
-		Push.plugin({ at: "/push" }),                               # VAPID_* from the environment
+		Push.plugin({ user: |context| context.member }),           # at "/push"; VAPID_* from the environment
 		Mcp.plugin({ at: "/mcp", tools: Tools.all }),
 		Audio.plugin,
 		JobsPage.plugin({ at: "/admin/jobs", guard: Middlewares.admin }),   # no default guard
@@ -138,19 +138,71 @@ handlers, migrations and jobs it bundles stay public, so an app can take one ove
 
 ## The details, from the app's side
 
-### Configuration
+### Each plugin declares what it needs
 
-A plugin's options are a record with defaults (Roc's `??` field defaults), so the common case is
-`Email.plugin({})` or `Audio.plugin`. A secret comes from the environment at run time, under a
-documented name, unless the app gives a function that finds it elsewhere:
+The platform's `Plugin(ctx)` is only what a plugin gives: its routes, tables, jobs, scripts. It has
+no `at`, no `guard`, no `from`. What a plugin needs from the app is that plugin's own options type,
+declared in its package: a field with no default is required, a field with `??` has a default, and
+the compiler holds every app to it.
 
 ```roc
-Push.plugin({ at: "/push" })                                    # VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT
-Push.plugin({ at: "/push", keys!: |{}| Vault.vapid_keys!({}) })  # the app's own
+# packages/admin: the jobs page needs a guard, and may be moved
+JobsPage.Options(ctx, out) := {
+	at : Str ?? "/admin/jobs",
+	guard : Middleware(ctx, out),        # no default: required
+}
+JobsPage.plugin : JobsPage.Options(ctx, out) -> Plugin(ctx)
+
+# packages/push: whose subscription it is, and where its endpoints go
+Push.Options(ctx) := {
+	at : Str ?? "/push",
+	user : ctx -> Str,                   # required: the plugin can't guess the app's accounts
+	keys! : {} => Try(Vapid.Keys, Str) ?? Push.keys_from_env!,
+	routes : [On, Off] ?? On,            # Off: the app mounts the endpoints itself
+}
+
+# packages/email: nothing required
+Email.Options := { from : Str ?? "", mailbox : Str ?? "/__rocx/mail" }   # "": MAIL_FROM
+
+# packages/audio: no options at all, so `Audio.plugin` is a value
+```
+
+Leaving out a required field is a compile error at the app's `plugins` line, in the plugin's own
+words:
+
+```
+This argument has the type:
+    { at: Str }
+But JobsPage.plugin needs the first argument to be:
+    JobsPage.Options(ctx, out)
+Hint: This record is missing the field: guard
+```
+
+(Checked on the pinned compiler: a nominal options type with `??` defaults fills them in, refuses a
+record missing a required field, and the guard's output type, `out`, doesn't reach `Plugin(ctx)`.
+`??` only fills a record checked straight against a nominal type, so each plugin's options are
+one: `:=`, as `packages/admin`'s `Admin.Config(context)` already is.)
+
+`at` and `guard` are conventions, not platform fields: names plugins agree on so apps read alike.
+`at` is where a plugin's routes go; `guard` is the app's middleware that decides who may use them;
+`user` finds the app's user in its context. A plugin with other needs names them its own way.
+
+A secret comes from the environment at run time, under a documented name, unless the app gives a
+function that finds it elsewhere:
+
+```roc
+Push.plugin({ user: |c| c.member })                                    # VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT
+Push.plugin({ user: |c| c.member, keys!: |{}| Vault.vapid_keys!({}) })  # the app's own
 ```
 
 `program` is a value, built before the server runs, so a plugin's options are values or functions
 (`keys!`), never effects run while the program is made.
+
+What the compiler can't check, a plugin can still declare: the environment variables it reads and
+whether it needs a database, as part of what it gives (`needs: [Env("VAPID_PRIVATE_KEY"), Database]`).
+The server checks them at start and says, in one line per plugin, what is missing ("push:
+VAPID_PRIVATE_KEY isn't set"), before the first request fails on it; the start-up log and the docs
+list them from the same place.
 
 ### What a plugin knows of the app
 
@@ -182,7 +234,7 @@ bucket), the app keeps the value in a module of its own, as with `packages/s3` t
 
 ### Where its routes go
 
-A plugin's routes sit under the prefix the app gives (`at:`), with a default. A few paths are
+A plugin's routes sit under the prefix its options take (`at`, by convention), with a default. A few paths are
 fixed by the web, not by the app: a service worker's scope (`/push-sw.js`), `/.well-known/…`; a
 plugin declares those as root paths. Two routes at one path (the app's and a plugin's, or two
 plugins') stop the server at start, naming both. Silently letting the app win would hide a typo.
@@ -241,7 +293,7 @@ start-up log names each with its plugin.
 ### Taking a piece over
 
 ```roc
-Push.plugin({ at: "/push", routes: Off })   # the table, the job and the scripts, but no endpoints
+Push.plugin({ user: |c| c.member, routes: Off })   # the table, the job and the scripts, but no endpoints
 # routes/push/subscribe/+server.roc
 post! = |{ body, context, .. }| Push.subscribe!(body, context.user)   # with the signed-in user
 ```
@@ -315,7 +367,8 @@ an app's server and pages get when it runs.
 
 Sketched only, to check that A is buildable:
 
-- **A `Plugin` type in the server platform**: a name, and lists of routes (method, path, handler,
+- **A `Plugin` type in the server platform**, the same for every plugin and knowing nothing of any
+  plugin's options: a name, and lists of routes (method, path, handler,
   dev or debug only), migrations, jobs, crons, actors, static files and scripts, and checks.
   `App.program` takes `plugins` and merges them: migrations and jobs namespaced, routes into the
   router after the app's own (clashes refused at start), scripts into the page.
@@ -347,5 +400,7 @@ Sketched only, to check that A is buildable:
 4. **Browser scripts:** on every page (recommended: few and small), or only on pages whose layout
    asks?
 5. **Build-time plugins** (content collections, message keys): design them next, or later?
-6. **Where the jobs page lives:** in `packages/admin` beside the tables admin (one package for an
+6. **Run-time needs:** should a plugin also declare the environment variables and the database it
+   needs, so the server checks them at start (recommended), or is a failure at first use enough?
+7. **Where the jobs page lives:** in `packages/admin` beside the tables admin (one package for an
    app's admin pages, sharing the look; recommended), or a package of its own?
