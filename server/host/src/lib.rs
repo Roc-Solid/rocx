@@ -22,6 +22,7 @@
 #[allow(unsafe_op_in_unsafe_fn)]
 mod abi;
 mod actors;
+mod channels;
 mod client;
 mod db;
 mod hosted;
@@ -77,11 +78,12 @@ fn served(args: Vec<String>) -> c_int {
     };
     // Roc runs on blocking threads, whose stacks are as deep as Roc's own default (8 MiB): a page
     // is a deep tree to render. (Stacks are reserved, not used: an idle thread costs little.) An
-    // open stream holds a thread for as long as it is open, so there may be many.
+    // open `events!` stream holds a thread for as long as it is open, so there may be many; a
+    // channel stream (`/rocx/live`) holds none (`channels`). `--blocking-threads` (1024) caps them.
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_stack_size(8 << 20)
-        .max_blocking_threads(1024)
+        .max_blocking_threads(config.blocking_threads)
         .build()
     {
         Ok(runtime) => runtime,

@@ -71,7 +71,7 @@ pub fn stopping() -> bool {
 }
 
 /// Resolves once the server is stopping.
-async fn stopped() {
+pub async fn stopped() {
     match STOP.get() {
         Some(stop) => {
             let mut stop = stop.clone();

@@ -5,7 +5,7 @@
 //! body is fetched from elsewhere (`client::open`) and sent on as it comes, never through Roc.
 
 use crate::roc::{self, Feed};
-use crate::{client, hosted, logging, signals};
+use crate::{channels, client, hosted, logging, signals};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited, StreamBody, combinators::BoxBody};
 use hyper::body::{Frame, Incoming};
@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, watch};
 
-type Body = BoxBody<Bytes, Infallible>;
+pub type Body = BoxBody<Bytes, Infallible>;
 
 /// The most a request's body may be: Roc is handed it whole.
 const MAX_BODY: usize = 16 << 20;
@@ -59,6 +59,10 @@ pub struct Config {
     /// `GET /__rocx/allocations` (how many allocations Roc holds now), and the mailbox as JSON
     /// (`/__rocx/mail.json`), for tests.
     pub debug: bool,
+    /// How often a channel stream (`/rocx/live`) beats: a comment, and its channels' checks again.
+    pub live_beat: Duration,
+    /// The most threads Roc's calls run on at once (tokio's blocking pool).
+    pub blocking_threads: usize,
 }
 
 pub const USAGE: &str = "usage: <app> [options]
@@ -70,7 +74,9 @@ pub const USAGE: &str = "usage: <app> [options]
   --actor-idle-ms 900000               an actor idle this long is let go (0: never; kept in Postgres)
   --smtp-url URL --mail-from ADDRESS   where email goes (SMTP_URL, MAIL_FROM); none: an outbox
   --dev                                reload pages on restart, show crashes, the mailbox at /__rocx/mail
-  --debug                              GET /__rocx/allocations, and the mailbox as JSON";
+  --debug                              GET /__rocx/allocations, and the mailbox as JSON
+  --live-beat-ms 15000                 how often a channel stream beats, and its checks run again
+  --blocking-threads 1024              the most threads Roc's calls run on at once";
 
 impl Config {
     pub fn parse(args: Vec<String>) -> Result<Config, String> {
@@ -88,6 +94,8 @@ impl Config {
         let mut mail_from = env("MAIL_FROM").unwrap_or_else(|| "rocx <rocx@localhost>".into());
         let mut dev = false;
         let mut debug = false;
+        let mut live_beat_ms: u64 = 15_000;
+        let mut blocking_threads: usize = 1024;
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
             let mut value = || args.next().ok_or_else(|| format!("{arg} needs a value"));
@@ -113,12 +121,15 @@ impl Config {
                 "--mail-from" => mail_from = value()?,
                 "--dev" => dev = true,
                 "--debug" => debug = true,
+                "--live-beat-ms" => live_beat_ms = value()?.parse().ok().filter(|ms| *ms > 0).ok_or("--live-beat-ms needs a number above 0")?,
+                "--blocking-threads" => blocking_threads = value()?.parse().ok().filter(|count| *count > 0).ok_or("--blocking-threads needs a number above 0")?,
                 "--help" | "-h" => return Err(USAGE.into()),
                 other => return Err(format!("unknown argument {other} (--help lists them)")),
             }
         }
         let address = format!("{host}:{port}").parse().map_err(|error| format!("{host}:{port}: {error}"))?;
-        Ok(Config { address, statics, files, context, database_url, job_workers, job_retry_ms, actor_idle_ms, smtp_url, mail_from, dev, debug })
+        let live_beat = Duration::from_millis(live_beat_ms);
+        Ok(Config { address, statics, files, context, database_url, job_workers, job_retry_ms, actor_idle_ms, smtp_url, mail_from, dev, debug, live_beat, blocking_threads })
     }
 }
 
@@ -139,6 +150,7 @@ pub async fn serve(listener: TcpListener, config: Config, mut stop: watch::Recei
         tokio::select! {
             accepted = listener.accept() => {
                 let Ok((stream, _)) = accepted else { continue };
+                unacknowledged_deadline(&stream);
                 let config = config.clone();
                 let service = service_fn(move |request| answer(request, config.clone()));
                 let connection = http1::Builder::new().serve_connection(TokioIo::new(stream), service);
@@ -178,6 +190,14 @@ async fn answer(request: Request<Incoming>, config: Arc<Config>) -> Result<Respo
         let mut response = Response::new(StreamBody::new(futures_util::stream::pending::<Result<Frame<Bytes>, Infallible>>()).boxed());
         response.headers_mut().insert(CONTENT_TYPE, HeaderValue::from_static("text/event-stream"));
         return Ok(response);
+    }
+    // The tab's stream of its channels, and what its pages say on them: the host's, not Roc's
+    // (Roc runs only briefly, for each channel's check and hooks: `channels`).
+    if path == "/rocx/live" {
+        return Ok(channels::stream(request, &config));
+    }
+    if path == "/rocx/live/send" {
+        return Ok(channels::send(request, config).await);
     }
     if config.debug && path == "/__rocx/allocations" {
         return Ok(full(StatusCode::OK, "text/plain", roc::live_allocations().to_string()));
@@ -237,9 +257,12 @@ fn content_type(path: &Path) -> &'static str {
 async fn from_roc(request: Request<Incoming>, config: Arc<Config>) -> Response<Body> {
     let method = request.method().clone();
     let target = target(request.uri());
+    // `x-rocx-channel` and `x-rocx-tab` are the host's own, on its requests about a channel
+    // (`channels`): never passed on from anyone else.
     let headers: String = request
         .headers()
         .iter()
+        .filter(|(name, _)| !matches!(name.as_str(), "x-rocx-channel" | "x-rocx-tab"))
         .map(|(name, value)| format!("{}: {}\n", name.as_str(), String::from_utf8_lossy(value.as_bytes())))
         .collect();
     let body = match Limited::new(request.into_body(), MAX_BODY).collect().await {
@@ -427,6 +450,26 @@ async fn send_events(feed: Feed, out: mpsc::Sender<Bytes>) {
     if let Ok(Err(crash)) = sent {
         logging::error("rocx server: a stream crashed", &[("error", crash.0.into())]);
     }
+}
+
+/// How long what the server sent may go unacknowledged before the connection is dropped: a client
+/// whose network went (no FIN ever comes) is noticed at the next write to it, a channel stream's
+/// beat (`--live-beat-ms`), and gone about 20 s later, its subscriptions' `on_close!` told. Linux's
+/// `TCP_USER_TIMEOUT`, macOS's `TCP_RXT_CONNDROPTIME`; elsewhere, the system's own (minutes).
+const UNACKNOWLEDGED: Duration = Duration::from_secs(20);
+
+fn unacknowledged_deadline(stream: &tokio::net::TcpStream) {
+    use std::os::fd::AsRawFd;
+    #[cfg(target_os = "linux")]
+    let (option, value) = (libc::TCP_USER_TIMEOUT, UNACKNOWLEDGED.as_millis() as libc::c_int);
+    #[cfg(target_os = "macos")]
+    let (option, value) = (0x80 as libc::c_int, UNACKNOWLEDGED.as_secs() as libc::c_int);
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    unsafe {
+        libc::setsockopt(stream.as_raw_fd(), libc::IPPROTO_TCP, option, (&value as *const libc::c_int).cast(), std::mem::size_of::<libc::c_int>() as libc::socklen_t);
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    let _ = stream;
 }
 
 /// The path and query Roc is given: a trailing slash dropped (`/syntax/` is `/syntax`), as the Node
