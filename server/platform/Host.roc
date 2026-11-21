@@ -269,6 +269,9 @@ Host := [].{
 	action! : Str => {}
 	submission! : Str => Str
 	submission_clear! : Str => {}
+	submissions! : Str => Str
+	submit! : Str, Str, Str, Str => {}
+	submission_drop! : Str, U64 => {}
 
 	## The document's title, as a `<Title>` says it while the server renders: noted for the page,
 	## whose `<head>` gets it, the last one rendered's (`<title data-rocx>`).

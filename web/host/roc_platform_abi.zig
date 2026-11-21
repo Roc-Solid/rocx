@@ -1022,6 +1022,31 @@ pub const HostSubmission_clearArgs = extern struct {
     arg0: RocStr,
 };
 
+/// Arguments for Host.submission_drop!
+/// Roc signature: Str, U64 => {}
+/// Refcounted fields are owned by the hosted function.
+pub const HostSubmission_dropArgs = extern struct {
+    arg0: RocStr,
+    arg1: u64,
+};
+
+/// Arguments for Host.submissions!
+/// Roc signature: Str => Str
+/// Refcounted fields are owned by the hosted function.
+pub const HostSubmissionsArgs = extern struct {
+    arg0: RocStr,
+};
+
+/// Arguments for Host.submit!
+/// Roc signature: Str, Str, Str, Str => {}
+/// Refcounted fields are owned by the hosted function.
+pub const HostSubmitArgs = extern struct {
+    arg0: RocStr,
+    arg1: RocStr,
+    arg2: RocStr,
+    arg3: RocStr,
+};
+
 /// Arguments for Host.subscribe!
 /// Roc signature: Str, Box({} => Str) => {}
 /// Refcounted fields are owned by the hosted function.
@@ -1323,6 +1348,31 @@ pub extern fn roc_submission(arg0: RocStr) callconv(.c) RocStr;
 /// moved into storage or into the result:
 ///     arg0.decref(roc_host);
 pub extern fn roc_submission_clear(arg0: RocStr) callconv(.c) void;
+
+/// Hosted symbol for Host.submission_drop!
+/// Roc signature: Str, U64 => {}
+/// Owned arguments. Release each exactly once before returning, unless it is
+/// moved into storage or into the result:
+///     arg0.decref(roc_host);
+pub extern fn roc_submission_drop(arg0: RocStr, arg1: u64) callconv(.c) void;
+
+/// Hosted symbol for Host.submissions!
+/// Roc signature: Str => Str
+/// Owned arguments. Release each exactly once before returning, unless it is
+/// moved into storage or into the result:
+///     arg0.decref(roc_host);
+/// The result is owned by Roc: return exactly one owned reference.
+pub extern fn roc_submissions(arg0: RocStr) callconv(.c) RocStr;
+
+/// Hosted symbol for Host.submit!
+/// Roc signature: Str, Str, Str, Str => {}
+/// Owned arguments. Release each exactly once before returning, unless it is
+/// moved into storage or into the result:
+///     arg0.decref(roc_host);
+///     arg1.decref(roc_host);
+///     arg2.decref(roc_host);
+///     arg3.decref(roc_host);
+pub extern fn roc_submit(arg0: RocStr, arg1: RocStr, arg2: RocStr, arg3: RocStr) callconv(.c) void;
 
 /// Hosted symbol for Host.subscribe!
 /// Roc signature: Str, Box({} => Str) => {}

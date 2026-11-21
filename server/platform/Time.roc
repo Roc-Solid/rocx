@@ -18,4 +18,10 @@ Time := [].{
 	## ```
 	now_nanos! : {} => U64
 	now_nanos! = |{}| Host.now_nanos!({})
+
+	## Waits `ms` milliseconds: the call that waits (a request, a job; a job's time limit ends the
+	## wait) pauses, and holds no thread (D-027), so the server goes on answering others. For a
+	## retry's pause, or an endpoint that is slow on purpose (a demo's latency).
+	sleep! : U64 => {}
+	sleep! = |ms| Host.sleep!(ms)
 }

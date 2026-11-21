@@ -23,10 +23,10 @@ export const MARKER = "# rocx: generated from";
 const VOID_ELEMENTS = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"]);
 const RAW_TEXT_ELEMENTS = new Set(["script", "style"]);
 // A component's handlers: `on:event={handler!}` runs an effect; `on:event.value={…}` and the others
-// give it what the event says.
-const HANDLERS = { "": "on", value: "on_value", checked: "on_checked", key: "on_key" };
+// give it what the event says; `on:event.prevent={…}` takes over what the browser would do.
+const HANDLERS = { "": "on", value: "on_value", checked: "on_checked", key: "on_key", prevent: "on_prevent" };
 /** Which way each transition attribute plays (`Html.transition`'s first argument). */
-const TRANSITION_WAYS = { transition: "Both", "transition:in": "In", "transition:out": "Out" };
+const TRANSITION_WAYS = { transition: "Both", "transition:in": "In", "transition:out": "Out", "transition:move": "Move" };
 // Words after which an expression begins, so a `<` after them starts markup.
 const KEYWORDS_BEFORE_EXPRESSION = new Set(["else", "return", "crash", "expect", "dbg", "in"]);
 const ENTITIES = {
@@ -726,7 +726,7 @@ class Transpiler {
 			// `transition={…}`, `transition:in={…}`, `transition:out={…}`: a Transition the element plays.
 			const transition = !component && (name === "transition" || name.startsWith("transition:"));
 			if (transition) {
-				if (!/^transition(?::in|:out)?$/.test(name)) this.fail(`${name}: write transition={…} (both ways), transition:in={…} or transition:out={…}`, nameStart);
+				if (!/^transition(?::in|:out|:move)?$/.test(name)) this.fail(`${name}: write transition={…} (both ways), transition:in={…}, transition:out={…} or transition:move={…}`, nameStart);
 				if (flag || optional || this.src[this.pos] !== "=" || this.src[this.pos + 1] !== "{") this.fail(`${name} needs {a Transition}: write ${name}={Transition.fade}`, nameStart);
 			}
 			if (component && !/^[a-z_][A-Za-z0-9_]*!?$/.test(name)) this.fail(`a component's props are Roc field names: ${name}`, nameStart);
@@ -776,7 +776,7 @@ class Transpiler {
 				if (component && computed && !name.endsWith("!") && !/^\s*\|/.test(expr) && !/^\s*([A-Za-z_][A-Za-z0-9_]*\.)*[a-z_][A-Za-z0-9_]*!\s*$/.test(expr)) readsProps = true;
 				if (component) attrs.push(`${name}: ${accessorProp(name, expr)}`);
 				else if (transition) attrs.push(`Html.${computed ? "transition_of" : "transition"}(${TRANSITION_WAYS[name]}, ${computed ? `|| ${expr}` : expr})`);
-				else if (computed || handler || name === "key") attrs.push(this.reactiveAttribute(name, expr, { flag, optional }, nameStart));
+				else if (computed || handler || name === "key") attrs.push(this.reactiveAttribute(name, expr, { flag, optional }, nameStart, computed));
 				else if (flag) attrs.push(`Html.flag(${rocString(name)}, ${expr})`);
 				else if (optional) attrs.push(`Html.optional(${rocString(name)}, ${expr})`);
 				else if (name.startsWith("class:")) attrs.push(`Html.class_if(${rocString(name.slice(6))}, ${expr})`);
@@ -796,7 +796,7 @@ class Transpiler {
 	//
 	// `on:frame.ms` is the runtime's own event, each animation frame; `on:keydown.ArrowUp` (a key's
 	// name: capitalised, or one letter or digit; `.Space` for the space bar) runs its handler for
-	// that key only.
+	// that key only; `on:click.prevent` prevents the event's default first.
 	handlerName(name, nameStart) {
 		const match = /^on:([a-z]+)(?:\.([A-Za-z0-9]+))?$/.exec(name);
 		if (!match) this.fail(`${name}: write on:event={a handler}, e.g. on:click={save!}`, nameStart);
@@ -810,7 +810,7 @@ class Transpiler {
 			if (event !== "keydown" && event !== "keyup") this.fail(`${name}: a key's name goes with on:keydown or on:keyup`, nameStart);
 			return { event, takes, key: takes === "Space" ? " " : takes };
 		}
-		this.fail(`${name}: a handler takes .value, .checked or .key, or a key's name (.Enter, .ArrowUp, .w), not .${takes}`, nameStart);
+		this.fail(`${name}: a handler takes .value, .checked or .key, a key's name (.Enter, .ArrowUp, .w), or .prevent, not .${takes}`, nameStart);
 	}
 
 	/** Whitespace in a tag, as newlines (spaces between attributes become the comma). */
@@ -901,8 +901,8 @@ class Transpiler {
 	}
 
 	/** An attribute from an expression, reactive: a computation, or a handler that is an effect. */
-	reactiveAttribute(name, expr, { flag, optional }, nameStart) {
-		if (name === "key") return `Html.key(${expr})`;
+	reactiveAttribute(name, expr, { flag, optional }, nameStart, computed = false) {
+		if (name === "key") return computed ? `Html.key_of(|| ${expr})` : `Html.key(${expr})`;
 		if (name.startsWith("on:")) {
 			const { event, takes, key } = this.handlerName(name, nameStart);
 			if (takes === "ms") return `Html.on_frame(${expr})`;

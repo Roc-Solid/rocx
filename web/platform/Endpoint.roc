@@ -25,9 +25,11 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	local : Str, Str, (Server.Request, context, arg => Try(result, Refusal)) -> Endpoint(context, arg, result)
 	local = |method, url, handler| { method: method, url: url, run: handler }
 
-	## The browser's copy: its method and URL, and nothing it does.
+	## The browser's copy: its method and URL, and nothing it does. Its `run` captures nothing, so
+	## naming an endpoint allocates nothing: a read that isn't in yet unwinds the frame that named
+	## it, and what that held would never be let go of.
 	remote : Str, Str -> Endpoint(context, arg, result)
-	remote = |method, url| { method: method, url: url, run: |_, _, _| crash "${method} ${url} runs on the server: send it with Endpoint.send!" }
+	remote = |method, url| { method: method, url: url, run: |_, _, _| crash "an endpoint runs on the server: the browser sends it (Endpoint.send!)" }
 
 	## A GET endpoint's answer, as a plain value, for a component or a computation
 	## (`create_memo!(|| Endpoint.get!(Api.get_profile({ id })))`): one definition of a page's data,
@@ -64,8 +66,15 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 		where [result.Json.Parseable([InvalidJson(Str)])]
 	read! = |endpoint|
 		if endpoint.method == "GET" {
-			answered = Call.fetch!({ method: "GET", url: endpoint.url, headers: [{ name: "accept", value: "application/json" }], body: "" })
-			Endpoint.answer(endpoint, Ok({ status: answered.status, headers: [], body: answered.body }))
+			# `Call.fetch!`'s request, its header written as the host takes it: a read that isn't in yet
+			# unwinds this frame, and a list made for the header would never be let go of.
+			match fetched(Host.fetch!("GET", endpoint.url, "accept: application/json", "")) {
+				Ok(answered) => Endpoint.answer(endpoint, Ok({ status: answered.status, headers: [], body: answered.body }))
+				Err(InvalidJson(why)) => {
+					Host.fail!("GET ${endpoint.url}: ${why}")
+					crash "unreachable: fail! doesn't return"
+				}
+			}
 		} else {
 			Host.fail!("${endpoint.method} ${endpoint.url} isn't read: send it with Endpoint.send!, from a handler")
 			crash "unreachable: fail! doesn't return"
@@ -427,6 +436,10 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 			"${request.path} takes ${Str.join_with(allowed, ", ")}, not ${request.method}",
 		)
 }
+
+## The host's answer to a request (`Host.fetch!`), as `Call.fetch!` reads it.
+fetched : Str -> Try({ status : U16, body : Str }, [InvalidJson(Str)])
+fetched = |answer| Json.parse(answer)
 
 ## What a subscription heard, as the runtime tells it (`Host.event_value!`): `"Resync"`,
 ## `{"Message":"<the message's JSON>"}`, `{"Refused":[403,"why"]}`, `{"Ended":"why"}`. A message it

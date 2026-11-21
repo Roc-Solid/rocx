@@ -11,14 +11,14 @@
 ##
 ## The modules both platforms have are written here, and the server platform's build copies them:
 ## the components' (`Html`, `Solid`, `Show`, `For`, `Transition`, `Loading`, `Errored`, `Context`,
-## `Call`, `Router`, `Submission`, `Title`, `HttpStatusCode`) and HTTP's (`Server`, `Endpoint`,
+## `Call`, `Router`, `Submission`, `Submissions`, `Title`, `HttpStatusCode`) and HTTP's (`Server`, `Endpoint`,
 ## `Channel`, `Middleware`, `Events`, `OpenApi`). Roc compiles only what a program reaches, so what
 ## only the server uses (`Middleware`, `OpenApi`) costs the browser's wasm nothing.
 platform ""
 	requires {
 		main! : {} => Html
 	}
-	exposes [Audio, Browser, Call, Channel, Context, Endpoint, Errored, Events, For, Html, HttpStatusCode, Loading, Middleware, OpenApi, Router, Server, Show, Solid, Submission, Title, Transition]
+	exposes [Audio, Browser, Call, Channel, Context, Endpoint, Errored, Events, For, Html, HttpStatusCode, Loading, Middleware, OpenApi, Router, Server, Show, Solid, Submission, Submissions, Title, Transition]
 	packages {}
 	provides { "roc_mount": mount_for_host!, "roc_run": run_for_host! }
 	hosted {
@@ -60,6 +60,9 @@ platform ""
 		"roc_status": Host.status!,
 		"roc_submission": Host.submission!,
 		"roc_submission_clear": Host.submission_clear!,
+		"roc_submission_drop": Host.submission_drop!,
+		"roc_submissions": Host.submissions!,
+		"roc_submit": Host.submit!,
 		"roc_subscribe": Host.subscribe!,
 		"roc_timeout": Host.timeout!,
 		"roc_title": Host.title!,
@@ -95,6 +98,7 @@ import Router
 import HttpStatusCode
 import Transition
 import Submission
+import Submissions
 import Title
 
 ## The app's markup, its holes registered with the runtime, as JSON (`Html.serialize!`).

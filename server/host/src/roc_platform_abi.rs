@@ -3151,6 +3151,37 @@ pub struct HostSubmissionClearArgs {
     pub arg0: RocStr,
 }
 
+/// Arguments for Host.submission_drop!
+/// Roc signature: Str, U64 => {}
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostSubmissionDropArgs {
+    pub arg0: RocStr,
+    pub arg1: u64,
+}
+
+/// Arguments for Host.submissions!
+/// Roc signature: Str => Str
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostSubmissionsArgs {
+    pub arg0: RocStr,
+}
+
+/// Arguments for Host.submit!
+/// Roc signature: Str, Str, Str, Str => {}
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostSubmitArgs {
+    pub arg0: RocStr,
+    pub arg1: RocStr,
+    pub arg2: RocStr,
+    pub arg3: RocStr,
+}
+
 /// Arguments for Host.subscribe!
 /// Roc signature: Str, Box({} => Str) => {}
 /// Refcounted fields are owned by the hosted function.
@@ -4525,6 +4556,31 @@ unsafe extern "C" {
     /// moved into storage or into the result:
     ///     unsafe { arg0.decref(roc_host); }
     pub fn roc_submission_clear(arg0: RocStr);
+
+    /// Hosted symbol for Host.submission_drop!
+    /// Roc signature: Str, U64 => {}
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    pub fn roc_submission_drop(arg0: RocStr, arg1: u64);
+
+    /// Hosted symbol for Host.submissions!
+    /// Roc signature: Str => Str
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_submissions(arg0: RocStr) -> RocStr;
+
+    /// Hosted symbol for Host.submit!
+    /// Roc signature: Str, Str, Str, Str => {}
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    ///     unsafe { arg1.decref(roc_host); }
+    ///     unsafe { arg2.decref(roc_host); }
+    ///     unsafe { arg3.decref(roc_host); }
+    pub fn roc_submit(arg0: RocStr, arg1: RocStr, arg2: RocStr, arg3: RocStr);
 
     /// Hosted symbol for Host.subscribe!
     /// Roc signature: Str, Box({} => Str) => {}

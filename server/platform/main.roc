@@ -53,7 +53,7 @@ platform ""
 			logs : { format : [Auto, Pretty, Json] },
 		}
 	}
-	exposes [Actor, AesGcm, Audio, Browser, Call, Channel, Context, Cron, Db, Email, Endpoint, Env, Errored, Events, For, Html, Http, HttpResponse, HttpStatusCode, Job, JobsPage, Kv, Live, Loading, Log, Middleware, OpenApi, Random, Router, Server, Show, Solid, Submission, Tcp, Time, Title, Transition]
+	exposes [Actor, AesGcm, Audio, Browser, Call, Channel, Context, Cron, Db, Email, Endpoint, Env, Errored, Events, For, Html, Http, HttpResponse, HttpStatusCode, Job, JobsPage, Kv, Live, Loading, Log, Middleware, OpenApi, Random, Router, Server, Show, Solid, Submission, Submissions, Tcp, Time, Title, Transition]
 	packages {}
 	provides {
 		"roc_actor": actor_for_host!,
@@ -152,6 +152,9 @@ platform ""
 		"roc_status": Host.status!,
 		"roc_submission": Host.submission!,
 		"roc_submission_clear": Host.submission_clear!,
+		"roc_submission_drop": Host.submission_drop!,
+		"roc_submissions": Host.submissions!,
+		"roc_submit": Host.submit!,
 		"roc_subscribe": Host.subscribe!,
 		"roc_timeout": Host.timeout!,
 		"roc_title": Host.title!,
@@ -205,6 +208,7 @@ import Setting
 import Show
 import Solid
 import Submission
+import Submissions
 import Tcp
 import Time
 import Title

@@ -37,6 +37,8 @@ const js = struct {
     extern "env" fn js_context_find(name_ptr: [*]const u8, name_len: usize) u32;
     extern "env" fn js_context_get(id: u32) usize;
     extern "env" fn js_fetch(method_ptr: [*]const u8, method_len: usize, url_ptr: [*]const u8, url_len: usize, headers_ptr: [*]const u8, headers_len: usize, body_ptr: [*]const u8, body_len: usize) usize;
+    /// Throws what the last `js_fetch` that answered `waits` would have: its caller waits, or fails.
+    extern "env" fn js_waits() void;
     extern "env" fn js_listen(url_ptr: [*]const u8, url_len: usize, handler: usize) void;
     extern "env" fn js_subscribe(url_ptr: [*]const u8, url_len: usize, handler: usize) void;
     extern "env" fn js_say(url_ptr: [*]const u8, url_len: usize, said_ptr: [*]const u8, said_len: usize) void;
@@ -53,6 +55,9 @@ const js = struct {
     extern "env" fn js_action(ptr: [*]const u8, len: usize) void;
     extern "env" fn js_submission(ptr: [*]const u8, len: usize) usize;
     extern "env" fn js_submission_clear(ptr: [*]const u8, len: usize) void;
+    extern "env" fn js_submissions(ptr: [*]const u8, len: usize) usize;
+    extern "env" fn js_submit(method_ptr: [*]const u8, method_len: usize, url_ptr: [*]const u8, url_len: usize, body_ptr: [*]const u8, body_len: usize, input_ptr: [*]const u8, input_len: usize) void;
+    extern "env" fn js_submission_drop(ptr: [*]const u8, len: usize, id: u32) void;
     extern "env" fn js_title(ptr: [*]const u8, len: usize) void;
 };
 
@@ -245,17 +250,27 @@ fn hostedContextGet(id: u64) callconv(.c) Callable {
     return value;
 }
 
+// A request's answer. One that isn't in yet (or failed) unwinds the caller, by a JS throw: the
+// runtime answers `waits`, and throws (`js_waits`) only once the arguments are let go of, since a
+// throw skips this function's defers.
 fn hostedFetch(method: RocStr, url: RocStr, headers: RocStr, body: RocStr) callconv(.c) RocStr {
-    defer method.decref(host());
-    defer url.decref(host());
-    defer headers.decref(host());
-    defer body.decref(host());
-    const m = method.asSlice();
-    const u = url.asSlice();
-    const h = headers.asSlice();
-    const b = body.asSlice();
-    return taken(js.js_fetch(m.ptr, m.len, u.ptr, u.len, h.ptr, h.len, b.ptr, b.len));
+    const length = asked: {
+        defer method.decref(host());
+        defer url.decref(host());
+        defer headers.decref(host());
+        defer body.decref(host());
+        const m = method.asSlice();
+        const u = url.asSlice();
+        const h = headers.asSlice();
+        const b = body.asSlice();
+        break :asked js.js_fetch(m.ptr, m.len, u.ptr, u.len, h.ptr, h.len, b.ptr, b.len);
+    };
+    if (length == waits) js.js_waits();
+    return taken(length);
 }
+
+/// What `js_fetch` answers for a request that unwinds its caller (`js_waits` throws why).
+const waits: usize = std.math.maxInt(usize);
 
 fn hostedListen(url: RocStr, handler: Callable) callconv(.c) void {
     defer url.decref(host());
@@ -372,6 +387,31 @@ fn hostedSubmissionClear(url: RocStr) callconv(.c) void {
     js.js_submission_clear(text.ptr, text.len);
 }
 
+fn hostedSubmissions(url: RocStr) callconv(.c) RocStr {
+    defer url.decref(host());
+    const text = url.asSlice();
+    return taken(js.js_submissions(text.ptr, text.len));
+}
+
+// An action (`Router.use_action!`): its method, URL, body, and what it sent, as JSON.
+fn hostedSubmit(method: RocStr, url: RocStr, body: RocStr, input: RocStr) callconv(.c) void {
+    defer method.decref(host());
+    defer url.decref(host());
+    defer body.decref(host());
+    defer input.decref(host());
+    const m = method.asSlice();
+    const u = url.asSlice();
+    const b = body.asSlice();
+    const i = input.asSlice();
+    js.js_submit(m.ptr, m.len, u.ptr, u.len, b.ptr, b.len, i.ptr, i.len);
+}
+
+fn hostedSubmissionDrop(url: RocStr, id: u64) callconv(.c) void {
+    defer url.decref(host());
+    const text = url.asSlice();
+    js.js_submission_drop(text.ptr, text.len, @intCast(id));
+}
+
 // The document's title, as a `<Title>`'s hole says it: the runtime's, which keeps the last one
 // rendered that is still there as `document.title` (or, rendering as a server would, the page's).
 fn hostedTitle(title: RocStr) callconv(.c) void {
@@ -455,5 +495,8 @@ comptime {
     @export(&hostedAction, .{ .name = "roc_action", .visibility = hidden });
     @export(&hostedSubmission, .{ .name = "roc_submission", .visibility = hidden });
     @export(&hostedSubmissionClear, .{ .name = "roc_submission_clear", .visibility = hidden });
+    @export(&hostedSubmissions, .{ .name = "roc_submissions", .visibility = hidden });
+    @export(&hostedSubmit, .{ .name = "roc_submit", .visibility = hidden });
+    @export(&hostedSubmissionDrop, .{ .name = "roc_submission_drop", .visibility = hidden });
     @export(&hostedTitle, .{ .name = "roc_title", .visibility = hidden });
 }

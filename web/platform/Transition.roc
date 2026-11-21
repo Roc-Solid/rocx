@@ -6,6 +6,14 @@
 ##     <li transition={Transition.fade}>{todo!().text}</li>
 ##     <rect transition:out={Transition.grow(Bottom).plus(Transition.fade).ms(150)} … />
 ##
+## `transition:move={Transition.glide}` is how it moves: when a change of the page moves it (a row
+## put in another order, pushed by one that comes or goes; or, with a `key`, taken out of one list as
+## an element with the same key comes into another), it glides from where it was to where it is
+## (FLIP: its new place, played backwards from its old one). Only the pace of the transition counts
+## there (`ms`, `delay`, `easing`).
+##
+##     <li key={card.id} transition:move={Transition.glide}>{card.title}</li>
+##
 ## A transition is the element's style while it is hidden (`opacity: 0`, `scale: 1 0`): it comes from
 ## that to its own style, and goes from its own to that, the same way back. The browser plays it
 ## (`element.animate`), so it costs Roc nothing per frame. For someone who asked their system for
@@ -23,6 +31,10 @@ Transition :: { hidden : List((Str, Str)), ms : U64, delay : U64, easing : Str, 
 	## Scaled from `start` (0 is nothing, 1 its own size), faded.
 	scale : Dec -> Transition
 	scale = |start| Transition.style([("scale", start.to_str()), ("opacity", "0")])
+
+	## No hidden style, at a pace for moving (250 ms, easing out): what `transition:move` plays.
+	glide : Transition
+	glide = Transition.style([]).ms(250).easing("cubic-bezier(0.2, 0, 0, 1)")
 
 	## Grown out of one of its edges, as a bar grows out of its axis: scaled to nothing toward it.
 	grow : [Top, Bottom, Left, Right] -> Transition

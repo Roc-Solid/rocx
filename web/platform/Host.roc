@@ -126,6 +126,19 @@ Host := [].{
 	## Forgets the latest submission to this URL (in a handler, applied when it is done).
 	submission_clear! : Str => {}
 
+	## Every submission the runtime sent to this URL (tracked), as JSON, oldest first:
+	## `{"cleared":…,"list":[{"id":…,"state":…,"input":…,"json":…,"status":…,"body":…}]}`; "" with
+	## none, and none forgotten: always "" on the server.
+	submissions! : Str => Str
+
+	## In a handler: a submission without a form (its method, URL, body, and its input: what it sent,
+	## as JSON), sent once the handler is done; a result has the page's reads read again before the
+	## submission is done. Anywhere else, it fails; on the server, nothing.
+	submit! : Str, Str, Str, Str => {}
+
+	## Forgets one submission to this URL, by its id (in a handler, applied when it is done).
+	submission_drop! : Str, U64 => {}
+
 	## The document's title, as a `<Title>` says it (its hole's run): in the browser, the last one
 	## rendered that is still there is `document.title`, until it goes; on the server, noted for the
 	## page's `<head>`.

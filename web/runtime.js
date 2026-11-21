@@ -10,7 +10,9 @@
 // contexts provided above it; a signal belongs to the run that made it, and goes with it, as do its
 // effects (Solid 2.0's split ones: a tracked compute, then an apply after the flush), cleanups,
 // timers and listens, a cleanup run before what made it runs again, and when it goes. A form
-// posting to an endpoint a component reads the submission of is sent with fetch. An app
+// posting to an endpoint a component reads the submission of is sent with fetch, as is an action a
+// handler sends; a submission answered with a result reads the page's reads again before it is done.
+// Drop targets accept drags; elements that glide are measured around a flush that moves them. An app
 // whose root renders a whole document (`<!doctype html><html>…`) hydrates the page the server sent
 // (`hydrateDocument`, called by start.js).
 
@@ -312,6 +314,26 @@ const OWN_PARTS = new Set(["show", "for", "leaving"]);
 
 /** Whether someone asked their system for less motion: then no transition plays. */
 const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/** What `js_fetch` answers (usize's largest, on wasm32) for a request whose caller unwinds. */
+const WAITS = 0xffffffff;
+
+/** The computations that run again when what they read changes: the ones a submission's result
+ * reads again (`revalidate`). A component, the root and a handler run once. */
+const READERS = new Set(["memo", "text", "attr", "flag", "class", "optional", "style", "html", "show", "for", "reaction", "transition"]);
+
+/** A submission as Roc reads it (`Host.submission!`), its id too in a list (`Host.submissions!`). */
+const submissionJson = ({ id, state, input, json, status, body }, listed = false) => JSON.stringify(listed ? { id, state, input, json, status, body } : { state, input, json, status, body });
+
+/** The latest submission, once it is forgotten: none, and not the flash either. */
+const CLEARED = submissionJson({ state: "cleared", input: "", json: false, status: 0, body: "" });
+
+/** The events of drag and drop whose handlers the runtime takes part in (`dragAndDrop`). */
+const DRAG_EVENTS = new Set(["dragstart", "dragenter", "dragleave", "drop"]);
+
+/** What a drop target says it will do with a drag the source allows `allowed` for: a move, unless
+ * only a copy or a link is allowed. */
+const dropEffect = (allowed) => (/move|all|uninitialized/i.test(allowed ?? "all") ? "move" : /copy/i.test(allowed) ? "copy" : /link/i.test(allowed) ? "link" : "none");
 
 /** A CSS property as `element.animate` names it: `transform-origin` is `transformOrigin`. */
 const camel = (property) => property.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
@@ -638,8 +660,22 @@ export class Runtime {
 		this.titlesDirty = false;
 		this.titled = null;
 		/** Rows and parts on their way out, by their first comment: each stays, inert, until its
-		 * transitions are over. A <For> putting its rows in order passes over them. */
+		 * transitions are over. A <For> putting its rows in order passes over them. `leavingNodes`:
+		 * the range each one's top nodes are in. */
 		this.leaving = new Map();
+		this.leavingNodes = new WeakMap();
+		/** Each element's name on the page (`key={…}`), and the elements that glide when they move
+		 * (`transition:move`); where those were before the flush first changed the page (`measure`),
+		 * and the glide each is playing. */
+		this.keys = new WeakMap();
+		this.gliders = new Set();
+		this.measured = null;
+		this.glides = new WeakMap();
+		/** Whether a flush is running its computations now: the page changes only then. */
+		this.inFlush = false;
+		/** The drop targets a drag is over now (`depth` above 0), told it left when the drag ends. */
+		this.overs = new Set();
+		this.dragEnds = null;
 		/** Letting go of what is inside a part that is leaving: its <For>s' rows stay with it. */
 		this.keeping = false;
 		/** The computation or handler running now. */
@@ -648,11 +684,17 @@ export class Runtime {
 		/** Effects whose apply is due, after the flush. */
 		this.due = new Set();
 		this.flushing = false;
-		/** The endpoints whose forms the runtime sends (`use_submission!`), by URL, and how many ask;
-		 * the latest submission to each, a source computations read; whether it listens for submits. */
+		/** The endpoints whose forms the runtime sends (`use_submission!`, `use_submissions!`), by URL,
+		 * and how many ask; the submissions to each (forms', actions'), a source computations read;
+		 * whether it listens for submits. */
 		this.actions = new Map();
 		this.submissions = new Map();
 		this.submitting = null;
+		/** The computations that read a GET from the server (`Endpoint.get!`): what a submission's
+		 * result has read again before it is done (`revalidate`). */
+		this.readers = new Set();
+		/** Why the last request `js_fetch` answered "waits" for unwinds its caller (`js_waits`). */
+		this.waiting = null;
 		/** In the browser: the flash the page came with (`Server.flash!`). On the server: the flash
 		 * the page being rendered read, for the page to carry. */
 		this.flash = "";
@@ -681,7 +723,9 @@ export class Runtime {
 		/** Whoever wants to see what the runtime does, as it does it (the docs' inspector): an object
 		 * with any of `seeded`, `call`, `answer`, `fetch`, `fetched`, `listen`, `heard`, `patch`,
 		 * `row`, `show`, `frame`, `effect` (a call of the page's own function), `apply` (an effect's
-		 * apply), `submit`, and the hub's `subscribe`, `unsubscribe`, `connect` and `dropped`. */
+		 * apply), `submit`, `submitted`, `revalidate` (a submission's result reading the page's reads
+		 * again), `glide` (an element moving), and the hub's `subscribe`, `unsubscribe`, `connect`
+		 * and `dropped`. */
 		this.observer = null;
 		/** The tab's channels (`Endpoint.subscribe!`): one stream for all of them. */
 		this.hub = new Hub(this);
@@ -855,7 +899,22 @@ export class Runtime {
 			},
 			js_context_find: (ptr, len) => this.current?.scope?.contexts?.[text(ptr, len)] ?? 0,
 			js_context_get: (id) => this.kept.get(id),
-			js_fetch: (mp, ml, up, ul, hp, hl, bp, bl) => this.fetchFor(text(mp, ml), text(up, ul), text(hp, hl), text(bp, bl)),
+			// A request's answer; one that isn't in (or failed) is thrown by `js_waits`, once the host has
+			// let go of the request's text (a throw would skip that).
+			js_fetch: (mp, ml, up, ul, hp, hl, bp, bl) => {
+				try {
+					return this.fetchFor(text(mp, ml), text(up, ul), text(hp, hl), text(bp, bl));
+				} catch (error) {
+					if (!(error instanceof NotReady || error instanceof Failed)) throw error;
+					this.waiting = error;
+					return WAITS;
+				}
+			},
+			js_waits: () => {
+				const error = this.waiting;
+				this.waiting = null;
+				throw error;
+			},
 			js_listen: (up, ul, ptr) => this.listenTo(text(up, ul), ptr),
 			js_subscribe: (up, ul, ptr) => this.hub.subscribe(text(up, ul), ptr),
 			js_say: (up, ul, sp, sl) => this.hub.say(text(up, ul), text(sp, sl)),
@@ -922,14 +981,36 @@ export class Runtime {
 					else this.actions.delete(key);
 				});
 			},
+			// The latest submission to an endpoint: none once it is forgotten (`clear!`), until the next.
 			js_submission: (ptr, len) => {
 				if (this.onServer) return this.give("");
 				const source = this.submissionOf(this.actionKey(text(ptr, len)));
 				this.track(source);
-				return this.give(source.value ? JSON.stringify(source.value) : "");
+				if (source.cleared) return this.give(CLEARED);
+				const latest = source.list.at(-1);
+				return this.give(latest ? submissionJson(latest) : "");
+			},
+			js_submissions: (ptr, len) => {
+				if (this.onServer) return this.give("");
+				const source = this.submissionOf(this.actionKey(text(ptr, len)));
+				this.track(source);
+				if (!source.list.length && !source.cleared) return this.give("");
+				return this.give(`{"cleared":${source.cleared},"list":[${source.list.map((entry) => submissionJson(entry, true)).join(",")}]}`);
 			},
 			js_submission_clear: (ptr, len) => {
 				if (!this.onServer) this.later({ cleared: this.actionKey(text(ptr, len)) });
+			},
+			js_submission_drop: (ptr, len, id) => {
+				if (!this.onServer) this.later({ dropped: this.actionKey(text(ptr, len)), id });
+			},
+			// An action (`use_action!`): sent once the handler is done, so one that waits and runs again
+			// sends it once.
+			js_submit: (mp, ml, up, ul, bp, bl, ip, il) => {
+				if (this.onServer) return;
+				const handler = this.current;
+				const url = text(up, ul);
+				if (handler?.kind !== "handler") throw new Failed(`use_action!(${url})'s function sends from a handler (an event, a timer, an effect's apply), not while computing`);
+				handler.writes.push({ submit: { method: text(mp, ml), url, body: text(bp, bl), input: text(ip, il) } });
 			},
 			// A <Title>'s hole: rendering as a server would, the page's title (the last one rendered);
 			// in the browser, its computation's, until it runs again or goes (`showTitle`).
@@ -986,14 +1067,17 @@ export class Runtime {
 		return `${this.unbased(resolved.pathname)}${resolved.search}`;
 	}
 
+	/** The submissions to an endpoint, oldest first (`list`), each `{ id, state, input, json,
+	 * status, body }`: a source computations read. `cleared` once the latest was forgotten, until
+	 * the next is sent: the latest is then none, and so is the flash. */
 	submissionOf(key) {
 		let source = this.submissions.get(key);
-		if (!source) this.submissions.set(key, (source = { value: null, seq: 0, observers: new Set() }));
+		if (!source) this.submissions.set(key, (source = { list: [], cleared: false, observers: new Set() }));
 		return source;
 	}
 
-	setSubmission(source, value) {
-		source.value = value;
+	/** The submissions to an endpoint changed: what read them runs again. */
+	submissionsChanged(source) {
 		for (const observer of source.observers) this.schedule(observer);
 	}
 
@@ -1024,39 +1108,86 @@ export class Runtime {
 		const key = `${this.unbased(url.pathname)}${url.search}`;
 		if (!this.actions.has(key)) return;
 		event.preventDefault();
-		this.submit(key, url.href, new URLSearchParams(new FormData(form, submitter ?? undefined)).toString());
+		const fields = new URLSearchParams(new FormData(form, submitter ?? undefined)).toString();
+		this.submit(key, url.href, { headers: { "content-type": "application/x-www-form-urlencoded" }, body: fields, input: fields, json: false });
+	}
+
+	/** An action (`use_action!`), sent: its arg as JSON in its body, as `Endpoint.send!` sends it. */
+	sendAction({ method, url, body, input }) {
+		const href = typeof location === "undefined" ? this.under(url) : new URL(this.under(url), location.href).href;
+		const headers = method === "GET" || method === "HEAD" ? {} : { "content-type": "application/json" };
+		this.submit(this.actionKey(url), href, { method, headers, body, input, json: true });
 	}
 
 	/**
-	 * Sends a form's fields to an endpoint, the latest submission to it pending until its answer is
-	 * in: 200, its result (JSON); any other status, a refusal; none, status 0 and why. A redirect of
-	 * the endpoint's own (`x-rocx-redirect`), or one fetch followed (middleware's), is where the
-	 * browser goes. An answer to a submission that isn't the latest is dropped.
+	 * Sends a submission to an endpoint (a form's fields, or an action's arg), a new one in its
+	 * list, pending until it is answered: 200, its result (JSON); any other status, a refusal; none,
+	 * status 0 and why. Several may be on their way at once, each answered on its own. A result has
+	 * the page's reads read again (`revalidate`) before the submission is done, so what shows the
+	 * server's data and the submission's end changes at once. A redirect of the endpoint's own
+	 * (`x-rocx-redirect`), or one fetch followed (middleware's), is where the browser goes.
 	 */
-	submit(key, href, input) {
+	submit(key, href, { method = "POST", headers = {}, body, input, json }) {
 		const source = this.submissionOf(key);
-		const seq = ++source.seq;
-		this.setSubmission(source, { state: "pending", input, status: 0, body: "" });
+		const entry = { id: ++ids, state: "pending", input, json, status: 0, body: "" };
+		source.list.push(entry);
+		source.cleared = false;
+		this.submissionsChanged(source);
 		const asked = performance.now();
-		this.notify("submit", { url: key, input });
-		fetch(href, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json", "x-rocx-submission": "1" }, body: input }).then(
+		this.notify("submit", { method, url: key, input, id: entry.id });
+		const done = (status, said) => {
+			Object.assign(entry, { state: "done", status, body: said });
+			// Forgotten meanwhile: nothing reads it.
+			if (source.list.includes(entry)) this.submissionsChanged(source);
+		};
+		fetch(href, { method, headers: { ...headers, accept: "application/json", "x-rocx-submission": "1" }, body: method === "GET" || method === "HEAD" ? undefined : body }).then(
 			async (response) => {
 				const to = response.headers.get("x-rocx-redirect");
 				if (to !== null || response.redirected) {
-					this.notify("submitted", { url: key, input, status: response.status, redirect: to ?? response.url, ms: performance.now() - asked });
+					this.notify("submitted", { url: key, input, id: entry.id, status: response.status, redirect: to ?? response.url, ms: performance.now() - asked });
 					location.assign(to !== null ? new URL(this.under(to), location.href).href : response.url);
 					return;
 				}
-				const body = await response.text();
-				this.notify("submitted", { url: key, input, status: response.status, body, ms: performance.now() - asked });
-				if (source.seq === seq) this.setSubmission(source, { state: "done", input, status: response.status, body });
+				const said = await response.text();
+				this.notify("submitted", { url: key, input, id: entry.id, status: response.status, body: said, ms: performance.now() - asked });
+				if (response.status === 200) this.revalidate(() => done(200, said));
+				else done(response.status, said);
 			},
 			(error) => {
-				const why = `POST ${key}: ${error?.message ?? error}`;
-				this.notify("submitted", { url: key, input, error: why, ms: performance.now() - asked });
-				if (source.seq === seq) this.setSubmission(source, { state: "done", input, status: 0, body: why });
+				const why = `${method} ${key}: ${error?.message ?? error}`;
+				this.notify("submitted", { url: key, input, id: entry.id, error: why, ms: performance.now() - asked });
+				done(0, why);
 			},
 		);
+	}
+
+	/**
+	 * Reads the page's reads again (Solid Router revalidating after an action), then `done`: every
+	 * computation that read a GET from the server (`Endpoint.get!`, `read!`) asks it again, its last
+	 * value shown meanwhile, and `done` runs once each has its answer (or failed, or went), in the
+	 * run of the last one, so whatever reads both sees the new data and the submission's end
+	 * together.
+	 */
+	revalidate(done) {
+		const targets = [...this.readers].filter((computation) => !computation.disposed && [...computation.calls.keys()].some((key) => key.startsWith("GET ")));
+		this.notify("revalidate", { reads: targets.length });
+		if (!targets.length) return done();
+		let left = targets.length;
+		const one = () => {
+			if (--left === 0) done();
+		};
+		for (const target of targets) {
+			(target.revalidating ??= []).push(one);
+			this.refresh(target);
+		}
+	}
+
+	/** A computation read again for a submission (`revalidate`) has its answer, failed, or went. */
+	revalidated(computation) {
+		const waiting = computation.revalidating;
+		if (!waiting) return;
+		computation.revalidating = null;
+		for (const one of waiting) one();
 	}
 
 	/** A read in a computation: it runs again when what it read changes. */
@@ -1127,6 +1258,7 @@ export class Runtime {
 			asking.calls.set(key, answer);
 		}
 		asking.used?.add(key);
+		if (method === "GET" && READERS.has(asking.kind)) this.readers.add(asking);
 		if (answer.state === "pending") throw new NotReady(answer.promise);
 		if (answer.state === "failed") throw new Failed(answer.error);
 		return this.give(answer.value);
@@ -1373,6 +1505,7 @@ export class Runtime {
 			// A value, or a failure: a probe that stopped at it may now read further.
 			if (outcome !== "pending") this.recheckReaders(computation);
 		}
+		if (outcome !== "pending") this.revalidated(computation);
 	}
 
 	/**
@@ -1456,6 +1589,7 @@ export class Runtime {
 		if (kind === "show") return this.settleShow(computation, JSON.parse(out));
 		if (kind === "for") return this.settleFor(computation, JSON.parse(out));
 		if (kind === "transition") return this.setTransition(target, name, JSON.parse(out));
+		if (kind === "key") return this.keys.set(target, JSON.parse(out));
 		if (kind === "text" || kind === "attr" || kind === "flag" || kind === "class" || kind === "optional" || kind === "style") {
 			// A value the node has already isn't a patch (a hole runs again whenever what it read
 			// was written, which may be with the same value).
@@ -1513,6 +1647,7 @@ export class Runtime {
 			}
 			this.stats.patches++;
 			this.notify("patch", { kind, name, node: target.start.parentNode });
+			this.measure();
 			const fragment = document.createDocumentFragment();
 			for (const node of nodes) fragment.append(this.build(node, computation, computation.scope));
 			replaceRange(target, fragment);
@@ -1556,6 +1691,8 @@ export class Runtime {
 	dispose(computation) {
 		if (!computation || computation.disposed) return;
 		computation.disposed = true;
+		this.readers.delete(computation);
+		this.revalidated(computation);
 		for (const source of computation.sources) source.observers.delete(computation);
 		computation.scope.loading?.done(computation);
 		if (computation.kind === "reaction") {
@@ -1597,6 +1734,7 @@ export class Runtime {
 	 * dirty again, and runs before the next). */
 	flush() {
 		const oldest = (set) => [...set].sort((a, b) => a.id - b.id)[0];
+		this.inFlush = true;
 		for (;;) {
 			if (this.dirty.size) {
 				const next = oldest(this.dirty);
@@ -1608,7 +1746,11 @@ export class Runtime {
 				this.applyReaction(next);
 			} else break;
 		}
+		this.inFlush = false;
 		this.flushing = false;
+		// What moved glides, before what came plays its transition in (one that is a moved element's
+		// doesn't).
+		if (this.measured) this.glide();
 		if (this.entering.length) this.playEntering();
 		// The title before the page's functions, so one sees the page as the flush left it.
 		if (this.titlesDirty) this.showTitle();
@@ -1712,10 +1854,16 @@ export class Runtime {
 					queueMicrotask(() => this.flush());
 				}
 			} else if (write.cleared !== undefined) {
+				// The latest forgotten (Solid's `clear`): out of the list, and none is the latest until the next.
 				const source = this.submissionOf(write.cleared);
-				source.seq++;
-				this.setSubmission(source, { state: "cleared", input: "", status: 0, body: "" });
-			}
+				source.list.pop();
+				source.cleared = true;
+				this.submissionsChanged(source);
+			} else if (write.dropped !== undefined) {
+				const source = this.submissionOf(write.dropped);
+				source.list = source.list.filter((entry) => entry.id !== write.id);
+				this.submissionsChanged(source);
+			} else if (write.submit) this.sendAction(write.submit);
 		}
 	}
 
@@ -1788,6 +1936,7 @@ export class Runtime {
 		computation.adopting = false;
 		const first = computation.holds === undefined;
 		computation.holds = holds;
+		if (!first && !adopting) this.measure();
 		const { node, target, scope } = computation;
 		const outs = first || adopting ? [] : this.transitioned(target, "out");
 		if (outs.length) {
@@ -1822,6 +1971,8 @@ export class Runtime {
 		// Rows made its first time come with the page, the row or the part it is in: no transition.
 		const later = computation.settled === true;
 		computation.settled = true;
+		// Rows that go, come or move change the page: where what glides is, first.
+		if (later && !adopting && (entries.length !== list.rows.size || entries.some(({ k }, index) => list.indexes.get(k)?.value !== index || !list.rows.has(k)))) this.measure();
 		const cursor = adopting ? new Cursor(target.start.nextSibling) : null;
 		const kept = computation.making.kept;
 		const rows = new Map();
@@ -1925,10 +2076,16 @@ export class Runtime {
 
 	// ---- Transitions ----
 
-	/** An element's transition (`way`: "in", "out" or "both"), from the markup or a computation. */
+	/** An element's transition (`way`: "in", "out", "both" or "move"), from the markup or a
+	 * computation. One that moves is among the elements a change of the page measures. */
 	setTransition(element, way, spec) {
 		let own = this.transitions.get(element);
-		if (!own) this.transitions.set(element, (own = { in: null, out: null }));
+		if (!own) this.transitions.set(element, (own = { in: null, out: null, move: null }));
+		if (way === "move") {
+			own.move = spec;
+			this.gliders.add(element);
+			return;
+		}
 		if (way !== "out") own.in = spec;
 		if (way !== "in") own.out = spec;
 		this.animates = true;
@@ -1992,6 +2149,7 @@ export class Runtime {
 		range.end.data = "/leaving";
 		this.leaving.set(range.start, range);
 		for (const node of inside(range)) {
+			this.leavingNodes.set(node, range);
 			if (node.nodeType !== 1) continue;
 			node.setAttribute("inert", "");
 			node.setAttribute("aria-hidden", "true");
@@ -2003,6 +2161,11 @@ export class Runtime {
 			gone = true;
 			this.leaving.delete(range.start);
 			removeRange(range);
+		};
+		// Gone at once (an element in it moved elsewhere: `glide`), its transitions out stopped.
+		range.finish = () => {
+			for (const animation of playing) animation.cancel();
+			go();
 		};
 		const playing = outs.map(([element, spec]) => this.play(element, spec, "out")).filter(Boolean);
 		if (!playing.length) return go();
@@ -2034,6 +2197,103 @@ export class Runtime {
 		} catch {
 			// An easing the browser doesn't know: no animation, rather than an error.
 			return null;
+		}
+	}
+
+	// ---- Moves ----
+
+	/**
+	 * Before a flush first changes what the page shows (a row comes, goes or moves; a part
+	 * switches; a hole's markup is made anew): where each element that glides (`transition:move`) is
+	 * on the screen. Once a flush, and only in one: hydrating and mounting move nothing.
+	 */
+	measure() {
+		if (this.measured || !this.inFlush || !this.gliders.size || typeof document === "undefined") return;
+		const still = reducedMotion();
+		this.measured = new Map();
+		for (const element of this.gliders) if (element.isConnected) this.measured.set(element, still ? null : element.getBoundingClientRect());
+	}
+
+	/** The range on its way out (`leave`) an element is in, if it is. */
+	leavingRangeOf(element) {
+		for (let node = element; node; node = node.parentNode) {
+			const range = this.leavingNodes.get(node);
+			if (range) return range;
+		}
+		return null;
+	}
+
+	/**
+	 * Once the flush is done: each element that glides and moved, as it was measured before and as
+	 * it is now, plays its move backwards from where it was (FLIP), with `translate`, so its own
+	 * transform stays its own. An element with a key (`key={…}`) that came as one with the same key
+	 * went (taken out of one list and put in another; a part switched) is that one moved: it glides
+	 * from the other's place, plays no transition in, and the other, if it was on its way out, goes
+	 * at once. One inside another that glides moves with it. Nothing glides for someone who asked
+	 * for less motion; an element taken off the page is forgotten.
+	 */
+	glide() {
+		const before = this.measured;
+		this.measured = null;
+		const still = reducedMotion();
+		// The ones that went (taken away, or on their way out), by key: where they were.
+		const went = new Map();
+		for (const [element, box] of before) {
+			if (!box || (element.isConnected && !this.leavingRangeOf(element))) continue;
+			const key = this.keys.get(element);
+			if (key !== undefined) went.set(key, { element, box });
+		}
+		const moves = [];
+		for (const element of this.gliders) {
+			if (!element.isConnected) {
+				// Taken off the page (not waiting in a fragment, as what a <Loading> holds does).
+				if (element.getRootNode().nodeType !== 11) this.gliders.delete(element);
+				continue;
+			}
+			if (still || this.leavingRangeOf(element)) continue;
+			let box = before.get(element);
+			if (box === undefined) {
+				const key = this.keys.get(element);
+				const pair = key === undefined ? undefined : went.get(key);
+				if (!pair) continue;
+				went.delete(key);
+				box = pair.box;
+				this.entering = this.entering.filter(([entering]) => entering !== element);
+				this.leavingRangeOf(pair.element)?.finish();
+			}
+			if (box) moves.push([element, box]);
+		}
+		if (!moves.length) return;
+		// Glides playing stop, then every box is read at once: one layout.
+		for (const [element] of moves) this.glides.get(element)?.cancel();
+		const boxes = moves.map(([element]) => element.getBoundingClientRect());
+		const moving = new Map();
+		moves.forEach(([element, box], index) => {
+			const dx = box.left - boxes[index].left;
+			const dy = box.top - boxes[index].top;
+			if (Math.abs(dx) >= 0.5 || Math.abs(dy) >= 0.5) moving.set(element, [dx, dy]);
+		});
+		for (const [element, [dx, dy]] of moving) {
+			let carried = false;
+			for (let parent = element.parentElement; parent && !carried; parent = parent.parentElement) carried = moving.has(parent);
+			if (carried || typeof element.animate !== "function") continue;
+			const spec = this.transitions.get(element)?.move ?? {};
+			try {
+				const animation = element.animate([{ translate: `${dx}px ${dy}px` }, { translate: "0px 0px" }], {
+					duration: spec.ms ?? 250,
+					delay: spec.delay ?? 0,
+					easing: spec.easing || "ease-out",
+					fill: "backwards",
+				});
+				this.glides.set(element, animation);
+				animation.finished.then(
+					() => this.glides.get(element) === animation && this.glides.delete(element),
+					() => {},
+				);
+				this.notify("glide", { node: element, dx, dy, key: this.keys.get(element) });
+			} catch {
+				// An easing the browser doesn't know: no glide, rather than an error.
+			}
 		}
 	}
 
@@ -2423,22 +2683,40 @@ export class Runtime {
 
 	/** Binds an element's computed attributes and handlers (made, or found when hydrating). */
 	bind(element, node, owner, scope) {
+		// Drag and drop: an element with a drop handler is a drop target, and one with a dragstart
+		// handler starts a drag in every browser (`dragAndDrop`). Its dragenter and dragleave handlers
+		// are the element's own, as mouseenter and mouseleave are.
+		let drag = null;
+		for (const [kind, name] of node.a) {
+			if ((kind === "on" || kind === "onp") && DRAG_EVENTS.has(name)) {
+				drag ??= { drop: false, start: false, enter: [], leave: [], depth: 0 };
+				if (name === "drop") drag.drop = true;
+				if (name === "dragstart") drag.start = true;
+			}
+		}
 		for (const [kind, name, value, wanted] of node.a) {
 			if (kind === "vo" || kind === "fo" || kind === "co" || kind === "oo" || kind === "so") {
 				const computed = { vo: "attr", fo: "flag", co: "class", oo: "optional", so: "style" }[kind];
 				this.run(new Computation(this, { kind: computed, runner: this.kept.get(value), owner, scope, target: element, name }));
-			} else if (kind === "on") {
+			} else if (kind === "on" || kind === "onp") {
 				// By the box's id: when its owner runs again the box is released, and the element replaced.
-				element.addEventListener(name, (event) => {
+				const handler = (event) => {
 					// A handler for one key (`on:keydown.ArrowUp`): that key only, and the browser doesn't
 					// also do what it would (an arrow key a game takes doesn't scroll the page).
 					if (wanted !== undefined && event.key !== wanted) return;
-					if (name === "submit" || wanted !== undefined) event.preventDefault();
+					// `.prevent`: what the browser would do (follow a link) is the handler's to do.
+					if (kind === "onp" || name === "submit" || wanted !== undefined) event.preventDefault();
 					const target = event.target;
-					const input = target?.type === "checkbox" ? String(target.checked) : String(target?.value ?? "");
+					// A drop's value is the text dropped (from another page, or another program).
+					const input = event.type === "drop" ? (event.dataTransfer?.getData("text/plain") ?? "") : target?.type === "checkbox" ? String(target.checked) : String(target?.value ?? "");
 					if (this.kept.has(value)) this.handle(value, input, scope, { owner });
-				});
-			} else if (kind === "onk") {
+				};
+				if (drag && name === "dragenter") drag.enter.push(handler);
+				else if (drag && name === "dragleave") drag.leave.push(handler);
+				else element.addEventListener(name, handler);
+			} else if (kind === "k") this.keys.set(element, name);
+			else if (kind === "ko") this.run(new Computation(this, { kind: "key", runner: this.kept.get(name), owner, scope, target: element }));
+			else if (kind === "onk") {
 				// A handler given the key (`on:keydown.key`).
 				element.addEventListener(name, (event) => {
 					if (this.kept.has(value)) this.handle(value, event.key ?? "", scope, { owner });
@@ -2469,6 +2747,64 @@ export class Runtime {
 				requestAnimationFrame(tick);
 			}
 		}
+		if (drag) this.dragAndDrop(element, drag);
+	}
+
+	/**
+	 * An element's part in drag and drop, after its own handlers (so they run first):
+	 *
+	 * - A drop target (a drop handler) accepts a drag: its dragenter's and dragover's default is
+	 *   prevented, and dragover's `dropEffect` set (a move, unless the drag allows only a copy or a
+	 *   link); its drop's default too (a dropped link or file doesn't open).
+	 * - Its dragenter handlers run when a drag comes over it from outside, its dragleave handlers
+	 *   when the drag leaves it for outside, is dropped, or ends: not each time the drag crosses a
+	 *   child, as the browser's events fire (a count of enters and leaves).
+	 * - An element with a dragstart handler has data set on the drag (`application/x-rocx`), which
+	 *   Firefox needs to start one; what is dragged is the app's to keep (a signal its handlers set).
+	 */
+	dragAndDrop(element, drag) {
+		const left = (event) => {
+			drag.depth = 0;
+			this.overs.delete(drag);
+			for (const handler of drag.leave) handler(event);
+		};
+		drag.left = left;
+		if (drag.enter.length || drag.leave.length || drag.drop) {
+			element.addEventListener("dragenter", (event) => {
+				if (drag.drop) event.preventDefault();
+				if (drag.depth++ > 0) return;
+				this.overs.add(drag);
+				this.listenForDragEnds();
+				for (const handler of drag.enter) handler(event);
+			});
+			element.addEventListener("dragleave", (event) => {
+				if (drag.depth > 0 && --drag.depth === 0) left(event);
+			});
+			element.addEventListener("drop", (event) => {
+				if (drag.drop) event.preventDefault();
+				if (drag.depth > 0) left(event);
+			});
+		}
+		if (drag.drop)
+			element.addEventListener("dragover", (event) => {
+				event.preventDefault();
+				if (event.dataTransfer) event.dataTransfer.dropEffect = dropEffect(event.dataTransfer.effectAllowed);
+			});
+		if (drag.start)
+			element.addEventListener("dragstart", (event) => {
+				if (event.dataTransfer && !event.dataTransfer.types.length) event.dataTransfer.setData("application/x-rocx", "rocx");
+			});
+	}
+
+	/** Once: a drag that ends (dropped anywhere, or called off) leaves every drop target it was over,
+	 * should the browser not have said so (the element under it went). */
+	listenForDragEnds() {
+		if (this.dragEnds || typeof this.page?.addEventListener !== "function") return;
+		this.dragEnds = (event) => {
+			for (const drag of [...this.overs]) drag.left(event);
+		};
+		this.page.addEventListener("dragend", this.dragEnds);
+		this.page.addEventListener("drop", this.dragEnds);
 	}
 
 	// ---- On the server ----
@@ -2559,7 +2895,7 @@ export class Runtime {
 				const attributes = [];
 				const styles = [];
 				for (const [kind, name, value] of node.a) {
-					if (scope.region && (kind === "on" || kind === "onk" || kind === "frame")) throw new Error(inRegion(node.tag, name));
+					if (scope.region && (kind === "on" || kind === "onp" || kind === "onk" || kind === "frame")) throw new Error(inRegion(node.tag, name));
 					if (kind === "v" && name === "class") classes.push(value);
 					else if (kind === "v" && name === "style") styles.push(value);
 					else if (kind === "v") attributes.push(`${name}="${escape(value)}"`);

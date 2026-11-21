@@ -41,10 +41,12 @@ Html :: [
 		OnChecked(Str, Bool => {}),
 		OnKey(Str, Str => {}),
 		OnNamedKey(Str, Str, () => {}),
+		OnPrevent(Str, () => {}),
 		OnFrame(F64 => {}),
 		Key(Str),
-		Animate([In, Out, Both], Transition),
-		AnimateOf([In, Out, Both], () => Transition),
+		KeyOf(() => Str),
+		Animate([In, Out, Both, Move], Transition),
+		AnimateOf([In, Out, Both, Move], () => Transition),
 	]
 
 	text : Str -> Html
@@ -135,24 +137,38 @@ Html :: [
 	on_named_key : Str, Str, (() => {}) -> Attr
 	on_named_key = |event, wanted, handler| OnNamedKey(event, wanted, handler)
 
+	## A handler that takes over what the browser would do (`on:click.prevent={…}`): the event's
+	## default is prevented before it runs, so a link's click goes where the handler says, not to its
+	## `href`.
+	on_prevent : Str, (() => {}) -> Attr
+	on_prevent = |event, handler| OnPrevent(event, handler)
+
 	## A handler run every animation frame while the element is on the page (`on:frame.ms={|ms| …}`),
 	## given the milliseconds since the last one (at most 100: a tab that comes back resumes, rather
 	## than jumps).
 	on_frame : (F64 => {}) -> Attr
 	on_frame = |handler| OnFrame(handler)
 
+	## The element's name on the page (`key={card.id}`): where one with a key goes and another with the
+	## same key comes, in one change of the page, it is the same element, moved, and with
+	## `transition:move` it glides from the one's place to the other's.
 	key : Str -> Attr
 	key = |id| Key(id)
 
+	## The same, computed (`key={card!().id}` in a `<For>`'s row, whose item is an accessor).
+	key_of : (() => Str) -> Attr
+	key_of = |compute| KeyOf(compute)
+
 	## An animation the element plays as it comes with a `<For>`'s row or a `<Show>`'s part (`In`,
 	## `transition:in={…}`), as it goes with one (`Out`, `transition:out={…}`), or both (`Both`,
-	## `transition={…}`). See `Transition`.
-	transition : [In, Out, Both], Transition -> Attr
+	## `transition={…}`); or as it moves (`Move`, `transition:move={…}`: only its pace counts). See
+	## `Transition`.
+	transition : [In, Out, Both, Move], Transition -> Attr
 	transition = |way, animation| Animate(way, animation)
 
 	## The same, computed (it reads a signal or an accessor): the one it says when the element comes
 	## or goes is the one played.
-	transition_of : [In, Out, Both], (() => Transition) -> Attr
+	transition_of : [In, Out, Both, Move], (() => Transition) -> Attr
 	transition_of = |way, compute| AnimateOf(way, compute)
 
 	loading : Html, List(Html) -> Html
@@ -340,8 +356,10 @@ attributes! = |attrs| {
 				OnChecked(event, handler) => "[\"on\",${json_str(event)},${keep!(|| handled!(|| handler(Host.event_value!({}) == "true")))}]"
 				OnKey(event, handler) => "[\"onk\",${json_str(event)},${keep!(|| handled!(|| handler(Host.event_value!({}))))}]"
 				OnNamedKey(event, wanted, handler) => "[\"on\",${json_str(event)},${keep!(|| handled!(handler))},${json_str(wanted)}]"
+				OnPrevent(event, handler) => "[\"onp\",${json_str(event)},${keep!(|| handled!(handler))}]"
 				OnFrame(handler) => "[\"frame\",\"frame\",${keep!(|| handled!(|| handler(frame_ms(Host.event_value!({})))))}]"
 				Key(id) => "[\"k\",${json_str(id)}]"
+				KeyOf(compute) => "[\"ko\",${keep!(|| json_str(compute()))}]"
 				Animate(way, animation) => "[\"tr\",${way_name(way)},${animation.json()}]"
 				AnimateOf(way, compute) => "[\"tro\",${way_name(way)},${keep!(|| compute().json())}]"
 			},
@@ -351,12 +369,13 @@ attributes! = |attrs| {
 }
 
 ## Which way a transition plays, as the runtime names it.
-way_name : [In, Out, Both] -> Str
+way_name : [In, Out, Both, Move] -> Str
 way_name = |way|
 	match way {
 		In => "\"in\""
 		Out => "\"out\""
 		Both => "\"both\""
+		Move => "\"move\""
 	}
 
 ## Markup with nothing to run in it as HTML (`Html.to_str`), `quiet` inside a `<NoHydration>`,
