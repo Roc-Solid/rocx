@@ -758,3 +758,64 @@ match row.note {
 shared, so the locks guarded nothing.
 
 **Reversible:** yes; the API change is a type at each nullable column.
+
+## D-023 Endpoints are how an app talks to its server; server functions are deprecated
+
+**Context.** An app had two ways to reach its server. A server function (`name! = server!(…)`) was
+answered at `POST /rocx/call/<Module>.<name>`, in-process while the server rendered, and recorded
+for hydration. An endpoint (a route's `+server.roc`) had a URL of its own, typed through
+`Generated/Api`, but a component could only send it from a handler. So a page whose data was also
+an API defined it twice: once as a server function for the render, once as the route's `get!`.
+And the server functions' URLs were rocx's, not the app's: unchosen, and absent from
+`/openapi.json`.
+
+**Options.**
+1. Keep both, and document when to use which.
+2. Give server functions URLs the app chooses: still a second way to say what an endpoint says.
+3. Let a component read a GET endpoint where it renders, as it called a server function, and
+   deprecate server functions (SvelteKit's `load` and SolidStart's `query` read data the same way:
+   one definition, read on the server first, its answer serialized for the browser).
+
+**Choice.** 3.
+
+```roc
+Endpoint.get! : Endpoint(context, {}, result) => result              # a refusal fails the computation
+Endpoint.read! : Endpoint(context, {}, result) => Try(result, Server.Problem)
+Endpoint.with_query : Endpoint(context, arg, result), Str -> Endpoint(context, arg, result)
+
+profile! = create_memo!(|| Endpoint.get!(Api.get_profile({ id })))
+board! = create_memo!(|| Endpoint.get!(Endpoint.with_query(Api.get_board({}), Router.location!({}).query)))
+```
+
+- **While the server renders a page**, a read is a GET of the endpoint's URL, answered in-process
+  through its route, as the browser's GET would be: `accept: application/json`, the page's cookies
+  and headers, `origin` this host, the route's middleware around it. Each URL is asked once a render.
+  The answer, whatever its status, is noted in the page's answers script under `GET <url>` (the
+  query part of the key), unless the read is inside a `<NoHydration>`.
+- **Hydrating**, the browser reads each GET from the page and asks nothing. Strict hydration (the
+  tests') throws if the page asks the server for anything it didn't carry.
+- **Later** (`refresh!(memo!)`, a URL built from a signal), the browser GETs the endpoint's own URL
+  for JSON: the same URL anything else would ask.
+- An answer that isn't 200 fails the computation (`get!`), or is its value (`read!`); recorded too,
+  so the browser fails where the server did. A redirect met while the page renders is the page's
+  answer, as D-019 has it for server functions.
+- A page's data is best at the page's own URL: a route's `+page.rocx` and `+server.roc` share a
+  path, the page answering a browser's GET and `get!` the rest. A layout, which many paths share,
+  reads an endpoint at a path of its own (the docs site's footer reads `GET /api/facts`).
+- Middleware context is the handler's `context`, not `Server.context!`.
+- `server!` still works, and `rocx build` warns at each one. Once no app uses them, server
+  functions go, with `/rocx/call/`, `Generated/ServerFunctions`, `Server.local`/`remote`/`serve!`/
+  `context!` and the host's `call!`/`record!`/`serve!`/`serving!`/`context!`.
+- No new host effect: a read is the platform's `Call.fetch!`. On the server, `Host.fetch!` answers a
+  GET of a path in-process while a page renders, and fails as before otherwise (a POST, another
+  site's URL, no page being rendered). In the browser and in Node's `renderToString`, a fetch whose
+  key the page's answers have is answered from them.
+- The static export needs nothing new: a prerendered page carries the GETs it read.
+
+**Why.** One definition of a page's data, at a URL the app chose, typed by the same `Api`, in the
+OpenAPI document, behind the same middleware for the page's render, the browser and anyone else.
+The render, hydration and later reads all meet the same handler.
+
+**Changed from SolidStart.** No `query` wrapper or cache key: the endpoint's URL is the key, and a
+memo is the cache. **Reversible:** reads, yes; removing server functions, once done, only by
+bringing them back.

@@ -2,8 +2,8 @@
 
 An app's page, Solid 2.0-style components, compiled to one wasm module, which `runtime.js` runs.
 A component runs once, where it is rendered. Its markup's holes are computations the runtime runs
-again when what they read changes, patching only their own node. An async value (a server
-function's answer, a memo waiting for one) is read as a plain value: until it is in, the read aborts
+again when what they read changes, patching only their own node. An async value (an endpoint's
+answer, a memo waiting for one) is read as a plain value: until it is in, the read aborts
 its computation, which runs again once it is. The nearest `<Loading>` shows its fallback until
 everything inside has its first values; a failure shows the nearest `<Errored>`. A context gives a
 value to everything under its provider. An effect runs once the markup is on the page, and again
@@ -20,14 +20,15 @@ same components natively; this one hydrates them.
 
 - `platform/main.roc`, the header: an app provides `main!`, its root: a whole document (`rocx build
   --client` writes it: the app's `Root`). The host provides `roc_mount` and `roc_run` (run a kept
-  box). The browser answers no calls of server functions: the server platform does.
+  box). The browser answers no requests: the server platform answers every endpoint, the GETs a
+  page reads as it renders among them.
 - `platform/*.roc`, what components are written with: `Html` (markup whose holes are closures,
   escaping, safe URLs), `Solid` (`create_signal!`, `create_memo!`, `create_effect!`,
   `on_cleanup!`, `on_settled!`, `refresh!`, `use_context!`, and the browser's timers, `set_interval!` and
   `set_timeout!`, each owned by the run that started it), `Audio` (`play!`, `play_with!`: a sound
   file, from a handler), `Browser` (`call!`: the page's own JavaScript function, from a handler),
-  `Show`, `For`, `Loading`, `Errored`, `Context`, `Call` (`server!`, `fetch!`,
-  `listen!`), `Router` (`location!`: the page's path and query; `use_submission!`: the latest
+  `Show`, `For`, `Loading`, `Errored`, `Context`, `Call` (`fetch!`, `listen!`; `server!`,
+  deprecated), `Router` (`location!`: the page's path and query; `use_submission!`: the latest
   submission of a form to an endpoint), `Submission` (its `pending!`, `input!`, `field!`,
   `result!`, `error!`, `clear!`), `Title` (`<Title>`: the document's title, from anywhere in the
   page) and `HttpStatusCode` (the status a page is answered with); and HTTP's: `Server` (a request,
@@ -35,15 +36,15 @@ same components natively; this one hydrates them.
   page, events, or a body the server fetches from elsewhere and sends on, `forward`, with what of
   the request it passes on, `passed_on`; cookies and redirects; the flash a plain form's post comes
   back with, `flash!`, `flash_back`, `clear_flash`;
-  server functions' `local`, `remote`, `serve!`, and `context!`, what a function's middleware handed
-  on, read in its body only: anywhere else, the browser among them, it crashes), `Endpoint`,
-  `Events`, `Middleware` and `OpenApi`. The server platform's build copies them into `server/platform`, so the same code
+  and the deprecated server functions' `local`, `remote`, `serve!` and `context!`), `Endpoint` (a
+  GET endpoint read as a plain value, `get!` or `read!`, with a query, `with_query`; any endpoint
+  sent from a handler, `send!`, or listened to, `listen!`), `Events`, `Middleware` and `OpenApi`. The server platform's build copies them into `server/platform`, so the same code
   compiles on both.
 - `host/host.zig`, inside the wasm: Roc's memory (its allocator, and a count of live allocations),
   and every hosted function passed through to JavaScript.
 - `runtime.js`: keeps Roc's closures as boxes by id; signals, memos, effects and computations, and
   which reads which, and who owns what; builds, hydrates and patches the DOM; asks the server
-  (server functions, `fetch`, streams of events, forms); renders as a server would too
+  (`fetch`, an endpoint's read among them; streams of events; forms); renders as a server would too
   (`renderToString`, from the answers a page recorded).
 - `start.js`, the bootstrap the server platform puts before a page's `</body>`
   (`<script type="module" data-rocx src="/rocx/start.js">`): it loads `runtime.js` and the app's
@@ -142,21 +143,23 @@ same components natively; this one hydrates them.
   layout's markup exactly as rendered, needs no context or provider, and leaves the layout's
   `<title>` as the fallback, holes and all. The cost: with a `<Title>`, a page's `<head>` has two
   `<title>`s, the first the one browsers and crawlers use.
-- **JSON.** What crosses as JSON (a server function's input and answer, an endpoint's body, result
-  and events, `Browser.call!`'s argument) is written with `Json.to_str_try`, so an `F64` goes as a
-  number; one JSON can't write (NaN, an infinity) fails the call (a server function's answer is a
-  500 that says so). Their where clauses read `Json.Encodable(e)`. The builtin `Try` has no
-  `encoder_for` or `parser_for` on this Roc, and nothing outside the builtins can give it one:
-  rocx refuses a server function whose annotation takes or answers one, at its line, naming the
-  tag union to write instead (`[Ok(a), Err(e)]`, read by a `match` as a `Try` is), and
-  `rocx check` adds that hint under the compiler's report for one without an annotation.
+- **JSON.** What crosses as JSON (an endpoint's body, result and events, `Browser.call!`'s
+  argument; a deprecated server function's input and answer) is written with `Json.to_str_try`, so
+  an `F64` goes as a number; one JSON can't write (NaN, an infinity) fails the call (an endpoint's
+  result is a 500 that says so). Their where clauses read `Json.Encodable(e)`. The builtin `Try`
+  has no `encoder_for` or `parser_for` on this Roc, and nothing outside the builtins can give it
+  one: `rocx check` adds a hint under the compiler's report, naming the tag union to write instead
+  (`[Ok(a), Err(e)]`, read by a `match` as a `Try` is), and `rocx build` refuses a server function
+  whose annotation takes or answers one, at its line.
 - **On a server**, nothing waits: every hole runs once, no effect or timer runs and no cleanup is
-  kept, a server function's call is answered from the answers given (`renderToString({ answers })`,
-  a page's answers script; one not there fails with 599), and the HTML
+  kept, an endpoint's read (noted under `GET <url>`) is answered from the answers given
+  (`renderToString({ answers })`, a page's answers script; one not there fails with 599), and the HTML
   has comments where computed holes, rows and `<Show>`s are (`<!--x-->…<!--/x-->`), with the answers
   in a script beside it.
 - **Hydrating**, the runtime reads the answers, walks the server's nodes beside the markup Roc made,
-  and binds each computation to its own node: nothing is asked again or made again.
+  and binds each computation to its own node: nothing is asked again or made again. A read whose
+  answer the page carries is answered from it; with `{ strict: true }` (the tests'), hydrating that
+  asks the server for anything the page didn't carry throws.
 - **A whole document** (`hydrateDocument(document)`): the root's markup is walked beside
   `document.childNodes`. The doctype takes the DocumentType node and `<html>` takes
   `documentElement`; there is no `<!--app-->` range. Where the markup doesn't take the DocumentType
@@ -175,24 +178,24 @@ same components natively; this one hydrates them.
   prose, listings, anything that never changes in the browser.
   - **On the server**, what is inside renders as anywhere else, every hole run once, but as static
     markup: between `<!--nohydration-->` and `<!--/nohydration-->`, with no comments of its own
-    inside (one inside another is only its part). A server function called inside isn't recorded in
-    the answers script, since the browser never calls it.
+    inside (one inside another is only its part). An endpoint read inside isn't noted in the
+    answers script, since the browser never reads it.
   - **In the browser's copy** of a `.rocx` file (`rocx build --client`), it has no children, and an
-    import only they used is gone, as a `server!` body's are: none of it is in the wasm. What is left
-    is a placeholder. Hydrating passes over the server's nodes between the markers, and never builds,
+    import only they used is gone, as one only a route file's `middleware` used is: none of it is in
+    the wasm. What is left is a placeholder. Hydrating passes over the server's nodes between the markers, and never builds,
     adopts or patches them. A `<body>` rendered again after a mismatch keeps the server's regions,
     in order. One the browser builds where the server rendered none (a
     `<Show>` switching to a part that has one) is empty, with a warning.
   - **What may go inside:** anything the server can render. Elements, text, holes (computed ones run
     once), pure and `view!` components (run once, never hydrated, as Solid's), `<Show>`, `<For>`,
-    `<Loading>`, `<Errored>` and server functions' calls all render as they would, once. Nothing
+    `<Loading>`, `<Errored>` and endpoint reads all render as they would, once. Nothing
     there changes afterwards, and nothing in it runs in the browser. So rocx refuses a handler
     (`on:…`), a `key` or a transition written inside, at its line, and the server refuses to render
     a handler a component put there: a 500 that says which element, rather than a dead button. A
     `<Title>` inside sets the page's title on the server only.
   - **`renderToString({ answers, regions })`** renders the browser's build against a page the server
-    rendered (decision D's byte-for-byte check): `answers` are the page's answers script (each call
-    answered from it and recorded as the page has it; a call the server didn't make fails, 599), and
+    rendered (decision D's byte-for-byte check): `answers` are the page's answers script (each read
+    answered from it and recorded as the page has it; one the server didn't make fails, 599), and
     `regions` what the page has inside each `<NoHydration>`, in order (`Runtime.regionsOf(html)`),
     written as they are there. Outside the regions it is byte for byte; inside them the server's
     output is taken as it is. Without `regions`, a placeholder renders empty.
@@ -205,7 +208,7 @@ same components natively; this one hydrates them.
   text anew from the markup (its holes bound to the text nodes it makes; not a patch), the server's
   text checked against it.
 - **Under a base** (`Runtime.load(source, { base })`, `/rocx/` for a copy at
-  `example.github.io/rocx/`), a URL Roc gives that begins with `/` (a server function's, a fetch's,
+  `example.github.io/rocx/`), a URL Roc gives that begins with `/` (an endpoint's read, a fetch's,
   a stream's) is asked for under it, and `Router.location!` takes it off the page's path, so the
   browser sees `/rocx/syntax` as the server sees `/syntax`.
 - **The page's own functions** (`Runtime.load(source, { effects: { vibrate(arg) {…} } })`, or
@@ -244,7 +247,9 @@ The test app (`test/app`, in rocx) is built several ways: the profile (`Profile.
 answers, one spinner, regions that fail on their own, a rename that waits for the server) from the
 dev backend and optimized; the picks (`<For>` by key and by position, `<Show>`); the fades (`Fades.rocx`:
 rows and a part with transitions, a computed one, a list inside the part); the echo (a server
-function, rendered in Node and hydrated); the docs' demos, a whole document, far apart, sharing a
+function, rendered in Node and hydrated); the reads (`Reads.rocx`: a GET endpoint read as the page
+renders, with the page's query, rendered from the answer the server noted, hydrated strictly without
+asking again, and read from its URL again when its events say so); the docs' demos, a whole document, far apart, sharing a
 store through a context; the tally
 with nothing to provide its store; and a whole document (`Document.rocx`; inside an `<Errored>`,
 `Wrapped.rocx`), rendered in Node as the server platform answers a page and hydrated by

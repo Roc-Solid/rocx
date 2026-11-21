@@ -73,7 +73,7 @@ layouts and the error page are components too, so a page puts a component where 
 `<Todos first={…} />`, under the contexts it provides.
 
 A component's view is pure or effectful, and Roc checks which. `view!` may make signals, read a
-context or call a server function, so it runs once, where it is rendered
+context or read an endpoint, so it runs once, where it is rendered
 (`Html.component(|| Counter.view!({ start_value: 3 }))`). `view`, without the `!`, can't: it makes markup
 from its props, so it is called where it is written (`Heading.view({ id: "why", children: […] })`).
 Its holes may still read accessors it was given; those are computations, as anywhere. `rocx build`
@@ -191,7 +191,7 @@ In a component only:
 | `<For each!={…} keyed={\|row\| row.id}>{\|row!, index!\| …}</For>` | a row per key, kept and moved; `keyed={Bool.False}` a row per position |
 | `<Loading fallback={…}>`, `<Errored fallback={\|problem, retry\| …}>` | while answers are on their way; when something inside failed |
 | `picks_context = create_context()`, `<PicksContext value={…}>` | Solid's context, named by rocx after its module and definition |
-| `echo! = server!(\|request, input\| …)` | a server function: a call on the server, a request from the browser |
+| `Endpoint.get!(Api.get_api_shelf({}))` | a GET endpoint's answer, as a plain value: the server answers it as it renders the page, and the page carries it to the browser (`Endpoint.read!`: a refusal as a value; `import pf.Endpoint`) |
 | `submission = use_submission!(Api.post_join({}))` | the latest submission of a form to an endpoint: `pending!()`, `input!()`, `field!(name)`, `result!()`, `error!()` (`import pf.Router exposing [use_submission!]`) |
 
 Whitespace in text follows HTML, as Svelte has it, not JSX: each run of spaces, tabs and line breaks
@@ -228,8 +228,8 @@ the error page; `Generated/Paths.roc`, a path for every page (`Paths.blog_slug({
 link to a page that isn't there doesn't compile; a name Roc keeps gets a `_`: `Paths.platform_`);
 and `Generated/Api.roc`, a function for every endpoint, which runs its handler on the server and is
 its method and URL in the browser's copy. Middleware (the platform's `Middleware`) runs around answers:
-the app's default around every request, and the one a route file names around its own (its page,
-endpoints and server functions).
+the app's default around every request, and the one a route file names around its own (its page
+and endpoints).
 
 A route file may define components of its own (`Board := [].{ view! = … }`) before its
 definitions or after them, not between: rocx writes them as types beside its module, where their
@@ -288,25 +288,34 @@ program = App.program({
 
 ## Talking to the server
 
-- **Server functions.** `echo! = server!(|request, message| "Echo: ${message}")`, beside the
-  component that calls it. Each is a route, `POST /rocx/call/Demos/Echo.echo` with the input as
-  JSON, which `rocx build` writes in `Generated/ServerFunctions.roc` and the app's `Routes` answers,
-  behind the app's default middleware and, for a function a route file defines, that file's. Its
-  body is given the request; what its middleware handed on is `Server.context!({})`, read as the
-  type the body reads (`Server.context!({}).member`). Read outside a server function's body (a
-  component, the browser), it crashes, and a context its middleware doesn't hand on is a 500 naming
-  the function. On the server, a component's call is `Server.local`: that request, answered
-  in-process as the page renders (the same middleware, the same answer), and put in the page for the
-  browser. In the browser's copy it is `Server.remote`, the request over HTTP. The browser's copy of
-  the module has no body, and none of the imports only the body used, so a body may use what only the
-  server has (`Db`, `Job`). Server functions stay out of `/openapi.json`: they are the app's own
-  calls, not an API. What one takes and answers goes as JSON: an `F64` as a number (one JSON can't
-  write, NaN or an infinity, is a 500 that says so). The builtin `Try` has no JSON encoder or parser
-  on this Roc, so rocx refuses a server function whose annotation takes or answers one, at its line,
-  naming the tag union to write instead (`[Ok(Str), Err([NotFound])]`, which a `match` reads as it
-  reads a `Try`); `rocx check` says the same under the compiler's report for one with no annotation.
-- **Endpoints.** A route's `+server.roc` answers HTTP at a path; a component asks one from a
-  handler with `Endpoint.send!(Api.post_api_shout({}), draft!(), Call.fetch!)`.
+A route's `+server.roc` is the one way an app talks to its server: endpoints, a method at a path,
+typed at both ends, which anything else that speaks HTTP may ask too.
+
+- **Reads.** A component reads a GET endpoint as a plain value:
+  `Endpoint.get!(Api.get_api_shelf({}))`, which fails its computation on an answer that isn't 200
+  (the nearest `<Errored>` shows why), or `Endpoint.read!(…)`, a `Try(result, Server.Problem)`.
+  `Endpoint.with_query(endpoint, query)` adds a query (the page's own, `Router.location!({}).query`,
+  which the handler reads as `request.query`). What the route's middleware handed on is the
+  handler's `context` (`get! = |{ params, context, .. }| Ok(…)`). A page's own data is best at the
+  page's own URL (`routes/members/+server.roc` answers `GET /members` for JSON, behind the same
+  middleware as the page there); a layout, which many pages share, reads an endpoint at a path of
+  its own (the docs site's footer reads `GET /api/facts`). A handler runs only on the server, so it
+  may use what only the server has (`Db`, `Job`); the browser's copy of `Api` is each endpoint's
+  method and URL. What goes and comes is JSON: an `F64` as a number (one JSON can't write, NaN or an
+  infinity, is a 500 that says so). The builtin `Try` has no JSON encoder or parser on this Roc, so a
+  result can't hold one: write the tag union instead (`[Ok(Str), Err([NotFound])]`, which a `match`
+  reads as it reads a `Try`); `rocx check` says so under the compiler's report.
+- **As the server renders.** While the server renders a page, each GET a component reads is answered
+  in-process, through the endpoint's route, as the browser's GET would be:
+  `accept: application/json`, the page's cookies and headers, behind the route's middleware. Each URL
+  is asked once a render, and its answer (any status) is noted in the page's answers script under
+  `GET <url>` (not from inside a `<NoHydration>`), so hydrating, the browser reads it there and asks
+  nothing; strict hydration (the tests') fails a page that asks again. A later read
+  (`refresh!(memo!)`, a URL built from a signal) GETs the endpoint's URL for JSON. A read its
+  middleware answers with a redirect (a signed-out visitor sent to sign in) makes the page that
+  redirect.
+- **From handlers.** A component sends any endpoint from a handler with
+  `Endpoint.send!(Api.post_api_shout({}), draft!(), Call.fetch!)`.
 - **Forms.** A `<form method="post" action={Endpoint.url_of(join)}>` posts to an endpoint, which reads
   its fields as a record of strings. `submission = use_submission!(join)` is its latest submission,
   as Solid Router's `useSubmission`: `submission.pending!()`, `input!()` (what was typed, as the
@@ -329,6 +338,12 @@ program = App.program({
   parser works with any format: the platform's `OpenApi` is a format that reads nothing and writes
   the schema of each shape it's asked to read. A tag union's tags are whichever names in the app's
   code the union turns out to have.
+- **`server!`, deprecated.** Server functions (`echo! = server!(|request, message| …)`, called at
+  `POST /rocx/call/<Module>.<name>`, answered by `Generated/ServerFunctions.roc`, their middleware's
+  context read with `Server.context!({})`) still work, and `rocx build` warns at each one; they will
+  be removed. To move one, put its body in a `get!` in a route's `+server.roc`, read its input from
+  the path's params or the query and what its middleware handed on from the handler's `context`, and
+  call `Endpoint.get!(Api.get_…(params))` where it was called (DECISIONS.md, D-023).
 
 ## Safety
 
@@ -344,17 +359,17 @@ change another site's page sends (`Middleware.same_origin`).
 ## Commands
 
 ```sh
-rocx build <dir>…        # each .rocx under the directories becomes the .roc beside it,
-                         # their server functions answered in <dir>/Generated/ServerFunctions.roc;
+rocx build <dir>…        # each .rocx under the directories becomes the .roc beside it;
                          # an app's routes/ become Generated/Routes.roc, Paths.roc, Api.roc and
-                         # App.roc (its program), and, for component route files, Root.roc
-  --client <out>         # and the browser's copy of the app: a server function only its name, a route
-                         # file without its middleware, the imports only they used gone;
+                         # App.roc (its program), and, for component route files, Root.roc;
+                         # server functions (deprecated, each warned of) answered in ServerFunctions.roc
+  --client <out>         # and the browser's copy of the app: an endpoint only its method and URL, a
+                         # route file without its middleware, the imports only they used gone;
                          # for component route files, its main.roc and static/rocx/
   --dev                  # and the stories (`<story>`): their catalog at /__rocx/stories
 rocx check -- <command>  # run a command, its reports pointed into .rocx files
 rocx lint <dir>…         # refuse Html.source_text in hand-written .roc files
-rocx routes <dir>        # list an app's routes and server functions: method, path, file, middleware
+rocx routes <dir>        # list an app's routes (and any server functions): method, path, file, middleware
 rocx fmt <path>…         # format the Roc in .rocx files and hand-written .roc files with roc fmt
   --check                # only say which files aren't formatted
 ```

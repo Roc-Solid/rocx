@@ -511,10 +511,10 @@ request (`render_page` in `host/src/signals.rs`), on the thread that answered it
 the root (`roc_run`), in a call guarded with the answer's own list of allocations, and the markup it
 gives is walked (`host/src/signals.rs`), as the browser's runtime (`web/runtime.js`, its
 `renderToString`) renders it, byte for byte (the site's tests compare the two): every hole run once, a memo computed when it is made,
-`<Loading>` rendering what is inside it, a failure showing the nearest `<Errored>`, a server
-function's call answered by its route, in-process, and noted. The answer is the document:
-`<!doctype html>` first (unless the page's markup begins with one, `Html.doctype`), and just before
-`</body>` the answers its server functions gave (`<script type="application/json"
+`<Loading>` rendering what is inside it, a failure showing the nearest `<Errored>`, an endpoint a
+component reads (`Endpoint.get!`) answered by its route, in-process, and noted. The answer is the
+document: `<!doctype html>` first (unless the page's markup begins with one, `Html.doctype`), and
+just before `</body>` the answers its reads got (`<script type="application/json"
 class="rocx-answers">`) and `<script type="module" data-rocx src="/rocx/start.js">`, which hydrates
 it in the browser. It is `text/html; charset=utf-8` unless the answer says otherwise, and its status
 is the answer's, or the one the page set as it rendered (`<HttpStatusCode code={404} />`,
@@ -527,36 +527,46 @@ rendered said (`Host.title!`) goes first in `<head>`, as `<title data-rocx>…</
 layout's own `<title>` (`titled`, as `web/runtime.js`'s `Runtime.titled`), which hydration passes
 over, so the layout's `<head>` hydrates as it rendered. Inside `<title>` and `<textarea>`,
 whose content the HTML parser reads as text (RCDATA), holes are written without their comments,
-which would show; the browser binds them to the element's text. A server function's call that its
-middleware answers with a redirect (a status from 300 to 399 with a `location`: a signed-out visitor
-sent to sign in) makes the page that redirect, caught by an `<Errored>` or not, with the cookies it
-sets (SolidStart answers a redirect thrown while it renders so). Any other failure fails its
+which would show; the browser binds them to the element's text. A read that its middleware
+answers with a redirect (a status from 300 to 399 with a `location`: a signed-out visitor sent to
+sign in) makes the page that redirect, caught by an `<Errored>` or not, with the cookies it sets
+(SolidStart answers a redirect thrown while it renders so). Any other failure fails its
 computation; in the root layout, where no boundary is above it (the root `<Errored>` is inside it),
-that is a 500, so a layout whose holes call the server puts its own `<Errored>` around them: its
-server functions answer every page's visitors, behind the app's default middleware.
+that is a 500, so a layout whose holes read the server puts its own `<Errored>` around them: the
+endpoints it reads answer every page's visitors.
 Whatever the render made, the page's box and what the answer held are freed when it ends, crash or
 not.
 
-### Server functions
+### Endpoint reads, as a page renders
 
-A server function is a route the app's `respond!` answers: `POST /rocx/call/<name>` (`rocx build`
-writes `Generated/ServerFunctions`, and its `Routes` gives it the calls, 405 for another method),
-behind the app's middleware. `Server.serve!` reads the input, tells the host which function it is
-serving and the context its middleware handed on, as JSON (`Host.serve!`), and answers with the
-function's answer: its body runs (`Server.local`, seeing `Host.serving!`), and reads the context
-with `Server.context!({})`, as the type it reads. Called while the host renders, a function is that
-request, made in-process (`Host.call!`, `roc_call` in `host/src/signals.rs`): the page's headers
-(cookies among them, `origin` this host, JSON accepted), the context the server started with, and
-its own guard and allocations. A 200 is the call's answer, noted for the page; any other answer
-fails the call, and the nearest `<Errored>` shows its status and text. `Host.request!` is the
-request being answered, whole; `Host.location!` its path and query (`Router.location!`), and
-`Host.status!` the status its page is to be answered with (`<HttpStatusCode>`, for pages of
-components).
+A component reads a GET endpoint with `Endpoint.get!` (or `Endpoint.read!`), which asks the host
+(`Host.fetch!`, `roc_fetch` in `host/src/signals.rs`). While the host renders a page, a GET of one
+of the app's own paths (`/…`) is that request, made in-process and answered by the app's `respond!`
+as the browser's GET would be, behind the route's middleware: the page's headers (cookies among
+them, `origin` this host), `accept: application/json`, the context the server started with, and its
+own guard and allocations. Its answer, whatever its status, is `{"status":…,"body":…}`, kept for the
+render, so a URL is asked once, and noted for the page under `GET <url>`, unless it was read inside a
+`<NoHydration>`. A crash in it is a 500 (why, under `--dev`), logged; an answer that is a stream of
+events, a page or a body from elsewhere isn't one to read, and fails the read. Any other request (a
+POST, another site's URL) is a handler's, sent from the browser: the render fails it.
+`Host.request!` is the request being answered, whole; `Host.location!` its path and query
+(`Router.location!`), and `Host.status!` the status its page is to be answered with
+(`<HttpStatusCode>`, for pages of components).
+
+Server functions (`server!`) are deprecated (D-023), and still work. Each is a route the app's
+`respond!` answers, `POST /rocx/call/<name>` (`rocx build` writes `Generated/ServerFunctions`, and
+its `Routes` gives it the calls, 405 for another method), behind the app's middleware.
+`Server.serve!` reads the input, tells the host which function it is serving and the context its
+middleware handed on, as JSON (`Host.serve!`), and answers with the function's answer: its body runs
+(`Server.local`, seeing `Host.serving!`), and reads the context with `Server.context!({})`. Called
+while the host renders, a function is that request, made in-process the same way (`Host.call!`,
+`roc_call`), with its input as JSON; a 200 is the call's answer, noted for the page, and any other
+answer fails the call.
 
 The modules components are written with are the browser's platform's (`web/platform`), copied into
-this one by the build (`server/build.mjs`), so the same components compile on both. A server
-function's body runs only here, so it may use `Db`, `Job` and the rest: rocx leaves the body, and
-the imports only it used, out of the browser's copy.
+this one by the build (`server/build.mjs`), so the same components compile on both. An endpoint's
+handler runs only here, so it may use `Db`, `Job` and the rest: in the browser's copy, `Api` is each
+endpoint's method and URL, and a route file has no middleware.
 
 ### The log: `Log`
 
@@ -684,7 +694,10 @@ server the test runs: whole, a range, a 304, HEAD, a redirect, 40 MiB with nothi
 not passed on, a body cut short, no answer, no range or cache question the request record doesn't
 pass on), streams, pages of components (a whole document with its answers and start.js, `<Loading>`,
 `<Errored>`, a server function behind middleware, `<HttpStatusCode>`, HEAD, crashes, effects that
-don't run, holes in `<title>` and `<textarea>`, a call redirected by its middleware, no leaks), form actions (a plain form's refusal and result back to its page with a
+don't run, holes in `<title>` and `<textarea>`, a call redirected by its middleware, no leaks),
+endpoint reads (answered in-process as a page renders, with its query, cookies and headers, noted
+once and none from a `<NoHydration>`; one its middleware redirects; a handler reading the page's
+flash), form actions (a plain form's refusal and result back to its page with a
 flash, read there with what was typed and noted for the browser, then let go; a script's and the
 runtime's posts answered as they are; a redirect for the runtime), a port in use,
 Postgres, migrations, transactions, jobs (at once, later, retried, failing for good, queued in a
