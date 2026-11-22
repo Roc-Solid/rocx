@@ -21,7 +21,10 @@ export async function findChrome() {
 	return (await driver()).findChrome();
 }
 
-/** Chromium, started (`close()` when done); null when there is none, for a test to skip. */
+/**
+ * Chromium, started (`close()` when done); null when there is none, for a test to skip. Its tabs
+ * share their cookies, as one person's browser does: for two people at once, launch twice.
+ */
 export async function launchBrowser() {
 	const { findChrome: find, launch } = await driver();
 	const binary = find();

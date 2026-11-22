@@ -128,7 +128,9 @@ await db.drop();
 **4. In a browser.** `launchBrowser()` starts Chromium's headless shell, or gives null when there
 is none, so the test can skip. A tab hydrates strictly: a page that isn't what the browser's half
 renders throws. You find things in it with the same queries, and use them with real clicks and
-keys. `findBy…` looks again until the page shows what it asks for.
+keys. `findBy…` looks again until the page shows what it asks for. The tabs of one launch share
+their cookies, as one person's browser does: a test of two people at once (two players, two
+editors of one board) launches twice, a browser each, as examples/board's does.
 
 ```js
 const browser = await launchBrowser();

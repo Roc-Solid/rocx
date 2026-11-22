@@ -19,6 +19,8 @@ export function findChrome() {
 	return null;
 }
 
+/** Chromium, headless, with a profile of its own: its tabs share that profile's cookies, so a test
+ * of two people (two sessions at once) launches it twice. */
 export async function launch(binary = findChrome()) {
 	const profile = mkdtempSync(join(tmpdir(), "rocx-chrome-"));
 	const child = spawn(binary, ["--headless", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run", "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
