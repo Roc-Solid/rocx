@@ -28,13 +28,16 @@
 
 use crate::abi::{
     AnonStruct2e6fc7635560c0c3 as Isolated, AnonStruct3ed536693d8b85f3 as Answered, AnonStructFa59a42fc999ca94 as Heard, HostDbExecuteResult,
+    AnonStruct932918cc5391b9a4 as Ranged, AnonStructF4ca8ee1c443b810 as Headed, HostBlobHeadResult, HostBlobHeadResultPayload,
+    HostBlobHeadResultTag, HostBlobKeysResult, HostBlobKeysResultPayload, HostBlobKeysResultTag, HostBlobRangeResult,
+    HostBlobRangeResultPayload, HostBlobRangeResultTag, RocList,
     HostDbExecuteResultPayload, HostHttpSendResult, HostHttpSendResultPayload, HostHttpSendResultTag, HostZoneOffsetResult,
     HostZoneOffsetResultPayload, HostZoneOffsetResultTag,
     HostDbExecuteResultTag, HostDbScriptResult, HostDbScriptResultPayload, HostDbScriptResultTag, HostStoreGetResult as TextResult,
     HostStoreGetResultPayload as TextPayload, HostStoreGetResultTag as TextTag, HostTcpReadExactlyResult as BytesResult,
     HostTcpReadExactlyResultPayload as BytesPayload, HostTcpReadExactlyResultTag as BytesTag, RocListWith, RocStr,
 };
-use crate::{actors, client, coroutine, db, kv, live, memory, roc, settings, signals, tcp};
+use crate::{actors, blobs, client, coroutine, db, kv, live, memory, roc, settings, signals, tcp};
 use bytes::Bytes;
 use futures_util::future::select_all;
 use std::cell::RefCell;
@@ -1150,5 +1153,88 @@ pub extern "C" fn roc_host_zone_offset(zone: RocStr, at_ms: i64) -> HostZoneOffs
     match offset {
         Ok(seconds) => HostZoneOffsetResult { payload: HostZoneOffsetResultPayload { ok: ManuallyDrop::new(seconds) }, tag: HostZoneOffsetResultTag::Ok },
         Err(why) => HostZoneOffsetResult { payload: HostZoneOffsetResultPayload { err: ManuallyDrop::new(roc_str(&why)) }, tag: HostZoneOffsetResultTag::Err },
+    }
+}
+
+// ---- Objects kept by key (packages/storage's file: and memory: buckets, D-047) ----
+
+/// Runs `work` (files: it blocks) on a thread for blocking work, the call paused meanwhile.
+fn blocking<T: Send + 'static>(work: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
+    wait(async move { tokio::task::spawn_blocking(work).await.unwrap_or_else(|_| Err("the host panicked".into())) })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_blob_put(root: RocStr, key: RocStr, bytes: RocListWith<u8, false>, content_type: RocStr) -> HostDbScriptResult {
+    let (root, key, content_type) = (taken(root), taken(key), taken(content_type));
+    let owned = bytes.as_slice().to_vec();
+    unsafe { bytes.decref(&roc::host()) };
+    done(blocking(move || blobs::put(&blobs::root(&root)?, &key, owned, &content_type)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_blob_get(root: RocStr, key: RocStr) -> BytesResult {
+    let (root, key) = (taken(root), taken(key));
+    bytes_or_error(blocking(move || blobs::get(&blobs::root(&root)?, &key)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_blob_range(root: RocStr, key: RocStr, offset: u64, length: u64) -> HostBlobRangeResult {
+    let (root, key) = (taken(root), taken(key));
+    match blocking(move || blobs::range(&blobs::root(&root)?, &key, offset, length)) {
+        Ok((bytes, size)) => HostBlobRangeResult {
+            payload: HostBlobRangeResultPayload { ok: ManuallyDrop::new(Ranged { size, bytes: roc_bytes(&bytes) }) },
+            tag: HostBlobRangeResultTag::Ok,
+        },
+        Err(why) => HostBlobRangeResult { payload: HostBlobRangeResultPayload { err: ManuallyDrop::new(roc_str(&why)) }, tag: HostBlobRangeResultTag::Err },
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_blob_head(root: RocStr, key: RocStr) -> HostBlobHeadResult {
+    let (root, key) = (taken(root), taken(key));
+    match blocking(move || blobs::head(&blobs::root(&root)?, &key)) {
+        Ok(info) => HostBlobHeadResult {
+            payload: HostBlobHeadResultPayload { ok: ManuallyDrop::new(Headed { size: info.size, content_type: roc_str(&info.content_type), etag: roc_str(&info.etag) }) },
+            tag: HostBlobHeadResultTag::Ok,
+        },
+        Err(why) => HostBlobHeadResult { payload: HostBlobHeadResultPayload { err: ManuallyDrop::new(roc_str(&why)) }, tag: HostBlobHeadResultTag::Err },
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_blob_delete(root: RocStr, key: RocStr) -> HostDbScriptResult {
+    let (root, key) = (taken(root), taken(key));
+    done(blocking(move || blobs::delete(&blobs::root(&root)?, &key)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_blob_compose(root: RocStr, parts: RocList<RocStr>, key: RocStr, content_type: RocStr) -> HostDbScriptResult {
+    let (root, key, content_type) = (taken(root), taken(key), taken(content_type));
+    let named: Vec<String> = parts.as_slice().iter().map(|part| part.as_str().to_owned()).collect();
+    unsafe { crate::abi::decref_list_of_str(parts, &roc::host()) };
+    done(blocking(move || blobs::compose(&blobs::root(&root)?, &named, &key, &content_type)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_blob_check(root: RocStr) -> HostDbScriptResult {
+    let root = taken(root);
+    done(blocking(move || blobs::check(&blobs::root(&root)?)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_blob_secret(root: RocStr) -> RocStr {
+    roc_str(&blobs::secret(&taken(root)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_blob_keys(root: RocStr, prefix: RocStr) -> HostBlobKeysResult {
+    let (root, prefix) = (taken(root), taken(prefix));
+    match blocking(move || blobs::keys(&blobs::root(&root)?, &prefix)) {
+        Ok(keys) => {
+            let host = roc::host();
+            let listed: Vec<RocStr> = keys.iter().map(|key| roc_str(key)).collect();
+            HostBlobKeysResult { payload: HostBlobKeysResultPayload { ok: ManuallyDrop::new(unsafe { RocList::from_slice(&listed, &host) }) }, tag: HostBlobKeysResultTag::Ok }
+        }
+        Err(why) => HostBlobKeysResult { payload: HostBlobKeysResultPayload { err: ManuallyDrop::new(roc_str(&why)) }, tag: HostBlobKeysResultTag::Err },
     }
 }

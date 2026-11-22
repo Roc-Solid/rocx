@@ -160,6 +160,36 @@ Host := [].{
 	## rolls back), or at once outside one.
 	db_notify! : Str, Str => Try({}, Str)
 
+	## Keeps bytes at a key under a root (`file:<dir>`, `memory:<name>`), with their content type,
+	## in place of what was there (`Blobs`, D-047).
+	blob_put! : Str, Str, List(U8), Str => Try({}, Str)
+
+	## The bytes at a key, whole; `Err("NotFound")` for none.
+	blob_get! : Str, Str => Try(List(U8), Str)
+
+	## So many bytes at a key from an offset (fewer at its end), and its size; `Err("NotFound")`.
+	blob_range! : Str, Str, U64, U64 => Try({ bytes : List(U8), size : U64 }, Str)
+
+	## A key's size, content type and ETag; `Err("NotFound")`.
+	blob_head! : Str, Str => Try({ size : U64, content_type : Str, etag : Str }, Str)
+
+	## The bytes at a key gone (none is no problem).
+	blob_delete! : Str, Str => Try({}, Str)
+
+	## The keys' bytes joined in order, kept at another key with a content type; `Err("NotFound")`
+	## when one isn't there.
+	blob_compose! : Str, List(Str), Str, Str => Try({}, Str)
+
+	## The keys under a root that start with a prefix, in order.
+	blob_keys! : Str, Str => Try(List(Str), Str)
+
+	## Whether a root can be written (a directory made when missing).
+	blob_check! : Str => Try({}, Str)
+
+	## A root's secret for signed URLs when its URL gives none: drawn once, kept while the server
+	## runs.
+	blob_secret! : Str => Str
+
 	## Sends `message` to every call listening to `topic`.
 	live_publish! : Str, Str => {}
 

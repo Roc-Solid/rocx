@@ -6,7 +6,7 @@
 //! comes, never through Roc.
 
 use crate::roc::{self, Feed};
-use crate::{channels, client, coroutine, hosted, logging, signals};
+use crate::{blobs, channels, client, coroutine, hosted, logging, signals};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited, StreamBody, combinators::BoxBody};
 use hyper::body::{Frame, Incoming};
@@ -273,7 +273,8 @@ async fn file(config: &Config, path: &str) -> Option<Response<Body>> {
     Some(response)
 }
 
-fn content_type(path: &Path) -> &'static str {
+/// A file's content type, from its name's extension.
+pub fn content_type(path: &Path) -> &'static str {
     match path.extension().and_then(|ext| ext.to_str()) {
         Some("css") => "text/css",
         Some("js" | "mjs") => "text/javascript",
@@ -363,6 +364,14 @@ async fn from_roc(request: Request<Incoming>, config: Arc<Config>, peer: String)
     if let Some(upstream) = answer.forward {
         return forwarded(upstream, &answer.headers, &method, &asked, &config).await;
     }
+    if let Some((root, key, questions)) = answer.stored {
+        // What the request record asks of it, as the app passed it on (`Server.stored`).
+        let asked_for = |wanted: &str| {
+            questions.lines().find_map(|line| line.split_once(": ").filter(|(name, _)| name.eq_ignore_ascii_case(wanted)).map(|(_, value)| value.to_string()))
+        };
+        let conditions = Conditions { range: asked_for("range"), if_none_match: asked_for("if-none-match") };
+        return stored(root, key, &answer.headers, &method, &asked, conditions).await;
+    }
 
     let status = StatusCode::from_u16(answer.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let mut builder = Response::builder().status(status);
@@ -408,6 +417,132 @@ async fn from_roc(request: Request<Incoming>, config: Arc<Config>, peer: String)
     }
     let body = if method == Method::HEAD { Bytes::new() } else { Bytes::from(body) };
     builder.body(Full::new(body).boxed()).unwrap()
+}
+
+/// What a request asks of a stored object's answer: a range, and whether it has a copy already.
+struct Conditions {
+    range: Option<String>,
+    if_none_match: Option<String>,
+}
+
+/// An object the host keeps (`Server.stored`: packages/storage's `file:` and `memory:` buckets,
+/// D-047), sent as it is, never through Roc: its length, type, ETag and `last-modified`, and the
+/// answer's own headers (in place of those); 304 when the request's `If-None-Match` meets its ETag;
+/// 206 and the bytes asked for, for one range (416 for one past its end; several, or one that can't
+/// be read, is the whole object); 404 when there is none.
+async fn stored(root: String, key: String, own: &str, method: &Method, asked: &str, conditions: Conditions) -> Response<Body> {
+    let found = tokio::task::spawn_blocking(move || blobs::root(&root).and_then(|root| blobs::find(&root, &key))).await;
+    let found = match found {
+        Ok(Ok(found)) => found,
+        Ok(Err(why)) if why == blobs::NOT_FOUND => return full(StatusCode::NOT_FOUND, "text/plain; charset=utf-8", "Not Found"),
+        Ok(Err(why)) => {
+            logging::error("rocx server: a stored object couldn't be read", &[("target", asked.into()), ("error", why.as_str().into())]);
+            return full(StatusCode::INTERNAL_SERVER_ERROR, "text/plain; charset=utf-8", "the object couldn't be read");
+        }
+        Err(_) => return full(StatusCode::INTERNAL_SERVER_ERROR, "text/plain; charset=utf-8", "the object couldn't be read"),
+    };
+    let info = match &found {
+        blobs::Found::File(_, info) | blobs::Found::Memory(_, info) => info.clone(),
+    };
+    let etag = format!("\"{}\"", info.etag);
+    let modified = chrono::DateTime::<chrono::Utc>::from(info.modified).format("%a, %d %b %Y %H:%M:%S GMT").to_string();
+    // The object's headers, then the answer's own in place of any of them.
+    let mut headers: Vec<(String, String)> = vec![
+        ("content-type".into(), info.content_type.clone()),
+        ("accept-ranges".into(), "bytes".into()),
+        ("etag".into(), etag.clone()),
+        ("last-modified".into(), modified),
+    ];
+    for line in own.lines() {
+        let Some((name, value)) = line.split_once(": ") else { continue };
+        let name = name.to_ascii_lowercase();
+        headers.retain(|(kept, _)| *kept != name);
+        headers.push((name, value.to_string()));
+    }
+    let answer = |status: StatusCode, more: Vec<(String, String)>| {
+        let mut builder = Response::builder().status(status);
+        for (name, value) in headers.iter().chain(more.iter()) {
+            if let (Ok(name), Ok(value)) = (HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_str(value)) {
+                builder = builder.header(name, value);
+            }
+        }
+        builder
+    };
+    let met = conditions.if_none_match.as_deref().is_some_and(|given| given.split(',').any(|tag| {
+        let tag = tag.trim();
+        tag == "*" || tag.trim_start_matches("W/") == etag
+    }));
+    if met {
+        return answer(StatusCode::NOT_MODIFIED, vec![]).body(Full::new(Bytes::new()).boxed()).unwrap();
+    }
+    let size = info.size;
+    let (status, start, length, more) = match conditions.range.as_deref().and_then(|range| one_range(range, size)) {
+        Some(Ok((start, end))) => (StatusCode::PARTIAL_CONTENT, start, end - start + 1, vec![("content-range".to_string(), format!("bytes {start}-{end}/{size}"))]),
+        Some(Err(())) => {
+            return answer(StatusCode::RANGE_NOT_SATISFIABLE, vec![("content-range".into(), format!("bytes */{size}"))]).body(Full::new(Bytes::new()).boxed()).unwrap();
+        }
+        None => (StatusCode::OK, 0, size, vec![]),
+    };
+    let builder = answer(status, more).header(hyper::header::CONTENT_LENGTH, length);
+    if *method == Method::HEAD || length == 0 {
+        return builder.body(Full::new(Bytes::new()).boxed()).unwrap();
+    }
+    match found {
+        blobs::Found::Memory(bytes, _) => builder.body(Full::new(bytes.slice(start as usize..(start + length) as usize)).boxed()).unwrap(),
+        blobs::Found::File(path, _) => {
+            use tokio::io::{AsyncReadExt, AsyncSeekExt};
+            let file = match tokio::fs::File::open(&path).await {
+                Ok(mut file) => match file.seek(std::io::SeekFrom::Start(start)).await {
+                    Ok(_) => file,
+                    Err(_) => return full(StatusCode::INTERNAL_SERVER_ERROR, "text/plain; charset=utf-8", "the object couldn't be read"),
+                },
+                Err(_) => return full(StatusCode::INTERNAL_SERVER_ERROR, "text/plain; charset=utf-8", "the object couldn't be read"),
+            };
+            // A chunk at a time, as the client takes them; a file that fails to read ends the body.
+            let chunks = futures_util::stream::unfold((file, length), |(mut file, left)| async move {
+                if left == 0 {
+                    return None;
+                }
+                let mut buffer = vec![0u8; left.min(64 * 1024) as usize];
+                match file.read(&mut buffer).await {
+                    Ok(0) | Err(_) => None,
+                    Ok(read) => {
+                        buffer.truncate(read);
+                        Some((Ok::<_, Infallible>(Frame::data(Bytes::from(buffer))), (file, left - read as u64)))
+                    }
+                }
+            });
+            builder.body(StreamBody::new(chunks).boxed()).unwrap()
+        }
+    }
+}
+
+/// The one range `range` asks for of `size` bytes (`bytes=0-99`, `bytes=100-`, `bytes=-100`): its
+/// first and last byte; `Err` when it starts past the end; `None` for several, or one that can't
+/// be read (the whole object is sent).
+fn one_range(range: &str, size: u64) -> Option<Result<(u64, u64), ()>> {
+    let spec = range.trim().strip_prefix("bytes=")?;
+    if spec.contains(',') {
+        return None;
+    }
+    let (first, last) = spec.split_once('-')?;
+    let (first, last) = (first.trim(), last.trim());
+    if first.is_empty() {
+        let suffix: u64 = last.parse().ok()?;
+        if suffix == 0 || size == 0 {
+            return Some(Err(()));
+        }
+        return Some(Ok((size.saturating_sub(suffix), size - 1)));
+    }
+    let start: u64 = first.parse().ok()?;
+    if start >= size {
+        return Some(Err(()));
+    }
+    let end = if last.is_empty() { size - 1 } else { last.parse::<u64>().ok()?.min(size - 1) };
+    if end < start {
+        return None;
+    }
+    Some(Ok((start, end)))
 }
 
 /// A forwarded answer (`Server.forward`): `upstream` asked with exactly the headers Roc gave it (a

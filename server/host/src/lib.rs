@@ -28,6 +28,7 @@
 #[allow(unsafe_op_in_unsafe_fn)]
 mod abi;
 mod actors;
+mod blobs;
 mod channels;
 mod client;
 mod coroutine;

@@ -2442,3 +2442,54 @@ Rust engine is the one with something new, and the one to measure against SQLite
 vectors; `rocx new`'s question offering Turso.
 
 **Reversible:** yes. Nothing that runs on SQLite changes; `Turso(path)` is one tag more.
+
+## D-047 Storage: one package, three backends (S3, files, memory)
+
+**Status.** Built (2026-11-22), with the user's answers: signed URLs are the app's to answer, by a
+plugin's route; `memory:` is the host's, not `Kv`; the package is `packages/storage`. The host's
+`Blobs` (with the keys under a prefix, for an upload's parts) and `Server.Body`'s `Stored` (the request
+record's range and ETag carried with it, so an app may drop a range first, as with S3); the package's
+three backends, its plugin at `/__storage`; a multipart object's ETag as S3 makes one, and a part listed
+with another's ETag refused, on every backend. The server's storage tests run on memory and a
+directory always, and on S3 when `STORAGE_URL` is set.
+
+**Context.** `packages/s3` (D-025) is plain Roc on `Http.send!`: every object is a request to an S3,
+so an app that keeps files needs one beside it (rustfs or MinIO in development), and its tests need
+one too (`STORAGE_URL`, skipped without). D-045 let an app's database be a file beside it; its
+files can be too, and a test's can be in memory.
+
+**Proposal.**
+
+- **One package, `packages/storage`, its module `Storage`**, the API `S3` had (put, get, a range,
+  head, delete, multipart, `serve!`, `signed_url!`, `check!`), on a bucket a URL names, its scheme
+  the backend: `s3://KEY:SECRET@host/bucket?…` as before; `file:<dir>` (`file:data/uploads`, from
+  where the server starts, made when missing); `memory:` (`memory:<name>`, a bucket in the server's
+  memory, gone when it stops: for tests). `S3Err` stays what S3 refusing is; `file:` and `memory:`
+  fail with `StorageErr` (or `NotFound`). The S3 protocol and its signatures are internal modules.
+- **It names the server platform** (as jobs and email do), so a bucket needs no effects handed in
+  (`Storage.from_url(url)`), and it has a plugin (below). The browser's half doesn't see it.
+- **The host keeps objects for `file:` and `memory:`** (`host/src/blobs.rs`, the platform's `Blobs`):
+  put (written to a file beside it, then renamed: a crash leaves no half object), get, a range, head,
+  delete, and compose (parts joined in order: a multipart upload's end), each under a root
+  (`file:<dir>` or `memory:<name>`). An object's content type and ETag (its MD5, as S3's for a single
+  put) are kept beside it (`<dir>/.storage/…`, hidden; in the map for memory). A key with `..`, an
+  absolute path or an empty segment is refused.
+- **`serve!` answers with a stored object** for `file:` and `memory:` (`Server.Body`'s `Stored`), as
+  it answers with a `Forward` for S3: the host sends it as it is, never through Roc, with its length,
+  type and ETag, a range (206, or 416), and 304 for a browser that has it (`If-None-Match`).
+- **Signed URLs are answered by the app** for `file:` and `memory:`: `Storage.plugin({})` adds the
+  route `/__storage/<key>` (GET, HEAD, PUT), which checks the URL's expiry and its HMAC-SHA256 (of
+  the method, the key and the expiry) before it serves or keeps the object; `signed_url!` makes them,
+  at the app's public URL (`Env.public_url!`). The secret is the bucket URL's (`?secret=…`), or else
+  one the host draws for the root when the server starts (its URLs end with the process). A PUT is a
+  request's body: 16 MiB at most (a larger file is a multipart upload, from the server).
+- **Tests run on every backend**: the server's storage tests on `memory:` and `file:` always, and on
+  S3 when `STORAGE_URL` is set.
+
+**Not in it.** Listing a bucket's keys (S3 has it; the package never did), versions, other
+providers' APIs (GCS, Azure), a bucket shared by two servers on `file:` (one instance, D-045).
+
+**Phases.** 1: the host's `Blobs` and `Stored`. 2: `packages/storage` (the rename, the backends,
+`serve!`). 3: the plugin and signed URLs. 4: the server's tests on each backend; callers, docs.
+
+**Reversible:** yes; an app changes `s3.S3` for `storage.Storage` and drops the effects it handed in.

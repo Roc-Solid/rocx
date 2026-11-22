@@ -64,7 +64,7 @@ platform ""
 			routes : List({ method : Str, path : Str, file : Str }),
 		}
 	}
-	exposes [Actor, AesGcm, Audio, Browser, Call, Channel, Context, Db, Endpoint, Env, Errored, Events, For, Html, Http, HttpResponse, HttpStatusCode, Kv, Live, Loading, Log, Middleware, OpenApi, Plugin, Random, Router, Server, Show, Solid, Submission, Submissions, Tcp, Time, Title, Transition]
+	exposes [Actor, AesGcm, Audio, Blobs, Browser, Call, Channel, Context, Db, Endpoint, Env, Errored, Events, For, Html, Http, HttpResponse, HttpStatusCode, Kv, Live, Loading, Log, Middleware, OpenApi, Plugin, Random, Router, Server, Show, Solid, Submission, Submissions, Tcp, Time, Title, Transition]
 	packages {}
 	provides {
 		"roc_actor": actor_for_host!,
@@ -99,6 +99,15 @@ platform ""
 		"roc_host_actor_tell": Host.actor_tell!,
 		"roc_host_aes_gcm_open": Host.aes_gcm_open!,
 		"roc_host_aes_gcm_seal": Host.aes_gcm_seal!,
+		"roc_host_blob_check": Host.blob_check!,
+		"roc_host_blob_compose": Host.blob_compose!,
+		"roc_host_blob_delete": Host.blob_delete!,
+		"roc_host_blob_get": Host.blob_get!,
+		"roc_host_blob_head": Host.blob_head!,
+		"roc_host_blob_keys": Host.blob_keys!,
+		"roc_host_blob_put": Host.blob_put!,
+		"roc_host_blob_range": Host.blob_range!,
+		"roc_host_blob_secret": Host.blob_secret!,
 		"roc_host_db_begin": Host.db_begin!,
 		"roc_host_db_commit": Host.db_commit!,
 		"roc_host_db_execute": Host.db_execute!,
@@ -187,6 +196,7 @@ import Actor
 import ActorTurn
 import AesGcm
 import Audio
+import Blobs
 import Browser
 import Call
 import Channel

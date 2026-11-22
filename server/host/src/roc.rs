@@ -456,6 +456,9 @@ pub struct Answer {
     pub bytes: Option<Vec<u8>>,
     /// Where its body comes from, if the host fetches it and sends it on (`Server.forward`).
     pub forward: Option<Upstream>,
+    /// The object it sends, if it is one the host keeps (`Server.stored`): its root, its key, and
+    /// what the request asks of it (its range and cache questions, a `name: value` a line).
+    pub stored: Option<(String, String, String)>,
     /// The stream, if the answer is one (server-sent events).
     pub feed: Option<Feed>,
     /// The page, if the answer is one, for the host to render.
@@ -502,6 +505,8 @@ pub fn respond(asked: &hosted::Asked) -> Result<Answer, Crash> {
     let bytes = (answer.kind == BYTES).then(|| answer.bytes.as_slice().to_vec());
     unsafe { answer.bytes.decref(host) };
     let upstream = Upstream { method: copied(answer.upstream.method, host), url: copied(answer.upstream.url, host), headers: copied(answer.upstream.headers, host) };
+    // A stored object rides in the upstream's fields (`Server.for_host`): its root, its key.
+    let stored = (answer.kind == STORED).then(|| (upstream.method.clone(), upstream.url.clone(), upstream.headers.clone()));
     let forward = (answer.kind == FORWARD).then_some(upstream);
     let (feed, page) = match answer.kind {
         STREAM => {
@@ -518,7 +523,7 @@ pub fn respond(asked: &hosted::Asked) -> Result<Answer, Crash> {
             (None, None)
         }
     };
-    Ok(Answer { status: answer.status, headers, body, bytes, forward, feed, page })
+    Ok(Answer { status: answer.status, headers, body, bytes, forward, stored, feed, page })
 }
 
 /// What an answer sends (`Server.for_host`'s `kind`): its text (0), its page, its stream, its
@@ -527,6 +532,7 @@ const PAGE: u8 = 1;
 const STREAM: u8 = 2;
 const BYTES: u8 = 3;
 const FORWARD: u8 = 4;
+const STORED: u8 = 5;
 
 /// Sends a stream to its end (`stream_for_host!`, which runs the feed), on this thread: Roc writes
 /// each event and waits between them through the hosted `send!` and `sleep!` (`hosted::call`, with

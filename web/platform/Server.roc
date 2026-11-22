@@ -31,12 +31,14 @@ Server := [].{
 
 	## What an answer sends after its status and headers: text (HTML, JSON, why it refused); bytes
 	## (an image, a file: `Server.bytes`); a page of components, which the server renders, a document
-	## for the browser to hydrate; a stream of events (`Server.events`); or a body the server fetches
-	## from elsewhere and sends on as it comes (`Server.forward`).
-	Body : [Text(Str), Bytes(List(U8)), Page({} => Html), Events(Events(Str)), Forward(Upstream)]
+	## for the browser to hydrate; a stream of events (`Server.events`); a body the server fetches
+	## from elsewhere and sends on as it comes (`Server.forward`); or an object the server keeps
+	## (`Server.stored`: packages/storage's `file:` and `memory:` buckets, D-047).
+	Body : [Text(Str), Bytes(List(U8)), Page({} => Html), Events(Events(Str)), Forward(Upstream), Stored({ root : Str, key : Str, asked : List({ name : Str, value : Str }) })]
 
 	## Where a forwarded answer's body comes from (`Server.forward`): the request the server makes
-	## for it, its method, URL and headers (keys and all: packages/s3's `S3.serve!` signs one).
+	## for it, its method, URL and headers (keys and all: packages/storage's `Storage.serve!` signs one
+	## for an S3 bucket).
 	Upstream : { method : Str, url : Str, headers : List({ name : Str, value : Str }) }
 
 	## What asking an endpoint can come to instead of its answer: none (`HttpErr`, from the
@@ -103,6 +105,8 @@ Server := [].{
 				upstream = { method: from.method, url: from.url, headers: lines(from.headers) }
 				{ status: answered.status, headers, kind: 4, text: "", bytes: [], upstream, page: |{}| Html.empty({}), feed: |_| {} }
 			}
+			# A stored object rides in the upstream's fields: its root, its key, and what the request asks of it.
+			Stored(object) => { status: answered.status, headers, kind: 5, text: "", bytes: [], upstream: { method: object.root, url: object.key, headers: lines(object.asked) }, page: |{}| Html.empty({}), feed: |_| {} }
 		}
 	}
 
@@ -116,7 +120,7 @@ Server := [].{
 	bytes = |status, headers, sent| { status: status, headers: headers, body: Bytes(sent) }
 
 	## An answer whose body the server fetches from `upstream` and sends on as it comes, never
-	## through Roc: a file in S3 (packages/s3's `S3.serve!`), a video of 500 MB. Upstream's status is the
+	## through Roc: a file in S3 (packages/storage's `Storage.serve!`), a video of 500 MB. Upstream's status is the
 	## answer's (200, 206 for a range, 304, 404…), with its `content-type`, `content-length`,
 	## `content-range`, `accept-ranges`, `etag` and `last-modified`; `headers` are added, or replace
 	## those. The answer's own `status` (200) is a stand-in. Upstream is sent `upstream.headers` and
@@ -128,9 +132,19 @@ Server := [].{
 	forward : Upstream, List({ name : Str, value : Str }) -> Response
 	forward = |upstream, headers| { status: 200, headers: headers, body: Forward(upstream) }
 
+	## An answer whose body is the object at `key` under `root` (`Blobs`: `file:<dir>`,
+	## `memory:<name>`), sent by the server as it is, never through Roc: 200 with its length, type
+	## (its own, unless `headers` say another), ETag and `last-modified`; 206 for the request's
+	## `Range` (one range; 416 for one past its end); 304 for an `If-None-Match` its ETag meets; 404
+	## when there is none. The range and the ETag asked about are `request`'s, as its record has them
+	## (`passed_on`), so an app may drop or change them first. `headers` are added, or replace those
+	## (`cache-control`). The answer's own `status` (200) is a stand-in.
+	stored : Str, Str, Request, List({ name : Str, value : Str }) -> Response
+	stored = |root, key, request, headers| { status: 200, headers: headers, body: Stored({ root, key, asked: Server.passed_on(request) }) }
+
 	## What a forwarded GET or HEAD passes on of the request: its `Range`, `If-Range`,
 	## `If-None-Match` and `If-Modified-Since`, as the request record has them (none it hasn't), for
-	## `upstream.headers` (`S3.serve!` adds them).
+	## `upstream.headers` (`Storage.serve!` adds them).
 	passed_on : Request -> List({ name : Str, value : Str })
 	passed_on = |asked| asked.headers.keep_if(|each| ["range", "if-range", "if-none-match", "if-modified-since"].contains(each.name))
 

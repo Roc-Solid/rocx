@@ -1272,6 +1272,62 @@ const _: () = assert!(core::mem::size_of::<AnonStruct3ed536693d8b85f3>() == 28, 
 #[cfg(target_pointer_width = "32")]
 const _: () = assert!(core::mem::align_of::<AnonStruct3ed536693d8b85f3>() == 4, "AnonStruct3ed536693d8b85f3 alignment mismatch");
 
+/// Element type for __AnonStruct_932918cc5391b9a4
+#[cfg(target_pointer_width = "32")]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct AnonStruct932918cc5391b9a4 {
+    pub size: u64,
+    pub bytes: RocListWith<u8, false>,
+}
+
+/// Element type for __AnonStruct_932918cc5391b9a4
+#[cfg(not(target_pointer_width = "32"))]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct AnonStruct932918cc5391b9a4 {
+    pub size: u64,
+    pub bytes: RocListWith<u8, false>,
+}
+
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::size_of::<AnonStruct932918cc5391b9a4>() == 32, "AnonStruct932918cc5391b9a4 size mismatch");
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::align_of::<AnonStruct932918cc5391b9a4>() == 8, "AnonStruct932918cc5391b9a4 alignment mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::size_of::<AnonStruct932918cc5391b9a4>() == 24, "AnonStruct932918cc5391b9a4 size mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::align_of::<AnonStruct932918cc5391b9a4>() == 8, "AnonStruct932918cc5391b9a4 alignment mismatch");
+
+/// Element type for __AnonStruct_f4ca8ee1c443b810
+#[cfg(target_pointer_width = "32")]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct AnonStructF4ca8ee1c443b810 {
+    pub size: u64,
+    pub content_type: RocStr,
+    pub etag: RocStr,
+}
+
+/// Element type for __AnonStruct_f4ca8ee1c443b810
+#[cfg(not(target_pointer_width = "32"))]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct AnonStructF4ca8ee1c443b810 {
+    pub size: u64,
+    pub content_type: RocStr,
+    pub etag: RocStr,
+}
+
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::size_of::<AnonStructF4ca8ee1c443b810>() == 56, "AnonStructF4ca8ee1c443b810 size mismatch");
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::align_of::<AnonStructF4ca8ee1c443b810>() == 8, "AnonStructF4ca8ee1c443b810 alignment mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::size_of::<AnonStructF4ca8ee1c443b810>() == 32, "AnonStructF4ca8ee1c443b810 size mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::align_of::<AnonStructF4ca8ee1c443b810>() == 8, "AnonStructF4ca8ee1c443b810 alignment mismatch");
+
 /// Element type for __AnonStruct_fa59a42fc999ca94
 #[cfg(target_pointer_width = "32")]
 #[repr(C)]
@@ -2119,14 +2175,14 @@ const _: () = assert!(core::mem::offset_of!(HostDbExecuteResult, tag) == 12, "Ho
 /// Tag discriminant for Try.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HostDbBeginResultTag {
+pub enum HostBlobCheckResultTag {
     Err = 0,
     Ok = 1,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub union HostDbBeginResultPayload {
+pub union HostBlobCheckResultPayload {
     pub err: core::mem::ManuallyDrop<RocStr>,
     pub ok: [u8; 0],
 }
@@ -2134,32 +2190,32 @@ pub union HostDbBeginResultPayload {
 #[cfg(target_pointer_width = "32")]
 #[repr(align(4))]
 #[derive(Clone, Copy)]
-pub struct HostDbBeginResultPayloadAlignment;
+pub struct HostBlobCheckResultPayloadAlignment;
 
 /// Tag union: Try
 #[cfg(target_pointer_width = "32")]
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct HostDbBeginResult {
-    pub _payload_alignment: [HostDbBeginResultPayloadAlignment; 0],
+pub struct HostBlobCheckResult {
+    pub _payload_alignment: [HostBlobCheckResultPayloadAlignment; 0],
     pub payload: [u8; 12],
-    pub tag: HostDbBeginResultTag,
+    pub tag: HostBlobCheckResultTag,
 }
 
 /// Tag union: Try
 #[cfg(not(target_pointer_width = "32"))]
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct HostDbBeginResult {
-    pub payload: HostDbBeginResultPayload,
-    pub tag: HostDbBeginResultTag,
+pub struct HostBlobCheckResult {
+    pub payload: HostBlobCheckResultPayload,
+    pub tag: HostBlobCheckResultTag,
 }
 
-impl HostDbBeginResult {
+impl HostBlobCheckResult {
     /// Borrow the `Err` payload without creating another owner.
     ///
     /// # Safety
-    /// `self.tag` must be `HostDbBeginResultTag::Err` and the payload must still be initialized.
+    /// `self.tag` must be `HostBlobCheckResultTag::Err` and the payload must still be initialized.
     #[cfg(target_pointer_width = "32")]
     pub unsafe fn borrow_payload_err_unchecked(&self) -> &RocStr {
         unsafe { &*(self.payload.as_ptr() as *const RocStr) }
@@ -2168,7 +2224,7 @@ impl HostDbBeginResult {
     /// Borrow the `Err` payload without creating another owner.
     ///
     /// # Safety
-    /// `self.tag` must be `HostDbBeginResultTag::Err` and the payload must still be initialized.
+    /// `self.tag` must be `HostBlobCheckResultTag::Err` and the payload must still be initialized.
     #[cfg(not(target_pointer_width = "32"))]
     pub unsafe fn borrow_payload_err_unchecked(&self) -> &RocStr {
         unsafe { &*(&self.payload.err as *const core::mem::ManuallyDrop<RocStr> as *const RocStr) }
@@ -2177,7 +2233,7 @@ impl HostDbBeginResult {
     /// Move the `Err` payload out of one owned tag-union shell.
     ///
     /// # Safety
-    /// `self.tag` must be `HostDbBeginResultTag::Err`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    /// `self.tag` must be `HostBlobCheckResultTag::Err`. After this call, `self` is logically uninitialized and must not be read or destroyed.
     #[cfg(target_pointer_width = "32")]
     pub unsafe fn take_payload_err_unchecked(&mut self) -> RocStr {
         unsafe { core::ptr::read(self.payload.as_ptr() as *const RocStr) }
@@ -2186,7 +2242,7 @@ impl HostDbBeginResult {
     /// Move the `Err` payload out of one owned tag-union shell.
     ///
     /// # Safety
-    /// `self.tag` must be `HostDbBeginResultTag::Err`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    /// `self.tag` must be `HostBlobCheckResultTag::Err`. After this call, `self` is logically uninitialized and must not be read or destroyed.
     #[cfg(not(target_pointer_width = "32"))]
     pub unsafe fn take_payload_err_unchecked(&mut self) -> RocStr {
         unsafe { core::mem::ManuallyDrop::take(&mut self.payload.err) }
@@ -2195,17 +2251,398 @@ impl HostDbBeginResult {
 }
 
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::size_of::<HostDbBeginResult>() == 32, "HostDbBeginResult size mismatch");
+const _: () = assert!(core::mem::size_of::<HostBlobCheckResult>() == 32, "HostBlobCheckResult size mismatch");
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::align_of::<HostDbBeginResult>() == 8, "HostDbBeginResult alignment mismatch");
+const _: () = assert!(core::mem::align_of::<HostBlobCheckResult>() == 8, "HostBlobCheckResult alignment mismatch");
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::offset_of!(HostDbBeginResult, tag) == 24, "HostDbBeginResult tag offset mismatch");
+const _: () = assert!(core::mem::offset_of!(HostBlobCheckResult, tag) == 24, "HostBlobCheckResult tag offset mismatch");
 #[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::size_of::<HostDbBeginResult>() == 16, "HostDbBeginResult size mismatch");
+const _: () = assert!(core::mem::size_of::<HostBlobCheckResult>() == 16, "HostBlobCheckResult size mismatch");
 #[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::align_of::<HostDbBeginResult>() == 4, "HostDbBeginResult alignment mismatch");
+const _: () = assert!(core::mem::align_of::<HostBlobCheckResult>() == 4, "HostBlobCheckResult alignment mismatch");
 #[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::offset_of!(HostDbBeginResult, tag) == 12, "HostDbBeginResult tag offset mismatch");
+const _: () = assert!(core::mem::offset_of!(HostBlobCheckResult, tag) == 12, "HostBlobCheckResult tag offset mismatch");
+
+/// Tag discriminant for Try.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostBlobRangeResultTag {
+    Err = 0,
+    Ok = 1,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub union HostBlobRangeResultPayload {
+    pub err: core::mem::ManuallyDrop<RocStr>,
+    pub ok: core::mem::ManuallyDrop<AnonStruct932918cc5391b9a4>,
+}
+
+#[cfg(target_pointer_width = "32")]
+#[repr(align(8))]
+#[derive(Clone, Copy)]
+pub struct HostBlobRangeResultPayloadAlignment;
+
+/// Tag union: Try
+#[cfg(target_pointer_width = "32")]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostBlobRangeResult {
+    pub _payload_alignment: [HostBlobRangeResultPayloadAlignment; 0],
+    pub payload: [u8; 24],
+    pub tag: HostBlobRangeResultTag,
+}
+
+/// Tag union: Try
+#[cfg(not(target_pointer_width = "32"))]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostBlobRangeResult {
+    pub payload: HostBlobRangeResultPayload,
+    pub tag: HostBlobRangeResultTag,
+}
+
+impl HostBlobRangeResult {
+    /// Borrow the `Err` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostBlobRangeResultTag::Err` and the payload must still be initialized.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn borrow_payload_err_unchecked(&self) -> &RocStr {
+        unsafe { &*(self.payload.as_ptr() as *const RocStr) }
+    }
+
+    /// Borrow the `Err` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostBlobRangeResultTag::Err` and the payload must still be initialized.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn borrow_payload_err_unchecked(&self) -> &RocStr {
+        unsafe { &*(&self.payload.err as *const core::mem::ManuallyDrop<RocStr> as *const RocStr) }
+    }
+
+    /// Move the `Err` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostBlobRangeResultTag::Err`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn take_payload_err_unchecked(&mut self) -> RocStr {
+        unsafe { core::ptr::read(self.payload.as_ptr() as *const RocStr) }
+    }
+
+    /// Move the `Err` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostBlobRangeResultTag::Err`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn take_payload_err_unchecked(&mut self) -> RocStr {
+        unsafe { core::mem::ManuallyDrop::take(&mut self.payload.err) }
+    }
+
+    /// Borrow the `Ok` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostBlobRangeResultTag::Ok` and the payload must still be initialized.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn borrow_payload_ok_unchecked(&self) -> &AnonStruct932918cc5391b9a4 {
+        unsafe { &*(self.payload.as_ptr() as *const AnonStruct932918cc5391b9a4) }
+    }
+
+    /// Borrow the `Ok` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostBlobRangeResultTag::Ok` and the payload must still be initialized.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn borrow_payload_ok_unchecked(&self) -> &AnonStruct932918cc5391b9a4 {
+        unsafe { &*(&self.payload.ok as *const core::mem::ManuallyDrop<AnonStruct932918cc5391b9a4> as *const AnonStruct932918cc5391b9a4) }
+    }
+
+    /// Move the `Ok` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostBlobRangeResultTag::Ok`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn take_payload_ok_unchecked(&mut self) -> AnonStruct932918cc5391b9a4 {
+        unsafe { core::ptr::read(self.payload.as_ptr() as *const AnonStruct932918cc5391b9a4) }
+    }
+
+    /// Move the `Ok` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostBlobRangeResultTag::Ok`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn take_payload_ok_unchecked(&mut self) -> AnonStruct932918cc5391b9a4 {
+        unsafe { core::mem::ManuallyDrop::take(&mut self.payload.ok) }
+    }
+
+}
+
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::size_of::<HostBlobRangeResult>() == 40, "HostBlobRangeResult size mismatch");
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::align_of::<HostBlobRangeResult>() == 8, "HostBlobRangeResult alignment mismatch");
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::offset_of!(HostBlobRangeResult, tag) == 32, "HostBlobRangeResult tag offset mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::size_of::<HostBlobRangeResult>() == 32, "HostBlobRangeResult size mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::align_of::<HostBlobRangeResult>() == 8, "HostBlobRangeResult alignment mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::offset_of!(HostBlobRangeResult, tag) == 24, "HostBlobRangeResult tag offset mismatch");
+
+/// Tag discriminant for Try.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostBlobHeadResultTag {
+    Err = 0,
+    Ok = 1,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub union HostBlobHeadResultPayload {
+    pub err: core::mem::ManuallyDrop<RocStr>,
+    pub ok: core::mem::ManuallyDrop<AnonStructF4ca8ee1c443b810>,
+}
+
+#[cfg(target_pointer_width = "32")]
+#[repr(align(8))]
+#[derive(Clone, Copy)]
+pub struct HostBlobHeadResultPayloadAlignment;
+
+/// Tag union: Try
+#[cfg(target_pointer_width = "32")]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostBlobHeadResult {
+    pub _payload_alignment: [HostBlobHeadResultPayloadAlignment; 0],
+    pub payload: [u8; 32],
+    pub tag: HostBlobHeadResultTag,
+}
+
+/// Tag union: Try
+#[cfg(not(target_pointer_width = "32"))]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostBlobHeadResult {
+    pub payload: HostBlobHeadResultPayload,
+    pub tag: HostBlobHeadResultTag,
+}
+
+impl HostBlobHeadResult {
+    /// Borrow the `Err` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostBlobHeadResultTag::Err` and the payload must still be initialized.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn borrow_payload_err_unchecked(&self) -> &RocStr {
+        unsafe { &*(self.payload.as_ptr() as *const RocStr) }
+    }
+
+    /// Borrow the `Err` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostBlobHeadResultTag::Err` and the payload must still be initialized.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn borrow_payload_err_unchecked(&self) -> &RocStr {
+        unsafe { &*(&self.payload.err as *const core::mem::ManuallyDrop<RocStr> as *const RocStr) }
+    }
+
+    /// Move the `Err` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostBlobHeadResultTag::Err`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn take_payload_err_unchecked(&mut self) -> RocStr {
+        unsafe { core::ptr::read(self.payload.as_ptr() as *const RocStr) }
+    }
+
+    /// Move the `Err` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostBlobHeadResultTag::Err`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn take_payload_err_unchecked(&mut self) -> RocStr {
+        unsafe { core::mem::ManuallyDrop::take(&mut self.payload.err) }
+    }
+
+    /// Borrow the `Ok` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostBlobHeadResultTag::Ok` and the payload must still be initialized.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn borrow_payload_ok_unchecked(&self) -> &AnonStructF4ca8ee1c443b810 {
+        unsafe { &*(self.payload.as_ptr() as *const AnonStructF4ca8ee1c443b810) }
+    }
+
+    /// Borrow the `Ok` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostBlobHeadResultTag::Ok` and the payload must still be initialized.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn borrow_payload_ok_unchecked(&self) -> &AnonStructF4ca8ee1c443b810 {
+        unsafe { &*(&self.payload.ok as *const core::mem::ManuallyDrop<AnonStructF4ca8ee1c443b810> as *const AnonStructF4ca8ee1c443b810) }
+    }
+
+    /// Move the `Ok` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostBlobHeadResultTag::Ok`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn take_payload_ok_unchecked(&mut self) -> AnonStructF4ca8ee1c443b810 {
+        unsafe { core::ptr::read(self.payload.as_ptr() as *const AnonStructF4ca8ee1c443b810) }
+    }
+
+    /// Move the `Ok` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostBlobHeadResultTag::Ok`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn take_payload_ok_unchecked(&mut self) -> AnonStructF4ca8ee1c443b810 {
+        unsafe { core::mem::ManuallyDrop::take(&mut self.payload.ok) }
+    }
+
+}
+
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::size_of::<HostBlobHeadResult>() == 64, "HostBlobHeadResult size mismatch");
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::align_of::<HostBlobHeadResult>() == 8, "HostBlobHeadResult alignment mismatch");
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::offset_of!(HostBlobHeadResult, tag) == 56, "HostBlobHeadResult tag offset mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::size_of::<HostBlobHeadResult>() == 40, "HostBlobHeadResult size mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::align_of::<HostBlobHeadResult>() == 8, "HostBlobHeadResult alignment mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::offset_of!(HostBlobHeadResult, tag) == 32, "HostBlobHeadResult tag offset mismatch");
+
+/// Tag discriminant for Try.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostBlobKeysResultTag {
+    Err = 0,
+    Ok = 1,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub union HostBlobKeysResultPayload {
+    pub err: core::mem::ManuallyDrop<RocStr>,
+    pub ok: core::mem::ManuallyDrop<RocList<RocStr>>,
+}
+
+#[cfg(target_pointer_width = "32")]
+#[repr(align(4))]
+#[derive(Clone, Copy)]
+pub struct HostBlobKeysResultPayloadAlignment;
+
+/// Tag union: Try
+#[cfg(target_pointer_width = "32")]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostBlobKeysResult {
+    pub _payload_alignment: [HostBlobKeysResultPayloadAlignment; 0],
+    pub payload: [u8; 12],
+    pub tag: HostBlobKeysResultTag,
+}
+
+/// Tag union: Try
+#[cfg(not(target_pointer_width = "32"))]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostBlobKeysResult {
+    pub payload: HostBlobKeysResultPayload,
+    pub tag: HostBlobKeysResultTag,
+}
+
+impl HostBlobKeysResult {
+    /// Borrow the `Err` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostBlobKeysResultTag::Err` and the payload must still be initialized.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn borrow_payload_err_unchecked(&self) -> &RocStr {
+        unsafe { &*(self.payload.as_ptr() as *const RocStr) }
+    }
+
+    /// Borrow the `Err` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostBlobKeysResultTag::Err` and the payload must still be initialized.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn borrow_payload_err_unchecked(&self) -> &RocStr {
+        unsafe { &*(&self.payload.err as *const core::mem::ManuallyDrop<RocStr> as *const RocStr) }
+    }
+
+    /// Move the `Err` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostBlobKeysResultTag::Err`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn take_payload_err_unchecked(&mut self) -> RocStr {
+        unsafe { core::ptr::read(self.payload.as_ptr() as *const RocStr) }
+    }
+
+    /// Move the `Err` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostBlobKeysResultTag::Err`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn take_payload_err_unchecked(&mut self) -> RocStr {
+        unsafe { core::mem::ManuallyDrop::take(&mut self.payload.err) }
+    }
+
+    /// Borrow the `Ok` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostBlobKeysResultTag::Ok` and the payload must still be initialized.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn borrow_payload_ok_unchecked(&self) -> &RocList<RocStr> {
+        unsafe { &*(self.payload.as_ptr() as *const RocList<RocStr>) }
+    }
+
+    /// Borrow the `Ok` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostBlobKeysResultTag::Ok` and the payload must still be initialized.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn borrow_payload_ok_unchecked(&self) -> &RocList<RocStr> {
+        unsafe { &*(&self.payload.ok as *const core::mem::ManuallyDrop<RocList<RocStr>> as *const RocList<RocStr>) }
+    }
+
+    /// Move the `Ok` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostBlobKeysResultTag::Ok`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn take_payload_ok_unchecked(&mut self) -> RocList<RocStr> {
+        unsafe { core::ptr::read(self.payload.as_ptr() as *const RocList<RocStr>) }
+    }
+
+    /// Move the `Ok` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostBlobKeysResultTag::Ok`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn take_payload_ok_unchecked(&mut self) -> RocList<RocStr> {
+        unsafe { core::mem::ManuallyDrop::take(&mut self.payload.ok) }
+    }
+
+}
+
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::size_of::<HostBlobKeysResult>() == 32, "HostBlobKeysResult size mismatch");
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::align_of::<HostBlobKeysResult>() == 8, "HostBlobKeysResult alignment mismatch");
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::offset_of!(HostBlobKeysResult, tag) == 24, "HostBlobKeysResult tag offset mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::size_of::<HostBlobKeysResult>() == 16, "HostBlobKeysResult size mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::align_of::<HostBlobKeysResult>() == 4, "HostBlobKeysResult alignment mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::offset_of!(HostBlobKeysResult, tag) == 12, "HostBlobKeysResult tag offset mismatch");
 
 /// Tag discriminant for Try.
 #[repr(u8)]
@@ -2785,6 +3222,100 @@ pub struct HostAesGcmOpenArgs {
 pub struct HostAesGcmSealArgs {
     pub arg0: RocListWith<u8, false>,
     pub arg1: RocListWith<u8, false>,
+}
+
+/// Arguments for Host.blob_check!
+/// Roc signature: Str => Try({}, Str)
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostBlobCheckArgs {
+    pub arg0: RocStr,
+}
+
+/// Arguments for Host.blob_compose!
+/// Roc signature: Str, List(Str), Str, Str => Try({}, Str)
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostBlobComposeArgs {
+    pub arg0: RocStr,
+    pub arg1: RocList<RocStr>,
+    pub arg2: RocStr,
+    pub arg3: RocStr,
+}
+
+/// Arguments for Host.blob_delete!
+/// Roc signature: Str, Str => Try({}, Str)
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostBlobDeleteArgs {
+    pub arg0: RocStr,
+    pub arg1: RocStr,
+}
+
+/// Arguments for Host.blob_get!
+/// Roc signature: Str, Str => Try(List(U8), Str)
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostBlobGetArgs {
+    pub arg0: RocStr,
+    pub arg1: RocStr,
+}
+
+/// Arguments for Host.blob_head!
+/// Roc signature: Str, Str => Try({ content_type : Str, etag : Str, size : U64 }, Str)
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostBlobHeadArgs {
+    pub arg0: RocStr,
+    pub arg1: RocStr,
+}
+
+/// Arguments for Host.blob_keys!
+/// Roc signature: Str, Str => Try(List(Str), Str)
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostBlobKeysArgs {
+    pub arg0: RocStr,
+    pub arg1: RocStr,
+}
+
+/// Arguments for Host.blob_put!
+/// Roc signature: Str, Str, List(U8), Str => Try({}, Str)
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostBlobPutArgs {
+    pub arg0: RocStr,
+    pub arg1: RocStr,
+    pub arg2: RocListWith<u8, false>,
+    pub arg3: RocStr,
+}
+
+/// Arguments for Host.blob_range!
+/// Roc signature: Str, Str, U64, U64 => Try({ bytes : List(U8), size : U64 }, Str)
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostBlobRangeArgs {
+    pub arg0: RocStr,
+    pub arg1: RocStr,
+    pub arg2: u64,
+    pub arg3: u64,
+}
+
+/// Arguments for Host.blob_secret!
+/// Roc signature: Str => Str
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostBlobSecretArgs {
+    pub arg0: RocStr,
 }
 
 /// Arguments for Host.db_execute!
@@ -3417,24 +3948,41 @@ pub struct HostTitleArgs {
 pub type HostAesGcmSealResult = HostAesGcmOpenResult;
 pub type HostAesGcmSealResultPayload = HostAesGcmOpenResultPayload;
 pub type HostAesGcmSealResultTag = HostAesGcmOpenResultTag;
-pub type HostDbCommitResult = HostDbBeginResult;
-pub type HostDbCommitResultPayload = HostDbBeginResultPayload;
-pub type HostDbCommitResultTag = HostDbBeginResultTag;
-pub type HostDbListenResult = HostDbBeginResult;
-pub type HostDbListenResultPayload = HostDbBeginResultPayload;
-pub type HostDbListenResultTag = HostDbBeginResultTag;
-pub type HostDbNotifyResult = HostDbBeginResult;
-pub type HostDbNotifyResultPayload = HostDbBeginResultPayload;
-pub type HostDbNotifyResultTag = HostDbBeginResultTag;
+pub type HostBlobComposeResult = HostBlobCheckResult;
+pub type HostBlobComposeResultPayload = HostBlobCheckResultPayload;
+pub type HostBlobComposeResultTag = HostBlobCheckResultTag;
+pub type HostBlobDeleteResult = HostBlobCheckResult;
+pub type HostBlobDeleteResultPayload = HostBlobCheckResultPayload;
+pub type HostBlobDeleteResultTag = HostBlobCheckResultTag;
+pub type HostBlobGetResult = HostAesGcmOpenResult;
+pub type HostBlobGetResultPayload = HostAesGcmOpenResultPayload;
+pub type HostBlobGetResultTag = HostAesGcmOpenResultTag;
+pub type HostBlobHeadOk = AnonStructF4ca8ee1c443b810;
+pub type HostBlobPutResult = HostBlobCheckResult;
+pub type HostBlobPutResultPayload = HostBlobCheckResultPayload;
+pub type HostBlobPutResultTag = HostBlobCheckResultTag;
+pub type HostBlobRangeOk = AnonStruct932918cc5391b9a4;
+pub type HostDbBeginResult = HostBlobCheckResult;
+pub type HostDbBeginResultPayload = HostBlobCheckResultPayload;
+pub type HostDbBeginResultTag = HostBlobCheckResultTag;
+pub type HostDbCommitResult = HostBlobCheckResult;
+pub type HostDbCommitResultPayload = HostBlobCheckResultPayload;
+pub type HostDbCommitResultTag = HostBlobCheckResultTag;
+pub type HostDbListenResult = HostBlobCheckResult;
+pub type HostDbListenResultPayload = HostBlobCheckResultPayload;
+pub type HostDbListenResultTag = HostBlobCheckResultTag;
+pub type HostDbNotifyResult = HostBlobCheckResult;
+pub type HostDbNotifyResultPayload = HostBlobCheckResultPayload;
+pub type HostDbNotifyResultTag = HostBlobCheckResultTag;
 pub type HostDbOpenResult = HostActorAskResult;
 pub type HostDbOpenResultPayload = HostActorAskResultPayload;
 pub type HostDbOpenResultTag = HostActorAskResultTag;
 pub type HostDbQueryResult = HostActorAskResult;
 pub type HostDbQueryResultPayload = HostActorAskResultPayload;
 pub type HostDbQueryResultTag = HostActorAskResultTag;
-pub type HostDbScriptResult = HostDbBeginResult;
-pub type HostDbScriptResultPayload = HostDbBeginResultPayload;
-pub type HostDbScriptResultTag = HostDbBeginResultTag;
+pub type HostDbScriptResult = HostBlobCheckResult;
+pub type HostDbScriptResultPayload = HostBlobCheckResultPayload;
+pub type HostDbScriptResultTag = HostBlobCheckResultTag;
 pub type HostEnvVarResult = HostActorAskResult;
 pub type HostEnvVarResultPayload = HostActorAskResultPayload;
 pub type HostEnvVarResultTag = HostActorAskResultTag;
@@ -3465,12 +4013,12 @@ pub type HostTcpReadUntilResultTag = HostAesGcmOpenResultTag;
 pub type HostTcpReadUpToResult = HostAesGcmOpenResult;
 pub type HostTcpReadUpToResultPayload = HostAesGcmOpenResultPayload;
 pub type HostTcpReadUpToResultTag = HostAesGcmOpenResultTag;
-pub type HostTcpStartTlsResult = HostDbBeginResult;
-pub type HostTcpStartTlsResultPayload = HostDbBeginResultPayload;
-pub type HostTcpStartTlsResultTag = HostDbBeginResultTag;
-pub type HostTcpWriteResult = HostDbBeginResult;
-pub type HostTcpWriteResultPayload = HostDbBeginResultPayload;
-pub type HostTcpWriteResultTag = HostDbBeginResultTag;
+pub type HostTcpStartTlsResult = HostBlobCheckResult;
+pub type HostTcpStartTlsResultPayload = HostBlobCheckResultPayload;
+pub type HostTcpStartTlsResultTag = HostBlobCheckResultTag;
+pub type HostTcpWriteResult = HostBlobCheckResult;
+pub type HostTcpWriteResultPayload = HostBlobCheckResultPayload;
+pub type HostTcpWriteResultTag = HostBlobCheckResultTag;
 pub type ActorForHostOk = AnonStruct47ce055eccfb1f9d;
 pub type DropFeedForHostArg0 = AnonStruct608867a33f852b1e;
 pub type RespondForHostArg0 = AnonStruct3136a6b59821456e;
@@ -3774,7 +4322,7 @@ unsafe impl RocRelease<HostDbExecuteResult> for HostDbExecuteResultRelease {
     }
 }
 
-impl HostDbBeginResult {
+impl HostBlobCheckResult {
     /// Recursively decrement Roc-owned payloads.
     ///
     /// # Safety
@@ -3783,11 +4331,11 @@ impl HostDbBeginResult {
         let mut value = self;
         let _ = roc_host;
         match value.tag {
-            HostDbBeginResultTag::Err => {
+            HostBlobCheckResultTag::Err => {
                 let payload = unsafe { value.take_payload_err_unchecked() };
                 unsafe { payload.decref(roc_host); }
             },
-            HostDbBeginResultTag::Ok => {},
+            HostBlobCheckResultTag::Ok => {},
         }
     }
 
@@ -3800,19 +4348,226 @@ impl HostDbBeginResult {
         let value = self;
         let _ = amount;
         match value.tag {
-            HostDbBeginResultTag::Err => {
+            HostBlobCheckResultTag::Err => {
                 let payload = unsafe { core::ptr::read(value.borrow_payload_err_unchecked()) };
                 unsafe { payload.incref(amount); }
             },
-            HostDbBeginResultTag::Ok => {},
+            HostBlobCheckResultTag::Ok => {},
         }
     }
 }
 
-pub struct HostDbBeginResultRelease;
+pub struct HostBlobCheckResultRelease;
 
-unsafe impl RocRelease<HostDbBeginResult> for HostDbBeginResultRelease {
-    unsafe fn release(value: HostDbBeginResult, roc_host: &RocHost) {
+unsafe impl RocRelease<HostBlobCheckResult> for HostBlobCheckResultRelease {
+    unsafe fn release(value: HostBlobCheckResult, roc_host: &RocHost) {
+        unsafe { value.decref(roc_host); }
+    }
+}
+
+impl HostBlobRangeResult {
+    /// Recursively decrement Roc-owned payloads.
+    ///
+    /// # Safety
+    /// `self` must own one live Roc reference for each refcounted payload.
+    pub unsafe fn decref(self, roc_host: &RocHost) {
+        let mut value = self;
+        let _ = roc_host;
+        match value.tag {
+            HostBlobRangeResultTag::Err => {
+                let payload = unsafe { value.take_payload_err_unchecked() };
+                unsafe { payload.decref(roc_host); }
+            },
+            HostBlobRangeResultTag::Ok => {
+                let payload = unsafe { value.take_payload_ok_unchecked() };
+                unsafe { payload.decref(roc_host); }
+            },
+        }
+    }
+
+    /// Increment Roc-owned payloads.
+    ///
+    /// # Safety
+    /// `self` must point at live Roc allocations. The retained references must
+    /// be balanced by later decrefs.
+    pub unsafe fn incref(self, amount: isize) {
+        let value = self;
+        let _ = amount;
+        match value.tag {
+            HostBlobRangeResultTag::Err => {
+                let payload = unsafe { core::ptr::read(value.borrow_payload_err_unchecked()) };
+                unsafe { payload.incref(amount); }
+            },
+            HostBlobRangeResultTag::Ok => {
+                let payload = unsafe { core::ptr::read(value.borrow_payload_ok_unchecked()) };
+                unsafe { payload.incref(amount); }
+            },
+        }
+    }
+}
+
+pub struct HostBlobRangeResultRelease;
+
+unsafe impl RocRelease<HostBlobRangeResult> for HostBlobRangeResultRelease {
+    unsafe fn release(value: HostBlobRangeResult, roc_host: &RocHost) {
+        unsafe { value.decref(roc_host); }
+    }
+}
+
+impl AnonStruct932918cc5391b9a4 {
+    /// Recursively decrement Roc-owned fields.
+    ///
+    /// # Safety
+    /// `self` must own one live Roc reference for each refcounted field.
+    pub unsafe fn decref(self, roc_host: &RocHost) {
+        let value = self;
+        unsafe { value.bytes.decref(roc_host); }
+    }
+
+    /// Increment Roc-owned fields.
+    ///
+    /// # Safety
+    /// `self` must point at live Roc allocations. The retained references must
+    /// be balanced by later decrefs.
+    pub unsafe fn incref(self, amount: isize) {
+        let value = self;
+        unsafe { value.bytes.incref(amount); }
+    }
+}
+
+pub struct AnonStruct932918cc5391b9a4Release;
+
+unsafe impl RocRelease<AnonStruct932918cc5391b9a4> for AnonStruct932918cc5391b9a4Release {
+    unsafe fn release(value: AnonStruct932918cc5391b9a4, roc_host: &RocHost) {
+        unsafe { value.decref(roc_host); }
+    }
+}
+
+impl HostBlobHeadResult {
+    /// Recursively decrement Roc-owned payloads.
+    ///
+    /// # Safety
+    /// `self` must own one live Roc reference for each refcounted payload.
+    pub unsafe fn decref(self, roc_host: &RocHost) {
+        let mut value = self;
+        let _ = roc_host;
+        match value.tag {
+            HostBlobHeadResultTag::Err => {
+                let payload = unsafe { value.take_payload_err_unchecked() };
+                unsafe { payload.decref(roc_host); }
+            },
+            HostBlobHeadResultTag::Ok => {
+                let payload = unsafe { value.take_payload_ok_unchecked() };
+                unsafe { payload.decref(roc_host); }
+            },
+        }
+    }
+
+    /// Increment Roc-owned payloads.
+    ///
+    /// # Safety
+    /// `self` must point at live Roc allocations. The retained references must
+    /// be balanced by later decrefs.
+    pub unsafe fn incref(self, amount: isize) {
+        let value = self;
+        let _ = amount;
+        match value.tag {
+            HostBlobHeadResultTag::Err => {
+                let payload = unsafe { core::ptr::read(value.borrow_payload_err_unchecked()) };
+                unsafe { payload.incref(amount); }
+            },
+            HostBlobHeadResultTag::Ok => {
+                let payload = unsafe { core::ptr::read(value.borrow_payload_ok_unchecked()) };
+                unsafe { payload.incref(amount); }
+            },
+        }
+    }
+}
+
+pub struct HostBlobHeadResultRelease;
+
+unsafe impl RocRelease<HostBlobHeadResult> for HostBlobHeadResultRelease {
+    unsafe fn release(value: HostBlobHeadResult, roc_host: &RocHost) {
+        unsafe { value.decref(roc_host); }
+    }
+}
+
+impl AnonStructF4ca8ee1c443b810 {
+    /// Recursively decrement Roc-owned fields.
+    ///
+    /// # Safety
+    /// `self` must own one live Roc reference for each refcounted field.
+    pub unsafe fn decref(self, roc_host: &RocHost) {
+        let value = self;
+        unsafe { value.content_type.decref(roc_host); }
+        unsafe { value.etag.decref(roc_host); }
+    }
+
+    /// Increment Roc-owned fields.
+    ///
+    /// # Safety
+    /// `self` must point at live Roc allocations. The retained references must
+    /// be balanced by later decrefs.
+    pub unsafe fn incref(self, amount: isize) {
+        let value = self;
+        unsafe { value.content_type.incref(amount); }
+        unsafe { value.etag.incref(amount); }
+    }
+}
+
+pub struct AnonStructF4ca8ee1c443b810Release;
+
+unsafe impl RocRelease<AnonStructF4ca8ee1c443b810> for AnonStructF4ca8ee1c443b810Release {
+    unsafe fn release(value: AnonStructF4ca8ee1c443b810, roc_host: &RocHost) {
+        unsafe { value.decref(roc_host); }
+    }
+}
+
+impl HostBlobKeysResult {
+    /// Recursively decrement Roc-owned payloads.
+    ///
+    /// # Safety
+    /// `self` must own one live Roc reference for each refcounted payload.
+    pub unsafe fn decref(self, roc_host: &RocHost) {
+        let mut value = self;
+        let _ = roc_host;
+        match value.tag {
+            HostBlobKeysResultTag::Err => {
+                let payload = unsafe { value.take_payload_err_unchecked() };
+                unsafe { payload.decref(roc_host); }
+            },
+            HostBlobKeysResultTag::Ok => {
+                let payload = unsafe { value.take_payload_ok_unchecked() };
+                unsafe { decref_list_of_str(payload, roc_host); }
+            },
+        }
+    }
+
+    /// Increment Roc-owned payloads.
+    ///
+    /// # Safety
+    /// `self` must point at live Roc allocations. The retained references must
+    /// be balanced by later decrefs.
+    pub unsafe fn incref(self, amount: isize) {
+        let value = self;
+        let _ = amount;
+        match value.tag {
+            HostBlobKeysResultTag::Err => {
+                let payload = unsafe { core::ptr::read(value.borrow_payload_err_unchecked()) };
+                unsafe { payload.incref(amount); }
+            },
+            HostBlobKeysResultTag::Ok => {
+                let payload = unsafe { core::ptr::read(value.borrow_payload_ok_unchecked()) };
+                unsafe { payload.incref(amount); }
+            },
+        }
+    }
+}
+
+pub struct HostBlobKeysResultRelease;
+
+unsafe impl RocRelease<HostBlobKeysResult> for HostBlobKeysResultRelease {
+    unsafe fn release(value: HostBlobKeysResult, roc_host: &RocHost) {
         unsafe { value.decref(roc_host); }
     }
 }
@@ -4088,7 +4843,7 @@ impl AnonStruct8f4fc9623a0f6755 {
     pub unsafe fn decref(self, roc_host: &RocHost) {
         let value = self;
         unsafe { value.bytes.decref(roc_host); }
-        unsafe { decref_box_with(value.feed as RocBox, core::mem::align_of::<AnonStruct608867a33f852b1e>(), true, Some(decref_box_payload_type73), roc_host); }
+        unsafe { decref_box_with(value.feed as RocBox, core::mem::align_of::<AnonStruct608867a33f852b1e>(), true, Some(decref_box_payload_type87), roc_host); }
         unsafe { value.headers.decref(roc_host); }
         unsafe { decref_erased_callable(value.page, roc_host); }
         unsafe { value.text.decref(roc_host); }
@@ -4189,7 +4944,18 @@ unsafe impl RocRelease<AnonStruct3136a6b59821456e> for AnonStruct3136a6b59821456
     }
 }
 
-extern "C" fn decref_box_payload_type59(data_ptr: *mut c_void, roc_host: *mut RocHost) {
+/// Release one owned reference to a `RocList<RocStr>`.
+///
+/// The allocation's final reference is claimed atomically before any element
+/// is read, so concurrent owners cannot skip or duplicate element teardown.
+///
+/// # Safety
+/// `value` must own one live Roc list reference.
+pub unsafe fn decref_list_of_str(value: RocList<RocStr>, roc_host: &RocHost) {
+    unsafe { value.release_with::<RocStrRelease>(roc_host); }
+}
+
+extern "C" fn decref_box_payload_type73(data_ptr: *mut c_void, roc_host: *mut RocHost) {
     if data_ptr.is_null() || roc_host.is_null() {
         return;
     }
@@ -4198,7 +4964,7 @@ extern "C" fn decref_box_payload_type59(data_ptr: *mut c_void, roc_host: *mut Ro
     unsafe { payload.decref(roc_host); }
 }
 
-extern "C" fn decref_box_payload_type73(data_ptr: *mut c_void, roc_host: *mut RocHost) {
+extern "C" fn decref_box_payload_type87(data_ptr: *mut c_void, roc_host: *mut RocHost) {
     if data_ptr.is_null() || roc_host.is_null() {
         return;
     }
@@ -4419,15 +5185,98 @@ unsafe extern "C" {
     /// The result is owned by Roc: return exactly one owned reference.
     pub fn roc_host_aes_gcm_seal(arg0: RocListWith<u8, false>, arg1: RocListWith<u8, false>) -> HostAesGcmOpenResult;
 
+    /// Hosted symbol for Host.blob_check!
+    /// Roc signature: Str => Try({}, Str)
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_blob_check(arg0: RocStr) -> HostBlobCheckResult;
+
+    /// Hosted symbol for Host.blob_compose!
+    /// Roc signature: Str, List(Str), Str, Str => Try({}, Str)
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    ///     unsafe { decref_list_of_str(arg1, roc_host); }
+    ///     unsafe { arg2.decref(roc_host); }
+    ///     unsafe { arg3.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_blob_compose(arg0: RocStr, arg1: RocList<RocStr>, arg2: RocStr, arg3: RocStr) -> HostBlobCheckResult;
+
+    /// Hosted symbol for Host.blob_delete!
+    /// Roc signature: Str, Str => Try({}, Str)
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    ///     unsafe { arg1.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_blob_delete(arg0: RocStr, arg1: RocStr) -> HostBlobCheckResult;
+
+    /// Hosted symbol for Host.blob_get!
+    /// Roc signature: Str, Str => Try(List(U8), Str)
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    ///     unsafe { arg1.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_blob_get(arg0: RocStr, arg1: RocStr) -> HostAesGcmOpenResult;
+
+    /// Hosted symbol for Host.blob_head!
+    /// Roc signature: Str, Str => Try({ content_type : Str, etag : Str, size : U64 }, Str)
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    ///     unsafe { arg1.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_blob_head(arg0: RocStr, arg1: RocStr) -> HostBlobHeadResult;
+
+    /// Hosted symbol for Host.blob_keys!
+    /// Roc signature: Str, Str => Try(List(Str), Str)
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    ///     unsafe { arg1.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_blob_keys(arg0: RocStr, arg1: RocStr) -> HostBlobKeysResult;
+
+    /// Hosted symbol for Host.blob_put!
+    /// Roc signature: Str, Str, List(U8), Str => Try({}, Str)
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    ///     unsafe { arg1.decref(roc_host); }
+    ///     unsafe { arg2.decref(roc_host); }
+    ///     unsafe { arg3.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_blob_put(arg0: RocStr, arg1: RocStr, arg2: RocListWith<u8, false>, arg3: RocStr) -> HostBlobCheckResult;
+
+    /// Hosted symbol for Host.blob_range!
+    /// Roc signature: Str, Str, U64, U64 => Try({ bytes : List(U8), size : U64 }, Str)
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    ///     unsafe { arg1.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_blob_range(arg0: RocStr, arg1: RocStr, arg2: u64, arg3: u64) -> HostBlobRangeResult;
+
+    /// Hosted symbol for Host.blob_secret!
+    /// Roc signature: Str => Str
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_blob_secret(arg0: RocStr) -> RocStr;
+
     /// Hosted symbol for Host.db_begin!
     /// Roc signature: {} => Try({}, Str)
     /// The result is owned by Roc: return exactly one owned reference.
-    pub fn roc_host_db_begin() -> HostDbBeginResult;
+    pub fn roc_host_db_begin() -> HostBlobCheckResult;
 
     /// Hosted symbol for Host.db_commit!
     /// Roc signature: {} => Try({}, Str)
     /// The result is owned by Roc: return exactly one owned reference.
-    pub fn roc_host_db_commit() -> HostDbBeginResult;
+    pub fn roc_host_db_commit() -> HostBlobCheckResult;
 
     /// Hosted symbol for Host.db_execute!
     /// Roc signature: Str, Str => Try(U64, Str)
@@ -4449,7 +5298,7 @@ unsafe extern "C" {
     /// moved into storage or into the result:
     ///     unsafe { arg0.decref(roc_host); }
     /// The result is owned by Roc: return exactly one owned reference.
-    pub fn roc_host_db_listen(arg0: RocStr) -> HostDbBeginResult;
+    pub fn roc_host_db_listen(arg0: RocStr) -> HostBlobCheckResult;
 
     /// Hosted symbol for Host.db_notify!
     /// Roc signature: Str, Str => Try({}, Str)
@@ -4458,7 +5307,7 @@ unsafe extern "C" {
     ///     unsafe { arg0.decref(roc_host); }
     ///     unsafe { arg1.decref(roc_host); }
     /// The result is owned by Roc: return exactly one owned reference.
-    pub fn roc_host_db_notify(arg0: RocStr, arg1: RocStr) -> HostDbBeginResult;
+    pub fn roc_host_db_notify(arg0: RocStr, arg1: RocStr) -> HostBlobCheckResult;
 
     /// Hosted symbol for Host.db_open!
     /// Roc signature: Str => Try(Str, Str)
@@ -4487,7 +5336,7 @@ unsafe extern "C" {
     /// moved into storage or into the result:
     ///     unsafe { arg0.decref(roc_host); }
     /// The result is owned by Roc: return exactly one owned reference.
-    pub fn roc_host_db_script(arg0: RocStr) -> HostDbBeginResult;
+    pub fn roc_host_db_script(arg0: RocStr) -> HostBlobCheckResult;
 
     /// Hosted symbol for Host.env_var!
     /// Roc signature: Str => Try(Str, Str)
@@ -4716,7 +5565,7 @@ unsafe extern "C" {
     /// moved into storage or into the result:
     ///     unsafe { arg1.decref(roc_host); }
     /// The result is owned by Roc: return exactly one owned reference.
-    pub fn roc_host_tcp_start_tls(arg0: u64, arg1: RocStr) -> HostDbBeginResult;
+    pub fn roc_host_tcp_start_tls(arg0: u64, arg1: RocStr) -> HostBlobCheckResult;
 
     /// Hosted symbol for Host.tcp_write!
     /// Roc signature: U64, List(U8) => Try({}, Str)
@@ -4724,7 +5573,7 @@ unsafe extern "C" {
     /// moved into storage or into the result:
     ///     unsafe { arg1.decref(roc_host); }
     /// The result is owned by Roc: return exactly one owned reference.
-    pub fn roc_host_tcp_write(arg0: u64, arg1: RocListWith<u8, false>) -> HostDbBeginResult;
+    pub fn roc_host_tcp_write(arg0: u64, arg1: RocListWith<u8, false>) -> HostBlobCheckResult;
 
     /// Hosted symbol for Host.zone_offset!
     /// Roc signature: Str, I64 => Try(I64, Str)
