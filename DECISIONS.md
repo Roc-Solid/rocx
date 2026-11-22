@@ -2304,3 +2304,87 @@ Kv.swap! : Str, was, value, Kv.Opts => Try({}, [Changed])   # was and value: Jso
 steps instead of a message and a write. **Reversible:** yes; `swap!` stays useful to anything that
 reads and writes back.
 
+
+## D-045 The database is pluggable: Postgres or SQLite, as the app chooses
+
+**Status.** Proposed (2026-11-22). Nothing is built.
+
+**Context.** Postgres is the platform's one database (`--database-url`). The platform runs one
+server an app (one instance), and many apps on one server need no database server beside it:
+SQLite in the server's process is a file, with no network between a query and its rows and nothing
+to run in development or in tests. examples/plate is such an app. The host asks little of a
+database (`server/host/src/db.rs`: a query's rows as JSON, a statement's count, a script, a
+transaction's begin, commit and rollback, and listening), so a second backend fits behind the same
+calls. What can't be shared is SQL: Postgres's and SQLite's differ, and the SQL is the app's.
+
+**Proposal.**
+
+- **The app picks its database's flavor when it is made, and writes its SQL for it.**
+  `App.program({ ..., database: Sqlite })`, `Postgres` by default (every app today). Where the
+  database is stays the server's to be told (`--database-url`, `DATABASE_URL`: `postgres://…`, or
+  `sqlite:data/plate.db`); a URL of the other flavor stops the server at start, saying which the
+  app wants. No SQL is translated, and no app runs on both. `rocx new` asks for the flavor
+  (postgres, sqlite, none) when it is built, and writes the program's `database` and a first
+  migration in it.
+- **A package says which flavors it works with; it may work with one.** A plugin's `needs` gets
+  `Postgres` and `Sqlite` beside `Database` (any): the server's start check (`Plugins.unmet!`) says,
+  with the rest, "admin needs Postgres; this app's database is SQLite". A package with SQL for both
+  asks `Db.backend! : {} => [Postgres, Sqlite]` which to run. A migration may say which flavor it is
+  for (`on: Sqlite`; any by default), and the server applies those of its own, so a plugin lists one
+  of each under one name. A package without a plugin says so in its README.
+- **The host has a backend a flavor** (`server/host/src/db/`: `postgres.rs`, today's `db.rs`, and
+  `sqlite.rs`), behind the calls it makes today, chosen at start by the URL's scheme. Another backend
+  (libSQL/Turso, which keeps a copy elsewhere in sync) is a file there and nothing else. SQLite is
+  rusqlite with SQLite compiled in (FTS5 and JSON with it): WAL, a pool of connections whose calls
+  run on threads of their own (they block), a busy timeout. A transaction begins `immediate`, holding
+  the write lock from its start, and keeps its connection as a Postgres one does; a statement past
+  the call's time limit is interrupted and its transaction rolled back.
+- **A parameter keeps its type to the host.** `Db.Value` goes as JSON's text, number, boolean or
+  null (today all text): Postgres's backend sends text, as now; SQLite's binds an integer as an
+  integer and a `Bool` as 1 or 0. `$1`, `$2`… are parameter names in SQLite too, bound by name, so
+  an app writes them in both. `Db.array` is Postgres's (an array literal); SQLite reads a list as
+  JSON (`in (select value from json_each($1))`).
+- **A row is JSON in both.** SQLite's columns are what each value is (an integer or real a number,
+  text a string, null), a column declared `boolean` a JSON boolean, one declared `json` its JSON. A
+  boolean SQLite works out (`exists (…)`) is 0 or 1, read as an `I64`. A time is the app's to store:
+  milliseconds in an integer (`Time.now_millis!`) is the advice.
+- **`Db.notify!(channel, payload)` takes `pg_notify`'s place in SQL.** Postgres's backend runs
+  `pg_notify`; SQLite's publishes in the process when the call's transaction commits (never if it
+  rolls back), at once outside one. Both reach the topic `db:<channel>` (was `pg:<channel>`), which
+  `Db.listen!` hears; on SQLite there is nothing to listen to.
+- **Nothing slow in a transaction.** On SQLite one holds every other write back until it ends (on
+  Postgres only the rows it wrote), so `Db.transaction!`'s docs say to keep a fetch or a wait out of
+  one.
+- **The platform's own tables have both flavors** (`rocx_migrations`, `rocx_actors`); the advisory
+  lock that makes two servers take turns migrating is Postgres's alone (SQLite's write lock does it).
+- **Jobs and cron work on both.** packages/jobs keeps its SQL in one module, each statement in both
+  flavors (about 15), and `0001_jobs` in both. On SQLite: times are milliseconds in integer
+  columns, now given by Roc (no clock in the SQL); a worker takes the next job with
+  `update … where id = (select … limit 1) returning …`, with no `skip locked` (writes take turns, and
+  there is one server); a queued job wakes the workers with `Db.notify!`; the kinds are a JSON list;
+  `on conflict (unique_key) where state in (…) do nothing` is SQLite's too. `Job.Row` is
+  milliseconds already, so the jobs page reads both. Cron's ticker is Roc, and changes only in the
+  statement that queues.
+- **Plate moves to SQLite**, the example of an app on one: its search on FTS5 (a word's start is
+  `word*`), `real` for its amounts (no `::float8` or `::numeric`, which is its README's gap 1), its
+  days from a recursive `with`. Its day begins in the profile's time zone, which it asks of Postgres
+  (`at time zone`, `pg_timezone_names`); SQLite knows no zones, so `Time` learns them from the host
+  (`Time.offset!(zone, at)`, jiff, with the zone data compiled in).
+- **The server's tests run on SQLite always, and on Postgres too when `DATABASE_URL` is set**; a
+  SQLite test's database is a file of its own in a temporary directory.
+
+**Not in it.** SQL that runs on both, a query builder, two databases in one app, MySQL. admin
+(its catalog reads Postgres's own tables) and push stay `needs: [Postgres]` until they have SQLite's
+statements.
+
+**Phases.** 1: the SQLite backend, typed parameters, `Db.notify!` and `Db.backend!`, the program's
+`database`, migrations a flavor, the needs; the server's test app on both. 2: jobs and cron on
+both, the jobs page. 3: `Time`'s zones; Plate on SQLite. 4: the docs (`/platform/postgres` becomes
+`/platform/database`). Later: `rocx new`'s question, libSQL/Turso, admin's SQLite catalog.
+
+**Waits on the user.** (1) A SQLite app given no URL: its file at `data/app.db`, made when missing,
+so `rocx dev` needs nothing set (recommended), or no database, as a Postgres app given none.
+(2) Plate's own diary is in Postgres: copied once into its SQLite file (recommended), or begun
+again.
+
+**Reversible:** yes. A Postgres app changes in nothing; packages trade `pg_notify` for `Db.notify!`.
