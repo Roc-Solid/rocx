@@ -382,6 +382,9 @@ test("<NoHydration>: a name only what is inside used is rewritten in the browser
 	assert.match(kept, /^view! = \|\{ name \}\|$/m);
 	const member = browserOf("import pf.Html\n\nCard := [].{\n\ttitle = \"Hi\"\n\n\tview! : {} => Html\n\tview! = |{}| <main><NoHydration><p>{title}</p></NoHydration></main>\n}\n");
 	assert.match(member, /^\ttitle = "Hi"$/m);
+	// A word in a string's text or a comment is no name: left as it is, though the server's copy has it twice.
+	const text = browserOf("import pf.Html\n\nview! = |{}| {\n\titem = { label: \"Comments, entities, raw ${\"text\"}\", sign: '\"' } # entities, too\n\t<main><p>{item.label}</p><NoHydration><p>{\"entities, \"}</p></NoHydration></main>\n}\n");
+	assert.match(text, /^\titem = \{ label: "Comments, entities, raw \$\{"text"\}", sign: '"' \} # entities, too$/m);
 	// A file with no <NoHydration> is untouched (and so is the server's copy).
 	assert.match(transpileModule("import pf.Html\n\nview! = |{ params }|\n\t<main><NoHydration><p>{params.lang}</p></NoHydration></main>\n", "P.rocx", { module: "P" }).code, /^view! = \|\{ params \}\|$/m);
 });

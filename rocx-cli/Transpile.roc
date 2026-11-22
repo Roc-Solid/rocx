@@ -2114,13 +2114,15 @@ Transpile := [].{
 	without_server_bindings = |browser, server| {
 		code = browser.to_utf8()
 		server_code = server.to_utf8()
+		mask = Transpile.code_mask(code)
+		server_mask = Transpile.code_mask(server_code)
 		var $out = code
 		var $shift = 0
-		for name in Transpile.bound_names(code) {
-			found = Transpile.occurrences(code, name)
-			if found.len() == 1 and Transpile.occurrences(server_code, name).len() > 1 {
+		for name in Transpile.bound_names(code, mask) {
+			found = Transpile.occurrences(code, mask, name)
+			if found.len() == 1 and Transpile.occurrences(server_code, server_mask, name).len() > 1 {
 				at = found.first() ?? 0
-				match Transpile.unbound(code, at, name) {
+				match Transpile.unbound(code, mask, at, name) {
 					Ok(rewritten) => {
 						$out = $out.take_first(at + $shift).concat(rewritten.to_utf8()).concat($out.drop_first(at + $shift + name.count_utf8_bytes()))
 						$shift = $shift + rewritten.count_utf8_bytes() - name.count_utf8_bytes()
@@ -2132,10 +2134,72 @@ Transpile := [].{
 		Str.from_utf8_lossy($out)
 	}
 
-	## Where `name` occurs in `code` as a name: not part of a longer one (`params` isn't in
-	## `params2`, `intl` isn't `intl!`) and not a field read (`.params`), in the order it occurs.
-	occurrences : List(U8), Str -> List(U64)
-	occurrences = |code, name| {
+	## Which bytes of `code` are code (`Bool.True`), not a string's text (a `${…}` in one is code), a
+	## character (`'"'`) or a comment.
+	code_mask : List(U8) -> List(Bool)
+	code_mask = |code| {
+		var $mask = List.with_capacity(code.len())
+		# The strings open here, innermost last: in each, how many `{` of a `${…}` are open (0: its text).
+		var $strings = []
+		var $comment = Bool.False
+		var $char = Bool.False
+		var $escaped = Bool.False
+		var $dollar = Bool.False
+		for b in code {
+			in_text =
+				match $strings.last() {
+					Ok(depth) => depth == 0
+					Err(_) => Bool.False
+				}
+			if $comment {
+				$mask = $mask.append(Bool.False)
+				$comment = b != '\n'
+			} else if $escaped {
+				$mask = $mask.append(Bool.False)
+				$escaped = Bool.False
+				$dollar = Bool.False
+			} else if $char {
+				$mask = $mask.append(Bool.False)
+				$escaped = b == '\\'
+				$char = b != '\''
+			} else if in_text {
+				$mask = $mask.append(Bool.False)
+				if b == '\\' {
+					$escaped = Bool.True
+				} else if b == '"' {
+					$strings = $strings.drop_last(1)
+				} else if b == '{' and $dollar {
+					$strings = $strings.drop_last(1).append(1)
+				}
+				$dollar = b == '$'
+			} else if b == '"' {
+				$mask = $mask.append(Bool.False)
+				$strings = $strings.append(0)
+			} else if b == '\'' {
+				$mask = $mask.append(Bool.False)
+				$char = Bool.True
+			} else if b == '#' {
+				$mask = $mask.append(Bool.False)
+				$comment = Bool.True
+			} else {
+				$mask = $mask.append(Bool.True)
+				# Code in a `${…}`: its braces count to its end.
+				depth = $strings.last() ?? 0
+				if !$strings.is_empty() and b == '{' {
+					$strings = $strings.drop_last(1).append(depth + 1)
+				} else if !$strings.is_empty() and b == '}' {
+					$strings = $strings.drop_last(1).append(depth - 1)
+				}
+			}
+		}
+		$mask
+	}
+
+	## Where `name` occurs in `code` as a name, in its code (`mask`), not in a string's text or a
+	## comment: not part of a longer one (`params` isn't in `params2`, `intl` isn't `intl!`) and not a
+	## field read (`.params`), in the order it occurs.
+	occurrences : List(U8), List(Bool), Str -> List(U64)
+	occurrences = |code, mask, name| {
 		needle = name.to_utf8()
 		size = needle.len()
 		var $found = []
@@ -2146,7 +2210,7 @@ Transpile := [].{
 					before = if (k == 0) ' ' else Text.at(code, k - 1)
 					after = Text.at(code, k + size)
 					longer = Transpile.is_alnum_under(after) or (after == '!' and Text.at(code, k + size + 1) != '=' and !name.ends_with("!"))
-					if !(Transpile.is_alnum_under(before) or before == '.' or before == '$') and !longer {
+					if !(Transpile.is_alnum_under(before) or before == '.' or before == '$') and !longer and (mask.get(k) ?? Bool.False) {
 						$found = $found.append(k)
 					}
 					$i = k + 1
@@ -2161,14 +2225,14 @@ Transpile := [].{
 
 	## The names the code binds that a rewrite may touch: each lowercase word followed, past spaces,
 	## by `,`, `}`, `|` or a lone `=` (a pattern's field, a parameter, a definition), each once.
-	bound_names : List(U8) -> List(Str)
-	bound_names = |code| {
+	bound_names : List(U8), List(Bool) -> List(Str)
+	bound_names = |code, mask| {
 		var $names = []
 		var $i = 0
 		while $i < code.len() {
 			b = Text.at(code, $i)
 			before = if ($i == 0) ' ' else Text.at(code, $i - 1)
-			if Text.is_lower(b) and !(Transpile.is_alnum_under(before) or before == '.' or before == '$' or before == '"') {
+			if Text.is_lower(b) and (mask.get($i) ?? Bool.False) and !(Transpile.is_alnum_under(before) or before == '.' or before == '$' or before == '"') {
 				var $j = $i
 				while $j < code.len() and Transpile.is_alnum_under(Text.at(code, $j)) {
 					$j = $j + 1
@@ -2193,8 +2257,8 @@ Transpile := [].{
 	## `name` at `at`, rewritten so it binds nothing the compiler would call unused: in a record
 	## pattern, `name: _`; a lambda's parameter or a definition at the start of its line, `_name`.
 	## `Unsure` anywhere else.
-	unbound : List(U8), U64, Str -> Try(Str, [Unsure])
-	unbound = |code, at, name| {
+	unbound : List(U8), List(Bool), U64, Str -> Try(Str, [Unsure])
+	unbound = |code, mask, at, name| {
 		end = at + name.count_utf8_bytes()
 		next_at = Text.skip_space(code, end)
 		next = Text.at(code, next_at)
@@ -2215,7 +2279,7 @@ Transpile := [].{
 		var $inside = Nothing
 		while $k > $start and $inside == Nothing {
 			$k = $k - 1
-			c = Text.at(code, $k)
+			c = if (mask.get($k) ?? Bool.False) Text.at(code, $k) else ' '
 			if c == '}' {
 				$depth = $depth + 1
 			} else if c == '{' and $depth == 0 {

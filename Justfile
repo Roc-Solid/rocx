@@ -198,16 +198,17 @@ deploy-pages: site
     git push -f "$remote" FETCH_HEAD:refs/heads/main
     echo "Published: https://roc-solid.github.io/ (Pages takes a minute to update)"
 
-# Everything: the transpiler and the routes; every Roc module's expects (the platform's modules, the
-# pages and their components, the highlighter: site/main.roc imports them all; and every package's,
-# packages/*/main.roc); the web platform in Node and a browser; the site in a browser, served by the
-# native server; the server platform; packages/testing's and packages/posthog's own tests, against
-# an app each builds (once the server's host is). One file at a time: the web platform's tests and
-# the site's both build its host. The browser tests need Chromium (see web/test/browser.mjs); the
-# server platform's Postgres, jobs, cron and actors tests, and packages/testing's and
-# packages/posthog's database tests, DATABASE_URL (`just db`).
+# Everything: the transpiler and the routes; every Roc module's expects (rocx's own, rocx-cli/; the
+# platform's modules, the pages and their components, the highlighter: site/main.roc imports them
+# all; and every package's, packages/*/main.roc); the web platform in Node and a browser; the site
+# in a browser, served by the native server; the server platform; packages/testing's and
+# packages/posthog's own tests, against an app each builds (once the server's host is). One file at
+# a time: the web platform's tests and the site's both build its host. The browser tests need
+# Chromium (see web/test/browser.mjs); the server platform's Postgres, jobs, cron and actors tests,
+# and packages/testing's and packages/posthog's database tests, DATABASE_URL (`just db`).
 test:
     ROC={{ roc }} node --test 'test/*.test.mjs'
+    {{ roc }} test rocx-cli/main.roc
     node site/build.mjs --prepare
     {{ roc }} test site/main.roc
     for package in packages/*/main.roc; do echo "$package"; {{ roc }} test "$package" || exit 1; done

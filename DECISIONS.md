@@ -1962,6 +1962,10 @@ left in the browser's is where it is bound, is rewritten there.
 - A local definition in a function's body: `lang = params.lang` is `_lang = params.lang`.
 - Anything else (a member of a block, which another module may read; a place it can't read for
   certain) is left as it is, and warns as before. The server's copy is never touched.
+- Only code counts: a word in a string's text, a character or a comment is no name. (The first
+  version read them as code, and rewrote `"Comments, entities, raw text"` in a record to
+  `"Comments, entities: _, raw text"` in the browser's copy, so the site's pages rendered
+  differently there.)
 
 **Why.** The warning was rocx's doing, not the app's. **Reversible:** yes.
 

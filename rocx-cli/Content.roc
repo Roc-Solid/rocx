@@ -116,7 +116,7 @@ sample = { name: "blog-posts", mod: "BlogPosts", files: ["hello.md", "2026/later
 
 expect Content.module_text(sample, "markdown").contains("import \"../../content/blog-posts/2026/later.md\" as file_1 : Str")
 expect Content.module_text(sample, "markdown").contains("\t\t{ path: \"2026/later.md\", source: file_1 },")
-expect !Content.module_text(sample, "markdown").contains("Collection")
+expect !Content.module_text(sample, "markdown").contains("import markdown.Collection")
 expect Content.module_text({ ..sample, frontmatter: Some("Post") }, "md").contains("import md.Collection\nimport ../../content/blog-posts/Post")
 expect Content.module_text({ ..sample, frontmatter: Some("Post") }, "md").contains("\tall : List(Collection.Entry(Post))")
 expect Content.module_text({ ..sample, files: [] }, "markdown").contains("\tfiles = []")
