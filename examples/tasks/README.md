@@ -149,9 +149,10 @@ Two more were fixed in rocx and the platform since (9, 10).
    own 404, for any refusal (a failing database too). Now a read its endpoint refuses with a 4xx
    makes the page that status, with the app's error page (`routes/+error.rocx`), as a path no page
    has does; a 5xx is still a 500. Both pages read with `get!`.
-7. **A plain form and the runtime need different answers from delete.** From the task's own page a
-   browser should go to the list, not back to the deleted task; from the list, the runtime wants
-   JSON. `Endpoint.posted_by` is private, so the endpoint asks `Server.wants_html(request)`.
+7. **Fixed: a plain form and the runtime need different answers from delete.** From the task's own
+   page a browser should go to the list, not back to the deleted task; from the list, the runtime
+   wants JSON. `Endpoint.posted_by` was private, so the endpoint asked `Server.wants_html(request)`;
+   now it is public, and the endpoint asks it (`PlainForm`, `Runtime` or `Other`).
 8. **`node --test <dir>` finds no tests on Node 24**: the glob `'examples/tasks/test/*.test.mjs'`
    does (`just examples` uses it).
 9. **Fixed: `rocx build --client` of an app with no component pages** (echo) wrote a `main.roc`

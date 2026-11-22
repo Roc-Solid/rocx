@@ -373,7 +373,7 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 				Read(json) => json
 				Unread(_) => "{}"
 			}
-		posted = posted_by(request)
+		posted = Endpoint.posted_by(request)
 		reply! = |status, body|
 			match posted {
 				PlainForm => Server.flash_back!(request, { url: endpoint.url, input: Server.text_of(request), status, body })
@@ -433,6 +433,22 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 			}
 		}
 	}
+
+	## Who sent a request, as `respond!` answers each: `PlainForm`, a browser's form posted without the
+	## runtime (a form's body, for a page: `accept: text/html`), which goes back to its page with a
+	## flash; `Runtime`, a form the runtime sent or an action (`use_action!`: `x-rocx-submission`),
+	## which gets the result as JSON or the refusal; `Other`, anything else (JSON from a script,
+	## `Endpoint.send!`), which gets them too. A handler that answers its own way asks it: a plain
+	## form's delete sends the browser to the list, where the runtime wants the list's id.
+	posted_by : Server.Request -> [PlainForm, Runtime, Other]
+	posted_by = |request|
+		if Server.header(request, "x-rocx-submission").is_ok() {
+			Runtime
+		} else if media_type(Server.header(request, "content-type") ?? "") == "application/x-www-form-urlencoded" and Server.wants_html(request) {
+			PlainForm
+		} else {
+			Other
+		}
 
 	## A refusal's status, and why.
 	refused : Refusal -> (U16, Str)
@@ -530,18 +546,6 @@ input_of = |request| {
 	}
 }
 
-## Who posted a request: a browser's plain form (a form's body, for a page: `accept: text/html`),
-## the runtime (a form it sent: `x-rocx-submission`), or anything else (a script, `Endpoint.send!`).
-posted_by : Server.Request -> [PlainForm, Runtime, Other]
-posted_by = |request|
-	if Server.header(request, "x-rocx-submission").is_ok() {
-		Runtime
-	} else if media_type(Server.header(request, "content-type") ?? "") == "application/x-www-form-urlencoded" and Server.wants_html(request) {
-		PlainForm
-	} else {
-		Other
-	}
-
 ## A redirect of a handler's own, for the runtime: 200, its `location` as `x-rocx-redirect`, the rest
 ## (a cookie it sets) kept. Any other answer as it is.
 redirected : Server.Response -> Server.Response
@@ -590,10 +594,10 @@ expect input_of(Server.from_http("PUT", "/upload", "content-type: text/plain", "
 expect input_of(Server.from_http("PUT", "/upload", "", [0xFF])) == Unread("")
 expect input_of(Server.from_http("DELETE", "/upload", "content-type: video/mp4", [])) == Read("{}")
 expect media_type("Application/JSON ; charset=utf-8") == "application/json"
-expect posted_by(Server.from_http("POST", "/shout", "content-type: application/x-www-form-urlencoded\naccept: text/html,*/*", [])) == PlainForm
-expect posted_by(Server.from_http("POST", "/shout", "content-type: application/x-www-form-urlencoded\naccept: application/json\nx-rocx-submission: 1", [])) == Runtime
-expect posted_by(Server.from_http("POST", "/shout", "content-type: application/json\naccept: text/html", [])) == Other
-expect posted_by(Server.from_http("POST", "/shout", "content-type: application/x-www-form-urlencoded", [])) == Other
+expect Endpoint.posted_by(Server.from_http("POST", "/shout", "content-type: application/x-www-form-urlencoded\naccept: text/html,*/*", [])) == PlainForm
+expect Endpoint.posted_by(Server.from_http("POST", "/shout", "content-type: application/x-www-form-urlencoded\naccept: application/json\nx-rocx-submission: 1", [])) == Runtime
+expect Endpoint.posted_by(Server.from_http("POST", "/shout", "content-type: application/json\naccept: text/html", [])) == Other
+expect Endpoint.posted_by(Server.from_http("POST", "/shout", "content-type: application/x-www-form-urlencoded", [])) == Other
 expect redirected(Server.with_cookie(Server.redirect("/members"), "member", "Ada")).headers == [{ name: "x-rocx-redirect", value: "/members" }, { name: "set-cookie", value: "member=Ada; Path=/; HttpOnly; SameSite=Lax" }]
 expect redirected(Server.redirect("/members")).status == 200
 expect redirected(Server.refused(409, "taken")).status == 409

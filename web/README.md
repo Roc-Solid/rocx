@@ -47,7 +47,7 @@ same components natively; this one hydrates them.
   subscribed to, `subscribe!`, said to, `say!`, or resynced, `resync!`, and, on the server,
   published on, `publish!` and `publish_latest!`, or an endpoint run there and then, `run!`, given
   its handler with `bind`: `Generated/Api` is the app's contract, each endpoint's method, URL and
-  types, the same in the browser's copy as on the server, D-037),
+  types, the same in the browser's copy as on the server, D-037; who sent a request, `posted_by`),
   `Channel` (what a route's `channel!` answers, `Channel.allow(who)`, and what a subscriber hears),
   `Events`, `Middleware` and `OpenApi`. The server platform's build copies them into
   `server/platform`, so the same code compiles on both.

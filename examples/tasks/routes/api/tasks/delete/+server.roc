@@ -11,9 +11,8 @@ import ../../../../Generated/Paths
 post! : { request : Server.Request, params : {}, context : Middlewares.Context, body : Tasks.Remove } => Try(Str, Endpoint.Refusal)
 post! = |{ request, body, .. }| {
 	list = Store.remove!(body.id).map_err(Store.refusal)?
-	if Server.wants_html(request) {
-		Err(Answer(Server.redirect(if (list.is_empty()) Paths.root else Paths.lists_id({ id: list }))))
-	} else {
-		Ok(list)
+	match Endpoint.posted_by(request) {
+		PlainForm => Err(Answer(Server.redirect(if (list.is_empty()) Paths.root else Paths.lists_id({ id: list }))))
+		Runtime | Other => Ok(list)
 	}
 }

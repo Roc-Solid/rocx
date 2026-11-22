@@ -328,7 +328,10 @@ answer as always. So does an action (`Router.use_action!`, D-030): the browser's
 arg as JSON, with `x-rocx-submission: 1`, and a result has it read the page's reads again
 (`Endpoint.get!`'s GETs); the server sees plain requests, and an endpoint that answers one with its
 own `Err(Answer(…))` (a cookie set along with its JSON, as the docs site's planner keeps a reader's
-week) is sent as it is.
+week) is sent as it is. A handler that answers each its own way asks
+`Endpoint.posted_by(request)`: `PlainForm`, `Runtime` (a form the runtime sent, or an action) or
+`Other` (a script). examples/tasks' delete sends a plain form to the list, and gives the runtime the
+list's id.
 
 ### Settings: `Env`
 
