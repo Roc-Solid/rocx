@@ -64,7 +64,8 @@ program = {
 }
 
 ## The plugins. The jobs (packages/jobs): the kinds its workers run, a schedule, and a short first
-## retry (20 ms), so the tests see retries soon. A plugin package's (server/test/fixture): the
+## retry (20 ms), so the tests see retries soon. The jobs page (packages/admin). A plugin package's
+## (server/test/fixture): the
 ## fixture's routes show the server's context as the app has it; `third` needs `second`, so it
 ## starts after it.
 plugins : List(Plugin.Value(Str))
@@ -76,6 +77,8 @@ plugins = [
 			retry_ms: 20,
 		},
 	),
+	# The jobs page (packages/admin), behind a guard of the app's own.
+	JobsPage.plugin({ at: "/admin/jobs", guard: admins_only }),
 	Fixture.plugin({ shown: |context| "the app's context, ${context}" }),
 	Fixture.third({}),
 	Fixture.second({}),
@@ -549,8 +552,8 @@ route! = |request, context| {
 				Err(BadRow(why)) => text(500, why)
 			}
 		}
-		# The jobs page, behind a guard of the app's own.
-		(_, "/admin/jobs") => Middleware.run!(admins_only, request, {}, |passed, _| JobsPage.respond!(passed, { mount: "/admin/jobs" }))
+		# The jobs page mounted by the app itself, behind a guard of its own (its plugin is at /admin/jobs).
+		(_, "/admin/mounted") => Middleware.run!(admins_only, request, context, |passed, _| JobsPage.respond!(passed, { mount: "/admin/mounted" }))
 		("GET", "/jobs/ticks") => {
 			found : Try(List({ ticks : I64 }), [DbErr(Str), BadRow(Str)])
 			found = Db.all!("select count(*) as ticks from job_log where kind = 'tick'", [])
@@ -954,7 +957,7 @@ described_job = |row| {
 }
 
 ## Admins only: a request saying `x-admin: yes`; anyone else is refused (403).
-admins_only : Middleware({}, {})
+admins_only : Middleware(Str, Str)
 admins_only = Middleware.make(|request, context, next!| if (Server.header(request, "x-admin") == Ok("yes")) next!(request, context) else Server.refused(403, "admins only"))
 
 ## Says a line to a server on this machine, and reads its answer: a line, then three bytes more.

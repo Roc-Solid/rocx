@@ -68,44 +68,16 @@ where the shape is known: the catalog's, the count's).
 **Undoing it.** Remove the copy step: packages go back to handing effects in, and `AdminPage` can
 keep a `respond_with!(request, context, config, effects)` for that until then.
 
-## The platform's admin look for apps (`AdminHtml`)
+## The admin look in one place (done)
 
-**Problem.** The jobs page and the dev mailbox are drawn with `server/platform/AdminHtml.roc`: the
-document (a sidebar, a header, panels), its stylesheet (`.rocx-admin`: tokens for light and dark,
-the shell, panels, tables, buttons), its helpers (`side`, `nav_link`, `header`, `panel`, `empty`,
-`icon`, `button_with`, `escape`, `link`, `moment`), and a stream of changes that refreshes a page.
-The platform doesn't expose it, so the admin's `Look` holds a copy of the parts its pages use: two
-copies of "the platform's admin look". `test/packages.test.mjs` keeps them from drifting apart (it
-compares each part of AdminHtml's stylesheet, and each helper, with Look's, and fails with what to
-copy again), but each change to the look is still made twice.
-
-**Options.**
-
-1. Keep the copy, guarded by the test (today's).
-2. Expose `AdminHtml` from the server platform, and add the admin's rules to its stylesheet: inputs,
-   selects and text areas, a row's `.fields` and `.help`, the list's `.tools`, `form.search`,
-   `tr.filter` and `.pager`, `td.null`, `th a.on`, `.btn.primary`, `.btn.danger`: about 50 short
-   rules, those after "The admin's own" in `Look.roc`. Its pages need nothing else.
-3. Move the look into a package both use: the platform can't import an app's package (the types
-   would be two packages' types).
-4. **The plugins design** (`spike/plugins/DESIGN.md`, phase 1; DECISIONS.md D-033): a package may
-   now name the server platform and import `pf.*` (the browser's half sees its `browser.roc`, or
-   nothing), and the design's next step moves `JobsPage` and `AdminHtml` out of the platform into
-   `packages/admin` itself (`JobsPage.plugin({ at, guard })`). Then the admin's pages and the jobs
-   page are drawn by the same module, in the same package, and there is nothing to copy.
-
-**Recommended: 4**, the eventual fix, once `AdminHtml` has moved; until then 1, which works now.
-With 4, `Look.document` becomes `AdminHtml.page(status, { title, events: "", now: 0, side, body })`,
-`Look`'s copy and the guard go, and `Look` keeps only the admin's own rules (or they join
-AdminHtml's stylesheet) and its headers (or `AdminHtml.page` gains the CSP header for every admin
-page, which the jobs page could use too: it runs one inline script, so its policy would allow that
-script's hash). 2 is the step before it if the plugins design waits long.
-
-**What depends on it.** `Look.document`, `Look.stylesheet`, `Look.side`, `Look.header`,
-`Look.panel`, `Look.empty`, `Look.icon`, `Look.button_with` (all become `AdminHtml`'s),
-`Look.escape` (becomes `AdminHtml.escape`), and the guard in `test/packages.test.mjs` (it goes).
-
-**Undoing it.** The admin keeps its copy, and the guard.
+Was: the jobs page and the dev mailbox were drawn with the platform's `AdminHtml`, which packages
+couldn't import, so `Look` held a copy of it and `test/packages.test.mjs` kept the two from
+drifting. **Done with the plugins (D-033, D-034):** the jobs page and its look moved into this
+package, and there is one look. `Look` holds it: the rules every admin page shares, part by part
+(`Look.shared`), and the helpers (`side`, `nav_link`, `header`, `panel`, `empty`, `icon`,
+`button_with`, `escape`). It stays on no platform, so a page in the browser can still show the
+tables admin. `AdminHtml` (the server's pages: the jobs page, the dev mailbox) builds its stylesheet
+from `Look.shared` and its own rules, and uses the same helpers. The copy and the guard are gone.
 
 ## Rows of any shape from `Db`
 

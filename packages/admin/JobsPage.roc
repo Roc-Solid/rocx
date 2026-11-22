@@ -1,31 +1,65 @@
 import pf.Db
+import pf.Middleware
+import pf.Plugin
 import pf.Server
 import pf.Time
 import jobs.Cron
 import jobs.Job
 import AdminHtml
+import Look
 
-## The jobs page: a console of packages/jobs's queue, for the app to mount behind its own
-## middleware (only the app knows who may see it). How many jobs are queued, running, failed,
-## done and canceled; what finished in the last hour, and the latest failures; each kind, with its
-## attempts, time limit and jobs; the schedules and when each runs next; and the jobs, newest
-## first, each opening in a drawer with its input, attempts, times and last error. Retry, cancel
-## and run now are plain forms, answered with a redirect back. It refreshes itself as jobs change
-## (a stream of events), and works without script too.
+## The jobs page: a console of packages/jobs's queue, as a plugin the app lists, behind a guard of
+## its own (only the app knows who may see it). How many jobs are queued, running, failed, done and
+## canceled; what finished in the last hour, and the latest failures; each kind, with its attempts,
+## time limit and jobs; the schedules and when each runs next; and the jobs, newest first, each
+## opening in a drawer with its input, attempts, times and last error. Retry, cancel and run now
+## are plain forms, answered with a redirect back. It refreshes itself as jobs change (a stream of
+## events), and works without script too.
+##
+## ```roc
+## plugins: [
+##     Job.plugin({ jobs: App.jobs }),
+##     JobsPage.plugin({ at: "/admin/jobs", guard: Middlewares.admin }),   # `guard` has no default
+## ]
+## ```
+##
+## An app that mounts it itself answers a route with `respond!` (`mount` is the path it is at):
 ##
 ## ```roc
 ## # routes/admin/jobs/+server.roc
 ## middleware = Middlewares.admin
-## get! = |{ request, .. }| Err(Answer(JobsPage.respond!(request, { mount: "/admin/jobs" })))
-## post! = |{ request, .. }| Err(Answer(JobsPage.respond!(request, { mount: "/admin/jobs" })))
+## respond! = |{ request, .. }| JobsPage.respond!(request, { mount: "/admin/jobs" })
 ## ```
 ##
-## `mount` is the path it is at. It answers GET (`?state=failed`, `?kind=…`, `?before=<id>` for
-## older ones, `?id=123` for one job, over the list the rest of the query picks, `?events` for its
-## stream of changes) and POST (`action=retry|cancel|run_now` with `id=`, or `action=run_schedule`
-## with `name=`). A POST from another site's page is refused (403), as `Middleware.same_origin`
-## would.
+## It answers GET (`?state=failed`, `?kind=…`, `?before=<id>` for older ones, `?id=123` for one
+## job, over the list the rest of the query picks, `?events` for its stream of changes) and POST
+## (`action=retry|cancel|run_now` with `id=`, or `action=run_schedule` with `name=`). A POST from
+## another site's page is refused (403), as `Middleware.same_origin` would.
 JobsPage := [].{
+
+	## Where the page is (`at`), and who may see it: `guard`, the app's middleware for its admins,
+	## which runs after the app's own and may refuse, or send a stranger to sign in. What it hands on
+	## isn't used. `guard` has no default: a jobs page is never public because an option was left
+	## out.
+	Options(ctx, out) := { at : Str ?? "/admin/jobs", guard : Middleware(ctx, out) }
+
+	## The jobs page as a plugin (`jobs-page`): its page at `at`, behind `guard`, which answers GET
+	## and POST (and 405 to any other method). It needs the jobs plugin (`Job.plugin`), whose queue it
+	## shows. Pages, not endpoints: not in the app's `/openapi.json`.
+	plugin : Options(ctx, out) -> Plugin.Value(ctx)
+	plugin = |options| {
+		at = options.at
+		guard = options.guard
+		{
+			name: "jobs-page",
+			# One route, for every method (`*`): two routes (GET and POST) whose closures each capture the
+			# guard crash a server built with --opt=speed as it starts (a compiler bug:
+			# test/compiler-bugs/two-guarded-routes-opt-speed). Back to a GET and a POST route once the
+			# compiler is fixed.
+			routes: [{ method: "*", path: at, kind: Page, answer!: |request, context| Middleware.run!(guard, request, context, |passed, _handed| JobsPage.respond!(passed, { mount: at })) }],
+			needs: [Plugin("jobs")],
+		}
+	}
 
 	## Answers a request to the jobs page at `mount`: a GET draws it (or streams its changes), a
 	## POST retries, cancels or runs a job, or runs a schedule, and redirects back; any other method
@@ -101,7 +135,7 @@ shown! = |mount, query| {
 		}
 	match read {
 		Err(why) => {
-			body = "${AdminHtml.header({ eyebrow: "Queue", title: "Jobs", actions: "" })}<section class=\"panel\"><div class=\"callout tone-bad\">${AdminHtml.icon("alert")}<div><strong>The queue can't be read</strong><p class=\"problem\">${AdminHtml.escape(why)}</p></div></div></section>"
+			body = "${Look.header({ eyebrow: "Queue", title: "Jobs", actions: "" })}<section class=\"panel\"><div class=\"callout tone-bad\">${Look.icon("alert")}<div><strong>The queue can't be read</strong><p class=\"problem\">${Look.escape(why)}</p></div></div></section>"
 			AdminHtml.page(500, { title: "Jobs", events: "", now, side: "", body })
 		}
 		Ok((counts, rows)) => {
@@ -121,9 +155,9 @@ shown! = |mount, query| {
 			titled = if (state.is_empty()) "Jobs" else "${AdminHtml.capitalized(state)} jobs"
 			heading =
 				if kind.is_empty() {
-					AdminHtml.header({ eyebrow: if (state.is_empty()) "Queue · Overview" else "Queue · State", title: titled, actions: AdminHtml.live(now, refresh) })
+					Look.header({ eyebrow: if (state.is_empty()) "Queue · Overview" else "Queue · State", title: titled, actions: AdminHtml.live(now, refresh) })
 				} else {
-					AdminHtml.header({ eyebrow: if (state.is_empty()) "Kind" else "Kind · ${AdminHtml.capitalized(state)}", title: "<code>${AdminHtml.escape(kind)}</code><span class=\"meta\">${AdminHtml.escape(kind_meta(kinds, kind))}</span>", actions: AdminHtml.live(now, refresh) })
+					Look.header({ eyebrow: if (state.is_empty()) "Kind" else "Kind · ${AdminHtml.capitalized(state)}", title: "<code>${Look.escape(kind)}</code><span class=\"meta\">${Look.escape(kind_meta(kinds, kind))}</span>", actions: AdminHtml.live(now, refresh) })
 				}
 			hour =
 				if state.is_empty() and before == 0 {
@@ -173,17 +207,17 @@ shown! = |mount, query| {
 ## The sidebar: the overview, each state and each kind, with how many jobs each has.
 sidebar : Str, List({ kind : Str, state : Str, count : U64 }), List(Job.KindInfo), Str, Str -> Str
 sidebar = |mount, counts, kinds, state, kind| {
-	overview = AdminHtml.nav_link({ href: mount, icon: "overview", tone: "accent", label: "Overview", count: "", on: state.is_empty() and kind.is_empty() })
+	overview = Look.nav_link({ href: mount, icon: "overview", tone: "accent", label: "Overview", count: "", on: state.is_empty() and kind.is_empty() })
 	by_state = states.map(
 		|each| {
 			count = count_of(counts, "", each)
-			AdminHtml.nav_link({ href: AdminHtml.link(mount, [("state", each)]), icon: "", tone: if (each == "failed" and count == 0) "neutral" else tone(each), label: AdminHtml.capitalized(each), count: count.to_str(), on: kind.is_empty() and state == each })
+			Look.nav_link({ href: AdminHtml.link(mount, [("state", each)]), icon: "", tone: if (each == "failed" and count == 0) "neutral" else tone(each), label: AdminHtml.capitalized(each), count: count.to_str(), on: kind.is_empty() and state == each })
 		},
 	)
-	by_kind = kind_names(kinds, counts).map(|name| AdminHtml.nav_link({ href: AdminHtml.link(mount, [("kind", name)]), icon: "layers", tone: "neutral", label: "<code>${AdminHtml.escape(name)}</code>", count: count_of(counts, name, "").to_str(), on: kind == name }))
-	kinds_nav = if (by_kind.is_empty()) "" else "${AdminHtml.nav_label("Kinds")}${Str.join_with(by_kind, "")}"
-	nav = "${overview}${AdminHtml.nav_label("States")}${Str.join_with(by_state, "")}${kinds_nav}"
-	AdminHtml.side({ name: "Jobs", note: "The queue, in Postgres", home: mount, nav, foot: "Times are UTC. Done jobs are kept for a week." })
+	by_kind = kind_names(kinds, counts).map(|name| Look.nav_link({ href: AdminHtml.link(mount, [("kind", name)]), icon: "layers", tone: "neutral", label: "<code>${Look.escape(name)}</code>", count: count_of(counts, name, "").to_str(), on: kind == name }))
+	kinds_nav = if (by_kind.is_empty()) "" else "${Look.nav_label("Kinds")}${Str.join_with(by_kind, "")}"
+	nav = "${overview}${Look.nav_label("States")}${Str.join_with(by_state, "")}${kinds_nav}"
+	Look.side({ name: "Jobs", note: "The queue, in Postgres", home: mount, nav, foot: "Times are UTC. Done jobs are kept for a week." })
 }
 
 ## How many jobs are in each state (of the kind shown), each a link to them.
@@ -196,7 +230,7 @@ metrics = |mount, counts, state, kind| {
 			zero = if (count == 0) " zero" else ""
 			toned = if (wanted.is_empty()) "" else " tone-${tone(wanted)}"
 			dot = if (wanted.is_empty()) "" else "<i class=\"dot\"></i>"
-			"<a class=\"metric${toned}${zero}\" href=\"${AdminHtml.escape(AdminHtml.link(mount, [("state", wanted), ("kind", kind)]))}\"${current}><span class=\"metric-label\">${dot}${label}</span><strong>${count.to_str()}</strong></a>"
+			"<a class=\"metric${toned}${zero}\" href=\"${Look.escape(AdminHtml.link(mount, [("state", wanted), ("kind", kind)]))}\"${current}><span class=\"metric-label\">${dot}${label}</span><strong>${count.to_str()}</strong></a>"
 		}
 	cells = [cell("All", "")].concat(states.map(|each| cell(AdminHtml.capitalized(each), each)))
 	"<nav class=\"metrics\" aria-label=\"States\">${Str.join_with(cells, "")}</nav>"
@@ -214,10 +248,10 @@ activity! = |kind|
 ## The last hour, as twelve bars of five minutes: done, done after a retry, and failed.
 activity_panel! : Str, Str => Str
 activity_panel! = |mount, kind| {
-	head = |aside, body| AdminHtml.panel({ eyebrow: "Last 60 minutes", title: "Finished jobs", aside, body, class: "hour" })
+	head = |aside, body| Look.panel({ eyebrow: "Last 60 minutes", title: "Finished jobs", aside, body, class: "hour" })
 	match activity!(kind) {
-		Err(DbErr(why)) => head("", "<p class=\"problem\">${AdminHtml.escape(why)}</p>")
-		Err(BadRow(why)) => head("", "<p class=\"problem\">${AdminHtml.escape(why)}</p>")
+		Err(DbErr(why)) => head("", "<p class=\"problem\">${Look.escape(why)}</p>")
+		Err(BadRow(why)) => head("", "<p class=\"problem\">${Look.escape(why)}</p>")
 		Ok(found) => {
 			got = |bucket, wanted| found.keep_if(|each| each.bucket == bucket and each.state == wanted).fold(0, |sum, each| sum + each.count)
 			columns = [11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0].map(|bucket| { bucket, done: got(bucket, "done"), retried: got(bucket, "retried"), failed: got(bucket, "failed") })
@@ -226,7 +260,7 @@ activity_panel! = |mount, kind| {
 			retried = columns.fold(0, |sum, each| sum + each.retried)
 			failed = columns.fold(0, |sum, each| sum + each.failed)
 			if done + retried + failed == 0 {
-				head("", AdminHtml.empty("clock", "Nothing finished in the last hour", "Jobs show here as the workers finish them."))
+				head("", Look.empty("clock", "Nothing finished in the last hour", "Jobs show here as the workers finish them."))
 			} else {
 				bars = columns.map(
 					|each| {
@@ -237,7 +271,7 @@ activity_panel! = |mount, kind| {
 						"<div class=\"bar\" style=\"height:${height.to_str()}%\" title=\"${said}\">${segment(each.done, "good")}${segment(each.retried, "warn")}${segment(each.failed, "bad")}</div>"
 					},
 				)
-				failed_link = if (failed == 0) "<span><i class=\"dot tone-bad\"></i><b>0</b> failed</span>" else "<a href=\"${AdminHtml.escape(AdminHtml.link(mount, [("state", "failed"), ("kind", kind)]))}\"><span><i class=\"dot tone-bad\"></i><b>${failed.to_str()}</b> failed</span></a>"
+				failed_link = if (failed == 0) "<span><i class=\"dot tone-bad\"></i><b>0</b> failed</span>" else "<a href=\"${Look.escape(AdminHtml.link(mount, [("state", "failed"), ("kind", kind)]))}\"><span><i class=\"dot tone-bad\"></i><b>${failed.to_str()}</b> failed</span></a>"
 				legend = "<div class=\"legend\"><span><i class=\"dot tone-good\"></i><b>${done.to_str()}</b> done</span><span><i class=\"dot tone-warn\"></i><b>${retried.to_str()}</b> done after a retry</span>${failed_link}</div>"
 				chart = "<div class=\"chart\">${legend}<div class=\"bars\" role=\"img\" aria-label=\"In the last hour: ${done.to_str()} done, ${retried.to_str()} done after a retry, ${failed.to_str()} failed\">${Str.join_with(bars, "")}</div><div class=\"axis\"><span>60 min ago</span><span>30 min</span><span>now</span></div></div>"
 				head("<span>${(done + retried + failed).to_str()} in all</span>", chart)
@@ -250,17 +284,17 @@ activity_panel! = |mount, kind| {
 failures_panel! : Str, List({ kind : Str, state : Str, count : U64 }), I64 => Str
 failures_panel! = |mount, counts, now| {
 	failed = count_of(counts, "", "failed")
-	all = if (failed == 0) "" else "<a class=\"btn\" href=\"${AdminHtml.escape(AdminHtml.link(mount, [("state", "failed")]))}\">All ${failed.to_str()}${AdminHtml.icon("next")}</a>"
+	all = if (failed == 0) "" else "<a class=\"btn\" href=\"${Look.escape(AdminHtml.link(mount, [("state", "failed")]))}\">All ${failed.to_str()}${Look.icon("next")}</a>"
 	body =
 		match Job.list!({ state: "failed", kind: "", before_id: 0, limit: 5 }) {
-			Err(JobErr(why)) => "<p class=\"problem\">${AdminHtml.escape(why)}</p>"
-			Ok(rows) if rows.is_empty() => AdminHtml.empty("check", "No failed jobs", "Each job that fails for good shows here, with why.")
+			Err(JobErr(why)) => "<p class=\"problem\">${Look.escape(why)}</p>"
+			Ok(rows) if rows.is_empty() => Look.empty("check", "No failed jobs", "Each job that fails for good shows here, with why.")
 			Ok(rows) => {
 				items = rows.map(
 					|row| {
 						why =
 							match row.last_error {
-								Some(text) => "<code class=\"err\" title=\"${AdminHtml.escape(text)}\">${AdminHtml.escape(AdminHtml.shortened(text))}</code>"
+								Some(text) => "<code class=\"err\" title=\"${Look.escape(text)}\">${Look.escape(AdminHtml.shortened(text))}</code>"
 								Null => ""
 							}
 						ago =
@@ -268,13 +302,13 @@ failures_panel! = |mount, counts, now| {
 								Some(at) => " · ${AdminHtml.relative(at, now)}"
 								Null => ""
 							}
-						"<li><a class=\"failure\" href=\"${AdminHtml.escape(AdminHtml.link(mount, [("id", row.id.to_str())]))}\"><span class=\"badge\">${AdminHtml.icon("alert")}</span><div><strong>${AdminHtml.escape(row.kind)}</strong><span>#${row.id.to_str()} · tried ${row.attempts.to_str()} of ${row.max_attempts.to_str()}${ago}</span>${why}</div></a></li>"
+						"<li><a class=\"failure\" href=\"${Look.escape(AdminHtml.link(mount, [("id", row.id.to_str())]))}\"><span class=\"badge\">${Look.icon("alert")}</span><div><strong>${Look.escape(row.kind)}</strong><span>#${row.id.to_str()} · tried ${row.attempts.to_str()} of ${row.max_attempts.to_str()}${ago}</span>${why}</div></a></li>"
 					},
 				)
 				"<ul class=\"list\">${Str.join_with(items, "")}</ul>"
 			}
 		}
-	AdminHtml.panel({ eyebrow: "Latest", title: "Failures", aside: all, body, class: "failures" })
+	Look.panel({ eyebrow: "Latest", title: "Failures", aside: all, body, class: "failures" })
 }
 
 ## Each kind (the app's, and any other in the queue), its attempts and time limit, and how many of
@@ -296,16 +330,16 @@ kinds_panel = |mount, counts, kinds| {
 						if count == 0 {
 							"<td class=\"n count zero\">0</td>"
 						} else {
-							"<td class=\"n count tone-${tone(state)}\"><a href=\"${AdminHtml.escape(AdminHtml.link(mount, [("state", state), ("kind", name)]))}\">${count.to_str()}</a></td>"
+							"<td class=\"n count tone-${tone(state)}\"><a href=\"${Look.escape(AdminHtml.link(mount, [("state", state), ("kind", name)]))}\">${count.to_str()}</a></td>"
 						}
 					},
 				)
-				"<tr><td><a class=\"kind-name\" href=\"${AdminHtml.escape(AdminHtml.link(mount, [("kind", name)]))}\"><code>${AdminHtml.escape(name)}</code></a><span class=\"kind-meta\">${AdminHtml.escape(kind_meta(kinds, name))}</span></td><td class=\"spread\">${spread}</td>${Str.join_with(cells, "")}</tr>"
+				"<tr><td><a class=\"kind-name\" href=\"${Look.escape(AdminHtml.link(mount, [("kind", name)]))}\"><code>${Look.escape(name)}</code></a><span class=\"kind-meta\">${Look.escape(kind_meta(kinds, name))}</span></td><td class=\"spread\">${spread}</td>${Str.join_with(cells, "")}</tr>"
 			},
 		)
 		heads = Str.join_with(states.map(|state| "<th class=\"n\">${state}</th>"), "")
 		table = "<div class=\"table-wrap\"><table class=\"kinds\"><thead><tr><th>Kind</th><th>Jobs</th>${heads}</tr></thead><tbody>${Str.join_with(rows, "")}</tbody></table></div>"
-		AdminHtml.panel({ eyebrow: "What the workers run", title: "Kinds", aside: "<span>${names.len().to_str()} kinds</span>", body: table, class: "" })
+		Look.panel({ eyebrow: "What the workers run", title: "Kinds", aside: "<span>${names.len().to_str()} kinds</span>", body: table, class: "" })
 	}
 }
 
@@ -323,11 +357,11 @@ schedules_panel! = |mount, query, now| {
 						Some(at) => "next ${AdminHtml.relative(at, now)}"
 						Null => "never again"
 					}
-				run = AdminHtml.button_with("", "play", mount, [("action", "run_schedule"), ("name", each.name), ("back", query)], "Run now")
-				"<li class=\"schedule\"><div><a href=\"${AdminHtml.escape(AdminHtml.link(mount, [("kind", each.job)]))}\"><code>${AdminHtml.escape(each.job)}</code></a>${run}</div><div><span class=\"cron\"><code>${AdminHtml.escape(each.schedule)}</code>${AdminHtml.escape(described(each.schedule))}</span><span class=\"next\">${next}</span></div></li>"
+				run = Look.button_with("", "play", mount, [("action", "run_schedule"), ("name", each.name), ("back", query)], "Run now")
+				"<li class=\"schedule\"><div><a href=\"${Look.escape(AdminHtml.link(mount, [("kind", each.job)]))}\"><code>${Look.escape(each.job)}</code></a>${run}</div><div><span class=\"cron\"><code>${Look.escape(each.schedule)}</code>${Look.escape(described(each.schedule))}</span><span class=\"next\">${next}</span></div></li>"
 			},
 		)
-		AdminHtml.panel({ eyebrow: "Cron, in UTC", title: "Schedules", aside: "", body: "<ul class=\"list\">${Str.join_with(items, "")}</ul>", class: "schedules" })
+		Look.panel({ eyebrow: "Cron, in UTC", title: "Schedules", aside: "", body: "<ul class=\"list\">${Str.join_with(items, "")}</ul>", class: "schedules" })
 	}
 }
 
@@ -335,15 +369,15 @@ schedules_panel! = |mount, query, now| {
 jobs_panel : Str, Str, { state : Str, kind : Str, before : I64, selected : I64 }, List(Job.Row), I64 -> Str
 jobs_panel = |mount, query, { state, kind, before, selected }, rows, now| {
 	filters = [("state", state), ("kind", kind), ("before", if (before == 0) "" else before.to_str())]
-	chip_state = if (state.is_empty()) "" else "<span class=\"chip\">${badge(state)}<a href=\"${AdminHtml.escape(AdminHtml.link(mount, [("kind", kind)]))}\" aria-label=\"Any state\" title=\"Any state\">${AdminHtml.icon("close")}</a></span>"
-	chip_kind = if (kind.is_empty()) "" else "<span class=\"chip\"><code>${AdminHtml.escape(kind)}</code><a href=\"${AdminHtml.escape(AdminHtml.link(mount, [("state", state)]))}\" aria-label=\"Every kind\" title=\"Every kind\">${AdminHtml.icon("close")}</a></span>"
+	chip_state = if (state.is_empty()) "" else "<span class=\"chip\">${badge(state)}<a href=\"${Look.escape(AdminHtml.link(mount, [("kind", kind)]))}\" aria-label=\"Any state\" title=\"Any state\">${Look.icon("close")}</a></span>"
+	chip_kind = if (kind.is_empty()) "" else "<span class=\"chip\"><code>${Look.escape(kind)}</code><a href=\"${Look.escape(AdminHtml.link(mount, [("state", state)]))}\" aria-label=\"Every kind\" title=\"Every kind\">${Look.icon("close")}</a></span>"
 	title = if (state.is_empty()) "Jobs" else "${AdminHtml.capitalized(state)} jobs"
 	body =
 		if rows.is_empty() {
 			if state == "failed" {
-				AdminHtml.empty("check", "No failed jobs", "Nothing here has failed for good.")
+				Look.empty("check", "No failed jobs", "Nothing here has failed for good.")
 			} else {
-				AdminHtml.empty("layers", "No jobs here", "Jobs show here as they are queued.")
+				Look.empty("layers", "No jobs here", "Jobs show here as they are queued.")
 			}
 		} else {
 			lines = rows.map(
@@ -351,24 +385,24 @@ jobs_panel = |mount, query, { state, kind, before, selected }, rows, now| {
 					href = AdminHtml.link(mount, filters.append(("id", row.id.to_str())))
 					key =
 						match row.key {
-							Some(text) => "<code class=\"key\" title=\"${AdminHtml.escape(text)}\">${AdminHtml.escape(text)}</code>"
+							Some(text) => "<code class=\"key\" title=\"${Look.escape(text)}\">${Look.escape(text)}</code>"
 							Null => "<span class=\"muted\">—</span>"
 						}
 					error =
 						match row.last_error {
-							Some(why) => "<span class=\"err\" title=\"${AdminHtml.escape(why)}\">${AdminHtml.escape(AdminHtml.shortened(why))}</span>"
+							Some(why) => "<span class=\"err\" title=\"${Look.escape(why)}\">${Look.escape(AdminHtml.shortened(why))}</span>"
 							Null => ""
 						}
 					picked = if (selected == row.id) " class=\"selected\"" else ""
-					"<tr${picked}><td class=\"job\"><a class=\"row-link\" href=\"${AdminHtml.escape(href)}\"><strong>${AdminHtml.escape(row.kind)}</strong><span>#${row.id.to_str()}</span></a>${error}</td><td>${badge(row.state)}</td><td class=\"n\"><span class=\"tries\">${row.attempts.to_str()}<small> of ${row.max_attempts.to_str()}</small></span></td><td class=\"when\">${timing(row, now)}</td><td>${key}</td><td class=\"actions\">${actions(mount, query, row, now)}</td></tr>"
+					"<tr${picked}><td class=\"job\"><a class=\"row-link\" href=\"${Look.escape(href)}\"><strong>${Look.escape(row.kind)}</strong><span>#${row.id.to_str()}</span></a>${error}</td><td>${badge(row.state)}</td><td class=\"n\"><span class=\"tries\">${row.attempts.to_str()}<small> of ${row.max_attempts.to_str()}</small></span></td><td class=\"when\">${timing(row, now)}</td><td>${key}</td><td class=\"actions\">${actions(mount, query, row, now)}</td></tr>"
 				},
 			)
 			"<div class=\"table-wrap\"><table class=\"jobs\"><thead><tr><th>Job</th><th>State</th><th class=\"n\">Tried</th><th>When</th><th>Key</th><th></th></tr></thead><tbody>${Str.join_with(lines, "")}</tbody></table></div>"
 		}
-	newest = if (before == 0) "" else "<a class=\"btn\" href=\"${AdminHtml.escape(AdminHtml.link(mount, [("state", state), ("kind", kind)]))}\">${AdminHtml.icon("back")}Newest</a>"
+	newest = if (before == 0) "" else "<a class=\"btn\" href=\"${Look.escape(AdminHtml.link(mount, [("state", state), ("kind", kind)]))}\">${Look.icon("back")}Newest</a>"
 	older =
 		match rows.last() {
-			Ok(last) if rows.len() == per_page => "<a class=\"btn\" href=\"${AdminHtml.escape(AdminHtml.link(mount, [("state", state), ("kind", kind), ("before", last.id.to_str())]))}\">Older${AdminHtml.icon("next")}</a>"
+			Ok(last) if rows.len() == per_page => "<a class=\"btn\" href=\"${Look.escape(AdminHtml.link(mount, [("state", state), ("kind", kind), ("before", last.id.to_str())]))}\">Older${Look.icon("next")}</a>"
 			_ => ""
 		}
 	shown =
@@ -377,17 +411,17 @@ jobs_panel = |mount, query, { state, kind, before, selected }, rows, now| {
 			_ => "none"
 		}
 	foot = if (rows.is_empty() and before == 0) "" else "<div class=\"panel-foot\"><span>${rows.len().to_str()} shown, ${shown}</span><span class=\"pages\">${newest}${older}</span></div>"
-	AdminHtml.panel({ eyebrow: "Newest first", title, aside: "${chip_state}${chip_kind}", body: "${body}${foot}", class: "jobs-panel" })
+	Look.panel({ eyebrow: "Newest first", title, aside: "${chip_state}${chip_kind}", body: "${body}${foot}", class: "jobs-panel" })
 }
 
 ## One job, in a drawer over the list (`close` is the list): everything the queue knows of it, and
 ## what may be done to it.
 drawer! : Str, Str, Str, I64, I64, List(Job.KindInfo) => { status : U16, html : Str }
 drawer! = |mount, query, close, id, now, kinds| {
-	frame = |eyebrow, title, content| "<a class=\"scrim\" href=\"${AdminHtml.escape(close)}\" tabindex=\"-1\" aria-hidden=\"true\"></a><aside class=\"drawer\" role=\"dialog\" aria-labelledby=\"job-title\"><header class=\"drawer-head\"><div><p class=\"eyebrow\">${eyebrow}</p><h2 id=\"job-title\">${title}</h2></div><a class=\"icon-btn\" href=\"${AdminHtml.escape(close)}\" data-close aria-label=\"Close\" title=\"Close (Esc)\">${AdminHtml.icon("close")}</a></header>${content}</aside>"
+	frame = |eyebrow, title, content| "<a class=\"scrim\" href=\"${Look.escape(close)}\" tabindex=\"-1\" aria-hidden=\"true\"></a><aside class=\"drawer\" role=\"dialog\" aria-labelledby=\"job-title\"><header class=\"drawer-head\"><div><p class=\"eyebrow\">${eyebrow}</p><h2 id=\"job-title\">${title}</h2></div><a class=\"icon-btn\" href=\"${Look.escape(close)}\" data-close aria-label=\"Close\" title=\"Close (Esc)\">${Look.icon("close")}</a></header>${content}</aside>"
 	match Job.get!(id) {
-		Err(NotFound) => { status: 404, html: frame("Job #${id.to_str()}", "No job #${id.to_str()}", AdminHtml.empty("layers", "No job #${id.to_str()}", "It may have been done more than a week ago.")) }
-		Err(JobErr(why)) => { status: 500, html: frame("Job #${id.to_str()}", "Job #${id.to_str()}", "<div class=\"callout tone-bad\">${AdminHtml.icon("alert")}<div><strong>The queue can't be read</strong><p class=\"problem\">${AdminHtml.escape(why)}</p></div></div>") }
+		Err(NotFound) => { status: 404, html: frame("Job #${id.to_str()}", "No job #${id.to_str()}", Look.empty("layers", "No job #${id.to_str()}", "It may have been done more than a week ago.")) }
+		Err(JobErr(why)) => { status: 500, html: frame("Job #${id.to_str()}", "Job #${id.to_str()}", "<div class=\"callout tone-bad\">${Look.icon("alert")}<div><strong>The queue can't be read</strong><p class=\"problem\">${Look.escape(why)}</p></div></div>") }
 		Ok(row) => {
 			limit =
 				match kinds.find_first(|kind| kind.name == row.kind) {
@@ -396,12 +430,12 @@ drawer! = |mount, query, close, id, now, kinds| {
 				}
 			key =
 				match row.key {
-					Some(text) => "<code>${AdminHtml.escape(text)}</code>"
+					Some(text) => "<code>${Look.escape(text)}</code>"
 					Null => "<span class=\"muted\">none</span>"
 				}
 			facts = Str.join_with(
 				[
-					"<div><dt>Kind</dt><dd><a href=\"${AdminHtml.escape(AdminHtml.link(mount, [("kind", row.kind)]))}\"><code>${AdminHtml.escape(row.kind)}</code></a></dd></div>",
+					"<div><dt>Kind</dt><dd><a href=\"${Look.escape(AdminHtml.link(mount, [("kind", row.kind)]))}\"><code>${Look.escape(row.kind)}</code></a></dd></div>",
 					"<div><dt>Tried</dt><dd>${row.attempts.to_str()} of ${row.max_attempts.to_str()} times</dd></div>",
 					"<div><dt>Time limit</dt><dd>${limit}</dd></div>",
 					"<div><dt>Key</dt><dd>${key}</dd></div>",
@@ -410,7 +444,7 @@ drawer! = |mount, query, close, id, now, kinds| {
 			)
 			error =
 				match row.last_error {
-					Some(why) => "<section class=\"section\"><h3>Last error</h3><pre class=\"problem\">${AdminHtml.escape(why)}</pre></section>"
+					Some(why) => "<section class=\"section\"><h3>Last error</h3><pre class=\"problem\">${Look.escape(why)}</pre></section>"
 					Null => ""
 				}
 			content = Str.join_with(
@@ -424,7 +458,7 @@ drawer! = |mount, query, close, id, now, kinds| {
 				],
 				"",
 			)
-			{ status: 200, html: frame("Job #${id.to_str()}", "<code>${AdminHtml.escape(row.kind)}</code>", content) }
+			{ status: 200, html: frame("Job #${id.to_str()}", "<code>${Look.escape(row.kind)}</code>", content) }
 		}
 	}
 }
@@ -432,8 +466,8 @@ drawer! = |mount, query, close, id, now, kinds| {
 ## What may be done to a job, said in the drawer: retry, run now, cancel; or why nothing may.
 callout : Str, Str, Job.Row, I64 -> Str
 callout = |mount, back, row, now| {
-	act = |class, symbol, action, label| AdminHtml.button_with(class, symbol, mount, [("action", action), ("id", row.id.to_str()), ("back", back)], label)
-	said = |toned, symbol, title, line, acts| "<div class=\"callout tone-${toned}\">${AdminHtml.icon(symbol)}<div><strong>${title}</strong><span>${line}</span></div><div class=\"acts\">${acts}</div></div>"
+	act = |class, symbol, action, label| Look.button_with(class, symbol, mount, [("action", action), ("id", row.id.to_str()), ("back", back)], label)
+	said = |toned, symbol, title, line, acts| "<div class=\"callout tone-${toned}\">${Look.icon(symbol)}<div><strong>${title}</strong><span>${line}</span></div><div class=\"acts\">${acts}</div></div>"
 	match row.state {
 		"failed" => said("bad", "retry", "Retry this job", "It is queued again now, its attempts counted from the start.", act("act-primary", "retry", "retry", "Retry"))
 		"canceled" => said("neutral", "retry", "Queue it again", "A canceled job runs if it is retried, its attempts counted from the start.", act("act-primary", "retry", "retry", "Retry"))
@@ -468,7 +502,7 @@ timeline = |row, now| {
 }
 
 badge : Str -> Str
-badge = |state| "<span class=\"state state-${AdminHtml.escape(state)}\">${AdminHtml.escape(state)}</span>"
+badge = |state| "<span class=\"state state-${Look.escape(state)}\">${Look.escape(state)}</span>"
 
 ## When a job runs, ran, or finished, as it stands now.
 timing : Job.Row, I64 -> Str
@@ -496,7 +530,7 @@ timing = |row, now|
 ## now or cancel one that is queued.
 actions : Str, Str, Job.Row, I64 -> Str
 actions = |mount, back, row, now| {
-	act = |class, action, label| AdminHtml.button_with(class, "", mount, [("action", action), ("id", row.id.to_str()), ("back", back)], label)
+	act = |class, action, label| Look.button_with(class, "", mount, [("action", action), ("id", row.id.to_str()), ("back", back)], label)
 	match row.state {
 		"failed" | "canceled" => act("", "retry", "Retry")
 		"queued" => "${if (row.run_at > now) act("", "run_now", "Run now") else ""}${act("act-danger", "cancel", "Cancel")}"

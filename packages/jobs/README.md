@@ -116,7 +116,8 @@ queues one twice, and tried as many times as its kind says. A field is `*`, a nu
 
 ## Listing and control
 
-What the jobs page (`packages/admin`'s `JobsPage`) is made of, and an app may build its own on:
+What the jobs page is made of (`packages/admin`'s `JobsPage.plugin({ at, guard })`), and an app
+may build its own on:
 
 ```roc
 Job.list!({ state: "failed", kind: "", before_id: 0, limit: 50 })   # List(Job.Row), newest first; "" and 0 for any
@@ -151,7 +152,9 @@ From the platform's `pf.Job`, `pf.Cron` and `pf.JobsPage` (before D-034):
 
 - Name the package in the app's header (`jobs: "…/packages/jobs/main.roc"`), and import
   `jobs.Job`, `jobs.Cron` instead of `pf.Job`, `pf.Cron`; the jobs page is `admin.JobsPage`
-  (packages/admin, which the header names too).
+  (packages/admin, which the header names too), best listed as a plugin:
+  `JobsPage.plugin({ at: "/admin/jobs", guard: Middlewares.admin })`, in place of the route file
+  that mounted it (which still works, with `admin.JobsPage`).
 - List the plugin: `plugins: [Job.plugin({ jobs: App.jobs, crons: [...] })]`. The schedules that were
   `App.program`'s `crons` are the plugin's now, and `App.program` has no `crons`.
 - `--job-workers` and `--job-retry-ms` are gone: the plugin's `workers` and `retry_ms` say it.

@@ -30,7 +30,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createCipheriv, createDecipheriv, createHash, createHmac, hkdfSync, randomBytes } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { createServer } from "node:net";
@@ -1045,12 +1045,10 @@ test("jobs: listed newest first, by state and kind, a page at a time; one read b
 	for (const n of [1, 3]) assert.equal(await post(`/jobs/cancel?key=${run}list${n}`), "1");
 });
 
-test("the jobs page: behind the app's guard; the states, the last hour, failures, kinds, schedules and jobs; retry, cancel and run now as forms; one job in a drawer; its stream of changes", { skip: skipDb }, async () => {
+test("the jobs page, as a plugin (JobsPage.plugin, packages/admin): behind the app's guard; the states, the last hour, failures, kinds, schedules and jobs; retry, cancel and run now as forms; one job in a drawer; its stream of changes", { skip: skipDb }, async () => {
 	const admin = { "x-admin": "yes" };
 	const page = (query = "", init = {}) => get(`/admin/jobs${query}`, { ...init, headers: { ...admin, ...init.headers }, redirect: "manual" });
 	const form = (fields, headers = {}) => page("", { method: "POST", body: new URLSearchParams(fields).toString(), headers: { "content-type": "application/x-www-form-urlencoded", ...headers } });
-	assert.equal((await get("/admin/jobs")).status, 403, "the app's guard refuses");
-	assert.equal((await get("/admin/jobs", { method: "POST", body: "action=retry&id=1" })).status, 403);
 
 	const listed = await page();
 	assert.equal(listed.status, 200);
@@ -1125,6 +1123,40 @@ test("the jobs page: behind the app's guard; the states, the last hour, failures
 	const { value } = await reader.read();
 	assert.ok(value === "data: changed\n\n" || value === "data: quiet\n\n", value);
 	gone.abort();
+});
+
+test("the jobs page's guard refuses whom it refuses, whatever they ask for: GET, its stream, a form; its answer is the guard's own", { skip }, async () => {
+	for (const [path, init] of [
+		["/admin/jobs", {}],
+		["/admin/jobs?events=1", { headers: { accept: "text/event-stream" } }],
+		["/admin/jobs?id=1", {}],
+		["/admin/jobs", { method: "POST", body: "action=retry&id=1", headers: { "content-type": "application/x-www-form-urlencoded" } }],
+	]) {
+		const refused = await get(path, { ...init, redirect: "manual" });
+		assert.equal(refused.status, 403, `${init.method ?? "GET"} ${path}`);
+		assert.match(await refused.text(), /admins only/, "the guard's answer, not the page's");
+	}
+	assert.equal((await get("/admin/jobs", { method: "PUT" })).status, 403, "every method at its path is the plugin's, behind the guard");
+	assert.equal((await get("/admin/jobs", { method: "PUT", headers: { "x-admin": "yes" } })).status, 405, "and the page answers GET and POST");
+});
+
+test("the jobs page mounted by the app itself (JobsPage.respond!), at its own path, behind its own guard", { skip: skipDb }, async () => {
+	assert.equal((await get("/admin/mounted")).status, 403);
+	const mounted = await get("/admin/mounted?state=failed", { headers: { "x-admin": "yes" } });
+	assert.equal(mounted.status, 200);
+	assert.match(await mounted.text(), /<div class="shell" data-events="\/admin\/mounted\?events=1" data-now="\d+">/);
+});
+
+test("JobsPage.plugin without a guard doesn't compile: the record is missing the field guard", { skip }, () => {
+	const at = join(root, "server", "test", "build", "guardless");
+	mkdirSync(at, { recursive: true });
+	writeFileSync(
+		join(at, "main.roc"),
+		'app [program] { pf: platform "../../../platform/main.roc", admin: "../../../../packages/admin/main.roc" }\n\nimport pf.Plugin\nimport pf.Server\nimport admin.JobsPage\n\nprogram = {\n\trespond!: |_, _, _, _, _| Server.response(200, [], ""),\n\tmigrations: [],\n\tactors: [],\n\tlogs: { format: Auto },\n\tplugins: [Plugin.running(JobsPage.plugin({ at: "/admin/jobs" }))],\n\troutes: [],\n}\n',
+	);
+	const checked = spawnSync(roc(), ["check", join(at, "main.roc")], { encoding: "utf8" });
+	assert.notEqual(checked.status, 0);
+	assert.match(checked.stdout + checked.stderr, /This record is missing the field: guard/);
 });
 
 // ---- Email ----
@@ -1324,11 +1356,12 @@ test("plugins: a plugin's route answers in the app, with the app's context and i
 		said.filter((msg) => msg.startsWith("rocx plugins:")),
 		[
 			"rocx plugins: jobs: 1 migration, 1 call, 5 loops, 1 start",
+			"rocx plugins: jobs-page: 1 route",
 			"rocx plugins: fixture: 5 routes, 1 early route, 1 migration, 1 call, 1 loop, 1 start, 1 check",
 			"rocx plugins: second: 1 route",
 			"rocx plugins: third: 1 route",
 		],
-		"listed jobs, fixture, third, second: third needs second, so it comes after it",
+		"listed jobs, the jobs page, fixture, third, second: third needs second, so it comes after it",
 	);
 	assert.ok(said.includes("fixture.look: the fixture looked"), "the check, run once after the start");
 });

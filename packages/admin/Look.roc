@@ -1,12 +1,10 @@
-## The admin's pages look as the platform's own do (the jobs page, the dev mailbox: the server
-## platform's `AdminHtml`): whole HTML documents in the shape of a console (a sidebar, a header,
-## panels), under one class, `rocx-admin`, in light or dark as the reader's scheme is; with no
-## script. The platform doesn't expose `AdminHtml` to packages (PROPOSALS.md), so this is a copy:
-## `AdminHtml`'s stylesheet, the parts the admin's pages use, and its helpers (`side`, `nav_link`,
-## `nav_label`, `header`, `panel`, `empty`, `icon`, `button_with`), as they are in
-## server/platform/AdminHtml.roc at commit 40ccf8d; then the admin's own rules (forms, a list's
-## search, filters and pages). test/packages.test.mjs fails when the two differ: copy AdminHtml's
-## again, and say here which commit's it is.
+## The admin look, in one place: whole HTML documents in the shape of a console (a sidebar, a
+## header, panels), under one class, `rocx-admin`, in light or dark as the reader's scheme is. Its
+## rules every admin page shares, part by part (`shared`), and its helpers (`side`, `nav_link`,
+## `nav_label`, `header`, `panel`, `empty`, `icon`, `button`, `button_with`): the tables admin's
+## pages are drawn with them and its own rules (`stylesheet`, `document`), and so are the server's
+## pages (`AdminHtml`: the jobs page, the dev mailbox), with theirs. On no platform, so a page in
+## the browser can show the tables admin too.
 Look := [].{
 
 	## Text as HTML has it, in an element or an attribute's quotes.
@@ -100,6 +98,10 @@ Look := [].{
 		"<svg class=\"icon\" viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">${paths}</svg>"
 	}
 
+	## A form that posts `fields` (hidden) to `action`, as a button saying `label`.
+	button : Str, List((Str, Str)), Str -> Str
+	button = |action, fields, label| Look.button_with("", "", action, fields, label)
+
 	## A form's button as `button` draws it, with a class on its form (`act-primary`, `act-danger`;
 	## "" for none) and an icon before its label ("" for none).
 	button_with : Str, Str, Str, List((Str, Str)), Str -> Str
@@ -110,12 +112,16 @@ Look := [].{
 		"<form class=\"${classes}\" method=\"post\" action=\"${escape(action)}\">${Str.join_with(hidden, "")}<button>${drawn}${escape(label)}</button></form>"
 	}
 
-	## `AdminHtml`'s rules, the parts the admin's pages use, then the admin's own.
-	stylesheet : Str
-	stylesheet =
-		Str.join_with(
+	## The rules every admin page shares, part by part (the jobs page's, the dev mailbox's, the
+	## tables admin's), in the order a stylesheet has them: each page's stylesheet puts its own rules
+	## among them (`Look.stylesheet`, `AdminHtml`'s).
+	Shared : { tokens : Str, shell : Str, top : Str, panels : Str, tables : Str, buttons : Str, empty : Str, narrower : Str }
+
+	shared : Shared
+	shared = {
+		# Tokens: light, and dark when the reader's scheme is.
+		tokens: Str.join_with(
 			[
-				# Tokens: light, and dark when the reader's scheme is.
 				":root{color-scheme:light dark;--canvas:#f4f6f7;--side:#fafbfb;--surface:#fff;--soft:#f6f8f9;--line:#e2e7ea;--line-strong:#cdd5da;--text:#121a1f;--muted:#5b6870;--subtle:#7a868d;--accent:#0e8a7e;--good:#1d8a3a;--warn:#a96a00;--bad:#c63a2f;--active:#2c6cc2;--neutral:#6b777e;--bar-good:#45b260;--bar-warn:#e6a63a;--bar-bad:#e0685d;--bar-active:#5b93e0;--bar-neutral:#a6b0b6;--shadow:0 1px 2px rgba(16,24,32,.04),0 1px 3px rgba(16,24,32,.06);--radius:10px}",
 				"@media (prefers-color-scheme:dark){:root{--canvas:#090c0f;--side:#0c1013;--surface:#11161a;--soft:#0e1317;--line:#232b31;--line-strong:#354047;--text:#edf1f2;--muted:#8e9aa1;--subtle:#76828a;--accent:#55c7bb;--good:#68c778;--warn:#e7ad52;--bad:#e8766e;--active:#6ca6e8;--neutral:#8e9aa1;--bar-good:#68c778;--bar-warn:#e7ad52;--bar-bad:#e26a62;--bar-active:#6ca6e8;--bar-neutral:#5d6a71;--shadow:none}}",
 				".tone-good{--tone:var(--good)}.tone-warn{--tone:var(--warn)}.tone-bad{--tone:var(--bad)}.tone-active{--tone:var(--active)}.tone-neutral{--tone:var(--neutral)}.tone-accent{--tone:var(--accent)}",
@@ -128,7 +134,12 @@ Look := [].{
 				"a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}",
 				".icon{display:block;flex:none}",
 				".muted{color:var(--muted)}.problem{color:var(--bad)}",
-				# The shell: a sidebar, and the main part.
+			],
+			"",
+		),
+		# The shell: a sidebar, and the main part.
+		shell: Str.join_with(
+			[
 				".shell{display:grid;grid-template-columns:232px minmax(0,1fr);min-height:100vh}",
 				".shell.bare{grid-template-columns:minmax(0,1fr)}.shell.bare main{max-width:60rem;margin:0 auto;width:100%}",
 				".side{position:sticky;top:0;height:100vh;overflow:auto;display:flex;flex-direction:column;border-right:1px solid var(--line);background:var(--side)}",
@@ -151,7 +162,12 @@ Look := [].{
 				".side-foot{margin:auto 0 0;padding:16px 20px 20px;border-top:1px solid var(--line);color:var(--subtle);font-size:12.5px}",
 				".dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--tone,var(--neutral));flex:none}",
 				".side-nav .dot{margin:0 4px}",
-				# The main part's header.
+			],
+			"",
+		),
+		# The main part's header.
+		top: Str.join_with(
+			[
 				"main{min-width:0;padding:0 32px 56px}",
 				".top{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:84px;padding:16px 0;margin-bottom:20px;border-bottom:1px solid var(--line)}",
 				".eyebrow{margin:0 0 2px;color:var(--subtle);font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase}",
@@ -169,7 +185,12 @@ Look := [].{
 				"@keyframes pulse{70%{box-shadow:0 0 0 6px transparent}100%{box-shadow:0 0 0 0 transparent}}",
 				".icon-btn{display:grid;place-items:center;width:34px;height:34px;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);color:var(--text)}",
 				".icon-btn:hover{background:var(--soft)}",
-				# Panels.
+			],
+			"",
+		),
+		# Panels.
+		panels: Str.join_with(
+			[
 				".grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px;margin-bottom:16px;align-items:stretch}",
 				".panel{min-width:0;margin-bottom:16px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);box-shadow:var(--shadow)}",
 				".grid>.panel{margin-bottom:0;display:flex;flex-direction:column}",
@@ -180,7 +201,12 @@ Look := [].{
 				".panel-body{padding:16px 18px}",
 				".panel-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px;border-top:1px solid var(--line);color:var(--muted);font-size:13px}",
 				".panel-foot .pages{display:flex;gap:8px;margin-left:auto}",
-				# Tables.
+			],
+			"",
+		),
+		# Tables.
+		tables: Str.join_with(
+			[
 				".table-wrap{overflow-x:auto}",
 				"table{width:100%;border-collapse:collapse}",
 				"th{padding:10px 18px;text-align:left;color:var(--subtle);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;border-bottom:1px solid var(--line)}",
@@ -204,7 +230,12 @@ Look := [].{
 				".tries{font-variant-numeric:tabular-nums;white-space:nowrap}.tries small{color:var(--subtle);font-size:inherit}",
 				".when{white-space:nowrap;color:var(--muted)}",
 				"td.actions{text-align:right;white-space:nowrap}",
-				# Buttons.
+			],
+			"",
+		),
+		# Buttons.
+		buttons: Str.join_with(
+			[
 				".act{display:inline-block;margin:0 0 0 6px}",
 				".act button,.btn{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;border:1px solid var(--line-strong);border-radius:7px;background:var(--surface);color:var(--text);font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap}",
 				".act button:hover,.btn:hover{background:var(--soft);border-color:var(--subtle)}",
@@ -213,7 +244,12 @@ Look := [].{
 				".act-primary button:hover{background:color-mix(in srgb,var(--text) 85%,var(--surface));border-color:transparent}",
 				".act-danger button:hover{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 50%,transparent);background:color-mix(in srgb,var(--bad) 8%,transparent)}",
 				".btn[aria-disabled=true]{opacity:.45;pointer-events:none}",
-				# Nothing to show; a callout.
+			],
+			"",
+		),
+		# Nothing to show; a callout.
+		empty: Str.join_with(
+			[
 				".empty{display:flex;flex-direction:column;align-items:center;gap:4px;padding:36px 18px;text-align:center;color:var(--muted)}",
 				".empty .icon{width:26px;height:26px;margin-bottom:6px;color:var(--good)}",
 				".empty strong{color:var(--text);font-weight:600}",
@@ -221,74 +257,93 @@ Look := [].{
 				".callout>.icon{width:18px;height:18px;margin-top:2px;color:var(--tone,var(--accent))}",
 				".callout div{flex:1;min-width:0}.callout strong{display:block;font-weight:600}.callout p{margin:0}.callout span{display:block;color:var(--muted);font-size:13px}",
 				".callout .acts{flex:none;display:flex;gap:6px;align-items:center}.callout .act{margin:0}",
-				# Narrower screens.
+			],
+			"",
+		),
+		# Narrower screens.
+		narrower: Str.join_with(
+			[
 				"@media (max-width:1180px){.grid{grid-template-columns:minmax(0,1fr)}.metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.metric:nth-child(4){border-left:0}.metric:nth-child(n+4){border-top:1px solid var(--line)}}",
 				"@media (max-width:820px){.shell{grid-template-columns:minmax(0,1fr);align-content:start}.side{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}.brand{min-height:0;padding:14px 16px}.side-nav{display:flex;overflow-x:auto;padding:8px 10px}.side-nav a{flex:none}.nav-label,.side-foot{display:none}main{padding:0 16px 40px}.top{min-height:0;flex-wrap:wrap}h1 .meta{display:block;margin:4px 0 0}.stamp{display:none}.facts{grid-template-columns:minmax(0,1fr)}th,td{padding-left:12px;padding-right:12px}}",
 				"@media (max-width:820px){table.jobs thead{display:none}table.jobs tbody tr{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px 12px;padding:12px 14px;border-bottom:1px solid var(--line)}table.jobs tbody tr:last-child{border-bottom:0}table.jobs td{padding:0;border:0}table.jobs td:nth-child(3),table.jobs td:nth-child(5),table.jobs td.actions:empty{display:none}table.jobs td.job{grid-column:1;grid-row:1;width:auto;max-width:none;min-width:0}table.jobs td:nth-child(2){grid-column:2;grid-row:1;text-align:right;align-self:start}table.jobs td.when{grid-column:1;grid-row:2}table.jobs td.actions{grid-column:2;grid-row:2}}",
 				"@media (prefers-reduced-motion:reduce){*{animation:none!important}}",
-				"",
-				# The admin's own: a trail in an eyebrow, links as buttons, a note or a problem over a page.
-				".eyebrow a:hover{color:var(--text)}.eyebrow code{font-size:12px;letter-spacing:0;text-transform:none}",
-				".btn.primary{background:var(--text);border-color:var(--text);color:var(--surface)}.btn.primary:hover{background:color-mix(in srgb,var(--text) 85%,var(--surface));border-color:transparent}",
-				".btn.danger:hover{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 50%,transparent);background:color-mix(in srgb,var(--bad) 8%,transparent)}",
-				".confirm .act-danger button{background:var(--bad);border-color:var(--bad);color:var(--surface)}.confirm .act-danger button:hover{background:color-mix(in srgb,var(--bad) 85%,var(--text));border-color:transparent;color:var(--surface)}",
-				".panel>.callout:first-child{border-radius:calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0}.panel>.callout:last-child{border-radius:0 0 calc(var(--radius) - 1px) calc(var(--radius) - 1px)}.panel>.callout:only-child{border-radius:calc(var(--radius) - 1px)}",
-				".callout .problem{overflow-wrap:anywhere}",
-				# Inputs, selects and text areas.
-				"input,select,textarea{height:32px;padding:0 10px;border:1px solid var(--line-strong);border-radius:7px;background:var(--surface);color:var(--text);font:inherit;font-size:13.5px}",
-				"textarea{display:block;width:100%;height:auto;min-height:5rem;padding:8px 10px;line-height:1.5;resize:vertical}",
-				"textarea.code{font-family:ui-monospace,\"SF Mono\",SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}",
-				"input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent)}",
-				"input[type=checkbox]{width:16px;height:16px;padding:0;margin:8px 0 0;accent-color:var(--accent)}",
-				"input::placeholder{color:var(--subtle)}[aria-invalid=true]{border-color:var(--bad)}",
-				# The index of tables.
-				"td.name a{display:block;font-weight:600}td.name a:hover{color:var(--accent)}td.name code{display:block;color:var(--subtle);font-size:12.5px}",
-				"td.about{color:var(--muted)}",
-				# A list: its search and the filters' button; its rows, which scroll sideways, a filter under each
-				# heading, each input as wide as its column (and at least as its kind needs); its pages.
-				".tools{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:12px 18px;border-bottom:1px solid var(--line)}",
-				"form.search{display:flex;flex:1 1 18rem;max-width:34rem;align-items:center;gap:8px;margin:0}form.search input{flex:1;min-width:0}",
-				".filtering{display:flex;align-items:center;gap:12px;margin-left:auto}",
-				".tools a{color:var(--muted);font-size:13px}.tools a:hover{color:var(--text)}",
-				".tools input{height:30px}",
-				"form.filters{display:block;margin:0}",
-				".rows{overflow-x:auto}",
-				".rows th,.rows td{padding-left:12px;padding-right:12px}.rows th:first-child,.rows td:first-child{padding-left:18px}.rows th:last-child,.rows td:last-child{padding-right:18px}",
-				".rows td{max-width:26rem;overflow-wrap:break-word}",
-				".rows td a{color:var(--accent)}.rows td a:hover{text-decoration:underline}",
-				".rows tbody td:first-child>a{color:var(--text);font-weight:600}.rows tbody td:first-child>a:hover{color:var(--accent);text-decoration:none}",
-				"td.null,.value.null{color:var(--subtle);font-style:italic}",
-				"th a{color:inherit}th a:hover,th a.on{color:var(--text)}",
-				"tr.filter td{padding-top:8px;padding-bottom:8px;background:var(--soft);vertical-align:top}",
-				"tbody tr:hover td.none{background:none}",
-				"tr.filter input,tr.filter select{display:block;width:100%;min-width:6rem;height:28px;padding:0 8px;font-size:12.5px}",
-				"tr.filter input[type=number]{min-width:4.5rem}tr.filter input[type=date]{min-width:8.5rem}tr.filter input[type=datetime-local]{min-width:12rem}tr.filter input[type=time]{min-width:6rem}",
-				"tr.filter .range{display:grid;grid-template-columns:max-content 1fr;gap:4px 6px;align-items:center}",
-				"tr.filter .range span{color:var(--subtle);font-size:11px}",
-				"tr.filter select.nulls{margin-top:4px}",
-				"tr.filter .note{display:block;margin-top:4px;color:var(--bad);font-size:11.5px;font-weight:500;white-space:normal}",
-				"td.none{padding:36px 18px;text-align:center;color:var(--muted)}",
-				".pager{display:flex;flex-wrap:wrap;gap:4px;margin-left:auto}",
-				".pager a{display:inline-grid;place-items:center;min-width:30px;height:30px;padding:0 8px;border:1px solid var(--line-strong);border-radius:7px;background:var(--surface);color:var(--text);font-variant-numeric:tabular-nums}",
-				".pager a:hover{background:var(--soft)}.pager a.on{background:var(--text);border-color:var(--text);color:var(--surface)}",
-				".pager .gap{display:inline-grid;place-items:center;min-width:20px;color:var(--subtle)}",
-				# A row's fields: a label, then its input, the column's comment and type.
-				".fields{display:grid;grid-template-columns:minmax(9rem,max-content) minmax(0,1fr);gap:16px 28px;align-items:start;padding:20px 18px}",
-				".fields>label,.fields>.label{padding-top:6px;font-weight:600}",
-				".fields>div{min-width:0}",
-				".fields input:not([type=checkbox]),.fields select{width:100%;max-width:32rem}",
-				".fields input[type=number],.fields input[type=date],.fields input[type=time],.fields input[type=datetime-local]{width:auto;min-width:12rem}",
-				".fields textarea{max-width:48rem}",
-				".fields div>a{margin-left:6px;color:var(--accent);font-size:13px}.fields div>a:hover{text-decoration:underline}",
-				".help{display:block;margin-top:5px;color:var(--muted);font-size:12.5px}",
-				".help .muted{color:var(--subtle);font-family:ui-monospace,\"SF Mono\",SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}",
-				".value{display:block;padding-top:6px;white-space:pre-wrap;overflow-wrap:anywhere}",
-				".panel-foot .act{margin:0}",
-				"@media (max-width:820px){.tools{padding:12px 14px}form.search{max-width:none}.filtering{margin-left:0}.rows th:first-child,.rows td:first-child{padding-left:12px}.rows th:last-child,.rows td:last-child{padding-right:12px}.fields{grid-template-columns:minmax(0,1fr);gap:6px;padding:16px 14px}.fields>div{margin-bottom:10px}.fields>label,.fields>.label{padding-top:0}}",
 			],
 			"",
-		)
+		),
+	}
+
+	## The tables admin's stylesheet: the shared rules, then its own.
+	stylesheet : Str
+	stylesheet = Str.join_with([Look.shared.tokens, Look.shared.shell, Look.shared.top, Look.shared.panels, Look.shared.tables, Look.shared.buttons, Look.shared.empty, Look.shared.narrower, own], "")
 }
+
+## The tables admin's own rules: a trail in an eyebrow, its forms, a list's search, filters and
+## pages, a row's fields.
+own : Str
+own =
+	Str.join_with(
+		[
+			# The admin's own: a trail in an eyebrow, links as buttons, a note or a problem over a page.
+			".eyebrow a:hover{color:var(--text)}.eyebrow code{font-size:12px;letter-spacing:0;text-transform:none}",
+			".btn.primary{background:var(--text);border-color:var(--text);color:var(--surface)}.btn.primary:hover{background:color-mix(in srgb,var(--text) 85%,var(--surface));border-color:transparent}",
+			".btn.danger:hover{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 50%,transparent);background:color-mix(in srgb,var(--bad) 8%,transparent)}",
+			".confirm .act-danger button{background:var(--bad);border-color:var(--bad);color:var(--surface)}.confirm .act-danger button:hover{background:color-mix(in srgb,var(--bad) 85%,var(--text));border-color:transparent;color:var(--surface)}",
+			".panel>.callout:first-child{border-radius:calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0}.panel>.callout:last-child{border-radius:0 0 calc(var(--radius) - 1px) calc(var(--radius) - 1px)}.panel>.callout:only-child{border-radius:calc(var(--radius) - 1px)}",
+			".callout .problem{overflow-wrap:anywhere}",
+			# Inputs, selects and text areas.
+			"input,select,textarea{height:32px;padding:0 10px;border:1px solid var(--line-strong);border-radius:7px;background:var(--surface);color:var(--text);font:inherit;font-size:13.5px}",
+			"textarea{display:block;width:100%;height:auto;min-height:5rem;padding:8px 10px;line-height:1.5;resize:vertical}",
+			"textarea.code{font-family:ui-monospace,\"SF Mono\",SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}",
+			"input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent)}",
+			"input[type=checkbox]{width:16px;height:16px;padding:0;margin:8px 0 0;accent-color:var(--accent)}",
+			"input::placeholder{color:var(--subtle)}[aria-invalid=true]{border-color:var(--bad)}",
+			# The index of tables.
+			"td.name a{display:block;font-weight:600}td.name a:hover{color:var(--accent)}td.name code{display:block;color:var(--subtle);font-size:12.5px}",
+			"td.about{color:var(--muted)}",
+			# A list: its search and the filters' button; its rows, which scroll sideways, a filter under each
+			# heading, each input as wide as its column (and at least as its kind needs); its pages.
+			".tools{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:12px 18px;border-bottom:1px solid var(--line)}",
+			"form.search{display:flex;flex:1 1 18rem;max-width:34rem;align-items:center;gap:8px;margin:0}form.search input{flex:1;min-width:0}",
+			".filtering{display:flex;align-items:center;gap:12px;margin-left:auto}",
+			".tools a{color:var(--muted);font-size:13px}.tools a:hover{color:var(--text)}",
+			".tools input{height:30px}",
+			"form.filters{display:block;margin:0}",
+			".rows{overflow-x:auto}",
+			".rows th,.rows td{padding-left:12px;padding-right:12px}.rows th:first-child,.rows td:first-child{padding-left:18px}.rows th:last-child,.rows td:last-child{padding-right:18px}",
+			".rows td{max-width:26rem;overflow-wrap:break-word}",
+			".rows td a{color:var(--accent)}.rows td a:hover{text-decoration:underline}",
+			".rows tbody td:first-child>a{color:var(--text);font-weight:600}.rows tbody td:first-child>a:hover{color:var(--accent);text-decoration:none}",
+			"td.null,.value.null{color:var(--subtle);font-style:italic}",
+			"th a{color:inherit}th a:hover,th a.on{color:var(--text)}",
+			"tr.filter td{padding-top:8px;padding-bottom:8px;background:var(--soft);vertical-align:top}",
+			"tbody tr:hover td.none{background:none}",
+			"tr.filter input,tr.filter select{display:block;width:100%;min-width:6rem;height:28px;padding:0 8px;font-size:12.5px}",
+			"tr.filter input[type=number]{min-width:4.5rem}tr.filter input[type=date]{min-width:8.5rem}tr.filter input[type=datetime-local]{min-width:12rem}tr.filter input[type=time]{min-width:6rem}",
+			"tr.filter .range{display:grid;grid-template-columns:max-content 1fr;gap:4px 6px;align-items:center}",
+			"tr.filter .range span{color:var(--subtle);font-size:11px}",
+			"tr.filter select.nulls{margin-top:4px}",
+			"tr.filter .note{display:block;margin-top:4px;color:var(--bad);font-size:11.5px;font-weight:500;white-space:normal}",
+			"td.none{padding:36px 18px;text-align:center;color:var(--muted)}",
+			".pager{display:flex;flex-wrap:wrap;gap:4px;margin-left:auto}",
+			".pager a{display:inline-grid;place-items:center;min-width:30px;height:30px;padding:0 8px;border:1px solid var(--line-strong);border-radius:7px;background:var(--surface);color:var(--text);font-variant-numeric:tabular-nums}",
+			".pager a:hover{background:var(--soft)}.pager a.on{background:var(--text);border-color:var(--text);color:var(--surface)}",
+			".pager .gap{display:inline-grid;place-items:center;min-width:20px;color:var(--subtle)}",
+			# A row's fields: a label, then its input, the column's comment and type.
+			".fields{display:grid;grid-template-columns:minmax(9rem,max-content) minmax(0,1fr);gap:16px 28px;align-items:start;padding:20px 18px}",
+			".fields>label,.fields>.label{padding-top:6px;font-weight:600}",
+			".fields>div{min-width:0}",
+			".fields input:not([type=checkbox]),.fields select{width:100%;max-width:32rem}",
+			".fields input[type=number],.fields input[type=date],.fields input[type=time],.fields input[type=datetime-local]{width:auto;min-width:12rem}",
+			".fields textarea{max-width:48rem}",
+			".fields div>a{margin-left:6px;color:var(--accent);font-size:13px}.fields div>a:hover{text-decoration:underline}",
+			".help{display:block;margin-top:5px;color:var(--muted);font-size:12.5px}",
+			".help .muted{color:var(--subtle);font-family:ui-monospace,\"SF Mono\",SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}",
+			".value{display:block;padding-top:6px;white-space:pre-wrap;overflow-wrap:anywhere}",
+			".panel-foot .act{margin:0}",
+			"@media (max-width:820px){.tools{padding:12px 14px}form.search{max-width:none}.filtering{margin-left:0}.rows th:first-child,.rows td:first-child{padding-left:12px}.rows th:last-child,.rows td:last-child{padding-right:12px}.fields{grid-template-columns:minmax(0,1fr);gap:6px;padding:16px 14px}.fields>div{margin-bottom:10px}.fields>label,.fields>.label{padding-top:0}}",
+		],
+		"",
+	)
 
 expect Look.escape("<a href=\"x\">'&") == "&lt;a href=&quot;x&quot;&gt;&#39;&amp;"
 expect Look.document("A <b>", "", "<p>hi</p>").contains("<title>A &lt;b&gt;</title>") and Look.document("A", "", "").contains("<div class=\"shell bare\"><main>")

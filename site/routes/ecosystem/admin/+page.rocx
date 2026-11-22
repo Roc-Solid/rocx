@@ -25,6 +25,7 @@ meta = {
 		{ id: "options", label: "Options" },
 		{ id: "widgets", label: "Widgets" },
 		{ id: "how", label: "How it works" },
+		{ id: "jobs-page", label: "The jobs page" },
 		{ id: "modules", label: "The modules" },
 		{ id: "status", label: "Status" },
 	],
@@ -40,8 +41,8 @@ view! = |_|
 				Django's admin, for a Roc Solid app: a page for each table, its rows with a search, a filter in
 				every column, sorting and pages, a form for each row, and a way to add and delete rows. It reads the tables from
 				Postgres's own catalog when a page is asked for, so there is nothing to generate, and nothing to keep
-				in step with the schema. It is mounted as its <a href={"${Paths.ecosystem_jobs}#page"}>jobs page</a>
-				is: one route file, behind the app's own middleware.
+				in step with the schema. It is mounted by one route file, behind the app's own middleware; the
+				package's other page, the <a href={"#jobs-page"}>jobs page</a>, is a plugin.
 			</PageHero>
 
 			<Heading id="first">A first admin</Heading>
@@ -74,7 +75,7 @@ view! = |_|
 				These are the admin's pages as the package renders them, by its own <code>View</code>, while this page
 				renders: from a made-up catalog of two tables, <code>books</code> and <code>authors</code>, with the
 				options above. Nothing asks a database, and the frames are sandboxed, so their links and forms do
-				nothing here. They are drawn in the platform's admin look, as the <a href="/platform/jobs">jobs page</a>
+				nothing here. They are drawn in the admin look, as the <a href={"${Paths.ecosystem_jobs}#page"}>jobs page</a>
 				is: the tables in a sidebar (across the top when the frame is narrow), a header with the page's
 				actions, panels, and light or dark as your system is.
 			</p>
@@ -271,6 +272,23 @@ view! = |_|
 				<code>Cache-Control: no-store</code>, and every value in them is escaped.
 			</p>
 
+			<Heading id="jobs-page">The jobs page</Heading>
+			<p>
+				The package draws the queue of <a href={Paths.ecosystem_jobs}>packages/jobs</a> too, as a plugin. The app
+				lists it with the guard its admin pages use, which has no default: a jobs page is never public because an
+				option was left out.
+			</p>
+			<Code source={"plugins: [\n\tJob.plugin({ jobs: App.jobs }),\n\tJobsPage.plugin({ at: \"/admin/jobs\", guard: Middlewares.admin }),   # at: \"/admin/jobs\" unless it says\n]"} numbers={Bool.False} />
+			<p>
+				A request at <code>at</code> passes the app's middleware, then <code>guard</code>, then the page;
+				what the guard hands on isn't used. It needs the jobs plugin, and the server says so at start if it
+				isn't listed. An app that mounts the page itself answers a route with
+				<code>{"JobsPage.respond!(request, { mount })"}</code>. Both are drawn in one look with the tables
+				admin: <code>Look</code> has the rules every admin page shares and the helpers, and
+				<code>AdminHtml</code> builds the server's pages on them (<a href={"${Paths.ecosystem_jobs}#page"}>what
+				the page shows</a>).
+			</p>
+
 			<Heading id="modules">The modules</Heading>
 			<p>
 				<code>AdminPage</code> is the one with effects, and they are the ones the app hands it. The rest is plain
@@ -288,7 +306,9 @@ view! = |_|
 						<tr><td><code>Listing</code></td><td>a list's search, filters, sort and page from the query, and back (<code>read</code>, <code>params</code>, <code>conditions</code>, <code>order</code>, <code>key</code>), each column's filter (<code>kind</code>) and the check of its values (<code>check</code>)</td></tr>
 						<tr><td><code>Paging</code></td><td><code>of(total, size, asked)</code>, <code>offset</code>, <code>shows</code>, <code>links</code>: the first two pages, three each side of this one, the last two</td></tr>
 						<tr><td><code>View</code></td><td>each page's HTML: <code>index_page</code>, <code>list_page</code>, <code>row_page</code>, <code>delete_page</code>, <code>problem_page</code></td></tr>
-						<tr><td><code>Look</code></td><td>the document around a page, in a copy of the platform's admin look (<code>AdminHtml</code>'s stylesheet and helpers, light and dark), with the admin's own rules for forms, filters and pages, and the headers it is sent with</td></tr>
+						<tr><td><code>Look</code></td><td>the admin look: the rules every admin page shares, part by part (<code>shared</code>), and its helpers (<code>side</code>, <code>header</code>, <code>panel</code>, <code>empty</code>, <code>icon</code>, <code>button_with</code>), light and dark; the tables admin's own rules for forms, filters and pages, its document, and the headers it is sent with</td></tr>
+						<tr><td><code>JobsPage</code></td><td>the jobs page: <code>{"plugin({ at, guard })"}</code>, or <code>{"respond!(request, { mount })"}</code> for an app that mounts it itself (server only)</td></tr>
+						<tr><td><code>AdminHtml</code></td><td>the server's admin pages (the jobs page's, the dev mailbox's), on <code>Look</code>: a page with its stream of changes, times, links (server only)</td></tr>
 						<tr><td><code>Form</code></td><td>a query's or a form's fields, decoded, and links, encoded</td></tr>
 					</tbody>
 				</table>
@@ -302,7 +322,7 @@ view! = |_|
 				columns, every page and form, and the refusals. That test isn't in the repository's suite yet, since
 				it needs a database.
 			</p>
-			<p>Two proposals would make it simpler:</p>
+			<p>A proposal would make it simpler:</p>
 			<ul>
 				<li>
 					<strong>Server-only modules in packages</strong>: <code>rocx build</code> would copy a package's
@@ -310,13 +330,11 @@ view! = |_|
 					<code>Db</code> and <code>Random</code> itself, and a route's <code>respond!</code> is
 					<code>AdminPage.respond!(request, context, admin)</code>, with no effects to hand it.
 				</li>
-				<li>
-					<strong>The platform's admin look for apps</strong>: the server platform draws the jobs page with a
-					module apps can't import yet (<code>AdminHtml</code>), so <code>Look</code> holds a copy of its
-					stylesheet and helpers, which a test keeps the same as <code>AdminHtml</code>'s. Shared (the plugins
-					design moves <code>AdminHtml</code> into this package), it would be one look in one place.
-				</li>
 			</ul>
+			<p>
+				One look in one place is done: the jobs page and its look moved into this package with the plugins
+				(D-034).
+			</p>
 			<p>Not yet:</p>
 			<ul>
 				<li>A list counts its rows (<code>count(*)</code>) and pages with <code>offset</code>: fine for thousands of rows, slow for millions.</li>

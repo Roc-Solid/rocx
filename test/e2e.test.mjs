@@ -242,6 +242,11 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		assert.equal(broken.status, 500);
 		assert.match(broken.html, /<title>Broken<\/title>.*<main><!--errored:failed--><section class="error"><h1>500<\/h1> <p class="problem">nothing above provides Generated\/BrokenPage\.missing[^<]*<\/p><\/section><!--\/errored--><\/main>/, "the error page, inside the layout");
 		assert.deepEqual([(await get("/members")).status, (await get("/members")).html], [401, "members only"]);
+		// The jobs page, a plugin's page: behind the app's middleware (its header), then its guard.
+		assert.deepEqual(await get("/admin/jobs"), { status: 401, app: "e2e", html: "members only" }, "the guard refuses a stranger");
+		const jobsPage = await get("/admin/jobs", { cookie: "member=Ada" });
+		assert.equal(jobsPage.app, "e2e");
+		assert.match(jobsPage.html, /<body class="rocx-admin">/, "the jobs page, in the admin look (no database here, so it says why)");
 		const member = await get("/members", { cookie: "member=Ada" });
 		assert.equal(member.status, 200);
 		assert.match(member.html, /<p class="who"><!--x-->Welcome, Ada<!--\/x--><\/p>/, "its endpoint, read as the page renders, answered by its route behind the file's middleware, in-process");

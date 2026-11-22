@@ -1723,6 +1723,22 @@ program = App.program({ …, plugins: [Job.plugin({ jobs: App.jobs, crons: [Cron
   `browser.roc` for the browser's half (D-033). The dev mailbox keeps a copy of the look in the
   platform until email moves (D-035).
 
+**The jobs page, a plugin (the same day).** `JobsPage.plugin({ at, guard })` lists the page
+in the app's plugins: `JobsPage.Options(ctx, out) := { at : Str ?? "/admin/jobs", guard :
+Middleware(ctx, out) }`. `guard` has no default, so a page that acts on the queue is never public
+because an option was left out: without it the app doesn't compile ("This record is missing the
+field: guard"; a server test checks the message). A request at `at` passes the app's middleware,
+then `guard` (what it hands on is ignored), then the page; it needs the jobs plugin
+(`needs: [Plugin("jobs")]`). It claims every method at its path (`*`; the page answers GET, HEAD
+and POST, and 405 to the rest), not a GET and a POST route: two closures that each capture the
+guard crash a server built with `--opt=speed` as it starts, with the pinned nightly and the fork
+alike (`test/compiler-bugs/two-guarded-routes-opt-speed`, reduced to 36 lines); back to two routes
+once the compiler is fixed. `JobsPage.respond!(request, { mount })` stays for an app that mounts it
+itself. And one look: `Look` (on no platform, so the browser's half can still show the tables
+admin) has the rules every admin page shares, part by part, and the helpers; the tables admin's
+stylesheet and `AdminHtml`'s (the server's pages) put their own rules among them. The copy the
+tables admin kept, and the test that held it to the platform's, are gone.
+
 **Moving to it.** What an app outside the repo changes:
 - Its header names the package (`jobs: "…/packages/jobs/main.roc"`), and `admin:
   "…/packages/admin/main.roc"` for the jobs page; its modules import `jobs.Job`, `jobs.Cron` and
@@ -1734,6 +1750,9 @@ program = App.program({ …, plugins: [Job.plugin({ jobs: App.jobs, crons: [Cron
 - A program written by hand drops `jobs` and `crons`, and lists
   `Job.plugin({ jobs: [Job.handler(kind), …], crons })` in its plugins (`Plugin.running`).
 - A database it has keeps its queue: nothing to do.
+- The jobs page: `JobsPage.plugin({ at: "/admin/jobs", guard: Middlewares.admin })` in its plugins,
+  in place of the route file that mounted it (`routes/admin/jobs/+server.roc` goes); or the route
+  file stays, importing `admin.JobsPage`.
 
 **Costs.** One more line in `main.roc` and one in the header. A plugin package names the server
 platform by a path, so the app names the same file (D-033). The dev mailbox's look is in two places

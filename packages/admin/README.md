@@ -193,8 +193,20 @@ in a new row, the column's default for a column that has one.
 
 `JobsPage` draws packages/jobs's queue as a console: how many jobs are in each state, what
 finished in the last hour, the latest failures, each kind, the schedules, and the jobs, each in a
-drawer, with retry, cancel and run now as plain forms. It needs the jobs plugin
-(`Job.plugin({ jobs: App.jobs })`), and is mounted behind the app's own middleware:
+drawer, with retry, cancel and run now as plain forms. It is a plugin, behind a guard the app gives
+it, which has no default (a jobs page is never public because an option was left out):
+
+```roc
+plugins: [
+    Job.plugin({ jobs: App.jobs }),
+    JobsPage.plugin({ at: "/admin/jobs", guard: Middlewares.admin }),   # at: "/admin/jobs" unless it says
+]
+```
+
+A request at `at` (any method: the page answers GET and POST, and 405 to the rest) passes the
+app's middleware, then `guard`, then the page; what the guard hands on isn't used. It needs the jobs plugin (`needs: [Plugin("jobs")]`: the server refuses to
+start without it). Leaving `guard` out doesn't compile: "This record is missing the field: guard".
+An app that mounts the page itself answers a route with `respond!`:
 
 ```roc
 # routes/admin/jobs/+server.roc
@@ -206,8 +218,15 @@ middleware = Middlewares.admin
 respond! = |{ request, .. }| JobsPage.respond!(request, { mount: "/admin/jobs" })
 ```
 
-`AdminHtml` is its look (and the dev mailbox's): whole pages in the shape of a console, light or
-dark, refreshed over a stream of events. The site's jobs page (`/ecosystem/jobs`) says more.
+## One look
+
+The tables admin, the jobs page and the dev mailbox (packages/email) are drawn in one look. `Look`
+has it, on no platform: the rules every admin page shares, part by part (`Look.shared`: tokens for
+light and dark, the shell, the header, panels, tables, buttons, an empty panel, narrow screens),
+and the helpers (`side`, `nav_link`, `nav_label`, `header`, `panel`, `empty`, `icon`, `button`,
+`button_with`, `escape`). The tables admin's stylesheet is the shared rules and its own;
+`AdminHtml` (server only) draws the server's pages with the shared rules among theirs, a stream of
+changes that refreshes a page, and times. The site's jobs page (`/ecosystem/jobs`) says more.
 
 ## Modules
 
@@ -224,10 +243,10 @@ packages/admin/main.roc` runs their `expect`s.
 | `Listing` | a list's search, filters, sort and page from the query, and back (`read`, `params`, `conditions`, `order`); each column's filter (`kind`) and the check of its values (`check`) |
 | `Paging` | `of(total, size, asked)`, `offset`, `shows`, `links` (Django's: the first two, three each side, the last two) |
 | `View` | each page's HTML, a list's row of filters, and the sidebar of tables (`side`) |
-| `Look` | the page around it: a copy of the admin look (`AdminHtml`'s stylesheet and helpers: `side`, `header`, `panel`, `empty`, `icon`, `button_with`), the admin's own rules (forms, filters, pages), and the headers |
+| `Look` | the admin look (`shared`, the rules every admin page shares, and the helpers), the tables admin's own rules, its `document` and its headers |
 | `Form` | a query's or a form's fields, decoded; links, encoded |
-| `JobsPage` | the jobs page (server only: it names the platform), `respond!(request, { mount })` |
-| `AdminHtml` | the jobs page's look, which the dev mailbox shares: a page, its sidebar, panels, buttons, times, a stream of changes |
+| `JobsPage` | the jobs page (server only): `plugin({ at, guard })`, or `respond!(request, { mount })` |
+| `AdminHtml` | the server's admin pages (the jobs page's, the dev mailbox's), on `Look`: a page, a stream of changes, times, links (server only) |
 
 Every statement answers with rows of one shape (each cell as text, and which were null), so one
 `Db.all!` reads them all, whatever the table.
@@ -239,14 +258,11 @@ Postgres 18 (`/tmp/rocx-pkg-admin`: a schema with an enum, a check, foreign keys
 generated and identity columns, and 137 rows; an end-to-end test of every page and form, and of
 each kind of filter, with the search, a sort and pages).
 
-Waits on a proposal (PROPOSALS.md):
+Waits on a proposal (PROPOSALS.md; one look in one place is done, D-034):
 
 - **Server-only modules in packages**: then `AdminPage` moves to the package's `server/`, imports
   `Db` and `Random` itself, and the route's `respond!` is
   `AdminPage.respond!(request, context, admin)`.
-- **One look** (`AdminHtml`, in this package now, with the jobs page): `Look` holds a copy of its
-  stylesheet and helpers, which `test/packages.test.mjs` keeps the same as the platform's copy
-  (the dev mailbox's, until email is a package). Folded into one, it will be one look in one place.
 
 ## Limits, for now
 
