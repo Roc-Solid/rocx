@@ -1,6 +1,6 @@
 {
 	"measured": "2026-11-22",
-	"commit": "4b1169c",
+	"commit": "c22e832",
 	"roc": "rocx-fork-3f66e242ea",
 	"machine": "Apple M5, 10 cores",
 	"runtime": {
@@ -14,18 +14,18 @@
 			"title": "Acme Board",
 			"pages": 3,
 			"endpoints": 20,
-			"lines": 3477,
+			"lines": 3529,
 			"expects": 81,
-			"tests": 15,
+			"tests": 17,
 			"packages": [
 				"guard",
 				"presence"
 			],
 			"postgres": true,
 			"wasm": {
-				"bytes": 769081,
-				"gzip": 272320,
-				"brotli": 206995
+				"bytes": 771815,
+				"gzip": 273213,
+				"brotli": 207818
 			}
 		},
 		{
