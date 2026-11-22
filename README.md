@@ -14,7 +14,7 @@ browser, in three parts.
   in the browser, the components, compiled to WebAssembly (`web/`).
 - **The ecosystem**: packages of plain Roc, components and plugins that any app can use, in
   `packages/`: charts, forms, Markdown, intl, an admin, guards, jobs and cron, email, MCP, presence,
-  Web Push, OpenTelemetry, S3, crypto and testing.
+  Web Push, OpenTelemetry, storage (S3, files, memory), crypto and testing.
 
 Pages are components, after Solid 2.0: a component runs once and makes signals; each hole in its
 markup that calls something named with `!` (a signal, a memo) is a computation that runs again when
@@ -78,7 +78,7 @@ just check   # type-check the site's two programs (reports at .rocx lines) and t
 | `rocx-cli/` | rocx, in Roc on basic-cli: the transpiler (`Transpile.roc`), scoped styles (`Styles.roc`), routing (`Routes.roc`), stories, error remapping, `rocx fmt`, the build (`Build.roc`) and its warning where the browser's copy reaches what only the server has (`ServerOnly.roc`), the command (`main.roc`); built into `bin/rocx` whenever its Roc changed (`server/build.mjs`'s `rocxBinary`, which every script uses). `rocx-cli/rocx.mjs` calls its functions from the repo's JavaScript tests by name (`rocx internal`) |
 | `packages/charts` | bar, stacked bar, line, sparkline, donut, scatter and heatmap charts, styled by custom properties: their arithmetic a Roc package (scales, round ticks, SVG paths, in `Dec`), their components copied into each app by `rocx build`; see its README |
 | `packages/crypto` | SHA-256, HMAC, HKDF, Base64 and hex in plain Roc, on no platform, each checked against its RFC's vectors; see its README |
-| `packages/s3` | files in any S3: objects, multipart uploads, presigned URLs, and objects served as they stream, a bucket made from its URL and the server platform's `Http.send!`; see its README |
+| `packages/storage` | files in a bucket whose URL says where (D-047): any S3, a directory beside the server, or memory for tests; objects, multipart uploads, signed URLs (a plugin answers a directory's), and objects served without passing through Roc; see its README |
 | `packages/jobs` | jobs and cron as a plugin (D-034): work queued in the app's database (Postgres or SQLite) and run by workers, again if it fails, and schedules; `Job.plugin({ jobs: App.jobs, crons })`; see its README |
 | `packages/email` | email as a plugin (D-035): over SMTP (`SMTP_URL`, `MAIL_FROM`), or kept for the dev mailbox at `/__rocx/mail` under `--dev`; `Email.plugin({})`, `Email.send!`; see its README |
 | `packages/*` | the other packages: `admin` (a Django-style admin for Postgres tables, and the jobs page), `forms`, `guard` (rate limits, feature flags, request guards), `intl`, `markdown`, `mcp`, `otel` (OpenTelemetry metrics and logs), `presence`, `push` (Web Push) and `testing`; each has a README, a PROPOSALS.md of what it waits on, and a page on the docs site. A package's modules for the server alone are a package of their own, `server/main.roc`, which names the server platform |
@@ -527,8 +527,8 @@ other servers (`Http.fetch!(url, init)`, as JavaScript's `fetch`), bodies as byt
 (`Server.forward`), cookies, settings (`Env`), encryption (`AesGcm`) and random bytes, values in
 memory by key (`Kv`: TTLs, atomic counters, an LRU limit), live topics and rooms, channels (typed
 live updates, one stream per tab), and actors (typed asks, tells and timers, one message at a time,
-their state kept in the database when there is one). Files in S3 and the crypto written in Roc
-are packages (`packages/s3`, `packages/crypto`), and so are jobs and cron (`packages/jobs`, a plugin:
+their state kept in the database when there is one). Files (in S3, a directory or memory) and the
+crypto written in Roc are packages (`packages/storage`, `packages/crypto`), and so are jobs and cron (`packages/jobs`, a plugin:
 options, keys, listing, and a jobs page in `packages/admin`, a plugin behind the app's guard) and
 email (`packages/email`, a plugin: SMTP, or a dev mailbox at `/__rocx/mail`). The Rust host gives general things (HTTP, database connections, TCP and TLS,
 background loops, isolated calls, the key-value store, channels' streams, actors' mailboxes and

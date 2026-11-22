@@ -238,7 +238,7 @@ Works today, and is tested here. `roc test packages/testing/main.roc` runs `Dom`
 Waits on a proposal (PROPOSALS.md):
 
 - a clock a test sets, and seeded randomness (a test mode in the server);
-- outbound `Http` stubbed (an S3 bucket's requests too, packages/s3), so a test makes no network calls;
+- outbound `Http` stubbed (an S3 bucket's requests too, packages/storage), so a test makes no network calls;
 - jobs and crons run by a request, without SQL;
 - clearing the dev mailbox between tests;
 - requests answered in-process from Roc, and `view!` components rendered in a Roc test (`rocx test`);

@@ -3,7 +3,7 @@ import crypto.Hex
 import crypto.Hkdf
 import crypto.Hmac
 import crypto.Sha256
-import s3.S3
+import storage.Storage
 import pf.AesGcm
 import pf.Env
 import pf.Http
@@ -153,74 +153,73 @@ Samples := [].{
 		)
 	}
 
-	# ---- Files in S3: packages/s3 ----
+	# ---- Files: packages/storage ----
 
-	## The app's bucket: the one its `STORAGE_URL` names, reached with the platform's `Http.send!`
-	## and `Time.now_millis!`.
-	files! : {} => Try(S3.Bucket, [StorageErr(Str)])
-	files! = |{}| S3.from_url(Env.var!("STORAGE_URL") ?? "", { send!: Http.send!, now!: Time.now_millis! })
+	## The app's bucket: the one its `STORAGE_URL` names (`s3://…`, `file:<dir>`, `memory:`).
+	files! : {} => Try(Storage.Bucket, [StorageErr(Str)])
+	files! = |{}| Storage.from_url(Env.var!("STORAGE_URL") ?? "")
 
 	## A member's avatar, the bytes the browser sent, kept under the member's name.
-	save_avatar! : Str, Server.Request => Try({}, [S3Err(S3.Refusal), StorageErr(Str)])
+	save_avatar! : Str, Server.Request => Try({}, [S3Err(Storage.Refusal), StorageErr(Str)])
 	save_avatar! = |member, request| {
 		type = Server.header(request, "content-type") ?? "application/octet-stream"
-		S3.put!(Samples.files!({})?, "avatars/${member}", request.body, { content_type: type })
+		Storage.put!(Samples.files!({})?, "avatars/${member}", request.body, { content_type: type })
 	}
 
 	## Its size and type, asked without its bytes.
-	avatar_size! : Str => Try(Str, [NotFound, S3Err(S3.Refusal), StorageErr(Str)])
+	avatar_size! : Str => Try(Str, [NotFound, S3Err(Storage.Refusal), StorageErr(Str)])
 	avatar_size! = |member| {
-		info = S3.head!(Samples.files!({})?, "avatars/${member}")?
+		info = Storage.head!(Samples.files!({})?, "avatars/${member}")?
 		Ok("${info.size.to_str()} bytes of ${info.content_type}")
 	}
 
 	## Its bytes, read whole (64 MiB at most), and gone again.
-	take_avatar! : Str => Try(List(U8), [NotFound, S3Err(S3.Refusal), StorageErr(Str)])
+	take_avatar! : Str => Try(List(U8), [NotFound, S3Err(Storage.Refusal), StorageErr(Str)])
 	take_avatar! = |member| {
 		files = Samples.files!({})?
-		bytes = S3.get!(files, "avatars/${member}")?
-		S3.delete!(files, "avatars/${member}")?
+		bytes = Storage.get!(files, "avatars/${member}")?
+		Storage.delete!(files, "avatars/${member}")?
 		Ok(bytes)
 	}
 
-	## A link the browser uploads a file to S3 with itself, for an hour: the app's server never holds
-	## its bytes.
+	## A link the browser uploads a file with itself, for an hour: to S3, which the app's server never
+	## sees; or to the app, the storage plugin's (`file:`, `memory:`).
 	upload_link! : Str => Try(Str, [BadExpiry, StorageErr(Str)])
-	upload_link! = |key| S3.signed_url!(Samples.files!({})?, key, { method: "PUT", expires_s: 3600 })
+	upload_link! = |key| Storage.signed_url!(Samples.files!({})?, key, { method: "PUT", expires_s: 3600 })
 
 	## A video in parts, as a browser sends a large file: started, each part sent (5 MiB or more,
-	## but the last), then finished, S3 putting them together.
-	save_in_parts! : Str, List(List(U8)) => Try({}, [NotFound, S3Err(S3.Refusal), StorageErr(Str)])
+	## but the last, for S3), then finished, the parts put together.
+	save_in_parts! : Str, List(List(U8)) => Try({}, [NotFound, S3Err(Storage.Refusal), StorageErr(Str)])
 	save_in_parts! = |key, parts| {
 		files = Samples.files!({})?
-		upload = S3.start_upload!(files, key, { content_type: "video/mp4" })?
+		upload = Storage.start_upload!(files, key, { content_type: "video/mp4" })?
 		var $sent = []
 		for part in parts {
 			number = $sent.len() + 1
-			etag = S3.upload_part!(files, key, upload, number, part)?
+			etag = Storage.upload_part!(files, key, upload, number, part)?
 			$sent = $sent.append({ number, etag })
 		}
-		S3.finish_upload!(files, key, upload, $sent)
+		Storage.finish_upload!(files, key, upload, $sent)
 	}
 
-	## A video, streamed from S3 to whoever asks, ranges and all, never through Roc. Without a
-	## bucket, a 500, and the log says why.
+	## A video, sent to whoever asks, ranges and all, never through Roc. Without a bucket, a 500,
+	## and the log says why.
 	serve_video! : Str, Server.Request => Server.Response
 	serve_video! = |key, request|
 		match Samples.files!({}) {
-			Ok(files) => S3.serve!(files, key, request, { content_type: "video/mp4", cache_control: "private, max-age=3600" })
+			Ok(files) => Storage.serve!(files, key, request, { content_type: "video/mp4", cache_control: "private, max-age=3600" })
 			Err(StorageErr(why)) => {
 				Log.error!("no storage", { why: why })
 				Server.refused(500, "Something went wrong.")
 			}
 		}
 
-	## The same, always whole: the request's range dropped before S3 is asked.
+	## The same, always whole: the request's range dropped before the bucket is asked.
 	serve_whole! : Str, Server.Request => Server.Response
 	serve_whole! = |key, request| {
 		whole = { ..request, headers: request.headers.drop_if(|header| header.name == "range") }
 		match Samples.files!({}) {
-			Ok(files) => S3.serve!(files, key, whole, { content_type: "video/mp4", cache_control: "private" })
+			Ok(files) => Storage.serve!(files, key, whole, { content_type: "video/mp4", cache_control: "private" })
 			Err(_) => Server.refused(500, "Something went wrong.")
 		}
 	}

@@ -1,0 +1,167 @@
+import pf.Html
+import ../../../Ui/Heading
+import ../../../Ui/Code
+import ../../../Generated/Sources
+import ../../../Generated/Paths
+import ../../../Ui/PageHero
+
+## The storage package (D-047): a bucket made from a URL whose scheme is its backend (S3, files
+## beside the server, the server's memory), keeping a file, a large one in parts, signed links,
+## serving one, and the errors. Static: the samples are server/test/app/Samples.roc's, which the
+## server's tests run on every backend.
+meta = {
+	title: "Storage",
+	description: "The storage package for Roc Solid apps: files kept in a bucket whose URL says where (any S3, files beside the server, or the server's memory for tests), put, read, described and deleted, uploaded in parts, linked to with signed URLs, and served to the browser without passing through Roc.",
+	toc: [
+		{ id: "bucket", label: "A bucket" },
+		{ id: "objects", label: "Keeping a file" },
+		{ id: "parts", label: "A large file, in parts" },
+		{ id: "signed", label: "Links that sign themselves" },
+		{ id: "serve", label: "Serving one" },
+		{ id: "errors", label: "Errors" },
+		{ id: "limits", label: "Not yet" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				kicker={[<>{"The ecosystem · "}</>, <code>packages/storage</code>]}
+				title="Files, in S3 or beside the server"
+			>
+				Uploads, avatars, videos: what doesn't belong in the database goes in a bucket. This package keeps a
+				file, reads it back whole or in part, uploads a large one in parts, hands out a link the browser
+				uploads or downloads with itself, and serves a file of any size to the browser, ranges and all. The
+				bucket is any S3, a directory beside the server, or the server's memory, and the code is the same.
+			</PageHero>
+			<p>
+				It names the server platform: S3's requests are signed with AWS's SigV4 (<code>SigV4</code>, held to
+				AWS's worked examples by its <code>expect</code>s) and sent with <code>Http.send!</code>
+				(<a href={"${Paths.platform_http}#out"}>other servers</a>); a directory's and memory's objects are the
+				host's to keep (<code>Blobs</code>). The samples are from <code>server/test/app/Samples.roc</code>, which
+				the platform's tests run on memory, on a directory, and on a real S3 when there is one.
+			</p>
+
+			<Heading id="bucket">A bucket</Heading>
+			<Code
+				title="main.roc's header"
+				source={"app [program] { pf: platform \"../server/platform/main.roc\", storage: \"../packages/storage/main.roc\" }"}
+				numbers={Bool.False}
+			/>
+			<Code title={"${Sources.platform_files.file}, in part"} source={Sources.platform_files.rocx} numbers={Bool.False} />
+			<p>
+				<code>Storage.from_url</code> reads a bucket's URL, and asks nothing of it yet; an app keeps the URL in
+				its environment and makes its bucket where it needs one. The URL's scheme is the backend:
+			</p>
+			<Code
+				title="STORAGE_URL"
+				source={"s3://KEY:SECRET@127.0.0.1:9000/uploads?region=us-east-1&style=path&tls=no   # rustfs or MinIO\ns3://KEY:SECRET@<account>.r2.cloudflarestorage.com/uploads?region=auto       # R2\ns3://KEY:SECRET@s3.eu-west-1.amazonaws.com/uploads?region=eu-west-1          # AWS\nfile:data/uploads?secret=…                                                    # files beside the server\nmemory:                                                                       # the server's memory: tests"}
+				numbers={Bool.False}
+				plain={Bool.True}
+			/>
+			<ul>
+				<li>
+					<strong>S3:</strong> the bucket is the URL's path. <code>region</code> is what the keys sign for
+					(<code>us-east-1</code> unless given, <code>auto</code> for R2); <code>style=path</code> puts the bucket
+					in the path, as rustfs and MinIO want, and without it the bucket is in the host's name, as AWS and R2
+					prefer; <code>tls=no</code> is plain <code>http</code>. A character the URL would read otherwise is
+					<code>%XX</code>.
+				</li>
+				<li>
+					<strong>A directory</strong> (<code>file:data/uploads</code>, from where the server starts, made when
+					missing): a file's bytes are a file at its key, written whole or not at all (to a file of its own first,
+					then moved into its place), with its type and its ETag beside it, in <code>.storage/</code>. It suits an
+					app on one server, as SQLite does (<a href={Paths.platform_database}>the database</a>); a volume keeps it.
+				</li>
+				<li>
+					<strong>Memory</strong> (<code>memory:</code>, or <code>memory:name</code> for a bucket of its own): gone
+					when the server stops. For tests, which then need no S3.
+				</li>
+			</ul>
+			<p>
+				<code>Storage.check!(bucket)</code> says whether the bucket answers: S3, with these keys, for this bucket;
+				a directory, that it can be written to. A health check's question.
+			</p>
+
+			<Heading id="objects">Keeping a file</Heading>
+			<Code title={"${Sources.platform_avatar.file}, in part"} source={Sources.platform_avatar.rocx} numbers={Bool.False} />
+			<ul>
+				<li>
+					<code>{"Storage.put!(bucket, key, bytes, { content_type })"}</code> keeps a file under a key (a name,
+					slashes and all), replacing what was there.
+				</li>
+				<li>
+					<code>Storage.get!(bucket, key)</code> reads it whole; <code>{"Storage.get_range!(bucket, key, { offset, length })"}</code>
+					reads a piece, and says the file's size, for one larger. <code>Storage.head!(bucket, key)</code>
+					describes it without its bytes: its size, its type and its ETag (its MD5, on every backend, for a file
+					put whole).
+				</li>
+				<li>
+					<code>Storage.delete!(bucket, key)</code> deletes it; a file that isn't there is deleted already, an
+					<code>Ok</code>.
+				</li>
+			</ul>
+
+			<Heading id="parts">A large file, in parts</Heading>
+			<Code title={"${Sources.platform_parts.file}, in part"} source={Sources.platform_parts.rocx} numbers={Bool.False} />
+			<p>
+				A video upload in parts: <code>Storage.start_upload!</code> answers the upload's id,
+				<code>Storage.upload_part!</code> sends a part by its number (from 1) and answers its ETag, and
+				<code>Storage.finish_upload!</code> puts the parts listed together, in the order of their numbers, into one
+				file, its ETag the MD5 of theirs and how many (<code>…-3</code>), as S3 makes one. A part listed with an
+				ETag that isn't its own is refused. <code>Storage.abort_upload!</code> drops an upload and what was sent
+				of it. On S3 each part but the last is 5 MiB or more (<code>EntityTooSmall</code> otherwise).
+			</p>
+
+			<Heading id="signed">Links that sign themselves</Heading>
+			<Code title={"${Sources.platform_upload_link.file}, in part"} source={Sources.platform_upload_link.rocx} numbers={Bool.False} />
+			<p>
+				<code>{"Storage.signed_url!(bucket, key, { method, expires_s })"}</code> is a link anyone holding it may use
+				to make that request (a <code>PUT</code>, a <code>GET</code>) until it runs out, a week at most
+				(<code>BadExpiry</code> past that, or at 0): keep it as a secret's due. On S3 it is S3's presigned URL, and
+				the browser uploads to S3 itself. For a directory or memory it is the app's own, at its public URL, which
+				the storage plugin answers: list <code>Storage.plugin({"({})"})</code> in the app's plugins. Its route,
+				<code>/__storage</code>, checks the link's method, its expiry, and an HMAC-SHA256 of them and the key,
+				made with the bucket URL's <code>secret</code> (or one the server draws when it starts, so its links end
+				with it), before it serves the file or keeps the one sent (16 MiB at most: a larger one goes in parts).
+			</p>
+			<Code title="main.roc, in part" source={"plugins: [Storage.plugin({})]   # the links of a file: or memory: bucket, STORAGE_URL's"} numbers={Bool.False} />
+
+			<Heading id="serve">Serving one</Heading>
+			<Code title={"${Sources.platform_serve.file}, in part"} source={Sources.platform_serve.rocx} numbers={Bool.False} />
+			<p>
+				<code>{"Storage.serve!(bucket, key, request, { content_type, cache_control })"}</code> answers a request with
+				a file of any size, never through Roc: from S3, a forward the server streams as it comes
+				(<a href={"${Paths.platform_http}#forward"}>a body from elsewhere</a>); from a directory or memory, the file
+				the server keeps (<code>Server.stored</code>). The request's <code>Range</code> and
+				<code>If-None-Match</code> are asked as the request record has them, so a video player's ranges are 206s
+				and a browser's cache gets its 304s, and an app may change the record first: drop a range, as above, to
+				send the whole file. A file that isn't there is a 404.
+			</p>
+
+			<Heading id="errors">Errors</Heading>
+			<ul>
+				<li><code>NotFound</code>: no such file, or no such upload.</li>
+				<li>
+					<code>{"S3Err({ status, code, message })"}</code>: what S3's <code>{"<Error>"}</code> said
+					(<code>AccessDenied</code>, <code>SignatureDoesNotMatch</code>, <code>NoSuchBucket</code>,
+					<code>EntityTooSmall</code>, <code>InvalidRange</code>…). <code>Storage.said(refusal)</code> writes one as a
+					line.
+				</li>
+				<li>
+					<code>StorageErr(why)</code>: S3 didn't answer, or too late; a file that couldn't be written; a key
+					that isn't one (empty, or one that would leave a directory: <code>..</code>, a leading <code>/</code>, an
+					empty segment). From <code>Storage.from_url</code>: no URL, or one that can't be read.
+				</li>
+			</ul>
+
+			<Heading id="limits">Not yet</Heading>
+			<ul>
+				<li><strong>Whole bodies:</strong> a file put or read is in memory whole; read a large one with <code>get_range!</code>, or serve it.</li>
+				<li><strong>No listing</strong> of a bucket's files, and no copying one to another key.</li>
+				<li><strong>A directory is one server's:</strong> two servers don't share one (the platform runs one).</li>
+				<li><strong>S3's static keys</strong> only: no session tokens.</li>
+			</ul>
+		</NoHydration>
+	</>

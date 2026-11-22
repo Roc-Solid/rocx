@@ -46,7 +46,7 @@ against Node's `crypto` from a running server.
 
 ## Used by
 
-`packages/s3` (its signatures), `packages/push` (Web Push's HKDF and base64url keys) and
+`packages/storage` (S3's signatures, and the app's signed URLs), `packages/push` (Web Push's HKDF and base64url keys) and
 `packages/mcp` (images, audio and blobs as Base64): each names this package itself, so an app that
 names one of them doesn't name this one too.
 

@@ -14,18 +14,18 @@
 // idle spell); `Http` asks servers this file runs (redirects, a timeout,
 // a body too large, TLS that fails); `Env` reads the environment from a request and a job; AES-GCM
 // seals as Node's does, and packages/crypto's SHA-256, HMAC, HKDF and Base64 agree with Node's;
-// packages/s3 keeps objects in S3, whole and in parts, serves them streamed, and signs URLs Node's
-// fetch uses;
+// packages/storage keeps objects in memory, in a directory and in S3, whole and in parts, serves
+// them without passing them through Roc, and signs URLs Node's fetch uses;
 // cookies are set as their options say; a stop lets the request being answered finish.
 //
 // ROCX_TEST_OPT=speed builds the app optimized (`--opt=speed`) instead.
 //
 // Needs the toolchain (`just setup`: Roc, and Rust for the host). What needs Postgres runs when
 // DATABASE_URL is set (`just db` starts one: postgres://rocx:rocx@127.0.0.1:55432/rocx); the tests
-// empty the app's tables and the platform's job queue. What needs S3 runs when STORAGE_URL is set
-// (a bucket the tests may write to: rustfs or MinIO in Docker, say, with a bucket made,
-// `s3://KEY:SECRET@127.0.0.1:9000/BUCKET?style=path&tls=no`); its objects are under a run's own
-// prefix.
+// empty the app's tables and the platform's job queue. Storage runs on memory and a directory
+// always, and on S3 too when STORAGE_URL is set (a bucket the tests may write to: rustfs or MinIO
+// in Docker, say, with a bucket made, `s3://KEY:SECRET@127.0.0.1:9000/BUCKET?style=path&tls=no`);
+// its objects are under a run's own prefix.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
@@ -1449,8 +1449,9 @@ test("plugins: a plugin's route answers in the app, with the app's context and i
 			"rocx plugins: fixture: 5 routes, 1 early route, 1 migration, 1 call, 1 loop, 1 start, 1 check",
 			"rocx plugins: second: 1 route",
 			"rocx plugins: third: 1 route",
+			"rocx plugins: storage: 1 route",
 		],
-		"listed jobs, email, the jobs page, fixture, third, second: third needs second, so it comes after it",
+		"listed jobs, email, the jobs page, fixture, third, second, storage: third needs second, so it comes after it",
 	);
 	assert.ok(said.includes("fixture.look: the fixture looked"), "the check, run once after the start");
 });
@@ -1892,15 +1893,10 @@ test("crypto in Roc, compiled: SHA-256, HMAC, HKDF, Base64 and Hex agree with No
 	}
 });
 
-// ---- Storage: S3 ----
+// ---- Storage: packages/storage, on memory:, file: and S3 (D-047) ----
 
 /** A key of this run's own, `%`-encoded for the query. */
 const keyed = (name) => encodeURIComponent(`${run}/${name}`);
-/** The app's storage route `path`: its status and its text. */
-const stored = async (path, init) => {
-	const response = await get(path, init);
-	return [response.status, await response.text()];
-};
 const md5 = (bytes) => createHash("md5").update(bytes).digest("hex");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const MiB = 1 << 20;
@@ -1976,168 +1972,269 @@ test("samples: what the docs show (Samples.roc) runs as they say: settings, cryp
 	}
 });
 
-test("samples: what the docs show of storage runs as they say: an avatar kept, described, taken; a video in parts; a link to upload with; a video served, in part or whole", { skip: skipStorage }, async () => {
-	const member = `${run}-ada`;
-	assert.deepEqual(await stored(`/samples/avatar?member=${member}`, { method: "PUT", body: "a picture", headers: { "content-type": "image/png" } }), [200, "saved"]);
-	assert.deepEqual(await stored(`/samples/avatar?member=${member}`), [200, "9 bytes of image/png"]);
-	assert.deepEqual(await stored(`/samples/avatar/take?member=${member}`, { method: "POST" }), [200, "a picture"]);
-	assert.deepEqual(await stored(`/samples/avatar?member=${member}`), [404, "NotFound"], "taken: gone");
-	const key = keyed("samples/clip.mp4");
-	const clip = Buffer.from(Array.from({ length: 50_000 }, (_, i) => (i * 7) % 256));
-	assert.deepEqual(await stored(`/samples/parts?key=${key}`, { method: "POST", body: clip }), [200, "saved"], "one part, the last, of any size");
-	const partly = await get(`/samples/video?key=${key}`, { headers: { range: "bytes=100-199" } });
-	assert.equal(partly.status, 206);
-	assert.deepEqual(Buffer.from(await partly.arrayBuffer()), clip.subarray(100, 200));
-	const whole = await get(`/samples/video/whole?key=${key}`, { headers: { range: "bytes=100-199" } });
-	assert.equal(whole.status, 200, "the range dropped");
-	assert.deepEqual(Buffer.from(await whole.arrayBuffer()), clip);
-	const [status, url] = await stored(`/samples/upload-link?key=${keyed("samples/upload.txt")}`);
-	assert.equal(status, 200, url);
-	assert.equal((await fetch(url, { method: "PUT", body: "sent by the browser" })).status, 200, "uploaded straight to S3");
-	assert.deepEqual(await stored(`/storage/get?key=${keyed("samples/upload.txt")}`), [200, "sent by the browser"]);
-	for (const each of [key, keyed("samples/upload.txt")]) assert.deepEqual(await stored(`/storage/delete?key=${each}`, { method: "POST" }), [200, "deleted"]);
-});
 
-test("storage: an object kept, read whole, in part and described, replaced, and deleted", { skip: skipStorage }, async () => {
-	assert.deepEqual(await stored("/storage/check"), [200, "S3 answers, and the bucket is there"]);
-	const key = keyed("notes/a b+ł?.txt");
-	const said = "Hello, storage ✓";
-	const size = Buffer.byteLength(said);
-	assert.deepEqual(await stored(`/storage/put?key=${key}&type=${encodeURIComponent("text/plain; charset=utf-8")}`, { method: "POST", body: said }), [200, "stored"]);
-	assert.deepEqual(await stored(`/storage/get?key=${key}`), [200, said], "a key with a space, a plus, a question mark and a ł");
-	assert.deepEqual(await stored(`/storage/head?key=${key}`), [200, `${size} text/plain; charset=utf-8 ${md5(said)}`], "its size, type and ETag");
-	assert.deepEqual(await stored(`/storage/range?key=${key}&offset=7&length=7`), [200, `${size} storage`]);
-	assert.deepEqual(await stored(`/storage/range?key=${key}&offset=15&length=100`), [200, `${size} ✓`], "fewer at its end");
-	assert.deepEqual(await stored(`/storage/range?key=${key}&offset=0&length=0`), [200, `${size} `], "no bytes, and the size");
-	const past = await stored(`/storage/range?key=${key}&offset=${size}&length=1`);
-	assert.deepEqual(past, [502, past[1]]);
-	assert.match(past[1], /^S3Err 416 InvalidRange: /, "past its end: S3's own refusal");
-	const every = Array.from({ length: 256 }, (_, byte) => byte).join(",");
-	assert.deepEqual(await stored(`/storage/put?key=${key}&as=numbers&type=application/octet-stream`, { method: "POST", body: every }), [200, "stored"], "replaced");
-	assert.deepEqual(await stored(`/storage/get?key=${key}&as=numbers`), [200, every], "every byte, as it was");
-	assert.deepEqual(await stored(`/storage/range?key=${key}&offset=254&length=2&as=numbers`), [200, "256 254,255"]);
-	assert.deepEqual(await stored(`/storage/delete?key=${key}`, { method: "POST" }), [200, "deleted"]);
-	assert.deepEqual(await stored(`/storage/get?key=${key}`), [404, "NotFound"]);
-	assert.deepEqual(await stored(`/storage/delete?key=${key}`, { method: "POST" }), [200, "deleted"], "deleting what isn't there");
-	assert.deepEqual(await stored("/storage/get?key="), [503, "StorageErr an object's key can't be empty"], "not the bucket itself");
-});
+/** The backends the storage tests run on: the server's memory and a directory always, and S3 when
+ * STORAGE_URL names a bucket the tests may write to. Each is a server of its own. */
+const backends = [
+	{ name: "memory", url: () => `memory:${run}`, skip },
+	{ name: "file", url: () => `file:${join(dir, "bucket")}`, skip },
+	{ name: "S3", url: () => storage, skip: skipStorage },
+];
 
-test("storage: an object that isn't there is NotFound, read whole, in part, or described", { skip: skipStorage }, async () => {
-	const key = keyed("never-kept");
-	assert.deepEqual(await stored(`/storage/get?key=${key}`), [404, "NotFound"]);
-	assert.deepEqual(await stored(`/storage/range?key=${key}&offset=0&length=10`), [404, "NotFound"]);
-	assert.deepEqual(await stored(`/storage/range?key=${key}&offset=0&length=0`), [404, "NotFound"]);
-	assert.deepEqual(await stored(`/storage/head?key=${key}`), [404, "NotFound"]);
-});
+for (const backend of backends) {
+	const s3 = backend.name === "S3";
+	let started = null;
+	/** This backend's server, started when its first test asks. */
+	const on = () => (started ??= start([], app, { ...mailEnv(), DATABASE_URL: "", STORAGE_URL: backend.url() }));
+	after(async () => {
+		if (started) await (await started).stop();
+	});
+	/** A path asked of this backend's server. */
+	const ask = async (path, init) => (await on()).get(path, init);
+	/** Its storage route `path`: its status and its text. */
+	const stored = async (path, init) => {
+		const response = await ask(path, init);
+		return [response.status, await response.text()];
+	};
+	const named = (what) => `storage (${backend.name}): ${what}`;
 
-test("storage: a multipart upload, parts of 5 MiB and a last smaller one sent at once, is one object", { skip: skipStorage }, async () => {
-	const key = keyed("videos/1");
-	const [status, upload] = await stored(`/storage/start?key=${key}&type=video/mp4`, { method: "POST" });
-	assert.equal(status, 200, upload);
-	const part = (number, size, fill) => stored(`/storage/part?key=${key}&upload=${encodeURIComponent(upload)}&number=${number}&size=${size}&fill=${fill}`, { method: "POST" });
-	const sizes = [5 * MiB, 5 * MiB, 1000];
-	const sent = await Promise.all(sizes.map((size, at) => part(at + 1, size, at + 1)));
-	const bytes = Buffer.concat(sizes.map((size, at) => Buffer.alloc(size, at + 1)));
-	for (const [at, [partStatus, etag]] of sent.entries()) {
-		assert.equal(partStatus, 200, etag);
-		assert.equal(etag, md5(Buffer.alloc(sizes[at], at + 1)), "each part's ETag, without its quotes");
+	test(named("what the docs show of storage runs as they say: an avatar kept, described, taken; a video in parts; a link to upload with; a video served, in part or whole"), { skip: backend.skip }, async () => {
+		const member = `${run}-ada`;
+		assert.deepEqual(await stored(`/samples/avatar?member=${member}`, { method: "PUT", body: "a picture", headers: { "content-type": "image/png" } }), [200, "saved"]);
+		assert.deepEqual(await stored(`/samples/avatar?member=${member}`), [200, "9 bytes of image/png"]);
+		assert.deepEqual(await stored(`/samples/avatar/take?member=${member}`, { method: "POST" }), [200, "a picture"]);
+		assert.deepEqual(await stored(`/samples/avatar?member=${member}`), [404, "NotFound"], "taken: gone");
+		const key = keyed("samples/clip.mp4");
+		const clip = Buffer.from(Array.from({ length: 50_000 }, (_, i) => (i * 7) % 256));
+		assert.deepEqual(await stored(`/samples/parts?key=${key}`, { method: "POST", body: clip }), [200, "saved"], "one part, the last, of any size");
+		const partly = await ask(`/samples/video?key=${key}`, { headers: { range: "bytes=100-199" } });
+		assert.equal(partly.status, 206);
+		assert.deepEqual(Buffer.from(await partly.arrayBuffer()), clip.subarray(100, 200));
+		const whole = await ask(`/samples/video/whole?key=${key}`, { headers: { range: "bytes=100-199" } });
+		assert.equal(whole.status, 200, "the range dropped");
+		assert.deepEqual(Buffer.from(await whole.arrayBuffer()), clip);
+		const [status, url] = await stored(`/samples/upload-link?key=${keyed("samples/upload.txt")}`);
+		assert.equal(status, 200, url);
+		assert.equal((await fetch(url, { method: "PUT", body: "sent by the browser" })).status, 200, s3 ? "uploaded straight to S3" : "uploaded to the app's own link");
+		assert.deepEqual(await stored(`/storage/get?key=${keyed("samples/upload.txt")}`), [200, "sent by the browser"]);
+		for (const each of [key, keyed("samples/upload.txt")]) assert.deepEqual(await stored(`/storage/delete?key=${each}`, { method: "POST" }), [200, "deleted"]);
+	});
+
+	test(named("an object kept, read whole, in part and described, replaced, and deleted"), { skip: backend.skip }, async () => {
+		assert.deepEqual(await stored("/storage/check"), [200, "the bucket answers"]);
+		const key = keyed("notes/a b+ł?.txt");
+		const said = "Hello, storage ✓";
+		const size = Buffer.byteLength(said);
+		assert.deepEqual(await stored(`/storage/put?key=${key}&type=${encodeURIComponent("text/plain; charset=utf-8")}`, { method: "POST", body: said }), [200, "stored"]);
+		assert.deepEqual(await stored(`/storage/get?key=${key}`), [200, said], "a key with a space, a plus, a question mark and a ł");
+		assert.deepEqual(await stored(`/storage/head?key=${key}`), [200, `${size} text/plain; charset=utf-8 ${md5(said)}`], "its size, type and ETag");
+		assert.deepEqual(await stored(`/storage/range?key=${key}&offset=7&length=7`), [200, `${size} storage`]);
+		assert.deepEqual(await stored(`/storage/range?key=${key}&offset=15&length=100`), [200, `${size} ✓`], "fewer at its end");
+		assert.deepEqual(await stored(`/storage/range?key=${key}&offset=0&length=0`), [200, `${size} `], "no bytes, and the size");
+		const past = await stored(`/storage/range?key=${key}&offset=${size}&length=1`);
+		if (s3) {
+			assert.deepEqual(past, [502, past[1]]);
+			assert.match(past[1], /^S3Err 416 InvalidRange: /, "past its end: S3's own refusal");
+		} else {
+			assert.deepEqual(past, [200, `${size} `], "past its end: none, and the size");
+		}
+		const every = Array.from({ length: 256 }, (_, byte) => byte).join(",");
+		assert.deepEqual(await stored(`/storage/put?key=${key}&as=numbers&type=application/octet-stream`, { method: "POST", body: every }), [200, "stored"], "replaced");
+		assert.deepEqual(await stored(`/storage/get?key=${key}&as=numbers`), [200, every], "every byte, as it was");
+		assert.deepEqual(await stored(`/storage/range?key=${key}&offset=254&length=2&as=numbers`), [200, "256 254,255"]);
+		assert.deepEqual(await stored(`/storage/delete?key=${key}`, { method: "POST" }), [200, "deleted"]);
+		assert.deepEqual(await stored(`/storage/get?key=${key}`), [404, "NotFound"]);
+		assert.deepEqual(await stored(`/storage/delete?key=${key}`, { method: "POST" }), [200, "deleted"], "deleting what isn't there");
+		assert.deepEqual(await stored("/storage/get?key="), [503, "StorageErr an object's key can't be empty"], "not the bucket itself");
+	});
+
+	test(named("an object that isn't there is NotFound, read whole, in part, or described"), { skip: backend.skip }, async () => {
+		const key = keyed("never-kept");
+		assert.deepEqual(await stored(`/storage/get?key=${key}`), [404, "NotFound"]);
+		assert.deepEqual(await stored(`/storage/range?key=${key}&offset=0&length=10`), [404, "NotFound"]);
+		assert.deepEqual(await stored(`/storage/range?key=${key}&offset=0&length=0`), [404, "NotFound"]);
+		assert.deepEqual(await stored(`/storage/head?key=${key}`), [404, "NotFound"]);
+	});
+
+	test(named("a multipart upload, parts of 5 MiB and a last smaller one sent at once, is one object"), { skip: backend.skip }, async () => {
+		const key = keyed("videos/1");
+		const [status, upload] = await stored(`/storage/start?key=${key}&type=video/mp4`, { method: "POST" });
+		assert.equal(status, 200, upload);
+		const part = (number, size, fill) => stored(`/storage/part?key=${key}&upload=${encodeURIComponent(upload)}&number=${number}&size=${size}&fill=${fill}`, { method: "POST" });
+		const sizes = [5 * MiB, 5 * MiB, 1000];
+		const sent = await Promise.all(sizes.map((size, at) => part(at + 1, size, at + 1)));
+		const bytes = Buffer.concat(sizes.map((size, at) => Buffer.alloc(size, at + 1)));
+		for (const [at, [partStatus, etag]] of sent.entries()) {
+			assert.equal(partStatus, 200, etag);
+			assert.equal(etag, md5(Buffer.alloc(sizes[at], at + 1)), "each part's ETag, without its quotes");
+		}
+		const listed = [3, 1, 2].map((number) => `${number} ${sent[number - 1][1]}`).join("\n");
+		assert.deepEqual(await stored(`/storage/finish?key=${key}&upload=${encodeURIComponent(upload)}`, { method: "POST", body: listed }), [200, "finished"], "listed in any order");
+		const [, head] = await stored(`/storage/head?key=${key}`);
+		const multipart = md5(Buffer.concat(sent.map(([, etag]) => Buffer.from(etag, "hex"))));
+		assert.equal(head, `${bytes.length} video/mp4 ${multipart}-3`, "its size, its type, and a multipart ETag (the MD5 of its parts' MD5s)");
+		assert.deepEqual(await stored(`/storage/range?key=${key}&offset=${5 * MiB - 2}&length=4&as=numbers`), [200, `${bytes.length} 1,1,2,2`], "a range across two parts");
+		assert.deepEqual(await stored(`/storage/sha?key=${key}`), [200, sha256(bytes)], "read whole in Roc");
+		const [, url] = await stored(`/storage/signed?key=${key}&method=GET&expires=60`);
+		const fetched = await fetch(url);
+		assert.equal(fetched.status, 200);
+		assert.equal(sha256(Buffer.from(await fetched.arrayBuffer())), sha256(bytes), "and by Node's fetch, from a signed URL");
+		const again = await part(4, 10, 4);
+		assert.deepEqual(again, [404, "NotFound"], "a part for an upload that is finished");
+		assert.deepEqual(await stored(`/storage/delete?key=${key}`, { method: "POST" }), [200, "deleted"]);
+	});
+
+	test(named("an upload whose parts aren't the ones sent is refused; an aborted upload is gone, and makes nothing"), { skip: backend.skip }, async () => {
+		const key = keyed("videos/2");
+		const [, upload] = await stored(`/storage/start?key=${key}&type=video/mp4`, { method: "POST" });
+		const id = encodeURIComponent(upload);
+		const part = (number, size) => stored(`/storage/part?key=${key}&upload=${id}&number=${number}&size=${size}&fill=9`, { method: "POST" });
+		const [[, first], [, second]] = await Promise.all([part(1, 1000), part(2, 1000)]);
+		const finish = (body) => stored(`/storage/finish?key=${key}&upload=${id}`, { method: "POST", body });
+		if (s3) {
+			const small = await finish(`1 ${first}\n2 ${second}`);
+			assert.equal(small[0], 502);
+			assert.match(small[1], /^S3Err 400 EntityTooSmall: /, "a part but the last under 5 MiB");
+		}
+		const wrong = await finish("1 0123456789abcdef0123456789abcdef");
+		if (s3) {
+			assert.equal(wrong[0], 502);
+			assert.match(wrong[1], /^S3Err 400 InvalidPart: /, "an ETag that isn't the part's");
+		} else {
+			assert.deepEqual(wrong, [503, `StorageErr InvalidPart: part 1 of ${decodeURIComponent(key)} isn't one sent with that ETag`]);
+		}
+		assert.deepEqual(await stored(`/storage/abort?key=${key}&upload=${id}`, { method: "POST" }), [200, "aborted"]);
+		assert.deepEqual(await part(3, 10), [404, "NotFound"], "no such upload any more");
+		assert.deepEqual(await finish(`1 ${first}`), [404, "NotFound"]);
+		assert.deepEqual(await stored(`/storage/abort?key=${key}&upload=${id}`, { method: "POST" }), [200, "aborted"], "aborting it again");
+		assert.deepEqual(await stored(`/storage/get?key=${key}`), [404, "NotFound"], "no object was made");
+	});
+
+	test(named("signed URLs, a PUT and a GET made by Node's fetch; a changed one, or another method, is refused; a week at most"), { skip: backend.skip }, async () => {
+		const key = keyed("signed/a file ✓.txt");
+		const [status, putUrl] = await stored(`/storage/signed?key=${key}&method=PUT&expires=60`);
+		assert.equal(status, 200, putUrl);
+		if (s3) {
+			assert.match(putUrl, /X-Amz-Expires=60&X-Amz-SignedHeaders=host&X-Amz-Signature=[0-9a-f]{64}$/);
+		} else {
+			assert.ok(putUrl.startsWith(`${(await on()).url}/__storage?method=PUT&key=`), "the app's own link, at where it listens");
+			assert.match(putUrl, /&expires=\d+&signature=[0-9a-f]{64}$/);
+		}
+		assert.equal((await fetch(putUrl, { method: "PUT", body: "sent by Node", headers: { "content-type": "text/plain" } })).status, 200);
+		assert.deepEqual(await stored(`/storage/get?key=${key}`), [200, "sent by Node"], "what the signed PUT sent");
+		const [, getUrl] = await stored(`/storage/signed?key=${key}&method=GET&expires=60`);
+		const got = await fetch(getUrl);
+		assert.equal(got.status, 200);
+		assert.equal(await got.text(), "sent by Node");
+		assert.equal((await fetch(getUrl.replace(/.$/, (last) => (last === "0" ? "1" : "0")))).status, 403, "a signature changed");
+		assert.equal((await fetch(putUrl, { method: "DELETE" })).status, s3 ? 403 : 403, "another method than the one signed");
+		assert.equal((await fetch(getUrl, { method: "PUT", body: "not this" })).status, 403, "a GET's link used to PUT");
+		assert.deepEqual(await stored(`/storage/signed?key=${key}&method=GET&expires=0`), [400, "BadExpiry"]);
+		assert.deepEqual(await stored(`/storage/signed?key=${key}&method=GET&expires=604801`), [400, "BadExpiry"]);
+		assert.equal((await stored(`/storage/signed?key=${key}&method=GET&expires=604800`))[0], 200, "a week");
+		assert.deepEqual(await stored(`/storage/delete?key=${key}`, { method: "POST" }), [200, "deleted"]);
+	});
+
+	test(named("serve! answers with the object, never through Roc: whole, a range, 304 for its ETag, HEAD, 404"), { skip: backend.skip }, async () => {
+		const key = keyed("served/clip.mp4");
+		const bytes = Buffer.from(Array.from({ length: 70_000 }, (_, i) => (i * 13 + 7) % 256));
+		assert.deepEqual(await stored(`/storage/put?key=${key}&type=application/octet-stream`, { method: "POST", body: bytes }), [200, "stored"], "the bytes as they came");
+		const served = await ask(`/storage/serve?key=${key}&type=video/mp4&cache=${encodeURIComponent("private, max-age=60")}`);
+		assert.equal(served.status, 200);
+		assert.deepEqual(Buffer.from(await served.arrayBuffer()), bytes);
+		assert.equal(served.headers.get("content-type"), "video/mp4");
+		assert.equal(served.headers.get("cache-control"), "private, max-age=60");
+		assert.equal(served.headers.get("content-length"), "70000");
+		const etag = served.headers.get("etag");
+		assert.equal(etag, `"${md5(bytes)}"`);
+		const part = await ask(`/storage/serve?key=${key}`, { headers: { range: "bytes=69990-69999" } });
+		assert.equal(part.status, 206);
+		assert.equal(part.headers.get("content-range"), "bytes 69990-69999/70000");
+		assert.equal(part.headers.get("content-type"), "application/octet-stream", "the object's own, with none given");
+		assert.equal(part.headers.get("cache-control"), null);
+		assert.deepEqual(Buffer.from(await part.arrayBuffer()), bytes.subarray(69_990));
+		const tail = await ask(`/storage/serve?key=${key}`, { headers: { range: "bytes=-5" } });
+		assert.equal(tail.status, 206);
+		assert.deepEqual(Buffer.from(await tail.arrayBuffer()), bytes.subarray(69_995), "the last five bytes");
+		const past = await ask(`/storage/serve?key=${key}`, { headers: { range: "bytes=70000-" } });
+		assert.equal(past.status, 416, "a range past its end");
+		const same = await ask(`/storage/serve?key=${key}`, { headers: { "if-none-match": etag } });
+		assert.equal(same.status, 304);
+		const whole = await ask(`/storage/serve?key=${key}&whole=1`, { headers: { range: "bytes=69990-69999" } });
+		assert.equal(whole.status, 200, "a range the app dropped from the request record isn't asked for");
+		assert.deepEqual(Buffer.from(await whole.arrayBuffer()), bytes);
+		const head = await ask(`/storage/serve?key=${key}`, { method: "HEAD" });
+		assert.equal(head.status, 200);
+		assert.equal(head.headers.get("content-length"), "70000");
+		assert.equal((await head.arrayBuffer()).byteLength, 0);
+		const missing = await ask(`/storage/serve?key=${keyed("never-kept")}`);
+		assert.equal(missing.status, 404);
+		assert.equal(await missing.text(), "Not Found", "not S3's XML");
+		assert.deepEqual(await stored(`/storage/delete?key=${key}`, { method: "POST" }), [200, "deleted"]);
+	});
+}
+
+test("storage (file): objects are files beside the server, written whole, kept across a restart; a key that would leave the directory is refused", { skip }, async () => {
+	const bucket = join(dir, "kept-bucket");
+	const url = `file:${bucket}`;
+	const first = await start([], app, { ...mailEnv(), DATABASE_URL: "", STORAGE_URL: url });
+	const ask = async (of, path, init) => {
+		const response = await of.get(path, init);
+		return [response.status, await response.text()];
+	};
+	try {
+		assert.deepEqual(await ask(first, "/storage/put?key=docs%2Fa.txt&type=text/plain", { method: "POST", body: "kept" }), [200, "stored"]);
+		assert.equal(readFileSync(join(bucket, "docs", "a.txt"), "utf8"), "kept", "the object is a file at its key");
+		for (const key of ["..%2Fout.txt", "%2Fabs", "a%2F..%2F..%2Fb", ".storage%2Fmeta%2Fx", "a%2F%2Fb"]) {
+			const [status, said] = await ask(first, `/storage/put?key=${key}&type=text/plain`, { method: "POST", body: "no" });
+			assert.equal(status, 503, key);
+			assert.match(said, /^StorageErr `.*` isn't a key: /, key);
+		}
+		assert.ok(!existsSync(join(dir, "out.txt")), "nothing outside the bucket");
+	} finally {
+		await first.stop();
 	}
-	const listed = [3, 1, 2].map((number) => `${number} ${sent[number - 1][1]}`).join("\n");
-	assert.deepEqual(await stored(`/storage/finish?key=${key}&upload=${encodeURIComponent(upload)}`, { method: "POST", body: listed }), [200, "finished"], "listed in any order");
-	const [, head] = await stored(`/storage/head?key=${key}`);
-	assert.match(head, new RegExp(`^${bytes.length} video/mp4 [0-9a-f]{32}-3$`), "its size, its type, and a multipart ETag");
-	assert.deepEqual(await stored(`/storage/range?key=${key}&offset=${5 * MiB - 2}&length=4&as=numbers`), [200, `${bytes.length} 1,1,2,2`], "a range across two parts");
-	assert.deepEqual(await stored(`/storage/sha?key=${key}`), [200, sha256(bytes)], "read whole in Roc");
-	const [, url] = await stored(`/storage/signed?key=${key}&method=GET&expires=60`);
-	const fetched = await fetch(url);
-	assert.equal(fetched.status, 200);
-	assert.equal(sha256(Buffer.from(await fetched.arrayBuffer())), sha256(bytes), "and by Node's fetch, from a presigned URL");
-	const again = await part(4, 10, 4);
-	assert.deepEqual(again, [404, "NotFound"], "a part for an upload that is finished");
-	assert.deepEqual(await stored(`/storage/delete?key=${key}`, { method: "POST" }), [200, "deleted"]);
+	const again = await start([], app, { ...mailEnv(), DATABASE_URL: "", STORAGE_URL: url });
+	try {
+		assert.deepEqual(await ask(again, "/storage/get?key=docs%2Fa.txt"), [200, "kept"], "after a restart");
+		assert.deepEqual(await ask(again, "/storage/head?key=docs%2Fa.txt"), [200, `4 text/plain ${md5("kept")}`], "its type and ETag kept beside it");
+	} finally {
+		await again.stop();
+	}
 });
 
-test("storage: S3's refusals of an upload say its code; an aborted upload is gone, and makes nothing", { skip: skipStorage }, async () => {
-	const key = keyed("videos/2");
-	const [, upload] = await stored(`/storage/start?key=${key}&type=video/mp4`, { method: "POST" });
-	const id = encodeURIComponent(upload);
-	const part = (number, size) => stored(`/storage/part?key=${key}&upload=${id}&number=${number}&size=${size}&fill=9`, { method: "POST" });
-	const [[, first], [, second]] = await Promise.all([part(1, 1000), part(2, 1000)]);
-	const finish = (body) => stored(`/storage/finish?key=${key}&upload=${id}`, { method: "POST", body });
-	const small = await finish(`1 ${first}\n2 ${second}`);
-	assert.equal(small[0], 502);
-	assert.match(small[1], /^S3Err 400 EntityTooSmall: /, "a part but the last under 5 MiB");
-	const wrong = await finish("1 0123456789abcdef0123456789abcdef");
-	assert.equal(wrong[0], 502);
-	assert.match(wrong[1], /^S3Err 400 InvalidPart: /, "an ETag that isn't the part's");
-	assert.deepEqual(await stored(`/storage/abort?key=${key}&upload=${id}`, { method: "POST" }), [200, "aborted"]);
-	assert.deepEqual(await part(3, 10), [404, "NotFound"], "no such upload any more");
-	assert.deepEqual(await finish(`1 ${first}`), [404, "NotFound"]);
-	assert.deepEqual(await stored(`/storage/abort?key=${key}&upload=${id}`, { method: "POST" }), [200, "aborted"], "aborting it again");
-	assert.deepEqual(await stored(`/storage/get?key=${key}`), [404, "NotFound"], "no object was made");
-});
-
-test("storage: presigned URLs, a PUT and a GET made by Node's fetch; a changed one is refused; a week at most", { skip: skipStorage }, async () => {
-	const key = keyed("signed/a file ✓.txt");
-	const [status, putUrl] = await stored(`/storage/signed?key=${key}&method=PUT&expires=60`);
-	assert.equal(status, 200, putUrl);
-	assert.match(putUrl, /X-Amz-Expires=60&X-Amz-SignedHeaders=host&X-Amz-Signature=[0-9a-f]{64}$/);
-	assert.equal((await fetch(putUrl, { method: "PUT", body: "sent by Node", headers: { "content-type": "text/plain" } })).status, 200);
-	assert.deepEqual(await stored(`/storage/get?key=${key}`), [200, "sent by Node"], "what the presigned PUT sent");
-	const [, getUrl] = await stored(`/storage/signed?key=${key}&method=GET&expires=60`);
-	const got = await fetch(getUrl);
-	assert.equal(got.status, 200);
-	assert.equal(await got.text(), "sent by Node");
-	assert.equal((await fetch(getUrl.replace(/.$/, (last) => (last === "0" ? "1" : "0")))).status, 403, "a signature changed");
-	assert.equal((await fetch(putUrl, { method: "DELETE" })).status, 403, "another method than the one signed");
-	assert.deepEqual(await stored(`/storage/signed?key=${key}&method=GET&expires=0`), [400, "BadExpiry"]);
-	assert.deepEqual(await stored(`/storage/signed?key=${key}&method=GET&expires=604801`), [400, "BadExpiry"]);
-	assert.equal((await stored(`/storage/signed?key=${key}&method=GET&expires=604800`))[0], 200, "a week");
-	assert.deepEqual(await stored(`/storage/delete?key=${key}`, { method: "POST" }), [200, "deleted"]);
-});
-
-test("storage: serve! answers with an object the server streams from S3: whole, a range, 304 for its ETag, HEAD, 404; without a bucket, the docs' sample a 500", { skip: skipStorage }, async () => {
-	const key = keyed("served/clip.mp4");
-	const bytes = Buffer.from(Array.from({ length: 70_000 }, (_, i) => (i * 13 + 7) % 256));
-	assert.deepEqual(await stored(`/storage/put?key=${key}&type=application/octet-stream`, { method: "POST", body: bytes }), [200, "stored"], "the bytes as they came");
-	const served = await get(`/storage/serve?key=${key}&type=video/mp4&cache=${encodeURIComponent("private, max-age=60")}`);
-	assert.equal(served.status, 200);
-	assert.deepEqual(Buffer.from(await served.arrayBuffer()), bytes);
-	assert.equal(served.headers.get("content-type"), "video/mp4");
-	assert.equal(served.headers.get("cache-control"), "private, max-age=60");
-	assert.equal(served.headers.get("content-length"), "70000");
-	const etag = served.headers.get("etag");
-	assert.equal(etag, `"${md5(bytes)}"`);
-	const part = await get(`/storage/serve?key=${key}`, { headers: { range: "bytes=69990-69999" } });
-	assert.equal(part.status, 206);
-	assert.equal(part.headers.get("content-range"), "bytes 69990-69999/70000");
-	assert.equal(part.headers.get("content-type"), "application/octet-stream", "S3's, with none given");
-	assert.equal(part.headers.get("cache-control"), null);
-	assert.deepEqual(Buffer.from(await part.arrayBuffer()), bytes.subarray(69_990));
-	const same = await get(`/storage/serve?key=${key}`, { headers: { "if-none-match": etag } });
-	assert.equal(same.status, 304);
-	const whole = await get(`/storage/serve?key=${key}&whole=1`, { headers: { range: "bytes=69990-69999" } });
-	assert.equal(whole.status, 200, "a range the app dropped from the request record isn't asked for");
-	assert.deepEqual(Buffer.from(await whole.arrayBuffer()), bytes);
-	const head = await get(`/storage/serve?key=${key}`, { method: "HEAD" });
-	assert.equal(head.status, 200);
-	assert.equal(head.headers.get("content-length"), "70000");
-	assert.equal((await head.arrayBuffer()).byteLength, 0);
-	const missing = await get(`/storage/serve?key=${keyed("never-kept")}`);
-	assert.equal(missing.status, 404);
-	assert.equal(await missing.text(), "Not Found", "not S3's XML");
+test("storage (memory): gone when the server stops; a signed link that has expired is refused; without a bucket, the docs' sample a 500", { skip }, async () => {
+	const url = `memory:${run}-gone`;
+	const first = await start([], app, { ...mailEnv(), DATABASE_URL: "", STORAGE_URL: url });
+	try {
+		assert.equal((await first.get("/storage/put?key=a&type=text/plain", { method: "POST", body: "here" })).status, 200);
+		const link = await (await first.get("/storage/signed?key=a&method=GET&expires=1")).text();
+		assert.equal((await fetch(link)).status, 200);
+		const expired = link.replace(/expires=\d+/, "expires=1000");
+		assert.equal((await fetch(expired)).status, 403, "its expiry changed: its signature no longer fits");
+		await new Promise((resolve) => setTimeout(resolve, 2100));
+		assert.deepEqual([(await fetch(link)).status, await (await fetch(link)).text()], [403, "This link has expired."]);
+	} finally {
+		await first.stop();
+	}
+	const again = await start([], app, { ...mailEnv(), DATABASE_URL: "", STORAGE_URL: url });
+	try {
+		assert.equal((await again.get("/storage/get?key=a")).status, 404, "a restart forgets it");
+	} finally {
+		await again.stop();
+	}
 	const none = await start([], app, { DATABASE_URL: "", STORAGE_URL: "" });
 	try {
-		const answered = await none.get(`/samples/video?key=${key}`);
+		const answered = await none.get(`/samples/video?key=${keyed("x")}`);
 		assert.deepEqual([answered.status, await answered.text()], [500, "Something went wrong."]);
 		await logs(/no storage/, none);
-		await logs(/no S3 URL/, none);
+		await logs(/no bucket URL/, none);
 	} finally {
 		await none.stop();
 	}
 });
 
-test("storage: keys S3 doesn't take are refused, with its code; a bucket that isn't there, S3 that isn't, a URL that can't be read, or none, say so", { skip: skipStorage }, async () => {
+test("storage (S3): keys S3 doesn't take are refused, with its code; a bucket that isn't there, S3 that isn't, a URL that can't be read, or none, say so", { skip: skipStorage }, async () => {
 	// The tests' own STORAGE_URL, changed: s3://KEY:SECRET@HOST/BUCKET?… (the secret may hold a `/` or an `@`).
 	const [, key, secret, rest] = /^s3:\/\/([^:]*):(.*)@([^@]*)$/.exec(storage);
 	const [place, query] = rest.split("?");
@@ -2172,7 +2269,7 @@ test("storage: keys S3 doesn't take are refused, with its code; a bucket that is
 		assert.match((await put(servers.port))[1], /^StorageErr PUT .+: no answer from S3: 127\.0\.0\.1:9: /);
 		assert.match((await ask(servers.port, "/storage/check"))[1], /^StorageErr GET rocx-storage-check: no answer from S3: /);
 		assert.deepEqual(await put(servers.typo), [503, "StorageErr the S3 URL: stlye isn't one of its parameters (region, style, tls)"]);
-		assert.deepEqual(await put(none), [503, "StorageErr no storage: no S3 URL (s3://KEY:SECRET@HOST/BUCKET?region=…)"]);
+		assert.deepEqual(await put(none), [503, "StorageErr no storage: no bucket URL (s3://…, file:<dir>, or memory:)"]);
 		assert.doesNotMatch(Object.values(servers).map((each) => each.logged()).join(""), new RegExp(secret.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the secret never logged");
 	} finally {
 		await Promise.all([...Object.values(servers), none].map((each) => each.stop()));

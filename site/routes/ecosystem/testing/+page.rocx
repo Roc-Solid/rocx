@@ -289,7 +289,7 @@ view! = |_|
 		</p>
 		<ul>
 			<li>a clock a test sets, and randomness it seeds: a test mode for the server;</li>
-			<li>outbound requests (<code>Http</code>, and <code>S3</code> from packages/s3 through it) answered by stubs, so a test makes no network calls;</li>
+			<li>outbound requests (<code>Http</code>, and <code>Storage</code>'s S3 requests from packages/storage through it) answered by stubs, so a test makes no network calls;</li>
 			<li>jobs and crons run by a request, with no SQL (today <code>settleJobs</code> waits on the database);</li>
 			<li>emptying the dev mailbox between tests (today <code>waitForMail</code> skips the messages already there);</li>
 			<li>endpoints and pages tested in Roc, answered inside the server, and a component with signals rendered in a Roc test;</li>

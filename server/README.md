@@ -13,10 +13,9 @@ calls on threads of their own), time zones, TCP and TLS sockets, requests to oth
 servers, live topics and rooms, channels' streams, background loops that sleep until woken,
 isolated calls, actors' mailboxes and timers, a key-value store in memory, the environment, secure
 random numbers, AES-GCM, and rendering components. Migrations, plugins and actors' state are the
-platform's Roc (`platform/*.roc`), written on those. Files in S3
-and the crypto written in Roc (SHA-256, HMAC, HKDF, Base64, hex) are packages an app names, on no
-platform (`packages/s3`, `packages/crypto`:
-D-025).
+platform's Roc (`platform/*.roc`), written on those. Files (in S3, a directory beside the server,
+or its memory: `packages/storage`, D-047) and the crypto written in Roc (SHA-256, HMAC, HKDF, Base64,
+hex: `packages/crypto`, on no platform, D-025) are packages an app names.
 
 ```sh
 just dev        # the docs site on it: http://localhost:8080, rebuilt on save
@@ -247,29 +246,39 @@ answered; a 303 (or a 301 or 302 to a POST) becomes a GET without its body; `aut
 is decompressed (send `accept-encoding` and the body is as the server sent it). An answer to a HEAD
 has no body, so its `content-length` is never too large.
 
-### Files in S3: `packages/s3`
+### Files: `packages/storage` (D-047), and `Blobs`
 
-Any S3 (rustfs or MinIO in development, R2 or AWS in production) is a package, on no platform
-(D-025). An app makes a bucket from a URL it keeps in its environment and the two effects the
-package needs, the platform's own. The package names no platform, so it can't name `Http.Init` or
-`HttpResponse`: it is given `Http.send!`, the deprecated shape, whose records it writes out (D-024).
+Files are a package that names this platform. An app makes a bucket from a URL it keeps in its
+environment, whose scheme is the backend: any S3 (`s3://…`: rustfs or MinIO in development, R2 or
+AWS in production, each operation a signed request with `Http.send!`), a directory beside the server
+(`file:<dir>`), or the server's memory (`memory:`, for tests).
 
 ```roc
-# main.roc's header: s3: "../packages/s3/main.roc"
-bucket = S3.from_url(Env.var!("STORAGE_URL") ?? "", { send!: Http.send!, now!: Time.now_millis! })?
-S3.put!(bucket, "images/${id}", bytes, { content_type: "image/jpeg" })?
-S3.serve!(bucket, "videos/${id}", request, { content_type: "video/mp4", cache_control: "private" })   # an answer
+# main.roc's header: storage: "../packages/storage/main.roc"
+bucket = Storage.from_url(Env.var!("STORAGE_URL") ?? "")?
+Storage.put!(bucket, "images/${id}", bytes, { content_type: "image/jpeg" })?
+Storage.serve!(bucket, "videos/${id}", request, { content_type: "video/mp4", cache_control: "private" })   # an answer
 ```
 
-`S3.serve!` answers with a `Forward` (below), so the server streams the object from S3 and it never
-comes into Roc. `packages/s3/README.md` has the rest: the URL, every operation, the errors, and the
-limits.
+A directory's and memory's objects are the host's to keep (`host/src/blobs.rs`, the platform's
+`Blobs`): put (written to a file of its own, then moved into place, so a crash leaves no half object),
+get, a range, head, delete, the keys under a prefix, and parts joined in order (a multipart upload's
+end), each under a root, `file:<dir>` or `memory:<name>`; an object's content type and ETag (its MD5)
+kept beside it (`<dir>/.storage/`), and a key that would leave its directory (`..`, a leading `/`, an
+empty segment) refused. Their files are read and written on tokio's blocking threads.
+
+`Storage.serve!` never brings an object into Roc: from S3 it answers with a `Forward` (below); from a
+directory or memory with `Stored` (`Server.stored(root, key, request, headers)`), which the host sends
+as it is, with its length, type, ETag and `last-modified`, 206 for the request record's `Range` (one;
+416 past the end), 304 for its `If-None-Match`. Signed URLs for a directory or memory are the app's,
+answered by the storage plugin's `/__storage` route. `packages/storage/README.md` has the rest: the
+URLs, every operation, the errors, signed URLs, and the limits.
 
 ### Bytes: `request.body`, `Server.bytes`
 
 ```roc
 Server.text_of(request)                  # the body as text (UTF-8; U+FFFD where it isn't): JSON, a form
-S3.put!(bucket, "images/${id}", request.body, { content_type: "image/jpeg" })?  # the bytes as they came
+Storage.put!(bucket, "images/${id}", request.body, { content_type: "image/jpeg" })?  # the bytes as they came
 Server.bytes(200, [{ name: "content-type", value: "image/jpeg" }], cover)       # sent as they are
 ```
 
@@ -308,7 +317,7 @@ URL that isn't `http` or `https`, or a redirect that can't be followed, is a 502
 without its head). Those are logged, without the URL's query (a presigned URL's signature is
 there), as is an error upstream other than a 404 or a 416. Once the body flows, a piece may take 60
 s to come; if upstream stops short, the client's connection is closed, so a cut body is never
-passed off as whole. packages/s3's `S3.serve!` is a `Forward` to S3.
+passed off as whole. packages/storage's `Storage.serve!` is a `Forward` to S3, for an S3 bucket.
 
 ### Cookies: `Server.set_cookie`
 
@@ -884,20 +893,21 @@ list; past `--kv-max-mb`; `kv.rs`'s own unit tests, compiled alone), actors
 timers and a cancelled one, a message an actor doesn't take and a kind the app has none of, logged,
 a restart, one idle let go and woken as the database has it), `Http` (to servers the test runs: redirects, a timeout, a body too large, TLS
 that fails), `Env` (from a request and a job), AES-GCM and packages/crypto against Node's, random
-bytes, packages/s3 (objects whole and in part, missing ones, a multipart upload of three parts and
-an aborted one, presigned URLs Node's fetch uses, `serve!` with a range (and one the app dropped),
-an ETag and HEAD, keys S3
-refuses, a bucket or S3 that isn't there, a URL that can't be read), the `Set-Cookie` lines cookies make, endpoints
+bytes, packages/storage on memory, on a directory and on S3 when there is one (objects whole and in
+part, missing ones, a multipart upload of three parts and an aborted one, signed URLs Node's fetch
+uses, `serve!` with a range (and one the app dropped), a 416, an ETag and HEAD; a directory's files
+kept across a restart and keys that would leave it refused; memory forgotten by one, and a signed
+link expired; keys S3 refuses, a bucket or S3 that isn't there, a URL that can't be read), the `Set-Cookie` lines cookies make, endpoints
 that take and answer `F64`s (and refuse an infinity) and a tag union in a `Try`'s place, what the
 docs' platform pages show (`server/test/app/Samples.roc`, which the site's build picks its samples
-from: settings, crypto, jobs, `Kv`, cookies, bytes, other servers, forwards and S3), calls that
+from: settings, crypto, jobs, `Kv`, cookies, bytes, other servers, forwards and storage), calls that
 wait on two
 Roc threads (2,000 requests that wait a second each, answered in about a second; 2,000 open
 streams beside a request answered at once; waits, crashes, pages, refusals and sockets interleaved,
 each answered as its own, nothing left held; a stack overflow that ends the process saying so), and
 a stop in the middle of a request. With
-`DATABASE_URL` unset, what needs Postgres is skipped; with `STORAGE_URL` unset (a bucket the tests
-may write to: rustfs or MinIO in Docker, say, with a bucket made), what needs S3; a
+`DATABASE_URL` unset, what needs Postgres is skipped; with `STORAGE_URL` unset (an S3 bucket the
+tests may write to: rustfs or MinIO in Docker, say, with a bucket made), storage's S3 runs; a
 request over the internet runs only with `ROCX_TEST_INTERNET=1`; `ROCX_TEST_OPT=speed` builds the
 app optimized.
 `server/test/sqlite.test.mjs` builds `server/test/sqlite`, an app whose database is SQLite, and needs
