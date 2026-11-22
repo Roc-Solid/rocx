@@ -179,8 +179,11 @@ What the app met, and how it works around each:
   posted every 15 s, and a post when a card opened, three routes. (Fixed since: presence runs on a
   channel, its hooks the package's, so the page holds one stream, and what it says, its beat and the
   card it has open, goes over it.)
-- **The browser has no clock.** Workaround: the board's data carries the server's date (`today`),
-  which says which cards are overdue.
+- **The browser had no clock.** The board's data carries the server's date (`today`), which says
+  which cards are overdue. (The platform has one since, `Time.now_millis!`, for handlers and
+  effects; `today` stays the server's, since it decides what the page shows, and the browser's own
+  date would make a page that differs from the server's at midnight, or on a phone whose clock is
+  off.)
 - **A value prop was read once outside a hole**, which was easy to miss: the tile's "Ada has this
   card open" label, a plain `label` prop of `<AvatarStack>` inside a `<Show>`, was made once, empty,
   and never changed. The workaround rendered the stack in a hole, made anew when who has the card

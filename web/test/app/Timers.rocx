@@ -3,12 +3,14 @@ import pf.Solid exposing [create_signal!, set_interval!, set_timeout!, on_settle
 import pf.Browser
 import pf.Audio
 import pf.Show
+import pf.Time
 import Ticker
 
 ## Timers, for the tests: a ticker in a <Show>, whose interval goes with it; an interval a button
 ## stops with its `clear!`; one that clears itself on its third tick; and a timeout a button
 ## starts, and another calls off. And calls of the page's own functions (`Browser.call!`): one the
-## page has, and one it hasn't; and a sound file, played (`Audio.play_with!`).
+## page has, and one it hasn't; and a sound file, played (`Audio.play_with!`). And the clock, read
+## in a handler (`Time`).
 Timers := [].{
 	Running : [Idle, Running(() => {})]
 
@@ -36,6 +38,12 @@ Timers := [].{
 		note! = || {
 			set_notes!(notes!() + 1)
 			Browser.call!("noted", { count: notes!() + 1 })
+		}
+		(stamp!, set_stamp!) = create_signal!(0.U64)
+		(nanos!, set_nanos!) = create_signal!(0.U64)
+		read_clock! = || {
+			set_nanos!(Time.now_nanos!({}))
+			set_stamp!(Time.now_millis!({}))
 		}
 		count_to_three! = || {
 			stop_three! = set_interval!(
@@ -66,6 +74,9 @@ Timers := [].{
 			<p class="notes">{notes!().to_str()}</p>
 			<button class="nowhere" on:click={|| Browser.call!("nowhere", { why: "nothing has it" })}>Nowhere</button>
 			<button class="play" on:click={|| Audio.play_with!("/beep.wav", { volume: 0.5, rate: 2.0 })}>Play</button>
+			<button class="clock" on:click={read_clock!}>Clock</button>
+			<p class="stamp">{stamp!().to_str()}</p>
+			<p class="nanos">{nanos!().to_str()}</p>
 		</div>
 	}
 }

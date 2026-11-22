@@ -13,12 +13,13 @@
 ## the components' (`Html`, `Solid`, `Show`, `For`, `Transition`, `Loading`, `Errored`, `Context`,
 ## `Call`, `Router`, `Submission`, `Submissions`, `Title`, `HttpStatusCode`) and HTTP's (`Server`, `Endpoint`,
 ## `Channel`, `Middleware`, `Events`, `OpenApi`). Roc compiles only what a program reaches, so what
-## only the server uses (`Middleware`, `OpenApi`) costs the browser's wasm nothing.
+## only the server uses (`Middleware`, `OpenApi`) costs the browser's wasm nothing. `Time` is the
+## browser's own, under the server's names: the clock, for handlers, effects and timers.
 platform ""
 	requires {
 		main! : {} => Html
 	}
-	exposes [Audio, Browser, Call, Channel, Context, Endpoint, Errored, Events, For, Html, HttpStatusCode, Loading, Middleware, OpenApi, Router, Server, Show, Solid, Submission, Submissions, Title, Transition]
+	exposes [Audio, Browser, Call, Channel, Context, Endpoint, Errored, Events, For, Html, HttpStatusCode, Loading, Middleware, OpenApi, Router, Server, Show, Solid, Submission, Submissions, Time, Title, Transition]
 	packages {}
 	provides { "roc_mount": mount_for_host!, "roc_run": run_for_host! }
 	hosted {
@@ -45,6 +46,8 @@ platform ""
 		"roc_memo_done": Host.memo_done!,
 		"roc_memo_get": Host.memo_get!,
 		"roc_memo_new": Host.memo_new!,
+		"roc_now_millis": Host.now_millis!,
+		"roc_now_nanos": Host.now_nanos!,
 		"roc_problem": Host.problem!,
 		"roc_refresh": Host.refresh!,
 		"roc_request": Host.request!,
@@ -99,6 +102,7 @@ import HttpStatusCode
 import Transition
 import Submission
 import Submissions
+import Time
 import Title
 
 ## The app's markup, its holes registered with the runtime, as JSON (`Html.serialize!`).

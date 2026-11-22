@@ -97,6 +97,13 @@ Host := [].{
 	interval! : U64, Box(() => Str) => U64
 	clear_timer! : U64 => {}
 
+	## The browser's clock: milliseconds since the Unix epoch (`Date.now()`).
+	now_millis! : {} => U64
+
+	## Nanoseconds since the Unix epoch, on a clock that doesn't go back while the page is open
+	## (`performance.timeOrigin + performance.now()`).
+	now_nanos! : {} => U64
+
 	## In a handler, in the browser: the page's own function by that name, given the argument (JSON),
 	## called once the handler is done and the page patched. Anywhere else, it fails.
 	browser_call! : Str, Str => {}

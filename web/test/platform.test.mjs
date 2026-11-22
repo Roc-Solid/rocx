@@ -447,7 +447,7 @@ window.hydrated = true;
 	}
 });
 
-test("timers: the server starts none; in the browser they run as handlers, stop with their clear!, and go with what started them", { skip }, async () => {
+test("timers: the server starts none; in the browser they run as handlers, stop with their clear!, and go with what started them; a handler reads the clock", { skip }, async () => {
 	const wasm = readFileSync(join(out, "timers.wasm"));
 	const server = await Runtime.load(wasm);
 	const { html } = server.renderToString({ path: "/" });
@@ -533,6 +533,17 @@ window.hydrated = true;
 		assert.equal(await timers(), 0);
 		assert.equal(await tab.eval("window.runtime.live()"), live, "every ticker's interval and signals, let go of");
 		assert.equal(await number(".settled"), 1, "on_settled! ran once, whatever happened after");
+
+		// The clock, read in a handler: the browser's, in milliseconds and in nanoseconds.
+		assert.equal(await number(".stamp"), 0, "nothing read while rendering");
+		const before = await tab.eval("Date.now()");
+		await tab.click(".clock");
+		await tab.wait("document.querySelector('.stamp').textContent !== '0'");
+		const stamp = await number(".stamp");
+		const after = await tab.eval("Date.now()");
+		assert.ok(stamp >= before && stamp <= after, `Time.now_millis! is Date.now(): ${before} <= ${stamp} <= ${after}`);
+		const nanos = BigInt(await tab.eval("document.querySelector('.nanos').textContent"));
+		assert.ok(nanos > 0n && (nanos / 1000000n - BigInt(stamp)) ** 2n < 1000n ** 2n, `Time.now_nanos! is in nanoseconds, by the same clock: ${nanos}`);
 		assert.deepEqual(tab.errors, []);
 	} finally {
 		await site.close();

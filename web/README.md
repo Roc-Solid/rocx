@@ -190,6 +190,13 @@ same components natively; this one hydrates them.
   `on_cleanup!(clear!)`: before the computation runs again, before the effect's next apply, when
   what made it goes. One started in an event handler belongs to the run that made the handler's
   element. `runtime.timers` holds the ones running; on the server none starts (the id is 0).
+- **The clock**: `Time.now_millis!({})` is `Date.now()`, and `Time.now_nanos!({})`
+  `performance.timeOrigin + performance.now()` in nanoseconds (it doesn't go back while the page is
+  open), the server platform's names and types (`Host.now_millis!`, `Host.now_nanos!`, floats from
+  JS made whole numbers by the host). For handlers, effects' applies and timers: markup made from
+  the time while rendering would differ from the server's, and hydration would refuse it, so a
+  date that decides what a page shows comes from the server, and so does a deadline (a countdown
+  counts to it by this clock). There is no `Time.sleep!` here: `set_timeout!` waits.
 - **Forms**: `use_submission!(endpoint)` (or `use_submissions!`) registers the endpoint's URL with
   the runtime, by its path without the site's base, while its component is there. A `submit` on the
   page (the runtime listens once) of a `method="post"` form to that URL, on this site, not

@@ -1044,6 +1044,9 @@ export class Runtime {
 				if (handler?.kind !== "handler") throw new Failed(`use_action!(${url})'s function sends from a handler (an event, a timer, an effect's apply), not while computing`);
 				handler.writes.push({ submit: { method: text(mp, ml), url, body: text(bp, bl), input: text(ip, il) } });
 			},
+			// The clock (`Time`): for handlers, effects and timers; markup made from it wouldn't hydrate.
+			js_now_millis: () => Date.now(),
+			js_now_precise: () => performance.timeOrigin + performance.now(),
 			// A <Title>'s hole: rendering as a server would, the page's title (the last one rendered);
 			// in the browser, its computation's, until it runs again or goes (`showTitle`).
 			js_title: (ptr, len) => {

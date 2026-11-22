@@ -59,6 +59,9 @@ const js = struct {
     extern "env" fn js_submit(method_ptr: [*]const u8, method_len: usize, url_ptr: [*]const u8, url_len: usize, body_ptr: [*]const u8, body_len: usize, input_ptr: [*]const u8, input_len: usize) void;
     extern "env" fn js_submission_drop(ptr: [*]const u8, len: usize, id: u32) void;
     extern "env" fn js_title(ptr: [*]const u8, len: usize) void;
+    /// `Date.now()`, and `performance.timeOrigin + performance.now()`: milliseconds, as JS has them.
+    extern "env" fn js_now_millis() f64;
+    extern "env" fn js_now_precise() f64;
 };
 
 var roc_env: abi.RocEnv = .{ .allocator = memory, .roc_io = abi.RocIo.freestanding() };
@@ -643,6 +646,17 @@ fn hostedTitle(title: RocStr) callconv(.c) void {
     js.js_title(text.ptr, text.len);
 }
 
+// The browser's clock (`Time`): JS's milliseconds, a float, as Roc's whole numbers.
+fn hostedNowMillis() callconv(.c) u64 {
+    return @intFromFloat(@max(js.js_now_millis(), 0));
+}
+
+fn hostedNowNanos() callconv(.c) u64 {
+    const ms = @max(js.js_now_precise(), 0);
+    const whole = @floor(ms);
+    return @as(u64, @intFromFloat(whole)) * 1_000_000 + @as(u64, @intFromFloat(@round((ms - whole) * 1_000_000)));
+}
+
 pub const panic = std.debug.FullPanic(panicImpl);
 
 fn panicImpl(message: []const u8, _: ?usize) noreturn {
@@ -722,4 +736,6 @@ comptime {
     @export(&hostedSubmit, .{ .name = "roc_submit", .visibility = hidden });
     @export(&hostedSubmissionDrop, .{ .name = "roc_submission_drop", .visibility = hidden });
     @export(&hostedTitle, .{ .name = "roc_title", .visibility = hidden });
+    @export(&hostedNowMillis, .{ .name = "roc_now_millis", .visibility = hidden });
+    @export(&hostedNowNanos, .{ .name = "roc_now_nanos", .visibility = hidden });
 }

@@ -1,6 +1,9 @@
 import Host
 
-## The time: the clock of the machine the server runs on.
+## The time: the clock of the machine the server runs on. The web platform has a `Time` too, with
+## `now_millis!` and `now_nanos!` (the browser's clock), so a component's handler reads it on both;
+## a component reads neither while rendering, as the page would then differ between the server and
+## the browser.
 Time := [].{
 
 	## Milliseconds since the Unix epoch.

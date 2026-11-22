@@ -1252,6 +1252,14 @@ pub extern fn roc_memo_get(arg0: u64) callconv(.c) RocErasedCallable;
 ///     decrefErasedCallable(arg0, roc_host);
 pub extern fn roc_memo_new(arg0: RocErasedCallable) callconv(.c) u64;
 
+/// Hosted symbol for Host.now_millis!
+/// Roc signature: {} => U64
+pub extern fn roc_now_millis() callconv(.c) u64;
+
+/// Hosted symbol for Host.now_nanos!
+/// Roc signature: {} => U64
+pub extern fn roc_now_nanos() callconv(.c) u64;
+
 /// Hosted symbol for Host.problem!
 /// Roc signature: {} => Str
 /// The result is owned by Roc: return exactly one owned reference.

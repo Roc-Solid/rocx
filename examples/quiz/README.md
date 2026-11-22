@@ -143,9 +143,11 @@ Each gap this app met, and what it does about it:
 - **A route file's components don't see the route file's own definitions**: helpers they use are
   defined in their own block (`Asked.answered`, `Revealed.taken`). (Fixed in rocx since: a route
   file's components see its definitions, as its page does; the helpers stay, as they read well.)
-- **The browser has no clock.** The countdown counts down from the server's `left_ms` with
-  `set_interval!` and starts again from each view, so a drifting or sleeping phone is put right by
-  the next view; the server alone decides when a question closes (presence's PROPOSALS.md, W2).
+- **The browser had no clock.** The countdown counted down from the server's `left_ms` with
+  `set_interval!`, a tenth of a second a tick, so a phone whose timers stalled fell behind until the
+  next view. (Fixed in the platform since: `Time.now_millis!` reads the browser's clock, so each view
+  sets a deadline by the phone's clock and each tick shows what is left of it; the server alone
+  still decides when a question closes, presence's PROPOSALS.md, W2.)
 - **Channel hooks weren't told which stream** a subscription was on. A tab whose stream reconnected
   (the same tab id) could be told `on_open!` for the new stream before `on_close!` for the old one,
   so the room counted each tab's open streams and left presence only at zero. (Fixed in the platform

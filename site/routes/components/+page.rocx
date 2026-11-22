@@ -244,7 +244,10 @@ view! = |_|
 				now. Each answers its <code>clear!</code>, which stops it. And each belongs to what started it, so it
 				stops by itself when that goes: a component's, with the component (a <code>{"<Show>"}</code> hiding it);
 				a handler's, with the part its element is in. That is Solid's
-				<code>{"onCleanup(() => clearInterval(id))"}</code>, built in. The server, rendering, starts none. The
+				<code>{"onCleanup(() => clearInterval(id))"}</code>, built in. The server, rendering, starts none. A
+				handler, an effect or a timer reads the clock with <code>{"Time.now_millis!({})"}</code> (and
+				<code>Time.now_nanos!</code>), the server's names, in the browser too; never while rendering, since
+				markup made from the time would differ from the server's. The
 				<a href={"${Paths.showcase}#timers"}>showcase</a> has a stopwatch, a search that waits for a pause in
 				the typing, and a clock that goes with its <code>{"<Show>"}</code>.
 			</p>
