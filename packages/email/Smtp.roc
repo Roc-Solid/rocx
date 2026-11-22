@@ -1,5 +1,5 @@
-import Base64
-import Tcp
+import pf.Tcp
+import crypto.Base64
 
 ## Just enough SMTP to hand a message to a server: plain, STARTTLS (`?tls=required`, or
 ## `opportunistic`), or TLS from the start (`smtps://`), and AUTH PLAIN when the URL has a user.
@@ -11,7 +11,7 @@ Smtp := [].{
 	parse : Str -> Try(Url, Str)
 	parse = |text|
 		match text.split_first("://") {
-			Err(_) => Err("--smtp-url: smtp://… or smtps://…")
+			Err(_) => Err("SMTP_URL: smtp://… or smtps://…")
 			Ok({ before: scheme, after: rest }) => {
 				(authority, query) =
 					match rest.split_first("?") {
@@ -38,7 +38,7 @@ Smtp := [].{
 					match scheme {
 						"smtps" => Ok(Implicit)
 						"smtp" => Ok(asked)
-						_ => Err("--smtp-url: smtp://… or smtps://…, not ${scheme}://")
+						_ => Err("SMTP_URL: smtp://… or smtps://…, not ${scheme}://")
 					}
 				(host, port_text) =
 					match host_port.split_first(":") {
@@ -52,12 +52,12 @@ Smtp := [].{
 					} else {
 						match U16.from_str(port_text) {
 							Ok(number) => Ok(number)
-							Err(_) => Err("--smtp-url: the port ${port_text} isn't a number")
+							Err(_) => Err("SMTP_URL: the port ${port_text} isn't a number")
 						}
 					}
 				match (tls, port) {
 					(Ok(how), Ok(number)) =>
-						if (host.is_empty()) Err("--smtp-url: no host") else Ok({ tls: how, host, port: number, user, password })
+						if (host.is_empty()) Err("SMTP_URL: no host") else Ok({ tls: how, host, port: number, user, password })
 					(Err(why), _) => Err(why)
 					(_, Err(why)) => Err(why)
 				}

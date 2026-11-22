@@ -53,8 +53,9 @@ view! = |_|
 				</li>
 				<li>
 					<strong>Roc</strong> (<code>server/platform/*.roc</code>): migrations, plugins (checked and
-					run), email (an SMTP client, MIME), actors' state and messages, <code>Db</code>'s decoding. Jobs
-					and cron are Roc too, on the same effects, in a package (<code>packages/jobs</code>).
+					run), actors' state and messages, <code>Db</code>'s decoding. Jobs and cron, and email (an SMTP
+					client, MIME), are Roc too, on the same effects, in packages (<code>packages/jobs</code>,
+					<code>packages/email</code>).
 				</li>
 			</ul>
 
@@ -163,9 +164,9 @@ view! = |_|
 
 			<Heading id="background">Background loops, isolated calls</Heading>
 			<p>
-				At start, the host asks the platform's Roc which loops to run in the background (a look at the SMTP
-				server, and the plugins' loops: the jobs plugin's workers and its schedules) and runs each, a call
-				of its own, until the server stops. A loop sleeps with <code>Live.next!</code>, which wakes when what it listens to is published
+				At start, the host asks the platform's Roc which loops to run in the background (the plugins' loops
+				and checks: the jobs plugin's workers and its schedules, the email plugin's look at the SMTP
+				server) and runs each, a call of its own, until the server stops. A loop sleeps with <code>Live.next!</code>, which wakes when what it listens to is published
 				(Postgres's <code>NOTIFY</code> is published on <code>pg:channel</code>), when its time is up, or
 				with <code>Gone</code> when the server stops. One that crashes is started again a second later.
 			</p>
@@ -208,15 +209,15 @@ view! = |_|
 				opens a socket for the call; <code>write_bytes!</code>, <code>read_exactly!</code>,
 				<code>read_up_to!</code> and <code>read_until!</code> use it, the call paused while each waits. TLS is
 				rustls, checked against the web's certificate authorities. A socket the call leaves open is closed
-				when it ends. <code>Random.seed_u64!</code> is the operating system's randomness. The platform's SMTP
-				client is written on these, and so is <a href={"${Paths.platform_postgres}#roc-pg"}>roc-pg</a>, a
+				when it ends. <code>Random.seed_u64!</code> is the operating system's randomness. The email package's
+				SMTP client is written on these, and so is <a href={"${Paths.platform_postgres}#roc-pg"}>roc-pg</a>, a
 				Postgres client in Roc.
 			</p>
 
 			<Heading id="running">Running it</Heading>
 			<Code
 				title="The app's executable"
-				source={"<app> --port 8080 --host 127.0.0.1        where to listen (PORT)\n      --static DIR, --file /PATH=FILE     files served as they are\n      --context-file FILE                 what respond! is given besides each request\n      --database-url URL                  Postgres (DATABASE_URL): Db, migrations, actors, plugins' tables\n      --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in Postgres)\n      --smtp-url URL --mail-from ADDRESS  (SMTP_URL, MAIL_FROM); none: an outbox\n      --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it\n      --dev                               reload pages on restart, show crashes, GET /__rocx/mail\n      --debug                             GET /__rocx/allocations and /__rocx/mail\n      --live-beat-ms 15000                how often a channel stream beats, and its checks run again\n      --roc-threads N                     the threads Roc runs on (ROCX_ROC_THREADS; one a core)"}
+				source={"<app> --port 8080 --host 127.0.0.1        where to listen (PORT)\n      --static DIR, --file /PATH=FILE     files served as they are\n      --context-file FILE                 what respond! is given besides each request\n      --database-url URL                  Postgres (DATABASE_URL): Db, migrations, actors, plugins' tables\n      --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in Postgres)\n      --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it\n      --dev                               reload pages on restart, show crashes, plugins' dev pages\n      --debug                             GET /__rocx/allocations, and plugins' debug paths\n      --live-beat-ms 15000                how often a channel stream beats, and its checks run again\n      --roc-threads N                     the threads Roc runs on (ROCX_ROC_THREADS; one a core)"}
 				numbers={Bool.False}
 				plain={Bool.True}
 			/>

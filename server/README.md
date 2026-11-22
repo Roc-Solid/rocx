@@ -1,8 +1,8 @@
 # Roc Solid's server platform
 
 Roc compiled to native code, in a Rust host: one executable that answers HTTP, streams events,
-renders pages of components, sends email, keeps live rooms, channels, actors and values in memory,
-and runs what plugins add (jobs and cron, as packages/jobs), with Postgres beneath all of it. The
+renders pages of components, keeps live rooms, channels, actors and values in memory, and runs what
+plugins add (jobs and cron, email: packages/jobs, packages/email), with Postgres beneath all of it. The
 browser's platform is `web/` (wasm): an app is two programs, one on each, talking over HTTP. The docs site's platform pages (`/platform`)
 say all this at more length.
 
@@ -10,8 +10,8 @@ The host (`host/`, Rust) gives Roc general things: HTTP, coroutines that Roc's c
 a pool of Postgres connections and one that listens, TCP and TLS sockets, requests to other
 servers, live topics and rooms, channels' streams, background loops that sleep until woken,
 isolated calls, actors' mailboxes and timers, a key-value store in memory, the environment, secure
-random numbers, AES-GCM, and rendering components. Migrations, plugins, email (an SMTP client,
-MIME) and actors' state are the platform's Roc (`platform/*.roc`), written on those. Files in S3
+random numbers, AES-GCM, and rendering components. Migrations, plugins and actors' state are the
+platform's Roc (`platform/*.roc`), written on those. Files in S3
 and the crypto written in Roc (SHA-256, HMAC, HKDF, Base64, hex) are packages an app names, on no
 platform (`packages/s3`, `packages/crypto`:
 D-025).
@@ -53,7 +53,7 @@ feed }`, `kind` 0 for `text`, 1 for the `page` (a box the host runs: `Html.seria
 markup, made once per answer), 2 for the `feed`, 3 for the `bytes`, 4 for the `upstream` (its
 method, URL and headers); the boxes an answer doesn't send do nothing, and the host releases them.
 `program.actors` lists the app's kinds of actor (`Actor.handler`), so the host can run an actor's
-turn when nobody waits on it (a tell, a timer). The platform exposes `Db`, `Email`, `Kv`, `Live`,
+turn when nobody waits on it (a tell, a timer). The platform exposes `Db`, `Kv`, `Live`,
 `Actor`, `Log`, `Time`, `Tcp`, `Http` (and `HttpResponse`, its answer), `Env`, `Random`, `AesGcm`
 and `Plugin`; the modules components are written with
 (`Html`, `Solid`, `Show`, `For`, `Loading`, `Errored`, `Context`, `Call`, `Router`, `Title`,
@@ -115,31 +115,12 @@ notifications, background loops, isolated calls): `Job.plugin({ jobs: App.jobs, 
 queue's table, its workers and its schedules. The jobs page is packages/admin's (`JobsPage`).
 `packages/jobs/README.md` says how they work.
 
-### Email: `Email`
+### Email: packages/email (D-035)
 
-```roc
-Email.send!({ to: "ada@example.com", subject: "Welcome", text: "…", html: "<p>…</p>" })
-```
-
-With `--smtp-url` (`smtp://user:password@host:587?tls=required`, `smtps://…:465`; or `SMTP_URL`)
-it is sent, from `--mail-from` (`MAIL_FROM`), as text, or text and HTML. Without one it is kept in
-an outbox in the server's memory and logged, so development sends nothing: the dev mailbox shows it.
-At start the server connects to the SMTP server (TLS and all) and logs whether it answers. Send from
-a job, so a mail server that doesn't answer is tried again. The client is Roc (`platform/Smtp.roc`,
-over `Tcp`): STARTTLS or TLS from the start, `AUTH PLAIN`; a subject that isn't ASCII is encoded, a
-body that isn't is sent as base64.
-
-**The dev mailbox.** Under `--dev` the platform answers `/__rocx/mail` itself, before the app
-(`platform/Outbox.roc`, from `main.roc`'s `respond_for_host!`): the email kept, newest first (when,
-from, to, subject), a **Clear** button (`POST /__rocx/mail/clear`), and each message at
-`/__rocx/mail/<id>`: its headers, its text, its HTML in a sandboxed frame (`<iframe sandbox
-srcdoc>`: no script runs in it, a link opens in a new tab), and the message whole, as SMTP's DATA
-would have carried it. The list updates as mail comes (a stream of events, `/__rocx/mail?events`,
-on the live topic `rocx:mail`). The last 100 are kept in the server's memory (`Kv`, under
-`rocx:mail`), database or not, so a restart forgets them (D-028). The JSON (oldest first: id, at, from, to,
-subject, text, html, raw) is at `/__rocx/mail.json`, and at `/__rocx/mail` when asked for
-(`accept: application/json`); with `--debug` alone (the tests), only the JSON is served. Without
-`--dev` or `--debug`, those paths are the app's.
+Email is a package and a plugin, on the platform's general effects (`Tcp` with TLS, `Kv`, early
+paths under `--dev`): `Email.plugin({})` sends over SMTP (`SMTP_URL`, `MAIL_FROM`), or keeps mail
+for the dev mailbox at `/__rocx/mail`, and looks at the SMTP server at start.
+`packages/email/README.md` says how.
 
 ### Requests to other servers: `Http`
 
@@ -318,7 +299,8 @@ if (Env.dev!({})) dev_sign_in else Server.refused(404, "No page here.")     # st
 `Env.var!` reads the server's environment: the app's secrets and what differs between machines,
 read alike in a request, a job or a schedule (twelve-factor; Phoenix's `runtime.exs`). The context
 file stays for what a request is given. `Env.dev!` says whether the server was started with
-`--dev`. The platform's own settings stay flags or their variables (`DATABASE_URL`, `SMTP_URL`, …).
+`--dev`. The platform's own settings stay flags or their variables (`DATABASE_URL`, …); a plugin
+reads its own (`SMTP_URL`, for packages/email).
 
 ### Time: `Time`
 
@@ -361,8 +343,8 @@ page = Kv.get!("cache:${url}")?                                     # Try(value,
 tries = Kv.increment!("login:${address}", 1, { ttl_ms: 60_000 })?   # a window a minute long
 Kv.add!("seen:${request_id}", {}, { ttl_ms: 86_400_000 })?          # Err(Exists): one request gets in
 state = Kv.take!("oauth:${given}")?                                 # good once
-Kv.push!("email:outbox", message, { keep: 100 })                    # a capped list, newest first
-Kv.list!("email:outbox")?
+Kv.push!("email:mailbox", message, { keep: 100 })                    # a capped list, newest first
+Kv.list!("email:mailbox")?
 ```
 
 Values by key, kept in the server's memory for as long as `ttl_ms` says (0, the default: until it
@@ -371,7 +353,7 @@ as JSON and read back as the type its reader asks for. Each operation is atomic,
 or list's time to live starts with it (later increments and pushes don't move it). The host keeps one
 map behind one lock (`host/src/kv.rs`; nothing is awaited while it is held), expired entries going at
 the next operation; past `--kv-max-mb` (64) the least recently read or written go, never the one
-just written. Keys name their owner first, by convention (`email:outbox`).
+just written. Keys name their owner first, by convention (`email:mailbox`).
 
 ### Live: `Live`
 
@@ -573,9 +555,9 @@ Log.line!("migrated")                                          # a message alone
 
 Every line the server writes to stderr is an event: a level, a message and fields. The host's own
 lines (`rocx server: http://… (Roc, native)`, stopping, a crash with its `method`, `target` and
-`error`, forwarding, a background loop that crashed), the platform's Roc's and its plugins' (mail,
-migrations, jobs and cron: `Log.line!` for now) and the app's all go through one formatter in the
-host.
+`error`, forwarding, a background loop that crashed), the platform's Roc's and its plugins'
+(migrations, jobs and cron, mail: `Log.line!` for now) and the app's all go through one formatter in
+the host.
 The fields are any record (`Json.Encodable`), written as JSON; `{}` is none; one record with a
 single field has to say its name twice (`{ id: id }`: `{ id }` alone is a block, which is `id`).
 
@@ -696,8 +678,8 @@ call as a crash would (`cut_off` in `host/src/hosted.rs`), so the only frame it 
 host's is that effect's own, which holds nothing by then.
 
 At start the host asks the platform's Roc which background loops to run (`roc_background_count`:
-a look at the SMTP server, and the plugins' loops and checks: the jobs plugin's workers and its
-schedules' loop) and runs each, a call of its own,
+the plugins' loops and checks: the jobs plugin's workers and its schedules' loop, the email
+plugin's look at the SMTP server) and runs each, a call of its own,
 until the server stops; one that crashes is started again a second later. `Live.next!` in one wakes
 with `Gone` when the server stops.
 
@@ -731,10 +713,9 @@ built `--target=arm64musl` runs in a container against `just db`'s Postgres, eve
       --context-file FILE                 what respond! is given besides each request
       --database-url URL                  Postgres (DATABASE_URL): Db, migrations, actors, plugins' tables
       --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in Postgres)
-      --smtp-url URL --mail-from ADDRESS  (SMTP_URL, MAIL_FROM); none: an outbox
       --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it
-      --dev                               reload pages on restart, show crashes, the mailbox at /__rocx/mail, Env.dev!
-      --debug                             GET /__rocx/allocations, and the mailbox as JSON
+      --dev                               reload pages on restart, show crashes, plugins' dev pages, Env.dev!
+      --debug                             GET /__rocx/allocations, and plugins' debug paths
       --live-beat-ms 15000                how often a channel stream beats, and its checks run again
       --roc-threads N                     the threads Roc runs on (ROCX_ROC_THREADS; one a core)
 ```
@@ -763,8 +744,9 @@ refused at start, the whole message), jobs through packages/jobs's plugin (at on
 failing for good, queued in a transaction, another app's left alone; attempts per kind, a time
 limit cutting a run off on Postgres, a socket and another server with nothing left held, keys
 unique while pending, cancel and move, listing; a database the platform migrated before jobs were
-a package, its jobs where they were), the jobs page (behind a guard; its forms; its stream), cron, email (an outbox,
-the dev mailbox, forgotten by a restart, and not without `--dev`, and SMTP to a server the test runs),
+a package, its jobs where they were), the jobs page (behind a guard; its forms; its stream), cron,
+email through packages/email's plugin (an outbox, the dev mailbox, forgotten by a restart, and not
+without `--dev`, and SMTP to a server the test runs; the old flags refused),
 `Tcp`, roc-pg, the log (JSON with `ROCX_LOG=json` or unset on a pipe, pretty lines with
 `ROCX_LOG=pretty`, an app's fields beside `time`, `level` and `msg` and never in their place, a
 program's `Pretty` winning over `Auto` and `ROCX_LOG`, 200 requests logging at once with every line
@@ -806,9 +788,8 @@ browser runtime's own render.
 - Actors' timers are in memory: durable ones (Orleans' reminders) would be rows, as jobs are.
 - A job's time limit cuts it off only at an effect that waits: Roc that loops without one holds
   its worker until it ends.
-- The platform's Roc (mail, migrations, plugins) and packages/jobs log with `Log.line!`: a message
-  at info, its details in the text, not yet a level and fields of their own.
-- Email: no attachments, Cc or Bcc.
+- The platform's Roc (migrations, plugins) and packages/jobs and packages/email log with
+  `Log.line!`: a message at info, its details in the text, not yet a level and fields of their own.
 - `Http`: HTTP/1.1, a connection a request (none kept alive), no proxy; an answer's body comes into
   Roc whole.
 - `Forward`: an upstream's body only, not the other way (a request's body streamed to S3 as it

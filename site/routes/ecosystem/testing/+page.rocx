@@ -190,7 +190,7 @@ view! = |_|
 		</p>
 		<Code title={Sources.testing_node_form.file} source={Sources.testing_node_form.rocx} numbers={Bool.False} />
 		<p>
-			With no <code>--smtp-url</code> the server keeps the mail it sends: the last 100 messages, in its memory
+			With no <code>SMTP_URL</code> the email plugin keeps the mail it sends: the last 100 messages, in its memory
 			(<code>Kv</code>), so each server a test starts has an empty mailbox. <code>mail()</code> reads them,
 			<code>waitForMail</code> waits for a message, and <code>links</code> finds the links in it:
 		</p>

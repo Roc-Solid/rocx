@@ -1,0 +1,106 @@
+import pf.Html
+import ../../../Ui/Heading
+import ../../../Ui/Callout
+import ../../../Ui/Code
+import ../../../Generated/Sources
+import ../../../Generated/Paths
+import ../../../Ui/PageHero
+
+meta = {
+	title: "Email",
+	description: "packages/email, a plugin for Roc Solid's server: email over SMTP, from a job so a server that doesn't answer is tried again; or kept in memory for the dev mailbox while developing.",
+	toc: [
+		{ id: "install", label: "Installing it" },
+		{ id: "send", label: "Sending one" },
+		{ id: "smtp", label: "Over SMTP" },
+		{ id: "mailbox", label: "The dev mailbox" },
+		{ id: "limits", label: "Not yet" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				eyebrow="The ecosystem · email"
+				title="Email that goes out over SMTP, or waits in a mailbox while you develop"
+			>
+				A welcome, a sign-in link, a receipt: <code>Email.send!</code> hands a message to an SMTP server, as
+				text or text and HTML. Without one, it keeps the message in the server's memory, and the dev mailbox
+				shows it, so development sends nothing.
+			</PageHero>
+			<p>
+				Email is a package, <code>packages/email</code>, and a plugin (D-035): Roc (<code>Email.roc</code>, an
+				SMTP client in <code>Smtp.roc</code>, the mailbox in <code>Mailbox.roc</code>) on what the server
+				platform gives any plugin: sockets with TLS, values in memory, and paths answered before the app
+				under <code>--dev</code> (<a href={"${Paths.platform_server}#plugins"}>plugins</a>). Its pages are in
+				<a href={Paths.ecosystem_admin}>the admin's</a> look.
+			</p>
+
+			<Heading id="install">Installing it</Heading>
+			<Code title={"${Sources.email_plugin.file}, in part"} source={Sources.email_plugin.rocx} numbers={Bool.False} />
+			<p>
+				The app names the package in its header (<code>{"email: \"…/packages/email/main.roc\""}</code>) and lists
+				its plugin: <code>{"Email.plugin({ from, smtp_url! })"}</code>. Both have defaults: <code>from</code>,
+				who mail is from, is <code>MAIL_FROM</code> from the environment (or <code>rocx &lt;rocx@localhost&gt;</code>);
+				<code>smtp_url!</code>, where it goes, reads <code>SMTP_URL</code> when the server starts, unless the app
+				gives a function that finds it elsewhere (a secret kept in a vault). The plugin adds the dev mailbox's
+				paths and a look at the SMTP server.
+			</p>
+
+			<Heading id="send">Sending one</Heading>
+			<Code title={"${Sources.platform_mail_job.file}, in part"} source={Sources.platform_mail_job.rocx} numbers={Bool.False} />
+			<p>
+				<code>{"Email.send!({ to, subject, text, html })"}</code> waits for the SMTP server's answer: <code>Ok</code>,
+				or <code>EmailErr</code> with why (an address it can't read, a server that refuses or isn't there). Send
+				from a job (<a href={Paths.ecosystem_jobs}>packages/jobs</a>): one that fails is sent again later, and the
+				request that queued it doesn't wait.
+			</p>
+
+			<Heading id="smtp">Over SMTP</Heading>
+			<ul>
+				<li>
+					<strong>Where:</strong> <code>smtp://user:password@host:587?tls=required</code> (STARTTLS), or
+					<code>smtps://…:465</code> (TLS from the start), and <code>AUTH PLAIN</code> when the URL has a user.
+					The SMTP client is Roc, over the platform's <code>Tcp</code>.
+				</li>
+				<li>
+					<strong>What:</strong> text, or text and HTML (<code>multipart/alternative</code>); a subject that
+					isn't ASCII is encoded, a body that isn't is sent as base64.
+				</li>
+				<li>
+					<strong>At start</strong> the plugin connects to the SMTP server, TLS and all, and logs whether it
+					answers (<code>email.smtp</code>): a wrong URL shows then, not at the first email. A server that
+					doesn't answer doesn't stop the app.
+				</li>
+			</ul>
+
+			<Heading id="mailbox">The dev mailbox</Heading>
+			<p>
+				A server started with <code>--dev</code> (as <code>just dev</code> starts it) answers
+				<code>/__rocx/mail</code> before the app: the email it kept rather than sent, newest first (when, from,
+				to, subject), with a Clear button, and each one at <code>/__rocx/mail/&lt;id&gt;</code>: its headers,
+				its text, its HTML in a sandboxed frame (no script runs in it; a link opens a new tab), and the message
+				whole, as SMTP would have carried it. The list updates as mail comes. The last 100 are kept in the
+				server's memory (<a href={"${Paths.platform_live}#kv"}><code>Kv</code></a>), so a restart forgets them.
+				<code>/__rocx/mail.json</code> is the same as JSON, for tests (<a href={Paths.ecosystem_testing}>packages/testing</a>
+				reads it): with <code>--debug</code> alone, only the JSON is served. Without <code>--dev</code> or
+				<code>--debug</code>, those paths are the app's.
+			</p>
+
+			<Heading id="limits">Not yet</Heading>
+			<ul>
+				<li>No attachments, Cc or Bcc.</li>
+				<li>Mail kept for the mailbox is in memory only: a restart forgets it, on purpose.</li>
+			</ul>
+			<Callout kind="tip" title="Tested">
+				<p>
+					The server's tests send mail from a request and from a job, as text and as HTML, to an SMTP server
+					the test runs; to one that isn't there (an error, not a crash); and to the mailbox, its pages,
+					its stream and its JSON, under <code>--dev</code> and <code>--debug</code> and neither, forgotten by
+					a restart. The old flags (<code>--smtp-url</code>, <code>--mail-from</code>) are refused, saying where
+					they went.
+				</p>
+			</Callout>
+		</NoHydration>
+	</>

@@ -54,6 +54,7 @@ Nav := [].{
 			{ path: Paths.ecosystem_admin, label: "Admin", blurb: "A Django-style admin for your Postgres tables" },
 			{ path: Paths.ecosystem_crypto, label: "Crypto", blurb: "SHA-256, HMAC, HKDF, Base64 and hex, in Roc" },
 			{ path: Paths.ecosystem_s3, label: "Files in S3", blurb: "Uploads, parts, signed links, streaming" },
+			{ path: Paths.ecosystem_email, label: "Email", blurb: "Email over SMTP, or a dev mailbox while you develop: a plugin" },
 			{ path: Paths.ecosystem_forms, label: "Forms", blurb: "A form's rules written once, checked as it is typed and at the endpoint" },
 			{ path: Paths.ecosystem_guard, label: "Guard", blurb: "Rate limits, feature flags and request guards, as middleware" },
 			{ path: Paths.ecosystem_intl, label: "Intl", blurb: "Numbers, dates and translated messages, as each locale writes them" },

@@ -275,7 +275,7 @@ view! = |_|
 				</li>
 				<li>
 					It holds 64 MiB (<code>--kv-max-mb</code>, or <code>KV_MAX_MB</code>); past that the least recently used values go. Keys name
-					their owner first (<code>login:…</code>, <code>email:outbox</code>), so a package's never meet an app's.
+					their owner first (<code>login:…</code>, <code>email:mailbox</code>), so a package's never meet an app's.
 				</li>
 			</ul>
 

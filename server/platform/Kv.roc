@@ -8,7 +8,7 @@ import Host
 ## A value is any type JSON can write, kept as JSON and read back as the type its reader asks for.
 ## Each operation is atomic: two requests incrementing one counter both count, two adding one key
 ## let one in, and a value taken is taken once. A key names its owner first, by convention
-## (`email:outbox`, `guard:login:203.0.113.7`), so a package's keys never meet an app's.
+## (`email:mailbox`, `guard:login:203.0.113.7`), so a package's keys never meet an app's.
 ##
 ## The store holds 64 MiB (`--kv-max-mb`, or `KV_MAX_MB`); past that the least recently read or
 ## written values go, so a cache can't grow without end. One instance of an app means one store.

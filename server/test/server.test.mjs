@@ -64,7 +64,8 @@ let baseline = 0;
 /** The SMTP server the app's email goes to (this file runs it): every server started with a
  * database shares one job queue, so each sends a job's email to the same place. */
 let smtp;
-const mailFlags = () => ["--smtp-url", `smtp://127.0.0.1:${smtp.port}`, "--mail-from", "Rocx Tests <tests@rocx.example>"];
+/** Where the email plugin sends: the SMTP server above, from the tests (its environment variables). */
+const mailEnv = () => ({ SMTP_URL: `smtp://127.0.0.1:${smtp.port}`, MAIL_FROM: "Rocx Tests <tests@rocx.example>" });
 /** A different run's names each time: jobs, notes and actors from runs before don't count. */
 const run = `t${Date.now().toString(36)}`;
 
@@ -97,7 +98,7 @@ async function start(flags = [], executable = app, environment = {}, { debug = t
 
 // The app's migrations are in it (`program.migrations`, its .sql files embedded).
 // A failed job waits 20 ms for its second attempt: the app's jobs plugin says so (`retry_ms`).
-const dbFlags = () => (database ? ["--database-url", database, ...mailFlags()] : mailFlags());
+const dbFlags = () => (database ? ["--database-url", database] : []);
 
 before(async () => {
 	if (skip) return;
@@ -108,7 +109,7 @@ before(async () => {
 	writeFileSync(join(dir, "context.txt"), "facts=yes");
 	smtp = await smtpServer();
 	// A short beat, so the channel tests see a stream's re-checks soon (`--live-beat-ms`).
-	server = await start([...dbFlags(), "--live-beat-ms", "300"]);
+	server = await start([...dbFlags(), "--live-beat-ms", "300"], app, mailEnv());
 	if (database) assert.equal(await server.text("/reset", { method: "POST" }), "ready");
 	// The loops settle (a worker's first look at the queue), then what they hold is the baseline.
 	const allocations = async () => Number(await server.text("/__rocx/allocations"));
@@ -225,7 +226,7 @@ const PRETTY = /^\d\d:\d\d:\d\d (DEBUG|INFO |WARN |ERROR) \S/;
 /** What the platform may say as a server starts, whatever a test does: a migration applied, jobs a
  * stop cut short queued again, a look at S3 (`STORAGE_URL`). */
 // A plugin's own lines (what each added; the fixture's check, logged in the background) too.
-const STARTING = /^\S+\s+(rocx server: migrated:|rocx jobs:|rocx storage:|rocx plugins:|fixture\.look:)/;
+const STARTING = /^\S+\s+(rocx server: migrated:|rocx jobs:|rocx storage:|rocx plugins:|fixture\.look:|email\.smtp:)/;
 
 /** Waits for a stopped server's stderr to end: everything it wrote, read. */
 const ended = (of) => new Promise((resolve) => (of.child.stderr.readableEnded ? resolve() : of.child.stderr.once("end", resolve)));
@@ -737,7 +738,7 @@ test("forward: an error upstream is its status and reason, never its body; a bod
 
 test("a port in use: the server says so and exits, having started nothing (no job workers, no schedules), so nothing panics on its way out", { skip: skipDb }, async () => {
 	const port = new URL(server.url).port;
-	const child = spawn(app, ["--port", port, "--context-file", join(dir, "context.txt"), ...dbFlags()], { stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, ROCX_LOG: "", ROCX_TEST_SETTING: SETTING } });
+	const child = spawn(app, ["--port", port, "--context-file", join(dir, "context.txt"), ...dbFlags()], { stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, ROCX_LOG: "", ROCX_TEST_SETTING: SETTING, FIXTURE_KEY: "set", ...mailEnv() } });
 	let logged = "";
 	child.stderr.on("data", (chunk) => (logged += chunk));
 	const code = await new Promise((resolve) => child.on("exit", resolve));
@@ -755,7 +756,7 @@ test("a port in use: the server says so and exits, having started nothing (no jo
 test("migrations: the platform's tables, then the app's (embedded in it), in order, each once", { skip: skipDb }, async () => {
 	// The server this file started applied whatever this database hadn't seen; a second start
 	// applies nothing.
-	const again = await start(dbFlags());
+	const again = await start(dbFlags(), app, mailEnv());
 	assert.doesNotMatch(again.logged(), /migrated:/);
 	assert.equal(await again.text("/tx/notes?run=nothing"), "", "the app's tables are there");
 	assert.equal(await again.stop(), 0);
@@ -1172,7 +1173,7 @@ test("email: without an SMTP server, kept in the outbox and logged", { skip }, a
 		assert.ok(id >= 1 && Math.abs(at - Date.now()) < 60_000, "an id, and when");
 		assert.match(raw, new RegExp(`^Subject: Hello ${run}\r$`, "m"), "the message as SMTP would carry it");
 		assert.deepEqual(JSON.parse(await plain.text("/__rocx/mail.json")), outbox);
-		await logs(new RegExp(`rocx mail \\(kept, not sent: no --smtp-url\\): to ada@example.com: Hello ${run}`), plain);
+		await logs(new RegExp(`email \\(kept, not sent: no SMTP_URL\\): to ada@example.com: Hello ${run}`), plain);
 		const refused = await plain.get("/mail?to=not-an-address", { method: "POST", body: "x" });
 		assert.equal(refused.status, 500);
 		assert.match(await refused.text(), /^to not-an-address: /);
@@ -1253,7 +1254,7 @@ test("email: over SMTP, from a request and from a job, as text and HTML", { skip
 	assert.match(encoded, /^Subject: =\?utf-8\?b\?[A-Za-z0-9+\/=]+\?=\r$/m);
 	assert.match(encoded, /Content-Transfer-Encoding: base64/);
 	// An SMTP server that isn't there is an error, not a crash.
-	const nowhere = await start(["--smtp-url", "smtp://127.0.0.1:9"]);
+	const nowhere = await start([], app, { SMTP_URL: "smtp://127.0.0.1:9" });
 	try {
 		const failed = await nowhere.get("/mail?to=ada@example.com", { method: "POST", body: "x" });
 		assert.equal(failed.status, 500);
@@ -1336,6 +1337,21 @@ test("the dev mailbox: under --dev, each email kept is a page (headers, text, it
 	}
 });
 
+test("what was a flag of the server's and is a plugin's now is refused, saying where it went: jobs' workers and retries, email's SMTP server and sender", { skip }, async () => {
+	for (const [flag, value, said] of [
+		["--job-workers", "2", /--job-workers is gone: jobs are a plugin \(packages\/jobs, D-034\)/],
+		["--job-retry-ms", "20", /--job-retry-ms is gone: jobs are a plugin/],
+		["--smtp-url", "smtp://127.0.0.1:9", /--smtp-url is gone: email is a plugin \(packages\/email, D-035\), which reads SMTP_URL and MAIL_FROM/],
+		["--mail-from", "a@b.example", /--mail-from is gone: email is a plugin/],
+	]) {
+		const refused = await start([flag, value]).then(
+			() => assert.fail(`${flag} was taken`),
+			(error) => error.message,
+		);
+		assert.match(refused, said, flag);
+	}
+});
+
 // ---- Plugins: what a package adds to an app (server/test/fixture) ----
 
 test("plugins: a plugin's route answers in the app, with the app's context and its own pattern as the route; its call runs in a call of its own, a crash ending only that; its loop ran, its start kept, its check logged; the log says what each added, in the order their needs put them", { skip }, async () => {
@@ -1356,12 +1372,13 @@ test("plugins: a plugin's route answers in the app, with the app's context and i
 		said.filter((msg) => msg.startsWith("rocx plugins:")),
 		[
 			"rocx plugins: jobs: 1 migration, 1 call, 5 loops, 1 start",
+			"rocx plugins: email: 4 early routes, 1 start, 1 check",
 			"rocx plugins: jobs-page: 1 route",
 			"rocx plugins: fixture: 5 routes, 1 early route, 1 migration, 1 call, 1 loop, 1 start, 1 check",
 			"rocx plugins: second: 1 route",
 			"rocx plugins: third: 1 route",
 		],
-		"listed jobs, the jobs page, fixture, third, second: third needs second, so it comes after it",
+		"listed jobs, email, the jobs page, fixture, third, second: third needs second, so it comes after it",
 	);
 	assert.ok(said.includes("fixture.look: the fixture looked"), "the check, run once after the start");
 });
@@ -2525,7 +2542,7 @@ test("actors: timers: a tell later (tell_after!), one cancelled before it fires 
 test("actors: their state is in Postgres, there after a restart", { skip: skipDb }, async () => {
 	const key = `${run}kept`;
 	assert.equal(await post(`/actors/count/${key}?by=41`), "41");
-	const restarted = await start(dbFlags());
+	const restarted = await start(dbFlags(), app, mailEnv());
 	try {
 		assert.equal(await restarted.text(`/actors/count/${key}`, { method: "POST" }), "42");
 	} finally {
@@ -2534,7 +2551,7 @@ test("actors: their state is in Postgres, there after a restart", { skip: skipDb
 });
 
 test("actors: one idle for --actor-idle-ms is let go, and the next message wakes it as Postgres has it; one awake keeps the state it has", { skip: skipDb }, async () => {
-	const idle = await start([...dbFlags(), "--actor-idle-ms", "200"]);
+	const idle = await start([...dbFlags(), "--actor-idle-ms", "200"], app, mailEnv());
 	try {
 		const key = `${run}idle`;
 		const ask = (path) => idle.text(path, { method: "POST" });
@@ -2928,7 +2945,7 @@ test("form actions: a script's post, or the runtime's, gets the endpoint's answe
 // ---- Stopping, memory ----
 
 test("a stop lets the request being answered finish, then the server exits", { skip: skipDb }, async () => {
-	const stopping = await start(dbFlags());
+	const stopping = await start(dbFlags(), app, mailEnv());
 	const slow = stopping.get("/sleep");
 	await new Promise((resolve) => setTimeout(resolve, 50));
 	const exited = stopping.stop();

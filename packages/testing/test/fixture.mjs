@@ -10,12 +10,15 @@ export function writeFixture(dir) {
 	const real = realpathSync(dir);
 	const platform = relative(real, realpathSync(join(repo, "server", "platform", "main.roc")));
 	const jobs = relative(real, realpathSync(join(repo, "packages", "jobs", "main.roc")));
+	const email = relative(real, realpathSync(join(repo, "packages", "email", "main.roc")));
 	const files = {
 		"main.roc": `## The fixture's program: rocx build writes Generated/App from its routes; the jobs plugin
-## (packages/jobs) runs the jobs its modules define.
-app [program] { jobs: "${jobs}", pf: platform "${platform}" }
+## (packages/jobs) runs the jobs its modules define, and the email plugin (packages/email) sends or
+## keeps its mail.
+app [program] { email: "${email}", jobs: "${jobs}", pf: platform "${platform}" }
 
 import pf.Middleware
+import email.Email
 import jobs.Job
 import Generated/App
 
@@ -23,11 +26,11 @@ program = App.program({
 	context: |started| { started: started },
 	middleware: Middleware.same_origin({}),
 	# A failed job waits 5 s for its next attempt: longer than a test settles the queue for.
-	plugins: [Job.plugin({ jobs: App.jobs, retry_ms: 5000 })],
+	plugins: [Job.plugin({ jobs: App.jobs, retry_ms: 5000 }), Email.plugin({})],
 })
 `,
 		"Jobs.roc": `import jobs.Job
-import pf.Email
+import email.Email
 
 ## The app's jobs.
 Jobs := [].{
@@ -157,9 +160,9 @@ events! = |_|
 `,
 		"routes/api/mail/+server.roc": `import pf.Server
 import pf.Endpoint
-import pf.Email
+import email.Email
 
-## POST /api/mail: an email to \`to\`, sent now (kept in the dev mailbox: no --smtp-url).
+## POST /api/mail: an email to \`to\`, sent now (kept in the dev mailbox: no SMTP_URL).
 post! : { request : Server.Request, params : {}, context : c, body : { to : Str } } => Try({}, Endpoint.Refusal)
 post! = |{ body, .. }|
 	match Email.send!({ to: body.to, subject: "Hello", text: "Hello, see https://notes.example/hello for more.", html: "" }) {

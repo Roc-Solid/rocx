@@ -96,8 +96,9 @@ test("a welcome is mailed", async () => {
 `rocx routes <dir>` lists the app's routes, each with its method, path, file and middleware
 (`GET /notes`).
 
-`mail()` and `waitForMail` read the dev mailbox's JSON (`/__rocx/mail.json`, which `--debug`
-serves): the last 100 messages `Email.send!` kept rather than sent (no `--smtp-url`), oldest first,
+`mail()` and `waitForMail` read the dev mailbox's JSON (`/__rocx/mail.json`, which the email
+plugin serves under `--debug`: packages/email): the last 100 messages `Email.send!` kept rather
+than sent (no `SMTP_URL`), oldest first,
 each with an `id`. The server keeps them in its memory (`Kv`), database or not, so each server a
 test starts has an empty mailbox, and a restart forgets it.
 

@@ -1,5 +1,5 @@
 //! What the server was started with, for Roc (`Host.setting!`): `database` ("yes" with one),
-//! `smtp-url`, `mail-from`, `dev` ("yes" with `--dev`:
+//! `dev` ("yes" with `--dev`:
 //! `Env.dev!`), `debug` ("yes" with `--debug`).
 //! The platform's Roc reads them; the host only keeps them.
 

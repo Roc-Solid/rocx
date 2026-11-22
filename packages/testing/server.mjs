@@ -80,7 +80,7 @@ export class Server {
 		return new Client(this, options);
 	}
 
-	/** What `Email.send!` kept rather than sent (no `--smtp-url`): every message, oldest first. */
+	/** What `Email.send!` (packages/email) kept rather than sent (no `SMTP_URL`): every message, oldest first. */
 	async mail() {
 		const answer = await fetch(`${this.url}/__rocx/mail.json`);
 		if (!answer.ok) throw new Error(`the mailbox: ${answer.status} ${await answer.text()} (it needs --debug or --dev)`);

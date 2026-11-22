@@ -8,7 +8,7 @@ import ../../../Ui/PageHero
 
 meta = {
 	title: "Jobs and cron",
-	description: "packages/jobs, a plugin for Roc Solid's server: jobs queued in Postgres and run by workers until they succeed, schedules, and a page of the queue; and the platform's email over SMTP, or kept in memory for the dev mailbox while developing.",
+	description: "packages/jobs, a plugin for Roc Solid's server: jobs queued in Postgres and run by workers until they succeed, schedules, and a page of the queue.",
 	toc: [
 		{ id: "install", label: "Installing it" },
 		{ id: "jobs", label: "A job" },
@@ -17,8 +17,6 @@ meta = {
 		{ id: "options", label: "Options, keys, listing" },
 		{ id: "page", label: "The jobs page" },
 		{ id: "cron", label: "On a schedule" },
-		{ id: "email", label: "Email" },
-		{ id: "mailbox", label: "The dev mailbox" },
 		{ id: "limits", label: "Not yet" },
 	],
 }
@@ -32,8 +30,9 @@ view! = |_|
 			>
 				Some work shouldn't hold up a request: sending a welcome mail, a nightly cleanup, a call to a slow
 				service. A job is that work, queued as a row in Postgres, run by workers in the background, and run
-				again if it fails. A schedule queues one when its time comes. Email goes out over SMTP, best from a
-				job, so a mail server that doesn't answer is tried again.
+				again if it fails. A schedule queues one when its time comes. Email is best sent from one
+				(<a href={Paths.ecosystem_email}>packages/email</a>), so a mail server that doesn't answer is tried
+				again.
 			</PageHero>
 			<p>
 				Jobs and cron are a package, <code>packages/jobs</code>, and a plugin (D-034): Roc
@@ -190,47 +189,9 @@ view! = |_|
 				start, saying why.
 			</p>
 
-			<Heading id="email">Email</Heading>
-			<p>
-				Email is still the server platform's (<code>pf.Email</code>); it is the next to become a package.
-			</p>
-			<Code title={"${Sources.platform_mail_job.file}, in part"} source={Sources.platform_mail_job.rocx} numbers={Bool.False} />
-			<ul>
-				<li>
-					<strong>Over SMTP</strong>, with <code>--smtp-url</code>
-					(<code>smtp://user:password@host:587?tls=required</code>, or <code>smtps://…:465</code>; or
-					<code>SMTP_URL</code>), from <code>--mail-from</code> (<code>MAIL_FROM</code>), as text, or text and
-					HTML. The SMTP client is the platform's Roc, over <code>Tcp</code>: STARTTLS, or TLS from the start,
-					and <code>AUTH PLAIN</code>; a subject that isn't ASCII is encoded, a body that isn't is sent as
-					base64. At start the server connects to the SMTP server, TLS and all, and logs whether it answers.
-				</li>
-				<li>
-					<strong>Without one</strong>, a mail is kept in the server's memory and logged, so development sends
-					nothing: the dev mailbox shows it (below).
-				</li>
-				<li>
-					<strong>From a job.</strong> <code>Email.send!</code> waits for the SMTP server's answer; in a job,
-					one that fails is sent again later, and the request that queued it doesn't wait.
-				</li>
-			</ul>
-
-			<Heading id="mailbox">The dev mailbox</Heading>
-			<p>
-				A server started with <code>--dev</code> (as <code>just dev</code> starts it) answers
-				<code>/__rocx/mail</code> itself, before the app: the email it kept rather than sent, newest first (when, from, to,
-				subject), with a Clear button, and each one at <code>/__rocx/mail/&lt;id&gt;</code>: its headers, its
-				text, its HTML in a sandboxed frame (no script runs in it; a link opens a new tab), and the message
-				whole, as SMTP would have carried it. The list updates as mail comes. The last 100 are kept in the
-				server's memory (<a href={"${Paths.platform_live}#kv"}><code>Kv</code></a>), so a restart forgets them.
-				<code>/__rocx/mail.json</code> is the same as JSON, for tests: with <code>--debug</code> alone,
-				only the JSON is served. Without <code>--dev</code> or <code>--debug</code>, those paths are the
-				app's.
-			</p>
-
 			<Heading id="limits">Not yet</Heading>
 			<ul>
 				<li><strong>A time limit</strong> cuts a job off only at an effect that waits: Roc that loops without one holds its worker.</li>
-				<li><strong>Email:</strong> no attachments, Cc or Bcc.</li>
 			</ul>
 			<Callout kind="tip" title="Tested">
 				<p>
@@ -239,8 +200,7 @@ view! = |_|
 					and another server, leaving nothing held; queue, cancel and move them by key; list them; use the
 					jobs page's forms behind a guard; leave alone a job another app queued; run a schedule every
 					second; start on a database the platform migrated before jobs were a package, and find its jobs
-					where they were; and send mail to an SMTP server the test runs, and to the mailbox, forgotten by a
-					restart.
+					where they were.
 				</p>
 			</Callout>
 		</NoHydration>

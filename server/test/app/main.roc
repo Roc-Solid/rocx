@@ -5,7 +5,7 @@
 ## answered by their routes, requests to other servers, the environment, AES-GCM, random
 ## bytes, the crypto written in Roc (packages/crypto), S3 storage (packages/s3), and cookies; and what the docs show of them
 ## (`Samples.roc`), as an app would write it.
-app [program] { pf: platform "../../platform/main.roc", admin: "../../../packages/admin/main.roc", crypto: "../../../packages/crypto/main.roc", fixture: "../fixture/main.roc", jobs: "../../../packages/jobs/main.roc", s3: "../../../packages/s3/main.roc" }
+app [program] { pf: platform "../../platform/main.roc", admin: "../../../packages/admin/main.roc", crypto: "../../../packages/crypto/main.roc", email: "../../../packages/email/main.roc", fixture: "../fixture/main.roc", jobs: "../../../packages/jobs/main.roc", s3: "../../../packages/s3/main.roc" }
 
 import crypto.Base64
 import crypto.Hex
@@ -17,10 +17,10 @@ import fixture.Fixture
 import jobs.Cron
 import jobs.Job
 import admin.JobsPage
+import email.Email
 import pf.Actor
 import pf.AesGcm
 import pf.Db
-import pf.Email
 import pf.Env
 import pf.Http
 import pf.HttpResponse
@@ -64,7 +64,8 @@ program = {
 }
 
 ## The plugins. The jobs (packages/jobs): the kinds its workers run, a schedule, and a short first
-## retry (20 ms), so the tests see retries soon. The jobs page (packages/admin). A plugin package's
+## retry (20 ms), so the tests see retries soon. Email (packages/email). The jobs page
+## (packages/admin). A plugin package's
 ## (server/test/fixture): the
 ## fixture's routes show the server's context as the app has it; `third` needs `second`, so it
 ## starts after it.
@@ -77,6 +78,8 @@ plugins = [
 			retry_ms: 20,
 		},
 	),
+	# Email (packages/email): SMTP_URL and MAIL_FROM from the environment, the dev mailbox under --dev.
+	Email.plugin({}),
 	# The jobs page (packages/admin), behind a guard of the app's own.
 	JobsPage.plugin({ at: "/admin/jobs", guard: admins_only }),
 	Fixture.plugin({ shown: |context| "the app's context, ${context}" }),

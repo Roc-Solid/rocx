@@ -1,8 +1,8 @@
 ## The server's platform: Roc compiled to native code, in a Rust host (`server/host`). The host
 ## answers HTTP with tokio and hyper and gives Roc a few general effects: Postgres, time, live
 ## topics and rooms, background loops, calls run in isolation, actors' mailboxes and timers, TCP and
-## TLS. Migrations, actors' state and email are Roc, here, built on them; jobs and cron are a
-## package's plugin (packages/jobs, D-034), on the same effects. The browser's
+## TLS. Migrations, plugins and actors' state are Roc, here, built on them; jobs and cron, and email,
+## are packages' plugins (packages/jobs, packages/email: D-034, D-035), on the same effects. The browser's
 ## platform is `web/platform`, wasm; an app is two programs, one on each, talking over HTTP.
 ##
 ## - `respond!(method, target, headers, body, context)` answers a request: a page or an endpoint.
@@ -26,8 +26,6 @@
 ##   (`ROCX_LOG`, `pretty` or `json`, if it is set; or else pretty when stderr is a terminal, and JSON
 ##   when it isn't), `Pretty` or `Json`. `App.program` says `Auto`; an app says otherwise with
 ##   `{ ..App.program(…), logs: { format: Json } }`.
-## - Under `--dev`, the platform answers `/__rocx/mail` itself: the dev mailbox (`Outbox`), email
-##   kept rather than sent.
 ## - `plugins`: what packages add to the app (`Plugin`), all but their routes, which `respond!`
 ##   answers: early paths, tables, calls, loops, starts, checks and needs, checked when the server
 ##   starts (`Plugins`); `routes`, the app's own (`Routes.claims`), which no plugin's may meet.
@@ -55,7 +53,7 @@ platform ""
 			routes : List({ method : Str, path : Str, file : Str }),
 		}
 	}
-	exposes [Actor, AesGcm, Audio, Browser, Call, Channel, Context, Db, Email, Endpoint, Env, Errored, Events, For, Html, Http, HttpResponse, HttpStatusCode, Kv, Live, Loading, Log, Middleware, OpenApi, Plugin, Random, Router, Server, Show, Solid, Submission, Submissions, Tcp, Time, Title, Transition]
+	exposes [Actor, AesGcm, Audio, Browser, Call, Channel, Context, Db, Endpoint, Env, Errored, Events, For, Html, Http, HttpResponse, HttpStatusCode, Kv, Live, Loading, Log, Middleware, OpenApi, Plugin, Random, Router, Server, Show, Solid, Submission, Submissions, Tcp, Time, Title, Transition]
 	packages {}
 	provides {
 		"roc_actor": actor_for_host!,
@@ -178,7 +176,6 @@ import Call
 import Channel
 import Context
 import Db
-import Email
 import Endpoint
 import Env
 import Errored
@@ -193,7 +190,6 @@ import Kv
 import Live
 import Loading
 import Log
-import Outbox
 import Middleware
 import Migrations
 import OpenApi
@@ -222,18 +218,13 @@ Feed : { run! : { send! : Str => Bool, sleep! : U64 => {} } => {} }
 ## from (4). The page is boxed for the host to run
 ## (`run_for_host!`): run, it renders the page's components, its holes kept by the host, as JSON
 ## (`Html.serialize!`). The boxes an answer doesn't send do nothing, and the host releases them.
-## Under `--dev`, the platform answers the dev mailbox's paths itself (`Outbox`).
+## A plugin's early path (`Plugin.Early`) is answered before the app, under the flag it names.
 respond_for_host! : Str, Str, Str, List(U8), Str => { status : U16, headers : Str, kind : U8, text : Str, bytes : List(U8), upstream : { method : Str, url : Str, headers : Str }, page : Box(() => Str), feed : Box(Feed) }
 respond_for_host! = |method, target, headers, body, context| {
 	answered =
 		match early!(method, target) {
 			Ok(early) => (early.answer!)({ ..Server.from_http(method, target, headers, body), route: early.path })
-			Err(NotEarly) =>
-				if Outbox.serves!(target) {
-					Outbox.respond!(Server.from_http(method, target, headers, body))
-				} else {
-					(program.respond!)(method, target, headers, body, context)
-				}
+			Err(NotEarly) => (program.respond!)(method, target, headers, body, context)
 		}
 	answer = Server.for_host(answered)
 	view! = answer.page
@@ -333,28 +324,24 @@ early! = |method, target| {
 	}
 }
 
-## What the server runs in the background, each loop a call of its own: a look at the SMTP server
-## (with one); then each plugin's loops, and its checks (each run once), by where they are in the
-## plugins' order.
-Loop : [CheckMail, Plugged(U64, U64), Checked(U64, U64)]
+## What the server runs in the background, each loop a call of its own: each plugin's loops, and its
+## checks (each run once), by where they are in the plugins' order.
+Loop : [Plugged(U64, U64), Checked(U64, U64)]
 
 loops! : {} => List(Loop)
 loops! = |{}| {
-	mail = if (Setting.text!("smtp-url").is_empty()) [] else [CheckMail]
 	plugins = Plugins.ordered(program.plugins)
-	theirs = plugins.map_with_index(|plugin, p| plugin.loops.map_with_index(|_, l| Plugged(p, l)).concat(plugin.checks.map_with_index(|_, c| Checked(p, c)))).join_map(|each| each)
-	mail.concat(theirs)
+	plugins.map_with_index(|plugin, p| plugin.loops.map_with_index(|_, l| Plugged(p, l)).concat(plugin.checks.map_with_index(|_, c| Checked(p, c)))).join_map(|each| each)
 }
 
 background_count_for_host! : {} => U64
 background_count_for_host! = |{}| loops!({}).len()
 
 ## Runs the background loop at `index` to its end: a plugin's loop (until it returns, or the
-## server stops); the mail check, or a plugin's check, once.
+## server stops); a plugin's check, once.
 background_for_host! : U64 => {}
 background_for_host! = |index|
 	match loops!({}).get(index) {
-		Ok(CheckMail) => Email.check!({})
 		Ok(Plugged(p, l)) =>
 			match Plugins.ordered(program.plugins).get(p) {
 				Ok(plugin) =>

@@ -1758,3 +1758,54 @@ tables admin kept, and the test that held it to the platform's, are gone.
 platform by a path, so the app names the same file (D-033). The dev mailbox's look is in two places
 until D-035. **Why.** The platform keeps what needs the host; jobs are Roc on general effects, and
 now an example of a plugin that brings tables, loops, a call and a start. **Reversible:** yes.
+
+## D-035 Email is a package, and a plugin
+
+**Context.** D-025's rule, and the user's decision of 2026-11-22 (D-034). Email was the platform's
+Roc on its general effects: `Email` (MIME), `Smtp` (on `Tcp`), the dev mailbox (`Outbox`, on `Kv`
+since D-028), drawn with the platform's copy of the admin look. What tied it to the platform: the
+host's `--smtp-url` and `--mail-from` (settings the Roc read), the mailbox's paths answered in
+`respond_for_host!` before the app, and the SMTP check as one of the platform's background loops.
+D-025 kept it there until plugins could carry dev-only paths and checks (D-033).
+
+**Choice.** `packages/email`: `Email`, `Smtp` and `Mailbox`, and a plugin.
+
+```roc
+Email.Options := { from : Str ?? "", smtp_url! : ({} => Str) ?? (reads SMTP_URL) }
+Email.plugin : Email.Options -> Plugin.Value(ctx)
+
+program = App.program({ …, plugins: [Email.plugin({ from: "Acme <hello@example.com>" })] })
+```
+
+- `Email.send!` and `Email.Message` are as they were. Who mail is from is `from`, or `MAIL_FROM`;
+  where it goes is `smtp_url!`, by default `SMTP_URL` from the environment, read when the server
+  starts (a plugin reads its documented variables unless the app passes a function: the user,
+  2026-11-21). The plugin's start keeps both (`Plugin.keep!`) for `send!`; without the plugin,
+  `send!` reads the environment itself.
+- The dev mailbox is the plugin's early paths: `GET /__rocx/mail` and `/__rocx/mail.json` under
+  `--dev` or `--debug`, `GET /__rocx/mail/[id]` and `POST /__rocx/mail/clear` under `--dev`, as
+  before (packages/testing reads the JSON unchanged). Its mail is in `Kv` under `email:mailbox`.
+- The SMTP check is the plugin's check (`email.smtp`), logged once the server has started; a server
+  that doesn't answer doesn't stop the app.
+- **The look:** the mailbox depends on packages/admin (`Look`, `AdminHtml`), which depends on
+  packages/jobs. Another split (the look in a package of its own) would make an app that wants
+  email and no admin pages name nothing more: it doesn't today either, since a package's
+  dependencies come with it. One look in one package is the simpler thing to keep.
+- The platform lost `Email`, `Smtp`, `Outbox`, its copy of `AdminHtml`, `Calendar` and `Base64`
+  (email uses packages/crypto's), the mail check, and `--smtp-url` and `--mail-from` (now errors
+  naming the variables). It keeps nothing about email.
+
+**Moving to it.** What an app outside the repo changes:
+- Its header names the package (`email: "…/packages/email/main.roc"`); its modules (and route
+  files) import `email.Email` instead of `pf.Email`.
+- Its plugins list `Email.plugin({})` (with `from` if it says who mail is from in the app), for the
+  dev mailbox and the check.
+- `--smtp-url URL` and `--mail-from ADDRESS` become `SMTP_URL` and `MAIL_FROM` in the server's
+  environment (which the server already read), or the plugin's options; the server refuses the flags.
+- Log lines change: `rocx mail (kept, not sent: no --smtp-url): to …` is
+  `email (kept, not sent: no SMTP_URL): to …`; the check's lines are `email.smtp: …`.
+- The mailbox's paths and JSON are the same.
+
+**Costs.** An app names one more package and lists one more plugin. **Why.** The platform keeps what
+needs the host; email is Roc on `Tcp` and `Kv`, and now the example of a plugin with dev-only paths
+and a check. **Reversible:** yes.

@@ -1,7 +1,7 @@
 ## What the Rust host does for Roc (`server/host/src/hosted.rs`): general effects, which the
 ## platform's modules build on (`Db`, `Live`, `Log`, `Time`, `Tcp`, `Http`, `Random`, `AesGcm`,
-## `Env`; and, in Roc, `Job`,
-## `Cron`, `Actor`, `Email`, the migrations). An error here is the host's message.
+## `Env`, `Plugin`; and, in Roc, `Actor`, the migrations; and the packages' plugins: jobs and cron,
+## email). An error here is the host's message.
 Host := [].{
 
 	## An event on the server's log (stderr, `Log`): its level (0 debug, 1 info, 2 warn, 3 error),
@@ -27,9 +27,8 @@ Host := [].{
 	## system clock's when the server started, plus a steady clock's time since.
 	now_nanos! : {} => U64
 
-	## A setting the server was started with: `database` ("yes" with one), `smtp-url`,
-	## `mail-from`, `dev` ("yes" with `--dev`), `debug` ("yes" with `--debug`). Empty when it wasn't
-	## given.
+	## A setting the server was started with: `database` ("yes" with one), `dev` ("yes" with
+	## `--dev`), `debug` ("yes" with `--debug`). Empty when it wasn't given.
 	setting! : Str => Str
 
 	## Whether the server is stopping: a background loop's cue to end.

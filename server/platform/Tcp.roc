@@ -1,8 +1,9 @@
 import Host
 
 ## A TCP connection, plain or over TLS: what a client of another server is built on (an SMTP
-## server: `Email`; Postgres: roc-pg). Shaped as basic-cli's, so packages written for it take a
-## connection from here as they are: `connect!`, then `write_bytes!` and `read_exactly!`.
+## server: packages/email's `Smtp`; Postgres: roc-pg). Shaped as basic-cli's, so packages written
+## for it take a connection from here as they are: `connect!`, then `write_bytes!` and
+## `read_exactly!`.
 ##
 ## Each effect blocks the call's own thread until it is done, as the platform's others do. A
 ## connection belongs to the call that made it, and is closed when that call ends, if not before.

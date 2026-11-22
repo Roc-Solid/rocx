@@ -116,7 +116,6 @@ export const GROUPS = [
 	{ id: "data", name: "Data", modules: ["Db", "Kv"] },
 	{ id: "plugins", name: "Plugins", modules: ["Plugin"] },
 	{ id: "background", name: "Background", modules: ["Actor", "Live"] },
-	{ id: "mail", name: "Mail", modules: ["Email"] },
 	{ id: "crypto", name: "Crypto", modules: ["AesGcm", "Random"] },
 	{ id: "system", name: "System", modules: ["Env", "Time", "Log", "Tcp"] },
 	{ id: "components", name: "Components and reactivity", modules: ["Solid", "Html", "Show", "For", "Loading", "Errored", "Context", "Transition", "Title", "HttpStatusCode", "Browser", "Audio"] },

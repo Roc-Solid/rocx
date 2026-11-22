@@ -117,11 +117,11 @@ view! = |_|
 			<p>
 				It is opinionated on purpose: one server, Roc and Postgres. The host, in Rust, gives Roc general
 				things: HTTP, Postgres connections, sockets with TLS, background loops that sleep until woken, calls
-				isolated from their caller, actors' mailboxes and timers, values in memory. Migrations, plugins,
-				email and actors' state are the platform's Roc, written on those
+				isolated from their caller, actors' mailboxes and timers, values in memory. Migrations, plugins and
+				actors' state are the platform's Roc, written on those
 				(<a href={"${Paths.platform_server}#layers"}>what is Rust, what is Roc</a>). What needs neither the
 				host nor the compiler is a package, not the platform: files in S3, the crypto written in Roc, and
-				jobs and cron (a plugin) are <a href={Paths.ecosystem}>the ecosystem's</a>.
+				jobs and cron and email (plugins) are <a href={Paths.ecosystem}>the ecosystem's</a>.
 			</p>
 
 			<Heading id="app">An app</Heading>
