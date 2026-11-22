@@ -11,7 +11,7 @@ import { existsSync, readdirSync, readFileSync, statSync, watch } from "node:fs"
 import { join, relative } from "node:path";
 import { root, server, serverFlags } from "./build.mjs";
 import { SHARED_MODULES } from "../server/build.mjs";
-import { MARKER } from "../src/rocx.mjs";
+import { MARKER } from "../rocx-cli/rocx.mjs";
 
 const args = process.argv.slice(2);
 const value = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
@@ -55,7 +55,7 @@ start();
 
 if (watching) {
 	let timer = null;
-	const dirs = ["site", "packages", "web", "src", "bin", "server/platform", "server/host"].filter((dir) => existsSync(join(root, dir)));
+	const dirs = ["site", "packages", "web", "rocx-cli", "bin", "server/platform", "server/host"].filter((dir) => existsSync(join(root, dir)));
 	const OUTPUT = /^(build|dist|Generated|target|targets|node_modules)$/;
 	const ignored = (path) => path.split("/").some((part) => OUTPUT.test(part)) || path.endsWith(".tmp");
 	const source = (path) => !/(^|\/)test\//.test(path) && /\.(rocx|roc|zig|rs|c|js|mjs|css|svg|toml)$/.test(path);

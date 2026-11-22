@@ -204,7 +204,7 @@ view! = |_|
 					<tbody>
 						<tr>
 							<td><code>rocx build</code></td>
-							<td>rocx (<code>src/Routes.roc</code>), as it writes the router</td>
+							<td>rocx (<code>rocx-cli/Routes.roc</code>), as it writes the router</td>
 							<td>
 								Writes Roc, and knows no types. <code>Generated/Api.roc</code> gets <code>openapi</code>: each
 								path, its params and its methods, with their comments, and for each endpoint a call that asks

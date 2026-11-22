@@ -8,8 +8,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { roc as findRoc, rocxBinary } from "../server/build.mjs";
-import { FormatError, formatRocx, rocFmt } from "../src/rocx.mjs";
-import { transpileModule } from "../src/rocx.mjs";
+import { FormatError, formatRocx, rocFmt } from "../rocx-cli/rocx.mjs";
+import { transpileModule } from "../rocx-cli/rocx.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");

@@ -1521,7 +1521,7 @@ to distribute, and for speed.
 
 **Choice.** 3, on basic-cli 0.28.1, with the Roc fork the repo builds with (the Justfile pins it).
 
-- `src/` is rocx: `main.roc` (the command), `Transpile.roc`, `Styles.roc`, `Routes.roc`,
+- `src/` is rocx (renamed `rocx-cli/` on 2026-11-22, below): `main.roc` (the command), `Transpile.roc`, `Styles.roc`, `Routes.roc`,
   `Stories.roc` (with `catalog.html`, the catalog page, embedded), `Remap.roc`, `Format.roc`,
   `Commands.roc` (`check`, `lint`), `Build.roc` (`rocx build`), `ServerOnly.roc` (its warning where
   the browser's copy reaches what only the server has), and the helpers they share: `Text`
@@ -1556,10 +1556,10 @@ Measured on the same files, interleaved, the machine loaded by other work (media
 of its own, a script), where `bin/rocx.mjs` is gone ("Cannot find module"). A Node script gets the
 binary's path from `server/build.mjs`'s `rocxBinary()`, which builds it if it is missing or stale; one
 that imported `src/transpile.mjs`, `src/routes.mjs` and the others imports the same names from
-`src/rocx.mjs`.
+`rocx-cli/rocx.mjs`.
 
 **Costs.** An optimized rocx takes about a minute and a half to build (a dev build, seconds); the
-binary rebuilds when `src/` changes. Roc keeps more words than JavaScript (`module`, `packages`,
+binary rebuilds when `rocx-cli/` changes. Roc keeps more words than JavaScript (`module`, `packages`,
 `where`, `platform` can't be names), and the compiler's bugs are rocx's now too. basic-cli has no
 file watcher (rocx needs none: `site/serve.mjs` watches). The repo's own scripts, its tests and the
 testing package's helpers are still JavaScript on Node; an app no longer needs Node to build. Each call
@@ -1570,4 +1570,6 @@ times asks once (`callMany`, as the site's build does for its route files).
 JavaScript at everything it does.
 
 **Reversible:** yes. The JavaScript is in the history (up to the commit that removed bin/rocx.mjs), and the tests still call
-rocx by the JavaScript's names (`src/rocx.mjs`).
+rocx by the JavaScript's names (`rocx-cli/rocx.mjs`).
+
+**Renamed (2026-11-22):** rocx's Roc moved from `src/` to `rocx-cli/`, since the repo holds much more than rocx (two platforms, packages, the site). `bin/rocx` stays where it is. A script outside the repo that imported `<repo>/src/rocx.mjs` imports `<repo>/rocx-cli/rocx.mjs`.

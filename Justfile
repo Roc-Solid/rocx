@@ -1,4 +1,4 @@
-# rocx: the transpiler (src/, bin/), the web platform (web/, wasm, in the browser), the server
+# rocx: the transpiler (rocx-cli/, bin/), the web platform (web/, wasm, in the browser), the server
 # platform (server/, native, in a Rust host), and the docs site (site/), which is written in rocx
 # and runs on them.
 
@@ -28,7 +28,7 @@ set lazy
 roc := if path_exists(".tools/roc-active") == "true" { ".tools/roc-active" } else if env("ROC", "") != "" { env("ROC") } else { error("no Roc compiler: run `just setup` (or set ROC)") }
 # Zig: the system's, on PATH (e.g. from Nix), when it is zig_version; else the one in .tools.
 zig := if `zig version 2>/dev/null || true` == zig_version { "zig" } else { justfile_directory() / ".tools/zig/zig" }
-# rocx itself: bin/rocx, built from its Roc (src/*.roc, on basic-cli) when that changed
+# rocx itself: bin/rocx, built from its Roc (rocx-cli/*.roc, on basic-cli) when that changed
 # (server/build.mjs rocxBinary).
 rocx := `node --input-type=module -e "import { rocxBinary } from './server/build.mjs'; console.log(rocxBinary())"`
 
@@ -229,7 +229,7 @@ check: (fmt "--check")
 # .rocx file's (its markup kept as written) and each hand-written .roc file. `just fmt --check`
 # only says which aren't formatted.
 fmt *args:
-    ROC={{ roc }} {{ rocx }} fmt {{ args }} src site packages web/platform server/platform
+    ROC={{ roc }} {{ rocx }} fmt {{ args }} rocx-cli site packages web/platform server/platform
 
 # Regenerates the platforms' glue after a change to a header: web/host/roc_platform_abi.zig, and
 # server/host/src/roc_platform_abi.rs.

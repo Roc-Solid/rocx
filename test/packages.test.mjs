@@ -5,8 +5,8 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { build } from "../src/rocx.mjs";
-import { scopeClass } from "../src/rocx.mjs";
+import { build } from "../rocx-cli/rocx.mjs";
+import { scopeClass } from "../rocx-cli/rocx.mjs";
 
 test("packages: rocx build copies a package's components into the app, and `import charts.X` imports the copy", () => {
 	const root = mkdtempSync(join(tmpdir(), "rocx-packages-"));

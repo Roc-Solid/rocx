@@ -2175,7 +2175,7 @@ Routes := [].{
 	row_value = |row|
 		Object([{ key: "method", value: Text(row.method) }, { key: "path", value: Text(row.path) }, { key: "file", value: Text(row.file) }, { key: "middleware", value: Value.text_or_null(row.middleware) }])
 
-	## `rocx internal`'s calls of this module's functions (src/rocx.mjs names them), by name.
+	## `rocx internal`'s calls of this module's functions (rocx-cli/rocx.mjs names them), by name.
 	rpc! : Str, List(Value) => Try(Value, [Failed(Value), Unknown(Str)])
 	rpc! = |name, args| {
 		arg = |i| args.get(i) ?? Null

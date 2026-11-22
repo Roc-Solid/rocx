@@ -178,7 +178,7 @@ routes! = |dir| {
 exit_with : I32 -> Try({}, [Exit(I32)])
 exit_with = |code| if (code == 0) Ok({}) else Err(Exit(code))
 
-## `rocx internal`: a call from the repo's JavaScript (src/rocx.mjs), `{ "fn": …, "args": […] }` on
+## `rocx internal`: a call from the repo's JavaScript (rocx-cli/rocx.mjs), `{ "fn": …, "args": […] }` on
 ## stdin, answered on stdout with `{ "ok": … }` or `{ "error": { "kind", "message", … } }`.
 internal! = |{}| {
 	input = Str.from_utf8_lossy(Stdin.read_to_end!()?)
@@ -196,7 +196,7 @@ internal! = |{}| {
 	Ok({})
 }
 
-## A function of rocx's, by the name src/rocx.mjs calls it.
+## A function of rocx's, by the name rocx-cli/rocx.mjs calls it.
 call! : Str, List(Value) => Try(Value, [Failed(Value), Unknown(Str)])
 call! = |name, args| {
 	known = |result|
@@ -221,7 +221,7 @@ call! = |name, args| {
 	if known(formatted) {
 		return formatted
 	}
-	# Many calls in one process (src/rocx.mjs callMany): each `{ fn, args }`, their answers in order.
+	# Many calls in one process (rocx-cli/rocx.mjs callMany): each `{ fn, args }`, their answers in order.
 	if name == "batch" {
 		var $answers = []
 		for each in Value.items(args.get(0) ?? Null) {

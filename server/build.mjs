@@ -43,14 +43,14 @@ export function roc() {
 }
 
 /**
- * rocx itself (bin/rocx), built from its Roc (src/*.roc, on basic-cli) when it is missing or older
- * than one of them or a file they embed (anything in src/ but the JavaScript): what the repo's scripts and tests run. `ROCX_OPT` picks the optimization
+ * rocx itself (bin/rocx), built from its Roc (rocx-cli/*.roc, on basic-cli) when it is missing or older
+ * than one of them or a file they embed (anything in rocx-cli/ but the JavaScript): what the repo's scripts and tests run. `ROCX_OPT` picks the optimization
  * (`speed` unless it says `dev`). Builds wait for one another (bin/.rocx-building), since the
  * tests run in several processes at once.
  */
 export function rocxBinary() {
 	const out = join(root, "bin", "rocx");
-	const sources = join(root, "src");
+	const sources = join(root, "rocx-cli");
 	const newest = () => Math.max(...readdirSync(sources).filter((name) => !name.endsWith(".mjs")).map((name) => statSync(join(sources, name)).mtimeMs));
 	// What it was built with (`dev` or `speed`), beside it: a dev build doesn't stand in for an optimized one.
 	const opt = process.env.ROCX_OPT === "dev" ? "dev" : "speed";
@@ -75,8 +75,8 @@ export function rocxBinary() {
 		const building = `${out}.building-${process.pid}`;
 		const result = spawnSync(roc(), ["build", `--opt=${opt}`, `--output=${building}`, join(sources, "main.roc")], { encoding: "utf8" });
 		// 1: errors (the binary would crash where they are); 2: warnings only.
-		if (result.status === 1 || !existsSync(building)) throw new Error(`building rocx (src/main.roc) failed:\n${result.stdout}${result.stderr}`);
-		if (result.status === 2) process.stderr.write(`rocx (src/main.roc) built with warnings:\n${result.stdout}${result.stderr}`);
+		if (result.status === 1 || !existsSync(building)) throw new Error(`building rocx (rocx-cli/main.roc) failed:\n${result.stdout}${result.stderr}`);
+		if (result.status === 2) process.stderr.write(`rocx (rocx-cli/main.roc) built with warnings:\n${result.stdout}${result.stderr}`);
 		renameSync(building, out);
 		writeFileSync(stamp, opt);
 		return out;

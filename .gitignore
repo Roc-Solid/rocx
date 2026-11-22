@@ -37,7 +37,7 @@ server/test/build/
 spike/*/platform/targets/
 spike/*/*.wasm
 
-# rocx, built from src/*.roc (server/build.mjs rocxBinary)
+# rocx, built from rocx-cli/*.roc (server/build.mjs rocxBinary)
 bin/rocx
 bin/rocx.building-*
 bin/.rocx-building/

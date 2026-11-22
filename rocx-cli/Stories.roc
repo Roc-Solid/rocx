@@ -160,7 +160,7 @@ Stories := [].{
 		Value.encode(Array(drafts.concat(others))).replace_each("<", "\\u003c")
 	}
 
-	## The catalog: a page of its own (src/catalog.html), whose script needs nothing but the list it
+	## The catalog: a page of its own (rocx-cli/catalog.html), whose script needs nothing but the list it
 	## is given.
 	catalog_html : List(Placed), Str, Str -> Str
 	catalog_html = |stories, title, root| {
@@ -210,7 +210,7 @@ Stories := [].{
 		Object(set(set(Value.fields(given), "id", Text(placed.id)), "alias", Text(placed.alias)))
 	}
 
-	## `rocx internal`'s calls of this module's functions (src/rocx.mjs names them), by name.
+	## `rocx internal`'s calls of this module's functions (rocx-cli/rocx.mjs names them), by name.
 	rpc : Str, List(Value) -> Try(Value, [Failed(Value), Unknown(Str)])
 	rpc = |name, args| {
 		arg = |i| args.get(i) ?? Null

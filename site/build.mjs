@@ -31,7 +31,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync,
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { brotliCompressSync, constants, gzipSync } from "node:zlib";
-import { definitionsOf, findRouteFiles, pathsModule, build as rocxBuild, RocxError, routesTable, routeTable, transpile } from "../src/rocx.mjs";
+import { definitionsOf, findRouteFiles, pathsModule, build as rocxBuild, RocxError, routesTable, routeTable, transpile } from "../rocx-cli/rocx.mjs";
 import { platformReference, referenceModule, rocString } from "./reference.mjs";
 import { Runtime } from "../web/runtime.js";
 import { buildApp, buildHost, rocxBinary, start, syncShared, zig } from "../server/build.mjs";
@@ -357,7 +357,7 @@ function refusals() {
  * a compiler run, so it is kept, and made again only when what makes it changes. */
 function checkReport() {
 	const source = ["import pf.Html", "", "Posts := [].{", "\tview : List(Str) -> Html", "\tview = |posts|", '\t\t<p class="count">', "\t\t\tYou have {posts.len()} posts", "\t\t</p>", "}", ""].join("\n");
-	const inputs = [source, roc(), ...["src/Transpile.roc", "src/Remap.roc", "src/main.roc", "web/platform/Html.roc"].map((path) => readFileSync(join(root, path), "utf8"))];
+	const inputs = [source, roc(), ...["rocx-cli/Transpile.roc", "rocx-cli/Remap.roc", "rocx-cli/main.roc", "web/platform/Html.roc"].map((path) => readFileSync(join(root, path), "utf8"))];
 	const key = createHash("sha256").update(inputs.join("\0")).digest("hex");
 	const kept = join(out, "check-report.json");
 	if (existsSync(kept)) {
