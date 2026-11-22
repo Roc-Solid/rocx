@@ -6,90 +6,11 @@ recommended change (sketched), what in the package depends on it, and how to und
 
 ## 1. Content collections found by `rocx build`
 
-**Problem.** `Collection.load` reads a list of `{ path, source }`, each source a file imported as
-text (`import "content/posts/hello.md" as hello : Str`). Today an app writes that list by hand:
-a new post means a new import and a new line, and forgetting one drops the post without a word.
-Finding the files needs the file system at build time, which only `rocx build` has.
-
-What already works, and decides the design: a top-level value is evaluated when the app is built,
-and a `crash` there is a compile error that `roc check` reports with its message. So a collection
-loaded in a top-level value fails the build on a bad file (tried in a scratch app:
-`bad: draft: expected true or false, found "maybe"`), with no frontmatter checking in JavaScript.
-
-**Options.**
-
-1. `rocx build` finds `content/<name>/**/*.md` and writes a typed module per folder, which loads
-   them as above. Checked at build time; the same on both halves.
-2. The server reads the files when it starts or when asked (a host primitive to read files, and a
-   server-only module, proposal 4). Nothing checked until it runs; the browser can't have them.
-3. Leave it: apps list their files by hand.
-
-**Recommended: 1.** The convention: a folder under `content/` holds the Markdown files (at any
-depth) and one `.roc` file declaring the type of their frontmatter, named for that type.
-
-```
-content/
-  posts/
-    Post.roc            # Post := { title : Str, date : Str, tags : List(Str) ?? [], draft : Bool ?? Bool.False }.{ parser_for : _ }
-    hello-world.md
-    2026/
-      roc-solid.md
-```
-
-`rocx build` writes `Generated/Content/Posts.roc`:
-
-```roc
-## Written by rocx build from content/posts: an entry for each .md file there, its frontmatter a
-## Post. Don't edit it: edit the files.
-import markdown.Collection
-import ../../content/posts/Post
-import "../../content/posts/hello-world.md" as file_0 : Str
-import "../../content/posts/2026/roc-solid.md" as file_1 : Str
-
-Posts := [].{
-	Entry : Collection.Entry(Post)
-
-	## Every post, in the order of their paths. Read when the app is built: a file whose
-	## frontmatter is wrong fails the build, and the message names it.
-	all : List(Posts.Entry)
-	all =
-		match Collection.load([{ path: "hello-world.md", source: file_0 }, { path: "2026/roc-solid.md", source: file_1 }]) {
-			Ok(entries) => entries
-			Err(failed) => crash "content/posts/${Collection.describe(failed)}"
-		}
-
-	## The post with this id (`"2026/roc-solid"`).
-	get : Str -> Try(Posts.Entry, [NotFound])
-	get = |id| Collection.find(Posts.all, id)
-}
-```
-
-A page uses it as any module: `import ../../Generated/Content/Posts`, then `Posts.all`, or
-`Posts.get(slug)` in `routes/blog/[slug]/+page.rocx`.
-
-In `bin/rocx.mjs`, beside `componentPackages(dir)`:
-
-```js
-// Each folder under content/ with Markdown files and one .roc type: Generated/Content/<Name>.roc.
-function contentCollections(dir) {
-	const root = join(dir, "content");
-	if (!existsSync(root)) return [];
-	const alias = headerAliasOf(dir, "markdown"); // the name the app's header gives packages/markdown
-	return readdirSync(root).filter((name) => statSync(join(root, name)).isDirectory()).map((name) => {
-		const folder = join(root, name);
-		const types = readdirSync(folder).filter((file) => /^[A-Z][A-Za-z0-9]*\.roc$/.test(file));
-		if (types.length !== 1) throw new RocxError(`content/${name}: put one .roc file beside the Markdown, its type the frontmatter's`);
-		const markdown = [...files(folder, ".md")].sort();
-		return { name, alias, type: basename(types[0], ".roc"), markdown, out: join(dir, GENERATED, "Content", `${pascalCase(name)}.roc`) };
-	});
-}
-```
-
-…whose outputs go in `routeOutputs` (so a folder that goes takes its module with it), and the dev
-server's watcher also watches `content/**/*.md`.
-
-**Depends on it in the package:** nothing; it uses `Collection.load`, `Collection.find` and
-`Collection.describe`, which exist. **Undo:** delete the generator; an app lists its files again.
+**Done (D-042).** `rocx build` finds each folder under an app's `content/` and writes
+`Generated/Content/<Name>.roc`: its Markdown files (at any depth) imported as text, `files`, and,
+with one `.roc` type beside them, `all` (read as the app is built, a wrong file failing the build)
+and `get(id)`, as sketched here. A folder that goes takes its module with it, and the browser's copy
+has the files. The README's "Frontmatter and collections" says how to use it.
 
 ## 2. Trusted raw HTML in `<Markdown>`
 

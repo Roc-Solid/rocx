@@ -182,11 +182,13 @@ view! = |_|
 				quoted and plain text, <code>|</code> and <code>{">"}</code> blocks, comments, and null, which leaves a
 				field to its default. Not anchors, aliases or tags.
 			</p>
-			<Callout kind="note" title="Listing the files, for now">
+			<Callout kind="note" title="A folder of them, found for you">
 				<p>
-					Each file is imported by hand (<code>{"import \"posts/heron.md\" as heron : Str"}</code>) and named
-					in the list. Until <code>rocx build</code> finds the files in a folder itself, a new post means a
-					new import and a new line.
+					In an app, a folder under <code>content/</code> is a collection: <code>rocx build</code> finds its
+					Markdown files and writes <code>Generated/Content/Posts.roc</code> for <code>content/posts/</code>,
+					each file imported as text. With the frontmatter's type beside them (<code>content/posts/Post.roc</code>),
+					<code>Posts.all</code> is every entry, read as the app is built, and <code>Posts.get(id)</code> one: a
+					new post is a new file. These two are listed by hand, as files of the site's docs.
 				</p>
 			</Callout>
 
@@ -233,13 +235,12 @@ view! = |_|
 					its tag filter.
 				</li>
 				<li><code>{"<Markdown>"}</code>, its hooks and <code>Markdown.highlight</code>, on the server and in the browser.</li>
-				<li>Frontmatter read into a record, collections listed by hand, and a bad file failing the build.</li>
+				<li>Frontmatter read into a record, collections found by <code>rocx build</code> under <code>content/</code>, and a bad file failing the build.</li>
 			</ul>
 			<p>
 				Waits on a proposal (in <code>packages/markdown/PROPOSALS.md</code>):
 			</p>
 			<ul>
-				<li><code>rocx build</code> finding a collection's files in a folder, so they needn't be listed.</li>
 				<li>Trusted raw HTML in <code>{"<Markdown>"}</code>, or HTML from an allowlist.</li>
 				<li>The highlighter these docs use, in a package of its own, so any app can colour code.</li>
 				<li>A component that never hydrates, so <code>{"<Markdown>"}</code> keeps out of the wasm without <code>{"<NoHydration>"}</code> around it.</li>

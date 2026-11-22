@@ -441,7 +441,9 @@ rocx dev [dir]           # build the app (a directory with routes/) and serve it
   --port 8080            # where (PORT); after `--`, the server's own options (--database-url URL)
 rocx build <dir>…        # each .rocx under the directories becomes the .roc beside it;
                          # an app's routes/ become Generated/Routes.roc, Paths.roc, Api.roc and
-                         # App.roc (its program), and, for component route files, Root.roc
+                         # App.roc (its program), and, for component route files, Root.roc;
+                         # each folder under content/, Generated/Content/<Name>.roc (its Markdown
+                         # files; with a type beside them, read: packages/markdown's README)
   --client <out>         # and the browser's copy of the app: an endpoint only its method and URL, a
                          # route file without its middleware, the imports only they used gone;
                          # for component route files, its main.roc and static/rocx/; a warning

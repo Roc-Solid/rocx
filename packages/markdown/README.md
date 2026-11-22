@@ -166,24 +166,34 @@ match Frontmatter.read(source) {
 A missing field without a default, a value of the wrong kind, a tag the union hasn't, a key set
 twice or a line indented wrong is an error that says which, and where.
 
-A collection is a folder of such files. Until `rocx build` finds them for you (PROPOSALS.md), list
-them yourself, each imported as text. Read in a top-level value, they are read when the app is
-built, so a file whose frontmatter is wrong fails the build, naming the file and the field:
+A collection is a folder of such files, under the app's `content/` (D-042). `rocx build` finds
+each folder's Markdown files, at any depth, and writes a module for it,
+`Generated/Content/<Name>.roc` (`content/blog-posts/` is `BlogPosts`), each file imported as text:
+a new post is a new file, and nothing else. With one `.roc` file beside the Markdown, the
+frontmatter's type, the module reads the files too:
+
+```
+content/
+  posts/
+    Post.roc              Post := { title : Str, date : Str, tags : List(Str) ?? [], draft : Bool ?? Bool.False }.{ parser_for : _ }
+    hello.md
+    2026/
+      later.md
+```
 
 ```roc
-import markdown.Collection
-import "content/posts/hello.md" as hello : Str
-import "content/posts/second.md" as second : Str
+import Generated/Content/Posts
 
-Posts := [].{
-	all : List(Collection.Entry(Post))
-	all =
-		match Collection.load([{ path: "hello.md", source: hello }, { path: "second.md", source: second }]) {
-			Ok(entries) => entries.keep_if(|post| !post.data.draft)
-			Err(failed) => crash Collection.describe(failed)   # "second: title is missing"
-		}
-}
+Posts.all                 # List(Collection.Entry(Post)), in the order of their paths
+Posts.get("2026/later")   # Try(Collection.Entry(Post), [NotFound])
+Posts.files               # List({ path, source }): the files as text
 ```
+
+`all` is read when the app is built, so a file whose frontmatter is wrong fails the build, naming
+the file and the field (`content/posts/hello: title is missing`). A folder with no type has `files`
+alone, for an app that reads them its own way: `Collection.load(Posts.files)`, or several folders
+of one type read together (examples/journal's `content/en/` and `content/pl/`). The browser's copy
+has the files too, for a component that reads one.
 
 An entry is `{ id, data, body, doc }`: `id` is its path without `.md` (`2026/hello`), `doc` its
 body parsed.

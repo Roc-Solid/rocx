@@ -1965,3 +1965,45 @@ left in the browser's is where it is bound, is rewritten there.
 
 **Why.** The warning was rocx's doing, not the app's. **Reversible:** yes.
 
+## D-042 `rocx build` finds a collection's files
+
+**Context.** packages/markdown reads a collection from a list of `{ path, source }`, each source a
+file imported as text. Every app wrote that list by hand: a new post meant a new import and a new
+line, and a forgotten one dropped the post without a word (examples/journal listed nineteen).
+Finding files needs the file system at build time, which only `rocx build` has.
+
+**Options.**
+1. `rocx build` lists each folder under `content/` in a module of its own, the files imported as
+   text; with the frontmatter's type beside them, the module reads them too.
+2. The server reads the files when it starts (a host primitive): nothing checked until it runs, and
+   the browser can't have them.
+3. Leave the list to the app.
+
+**Choice.** 1, as packages/markdown's PROPOSALS.md sketched it.
+
+```
+content/posts/Post.roc         # Post := { title : Str, … }.{ parser_for : _ }
+content/posts/hello.md
+content/posts/2026/later.md
+```
+
+```roc
+import Generated/Content/Posts
+
+Posts.files      # List({ path : Str, source : Str }), in the order of their paths
+Posts.all        # with a type: List(Collection.Entry(Post)), read as the app is built
+Posts.get(id)    # Try(Collection.Entry(Post), [NotFound])
+```
+
+- A folder's module is named after it (`content/blog-posts/` is `BlogPosts`), a name in lower case
+  as a route's directory is; one `.roc` type beside the Markdown at most. `all` crashes on a wrong
+  file, which `roc check` reports as the build's error, naming the file.
+- A folder that goes takes its module with it; a new file is in it at the next build. `rocx dev`
+  rebuilds on a change to one, as on any file of the app.
+- The browser's copy has the files too, for a component that reads one.
+- With no type, the module has `files` alone, for an app that reads them its own way:
+  examples/journal reads `content/en/` and `content/pl/` with one `Post` type and rules of its own.
+
+**Why.** A collection is a folder; listing it by hand was a chore that could silently drop a file.
+**Reversible:** yes: an app lists its files again.
+

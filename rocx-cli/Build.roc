@@ -8,6 +8,7 @@ import Transpile
 import Routes
 import Stories
 import ServerOnly
+import Content
 
 Build := [].{
 
@@ -381,6 +382,35 @@ Build := [].{
 				}
 			}
 		}
+		# The content collections (D-042): each folder under content/, its module under
+		# Generated/Content/, the Markdown files it lists imported as text.
+		match Content.collections!(dir) {
+			Err(Problem(why)) => {
+				$said = $said.append("✗ ${here}/${why}")
+				$failed = Bool.True
+			}
+			Ok(collections) => {
+				markdown = Build.package_with!(dir, "Collection")
+				for found in collections {
+					out = Fs.join([dir, Build.generated, "Content", "${found.mod}.roc"])
+					$route_outputs = $route_outputs.append(out)
+					typed =
+						match found.frontmatter {
+							Some(_) => Bool.True
+							None => Bool.False
+						}
+					if typed and markdown.is_empty() {
+						$said = $said.append("✗ ${here}/content/${found.name}: its frontmatter has a type, and the app's header names no markdown package: add markdown: \"…/packages/markdown/main.roc\" to it")
+						$failed = Bool.True
+					} else if Fs.exists!(out) and !Build.is_generated!(out) {
+						$said = $said.append("✗ ${Fs.relative(cwd, out)} exists and was not written by rocx; rename it")
+						$failed = Bool.True
+					} else if Build.write!(out, Content.module_text(found, markdown)) {
+						$written = $written + 1
+					}
+				}
+			}
+		}
 		if route_files.is_empty() and !$styles.is_empty() {
 			files = Str.join_with(Text.unique($styles.map(|style| style.file)), ", ")
 			$said = $said.append("rocx: ${here} has <style>s (${files}) but no routes/, so no layout to put them in")
@@ -680,6 +710,14 @@ Build := [].{
 					None => Fs.read_or_empty!(path)
 				}
 			_ = Build.write!(to, Build.move_header(code, path, to))
+		}
+		# The content collections' files (D-042), which their modules import: the browser's copy has them
+		# too, for a component that reads one.
+		content = Fs.join([dir, "content"])
+		if Fs.is_dir!(content) {
+			for path in Fs.files!(content, ".md", skip) {
+				_ = Build.write!(Fs.join([target, Fs.relative(dir, path)]), Fs.read_or_empty!(path))
+			}
 		}
 		# An app of component pages: the browser's app (main.roc, its root the app's page), and what
 		# a page loads beside the wasm built from it (`static/rocx/`, served at /rocx/).
