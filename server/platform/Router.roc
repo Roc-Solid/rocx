@@ -43,7 +43,7 @@ Router := [].{
 	use_submission! = |endpoint| {
 		url = Endpoint.url_of(endpoint)
 		Host.action!(url)
-		Submission.of(url)
+		Submission.of(url, Endpoint.form_of(endpoint))
 	}
 
 	## Every submission to `endpoint`, each its own (Solid Router's `useSubmissions(action)`): its
@@ -56,7 +56,7 @@ Router := [].{
 	use_submissions! = |endpoint| {
 		url = Endpoint.url_of(endpoint)
 		Host.action!(url)
-		Submissions.of(url)
+		Submissions.of(url, Endpoint.form_of(endpoint))
 	}
 
 	## Sends `endpoint` from a handler, without a form, and without the handler waiting for its

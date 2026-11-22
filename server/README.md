@@ -309,11 +309,11 @@ has, in order, and missing is `[]`; a tag with no payload is the one its text na
 A `Str` is the text as typed. A `Str` or a number that is missing (a number left empty too), or
 text that isn't its type, is a 400 naming the field (`the field count needs a whole number, 0 or
 more, not "two"`). A field a non-list has twice is its last value (a hidden default before a
-checkbox); a field the body has and the record doesn't is let be. `Endpoint.local` makes the reader,
-where the route's types are known; a function generic in its arg as JSON alone (packages/mcp's
-tools) makes its endpoints with `Endpoint.local_json`, which reads a form's fields as strings. In
-the browser, a submission's `input!` reads a form's fields as strings until `Api` is typed in both
-copies (D-037).
+checkbox); a field the body has and the record doesn't is let be. `Endpoint.remote` makes the
+reader, where `Generated/Api` gives the contract its types, and `bind` keeps it (`Endpoint.local`
+makes one too); a function generic in its arg as JSON alone (packages/mcp's tools) makes its
+endpoints with `Endpoint.local_json`, which reads a form's fields as strings. The browser's
+submissions read a form the runtime sent with the same reader (`input!`, `pending_inputs!`).
 
 A form a browser posts without the runtime (a plain `<form method="post">`: a form's body,
 `application/x-www-form-urlencoded`, from a page, `accept: text/html`) would get a page of JSON, or

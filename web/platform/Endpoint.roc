@@ -61,6 +61,15 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	bind : Endpoint(context, arg, result), (Server.Request, context, arg => Try(result, Refusal)) -> Endpoint(context, arg, result)
 	bind = |endpoint, handler| { method: endpoint.method, url: endpoint.url, run: handler, form: endpoint.form }
 
+	## Its reader of a form's fields as its arg (`FormBody`), or why it can't: what a submission of a
+	## form to it reads what was typed with (`Router.use_submission!`, `Submission.input!`).
+	form_of : Endpoint(context, arg, result) -> (List({ name : Str, value : Str }) -> Try(arg, Str))
+	form_of = |endpoint|
+		match endpoint.form {
+			Typed(reader) => reader
+			Untyped => |_| Err("${endpoint.method} ${endpoint.url} reads JSON alone (Endpoint.local_json)")
+		}
+
 	## A GET endpoint's answer, as a plain value, for a component or a computation
 	## (`create_memo!(|| Endpoint.get!(Api.get_profile({ id })))`): one definition of a page's data,
 	## the endpoint's, read where the page renders.

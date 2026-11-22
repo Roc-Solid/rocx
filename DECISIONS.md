@@ -2083,25 +2083,33 @@ FormBody.parse : List({ name : Str, value : Str }) -> Try(a, Str) where [a.FormB
 
 # web/platform/Endpoint.roc
 Endpoint(c, a, r) :: { method, url, run, form : [Typed(List({ name : Str, value : Str }) -> Try(a, Str)), Untyped] }
-Endpoint.local : Str, Str, handler -> Endpoint(c, a, r) where [a.FormBody.Readable]   # the reader, made here
+Endpoint.remote : Str, Str -> Endpoint(c, a, r) where [a.FormBody.Readable]           # Api's contract: the reader, made here
+Endpoint.bind : Endpoint(c, a, r), handler -> Endpoint(c, a, r)                        # keeps the contract's reader
+Endpoint.local : Str, Str, handler -> Endpoint(c, a, r) where [a.FormBody.Readable]   # an endpoint outside the routes: here too
 Endpoint.local_json : Str, Str, handler -> Endpoint(c, a, r)                          # none: a form's fields as strings
+Endpoint.form_of : Endpoint(c, a, r) -> (List({ name : Str, value : Str }) -> Try(a, Str))
+
+# web/platform/Submission.roc, Submissions.roc: the endpoint's reader, given by use_submission(s)!
+Submission.of : Str, (List({ name : Str, value : Str }) -> Try(a, Str)) -> Submission(a, r)
 ```
 
 - **Where the reader is made.** A where clause naming both formats
   (`[a.FormBody.Readable, a.Json.Parseable(…)]`) crashes the compiler (test/compiler-bugs/
-  two-formats-one-where). So `respond!` asks for `Json.Parseable` alone, and uses the reader the
-  endpoint was made with: `Endpoint.local` makes it, where the route's arg type is known.
+  two-formats-one-where). So `respond!` and `Submission.input!` ask for `Json.Parseable` alone,
+  and use the reader the endpoint was made with. `Endpoint.remote` makes it: `Generated/Api` gives
+  each contract its handler's types (D-037), in the browser's copy as on the server, so the
+  reader is typed in both; `bind` keeps it for the router. `Router.use_submission!` and
+  `use_submissions!` give it to the submissions, so a form the runtime sent, or a plain form's
+  flash, is read in the browser as the server reads it (`input!`, `pending_inputs!`, `all!`).
 - **`local_json`.** A function generic in its arg as JSON alone can't call `local`: packages/mcp's
-  `McpHttp.function` and its tools' type witness use `local_json`, whose endpoints read a form, if
-  one is ever posted to them, as strings, as before.
-- **The browser's half follows D-037.** The browser's `Api` is untyped (`Endpoint.remote`, the
-  route files aren't in its copy), so its endpoints have no reader yet, and a submission's
-  `input!`/`pending_inputs!` read a form's fields as strings, as before. Once D-037 types `Api` in
-  both copies, `remote` makes the reader too, the browser reads a form submission by its types, and
-  examples/tasks' toggle and move leave their strings.
+  `McpHttp.function`, and the type witnesses it hands `OpenApi`, use `local_json`, whose endpoints
+  read a form, if one is ever posted to them, as strings, as before.
+- **Built in two steps.** The server's half landed first, while `Api` was still untyped in the
+  browser's copy; once D-037 typed it, the reader moved onto `remote`, the browser's submissions
+  took it, and examples/tasks' toggle and move left their strings (`done : Bool`, `to : U64`).
 
 **Why.** One endpoint, one type, for every way it is sent; and the rules are the type's, not a
-guess. **Reversible:** yes: `local` without the reader reads strings again.
+guess. **Reversible:** yes: `remote` and `local` without the reader read strings again.
 
 ## D-040 Client-side navigation
 

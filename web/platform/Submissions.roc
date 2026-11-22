@@ -18,16 +18,17 @@ import Submission
 ## Submissions are kept by the endpoint's URL: an endpoint with params in its path has a list for
 ## each URL, so what varies goes in its body. Their types are the endpoint's, from the app's
 ## contract (`Generated/Api`, D-037), in the browser's copy as on the server.
-Submissions(arg, result) :: { url : Str }.{
+Submissions(arg, result) :: { url : Str, form : List({ name : Str, value : Str }) -> Try(arg, Str) }.{
 
 	## A submission as it is now, Solid's fields: whether it is on its way (`pending`), what it sent,
 	## as the endpoint reads it (`input`), and the endpoint's result or refusal; its `id`, unique on
 	## the page, keys it (`<For keyed={|move| move.id}>`) and forgets it (`clear!`).
 	Sent(arg, result) : { id : U64, pending : Bool, input : Try(arg, [NoInput]), result : Try(result, [NoResult]), error : Try(Server.Problem, [NoError]) }
 
-	## The submissions to the endpoint at `url`: `Router.use_submissions!` makes them.
-	of : Str -> Submissions(arg, result)
-	of = |to| { url: to }
+	## The submissions to the endpoint at `url`, whose arg a form's fields are read as by `form` (the
+	## endpoint's reader, `Endpoint.form_of`): `Router.use_submissions!` makes them.
+	of : Str, (List({ name : Str, value : Str }) -> Try(arg, Str)) -> Submissions(arg, result)
+	of = |to, form| { url: to, form: form }
 
 	## Each one, oldest first, as it is now: those on their way, and those answered, until forgotten
 	## (`clear!`). A computation that reads them runs again when one changes. Without the runtime,
@@ -37,8 +38,8 @@ Submissions(arg, result) :: { url : Str }.{
 		where [arg.Json.Parseable([InvalidJson(Str)]), result.Json.Parseable([InvalidJson(Str)])]
 	all! = |submissions|
 		match listed!(Submissions.url_of(submissions)) {
-			Listed(entries) => entries.map(|entry| sent_of(entry.id, entry.state == "pending", Submission.parse_input(entry.input, entry.json), entry.status, entry.body))
-			Flashed(flash) => [sent_of(0, Bool.False, Submission.parse_input(Submission.form_body(flash.fields), Bool.False), flash.status, flash.body)]
+			Listed(entries) => entries.map(|entry| sent_of(entry.id, entry.state == "pending", Submission.parse_input(submissions.form, entry.input, entry.json), entry.status, entry.body))
+			Flashed(flash) => [sent_of(0, Bool.False, Submission.parse_input(submissions.form, Submission.form_body(flash.fields), Bool.False), flash.status, flash.body)]
 			Unlisted => []
 		}
 
@@ -55,7 +56,7 @@ Submissions(arg, result) :: { url : Str }.{
 	pending_inputs! : Submissions(arg, result) => List(arg) where [arg.Json.Parseable([InvalidJson(Str)])]
 	pending_inputs! = |submissions|
 		match listed!(Submissions.url_of(submissions)) {
-			Listed(entries) => entries.keep_if(|entry| entry.state == "pending").keep_oks(|entry| Submission.parse_input(entry.input, entry.json))
+			Listed(entries) => entries.keep_if(|entry| entry.state == "pending").keep_oks(|entry| Submission.parse_input(submissions.form, entry.input, entry.json))
 			_ => []
 		}
 

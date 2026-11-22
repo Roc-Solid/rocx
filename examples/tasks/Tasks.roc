@@ -31,13 +31,14 @@ Tasks := [].{
 	## Which tasks a list shows: `?show=open` in its URL.
 	Filter : [All, Open, Done, Mine]
 
-	## What the changes to a list send, each a record of strings: a plain form posts its fields as
-	## strings, and an action (`use_action!`) sends the same record as JSON, so one endpoint
-	## answers both. Each says where things end up (done or not, at which place), not "one more",
-	## so applying one twice changes nothing: the page applies the changes still on their way to
-	## data the server may already have changed (DECISIONS.md, D-030).
-	Toggle : { id : Str, done : Str }
-	Move : { id : Str, to : Str }
+	## What the changes to a list send: a plain form posts its fields, which the endpoint reads by
+	## these types (`done=true` a `Bool`, `to=2` a `U64`: D-038), and an action (`use_action!`)
+	## sends the same record as JSON, so one endpoint answers both. Each says where things end up
+	## (done or not, at which place), not "one more", so applying one twice changes nothing: the
+	## page applies the changes still on their way to data the server may already have changed
+	## (DECISIONS.md, D-030).
+	Toggle : { id : Str, done : Bool }
+	Move : { id : Str, to : U64 }
 	Remove : { id : Str }
 	Adding : { title : Str, due : Str, assignee : Str }
 
@@ -97,7 +98,7 @@ Tasks := [].{
 
 	## A task done, or open again.
 	toggled : List(Task), Toggle -> List(Task)
-	toggled = |tasks, { id, done }| tasks.map(|task| if (task.id == id) { ..task, done: done == "true" } else task)
+	toggled = |tasks, { id, done }| tasks.map(|task| if (task.id == id) { ..task, done: done } else task)
 
 	## A task gone.
 	removed : List(Task), Remove -> List(Task)
@@ -106,16 +107,16 @@ Tasks := [].{
 	## A task at another place: taken out, then put at `to` (counted without it), or last.
 	moved : List(Task), Move -> List(Task)
 	moved = |tasks, { id, to }|
-		match (tasks.find_first_index(|task| task.id == id), U64.from_str(to)) {
-			(Ok(from), Ok(place)) =>
+		match tasks.find_first_index(|task| task.id == id) {
+			Ok(from) =>
 				match tasks.get(from) {
 					Ok(task) => {
 						rest = tasks.drop_at(from)
-						rest.insert(U64.min(place, rest.len()), task) ?? tasks
+						rest.insert(U64.min(to, rest.len()), task) ?? tasks
 					}
 					Err(OutOfBounds) => tasks
 				}
-			_ => tasks
+			Err(_) => tasks
 		}
 
 	## Tasks being added, at the end, as they will be once the server has them. Until then each has
@@ -241,25 +242,24 @@ expect Tasks.open_label([]) == "Nothing yet"
 expect Tasks.open_label(Tasks.visible(sample, Done, "")) == "All done"
 
 # A toggle, a delete and a move say where things end up, so applying one twice is applying it once.
-expect ids(Tasks.visible(Tasks.toggled(Tasks.toggled(sample, { id: "2", done: "false" }), { id: "2", done: "false" }), Done, "")) == ""
+expect ids(Tasks.visible(Tasks.toggled(Tasks.toggled(sample, { id: "2", done: Bool.False }), { id: "2", done: Bool.False }), Done, "")) == ""
 expect ids(Tasks.removed(Tasks.removed(sample, { id: "3" }), { id: "3" })) == "1,2,4"
-expect ids(Tasks.moved(sample, { id: "4", to: "0" })) == "4,1,2,3"
-expect ids(Tasks.moved(Tasks.moved(sample, { id: "4", to: "0" }), { id: "4", to: "0" })) == "4,1,2,3"
-expect ids(Tasks.moved(sample, { id: "1", to: "9" })) == "2,3,4,1"
-expect ids(Tasks.moved(sample, { id: "9", to: "0" })) == "1,2,3,4"
-expect ids(Tasks.moved(sample, { id: "1", to: "up" })) == "1,2,3,4"
+expect ids(Tasks.moved(sample, { id: "4", to: 0 })) == "4,1,2,3"
+expect ids(Tasks.moved(Tasks.moved(sample, { id: "4", to: 0 }), { id: "4", to: 0 })) == "4,1,2,3"
+expect ids(Tasks.moved(sample, { id: "1", to: 9 })) == "2,3,4,1"
+expect ids(Tasks.moved(sample, { id: "9", to: 0 })) == "1,2,3,4"
 
 # Dropped on another task, a task takes its place: past it, from above or from below.
-expect ids(Tasks.moved(sample, { id: "1", to: (Tasks.place_of(sample, "3") ?? 0).to_str() })) == "2,3,1,4"
-expect ids(Tasks.moved(sample, { id: "4", to: (Tasks.place_of(sample, "2") ?? 0).to_str() })) == "1,4,2,3"
+expect ids(Tasks.moved(sample, { id: "1", to: (Tasks.place_of(sample, "3") ?? 0) })) == "2,3,1,4"
+expect ids(Tasks.moved(sample, { id: "4", to: (Tasks.place_of(sample, "2") ?? 0) })) == "1,4,2,3"
 
 # Moving among the open tasks (1, 3, 4): 3 goes up past 1, and 1 goes down past 3.
 expect Tasks.place_above(sample, Tasks.visible(sample, Open, ""), "3") == Ok(0)
 expect Tasks.place_above(sample, sample, "1") == Err(Top)
-expect ids(Tasks.moved(sample, { id: "1", to: (Tasks.place_below(sample, Tasks.visible(sample, Open, ""), "1") ?? 0).to_str() })) == "2,3,1,4"
+expect ids(Tasks.moved(sample, { id: "1", to: (Tasks.place_below(sample, Tasks.visible(sample, Open, ""), "1") ?? 0) })) == "2,3,1,4"
 expect Tasks.place_below(sample, sample, "4") == Err(Bottom)
 
-expect ids(Tasks.showing(sample, { toggles: [], moves: [{ id: "3", to: "0" }], removes: [{ id: "2" }], adds: [{ title: " Milk ", due: "", assignee: "" }] })) == "3,1,4,new-0"
+expect ids(Tasks.showing(sample, { toggles: [], moves: [{ id: "3", to: 0 }], removes: [{ id: "2" }], adds: [{ title: " Milk ", due: "", assignee: "" }] })) == "3,1,4,new-0"
 expect Tasks.showing(sample, { toggles: [], moves: [], removes: [], adds: [{ title: " Milk ", due: "", assignee: "" }] }).last().map_ok(|each| each.title) == Ok("Milk")
 
 expect Tasks.due("2026-11-20", "2026-11-22") == Ok({ label: "Overdue · Nov 20", tone: Overdue })

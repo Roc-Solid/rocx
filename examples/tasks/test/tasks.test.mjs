@@ -196,7 +196,7 @@ test("moving tasks: up and down with forms, anywhere as JSON, the same way the p
 	assert.equal((await person.post("/api/tasks/move", { id: c, to: up.attr("value") })).status, 303);
 	assert.deepEqual(await titles(person, id), ["A", "C", "B"]);
 	// A drop sends the same record as JSON (an action).
-	assert.equal((await person.json("/api/tasks/move", { id: a, to: "2" })).status, 200);
+	assert.equal((await person.json("/api/tasks/move", { id: a, to: 2 })).status, 200);
 	assert.deepEqual(await titles(person, id), ["C", "B", "A"]);
 	const rows = await db.sql`select title, position from tasks where list_id = ${Number(id)} order by position`;
 	assert.deepEqual(rows, [{ title: "C", position: 0 }, { title: "B", position: 1 }, { title: "A", position: 2 }]);

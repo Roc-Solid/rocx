@@ -14,11 +14,13 @@ import Server
 ##
 ## A submission the endpoint answers with its result (200) stays pending until the page's reads
 ## (`Endpoint.get!`) have been read again, so what the page shows next is the server's, all at once.
-Submission(arg, result) :: { url : Str }.{
+Submission(arg, result) :: { url : Str, form : List({ name : Str, value : Str }) -> Try(arg, Str) }.{
 
-	## The latest submission to the endpoint at `url`: `Router.use_submission!` makes one.
-	of : Str -> Submission(arg, result)
-	of = |to| { url: to }
+	## The latest submission to the endpoint at `url`, whose arg a form's fields are read as by
+	## `form` (the endpoint's reader, `Endpoint.form_of`: by the arg's type, D-038):
+	## `Router.use_submission!` makes one.
+	of : Str, (List({ name : Str, value : Str }) -> Try(arg, Str)) -> Submission(arg, result)
+	of = |to, form| { url: to, form: form }
 
 	## The URL of the endpoint it is to: what the form's `action` is.
 	url_of : Submission(arg, result) -> Str
@@ -38,8 +40,8 @@ Submission(arg, result) :: { url : Str }.{
 	input! : Submission(arg, result) => Try(arg, [NoInput]) where [arg.Json.Parseable([InvalidJson(Str)])]
 	input! = |submission|
 		match sent_of(latest!(submission)) {
-			Ok(Form(fields)) => Submission.parse_input(fields, Bool.False)
-			Ok(Json(json)) => Submission.parse_input(json, Bool.True)
+			Ok(Form(fields)) => Submission.parse_input(submission.form, fields, Bool.False)
+			Ok(Json(json)) => Submission.parse_input(submission.form, json, Bool.True)
 			Err(NoInput) => Err(NoInput)
 		}
 
@@ -89,16 +91,22 @@ Submission(arg, result) :: { url : Str }.{
 	form_body : List({ name : Str, value : Str }) -> Str
 	form_body = |fields| Str.join_with(fields.map(|field| "${Server.encode_segment(field.name)}=${Server.encode_segment(field.value)}"), "&")
 
-	## The arg a submission's input is, as its endpoint reads it: a form's body (`name=Ada`), read as
-	## a record of its fields; or, `json`, an action's arg as JSON. `Err(NoInput)` when it isn't one.
-	parse_input : Str, Bool -> Try(arg, [NoInput]) where [arg.Json.Parseable([InvalidJson(Str)])]
-	parse_input = |input, json| {
-		text = if (json) input else fields_json(Server.form_fields(input))
-		match Json.parse(text) {
-			Ok(parsed) => Ok(parsed)
-			Err(InvalidJson(_)) => Err(NoInput)
+	## The arg a submission's input is, as its endpoint reads it: a form's body (`name=Ada`), read by
+	## `form`, the endpoint's reader (its arg's types: a number from its text, a box left unticked
+	## `Bool.False`); or, `json`, an action's arg as JSON. `Err(NoInput)` when it isn't one.
+	parse_input : (List({ name : Str, value : Str }) -> Try(arg, Str)), Str, Bool -> Try(arg, [NoInput]) where [arg.Json.Parseable([InvalidJson(Str)])]
+	parse_input = |form, input, json|
+		if json {
+			match Json.parse(input) {
+				Ok(parsed) => Ok(parsed)
+				Err(InvalidJson(_)) => Err(NoInput)
+			}
+		} else {
+			match form(Server.form_fields(input)) {
+				Ok(parsed) => Ok(parsed)
+				Err(_) => Err(NoInput)
+			}
 		}
-	}
 }
 
 ## The latest submission, as the runtime has it, or, when it has none, the flash, if it is the
@@ -143,11 +151,6 @@ sent_of = |latest|
 		Idle => Err(NoInput)
 	}
 
-## Fields as a JSON object of strings, as an endpoint reads a form.
-fields_json : List({ name : Str, value : Str }) -> Str
-fields_json = |fields| "{${Str.join_with(fields.map(|field| "${Json.to_str(field.name)}:${Json.to_str(field.value)}"), ",")}}"
-
 expect Submission.form_body([{ name: "name", value: "Ada L" }, { name: "plan", value: "a&b" }]) == "name=Ada%20L&plan=a%26b"
 expect Server.form_fields(Submission.form_body([{ name: "name", value: "Ada L" }, { name: "plan", value: "a&b" }])) == [{ name: "name", value: "Ada L" }, { name: "plan", value: "a&b" }]
-expect fields_json([{ name: "name", value: "Ada \"L\"" }]) == "{\"name\":\"Ada \\\"L\\\"\"}"
 expect parsed("{\"state\":\"done\",\"input\":\"name=\",\"json\":false,\"status\":400,\"body\":\"no\"}") == Ok({ state: "done", input: "name=", json: Bool.False, status: 400, body: "no" })

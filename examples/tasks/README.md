@@ -131,10 +131,12 @@ Two more were fixed in rocx and the platform since (9, 10).
    `live.reset!()` starts a form afresh where it is, and `live.accepted!()` says the endpoint took
    what was sent: `AddTask` resets once it has, and the title field keeps focus (and, its props
    being getters since D-039, the list read again after an add doesn't make it anew either).
-3. **One endpoint for a form and an action takes a record of strings.** A plain form posts strings,
-   and the runtime sends an action's arg as JSON, so an endpoint both reach reads strings:
-   `{ id : Str, done : Str }`, `done` `"true"`, and `to` a place as text (`Tasks.Toggle`,
-   `Tasks.Move`). A typed form decoding (`"2"` as a `U64`) would make these `U64` and `Bool`.
+3. **Fixed: one endpoint for a form and an action took a record of strings.** A plain form posts
+   strings, and the runtime sends an action's arg as JSON, so an endpoint both reach read strings:
+   `{ id : Str, done : Str }`, `done` `"true"`, and `to` a place as text. A form's fields are read
+   by the endpoint's types now (D-038), on the server and in the browser's submissions, so
+   `Tasks.Toggle` is `{ id : Str, done : Bool }` and `Tasks.Move` `{ id : Str, to : U64 }`, from a
+   row's form and from a drop's action alike.
 4. **A form's endpoint reads the body twice.** `Tasks.Adding` is the add form's fields as strings,
    so the list can show a task while it is on its way (`pending_inputs!` gives the endpoint's arg),
    and `TaskForm.adding.parse_body(Server.text_of(request))` reads the same body again, checked.

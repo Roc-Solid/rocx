@@ -46,7 +46,7 @@ TaskRow := [].{
 				{}
 			} else {
 				match Tasks.place_of(tasks!(), id!()) {
-					Ok(place) => move!({ id: dragged, to: place.to_str() })
+					Ok(place) => move!({ id: dragged, to: place })
 					Err(NotFound) => {}
 				}
 			}

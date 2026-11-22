@@ -9,4 +9,4 @@ import ../../../../Tasks
 ## (a 303, which `Endpoint.respond!` sends a plain form); with it, the runtime sends it with fetch,
 ## and the list shows the change before the answer is in.
 post! : { request : Server.Request, params : {}, context : Middlewares.Context, body : Tasks.Toggle } => Try({}, Endpoint.Refusal)
-post! = |{ body, .. }| Store.toggle!(body.id, body.done == "true").map_err(Store.refusal)
+post! = |{ body, .. }| Store.toggle!(body.id, body.done).map_err(Store.refusal)
