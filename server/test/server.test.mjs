@@ -1466,14 +1466,16 @@ test("plugins: an early path is answered before the app, only under the flag it 
 	}
 });
 
-test("a sqlite: URL stops a Postgres app at start, saying which it wants (D-045), and makes no file", { skip }, async () => {
-	const wrong = join(dir, "wrong", "app.db");
-	const refused = await start(["--database-url", `sqlite:${wrong}`], app, mailEnv()).then(
-		() => assert.fail("it started"),
-		(error) => error,
-	);
-	assert.match(refused.message, /the app's database is Postgres \(its program's `database`\), and --database-url \(or DATABASE_URL\) is a sqlite: one/);
-	assert.ok(!existsSync(wrong));
+test("a sqlite: or turso: URL stops a Postgres app at start, saying which it wants (D-045, D-046), and makes no file", { skip }, async () => {
+	for (const scheme of ["sqlite", "turso"]) {
+		const wrong = join(dir, "wrong", `${scheme}.db`);
+		const refused = await start(["--database-url", `${scheme}:${wrong}`], app, mailEnv()).then(
+			() => assert.fail("it started"),
+			(error) => error,
+		);
+		assert.match(refused.message, /the app's database is Postgres \(its program's `database`\), and --database-url \(or DATABASE_URL\) is a sqlite: or turso: one/);
+		assert.ok(!existsSync(wrong));
+	}
 });
 
 test("plugins: a plugin's table, applied after the platform's and before the app's, recorded under the plugin's name", { skip: skipDb }, async () => {

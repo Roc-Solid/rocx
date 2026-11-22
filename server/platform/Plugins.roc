@@ -72,7 +72,7 @@ Plugins := [].{
 							$found = $found.append("${plugin.name}: it needs Postgres, and the app's database is ${described(Host.db_flavor!({}))}")
 						}
 					Sqlite =>
-						if Host.db_flavor!({}) != "sqlite" {
+						if Host.db_flavor!({}) != "sqlite" and Host.db_flavor!({}) != "turso" {
 							$found = $found.append("${plugin.name}: it needs SQLite, and the app's database is ${described(Host.db_flavor!({}))}")
 						}
 					Plugin(_) => {}
@@ -258,5 +258,6 @@ described = |flavor|
 	match flavor {
 		"postgres" => "Postgres"
 		"sqlite" => "SQLite"
+		"turso" => "Turso"
 		_ => "none"
 	}

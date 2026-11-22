@@ -56,8 +56,9 @@ Plugin := [].{
 	Early : { method : Str, path : Str, under : List([Dev, Debug]), answer! : Server.Request => Server.Response }
 
 	## A table: its SQL, applied once, recorded as `<plugin>/<name>`. `on` says which database it is
-	## for (D-045): `Any` (the default), `Postgres` or `Sqlite`; the server applies those of its own,
-	## so a plugin that works with both lists one of each under one name.
+	## for (D-045): `Any` (the default), `Postgres` or `Sqlite` (Turso's too: its SQL is SQLite's,
+	## D-046); the server applies those of its own, so a plugin that works with both lists one of
+	## each under one name.
 	Migration := { name : Str, sql : Str, on : [Any, Postgres, Sqlite] ?? Any }
 
 	## A function the plugin runs in a call of its own (`Plugin.isolated!`), named
@@ -80,7 +81,8 @@ Plugin := [].{
 
 	## What a plugin needs that the compiler can't see: an environment variable that is set; a
 	## database, any (`Database`), or one flavor (`Postgres`, `Sqlite`: a package may work with one
-	## alone, D-045); another plugin in the app's list (which then comes first).
+	## alone, D-045; Turso meets `Sqlite`, D-046); another plugin in the app's list (which then comes
+	## first).
 	Need : [Env(Str), Database, Postgres, Sqlite, Plugin(Str)]
 
 	## What the platform keeps of a plugin (`program.plugins`): all but its routes, which the app's

@@ -746,17 +746,18 @@ pub extern "C" fn roc_host_env_var(name: RocStr) -> TextResult {
     text_or_error(guarded(|| std::env::var_os(&name).map(|value| value.to_string_lossy().into_owned()).ok_or_else(String::new)))
 }
 
-// ---- The database (Postgres or SQLite) ----
+// ---- The database (Postgres, SQLite or Turso) ----
 
-/// Opens the app's database at `url` (`postgres://…`, `sqlite:<path>`), which the platform's start
-/// works out from the program and `--database-url`: its flavor ("postgres", "sqlite").
+/// Opens the app's database at `url` (`postgres://…`, `sqlite:<path>`, `turso:<path>`), which the
+/// platform's start works out from the program and `--database-url`: its flavor ("postgres",
+/// "sqlite", "turso").
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_db_open(url: RocStr) -> TextResult {
     let url = taken(url);
     text_or_error(wait(async { db::open(&url).await.map(|flavor| flavor.name().to_string()) }))
 }
 
-/// The database the server opened: "postgres", "sqlite", or "" for none.
+/// The database the server opened: "postgres", "sqlite", "turso", or "" for none.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_db_flavor() -> RocStr {
     roc_str(db::flavor().map(db::Flavor::name).unwrap_or(""))
@@ -764,10 +765,10 @@ pub extern "C" fn roc_host_db_flavor() -> RocStr {
 
 /// Tells the listeners of `channel` (the topic `db:<channel>`) `payload`, when the call's transaction
 /// commits (never, if it rolls back), or at once outside one: on Postgres with `pg_notify`, which
-/// other processes hear too; on SQLite in the process, the host keeping the call's notices.
+/// other processes hear too; on SQLite and Turso in the process, the host keeping the call's notices.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_db_notify(channel: RocStr, payload: RocStr) -> HostDbScriptResult {
-    if db::flavor() == Some(db::Flavor::Sqlite) {
+    if db::flavor().is_some_and(db::Flavor::in_process) {
         let (channel, payload) = (taken(channel), taken(payload));
         let kept = CALL.with(|context| {
             let mut context = context.borrow_mut();

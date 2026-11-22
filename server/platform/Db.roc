@@ -1,13 +1,17 @@
 import Host
 
-## The app's database: Postgres or SQLite, as its program says (`database`, D-045). Its SQL is the
-## app's, in its database's flavor: nothing is translated.
+## The app's database: Postgres, SQLite or Turso, as its program says (`database`, D-045, D-046).
+## Its SQL is the app's, in its database's flavor: nothing is translated.
 ##
 ## - Postgres is at `--database-url` (or `DATABASE_URL`); without one the app has no database.
 ## - SQLite is a file in the server's process, at the program's `Sqlite(path)` (or a `sqlite:<path>`
 ##   `--database-url`), made when missing. Reads go on while a write does; writes take turns. So keep
 ##   anything slow (`Http.fetch!`, a wait) out of a transaction: on SQLite it holds every other write
 ##   back until it ends.
+## - Turso is SQLite written again in Rust: the same SQL, a file in SQLite's format, the same
+##   rules, at the program's `Turso(path)` (or a `turso:<path>` `--database-url`, which runs a
+##   SQLite app on Turso too). What is said of SQLite here holds for it, but that the server keeps
+##   its file to itself while it runs (no `sqlite3` beside it) and it has no FTS5.
 ##
 ## A statement's parameters are `$1`, `$2`, …, given as `Value`s, in both. Postgres reads each as the
 ## type its place wants (`where id = $1` reads `Int(7)` as an integer); SQLite is given each as it
@@ -153,12 +157,26 @@ Db := [].{
 	connected! : {} => Bool
 	connected! = |{}| !Host.db_flavor!({}).is_empty()
 
-	## The database the server has: a package with SQL for both runs its flavor's.
+	## The database the server has, as its SQL: a package with SQL for both runs its flavor's.
+	## Turso's SQL is SQLite's, so a Turso app's answer is `Sqlite` (`engine!` tells them apart).
 	backend! : {} => [Postgres, Sqlite, None]
 	backend! = |{}|
 		match Host.db_flavor!({}) {
 			"postgres" => Postgres
 			"sqlite" => Sqlite
+			"turso" => Sqlite
+			_ => None
+		}
+
+	## The engine the server runs its statements on (D-046): Postgres, SQLite, or Turso (SQLite's SQL,
+	## Turso's engine). For what one engine has and the other hasn't (SQLite's FTS5), and for saying
+	## which: the SQL to run is `backend!`'s.
+	engine! : {} => [Postgres, Sqlite, Turso, None]
+	engine! = |{}|
+		match Host.db_flavor!({}) {
+			"postgres" => Postgres
+			"sqlite" => Sqlite
+			"turso" => Turso
 			_ => None
 		}
 

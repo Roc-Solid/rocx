@@ -22,8 +22,10 @@
 ## - `database`: the app's database (D-045). `Postgres`, at `--database-url` (`DATABASE_URL`), and
 ##   none without it; or `Sqlite(path)`, a file in the server's process at `path` (from where the
 ##   server starts; made, with its directory, when missing), or at `--database-url`
-##   (`sqlite:<path>`) when it is given. A URL of the other flavor stops the server at start. The
-##   app's SQL is its database's: nothing is translated.
+##   (`sqlite:<path>`) when it is given; or `Turso(path)`, the same with Turso's engine (D-046:
+##   SQLite written again in Rust, its SQL SQLite's). The URL picks between SQLite and Turso
+##   (`turso:<path>` runs a SQLite app on Turso); one of the other flavor stops the server at start.
+##   The app's SQL is its database's: nothing is translated.
 ## - `migrations`: the app's schema, applied once each, in order, when the server starts (each a
 ##   name and its SQL, in its database's flavor: `import "migrations/0001_notes.sql" as notes : Str`
 ##   embeds a file).
@@ -54,7 +56,7 @@ platform ""
 	requires {
 		program : {
 			respond! : Server.Request, Str => Server.Response,
-			database : [Postgres, Sqlite(Str)],
+			database : [Postgres, Sqlite(Str), Turso(Str)],
 			migrations : List({ name : Str, sql : Str }),
 			actors : List({ name : Str, run! : Str, Str, Str => Try({ state : Str, reply : Str }, Str) }),
 			logs : { format : [Auto, Pretty, Json] },
@@ -297,11 +299,13 @@ init_for_host! = |{}| {
 	if !problems.is_empty() {
 		return Err(Str.join_with(problems, "\n"))
 	}
-	# The app's flavor: each plugin's migrations for it alone, for the log and the database.
+	# The app's flavor: each plugin's migrations for it alone, for the log and the database. Turso's
+	# SQL is SQLite's.
 	flavor =
 		match program.database {
 			Postgres => Postgres
 			Sqlite(_) => Sqlite
+			Turso(_) => Sqlite
 		}
 	plugins = Plugins.ordered(program.plugins).map(|plugin| { ..plugin, migrations: plugin.migrations.keep_if(|migration| applies(migration.on, flavor)) })
 	Host.actor_kinds!(Str.join_with(program.actors.map(|actor| actor.name), "\n"))
@@ -327,30 +331,38 @@ applies = |on, flavor|
 		_ => Bool.False
 	}
 
-## The app's database, opened where its program and `--database-url` say (D-045): `Postgres` at the
-## URL, and none without one; `Sqlite(path)` at the URL when it is a `sqlite:` one, or else at
-## `path`. A URL of the other flavor stops the server, saying which the app wants.
-database_opened! : [Postgres, Sqlite(Str)] => Try({}, Str)
+## The app's database, opened where its program and `--database-url` say (D-045, D-046):
+## `Postgres` at the URL, and none without one; `Sqlite(path)` or `Turso(path)` at the URL when it
+## is a `sqlite:` or a `turso:` one (either engine: the SQL is SQLite's), or else at `path`. A URL
+## of the other flavor stops the server, saying which the app wants.
+database_opened! : [Postgres, Sqlite(Str), Turso(Str)] => Try({}, Str)
 database_opened! = |wanted| {
 	given = Host.setting!("database_url")
-	sqlite_url = given.starts_with("sqlite:")
+	file_url = given.starts_with("sqlite:") or given.starts_with("turso:")
 	match wanted {
 		Postgres =>
 			if given.is_empty() {
 				Ok({})
-			} else if sqlite_url {
-				Err("the app's database is Postgres (its program's `database`), and --database-url (or DATABASE_URL) is a sqlite: one: give it a postgres:// URL, or say `database: Sqlite(path)` in the program")
+			} else if file_url {
+				Err("the app's database is Postgres (its program's `database`), and --database-url (or DATABASE_URL) is a sqlite: or turso: one: give it a postgres:// URL, or say `database: Sqlite(path)` in the program")
 			} else {
 				opened!(given)
 			}
-		Sqlite(path) =>
-			if given.is_empty() {
-				opened!("sqlite:${path}")
-			} else if sqlite_url {
-				opened!(given)
-			} else {
-				Err("the app's database is SQLite (its program's `database: Sqlite(\"${path}\")`), and --database-url (or DATABASE_URL) isn't a sqlite:<path> one: leave it unset (DATABASE_URL too) for ${path}, or say `database: Postgres` in the program")
-			}
+		Sqlite(path) => file_opened!(given, file_url, "sqlite:${path}", "SQLite", "Sqlite(\"${path}\")")
+		Turso(path) => file_opened!(given, file_url, "turso:${path}", "Turso", "Turso(\"${path}\")")
+	}
+}
+
+## A SQLite or Turso app's file: at `--database-url` when it is a `sqlite:` or a `turso:` one, or
+## else at the program's (`url`).
+file_opened! : Str, Bool, Str, Str, Str => Try({}, Str)
+file_opened! = |given, file_url, url, name, said| {
+	if given.is_empty() {
+		opened!(url)
+	} else if file_url {
+		opened!(given)
+	} else {
+		Err("the app's database is ${name} (its program's `database: ${said}`), and --database-url (or DATABASE_URL) isn't a sqlite:<path> or turso:<path> one: leave it unset (DATABASE_URL too) for the program's file, or say `database: Postgres` in the program")
 	}
 }
 

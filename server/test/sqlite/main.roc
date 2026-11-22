@@ -1,5 +1,6 @@
 ## An app on the server platform whose database is SQLite (D-045), for its tests
-## (`server/test/sqlite.test.mjs`): its file where its program says, or at `--database-url`;
+## (`server/test/sqlite.test.mjs`, which builds a copy saying `Turso(…)` too, D-046): its file where
+## its program says, or at `--database-url`;
 ## parameters bound as what they are, at their names; rows read into records (a column declared
 ## boolean, one declared json, a real, a null); transactions, and a script that fails; writes taking
 ## turns, and reads going on beside one; what is notified, heard once its transaction commits; a
@@ -82,6 +83,16 @@ route! = |request, context| {
 				match Db.backend!({}) {
 					Postgres => "postgres"
 					Sqlite => "sqlite"
+					None => "none"
+				},
+			)
+		("GET", "/engine") =>
+			text(
+				200,
+				match Db.engine!({}) {
+					Postgres => "postgres"
+					Sqlite => "sqlite"
+					Turso => "turso"
 					None => "none"
 				},
 			)

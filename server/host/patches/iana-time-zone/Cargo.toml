@@ -1,0 +1,15 @@
+# The host's own iana-time-zone (D-046), in place of crates.io's (`[patch.crates-io]` in the host's
+# Cargo.toml): the same API, the zone read from /etc/localtime on every Unix, with no CoreFoundation,
+# which an app isn't linked with on macOS (chrono asks it only when TZ and /etc/localtime fail).
+[package]
+name = "iana-time-zone"
+version = "0.1.65"
+edition = "2021"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[features]
+fallback = []
+
+[lib]
+path = "src/lib.rs"

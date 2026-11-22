@@ -8,7 +8,8 @@ browser, in three parts.
   every value put in a page, and reports at your lines. `rocx` is the command-line tool, too: Roc
   itself, on [basic-cli](https://github.com/roc-lang/basic-cli), one native executable.
 - **The platform**, what an app runs on: on the server, Roc compiled to native code in a Rust host
-  (`server/`), with a database (Postgres, or SQLite in the server's process), channels and live
+  (`server/`), with a database (Postgres, or SQLite in the server's process, on SQLite's engine or
+  Turso's), channels and live
   rooms, a key-value store, actors and plugins;
   in the browser, the components, compiled to WebAssembly (`web/`).
 - **The ecosystem**: packages of plain Roc, components and plugins that any app can use, in
@@ -519,8 +520,8 @@ it). Each call into Roc is a coroutine on one of a few threads of Roc's own, pau
 waits, so a call that waits holds up nothing else and holds no thread (D-027); a crash ends only
 its call (a 500, a stream ended, a job run again), its memory freed and its transaction rolled
 back. It renders a page of components, byte for byte as the browser's runtime would. A database,
-Postgres or SQLite in the server's process, as the app's program says (`Db`, migrations,
-transactions, notifications: D-045), plugins (what a package adds to an app: routes, tables, loops,
+Postgres or SQLite in the server's process (on SQLite's engine or Turso's), as the app's program says
+(`Db`, migrations, transactions, notifications: D-045, D-046), plugins (what a package adds to an app: routes, tables, loops,
 paths for development, checked when the server starts: D-033), requests to
 other servers (`Http.fetch!(url, init)`, as JavaScript's `fetch`), bodies as bytes and from elsewhere
 (`Server.forward`), cookies, settings (`Env`), encryption (`AesGcm`) and random bytes, values in
@@ -593,8 +594,8 @@ with the browser's build's own render, byte for byte outside its `<NoHydration>`
 the files GitHub Pages serves. `server/test/server.test.mjs` asks a small app on the server's
 platform over HTTP: crashes and memory, streams, pages of components, and, with `DATABASE_URL` set (`just db`),
 Postgres, transactions, migrations, jobs, cron, email over SMTP, live rooms, actors across a
-restart, and a graceful stop; `server/test/sqlite.test.mjs` asks an app on SQLite, which needs no
-database server, the same of its database, jobs and cron. `roc test packages/<name>/main.roc` runs each package's `expect`s,
+restart, and a graceful stop; `server/test/sqlite.test.mjs` asks an app on SQLite, and its copy on
+Turso, which need no database server, the same of their database, jobs and cron. `roc test packages/<name>/main.roc` runs each package's `expect`s,
 and `packages/testing/test/` tests that package's helpers against an app it builds. The browser
 tests drive Chromium's headless shell over the DevTools protocol with no dependencies: `$CHROME`,
 or Playwright's cached one; without it they are skipped. packages/testing's (and the board

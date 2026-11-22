@@ -2315,7 +2315,7 @@ database), migrations and needs a kind, jobs and cron on both (a test's own jobs
 `testSqlite()`, the docs (`/platform/database`); packages/admin's tables admin on both (SQLite's
 pragmas read as Postgres's catalog is; `AdminPage.Effects` has `backend!`) and packages/push on both;
 and every example with a database on SQLite: plate, tasks, quiz, board, notes and uptime. Open:
-`rocx new`'s question, libSQL/Turso.
+`rocx new`'s question. Turso is D-046.
 
 **Context.** Postgres is the platform's one database (`--database-url`). The platform runs one
 server an app (one instance), and many apps on one server need no database server beside it:
@@ -2392,3 +2392,54 @@ both, the jobs page. 3: `Time`'s zones; Plate and the other examples on SQLite. 
 `/platform/database`). Later: `rocx new`'s question, libSQL/Turso, admin's SQLite catalog.
 
 **Reversible:** yes. A Postgres app changes in nothing; packages trade `pg_notify` for `Db.notify!`.
+
+
+## D-046 Turso: SQLite's SQL on Turso's engine, a third backend
+
+**Status.** Built (2026-11-22). `Turso(path)` in the program, `turso:<path>` as a URL, the host's
+`db/turso.rs` on `turso_core` 0.8.4, `Db.engine!`, the server's SQLite tests run on both engines,
+the docs (`/platform/database`). Open: Turso's concurrent writes (MVCC), its sync to Turso's cloud,
+its full-text search; a benchmark of the two engines (`examples/sqlite-vs-turso`, to be designed).
+
+**Context.** D-045 made the database pluggable and left libSQL/Turso as "another file in
+`db/`". Turso has two engines: libSQL, a fork of SQLite's C (its local file is SQLite's, its draw
+a replica of a primary in Turso's cloud, written over the network), and Turso Database
+(`turso_core`), SQLite written again in Rust, in-process, with concurrent writes (MVCC, beta), sync
+to Turso's cloud, vectors, change capture and encryption, before its 1.0 but past its beta warning.
+libSQL in-process adds nothing to SQLite here (and its bundled C would clash with rusqlite's); the
+Rust engine is the one with something new, and the one to measure against SQLite.
+
+**Decision.**
+
+- **An engine, not a flavor.** Turso's SQL is SQLite's, so a Turso app writes SQLite's SQL, and
+  what is SQLite's is its: a package's SQL for SQLite, a plugin's migrations `on: Sqlite`, a need
+  `Sqlite` (Turso meets it). `Db.backend!` answers `Sqlite`; `Db.engine! : {} => [Postgres, Sqlite,
+  Turso, None]` tells them apart (for what one has and the other hasn't, and for saying which). No
+  package changes.
+- **The program says `Turso(path)`; the URL picks the engine.** `database : [Postgres, Sqlite(Str),
+  Turso(Str)]`. `--database-url turso:<path>` runs a SQLite app on Turso and `sqlite:<path>` a
+  Turso app on SQLite (same SQL), so an app is tried on the other without a rebuild; a Postgres URL
+  stops either at start, as before.
+- **`db/turso.rs` mirrors `sqlite.rs`.** `turso_core` alone (no `turso` crate: its mimalloc would
+  take the host's allocator), with `fs`, `json`, `time`, `series`, `uuid` and `percentile`: a file in
+  WAL mode, a pool of 8 connections whose calls run on tokio's blocking threads, foreign keys on,
+  a 10 s busy timeout, a transaction begun `immediate`, statements prepared once per connection
+  (their programs kept by SQL, and used again while the schema holds), a statement past its call's
+  time limit interrupted and its connection closed. Parameters and rows as on SQLite (`$1`, a
+  declared boolean or json). The backend steps a statement itself: Turso's own loops spin through
+  a lock's wait (its IO's `step` does nothing on Unix), so the thread sleeps the delay Turso asks
+  for. Errors read as SQLite's (`ConstraintViolation: UNIQUE constraint failed: …`), which
+  packages/jobs matches.
+- **No CoreFoundation, no C of its own.** turso_core's `localtime` reaches chrono's time zone
+  lookup, whose last resort (iana-time-zone) calls CoreFoundation on macOS, and Roc links an app
+  against the C library alone: the host patches iana-time-zone (`server/host/patches/`, the same
+  API) with one that reads /etc/localtime. `pure-rust-crypto` keeps aegis's C out (Turso's
+  encryption is unused), so the musl builds compile no more C than before.
+- **What differs is said.** The server holds a Turso file while it runs (an OS lock: no `sqlite3`
+  or `node:sqlite` beside it, so `packages/testing`'s `testSqlite()` reads it only once the server
+  stops); no FTS5 (examples/notes needs SQLite); MVCC unused (writes take turns, as on SQLite).
+
+**Not in it.** libSQL; `begin concurrent`; sync to Turso's cloud; Turso's full-text search and
+vectors; `rocx new`'s question offering Turso.
+
+**Reversible:** yes. Nothing that runs on SQLite changes; `Turso(path)` is one tag more.

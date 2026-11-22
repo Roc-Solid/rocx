@@ -25,6 +25,8 @@ ring = "0.17"
 rusqlite = { version = "0.43.0", features = ["bundled", "column_decltype"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde_json = "1"
+# Turso (D-046): its engine alone, the SQLite flavor of SQL in Rust; no global allocator, no FTS.
+turso_core = { version = "0.8.4", default-features = false, features = ["fs", "json", "time", "series", "uuid", "percentile", "pure-rust-crypto"] }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros", "fs", "signal"] }
 tokio-postgres = { version = "0.7", features = ["with-serde_json-1", "with-uuid-1", "with-chrono-0_4"] }
 tokio-postgres-rustls = "0.13"
@@ -37,3 +39,8 @@ cc = "1"
 
 [profile.release]
 debug = 1
+
+# The host links no CoreFoundation (Roc links an app against the C library alone): chrono's time zone
+# lookup, which turso_core's `localtime` reaches, reads /etc/localtime instead (patches/, D-046).
+[patch.crates-io]
+iana-time-zone = { path = "patches/iana-time-zone" }

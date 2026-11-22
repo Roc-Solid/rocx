@@ -124,16 +124,18 @@ Host := [].{
 	## an `Err` means there was none: "timed out", "too large", or why.
 	http_send! : Str, Str, Str, List(U8), U64, U64, Bool => Try({ status : U16, headers : Str, body : List(U8) }, Str)
 
-	## Opens the app's database at a URL (`postgres://…`, or `sqlite:<path>`): its flavor,
-	## "postgres" or "sqlite". The platform's start calls it once, before anything reads.
+	## Opens the app's database at a URL (`postgres://…`, `sqlite:<path>` or `turso:<path>`): its
+	## flavor, "postgres", "sqlite" or "turso". The platform's start calls it once, before anything
+	## reads.
 	db_open! : Str => Try(Str, Str)
 
-	## The database the server opened: "postgres", "sqlite", or "" for none.
+	## The database the server opened: "postgres", "sqlite", "turso", or "" for none.
 	db_flavor! : {} => Str
 
 	## The rows a statement reads, as a JSON array of objects (a column's name, its value), for
 	## the parameters in `params`, a JSON array of text, integers, booleans and nulls (Postgres is
-	## sent each as text, which it reads as the type its place wants; SQLite binds each as it is).
+	## sent each as text, which it reads as the type its place wants; SQLite and Turso bind each as
+	## it is).
 	db_query! : Str, Str => Try(Str, Str)
 
 	## How many rows a statement changed.

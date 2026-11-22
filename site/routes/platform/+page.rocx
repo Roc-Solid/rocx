@@ -98,7 +98,7 @@ view! = |_|
 				</Feature>
 				<Feature title="The database" href={Paths.platform_database}>
 					<p>
-						Postgres, or SQLite in the server's process, as the program says: queries whose rows decode into
+						Postgres, or SQLite in the server's process (or Turso's engine), as the program says: queries whose rows decode into
 						the record you annotate, transactions, migrations built into the app; or roc-pg, whose queries are
 						checked at build.
 					</p>
@@ -217,7 +217,7 @@ view! = |_|
 			</ul>
 			<Callout kind="note" title="A working prototype">
 				<p>
-					Both platforms are tested, together and apart: the server's against Postgres and SQLite, crashes and all; the
+					Both platforms are tested, together and apart: the server's against Postgres, SQLite and Turso, crashes and all; the
 					browser's in Chromium; this site on both. Each page here says what isn't there yet.
 				</p>
 			</Callout>

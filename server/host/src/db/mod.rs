@@ -1,5 +1,5 @@
-//! The app's database, for `Db` (`server/platform/Db.roc`): Postgres (`postgres`) or SQLite
-//! (`sqlite`), as its program says (D-045). The platform's start opens it (`open`) at the URL it
+//! The app's database, for `Db` (`server/platform/Db.roc`): Postgres (`postgres`), SQLite
+//! (`sqlite`, D-045) or Turso (`turso`, D-046: SQLite's SQL, Turso's engine), as its program says. The platform's start opens it (`open`) at the URL it
 //! works out from the program and `--database-url`; an app with none has no database, and every
 //! statement says so. The rest is the same for both: statements whose parameters arrive as JSON
 //! (text, an integer, a boolean or null) and whose rows leave as JSON, an array of objects, each
@@ -11,6 +11,7 @@
 
 mod postgres;
 mod sqlite;
+mod turso;
 
 use serde_json::Value;
 use std::sync::OnceLock;
@@ -23,15 +24,23 @@ pub const NONE: &str = "no database: the app's program says `database: Postgres`
 pub enum Flavor {
     Postgres,
     Sqlite,
+    Turso,
 }
 
 impl Flavor {
-    /// As Roc reads it (`Db.backend!`).
+    /// As Roc reads it (`Db.engine!`; `Db.backend!` reads "turso" as SQLite, its SQL).
     pub fn name(self) -> &'static str {
         match self {
             Flavor::Postgres => "postgres",
             Flavor::Sqlite => "sqlite",
+            Flavor::Turso => "turso",
         }
+    }
+
+    /// Whether it is a file in the server's process (SQLite, Turso), whose notices the host keeps
+    /// itself, not a server of its own.
+    pub fn in_process(self) -> bool {
+        matches!(self, Flavor::Sqlite | Flavor::Turso)
     }
 }
 
@@ -43,7 +52,8 @@ pub fn flavor() -> Option<Flavor> {
 }
 
 /// Opens the database at `url`: `postgres://…` (or `postgresql://…`), its pool and the connection
-/// that listens; or `sqlite:<path>`, a file (made, with its directory, when missing).
+/// that listens; or `sqlite:<path>` or `turso:<path>`, a file (made, with its directory, when
+/// missing).
 pub async fn open(url: &str) -> Result<Flavor, String> {
     if OPENED.get().is_some() {
         return Err("the database is open already".into());
@@ -55,8 +65,11 @@ pub async fn open(url: &str) -> Result<Flavor, String> {
     } else if let Some(path) = url.strip_prefix("sqlite:") {
         sqlite::open(path.strip_prefix("//").unwrap_or(path)).await?;
         Flavor::Sqlite
+    } else if let Some(path) = url.strip_prefix("turso:") {
+        turso::open(path.strip_prefix("//").unwrap_or(path)).await?;
+        Flavor::Turso
     } else {
-        return Err(format!("database url `{}`: neither postgres://… nor sqlite:<path>", scheme_only(url)));
+        return Err(format!("database url `{}`: neither postgres://…, sqlite:<path> nor turso:<path>", scheme_only(url)));
     };
     OPENED.set(flavor).map_err(|_| "the database is open already".to_string())?;
     Ok(flavor)
@@ -74,12 +87,14 @@ fn scheme_only(url: &str) -> String {
 pub enum Client {
     Postgres(postgres::Client),
     Sqlite(sqlite::Client),
+    Turso(turso::Client),
 }
 
 pub async fn client() -> Result<Client, String> {
     match flavor() {
         Some(Flavor::Postgres) => postgres::client().await.map(Client::Postgres),
         Some(Flavor::Sqlite) => sqlite::client().await.map(Client::Sqlite),
+        Some(Flavor::Turso) => turso::client().await.map(Client::Turso),
         None => Err(NONE.into()),
     }
 }
@@ -118,6 +133,7 @@ pub async fn query(client: &Client, sql: &str, params: &str) -> Result<String, S
     match client {
         Client::Postgres(client) => postgres::query(client, sql, &params).await,
         Client::Sqlite(client) => sqlite::query(client, sql, params).await,
+        Client::Turso(client) => turso::query(client, sql, params).await,
     }
 }
 
@@ -127,6 +143,7 @@ pub async fn execute(client: &Client, sql: &str, params: &str) -> Result<u64, St
     match client {
         Client::Postgres(client) => postgres::execute(client, sql, &params).await,
         Client::Sqlite(client) => sqlite::execute(client, sql, params).await,
+        Client::Turso(client) => turso::execute(client, sql, params).await,
     }
 }
 
@@ -136,6 +153,7 @@ pub async fn script(client: &Client, in_transaction: bool, sql: &str) -> Result<
     match client {
         Client::Postgres(client) => postgres::script(client, in_transaction, sql).await,
         Client::Sqlite(client) => sqlite::script(client, in_transaction, sql).await,
+        Client::Turso(client) => turso::script(client, in_transaction, sql).await,
     }
 }
 
@@ -146,6 +164,7 @@ pub fn abandon(client: Client, runtime: &tokio::runtime::Handle) {
     match client {
         Client::Postgres(client) => postgres::abandon(client, runtime),
         Client::Sqlite(client) => sqlite::abandon(client),
+        Client::Turso(client) => turso::abandon(client),
     }
 }
 
@@ -154,6 +173,7 @@ pub async fn begin(client: &Client) -> Result<(), String> {
     match client {
         Client::Postgres(client) => postgres::begin(client).await,
         Client::Sqlite(client) => sqlite::begin(client).await,
+        Client::Turso(client) => turso::begin(client).await,
     }
 }
 
@@ -161,6 +181,7 @@ pub async fn commit(client: &Client) -> Result<(), String> {
     match client {
         Client::Postgres(client) => postgres::commit(client).await,
         Client::Sqlite(client) => sqlite::commit(client).await,
+        Client::Turso(client) => turso::commit(client).await,
     }
 }
 
@@ -168,15 +189,16 @@ pub async fn rollback(client: &Client) {
     match client {
         Client::Postgres(client) => postgres::rollback(client).await,
         Client::Sqlite(client) => sqlite::rollback(client).await,
+        Client::Turso(client) => turso::rollback(client).await,
     }
 }
 
 /// Postgres's `pg_notify` on `client`: delivered when its transaction commits, or at once. (On
-/// SQLite the host keeps a call's notices itself: `hosted::roc_host_db_notify`.)
+/// SQLite and Turso the host keeps a call's notices itself: `hosted::roc_host_db_notify`.)
 pub async fn notify(client: &Client, channel: &str, payload: &str) -> Result<(), String> {
     match client {
         Client::Postgres(client) => postgres::notify(client, channel, payload).await,
-        Client::Sqlite(_) => {
+        Client::Sqlite(_) | Client::Turso(_) => {
             crate::live::publish(&format!("db:{channel}"), payload);
             Ok(())
         }
@@ -184,11 +206,11 @@ pub async fn notify(client: &Client, channel: &str, payload: &str) -> Result<(),
 }
 
 /// Listens to `channel`, if nothing has yet: on Postgres, its connection that listens is told; on
-/// SQLite there is nothing to tell, as what is notified is published in the process.
+/// SQLite and Turso there is nothing to tell, as what is notified is published in the process.
 pub async fn listen(channel: &str) -> Result<(), String> {
     match flavor() {
         Some(Flavor::Postgres) => postgres::listen(channel).await,
-        Some(Flavor::Sqlite) => Ok(()),
+        Some(Flavor::Sqlite | Flavor::Turso) => Ok(()),
         None => Err(NONE.into()),
     }
 }

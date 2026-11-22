@@ -12,8 +12,8 @@ Setting := [].{
 	number! : Str, U64 => U64
 	number! = |name, default| U64.from_str(Host.setting!(name)) ?? default
 
-	## Whether the server has a database: the app's program says `Sqlite(path)`, or `Postgres` and
-	## the server was started with `--database-url` (or `DATABASE_URL`).
+	## Whether the server has a database: the app's program says `Sqlite(path)` or `Turso(path)`, or
+	## `Postgres` and the server was started with `--database-url` (or `DATABASE_URL`).
 	database! : {} => Bool
 	database! = |{}| !Host.db_flavor!({}).is_empty()
 }

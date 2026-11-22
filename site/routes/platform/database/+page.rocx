@@ -8,9 +8,10 @@ import ../../../Ui/PageHero
 
 meta = {
 	title: "The database",
-	description: "The Roc Solid server platform's database, Postgres or SQLite in the server's process, as the app's program says: queries whose rows decode into the record you annotate, transactions that take jobs with them, migrations built into the app, notifications, and roc-pg, a client in Roc whose queries are checked when the app is built.",
+	description: "The Roc Solid server platform's database, Postgres, or SQLite or Turso in the server's process, as the app's program says: queries whose rows decode into the record you annotate, transactions that take jobs with them, migrations built into the app, notifications, and roc-pg, a client in Roc whose queries are checked when the app is built.",
 	toc: [
 		{ id: "choose", label: "Postgres or SQLite" },
+		{ id: "turso", label: "Turso" },
 		{ id: "query", label: "A query" },
 		{ id: "rows", label: "Rows, as records" },
 		{ id: "write", label: "Writing" },
@@ -30,8 +31,8 @@ view! = |_|
 				eyebrow="The platform · The database"
 				title="One database, and the types you say"
 			>
-				The server platform is opinionated: an app has one database, Postgres or SQLite, as its program
-				says. <code>Db</code> runs a statement with its parameters and gives back the rows, decoded into the
+				The server platform is opinionated: an app has one database, Postgres or SQLite (on SQLite's own
+				engine, or on Turso's), as its program says. <code>Db</code> runs a statement with its parameters and gives back the rows, decoded into the
 				record the caller annotated; a transaction keeps one connection for a call; migrations run once
 				each, when the server starts. The jobs queue and the actors' state live there too.
 			</PageHero>
@@ -62,6 +63,29 @@ view! = |_|
 				<code>Postgres</code> or <code>Sqlite</code>; one that needs the other stops the server as it starts,
 				saying so. A package with SQL for both asks <code>Db.backend!</code> which to run, and lists a migration
 				for each (<code>{"{ name: \"0001_jobs\", sql: lite, on: Sqlite }"}</code>): the jobs plugin does both.
+			</p>
+
+			<Heading id="turso">Turso: SQLite's SQL on another engine</Heading>
+			<p>
+				<code>Turso(path)</code> is <code>Sqlite(path)</code> with another engine under it:
+				<a href="https://github.com/tursodatabase/turso">Turso</a>, SQLite written again in Rust, in the
+				server's process. Its SQL is SQLite's and its file is in SQLite's format, so what this page says of
+				SQLite holds for it: the app's SQL, and a package's, a plugin's migrations and needs for SQLite.
+				<code>Db.backend!</code> answers <code>Sqlite</code> on both; <code>Db.engine!</code> tells them apart.
+			</p>
+			<Code
+				title="main.roc"
+				source={"program = App.program({\n\tcontext: |_started| {},\n\tmiddleware: Middlewares.default,\n\tdatabase: Turso(\"data/plate.db\"),\n})"}
+				numbers={Bool.False}
+			/>
+			<p>
+				The URL picks the engine: <code>--database-url turso:data/plate.db</code> runs a SQLite app on Turso,
+				and <code>sqlite:</code> a Turso app on SQLite, which is how to try one against the other. Two things
+				differ. The server keeps a Turso file to itself while it runs (an OS lock on it), so
+				<code>sqlite3</code>, or a test's <code>node:sqlite</code>, opens it once the server has stopped; and
+				Turso has no FTS5, so <code>examples/notes</code>' search needs SQLite. Turso is younger than SQLite
+				(0.8, before its 1.0), and its concurrent writes (MVCC) aren't used yet: writes take turns, as they
+				do on SQLite.
 			</p>
 
 			<Heading id="query">A query</Heading>
@@ -179,9 +203,10 @@ view! = |_|
 				(<code>Endpoint.get!</code>, answered in-process as the server renders the page): the handler runs
 				only on the server, so it may query, and the browser's copy has only the endpoint's method and URL
 				(<a href={"${Paths.calls}#user"}>who is asking</a>). A
-				statement takes a connection from a pool (16 to Postgres, 8 to SQLite's file), and gives it back; a
-				transaction keeps one until it ends. Statements are prepared once per connection, and kept.
-				SQLite's run on threads of their own, so a call waiting on one holds none of Roc's.
+				statement takes a connection from a pool (16 to Postgres, 8 to SQLite's or Turso's file), and gives
+				it back; a transaction keeps one until it ends. Statements are prepared once per connection, and
+				kept. SQLite's and Turso's run on threads of their own, so a call waiting on one holds none of
+				Roc's.
 			</p>
 			<p>
 				<code>just db</code> runs a Postgres in Docker and prints its URL; the server takes it as
@@ -189,7 +214,8 @@ view! = |_|
 				database, and the server's other parts work. Connections use TLS when the database offers it (or the
 				URL's <code>sslmode</code> asks for it), checked against the web's certificate authorities. SQLite's
 				file is in WAL mode, with its <code>-wal</code> and <code>-shm</code> beside it; a backup is
-				<code>sqlite3 data/plate.db ".backup copy.db"</code>, or the file with the server stopped.
+				<code>sqlite3 data/plate.db ".backup copy.db"</code>, or the file with the server stopped (Turso's
+				only so: the server holds it while it runs).
 			</p>
 
 			<Heading id="roc-pg">roc-pg: queries checked at build</Heading>
@@ -219,6 +245,7 @@ view! = |_|
 				<li><strong>Parameters</strong> are four kinds and arrays of them; bytes aren't yet, and a row reads an array column through a cast (<code>array_to_json(tags)</code>).</li>
 				<li><strong>No cursors or streaming:</strong> a query's rows come back whole.</li>
 				<li><strong>SQLite</strong> is a file: no database in memory alone (the server's connections couldn't share it), and a blob is read through <code>hex(…)</code>.</li>
+				<li><strong>Turso</strong> runs as SQLite does: its concurrent writes (<code>begin concurrent</code>, MVCC), its sync to Turso's cloud and its own full-text search aren't used yet.</li>
 			</ul>
 		</NoHydration>
 	</>

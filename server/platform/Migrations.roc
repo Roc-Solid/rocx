@@ -5,8 +5,8 @@ import Log
 ## state), then the plugins' (each recorded as `<plugin>/<name>`), then the app's
 ## (`program.migrations`). Each is applied once, in order, in a
 ## transaction of its own, and recorded in `rocx_migrations`; on Postgres, two servers starting at
-## once take turns (an advisory lock), so none is applied twice (on SQLite, a transaction holds the
-## write lock from its start).
+## once take turns (an advisory lock), so none is applied twice (on SQLite and Turso, a transaction
+## holds the write lock from its start).
 Migrations := [].{
 
 	## The platform's own, for the database it has (D-045): each says which it is for.

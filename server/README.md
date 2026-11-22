@@ -3,13 +3,13 @@
 Roc compiled to native code, in a Rust host: one executable that answers HTTP, streams events,
 renders pages of components, keeps live rooms, channels, actors and values in memory, and runs what
 plugins add (jobs and cron, email: packages/jobs, packages/email), with a database beneath all of it:
-Postgres, or SQLite in the server's own process (D-045). The
+Postgres, or SQLite in the server's own process (D-045; on Turso's engine too, D-046). The
 browser's platform is `web/` (wasm): an app is two programs, one on each, talking over HTTP. The docs site's platform pages (`/platform`)
 say all this at more length.
 
 The host (`host/`, Rust) gives Roc general things: HTTP, coroutines that Roc's calls run on (below),
-the database (a pool of Postgres connections and one that listens, or SQLite's file, its calls on
-threads of their own), time zones, TCP and TLS sockets, requests to other
+the database (a pool of Postgres connections and one that listens, or SQLite's or Turso's file, its
+calls on threads of their own), time zones, TCP and TLS sockets, requests to other
 servers, live topics and rooms, channels' streams, background loops that sleep until woken,
 isolated calls, actors' mailboxes and timers, a key-value store in memory, the environment, secure
 random numbers, AES-GCM, and rendering components. Migrations, plugins and actors' state are the
@@ -97,7 +97,7 @@ import. `run!` given Api's contract crashes, saying to use Handlers'. A route fi
 another route's handler binds it itself (`Endpoint.bind(Api.x(params), |r, c, b| XServer.post!(…))`),
 as `site/routes/calls/+server.roc` does.
 
-### The database: `Db` (Postgres or SQLite, D-045)
+### The database: `Db` (Postgres or SQLite, D-045; Turso, D-046)
 
 An app picks its database in its program, and writes its SQL for it: nothing is translated, and an
 app runs on one. `Postgres`, the default, is at `--database-url` (or `DATABASE_URL`), and an app
@@ -110,7 +110,7 @@ program = App.program({ context: |_| {}, middleware: Middlewares.default, databa
 
 `--database-url sqlite:<path>` puts a SQLite app's file elsewhere; a URL of the other kind stops the
 server as it starts, saying which the app wants. The host has a backend a kind
-(`host/src/db/`: `postgres.rs`, `sqlite.rs`), behind the same calls. SQLite is rusqlite with SQLite
+(`host/src/db/`: `postgres.rs`, `sqlite.rs`, `turso.rs`), behind the same calls. SQLite is rusqlite with SQLite
 compiled in (FTS5 and JSON with it), in WAL mode: a pool of 8 connections whose calls run on
 tokio's blocking threads, reads beside a write, writes taking turns (each waits up to 10 s for the
 one before), a transaction begun `immediate` (it holds the write lock from its start: keep anything
@@ -119,6 +119,15 @@ package says which it works with in its plugin's `needs` (`Database` for either,
 `Sqlite`), and a migration which it is for (`on: Sqlite`; any by default): the start check refuses a
 package that needs the other, and applies the platform's and the plugins' migrations for the app's
 kind. `Db.backend!` says which the server has, for a package with SQL for both (packages/jobs).
+
+`Turso(path)` (D-046) is SQLite's SQL on Turso's engine (`turso_core`, SQLite written again in Rust),
+a file in SQLite's format: everything above said of SQLite holds, `Db.backend!` answers `Sqlite`, and
+`Db.engine!` tells the two apart. The URL picks the engine (`turso:<path>` runs a SQLite app on
+Turso, `sqlite:<path>` a Turso app on SQLite). `turso.rs` mirrors `sqlite.rs`: 8 connections on
+blocking threads, WAL, a transaction begun `immediate`, a statement interrupted past its time limit,
+its statements prepared once per connection; it drives a statement's steps itself, sleeping the
+delay Turso asks for before trying a lock again. The server holds a Turso file while it runs (an OS
+lock: no `sqlite3` beside it), and Turso has no FTS5; its concurrent writes (MVCC) aren't used.
 
 ```roc
 notes : Try(List({ id : I64, body : Str, note : Db.Nullable(Str) }), [DbErr(Str), BadRow(Str)])
@@ -822,7 +831,7 @@ built `--target=arm64musl` runs in a container against `just db`'s Postgres, eve
 <app> --port 8080 --host 127.0.0.1        where to listen (PORT)
       --static DIR, --file /PATH=FILE     files served as they are
       --context-file FILE                 what respond! is given besides each request
-      --database-url URL                  the database (DATABASE_URL): postgres://…, or sqlite:<path> for a SQLite app's file elsewhere
+      --database-url URL                  the database (DATABASE_URL): postgres://…, or sqlite:<path> (turso:<path>) for a SQLite (Turso) app's file elsewhere
       --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in the database)
       --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it
       --public-url https://app.example    where the app is, for links it sends (PUBLIC_URL; else where it listens)
