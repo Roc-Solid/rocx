@@ -82,6 +82,6 @@ footer.
 
 ## Adding a post
 
-Write the file, add two lines to the list of posts in `Posts.roc`, and build. If the build passes,
-the post is fine. If it doesn't, the message says what to fix. That is the whole workflow, and
+Write the file and build: the build finds every file in the folder by itself. If it passes, the
+post is fine. If it doesn't, the message says what to fix. That is the whole workflow, and
 it is the reason I'm happy to hand it over.

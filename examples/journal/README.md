@@ -44,7 +44,7 @@ Polish-only Sunday of pierogi. Their writers, Iris Vale, Hanna Wierzba and Theo 
 
 | Feature | Where |
 |---|---|
-| A collection with typed frontmatter (packages/markdown's `Collection`, `Frontmatter`): title, date, writer, tags, summary, optional cover and its description; a translation is the file of the same name in the other language's folder | `Post.roc`, `Posts.roc` |
+| A collection with typed frontmatter (packages/markdown's `Collection`, `Frontmatter`): title, date, writer, tags, summary, optional cover and its description; a translation is the file of the same name in the other language's folder. `rocx build` finds the files (`Generated/Content/En`, `Pl`): a new post is a new file | `Post.roc`, `Posts.roc`, `content/` |
 | Content rules a type can't say: a real day, a known writer, one to five slug tags, a described cover, no `#` headings in the body, every footnote with its note and every note used (`Md.footnote_problems`), a translation by the same writer. A wrong post fails the build, with every problem named | `Rules.roc` (its expects), `Posts.all`, `test/content.test.mjs` |
 | `<Markdown>` with hooks: heading anchors, labelled code blocks in a scroll of their own, images as captioned figures, packages/markdown's footnotes as superscripts and notes under a heading in the post's language (`footnote` and `notes` hooks); the typography through `:global(…)` under a scoped `.prose` | `Ui/Prose.rocx` |
 | Reading time, table of contents, previous and next posts | `Posts.roc` (`minutes`, `newer`, `older`), `Ui/Toc.rocx`, `Ui/Article.rocx` |
@@ -81,8 +81,8 @@ Then open http://localhost:18140. The feeds and the sitemap use whole URLs, take
 needed. Without a database, the rate limit's tallies stay in memory as well. With one
 (`--database-url`), guard's actors write them to Postgres.
 
-A new post is a Markdown file in `content/en/` or `content/pl/`, plus two lines in `Posts.roc` (its
-`import` and its entry in `files`). A build tells you what is wrong with it.
+A new post is a Markdown file in `content/en/` or `content/pl/`: `rocx build` finds it. A build tells
+you what is wrong with it.
 
 ## Test it
 
@@ -135,34 +135,33 @@ and start the server on a free port. They don't use `DATABASE_URL`.
 
 ## What it asked of the platform
 
-Every gap met, and what the journal does about it. Six were fixed in the platform while it was
+Every gap met, and what the journal does about it. Seven were fixed in the platform while it was
 built: a route's directory may now name a file (`routes/sitemap.xml/`); packages/markdown parses
 footnotes; packages/testing's `click()` scrolls instantly, so it no longer misses on a page with
 `scroll-behavior: smooth`; a `<For>` or `<Show>` may sit in a function child (the reactions'
 `<For>` is in their `<Show>`'s child); and a request carries the address of the connection it came
 on (`Server.Request`'s `peer`, D-041), so guard's limit can count a reader without a cookie by
 address; and a page may read its params only inside `<NoHydration>` (D-044: the browser's copy
-unbinds them; the pages here read theirs in a `<Title>` too, which they want anyway). These are
-still open:
+unbinds them; the pages here read theirs in a `<Title>` too, which they want anyway); and `rocx
+build` finds the posts (D-042: `Generated/Content/En` and `Pl`, every file in `content/en/` and
+`content/pl/` imported). These are still open:
 
-1. **Collections aren't found by `rocx build`** (packages/markdown's PROPOSALS.md). Each post is
-   imported as text and listed in `Posts.files`.
-2. **guard's middleware is copied by hand** (packages/guard's PROPOSALS.md, "Server-only modules in
+1. **guard's middleware is copied by hand** (packages/guard's PROPOSALS.md, "Server-only modules in
    packages"). `Guard.roc`, `FlagStore.roc` and `Kept.roc` are verbatim copies of
    `packages/guard/server/`. Its tallies are actors' state, not `Kv` yet ("Memory: state between
    requests"). With a database, each limited request writes to Postgres.
-3. **`<HttpStatusCode>` is effectful**, so a component that sets the status is a `view!`
+2. **`<HttpStatusCode>` is effectful**, so a component that sets the status is a `view!`
    (`Ui/NotFound.rocx`). Pure callers still write `<NotFound … />`, and rocx wraps it.
-4. **guard's CSP refuses the OpenAPI page**, which loads Scalar from jsDelivr. `Middlewares.security`
+3. **guard's CSP refuses the OpenAPI page**, which loads Scalar from jsDelivr. `Middlewares.security`
    leaves `/openapi.html` out, and every other answer has the headers.
-5. **`node --test examples/journal/test/` fails on Node 24**: a directory is taken as a module
+4. **`node --test examples/journal/test/` fails on Node 24**: a directory is taken as a module
    ("Cannot find module"). Use the glob, `node --test 'examples/journal/test/*.test.mjs'`.
-6. **The OpenAPI document gives the reactions' `POST` a JSON body only**, though the endpoint takes
+5. **The OpenAPI document gives the reactions' `POST` a JSON body only**, though the endpoint takes
    the same fields as a form, which is what the no-JavaScript buttons send (server/README.md, "Not
    yet").
-7. **The browser's copy of `Api` has no types** (known, D-030). The search's `posts` and the
+6. **The browser's copy of `Api` has no types** (known, D-030). The search's `posts` and the
     reactions' `toggles : Submissions(Reaction.Toggle, Reaction.Tally)` are annotated.
-8. **The Roc gotchas met:**
+7. **The Roc gotchas met:**
     - `{ lang }` alone is a block, not a record (`Paths.lang({ lang: lang })`).
     - A parameter can't share a name with a member of its type's block (hence `Rules.of_title`, …).
     - `join_with` is `Str.join_with(list, sep)`, not a method of a list.

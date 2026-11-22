@@ -8,25 +8,8 @@ import Listing
 import Post
 import Rules
 import Generated/Paths
-import "content/en/how-this-journal-is-made.md" as en_how_this_journal_is_made : Str
-import "content/en/json-by-hand.md" as en_json_by_hand : Str
-import "content/en/night-trains.md" as en_night_trains : Str
-import "content/en/pocket-notebook.md" as en_pocket_notebook : Str
-import "content/en/rain-sounds.md" as en_rain_sounds : Str
-import "content/en/reading-a-tide-table.md" as en_reading_a_tide_table : Str
-import "content/en/slow-bread.md" as en_slow_bread : Str
-import "content/en/small-shell-scripts.md" as en_small_shell_scripts : Str
-import "content/en/truing-a-wheel.md" as en_truing_a_wheel : Str
-import "content/en/winter-garden.md" as en_winter_garden : Str
-import "content/pl/json-by-hand.md" as pl_json_by_hand : Str
-import "content/pl/niedziela-z-pierogami.md" as pl_niedziela_z_pierogami : Str
-import "content/pl/night-trains.md" as pl_night_trains : Str
-import "content/pl/pocket-notebook.md" as pl_pocket_notebook : Str
-import "content/pl/reading-a-tide-table.md" as pl_reading_a_tide_table : Str
-import "content/pl/slow-bread.md" as pl_slow_bread : Str
-import "content/pl/small-shell-scripts.md" as pl_small_shell_scripts : Str
-import "content/pl/truing-a-wheel.md" as pl_truing_a_wheel : Str
-import "content/pl/winter-garden.md" as pl_winter_garden : Str
+import Generated/Content/En
+import Generated/Content/Pl
 
 ## The journal's posts: the Markdown files in `content/en/` and `content/pl/`, read when the app is
 ## built, a collection of `Post`s (packages/markdown's `Collection`). A file whose frontmatter is
@@ -34,8 +17,10 @@ import "content/pl/winter-garden.md" as pl_winter_garden : Str
 ## Only the server reads them: pages show them inside `<NoHydration>`, so none of this (nor the
 ## Markdown parser) is in the browser's wasm.
 ##
-## `rocx build` doesn't find a collection's files yet (packages/markdown's PROPOSALS.md), so each is
-## imported as text above and listed in `files`: a new post is a file and two lines.
+## `rocx build` finds each folder's files (D-042) and writes a module for each,
+## `Generated/Content/En` and `Generated/Content/Pl`, every file imported as text: a new post is a
+## new file, and nothing else. The frontmatter's type is the journal's own `Post`, shared by both
+## folders, so the modules give the files (`En.files`) and this module reads them.
 Posts := [].{
 
 	## A post, read: where it is, its frontmatter, its body parsed (its footnotes' notes last), its
@@ -48,27 +33,7 @@ Posts := [].{
 
 	## Every file of the collection, with its language: the folder it is in.
 	files : List({ lang : Str, path : Str, source : Str })
-	files = [
-		{ lang: "en", path: "how-this-journal-is-made.md", source: en_how_this_journal_is_made },
-		{ lang: "en", path: "json-by-hand.md", source: en_json_by_hand },
-		{ lang: "en", path: "night-trains.md", source: en_night_trains },
-		{ lang: "en", path: "pocket-notebook.md", source: en_pocket_notebook },
-		{ lang: "en", path: "rain-sounds.md", source: en_rain_sounds },
-		{ lang: "en", path: "reading-a-tide-table.md", source: en_reading_a_tide_table },
-		{ lang: "en", path: "slow-bread.md", source: en_slow_bread },
-		{ lang: "en", path: "small-shell-scripts.md", source: en_small_shell_scripts },
-		{ lang: "en", path: "truing-a-wheel.md", source: en_truing_a_wheel },
-		{ lang: "en", path: "winter-garden.md", source: en_winter_garden },
-		{ lang: "pl", path: "json-by-hand.md", source: pl_json_by_hand },
-		{ lang: "pl", path: "niedziela-z-pierogami.md", source: pl_niedziela_z_pierogami },
-		{ lang: "pl", path: "night-trains.md", source: pl_night_trains },
-		{ lang: "pl", path: "pocket-notebook.md", source: pl_pocket_notebook },
-		{ lang: "pl", path: "reading-a-tide-table.md", source: pl_reading_a_tide_table },
-		{ lang: "pl", path: "slow-bread.md", source: pl_slow_bread },
-		{ lang: "pl", path: "small-shell-scripts.md", source: pl_small_shell_scripts },
-		{ lang: "pl", path: "truing-a-wheel.md", source: pl_truing_a_wheel },
-		{ lang: "pl", path: "winter-garden.md", source: pl_winter_garden },
-	]
+	files = En.files.map(|file| { lang: "en", path: file.path, source: file.source }).concat(Pl.files.map(|file| { lang: "pl", path: file.path, source: file.source }))
 
 	## Every post, each language's newest first. Read when the app is built: a crash here is a
 	## build that fails, saying why.
