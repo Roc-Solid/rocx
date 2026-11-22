@@ -327,9 +327,14 @@ test("in a browser: adding, moving and deleting tasks without leaving the page",
 	const id = await newList(person, "Browser errands");
 	await addTask(person, id, { title: "Post the letter" });
 	const tab = await openList(id);
-	// An empty title is refused by the endpoint, and the issue shows under the field.
+	// An empty title is refused by the endpoint, and the issue shows under the field. It shows as
+	// soon as the form is sent (the browser's own check, once every issue shows), while the button
+	// says "Adding…", disabled, until the endpoint's refusal is in; Enter pressed before that would
+	// send nothing (a form whose submit button is disabled isn't sent by Enter), so the next step
+	// waits for the button to say "Add" again.
 	await (await tab.getByRole("button", { name: "Add" })).click();
 	await tab.findByText("Fill this in");
+	await tab.findByRole("button", { name: "Add" });
 	await (await tab.getByLabelText("New task")).fill("Return the books");
 	// Sent with Enter from the title field: the task is added, and the form starts afresh where it
 	// is (LiveForm's reset!), the field empty, no issue shown, and focus still in it for the next.
