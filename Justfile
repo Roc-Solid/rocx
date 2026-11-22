@@ -215,7 +215,7 @@ test:
     for package in packages/*/main.roc; do echo "$package"; {{ roc }} test "$package" || exit 1; done
     ROC={{ roc }} node --test --test-concurrency=1 'web/test/*.test.mjs' 'site/test/*.test.mjs'
     ROC={{ roc }} node --test 'server/test/*.test.mjs'
-    ROC={{ roc }} node --test 'packages/testing/test/*.test.mjs' 'packages/posthog/test/*.test.mjs' 'packages/guard/example/test/*.test.mjs'
+    ROC={{ roc }} node --test 'packages/testing/test/*.test.mjs' 'packages/posthog/test/*.test.mjs' 'packages/guard/example/test/*.test.mjs' 'packages/push/example/test/*.test.mjs'
 
 # Type-checks the site, both programs, with reports pointed into .rocx files, and lints its markup:
 # the server's, and the browser's, built from the copy of the site in which a route file has no
@@ -249,8 +249,9 @@ examples := `git ls-files 'examples/*/main.roc' | xargs -n1 dirname | tr '\n' ' 
 # an app of endpoints alone, as echo is, has none, and the build says so), each with reports at .rocx lines;
 # `rocx lint`; its expects (`roc test`); and its node tests, examples/<name>/test/*.test.mjs, when
 # it has them (a glob: `node --test <dir>` doesn't find them on Node 24; helper modules there
-# don't end in .test.mjs). The apps on SQLite need nothing for their database (each test makes a
-# file of its own); uptime, on Postgres, wants DATABASE_URL (`just db`); and Chromium for their browser tests, which skip without it. Every example is run, and those that
+# don't end in .test.mjs). They need nothing for their database, all on SQLite (each test makes a
+# file of its own), and Chromium for their browser tests, which skip without it. Every example is
+# run, and those that
 # failed are named at the end.
 #
 # Not part of `just test`: each example's tests build its wasm and its server (about a minute for

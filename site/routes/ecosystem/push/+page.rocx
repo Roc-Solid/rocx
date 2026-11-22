@@ -74,7 +74,7 @@ view! = |_|
 					checks it against the RFCs' own examples.
 				</li>
 				<li>
-					<strong>The server's glue</strong>, <code>server/</code>: it keeps subscriptions in Postgres and
+					<strong>The server's glue</strong>, <code>server/</code>: it keeps subscriptions in the app's database (Postgres or SQLite) and
 					sends with <a href={Paths.ecosystem_jobs}>jobs</a> (packages/jobs, which the app names too). It imports
 					the server platform, and isn't a plugin yet, so an app copies it in by hand.
 				</li>
@@ -336,7 +336,7 @@ view! = |_|
 					(up to the AES), the request's headers, and what each answer means.
 				</li>
 				<li>
-					The glue, built into an app and run against Postgres and a stand-in push service: it saves and
+					The glue, built into an app and run against SQLite, and Postgres when there is one, and a stand-in push service: it saves and
 					forgets subscriptions, queues a job for each, and handles every answer.
 				</li>
 				<li>The button, the page's script and the service worker, tried in a browser.</li>

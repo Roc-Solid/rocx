@@ -1442,7 +1442,7 @@ test("plugins: a plugin's route answers in the app, with the app's context and i
 	assert.deepEqual(
 		said.filter((msg) => msg.startsWith("rocx plugins:")),
 		[
-			"rocx plugins: jobs: 1 migration, 1 call, 5 loops, 1 start",
+			"rocx plugins: jobs: 1 early route, 1 migration, 1 call, 5 loops, 1 start",
 			"rocx plugins: email: 4 early routes, 1 start, 1 check",
 			"rocx plugins: jobs-page: 1 route",
 			"rocx plugins: fixture: 5 routes, 1 early route, 1 migration, 1 call, 1 loop, 1 start, 1 check",

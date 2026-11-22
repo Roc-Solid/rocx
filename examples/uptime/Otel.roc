@@ -16,7 +16,7 @@ import otel.Points
 ## `OTEL_METRIC_EXPORT_INTERVAL`, to `OTEL_EXPORTER_OTLP_ENDPOINT` as OTLP/HTTP JSON (`Config`).
 ## With no endpoint, nothing is measured, kept or sent.
 ##
-## With a database, the platform writes an actor's state to Postgres after each message that changes
+## With a database, the platform writes an actor's state to it after each message that changes
 ## it: a write for each measurement. Cheap enough for a start; a kind kept only in memory is the
 ## platform's to add.
 Otel := [].{

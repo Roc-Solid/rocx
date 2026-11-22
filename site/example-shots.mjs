@@ -9,8 +9,7 @@
 //   node site/example-shots.mjs              every app's
 //   node site/example-shots.mjs tasks plate  those alone
 //
-// It needs DATABASE_URL (a Postgres it may make databases in, `just db`) for the apps on Postgres
-// (uptime), and Chromium.
+// It needs Chromium; every app with a database is on SQLite (D-045), a file of its own each run.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -138,7 +137,10 @@ const scenes = {
 		try {
 			const sql = run.db.sql.bind(run.db);
 			// Four services, each with a day of checks every half hour and ninety days rolled up; Search
-			// down for the last hour and a half, with its incident open.
+			// down for the last hour and a half, with its incident open. Moments are milliseconds, days
+			// their date as text (SQLite, D-045).
+			const now = Date.now();
+			const minutes = (n) => now - n * 60_000;
 			const services = [
 				["Website", "Public", 120, 0],
 				["API", "Public", 85, 0],
@@ -147,21 +149,21 @@ const scenes = {
 			];
 			let search = 0;
 			for (const [name, group, latency, failing] of services) {
-				const [row] = await sql`insert into monitors (name, url, interval_s, group_name, threshold, next_check_at) values (${name}, ${`${target.url}/${name.toLowerCase()}`}, 1800, ${group}, 3, now() + interval '1 day') returning id`;
+				const [row] = await sql`insert into monitors (name, url, interval_s, group_name, threshold, next_check_at) values (${name}, ${`${target.url}/${name.toLowerCase()}`}, 1800, ${group}, 3, ${now + 86_400_000}) returning id`;
 				const id = Number(row.id);
 				if (name === "Search") search = id;
 				for (let i = 47; i >= 0; i--) {
 					const up = i >= failing;
-					await sql`insert into checks (monitor_id, at, up, status, latency_ms, error) values (${id}, now() - ${`${i * 30} minutes`}::interval, ${up}, ${up ? 200 : 503}, ${Math.round(latency * (0.8 + 0.4 * Math.abs(Math.sin(i + id))))}, ${up ? "" : "expected 200, got 503"})`;
+					await sql`insert into checks (monitor_id, at, up, status, latency_ms, error) values (${id}, ${minutes(i * 30)}, ${up}, ${up ? 200 : 503}, ${Math.round(latency * (0.8 + 0.4 * Math.abs(Math.sin(i + id))))}, ${up ? "" : "expected 200, got 503"})`;
 				}
 				for (let day = 1; day <= 90; day++) {
 					const down = (day * 7 + id * 3) % 41 === 0 ? 3 : 0;
-					await sql`insert into daily (monitor_id, day, checks, up, latency_ms_sum) values (${id}, current_date - ${day}::int, 48, ${48 - down}, ${48 * latency}) on conflict do nothing`;
+					await sql`insert into daily (monitor_id, day, checks, up, latency_ms_sum) values (${id}, date('now', ${`-${day} days`}), 48, ${48 - down}, ${48 * latency}) on conflict do nothing`;
 				}
 				if (failing > 0) {
 					await sql`update monitors set streak = ${failing} where id = ${id}`;
-					const [incident] = await sql`insert into incidents (monitor_id, title, opened_at) values (${id}, ${`${name} is down`}, now() - interval '90 minutes') returning id`;
-					await sql`insert into incident_updates (incident_id, at, state, body) values (${incident.id}, now() - interval '90 minutes', 'investigating', ${"Searches time out: we're looking into it."})`;
+					const [incident] = await sql`insert into incidents (monitor_id, title, opened_at) values (${id}, ${`${name} is down`}, ${minutes(90)}) returning id`;
+					await sql`insert into incident_updates (incident_id, at, state, body) values (${incident.id}, ${minutes(90)}, 'investigating', ${"Searches time out: we're looking into it."})`;
 				}
 			}
 			await shoot(browser, run.app.url, "uptime", "status", "/", { settle: 1200 });

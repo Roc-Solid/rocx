@@ -98,8 +98,8 @@ server's benchmark, and each has a page of its own with screenshots: `just examp
 them into `site/example-apps.json` (`--bench` runs echo under bombardier too), and
 `just example-shots` takes the screenshots into `site/static/shots/`.
 
-Every example with a database but uptime is on SQLite (D-045): a file beside its server, so each
-runs with nothing else; uptime is on Postgres (its admin's tables read Postgres's catalog).
+Every example with a database is on SQLite (D-045): a file beside its server, so each runs with
+nothing else.
 
 - [`hello`](examples/hello): the app Getting started makes, a page with a button that counts and
   `GET /hello`; its `main.roc` is the one `rocx dev` writes.

@@ -2309,10 +2309,13 @@ reads and writes back.
 
 **Status.** Built (2026-11-22), with the user's answers: the path is the program's, the examples
 are on SQLite, Plate moved without its data. The platform and the host (`db/postgres.rs`,
-`db/sqlite.rs`), `Db.notify!` and `Db.backend!`, migrations and needs a kind, jobs and cron on both,
-`Time.offset!`, `packages/testing`'s `testSqlite()`, the docs (`/platform/database`), and plate,
-tasks, quiz, board and notes on SQLite. Open: uptime (packages/admin's tables read Postgres's
-catalog), packages/push (Postgres's statements), `rocx new`'s question, libSQL/Turso.
+`db/sqlite.rs`), `Db.notify!` and `Db.backend!` (`[Postgres, Sqlite, None]`: none without a
+database), migrations and needs a kind, jobs and cron on both (a test's own jobs woken through
+`POST /__rocx/jobs/wake`, under `--dev` or `--debug`), `Time.offset!`, `packages/testing`'s
+`testSqlite()`, the docs (`/platform/database`); packages/admin's tables admin on both (SQLite's
+pragmas read as Postgres's catalog is; `AdminPage.Effects` has `backend!`) and packages/push on both;
+and every example with a database on SQLite: plate, tasks, quiz, board, notes and uptime. Open:
+`rocx new`'s question, libSQL/Turso.
 
 **Context.** Postgres is the platform's one database (`--database-url`). The platform runs one
 server an app (one instance), and many apps on one server need no database server beside it:
@@ -2372,7 +2375,7 @@ calls. What can't be shared is SQL: Postgres's and SQLite's differ, and the SQL 
   milliseconds already, so the jobs page reads both. Cron's ticker is Roc, and changes only in the
   statement that queues.
 - **The examples are on SQLite**, so running one needs nothing beside it: board, notes, plate,
-  quiz and tasks; uptime once admin has SQLite's statements.
+  quiz, tasks and uptime.
 - **Plate moves to SQLite** (its data isn't copied): its search on FTS5 (a word's start is
   `word*`), `real` for its amounts (no `::float8` or `::numeric`, which is its README's gap 1), its
   days from a recursive `with`. Its day begins in the profile's time zone, which it asks of Postgres
@@ -2381,9 +2384,7 @@ calls. What can't be shared is SQL: Postgres's and SQLite's differ, and the SQL 
 - **The server's tests run on SQLite always, and on Postgres too when `DATABASE_URL` is set**; a
   SQLite test's database is a file of its own in a temporary directory.
 
-**Not in it.** SQL that runs on both, a query builder, two databases in one app, MySQL. admin
-(its catalog reads Postgres's own tables) and push stay `needs: [Postgres]` until they have SQLite's
-statements.
+**Not in it.** SQL that runs on both, a query builder, two databases in one app, MySQL.
 
 **Phases.** 1: the SQLite backend, typed parameters, `Db.notify!` and `Db.backend!`, the program's
 `database`, migrations a flavor, the needs; the server's test app on both. 2: jobs and cron on
