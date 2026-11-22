@@ -135,9 +135,11 @@ describe("Acme Board over HTTP", { skip: noDatabase }, () => {
 		const card = seeded.cards["Telemetry dashboard"];
 		const lease = `/b/launch/cards/${card}/lease`;
 		const fields = { title: "Telemetry dashboard", description: "Every second.", assignee: "", due: "" };
+		// Each opening of the card takes the lease, and lets it go, with a token of its own.
+		const [adas, bos] = [{ token: "ada-1" }, { token: "bo-1" }];
 
-		assert.deepEqual([(await ada.json(lease, {})).status, (await ada.json(lease, {})).status], [200, 200]);
-		const refused = await bo.json(lease, {});
+		assert.deepEqual([(await ada.json(lease, adas)).status, (await ada.json(lease, adas)).status], [200, 200]);
+		const refused = await bo.json(lease, bos);
 		assert.deepEqual([refused.status, refused.text], [409, "Ada is editing this card."]);
 		assert.deepEqual((await bo.read("/b/launch")).leases, [{ card, person: (await ada.read("/b/launch")).me.id, name: "Ada" }]);
 
@@ -149,14 +151,38 @@ describe("Acme Board over HTTP", { skip: noDatabase }, () => {
 		assert.equal((await bo.json("/b/launch/move", { card, column: seeded.columns.Doing, before: "" })).status, 200);
 
 		// Bo can't let Ada's lease go; Ada can, and then Bo has it.
-		assert.equal((await bo.json(lease, {}, "DELETE")).text, '"not yours"');
-		assert.equal((await ada.json(lease, {}, "DELETE")).text, '"released"');
-		assert.equal((await bo.json(lease, {})).status, 200);
-		assert.equal((await ada.json(lease, {})).text, "Bo is editing this card.");
+		assert.equal((await bo.json(`${lease}/release`, bos)).text, '"not yours"');
+		assert.equal((await ada.json(`${lease}/release`, adas)).text, '"released"');
+		assert.equal((await bo.json(lease, bos)).status, 200);
+		assert.equal((await ada.json(lease, { token: "ada-2" })).text, "Bo is editing this card.");
 
 		// Bo's tab vanishes: no renewals, and the lease runs out on its own (3 s here).
-		await until(async () => (await ada.json(lease, {})).status === 200, { ms: 5000, what: "Bo's lease to run out" });
+		await until(async () => (await ada.json(lease, { token: "ada-2" })).status === 200, { ms: 5000, what: "Bo's lease to run out" });
 		assert.equal((await bo.json(`/b/launch/cards/${card}`, fields)).status, 409);
+	});
+
+	test("a take an open card sent before it closed takes nothing, once it has let the lease go; opening it again takes it", async () => {
+		const ada = await as(app, db, "Ada");
+		const card = seeded.cards["Weather go/no-go checklist"];
+		const lease = `/b/launch/cards/${card}/lease`;
+		const leases = async () => (await ada.read("/b/launch")).leases.filter((each) => each.card === card);
+
+		// Taken, saved and closed, and the renewal the card sent before it closed comes in last.
+		assert.equal((await ada.json(lease, { token: "open-1" })).status, 200);
+		assert.equal((await ada.json(`${lease}/release`, { token: "open-1" })).text, '"released"');
+		const late = await ada.json(lease, { token: "open-1" });
+		assert.deepEqual([late.status, late.text], [409, "This card was closed."]);
+		assert.deepEqual(await leases(), []);
+
+		// Opened and closed at once, the release in before the first take.
+		assert.equal((await ada.json(`${lease}/release`, { token: "open-2" })).text, '"not yours"');
+		assert.equal((await ada.json(lease, { token: "open-2" })).status, 409);
+		assert.deepEqual(await leases(), []);
+
+		// Opened again: a new token, and the lease is hers.
+		assert.equal((await ada.json(lease, { token: "open-3" })).status, 200);
+		assert.equal((await leases()).length, 1);
+		assert.equal((await ada.json(`${lease}/release`, { token: "open-3" })).text, '"released"');
 	});
 
 	test("everyone on a board hears each change on its channel, and only members may listen", async () => {

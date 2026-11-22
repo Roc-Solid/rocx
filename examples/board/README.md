@@ -32,7 +32,7 @@ several people work on one board at once: each sees the others' changes as they 
 | Cards glide to their new place, between columns too (`transition:move` and `key`, D-031) | `Ui/CardTile.rocx` |
 | Everyone sees each change live: the board's channel (D-020), published after every change | `routes/b/[board]/+server.roc` (`channel!`), `News.roc`, the page's `heard!` |
 | Presence: who is on the board, and who has which card open (packages/presence, on a channel) | `routes/b/[board]/presence/+server.roc` (the package's hooks), the page's `here` (`Presence.join!`), `Ui/Shared.roc` |
-| An edit lease on a card, in `Kv` with a time to live (D-028) | `Lease.roc`, `routes/b/[board]/cards/[card]/lease/+server.roc`, `Ui/CardPanel.rocx` (`take!`) |
+| An edit lease on a card, in `Kv` with a time to live (D-028), taken and let go with a token of each opening of the card, so a late take can't outlive a close | `Lease.roc`, `routes/b/[board]/cards/[card]/lease/` (`+server.roc`, `release/`), `Ui/CardPanel.rocx` (`take!`) |
 | Changes shown before the server has them in the open card (labels, ticks, its fields), as moves are | `Ui/CardPanel.rocx` (`card!`), `Board.saved`, `Board.labelled`, `Board.ticked` |
 | Rate limits on writes (packages/guard) and security headers | `Middlewares.roc` (`writer`, `default`) |
 | Who you are: a name and a colour in a cookie; members only | `routes/join/`, `Middlewares.member` |
@@ -100,16 +100,18 @@ node --test 'examples/board/test/*.test.mjs'       # needs DATABASE_URL; the bro
   never being sent to another site after), the seeded board (and the seed run again adding nothing),
   moves and their ranks (between neighbours, at either end, before a card that has moved away, one
   row written), ten moves into one gap at once, refused moves, the edit lease (taken, refused to
-  someone else, renewed, released, and running out), the channel (a member hears each change, a
-  visitor is refused), labels, the checklist, archiving and deleting, the forms without JavaScript,
-  and the rate limit.
+  someone else, renewed, released, and running out; a take its card sent before it closed, arriving
+  after the release, takes nothing, and the next opening takes it), the channel (a member hears
+  each change, a visitor is refused), labels, the checklist, archiving and deleting, the forms
+  without JavaScript, and the rate limit.
 - `test/browser.test.mjs`: two people in two browsers on one board, Ada in headless Gecko (Zen or
   Firefox) when there is one and Bo in Chromium. Each sees the other, the board's channel and its
   presence room on one stream; Ada drags a card to another column, it shows there at once for her
   and moves on Bo's page (gliding on both) without a reload; Ada opens a card, Bo's board shows she
   has it open and is editing it, Bo opens it read-only, it opens for him when she closes it, and his
-  edit shows on her board; a third person comes, and once their browser closes and the grace is up,
-  leaves everyone's stack.
+  edit shows on her board; Bo, then Ada, saves a card and closes it at once while the renewal the
+  save made is held back on its way, and the other sees the card free, and it stays free; a third
+  person comes, and once their browser closes and the grace is up, leaves everyone's stack.
 
 The test files build the app once between them, each with a database and a server of its own.
 
@@ -135,7 +137,10 @@ so a column's cards scroll on their own again and the card is seen all the way.
   details, not where it is: moving a card someone is editing is allowed. Opening a card takes it
   (when free); the open card renews it every 10 s and lets it go when closed; a tab that vanishes
   stops renewing, and the lease runs out 30 s later. Someone waiting with the card open gets it as
-  soon as the board says it is free, or at their next renewal once it has run out.
+  soon as the board says it is free, or at their next renewal once it has run out. A card closed
+  lets its lease go for good, though a renewal it sent (the board read again after a save) reaches
+  the server after: each opening takes and lets go with a token of its own, and the server keeps
+  the lease marked as let go by it for as long as a lease lasts.
 - A browser without JavaScript never holds a lease: it may change a card unless someone else is
   editing it.
 - A card is archived before it can be deleted: two steps, so a slip loses nothing.

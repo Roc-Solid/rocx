@@ -7,7 +7,7 @@
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { findChrome, findGecko, launchBrowser } from "../../../packages/testing/index.mjs";
-import { ids, noDatabase, started } from "./app.mjs";
+import { as, ids, noDatabase, started } from "./app.mjs";
 
 const noChrome = !(await findChrome()) && "needs Chromium's headless shell ($CHROME, or Playwright's)";
 /** Ada's browser. */
@@ -26,6 +26,31 @@ const GLIDES = `document.addEventListener("rocx:ready", (event) => {
 		},
 	};
 });`;
+
+/** Holds back the lease takes an open card sends (`POST …/lease`) while `window.__holdTakes` is set,
+ * as a slow network might, until `window.__letTakesGo()` sends them (it answers how many); notes the
+ * status each was answered with. */
+const HOLD = `(() => {
+	const send = window.fetch;
+	window.__held = [];
+	window.__answered = [];
+	window.fetch = async (input, init) => {
+		const url = typeof input === "string" ? input : input.url;
+		if (window.__holdTakes && (init?.method ?? input.method) === "POST" && url.endsWith("/lease")) {
+			await new Promise((go) => window.__held.push(go));
+			const answer = await send(input, init);
+			window.__answered.push(answer.status);
+			return answer;
+		}
+		return send(input, init);
+	};
+	window.__letTakesGo = () => {
+		window.__holdTakes = false;
+		const held = window.__held.splice(0);
+		for (const go of held) go();
+		return held.length;
+	};
+})();`;
 
 /** A key pressed and let go with Alt held, as a keyboard does it: over the DevTools protocol in
  * Chromium, with WebDriver's key actions in Gecko (Alt is `\uE00A` there, ArrowDown `\uE015`). */
@@ -46,7 +71,7 @@ describe(`Acme Board in two browsers (Ada's: ${engine})`, { skip: noDatabase || 
 		people = Object.fromEntries((await running.db.sql`select name, id::text as id from people`).map((row) => [row.name, row.id]));
 		browsers = [await launchBrowser({ engine }), await launchBrowser()];
 		open = async (browser, person) => {
-			const tab = await browser.open(`${running.app.url}/b/launch`, { cookies: [["acme_board_person", person]], script: GLIDES });
+			const tab = await browser.open(`${running.app.url}/b/launch`, { cookies: [["acme_board_person", person]], script: GLIDES + HOLD });
 			// Live: subscribed to the board's channel, and in its presence room.
 			await tab.page.wait("document.querySelector('.live.on')", 5000);
 			return tab;
@@ -145,13 +170,46 @@ describe(`Acme Board in two browsers (Ada's: ${engine})`, { skip: noDatabase || 
 		await (await bo.getByLabelText("Title")).fill("Book the launch pad for Tuesday");
 		await (await bo.getByRole("button", { name: "Save" })).click();
 		await ada.findByRole("link", { name: "Book the launch pad for Tuesday" }, { ms: 5000 });
-		// Bo closes it with Escape, pressed with the focus anywhere on the page (`<Document>`), once his
-		// save is done (the board read again after it renews his lease, which closing lets go of).
-		await bo.page.wait("!document.querySelector('.panel .saving')?.textContent.includes('Saving')", 5000);
+		// Bo closes it with Escape, pressed with the focus anywhere on the page (`<Document>`).
 		await bo.page.eval("document.activeElement?.blur()");
 		for (const type of ["rawKeyDown", "keyUp"]) await bo.page.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape" });
 		await bo.page.wait("!document.querySelector('.panel')", 5000);
 		await ada.page.wait(`!document.querySelector('[data-card="${card}"] .editing')`, 5000);
+	});
+
+	test("a card saved and closed at once is free for everyone else, though the renewal it sent was still on its way", async () => {
+		// Bo, in Chromium, then Ada, in Gecko when there is one, saves a card and closes it at once. The
+		// board, read again after the save, makes the open card renew its lease, and that take is held
+		// back (a slow network) until the card has let the lease go: it reaches the server last, and
+		// finds the lease let go by the opening that sent it, so it takes nothing.
+		const cyd = await as(running.app, running.db, "Cyd");
+		for (const [who, tab, other, title] of [
+			["Bo", bo, ada, "Live countdown on the website"],
+			["Ada", ada, bo, "Confetti cannon at lift-off"],
+		]) {
+			const card = seeded.cards[title];
+			const editing = `document.querySelector('[data-card="${card}"] .editing')`;
+			await (await tab.getByRole("link", { name: title })).click();
+			await tab.findByRole("heading", { level: 2, name: title });
+			await other.page.wait(`${editing}?.textContent.includes("${who} is editing")`, 5000);
+
+			await tab.page.eval("window.__holdTakes = true");
+			await (await tab.getByLabelText("Title")).fill(`${title}, again`);
+			await (await tab.getByRole("button", { name: "Save" })).click();
+			await tab.page.wait("window.__held.length > 0", 5000);
+			await tab.page.eval("document.activeElement?.blur()");
+			await tab.page.press("Escape");
+			await tab.page.wait("!document.querySelector('.panel')", 5000);
+			await other.page.wait(`!${editing}`, 5000);
+
+			const late = await tab.page.eval("window.__letTakesGo()");
+			await tab.page.wait(`window.__answered.length === ${late}`, 5000);
+			assert.deepEqual(await tab.page.eval("window.__answered.splice(0)"), Array(late).fill(409), `${who}'s late renewals are refused`);
+			assert.deepEqual((await cyd.read("/b/launch")).leases, [], `no one holds a lease once ${who} has closed the card`);
+			assert.equal(await other.page.eval(`${editing} === null`), true);
+			const [row] = await running.db.sql`select title from cards where id = ${card}`;
+			assert.equal(row.title, `${title}, again`, `${who}'s save is in`);
+		}
 	});
 
 	test("Cyd opens the card Ada has open: on Bo's board the tile's stack is kept, its label patched (D-039)", async () => {
