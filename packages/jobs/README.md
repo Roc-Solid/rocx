@@ -68,6 +68,9 @@ Job.plugin : Job.Options -> Plugin.Value(ctx)
 - **The workers** (`jobs.worker`, `workers` of them; none without a database or a kind to run) and
   **the schedules' loop** (`jobs.schedules`, with a database and a schedule).
 - **A call**, `jobs.run`: each job runs in a call of its own (`Plugin.isolated!`).
+- **Under `--dev` or `--debug`**, `POST /__rocx/jobs/wake`: the workers told to look for a due job
+  now, as queuing one tells them. For a job another process wrote into `rocx_jobs` itself, which on
+  SQLite can't tell them (a test's: packages/testing's `enqueue` and `settleJobs` ask it).
 - **At start**: the kinds and schedules kept, for `Job.kinds!`, `Cron.schedules!` and the jobs
   page; every schedule checked (one it can't read, or whose job the plugin doesn't run, stops the
   server, saying why); and, with a database, the jobs a stop cut short queued again, and done jobs

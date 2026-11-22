@@ -1,5 +1,6 @@
 import pf.Db
 import pf.Plugin
+import pf.Server
 import Cron
 import CronTicker
 import JobWorker
@@ -75,7 +76,10 @@ Job := [].{
 	## database and a kind to run) and the schedules' loop (`jobs.schedules`, with one), the call
 	## a job runs in (`jobs.run`), and at start the kinds and schedules kept (`kinds!`,
 	## `Cron.schedules!`), every schedule checked (a bad one, or one naming a job the plugin doesn't
-	## run, stops the server), and the jobs a stop cut short queued again.
+	## run, stops the server), and the jobs a stop cut short queued again. Under `--dev` or
+	## `--debug`, `POST /__rocx/jobs/wake` tells the workers to look for a due job now, as queuing
+	## one does: for a job another process wrote into the queue itself, which on SQLite can't tell
+	## them (a test's: packages/testing's `enqueue` and `settleJobs`).
 	plugin : Options -> Plugin.Value(ctx)
 	plugin = |options| {
 		handlers = options.jobs
@@ -88,6 +92,7 @@ Job := [].{
 		{
 			name: "jobs",
 			migrations: [{ name: "0001_jobs", sql: jobs_table, on: Postgres }, { name: "0001_jobs", sql: lite_jobs_table, on: Sqlite }],
+			early: [{ method: "POST", path: "/__rocx/jobs/wake", under: [Dev, Debug], answer!: woken! }],
 			calls: [{ name: "jobs.run", run!: |input| ran!(handlers, input) }],
 			loops: workers.concat(ticker),
 			starts: [|{}| started!(kinds, crons)],
@@ -366,6 +371,15 @@ acted! = |id, done, sql, lite_sql|
 ## What `on_failed!` does when the app doesn't say: nothing (the worker has logged it).
 ignored! : Job.Failure => {}
 ignored! = |_failure| {}
+
+## `POST /__rocx/jobs/wake`: the workers told to look for a due job now (`rocx_jobs` notified, as
+## queuing one does); 204, or 503 with why.
+woken! : Server.Request => Server.Response
+woken! = |_request|
+	match Db.notify!("rocx_jobs", "") {
+		Ok({}) => Server.response(204, [], "")
+		Err(DbErr(why)) => Server.response(503, [], why)
+	}
 
 ## Runs a job (the plugin's call `jobs.run`): `input` is its kind, a newline, and its input as JSON.
 ran! : List(Job.Handler), Str => Try(Str, Str)

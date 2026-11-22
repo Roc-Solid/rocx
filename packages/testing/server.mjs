@@ -16,7 +16,9 @@ import { parse, within } from "./dom.mjs";
  * Starts the server `executable` on a free port (`--port 0`) with `--debug` (the mailbox's JSON) and
  * what `options` say, and resolves once it listens:
  *
- * - `database`: its `--database-url` (a test's own: postgres.mjs's `testDatabase`);
+ * - `database`: its `--database-url`, or a test's own database (postgres.mjs's `testDatabase`,
+ *   sqlite.mjs's `testSqlite`), whose `url` it is given and which then knows the server (a SQLite
+ *   one wakes its job workers);
  * - `dev`: `--dev` (the mailbox's pages, crash pages, page reloads);
  * - `statics`: directories it serves files from (`--static`, each);
  * - `context`: a file of what its middleware is given (`--context-file`);
@@ -31,7 +33,7 @@ export async function startServer(executable, { database, dev = false, debug = t
 		"0",
 		...(debug ? ["--debug"] : []),
 		...(dev ? ["--dev"] : []),
-		...(database ? ["--database-url", database] : []),
+		...(database ? ["--database-url", typeof database === "string" ? database : database.url] : []),
 		...(context ? ["--context-file", context] : []),
 		...statics.flatMap((dir) => ["--static", dir]),
 		...flags,
@@ -47,7 +49,9 @@ export async function startServer(executable, { database, dev = false, debug = t
 		child.on("error", reject);
 		child.on("exit", (code) => reject(new Error(`${executable} exited (${code}) before it listened:\n${said}`)));
 	});
-	return new Server(url, child, () => said);
+	const server = new Server(url, child, () => said);
+	if (database && typeof database === "object") database.server = server;
+	return server;
 }
 
 /** A server started by `startServer`. */
