@@ -72,7 +72,7 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 		assert.deepEqual(home.notes.map((note) => note.title), ["Welcome to Notes"]);
 
 		// Nothing in the server keeps the token itself: Kv has its hash.
-		assert.equal((await db.sql`select count(*)::int as n from people where email = 'cyd@example.com'`)[0].n, 1);
+		assert.equal((await db.sql`select count(*) as n from people where email = 'cyd@example.com'`)[0].n, 1);
 	});
 
 	test("a link works once: used again, or by someone else, it is refused", async () => {
@@ -148,8 +148,12 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 		assert.deepEqual((await ada.read("/?archived=true")).notes.map((note) => note.title), ["Old flat: things to sort"]);
 		assert.deepEqual((await ada.read("/?tag=rocket")).notes.map((note) => note.title), ["Launch week plan", "Countdown script"]);
 
-		await db.query(readFileSync(join(dir, "migrations", "0002_seed.sql"), "utf8"));
-		const [counts] = await db.sql`select (select count(*)::int from people where email in ('ada@example.com', 'bo@example.com')) as people, (select count(*)::int from notes n join people p on p.id = n.person_id where p.email = 'ada@example.com') as notes`;
+		// The seed is several statements: node:sqlite's exec runs them all (db.query prepares one).
+		const { DatabaseSync } = await import("node:sqlite");
+		const seeding = new DatabaseSync(db.path, { timeout: 10_000 });
+		seeding.exec(readFileSync(join(dir, "migrations", "0002_seed.sql"), "utf8"));
+		seeding.close();
+		const [counts] = await db.sql`select (select count(*) from people where email in ('ada@example.com', 'bo@example.com')) as people, (select count(*) from notes n join people p on p.id = n.person_id where p.email = 'ada@example.com') as notes`;
 		assert.deepEqual(counts, { people: 2, notes: 8 });
 	});
 
@@ -282,7 +286,8 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 	test("tokens: shown once, kept only as a hash, listed with their last use, read-only, revoked", async () => {
 		const token = await makeToken(ada, "Reader", "read");
 		const [row] = await db.sql`select name, hash, hint, read_only from tokens where hash = ${sha256(token)}`;
-		assert.deepEqual(row, { name: "Reader", hash: sha256(token), hint: token.slice(-4), read_only: true });
+		// SQLite keeps a boolean as 1 or 0, which is what node:sqlite reads (Db reads it as a Bool).
+		assert.deepEqual(row, { name: "Reader", hash: sha256(token), hint: token.slice(-4), read_only: 1 });
 		const everything = JSON.stringify(await db.sql`select * from tokens`);
 		assert.ok(!everything.includes(token.slice("acme_pat_".length, -4)), "no token is in the database");
 
@@ -360,7 +365,7 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 		}
 		// Nor one of Bo's tokens.
 		const bosToken = await makeToken(bo, "Bo's");
-		const [{ id: bosTokenId }] = await db.sql`select id::text as id from tokens where hash = ${sha256(bosToken)}`;
+		const [{ id: bosTokenId }] = await db.sql`select cast(id as text) as id from tokens where hash = ${sha256(bosToken)}`;
 		await ada.get("/settings");
 		await ada.post("/settings/revoke", { id: bosTokenId });
 		assert.equal(ada.flash.status, 404);
@@ -368,7 +373,7 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 
 		// Bo's note is as it was.
 		const [row] = await db.sql`select title, body, archived from notes where id = ${theirs}`;
-		assert.deepEqual([row.title, row.archived], ["Telemetry dashboard", false]);
+		assert.deepEqual([row.title, row.archived], ["Telemetry dashboard", 0]);
 		assert.ok(!row.body.includes("hi"));
 	});
 

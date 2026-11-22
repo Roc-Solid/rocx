@@ -1,17 +1,17 @@
 // What the notes tests share: the app, built once (node --test runs the files at once, and two
 // builds of one app at once would write the same files); a server of a test file's own, on a
-// database of its own; and the ways in: signing in through the mailed link, as a person does, and
+// SQLite file of its own (no database server is needed); and the ways in: signing in through the mailed link, as a person does, and
 // personal access tokens, as an AI client uses them.
 import assert from "node:assert/strict";
 import { mkdirSync, rmSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildForTests, links, startServer, testDatabase } from "../../../packages/testing/index.mjs";
+import { buildForTests, links, startServer, testSqlite } from "../../../packages/testing/index.mjs";
 
 export const dir = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** Why the tests that need Postgres are skipped, or false. */
-export const noDatabase = !process.env.DATABASE_URL && "needs DATABASE_URL (a Postgres, `just db`)";
+/** Why the tests that need the database are skipped, or false: never, as it is a SQLite file of their own. */
+export const noDatabase = false;
 
 /** The app, built: `{ server, statics }`. One test file builds it while the others wait. */
 export async function built() {
@@ -34,10 +34,10 @@ export async function built() {
 	}
 }
 
-/** The app's server, on a database of its own, migrated and seeded as it starts. */
+/** The app's server, on a SQLite file of its own, migrated and seeded as it starts. */
 export async function started({ env = {} } = {}) {
 	const { server, statics } = await built();
-	const db = await testDatabase();
+	const db = testSqlite();
 	const app = await startServer(server, { statics, database: db.url, env: { NOTES_SECRET: "a secret for the tests, and only them", PUBLIC_URL: "http://notes.example", ...env } });
 	return {
 		app,
@@ -88,6 +88,6 @@ export function bearer(app, token) {
 
 /** The ids of someone's notes, by title. */
 export async function noteIds(db, email) {
-	const rows = await db.sql`select n.title, n.id::text as id from notes n join people p on p.id = n.person_id where p.email = ${email}`;
+	const rows = await db.sql`select n.title, cast(n.id as text) as id from notes n join people p on p.id = n.person_id where p.email = ${email}`;
 	return Object.fromEntries(rows.map((row) => [row.title, row.id]));
 }

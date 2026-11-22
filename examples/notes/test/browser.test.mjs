@@ -64,8 +64,9 @@ describe("Notes in a browser", { skip: noDatabase || noChrome }, () => {
 		await tab.findByRole("link", { name: "#outdoors" });
 		assert.deepEqual(tab.errors, []);
 
-		const [row] = await running.db.sql`select n.body, array_to_json(n.tags) as tags from notes n join people p on p.id = n.person_id where p.email = 'ada@example.com' and n.title = 'Kite festival'`;
-		assert.deepEqual(row.tags, ["events", "outdoors"]);
+		const [row] = await running.db.sql`select n.body, n.tags from notes n join people p on p.id = n.person_id where p.email = 'ada@example.com' and n.title = 'Kite festival'`;
+		// node:sqlite reads a json column as its text.
+		assert.deepEqual(JSON.parse(row.tags), ["events", "outdoors"]);
 	});
 
 	test("finding it again by searching, the word it found highlighted", async () => {

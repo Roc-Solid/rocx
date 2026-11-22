@@ -1,63 +1,69 @@
--- The app's tables: the people who sign in (by email: there are no passwords), their notes, and
--- the personal access tokens their AI clients use. Every note is one person's, and every query the
--- app makes names whose (Store.roc).
+-- The app's tables, in SQLite (the app's database is a file: `database: Sqlite("data/notes.db")`):
+-- the people who sign in (by email: there are no passwords), their notes, and the personal access
+-- tokens their AI clients use. Every note is one person's, and every query the app makes names
+-- whose (Store.roc). A moment is milliseconds since the epoch.
 
 create table people (
-	id bigserial primary key,
+	id integer primary key,
 	email text not null check (length(email) between 3 and 254),
 	-- Raised by "sign out everywhere": a session cookie carries the number it was signed with, and
 	-- one with an older number is refused (Session.roc).
 	session_epoch integer not null default 0,
-	created_at timestamptz not null default now()
+	created_at integer not null default (cast(unixepoch('subsec') * 1000 as integer))
 );
 
--- One person per address, whatever its case.
+-- One person per address, whatever its case (SQLite's lower() folds ASCII letters, which is what
+-- an address's are).
 create unique index people_email on people (lower(email));
 
 create table notes (
-	id bigserial primary key,
-	person_id bigint not null references people on delete cascade,
+	id integer primary key,
+	person_id integer not null references people on delete cascade,
 	title text not null check (length(title) between 1 and 200),
 	body text not null default '' check (length(body) <= 100000),
-	tags text[] not null default '{}',
+	-- A JSON list of the note's tags (declared json, so Db reads the list).
+	tags json not null default '[]',
 	pinned boolean not null default false,
 	archived boolean not null default false,
-	created_at timestamptz not null default now(),
-	updated_at timestamptz not null default now(),
-	-- The body as plain words, kept by Postgres in step with it: Markdown's marks, code fences and
-	-- links' addresses left out. What a list shows of a note, and what search quotes from it.
-	plain text generated always as (
-		trim(regexp_replace(
-			regexp_replace(
-				regexp_replace(
-					regexp_replace(
-						regexp_replace(body, '!?\[([^\]]*)\]\([^)]*\)', '\1', 'g'),
-					'^\s{0,3}(#{1,6}|>|[-*+]|\d+\.)\s+(\[[ xX]\]\s+)?', '', 'gn'),
-				'```[A-Za-z0-9_-]*', '', 'g'),
-			'[*_`~]+', '', 'g'),
-		'\s+', ' ', 'g'))
-	) stored,
-	-- What full-text search matches: the title's words weigh more than the body's.
-	search tsvector generated always as (
-		setweight(to_tsvector('english', title), 'A') || setweight(to_tsvector('english', body), 'B')
-	) stored
+	created_at integer not null default (cast(unixepoch('subsec') * 1000 as integer)),
+	updated_at integer not null default (cast(unixepoch('subsec') * 1000 as integer)),
+	-- The body as plain words: Markdown's marks, code fences and links' addresses left out
+	-- (Note.plain, which Store writes with every body). What a list shows of a note, and what search
+	-- finds and quotes.
+	plain text not null default ''
 );
 
-create index notes_search on notes using gin (search);
-create index notes_tags on notes using gin (tags);
 create index notes_person on notes (person_id, archived, pinned desc, updated_at desc);
 
+-- What full-text search matches: each note's title and plain words, in an FTS5 index the triggers
+-- keep in step with `notes`, each word by its stem (porter: "rehearsals" finds "rehearsal"). A
+-- search weighs the title's words more than the body's (Store.search!).
+create virtual table note_words using fts5 (title, plain, content = 'notes', content_rowid = 'id', tokenize = 'porter unicode61');
+
+create trigger notes_words_added after insert on notes begin
+	insert into note_words (rowid, title, plain) values (new.id, new.title, new.plain);
+end;
+
+create trigger notes_words_removed after delete on notes begin
+	insert into note_words (note_words, rowid, title, plain) values ('delete', old.id, old.title, old.plain);
+end;
+
+create trigger notes_words_changed after update of title, plain on notes begin
+	insert into note_words (note_words, rowid, title, plain) values ('delete', old.id, old.title, old.plain);
+	insert into note_words (rowid, title, plain) values (new.id, new.title, new.plain);
+end;
+
 create table tokens (
-	id bigserial primary key,
-	person_id bigint not null references people on delete cascade,
+	id integer primary key,
+	person_id integer not null references people on delete cascade,
 	name text not null check (length(name) between 1 and 60),
 	-- The token's SHA-256, in hex: the token itself is shown once, when it is made, and never kept.
 	hash text not null unique,
 	-- Its last four characters, so a list of tokens can tell them apart.
 	hint text not null,
 	read_only boolean not null default false,
-	created_at timestamptz not null default now(),
-	last_used_at timestamptz
+	created_at integer not null default (cast(unixepoch('subsec') * 1000 as integer)),
+	last_used_at integer
 );
 
 create index tokens_person on tokens (person_id, created_at);

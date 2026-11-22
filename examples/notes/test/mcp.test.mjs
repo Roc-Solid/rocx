@@ -134,7 +134,8 @@ describe("Notes over MCP", { skip: noDatabase }, () => {
 		const prompt = await rpc(writer, "prompts/get", { name: "summarize_note", arguments: { id: theirs } });
 		assert.ok(prompt.error || prompt.isError || !JSON.stringify(prompt).includes("Altitude"), JSON.stringify(prompt));
 		const [row] = await db.sql`select body, archived from notes where id = ${theirs}`;
-		assert.deepEqual([row.body.includes("hello"), row.archived], [false, false]);
+		// SQLite keeps a boolean as 1 or 0, which is what node:sqlite reads.
+		assert.deepEqual([row.body.includes("hello"), row.archived], [false, 0]);
 	});
 
 	test("resources: the index, and each note as Markdown", async () => {

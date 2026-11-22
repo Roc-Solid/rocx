@@ -35,7 +35,7 @@ person sees only their own notes, whichever way they ask.
 | Feature | Where |
 |---|---|
 | Sign-in by a mailed link: the form, `Email.send!` (packages/email's plugin, D-035), the landing page and its button | `routes/sign-in/`, `routes/sign-in/link/`, `Account.send_link!`, `main.roc` (`Email.plugin`) |
-| A single-use token with a time to live, in `Kv` (D-028), kept by its hash; why `Kv` and not Postgres | `Account.roc` (its `##` comment, `use_link!` with `Kv.take!`), `Token.link` |
+| A single-use token with a time to live, in `Kv` (D-028), kept by its hash; why `Kv` and not a table | `Account.roc` (its `##` comment, `use_link!` with `Kv.take!`), `Token.link` |
 | A session cookie signed with HMAC-SHA256 (packages/crypto), refused when forged, expired or signed out everywhere, with its `expect`s | `Session.roc`, `Account.session!`, `Account.signed_in!` |
 | Signing out, and out of every browser (a session epoch) | `routes/sign-out/`, `routes/settings/everywhere/`, `Store.sign_out_everywhere!` |
 | Middleware that puts the person into the context and guards pages, the API and MCP | `Middlewares.roc` (`signed_in`, `api`, `agent`), each route file's `middleware = …` |
@@ -45,11 +45,11 @@ person sees only their own notes, whichever way they ask.
 | Bearer tokens turned into the person, so a token never reaches another's notes; read-only tokens refused for writes | `Middlewares.agent`, `Notebook.writer`, `Store.roc` (every query names the person) |
 | The JSON API, and its OpenAPI document with Scalar (`openapi: Page(Scalar)`) | `routes/api/`, `main.roc`, `/openapi.html` |
 | Rate limits (packages/guard): sign-in links for each address, MCP calls for each token | `Middlewares.mail_limit`, `Middlewares.agent_limit` |
-| Full-text search in Postgres: a generated `tsvector`, `websearch_to_tsquery`, ranking, `ts_headline` snippets | `migrations/0001_notes.sql`, `Store.search!`, `Note.query_of`, `Note.pieces` |
+| Full-text search in SQLite: an FTS5 index kept in step by triggers, each word by its stem (porter), a search engine's syntax read in Roc (`Store.matching`), ranking with titles first (`bm25`), `snippet()`s of what a body reads as (`Note.plain`) | `migrations/0001_notes.sql`, `Store.search!`, `Store.matching`, `Note.plain`, `Note.query_of`, `Note.pieces` |
 | Matches highlighted as text, never as markup | `Note.pieces`, `Ui/NoteCard.rocx` (`snippet`) |
 | Markdown rendered by packages/markdown: on a note's page by the server alone (`<NoHydration>`), in the editor's preview by the browser as you type | `Ui/Prose.rocx`, `routes/notes/[id]/+page.rocx`, `Ui/Editor.rocx` |
 | One rule set for every write, whoever sends it (a page, a script, an agent) | `Note.roc` (rules, with `expect`s), `Notebook.roc` (operations) |
-| Appends that never overwrite each other (one statement) | `Store.append!` |
+| Appends that never overwrite each other (read and written in one transaction, which takes turns) | `Store.append!`, `Note.appended` |
 | Tags, pinning and archiving | `Notebook.tag!`, `pin!`, `archive!`; `routes/notes/[id]/+server.roc` |
 | Pages that read their own endpoint, typed for both halves | `Pages.roc`, each page's `Endpoint.get!` / `read!` |
 | A 404 for a note that isn't there or isn't yours (the same page, so ids tell nothing): the endpoint refuses both alike, and `Endpoint.get!` makes the page the app's error page | `routes/notes/[id]/+page.rocx`, `routes/+error.rocx` |
@@ -57,31 +57,30 @@ person sees only their own notes, whichever way they ask.
 | Pure and effectful components: `view` for what only shows its props, `view!` for what keeps state or sets the status | `Ui/NoteCard.rocx`, `Ui/Topbar.rocx`, `Ui/Prose.rocx` (pure); `Ui/Editor.rocx` (effectful) |
 | Scoped styles and a look of its own (ink, paper, a highlighter), light and dark, narrow screens | each component's `<style>`; the tokens in `routes/+layout.rocx` |
 | Stories for the components (`rocx build --dev`, `/__rocx/stories`) | `<story>` in `Ui/*.rocx` |
-| Postgres by migrations, and an idempotent seed | `migrations/` |
+| SQLite in the server's process (`database: Sqlite("data/notes.db")`, D-045), by migrations, and an idempotent seed | `main.roc`, `migrations/` |
 
 ## Build and run
 
-The toolchain once (`just setup`), and the platforms' hosts (`just test` builds both). Then, from the
-repository's root, with a Postgres (`just db`):
+The toolchain once (`just setup`), and the platforms' hosts (`just test` builds both). Nothing else:
+the notes are a SQLite file, `data/notes.db` from where the server starts. From the repository's
+root:
 
 ```sh
-docker exec rocx-postgres createdb -U rocx notes
-export DATABASE_URL=postgres://rocx:rocx@127.0.0.1:55432/notes
 export NOTES_SECRET="$(openssl rand -base64 32)"   # signs the session cookies
 
 bin/rocx build examples/notes --client examples/notes/build/client
 .tools/roc-active build --target=wasm32 --opt=size --output=examples/notes/build/client/static/rocx/app.wasm examples/notes/build/client/main.roc
 node server/build.mjs examples/notes/main.roc examples/notes/build/server
-examples/notes/build/server --port 18160 --dev --static examples/notes/build/client/static
+cd examples/notes && build/server --port 18160 --dev --static build/client/static
 ```
 
 Open http://127.0.0.1:18160 and sign in as `ada@example.com`; the link is in the dev mailbox,
-http://127.0.0.1:18160/__rocx/mail (`--dev` serves it), and goes to where the server listens. The server migrates and seeds the database
-as it starts.
+http://127.0.0.1:18160/__rocx/mail (`--dev` serves it), and goes to where the server listens. The server makes the file, and migrates and
+seeds it, as it starts.
 
 | Setting | |
 |---|---|
-| `DATABASE_URL` | the Postgres |
+| `DATABASE_URL` | where the notes are, as `sqlite:<path>` (or `--database-url`); unset, `data/notes.db` from where the server starts |
 | `NOTES_SECRET` | what session cookies are signed with (through HKDF). Unset, a key is made at random when first needed and kept in memory, so a restart signs everyone out (the log says so) |
 | `PUBLIC_URL` | the app's address, for the links in email and the MCP address Settings shows (or `--public-url`; without either, where the server listens: `http://127.0.0.1:18160` as above) |
 | `SMTP_URL` | a mail server (`smtp://user:password@smtp.example.com:587?tls=required`); unset, mail goes to the dev mailbox |
@@ -154,14 +153,15 @@ http://localhost:18160/api/me`); http://localhost:18160/openapi.html describes i
 
 ```sh
 .tools/roc-active test examples/notes/main.roc   # the expects
-node --test 'examples/notes/test/*.test.mjs'      # needs DATABASE_URL; the browser test needs Chromium
+node --test 'examples/notes/test/*.test.mjs'      # a SQLite file each; the browser test needs Chromium
 just examples notes                               # both, after building and checking it
 ```
 
-- **75 `expect`s** in the app's modules: `Session.roc` (a cookie signed and read back, expired,
+- **91 `expect`s** in the app's modules: `Session.roc` (a cookie signed and read back, expired,
   forged by another key, with another id, a later time or a newer epoch, and malformed in five
   ways), `Token.roc` (shapes, the hash being SHA-256's, the hint, names), `Note.roc` (titles,
-  bodies, tags, the search box's `#tags`, snippets' marks, dates), `Address.roc`, `Query.roc`,
+  bodies, tags, the search box's `#tags`, snippets' marks, dates, what a body reads as, appending),
+  `Store.matching` (a search box's words as an FTS5 query), `Address.roc`, `Query.roc`,
   `Account.path_of` (never another site after signing in), the editor's word count, `NoteCard` and
   `Topbar` rendered and read with packages/testing's `Dom`, and `Mcp.problems(Agents.server)`.
 - **`test/http.test.mjs`** (14 tests): signed out, pages send you to sign in and the API and MCP
@@ -183,7 +183,7 @@ just examples notes                               # both, after building and che
   highlighted; every page hydrating strictly, with no errors.
 - **`test/copies.test.mjs`** (4 tests): the modules copied from packages (below) are still theirs.
 
-The test files build the app once between them, each with a database and a server of its own.
+The test files build the app once between them, each with a SQLite file and a server of its own.
 
 Also tried by hand: the official MCP TypeScript SDK's v2 client (`@modelcontextprotocol/client`
 2.4.0), at the current protocol (2026-07-28) and in `auto`, listed the tools, searched, read the
@@ -273,13 +273,21 @@ What the app met, and how it works around each. None needed a change outside the
     its endpoint's types now (D-038): a box left unticked is `Bool.False`. The token's form has a box,
     "It may write too", and the endpoint a `write : Bool`.
 14. **Fixed: `Db.Value` had no list** (D-016), so tags went as a JSON array, `array(select
-    jsonb_array_elements_text($1::jsonb))`. `Db.array` makes a list one parameter now (a Postgres
-    array, in text), so `tags @> $3` and `set tags = $5` take `Db.array(tags.map(|tag| Text(tag)))`
-    (`Store.roc`). Tags still come back as `array_to_json(tags)`: a row reads JSON's types, and an
-    array column asks for a cast.
+    jsonb_array_elements_text($1::jsonb))`. `Db.array` made a list one parameter (a Postgres array,
+    in text). On SQLite (D-045), which has no arrays, a note's tags are a column declared `json`:
+    written as `Text(Json.to_str(tags))`, read back as the list with no cast, and looked into with
+    `json_each` (`Store.tagged`, the sidebar's counts).
 15. **No modifier keys in key handlers**, so no Ctrl+S to save: the editor saves with its button.
 16. **Roc on the way**: `{ ttl_ms }` alone is a block, not a record (`{ ttl_ms: ttl_ms }`); a tag
     isn't a function (`map_err(|why| BadRequest(why))`, not `map_err(BadRequest)`); a list's
     `keep_if` takes a pure function, so a page reads its endpoint once before filtering.
 17. **Email moved into packages/email (D-035)** while the app was being written: it names the package,
     imports `email.Email`, and lists `Email.plugin` in `main.roc`.
+18. **SQLite has no regular expressions, and no search engine's syntax** (the app moved from
+    Postgres to SQLite, D-045). What a body reads as (`plain`, Markdown's marks left out) was a
+    column Postgres generated with `regexp_replace`; now it is `Note.plain`, in Roc, which `Store`
+    writes with every body (so an append reads the body and writes it back, in a transaction that
+    takes turns), and the seed carries its own. `websearch_to_tsquery` is `Store.matching`, which
+    makes an FTS5 query of the words (`"launch" NOT "rehearsal"`). What differs: FTS5 keeps
+    stopwords, so every word asked for (`the`, `for`) must be in the note; a link's address isn't
+    searched, as `plain` leaves it out; and a snippet is one piece of about 24 words, not two.

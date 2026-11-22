@@ -39,8 +39,8 @@ Note := [].{
 		if (body.count_utf8_bytes() > 100_000) Err("A note is 100,000 characters at most.") else Ok(body)
 	}
 
-	## Text added at a note's end (`append_to_note`), which mustn't be empty. Postgres adds it, a
-	## blank line before it, in one statement (`Store.append!`).
+	## Text added at a note's end (`append_to_note`), which mustn't be empty: a blank line before it
+	## (`Note.appended`), in one transaction (`Store.append!`).
 	addition_of : Str -> Try(Str, Str)
 	addition_of = |given| {
 		text = given.replace_each("\r\n", "\n").trim()
@@ -79,6 +79,25 @@ Note := [].{
 	tags_text : List(Str) -> Str
 	tags_text = |tags| Str.join_with(tags, ", ")
 
+	## `body` with `text` at its end, a blank line between them, or `text` alone when the body has
+	## nothing but spaces: what appending to a note makes of it.
+	appended : Str, Str -> Str
+	appended = |body, text| {
+		kept = body.trim_end()
+		if (kept.trim().is_empty()) text else "${kept}\n\n${text}"
+	}
+
+	## What a body reads as, its Markdown's marks left out: a link or an image is its text, the mark
+	## at a line's start (a heading's `#`s, `>`, a list's `-`, `*`, `+` or `1.`, and a task's
+	## `[ ]` after it) goes, so do a code fence's marks and its language and every `*`, `_`, `` ` ``
+	## and `~`, and each run of spaces and line breaks is one space. What a list shows of a note, and
+	## what a search quotes from it: `Store` writes it with the body, and searches it.
+	plain : Str -> Str
+	plain = |body| {
+		bytes = fenceless(line_marks_gone(unlinked(body.to_utf8()))).drop_if(|byte| byte == '*' or byte == '_' or byte == '`' or byte == '~')
+		Str.from_utf8_lossy(one_spaced(bytes))
+	}
+
 	## A search box's text read: `#tag` narrows the search to notes with that tag, and the rest are
 	## the words to find (`"deploy #work"`: notes tagged work that mention deploying).
 	query_of : Str -> Note.Query
@@ -89,8 +108,8 @@ Note := [].{
 		{ words, tags }
 	}
 
-	## What Postgres puts around a word a search matched in a snippet (`ts_headline`'s `StartSel`
-	## and `StopSel`): characters of Unicode's private use area, which no note has, so the marks
+	## What the search puts around a word it matched in a snippet (SQLite's `snippet()`): characters
+	## of Unicode's private use area, which no note has, so the marks
 	## can't be confused with what was written.
 	start_mark : Str
 	start_mark = "\u(E000)"
@@ -98,7 +117,7 @@ Note := [].{
 	stop_mark : Str
 	stop_mark = "\u(E001)"
 
-	## A snippet as Postgres gives it, the matches between the marks, as pieces: the page shows each
+	## A snippet as the search gives it, the matches between the marks, as pieces: the page shows each
 	## hit in a `<mark>`, as text, so nothing in a note is ever read as markup.
 	pieces : Str -> List(Note.Piece)
 	pieces = |marked|
@@ -142,6 +161,160 @@ Note := [].{
 	}
 }
 
+## Whether `byte` is a space as a regular expression's `\s` is: a space, a tab, a line break.
+is_space : U8 -> Bool
+is_space = |byte| byte == ' ' or byte == '\t' or byte == '\n' or byte == '\r' or byte == 11 or byte == 12
+
+## Each link and image (`[text](address)`, `![text](address)`) as its text alone.
+unlinked : List(U8) -> List(U8)
+unlinked = |bytes| {
+	var $out = List.with_capacity(bytes.len())
+	var $at = 0
+	while $at < bytes.len() {
+		byte = bytes.get($at) ?? 0
+		start = if (byte == '!' and bytes.get($at + 1) == Ok('[')) $at + 1 else $at
+		match link_at(bytes, start) {
+			Ok({ text, after }) => {
+				$out = $out.concat(text)
+				$at = after
+			}
+			Err(NoLink) => {
+				$out = $out.append(byte)
+				$at = $at + 1
+			}
+		}
+	}
+	$out
+}
+
+## The link at `at` (its `[`): its text, and where it ends.
+link_at : List(U8), U64 -> Try({ text : List(U8), after : U64 }, [NoLink])
+link_at = |bytes, at|
+	if bytes.get(at) != Ok('[') {
+		Err(NoLink)
+	} else {
+		close = next_at(bytes, at + 1, ']')
+		if bytes.get(close + 1) != Ok('(') {
+			Err(NoLink)
+		} else {
+			end = next_at(bytes, close + 2, ')')
+			if (end >= bytes.len()) Err(NoLink) else Ok({ text: bytes.sublist({ start: at + 1, len: close - at - 1 }), after: end + 1 })
+		}
+	}
+
+## Where the first `wanted` from `from` on is, or the end.
+next_at : List(U8), U64, U8 -> U64
+next_at = |bytes, from, wanted| {
+	var $at = from
+	while $at < bytes.len() and bytes.get($at) != Ok(wanted) {
+		$at = $at + 1
+	}
+	$at
+}
+
+## The mark at the start of each line gone, with the spaces around it: up to three spaces, then
+## `#` to `######`, `>`, `-`, `*`, `+` or a number and `.`, then a space or more, then a task's
+## `[ ]` (or `[x]`) and its spaces, if there is one.
+line_marks_gone : List(U8) -> List(U8)
+line_marks_gone = |bytes| {
+	var $out = List.with_capacity(bytes.len())
+	var $at = 0
+	while $at < bytes.len() {
+		starts_line = $at == 0 or bytes.get($at - 1) == Ok('\n')
+		match (if (starts_line) line_mark_at(bytes, $at) else Err(NoMark)) {
+			Ok(after) => {
+				$at = after
+			}
+			Err(NoMark) => {
+				$out = $out.append(bytes.get($at) ?? 0)
+				$at = $at + 1
+			}
+		}
+	}
+	$out
+}
+
+## Where the mark at the start of a line, at `at`, ends.
+line_mark_at : List(U8), U64 -> Try(U64, [NoMark])
+line_mark_at = |bytes, at| {
+	indent = spaces_at(bytes, at, 3)
+	marked = at + indent
+	hashes = run_at(bytes, marked, |byte| byte == '#')
+	digits = run_at(bytes, marked, |byte| byte >= '0' and byte <= '9')
+	first = bytes.get(marked) ?? 0
+	mark =
+		if hashes >= 1 and hashes <= 6 {
+			Ok(marked + hashes)
+		} else if first == '>' or first == '-' or first == '*' or first == '+' {
+			Ok(marked + 1)
+		} else if digits >= 1 and bytes.get(marked + digits) == Ok('.') {
+			Ok(marked + digits + 1)
+		} else {
+			Err(NoMark)
+		}
+	after_mark = mark?
+	gap = run_at(bytes, after_mark, is_space)
+	if gap == 0 {
+		Err(NoMark)
+	} else {
+		after_gap = after_mark + gap
+		boxed = bytes.get(after_gap) == Ok('[') and (bytes.get(after_gap + 1) == Ok(' ') or bytes.get(after_gap + 1) == Ok('x') or bytes.get(after_gap + 1) == Ok('X')) and bytes.get(after_gap + 2) == Ok(']')
+		box_gap = if (boxed) run_at(bytes, after_gap + 3, is_space) else 0
+		if (boxed and box_gap > 0) Ok(after_gap + 3 + box_gap) else Ok(after_gap)
+	}
+}
+
+## How many spaces there are at `at`, up to `most`.
+spaces_at : List(U8), U64, U64 -> U64
+spaces_at = |bytes, at, most| U64.min(run_at(bytes, at, is_space), most)
+
+## How many bytes in a row from `at` are ones `keep` says yes to.
+run_at : List(U8), U64, (U8 -> Bool) -> U64
+run_at = |bytes, at, keep| {
+	var $count = 0
+	while bytes.get(at + $count).map_ok(keep) == Ok(Bool.True) {
+		$count = $count + 1
+	}
+	$count
+}
+
+## Each code fence's marks gone, with the language after them (`````sh`).
+fenceless : List(U8) -> List(U8)
+fenceless = |bytes| {
+	var $out = List.with_capacity(bytes.len())
+	var $at = 0
+	while $at < bytes.len() {
+		if bytes.get($at) == Ok('`') and bytes.get($at + 1) == Ok('`') and bytes.get($at + 2) == Ok('`') {
+			$at = $at + 3 + run_at(bytes, $at + 3, |byte| (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z') or (byte >= '0' and byte <= '9') or byte == '_' or byte == '-')
+		} else {
+			$out = $out.append(bytes.get($at) ?? 0)
+			$at = $at + 1
+		}
+	}
+	$out
+}
+
+## Each run of spaces and line breaks one space, and none at either end.
+one_spaced : List(U8) -> List(U8)
+one_spaced = |bytes| {
+	var $out = List.with_capacity(bytes.len())
+	var $gap = Bool.False
+	for byte in bytes {
+		if is_space(byte) {
+			$gap = Bool.True
+		} else {
+			if $gap and !$out.is_empty() {
+				$out = $out.append(' ')
+			} else {
+				{}
+			}
+			$gap = Bool.False
+			$out = $out.append(byte)
+		}
+	}
+	$out
+}
+
 expect Note.title_of("  Groceries ") == Ok("Groceries")
 expect Note.title_of("   ").is_err()
 expect Note.title_of(Str.repeat("a", 201)).is_err()
@@ -165,3 +338,10 @@ expect Note.pieces("no match here") == [{ text: "no match here", hit: Bool.False
 expect Note.day("2026-11-22T09:30:00Z") == "22 Nov 2026"
 expect Note.day("2026-01-05") == "5 Jan 2026"
 expect Note.day("soon") == "soon"
+expect Note.plain("## Packing\n\nBring the **orange** kite, and spare line.\n\n- [ ] Check the wind") == "Packing Bring the orange kite, and spare line. Check the wind"
+expect Note.plain("- [x] Book the cabin\n  2. Ask [the library](https://library.example.com/winter), see ![a map](map.png)") == "Book the cabin Ask the library, see a map"
+expect Note.plain("```sh\nsay \"$n\"; sleep 1\n```\n\nSwap `say` for snake_case") == "say \"$n\"; sleep 1 Swap say for snakecase"
+expect Note.plain("####### seven\n    - indented\n> quoted\n[not a link] (x)") == "####### seven - indented quoted [not a link] (x)"
+expect Note.plain("") == ""
+expect Note.appended("- Try rye flour", "- Ask about the oven") == "- Try rye flour\n\n- Ask about the oven"
+expect Note.appended(" \n ", "First") == "First"

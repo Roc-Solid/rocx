@@ -17,10 +17,10 @@ import Token
 ##   when the server has no SMTP server) and kept in `Kv` by its hash, for 15 minutes. Kv because a link is short-lived
 ##   and good once: `Kv.take!` reads it and forgets it in one atomic step, so two clicks at once
 ##   can't both sign in, and its time to live forgets it with nothing to clean up. A restart forgets
-##   the links on their way, which only means asking for another; a table in Postgres would keep
+##   the links on their way, which only means asking for another; a table in the database would keep
 ##   them, and need a job to sweep the old ones out.
 ## - **A session** is a signed cookie (Session.roc), so the server keeps none.
-## - **A personal access token** is kept as its hash, in Postgres (it must outlive a restart).
+## - **A personal access token** is kept as its hash, in the database (it must outlive a restart).
 Account := [].{
 
 	## What `Kv` keeps for a link that is on its way: who it signs in, and where they were going.

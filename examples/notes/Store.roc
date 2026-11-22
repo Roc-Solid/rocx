@@ -1,16 +1,19 @@
 import pf.Db
 import pf.Endpoint
 import pf.Log
+import pf.Time
 import Note
 import Token
 
-## Notes in Postgres: every query the app makes, in one place (the tables are
-## migrations/0001_notes.sql). Every query about notes or tokens names the person they are for, in
-## its `where`: a note that isn't theirs is a note that isn't there, so one person's id in another's
-## request finds nothing, whichever way it came (a page, the API, MCP).
+## Notes in SQLite, a file beside the server: every query the app makes, in one place (the
+## tables are migrations/0001_notes.sql). Every query about notes or tokens names the person they
+## are for, in its `where`: a note that isn't theirs is a note that isn't there, so one person's id
+## in another's request finds nothing, whichever way it came (a page, the API, MCP).
 ##
-## Ids are `bigint`s in Postgres and text everywhere else: queries read them as `id::text`, and a
-## parameter sent as text is read by Postgres as the type its place wants. Dates are ISO 8601, UTC.
+## Ids are integers in SQLite and text everywhere else: queries read them as `cast(id as text)`,
+## and a parameter sent as text is compared with an integer column as the number it spells (the
+## column's affinity). A moment is kept as milliseconds since the epoch, given from Roc
+## (`Time.now_millis!`), and read as ISO 8601, UTC. A note's tags are a JSON list.
 Store := [].{
 
 	## Someone who signs in: their id, their address, and their session epoch (Session.roc).
@@ -41,7 +44,7 @@ Store := [].{
 	person! : Str => Try(Store.Person, Store.Problem)
 	person! = |id| {
 		found : Try(List(Store.Person), [DbErr(Str), BadRow(Str)])
-		found = Db.all!("select id::text as id, email, session_epoch as epoch from people where id = $1", [Text(numbered(id)?)])
+		found = Db.all!("select cast(id as text) as id, email, session_epoch as epoch from people where id = $1", [Text(numbered(id)?)])
 		first(found?)
 	}
 
@@ -51,7 +54,7 @@ Store := [].{
 	person_for! = |email| {
 		made : Try(List(Store.Person), [DbErr(Str), BadRow(Str)])
 		made = Db.all!(
-			"insert into people (email) values ($1) on conflict ((lower(email))) do nothing returning id::text as id, email, session_epoch as epoch",
+			"insert into people (email) values ($1) on conflict (lower(email)) do nothing returning cast(id as text) as id, email, session_epoch as epoch",
 			[Text(email)],
 		)
 		match made? {
@@ -61,7 +64,7 @@ Store := [].{
 			}
 			_ => {
 				found : Try(List(Store.Person), [DbErr(Str), BadRow(Str)])
-				found = Db.all!("select id::text as id, email, session_epoch as epoch from people where lower(email) = lower($1)", [Text(email)])
+				found = Db.all!("select cast(id as text) as id, email, session_epoch as epoch from people where lower(email) = lower($1)", [Text(email)])
 				first(found?)
 			}
 		}
@@ -84,35 +87,83 @@ Store := [].{
 	notes! = |person, { archived, tags }| {
 		rows : Try(List(Listed), [DbErr(Str), BadRow(Str)])
 		rows = Db.all!(
-			"select ${listed} left(plain, 220) as marked from notes where person_id = $1 and archived = $2 and tags @> $3 order by pinned desc, updated_at desc, id desc limit 200",
-			[Text(numbered(person)?), Bool(archived), Db.array(tags.map(|tag| Text(tag)))],
+			"select ${listed} substr(notes.plain, 1, 220) as marked from notes where notes.person_id = $1 and notes.archived = $2 and ${tagged("$3")} order by notes.pinned desc, notes.updated_at desc, notes.id desc limit 200",
+			[Text(numbered(person)?), Bool(archived), Text(Json.to_str(tags))],
 		)
 		Ok(rows?.map(summary))
 	}
 
 	## Someone's notes that match `query`, best first, archived ones too: its words found by
-	## Postgres's full-text search (`websearch_to_tsquery`, so `"two words"`, `or` and `-not` work as
-	## they do in a search engine), the title's words weighing more than the body's, each snippet
-	## with the matches marked (`ts_headline`). Tags alone list the notes with them.
+	## SQLite's full-text search (FTS5, `note_words`: a note's title and what its body reads as,
+	## each word by its stem, so "rehearsals" finds "rehearsal"), read as a search engine reads them
+	## (`Store.matching`: `"two words"`, `or` and `-not`), the title's words weighing more than the
+	## body's (`bm25`), each snippet with the matches marked (`snippet`). Tags alone list the notes
+	## with them.
 	search! : Str, Note.Query => Try(List(Note.Summary), Store.Problem)
 	search! = |person, query|
 		if query.words.is_empty() {
 			Store.notes!(person, { archived: Bool.False, tags: query.tags })
 		} else {
-			rows : Try(List(Listed), [DbErr(Str), BadRow(Str)])
-			rows = Db.all!(
-				"select ${listed} ts_headline('english', plain, q, $4) as marked from notes, websearch_to_tsquery('english', $2) as q where person_id = $1 and search @@ q and tags @> $3 order by ts_rank(search, q) desc, updated_at desc limit 50",
-				[Text(numbered(person)?), Text(query.words), Db.array(query.tags.map(|tag| Text(tag))), Text(headline)],
-			)
-			Ok(rows?.map(summary))
+			wanted = Store.matching(query.words)
+			if wanted.is_empty() {
+				Ok([])
+			} else {
+				rows : Try(List(Listed), [DbErr(Str), BadRow(Str)])
+				rows = Db.all!(
+					"select ${listed} snippet(note_words, 1, $4, $5, '…', 24) as marked from note_words join notes on notes.id = note_words.rowid where note_words match $2 and notes.person_id = $1 and ${tagged("$3")} order by bm25(note_words, 10.0, 1.0), notes.updated_at desc limit 50",
+					[Text(numbered(person)?), Text(wanted), Text(Json.to_str(query.tags)), Text(Note.start_mark), Text(Note.stop_mark)],
+				)
+				Ok(rows?.map(summary))
+			}
 		}
+
+	## A search box's words as an FTS5 query, read as a search engine reads them: each word must be
+	## there (`"launch"`), words in quotes are a phrase (`"stretch and folds"`), `or` between them is
+	## either, and `-word` (or `-"a phrase"`) is without it. Only letters and digits make words: the
+	## rest, which FTS5 would read as its own syntax, splits them, and the words of one (`launch-pad`)
+	## are a phrase. `""` when nothing is left to look for (only words without: FTS5 can't ask for
+	## everything but).
+	matching : Str -> Str
+	matching = |text| {
+		groups = terms(text.to_utf8()).fold(
+			[[]],
+			|sofar, term|
+				match term {
+					Either => sofar.append([])
+					Wanted(_) | Without(_) => sofar.drop_last(1).append((sofar.last() ?? []).append(term))
+				},
+		)
+		asked = groups.keep_oks(
+			|group| {
+				wanted = group.keep_oks(
+					|term|
+						match term {
+							Wanted(found) => Ok(phrase(found))
+							_ => Err(None)
+						},
+				)
+				unwanted = group.keep_oks(
+					|term|
+						match term {
+							Without(found) => Ok(" NOT ${phrase(found)}")
+							_ => Err(None)
+						},
+				)
+				if (wanted.is_empty()) Err(None) else Ok("${Str.join_with(wanted, " ")}${Str.join_with(unwanted, "")}")
+			},
+		)
+		match asked {
+			[one] => one
+			_ => Str.join_with(asked.map(|group| "(${group})"), " OR ")
+		}
+	}
 
 	## Someone's tags, and how many of their notes (not archived) have each: the sidebar's.
 	tags! : Str => Try(List(Note.Tagged), Store.Problem)
 	tags! = |person| {
 		rows : Try(List(Note.Tagged), [DbErr(Str), BadRow(Str)])
 		rows = Db.all!(
-			"select tag as name, count(*) as count from notes, unnest(tags) as tag where person_id = $1 and not archived group by tag order by count(*) desc, tag limit 50",
+			"select tag.value as name, count(*) as count from notes, json_each(notes.tags) as tag where notes.person_id = $1 and not notes.archived group by tag.value order by count(*) desc, tag.value limit 50",
 			[Text(numbered(person)?)],
 		)
 		Ok(rows?)
@@ -122,46 +173,54 @@ Store := [].{
 	note! : Str, Str => Try(Note.Full, Store.Problem)
 	note! = |person, id| one!("select ${full} from notes where person_id = $1 and id = $2", [Text(numbered(person)?), Text(numbered(id)?)])
 
-	## A new note.
+	## A new note, and what its body reads as (`Note.plain`).
 	create! : Str, { title : Str, body : Str, tags : List(Str) } => Try(Note.Full, Store.Problem)
 	create! = |person, note|
 		one!(
-			"insert into notes (person_id, title, body, tags) values ($1, $2, $3, $4) returning ${full}",
-			[Text(numbered(person)?), Text(note.title), Text(note.body), Db.array(note.tags.map(|tag| Text(tag)))],
+			"insert into notes (person_id, title, body, plain, tags) values ($1, $2, $3, $4, $5) returning ${full}",
+			[Text(numbered(person)?), Text(note.title), Text(note.body), Text(Note.plain(note.body)), Text(Json.to_str(note.tags))],
 		)
 
-	## A note's title, body and tags, changed.
+	## A note's title, body and tags, changed, and what its body reads as.
 	update! : Str, Str, { title : Str, body : Str, tags : List(Str) } => Try(Note.Full, Store.Problem)
 	update! = |person, id, note|
 		one!(
-			"update notes set title = $3, body = $4, tags = $5, updated_at = now() where person_id = $1 and id = $2 returning ${full}",
-			[Text(numbered(person)?), Text(numbered(id)?), Text(note.title), Text(note.body), Db.array(note.tags.map(|tag| Text(tag)))],
+			"update notes set title = $3, body = $4, plain = $5, tags = $6, updated_at = $7 where person_id = $1 and id = $2 returning ${full}",
+			[Text(numbered(person)?), Text(numbered(id)?), Text(note.title), Text(note.body), Text(Note.plain(note.body)), Text(Json.to_str(note.tags)), Int(now!({}))],
 		)
 
-	## `text` added at a note's end, a blank line before it. One statement, so two agents appending
-	## to one note at once each add theirs: neither reads the body, then writes it back over the
+	## `text` added at a note's end, a blank line before it (`Note.appended`). The body is read and
+	## written in one transaction, which holds SQLite's write lock from its start, so two agents
+	## appending to one note at once take turns and each adds theirs: neither writes over the
 	## other's.
 	append! : Str, Str, Str => Try(Note.Full, Store.Problem)
 	append! = |person, id, text|
-		one!(
-			"update notes set body = case when btrim(body, E' \\n\\t\\r') = '' then $3 else rtrim(body, E' \\n\\t\\r') || E'\\n\\n' || $3 end, updated_at = now() where person_id = $1 and id = $2 and length(body) + length($3) + 2 <= 100000 returning ${full}",
-			[Text(numbered(person)?), Text(numbered(id)?), Text(text)],
+		Db.transaction!(
+			|{}| {
+				bodies : Try(List({ body : Str }), [DbErr(Str), BadRow(Str)])
+				bodies = Db.all!("select body from notes where person_id = $1 and id = $2", [Text(numbered(person)?), Text(numbered(id)?)])
+				body = Note.appended(first(bodies?)?.body, text)
+				one!(
+					"update notes set body = $3, plain = $4, updated_at = $5 where person_id = $1 and id = $2 and length($3) <= 100000 returning ${full}",
+					[Text(numbered(person)?), Text(numbered(id)?), Text(body), Text(Note.plain(body)), Int(now!({}))],
+				)
+			},
 		)
 
 	## A note's tags, all of them, as given.
 	set_tags! : Str, Str, List(Str) => Try(Note.Full, Store.Problem)
 	set_tags! = |person, id, tags|
 		one!(
-			"update notes set tags = $3, updated_at = now() where person_id = $1 and id = $2 returning ${full}",
-			[Text(numbered(person)?), Text(numbered(id)?), Db.array(tags.map(|tag| Text(tag)))],
+			"update notes set tags = $3, updated_at = $4 where person_id = $1 and id = $2 returning ${full}",
+			[Text(numbered(person)?), Text(numbered(id)?), Text(Json.to_str(tags)), Int(now!({}))],
 		)
 
 	## A note archived (out of the way, kept, still found by search), or brought back.
 	set_archived! : Str, Str, Bool => Try(Note.Full, Store.Problem)
 	set_archived! = |person, id, archived|
 		one!(
-			"update notes set archived = $3, pinned = pinned and not $3, updated_at = now() where person_id = $1 and id = $2 returning ${full}",
-			[Text(numbered(person)?), Text(numbered(id)?), Bool(archived)],
+			"update notes set archived = $3, pinned = pinned and not $3, updated_at = $4 where person_id = $1 and id = $2 returning ${full}",
+			[Text(numbered(person)?), Text(numbered(id)?), Bool(archived), Int(now!({}))],
 		)
 
 	## A note pinned to the top of the list, or let go. Its place in time doesn't change.
@@ -211,9 +270,10 @@ Store := [].{
 	## so an agent's busy minute writes one row, not one a call).
 	bearer! : Str => Try({ person : Store.Person, token : Str, read_only : Bool }, Store.Problem)
 	bearer! = |hash| {
+		_ = Db.run!("update tokens set last_used_at = $2 where hash = $1 and (last_used_at is null or last_used_at < $2 - 60000)", [Text(hash), Int(now!({}))])?
 		rows : Try(List({ id : Str, email : Str, epoch : U64, token : Str, read_only : Bool }), [DbErr(Str), BadRow(Str)])
 		rows = Db.all!(
-			"with used as (update tokens set last_used_at = now() where hash = $1 and (last_used_at is null or last_used_at < now() - interval '1 minute')) select p.id::text as id, p.email, p.session_epoch as epoch, t.id::text as token, t.read_only from tokens t join people p on p.id = t.person_id where t.hash = $1",
+			"select cast(p.id as text) as id, p.email, p.session_epoch as epoch, cast(t.id as text) as token, t.read_only from tokens t join people p on p.id = t.person_id where t.hash = $1",
 			[Text(hash)],
 		)
 		first(rows?).map_ok(|row| { person: { id: row.id, email: row.email, epoch: row.epoch }, token: row.token, read_only: row.read_only })
@@ -223,32 +283,106 @@ Store := [].{
 ## A note in a list, as a query reads it: `marked` is its snippet, matches marked.
 Listed : { id : Str, title : Str, tags : List(Str), pinned : Bool, archived : Bool, updated : Str, marked : Str }
 
-## The columns a list of notes reads, before its snippet.
+## The columns a list of notes reads, before its snippet (named with their table, as a search
+## reads `note_words` beside it, which has a `title` too).
 listed : Str
-listed = "id::text as id, title, array_to_json(tags) as tags, pinned, archived, ${iso("updated_at")} as updated,"
+listed = "cast(notes.id as text) as id, notes.title as title, notes.tags as tags, notes.pinned as pinned, notes.archived as archived, ${iso("notes.updated_at")} as updated,"
 
 ## The columns a whole note reads.
 full : Str
-full = "id::text as id, title, body, array_to_json(tags) as tags, pinned, archived, ${iso("created_at")} as created, ${iso("updated_at")} as updated"
+full = "cast(id as text) as id, title, body, tags, pinned, archived, ${iso("created_at")} as created, ${iso("updated_at")} as updated"
 
 ## The columns a token reads.
 token_columns : Str
-token_columns = "id::text as id, name, hint, read_only, ${iso("created_at")} as created, coalesce(${iso("last_used_at")}, '') as last_used"
+token_columns = "cast(id as text) as id, name, hint, read_only, ${iso("created_at")} as created, coalesce(${iso("last_used_at")}, '') as last_used"
 
-## A timestamp column as ISO 8601, in UTC.
+## A moment (milliseconds since the epoch) as ISO 8601, in UTC, to the second.
 iso : Str -> Str
-iso = |column| "to_char(${column} at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')"
+iso = |column| "strftime('%Y-%m-%dT%H:%M:%SZ', ${column} / 1000, 'unixepoch')"
 
-## `ts_headline`'s options: up to two pieces of about twenty words around the matches, each match
-## between the marks `Note.pieces` reads.
-headline : Str
-headline = "StartSel=${Note.start_mark}, StopSel=${Note.stop_mark}, MaxWords=24, MinWords=10, MaxFragments=2, FragmentDelimiter=\" … \""
+## Whether a note has every tag in the JSON list `param` (a statement's `$3`).
+tagged : Str -> Str
+tagged = |param| "not exists (select 1 from json_each(${param}) as wanted where wanted.value not in (select value from json_each(notes.tags)))"
+
+## Now, in milliseconds since the epoch.
+now! : {} => I64
+now! = |{}| Time.now_millis!({}).to_i64_wrap()
+
+## What a search asks for, a term at a time: words that must be there, words that mustn't, and
+## `or` between two.
+Term : [Wanted(List(Str)), Without(List(Str)), Either]
+
+## The terms of a search box's text: a quoted phrase, or a run of anything but spaces and quotes,
+## each read as `words` reads it; `-` before one is without it, and `or` alone is either.
+terms : List(U8) -> List(Term)
+terms = |bytes| {
+	var $out = []
+	var $at = 0
+	while $at < bytes.len() {
+		byte = bytes.get($at) ?? 0
+		without = byte == '-' and $at + 1 < bytes.len()
+		from = if (without) $at + 1 else $at
+		if byte == ' ' or byte == '\t' or byte == '\n' or byte == '\r' {
+			$at = $at + 1
+		} else if bytes.get(from) == Ok('"') {
+			close = quote_at(bytes, from + 1)
+			found = words(bytes.sublist({ start: from + 1, len: close - from - 1 }))
+			$out = if (found.is_empty()) $out else $out.append(if (without) Without(found) else Wanted(found))
+			$at = close + 1
+		} else {
+			end = run_end(bytes, from)
+			chunk = bytes.sublist({ start: from, len: end - from })
+			found = words(chunk)
+			$out =
+				if !without and found == ["or"] and chunk.len() == 2 {
+					$out.append(Either)
+				} else if found.is_empty() {
+					$out
+				} else {
+					$out.append(if (without) Without(found) else Wanted(found))
+				}
+			$at = end
+		}
+	}
+	$out
+}
+
+## Where the quote closing a phrase is, from `from` on, or the end.
+quote_at : List(U8), U64 -> U64
+quote_at = |bytes, from| {
+	var $at = from
+	while $at < bytes.len() and bytes.get($at) != Ok('"') {
+		$at = $at + 1
+	}
+	$at
+}
+
+## Where a run of anything but spaces and quotes, from `from` on, ends.
+run_end : List(U8), U64 -> U64
+run_end = |bytes, from| {
+	var $at = from
+	while $at < bytes.len() and !([' ', '\t', '\n', '\r', '"'].contains(bytes.get($at) ?? ' ')) {
+		$at = $at + 1
+	}
+	$at
+}
+
+## The words in `bytes`: letters and digits (any script's), lower case; the rest splits them.
+words : List(U8) -> List(Str)
+words = |bytes| {
+	kept = bytes.map(|byte| if (byte >= 128 or (byte >= '0' and byte <= '9') or (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z')) byte else ' ')
+	Str.from_utf8_lossy(kept).split_on(" ").keep_if(|word| !word.is_empty()).map(|word| word.with_ascii_lowercased())
+}
+
+## Words as an FTS5 phrase: each in that order (one word is a phrase of one).
+phrase : List(Str) -> Str
+phrase = |each| "\"${Str.join_with(each, " ")}\""
 
 summary : Listed -> Note.Summary
 summary = |row| { id: row.id, title: row.title, tags: row.tags, pinned: row.pinned, archived: row.archived, updated: row.updated, snippet: Note.pieces(row.marked) }
 
-## An id as Postgres will read it: digits, or no such row (so `abc` is a 404, not a query that
-## fails).
+## An id as SQLite will compare it: digits, or no such row (so `abc` is a 404, not a query
+## that finds nothing as text).
 numbered : Str -> Try(Str, [NotFound])
 numbered = |id| if (I64.from_str(id).is_ok()) Ok(id) else Err(NotFound)
 
@@ -289,3 +423,13 @@ welcome = {
 		"\n",
 	),
 }
+
+expect Store.matching("launch") == "\"launch\""
+expect Store.matching("Launch -rehearsal") == "\"launch\" NOT \"rehearsal\""
+expect Store.matching("\"stretch and folds\" bread") == "\"stretch and folds\" \"bread\""
+expect Store.matching("sourdough OR loaf") == "(\"sourdough\") OR (\"loaf\")"
+expect Store.matching("a:* & b^ -\"c d\" or") == "\"a\" \"b\" NOT \"c d\""
+expect Store.matching("launch-pad") == "\"launch pad\""
+expect Store.matching("-alone") == ""
+expect Store.matching("żurek") == "\"żurek\""
+expect Store.matching("  ") == ""
