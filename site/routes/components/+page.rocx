@@ -395,7 +395,8 @@ view! = |_|
 					<strong>It gives way to the server's without a flicker.</strong> A submission answered with a
 					result has the page's reads read again (Solid Router's revalidation: every endpoint the page read),
 					and stays on its way until they are in. Then the server's week, which has the move, and the move's
-					end show together: the plan never goes back to where it was.
+					end show together: the plan never goes back to where it was. Meanwhile
+					<code>is_pending!(plans!)</code> is true, and the week dims a little.
 				</li>
 				<li>
 					<strong>A refusal puts it back</strong>, and says why: a refused submission isn't on its way, so its

@@ -1420,7 +1420,8 @@ plans! = create_memo!(|| {
   (`Endpoint.get!`, `read!`) has its answers cleared and runs again, its last value shown meanwhile,
   and the submission is done in the run of the last one to have its answer (or fail, or go). What
   reads both the data and the submissions sees the server's new data and the submission's end in
-  one flush, so the optimistic value gives way with nothing of the old in between. A refusal, or no
+  one flush, so the optimistic value gives way with nothing of the old in between; meanwhile
+  `is_pending!` of a memo read again is true, so a page may dim what is about to change. A refusal, or no
   answer, is done at once: its input is no longer applied, and its `error` says why.
 - Several may be on their way; each is answered on its own. An input still on its way is applied to
   data read again for another, which may already have it: applying one should be idempotent (a

@@ -167,7 +167,8 @@ same components natively; this one hydrates them.
   (`revalidate`: every computation that read a GET, `Endpoint.get!` or `read!`, has its calls
   cleared and runs again, its last value shown meanwhile), and marks it done in the run of the last
   one to have its answer (or fail, or go), so what reads both sees the server's new data and the
-  submission's end in one flush: the optimistic value gives way with no frame of the old data. A
+  submission's end in one flush: the optimistic value gives way with no frame of the old data
+  (meanwhile `is_pending!` of the memos read again is true). A
   refusal (any other status, or none) is done at once: the input isn't applied any more, and the
   value is the server's again, the refusal in `error`. Several may be on their way, each answered on
   its own; an input still on its way is applied to the data read again, so applying one should be

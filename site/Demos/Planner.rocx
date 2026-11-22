@@ -1,5 +1,5 @@
 import pf.Html
-import pf.Solid exposing [create_memo!, create_signal!]
+import pf.Solid exposing [create_memo!, create_signal!, is_pending!]
 import pf.Router exposing [use_action!, use_submissions!]
 import pf.Endpoint
 import pf.Server
@@ -12,7 +12,8 @@ import ../Generated/Api
 ## server's (`GET /api/planner`), with the moves on their way applied (`use_submissions!`). It is
 ## sent without the handler waiting (`use_action!`) to an endpoint that takes 800 ms and refuses a
 ## full day or the dentist; once it is in, the week is read again, and the server's takes the place
-## of the one shown. A refused move goes back, and says why. Plans glide from day to day.
+## of the one shown, the week a little dimmed while it is read again (`is_pending!`). A refused move
+## goes back, and says why. Plans glide from day to day.
 Planner := [].{
 
 	## Why a move was refused, as the page says it.
@@ -48,7 +49,7 @@ Planner := [].{
 		)
 		board = { plans!, dragging!, set_dragging!, over!, set_over!, move! }
 		<div class="planner">
-			<div class="week">
+			<div class="week" class:stale={is_pending!(plans!)}>
 				<For each!={PlannerDay.days} keyed={|day| day.id}>
 					{|day!, _| <PlannerDay day={day!()} board={board} />}
 				</For>
@@ -70,6 +71,14 @@ Planner := [].{
 			display: grid;
 			grid-template-columns: repeat(4, minmax(0, 1fr));
 			gap: var(--space-2);
+		}
+
+		.week {
+			transition: opacity 160ms;
+		}
+
+		.week.stale {
+			opacity: 0.85;
 		}
 
 		.status {
