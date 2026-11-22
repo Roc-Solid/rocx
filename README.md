@@ -40,6 +40,20 @@ An app is two programs, one on each platform, talking over HTTP. The docs site i
 written in rocx, with a front page for Roc Solid and a part for each of rocx, the platform and the
 ecosystem. `just dev`, then http://localhost:8080.
 
+## Getting started
+
+```sh
+git clone https://github.com/Roc-Solid/rocx && cd rocx
+just setup                     # the toolchain into .tools/, then bin/rocx
+export PATH="$PWD/bin:$PATH"
+# an app is a folder with routes/: a page in my-app/routes/+page.rocx, or an endpoint in
+# my-app/routes/hello/+server.roc
+rocx dev my-app                # http://localhost:8080, built again on each save
+```
+
+The first run writes `my-app/main.roc` and builds the server's host (a few minutes, once).
+[`examples/hello`](examples/hello) is that app: a page with a button that counts, and `GET /hello`.
+
 ## Quick start
 
 Zig 0.17.1 and Rust ≥1.85 from your system (e.g. Nix), or `just setup` downloads them. Roc is a
@@ -47,7 +61,7 @@ fork of the pinned nightly with the compiler fixes rocx needs, which `just setup
 .tools/ (the Justfile says why); never the `roc` on your PATH.
 
 ```sh
-just setup   # the Roc fork rocx builds with, the pinned nightly, Zig and Rust if need be, into .tools/
+just setup   # the Roc fork rocx builds with, the pinned nightly, Zig and Rust if need be, into .tools/; then bin/rocx
 just compiler-bugs   # each Roc bug rocx has met, with the nightly and with the fork
 just test    # the transpiler, both platforms, every package, the site in Chromium
 just dev     # the docs site, its server (native) answering each page, rebuilt on save
@@ -79,6 +93,8 @@ Each is a whole app in `examples/<name>`, with a README that tours it, maps each
 file that shows it, and says what it asked of the platform. `just examples` builds, checks and
 tests them all (`just examples tasks` one); `just check` type-checks them.
 
+- [`hello`](examples/hello): the app Getting started makes, a page with a button that counts and
+  `GET /hello`; its `main.roc` is the one `rocx dev` writes.
 - [`tasks`](examples/tasks): Acme Tasks, a small team's task lists. Start here: file routing, a
   middleware, Postgres, pages that read endpoints, forms that work without JavaScript, and
   optimistic actions, in the plainest way, with comments throughout.
@@ -412,6 +428,10 @@ change another site's page sends (`Middleware.same_origin`).
 ## Commands
 
 ```sh
+rocx dev [dir]           # build the app (a directory with routes/) and serve it at :8080 under --dev,
+                         # built again and restarted on each save, its open pages reloaded; a mistake
+                         # shown at its .rocx line; writes the smallest main.roc if there is none
+  --port 8080            # where (PORT); after `--`, the server's own options (--database-url URL)
 rocx build <dir>…        # each .rocx under the directories becomes the .roc beside it;
                          # an app's routes/ become Generated/Routes.roc, Paths.roc, Api.roc and
                          # App.roc (its program), and, for component route files, Root.roc

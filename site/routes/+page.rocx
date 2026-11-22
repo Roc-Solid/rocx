@@ -31,7 +31,8 @@ view! = |_| {
 				title="Roc, from the database to the browser."
 				centered
 				actions={[
-					<Button href={Paths.rocx} primary>Read the guide</Button>,
+					<Button href="#start" primary>Get started</Button>,
+					<Button href={Paths.rocx}>Read the guide</Button>,
 					<Button href={Paths.platform_}>The platform</Button>,
 					<Button href={Paths.showcase}>Play Snake, watch the birds</Button>,
 				]}
@@ -45,6 +46,52 @@ view! = |_| {
 			<NoHydration><p class="awake" data-stat="hydrated">Waiting for the counter to wake up…</p></NoHydration>
 		</Specimen>
 		<NoHydration>
+			<Heading id="start">Getting started</Heading>
+			<ol class="start">
+				<li>
+					<span class="start-num">01</span>
+					<div>
+						<h3>Install</h3>
+						<p>
+							Roc Solid builds from a clone of its repository for now. With git, Node and
+							<a href="https://just.systems">just</a> on your machine, <code>just setup</code> brings the
+							rest into <code>.tools/</code>: the Roc compiler it pins, and Zig and Rust unless your system
+							has them. Then <code>bin/rocx</code>, the command, on your <code>PATH</code>.
+						</p>
+						<Code source={"git clone https://github.com/Roc-Solid/rocx\ncd rocx\njust setup\nexport PATH=\"$PWD/bin:$PATH\""} numbers={Bool.False} plain />
+					</div>
+				</li>
+				<li>
+					<span class="start-num">02</span>
+					<div>
+						<h3>Make a page, or an endpoint</h3>
+						<p>
+							A folder with <code>routes/</code> in it is an app. A <code>+page.rocx</code> is the page at
+							its folder's path, rendered by the server and live in the browser; a <code>+server.roc</code>
+							answers HTTP there.
+						</p>
+						<Code title="my-app/routes/+page.rocx" source={Sources.start_page.rocx} numbers={Bool.False} />
+						<Code title="my-app/routes/hello/+server.roc" source={Sources.start_server.rocx} numbers={Bool.False} />
+					</div>
+				</li>
+				<li>
+					<span class="start-num">03</span>
+					<div>
+						<h3>Run it</h3>
+						<p>
+							<code>rocx dev</code> builds the app and serves it at <code>http://localhost:8080</code>. The
+							first run writes <code>my-app/main.roc</code>, the app's program, and builds the server's
+							host, once, in a few minutes. After that, a save is built and the page reloads in under a
+							second, and a mistake is shown at its line in your file.
+						</p>
+						<Code source={"rocx dev my-app"} numbers={Bool.False} plain />
+					</div>
+				</li>
+			</ol>
+			<p>
+				Then <a href={Paths.rocx}>rocx</a> for pages, components and routes, and
+				<a href={Paths.platform_}>the platform</a> for what the server and the browser give an app.
+			</p>
 
 			<Heading id="parts">Three parts</Heading>
 			<Way kind="rocx" href={Paths.rocx} more="rocx →" code={[<Code source={Sources.home_update.rocx} numbers={Bool.False} />]}>
@@ -103,19 +150,6 @@ view! = |_| {
 				{ label: "The server", value: Facts.get(facts, "server_bytes"), note: "one executable: every page, and its Rust host" },
 			]}
 		/>
-		<NoHydration>
-			<Heading id="start">Getting started</Heading>
-			<Code
-				title="In this repository"
-				source={"just setup    # the Roc fork rocx builds with, the pinned nightly, Zig and Rust if need be, into .tools/\njust test     # the transpiler, both platforms, this site in a browser\njust dev      # this site at http://localhost:8080, rebuilt on save\njust db       # a Postgres in Docker, for the server platform's tests and apps"}
-				numbers={Bool.False}
-			/>
-			<p>
-				Zig 0.17.1 and Rust ≥1.85 from your system (e.g. Nix), or <code>just setup</code> downloads them.
-				Then read <a href={Paths.rocx}>rocx</a>, or open <code>site/routes/</code>: these pages are
-				<code>.rocx</code> files, and every example in them is a real file the build compiles.
-			</p>
-		</NoHydration>
 	</>
 }
 
@@ -171,6 +205,43 @@ view! = |_| {
 		font-size: var(--size-sm);
 	}
 
+	/* Getting started: three steps down the page, each its number beside what to do. */
+	.start {
+		display: grid;
+		gap: var(--space-6);
+		max-width: none;
+		margin: 0 0 var(--space-5);
+		padding: 0;
+		list-style: none;
+	}
+
+	.start > li {
+		display: grid;
+		grid-template-columns: 3rem minmax(0, 1fr);
+		gap: var(--space-4);
+		margin: 0;
+	}
+
+	.start-num {
+		background: var(--gradient);
+		-webkit-background-clip: text;
+		background-clip: text;
+		color: transparent;
+		font-size: var(--size-xl);
+		font-weight: 800;
+		letter-spacing: -0.02em;
+		line-height: 1.2;
+	}
+
+	.start h3 {
+		margin: 0 0 var(--space-2);
+		font-size: var(--size-lg);
+	}
+
+	.start p {
+		margin: 0 0 var(--space-3);
+	}
+
 	/* How long the counter took to wake up: site.js writes it, and marks it awake. Under the
 	   counter, in the middle, as the counter is. */
 	.awake {
@@ -178,6 +249,14 @@ view! = |_| {
 		color: var(--text-faint);
 		font-size: var(--size-xs);
 		text-align: center;
+	}
+
+	/* On a phone, each step's number above it, and the code the whole width. */
+	@media (max-width: 40rem) {
+		.start > li {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 0;
+		}
 	}
 
 	@media (max-width: 52rem) {

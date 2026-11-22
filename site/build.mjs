@@ -390,6 +390,9 @@ function sourcesModule() {
 		.map(example);
 	const files = [
 		whole("demo_counter", "site/Demos/Counter.rocx"),
+		// The front page's Getting started: examples/hello, the app it makes.
+		whole("start_page", "examples/hello/routes/+page.rocx"),
+		whole("start_server", "examples/hello/routes/hello/+server.roc"),
 		whole("ui_callout", "site/Ui/Callout.rocx"),
 		routeTree(),
 		first("route_page", "site/routes/showcase/+page.rocx", 23),

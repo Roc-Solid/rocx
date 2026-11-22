@@ -37,7 +37,7 @@ default:
 
 # The toolchain, into .tools/: Zig and Rust, unless the system's (on PATH, e.g. from Nix) will do;
 # the pinned Roc nightly and the glue spec for `just glue`; then the Roc fork rocx builds with
-# (`roc_fork_commit`), built and linked as .tools/roc-active.
+# (`roc_fork_commit`), built and linked as .tools/roc-active; then bin/rocx.
 setup:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -111,6 +111,8 @@ setup:
     fi
     ln -sfn "roc-fork/$commit/bin/roc" .tools/roc-active
     .tools/roc-active version
+    # rocx itself, bin/rocx, from its Roc (rocx-cli/): `rocx dev` for an app, and every script here.
+    node --input-type=module -e "import { rocxBinary } from './server/build.mjs'; console.log(rocxBinary())"
 
 # Each Roc compiler bug rocx has met (test/compiler-bugs/*/repro.sh), with the pinned nightly and
 # with the fork rocx builds with: what the fork fixes, and, with a newer nightly, what it still needs.

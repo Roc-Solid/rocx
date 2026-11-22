@@ -1,5 +1,6 @@
 app [main!] { pf: platform "https://github.com/roc-lang/basic-cli/releases/download/0.28.1/7brgwR8YUqfeGrkdfF1V4GPPN7DnP7ftqub9KcrTEZtr.tar.zst" }
 
+import pf.Cmd
 import pf.Stdin
 import pf.Stdout
 import pf.Stderr
@@ -28,13 +29,14 @@ main! = |args| {
 		Ok("lint") if words.len() > 1 => exit_with(Commands.lint!(words.drop_first(1)))
 		Ok("routes") if words.len() == 2 => routes!(words.get(1) ?? ".")
 		Ok("build") => build!(words.drop_first(1))
+		Ok("dev") => dev!(words.drop_first(1))
 		Ok("fmt") if words.drop_first(1).any(|arg| arg != "--check") => fmt!(words.drop_first(1))
 		_ => usage!({})
 	}
 }
 
 usage! = |{}| {
-	Stderr.line!("usage: rocx build <dir>… [--client <out>] [--dev] | rocx check -- <command>… | rocx lint <dir>… | rocx routes <dir> | rocx fmt [--check] <path>…")?
+	Stderr.line!("usage: rocx dev [dir] [--port 8080] | rocx build <dir>… [--client <out>] [--dev] | rocx check -- <command>… | rocx lint <dir>… | rocx routes <dir> | rocx fmt [--check] <path>…")?
 	Err(Exit(2))
 }
 
@@ -94,6 +96,26 @@ build! = |rest| {
 					Err(Exit(1))
 				}
 			}
+		}
+	}
+}
+
+## `rocx dev [dir] [--port 8080] [-- server options…]`: the app in `dir` (or here), built and served
+## under --dev, built again and restarted on each save. rocx-cli/dev.mjs does it, in Node, with the
+## builds of the clone rocx is in (`rocx_home!`); its status is rocx's.
+dev! = |rest| {
+	script = Fs.join([rocx_home!({}), "rocx-cli", "dev.mjs"])
+	match Cmd.new(OsStr.from_str("node")).args([script].concat(rest).map(OsStr.from_str)).call!() {
+		Ok({}) => Ok({})
+		Err(BadExitStatus(output)) =>
+			match output.status {
+				Exited(code) => exit_with(code)
+				Signaled(_) => Ok({})
+			}
+		Err(Interrupted) => Ok({})
+		Err(CmdErr(_)) => {
+			Stderr.line!("rocx dev: couldn't run node, which builds and serves the app: is Node on PATH?")?
+			Err(Exit(1))
 		}
 	}
 }

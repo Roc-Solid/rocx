@@ -1,0 +1,13 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+
+## The page at /: rendered by the server, then live in the browser.
+view! = |_| {
+	(count!, set_count!) = create_signal!(0.I64)
+	<main>
+		<h1>Hello, Roc Solid</h1>
+		<button on:click={|| set_count!(count!() + 1)}>
+			Clicked {count!().to_str()} times
+		</button>
+	</main>
+}

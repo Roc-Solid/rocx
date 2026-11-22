@@ -9,7 +9,7 @@ import ../../Ui/TableWrap
 
 meta = {
 	title: "Tooling",
-	description: "rocx build, check, lint, routes and fmt; compiler errors reported at your .rocx lines; setting up an app.",
+	description: "rocx dev, build, check, lint, routes and fmt; compiler errors reported at your .rocx lines; setting up an app.",
 	toc: [
 		{ id: "commands", label: "Commands" },
 		{ id: "errors", label: "Errors at your lines" },
@@ -33,6 +33,17 @@ view! = |_|
 
 			<Heading id="commands">Commands</Heading>
 			<div class="commands">
+				<div class="command">
+					<p class="command-usage">rocx dev {"[dir]"}<span>--port 8080</span></p>
+					<p>
+						Builds the app in the directory (or here) and serves it at
+						<code>http://localhost:8080</code> under <code>--dev</code>; each save builds it again and
+						restarts the server, and its open pages reload. A mistake is reported at its
+						<code>.rocx</code> line while the build before is still served. An app without a
+						<code>main.roc</code> gets the smallest one. What follows <code>--</code> goes to the server
+						(<code>--database-url</code>), and so does the environment (<code>DATABASE_URL</code>).
+					</p>
+				</div>
 				<div class="command">
 					<p class="command-usage">rocx build {"<dir>…"}<span>--client {"<out>"}</span></p>
 					<div>
@@ -143,7 +154,9 @@ view! = |_|
 
 			<Heading id="setup">Setting up an app</Heading>
 			<p>
-				Run <code>rocx build</code> before <code>roc build</code>, and <code>rocx check</code> instead of
+				<code>rocx dev</code> does what follows for you as you edit
+				(<a href={"${Paths.root}#start"}>getting started</a>). By hand, or for a build that ships: run
+				<code>rocx build</code> before <code>roc build</code>, and <code>rocx check</code> instead of
 				<code>roc check</code>. An app is two programs (<a href={Paths.platform_}>the platform</a>): the
 				server's, on the server platform (native, in a Rust host), and the browser's, the same pages, on the
 				web platform (wasm). With pages in <code>routes/</code> (<a href={Paths.routing}>routing</a>), the
@@ -153,7 +166,7 @@ view! = |_|
 			</p>
 			<Code
 				title="main.roc"
-				source={"app [program] { pf: platform \"../rocx/server/platform/main.roc\" }\n\nimport pf.Middleware\nimport Generated/App\n\nprogram = App.program({\n\tcontext: |_started| {},\n\tmiddleware: Middleware.same_origin({}),\n\tcrons: [],\n})"}
+				source={"app [program] { pf: platform \"../rocx/server/platform/main.roc\" }\n\nimport pf.Middleware\nimport Generated/App\n\nprogram = App.program({\n\tcontext: |_started| {},\n\tmiddleware: Middleware.same_origin({}),\n})"}
 			/>
 			<p>
 				The browser's app is rocx's to write (<code>rocx build --client</code>): its root is the page,
@@ -171,7 +184,8 @@ view! = |_|
 				<code>pf.Endpoint</code>, <code>pf.Middleware</code>, <code>pf.Events</code>, <code>pf.OpenApi</code>),
 				and so are the modules components are written with, so the same component compiles on both.
 				Pages need the <code>web/</code> platform in the browser, and the server platform to render them,
-				natively; jobs, cron, email, Postgres, live rooms and actors are the server platform's.
+				natively; Postgres, channels, live rooms and actors are the server platform's, and jobs, cron
+				and email are packages for it (<a href={Paths.ecosystem}>the ecosystem</a>).
 			</p>
 
 			<Heading id="repository">This repository</Heading>
@@ -194,7 +208,7 @@ view! = |_|
 				builds into <code>.tools/</code>.
 			</p>
 			<Code
-				source={"just setup   # the Roc fork rocx builds with, the pinned nightly, Zig and Rust if need be, into .tools/\njust db      # a Postgres in Docker, for the server platform\njust test    # everything: the transpiler, both platforms, the site in Chromium\njust dev     # this site, rendered per request, rebuilt and reloaded on save\njust site    # the static site, in site/dist"}
+				source={"just setup   # the Roc fork rocx builds with, the pinned nightly, Zig and Rust if need be, into .tools/; then bin/rocx\njust db      # a Postgres in Docker, for the server platform\njust test    # everything: the transpiler, both platforms, the site in Chromium\njust dev     # this site, rendered per request, rebuilt and reloaded on save\njust site    # the static site, in site/dist"}
 				numbers={Bool.False}
 			/>
 		</NoHydration>
