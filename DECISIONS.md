@@ -2307,8 +2307,12 @@ reads and writes back.
 
 ## D-045 The database is pluggable: Postgres or SQLite, as the app chooses
 
-**Status.** Accepted (2026-11-22), with the user's answers: the path is the program's, the
-examples are on SQLite, Plate moves without its data. Being built on the branch `db-backends`.
+**Status.** Built (2026-11-22), with the user's answers: the path is the program's, the examples
+are on SQLite, Plate moved without its data. The platform and the host (`db/postgres.rs`,
+`db/sqlite.rs`), `Db.notify!` and `Db.backend!`, migrations and needs a kind, jobs and cron on both,
+`Time.offset!`, `packages/testing`'s `testSqlite()`, the docs (`/platform/database`), and plate,
+tasks, quiz, board and notes on SQLite. Open: uptime (packages/admin's tables read Postgres's
+catalog), packages/push (Postgres's statements), `rocx new`'s question, libSQL/Turso.
 
 **Context.** Postgres is the platform's one database (`--database-url`). The platform runs one
 server an app (one instance), and many apps on one server need no database server beside it:

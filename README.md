@@ -97,10 +97,13 @@ tests them all (`just examples tasks` one); `just check` type-checks them. The d
 server's benchmark: `just example-apps` measures them into `site/example-apps.json` (`--bench`
 runs echo under bombardier too).
 
+Every example with a database but uptime is on SQLite (D-045): a file beside its server, so each
+runs with nothing else; uptime is on Postgres (its admin's tables read Postgres's catalog).
+
 - [`hello`](examples/hello): the app Getting started makes, a page with a button that counts and
   `GET /hello`; its `main.roc` is the one `rocx dev` writes.
 - [`tasks`](examples/tasks): Tasks, a small team's task lists. Start here: file routing, a
-  middleware, Postgres, pages that read endpoints, forms that work without JavaScript, and
+  middleware, a database (SQLite), pages that read endpoints, forms that work without JavaScript, and
   optimistic actions, in the plainest way, with comments throughout.
 - [`echo`](examples/echo): the smallest app on the server platform, one endpoint, for measuring
   the server (`bench.sh`).
@@ -115,9 +118,9 @@ runs echo under bombardier too).
   tables, and a page that follows it all live over a channel.
 - [`notes`](examples/notes): Notes, personal notes in Markdown that AI agents use over MCP:
   sign-in by a mailed link, a signed session cookie, personal access tokens kept as hashes,
-  Postgres full-text search, a live preview, and a JSON API with its OpenAPI page.
-- [`plate`](examples/plate): Plate, a food diary for a phone, on SQLite (a file beside the server,
-  nothing to run with it): the USDA's 7,500 foods seeded into it, packets looked up by barcode in Open Food Facts, recipes that log like foods,
+  full-text search (SQLite's FTS5), a live preview, and a JSON API with its OpenAPI page.
+- [`plate`](examples/plate): Plate, a food diary for a phone: the USDA's 7,500 foods seeded
+  into its SQLite file, packets looked up by barcode in Open Food Facts, recipes that log like foods,
   targets worked out from a profile, trends charted, and a search that follows the typing.
 
 ## Pages and components
