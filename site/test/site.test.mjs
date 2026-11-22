@@ -1250,18 +1250,21 @@ test("pages: rendering them again and again leaves nothing allocated", { skip },
 
 test("the dev build (`just dev`) rebuilds fast, and every page still wakes up and works", { skip }, async (t) => {
 	// Two seconds, on a machine with a core for each thing it runs. On a busier one (other builds,
-	// other tests: a load average above its cores) each process gets a share of a core, and the
-	// build takes longer by as much, so the limit grows by load / cores, the higher of the two
-	// readings around the build (the load average is a minute's, and lags). A rebuild that got
-	// slower still fails on a quiet machine, where the limit stays two seconds; retrying, or
-	// comparing with another build, would hide it on a quiet one as well.
+	// other tests: a load average near or above its cores) each process gets a share of a core, and
+	// the build takes longer by as much, so the limit grows with load / cores, the higher of the two
+	// readings around the build. The load average is a minute's, and lags behind a burst of builds
+	// (a run took 3.6 s at loads of 13 to 23 on 10 cores, where load / cores allowed 3.1 s), so a
+	// busy machine gets half as much again: 2 s × 1.5 × load / cores. Below two thirds of a core's
+	// load each, a quiet machine, the limit stays two seconds, so a rebuild that got slower still
+	// fails there; retrying, or comparing with another build, would hide it on a quiet one as well.
+	// (The build blocks this process, so the load can't be read while it runs.)
 	const cores = cpus().length;
 	const busy = () => loadavg()[0] / cores;
 	const busyBefore = busy();
 	const started = performance.now();
 	const facts = await build({ dev: true, log: () => {} });
 	const took = performance.now() - started;
-	const limit = 2000 * Math.max(1, busyBefore, busy());
+	const limit = 2000 * Math.max(1, 1.5 * busyBefore, 1.5 * busy());
 	t.diagnostic(`a dev rebuild took ${Math.round(took)} ms; load average ${loadavg()[0].toFixed(1)} on ${cores} cores; the limit ${Math.round(limit)} ms`);
 	assert.ok(took < limit, `a rebuild while editing takes well under two seconds (${Math.round(limit)} ms on a machine this busy): it took ${Math.round(took)} ms`);
 	assert.match(facts, /^dev=yes$/m);
