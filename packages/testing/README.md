@@ -138,8 +138,23 @@ const tab = await browser.open(`${app.url}/`);
 await (await tab.getByRole("button", { name: "Add one" })).click();
 await tab.findByText("2");
 await (await tab.getByLabelText("New note")).fill("milk");
+await tab.drag(await tab.getByText("Milk"), await tab.getByRole("list", { name: "Done" }));
 assert.deepEqual(tab.errors, []);
 ```
+
+`launchBrowser({ engine: "gecko" })` starts Gecko instead, headless: `$GECKO`, or Zen, or Firefox,
+or the Firefox Playwright keeps (null when there is none). It is driven over WebDriver BiDi, and its
+tabs do what Chromium's do, but for a dark screenshot. Each tab it goes to is the shown one, so its
+transitions run (a hidden headless tab gets a frame about once a second).
+
+`tab.drag(source, target)` presses `source`'s middle and drops it on `target`'s (elements found, or
+CSS selectors): dragstart, drag, dragenter, dragover, then drop if the target takes it (its
+dragover's default prevented), or else dragleave; then dragend; each with its coordinates. In
+Chromium these are the browser's own drag and drop, through real pointer input. Gecko never ends a
+drag that WebDriver's pointer starts, headless or not (Mozilla's bug 1515879), so there `drag` fires
+the DOM's own drag events, untrusted, with one `DataTransfer` carried through them, and no pointer or
+mouse events. With `{ drop: false }` the drag stays over the target until `tab.finish()` (or
+`tab.finish({ cancel: true })`: dragleave and dragend in Gecko, dragend alone in Chromium).
 
 A component with signals can't be rendered by `Html.to_str` (its holes run in the runtime), but its
 `<story>` can: `buildForTests(dir, { dev: true })` serves each story as a page, at
@@ -179,7 +194,7 @@ labels skip what a reader can't see: `hidden`, `aria-hidden="true"`, `display: n
 | `dom.mjs` | `parse(html)`, `within(node)`: Testing Library's queries, `getByRole(role, { name, level, hidden })`, `getByText`, `getByLabelText`, `getByTestId`, each as `queryBy…` (null), `getAllBy…`, `queryAllBy…`. A name or text is a string, matched whole with its whitespace collapsed, or a RegExp. A node has `text`, `attr(name)`, `role`, `name`, `hasClass`, `elements`. The rules are `Dom.roc`'s. |
 | `server.mjs` | `startServer(executable, { statics, database, dev, flags, env })`: the server on a free port, with `--debug`. Its `client()` is a cookie jar: `get`, `post` (a plain form, from the last page), `submit` (as the runtime sends a form), `json`, `put`, `read(path)` (a GET endpoint, as a page reads it), `events(path)`, and `flash`. Each `Answer` has `status`, `location`, `text`, `json()`, `dom`, `follow()`. Also `mail()`, `waitForMail(match, { after })`, `logs()` (the JSON log), `stop()`; `links(message)`, `until(check)`, `storyPath(module, name)`. |
 | `postgres.mjs` | `testDatabase(url, { template })`: a database of the test's own, with `url`, `query`, `` sql`…${value}` `` (values as literals), `jobs`, `enqueue`, `settleJobs`, `drop`. `connect(url)`. A client of its own, over Node's sockets: SCRAM-SHA-256, the simple query protocol, rows as objects of numbers, booleans, JSON and text. |
-| `browser.mjs` | `launchBrowser()`, `browser.open(url, { strict, cookies })`: a `Tab` with the queries (async), `findBy…`, `waitFor(check)`, `dom()`, `text()`, `requested()`, `errors`, `console`, `screenshot()`. Each `Element` has `click()`, `fill(text)`, `type(text)`, `press(key)`, `value()`, `checked()`. |
+| `browser.mjs` | `launchBrowser({ engine })` (`"chromium"`, or `"gecko"`), `browser.open(url, { strict, cookies, script })`: a `Tab` with the queries (async), `findBy…`, `waitFor(check)`, `dom()`, `text()`, `requested()`, `errors`, `console`, `screenshot()`, `drag(source, target)`, `finish()`. Each `Element` has `click()`, `fill(text)`, `type(text)`, `press(key)`, `value()`, `checked()`, `selector()`. |
 | `build.mjs` | `buildForTests(dir, { client, dev, opt })`: `rocx build`, the browser's wasm, the server; `{ server, statics }` |
 | `index.mjs` | all of the above |
 

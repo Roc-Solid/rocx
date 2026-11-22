@@ -557,8 +557,8 @@ function sourcesModule() {
 		picks(
 			"testing_node_setup",
 			"packages/testing/test/app.test.mjs",
-			["before(async () => {", "if (skip) return;", "dir = writeFixture(", "const built = await buildForTests(", "if (!skipDb) db = await testDatabase();", "app = await startServer(", "browser = await launchBrowser();", "});"],
-			["after(async () => {", "await browser?.close();", "await app?.stop();", "await db?.drop();", "if (dir) rmSync(", "});"],
+			["before(async () => {", "if (skip) return;", "dir = writeFixture(", "const built = await buildForTests(", "if (!skipDb) db = await testDatabase();", "app = await startServer(", "for (const engine of [\"chromium\", \"gecko\"]) browsers[engine] = await launchBrowser({ engine });", "});"],
+			["after(async () => {", "for (const browser of Object.values(browsers)) await browser?.close();", "await app?.stop();", "await db?.drop();", "if (dir) rmSync(", "});"],
 		),
 		pick("testing_node_page", "packages/testing/test/app.test.mjs", [
 			'test("a page, found in by role', "const person = app.client();", 'const page = await person.get("/");', "assert.equal(page.status, 200);", "const { getByRole, getByLabelText, getByTestId } = page.dom;",
@@ -582,10 +582,10 @@ function sourcesModule() {
 			["// One that fails is tried again later", "// with `later`", 'const failing = await db.enqueue("welcome"', "const first = await db.settleJobs();", "assert.deepEqual(first.map(", "assert.match(first[0].last_error", "const spent = await db.settleJobs({ later: true });", "assert.deepEqual(spent.map(", 'assert.deepEqual((await db.jobs({ kind: "welcome" }))'],
 		),
 		pick("testing_node_browser", "packages/testing/test/app.test.mjs", [
-			'test("in Chromium', "if (!browser) return t.skip(", "const tab = await browser.open(", "try {", "assert.deepEqual(tab.errors, []);", "assert.deepEqual(tab.console, []);", "assert.ok((await tab.requested())",
+			'for (const engine of ["chromium", "gecko"]) {', "test(`in ${engine}", "const browser = browsers[engine];", "if (!browser) return t.skip(", "const tab = await browser.open(", "try {", "assert.deepEqual(tab.errors, []);", "assert.deepEqual(tab.console, []);", "assert.ok((await tab.requested())",
 			'await (await tab.getByRole("button", { name: "Add one" })).click();', 'const count = await tab.findByText("2");', "assert.deepEqual([count.tag, count.name]", 'const field = await tab.getByLabelText("New note");', 'await field.fill("first");', 'await field.fill("second");',
 			'assert.equal(await field.value(), "second");', 'assert.equal((await tab.findByText("3 notes")).tag', 'await assert.rejects(tab.findByRole("button", { name: "Delete" }', "} finally {", "await tab.close();", "}",
-			"const story = await browser.open(", "try {", 'assert.equal((await story.getByRole("status"', 'await (await story.getByRole("button"', 'await story.findByText("11");', "assert.deepEqual(story.errors, []);", "} finally {", "await story.close();", "}", "});",
+			"const story = await browser.open(", "try {", 'assert.equal((await story.getByRole("status"', 'await (await story.getByRole("button"', 'await story.findByText("11");', "assert.deepEqual(story.errors, []);", "} finally {", "await story.close();", "}", "});", "}",
 		]),
 		whole("demo_shelf", "site/Demos/Shelf.rocx"),
 		whole("demo_bag", "site/Demos/Bag.rocx"),

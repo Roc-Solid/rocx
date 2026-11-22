@@ -103,26 +103,29 @@ node --test 'examples/board/test/*.test.mjs'       # needs DATABASE_URL; the bro
   someone else, renewed, released, and running out), the channel (a member hears each change, a
   visitor is refused), labels, the checklist, archiving and deleting, the forms without JavaScript,
   and the rate limit.
-- `test/browser.test.mjs`: two people in two Chromium launches on one board. Each sees the other,
-  the board's channel and its presence room on one stream; Ada drags a card to another column, it
-  shows there at once for her and moves on Bo's page (gliding on both) without a reload; Ada opens a
-  card, Bo's board shows she has it open and is editing it, Bo opens it read-only, it opens for him
-  when she closes it, and his edit shows on her board; a third person comes, and once their browser
-  closes and the grace is up, leaves everyone's stack.
+- `test/browser.test.mjs`: two people in two browsers on one board, Ada in headless Gecko (Zen or
+  Firefox) when there is one and Bo in Chromium. Each sees the other, the board's channel and its
+  presence room on one stream; Ada drags a card to another column, it shows there at once for her
+  and moves on Bo's page (gliding on both) without a reload; Ada opens a card, Bo's board shows she
+  has it open and is editing it, Bo opens it read-only, it opens for him when she closes it, and his
+  edit shows on her board; a third person comes, and once their browser closes and the grace is up,
+  leaves everyone's stack.
 
 The test files build the app once between them, each with a database and a server of its own.
 
-**In a Firefox-based browser.** Headless Chromium never runs CSS transitions, so the glides were
-also checked in headless Zen (Gecko), over WebDriver BiDi, with Bo in Chromium: Zen's page hydrated
-with no warnings; a drag started with real pointer actions lit the column it was over, dimmed the
-tile and drew the drop line; the drop target accepted the drag (its `dragover` default prevented)
-and the dropped card showed in its new column at once and glided there, and Bo saw it moved; Bo's
-move arrived on Zen's page and that tile glided, its animation running. Headless Gecko never ends a
-drag that WebDriver's pointer started (no `drop`, no `dragend`; neither pointer-up nor Escape reaches
-its drag session), so that drop was made with the DOM's own drag events. The frames it took showed
-one real glitch Chromium couldn't: a card gliding into another column was invisible on its way,
-clipped by the column's card list, which was a scroll box. Columns don't scroll on their own now
-(the board scrolls), and the card is seen all the way.
+**In a Firefox-based browser.** Headless Chromium never runs CSS transitions, so Ada's half of the
+browser test runs in headless Gecko (Zen, or Firefox) when there is one, over WebDriver BiDi
+(packages/testing's `launchBrowser({ engine: "gecko" })`), with Bo in Chromium: Zen's page hydrates
+with no warnings, Ada's drag shows the card in its new column at once and it glides there, and Bo
+sees it moved. Headless Gecko never ends a drag that WebDriver's pointer starts (no `drop`, no
+`dragend`; neither pointer-up nor Escape reaches its drag session, and no pref or pacing of the
+actions changes that: Mozilla's bug 1515879), so packages/testing's `drag` makes a drag in Gecko of
+the DOM's own drag events, in the browser's order, with one `DataTransfer` carried through them; in
+Chromium it is the browser's own drag and drop. Fixed: the test used to drag with the DevTools
+protocol alone, and the Zen check was a script of its own. Frames Zen took showed one real glitch
+Chromium couldn't: a card gliding into another column was invisible on its way, clipped by the
+column's card list, which was a scroll box. Columns don't scroll on their own now (the board
+scrolls), and the card is seen all the way.
 
 ## Product calls
 

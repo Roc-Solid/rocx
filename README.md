@@ -563,4 +563,6 @@ Postgres, transactions, migrations, jobs, cron, email over SMTP, live rooms, act
 restart, and a graceful stop. `roc test packages/<name>/main.roc` runs each package's `expect`s,
 and `packages/testing/test/` tests that package's helpers against an app it builds. The browser
 tests drive Chromium's headless shell over the DevTools protocol with no dependencies: `$CHROME`,
-or Playwright's cached one; without it they are skipped.
+or Playwright's cached one; without it they are skipped. packages/testing's (and the board
+example's) drive Gecko too when there is one, headless over WebDriver BiDi: `$GECKO`, Zen, Firefox,
+or Playwright's Firefox (`web/test/browser.mjs`, `launchGecko`).

@@ -217,6 +217,13 @@ view! = |_|
 		</p>
 		<Code title={Sources.testing_node_browser.file} source={Sources.testing_node_browser.rocx} numbers={Bool.False} />
 		<p>
+			<code>{"launchBrowser({ engine: \"gecko\" })"}</code> starts Gecko instead, headless: Zen, or Firefox, driven over
+			WebDriver BiDi, its tabs doing what Chromium's do. <code>{"tab.drag(source, target)"}</code> drags one element
+			onto another as a mouse does: dragstart, drag, dragenter, dragover, drop if the target takes it, dragend, each
+			with its coordinates. In Chromium that is the browser's own drag and drop. Gecko never ends a drag that
+			WebDriver starts, so there it is the DOM's own drag events, with one <code>DataTransfer</code> through them.
+		</p>
+		<p>
 			<code>Html.to_str</code> can't render a component with signals: its holes run in the runtime. Its
 			<code>{"<story>"}</code> can be tested instead. <code>{"buildForTests(dir, { dev: true })"}</code> serves
 			each story as a page, at <code>{"storyPath(\"Counter\", \"At ten\")"}</code>, to fetch or to open.
@@ -261,9 +268,9 @@ view! = |_|
 					<tr>
 						<td><code>browser.mjs</code></td>
 						<td>
-							<code>launchBrowser()</code>, <code>{"browser.open(url, { strict, cookies })"}</code>: a tab with the
+							<code>{"launchBrowser({ engine })"}</code>, <code>{"browser.open(url, { strict, cookies, script })"}</code>: a tab with the
 							queries, <code>findBy…</code>, <code>waitFor</code>, <code>errors</code>, <code>console</code>,
-							<code>screenshot</code>; elements with <code>click</code>, <code>fill</code>, <code>type</code>,
+							<code>screenshot</code>, <code>drag</code>; elements with <code>click</code>, <code>fill</code>, <code>type</code>,
 							<code>press</code>, <code>value</code>
 						</td>
 					</tr>

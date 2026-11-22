@@ -159,8 +159,11 @@ Each gap this app met, and what it does about it:
   warning: a shadowed name) as a failure. The code has no warnings.
 - **`node --test examples/quiz/test/` doesn't run on Node 24**, which takes a directory as a module
   to load; the glob (`'examples/quiz/test/*.test.mjs'`) does.
-- **Checking transitions in a Firefox-based browser headlessly is limited.** Driven over WebDriver
-  BiDi (a scratch script, not in the repo), Zen runs every animation the runtime starts (each phase's
+- **Fixed: checking transitions in a Firefox-based browser headlessly was limited.** Driven over
+  WebDriver BiDi (a scratch script, then), Zen ran every animation the runtime starts (each phase's
   in and out, the board's glides, with their keyframes and lengths), but a headless window's
-  document is hidden and its animation timeline barely moves (raising `layout.throttled_frame_rate`
-  helps), so its screenshots show first frames. Headless Chromium doesn't play them either.
+  document was hidden and its animation timeline barely moved (raising `layout.throttled_frame_rate`
+  helped a little), so its screenshots showed first frames. Headless Chromium doesn't play them
+  either. packages/testing now launches Gecko (`launchBrowser({ engine: "gecko" })`), and each tab
+  it goes to is the shown one (BiDi's `browsingContext.activate`): its document is visible, and its
+  transitions run in real time, sixty frames a second.

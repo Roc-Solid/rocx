@@ -1,19 +1,23 @@
-// A page in a real browser: Chromium's headless shell, driven by the repository's own DevTools
-// driver (web/test/browser.mjs, no dependencies). A tab hydrates strictly (a page that isn't what
-// the browser's half renders throws, instead of being rendered again), is found in by role and name
-// as dom.mjs finds (it reads the live document), and is used with real clicks and keys.
+// A page in a real browser: Chromium's headless shell, or Gecko (Zen, or Firefox) headless,
+// driven by the repository's own driver (web/test/browser.mjs, no dependencies: the DevTools
+// protocol, and WebDriver BiDi for Gecko). A tab hydrates strictly (a page that isn't what the
+// browser's half renders throws, instead of being rendered again), is found in by role and name as
+// dom.mjs finds (it reads the live document), and is used with real clicks and keys, and drags.
 //
 //   const browser = await launchBrowser();          // null without Chromium: skip
 //   const tab = await browser.open(`${app.url}/`);   // hydrated
 //   await (await tab.getByRole("button", { name: "Add one" })).click();
 //   assert.equal((await tab.findByText("2")).tag, "output");
+//   await tab.drag(await tab.getByText("Card"), await tab.getByRole("list", { name: "Done" }));
 //   assert.deepEqual(tab.errors, []);
+//
+//   const gecko = await launchBrowser({ engine: "gecko" });   // null without Zen or Firefox
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { repo } from "./build.mjs";
 import { QueryError, parse, within } from "./dom.mjs";
 
-/** The DevTools driver: web/test/browser.mjs (`findChrome`, `launch`). */
+/** The driver: web/test/browser.mjs (`findChrome`, `launch`, `findGecko`, `launchGecko`). */
 const driver = () => import(pathToFileURL(join(repo, "web", "test", "browser.mjs")).href);
 
 /** Chromium's headless shell: `$CHROME`, or Playwright's cached one; null when there is none. */
@@ -21,45 +25,52 @@ export async function findChrome() {
 	return (await driver()).findChrome();
 }
 
+/** A Gecko browser (`$GECKO`, Zen, Firefox, or Playwright's Firefox); null when there is none. */
+export async function findGecko() {
+	return (await driver()).findGecko();
+}
+
 /**
- * Chromium, started (`close()` when done); null when there is none, for a test to skip. Its tabs
- * share their cookies, as one person's browser does: for two people at once, launch twice.
+ * A browser, started (`close()` when done): Chromium, or with `engine: "gecko"` Zen or Firefox;
+ * null when there is none, for a test to skip. Its tabs share their cookies, as one person's
+ * browser does: for two people at once, launch twice.
  */
-export async function launchBrowser() {
-	const { findChrome: find, launch } = await driver();
-	const binary = find();
-	return binary ? new Browser(await launch(binary)) : null;
+export async function launchBrowser({ engine = "chromium" } = {}) {
+	const { findChrome: chrome, launch, findGecko: gecko, launchGecko } = await driver();
+	if (engine !== "chromium" && engine !== "gecko") throw new Error(`no browser engine ${JSON.stringify(engine)}: "chromium" or "gecko"`);
+	const binary = engine === "gecko" ? gecko() : chrome();
+	return binary ? new Browser(engine === "gecko" ? await launchGecko(binary) : await launch(binary), engine) : null;
 }
 
 /** What every tab runs before the page does: strict hydration (when asked), and `rocx:ready` noted. */
 const BEFORE = (strict) => `${strict ? "window.rocxStrict = true;" : ""} document.addEventListener("rocx:ready", (event) => { window.__rocxReady = { ms: event.detail?.ms ?? 0 }; });`;
 
-/** A started Chromium. */
+/** A started browser: `engine` is "chromium" or "gecko". */
 export class Browser {
-	constructor(chrome) {
-		this.chrome = chrome;
+	constructor(driven, engine = "chromium") {
+		this.driven = driven;
+		this.engine = engine;
 	}
 
 	/**
 	 * A tab at `url`, loaded, and hydrated if the page loads the runtime (`/rocx/start.js`). `strict`
 	 * (the default) makes a page that isn't what the browser's half renders throw. `cookies` (a
 	 * client's, `[name, value]` pairs or a Map) are set first; the tabs of one browser share cookies,
-	 * so each `open` clears them before.
+	 * so each `open` clears them before. `script` (JavaScript) runs in each document the tab loads,
+	 * before the page's own scripts.
 	 */
-	async open(url, { strict = true, cookies = [], timeout = 10_000 } = {}) {
-		const page = await this.chrome.page();
-		await page.send("Page.enable");
-		await page.send("Network.enable");
-		await page.send("Network.clearBrowserCookies");
-		await page.send("Page.addScriptToEvaluateOnNewDocument", { source: BEFORE(strict) });
-		for (const [name, value] of cookies) await page.send("Network.setCookie", { name, value, url });
+	async open(url, { strict = true, cookies = [], script = "", timeout = 10_000 } = {}) {
+		const page = await this.driven.page();
+		await page.clearCookies();
+		await page.beforeEachDocument(`${BEFORE(strict)}\n${script}`);
+		for (const [name, value] of cookies) await page.setCookie(name, value, url);
 		const tab = new Tab(page);
 		await tab.goto(url, { timeout });
 		return tab;
 	}
 
 	close() {
-		return this.chrome.close();
+		return this.driven.close();
 	}
 }
 
@@ -72,7 +83,7 @@ const KINDS = ["Role", "Text", "LabelText", "TestId"];
 /** A tab: its document as it is now, its elements found as a person finds them, and used. */
 export class Tab {
 	constructor(page) {
-		/** The driver's page (web/test/browser.mjs): `send`, `eval`, `wait`, `screenshot`. */
+		/** The driver's page (web/test/browser.mjs): `eval`, `wait`, `screenshot`; Chromium's `send`. */
 		this.page = page;
 		for (const kind of KINDS) {
 			for (const form of [`getBy${kind}`, `queryBy${kind}`, `getAllBy${kind}`, `queryAllBy${kind}`]) {
@@ -149,8 +160,33 @@ export class Tab {
 		return this.page.screenshot(options);
 	}
 
+	/**
+	 * A drag of `source` onto `target` (each an element this tab found, or a CSS selector), as a
+	 * person does it with a mouse, pressed at the middle of one and dropped at the middle of the
+	 * other: dragstart, drag, dragenter, dragover, drop (if `target` accepts it: its dragover's
+	 * default prevented), dragend, each with its coordinates. Unless `drop` is false: the drag stays
+	 * over `target`, for `finish`. In Chromium, real pointer input through the browser's own drag and
+	 * drop (every event trusted); in Gecko, which never ends a drag WebDriver starts, the DOM's own
+	 * drag events, all carrying one `DataTransfer`, and no pointer or mouse events
+	 * (web/test/browser.mjs, `GeckoPage.drag`, says exactly what fires). What the drag carried, as
+	 * dragstart set it: `{ items: [{ mimeType, data }] }` (Chromium's has more).
+	 */
+	async drag(source, target, { drop = true } = {}) {
+		const at = async (each) => (typeof each === "string" ? each : await each.selector());
+		return this.page.drag(await at(source), [await at(target)], { drop });
+	}
+
+	/**
+	 * The drag `drag(…, { drop: false })` left over its target, dropped (or, `cancel`, called off:
+	 * in Gecko, dragleave on the target and dragend, as the HTML standard has it; in Chromium, whose
+	 * DevTools protocol calls a drag off its own way, dragend alone).
+	 */
+	finish({ cancel = false } = {}) {
+		return this.page.finish({ cancel });
+	}
+
 	close() {
-		return this.page.send("Page.close").catch(() => {});
+		return this.page.close();
 	}
 }
 
@@ -176,6 +212,15 @@ export class Element {
 		return this.node.attr(name);
 	}
 
+	/** A CSS selector of it, by its place in the document (it refuses if it has gone). */
+	async selector() {
+		await this.#in("return true;");
+		return `:root${this.path
+			.slice(1)
+			.map((index) => ` > :nth-child(${index + 1})`)
+			.join("")}`;
+	}
+
 	/** Runs `body` (JavaScript, with `element` the live element) in the page: its value. */
 	async #in(body) {
 		const value = await this.tab.page.eval(`(() => {
@@ -195,7 +240,7 @@ export class Element {
 	 */
 	async click() {
 		const box = await this.#in('element.scrollIntoView({ block: "center", behavior: "instant" }); const r = element.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 };');
-		for (const type of ["mousePressed", "mouseReleased"]) await this.tab.page.send("Input.dispatchMouseEvent", { type, x: box.x, y: box.y, button: "left", clickCount: 1 });
+		await this.tab.page.clickAt(box.x, box.y);
 	}
 
 	focus() {
@@ -205,13 +250,13 @@ export class Element {
 	/** Types `text` where the caret is, as a keyboard does (each `input` event fires). */
 	async type(text) {
 		await this.focus();
-		await this.tab.page.send("Input.insertText", { text });
+		await this.tab.page.insertText(text);
 	}
 
 	/** Replaces what is in a field with `text`, as selecting it all and typing does. */
 	async fill(text) {
 		await this.#in("element.focus(); element.select?.(); return true;");
-		if (text) await this.tab.page.send("Input.insertText", { text });
+		if (text) await this.tab.page.insertText(text);
 		else await this.tab.page.press("Backspace");
 	}
 

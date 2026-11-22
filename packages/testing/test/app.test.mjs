@@ -1,9 +1,9 @@
 // The helpers against a real app (fixture.mjs), built as a deploy builds it (buildForTests) and
 // served by its server (startServer): a page found in by role and name, a form's post and its
 // flash, an endpoint the page reads, JSON, events, the dev mailbox; with DATABASE_URL, a database of the
-// test's own and jobs run to their end; with Chromium, a page hydrated strictly, clicked, typed in,
-// and a component's story. Needs the toolchain (`just setup`, and the platforms' hosts built, as
-// `just test` builds them).
+// test's own and jobs run to their end; with Chromium, and again with Gecko (Zen or Firefox) when
+// there is one, a page hydrated strictly, clicked, typed in, and a component's story. Needs the
+// toolchain (`just setup`, and the platforms' hosts built, as `just test` builds them).
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
@@ -31,7 +31,8 @@ const skipDb = skip || (!process.env.DATABASE_URL && "no DATABASE_URL (`just db`
 let dir;
 let app;
 let db;
-let browser;
+/** The browsers there are, by engine (null for one there isn't). */
+const browsers = {};
 
 before(async () => {
 	if (skip) return;
@@ -39,11 +40,11 @@ before(async () => {
 	const built = await buildForTests(dir, { dev: true });
 	if (!skipDb) db = await testDatabase();
 	app = await startServer(built.server, { statics: built.statics, database: db?.url, env: { MAIL_FROM: "Notes <notes@example.com>" } });
-	browser = await launchBrowser();
+	for (const engine of ["chromium", "gecko"]) browsers[engine] = await launchBrowser({ engine });
 });
 
 after(async () => {
-	await browser?.close();
+	for (const browser of Object.values(browsers)) await browser?.close();
 	await app?.stop();
 	await db?.drop();
 	if (dir) rmSync(dir, { recursive: true, force: true });
@@ -128,32 +129,35 @@ test("jobs: queued by an endpoint, or as a cron would, run to their end, with th
 	assert.deepEqual((await db.jobs({ kind: "welcome" })).map((job) => job.state), ["done", "done", "failed"]);
 });
 
-test("in Chromium: the page hydrates strictly, a click and typing change it, and a story is a page", { skip }, async (t) => {
-	if (!browser) return t.skip("no Chromium (set CHROME)");
-	const tab = await browser.open(`${app.url}/`);
-	try {
-		assert.deepEqual(tab.errors, []);
-		assert.deepEqual(tab.console, []);
-		assert.ok((await tab.requested()).includes("/rocx/app.wasm"));
-		await (await tab.getByRole("button", { name: "Add one" })).click();
-		const count = await tab.findByText("2");
-		assert.deepEqual([count.tag, count.name], ["output", "Count"]);
-		const field = await tab.getByLabelText("New note");
-		await field.fill("first");
-		await field.fill("second");
-		assert.equal(await field.value(), "second");
-		assert.equal((await tab.findByText("3 notes")).tag, "p");
-		await assert.rejects(tab.findByRole("button", { name: "Delete" }, { ms: 100 }), /nothing is a button named "Delete"; the buttons here: "Add one", "Add"/);
-	} finally {
-		await tab.close();
-	}
-	const story = await browser.open(`${app.url}${storyPath("Counter", "At ten")}`);
-	try {
-		assert.equal((await story.getByRole("status", { name: "Count" })).text, "10");
-		await (await story.getByRole("button", { name: "Add one" })).click();
-		await story.findByText("11");
-		assert.deepEqual(story.errors, []);
-	} finally {
-		await story.close();
-	}
-});
+for (const engine of ["chromium", "gecko"]) {
+	test(`in ${engine}: the page hydrates strictly, a click and typing change it, and a story is a page`, { skip }, async (t) => {
+		const browser = browsers[engine];
+		if (!browser) return t.skip(`no ${engine} browser (set ${engine === "gecko" ? "GECKO" : "CHROME"})`);
+		const tab = await browser.open(`${app.url}/`);
+		try {
+			assert.deepEqual(tab.errors, []);
+			assert.deepEqual(tab.console, []);
+			assert.ok((await tab.requested()).includes("/rocx/app.wasm"));
+			await (await tab.getByRole("button", { name: "Add one" })).click();
+			const count = await tab.findByText("2");
+			assert.deepEqual([count.tag, count.name], ["output", "Count"]);
+			const field = await tab.getByLabelText("New note");
+			await field.fill("first");
+			await field.fill("second");
+			assert.equal(await field.value(), "second");
+			assert.equal((await tab.findByText("3 notes")).tag, "p");
+			await assert.rejects(tab.findByRole("button", { name: "Delete" }, { ms: 100 }), /nothing is a button named "Delete"; the buttons here: "Add one", "Add"/);
+		} finally {
+			await tab.close();
+		}
+		const story = await browser.open(`${app.url}${storyPath("Counter", "At ten")}`);
+		try {
+			assert.equal((await story.getByRole("status", { name: "Count" })).text, "10");
+			await (await story.getByRole("button", { name: "Add one" })).click();
+			await story.findByText("11");
+			assert.deepEqual(story.errors, []);
+		} finally {
+			await story.close();
+		}
+	});
+}

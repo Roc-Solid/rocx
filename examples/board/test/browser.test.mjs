@@ -1,14 +1,17 @@
-// Two people on one board, each in a browser of their own (two Chromium launches: the tabs of one
-// launch share their cookies, so they would be one person). Ada drags a card to another column; it
-// shows there at once on her page, and moves on Bo's, gliding, without a reload. Each sees the
-// other here; Bo sees which card Ada has open, and that she is editing it, and it opens for him to
-// edit once she closes it.
+// Two people on one board, each in a browser of their own (the tabs of one launch share their
+// cookies, so they would be one person): Ada in Gecko (Zen or Firefox) when there is one, as many
+// people browse, and in Chromium when there isn't; Bo in Chromium. Ada drags a card to another
+// column; it shows there at once on her page, and moves on Bo's, gliding, without a reload. Each
+// sees the other here; Bo sees which card Ada has open, and that she is editing it, and it opens
+// for him to edit once she closes it.
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { findChrome, launchBrowser } from "../../../packages/testing/index.mjs";
+import { findChrome, findGecko, launchBrowser } from "../../../packages/testing/index.mjs";
 import { ids, noDatabase, started } from "./app.mjs";
 
 const noChrome = !(await findChrome()) && "needs Chromium's headless shell ($CHROME, or Playwright's)";
+/** Ada's browser. */
+const engine = (await findGecko()) ? "gecko" : "chromium";
 
 /** Notes every glide (D-031) the page's runtime plays, by the key of the element that moved. */
 const GLIDES = `document.addEventListener("rocx:ready", (event) => {
@@ -17,18 +20,15 @@ const GLIDES = `document.addEventListener("rocx:ready", (event) => {
 	event.detail.runtime.observer = { glide: (detail) => window.__glides.push(detail.key ?? "") };
 });`;
 
-describe("Acme Board in two browsers", { skip: noDatabase || noChrome }, () => {
+describe(`Acme Board in two browsers (Ada's: ${engine})`, { skip: noDatabase || noChrome }, () => {
 	let running, seeded, browsers, people, open, ada, bo;
 	before(async () => {
 		running = await started();
 		seeded = await ids(running.db);
 		people = Object.fromEntries((await running.db.sql`select name, id::text as id from people`).map((row) => [row.name, row.id]));
-		browsers = [await launchBrowser(), await launchBrowser()];
+		browsers = [await launchBrowser({ engine }), await launchBrowser()];
 		open = async (browser, person) => {
-			const url = `${running.app.url}/b/launch`;
-			const tab = await browser.open(url, { cookies: [["acme_board_person", person]] });
-			await tab.page.send("Page.addScriptToEvaluateOnNewDocument", { source: GLIDES });
-			await tab.goto(url);
+			const tab = await browser.open(`${running.app.url}/b/launch`, { cookies: [["acme_board_person", person]], script: GLIDES });
 			// Live: subscribed to the board's channel, and in its presence room.
 			await tab.page.wait("document.querySelector('.live.on')", 5000);
 			return tab;
@@ -63,9 +63,10 @@ describe("Acme Board in two browsers", { skip: noDatabase || noChrome }, () => {
 		assert.equal(await columnOf(bo, "Press kit"), "To do");
 		await bo.page.eval("window.__stayed = true");
 
-		// A real drag, through the browser's own drag and drop: pressed on the tile, moved over the
-		// Doing column's first card, and dropped there.
-		await ada.page.drag(`[data-card="${card}"]`, [`[data-card="${seeded.cards["Telemetry dashboard"]}"]`]);
+		// A drag, as a mouse makes it: pressed on the tile, and dropped on the Doing column's first
+		// card (packages/testing's drag: Chromium's own drag and drop, or in Gecko, which never ends
+		// a drag WebDriver starts, the DOM's drag events).
+		await ada.drag(`[data-card="${card}"]`, `[data-card="${seeded.cards["Telemetry dashboard"]}"]`);
 		assert.equal(await columnOf(ada, "Press kit"), "Doing");
 
 		await bo.page.wait(`[...document.querySelectorAll('[data-column="${seeded.columns.Doing}"] .tile .open')].map((each) => each.textContent).join("|") === "Press kit|Telemetry dashboard|Rehearse the countdown"`, 5000);
