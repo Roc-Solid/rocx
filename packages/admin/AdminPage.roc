@@ -22,11 +22,12 @@ import Widget
 ## middleware = Middlewares.staff
 ##
 ## respond! : { request : Server.Request, params : {}, context : { user : Str, staff : Bool } } => Server.Response
-## respond! = |{ request, context, .. }| AdminPage.respond!(request, context, Admin.admin, { all!: Db.all!, run!: Db.run!, random!: Random.bytes! })
+## respond! = |{ request, context, .. }| AdminPage.respond!(request, context, Admin.admin, { all!: Db.all!, run!: Db.run!, random!: Random.bytes!, backend!: Db.backend! })
 ## ```
 ##
 ## A package can't name the server's platform (see the README), so the app hands the admin the
-## three effects it runs on: Postgres's `Db.all!` and `Db.run!`, and `Random.bytes!`.
+## effects it runs on: `Db.all!` and `Db.run!`, `Random.bytes!`, and `Db.backend!`, which says
+## whether the app's database is Postgres or SQLite (D-045): the admin writes its statements for it.
 ##
 ## It reads the schema's catalog for each request, and answers GET (`?table=books` a table's rows,
 ## `&k.id=7` a row, `&new` a new one, `&delete` the question before deleting one) and POST (a form:
@@ -37,17 +38,25 @@ AdminPage := [].{
 	## A request, as `Server.Request` is.
 	Request : { method : Str, path : Str, query : Str, headers : List({ name : Str, value : Str }), body : List(U8), route : Str, peer : Str }
 
-	## What the admin runs on: `{ all!: Db.all!, run!: Db.run!, random!: Random.bytes! }`.
+	## What the admin runs on: `{ all!: Db.all!, run!: Db.run!, random!: Random.bytes!, backend!: Db.backend! }`
+	## (`backend!` says which database the app has, Postgres or SQLite, D-045).
 	Effects : {
-		all! : Str, List(Sql.Param) => Try(List(Catalog.Row), [DbErr(Str), BadRow(Str)]),
+		all! : Str, List(Sql.Param) => Try(List(Catalog.Raw), [DbErr(Str), BadRow(Str)]),
 		run! : Str, List(Sql.Param) => Try(U64, [DbErr(Str)]),
 		random! : U64 => List(U8),
+		backend! : {} => [Postgres, Sqlite, None],
 	}
 
 	## The answer to a request, given the context the route's middleware handed on: a page, a
 	## redirect after a form, or a refusal. It is a `Server.Response`.
 	respond! : Request, context, Admin.Config(context), Effects => { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
 	respond! = |request, context, config, effects| {
+		# Where its statements run: the app's database (D-045), and the schema (SQLite's is `main`).
+		on =
+			match (effects.backend!)({}) {
+				Sqlite => { schema: "main", dialect: Sqlite }
+				_ => { schema: config.schema, dialect: Postgres }
+			}
 		access = (config.access)(context)
 		empty_frame = { mount: config.mount, title: config.title, tables: [], access, token: "", back: config.back }
 		method = if (request.method == "HEAD") "GET" else request.method
@@ -66,14 +75,14 @@ AdminPage := [].{
 					# Before anything is read: another site's page, or one from before the cookie.
 					page(403, empty_frame, Elsewhere, "Not done", View.problem_page(empty_frame, "Not done", "The form was sent from another site's page, or from an old one: open it again here, and send it again."))
 				} else {
-					match read_catalog!(effects, config.schema) {
+					match read_catalog!(effects, on) {
 						Err(why) => page(500, empty_frame, Elsewhere, "The database", View.problem_page(empty_frame, "The database can't be read", why))
 						Ok(tables) => {
 							frame = { ..empty_frame, tables: Admin.showing(config, tables), token }
 							if method == "POST" {
-								write!(form, frame, config.schema, effects)
+								write!(form, frame, on, effects)
 							} else {
-								read!(Form.fields(request.query), frame, config.schema, effects)
+								read!(Form.fields(request.query), frame, on, effects)
 							}
 						}
 					}
@@ -157,34 +166,44 @@ page = |status, frame, on, title, body| {
 redirect : Str -> { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
 redirect = |location| { status: 303, headers: [{ name: "location", value: location }, { name: "cache-control", value: "no-store" }], body: Text("") }
 
-## The schema's tables, from its catalog.
-read_catalog! : AdminPage.Effects, Str => Try(List(Catalog.Table), Str)
-read_catalog! = |effects, schema| {
+## The schema's tables, from its catalog: Postgres's, or SQLite's.
+read_catalog! : AdminPage.Effects, Sql.On => Try(List(Catalog.Table), Str)
+read_catalog! = |effects, on| {
 	asked! = |sql|
-		match (effects.all!)(sql, [Text(schema)]) {
-			Ok(rows) => Ok(rows)
+		match (effects.all!)(sql, [Text(on.schema)]) {
+			Ok(rows) => Ok(rows.map(Catalog.parsed))
 			Err(DbErr(why)) => Err(why)
 			Err(BadRow(why)) => Err(why)
 		}
-	tables = asked!(Catalog.tables_sql)?
-	columns = asked!(Catalog.columns_sql)?
-	enums = asked!(Catalog.enums_sql)?
-	constraints = asked!(Catalog.constraints_sql)?
-	Ok(Catalog.read(schema, { tables, columns, enums, constraints }))
+	match on.dialect {
+		Postgres => {
+			tables = asked!(Catalog.tables_sql)?
+			columns = asked!(Catalog.columns_sql)?
+			enums = asked!(Catalog.enums_sql)?
+			constraints = asked!(Catalog.constraints_sql)?
+			Ok(Catalog.read(on.schema, { tables, columns, enums, constraints }))
+		}
+		Sqlite => {
+			tables = asked!(Catalog.sqlite_tables_sql)?
+			columns = asked!(Catalog.sqlite_columns_sql)?
+			constraints = asked!(Catalog.sqlite_constraints_sql)?
+			Ok(Catalog.read_sqlite(on.schema, { tables, columns, constraints }))
+		}
+	}
 }
 
 ## The rows a statement reads, or why it couldn't.
 rows! : AdminPage.Effects, Sql.Statement => Try(List(Catalog.Row), Str)
 rows! = |effects, statement|
 	match (effects.all!)(statement.sql, statement.params) {
-		Ok(found) => Ok(found)
+		Ok(found) => Ok(found.map(Catalog.parsed))
 		Err(DbErr(why)) => Err(why)
 		Err(BadRow(why)) => Err(why)
 	}
 
 ## A page: the index, a table's rows, a row, a new row, or the question before deleting one.
-read! : List(Form.Field), View.Frame, Str, AdminPage.Effects => { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
-read! = |query, frame, schema, effects| {
+read! : List(Form.Field), View.Frame, Sql.On, AdminPage.Effects => { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
+read! = |query, frame, on, effects| {
 	name = Form.get(query, "table")
 	if name.is_empty() {
 		page(200, frame, Overview, frame.title, View.index_page(frame))
@@ -195,14 +214,14 @@ read! = |query, frame, schema, effects| {
 				if Form.asks(query, "new") {
 					if frame.access == Edit and shown.options.create {
 						values = Admin.visible(shown).map(|column| { name: column.name, value: Widget.initial(column), null: Bool.False })
-						row_page!(200, frame, schema, shown, effects, { key: [], values, problem: "", notice: "" })
+						row_page!(200, frame, on, shown, effects, { key: [], values, problem: "", notice: "" })
 					} else {
 						page(403, frame, Table(shown.table.name), Admin.label(shown), View.problem_page(frame, "Not here", "Rows aren't added to ${Admin.label(shown)} here."))
 					}
 				} else {
 					match Listing.key(shown, query) {
-						Err(NoKey) => list!(query, frame, schema, shown, effects)
-						Ok(key) => one!(query, frame, schema, shown, key, effects)
+						Err(NoKey) => list!(query, frame, on, shown, effects)
+						Ok(key) => one!(query, frame, on, shown, key, effects)
 					}
 				}
 		}
@@ -210,18 +229,18 @@ read! = |query, frame, schema, effects| {
 }
 
 ## A table's rows, a page of them.
-list! : List(Form.Field), View.Frame, Str, Admin.Shown, AdminPage.Effects => { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
-list! = |query, frame, schema, shown, effects| {
+list! : List(Form.Field), View.Frame, Sql.On, Admin.Shown, AdminPage.Effects => { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
+list! = |query, frame, on, shown, effects| {
 	state = Listing.read(shown, query)
 	conditions = Listing.conditions(shown, state)
 	read =
-		match rows!(effects, Sql.count(schema, shown.table, conditions)) {
+		match rows!(effects, Sql.count(on, shown.table, conditions)) {
 			Err(why) => Err(why)
 			Ok(counted) => {
 				total = U64.from_str(Catalog.cell(counted.first() ?? { cells: [], nulls: [] }, 0)) ?? 0
 				paged = Paging.of(total, shown.options.per_page, state.page)
 				statement = Sql.rows(
-					schema,
+					on,
 					shown.table,
 					{ columns: Admin.listed(shown), whole: Admin.key(shown), conditions, order: Listing.order(shown, state), limit: paged.size, offset: Paging.offset(paged), longest: 81 },
 				)
@@ -241,10 +260,10 @@ list! = |query, frame, schema, shown, effects| {
 }
 
 ## A row: its form, or the question before deleting it.
-one! : List(Form.Field), View.Frame, Str, Admin.Shown, List((Catalog.Column, Str)), AdminPage.Effects => { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
-one! = |query, frame, schema, shown, key, effects| {
+one! : List(Form.Field), View.Frame, Sql.On, Admin.Shown, List((Catalog.Column, Str)), AdminPage.Effects => { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
+one! = |query, frame, on, shown, key, effects| {
 	named = key.map(|(column, value)| (column.name, value))
-	match current!(effects, schema, shown, key) {
+	match current!(effects, on, shown, key) {
 		Err(Missing) => page(404, frame, Table(shown.table.name), Admin.label(shown), View.problem_page(frame, "No such row", "${Admin.label(shown)} has no row whose ${described(shown, named)}."))
 		Err(Failed(why)) => page(400, frame, Table(shown.table.name), Admin.label(shown), View.problem_page(frame, "No such row", why))
 		Ok(values) =>
@@ -256,16 +275,16 @@ one! = |query, frame, schema, shown, key, effects| {
 					page(403, frame, Table(shown.table.name), Admin.label(shown), View.problem_page(frame, "Not here", "Rows of ${Admin.label(shown)} aren't deleted here."))
 				}
 			} else {
-				row_page!(200, frame, schema, shown, effects, { key: named, values, problem: "", notice: View.notice(Form.get(query, "done")) })
+				row_page!(200, frame, on, shown, effects, { key: named, values, problem: "", notice: View.notice(Form.get(query, "done")) })
 			}
 	}
 }
 
 ## A row's visible columns, as the database has them now.
-current! : AdminPage.Effects, Str, Admin.Shown, List((Catalog.Column, Str)) => Try(List({ name : Str, value : Str, null : Bool }), [Missing, Failed(Str)])
-current! = |effects, schema, shown, key| {
+current! : AdminPage.Effects, Sql.On, Admin.Shown, List((Catalog.Column, Str)) => Try(List({ name : Str, value : Str, null : Bool }), [Missing, Failed(Str)])
+current! = |effects, on, shown, key| {
 	columns = Admin.visible(shown)
-	match rows!(effects, Sql.one(schema, shown.table, columns, key)) {
+	match rows!(effects, Sql.one(on, shown.table, columns, key)) {
 		Err(why) => Err(Failed(why))
 		Ok(found) =>
 			match found.first() {
@@ -276,8 +295,8 @@ current! = |effects, schema, shown, key| {
 }
 
 ## A row's page, with the choices of its foreign keys.
-row_page! : U16, View.Frame, Str, Admin.Shown, AdminPage.Effects, { key : List((Str, Str)), values : List({ name : Str, value : Str, null : Bool }), problem : Str, notice : Str } => { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
-row_page! = |status, frame, schema, shown, effects, row| {
+row_page! : U16, View.Frame, Sql.On, Admin.Shown, AdminPage.Effects, { key : List((Str, Str)), values : List({ name : Str, value : Str, null : Bool }), problem : Str, notice : Str } => { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
+row_page! = |status, frame, on, shown, effects, row| {
 	doing = if (row.key.is_empty()) Creating else Editing
 	var $options = []
 	for column in Admin.visible(shown).keep_if(|each| Admin.writable(shown, frame.access, each, doing)) {
@@ -288,7 +307,7 @@ row_page! = |status, frame, schema, shown, effects, row| {
 						Ok(target) if target.table.key == [other.column] =>
 							match (Catalog.column(target.table, other.column), Admin.title(target)) {
 								(Ok(key_column), Ok(title)) =>
-									match rows!(effects, Sql.titles(schema, target.table, key_column, title, 201)) {
+									match rows!(effects, Sql.titles(on, target.table, key_column, title, 201)) {
 										# Too many to choose from: an input instead.
 										Ok(found) if found.len() <= 200 => [{ column: column.name, options: found.map(|each| (Catalog.cell(each, 0), Widget.cut(Catalog.cell(each, 1), 60))) }]
 										_ => []
@@ -308,15 +327,15 @@ row_page! = |status, frame, schema, shown, effects, row| {
 
 ## A form, sent (by someone who may edit, from one of the admin's pages): a row added, changed or
 ## deleted, then on to a page that says so; or the form again, with what went wrong.
-write! : List(Form.Field), View.Frame, Str, AdminPage.Effects => { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
-write! = |form, frame, schema, effects|
+write! : List(Form.Field), View.Frame, Sql.On, AdminPage.Effects => { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
+write! = |form, frame, on, effects|
 	match Admin.find(frame.tables, Form.get(form, "table")) {
 		Err(NotFound) => page(404, frame, Elsewhere, "No such table", View.problem_page(frame, "No such table", "There is no table called ${Form.get(form, "table")} here."))
 		Ok(shown) =>
 			match Form.get(form, "action") {
-				"create" => create!(form, frame, schema, shown, effects)
-				"update" => update!(form, frame, schema, shown, effects)
-				"delete" => delete!(form, frame, schema, shown, effects)
+				"create" => create!(form, frame, on, shown, effects)
+				"update" => update!(form, frame, on, shown, effects)
+				"delete" => delete!(form, frame, on, shown, effects)
 				other => page(400, frame, Table(shown.table.name), "Not done", View.problem_page(frame, "Not done", "The admin's forms don't ${other}."))
 			}
 	}
@@ -325,8 +344,8 @@ write! = |form, frame, schema, effects|
 sent : List(Form.Field), List(Catalog.Column) -> List({ name : Str, value : Str, null : Bool })
 sent = |form, columns| columns.keep_if(|column| Form.asks(form, "v.${column.name}")).map(|column| { name: column.name, value: Form.get(form, "v.${column.name}"), null: Bool.False })
 
-create! : List(Form.Field), View.Frame, Str, Admin.Shown, AdminPage.Effects => { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
-create! = |form, frame, schema, shown, effects|
+create! : List(Form.Field), View.Frame, Sql.On, Admin.Shown, AdminPage.Effects => { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
+create! = |form, frame, on, shown, effects|
 	if !shown.options.create {
 		page(403, frame, Table(shown.table.name), Admin.label(shown), View.problem_page(frame, "Not done", "Rows aren't added to ${Admin.label(shown)} here."))
 	} else {
@@ -339,8 +358,8 @@ create! = |form, frame, schema, shown, effects|
 				},
 		)
 		key = Admin.key(shown)
-		match rows!(effects, Sql.insert(schema, shown.table, values, key)) {
-			Err(why) => row_page!(422, frame, schema, shown, effects, { key: [], values: sent(form, columns), problem: why, notice: "" })
+		match rows!(effects, Sql.insert(on, shown.table, values, key)) {
+			Err(why) => row_page!(422, frame, on, shown, effects, { key: [], values: sent(form, columns), problem: why, notice: "" })
 			Ok(found) => {
 				row = found.first() ?? { cells: [], nulls: [] }
 				if key.is_empty() {
@@ -353,13 +372,13 @@ create! = |form, frame, schema, shown, effects|
 		}
 	}
 
-update! : List(Form.Field), View.Frame, Str, Admin.Shown, AdminPage.Effects => { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
-update! = |form, frame, schema, shown, effects|
+update! : List(Form.Field), View.Frame, Sql.On, Admin.Shown, AdminPage.Effects => { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
+update! = |form, frame, on, shown, effects|
 	match Listing.key(shown, form) {
 		Err(NoKey) => page(400, frame, Table(shown.table.name), "Not done", View.problem_page(frame, "Not done", "The form doesn't say which row of ${Admin.label(shown)} it changes."))
 		Ok(key) => {
 			named = key.map(|(column, value)| (column.name, value))
-			match current!(effects, schema, shown, key) {
+			match current!(effects, on, shown, key) {
 				Err(Missing) => page(404, frame, Table(shown.table.name), Admin.label(shown), View.problem_page(frame, "No such row", "${Admin.label(shown)} has no row whose ${described(shown, named)}: it may have been deleted."))
 				Err(Failed(why)) => page(400, frame, Table(shown.table.name), Admin.label(shown), View.problem_page(frame, "Not done", why))
 				Ok(now) => {
@@ -383,7 +402,7 @@ update! = |form, frame, schema, shown, effects|
 					if changed.is_empty() {
 						redirect("${back}&done=unchanged")
 					} else {
-						statement = Sql.update(schema, shown.table, changed, key)
+						statement = Sql.update(on, shown.table, changed, key)
 						match (effects.run!)(statement.sql, statement.params) {
 							Ok(0) => page(404, frame, Table(shown.table.name), Admin.label(shown), View.problem_page(frame, "No such row", "${Admin.label(shown)} has no row whose ${described(shown, named)}: it may have been deleted."))
 							Ok(_) => redirect("${back}&done=saved")
@@ -391,7 +410,7 @@ update! = |form, frame, schema, shown, effects|
 								# The form again: what was sent, and the rest as it is.
 								given = sent(form, columns)
 								values = now.map(|each| given.find_first(|other| other.name == each.name) ?? each)
-								row_page!(422, frame, schema, shown, effects, { key: named, values, problem: why, notice: "" })
+								row_page!(422, frame, on, shown, effects, { key: named, values, problem: why, notice: "" })
 							}
 						}
 					}
@@ -400,8 +419,8 @@ update! = |form, frame, schema, shown, effects|
 		}
 	}
 
-delete! : List(Form.Field), View.Frame, Str, Admin.Shown, AdminPage.Effects => { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
-delete! = |form, frame, schema, shown, effects|
+delete! : List(Form.Field), View.Frame, Sql.On, Admin.Shown, AdminPage.Effects => { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
+delete! = |form, frame, on, shown, effects|
 	if !shown.options.delete {
 		page(403, frame, Table(shown.table.name), Admin.label(shown), View.problem_page(frame, "Not done", "Rows of ${Admin.label(shown)} aren't deleted here."))
 	} else {
@@ -409,7 +428,7 @@ delete! = |form, frame, schema, shown, effects|
 			Err(NoKey) => page(400, frame, Table(shown.table.name), "Not done", View.problem_page(frame, "Not done", "The form doesn't say which row of ${Admin.label(shown)} it deletes."))
 			Ok(key) => {
 				named = key.map(|(column, value)| (column.name, value))
-				statement = Sql.delete(schema, shown.table, key)
+				statement = Sql.delete(on, shown.table, key)
 				match (effects.run!)(statement.sql, statement.params) {
 					Ok(0) => page(404, frame, Table(shown.table.name), Admin.label(shown), View.problem_page(frame, "No such row", "${Admin.label(shown)} has no row whose ${described(shown, named)}: it may have been deleted already."))
 					Ok(_) => redirect(Form.link(frame.mount, [("table", shown.table.name), ("done", "deleted")]))

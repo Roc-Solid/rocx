@@ -7,6 +7,8 @@
 ## not, tried again, keyed, cancelled, moved, cut off past their time limit), cron, and the jobs page.
 app [program] { pf: platform "../../platform/main.roc", admin: "../../../packages/admin/main.roc", jobs: "../../../packages/jobs/main.roc" }
 
+import admin.Admin
+import admin.AdminPage
 import admin.JobsPage
 import jobs.Cron
 import jobs.Job
@@ -15,15 +17,17 @@ import pf.Db
 import pf.Live
 import pf.Middleware
 import pf.Plugin
+import pf.Random
 import pf.Server
 import pf.Time
 import "migrations/0001_tables.sql" as tables : Str
+import "migrations/0002_admin.sql" as admin_tables : Str
 
 program = {
 	respond!,
 	# A file beside where the server starts, unless --database-url says `sqlite:<path>`.
 	database: Sqlite("data/sqlite-test.db"),
-	migrations: [{ name: "0001_tables.sql", sql: tables }],
+	migrations: [{ name: "0001_tables.sql", sql: tables }, { name: "0002_admin.sql", sql: admin_tables }],
 	actors: [Actor.handler(counter)],
 	logs: { format: Auto },
 	plugins: plugins.map(Plugin.running),
@@ -69,7 +73,7 @@ respond! : Server.Request, Str => Server.Response
 respond! = |request, context| Plugin.respond!(plugins, { ..request, route: Plugin.pattern(plugins, request.method, request.path) ?? "" }, context, route!)
 
 route! : Server.Request, Str => Server.Response
-route! = |request, _context| {
+route! = |request, context| {
 	query = request.query
 	match (request.method, request.path) {
 		("GET", "/flavor") =>
@@ -328,8 +332,22 @@ route! = |request, _context| {
 				Ok(rows) => text(200, Str.join_with(rows.map(|row| "${row.kind} ${row.state} ${row.count.to_str()}"), "\n"))
 				Err(JobErr(why)) => text(500, why)
 			}
+		# packages/admin's tables admin, on the app's SQLite.
+		(_, "/admin/db") => AdminPage.respond!(request, context, db_admin, { all!: Db.all!, run!: Db.run!, random!: Random.bytes!, backend!: Db.backend! })
 		_ => text(404, "no such route")
 	}
+}
+
+## packages/admin's tables admin at /admin/db (`server/test/admin-checks.mjs`), open to all: an
+## author, and books with a foreign key, a check that is a choice, a boolean, a number and JSON.
+db_admin : Admin.Config(Str)
+db_admin = {
+	mount: "/admin/db",
+	access: |_| Edit,
+	tables: [
+		{ name: "admin_books", list: ["id", "title", "author_id", "state", "done", "price"], search: ["title"] },
+		{ name: "admin_authors", title: "name" },
+	],
 }
 
 text : U16, Str -> Server.Response

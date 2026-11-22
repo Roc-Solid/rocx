@@ -18,7 +18,7 @@ server's on `server/platform`), so a package can't `import pf.Db`. Today the app
 in:
 
 ```roc
-respond! = |{ request, context, .. }| AdminPage.respond!(request, context, admin, { all!: Db.all!, run!: Db.run!, random!: Random.bytes! })
+respond! = |{ request, context, .. }| AdminPage.respond!(request, context, admin, { all!: Db.all!, run!: Db.run!, random!: Random.bytes!, backend!: Db.backend! })
 ```
 
 That works, and is checked by the compiler, but every app writes the same record, the package can't

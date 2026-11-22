@@ -17,6 +17,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildApp, buildHost, hasRust, roc, root } from "../build.mjs";
+import { adminWorks } from "./admin-checks.mjs";
 
 let hasRoc = true;
 try {
@@ -176,9 +177,9 @@ test("what is notified is heard when its transaction commits, at once outside on
 test("the platform's tables and a plugin's for SQLite are made, a plugin's for Postgres isn't; each recorded once, and a restart applies none again", { skip }, async () => {
 	assert.equal(
 		await server.text("/tables"),
-		["any_flavor", "counters", "flaky", "items", "job_log", "lite_only", "rocx_actors", "rocx_jobs", "rocx_migrations", "scratch"].join("\n"),
+		["admin_authors", "admin_books", "any_flavor", "counters", "flaky", "items", "job_log", "lite_only", "rocx_actors", "rocx_jobs", "rocx_migrations", "scratch"].join("\n"),
 	);
-	assert.equal(await server.text("/migrated"), ["0001_tables.sql", "jobs/0001_jobs", "lite/0001_lite", "lite/0002_any", "rocx/0001 jobs and actors"].join("\n"));
+	assert.equal(await server.text("/migrated"), ["0001_tables.sql", "0002_admin.sql", "jobs/0001_jobs", "lite/0001_lite", "lite/0002_any", "rocx/0001 jobs and actors"].join("\n"));
 	assert.match(server.logged(), /migrated: rocx\/0001 jobs and actors[\s\S]*migrated: jobs\/0001_jobs[\s\S]*migrated: lite\/0001_lite[\s\S]*migrated: 0001_tables.sql/);
 	const cwd = join(dir, "restarted");
 	const first = await start([], { cwd });
@@ -282,4 +283,8 @@ test("the jobs page shows the queue and the last hour, with no problem", { skip 
 	const page = await (await fetch(`${server.url}/admin/jobs`)).text();
 	assert.match(page, /Finished jobs/);
 	assert.doesNotMatch(page, /class="problem"/);
+});
+
+test("packages/admin on SQLite: its catalog read from SQLite's pragmas, a check's values and a foreign key as choices, a row created, found, changed and deleted, a boolean written as 1 or 0 and read back", { skip }, async () => {
+	await adminWorks(server.url);
 });

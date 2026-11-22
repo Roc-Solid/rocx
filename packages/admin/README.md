@@ -1,14 +1,17 @@
 # admin
 
-A Django-style admin for a Roc Solid app's Postgres tables: an index of tables, each table's rows
-with a search, a filter in every column, sorting and pages, a form for each row, adding and deleting
-rows. It reads
-the tables from Postgres's catalog when a page is asked for, so there is nothing to generate and
-nothing to keep in step with the schema. It is mounted as the jobs page beside it is (`JobsPage`,
+A Django-style admin for a Roc Solid app's tables, on Postgres or SQLite (D-045): an index of
+tables, each table's rows with a search, a filter in every column, sorting and pages, a form for
+each row, adding and deleting rows. It reads the tables from the database's own catalog when a page
+is asked for (Postgres's `pg_catalog`, or SQLite's `pragma_table_list`, `pragma_table_xinfo`,
+`pragma_foreign_key_list` and each table's `create table` for its checks), so there is nothing to
+generate and nothing to keep in step with the schema. It is mounted as the jobs page beside it is (`JobsPage`,
 below): one route file, behind the app's own middleware.
 
-The tables' admin needs Postgres (D-045): its catalog and its statements are Postgres's, so an app
-on SQLite can't mount it yet. The jobs page works on either.
+On SQLite a column's declared type is read as Postgres's would be (`integer` as `int8`, `real` as
+`float8`, `boolean` as `bool`, `json`, `date`, `timestamp`), so it gets the same widget and filter;
+a boolean is written as 1 or 0; a table has no estimate of its rows and no comment. The jobs page
+works on either too.
 
 ```roc
 # routes/admin/db/+server.roc
@@ -22,7 +25,7 @@ import ../../../Middlewares
 middleware = Middlewares.staff
 
 respond! : { request : Server.Request, params : {}, context : { user : Str, staff : Bool } } => Server.Response
-respond! = |{ request, context, .. }| AdminPage.respond!(request, context, admin, { all!: Db.all!, run!: Db.run!, random!: Random.bytes! })
+respond! = |{ request, context, .. }| AdminPage.respond!(request, context, admin, { all!: Db.all!, run!: Db.run!, random!: Random.bytes!, backend!: Db.backend! })
 
 admin : Admin.Config({ user : Str, staff : Bool })
 admin = {
@@ -54,7 +57,7 @@ admin = {
    `mount` is that path. Its pages are that path and a query (`/admin/db?table=books&k.id=7`), so one
    route file is all it takes.
 
-3. Hand it the three effects it runs on: `{ all!: Db.all!, run!: Db.run!, random!: Random.bytes! }`.
+3. Hand it the effects it runs on (`backend!` says which database the app has): `{ all!: Db.all!, run!: Db.run!, random!: Random.bytes!, backend!: Db.backend! }`.
    The tables admin's modules use no platform, so that a page can show them in the browser (this
    site's demos do), so the app passes them in.
 
@@ -249,7 +252,7 @@ packages/admin/main.roc` runs their `expect`s.
 |---|---|
 | `Admin` | the options (`Config`, `Table`, `Access`), and what they mean for a table: `showing`, `listed`, `searchable`, `writable`, `title`, `ordering`, `widget` |
 | `AdminPage` | `respond!(request, context, config, effects)`: the access check, the token, the catalog, then the page or the form |
-| `Catalog` | the statements that read the schema from `pg_catalog`, and `Catalog.read`, their rows as tables, columns, keys, foreign keys, enums and a check's values |
+| `Catalog` | the statements that read the schema from `pg_catalog` (or SQLite's pragmas), and `Catalog.read` (`read_sqlite`), their rows as tables, columns, keys, foreign keys, enums and a check's values |
 | `Sql` | `ident` (a quoted name), `contains` (a search's or a filter's pattern), the conditions (`Equals`, `IsNull`, `NotNull`, `Contains`, `AtLeast`, `AtMost`, `Search`), and the statements: `rows`, `count`, `one`, `insert`, `update`, `delete`, `titles` |
 | `Widget` | a column's widget from its type (`of`), its input (`input`), what a form's text writes (`param`), whether it changed (`same`), a new row's value (`initial`) |
 | `Listing` | a list's search, filters, sort and page from the query, and back (`read`, `params`, `conditions`, `order`); each column's filter (`kind`) and the check of its values (`check`) |

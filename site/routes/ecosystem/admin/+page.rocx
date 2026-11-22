@@ -15,7 +15,7 @@ import ../../../Ui/TableWrap
 ## browser runs nothing here.
 meta = {
 	title: "Admin",
-	description: "A Django-style admin for a Roc Solid app's Postgres tables: each table's rows with a search, a filter in every column, sorting and pages, and a form for each row, read from Postgres's own catalog.",
+	description: "A Django-style admin for a Roc Solid app's tables, on Postgres or SQLite: each table's rows with a search, a filter in every column, sorting and pages, and a form for each row, read from Postgres's own catalog.",
 	toc: [
 		{ id: "first", label: "A first admin" },
 		{ id: "looks", label: "What it looks like" },
@@ -36,11 +36,11 @@ view! = |_|
 		<NoHydration>
 			<PageHero
 				kicker={[<>{"The ecosystem · "}</>, <code>packages/admin</code>]}
-				title="An admin for your tables, read from Postgres itself"
+				title="An admin for your tables, read from the database itself"
 			>
 				Django's admin, for a Roc Solid app: a page for each table, its rows with a search, a filter in
 				every column, sorting and pages, a form for each row, and a way to add and delete rows. It reads the tables from
-				Postgres's own catalog when a page is asked for, so there is nothing to generate, and nothing to keep
+				the database's own catalog (Postgres's, or SQLite's) when a page is asked for, so there is nothing to generate, and nothing to keep
 				in step with the schema. It is mounted by one route file, behind the app's own middleware; the
 				package's other page, the <a href={"#jobs-page"}>jobs page</a>, is a plugin.
 			</PageHero>
@@ -63,9 +63,10 @@ view! = |_|
 			<Callout kind="note" title="Why the app hands it Db.all!">
 				<p>
 					A Roc package can't import a platform's modules: it may name a platform only if it is the app's own,
-					and a Roc Solid app is two programs on two platforms. So the app passes the three effects the
-					admin runs on, the server platform's <code>Db.all!</code>, <code>Db.run!</code> and
-					<code>Random.bytes!</code>, and the compiler checks that they fit. The browser's program never
+					and a Roc Solid app is two programs on two platforms. So the app passes the effects the
+					admin runs on, the server platform's <code>Db.all!</code>, <code>Db.run!</code>,
+					<code>Random.bytes!</code> and <code>Db.backend!</code> (which says whether the app's database is
+					Postgres or SQLite, so the admin writes its statements for it), and the compiler checks that they fit. The browser's program never
 					compiles the admin: it doesn't import a <code>+server.roc</code>.
 				</p>
 			</Callout>
@@ -249,8 +250,10 @@ view! = |_|
 
 			<Heading id="how">How it works</Heading>
 			<p>
-				For each request, the admin reads the schema from Postgres's catalog (<code>pg_catalog</code>: four small
-				statements), and turns its answer into tables (<code>Catalog.read</code>): their columns and types, which
+				For each request, the admin reads the schema from the database's catalog (Postgres's <code>pg_catalog</code>,
+				four small statements; or SQLite's <code>pragma_table_list</code>, <code>pragma_table_xinfo</code> and
+				<code>pragma_foreign_key_list</code>, with each table's checks read from its <code>create table</code>, a
+				column's declared type read as Postgres's name for it), and turns its answer into tables (<code>Catalog.read</code>): their columns and types, which
 				may be null, which have defaults, their primary keys, foreign keys, enums, and a check's values. A table
 				or a column a request names is looked up there, among those the app lets it show, and only the
 				catalog's names go into SQL, double-quoted. Every value is a parameter.

@@ -59,10 +59,10 @@ AdminPreview := [].{
 	statements = {
 		state = Listing.read(books, Form.fields(AdminPreview.query))
 		conditions = Listing.conditions(books, state)
-		count = Sql.count("public", books.table, conditions)
+		count = Sql.count({ schema: "public", dialect: Postgres }, books.table, conditions)
 		page = Paging.of(120, books.options.per_page, state.page)
 		rows = Sql.rows(
-			"public",
+			{ schema: "public", dialect: Postgres },
 			books.table,
 			{ columns: Admin.listed(books), whole: Admin.key(books), conditions, order: Listing.order(books, state), limit: page.size, offset: Paging.offset(page), longest: 81 },
 		)

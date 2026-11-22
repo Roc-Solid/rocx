@@ -17,6 +17,8 @@ import fixture.Fixture
 import guard.Security
 import jobs.Cron
 import jobs.Job
+import admin.Admin
+import admin.AdminPage
 import admin.JobsPage
 import email.Email
 import pf.Actor
@@ -49,13 +51,14 @@ import pf.Router
 import Samples
 import "migrations/0001_tables.sql" as tables : Str
 import "migrations/0002_note_index.sql" as note_index : Str
+import "migrations/0003_admin.sql" as admin_tables : Str
 
 program = {
 	respond!,
 	# The app's database (D-045): Postgres, at --database-url.
 	database: Postgres,
 	# The app's schema, in the executable: applied once each, in order, when the server starts.
-	migrations: [{ name: "0001_tables.sql", sql: tables }, { name: "0002_note_index.sql", sql: note_index }],
+	migrations: [{ name: "0001_tables.sql", sql: tables }, { name: "0002_note_index.sql", sql: note_index }, { name: "0003_admin.sql", sql: admin_tables }],
 	# The kinds of actor (`rocx build` lists them for an app it builds).
 	actors: [Actor.handler(counter), Actor.handler(mirror({})), Actor.handler(bouncer({})), Actor.handler(ticker)],
 	# The log's format: `ROCX_LOG` if it's set, or else pretty on a terminal and JSON elsewhere.
@@ -182,6 +185,8 @@ route! = |request, context| {
 	run = param(request.query, "run")
 	match (request.method, request.path) {
 		("GET", "/") => text(200, "Hello from Roc, natively.")
+		# packages/admin's tables admin, on the app's Postgres.
+		(_, "/admin/db") => AdminPage.respond!(request, context, db_admin, { all!: Db.all!, run!: Db.run!, random!: Random.bytes!, backend!: Db.backend! })
 		("GET", "/context") => text(200, context)
 		("GET", "/echo") => text(200, "${request.method} ${request.path}?${request.query} ${Server.text_of(request)}")
 		# ---- The connection's address, as the host hands it over, and as `Server.request!` reads it again ----
@@ -1026,6 +1031,18 @@ described_job = |row| {
 }
 
 ## Admins only: a request saying `x-admin: yes`; anyone else is refused (403).
+## packages/admin's tables admin at /admin/db (`server/test/admin-checks.mjs`), open to all: an
+## author, and books with a foreign key, a check that is a choice, a boolean, a number and JSON.
+db_admin : Admin.Config(Str)
+db_admin = {
+	mount: "/admin/db",
+	access: |_| Edit,
+	tables: [
+		{ name: "admin_books", list: ["id", "title", "author_id", "state", "done", "price"], search: ["title"] },
+		{ name: "admin_authors", title: "name" },
+	],
+}
+
 admins_only : Middleware(Str, Str)
 admins_only = Middleware.make(|request, context, next!| if (Server.header(request, "x-admin") == Ok("yes")) next!(request, context) else Server.refused(403, "admins only"))
 

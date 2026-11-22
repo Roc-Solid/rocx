@@ -26,5 +26,5 @@ AdminRoute := [].{
 
 	## The route's answer: the request, handed to the admin with the effects it runs on.
 	respond! : { request : Server.Request, params : {}, context : Who } => Server.Response
-	respond! = |{ request, context, .. }| AdminPage.respond!(request, context, AdminRoute.admin, { all!: Db.all!, run!: Db.run!, random!: Random.bytes! })
+	respond! = |{ request, context, .. }| AdminPage.respond!(request, context, AdminRoute.admin, { all!: Db.all!, run!: Db.run!, random!: Random.bytes!, backend!: Db.backend! })
 }

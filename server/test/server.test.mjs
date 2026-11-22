@@ -38,6 +38,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildApp, buildHost, hasRust, hostUnitTests, roc, root } from "../build.mjs";
 import { testDatabase } from "../../packages/testing/postgres.mjs";
+import { adminWorks } from "./admin-checks.mjs";
 
 
 let hasRoc = true;
@@ -1226,6 +1227,10 @@ test("JobsPage.plugin without a guard doesn't compile: the record is missing the
 	assert.match(checked.stdout + checked.stderr, /This record is missing these fields:\n - back\n - guard\n/);
 });
 
+test("packages/admin on Postgres: its catalog read from pg_catalog, a check's values and a foreign key as choices, a row created, found, changed and deleted", { skip: skipDb }, async () => {
+	await adminWorks(server.url);
+});
+
 // ---- Email ----
 
 test("email: without an SMTP server, kept in the outbox and logged", { skip }, async () => {
@@ -1476,9 +1481,10 @@ test("plugins: a plugin's table, applied after the platform's and before the app
 	const order = events()
 		.map((event) => event.msg)
 		.filter((msg) => msg.startsWith("rocx server: migrated:"));
-	if (order.length > 0) {
-		// A fresh database: the first start applied them all, in order.
-		const at = (name) => order.findIndex((msg) => msg.endsWith(name));
+	// A fresh database: the first start applied them all, in order. (A database that had some of
+	// them has only what is new since, a later migration of the app's, say: nothing to compare.)
+	const at = (name) => order.findIndex((msg) => msg.endsWith(name));
+	if (["rocx/0001 jobs and actors", "fixture/0001_notes", "0001_tables.sql"].every((name) => at(name) >= 0)) {
 		assert.ok(at("rocx/0001 jobs and actors") < at("fixture/0001_notes") && at("fixture/0001_notes") < at("0001_tables.sql"), order.join("\n"));
 	}
 });

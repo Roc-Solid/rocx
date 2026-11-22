@@ -8,10 +8,10 @@ import ../../../Middlewares
 middleware = Middlewares.admin
 
 ## /admin/db: packages/admin's pages for the app's tables, where monitors are added, edited and
-## deleted (Postgres's checks, in migrations/0001_uptime.sql, refuse what doesn't make sense, and
+## deleted (the database's checks, in migrations/0001_uptime.sql, refuse what doesn't make sense, and
 ## the form shows why). Only with the admin's session.
 respond! : { request : Server.Request, params : {}, context : {} } => Server.Response
-respond! = |{ request, context, .. }| AdminPage.respond!(request, context, tables, { all!: Db.all!, run!: Db.run!, random!: Random.bytes! })
+respond! = |{ request, context, .. }| AdminPage.respond!(request, context, tables, { all!: Db.all!, run!: Db.run!, random!: Random.bytes!, backend!: Db.backend! })
 
 tables : Admin.Config({})
 tables = {
