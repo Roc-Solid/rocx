@@ -273,8 +273,9 @@ view! = |_|
 				own origin: a page needs <code>'wasm-unsafe-eval'</code> to start its wasm under a CSP. Styles may
 				be inline too, as components write <code>{"style=\"…\""}</code>, and calls go to the site's own
 				server. <code>Security.directive</code> changes one directive. Under <code>--dev</code>, there is
-				no <code>Strict-Transport-Security</code>, and the CSP only reports, so the dev server's reload
-				script still runs.
+				no <code>Strict-Transport-Security</code>, and the CSP only reports: while you work, a violation
+				shows in the console instead of breaking the page. The dev server's reload script is a file of
+				the site's own (<code>/__reload.js</code>), so it is no violation.
 			</p>
 
 			<Heading id="modules">The modules</Heading>

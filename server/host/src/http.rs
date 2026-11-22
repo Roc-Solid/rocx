@@ -170,10 +170,13 @@ pub async fn serve(listener: TcpListener, config: Config, mut stop: watch::Recei
     Ok(())
 }
 
-// A page in a frame (a story in the dev catalog, beside others) leaves it to the page around it,
-// which reloads it too: each held stream is one of the six connections a browser makes to a host,
-// and a seventh frame's would wait for one forever.
-const RELOAD: &str = r#"<script data-rocx>if(window.top===window){let gone=false;const at=new EventSource("/__reload");at.onerror=()=>{gone=true};at.onopen=()=>{if(gone)location.reload()}}</script>"#;
+// Under --dev, every page loads the reload script. It is a file (`/__reload.js`), not inline, so a
+// CSP that allows only the site's own scripts (`script-src 'self'`, as packages/guard's does)
+// allows it too. A page in a frame (a story in the dev catalog, beside others) leaves reloading to
+// the page around it, which reloads it too: each held stream is one of the six connections a
+// browser makes to a host, and a seventh frame's would wait for one forever.
+const RELOAD: &str = r#"<script src="/__reload.js" data-rocx></script>"#;
+const RELOAD_JS: &str = r#"if(window.top===window){let gone=false;const at=new EventSource("/__reload");at.onerror=()=>{gone=true};at.onopen=()=>{if(gone)location.reload()}}"#;
 
 fn full(status: StatusCode, content_type: &str, body: impl Into<Bytes>) -> Response<Body> {
     let mut response = Response::new(Full::new(body.into()).boxed());
@@ -195,6 +198,11 @@ async fn answer(request: Request<Incoming>, config: Arc<Config>, peer: String) -
         // when it can connect again.
         let mut response = Response::new(StreamBody::new(futures_util::stream::pending::<Result<Frame<Bytes>, Infallible>>()).boxed());
         response.headers_mut().insert(CONTENT_TYPE, HeaderValue::from_static("text/event-stream"));
+        return Ok(response);
+    }
+    if config.dev && path == "/__reload.js" {
+        let mut response = full(StatusCode::OK, "text/javascript", RELOAD_JS);
+        response.headers_mut().insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
         return Ok(response);
     }
     // The tab's stream of its channels, and what its pages say on them: the host's, not Roc's

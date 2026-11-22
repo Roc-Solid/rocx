@@ -357,7 +357,7 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		await reloaded.goto(`${dev.url}/posts/hello`);
 		await reloaded.wait("window.ready", 5000);
 		assert.deepEqual(reloaded.errors, []);
-		assert.deepEqual(await reloaded.eval("[...document.querySelectorAll('body > script[data-rocx]')].map((script) => script.src ? new URL(script.src).pathname : script.textContent.includes('/__reload'))"), ["/rocx/start.js", true], "start.js, and the reload script after it (the answers are read, and gone)");
+		assert.deepEqual(await reloaded.eval("[...document.querySelectorAll('body > script[data-rocx]')].map((script) => new URL(script.src).pathname)"), ["/rocx/start.js", "/__reload.js"], "start.js, and the reload script after it, a file (the answers are read, and gone)");
 	} finally {
 		await browser?.close();
 		for (const server of servers) await server.stop();

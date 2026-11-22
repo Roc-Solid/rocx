@@ -65,8 +65,9 @@ Security := [].{
 
 	## The headers `config` says. Under `dev` (a server started with `--dev`), no
 	## `Strict-Transport-Security` (a browser would hold localhost to HTTPS), and the CSP only
-	## reports (`Content-Security-Policy-Report-Only`): the dev server's reload script is inline,
-	## and a violation shows in the console instead of breaking the page.
+	## reports (`Content-Security-Policy-Report-Only`): while you work, a violation shows in the
+	## console instead of breaking the page. (The dev server's reload script is a file of the
+	## site's own, `/__reload.js`, so it is no violation.)
 	headers : Config, { dev : Bool } -> List({ name : Str, value : Str })
 	headers = |config, { dev }|
 		[

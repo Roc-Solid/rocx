@@ -2790,7 +2790,35 @@ test("pages of components: one that crashes, as it is made or as it renders, or 
 		assert.equal(crashed.status, 500);
 		assert.equal(await crashed.text(), "Roc crashed: a page that crashed");
 		const page = await dev.text("/page-gone");
-		assert.ok(page.endsWith(`${scripts("[]")}<script data-rocx>if(window.top===window){let gone=false;const at=new EventSource("/__reload");at.onerror=()=>{gone=true};at.onopen=()=>{if(gone)location.reload()}}</script></body></html>`), page);
+		assert.ok(page.endsWith(`${scripts("[]")}<script src="/__reload.js" data-rocx></script></body></html>`), page);
+	} finally {
+		await dev.stop();
+	}
+});
+
+test("pages of components: under --dev the reload script is a file of the site's own (/__reload.js), so a CSP of the site's own scripts (packages/guard's) allows every script on a page; it is served only under --dev", { skip }, async () => {
+	assert.equal((await get("/__reload.js")).status, 404, "not without --dev");
+	const dev = await start(["--dev"]);
+	try {
+		const answer = await dev.get("/page-guarded?from=test");
+		const csp = answer.headers.get("content-security-policy");
+		const sources = csp.split(";").map((directive) => directive.trim().split(/\s+/)).find(([name]) => name === "script-src").slice(1);
+		assert.deepEqual(sources, ["'self'", "'wasm-unsafe-eval'"], "guard's script-src: the site's own scripts, and no inline ones");
+		const html = await answer.text();
+		const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)].map(([, attributes, text]) => ({ type: /\btype="([^"]*)"/.exec(attributes)?.[1] ?? "", src: /\bsrc="([^"]*)"/.exec(attributes)?.[1] ?? "", text }));
+		assert.deepEqual(
+			scripts.filter((script) => script.type !== "application/json").map(({ src, text }) => ({ src, text })),
+			[
+				{ src: "/rocx/start.js", text: "" },
+				{ src: "/__reload.js", text: "" },
+			],
+			"no inline script runs: start.js and the reload script come from the site (the answers are JSON, which a CSP doesn't block)",
+		);
+		const reload = await dev.get("/__reload.js");
+		assert.equal(reload.status, 200);
+		assert.equal(reload.headers.get("content-type"), "text/javascript");
+		assert.equal(reload.headers.get("cache-control"), "no-store");
+		assert.equal(await reload.text(), 'if(window.top===window){let gone=false;const at=new EventSource("/__reload");at.onerror=()=>{gone=true};at.onopen=()=>{if(gone)location.reload()}}', "a frame leaves reloading to the page around it; the page holds one stream");
 	} finally {
 		await dev.stop();
 	}

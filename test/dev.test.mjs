@@ -76,7 +76,8 @@ test("rocx dev: writes main.roc, serves the page and the endpoint, rebuilds on a
 		assert.match(said, /rocx dev: wrote .*main\.roc, the app's program/);
 		assert.match(main, /^app \[program\] \{ pf: platform "[^"]*server\/platform\/main\.roc" \}$/m);
 		assert.match(await page(), /<h1>Hello, Roc Solid<\/h1> <button>Clicked <!--x-->0<!--\/x--> times<\/button>/);
-		assert.match(await page(), /new EventSource\("\/__reload"\)/, "under --dev: the page reloads when the server is back");
+		assert.match(await page(), /<script src="\/__reload\.js" data-rocx><\/script><\/body>/, "under --dev: the page reloads when the server is back");
+		assert.match(await (await fetch(`${url}/__reload.js`)).text(), /new EventSource\("\/__reload"\)/);
 		assert.equal(await (await fetch(`${url}/hello`)).json(), "Hello from the server");
 
 		// The browser's half: the button counts.

@@ -184,9 +184,10 @@ What the app met, and how it works around each:
   changes, its label patched; the browser test checks it with a third person opening the card.)
 - **A glide is clipped by a box that scrolls** (D-031's own limit): seen in Zen as cards vanishing on
   their way into another column. Workaround: columns don't scroll on their own.
-- **Under `--dev`, Firefox reports the dev server's inline reload script** against packages/guard's
-  CSP (report-only under `--dev`, so nothing breaks): a console error on every page. Without
-  `--dev` there are none.
+- **Fixed: under `--dev`, Firefox reported the dev server's inline reload script** against
+  packages/guard's CSP (report-only under `--dev`, so nothing broke): a console error on every page.
+  The script is a file of the site's own now (`/__reload.js`), which `script-src 'self'` allows; in
+  headless Zen the board's pages report nothing.
 - **Roc on the way:** `has` is a keyword (a SQL column alias called `has` didn't parse as a record
   field); `{ me }` alone is a block, not a record (`{ me: me }`); whitespace at the end of an
   element's text went, so `<span>You are </span>` lost its space (`{"You are "}` keeps it; fixed in

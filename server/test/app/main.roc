@@ -5,7 +5,7 @@
 ## answered by their routes, requests to other servers, the environment, AES-GCM, random
 ## bytes, the crypto written in Roc (packages/crypto), S3 storage (packages/s3), and cookies; and what the docs show of them
 ## (`Samples.roc`), as an app would write it.
-app [program] { pf: platform "../../platform/main.roc", admin: "../../../packages/admin/main.roc", crypto: "../../../packages/crypto/main.roc", email: "../../../packages/email/main.roc", fixture: "../fixture/main.roc", jobs: "../../../packages/jobs/main.roc", s3: "../../../packages/s3/main.roc" }
+app [program] { pf: platform "../../platform/main.roc", admin: "../../../packages/admin/main.roc", crypto: "../../../packages/crypto/main.roc", email: "../../../packages/email/main.roc", fixture: "../fixture/main.roc", guard: "../../../packages/guard/main.roc", jobs: "../../../packages/jobs/main.roc", s3: "../../../packages/s3/main.roc" }
 
 import crypto.Base64
 import crypto.Hex
@@ -14,6 +14,7 @@ import crypto.Hmac
 import crypto.Sha256
 import s3.S3
 import fixture.Fixture
+import guard.Security
 import jobs.Cron
 import jobs.Job
 import admin.JobsPage
@@ -763,6 +764,8 @@ route! = |request, context| {
 		(_, "/page-region") => page(region!)
 		(_, "/page-region-handler") => page(region_handler!)
 		(_, "/page-gated") => { status: 200, headers: [{ name: "x-page", value: "yes" }], body: Page(gated!) }
+		# packages/guard's headers, its CSP enforced: every script on the page is the site's own.
+		(_, "/page-guarded") => { status: 200, headers: Security.headers(Security.defaults, { dev: Bool.False }), body: Page(document!) }
 
 		# ---- Form actions: a plain form's post comes back to its page with a flash ----
 		(_, "/flash/join") => Endpoint.respond!(join_endpoint, request, {})
