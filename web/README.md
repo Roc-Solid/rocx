@@ -389,8 +389,15 @@ same components natively; this one hydrates them.
   (taken away, or on its way out) is that one moved: it glides from the other's box, its transition
   in doesn't play, and the other, if leaving, goes at once. An element inside another that glides
   moves with it; a glide playing is stopped and the next starts from where the element is seen.
-  Hydrating and mounting measure nothing; with `prefers-reduced-motion: reduce`, nothing glides.
-  The server writes nothing for them.
+  One that glides out of a box that scrolls or clips (`overflow` other than `visible`, `contain:
+  paint`) into another (a card into another column's scrolling list), where what clips it now would
+  hide where it was, is lifted for its glide (`lift`): fixed where it lands, above the page, a
+  hidden stand-in of its size keeping its place, so nothing cuts it off on its way; it stays where
+  it is in the document, so its styles and handlers are its own, and is put back, its own style as
+  it was, when the glide ends or another starts. A glide within one box, or one whose old place the
+  box shows, isn't lifted: what it costs is a walk up from the element, each box's style read once
+  a flush. Hydrating and mounting measure nothing; with `prefers-reduced-motion: reduce`, nothing
+  glides. The server writes nothing for them.
 - **An observer** (`runtime.observer`: `seeded`, `fetch`, `fetched`, `listen`,
   `heard`, `unlisten`, `patch`, `row`, `show`, `frame`, `effect` (a call of the page's own
   function), `apply` (an effect's apply), `submit`, `submitted`, `revalidate` (a result reading the
@@ -455,7 +462,9 @@ after many runs that waited (refreshes, new pages, memos made again: `Upstream.r
   iPad and iPhone; many other mobile browsers start none from a touch); files dropped (`dataTransfer.files`), a drag image of the app's, and data other
   than text for other pages to read.
 - **Moves that resize:** a glide moves an element (`translate`), it doesn't scale it from its old
-  size; one inside a box that clips (`overflow`) is clipped as it crosses into another.
+  size. One lifted out of a box that clips lands over its new box's edge when its place there is
+  scrolled out of sight, then is clipped as it is put back; one inside a box that makes fixed
+  elements its own (a `transform`, a `filter`, `contain: paint`) stays clipped by that box.
 - **The rest of @solidjs/meta:** `<Meta>`, `<Link>`, `<Style>`; only `<Title>` is there.
 - **`untrack`** (Solid's), and Solid 2.0's dev warning for a reactive read at a component's top
   (a prop's getter, a signal) that it would silence; and `merge`/`omit` for passing props on.

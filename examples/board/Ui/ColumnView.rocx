@@ -98,11 +98,13 @@ ColumnView := [].{
 		</details>
 
 	<style>
+		/* As tall as the window leaves below the board's bar, at the most. */
 		.column {
 			display: flex;
 			flex-direction: column;
 			flex: 0 0 var(--column-width);
 			min-width: 0;
+			max-height: calc(100dvh - 6.5rem);
 			border-radius: calc(var(--radius) + 4px);
 			background: var(--lane);
 			border: 2px solid transparent;
@@ -183,8 +185,9 @@ ColumnView := [].{
 			color: var(--ink-soft);
 		}
 
-		/* Not a scroll box of its own: a card gliding in from another column would be clipped by it
-		   (D-031), unseen until it is inside. The board scrolls instead. */
+		/* A long column scrolls on its own, its name and its add form kept in sight. A card gliding in
+		   from another column glides above both lists (D-031), so neither cuts it off on its way. Its
+		   top padding keeps the drop line above the first card in sight. */
 		.cards {
 			display: flex;
 			flex-direction: column;
@@ -192,8 +195,10 @@ ColumnView := [].{
 			flex: 1;
 			min-height: 3rem;
 			margin: 0;
-			padding: 0.35rem 0.6rem 0;
+			padding: 0.55rem 0.6rem 0;
 			list-style: none;
+			overflow-y: auto;
+			overscroll-behavior: contain;
 		}
 
 		.adding {

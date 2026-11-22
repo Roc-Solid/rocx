@@ -124,8 +124,8 @@ the DOM's own drag events, in the browser's order, with one `DataTransfer` carri
 Chromium it is the browser's own drag and drop. Fixed: the test used to drag with the DevTools
 protocol alone, and the Zen check was a script of its own. Frames Zen took showed one real glitch
 Chromium couldn't: a card gliding into another column was invisible on its way, clipped by the
-column's card list, which was a scroll box. Columns don't scroll on their own now (the board
-scrolls), and the card is seen all the way.
+column's card list, which was a scroll box. The platform lifts such a glide above the page since,
+so a column's cards scroll on their own again and the card is seen all the way.
 
 ## Product calls
 
@@ -194,8 +194,10 @@ What the app met, and how it works around each:
   open changed. (Fixed in the platform since: a value prop is a getter, as Solid's are (D-039). The
   stack is in the tile's markup again with a plain `label`, kept while who has the card open
   changes, its label patched; the browser test checks it with a third person opening the card.)
-- **A glide is clipped by a box that scrolls** (D-031's own limit): seen in Zen as cards vanishing on
-  their way into another column. Workaround: columns don't scroll on their own.
+- **A glide was clipped by a box that scrolls** (D-031's own limit): seen in Zen as cards vanishing
+  on their way into another column, so columns didn't scroll on their own. (Fixed in the platform
+  since: one gliding out of a box that scrolls into another glides above the page, lifted out of
+  both, so a column's cards scroll again, its name and add form kept in sight.)
 - **Fixed: under `--dev`, Firefox reported the dev server's inline reload script** against
   packages/guard's CSP (report-only under `--dev`, so nothing broke): a console error on every page.
   The script is a file of the site's own now (`/__reload.js`), which `script-src 'self'` allows; in

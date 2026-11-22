@@ -718,11 +718,14 @@ export class Runtime {
 		this.leavingNodes = new WeakMap();
 		/** Each element's name on the page (`key={…}`), and the elements that glide when they move
 		 * (`transition:move`); where those were before the flush first changed the page (`measure`),
-		 * and the glide each is playing. */
+		 * and in what (their parents then); the glide each is playing, and how to put back one
+		 * lifted out of what would clip it (`lift`). */
 		this.keys = new WeakMap();
 		this.gliders = new Set();
 		this.measured = null;
+		this.measuredIn = null;
 		this.glides = new WeakMap();
+		this.lifted = new Map();
 		/** Whether a flush is running its computations now: the page changes only then. */
 		this.inFlush = false;
 		/** The drop targets a drag is over now (`depth` above 0), told it left when the drag ends. */
@@ -2289,7 +2292,13 @@ export class Runtime {
 		if (this.measured || !this.inFlush || !this.gliders.size || typeof document === "undefined") return;
 		const still = reducedMotion();
 		this.measured = new Map();
-		for (const element of this.gliders) if (element.isConnected) this.measured.set(element, still ? null : element.getBoundingClientRect());
+		this.measuredIn = new Map();
+		for (const element of this.gliders) {
+			if (!element.isConnected) continue;
+			this.measured.set(element, still ? null : element.getBoundingClientRect());
+			// One lifted now is in nothing that clips it: moved again, it glides on above the page.
+			this.measuredIn.set(element, this.lifted.has(element) ? null : element.parentElement);
+		}
 	}
 
 	/** The range on its way out (`leave`) an element is in, if it is. */
@@ -2308,11 +2317,14 @@ export class Runtime {
 	 * went (taken out of one list and put in another; a part switched) is that one moved: it glides
 	 * from the other's place, plays no transition in, and the other, if it was on its way out, goes
 	 * at once. One inside another that glides moves with it. Nothing glides for someone who asked
-	 * for less motion; an element taken off the page is forgotten.
+	 * for less motion; an element taken off the page is forgotten. One that glides from another box
+	 * that scrolls or clips (a card into another column's list), where what clips it now would hide
+	 * where it was, glides above the page (`lift`), so nothing cuts it off on its way.
 	 */
 	glide() {
 		const before = this.measured;
-		this.measured = null;
+		const parents = this.measuredIn;
+		this.measured = this.measuredIn = null;
 		const still = reducedMotion();
 		// The ones that went (taken away, or on their way out), by key: where they were.
 		const went = new Map();
@@ -2322,6 +2334,8 @@ export class Runtime {
 			if (key !== undefined) went.set(key, { element, box });
 		}
 		const moves = [];
+		// Where each came from, when that is another element (a keyed pair's): what it was in.
+		const origins = new Map();
 		for (const element of this.gliders) {
 			if (!element.isConnected) {
 				// Taken off the page (not waiting in a fragment, as what a <Loading> holds does).
@@ -2336,26 +2350,32 @@ export class Runtime {
 				if (!pair) continue;
 				went.delete(key);
 				box = pair.box;
+				origins.set(element, pair.element);
 				this.entering = this.entering.filter(([entering]) => entering !== element);
 				this.leavingRangeOf(pair.element)?.finish();
 			}
 			if (box) moves.push([element, box]);
 		}
 		if (!moves.length) return;
-		// Glides playing stop, then every box is read at once: one layout.
-		for (const [element] of moves) this.glides.get(element)?.cancel();
+		// Glides playing stop (one lifted is put back), then every box is read at once: one layout.
+		for (const [element] of moves) {
+			this.glides.get(element)?.cancel();
+			this.lifted.get(element)?.();
+		}
 		const boxes = moves.map(([element]) => element.getBoundingClientRect());
 		const moving = new Map();
 		moves.forEach(([element, box], index) => {
 			const dx = box.left - boxes[index].left;
 			const dy = box.top - boxes[index].top;
-			if (Math.abs(dx) >= 0.5 || Math.abs(dy) >= 0.5) moving.set(element, [dx, dy]);
+			if (Math.abs(dx) >= 0.5 || Math.abs(dy) >= 0.5) moving.set(element, { dx, dy, from: box, to: boxes[index] });
 		});
-		for (const [element, [dx, dy]] of moving) {
+		const clips = new Map();
+		for (const [element, { dx, dy, from, to }] of moving) {
 			let carried = false;
 			for (let parent = element.parentElement; parent && !carried; parent = parent.parentElement) carried = moving.has(parent);
 			if (carried || typeof element.animate !== "function") continue;
 			const spec = this.transitions.get(element)?.move ?? {};
+			const lifted = this.crosses(element, from, parents.get(origins.get(element) ?? element), clips) ? this.lift(element, to) : null;
 			try {
 				const animation = element.animate([{ translate: `${dx}px ${dy}px` }, { translate: "0px 0px" }], {
 					duration: spec.ms ?? 250,
@@ -2365,14 +2385,89 @@ export class Runtime {
 				});
 				this.glides.set(element, animation);
 				animation.finished.then(
-					() => this.glides.get(element) === animation && this.glides.delete(element),
-					() => {},
+					() => {
+						lifted?.();
+						if (this.glides.get(element) === animation) this.glides.delete(element);
+					},
+					() => lifted?.(),
 				);
-				this.notify("glide", { node: element, dx, dy, key: this.keys.get(element) });
+				this.notify("glide", { node: element, dx, dy, key: this.keys.get(element), lifted: Boolean(lifted) });
 			} catch {
 				// An easing the browser doesn't know: no glide, rather than an error.
+				lifted?.();
 			}
 		}
+	}
+
+	/**
+	 * What clips what is in `node` (`node` itself, then its ancestors): the boxes that scroll or clip
+	 * (`overflow` other than `visible`, `contain: paint`), their boxes on the screen intersected
+	 * (`rect`), and the nearest of them (`box`); none when nothing does (the page's own scrolling
+	 * clips nothing here). Kept in `clips` for one glide, which reads each ancestor's style once.
+	 */
+	clipping(node, clips) {
+		if (!node || node.nodeType !== 1 || node === this.page.documentElement || node === this.page.body) return null;
+		if (clips.has(node)) return clips.get(node);
+		const outer = this.clipping(node.parentElement, clips);
+		const style = getComputedStyle(node);
+		let found = outer;
+		if (style.overflowX !== "visible" || style.overflowY !== "visible" || /paint|strict|content/.test(style.contain)) {
+			const own = node.getBoundingClientRect();
+			const rect = outer ? { left: Math.max(own.left, outer.rect.left), top: Math.max(own.top, outer.rect.top), right: Math.min(own.right, outer.rect.right), bottom: Math.min(own.bottom, outer.rect.bottom) } : own;
+			found = { box: node, rect };
+		}
+		clips.set(node, found);
+		return found;
+	}
+
+	/**
+	 * Whether a glide from `from` (where it was, in `was`, its parent then, or none when it was lifted
+	 * already) to where `element` is now would be cut off: what clips it now hides some of where it
+	 * was, and that is another box than the one it was in (in the same box, a row coming from where
+	 * the list is scrolled away comes in from its edge, as it would). Cheap when nothing clips the
+	 * element: one walk up, styles cached.
+	 */
+	crosses(element, from, was, clips) {
+		if (!(element instanceof HTMLElement)) return false;
+		const now = this.clipping(element.parentElement, clips);
+		if (!now) return false;
+		const { rect } = now;
+		if (from.left >= rect.left - 0.5 && from.top >= rect.top - 0.5 && from.right <= rect.right + 0.5 && from.bottom <= rect.bottom + 0.5) return false;
+		return !was?.isConnected || this.clipping(was, clips)?.box !== now.box;
+	}
+
+	/**
+	 * Lifts an element out of what clips it, for its glide: fixed where it now is (`to`), above the
+	 * page, with a stand-in of its size where it is in the page, so nothing around it moves. It stays
+	 * where it is in the document, so its styles and handlers are its own. Answers how to put it back
+	 * (once its glide ends, or another one starts), its own styles as they were.
+	 */
+	lift(element, to) {
+		const style = getComputedStyle(element);
+		const width = element.offsetWidth;
+		const height = element.offsetHeight;
+		const holder = this.page.createElement(element.localName);
+		holder.setAttribute("aria-hidden", "true");
+		holder.setAttribute("data-rocx-lifted", "");
+		const display = style.display === "inline" ? "inline-block" : style.display;
+		holder.style.cssText = `display: ${display}; box-sizing: border-box; width: ${width}px; height: ${height}px; margin: ${style.marginTop} ${style.marginRight} ${style.marginBottom} ${style.marginLeft}; padding: 0; border: 0; flex: none; grid-area: ${style.gridArea}; visibility: hidden; list-style: none`;
+		element.before(holder);
+		const fixed = { position: "fixed", left: `${to.left}px`, top: `${to.top}px`, right: "auto", bottom: "auto", width: `${width}px`, height: `${height}px`, margin: "0px", "max-width": "none", "max-height": "none", "box-sizing": "border-box", "z-index": "2147483647" };
+		const own = Object.keys(fixed).map((name) => [name, element.style.getPropertyValue(name), element.style.getPropertyPriority(name)]);
+		for (const [name, value] of Object.entries(fixed)) element.style.setProperty(name, value, "important");
+		let back = false;
+		const putBack = () => {
+			if (back) return;
+			back = true;
+			if (this.lifted.get(element) === putBack) this.lifted.delete(element);
+			holder.remove();
+			for (const [name, value, priority] of own) {
+				if (value) element.style.setProperty(name, value, priority);
+				else element.style.removeProperty(name);
+			}
+		};
+		this.lifted.set(element, putBack);
+		return putBack;
 	}
 
 	// ---- The DOM ----

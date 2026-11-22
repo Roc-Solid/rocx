@@ -1523,7 +1523,10 @@ too.
   it: hydration is unchanged.
 
 **Limits.** It translates; it doesn't scale an element from its old size to its new one. One
-inside a box that clips (`overflow: auto`) is clipped as it crosses into another. Each flush that
+inside a box that clips (`overflow: auto`) was clipped as it crossed into another; since then (the
+browser gaps, 2026-11-22) it is lifted for its glide, fixed above the page with a hidden stand-in
+in its place, and put back when it lands, unless a box that makes fixed elements its own (a
+`transform`) holds it. Each flush that
 changes structure while something glides costs two layout reads. A text change alone (a card's
 title growing) moves nothing. **Reversible:** yes.
 

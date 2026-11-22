@@ -555,8 +555,9 @@ view! = |_|
 						where it was to where it is: the runtime measures it before the change and after, and plays the
 						difference back (FLIP). With a <code>{"key={…}"}</code>, it is the same element wherever it is on the
 						page: one with that key taken out of one list as another comes into a second glides from the first's
-						place, and neither plays its transition in or out. The <a href="#actions">planner's plans</a> glide
-						from day to day.
+						place, and neither plays its transition in or out. One that leaves a box that scrolls for another
+						(a card into another column's list) glides above the page, so neither box cuts it off on its way.
+						The <a href="#actions">planner's plans</a> glide from day to day.
 					</li>
 					<li>
 						<strong>For someone who asked their system for less motion</strong>, none plays: what goes, goes

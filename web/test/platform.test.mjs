@@ -51,6 +51,7 @@ if (!skip) {
 		["timers", join(here, "app", "timers_app.roc"), "dev"],
 		["props", join(here, "app", "props_app.roc"), "dev"],
 		["shortcuts", join(here, "app", "shortcuts_app.roc"), "dev"],
+		["glides", join(here, "app", "glides_app.roc"), "dev"],
 		["fades", join(here, "app", "fades_app.roc"), "dev"],
 		["echo-server", join(here, "app", "echo_app.roc"), "dev"],
 		["echo", join(out, "app-client", "echo_app.roc"), "size"],
@@ -548,6 +549,89 @@ window.hydrated = true;
 		await tab.wait("document.querySelector('.resized').textContent === '1'");
 		assert.deepEqual(tab.errors, []);
 		assert.deepEqual(tab.console, []);
+	} finally {
+		await site.close();
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("glides: one from a box that scrolls into another glides above the page, lifted out of both, a stand-in keeping its place, and is put back when it lands; one within a box glides in it, lifted out of nothing", { skip }, async () => {
+	const wasm = readFileSync(join(out, "glides.wasm"));
+	const server = await Runtime.load(wasm);
+	const { html } = server.renderToString({ path: "/" });
+	const dir = mkdtempSync(join(tmpdir(), "rocx-glides-"));
+	cpSync(join(web, "runtime.js"), join(dir, "runtime.js"));
+	writeFileSync(join(dir, "glides.wasm"), wasm);
+	const page = `<!doctype html><html><body><div id="app">${html}</div>
+<script type="module">
+import { Runtime } from "/runtime.js";
+window.runtime = await Runtime.load(fetch("/glides.wasm"));
+window.glides = [];
+window.runtime.observer = { glide: ({ key, lifted }) => window.glides.push(key + (lifted ? " lifted" : "")) };
+window.runtime.hydrate(document.getElementById("app"));
+window.hydrated = true;
+</script></body></html>`;
+	const site = await serve(dir, (path) => (path === "/" ? page : null));
+	try {
+		const tab = await browser.page();
+		await tab.goto(`${site.url}/`);
+		await tab.wait("window.hydrated === true", 3000);
+		assert.deepEqual(tab.console, [], "hydrated without a mismatch");
+		const item = (id) => `[...document.querySelectorAll('.item')].find((li) => li.textContent === ${JSON.stringify(id)})`;
+		// Within a list: it glides in it, lifted out of nothing.
+		await tab.click(".within");
+		await tab.wait("window.glides.length >= 2");
+		assert.deepEqual((await tab.eval("window.glides")).sort(), ["a1", "a3"], "the ends glide within list a, the middle stays");
+		assert.equal(await tab.eval("document.querySelectorAll('[data-rocx-lifted]').length"), 0);
+		await tab.wait(`${item("a3")}.getAnimations().length === 0`, 3000);
+		// Across: it glides above the page, fixed where it lands, a stand-in in its place; then it is
+		// put back, as it was.
+		await tab.eval("window.glides = []");
+		await tab.click(".across");
+		await tab.wait("window.glides.includes('a1 lifted')");
+		const during = await tab.eval(`(() => {
+			const li = ${item("a1")};
+			const holder = document.querySelector('[data-rocx-lifted]');
+			return { position: getComputedStyle(li).position, holder: holder?.nextElementSibling === li, height: holder?.offsetHeight, list: li.closest('ul').className };
+		})()`);
+		assert.deepEqual(during, { position: "fixed", holder: true, height: 30, list: "list b" }, "lifted out of both lists, its place kept");
+		// Held where it starts, in list a, it is what is seen there: list b, its box now, doesn't cut it off.
+		const seen = await tab.eval(`(() => {
+			const li = ${item("a1")};
+			const [glide] = li.getAnimations();
+			glide.pause();
+			glide.currentTime = 0;
+			const box = li.getBoundingClientRect();
+			const at = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+			const list = document.querySelector('.list.a').getBoundingClientRect();
+			return { seen: at === li, inA: box.left >= list.left && box.right <= list.right };
+		})()`);
+		assert.deepEqual(seen, { seen: true, inA: true }, "seen at its old place, over list a");
+		assert.ok(!(await tab.eval("window.glides")).some((glide) => glide !== "a1 lifted" && glide.endsWith("lifted")), "nothing else is lifted: what moves up in list a stays in it");
+		// Moved again while it is there (held over list a): it glides on from there, lifted still, as
+		// list b would cut it off; what moves within a list stays in it.
+		await tab.eval("window.glides = []");
+		await tab.click(".within");
+		await tab.wait("window.glides.length >= 4");
+		assert.deepEqual((await tab.eval("window.glides")).sort(), ["a1 lifted", "a2", "a3", "b1"]);
+		assert.deepEqual(
+			await tab.eval(`(() => {
+				const li = ${item("a1")};
+				const [glide] = li.getAnimations();
+				glide.pause();
+				glide.currentTime = 0;
+				const box = li.getBoundingClientRect();
+				const at = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+				const out = { holders: document.querySelectorAll('[data-rocx-lifted]').length, position: getComputedStyle(li).position, seen: at === li, row: [...li.parentElement.children].filter((each) => !each.hasAttribute('data-rocx-lifted')).indexOf(li) };
+				glide.play();
+				return out;
+			})()`),
+			{ holders: 1, position: "fixed", seen: true, row: 0 },
+			"one stand-in, the old one put back first; seen where it was held; first in list b now",
+		);
+		await tab.wait(`${item("a1")}.getAnimations().length === 0 && !document.querySelector('[data-rocx-lifted]')`, 3000);
+		assert.deepEqual(await tab.eval(`(() => { const li = ${item("a1")}; return { position: getComputedStyle(li).position, style: li.getAttribute("style") }; })()`), { position: "static", style: "height: 30px;" }, "put back, its own style as it was");
+		assert.deepEqual(tab.errors, []);
 	} finally {
 		await site.close();
 		rmSync(dir, { recursive: true, force: true });

@@ -13,11 +13,18 @@ const noChrome = !(await findChrome()) && "needs Chromium's headless shell ($CHR
 /** Ada's browser. */
 const engine = (await findGecko()) ? "gecko" : "chromium";
 
-/** Notes every glide (D-031) the page's runtime plays, by the key of the element that moved. */
+/** Notes every glide (D-031) the page's runtime plays, by the key of the element that moved, and
+ * those lifted above the page (out of a column's scrolling list into another's). */
 const GLIDES = `document.addEventListener("rocx:ready", (event) => {
 	window.__glides = [];
+	window.__lifted = [];
 	window.__runtime = event.detail.runtime;
-	event.detail.runtime.observer = { glide: (detail) => window.__glides.push(detail.key ?? "") };
+	event.detail.runtime.observer = {
+		glide: (detail) => {
+			window.__glides.push(detail.key ?? "");
+			if (detail.lifted) window.__lifted.push(detail.key ?? "");
+		},
+	};
 });`;
 
 /** A key pressed and let go with Alt held, as a keyboard does it: over the DevTools protocol in
@@ -86,11 +93,22 @@ describe(`Acme Board in two browsers (Ada's: ${engine})`, { skip: noDatabase || 
 		// share the card's key.
 		assert.ok((await bo.page.eval("window.__glides")).includes(card));
 		assert.ok((await ada.page.eval("window.__glides")).includes(card));
+		// Out of To do's list, which scrolls, into Doing's: above the page, so neither cuts it off; the
+		// cards that made room for it stayed in their lists.
+		for (const [who, tab] of [["Bo", bo], ["Ada", ada]]) {
+			const lifted = await tab.page.eval("window.__lifted");
+			assert.ok(lifted.includes(card) && lifted.every((key) => key === card), `lifted on ${who}'s page, and nothing else: ${lifted}`);
+		}
+		assert.equal(await ada.page.eval(`getComputedStyle(document.querySelector('[data-column="${seeded.columns.Doing}"] .cards')).overflowY`), "auto", "a column's cards scroll on their own");
 		// Bo is told who moved what.
 		await bo.findByText("Ada moved “Press kit” to Doing");
 
 		const [row] = await running.db.sql`select c.name from cards join columns c on c.id = cards.column_id where cards.id = ${card}`;
 		assert.equal(row.name, "Doing");
+		// The board read again, and the glides over, each tile where it lands, no stand-in left: To do's
+		// list, scrolled to show the card as it was dragged, is shorter now, and its cards glide down
+		// from where they were seen.
+		for (const tab of [ada, bo]) await tab.page.wait("!document.querySelector('.board.stale') && ![...document.querySelectorAll('.tile')].some((tile) => tile.getAnimations().length) && !document.querySelector('[data-rocx-lifted]')", 5000);
 	});
 
 	test("Ada opens a card: Bo sees her there and that she is editing it, and it opens for him once she closes it", async () => {
