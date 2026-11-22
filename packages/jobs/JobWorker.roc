@@ -20,9 +20,10 @@ import Registry
 JobWorker := [].{
 
 	## Runs jobs of `kinds` until the server stops, a failed one again `retry_ms` later (doubled for
-	## each attempt after). The job it is running when it is told to stop, it finishes.
-	run! : List(Registry.Kind), U64 => {}
-	run! = |listed_kinds, retry_ms| {
+	## each attempt after), and `on_failed!` with one that failed for good. The job it is running when
+	## it is told to stop, it finishes.
+	run! : List(Registry.Kind), U64, ({ kind : Str, id : I64, attempts : U64, error : Str } => {}) => {}
+	run! = |listed_kinds, retry_ms, on_failed!| {
 		if !Db.connected!({}) {
 			return {}
 		}
@@ -40,7 +41,7 @@ JobWorker := [].{
 					match take!(kinds) {
 						Ok(Some(job)) => {
 							Live.publish!("rocx:jobs", "${job.id.to_str()} running")
-							finish!(job, attempt!(job, limit(listed_kinds, job.kind)), retry_ms)
+							finish!(job, attempt!(job, limit(listed_kinds, job.kind)), retry_ms, on_failed!)
 							Bool.True
 						}
 						Ok(None) => Live.next!(due_in!(kinds)) != Gone
@@ -107,8 +108,8 @@ attempt! = |job, limit_ms|
 		Err(why) => Err(why)
 	}
 
-finish! : Taken, Try({}, Str), U64 => {}
-finish! = |job, outcome, retry_ms| {
+finish! : Taken, Try({}, Str), U64, ({ kind : Str, id : I64, attempts : U64, error : Str } => {}) => {}
+finish! = |job, outcome, retry_ms, on_failed!| {
 	name = "${job.kind} #${job.id.to_str()}"
 	match outcome {
 		Ok({}) => {
@@ -133,6 +134,7 @@ finish! = |job, outcome, retry_ms| {
 			recorded!(name, Db.run!("update rocx_jobs set state = 'failed', finished_at = now(), last_error = $2 where id = $1", [Int(job.id), Text(why)]))
 			Log.line!("rocx jobs: ${name} failed for good after ${job.attempts.to_str()} attempts: ${why}")
 			Live.publish!("rocx:jobs", "${job.id.to_str()} failed")
+			on_failed!({ kind: job.kind, id: job.id, attempts: job.attempts, error: why })
 		}
 	}
 }

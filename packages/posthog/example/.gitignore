@@ -1,0 +1,5 @@
+# What `rocx build` writes, and the tests' builds.
+Generated/
+build/
+routes/**/*.roc
+!routes/**/+server.roc

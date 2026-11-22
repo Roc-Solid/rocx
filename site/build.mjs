@@ -597,6 +597,8 @@ function sourcesModule() {
 		},
 		pick("platform_program", "server/test/app/main.roc", ["program = {", "respond!,", "# The app's schema", "migrations: [", "# The kinds of actor", "actors: [", "# The plugins", "# runs the rest.", "plugins:", "routes:", "}"]),
 		pick("email_plugin", "server/test/app/main.roc", ["# Email (packages/email)", "Email.plugin({}),"]),
+		pick("posthog_program", "packages/posthog/example/main.roc", ["program = App.program({", "context:", "middleware:", "plugins:", "})"]),
+		pick("posthog_capture", "packages/posthog/example/routes/refund/+server.roc", ["get! = |_input| {", "PostHog.capture!(", "Ok(", "}"]),
 		pick("jobs_plugin", "test/e2e/app/main.roc", ["import jobs.Cron", "import jobs.Job", "import admin.JobsPage", "import Generated/App", "", "program = App.program({", "context:", "middleware:", "# The jobs plugin", "# the jobs page", "plugins: [", "Job.plugin(", "JobsPage.plugin(", "],", "})"]),
 		pick("platform_site_program", "site/main.roc", ["program = App.program({", "context:", "middleware:", "openapi:", "})"]),
 		pick("platform_notes", "server/test/app/main.roc", ["(\"GET\", \"/notes\") => {", "found : Try(", "found = Db.all!(", "match found {", "Ok(notes) =>", "Err(DbErr(why))", "Err(BadRow(why))", "}", "}"]),

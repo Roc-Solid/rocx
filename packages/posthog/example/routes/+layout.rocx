@@ -1,0 +1,18 @@
+import pf.Html
+
+## The document around every page, with packages/posthog's script, which sends what goes wrong in
+## the browser to the plugin.
+view! = |{ children, .. }|
+	<>
+		<!doctype html>
+		<html lang="en">
+			<head>
+				<meta charset="utf-8" />
+				<title>Acme Shop</title>
+				<script src="/rocx-errors.js" defer></script>
+			</head>
+			<body>
+				<main>{...children}</main>
+			</body>
+		</html>
+	</>

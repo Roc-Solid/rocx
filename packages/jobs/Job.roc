@@ -47,14 +47,22 @@ Job := [].{
 
 	## What the jobs plugin runs: the app's kinds of job (`App.jobs`, which rocx build lists, or
 	## `Job.handler(kind)` for each), its schedules (`Cron.every`), how many workers take jobs at
-	## once (each a background loop), and how long a failed job waits before its second attempt
-	## (milliseconds; doubled for each after).
+	## once (each a background loop), how long a failed job waits before its second attempt
+	## (milliseconds; doubled for each after), and what is done when a job has failed for good,
+	## after it is logged (`on_failed!`: nothing more, unless the app says; an error tracker's
+	## report, `PostHog.job_failed!`).
 	Options := {
 		jobs : List(Handler),
 		crons : List({ name : Str, schedule : Str, job : Str, input : Str }) ?? [],
 		workers : U64 ?? 4,
 		retry_ms : U64 ?? 1000,
+		on_failed! : (Failure => {}) ?? ignored!,
 	}
+
+	## A job that failed for good, as the plugin's `on_failed!` is given it: its kind, its id, how
+	## many times it was tried and why the last attempt failed (its `Err`, a crash, or "timed out
+	## after …"). Its row stays in `rocx_jobs`, failed, until it is run again (`run_now!`).
+	Failure : { kind : Str, id : I64, attempts : U64, error : Str }
 
 	## The jobs plugin: the queue's table (`jobs/0001_jobs`), the workers (`jobs.worker`, with a
 	## database and a kind to run) and the schedules' loop (`jobs.schedules`, with one), the call
@@ -66,8 +74,9 @@ Job := [].{
 		handlers = options.jobs
 		crons = options.crons
 		retry_ms = options.retry_ms
+		on_failed! = options.on_failed!
 		kinds = handlers.map(|job| { name: job.name, attempts: job.attempts, timeout_ms: job.timeout_ms })
-		workers = if (handlers.is_empty()) [] else List.repeat({ name: "jobs.worker", run!: |{}| JobWorker.run!(kinds, retry_ms) }, options.workers)
+		workers = if (handlers.is_empty()) [] else List.repeat({ name: "jobs.worker", run!: |{}| JobWorker.run!(kinds, retry_ms, on_failed!) }, options.workers)
 		ticker = if (crons.is_empty()) [] else [{ name: "jobs.schedules", run!: |{}| CronTicker.run!(crons) }]
 		{
 			name: "jobs",
@@ -295,6 +304,10 @@ acted! = |id, done, sql|
 				Err(JobErr(why))
 			}
 	}
+
+## What `on_failed!` does when the app doesn't say: nothing (the worker has logged it).
+ignored! : Job.Failure => {}
+ignored! = |_failure| {}
 
 ## Runs a job (the plugin's call `jobs.run`): `input` is its kind, a newline, and its input as JSON.
 ran! : List(Job.Handler), Str => Try(Str, Str)

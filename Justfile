@@ -201,10 +201,11 @@ deploy-pages: site
 # Everything: the transpiler and the routes; every Roc module's expects (the platform's modules, the
 # pages and their components, the highlighter: site/main.roc imports them all; and every package's,
 # packages/*/main.roc); the web platform in Node and a browser; the site in a browser, served by the
-# native server; the server platform; packages/testing's own tests, against an app it builds (once
-# the server's host is). One file at a time: the web platform's tests and the site's both build its
-# host. The browser tests need Chromium (see web/test/browser.mjs); the server platform's Postgres,
-# jobs, cron and actors tests, and packages/testing's database tests, DATABASE_URL (`just db`).
+# native server; the server platform; packages/testing's and packages/posthog's own tests, against
+# an app each builds (once the server's host is). One file at a time: the web platform's tests and
+# the site's both build its host. The browser tests need Chromium (see web/test/browser.mjs); the
+# server platform's Postgres, jobs, cron and actors tests, and packages/testing's and
+# packages/posthog's database tests, DATABASE_URL (`just db`).
 test:
     ROC={{ roc }} node --test 'test/*.test.mjs'
     node site/build.mjs --prepare
@@ -212,7 +213,7 @@ test:
     for package in packages/*/main.roc; do echo "$package"; {{ roc }} test "$package" || exit 1; done
     ROC={{ roc }} node --test --test-concurrency=1 'web/test/*.test.mjs' 'site/test/*.test.mjs'
     ROC={{ roc }} node --test 'server/test/*.test.mjs'
-    ROC={{ roc }} node --test 'packages/testing/test/*.test.mjs'
+    ROC={{ roc }} node --test 'packages/testing/test/*.test.mjs' 'packages/posthog/test/*.test.mjs'
 
 # Type-checks the site, both programs, with reports pointed into .rocx files, and lints its markup:
 # the server's, and the browser's, built from the copy of the site in which a route file has no

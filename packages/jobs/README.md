@@ -53,7 +53,9 @@ Job.Options := {
     crons : List({ name : Str, schedule : Str, job : Str, input : Str }) ?? [],   # Cron.every(…)
     workers : U64 ?? 4,                                            # jobs run at once
     retry_ms : U64 ?? 1000,                                        # a failed job's wait, doubled after
+    on_failed! : (Job.Failure => {}) ?? ignored!,                  # a job that failed for good
 }
+Job.Failure : { kind : Str, id : I64, attempts : U64, error : Str }
 Job.plugin : Job.Options -> Plugin.Value(ctx)
 ```
 
@@ -80,7 +82,8 @@ next job due of a kind the plugin runs with `for update skip locked`, so none is
 runs it in a call of its own, so a crash is that job's failure, not the worker's. A job that fails
 (an `Err`, a crash, or its time limit passing) runs again after `retry_ms` (1000), then twice that,
 and so on, as many attempts in all as its kind says (`attempts`; five with `Job.define`); then it is
-`failed`, with its last error. Queueing one sends `NOTIFY rocx_jobs`, which Postgres delivers when
+`failed`, with its last error, said on the log, and given to the plugin's `on_failed!` (nothing more
+unless the app says: an error tracker's report, as packages/posthog's `PostHog.job_failed!`). Queueing one sends `NOTIFY rocx_jobs`, which Postgres delivers when
 the transaction commits (`Db.listen!` hears it as the live topic `pg:rocx_jobs`); a worker sleeps
 on it (`Live.next!`) until then, or until the next delayed job or retry falls due. Queued in a
 transaction (`Db.transaction!`), a job is a row in it: there only if it commits. A job running when

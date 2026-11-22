@@ -62,6 +62,7 @@ Nav := [].{
 			{ path: Paths.ecosystem_markdown, label: "Markdown", blurb: "CommonMark in Roc, a <Markdown> component, and typed frontmatter" },
 			{ path: Paths.ecosystem_mcp, label: "MCP", blurb: "An app's tools, resources and prompts, for AI agents" },
 			{ path: Paths.ecosystem_otel, label: "OpenTelemetry", blurb: "Request timings and the app's metrics over OTLP; logs for a collector" },
+			{ path: Paths.ecosystem_posthog, label: "PostHog", blurb: "5xx answers, handled errors, failed jobs and browser errors, as PostHog issues" },
 			{ path: Paths.ecosystem_presence, label: "Presence", blurb: "Who is here, who is typing, and live cursors" },
 			{ path: Paths.ecosystem_push, label: "Push", blurb: "Web Push notifications: a button that subscribes, and jobs that send" },
 			{ path: Paths.ecosystem_testing, label: "Testing", blurb: "Find things in a page by role, name and label, from Roc and Node" },

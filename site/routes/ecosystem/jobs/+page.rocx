@@ -45,10 +45,12 @@ view! = |_|
 			<Code title={"${Sources.jobs_plugin.file}, in part"} source={Sources.jobs_plugin.rocx} numbers={Bool.False} />
 			<p>
 				The app names the package in its header (<code>{"jobs: \"…/packages/jobs/main.roc\""}</code>) and lists
-				its plugin: <code>{"Job.plugin({ jobs, crons, workers, retry_ms })"}</code>. <code>jobs</code> is the
+				its plugin: <code>{"Job.plugin({ jobs, crons, workers, retry_ms, on_failed! })"}</code>. <code>jobs</code> is the
 				kinds its workers run: <code>App.jobs</code>, every kind the app's modules define, which
 				<code>rocx build</code> finds. The rest have defaults: no schedules, four workers, a second before a
-				failed job's second attempt. The plugin adds the queue's table (<code>rocx_jobs</code>, recorded as
+				failed job's second attempt, and nothing more done with a job that failed for good than logging it
+				(<code>on_failed!</code> is given its kind, id, attempts and error: an error tracker's report, as
+				<a href={Paths.ecosystem_posthog}>packages/posthog</a>'s <code>PostHog.job_failed!</code>). The plugin adds the queue's table (<code>rocx_jobs</code>, recorded as
 				<code>jobs/0001_jobs</code>), the workers and the schedules' loop, and at start keeps what it runs,
 				checks every schedule, and queues again the jobs a stop cut short. Without a database it runs
 				nothing, and queueing a job says why.

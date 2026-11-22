@@ -1,0 +1,8 @@
+import pf.Html
+
+## A page whose own script (/broken.js) fails: an error, and a promise rejected.
+view! = |_|
+	<section>
+		<h1>Acme Shop</h1>
+		<script src="/broken.js" defer></script>
+	</section>

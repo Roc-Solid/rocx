@@ -1,0 +1,127 @@
+import pf.Html
+import ../../../Ui/Heading
+import ../../../Ui/Code
+import ../../../Generated/Sources
+import ../../../Generated/Paths
+import ../../../Ui/PageHero
+import ../../../Ui/TableWrap
+
+## The posthog package: an app's errors sent to PostHog's error tracking, from the app itself (a
+## middleware, a plugin's routes and loop), grouped by fingerprints of its own; and the daily digest
+## that reads them. Static: PostHog is a server.
+meta = {
+	title: "PostHog",
+	description: "packages/posthog, a plugin for Roc Solid's server: 5xx answers, errors the app deals with, jobs that failed for good and errors in the browser, sent to PostHog's error tracking, grouped into issues, with a daily digest that reads them.",
+	toc: [
+		{ id: "install", label: "Installing it" },
+		{ id: "what", label: "What it reports" },
+		{ id: "capture", label: "An error the app handles" },
+		{ id: "where", label: "Where they go" },
+		{ id: "issues", label: "Issues" },
+		{ id: "digest", label: "A daily digest" },
+		{ id: "limits", label: "Not reported" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				kicker={[<>{"The ecosystem · "}</>, <code>packages/posthog</code>]}
+				title="Errors in PostHog, grouped into issues, from the app itself"
+			>
+				Every 5xx answer, every error the app deals with but wants seen, every job that failed for good and
+				every error nothing caught in a browser, sent to PostHog's error tracking as an issue, with where it
+				happened and who it reached. All of it is the app's: a middleware, a plugin's routes and a background
+				loop, on nothing a plugin doesn't have.
+			</PageHero>
+
+			<Heading id="install">Installing it</Heading>
+			<Code title={"${Sources.posthog_program.file}, in part"} source={Sources.posthog_program.rocx} numbers={Bool.False} />
+			<p>
+				The app names the package in its header (<code>{"posthog: \"…/packages/posthog/main.roc\""}</code>), lists
+				its plugin, puts its middleware after the one that knows who asked, and gives the jobs plugin
+				<code>PostHog.job_failed!</code> as its <code>on_failed!</code> (<a href={Paths.ecosystem_jobs}>jobs</a>).
+				Pages send their errors with one line in the layout:
+				<code>{"<script src=\"/rocx-errors.js\" defer></script>"}</code>.
+			</p>
+
+			<Heading id="what">What it reports</Heading>
+			<TableWrap>
+				<table>
+					<thead><tr><th>What</th><th>How</th><th>Type</th><th>Handled</th></tr></thead>
+					<tbody>
+						<tr><td>an answer with a 5xx status</td><td><code>PostHog.middleware(user)</code></td><td><code>ServerError</code></td><td>no</td></tr>
+						<tr><td>an error the app dealt with</td><td><code>PostHog.capture!(message, fields)</code></td><td><code>Error</code></td><td>yes</td></tr>
+						<tr><td>a job that failed for good</td><td><code>on_failed!: PostHog.job_failed!</code></td><td><code>JobFailed</code></td><td>no</td></tr>
+						<tr><td>an error or a rejected promise nothing caught in a browser</td><td><code>/rocx-errors.js</code></td><td>its own (<code>TypeError</code>)</td><td>no</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				Each is kept in the server's memory (<a href={"${Paths.platform_live}#kv"}>Kv</a>, the newest 1,000), and
+				a background loop sends what there is every ten seconds, and once more as the server stops, as
+				<code>$exception</code> events to PostHog's batch endpoint. A request never waits on PostHog. A 5xx answer
+				says its route's pattern (<code>/posts/[id]</code>), its method, its status and its text; the
+				middleware's function names who asked, from the context it is given (<code>""</code> for nobody known,
+				whose errors make no person in PostHog).
+			</p>
+
+			<Heading id="capture">An error the app handles</Heading>
+			<Code title={"${Sources.posthog_capture.file}, in part"} source={Sources.posthog_capture.rocx} numbers={Bool.False} />
+			<p>
+				Most of what goes wrong in a Roc app is a value: a refusal, a database's error, a fetch that timed
+				out. <code>PostHog.capture!</code> takes a message and fields, as <code>Log.error!</code> does, and adds
+				the request being answered; <code>{"PostHog.capture_for!(user, message, fields)"}</code> says who it
+				reached.
+			</p>
+
+			<Heading id="where">Where they go</Heading>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Option</th><th>Environment</th><th>Default</th></tr></thead>
+					<tbody>
+						<tr><td><code>key</code></td><td><code>POSTHOG_KEY</code></td><td>none: off</td></tr>
+						<tr><td><code>host</code></td><td><code>POSTHOG_HOST</code></td><td><code>https://us.i.posthog.com</code></td></tr>
+						<tr><td><code>release</code></td><td><code>POSTHOG_RELEASE</code></td><td>none: the commit a build is from</td></tr>
+						<tr><td><code>at</code></td><td></td><td><code>/rocx-errors</code></td></tr>
+						<tr><td><code>interval_ms</code></td><td></td><td><code>10000</code></td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				Without a key nothing is kept or sent, which is the default while developing. Once started, the server
+				says on its log where errors go, or that reporting is off.
+			</p>
+
+			<Heading id="issues">Issues</Heading>
+			<p>
+				Roc has no stack traces, so the package says which issue an error belongs to itself
+				(<code>$exception_fingerprint</code>): a 5xx answer by its route's pattern and message, a captured error by
+				its message, a job by its kind and error, a browser's by its type and message. A word with a digit in it
+				counts as any other (<code>user 1234 not found</code> and <code>user 77 not found</code> are one issue),
+				and so does text in quotes. One issue is sent 20 times a minute at most, browsers 120 errors a minute
+				in all; what PostHog didn't take (a 5xx, no answer) is sent again.
+			</p>
+
+			<Heading id="digest">A daily digest</Heading>
+			<p>
+				Errors sent somewhere are worth a loop that reads them. PostHog's MCP server lists the issues with how
+				many people each reached; a scheduled agent, once a day, writes the digest of what is new or came back,
+				checks out each top issue's <code>release</code>, writes a failing test from its route, method and fields,
+				fixes it on a branch and opens a pull request, never merging. The package's README has the steps.
+			</p>
+
+			<Heading id="limits">Not reported</Heading>
+			<ul>
+				<li>
+					<strong>A crash in Roc</strong> ends its call before the middleware sees an answer: the host answers
+					500 and logs <code>rocx server: Roc crashed</code>, so crashes are on the server's log.
+				</li>
+				<li>
+					A computation in the browser that fails with no <code>{"<Errored>"}</code> around it, and a handler
+					that fails: the runtime writes them to the console only.
+				</li>
+			</ul>
+		</NoHydration>
+	</>
