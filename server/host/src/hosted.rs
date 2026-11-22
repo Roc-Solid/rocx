@@ -28,7 +28,8 @@
 
 use crate::abi::{
     AnonStruct2e6fc7635560c0c3 as Isolated, AnonStruct3ed536693d8b85f3 as Answered, AnonStructFa59a42fc999ca94 as Heard, HostDbExecuteResult,
-    HostDbExecuteResultPayload, HostHttpSendResult, HostHttpSendResultPayload, HostHttpSendResultTag,
+    HostDbExecuteResultPayload, HostHttpSendResult, HostHttpSendResultPayload, HostHttpSendResultTag, HostZoneOffsetResult,
+    HostZoneOffsetResultPayload, HostZoneOffsetResultTag,
     HostDbExecuteResultTag, HostDbScriptResult, HostDbScriptResultPayload, HostDbScriptResultTag, HostStoreGetResult as TextResult,
     HostStoreGetResultPayload as TextPayload, HostStoreGetResultTag as TextTag, HostTcpReadExactlyResult as BytesResult,
     HostTcpReadExactlyResultPayload as BytesPayload, HostTcpReadExactlyResultTag as BytesTag, RocListWith, RocStr,
@@ -1130,4 +1131,23 @@ fn open(key: &[u8], sealed: &[u8]) -> Result<Vec<u8>, String> {
     let mut buffer = rest.to_vec();
     let plaintext = key.open_in_place(nonce, ring::aead::Aad::empty(), &mut buffer).map_err(|_| "forged".to_string())?;
     Ok(plaintext.to_vec())
+}
+
+// ---- Time zones ----
+
+/// The offset from UTC, in seconds, of the IANA time zone `zone` at `at_ms` (milliseconds since the
+/// epoch), summer time counted, from the zone database compiled in (chrono-tz); an `Err` for a name
+/// it doesn't have.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_zone_offset(zone: RocStr, at_ms: i64) -> HostZoneOffsetResult {
+    use chrono::{Offset, TimeZone};
+    let zone = taken(zone);
+    let offset = zone.parse::<chrono_tz::Tz>().map_err(|_| format!("no time zone is called {zone}")).and_then(|tz| {
+        let at = chrono::DateTime::from_timestamp_millis(at_ms).ok_or_else(|| format!("{at_ms} ms isn't a moment"))?;
+        Ok(i64::from(tz.offset_from_utc_datetime(&at.naive_utc()).fix().local_minus_utc()))
+    });
+    match offset {
+        Ok(seconds) => HostZoneOffsetResult { payload: HostZoneOffsetResultPayload { ok: ManuallyDrop::new(seconds) }, tag: HostZoneOffsetResultTag::Ok },
+        Err(why) => HostZoneOffsetResult { payload: HostZoneOffsetResultPayload { err: ManuallyDrop::new(roc_str(&why)) }, tag: HostZoneOffsetResultTag::Err },
+    }
 }

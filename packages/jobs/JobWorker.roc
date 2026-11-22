@@ -2,20 +2,22 @@ import pf.Db
 import pf.Live
 import pf.Log
 import pf.Plugin
+import Queue
 import Registry
 
 ## A job worker: a background loop the jobs plugin runs `workers` (4) of, each a call of its own,
 ## until the server stops; none without a database.
 ##
 ## A worker takes the next job that is due of a kind the app lists (another app may share the
-## database) with `for update skip locked`, so no two take the same,
+## database) with `for update skip locked` on Postgres, so no two take the same (on SQLite writes
+## take turns, so the update that takes it is enough),
 ## and runs it in a call of its own (the plugin's call `jobs.run`, `Plugin.isolated!`), within its
 ## kind's time limit, so a crash in it, or its time running out, ends that call, not the worker. One
 ## that fails (an `Err`, a crash, or "timed out after …") is queued again, `retry_ms` (1000) later,
 ## then twice that, and so on, until its attempts (its kind's; 5 by default) run out; then it is
 ## failed, with why. With
-## nothing due, a worker sleeps until the next job is, or until Postgres says one was queued
-## (`pg_notify` on `rocx_jobs`, sent when the transaction that queued it commits), or the server
+## nothing due, a worker sleeps until the next job is, or until the database says one was queued
+## (`rocx_jobs` notified, when the transaction that queued it commits), or the server
 ## stops. What it starts and finishes it says on the live topic `rocx:jobs` (the jobs page listens).
 JobWorker := [].{
 
@@ -58,12 +60,24 @@ JobWorker := [].{
 	## last stopped was cut short, so it is queued again; done jobs older than a week go.
 	recover! : List(Str) => Try({}, Str)
 	recover! = |kinds| {
-		requeued = Db.run!("update rocx_jobs set state = 'queued', locked_at = null where state = 'running' and kind = any(string_to_array($1, E'\\n'))", [listed(kinds)])
+		lite = Queue.lite!({})
+		requeued =
+			if lite {
+				Db.run!("update rocx_jobs set state = 'queued', locked_at = null where state = 'running' and kind in (select value from json_each($1))", [Queue.kinds(kinds)])
+			} else {
+				Db.run!("update rocx_jobs set state = 'queued', locked_at = null where state = 'running' and kind = any(string_to_array($1, E'\\n'))", [listed(kinds)])
+			}
 		match requeued {
 			Err(DbErr(why)) => Err("jobs: ${why}")
 			Ok(count) => {
 				if (count > 0) Log.line!("rocx jobs: ${count.to_str()} cut short by the last stop, queued again") else {}
-				match Db.run!("delete from rocx_jobs where state = 'done' and finished_at < now() - interval '7 days'", []) {
+				swept =
+					if lite {
+						Db.run!("delete from rocx_jobs where state = 'done' and finished_at < $1", [Int(Queue.now!({}) - 7 * 24 * 3_600_000)])
+					} else {
+						Db.run!("delete from rocx_jobs where state = 'done' and finished_at < now() - interval '7 days'", [])
+					}
+				match swept {
 					Ok(_) => Ok({})
 					Err(DbErr(why)) => Err("jobs: ${why}")
 				}
@@ -78,10 +92,18 @@ Taken : { id : I64, kind : Str, input : Str, attempts : U64, max_attempts : U64 
 take! : List(Str) => Try([Some(Taken), None], Str)
 take! = |kinds| {
 	taken : Try(List(Taken), [DbErr(Str), BadRow(Str)])
-	taken = Db.all!(
-		"update rocx_jobs set state = 'running', attempts = attempts + 1, locked_at = now() where id = (select id from rocx_jobs where state = 'queued' and run_at <= now() and kind = any(string_to_array($1, E'\\n')) order by run_at, id for update skip locked limit 1) returning id, kind, input, attempts, max_attempts",
-		[listed(kinds)],
-	)
+	taken =
+		if Queue.lite!({}) {
+			Db.all!(
+				"update rocx_jobs set state = 'running', attempts = attempts + 1, locked_at = $2 where id = (select id from rocx_jobs where state = 'queued' and run_at <= $2 and kind in (select value from json_each($1)) order by run_at, id limit 1) returning id, kind, input, attempts, max_attempts",
+				[Queue.kinds(kinds), Int(Queue.now!({}))],
+			)
+		} else {
+			Db.all!(
+				"update rocx_jobs set state = 'running', attempts = attempts + 1, locked_at = now() where id = (select id from rocx_jobs where state = 'queued' and run_at <= now() and kind = any(string_to_array($1, E'\\n')) order by run_at, id for update skip locked limit 1) returning id, kind, input, attempts, max_attempts",
+				[listed(kinds)],
+			)
+		}
 	match taken {
 		Ok([job]) => Ok(Some(job))
 		Ok(_) => Ok(None)
@@ -111,27 +133,53 @@ attempt! = |job, limit_ms|
 finish! : Taken, Try({}, Str), U64, ({ kind : Str, id : I64, attempts : U64, error : Str } => {}) => {}
 finish! = |job, outcome, retry_ms, on_failed!| {
 	name = "${job.kind} #${job.id.to_str()}"
+	lite = Queue.lite!({})
+	now = Queue.now!({})
 	match outcome {
 		Ok({}) => {
-			recorded!(name, Db.run!("update rocx_jobs set state = 'done', finished_at = now(), last_error = null where id = $1", [Int(job.id)]))
+			recorded!(
+				name,
+				if lite {
+					Db.run!("update rocx_jobs set state = 'done', finished_at = $2, last_error = null where id = $1", [Int(job.id), Int(now)])
+				} else {
+					Db.run!("update rocx_jobs set state = 'done', finished_at = now(), last_error = null where id = $1", [Int(job.id)])
+				},
+			)
 			Live.publish!("rocx:jobs", "${job.id.to_str()} done")
 		}
 		Err(why) if job.attempts < job.max_attempts => {
 			wait = backoff(retry_ms, job.attempts)
 			recorded!(
 				name,
-				Db.run!(
-					"update rocx_jobs set state = 'queued', last_error = $2, run_at = now() + ($3::bigint * interval '1 millisecond') where id = $1",
-					[Int(job.id), Text(why), Text(wait.to_str())],
-				),
+				if lite {
+					Db.run!("update rocx_jobs set state = 'queued', last_error = $2, run_at = $3 where id = $1", [Int(job.id), Text(why), Int(now + wait.to_i64_wrap())])
+				} else {
+					Db.run!(
+						"update rocx_jobs set state = 'queued', last_error = $2, run_at = now() + ($3::bigint * interval '1 millisecond') where id = $1",
+						[Int(job.id), Text(why), Text(wait.to_str())],
+					)
+				},
 			)
 			Log.line!("rocx jobs: ${name} failed (attempt ${job.attempts.to_str()} of ${job.max_attempts.to_str()}), again in ${wait.to_str()} ms: ${why}")
 			Live.publish!("rocx:jobs", "${job.id.to_str()} queued")
 			# The other workers, asleep until what was due when they looked, look again.
-			recorded!(name, Db.run!("select pg_notify('rocx_jobs', '')", []))
+			recorded!(
+				name,
+				match Db.notify!("rocx_jobs", "") {
+					Ok({}) => Ok(0)
+					Err(DbErr(unheard)) => Err(DbErr(unheard))
+				},
+			)
 		}
 		Err(why) => {
-			recorded!(name, Db.run!("update rocx_jobs set state = 'failed', finished_at = now(), last_error = $2 where id = $1", [Int(job.id), Text(why)]))
+			recorded!(
+				name,
+				if lite {
+					Db.run!("update rocx_jobs set state = 'failed', finished_at = $3, last_error = $2 where id = $1", [Int(job.id), Text(why), Int(now)])
+				} else {
+					Db.run!("update rocx_jobs set state = 'failed', finished_at = now(), last_error = $2 where id = $1", [Int(job.id), Text(why)])
+				},
+			)
 			Log.line!("rocx jobs: ${name} failed for good after ${job.attempts.to_str()} attempts: ${why}")
 			Live.publish!("rocx:jobs", "${job.id.to_str()} failed")
 			on_failed!({ kind: job.kind, id: job.id, attempts: job.attempts, error: why })
@@ -168,10 +216,18 @@ backoff = |retry_ms, attempts| {
 due_in! : List(Str) => U64
 due_in! = |kinds| {
 	due : Try(List({ ms : U64 }), [DbErr(Str), BadRow(Str)])
-	due = Db.all!(
-		"select coalesce(greatest(0, ceil(extract(epoch from (min(run_at) - now())) * 1000)), 60000)::int8 as ms from rocx_jobs where state = 'queued' and kind = any(string_to_array($1, E'\\n'))",
-		[listed(kinds)],
-	)
+	due =
+		if Queue.lite!({}) {
+			Db.all!(
+				"select coalesce(max(0, min(run_at) - $2), 60000) as ms from rocx_jobs where state = 'queued' and kind in (select value from json_each($1))",
+				[Queue.kinds(kinds), Int(Queue.now!({}))],
+			)
+		} else {
+			Db.all!(
+				"select coalesce(greatest(0, ceil(extract(epoch from (min(run_at) - now())) * 1000)), 60000)::int8 as ms from rocx_jobs where state = 'queued' and kind = any(string_to_array($1, E'\\n'))",
+				[listed(kinds)],
+			)
+		}
 	match due {
 		Ok([{ ms }]) => U64.min(ms, 60000)
 		_ => 1000

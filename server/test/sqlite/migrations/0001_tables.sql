@@ -15,3 +15,16 @@ create table counters (
     value integer not null
 );
 insert into counters (name, value) values ('hits', 0);
+
+-- What the jobs did, a line each.
+create table job_log (
+    id integer primary key,
+    kind text not null,
+    said text not null
+);
+
+-- How many times a flaky job has been tried.
+create table flaky (
+    name text primary key,
+    tries integer not null
+);

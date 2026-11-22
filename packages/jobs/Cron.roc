@@ -1,6 +1,7 @@
 import pf.Db
 import pf.Time
 import Calendar
+import Queue
 import Registry
 
 ## Jobs on a schedule: the jobs plugin's `crons` (`Job.plugin({ jobs: App.jobs, crons: [Cron.every(…)] })`).
@@ -89,10 +90,13 @@ Cron := [].{
 		match Registry.schedules!({}).find_first(|each| each.name == name) {
 			Err(_) => Err(NotFound)
 			Ok(found) => {
-				queued = Db.run!(
-					"with queued as (insert into rocx_jobs (kind, input, max_attempts) values ($1, $2, $3::int) returning id) select pg_notify('rocx_jobs', id::text) from queued",
-					[Text(found.job), Text(found.input), Int(Registry.attempts!(found.job).to_i64_wrap())],
-				)
+				params = [Text(found.job), Text(found.input), Int(Registry.attempts!(found.job).to_i64_wrap())]
+				queued =
+					if Queue.lite!({}) {
+						Queue.told!(Db.run!("insert into rocx_jobs (kind, input, max_attempts, run_at, created_at) values ($1, $2, $3, $4, $4)", params.append(Int(Queue.now!({})))))
+					} else {
+						Db.run!("with queued as (insert into rocx_jobs (kind, input, max_attempts) values ($1, $2, $3::int) returning id) select pg_notify('rocx_jobs', id::text) from queued", params)
+					}
 				match queued {
 					Ok(_) => Ok({})
 					Err(DbErr(why)) => Err(JobErr(why))

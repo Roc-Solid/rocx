@@ -52,8 +52,9 @@ import "migrations/0002_note_index.sql" as note_index : Str
 
 program = {
 	respond!,
-	# The app's schema, in the executable: applied once each, in order, when the server starts.
+	# The app's database (D-045): Postgres, at --database-url.
 	database: Postgres,
+	# The app's schema, in the executable: applied once each, in order, when the server starts.
 	migrations: [{ name: "0001_tables.sql", sql: tables }, { name: "0002_note_index.sql", sql: note_index }],
 	# The kinds of actor (`rocx build` lists them for an app it builds).
 	actors: [Actor.handler(counter), Actor.handler(mirror({})), Actor.handler(bouncer({})), Actor.handler(ticker)],

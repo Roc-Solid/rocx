@@ -23,6 +23,10 @@ Host := [].{
 	## Milliseconds since the Unix epoch.
 	now_millis! : {} => U64
 
+	## The offset from UTC, in seconds, of the IANA time zone named (`Europe/Warsaw`) at a moment
+	## (milliseconds since the epoch), summer time counted; an `Err` for a name it doesn't know.
+	zone_offset! : Str, I64 => Try(I64, Str)
+
 	## Nanoseconds since the Unix epoch, on a clock that doesn't go back while the server runs: the
 	## system clock's when the server started, plus a steady clock's time since.
 	now_nanos! : {} => U64

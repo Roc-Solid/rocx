@@ -22,6 +22,22 @@ Time := [].{
 	now_nanos! : {} => U64
 	now_nanos! = |{}| Host.now_nanos!({})
 
+	## How far ahead of UTC the clocks of the time zone `zone` are at `at` (milliseconds since the
+	## epoch), in seconds, summer time counted: `zone` is an IANA name (`Europe/Warsaw`,
+	## `America/New_York`, `UTC`), and one the zone database doesn't have is `UnknownZone`. The time
+	## there is `at` plus it, in milliseconds:
+	##
+	## ```roc
+	## now = Time.now_millis!({}).to_i64_wrap()
+	## there = now + Time.offset!("Europe/Warsaw", now)? * 1000
+	## ```
+	offset! : Str, I64 => Try(I64, [UnknownZone])
+	offset! = |zone, at|
+		match Host.zone_offset!(zone, at) {
+			Ok(seconds) => Ok(seconds)
+			Err(_) => Err(UnknownZone)
+		}
+
 	## Waits `ms` milliseconds: the call that waits (a request, a job; a job's time limit ends the
 	## wait) pauses, and holds no thread (D-027), so the server goes on answering others. For a
 	## retry's pause, or an endpoint that is slow on purpose (a demo's latency).

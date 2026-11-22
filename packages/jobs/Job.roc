@@ -3,10 +3,13 @@ import pf.Plugin
 import Cron
 import CronTicker
 import JobWorker
+import Queue
 import Registry
 import "migrations/0001_jobs.sql" as jobs_table : Str
+import "migrations/0001_jobs_sqlite.sql" as lite_jobs_table : Str
 
-## Work to do outside any request: queued in Postgres (`rocx_jobs`), run in the background by the
+## Work to do outside any request: queued in the app's database (`rocx_jobs`, on Postgres or
+## SQLite), run in the background by the
 ## jobs plugin's workers (`JobWorker`), and run again if it fails (an `Err`, a crash, or its time
 ## limit passing), a little later each time, as many times as its kind says (five unless it says
 ## otherwise). Queued in a transaction (`Db.transaction!`), a job is a row in it: there only if it
@@ -84,7 +87,7 @@ Job := [].{
 		ticker = if (crons.is_empty()) [] else [{ name: "jobs.schedules", run!: |{}| CronTicker.run!(crons) }]
 		{
 			name: "jobs",
-			migrations: [{ name: "0001_jobs", sql: jobs_table }],
+			migrations: [{ name: "0001_jobs", sql: jobs_table, on: Postgres }, { name: "0001_jobs", sql: lite_jobs_table, on: Sqlite }],
 			calls: [{ name: "jobs.run", run!: |input| ran!(handlers, input) }],
 			loops: workers.concat(ticker),
 			starts: [|{}| started!(kinds, crons)],
@@ -99,8 +102,8 @@ Job := [].{
 	kinds! = |{}| Registry.kinds!({})
 
 	## The live topic (`Live.listen!`) the workers say on what they start and finish: `<id> running`,
-	## `<id> done`, `<id> queued`, `<id> failed`. (Postgres notifies `rocx_jobs` too, when a job is
-	## queued or changed: `Db.listen!`.)
+	## `<id> done`, `<id> queued`, `<id> failed`. (The database notifies `rocx_jobs` too, when a job
+	## is queued or changed: `Db.listen!`.)
 	changes : Str
 	changes = "rocx:jobs"
 
@@ -127,7 +130,7 @@ Job := [].{
 	KeyedOpts : { when : When, key : Str }
 
 	## Queues a job of `kind` with `input`, to run when `opts` says. The workers hear of it
-	## (`pg_notify`) once it is there for them: now, or when its transaction commits. A `JobErr`
+	## (`rocx_jobs` is notified) once it is there for them: now, or when its transaction commits. A `JobErr`
 	## when the app has no jobs plugin (`Job.plugin`), or the database refuses.
 	enqueue! : Kind(input), input, Opts => Try({}, [JobErr(Str), ..others])
 		where [input.Json.Encodable([])]
@@ -152,11 +155,21 @@ Job := [].{
 
 	## Cancels the queued jobs with `key`: how many there were. One that is running isn't stopped.
 	cancel! : Str => Try(U64, [JobErr(Str), ..others])
-	cancel! = |key| changed!("update rocx_jobs set state = 'canceled', finished_at = now() where unique_key = $1 and state = 'queued' returning id", [Text(key)])
+	cancel! = |key|
+		changed!(
+			"update rocx_jobs set state = 'canceled', finished_at = now() where unique_key = $1 and state = 'queued' returning id",
+			"update rocx_jobs set state = 'canceled', finished_at = $2 where unique_key = $1 and state = 'queued'",
+			[Text(key)],
+		)
 
 	## Moves the queued job with `key` to run `when` instead: how many there were (0 or 1).
 	move! : Str, When => Try(U64, [JobErr(Str), ..others])
-	move! = |key, when| changed!("update rocx_jobs set run_at = coalesce(to_timestamp($2::bigint / 1000.0), now()) where unique_key = $1 and state = 'queued' returning id", [Text(key), at(when)])
+	move! = |key, when|
+		changed!(
+			"update rocx_jobs set run_at = coalesce(to_timestamp($2::bigint / 1000.0), now()) where unique_key = $1 and state = 'queued' returning id",
+			"update rocx_jobs set run_at = coalesce($2, $3) where unique_key = $1 and state = 'queued'",
+			[Text(key), at(when)],
+		)
 
 	## How the workers run jobs of `kind`, for the plugin's `jobs`: their input decoded from JSON.
 	handler : Kind(input) -> Handler
@@ -196,16 +209,20 @@ Job := [].{
 
 	## The jobs `filter` picks, newest first. A page goes on with `before_id` set to the last one's id.
 	list! : Filter => Try(List(Row), [JobErr(Str), ..others])
-	list! = |filter|
-		rows!(
-			"${columns} where ($1 = '' or state = $1) and ($2 = '' or kind = $2) and ($3::int8 = 0 or id < $3::int8) order by id desc limit nullif($4::int8, 0)",
-			[Text(filter.state), Text(filter.kind), Int(filter.before_id), Int(filter.limit.to_i64_wrap())],
-		)
+	list! = |filter| {
+		filtered =
+			if Queue.lite!({}) {
+				"where ($1 = '' or state = $1) and ($2 = '' or kind = $2) and ($3 = 0 or id < $3) order by id desc limit case when $4 = 0 then -1 else $4 end"
+			} else {
+				"where ($1 = '' or state = $1) and ($2 = '' or kind = $2) and ($3::int8 = 0 or id < $3::int8) order by id desc limit nullif($4::int8, 0)"
+			}
+		rows!("${columns!({})} ${filtered}", [Text(filter.state), Text(filter.kind), Int(filter.before_id), Int(filter.limit.to_i64_wrap())])
+	}
 
 	## The job with this id; `NotFound` if there is none.
 	get! : I64 => Try(Row, [NotFound, JobErr(Str), ..others])
 	get! = |id|
-		match rows!("${columns} where id = $1", [Int(id)]) {
+		match rows!("${columns!({})} where id = $1", [Int(id)]) {
 			Ok([row]) => Ok(row)
 			Ok(_) => Err(NotFound)
 			Err(JobErr(why)) => Err(JobErr(why))
@@ -231,15 +248,28 @@ Job := [].{
 			id,
 			"retried",
 			"update rocx_jobs set state = 'queued', attempts = 0, run_at = now(), locked_at = null, finished_at = null where id = $1 and state in ('failed', 'canceled') returning id",
+			"update rocx_jobs set state = 'queued', attempts = 0, run_at = $2, locked_at = null, finished_at = null where id = $1 and state in ('failed', 'canceled')",
 		)
 
 	## Cancels a queued job.
 	cancel_id! : I64 => Try({}, [NotFound, JobErr(Str), ..others])
-	cancel_id! = |id| acted!(id, "canceled", "update rocx_jobs set state = 'canceled', finished_at = now() where id = $1 and state = 'queued' returning id")
+	cancel_id! = |id|
+		acted!(
+			id,
+			"canceled",
+			"update rocx_jobs set state = 'canceled', finished_at = now() where id = $1 and state = 'queued' returning id",
+			"update rocx_jobs set state = 'canceled', finished_at = $2 where id = $1 and state = 'queued'",
+		)
 
 	## Makes a queued job due now (one queued for later, or waiting to be tried again).
 	run_now! : I64 => Try({}, [NotFound, JobErr(Str), ..others])
-	run_now! = |id| acted!(id, "run now", "update rocx_jobs set run_at = now() where id = $1 and state = 'queued' returning id")
+	run_now! = |id|
+		acted!(
+			id,
+			"run now",
+			"update rocx_jobs set run_at = now() where id = $1 and state = 'queued' returning id",
+			"update rocx_jobs set run_at = $2 where id = $1 and state = 'queued'",
+		)
 }
 
 ## Inserts a job; how many were queued (0 when a pending job has its key).
@@ -248,10 +278,21 @@ queue! = |kind, input, attempts, when, key| {
 	if !Registry.installed!({}) {
 		return Err("the app has no jobs plugin to run ${kind}: list Job.plugin({ jobs: App.jobs }) in its plugins")
 	}
-	queued = Db.run!(
-		"with queued as (insert into rocx_jobs (kind, input, max_attempts, run_at, unique_key) values ($1, $2, $3::int, coalesce(to_timestamp($4::bigint / 1000.0), now()), $5) on conflict (unique_key) where state in ('queued', 'running') do nothing returning id) select pg_notify('rocx_jobs', id::text) from queued",
-		[Text(kind), Text(input), Int(attempts.to_i64_wrap()), at(when), key],
-	)
+	params = [Text(kind), Text(input), Int(attempts.to_i64_wrap()), at(when), key]
+	queued =
+		if Queue.lite!({}) {
+			Queue.told!(
+				Db.run!(
+					"insert into rocx_jobs (kind, input, max_attempts, run_at, unique_key, created_at) values ($1, $2, $3, coalesce($4, $6), $5, $6) on conflict (unique_key) where state in ('queued', 'running') do nothing",
+					params.append(Int(Queue.now!({}))),
+				),
+			)
+		} else {
+			Db.run!(
+				"with queued as (insert into rocx_jobs (kind, input, max_attempts, run_at, unique_key) values ($1, $2, $3::int, coalesce(to_timestamp($4::bigint / 1000.0), now()), $5) on conflict (unique_key) where state in ('queued', 'running') do nothing returning id) select pg_notify('rocx_jobs', id::text) from queued",
+				params,
+			)
+		}
 	match queued {
 		Ok(count) => Ok(count)
 		Err(DbErr(why)) => Err(why)
@@ -265,9 +306,14 @@ at = |when|
 		At(ms) => Text(ms.to_str())
 	}
 
-## A row of `rocx_jobs` as `Job.Row` reads it: times in milliseconds.
-columns : Str
-columns = "select id, kind, input, state, attempts, max_attempts, unique_key as key, (extract(epoch from run_at) * 1000)::int8 as run_at, (extract(epoch from locked_at) * 1000)::int8 as locked_at, (extract(epoch from finished_at) * 1000)::int8 as finished_at, last_error, (extract(epoch from created_at) * 1000)::int8 as created_at from rocx_jobs"
+## A row of `rocx_jobs` as `Job.Row` reads it: times in milliseconds (on SQLite, as they are kept).
+columns! : {} => Str
+columns! = |{}|
+	if Queue.lite!({}) {
+		"select id, kind, input, state, attempts, max_attempts, unique_key as key, run_at, locked_at, finished_at, last_error, created_at from rocx_jobs"
+	} else {
+		"select id, kind, input, state, attempts, max_attempts, unique_key as key, (extract(epoch from run_at) * 1000)::int8 as run_at, (extract(epoch from locked_at) * 1000)::int8 as locked_at, (extract(epoch from finished_at) * 1000)::int8 as finished_at, last_error, (extract(epoch from created_at) * 1000)::int8 as created_at from rocx_jobs"
+	}
 
 rows! : Str, List(Db.Value) => Try(List(Job.Row), [JobErr(Str), ..others])
 rows! = |sql, params| {
@@ -280,20 +326,28 @@ rows! = |sql, params| {
 	}
 }
 
-## Runs `sql` (an `update … returning id`), then tells the workers and the jobs page (`pg_notify`,
-## when its transaction commits): how many jobs it changed.
-changed! : Str, List(Db.Value) => Try(U64, [JobErr(Str), ..others])
-changed! = |sql, params|
-	match Db.run!("with changed as (${sql}) select pg_notify('rocx_jobs', id::text) from changed", params) {
+## Runs `sql` (an `update … returning id`), on SQLite `lite_sql` (an `update`, given now after
+## `params`), then tells the workers and the jobs page (`rocx_jobs` is notified, when its
+## transaction commits): how many jobs it changed.
+changed! : Str, Str, List(Db.Value) => Try(U64, [JobErr(Str), ..others])
+changed! = |sql, lite_sql, params| {
+	done =
+		if Queue.lite!({}) {
+			Queue.told!(Db.run!(lite_sql, params.append(Int(Queue.now!({})))))
+		} else {
+			Db.run!("with changed as (${sql}) select pg_notify('rocx_jobs', id::text) from changed", params)
+		}
+	match done {
 		Ok(count) => Ok(count)
 		Err(DbErr(why)) => Err(JobErr(why))
 	}
+}
 
 ## Acts on job `id` (`sql`, which changes it only in the states it may be in): `NotFound` when there
 ## is no such job; why not, when it is in another state.
-acted! : I64, Str, Str => Try({}, [NotFound, JobErr(Str), ..others])
-acted! = |id, done, sql|
-	match changed!(sql, [Int(id)]) {
+acted! : I64, Str, Str, Str => Try({}, [NotFound, JobErr(Str), ..others])
+acted! = |id, done, sql, lite_sql|
+	match changed!(sql, lite_sql, [Int(id)]) {
 		Ok(0) =>
 			match Job.get!(id) {
 				Ok(row) => Err(JobErr("job #${id.to_str()} is ${row.state}: it can't be ${done}"))
@@ -302,7 +356,7 @@ acted! = |id, done, sql|
 			}
 		Ok(_) => Ok({})
 		Err(JobErr(why)) =>
-			if why.starts_with("23505") {
+			if why.starts_with("23505") or why.contains("UNIQUE constraint failed") {
 				Err(JobErr("job #${id.to_str()} can't be ${done}: another job with its key is pending"))
 			} else {
 				Err(JobErr(why))

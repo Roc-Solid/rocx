@@ -3,12 +3,17 @@
 ## parameters bound as what they are, at their names; rows read into records (a column declared
 ## boolean, one declared json, a real, a null); transactions, and a script that fails; writes taking
 ## turns, and reads going on beside one; what is notified, heard once its transaction commits; a
-## plugin's migrations for SQLite alone; an actor's state, kept.
-app [program] { pf: platform "../../platform/main.roc" }
+## plugin's migrations for SQLite alone; an actor's state, kept; jobs (queued in a transaction or
+## not, tried again, keyed, cancelled, moved, cut off past their time limit), cron, and the jobs page.
+app [program] { pf: platform "../../platform/main.roc", admin: "../../../packages/admin/main.roc", jobs: "../../../packages/jobs/main.roc" }
 
+import admin.JobsPage
+import jobs.Cron
+import jobs.Job
 import pf.Actor
 import pf.Db
 import pf.Live
+import pf.Middleware
 import pf.Plugin
 import pf.Server
 import pf.Time
@@ -25,10 +30,19 @@ program = {
 	routes: [],
 }
 
-## A plugin that works with SQLite alone (`needs`), with a migration for each database (the server
-## applies SQLite's) and one for any.
+## The jobs (packages/jobs), with a schedule each second and a short first retry; the jobs page
+## (packages/admin), open to all; and a plugin that works with SQLite alone (`needs`), with a
+## migration for each database (the server applies SQLite's) and one for any.
 plugins : List(Plugin.Value(Str))
 plugins = [
+	Job.plugin(
+		{
+			jobs: [Job.handler(note_job), Job.handler(flaky_job), Job.handler(slow_job), Job.handler(tick_job)],
+			crons: [Cron.every("* * * * * *", tick_job, {})],
+			retry_ms: 20,
+		},
+	),
+	JobsPage.plugin({ at: "/admin/jobs", guard: Middleware.make(|request, context, next!| next!(request, context)), back: { label: "Tests", href: "/" } }),
 	{
 		name: "lite",
 		needs: [Sqlite],
@@ -50,8 +64,12 @@ counter = Actor.define({
 		},
 })
 
+## A plugin's route, or the app's.
 respond! : Server.Request, Str => Server.Response
-respond! = |request, _context| {
+respond! = |request, context| Plugin.respond!(plugins, { ..request, route: Plugin.pattern(plugins, request.method, request.path) ?? "" }, context, route!)
+
+route! : Server.Request, Str => Server.Response
+route! = |request, _context| {
 	query = request.query
 	match (request.method, request.path) {
 		("GET", "/flavor") =>
@@ -251,6 +269,65 @@ respond! = |request, _context| {
 				Ok(count) => text(200, count.to_str())
 				Err(ActorErr(why)) => text(500, why)
 			}
+
+		# ---- Jobs ----
+		("POST", "/jobs/note") => enqueued(Job.enqueue!(note_job, { said: param(query, "said") }, { when: Now }))
+		# Queued in a transaction: there only if it commits.
+		("POST", "/jobs/note-tx") => {
+			failing = param(query, "fail") == "yes"
+			said = param(query, "said")
+			outcome = Db.transaction!(
+				|{}| {
+					Job.enqueue!(note_job, { said: said }, { when: Now })?
+					if failing Err(JobErr("on purpose")) else Ok({})
+				},
+			)
+			match outcome {
+				Ok({}) => text(200, "committed")
+				Err(JobErr(why)) => text(200, "rolled back: ${why}")
+				Err(DbErr(why)) => text(500, why)
+			}
+		}
+		("POST", "/jobs/flaky") => enqueued(Job.enqueue!(flaky_job, { name: param(query, "name"), fails: I64.from_str(param(query, "fails")) ?? 0 }, { when: Now }))
+		("POST", "/jobs/slow") => enqueued(Job.enqueue!(slow_job, { said: param(query, "said") }, { when: Now }))
+		# Keyed, `in_ms` from now: `Queued`, or `Exists` while one with the key is pending.
+		("POST", "/jobs/keyed") => {
+			due = Time.now_millis!({}) + number(query, "in_ms")
+			match Job.enqueue_keyed!(note_job, { said: param(query, "said") }, { when: At(due), key: param(query, "key") }) {
+				Ok(Queued) => text(200, "queued")
+				Ok(Exists) => text(200, "exists")
+				Err(JobErr(why)) => text(500, why)
+			}
+		}
+		("POST", "/jobs/cancel") => counted(Job.cancel!(param(query, "key")))
+		("POST", "/jobs/move") => counted(Job.move!(param(query, "key"), Now))
+		("POST", "/jobs/retry") =>
+			match Job.retry!(I64.from_str(param(query, "id")) ?? 0) {
+				Ok({}) => text(200, "retried")
+				Err(NotFound) => text(404, "no such job")
+				Err(JobErr(why)) => text(409, why)
+			}
+		("GET", "/jobs/log") => {
+			logged : Try(List({ kind : Str, said : Str }), [DbErr(Str), BadRow(Str)])
+			logged = Db.all!("select kind, said from job_log where kind <> 'tick' order by id", [])
+			lines(logged, |row| "${row.kind} ${row.said}")
+		}
+		("GET", "/jobs/ticks") => {
+			ticks : Try(List({ n : I64 }), [DbErr(Str), BadRow(Str)])
+			ticks = Db.all!("select count(*) as n from job_log where kind = 'tick'", [])
+			lines(ticks, |row| row.n.to_str())
+		}
+		# The queue, as `Job.list!` reads it: `id kind state attempts`, newest first, and `last_error`.
+		("GET", "/jobs/list") =>
+			match Job.list!({ state: param(query, "state"), kind: param(query, "kind"), before_id: 0, limit: 0 }) {
+				Ok(rows) => text(200, Str.join_with(rows.map(|row| "${row.id.to_str()} ${row.kind} ${row.state} ${row.attempts.to_str()} ${shown(row.last_error)}"), "\n"))
+				Err(JobErr(why)) => text(500, why)
+			}
+		("GET", "/jobs/counts") =>
+			match Job.counts!({}) {
+				Ok(rows) => text(200, Str.join_with(rows.map(|row| "${row.kind} ${row.state} ${row.count.to_str()}"), "\n"))
+				Err(JobErr(why)) => text(500, why)
+			}
 		_ => text(404, "no such route")
 	}
 }
@@ -266,6 +343,85 @@ lines = |rows, line|
 		Err(DbErr(why)) => text(500, why)
 		Err(BadRow(why)) => text(500, why)
 	}
+
+enqueued : Try({}, [JobErr(Str)]) -> Server.Response
+enqueued = |result|
+	match result {
+		Ok({}) => text(200, "queued")
+		Err(JobErr(why)) => text(500, why)
+	}
+
+counted : Try(U64, [JobErr(Str)]) -> Server.Response
+counted = |result|
+	match result {
+		Ok(count) => text(200, count.to_str())
+		Err(JobErr(why)) => text(500, why)
+	}
+
+## Writes what it was given to the job log.
+note_job : Job.Kind({ said : Str })
+note_job = Job.define(
+	"note",
+	|{ said }|
+		match Db.run!("insert into job_log (kind, said) values ('note', $1)", [Text(said)]) {
+			Ok(_) => Ok({})
+			Err(DbErr(why)) => Err(why)
+		},
+)
+
+## Fails `fails` times, then writes to the job log.
+flaky_job : Job.Kind({ name : Str, fails : I64 })
+flaky_job = Job.define(
+	"flaky",
+	|{ name, fails }| {
+		tried : Try(List({ tries : I64 }), [DbErr(Str), BadRow(Str)])
+		tried = Db.all!("insert into flaky (name, tries) values ($1, 1) on conflict (name) do update set tries = tries + 1 returning tries", [Text(name)])
+		match tried {
+			Ok([{ tries }]) if tries <= fails => Err("not yet (try ${tries.to_str()})")
+			Ok(_) =>
+				match Db.run!("insert into job_log (kind, said) values ('flaky', $1)", [Text("${name} done")]) {
+					Ok(_) => Ok({})
+					Err(DbErr(why)) => Err(why)
+				}
+			Err(DbErr(why)) => Err(why)
+			Err(BadRow(why)) => Err(why)
+		}
+	},
+)
+
+## Writes to the job log in a transaction, then counts for far longer than its 300 ms: cut off, its
+## statement interrupted, its transaction rolled back with its connection. Tried once.
+slow_job : Job.Kind({ said : Str })
+slow_job = Job.define_with(
+	"slow",
+	{ attempts: 1, timeout_ms: 300 },
+	|{ said }| {
+		counted_up = Db.transaction!(
+			|{}| {
+				_ = Db.run!("insert into job_log (kind, said) values ('slow', $1)", [Text(said)])?
+				many : List({ n : I64 })
+				many = Db.all!("with recursive c(x) as (select 1 union all select x + 1 from c where x < 1000000000) select count(*) as n from c", [])?
+				Ok(many)
+			},
+		)
+		match counted_up {
+			Ok(_) => Ok({})
+			Err(DbErr(why)) => Err(why)
+			Err(BadRow(why)) => Err(why)
+		}
+	},
+)
+
+## The schedule's job: a tick in the job log.
+tick_job : Job.Kind({})
+tick_job = Job.define(
+	"tick",
+	|{}|
+		match Db.run!("insert into job_log (kind, said) values ('tick', 'tick')", []) {
+			Ok(_) => Ok({})
+			Err(DbErr(why)) => Err(why)
+		},
+)
 
 notified : Try({}, [DbErr(Str)]) -> Server.Response
 notified = |result|

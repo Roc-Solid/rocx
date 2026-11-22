@@ -13,6 +13,7 @@ path = "src/lib.rs"
 [dependencies]
 bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+chrono-tz = "0.10.4"
 corosensei = { version = "0.3", default-features = false, features = ["unwind"] }
 deadpool-postgres = "0.14"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }

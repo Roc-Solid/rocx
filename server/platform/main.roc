@@ -142,6 +142,7 @@ platform ""
 		"roc_host_tcp_read_up_to": Host.tcp_read_up_to!,
 		"roc_host_tcp_start_tls": Host.tcp_start_tls!,
 		"roc_host_tcp_write": Host.tcp_write!,
+		"roc_host_zone_offset": Host.zone_offset!,
 		"roc_interval": Host.interval!,
 		"roc_is_pending": Host.is_pending!,
 		"roc_keep": Host.keep!,
@@ -296,28 +297,27 @@ init_for_host! = |{}| {
 	if !problems.is_empty() {
 		return Err(Str.join_with(problems, "\n"))
 	}
-	plugins = Plugins.ordered(program.plugins)
-	Host.actor_kinds!(Str.join_with(program.actors.map(|actor| actor.name), "\n"))
+	# The app's flavor: each plugin's migrations for it alone, for the log and the database.
 	flavor =
-		match Db.backend!({}) {
-			Postgres => Ok(Postgres)
-			Sqlite => Ok(Sqlite)
-			None => Err(None)
+		match program.database {
+			Postgres => Postgres
+			Sqlite(_) => Sqlite
 		}
-	match flavor {
-		Ok(on) => {
-			# The platform's tables, then each plugin's (recorded as `<plugin>/<name>`), then the app's.
-			theirs = plugins.join_map(|plugin| plugin.migrations.keep_if(|migration| applies(migration.on, on)).map(|migration| { name: "${plugin.name}/${migration.name}", sql: migration.sql }))
-			match Migrations.apply!(Migrations.own(on).concat(theirs).concat(program.migrations)) {
-				Err(why) => Err(why)
-				Ok({}) => started!(plugins)
-			}
+	plugins = Plugins.ordered(program.plugins).map(|plugin| { ..plugin, migrations: plugin.migrations.keep_if(|migration| applies(migration.on, flavor)) })
+	Host.actor_kinds!(Str.join_with(program.actors.map(|actor| actor.name), "\n"))
+	if Setting.database!({}) {
+		# The platform's tables, then each plugin's (recorded as `<plugin>/<name>`), then the app's.
+		theirs = plugins.join_map(|plugin| plugin.migrations.map(|migration| { name: "${plugin.name}/${migration.name}", sql: migration.sql }))
+		match Migrations.apply!(Migrations.own(flavor).concat(theirs).concat(program.migrations)) {
+			Err(why) => Err(why)
+			Ok({}) => started!(plugins)
 		}
-		Err(None) => started!(plugins)
+	} else {
+		started!(plugins)
 	}
 }
 
-## Whether a plugin's migration for `on` (`Plugin.Migration`) is one for the database the server has.
+## Whether a plugin's migration for `on` (`Plugin.Migration`) is one for the app's database.
 applies : [Any, Postgres, Sqlite], [Postgres, Sqlite] -> Bool
 applies = |on, flavor|
 	match (on, flavor) {

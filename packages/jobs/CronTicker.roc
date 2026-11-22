@@ -3,6 +3,7 @@ import pf.Live
 import pf.Log
 import pf.Time
 import Cron
+import Queue
 import Registry
 
 ## The schedules (the jobs plugin's `crons`): a background loop, with a database, that sleeps until
@@ -71,10 +72,21 @@ CronTicker := [].{
 queue! : { name : Str, schedule : Str, job : Str, input : Str }, I64 => {}
 queue! = |cron, due| {
 	key = "cron:${cron.name}:${(due // 1000).to_str()}"
-	queued = Db.run!(
-		"with queued as (insert into rocx_jobs (kind, input, unique_key, max_attempts) values ($1, $2, $3, $4::int) on conflict (unique_key) where state in ('queued', 'running') do nothing returning id) select pg_notify('rocx_jobs', id::text) from queued",
-		[Text(cron.job), Text(cron.input), Text(key), Int(Registry.attempts!(cron.job).to_i64_wrap())],
-	)
+	params = [Text(cron.job), Text(cron.input), Text(key), Int(Registry.attempts!(cron.job).to_i64_wrap())]
+	queued =
+		if Queue.lite!({}) {
+			Queue.told!(
+				Db.run!(
+					"insert into rocx_jobs (kind, input, unique_key, max_attempts, run_at, created_at) values ($1, $2, $3, $4, $5, $5) on conflict (unique_key) where state in ('queued', 'running') do nothing",
+					params.append(Int(Queue.now!({}))),
+				),
+			)
+		} else {
+			Db.run!(
+				"with queued as (insert into rocx_jobs (kind, input, unique_key, max_attempts) values ($1, $2, $3, $4::int) on conflict (unique_key) where state in ('queued', 'running') do nothing returning id) select pg_notify('rocx_jobs', id::text) from queued",
+				params,
+			)
+		}
 	match queued {
 		Ok(_) => {}
 		Err(DbErr(why)) => Log.line!("rocx cron: ${cron.name}: ${why}")

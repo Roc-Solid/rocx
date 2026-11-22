@@ -1484,6 +1484,133 @@ const _: () = assert!(core::mem::align_of::<AnonStruct3136a6b59821456e>() == 4, 
 /// Tag discriminant for Try.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostZoneOffsetResultTag {
+    Err = 0,
+    Ok = 1,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub union HostZoneOffsetResultPayload {
+    pub err: core::mem::ManuallyDrop<RocStr>,
+    pub ok: core::mem::ManuallyDrop<i64>,
+}
+
+#[cfg(target_pointer_width = "32")]
+#[repr(align(8))]
+#[derive(Clone, Copy)]
+pub struct HostZoneOffsetResultPayloadAlignment;
+
+/// Tag union: Try
+#[cfg(target_pointer_width = "32")]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostZoneOffsetResult {
+    pub _payload_alignment: [HostZoneOffsetResultPayloadAlignment; 0],
+    pub payload: [u8; 12],
+    pub tag: HostZoneOffsetResultTag,
+}
+
+/// Tag union: Try
+#[cfg(not(target_pointer_width = "32"))]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostZoneOffsetResult {
+    pub payload: HostZoneOffsetResultPayload,
+    pub tag: HostZoneOffsetResultTag,
+}
+
+impl HostZoneOffsetResult {
+    /// Borrow the `Err` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostZoneOffsetResultTag::Err` and the payload must still be initialized.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn borrow_payload_err_unchecked(&self) -> &RocStr {
+        unsafe { &*(self.payload.as_ptr() as *const RocStr) }
+    }
+
+    /// Borrow the `Err` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostZoneOffsetResultTag::Err` and the payload must still be initialized.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn borrow_payload_err_unchecked(&self) -> &RocStr {
+        unsafe { &*(&self.payload.err as *const core::mem::ManuallyDrop<RocStr> as *const RocStr) }
+    }
+
+    /// Move the `Err` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostZoneOffsetResultTag::Err`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn take_payload_err_unchecked(&mut self) -> RocStr {
+        unsafe { core::ptr::read(self.payload.as_ptr() as *const RocStr) }
+    }
+
+    /// Move the `Err` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostZoneOffsetResultTag::Err`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn take_payload_err_unchecked(&mut self) -> RocStr {
+        unsafe { core::mem::ManuallyDrop::take(&mut self.payload.err) }
+    }
+
+    /// Borrow the `Ok` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostZoneOffsetResultTag::Ok` and the payload must still be initialized.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn borrow_payload_ok_unchecked(&self) -> &i64 {
+        unsafe { &*(self.payload.as_ptr() as *const i64) }
+    }
+
+    /// Borrow the `Ok` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostZoneOffsetResultTag::Ok` and the payload must still be initialized.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn borrow_payload_ok_unchecked(&self) -> &i64 {
+        unsafe { &*(&self.payload.ok as *const core::mem::ManuallyDrop<i64> as *const i64) }
+    }
+
+    /// Move the `Ok` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostZoneOffsetResultTag::Ok`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn take_payload_ok_unchecked(&mut self) -> i64 {
+        unsafe { core::ptr::read(self.payload.as_ptr() as *const i64) }
+    }
+
+    /// Move the `Ok` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostZoneOffsetResultTag::Ok`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn take_payload_ok_unchecked(&mut self) -> i64 {
+        unsafe { core::mem::ManuallyDrop::take(&mut self.payload.ok) }
+    }
+
+}
+
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::size_of::<HostZoneOffsetResult>() == 32, "HostZoneOffsetResult size mismatch");
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::align_of::<HostZoneOffsetResult>() == 8, "HostZoneOffsetResult alignment mismatch");
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::offset_of!(HostZoneOffsetResult, tag) == 24, "HostZoneOffsetResult tag offset mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::size_of::<HostZoneOffsetResult>() == 16, "HostZoneOffsetResult size mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::align_of::<HostZoneOffsetResult>() == 8, "HostZoneOffsetResult alignment mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::offset_of!(HostZoneOffsetResult, tag) == 12, "HostZoneOffsetResult tag offset mismatch");
+
+/// Tag discriminant for Try.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostActorAskResultTag {
     Err = 0,
     Ok = 1,
@@ -3027,6 +3154,16 @@ pub struct HostTcpWriteArgs {
     pub arg1: RocListWith<u8, false>,
 }
 
+/// Arguments for Host.zone_offset!
+/// Roc signature: Str, I64 => Try(I64, Str)
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostZoneOffsetArgs {
+    pub arg0: RocStr,
+    pub arg1: i64,
+}
+
 /// Arguments for Host.interval!
 /// Roc signature: U64, Box({} => Str) => U64
 /// Refcounted fields are owned by the hosted function.
@@ -3343,6 +3480,49 @@ pub type RespondForHostUpstream = AnonStructC1c0196657ba1ea1;
 pub type StreamForHostArg0 = AnonStruct608867a33f852b1e;
 
 // Generated Refcount Helpers
+
+impl HostZoneOffsetResult {
+    /// Recursively decrement Roc-owned payloads.
+    ///
+    /// # Safety
+    /// `self` must own one live Roc reference for each refcounted payload.
+    pub unsafe fn decref(self, roc_host: &RocHost) {
+        let mut value = self;
+        let _ = roc_host;
+        match value.tag {
+            HostZoneOffsetResultTag::Err => {
+                let payload = unsafe { value.take_payload_err_unchecked() };
+                unsafe { payload.decref(roc_host); }
+            },
+            HostZoneOffsetResultTag::Ok => {},
+        }
+    }
+
+    /// Increment Roc-owned payloads.
+    ///
+    /// # Safety
+    /// `self` must point at live Roc allocations. The retained references must
+    /// be balanced by later decrefs.
+    pub unsafe fn incref(self, amount: isize) {
+        let value = self;
+        let _ = amount;
+        match value.tag {
+            HostZoneOffsetResultTag::Err => {
+                let payload = unsafe { core::ptr::read(value.borrow_payload_err_unchecked()) };
+                unsafe { payload.incref(amount); }
+            },
+            HostZoneOffsetResultTag::Ok => {},
+        }
+    }
+}
+
+pub struct HostZoneOffsetResultRelease;
+
+unsafe impl RocRelease<HostZoneOffsetResult> for HostZoneOffsetResultRelease {
+    unsafe fn release(value: HostZoneOffsetResult, roc_host: &RocHost) {
+        unsafe { value.decref(roc_host); }
+    }
+}
 
 impl AnonStruct2e6fc7635560c0c3 {
     /// Recursively decrement Roc-owned fields.
@@ -3908,7 +4088,7 @@ impl AnonStruct8f4fc9623a0f6755 {
     pub unsafe fn decref(self, roc_host: &RocHost) {
         let value = self;
         unsafe { value.bytes.decref(roc_host); }
-        unsafe { decref_box_with(value.feed as RocBox, core::mem::align_of::<AnonStruct608867a33f852b1e>(), true, Some(decref_box_payload_type70), roc_host); }
+        unsafe { decref_box_with(value.feed as RocBox, core::mem::align_of::<AnonStruct608867a33f852b1e>(), true, Some(decref_box_payload_type73), roc_host); }
         unsafe { value.headers.decref(roc_host); }
         unsafe { decref_erased_callable(value.page, roc_host); }
         unsafe { value.text.decref(roc_host); }
@@ -4009,7 +4189,7 @@ unsafe impl RocRelease<AnonStruct3136a6b59821456e> for AnonStruct3136a6b59821456
     }
 }
 
-extern "C" fn decref_box_payload_type56(data_ptr: *mut c_void, roc_host: *mut RocHost) {
+extern "C" fn decref_box_payload_type59(data_ptr: *mut c_void, roc_host: *mut RocHost) {
     if data_ptr.is_null() || roc_host.is_null() {
         return;
     }
@@ -4018,7 +4198,7 @@ extern "C" fn decref_box_payload_type56(data_ptr: *mut c_void, roc_host: *mut Ro
     unsafe { payload.decref(roc_host); }
 }
 
-extern "C" fn decref_box_payload_type70(data_ptr: *mut c_void, roc_host: *mut RocHost) {
+extern "C" fn decref_box_payload_type73(data_ptr: *mut c_void, roc_host: *mut RocHost) {
     if data_ptr.is_null() || roc_host.is_null() {
         return;
     }
@@ -4545,6 +4725,14 @@ unsafe extern "C" {
     ///     unsafe { arg1.decref(roc_host); }
     /// The result is owned by Roc: return exactly one owned reference.
     pub fn roc_host_tcp_write(arg0: u64, arg1: RocListWith<u8, false>) -> HostDbBeginResult;
+
+    /// Hosted symbol for Host.zone_offset!
+    /// Roc signature: Str, I64 => Try(I64, Str)
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_zone_offset(arg0: RocStr, arg1: i64) -> HostZoneOffsetResult;
 
     /// Hosted symbol for Host.interval!
     /// Roc signature: U64, Box({} => Str) => U64

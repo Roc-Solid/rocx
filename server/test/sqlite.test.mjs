@@ -174,9 +174,12 @@ test("what is notified is heard when its transaction commits, at once outside on
 });
 
 test("the platform's tables and a plugin's for SQLite are made, a plugin's for Postgres isn't; each recorded once, and a restart applies none again", { skip }, async () => {
-	assert.equal(await server.text("/tables"), ["any_flavor", "counters", "items", "lite_only", "rocx_actors", "rocx_migrations", "scratch"].join("\n"));
-	assert.equal(await server.text("/migrated"), ["0001_tables.sql", "lite/0001_lite", "lite/0002_any", "rocx/0001 jobs and actors"].join("\n"));
-	assert.match(server.logged(), /migrated: rocx\/0001 jobs and actors[\s\S]*migrated: lite\/0001_lite[\s\S]*migrated: 0001_tables.sql/);
+	assert.equal(
+		await server.text("/tables"),
+		["any_flavor", "counters", "flaky", "items", "job_log", "lite_only", "rocx_actors", "rocx_jobs", "rocx_migrations", "scratch"].join("\n"),
+	);
+	assert.equal(await server.text("/migrated"), ["0001_tables.sql", "jobs/0001_jobs", "lite/0001_lite", "lite/0002_any", "rocx/0001 jobs and actors"].join("\n"));
+	assert.match(server.logged(), /migrated: rocx\/0001 jobs and actors[\s\S]*migrated: jobs\/0001_jobs[\s\S]*migrated: lite\/0001_lite[\s\S]*migrated: 0001_tables.sql/);
 	const cwd = join(dir, "restarted");
 	const first = await start([], { cwd });
 	await first.stop();
@@ -217,4 +220,66 @@ test("a plugin that needs Postgres stops a SQLite app at start, saying so", { sk
 	);
 	assert.equal(refused.code, 1);
 	assert.match(refused.logged, /pg-only: it needs Postgres, and the app's database is SQLite/);
+});
+
+// ---- Jobs and cron (packages/jobs on SQLite) ----
+
+/** Waits until `check` (async) is true, or fails after `ms`. */
+async function until(check, ms = 5000) {
+	const started = performance.now();
+	while (!(await check())) {
+		if (performance.now() - started > ms) assert.fail(`not within ${ms} ms`);
+		await new Promise((resolve) => setTimeout(resolve, 25));
+	}
+}
+
+test("jobs: queued and run; queued in a transaction, run only if it commits; tried again until it passes", { skip }, async () => {
+	assert.equal(await server.post("/jobs/note?said=hello"), "queued");
+	assert.equal(await server.post("/jobs/note-tx?said=kept"), "committed");
+	assert.equal(await server.post("/jobs/note-tx?said=dropped&fail=yes"), "rolled back: on purpose");
+	assert.equal(await server.post("/jobs/flaky?name=f1&fails=2"), "queued");
+	await until(async () => (await server.text("/jobs/log")).includes("flaky f1 done"));
+	const log = await server.text("/jobs/log");
+	assert.match(log, /^note hello$/m);
+	assert.match(log, /^note kept$/m);
+	assert.doesNotMatch(log, /dropped/);
+	assert.match(await server.text("/jobs/list?kind=flaky"), /^\d+ flaky done 3 -$/m, "tried three times");
+});
+
+test("jobs: a key is one pending job's; a keyed job is cancelled or moved by it", { skip }, async () => {
+	assert.equal(await server.post("/jobs/keyed?key=k1&said=later&in_ms=60000"), "queued");
+	assert.equal(await server.post("/jobs/keyed?key=k1&said=again&in_ms=60000"), "exists");
+	assert.equal(await server.post("/jobs/keyed?key=k2&said=moved&in_ms=60000"), "queued");
+	assert.equal(await server.post("/jobs/cancel?key=k1"), "1");
+	assert.equal(await server.post("/jobs/cancel?key=k1"), "0");
+	assert.equal(await server.post("/jobs/move?key=k2"), "1");
+	await until(async () => /^note moved$/m.test(await server.text("/jobs/log")));
+	assert.doesNotMatch(await server.text("/jobs/log"), /later|again/);
+	// Canceled, the key is free again.
+	assert.equal(await server.post("/jobs/keyed?key=k1&said=free&in_ms=60000"), "queued");
+	assert.equal(await server.post("/jobs/cancel?key=k1"), "1");
+});
+
+test("jobs: one past its time limit is cut off, its statement interrupted and its transaction rolled back; the next write doesn't wait; retried, it is queued again", { skip }, async () => {
+	assert.equal(await server.post("/jobs/slow?said=slow1"), "queued");
+	let failed;
+	await until(async () => (failed = /^(\d+) slow failed 1 timed out after 300 ms$/m.exec(await server.text("/jobs/list?kind=slow"))) !== null);
+	assert.doesNotMatch(await server.text("/jobs/log"), /slow1/, "its write rolled back");
+	const started = performance.now();
+	assert.match(await server.post("/items?name=after-slow"), /^\d+$/);
+	assert.ok(performance.now() - started < 500, "the write lock was let go");
+	assert.equal(await server.post(`/jobs/retry?id=${failed[1]}`), "retried");
+	await until(async () => new RegExp(`^${failed[1]} slow failed 1 timed out`, "m").test(await server.text("/jobs/list?kind=slow")));
+});
+
+test("cron: a schedule each second queues its job, once a second", { skip }, async () => {
+	const before = Number(await server.text("/jobs/ticks"));
+	await until(async () => Number(await server.text("/jobs/ticks")) >= before + 2, 4000);
+	assert.match(await server.text("/jobs/counts"), /^tick done \d+$/m);
+});
+
+test("the jobs page shows the queue and the last hour, with no problem", { skip }, async () => {
+	const page = await (await fetch(`${server.url}/admin/jobs`)).text();
+	assert.match(page, /Finished jobs/);
+	assert.doesNotMatch(page, /class="problem"/);
 });

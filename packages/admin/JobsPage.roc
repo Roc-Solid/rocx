@@ -252,10 +252,18 @@ metrics = |mount, counts, state, kind| {
 ## when it took more than one attempt) or failed.
 activity! : Str => Try(List({ bucket : I64, state : Str, count : I64 }), [DbErr(Str), BadRow(Str)])
 activity! = |kind|
-	Db.all!(
-		"select greatest(0, least(11, floor(extract(epoch from (now() - finished_at)) / 300)))::int8 as bucket, case when state = 'done' and attempts > 1 then 'retried' else state end as state, count(*)::int8 as count from rocx_jobs where finished_at > now() - interval '60 minutes' and state in ('done', 'failed') and ($1 = '' or kind = $1) group by 1, 2",
-		[Text(kind)],
-	)
+	if Db.backend!({}) == Sqlite {
+		# The queue's times are milliseconds there (packages/jobs, D-045).
+		Db.all!(
+			"select max(0, min(11, ($2 - finished_at) / 300000)) as bucket, case when state = 'done' and attempts > 1 then 'retried' else state end as state, count(*) as count from rocx_jobs where finished_at > $2 - 3600000 and state in ('done', 'failed') and ($1 = '' or kind = $1) group by 1, 2",
+			[Text(kind), Int(Time.now_millis!({}).to_i64_wrap())],
+		)
+	} else {
+		Db.all!(
+			"select greatest(0, least(11, floor(extract(epoch from (now() - finished_at)) / 300)))::int8 as bucket, case when state = 'done' and attempts > 1 then 'retried' else state end as state, count(*)::int8 as count from rocx_jobs where finished_at > now() - interval '60 minutes' and state in ('done', 'failed') and ($1 = '' or kind = $1) group by 1, 2",
+			[Text(kind)],
+		)
+	}
 
 ## The last hour, as twelve bars of five minutes: done, done after a retry, and failed.
 activity_panel! : Str, Str => Str
