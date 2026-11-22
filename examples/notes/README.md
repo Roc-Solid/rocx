@@ -260,9 +260,10 @@ What the app met, and how it works around each. None needed a change outside the
 11. **The app's public address isn't the platform's to know.** A link in email needs it, and a
     request's `Host` is whatever the asker sends (a link to their site, mailed to you, would hand them
     your token). Workaround: `NOTES_ORIGIN`.
-12. **A plain form's result travels in the flash cookie**: a token made without JavaScript rides in
-    `rocx-flash` (`HttpOnly`, `SameSite=Lax`, 60 s) to the page that shows it, which lets it go.
-    With the runtime it never leaves the answer.
+12. **Fixed: a plain form's result travelled in the flash cookie**, so a token made without
+    JavaScript rode in `rocx-flash` to the page that shows it. The platform now keeps a flash in the
+    server's memory for a minute; the cookie holds a random id, and the page that shows the token
+    takes it, once. With the runtime it never leaves the answer.
 13. **An unticked checkbox sends nothing**, so a form whose record has its field fails to read: the
     token's access is two radio buttons, one always ticked.
 14. **Fixed: `Db.Value` had no list** (D-016), so tags went as a JSON array, `array(select

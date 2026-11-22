@@ -300,18 +300,24 @@ Server.flash!({})      # Ok({ url: "/members/join", fields: [{ name: "name", val
 A form a browser posts without the runtime (a plain `<form method="post">`: a form's body,
 `application/x-www-form-urlencoded`, from a page, `accept: text/html`) would get a page of JSON, or
 of text, from its endpoint. `Endpoint.respond!` sends neither: for its result, its refusal, or a
-body it can't read (400), it answers `Server.flash_back`: a 303 to the page the form was posted
-from (`Referer`, when it is this site's; `/` otherwise), with the cookie `rocx-flash` (the URL it
-posted to, the form's body as posted, the status and the body: `Path=/; HttpOnly; SameSite=Lax;
-Max-Age=60`; past what a cookie may hold, ~3.8 KB, the fields are left out and the answer kept). An
-answer of the endpoint's own (`Err(Answer(…))`: a redirect that sets a cookie) is sent as it is.
+body it can't read (400), it answers `Server.flash_back!`: a 303 to the page the form was posted
+from (`Referer`, when it is this site's; `/` otherwise), with a flash: the URL it posted to, the
+form's body as posted (however long), the status and the body. The flash is kept in the server's
+memory (the store `Kv` uses) for a minute, under a random id, and the cookie `rocx-flash` holds
+only that id (`Path=/; HttpOnly; SameSite=Lax; Max-Age=60`). With `--debug` or `--dev` the 303 also
+says what the flash holds but the fields (`x-rocx-flash`: its URL, status and body), for tests
+(packages/testing's `flash`). An answer of the endpoint's own (`Err(Answer(…))`: a redirect that
+sets a cookie) is sent as it is.
 The page the browser lands on reads it with `Server.flash!({})`, or as its form's submission
 (`Router.use_submission!(endpoint)`, which is the flash when it is that endpoint's): what was typed,
-and the result or the refusal. The host notes the flash a page read in `<script
-type="application/json" class="rocx-flash">`, before the answers, so the browser renders it as the
-server did. `App.program` lets it go with that page (`Server.clear_flash`: a browser's next GET of
-a page clears the cookie, read or not), so a reload doesn't show it again; an app that writes its
-own program calls `Server.clear_flash(request, answer)` itself.
+and the result or the refusal. The first read while a page renders takes it from the store, so a
+flash is read once (a replayed cookie finds nothing); the host keeps it for the page's other reads,
+and notes it in `<script type="application/json" class="rocx-flash">`, before the answers, so the
+browser renders it as the server did. A password is never sent back: `Html` leaves the `value` out
+of an `<input type="password">`, whatever a component gives it, and the note leaves out each field
+the page has as one. `App.program` lets the cookie go with that page (`Server.clear_flash`: a
+browser's next GET of a page clears it, read or not), so a reload doesn't show it again; an app
+that writes its own program calls `Server.clear_flash(request, answer)` itself.
 
 With the runtime, a form whose page reads its submission is sent with `fetch` instead
 (`x-rocx-submission: 1`, `accept: application/json`): it gets the endpoint's result as JSON, or its

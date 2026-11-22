@@ -112,6 +112,8 @@ struct Render {
     fetched: HashMap<String, String>,
     /// The flash a plain form's post came back with, if the page read it (`Server.flash!`).
     flash: Option<String>,
+    /// The names of the page's `<input type="password">`s: fields the flash's note leaves out.
+    secrets: Vec<String>,
     /// The title the last `<Title>` rendered said, if one did (`Host.title!`): the page's `<head>`'s.
     title: Option<String>,
     /// The first redirect a GET the page read was answered with as it rendered (its
@@ -207,7 +209,7 @@ pub fn render_page(page: roc::Page) -> Result<Rendered, Crash> {
     });
     let mut render = end();
     let answers = std::mem::take(&mut render.recorded);
-    let flash = render.flash.take();
+    let flash = render.flash.take().map(|flash| without_secrets(&flash, &render.secrets));
     let title = render.title.take();
     let redirect = render.redirect.take();
     render.release_all();
@@ -427,9 +429,18 @@ fn html(node: &Value, scope: &Scope) -> Result<String, Stop> {
             let mut classes: Vec<String> = Vec::new();
             let mut attributes: Vec<String> = Vec::new();
             let mut styles: Vec<String> = Vec::new();
+            // An `<input type="password">`'s name, for the flash's note (`without_secrets`).
+            let (mut secret, mut named) = (false, String::new());
             for attribute in field("a").as_array().into_iter().flatten() {
                 let part = |index: usize| attribute.get(index).unwrap_or(&Value::Null);
                 let name = part(1).as_str().unwrap_or("");
+                if part(0).as_str() == Some("v") {
+                    match name {
+                        "type" => secret = shown(part(2)).eq_ignore_ascii_case("password"),
+                        "name" => named = shown(part(2)),
+                        _ => {}
+                    }
+                }
                 match part(0).as_str().unwrap_or("") {
                     "on" | "onp" | "onk" | "frame" if scope.region => return Err(Stop::Crashed(in_region(tag, name))),
                     "v" if name == "class" => classes.push(shown(part(2))),
@@ -486,6 +497,9 @@ fn html(node: &Value, scope: &Scope) -> Result<String, Stop> {
                     _ => {}
                 }
             }
+            if secret && tag.eq_ignore_ascii_case("input") && !named.is_empty() {
+                with(|render| render.secrets.push(named));
+            }
             if !classes.is_empty() {
                 attributes.insert(0, format!("class=\"{}\"", escape(&classes.join(" "))));
             }
@@ -504,6 +518,49 @@ fn html(node: &Value, scope: &Scope) -> Result<String, Stop> {
 /// hydrates what is there, so it would never run.
 fn in_region(tag: &str, event: &str) -> String {
     format!("rocx: <{tag} on:{event}> is inside <NoHydration>, which the browser never hydrates, so its handler would never run: render what has it outside <NoHydration>")
+}
+
+/// The flash's JSON (`{"url":…,"input":…,…}`, its `input` a form's body) without the fields the
+/// page has as `<input type="password">` (`secrets`): what was typed in one never reaches the page,
+/// not even in its note for the browser. As it was when it has none of them.
+fn without_secrets(flash: &str, secrets: &[String]) -> String {
+    if secrets.is_empty() {
+        return flash.to_string();
+    }
+    let Ok(Value::Object(mut kept)) = serde_json::from_str::<Value>(flash) else { return flash.to_string() };
+    let Some(input) = kept.get("input").and_then(Value::as_str) else { return flash.to_string() };
+    let fields: Vec<&str> = input.split('&').filter(|field| !field.is_empty()).collect();
+    let left: Vec<&str> = fields.iter().copied().filter(|field| !secrets.contains(&form_decoded(field.split('=').next().unwrap_or("")))).collect();
+    if left.len() == fields.len() {
+        return flash.to_string();
+    }
+    kept.insert("input".into(), Value::String(left.join("&")));
+    serde_json::to_string(&kept).unwrap_or_else(|_| flash.to_string())
+}
+
+/// A form's field name as a browser encodes it, decoded: `+` a space, `%XX` a byte.
+fn form_decoded(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        let hex = |index: usize| bytes.get(index).and_then(|byte| (*byte as char).to_digit(16));
+        match (bytes[at], hex(at + 1), hex(at + 2)) {
+            (b'%', Some(high), Some(low)) => {
+                out.push((high * 16 + low) as u8);
+                at += 3;
+            }
+            (b'+', _, _) => {
+                out.push(b' ');
+                at += 1;
+            }
+            (byte, _, _) => {
+                out.push(byte);
+                at += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// The flash a page read, as a script for the browser (web/runtime.js's `flashScript`): the
@@ -974,14 +1031,17 @@ pub extern "C" fn roc_cleanup(cleanup: Callable) {
     roc::release(cleanup);
 }
 
-/// The flash Roc found in the request's cookie (`Server.flash!`): noted for the page being
-/// rendered, which carries it to the browser, and given back.
+/// The flash Roc took from the store (`Server.flash!`, platform/FlashStore.roc): noted for the
+/// page being rendered, which carries it to the browser, and given back. Given nothing, the flash
+/// this render noted already, if any: the store gives a flash once, and a page may read it in
+/// several places, so the render keeps it, as nothing in Roc lasts from one read to the next.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_flash(found: RocStr) -> RocStr {
     let found = taken(found);
-    if !found.is_empty() {
-        with(|render| render.flash = Some(found.clone()));
+    if found.is_empty() {
+        return given(&with(|render| render.flash.clone()).flatten().unwrap_or_default());
     }
+    with(|render| render.flash = Some(found.clone()));
     given(&found)
 }
 

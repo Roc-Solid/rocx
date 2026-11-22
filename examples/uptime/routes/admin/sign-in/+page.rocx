@@ -1,5 +1,7 @@
 import pf.Html
 import pf.Endpoint
+import pf.Server
+import pf.Show
 import pf.Title
 import pf.Router exposing [use_submission!]
 import pf.Router
@@ -8,13 +10,11 @@ import ../../../Generated/Api
 
 ## The admin's sign-in: the password the server was started with (`ADMIN_PASSWORD`). The admin's
 ## pages send a browser here, with where it was going (`?next=/admin/jobs`), and it goes on there.
-## A refusal comes back as `?problem=…`, which the page says in words.
+## A refusal is the submission's error, with the runtime or without it (a flash).
 meta = { title: "Sign in · Acme Status" }
 
 view! = |_| {
-	query = Router.location!({}).query
-	next = Words.query_value(query, "next")
-	problem = Words.query_value(query, "problem")
+	next = Words.query_value(Router.location!({}).query, "next")
 	sign_in = Api.post_admin_sign_in({})
 	submission = use_submission!(sign_in)
 	<section class="sign-in">
@@ -25,20 +25,10 @@ view! = |_| {
 			<input id="password" name="password" type="password" required autocomplete="current-password" />
 			<input type="hidden" name="next" value={if (next.is_empty()) "/admin" else next} />
 			<button disabled?={submission.pending!()}>{if (submission.pending!()) "Signing in…" else "Sign in"}</button>
-			<p class="problem" role="alert" hidden?={problem.is_empty()}>{said(problem)}</p>
+			<Show when!={submission.error!()}>{|problem!| <p class="problem" role="alert">{Server.explain(problem!())}</p>}</Show>
 		</form>
 	</section>
 }
-
-## What a refusal's code (`?problem=…`) means.
-said : Str -> Str
-said = |problem|
-	match problem {
-		"wrong" => "That isn't the admin password."
-		"closed" => "Signing in is off: start the server with ADMIN_PASSWORD set."
-		"too-many" => "Too many tries: wait a minute and try again."
-		_ => ""
-	}
 
 <style>
 	.sign-in {

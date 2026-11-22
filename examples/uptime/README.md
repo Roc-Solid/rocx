@@ -149,7 +149,8 @@ DATABASE_URL=postgres://rocx:rocx@127.0.0.1:55432/rocx node --test 'examples/upt
   - the app's own monitors checking `/health` and `/demo/flaky`, and the demo's switch;
   - a monitor's page and JSON, and the 404s;
   - subscribing, as a plain form and as the runtime sends it, a wrong address, the unsubscribe link;
-  - the admin's sign-in, a wrong password with no flash, the pages, packages/admin and the jobs page;
+  - the admin's sign-in, a wrong password refused and never sent back (no cookie, no `value`), the
+    pages, packages/admin and the jobs page;
   - **up → down → up**: checks queued with `enqueue()` and run with `settleJobs()`; two failures
     give "degraded", the third opens the incident; the alert mail arrives (`waitForMail`) for the
     test's subscriber and the seeded one; the status page and its JSON say "Partial outage"; a
@@ -204,12 +205,13 @@ Every gap met, and what the app does about each:
    a client writes that header (`Origin.roc`, with expects). Until a page has been asked, the app's
    checks of itself wait and log why. A `Server.address!` or a setting with the port would remove
    this.
-3. **A plain form's flash keeps what the form sent, so a password sent to the sign-in form would
-   sit in the `rocx-flash` cookie and in the page's flash script.** This happens whenever the
-   endpoint refuses (a wrong password). The sign-in endpoint never refuses: it answers its own
-   redirect back to the form with `?problem=wrong` (`Err(Answer(…))`), and the page says the
-   problem in words. Fields that are never kept (`type="password"`, or a list the endpoint gives)
-   would make this safe by default. The HTTP test checks that no flash is set.
+3. **Fixed: a plain form's flash kept what the form sent**, so a password sent to the sign-in form
+   would have sat in the `rocx-flash` cookie and in the page's flash script, and the sign-in
+   answered its own redirect with `?problem=wrong` instead of refusing. The platform now keeps a
+   flash in the server's memory (the cookie holds a random id, taken once), never fills an
+   `<input type="password">` in again, and leaves its field out of the page's note of the flash. The
+   sign-in refuses as any endpoint does (`Status(401, …)`), and the page shows the submission's
+   error; the HTTP test checks that no cookie and no part of the page holds the password.
 4. **packages/otel's actor must be copied into the app**, as its README says (`rocx build` lists
    actor kinds only from the app's own files). `Otel.roc` is a verbatim copy, and
    `test/copies.test.mjs` fails if it drifts.

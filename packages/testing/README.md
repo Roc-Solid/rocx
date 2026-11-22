@@ -80,7 +80,7 @@ test("a note posted from the page", async () => {
 
 	const posted = await person.post("/notes", { body: "milk" }); // a plain form, from that page
 	assert.equal(posted.status, 303);
-	assert.deepEqual(person.flash, { url: "/notes", input: "body=milk", status: 200, body: '"added milk"' });
+	assert.deepEqual(person.flash, { url: "/notes", status: 200, body: '"added milk"' }); // what the page it lands on reads
 	await posted.follow();
 
 	assert.equal(await person.read("/notes"), 3); // an endpoint, read as a page reads it
@@ -192,7 +192,7 @@ labels skip what a reader can't see: `hidden`, `aria-hidden="true"`, `display: n
 | Module | What it gives a test |
 |---|---|
 | `dom.mjs` | `parse(html)`, `within(node)`: Testing Library's queries, `getByRole(role, { name, level, hidden })`, `getByText`, `getByLabelText`, `getByTestId`, each as `queryBy…` (null), `getAllBy…`, `queryAllBy…`. A name or text is a string, matched whole with its whitespace collapsed, or a RegExp. A node has `text`, `attr(name)`, `role`, `name`, `hasClass`, `elements`. The rules are `Dom.roc`'s. |
-| `server.mjs` | `startServer(executable, { statics, database, dev, flags, env })`: the server on a free port, with `--debug`. Its `client()` is a cookie jar: `get`, `post` (a plain form, from the last page), `submit` (as the runtime sends a form), `json`, `put`, `read(path)` (a GET endpoint, as a page reads it), `events(path)`, and `flash`. Each `Answer` has `status`, `location`, `text`, `json()`, `dom`, `follow()`. Also `mail()`, `waitForMail(match, { after })`, `logs()` (the JSON log), `stop()`; `links(message)`, `until(check)`, `storyPath(module, name)`. |
+| `server.mjs` | `startServer(executable, { statics, database, dev, flags, env })`: the server on a free port, with `--debug`. Its `client()` is a cookie jar: `get`, `post` (a plain form, from the last page), `submit` (as the runtime sends a form), `json`, `put`, `read(path)` (a GET endpoint, as a page reads it), `events(path)`, and `flash` (what a plain post's flash holds, which the server keeps and says with `--debug`: its URL, status and body). Each `Answer` has `status`, `location`, `text`, `json()`, `dom`, `follow()`. Also `mail()`, `waitForMail(match, { after })`, `logs()` (the JSON log), `stop()`; `links(message)`, `until(check)`, `storyPath(module, name)`. |
 | `postgres.mjs` | `testDatabase(url, { template })`: a database of the test's own, with `url`, `query`, `` sql`…${value}` `` (values as literals), `jobs`, `enqueue`, `settleJobs`, `drop`. `connect(url)`. A client of its own, over Node's sockets: SCRAM-SHA-256, the simple query protocol, rows as objects of numbers, booleans, JSON and text. |
 | `browser.mjs` | `launchBrowser({ engine })` (`"chromium"`, or `"gecko"`), `browser.open(url, { strict, cookies, script })`: a `Tab` with the queries (async), `findBy…`, `waitFor(check)`, `dom()`, `text()`, `requested()`, `errors`, `console`, `screenshot()`, `drag(source, target)`, `finish()`. Each `Element` has `click()`, `fill(text)`, `type(text)`, `press(key)`, `value()`, `checked()`, `selector()`. |
 | `build.mjs` | `buildForTests(dir, { client, dev, opt })`: `rocx build`, the browser's wasm, the server; `{ server, statics }` |

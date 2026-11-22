@@ -771,6 +771,7 @@ route! = |request, context| {
 		(_, "/flash/join") => Endpoint.respond!(join_endpoint, request, {})
 		(_, "/flash/away") => Endpoint.respond!(away_endpoint, request, {})
 		("GET", "/flash/page") => page(joining!)
+		("GET", "/flash/sign-in") => page(signing_in!)
 
 		# ---- TCP ----
 		("POST", "/tcp") =>
@@ -1921,6 +1922,40 @@ join_endpoint = Endpoint.local(
 ## POST /flash/away: an answer of its own, a redirect that sets a cookie.
 away_endpoint : Endpoint({}, {}, Str)
 away_endpoint = Endpoint.local("POST", "/flash/away", |_, {}, {}| Err(Answer(Server.with_cookie(Server.redirect("/members"), "member", "Ada"))))
+
+## A sign-in page: the joining form with a password, each field filled in again from the submission
+## (`field!`), as a careless page would: the password never is (`Html` leaves its `value` out), and
+## the page's note of the flash for the browser leaves it out too.
+signing_in! : {} => Html
+signing_in! = |{}| {
+	submission = Router.use_submission!(join_endpoint)
+	problem =
+		match submission.error!() {
+			Ok(said) => Server.explain(said)
+			Err(NoError) => ""
+		}
+	Html.element(
+		"html",
+		[],
+		[
+			Html.element(
+				"body",
+				[],
+				[
+					Html.element(
+						"form",
+						[Html.attr("method", "post"), Html.attr("action", Endpoint.url_of(join_endpoint))],
+						[
+							Html.void("input", [Html.attr("name", "name"), Html.attr_of("value", || submission.field!("name"))]),
+							Html.void("input", [Html.attr("type", "password"), Html.attr("name", "secret"), Html.attr_of("value", || submission.field!("secret"))]),
+						],
+					),
+					Html.element("p", [Html.attr("class", "problem")], [Html.text(problem)]),
+				],
+			),
+		],
+	)
+}
 
 ## The joining page: the flash as it came (`Server.flash!`), and the form's submission
 ## (`use_submission!`): what was typed, and the refusal or the welcome.

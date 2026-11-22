@@ -41,7 +41,7 @@ same components natively; this one hydrates them.
   page is answered with); and HTTP's: `Server` (a request, its body the bytes as they came, which `text_of` reads as text, and its answer: text, bytes, a
   page, events, or a body the server fetches from elsewhere and sends on, `forward`, with what of
   the request it passes on, `passed_on`; cookies and redirects; the flash a plain form's post comes
-  back with, `flash!`, `flash_back`, `clear_flash`), `Endpoint` (a
+  back with, `flash!`, `flash_back!`, `clear_flash`), `Endpoint` (a
   GET endpoint read as a plain value, `get!` or `read!`, with a query, `with_query`; any endpoint
   sent from a handler, `send!`, or listened to, `listen!`; a form's `action`, `url_of`; a channel
   subscribed to, `subscribe!`, said to, `say!`, or resynced, `resync!`, and, on the server,
@@ -231,10 +231,14 @@ same components natively; this one hydrates them.
   flash or none, and nothing is applied, so the page hydrates as rendered. The endpoint's contract
   (`Generated/Api`, D-037) types its submissions in both copies of the app: `use_submissions!(Api.post_move({}))`
   is a `Submissions(Move, Str)`, with nothing for a component to say.
-- **The flash**: on the server, `Server.flash!` reads the `rocx-flash` cookie a plain form's post came
-  back with, and the runtime notes what the page read (`Host.flash!`). The page carries it in
-  `<script type="application/json" class="rocx-flash">`, before the answers, which hydration reads
-  and takes out, so the browser's first render is the server's.
+- **The flash**: on the server, `Server.flash!` takes the flash a plain form's post came back with
+  from the server's memory, by the id in the `rocx-flash` cookie, and the host notes what the page
+  read (`Host.flash!`), leaving out the fields the page has as `<input type="password">`. The page
+  carries it in `<script type="application/json" class="rocx-flash">`, before the answers, which
+  hydration reads and takes out, so the browser's first render is the server's. Each platform has
+  its own `FlashStore` (the module `Server` keeps and reads flashes through); renderToString's
+  (the tests') reads the flash from the cookie itself. `Html` never writes a `value` into an
+  `<input type="password">`.
 - **Contexts** are named by rocx (`Context.required("Demos/Picks.picks_context")`), since Roc's
   values have no identity; the runtime carries provided values down as it builds.
 - **The document's title** (`<Title>`, `Title.view!`, `import pf.Title`), decided as @solidjs/meta

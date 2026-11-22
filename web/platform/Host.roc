@@ -117,8 +117,9 @@ Host := [].{
 	## On the server, let go of: nothing it would undo started there.
 	cleanup! : Box(() => Str) => {}
 
-	## The flash a plain form's post came back with (`Server.flash!`), as JSON: on the server, what
-	## Roc found in the request's cookie, noted for the page; in the browser, what the page noted.
+	## The flash a plain form's post came back with (`Server.flash!`), as JSON: in the browser, what
+	## the page noted, whatever it is given; rendered by renderToString (the tests'), what Roc found
+	## in the request's cookie, noted for the page.
 	flash! : Str => Str
 
 	## A form posting to this URL is sent by the runtime (`use_submission!`), while what is running

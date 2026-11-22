@@ -286,10 +286,6 @@ view! = |_|
 					which refuses it with the same issues.
 				</li>
 				<li>
-					A password left out of the flash: after a post without the runtime, the flash cookie holds what was
-					typed for a minute, a <code>Secret</code> too (the page doesn't show it again).
-				</li>
-				<li>
 					Server-only modules in packages: none are needed yet. The endpoint glue (<code>post!</code> above)
 					is a few lines the app writes in its route file; with this proposal, the package could ship a
 					ready-made handler instead.

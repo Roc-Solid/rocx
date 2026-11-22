@@ -30,7 +30,7 @@ before(async () => {
 			case "GET /":
 				return send(200, { "content-type": "text/html; charset=utf-8", "set-cookie": ["a=1; Path=/", "b=two%20words; Path=/; HttpOnly"] }, '<main><h1>Home</h1><a href="/b">B</a></main>');
 			case "POST /form":
-				return send(303, { location: "/", "set-cookie": ["rocx-flash=%7B%22status%22%3A400%2C%22body%22%3A%22no%22%7D; Path=/; Max-Age=60", "a=; Path=/; Max-Age=0"] });
+				return send(303, { location: "/", "x-rocx-flash": "%7B%22status%22%3A400%2C%22body%22%3A%22no%22%7D", "set-cookie": ["rocx-flash=0f1e; Path=/; Max-Age=60", "a=; Path=/; Max-Age=0"] });
 			case "GET /notes/count":
 				return send(200, { "content-type": "application/json" }, JSON.stringify({ n: 2 }));
 			case "GET /notes/secret":

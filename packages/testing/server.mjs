@@ -136,7 +136,12 @@ export class Client {
 		this.page = null;
 	}
 
+	/** What the server said of the last flash it kept (`x-rocx-flash`). */
+	#told = null;
+
 	#keep(response) {
+		const told = response.headers.get("x-rocx-flash");
+		if (told) this.#told = JSON.parse(decodeURIComponent(told));
 		for (const line of response.headers.getSetCookie()) {
 			const [pair, ...attributes] = line.split(";").map((part) => part.trim());
 			const at = pair.indexOf("=");
@@ -149,13 +154,16 @@ export class Client {
 
 	/**
 	 * The flash a plain form's post came back with (`post`), as the page it lands on reads it
-	 * (`Server.flash!`): `{ url, input, status, body }`, the endpoint's URL, what was typed, and its
-	 * result (status 200, its JSON) or refusal (its status, and why). Null when there is none: the
-	 * page a browser asks for next lets it go.
+	 * (`Server.flash!`): `{ url, status, body }`, the endpoint's URL and its result (status 200, its
+	 * JSON) or refusal (its status, and why). What was typed stays on the server (the page shows it).
+	 * Null when there is none: the page a browser asks for next lets it go. The flash is kept on the
+	 * server, its id in the cookie; the post's answer says what it holds with `--debug` or `--dev`
+	 * (`x-rocx-flash`), as `startServer` starts it.
 	 */
 	get flash() {
-		const kept = this.cookies.get("rocx-flash");
-		return kept ? JSON.parse(decodeURIComponent(kept)) : null;
+		if (!this.cookies.has("rocx-flash")) return null;
+		if (!this.#told) throw new Error("the flash is kept on the server, which says what it holds with --debug or --dev (startServer's debug, the default)");
+		return this.#told;
 	}
 
 	/** Sends a request; its answer, read whole (`Answer`). An event stream isn't: `events()` reads one. */

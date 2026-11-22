@@ -338,8 +338,9 @@ view! = |_|
 				<li>
 					<strong>Without it</strong> (before it loads, or with JavaScript off), the form posts, and a page of
 					JSON or of text would come back. Instead the endpoint sends the browser back to the page the form
-					was on, with a flash: a cookie of a minute holding where it posted, what was typed, and the result
-					or the refusal. That page's submission is the flash, so it shows the refusal, with what was typed
+					was on, with a flash: where it posted, what was typed, and the result or the refusal, kept on the
+					server for a minute (a cookie holds only its id) and read once. A password typed is never sent
+					back. That page's submission is the flash, so it shows the refusal, with what was typed
 					in its field, as it would have with the runtime, and the browser hydrates it as the server
 					rendered it. The next page view lets it go. <code>{"Server.flash!({})"}</code> reads it as it came.
 				</li>

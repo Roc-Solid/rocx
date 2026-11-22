@@ -354,7 +354,7 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	## A form a browser posted without the runtime (a plain `<form method="post">`: a form's body,
 	## `accept: text/html`) gets neither its result nor its refusal, which would be a page of JSON or
 	## of text: it goes back to the page it came from, which reads them with what was typed
-	## (`Server.flash_back`, `Server.flash!`, `use_submission!`). A form the runtime sent
+	## (`Server.flash_back!`, `Server.flash!`, `use_submission!`). A form the runtime sent
 	## (`x-rocx-submission`) gets them, and a redirect of its handler's own comes back as 200 with
 	## `x-rocx-redirect` (fetch would follow it before anyone could read it), for the runtime to go
 	## there. An answer of its own is otherwise sent as it is.
@@ -368,9 +368,9 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 				Unread(_) => "{}"
 			}
 		posted = posted_by(request)
-		reply = |status, body|
+		reply! = |status, body|
 			match posted {
-				PlainForm => Server.flash_back(request, { url: endpoint.url, input: Server.text_of(request), status, body })
+				PlainForm => Server.flash_back!(request, { url: endpoint.url, input: Server.text_of(request), status, body })
 				_ => if (status == 200) Server.response(200, [{ name: "content-type", value: "application/json" }], body) else text(status, body)
 			}
 		match Json.parse(input) {
@@ -379,8 +379,8 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 				match handler(request, context, arg) {
 					Ok(result) =>
 						match Json.to_str_try(result) {
-							Ok(json) => reply(200, json)
-							Err(_) => reply(500, "${endpoint.method} ${request.path}'s answer: ${Server.unwritable}")
+							Ok(json) => reply!(200, json)
+							Err(_) => reply!(500, "${endpoint.method} ${request.path}'s answer: ${Server.unwritable}")
 						}
 					Err(Answer(own)) =>
 						match posted {
@@ -389,13 +389,13 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 						}
 					Err(refusal) => {
 						(status, why) = Endpoint.refused(refusal)
-						reply(status, why)
+						reply!(status, why)
 					}
 				}
 			}
 			Err(InvalidJson(why)) =>
 				match read {
-					Read(_) => reply(400, "${endpoint.method} ${request.path} can't read its body: ${why}")
+					Read(_) => reply!(400, "${endpoint.method} ${request.path} can't read its body: ${why}")
 					Unread(type) => text(415, "${endpoint.method} ${request.path} reads JSON (application/json) or a form, not ${if (type.is_empty()) "a body with no content-type" else type}")
 				}
 		}

@@ -274,8 +274,8 @@ Html :: [
 	serialize! : Html => Str
 	serialize! = |node|
 		match node {
-			Element(tag, attrs, children) => "{\"t\":\"e\",\"tag\":${json_str(tag)},\"a\":[${attributes!(tag, attrs)}],\"c\":[${nodes!(children)}]}"
-			Void(tag, attrs) => "{\"t\":\"e\",\"tag\":${json_str(tag)},\"a\":[${attributes!(tag, attrs)}],\"c\":[]}"
+			Element(tag, attrs, children) => "{\"t\":\"e\",\"tag\":${json_str(tag)},\"a\":[${attributes!(tag, unfilled(tag, attrs))}],\"c\":[${nodes!(children)}]}"
+			Void(tag, attrs) => "{\"t\":\"e\",\"tag\":${json_str(tag)},\"a\":[${attributes!(tag, unfilled(tag, attrs))}],\"c\":[]}"
 			Text(content) => "{\"t\":\"s\",\"v\":${json_str(content)}}"
 			Raw(content) => "{\"t\":\"raw\",\"v\":${json_str(content)}}"
 			Doctype => "{\"t\":\"doctype\"}"
@@ -410,6 +410,31 @@ attributes! = |tag, attrs| {
 	Str.join_with($out, ",")
 }
 
+## An element's attributes, without an `<input type="password">`'s `value`: what was typed in one is
+## never written into a page (a form filled in again after a refused post, say), whatever the
+## component says.
+unfilled : Str, List(Html.Attr) -> List(Html.Attr)
+unfilled = |tag, attrs| {
+	secret = |attribute|
+		match attribute {
+			Value("type", kind) => kind.with_ascii_lowercased() == "password"
+			_ => Bool.False
+		}
+	filled = |attribute|
+		match attribute {
+			Value(name, _) => name == "value"
+			ValueOf(name, _) => name == "value"
+			Optional(name, _) => name == "value"
+			OptionalOf(name, _) => name == "value"
+			_ => Bool.False
+		}
+	if tag == "input" and attrs.any(secret) {
+		attrs.keep_if(|attribute| !filled(attribute))
+	} else {
+		attrs
+	}
+}
+
 ## Which way a transition plays, as the runtime names it.
 way_name : [In, Out, Both, Move] -> Str
 way_name = |way|
@@ -426,11 +451,11 @@ static_str : Html, Bool -> Str
 static_str = |node, quiet|
 	match node {
 		Element(tag, attrs, children) => {
-			open = "<${tag}${static_attributes(tag, attrs)}>"
+			open = "<${tag}${static_attributes(tag, unfilled(tag, attrs))}>"
 			if (void_elements.contains(tag)) open else "${open}${static_nodes(children, quiet)}</${tag}>"
 		}
 		Void(tag, attrs) => {
-			open = "<${tag}${static_attributes(tag, attrs)}>"
+			open = "<${tag}${static_attributes(tag, unfilled(tag, attrs))}>"
 			if (void_elements.contains(tag)) open else "${open}</${tag}>"
 		}
 		Text(content) => escape(content)
@@ -673,3 +698,6 @@ expect Html.to_str(Html.element("div", [], [Html.void("br", []), Html.element("i
 expect Html.to_str(Html.element("button", [Html.on("click", || {}), Html.key("k")], [Html.join([Html.text("a"), Html.text("b")])])) == "<button>ab</button>"
 expect Html.to_str(Html.element("main", [], [Html.no_hydration([Html.element("p", [], [Html.text("a & b")]), Html.join([Html.text("c")])]), Html.text("d")])) == "<main><!--nohydration--><p>a &amp; b</p>c<!--/nohydration-->d</main>"
 expect Html.to_str(Html.no_hydration([Html.loading(Html.empty({}), [Html.text("in")]), Html.no_hydration([Html.text("nested")])])) == "<!--nohydration-->innested<!--/nohydration-->"
+expect Html.to_str(Html.void("input", [Html.attr("type", "password"), Html.attr("name", "password"), Html.attr("value", "hunter2")])) == "<input type=\"password\" name=\"password\">"
+expect Html.to_str(Html.void("input", [Html.attr("name", "q"), Html.optional("value", "roc"), Html.attr("type", "PASSWORD")])) == "<input name=\"q\" type=\"PASSWORD\">"
+expect Html.to_str(Html.void("input", [Html.attr("type", "text"), Html.attr("value", "Ada")])) == "<input type=\"text\" value=\"Ada\">"

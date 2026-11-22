@@ -241,6 +241,11 @@ a `<SubmitButton live={live}>` that marks it; the page's form would write
 
 ## 5. Secrets out of the flash
 
+**Done another way (2026-11-22).** The platform keeps a flash in the server's memory (the cookie
+holds a random id, taken once), `Html` never writes a `value` into an `<input type="password">`,
+and the page's note of the flash leaves out each field the page has as one. A `Secret` renders as
+such an input, so no route needs to name its secrets. What follows is the proposal as it was.
+
 **Problem.** A plain post (no runtime) that an endpoint refuses comes back with a flash: a cookie
 (`rocx-flash`, HttpOnly, SameSite=Lax, 60 seconds) holding the form's whole body as posted, so
 the page can show what was typed. A password is in it, sent back to the browser and up with every

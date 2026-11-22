@@ -382,8 +382,9 @@ view! = |_|
 			<Code title={"${Sources.components_form.file}, in part"} source={Sources.components_form.rocx} numbers={Bool.False} />
 			<p>
 				Without the runtime (before it loads, or with JavaScript off) the form posts, and the endpoint sends
-				the browser back to the page it came from with a flash: a cookie of a minute holding what was typed
-				and the result or the refusal. The page's submission is then the flash, so it shows the same thing,
+				the browser back to the page it came from with a flash: what was typed and the result or the refusal,
+				kept on the server for a minute (a cookie holds its id). The page's submission is then the flash, so
+				it shows the same thing,
 				and hydrates as the server rendered it. <code>{"Server.flash!({})"}</code> reads the flash as it came:
 				<code>{"Ok({ url, fields, status, body })"}</code>, or <code>NoFlash</code>. The details, and redirects:
 				<a href={"${Paths.calls}#forms"}>forms</a>, on the server page.

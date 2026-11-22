@@ -644,6 +644,11 @@ The form's `action` is the endpoint's URL, since Roc can't turn an endpoint into
 (a no-op on Solid's `useSubmission`), `useSubmissions`, `useAction` or `.with`: an endpoint's params
 are in its URL. **Reversible:** yes.
 
+**Later (2026-11-22):** the flash is kept in the server's memory for a minute, under a random id the
+cookie holds, and the first page that reads it takes it (`Server.flash_back!`, now effectful); there
+is no size limit. `Html` never writes a `value` into an `<input type="password">`, and the page's
+note of the flash leaves out the fields it has as one, so a password typed is never sent back.
+
 ## D-019 A server function's redirect while a page renders
 
 **Context.** A layout calls a server function (who is signed in?), and the app's default middleware

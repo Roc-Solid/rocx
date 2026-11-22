@@ -61,6 +61,8 @@ let server;
 /** What Roc holds once the server has started: its background loops' own state (the schedules
  * the cron ticker keeps, say). Everything else a call makes is let go of when it ends. */
 let baseline = 0;
+/** A plain form's flash made as the tests start, and never read: its cookie, and when. */
+let unread;
 /** The SMTP server the app's email goes to (this file runs it): every server started with a
  * database shares one job queue, so each sends a job's email to the same place. */
 let smtp;
@@ -111,6 +113,9 @@ before(async () => {
 	// A short beat, so the channel tests see a stream's re-checks soon (`--live-beat-ms`).
 	server = await start([...dbFlags(), "--live-beat-ms", "300"], app, mailEnv());
 	if (database) assert.equal(await server.text("/reset", { method: "POST" }), "ready");
+	// A flash nobody reads, made now, so that the test of its expiry (a minute on) waits for little.
+	const posted = await fetch(`${server.url}/flash/join`, { method: "POST", redirect: "manual", body: "name=Al", headers: { "content-type": "application/x-www-form-urlencoded", accept: "text/html" } });
+	unread = { cookie: (posted.headers.get("set-cookie") ?? "").split(";")[0], at: Date.now() };
 	// The loops settle (a worker's first look at the queue), then what they hold is the baseline.
 	const allocations = async () => Number(await server.text("/__rocx/allocations"));
 	for (let previous = -1; ; ) {
@@ -2957,15 +2962,17 @@ test("endpoint reads: a handler that reads the flash (Server.flash!) reads the p
 	assert.match(await text("/reads-flash", { headers: { accept: "text/html" } }), /<p class="flash"><!--x-->no flash<!--\/x--><\/p>/);
 });
 
-test("form actions: a plain form's refusal goes back to the page it came from, with a flash: the page reads it (Server.flash!, use_submission!) with what was typed, notes it for the browser, and lets it go", { skip }, async () => {
-	const host = new URL(server.url).host;
+test("form actions: a plain form's refusal goes back to the page it came from, with a flash kept in the server's memory, the cookie only its id: the page reads it (Server.flash!, use_submission!) with what was typed, notes it for the browser, and takes it, once", { skip }, async () => {
 	const refused = await plainPost("/flash/join", { name: "Al" }, { referer: `${server.url}/flash/page?from=form#top` });
 	assert.equal(refused.status, 303, "not the refusal itself: the browser goes back");
 	assert.equal(refused.headers.get("location"), "/flash/page?from=form", "to the page it came from (this site's), its fragment dropped");
-	const cookie = refused.headers.get("set-cookie");
-	assert.match(cookie, /^rocx-flash=[^;]+; Path=\/; Max-Age=60; HttpOnly; SameSite=Lax$/);
-	const kept = JSON.parse(decodeURIComponent(flashOf(refused).slice("rocx-flash=".length)));
-	assert.deepEqual(kept, { url: "/flash/join", input: "name=Al", status: 409, body: "Al is taken" }, "where it posted, what was typed, and the refusal");
+	const [cookie] = refused.headers.getSetCookie();
+	assert.match(cookie, /^rocx-flash=[0-9a-f]{32}; Path=\/; Max-Age=60; HttpOnly; SameSite=Lax$/, "a random id, and nothing of the flash");
+	const id = flashOf(refused).slice("rocx-flash=".length);
+	// As Roc writes it: its fields in order of their names.
+	const kept = { body: "Al is taken", input: "name=Al", status: 409, url: "/flash/join" };
+	assert.deepEqual(JSON.parse(decodeURIComponent(refused.headers.get("x-rocx-flash"))), { url: "/flash/join", status: 409, body: "Al is taken" }, "with --debug, what it says, for tests: never the fields");
+	assert.match((await kv(`get?key=rocx:flash:${id}`))[1], /^BadValue /, "kept in the store (a record, not text)");
 	// The page the browser lands on: the flash and the submission, rendered, and noted for the browser.
 	const page = await get("/flash/page?from=form", { headers: { cookie: `a=1; ${flashOf(refused)}`, accept: "text/html" } });
 	assert.equal(page.status, 200);
@@ -2975,19 +2982,36 @@ test("form actions: a plain form's refusal goes back to the page it came from, w
 	assert.match(html, /<p class="problem">Al is taken<\/p><p class="welcome"><\/p><p class="typed">Al<\/p><p class="pending">not pending<\/p>/);
 	assert.ok(html.includes(`<script type="application/json" class="rocx-flash">${JSON.stringify(JSON.stringify(kept))}</script><script type="application/json" class="rocx-answers">[]</script>`), "noted for the browser, before the answers");
 	assert.equal(page.headers.get("set-cookie"), "rocx-flash=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax", "and let go: a reload doesn't show it again");
+	// Read once: the store gave it to that page, so the same cookie again (a replay) finds nothing.
+	assert.deepEqual(await kv(`get?key=rocx:flash:${id}`), [404, "NotFound"], "taken from the store");
+	assert.match(await text("/flash/page", { headers: { cookie: flashOf(refused), accept: "text/html" } }), /<p class="flash">no flash<\/p>/);
 	// Without one: none.
 	const plain = await text("/flash/page", { headers: { accept: "text/html" } });
 	assert.match(plain, /<p class="flash">no flash<\/p>/);
 	assert.match(plain, /<p class="problem"><\/p><p class="welcome"><\/p><p class="typed">\(nothing\)<\/p>/);
 	assert.doesNotMatch(plain, /rocx-flash/);
+	// A cookie that names no flash (made up, or the flash itself, as cookies held it before) is none.
+	const made = encodeURIComponent(JSON.stringify(kept));
+	assert.match(await text("/flash/page", { headers: { cookie: `rocx-flash=${made}`, accept: "text/html" } }), /<p class="flash">no flash<\/p>/);
 	// A flash for another endpoint isn't this submission's, though the page still sees it.
-	const other = encodeURIComponent(JSON.stringify({ url: "/elsewhere", input: "name=Bo", status: 400, body: "no" }));
-	const elsewhere = await text("/flash/page", { headers: { cookie: `rocx-flash=${other}`, accept: "text/html" } });
-	assert.match(elsewhere, /<p class="flash">\/elsewhere 400 name=Bo<\/p>.*<p class="problem"><\/p><p class="welcome"><\/p><p class="typed">\(nothing\)<\/p>/s);
-	assert.ok(host);
+	const other = await plainPost("/flash/join", { name: "Al" }, { referer: `${server.url}/flash/sign-in` });
+	const elsewhere = await text("/flash/page", { headers: { cookie: flashOf(other), accept: "text/html" } });
+	assert.match(elsewhere, /<p class="flash">\/flash\/join 409 name=Al<\/p>.*<p class="problem">Al is taken<\/p>/s);
 });
 
-test("form actions: a plain form's result goes back with a flash too; a body it can't read is a refusal; a referrer from elsewhere, or none, goes to /", { skip }, async () => {
+test("form actions: a password never comes back: no cookie holds it, its field isn't filled in again, and the page's note of the flash leaves it out", { skip }, async () => {
+	const refused = await plainPost("/flash/join", { name: "Al", secret: "hunter2" }, { referer: `${server.url}/flash/sign-in` });
+	assert.equal(refused.status, 303);
+	for (const cookie of refused.headers.getSetCookie()) assert.doesNotMatch(cookie, /hunter2/, "in no Set-Cookie");
+	assert.doesNotMatch(refused.headers.get("x-rocx-flash"), /hunter2/, "nor in what --debug tells");
+	const html = await text("/flash/sign-in", { headers: { cookie: flashOf(refused), accept: "text/html" } });
+	assert.match(html, /<input name="name" value="Al"><input type="password" name="secret">/, "the name filled in again; the password not, though the page asks for it");
+	assert.match(html, /<p class="problem">Al is taken<\/p>/);
+	assert.ok(html.includes(`<script type="application/json" class="rocx-flash">${JSON.stringify(JSON.stringify({ body: "Al is taken", input: "name=Al", status: 409, url: "/flash/join" }))}</script>`), "noted for the browser without it");
+	assert.doesNotMatch(html, /hunter2/, "anywhere on the page");
+});
+
+test("form actions: a plain form's result goes back with a flash too, however long what was typed; a body it can't read is a refusal; a referrer from elsewhere, or none, goes to /", { skip }, async () => {
 	const welcomed = await plainPost("/flash/join", { name: "Ada Lovelace" }, { referer: `${server.url}/flash/page` });
 	assert.equal(welcomed.status, 303);
 	assert.equal(welcomed.headers.get("location"), "/flash/page");
@@ -2996,14 +3020,16 @@ test("form actions: a plain form's result goes back with a flash too; a body it 
 	const unread = await plainPost("/flash/join", { nickname: "Al" }, { referer: "https://evil.example/flash/page" });
 	assert.equal(unread.status, 303);
 	assert.equal(unread.headers.get("location"), "/", "another site's page isn't where it goes");
-	const kept = JSON.parse(decodeURIComponent(flashOf(unread).slice("rocx-flash=".length)));
-	assert.equal(kept.status, 400);
-	assert.match(kept.body, /^POST \/flash\/join can't read its body/);
+	const told = JSON.parse(decodeURIComponent(unread.headers.get("x-rocx-flash")));
+	assert.equal(told.status, 400);
+	assert.match(told.body, /^POST \/flash\/join can't read its body/);
 	assert.equal((await plainPost("/flash/join", { name: "" })).headers.get("location"), "/", "no referrer");
-	// What a cookie can't hold: the fields are left out, the refusal kept.
-	const long = await plainPost("/flash/join", { name: "", notes: "x".repeat(5000) }, { referer: `${server.url}/flash/page` });
-	const trimmed = JSON.parse(decodeURIComponent(flashOf(long).slice("rocx-flash=".length)));
-	assert.deepEqual([trimmed.input, trimmed.status, trimmed.body], ["", 400, "a member has a name"]);
+	// More than a cookie could hold: kept whole, in the store.
+	const notes = "x".repeat(20000);
+	const long = await plainPost("/flash/join", { name: "", notes }, { referer: `${server.url}/flash/page` });
+	assert.ok(flashOf(long).length < 60, "the cookie is the id alone");
+	const back = await text("/flash/page", { headers: { cookie: flashOf(long), accept: "text/html" } });
+	assert.ok(back.includes(`<p class="flash">/flash/join 400 name=&amp;notes=${notes}</p>`), "every field as typed");
 });
 
 test("form actions: a script's post, or the runtime's, gets the endpoint's answer, not a flash; a redirect of the endpoint's own comes to the runtime as 200 and x-rocx-redirect, its cookie kept", { skip }, async () => {
@@ -3028,10 +3054,19 @@ test("form actions: a script's post, or the runtime's, gets the endpoint's answe
 	const plain = await plainPost("/flash/away", {});
 	assert.equal(plain.status, 303, "a plain form gets the endpoint's own answer as it is");
 	assert.equal(plain.headers.get("location"), "/members");
-	const flashed = encodeURIComponent(JSON.stringify({ url: "/flash/join", input: "name=Al", status: 409, body: "Al is taken" }));
 	const before = await steady();
-	for (let i = 0; i < 20; i++) await text("/flash/page", { headers: { cookie: `rocx-flash=${flashed}`, accept: "text/html" } });
+	for (let i = 0; i < 20; i++) {
+		const flashed = await plainPost("/flash/join", { name: "Al", secret: "x" }, { referer: `${server.url}/flash/sign-in` });
+		await text(i % 2 ? "/flash/page" : "/flash/sign-in", { headers: { cookie: flashOf(flashed), accept: "text/html" } });
+	}
 	assert.equal(await until(async () => (await live()) === before), true, `${await live()} allocations, ${before} before`);
+});
+
+test("form actions: a flash nobody read is gone after a minute, though its cookie were sent", { skip }, async () => {
+	assert.match(unread.cookie, /^rocx-flash=[0-9a-f]{32}$/);
+	await sleep(Math.max(0, unread.at + 61_000 - Date.now()));
+	assert.deepEqual(await kv(`get?key=rocx:flash:${unread.cookie.slice("rocx-flash=".length)}`), [404, "NotFound"], "expired in the store");
+	assert.match(await text("/flash/page", { headers: { cookie: unread.cookie, accept: "text/html" } }), /<p class="flash">no flash<\/p>/);
 });
 
 // ---- Stopping, memory ----

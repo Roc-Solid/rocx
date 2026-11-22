@@ -754,6 +754,8 @@ export class Runtime {
 		 * the page being rendered read, for the page to carry. */
 		this.flash = "";
 		this.flashed = "";
+		/** On the server: the names of the `<input type="password">`s the page being rendered has. */
+		this.secrets = [];
 		this.taken = null;
 		this.stats = { runs: 0, aborts: 0, patches: 0 };
 		/** In the browser: answers the server gave while rendering the page, by name and input. */
@@ -3128,6 +3130,11 @@ export class Runtime {
 						if (styled !== "") styles.push(`${name}: ${styled}`);
 					}
 				}
+				// An `<input type="password">`'s name, for the flash's note (`withoutSecrets`).
+				if (node.tag.toLowerCase() === "input" && node.a.some(([kind, name, value]) => kind === "v" && name === "type" && String(value).toLowerCase() === "password")) {
+					const named = node.a.find(([kind, name]) => kind === "v" && name === "name");
+					if (named && named[2] !== "") this.secrets.push(String(named[2]));
+				}
 				if (classes.length) attributes.unshift(`class="${escape(classes.join(" "))}"`);
 				if (styles.length) attributes.push(`style="${escape(styles.join("; "))}"`);
 				const open = `<${node.tag}${attributes.map((attribute) => ` ${attribute}`).join("")}>`;
@@ -3177,6 +3184,7 @@ export class Runtime {
 		this.headers = headers;
 		this.recorded = [];
 		this.flashed = "";
+		this.secrets = [];
 		this.titled = null;
 		this.status = 200;
 		const wasOnServer = this.onServer;
@@ -3195,7 +3203,7 @@ export class Runtime {
 		}
 		try {
 			const markup = this.html(JSON.parse(out), root, scope);
-			const html = DOCUMENT.test(markup) ? Runtime.documentOf(markup, this.recorded, this.flashed, this.titled) : `<!--app-->${markup}<!--/app-->`;
+			const html = DOCUMENT.test(markup) ? Runtime.documentOf(markup, this.recorded, Runtime.withoutSecrets(this.flashed, this.secrets), this.titled) : `<!--app-->${markup}<!--/app-->`;
 			return { html, answers: this.recorded };
 		} finally {
 			this.onServer = wasOnServer;
@@ -3223,8 +3231,32 @@ export class Runtime {
 		return `<script type="application/json" class="rocx-answers">${JSON.stringify(answers).replace(/</g, "\\u003c")}</script>`;
 	}
 
-	/** The flash a page read, as a script for the browser (signals.rs's `flash_script`): the cookie's
-	 * JSON, as a JSON string. */
+	/** The flash's JSON without the fields the page has as `<input type="password">` (`secrets`), as
+	 * signals.rs's `without_secrets` leaves them out: what was typed in one never reaches the page. */
+	static withoutSecrets(flash, secrets) {
+		if (!flash || !secrets.length) return flash;
+		let kept;
+		try {
+			kept = JSON.parse(flash);
+		} catch {
+			return flash;
+		}
+		if (typeof kept?.input !== "string") return flash;
+		const decoded = (name) => {
+			try {
+				return decodeURIComponent(name.replace(/\+/g, " "));
+			} catch {
+				return name;
+			}
+		};
+		const fields = kept.input.split("&").filter((field) => field !== "");
+		const left = fields.filter((field) => !secrets.includes(decoded(field.split("=")[0])));
+		if (left.length === fields.length) return flash;
+		return JSON.stringify({ ...kept, input: left.join("&") });
+	}
+
+	/** The flash a page read, as a script for the browser (signals.rs's `flash_script`): its JSON, as
+	 * a JSON string. */
 	static flashScript(flash) {
 		return `<script type="application/json" class="rocx-flash">${JSON.stringify(flash).replace(/</g, "\\u003c")}</script>`;
 	}

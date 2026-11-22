@@ -1,6 +1,7 @@
 import Host
 import Html
 import Events
+import FlashStore
 
 ## The server: what it knows about a request, and how it answers. An app's `respond!` gets each
 ## request from its platform (`from_http`) and gives back the answer; its routes, endpoints and
@@ -251,13 +252,15 @@ Server := [].{
 	## What a form posted without the runtime (a plain `<form method="post">`) comes back to its page
 	## with: the URL it posted to, its fields as typed, and the endpoint's answer, its status and
 	## body (200 and the result as JSON, or a refusal's status and why). `Endpoint.respond!` sends
-	## it back (`flash_back`), and the page it lands on reads it (`flash!`).
+	## it back (`flash_back!`), and the page it lands on reads it (`flash!`).
 	Flash : { url : Str, fields : List({ name : Str, value : Str }), status : U16, body : Str }
 
 	## The flash a plain form's post came back with, on the page the redirect lands on: the next page
-	## a browser asks for after it (`clear_flash`). On the server it is in the request's cookie,
-	## and the page notes it for the browser (a script hydration reads), so both render the same.
-	## `Err(NoFlash)` on any other page. `use_submission!` reads it for you.
+	## a browser asks for after it (`clear_flash`). On the server it waits in the server's memory, its
+	## id in the request's cookie, and the first page that reads it takes it (it is read once); the
+	## page notes it for the browser (a script hydration reads), so both render the same. A field the
+	## page has as an `<input type="password">` is left out of that note, and the page never fills
+	## such an input in again. `Err(NoFlash)` on any other page. `use_submission!` reads it for you.
 	flash! : {} => Try(Flash, [NoFlash])
 	flash! = |{}| {
 		found =
@@ -265,7 +268,7 @@ Server := [].{
 				Ok(value) => value
 				Err(Missing) => ""
 			}
-		match flashed(Host.flash!(found)) {
+		match flashed(FlashStore.read!(found)) {
 			Ok(posted) => Ok({ url: posted.url, fields: Server.form_fields(posted.input), status: posted.status, body: posted.body })
 			Err(NoFlash) => Err(NoFlash)
 		}
@@ -273,17 +276,11 @@ Server := [].{
 
 	## The answer to a plain form's post, instead of the endpoint's own: back to the page it was
 	## posted from (`Referer`, when it is this site's; `/` otherwise), with a 303, and the flash
-	## (`url` posted to, the form's body as posted, the answer's status and body) in a cookie that
-	## lasts a minute, for that page to read (`flash!`). Past what a cookie may hold (~3.8 KB), the
-	## fields are left out, and the answer kept.
-	flash_back : Request, { url : Str, input : Str, status : U16, body : Str } -> Response
-	flash_back = |asked, posted| {
-		back = referrer(asked)
-		whole = Server.encode_segment(Json.to_str(posted))
-		value = if (whole.count_utf8_bytes() <= 3800) whole else Server.encode_segment(Json.to_str({ ..posted, input: "" }))
-		kept = "${flash_cookie}=${value}; Path=/; Max-Age=60; HttpOnly; SameSite=Lax"
-		Server.response(303, [{ name: "location", value: back }, { name: "set-cookie", value: kept }], "")
-	}
+	## (`url` posted to, the form's body as posted, the answer's status and body) kept for that page
+	## to read (`flash!`): in the server's memory for a minute, under a random id that a cookie
+	## (`rocx-flash`, HttpOnly) holds, and nothing else. However long what was typed, it is kept.
+	flash_back! : Request, { url : Str, input : Str, status : U16, body : Str } => Response
+	flash_back! = |asked, posted| Server.response(303, [{ name: "location", value: referrer(asked) }].concat(FlashStore.keep!(posted)), "")
 
 	## The answer, letting the flash go if the request is a browser's GET of a page that had one (the
 	## page the flash was for: it reads it now, or never), so a reload doesn't show it again.
@@ -425,11 +422,12 @@ sent! = |events, { send!, sleep! }| {
 frame : Str -> Str
 frame = |text| Str.join_with(text.split_on("\n").map(|line| "data: ${line}\n"), "").concat("\n")
 
-## The cookie a plain form's flash is kept in, between its post and its page (`Server.flash_back`).
+## The cookie that holds the id of a plain form's flash, between its post and its page
+## (`Server.flash_back!`).
 flash_cookie : Str
 flash_cookie = "rocx-flash"
 
-## A flash as the cookie keeps it (JSON), or none.
+## A flash as it is kept (JSON), or none.
 flashed : Str -> Try({ url : Str, input : Str, status : U16, body : Str }, [NoFlash])
 flashed = |given|
 	if given.is_empty() {
@@ -608,8 +606,6 @@ expect referrer(Server.from_http("POST", "/join", "host: localhost:8080\nreferer
 expect referrer(Server.from_http("POST", "/join", "host: localhost:8080\nreferer: http://localhost:8080", [])) == "/"
 expect referrer(Server.from_http("POST", "/join", "host: localhost:8080\nreferer: https://evil.example/members", [])) == "/"
 expect referrer(Server.from_http("POST", "/join", "host: localhost:8080", [])) == "/"
-expect Server.flash_back(Server.from_http("POST", "/join", "host: h\nreferer: http://h/j", []), { url: "/join", input: "name=", status: 400, body: "a name" }).headers == [{ name: "location", value: "/j" }, { name: "set-cookie", value: "rocx-flash=%7B%22body%22%3A%22a%20name%22%2C%22input%22%3A%22name%3D%22%2C%22status%22%3A400%2C%22url%22%3A%22%2Fjoin%22%7D; Path=/; Max-Age=60; HttpOnly; SameSite=Lax" }]
-expect Server.flash_back(Server.from_http("POST", "/join", "", []), { url: "/join", input: Str.repeat("x", 5000), status: 400, body: "long" }).headers.get(1).map_ok(|header| header.value.contains("xxx")) == Ok(Bool.False)
 expect flashed("{\"url\":\"/join\",\"input\":\"name=Ada\",\"status\":400,\"body\":\"no\"}") == Ok({ url: "/join", input: "name=Ada", status: 400, body: "no" })
 expect flashed("") == Err(NoFlash) and flashed("{") == Err(NoFlash)
 expect Server.clear_flash(Server.from_http("GET", "/j", "accept: text/html\ncookie: rocx-flash=x", []), Server.redirect("/")).headers.len() == 2

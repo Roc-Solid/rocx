@@ -72,7 +72,7 @@ test("a form posted without the runtime goes back to its page with a flash; the 
 	const posted = await person.post("/notes", { body: "  milk " });
 	assert.equal(posted.status, 303);
 	assert.equal(posted.location, "/", "back to the page it came from");
-	assert.deepEqual(person.flash, { url: "/notes", input: "body=++milk+", status: 200, body: '"added milk"' }, "what was typed, as it was sent");
+	assert.deepEqual(person.flash, { url: "/notes", status: 200, body: '"added milk"' }, "what the page reads: what was typed stays on the server");
 	assert.equal((await posted.follow()).status, 200);
 	assert.equal(person.flash, null, "the page it landed on let it go");
 	await person.post("/notes", { body: "" });

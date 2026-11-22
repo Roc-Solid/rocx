@@ -265,8 +265,10 @@ Host := [].{
 	effect_new! : Box(() => Str) => {}
 	cleanup! : Box(() => Str) => {}
 
-	## The flash a plain form's post came back with (`Server.flash!`), which Roc found in the
-	## request's cookie: noted for the page (a script the browser reads), and given back.
+	## The flash a plain form's post came back with (`Server.flash!`), which Roc took from the store
+	## (`FlashStore`): noted for the page (a script the browser reads), and given back. Given "", the
+	## flash this render noted already, or "": a page may read it in several places, and the store
+	## gives it once.
 	flash! : Str => Str
 
 	## The runtime's form submissions are the browser's: none on the server.

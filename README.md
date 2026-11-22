@@ -407,9 +407,10 @@ typed at both ends, which anything else that speaks HTTP may ask too.
   as Solid Router's `useSubmission`: `submission.pending!()`, `input!()` (what was typed, as the
   endpoint reads it), `field!("name")`, `result!()`, `error!()`, `clear!()`. With the runtime the
   form is sent with `fetch` and the page stays; without it (before it loads, or with no JavaScript)
-  it posts, and the endpoint sends the browser back to the page with a flash, a short-lived cookie
-  holding what was typed and the result or refusal, which the submission is then
-  (`Server.flash!({})` reads it as it came). A redirect of the endpoint's own is followed either way.
+  it posts, and the endpoint sends the browser back to the page with a flash: what was typed and the
+  result or refusal, kept on the server for a minute (a cookie holds its id) and read once, which
+  the submission is then (`Server.flash!({})` reads it as it came). A password typed is never sent
+  back. A redirect of the endpoint's own is followed either way.
   A result has the page's reads read again (Solid Router's revalidation), and the submission stays
   pending until they are in.
 - **Actions.** `move! = use_action!(endpoint)` is a function a handler calls with the endpoint's arg:

@@ -277,7 +277,8 @@ Form(a) := { read : Posted -> Parsed(a), fields : List(Field), at : Str }.{
 	names = |form| form.fields.map(|each| each.name)
 
 	## The fields that are `Secret` (passwords): what a page that comes back after a post doesn't
-	## fill in again, and what the platform shouldn't keep in a flash (PROPOSALS.md).
+	## fill in again. The platform doesn't either: it never writes a `value` into an
+	## `<input type="password">`, and leaves such a field out of the page's note of the flash.
 	secrets : Form(a) -> List(Str)
 	secrets = |form| form.fields.keep_if(|each| each.attributes.type == "password").map(|each| each.name)
 

@@ -129,7 +129,7 @@ test("subscribing: a plain form, the runtime's, a wrong address, and the unsubsc
 	assert.equal((await person.submit("/unsubscribe", { token })).status, 400);
 });
 
-test("the admin: sign-in required, a wrong password told without a flash, then the pages and the tables", async (t) => {
+test("the admin: sign-in required, a wrong password refused and never sent back, then the pages and the tables", async (t) => {
 	if (skip(t)) return;
 	const stranger = app.client();
 	const sent = await stranger.get("/admin");
@@ -139,12 +139,16 @@ test("the admin: sign-in required, a wrong password told without a flash, then t
 	assert.equal((await stranger.get("/admin/jobs")).status, 303);
 	assert.equal((await stranger.get("/admin/db")).status, 303);
 
-	await stranger.get("/admin/sign-in");
+	await stranger.get("/admin/sign-in?next=%2Fadmin");
 	const wrong = await stranger.post("/admin/sign-in", { password: "hunter2", next: "/admin" });
 	assert.equal(wrong.status, 303);
-	assert.equal(wrong.location, "/admin/sign-in?problem=wrong&next=%2Fadmin");
-	assert.equal(stranger.flash, null, "the password isn't kept in a flash");
-	(await wrong.follow()).dom.getByRole("alert", { name: "" });
+	assert.equal(wrong.location, "/admin/sign-in?next=%2Fadmin", "back to the form");
+	assert.deepEqual([stranger.flash.status, stranger.flash.body], [401, "That isn't the admin password."]);
+	for (const cookie of wrong.headers.getSetCookie()) assert.doesNotMatch(cookie, /hunter2/, "no cookie holds the password");
+	const again = await wrong.follow();
+	assert.equal(again.dom.getByRole("alert").text, "That isn't the admin password.");
+	assert.equal(again.dom.getByLabelText("Admin password").attr("value"), null, "the password isn't filled in again");
+	assert.doesNotMatch(again.text, /hunter2/, "nor anywhere on the page");
 
 	const person = await admin(app);
 	const page = await person.get("/admin");

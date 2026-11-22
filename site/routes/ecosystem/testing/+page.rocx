@@ -184,7 +184,8 @@ view! = |_|
 		<Code title={Sources.testing_node_page.file} source={Sources.testing_node_page.rocx} numbers={Bool.False} />
 		<p>
 			<code>post</code> sends a form as a browser does without the runtime: the endpoint answers with a redirect
-			back to the page, and a flash that holds its result. A test sees the redirect, and reads the flash.
+			back to the page, and a flash that holds its result. A test sees the redirect, and reads the flash
+			(the server keeps it, and says what it holds to a test's server, which runs with <code>--debug</code>).
 			<code>submit</code> sends the form as the runtime does, and gets the endpoint's answer.
 			<code>read</code> reads a GET endpoint as a page reads it, and
 			<code>events</code> reads an endpoint's events as they come.
