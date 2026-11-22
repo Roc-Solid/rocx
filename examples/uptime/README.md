@@ -255,7 +255,9 @@ Every gap met, and what the app does about each:
       `overview!()`).
     - A pure `view` with a `<For>` inside doesn't compile: it has to be a `view!`
       (`Ui/GroupSection.rocx`).
-    - `style` can't be computed, even in an email's HTML, so the alert's heading is two elements,
-      one for each colour (`Ui/AlertMail.rocx`).
+    - `style` couldn't be computed, even in an email's HTML, so the alert's heading was two
+      elements, one for each colour. (Fixed in the platform since: `style:color={…}` sets one
+      property from data, through the same check as a custom property's, in `Html.to_str` too, so
+      `Ui/AlertMail.rocx` has one heading.)
     - A heatmap's row labels are a value prop: reading them from the page's data would make the
       chart anew on every check, so they are fixed words ("6 days ago" … "Today").

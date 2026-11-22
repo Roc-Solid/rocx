@@ -337,7 +337,7 @@ const REFUSED = [
 	`<p>&bogus;</p>`,
 	`<DIV>Hi</DIV>`,
 	`<input checked?="yes" />`,
-	`<p style:color={c}>Hi</p>`,
+	`<p style:font_size={c}>Hi</p>`,
 	`<input on:input.files={f} />`,
 ];
 

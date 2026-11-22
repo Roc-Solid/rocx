@@ -205,7 +205,8 @@ import charts.Format
 | `<input type="checkbox" checked?={bool} required />` | `?=` sets a boolean attribute when true; a bare name is always on |
 | `<a rel??={str}>` | `??=` sets an attribute unless the string is empty (Svelte leaves out an undefined one) |
 | `<li class="row" class:active={bool}>` | `class:name` adds a class when true; all of them end up in one `class` |
-| `<span style:--size={str}>` | sets a CSS custom property; joins any static `style`; a value with characters that could end the declaration is left out |
+| `<span style:--size={str}>` | sets a CSS custom property; joins any static `style`; a value with characters that could end the declaration, or a function that loads something (`url(…)`), is left out |
+| `<h1 style:color={str}>` | sets one property of the style the same way, its name letters and dashes, computed if it reads a signal; in `Html.to_str` too (an email's colours) |
 | `{expr}` among children | text: `expr` is a `Str`, escaped |
 | `{=expr}` | one `Html` value, as it is |
 | `{...expr}` | a `List(Html)`, joined |

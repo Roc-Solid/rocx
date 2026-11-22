@@ -19,6 +19,7 @@ Cheatsheet := [].{
 		{ write: "rel??={str}", means: "An attribute left out when the string is empty." },
 		{ write: "class:active={bool}", means: "Adds a class when true; all classes end up in one class attribute." },
 		{ write: "style:--size={str}", means: "Sets a CSS custom property; unsafe values are left out." },
+		{ write: "style:color={str}", means: "Sets one property of the style, checked the same way; computed if it reads a signal." },
 		{ write: "on:click={|| …}", means: "In a component: runs the handler, an effect, when the event happens." },
 		{ write: "on:input.value={set_draft!}", means: "Gives the handler the target's value (a Str)." },
 		{ write: "on:change.checked={|done| …}", means: "Gives the handler whether the target is checked (a Bool)." },

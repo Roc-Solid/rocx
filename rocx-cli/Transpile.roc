@@ -1923,12 +1923,22 @@ Transpile := [].{
 		!bytes.is_empty() and (Text.is_lower(first) or first == '_') and bytes.all(Transpile.is_alnum_under)
 	}
 
-	## `/^style:--[A-Za-z0-9_-]+$/`: a custom property.
-	is_custom_property : Str -> Bool
-	is_custom_property = |attr| {
-		rest = attr.to_utf8().drop_first(8)
-		attr.starts_with("style:--") and !rest.is_empty() and rest.all(|b| Transpile.is_alnum_under(b) or b == '-')
+	## `/^style:--[A-Za-z0-9_-]+$/` (a custom property) or `/^style:[A-Za-z-]+$/` (a property): one
+	## property of an element's `style`, its value from data.
+	is_style_property : Str -> Bool
+	is_style_property = |attr| {
+		custom = attr.to_utf8().drop_first(8)
+		plain = attr.to_utf8().drop_first(6)
+		if attr.starts_with("style:--") {
+			!custom.is_empty() and custom.all(|b| Transpile.is_alnum_under(b) or b == '-')
+		} else {
+			attr.starts_with("style:") and !plain.is_empty() and plain.all(|b| Text.is_letter(b) or b == '-')
+		}
 	}
+
+	## Why a `style:` attribute's name is refused.
+	style_name_refused : Str -> Str
+	style_name_refused = |attr| "${attr}: a style property's name is letters and dashes (style:color={…}), or a custom property's (style:--size={…})"
 
 	## Attributes up to `>` or `/>`, as Html.attr calls (elements) or record fields (components). A
 	## component that takes getters (D-039) is given each value prop as one (`label: || word!()`); with
@@ -2132,7 +2142,7 @@ Transpile := [].{
 						} else if name.starts_with("class:") {
 							Ok("Html.class_if(${Text.roc_string(name.drop_prefix("class:"))}, ${expr})")
 						} else if name.starts_with("style:") {
-							if (Transpile.is_custom_property(name)) Ok("Html.style_var(${Text.roc_string(name.drop_prefix("style:"))}, ${expr})") else Err(oops("${name}: only custom properties (style:--name={…}) take a value from data"))
+							if (Transpile.is_style_property(name)) Ok("Html.style_var(${Text.roc_string(name.drop_prefix("style:"))}, ${expr})") else Err(oops(Transpile.style_name_refused(name)))
 						} else if name == "style" {
 							Err(oops("style takes a static value: change classes, not styles, with data"))
 						} else {
@@ -2366,10 +2376,10 @@ Transpile := [].{
 		} else if attr.starts_with("class:") {
 			Ok("Html.class_of(${Text.roc_string(attr.drop_prefix("class:"))}, || ${expr})")
 		} else if attr.starts_with("style:") {
-			if Transpile.is_custom_property(attr) {
+			if Transpile.is_style_property(attr) {
 				Ok("Html.style_of(${Text.roc_string(attr.drop_prefix("style:"))}, || ${expr})")
 			} else {
-				Err(Transpile.fail(cfg, "${attr}: only custom properties (style:--name={…}) take a value from data", name_start))
+				Err(Transpile.fail(cfg, Transpile.style_name_refused(attr), name_start))
 			}
 		} else if attr == "style" {
 			Err(Transpile.fail(cfg, "style takes a static value: change classes, not styles, with data", name_start))

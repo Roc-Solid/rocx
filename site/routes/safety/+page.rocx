@@ -55,8 +55,11 @@ view! = |_|
 						<code>poster</code> and <code>cite</code> take only <a href="#urls">safe URLs</a>.
 					</p>
 				</Feature>
-				<Feature title="Custom properties">
-					<p>A value for <code>style:--size</code> is dropped if it could end the declaration.</p>
+				<Feature title="Styles">
+					<p>
+						A value for <code>style:color</code> or <code>style:--size</code> is dropped if it could end the
+						declaration or calls a function that loads something (<code>url(…)</code>).
+					</p>
 				</Feature>
 				<Feature title="Tags and script">
 					<p>Tags, attribute names and script come only from the file, never from a value.</p>

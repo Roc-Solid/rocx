@@ -7,7 +7,8 @@ import pf.Solid exposing [create_signal!, create_effect!]
 ## an effectful component in a hole, outside one and inside a `<Show>`; the same signal as an accessor
 ## prop; a component that reads its prop in its body, in a pure lambda, in an effect and in a handler;
 ## and a `<For>` whose rows are made once (untracked). Then what a `<Show>` shows, and fallbacks, made
-## when they show, with value props in them.
+## when they show, with value props in them. And a property of an element's style from data,
+## computed (`style:color`), and one whose value would load something, dropped.
 Props := [].{
 	view! : {} => Html
 	view! = |{}| {
@@ -41,6 +42,7 @@ Props := [].{
 					<Shows label={word!()} />
 				</Show>
 			</p>
+			<p class="painted" style:color={if (word!() == "one") "rgb(200, 0, 0)" else "rgb(0, 0, 200)"} style:background-image={"url(/x.png)"}>Painted</p>
 			<p class="listed">
 				<For each!={entries!()} keyed={Bool.False} fallback={<Shows label={"none, ${word!()}"} />}>
 					{|entry!, _| <span class="item">{entry!()}</span>}

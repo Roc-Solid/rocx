@@ -74,7 +74,10 @@ same components natively; this one hydrates them.
   is JSON again.
 - **Static holes.** A hole or attribute that calls nothing named with `!` reads nothing that
   changes, so rocx writes it as a page's: `Html.text(e)`, `Html.attr`, `Html.class_if` (`["ci",…]`),
-  `Html.optional` (`["o",…]`)…, with no closure, and the server puts no comments around it. A
+  `Html.optional` (`["o",…]`), `Html.style_var` (`["sv",…]`: `style:color` or `style:--size`, the
+  name plain, the value passed through `safe_css`, which drops what could end the declaration and
+  any function but those that compute a value)…, with no closure, and the server puts no comments
+  around it. A
   `<script>`'s or `<style>`'s text, as the `.rocx` file has it, is `{"t":"raw"}` (`Html.source_text`),
   and `<!doctype html>` is `{"t":"doctype"}`. Hydrating takes raw text without comparing it; a
   `<script>` the runtime builds doesn't run, as in Solid (the server's ran as the page was read).

@@ -104,12 +104,16 @@ Html :: [
 	optional_of : Str, (() => Str) -> Attr
 	optional_of = |name, compute| OptionalOf(name, compute)
 
-	## A custom property (`style:--size="…"`), in the element's `style`. A value with anything but
-	## letters, digits, spaces and `.,%#()-+` in it is dropped: data can't write CSS.
+	## One property of the element's `style` (`style:color={…}`), or a custom property
+	## (`style:--size={…}`), joining its static `style`. Data can't write CSS: a name that isn't
+	## letters and dashes (or `--` and letters, digits, `_` and `-`) is dropped, and so is a value
+	## with anything but letters, digits, spaces and `.,%#()-+` in it, or a function that isn't one
+	## that computes a value (`rgb(…)`, `calc(…)`, `var(…)`; never `url(…)`). In `Html.to_str` too,
+	## so an email's colour may come from data, as email clients want it: inline, no variables.
 	style_var : Str, Str -> Attr
 	style_var = |name, value| StyleVar(name, value)
 
-	## The same, computed (`style:--x={…}`).
+	## The same, computed (`style:color={…}` reading a signal), patched as it changes.
 	style_of : Str, (() => Str) -> Attr
 	style_of = |name, compute| StyleOf(name, compute)
 
@@ -377,8 +381,13 @@ attributes! = |tag, attrs| {
 				ValueOf(name, compute) => "[\"vo\",${json_str(name)},${keep!(|| json_str(safe_value(tag, name, compute())))}]"
 				Optional(name, value) => "[\"o\",${json_str(name)},${json_str(safe_value(tag, name, value))}]"
 				OptionalOf(name, compute) => "[\"oo\",${json_str(name)},${keep!(|| json_str(safe_value(tag, name, compute())))}]"
-				StyleVar(name, value) => "[\"sv\",${json_str(name)},${json_str(safe_css(value))}]"
-				StyleOf(name, compute) => "[\"so\",${json_str(name)},${keep!(|| json_str(safe_css(compute())))}]"
+				StyleVar(name, value) => "[\"sv\",${json_str(name)},${json_str(safe_style(name, value))}]"
+				StyleOf(name, compute) =>
+					if plain_property(name) {
+						"[\"so\",${json_str(name)},${keep!(|| json_str(safe_css(compute())))}]"
+					} else {
+						"[\"sv\",${json_str(name)},\"\"]"
+					}
 				Flag(name, is_on) => "[\"f\",${json_str(name)},${if (is_on) "true" else "false"}]"
 				FlagOf(name, compute) => "[\"fo\",${json_str(name)},${keep!(|| if (compute()) "true" else "false")}]"
 				ClassIf(name, is_on) => "[\"ci\",${json_str(name)},${if (is_on) "true" else "false"}]"
@@ -461,7 +470,7 @@ static_attributes = |tag, attrs| {
 				Flag(name, is_on) => if (is_on) { ..state, others: state.others.append(name) } else state
 				ClassIf(name, is_on) => if (is_on) { ..state, classes: state.classes.append(name) } else state
 				StyleVar(name, value) => {
-					safe = safe_css(value)
+					safe = safe_style(name, value)
 					if (safe.is_empty()) state else { ..state, styles: state.styles.append("${name}: ${safe}") }
 				}
 				ValueOf(_, _) => crash "Html.to_str renders static attributes: a computed one needs the runtime"
@@ -503,10 +512,56 @@ keys_of = |said| {
 frame_ms : Str -> F64
 frame_ms = |micros| F64.min((U64.from_str(micros) ?? 0).to_f64() / 1000.0, 100.0)
 
-## A custom property's value, if it is plain: letters, digits, spaces and `.,%#()-+`; otherwise none.
+## A style's value, if it is plain: letters, digits, spaces and `.,%#()-+`, and no function but
+## one that computes a value (`css_functions`); otherwise none.
 safe_css : Str -> Str
-safe_css = |value|
-	if (value.to_utf8().all(|byte| (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z') or (byte >= '0' and byte <= '9') or " .,%#()-+".to_utf8().contains(byte))) value else ""
+safe_css = |value| {
+	bytes = value.to_utf8()
+	if (bytes.all(|byte| (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z') or (byte >= '0' and byte <= '9') or " .,%#()-+".to_utf8().contains(byte)) and computes_only(bytes)) value else ""
+}
+
+## A style property's value as `safe_css` makes it, and none for a name that isn't plain.
+safe_style : Str, Str -> Str
+safe_style = |name, value| if (plain_property(name)) safe_css(value) else ""
+
+## A property's name as rocx takes one: letters and dashes (`color`, `-webkit-line-clamp`), or a
+## custom property's, `--` then letters, digits, `_` and `-`.
+plain_property : Str -> Bool
+plain_property = |name| {
+	bytes = name.to_utf8()
+	if name.starts_with("--") {
+		bytes.len() > 2 and bytes.drop_first(2).all(|byte| (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z') or (byte >= '0' and byte <= '9') or byte == '_' or byte == '-')
+	} else {
+		!bytes.is_empty() and bytes.all(|byte| (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z') or byte == '-')
+	}
+}
+
+## Whether every function a value calls (the name before each `(`) is one that only computes a
+## value (`css_functions`): none that loads something (`url(…)`, `image-set(…)`, `src(…)`).
+computes_only : List(U8) -> Bool
+computes_only = |bytes| {
+	var $name = []
+	var $ok = Bool.True
+	for byte in bytes {
+		if byte == '(' {
+			called = Str.from_utf8_lossy($name).with_ascii_lowercased()
+			if !(called.is_empty() or css_functions.contains(called)) {
+				$ok = Bool.False
+			}
+			$name = []
+		} else if (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z') or (byte >= '0' and byte <= '9') or byte == '-' {
+			$name = $name.append(byte)
+		} else {
+			$name = []
+		}
+	}
+	$ok
+}
+
+## The functions a style's value may call: colours, arithmetic, transforms, gradients, timing and
+## filters, which compute a value and load nothing.
+css_functions : List(Str)
+css_functions = ["rgb", "rgba", "hsl", "hsla", "hwb", "lab", "lch", "oklab", "oklch", "color", "color-mix", "light-dark", "calc", "min", "max", "clamp", "var", "round", "mod", "rem", "abs", "sign", "pow", "sqrt", "hypot", "sin", "cos", "tan", "translate", "translatex", "translatey", "translate3d", "scale", "scalex", "scaley", "rotate", "skew", "skewx", "skewy", "matrix", "perspective", "linear-gradient", "radial-gradient", "conic-gradient", "repeating-linear-gradient", "repeating-radial-gradient", "repeating-conic-gradient", "cubic-bezier", "steps", "minmax", "repeat", "fit-content", "blur", "brightness", "contrast", "drop-shadow", "grayscale", "hue-rotate", "invert", "opacity", "saturate", "sepia"]
 
 url_attributes : List(Str)
 url_attributes = ["href", "src", "action", "formaction", "poster", "cite"]
@@ -600,6 +655,10 @@ expect safe_value("iframe", "src", "DATA:image/svg+xml,x") == unsafe and safe_va
 expect [("img", "src"), ("link", "href"), ("source", "src"), ("video", "poster"), ("a", "href"), ("iframe", "src")].all(|(tag, name)| safe_value(tag, name, "data:text/html,<script>alert(1)</script>") == unsafe and safe_value(tag, name, "DATA:text/html;image/png,x") == unsafe and safe_value(tag, name, "data:,image/png") == unsafe)
 expect safe_value("img", "src", "javascript:alert(1)") == unsafe and safe_value("link", "href", "jav\nascript:alert(1)") == unsafe
 expect safe_css("12.5%") == "12.5%" and safe_css("red; background: url(x)") == ""
+expect safe_css("url(x)") == "" and safe_css("URL(x)") == "" and safe_css("image-set(a 1x)") == "" and safe_css("calc(var(--a) + (2px - 1%))") == "calc(var(--a) + (2px - 1%))"
+expect safe_css("hsl(120 50% 40%)") == "hsl(120 50% 40%)" and safe_css("#11734b") == "#11734b"
+expect plain_property("color") and plain_property("-webkit-line-clamp") and plain_property("--size-2") and !plain_property("col0r") and !plain_property("--") and !plain_property("a:b") and !plain_property("")
+expect Html.to_str(Html.element("h1", [Html.attr("style", "font-size: 22px"), Html.style_var("color", "#11734b"), Html.style_var("background", "url(x)"), Html.style_var("x;y", "red")], [])) == "<h1 style=\"font-size: 22px; color: #11734b\"></h1>"
 expect keys_of("01001k") == { key: "k", shift: Bool.False, ctrl: Bool.True, alt: Bool.False, meta: Bool.False, mod: Bool.True }
 expect keys_of("10000Enter").shift and keys_of("10000Enter").key == "Enter" and keys_of("").key == ""
 expect frame_ms("16667") > 16.6 and frame_ms("16667") < 16.7 and frame_ms("500000") == 100.0

@@ -213,7 +213,8 @@ test("components: holes and attributes are computations, handlers effects", () =
 	assert.equal(more(`x = <p on:keydown.Space={go!}></p>`), `x = Html.element("p", [Html.on_named_key("keydown", " ", go!),], [])`);
 	assert.equal(more(`x = <p on:keydown.key={pressed!}></p>`), `x = Html.element("p", [Html.on_key("keydown", pressed!),], [])`);
 	assert.equal(more(`x = <i on:frame.ms={tick!}></i>`), `x = Html.element("i", [Html.on_frame(tick!),], [])`);
-	assert.throws(() => more(`x = <p style:color={b}></p>`), /only custom properties/);
+	assert.equal(more(`x = <p style:color={b!()} style:-webkit-line-clamp={n}></p>`), `x = Html.element("p", [Html.style_of("color", || b!()), Html.style_var("-webkit-line-clamp", n),], [])`, "a property of the style, computed or not");
+	assert.throws(() => more(`x = <p style:col0r={b}></p>`), /a style property's name is letters and dashes \(style:color=\{…\}\), or a custom property's/);
 	// Solid's control flow: a function child calls `view_with!`; `keyed={Bool.False}` the unkeyed one.
 	const lines = (source) => reactive(source).split("\n").slice(1).join("\n");
 	assert.equal(lines(`import pf.For\nx = <For each!={posts!()} keyed={|post| post.id} fallback={<p>None</p>}>{|post!, i!| <li>{post!().title}</li>}</For>`), `x = For.view_with_keyed!({ each!: || posts!(), keyed: |post| post.id, fallback: Html.element("p", [], [Html.text("None"),]), children: |post!, i!| Html.element("li", [], [Html.text_of(|| post!().title),]), })`);
@@ -513,7 +514,8 @@ test("unsafe or unclear markup is refused at its line and column", () => {
 	assert.match(failure(`x = <p>never closed`).reason, /<p> is never closed/);
 	assert.match(failure(`x = <Pill data-x="1" />`).reason, /props are Roc field names/);
 	assert.match(failure(`x = <input checked?="yes" />`).reason, /needs \{a Bool\}/);
-	assert.match(failure(`x = <p style:color={c} />`).reason, /only custom properties/);
+	assert.equal(roc(`x = <p style:color={c} />`), `x = Html.element("p", [Html.style_var("color", c),], [])`, "a property of the style, from data");
+	assert.match(failure(`x = <p style:background:url={c} />`).reason, /a style property's name is letters and dashes/);
 	assert.match(failure(`x = <a class:card-link>x</a>`).reason, /class:card-link needs \{a Bool\}/, "not a literal attribute");
 	assert.match(failure(`x = <a style:--x />`).reason, /style:--x needs \{a value\}/);
 	assert.equal(roc(`x = <p style:--size={s} />`), `x = Html.element("p", [Html.style_var("--size", s),], [])`);

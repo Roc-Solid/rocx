@@ -65,21 +65,25 @@ view! = |_|
 			</p>
 			<Example source={Sources.hello} output={Hello.demo({})} live />
 
-			<Heading id="attributes">Booleans, optional attributes, classes and custom properties</Heading>
+			<Heading id="attributes">Booleans, optional attributes, classes and styles</Heading>
 			<p>
 				<code>name?={"{bool}"}</code> writes a boolean attribute when the value is true, and a bare name is
 				always on. <code>name??={"{str}"}</code> leaves the attribute out when the string is empty, as
 				Svelte leaves out an undefined one. <code>class:name={"{bool}"}</code> adds a class, and every class
 				on the element ends up in one <code>class</code> attribute. <code>style:--name={"{str}"}</code> sets a
-				custom property; a value that could end the declaration (a <code>;</code>, a <code>url(</code>) is
-				left out.
+				custom property, and <code>style:color={"{str}"}</code> one property of the style, its name letters
+				and dashes; both join the element's static <code>style</code>. A value that could end the declaration
+				(a <code>;</code>), or that calls a function that loads something (a <code>url(</code>), is left
+				out.
 			</p>
 			<Example source={Sources.attributes} output={Attributes.demo({})} live />
 			<Callout kind="note" title="Why style takes no values">
 				<p>
-					<code>style={"{…}"}</code> is refused: a computed style is how data ends up deciding
-					layout and loading URLs. Change classes with data, or pass a number through a custom property
-					the stylesheet uses.
+					<code>style={"{…}"}</code> is refused: a whole style from data is how data ends up deciding
+					layout and loading URLs. Change classes with data, pass a number through a custom property the
+					stylesheet uses, or set one property, <code>style:color={"{…}"}</code>, whose name is the file's
+					and whose value is checked. That last one is for where a stylesheet can't reach: an email's
+					colours, inline, since email clients read neither stylesheets nor custom properties.
 				</p>
 			</Callout>
 

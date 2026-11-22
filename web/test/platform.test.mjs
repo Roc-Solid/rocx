@@ -372,7 +372,7 @@ window.hydrated = true;
 
 // ---- Timers: the browser's, owned by what started them ----
 
-test("props: a value prop is a getter (D-039): the component is made once and keeps its signals, and only what reads the prop is patched, in a hole, outside one, in a <Show>; read in the body, once; in a pure lambda, by its hole; in an effect and a handler, as they run; rows made once; what a <Show> shows and a fallback made as they show", { skip }, async () => {
+test("props: a value prop is a getter (D-039): the component is made once and keeps its signals, and only what reads the prop is patched, in a hole, outside one, in a <Show>; read in the body, once; in a pure lambda, by its hole; in an effect and a handler, as they run; rows made once; what a <Show> shows and a fallback made as they show; a style property from data, patched", { skip }, async () => {
 	const wasm = readFileSync(join(out, "props.wasm"));
 	const server = await Runtime.load(wasm);
 	const { html } = server.renderToString({ path: "/" });
@@ -381,6 +381,7 @@ test("props: a value prop is a getter (D-039): the component is made once and ke
 	assert.ok(html.includes(`<p class="once">${label("one")}</p>`));
 	assert.ok(html.includes(`<span class="first">one</span> <span class="joined"><!--x-->a-one,b-one<!--/x--></span>`), "read in the body: static; in a pure lambda: its hole's");
 	assert.ok(html.includes(`<li data-id="a">${label("Ada")} <span class="first">Ada</span></li>`));
+	assert.match(html, /<p class="painted" style="color: rgb\(200, 0, 0\)">Painted<\/p>/, "a style property from data, its url() dropped");
 	assert.ok(html.includes(`<p class="toggled"><!--show-->${label("no one")}<!--/show--></p>`), "a <Show>'s fallback, made as it shows");
 	assert.ok(html.includes(`<p class="listed"><!--for--><!--fallback-->${label("none, one")}<!--/fallback--><!--/for--></p>`), "a <For>'s fallback, made as it shows");
 	const dir = mkdtempSync(join(tmpdir(), "rocx-props-"));
@@ -403,6 +404,8 @@ window.hydrated = true;
 		const detail = () => tab.eval(`["span.first", "span.joined", "span.seen", "button.say"].map((p) => document.querySelector(".detail " + p).textContent)`);
 		await tab.wait(`document.querySelector(".detail .seen").textContent === "one"`);
 		assert.deepEqual(await shown(), ["one 0", "one 0", "one 0", "one 0", "Ada 0", "Bo 0"]);
+		const painted = () => tab.eval("getComputedStyle(document.querySelector('p.painted')).color");
+		assert.equal(await painted(), "rgb(200, 0, 0)");
 		for (const button of ["p.hole button", "p.once button", "p.getter button", "p.shown button", "li[data-id=a] button"]) await tab.click(button);
 		await tab.wait(`document.querySelector("li[data-id=a] button").textContent === "Ada 1"`);
 		assert.deepEqual(await shown(), ["one 1", "one 1", "one 1", "one 1", "Ada 1", "Bo 0"], "each its own clicks");
@@ -413,7 +416,9 @@ window.hydrated = true;
 		assert.deepEqual(await shown(), ["two 1", "two 1", "two 1", "two 1", "Ada 1", "Bo 0"], "patched where the label is read, the component kept, its clicks with it (in a hole too)");
 		await tab.wait(`document.querySelector(".detail .seen").textContent === "two"`);
 		assert.deepEqual(await detail(), ["one", "a-two,b-two", "two", ""], "the body's read is the first; the pure lambda's hole, and the effect, follow");
-		assert.deepEqual(await tab.eval(`window.patched.sort()`), ["getter", "joined", "seen", "shows", "shows", "shows", "shows", "shows"], "only what reads the label: six labels (one an accessor's, two in fallbacks), the pure lambda's hole, and what the effect set");
+		assert.deepEqual(await tab.eval(`window.patched.sort()`), ["getter", "joined", "painted", "seen", "shows", "shows", "shows", "shows", "shows"], "only what reads the label: six labels (one an accessor's, two in fallbacks), the pure lambda's hole, what the effect set, and the style:color");
+		assert.equal(await painted(), "rgb(0, 0, 200)", "style:color, patched as what it read changed");
+		assert.equal(await tab.eval("document.querySelector('p.painted').style.backgroundImage"), "", "a url() is never set");
 		assert.equal(await tab.eval(`window.kept.every((node, i) => node === document.querySelector(["p.hole button", "p.once button", "p.shown button", "li[data-id=a]", ".detail"][i]))`), true, "the same elements");
 		await tab.eval("window.runtime.observer = null");
 		await tab.click(".detail .say");

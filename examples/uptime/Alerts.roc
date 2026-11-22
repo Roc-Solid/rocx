@@ -60,10 +60,10 @@ incident_row = { id: 7, monitor: 2, monitor_name: "Payments API", title: "Paymen
 
 expect {
 	mail = Alerts.mail({ kind: Opened, incident: incident_row, said: "Payments API failed 3 checks in a row (expected 200, got 503).", origin: "https://status.example.com", to: "ada@example.com", token: "abc" })
-	mail.subject == "[Acme Status] Payments API is down" and mail.text.contains("https://status.example.com/incidents/7") and mail.text.contains("unsubscribe?token=abc") and mail.html.contains("Payments API failed 3 checks in a row")
+	mail.subject == "[Acme Status] Payments API is down" and mail.text.contains("https://status.example.com/incidents/7") and mail.text.contains("unsubscribe?token=abc") and mail.html.contains("Payments API failed 3 checks in a row") and mail.html.contains("<h1 style=\"font-size: 22px; color: #b42318\">")
 }
 
 expect {
 	mail = Alerts.mail({ kind: Closed, incident: incident_row, said: "Back.", origin: "https://status.example.com", to: "ada@example.com", token: "abc" })
-	mail.subject == "[Acme Status] Resolved: Payments API is back" and mail.text.contains("Down for 23 minutes, from Nov 22, 14:05 UTC.")
+	mail.subject == "[Acme Status] Resolved: Payments API is back" and mail.text.contains("Down for 23 minutes, from Nov 22, 14:05 UTC.") and mail.html.contains("color: #11734b")
 }
