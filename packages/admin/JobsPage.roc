@@ -137,6 +137,7 @@ shown! = |mount, back, query| {
 	wanted = I64.from_str(AdminHtml.param(query, "id"))
 	now = Time.now_millis!({}).to_i64_wrap()
 	kinds = Job.kinds!({})
+	note = queue_note(Db.backend!({}))
 	read =
 		match (Job.counts!({}), Job.list!({ state, kind, before_id: before, limit: per_page })) {
 			(Ok(counts), Ok(rows)) => Ok((counts, rows))
@@ -146,7 +147,7 @@ shown! = |mount, back, query| {
 	match read {
 		Err(why) => {
 			body = "${Look.header({ eyebrow: "Queue", title: "Jobs", actions: "" })}<section class=\"panel\"><div class=\"callout tone-bad\">${Look.icon("alert")}<div><strong>The queue can't be read</strong><p class=\"problem\">${Look.escape(why)}</p></div></div></section>"
-			side = if (back.href.is_empty()) "" else Look.side({ name: "Jobs", note: "The queue, in Postgres", home: mount, nav: Look.back_link(back), foot: "" })
+			side = if (back.href.is_empty()) "" else Look.side({ name: "Jobs", note, home: mount, nav: Look.back_link(back), foot: "" })
 			AdminHtml.page(500, { title: "Jobs", events: "", now, side, body })
 		}
 		Ok((counts, rows)) => {
@@ -210,15 +211,24 @@ shown! = |mount, back, query| {
 					Ok(id) => "Job #${id.to_str()} · Jobs"
 					Err(_) => if (kind.is_empty()) titled else "${kind} · Jobs"
 				}
-			AdminHtml.page(opened.status, { title, events: AdminHtml.link(mount, [("events", "1")]), now, side: sidebar(mount, back, counts, kinds, state, kind), body })
+			AdminHtml.page(opened.status, { title, events: AdminHtml.link(mount, [("events", "1")]), now, side: sidebar(mount, back, note, counts, kinds, state, kind), body })
 		}
 	}
 }
 
+## What the sidebar says of the queue under its name: the database it is in (`Db.backend!`).
+queue_note : [Postgres, Sqlite, None] -> Str
+queue_note = |backend|
+	match backend {
+		Postgres => "The queue, in Postgres"
+		Sqlite => "The queue, in SQLite"
+		None => "The queue"
+	}
+
 ## The sidebar: the link back to the app (`back`, if it has one), the overview, each state and each
-## kind, with how many jobs each has.
-sidebar : Str, { label : Str, href : Str }, List({ kind : Str, state : Str, count : U64 }), List(Job.KindInfo), Str, Str -> Str
-sidebar = |mount, back, counts, kinds, state, kind| {
+## kind, with how many jobs each has. `note` is what it says of the queue (`queue_note`).
+sidebar : Str, { label : Str, href : Str }, Str, List({ kind : Str, state : Str, count : U64 }), List(Job.KindInfo), Str, Str -> Str
+sidebar = |mount, back, note, counts, kinds, state, kind| {
 	overview = Look.nav_link({ href: mount, icon: "overview", tone: "accent", label: "Overview", count: "", on: state.is_empty() and kind.is_empty() })
 	by_state = states.map(
 		|each| {
@@ -229,7 +239,7 @@ sidebar = |mount, back, counts, kinds, state, kind| {
 	by_kind = kind_names(kinds, counts).map(|name| Look.nav_link({ href: AdminHtml.link(mount, [("kind", name)]), icon: "layers", tone: "neutral", label: "<code>${Look.escape(name)}</code>", count: count_of(counts, name, "").to_str(), on: kind == name }))
 	kinds_nav = if (by_kind.is_empty()) "" else "${Look.nav_label("Kinds")}${Str.join_with(by_kind, "")}"
 	nav = "${Look.back_link(back)}${overview}${Look.nav_label("States")}${Str.join_with(by_state, "")}${kinds_nav}"
-	Look.side({ name: "Jobs", note: "The queue, in Postgres", home: mount, nav, foot: "Times are UTC. Done jobs are kept for a week." })
+	Look.side({ name: "Jobs", note, home: mount, nav, foot: "Times are UTC. Done jobs are kept for a week." })
 }
 
 ## How many jobs are in each state (of the kind shown), each a link to them.
@@ -649,6 +659,9 @@ act! = |request, mount|
 		}
 	}
 
+expect queue_note(Postgres) == "The queue, in Postgres"
+expect queue_note(Sqlite) == "The queue, in SQLite"
+expect queue_note(None) == "The queue"
 expect described("*/5 * * * *") == "every 5 minutes"
 expect described("0 3 * * *") == "daily at 03:00"
 expect described("0 9 * * 1") == "Mondays at 09:00"
@@ -659,5 +672,6 @@ expect described("0 0 1 * *") == "monthly, on day 1, at 00:00"
 expect described("0 3 * 1 *") == ""
 
 # The link back to the app, first in the sidebar, when the app gives one.
-expect sidebar("/admin/jobs", { label: "Status", href: "/admin" }, [], [], "", "").contains("<nav class=\"side-nav\" aria-label=\"Jobs\"><a class=\"back\" href=\"/admin\">")
-expect !sidebar("/admin/jobs", { label: "", href: "" }, [], [], "", "").contains("class=\"back\"")
+expect sidebar("/admin/jobs", { label: "Status", href: "/admin" }, "The queue, in SQLite", [], [], "", "").contains("<nav class=\"side-nav\" aria-label=\"Jobs\"><a class=\"back\" href=\"/admin\">")
+expect !sidebar("/admin/jobs", { label: "", href: "" }, "The queue", [], [], "", "").contains("class=\"back\"")
+expect sidebar("/admin/jobs", { label: "", href: "" }, "The queue, in SQLite", [], [], "", "").contains("The queue, in SQLite")

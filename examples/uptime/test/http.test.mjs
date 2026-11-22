@@ -158,6 +158,8 @@ test("the admin: sign-in required, a wrong password refused and never sent back,
 	const jobs = await person.get("/admin/jobs");
 	assert.equal(jobs.status, 200);
 	assert.match(jobs.text, /check/);
+	// Its sidebar names the database the queue is in: uptime's is SQLite.
+	assert.match(jobs.text, /The queue, in SQLite/);
 	// packages/admin's pages lead back to the app's own admin, first in their sidebars (`back`).
 	for (const html of [tables.text, jobs.text]) assert.match(html, /<nav class="side-nav" aria-label="[^"]+"><a class="back" href="\/admin">.*?<span class="label">Status admin<\/span><\/a>/);
 
