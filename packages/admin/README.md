@@ -7,6 +7,9 @@ the tables from Postgres's catalog when a page is asked for, so there is nothing
 nothing to keep in step with the schema. It is mounted as the jobs page beside it is (`JobsPage`,
 below): one route file, behind the app's own middleware.
 
+The tables' admin needs Postgres (D-045): its catalog and its statements are Postgres's, so an app
+on SQLite can't mount it yet. The jobs page works on either.
+
 ```roc
 # routes/admin/db/+server.roc
 import pf.Db

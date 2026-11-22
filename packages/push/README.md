@@ -2,7 +2,8 @@
 
 Web Push notifications for Roc Solid apps. A page asks the user's permission and subscribes; the
 server keeps the subscription; later the server sends a notification, and the browser shows it even
-with every tab of the site closed.
+with every tab of the site closed. The server's half keeps subscriptions in Postgres (D-045: its
+statements are Postgres's; an app on SQLite can't use it yet).
 
 ```roc
 import push.Notification
