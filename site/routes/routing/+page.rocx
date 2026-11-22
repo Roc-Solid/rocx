@@ -63,7 +63,7 @@ view! = |_|
 
 			<Heading id="page">A page</Heading>
 			<p>
-				A route file is bare: its imports, a blank line, and its definitions. <code>view</code> renders the
+				A route file is bare: its imports, then its definitions. <code>view</code> renders the
 				page; <code>meta</code>, if it has one, is given to its layouts (here, the title, the description and
 				what the sidebar on the right lists).
 			</p>
@@ -96,8 +96,8 @@ view! = |_|
 				Roc names a module after its file, and <code>+page</code> isn't a name, so rocx writes each route file
 				as a module of its own under <code>Generated/</code>, named after its path
 				(<code>ShowcasePage</code>). Its imports are moved to where it is, and the module's line goes on the
-				blank line, so line <var>N</var> is still line <var>N</var> of the route file, and the compiler's
-				reports point into it:
+				blank line after them (or, with none, at the start of the first definition's line), so line
+				<var>N</var> is still line <var>N</var> of the route file, and the compiler's reports point into it:
 			</p>
 			<Code title={Sources.route_page_generated.file} source={Sources.route_page_generated.rocx} />
 

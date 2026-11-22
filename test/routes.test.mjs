@@ -46,7 +46,13 @@ test("routes: a route file's module keeps its lines: imports moved, the module's
 	const module = routeModule(code, { name: "BlogPage", source: "/app/routes/blog/+page.rocx", generated: "/app/Generated/BlogPage.roc" });
 	assert.deepEqual(module.split("\n").slice(0, 5), ["import pf.Html", "import ../Ui/Card", "BlogPage := [].{", "view! = |_| x", "}"]);
 	assert.match(module, /# rocx: generated from \.\.\/routes\/blog\/\+page\.rocx: edit that file/);
-	assert.throws(() => routeModule("import pf.Html\nview! = |_| x\n", { name: "X", source: "/a/routes/+page.rocx", generated: "/a/Generated/X.roc" }), /leave a blank line/);
+	// No blank line after the imports, or no imports: the module's line at the start of the first
+	// definition's, the lines kept; a file of imports alone has nothing to open.
+	const at = { name: "X", source: "/a/routes/+page.rocx", generated: "/a/Generated/X.roc" };
+	assert.deepEqual(routeModule("import pf.Html\nview! = |_| x\n", at).split("\n").slice(0, 3), ["import pf.Html", "X := [].{ view! = |_| x", "}"]);
+	assert.deepEqual(routeModule("## GET /hello.\nget! = |_| Ok(1)\n", at).split("\n").slice(0, 3), ["## GET /hello.", "X := [].{ get! = |_| Ok(1)", "}"]);
+	assert.deepEqual(routeModule("get! = |_| Ok(1)", at).split("\n").slice(0, 2), ["X := [].{ get! = |_| Ok(1)", "}"]);
+	assert.throws(() => routeModule("import pf.Html", at), /defines its view, meta or methods after its imports/);
 });
 
 test("routes: a route file's own components are types beside its module, not in its block, where their view! would be the page's again", () => {
@@ -57,6 +63,8 @@ test("routes: a route file's own components are types beside its module, not in 
 	assert.deepEqual(routeModule(before.join("\n"), where).split("\n").slice(0, 8), ["import pf.Html", "", "Board := [].{", "\tview! = |_| y", "}", "LocalPage := [].{", "view! = |_| x", "}"], "opened on the blank line after them");
 	const tight = ["import pf.Html", "", "view! = |_| x", "Board := [].{", "\tview! = |_| y", "}"];
 	assert.equal(routeModule(tight.join("\n"), where).split("\n")[3], "} Board := [].{", "no blank line: closed at the start of the component's");
+	const tightBefore = ["import pf.Html", "", "Board := [].{", "\tview! = |_| y", "}", "view! = |_| x"];
+	assert.deepEqual(routeModule(tightBefore.join("\n"), where).split("\n").slice(4, 7), ["}", "LocalPage := [].{ view! = |_| x", "}"], "no blank line after them: opened at the start of the first definition's");
 	assert.throws(() => routeModule(["import pf.Html", "", "meta = 1", "Board := [].{", "\tview! = |_| y", "}", "view! = |_| x"].join("\n"), where), /local\/\+page\.rocx:7: put the file's own components \(Board\) before its definitions or after them, not between/);
 });
 

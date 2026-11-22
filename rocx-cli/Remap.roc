@@ -169,8 +169,10 @@ Remap := [].{
 		carets > start and Text.skip_space(bytes, carets) == bytes.len()
 	}
 
-	## The generated file's lines and its .rocx file's: the .rocx beside it, or, for a route's module
-	## (Generated/ShowcasePage.roc), the one its last line names. None for a file rocx didn't write.
+	## The generated file's lines and its source's: the .rocx beside it, or, for a route's module
+	## (Generated/ShowcasePage.roc), the route file its last line names (a `+page.rocx`, or a
+	## `+server.roc`, whose module's line may share a line with its first definition). None for a file
+	## rocx didn't write.
 	entry! : Str, Str => [Some(Entry), None]
 	entry! = |file, cwd| {
 		text = if (Fs.exists!(file)) Fs.read_or_empty!(file) else ""
@@ -199,7 +201,8 @@ Remap := [].{
 		}
 	}
 
-	## The .rocx file a generated file's last line names (`# rocx: generated from (\S+\.rocx):`).
+	## The file a generated file's last line names (`# rocx: generated from (\S+\.rocx):`), or a
+	## route file's Roc (`… from ../routes/feed/+server.roc:`).
 	named : Str -> [Some(Str), None]
 	named = |last| {
 		lead = "${Remap.marker} "
@@ -222,7 +225,12 @@ Remap := [].{
 		}
 		match $found {
 			Some(at) => Some(Text.cut(bytes, 0, at + 5))
-			None => None
+			None =>
+				if $token_end > 5 and Text.starts_with_at(bytes, ".roc:".to_utf8(), $token_end - 5) {
+					Some(Text.cut(bytes, 0, $token_end - 1))
+				} else {
+					None
+				}
 		}
 	}
 

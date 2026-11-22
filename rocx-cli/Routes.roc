@@ -8,10 +8,10 @@
 ## route file names its `middleware`, which runs around it. Directories that start with a dot are
 ## skipped, but for `.well-known` (`routes/.well-known/openid-configuration/+server.roc`).
 ##
-## A route file is bare: imports, a blank line, then its definitions (`meta`, `view`). Roc names a
-## module after its file, and `+page` isn't a name, so rocx writes each as a module of its own under
-## `Generated/` (`ShowcasePage.roc`), putting the module's line on that blank line, so line N there
-## is still line N of the route file. Then `Generated/Routes.roc` matches a request's path to its
+## A route file is bare: imports, then its definitions (`meta`, `view`). Roc names a module after
+## its file, and `+page` isn't a name, so rocx writes each as a module of its own under `Generated/`
+## (`ShowcasePage.roc`), putting the module's line on the blank line between them (or at the start
+## of the first definition's line), so line N there is still line N of the route file. Then `Generated/Routes.roc` matches a request's path to its
 ## page, `Generated/Paths.roc` has a path for every page, and `Generated/Api.roc` has each endpoint,
 ## a function of its params, and their OpenAPI document (`Api.openapi`). (A record field can't be
 ## called `module` in Roc: these records call a route's module `mod`.)
@@ -698,8 +698,9 @@ Routes := [].{
 	}
 
 	## A route file's Roc (what rocx wrote for it), as the module `name` at `generated`: its
-	## relative imports made relative to there, the module's line on the blank line after them,
-	## and a `}` after the rest. Its paths are absolute (else taken from `/`).
+	## relative imports made relative to there, the module's line on the blank line after them (at
+	## the start of the first definition's line, when there is none), and a `}` after the rest. Its
+	## paths are absolute (else taken from `/`).
 	route_module : Str, { name : Str, source : Str, generated : Str } -> Try(Str, [Problem(Str)])
 	route_module = |code, place| Routes.route_module_in("/", code, place)
 
@@ -737,10 +738,15 @@ Routes := [].{
 				$i = $i + 1
 			}
 		}
-		if !$has_blank {
-			return Err(Problem("${source}: leave a blank line after the imports, before the definitions: rocx puts the module's line there"))
+		# No blank line after the imports (or none at all): the module's line goes at the start of the
+		# first definition's, so line N is still line N. A file of imports alone has nothing to open.
+		if !$has_blank and $i >= $lines.len() {
+			return Err(Problem("${source}: a route file defines its view, meta or methods after its imports"))
 		}
-		blank = $blank
+		inline = !$has_blank
+		blank = if (inline) $i else $blank
+		# Where the definitions start: the line after the blank one, or the first definition's.
+		body_from = if (inline) blank else blank + 1
 		lines = $lines
 		line_at = |i| lines.get(i) ?? ""
 		own = |i| Routes.is_component_line(line_at(i))
@@ -753,7 +759,7 @@ Routes := [].{
 		var $has_first = Bool.False
 		var $last = 0
 		var $owned = []
-		var $k = blank + 1
+		var $k = body_from
 		while $k < lines.len() {
 			if own($k) {
 				$owned = $owned.append($k)
@@ -782,8 +788,15 @@ Routes := [].{
 		from = Fs.relative(Fs.dirname(generated), Fs.resolve(cwd, [source]))
 		ending = "${Routes.marker} ${from}: edit that file, not this one. Line N here is line N there.\n"
 		opening_line = "${place.name} := [].{"
+		# The module's line on the line `at`: alone on a blank one, or before a definition on its own.
+		open_at = |at, before|
+			if before {
+				lines.set(at, "${opening_line} ${line_at(at)}") ?? lines
+			} else {
+				lines.set(at, opening_line) ?? lines
+			}
 		if owned.is_empty() {
-			done = lines.set(blank, opening_line) ?? lines
+			done = open_at(blank, inline)
 			return Ok("${Routes.without_trailing_newlines(Str.join_with(done, "\n"))}\n}\n\n${ending}")
 		}
 		if !$has_first {
@@ -797,10 +810,12 @@ Routes := [].{
 			$at
 		}
 		var $opening = blank
+		var $opening_inline = inline
 		if owned.any(|at| at < first) {
+			# On the blank line after the components, or else at the start of the first definition's.
 			var $found = Bool.False
 			var $j = comment_start(first)
-			while !$found and $j > blank + 1 {
+			while !$found and $j > body_from {
 				$j = $j - 1
 				if Text.trim(line_at($j)).is_empty() {
 					$opening = $j
@@ -809,10 +824,13 @@ Routes := [].{
 			}
 			opening_now = $opening
 			if !$found or owned.any(|at| at > opening_now and at < first) {
-				return Err(Problem("${source}:${(first + 1).to_str()}: leave a blank line after the file's own components, before its definitions: rocx puts the module's line there"))
+				$opening = first
+				$opening_inline = Bool.True
+			} else {
+				$opening_inline = Bool.False
 			}
 		}
-		opened = lines.set($opening, opening_line) ?? lines
+		opened = open_at($opening, $opening_inline)
 		after = owned.keep_if(|at| at > last).sort_with(|a, b| if (a < b) Before else if (a > b) After else Same)
 		match after.first() {
 			Err(_) => Ok("${Routes.without_trailing_newlines(Str.join_with(opened, "\n"))}\n}\n\n${ending}")

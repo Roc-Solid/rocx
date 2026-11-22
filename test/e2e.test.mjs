@@ -142,15 +142,42 @@ test("routes: a link with the wrong params doesn't compile, and is reported at t
 	}
 });
 
-test("routes: a route file with no blank line before its definitions, or a directory that isn't a path's part, is refused", () => {
+test("routes: a route file with no blank line before its definitions builds, its module's line on the first one's, and a mistake in it is still reported at its line", { skip: !hasRoc && "no Roc (run `just setup`, or set ROC)" }, () => {
 	const dir = routesCopy((path, source) => source.replace("import ../../../Generated/Paths\n\n", "import ../../../Generated/Paths\n"));
 	try {
 		const built = run("build", dir);
-		assert.equal(built.status, 1);
-		assert.match(built.stderr, /leave a blank line after the imports/);
+		assert.equal(built.status, 0, built.stderr);
+		assert.equal(readFileSync(join(dir, "Generated", "BlogSlugPage.roc"), "utf8").split("\n")[3], "BlogSlugPage := [].{ view! = |{ params }|");
+		const tested = run("check", "--", roc, "test", join(dir, "main.roc"));
+		assert.equal(tested.status, 0, tested.stdout);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
+	const wrong = routesCopy((path, source) => source.replace("import ../../../Generated/Paths\n\n", "import ../../../Generated/Paths\n").replace('Paths.blog_slug({ slug: "other" })', 'Paths.blog_slug({ slg: "other" })'));
+	try {
+		assert.equal(run("build", wrong).status, 0);
+		const checked = run("check", "--", roc, "check", join(wrong, "main.roc"));
+		assert.notEqual(checked.status, 0);
+		assert.match(checked.stdout, /routes\/blog\/\[slug\]\/\+page\.rocx:7:\d+/);
+	} finally {
+		rmSync(wrong, { recursive: true, force: true });
+	}
+	// An endpoint of one line: its module's line before it, and a mistake in it at its column there.
+	const endpoint = routesCopy();
+	try {
+		mkdirSync(join(endpoint, "routes", "feed"));
+		writeFileSync(join(endpoint, "routes", "feed", "+server.roc"), "get! = |_| Ok(nobody)\n");
+		assert.equal(run("build", endpoint).status, 0);
+		assert.equal(readFileSync(join(endpoint, "Generated", "FeedServer.roc"), "utf8").split("\n")[0], "FeedServer := [].{ get! = |_| Ok(nobody)");
+		const checked = run("check", "--", roc, "check", join(endpoint, "main.roc"));
+		assert.notEqual(checked.status, 0);
+		assert.match(checked.stdout, /routes\/feed\/\+server\.roc:1:15\n\nNothing is named nobody in this scope\.\n\nget! = \|_\| Ok\(nobody\)\n {14}\^{6}/, `the endpoint's line and column, quoted:\n${checked.stdout}`);
+	} finally {
+		rmSync(endpoint, { recursive: true, force: true });
+	}
+});
+
+test("routes: a directory that isn't a path's part is refused", () => {
 	const other = routesCopy();
 	try {
 		cpSync(join(other, "routes", "blog"), join(other, "routes", "Blog Posts"), { recursive: true });

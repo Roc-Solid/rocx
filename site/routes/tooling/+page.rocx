@@ -111,7 +111,8 @@ view! = |_|
 				Because line <var>N</var> of the generated file is line <var>N</var> of yours, the compiler's reports
 				already name the right line. <code>rocx check</code> makes them read as if the compiler had seen
 				your file: it rewrites the location, quotes your line instead of the generated one, and moves the
-				caret onto the same code. Here is a mistake, a number where text belongs:
+				caret onto the same code; a mistake in a route file's Roc (<code>+server.roc</code>) is put at its
+				line too. Here is a mistake, a number where text belongs:
 			</p>
 			<Code title="Posts.rocx" source={Sources.check_source} />
 			<p>and what <code>rocx check -- roc check Posts.roc</code> printed when this page was built:</p>
