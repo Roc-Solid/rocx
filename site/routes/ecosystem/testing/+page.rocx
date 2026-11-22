@@ -172,8 +172,9 @@ view! = |_|
 		<Heading id="node">From Node</Heading>
 		<p>
 			<code>buildForTests</code> builds the app as a deploy does: <code>rocx build</code>, the browser's wasm
-			and the server. <code>startServer</code> starts that server on a free port. A test file starts one for
-			all its tests, and stops it at the end:
+			and the server. A markup problem, a type error or a warning throws, with the report at its line in
+			the <code>.rocx</code> file. <code>startServer</code> starts that server on a free port. A test file
+			starts one for all its tests, and stops it at the end:
 		</p>
 		<Code title={Sources.testing_node_setup.file} source={Sources.testing_node_setup.rocx} numbers={Bool.False} />
 		<p>

@@ -1,8 +1,8 @@
 // `rocx dev`, as the front page's Getting started uses it: on a copy of examples/hello without its
 // main.roc, it writes one, builds the app, serves the page and the endpoint (the page hydrated in
 // Chromium), builds again and restarts on a save, says where a mistake is in the .rocx file and
-// keeps serving the build before, and stops its server when it is stopped. Needs the toolchain
-// (`just setup`) and Chromium (web/test/browser.mjs).
+// keeps serving the build before, serves a build with warnings alone (saying them), and stops its
+// server when it is stopped. Needs the toolchain (`just setup`) and Chromium (web/test/browser.mjs).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
@@ -47,7 +47,7 @@ async function until(check, seconds, what) {
 	}
 }
 
-test("rocx dev: writes main.roc, serves the page and the endpoint, rebuilds on a save, says where a mistake is, and stops its server", { skip, timeout: 15 * 60 * 1000 }, async () => {
+test("rocx dev: writes main.roc, serves the page and the endpoint, rebuilds on a save, says where a mistake is, serves a build with warnings, and stops its server", { skip, timeout: 15 * 60 * 1000 }, async () => {
 	const dir = realpathSync(mkdtempSync(join(tmpdir(), "rocx-dev-")));
 	cpSync(join(root, "examples", "hello"), dir, { recursive: true, filter: (path) => !/\/(Generated|build)$/.test(path) });
 	rmSync(join(dir, "main.roc"));
@@ -104,6 +104,12 @@ test("rocx dev: writes main.roc, serves the page and the endpoint, rebuilds on a
 		// Fixed: served again.
 		writeFileSync(page_file, hello);
 		await until(async () => (await page()).includes("<h1>Hello, Roc Solid</h1>"), 60, `the build after the fix:\n${said}`);
+
+		// A warning alone (a name nothing uses): built and served, the warning said at its .rocx line.
+		writeFileSync(page_file, hello.replace("<h1>Hello, Roc Solid</h1>", "<h1>Hello, warned</h1>").replace("\t(count!, set_count!)", "\tunused = 1\n\t(count!, set_count!)"));
+		await until(async () => (await page()).includes("<h1>Hello, warned</h1>"), 60, `the build with a warning:\n${said}`);
+		assert.match(said, /unused variable/);
+		assert.match(said, /routes\/\+page\.rocx:6:2/, "the warning points into the .rocx file");
 	} finally {
 		await browser?.close();
 		const gone = new Promise((done) => (dev.exitCode !== null ? done() : dev.once("exit", done)));

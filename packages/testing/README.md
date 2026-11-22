@@ -57,6 +57,8 @@ for a `dbg`.
 **2. The app, from Node: `node:test` over HTTP.** Build the app as a deploy builds it, start its
 server on a port of its own, and ask it as a browser would: a cookie jar, forms, JSON, the
 endpoints a page reads, events. Each answer's `dom` holds the same queries, with Testing Library's names.
+A markup problem, a type error or a warning makes `buildForTests` throw, with the report at its
+`.rocx` line.
 
 ```js
 import { test, before, after } from "node:test";

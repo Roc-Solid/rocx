@@ -74,19 +74,22 @@ if (!existsSync(main)) {
 // ---- Building ----
 
 /** `command`, its output shown when it fails (then thrown), and on success only what isn't routine:
- * rocx build's count of the files it wrote, and Roc's line for a build without problems. */
-function step(command, commandArgs, what) {
+ * rocx build's count of the files it wrote, and Roc's line for a build without problems. `warned`:
+ * the exit code that means warnings alone (Roc's 2), a success whose warnings are shown. */
+function step(command, commandArgs, what, warned = null) {
 	const result = spawnSync(command, commandArgs, { encoding: "utf8", maxBuffer: 1 << 28 });
 	const said = `${result.stdout ?? ""}${result.stderr ?? ""}`;
 	if (result.error) throw new Error(`rocx dev: ${what} failed: ${result.error.message}`);
-	if (result.status !== 0) throw new Error(`${said.trimEnd()}\nrocx dev: ${what} failed; fix it and save again`);
+	if (result.status !== 0 && result.status !== warned) throw new Error(`${said.trimEnd()}\nrocx dev: ${what} failed; fix it and save again`);
 	if (/^0 errors and 0 warnings found/m.test(said)) return;
 	const rest = said.split("\n").filter((line) => line.trim() && !/^rocx: \d+ files? written$/.test(line));
 	if (rest.length > 0) console.error(rest.join("\n"));
 }
 
-/** `roc build` with `buildArgs`, its reports pointed into the .rocx files (`rocx check`). */
-const rocBuild = (buildArgs, what) => step(rocxBinary(), ["check", "--", roc(), "build", ...buildArgs], what);
+/** `roc build` with `buildArgs`, its reports pointed into the .rocx files (`rocx check`). Roc exits
+ * 1 on an error, though it says it built (what it wrote crashes where the error is), and 2 on
+ * warnings alone, which are shown and served. */
+const rocBuild = (buildArgs, what) => step(rocxBinary(), ["check", "--", roc(), "build", ...buildArgs], what, 2);
 
 /** The browser's host, built once (and again when its Zig changes), as site/build.mjs builds it. */
 function webHost() {
