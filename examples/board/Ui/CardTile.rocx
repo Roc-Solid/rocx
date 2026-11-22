@@ -1,0 +1,255 @@
+import pf.Html
+import pf.Transition
+import presence.AvatarStack
+import presence.Stack
+import presence.Wire
+import Avatar
+import Shared
+import ../Board
+
+## A card on the board, as its column shows it: its title (a link that opens it), its labels, when
+## it is due, how far its checklist is, who it is assigned to, who else has it open, and who is
+## editing it. It is dragged to another place (D-029), and glides there when the board changes
+## around it (`transition:move`, D-031): when it moves to another column, the tile that leaves one
+## column and the tile that comes into the other have the same `key`, so it glides between them.
+CardTile := [].{
+
+	view! : { card! : () => Board.Card, shared : Shared.State } => Html
+	view! = |{ card!, shared }| {
+		{ board!, dragging!, set_dragging!, over!, set_over!, set_open!, here!, .. } = shared
+		# The drag's end, whether dropped or called off (Escape). A drop that moves this tile to
+		# another column removes it before its dragend: the column's drop handler clears these too.
+		ended! = || {
+			set_dragging!("")
+			set_over!(Shared.nowhere)
+		}
+		# Who else has this card open, by their presence.
+		viewers! = || Shared.viewers(here!(), card!().id, board!().me.id).map(|each| { ..Wire.face(each), status: "" })
+		# A drag over this tile would put the card just above it.
+		entered! = || set_over!({ column: card!().column, before: card!().id })
+		<li
+			class="tile"
+			data-card={card!().id}
+			key={card!().id}
+			draggable="true"
+			transition:move={Transition.glide.ms(280)}
+			class:dragged={dragging!() == card!().id}
+			class:above={dragging!() != "" and dragging!() != card!().id and over!() == { column: card!().column, before: card!().id }}
+			on:dragstart={|| set_dragging!(card!().id)}
+			on:dragend={ended!}
+			on:dragenter={entered!}
+		>
+			<ul class="labels" aria-label="Labels">
+				{...card!().labels.map(|key| <li class="chip" data-label={key}>{Board.label_name(key)}</li>)}
+			</ul>
+			<a class="open" href={"?card=${card!().id}"} draggable="false" on:click.prevent={|| set_open!(card!().id)}>{card!().title}</a>
+			<div class="meta">
+				{=CardTile.due(card!().due, Board.is_overdue(board!(), card!()))}
+				{=CardTile.progress(Board.progress(card!().checklist))}
+				{=if (card!().description.is_empty()) Html.empty({}) else <span class="has-notes" title="Has a description" role="img" aria-label="Has a description">≡</span>}
+				<span class="space"></span>
+				{=CardTile.viewing(viewers!())}
+				{=CardTile.assignee(board!().people, card!().assignee)}
+			</div>
+			{=CardTile.editing(board!(), card!().id)}
+		</li>
+	}
+
+	## When a card is due, red once it is late.
+	due : Str, Bool -> Html
+	due = |date, late|
+		if date.is_empty() {
+			Html.empty({})
+		} else {
+			<span class="due" class:overdue={late}>
+				<span aria-hidden="true">◷</span>
+				<span class="hidden">{if (late) "Overdue: due " else "Due "}</span>
+				{Board.short_date(date)}
+			</span>
+		}
+
+	## How far a card's checklist is: `2/3`, with a bar.
+	progress : { done : U64, total : U64 } -> Html
+	progress = |{ done, total }|
+		if total == 0 {
+			Html.empty({})
+		} else {
+			<span class="progress" class:complete={done == total} style:--done={"${((done * 100) // total).to_str()}%"} title="Checklist">
+				<span aria-hidden="true">☑</span> {"${done.to_str()}/${total.to_str()}"}
+			</span>
+		}
+
+	## Who else has the card open: a small avatar stack, which a screen reader hears as "Ada has
+	## this card open". Made anew when they change (in a hole), since its label is a plain value.
+	viewing : List(Stack.Face) -> Html
+	viewing = |faces|
+		if faces.is_empty() {
+			Html.empty({})
+		} else {
+			<AvatarStack faces!={faces} max={3} label={"${Stack.names(faces.map(|face| face.name), 2)} ${if (faces.len() == 1) "has" else "have"} this card open"} />
+		}
+
+	## Who a card is assigned to.
+	assignee : List(Board.Person), Str -> Html
+	assignee = |people, id|
+		match Board.person(people, id) {
+			Ok(person) => <Avatar person={person} label={"Assigned to ${person.name}"} />
+			Err(NotFound) => Html.empty({})
+		}
+
+	## Who is editing the card, unless it is you.
+	editing : Board.Data, Str -> Html
+	editing = |board, card|
+		match Board.lease_of(board.leases, card) {
+			Ok(lease) if lease.person != board.me.id => <p class="editing"><span aria-hidden="true">✎</span> {lease.name} is editing</p>
+			_ => Html.empty({})
+		}
+
+	<style>
+		.tile {
+			position: relative;
+			display: grid;
+			gap: 0.4rem;
+			padding: 0.7rem 0.8rem 0.6rem;
+			border: 1px solid var(--line);
+			border-radius: var(--radius);
+			background: var(--card);
+			box-shadow: var(--shadow-1);
+			cursor: grab;
+			transition: box-shadow 140ms, opacity 140ms, transform 140ms;
+		}
+
+		.tile:hover {
+			box-shadow: var(--shadow-2);
+		}
+
+		.tile.dragged {
+			opacity: 0.35;
+		}
+
+		/* Where the card being dragged would land: a line just above this one. */
+		.tile.above::before {
+			content: "";
+			position: absolute;
+			left: 0.25rem;
+			right: 0.25rem;
+			top: calc(-0.35rem - 2px);
+			height: 3px;
+			border-radius: 2px;
+			background: var(--accent);
+		}
+
+		.labels {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.25rem;
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		.labels:empty {
+			display: none;
+		}
+
+		.chip {
+			padding: 0.05rem 0.5rem;
+			border-radius: 999px;
+			background: var(--label);
+			color: #fff;
+			font-size: 0.7rem;
+			font-weight: 700;
+			letter-spacing: 0.02em;
+		}
+
+		.open {
+			color: var(--ink);
+			font-weight: 600;
+			line-height: 1.3;
+			text-decoration: none;
+			overflow-wrap: anywhere;
+		}
+
+		.open:hover {
+			text-decoration: underline;
+			text-decoration-color: var(--accent);
+			text-underline-offset: 0.15em;
+		}
+
+		.open:focus-visible {
+			outline: none;
+		}
+
+		/* The whole tile shows the link's focus. */
+		.tile:has(.open:focus-visible) {
+			outline: 3px solid var(--focus);
+			outline-offset: 2px;
+		}
+
+		.meta {
+			display: flex;
+			align-items: center;
+			gap: 0.45rem;
+			min-height: 1.6rem;
+			font-size: 0.78rem;
+			color: var(--ink-soft);
+			--avatar: 1.45rem;
+			--avatar-size: 1.45rem;
+			--avatar-ring: var(--card);
+		}
+
+		.space {
+			flex: 1;
+		}
+
+		.has-notes {
+			font-size: 0.9rem;
+			line-height: 1;
+		}
+
+		.due,
+		.progress {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.2rem;
+			padding: 0.05rem 0.4rem;
+			border-radius: 999px;
+			background: var(--chip);
+			white-space: nowrap;
+		}
+
+		.due.overdue {
+			background: var(--danger-soft);
+			color: var(--danger);
+			font-weight: 600;
+		}
+
+		.progress {
+			background: linear-gradient(90deg, var(--ok-soft) var(--done), var(--chip) var(--done));
+		}
+
+		.progress.complete {
+			color: var(--ok);
+			font-weight: 600;
+		}
+
+		.hidden {
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			overflow: hidden;
+			clip-path: inset(50%);
+			white-space: nowrap;
+		}
+
+		.editing {
+			margin: 0;
+			padding: 0.2rem 0.45rem;
+			border-radius: 6px;
+			background: var(--warn-soft);
+			color: var(--warn);
+			font-size: 0.76rem;
+			font-weight: 600;
+		}
+	</style>
+}

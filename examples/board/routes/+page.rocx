@@ -1,0 +1,171 @@
+import pf.Html
+import pf.Endpoint
+import pf.For
+import pf.Server
+import pf.Show
+import pf.Router exposing [use_submission!]
+import ../Board
+import ../Middlewares
+import ../Generated/Api
+import ../Ui/Avatar
+
+## The front page: every board, and a form for a new one. For members only (its middleware): someone
+## who hasn't joined is sent to join first.
+middleware = Middlewares.member
+
+meta = { title: "Acme Board" }
+
+## Who is asking, and every board (`GET /`). Its type is said here: in the browser's copy of the
+## app, an endpoint has none.
+home! : {} => { me : Board.Person, boards : List(Board.Summary) }
+home! = |{}| Endpoint.get!(Api.get_root({}))
+
+view! = |_| {
+	creating = use_submission!(Api.post_root({}))
+	<div class="home">
+		<header class="top">
+			<span class="brand"><span class="mark" aria-hidden="true">▲</span> Acme Board</span>
+			<a class="me" href="/join?then=/" title="Not you? Pick another name">
+				{=Avatar.view({ person: home!({}).me, label: "" })}
+				<span><span class="hidden">{"You are "}</span>{home!({}).me.name}</span>
+			</a>
+		</header>
+		<main id="boards">
+			<h1>Boards</h1>
+			<ul class="boards">
+				<For each!={home!({}).boards} keyed={|each| each.slug}>
+					{|each!, _|
+						<li>
+							<a href={"/b/${each!().slug}"}>
+								<span class="name">{each!().name}</span>
+								<span class="cards">{if (each!().cards == 1) "1 card" else "${each!().cards.to_str()} cards"}</span>
+							</a>
+						</li>
+					}
+				</For>
+			</ul>
+			<form class="new" method="post" action={Endpoint.url_of(Api.post_root({}))}>
+				<label for="board-name">A new board</label>
+				<div class="row">
+					<input id="board-name" name="name" placeholder="Q1 roadmap" maxlength="60" required value={creating.field!("name")} />
+					<button type="submit" class="primary" disabled?={creating.pending!()}>Make it</button>
+				</div>
+				<Show when!={creating.error!()}>
+					{|problem!| <p class="problem" role="alert">{Server.explain(problem!())}</p>}
+				</Show>
+			</form>
+		</main>
+	</div>
+}
+
+<style>
+	.top {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0.75rem 1.25rem;
+		background: var(--bar);
+		color: var(--bar-ink);
+	}
+
+	.brand {
+		font-weight: 800;
+	}
+
+	.mark {
+		color: var(--accent);
+	}
+
+	.me {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		color: var(--bar-ink);
+		text-decoration: none;
+		--surface: var(--bar);
+	}
+
+	main {
+		max-width: 44rem;
+		margin: 0 auto;
+		padding: 2rem 1.25rem 4rem;
+	}
+
+	h1 {
+		margin: 0 0 1rem;
+		font-size: 1.8rem;
+		letter-spacing: -0.02em;
+	}
+
+	.boards {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+		gap: 0.75rem;
+		margin: 0 0 2.5rem;
+		padding: 0;
+		list-style: none;
+	}
+
+	.boards a {
+		display: grid;
+		gap: 0.35rem;
+		min-height: 5.5rem;
+		padding: 1rem 1.1rem;
+		border: 1px solid var(--line);
+		border-radius: calc(var(--radius) + 4px);
+		background: var(--card);
+		box-shadow: var(--shadow-1);
+		color: var(--ink);
+		text-decoration: none;
+		transition: box-shadow 140ms, transform 140ms;
+	}
+
+	.boards a:hover {
+		box-shadow: var(--shadow-2);
+		transform: translateY(-1px);
+	}
+
+	.name {
+		font-size: 1.1rem;
+		font-weight: 700;
+	}
+
+	.cards {
+		color: var(--ink-soft);
+		font-size: 0.88rem;
+	}
+
+	.new {
+		display: grid;
+		gap: 0.5rem;
+		max-width: 28rem;
+	}
+
+	.new label {
+		font-weight: 700;
+	}
+
+	.row {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.row input {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.problem {
+		margin: 0;
+		color: var(--danger);
+	}
+
+	.hidden {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+</style>

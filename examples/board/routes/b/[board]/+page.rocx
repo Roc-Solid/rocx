@@ -1,0 +1,336 @@
+import pf.Html
+import pf.Call
+import pf.Channel
+import pf.Endpoint
+import pf.Errored
+import pf.For
+import pf.HttpStatusCode
+import pf.Server
+import pf.Title
+import pf.Solid exposing [create_effect!, create_memo!, create_signal!, is_pending!, on_settled!, refresh!, set_interval!]
+import pf.Router exposing [use_action!, use_submissions!]
+import pf.Router
+import pf.Submissions
+import presence.AvatarStack
+import presence.Presence
+import presence.Room
+import presence.Wire
+import ../../../Board
+import ../../../Middlewares
+import ../../../Generated/Api
+import ../../../Ui/AddColumn
+import ../../../Ui/Archive
+import ../../../Ui/Avatar
+import ../../../Ui/CardPanel
+import ../../../Ui/ColumnView
+import ../../../Ui/Shared
+
+## A board: its columns of cards, which everyone on it moves, and sees moved, as it happens.
+##
+## - The board is the server's (`GET /b/<board>`, read as the page renders and carried in it), with
+##   the moves and new cards on their way applied (`use_submissions!`, D-030): a card dropped in
+##   another column shows there at once, and stays there while the server takes it and the board is
+##   read again.
+## - Everyone else hears about it on the board's channel (D-020): each page subscribes, and reads the
+##   board again when it hears that something changed. A card that moves glides to its new place
+##   (`transition:move`, D-031) on every page, since each tile has its card's id as its `key`.
+## - Who is here, and which card each has open, is the board's presence room (packages/presence).
+middleware = Middlewares.member
+
+meta = { title: "Board · Acme Board" }
+
+view! = |{ params }| {
+	board = params.board
+	read = Api.get_b_board({ board: board })
+	moves : Submissions(Board.Move, Str)
+	moves = use_submissions!(Api.post_b_board_move({ board: board }))
+	move! = use_action!(Api.post_b_board_move({ board: board }))
+	adds : Submissions(Shared.Adding, Str)
+	adds = use_submissions!(Api.post_b_board_cards({ board: board }))
+	add! = use_action!(Api.post_b_board_cards({ board: board }))
+	# The board as it shows: the server's, with the moves on their way applied. The read comes
+	# first, its endpoint named outside: what a run makes before a read that isn't in yet is lost.
+	board! = create_memo!(
+		|| {
+			server = Endpoint.get!(read)
+			moves.pending_inputs!().fold(server, Board.moved)
+		},
+	)
+	(dragging!, set_dragging!) = create_signal!("")
+	(over!, set_over!) = create_signal!(Shared.nowhere)
+	(open!, set_open!) = create_signal!(Board.card_in_query(Router.location!({}).query))
+
+	# The board's channel: read the board again whenever it changes, and say who changed what.
+	(live!, set_live!) = create_signal!(Bool.False)
+	(news!, set_news!) = create_signal!("")
+	heard! : Channel.Event(Board.News) => {}
+	heard! = |event|
+		match event {
+			Resync => {
+				set_live!(Bool.True)
+				refresh!(board!)
+			}
+			Message(news) => {
+				refresh!(board!)
+				if (news.did.is_empty() or news.by == board!().me.name) {} else set_news!("${news.by} ${news.did}")
+			}
+			Refused(_, _) | Ended(_) => set_live!(Bool.False)
+		}
+	create_effect!(|| {}, |{}| Endpoint.subscribe!(Api.channel_b_board({ board: board }), heard!))
+
+	# Who is here (packages/presence): this tab's events, its beat every 15 s, and the card it has
+	# open, said whenever that changes.
+	here = Presence.create_room!(|| {})
+	heard_here! : Wire.Event(Wire.Meta) => {}
+	heard_here! = here.heard!
+	on_settled!(
+		|| Endpoint.listen!(
+			Api.events_b_board_presence({ board: board }),
+			Call.listen!,
+			|event|
+				match event {
+					Event(said) => heard_here!(said)
+					Ended => (here.lost!)()
+					Failed(_) => (here.lost!)()
+				},
+		),
+	)
+	on_settled!(
+		|| {
+			_ = set_interval!(Room.beat_every(Room.defaults), || beat!(board, (here.me!)().tab, open!()))
+			{}
+		},
+	)
+	create_effect!(|| ((here.synced!)(), open!()), |(synced, card)| if (synced) opened!(board, card) else {})
+
+	shared = {
+		board: board,
+		board!,
+		dragging!,
+		set_dragging!,
+		over!,
+		set_over!,
+		move!,
+		open!,
+		set_open!,
+		here!: here.members!,
+		adding!: || adds.pending_inputs!(),
+		add!,
+	}
+	<Errored fallback={|why, _| <Missing why={why} />}>
+		<div class="page">
+			<Title>{board!().name} · Acme Board</Title>
+			<header class="top">
+				<a class="brand" href="/"><span class="mark" aria-hidden="true">▲</span> Acme Board</a>
+				<h1>{board!().name}</h1>
+				<div class="people">
+					<span class="live" class:on={live!()} role="status">{if (live!()) "Live" else "Connecting…"}</span>
+					<AvatarStack faces!={Shared.others((here.members!)(), board!().me.id)} max={5} />
+					<a class="me" href={"/join?then=/b/${board}"} title="Not you? Pick another name">
+						{=Avatar.view({ person: board!().me, label: "" })}
+						<span class="name"><span class="hidden">{"You are "}</span>{board!().me.name}</span>
+					</a>
+				</div>
+			</header>
+			<main id="board" class="board" class:stale={is_pending!(board!)} class:dragging={dragging!() != ""}>
+				<For each!={Board.columns_in_order(board!().columns)} keyed={|column| column.id}>
+					{|column!, _| <ColumnView column!={column!()} shared={shared} />}
+				</For>
+				<AddColumn board={board} />
+			</main>
+			<Archive shared={shared} />
+			<p class="news" role="status" aria-live="polite" class:shown={!news!().is_empty()}>{news!()}</p>
+			{=if (open!().is_empty()) Html.empty({}) else <CardPanel card={open!()} shared={shared} />}
+		</div>
+	</Errored>
+}
+
+## This tab is still on the board, with that card open (`""`: none).
+beat! : Str, Str, Str => {}
+beat! = |board, tab, card| {
+	sent : Try({}, Server.Problem)
+	sent = Endpoint.send!(Api.post_b_board_presence_beat({ board: board }), { tab, card }, Call.fetch!)
+	_ = sent
+	{}
+}
+
+## This tab has that card open now (`""`: none): everyone's tiles show it.
+opened! : Str, Str => {}
+opened! = |board, card| {
+	sent : Try({}, Server.Problem)
+	sent = Endpoint.send!(Api.post_b_board_presence_status({ board: board }), { card: card }, Call.fetch!)
+	_ = sent
+	{}
+}
+
+## A board that isn't there (a 404), or that couldn't be read (a 500).
+Missing := [].{
+
+	view! : { why : Str } => Html
+	view! = |{ why }|
+		<main class="missing">
+			<HttpStatusCode code={if (why.contains("404")) 404 else 500} />
+			<h1>{if (why.contains("404")) "There's no board here" else "The board couldn't be shown"}</h1>
+			<p><a href="/">All boards</a></p>
+		</main>
+
+	<style>
+		.missing {
+			max-width: 32rem;
+			margin: 4rem auto;
+			padding: 0 1.25rem;
+		}
+	</style>
+}
+
+<style>
+	.page {
+		display: flex;
+		flex-direction: column;
+		min-height: 100vh;
+	}
+
+	.top {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.75rem 1.25rem;
+		padding: 0.75rem 1.25rem;
+		background: var(--bar);
+		color: var(--bar-ink);
+	}
+
+	.brand {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		color: var(--bar-ink);
+		font-weight: 800;
+		letter-spacing: -0.01em;
+		text-decoration: none;
+	}
+
+	.mark {
+		color: var(--accent);
+	}
+
+	h1 {
+		margin: 0;
+		font-size: 1.15rem;
+		font-weight: 600;
+		opacity: 0.9;
+	}
+
+	.people {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		margin-left: auto;
+		--avatar-ring: var(--bar);
+		--avatar-size: 1.9rem;
+	}
+
+	.live {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		font-size: 0.78rem;
+		opacity: 0.75;
+	}
+
+	.live::before {
+		content: "";
+		width: 0.5rem;
+		height: 0.5rem;
+		border-radius: 50%;
+		background: var(--warn);
+	}
+
+	.live.on::before {
+		background: var(--ok-bright);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok-bright) 30%, transparent);
+	}
+
+	.me {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.2rem 0.6rem 0.2rem 0.2rem;
+		border-radius: 999px;
+		color: var(--bar-ink);
+		text-decoration: none;
+		font-size: 0.88rem;
+		--surface: var(--bar);
+	}
+
+	.me:hover {
+		background: color-mix(in srgb, var(--bar-ink) 12%, transparent);
+	}
+
+	.board {
+		--column-width: 18.5rem;
+		display: flex;
+		align-items: flex-start;
+		gap: 1rem;
+		flex: 1;
+		padding: 1.25rem;
+		overflow-x: auto;
+		transition: opacity 160ms;
+	}
+
+	.board.stale {
+		opacity: 0.92;
+	}
+
+	.news {
+		position: fixed;
+		left: 1.25rem;
+		bottom: 1.25rem;
+		z-index: 10;
+		max-width: min(28rem, calc(100vw - 2.5rem));
+		margin: 0;
+		padding: 0.6rem 0.9rem;
+		border-radius: var(--radius);
+		background: var(--bar);
+		color: var(--bar-ink);
+		font-size: 0.88rem;
+		box-shadow: var(--shadow-2);
+		opacity: 0;
+		transform: translateY(0.5rem);
+		transition: opacity 200ms, transform 200ms;
+		pointer-events: none;
+	}
+
+	.news.shown {
+		opacity: 1;
+		transform: none;
+	}
+
+	.hidden {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+
+	@media (max-width: 40rem) {
+		.board {
+			--column-width: 82vw;
+			scroll-snap-type: x mandatory;
+		}
+
+		.board > :global(*) {
+			scroll-snap-align: center;
+		}
+
+		.me .name {
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			overflow: hidden;
+			clip-path: inset(50%);
+		}
+	}
+</style>

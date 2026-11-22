@@ -1,0 +1,97 @@
+import pf.Html
+import pf.Endpoint
+import pf.For
+import pf.Router exposing [use_action!]
+import Shared
+import ../Board
+import ../Generated/Api
+
+## The cards taken off the board: each brought back where it was, or deleted for good. Folded away
+## below the columns (`<details>`), and gone while there are none.
+Archive := [].{
+
+	view! : { shared : Shared.State } => Html
+	view! = |{ shared }| {
+		{ board, board!, .. } = shared
+		archived! = || board!().cards.keep_if(|card| card.archived)
+		<details class="archive" class:empty={archived!().is_empty()}>
+			<summary>Archived cards <span class="count">{archived!().len().to_str()}</span></summary>
+			<ul>
+				<For each!={archived!()} keyed={|card| card.id}>
+					{|card!, _| <Archived card!={card!()} board={board} />}
+				</For>
+			</ul>
+		</details>
+	}
+
+	<style>
+		.archive {
+			margin: 0 1.25rem 1.25rem;
+			max-width: 40rem;
+		}
+
+		.archive.empty {
+			display: none;
+		}
+
+		summary {
+			cursor: pointer;
+			font-weight: 600;
+			color: var(--ink-soft);
+		}
+
+		.count {
+			padding: 0 0.45rem;
+			border-radius: 999px;
+			background: var(--chip);
+			font-size: 0.8rem;
+		}
+
+		ul {
+			display: grid;
+			gap: 0.4rem;
+			margin: 0.75rem 0 0;
+			padding: 0;
+			list-style: none;
+		}
+	</style>
+}
+
+## An archived card: its title, and what can be done with it.
+Archived := [].{
+
+	view! : { card! : () => Board.Card, board : Str } => Html
+	view! = |{ card!, board }| {
+		at = { board: board, card: card!().id }
+		restore! = use_action!(Api.post_b_board_cards_card_archive(at))
+		delete! = use_action!(Api.post_b_board_cards_card_delete(at))
+		<li class="archived">
+			<span class="title">{card!().title}</span>
+			<form method="post" action={Endpoint.url_of(Api.post_b_board_cards_card_archive(at))} on:submit={|| restore!({ archived: "false" })}>
+				<input type="hidden" name="archived" value="false" />
+				<button type="submit" aria-label={"Bring back “${card!().title}”"}>Bring back</button>
+			</form>
+			<form method="post" action={Endpoint.url_of(Api.post_b_board_cards_card_delete(at))} on:submit={|| delete!({})}>
+				<button type="submit" class="danger" aria-label={"Delete “${card!().title}” for good"}>Delete</button>
+			</form>
+		</li>
+	}
+
+	<style>
+		.archived {
+			display: flex;
+			align-items: center;
+			gap: 0.5rem;
+			padding: 0.5rem 0.75rem;
+			border: 1px solid var(--line);
+			border-radius: var(--radius);
+			background: var(--card);
+		}
+
+		.title {
+			flex: 1;
+			min-width: 0;
+			overflow-wrap: anywhere;
+		}
+	</style>
+}

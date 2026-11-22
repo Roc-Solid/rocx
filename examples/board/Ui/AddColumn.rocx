@@ -1,0 +1,64 @@
+import pf.Html
+import pf.Endpoint
+import pf.Solid exposing [create_signal!]
+import pf.Router exposing [use_action!, use_submissions!]
+import pf.Submissions
+import ../Board
+import ../Generated/Api
+
+## The board's last place: a form for a new column.
+AddColumn := [].{
+
+	view! : { board : Str } => Html
+	view! = |{ board }| {
+		endpoint = Api.post_b_board_columns({ board: board })
+		adds : Submissions({ name : Str }, Str)
+		adds = use_submissions!(endpoint)
+		add! = use_action!(endpoint)
+		(draft!, set_draft!) = create_signal!("")
+		(problem!, set_problem!) = create_signal!("")
+		added! = || {
+			match Board.column_name_of(draft!()) {
+				Ok(name) => {
+					add!({ name: name })
+					set_draft!("")
+					set_problem!("")
+				}
+				Err(why) => set_problem!(why)
+			}
+		}
+		<form class="add-column" method="post" action={Endpoint.url_of(endpoint)} on:submit={added!}>
+			<label for="new-column">New column</label>
+			<input id="new-column" name="name" placeholder="Review, Blocked…" maxlength="60" autocomplete="off" value={draft!()} on:input.value={set_draft!} />
+			<button type="submit">{if (adds.pending!()) "Adding…" else "Add column"}</button>
+			<p class="problem" role="status">{problem!()}</p>
+		</form>
+	}
+
+	<style>
+		.add-column {
+			display: grid;
+			gap: 0.45rem;
+			align-content: start;
+			flex: 0 0 var(--column-width);
+			padding: 0.85rem;
+			border: 2px dashed var(--line-strong);
+			border-radius: calc(var(--radius) + 4px);
+		}
+
+		label {
+			font-size: 0.82rem;
+			font-weight: 700;
+			letter-spacing: 0.06em;
+			text-transform: uppercase;
+			color: var(--ink-soft);
+		}
+
+		.problem {
+			margin: 0;
+			min-height: 1lh;
+			font-size: 0.8rem;
+			color: var(--danger);
+		}
+	</style>
+}

@@ -1,0 +1,40 @@
+import pf.Html
+import presence.Stack
+import ../Board
+
+## Someone's initials on their colour: an assignee on a card, you in the header.
+Avatar := [].{
+
+	## `label` is what a screen reader hears (`"Assigned to Ada"`); `""` when the name is beside it
+	## already, so it hears nothing twice.
+	view : { person : Board.Person, label : Str } -> Html
+	view = |{ person, label }|
+		if label.is_empty() {
+			<span class="avatar" aria-hidden="true" style:--who={person.color}>{Stack.initials(person.name)}</span>
+		} else {
+			<span class="avatar" role="img" aria-label={label} title={person.name} style:--who={person.color}>
+				<span aria-hidden="true">{Stack.initials(person.name)}</span>
+			</span>
+		}
+
+	<story name="Ada">
+		<Avatar person={{ id: "1", name: "Ada", color: "#c2255c" }} label="Ada" />
+	</story>
+
+	<style>
+		.avatar {
+			display: inline-grid;
+			place-items: center;
+			flex: none;
+			width: var(--avatar, 1.75rem);
+			height: var(--avatar, 1.75rem);
+			border-radius: 50%;
+			background: var(--who);
+			color: #fff;
+			font-size: calc(var(--avatar, 1.75rem) * 0.42);
+			font-weight: 700;
+			letter-spacing: 0.02em;
+			box-shadow: 0 0 0 2px var(--surface);
+		}
+	</style>
+}

@@ -1,0 +1,261 @@
+import pf.Html
+import pf.For
+import pf.Endpoint
+import pf.Solid exposing [create_signal!]
+import pf.Router exposing [use_action!]
+import CardTile
+import Shared
+import ../Board
+import ../Generated/Api
+
+## A column of the board: its name (renamed in place), its cards in order, and a form for a new
+## one. The whole column is a drop target (D-029): a card dropped on it goes where the drag last
+## was over (`Shared.over!`: just above a tile, at the top for the column's name, at the end below
+## its last card), and is sent as a move (`Shared.move!`), shown there at once.
+ColumnView := [].{
+
+	view! : { column! : () => Board.Column, shared : Shared.State } => Html
+	view! = |{ column!, shared }| {
+		{ board, board!, dragging!, set_dragging!, over!, set_over!, move!, adding!, add!, .. } = shared
+		id = column!().id
+		cards! = || Board.column_cards(board!().cards, id)
+		# A card dropped here: where the drag last was over, if that was in this column, or else at
+		# its end. A drop that changes nothing (a card put back where it was) sends nothing.
+		dropped! = || {
+			card = dragging!()
+			at = over!()
+			set_dragging!("")
+			set_over!(Shared.nowhere)
+			before = if (at.column == id) at.before else ""
+			move = { card, column: id, before }
+			if (!card.is_empty() and Board.changes(board!().cards, move)) move!(move) else {}
+		}
+		# Over the column's name: its top.
+		at_top! = || set_over!({ column: id, before: cards!().first().map_ok(|card| card.id) ?? "" })
+		(draft!, set_draft!) = create_signal!("")
+		add_card! = || {
+			match Board.title_of(draft!()) {
+				Ok(title) => {
+					add!({ column: id, title })
+					set_draft!("")
+				}
+				Err(_) => {}
+			}
+		}
+		# The name being typed, until it is sent: what the field shows (`Clean`: the column's own).
+		(name_draft!, set_name_draft!) = create_signal!(Err(Clean))
+		name! = || name_draft!() ?? column!().name
+		# Each rename sent makes the form anew, which closes it.
+		(renames!, set_renames!) = create_signal!(0.U64)
+		rename! = use_action!(Api.post_b_board_columns_rename({ board: board }))
+		renamed! = || {
+			match Board.column_name_of(name!()) {
+				Ok(name) => {
+					rename!({ column: id, name })
+					set_name_draft!(Err(Clean))
+					set_renames!(renames!() + 1)
+				}
+				Err(_) => {}
+			}
+		}
+		typed_name! = |text| set_name_draft!(Ok(text))
+		<section class="column" data-column={id} class:over={dragging!() != "" and over!().column == id} aria-labelledby={"column-${id}"} on:drop={dropped!}>
+			<header on:dragenter={at_top!}>
+				<h2 id={"column-${id}"}>{column!().name}</h2>
+				<span class="count" title="Cards">{cards!().len().to_str()}</span>
+				{=ColumnView.rename_form(renames!(), { board, id, column!, name!, typed_name!, renamed! })}
+			</header>
+			<ol class="cards" aria-labelledby={"column-${id}"}>
+				<For each!={cards!()} keyed={|card| card.id}>
+					{|card!, _| <CardTile card!={card!()} shared={shared} />}
+				</For>
+				<For each!={adding!().keep_if(|each| each.column == id)} keyed={|each| each.title}>
+					{|each!, _| <li class="adding" aria-busy="true">{each!().title}</li>}
+				</For>
+				<li class="end" class:above={dragging!() != "" and over!() == { column: id, before: "" }} aria-hidden="true" on:dragenter={|| set_over!({ column: id, before: "" })}></li>
+			</ol>
+			<form class="add" method="post" action={Endpoint.url_of(Api.post_b_board_cards({ board: board }))} on:submit={add_card!}>
+				<input type="hidden" name="column" value={id} />
+				<label class="hidden" for={"new-card-${id}"}>New card in {column!().name}</label>
+				<input id={"new-card-${id}"} name="title" placeholder="Add a card…" autocomplete="off" maxlength="200" value={draft!()} on:input.value={set_draft!} on:keydown.Escape={|| set_draft!("")} />
+				<button type="submit" aria-label={"Add the card to ${column!().name}"}>Add</button>
+			</form>
+		</section>
+	}
+
+	## The column's name in a form that renames it, folded away (`<details>`: it opens with or without
+	## JavaScript). `renames` is how many renames it has sent: each makes the form anew, closed.
+	rename_form : U64, { board : Str, id : Str, column! : () => Board.Column, name! : () => Str, typed_name! : Str => {}, renamed! : () => {} } -> Html
+	rename_form = |_renames, { board, id, column!, name!, typed_name!, renamed! }|
+		<details class="rename">
+			<summary aria-label={"Rename ${column!().name}"} title="Rename">✎</summary>
+			<form method="post" action={Endpoint.url_of(Api.post_b_board_columns_rename({ board: board }))} on:submit={renamed!}>
+				<input type="hidden" name="column" value={id} />
+				<label for={"rename-${id}"}>Name</label>
+				<input id={"rename-${id}"} name="name" value={name!()} maxlength="60" required on:input.value={typed_name!} />
+				<button type="submit">Rename</button>
+			</form>
+		</details>
+
+	<style>
+		.column {
+			display: flex;
+			flex-direction: column;
+			flex: 0 0 var(--column-width);
+			min-width: 0;
+			border-radius: calc(var(--radius) + 4px);
+			background: var(--lane);
+			border: 2px solid transparent;
+			transition: border-color 120ms, background 120ms;
+		}
+
+		.column.over {
+			border-color: var(--accent);
+			background: var(--lane-over);
+		}
+
+		header {
+			display: flex;
+			align-items: center;
+			gap: 0.5rem;
+			padding: 0.75rem 0.85rem 0.4rem;
+			position: relative;
+		}
+
+		h2 {
+			margin: 0;
+			font-size: 0.82rem;
+			font-weight: 700;
+			letter-spacing: 0.06em;
+			text-transform: uppercase;
+			color: var(--ink-soft);
+			overflow-wrap: anywhere;
+		}
+
+		.count {
+			padding: 0 0.45rem;
+			border-radius: 999px;
+			background: var(--chip);
+			font-size: 0.75rem;
+			font-weight: 600;
+			color: var(--ink-soft);
+		}
+
+		.rename {
+			margin-left: auto;
+		}
+
+		.rename summary {
+			list-style: none;
+			cursor: pointer;
+			padding: 0.1rem 0.4rem;
+			border-radius: 6px;
+			color: var(--ink-soft);
+		}
+
+		.rename summary::-webkit-details-marker {
+			display: none;
+		}
+
+		.rename summary:hover,
+		.rename[open] summary {
+			background: var(--chip);
+		}
+
+		.rename form {
+			position: absolute;
+			z-index: 5;
+			right: 0.5rem;
+			top: 2.6rem;
+			display: grid;
+			gap: 0.4rem;
+			width: min(16rem, calc(var(--column-width) - 1rem));
+			padding: 0.75rem;
+			border: 1px solid var(--line);
+			border-radius: var(--radius);
+			background: var(--card);
+			box-shadow: var(--shadow-2);
+		}
+
+		.rename label {
+			font-size: 0.78rem;
+			font-weight: 600;
+			color: var(--ink-soft);
+		}
+
+		/* Not a scroll box of its own: a card gliding in from another column would be clipped by it
+		   (D-031), unseen until it is inside. The board scrolls instead. */
+		.cards {
+			display: flex;
+			flex-direction: column;
+			gap: 0.55rem;
+			flex: 1;
+			min-height: 3rem;
+			margin: 0;
+			padding: 0.35rem 0.6rem 0;
+			list-style: none;
+		}
+
+		.adding {
+			padding: 0.7rem 0.8rem;
+			border: 1px dashed var(--line-strong);
+			border-radius: var(--radius);
+			color: var(--ink-soft);
+			font-weight: 600;
+			animation: breathe 1.2s ease-in-out infinite alternate;
+		}
+
+		@keyframes breathe {
+			from {
+				opacity: 0.45;
+			}
+
+			to {
+				opacity: 0.9;
+			}
+		}
+
+		/* Below the last card: a drop here is at the column's end. */
+		.end {
+			flex: 1 0 2.5rem;
+			position: relative;
+		}
+
+		.end.above::before {
+			content: "";
+			position: absolute;
+			left: 0.25rem;
+			right: 0.25rem;
+			top: 0;
+			height: 3px;
+			border-radius: 2px;
+			background: var(--accent);
+		}
+
+		.add {
+			display: flex;
+			gap: 0.4rem;
+			padding: 0.5rem 0.6rem 0.65rem;
+		}
+
+		.add input[name="title"] {
+			flex: 1;
+			min-width: 0;
+		}
+
+		.hidden {
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			overflow: hidden;
+			clip-path: inset(50%);
+			white-space: nowrap;
+		}
+
+		@media (prefers-reduced-motion: reduce) {
+			.adding {
+				animation: none;
+			}
+		}
+	</style>
+}

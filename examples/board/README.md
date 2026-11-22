@@ -1,0 +1,189 @@
+# Acme Board
+
+A live kanban board for a small team, in Roc Solid. Boards have columns, columns have cards, and
+several people work on one board at once: each sees the others' changes as they happen.
+
+## A tour
+
+1. Open the app and you are asked who you are: pick Ada, Bo or Cyd (the seeded team), or type a
+   new name and pick a colour. That's a cookie; there are no passwords.
+2. The front page lists the boards. "Acme Rocket Launch" is seeded with four columns and ten cards;
+   make another with the form below it.
+3. On a board, drag a card to another column, or up and down its own. It lands at once, and glides
+   there. Open the board in a second browser as someone else: the card moves there too, without a
+   reload, and a line at the bottom says who moved what.
+4. The header shows who else is on the board. A card someone has open shows their face; a card
+   someone is editing says "Ada is editing".
+5. Click a card's title to open it beside the board: its title, description, assignee, due date,
+   labels and checklist (with a progress bar), and buttons that move it without dragging. If someone
+   else has it open, you can read it but not change it, until they close it. Archive it from there;
+   the archive, folded away below the columns, brings it back or deletes it for good.
+6. Add a card at the foot of a column, a column at the board's end, and rename a column with its ✎.
+7. Turn JavaScript off: every form still works, and a card opens from its address (`?card=12`).
+
+## What it shows
+
+| Feature | Where |
+|---|---|
+| Fractional ranks: a move writes one row, and two cards dropped in one gap at once each get a rank of their own (below) | `Rank.roc` (with its `expect`s), `Board.rank_for`, `Store.move!` |
+| The rules both halves share: the order cards show in, where a move puts a card, a move applied to the page's copy, validation | `Board.roc` |
+| Drag and drop (D-029): tiles are dragged, a column is a drop target, the drop lands where the drag last was | `Ui/CardTile.rocx`, `Ui/ColumnView.rocx` |
+| A move shown before the server has it, kept while it is on its way (`use_action!`, `use_submissions!`, D-030), and the board read again after | `routes/b/[board]/+page.rocx` (`board!`), `routes/b/[board]/move/+server.roc` |
+| Cards glide to their new place, between columns too (`transition:move` and `key`, D-031) | `Ui/CardTile.rocx` |
+| Everyone sees each change live: the board's channel (D-020), published after every change | `routes/b/[board]/+server.roc` (`channel!`), `News.roc`, the page's `heard!` |
+| Presence: who is on the board, and who has which card open (packages/presence) | `routes/b/[board]/presence/`, the page's `here`, `Ui/Shared.roc` |
+| An edit lease on a card, in `Kv` with a time to live (D-028) | `Lease.roc`, `routes/b/[board]/cards/[card]/lease/+server.roc`, `Ui/CardPanel.rocx` (`take!`) |
+| Changes shown before the server has them in the open card (labels, ticks, its fields), as moves are | `Ui/CardPanel.rocx` (`card!`), `Board.saved`, `Board.labelled`, `Board.ticked` |
+| Rate limits on writes (packages/guard) and security headers | `Middlewares.roc` (`writer`, `default`) |
+| Who you are: a name and a colour in a cookie; members only | `routes/join/`, `Middlewares.member` |
+| Postgres: migrations, a transaction that locks a column, every query in one module | `migrations/`, `Store.roc` |
+| An idempotent seed: three people and a board that looks lived in | `migrations/0002_seed.sql` |
+| Forms without JavaScript, and the same forms sent by the page with it | every `<form>`: `method="post"` and an `on:submit` |
+| Pure and effectful components: `view` for what only shows its props, `view!` for what keeps state | `Ui/Avatar.rocx` (pure); `Ui/ColumnView.rocx`, `Ui/CardPanel.rocx` (effectful) |
+| Scoped styles and a design of its own, light and dark | each component's `<style>`; the tokens in `routes/+layout.rocx` |
+| A page for a board that isn't there (404) | `Missing` in `routes/b/[board]/+page.rocx` |
+
+### Ranks, and why they survive concurrent moves
+
+A card's place in its column is a rank: a string of base-36 digits read as a fraction (`"i"` is
+18/36), compared byte by byte (the column is `collate "C"`). Moving a card gives it a rank between
+its new neighbours' (`Rank.between("i", "j")` is `"ii"`), and writes that one row. Nothing else is
+renumbered, so two people moving different cards never write the same rows, and there is always
+room between two ranks (ranks never end in `0`, so `"i"` and `"i0"` can't both exist).
+
+What could still go wrong is two cards dropped into the same gap at the same moment: both would get
+the rank between the same two neighbours. So the server works the rank out itself, from the board as
+it is when the move arrives, inside a transaction that locks the column it goes to (`select … for
+update`, `Store.lock_column!`): moves into one column take turns, and each sees the one before it.
+A unique index on `(column_id, rank)` says so to anything else that writes cards. The page sends what
+was meant (`{ card, column, before }`: "just above that card"), not a rank, so a card dropped above
+one that someone else has just moved away goes to the end of the column, rather than somewhere
+stale. Archived cards keep their ranks, and a new rank is made between every card in the column,
+archived or not, so bringing one back puts it where it was.
+
+The cost: a card dropped at the same place over and over makes its rank a character longer every
+five or six moves. Real boards don't do that much; a board that did would rewrite a column's ranks
+once in a while (not done here).
+
+## Build and run
+
+The toolchain once (`just setup`), and the platforms' hosts (`just test` builds both). Then, from the
+repository's root, with a Postgres (`just db`):
+
+```sh
+docker exec rocx-postgres createdb -U rocx acme_board
+export DATABASE_URL=postgres://rocx:rocx@127.0.0.1:55432/acme_board
+
+bin/rocx build examples/board --client examples/board/build/client
+.tools/roc-active build --target=wasm32 --opt=size --output=examples/board/build/client/static/rocx/app.wasm examples/board/build/client/main.roc
+node server/build.mjs examples/board/main.roc examples/board/build/server
+examples/board/build/server --port 18120 --static examples/board/build/client/static
+```
+
+Then open http://localhost:18120. The server migrates and seeds the database as it starts. Open it
+in a second browser (or a private window: one browser's tabs share their cookies, so they are one
+person) to be two people at once.
+
+`BOARD_LEASE_TTL_MS` sets how long an edit lease lasts unrenewed (30000; the tests make it short).
+
+## Test
+
+```sh
+.tools/roc-active test examples/board/main.roc     # the expects: ranks, moves, validation
+node --test 'examples/board/test/*.test.mjs'       # needs DATABASE_URL; the browser test needs Chromium
+```
+
+- `Rank.roc` and `Board.roc` have the `expect`s: ranks always between their neighbours and never
+  ending in `0`, fifty cards put at a column's top, end or always second staying in order and short,
+  moves applied twice being moves applied once, nudges up and down, validation.
+- `test/http.test.mjs` asks the server as a browser does, with JavaScript and without: joining (and
+  never being sent to another site after), the seeded board (and the seed run again adding nothing),
+  moves and their ranks (between neighbours, at either end, before a card that has moved away, one
+  row written), ten moves into one gap at once, refused moves, the edit lease (taken, refused to
+  someone else, renewed, released, and running out), the channel (a member hears each change, a
+  visitor is refused), labels, the checklist, archiving and deleting, the forms without JavaScript,
+  and the rate limit.
+- `test/browser.test.mjs`: two people in two Chromium launches on one board. Each sees the other;
+  Ada drags a card to another column, it shows there at once for her and moves on Bo's page (gliding
+  on both) without a reload; Ada opens a card, Bo's board shows she has it open and is editing it,
+  Bo opens it read-only, it opens for him when she closes it, and his edit shows on her board.
+- `test/copies.test.mjs`: the four modules copied from packages (below) are still the packages'.
+
+The test files build the app once between them, each with a database and a server of its own.
+
+**In a Firefox-based browser.** Headless Chromium never runs CSS transitions, so the glides were
+also checked in headless Zen (Gecko), over WebDriver BiDi, with Bo in Chromium: Zen's page hydrated
+with no warnings; a drag started with real pointer actions lit the column it was over, dimmed the
+tile and drew the drop line; the drop target accepted the drag (its `dragover` default prevented)
+and the dropped card showed in its new column at once and glided there, and Bo saw it moved; Bo's
+move arrived on Zen's page and that tile glided, its animation running. Headless Gecko never ends a
+drag that WebDriver's pointer started (no `drop`, no `dragend`; neither pointer-up nor Escape reaches
+its drag session), so that drop was made with the DOM's own drag events. The frames it took showed
+one real glitch Chromium couldn't: a card gliding into another column was invisible on its way,
+clipped by the column's card list, which was a scroll box. Columns don't scroll on their own now
+(the board scrolls), and the card is seen all the way.
+
+## Product calls
+
+- No passwords: picking a name is being that person, and picking a name someone has makes you them,
+  in the colour you picked. Everyone who has joined may use every board.
+- The edit lease is a person's, not a tab's: Ada in two tabs edits in both. It covers the card's
+  details, not where it is: moving a card someone is editing is allowed. Opening a card takes it
+  (when free); the open card renews it every 10 s and lets it go when closed; a tab that vanishes
+  stops renewing, and the lease runs out 30 s later. Someone waiting with the card open gets it as
+  soon as the board says it is free, or at their next renewal once it has run out.
+- A browser without JavaScript never holds a lease: it may change a card unless someone else is
+  editing it.
+- A card is archived before it can be deleted: two steps, so a slip loses nothing.
+- The last column is where finished work goes: its cards are never overdue.
+- Writes to a board are limited to 60 at once and then one a second for each person; reading,
+  presence and leases aren't counted.
+- The header's avatars are the others on the board; you are the chip beside them.
+
+## What it asked of the platform
+
+What the app met, and how it works around each:
+
+- **Packages' server modules are copied in by hand.** packages/guard's middleware (`Guard`, with
+  `Kept` and `FlagStore`) and packages/presence's room (`PresenceServer`) import the server
+  platform, so they aren't copied into an app by `rocx build`, as their READMEs say. Naming their
+  `server/main.roc` in the header (D-033) isn't enough either: `rocx build` lists only the kinds of
+  actor defined in the app's own files, and both keep their state in actors. Workaround: the four
+  files copied verbatim into the app, and `test/copies.test.mjs` failing when they drift.
+- **A handler can't name another route's channel.** Every write publishes on the board's channel,
+  but route files can't import `Generated/Api` (it is made of them). Workaround: `News.channel`
+  builds the same endpoint by its path, `Endpoint.remote("CHANNEL", "/b/<board>")`; moving the
+  channel's route means changing it there too.
+- **An import a doc comment mentions stays in the browser's copy.** The front page's `##` comment
+  named `Middlewares.member`; the browser's copy then kept `import ../Middlewares` (which reaches
+  `pf.Actor` through Guard), and `rocx build` warned that the browser's build couldn't compile it.
+  Workaround: the comment says "its middleware".
+- **Key handlers see only `event.key`, no modifier keys,** so there is no Alt+↑ to move a card from
+  the keyboard. Workaround: an open card has Up, Down and "To the end of" buttons, which are forms, so
+  they work without JavaScript, by keyboard and on touch screens (which start no drag in many mobile
+  browsers).
+- **No client-side navigation.** Opening a card in place doesn't change the address, and Back
+  doesn't close it. Workaround: a card's link is `?card=12`, which a click opens in place
+  (`on:click.prevent`) and a new tab, a shared link or a browser without JavaScript open as a page.
+- **No way to move focus from Roc.** An open card doesn't take the keyboard's focus (there is no
+  focus effect, and `Browser.call!` needs a script of the page's own, which this app doesn't serve).
+  Workaround: none yet; keyboard users Tab to it. Escape closes it.
+- **Presence isn't on channels yet** (packages/presence says so): its glue is an event stream per
+  tab beside `/rocx/live`, a beat posted every 15 s, and a post when a card opens. Workaround: the
+  package's documented glue, as it is.
+- **The browser has no clock.** Workaround: the board's data carries the server's date (`today`),
+  which says which cards are overdue.
+- **A value prop is read once outside a hole**, as web/README.md says, which is easy to miss: the
+  tile's "Ada has this card open" label, a plain `label` prop of `<AvatarStack>` inside a `<Show>`,
+  was made once, empty, and never changed. Workaround: that stack is rendered in a hole
+  (`CardTile.viewing`), made anew when who has the card open changes.
+- **A glide is clipped by a box that scrolls** (D-031's own limit): seen in Zen as cards vanishing on
+  their way into another column. Workaround: columns don't scroll on their own.
+- **Under `--dev`, Firefox reports the dev server's inline reload script** against packages/guard's
+  CSP (report-only under `--dev`, so nothing breaks): a console error on every page. Without
+  `--dev` there are none.
+- **Roc on the way:** `has` is a keyword (a SQL column alias called `has` didn't parse as a record
+  field); `{ me }` alone is a block, not a record (`{ me: me }`); whitespace at the end of an
+  element's text goes, so `<span>You are </span>` lost its space (`{"You are "}` keeps it); and in
+  the browser's copy every endpoint read and submission list needs its type written down
+  (`moves : Submissions(Board.Move, Str)`, `home! : {} => …`), as D-030 says.

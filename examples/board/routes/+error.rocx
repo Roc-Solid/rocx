@@ -1,0 +1,19 @@
+import pf.Html
+
+## What a path nothing answers shows (404), and what a page that failed shows (500).
+meta = { title: "Not here · Acme Board" }
+
+view! = |{ status, problem }|
+	<main class="error">
+		<h1>{if (status == 404) "Nothing here" else "Something went wrong"}</h1>
+		<p>{problem}</p>
+		<p><a href="/">All boards</a></p>
+	</main>
+
+<style>
+	.error {
+		max-width: 32rem;
+		margin: 4rem auto;
+		padding: 0 1.25rem;
+	}
+</style>

@@ -1,0 +1,225 @@
+import pf.Html
+import ../Generated/Styles
+
+## The document around every page: its head, the stylesheet every component's `<style>` is in
+## (`Generated/Styles`), and the design's tokens and base styles, below. A page's own title comes
+## from its `meta`, or from a `<Title>` it renders (the board's name).
+view! = |{ meta, children, .. }|
+	<>
+		<!doctype html>
+		<html lang="en">
+			<head>
+				<meta charset="utf-8" />
+				<meta name="viewport" content="width=device-width, initial-scale=1" />
+				<meta name="color-scheme" content="light dark" />
+				<title>{meta.title}</title>
+				<NoHydration>{=Styles.style}</NoHydration>
+			</head>
+			<body>
+				<a class="skip" href="#board">Skip to the board</a>
+				{...children}
+			</body>
+		</html>
+	</>
+
+<style>
+	/* Acme Board's look: warm paper, navy ink, and a signal orange for what you are doing. */
+	:global(:root) {
+		--paper: #f4f1ea;
+		--surface: #fbfaf7;
+		--card: #ffffff;
+		--lane: #e8e4da;
+		--lane-over: #f6e2cf;
+		--ink: #1f2430;
+		--ink-soft: #5b6270;
+		--line: #ddd6c9;
+		--line-strong: #bfb6a6;
+		--chip: #efebe3;
+		--bar: #1f2430;
+		--bar-ink: #f4f1ea;
+		--accent: #e8590c;
+		--accent-ink: #ffffff;
+		--focus: #1971c2;
+		--ok: #2b8a3e;
+		--ok-soft: #d3f0da;
+		--ok-bright: #51cf66;
+		--warn: #a14f00;
+		--warn-soft: #fff0d6;
+		--danger: #c92a2a;
+		--danger-soft: #ffe3e3;
+		--radius: 10px;
+		--shadow-1: 0 1px 2px rgb(31 36 48 / 0.08), 0 1px 1px rgb(31 36 48 / 0.04);
+		--shadow-2: 0 6px 16px rgb(31 36 48 / 0.12), 0 1px 3px rgb(31 36 48 / 0.08);
+		--shadow-3: -16px 0 48px rgb(31 36 48 / 0.18);
+		color-scheme: light;
+	}
+
+	@media (prefers-color-scheme: dark) {
+		:global(:root) {
+			--paper: #14161b;
+			--surface: #1b1e25;
+			--card: #242832;
+			--lane: #1c1f26;
+			--lane-over: #33281f;
+			--ink: #ecebe7;
+			--ink-soft: #a5abb6;
+			--line: #343945;
+			--line-strong: #4b5160;
+			--chip: #2d313c;
+			--bar: #0d0f13;
+			--bar-ink: #ecebe7;
+			--accent: #ff7a33;
+			--focus: #74b4ff;
+			--ok: #69db7c;
+			--ok-soft: #1f3a27;
+			--warn: #ffc078;
+			--warn-soft: #3d2c14;
+			--danger: #ff8787;
+			--danger-soft: #3e1d1d;
+			--shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+			--shadow-2: 0 6px 16px rgb(0 0 0 / 0.45);
+			--shadow-3: -16px 0 48px rgb(0 0 0 / 0.5);
+			color-scheme: dark;
+		}
+	}
+
+	/* The labels' colours, wherever a label is (`data-label`). */
+	:global {
+		[data-label="bug"] {
+			--label: #e03131;
+		}
+
+		[data-label="feature"] {
+			--label: #1c7ed6;
+		}
+
+		[data-label="design"] {
+			--label: #ae3ec9;
+		}
+
+		[data-label="ops"] {
+			--label: #2f9e44;
+		}
+
+		[data-label="research"] {
+			--label: #0c8599;
+		}
+
+		[data-label="urgent"] {
+			--label: #e8590c;
+		}
+
+		*,
+		*::before,
+		*::after {
+			box-sizing: border-box;
+		}
+
+		body {
+			margin: 0;
+			background: var(--paper);
+			color: var(--ink);
+			font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+			-webkit-font-smoothing: antialiased;
+		}
+
+		a {
+			color: var(--focus);
+		}
+
+		input,
+		select,
+		textarea,
+		button {
+			font: inherit;
+			color: inherit;
+		}
+
+		input:not([type="radio"]):not([type="hidden"]),
+		select,
+		textarea {
+			padding: 0.45rem 0.6rem;
+			border: 1px solid var(--line-strong);
+			border-radius: 8px;
+			background: var(--card);
+		}
+
+		input:disabled,
+		select:disabled,
+		textarea:disabled {
+			background: var(--chip);
+			color: var(--ink-soft);
+		}
+
+		button {
+			padding: 0.45rem 0.85rem;
+			border: 1px solid var(--line-strong);
+			border-radius: 8px;
+			background: var(--card);
+			font-weight: 600;
+			cursor: pointer;
+		}
+
+		button:hover:not(:disabled) {
+			border-color: var(--ink-soft);
+		}
+
+		button:disabled {
+			cursor: default;
+			opacity: 0.55;
+		}
+
+		button.primary {
+			border-color: var(--accent);
+			background: var(--accent);
+			color: var(--accent-ink);
+		}
+
+		button.primary:hover:not(:disabled) {
+			border-color: var(--accent);
+			filter: brightness(1.06);
+		}
+
+		button.quiet {
+			border-color: transparent;
+			background: var(--chip);
+		}
+
+		button.danger {
+			border-color: transparent;
+			background: var(--danger-soft);
+			color: var(--danger);
+		}
+
+		:focus-visible {
+			outline: 3px solid var(--focus);
+			outline-offset: 2px;
+		}
+
+		.label {
+			padding: 0.05rem 0.5rem;
+			border-radius: 999px;
+			background: var(--label);
+			color: #fff;
+			font-size: 0.7rem;
+			font-weight: 700;
+			letter-spacing: 0.02em;
+		}
+	}
+
+	.skip {
+		position: absolute;
+		left: 0.75rem;
+		top: -3rem;
+		z-index: 100;
+		padding: 0.5rem 0.9rem;
+		border-radius: 8px;
+		background: var(--accent);
+		color: var(--accent-ink);
+		font-weight: 700;
+	}
+
+	.skip:focus {
+		top: 0.75rem;
+	}
+</style>

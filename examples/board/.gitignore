@@ -1,0 +1,7 @@
+# What `rocx build` writes: the generated modules, the .roc beside each .rocx, and the builds.
+Generated/
+build/
+routes/**/*.roc
+!routes/**/+server.roc
+Ui/*.roc
+!Ui/Shared.roc

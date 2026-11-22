@@ -1,0 +1,684 @@
+import pf.Html
+import pf.Call
+import pf.Endpoint
+import pf.For
+import pf.Server
+import pf.Show
+import pf.Solid exposing [create_effect!, create_signal!, on_cleanup!, on_settled!, set_interval!]
+import pf.Router exposing [use_action!, use_submissions!]
+import pf.Submissions
+import Shared
+import ../Board
+import ../Generated/Api
+
+## An open card, beside the board: its details, to read and to change. Opening it asks for the
+## card's edit lease (`Lease.roc`); while someone else holds it, everything here is read-only and
+## says who is editing, and it takes the lease as soon as it is free. It renews the lease while it
+## is open, and lets it go when it is closed. Each change is sent without the page waiting
+## (`use_action!`) and shown at once (the card, with the changes on their way applied), as a move is.
+##
+## Every form here posts to its endpoint without JavaScript too (the page opens a card from its
+## address, `?card=12`), and the endpoint sends the browser back.
+CardPanel := [].{
+
+	view! : { card : Str, shared : Shared.State } => Html
+	view! = |{ card, shared }| {
+		{ board!, set_open!, .. } = shared
+		close! = || set_open!("")
+		<aside class="panel" aria-labelledby="panel-title" on:keydown.Escape={close!}>
+			<div class="bar">
+				<a class="close" href="?" aria-label="Close the card" on:click.prevent={close!}>✕</a>
+			</div>
+			<Show when!={Board.shown_card(board!().cards, card)} fallback={CardPanel.gone({})}>
+				{|found!| <Editor found!={found!()} shared={shared} />}
+			</Show>
+		</aside>
+	}
+
+	## A card that isn't on the board (archived, deleted, or never there).
+	gone : {} -> Html
+	gone = |{}|
+		<div class="gone">
+			<h2 id="panel-title">This card isn't on the board</h2>
+			<p>Someone archived or deleted it, or the link is old. The board's archive, below its columns, has the archived ones.</p>
+		</div>
+
+	<style>
+		.panel {
+			position: fixed;
+			z-index: 20;
+			top: 0;
+			right: 0;
+			bottom: 0;
+			display: flex;
+			flex-direction: column;
+			width: min(30rem, 100vw);
+			border-left: 1px solid var(--line);
+			background: var(--surface);
+			box-shadow: var(--shadow-3);
+			overflow-y: auto;
+			animation: slide-in 180ms ease-out;
+		}
+
+		@keyframes slide-in {
+			from {
+				transform: translateX(2rem);
+				opacity: 0;
+			}
+		}
+
+		.bar {
+			position: sticky;
+			top: 0;
+			z-index: 1;
+			display: flex;
+			justify-content: flex-end;
+			padding: 0.6rem 0.75rem 0;
+			background: var(--surface);
+		}
+
+		.close {
+			display: grid;
+			place-items: center;
+			width: 2.2rem;
+			height: 2.2rem;
+			border-radius: 50%;
+			color: var(--ink-soft);
+			text-decoration: none;
+			font-size: 1rem;
+		}
+
+		.close:hover {
+			background: var(--chip);
+			color: var(--ink);
+		}
+
+		.gone {
+			padding: 0 1.5rem 1.5rem;
+		}
+
+		.gone h2 {
+			margin: 0 0 0.5rem;
+			font-size: 1.2rem;
+		}
+
+		@media (prefers-reduced-motion: reduce) {
+			.panel {
+				animation: none;
+			}
+		}
+	</style>
+}
+
+## The card itself, while it is on the board: `found!` is the server's (as the board read it).
+Editor := [].{
+
+	view! : { found! : () => Board.Card, shared : Shared.State } => Html
+	view! = |{ found!, shared }| {
+		{ board, board!, move!, set_open!, .. } = shared
+		id = found!().id
+		at = { board: board, card: id }
+		# Each change, sent without waiting, and every one of them on its way. Their types are said
+		# here: in the browser's copy of the app an endpoint has none.
+		saves : Submissions(Board.Fields, Str)
+		saves = use_submissions!(Api.post_b_board_cards_card(at))
+		save! = use_action!(Api.post_b_board_cards_card(at))
+		labels : Submissions(Board.LabelSet, Str)
+		labels = use_submissions!(Api.post_b_board_cards_card_labels(at))
+		set_label! = use_action!(Api.post_b_board_cards_card_labels(at))
+		ticks : Submissions(Board.Tick, Str)
+		ticks = use_submissions!(Api.post_b_board_cards_card_checklist_tick(at))
+		tick! = use_action!(Api.post_b_board_cards_card_checklist_tick(at))
+		additions : Submissions({ text : Str }, Str)
+		additions = use_submissions!(Api.post_b_board_cards_card_checklist(at))
+		add_item! = use_action!(Api.post_b_board_cards_card_checklist(at))
+		delete_item! = use_action!(Api.post_b_board_cards_card_checklist_delete(at))
+		archive! = use_action!(Api.post_b_board_cards_card_archive(at))
+		release! = use_action!(Api.delete_b_board_cards_card_lease(at))
+		lease = Api.post_b_board_cards_card_lease(at)
+
+		# The card as it shows: the server's, with the changes on their way applied.
+		card! = || {
+			ticked = ticks.pending_inputs!().fold(found!(), Board.ticked)
+			labelled = labels.pending_inputs!().fold(ticked, Board.labelled)
+			saves.pending_inputs!().fold(labelled, Board.saved)
+		}
+
+		# Who else is editing it (`""`: no one, or you).
+		editor! = || {
+			data = board!()
+			match Board.lease_of(data.leases, id) {
+				Ok(held) if held.person != data.me.id => held.name
+				_ => ""
+			}
+		}
+		locked! = || !editor!().is_empty()
+
+		# The lease: taken now if it is free, and again whenever it comes free; renewed every 10 s,
+		# which also takes it once its holder's runs out (their tab gone). Asking for a lease someone
+		# else has is a 409, which changes nothing here: the board says who has it.
+		take! = || {
+			taken : Try(Str, Server.Problem)
+			taken = Endpoint.send!(lease, {}, Call.fetch!)
+			_ = taken
+			{}
+		}
+		create_effect!(|| editor!(), |holder| if (holder.is_empty()) take!() else {})
+		on_settled!(
+			|| {
+				_ = set_interval!(Board.renew_every, take!)
+				{}
+			},
+		)
+		# Closed (or archived, or another card opened): the lease goes, if it was this page's. A tab
+		# that is closed runs nothing; its lease runs out on its own.
+		on_cleanup!(|| release!({}))
+		close! = || set_open!("")
+
+		# What is typed, until it is saved: what the fields show (`Clean`: the card's own).
+		(title!, set_title!) = create_signal!(Err(Clean))
+		(description!, set_description!) = create_signal!(Err(Clean))
+		(assignee!, set_assignee!) = create_signal!(Err(Clean))
+		(due!, set_due!) = create_signal!(Err(Clean))
+		(problem!, set_problem!) = create_signal!("")
+		fields! = || {
+			shown = card!()
+			{ title: title!() ?? shown.title, description: description!() ?? shown.description, assignee: assignee!() ?? shown.assignee, due: due!() ?? shown.due }
+		}
+		save_fields! = || {
+			match Board.fields_of(fields!()) {
+				Err(why) => set_problem!(why)
+				Ok(fields) => {
+					save!(fields)
+					set_problem!("")
+					set_title!(Err(Clean))
+					set_description!(Err(Clean))
+					set_assignee!(Err(Clean))
+					set_due!(Err(Clean))
+				}
+			}
+		}
+		(item_draft!, set_item_draft!) = create_signal!("")
+		add_line! = || {
+			match Board.item_of(item_draft!()) {
+				Ok(text) => {
+					add_item!({ text: text })
+					set_item_draft!("")
+				}
+				Err(_) => {}
+			}
+		}
+		archived! = || {
+			archive!({ archived: "true" })
+			close!()
+		}
+		column_name! = || {
+			here = card!().column
+			(board!().columns.find_first(|column| column.id == here) ?? { id: "", name: "", rank: "" }).name
+		}
+		nudge! = |way|
+			match Board.nudged(board!().cards, id, way) {
+				Ok(move) => move!(move)
+				Err(Stays) => {}
+			}
+		# The column picked to move it to (`Clean`: its own).
+		(to!, set_to!) = create_signal!(Err(Clean))
+		to_column! = || to!() ?? card!().column
+		moved! = || {
+			column = to_column!()
+			if (column != card!().column) move!({ card: id, column, before: "" }) else {}
+			set_to!(Err(Clean))
+		}
+
+		<div class="editor" class:locked={locked!()}>
+			<header>
+				<p class="where">In <strong>{column_name!()}</strong></p>
+				<h2 id="panel-title">{card!().title}</h2>
+				<Show when!={locked!()}>
+					<p class="lock" role="status"><span aria-hidden="true">✎</span> {editor!()} is editing this card. You can read it; it opens for you once they close it.</p>
+				</Show>
+			</header>
+
+			<fieldset class="body" disabled?={locked!()}>
+				<legend class="hidden">The card's details</legend>
+				<form class="fields" method="post" action={Endpoint.url_of(Api.post_b_board_cards_card(at))} on:submit={save_fields!}>
+					<label for="card-title">Title</label>
+					<input id="card-title" name="title" required maxlength="200" value={fields!().title} on:input.value={|text| set_title!(Ok(text))} />
+					<label for="card-description">Description</label>
+					<textarea id="card-description" name="description" rows="5" on:input.value={|text| set_description!(Ok(text))}>{fields!().description}</textarea>
+					<div class="pair">
+						<div>
+							<label for="card-assignee">Assignee</label>
+							<select id="card-assignee" name="assignee" on:change.value={|value| set_assignee!(Ok(value))}>
+								<option value="" selected?={fields!().assignee.is_empty()}>No one</option>
+								{...board!().people.map(|person| <option value={person.id} selected?={person.id == fields!().assignee}>{person.name}</option>)}
+							</select>
+						</div>
+						<div>
+							<label for="card-due">Due</label>
+							<input id="card-due" type="date" name="due" value={fields!().due} on:input.value={|text| set_due!(Ok(text))} />
+						</div>
+					</div>
+					<div class="actions">
+						<button type="submit" class="primary">Save</button>
+						<span class="saving" role="status">{if (saves.pending!()) "Saving…" else problem!()}</span>
+					</div>
+				</form>
+
+				<section class="labels" aria-labelledby="labels-title">
+					<h3 id="labels-title">Labels</h3>
+					<ul>
+						<For each!={Board.labels} keyed={|label| label.key}>
+							{|label!, _|
+								<li>
+									<form method="post" action={Endpoint.url_of(Api.post_b_board_cards_card_labels(at))} on:submit={|| set_label!({ label: label!().key, on: if (card!().labels.contains(label!().key)) "false" else "true" })}>
+										<input type="hidden" name="label" value={label!().key} />
+										<input type="hidden" name="on" value={if (card!().labels.contains(label!().key)) "false" else "true"} />
+										<button type="submit" class="label-toggle" data-label={label!().key} aria-pressed={if (card!().labels.contains(label!().key)) "true" else "false"}>{label!().name}</button>
+									</form>
+								</li>
+							}
+						</For>
+					</ul>
+				</section>
+
+				<section class="checklist" aria-labelledby="checklist-title">
+					<h3 id="checklist-title">Checklist <span class="tally">{Editor.tally(Board.progress(card!().checklist))}</span></h3>
+					<progress max={Editor.at_least_one(Board.progress(card!().checklist).total)} value={Board.progress(card!().checklist).done.to_str()} aria-labelledby="checklist-title"></progress>
+					<ul>
+						<For each!={card!().checklist} keyed={|item| item.id}>
+							{|item!, _|
+								<li class:done={item!().done}>
+									<form method="post" action={Endpoint.url_of(Api.post_b_board_cards_card_checklist_tick(at))} on:submit={|| tick!({ item: item!().id, done: if (item!().done) "false" else "true" })}>
+										<input type="hidden" name="item" value={item!().id} />
+										<input type="hidden" name="done" value={if (item!().done) "false" else "true"} />
+										<button type="submit" class="tick" role="checkbox" aria-checked={if (item!().done) "true" else "false"}>
+											<span class="box" aria-hidden="true"></span>
+											<span class="text">{item!().text}</span>
+										</button>
+									</form>
+									<form method="post" action={Endpoint.url_of(Api.post_b_board_cards_card_checklist_delete(at))} on:submit={|| delete_item!({ item: item!().id })}>
+										<input type="hidden" name="item" value={item!().id} />
+										<button type="submit" class="remove" aria-label={"Remove “${item!().text}”"}>✕</button>
+									</form>
+								</li>
+							}
+						</For>
+						<For each!={additions.pending_inputs!()} keyed={|each| each.text}>
+							{|each!, _| <li class="adding" aria-busy="true"><span class="text">{each!().text}</span></li>}
+						</For>
+					</ul>
+					<form class="add-line" method="post" action={Endpoint.url_of(Api.post_b_board_cards_card_checklist(at))} on:submit={add_line!}>
+						<label class="hidden" for="new-line">New checklist line</label>
+						<input id="new-line" name="text" placeholder="Add a line…" maxlength="200" autocomplete="off" value={item_draft!()} on:input.value={set_item_draft!} />
+						<button type="submit">Add</button>
+					</form>
+				</section>
+
+				<form class="archive" method="post" action={Endpoint.url_of(Api.post_b_board_cards_card_archive(at))} on:submit={archived!}>
+					<input type="hidden" name="archived" value="true" />
+					<button type="submit" class="quiet">Archive this card</button>
+				</form>
+			</fieldset>
+
+			<section class="place" aria-labelledby="place-title">
+				<h3 id="place-title">Move</h3>
+				<p class="hint">Or drag it on the board.</p>
+				<form class="to-column" method="post" action={Endpoint.url_of(Api.post_b_board_move({ board: board }))} on:submit={moved!}>
+					<input type="hidden" name="card" value={id} />
+					<input type="hidden" name="before" value="" />
+					<label for="card-column">To the end of</label>
+					<div class="pick">
+						<select id="card-column" name="column" on:change.value={|value| set_to!(Ok(value))}>
+							{...Board.columns_in_order(board!().columns).map(|column| <option value={column.id} selected?={column.id == to_column!()}>{column.name}</option>)}
+						</select>
+						<button type="submit">Move</button>
+					</div>
+				</form>
+				<div class="nudge">
+					<form method="post" action={Endpoint.url_of(Api.post_b_board_move({ board: board }))} on:submit={|| nudge!(Up)}>
+						{=Editor.nudge_fields(Board.nudged(board!().cards, id, Up))}
+						<button type="submit" disabled?={Board.nudged(board!().cards, id, Up).is_err()}>↑ Up</button>
+					</form>
+					<form method="post" action={Endpoint.url_of(Api.post_b_board_move({ board: board }))} on:submit={|| nudge!(Down)}>
+						{=Editor.nudge_fields(Board.nudged(board!().cards, id, Down))}
+						<button type="submit" disabled?={Board.nudged(board!().cards, id, Down).is_err()}>↓ Down</button>
+					</form>
+				</div>
+			</section>
+
+			<p class="done-row">
+				<button type="button" class="primary" on:click={close!}>Done</button>
+			</p>
+		</div>
+	}
+
+	## A move's fields, for a form that sends it without JavaScript.
+	nudge_fields : Try(Board.Move, [Stays]) -> Html
+	nudge_fields = |nudged|
+		match nudged {
+			Ok(move) =>
+				<>
+					<input type="hidden" name="card" value={move.card} />
+					<input type="hidden" name="column" value={move.column} />
+					<input type="hidden" name="before" value={move.before} />
+				</>
+			Err(Stays) => Html.empty({})
+		}
+
+	## How far a checklist is, in words: `2 of 3`.
+	tally : { done : U64, total : U64 } -> Str
+	tally = |{ done, total }| if (total == 0) "" else "${done.to_str()} of ${total.to_str()}"
+
+	## A `<progress>`'s `max`: a checklist with no lines is 0 of 1, not 0 of 0.
+	at_least_one : U64 -> Str
+	at_least_one = |total| if (total == 0) "1" else total.to_str()
+
+	<style>
+		.editor {
+			display: grid;
+			gap: 1.25rem;
+			padding: 0 1.5rem 1.5rem;
+		}
+
+		header {
+			display: grid;
+			gap: 0.35rem;
+		}
+
+		.where {
+			margin: 0;
+			font-size: 0.8rem;
+			color: var(--ink-soft);
+		}
+
+		h2 {
+			margin: 0;
+			font-size: 1.35rem;
+			line-height: 1.25;
+			overflow-wrap: anywhere;
+		}
+
+		.lock {
+			margin: 0.25rem 0 0;
+			padding: 0.55rem 0.75rem;
+			border-radius: var(--radius);
+			background: var(--warn-soft);
+			color: var(--warn);
+			font-weight: 600;
+			font-size: 0.88rem;
+		}
+
+		.body {
+			display: grid;
+			gap: 1.25rem;
+			margin: 0;
+			padding: 0;
+			border: 0;
+			min-width: 0;
+		}
+
+		.body:disabled {
+			opacity: 0.75;
+		}
+
+		.fields {
+			display: grid;
+			gap: 0.35rem;
+		}
+
+		.fields label,
+		.place label {
+			margin-top: 0.4rem;
+			font-size: 0.78rem;
+			font-weight: 600;
+			color: var(--ink-soft);
+		}
+
+		textarea {
+			resize: vertical;
+			min-height: 6rem;
+		}
+
+		.pair {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 0.75rem;
+		}
+
+		.pair > div {
+			display: grid;
+			gap: 0.35rem;
+		}
+
+		.actions {
+			display: flex;
+			align-items: center;
+			gap: 0.75rem;
+			margin-top: 0.6rem;
+		}
+
+		.saving {
+			font-size: 0.85rem;
+			color: var(--ink-soft);
+		}
+
+		h3 {
+			display: flex;
+			align-items: baseline;
+			gap: 0.5rem;
+			margin: 0 0 0.5rem;
+			font-size: 0.82rem;
+			letter-spacing: 0.06em;
+			text-transform: uppercase;
+			color: var(--ink-soft);
+		}
+
+		.tally {
+			font-weight: 500;
+			letter-spacing: 0;
+			text-transform: none;
+		}
+
+		.labels ul {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.4rem;
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		.label-toggle {
+			padding: 0.3rem 0.7rem;
+			border: 2px solid var(--label);
+			border-radius: 999px;
+			background: transparent;
+			color: var(--ink);
+			font-size: 0.82rem;
+			font-weight: 600;
+		}
+
+		.label-toggle[aria-pressed="true"] {
+			background: var(--label);
+			color: #fff;
+		}
+
+		progress {
+			width: 100%;
+			height: 0.5rem;
+			margin-bottom: 0.4rem;
+			appearance: none;
+			border: 0;
+			border-radius: 999px;
+			background: var(--chip);
+			overflow: hidden;
+		}
+
+		progress::-webkit-progress-bar {
+			background: var(--chip);
+		}
+
+		progress::-webkit-progress-value {
+			background: var(--ok);
+			border-radius: 999px;
+			transition: width 200ms;
+		}
+
+		progress::-moz-progress-bar {
+			background: var(--ok);
+			border-radius: 999px;
+		}
+
+		.checklist ul {
+			display: grid;
+			gap: 0.15rem;
+			margin: 0 0 0.5rem;
+			padding: 0;
+			list-style: none;
+		}
+
+		.checklist li {
+			display: flex;
+			align-items: center;
+			gap: 0.25rem;
+			border-radius: 8px;
+		}
+
+		.checklist li:hover {
+			background: var(--chip);
+		}
+
+		.checklist li form:first-child {
+			flex: 1;
+			min-width: 0;
+		}
+
+		.tick {
+			display: flex;
+			align-items: center;
+			gap: 0.6rem;
+			width: 100%;
+			padding: 0.4rem 0.45rem;
+			border: 0;
+			background: none;
+			color: var(--ink);
+			font: inherit;
+			text-align: left;
+			cursor: pointer;
+		}
+
+		.box {
+			flex: none;
+			width: 1.05rem;
+			height: 1.05rem;
+			border: 2px solid var(--line-strong);
+			border-radius: 4px;
+			display: grid;
+			place-items: center;
+		}
+
+		.done .box {
+			border-color: var(--ok);
+			background: var(--ok);
+		}
+
+		.done .box::after {
+			content: "✓";
+			color: #fff;
+			font-size: 0.75rem;
+			font-weight: 700;
+		}
+
+		.done .text {
+			color: var(--ink-soft);
+			text-decoration: line-through;
+		}
+
+		.adding {
+			padding: 0.4rem 0.45rem 0.4rem 2.1rem;
+			color: var(--ink-soft);
+		}
+
+		.remove {
+			padding: 0.2rem 0.45rem;
+			border: 0;
+			background: none;
+			color: var(--ink-soft);
+			opacity: 0;
+		}
+
+		.checklist li:hover .remove,
+		.remove:focus-visible {
+			opacity: 1;
+		}
+
+		.add-line {
+			display: flex;
+			gap: 0.4rem;
+		}
+
+		.add-line input {
+			flex: 1;
+			min-width: 0;
+		}
+
+		.place {
+			display: grid;
+			gap: 0.35rem;
+			padding-top: 1rem;
+			border-top: 1px solid var(--line);
+		}
+
+		.place form {
+			display: grid;
+			gap: 0.35rem;
+		}
+
+		.hint {
+			margin: -0.4rem 0 0;
+			font-size: 0.8rem;
+			color: var(--ink-soft);
+		}
+
+		.pick {
+			display: flex;
+			gap: 0.4rem;
+		}
+
+		.pick select {
+			flex: 1;
+		}
+
+		.nudge {
+			display: flex;
+			gap: 0.5rem;
+			margin-top: 0.4rem;
+		}
+
+		.archive {
+			justify-self: start;
+		}
+
+		.done-row {
+			display: flex;
+			justify-content: flex-end;
+			margin: 0;
+		}
+
+		.hidden {
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			overflow: hidden;
+			clip-path: inset(50%);
+			white-space: nowrap;
+		}
+
+		@media (hover: none) {
+			.remove {
+				opacity: 1;
+			}
+		}
+	</style>
+}
