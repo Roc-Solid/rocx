@@ -1,0 +1,262 @@
+import pf.Html
+import pf.Show
+import pf.Transition
+import ../Tasks
+import ../Generated/Paths
+import DueBadge
+import Avatar
+
+## One task on a list: a box to tick, its title (a link to its page), when it is due and who has
+## it, and buttons to move it up or down or delete it. Every control is a plain `<form>` that posts
+## to an endpoint, so the list works without JavaScript; with it, the runtime sends the form with
+## `fetch` instead, because the list reads that endpoint's submissions (`use_submissions!`), and the
+## change shows at once. Rows can also be dragged onto each other, which only a browser running
+## the page can do: that sends the same move as an action (`use_action!`).
+TaskRow := [].{
+
+	## What every row shares, from the list (`routes/lists/[id]/+page.rocx`).
+	Board : {
+		tasks! : () => List(Tasks.Task),
+		shown! : () => List(Tasks.Task),
+		people! : () => List(Tasks.Person),
+		today! : () => Str,
+		toggle : Str,
+		move : Str,
+		remove : Str,
+		move! : Tasks.Move => {},
+		dragging! : () => Str,
+		set_dragging! : Str => {},
+		over! : () => Str,
+		set_over! : Str => {},
+	}
+
+	view! : { task! : () => Tasks.Task, board : TaskRow.Board } => Html
+	view! = |{ task!, board }| {
+		{ tasks!, shown!, people!, today!, toggle, move, remove, move!, dragging!, set_dragging!, over!, set_over! } = board
+		id! = || task!().id
+		title_id! = || "task-${id!()}"
+		above! = || Tasks.place_above(tasks!(), shown!(), id!())
+		below! = || Tasks.place_below(tasks!(), shown!(), id!())
+		# A task dragged here takes this one's place.
+		dropped! = || {
+			dragged = dragging!()
+			set_dragging!("")
+			set_over!("")
+			if dragged.is_empty() or dragged == id!() {
+				{}
+			} else {
+				match Tasks.place_of(tasks!(), id!()) {
+					Ok(place) => move!({ id: dragged, to: place.to_str() })
+					Err(NotFound) => {}
+				}
+			}
+		}
+		<li
+			class="task"
+			class:done={task!().done}
+			class:saving={Tasks.is_saving(task!())}
+			class:dragged={dragging!() == id!()}
+			class:over={over!() == id!() and dragging!() != id!()}
+			key={id!()}
+			transition:move={Transition.glide.ms(240)}
+			transition:in={Transition.fade}
+			draggable={if (Tasks.is_saving(task!())) "false" else "true"}
+			on:dragstart={|| set_dragging!(id!())}
+			on:dragend={|| {
+				set_dragging!("")
+				set_over!("")
+			}}
+			on:dragenter={|| set_over!(id!())}
+			on:drop={dropped!}
+		>
+			<form method="post" action={toggle}>
+				<input type="hidden" name="id" value={id!()} />
+				<input type="hidden" name="done" value={if (task!().done) "false" else "true"} />
+				<button class="check" type="submit" role="checkbox" aria-checked={if (task!().done) "true" else "false"} aria-labelledby={title_id!()} disabled?={Tasks.is_saving(task!())}>
+					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" /></svg>
+				</button>
+			</form>
+			<div class="body">
+				<Show when!={Tasks.is_saving(task!())} fallback={<a id={title_id!()} class="title" href={Paths.tasks_id({ id: id!() })}>{task!().title}</a>}>
+					<span id={title_id!()} class="title">{task!().title}</span>
+				</Show>
+				<div class="meta">
+					{=DueBadge.view({ due: if (task!().done) "" else task!().due, today: today!() })}
+					<Show when!={!task!().notes.is_empty()}>
+						<span class="notes" title="Has notes">Notes</span>
+					</Show>
+					<Show when!={Tasks.is_saving(task!())}>
+						<span class="saving-label">Saving…</span>
+					</Show>
+				</div>
+			</div>
+			{=Avatar.view({ name: Tasks.name_of(people!(), task!().assignee) })}
+			<Show when!={!Tasks.is_saving(task!())}>
+				<form class="tools" method="post" action={move}>
+					<input type="hidden" name="id" value={id!()} />
+					<button type="submit" name="to" value={(above!() ?? 0).to_str()} disabled?={above!().is_err()} aria-label={"Move up: ${task!().title}"}>
+						<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 12.5v-9M4 7.5l4-4 4 4" /></svg>
+					</button>
+					<button type="submit" name="to" value={(below!() ?? 0).to_str()} disabled?={below!().is_err()} aria-label={"Move down: ${task!().title}"}>
+						<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M4 8.5l4 4 4-4" /></svg>
+					</button>
+					<button type="submit" formaction={remove} class="delete" aria-label={"Delete: ${task!().title}"}>
+						<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+					</button>
+				</form>
+			</Show>
+		</li>
+	}
+
+	<style>
+		.task {
+			display: grid;
+			grid-template-columns: auto minmax(0, 1fr) auto auto;
+			align-items: center;
+			gap: 0.75rem;
+			padding: 0.7rem 0.75rem;
+			border: 1px solid var(--line);
+			border-radius: 0.75rem;
+			background: var(--surface);
+			box-shadow: var(--shadow-sm);
+			transition: border-color 120ms, opacity 120ms;
+		}
+
+		.task.over {
+			border-color: var(--accent);
+			box-shadow: 0 0 0 3px var(--accent-soft);
+		}
+
+		.task.dragged {
+			opacity: 0.45;
+		}
+
+		.task.saving {
+			border-style: dashed;
+			box-shadow: none;
+		}
+
+		form {
+			display: contents;
+		}
+
+		.check {
+			display: grid;
+			place-items: center;
+			width: 1.5rem;
+			height: 1.5rem;
+			padding: 0;
+			border: 2px solid var(--line-strong);
+			border-radius: 50%;
+			background: transparent;
+			color: transparent;
+			cursor: pointer;
+			transition: background 120ms, border-color 120ms, color 120ms;
+		}
+
+		.check:hover {
+			border-color: var(--accent);
+			color: var(--accent);
+		}
+
+		.check[aria-checked="true"] {
+			border-color: var(--accent);
+			background: var(--accent);
+			color: var(--on-accent);
+		}
+
+		svg {
+			width: 1rem;
+			height: 1rem;
+			fill: none;
+			stroke: currentColor;
+			stroke-width: 2;
+			stroke-linecap: round;
+			stroke-linejoin: round;
+		}
+
+		.body {
+			display: grid;
+			gap: 0.2rem;
+			min-width: 0;
+		}
+
+		.title {
+			overflow-wrap: anywhere;
+			color: var(--ink);
+			font-weight: 550;
+			text-decoration: none;
+		}
+
+		a.title:hover {
+			text-decoration: underline;
+			text-underline-offset: 0.2em;
+		}
+
+		.done .title {
+			color: var(--ink-faint);
+			text-decoration: line-through;
+		}
+
+		.meta {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 0.4rem;
+		}
+
+		.meta:empty {
+			display: none;
+		}
+
+		.notes,
+		.saving-label {
+			color: var(--ink-faint);
+			font-size: 0.75rem;
+		}
+
+		.tools {
+			display: flex;
+			gap: 0.15rem;
+		}
+
+		.tools button {
+			display: grid;
+			place-items: center;
+			width: 2rem;
+			height: 2rem;
+			padding: 0;
+			border: 0;
+			border-radius: 0.5rem;
+			background: transparent;
+			color: var(--ink-faint);
+			cursor: pointer;
+		}
+
+		.tools button:hover:not(:disabled) {
+			background: var(--chip);
+			color: var(--ink);
+		}
+
+		.tools button:disabled {
+			opacity: 0.3;
+			cursor: default;
+		}
+
+		.tools .delete:hover {
+			background: var(--overdue-soft);
+			color: var(--overdue);
+		}
+
+		@media (max-width: 34rem) {
+			.task {
+				grid-template-columns: auto minmax(0, 1fr) auto;
+			}
+
+			.tools {
+				grid-column: 2 / -1;
+				justify-content: flex-end;
+			}
+		}
+	</style>
+}

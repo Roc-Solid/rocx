@@ -1,0 +1,248 @@
+import pf.Html
+import pf.Endpoint
+import pf.Router exposing [use_submission!]
+import pf.Submission
+import pf.Show
+import pf.For
+import pf.Title
+import pf.HttpStatusCode
+import forms.Issues
+import ../../../Tasks
+import ../../../Generated/Api
+import ../../../Generated/Paths
+
+## A task's page: everything about it in one form (title, notes, due day, who has it, done), and a
+## button that deletes it. Both are plain forms. Saving posts to this page's own URL
+## (`POST /tasks/:id`), whose endpoint reads the form with `TaskForm.editing` (packages/forms) and
+## sends you back to the list, or refuses it (422) with each field's issues, which show here under
+## their fields, with what was typed: without JavaScript the browser posts and comes back (a 303,
+## and a flash); with it, the runtime sends the form with fetch and the page stays.
+meta = { title: "A task" }
+
+view! = |{ params, .. }|
+	match Endpoint.read!(Api.get_tasks_id({ id: params.id })) {
+		Ok(detail) => <Editor detail={detail} />
+		Err(_) =>
+			<section class="missing">
+				<HttpStatusCode code={404} />
+				<Title>No such task · Acme Tasks</Title>
+				<h1>There's no such task</h1>
+				<p>It may have been deleted. <a href={Paths.root}>See all the lists</a></p>
+			</section>
+	}
+
+## The form, filled in with the task as it is, or with what was typed if it came back refused.
+##
+## The other forms use packages/forms' `LiveForm`, which also checks what is typed as it is typed.
+## A `LiveForm` starts empty, though (or with a refused plain post's fields), and nothing can fill
+## it in while the page renders, so an edit form reads its submission itself: `use_submission!`
+## gives what was typed (`field!`) and the refusal, whose issues `Issues.from_problem` reads back.
+Editor := [].{
+	view! : { detail : Tasks.Detail } => Html
+	view! = |{ detail }| {
+		{ task, list, people } = detail
+		save = Api.post_tasks_id({ id: task.id })
+		# Its types said: in the browser's copy of the app an endpoint has none.
+		sent : Submission({}, {})
+		sent = use_submission!(save)
+		# What a field shows: what was typed, if the form was sent; the task as it is, if not.
+		shown! = |name, current| if (sent.input!().is_ok()) sent.field!(name) else current
+		# The endpoint's issues with a field, once it has refused the form.
+		issues! = |name|
+			match sent.error!() {
+				Ok(problem) => Issues.messages(Issues.from_problem(problem), name)
+				Err(NoError) => []
+			}
+		invalid! = |name| !issues!(name).is_empty()
+		<article class="task">
+			<Title>{task.title} · Acme Tasks</Title>
+			<p class="crumb"><a href={Paths.lists_id({ id: list.id })}>← {list.name}</a></p>
+			<h1>Edit task</h1>
+			<Show when!={sent.error!().is_ok()}>
+				<p class="problem" role="alert">That didn't save: fix what's marked below, then save again.</p>
+			</Show>
+			<form class="edit" method="post" action={Endpoint.url_of(save)} novalidate>
+				<Field name="title" label="Title" issues!={issues!("title")}>
+					<input id="field-title" name="title" autocomplete="off" required maxlength="120" value={shown!("title", task.title)} aria-invalid={if (invalid!("title")) "true" else "false"} aria-describedby="field-title-issues" />
+				</Field>
+				<Field name="notes" label="Notes" issues!={issues!("notes")}>
+					<textarea id="field-notes" name="notes" rows="5" maxlength="2000" aria-invalid={if (invalid!("notes")) "true" else "false"} aria-describedby="field-notes-issues">{shown!("notes", task.notes)}</textarea>
+				</Field>
+				<div class="pair">
+					<Field name="due" label="Due" issues!={issues!("due")}>
+						<input id="field-due" name="due" type="date" value={shown!("due", task.due)} aria-invalid={if (invalid!("due")) "true" else "false"} aria-describedby="field-due-issues" />
+					</Field>
+					<Field name="assignee" label="For" issues!={issues!("assignee")}>
+						<select id="field-assignee" name="assignee" aria-invalid={if (invalid!("assignee")) "true" else "false"} aria-describedby="field-assignee-issues">
+							<option value="">Nobody yet</option>
+							{...people.map(|person| <option value={person.id} selected?={shown!("assignee", task.assignee) == person.id}>{person.name}</option>)}
+						</select>
+					</Field>
+				</div>
+				<label class="box">
+					<input type="checkbox" name="done" checked?={if (sent.input!().is_ok()) sent.field!("done") == "on" else task.done} />
+					Done
+				</label>
+				<div class="actions">
+					<button type="submit" class="save" disabled?={sent.pending!()}>{if (sent.pending!()) "Saving…" else "Save"}</button>
+					<a href={Paths.lists_id({ id: list.id })}>Cancel</a>
+				</div>
+			</form>
+			<form class="delete" method="post" action={Endpoint.url_of(Api.post_api_tasks_delete({}))}>
+				<input type="hidden" name="id" value={task.id} />
+				<button type="submit">Delete this task</button>
+			</form>
+		</article>
+	}
+}
+
+## A field: its label, its control (`children`, whose `id` is `field-<name>`), and the issues with
+## it under it, in a line kept for them, so one that shows moves nothing below.
+Field := [].{
+	view! : { name : Str, label : Str, issues! : () => List(Str), children : List(Html) } => Html
+	view! = |{ name, label, issues!, children }|
+		<div class="field" class:invalid={!issues!().is_empty()}>
+			<label for={"field-${name}"}>{label}</label>
+			{...children}
+			<ul id={"field-${name}-issues"} class="issues" aria-live="polite">
+				<For each!={issues!()} keyed={|issue| issue}>
+					{|issue!, _| <li>{issue!()}</li>}
+				</For>
+			</ul>
+		</div>
+}
+
+<style>
+	.task {
+		display: grid;
+		gap: 1rem;
+		max-width: 40rem;
+	}
+
+	.crumb {
+		margin: 0;
+	}
+
+	.crumb a,
+	.missing a,
+	.actions a {
+		color: var(--accent-strong);
+		font-weight: 600;
+		text-decoration: none;
+	}
+
+	.edit {
+		display: grid;
+		gap: 0.25rem;
+		padding: 1.25rem;
+		border: 1px solid var(--line);
+		border-radius: 0.9rem;
+		background: var(--surface);
+	}
+
+	.pair {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 1rem;
+	}
+
+	.field {
+		display: grid;
+		gap: 0.25rem;
+	}
+
+	label {
+		font-weight: 600;
+	}
+
+	input,
+	textarea,
+	select {
+		font: inherit;
+		padding: 0.4rem 0.5rem;
+		border: 1px solid var(--line-strong);
+		border-radius: 0.5rem;
+	}
+
+	textarea {
+		resize: vertical;
+	}
+
+	.invalid input,
+	.invalid textarea,
+	.invalid select {
+		border-color: var(--overdue);
+	}
+
+	.issues {
+		min-height: 1lh;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		color: var(--overdue);
+	}
+
+	.box {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-bottom: 0.75rem;
+	}
+
+	.box input {
+		width: 1.1rem;
+		height: 1.1rem;
+		accent-color: var(--accent);
+	}
+
+	.problem {
+		margin: 0;
+		padding: 0.6rem 0.9rem;
+		border-radius: 0.6rem;
+		background: var(--overdue-soft);
+		color: var(--overdue);
+	}
+
+	.actions {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+	}
+
+	.save {
+		padding: 0.55rem 1.3rem;
+		border: 0;
+		border-radius: 0.6rem;
+		background: var(--accent);
+		color: var(--on-accent);
+		font: inherit;
+		font-weight: 700;
+		cursor: pointer;
+	}
+
+	.save:hover {
+		background: var(--accent-strong);
+	}
+
+	.delete button {
+		padding: 0.45rem 0.9rem;
+		border: 1px solid var(--line-strong);
+		border-radius: 0.6rem;
+		background: transparent;
+		color: var(--overdue);
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.delete button:hover {
+		border-color: var(--overdue);
+		background: var(--overdue-soft);
+	}
+
+	@media (max-width: 34rem) {
+		.pair {
+			grid-template-columns: 1fr;
+		}
+	}
+</style>

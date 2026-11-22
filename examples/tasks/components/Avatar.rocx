@@ -1,0 +1,58 @@
+import pf.Html
+import testing.Dom
+import ../Tasks
+
+## Someone's initials in a circle, in a colour of their own; a dashed circle for nobody. A pure
+## component (`view`, no `!`): markup made from its props, nothing more, so a Roc `expect` can
+## render it (below).
+Avatar := [].{
+	view : { name : Str } -> Html
+	view = |{ name }|
+		if (name.is_empty())
+			<span class="avatar nobody" role="img" aria-label="Nobody yet" title="Nobody yet"></span>
+		else
+			<span class="avatar" role="img" aria-label={name} title={name} style:--hue={Avatar.hue(name).to_str()}>{Tasks.initials(name)}</span>
+
+	## A hue for a name, the same every time: the sum of its bytes, around the colour wheel.
+	hue : Str -> U64
+	hue = |name| name.to_utf8().fold(0, |sum, byte| sum + byte.to_u64()) * 47 % 360
+
+	<style>
+		.avatar {
+			display: inline-grid;
+			place-items: center;
+			flex: none;
+			width: 1.75rem;
+			height: 1.75rem;
+			border-radius: 50%;
+			background: hsl(var(--hue) 55% 88%);
+			color: hsl(var(--hue) 45% 28%);
+			font-size: 0.7rem;
+			font-weight: 700;
+			letter-spacing: 0.02em;
+		}
+
+		.nobody {
+			border: 1.5px dashed var(--line-strong);
+			background: transparent;
+		}
+
+		@media (prefers-color-scheme: dark) {
+			.avatar {
+				background: hsl(var(--hue) 35% 30%);
+				color: hsl(var(--hue) 70% 88%);
+			}
+
+			.nobody {
+				background: transparent;
+			}
+		}
+	</style>
+}
+
+avatar : Str -> Dom
+avatar = |name| Dom.parse(Html.to_str(Avatar.view({ name: name })))
+
+expect avatar("Avery Stone").text_of(Named("img", "Avery Stone")) == Ok("AS")
+expect avatar("").contains(Named("img", "Nobody yet"))
+expect Avatar.hue("Avery Stone") == Avatar.hue("Avery Stone")

@@ -1,2 +1,4 @@
-# Written by rocx build
+# Written by rocx build: the generated modules, and the browser's copy (`--client build/client`,
+# which `just examples` asks for)
 Generated/
+build/

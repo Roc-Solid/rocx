@@ -1,0 +1,265 @@
+import pf.Html
+import pf.Solid exposing [create_memo!, create_signal!, is_pending!, refresh!]
+import pf.Router exposing [use_action!, use_submissions!]
+import pf.Endpoint
+import pf.Server
+import pf.Submissions
+import pf.Show
+import pf.For
+import pf.Title
+import pf.HttpStatusCode
+import ../../../Tasks
+import ../../../Generated/Api
+import ../../../Generated/Paths
+import ../../../components/TaskRow
+import ../../../components/AddTask
+import ../../../components/FilterTabs
+
+## A list: its tasks, filtered by the address (`?show=open`), with a box to tick on each, buttons
+## to move and delete, and the form that adds one. Its data is its own URL's (`GET /lists/:id`,
+## in `+server.roc` beside this file), read in a memo: once a change is in, the runtime reads it
+## again, and shows the server's list in place of the one it guessed.
+meta = { title: "A list" }
+
+view! = |{ params, .. }| {
+	# The read, its endpoint named outside the memo (D-030: what a computation made before a read
+	# that isn't in yet would be lost).
+	page = Api.get_lists_id({ id: params.id })
+	sheet! : () => Try(Tasks.Sheet, Server.Problem)
+	sheet! = create_memo!(|| Endpoint.read!(page))
+	location = Router.location!({})
+	<Show when!={sheet!()} fallback={<Missing />}>
+		{|found!| <Board list={params.id} sheet!={found!()} stale!={is_pending!(sheet!)} reload!={refresh!(sheet!)} filter={Tasks.filter_of(location.query)} path={location.path} />}
+	</Show>
+}
+
+## The list, once it has been read: `sheet!` is the server's, `stale!` whether it is being read
+## again, and `reload!` reads it again.
+Board := [].{
+	view! : { list : Str, sheet! : () => Tasks.Sheet, stale! : () => Bool, reload! : () => {}, filter : Tasks.Filter, path : Str } => Html
+	view! = |{ list, sheet!, stale!, reload!, filter, path }| {
+		# Every change this page sends, each to its endpoint: every form a row has posts to one of
+		# these, and the runtime sends it with fetch because the page reads its submissions here.
+		# Their types are said: in the browser's copy of the app an endpoint has none (its route
+		# file isn't there).
+		adds : Submissions(Tasks.Adding, Str)
+		adds = use_submissions!(Api.post_lists_id({ id: list }))
+		toggles : Submissions(Tasks.Toggle, {})
+		toggles = use_submissions!(Api.post_api_tasks_toggle({}))
+		moves : Submissions(Tasks.Move, {})
+		moves = use_submissions!(Api.post_api_tasks_move({}))
+		removes : Submissions(Tasks.Remove, Str)
+		removes = use_submissions!(Api.post_api_tasks_delete({}))
+		# A drop has no form to post: it sends the move as an action, from its handler.
+		move! = use_action!(Api.post_api_tasks_move({}))
+		(dragging!, set_dragging!) = create_signal!("")
+		(over!, set_over!) = create_signal!("")
+
+		# What the page shows: the server's tasks, with every change on its way applied. A change
+		# shows at once, and gives way to the server's list once that has been read again; one
+		# refused is no longer applied, so it is undone.
+		tasks! = create_memo!(
+			||
+				Tasks.showing(
+					sheet!().tasks,
+					{
+						toggles: toggles.pending_inputs!(),
+						moves: moves.pending_inputs!(),
+						removes: removes.pending_inputs!(),
+						adds: adds.pending_inputs!(),
+					},
+				),
+		)
+		shown! = create_memo!(|| Tasks.visible(tasks!(), filter, sheet!().me))
+		counts! = || {
+			all = tasks!()
+			{
+				all: all.len(),
+				open: Tasks.visible(all, Open, "").len(),
+				done: Tasks.visible(all, Done, "").len(),
+				mine: Tasks.visible(all, Mine, sheet!().me).len(),
+			}
+		}
+		saving! = || toggles.pending!() or moves.pending!() or removes.pending!() or adds.pending!()
+		# Why the latest refused change was refused (a task deleted in another tab, say).
+		refused! = || {
+			whys =
+				[
+					toggles.all!().keep_oks(|sent| sent.error),
+					moves.all!().keep_oks(|sent| sent.error),
+					removes.all!().keep_oks(|sent| sent.error),
+				]
+					.join()
+			whys.last().map_ok(Board.why)
+		}
+		# Dismissed: the refusals forgotten, and the list read again, since what was refused may
+		# have changed meanwhile (a task deleted in another tab is gone from this one too).
+		dismiss! = || {
+			for sent in toggles.all!() {
+				if sent.error.is_ok() {
+					toggles.clear!(sent.id)
+				}
+			}
+			for sent in moves.all!() {
+				if sent.error.is_ok() {
+					moves.clear!(sent.id)
+				}
+			}
+			for sent in removes.all!() {
+				if sent.error.is_ok() {
+					removes.clear!(sent.id)
+				}
+			}
+			reload!()
+		}
+		# A successful add starts the form afresh (see AddTask).
+		added! = || adds.all!().count_if(|sent| sent.result.is_ok())
+		board = {
+			tasks!,
+			shown!,
+			people!: || sheet!().people,
+			today!: || sheet!().today,
+			toggle: Endpoint.url_of(Api.post_api_tasks_toggle({})),
+			move: Endpoint.url_of(Api.post_api_tasks_move({})),
+			remove: Endpoint.url_of(Api.post_api_tasks_delete({})),
+			move!,
+			dragging!,
+			set_dragging!,
+			over!,
+			set_over!,
+		}
+		<section class="board" aria-labelledby="list-name">
+			<Title>{sheet!().name} · Acme Tasks</Title>
+			<header>
+				<h1 id="list-name">{sheet!().name}</h1>
+				<p class="status" aria-live="polite">
+					{Tasks.open_label(tasks!())}
+					<span class="saving" hidden?={!saving!()}>Saving…</span>
+				</p>
+			</header>
+			<FilterTabs path={path} current={filter} counts!={counts!()} />
+			<Show when!={refused!()}>
+				{|why!|
+					<p class="refused" role="alert">
+						<span>That change couldn't be saved, so it was undone: {why!()}</span>
+						<button type="button" on:click={dismiss!}>Dismiss</button>
+					</p>
+				}
+			</Show>
+			<ul class="tasks" class:stale={stale!()} aria-label="Tasks">
+				<For each!={shown!()} keyed={|task| task.id} fallback={<li class="empty">{Board.empty(filter, sheet!().me)}</li>}>
+					{|task!, _| <TaskRow task!={task!()} board={board} />}
+				</For>
+			</ul>
+			<For each!={[added!()]} keyed={|count| count}>
+				{|_, _| <AddTask list={list} people={sheet!().people} me={sheet!().me} />}
+			</For>
+		</section>
+	}
+
+	## Why a change was refused, as the page says it.
+	why : Server.Problem -> Str
+	why = |problem|
+		match problem {
+			Refused(404, _) => "that task isn't there any more."
+			Refused(_, said) => said
+			_ => Server.explain(problem)
+		}
+
+	## What an empty list says, under each filter.
+	empty : Tasks.Filter, Str -> Str
+	empty = |filter, me|
+		match filter {
+			All => "Nothing on this list yet. Add the first task below."
+			Open => "Nothing left to do here."
+			Done => "Nothing done yet."
+			Mine => if (me.is_empty()) "Say who you are (at the top) to see your tasks." else "Nothing on this list is yours."
+		}
+}
+
+## A list that isn't there (deleted, or never was): a 404.
+Missing := [].{
+	view! : {} => Html
+	view! = |{}|
+		<section class="missing">
+			<HttpStatusCode code={404} />
+			<Title>No such list · Acme Tasks</Title>
+			<h1>There's no such list</h1>
+			<p><a href={Paths.root}>See all the lists</a></p>
+		</section>
+}
+
+<style>
+	.board {
+		display: grid;
+		gap: 1.25rem;
+	}
+
+	header {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.5rem 1rem;
+	}
+
+	.status {
+		margin: 0;
+		color: var(--ink-soft);
+		font-weight: 600;
+	}
+
+	.saving {
+		margin-left: 0.5rem;
+		color: var(--accent-strong);
+	}
+
+	.tasks {
+		display: grid;
+		gap: 0.5rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		transition: opacity 160ms;
+	}
+
+	/* The list being read again after a change: a little dimmed until the server's is in. */
+	.tasks.stale {
+		opacity: 0.7;
+	}
+
+	.empty {
+		padding: 1.5rem;
+		border: 1px dashed var(--line-strong);
+		border-radius: 0.75rem;
+		color: var(--ink-soft);
+		text-align: center;
+	}
+
+	.refused {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		margin: 0;
+		padding: 0.6rem 0.9rem;
+		border-radius: 0.6rem;
+		background: var(--overdue-soft);
+		color: var(--overdue);
+	}
+
+	.refused button {
+		padding: 0.3rem 0.7rem;
+		border: 1px solid currentColor;
+		border-radius: 0.5rem;
+		background: transparent;
+		color: inherit;
+		font: inherit;
+		cursor: pointer;
+	}
+
+	.missing a {
+		color: var(--accent-strong);
+		font-weight: 600;
+	}
+</style>

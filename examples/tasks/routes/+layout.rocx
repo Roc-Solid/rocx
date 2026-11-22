@@ -1,0 +1,324 @@
+import pf.Html
+import pf.Solid exposing [create_memo!]
+import pf.Endpoint
+import pf.Router
+import pf.For
+import pf.Errored
+import pf.Show
+import ../Tasks
+import ../Generated/Api
+import ../Generated/Paths
+import ../Generated/Styles
+import ../components/Avatar
+
+## The document around every page: the bar at the top (the app's name, and who you are), the
+## lists down the side, each with how many of its tasks are open, and the page. What it shows comes
+## from `GET /api/team`, read in a memo: after a change on a page (a task done), the runtime reads
+## the page's reads again, this one too, so the counts down the side follow. A story (a dev build's
+## catalog, `/__rocx/stories/…`) is the component alone, in the page's frame, without the rest.
+view! = |{ meta, children, .. }| {
+	team = Api.get_api_team({})
+	# Its type said: in the browser's copy of the app an endpoint has none.
+	team! : () => Tasks.Team
+	team! = create_memo!(|| Endpoint.get!(team))
+	path = Router.location!({}).path
+	story = path.starts_with("/__rocx/stories/")
+	<>
+		<!doctype html>
+		<html lang="en">
+			<head>
+				<meta charset="utf-8" />
+				<meta name="viewport" content="width=device-width, initial-scale=1" />
+				<title>{meta.title} · Acme Tasks</title>
+				<meta name="color-scheme" content="light dark" />
+				<NoHydration>{=Styles.style}</NoHydration>
+			</head>
+			<body>
+				<Show when!={!story}>
+					<a class="skip" href="#main">Skip to the page</a>
+					<header class="bar">
+						<a class="brand" href={Paths.root}>
+							<span class="logo" aria-hidden="true">
+								<svg viewBox="0 0 32 32"><path d="M9 16.5l4.5 4.5L23 11" /></svg>
+							</span>
+							Acme Tasks
+						</a>
+						<Errored fallback={|_, _| <span></span>}>
+							<a class="me" href={Paths.me}>
+								{=Avatar.view({ name: Tasks.name_of(team!().people, team!().me) })}
+								<span>{if (team!().me.is_empty()) "Who are you?" else Tasks.first_name(Tasks.name_of(team!().people, team!().me))}</span>
+							</a>
+						</Errored>
+					</header>
+				</Show>
+				<div class="frame" class:story={story}>
+					<Show when!={!story}>
+						<nav class="lists" aria-label="Lists">
+							<h2>Lists</h2>
+							<Errored fallback={|_, _| <p class="quiet">The lists can't be read just now.</p>}>
+								<ul>
+									<For each!={team!().lists} keyed={|list| list.id}>
+										{|list!, _|
+											<li>
+												<a href={Paths.lists_id({ id: list!().id })} aria-current??={if (path == Paths.lists_id({ id: list!().id })) "page" else ""}>
+													<span class="name">{list!().name}</span>
+													<span class="open" aria-label={"${list!().open.to_str()} open"}>{list!().open.to_str()}</span>
+												</a>
+											</li>
+										}
+									</For>
+								</ul>
+							</Errored>
+							<a class="new" href={"${Paths.root}#new-list"}>+ New list</a>
+						</nav>
+					</Show>
+					<main id="main">{...children}</main>
+				</div>
+			</body>
+		</html>
+	</>
+}
+
+<style>
+	/* The app's look, for every page: tokens on :root (light, and dark when the system is), and the
+	   elements' defaults. Each component styles its own markup in its own <style>. */
+	:global {
+		:root {
+			--paper: #f6f4ef;
+			--surface: #ffffff;
+			--ink: #1f1d1a;
+			--ink-soft: #57524a;
+			--ink-faint: #8f887c;
+			--line: #e7e2d8;
+			--line-strong: #cfc8ba;
+			--chip: #efebe3;
+			--accent: #e8590c;
+			--accent-strong: #c94b08;
+			--accent-soft: #fde4d3;
+			--on-accent: #ffffff;
+			--overdue: #c92a2a;
+			--overdue-soft: #ffe3e3;
+			--today: #a15c00;
+			--today-soft: #fff0c2;
+			--soon: #2b6cb0;
+			--soon-soft: #e3eefb;
+			--shadow-sm: 0 1px 2px rgb(31 29 26 / 0.06);
+			--form-border: var(--line-strong);
+			--form-invalid: var(--overdue);
+			--form-muted: var(--ink-faint);
+			--form-radius: 0.5rem;
+		}
+
+		@media (prefers-color-scheme: dark) {
+			:root {
+				--paper: #191816;
+				--surface: #23211e;
+				--ink: #f1ede6;
+				--ink-soft: #c4bdb1;
+				--ink-faint: #8d867b;
+				--line: #34312c;
+				--line-strong: #4a463f;
+				--chip: #2c2a26;
+				--accent: #ff7a2e;
+				--accent-strong: #ff9152;
+				--accent-soft: #4a2a17;
+				--on-accent: #1a1006;
+				--overdue: #ff8787;
+				--overdue-soft: #4a1f1f;
+				--today: #ffd166;
+				--today-soft: #45380f;
+				--soon: #90c2ff;
+				--soon-soft: #1c3048;
+				--shadow-sm: none;
+			}
+		}
+
+		*,
+		*::before,
+		*::after {
+			box-sizing: border-box;
+		}
+
+		body {
+			margin: 0;
+			background: var(--paper);
+			color: var(--ink);
+			font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+		}
+
+		input,
+		textarea,
+		select {
+			background: var(--surface);
+			color: var(--ink);
+		}
+
+		:focus-visible {
+			outline: 2px solid var(--accent);
+			outline-offset: 2px;
+		}
+
+		h1 {
+			margin: 0;
+			font-size: 1.6rem;
+			line-height: 1.2;
+			letter-spacing: -0.01em;
+		}
+	}
+
+	.skip {
+		position: absolute;
+		left: -100vw;
+	}
+
+	.skip:focus {
+		left: 1rem;
+		top: 1rem;
+		z-index: 1;
+		padding: 0.5rem 0.75rem;
+		background: var(--surface);
+	}
+
+	.bar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		padding: 0.75rem clamp(1rem, 3vw, 2rem);
+		border-bottom: 1px solid var(--line);
+		background: var(--surface);
+	}
+
+	.brand {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.6rem;
+		color: var(--ink);
+		font-weight: 800;
+		letter-spacing: -0.01em;
+		text-decoration: none;
+	}
+
+	.logo {
+		display: grid;
+		place-items: center;
+		width: 1.9rem;
+		height: 1.9rem;
+		border-radius: 0.6rem;
+		background: var(--accent);
+	}
+
+	.logo svg {
+		width: 1.2rem;
+		fill: none;
+		stroke: var(--on-accent);
+		stroke-width: 3.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	.me {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.25rem 0.75rem 0.25rem 0.25rem;
+		border-radius: 999px;
+		color: var(--ink-soft);
+		font-size: 0.9rem;
+		font-weight: 600;
+		text-decoration: none;
+	}
+
+	.me:hover {
+		background: var(--chip);
+		color: var(--ink);
+	}
+
+	.frame {
+		display: grid;
+		grid-template-columns: 15rem minmax(0, 1fr);
+		gap: clamp(1rem, 3vw, 2.5rem);
+		max-width: 72rem;
+		margin: 0 auto;
+		padding: clamp(1rem, 3vw, 2rem);
+	}
+
+	.frame.story {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.lists h2 {
+		margin: 0 0 0.5rem;
+		color: var(--ink-faint);
+		font-size: 0.75rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+
+	.lists ul {
+		display: grid;
+		gap: 0.15rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.lists a {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		padding: 0.45rem 0.65rem;
+		border-radius: 0.55rem;
+		color: var(--ink-soft);
+		font-weight: 550;
+		text-decoration: none;
+	}
+
+	.lists a:hover {
+		background: var(--chip);
+		color: var(--ink);
+	}
+
+	.lists a[aria-current="page"] {
+		background: var(--accent-soft);
+		color: var(--ink);
+	}
+
+	.open {
+		color: var(--ink-faint);
+		font-size: 0.8rem;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.lists .new {
+		margin-top: 0.5rem;
+		color: var(--accent-strong);
+		font-size: 0.9rem;
+	}
+
+	.quiet {
+		color: var(--ink-faint);
+	}
+
+	@media (max-width: 48rem) {
+		.frame {
+			grid-template-columns: minmax(0, 1fr);
+		}
+
+		.lists ul {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.35rem;
+		}
+
+		.lists a {
+			border: 1px solid var(--line);
+			background: var(--surface);
+		}
+
+		.lists .new {
+			display: inline-block;
+		}
+	}
+</style>

@@ -1,0 +1,105 @@
+import pf.Html
+import pf.Endpoint
+import forms.LiveForm
+import forms.TextField
+import ../Tasks
+import ../TaskForm
+import ../Generated/Api
+
+## The form under a list that adds a task: a title, and maybe a due day and someone to do it.
+## It posts to the list's own URL (`POST /lists/:id`), whose endpoint reads it with the same
+## `TaskForm.adding` this checks it with as it is typed (`LiveForm`, from packages/forms): a title
+## left empty is refused there too, with the same words, shown under the field with what was typed.
+## Without JavaScript it is a plain form: the browser posts it, and the endpoint sends it back to
+## the list (303), with the refusal and what was typed if there was one.
+AddTask := [].{
+	view! : { list : Str, people : List(Tasks.Person), me : Str } => Html
+	view! = |{ list, people, me }| {
+		live = LiveForm.of!(TaskForm.adding, Api.post_lists_id({ id: list }))
+		# Whom a new task goes to unless you pick someone else: you, once the app knows who you are.
+		assignee! = || if (live.sent!()) live.value!("assignee") else me
+		<form class="add" method="post" action={live.url()} novalidate>
+			<div class="title">
+				<TextField live={live} name="title" label="New task" autocomplete="off" />
+			</div>
+			<div class="field">
+				<TextField live={live} name="due" label="Due" />
+			</div>
+			<div class="field">
+				<label for="field-assignee">For</label>
+				<select id="field-assignee" name="assignee" on:change.value={|picked| live.input!("assignee", picked)}>
+					<option value="">Nobody yet</option>
+					{...people.map(|person| <option value={person.id} selected?={assignee!() == person.id}>{person.name}</option>)}
+				</select>
+			</div>
+			<button type="submit" disabled?={live.pending!()}>{if (live.pending!()) "Adding…" else "Add"}</button>
+		</form>
+	}
+
+	<style>
+		.add {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) auto auto auto;
+			align-items: start;
+			gap: 0.75rem;
+			padding: 1rem 1rem 0.25rem;
+			border: 1px solid var(--line);
+			border-radius: 0.9rem;
+			background: var(--surface);
+		}
+
+		.field {
+			display: grid;
+			gap: 0.25rem;
+		}
+
+		label {
+			font-weight: 600;
+		}
+
+		select {
+			font: inherit;
+			padding: 0.4rem 0.5rem;
+			border: 1px solid var(--line-strong);
+			border-radius: 0.5rem;
+			background: var(--surface);
+			color: var(--ink);
+		}
+
+		button {
+			margin-top: 1.6rem;
+			padding: 0.5rem 1.1rem;
+			border: 0;
+			border-radius: 0.6rem;
+			background: var(--accent);
+			color: var(--on-accent);
+			font: inherit;
+			font-weight: 700;
+			cursor: pointer;
+		}
+
+		button:hover {
+			background: var(--accent-strong);
+		}
+
+		button:disabled {
+			opacity: 0.6;
+			cursor: progress;
+		}
+
+		@media (max-width: 40rem) {
+			.add {
+				grid-template-columns: 1fr 1fr;
+			}
+
+			.title {
+				grid-column: 1 / -1;
+			}
+
+			button {
+				grid-column: 1 / -1;
+				margin-top: 0;
+			}
+		}
+	</style>
+}

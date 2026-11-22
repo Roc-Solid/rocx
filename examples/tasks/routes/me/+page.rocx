@@ -1,0 +1,126 @@
+import pf.Html
+import pf.Solid exposing [create_memo!]
+import pf.Router exposing [use_submission!]
+import pf.Endpoint
+import pf.Server
+import pf.For
+import pf.Show
+import ../../Tasks
+import ../../Generated/Api
+import ../../components/Avatar
+
+## "Who are you?": pick yourself from the team, and a cookie remembers it, so "Mine" on a list
+## shows your tasks and new tasks are yours unless you say otherwise. A plain form, posted to this
+## page's own URL (`POST /me`). It is not a sign-in, and doesn't pretend to be one.
+meta = { title: "Who are you?" }
+
+view! = |_| {
+	team = Api.get_api_team({})
+	# Its type said: in the browser's copy of the app an endpoint has none.
+	team! : () => Tasks.Team
+	team! = create_memo!(|| Endpoint.get!(team))
+	choose = Api.post_me({})
+	# The latest submission: after a refused plain post, the flash it came back with.
+	sent = use_submission!(choose)
+	<section class="who" aria-labelledby="who-title">
+		<h1 id="who-title">Who are you?</h1>
+		<p class="lead">Pick yourself. This isn't a sign-in: it only tells the lists whose tasks are "mine".</p>
+		<form method="post" action={Endpoint.url_of(choose)}>
+			<fieldset>
+				<legend>The team</legend>
+				<For each!={team!().people} keyed={|person| person.id}>
+					{|person!, _|
+						<label class="person">
+							<input type="radio" name="person" value={person!().id} checked?={team!().me == person!().id} required />
+							{=Avatar.view({ name: person!().name })}
+							<span>{person!().name}</span>
+						</label>
+					}
+				</For>
+			</fieldset>
+			<Show when!={sent.error!()}>
+				{|problem!| <p class="problem" role="alert">{Server.explain(problem!())}</p>}
+			</Show>
+			<div class="actions">
+				<button type="submit" class="primary">That's me</button>
+				<Show when!={!team!().me.is_empty()}>
+					<button type="submit" name="person" value="" formnovalidate>I'd rather not say</button>
+				</Show>
+			</div>
+		</form>
+	</section>
+}
+
+<style>
+	.who {
+		display: grid;
+		gap: 1rem;
+		max-width: 30rem;
+	}
+
+	.lead {
+		margin: 0;
+		color: var(--ink-soft);
+	}
+
+	fieldset {
+		display: grid;
+		gap: 0.4rem;
+		margin: 0;
+		padding: 0;
+		border: 0;
+	}
+
+	legend {
+		margin-bottom: 0.5rem;
+		font-weight: 700;
+	}
+
+	.person {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.6rem 0.8rem;
+		border: 1px solid var(--line);
+		border-radius: 0.75rem;
+		background: var(--surface);
+		cursor: pointer;
+	}
+
+	.person:has(input:checked) {
+		border-color: var(--accent);
+		box-shadow: 0 0 0 3px var(--accent-soft);
+	}
+
+	input {
+		accent-color: var(--accent);
+	}
+
+	.problem {
+		color: var(--overdue);
+	}
+
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+		margin-top: 1rem;
+	}
+
+	button {
+		padding: 0.5rem 1.1rem;
+		border: 1px solid var(--line-strong);
+		border-radius: 0.6rem;
+		background: transparent;
+		color: var(--ink);
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.primary {
+		border-color: var(--accent);
+		background: var(--accent);
+		color: var(--on-accent);
+	}
+</style>

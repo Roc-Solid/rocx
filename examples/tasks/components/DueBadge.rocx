@@ -1,0 +1,73 @@
+import pf.Html
+import testing.Dom
+import ../Tasks
+
+## When a task is due, as a small badge: red when it is overdue, amber today, and calmer the
+## further off it is; nothing when it has no due day. Pure: what it shows is `Tasks.due` of its
+## props, so its stories (a dev build's catalog, `/__rocx/stories`) and the expects below show
+## every kind without a server.
+DueBadge := [].{
+	view : { due : Str, today : Str } -> Html
+	view = |{ due, today }|
+		match Tasks.due(due, today) {
+			Ok(soon) =>
+				<span class="due" class:overdue={soon.tone == Overdue} class:today={soon.tone == Today} class:soon={soon.tone == Soon}>
+					<time datetime={due}>{soon.label}</time>
+				</span>
+			Err(NoDue) => Html.empty({})
+		}
+
+	<story name="Overdue">
+		<DueBadge due="2026-11-20" today="2026-11-22" />
+	</story>
+
+	<story name="Today">
+		<DueBadge due="2026-11-22" today="2026-11-22" />
+	</story>
+
+	<story name="This week">
+		<DueBadge due="2026-11-27" today="2026-11-22" />
+	</story>
+
+	<story name="Later">
+		<DueBadge due="2027-03-03" today="2026-11-22" />
+	</story>
+
+	<style>
+		.due {
+			display: inline-flex;
+			align-items: center;
+			padding: 0.1rem 0.5rem;
+			border-radius: 999px;
+			background: var(--chip);
+			color: var(--ink-soft);
+			font-size: 0.75rem;
+			font-weight: 600;
+			white-space: nowrap;
+		}
+
+		.soon {
+			background: var(--soon-soft);
+			color: var(--soon);
+		}
+
+		.today {
+			background: var(--today-soft);
+			color: var(--today);
+		}
+
+		.overdue {
+			background: var(--overdue-soft);
+			color: var(--overdue);
+		}
+	</style>
+}
+
+badge : Str -> Dom
+badge = |due| Dom.parse(Html.to_str(DueBadge.view({ due, today: "2026-11-22" })))
+
+expect badge("2026-11-20").text_of(Tag("time")) == Ok("Overdue · Nov 20")
+expect badge("2026-11-20").first(Tag("span")).map_ok(|span| span.has_class("overdue")) == Ok(Bool.True)
+expect badge("2026-11-22").text_of(Tag("time")) == Ok("Today")
+expect badge("2026-11-23").first(Tag("time")).map_ok(|time| time.attr("datetime")) == Ok(Ok("2026-11-23"))
+expect !badge("").contains(Tag("time"))

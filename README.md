@@ -70,7 +70,26 @@ just check   # type-check the site's two programs (reports at .rocx lines) and t
 | `server/` | the server's platform: native Roc in a Rust host (tokio, hyper, Postgres, plugins, channels, actors, `Kv`), rendering pages of components; see `server/README.md` |
 | `site/` | the docs site: pages in `routes/`, the demos on them in `Demos/`, its program in `main.roc`, real examples in `examples/` |
 | `test/`, `web/test/`, `site/test/`, `server/test/`, `packages/testing/test/` | the transpiler and routes; the browser's platform; the site in a browser; the server's platform; the testing package's helpers |
+| `examples/` | whole apps, each small enough to read end to end, with its README and its tests (below) |
 | `spike/suspense` | an experiment: how a read that has to wait can stop a computation in wasm |
+
+## Examples
+
+Each is a whole app in `examples/<name>`, with a README that tours it, maps each feature to the
+file that shows it, and says what it asked of the platform. `just examples` builds, checks and
+tests them all (`just examples tasks` one); `just check` type-checks them.
+
+- [`tasks`](examples/tasks): Acme Tasks, a small team's task lists. Start here: file routing, a
+  middleware, Postgres, pages that read endpoints, forms that work without JavaScript, and
+  optimistic actions, in the plainest way, with comments throughout.
+- [`echo`](examples/echo): the smallest app on the server platform, one endpoint, for measuring
+  the server (`bench.sh`).
+- [`journal`](examples/journal): Acme Journal, a small publication in English and Polish: Markdown
+  posts with typed frontmatter, intl, feeds, and two islands on pages the server renders.
+- [`board`](examples/board): Acme Board, a live kanban board several people move cards on at once:
+  drag and drop, optimistic moves, channels, presence and an edit lease in Kv.
+- [`quiz`](examples/quiz): Pinwheel, a live quiz for a room full of phones: an actor per room with
+  its own timers, a channel to every phone, and charts of how the room answered.
 
 ## Pages and components
 

@@ -1,0 +1,34 @@
+import pf.Html
+import ../Generated/Paths
+
+## What a path no page has shows (404), and a page that failed (500): what happened, and the way
+## back to the lists.
+meta = { title: "Not here" }
+
+view! = |{ status, problem }|
+	<section class="error" role="alert">
+		<p class="code">{status.to_str()}</p>
+		<h1>{if (status == 404) "There's nothing here" else "Something went wrong"}</h1>
+		<p>{if (status == 404) "No page has this address. It may have been a task that's been deleted." else problem}</p>
+		<p><a href={Paths.root}>Back to your lists</a></p>
+	</section>
+
+<style>
+	.error {
+		max-width: 32rem;
+		padding: 2rem 0;
+	}
+
+	.code {
+		margin: 0;
+		color: var(--accent);
+		font-weight: 800;
+		font-size: 0.9rem;
+		letter-spacing: 0.08em;
+	}
+
+	a {
+		color: var(--accent-strong);
+		font-weight: 600;
+	}
+</style>

@@ -216,20 +216,81 @@ test:
 # the server's, and the browser's, built from the copy of the site in which a route file has no
 # middleware and a <NoHydration> no children (site/build/client, whose main.roc rocx build writes).
 # Then each package's modules for the server (packages/*/server/main.roc, a package that names the
-# server platform), which no app here imports. First, that everything is formatted (`just fmt`
-# formats it).
+# server platform), which no app here imports, and the example apps' two programs
+# (`examples-check`; `just examples` builds and tests them too). First, that everything is
+# formatted (`just fmt` formats it).
 check: (fmt "--check")
     node site/build.mjs --prepare
     {{ rocx }} lint site web/test/app
     {{ rocx }} check -- {{ roc }} check site/main.roc
     {{ rocx }} check -- {{ roc }} check site/build/client/main.roc
     for package in packages/*/server/main.roc; do {{ roc }} check "$package" || exit 1; done
+    just examples-check
 
-# Formats the Roc of the site, the packages (packages/*) and the platforms with roc fmt: each
-# .rocx file's (its markup kept as written) and each hand-written .roc file. `just fmt --check`
-# only says which aren't formatted.
+# Formats the Roc of the site, the packages (packages/*), the platforms and the example apps
+# (`examples`, below) with roc fmt: each .rocx file's (its markup kept as written) and each
+# hand-written .roc file. `just fmt --check` only says which aren't formatted.
 fmt *args:
-    ROC={{ roc }} {{ rocx }} fmt {{ args }} rocx-cli site packages web/platform server/platform
+    ROC={{ roc }} {{ rocx }} fmt {{ args }} rocx-cli site packages web/platform server/platform {{ examples }}
+
+# The example apps: each examples/<name>/main.roc that git tracks, by its directory. Only tracked
+# ones: an untracked directory under examples/ (a private repo of one's own, say) is never built,
+# formatted or tested.
+examples := `git ls-files 'examples/*/main.roc' | xargs -n1 dirname | tr '\n' ' '`
+
+# Builds, checks and tests every example app (or the ones named: `just examples tasks echo`), as
+# each one's README says to: `rocx build` (and the browser's copy), its server program type-checked,
+# and its browser program when it has one (component pages: the build writes static/rocx/start.js
+# beside it; an app of endpoints alone, as echo is, has none), each with reports at .rocx lines;
+# `rocx lint`; its expects (`roc test`); and its node tests, examples/<name>/test/*.test.mjs, when
+# it has them (a glob: `node --test <dir>` doesn't find them on Node 24; helper modules there
+# don't end in .test.mjs). The tests want DATABASE_URL (`just db`) for the apps with a database,
+# and Chromium for their browser tests, which skip without it. Every example is run, and those that
+# failed are named at the end.
+#
+# Not part of `just test`: each example's tests build its wasm and its server (about a minute for
+# the five here, more as examples come), and `just test` is already the long one. `just check` does
+# the quick half (`examples-check`: build, type-check both programs, lint), so a change to the
+# platform that breaks an example's code fails `just check`; run `just examples` before landing a
+# change to the platforms, the packages or an example, to see each app still work.
+examples *names:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    failed=()
+    for dir in {{ if names == "" { examples } else { names } }}; do
+        dir="examples/${dir#examples/}"
+        name=$(basename "$dir")
+        echo "== $name"
+        if just examples-check "$name" \
+            && {{ rocx }} check -- {{ roc }} test "$dir/main.roc" \
+            && { ! compgen -G "$dir/test/*.test.mjs" >/dev/null || ROC={{ roc }} node --test "$dir/test/*.test.mjs"; }; then
+            echo "== $name: ok"
+        else
+            echo "== $name: FAILED" >&2
+            failed+=("$name")
+        fi
+    done
+    if [ ${#failed[@]} -gt 0 ]; then
+        echo "Examples that failed: ${failed[*]}" >&2
+        exit 1
+    fi
+
+# The quick half of `examples` (every one, or those named): rocx build with the browser's copy
+# (examples/<name>/build/client), both programs type-checked with reports at .rocx lines, and
+# rocx lint. No wasm, no server, no tests.
+examples-check *names:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for dir in {{ if names == "" { examples } else { names } }}; do
+        dir="examples/${dir#examples/}"
+        client="$dir/build/client"
+        ROC={{ roc }} {{ rocx }} build "$dir" --client "$client"
+        {{ rocx }} check -- {{ roc }} check "$dir/main.roc"
+        if [ -f "$client/static/rocx/start.js" ]; then
+            {{ rocx }} check -- {{ roc }} check "$client/main.roc"
+        fi
+        {{ rocx }} lint "$dir"
+    done
 
 # Regenerates the platforms' glue after a change to a header: web/host/roc_platform_abi.zig, and
 # server/host/src/roc_platform_abi.rs.

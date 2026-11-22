@@ -1,0 +1,191 @@
+import pf.Html
+import pf.Solid exposing [create_memo!]
+import pf.Endpoint
+import pf.For
+import forms.LiveForm
+import forms.TextField
+import ../Tasks
+import ../TaskForm
+import ../Generated/Api
+import ../Generated/Paths
+import ../components/Avatar
+
+## The front page: a greeting, every list as a card with how far along it is, and a form that
+## makes a new list. It reads `GET /api/team`, as the layout does: the page asks for it once.
+meta = { title: "Your lists" }
+
+view! = |_| {
+	team = Api.get_api_team({})
+	# Its type said: in the browser's copy of the app an endpoint has none.
+	team! : () => Tasks.Team
+	team! = create_memo!(|| Endpoint.get!(team))
+	live = LiveForm.of!(TaskForm.new_list, Api.post_root({}))
+	me! = || Tasks.name_of(team!().people, team!().me)
+	<>
+		<section class="hello">
+			<h1>{if (me!().is_empty()) "Your team's lists" else "Hello, ${Tasks.first_name(me!())}"}</h1>
+			<p>
+				{if (me!().is_empty()) "Pick a list to see what's on it. " else "Here's where everything stands. "}
+				<a href={Paths.me}>{if (me!().is_empty()) "Tell us who you are" else "Not you?"}</a>
+			</p>
+		</section>
+		<ul class="cards" aria-label="Lists">
+			<For each!={team!().lists} keyed={|list| list.id}>
+				{|list!, _|
+					<li>
+						<a class="card" href={Paths.lists_id({ id: list!().id })}>
+							<span class="name">{list!().name}</span>
+							<span class="counts">{Home.counts(list!())}</span>
+							<span class="bar" style:--done={Home.percent(list!())} aria-hidden="true"><span></span></span>
+						</a>
+					</li>
+				}
+			</For>
+		</ul>
+		<section class="new" id="new-list" aria-labelledby="new-list-title">
+			<h2 id="new-list-title">New list</h2>
+			<form method="post" action={live.url()} novalidate>
+				<TextField live={live} name="name" label="Name" hint="A project, a week, a place: whatever its tasks share." autocomplete="off" />
+				<button type="submit" disabled?={live.pending!()}>Make the list</button>
+			</form>
+		</section>
+		<section class="team" aria-labelledby="team-title">
+			<h2 id="team-title">The team</h2>
+			<ul>
+				<For each!={team!().people} keyed={|person| person.id}>
+					{|person!, _| <li>{=Avatar.view({ name: person!().name })} {person!().name}</li>}
+				</For>
+			</ul>
+		</section>
+	</>
+}
+
+## What a card says.
+Home := [].{
+
+	## "3 open · 2 done"
+	counts : Tasks.Summary -> Str
+	counts = |list| if (list.open + list.done == 0) "No tasks yet" else "${list.open.to_str()} open · ${list.done.to_str()} done"
+
+	## How much of it is done, for the bar's width: `40%`.
+	percent : Tasks.Summary -> Str
+	percent = |list| {
+		all = list.open + list.done
+		if (all == 0) "0%" else "${(list.done * 100 // all).to_str()}%"
+	}
+}
+
+<style>
+	.hello p {
+		margin: 0.4rem 0 0;
+		color: var(--ink-soft);
+	}
+
+	a {
+		color: var(--accent-strong);
+		font-weight: 600;
+	}
+
+	h2 {
+		margin: 0 0 0.75rem;
+		font-size: 1.05rem;
+	}
+
+	.cards {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+		gap: 0.75rem;
+		margin: 1.5rem 0 2.5rem;
+		padding: 0;
+		list-style: none;
+	}
+
+	.card {
+		display: grid;
+		gap: 0.4rem;
+		height: 100%;
+		padding: 1rem 1.1rem;
+		border: 1px solid var(--line);
+		border-radius: 0.9rem;
+		background: var(--surface);
+		box-shadow: var(--shadow-sm);
+		color: var(--ink);
+		text-decoration: none;
+		transition: border-color 120ms, transform 120ms;
+	}
+
+	.card:hover {
+		border-color: var(--accent);
+		transform: translateY(-1px);
+	}
+
+	.name {
+		font-weight: 700;
+	}
+
+	.counts {
+		color: var(--ink-soft);
+		font-size: 0.875rem;
+		font-weight: 500;
+	}
+
+	.bar {
+		height: 0.4rem;
+		overflow: hidden;
+		border-radius: 999px;
+		background: var(--chip);
+	}
+
+	.bar span {
+		display: block;
+		width: var(--done);
+		height: 100%;
+		border-radius: inherit;
+		background: var(--accent);
+	}
+
+	.new form {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: start;
+		gap: 0.75rem;
+		max-width: 34rem;
+	}
+
+	.new form > :first-child {
+		flex: 1;
+		min-width: 14rem;
+	}
+
+	.new button {
+		margin-top: 3.2rem;
+		padding: 0.5rem 1.1rem;
+		border: 0;
+		border-radius: 0.6rem;
+		background: var(--accent);
+		color: var(--on-accent);
+		font: inherit;
+		font-weight: 700;
+		cursor: pointer;
+	}
+
+	.team {
+		margin-top: 2.5rem;
+	}
+
+	.team ul {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem 1.25rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.team li {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		color: var(--ink-soft);
+	}
+</style>

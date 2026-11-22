@@ -1,0 +1,84 @@
+import pf.Html
+import ../Tasks
+
+## The filters over a list: all, open, done, and yours, each a link (`?show=open`), so a filter is
+## an address you can share or reload, and works without JavaScript. The current one is marked
+## (`aria-current`). Pure: the counts are an accessor (`counts!`), read in the holes that show them,
+## so they change as the tasks do.
+FilterTabs := [].{
+	Counts : { all : U64, open : U64, done : U64, mine : U64 }
+
+	view : { path : Str, current : Tasks.Filter, counts! : () => FilterTabs.Counts } -> Html
+	view = |{ path, current, counts! }|
+		<nav class="filters" aria-label="Show">
+			{...Tasks.filters.map(
+				|filter| {
+					href = if (filter == All) path else "${path}?show=${Tasks.filter_name(filter)}"
+					<a href={href} aria-current??={if (filter == current) "page" else ""}>
+						{FilterTabs.label(filter)}
+						<span class="count">{FilterTabs.count(counts!(), filter).to_str()}</span>
+					</a>
+				},
+			)}
+		</nav>
+
+	label : Tasks.Filter -> Str
+	label = |filter|
+		match filter {
+			All => "All"
+			Open => "Open"
+			Done => "Done"
+			Mine => "Mine"
+		}
+
+	count : FilterTabs.Counts, Tasks.Filter -> U64
+	count = |counts, filter|
+		match filter {
+			All => counts.all
+			Open => counts.open
+			Done => counts.done
+			Mine => counts.mine
+		}
+
+	<style>
+		.filters {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.25rem;
+			padding: 0.25rem;
+			border-radius: 0.75rem;
+			background: var(--chip);
+		}
+
+		a {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.4rem;
+			padding: 0.35rem 0.75rem;
+			border-radius: 0.55rem;
+			color: var(--ink-soft);
+			font-size: 0.875rem;
+			font-weight: 600;
+			text-decoration: none;
+		}
+
+		a:hover {
+			color: var(--ink);
+		}
+
+		a[aria-current="page"] {
+			background: var(--surface);
+			color: var(--ink);
+			box-shadow: var(--shadow-sm);
+		}
+
+		.count {
+			min-width: 1.25rem;
+			padding: 0 0.3rem;
+			border-radius: 999px;
+			background: var(--line);
+			font-size: 0.7rem;
+			text-align: center;
+		}
+	</style>
+}
