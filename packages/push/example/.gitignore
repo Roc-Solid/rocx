@@ -3,3 +3,4 @@ Push.roc
 PushStore.roc
 migrations/
 Generated/
+build/
