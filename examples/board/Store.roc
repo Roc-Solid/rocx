@@ -1,15 +1,19 @@
 import pf.Db
 import pf.Endpoint
 import pf.Log
+import pf.Time
 import Board
 import Rank
 
-## Board in Postgres: every query the app makes, in one place. The tables are
-## migrations/0001_board.sql; the route files call these and say what each answer means to whoever
-## asked. A row comes back as the record its query is annotated with, by column name (`Db.all!`).
+## Board in SQLite, a file beside the server: every query the app makes, in one place. The
+## tables are migrations/0001_board.sql; the route files call these and say what each answer means
+## to whoever asked. A row comes back as the record its query is annotated with, by column name
+## (`Db.all!`).
 ##
-## Ids are `bigint`s in Postgres and strings everywhere else: a query reads them as `id::text`, and
-## a parameter sent as text is read by Postgres as the type its place wants.
+## Ids are integers in SQLite and strings everywhere else: a query reads them as
+## `cast(id as text)`, and a parameter sent as text is compared with an integer column, or written
+## to one, as the number it spells (the column's affinity). A moment is milliseconds since the
+## epoch, given from Roc (`Time.now_millis!`).
 Store := [].{
 
 	## What a query can fail with: no such row, or the database's own error.
@@ -43,13 +47,13 @@ Store := [].{
 			Err(NotFound)
 		} else {
 			found : Try(List(Board.Person), [DbErr(Str), BadRow(Str)])
-			found = Db.all!("select id::text as id, name, color from people where id = $1", [Text(id)])
+			found = Db.all!("select cast(id as text) as id, name, color from people where id = $1", [Text(id)])
 			first(found?)
 		}
 
 	## Everyone, by name: the board's assignees and the joining page's quick picks.
 	people! : {} => Try(List(Board.Person), [DbErr(Str), BadRow(Str)])
-	people! = |{}| Db.all!("select id::text as id, name, color from people order by lower(name)", [])
+	people! = |{}| Db.all!("select cast(id as text) as id, name, color from people order by lower(name)", [])
 
 	## Joins as `name`, with `color`: someone new, or the one already called that (whatever its
 	## case), whose colour becomes `color`. No passwords: picking a name is being them.
@@ -57,7 +61,7 @@ Store := [].{
 	join! = |name, color| {
 		found : Try(List(Board.Person), [DbErr(Str), BadRow(Str)])
 		found = Db.all!(
-			"insert into people (name, color) values ($1, $2) on conflict ((lower(name))) do update set color = excluded.color returning id::text as id, name, color",
+			"insert into people (name, color) values ($1, $2) on conflict (lower(name)) do update set color = excluded.color returning cast(id as text) as id, name, color",
 			[Text(name), Text(color)],
 		)
 		first(found?)
@@ -73,32 +77,41 @@ Store := [].{
 			[],
 		)
 
-	## A new board called `name` at `slug`, with three columns to start with.
+	## A new board called `name` at `slug`, with three columns to start with: in one transaction, so
+	## a board is never there without them.
 	create_board! : Str, Str => Try({}, [Taken, DbErr(Str)])
-	create_board! = |slug, name| {
-		made = Db.run!(
-			"with board as (insert into boards (slug, name) values ($1, $2) on conflict (slug) do nothing returning id) insert into columns (board_id, name, rank) select board.id, c.name, c.rank from board, (values ('To do', 'i'), ('Doing', 'r'), ('Done', 'w')) as c(name, rank)",
-			[Text(slug), Text(name)],
-		)?
-		if (made == 0) Err(Taken) else Ok({})
-	}
+	create_board! = |slug, name|
+		Db.transaction!(
+			|{}| {
+				made = Db.run!("insert into boards (slug, name) values ($1, $2) on conflict (slug) do nothing", [Text(slug), Text(name)])?
+				if made == 0 {
+					Err(Taken)
+				} else {
+					_ = Db.run!(
+						"insert into columns (board_id, name, rank) with c (name, rank) as (values ('To do', 'i'), ('Doing', 'r'), ('Done', 'w')) select b.id, c.name, c.rank from boards b, c where b.slug = $1",
+						[Text(slug)],
+					)?
+					Ok({})
+				}
+			},
+		)
 
-	## A whole board, but who is asking and who is editing what: those aren't Postgres's to say.
+	## A whole board, but who is asking and who is editing what: those aren't the database's to say.
 	board! : Str => Try({ slug : Str, name : Str, today : Str, columns : List(Board.Column), cards : List(Board.Card), people : List(Board.Person) }, Store.Problem)
 	board! = |slug| {
 		boards : Try(List({ id : Str, name : Str, today : Str }), [DbErr(Str), BadRow(Str)])
-		boards = Db.all!("select id::text as id, name, current_date::text as today from boards where slug = $1", [Text(slug)])
+		boards = Db.all!("select cast(id as text) as id, name, date('now') as today from boards where slug = $1", [Text(slug)])
 		board = first(boards?)?
 		columns : Try(List(Board.Column), [DbErr(Str), BadRow(Str)])
-		columns = Db.all!("select id::text as id, name, rank from columns where board_id = $1 order by rank, id", [Text(board.id)])
+		columns = Db.all!("select cast(id as text) as id, name, rank from columns where board_id = $1 order by rank, id", [Text(board.id)])
 		cards : Try(List({ id : Str, column : Str, rank : Str, title : Str, description : Str, labels : List(Str), assignee : Str, due : Str, archived : Bool }), [DbErr(Str), BadRow(Str)])
 		cards = Db.all!(
-			"select id::text as id, column_id::text as \"column\", rank, title, description, labels, coalesce(assignee_id::text, '') as assignee, coalesce(due::text, '') as due, archived from cards where board_id = $1 order by rank, id",
+			"select cast(id as text) as id, cast(column_id as text) as \"column\", rank, title, description, labels, coalesce(cast(assignee_id as text), '') as assignee, coalesce(due, '') as due, archived from cards where board_id = $1 order by rank, id",
 			[Text(board.id)],
 		)
 		items : Try(List({ id : Str, card : Str, text : Str, done : Bool }), [DbErr(Str), BadRow(Str)])
 		items = Db.all!(
-			"select i.id::text as id, i.card_id::text as card, i.text, i.done from checklist_items i join cards c on c.id = i.card_id where c.board_id = $1 order by i.id",
+			"select cast(i.id as text) as id, cast(i.card_id as text) as card, i.text, i.done from checklist_items i join cards c on c.id = i.card_id where c.board_id = $1 order by i.id",
 			[Text(board.id)],
 		)
 		all_items = items?
@@ -121,7 +134,7 @@ Store := [].{
 	board_exists! : Str => Bool
 	board_exists! = |slug| {
 		found : Try(List({ id : Str }), [DbErr(Str), BadRow(Str)])
-		found = Db.all!("select id::text as id from boards where slug = $1", [Text(slug)])
+		found = Db.all!("select cast(id as text) as id from boards where slug = $1", [Text(slug)])
 		match found {
 			Ok([_, ..]) => Bool.True
 			_ => Bool.False
@@ -135,9 +148,10 @@ Store := [].{
 	add_column! = |slug, name|
 		Db.transaction!(
 			|{}| {
-				# The board's row, locked: two columns added at once take turns for the last rank.
+				# The transaction holds the write lock from its start: two columns added at once take
+				# turns for the last rank.
 				boards : Try(List({ id : Str }), [DbErr(Str), BadRow(Str)])
-				boards = Db.all!("select id::text as id from boards where slug = $1 for update", [Text(slug)])
+				boards = Db.all!("select cast(id as text) as id from boards where slug = $1", [Text(slug)])
 				board = first(boards?)?
 				last : Try(List({ rank : Str }), [DbErr(Str), BadRow(Str)])
 				last = Db.all!("select rank from columns where board_id = $1 order by rank desc limit 1", [Text(board.id)])
@@ -147,17 +161,19 @@ Store := [].{
 			},
 		)
 
-	## Column `column` of the board, called `name` now. Its old name, for the news.
+	## Column `column` of the board, called `name` now. Its old name, for the news: read, then
+	## written, in one transaction (SQLite's `returning` has the new row only).
 	rename_column! : Str, Str, Str => Try(Str, Store.Problem)
-	rename_column! = |slug, column, name| {
-		renamed : Try(List({ old : Str }), [DbErr(Str), BadRow(Str)])
-		renamed = Db.all!(
-			"update columns c set name = $3 from columns prev where c.id = prev.id and c.id = $2 and c.board_id = (select id from boards where slug = $1) returning prev.name as old",
-			[Text(slug), Text(column), Text(name)],
+	rename_column! = |slug, column, name|
+		Db.transaction!(
+			|{}| {
+				olds : Try(List({ old : Str }), [DbErr(Str), BadRow(Str)])
+				olds = Db.all!("select name as old from columns where id = $2 and board_id = (select id from boards where slug = $1)", [Text(slug), Text(column)])
+				row = first(olds?)?
+				_ = Db.run!("update columns set name = $2 where id = $1", [Text(column), Text(name)])?
+				Ok(row.old)
+			},
 		)
-		row = first(renamed?)?
-		Ok(row.old)
-	}
 
 	# ---- Cards ----
 
@@ -194,7 +210,7 @@ Store := [].{
 					place = Store.lock_column!(slug, move.column)?
 					card = Store.card!(slug, move.card)?
 					rank = Board.rank_for(Store.spots!(move.column)?, move)
-					_ = Db.run!("update cards set column_id = $2, rank = $3, updated_at = now() where id = $1", [Text(move.card), Text(move.column), Text(rank)])?
+					_ = Db.run!("update cards set column_id = $2, rank = $3, updated_at = $4 where id = $1", [Text(move.card), Text(move.column), Text(rank), Int(now!({}))])?
 					Ok({ title: card.title, column: place.name })
 				},
 			)
@@ -207,7 +223,7 @@ Store := [].{
 			Err(NotFound)
 		} else {
 			found : Try(List({ id : Str, title : Str, archived : Bool }), [DbErr(Str), BadRow(Str)])
-			found = Db.all!("select id::text as id, title, archived from cards where id = $2 and board_id = (select id from boards where slug = $1)", [Text(slug), Text(card)])
+			found = Db.all!("select cast(id as text) as id, title, archived from cards where id = $2 and board_id = (select id from boards where slug = $1)", [Text(slug), Text(card)])
 			first(found?)
 		}
 
@@ -216,18 +232,19 @@ Store := [].{
 	save_card! : Str, Str, { title : Str, description : Str, assignee : Str, due : Str } => Try({}, Store.Problem)
 	save_card! = |slug, card, fields| {
 		changed = Db.run!(
-			"update cards set title = $3, description = $4, assignee_id = nullif($5, '')::bigint, due = nullif($6, '')::date, updated_at = now() where id = $2 and board_id = (select id from boards where slug = $1)",
-			[Text(slug), Text(card), Text(fields.title), Text(fields.description), Text(fields.assignee), Text(fields.due)],
+			"update cards set title = $3, description = $4, assignee_id = nullif($5, ''), due = nullif($6, ''), updated_at = $7 where id = $2 and board_id = (select id from boards where slug = $1)",
+			[Text(slug), Text(card), Text(fields.title), Text(fields.description), Text(fields.assignee), Text(fields.due), Int(now!({}))],
 		)?
 		if (changed == 0) Err(NotFound) else Ok({})
 	}
 
-	## The card with label `label`, or without it (`on`).
+	## The card with label `label`, or without it (`on`): its labels are a JSON list, added to at its
+	## end, or kept but for `label`, in their order.
 	set_label! : Str, Str, Str, Bool => Try({}, Store.Problem)
 	set_label! = |slug, card, label, on| {
 		changed = Db.run!(
-			"update cards set labels = case when $4 then (case when labels ? $3 then labels else labels || to_jsonb($3::text) end) else labels - $3 end, updated_at = now() where id = $2 and board_id = (select id from boards where slug = $1)",
-			[Text(slug), Text(card), Text(label), Bool(on)],
+			"update cards set labels = case when $4 then (case when exists (select 1 from json_each(labels) where value = $3) then labels else json_insert(labels, '$[#]', $3) end) else (select json_group_array(value order by key) from json_each(labels) where value <> $3) end, updated_at = $5 where id = $2 and board_id = (select id from boards where slug = $1)",
+			[Text(slug), Text(card), Text(label), Bool(on), Int(now!({}))],
 		)?
 		if (changed == 0) Err(NotFound) else Ok({})
 	}
@@ -236,8 +253,8 @@ Store := [].{
 	set_archived! : Str, Str, Bool => Try({}, Store.Problem)
 	set_archived! = |slug, card, archived| {
 		changed = Db.run!(
-			"update cards set archived = $3, updated_at = now() where id = $2 and board_id = (select id from boards where slug = $1)",
-			[Text(slug), Text(card), Bool(archived)],
+			"update cards set archived = $3, updated_at = $4 where id = $2 and board_id = (select id from boards where slug = $1)",
+			[Text(slug), Text(card), Bool(archived), Int(now!({}))],
 		)?
 		if (changed == 0) Err(NotFound) else Ok({})
 	}
@@ -285,13 +302,13 @@ Store := [].{
 
 	# ---- Inside a transaction ----
 
-	## Column `column` of the board, locked until the transaction ends (`for update`): the moves and
-	## new cards into it take turns. Its board's id and its name.
+	## Column `column` of the board, read in a transaction, which holds the write lock from its start:
+	## the moves and new cards into it take turns. Its board's id and its name.
 	lock_column! : Str, Str => Try({ board : Str, name : Str }, Store.Problem)
 	lock_column! = |slug, column| {
 		found : Try(List({ board : Str, name : Str }), [DbErr(Str), BadRow(Str)])
 		found = Db.all!(
-			"select c.board_id::text as board, c.name from columns c join boards b on b.id = c.board_id where b.slug = $1 and c.id = $2 for update of c",
+			"select cast(c.board_id as text) as board, c.name from columns c join boards b on b.id = c.board_id where b.slug = $1 and c.id = $2",
 			[Text(slug), Text(column)],
 		)
 		first(found?)
@@ -299,8 +316,12 @@ Store := [].{
 
 	## Every card in a column, archived ones too, where they are: what a new rank must differ from.
 	spots! : Str => Try(List(Board.Spot), [DbErr(Str), BadRow(Str)])
-	spots! = |column| Db.all!("select id::text as id, column_id::text as \"column\", rank from cards where column_id = $1", [Text(column)])
+	spots! = |column| Db.all!("select cast(id as text) as id, cast(column_id as text) as \"column\", rank from cards where column_id = $1", [Text(column)])
 }
+
+## Now, in milliseconds since the epoch: what a card's `updated_at` is set to.
+now! : {} => I64
+now! = |{}| Time.now_millis!({}).to_i64_wrap()
 
 ## The one row a query found, or `NotFound`.
 first : List(row) -> Try(row, [NotFound, ..others])

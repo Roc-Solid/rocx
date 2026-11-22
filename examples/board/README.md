@@ -36,7 +36,7 @@ several people work on one board at once: each sees the others' changes as they 
 | Changes shown before the server has them in the open card (labels, ticks, its fields), as moves are | `Ui/CardPanel.rocx` (`card!`), `Board.saved`, `Board.labelled`, `Board.ticked` |
 | Rate limits on writes (packages/guard) and security headers | `Middlewares.roc` (`writer`, `default`) |
 | Who you are: a name and a colour in a cookie; members only | `routes/join/`, `Middlewares.member` |
-| Postgres: migrations, a transaction that locks a column, every query in one module | `migrations/`, `Store.roc` |
+| SQLite in the server's process (`database: Sqlite("data/board.db")`, D-045): migrations, transactions that take turns, a `json` column, every query in one module | `main.roc`, `migrations/`, `Store.roc` |
 | An idempotent seed: three people and a board that looks lived in | `migrations/0002_seed.sql` |
 | Forms without JavaScript, and the same forms sent by the page with it | every `<form>`: `method="post"` and an `on:submit` |
 | Pure and effectful components: `view` for what only shows its props, `view!` for what keeps state | `Ui/Avatar.rocx` (pure); `Ui/ColumnView.rocx`, `Ui/CardPanel.rocx` (effectful) |
@@ -46,15 +46,15 @@ several people work on one board at once: each sees the others' changes as they 
 ### Ranks, and why they survive concurrent moves
 
 A card's place in its column is a rank: a string of base-36 digits read as a fraction (`"i"` is
-18/36), compared byte by byte (the column is `collate "C"`). Moving a card gives it a rank between
+18/36), compared byte by byte (SQLite's own collation, binary). Moving a card gives it a rank between
 its new neighbours' (`Rank.between("i", "j")` is `"ii"`), and writes that one row. Nothing else is
 renumbered, so two people moving different cards never write the same rows, and there is always
 room between two ranks (ranks never end in `0`, so `"i"` and `"i0"` can't both exist).
 
 What could still go wrong is two cards dropped into the same gap at the same moment: both would get
 the rank between the same two neighbours. So the server works the rank out itself, from the board as
-it is when the move arrives, inside a transaction that locks the column it goes to (`select … for
-update`, `Store.lock_column!`): moves into one column take turns, and each sees the one before it.
+it is when the move arrives, inside a transaction (`Store.lock_column!`), which on SQLite holds the
+write lock from its start: moves take turns, and each sees the one before it.
 A unique index on `(column_id, rank)` says so to anything else that writes cards. The page sends what
 was meant (`{ card, column, before }`: "just above that card"), not a rank, so a card dropped above
 one that someone else has just moved away goes to the end of the column, rather than somewhere
@@ -67,20 +67,19 @@ once in a while (not done here).
 
 ## Build and run
 
-The toolchain once (`just setup`), and the platforms' hosts (`just test` builds both). Then, from the
-repository's root, with a Postgres (`just db`):
+The toolchain once (`just setup`), and the platforms' hosts (`just test` builds both). Nothing
+else: the board is a SQLite file, `data/board.db` from where the server starts
+(`--database-url sqlite:<path>` puts it elsewhere). From the repository's root:
 
 ```sh
-docker exec rocx-postgres createdb -U rocx board
-export DATABASE_URL=postgres://rocx:rocx@127.0.0.1:55432/board
-
 bin/rocx build examples/board --client examples/board/build/client
 .tools/roc-active build --target=wasm32 --opt=size --output=examples/board/build/client/static/rocx/app.wasm examples/board/build/client/main.roc
 node server/build.mjs examples/board/main.roc examples/board/build/server
-examples/board/build/server --port 18120 --static examples/board/build/client/static
+cd examples/board && build/server --port 18120 --static build/client/static
 ```
 
-Then open http://localhost:18120. The server migrates and seeds the database as it starts. Open it
+Then open http://localhost:18120. The server makes the file, and migrates and seeds it, as it
+starts. Open it
 in a second browser (or a private window: one browser's tabs share their cookies, so they are one
 person) to be two people at once.
 
@@ -90,7 +89,7 @@ person) to be two people at once.
 
 ```sh
 .tools/roc-active test examples/board/main.roc     # the expects: ranks, moves, validation
-node --test 'examples/board/test/*.test.mjs'       # needs DATABASE_URL; the browser test needs Chromium
+node --test 'examples/board/test/*.test.mjs'       # a SQLite file each; the browser test needs Chromium
 ```
 
 - `Rank.roc` and `Board.roc` have the `expect`s: ranks always between their neighbours and never
@@ -113,7 +112,7 @@ node --test 'examples/board/test/*.test.mjs'       # needs DATABASE_URL; the bro
   save made is held back on its way, and the other sees the card free, and it stays free; a third
   person comes, and once their browser closes and the grace is up, leaves everyone's stack.
 
-The test files build the app once between them, each with a database and a server of its own.
+The test files build the app once between them, each with a SQLite file and a server of its own.
 
 **In a Firefox-based browser.** Headless Chromium never runs CSS transitions, so Ada's half of the
 browser test runs in headless Gecko (Zen, or Firefox) when there is one, over WebDriver BiDi

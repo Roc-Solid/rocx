@@ -9,15 +9,14 @@ insert into boards (slug, name) values ('launch', 'Acme Rocket Launch')
 on conflict (slug) do nothing;
 
 insert into columns (board_id, name, rank)
+with c (name, rank) as (values ('Ideas', 'c'), ('To do', 'i'), ('Doing', 'r'), ('Done', 'w'))
 select b.id, c.name, c.rank
-from boards b, (values ('Ideas', 'c'), ('To do', 'i'), ('Doing', 'r'), ('Done', 'w')) as c(name, rank)
+from boards b, c
 where b.slug = 'launch' and not exists (select 1 from columns where board_id = b.id);
 
+-- A card's due day is so many days from the day the database was made (none when null).
 insert into cards (board_id, column_id, rank, title, description, labels, assignee_id, due)
-select b.id, col.id, c.rank, c.title, c.description, c.labels::jsonb,
-	(select id from people where name = c.assignee), current_date + c.due_in
-from boards b
-join (values
+with c (column_name, rank, title, description, labels, assignee, due_in) as (values
 	('Ideas', 'i', 'Confetti cannon at lift-off', 'Ask the safety team first.', '["feature"]', null, null),
 	('Ideas', 'r', 'Live countdown on the website', '', '["feature","design"]', 'Bo', null),
 	('To do', 'c', 'Book the launch pad', 'Tuesday or Thursday; the pad crew prefers mornings.', '["ops","urgent"]', 'Ada', 2),
@@ -28,14 +27,16 @@ join (values
 	('Doing', 'r', 'Rehearse the countdown', '', '["ops"]', 'Cyd', 1),
 	('Done', 'i', 'Paint the rocket', 'Acme red, with the logo on both sides.', '["design"]', 'Bo', -3),
 	('Done', 'r', 'Order the fuel', '', '["ops"]', 'Ada', -6)
-) as c(column_name, rank, title, description, labels, assignee, due_in) on true
+)
+select b.id, col.id, c.rank, c.title, c.description, c.labels,
+	(select id from people where name = c.assignee), date('now', c.due_in || ' days')
+from boards b
+join c
 join columns col on col.board_id = b.id and col.name = c.column_name
 where b.slug = 'launch' and not exists (select 1 from cards where board_id = b.id);
 
 insert into checklist_items (card_id, text, done)
-select card.id, i.text, i.done
-from cards card
-join (values
+with i (position, card_title, text, done) as (values
 	(1, 'Book the launch pad', 'Call the pad crew', true),
 	(2, 'Book the launch pad', 'Sign the booking form', false),
 	(3, 'Book the launch pad', 'Tell the press office', false),
@@ -47,6 +48,9 @@ join (values
 	(9, 'Paint the rocket', 'Primer', true),
 	(10, 'Paint the rocket', 'Acme red', true),
 	(11, 'Paint the rocket', 'Logo', true)
-) as i(position, card_title, text, done) on card.title = i.card_title
+)
+select card.id, i.text, i.done
+from cards card
+join i on card.title = i.card_title
 where not exists (select 1 from checklist_items where card_id = card.id)
 order by i.position;

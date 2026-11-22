@@ -68,7 +68,7 @@ describe(`Board in two browsers (Ada's: ${engine})`, { skip: noDatabase || noChr
 	before(async () => {
 		running = await started();
 		seeded = await ids(running.db);
-		people = Object.fromEntries((await running.db.sql`select name, id::text as id from people`).map((row) => [row.name, row.id]));
+		people = Object.fromEntries((await running.db.sql`select name, cast(id as text) as id from people`).map((row) => [row.name, row.id]));
 		browsers = [await launchBrowser({ engine }), await launchBrowser()];
 		open = async (browser, person) => {
 			const tab = await browser.open(`${running.app.url}/b/launch`, { cookies: [["acme_board_person", person]], script: GLIDES + HOLD });

@@ -1,6 +1,6 @@
 ## Fractional ranks: where a card sits in its column. A rank is a string of base-36 digits
 ## (`0`–`9`, then `a`–`z`) read as a fraction (`"i"` is 18/36, `"i8"` a little more), and cards are
-## ordered by their ranks byte by byte (Postgres's `"C"` collation, `Rank.compare` here).
+## ordered by their ranks byte by byte (SQLite's own collation, `Rank.compare` here).
 ##
 ## Moving a card writes one row: its new rank, made between its new neighbours' (`between`). The
 ## other cards keep theirs, so two people moving different cards never touch the same rows, and
@@ -18,7 +18,7 @@ Rank := [].{
 	between : Str, Str -> Str
 	between = |low, high| Str.from_utf8_lossy(midpoint(low.to_utf8(), high.to_utf8()))
 
-	## Which of two ranks sorts first, byte by byte, as Postgres's `"C"` collation sorts them.
+	## Which of two ranks sorts first, byte by byte, as SQLite's own collation sorts them.
 	compare : Str, Str -> [Before, Same, After]
 	compare = |a, b| compare_bytes(a.to_utf8(), b.to_utf8())
 

@@ -61,7 +61,11 @@ describe("Board over HTTP", { skip: noDatabase }, () => {
 		assert.deepEqual(pad.labels, ["ops", "urgent"]);
 		assert.match(pad.due, /^\d{4}-\d{2}-\d{2}$/);
 
-		await db.query(readFileSync(join(dir, "migrations", "0002_seed.sql"), "utf8"));
+		// The seed is several statements: node:sqlite's exec runs them all (db.query prepares one).
+		const { DatabaseSync } = await import("node:sqlite");
+		const seeding = new DatabaseSync(db.path, { timeout: 10_000 });
+		seeding.exec(readFileSync(join(dir, "migrations", "0002_seed.sql"), "utf8"));
+		seeding.close();
 		const [counts] = await db.sql`select (select count(*) from people) as people, (select count(*) from cards) as cards, (select count(*) from checklist_items) as items`;
 		assert.equal(Number(counts.cards), 10);
 		assert.equal(Number(counts.items), 11);
@@ -70,14 +74,14 @@ describe("Board over HTTP", { skip: noDatabase }, () => {
 	test("a move puts the card between its new neighbours, writing its row alone", async () => {
 		const ada = await as(app, db, "Ada");
 		const { cards, columns } = seeded;
-		const before = await db.sql`select id::text as id, rank from cards where id <> ${cards["Press kit"]} order by id`;
+		const before = await db.sql`select cast(id as text) as id, rank from cards where id <> ${cards["Press kit"]} order by id`;
 
 		// Into another column, between two cards.
 		const moved = await ada.json("/b/launch/move", { card: cards["Press kit"], column: columns.Doing, before: cards["Rehearse the countdown"] });
 		assert.equal(moved.status, 200);
 		let board = await ada.read("/b/launch");
 		assert.deepEqual(titles(board, columns.Doing), ["Telemetry dashboard", "Press kit", "Rehearse the countdown"]);
-		assert.deepEqual(await db.sql`select id::text as id, rank from cards where id <> ${cards["Press kit"]} order by id`, before);
+		assert.deepEqual(await db.sql`select cast(id as text) as id, rank from cards where id <> ${cards["Press kit"]} order by id`, before);
 
 		// To the top of a column, and to its end.
 		await ada.json("/b/launch/move", { card: cards["Fix the fuel gauge rounding"], column: columns["To do"], before: cards["Book the launch pad"] });
@@ -92,7 +96,7 @@ describe("Board over HTTP", { skip: noDatabase }, () => {
 		assert.deepEqual(titles(board, columns["To do"]), ["Fix the fuel gauge rounding", "Book the launch pad", "Press kit"]);
 
 		// Every rank is a rank, and no two cards in a column share one.
-		const ranks = await db.sql`select column_id::text as col, rank from cards`;
+		const ranks = await db.sql`select cast(column_id as text) as col, rank from cards`;
 		assert.ok(ranks.every((row) => /^[0-9a-z]*[1-9a-z]$/.test(row.rank)), JSON.stringify(ranks));
 		assert.equal(new Set(ranks.map((row) => `${row.col} ${row.rank}`)).size, ranks.length);
 	});

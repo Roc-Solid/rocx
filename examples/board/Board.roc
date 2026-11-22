@@ -1,11 +1,11 @@
 import Rank
 
 ## A board as a page shows it, and the rules both halves share: the order cards show in, and
-## where a move puts one. The server reads a board from Postgres (`Store`) and answers it at
+## where a move puts one. The server reads a board from its database (`Store`) and answers it at
 ## `GET /b/<board>`; the page reads it there, and applies the moves still on their way to it
 ## (`moved`), so a dragged card shows where it was dropped before the server has it.
 ##
-## Ids are strings here (Postgres's `bigint`s, as text): they are keys on the page and in JSON.
+## Ids are strings here (SQLite's integers, as text): they are keys on the page and in JSON.
 Board := [].{
 
 	## Someone on the board: the name and colour they picked when they joined.
