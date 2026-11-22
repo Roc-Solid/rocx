@@ -41,7 +41,7 @@ person sees only their own notes, whichever way they ask.
 | Middleware that puts the person into the context and guards pages, the API and MCP | `Middlewares.roc` (`signed_in`, `api`, `agent`), each route file's `middleware = …` |
 | Personal access tokens: made, shown once, kept as SHA-256 only, named, last use noted, read-only, revoked | `routes/settings/`, `Token.roc` (with its `expect`s), `Account.make_token!`, `Store.bearer!` |
 | An MCP server (packages/mcp) at `/mcp`: six tools with their hints, notes as resources, two prompts | `Agents.roc` |
-| MCP tools made of the JSON API's endpoints (`McpHttp.endpoint`, and `Endpoint.run!` for those with an id) | `Agents.roc` (`server`, `read_note!` and the others) |
+| MCP tools made of the JSON API's endpoints (`McpHttp.endpoint`, a tool's arguments filling an endpoint's `id` too) | `Agents.roc` (`server`) |
 | Bearer tokens turned into the person, so a token never reaches another's notes; read-only tokens refused for writes | `Middlewares.agent`, `Notebook.writer`, `Store.roc` (every query names the person) |
 | The JSON API, and its OpenAPI document with Scalar (`openapi: Page(Scalar)`) | `routes/api/`, `main.roc`, `/openapi.html` |
 | Rate limits (packages/guard): sign-in links for each address, MCP calls for each token | `Middlewares.mail_limit`, `Middlewares.agent_limit` |
@@ -227,12 +227,13 @@ What the app met, and how it works around each. None needed a change outside the
    `Generated/Handlers`' endpoints, which only what is outside the routes' imports may import.
    `main.roc` is the documented place to mount MCP, so the mount stays; a route of `respond!` alone
    could serve it too now.)
-3. **`McpHttp.endpoint` can't fill an endpoint's path from a tool's arguments**: `Api.get_api_notes_id({ id })`
-   needs its `id` when the tool is made. Workaround: `search_notes` and `create_note` are endpoints
-   whole, and the four tools that take an `id` are `McpHttp.tool`s that run the endpoint for that id
-   (`Endpoint.run!(Handlers.get_api_notes_id({ id: id }), caller.request, caller.context, {})`), so they
-   still go through the API's code. Something like `McpHttp.endpoint_for(|args| Api.x({ id: args.id }), …)`
-   would make them a line each.
+3. **`McpHttp.endpoint` couldn't fill an endpoint's path from a tool's arguments**: `Api.get_api_notes_id({ id })`
+   needed its `id` when the tool was made. The workaround was `search_notes` and `create_note` as
+   endpoints whole, and the four tools that take an `id` as `McpHttp.tool`s that ran the endpoint for
+   that id (`Endpoint.run!(Handlers.get_api_notes_id({ id: id }), …)`). (Fixed in packages/mcp
+   since: `McpHttp.endpoint` takes the endpoint's function, `Handlers.get_api_notes_id`, and reads
+   the tool's arguments as its params and as its body, so each of the six tools is a line, and a
+   body field named as a param is a problem `Mcp.problems` reports.)
 4. **Every field of a tool's arguments is required** (packages/mcp's README), so an agent sends
    `"tags": []` to `create_note`. The search box's `#tag` syntax keeps `search_notes` to one field.
 5. **`Endpoint.get!` of a 404 makes a 500 page** (examples/tasks met it too). The note's page and

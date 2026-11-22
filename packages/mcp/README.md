@@ -19,7 +19,8 @@ server = {
     version: "1.0.0",
     instructions: "Notes, by id: list them, then read or add one.",
     tools: [
-        McpHttp.endpoint(Handlers.post_api_notes({}), { name: "add_note", description: "Adds a note" }, McpHttp.openapi({})),
+        McpHttp.endpoint(Handlers.post_api_notes, { name: "add_note", description: "Adds a note" }, McpHttp.openapi({})),
+        McpHttp.endpoint(Handlers.get_api_notes_id, { name: "read_note", description: "A note, by its id" }, McpHttp.openapi({})).read_only(),
         McpHttp.function(Notes.search!, { name: "search", description: "Finds notes by their words" }, McpHttp.openapi({})).read_only(),
     ],
 }
@@ -48,7 +49,7 @@ messages through it.
 | Module | What it does |
 |---|---|
 | `Mcp` | `Mcp.Server(ctx)`: what the server offers; `handle!(server, incoming, ctx)`, a request's answer; `receive(server, incoming)`, the same, pure: `Reply(answer)` or `Run(running)`; `progress`, a progress notification; `problems(server)`, for the app's own test; `versions` |
-| `Tool` | `Tool.typed(name, description, schema, run!)`: arguments read into a Roc type, the answer written as JSON; `Tool.new`: any JSON in, content out; hints (`read_only`, `additive`, `idempotent`, `closed_world`), `titled`, `answers(schema)`, `reporting`; `Tool.text`, `Tool.structured` |
+| `Tool` | `Tool.typed(name, description, schema, run!)`: arguments read into a Roc type, the answer written as JSON; `Tool.typed_with_params(name, description, params_schema, body_schema, run!)`: arguments read into two (an endpoint's path params and its body), their schemas merged; `Tool.new`: any JSON in, content out; hints (`read_only`, `additive`, `idempotent`, `closed_world`), `titled`, `answers(schema)`, `reporting`; `Tool.text`, `Tool.structured` |
 | `Resource` | `Resource.text(uri, name, mime, read!)`, `Resource.new(uri, name, read!)`: what reading a URI gives; `Resource.contents(uri, mime, Text(…) or Blob(bytes))` |
 | `Template` | `Template.new("notes://note/{id}", name, read!)`: a family of resources, read with the values the URI gave the template's names; `Template.matching` |
 | `Prompt` | `Prompt.new(name, description, arguments, get!)`: messages made from string arguments (`Prompt.argument`, `Prompt.optional`; `Prompt.user`, `Prompt.assistant`) |
@@ -77,7 +78,7 @@ app [program] { mcp: "../packages/mcp/main.roc", pf: platform "../server/platfor
 |---|---|
 | `middleware(path, server)` | the MCP server as a middleware: it answers `path`, and hands every other request on. Put it after the middleware that decides who may ask |
 | `respond!(server, request, context)` | the answer to a request to the MCP route; a route file's `respond!` can call it (`routes/mcp/+server.roc`): a route of `respond!` alone may import `Generated/Handlers` (D-037), which imports only the route files with endpoints |
-| `endpoint(Handlers.x({}), about, McpHttp.openapi({}))` | an endpoint as a tool: its body is the arguments, its answer the tool's; run as `Endpoint.run!` runs it, so it is `Generated/Handlers`' endpoint (with its handler), not `Generated/Api`'s contract; a refusal goes back to the model |
+| `endpoint(Handlers.x, about, McpHttp.openapi({}))` | an endpoint as a tool, from the function of its params that names it: the arguments are one object, read as the path's params and as the body (`{ "id": "7", "tags": ["work"] }` for `Handlers.put_api_notes_id_tags`; an endpoint of no params, its body alone), and its answer is the tool's; run as `Endpoint.run!` runs it, so it is `Generated/Handlers`' endpoint (with its handler), not `Generated/Api`'s contract; a refusal goes back to the model. A body field named as a param is a problem `Mcp.problems` reports |
 | `function(Module.name!, about, McpHttp.openapi({}))` | a function of the app's own (`arg => result`) as a tool, run in the MCP request, behind the MCP route's middleware |
 | `tool(about, handler!, McpHttp.openapi({}))` | a handler of the app's own, `arg, Caller(c) => Try(result, Str)`, its schemas from its types |
 | `Caller(c)` | what a tool is given: `{ request, context, progress! }`. `context` is what the middleware handed on: who is asking |

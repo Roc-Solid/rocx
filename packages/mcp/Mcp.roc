@@ -14,7 +14,7 @@ import Tool
 ##         name: "notes",
 ##         version: "1.0.0",
 ##         instructions: "Notes, by id. List them first.",
-##         tools: [McpHttp.endpoint(Api.post_api_notes({}), { name: "add_note", description: "Adds a note" })],
+##         tools: [McpHttp.endpoint(Handlers.post_api_notes, { name: "add_note", description: "Adds a note" }, McpHttp.openapi({}))],
 ##     }
 ##
 ## It speaks both eras of MCP. The current one (2026-07-28) has no handshake: each request says its
@@ -137,7 +137,8 @@ Mcp := [].{
 
 	## What is wrong with a server's tools, resources and prompts, for a test of the app's
 	## (`expect Mcp.problems(server) == []`): a name MCP doesn't take (a tool's is 1 to 128 letters,
-	## digits, `_`, `-` and `.`), one given twice, a schema that isn't JSON.
+	## digits, `_`, `-` and `.`), one given twice, a schema that isn't JSON, an endpoint's tool whose
+	## path params and body name one field.
 	problems : Server(ctx) -> List(Str)
 	problems = |server| {
 		tools = server.tools.map(|tool| tool.name)
@@ -146,6 +147,7 @@ Mcp := [].{
 			|tool|
 				match (tool.input, tool.output) {
 					(Err(InvalidJson(why)), _) => Ok("The tool ${tool.name}'s input schema isn't JSON: ${why}")
+					(Err(Clash(names)), _) => Ok("The tool ${tool.name}'s arguments name ${Str.join_with(names, ", ")} both as its endpoint's path params and in its body: one object can't fill both (rename the body's field)")
 					(_, Err(InvalidJson(why))) => Ok("The tool ${tool.name}'s output schema isn't JSON: ${why}")
 					_ => Err(Fine)
 				},
@@ -766,6 +768,11 @@ expect {
 	broken : Mcp.Server(Notes)
 	broken = { name: "x", version: "1", tools: [Tool.typed("a b", "", "{", adding), Tool.typed("add", "", "", adding), Tool.typed("add", "", "", adding)] }
 	Mcp.problems(broken) == ["The tool name \"a b\" isn't 1 to 128 of A-Z, a-z, 0-9, _, - and .", "The tool a b's input schema isn't JSON: a key expected, at byte 1", "Two of the tools are add"]
+}
+expect {
+	clashing : Mcp.Server(Notes)
+	clashing = { name: "x", version: "1", tools: [Tool.typed_with_params("append", "", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"]}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"]}", |_, _, _| Ok({}))] }
+	Mcp.problems(clashing) == ["The tool append's arguments name id both as its endpoint's path params and in its body: one object can't fill both (rename the body's field)"]
 }
 
 ## A tool's progress, as the notification the stream sends.

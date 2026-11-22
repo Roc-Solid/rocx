@@ -5,13 +5,15 @@ program = App.program({
 	crons: [],
 })
 
-# Agents.roc: an endpoint, a function and a handler of the app's own, a tool each
+# Agents.roc: endpoints (Generated/Handlers', D-037), a function and a handler of the app's own,
+# a tool each; a tool's arguments fill an endpoint's path too (read_note's id)
 server : Mcp.Server(McpHttp.Caller(Context))
 server = {
 	name: "notes",
 	version: "1.0.0",
 	tools: [
-		McpHttp.endpoint(Api.post_api_convert({}), { name: "convert", description: "Celsius to Fahrenheit" }, McpHttp.openapi({})),
+		McpHttp.endpoint(Handlers.post_api_convert, { name: "convert", description: "Celsius to Fahrenheit" }, McpHttp.openapi({})),
+		McpHttp.endpoint(Handlers.get_api_notes_id, { name: "read_note", description: "A note, by its id" }, McpHttp.openapi({})),
 		McpHttp.function(Echo.echo!, { name: "echo", description: "Says a message back" }, McpHttp.openapi({})),
 		McpHttp.tool({ name: "greet", description: "Greets someone" }, greet!, McpHttp.openapi({})),
 	],

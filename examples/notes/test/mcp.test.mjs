@@ -60,6 +60,12 @@ describe("Acme Notes over MCP", { skip: noDatabase }, () => {
 		assert.deepEqual(create.inputSchema.required.sort(), ["body", "tags", "title"]);
 		assert.equal(create.inputSchema.properties.tags.type, "array");
 		assert.equal(tools.find((tool) => tool.name === "archive_note").inputSchema.properties.archived.type, "boolean");
+		// An endpoint with an id in its path: the id is an argument, beside its body's fields.
+		const schema = (name) => tools.find((tool) => tool.name === name).inputSchema;
+		assert.deepEqual(schema("read_note"), { type: "object", properties: { id: { type: "string" } }, required: ["id"] });
+		assert.deepEqual(schema("append_to_note").required, ["id", "text"]);
+		assert.deepEqual(Object.keys(schema("tag_note").properties), ["id", "tags"]);
+		assert.equal(tools.find((tool) => tool.name === "read_note").outputSchema.properties.title.type, "string");
 	});
 
 	test("tools/call: search, read, create, append, tag and archive, as the token's person", async () => {

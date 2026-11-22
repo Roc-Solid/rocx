@@ -87,7 +87,7 @@ view! = |_|
 				<tbody>
 					<tr><td><code>middleware(path, server)</code></td><td>the MCP server as a middleware: it answers <code>path</code>, and hands every other request on</td></tr>
 					<tr><td><code>respond!(server, request, context)</code></td><td>the answer to a request to the MCP route, for a route file's <code>respond!</code></td></tr>
-					<tr><td><code>endpoint(Handlers.x({"{}"}), about, McpHttp.openapi({"{}"}))</code></td><td>an endpoint as a tool (<code>Generated/Handlers</code>', which has its handler, D-037): its body is the arguments, its answer the tool's, a refusal goes back to the model</td></tr>
+					<tr><td><code>endpoint(Handlers.x, about, McpHttp.openapi({"{}"}))</code></td><td>an endpoint as a tool, from the function of its params (<code>Generated/Handlers</code>', which has its handler, D-037): the arguments are one object, read as its path's params and as its body (<code>{"{ \"id\": \"7\", \"tags\": [\"work\"] }"}</code>), its answer is the tool's, a refusal goes back to the model; a body field named as a param is a problem <code>Mcp.problems</code> reports</td></tr>
 					<tr><td><code>function(Module.name!, about, McpHttp.openapi({"{}"}))</code></td><td>a function of the app's own as a tool, run in the MCP request, behind the MCP route's middleware</td></tr>
 					<tr><td><code>tool(about, handler!, McpHttp.openapi({"{}"}))</code></td><td>a handler of the app's own, its schemas from its types</td></tr>
 					<tr><td><code>Caller(c)</code></td><td>what a handler is given: <code>{"{ request, context, progress! }"}</code>; <code>context</code> is what the middleware handed on, who is asking</td></tr>
@@ -208,18 +208,15 @@ view! = |_|
 				The protocol, both eras: 137 <code>expect</code>s. And over HTTP, in an app built with
 				<code>rocx build</code> on the server platform, with the official clients: the MCP Inspector's
 				command line (2.16.0, which speaks 2025-11-25), and the TypeScript SDK's client (2.4.0) on 2026-07-28.
-				Tools from an endpoint, a function and handlers, refusals, resources, a template, a prompt,
-				and a tool's progress, streamed as events.
+				Tools from an endpoint (its path's params among the arguments), a function and handlers,
+				refusals, resources, a template, a prompt, and a tool's progress, streamed as events. A route of
+				<code>respond!</code> alone may serve it, as <code>Generated/Handlers</code> doesn't import it (D-037);
+				examples/notes mounts it from <code>main.roc</code>.
 			</li>
 		</ul>
 		<p>Waits on a proposal (in <code>packages/mcp/PROPOSALS.md</code>):</p>
 		<ul>
 			<li>the HTTP side reaches an app by hand, until "Server-only modules in packages";</li>
-			<li>
-				a route file can't serve an MCP server whose tools are <code>Api</code>'s: <code>Api</code> imports
-				every route file, endpoints or not, so the two would import each other. Today it is mounted as a
-				middleware;
-			</li>
 			<li>
 				a tag union in a tool's arguments is "any value" until <code>Api</code> lists the tags it found
 				(<code>Api.tags</code>); and an endpoint's doc comment isn't its tool's description yet;

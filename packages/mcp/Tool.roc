@@ -17,7 +17,7 @@ Tool(ctx) := {
 	name : Str,
 	title : Str,
 	description : Str,
-	input : Try(JsonValue, [InvalidJson(Str)]),
+	input : Try(JsonValue, [InvalidJson(Str), Clash(List(Str))]),
 	output : Try(JsonValue, [NoOutput, InvalidJson(Str)]),
 	hints : List((Str, Bool)),
 	reports : Bool,
@@ -31,7 +31,7 @@ Tool(ctx) := {
 		name: name,
 		title: "",
 		description: description,
-		input: schema_of(schema),
+		input: schema_of(schema).map_err(|InvalidJson(why)| InvalidJson(why)),
 		output: Err(NoOutput),
 		hints: [],
 		reports: Bool.False,
@@ -49,12 +49,12 @@ Tool(ctx) := {
 	typed = |name, description, schema, run!| {
 		read = schema_of(schema)
 		wrapped = !is_object_schema(read)
-		input = if (wrapped) read.map_ok(|inner| Object([("type", String("object")), ("properties", Object([("input", inner)])), ("required", Array([String("input")]))])) else read
+		input = if (wrapped) read.map_ok(wrap_input) else read
 		{
 			name: name,
 			title: "",
 			description: description,
-			input: input,
+			input: input.map_err(|InvalidJson(why)| InvalidJson(why)),
 			output: Err(NoOutput),
 			hints: [],
 			reports: Bool.False,
@@ -65,6 +65,42 @@ Tool(ctx) := {
 				match decoded {
 					Ok(arg) => Ok(|ctx| Tool.answer(run!(arg, ctx)))
 					Err(InvalidJson(why)) => Err("Invalid arguments for ${name}: ${why}")
+				}
+			},
+		}
+	}
+
+	## A tool whose arguments are two Roc types, read from one object: an endpoint's path params
+	## (`{ id : Str }`) and its body, as `McpHttp.endpoint` makes one, each read from the arguments
+	## (`Json` skips the fields a type doesn't have). Its schema is both: the params' properties and
+	## the body's, and both required lists. A name in both is an input schema `Mcp.problems`
+	## reports, as the arguments can't say which it is for. A body whose schema isn't an object's is
+	## the arguments' `input` field, as `typed` reads one; params of no fields leave the body's
+	## schema as it is.
+	typed_with_params : Str, Str, Str, Str, (params, arg, ctx => Try(result, Str)) -> Tool(ctx)
+		where [params.Json.Parseable([InvalidJson(Str)]), arg.Json.Parseable([InvalidJson(Str)]), result.Json.Encodable(e)]
+	typed_with_params = |name, description, params_schema, body_schema, run!| {
+		read = schema_of(body_schema)
+		wrapped = !is_object_schema(read)
+		body = if (wrapped) read.map_ok(wrap_input) else read
+		{
+			name: name,
+			title: "",
+			description: description,
+			input: merged(schema_of(params_schema), body),
+			output: Err(NoOutput),
+			hints: [],
+			reports: Bool.False,
+			prepare: |arguments| {
+				given = if (wrapped) arguments.get("input") ?? Null else arguments
+				in_path : Try(params, [InvalidJson(Str)])
+				in_path = JsonValue.decode(arguments)
+				decoded : Try(arg, [InvalidJson(Str)])
+				decoded = JsonValue.decode(given)
+				match (in_path, decoded) {
+					(Ok(params), Ok(arg)) => Ok(|ctx| Tool.answer(run!(params, arg, ctx)))
+					(Err(InvalidJson(why)), _) => Err("Invalid arguments for ${name}: ${why}")
+					(_, Err(InvalidJson(why))) => Err("Invalid arguments for ${name}: ${why}")
 				}
 			},
 		}
@@ -171,6 +207,50 @@ Tool(ctx) := {
 schema_of : Str -> Try(JsonValue, [InvalidJson(Str)])
 schema_of = |schema| if (schema.trim().is_empty()) Ok(Object([("type", String("object"))])) else JsonValue.parse(schema)
 
+## An object's schema with `inner` as its one field, `input`: the arguments of a tool that takes
+## another value.
+wrap_input : JsonValue -> JsonValue
+wrap_input = |inner| Object([("type", String("object")), ("properties", Object([("input", inner)])), ("required", Array([String("input")]))])
+
+## The arguments' schema of a tool with params (`typed_with_params`): the params' properties and the
+## body's, and both required lists; `Clash` with the names both have. Params of no fields, the body's.
+merged : Try(JsonValue, [InvalidJson(Str)]), Try(JsonValue, [InvalidJson(Str)]) -> Try(JsonValue, [InvalidJson(Str), Clash(List(Str))])
+merged = |params, body|
+	match (params, body) {
+		(Err(InvalidJson(why)), _) => Err(InvalidJson(why))
+		(_, Err(InvalidJson(why))) => Err(InvalidJson(why))
+		(Ok(of_params), Ok(of_body)) => {
+			named = fields_of(of_params, "properties")
+			if named.is_empty() {
+				Ok(of_body)
+			} else {
+				own = fields_of(of_body, "properties")
+				both = named.keep_if(|(key, _)| own.any(|(other, _)| other == key)).map(|(key, _)| key)
+				if both.is_empty() {
+					Ok(Object([("type", String("object")), ("properties", Object(named.concat(own))), ("required", Array(items_of(of_params, "required").concat(items_of(of_body, "required"))))]))
+				} else {
+					Err(Clash(both))
+				}
+			}
+		}
+	}
+
+## An object's field that is an object: its fields; none if it isn't one.
+fields_of : JsonValue, Str -> List((Str, JsonValue))
+fields_of = |value, key|
+	match value.get(key) {
+		Ok(Object(fields)) => fields
+		_ => []
+	}
+
+## An object's field that is an array: its items; none if it isn't one.
+items_of : JsonValue, Str -> List(JsonValue)
+items_of = |value, key|
+	match value.get(key) {
+		Ok(Array(items)) => items
+		_ => []
+	}
+
 ## Whether a schema is an object's (`"type": "object"`), as MCP's arguments and structured answers
 ## have to be.
 is_object_schema : Try(JsonValue, [InvalidJson(Str)]) -> Bool
@@ -207,6 +287,33 @@ expect prepared(add, "{\"a\":1}").is_err()
 expect prepared(add, "{\"a\":\"one\",\"b\":2}").map_err(|why| why.starts_with("Invalid arguments for add: ")) == Err(Bool.True)
 expect prepared(shout, "{\"input\":\"hi\"}") == Ok({})
 expect prepared(shout, "{\"said\":\"hi\"}").is_err()
+
+## A tool with params: its arguments read twice, as the params and as the body; its schema both.
+appending : { id : Str }, { text : Str }, {} => Try(Str, Str)
+appending = |params, body, _| Ok("${params.id}: ${body.text}")
+
+append : Tool({})
+append = Tool.typed_with_params("append", "Adds to a note", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"]}", "{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"]}", appending)
+
+expect prepared(append, "{\"id\":\"7\",\"text\":\"milk\"}") == Ok({})
+expect prepared(append, "{\"text\":\"milk\"}").map_err(|why| why.starts_with("Invalid arguments for append: ")) == Err(Bool.True)
+expect prepared(append, "{\"id\":7,\"text\":\"milk\"}").is_err()
+expect prepared(append, "{\"id\":\"7\"}").is_err()
+expect
+	Tool.to_json(append).get("inputSchema").map_ok(JsonValue.to_str)
+		== Ok("{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"text\":{\"type\":\"string\"}},\"required\":[\"id\",\"text\"]}")
+
+## Params of no fields: the body's schema as it is. A body that isn't an object's: its `input`.
+expect Tool.to_json(Tool.typed_with_params("add", "", "{\"type\":\"object\",\"properties\":{},\"required\":[]}", "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"integer\"}},\"required\":[\"a\"]}", |{}, { a }, {}| Ok(a + 1))).get("inputSchema").map_ok(JsonValue.to_str) == Ok("{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"integer\"}},\"required\":[\"a\"]}")
+expect {
+	renaming : Tool({})
+	renaming = Tool.typed_with_params("rename", "", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"]}", "{\"type\":\"string\"}", |{ id }, name, {}| Ok("${id} is ${name}"))
+	Tool.to_json(renaming).get("inputSchema").map_ok(JsonValue.to_str) == Ok("{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"input\":{\"type\":\"string\"}},\"required\":[\"id\",\"input\"]}")
+		and prepared(renaming, "{\"id\":\"7\",\"input\":\"Shed\"}") == Ok({})
+}
+
+## A name in both the params and the body: a clash, which `Mcp.problems` names.
+expect Tool.typed_with_params("both", "", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"]}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"text\":{\"type\":\"string\"}},\"required\":[\"id\",\"text\"]}", appending).input == Err(Clash(["id"]))
 
 expect
 	JsonValue.to_str(Tool.to_json(add))
