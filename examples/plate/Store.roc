@@ -4,7 +4,7 @@ import charts.Format
 import forms.Date
 import Plate
 
-## Acme Plate's data in Postgres (the tables are `migrations/0001_tables.sql`). Only the endpoints
+## Plate's data in Postgres (the tables are `migrations/0001_tables.sql`). Only the endpoints
 ## (`routes/**/+server.roc`) use it: it imports `pf.Db`, which only the server has.
 ##
 ## Postgres keeps amounts as `numeric`, which Db reads once they are cast (`kcal::float8`): a JSON

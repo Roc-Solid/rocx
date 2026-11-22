@@ -1,4 +1,4 @@
-## Acme Plate: a food diary on Roc Solid. The README says what it shows, and where.
+## Plate: a food diary on Roc Solid. The README says what it shows, and where.
 ##
 ## This is the server's program. rocx build writes nearly all of it from the app's routes
 ## (`routes/`: pages, layouts and endpoints) into `Generated/App`, with the migrations

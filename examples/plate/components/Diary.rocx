@@ -26,7 +26,7 @@ Diary := [].{
 		label! = || Plate.day_label(day!().day, day!().today)
 		remove = Endpoint.url_of(Api.post_api_entries_delete({}))
 		<section class="diary" class:stale={stale!()} aria-labelledby="day-name">
-			<Title>{label!()} · Acme Plate</Title>
+			<Title>{label!()} · Plate</Title>
 			<nav class="days" aria-label="Days">
 				<a class="step" href={Diary.path(day!().previous, day!().today)} aria-label="The day before">
 					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3L5 8l5 5" /></svg>

@@ -1,7 +1,7 @@
 import forms.Date
 import charts.Format
 
-## Acme Plate's rules: what a food and a diary entry are, what an amount of a food has, a day's
+## Plate's rules: what a food and a diary entry are, what an amount of a food has, a day's
 ## totals against its target, the targets a profile asks for, and how numbers and days are said.
 ## Plain Roc on no platform, so the server and the browser run the same functions: the food page
 ## shows what an amount has as it is typed, and the server logs the very same numbers.

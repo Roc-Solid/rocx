@@ -1,4 +1,4 @@
-// Acme Plate, tested as people use it: over HTTP (pages, plain forms, the runtime's posts, the
+// Plate, tested as people use it: over HTTP (pages, plain forms, the runtime's posts, the
 // endpoints as JSON, the database), then in a real browser. The app is built once (rocx build, the
 // browser's wasm, the server), and started against a database of the tests' own, which its
 // migrations make and fill with the USDA's foods. Open Food Facts is a stand-in on a local port
@@ -229,7 +229,7 @@ test("a barcode: Open Food Facts is asked once, and the product kept as a food",
 	assert.deepEqual(pick.food.portions, [{ label: "1 bowl (45 g)", grams: 45 }]);
 	assert.ok(pick.food.extras.some((extra) => extra.name === "Sodium" && extra.amount === 120));
 	assert.equal(asked.filter((each) => each.code === granola.code).length, 1);
-	assert.match(asked[0].agent, /^AcmePlate\//);
+	assert.match(asked[0].agent, /^Plate\//);
 	// The second time it is the diary's: Open Food Facts isn't asked again.
 	const again = await person.submit("/barcode", { barcode: granola.code });
 	assert.equal(asked.filter((each) => each.code === granola.code).length, 1);

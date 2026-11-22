@@ -57,7 +57,7 @@ Kitchen := [].{
 		add = Endpoint.url_of(Api.post_recipes_id_ingredients({ id: id }))
 		remove = Endpoint.url_of(Api.post_api_ingredients_delete({}))
 		<article class="kitchen" class:stale={stale!()}>
-			<Title>{recipe!().name} · Acme Plate</Title>
+			<Title>{recipe!().name} · Plate</Title>
 			<header>
 				<a class="back" href={Paths.recipes} aria-label="Back to the recipes">
 					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3L5 8l5 5" /></svg>
@@ -148,7 +148,7 @@ NoRecipe := [].{
 	view! = |{}|
 		<section>
 			<HttpStatusCode code={404} />
-			<Title>No such recipe · Acme Plate</Title>
+			<Title>No such recipe · Plate</Title>
 			<h1>There's no such recipe</h1>
 			<p><a href={Paths.recipes}>See your recipes</a></p>
 		</section>

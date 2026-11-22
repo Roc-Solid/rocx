@@ -1,4 +1,4 @@
-// Writes migrations/0002_usda_foods.sql: the foods Acme Plate starts with, from USDA FoodData
+// Writes migrations/0002_usda_foods.sql: the foods Plate starts with, from USDA FoodData
 // Central (public domain, CC0): SR Legacy (2018-04), the classic reference of about 7,800 foods,
 // and Foundation Foods, newer analyses of a few hundred. Each food keeps its name, its group, what
 // 100 g of it has (energy, protein, carbohydrate, fat, and fibre, sugars, saturated fat and sodium
@@ -106,7 +106,7 @@ function number(value) {
 	return String(Math.round(value * 100) / 100);
 }
 
-/** What 100 g of a food has, by the names Acme Plate keeps; null where the data doesn't say. */
+/** What 100 g of a food has, by the names Plate keeps; null where the data doesn't say. */
 function per100(food) {
 	return Object.fromEntries(
 		Object.entries(kept).map(([name, ids]) => {

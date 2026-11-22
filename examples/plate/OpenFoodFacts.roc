@@ -31,7 +31,7 @@ OpenFoodFacts := [].{
 	lookup! : Str => Try(OpenFoodFacts.Product, [NotFound, Unreadable(Str), Unreachable(Str)])
 	lookup! = |barcode| {
 		url = "${OpenFoodFacts.base!({})}/api/v2/product/${barcode}?fields=product_name,product_name_en,generic_name,brands,nutriments,serving_size,serving_quantity"
-		asked = Http.fetch!(url, { headers: [("user-agent", "AcmePlate/1.0 (a Roc Solid example app)"), ("accept", "application/json")], timeout_ms: 10_000, max_bytes: 2_000_000 })
+		asked = Http.fetch!(url, { headers: [("user-agent", "Plate/1.0 (a Roc Solid example app)"), ("accept", "application/json")], timeout_ms: 10_000, max_bytes: 2_000_000 })
 		match asked {
 			Ok(answer) if answer.status == 404 => Err(NotFound)
 			Ok(answer) if answer.status == 200 =>

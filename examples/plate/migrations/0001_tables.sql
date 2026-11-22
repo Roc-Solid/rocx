@@ -1,4 +1,4 @@
--- Acme Plate's tables. The server applies each file in migrations/ once, in the order of their
+-- Plate's tables. The server applies each file in migrations/ once, in the order of their
 -- names, when it starts (rocx build embeds them; the server records each in rocx_migrations).
 
 -- Every food the diary can log, each with what 100 g of it has. They come from USDA FoodData

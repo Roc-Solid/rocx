@@ -29,7 +29,7 @@ NotADay := [].{
 	view! = |{}|
 		<section>
 			<HttpStatusCode code={404} />
-			<Title>No such day · Acme Plate</Title>
+			<Title>No such day · Plate</Title>
 			<h1>That isn't a day</h1>
 			<p><a href={Paths.root}>Go to today</a></p>
 		</section>

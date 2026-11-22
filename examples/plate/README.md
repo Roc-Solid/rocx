@@ -1,4 +1,4 @@
-# plate: Acme Plate
+# Plate
 
 A food diary, in Roc Solid. You log what you eat to a day's four meals, and see the day's energy
 against a target, with protein, carbohydrate and fat beside it. Foods come from three places: the
@@ -85,12 +85,12 @@ From the repository's root, with the toolchain (`just setup`) and a Postgres (`j
 prints its URL):
 
 ```sh
-docker exec rocx-postgres createdb -U rocx acme_plate   # a database of its own
+docker exec rocx-postgres createdb -U rocx plate   # a database of its own
 bin/rocx build examples/plate --client examples/plate/build/client
 .tools/roc-active build --target=wasm32 --opt=size --output=examples/plate/build/client/static/rocx/app.wasm examples/plate/build/client/main.roc
 node server/build.mjs examples/plate/main.roc examples/plate/build/plate
 examples/plate/build/plate --port 18190 --static examples/plate/build/client/static \
-  --database-url postgres://rocx:rocx@127.0.0.1:55432/acme_plate
+  --database-url postgres://rocx:rocx@127.0.0.1:55432/plate
 ```
 
 Then http://localhost:18190. The first start makes the tables and seeds the foods. Set your

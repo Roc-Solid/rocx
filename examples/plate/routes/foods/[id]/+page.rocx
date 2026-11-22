@@ -46,7 +46,7 @@ FoodPage := [].{
 		grams! = || Plate.grams_of(Dec.from_str(live.value!("amount").trim()) ?? 0.0, live.value!("unit"), food!().portions)
 		eaten! = || Plate.scaled(food!().per100, grams!())
 		<article class="food">
-			<Title>{food!().name} · Acme Plate</Title>
+			<Title>{food!().name} · Plate</Title>
 			<header>
 				<a class="back" href={Links.add({ day, meal, query: "" })} aria-label="Back to the search">
 					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3L5 8l5 5" /></svg>
@@ -115,7 +115,7 @@ NoFood := [].{
 	view! = |{}|
 		<section>
 			<HttpStatusCode code={404} />
-			<Title>No such food · Acme Plate</Title>
+			<Title>No such food · Plate</Title>
 			<h1>There's no such food</h1>
 			<p><a href={Paths.add}>Search for another</a></p>
 		</section>

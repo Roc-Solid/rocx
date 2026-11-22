@@ -31,7 +31,7 @@ view! = |_| {
 	meal! = || Plate.meal_of(found!().meal)
 	where! = || { day: found!().day, meal: found!().meal }
 	<section class="add">
-		<Title>Add to {Plate.meal_name(meal!())} · Acme Plate</Title>
+		<Title>Add to {Plate.meal_name(meal!())} · Plate</Title>
 		<header>
 			<a class="back" href={Links.diary(found!().day, found!().today)} aria-label="Back to the diary">
 				<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3L5 8l5 5" /></svg>

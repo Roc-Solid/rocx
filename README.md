@@ -112,7 +112,7 @@ tests them all (`just examples tasks` one); `just check` type-checks them.
 - [`notes`](examples/notes): Acme Notes, personal notes in Markdown that AI agents use over MCP:
   sign-in by a mailed link, a signed session cookie, personal access tokens kept as hashes,
   Postgres full-text search, a live preview, and a JSON API with its OpenAPI page.
-- [`plate`](examples/plate): Acme Plate, a food diary for a phone: the USDA's 7,500 foods seeded
+- [`plate`](examples/plate): Plate, a food diary for a phone: the USDA's 7,500 foods seeded
   into Postgres, packets looked up by barcode in Open Food Facts, recipes that log like foods,
   targets worked out from a profile, trends charted, and a search that follows the typing.
 
