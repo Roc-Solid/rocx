@@ -82,7 +82,7 @@ Transpile := [].{
 	keywords_before_expression = ["else", "return", "crash", "expect", "dbg", "in"]
 
 	## A component's handlers: `on:event={handler!}` runs an effect; `on:event.value={…}` and the others
-	## give it what the event says.
+	## give it what the event says; `on:event.prevent={…}` takes over what the browser would do.
 	handler_fn : Str -> [Some(Str), None]
 	handler_fn = |takes|
 		if takes == "" {
@@ -93,13 +93,15 @@ Transpile := [].{
 			Some("on_checked")
 		} else if takes == "key" {
 			Some("on_key")
+		} else if takes == "prevent" {
+			Some("on_prevent")
 		} else {
 			None
 		}
 
 	## Which way each transition attribute plays (`Html.transition`'s first argument).
 	transition_way : Str -> Str
-	transition_way = |attr| if (attr == "transition:in") "In" else if (attr == "transition:out") "Out" else "Both"
+	transition_way = |attr| if (attr == "transition:in") "In" else if (attr == "transition:out") "Out" else if (attr == "transition:move") "Move" else "Both"
 
 	## What an HTML entity stands for (as `name in ENTITIES` answered: Object's own methods too).
 	entity_value : Str -> [Some(Str), None]
@@ -1627,8 +1629,8 @@ Transpile := [].{
 			# `transition={…}`, `transition:in={…}`, `transition:out={…}`: a Transition the element plays.
 			transition = !component and (name == "transition" or name.starts_with("transition:"))
 			if transition {
-				if !(name == "transition" or name == "transition:in" or name == "transition:out") {
-					return Err(oops("${name}: write transition={…} (both ways), transition:in={…} or transition:out={…}"))
+				if !(name == "transition" or name == "transition:in" or name == "transition:out" or name == "transition:move") {
+					return Err(oops("${name}: write transition={…} (both ways), transition:in={…}, transition:out={…} or transition:move={…}"))
 				}
 				if flag or optional or Text.at(src, eq) != '=' or Text.at(src, eq + 1) != '{' {
 					return Err(oops("${name} needs {a Transition}: write ${name}={Transition.fade}"))
@@ -1724,7 +1726,7 @@ Transpile := [].{
 						} else if transition {
 							Ok(if (computed) "Html.transition_of(${Transpile.transition_way(name)}, || ${expr})" else "Html.transition(${Transpile.transition_way(name)}, ${expr})")
 						} else if computed or handler or name == "key" {
-							Transpile.reactive_attribute(cfg, name, expr, flag, optional, name_start)
+							Transpile.reactive_attribute(cfg, name, expr, flag, optional, name_start, computed)
 						} else if flag {
 							Ok("Html.flag(${Text.roc_string(name)}, ${expr})")
 						} else if optional {
@@ -1782,7 +1784,7 @@ Transpile := [].{
 							Ok({ event, takes, key: Some(if (takes == "Space") " " else takes) })
 						}
 					} else {
-						Err(Transpile.fail(cfg, "${attr}: a handler takes .value, .checked or .key, or a key's name (.Enter, .ArrowUp, .w), not .${takes}", name_start))
+						Err(Transpile.fail(cfg, "${attr}: a handler takes .value, .checked or .key, a key's name (.Enter, .ArrowUp, .w), or .prevent, not .${takes}", name_start))
 					}
 				}
 		}
@@ -1926,10 +1928,10 @@ Transpile := [].{
 	}
 
 	## An attribute from an expression, reactive: a computation, or a handler that is an effect.
-	reactive_attribute : Cfg, Str, Str, Bool, Bool, U64 -> Try(Str, [Rocx(RocxError), Crash(Str)])
-	reactive_attribute = |cfg, attr, expr, flag, optional, name_start| {
+	reactive_attribute : Cfg, Str, Str, Bool, Bool, U64, Bool -> Try(Str, [Rocx(RocxError), Crash(Str)])
+	reactive_attribute = |cfg, attr, expr, flag, optional, name_start, computed| {
 		if attr == "key" {
-			return Ok("Html.key(${expr})")
+			return Ok(if (computed) "Html.key_of(|| ${expr})" else "Html.key(${expr})")
 		}
 		if attr.starts_with("on:") {
 			h = Transpile.handler_name(cfg, attr, name_start)?
