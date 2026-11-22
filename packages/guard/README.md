@@ -11,7 +11,7 @@ import pf.Middleware
 import pf.Server
 import guard.RateLimit
 import guard.Security
-import Guard
+import guard.Guard
 import Features
 
 Middlewares := [].{
@@ -79,27 +79,23 @@ flag is decided by the same function on the server and in the browser.
 
 `roc test packages/guard/main.roc` runs their `expect`s.
 
-**The middleware is server-only Roc** (`server/`): `Guard` (every guard), `FlagStore` (flags while
-the server runs) and `Kept` (what the guards keep between requests). They import the server
-platform (`Middleware`, `Server`, `Time`, `Env`, `Log`, `Actor`), which a package can't: a Roc Solid
-app is two apps, and a package may only name the very platform its app does. (`server/main.roc`
-names the server platform so that `roc check packages/guard/server/main.roc` checks the three on
-their own; it isn't copied.)
+**The middleware is the server's half** (D-043): `Guard` (every guard), `FlagStore` (flags while
+the server runs) and `Kept` (what the guards keep between requests), which import the server
+platform (`Middleware`, `Server`, `Time`, `Env`, `Log`, `Kv`). So the package names the server
+platform (`main.roc`), and the browser's half of an app sees the logic alone (`browser.roc`), as
+D-033 has it for a package that needs the platform.
 
 **The component is a `.rocx` file** (`components/Flagged.rocx`), which `rocx build` copies into the
 app, as it copies packages/charts' charts.
 
-### Using it today
+### Using it
 
-1. Name the package in the app's header (main.roc's, and the browser's, which `rocx build --client`
-   writes from it): `guard: "../packages/guard/main.roc"`.
-2. Copy `server/Guard.roc`, `server/FlagStore.roc` and `server/Kept.roc` into the app, beside its
-   main.roc, and import them by name (`import Guard`, `import FlagStore`). `rocx build` doesn't
-   copy a package's server-only modules yet: PROPOSALS.md, "Server-only modules in packages", asks
-   it to, into the server's half only.
+1. Name the package in the app's header: `guard: "../packages/guard/main.roc"` (an app on the server
+   platform; the browser's half sees `browser.roc`).
+2. `import guard.Guard` (and `guard.FlagStore`) in the server's modules: the middleware, endpoints.
 3. `import guard.Flagged` in a `.rocx` file: `rocx build` copies the component.
 
-`example/` does all three: copy those three modules into it, then `rocx build .` there.
+`example/` does all three; `example/test/` asks it over HTTP.
 
 ## Rate limits
 
@@ -128,8 +124,11 @@ Guard.rate_limit_with({ name, policy, key, max_keys: 50_000 })
   whole again is forgotten first (that changes nothing); past `max_keys`, the one seen longest ago
   (it starts again). The clients are split over 64 tallies, so a request reads and writes about a
   hundred and fifty of them at most.
-- **When the count can't be reached** (its actor busy for 30 s), the request goes on, and the log
-  says so: a limiter that fails shouldn't take the site down with it.
+- **Kept in the server's memory** (`Kv`, D-043), each tally under `guard:<limit>/<shard>`, never
+  written to Postgres; a restart starts every limit again. A hit reads its tally and swaps the next
+  one in (`Kv.swap!`): of two requests at once, one wins and the other reads again, so no hit is
+  lost. When a tally changed under 50 tries in a row, the request goes on, and the log says so: a
+  limiter that fails shouldn't take the site down with it.
 
 ### Behind a proxy
 
@@ -173,7 +172,8 @@ rollout reaches them at 100.
 
 What the code says is the default. The environment picks among a flag's rules (`in_env`): `APP_ENV`
 if it is set, or else `dev` under `--dev`, or else `production`. A rule set while the server runs
-replaces the code's until it is reset, kept in memory and, with a database, in Postgres:
+replaces the code's until it is reset, kept in the server's memory (`Kv`, under `guard:flags`): a
+restart forgets it, and the code's rules stand again.
 
 ```roc
 FlagStore.set!("new_checkout", Flags.rollout(50))?      # from an admin page
@@ -250,8 +250,9 @@ write `style="…"`), its calls to its own server. To allow images from elsewher
 
 ## Status
 
-Works today, tested: every module of the package (211 `expect`s), and `example/`, an app with the
-server modules copied in by hand. Its admin endpoint answered 403 to anyone but an admin. Its login
+Works today, tested: every module of the package (211 `expect`s), and `example/`, which
+`example/test/guard.test.mjs` asks over HTTP (`just test` runs it): the login limit by address, a
+flag set and reset by an admin, maintenance mode and the feature route. Its admin endpoint answered 403 to anyone but an admin. Its login
 limit answered 429 on the sixth try, with the headers above; its `/api` limit counted users and
 addresses apart; flags and their overrides, the feature route and maintenance mode worked, set at
 runtime; and a page with `<Flagged>` rendered the right part for each user and hydrated strictly in
@@ -259,13 +260,7 @@ Chromium, under the default CSP.
 
 Waits on a proposal (PROPOSALS.md):
 
-- **Server-only modules in packages**: until then, `Guard`, `FlagStore` and `Kept` are copied into
-  the app by hand.
-- **Memory: state between requests**: the platform has a place for it now, `Kv` (D-028), but the
-  guards haven't moved onto it. Until they do, they keep their state as actors' state, a message
-  for each limited request and each read of the flags. With a database, the platform writes an
-  actor's state to Postgres only when a message changes it (D-021): a limited request moves a
-  tally, so it costs a write; a flag read changes nothing and writes nothing (setting or resetting
-  an override does).
+- **Overrides that outlive a restart**: they are in the server's memory (`Kv`), so a restart (a
+  deploy) brings back the code's rules. A plugin with a table could keep them (PROPOSALS.md).
 - The server reads a body (up to 16 MiB) before any middleware runs, so `body_limit` refuses a large
   body after it has come, not before (DECISIONS.md, D-014).

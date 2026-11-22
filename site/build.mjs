@@ -485,8 +485,8 @@ function sourcesModule() {
 		whole("guard_layout", "packages/guard/example/routes/+layout.rocx"),
 		whole("guard_page", "packages/guard/example/routes/+page.rocx"),
 		whole("guard_checkout", "site/Demos/GuardCheckout.rocx"),
-		lines("guard_middleware_api", "packages/guard/server/Guard.roc", /^\t[A-Za-z_]+(\(c\))? : /),
-		lines("guard_flagstore_api", "packages/guard/server/FlagStore.roc", /^\t[a-z_]+! : /),
+		lines("guard_middleware_api", "packages/guard/Guard.roc", /^\t[A-Za-z_]+(\(c\))? : /),
+		lines("guard_flagstore_api", "packages/guard/FlagStore.roc", /^\t[a-z_]+! : /),
 		// packages/intl (/ecosystem/intl): its demo, what the page writes at build time, and the package's example app.
 		picks("intl_demo_use", "site/Demos/IntlDemo.rocx", ["import intl.Language", "import intl.Locales", "import intl.Catalog"], ["store = Language.store!(", "{ intl!, .. } = store", "<LanguageContext value={store}>", "<Language label=", '<div><dt><code>{"number(', "</LanguageContext>"]),
 		whole("intl_demo", "site/Demos/IntlDemo.rocx"),

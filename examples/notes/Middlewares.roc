@@ -6,7 +6,7 @@ import guard.Security
 import mcp.Auth
 import Account
 import Address
-import Guard
+import guard.Guard
 import Store
 
 ## What requests go through. `default` runs around every one (main.roc names it); a route file names

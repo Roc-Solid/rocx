@@ -105,6 +105,7 @@ platform ""
 		"roc_host_kv_increment": Host.kv_increment!,
 		"roc_host_kv_push": Host.kv_push!,
 		"roc_host_kv_set": Host.kv_set!,
+		"roc_host_kv_swap": Host.kv_swap!,
 		"roc_host_kv_take": Host.kv_take!,
 		"roc_host_live_count": Host.live_count!,
 		"roc_host_live_join": Host.live_join!,

@@ -58,7 +58,7 @@ Polish-only Sunday of pierogi. Their writers, Iris Vale, Hanna Wierzba and Theo 
 | Island 1, search as you type: a signal and a memo over the JSON API's answer, read as the page renders and carried in it, so typing asks the server nothing. The results reuse the server's pure `PostCard` | `Ui/SearchBox.rocx`, `Search.roc`, `Ui/PostCard.rocx` |
 | Island 2, reactions: optimistic through `use_action!` and `use_submissions!` (the server's tally with the toggles on their way applied, `Reaction.apply`), refusals shown and dismissable; each button also a plain form for no JavaScript (`on:click.prevent`) | `Ui/ReactionBar.rocx`, `Reaction.roc` |
 | `Kv` with atomic operations: counters (`increment!`), a reader's mark that one request alone sets (`add!`) or takes back (`take!`), and idempotent seeding (`add!` of each counter's seed) | `Reactions.roc` |
-| packages/guard: a rate limit on sending reactions (20 a minute a reader, 429 with `Retry-After`), and the security headers (CSP) on every answer | `Middlewares.roc`, `routes/api/posts/[lang]/[slug]/reactions/+server.roc`, `Guard.roc` |
+| packages/guard: a rate limit on sending reactions (20 a minute a reader, 429 with `Retry-After`), and the security headers (CSP) on every answer, its middleware imported from the package (`guard.Guard`), its counts in `Kv` | `Middlewares.roc`, `routes/api/posts/[lang]/[slug]/reactions/+server.roc` |
 | Middleware: same-origin writes, the reader cookie in the context | `Middlewares.roc` |
 | Scoped styles for each component; tokens and base in `static/journal.css` (light and dark); a print stylesheet (`static/print.css`, and `@media print` in the components) | `Ui/*.rocx`, `static/` |
 | Pure `view` components (cards, lists, the article) and effectful `view!` ones (the islands, and `NotFound`, which sets the status) | `Ui/` |
@@ -78,8 +78,7 @@ examples/journal/build/journal --port 18140 --host 127.0.0.1 --static examples/j
 
 Then open http://localhost:18140. The feeds and the sitemap use whole URLs, taken from the request's
 `Host`, or from `ORIGIN` when it is set (`ORIGIN=https://journal.example.com`). No database is
-needed. Without a database, the rate limit's tallies stay in memory as well. With one
-(`--database-url`), guard's actors write them to Postgres.
+needed: the rate limit's tallies are in the server's memory too (`Kv`), database or not.
 
 A new post is a Markdown file in `content/en/` or `content/pl/`: `rocx build` finds it. A build tells
 you what is wrong with it.
@@ -135,7 +134,7 @@ and start the server on a free port. They don't use `DATABASE_URL`.
 
 ## What it asked of the platform
 
-Every gap met, and what the journal does about it. Seven were fixed in the platform while it was
+Every gap met, and what the journal does about it. Eight were fixed in the platform while it was
 built: a route's directory may now name a file (`routes/sitemap.xml/`); packages/markdown parses
 footnotes; packages/testing's `click()` scrolls instantly, so it no longer misses on a page with
 `scroll-behavior: smooth`; a `<For>` or `<Show>` may sit in a function child (the reactions'
@@ -144,24 +143,21 @@ on (`Server.Request`'s `peer`, D-041), so guard's limit can count a reader witho
 address; and a page may read its params only inside `<NoHydration>` (D-044: the browser's copy
 unbinds them; the pages here read theirs in a `<Title>` too, which they want anyway); and `rocx
 build` finds the posts (D-042: `Generated/Content/En` and `Pl`, every file in `content/en/` and
-`content/pl/` imported). These are still open:
+`content/pl/` imported); and guard keeps its state in `Kv` and names the server platform itself
+(D-043), so its middleware is imported (`guard.Guard`) rather than copied. These are still open:
 
-1. **guard's middleware is copied by hand** (packages/guard's PROPOSALS.md, "Server-only modules in
-   packages"). `Guard.roc`, `FlagStore.roc` and `Kept.roc` are verbatim copies of
-   `packages/guard/server/`. Its tallies are actors' state, not `Kv` yet ("Memory: state between
-   requests"). With a database, each limited request writes to Postgres.
-2. **`<HttpStatusCode>` is effectful**, so a component that sets the status is a `view!`
+1. **`<HttpStatusCode>` is effectful**, so a component that sets the status is a `view!`
    (`Ui/NotFound.rocx`). Pure callers still write `<NotFound … />`, and rocx wraps it.
-3. **guard's CSP refuses the OpenAPI page**, which loads Scalar from jsDelivr. `Middlewares.security`
+2. **guard's CSP refuses the OpenAPI page**, which loads Scalar from jsDelivr. `Middlewares.security`
    leaves `/openapi.html` out, and every other answer has the headers.
-4. **`node --test examples/journal/test/` fails on Node 24**: a directory is taken as a module
+3. **`node --test examples/journal/test/` fails on Node 24**: a directory is taken as a module
    ("Cannot find module"). Use the glob, `node --test 'examples/journal/test/*.test.mjs'`.
-5. **The OpenAPI document gives the reactions' `POST` a JSON body only**, though the endpoint takes
+4. **The OpenAPI document gives the reactions' `POST` a JSON body only**, though the endpoint takes
    the same fields as a form, which is what the no-JavaScript buttons send (server/README.md, "Not
    yet").
-6. **The browser's copy of `Api` has no types** (known, D-030). The search's `posts` and the
+5. **The browser's copy of `Api` has no types** (known, D-030). The search's `posts` and the
     reactions' `toggles : Submissions(Reaction.Toggle, Reaction.Tally)` are annotated.
-7. **The Roc gotchas met:**
+6. **The Roc gotchas met:**
     - `{ lang }` alone is a block, not a record (`Paths.lang({ lang: lang })`).
     - A parameter can't share a name with a member of its type's block (hence `Rules.of_title`, …).
     - `join_with` is `Str.join_with(list, sep)`, not a method of a list.

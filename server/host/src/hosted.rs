@@ -694,6 +694,11 @@ pub extern "C" fn roc_host_kv_add(key: RocStr, text: RocStr, ttl_ms: u64) -> boo
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn roc_host_kv_swap(key: RocStr, was: RocStr, text: RocStr, ttl_ms: u64) -> bool {
+    kv::swap(&taken(key), &taken(was), &taken(text), ttl_ms)
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn roc_host_kv_increment(key: RocStr, by: i64, ttl_ms: u64) -> TextResult {
     text_or_error(kv::increment(&taken(key), by, ttl_ms).map(|now| now.to_string()))
 }

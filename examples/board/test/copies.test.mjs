@@ -1,7 +1,7 @@
-// Four of the app's modules are packages' server modules, copied in as their READMEs say (rocx
-// build doesn't copy a package's server-only modules yet, and it finds the kinds of actor only in
-// the app's own files). This keeps each copy the same as its package's, so the board runs on the
-// packages as they are.
+// One of the app's modules is a package's server module, copied in as its README says (rocx build
+// finds the kinds of actor only in the app's own files, and presence keeps its room in one). This
+// keeps the copy the same as its package's, so the board runs on the package as it is. (packages/guard
+// is named in the header, and copied no more: D-043.)
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -9,9 +9,6 @@ import { join } from "node:path";
 import { dir } from "./app.mjs";
 
 const copies = {
-	"Guard.roc": "packages/guard/server/Guard.roc",
-	"Kept.roc": "packages/guard/server/Kept.roc",
-	"FlagStore.roc": "packages/guard/server/FlagStore.roc",
 	"PresenceServer.roc": "packages/presence/server/PresenceServer.roc",
 };
 

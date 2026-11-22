@@ -189,6 +189,20 @@ pub fn add(key: &str, text: &str, ttl_ms: u64) -> bool {
     true
 }
 
+/// Replaces the text under `key` with `text`, for `ttl_ms` (0: until the server stops), only if
+/// it is still `was`: whether it did. Nothing there (or a list) is no match. Of two callers that
+/// read one value and change it, one wins and the other reads again (D-043).
+pub fn swap(key: &str, was: &str, text: &str, ttl_ms: u64) -> bool {
+    let mut store = store();
+    store.sweep();
+    match store.entries.get(key) {
+        Some(Entry { value: Value::Text(now), .. }) if now == was => {}
+        _ => return false,
+    }
+    store.put(key, Value::Text(text.to_string()), deadline(ttl_ms));
+    true
+}
+
 /// Adds `by` to the integer under `key` (0 if nothing is there, its deadline then `ttl_ms` from
 /// now; an existing one keeps its own): the new value. An error if what is there isn't an integer.
 pub fn increment(key: &str, by: i64, ttl_ms: u64) -> Result<i64, String> {
@@ -254,6 +268,34 @@ mod tests {
         assert_eq!(increment("t3:n", 5, 0), Ok(6));
         set("t3:s", "\"no\"", 0);
         assert!(increment("t3:s", 1, 0).is_err());
+    }
+
+    #[test]
+    fn swap_only_what_is_still_there() {
+        assert!(!swap("t6:a", "1", "2", 0), "nothing there: no match");
+        set("t6:a", "1", 0);
+        assert!(!swap("t6:a", "0", "2", 0), "another value: no match");
+        assert!(swap("t6:a", "1", "2", 0));
+        assert_eq!(get("t6:a").as_deref(), Some("2"));
+        // Many threads each adding one by reading and swapping, again when they lose: none is lost.
+        set("t6:n", "0", 0);
+        let threads: Vec<_> = (0..8)
+            .map(|_| {
+                std::thread::spawn(|| {
+                    for _ in 0..300 {
+                        loop {
+                            let was = get("t6:n").unwrap();
+                            let next = (was.parse::<u64>().unwrap() + 1).to_string();
+                            if swap("t6:n", &was, &next, 0) {
+                                break;
+                            }
+                        }
+                    }
+                })
+            })
+            .collect();
+        threads.into_iter().for_each(|thread| thread.join().unwrap());
+        assert_eq!(get("t6:n").as_deref(), Some("2400"));
     }
 
     #[test]

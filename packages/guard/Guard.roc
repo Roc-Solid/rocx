@@ -3,13 +3,13 @@ import pf.Server
 import pf.Time
 import pf.Env
 import pf.Log
-import guard.Checks
-import guard.ClientIp
-import guard.Flag
-import guard.Flags
-import guard.Ip
-import guard.RateLimit
-import guard.Security
+import Checks
+import ClientIp
+import Flag
+import Flags
+import Ip
+import RateLimit
+import Security
 import FlagStore
 import Kept
 

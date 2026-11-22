@@ -2,7 +2,7 @@ import pf.Middleware
 import pf.Server
 import guard.RateLimit
 import guard.Security
-import Guard
+import guard.Guard
 import Features
 
 Middlewares := [].{

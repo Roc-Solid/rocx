@@ -213,11 +213,12 @@ index and got a prompt; with a wrong token it got 401.
 
 What the app met, and how it works around each. None needed a change outside the example.
 
-1. **Packages' server modules are copied in by hand.** packages/guard's middleware (`Guard`, `Kept`,
-   `FlagStore`) and packages/mcp's HTTP side (`McpHttp`) import the server platform, so `rocx build`
-   doesn't copy them into an app, as their READMEs say, and guard keeps its counts in actors, whose
-   kinds `rocx build` finds only in the app's own files. Workaround: the four files copied verbatim,
-   and `test/copies.test.mjs` failing when they drift.
+1. **Packages' server modules are copied in by hand.** packages/mcp's HTTP side (`McpHttp`) imports
+   the server platform, so `rocx build` doesn't copy it into an app, as its README says.
+   Workaround: the file copied verbatim, and `test/copies.test.mjs` failing when it drifts.
+   (packages/guard's middleware was copied too, until guard kept its state in `Kv` and named the
+   server platform itself: D-043. Now the header names it and `Middlewares.roc` imports
+   `guard.Guard`.)
 2. **The MCP server can't be a route** (packages/mcp's PROPOSALS.md, "`Api` imports only route files
    with endpoints"): its tools are `Api`'s endpoints, and a route file can't import `Api`.
    Workaround: `Agents.mount`, a middleware main.roc puts after the default one, which answers

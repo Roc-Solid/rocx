@@ -55,6 +55,14 @@ Kv := [].{
 	add! : Str, value, Opts => Try({}, [Exists]) where [value.Json.Encodable([])]
 	add! = |key, value, opts| if (Host.kv_add!(key, Json.to_str(value), opts.ttl_ms)) Ok({}) else Err(Exists)
 
+	## Replaces the value under `key` with `value`, and its time to live, only if it is still `was`
+	## (compared as JSON, as this module writes it): `Changed` otherwise, or when nothing is there
+	## (`add!` puts a first one). A change that reads a value and writes the next one (a tally, a
+	## list of overrides) swaps, and on `Changed` reads again: of two at once, one wins and the other
+	## tries again with what it wrote, so none is lost (D-043).
+	swap! : Str, was, value, Opts => Try({}, [Changed]) where [was.Json.Encodable([]), value.Json.Encodable([])]
+	swap! = |key, was, value, opts| if (Host.kv_swap!(key, Json.to_str(was), Json.to_str(value), opts.ttl_ms)) Ok({}) else Err(Changed)
+
 	## Adds `by` to the integer under `key`, starting from 0 when there is none: the new value. A
 	## new counter's time to live starts then and isn't moved by later increments, so
 	## `increment!(key, 1, { ttl_ms: 60_000 })` counts in windows of a minute (a rate limit).

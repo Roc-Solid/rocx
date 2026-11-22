@@ -2121,10 +2121,10 @@ const kv = async (path, of = server) => {
 };
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-test("kv: the store's own unit tests (kv.rs, compiled alone): expiry, eviction, atomic increments from many threads", { skip }, () => {
+test("kv: the store's own unit tests (kv.rs, compiled alone): expiry, eviction, atomic increments from many threads, a swap that only one of many wins", { skip }, () => {
 	const ran = hostUnitTests("kv.rs", join(dir, "kv-unit-tests"));
 	assert.equal(ran.status, 0, ran.stdout + ran.stderr);
-	assert.match(ran.stdout, /test result: ok\. 6 passed/);
+	assert.match(ran.stdout, /test result: ok\. 7 passed/);
 });
 
 test("kv: a value kept, read, taken once, deleted; a JSON number reads back as an I64, a string doesn't", { skip }, async () => {

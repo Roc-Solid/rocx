@@ -1,7 +1,7 @@
 import pf.Server
 import pf.Endpoint
 import guard.Flags
-import ../../../FlagStore
+import guard.FlagStore
 import ../../../Middlewares
 
 middleware = Middlewares.admins

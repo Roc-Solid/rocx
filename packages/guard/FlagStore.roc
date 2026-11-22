@@ -1,36 +1,17 @@
-import pf.Actor
 import pf.Env
+import pf.Kv
 import pf.Log
-import guard.Flag
-import guard.Flags
+import Flag
+import Flags
 
 ## Feature flags while the server runs: the environment it is in, and the rules set in place of
-## the code's (overrides), kept in the server's memory, and in Postgres when it has a database (so
-## they outlive a restart). An admin page lists the flags and sets or resets their rules here.
+## the code's (overrides), kept in the server's memory (`Kv`, D-043) under `guard:flags`. An admin
+## page lists the flags and sets or resets their rules here. A restart forgets the overrides, and
+## the code's rules stand again.
 ##
 ##     on = FlagStore.is_on!(Features.new_checkout, { user: context.user, groups: [] })
 ##     FlagStore.set!("new_checkout", Flags.rollout(50))?
-##
-## The overrides are an actor's state (`rocx_guard_flags`). PROPOSALS.md ("Memory: state between
-## requests") would make reading them a lookup in memory rather than an actor's message (a read
-## writes nothing to Postgres: it changes nothing).
 FlagStore := [].{
-
-	## The overrides' actor (`rocx build` lists it in the app's `program.actors`).
-	kept : Actor.Kind(List(Flags.Override), Change, List(Flags.Override))
-	kept = Actor.define({
-		name: "rocx_guard_flags",
-		initial: |_key| [],
-		receive!: |_me, overrides, change| {
-			next =
-				match change {
-					Read => overrides
-					Set(given) => Flags.set(overrides, given.name, given.rule)
-					Reset(name) => Flags.reset(overrides, name)
-				}
-			{ state: next, reply: next }
-		},
-	})
 
 	## The environment the server runs in, for `Flag.in_env`: `APP_ENV`, if it is set; or else
 	## `dev`, when the server was started with `--dev`; or else `production`.
@@ -44,14 +25,18 @@ FlagStore := [].{
 	## The overrides set. None, and a warning in the log, when they can't be read: the code's rules
 	## stand.
 	overrides! : {} => List(Flags.Override)
-	overrides! = |{}|
-		match Actor.ask!(FlagStore.kept, "overrides", Read) {
+	overrides! = |{}| {
+		found : Try(List(Flags.Override), [NotFound, BadValue(Str)])
+		found = Kv.get!(kept)
+		match found {
 			Ok(overrides) => overrides
-			Err(ActorErr(why)) => {
+			Err(NotFound) => []
+			Err(BadValue(why)) => {
 				Log.warn!("guard: the flags' overrides couldn't be read; the code's rules stand", { error: why })
 				[]
 			}
 		}
+	}
 
 	## What flags are decided with now: the environment, and the overrides.
 	settings! : {} => Flags.Settings
@@ -83,12 +68,35 @@ FlagStore := [].{
 default_env! : {} => Str
 default_env! = |{}| if (Env.dev!({})) "dev" else "production"
 
-## What the overrides' actor is told.
-Change : [Read, Set(Flags.Override), Reset(Str)]
+## Where the overrides are kept (`Kv`).
+kept : Str
+kept = "guard:flags"
 
+## A change to the overrides.
+Change : [Set(Flags.Override), Reset(Str)]
+
+## Applies `change` to the overrides, reading them again when another request changed them first.
 changed! : Change => Try({}, [FlagErr(Str)])
-changed! = |change|
-	match Actor.ask!(FlagStore.kept, "overrides", change) {
-		Ok(_) => Ok({})
-		Err(ActorErr(why)) => Err(FlagErr(why))
+changed! = |change| {
+	var $left = 50
+	while $left > 0 {
+		was : Try(List(Flags.Override), [NotFound, BadValue(Str)])
+		was = Kv.get!(kept)
+		overrides = was ?? []
+		next =
+			match change {
+				Set(given) => Flags.set(overrides, given.name, given.rule)
+				Reset(name) => Flags.reset(overrides, name)
+			}
+		stored =
+			match was {
+				Ok(_) => Kv.swap!(kept, overrides, next, {})
+				Err(_) => Kv.add!(kept, next, {}).map_err(|_| Changed)
+			}
+		if stored.is_ok() {
+			return Ok({})
+		}
+		$left = $left - 1
 	}
+	Err(FlagErr("the overrides changed under each of 50 tries"))
+}

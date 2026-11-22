@@ -1,10 +1,7 @@
 ## An app that uses packages/guard: security headers, a body limit and maintenance mode on every
 ## request, a limit on /api and on the login route, a route behind a feature flag, and a page that
-## shows the new checkout to those who have it on. Its server-only modules aren't copied in by
-## rocx build yet (PROPOSALS.md, "Server-only modules in packages"), so copy them by hand first:
-##
-##     cp ../server/Guard.roc ../server/FlagStore.roc ../server/Kept.roc .
-##     rocx build .
+## shows the new checkout to those who have it on. The middleware is the package's own
+## (`import guard.Guard`): `rocx build .`, then build it as any app.
 app [program] { guard: "../main.roc", pf: platform "../../../server/platform/main.roc" }
 
 import Generated/App

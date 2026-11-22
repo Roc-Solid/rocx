@@ -2011,3 +2011,45 @@ Posts.get(id)    # Try(Collection.Entry(Post), [NotFound])
 **Why.** A collection is a folder; listing it by hand was a chore that could silently drop a file.
 **Reversible:** yes: an app lists its files again.
 
+## D-043 guard keeps its state in `Kv`, with a compare-and-swap, and names the server platform
+
+**Context.** packages/guard's middleware (`Guard`), with what it keeps between requests (`Kept`, the
+rate limits' tallies; `FlagStore`, the flags' overrides), was copied into every app that used it
+(journal, board, notes, guard's own example), with tests in two of them keeping the copies the same.
+Two things kept it copied. A package couldn't hold the server's modules, which D-033 solved. And
+its state was in actors, whose kinds `rocx build` finds only in the app's own files, so a package's
+actor was never registered. Actors also cost a message, a call of its own and, with a database, a
+Postgres write for every limited request. `Kv` (D-028) has no read-and-write-back, so a tally,
+read, changed and written, could lose a hit to another request.
+
+**Options.**
+1. `Kv.swap!(key, was, value, opts)`, a compare-and-swap: the host replaces the value only if it is
+   still what the caller read. guard's tallies and overrides go into `Kv`, each change a read, the
+   package's pure step, and a swap, again on `Changed`. The package names the server platform, with
+   a `browser.roc`.
+2. Counters (`Kv.increment!` under a key per client and window): no new primitive, but a fixed or
+   weighted window instead of guard's token bucket, and its tests' semantics changed.
+3. Let `rocx build` find actors in the packages the header names: guard is no longer copied, but
+   keeps actors and their costs.
+
+**Choice.** 1.
+
+```roc
+Kv.swap! : Str, was, value, Kv.Opts => Try({}, [Changed])   # was and value: Json.Encodable
+```
+
+- The host compares the stored text with `was`, written as JSON as `Kv` writes it, under the store's
+  one lock; nothing there (or a list) is no match: `add!` puts a first value.
+- `Kept`: a limit's tallies under `guard:<limit>/<shard>`, a hit read and swapped, 50 tries before it
+  lets the request through with a warning, as a limiter that can't count did before.
+- `FlagStore`: the overrides under `guard:flags`, set and reset the same way. They are memory only
+  now, so a restart brings back the code's rules (an actor kept them in Postgres with a database);
+  a plugin with a table could keep them again.
+- packages/guard's `main.roc` names the server platform and exposes `Guard`, `Kept` and `FlagStore`;
+  `browser.roc` exposes the logic. Apps write `import guard.Guard`: the examples' copies and their
+  copy tests went, and guard's example has HTTP tests of its own (`just test` runs them).
+
+**Why.** guard's logic is unchanged, the copies are gone, and a limited request costs a few map
+steps instead of a message and a write. **Reversible:** yes; `swap!` stays useful to anything that
+reads and writes back.
+

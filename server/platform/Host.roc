@@ -85,6 +85,10 @@ Host := [].{
 	## Keeps text under a key only if nothing is there: whether it did.
 	kv_add! : Str, Str, U64 => Bool
 
+	## Replaces the text under a key with another, for so many milliseconds, only if it is still
+	## the text given: whether it did (D-043).
+	kv_swap! : Str, Str, Str, U64 => Bool
+
 	## Adds to the integer under a key (0 if none, its time to live starting then): the new value,
 	## as text, or why it can't (what is there isn't an integer).
 	kv_increment! : Str, I64, U64 => Try(Str, Str)

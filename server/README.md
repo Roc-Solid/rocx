@@ -346,6 +346,7 @@ Kv.set!("cache:${url}", page, { ttl_ms: 60_000 })                  # any type JS
 page = Kv.get!("cache:${url}")?                                     # Try(value, [NotFound, BadValue(Str)])
 tries = Kv.increment!("login:${address}", 1, { ttl_ms: 60_000 })?   # a window a minute long
 Kv.add!("seen:${request_id}", {}, { ttl_ms: 86_400_000 })?          # Err(Exists): one request gets in
+Kv.swap!("guard:login/7", was, next, {})?                           # Err(Changed): another changed it; read again
 state = Kv.take!("oauth:${given}")?                                 # good once
 Kv.push!("email:mailbox", message, { keep: 100 })                    # a capped list, newest first
 Kv.list!("email:mailbox")?

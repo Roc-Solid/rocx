@@ -1,6 +1,5 @@
-# Copied in by hand from ../server (until rocx build copies them), and written by rocx build
-Guard.roc
-FlagStore.roc
-Kept.roc
+# Written by rocx build
 Visitor.roc
 Generated/
+# Written by the tests (buildForTests)
+build/

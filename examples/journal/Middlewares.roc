@@ -3,7 +3,7 @@ import pf.Random
 import pf.Server
 import guard.RateLimit
 import guard.Security
-import Guard
+import guard.Guard
 
 ## The journal's middleware: what runs around its answers. `default` runs around every request
 ## (main.roc names it); a route file names its own (`middleware = Middlewares.reactions_limit`),

@@ -63,11 +63,10 @@ view! = |_|
 			</p>
 			<p>
 				Name the package in the app's header, as you name <a href={Paths.ecosystem_charts}>charts</a>:
-				<code>{"guard: \"../packages/guard/main.roc\""}</code>. The middleware itself (<code>Guard</code>,
-				<code>FlagStore</code> and <code>Kept</code>, in <code>packages/guard/server/</code>) is copied
-				into the app by hand for now, beside its <code>main.roc</code>: <a href="#status">Status</a> says
-				why. The code above is from <code>packages/guard/example/</code>, a whole app that builds once
-				they are copied in.
+				<code>{"guard: \"../packages/guard/main.roc\""}</code>, and import the middleware from it
+				(<code>import guard.Guard</code>): the package names the server platform, and the browser's half
+				of an app sees its logic alone. The code above is from <code>packages/guard/example/</code>, a
+				whole app that builds and runs, and that its tests ask over HTTP.
 			</p>
 
 			<Heading id="limits">Rate limits</Heading>
@@ -141,9 +140,10 @@ view! = |_|
 				Each limit keeps at most 10,000 clients (<code>Guard.rate_limit_with</code> says another number).
 				A client whose limit is whole again is forgotten first, which changes nothing. Past the limit, the
 				client seen longest ago is forgotten, and starts again. Each limit's clients are split into 64
-				tallies, so a request reads and writes about 150 at most. The counts live in an actor, which
-				takes one message at a time. When they can't be reached, the request goes on, and the log says
-				why.
+				tallies, so a request reads and writes about 150 at most. The counts live in the server's memory
+				(<code>Kv</code>): a request reads its tally and swaps the next one in, reading again when
+				another request changed it first, so no hit is lost and nothing is written to Postgres. When a
+				tally can't be changed, the request goes on, and the log says why.
 			</p>
 
 			<Heading id="proxies">Behind a proxy</Heading>
@@ -199,7 +199,7 @@ view! = |_|
 			<h3>Changed while the server runs</h3>
 			<p>
 				What the code says is the default. An admin page can set a rule in its place, until it is reset.
-				The server keeps it in an actor, which takes one message at a time.
+				The server keeps it in its memory (<code>Kv</code>), so a restart brings back the code's rules.
 				The endpoint that sets it is for admins only: in the example, <code>Middlewares.admins</code>
 				answers anyone else <code>403</code>.
 			</p>
@@ -299,7 +299,8 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				The middleware is in <code>packages/guard/server/</code>, Roc that only the server half runs.
+				The middleware is the package's server half (<code>Guard</code>, <code>FlagStore</code>,
+				<code>Kept</code>), Roc that only the server runs.
 				<code>Guard</code> holds the guards, and <code>FlagStore</code> holds the flags while the server
 				runs:
 			</p>
@@ -309,7 +310,7 @@ view! = |_|
 			<Heading id="status">Status</Heading>
 			<p>
 				What works today, and is tested: every module of the package, by its <code>expect</code>s; and
-				the middleware, copied into <code>packages/guard/example/</code>, which builds and runs. Its login
+				the middleware, in <code>packages/guard/example/</code>, which builds, runs and is tested over HTTP. Its login
 				limit answered <code>429</code> on the sixth try, with the headers above; its admin endpoint
 				answered <code>403</code> to anyone but an admin; and its page showed each user their checkout. Its
 				flags' overrides, its feature route and its maintenance mode worked while it ran, and a page with
@@ -318,21 +319,8 @@ view! = |_|
 			<p>What waits on a proposal (<code>packages/guard/PROPOSALS.md</code>):</p>
 			<ul>
 				<li>
-					<strong>Server-only modules in packages.</strong> <code>rocx build</code> copies a package's
-					components into an app, but not its server-only modules. Until it does, <code>Guard.roc</code>,
-					<code>FlagStore.roc</code> and <code>Kept.roc</code> from <code>packages/guard/server/</code> are
-					copied into the app by hand.
-				</li>
-				<li>
-					<strong>The client's address.</strong> The server platform doesn't hand Roc the address a
-					connection came from. Until it does, <code>Direct</code> can't tell clients apart, and
-					<code>Proxies</code> can't check that a request came through the app's proxy.
-				</li>
-				<li>
-					<strong>Memory between requests.</strong> The guards keep their counts and the flags'
-					overrides in actors, which take one message at a time: a message for each limited request.
-					The platform has a plainer place for it now, <code>Kv</code>; the guards haven't moved
-					onto it yet.
+					<strong>Overrides that outlive a restart.</strong> The flags' overrides are in the server's
+					memory, so a deploy brings back the code's rules. A plugin with a table could keep them.
 				</li>
 			</ul>
 			<Note>

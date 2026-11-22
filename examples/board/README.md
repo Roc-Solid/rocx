@@ -144,12 +144,12 @@ clipped by the column's card list, which was a scroll box. Columns don't scroll 
 
 What the app met, and how it works around each:
 
-- **Packages' server modules are copied in by hand.** packages/guard's middleware (`Guard`, with
-  `Kept` and `FlagStore`) and packages/presence's room (`PresenceServer`) import the server
-  platform, so they aren't copied into an app by `rocx build`, as their READMEs say. Naming their
-  `server/main.roc` in the header (D-033) isn't enough either: `rocx build` lists only the kinds of
-  actor defined in the app's own files, and both keep their state in actors. Workaround: the four
-  files copied verbatim into the app, and `test/copies.test.mjs` failing when they drift.
+- **Packages' server modules are copied in by hand.** packages/presence's room (`PresenceServer`)
+  imports the server platform and keeps its state in an actor, whose kind `rocx build` finds only in
+  the app's own files. Workaround: the file copied verbatim into the app, and
+  `test/copies.test.mjs` failing when it drifts. (packages/guard's middleware was copied too, until
+  guard kept its state in `Kv` and named the server platform itself: D-043. Now the header names
+  it and `Middlewares.roc` imports `guard.Guard`.)
 - **A handler can't name another route's channel.** Every write publishes on the board's channel,
   but route files can't import `Generated/Api` (it is made of them). Workaround: `News.channel`
   builds the same endpoint by its path, `Endpoint.remote("CHANNEL", "/b/<board>")`; moving the

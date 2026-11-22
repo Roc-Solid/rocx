@@ -2796,6 +2796,18 @@ pub struct HostKvSetArgs {
     pub arg2: u64,
 }
 
+/// Arguments for Host.kv_swap!
+/// Roc signature: Str, Str, Str, U64 => Bool
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostKvSwapArgs {
+    pub arg0: RocStr,
+    pub arg1: RocStr,
+    pub arg2: RocStr,
+    pub arg3: u64,
+}
+
 /// Arguments for Host.kv_take!
 /// Roc signature: Str => Try(Str, Str)
 /// Refcounted fields are owned by the hosted function.
@@ -4324,6 +4336,15 @@ unsafe extern "C" {
     ///     unsafe { arg0.decref(roc_host); }
     ///     unsafe { arg1.decref(roc_host); }
     pub fn roc_host_kv_set(arg0: RocStr, arg1: RocStr, arg2: u64);
+
+    /// Hosted symbol for Host.kv_swap!
+    /// Roc signature: Str, Str, Str, U64 => Bool
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    ///     unsafe { arg1.decref(roc_host); }
+    ///     unsafe { arg2.decref(roc_host); }
+    pub fn roc_host_kv_swap(arg0: RocStr, arg1: RocStr, arg2: RocStr, arg3: u64) -> bool;
 
     /// Hosted symbol for Host.kv_take!
     /// Roc signature: Str => Try(Str, Str)
