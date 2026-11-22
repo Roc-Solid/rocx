@@ -1,0 +1,249 @@
+import pf.Html
+import pf.Channel
+import pf.Endpoint
+import pf.Errored
+import pf.For
+import pf.Title
+import pf.Solid exposing [create_effect!, create_memo!, refresh!]
+import charts.Format
+import charts.Heatmap
+import charts.LineChart
+import ../../../Days
+import ../../../News
+import ../../../Report
+import ../../../Words
+import ../../../Generated/Api
+import ../../../Ui/IncidentCard
+import ../../../Ui/Missing
+import ../../../Ui/StatePill
+import ../../../Ui/UptimeStrip
+
+## A monitor's page: how it is checked, its uptime, its response time over the last day
+## (`<LineChart>`), when its checks failed over the last week (`<Heatmap>`, by day and hour), its 90
+## days, its last checks and its incidents. Its data is `GET /monitors/<id>` as JSON, read again when
+## the live channel says this monitor was checked or changed.
+meta = { title: "Monitor · Acme Status" }
+
+view! = |{ params }| {
+	id = params.id
+	read = Api.get_monitors_id({ id: id })
+	detail! : () => Report.Detail
+	detail! = create_memo!(|| Endpoint.get!(read))
+	heard! : Channel.Event(News.Said) => {}
+	heard! = |event|
+		match event {
+			Resync => refresh!(detail!)
+			Message(news) => if (news.monitor.to_str() == id) refresh!(detail!) else {}
+			Refused(_, _) | Ended(_) => {}
+		}
+	create_effect!(|| {}, |{}| Endpoint.subscribe!(Api.channel_live({}), heard!))
+	<Errored fallback={|why, _| <Missing why={why} what="monitor" />}>
+		<article class="detail">
+			<Title>{detail!().monitor.name} · Acme Status</Title>
+			<p class="crumbs"><a href="/">All services</a> <span aria-hidden="true">/</span> {detail!().group_name}</p>
+			<header>
+				<h1>{detail!().monitor.name}</h1>
+				{=<StatePill state={detail!().monitor.state} label={detail!().monitor.label} />}
+			</header>
+			<p class="how">
+				{"Checked ${Words.every(detail!().interval_s)}, up when it answers ${detail!().expected_status.to_str()}. An incident opens after ${detail!().threshold.to_str()} failed checks in a row, and closes on the next that passes."}
+			</p>
+			<dl class="numbers">
+				<div>
+					<dt>Uptime, 24 hours</dt>
+					<dd>{detail!().monitor.uptime_24h}</dd>
+				</div>
+				<div>
+					<dt>7 days</dt>
+					<dd>{detail!().monitor.uptime_7d}</dd>
+				</div>
+				<div>
+					<dt>90 days</dt>
+					<dd>{detail!().monitor.uptime_90d}</dd>
+				</div>
+				<div>
+					<dt>Last check</dt>
+					<dd>{Words.latency(detail!().monitor.latency_ms)}</dd>
+				</div>
+			</dl>
+			<section aria-labelledby="latency">
+				<h2 id="latency">Response time, last 24 hours</h2>
+				<div class="chart">
+					<LineChart data!={detail!().latency.map(|ms| ms.to_dec())} label="Average response time of the checks that passed, each half hour of the last 24 hours, in milliseconds" format={|ms| "${Format.num(ms, 0)} ms"} smooth={Bool.True} />
+				</div>
+			</section>
+			<section aria-labelledby="failures">
+				<h2 id="failures">Failed checks, last 7 days</h2>
+				<div class="chart">
+					<Heatmap data!={detail!().failures.map(|row| row.map(|count| count.to_dec()))} rows={week} columns={hours} label="Failed checks in each hour of the last 7 days (UTC)" format={|count| Format.num(count, 0)} />
+				</div>
+			</section>
+			<section aria-labelledby="days">
+				<h2 id="days">90 days</h2>
+				{=<UptimeStrip days={detail!().monitor.days} />}
+			</section>
+			<section aria-labelledby="checks">
+				<h2 id="checks">Last checks</h2>
+				<div class="table">
+					<table>
+						<thead>
+							<tr>
+								<th scope="col">When (UTC)</th>
+								<th scope="col">Result</th>
+								<th scope="col">Status</th>
+								<th scope="col">Time</th>
+								<th scope="col">Problem</th>
+							</tr>
+						</thead>
+						<tbody>
+							<For each!={detail!().checks} keyed={|check| check.at}>
+								{|check!, _|
+									<tr class:failed={!check!().up}>
+										<td><time datetime={check!().at}>{Days.moment(check!().at)}</time></td>
+										<td>{if (check!().up) "Passed" else "Failed"}</td>
+										<td>{if (check!().status == 0) "—" else check!().status.to_str()}</td>
+										<td>{Words.latency(check!().latency_ms)}</td>
+										<td>{check!().error}</td>
+									</tr>}
+							</For>
+						</tbody>
+					</table>
+				</div>
+			</section>
+			<section aria-labelledby="incidents">
+				<h2 id="incidents">Incidents, last 90 days</h2>
+				<p class="quiet" hidden?={!detail!().incidents.is_empty()}>None. 🎉</p>
+				<ul class="incidents">
+					<For each!={detail!().incidents} keyed={|incident| incident.id}>
+						{|incident!, _| <li>{=<IncidentCard incident={incident!()} link={Bool.True} />}</li>}
+					</For>
+				</ul>
+			</section>
+		</article>
+	</Errored>
+}
+
+## The heatmap's rows, the oldest day first: words, not dates, so they never change while the page
+## is open.
+week : List(Str)
+week = ["6 days ago", "5 days ago", "4 days ago", "3 days ago", "2 days ago", "Yesterday", "Today"]
+
+## The heatmap's columns: the hours of a day, in UTC.
+hours : List(Str)
+hours = List.repeat(0, 24).map_with_index(|_, hour| if (hour < 10) "0${hour.to_str()}:00" else "${hour.to_str()}:00")
+
+<style>
+	.detail {
+		display: grid;
+		gap: var(--space-5);
+	}
+
+	.crumbs {
+		font-size: var(--text-small);
+		color: var(--ink-faint);
+	}
+
+	header {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-3);
+	}
+
+	h1 {
+		font-size: var(--text-huge);
+	}
+
+	.how {
+		color: var(--ink-soft);
+		max-width: 46rem;
+	}
+
+	.numbers {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+		gap: var(--space-3);
+		margin: 0;
+	}
+
+	.numbers div {
+		padding: var(--space-4);
+		background: var(--surface);
+		border: 1px solid var(--line);
+		border-radius: var(--radius);
+	}
+
+	dt {
+		font-size: var(--text-tiny);
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--ink-faint);
+	}
+
+	dd {
+		margin: 0;
+		font-size: 1.6rem;
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
+	}
+
+	section {
+		display: grid;
+		gap: var(--space-3);
+	}
+
+	.chart {
+		padding: var(--space-4);
+		background: var(--surface);
+		border: 1px solid var(--line);
+		border-radius: var(--radius);
+	}
+
+	.table {
+		overflow-x: auto;
+		background: var(--surface);
+		border: 1px solid var(--line);
+		border-radius: var(--radius);
+	}
+
+	table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: var(--text-small);
+		font-variant-numeric: tabular-nums;
+	}
+
+	th,
+	td {
+		padding: var(--space-2) var(--space-4);
+		text-align: left;
+		border-bottom: 1px solid var(--line);
+		white-space: nowrap;
+	}
+
+	th {
+		color: var(--ink-faint);
+		font-weight: 600;
+	}
+
+	tr:last-child td {
+		border-bottom: 0;
+	}
+
+	tr.failed td {
+		color: var(--major);
+		background: var(--major-soft);
+	}
+
+	.incidents {
+		display: grid;
+		gap: var(--space-4);
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.quiet {
+		color: var(--ink-faint);
+	}
+</style>

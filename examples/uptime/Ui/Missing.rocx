@@ -1,0 +1,25 @@
+import pf.Html
+import pf.HttpStatusCode
+
+## What a monitor's or an incident's page shows when it can't: a 404 for one that isn't there (its
+## read refused), a 500 otherwise. It sets the page's status, so it is effectful (`view!`).
+Missing := [].{
+	view! : { why : Str, what : Str } => Html
+	view! = |{ why, what }| {
+		gone = why.contains("404")
+		<section class="missing" role="alert">
+			<HttpStatusCode code={if (gone) 404 else 500} />
+			<h1>{if (gone) "There's no ${what} here" else "This ${what} couldn't be shown"}</h1>
+			<p>{if (gone) "It may have been deleted." else "Try again in a moment."}</p>
+			<p><a href="/">Back to the status of every service</a></p>
+		</section>
+	}
+
+	<style>
+		.missing {
+			display: grid;
+			gap: var(--space-3);
+			padding: var(--space-7) 0;
+		}
+	</style>
+}

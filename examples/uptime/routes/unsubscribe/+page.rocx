@@ -1,0 +1,65 @@
+import pf.Html
+import pf.Endpoint
+import pf.Server
+import pf.Show
+import pf.Title
+import pf.Router exposing [use_submission!]
+import pf.Router
+import ../../Words
+import ../../Generated/Api
+
+## The page an alert's "Unsubscribe" link opens (`/unsubscribe?token=…`). Opening it changes
+## nothing (mail scanners open links): its button posts the token, and then it says it is done.
+meta = { title: "Unsubscribe · Acme Status" }
+
+view! = |_| {
+	token = Words.query_value(Router.location!({}).query, "token")
+	unsubscribe = Api.post_unsubscribe({})
+	submission = use_submission!(unsubscribe)
+	<section class="unsubscribe">
+		<Title>Unsubscribe · Acme Status</Title>
+		<h1>Stop the alert emails?</h1>
+		<Show when!={submission.result!().is_err()}>
+			<p>You get an email from Acme Status when an incident opens or closes. You can subscribe again on the status page whenever you like.</p>
+			<form method="post" action={Endpoint.url_of(unsubscribe)}>
+				<input type="hidden" name="token" value={token} />
+				<button disabled?={submission.pending!()}>Unsubscribe</button>
+			</form>
+		</Show>
+		<Show when!={submission.result!()}>{|email!| <p class="done" role="status">{"Done: ${email!()} won't get any more alerts."}</p>}</Show>
+		<Show when!={submission.error!()}>{|problem!| <p class="problem" role="alert">{Server.explain(problem!())}</p>}</Show>
+		<p><a href="/">Back to the status page</a></p>
+	</section>
+}
+
+<style>
+	.unsubscribe {
+		display: grid;
+		gap: var(--space-4);
+		max-width: 34rem;
+		padding: var(--space-6) 0;
+	}
+
+	h1 {
+		font-size: var(--text-huge);
+	}
+
+	button {
+		padding: 0.6rem 1.1rem;
+		border: 0;
+		border-radius: var(--radius-small);
+		background: var(--major);
+		color: #fff;
+		font-weight: 650;
+		cursor: pointer;
+	}
+
+	.done {
+		color: var(--good);
+		font-weight: 600;
+	}
+
+	.problem {
+		color: var(--major);
+	}
+</style>

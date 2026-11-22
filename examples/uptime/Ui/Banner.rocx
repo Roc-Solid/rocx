@@ -1,0 +1,86 @@
+import pf.Html
+import testing.Dom
+import ../Report
+
+## The banner over the status page: "All systems operational", or what isn't, in its colour. It is
+## the page's `status` region, so a screen reader hears it change.
+Banner := [].{
+	view : { banner : Report.Banner } -> Html
+	view = |{ banner }|
+		<div class={"banner ${banner.level}"} role="status">
+			<span class="icon" aria-hidden="true">{icon(banner.level)}</span>
+			<div>
+				<h1>{banner.title}</h1>
+				<p>{banner.detail}</p>
+			</div>
+		</div>
+
+	<story name="Operational">
+		<Banner banner={{ level: "operational", title: "All systems operational", detail: "Every service passed its last check." }} />
+	</story>
+
+	<story name="Partial outage">
+		<Banner banner={{ level: "partial", title: "Partial outage", detail: "1 service is down; the rest are operational." }} />
+	</story>
+
+	<style>
+		.banner {
+			display: flex;
+			align-items: center;
+			gap: var(--space-4);
+			padding: var(--space-5) var(--space-6);
+			border-radius: var(--radius);
+			background: var(--good);
+			color: #fff;
+			box-shadow: var(--shadow);
+		}
+
+		.degraded {
+			background: var(--minor);
+		}
+
+		.partial,
+		.major {
+			background: var(--major);
+		}
+
+		h1 {
+			font-size: var(--text-huge);
+		}
+
+		p {
+			opacity: 0.92;
+		}
+
+		.icon {
+			display: grid;
+			place-items: center;
+			flex: none;
+			width: 2.6rem;
+			height: 2.6rem;
+			border-radius: 50%;
+			background: rgb(255 255 255 / 0.22);
+			font-size: 1.4rem;
+			font-weight: 800;
+		}
+
+		@media (prefers-color-scheme: dark) {
+			.banner {
+				color: #0d1420;
+			}
+
+			.icon {
+				background: rgb(13 20 32 / 0.15);
+			}
+		}
+	</style>
+}
+
+## A tick when all is well, a bang otherwise.
+icon : Str -> Str
+icon = |level| if (level == "operational") "✓" else "!"
+
+expect {
+	page = Dom.parse(Html.to_str(Banner.view({ banner: { level: "partial", title: "Partial outage", detail: "1 service is down; the rest are operational." } })))
+	page.text_of(Role("heading")) == Ok("Partial outage") and page.contains(Role("status"))
+}

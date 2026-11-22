@@ -1,0 +1,56 @@
+import pf.Html
+import pf.Channel
+import pf.Endpoint
+import pf.Errored
+import pf.Title
+import pf.Solid exposing [create_effect!, create_memo!, refresh!]
+import ../../../Generated/Api
+import ../../../Generated/Paths
+import ../../../News
+import ../../../Report
+import ../../../Ui/IncidentCard
+import ../../../Ui/Missing
+
+## An incident's page, the one its alert emails link to: its timeline, which grows as the admin
+## posts updates and closes when its monitor passes a check, read again when the live channel says
+## its monitor changed.
+meta = { title: "Incident · Acme Status" }
+
+view! = |{ params }| {
+	read = Api.get_incidents_id({ id: params.id })
+	incident! : () => Report.Incident
+	incident! = create_memo!(|| Endpoint.get!(read))
+	heard! : Channel.Event(News.Said) => {}
+	heard! = |event|
+		match event {
+			Resync => refresh!(incident!)
+			Message(news) => if (news.monitor == incident!().monitor) refresh!(incident!) else {}
+			Refused(_, _) | Ended(_) => {}
+		}
+	create_effect!(|| {}, |{}| Endpoint.subscribe!(Api.channel_live({}), heard!))
+	<Errored fallback={|why, _| <Missing why={why} what="incident" />}>
+		<div class="incident-page">
+			<Title>{incident!().title} · Acme Status</Title>
+			<p class="crumbs">
+				<a href="/">All services</a>
+				<span aria-hidden="true">/</span>
+				<a href={Paths.monitors_id({ id: incident!().monitor.to_str() })}>{incident!().monitor_name}</a>
+			</p>
+			{=<IncidentCard incident={incident!()} link={Bool.False} />}
+		</div>
+	</Errored>
+}
+
+<style>
+	.incident-page {
+		display: grid;
+		gap: var(--space-4);
+	}
+
+	.crumbs {
+		display: flex;
+		gap: var(--space-2);
+		font-size: var(--text-small);
+		color: var(--ink-faint);
+	}
+</style>

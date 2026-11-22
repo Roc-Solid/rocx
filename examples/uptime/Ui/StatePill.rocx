@@ -1,0 +1,74 @@
+import pf.Html
+import testing.Dom
+
+## A monitor's state, as a coloured dot and its word: `Operational`, `Degraded`, `Outage`, `Paused`.
+StatePill := [].{
+	view : { state : Str, label : Str } -> Html
+	view = |{ state, label }|
+		<span class={"pill ${state}"}>
+			<span class="dot" aria-hidden="true"></span>
+			{label}
+		</span>
+
+	<story name="Every state">
+		<p style="display: flex; gap: 8px; flex-wrap: wrap">
+			<StatePill state="operational" label="Operational" />
+			<StatePill state="degraded" label="Degraded" />
+			<StatePill state="outage" label="Outage" />
+			<StatePill state="paused" label="Paused" />
+			<StatePill state="pending" label="Waiting for its first check" />
+		</p>
+	</story>
+
+	<style>
+		.pill {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.4em;
+			padding: 0.15em 0.65em 0.15em 0.5em;
+			border-radius: 999px;
+			font-size: var(--text-small);
+			font-weight: 600;
+			white-space: nowrap;
+			background: var(--surface-sunk);
+			color: var(--ink-soft);
+		}
+
+		.dot {
+			width: 0.6em;
+			height: 0.6em;
+			border-radius: 50%;
+			background: currentColor;
+		}
+
+		.operational {
+			background: var(--good-soft);
+			color: var(--good);
+		}
+
+		.degraded {
+			background: var(--minor-soft);
+			color: var(--minor);
+		}
+
+		.outage {
+			background: var(--major-soft);
+			color: var(--major);
+		}
+
+		.outage .dot {
+			animation: beat 1.6s ease-in-out infinite;
+		}
+
+		@keyframes beat {
+			50% {
+				opacity: 0.35;
+			}
+		}
+	</style>
+}
+
+pill = |state, label| Dom.parse(Html.to_str(StatePill.view({ state, label })))
+
+expect pill("outage", "Outage").first(Tag("span")).map_ok(|span| span.text()) == Ok("Outage")
+expect pill("outage", "Outage").first(Tag("span")).map_ok(|span| span.has_class("outage")) == Ok(Bool.True)

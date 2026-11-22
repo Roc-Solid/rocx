@@ -1,0 +1,198 @@
+import pf.Html
+import pf.Channel
+import pf.Endpoint
+import pf.For
+import pf.Title
+import pf.Solid exposing [create_effect!, create_memo!, refresh!]
+import pf.Router exposing [use_submission!]
+import ../../Middlewares
+import ../../News
+import ../../Report
+import ../../Generated/Api
+import ../../Ui/AdminRow
+import ../../Ui/IncidentCard
+import ../../Ui/UpdateForm
+
+## The admin's page, behind the sign-in: every monitor with "Check now" and "Pause", each open
+## incident with a form for its next update, the flaky demo's switch, and the way to the rest:
+## packages/admin's tables (adding and editing monitors), the jobs page, and the dev mailbox.
+## Its data is `GET /admin` as JSON, read again after each of its forms and whenever the live
+## channel says something changed.
+middleware = Middlewares.admin
+
+meta = { title: "Admin · Acme Status" }
+
+view! = |_| {
+	read = Api.get_admin({})
+	admin! : () => Report.Admin
+	admin! = create_memo!(|| Endpoint.get!(read))
+	heard! : Channel.Event(News.Said) => {}
+	heard! = |event|
+		match event {
+			Resync | Message(_) => refresh!(admin!)
+			Refused(_, _) | Ended(_) => {}
+		}
+	create_effect!(|| {}, |{}| Endpoint.subscribe!(Api.channel_live({}), heard!))
+	demo = Api.post_admin_demo({})
+	switched = use_submission!(demo)
+	<div class="admin">
+		<Title>Admin · Acme Status</Title>
+		<header>
+			<h1>Admin</h1>
+			<nav aria-label="Admin">
+				<a href="/admin/db?table=monitors&new">Add a monitor</a>
+				<a href="/admin/db?table=monitors">Edit monitors</a>
+				<a href="/admin/db">All tables</a>
+				<a href="/admin/jobs">Jobs</a>
+				<a href="/__rocx/mail">Mailbox (dev)</a>
+				<form method="post" action="/admin/sign-out"><button class="link">Sign out</button></form>
+			</nav>
+		</header>
+		<section aria-labelledby="monitors">
+			<h2 id="monitors">Monitors</h2>
+			<div class="table">
+				<table>
+					<thead>
+						<tr>
+							<th scope="col">Name</th>
+							<th scope="col">Asks</th>
+							<th scope="col">State</th>
+							<th scope="col">Last check (UTC)</th>
+							<th scope="col"><span class="visually-hidden">Actions</span></th>
+						</tr>
+					</thead>
+					<tbody>
+						<For each!={admin!().monitors} keyed={|monitor| monitor.id}>
+							{|monitor!, _| <AdminRow monitor!={monitor!()} />}
+						</For>
+					</tbody>
+				</table>
+			</div>
+		</section>
+		<section aria-labelledby="open">
+			<h2 id="open">Open incidents</h2>
+			<p class="quiet" hidden?={!admin!().incidents.is_empty()}>None. Incidents open on their own after a monitor fails enough checks in a row.</p>
+			<ul class="incidents">
+				<For each!={admin!().incidents} keyed={|incident| incident.id}>
+					{|incident!, _|
+						<li>
+							{=<IncidentCard incident={incident!()} link={Bool.True} />}
+							<UpdateForm incident={incident!().id} />
+						</li>}
+				</For>
+			</ul>
+		</section>
+		<section aria-labelledby="demo" class="demo">
+			<h2 id="demo">The flaky demo</h2>
+			<p>
+				{if (admin!().broken) "/demo/flaky is broken on purpose: every check of the Payments API fails, and an incident opens after three." else "/demo/flaky answers as usual: about one check in 250 fails, too few in a row for an incident."}
+			</p>
+			<form method="post" action={Endpoint.url_of(demo)}>
+				<input type="hidden" name="broken" value={if (admin!().broken) "no" else "yes"} />
+				<button class={if (admin!().broken) "mend" else "break"} disabled?={switched.pending!()}>{if (admin!().broken) "Mend it" else "Break it"}</button>
+			</form>
+		</section>
+		<section aria-labelledby="subscribers">
+			<h2 id="subscribers">Subscribers</h2>
+			<p>
+				{if (admin!().subscribers == 1) "1 address gets" else "${admin!().subscribers.to_str()} addresses get"}
+				{" an email when an incident opens or closes. "}
+				<a href="/admin/db?table=subscribers">See them</a>
+			</p>
+		</section>
+	</div>
+}
+
+<style>
+	.admin {
+		display: grid;
+		gap: var(--space-6);
+	}
+
+	header {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-4);
+	}
+
+	h1 {
+		font-size: var(--text-huge);
+	}
+
+	nav {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-2) var(--space-4);
+		font-size: var(--text-small);
+	}
+
+	.link {
+		padding: 0;
+		border: 0;
+		background: none;
+		color: var(--accent);
+		text-decoration: underline;
+		cursor: pointer;
+	}
+
+	section {
+		display: grid;
+		gap: var(--space-3);
+	}
+
+	.table {
+		overflow-x: auto;
+		background: var(--surface);
+		border: 1px solid var(--line);
+		border-radius: var(--radius);
+	}
+
+	table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: var(--text-small);
+	}
+
+	thead th {
+		padding: var(--space-3) var(--space-4);
+		text-align: left;
+		color: var(--ink-faint);
+		border-bottom: 1px solid var(--line);
+	}
+
+	.incidents {
+		display: grid;
+		gap: var(--space-4);
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.quiet {
+		color: var(--ink-faint);
+	}
+
+	.demo form {
+		display: flex;
+	}
+
+	.demo button {
+		padding: 0.55rem 1.1rem;
+		border: 0;
+		border-radius: var(--radius-small);
+		font-weight: 650;
+		cursor: pointer;
+		color: #fff;
+	}
+
+	.break {
+		background: var(--major);
+	}
+
+	.mend {
+		background: var(--good);
+	}
+</style>

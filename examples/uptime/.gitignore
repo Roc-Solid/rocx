@@ -1,0 +1,7 @@
+# What `rocx build` writes: the generated modules (routes, program, the packages' components), the
+# .roc beside each .rocx file; and the builds (the tests' and by hand).
+Generated/
+build/
+Ui/*.roc
+routes/**/*.roc
+!routes/**/+server.roc

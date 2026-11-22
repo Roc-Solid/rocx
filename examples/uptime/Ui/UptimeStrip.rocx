@@ -1,0 +1,77 @@
+import pf.Html
+import testing.Dom
+import ../Report
+import ../Words
+
+## The last 90 days, a bar a day, coloured by how the day went: green from 99% up, amber from 95%,
+## red below, grey without checks. A screen reader hears one sentence that counts them; a pointer
+## gets each day's uptime as its tooltip.
+UptimeStrip := [].{
+	view : { days : List(Report.Day) } -> Html
+	view = |{ days }|
+		<div class="strip">
+			<ol class="days" role="img" aria-label={Words.strip(days)}>
+				{...days.map(|day| <li class={"day ${day.level}"} title={Words.day(day)}></li>)}
+			</ol>
+			<p class="ends" aria-hidden="true">
+				<span>{"${days.len().to_str()} days ago"}</span>
+				<span>Today</span>
+			</p>
+		</div>
+
+	<story name="A flaky service">
+		<UptimeStrip days={List.repeat(0, 90).map_with_index(|_, i| { day: "2026-11-10", level: if (i == 77) "major" else if (i % 23 == 5) "minor" else if (i < 3) "none" else "good", uptime: "99%" })} />
+	</story>
+
+	<style>
+		.days {
+			display: flex;
+			gap: 2px;
+			height: 2rem;
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		.day {
+			flex: 1;
+			min-width: 1px;
+			border-radius: 2px;
+			background: var(--good);
+			transition: transform 120ms ease;
+		}
+
+		.day:hover {
+			transform: scaleY(1.15);
+		}
+
+		.minor {
+			background: var(--minor);
+		}
+
+		.major {
+			background: var(--major);
+		}
+
+		.none {
+			background: var(--none);
+		}
+
+		.ends {
+			display: flex;
+			justify-content: space-between;
+			margin-top: var(--space-1);
+			font-size: var(--text-tiny);
+			color: var(--ink-faint);
+		}
+	</style>
+}
+
+strip = |days| Dom.parse(Html.to_str(UptimeStrip.view({ days: days })))
+
+three : List(Report.Day)
+three = [{ day: "2026-11-20", level: "good", uptime: "100%" }, { day: "2026-11-21", level: "major", uptime: "90.00%" }, { day: "2026-11-22", level: "none", uptime: "—" }]
+
+expect strip(three).contains(Named("img", "The last 3 days: 1 fine, 1 with a lot of downtime, 1 without checks."))
+expect strip(three).all(Tag("li")).map(|day| day.attr("title")) == [Ok("Nov 20: 100%"), Ok("Nov 21: 90.00%"), Ok("Nov 22: no checks")]
+expect strip(three).all(Tag("li")).map(|day| day.has_class("major")) == [Bool.False, Bool.True, Bool.False]

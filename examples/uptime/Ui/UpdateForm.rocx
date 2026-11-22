@@ -1,0 +1,85 @@
+import pf.Html
+import pf.Endpoint
+import pf.Server
+import pf.Show
+import pf.Router exposing [use_submission!]
+import ../Incident
+import ../Generated/Api
+
+## The admin's form for an open incident's next update: its stage and what to say. "Resolved"
+## closes the incident and mails the subscribers.
+UpdateForm := [].{
+	view! : { incident : I64 } => Html
+	view! = |{ incident }| {
+		post = Api.post_admin_incidents_id({ id: incident.to_str() })
+		submission = use_submission!(post)
+		field = "update-${incident.to_str()}"
+		<form class="update" method="post" action={Endpoint.url_of(post)}>
+			<div class="row">
+				<label for={"${field}-state"}>Stage</label>
+				<select id={"${field}-state"} name="state">
+					{...Incident.stages.map(|stage| <option value={Incident.stage_name(stage)}>{Incident.stage_label(stage)}</option>)}
+				</select>
+			</div>
+			<label for={"${field}-body"}>What is happening</label>
+			<textarea id={"${field}-body"} name="body" rows="3" required maxlength="2000" placeholder="We have found the cause and are rolling back the change."></textarea>
+			<div class="row">
+				<button disabled?={submission.pending!()}>{if (submission.pending!()) "Posting…" else "Post update"}</button>
+				<Show when!={submission.result!()}>{|said!| <span class="said" role="status">{said!()}</span>}</Show>
+				<Show when!={submission.error!()}>{|problem!| <span class="problem" role="alert">{Server.explain(problem!())}</span>}</Show>
+			</div>
+		</form>
+	}
+
+	<style>
+		.update {
+			display: grid;
+			gap: var(--space-2);
+			margin-top: var(--space-4);
+			padding-top: var(--space-4);
+			border-top: 1px dashed var(--line);
+		}
+
+		.row {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: var(--space-3);
+		}
+
+		label {
+			font-weight: 600;
+			font-size: var(--text-small);
+		}
+
+		select,
+		textarea {
+			padding: 0.5rem 0.7rem;
+			border: 1px solid var(--line);
+			border-radius: var(--radius-small);
+			background: var(--surface);
+		}
+
+		textarea {
+			resize: vertical;
+		}
+
+		button {
+			padding: 0.5rem 1rem;
+			border: 0;
+			border-radius: var(--radius-small);
+			background: var(--accent);
+			color: var(--accent-ink);
+			font-weight: 650;
+			cursor: pointer;
+		}
+
+		.said {
+			color: var(--good);
+		}
+
+		.problem {
+			color: var(--major);
+		}
+	</style>
+}

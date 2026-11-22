@@ -1,0 +1,166 @@
+import pf.Html
+import testing.Dom
+import ../Days
+import ../Generated/Paths
+import ../Report
+
+## An incident and its timeline: its title (a link to its page, unless this is it), whether it is
+## open, when it began and how long it lasted, and each update, newest first, with its stage.
+IncidentCard := [].{
+	view : { incident : Report.Incident, link : Bool } -> Html
+	view = |{ incident, link }|
+		<article class={if (incident.open) "incident open" else "incident"} aria-label={incident.title}>
+			<header>
+				<h3>{=if (link) <a href={Paths.incidents_id({ id: incident.id.to_str() })}>{incident.title}</a> else <>{incident.title}</>}</h3>
+				<p class="meta">
+					<span class={if (incident.open) "badge open" else "badge"}>{if (incident.open) "Ongoing" else "Resolved"}</span>
+					{if (incident.open) "Since ${Days.moment(incident.opened_at)}, ${incident.duration} so far" else "${Days.moment(incident.opened_at)}, lasted ${incident.duration}"}
+				</p>
+			</header>
+			<ol class="timeline">
+				{...incident.updates.map(
+					|update|
+						<li class={"update ${update.state}"}>
+							<p class="stage">
+								<strong>{update.label}</strong>
+								<time datetime={update.at}>{Days.moment(update.at)}</time>
+							</p>
+							<p class="body">{update.body}</p>
+							<p class="author">{update.author}</p>
+						</li>,
+				)}
+			</ol>
+		</article>
+
+	<story name="Resolved">
+		<IncidentCard
+			incident={{ id: 1, monitor: 2, monitor_name: "Payments API", title: "Payments API is down", open: Bool.False, opened_at: "2026-11-10T14:05:00Z", closed_at: "2026-11-10T14:28:00Z", duration: "23 minutes", updates: [{ at: "2026-11-10T14:28:00Z", state: "resolved", label: "Resolved", body: "Payments API answers again (200 in 96 ms) after 23 minutes.", author: "Acme Status" }, { at: "2026-11-10T14:05:00Z", state: "investigating", label: "Investigating", body: "Payments API failed 3 checks in a row (expected 200, got 503).", author: "Acme Status" }] }}
+			link={Bool.True}
+		/>
+	</story>
+
+	<style>
+		.incident {
+			padding: var(--space-5);
+			background: var(--surface);
+			border: 1px solid var(--line);
+			border-radius: var(--radius);
+		}
+
+		.incident.open {
+			border-color: var(--major);
+			box-shadow: 0 0 0 3px var(--major-soft);
+		}
+
+		header {
+			display: grid;
+			gap: var(--space-1);
+			margin-bottom: var(--space-4);
+		}
+
+		h3 {
+			font-size: 1.1rem;
+		}
+
+		h3 a {
+			color: inherit;
+		}
+
+		.meta {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: var(--space-2);
+			font-size: var(--text-small);
+			color: var(--ink-soft);
+		}
+
+		.badge {
+			padding: 0 0.55em;
+			border-radius: 999px;
+			font-size: var(--text-tiny);
+			font-weight: 700;
+			text-transform: uppercase;
+			letter-spacing: 0.06em;
+			background: var(--good-soft);
+			color: var(--good);
+		}
+
+		.badge.open {
+			background: var(--major-soft);
+			color: var(--major);
+		}
+
+		.timeline {
+			display: grid;
+			gap: var(--space-4);
+			margin: 0;
+			padding: 0 0 0 var(--space-5);
+			list-style: none;
+			border-left: 2px solid var(--line);
+		}
+
+		.update {
+			position: relative;
+			display: grid;
+			gap: 2px;
+		}
+
+		.update::before {
+			content: "";
+			position: absolute;
+			left: calc(-1 * var(--space-5) - 7px);
+			top: 0.3em;
+			width: 12px;
+			height: 12px;
+			border-radius: 50%;
+			background: var(--surface);
+			border: 3px solid var(--minor);
+		}
+
+		.update.resolved::before {
+			border-color: var(--good);
+		}
+
+		.update.investigating::before {
+			border-color: var(--major);
+		}
+
+		.stage {
+			display: flex;
+			flex-wrap: wrap;
+			gap: var(--space-2);
+			align-items: baseline;
+		}
+
+		time,
+		.author {
+			font-size: var(--text-small);
+			color: var(--ink-faint);
+		}
+	</style>
+}
+
+sample : Report.Incident
+sample = {
+	id: 7,
+	monitor: 2,
+	monitor_name: "Payments API",
+	title: "Payments API is down",
+	open: Bool.True,
+	opened_at: "2026-11-22T14:05:00Z",
+	closed_at: "",
+	duration: "12 minutes",
+	updates: [
+		{ at: "2026-11-22T14:11:00Z", state: "identified", label: "Identified", body: "A deploy broke it; rolling back.", author: "On-call team" },
+		{ at: "2026-11-22T14:05:00Z", state: "investigating", label: "Investigating", body: "Payments API failed 3 checks in a row (expected 200, got 503).", author: "Acme Status" },
+	],
+}
+
+card = |incident, link| Dom.parse(Html.to_str(IncidentCard.view({ incident, link })))
+
+expect card(sample, Bool.True).get(Named("link", "Payments API is down")).map_ok(|a| a.attr("href")) == Ok(Ok("/incidents/7"))
+expect !card(sample, Bool.False).contains(Role("link"))
+expect card(sample, Bool.True).texts(Tag("strong")) == ["Identified", "Investigating"]
+expect card(sample, Bool.True).texts(Tag("p")).any(|text| text == "Ongoing Since Nov 22, 14:05 UTC, 12 minutes so far")
+expect card({ ..sample, open: Bool.False, closed_at: "2026-11-22T14:17:00Z" }, Bool.True).texts(Tag("p")).any(|text| text == "Resolved Nov 22, 14:05 UTC, lasted 12 minutes")

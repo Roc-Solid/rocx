@@ -1,0 +1,161 @@
+import pf.Html
+import pf.Channel
+import pf.Endpoint
+import pf.For
+import pf.Show
+import pf.Solid exposing [create_effect!, create_memo!, create_signal!, is_pending!, refresh!]
+import ../Days
+import ../News
+import ../Report
+import ../Words
+import ../Generated/Api
+import ../Ui/Banner
+import ../Ui/GroupSection
+import ../Ui/IncidentCard
+import ../Ui/SubscribeForm
+
+## The status page: the banner, the incidents happening now, every monitor by group (its state,
+## uptime, response time and 90 days), the incidents of the last two weeks, and the form to
+## subscribe to alerts.
+##
+## Its data is `GET /` as JSON (`routes/+server.roc`), read as the server renders the page and
+## carried in it. It stays live through the live channel (`routes/live/+server.roc`, D-020): every
+## check and every change the admin makes is published there (`News.tell!`), and the page reads its
+## data again when it hears one, so a monitor going down shows on every open page within a
+## second, without a reload. Rows are kept by id, so only what changed is patched, and the
+## sparklines glide.
+meta = { title: "Acme Status" }
+
+view! = |_| {
+	read = Api.get_root({})
+	overview! : () => Report.Overview
+	overview! = create_memo!(|| Endpoint.get!(read))
+	(live!, set_live!) = create_signal!(Bool.False)
+	(said!, set_said!) = create_signal!("")
+	heard! : Channel.Event(News.Said) => {}
+	heard! = |event|
+		match event {
+			Resync => {
+				set_live!(Bool.True)
+				refresh!(overview!)
+			}
+			Message(news) => {
+				refresh!(overview!)
+				words = Words.news({ name: news.name, what: news.what })
+				if (words.is_empty()) {} else set_said!(words)
+			}
+			Refused(_, _) | Ended(_) => set_live!(Bool.False)
+		}
+	create_effect!(|| {}, |{}| Endpoint.subscribe!(Api.channel_live({}), heard!))
+	<div class="status" class:stale={is_pending!(overview!)}>
+		{=<Banner banner={overview!().banner} />}
+		<p class="live">
+			<span class="signal" class:on={live!()} aria-hidden="true"></span>
+			<span>{if (live!()) "Live" else "Connecting…"}</span>
+			<span>·</span>
+			<span>Updated {Days.clock(overview!().now)} UTC</span>
+			<span class="visually-hidden" aria-live="polite">{said!()}</span>
+		</p>
+		<Show when!={overview!().incidents.any(|incident| incident.open)}>
+			<section class="now" aria-labelledby="now">
+				<h2 id="now">Happening now</h2>
+				<ul class="incidents">
+					<For each!={overview!().incidents.keep_if(|incident| incident.open)} keyed={|incident| incident.id}>
+						{|incident!, _| <li>{=<IncidentCard incident={incident!()} link={Bool.True} />}</li>}
+					</For>
+				</ul>
+			</section>
+		</Show>
+		<div class="groups">
+			<For each!={overview!().groups} keyed={|group| group.name}>
+				{|group!, _| <GroupSection group!={group!()} />}
+			</For>
+		</div>
+		<section class="past" aria-labelledby="past">
+			<h2 id="past">Past incidents</h2>
+			<p class="quiet" hidden?={overview!().incidents.any(|incident| !incident.open)}>No incidents in the last 14 days.</p>
+			<ul class="incidents">
+				<For each!={overview!().incidents.keep_if(|incident| !incident.open)} keyed={|incident| incident.id}>
+					{|incident!, _| <li>{=<IncidentCard incident={incident!()} link={Bool.True} />}</li>}
+				</For>
+			</ul>
+		</section>
+		<section id="subscribe" class="subscribe" aria-label="Subscribe">
+			<SubscribeForm />
+		</section>
+	</div>
+}
+
+<style>
+	.status {
+		display: grid;
+		gap: var(--space-6);
+		transition: opacity 200ms ease;
+	}
+
+	.status.stale {
+		opacity: 0.85;
+	}
+
+	.live {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-2);
+		margin-top: calc(-1 * var(--space-4));
+		font-size: var(--text-small);
+		color: var(--ink-faint);
+	}
+
+	.signal {
+		width: 0.55rem;
+		height: 0.55rem;
+		border-radius: 50%;
+		background: var(--none);
+	}
+
+	.signal.on {
+		background: var(--good);
+		box-shadow: 0 0 0 3px var(--good-soft);
+	}
+
+	section {
+		display: grid;
+		gap: var(--space-3);
+	}
+
+	.now h2 {
+		color: var(--major);
+	}
+
+	.past h2 {
+		font-size: var(--text-small);
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--ink-soft);
+	}
+
+	.groups {
+		display: grid;
+		gap: var(--space-6);
+	}
+
+	.incidents {
+		display: grid;
+		gap: var(--space-4);
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.quiet {
+		color: var(--ink-faint);
+	}
+
+	.subscribe {
+		padding: var(--space-5);
+		background: var(--surface);
+		border: 1px solid var(--line);
+		border-radius: var(--radius);
+	}
+</style>

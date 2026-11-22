@@ -1,0 +1,27 @@
+import pf.Html
+
+meta = { title: "Not here · Acme Status" }
+
+## Where nothing is: a 404 (or the error that stopped a page), with the way back to the status.
+view! = |{ status, problem }|
+	<section class="missing" role="alert">
+		<p class="code">{status.to_str()}</p>
+		<h1>{if (status == 404) "There is no page here" else "Something went wrong"}</h1>
+		<p>{problem}</p>
+		<p><a href="/">Back to the status of every service</a></p>
+	</section>
+
+<style>
+	.missing {
+		display: grid;
+		gap: var(--space-3);
+		justify-items: start;
+		padding: var(--space-7) 0;
+	}
+
+	.code {
+		font-size: 3rem;
+		font-weight: 800;
+		color: var(--accent);
+	}
+</style>

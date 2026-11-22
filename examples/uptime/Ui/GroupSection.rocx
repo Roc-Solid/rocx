@@ -1,0 +1,41 @@
+import pf.Html
+import pf.For
+import ../Report
+import MonitorCard
+
+## A group of monitors under its heading (`Platform`, `Websites`), each a card, kept by its id as
+## the status is read again.
+GroupSection := [].{
+	view! : { group! : () => Report.Group } => Html
+	view! = |{ group! }|
+		<section class="group">
+			<h2>{group!().name}</h2>
+			<ul class="monitors">
+				<For each!={group!().monitors} keyed={|monitor| monitor.id}>
+					{|monitor!, _| <MonitorCard monitor!={monitor!()} />}
+				</For>
+			</ul>
+		</section>
+
+	<style>
+		.group {
+			display: grid;
+			gap: var(--space-3);
+		}
+
+		h2 {
+			font-size: var(--text-small);
+			text-transform: uppercase;
+			letter-spacing: 0.08em;
+			color: var(--ink-soft);
+		}
+
+		.monitors {
+			display: grid;
+			gap: var(--space-4);
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+	</style>
+}

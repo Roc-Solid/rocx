@@ -1,0 +1,17 @@
+import pf.Html
+
+## An alert's email, as HTML: what happened, what was said, a link to follow it, and one to stop
+## these emails. Email clients ignore stylesheets, so its styles are inline, and plain; the text
+## part (`Alerts.mail`) says the same.
+AlertMail := [].{
+	view : { heading : Str, said : Str, when : Str, follow : Str, unsubscribe : Str, resolved : Bool } -> Html
+	view = |{ heading, said, when, follow, unsubscribe, resolved }|
+		<div style="font-family: system-ui, sans-serif; max-width: 34rem; margin: 0 auto; color: #1d2433">
+			<p style="font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: #5b6478">Acme Status</p>
+			{=if (resolved) <h1 style="font-size: 22px; color: #11734b">{heading}</h1> else <h1 style="font-size: 22px; color: #b42318">{heading}</h1>}
+			<p style="font-size: 16px; line-height: 1.5">{said}</p>
+			<p style="font-size: 14px; color: #5b6478">{when}</p>
+			<p><a href={follow} style="display: inline-block; padding: 10px 16px; border-radius: 8px; background: #1d2433; color: #ffffff; text-decoration: none">Follow it on the status page</a></p>
+			<p style="font-size: 12px; color: #5b6478; margin-top: 32px">You get these emails because you subscribed to Acme Status. <a href={unsubscribe} style="color: #5b6478">Unsubscribe</a>.</p>
+		</div>
+}

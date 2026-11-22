@@ -1,0 +1,105 @@
+import pf.Html
+import pf.Endpoint
+import pf.Server
+import pf.Show
+import pf.Router exposing [use_submission!]
+import ../Days
+import ../Report
+import ../Words
+import ../Generated/Api
+import ../Generated/Paths
+import StatePill
+
+## A monitor on the admin's page: what it asks, its state, its last check, and its two actions,
+## "Check now" and "Pause" (or "Resume"), each a plain form, so they work without JavaScript too.
+## With the runtime they are sent with `fetch`; their result has the page's data read again.
+AdminRow := [].{
+	view! : { monitor! : () => Report.AdminMonitor } => Html
+	view! = |{ monitor! }| {
+		id = monitor!().id.to_str()
+		check = Api.post_admin_monitors_id_check({ id: id })
+		pause = Api.post_admin_monitors_id_pause({ id: id })
+		checked = use_submission!(check)
+		paused = use_submission!(pause)
+		<tr>
+			<th scope="row"><a href={Paths.monitors_id({ id: id })}>{monitor!().name}</a></th>
+			<td><code>{"${monitor!().method} ${monitor!().url}"}</code> <span class="every">{Words.every(monitor!().interval_s)}</span></td>
+			<td>{=<StatePill state={monitor!().state} label={monitor!().label} />}</td>
+			<td>{if (monitor!().last_at.is_empty()) "Never" else Days.moment(monitor!().last_at)}</td>
+			<td>
+				<div class="actions">
+				<form method="post" action={Endpoint.url_of(check)}>
+					<button disabled?={checked.pending!() or monitor!().paused} aria-label={"Check ${monitor!().name} now"}>Check now</button>
+				</form>
+				<form method="post" action={Endpoint.url_of(pause)}>
+					<button class="quiet" disabled?={paused.pending!()} aria-label={"${if (monitor!().paused) "Resume" else "Pause"} ${monitor!().name}"}>{if (monitor!().paused) "Resume" else "Pause"}</button>
+				</form>
+				<Show when!={checked.result!()}>{|said!| <span class="said" role="status">{said!()}</span>}</Show>
+				<Show when!={checked.error!()}>{|problem!| <span class="problem" role="alert">{Server.explain(problem!())}</span>}</Show>
+				</div>
+			</td>
+		</tr>
+	}
+
+	<style>
+		th,
+		td {
+			padding: var(--space-3) var(--space-4);
+			text-align: left;
+			border-bottom: 1px solid var(--line);
+			vertical-align: middle;
+		}
+
+		th a {
+			color: inherit;
+		}
+
+		code {
+			word-break: break-all;
+		}
+
+		.every {
+			display: block;
+			font-size: var(--text-tiny);
+			color: var(--ink-faint);
+		}
+
+		.actions {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: var(--space-2);
+		}
+
+		button {
+			padding: 0.35rem 0.8rem;
+			border: 0;
+			border-radius: var(--radius-small);
+			background: var(--accent);
+			color: var(--accent-ink);
+			font-weight: 600;
+			font-size: var(--text-small);
+			cursor: pointer;
+		}
+
+		button.quiet {
+			background: var(--surface-sunk);
+			color: var(--ink);
+		}
+
+		button:disabled {
+			opacity: 0.5;
+			cursor: default;
+		}
+
+		.said {
+			font-size: var(--text-small);
+			color: var(--good);
+		}
+
+		.problem {
+			font-size: var(--text-small);
+			color: var(--major);
+		}
+	</style>
+}

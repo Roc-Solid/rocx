@@ -1,0 +1,75 @@
+import pf.Html
+import pf.Endpoint
+import pf.Server
+import pf.Show
+import pf.Router exposing [use_submission!]
+import ../Generated/Api
+
+## The form that subscribes an address to alerts (`POST /subscribe`). With the runtime it is sent
+## with `fetch` and says how it went in place; without JavaScript it posts, and the server sends the
+## browser back here with a flash, which says the same (`use_submission!` reads either).
+SubscribeForm := [].{
+	view! : {} => Html
+	view! = |{}| {
+		subscribe = Api.post_subscribe({})
+		submission = use_submission!(subscribe)
+		<form class="subscribe" method="post" action={Endpoint.url_of(subscribe)}>
+			<label for="subscribe-email">Get an email when an incident opens or closes</label>
+			<div class="row">
+				<input id="subscribe-email" name="email" type="email" required autocomplete="email" placeholder="you@example.com" value={submission.field!("email")} />
+				<button disabled?={submission.pending!()}>{if (submission.pending!()) "Subscribing…" else "Subscribe"}</button>
+			</div>
+			<Show when!={submission.result!()}>{|said!| <p class="said" role="status">{said!()}</p>}</Show>
+			<Show when!={submission.error!()}>{|problem!| <p class="problem" role="alert">{Server.explain(problem!())}</p>}</Show>
+		</form>
+	}
+
+	<style>
+		.subscribe {
+			display: grid;
+			gap: var(--space-2);
+		}
+
+		label {
+			font-weight: 600;
+		}
+
+		.row {
+			display: flex;
+			flex-wrap: wrap;
+			gap: var(--space-2);
+		}
+
+		input {
+			flex: 1;
+			min-width: 14rem;
+			padding: 0.6rem 0.8rem;
+			border: 1px solid var(--line);
+			border-radius: var(--radius-small);
+			background: var(--surface);
+		}
+
+		button {
+			padding: 0.6rem 1.1rem;
+			border: 0;
+			border-radius: var(--radius-small);
+			background: var(--accent);
+			color: var(--accent-ink);
+			font-weight: 650;
+			cursor: pointer;
+		}
+
+		button:disabled {
+			opacity: 0.6;
+			cursor: progress;
+		}
+
+		.said {
+			color: var(--good);
+		}
+
+		.problem {
+			color: var(--major);
+		}
+	</style>
+}

@@ -90,6 +90,9 @@ tests them all (`just examples tasks` one); `just check` type-checks them.
   drag and drop, optimistic moves, channels, presence and an edit lease in Kv.
 - [`quiz`](examples/quiz): Pinwheel, a live quiz for a room full of phones: an actor per room with
   its own timers, a channel to every phone, and charts of how the room answered.
+- [`uptime`](examples/uptime): Acme Status, an uptime monitor and its status page: checks run by
+  jobs and cron, incidents that open and close themselves, email alerts, metrics, the admin's
+  tables, and a page that follows it all live over a channel.
 
 ## Pages and components
 
