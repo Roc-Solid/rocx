@@ -7,13 +7,30 @@ import Paging
 import Widget
 
 ## The admin's pages, as HTML: the index of tables, a table's rows, a row's form, the question
-## before a row is deleted, and why something wasn't done. Each is a page's main part, for
-## `Look.document`; links are the admin's path and a query (`Form.link`).
+## before a row is deleted, and why something wasn't done. Each is a page's main part (a header,
+## then panels), for `Look.document`, beside the sidebar `View.side` draws; links are the admin's
+## path and a query (`Form.link`).
 View := [].{
 
 	## What every page knows: the admin's path and title, the tables it shows, what the visitor may
 	## do, and the token its forms send back (against cross-site requests).
 	Frame : { mount : Str, title : Str, tables : List(Admin.Shown), access : Admin.Access, token : Str }
+
+	## The sidebar: the admin's name, a link to all its tables, then each table (`on`: the page
+	## shown, which the sidebar marks), and what the visitor may do.
+	side : Frame, [Overview, Table(Str), Elsewhere] -> Str
+	side = |frame, on| {
+		overview = Look.nav_link({ href: frame.mount, icon: "overview", tone: "accent", label: "All tables", count: "", on: on == Overview })
+		tables = frame.tables.map(|shown| Look.nav_link({ href: Form.link(frame.mount, [("table", shown.table.name)]), icon: "table", tone: "neutral", label: Look.escape(Admin.label(shown)), count: "", on: on == Table(shown.table.name) }))
+		listed = if (tables.is_empty()) "" else "${Look.nav_label("Tables")}${Str.join_with(tables, "")}"
+		foot =
+			match frame.access {
+				Edit => "Changes are written to the database as each form is sent."
+				ReadOnly => "Read only: you may look here, not change anything."
+				Refused => ""
+			}
+		Look.side({ name: frame.title, note: "Tables, in Postgres", home: frame.mount, nav: "${overview}${listed}", foot })
+	}
 
 	## The tables, each with about how many rows it has and what it is.
 	index_page : Frame -> Str
@@ -21,12 +38,24 @@ View := [].{
 		rows = frame.tables.map(
 			|shown| {
 				estimate = if (shown.table.estimate < 0) "<span class=\"muted\">—</span>" else "≈ ${shown.table.estimate.to_str()}"
-				add = if (may_create(frame, shown)) "<a href=\"${Look.escape(Form.link(frame.mount, [("table", shown.table.name), ("new", "1")]))}\">Add</a>" else ""
-				"<tr><td><a href=\"${Look.escape(Form.link(frame.mount, [("table", shown.table.name)]))}\">${Look.escape(Admin.label(shown))}</a> <code class=\"muted\">${Look.escape(shown.table.name)}</code></td><td>${estimate}</td><td>${Look.escape(shown.table.comment)}</td><td class=\"actions\">${add}</td></tr>"
+				add = if (may_create(frame, shown)) "<a class=\"btn\" href=\"${Look.escape(Form.link(frame.mount, [("table", shown.table.name), ("new", "1")]))}\">${Look.icon("plus")}Add</a>" else ""
+				"<tr><td class=\"name\"><a href=\"${Look.escape(Form.link(frame.mount, [("table", shown.table.name)]))}\">${Look.escape(Admin.label(shown))}</a><code class=\"muted\">${Look.escape(shown.table.name)}</code></td><td class=\"n nowrap\">${estimate}</td><td class=\"about\">${Look.escape(shown.table.comment)}</td><td class=\"actions\">${add}</td></tr>"
 			},
 		)
-		table = if (rows.is_empty()) "<p class=\"muted\">No tables to show: the app lists them (<code>tables</code>), or shows every one (<code>include: All</code>).</p>" else "<table><thead><tr><th>Table</th><th>Rows</th><th>About</th><th></th></tr></thead><tbody>${Str.join_with(rows, "")}</tbody></table>"
-		"<div class=\"bar\"><h1>${Look.escape(frame.title)}</h1></div>${table}"
+		body =
+			if rows.is_empty() {
+				Look.empty("table", "No tables to show", "The app lists them (<code>tables</code>), or shows every one (<code>include: All</code>).")
+			} else {
+				"<div class=\"table-wrap\"><table class=\"tables\"><thead><tr><th>Table</th><th class=\"n\">Rows</th><th>About</th><th></th></tr></thead><tbody>${Str.join_with(rows, "")}</tbody></table></div>"
+			}
+		counted = if (rows.len() == 1) "1 table" else "${rows.len().to_str()} tables"
+		Str.join_with(
+			[
+				Look.header({ eyebrow: "Overview", title: Look.escape(frame.title), actions: "" }),
+				Look.panel({ eyebrow: "Rows are Postgres's estimates", title: "Tables", aside: "<span>${counted}</span>", body, class: "" }),
+			],
+			"",
+		)
 	}
 
 	## A table's rows, a page of them, with its search, a filter under each column's heading (a
@@ -75,7 +104,7 @@ View := [].{
 		kept = Listing.params(name, { ..state, filters: [], page: 1 }).keep_if(|(_, value)| !value.is_empty()).map(|(field, value)| "<input type=\"hidden\" name=\"${Look.escape(field)}\" value=\"${Look.escape(value)}\">")
 		rows_html =
 			if columns.is_empty() {
-				"<p class=\"muted\">No columns to show.</p>"
+				Look.empty("table", "No columns to show", "The app's options for this table list none, or hide them all.")
 			} else {
 				"<form id=\"filters\" class=\"filters\" method=\"get\" action=\"${Look.escape(frame.mount)}\">${Str.join_with(kept, "")}<div class=\"rows\"><table><thead><tr>${Str.join_with(heads, "")}</tr><tr class=\"filter\">${Str.join_with(filter_cells, "")}</tr></thead><tbody>${body_rows}</tbody></table></div></form>"
 			}
@@ -93,7 +122,7 @@ View := [].{
 				"<nav class=\"pager\" aria-label=\"Pages\">${Str.join_with(links, "")}</nav>"
 			}
 		range = Paging.shows(listing.page)
-		counted = if (listing.page.total == 0) "" else "<p class=\"muted\">${range.first.to_str()}–${range.last.to_str()} of ${listing.page.total.to_str()}</p>"
+		foot = if (listing.page.total == 0) "" else "<div class=\"panel-foot\"><span>${range.first.to_str()}–${range.last.to_str()} of ${listing.page.total.to_str()}</span>${pager}</div>"
 		search =
 			if Admin.searchable(shown).is_empty() {
 				""
@@ -101,7 +130,7 @@ View := [].{
 				searched_kept = Listing.params(name, { ..state, search: "", page: 1 }).keep_if(|(_, value)| !value.is_empty()).map(|(field, value)| "<input type=\"hidden\" name=\"${Look.escape(field)}\" value=\"${Look.escape(value)}\">")
 				searched_in = Str.join_with(Admin.searchable(shown).map(|column| Admin.column_label(shown, column.name)), ", ")
 				clear = if (state.search.is_empty()) "" else " <a href=\"${at({ ..state, search: "", page: 1 })}\">Clear</a>"
-				"<form class=\"search\" method=\"get\" action=\"${Look.escape(frame.mount)}\">${Str.join_with(searched_kept, "")}<input type=\"search\" name=\"q\" value=\"${Look.escape(state.search)}\" aria-label=\"Search\" placeholder=\"${Look.escape(searched_in)}\"><button>Search</button>${clear}</form>"
+				"<form class=\"search\" method=\"get\" action=\"${Look.escape(frame.mount)}\">${Str.join_with(searched_kept, "")}<input type=\"search\" name=\"q\" value=\"${Look.escape(state.search)}\" aria-label=\"Search\" placeholder=\"${Look.escape(searched_in)}\"><button class=\"btn\">${Look.icon("search")}Search</button>${clear}</form>"
 			}
 		# The filters' button is the form's (`form="filters"`), so it sits beside the search.
 		filter_button =
@@ -109,20 +138,16 @@ View := [].{
 				""
 			} else {
 				clear = if (filtering) " <a href=\"${at({ ..state, filters: [], invalid: [], page: 1 })}\">Clear filters</a>" else ""
-				"<span class=\"filtering\"><button form=\"filters\">Filter</button>${clear}</span>"
+				"<span class=\"filtering\"><button class=\"btn\" form=\"filters\">${Look.icon("filter")}Filter</button>${clear}</span>"
 			}
-		add = if (may_create(frame, shown)) "<a href=\"${Look.escape(Form.link(frame.mount, [("table", name), ("new", "1")]))}\">Add</a>" else ""
-		about = if (shown.table.comment.is_empty()) "" else "<p class=\"muted\">${Look.escape(shown.table.comment)}</p>"
+		add = if (may_create(frame, shown)) "<a class=\"btn primary\" href=\"${Look.escape(Form.link(frame.mount, [("table", name), ("new", "1")]))}\">${Look.icon("plus")}Add</a>" else ""
+		about = if (shown.table.comment.is_empty()) "" else "<span class=\"meta\">${Look.escape(shown.table.comment)}</span>"
+		tools = if (search.is_empty() and filter_button.is_empty()) "" else "<div class=\"tools\">${search}${filter_button}</div>"
 		Str.join_with(
 			[
-				crumbs(frame, []),
+				Look.header({ eyebrow: "${trail(frame, [])} · <code>${Look.escape(name)}</code>", title: "${Look.escape(Admin.label(shown))}${about}", actions: add }),
 				notice_html(listing.notice),
-				"<div class=\"bar\"><h1>${Look.escape(Admin.label(shown))}</h1><span>${add}</span></div>",
-				about,
-				if (search.is_empty() and filter_button.is_empty()) "" else "<div class=\"tools\">${search}${filter_button}</div>",
-				rows_html,
-				pager,
-				counted,
+				"<section class=\"panel rows-panel\">${tools}${rows_html}${foot}</section>",
 			],
 			"",
 		)
@@ -165,22 +190,32 @@ View := [].{
 			},
 		)
 		key_fields = row.key.map(|(column, value)| ("k.${column}", value))
+		listed = Form.link(frame.mount, [("table", name)])
 		delete =
 			if !creating and frame.access == Edit and shown.options.delete {
-				"<a href=\"${Look.escape(Form.link(frame.mount, [("table", name)].concat(key_fields).append(("delete", "1"))))}\">Delete</a>"
+				"<a class=\"btn danger\" href=\"${Look.escape(Form.link(frame.mount, [("table", name)].concat(key_fields).append(("delete", "1"))))}\">${Look.icon("trash")}Delete</a>"
 			} else {
 				""
 			}
+		back = "<a class=\"btn\" href=\"${Look.escape(listed)}\">${Look.icon("back")}Back to the list</a>"
 		writes = frame.access == Edit and columns.any(|column| Admin.writable(shown, frame.access, column, doing))
 		body =
 			if writes {
 				hidden = hidden_fields(frame.token, if (creating) "create" else "update", name, key_fields)
-				"<form class=\"edit\" method=\"post\" action=\"${Look.escape(frame.mount)}\">${hidden}<div class=\"fields\">${Str.join_with(fields, "")}</div><div class=\"buttons\"><button class=\"primary\">${if (creating) "Add" else "Save"}</button> <a href=\"${Look.escape(Form.link(frame.mount, [("table", name)]))}\">Back to the list</a></div></form>"
+				"<form class=\"edit panel\" method=\"post\" action=\"${Look.escape(frame.mount)}\">${hidden}<div class=\"fields\">${Str.join_with(fields, "")}</div><div class=\"panel-foot buttons\">${back}<span class=\"act act-primary\"><button>${if (creating) "Add" else "Save"}</button></span></div></form>"
 			} else {
-				"<div class=\"fields\">${Str.join_with(fields, "")}</div><div class=\"buttons\"><a href=\"${Look.escape(Form.link(frame.mount, [("table", name)]))}\">Back to the list</a></div>"
+				"<section class=\"panel\"><div class=\"fields\">${Str.join_with(fields, "")}</div><div class=\"panel-foot buttons\">${back}</div></section>"
 			}
-		problem = if (row.problem.is_empty()) "" else "<p class=\"problem\">${Look.escape(row.problem)}</p>"
-		Str.join_with([crumbs(frame, [(Admin.label(shown), Form.link(frame.mount, [("table", name)]))]), notice_html(row.notice), problem, "<div class=\"bar\"><h1>${Look.escape(heading)}</h1><span>${delete}</span></div>", body], "")
+		problem = problem_html(if (creating) "Not added" else "Not saved", row.problem)
+		Str.join_with(
+			[
+				Look.header({ eyebrow: trail(frame, [(Admin.label(shown), listed)]), title: Look.escape(heading), actions: delete }),
+				notice_html(row.notice),
+				problem,
+				body,
+			],
+			"",
+		)
 	}
 
 	## The question before a row is deleted, and the button that deletes it.
@@ -189,14 +224,13 @@ View := [].{
 		name = asked.shown.table.name
 		key_fields = asked.key.map(|(column, value)| ("k.${column}", value))
 		described = Str.join_with(asked.key.map(|(column, value)| "${Admin.column_label(asked.shown, column)} ${value}"), ", ")
-		problem = if (asked.problem.is_empty()) "" else "<p class=\"problem\">${Look.escape(asked.problem)}</p>"
+		row = View.row_link(frame.mount, name, asked.key)
+		delete = Look.button_with("act-danger", "trash", frame.mount, [("csrf", frame.token), ("action", "delete"), ("table", name)].concat(key_fields), "Delete")
 		Str.join_with(
 			[
-				crumbs(frame, [(Admin.label(asked.shown), Form.link(frame.mount, [("table", name)])), (asked.title, View.row_link(frame.mount, name, asked.key))]),
-				problem,
-				"<h1>Delete ${Look.escape(asked.title)}?</h1>",
-				"<p>The row of ${Look.escape(Admin.label(asked.shown))} whose ${Look.escape(described)} goes, for good. If other rows refer to it, their foreign keys say whether they go with it or keep it from going.</p>",
-				"<form class=\"edit\" method=\"post\" action=\"${Look.escape(frame.mount)}\">${hidden_fields(frame.token, "delete", name, key_fields)}<div class=\"buttons\"><button class=\"danger\">Delete</button> <a href=\"${Look.escape(View.row_link(frame.mount, name, asked.key))}\">No, keep it</a></div></form>",
+				Look.header({ eyebrow: trail(frame, [(Admin.label(asked.shown), Form.link(frame.mount, [("table", name)])), (asked.title, row)]), title: "Delete ${Look.escape(asked.title)}?", actions: "" }),
+				problem_html("Not deleted", asked.problem),
+				"<section class=\"panel confirm\"><div class=\"callout tone-bad\">${Look.icon("alert")}<div><strong>This can't be undone</strong><p>The row of ${Look.escape(Admin.label(asked.shown))} whose ${Look.escape(described)} goes, for good. If other rows refer to it, their foreign keys say whether they go with it or keep it from going.</p></div></div><div class=\"panel-foot buttons\"><a class=\"btn\" href=\"${Look.escape(row)}\">${Look.icon("back")}No, keep it</a>${delete}</div></section>",
 			],
 			"",
 		)
@@ -204,7 +238,11 @@ View := [].{
 
 	## Why something wasn't done.
 	problem_page : Frame, Str, Str -> Str
-	problem_page = |frame, heading, why| "${crumbs(frame, [])}<h1>${Look.escape(heading)}</h1><p class=\"problem\">${Look.escape(why)}</p>"
+	problem_page = |frame, heading, why| {
+		back = if (frame.access == Refused) "" else "<div class=\"panel-foot\"><a class=\"btn\" href=\"${Look.escape(frame.mount)}\">${Look.icon("back")}All tables</a></div>"
+		eyebrow = if (frame.access == Refused) Look.escape(frame.title) else trail(frame, [])
+		"${Look.header({ eyebrow, title: Look.escape(heading), actions: "" })}<section class=\"panel\"><div class=\"callout tone-bad\">${Look.icon("alert")}<div><p class=\"problem\">${Look.escape(why)}</p></div></div>${back}</section>"
+	}
 
 	## The link to a row: its table, and its key's columns and values (`k.id=7`).
 	row_link : Str, Str, List((Str, Str)) -> Str
@@ -328,14 +366,17 @@ filter_value = |state, column, wanted| {
 	}
 }
 
-crumbs : View.Frame, List((Str, Str)) -> Str
-crumbs = |frame, trail| {
-	links = [(frame.title, frame.mount)].concat(trail).map(|(label, href)| "<a href=\"${Look.escape(href)}\">${Look.escape(label)}</a>")
-	"<p class=\"crumbs\">${Str.join_with(links, " › ")}</p>"
-}
+## The eyebrow over a page's title: the admin's name, then the pages on the way to this one, each a link.
+trail : View.Frame, List((Str, Str)) -> Str
+trail = |frame, steps| Str.join_with([(frame.title, frame.mount)].concat(steps).map(|(label, href)| "<a href=\"${Look.escape(href)}\">${Look.escape(label)}</a>"), " · ")
 
+## What a form did (`Saved.`), over the page it went back to.
 notice_html : Str -> Str
-notice_html = |text| if (text.is_empty()) "" else "<p class=\"notice\" role=\"status\">${Look.escape(text)}</p>"
+notice_html = |text| if (text.is_empty()) "" else "<section class=\"panel\"><div class=\"callout tone-good\">${Look.icon("check")}<div><p class=\"notice\" role=\"status\">${Look.escape(text)}</p></div></div></section>"
+
+## Why a form wasn't done (`title`, then what Postgres said), over the form again.
+problem_html : Str, Str -> Str
+problem_html = |title, why| if (why.is_empty()) "" else "<section class=\"panel\"><div class=\"callout tone-bad\" role=\"alert\">${Look.icon("alert")}<div><strong>${Look.escape(title)}</strong><p class=\"problem\">${Look.escape(why)}</p></div></div></section>"
 
 hidden_fields : Str, Str, Str, List((Str, Str)) -> Str
 hidden_fields = |token, action, table, key_fields| {
@@ -455,7 +496,7 @@ filter_row = |html|
 
 expect {
 	html = View.index_page(frame_of(Edit))
-	html.contains("<a href=\"/db?table=books\">Books</a>") and html.contains("<a href=\"/db?table=books&amp;new=1\">Add</a>") and html.contains("≈ 3") and html.contains("People who write")
+	html.contains("<a href=\"/db?table=books\">Books</a><code class=\"muted\">books</code>") and html.contains("<a class=\"btn\" href=\"/db?table=books&amp;new=1\">") and html.contains("</svg>Add</a>") and html.contains("≈ 3") and html.contains("People who write")
 }
 expect !View.index_page(frame_of(ReadOnly)).contains(">Add<")
 expect {
@@ -477,7 +518,8 @@ expect {
 		and html.contains("<a class=\"on\" href=\"/db?table=books&amp;q=dune&amp;sort=-title\">Title ▲</a>")
 		and html.contains("<input type=\"hidden\" name=\"table\" value=\"books\"><input type=\"hidden\" name=\"sort\" value=\"title\"><input type=\"search\" name=\"q\" value=\"dune\"")
 		and html.contains("<form id=\"filters\" class=\"filters\" method=\"get\" action=\"/db\"><input type=\"hidden\" name=\"table\" value=\"books\"><input type=\"hidden\" name=\"q\" value=\"dune\"><input type=\"hidden\" name=\"sort\" value=\"title\"><div class=\"rows\"><table><thead><tr><th>")
-		and html.contains("<span class=\"filtering\"><button form=\"filters\">Filter</button></span>")
+		and html.contains("<span class=\"filtering\"><button class=\"btn\" form=\"filters\">")
+		and html.contains("</svg>Filter</button></span>")
 		and !html.contains("Clear filters")
 		and !html.contains("<aside")
 		and html.contains("<a class=\"on\" aria-current=\"page\" href=\"/db?table=books&amp;q=dune&amp;sort=title\">1</a><a href=\"/db?table=books&amp;q=dune&amp;sort=title&amp;page=2\">2</a>")
@@ -502,7 +544,8 @@ expect {
 		and html.contains("<span class=\"label\">Id</span><div><span class=\"value\">7</span>")
 		and html.contains("<select id=\"field-2\" name=\"v.author_id\"><option value=\"\">—</option><option value=\"1\" selected>Ada</option>")
 		and html.contains(" <a href=\"/db?table=authors&amp;k.id=1\">Open</a>")
-		and html.contains("<a href=\"/db?table=books&amp;k.id=7&amp;delete=1\">Delete</a>")
+		and html.contains("<a class=\"btn danger\" href=\"/db?table=books&amp;k.id=7&amp;delete=1\">")
+		and html.contains("<span class=\"act act-primary\"><button>Save</button></span>")
 }
 expect {
 	html = View.row_page(
@@ -573,6 +616,19 @@ expect {
 	odd = Admin.pair({ ..shelf.table, columns: [column_of("id", "int8"), { ..column_of("flag", "text"), nullable: Bool.True, choices: ["set", "unset"] }] }, { name: "shelf" })
 	html = View.list_page(frame_of(Edit), { shown: odd, state: Listing.read(odd, Form.fields("f.flag=set")), page: Paging.of(0, 50, 1), rows: [], notice: "" })
 	html.contains("<select name=\"f.flag\" aria-label=\"Flag\"><option value=\"\">any</option><option value=\"set\" selected>set</option><option value=\"unset\">unset</option></select><select class=\"nulls\" name=\"is.flag\"")
+}
+# The sidebar: every table, the one shown marked; a reader is told they may only look.
+expect {
+	side = View.side(frame_of(Edit), Table("books"))
+	side.contains("<a href=\"/db?table=books\" aria-current=\"page\">") and side.contains("<a href=\"/db?table=authors\"><svg") and !side.contains("<a href=\"/db\" aria-current")
+}
+expect View.side(frame_of(Edit), Overview).contains("<a href=\"/db\" aria-current=\"page\">") and View.side(frame_of(ReadOnly), Elsewhere).contains("Read only")
+# A refusal has no way on to the tables; another problem has.
+expect !View.problem_page({ ..frame_of(Refused), tables: [] }, "Not for you", "No.").contains("All tables") and View.problem_page(frame_of(Edit), "No such table", "None.").contains(">All tables</a>")
+expect {
+	html = View.delete_page(frame_of(Edit), { shown: Admin.pair(books, { name: "books" }), key: [("id", "7")], title: "Dune", problem: "23503: still referred to" })
+	html.contains("<form class=\"act act-danger\" method=\"post\" action=\"/db\"><input type=\"hidden\" name=\"csrf\" value=\"t0k\"><input type=\"hidden\" name=\"action\" value=\"delete\"><input type=\"hidden\" name=\"table\" value=\"books\"><input type=\"hidden\" name=\"k.id\" value=\"7\">")
+		and html.contains("<strong>Not deleted</strong><p class=\"problem\">23503: still referred to</p>")
 }
 expect View.row_title(Admin.pair(books, { name: "books" }), [("id", "7")], [{ name: "title", value: "", null: Bool.False }]) == "#7"
 expect View.notice("saved") == "Saved." and View.notice("<script>") == ""

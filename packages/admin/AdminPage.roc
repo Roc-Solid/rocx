@@ -52,7 +52,7 @@ AdminPage := [].{
 		empty_frame = { mount: config.mount, title: config.title, tables: [], access, token: "" }
 		method = if (request.method == "HEAD") "GET" else request.method
 		if access == Refused {
-			page(403, empty_frame, "Not for you", View.problem_page(empty_frame, "Not for you", "This admin isn't open to you."))
+			page(403, empty_frame, Elsewhere, "Not for you", View.problem_page(empty_frame, "Not for you", "This admin isn't open to you."))
 		} else if method != "GET" and method != "POST" {
 			{ status: 405, headers: [{ name: "allow", value: "GET, HEAD, POST" }, { name: "content-type", value: "text/plain; charset=utf-8" }], body: Text("The admin answers GET and POST.") }
 		} else {
@@ -61,13 +61,13 @@ AdminPage := [].{
 			form = if (method == "POST") Form.fields(Str.from_utf8_lossy(request.body)) else []
 			answer =
 				if method == "POST" and access != Edit {
-					page(403, empty_frame, "Not done", View.problem_page(empty_frame, "Not done", "You may look here, not change anything."))
+					page(403, empty_frame, Elsewhere, "Not done", View.problem_page(empty_frame, "Not done", "You may look here, not change anything."))
 				} else if method == "POST" and (!AdminPage.same_origin(request.headers) or !AdminPage.is_token(given) or Form.get(form, "csrf") != given) {
 					# Before anything is read: another site's page, or one from before the cookie.
-					page(403, empty_frame, "Not done", View.problem_page(empty_frame, "Not done", "The form was sent from another site's page, or from an old one: open it again here, and send it again."))
+					page(403, empty_frame, Elsewhere, "Not done", View.problem_page(empty_frame, "Not done", "The form was sent from another site's page, or from an old one: open it again here, and send it again."))
 				} else {
 					match read_catalog!(effects, config.schema) {
-						Err(why) => page(500, empty_frame, "The database", View.problem_page(empty_frame, "The database can't be read", why))
+						Err(why) => page(500, empty_frame, Elsewhere, "The database", View.problem_page(empty_frame, "The database can't be read", why))
 						Ok(tables) => {
 							frame = { ..empty_frame, tables: Admin.showing(config, tables), token }
 							if method == "POST" {
@@ -144,11 +144,13 @@ cookie = |headers, name| {
 	found.first() ?? ""
 }
 
-## A whole page.
-page : U16, View.Frame, Str, Str -> { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
-page = |status, frame, title, body| {
+## A whole page: its main part, beside the sidebar of the admin's tables (`on`: the page shown);
+## with none, when it shows none (a refusal).
+page : U16, View.Frame, [Overview, Table(Str), Elsewhere], Str, Str -> { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
+page = |status, frame, on, title, body| {
 	full = if (title == frame.title) title else "${title} · ${frame.title}"
-	{ status, headers: Look.headers, body: Text(Look.document(full, body)) }
+	side = if (frame.tables.is_empty()) "" else View.side(frame, on)
+	{ status, headers: Look.headers, body: Text(Look.document(full, side, body)) }
 }
 
 ## On to `location` (a link of the admin's own), after a form.
@@ -185,17 +187,17 @@ read! : List(Form.Field), View.Frame, Str, AdminPage.Effects => { status : U16, 
 read! = |query, frame, schema, effects| {
 	name = Form.get(query, "table")
 	if name.is_empty() {
-		page(200, frame, frame.title, View.index_page(frame))
+		page(200, frame, Overview, frame.title, View.index_page(frame))
 	} else {
 		match Admin.find(frame.tables, name) {
-			Err(NotFound) => page(404, frame, "No such table", View.problem_page(frame, "No such table", "There is no table called ${name} here."))
+			Err(NotFound) => page(404, frame, Elsewhere, "No such table", View.problem_page(frame, "No such table", "There is no table called ${name} here."))
 			Ok(shown) =>
 				if Form.asks(query, "new") {
 					if frame.access == Edit and shown.options.create {
 						values = Admin.visible(shown).map(|column| { name: column.name, value: Widget.initial(column), null: Bool.False })
 						row_page!(200, frame, schema, shown, effects, { key: [], values, problem: "", notice: "" })
 					} else {
-						page(403, frame, Admin.label(shown), View.problem_page(frame, "Not here", "Rows aren't added to ${Admin.label(shown)} here."))
+						page(403, frame, Table(shown.table.name), Admin.label(shown), View.problem_page(frame, "Not here", "Rows aren't added to ${Admin.label(shown)} here."))
 					}
 				} else {
 					match Listing.key(shown, query) {
@@ -230,10 +232,10 @@ list! = |query, frame, schema, shown, effects| {
 			}
 		}
 	match read {
-		Err(why) => page(400, frame, Admin.label(shown), View.problem_page(frame, Admin.label(shown), "Its rows can't be read: ${why}"))
+		Err(why) => page(400, frame, Table(shown.table.name), Admin.label(shown), View.problem_page(frame, Admin.label(shown), "Its rows can't be read: ${why}"))
 		Ok((paged, found)) => {
 			body = View.list_page(frame, { shown, state, page: paged, rows: found, notice: View.notice(Form.get(query, "done")) })
-			page(200, frame, Admin.label(shown), body)
+			page(200, frame, Table(shown.table.name), Admin.label(shown), body)
 		}
 	}
 }
@@ -243,15 +245,15 @@ one! : List(Form.Field), View.Frame, Str, Admin.Shown, List((Catalog.Column, Str
 one! = |query, frame, schema, shown, key, effects| {
 	named = key.map(|(column, value)| (column.name, value))
 	match current!(effects, schema, shown, key) {
-		Err(Missing) => page(404, frame, Admin.label(shown), View.problem_page(frame, "No such row", "${Admin.label(shown)} has no row whose ${described(shown, named)}."))
-		Err(Failed(why)) => page(400, frame, Admin.label(shown), View.problem_page(frame, "No such row", why))
+		Err(Missing) => page(404, frame, Table(shown.table.name), Admin.label(shown), View.problem_page(frame, "No such row", "${Admin.label(shown)} has no row whose ${described(shown, named)}."))
+		Err(Failed(why)) => page(400, frame, Table(shown.table.name), Admin.label(shown), View.problem_page(frame, "No such row", why))
 		Ok(values) =>
 			if Form.asks(query, "delete") {
 				if frame.access == Edit and shown.options.delete {
 					title = View.row_title(shown, named, values)
-					page(200, frame, "Delete ${title}", View.delete_page(frame, { shown, key: named, title, problem: "" }))
+					page(200, frame, Table(shown.table.name), "Delete ${title}", View.delete_page(frame, { shown, key: named, title, problem: "" }))
 				} else {
-					page(403, frame, Admin.label(shown), View.problem_page(frame, "Not here", "Rows of ${Admin.label(shown)} aren't deleted here."))
+					page(403, frame, Table(shown.table.name), Admin.label(shown), View.problem_page(frame, "Not here", "Rows of ${Admin.label(shown)} aren't deleted here."))
 				}
 			} else {
 				row_page!(200, frame, schema, shown, effects, { key: named, values, problem: "", notice: View.notice(Form.get(query, "done")) })
@@ -301,7 +303,7 @@ row_page! = |status, frame, schema, shown, effects, row| {
 	}
 	options = $options
 	heading = if (row.key.is_empty()) "Add to ${Admin.label(shown)}" else View.row_title(shown, row.key, row.values)
-	page(status, frame, heading, View.row_page(frame, { shown, key: row.key, values: row.values, options, problem: row.problem, notice: row.notice }))
+	page(status, frame, Table(shown.table.name), heading, View.row_page(frame, { shown, key: row.key, values: row.values, options, problem: row.problem, notice: row.notice }))
 }
 
 ## A form, sent (by someone who may edit, from one of the admin's pages): a row added, changed or
@@ -309,13 +311,13 @@ row_page! = |status, frame, schema, shown, effects, row| {
 write! : List(Form.Field), View.Frame, Str, AdminPage.Effects => { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
 write! = |form, frame, schema, effects|
 	match Admin.find(frame.tables, Form.get(form, "table")) {
-		Err(NotFound) => page(404, frame, "No such table", View.problem_page(frame, "No such table", "There is no table called ${Form.get(form, "table")} here."))
+		Err(NotFound) => page(404, frame, Elsewhere, "No such table", View.problem_page(frame, "No such table", "There is no table called ${Form.get(form, "table")} here."))
 		Ok(shown) =>
 			match Form.get(form, "action") {
 				"create" => create!(form, frame, schema, shown, effects)
 				"update" => update!(form, frame, schema, shown, effects)
 				"delete" => delete!(form, frame, schema, shown, effects)
-				other => page(400, frame, "Not done", View.problem_page(frame, "Not done", "The admin's forms don't ${other}."))
+				other => page(400, frame, Table(shown.table.name), "Not done", View.problem_page(frame, "Not done", "The admin's forms don't ${other}."))
 			}
 	}
 
@@ -326,7 +328,7 @@ sent = |form, columns| columns.keep_if(|column| Form.asks(form, "v.${column.name
 create! : List(Form.Field), View.Frame, Str, Admin.Shown, AdminPage.Effects => { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
 create! = |form, frame, schema, shown, effects|
 	if !shown.options.create {
-		page(403, frame, Admin.label(shown), View.problem_page(frame, "Not done", "Rows aren't added to ${Admin.label(shown)} here."))
+		page(403, frame, Table(shown.table.name), Admin.label(shown), View.problem_page(frame, "Not done", "Rows aren't added to ${Admin.label(shown)} here."))
 	} else {
 		columns = Admin.visible(shown).keep_if(|column| Admin.writable(shown, Edit, column, Creating) and Form.asks(form, "v.${column.name}"))
 		values = columns.keep_oks(
@@ -354,12 +356,12 @@ create! = |form, frame, schema, shown, effects|
 update! : List(Form.Field), View.Frame, Str, Admin.Shown, AdminPage.Effects => { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
 update! = |form, frame, schema, shown, effects|
 	match Listing.key(shown, form) {
-		Err(NoKey) => page(400, frame, "Not done", View.problem_page(frame, "Not done", "The form doesn't say which row of ${Admin.label(shown)} it changes."))
+		Err(NoKey) => page(400, frame, Table(shown.table.name), "Not done", View.problem_page(frame, "Not done", "The form doesn't say which row of ${Admin.label(shown)} it changes."))
 		Ok(key) => {
 			named = key.map(|(column, value)| (column.name, value))
 			match current!(effects, schema, shown, key) {
-				Err(Missing) => page(404, frame, Admin.label(shown), View.problem_page(frame, "No such row", "${Admin.label(shown)} has no row whose ${described(shown, named)}: it may have been deleted."))
-				Err(Failed(why)) => page(400, frame, Admin.label(shown), View.problem_page(frame, "Not done", why))
+				Err(Missing) => page(404, frame, Table(shown.table.name), Admin.label(shown), View.problem_page(frame, "No such row", "${Admin.label(shown)} has no row whose ${described(shown, named)}: it may have been deleted."))
+				Err(Failed(why)) => page(400, frame, Table(shown.table.name), Admin.label(shown), View.problem_page(frame, "Not done", why))
 				Ok(now) => {
 					columns = Admin.visible(shown).keep_if(|column| Admin.writable(shown, Edit, column, Editing) and Form.asks(form, "v.${column.name}"))
 					changed = columns.keep_oks(
@@ -383,7 +385,7 @@ update! = |form, frame, schema, shown, effects|
 					} else {
 						statement = Sql.update(schema, shown.table, changed, key)
 						match (effects.run!)(statement.sql, statement.params) {
-							Ok(0) => page(404, frame, Admin.label(shown), View.problem_page(frame, "No such row", "${Admin.label(shown)} has no row whose ${described(shown, named)}: it may have been deleted."))
+							Ok(0) => page(404, frame, Table(shown.table.name), Admin.label(shown), View.problem_page(frame, "No such row", "${Admin.label(shown)} has no row whose ${described(shown, named)}: it may have been deleted."))
 							Ok(_) => redirect("${back}&done=saved")
 							Err(DbErr(why)) => {
 								# The form again: what was sent, and the rest as it is.
@@ -401,17 +403,17 @@ update! = |form, frame, schema, shown, effects|
 delete! : List(Form.Field), View.Frame, Str, Admin.Shown, AdminPage.Effects => { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
 delete! = |form, frame, schema, shown, effects|
 	if !shown.options.delete {
-		page(403, frame, Admin.label(shown), View.problem_page(frame, "Not done", "Rows of ${Admin.label(shown)} aren't deleted here."))
+		page(403, frame, Table(shown.table.name), Admin.label(shown), View.problem_page(frame, "Not done", "Rows of ${Admin.label(shown)} aren't deleted here."))
 	} else {
 		match Listing.key(shown, form) {
-			Err(NoKey) => page(400, frame, "Not done", View.problem_page(frame, "Not done", "The form doesn't say which row of ${Admin.label(shown)} it deletes."))
+			Err(NoKey) => page(400, frame, Table(shown.table.name), "Not done", View.problem_page(frame, "Not done", "The form doesn't say which row of ${Admin.label(shown)} it deletes."))
 			Ok(key) => {
 				named = key.map(|(column, value)| (column.name, value))
 				statement = Sql.delete(schema, shown.table, key)
 				match (effects.run!)(statement.sql, statement.params) {
-					Ok(0) => page(404, frame, Admin.label(shown), View.problem_page(frame, "No such row", "${Admin.label(shown)} has no row whose ${described(shown, named)}: it may have been deleted already."))
+					Ok(0) => page(404, frame, Table(shown.table.name), Admin.label(shown), View.problem_page(frame, "No such row", "${Admin.label(shown)} has no row whose ${described(shown, named)}: it may have been deleted already."))
 					Ok(_) => redirect(Form.link(frame.mount, [("table", shown.table.name), ("done", "deleted")]))
-					Err(DbErr(why)) => page(409, frame, "Not deleted", View.delete_page(frame, { shown, key: named, title: View.row_title(shown, named, []), problem: why }))
+					Err(DbErr(why)) => page(409, frame, Table(shown.table.name), "Not deleted", View.delete_page(frame, { shown, key: named, title: View.row_title(shown, named, []), problem: why }))
 				}
 			}
 		}

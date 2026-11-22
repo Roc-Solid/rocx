@@ -83,3 +83,63 @@ test("packages: one that names the server platform is the browser's half as its 
 		rmSync(root, { recursive: true, force: true });
 	}
 });
+
+// packages/admin draws its pages in the platform's admin look (the jobs page's, the mailbox's), from
+// a copy in packages/admin/Look.roc, since the platform doesn't expose server/platform/AdminHtml.roc.
+// This keeps the copy from drifting: each part of AdminHtml's stylesheet is either one Look carries
+// as it is, or one it leaves out (the jobs page's own); and the helpers Look copies are AdminHtml's,
+// line for line. What is compared is Roc's text of each string, so how the files are laid out
+// doesn't matter. When it fails, copy that part of AdminHtml into Look.roc again, and update the
+// commit Look's comment says it matches.
+test("packages/admin: Look carries the platform's admin look (AdminHtml's stylesheet and helpers) as AdminHtml has it", () => {
+	const root = join(dirname(new URL(import.meta.url).pathname), "..");
+	const adminHtml = readFileSync(join(root, "server/platform/AdminHtml.roc"), "utf8");
+	const look = readFileSync(join(root, "packages/admin/Look.roc"), "utf8");
+	const resync = "copy it from server/platform/AdminHtml.roc into packages/admin/Look.roc again, and update the commit Look.roc's comment says it matches";
+
+	// A stylesheet's parts: each `# comment` in its list of strings starts one; a part is its strings' text, joined.
+	const parts = (source, file) => {
+		const start = source.search(/^\t*stylesheet =$/m);
+		assert.ok(start >= 0, `${file} has no stylesheet`);
+		const list = source.slice(start, source.indexOf("\n\t\t],", start));
+		const found = new Map();
+		let name = "(before any comment)";
+		for (const [, comment, text] of list.matchAll(/#[ \t]*([^\n]*)|"((?:[^"\\]|\\.)*)"/g)) {
+			if (comment !== undefined) name = comment.trim();
+			else found.set(name, (found.get(name) ?? "") + text);
+		}
+		return found;
+	};
+	const platform = parts(adminHtml, "AdminHtml.roc");
+	const copied = [...parts(look, "Look.roc").values()].join("");
+	const shared = ["Tokens: light, and dark when the reader's scheme is.", "The shell: a sidebar, and the main part.", "The main part's header.", "Panels.", "Tables.", "Buttons.", "Nothing to show; a callout.", "Narrower screens."];
+	const jobsOnly = ["Metrics: how many of each state.", "A job's state.", "Filters.", "The last hour.", "Lists in a panel: failures, schedules.", "Kinds.", "A job, in a drawer over the list.", "Plain pages (the mailbox's): a list of facts, a frame."];
+	for (const name of platform.keys()) {
+		assert.ok(shared.includes(name) || jobsOnly.includes(name), `AdminHtml's stylesheet has a part this test doesn't know, "${name}": say whether the admin's pages share it (then ${resync}) or not, in test/packages.test.mjs`);
+	}
+	for (const name of shared) {
+		assert.ok(platform.has(name), `AdminHtml's stylesheet no longer has the part "${name}": update the parts test/packages.test.mjs names`);
+		assert.ok(copied.includes(platform.get(name)), `packages/admin/Look.roc's stylesheet differs from AdminHtml's part "${name}": ${resync}`);
+	}
+
+	// A helper's definition, from its type to the next one: its text with the module's name and the
+	// spaces taken out.
+	const definition = (source, name) => {
+		const at = source.search(new RegExp(`^\\t${name} : `, "m"));
+		if (at < 0) return null;
+		const end = source.slice(at + 1).search(/^\t(?:##|[a-z_]+ : )|^\}/m);
+		return source.slice(at, at + 1 + end).replace(/\b(?:AdminHtml|Look)\./g, "").replace(/\s+/g, " ").trim();
+	};
+	for (const name of ["escape", "side", "nav_link", "nav_label", "header", "panel", "empty", "button_with"]) {
+		assert.ok(definition(adminHtml, name), `AdminHtml has no ${name}: update the helpers test/packages.test.mjs names`);
+		assert.equal(definition(look, name), definition(adminHtml, name), `Look.${name} differs from AdminHtml.${name}: ${resync}`);
+	}
+	// Its icons: each of AdminHtml's, drawn as AdminHtml draws it (Look has a few more of its own).
+	const icons = (source) => {
+		const body = definition(source, "icon");
+		return { svg: /"<svg[^]*?<\/svg>"/.exec(body)?.[0], arms: [...body.matchAll(/("[a-z]+") => ("(?:[^"\\]|\\.)*")/g)].map(([, name, paths]) => `${name} => ${paths}`) };
+	};
+	const drawn = icons(look);
+	assert.equal(drawn.svg, icons(adminHtml).svg, `Look.icon draws its <svg> differently from AdminHtml.icon: ${resync}`);
+	for (const arm of icons(adminHtml).arms) assert.ok(drawn.arms.includes(arm), `Look.icon lacks AdminHtml's icon ${arm.split(" =>")[0]}, or draws it differently: ${resync}`);
+});

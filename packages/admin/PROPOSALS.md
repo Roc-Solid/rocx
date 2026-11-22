@@ -71,32 +71,41 @@ keep a `respond_with!(request, context, config, effects)` for that until then.
 ## The platform's admin look for apps (`AdminHtml`)
 
 **Problem.** The jobs page and the dev mailbox are drawn with `server/platform/AdminHtml.roc`: the
-document, its stylesheet (`.rocx-admin`), `escape`, `link`, `button`, `moment`, and a stream of
-changes that refreshes a page. The platform doesn't expose it, so the admin's `Look` holds a copy
-of its stylesheet and its document: two copies of "the platform's admin look" that will drift.
+document (a sidebar, a header, panels), its stylesheet (`.rocx-admin`: tokens for light and dark,
+the shell, panels, tables, buttons), its helpers (`side`, `nav_link`, `header`, `panel`, `empty`,
+`icon`, `button_with`, `escape`, `link`, `moment`), and a stream of changes that refreshes a page.
+The platform doesn't expose it, so the admin's `Look` holds a copy of the parts its pages use: two
+copies of "the platform's admin look". `test/packages.test.mjs` keeps them from drifting apart (it
+compares each part of AdminHtml's stylesheet, and each helper, with Look's, and fails with what to
+copy again), but each change to the look is still made twice.
 
 **Options.**
 
-1. Keep the copy (today's).
-2. Expose `AdminHtml` from the server platform, and add the admin's rules to its stylesheet: forms
-   (`.fields`, inputs, selects, text areas, `.help`, `.buttons`, `button.primary`,
-   `button.danger`), the list's search and its row of filters (`.tools`, `form.search`,
-   `tr.filter`), the pager (`nav.pager`), `.notice`, `.crumbs`, `td.null`, `th a.on`: about 35
-   short rules, those after "The admin's own" in `Look.roc`. Its CSP-friendly pages need nothing
-   else.
+1. Keep the copy, guarded by the test (today's).
+2. Expose `AdminHtml` from the server platform, and add the admin's rules to its stylesheet: inputs,
+   selects and text areas, a row's `.fields` and `.help`, the list's `.tools`, `form.search`,
+   `tr.filter` and `.pager`, `td.null`, `th a.on`, `.btn.primary`, `.btn.danger`: about 50 short
+   rules, those after "The admin's own" in `Look.roc`. Its pages need nothing else.
 3. Move the look into a package both use: the platform can't import an app's package (the types
    would be two packages' types).
+4. **The plugins design** (`spike/plugins/DESIGN.md`, phase 1; DECISIONS.md D-033): a package may
+   now name the server platform and import `pf.*` (the browser's half sees its `browser.roc`, or
+   nothing), and the design's next step moves `JobsPage` and `AdminHtml` out of the platform into
+   `packages/admin` itself (`JobsPage.plugin({ at, guard })`). Then the admin's pages and the jobs
+   page are drawn by the same module, in the same package, and there is nothing to copy.
 
-**Recommended: 2.** In `server/platform/main.roc`, `exposes [… AdminHtml, …]`; in `AdminHtml.roc`,
-the rules appended to `stylesheet`. Then, with server-only modules (above), `AdminPage` answers
-with `AdminHtml.page(status, { title, events: "", body })`, and `Look` keeps only its headers (or
-`AdminHtml.page` gains the CSP header for every admin page, which the jobs page could use too: it
-runs one inline script, so its policy would allow that script's hash).
+**Recommended: 4**, the eventual fix, once `AdminHtml` has moved; until then 1, which works now.
+With 4, `Look.document` becomes `AdminHtml.page(status, { title, events: "", now: 0, side, body })`,
+`Look`'s copy and the guard go, and `Look` keeps only the admin's own rules (or they join
+AdminHtml's stylesheet) and its headers (or `AdminHtml.page` gains the CSP header for every admin
+page, which the jobs page could use too: it runs one inline script, so its policy would allow that
+script's hash). 2 is the step before it if the plugins design waits long.
 
-**What depends on it.** `Look.document`, `Look.stylesheet` (both go), `Look.escape` (becomes
-`AdminHtml.escape`).
+**What depends on it.** `Look.document`, `Look.stylesheet`, `Look.side`, `Look.header`,
+`Look.panel`, `Look.empty`, `Look.icon`, `Look.button_with` (all become `AdminHtml`'s),
+`Look.escape` (becomes `AdminHtml.escape`), and the guard in `test/packages.test.mjs` (it goes).
 
-**Undoing it.** Take `AdminHtml` out of `exposes`; the admin keeps its copy.
+**Undoing it.** The admin keeps its copy, and the guard.
 
 ## Rows of any shape from `Db`
 
@@ -145,10 +154,10 @@ will change more often than the platform should; and an app that doesn't use it 
 A platform can't share a package with the app either (its `Admin.Config` would be another type than
 the app's), so a platform version would have to hold all of it.
 
-**Recommended: a package**, with the two small platform changes above (server-only modules,
-`AdminHtml`). If server-only modules are turned down, the next best is to move `AdminPage` and the
-modules it needs into `server/platform` as `TablesPage`, keeping the package for the pure parts
-only where the platform doesn't need them.
+**Recommended: a package**, with the two platform changes above (server-only modules, and
+`AdminHtml` shared: the plugins design brings both). If server-only modules are turned down, the
+next best is to move `AdminPage` and the modules it needs into `server/platform` as `TablesPage`,
+keeping the package for the pure parts only where the platform doesn't need them.
 
 ## Open questions
 

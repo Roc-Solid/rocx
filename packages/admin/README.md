@@ -78,6 +78,10 @@ was given, which the admin keeps in a cookie (`rocx_admin_csrf`: for the admin's
 | `?table=books&new` | a new row's form, its constant defaults filled in (`true`, `'draft'`, `0`) |
 | `?table=books&k.id=7&delete` | the question before a row is deleted |
 
+Every page is drawn in the platform's admin look, the jobs page's and the dev mailbox's: the tables
+in a sidebar (on a phone, a row of links across the top), a header with the page's actions (Add,
+Delete), panels, light or dark as the reader's system is, and no script.
+
 A form sent adds, changes or deletes the row, then goes on to its page, which says so ("Saved.").
 An update writes only the columns that changed. When Postgres refuses (a value that isn't a number,
 a foreign key a row still needs), the form comes back with what was sent and Postgres's reason.
@@ -197,8 +201,8 @@ packages/admin/main.roc` runs their `expect`s.
 | `Widget` | a column's widget from its type (`of`), its input (`input`), what a form's text writes (`param`), whether it changed (`same`), a new row's value (`initial`) |
 | `Listing` | a list's search, filters, sort and page from the query, and back (`read`, `params`, `conditions`, `order`); each column's filter (`kind`) and the check of its values (`check`) |
 | `Paging` | `of(total, size, asked)`, `offset`, `shows`, `links` (Django's: the first two, three each side, the last two) |
-| `View` | each page's HTML, and a list's row of filters |
-| `Look` | the page around it: a copy of the stylesheet the platform's jobs page had before its redesign, and the headers |
+| `View` | each page's HTML, a list's row of filters, and the sidebar of tables (`side`) |
+| `Look` | the page around it: a copy of the platform's admin look (`AdminHtml`'s stylesheet and helpers: `side`, `header`, `panel`, `empty`, `icon`, `button_with`), the admin's own rules (forms, filters, pages), and the headers |
 | `Form` | a query's or a form's fields, decoded; links, encoded |
 
 Every statement answers with rows of one shape (each cell as text, and which were null), so one
@@ -216,8 +220,9 @@ Waits on a proposal (PROPOSALS.md):
 - **Server-only modules in packages**: then `AdminPage` moves to the package's `server/`, imports
   `Db` and `Random` itself, and the route's `respond!` is
   `AdminPage.respond!(request, context, admin)`.
-- **The platform's admin look for apps** (`AdminHtml`): `Look` is a copy of its stylesheet from
-  before the jobs page's redesign, so the admin and the jobs page look different today.
+- **The platform's admin look for apps** (`AdminHtml`): `Look` holds a copy of its stylesheet and
+  helpers, which `test/packages.test.mjs` keeps the same as AdminHtml's (it fails when AdminHtml
+  changes and the copy doesn't). Shared, it would be one look in one place.
 
 ## Limits, for now
 

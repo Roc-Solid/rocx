@@ -800,8 +800,10 @@ test("admin: its page shows the package's own pages, rendered with the page into
 	assert.equal(filters.split("<td>").length - 1, 5, "id, title, author_id, state, price");
 	assert.match(filters, /name="from.price" value="10"/, "a filter on");
 	assert.match(filters, /<select name="f.state" aria-label="State"><option value="">any<\/option><option value="draft">draft<\/option><option value="published">published<\/option><option value="out of print">out of print<\/option><\/select>/, "the check's values, as a filter");
-	assert.match(list, /<button form="filters">Filter<\/button>/);
-	assert.doesNotMatch(list, /<aside/, "no panel beside the rows");
+	assert.match(list, /<button class="btn" form="filters"><svg[^>]*>[\s\S]*?<\/svg>Filter<\/button>/);
+	// In the platform's admin look: the tables in its sidebar, this one marked; no panel of filters beside the rows.
+	assert.match(list, /<aside class="side">[\s\S]*<a href="\/admin\/db\?table=books" aria-current="page">/);
+	assert.doesNotMatch(list, /<aside>/, "no panel of filters beside the rows");
 	assert.match(row, /<h1>A field guide to clouds<\/h1>/);
 	assert.match(row, /Saved\./);
 	assert.match(row, /<select[^>]*name="v.author_id"[\s\S]*Ines Hart/, "a foreign key, as a select of the rows it may name");

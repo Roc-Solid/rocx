@@ -74,7 +74,9 @@ view! = |_|
 				These are the admin's pages as the package renders them, by its own <code>View</code>, while this page
 				renders: from a made-up catalog of two tables, <code>books</code> and <code>authors</code>, with the
 				options above. Nothing asks a database, and the frames are sandboxed, so their links and forms do
-				nothing here.
+				nothing here. They are drawn in the platform's admin look, as the <a href="/platform/jobs">jobs page</a>
+				is: the tables in a sidebar (across the top when the frame is narrow), a header with the page's
+				actions, panels, and light or dark as your system is.
 			</p>
 			<figure class="admin-preview">
 				<iframe class="list" title="The admin's list of books, as the package renders it" srcdoc={AdminPreview.list_page} sandbox="" loading="lazy"></iframe>
@@ -286,7 +288,7 @@ view! = |_|
 						<tr><td><code>Listing</code></td><td>a list's search, filters, sort and page from the query, and back (<code>read</code>, <code>params</code>, <code>conditions</code>, <code>order</code>, <code>key</code>), each column's filter (<code>kind</code>) and the check of its values (<code>check</code>)</td></tr>
 						<tr><td><code>Paging</code></td><td><code>of(total, size, asked)</code>, <code>offset</code>, <code>shows</code>, <code>links</code>: the first two pages, three each side of this one, the last two</td></tr>
 						<tr><td><code>View</code></td><td>each page's HTML: <code>index_page</code>, <code>list_page</code>, <code>row_page</code>, <code>delete_page</code>, <code>problem_page</code></td></tr>
-						<tr><td><code>Look</code></td><td>the document around a page, its stylesheet (a copy of the jobs page's from before its redesign), and the headers it is sent with</td></tr>
+						<tr><td><code>Look</code></td><td>the document around a page, in a copy of the platform's admin look (<code>AdminHtml</code>'s stylesheet and helpers, light and dark), with the admin's own rules for forms, filters and pages, and the headers it is sent with</td></tr>
 						<tr><td><code>Form</code></td><td>a query's or a form's fields, decoded, and links, encoded</td></tr>
 					</tbody>
 				</table>
@@ -294,7 +296,7 @@ view! = |_|
 
 			<Heading id="status">Status</Heading>
 			<p>
-				Everything on this page works today, with the server platform as it is. The package's 165
+				Everything on this page works today, with the server platform as it is. The package's 172
 				<code>expect</code>s test its plain modules. The whole admin was tried end to end in a scratch app
 				against Postgres 18: an enum, a check, foreign keys, a key of two columns, generated and identity
 				columns, every page and form, and the refusals. That test isn't in the repository's suite yet, since
@@ -311,8 +313,8 @@ view! = |_|
 				<li>
 					<strong>The platform's admin look for apps</strong>: the server platform draws the jobs page with a
 					module apps can't import yet (<code>AdminHtml</code>), so <code>Look</code> holds a copy of its
-					stylesheet from before the jobs page's redesign, and the two look different today. Exposed, it would
-					be one look in one place.
+					stylesheet and helpers, which a test keeps the same as <code>AdminHtml</code>'s. Shared (the plugins
+					design moves <code>AdminHtml</code> into this package), it would be one look in one place.
 				</li>
 			</ul>
 			<p>Not yet:</p>
@@ -330,7 +332,9 @@ view! = |_|
 	</>
 
 <style>
-	/* The admin's own pages, in frames: as wide as the text, and tall enough to see a list. */
+	/* The admin's own pages, in frames: as wide as the text, which is narrow enough that the admin
+	   lists its tables across the top, as on a phone. A book's form is taller than its frame, and
+	   scrolls in it. */
 	.admin-preview {
 		margin: var(--space-5) 0;
 	}
@@ -338,21 +342,21 @@ view! = |_|
 	.admin-preview iframe {
 		display: block;
 		width: 100%;
-		height: 54rem;
+		height: 60rem;
 		border: 1px solid var(--rule-strong);
 		border-radius: var(--radius);
-		background: #f6f8fa;
+		background: #f4f6f7;
 	}
 
-	/* The list of books, its filters in its table, is shorter than a book's form; on a phone, its
-	   titles take two lines. */
+	/* The list of books, whole: its filters in its table, its six rows and its count; on a phone,
+	   its titles take two lines. */
 	.admin-preview iframe.list {
-		height: 38rem;
+		height: 52rem;
 	}
 
 	@media (max-width: 40rem) {
 		.admin-preview iframe.list {
-			height: 44rem;
+			height: 57rem;
 		}
 	}
 

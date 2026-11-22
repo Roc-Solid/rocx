@@ -20,7 +20,7 @@ AdminPreview := [].{
 		state = Listing.read(books, Form.fields("table=books&from.price=10"))
 		kept = book_rows.keep_if(|each| (Dec.from_str(Catalog.cell(each, 4)) ?? 0) >= 10)
 		body = View.list_page(frame, { shown: books, state, page: Paging.of(kept.len(), 8, 1), rows: kept, notice: "" })
-		framed(Look.document("Books · Database", body))
+		framed(Look.document("Books · Database", View.side(frame, Table("books")), body))
 	}
 
 	## A book's form, just saved, as a whole HTML document.
@@ -47,7 +47,7 @@ AdminPreview := [].{
 				notice: View.notice("saved"),
 			},
 		)
-		framed(Look.document("A field guide to clouds · Database", body))
+		framed(Look.document("A field guide to clouds · Database", View.side(frame, Table("books")), body))
 	}
 
 	## The query the statements are for.
