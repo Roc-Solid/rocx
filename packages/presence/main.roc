@@ -4,11 +4,12 @@
 ## one), the changes between two lists of who is here (`Diff`), a sender's rate limit that keeps the
 ## latest value (`Throttle`, for cursors), cursors (`Cursors`), who is typing (`Typing`, and a
 ## page's own side of it, `Typist`), an avatar stack's arithmetic (`Stack`), and what a room's
-## stream sends (`Wire`). It is plain Roc, on no platform: the server's stream and the browser's
-## components run the same code, and its tests run on a clock they are given.
+## channel carries (`Wire`): plain Roc, on no platform, so the server and the browser run the same
+## code, and its tests run on a clock they are given. And the server's side, a room on a route's
+## channel (`PresenceServer`: its hooks, the room kept in `Kv`).
 ##
-## The components (`<AvatarStack>`, `<TypingIndicator>`, `<LiveCursors>`) and the browser's stores
-## (`Presence.create_room!` and the others) are in `components/`: `rocx build` copies them into each
-## app that names this package. The server's side (`server/PresenceServer.roc`) imports the server's
-## platform, so an app copies it in for now. See README.md and PROPOSALS.md.
-package [Cursors, Diff, Mirror, Room, Stack, Throttle, Typing, Typist, Wire] {}
+## It names the server platform, for `PresenceServer`; the browser's half sees the modules both
+## halves can compile (`browser.roc`). The components (`<AvatarStack>`, `<TypingIndicator>`,
+## `<LiveCursors>`) and the browser's stores (`Presence.join!`, and the stores under it) are in
+## `components/`: `rocx build` copies them into each app that names this package. See README.md.
+package [Cursors, Diff, Mirror, PresenceServer, Room, Stack, Throttle, Typing, Typist, Wire] { pf: platform "../../server/platform/main.roc" }

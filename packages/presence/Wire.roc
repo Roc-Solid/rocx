@@ -3,10 +3,12 @@ import Mirror
 import Room
 import Stack
 
-## What a room's stream sends a page, as JSON, one event each: the page's own key and tab
+## What a room's channel carries, as JSON. To a page, one event a message: its own key and tab
 ## (`Welcome`, first), who is here (`Presence`: a snapshot, then each change), someone typing or
 ## stopping (`Typing`), a cursor that moved (`Moved`), and one whose pointer left the area (`Away`).
-## The server's stream and the browser's stores both read it, so they can't disagree.
+## From a page, what it says (`Said`): it is here, with its status, or typing, or where its cursor
+## is. Who says it is the channel's check's say (`Member`), never the page's. The server's hooks and
+## the browser's stores both read it, so they can't disagree.
 ##
 ## A member's metadata on the wire is `Wire.Meta`: their name, picture, colour and status. (`Room`
 ## and `Mirror` take any metadata, but on this Roc a type variable's JSON can't be carried through
@@ -20,6 +22,15 @@ Wire := [].{
 
 	## A room's event.
 	Event(m) : [Welcome({ key : Str, tab : Str }), Presence(Mirror.Message(m)), Typing({ key : Str, typing : Bool }), Moved(Cursors.Move), Away(Str)]
+
+	## Who is in a room, as its channel's check lets them in (`Channel.allow`): their key (the app's
+	## id for them) and metadata, from the middleware's context.
+	Member : { key : Str, meta : Wire.Meta }
+
+	## What a page says on a room's channel: this tab is here (its beat, every `Room.beat_every`, and
+	## whenever its status changes: a word the app picks, `""` for none), its member is typing or
+	## stopped, its cursor is at (`x`, `y`), shares of the area, or its pointer left the area.
+	Said : [Here({ status : Str }), Typing(Bool), Moved({ x : Dec, y : Dec }), Away]
 
 	## A member, as an avatar stack shows them.
 	face : Room.Here(Wire.Meta) -> Stack.Face
@@ -91,4 +102,12 @@ expect {
 	parsed : Try(Wire.Event({ name : Str }), [InvalidJson(Str)])
 	parsed = Json.parse(Json.to_str(event))
 	parsed == Ok(event)
+}
+
+expect {
+	said : Wire.Said
+	said = Here({ status: "away" })
+	parsed : Try(Wire.Said, [InvalidJson(Str)])
+	parsed = Json.parse(Json.to_str(said))
+	parsed == Ok(said)
 }

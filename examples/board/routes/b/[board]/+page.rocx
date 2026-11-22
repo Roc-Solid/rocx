@@ -1,20 +1,16 @@
 import pf.Html
-import pf.Call
 import pf.Channel
 import pf.Endpoint
 import pf.Errored
 import pf.For
 import pf.HttpStatusCode
-import pf.Server
 import pf.Title
-import pf.Solid exposing [create_effect!, create_memo!, create_signal!, is_pending!, on_settled!, refresh!, set_interval!]
+import pf.Solid exposing [create_effect!, create_memo!, create_signal!, is_pending!, refresh!]
 import pf.Router exposing [use_action!, use_submissions!]
 import pf.Router
 import pf.Submissions
 import presence.AvatarStack
 import presence.Presence
-import presence.Room
-import presence.Wire
 import ../../../Board
 import ../../../Middlewares
 import ../../../Generated/Api
@@ -48,8 +44,7 @@ view! = |{ params }| {
 	adds : Submissions(Shared.Adding, Str)
 	adds = use_submissions!(Api.post_b_board_cards({ board: board }))
 	add! = use_action!(Api.post_b_board_cards({ board: board }))
-	# The board as it shows: the server's, with the moves on their way applied. The read comes
-	# first, its endpoint named outside: what a run makes before a read that isn't in yet is lost.
+	# The board as it shows: the server's, with the moves on their way applied.
 	board! = create_memo!(
 		|| {
 			server = Endpoint.get!(read)
@@ -78,30 +73,10 @@ view! = |{ params }| {
 		}
 	create_effect!(|| {}, |{}| Endpoint.subscribe!(Api.channel_b_board({ board: board }), heard!))
 
-	# Who is here (packages/presence): this tab's events, its beat every 15 s, and the card it has
-	# open, said whenever that changes.
-	here = Presence.create_room!(|| {})
-	heard_here! : Wire.Event(Wire.Meta) => {}
-	heard_here! = here.heard!
-	on_settled!(
-		|| Endpoint.listen!(
-			Api.events_b_board_presence({ board: board }),
-			Call.listen!,
-			|event|
-				match event {
-					Event(said) => heard_here!(said)
-					Ended => (here.lost!)()
-					Failed(_) => (here.lost!)()
-				},
-		),
-	)
-	on_settled!(
-		|| {
-			_ = set_interval!(Room.beat_every(Room.defaults), || beat!(board, (here.me!)().tab, open!()))
-			{}
-		},
-	)
-	create_effect!(|| ((here.synced!)(), open!()), |(synced, card)| if (synced) opened!(board, card) else {})
+	# Who is here (packages/presence): the board's room, on its channel (one stream with the board's
+	# own), and the card this tab has open as its status, said whenever that changes.
+	here = Presence.join!(Api.channel_b_board_presence({ board: board }))
+	create_effect!(|| open!(), |card| (here.status!)(Board.status_of(card)))
 
 	shared = {
 		board: board,
@@ -143,24 +118,6 @@ view! = |{ params }| {
 			{=if (open!().is_empty()) Html.empty({}) else <CardPanel card={open!()} shared={shared} />}
 		</div>
 	</Errored>
-}
-
-## This tab is still on the board, with that card open (`""`: none).
-beat! : Str, Str, Str => {}
-beat! = |board, tab, card| {
-	sent : Try({}, Server.Problem)
-	sent = Endpoint.send!(Api.post_b_board_presence_beat({ board: board }), { tab, card }, Call.fetch!)
-	_ = sent
-	{}
-}
-
-## This tab has that card open now (`""`: none): everyone's tiles show it.
-opened! : Str, Str => {}
-opened! = |board, card| {
-	sent : Try({}, Server.Problem)
-	sent = Endpoint.send!(Api.post_b_board_presence_status({ board: board }), { card: card }, Call.fetch!)
-	_ = sent
-	{}
 }
 
 ## A board that isn't there (a 404), or that couldn't be read (a 500).

@@ -1,14 +1,20 @@
 import pf.Server
 import pf.Endpoint
-import pf.Events
+import pf.Channel
+import presence.PresenceServer
 import presence.Wire
 import ../../../../Middlewares
-import ../../../../PresenceServer
 
 middleware = Middlewares.member
 
-## GET /b/<board>/presence: who is on the board, as events (packages/presence): this tab is in the
-## board's room, as the person the middleware says, until its page goes. Each change to who is here,
-## and to which card each has open (their `status`), comes as it happens.
-events! : { request : Server.Request, params : { board : Str }, context : Middlewares.Member } => Try(Events(Wire.Event(Wire.Meta)), Endpoint.Refusal)
-events! = |{ params, context, .. }| Ok(PresenceServer.stream(params.board, { key: context.me.id, meta: { name: context.me.name, image: "", color: context.me.color, status: "" } }))
+## /b/<board>/presence: who is on the board (packages/presence), as a channel (D-020). A tab is in
+## the board's room while it subscribes, as the person the middleware says; its status is the card
+## it has open (`Board.status_of`), which every tile shows. The room's hooks are the package's.
+channel! : { request : Server.Request, params : { board : Str }, context : Middlewares.Member } => Try(Channel(Wire.Member, Wire.Event(Wire.Meta), Wire.Said), Endpoint.Refusal)
+channel! = |{ context, .. }| Ok(Channel.allow({ key: context.me.id, meta: { name: context.me.name, image: "", color: context.me.color, status: "" } }))
+
+on_open! = PresenceServer.on_open!
+
+on_close! = PresenceServer.on_close!
+
+receive! = PresenceServer.receive!

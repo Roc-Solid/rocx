@@ -146,10 +146,11 @@ Each gap this app met, and what it does about it:
   so the room counted each tab's open streams and left presence only at zero. (Fixed in the platform
   since: a tab has one stream, and a new one ends the old first, so a tab's hooks come in order; the
   room joins and leaves a tab as it is told.)
-- **packages/presence's server glue is events, not channels** (its README says so). The app uses
-  presence's `Room` (the logic) inside its own actor, fed by the channel's hooks, and its
-  `<AvatarStack>`; the channel's beat check (`x-rocx-channel: check`, with `x-rocx-tab`) is the
-  heartbeat.
+- **packages/presence's server glue was events, not channels.** The app uses presence's `Room`
+  (the logic) inside its own actor, fed by the room's channel's hooks, and its `<AvatarStack>`; the
+  channel's beat check (`x-rocx-channel: check`, with `x-rocx-tab`) is the heartbeat. (Presence
+  runs on channels since, its hooks `PresenceServer`'s; the room stays the actor's, as who is here
+  is part of the game.)
 - **A record's function field is called with parentheses**: `(room.say!)(Start)`, not
   `room.say!(Start)`, which Roc reads as a method call.
 - **Roc can't build a form of one field with the record builder** ("single-field record builder"):

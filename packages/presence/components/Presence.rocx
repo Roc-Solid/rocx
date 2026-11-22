@@ -1,4 +1,6 @@
-import pf.Solid exposing [create_effect!, create_signal!, set_interval!]
+import pf.Solid exposing [create_effect!, create_signal!, on_settled!, set_interval!]
+import pf.Endpoint
+import pf.Channel
 import presence.Cursors
 import presence.Mirror
 import presence.Room
@@ -7,10 +9,11 @@ import presence.Typist
 import presence.Wire
 
 ## The browser's side of presence, as Solid primitives: each is called in a component (as
-## `create_signal!` is), keeps its state in signals the components read, and is fed what a stream
-## hears, however it is carried (an endpoint's events today; a channel's messages once there are
-## channels). Typing and cursors expire on a clock of their own: a timer that ticks every quarter
-## second, and only while something can expire.
+## `create_signal!` is), and keeps its state in signals the components read. `join!` is a room on
+## its channel (`PresenceServer`'s hooks on a route's `channel!`): the stores below, fed what the
+## channel says, and what this tab says to it. The stores take what a room says however it comes.
+## Typing and cursors expire on a clock of their own: a timer that ticks every quarter second, and
+## only while something can expire.
 ##
 ## Call a store once a handler. A write applies when its handler is done (Solid 2.0's batching), so
 ## a second call in the same handler sees the store as it was before the first, and the first is
@@ -19,8 +22,70 @@ import presence.Wire
 ## sends each from a handler of its own (`set_timeout!(0, …)`).
 Presence := [].{
 
-	## A room, as its stream says (`Wire.Event`, from `PresenceServer.stream` today): who is here
-	## (`members!`, `synced!`), this page's own key and tab (`me!`, from the stream's `Welcome`), the
+	## The room on `channel` (a route's `channel!` with `PresenceServer`'s hooks), joined for as long
+	## as the component is: subscribed to, so this tab is in the room, as the member the channel's
+	## check says, until the component goes; and told this tab is still here every `Room.beat_every`.
+	## Who is here (`members!`, `synced!`), this tab's key and tab (`me!`), who is typing (`typing!`,
+	## keys) and others' cursors (`cursors!`), as `create_room!` has them. `status!(word)` says this
+	## tab's status (a word the app picks: `away`, a card it has open; `""` for none) from a handler or
+	## an effect's apply; `typed!()` and `done!()` say it is typing (`create_typist!`); `moved!` and
+	## `away!` say where its cursor is.
+	##
+	##     here = Presence.join!(Api.channel_rooms_room({ room: room }))
+	##     <AvatarStack faces!={(here.members!)().map(Wire.face)} />
+	join! : Endpoint(c, {}, Channel(Wire.Member, Wire.Event(Wire.Meta), Wire.Said)) => { members! : () => List(Room.Here(Wire.Meta)), synced! : () => Bool, me! : () => { key : Str, tab : Str }, typing! : () => List(Str), cursors! : () => List(Cursors.Shown), status! : Str => {}, typed! : () => {}, done! : () => {}, moved! : { x : Dec, y : Dec } => {}, away! : () => {} }
+	join! = |channel| {
+		# A missed number: the server sends who is here again (its on_open!'s, after a resync).
+		room = Presence.create_room!(|| Endpoint.resync!(channel))
+		heard! = room.heard!
+		lost! = room.lost!
+		(status!, set_status!) = create_signal!("")
+		said! = |said| {
+			out : Wire.Said
+			out = said
+			Endpoint.say!(channel, out)
+		}
+		create_effect!(
+			|| {},
+			|{}|
+				Endpoint.subscribe!(
+					channel,
+					|event|
+						match event {
+							# Who is here comes next, as the channel's first messages.
+							Resync => {}
+							Message(message) => heard!(message)
+							Refused(_, _) => lost!()
+							Ended(_) => lost!()
+						},
+				),
+		)
+		on_settled!(
+			|| {
+				_ = set_interval!(Room.beat_every(Room.defaults), || said!(Here({ status: status!() })))
+				{}
+			},
+		)
+		typist = Presence.create_typist!(3000, |typing| said!(Typing(typing == Started)))
+		{
+			members!: room.members!,
+			synced!: room.synced!,
+			me!: room.me!,
+			typing!: room.typing!,
+			cursors!: room.cursors!,
+			status!: |word| {
+				set_status!(word)
+				said!(Here({ status: word }))
+			},
+			typed!: typist.typed!,
+			done!: typist.done!,
+			moved!: |point| said!(Moved(point)),
+			away!: || said!(Away),
+		}
+	}
+
+	## A room, as its channel says (`Wire.Event`, from `PresenceServer`'s hooks): who is here
+	## (`members!`, `synced!`), this page's own key and tab (`me!`, from the channel's `Welcome`), the
 	## keys of who is typing (`typing!`), and others' cursors (`cursors!`). `heard!` takes each event,
 	## `lost!` says the stream dropped. Its own typing and cursor come back from the room, and are
 	## left out; one who leaves stops typing, and their cursor goes. A message after a missed one calls

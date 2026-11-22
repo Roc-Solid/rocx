@@ -49,7 +49,7 @@ view! = |_|
 			<Heading id="room">A room, in your browser</Heading>
 			<p>
 				This site is static files, with no server to keep a room. So the demo plays the server's part: it
-				keeps a list of who is here, and tells the package's stores and components what a room's stream
+				keeps a list of who is here, and tells the package's stores and components what a room's channel
 				would. Press a button, or let Auto, on from the start, do something every 1.5 seconds.
 			</p>
 		</NoHydration>
@@ -67,30 +67,23 @@ view! = |_|
 			<p>
 				Name the package in the app's header, as any package (<a href={Paths.ecosystem}>the ecosystem</a>), and
 				import its components. Each takes its data as an accessor, so it shows whatever feeds it: a room's
-				stream in an app, or, here, the demo.
+				channel in an app, or, here, the demo.
 			</p>
 			<Code title={"${Sources.presence_use.file}, in part"} source={Sources.presence_use.rocx} />
 			<p>
-				In an app, the server keeps each room. Its side is <code>PresenceServer</code>, in the package's
-				<code>server/</code>: a page's stream is an endpoint whose <code>events!</code> is
-				<code>PresenceServer.stream</code>, given the room and who the member is (their key and metadata, from
-				the middleware's context, never from the page):
+				In an app, a room is a route's <a href={"${Paths.platform_live}#channels"}>channel</a>, and the server
+				keeps it. Its check lets a member in, as who the middleware says they are (their key and metadata,
+				never the page's say), and its hooks are the package's <code>PresenceServer</code>'s: a tab joins as it
+				subscribes, and leaves when its subscription ends.
 			</p>
-			<Code title={"${Sources.presence_stream.file}, in part"} source={Sources.presence_stream.rocx} />
+			<Code title={Sources.presence_route.file} source={Sources.presence_route.rocx} />
 			<p>
-				The page listens to that endpoint (<a href={"${Paths.calls}#events"}><code>Endpoint.listen!</code></a>)
-				and hands each event to <code>Presence.create_room!</code>, which the components read. It beats every 15
-				seconds with a POST to an endpoint that calls <code>PresenceServer.join!</code>, and says it is typing
-				with another, <code>PresenceServer.typing!</code>. The package's README has the whole page; this site can't
-				run it, having no server.
+				The page joins the room with <code>Presence.join!</code>, given the channel: it subscribes, says every
+				15 seconds that this tab is still here, and gives what the components read. What the page says (its
+				status, that it is typing) goes over the tab's one stream, with its other channels; nothing has an
+				endpoint of its own.
 			</p>
-			<Callout kind="note" title="Copied in by hand, for now">
-				<p>
-					<code>PresenceServer</code> imports the server's <code>Actor</code> and <code>Live</code>, and
-					<code>rocx build</code> copies only a package's components into an app. Until it copies server
-					modules too, an app copies <code>server/PresenceServer.roc</code> beside its <code>main.roc</code>.
-				</p>
-			</Callout>
+			<Code title={"${Sources.presence_join.file}, in part"} source={Sources.presence_join.rocx} />
 
 			<Heading id="stack">{"<AvatarStack>"}</Heading>
 			<div class="sample">
@@ -178,13 +171,13 @@ view! = |_|
 			<Code title={"${Sources.presence_grace.file}, in part"} source={Sources.presence_grace.rocx} />
 			<ul>
 				<li>
-					<strong>Leaving has a grace.</strong> A tab whose stream ends leaves after five seconds, unless it is
+					<strong>Leaving has a grace.</strong> A tab whose subscription ends leaves after five seconds, unless it is
 					back by then: a page that reconnects doesn't flicker out and in.
 				</li>
 				<li>
-					<strong>Vanishing has a timeout.</strong> A page beats every 15 seconds. A tab unheard for 75 seconds
-					is swept out: a browser may hold a hidden tab's timers back to once a minute, and 75 seconds is that
-					minute and a beat to spare.
+					<strong>Vanishing has a timeout.</strong> A page says it is here every 15 seconds. A tab unheard for 75
+					seconds is swept out, however long its connection lingers: a browser may hold a hidden tab's timers
+					back to once a minute, and 75 seconds is that minute and a beat to spare.
 				</li>
 				<li>
 					<strong>Changes are numbered.</strong> A page's copy of the room (<code>Mirror</code>) takes a snapshot,
@@ -192,10 +185,10 @@ view! = |_|
 					and the page asks for a snapshot again.
 				</li>
 				<li>
-					<strong>One message at a time.</strong> In an app, a room is an
-					<a href={"${Paths.platform_live}#actors"}>actor</a>, which handles one message at a time, so two tabs
-					that join at once both count. It publishes each change on the room's
-					<a href={Paths.platform_live}>live topic</a> as it makes it, so they go out in the order they were
+					<strong>Kept in memory, swapped in.</strong> In an app, a room is kept in the server's
+					<code>Kv</code>. Each change reads it, sweeps it, changes it and swaps it back only if no one else
+					changed it meanwhile (<code>Kv.swap!</code>), else reads it again, so two tabs that join at once
+					both count, and nothing is written to Postgres. What changed is published on the room's channel,
 					numbered.
 				</li>
 			</ul>
@@ -203,12 +196,14 @@ view! = |_|
 			<Heading id="stores">The stores</Heading>
 			<p>
 				The browser's side, as Solid primitives: each is called in a component, as
-				<code>create_signal!</code> is, keeps its state in signals, and is fed what a stream hears.
+				<code>create_signal!</code> is, and keeps its state in signals. <code>join!</code> is a room on its
+				channel; the others take what a room says however it comes.
 			</p>
 			<TableWrap>
 				<table>
 					<thead><tr><th>Store</th><th>Gives</th></tr></thead>
 					<tbody>
+						<tr><td><code>{"Presence.join!(channel)"}</code></td><td>the room on a route's channel, joined while the component is there: what <code>create_room!</code> gives, fed by the channel, and what this tab says, <code>status!(word)</code>, <code>typed!()</code> and <code>done!()</code>, <code>moved!(point)</code> and <code>away!()</code>; it says it is here every 15 seconds</td></tr>
 						<tr><td><code>{"Presence.create_room!(on_gap!)"}</code></td><td>all of them at once, fed a room's events with <code>heard!(event)</code>: <code>members!</code>, <code>synced!</code>, <code>me!</code>, <code>typing!</code> (your own left out), <code>cursors!</code> (others'), <code>lost!</code>; one who leaves stops typing, and their cursor goes</td></tr>
 						<tr><td><code>{"Presence.create_presence!(on_gap!)"}</code></td><td><code>members!</code>, <code>synced!</code>, <code>receive!(message)</code>, <code>lost!</code></td></tr>
 						<tr><td><code>{"Presence.create_typing!(ttl)"}</code></td><td><code>who!</code>, <code>started!(key)</code>, <code>stopped!(key)</code>; a ping lasts <code>ttl</code> milliseconds</td></tr>
@@ -219,20 +214,22 @@ view! = |_|
 			</TableWrap>
 			<p>
 				A write applies when its handler is done, as in Solid 2.0, so call a store once a handler: a second
-				call in the same handler sees the store as it was before the first. A stream hands each event to a
+				call in the same handler sees the store as it was before the first. A channel hands each event to a
 				handler of its own, so this is how a page uses them anyway. The browser has no clock yet, so a store
 				keeps its own, a timer that ticks every quarter second, and only while something can expire.
 			</p>
 			<p>
-				The demo above has no stream, so it does what one would: a press tells the stores what happened, once
+				The demo above has no channel, so it does what one would: a press tells the stores what happened, once
 				each, and each cursor's move goes from a timeout of its own.
 			</p>
 			<Code title={"${Sources.presence_stores.file}, in part"} source={Sources.presence_stores.rocx} />
 
 			<Heading id="modules">The modules</Heading>
 			<p>
-				Plain Roc, on no platform, so the server's stream and the browser's stores run the same code.
-				<code>roc test packages/presence/main.roc</code> runs their <code>expect</code>s.
+				Plain Roc, on no platform, so the server's hooks and the browser's stores run the same code (the
+				browser's half sees them through the package's <code>browser.roc</code>), and
+				<code>PresenceServer</code>, the server's side. <code>roc test packages/presence/main.roc</code> runs
+				their <code>expect</code>s.
 			</p>
 			<TableWrap>
 				<table>
@@ -246,7 +243,8 @@ view! = |_|
 						<tr><td><code>Typing</code></td><td>who is typing: <code>started</code>, <code>stopped</code>, <code>who</code>, <code>deadline</code>, <code>sentence</code></td></tr>
 						<tr><td><code>Typist</code></td><td>your own typing: <code>typed(now)</code> says when to ping, <code>done</code> when to say it stopped</td></tr>
 						<tr><td><code>Stack</code></td><td><code>split</code> (who fits, and <code>+N</code>), <code>initials</code> (<code>"Ada Lovelace"</code> is <code>"AL"</code>), <code>color</code> (the same key, the same colour), <code>names</code>, <code>label</code></td></tr>
-						<tr><td><code>Wire</code></td><td>what a room's stream sends (<code>Event</code>: <code>Welcome</code>, <code>Presence</code>, <code>Typing</code>, <code>Moved</code>, <code>Away</code>), the metadata it carries (<code>Meta</code>: name, image, color, status), and <code>face</code>, <code>names</code>, <code>pointers</code> to feed the components</td></tr>
+						<tr><td><code>Wire</code></td><td>what a room's channel carries: to a page (<code>Event</code>: <code>Welcome</code>, <code>Presence</code>, <code>Typing</code>, <code>Moved</code>, <code>Away</code>), from one (<code>Said</code>: <code>Here</code>, with its status, <code>Typing</code>, <code>Moved</code>, <code>Away</code>), who is in it (<code>Member</code>: a key and <code>Meta</code>: name, image, color, status), and <code>face</code>, <code>names</code>, <code>pointers</code> to feed the components</td></tr>
+						<tr><td><code>PresenceServer</code></td><td>the server's side: a room channel's hooks, <code>on_open!</code>, <code>on_close!</code> and <code>receive!</code>, the room kept in <code>Kv</code></td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
@@ -268,18 +266,13 @@ view! = |_|
 				<li>the modules, with their tests (<code>roc test packages/presence/main.roc</code>);</li>
 				<li>the three components and the stores, which <code>rocx build</code> copies into an app;</li>
 				<li>
-					<code>PresenceServer</code>, copied into an app by hand: in a test app on the native server, two
-					members in a browser each saw the other, saw the other typing, and saw a closed tab leave.
+					the server's side on a route's channel, which an app imports (<code>presence.PresenceServer</code>):
+					in examples/board, two people in browsers of their own each see the other, see which card each has
+					open, and see a third who closes their browser leave.
 				</li>
 			</ul>
-			<p>
-				Not done yet: the server's side on <a href={"${Paths.platform_live}#channels"}>channels</a>, which have
-				landed since with what presence asked of them: one stream a tab for every room on a page, and messages
-				from the page without an endpoint each.
-			</p>
 			<p>Waits on a proposal (the package's PROPOSALS.md has each of these, and a few more):</p>
 			<ul>
-				<li><code>rocx build</code> copying a package's <code>server/</code> modules into the server's half, so no copy by hand;</li>
 				<li>sending your own cursor: a handler given where the pointer is (<code>on:pointermove.point</code>);</li>
 				<li>a clock in the browser, and knowing when a tab is hidden, to show it as away;</li>
 				<li>the app's own metadata on the wire, instead of <code>Wire.Meta</code>, once the compiler can carry it.</li>

@@ -13,6 +13,7 @@ const noChrome = !(await findChrome()) && "needs Chromium's headless shell ($CHR
 /** Notes every glide (D-031) the page's runtime plays, by the key of the element that moved. */
 const GLIDES = `document.addEventListener("rocx:ready", (event) => {
 	window.__glides = [];
+	window.__runtime = event.detail.runtime;
 	event.detail.runtime.observer = { glide: (detail) => window.__glides.push(detail.key ?? "") };
 });`;
 
@@ -46,9 +47,14 @@ describe("Acme Board in two browsers", { skip: noDatabase || noChrome }, () => {
 			return link ? link.closest("[data-column]").querySelector("h2").textContent : null;
 		})()`);
 
-	test("each sees the other on the board", async () => {
+	test("each sees the other on the board, the board's channel and its presence room on one stream", async () => {
 		await ada.findByRole("group", { name: "Bo is here" });
 		await bo.findByRole("group", { name: "Ada is here" });
+		for (const tab of [ada, bo]) {
+			assert.equal(await tab.page.eval("window.__runtime.hub.stream?.key ?? null"), "/b/launch\n/b/launch/presence", "one stream (/rocx/live) for both channels");
+			assert.equal(await tab.page.eval("window.__runtime.hub.stats.connects"), 1, "opened once");
+			assert.ok(!(await tab.requested()).some((path) => path.startsWith("/b/launch/presence")), "presence asks nothing of its own");
+		}
 	});
 
 	test("a card Ada drags to another column moves there on her page at once, and on Bo's as it is saved", async () => {
@@ -126,7 +132,14 @@ describe("Acme Board in two browsers", { skip: noDatabase || noChrome }, () => {
 		await bo.findByRole("group", { name: "Cyd has this card open" }, { ms: 5000 });
 		assert.equal(await bo.page.eval(`window.__stack === ${stack}`), true);
 		assert.deepEqual(cyd.errors, []);
+		// Cyd's browser closes: their tab's subscription ends, and once the room's grace (5 s) is up,
+		// the next change anyone makes (Ada opening a card) sweeps them out of everyone's stack.
+		await bo.findByRole("group", { name: "Ada and Cyd are here" });
 		await browsers.pop().close();
+		await new Promise((resolve) => setTimeout(resolve, 5500));
+		await (await ada.getByRole("link", { name: title })).click();
+		await bo.findByRole("group", { name: "Ada is here" }, { ms: 5000 });
+		await (await ada.getByRole("button", { name: "Done" })).click();
 	});
 
 	test("neither page threw or warned", () => {

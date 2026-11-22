@@ -530,14 +530,15 @@ function sourcesModule() {
 		// packages/presence (/ecosystem/presence): the demo, and the package's own files.
 		picks("presence_use", "site/Demos/PresenceDemo.rocx", ["import presence.AvatarStack", "import presence.Cursors", "import presence.LiveCursors", "import presence.TypingIndicator", "import presence.Presence", "import presence.Room", "import presence.Wire"], ["(members!, set_members!) = create_signal!(", "typing = Presence.create_typing!(", "cursors = Presence.create_cursors!("], ["<AvatarStack faces!="], ["<LiveCursors cursors!=", "<div class=\"note\"", "<p class=\"note-title\">", "<p class=\"line\">", "<p class=\"line short\">", "<p class=\"line\">", "<p class=\"line shorter\">", "</div>", "</LiveCursors>"], ["<TypingIndicator names!="]),
 		pick("presence_stores", "site/Demos/PresenceDemo.rocx", ["did! = |step| {", "set_members!(", "set_seed!(", "if (!step.typed", "if !step.left", "(typing.stopped!)(", "(cursors.gone!)(", "}", "var $after", "for move in step.moves {", "_ = set_timeout!(", "$after = $after + 150", "}", "}", "act! = |action| "]),
-		defined("presence_stream", "packages/presence/server/PresenceServer.roc", ["stream"]),
+		whole("presence_route", "examples/board/routes/b/[board]/presence/+server.roc"),
+		pick("presence_join", "examples/board/routes/b/[board]/+page.rocx", ["# Who is here (packages/presence)", "# own), and the card", "here = Presence.join!(", "create_effect!(|| open!()"]),
 		picks("presence_grace", "packages/presence/Room.roc", ["Meta : { name : Str, status : Str }"], ["ann : Meta", "ann = "], ["start : Room(Meta)", "start = Room.empty("], ["# Leaving with grace", "expect {", "(room, _) = start.join(", "(left, changes) = room.leave(", "(early, before) = left.sweep(", "(_, after) = early.sweep(", "changes == []", "}"]),
 		whole("presence_demo", "site/Demos/PresenceDemo.rocx"),
 		whole("presence_avatar_stack", "packages/presence/components/AvatarStack.rocx"),
 		whole("presence_typing_indicator", "packages/presence/components/TypingIndicator.rocx"),
 		whole("presence_live_cursors", "packages/presence/components/LiveCursors.rocx"),
 		whole("presence_stores_file", "packages/presence/components/Presence.rocx"),
-		whole("presence_server", "packages/presence/server/PresenceServer.roc"),
+		whole("presence_server", "packages/presence/PresenceServer.roc"),
 		// packages/push (/ecosystem/push): its example app, its server glue, its button, and the page's demo.
 		whole("push_example_main", "packages/push/example/main.roc"),
 		whole("push_example_layout", "packages/push/example/routes/+layout.rocx"),

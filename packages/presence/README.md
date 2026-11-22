@@ -12,19 +12,20 @@ import presence.TypingIndicator
 import presence.Presence
 import presence.Wire
 
-here = Presence.create_room!(|| {})
+here = Presence.join!(Api.channel_rooms_room({ room: room }))
 
 <AvatarStack faces!={(here.members!)().map(Wire.face)} max={4} />
 <TypingIndicator names!={Wire.names((here.members!)(), (here.typing!)())} />
 ```
 
-The server keeps each room itself, as an actor: one server instance, so there is no broker to run.
+A room is a route's channel (D-020), and the server keeps it in its memory (`Kv`): one server
+instance, so there is no broker to run, and nothing is written to Postgres.
 
 ## Three parts
 
-**The logic is a Roc package** (`main.roc`): plain Roc on no platform, so the server's stream and
-the browser's components run the same code. Its tests run on a clock they are given (`now`, in
-milliseconds), so a timeout is tested without waiting for one.
+**The logic is plain Roc**, on no platform, so the server's hooks and the browser's components run
+the same code. Its tests run on a clock they are given (`now`, in milliseconds), so a timeout is
+tested without waiting for one.
 
 | Module | What it does |
 |---|---|
@@ -36,142 +37,87 @@ milliseconds), so a timeout is tested without waiting for one.
 | `Typing` | Who is typing: `started` (a ping, which lasts `ttl`), `stopped`, `who`, `deadline`; `sentence`: `"Ann and Bo are typing…"` |
 | `Typist` | A page's own side: `typed(now)` says when to ping (at once, then at most every `every`), `done` when to say it stopped, `rest` after a quiet spell |
 | `Stack` | An avatar stack's arithmetic: `split` (who fits, and `+N`), `initials` (`"Ada Lovelace"` is `"AL"`), `color` (the same key, the same colour, from a palette white text reads on), `names`, `label` |
-| `Wire` | What a room's stream sends, `Event`: `Welcome` (the page's key and tab), `Presence(Snapshot \| Delta)`, `Typing`, `Moved`, `Away`; the metadata it carries (`Meta`: name, image, color, status); `face`, `names`, `pointers` to feed the components |
+| `Wire` | What a room's channel carries: to a page, `Event`: `Welcome` (the page's key and tab), `Presence(Snapshot \| Delta)`, `Typing`, `Moved`, `Away`; from one, `Said`: `Here({ status })` (its beat, and its status), `Typing(Bool)`, `Moved({ x, y })`, `Away`; who is in it, `Member` (a key, and `Meta`: name, image, color, status); `face`, `names`, `pointers` to feed the components |
 
 `roc test packages/presence/main.roc` runs their `expect`s.
 
 **The components and the browser's stores are `.rocx` files** (`components/`). They import the
 platform's `Html` and `Solid`, so, as with charts, `rocx build` copies them into each app that names
-the package (`Generated/presence/`), where `pf` is whichever platform each half is on. Name the
-package in the app's header, by its directory's name:
+the package (`Generated/presence/`), where `pf` is whichever platform each half is on.
+
+**The server's side is `PresenceServer`**: a room channel's hooks, with the room kept in `Kv`. The
+package names the server platform for it (D-033, as guard does), and the browser's half sees the
+modules both halves compile (`browser.roc`), so an app names the package once in its header, by its
+directory's name, and imports `presence.PresenceServer` in a route file:
 
 ```roc
 app [program] { presence: "../packages/presence/main.roc", pf: platform "…" }
 ```
 
-**The server's side is `server/PresenceServer.roc`.** It imports `Actor`, `Live`, `Random` and
-`Time`, which only the server's platform has, and `rocx build` doesn't copy a package's server modules yet (see
-PROPOSALS.md, "Server-only modules in packages"). For now, copy it into the app, beside `main.roc`,
-and import it from there (`import ../PresenceServer` in a route file).
+## Wiring a room
 
-## Wiring a room, today
-
-A room is an endpoint that streams its events, two that take a page's posts (its beat, and who is
-typing), and a component, which sends those from its handlers with `Endpoint.send!`.
+A room is a route's channel: its check lets a member in, and its hooks are `PresenceServer`'s. Its
+URL is the room.
 
 ```roc
-# routes/presence/[room]/+server.roc: this tab is in the room, as the member the middleware says
+# routes/rooms/[room]/+server.roc: who is in the room, as a channel
 import pf.Server
 import pf.Endpoint
-import pf.Events
+import pf.Channel
+import presence.PresenceServer
 import presence.Wire
-import ../../../PresenceServer
 
-events! : { request : Server.Request, params : { room : Str }, context : { member : Str } } => Try(Events(Wire.Event(Wire.Meta)), Endpoint.Refusal)
-events! = |{ params, context, .. }|
-    Ok(PresenceServer.stream(params.room, { key: context.member, meta: { name: context.member, image: "", color: "", status: "" } }))
-```
+channel! : { request : Server.Request, params : { room : Str }, context : { member : Str } } => Try(Channel(Wire.Member, Wire.Event(Wire.Meta), Wire.Said), Endpoint.Refusal)
+channel! = |{ context, .. }| Ok(Channel.allow({ key: context.member, meta: { name: context.member, image: "", color: "", status: "" } }))
 
-```roc
-# routes/presence/[room]/beat/+server.roc: this tab is still here (and, if the room had swept it
-# out, here again)
-import pf.Server
-import pf.Endpoint
-import ../../../../PresenceServer
+on_open! = PresenceServer.on_open!
 
-post! : { request : Server.Request, params : { room : Str }, context : { member : Str }, body : { tab : Str } } => Try({}, Endpoint.Refusal)
-post! = |{ params, context, body, .. }| {
-    _ = PresenceServer.join!(params.room, { key: context.member, tab: body.tab, meta: { name: context.member, image: "", color: "", status: "" } })
-    Ok({})
-}
-```
+on_close! = PresenceServer.on_close!
 
-```roc
-# routes/presence/[room]/typing/+server.roc: this page's member is typing, or stopped
-import pf.Server
-import pf.Endpoint
-import ../../../../PresenceServer
-
-post! : { request : Server.Request, params : { room : Str }, context : { member : Str }, body : { typing : Bool } } => Try({}, Endpoint.Refusal)
-post! = |{ params, context, body, .. }| {
-    PresenceServer.typing!(params.room, context.member, body.typing)
-    Ok({})
-}
+receive! = PresenceServer.receive!
 ```
 
 ```roc
 # routes/rooms/[room]/+page.rocx
 import pf.Html
-import pf.Call
-import pf.Endpoint
-import pf.Solid exposing [set_interval!, on_settled!]
 import presence.AvatarStack
 import presence.TypingIndicator
 import presence.LiveCursors
 import presence.Presence
-import presence.Room
 import presence.Wire
 import ../../../Generated/Api
 
-## A page's beat, from its timer: this tab is still here.
-beat! : Str, Str => {}
-beat! = |room, tab| {
-    _sent = Endpoint.send!(Api.post_presence_room_beat({ room: room }), { tab: tab }, Call.fetch!)
-    {}
-}
-
-## This page's member is typing, or stopped, from a handler.
-typing! : Str, Bool => {}
-typing! = |room, typing| {
-    _sent = Endpoint.send!(Api.post_presence_room_typing({ room: room }), { typing: typing }, Call.fetch!)
-    {}
-}
-
 view! = |{ params }| {
-    room = params.room
-    here = Presence.create_room!(|| {})
-    heard! : Wire.Event(Wire.Meta) => {}
-    heard! = here.heard!
-    typist = Presence.create_typist!(3000, |said| typing!(room, said == Started))
-    on_settled!(|| Endpoint.listen!(Api.events_presence_room({ room: room }), Call.listen!, |event|
-        match event {
-            Event(said) => heard!(said)
-            Ended => (here.lost!)()
-            Failed(_) => (here.lost!)()
-        }))
-    on_settled!(|| {
-        _ = set_interval!(Room.beat_every(Room.defaults), || beat!(room, (here.me!)().tab))
-        {}
-    })
+    here = Presence.join!(Api.channel_rooms_room({ room: params.room }))
     <section>
         <AvatarStack faces!={(here.members!)().map(Wire.face)} />
         <LiveCursors cursors!={Wire.pointers((here.members!)(), (here.cursors!)())}>
-            <textarea aria-label="Say something" on:input={typist.typed!} on:blur={typist.done!}></textarea>
+            <textarea aria-label="Say something" on:input={here.typed!} on:blur={here.done!}></textarea>
         </LiveCursors>
         <TypingIndicator names!={Wire.names((here.members!)(), (here.typing!)())} />
     </section>
 }
 ```
 
-`heard!` is annotated because the browser's copy of an endpoint is only its URL: the events' type is
-what the page says it is. (`{ room: room }`, not `{ room }`, which on its own is a block.)
+A status (`away`, the card a page has open) is a word the page says, from a handler or an effect's
+apply: `create_effect!(|| open!(), |card| (here.status!)(Board.status_of(card)))`
+(examples/board).
 
-Who a member is (their key, their name) is always the server's say: the endpoints read it from the
-middleware's context. The page's tab id comes from the stream
-(`Welcome`), and only names a tab of the member the server says.
+Who a member is (their key, their name) is always the server's say: the channel's check gives it,
+from the middleware's context. The page's tab id is its hub's (the same across reconnects and
+reloads), and the room tells the page its own key and tab first (`Welcome`), then who is here.
 
-How it holds together: the room is an actor (one message at a time, so two tabs joining at once
-both count; its state is a `Room`); the actor publishes each change, numbered, on the room's `Live`
-topic as it makes it; each page's stream listens, sends a snapshot, then the changes, and the page's
-`Mirror` takes them in order. A stream that ends leaves its tab; a page beats every 15 s, and a tab
-whose beats stop is swept out 75 s after the last (a browser may hold a hidden tab's timers back to
-once a minute).
-
-**Channels** (D-020) have landed since, with hooks for what presence asked of them (PROPOSALS.md,
-C1 to C9); this glue doesn't use them yet. On a channel, the three endpoints would be one route's
-`channel!` (its `on_open!` sending the snapshot, `on_close!` leaving, `receive!` taking what pages
-say), `Endpoint.subscribe!(Api.channel_presence_room({ room: room }), …)` would feed `heard!`, and
-`Endpoint.say!` would replace the posts. Nothing in the components or the stores would change.
+How it holds together: a tab joins as its subscription opens (`on_open!`: its key and tab, then a
+snapshot) and leaves when it ends (`on_close!`, after a 5 s grace, so a page that reconnects doesn't
+flicker out and in); the host tells a tab's hooks in order, an old stream's end before a new one's
+start. A page says it is here every 15 s (`Here`, with its status), so a tab whose page vanished
+without a word (a laptop shut, a network gone) is swept out 75 s after its last word, however long
+its connection lingers (a browser may hold a hidden tab's timers back to once a minute). Each
+change reads the room from `Kv`, sweeps it, changes it and swaps it back (`Kv.swap!`, read again if
+another changed it first, so two tabs joining at once both count), then publishes what changed on
+the channel, numbered; a page that misses a number asks for a snapshot again (`Endpoint.resync!`).
+Typing and cursors are said and passed on, never kept (a cursor latest-wins). A room nobody speaks
+in for a quarter of an hour is forgotten.
 
 ## `<AvatarStack>`
 
@@ -203,8 +149,9 @@ under it jumps, and a screen reader hears it change (`aria-live="polite"`).
 | `children : List(Html)` | the area they point at |
 
 Each cursor is an arrow in its member's colour with their name beside it. It glides between the
-places it is sent, fades when idle, and takes no pointer events. Drawing works today; sending your
-own needs the pointer's place in a handler, which the platform doesn't give yet (PROPOSALS.md, W1).
+places it is sent, fades when idle, and takes no pointer events. Drawing works today, and a room
+passes on what `here.moved!` says; sending your own needs the pointer's place in a handler, which
+the platform doesn't give yet (PROPOSALS.md, W1).
 
 ## The stores
 
@@ -212,6 +159,7 @@ Called in a component, as `create_signal!` is (`components/Presence.rocx`):
 
 | Store | Gives |
 |---|---|
+| `join!(channel)` | the room on a route's channel, joined while the component is there: what `create_room!` gives, fed by the channel, and what this tab says: `status!(word)`, `typed!()` and `done!()` (a typist, every 3 s at most), `moved!({ x, y })`, `away!()`; it says it is here every 15 s |
 | `create_room!(on_gap!)` | all of these at once, fed by `heard!(event)`: `members!`, `synced!`, `me!` (`{ key, tab }`), `typing!` (keys, your own left out), `cursors!` (others'), `lost!`; one who leaves stops typing and loses their cursor |
 | `create_presence!(on_gap!)` | `members!`, `synced!`, `receive!(message)`, `lost!` |
 | `create_typing!(ttl)` | `who!`, `started!(key)`, `stopped!(key)` |
@@ -220,7 +168,7 @@ Called in a component, as `create_signal!` is (`components/Presence.rocx`):
 
 Call a store once a handler. A write applies when its handler is done (Solid 2.0's batching), so a
 second call in the same handler sees the store as it was before the first, and the first is lost. A
-stream hands each event to a handler of its own, so a page fed by one never does; a page that makes
+channel hands each event to a handler of its own, so a page fed by one never does; a page that makes
 several events at once sends each from a handler of its own (`set_timeout!(0, …)`).
 
 The browser has no clock yet, so a store keeps its own: a timer that ticks every quarter second, and
@@ -237,20 +185,18 @@ background), `--avatar-font`, `--avatar-more`, `--avatar-status`, `--avatar-away
 
 Works today:
 
-- the package: 97 `expect`s (`roc test packages/presence/main.roc`);
+- the package: its `expect`s (`roc test packages/presence/main.roc`);
 - the three components and the stores, built by `rocx build` into an app, both halves type-checked;
-- `server/PresenceServer.roc`, copied into an app by hand, with the page above: in a scratch app's
-  native server and headless Chromium, two members each saw the other (`"ann and bo are here"`), one
-  saw the other typing, the ping ran out on its own, and a closed tab left the other's stack 8 s
-  later (the 5 s grace, then the next sweep); over plain HTTP, a tab that beat once and went silent
-  was swept out after the 75 s timeout.
-
-Not done yet: the glue on channels (D-020, landed), for one stream for every room on a page, and
-messages from the page without a request each.
+- the room on a channel (`PresenceServer`, imported from the package): in examples/board, two people
+  in browsers of their own each see the other, on the tab's one stream with the board's own channel,
+  see which card each has open (the status), and see a third who closes their browser leave once
+  the grace is up.
 
 Waits on a proposal (PROPOSALS.md):
 
-- `rocx build` copying `server/` into the server's half (Server-only modules in packages);
 - sending your own cursor (W1), a clock in the browser (W2), `away` when a tab is hidden (W3);
-- presence without a database write per beat (S1);
 - the app's own metadata type on the wire, instead of `Wire.Meta` (R1).
+
+Done since it was proposed: the glue on channels (C1 to C9, D-020), a package's server modules
+(D-033: the package names the server platform), and presence without a database write per beat
+(S1: the room is kept in `Kv`, never in Postgres).

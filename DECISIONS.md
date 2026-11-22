@@ -778,7 +778,8 @@ the hub), freely: it is the platform's.
 close) ends the tab's old one first, telling it `event: replaced`, and waits for its `on_close!`s
 before its own checks and `on_open!`s. A route keeps who is here by tab with nothing to count
 (examples/quiz counted each tab's open streams before). A page that hears `replaced` is a duplicated
-tab, whose sessionStorage held the same id: it takes one of its own.
+tab, whose sessionStorage held the same id: it takes one of its own. packages/presence runs on a
+channel since, its hooks the package's, its room in `Kv`.
 
 ## D-021 Actors: registered kinds, mailboxes, typed tells and timers, no locks
 

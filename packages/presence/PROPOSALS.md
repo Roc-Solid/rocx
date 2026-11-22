@@ -1,9 +1,15 @@
 # presence: proposals
 
-What `packages/presence` needs from outside its folder. Nothing here is built: each section is a
-problem, the options considered, the change recommended, what in the package depends on it, and
-how it could be undone. Everything the package has today works without these; where it works around
-one, the section says how.
+What `packages/presence` needs from outside its folder: each section is a problem, the options
+considered, the change recommended, what in the package depends on it, and how it could be undone.
+Everything the package has today works without the open ones; where it works around one, the
+section says how.
+
+**Done since (2026-11-22):** the channels asks, C1 to C9 (D-020; and a tab's hooks in order, its old
+stream's end before its new one's start), on which the package now runs (`PresenceServer`'s hooks
+and `Presence.join!`); "Server-only modules in packages" (D-033: the package names the server
+platform, and `browser.roc` lists what the browser compiles); and S1 (the room is kept in `Kv`, in
+memory, never in Postgres). "Today's glue", at the end, is how it ran before. Open: W1 to W3, R1.
 
 The channels asks are first, collected under one heading so they can be forwarded as a group.
 

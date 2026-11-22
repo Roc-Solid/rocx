@@ -31,7 +31,7 @@ several people work on one board at once: each sees the others' changes as they 
 | A move shown before the server has it, kept while it is on its way (`use_action!`, `use_submissions!`, D-030), and the board read again after | `routes/b/[board]/+page.rocx` (`board!`), `routes/b/[board]/move/+server.roc` |
 | Cards glide to their new place, between columns too (`transition:move` and `key`, D-031) | `Ui/CardTile.rocx` |
 | Everyone sees each change live: the board's channel (D-020), published after every change | `routes/b/[board]/+server.roc` (`channel!`), `News.roc`, the page's `heard!` |
-| Presence: who is on the board, and who has which card open (packages/presence) | `routes/b/[board]/presence/`, the page's `here`, `Ui/Shared.roc` |
+| Presence: who is on the board, and who has which card open (packages/presence, on a channel) | `routes/b/[board]/presence/+server.roc` (the package's hooks), the page's `here` (`Presence.join!`), `Ui/Shared.roc` |
 | An edit lease on a card, in `Kv` with a time to live (D-028) | `Lease.roc`, `routes/b/[board]/cards/[card]/lease/+server.roc`, `Ui/CardPanel.rocx` (`take!`) |
 | Changes shown before the server has them in the open card (labels, ticks, its fields), as moves are | `Ui/CardPanel.rocx` (`card!`), `Board.saved`, `Board.labelled`, `Board.ticked` |
 | Rate limits on writes (packages/guard) and security headers | `Middlewares.roc` (`writer`, `default`) |
@@ -103,11 +103,12 @@ node --test 'examples/board/test/*.test.mjs'       # needs DATABASE_URL; the bro
   someone else, renewed, released, and running out), the channel (a member hears each change, a
   visitor is refused), labels, the checklist, archiving and deleting, the forms without JavaScript,
   and the rate limit.
-- `test/browser.test.mjs`: two people in two Chromium launches on one board. Each sees the other;
-  Ada drags a card to another column, it shows there at once for her and moves on Bo's page (gliding
-  on both) without a reload; Ada opens a card, Bo's board shows she has it open and is editing it,
-  Bo opens it read-only, it opens for him when she closes it, and his edit shows on her board.
-- `test/copies.test.mjs`: the four modules copied from packages (below) are still the packages'.
+- `test/browser.test.mjs`: two people in two Chromium launches on one board. Each sees the other,
+  the board's channel and its presence room on one stream; Ada drags a card to another column, it
+  shows there at once for her and moves on Bo's page (gliding on both) without a reload; Ada opens a
+  card, Bo's board shows she has it open and is editing it, Bo opens it read-only, it opens for him
+  when she closes it, and his edit shows on her board; a third person comes, and once their browser
+  closes and the grace is up, leaves everyone's stack.
 
 The test files build the app once between them, each with a database and a server of its own.
 
@@ -144,12 +145,12 @@ clipped by the column's card list, which was a scroll box. Columns don't scroll 
 
 What the app met, and how it works around each:
 
-- **Packages' server modules are copied in by hand.** packages/presence's room (`PresenceServer`)
-  imports the server platform and keeps its state in an actor, whose kind `rocx build` finds only in
-  the app's own files. Workaround: the file copied verbatim into the app, and
-  `test/copies.test.mjs` failing when it drifts. (packages/guard's middleware was copied too, until
-  guard kept its state in `Kv` and named the server platform itself: D-043. Now the header names
-  it and `Middlewares.roc` imports `guard.Guard`.)
+- **Packages' server modules were copied in by hand.** packages/presence's room (`PresenceServer`)
+  imported the server platform and kept its state in an actor, whose kind `rocx build` finds only in
+  the app's own files, so the file was copied into the app, with a test failing when it drifted.
+  (Fixed since: guard keeps its state in `Kv` and names the server platform itself, D-043, and so
+  does presence, on a channel; the header names both, and the routes import `guard.Guard` and
+  `presence.PresenceServer`. No copies are left.)
 - **A handler can't name another route's channel.** Every write publishes on the board's channel,
   but route files can't import `Generated/Api` (it is made of them). Workaround: `News.channel`
   builds the same endpoint by its path, `Endpoint.remote("CHANNEL", "/b/<board>")`; moving the
@@ -169,9 +170,10 @@ What the app met, and how it works around each:
 - **No way to move focus from Roc.** An open card doesn't take the keyboard's focus (there is no
   focus effect, and `Browser.call!` needs a script of the page's own, which this app doesn't serve).
   Workaround: none yet; keyboard users Tab to it. Escape closes it.
-- **Presence isn't on channels yet** (packages/presence says so): its glue is an event stream per
-  tab beside `/rocx/live`, a beat posted every 15 s, and a post when a card opens. Workaround: the
-  package's documented glue, as it is.
+- **Presence wasn't on channels**: its glue was an event stream per tab beside `/rocx/live`, a beat
+  posted every 15 s, and a post when a card opened, three routes. (Fixed since: presence runs on a
+  channel, its hooks the package's, so the page holds one stream, and what it says, its beat and the
+  card it has open, goes over it.)
 - **The browser has no clock.** Workaround: the board's data carries the server's date (`today`),
   which says which cards are overdue.
 - **A value prop was read once outside a hole**, which was easy to miss: the tile's "Ada has this
