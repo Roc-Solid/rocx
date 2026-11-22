@@ -372,7 +372,9 @@ const within = (node, scope) => (node.tag === "svg" && !scope.svg ? { ...scope, 
  * - What the page says (`say!`), and its asks for a resync (`resync!`, a new subscriber to a channel
  *   already open), go in one `POST /rocx/live/send` a frame.
  * - The tab's id (`tab`, random, kept in sessionStorage, so a reload keeps it) names the tab to the
- *   server's hooks.
+ *   server's hooks. A tab has one stream: the server ends a tab's old stream when a new one comes,
+ *   telling it `replaced`, and a page that hears it is another tab with the same id (a duplicated
+ *   tab copies sessionStorage), so it takes a new id before it connects again.
  * - Where no server answers (a static copy of the site: a 404, a 405, or a page that isn't a
  *   stream), every subscriber hears `Refused(404, …)` and the hub asks for nothing more.
  */
@@ -399,15 +401,16 @@ class Hub {
 		this.stats = { connects: 0, posts: 0 };
 	}
 
-	/** The tab's id: random, made once per tab, kept in sessionStorage (a reload keeps it). */
-	tab() {
-		if (this.tabId) return this.tabId;
-		const fresh = () => [...crypto.getRandomValues(new Uint8Array(12))].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+	/** The tab's id: random, made once per tab, kept in sessionStorage (a reload keeps it). A new one
+	 * (`fresh`) when the server said another tab has this one (`replaced`). */
+	tab({ fresh = false } = {}) {
+		if (this.tabId && !fresh) return this.tabId;
+		const made = () => [...crypto.getRandomValues(new Uint8Array(12))].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 		try {
-			this.tabId = sessionStorage.getItem("rocx-tab") || fresh();
+			this.tabId = (!fresh && sessionStorage.getItem("rocx-tab")) || made();
 			sessionStorage.setItem("rocx-tab", this.tabId);
 		} catch {
-			this.tabId = fresh();
+			this.tabId = made();
 		}
 		return this.tabId;
 	}
@@ -540,8 +543,14 @@ class Hub {
 		for (const channel of this.channels.values()) for (const subscriber of channel.subscribers.values()) this.deliver(subscriber, { Refused: this.unavailable });
 	}
 
-	/** An event of the stream, for the channel at `url`. */
+	/** An event of the stream, for the channel at `url`; or `replaced`, for the stream: another tab
+	 * has this one's id, and a stream of its own now. */
 	dispatch(kind, url, said) {
+		if (kind === "replaced") {
+			this.runtime.notify("replaced", { tab: this.tabId });
+			this.tab({ fresh: true });
+			return;
+		}
 		const channel = this.channels.get(url);
 		if (!channel) return;
 		let heard;
@@ -735,7 +744,7 @@ export class Runtime {
 		 * with any of `seeded`, `call`, `answer`, `fetch`, `fetched`, `listen`, `heard`, `patch`,
 		 * `row`, `show`, `frame`, `effect` (a call of the page's own function), `apply` (an effect's
 		 * apply), `submit`, `submitted`, `revalidate` (a submission's result reading the page's reads
-		 * again), `glide` (an element moving), and the hub's `subscribe`, `unsubscribe`, `connect`
+		 * again), `glide` (an element moving), and the hub's `subscribe`, `unsubscribe`, `connect`, `replaced`
 		 * and `dropped`. */
 		this.observer = null;
 		/** The tab's channels (`Endpoint.subscribe!`): one stream for all of them. */

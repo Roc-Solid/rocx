@@ -1906,7 +1906,7 @@ function liveServer() {
 	return live;
 }
 
-test("channels: two components on one channel share one stream with a third's; each hears resync, then what is published, in order; a refused channel is told so and the others go on; what a handler says goes in one post; a new subscriber to an open channel gets a resync without a reconnect; a change of channels reconnects once; a drop, again, a little later each time, with a resync", { skip }, async () => {
+test("channels: two components on one channel share one stream with a third's; each hears resync, then what is published, in order; a refused channel is told so and the others go on; what a handler says goes in one post; a new subscriber to an open channel gets a resync without a reconnect; a change of channels reconnects once; a drop, again, a little later each time, with a resync; replaced, a new tab id", { skip }, async () => {
 	const live = liveServer();
 	await withDocument({ app: "channels", api: live.api, pages: { "/": (render) => documentPage(render, "/") } }, async ({ site, server }) => {
 		const { html } = server.renderToString({ path: "/" });
@@ -1972,6 +1972,17 @@ test("channels: two components on one channel share one stream with a third's; e
 		for (let i = 1; i < gaps.length; i++) assert.ok(gaps[i] > gaps[i - 1] * 1.4, `each wait about twice the last: ${gaps.map(Math.round)}`);
 		assert.ok(live.connects.every((connect) => connect.tab === id), "one tab throughout");
 		await tab.wait("document.querySelector('.feed.first').textContent.split('resync zeta').length === 7", 3000);
+		// Replaced: another tab has this one's id (a duplicated tab copies sessionStorage), and a
+		// stream of its own; the server ends this one with `replaced`, and the page takes an id of its
+		// own, keeps it, and connects again with it.
+		const connects = live.connects.length;
+		live.streams[0].response.end("event: replaced\ndata: \n\n");
+		await until(() => live.connects.length > connects, 5000, "a reconnect");
+		const fresh = live.connects.at(-1).tab;
+		assert.match(fresh, /^[0-9a-f]{24}$/);
+		assert.notEqual(fresh, id, "an id of its own");
+		assert.equal(await tab.eval("sessionStorage.getItem('rocx-tab')"), fresh, "kept for the tab");
+		await tab.wait("document.querySelector('.feed.first').textContent.split('resync zeta').length === 8", 3000);
 		assert.deepEqual(tab.errors, []);
 		assert.deepEqual(tab.console, []);
 	});

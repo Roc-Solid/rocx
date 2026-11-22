@@ -1497,8 +1497,8 @@ clock : Endpoint(Str, {}, Channel({}, U64, []))
 clock = Endpoint.local("CHANNEL", "/clock", |_request, _context, {}| Ok(Channel.allow({})))
 
 ## The host's asks about a subscription: each channel's check behind its middleware, then its hooks.
-## An org's news sends a subscriber a welcome first (`on_open!`), and hears what pages say
-## (`receive!`): a hello is published to the org, `Fail` is refused.
+## An org's news sends a subscriber a welcome first (`on_open!`, which logs who, from which tab), and
+## hears what pages say (`receive!`): a hello is published to the org, `Fail` is refused.
 channel! : Server.Request => Server.Response
 channel! = |request| {
 	segments = request.path.split_on("/").keep_if(|segment| !segment.is_empty()).map(Server.decode_segment)
@@ -1514,7 +1514,10 @@ channel! = |request| {
 					passed,
 					member,
 					{
-						opened!: |who, tab| [{ title: "welcome, ${who} (${if (tab.is_empty()) "no tab" else "a tab"})", n: 0 }],
+						opened!: |who, tab| {
+							Log.info!("channel opened", { channel: passed.path, who, tab })
+							[{ title: "welcome, ${who} (${if (tab.is_empty()) "no tab" else "a tab"})", n: 0 }]
+						},
 						received!: Endpoint.receiving(
 							org_news(org),
 							|who, _tab, said|

@@ -175,7 +175,9 @@ same components natively; this one hydrates them.
   over once a stream has stayed up 10 s. A new subscriber to a channel the stream has open asks the
   server for its resync. `Endpoint.say!(channel, said)` (from a handler) goes, with the frame's other
   sayings, in one `POST /rocx/live/send`; a refusal is a warning in the console. The tab's id is
-  random, kept in `sessionStorage` (a reload keeps it; a duplicated tab copies it). Where no server
+  random, kept in `sessionStorage` (a reload keeps it; a duplicated tab copies it). A tab has one
+  stream: the server ends a tab's old stream when a new one comes, telling it `event: replaced`, so
+  a page that hears it is a duplicated tab, and takes an id of its own before it connects again. Where no server
   answers (a static copy: a 404, a 405, or no stream), every subscriber hears `Refused(404, …)`, and
   the hub asks for nothing more. Subscribing from a handler fails: nothing would end it. On the
   server, nothing is subscribed to. `Endpoint.publish!` is the server's: in the browser it fails.

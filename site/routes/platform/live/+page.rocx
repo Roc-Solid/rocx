@@ -142,6 +142,13 @@ view! = |_|
 				<code>who</code> stays on the server, kept as JSON between the check and <code>on_close!</code>. A
 				tab's id is random, kept for the tab (a reload keeps it), and names the tab, not a person.
 			</p>
+			<p>
+				A tab's hooks come in order. A tab has one stream, and when a new one comes for it (a reload, a
+				reconnect, a change of what it subscribes to) before the server has heard the old one end, the old
+				one ends first: its subscriptions' <code>on_close!</code> are told before the new one's checks and
+				<code>on_open!</code> run. So a route can keep who is here by tab, joining on <code>on_open!</code>
+				and leaving on <code>on_close!</code>, with nothing to count.
+			</p>
 
 			<Heading id="channel-stream">One stream a tab</Heading>
 			<p>
@@ -161,6 +168,7 @@ view! = |_|
 						<tr><td><code>event: refused</code>, the URL, then <code>data: {"{\"status\":403,\"why\":\"Forbidden\"}"}</code></td><td>its check refused it; the stream goes on for the others</td></tr>
 						<tr><td><code>event: ended</code>, the URL, then why, as a JSON string</td><td>its check refused it at a beat</td></tr>
 						<tr><td><code>: beat</code></td><td>every 15 s (<code>--live-beat-ms</code>): the server is there, and checks each channel again</td></tr>
+						<tr><td><code>event: replaced</code></td><td>a newer stream for this tab took its place, and this one ends: a page still reading it is another tab with the same id (a duplicated tab copies it), and takes an id of its own</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>

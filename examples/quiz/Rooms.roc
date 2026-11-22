@@ -31,14 +31,14 @@ Rooms := [].{
 	kind : Actor.Kind(Rooms.State, Rooms.Message, Rooms.Reply)
 	kind = Actor.define({
 		name: "room",
-		initial: |_code| { game: Game.vacant, presence: Room.empty(Rooms.presence).save(), streams: [], timer: 0 },
+		initial: |_code| { game: Game.vacant, presence: Room.empty(Rooms.presence).save(), timer: 0 },
 		receive!: |me, state, message| Rooms.turn!(me, state, message),
 	})
 
-	## What the actor keeps: the game, who is here (presence's room, saved as JSON), how many
-	## streams each tab has open (a tab's stream that reconnects opens before the old one is told
-	## gone), and the timer its phase's deadline is set on.
-	State : { game : Game.State, presence : Room.Saved(Wire.Meta), streams : List({ tab : Str, open : U64 }), timer : U64 }
+	## What the actor keeps: the game, who is here (presence's room, saved as JSON), and the timer
+	## its phase's deadline is set on. A tab has one stream, and its hooks come in order (a stream
+	## that reconnects is told gone before it opens again), so a tab joins and leaves as it is told.
+	State : { game : Game.State, presence : Room.Saved(Wire.Meta), timer : U64 }
 
 	## What a room is told or asked. Everything a visitor does names them by their visitor id, and
 	## the room decides who that is (`Game.who`): the host, a player, or anyone.
@@ -145,8 +145,7 @@ Rooms := [].{
 			Look(visitor) => (state, Seat(Game.seat(game, visitor, now)))
 			Said({ visitor, said }) => Rooms.heard(state, visitor, said, now)
 			Opened({ visitor, tab }) => {
-				streams = Rooms.counted(state.streams, tab, 1)
-				opened = Rooms.tab_joined({ ..state, streams }, visitor, tab, now)
+				opened = Rooms.tab_joined(state, visitor, tab, now)
 				(opened, Seat(Game.seat(opened.game, visitor, now)))
 			}
 			Beat({ visitor, tab }) =>
@@ -159,19 +158,16 @@ Rooms := [].{
 						}
 					_ => (state, Done)
 				}
-			Closed({ visitor, tab }) => {
-				streams = Rooms.counted(state.streams, tab, 0)
-				still_open = streams.any(|each| each.tab == tab)
+			Closed({ visitor, tab }) =>
 				match Game.who(game, visitor) {
-					Player(id) if !still_open => {
+					Player(id) => {
 						(left, changes) = Room.load(state.presence).leave(id, tab, now)
 						# The grace, then a sweep: if the tab isn't back by then, its player is gone.
 						_sweep = Actor.after!(me, Rooms.presence.grace + 50, Sweep)
-						(Rooms.present({ ..state, streams, presence: left.save() }, (left, changes)), Done)
+						(Rooms.present({ ..state, presence: left.save() }, (left, changes)), Done)
 					}
-					_ => ({ ..state, streams }, Done)
+					_ => (state, Done)
 				}
-			}
 			# The sweep has run already, at the start of the turn.
 			Sweep => (state, Done)
 			Close(index) => ({ ..state, game: Game.close(game, index, now) }, Done)
@@ -261,18 +257,4 @@ Rooms := [].{
 		{ ..state, game, presence: room.save() }
 	}
 
-	## A tab's open streams, one more (`by` 1) or one fewer (`by` 0); a tab with none is forgotten.
-	counted : List({ tab : Str, open : U64 }), Str, U64 -> List({ tab : Str, open : U64 })
-	counted = |streams, tab, by| {
-		open = (streams.find_first(|each| each.tab == tab) ?? { tab, open: 0 }).open
-		next = if (by == 1) open + 1 else open - U64.min(open, 1)
-		others = streams.drop_if(|each| each.tab == tab)
-		if (next == 0) others else others.append({ tab, open: next })
-	}
 }
-
-expect Rooms.counted([], "t1", 1) == [{ tab: "t1", open: 1 }]
-expect Rooms.counted(Rooms.counted([], "t1", 1), "t1", 1) == [{ tab: "t1", open: 2 }]
-expect Rooms.counted([{ tab: "t1", open: 2 }], "t1", 0) == [{ tab: "t1", open: 1 }]
-expect Rooms.counted([{ tab: "t1", open: 1 }], "t1", 0) == []
-expect Rooms.counted([], "t1", 0) == []

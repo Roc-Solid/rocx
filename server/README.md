@@ -427,6 +427,10 @@ The host answers the tab's stream itself, on the async side, holding no thread o
 - A subscription's end (the client gone, the server stopping, or refused at a beat) is
   `x-rocx-channel: close`, its body who the check said it was and why: `App` answers it outside the
   middleware, with the route's `on_close!`.
+- A tab has one stream: a new stream for a tab ends the tab's old one first (`event: replaced`, for
+  a page still reading it: a duplicated tab, which takes an id of its own), and waits for its
+  `on_close!`s (10 s at the most) before its own checks run, so a tab's hooks come in order, an old
+  subscription's end before a new one's start.
 - The host drops `x-rocx-channel` and `x-rocx-tab` from every request it is sent, so only it asks.
 - `/rocx/live` never reaches the app's middleware, so an auth middleware has nothing to let
   through: a channel is guarded by its own path's middleware instead.

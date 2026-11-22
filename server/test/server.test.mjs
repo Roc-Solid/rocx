@@ -2391,6 +2391,35 @@ test("channels: what a page says goes to its channel's receive!, through the sam
 	await logsEvent({ msg: "channel closed", who: "grace", tab, why: "gone" });
 });
 
+test("channels: a tab has one stream: a new one ends the old (replaced), whose on_close! is told before the new one's on_open!, so a route's hooks hear a tab's subscriptions in order", { skip }, async () => {
+	const tab = `${run}t5`;
+	const cookie = memberOf("eve", "acme");
+	const first = await channelStream(["/news/acme"], { tab, cookie, signal: new AbortController().signal });
+	assert.equal((await first.next()).event, "resync");
+	assert.equal((await first.next()).said.title, "welcome, eve (a tab)");
+	// The same tab again, the first stream still open (as when the host hears a connection's end
+	// late): the first is replaced, and ends.
+	const gone = new AbortController();
+	const second = await channelStream(["/news/acme"], { tab, cookie, signal: gone.signal });
+	assert.deepEqual(await first.next(), { event: "replaced", url: "", said: null });
+	assert.equal(await first.next(), null, "and ends");
+	assert.equal((await second.next()).event, "resync");
+	assert.equal((await second.next()).said.title, "welcome, eve (a tab)");
+	await logsEvent({ msg: "channel closed", who: "eve", tab, why: "gone" });
+	const told = events().filter((event) => event.tab === tab && /^channel (opened|closed)$/.test(event.msg)).map((event) => event.msg);
+	assert.deepEqual(told, ["channel opened", "channel closed", "channel opened"], "the old one's end, then the new one's start");
+	// Another tab is a stream of its own: it replaces nothing.
+	const other = new AbortController();
+	const third = await channelStream(["/news/acme"], { tab: `${run}t6`, cookie, signal: other.signal });
+	assert.equal((await third.next()).event, "resync");
+	assert.equal((await third.next()).said.title, "welcome, eve (a tab)");
+	assert.equal(await text("/news/publish?org=acme&title=both&n=7", { method: "POST" }), "published");
+	assert.deepEqual(await second.next(), { event: "message", url: "/news/acme", said: { n: 7, title: "both" } }, "the second stream goes on");
+	assert.deepEqual(await third.next(), { event: "message", url: "/news/acme", said: { n: 7, title: "both" } });
+	gone.abort();
+	other.abort();
+});
+
 test("channels: a check that starts failing ends its subscription at the next beat (ended, and why), and on_close! is told it was refused; the stream goes on", { skip }, async () => {
 	const gone = new AbortController();
 	const tab = `${run}t3`;

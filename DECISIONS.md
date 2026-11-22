@@ -773,6 +773,13 @@ route.
 **Reversible:** the API, with an edit at each channel and subscription; the transport (one stream,
 the hub), freely: it is the platform's.
 
+**Since (2026-11-22).** A tab has one stream, and its hooks come in order: a new stream for a tab
+(a reload, a reconnect, a change of channels, which the host may see before the old connection's
+close) ends the tab's old one first, telling it `event: replaced`, and waits for its `on_close!`s
+before its own checks and `on_open!`s. A route keeps who is here by tab with nothing to count
+(examples/quiz counted each tab's open streams before). A page that hears `replaced` is a duplicated
+tab, whose sessionStorage held the same id: it takes one of its own.
+
 ## D-021 Actors: registered kinds, mailboxes, typed tells and timers, no locks
 
 **Context.** An actor was a named lock (`Host.lock!`, a `tokio::sync::Mutex` per key) around a read

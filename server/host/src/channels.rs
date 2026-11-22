@@ -17,6 +17,14 @@
 //! held until the check has let it in, then sent after its `resync` and its `on_open!` messages.
 //! Its own topic, `tab:<id>`, carries the tab's asks for a resync (`POST /rocx/live/send`).
 //!
+//! A tab has one stream. The hub opens a new one when what the page subscribes to changes, or when
+//! the old one dropped, and the host may hear the old one end after the new one starts (a
+//! connection's close takes a while to reach it). So a new stream for a tab ends the tab's old one
+//! first (`event: replaced`, should anyone still read it), waits for its subscriptions' `on_close!`,
+//! and only then runs its own checks and `on_open!`: a route's hooks hear a tab's subscriptions end
+//! before they start again, in order. A page that hears `replaced` is another tab with the same id
+//! (a duplicated browser tab copies its sessionStorage): it takes a new id, and connects again.
+//!
 //! The stream, as server-sent events: `event: resync | message | refused | ended`, the channel's URL
 //! as the first `data:` line, then what it says (a message's JSON; `{"status":403,"why":"…"}`; the
 //! JSON string why it ended); and `: beat` every beat (15 s), on which each channel's check runs
@@ -34,11 +42,11 @@ use hyper::body::{Frame, Incoming};
 use hyper::header::{ALLOW, CACHE_CONTROL, CONTENT_TYPE, HeaderMap, HeaderValue};
 use hyper::{Method, Request, Response, StatusCode};
 use serde_json::Value;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::convert::Infallible;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{Notify, broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
 
 /// The most channels one stream carries.
@@ -50,6 +58,10 @@ const MOST_QUEUED: usize = 64;
 /// The most a `POST /rocx/live/send` carries: items, and bytes.
 const MOST_SAID: usize = 256;
 const MOST_SAID_BYTES: usize = 1 << 20;
+
+/// How long a new stream waits for its tab's old one to have ended (its `on_close!`s told) before
+/// it opens its own subscriptions anyway.
+const MOST_WAIT_FOR_OLD: Duration = Duration::from_secs(10);
 
 /// The request headers a channel's requests don't pass on: their own, and the stream's conditions.
 const NOT_PASSED: [&str; 10] = ["accept", "content-type", "content-length", "transfer-encoding", "connection", "range", "if-none-match", "if-modified-since", "x-rocx-channel", "x-rocx-tab"];
@@ -213,6 +225,59 @@ fn not_allowed(path: &str, allowed: &'static str, method: &Method) -> Response<B
     let mut response = text(StatusCode::METHOD_NOT_ALLOWED, format!("{path} takes {allowed}, not {method}"));
     response.headers_mut().insert(ALLOW, HeaderValue::from_static(allowed));
     response
+}
+
+// ---- A tab's one stream ----
+
+/// The stream a tab has: its number (a newer one replaces it), how to tell it it has been
+/// replaced, and whether it has ended (its `on_close!`s told).
+struct Held {
+    number: u64,
+    replaced: Arc<Notify>,
+    ended: watch::Receiver<bool>,
+}
+
+/// Each tab's stream, by its id.
+fn held() -> &'static Mutex<HashMap<String, Held>> {
+    static HELD: OnceLock<Mutex<HashMap<String, Held>>> = OnceLock::new();
+    HELD.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// A stream's place as its tab's one stream: told when a newer one replaces it, and telling the
+/// newer one when it has ended.
+struct Place {
+    tab: String,
+    number: u64,
+    replaced: Arc<Notify>,
+    ended: watch::Sender<bool>,
+}
+
+impl Place {
+    /// The stream for `tab` from now on, and the one it replaces, if the tab had one: told so here.
+    fn take(tab: &str) -> (Place, Option<watch::Receiver<bool>>) {
+        static NUMBERS: OnceLock<std::sync::atomic::AtomicU64> = OnceLock::new();
+        let number = NUMBERS.get_or_init(Default::default).fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        let replaced = Arc::new(Notify::new());
+        let (ended, ended_heard) = watch::channel(false);
+        let old = held().lock().unwrap_or_else(|poisoned| poisoned.into_inner()).insert(tab.to_string(), Held { number, replaced: replaced.clone(), ended: ended_heard });
+        let old = old.map(|old| {
+            old.replaced.notify_one();
+            old.ended
+        });
+        (Place { tab: tab.to_string(), number, replaced, ended }, old)
+    }
+}
+
+impl Drop for Place {
+    /// It has ended: the tab has no stream now, unless a newer one has taken its place.
+    fn drop(&mut self) {
+        let mut held = held().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if held.get(&self.tab).is_some_and(|each| each.number == self.number) {
+            held.remove(&self.tab);
+        }
+        drop(held);
+        let _ = self.ended.send(true);
+    }
 }
 
 // ---- The stream ----
@@ -423,6 +488,13 @@ async fn run(asking: Arc<Asking>, urls: Vec<String>, out: mpsc::Sender<Bytes>, b
     };
     drop((heard_to, latest_to));
 
+    // The tab's one stream from now on: its old one, if it is still held, ends first, and its
+    // subscriptions' ends are told before these start (listening already, so nothing is missed).
+    let (place, old) = Place::take(&asking.tab);
+    if let Some(mut old) = old {
+        let _ = tokio::time::timeout(MOST_WAIT_FOR_OLD, old.wait_for(|ended| *ended)).await;
+    }
+
     let mut ops: VecDeque<Op> = subscriptions.iter().map(|each| Op::Open { id: each.id, url: each.url.clone() }).collect();
     let mut job = None;
     let mut checking = false;
@@ -437,6 +509,12 @@ async fn run(asking: Arc<Asking>, urls: Vec<String>, out: mpsc::Sender<Bytes>, b
             biased;
             _ = out.closed() => break,
             _ = hosted::stopped() => break,
+            _ = place.replaced.notified() => {
+                // A newer stream for this tab: this one ends. Its page, if it still reads, is another
+                // tab with this one's id, and takes an id of its own.
+                let _ = out.try_send(Bytes::from_static(b"event: replaced\ndata: \n\n"));
+                break;
+            }
             done = running(&mut job) => {
                 job = None;
                 for (op, answered) in done {
@@ -538,6 +616,8 @@ async fn run(asking: Arc<Asking>, urls: Vec<String>, out: mpsc::Sender<Bytes>, b
             }
         }
     }
+    // Ended, every end told: a newer stream for the tab may start its subscriptions.
+    drop(place);
 }
 
 /// A subscription that fell behind, or whose tab asked: its check runs again, and once it is in,

@@ -141,9 +141,11 @@ Each gap this app met, and what it does about it:
 - **The browser has no clock.** The countdown counts down from the server's `left_ms` with
   `set_interval!` and starts again from each view, so a drifting or sleeping phone is put right by
   the next view; the server alone decides when a question closes (presence's PROPOSALS.md, W2).
-- **Channel hooks aren't told which stream** a subscription was on. A tab whose stream reconnects
-  (the same tab id) may be told `on_open!` for the new stream before `on_close!` for the old one, so
-  the room counts each tab's open streams (`Rooms.counted`) and leaves presence only at zero.
+- **Channel hooks weren't told which stream** a subscription was on. A tab whose stream reconnected
+  (the same tab id) could be told `on_open!` for the new stream before `on_close!` for the old one,
+  so the room counted each tab's open streams and left presence only at zero. (Fixed in the platform
+  since: a tab has one stream, and a new one ends the old first, so a tab's hooks come in order; the
+  room joins and leaves a tab as it is told.)
 - **packages/presence's server glue is events, not channels** (its README says so). The app uses
   presence's `Room` (the logic) inside its own actor, fed by the channel's hooks, and its
   `<AvatarStack>`; the channel's beat check (`x-rocx-channel: check`, with `x-rocx-tab`) is the
