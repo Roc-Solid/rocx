@@ -8,7 +8,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { cpus, loadavg, tmpdir } from "node:os";
 import { join } from "node:path";
 import { appWasm, build, nativePage, out, pageFile, prerender, roc, root, ROUTES, STATIC_GETS, startServer, underBase } from "../build.mjs";
 import { hasRust } from "../../server/build.mjs";
@@ -1248,10 +1248,22 @@ test("pages: rendering them again and again leaves nothing allocated", { skip },
 // The dev build's last: they build the site again, from Roc's dev backend, with the stories, over
 // what the tests above use.
 
-test("the dev build (`just dev`) rebuilds fast, and every page still wakes up and works", { skip }, async () => {
+test("the dev build (`just dev`) rebuilds fast, and every page still wakes up and works", { skip }, async (t) => {
+	// Two seconds, on a machine with a core for each thing it runs. On a busier one (other builds,
+	// other tests: a load average above its cores) each process gets a share of a core, and the
+	// build takes longer by as much, so the limit grows by load / cores, the higher of the two
+	// readings around the build (the load average is a minute's, and lags). A rebuild that got
+	// slower still fails on a quiet machine, where the limit stays two seconds; retrying, or
+	// comparing with another build, would hide it on a quiet one as well.
+	const cores = cpus().length;
+	const busy = () => loadavg()[0] / cores;
+	const busyBefore = busy();
 	const started = performance.now();
 	const facts = await build({ dev: true, log: () => {} });
-	assert.ok(performance.now() - started < 2000, "a rebuild while editing takes well under two seconds");
+	const took = performance.now() - started;
+	const limit = 2000 * Math.max(1, busyBefore, busy());
+	t.diagnostic(`a dev rebuild took ${Math.round(took)} ms; load average ${loadavg()[0].toFixed(1)} on ${cores} cores; the limit ${Math.round(limit)} ms`);
+	assert.ok(took < limit, `a rebuild while editing takes well under two seconds (${Math.round(limit)} ms on a machine this busy): it took ${Math.round(took)} ms`);
 	assert.match(facts, /^dev=yes$/m);
 
 	const devDir = mkdtempSync(join(tmpdir(), "rocx-site-dev-"));
