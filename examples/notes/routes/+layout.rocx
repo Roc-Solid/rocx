@@ -1,0 +1,239 @@
+import pf.Html
+import ../Generated/Styles
+
+## The document around every page: its head, the stylesheet every component's `<style>` is in
+## (`Generated/Styles`), and Acme Notes' look: its tokens and base styles, below. A page's title
+## comes from its `meta`, or from a `<Title>` it renders (a note's title).
+view! = |{ meta, children, .. }|
+	<>
+		<!doctype html>
+		<html lang="en">
+			<head>
+				<meta charset="utf-8" />
+				<meta name="viewport" content="width=device-width, initial-scale=1" />
+				<meta name="color-scheme" content="light dark" />
+				<title>{meta.title}</title>
+				<NoHydration>{=Styles.style}</NoHydration>
+			</head>
+			<body>
+				<a class="skip" href="#main">Skip to the content</a>
+				{...children}
+			</body>
+		</html>
+	</>
+
+<style>
+	/* Acme Notes' look: ink on warm paper, an indigo pen for what you can do, and a yellow
+	   highlighter for what a search found. */
+	:global(:root) {
+		--paper: #f7f5ef;
+		--surface: #ffffff;
+		--sunk: #efece3;
+		--ink: #1e1f24;
+		--ink-soft: #5c616c;
+		--ink-faint: #8b909a;
+		--line: #e3dfd4;
+		--line-strong: #c8c2b3;
+		--accent: #2f4ac4;
+		--accent-soft: #e7ebfb;
+		--accent-ink: #ffffff;
+		--mark: #ffe46b;
+		--mark-ink: #1e1f24;
+		--pin: #d9480f;
+		--ok: #2b8a3e;
+		--ok-soft: #dcf3e1;
+		--danger: #c92a2a;
+		--danger-soft: #ffe3e3;
+		--focus: #2f4ac4;
+		--radius: 12px;
+		--shadow-1: 0 1px 2px rgb(30 31 36 / 0.06), 0 1px 1px rgb(30 31 36 / 0.04);
+		--shadow-2: 0 8px 24px rgb(30 31 36 / 0.1), 0 2px 4px rgb(30 31 36 / 0.06);
+		--sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+		--serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+		--mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+		color-scheme: light;
+	}
+
+	@media (prefers-color-scheme: dark) {
+		:global(:root) {
+			--paper: #121317;
+			--surface: #1b1d23;
+			--sunk: #23262e;
+			--ink: #ecebe6;
+			--ink-soft: #a7acb6;
+			--ink-faint: #7b808b;
+			--line: #2d3139;
+			--line-strong: #454a55;
+			--accent: #8fa3ff;
+			--accent-soft: #232a4a;
+			--accent-ink: #121317;
+			--mark: #6e5c00;
+			--mark-ink: #fff4c2;
+			--pin: #ff8a4c;
+			--ok: #69db7c;
+			--ok-soft: #1d3324;
+			--danger: #ff8787;
+			--danger-soft: #3b1d1d;
+			--focus: #8fa3ff;
+			--shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+			--shadow-2: 0 8px 24px rgb(0 0 0 / 0.45);
+			color-scheme: dark;
+		}
+	}
+
+	:global {
+		*,
+		*::before,
+		*::after {
+			box-sizing: border-box;
+		}
+
+		body {
+			margin: 0;
+			min-height: 100vh;
+			background: var(--paper);
+			color: var(--ink);
+			font: 15px/1.55 var(--sans);
+			-webkit-font-smoothing: antialiased;
+		}
+
+		a {
+			color: var(--accent);
+			text-underline-offset: 0.15em;
+		}
+
+		h1,
+		h2,
+		h3 {
+			line-height: 1.2;
+			letter-spacing: -0.01em;
+		}
+
+		input,
+		select,
+		textarea,
+		button {
+			font: inherit;
+			color: inherit;
+		}
+
+		input:not([type="radio"]):not([type="checkbox"]):not([type="hidden"]),
+		textarea {
+			width: 100%;
+			padding: 0.55rem 0.7rem;
+			border: 1px solid var(--line-strong);
+			border-radius: 9px;
+			background: var(--surface);
+		}
+
+		input::placeholder,
+		textarea::placeholder {
+			color: var(--ink-faint);
+		}
+
+		button,
+		.button {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			gap: 0.4rem;
+			padding: 0.5rem 0.95rem;
+			border: 1px solid var(--line-strong);
+			border-radius: 9px;
+			background: var(--surface);
+			color: var(--ink);
+			font-weight: 600;
+			text-decoration: none;
+			white-space: nowrap;
+			cursor: pointer;
+		}
+
+		button:hover:not(:disabled),
+		.button:hover {
+			border-color: var(--ink-soft);
+		}
+
+		button:disabled {
+			cursor: default;
+			opacity: 0.55;
+		}
+
+		button.primary,
+		.button.primary {
+			border-color: var(--accent);
+			background: var(--accent);
+			color: var(--accent-ink);
+		}
+
+		button.primary:hover:not(:disabled),
+		.button.primary:hover {
+			border-color: var(--accent);
+			filter: brightness(1.08);
+		}
+
+		button.quiet,
+		.button.quiet {
+			border-color: transparent;
+			background: transparent;
+			color: var(--ink-soft);
+		}
+
+		button.quiet:hover:not(:disabled),
+		.button.quiet:hover {
+			border-color: transparent;
+			background: var(--sunk);
+			color: var(--ink);
+		}
+
+		button.danger {
+			border-color: transparent;
+			background: var(--danger-soft);
+			color: var(--danger);
+		}
+
+		:focus-visible {
+			outline: 3px solid var(--focus);
+			outline-offset: 2px;
+		}
+
+		mark {
+			padding: 0 0.12em;
+			border-radius: 3px;
+			background: var(--mark);
+			color: var(--mark-ink);
+		}
+
+		.visually-hidden {
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			overflow: hidden;
+			clip-path: inset(50%);
+			white-space: nowrap;
+		}
+
+		.problem {
+			margin: 0;
+			padding: 0.6rem 0.8rem;
+			border-radius: 9px;
+			background: var(--danger-soft);
+			color: var(--danger);
+		}
+	}
+
+	.skip {
+		position: absolute;
+		left: 0.75rem;
+		top: -3rem;
+		z-index: 100;
+		padding: 0.5rem 0.9rem;
+		border-radius: 9px;
+		background: var(--accent);
+		color: var(--accent-ink);
+		font-weight: 700;
+	}
+
+	.skip:focus {
+		top: 0.75rem;
+	}
+</style>

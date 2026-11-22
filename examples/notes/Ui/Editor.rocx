@@ -1,0 +1,175 @@
+import pf.Html
+import pf.Solid exposing [create_signal!, on_settled!]
+import ../Ui/Prose
+
+## A note's fields, in its page's form: its title, its tags, and its Markdown beside a live preview,
+## rendered again as you type (in the browser, by the same parser the server uses: packages/markdown,
+## compiled to WebAssembly). On a narrow screen Write and Preview are tabs. The fields are a plain
+## form's, so the page saves them with or without JavaScript; without it there is no live preview,
+## and the preview shows the note as it was saved.
+Editor := [].{
+
+	view! : { title : Str, body : Str, tags : Str } => Html
+	view! = |{ title, body, tags }| {
+		(draft!, set_draft!) = create_signal!(body)
+		(previewing!, set_previewing!) = create_signal!(Bool.False)
+		(ready!, set_ready!) = create_signal!(Bool.False)
+		on_settled!(|| set_ready!(Bool.True))
+		<div class="editor" class:previewing={previewing!()}>
+			<label for="title" class="visually-hidden">Title</label>
+			<input id="title" name="title" class="title" value={title} placeholder="Title" required maxlength="200" autocomplete="off" />
+			<div class="tags">
+				<label for="tags">Tags</label>
+				<input id="tags" name="tags" value={tags} placeholder="work, ideas" autocomplete="off" aria-describedby="tags-hint" />
+				<span id="tags-hint" class="hint">Separated by commas: letters, digits and dashes.</span>
+			</div>
+			<div class="tabs" role="tablist" aria-label="Editor" hidden?={!ready!()}>
+				<button type="button" role="tab" aria-selected={if (previewing!()) "false" else "true"} aria-controls="write" on:click={|| set_previewing!(Bool.False)}>Write</button>
+				<button type="button" role="tab" aria-selected={if (previewing!()) "true" else "false"} aria-controls="preview" on:click={|| set_previewing!(Bool.True)}>Preview</button>
+			</div>
+			<div class="panes">
+				<div class="pane write" id="write">
+					<label for="body" class="visually-hidden">The note, in Markdown</label>
+					<textarea id="body" name="body" rows="18" placeholder="Write in Markdown: # a heading, - a list, **bold**, [a link](https://…)" on:input.value={set_draft!}>{body}</textarea>
+					<p class="hint" aria-live="polite">{Editor.counted(draft!())}</p>
+				</div>
+				<section class="pane preview" id="preview" aria-label="Preview">
+					<p class="label" aria-hidden="true">Preview</p>
+					{=Prose.view({ source: if (draft!().trim().is_empty()) "*Nothing to preview yet.*" else draft!() })}
+				</section>
+			</div>
+		</div>
+	}
+
+	## How long a draft is, in words: what has a letter or a digit in it, so Markdown's marks (`##`,
+	## `- [ ]`) aren't counted.
+	counted : Str -> Str
+	counted = |text| {
+		count = text.replace_each("\n", " ").split_on(" ").keep_if(|word| word.to_utf8().any(|byte| (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z') or (byte >= '0' and byte <= '9') or byte >= 128)).len()
+		if (count == 1) "1 word" else "${count.to_str()} words"
+	}
+
+	<story name="A draft">
+		<Editor title="Launch checklist" tags="work, rocket" body="## Before the day\n\n- [x] Book the pad\n- [ ] Weather go/no-go" />
+	</story>
+
+	<style>
+		.editor {
+			display: grid;
+			gap: 0.8rem;
+		}
+
+		.title {
+			padding: 0.4rem 0 !important;
+			border: 0 !important;
+			border-bottom: 2px solid var(--line) !important;
+			border-radius: 0 !important;
+			background: transparent !important;
+			font-size: 1.7rem;
+			font-weight: 700;
+			letter-spacing: -0.01em;
+		}
+
+		.title:focus-visible {
+			outline: none;
+			border-bottom-color: var(--accent) !important;
+		}
+
+		.tags {
+			display: grid;
+			grid-template-columns: auto 1fr;
+			align-items: center;
+			gap: 0.3rem 0.75rem;
+		}
+
+		.tags label {
+			color: var(--ink-soft);
+			font-weight: 600;
+		}
+
+		.tags .hint {
+			grid-column: 2;
+		}
+
+		.hint {
+			margin: 0;
+			color: var(--ink-faint);
+			font-size: 0.8rem;
+		}
+
+		.tabs {
+			display: none;
+			gap: 0.25rem;
+		}
+
+		.tabs button[aria-selected="true"] {
+			border-color: var(--accent);
+			background: var(--accent-soft);
+			color: var(--accent);
+		}
+
+		.panes {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 1rem;
+			align-items: stretch;
+		}
+
+		.pane {
+			display: grid;
+			align-content: start;
+			gap: 0.4rem;
+			min-width: 0;
+		}
+
+		textarea {
+			min-height: 26rem;
+			resize: vertical;
+			font-family: var(--mono);
+			font-size: 0.92rem;
+			line-height: 1.6;
+		}
+
+		.preview {
+			padding: 1rem 1.2rem;
+			border: 1px solid var(--line);
+			border-radius: 9px;
+			background: var(--surface);
+			max-height: 34rem;
+			overflow: auto;
+		}
+
+		.label {
+			margin: 0 0 0.25rem;
+			color: var(--ink-faint);
+			font-size: 0.72rem;
+			font-weight: 700;
+			letter-spacing: 0.08em;
+			text-transform: uppercase;
+		}
+
+		@media (max-width: 52rem) {
+			.tabs:not([hidden]) {
+				display: flex;
+			}
+
+			.panes {
+				grid-template-columns: 1fr;
+			}
+
+			.editor:has(.tabs:not([hidden])) .preview,
+			.editor.previewing .write {
+				display: none;
+			}
+
+			.editor.previewing .preview {
+				display: grid;
+			}
+		}
+	</style>
+}
+
+expect Editor.counted("") == "0 words"
+expect Editor.counted("one") == "1 word"
+expect Editor.counted("# Two\n\nwords  here") == "3 words"
+expect Editor.counted("- [ ] **Check** the wind") == "3 words"

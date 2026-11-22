@@ -1,0 +1,150 @@
+import pf.Html
+import pf.Server
+import testing.Dom
+import ../Note
+
+## A note in the notebook's list: its title, the start of its words (or, in a search's results, the
+## parts that matched, highlighted), its tags, and when it last changed. A pure component: it only
+## shows what it is given, so it is checked by the `expect`s below.
+NoteCard := [].{
+
+	view : { note : Note.Summary } -> Html
+	view = |{ note }|
+		<article class="card" class:pinned={note.pinned} aria-labelledby={"note-${note.id}"}>
+			<h3 id={"note-${note.id}"}>
+				<a href={"/notes/${note.id}"}>{note.title}</a>
+			</h3>
+			<p class="snippet">{...NoteCard.snippet(note.snippet)}</p>
+			<footer>
+				<time datetime={note.updated}>{Note.day(note.updated)}</time>
+				{=if (note.pinned) <span class="badge pin">Pinned</span> else Html.empty({})}
+				{=if (note.archived) <span class="badge">Archived</span> else Html.empty({})}
+				<ul class="tags" aria-label="Tags">
+					{...note.tags.map(|tag| <li><a href={"/?tag=${Server.encode_segment(tag)}"}>{"#${tag}"}</a></li>)}
+				</ul>
+			</footer>
+		</article>
+
+	## A snippet's pieces: each match in a `<mark>`, as text, so nothing a note says is read as
+	## markup.
+	snippet : List(Note.Piece) -> List(Html)
+	snippet = |pieces|
+		if pieces.is_empty() {
+			[<span class="empty">Nothing written yet.</span>]
+		} else {
+			pieces.map(|piece| if (piece.hit) <mark>{piece.text}</mark> else Html.text(piece.text))
+		}
+
+	<story name="A search's hit">
+		<NoteCard note={{ id: "1", title: "Launch checklist", snippet: [{ text: "Book the ", hit: Bool.False }, { text: "launch", hit: Bool.True }, { text: " pad and tell the crew.", hit: Bool.False }], tags: ["work", "rocket"], pinned: Bool.True, archived: Bool.False, updated: "2026-11-20T09:30:00Z" }} />
+	</story>
+
+	<style>
+		.card {
+			display: grid;
+			grid-template-rows: auto 1fr auto;
+			gap: 0.45rem;
+			min-height: 9.5rem;
+			padding: 1rem 1.1rem 0.85rem;
+			border: 1px solid var(--line);
+			border-radius: var(--radius);
+			background: var(--surface);
+			box-shadow: var(--shadow-1);
+			transition: box-shadow 120ms, border-color 120ms;
+		}
+
+		.card:hover,
+		.card:focus-within {
+			border-color: var(--line-strong);
+			box-shadow: var(--shadow-2);
+		}
+
+		.card.pinned {
+			border-top: 3px solid var(--pin);
+		}
+
+		h3 {
+			margin: 0;
+			font-size: 1.02rem;
+		}
+
+		h3 a {
+			color: var(--ink);
+			text-decoration: none;
+		}
+
+		h3 a:hover {
+			text-decoration: underline;
+		}
+
+		.snippet {
+			margin: 0;
+			overflow: hidden;
+			display: -webkit-box;
+			-webkit-line-clamp: 4;
+			-webkit-box-orient: vertical;
+			color: var(--ink-soft);
+			font-family: var(--serif);
+			font-size: 0.95rem;
+			line-height: 1.5;
+		}
+
+		.empty {
+			font-style: italic;
+			color: var(--ink-faint);
+		}
+
+		footer {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 0.35rem 0.6rem;
+			color: var(--ink-faint);
+			font-size: 0.8rem;
+		}
+
+		.badge {
+			padding: 0.05rem 0.45rem;
+			border-radius: 999px;
+			background: var(--sunk);
+			color: var(--ink-soft);
+			font-weight: 600;
+		}
+
+		.badge.pin {
+			background: color-mix(in srgb, var(--pin) 14%, transparent);
+			color: var(--pin);
+		}
+
+		.tags {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.3rem;
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		.tags a {
+			color: var(--accent);
+			text-decoration: none;
+		}
+
+		.tags a:hover {
+			text-decoration: underline;
+		}
+	</style>
+}
+
+card = |note| Dom.parse(Html.to_str(NoteCard.view({ note: note })))
+
+groceries = { id: "4", title: "Groceries", snippet: [{ text: "buy ", hit: Bool.False }, { text: "<milk>", hit: Bool.True }], tags: ["home"], pinned: Bool.False, archived: Bool.True, updated: "2026-11-21T08:00:00Z" }
+
+expect card(groceries).text_of(Role("heading")) == Ok("Groceries")
+expect card(groceries).get(Named("link", "Groceries")).map_ok(|link| link.attr("href")) == Ok(Ok("/notes/4"))
+# A match is marked, and stays text: a note's `<milk>` is never markup.
+expect card(groceries).texts(Tag("mark")) == ["<milk>"]
+expect card(groceries).contains(Text("Archived")) and !card(groceries).contains(Text("Pinned"))
+expect card(groceries).texts(Role("link")) == ["Groceries", "#home"]
+expect card({ ..groceries, snippet: [] }).contains(Text("Nothing written yet."))
+expect card({ ..groceries, pinned: Bool.True, archived: Bool.False }).contains(Text("Pinned"))

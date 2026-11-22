@@ -1,0 +1,71 @@
+import pf.Html
+import pf.Endpoint
+import pf.Server
+import pf.Show
+import pf.Submission
+import pf.Title
+import pf.Router exposing [use_submission!]
+import ../../../../Middlewares
+import ../../../../Note
+import ../../../../Pages
+import ../../../../Generated/Api
+import ../../../../Ui/Editor
+import ../../../../Ui/Missing
+import ../../../../Ui/Topbar
+
+## A note's editor: its fields filled from the note (`GET /notes/<id>`, the note page's endpoint),
+## in a form that posts to `/notes/<id>/edit`. What was typed survives a refusal: the fields are
+## filled from the submission then, rather than the note.
+middleware = Middlewares.signed_in
+
+meta = { title: "Edit · Acme Notes" }
+
+view! = |{ params }|
+	match Endpoint.read!(Api.get_notes_id({ id: params.id })) {
+		Ok(opened) => <Editing id={params.id} opened={opened} />
+		Err(problem) => <Missing problem={problem} />
+	}
+
+## The editor, once the note is found.
+Editing := [].{
+	view! : { id : Str, opened : Pages.Opened } => Html
+	view! = |{ id, opened }| {
+		saving : Submission({ title : Str, body : Str, tags : Str }, Str)
+		saving = use_submission!(Api.post_notes_id_edit({ id: id }))
+		typed! = |name, saved| if (saving.error!().is_ok()) saving.field!(name) else saved
+		<div>
+			<Title>{"Editing ${opened.note.title} · Acme Notes"}</Title>
+			{=Topbar.view({ email: opened.email, query: "" })}
+			<main id="main" class="page">
+				<form method="post" action={Endpoint.url_of(Api.post_notes_id_edit({ id: id }))} class="sheet">
+					<Editor title={typed!("title", opened.note.title)} body={typed!("body", opened.note.body)} tags={typed!("tags", Note.tags_text(opened.note.tags))} />
+					<Show when!={saving.error!()}>
+						{|problem!| <p class="problem" role="alert">{Server.explain(problem!())}</p>}
+					</Show>
+					<div class="buttons">
+						<button type="submit" class="primary" disabled?={saving.pending!()}>{if (saving.pending!()) "Saving…" else "Save"}</button>
+						<a class="button quiet" href={"/notes/${id}"}>Cancel</a>
+					</div>
+				</form>
+			</main>
+		</div>
+	}
+}
+
+<style>
+	.page {
+		max-width: 76rem;
+		margin: 0 auto;
+		padding: 1.5rem clamp(1rem, 3vw, 2rem) 4rem;
+	}
+
+	.sheet {
+		display: grid;
+		gap: 1rem;
+	}
+
+	.buttons {
+		display: flex;
+		gap: 0.5rem;
+	}
+</style>

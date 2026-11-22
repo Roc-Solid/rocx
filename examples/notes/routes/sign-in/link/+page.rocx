@@ -1,0 +1,91 @@
+import pf.Html
+import pf.Endpoint
+import pf.Router
+import pf.Server
+import pf.Show
+import pf.Submission
+import pf.Router exposing [use_submission!]
+import ../../../Query
+import ../../../Generated/Api
+import ../../../Ui/Brand
+
+## Where a sign-in link lands: who it signs in, and a button that does. Following the link signs
+## nobody in by itself, so a mail scanner that opens links doesn't use yours up; the button posts it.
+meta = { title: "Sign in · Acme Notes" }
+
+## Who the link signs in, or why it doesn't (used, or expired: 410).
+link! : Str => Try({ email : Str }, Server.Problem)
+link! = |token| Endpoint.read!(Api.get_sign_in_link({}).with_query("token=${Server.encode_segment(token)}"))
+
+view! = |_| {
+	token = Query.value(Router.location!({}).query, "token")
+	using : Submission({ token : Str }, Str)
+	using = use_submission!(Api.post_sign_in_link({}))
+	<main id="main" class="link">
+		<div class="card">
+			<p class="brand">{=Brand.view({})}</p>
+			<Show
+				when!={link!(token).is_ok()}
+				fallback={
+					<div role="alert">
+						<h1>This link has expired</h1>
+						<p>A sign-in link works once, for 15 minutes. This one has been used, or its time is up.</p>
+						<p><a class="button primary" href="/sign-in">Get a new link</a></p>
+					</div>
+				}
+			>
+				<form method="post" action={Endpoint.url_of(Api.post_sign_in_link({}))}>
+					<h1>Almost there</h1>
+					<p>Sign in as <strong>{link!(token).map_ok(|found| found.email) ?? ""}</strong>?</p>
+					<input type="hidden" name="token" value={token} />
+					<button type="submit" class="primary" disabled?={using.pending!()}>Sign in</button>
+					<Show when!={using.error!()}>
+						{|problem!| <p class="problem" role="alert">{Server.explain(problem!())}</p>}
+					</Show>
+				</form>
+			</Show>
+		</div>
+	</main>
+}
+
+<style>
+	.link {
+		display: grid;
+		place-items: center;
+		min-height: 100vh;
+		padding: 2rem 1rem;
+		background: radial-gradient(circle at 20% 15%, color-mix(in srgb, var(--mark) 45%, transparent), transparent 32rem);
+	}
+
+	.card {
+		width: min(100%, 26rem);
+		padding: 2rem;
+		border: 1px solid var(--line);
+		border-radius: calc(var(--radius) + 6px);
+		background: var(--surface);
+		box-shadow: var(--shadow-2);
+	}
+
+	.brand {
+		margin: 0 0 1.25rem;
+	}
+
+	form {
+		display: grid;
+		gap: 0.75rem;
+	}
+
+	h1 {
+		margin: 0;
+		font-size: 1.5rem;
+	}
+
+	p {
+		margin: 0;
+		color: var(--ink-soft);
+	}
+
+	button {
+		padding: 0.65rem 1rem;
+	}
+</style>

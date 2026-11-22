@@ -1,0 +1,88 @@
+import pf.Html
+import testing.Dom
+import ../Ui/Brand
+
+## The bar across the top of every signed-in page: the name, the search box (a plain form, so it
+## searches with or without JavaScript), a new note, settings, and signing out.
+Topbar := [].{
+
+	## `query` is what the search box shows: the search the page is of, if it is one.
+	view : { email : Str, query : Str } -> Html
+	view = |{ email, query }|
+		<header class="topbar">
+			<a class="home" href="/">{=Brand.view({})}</a>
+			<form class="search" method="get" action="/" role="search">
+				<label for="search" class="visually-hidden">Search your notes</label>
+				<input id="search" name="q" type="search" value={query} placeholder="Search notes, or #tag" autocomplete="off" />
+			</form>
+			<nav class="actions" aria-label="Account">
+				<a class="button primary" href="/new"><span aria-hidden="true">＋</span> New note</a>
+				<a class="button quiet" href="/settings" title={"Signed in as ${email}"}>Settings</a>
+				<form method="post" action="/sign-out">
+					<button type="submit" class="quiet">Sign out</button>
+				</form>
+			</nav>
+		</header>
+
+	<story name="Searching">
+		<Topbar email="ada@example.com" query="launch #work" />
+	</story>
+
+	<style>
+		.topbar {
+			position: sticky;
+			top: 0;
+			z-index: 10;
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 0.75rem 1rem;
+			padding: 0.7rem clamp(1rem, 3vw, 2rem);
+			border-bottom: 1px solid var(--line);
+			background: color-mix(in srgb, var(--paper) 88%, transparent);
+			backdrop-filter: blur(8px);
+		}
+
+		.home {
+			border-radius: 8px;
+			text-decoration: none;
+		}
+
+		.search {
+			flex: 1 1 16rem;
+			max-width: 34rem;
+		}
+
+		.search input {
+			border-radius: 999px;
+			padding-left: 1rem;
+			background: var(--surface);
+		}
+
+		.actions {
+			display: flex;
+			align-items: center;
+			gap: 0.35rem;
+			margin-left: auto;
+		}
+
+		.actions form {
+			margin: 0;
+		}
+
+		@media (max-width: 40rem) {
+			.search {
+				order: 3;
+				flex-basis: 100%;
+				max-width: none;
+			}
+		}
+	</style>
+}
+
+bar = Dom.parse(Html.to_str(Topbar.view({ email: "ada@example.com", query: "launch #work" })))
+
+# The search box shows the search the page is of, and is labelled for a screen reader.
+expect bar.get(Label("Search your notes")).map_ok(|input| input.attr("value")) == Ok(Ok("launch #work"))
+expect bar.contains(Role("search"))
+expect bar.contains(Named("link", "New note")) and bar.contains(Named("button", "Sign out"))

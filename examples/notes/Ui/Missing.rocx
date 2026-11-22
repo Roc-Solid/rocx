@@ -1,0 +1,46 @@
+import pf.Html
+import pf.HttpStatusCode
+import pf.Server
+
+## What a page shows for a note that isn't there, or isn't yours (the two look the same, so nobody
+## learns which ids are someone else's): the error page's words (`routes/+error.rocx`), and the
+## answer's status set to 404 (`<HttpStatusCode>`). Any other failure is said as one. Effectful
+## (`view!`), since it sets the status.
+Missing := [].{
+
+	view! : { problem : Server.Problem } => Html
+	view! = |{ problem }| {
+		status =
+			match problem {
+				Refused(code, _) => code
+				_ => 500
+			}
+		missing = status == 404
+		<main id="main" class="missing">
+			<HttpStatusCode code={status} />
+			<p class="code" aria-hidden="true">{status.to_str()}</p>
+			<h1>{if (missing) "There's no note here" else "Something went wrong"}</h1>
+			<p>{if (missing) "It may have been deleted, or the address is wrong." else Server.explain(problem)}</p>
+			<p><a class="button" href="/">Back to your notes</a></p>
+		</main>
+	}
+
+	<style>
+		.missing {
+			max-width: 32rem;
+			margin: 5rem auto;
+			padding: 0 1.25rem;
+			text-align: center;
+		}
+
+		.code {
+			margin: 0;
+			color: var(--ink-faint);
+			font: 700 3rem/1 var(--mono);
+		}
+
+		h1 {
+			margin: 0.5rem 0 1rem;
+		}
+	</style>
+}

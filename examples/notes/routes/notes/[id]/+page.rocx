@@ -1,0 +1,172 @@
+import pf.Html
+import pf.Endpoint
+import pf.Server
+import pf.Show
+import pf.Submission
+import pf.Title
+import pf.Router exposing [use_submission!]
+import ../../../Middlewares
+import ../../../Note
+import ../../../Pages
+import ../../../Generated/Api
+import ../../../Ui/Missing
+import ../../../Ui/Prose
+import ../../../Ui/Topbar
+
+## A note: its Markdown as it reads, its tags, and what can be done with it. The buttons are forms
+## posting to `/notes/<id>`; with JavaScript the page stays, and reads the note again after each.
+middleware = Middlewares.signed_in
+
+meta = { title: "Note · Acme Notes" }
+
+view! = |{ params }|
+	match Endpoint.read!(Api.get_notes_id({ id: params.id })) {
+		Ok(first) => <Shown id={params.id} first={first} />
+		Err(problem) => <Missing problem={problem} />
+	}
+
+## The note, once it is found: what the page shows of it, read again (`opened!`) where a button
+## changes it.
+Shown := [].{
+	view! : { id : Str, first : Pages.Opened } => Html
+	view! = |{ id, first }| {
+		read = Api.get_notes_id({ id: id })
+		opened! : {} => Pages.Opened
+		opened! = |{}| Endpoint.get!(read)
+		acting : Submission({ action : Str }, Note.Full)
+		acting = use_submission!(Api.post_notes_id({ id: id }))
+		action = Endpoint.url_of(Api.post_notes_id({ id: id }))
+		<div>
+			<Title>{"${first.note.title} · Acme Notes"}</Title>
+			{=Topbar.view({ email: first.email, query: "" })}
+			<main id="main" class="page">
+				<a class="back" href={if (first.note.archived) "/?archived=true" else "/"}>← {if (first.note.archived) "Archive" else "All notes"}</a>
+				<article class="note" aria-labelledby="title">
+					<header>
+						<h1 id="title">{first.note.title}</h1>
+						<p class="meta">
+							<span>Edited <time datetime={first.note.updated}>{Note.day(first.note.updated)}</time></span>
+							<span>Written <time datetime={first.note.created}>{Note.day(first.note.created)}</time></span>
+							<Show when!={opened!({}).note.pinned}><span class="badge pin">Pinned</span></Show>
+							<Show when!={opened!({}).note.archived}><span class="badge">Archived</span></Show>
+						</p>
+						<ul class="tags" aria-label="Tags">
+							{...first.note.tags.map(|tag| <li><a href={"/?tag=${Server.encode_segment(tag)}"}>{"#${tag}"}</a></li>)}
+						</ul>
+						<div class="actions">
+							<a class="button primary" href={"/notes/${id}/edit"}>Edit</a>
+							<Show when!={!opened!({}).note.archived}>
+								<form method="post" action={action}>
+									<input type="hidden" name="action" value={if (opened!({}).note.pinned) "unpin" else "pin"} />
+									<button type="submit" disabled?={acting.pending!()}>{if (opened!({}).note.pinned) "Unpin" else "Pin"}</button>
+								</form>
+							</Show>
+							<form method="post" action={action}>
+								<input type="hidden" name="action" value={if (opened!({}).note.archived) "restore" else "archive"} />
+								<button type="submit" disabled?={acting.pending!()}>{if (opened!({}).note.archived) "Restore" else "Archive"}</button>
+							</form>
+							<Show when!={opened!({}).note.archived}>
+								<form method="post" action={action}>
+									<input type="hidden" name="action" value="delete" />
+									<button type="submit" class="danger" disabled?={acting.pending!()}>Delete for good</button>
+								</form>
+							</Show>
+						</div>
+						<Show when!={acting.error!()}>
+							{|problem!| <p class="problem" role="alert">{Server.explain(problem!())}</p>}
+						</Show>
+					</header>
+					<NoHydration>
+						{=Prose.view({ source: if (first.note.body.trim().is_empty()) "*Nothing written yet.*" else first.note.body })}
+					</NoHydration>
+				</article>
+			</main>
+		</div>
+	}
+}
+
+<style>
+	.page {
+		max-width: 46rem;
+		margin: 0 auto;
+		padding: 1.5rem clamp(1rem, 3vw, 2rem) 5rem;
+	}
+
+	.back {
+		color: var(--ink-soft);
+		font-size: 0.9rem;
+		text-decoration: none;
+	}
+
+	.back:hover {
+		color: var(--accent);
+	}
+
+	header {
+		display: grid;
+		gap: 0.6rem;
+		margin: 1rem 0 2rem;
+		padding-bottom: 1.25rem;
+		border-bottom: 1px solid var(--line);
+	}
+
+	h1 {
+		margin: 0;
+		font-size: clamp(1.7rem, 4vw, 2.3rem);
+	}
+
+	.meta {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.4rem 1rem;
+		margin: 0;
+		color: var(--ink-faint);
+		font-size: 0.85rem;
+	}
+
+	.badge {
+		padding: 0.05rem 0.5rem;
+		border-radius: 999px;
+		background: var(--sunk);
+		color: var(--ink-soft);
+		font-weight: 600;
+	}
+
+	.badge.pin {
+		background: color-mix(in srgb, var(--pin) 14%, transparent);
+		color: var(--pin);
+	}
+
+	.tags {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.tags:empty {
+		display: none;
+	}
+
+	.tags a {
+		padding: 0.1rem 0.55rem;
+		border-radius: 999px;
+		background: var(--accent-soft);
+		color: var(--accent);
+		font-size: 0.85rem;
+		text-decoration: none;
+	}
+
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+	}
+
+	.actions form {
+		margin: 0;
+	}
+</style>

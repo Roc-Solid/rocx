@@ -1,0 +1,40 @@
+import pf.Html
+
+## Acme Notes' mark and name: a page of notes, half highlighted, half in ink. In the bar across the
+## top of every signed-in page (a link home), and on the sign-in pages.
+Brand := [].{
+
+	view : {} -> Html
+	view = |{}|
+		<span class="brand">
+			<span class="logo" aria-hidden="true">✎</span>
+			<span>Acme Notes</span>
+		</span>
+
+	<story name="The mark">
+		<Brand />
+	</story>
+
+	<style>
+		.brand {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.55rem;
+			color: var(--ink);
+			font-weight: 750;
+			font-size: 1.05rem;
+			letter-spacing: -0.01em;
+		}
+
+		.logo {
+			display: inline-grid;
+			place-items: center;
+			width: 1.9rem;
+			height: 1.9rem;
+			border-radius: 8px;
+			background: linear-gradient(160deg, var(--mark) 0 55%, var(--accent) 55% 100%);
+			color: var(--mark-ink);
+			font-size: 1rem;
+		}
+	</style>
+}

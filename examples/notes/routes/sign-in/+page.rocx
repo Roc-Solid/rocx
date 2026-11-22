@@ -1,0 +1,112 @@
+import pf.Html
+import pf.Endpoint
+import pf.Router
+import pf.Server
+import pf.Show
+import pf.Submission
+import pf.Router exposing [use_submission!]
+import ../../Query
+import ../../Generated/Api
+import ../../Ui/Brand
+
+## Signing in: an address, and a link mailed to it. No passwords. A plain form, so it works before
+## the page's JavaScript has loaded, and without it; with it, the page stays and says where the link
+## went.
+meta = { title: "Sign in · Acme Notes" }
+
+view! = |_| {
+	then = Query.value(Router.location!({}).query, "then")
+	sending : Submission({ email : Str, then : Str }, { sent : Str })
+	sending = use_submission!(Api.post_sign_in({}))
+	<main id="main" class="sign-in">
+		<div class="card">
+			<p class="brand">{=Brand.view({})}</p>
+			<Show
+				when!={sending.result!()}
+				fallback={
+					<form method="post" action={Endpoint.url_of(Api.post_sign_in({}))}>
+						<h1>Sign in</h1>
+						<p class="lead">Your notes, in Markdown, searchable, and yours alone. We'll email you a link: no password to remember.</p>
+						<input type="hidden" name="then" value={then} />
+						<label for="email">Email address</label>
+						<input id="email" name="email" type="email" required autocomplete="email" placeholder="you@example.com" value={sending.field!("email")} />
+						<button type="submit" class="primary" disabled?={sending.pending!()}>{if (sending.pending!()) "Sending…" else "Email me a link"}</button>
+						<Show when!={sending.error!()}>
+							{|problem!| <p class="problem" role="alert">{Server.explain(problem!())}</p>}
+						</Show>
+					</form>
+				}
+			>
+				{|sent!|
+					<div class="sent" role="status">
+						<h1>Check your inbox</h1>
+						<p>We sent a sign-in link to <strong>{sent!().sent}</strong>. It works once, for the next 15 minutes.</p>
+						<p class="small">Running Acme Notes yourself? With <code>--dev</code> and no mail server, it lands in the dev mailbox: <a href="/__rocx/mail">/__rocx/mail</a>.</p>
+					</div>
+				}
+			</Show>
+		</div>
+	</main>
+}
+
+<style>
+	.sign-in {
+		display: grid;
+		place-items: center;
+		min-height: 100vh;
+		padding: 2rem 1rem;
+		background:
+			radial-gradient(circle at 15% 20%, color-mix(in srgb, var(--mark) 45%, transparent), transparent 32rem),
+			radial-gradient(circle at 85% 85%, var(--accent-soft), transparent 30rem);
+	}
+
+	.card {
+		width: min(100%, 26rem);
+		padding: 2rem;
+		border: 1px solid var(--line);
+		border-radius: calc(var(--radius) + 6px);
+		background: var(--surface);
+		box-shadow: var(--shadow-2);
+	}
+
+	.brand {
+		margin: 0 0 1.25rem;
+	}
+
+	form {
+		display: grid;
+		gap: 0.6rem;
+	}
+
+	h1 {
+		margin: 0;
+		font-size: 1.5rem;
+	}
+
+	.lead {
+		margin: 0 0 0.5rem;
+		color: var(--ink-soft);
+	}
+
+	label {
+		font-weight: 600;
+	}
+
+	button {
+		margin-top: 0.4rem;
+		padding: 0.65rem 1rem;
+	}
+
+	.sent p {
+		color: var(--ink-soft);
+	}
+
+	.small {
+		font-size: 0.85rem;
+	}
+
+	code {
+		font-family: var(--mono);
+		font-size: 0.9em;
+	}
+</style>

@@ -93,6 +93,9 @@ tests them all (`just examples tasks` one); `just check` type-checks them.
 - [`uptime`](examples/uptime): Acme Status, an uptime monitor and its status page: checks run by
   jobs and cron, incidents that open and close themselves, email alerts, metrics, the admin's
   tables, and a page that follows it all live over a channel.
+- [`notes`](examples/notes): Acme Notes, personal notes in Markdown that AI agents use over MCP:
+  sign-in by a mailed link, a signed session cookie, personal access tokens kept as hashes,
+  Postgres full-text search, a live preview, and a JSON API with its OpenAPI page.
 
 ## Pages and components
 

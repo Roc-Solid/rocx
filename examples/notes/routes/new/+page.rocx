@@ -1,0 +1,57 @@
+import pf.Html
+import pf.Endpoint
+import pf.Server
+import pf.Show
+import pf.Submission
+import pf.Router exposing [use_submission!]
+import ../../Middlewares
+import ../../Pages
+import ../../Generated/Api
+import ../../Ui/Editor
+import ../../Ui/Topbar
+
+## A new note: the editor, in a form that posts to `/new`, which saves it and goes on to it.
+middleware = Middlewares.signed_in
+
+meta = { title: "New note · Acme Notes" }
+
+blank! : {} => Pages.Blank
+blank! = |{}| Endpoint.get!(Api.get_new({}))
+
+view! = |_| {
+	saving : Submission({ title : Str, body : Str, tags : Str }, Str)
+	saving = use_submission!(Api.post_new({}))
+	<div>
+		{=Topbar.view({ email: blank!({}).email, query: "" })}
+		<main id="main" class="page">
+			<form method="post" action={Endpoint.url_of(Api.post_new({}))} class="sheet">
+				<Editor title={saving.field!("title")} body={saving.field!("body")} tags={saving.field!("tags")} />
+				<Show when!={saving.error!()}>
+					{|problem!| <p class="problem" role="alert">{Server.explain(problem!())}</p>}
+				</Show>
+				<div class="buttons">
+					<button type="submit" class="primary" disabled?={saving.pending!()}>{if (saving.pending!()) "Saving…" else "Save note"}</button>
+					<a class="button quiet" href="/">Cancel</a>
+				</div>
+			</form>
+		</main>
+	</div>
+}
+
+<style>
+	.page {
+		max-width: 76rem;
+		margin: 0 auto;
+		padding: 1.5rem clamp(1rem, 3vw, 2rem) 4rem;
+	}
+
+	.sheet {
+		display: grid;
+		gap: 1rem;
+	}
+
+	.buttons {
+		display: flex;
+		gap: 0.5rem;
+	}
+</style>
