@@ -1,6 +1,6 @@
 import pf.Env
 import pf.Http
-import pf.Job
+import jobs.Job
 import pf.Log
 import pf.Random
 import pf.Time

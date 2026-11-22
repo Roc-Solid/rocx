@@ -8,7 +8,7 @@ import pf.AesGcm
 import pf.Env
 import pf.Http
 import pf.HttpResponse
-import pf.Job
+import jobs.Job
 import pf.Kv
 import pf.Log
 import pf.Random

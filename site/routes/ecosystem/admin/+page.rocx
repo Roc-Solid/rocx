@@ -40,7 +40,7 @@ view! = |_|
 				Django's admin, for a Roc Solid app: a page for each table, its rows with a search, a filter in
 				every column, sorting and pages, a form for each row, and a way to add and delete rows. It reads the tables from
 				Postgres's own catalog when a page is asked for, so there is nothing to generate, and nothing to keep
-				in step with the schema. It is mounted as the platform's <a href={"${Paths.platform_jobs}#page"}>jobs page</a>
+				in step with the schema. It is mounted as its <a href={"${Paths.ecosystem_jobs}#page"}>jobs page</a>
 				is: one route file, behind the app's own middleware.
 			</PageHero>
 

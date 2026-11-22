@@ -4,12 +4,12 @@ import Host
 import Live
 import Server
 
-## What the platform's own pages (the jobs page, the dev mailbox) are drawn with: whole HTML
-## documents in the shape of a console (a sidebar, a header, panels), plain forms, one stylesheet
-## that follows the reader's light or dark scheme, and a few lines of script: they refresh the page
-## when its stream of events says something changed, keep its times (`3 s ago`) current, say
-## whether the page is live, and close a drawer on Escape. With no script, the page is the same,
-## with a button that refreshes it.
+## What the dev mailbox is drawn with (a copy of packages/admin's look, until email is a package):
+## whole HTML documents in the shape of a console (a sidebar, a header, panels), plain forms, one
+## stylesheet that follows the reader's light or dark scheme, and a few lines of script: they
+## refresh the page when its stream of events says something changed, keep its times (`3 s ago`)
+## current, say whether the page is live, and close a drawer on Escape. With no script, the page is
+## the same, with a button that refreshes it.
 AdminHtml := [].{
 
 	## Text as HTML has it, in an element or an attribute's quotes.

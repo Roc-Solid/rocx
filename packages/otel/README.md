@@ -10,7 +10,6 @@ likes. Everything goes to any OpenTelemetry Collector, or to a backend that take
 program = App.program({
 	context: |started| { facts: started },
 	middleware: Otel.middleware({}).then(Middlewares.default),
-	crons: [],
 })
 ```
 

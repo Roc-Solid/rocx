@@ -37,6 +37,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildApp, buildHost, hasRust, hostUnitTests, roc, root } from "../build.mjs";
+import { testDatabase } from "../../packages/testing/postgres.mjs";
 
 
 let hasRoc = true;
@@ -95,7 +96,8 @@ async function start(flags = [], executable = app, environment = {}, { debug = t
 }
 
 // The app's migrations are in it (`program.migrations`, its .sql files embedded).
-const dbFlags = () => (database ? ["--database-url", database, "--job-retry-ms", "20", ...mailFlags()] : mailFlags());
+// A failed job waits 20 ms for its second attempt: the app's jobs plugin says so (`retry_ms`).
+const dbFlags = () => (database ? ["--database-url", database, ...mailFlags()] : mailFlags());
 
 before(async () => {
 	if (skip) return;
@@ -812,6 +814,71 @@ const finished = (job) =>
 		return !state.startsWith("running") && !state.startsWith("queued") && state;
 	});
 
+/** What the platform applied before jobs were a package (D-034), as master had it: its first
+ * migration (the queue and actors' state) and its second (job keys, cancelling, the outbox), word
+ * for word; and its third, which dropped the outbox. */
+const PLATFORM_BEFORE_D034 = [
+	[
+		"rocx/0001 jobs and actors",
+		"create table rocx_jobs (\n    id bigserial primary key,\n    kind text not null,\n    input text not null,\n    state text not null default 'queued' check (state in ('queued', 'running', 'done', 'failed')),\n    attempts int not null default 0,\n    max_attempts int not null default 5,\n    run_at timestamptz not null default now(),\n    locked_at timestamptz,\n    finished_at timestamptz,\n    last_error text,\n    unique_key text unique,\n    created_at timestamptz not null default now()\n);\ncreate index rocx_jobs_ready on rocx_jobs (run_at, id) where state = 'queued';\ncreate table rocx_actors (\n    kind text not null,\n    key text not null,\n    state text not null,\n    updated_at timestamptz not null default now(),\n    primary key (kind, key)\n);",
+	],
+	[
+		"rocx/0002 job keys, cancelling, the outbox",
+		"alter table rocx_jobs drop constraint rocx_jobs_unique_key_key;\ncreate unique index rocx_jobs_pending_key on rocx_jobs (unique_key) where state in ('queued', 'running');\nalter table rocx_jobs drop constraint rocx_jobs_state_check;\nalter table rocx_jobs add constraint rocx_jobs_state_check check (state in ('queued', 'running', 'done', 'failed', 'canceled'));\ncreate index rocx_jobs_listed on rocx_jobs (state, kind, id);\ncreate table rocx_outbox (\n    id bigserial primary key,\n    sent_at timestamptz not null default now(),\n    from_address text not null,\n    to_address text not null,\n    subject text not null,\n    text text not null,\n    html text not null,\n    raw text not null\n);",
+	],
+	["rocx/0003 the dev mailbox in memory", "drop table if exists rocx_outbox"],
+];
+
+test("jobs: a database the platform migrated before jobs were a package (D-034) keeps its queue: nothing made again, its jobs where they were, a due one run, a key still one pending job's", { skip: skipDb }, async () => {
+	const db = await testDatabase();
+	let moved;
+	try {
+		// The database as the platform left it: its migrations applied and recorded, and a queue with
+		// a job due, one keyed for later, one failed and one done.
+		await db.query("create table rocx_migrations (name text primary key, applied_at timestamptz not null default now())");
+		for (const [name, sql] of PLATFORM_BEFORE_D034) {
+			await db.query(sql);
+			await db.query(`insert into rocx_migrations (name) values ('${name.replaceAll("'", "''")}')`);
+		}
+		const marker = `${run}kept`;
+		await db.query(
+			`insert into rocx_jobs (kind, input, state, run_at, unique_key, attempts, last_error, finished_at) values
+				('note', '{"run":"${marker}","said":"from before"}', 'queued', now(), null, 0, null, null),
+				('note', '{"run":"${marker}","said":"later"}', 'queued', now() + interval '1 hour', 'later:${marker}', 0, null, null),
+				('flaky', '{"run":"${marker}","fails":9}', 'failed', now(), null, 5, 'failed before', now()),
+				('note', '{"run":"${marker}","said":"done"}', 'done', now(), null, 1, null, now())`,
+		);
+		moved = await start(["--database-url", db.url]);
+		const migrated = events(moved)
+			.map((event) => event.msg)
+			.filter((msg) => msg.startsWith("rocx server: migrated:"));
+		assert.ok(migrated.includes("rocx server: migrated: jobs/0001_jobs"), migrated.join("\n"));
+		assert.ok(!migrated.some((msg) => msg.includes("rocx/")), "the platform's own, not again");
+		// The job that was due runs; the rest are as they were.
+		assert.equal(await until(() => moved.text(`/jobs/log?run=${marker}`)), `note: ${marker} from before`);
+		// The worker marks it done just after it ran.
+		const state = async () => (await db.query(`select state from rocx_jobs where input like '%${marker}%from before%'`))[0]?.state;
+		assert.equal(await until(async () => ((await state()) === "done" ? "done" : "")), "done", "and is done");
+		const rows = await db.query(`select input::json->>'said' as said, state, attempts, unique_key, last_error from rocx_jobs where input like '%${marker}%' order by id`);
+		assert.deepEqual(
+			rows.map((row) => [row.said, row.state, row.attempts, row.unique_key, row.last_error]),
+			[
+				["from before", "done", 1, null, null],
+				["later", "queued", 0, `later:${marker}`, null],
+				[null, "failed", 5, null, "failed before"],
+				["done", "done", 1, null, null],
+			],
+		);
+		// The key is still one pending job's, and a queued job can still be canceled.
+		await assert.rejects(db.query(`insert into rocx_jobs (kind, input, unique_key) values ('note', '{}', 'later:${marker}')`), /rocx_jobs_pending_key/);
+		assert.equal(await moved.text(`/jobs/cancel?key=later:${marker}`, { method: "POST" }), "1");
+		assert.deepEqual(await db.query(`select state from rocx_jobs where unique_key = 'later:${marker}'`), [{ state: "canceled" }]);
+	} finally {
+		await moved?.stop();
+		await db.drop();
+	}
+});
+
 test("jobs: one queued runs at once, one queued for later runs later, in the background", { skip: skipDb }, async () => {
 	const now = `${run}now`;
 	const started = performance.now();
@@ -1255,8 +1322,13 @@ test("plugins: a plugin's route answers in the app, with the app's context and i
 	const said = events().map((event) => event.msg);
 	assert.deepEqual(
 		said.filter((msg) => msg.startsWith("rocx plugins:")),
-		["rocx plugins: fixture: 5 routes, 1 early route, 1 migration, 1 call, 1 loop, 1 start, 1 check", "rocx plugins: second: 1 route", "rocx plugins: third: 1 route"],
-		"listed fixture, third, second: third needs second, so it comes after it",
+		[
+			"rocx plugins: jobs: 1 migration, 1 call, 5 loops, 1 start",
+			"rocx plugins: fixture: 5 routes, 1 early route, 1 migration, 1 call, 1 loop, 1 start, 1 check",
+			"rocx plugins: second: 1 route",
+			"rocx plugins: third: 1 route",
+		],
+		"listed jobs, fixture, third, second: third needs second, so it comes after it",
 	);
 	assert.ok(said.includes("fixture.look: the fixture looked"), "the check, run once after the start");
 });

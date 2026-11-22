@@ -10,5 +10,4 @@ import pf.Middleware
 program = App.program({
 	context: |_started| {},
 	middleware: Middleware.same_origin({}),
-	crons: [],
 })

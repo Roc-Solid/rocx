@@ -1,11 +1,12 @@
+import pf.Db
+import pf.Live
+import pf.Log
+import pf.Time
 import Cron
-import Db
-import Live
-import Log
 import Registry
-import Time
 
-## The schedules (`program.crons`), kept: a background loop that sleeps until the next one is due,
+## The schedules (the jobs plugin's `crons`): a background loop, with a database, that sleeps until
+## the next one is due,
 ## queues its job, and goes back to sleep, until the server stops. A job is queued keyed by its
 ## schedule and the second it was due (`unique_key`), so a restart in that second, or another
 ## server, never queues it twice while the first is pending. It is tried as many times as its kind
@@ -13,6 +14,9 @@ import Time
 CronTicker := [].{
 	run! : List({ name : Str, schedule : Str, job : Str, input : Str }) => {}
 	run! = |crons| {
+		if !Db.connected!({}) {
+			return {}
+		}
 		now = Time.now_millis!({}).to_i64_wrap()
 		var $pending = crons.keep_oks(
 			|cron|

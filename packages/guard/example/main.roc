@@ -14,5 +14,4 @@ import Middlewares
 program = App.program({
 	context: |started| { facts: started },
 	middleware: Middlewares.default,
-	crons: [],
 })

@@ -290,7 +290,7 @@ view! = |_|
 						<tr><td>a count, a cache, a token used once</td><td>a value in memory (<code>Kv.increment!</code>, <code>Kv.set!</code>, <code>Kv.take!</code>)</td><td>its time to live, or until a restart</td></tr>
 						<tr><td>state many requests change, one at a time</td><td>an actor (<code>Actor.ask!</code>, <code>Actor.tell!</code>)</td><td>in Postgres: restarts too</td></tr>
 						<tr><td>data, queried every way</td><td>a table (<a href={Paths.platform_postgres}><code>Db</code></a>)</td><td>in Postgres</td></tr>
-						<tr><td>work that may fail and should run again</td><td>a job (<a href={Paths.platform_jobs}><code>Job.enqueue!</code></a>)</td><td>in Postgres, until done</td></tr>
+						<tr><td>work that may fail and should run again</td><td>a job (<a href={Paths.ecosystem_jobs}><code>Job.enqueue!</code></a>)</td><td>in Postgres, until done</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>

@@ -12,8 +12,6 @@ program = {
 		Server.response(200, [{ name: "content-type", value: "text/plain; charset=utf-8" }], "logged")
 	},
 	migrations: [],
-	jobs: [],
-	crons: [],
 	actors: [],
 	logs: { format: Pretty },
 	plugins: [],

@@ -1,38 +1,40 @@
-import Db
-import Host
-import Live
-import Log
+import pf.Db
+import pf.Live
+import pf.Log
+import pf.Plugin
 import Registry
-import Setting
 
-## A job worker: a background loop the server runs `--job-workers` (4) of, each a call of its own,
-## until it stops.
+## A job worker: a background loop the jobs plugin runs `workers` (4) of, each a call of its own,
+## until the server stops; none without a database.
 ##
 ## A worker takes the next job that is due of a kind the app lists (another app may share the
 ## database) with `for update skip locked`, so no two take the same,
-## and runs it in a call of its own (`Host.isolated!`), within its kind's time limit, so a crash in
-## it, or its time running out, ends that call, not the worker. One that fails (an `Err`, a crash,
-## or "timed out after …") is queued again, `--job-retry-ms` (1000) later, then twice that, and so
-## on, until its attempts (its kind's; 5 by default) run out; then it is failed, with why. With
+## and runs it in a call of its own (the plugin's call `jobs.run`, `Plugin.isolated!`), within its
+## kind's time limit, so a crash in it, or its time running out, ends that call, not the worker. One
+## that fails (an `Err`, a crash, or "timed out after …") is queued again, `retry_ms` (1000) later,
+## then twice that, and so on, until its attempts (its kind's; 5 by default) run out; then it is
+## failed, with why. With
 ## nothing due, a worker sleeps until the next job is, or until Postgres says one was queued
 ## (`pg_notify` on `rocx_jobs`, sent when the transaction that queued it commits), or the server
 ## stops. What it starts and finishes it says on the live topic `rocx:jobs` (the jobs page listens).
 JobWorker := [].{
 
-	## Runs jobs of `kinds` until the server stops. The job it is running when it is told to stop, it
-	## finishes.
-	run! : List(Registry.Kind) => {}
-	run! = |listed_kinds| {
+	## Runs jobs of `kinds` until the server stops, a failed one again `retry_ms` later (doubled for
+	## each attempt after). The job it is running when it is told to stop, it finishes.
+	run! : List(Registry.Kind), U64 => {}
+	run! = |listed_kinds, retry_ms| {
+		if !Db.connected!({}) {
+			return {}
+		}
 		kinds = listed_kinds.map(|kind| kind.name)
-		retry_ms = Setting.number!("job-retry-ms", 1000)
-		match Host.db_listen!("rocx_jobs") {
+		match Db.listen!("rocx_jobs") {
 			Ok({}) => {}
-			Err(why) => Log.line!("rocx jobs: can't hear when a job is queued (looking every second instead): ${why}")
+			Err(DbErr(why)) => Log.line!("rocx jobs: can't hear when a job is queued (looking every second instead): ${why}")
 		}
 		var $going = Bool.True
 		while $going {
 			$going =
-				if Host.stopping!({}) {
+				if Plugin.stopping!({}) {
 					Bool.False
 				} else {
 					match take!(kinds) {
@@ -51,8 +53,8 @@ JobWorker := [].{
 		}
 	}
 
-	## When the server starts: a job of the app's kinds that was running when it last stopped was cut
-	## short, so it is queued again; done jobs older than a week go.
+	## When the server starts (with a database): a job of the plugin's kinds that was running when it
+	## last stopped was cut short, so it is queued again; done jobs older than a week go.
 	recover! : List(Str) => Try({}, Str)
 	recover! = |kinds| {
 		requeued = Db.run!("update rocx_jobs set state = 'queued', locked_at = null where state = 'running' and kind = any(string_to_array($1, E'\\n'))", [listed(kinds)])
@@ -95,18 +97,15 @@ limit = |kinds, name|
 		Err(_) => 0
 	}
 
-## Runs the job, isolated, within `limit_ms` (0: no limit): Ok, or why it failed (a crash says so;
-## a run its limit cut off says "timed out after …").
+## Runs the job, isolated (the plugin's call `jobs.run`: its kind, a newline, its input), within
+## `limit_ms` (0: no limit): Ok, or why it failed (a crash says so; a run its limit cut off says
+## "timed out after …").
 attempt! : Taken, U64 => Try({}, Str)
-attempt! = |job, limit_ms| {
-	ran = Host.isolated!("job:${job.kind}", job.input, limit_ms)
-	match ran.status {
-		0 => Ok({})
-		1 => Err(ran.out)
-		3 => Err(ran.out)
-		_ => Err("crashed: ${ran.out}")
+attempt! = |job, limit_ms|
+	match Plugin.isolated!("jobs.run", "${job.kind}\n${job.input}", limit_ms) {
+		Ok(_) => Ok({})
+		Err(why) => Err(why)
 	}
-}
 
 finish! : Taken, Try({}, Str), U64 => {}
 finish! = |job, outcome, retry_ms| {

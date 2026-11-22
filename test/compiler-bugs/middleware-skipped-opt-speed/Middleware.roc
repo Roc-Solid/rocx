@@ -30,8 +30,6 @@ pass_on = Mw.make(|path, next!| next!(path))
 program = {
 	respond!: |_method, target, _headers, _body, _started| Server.response(200, [], pass_on.then(pass_on).then(Mw.make(|_, _| "doc")).run!(target, |_| "fell through")),
 	migrations: [],
-	jobs: [],
-	crons: [],
 	actors: [],
 	logs: { format: Auto },
 	plugins: [],

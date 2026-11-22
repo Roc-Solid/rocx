@@ -1,32 +1,20 @@
 import Db
 import Log
 
-## The schema, applied when the server starts: the platform's own tables first (the jobs queue,
-## the actors' state), then the app's (`program.migrations`). Each is applied once, in order, in a
+## The schema, applied when the server starts: the platform's own tables first (the actors'
+## state), then the plugins' (each recorded as `<plugin>/<name>`), then the app's
+## (`program.migrations`). Each is applied once, in order, in a
 ## transaction of its own, and recorded in `rocx_migrations`; two servers starting at once take
 ## turns (an advisory lock), so none is applied twice.
 Migrations := [].{
 	own : List({ name : Str, sql : Str })
 	own = [
 		{
+			# The jobs queue was the platform's here too, until jobs were a package (D-034): its table
+			# is the jobs plugin's now (`jobs/0001_jobs`), which a database migrated before has.
 			name: "rocx/0001 jobs and actors",
 			sql: Str.join_with(
 				[
-					"create table rocx_jobs (",
-					"    id bigserial primary key,",
-					"    kind text not null,",
-					"    input text not null,",
-					"    state text not null default 'queued' check (state in ('queued', 'running', 'done', 'failed')),",
-					"    attempts int not null default 0,",
-					"    max_attempts int not null default 5,",
-					"    run_at timestamptz not null default now(),",
-					"    locked_at timestamptz,",
-					"    finished_at timestamptz,",
-					"    last_error text,",
-					"    unique_key text unique,",
-					"    created_at timestamptz not null default now()",
-					");",
-					"create index rocx_jobs_ready on rocx_jobs (run_at, id) where state = 'queued';",
 					"create table rocx_actors (",
 					"    kind text not null,",
 					"    key text not null,",
@@ -39,27 +27,23 @@ Migrations := [].{
 			),
 		},
 		{
+			# Brings a jobs queue made by the platform's first migration up to date; a database
+			# without one gets it from the jobs plugin, as it is now.
 			name: "rocx/0002 job keys, cancelling, the outbox",
 			sql: Str.join_with(
 				[
+					"do $$",
+					"begin",
+					"    if to_regclass('rocx_jobs') is not null then",
 					# A key is one job's while it is pending (queued or running), not forever: the
 					# next may have it once that one is done.
-					"alter table rocx_jobs drop constraint rocx_jobs_unique_key_key;",
-					"create unique index rocx_jobs_pending_key on rocx_jobs (unique_key) where state in ('queued', 'running');",
-					"alter table rocx_jobs drop constraint rocx_jobs_state_check;",
-					"alter table rocx_jobs add constraint rocx_jobs_state_check check (state in ('queued', 'running', 'done', 'failed', 'canceled'));",
-					"create index rocx_jobs_listed on rocx_jobs (state, kind, id);",
-					# Email kept instead of sent (no SMTP server): the dev mailbox's.
-					"create table rocx_outbox (",
-					"    id bigserial primary key,",
-					"    sent_at timestamptz not null default now(),",
-					"    from_address text not null,",
-					"    to_address text not null,",
-					"    subject text not null,",
-					"    text text not null,",
-					"    html text not null,",
-					"    raw text not null",
-					");",
+					"        alter table rocx_jobs drop constraint if exists rocx_jobs_unique_key_key;",
+					"        create unique index if not exists rocx_jobs_pending_key on rocx_jobs (unique_key) where state in ('queued', 'running');",
+					"        alter table rocx_jobs drop constraint if exists rocx_jobs_state_check;",
+					"        alter table rocx_jobs add constraint rocx_jobs_state_check check (state in ('queued', 'running', 'done', 'failed', 'canceled'));",
+					"        create index if not exists rocx_jobs_listed on rocx_jobs (state, kind, id);",
+					"    end if;",
+					"end $$;",
 				],
 				"\n",
 			),

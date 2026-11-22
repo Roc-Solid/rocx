@@ -4,8 +4,8 @@ A Django-style admin for a Roc Solid app's Postgres tables: an index of tables, 
 with a search, a filter in every column, sorting and pages, a form for each row, adding and deleting
 rows. It reads
 the tables from Postgres's catalog when a page is asked for, so there is nothing to generate and
-nothing to keep in step with the schema. It is mounted as the platform's jobs page is: one route
-file, behind the app's own middleware.
+nothing to keep in step with the schema. It is mounted as the jobs page beside it is (`JobsPage`,
+below): one route file, behind the app's own middleware.
 
 ```roc
 # routes/admin/db/+server.roc
@@ -41,8 +41,10 @@ admin = {
    app [program] { admin: "../packages/admin/main.roc", pf: platform "…/server/platform/main.roc" }
    ```
 
-   The browser's half names it too (`rocx build --client` copies the header's packages), and never
-   compiles the admin: the browser's routes don't import a `+server.roc`.
+   The package names the server platform (for the jobs page), so it must be the same file the app
+   names. The browser's half sees its `browser.roc` instead, the tables admin's modules alone
+   (`rocx build --client` names it there), and never compiles the admin: the browser's routes don't
+   import a `+server.roc`.
 
 2. Add a route file at the path the admin is to have (`routes/admin/db/+server.roc` is
    `/admin/db`), with a `respond!` that hands the request to `AdminPage.respond!`, as above. Its
@@ -50,8 +52,8 @@ admin = {
    route file is all it takes.
 
 3. Hand it the three effects it runs on: `{ all!: Db.all!, run!: Db.run!, random!: Random.bytes! }`.
-   A Roc package can't import a platform's modules (the compiler lets a package name a platform
-   only if it is the app's own, and a Roc Solid app is two apps), so the app passes them in.
+   The tables admin's modules use no platform, so that a page can show them in the browser (this
+   site's demos do), so the app passes them in.
 
 ## Who may use it
 
@@ -187,6 +189,26 @@ in a new row, the column's default for a column that has one.
   elsewhere, forms only to this site), `X-Frame-Options: DENY` and `Cache-Control: no-store`, and
   every value is escaped.
 
+## The jobs page
+
+`JobsPage` draws packages/jobs's queue as a console: how many jobs are in each state, what
+finished in the last hour, the latest failures, each kind, the schedules, and the jobs, each in a
+drawer, with retry, cancel and run now as plain forms. It needs the jobs plugin
+(`Job.plugin({ jobs: App.jobs })`), and is mounted behind the app's own middleware:
+
+```roc
+# routes/admin/jobs/+server.roc
+import admin.JobsPage
+import ../../../Middlewares
+
+middleware = Middlewares.admin
+
+respond! = |{ request, .. }| JobsPage.respond!(request, { mount: "/admin/jobs" })
+```
+
+`AdminHtml` is its look (and the dev mailbox's): whole pages in the shape of a console, light or
+dark, refreshed over a stream of events. The site's jobs page (`/ecosystem/jobs`) says more.
+
 ## Modules
 
 `AdminPage` is the one with effects. The others are plain Roc, and `roc test
@@ -202,8 +224,10 @@ packages/admin/main.roc` runs their `expect`s.
 | `Listing` | a list's search, filters, sort and page from the query, and back (`read`, `params`, `conditions`, `order`); each column's filter (`kind`) and the check of its values (`check`) |
 | `Paging` | `of(total, size, asked)`, `offset`, `shows`, `links` (Django's: the first two, three each side, the last two) |
 | `View` | each page's HTML, a list's row of filters, and the sidebar of tables (`side`) |
-| `Look` | the page around it: a copy of the platform's admin look (`AdminHtml`'s stylesheet and helpers: `side`, `header`, `panel`, `empty`, `icon`, `button_with`), the admin's own rules (forms, filters, pages), and the headers |
+| `Look` | the page around it: a copy of the admin look (`AdminHtml`'s stylesheet and helpers: `side`, `header`, `panel`, `empty`, `icon`, `button_with`), the admin's own rules (forms, filters, pages), and the headers |
 | `Form` | a query's or a form's fields, decoded; links, encoded |
+| `JobsPage` | the jobs page (server only: it names the platform), `respond!(request, { mount })` |
+| `AdminHtml` | the jobs page's look, which the dev mailbox shares: a page, its sidebar, panels, buttons, times, a stream of changes |
 
 Every statement answers with rows of one shape (each cell as text, and which were null), so one
 `Db.all!` reads them all, whatever the table.
@@ -220,9 +244,9 @@ Waits on a proposal (PROPOSALS.md):
 - **Server-only modules in packages**: then `AdminPage` moves to the package's `server/`, imports
   `Db` and `Random` itself, and the route's `respond!` is
   `AdminPage.respond!(request, context, admin)`.
-- **The platform's admin look for apps** (`AdminHtml`): `Look` holds a copy of its stylesheet and
-  helpers, which `test/packages.test.mjs` keeps the same as AdminHtml's (it fails when AdminHtml
-  changes and the copy doesn't). Shared, it would be one look in one place.
+- **One look** (`AdminHtml`, in this package now, with the jobs page): `Look` holds a copy of its
+  stylesheet and helpers, which `test/packages.test.mjs` keeps the same as the platform's copy
+  (the dev mailbox's, until email is a package). Folded into one, it will be one look in one place.
 
 ## Limits, for now
 

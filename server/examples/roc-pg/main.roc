@@ -27,8 +27,6 @@ Schema := [].{
 program = {
 	respond!,
 	migrations: [{ name: "roc-pg example: planets", sql: schema_sql }],
-	jobs: [],
-	crons: [],
 	actors: [],
 	logs: { format: Auto },
 	plugins: [],

@@ -12,5 +12,4 @@ import Generated/App
 program = App.program({
 	context: |_started| {},
 	middleware: Middleware.same_origin({}),
-	crons: [],
 })

@@ -95,15 +95,19 @@ site's page for this package shows its files.
    or an `https:` URL) in its environment. Browsers subscribed with one public key can only be sent
    to with that pair.
 
-2. **The package**, in the app's header, as for any package:
+2. **The package**, in the app's header, as for any package, and packages/jobs, whose plugin runs
+   the `deliver` job:
 
    ```roc
-   app [program] { push: "../packages/push/main.roc", pf: platform "…" }
+   app [program] { jobs: "../packages/jobs/main.roc", push: "../packages/push/main.roc", pf: platform "…" }
+
+   program = App.program({ …, plugins: [Job.plugin({ jobs: App.jobs })] })
    ```
 
 3. **The glue, by hand for now**: copy `server/Push.roc` and `server/PushStore.roc` into the app's
    directory, and `migrations/0001_push_subscriptions.sql` into its `migrations/`. `rocx build`
-   finds the `deliver` job and the migration there, as it finds the app's own.
+   finds the `deliver` job and the migration there, as it finds the app's own, and lists the job in
+   `App.jobs`.
 
 4. **Three endpoints**, where `<PushButton api="/push">` looks for them:
 

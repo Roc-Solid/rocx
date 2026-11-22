@@ -7,9 +7,10 @@ import ../../../Generated/Paths
 import ../../../Ui/PageHero
 
 meta = {
-	title: "Jobs, cron and email",
-	description: "Background work on the Roc Solid server platform: jobs queued in Postgres and run by workers until they succeed, schedules, and email over SMTP, or kept in memory for the dev mailbox while developing.",
+	title: "Jobs and cron",
+	description: "packages/jobs, a plugin for Roc Solid's server: jobs queued in Postgres and run by workers until they succeed, schedules, and a page of the queue; and the platform's email over SMTP, or kept in memory for the dev mailbox while developing.",
 	toc: [
+		{ id: "install", label: "Installing it" },
 		{ id: "jobs", label: "A job" },
 		{ id: "queue", label: "Queueing one" },
 		{ id: "workers", label: "Workers, and trying again" },
@@ -26,19 +27,32 @@ view! = |_|
 	<>
 		<NoHydration>
 			<PageHero
-				eyebrow="The platform · jobs, cron and email"
+				eyebrow="The ecosystem · jobs and cron"
 				title="Work that runs later, and again until it is done"
 			>
 				Some work shouldn't hold up a request: sending a welcome mail, a nightly cleanup, a call to a slow
-				service. A job is that work, queued as a row in Postgres, run by the server's workers in the
-				background, and run again if it fails. A schedule queues one when its time comes. Email goes out over
-				SMTP, best from a job, so a mail server that doesn't answer is tried again.
+				service. A job is that work, queued as a row in Postgres, run by workers in the background, and run
+				again if it fails. A schedule queues one when its time comes. Email goes out over SMTP, best from a
+				job, so a mail server that doesn't answer is tried again.
 			</PageHero>
 			<p>
-				All of it is the platform's Roc (<code>server/platform/JobWorker.roc</code>, <code>Cron.roc</code>,
-				<code>Smtp.roc</code>), on what the host gives every call: Postgres, background loops, sleeping until
-				woken, isolated calls and sockets (<a href={"${Paths.platform_server}#layers"}>what is Rust, what is
-				Roc</a>).
+				Jobs and cron are a package, <code>packages/jobs</code>, and a plugin (D-034): Roc
+				(<code>Job.roc</code>, <code>Cron.roc</code>, the workers and the schedules' loop) on what the
+				server platform gives any plugin: Postgres and its notifications, background loops, sleeping until
+				woken, and calls run on their own (<a href={"${Paths.platform_server}#plugins"}>plugins</a>).
+			</p>
+
+			<Heading id="install">Installing it</Heading>
+			<Code title={"${Sources.jobs_plugin.file}, in part"} source={Sources.jobs_plugin.rocx} numbers={Bool.False} />
+			<p>
+				The app names the package in its header (<code>{"jobs: \"…/packages/jobs/main.roc\""}</code>) and lists
+				its plugin: <code>{"Job.plugin({ jobs, crons, workers, retry_ms })"}</code>. <code>jobs</code> is the
+				kinds its workers run: <code>App.jobs</code>, every kind the app's modules define, which
+				<code>rocx build</code> finds. The rest have defaults: no schedules, four workers, a second before a
+				failed job's second attempt. The plugin adds the queue's table (<code>rocx_jobs</code>, recorded as
+				<code>jobs/0001_jobs</code>), the workers and the schedules' loop, and at start keeps what it runs,
+				checks every schedule, and queues again the jobs a stop cut short. Without a database it runs
+				nothing, and queueing a job says why.
 			</p>
 
 			<Heading id="jobs">A job</Heading>
@@ -48,8 +62,8 @@ view! = |_|
 			</p>
 			<Code title={"${Sources.platform_job.file}, in part"} source={Sources.platform_job.rocx} numbers={Bool.False} />
 			<p>
-				The app tells the platform which kinds its workers run, with <code>Job.handler</code>, in
-				<code>program.jobs</code> (<a href={"${Paths.platform_}#app"}>an app</a>).
+				The plugin runs the kinds in its <code>jobs</code>: <code>App.jobs</code>, or, in a program written
+				by hand, <code>Job.handler(kind)</code> for each.
 			</p>
 
 			<Heading id="queue">Queueing one</Heading>
@@ -65,11 +79,11 @@ view! = |_|
 			<Heading id="workers">Workers, and trying again</Heading>
 			<ul>
 				<li>
-					<strong>Taken once.</strong> Workers (<code>--job-workers</code>, 4; none if the app lists no jobs or
-					has no database) are background loops, each a call that pauses while it waits, so an idle one holds
-					no thread. Each takes the next job due with <code>for update skip locked</code>, so no job is taken
-					twice, and runs it in an isolated call: a crash in a job is that job's failure, not the worker's. They take only the
-					kinds the app lists, so apps can share a database.
+					<strong>Taken once.</strong> Workers (the plugin's <code>workers</code>, 4; none if it runs no kinds
+					or the server has no database) are background loops, each a call that pauses while it waits, so an
+					idle one holds no thread. Each takes the next job due with <code>for update skip locked</code>, so no
+					job is taken twice, and runs it in a call of its own (the plugin's call <code>jobs.run</code>): a crash
+					in a job is that job's failure, not the worker's. They take only the kinds the plugin runs.
 				</li>
 				<li>
 					<strong>Woken, not polling.</strong> Queueing a job sends Postgres a <code>NOTIFY</code>, delivered
@@ -78,7 +92,7 @@ view! = |_|
 				</li>
 				<li>
 					<strong>Again, and later.</strong> A job that fails (an <code>Err</code>, a crash, or its time
-					limit passing) runs again after <code>--job-retry-ms</code> (1000), then twice that, and so on, as
+					limit passing) runs again after the plugin's <code>retry_ms</code> (1000), then twice that, and so on, as
 					many attempts in all as its kind says (five with <code>Job.define</code>; <code>{"Job.define_with(name, { attempts, timeout_ms }, run!)"}</code>
 					says otherwise); then it is <code>failed</code>, with its last error, in <code>rocx_jobs</code>.
 				</li>
@@ -101,9 +115,8 @@ view! = |_|
 				<li>
 					<strong>Options.</strong> <code>{"Job.define_with(name, { attempts, timeout_ms }, run!)"}</code> is a
 					kind tried <code>attempts</code> times in all, each run within <code>timeout_ms</code> (0: no limit);
-					<code>Job.define</code>'s are tried five times, with none. The app lists it in
-					<code>program.jobs</code> as any other (an app with routes gets it there by itself: rocx build finds
-					both, at the top of a module's block).
+					<code>Job.define</code>'s are tried five times, with none. rocx build finds both, at the top of a
+					module's block, and lists them in <code>App.jobs</code>.
 				</li>
 				<li>
 					<strong>Keys.</strong> <code>{"Job.enqueue_keyed!(kind, input, { when, key })"}</code> answers
@@ -121,19 +134,21 @@ view! = |_|
 				<code>max_attempts</code>, key, last error, and its times in milliseconds. <code>Job.get!(id)</code>,
 				<code>Job.counts!</code> (how many of each kind in each state), <code>Job.retry!</code> (a failed or
 				canceled one, queued again), <code>Job.cancel_id!</code>, <code>Job.run_now!</code>,
-				<code>Cron.schedules!</code> and <code>Cron.run_now!</code> are the rest: what the jobs page is made of,
-				for an app's own.
+				<code>Cron.schedules!</code> and <code>Cron.run_now!</code> are the rest; <code>Job.kinds!</code> says
+				what the plugin runs, and <code>Job.changes</code> is the live topic the workers say what they start and
+				finish on: what the jobs page is made of, for an app's own.
 			</p>
 
 			<Heading id="page">The jobs page</Heading>
 			<Code title={"${Sources.platform_jobs_page.file}, in part"} source={"${Sources.platform_admins_only.rocx}\n\n# … in respond!'s routes\n${Sources.platform_jobs_page.rocx}"} numbers={Bool.False} />
 			<p>
-				The platform draws a page of jobs, and the app mounts it where only its admins get in:
-				<code>{"JobsPage.respond!(request, { mount })"}</code> answers every request under <code>mount</code>,
-				behind whatever middleware the app runs in front of it, since only the app knows who is an admin. In a
-				route file it is a <code>respond!</code> (<a href={"${Paths.platform_http}#routes"}>every method</a>):
+				<a href={Paths.ecosystem_admin}>packages/admin</a> draws a page of jobs, and the app mounts it where
+				only its admins get in: <code>{"JobsPage.respond!(request, { mount })"}</code> answers every request
+				under <code>mount</code>, behind whatever middleware the app runs in front of it, since only the app
+				knows who is an admin. In a route file it is a <code>respond!</code>
+				(<a href={"${Paths.platform_http}#routes"}>every method</a>):
 			</p>
-			<Code title="routes/admin/jobs/+server.roc" source={"import pf.JobsPage\nimport ../../../Middlewares\n\nmiddleware = Middlewares.admin\n\nrespond! = |{ request, .. }| JobsPage.respond!(request, { mount: \"/admin/jobs\" })"} numbers={Bool.False} />
+			<Code title="routes/admin/jobs/+server.roc" source={"import admin.JobsPage\nimport ../../../Middlewares\n\nmiddleware = Middlewares.admin\n\nrespond! = |{ request, .. }| JobsPage.respond!(request, { mount: \"/admin/jobs\" })"} numbers={Bool.False} />
 			<ul>
 				<li>
 					<strong>What it shows.</strong> A console of the queue: how many jobs are queued, running, failed,
@@ -165,14 +180,17 @@ view! = |_|
 			<Heading id="cron">On a schedule</Heading>
 			<Code source={"Cron.every(\"0 3 * * *\", nightly, {})       # five fields, UTC: at 03:00 each day\nCron.every(\"* * * * * *\", tick_job, {})    # six begin with seconds: every second"} numbers={Bool.False} />
 			<p>
-				A schedule, in <code>program.crons</code>, queues its job each time it comes round, with the input it
-				was given. It is keyed by the time it was due, so a restart never queues one twice;
+				A schedule, in the plugin's <code>crons</code>, queues its job each time it comes round, with the
+				input it was given. It is keyed by the time it was due, so a restart never queues one twice;
 				and since what it queues is a job, a run that fails is tried again like any other. Cron's parser is
-				Roc too: a schedule it can't read, or one whose job the app doesn't list, stops the server at
+				Roc too: a schedule it can't read, or one whose job the plugin doesn't run, stops the server at
 				start, saying why.
 			</p>
 
 			<Heading id="email">Email</Heading>
+			<p>
+				Email is still the server platform's (<code>pf.Email</code>); it is the next to become a package.
+			</p>
 			<Code title={"${Sources.platform_mail_job.file}, in part"} source={Sources.platform_mail_job.rocx} numbers={Bool.False} />
 			<ul>
 				<li>
@@ -213,11 +231,13 @@ view! = |_|
 			</ul>
 			<Callout kind="tip" title="Tested">
 				<p>
-					The platform's tests queue jobs now, later, in transactions that commit and that roll back; fail
+					The server's tests queue jobs now, later, in transactions that commit and that roll back; fail
 					them a few times, and for good; crash them; cut them off at their time limit, on Postgres, a socket
 					and another server, leaving nothing held; queue, cancel and move them by key; list them; use the
 					jobs page's forms behind a guard; leave alone a job another app queued; run a schedule every
-					second; and send mail to an SMTP server the test runs, and to the mailbox, forgotten by a restart.
+					second; start on a database the platform migrated before jobs were a package, and find its jobs
+					where they were; and send mail to an SMTP server the test runs, and to the mailbox, forgotten by a
+					restart.
 				</p>
 			</Callout>
 		</NoHydration>

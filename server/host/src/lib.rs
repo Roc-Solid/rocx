@@ -7,10 +7,11 @@
 //! (`signals`). Jobs, cron, migrations, actors' state and email are the platform's Roc.
 //!
 //! Starting: the address is taken (a port in use stops the server before anything starts); the
-//! database is connected, and a connection listens to it; the platform's start runs in Roc (its
-//! schedules checked, its tables and the app's migrations applied, the jobs a stop cut short queued
-//! again); its background loops start (the job workers, the schedules), each a call of its own
-//! that pauses while it waits; then it answers. Stopping (SIGTERM, or ^C): it stops listening, the
+//! database is connected, and a connection listens to it; the platform's start runs in Roc (the
+//! app's plugins checked, its tables, the plugins' and the app's migrations applied, the plugins'
+//! starts run: the jobs plugin's queues again the jobs a stop cut short); its background loops
+//! start (the plugins': the job workers, the schedules), each a call of its own that pauses while
+//! it waits; then it answers. Stopping (SIGTERM, or ^C): it stops listening, the
 //! loops end (a worker finishes the job it is running), and it waits for what is running (up to ten
 //! seconds) before it exits, its log flushed.
 //!
@@ -115,8 +116,6 @@ async fn run(config: http::Config) -> Result<(), String> {
     if config.database_url.is_some() {
         given.insert("database".to_string(), "yes".to_string());
     }
-    given.insert("job-workers".to_string(), config.job_workers.to_string());
-    given.insert("job-retry-ms".to_string(), config.job_retry_ms.to_string());
     given.insert("mail-from".to_string(), config.mail_from.clone());
     if let Some(url) = &config.smtp_url {
         given.insert("smtp-url".to_string(), url.clone());

@@ -185,7 +185,7 @@ view! = |_|
 				other directory beginning with a dot isn't routed. A <code>+server.roc</code> that defines
 				<code>respond!</code> answers every method its file doesn't name with a <code>Server.Response</code> of
 				its own, given the request, the params and the context: a protocol that speaks over POST and GET at
-				one URL, a page the platform draws (<a href={"${Paths.platform_jobs}#page"}>the jobs page</a>). It isn't
+				one URL, a page a package draws (<a href={"${Paths.ecosystem_jobs}#page"}>the jobs page</a>). It isn't
 				an endpoint, so it stays out of <code>/openapi.json</code>
 				(<a href={"${Paths.routing}#endpoints"}>endpoints</a>).
 			</p>

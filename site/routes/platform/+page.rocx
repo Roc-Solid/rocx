@@ -101,10 +101,10 @@ view! = |_|
 						app; or roc-pg, whose queries are checked at build.
 					</p>
 				</Feature>
-				<Feature title="Jobs, cron and email" href={Paths.platform_jobs}>
+				<Feature title="Plugins" href={"${Paths.platform_server}#plugins"}>
 					<p>
-						Work queued in Postgres and run by workers, again if it fails; schedules; email over SMTP, or an
-						outbox while developing.
+						What a package adds to an app in one line: routes, tables, background loops, pages for
+						development. Jobs and cron are one (<a href={Paths.ecosystem_jobs}>packages/jobs</a>).
 					</p>
 				</Feature>
 				<Feature title="Live and actors" href={Paths.platform_live}>
@@ -117,17 +117,18 @@ view! = |_|
 			<p>
 				It is opinionated on purpose: one server, Roc and Postgres. The host, in Rust, gives Roc general
 				things: HTTP, Postgres connections, sockets with TLS, background loops that sleep until woken, calls
-				isolated from their caller, actors' mailboxes and timers, values in memory. Jobs, cron, migrations,
+				isolated from their caller, actors' mailboxes and timers, values in memory. Migrations, plugins,
 				email and actors' state are the platform's Roc, written on those
 				(<a href={"${Paths.platform_server}#layers"}>what is Rust, what is Roc</a>). What needs neither the
-				host nor the compiler is a package, not the platform: files in S3, and the crypto written in Roc,
-				are <a href={Paths.ecosystem}>the ecosystem's</a>.
+				host nor the compiler is a package, not the platform: files in S3, the crypto written in Roc, and
+				jobs and cron (a plugin) are <a href={Paths.ecosystem}>the ecosystem's</a>.
 			</p>
 
 			<Heading id="app">An app</Heading>
 			<p>
-				On the server platform an app is a record: how it answers a request, its migrations, the kinds of
-				job its workers run, its schedules, and its kinds of actor. The platform's tests' app has all of them:
+				On the server platform an app is a record: how it answers a request, its migrations, its kinds of
+				actor, and its plugins (the jobs plugin: the kinds of job its workers run, and its schedules). The
+				platform's tests' app has all of them:
 			</p>
 			<Code title={"${Sources.platform_program.file}, in part"} source={Sources.platform_program.rocx} numbers={Bool.False} />
 			<p>This site has pages and endpoints, and none of the rest; <code>rocx build</code> writes its program:</p>

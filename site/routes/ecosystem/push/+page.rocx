@@ -75,8 +75,8 @@ view! = |_|
 				</li>
 				<li>
 					<strong>The server's glue</strong>, <code>server/</code>: it keeps subscriptions in Postgres and
-					sends with <a href={Paths.platform_jobs}>jobs</a>. It imports the server platform, which a package
-					can't do yet, so an app copies it in by hand.
+					sends with <a href={Paths.ecosystem_jobs}>jobs</a> (packages/jobs, which the app names too). It imports
+					the server platform, and isn't a plugin yet, so an app copies it in by hand.
 				</li>
 				<li>
 					<strong>The browser's part</strong>: <code>{"<PushButton>"}</code> (in <code>components/</code>,

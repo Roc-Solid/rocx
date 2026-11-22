@@ -38,7 +38,7 @@ before(async () => {
 	dir = writeFixture(mkdtempSync(join(tmpdir(), "rocx-testing-")));
 	const built = await buildForTests(dir, { dev: true });
 	if (!skipDb) db = await testDatabase();
-	app = await startServer(built.server, { statics: built.statics, database: db?.url, flags: ["--mail-from", "Notes <notes@example.com>", "--job-retry-ms", "5000"] });
+	app = await startServer(built.server, { statics: built.statics, database: db?.url, flags: ["--mail-from", "Notes <notes@example.com>"] });
 	browser = await launchBrowser();
 });
 
@@ -117,7 +117,7 @@ test("jobs: queued by an endpoint, or as a cron would, run to their end, with th
 	const id = await db.enqueue("welcome", { to: "bob@example.com" });
 	assert.deepEqual((await db.settleJobs()).map((job) => [job.id, job.state]), [[id, "done"]]);
 
-	// One that fails is tried again later (5 s: --job-retry-ms), which a settle doesn't wait for;
+	// One that fails is tried again later (5 s: the fixture's Job.plugin says `retry_ms`), which a settle doesn't wait for;
 	// with `later`, it is tried again now, until its attempts are spent.
 	const failing = await db.enqueue("welcome", { to: "nobody" }, { attempts: 3 });
 	const first = await db.settleJobs();

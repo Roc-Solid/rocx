@@ -8,11 +8,11 @@ browser, in three parts.
   every value put in a page, and reports at your lines. `rocx` is the command-line tool, too: Roc
   itself, on [basic-cli](https://github.com/roc-lang/basic-cli), one native executable.
 - **The platform**, what an app runs on: on the server, Roc compiled to native code in a Rust host
-  (`server/`), with Postgres, jobs, cron, email, channels and live rooms, a key-value store and
-  actors; in the browser, the components, compiled to WebAssembly (`web/`).
-- **The ecosystem**: packages of plain Roc and components that any app can use, in `packages/`:
-  charts, forms, Markdown, intl, an admin, guards, MCP, presence, Web Push, OpenTelemetry, S3,
-  crypto and testing.
+  (`server/`), with Postgres, email, channels and live rooms, a key-value store, actors and plugins;
+  in the browser, the components, compiled to WebAssembly (`web/`).
+- **The ecosystem**: packages of plain Roc, components and plugins that any app can use, in
+  `packages/`: charts, forms, Markdown, intl, an admin, guards, jobs and cron, MCP, presence, Web
+  Push, OpenTelemetry, S3, crypto and testing.
 
 Pages are components, after Solid 2.0: a component runs once and makes signals; each hole in its
 markup that calls something named with `!` (a signal, a memo) is a computation that runs again when
@@ -63,7 +63,8 @@ just check   # type-check the site's two programs (reports at .rocx lines) and t
 | `packages/charts` | bar, stacked bar, line, sparkline, donut, scatter and heatmap charts, styled by custom properties: their arithmetic a Roc package (scales, round ticks, SVG paths, in `Dec`), their components copied into each app by `rocx build`; see its README |
 | `packages/crypto` | SHA-256, HMAC, HKDF, Base64 and hex in plain Roc, on no platform, each checked against its RFC's vectors; see its README |
 | `packages/s3` | files in any S3: objects, multipart uploads, presigned URLs, and objects served as they stream, a bucket made from its URL and the server platform's `Http.send!`; see its README |
-| `packages/*` | the other packages: `admin` (a Django-style admin for Postgres tables), `forms`, `guard` (rate limits, feature flags, request guards), `intl`, `markdown`, `mcp`, `otel` (OpenTelemetry metrics and logs), `presence`, `push` (Web Push) and `testing`; each has a README, a PROPOSALS.md of what it waits on, and a page on the docs site. A package's modules for the server alone are a package of their own, `server/main.roc`, which names the server platform |
+| `packages/jobs` | jobs and cron as a plugin (D-034): work queued in Postgres and run by workers, again if it fails, and schedules; `Job.plugin({ jobs: App.jobs, crons })`; see its README |
+| `packages/*` | the other packages: `admin` (a Django-style admin for Postgres tables, and the jobs page), `forms`, `guard` (rate limits, feature flags, request guards), `intl`, `markdown`, `mcp`, `otel` (OpenTelemetry metrics and logs), `presence`, `push` (Web Push) and `testing`; each has a README, a PROPOSALS.md of what it waits on, and a page on the docs site. A package's modules for the server alone are a package of their own, `server/main.roc`, which names the server platform |
 | `web/` | the browser's platform: the modules components are written with (`Html`, `Solid`, `Show`, `For`, …) and HTTP's (`Server`, requests and answers; `Endpoint`, `Channel`, `Events`, `Middleware`, `OpenApi`), which the server's platform has too; its Zig host, `runtime.js`; see `web/README.md` |
 | `server/` | the server's platform: native Roc in a Rust host (tokio, hyper, Postgres, jobs, email, channels, actors, `Kv`), rendering pages of components; see `server/README.md` |
 | `site/` | the docs site: pages in `routes/`, the demos on them in `Demos/`, its program in `main.roc`, real examples in `examples/` |
@@ -267,12 +268,13 @@ writes more for it:
 
 Any app with routes, of components or not (endpoints alone too), gets its program:
 
-- `Generated/App.roc`: `App.program({ context, middleware, crons })` is the platform's `program`.
-  Every request is answered by `Routes.respond!` behind `middleware`, which is given
-  `context(started)` (`--context-file`), and a page a browser asks for lets a plain form's flash go
-  (`Server.clear_flash`). The jobs are the ones the app's modules define, each at the top of its
-  module's block (`\twelcome = Job.define("welcome", …)`, or `Job.define_with`; one outside it, or two
-  with one name, fail the build). The migrations are `migrations/*.sql`, embedded, in the order of
+- `Generated/App.roc`: `App.program({ context, middleware, plugins })` is the platform's `program`.
+  Every request is answered by a plugin's route or `Routes.respond!` behind `middleware`, which is
+  given `context(started)` (`--context-file`), and a page a browser asks for lets a plain form's
+  flash go (`Server.clear_flash`). `App.jobs` is the jobs the app's modules define, for the jobs
+  plugin (packages/jobs), each at the top of its module's block (`\twelcome = Job.define("welcome",
+  …)`, or `Job.define_with`; one outside it, or two with one name, fail the build, and so do jobs
+  with no jobs package in the header). The migrations are `migrations/*.sql`, embedded, in the order of
   their names. The log's format is `Auto` (`ROCX_LOG`, `pretty` or `json`, if it is set; or else
   pretty on a terminal and JSON elsewhere); `program = { ..App.program({ … }), logs: { format: Json } }`
   (or `Pretty`) says otherwise. The server's lines and the app's (`Log.info!("gate failed", { path:
@@ -284,9 +286,10 @@ not put off as a component that may read a context. What the author writes besid
 and their modules is main.roc:
 
 ```roc
-app [program] { pf: platform "../server/platform/main.roc" }
+app [program] { jobs: "../packages/jobs/main.roc", pf: platform "../server/platform/main.roc" }
 
-import pf.Cron
+import jobs.Cron
+import jobs.Job
 import Generated/App
 import Middlewares
 import Jobs
@@ -294,7 +297,7 @@ import Jobs
 program = App.program({
 	context: |started| { facts: started },
 	middleware: Middlewares.default,
-	crons: [Cron.every("0 3 * * *", Jobs.nightly, {})],
+	plugins: [Job.plugin({ jobs: App.jobs, crons: [Cron.every("0 3 * * *", Jobs.nightly, {})] })],
 })
 ```
 
@@ -416,22 +419,25 @@ markup moves only with the code around it, and the text of a `<pre>` or `<textar
 ## The platform
 
 **The server** (`server/`): an app gives it a record (`respond!`, whose answer may be a page of
-components or a stream, `migrations`, `jobs`, `crons`, `actors` and `logs`; `App.program` writes
+components or a stream, `migrations`, `actors`, `logs`, `plugins` and `routes`; `App.program` writes
 it). Each call into Roc is a coroutine on one of a few threads of Roc's own, paused while an effect
 waits, so a call that waits holds up nothing else and holds no thread (D-027); a crash ends only
 its call (a 500, a stream ended, a job run again), its memory freed and its transaction rolled
 back. It renders a page of components, byte for byte as the browser's runtime would. Postgres
-(`Db`, migrations, transactions), jobs and cron (options, keys, listing, and a jobs page an app
-mounts behind its own middleware), email (SMTP, or a dev mailbox at `/__rocx/mail`), requests to
+(`Db`, migrations, transactions), plugins (what a package adds to an app: routes, tables, loops,
+paths for development, checked when the server starts: D-033), email (SMTP, or a dev mailbox at
+`/__rocx/mail`), requests to
 other servers (`Http.fetch!(url, init)`, as JavaScript's `fetch`), bodies as bytes and from elsewhere
 (`Server.forward`), cookies, settings (`Env`), encryption (`AesGcm`) and random bytes, values in
 memory by key (`Kv`: TTLs, atomic counters, an LRU limit), live topics and rooms, channels (typed
 live updates, one stream per tab), and actors (typed asks, tells and timers, one message at a time,
 their state kept in Postgres when there is a database). Files in S3 and the crypto written in Roc
-are packages (`packages/s3`, `packages/crypto`). The Rust host gives general things (HTTP, Postgres
-connections, TCP and TLS, background loops, isolated calls, the key-value store, channels' streams,
-actors' mailboxes and timers); jobs, cron, migrations, email and actors' state are the platform's
-Roc, written on them, and so is
+are packages (`packages/s3`, `packages/crypto`), and so are jobs and cron (`packages/jobs`, a plugin:
+options, keys, listing, and a jobs page in `packages/admin` an app mounts behind its own
+middleware). The Rust host gives general things (HTTP, Postgres connections, TCP and TLS,
+background loops, isolated calls, the key-value store, channels' streams, actors' mailboxes and
+timers); migrations, plugins, email and actors' state are the platform's Roc, written on them, and
+so are the jobs package, and
 [roc-pg](https://github.com/niclas-ahden/roc-pg), whose queries are checked at build, which runs on
 the platform's `Tcp`. `--target=arm64musl` cross-compiles one static Linux executable.
 `server/README.md` has every module's API.

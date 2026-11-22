@@ -1,9 +1,8 @@
 ## The site's program, on the server platform (`server/platform`: native code, in a Rust host). rocx
 ## build writes nearly all of it from site/routes (`Generated/App`: every page and endpoint, behind
 ## the site's default middleware); this says what only the site can: what its
-## middleware is given, which middleware that is, its schedules (none), and that it serves its
-## endpoints' OpenAPI document, with a page to read it in (`/openapi.json`, and `/openapi.html` in
-## Swagger UI). The browser's half is the same pages, compiled to WebAssembly from the browser's copy
+## middleware is given, which middleware that is, and that it serves its endpoints' OpenAPI
+## document, with a page to read it in (`/openapi.json`, and `/openapi.html` in Swagger UI). The browser's half is the same pages, compiled to WebAssembly from the browser's copy
 ## of the site (`rocx build site --client site/build/client` writes its main.roc).
 app [program] { admin: "../packages/admin/main.roc", charts: "../packages/charts/main.roc", forms: "../packages/forms/main.roc", guard: "../packages/guard/main.roc", intl: "../packages/intl/main.roc", markdown: "../packages/markdown/main.roc", mcp: "../packages/mcp/main.roc", pf: platform "../server/platform/main.roc", presence: "../packages/presence/main.roc", push: "../packages/push/main.roc", testing: "../packages/testing/main.roc" }
 
@@ -20,6 +19,5 @@ import Demos/Count
 program = App.program({
 	context: |started| { facts: started },
 	middleware: Middlewares.default,
-	crons: [],
 	openapi: Page(Swagger),
 })

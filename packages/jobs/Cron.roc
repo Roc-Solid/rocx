@@ -1,11 +1,11 @@
+import pf.Db
+import pf.Time
 import Calendar
-import Db
-import Job
 import Registry
-import Time
 
-## Jobs on a schedule (`program.crons`). The server queues one each time its schedule comes round,
-## once, even after a restart (`CronTicker`); a worker runs it like any other (`Job`).
+## Jobs on a schedule: the jobs plugin's `crons` (`Job.plugin({ jobs: App.jobs, crons: [Cron.every(…)] })`).
+## The server queues one each time its schedule comes round, once, even after a restart
+## (`CronTicker`); a worker runs it like any other (`Job`).
 ##
 ## A schedule is cron's: five fields, `minute hour day month weekday` (`0 3 * * *`: 03:00 every
 ## day), or six, beginning with seconds (`*/10 * * * * *`: every ten seconds). Times are UTC. A field
@@ -14,8 +14,8 @@ import Time
 ## weekday are given, either one matching is enough, as in Unix cron.
 Cron := [].{
 
-	## A job of `kind`, with `input`, on `schedule`.
-	every : Str, Job.Kind(input), input -> { name : Str, schedule : Str, job : Str, input : Str }
+	## A job of `kind` (`Job.define`), with `input`, on `schedule`.
+	every : Str, { name : Str, attempts : U64, timeout_ms : U64, run! : input => Try({}, Str) }, input -> { name : Str, schedule : Str, job : Str, input : Str }
 		where [input.Json.Encodable([])]
 	every = |schedule, kind, input| { name: "${kind.name} ${schedule}", schedule, job: kind.name, input: Json.to_str(input) }
 
@@ -42,8 +42,8 @@ Cron := [].{
 		}
 	}
 
-	## Whether every schedule of `crons` can be read, and names a job of `kinds` (the app's: one it
-	## doesn't list would be queued and never run): the first that doesn't, and why.
+	## Whether every schedule of `crons` can be read, and names a job of `kinds` (the plugin's: one
+	## it doesn't run would be queued and never run): the first that doesn't, and why.
 	check : List({ name : Str, schedule : Str, job : Str, input : Str }), List(Str) -> Try({}, Str)
 	check = |crons, kinds|
 		crons.fold(
@@ -56,12 +56,12 @@ Cron := [].{
 						if kinds.contains(cron.job) {
 							Ok({})
 						} else {
-							Err("cron ${cron.name}: no job is called ${cron.job}: list it in the app's `jobs`")
+							Err("cron ${cron.name}: no job is called ${cron.job}: list it in the jobs plugin's `jobs`")
 						}
 				},
 		)
 
-	## The app's schedules, each with the next time it comes round (milliseconds since the epoch;
+	## The plugin's schedules, each with the next time it comes round (milliseconds since the epoch;
 	## `Null` if never: the 30th of February).
 	schedules! : {} => List({ name : Str, schedule : Str, job : Str, next_at : [Null, Some(I64)] })
 	schedules! = |{}| {
@@ -315,5 +315,5 @@ expect Cron.parse("61 * * * *").is_err()
 expect Cron.parse("*/0 * * * *").is_err()
 expect Cron.parse("5-1 * * * *").is_err()
 expect Cron.check([{ name: "x", schedule: "* * * * *", job: "x", input: "{}" }], ["x"]) == Ok({})
-expect Cron.check([{ name: "nightly", schedule: "0 3 * * *", job: "tidy", input: "{}" }], ["x"]) == Err("cron nightly: no job is called tidy: list it in the app's `jobs`")
+expect Cron.check([{ name: "nightly", schedule: "0 3 * * *", job: "tidy", input: "{}" }], ["x"]) == Err("cron nightly: no job is called tidy: list it in the jobs plugin's `jobs`")
 expect Cron.check([{ name: "x", schedule: "nope", job: "x", input: "{}" }], ["x"]) == Err("cron `nope` (x): cron has five fields (minute hour day month weekday), or six beginning with seconds; this has 1")

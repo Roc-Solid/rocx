@@ -10,8 +10,6 @@ import Generated/Paths
 program = {
 	respond!: |method, target, headers, body, context| Routes.respond!(Server.from_http(method, target, headers, body), context),
 	migrations: [],
-	jobs: [],
-	crons: [],
 	actors: [],
 	logs: { format: Auto },
 	plugins: [],

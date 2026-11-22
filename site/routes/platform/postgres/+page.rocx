@@ -83,7 +83,7 @@ view! = |_|
 			<Code title={"${Sources.platform_transaction.file}, in part"} source={Sources.platform_transaction.rocx} numbers={Bool.False} />
 			<p>
 				A job queued in a transaction is a row in it, so it runs only if the transaction commits, and the
-				workers are woken when it does (<a href={Paths.platform_jobs}>jobs</a>).
+				workers are woken when it does (<a href={Paths.ecosystem_jobs}>jobs</a>).
 			</p>
 
 			<Heading id="migrations">Migrations</Heading>
@@ -92,8 +92,9 @@ view! = |_|
 				its SQL, which Roc reads from a <code>.sql</code> file when the app is compiled. When the server
 				starts, the platform's Roc applies them in the order listed, each once, each in a transaction,
 				recorded by name in <code>rocx_migrations</code>; two starting at once (a deploy's old server and its
-				new one) take turns (an advisory lock). The platform's own tables (<code>rocx_jobs</code>, <code>rocx_actors</code>) come
-				first. One that fails stops the server, saying why.
+				new one) take turns (an advisory lock). The platform's own tables (<code>rocx_actors</code>) come
+				first, then the plugins' (the jobs plugin's <code>rocx_jobs</code>, recorded as <code>jobs/0001_jobs</code>),
+				then the app's. One that fails stops the server, saying why.
 			</p>
 			<Code title={"${Sources.platform_migrations.file}, in part"} source={Sources.platform_migrations.rocx} numbers={Bool.False} />
 			<Code title={Sources.platform_migration.file} source={Sources.platform_migration.rocx} numbers={Bool.False} plain={Bool.True} />

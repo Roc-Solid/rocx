@@ -1825,8 +1825,10 @@ Routes := [].{
 	}
 
 	## `Generated/App.roc`, the server's program.
-	app_module : { jobs : List(Found), actors : List(Found), migrations : List(Str), endpoints : Bool } -> Str
+	app_module : { jobs : List(Found), actors : List(Found), migrations : List(Str), endpoints : Bool, jobs_package : Str } -> Str
 	app_module = |input| {
+		# The jobs package, as the app's header names it (packages/jobs): `App.jobs` is for its plugin.
+		jobs_package = input.jobs_package
 		alias = |found|
 			match found.route {
 				Some(route) => route
@@ -1870,19 +1872,20 @@ Routes := [].{
 		lines =
 			[
 				"## Written by rocx build: the app's `program`, for its main.roc, which says what only it can",
-				"## (`program = App.program({ context, middleware, crons })`, and `openapi` if it serves its",
-				"## endpoints' OpenAPI document). Every request is answered by the routes (`Routes.respond!`),",
-				"## behind the app's middleware; the jobs and the kinds of actor are the ones its modules define",
-				"## (`Job.define`, `Actor.define`); the migrations, migrations/*.sql, in the order of their names;",
-				"## the log's format is `Auto` (`ROCX_LOG`, or pretty on a terminal and JSON elsewhere), which the",
-				"## app may change: `program = { ..App.program({ … }), logs: { format: Json } }`.",
+				"## (`program = App.program({ context, middleware })`, `openapi` if it serves its endpoints' OpenAPI",
+				"## document, and `plugins`). Every request is answered by a plugin's route or the app's",
+				"## (`Routes.respond!`), behind the app's middleware; the kinds of actor are the ones its modules",
+				"## define (`Actor.define`), and so are the kinds of job in `App.jobs` (`Job.define`), for the jobs",
+				"## plugin; the migrations, migrations/*.sql, in the order of their names; the log's format is",
+				"## `Auto` (`ROCX_LOG`, or pretty on a terminal and JSON elsewhere), which the app may change:",
+				"## `program = { ..App.program({ … }), logs: { format: Json } }`.",
 				"import pf.Server",
 				"import pf.Endpoint",
 				"import pf.Middleware",
 				"import pf.OpenApi",
 				"import pf.Plugin",
 			]
-				.concat(if (input.jobs.is_empty()) [] else ["import pf.Job"])
+				.concat(if (jobs_package.is_empty()) [] else ["import ${jobs_package}.Job"])
 				.concat(if (input.actors.is_empty()) [] else ["import pf.Actor"])
 				.concat(if (input.endpoints) ["import Api"] else [])
 				.concat(["import Routes"])
@@ -1891,16 +1894,30 @@ Routes := [].{
 				.concat([
 					"",
 					"${Routes.app_name} := [].{",
+				])
+				.concat(
+					if jobs_package.is_empty() {
+						[]
+					} else {
+						[
+							"\t## The kinds of job the app's modules define (`Job.define`, which rocx build finds), for the jobs",
+							"\t## plugin: `Job.plugin({ jobs: App.jobs, crons: [Cron.every(…)] })`.",
+							"\tjobs : List(Job.Handler)",
+							"\tjobs = [${Str.join_with(input.jobs.map(|job| "Job.handler(${alias(job)}.${job.define})"), ", ")}]",
+							"",
+						]
+					},
+				)
+				.concat([
 					"\t## What only the app can say: `context`, what its middleware is given from what the server was",
 					"\t## started with (`--context-file`: `|started| …`); `middleware`, which runs around every",
-					"\t## request; `crons`, the jobs on a schedule (`Cron.every`); `openapi`, whether it serves its",
-					"\t## endpoints' OpenAPI document, and a page to read it in (`OpenApi.Serving`): `Off` unless it",
-					"\t## says; and `plugins`, what packages add to it (`Plugin`): their routes answer behind the",
-					"\t## middleware, before the app's own, and the platform runs the rest.",
+					"\t## request; `openapi`, whether it serves its endpoints' OpenAPI document, and a page to read it",
+					"\t## in (`OpenApi.Serving`): `Off` unless it says; and `plugins`, what packages add to it",
+					"\t## (`Plugin`): their routes answer behind the middleware, before the app's own, and the",
+					"\t## platform runs the rest (the jobs plugin: `App.jobs`, and its schedules).",
 					"\tConfig(given, handed) := {",
 					"\t\tcontext : Str -> given,",
 					"\t\tmiddleware : Middleware(given, handed),",
-					"\t\tcrons : List({ name : Str, schedule : Str, job : Str, input : Str }),",
 					"\t\topenapi : OpenApi.Serving ?? Off,",
 					"\t\tplugins : List(Plugin.Value(handed)) ?? [],",
 					"\t}",
@@ -1936,8 +1953,6 @@ Routes := [].{
 					"\t\t\t}",
 					"\t\t},",
 					"\t\tmigrations: [${Str.join_with(embedded.map(|each| "{ name: ${Text.roc_string(each.name)}, sql: ${each.as_name} }"), ", ")}],",
-					"\t\tjobs: [${Str.join_with(input.jobs.map(|job| "Job.handler(${alias(job)}.${job.define})"), ", ")}],",
-					"\t\tcrons: config.crons,",
 					"\t\tactors: [${Str.join_with(input.actors.map(|actor| "Actor.handler(${alias(actor)}.${actor.define}${if (actor.thunk) "({})" else ""})"), ", ")}],",
 					"\t\tlogs: { format: Auto },",
 					"\t\tplugins: config.plugins.map(Plugin.running),",
@@ -2257,7 +2272,7 @@ Routes := [].{
 			"migrationsIn" => Ok(Value.strs(Routes.migrations_in!(Value.str(arg(0)))))
 			"appModule" => {
 				input = arg(0)
-				Ok(Text(Routes.app_module({ jobs: Value.items(Value.field(input, "jobs")).map(Routes.found_from), actors: Value.items(Value.field(input, "actors")).map(Routes.found_from), migrations: Value.items(Value.field(input, "migrations")).map(Value.str), endpoints: Routes.truthy(Value.field(input, "endpoints")) })))
+				Ok(Text(Routes.app_module({ jobs: Value.items(Value.field(input, "jobs")).map(Routes.found_from), actors: Value.items(Value.field(input, "actors")).map(Routes.found_from), migrations: Value.items(Value.field(input, "migrations")).map(Value.str), endpoints: Routes.truthy(Value.field(input, "endpoints")), jobs_package: Value.str_or(Value.field(input, "jobsPackage"), "") })))
 			}
 			"clientMainModule" => {
 				input = arg(0)

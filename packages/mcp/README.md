@@ -30,7 +30,6 @@ and, in `main.roc`, behind the middleware that decides who may ask:
 program = App.program({
     context: |started| { secret: started },
     middleware: Middlewares.signed_in.then(McpHttp.middleware("/mcp", Agents.server)),
-    crons: [],
 })
 ```
 

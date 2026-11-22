@@ -284,6 +284,15 @@ Build := [].{
 				$said = $said.append("✗ ${here}/${problem}")
 				$failed = Bool.True
 			}
+			# The jobs package (packages/jobs), as the header names it: `App.jobs` is for its plugin.
+			jobs_package = Build.package_with!(dir, "Job")
+			match jobs.jobs.first() {
+				Ok(first) if jobs_package.is_empty() => {
+					$said = $said.append("✗ ${here}/${first.file}:${first.line.to_str()}: the app defines jobs, and its header names no jobs package: add jobs: \"…/packages/jobs/main.roc\" to it, and Job.plugin({ jobs: App.jobs }) to the app's plugins")
+					$failed = Bool.True
+				}
+				_ => {}
+			}
 			if $failed {
 				return Ok({ failed: $failed, written: $written, said: $said })
 			}
@@ -344,7 +353,7 @@ Build := [].{
 					.concat([{ name: "Paths", content: Routes.paths_module(table) }, { name: "Styles", content: Build.styles_module($styles) }])
 					.concat(api)
 					.concat(root_page)
-					.concat([{ name: Build.app_module_name, content: Routes.app_module({ jobs: jobs.jobs, actors: actors.actors, migrations: Routes.migrations_in!(dir), endpoints }) }])
+					.concat([{ name: Build.app_module_name, content: Routes.app_module({ jobs: jobs.jobs, actors: actors.actors, migrations: Routes.migrations_in!(dir), endpoints, jobs_package }) }])
 			if pages {
 				match options.client {
 					Some(_) => {
@@ -870,6 +879,26 @@ Build := [].{
 			}
 		}
 		[]
+	}
+
+	## The name the app's headers give the package whose main.roc lists `wanted` (`jobs`, for the
+	## jobs package's `Job`); "" if none does.
+	package_with! : Str, Str => Str
+	package_with! = |dir, wanted| {
+		for entry in Fs.entries!(dir) {
+			if entry.ends_with(".roc") and !Fs.is_dir!(Fs.join([dir, entry])) {
+				header = Build.app_header(Fs.read_or_empty!(Fs.join([dir, entry])), Bool.False) ?? ""
+				for each in Build.named_paths(header, Bool.False) {
+					if each.path.starts_with("./") or each.path.starts_with("../") {
+						listed = (ServerOnly.package_header(Fs.read_or_empty!(Fs.resolve(dir, [each.path]))) ?? { listed: [], deps: "" }).listed
+						if listed.contains(wanted) {
+							return each.name
+						}
+					}
+				}
+			}
+		}
+		""
 	}
 
 	## The packages the app's headers name that name the server platform, each by the name the app

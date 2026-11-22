@@ -30,7 +30,7 @@ view! = |_|
 				<span class="shared">browser too</span> is the browser's as well (<code>web/platform</code>, copied
 				into the server's by the build): the same code, on either side. The pages before this one show the
 				effects at work: <a href={Paths.platform_http}>HTTP</a>, <a href={Paths.platform_postgres}>Postgres</a>,
-				<a href={Paths.platform_jobs}>jobs</a>, <a href={Paths.platform_live}>live topics</a>.
+				<a href={Paths.platform_live}>live topics</a>, <a href={"${Paths.platform_server}#plugins"}>plugins</a>.
 			</p>
 			<nav class="index" aria-label="Modules">{...PlatformReference.groups.map(index_entry)}</nav>
 			{...PlatformReference.groups.map(group_view)}

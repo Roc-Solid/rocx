@@ -21,8 +21,6 @@ program = {
 		Server.response(200, [], chain(target, |_| "fell through"))
 	},
 	migrations: [],
-	jobs: [],
-	crons: [],
 	actors: [],
 	logs: { format: Auto },
 	plugins: [],

@@ -202,7 +202,7 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		assert.equal(built.status, 0, built.stderr);
 		assert.ok(!existsSync(join(dir, "Generated", "ServerFunctions.roc")), "no server functions (D-023): rocx writes no ServerFunctions");
 		const app = readFileSync(join(dir, "Generated", "App.roc"), "utf8");
-		assert.match(app, /\t\tjobs: \[Job\.handler\(Jobs\.welcome\)\],/, "the job, found in Jobs.roc");
+		assert.match(app, /^\tjobs = \[Job\.handler\(Jobs\.welcome\)\]$/m, "the job, found in Jobs.roc: App.jobs, for the jobs plugin");
 		assert.match(app, /\t\tmigrations: \[\{ name: "0001_e2e_notes\.sql", sql: m0001_e2e_notes \}, \{ name: "0002_e2e_note_index\.sql", sql: m0002_e2e_note_index \}\],/, "the migrations, in order");
 		assert.ok(existsSync(join(client, "static", "rocx", "start.js")) && existsSync(join(client, "static", "rocx", "runtime.js")), "what a page loads, beside where the wasm goes");
 		// The browser's half, from the main.roc rocx wrote; the server's, natively (optimized, as it ships).
@@ -380,7 +380,7 @@ test("routes, served natively: each page in its layouts, a param a page's, a pat
 	// itself does: `OpenApi.respond` first, then the routes.
 	put(
 		"main.roc",
-		'app [program] { pf: platform "../../../server/platform/main.roc", crypto: "../../../packages/crypto/main.roc" }\n\nimport pf.Server\nimport pf.OpenApi\nimport Generated/Api\nimport Generated/Routes\n\nprogram = {\n\trespond!: |method, target, headers, body, context| {\n\t\trequest = Server.from_http(method, target, headers, body)\n\t\tmatch OpenApi.respond(request, Document, Api.openapi) {\n\t\t\tOk(served) => served\n\t\t\tErr(NotHere) => Routes.respond!(request, context)\n\t\t}\n\t},\n\tmigrations: [],\n\tjobs: [],\n\tcrons: [],\n\tactors: [],\n\tlogs: { format: Auto },\n\tplugins: [],\n\troutes: [],\n}\n',
+		'app [program] { pf: platform "../../../server/platform/main.roc", crypto: "../../../packages/crypto/main.roc" }\n\nimport pf.Server\nimport pf.OpenApi\nimport Generated/Api\nimport Generated/Routes\n\nprogram = {\n\trespond!: |method, target, headers, body, context| {\n\t\trequest = Server.from_http(method, target, headers, body)\n\t\tmatch OpenApi.respond(request, Document, Api.openapi) {\n\t\t\tOk(served) => served\n\t\t\tErr(NotHere) => Routes.respond!(request, context)\n\t\t}\n\t},\n\tmigrations: [],\n\tactors: [],\n\tlogs: { format: Auto },\n\tplugins: [],\n\troutes: [],\n}\n',
 	);
 	mkdirSync(join(dir, "routes", ".hidden"));
 	writeFileSync(join(dir, "routes", ".hidden", "+page.rocx"), "import pf.Html\n\nview! = |_| <p>hidden</p>\n");

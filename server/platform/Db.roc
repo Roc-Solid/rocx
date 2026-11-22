@@ -104,6 +104,21 @@ Db := [].{
 			Err(why) => Err(DbErr(why))
 		}
 
+	## Whether the server has a database (`--database-url`, or `DATABASE_URL`): a plugin that
+	## works without one (the job workers) does nothing instead.
+	connected! : {} => Bool
+	connected! = |{}| !Host.setting!("database").is_empty()
+
+	## From now until this call ends, it hears Postgres's notifications on `channel` (`notify`,
+	## sent when the transaction that sent them commits) as messages on the topic `pg:<channel>`
+	## (`Live.next!`): how a background loop sleeps until there is work.
+	listen! : Str => Try({}, [DbErr(Str)])
+	listen! = |channel|
+		match Host.db_listen!(channel) {
+			Ok({}) => Ok({})
+			Err(why) => Err(DbErr(why))
+		}
+
 	## Runs `body!` in a transaction: what it writes, and the jobs it queues, stay only if it
 	## returns `Ok`; an `Err` (or a crash) rolls all of it back. Its error is the body's, or the
 	## database's.

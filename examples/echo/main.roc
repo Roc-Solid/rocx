@@ -10,5 +10,4 @@ import Generated/App
 program = App.program({
 	context: |_started| {},
 	middleware: Middleware.make(|request, context, next!| next!(request, context)),
-	crons: [],
 })

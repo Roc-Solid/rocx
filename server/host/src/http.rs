@@ -48,8 +48,6 @@ pub struct Config {
     /// What every call to `respond!` is given besides the request.
     pub context: String,
     pub database_url: Option<String>,
-    pub job_workers: usize,
-    pub job_retry_ms: u64,
     /// How long an actor waits with nothing to do before it is let go (0: never), with a database.
     pub actor_idle_ms: u64,
     pub smtp_url: Option<String>,
@@ -73,8 +71,7 @@ pub const USAGE: &str = "usage: <app> [options]
   --port 8080 --host 127.0.0.1         where to listen (PORT)
   --static DIR, --file /PATH=FILE      files served as they are
   --context-file FILE                  what respond! is given besides each request
-  --database-url URL                   Postgres (DATABASE_URL): Db, migrations, jobs, cron, actors
-  --job-workers 4 --job-retry-ms 1000  jobs run at once; the first retry's wait, doubled after
+  --database-url URL                   Postgres (DATABASE_URL): Db, migrations, actors, plugins' tables
   --actor-idle-ms 900000               an actor idle this long is let go (0: never; kept in Postgres)
   --smtp-url URL --mail-from ADDRESS   where email goes (SMTP_URL, MAIL_FROM); none: an outbox
   --kv-max-mb 64                       the key-value store's limit (KV_MAX_MB): the least recently used goes past it
@@ -92,8 +89,6 @@ impl Config {
         let mut files = Vec::new();
         let mut context = String::new();
         let mut database_url = env("DATABASE_URL");
-        let mut job_workers = 4;
-        let mut job_retry_ms = 1000;
         let mut actor_idle_ms = 15 * 60 * 1000;
         let mut smtp_url = env("SMTP_URL");
         let mut mail_from = env("MAIL_FROM").unwrap_or_else(|| "rocx <rocx@localhost>".into());
@@ -123,8 +118,7 @@ impl Config {
                 }
                 "--database-url" => database_url = Some(value()?),
                 "--migrations" => return Err("--migrations is gone: an app embeds its migrations (`program.migrations`, `import \"migrations/0001_notes.sql\" as notes : Str`)".into()),
-                "--job-workers" => job_workers = value()?.parse().map_err(|_| "--job-workers needs a number".to_string())?,
-                "--job-retry-ms" => job_retry_ms = value()?.parse().map_err(|_| "--job-retry-ms needs a number".to_string())?,
+                "--job-workers" | "--job-retry-ms" => return Err(format!("{arg} is gone: jobs are a plugin (packages/jobs, D-034), whose options say how many workers run and how long a failed job waits: Job.plugin({{ jobs, workers, retry_ms }})")),
                 "--actor-idle-ms" => actor_idle_ms = value()?.parse().map_err(|_| "--actor-idle-ms needs a number".to_string())?,
                 "--smtp-url" => smtp_url = Some(value()?),
                 "--mail-from" => mail_from = value()?,
@@ -140,7 +134,7 @@ impl Config {
         }
         let address = format!("{host}:{port}").parse().map_err(|error| format!("{host}:{port}: {error}"))?;
         let live_beat = Duration::from_millis(live_beat_ms);
-        Ok(Config { address, statics, files, context, database_url, job_workers, job_retry_ms, actor_idle_ms, smtp_url, mail_from, kv_max_mb, dev, debug, live_beat, roc_threads })
+        Ok(Config { address, statics, files, context, database_url, actor_idle_ms, smtp_url, mail_from, kv_max_mb, dev, debug, live_beat, roc_threads })
     }
 }
 

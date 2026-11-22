@@ -1,7 +1,8 @@
 ## The server's platform: Roc compiled to native code, in a Rust host (`server/host`). The host
 ## answers HTTP with tokio and hyper and gives Roc a few general effects: Postgres, time, live
 ## topics and rooms, background loops, calls run in isolation, actors' mailboxes and timers, TCP and
-## TLS. Jobs, cron, migrations, actors' state and email are Roc, here, built on them. The browser's
+## TLS. Migrations, actors' state and email are Roc, here, built on them; jobs and cron are a
+## package's plugin (packages/jobs, D-034), on the same effects. The browser's
 ## platform is `web/platform`, wasm; an app is two programs, one on each, talking over HTTP.
 ##
 ## - `respond!(method, target, headers, body, context)` answers a request: a page or an endpoint.
@@ -18,9 +19,6 @@
 ##   there, `sleep!` waits that many milliseconds (and wakes early if the client goes).
 ## - `migrations`: the app's schema, applied once each, in order, when the server starts (each a
 ##   name and its SQL: `import "migrations/0001_notes.sql" as notes : Str` embeds a file).
-## - `jobs`: the kinds of job the server's workers run (`Job.handler(kind)`: each with its attempts
-##   and time limit); `crons`: jobs on a schedule (`Cron.every`). The jobs page (`JobsPage`) is the
-##   app's to mount, behind its own middleware.
 ## - `actors`: the kinds of actor the app defines (`Actor.handler(kind)`), which `rocx build` lists:
 ##   the host runs their turns (`actor_for_host!`), one message at a time each, and refuses a
 ##   message to a kind that isn't here.
@@ -51,15 +49,13 @@ platform ""
 		program : {
 			respond! : Str, Str, Str, List(U8), Str => Server.Response,
 			migrations : List({ name : Str, sql : Str }),
-			jobs : List({ name : Str, attempts : U64, timeout_ms : U64, run! : Str => Try({}, Str) }),
-			crons : List({ name : Str, schedule : Str, job : Str, input : Str }),
 			actors : List({ name : Str, run! : Str, Str, Str => Try({ state : Str, reply : Str }, Str) }),
 			logs : { format : [Auto, Pretty, Json] },
 			plugins : List(Plugin.Running),
 			routes : List({ method : Str, path : Str, file : Str }),
 		}
 	}
-	exposes [Actor, AesGcm, Audio, Browser, Call, Channel, Context, Cron, Db, Email, Endpoint, Env, Errored, Events, For, Html, Http, HttpResponse, HttpStatusCode, Job, JobsPage, Kv, Live, Loading, Log, Middleware, OpenApi, Plugin, Random, Router, Server, Show, Solid, Submission, Submissions, Tcp, Time, Title, Transition]
+	exposes [Actor, AesGcm, Audio, Browser, Call, Channel, Context, Db, Email, Endpoint, Env, Errored, Events, For, Html, Http, HttpResponse, HttpStatusCode, Kv, Live, Loading, Log, Middleware, OpenApi, Plugin, Random, Router, Server, Show, Solid, Submission, Submissions, Tcp, Time, Title, Transition]
 	packages {}
 	provides {
 		"roc_actor": actor_for_host!,
@@ -181,8 +177,6 @@ import Browser
 import Call
 import Channel
 import Context
-import Cron
-import CronTicker
 import Db
 import Email
 import Endpoint
@@ -195,9 +189,6 @@ import Html
 import Http
 import HttpResponse
 import HttpStatusCode
-import Job
-import JobsPage
-import JobWorker
 import Kv
 import Live
 import Loading
@@ -209,7 +200,6 @@ import OpenApi
 import Plugin
 import Plugins
 import Random
-import Registry
 import Router
 import Server
 import Setting
@@ -274,11 +264,10 @@ drop_feed_for_host : Box(Feed) -> {}
 drop_feed_for_host = |_| {}
 
 ## The server is starting, connected to its database if it has one: the log takes the app's format
-## (before anything is logged: a migration, a bad schedule), the kinds of job and the schedules are
-## kept for the modules that read them (`Registry`), the host is told the kinds of actor; the
-## schedules are checked (a bad
-## one, or one naming a job the app doesn't list, stops it here), then the platform's tables and the
-## app's migrations are applied, and the jobs a stop cut short are queued again.
+## (before anything is logged: a migration, a plugin's problem); the plugins are checked (any
+## problem stops it here, with every one) and put in order; the host is told the kinds of actor;
+## then the platform's tables, the plugins' and the app's migrations are applied, and the plugins'
+## starts run (a jobs plugin's queues again the jobs a stop cut short).
 init_for_host! : {} => Try({}, Str)
 init_for_host! = |{}| {
 	Host.log_format!(
@@ -294,28 +283,16 @@ init_for_host! = |{}| {
 		return Err(Str.join_with(problems, "\n"))
 	}
 	plugins = Plugins.ordered(program.plugins)
-	# The kinds of job the app runs (names, attempts, time limits): its workers take only these.
-	kinds = program.jobs.map(|job| { name: job.name, attempts: job.attempts, timeout_ms: job.timeout_ms })
-	names = kinds.map(|kind| kind.name)
-	Registry.keep!(kinds, program.crons)
 	Host.actor_kinds!(Str.join_with(program.actors.map(|actor| actor.name), "\n"))
-	match Cron.check(program.crons, names) {
-		Err(why) => Err(why)
-		Ok({}) =>
-			if Setting.database!({}) {
-				# The platform's tables, then each plugin's (recorded as `<plugin>/<name>`), then the app's.
-				theirs = plugins.join_map(|plugin| plugin.migrations.map(|migration| { name: "${plugin.name}/${migration.name}", sql: migration.sql }))
-				match Migrations.apply!(Migrations.own.concat(theirs).concat(program.migrations)) {
-					Err(why) => Err(why)
-					Ok({}) =>
-						match JobWorker.recover!(names) {
-							Err(why) => Err(why)
-							Ok({}) => started!(plugins)
-						}
-				}
-			} else {
-				started!(plugins)
-			}
+	if Setting.database!({}) {
+		# The platform's tables, then each plugin's (recorded as `<plugin>/<name>`), then the app's.
+		theirs = plugins.join_map(|plugin| plugin.migrations.map(|migration| { name: "${plugin.name}/${migration.name}", sql: migration.sql }))
+		match Migrations.apply!(Migrations.own.concat(theirs).concat(program.migrations)) {
+			Err(why) => Err(why)
+			Ok({}) => started!(plugins)
+		}
+	} else {
+		started!(plugins)
 	}
 }
 
@@ -356,32 +333,27 @@ early! = |method, target| {
 	}
 }
 
-## What the server runs in the background, each loop a call of its own: the job workers and
-## the schedules (with a database), and a look at the SMTP server (with one); then each plugin's
-## loops, and its checks (each run once), by where they are in the plugins' order.
-Loop : [Work, Schedules, CheckMail, Plugged(U64, U64), Checked(U64, U64)]
+## What the server runs in the background, each loop a call of its own: a look at the SMTP server
+## (with one); then each plugin's loops, and its checks (each run once), by where they are in the
+## plugins' order.
+Loop : [CheckMail, Plugged(U64, U64), Checked(U64, U64)]
 
 loops! : {} => List(Loop)
 loops! = |{}| {
-	database = Setting.database!({})
-	workers = if (database and !program.jobs.is_empty()) List.repeat(Work, Setting.number!("job-workers", 4)) else []
-	schedules = if (database and !program.crons.is_empty()) [Schedules] else []
 	mail = if (Setting.text!("smtp-url").is_empty()) [] else [CheckMail]
 	plugins = Plugins.ordered(program.plugins)
 	theirs = plugins.map_with_index(|plugin, p| plugin.loops.map_with_index(|_, l| Plugged(p, l)).concat(plugin.checks.map_with_index(|_, c| Checked(p, c)))).join_map(|each| each)
-	workers.concat(schedules).concat(mail).concat(theirs)
+	mail.concat(theirs)
 }
 
 background_count_for_host! : {} => U64
 background_count_for_host! = |{}| loops!({}).len()
 
-## Runs the background loop at `index` to its end: a worker or the schedules, until the server
-## stops; the mail check, once.
+## Runs the background loop at `index` to its end: a plugin's loop (until it returns, or the
+## server stops); the mail check, or a plugin's check, once.
 background_for_host! : U64 => {}
 background_for_host! = |index|
 	match loops!({}).get(index) {
-		Ok(Work) => JobWorker.run!(Registry.kinds!({}))
-		Ok(Schedules) => CronTicker.run!(program.crons)
 		Ok(CheckMail) => Email.check!({})
 		Ok(Plugged(p, l)) =>
 			match Plugins.ordered(program.plugins).get(p) {
@@ -408,26 +380,14 @@ background_for_host! = |index|
 		Err(_) => {}
 	}
 
-## Runs a part of the app in a call of its own (`Host.isolated!`): a job (`job:<kind>`, its input),
-## or a plugin's call (`<plugin>.<name>`, `Plugin.isolated!`). What it answers, or why it failed; a
-## crash in it ends this call only.
+## Runs a part of the app in a call of its own (`Host.isolated!`): a plugin's call
+## (`<plugin>.<name>`, `Plugin.isolated!`: a job, for the jobs plugin). What it answers, or why it
+## failed; a crash in it ends this call only.
 isolated_for_host! : Str, Str => Try(Str, Str)
 isolated_for_host! = |what, input|
-	if what.starts_with("job:") {
-		name = what.drop_prefix("job:")
-		match program.jobs.find_first(|job| job.name == name) {
-			Ok(job) =>
-				match (job.run!)(input) {
-					Ok({}) => Ok("")
-					Err(why) => Err(why)
-				}
-			Err(_) => Err("no job is called ${name}: list it in the app's `jobs`")
-		}
-	} else {
-		match program.plugins.join_map(|plugin| plugin.calls).find_first(|call| call.name == what) {
-			Ok(call) => (call.run!)(input)
-			Err(_) => Err("nothing in the app is called ${what}")
-		}
+	match program.plugins.join_map(|plugin| plugin.calls).find_first(|call| call.name == what) {
+		Ok(call) => (call.run!)(input)
+		Err(_) => Err("nothing in the app is called ${what}")
 	}
 
 ## An actor's turn, which its mailbox in the host runs (`actors.rs`): the actor of kind `kind`

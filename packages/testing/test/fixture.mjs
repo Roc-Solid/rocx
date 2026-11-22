@@ -9,20 +9,24 @@ import { repo } from "../build.mjs";
 export function writeFixture(dir) {
 	const real = realpathSync(dir);
 	const platform = relative(real, realpathSync(join(repo, "server", "platform", "main.roc")));
+	const jobs = relative(real, realpathSync(join(repo, "packages", "jobs", "main.roc")));
 	const files = {
-		"main.roc": `## The fixture's program: rocx build writes Generated/App from its routes.
-app [program] { pf: platform "${platform}" }
+		"main.roc": `## The fixture's program: rocx build writes Generated/App from its routes; the jobs plugin
+## (packages/jobs) runs the jobs its modules define.
+app [program] { jobs: "${jobs}", pf: platform "${platform}" }
 
 import pf.Middleware
+import jobs.Job
 import Generated/App
 
 program = App.program({
 	context: |started| { started: started },
 	middleware: Middleware.same_origin({}),
-	crons: [],
+	# A failed job waits 5 s for its next attempt: longer than a test settles the queue for.
+	plugins: [Job.plugin({ jobs: App.jobs, retry_ms: 5000 })],
 })
 `,
-		"Jobs.roc": `import pf.Job
+		"Jobs.roc": `import jobs.Job
 import pf.Email
 
 ## The app's jobs.
@@ -165,7 +169,7 @@ post! = |{ body, .. }|
 `,
 		"routes/api/welcome/+server.roc": `import pf.Server
 import pf.Endpoint
-import pf.Job
+import jobs.Job
 import ../../../Jobs
 
 ## POST /api/welcome: a welcome queued for \`to\` (a job: needs the database).

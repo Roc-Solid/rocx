@@ -52,9 +52,9 @@ view! = |_|
 					components.
 				</li>
 				<li>
-					<strong>Roc</strong> (<code>server/platform/*.roc</code>): migrations, the jobs queue and its
-					workers, cron (its parser too), email (an SMTP client, MIME), actors' state and messages,
-					<code>Db</code>'s decoding.
+					<strong>Roc</strong> (<code>server/platform/*.roc</code>): migrations, plugins (checked and
+					run), email (an SMTP client, MIME), actors' state and messages, <code>Db</code>'s decoding. Jobs
+					and cron are Roc too, on the same effects, in a package (<code>packages/jobs</code>).
 				</li>
 			</ul>
 
@@ -163,16 +163,17 @@ view! = |_|
 
 			<Heading id="background">Background loops, isolated calls</Heading>
 			<p>
-				At start, the host asks the platform's Roc which loops to run in the background (the job workers,
-				cron's ticker, a look at the SMTP server) and runs each, a call of its own, until the server
-				stops. A loop sleeps with <code>Live.next!</code>, which wakes when what it listens to is published
+				At start, the host asks the platform's Roc which loops to run in the background (a look at the SMTP
+				server, and the plugins' loops: the jobs plugin's workers and its schedules) and runs each, a call
+				of its own, until the server stops. A loop sleeps with <code>Live.next!</code>, which wakes when what it listens to is published
 				(Postgres's <code>NOTIFY</code> is published on <code>pg:channel</code>), when its time is up, or
 				with <code>Gone</code> when the server stops. One that crashes is started again a second later.
 			</p>
 			<p>
 				An isolated call runs Roc inside another call, guarded on its own: a crash in it ends it alone, and
-				the caller is told, with why. A worker runs each job that way, so a job that crashes is a job that
-				failed, and the worker goes on. An actor's turn is a guarded call of its own, which its mailbox in
+				the caller is told, with why. A plugin's calls run that way (<code>Plugin.isolated!</code>): the
+				jobs plugin's worker runs each job so, so a job that crashes is a job that failed, and the worker
+				goes on. An actor's turn is a guarded call of its own, which its mailbox in
 				the host runs as a call of its own with the kind, key, state and message as strings, so a crash
 				frees all of them. No lock is taken anywhere: one task routes every message to its actor's mailbox,
 				and each actor handles its own, one at a time.
@@ -189,7 +190,7 @@ view! = |_|
 			</p>
 			<Code
 				title="main.roc"
-				source={"app [program] { pf: platform \"../server/platform/main.roc\", acme: \"../packages/acme/main.roc\" }\n\nimport acme.Acme\n\nprogram = App.program({\n\tcontext,\n\tmiddleware: Middlewares.default,\n\tcrons: [],\n\tplugins: [Acme.plugin({ at: \"/acme\" })],\n})"}
+				source={"app [program] { pf: platform \"../server/platform/main.roc\", acme: \"../packages/acme/main.roc\" }\n\nimport acme.Acme\n\nprogram = App.program({\n\tcontext,\n\tmiddleware: Middlewares.default,\n\tplugins: [Acme.plugin({ at: \"/acme\" })],\n})"}
 				numbers={Bool.False}
 			/>
 			<p>
@@ -215,7 +216,7 @@ view! = |_|
 			<Heading id="running">Running it</Heading>
 			<Code
 				title="The app's executable"
-				source={"<app> --port 8080 --host 127.0.0.1        where to listen (PORT)\n      --static DIR, --file /PATH=FILE     files served as they are\n      --context-file FILE                 what respond! is given besides each request\n      --database-url URL                  Postgres (DATABASE_URL): Db, migrations, jobs, cron, actors\n      --job-workers 4 --job-retry-ms 1000 jobs run at once; the first retry's wait, doubled after\n      --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in Postgres)\n      --smtp-url URL --mail-from ADDRESS  (SMTP_URL, MAIL_FROM); none: an outbox\n      --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it\n      --dev                               reload pages on restart, show crashes, GET /__rocx/mail\n      --debug                             GET /__rocx/allocations and /__rocx/mail\n      --live-beat-ms 15000                how often a channel stream beats, and its checks run again\n      --roc-threads N                     the threads Roc runs on (ROCX_ROC_THREADS; one a core)"}
+				source={"<app> --port 8080 --host 127.0.0.1        where to listen (PORT)\n      --static DIR, --file /PATH=FILE     files served as they are\n      --context-file FILE                 what respond! is given besides each request\n      --database-url URL                  Postgres (DATABASE_URL): Db, migrations, actors, plugins' tables\n      --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in Postgres)\n      --smtp-url URL --mail-from ADDRESS  (SMTP_URL, MAIL_FROM); none: an outbox\n      --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it\n      --dev                               reload pages on restart, show crashes, GET /__rocx/mail\n      --debug                             GET /__rocx/allocations and /__rocx/mail\n      --live-beat-ms 15000                how often a channel stream beats, and its checks run again\n      --roc-threads N                     the threads Roc runs on (ROCX_ROC_THREADS; one a core)"}
 				numbers={Bool.False}
 				plain={Bool.True}
 			/>
@@ -237,7 +238,7 @@ view! = |_|
 			</p>
 			<Code
 				title="An event, and the log's format"
-				source={"Log.info!(\"gate failed\", { path: request.path, error: why })\n\nprogram = {\n\t..App.program({ context, middleware, crons }),\n\tlogs: { format: Auto }, # or Pretty, or Json\n}"}
+				source={"Log.info!(\"gate failed\", { path: request.path, error: why })\n\nprogram = {\n\t..App.program({ context, middleware }),\n\tlogs: { format: Auto }, # or Pretty, or Json\n}"}
 			/>
 			<Code
 				title="The line, pretty and as JSON"

@@ -13,5 +13,4 @@ import Otel
 program = App.program({
 	context: |started| { facts: started },
 	middleware: Otel.middleware({}),
-	crons: [],
 })

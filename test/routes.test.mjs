@@ -275,15 +275,16 @@ test("App: the program, with the jobs the app's modules define (found by rocx bu
 			"a route file's top is its module's block; Generated/, build/ and the .roc a .rocx file became are rocx's; Job.define_with's kinds too",
 		);
 		assert.deepEqual(migrationsIn(dir), ["0002-first.sql", "0010_later.sql"]);
-		const app = appModule({ jobs, migrations: migrationsIn(dir) });
-		assert.match(app, /^import pf\.Server\nimport pf\.Endpoint\nimport pf\.Middleware\nimport pf\.OpenApi\nimport pf\.Plugin\nimport pf\.Job\nimport Routes\nimport \.\.\/Jobs as Jobs\nimport MembersServer\nimport \.\.\/Server\/Mail as ServerMail\nimport "\.\.\/migrations\/0002-first\.sql" as m0002_first : Str\nimport "\.\.\/migrations\/0010_later\.sql" as m0010_later : Str\n\nApp := \[\]\.\{$/m);
-		assert.match(app, /\tConfig\(given, handed\) := \{\n\t\tcontext : Str -> given,\n\t\tmiddleware : Middleware\(given, handed\),\n\t\tcrons : List\(\{ name : Str, schedule : Str, job : Str, input : Str \}\),\n\t\topenapi : OpenApi\.Serving \?\? Off,\n\t\tplugins : List\(Plugin\.Value\(handed\)\) \?\? \[\],\n\t\}/, "the app's config: openapi is Off unless it says; no plugins unless it lists them");
+		const app = appModule({ jobs, migrations: migrationsIn(dir), jobsPackage: "jobs" });
+		assert.match(app, /^import pf\.Server\nimport pf\.Endpoint\nimport pf\.Middleware\nimport pf\.OpenApi\nimport pf\.Plugin\nimport jobs\.Job\nimport Routes\nimport \.\.\/Jobs as Jobs\nimport MembersServer\nimport \.\.\/Server\/Mail as ServerMail\nimport "\.\.\/migrations\/0002-first\.sql" as m0002_first : Str\nimport "\.\.\/migrations\/0010_later\.sql" as m0010_later : Str\n\nApp := \[\]\.\{$/m);
+		assert.match(app, /\tConfig\(given, handed\) := \{\n\t\tcontext : Str -> given,\n\t\tmiddleware : Middleware\(given, handed\),\n\t\topenapi : OpenApi\.Serving \?\? Off,\n\t\tplugins : List\(Plugin\.Value\(handed\)\) \?\? \[\],\n\t\}/, "the app's config: openapi is Off unless it says; no plugins unless it lists them");
 		assert.match(app, /\tprogram : Config\(_, _\) -> _\n\tprogram = \|config\| \{\n\t\trespond!: \|method, target, headers, body, started\| \{\n\t\t\tparsed = Server\.from_http\(method, target, headers, body\)\n\t\t\t# [^\n]*\n\t\t\trequest = \{ \.\.parsed, route: Plugin\.pattern\(config\.plugins, parsed\.method, parsed\.path\) \?\? Routes\.pattern\(parsed\.path\) \}\n\t\t\t# [^\n]*\n\t\t\t# [^\n]*\n\t\t\tif \(Endpoint\.channel_asked\(request\) == "close"\) \{\n\t\t\t\tRoutes\.closed!\(request\)\n\t\t\t\} else \{\n\t\t\t\t# [^\n]*\n\t\t\t\tchain = config\.middleware\n\t\t\t\t# A plugin's route, or the app's\.\n\t\t\t\tServer\.clear_flash\(request, Middleware\.run!\(chain, request, \(config\.context\)\(started\), \|passed, context\| Plugin\.respond!\(config\.plugins, passed, context, \|routed, handed\| Routes\.respond!\(routed, handed\)\)\)\)\n\t\t\t\}\n\t\t\},\n/, "the request as the host gives it, with the route that answers it; a page view lets the flash go; a channel subscription's end, outside the middleware");
-		assert.match(app, /\t\tmigrations: \[\{ name: "0002-first\.sql", sql: m0002_first \}, \{ name: "0010_later\.sql", sql: m0010_later \}\],\n\t\tjobs: \[Job\.handler\(Jobs\.welcome\), Job\.handler\(Jobs\.nightly\), Job\.handler\(Jobs\.once\), Job\.handler\(ServerMail\.send\), Job\.handler\(MembersServer\.reminder\)\],\n\t\tcrons: config\.crons,\n\t\tactors: \[\],\n\t\tlogs: \{ format: Auto \},\n\t\tplugins: config\.plugins\.map\(Plugin\.running\),\n\t\troutes: Routes\.claims,\n\t\}/, "the platform's program: these five, and no more (and no actors); the log's format Auto (ROCX_LOG, or the terminal's guess), which the app may change with a record update");
+		assert.match(app, /\t\tmigrations: \[\{ name: "0002-first\.sql", sql: m0002_first \}, \{ name: "0010_later\.sql", sql: m0010_later \}\],\n\t\tactors: \[\],\n\t\tlogs: \{ format: Auto \},\n\t\tplugins: config\.plugins\.map\(Plugin\.running\),\n\t\troutes: Routes\.claims,\n\t\}/, "the platform's program: the migrations, no actors (the jobs are App.jobs', for the plugin); the log's format Auto (ROCX_LOG, or the terminal's guess), which the app may change with a record update");
 		const none = appModule({});
-		assert.match(none, /\t\tmigrations: \[\],\n\t\tjobs: \[\],/);
+		assert.match(app, /^\tjobs = \[Job\.handler\(Jobs\.welcome\), Job\.handler\(Jobs\.nightly\), Job\.handler\(Jobs\.once\), Job\.handler\(ServerMail\.send\), Job\.handler\(MembersServer\.reminder\)\]$/m, "App.jobs: the five, for the jobs plugin");
+		assert.match(none, /\t\tmigrations: \[\],\n\t\tactors: \[\],/);
 		assert.match(none, /\t\tlogs: \{ format: Auto \},\n\t\tplugins: config\.plugins\.map\(Plugin\.running\),\n\t\troutes: Routes\.claims,\n\t\}\n\}/, "App.program's log format is Auto; the platform gets the plugins and the app's routes, to check them at start");
-		assert.doesNotMatch(none, /pf\.Job|pf\.Actor|import "/);
+		assert.doesNotMatch(none, /jobs\.Job|pf\.Actor|import "|\tjobs = /, "no jobs package named: no App.jobs");
 		// A job outside its module's block, or inside a definition, can't be named; two with one name are refused.
 		put("Loose.roc", 'import pf.Job\n\nloose = Job.define("loose", |{}| Ok({}))\n\nLoose := [].{\n\tmake = |{}| {\n\t\tdeep = Job.define("deep", |{}| Ok({}))\n\t\tdeep\n\t}\n}\n');
 		put("Again.roc", 'Again := [].{\n\tagain = Job.define("welcome", |{}| Ok({}))\n}\n');
@@ -320,9 +321,10 @@ test("App: the kinds of actor the app's modules define (found by rocx build), ea
 			],
 		);
 		const { jobs } = jobsIn(dir, table);
-		const app = appModule({ jobs, actors });
-		assert.match(app, /^import pf\.Job\nimport pf\.Actor\nimport Routes\nimport \.\.\/Carts as Carts\nimport \.\.\/Jobs as Jobs\nimport RoomsServer\n/m, "each module once, jobs' and actors' alike");
-		assert.match(app, /\t\tjobs: \[Job\.handler\(Jobs\.daily\)\],\n\t\tcrons: config\.crons,\n\t\tactors: \[Actor\.handler\(Carts\.cart\), Actor\.handler\(Carts\.mirror\(\{\}\)\), Actor\.handler\(RoomsServer\.room\)\],\n/);
+		const app = appModule({ jobs, actors, jobsPackage: "jobs" });
+		assert.match(app, /^import jobs\.Job\nimport pf\.Actor\nimport Routes\nimport \.\.\/Carts as Carts\nimport \.\.\/Jobs as Jobs\nimport RoomsServer\n/m, "each module once, jobs' and actors' alike");
+		assert.match(app, /^\tjobs = \[Job\.handler\(Jobs\.daily\)\]$/m);
+		assert.match(app, /\t\tmigrations: \[\],\n\t\tactors: \[Actor\.handler\(Carts\.cart\), Actor\.handler\(Carts\.mirror\(\{\}\)\), Actor\.handler\(RoomsServer\.room\)\],\n/);
 		// Outside its module's block, its name not first, or two with one name: refused.
 		put("Loose.roc", 'import pf.Actor\n\nloose = Actor.define({ name: "loose", initial: |_| 0, receive!: |_, n, _| { state: n, reply: n } })\n\nLoose := [].{\n\tunnamed = Actor.define({ initial: |_| 0, name: "unnamed", receive!: |_, n, _| { state: n, reply: n } })\n}\n');
 		put("Again.roc", 'Again := [].{\n\tagain = Actor.define({ name: "cart", initial: |_| 0, receive!: |_, n, _| { state: n, reply: n } })\n}\n');
@@ -343,9 +345,11 @@ test("rocx build --client, for an app of component pages: the browser's main.roc
 		writeFileSync(join(dir, path), text);
 	};
 	try {
-		put("app/main.roc", 'app [program] { charts: "../packages/charts/main.roc", pf: platform "../server/platform/main.roc" }\n\nimport Generated/App\n\nprogram = App.program({ context: |s| s, middleware: M.none, crons: [] })\n');
+		// The jobs package names the server platform and has no browser.roc: the browser's half doesn't see it.
+		put("packages/jobs/main.roc", 'package [Job, Cron] { pf: platform "../../server/platform/main.roc" }\n');
+		put("app/main.roc", 'app [program] { charts: "../packages/charts/main.roc", jobs: "../packages/jobs/main.roc", pf: platform "../server/platform/main.roc" }\n\nimport jobs.Job\nimport Generated/App\n\nprogram = App.program({ context: |s| s, middleware: M.none, plugins: [Job.plugin({ jobs: App.jobs })] })\n');
 		put("app/routes/+page.rocx", "import pf.Html\n\nview! = |_| <p>Home</p>\n");
-		put("app/Jobs.roc", 'import pf.Job\n\nJobs := [].{\n\tdaily = Job.define("daily", |{}| Ok({}))\n}\n');
+		put("app/Jobs.roc", 'import jobs.Job\n\nJobs := [].{\n\tdaily = Job.define("daily", |{}| Ok({}))\n}\n');
 		const said = [];
 		assert.equal(build([join(dir, "app")], { client: join(dir, "app", "build", "client"), cwd: dir, log: (line) => said.push(line) }), true, said.join("\n"));
 		const out = join(dir, "app", "build", "client");
@@ -359,7 +363,7 @@ test("rocx build --client, for an app of component pages: the browser's main.roc
 		assert.equal(readFileSync(join(out, "static", "rocx", "start.js"), "utf8"), readFileSync(join(dirname(web), "..", "start.js"), "utf8"));
 		assert.equal(readFileSync(join(out, "static", "rocx", "runtime.js"), "utf8"), readFileSync(join(dirname(web), "..", "runtime.js"), "utf8"));
 		assert.equal(readFileSync(join(out, "Generated", "Root.roc"), "utf8"), readFileSync(join(dir, "app", "Generated", "Root.roc"), "utf8"), "Root: the same in both copies");
-		assert.match(readFileSync(join(dir, "app", "Generated", "App.roc"), "utf8"), /jobs: \[Job\.handler\(Jobs\.daily\)\]/);
+		assert.match(readFileSync(join(dir, "app", "Generated", "App.roc"), "utf8"), /^import jobs\.Job$[^]*^\tjobs = \[Job\.handler\(Jobs\.daily\)\]$/m, "App.jobs, for the jobs plugin, as the header names its package");
 		assert.ok(!existsSync(join(dir, "app", "reference.roc")) && !existsSync(join(out, "reference.roc")), "no reference.roc: the browser's copy renders from the answers the server's page recorded");
 		// Built again: what rocx wrote before goes (a page since removed), but the wasm built from it
 		// stays as it was, served until its own build replaces it, so a running server's pages hydrate.
@@ -386,11 +390,16 @@ test("rocx build --client, for an app of component pages: the browser's main.roc
 		assert.match(said.join("\n"), /site\/routes\/\+page\.rocx: a page is a component, which defines view!: `view! = \|\{ params \}\| …`/);
 		// An app of endpoints alone: its program, with its jobs (Job.define_with's too) and migrations.
 		put("api/routes/notes/+server.roc", "import pf.Server\n\nget! = |_| Ok(1)\n");
-		put("api/Jobs.roc", 'import pf.Job\n\nJobs := [].{\n\tdaily = Job.define_with("daily", { attempts: 1, timeout_ms: 0 }, |{}| Ok({}))\n}\n');
+		put("api/Jobs.roc", 'import jobs.Job\n\nJobs := [].{\n\tdaily = Job.define_with("daily", { attempts: 1, timeout_ms: 0 }, |{}| Ok({}))\n}\n');
 		put("api/migrations/0001_notes.sql", "create table notes (id bigint);");
+		// Jobs, and no jobs package in the header: refused, saying what to add.
+		said.length = 0;
+		assert.equal(build([join(dir, "api")], { cwd: dir, log: (line) => said.push(line) }), false);
+		assert.match(said.join("\n"), /✗ api\/Jobs\.roc:4: the app defines jobs, and its header names no jobs package: add jobs: "…\/packages\/jobs\/main\.roc" to it, and Job\.plugin\(\{ jobs: App\.jobs \}\) to the app's plugins/);
+		put("api/main.roc", 'app [program] { queue: "../packages/jobs/main.roc", pf: platform "../server/platform/main.roc" }\n');
 		assert.equal(build([join(dir, "api")], { cwd: dir, log: (line) => said.push(line) }), true, said.join("\n"));
 		const api = readFileSync(join(dir, "api", "Generated", "App.roc"), "utf8");
-		assert.match(api, /jobs: \[Job\.handler\(Jobs\.daily\)\]/);
+		assert.match(api, /^import queue\.Job$[^]*^\tjobs = \[Job\.handler\(Jobs\.daily\)\]$/m, "the jobs package by the name the header gives it");
 		assert.match(api, /migrations: \[\{ name: "0001_notes\.sql", sql: m0001_notes \}\]/);
 		assert.ok(!existsSync(join(dir, "api", "Generated", "Root.roc")));
 	} finally {

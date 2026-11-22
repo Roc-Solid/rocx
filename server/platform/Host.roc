@@ -27,15 +27,16 @@ Host := [].{
 	## system clock's when the server started, plus a steady clock's time since.
 	now_nanos! : {} => U64
 
-	## A setting the server was started with: `database` ("yes" with one), `job-workers`,
-	## `job-retry-ms`, `smtp-url`, `mail-from`, `dev` ("yes" with `--dev`), `debug`
-	## ("yes" with `--debug`). Empty when it wasn't given.
+	## A setting the server was started with: `database` ("yes" with one), `smtp-url`,
+	## `mail-from`, `dev` ("yes" with `--dev`), `debug` ("yes" with `--debug`). Empty when it wasn't
+	## given.
 	setting! : Str => Str
 
 	## Whether the server is stopping: a background loop's cue to end.
 	stopping! : {} => Bool
 
-	## Runs a part of the app (`job:<kind>`) in a call of its own, as `isolated_for_host!`, within
+	## Runs a part of the app (a plugin's call, `<plugin>.<name>`) in a call of its own, as
+	## `isolated_for_host!`, within
 	## `limit_ms` milliseconds (0: no limit): its answer (status 0), why it failed (1), the crash
 	## that ended it (2), or "timed out after …" (3: the first effect that waited past the limit cut
 	## it off). The call has its own context (its transaction, its rooms), and what it allocated is

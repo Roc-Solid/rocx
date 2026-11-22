@@ -1,8 +1,14 @@
-import Db
+import pf.Db
+import pf.Plugin
+import Cron
+import CronTicker
+import JobWorker
+import Registry
+import "migrations/0001_jobs.sql" as jobs_table : Str
 
 ## Work to do outside any request: queued in Postgres (`rocx_jobs`), run in the background by the
-## server's workers (`JobWorker`), and run again if it fails (an `Err`, a crash, or its time limit
-## passing), a little later each time, as many times as its kind says (five unless it says
+## jobs plugin's workers (`JobWorker`), and run again if it fails (an `Err`, a crash, or its time
+## limit passing), a little later each time, as many times as its kind says (five unless it says
 ## otherwise). Queued in a transaction (`Db.transaction!`), a job is a row in it: there only if it
 ## commits, and the workers hear of it then.
 ##
@@ -19,14 +25,71 @@ import Db
 ## Job.cancel!("reminder:ada")
 ## ```
 ##
-## The server runs the kinds the app lists (`program.jobs`, each `Job.handler(kind)`). `list!`,
-## `get!` and `counts!` read the queue, and `retry!`, `cancel_id!` and `run_now!` act on one job:
-## what the jobs page (`JobsPage`) is made of.
+## The app lists the plugin, with the kinds its workers run and its schedules:
+##
+## ```roc
+## plugins: [Job.plugin({ jobs: App.jobs, crons: [Cron.every("0 3 * * *", Jobs.tidy, {})] })]
+## ```
+##
+## `App.jobs` is every kind the app's modules define (`rocx build` finds each `Job.define` and
+## `Job.define_with` at the top of a module's block); a program written by hand lists
+## `Job.handler(kind)` for each. `list!`, `get!` and `counts!` read the queue, `retry!`,
+## `cancel_id!` and `run_now!` act on one job, and `kinds!` and `changes` say what the plugin runs
+## and when the queue changes: what a jobs page is made of (packages/admin's `JobsPage`).
 Job := [].{
 
 	## A kind of job: its name, how many times one is tried, its time limit (milliseconds, 0 for
 	## none) and what running one does with its input.
 	Kind(input) : { name : Str, attempts : U64, timeout_ms : U64, run! : input => Try({}, Str) }
+
+	## A kind as the workers run it (`Job.handler`): its input as JSON.
+	Handler : { name : Str, attempts : U64, timeout_ms : U64, run! : Str => Try({}, Str) }
+
+	## What the jobs plugin runs: the app's kinds of job (`App.jobs`, which rocx build lists, or
+	## `Job.handler(kind)` for each), its schedules (`Cron.every`), how many workers take jobs at
+	## once (each a background loop), and how long a failed job waits before its second attempt
+	## (milliseconds; doubled for each after).
+	Options := {
+		jobs : List(Handler),
+		crons : List({ name : Str, schedule : Str, job : Str, input : Str }) ?? [],
+		workers : U64 ?? 4,
+		retry_ms : U64 ?? 1000,
+	}
+
+	## The jobs plugin: the queue's table (`jobs/0001_jobs`), the workers (`jobs.worker`, with a
+	## database and a kind to run) and the schedules' loop (`jobs.schedules`, with one), the call
+	## a job runs in (`jobs.run`), and at start the kinds and schedules kept (`kinds!`,
+	## `Cron.schedules!`), every schedule checked (a bad one, or one naming a job the plugin doesn't
+	## run, stops the server), and the jobs a stop cut short queued again.
+	plugin : Options -> Plugin.Value(ctx)
+	plugin = |options| {
+		handlers = options.jobs
+		crons = options.crons
+		retry_ms = options.retry_ms
+		kinds = handlers.map(|job| { name: job.name, attempts: job.attempts, timeout_ms: job.timeout_ms })
+		workers = if (handlers.is_empty()) [] else List.repeat({ name: "jobs.worker", run!: |{}| JobWorker.run!(kinds, retry_ms) }, options.workers)
+		ticker = if (crons.is_empty()) [] else [{ name: "jobs.schedules", run!: |{}| CronTicker.run!(crons) }]
+		{
+			name: "jobs",
+			migrations: [{ name: "0001_jobs", sql: jobs_table }],
+			calls: [{ name: "jobs.run", run!: |input| ran!(handlers, input) }],
+			loops: workers.concat(ticker),
+			starts: [|{}| started!(kinds, crons)],
+		}
+	}
+
+	## A kind of job the plugin runs: its name, attempts and time limit (milliseconds; 0, none).
+	KindInfo : { name : Str, attempts : U64, timeout_ms : U64 }
+
+	## The kinds of job the plugin runs.
+	kinds! : {} => List(KindInfo)
+	kinds! = |{}| Registry.kinds!({})
+
+	## The live topic (`Live.listen!`) the workers say on what they start and finish: `<id> running`,
+	## `<id> done`, `<id> queued`, `<id> failed`. (Postgres notifies `rocx_jobs` too, when a job is
+	## queued or changed: `Db.listen!`.)
+	changes : Str
+	changes = "rocx:jobs"
 
 	## A kind tried five times, with no time limit.
 	define : Str, (input => Try({}, Str)) -> Kind(input)
@@ -51,7 +114,8 @@ Job := [].{
 	KeyedOpts : { when : When, key : Str }
 
 	## Queues a job of `kind` with `input`, to run when `opts` says. The workers hear of it
-	## (`pg_notify`) once it is there for them: now, or when its transaction commits.
+	## (`pg_notify`) once it is there for them: now, or when its transaction commits. A `JobErr`
+	## when the app has no jobs plugin (`Job.plugin`), or the database refuses.
 	enqueue! : Kind(input), input, Opts => Try({}, [JobErr(Str)])
 		where [input.Json.Encodable([])]
 	enqueue! = |kind, input, opts|
@@ -81,8 +145,8 @@ Job := [].{
 	move! : Str, When => Try(U64, [JobErr(Str)])
 	move! = |key, when| changed!("update rocx_jobs set run_at = coalesce(to_timestamp($2::bigint / 1000.0), now()) where unique_key = $1 and state = 'queued' returning id", [Text(key), at(when)])
 
-	## How the server runs jobs of `kind`, for `program.jobs`: their input decoded from JSON.
-	handler : Kind(input) -> { name : Str, attempts : U64, timeout_ms : U64, run! : Str => Try({}, Str) }
+	## How the workers run jobs of `kind`, for the plugin's `jobs`: their input decoded from JSON.
+	handler : Kind(input) -> Handler
 		where [input.Json.Parseable([InvalidJson(Str)])]
 	handler = |kind| {
 		name: kind.name,
@@ -168,6 +232,9 @@ Job := [].{
 ## Inserts a job; how many were queued (0 when a pending job has its key).
 queue! : Str, Str, U64, Job.When, Db.Value => Try(U64, Str)
 queue! = |kind, input, attempts, when, key| {
+	if !Registry.installed!({}) {
+		return Err("the app has no jobs plugin to run ${kind}: list Job.plugin({ jobs: App.jobs }) in its plugins")
+	}
 	queued = Db.run!(
 		"with queued as (insert into rocx_jobs (kind, input, max_attempts, run_at, unique_key) values ($1, $2, $3::int, coalesce(to_timestamp($4::bigint / 1000.0), now()), $5) on conflict (unique_key) where state in ('queued', 'running') do nothing returning id) select pg_notify('rocx_jobs', id::text) from queued",
 		[Text(kind), Text(input), Int(attempts.to_i64_wrap()), at(when), key],
@@ -228,3 +295,35 @@ acted! = |id, done, sql|
 				Err(JobErr(why))
 			}
 	}
+
+## Runs a job (the plugin's call `jobs.run`): `input` is its kind, a newline, and its input as JSON.
+ran! : List(Job.Handler), Str => Try(Str, Str)
+ran! = |handlers, input| {
+	(kind, payload) =
+		match input.split_first("\n") {
+			Ok({ before, after }) => (before, after)
+			Err(_) => (input, "")
+		}
+	match handlers.find_first(|job| job.name == kind) {
+		Ok(job) =>
+			match (job.run!)(payload) {
+				Ok({}) => Ok("")
+				Err(why) => Err(why)
+			}
+		Err(_) => Err("no job is called ${kind}: list it in the jobs plugin's `jobs`")
+	}
+}
+
+## The plugin's start: what it runs kept, its schedules checked, and (with a database) the jobs a
+## stop cut short queued again.
+started! : List(Registry.Kind), List(Registry.Schedule) => Try({}, Str)
+started! = |kinds, crons| {
+	names = kinds.map(|kind| kind.name)
+	Registry.keep!(kinds, crons)
+	Cron.check(crons, names)?
+	if Db.connected!({}) {
+		JobWorker.recover!(names)
+	} else {
+		Ok({})
+	}
+}

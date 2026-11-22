@@ -160,7 +160,7 @@ view! = |_|
 			</p>
 			<h3>Turning it on</h3>
 			<p>It is off unless the app says so, with <code>openapi</code> in its <code>App.program</code>:</p>
-			<Code title="main.roc" source={"program = App.program({\n\tcontext: |started| { started },\n\tmiddleware: Middlewares.default,\n\tcrons: [],\n\topenapi: Page(Swagger),\n})"} numbers={Bool.False} />
+			<Code title="main.roc" source={"program = App.program({\n\tcontext: |started| { started },\n\tmiddleware: Middlewares.default,\n\topenapi: Page(Swagger),\n})"} numbers={Bool.False} />
 			<TableWrap>
 				<table>
 					<thead><tr><th><code>openapi:</code></th><th>The app serves</th></tr></thead>

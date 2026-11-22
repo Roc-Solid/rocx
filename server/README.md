@@ -1,19 +1,19 @@
 # Roc Solid's server platform
 
 Roc compiled to native code, in a Rust host: one executable that answers HTTP, streams events,
-renders pages of components, runs jobs and cron, sends email, keeps live rooms, channels, actors
-and values in memory, with Postgres beneath all of it. The browser's platform is `web/` (wasm): an
-app is two programs, one on each, talking over HTTP. The docs site's platform pages (`/platform`)
+renders pages of components, sends email, keeps live rooms, channels, actors and values in memory,
+and runs what plugins add (jobs and cron, as packages/jobs), with Postgres beneath all of it. The
+browser's platform is `web/` (wasm): an app is two programs, one on each, talking over HTTP. The docs site's platform pages (`/platform`)
 say all this at more length.
 
 The host (`host/`, Rust) gives Roc general things: HTTP, coroutines that Roc's calls run on (below),
 a pool of Postgres connections and one that listens, TCP and TLS sockets, requests to other
 servers, live topics and rooms, channels' streams, background loops that sleep until woken,
 isolated calls, actors' mailboxes and timers, a key-value store in memory, the environment, secure
-random numbers, AES-GCM, and rendering components. Migrations, the
-jobs queue and its workers, cron, email (an SMTP client, MIME) and actors' state are the platform's
-Roc (`platform/*.roc`), written on those. Files in S3 and the crypto written in Roc (SHA-256, HMAC,
-HKDF, Base64, hex) are packages an app names, on no platform (`packages/s3`, `packages/crypto`:
+random numbers, AES-GCM, and rendering components. Migrations, plugins, email (an SMTP client,
+MIME) and actors' state are the platform's Roc (`platform/*.roc`), written on those. Files in S3
+and the crypto written in Roc (SHA-256, HMAC, HKDF, Base64, hex) are packages an app names, on no
+platform (`packages/s3`, `packages/crypto`:
 D-025).
 
 ```sh
@@ -30,11 +30,9 @@ app [program] { pf: platform "…/server/platform/main.roc" }
 program = {
     respond!,                                   # every request, answered with a Server.Response
     migrations: [{ name: "0001_tables.sql", sql: tables }],   # import "0001_tables.sql" as tables : Str
-    jobs: [Job.handler(welcome)],               # what the job workers run
-    crons: [Cron.every("0 3 * * *", nightly, {})],
     actors: [Actor.handler(cart)],              # the kinds of actor (below)
     logs: { format: Auto },                     # the log's format: Auto, Pretty or Json (below)
-    plugins: plugins.map(Plugin.running),       # what packages add (below); [] for none
+    plugins: plugins.map(Plugin.running),       # what packages add (below): the jobs plugin too
     routes: [],                                 # the app's own routes, which plugins' mustn't meet
 }
 ```
@@ -42,10 +40,11 @@ program = {
 `respond!` takes a request's method, target, headers (`name: value` a line), body (`List(U8)`, the
 bytes as they came) and what the server was started with (`--context-file`), and answers with a
 `Server.Response`: `Server.from_http` makes the request. An app with routes writes none of this
-record: `rocx build` writes `Generated/App`, whose `App.program({ context, middleware, crons,
-openapi })` is a program that answers every request with the app's routes (pages, `+server.roc`
-endpoints and channels) behind its middleware, and lists the jobs and kinds of actor its modules
-define and its `migrations/*.sql` (`site/main.roc` is a whole app). The
+record: `rocx build` writes `Generated/App`, whose `App.program({ context, middleware, openapi,
+plugins })` is a program that answers every request with a plugin's route or the app's (pages,
+`+server.roc` endpoints and channels) behind its middleware, and lists the kinds of actor its
+modules define and its `migrations/*.sql`; `App.jobs` is the kinds of job they define, for the jobs
+plugin (`site/main.roc` is a whole app). The
 response's body is text; bytes (`Server.bytes`, below); a body the host fetches from elsewhere and
 sends on (`Server.forward`, below); a page of components (`Page`), which the host renders (below); or
 a stream of `Events`, which the host runs in a call of its own with `{ send!, sleep! }`.
@@ -54,9 +53,9 @@ feed }`, `kind` 0 for `text`, 1 for the `page` (a box the host runs: `Html.seria
 markup, made once per answer), 2 for the `feed`, 3 for the `bytes`, 4 for the `upstream` (its
 method, URL and headers); the boxes an answer doesn't send do nothing, and the host releases them.
 `program.actors` lists the app's kinds of actor (`Actor.handler`), so the host can run an actor's
-turn when nobody waits on it (a tell, a timer). The platform exposes `Db`, `Job`, `Cron`, `Email`,
-`Kv`, `Live`, `Actor`, `Log`, `Time`, `Tcp`, `Http` (and `HttpResponse`, its answer), `Env`,
-`Random` and `AesGcm`; the jobs page (`JobsPage`); the modules components are written with
+turn when nobody waits on it (a tell, a timer). The platform exposes `Db`, `Email`, `Kv`, `Live`,
+`Actor`, `Log`, `Time`, `Tcp`, `Http` (and `HttpResponse`, its answer), `Env`, `Random`, `AesGcm`
+and `Plugin`; the modules components are written with
 (`Html`, `Solid`, `Show`, `For`, `Loading`, `Errored`, `Context`, `Call`, `Router`, `Title`,
 `HttpStatusCode`, `Transition`, `Submission`, `Submissions`, `Browser`, `Audio`); and HTTP's
 (`Server`, `Endpoint`, `Channel`, `Middleware`, `Events`, `OpenApi`). Those last two kinds are the
@@ -96,9 +95,9 @@ parameters.
 (`import "migrations/0001_tables.sql" as tables : Str` reads a file when the app is compiled). When
 the server starts they are applied in the order listed, each once, each in a transaction (recorded
 by name in `rocx_migrations`); two starting at once (a deploy's old server and its new one) take
-turns (an advisory lock). The
-platform's own tables (`rocx_jobs`, `rocx_actors`: `rocx/0001`, `rocx/0002`, …)
-come first; one that fails stops the server.
+turns (an advisory lock). The platform's own tables (`rocx_actors`: `rocx/0001`, …) come first,
+then the plugins' (each recorded as `<plugin>/<name>`: the jobs plugin's `rocx_jobs` is
+`jobs/0001_jobs`), then the app's; one that fails stops the server.
 
 Connections use TLS when the database offers it (or the URL's `sslmode` asks), checked against the
 web's certificate authorities.
@@ -109,106 +108,12 @@ connects with `Tcp.connect!` and logs in with `Random.seed_u64!`. `examples/roc-
 `schema.sql` as its migration and as what roc-pg checks against; the tests build it and run it.
 From cold, checking it takes 0.8 s, a dev build 1.2 s, an optimized one 6.3 s.
 
-### Jobs and cron: `Job`, `Cron`
+### Jobs and cron: packages/jobs (D-034)
 
-```roc
-welcome : Job.Kind({ member : I64 })
-welcome = Job.define("welcome", |{ member }| { … Email.send!(…) … })    # Ok({}), or Err(why)
-
-# Tried once, within 20 minutes (Job.define: five times, no limit).
-reminder = Job.define_with("reminder", { attempts: 1, timeout_ms: 20 * 60_000 }, |{ member }| …)
-
-Job.enqueue!(welcome, { member: 7 }, { when: Now })
-Job.enqueue!(welcome, { member: 7 }, { when: At(Time.now_millis!({}) + 60_000) })   # a minute from now
-Job.enqueue_keyed!(reminder, { member: "ada" }, { when: Now, key: "reminder:ada" })  # Ok(Queued), or Ok(Exists)
-Job.cancel!("reminder:ada")                               # the queued jobs with that key: how many
-Job.move!("reminder:ada", At(due))                        # the queued one with that key runs then
-Cron.every("0 3 * * *", nightly, {})                      # five fields, UTC; six begin with seconds
-```
-
-A job is a row in `rocx_jobs`. Workers (`--job-workers`, 4; none if the app lists no jobs or has no
-database) are
-background loops (`platform/JobWorker.roc`): each takes the next job due of a kind the app lists
-(apps may share a database) with `for update skip locked`, so none is taken twice, and runs it in an
-isolated call, so a crash is that job's failure, not the worker's. A job that fails (an `Err`, a
-crash, or its time limit passing) runs again, after `--job-retry-ms` (1000), then twice that, and so
-on, as many attempts in all as its kind says (`attempts`; five with `Job.define`); then it is
-`failed`, with its last error. Queueing one sends `NOTIFY rocx_jobs`, which Postgres delivers when
-the transaction commits and the host publishes on the live topic `pg:rocx_jobs`; a worker sleeps on
-it (`Live.next!`) until then, or until the next delayed job or retry falls due. A job running when
-the server stopped runs again at the next start; done jobs are kept for a week.
-
-**A time limit** (`timeout_ms`, 0 for none) is a deadline on the job's isolated call
-(`Host.isolated!` is given it). The first effect that waits past it ends the call, wherever the job
-is: a Postgres statement (cancelled, and its connection closed rather than given back to the pool, a
-transaction on it with it), a socket's read or write, a request to another server, an actor's
-answer, a live topic. The effect doesn't return an error the job could ignore: it jumps back to the
-call's guard, as a crash does, so what the call allocated is freed and what it held (its
-transaction, sockets, rooms) is given back. The job fails with `timed out after <limit> ms`, and is
-tried again if it has attempts left. An actor it asks doesn't share its deadline: the actor's turn
-is its own, and ends as it would. Roc that loops without an effect isn't cut off.
-
-**A key** (`enqueue_keyed!`) is one pending job's: while a job with it is queued or running,
-queueing another with it does nothing and answers `Exists`; once that one is done, failed or
-canceled, the key is free again (a unique index on `unique_key` where the state is `queued` or
-`running`). It names what the job is for (`reminder:ada`), so `Job.cancel!` (queued ones become
-`canceled`; a running one isn't stopped) and `Job.move!` can find it. Each is a statement, so in a
-transaction it stays only if the transaction commits. Cron's jobs are keyed by their schedule and
-the second they were due.
-
-**Listing and control**, what the jobs page is made of, and an app may build its own on:
-
-```roc
-Job.list!({ state: "failed", kind: "", before_id: 0, limit: 50 })   # List(Job.Row), newest first; "" and 0 for any
-Job.get!(id)                       # Job.Row, or NotFound
-Job.counts!({})                    # how many of each kind in each state
-Job.retry!(id)                     # failed or canceled: queued again, due now, attempts back to none
-Job.cancel_id!(id)                 # queued: canceled
-Job.run_now!(id)                   # queued for later (or for its next attempt): due now
-Cron.schedules!({})                # each schedule, its job, and when it comes round next (next_at)
-Cron.run_now!(name)                # the schedule's job, queued now
-```
-
-A `Job.Row` is a job's id, kind, input (JSON), state (`queued`, `running`, `done`, `failed`,
-`canceled`), attempts and `max_attempts`, key, last error, and its times in milliseconds (`run_at`,
-`locked_at` when its last attempt began, `finished_at`, `created_at`). An action on a job in a state
-it doesn't apply to is a `JobErr` saying so. `main.roc` alone sees `program`; it keeps the kinds (with
-their attempts and time limits) and the schedules in the host's store when the server starts
-(`platform/Registry.roc`), where `Cron` and the jobs page read them.
-
-A schedule (`platform/Cron.roc`, `CronTicker.roc`: the parser and the clock are Roc) queues its job
-each time it comes round, keyed by the time it was due (its ticker starts from now, so a restart
-never queues one twice), tried as many times as its kind says. One it can't read, or whose job the
-app doesn't list, stops the server at start.
-
-### The jobs page: `JobsPage`
-
-```roc
-# routes/admin/jobs/+server.roc: behind the app's own middleware (only the app knows who is an admin)
-middleware = Middlewares.admin
-respond! = |{ request, .. }| JobsPage.respond!(request, { mount: "/admin/jobs" })   # every method
-```
-
-The platform draws it (`platform/JobsPage.roc`, on `AdminHtml.roc`), as a whole HTML page answered
-at `mount`, a console of the queue: how many jobs are queued, running, failed, done and canceled;
-what finished in each five minutes of the last hour (done, done after a retry, failed) and the
-latest failures; each kind with its attempts, time limit and jobs by state; the schedules, in words
-where it can (`daily at 03:00`), with when each comes round next and a **Run now** button; and the
-jobs (newest first, fifty a page, **Older** for the next) with their state, attempts, times, key and
-last error. A sidebar narrows it to a state or a kind. `?state=failed`, `?kind=…`, `?before=<id>`
-choose them; `?id=<id>` opens one job in a drawer over the list: its input, its timeline, its
-attempts and time limit, its last error whole. **Retry** (a failed or canceled job),
-**Cancel** and **Run now** (a queued one) are plain forms posting to `mount` (`action=retry|cancel|
-run_now&id=…`, `action=run_schedule&name=…`), answered with a 303 back to the view they came from;
-one that can't be done is a page saying why (409), and a POST another site's page sent is refused
-(403, as `Middleware.same_origin` refuses it; the app's own same-origin middleware should run in
-front too). It refreshes itself as jobs change: it listens to `mount?events` (a stream of events
-that says `changed` when a worker starts or finishes a job, or Postgres says one was queued or
-changed: the topics `rocx:jobs` and `pg:rocx_jobs`), and a few lines of script fetch the page again
-and put its sidebar and main part in place, keeping an open drawer where the reader was. Without
-script it is the same page, with a button that refreshes it. No hydration, no components: it works
-whatever the app's pages are made of. Its stylesheet is its own, under the class `rocx-admin`, and
-follows the reader's light or dark scheme.
+Jobs and cron are a package and a plugin, on the platform's general effects (Postgres and its
+notifications, background loops, isolated calls): `Job.plugin({ jobs: App.jobs, crons })` adds the
+queue's table, its workers and its schedules. The jobs page is packages/admin's (`JobsPage`).
+`packages/jobs/README.md` says how they work.
 
 ### Email: `Email`
 
@@ -668,8 +573,9 @@ Log.line!("migrated")                                          # a message alone
 
 Every line the server writes to stderr is an event: a level, a message and fields. The host's own
 lines (`rocx server: http://… (Roc, native)`, stopping, a crash with its `method`, `target` and
-`error`, forwarding, a background loop that crashed), the platform's Roc's (jobs, cron, mail,
-migrations: `Log.line!` for now) and the app's all go through one formatter in the host.
+`error`, forwarding, a background loop that crashed), the platform's Roc's and its plugins' (mail,
+migrations, jobs and cron: `Log.line!` for now) and the app's all go through one formatter in the
+host.
 The fields are any record (`Json.Encodable`), written as JSON; `{}` is none; one record with a
 single field has to say its name twice (`{ id: id }`: `{ id }` alone is a block, which is `id`).
 
@@ -704,7 +610,7 @@ app [program] { pf: platform "../server/platform/main.roc", acme: "../packages/a
 
 import acme.Acme
 
-program = App.program({ context, middleware, crons: [], plugins: [Acme.plugin({ at: "/acme" })] })
+program = App.program({ context, middleware, plugins: [Acme.plugin({ at: "/acme" })] })
 ```
 
 A plugin is a `Plugin.Value(ctx)`: a name, and what a package adds to the app, every field but the
@@ -790,7 +696,8 @@ call as a crash would (`cut_off` in `host/src/hosted.rs`), so the only frame it 
 host's is that effect's own, which holds nothing by then.
 
 At start the host asks the platform's Roc which background loops to run (`roc_background_count`:
-the job workers, cron's ticker, and a look at the SMTP server) and runs each, a call of its own,
+a look at the SMTP server, and the plugins' loops and checks: the jobs plugin's workers and its
+schedules' loop) and runs each, a call of its own,
 until the server stops; one that crashes is started again a second later. `Live.next!` in one wakes
 with `Gone` when the server stops.
 
@@ -822,8 +729,7 @@ built `--target=arm64musl` runs in a container against `just db`'s Postgres, eve
 <app> --port 8080 --host 127.0.0.1        where to listen (PORT)
       --static DIR, --file /PATH=FILE     files served as they are
       --context-file FILE                 what respond! is given besides each request
-      --database-url URL                  Postgres (DATABASE_URL): Db, migrations, jobs, cron, actors
-      --job-workers 4 --job-retry-ms 1000 jobs run at once; the first retry's wait, doubled after
+      --database-url URL                  Postgres (DATABASE_URL): Db, migrations, actors, plugins' tables
       --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in Postgres)
       --smtp-url URL --mail-from ADDRESS  (SMTP_URL, MAIL_FROM); none: an outbox
       --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it
@@ -851,10 +757,13 @@ once and none from a `<NoHydration>`; one its middleware redirects; a handler re
 flash), form actions (a plain form's refusal and result back to its page with a
 flash, read there with what was typed and noted for the browser, then let go; a script's and the
 runtime's posts answered as they are; a redirect for the runtime), a port in use,
-Postgres, migrations, transactions, jobs (at once, later, retried, failing for good, queued in a
-transaction, another app's left alone; attempts per kind, a time limit cutting a run off on
-Postgres, a socket and another server with nothing left held, keys unique while pending, cancel
-and move, listing), the jobs page (behind a guard; its forms; its stream), cron, email (an outbox,
+Postgres, migrations, transactions, plugins (a fixture plugin package's route with the app's
+context, early path, table, call, loop, start, check and need; an app whose plugins break every rule
+refused at start, the whole message), jobs through packages/jobs's plugin (at once, later, retried,
+failing for good, queued in a transaction, another app's left alone; attempts per kind, a time
+limit cutting a run off on Postgres, a socket and another server with nothing left held, keys
+unique while pending, cancel and move, listing; a database the platform migrated before jobs were
+a package, its jobs where they were), the jobs page (behind a guard; its forms; its stream), cron, email (an outbox,
 the dev mailbox, forgotten by a restart, and not without `--dev`, and SMTP to a server the test runs),
 `Tcp`, roc-pg, the log (JSON with `ROCX_LOG=json` or unset on a pipe, pretty lines with
 `ROCX_LOG=pretty`, an app's fields beside `time`, `level` and `msg` and never in their place, a
@@ -897,8 +806,8 @@ browser runtime's own render.
 - Actors' timers are in memory: durable ones (Orleans' reminders) would be rows, as jobs are.
 - A job's time limit cuts it off only at an effect that waits: Roc that loops without one holds
   its worker until it ends.
-- The platform's Roc (jobs, cron, mail, migrations) logs with `Log.line!`: a message at
-  info, its details in the text, not yet a level and fields of their own.
+- The platform's Roc (mail, migrations, plugins) and packages/jobs log with `Log.line!`: a message
+  at info, its details in the text, not yet a level and fields of their own.
 - Email: no attachments, Cc or Bcc.
 - `Http`: HTTP/1.1, a connection a request (none kept alive), no proxy; an answer's body comes into
   Roc whole.
@@ -906,10 +815,8 @@ browser runtime's own render.
   comes: an upload is still read whole, 16 MiB at most); one connection a request.
 - A stack overflow in Roc still ends the process.
 - HTTP/1.1 only, no TLS: put it behind a proxy. `x64musl` and `x64mac` are configured, not yet run.
-- Roc nightly-2026-11-18 crashes building an app with no jobs optimized (`--opt=speed`) when the
-  platform goes over `program.jobs` (records holding a function) in most places; `main.roc` reads
-  the jobs' names in `isolated_for_host!`, where it doesn't. `roc test` on a module with no `expect` (`Migrations.roc`) never ends;
-  nor does it on `JobsPage.roc` (`roc check` and both builds are fine), so the page's small helpers
+- `roc test` on a module with no `expect` (`Migrations.roc`) never ends; nor does it on
+  `JobsPage.roc` (packages/admin; `roc check` and both builds are fine), so the page's small helpers
   and their `expect`s are in `AdminHtml.roc`.
 - Roc nightly-2026-11-18 traps in optimized wasm builds (`--opt=speed`, `--specialize=yes`) when a
   platform passes a hosted function on as a value. This platform is native, and unaffected; it

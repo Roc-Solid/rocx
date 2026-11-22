@@ -1,13 +1,12 @@
+import pf.Db
+import pf.Server
+import pf.Time
+import jobs.Cron
+import jobs.Job
 import AdminHtml
-import Cron
-import Db
-import Job
-import Registry
-import Server
-import Time
 
-## The jobs page, drawn by the platform for the app to mount behind its own middleware (only the
-## app knows who may see it): a console of the queue. How many jobs are queued, running, failed,
+## The jobs page: a console of packages/jobs's queue, for the app to mount behind its own
+## middleware (only the app knows who may see it). How many jobs are queued, running, failed,
 ## done and canceled; what finished in the last hour, and the latest failures; each kind, with its
 ## attempts, time limit and jobs; the schedules and when each runs next; and the jobs, newest
 ## first, each opening in a drawer with its input, attempts, times and last error. Retry, cancel
@@ -37,7 +36,7 @@ JobsPage := [].{
 			act!(request, mount)
 		} else if request.method == "GET" or request.method == "HEAD" {
 			if AdminHtml.asks(request.query, "events") {
-				AdminHtml.changes(["rocx:jobs"], "rocx_jobs")
+				AdminHtml.changes([Job.changes], "rocx_jobs")
 			} else {
 				shown!(mount, request.query)
 			}
@@ -69,14 +68,14 @@ tone = |state|
 	}
 
 ## Each kind's name: the app's, then any other the queue has jobs of (another app's).
-kind_names : List(Registry.Kind), List({ kind : Str, state : Str, count : U64 }) -> List(Str)
+kind_names : List(Job.KindInfo), List({ kind : Str, state : Str, count : U64 }) -> List(Str)
 kind_names = |kinds, counts| {
 	listed = kinds.map(|each| each.name)
 	counts.map(|each| each.kind).fold(listed, |seen, name| if (seen.contains(name)) seen else seen.append(name))
 }
 
 ## What a kind says of itself: its attempts and time limit, or that it is another app's.
-kind_meta : List(Registry.Kind), Str -> Str
+kind_meta : List(Job.KindInfo), Str -> Str
 kind_meta = |kinds, name|
 	match kinds.find_first(|each| each.name == name) {
 		Ok(kind) => "${kind.attempts.to_str()} attempts · ${if (kind.timeout_ms == 0) "no time limit" else "${AdminHtml.span(kind.timeout_ms.to_i64_wrap())} limit"}"
@@ -93,7 +92,7 @@ shown! = |mount, query| {
 	before = I64.from_str(AdminHtml.param(query, "before")) ?? 0
 	wanted = I64.from_str(AdminHtml.param(query, "id"))
 	now = Time.now_millis!({}).to_i64_wrap()
-	kinds = Registry.kinds!({})
+	kinds = Job.kinds!({})
 	read =
 		match (Job.counts!({}), Job.list!({ state, kind, before_id: before, limit: per_page })) {
 			(Ok(counts), Ok(rows)) => Ok((counts, rows))
@@ -172,7 +171,7 @@ shown! = |mount, query| {
 }
 
 ## The sidebar: the overview, each state and each kind, with how many jobs each has.
-sidebar : Str, List({ kind : Str, state : Str, count : U64 }), List(Registry.Kind), Str, Str -> Str
+sidebar : Str, List({ kind : Str, state : Str, count : U64 }), List(Job.KindInfo), Str, Str -> Str
 sidebar = |mount, counts, kinds, state, kind| {
 	overview = AdminHtml.nav_link({ href: mount, icon: "overview", tone: "accent", label: "Overview", count: "", on: state.is_empty() and kind.is_empty() })
 	by_state = states.map(
@@ -280,7 +279,7 @@ failures_panel! = |mount, counts, now| {
 
 ## Each kind (the app's, and any other in the queue), its attempts and time limit, and how many of
 ## its jobs are in each state.
-kinds_panel : Str, List({ kind : Str, state : Str, count : U64 }), List(Registry.Kind) -> Str
+kinds_panel : Str, List({ kind : Str, state : Str, count : U64 }), List(Job.KindInfo) -> Str
 kinds_panel = |mount, counts, kinds| {
 	names = kind_names(kinds, counts)
 	if names.is_empty() {
@@ -383,7 +382,7 @@ jobs_panel = |mount, query, { state, kind, before, selected }, rows, now| {
 
 ## One job, in a drawer over the list (`close` is the list): everything the queue knows of it, and
 ## what may be done to it.
-drawer! : Str, Str, Str, I64, I64, List(Registry.Kind) => { status : U16, html : Str }
+drawer! : Str, Str, Str, I64, I64, List(Job.KindInfo) => { status : U16, html : Str }
 drawer! = |mount, query, close, id, now, kinds| {
 	frame = |eyebrow, title, content| "<a class=\"scrim\" href=\"${AdminHtml.escape(close)}\" tabindex=\"-1\" aria-hidden=\"true\"></a><aside class=\"drawer\" role=\"dialog\" aria-labelledby=\"job-title\"><header class=\"drawer-head\"><div><p class=\"eyebrow\">${eyebrow}</p><h2 id=\"job-title\">${title}</h2></div><a class=\"icon-btn\" href=\"${AdminHtml.escape(close)}\" data-close aria-label=\"Close\" title=\"Close (Esc)\">${AdminHtml.icon("close")}</a></header>${content}</aside>"
 	match Job.get!(id) {

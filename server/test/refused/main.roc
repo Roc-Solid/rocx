@@ -8,8 +8,6 @@ import pf.Server
 program = {
 	respond!: |_, _, _, _, _| Server.response(200, [], "never"),
 	migrations: [],
-	jobs: [],
-	crons: [],
 	actors: [],
 	logs: { format: Auto },
 	plugins: plugins.map(Plugin.running),

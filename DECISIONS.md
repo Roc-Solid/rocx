@@ -1665,3 +1665,77 @@ one and three plugins, and its tests pass optimized (`ROCX_TEST_OPT=speed`).
 **Why.** Installing is a line in the header and one in `plugins`; what a plugin adds is checked
 before the first request and listed in the log; and the jobs, the jobs page and email can leave the
 platform (D-034, D-035). **Reversible:** yes.
+
+## D-034 Jobs and cron are a package, and a plugin
+
+**Context.** D-025's rule: a platform module stays only if it needs the host or the transpiler.
+`Job`, `Cron` and the schedules' loop made no host calls; the workers used three general ones
+(`db_listen!`, `stopping!`, `isolated!`) and the kinds were kept in the host's store. What tied them
+to the platform was `program`'s `jobs` and `crons` and the start (the kinds kept, the schedules
+checked, jobs a stop cut short queued again, the workers started). The user decided on 2026-11-22
+to move jobs and cron, the jobs page with its look, and email into the ecosystem, once plugins
+(D-033) could carry them.
+
+**Choice.** `packages/jobs`, a plugin on the platform's general effects.
+
+```roc
+Job.Options := {
+    jobs : List(Job.Handler),                                       # App.jobs: the kinds rocx build finds
+    crons : List({ name : Str, schedule : Str, job : Str, input : Str }) ?? [],   # Cron.every(…)
+    workers : U64 ?? 4,
+    retry_ms : U64 ?? 1000,
+}
+Job.plugin : Job.Options -> Plugin.Value(ctx)
+
+program = App.program({ …, plugins: [Job.plugin({ jobs: App.jobs, crons: [Cron.every("0 3 * * *", Jobs.nightly, {})] })] })
+```
+
+- `Job` and `Cron` keep their API (`Cron.every` takes a kind by its shape, so `Cron` doesn't import
+  `Job`), and `Job` gains `plugin`, `Options`, `Handler`, `kinds!` (what the plugin runs, which the
+  jobs page reads) and `changes` (the live topic the workers say on what they start and finish).
+  `Calendar` comes too (cron's dates). The workers, the schedules' loop and what they keep at start
+  are the package's own modules.
+- **Where schedules go: the plugin's options.** They are the plugin's: it checks them at start and
+  runs them. `App.program` has no `crons` any more, and `App.jobs` (Generated/App, when the header
+  names a package with `Job`) is the kinds the app's modules define. An app that defines jobs and
+  names no jobs package is a build error saying what to add.
+- The plugin: the table (`jobs/0001_jobs`), `workers` worker loops and the schedules' loop (none
+  without a database), a call each job runs in (`jobs.run`), and a start that keeps the kinds and
+  schedules, checks every schedule (a bad one stops the server), and queues again the jobs a stop
+  cut short. `Job.enqueue!` without the plugin listed is a `JobErr` saying so.
+- The platform gained what a plugin like it needs: `Db.listen!`, `Db.connected!`, and D-033's
+  `Plugin.isolated!`, `stopping!`, `keep!`, `kept!`. It lost `program.jobs`, `program.crons`, its
+  `Job`, `Cron` and `JobsPage` modules, and `--job-workers` and `--job-retry-ms` (each now an error
+  naming the plugin's option).
+- **Existing databases keep working.** The table keeps its name (`rocx_jobs`), its notifications
+  (`rocx_jobs`) and its topic (`rocx:jobs`), which packages/testing reads too. The plugin's migration
+  makes it only if it isn't there (`create table if not exists`, its indexes likewise), so a
+  database the platform migrated records `jobs/0001_jobs` and changes nothing. On a new database the
+  platform's `rocx/0001` makes only `rocx_actors`, and `rocx/0002` brings up to date a queue its old
+  first migration made (inside `to_regclass('rocx_jobs') is not null`). Tested twice: a server test
+  that lays down the platform's old migrations word for word and a queue, then starts; and by hand,
+  master's own server migrating a database and queueing jobs (one keyed for later, one failed, one
+  done, one left running), then this one starting on it: the running one queued again and run, the
+  keyed one cancelled by its key, the rest where they were, and the schema the same as a new
+  database's.
+- The jobs page moves to `packages/admin`, with its look (`AdminHtml`), since it reads `Job`:
+  `packages/admin` names the server platform now, and lists its tables admin's modules in
+  `browser.roc` for the browser's half (D-033). The dev mailbox keeps a copy of the look in the
+  platform until email moves (D-035).
+
+**Moving to it.** What an app outside the repo changes:
+- Its header names the package (`jobs: "…/packages/jobs/main.roc"`), and `admin:
+  "…/packages/admin/main.roc"` for the jobs page; its modules import `jobs.Job`, `jobs.Cron` and
+  `admin.JobsPage` instead of `pf.Job`, `pf.Cron` and `pf.JobsPage` (route files too).
+- `App.program({ …, crons: [...] })` becomes `App.program({ …, plugins: [Job.plugin({ jobs:
+  App.jobs, crons: [...] })] })`; an app with no schedules drops `crons: []`.
+- `--job-workers N` and `--job-retry-ms N` become `Job.plugin({ …, workers: N, retry_ms: N })`; the
+  server refuses the flags, saying so.
+- A program written by hand drops `jobs` and `crons`, and lists
+  `Job.plugin({ jobs: [Job.handler(kind), …], crons })` in its plugins (`Plugin.running`).
+- A database it has keeps its queue: nothing to do.
+
+**Costs.** One more line in `main.roc` and one in the header. A plugin package names the server
+platform by a path, so the app names the same file (D-033). The dev mailbox's look is in two places
+until D-035. **Why.** The platform keeps what needs the host; jobs are Roc on general effects, and
+now an example of a plugin that brings tables, loops, a call and a start. **Reversible:** yes.

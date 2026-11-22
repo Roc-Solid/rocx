@@ -5,7 +5,7 @@
 ## answered by their routes, requests to other servers, the environment, AES-GCM, random
 ## bytes, the crypto written in Roc (packages/crypto), S3 storage (packages/s3), and cookies; and what the docs show of them
 ## (`Samples.roc`), as an app would write it.
-app [program] { pf: platform "../../platform/main.roc", crypto: "../../../packages/crypto/main.roc", fixture: "../fixture/main.roc", s3: "../../../packages/s3/main.roc" }
+app [program] { pf: platform "../../platform/main.roc", admin: "../../../packages/admin/main.roc", crypto: "../../../packages/crypto/main.roc", fixture: "../fixture/main.roc", jobs: "../../../packages/jobs/main.roc", s3: "../../../packages/s3/main.roc" }
 
 import crypto.Base64
 import crypto.Hex
@@ -14,16 +14,16 @@ import crypto.Hmac
 import crypto.Sha256
 import s3.S3
 import fixture.Fixture
+import jobs.Cron
+import jobs.Job
+import admin.JobsPage
 import pf.Actor
 import pf.AesGcm
-import pf.Cron
 import pf.Db
 import pf.Email
 import pf.Env
 import pf.Http
 import pf.HttpResponse
-import pf.Job
-import pf.JobsPage
 import pf.Kv
 import pf.Live
 import pf.Log
@@ -53,22 +53,33 @@ program = {
 	respond!,
 	# The app's schema, in the executable: applied once each, in order, when the server starts.
 	migrations: [{ name: "0001_tables.sql", sql: tables }, { name: "0002_note_index.sql", sql: note_index }],
-	jobs: [Job.handler(note_job), Job.handler(flaky_job), Job.handler(crash_job), Job.handler(mail_job), Job.handler(tick_job), Job.handler(env_job), Job.handler(twice_job), Job.handler(slow_job)],
-	crons: [Cron.every("* * * * * *", tick_job, {})],
 	# The kinds of actor (`rocx build` lists them for an app it builds).
 	actors: [Actor.handler(counter), Actor.handler(mirror({})), Actor.handler(bouncer({})), Actor.handler(ticker)],
 	# The log's format: `ROCX_LOG` if it's set, or else pretty on a terminal and JSON elsewhere.
 	logs: { format: Auto },
-	# A plugin package's plugins (server/test/fixture): their routes answer in `respond!`
-	# (`Plugin.respond!`), the platform runs the rest.
+	# The plugins (`plugins`): their routes answer in `respond!` (`Plugin.respond!`), the platform
+	# runs the rest.
 	plugins: plugins.map(Plugin.running),
 	routes: [],
 }
 
-## The plugins: the fixture's routes show the server's context as the app has it; `third` needs
-## `second`, so it starts after it.
+## The plugins. The jobs (packages/jobs): the kinds its workers run, a schedule, and a short first
+## retry (20 ms), so the tests see retries soon. A plugin package's (server/test/fixture): the
+## fixture's routes show the server's context as the app has it; `third` needs `second`, so it
+## starts after it.
 plugins : List(Plugin.Value(Str))
-plugins = [Fixture.plugin({ shown: |context| "the app's context, ${context}" }), Fixture.third({}), Fixture.second({})]
+plugins = [
+	Job.plugin(
+		{
+			jobs: [Job.handler(note_job), Job.handler(flaky_job), Job.handler(crash_job), Job.handler(mail_job), Job.handler(tick_job), Job.handler(env_job), Job.handler(twice_job), Job.handler(slow_job)],
+			crons: [Cron.every("* * * * * *", tick_job, {})],
+			retry_ms: 20,
+		},
+	),
+	Fixture.plugin({ shown: |context| "the app's context, ${context}" }),
+	Fixture.third({}),
+	Fixture.second({}),
+]
 
 respond! : Str, Str, Str, List(U8), Str => Server.Response
 respond! = |method, target, headers, body, context| {
