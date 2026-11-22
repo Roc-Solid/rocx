@@ -1,6 +1,6 @@
 {
 	"measured": "2026-11-22",
-	"commit": "3c73321",
+	"commit": "30ad05f",
 	"roc": "rocx-fork-3f66e242ea",
 	"machine": "Apple M5, 10 cores",
 	"runtime": {
@@ -166,8 +166,8 @@
 			"title": "Status",
 			"pages": 6,
 			"endpoints": 15,
-			"lines": 3456,
-			"expects": 99,
+			"lines": 3490,
+			"expects": 100,
 			"tests": 13,
 			"packages": [
 				"admin",
@@ -178,11 +178,11 @@
 				"otel",
 				"testing"
 			],
-			"database": "Postgres",
+			"database": "SQLite",
 			"wasm": {
 				"bytes": 631843,
-				"gzip": 218265,
-				"brotli": 163167
+				"gzip": 218360,
+				"brotli": 163183
 			}
 		}
 	],
@@ -191,7 +191,7 @@
 		"measured": "2026-11-22",
 		"commit": "4b1169c",
 		"machine": "Apple M5, 10 cores",
-		"load": "12.7 \u2192 18.9",
+		"load": "12.7 → 18.9",
 		"opt": "speed",
 		"seconds": 10,
 		"body": "\"hello\"",
