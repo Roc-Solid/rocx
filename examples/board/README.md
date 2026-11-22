@@ -157,7 +157,8 @@ What the app met, and how it works around each:
 - **An import a doc comment mentions stays in the browser's copy.** The front page's `##` comment
   named `Middlewares.member`; the browser's copy then kept `import ../Middlewares` (which reaches
   `pf.Actor` through Guard), and `rocx build` warned that the browser's build couldn't compile it.
-  Workaround: the comment says "its middleware".
+  Workaround: the comment says "its middleware". (Fixed in rocx since: what a comment or a string
+  says doesn't keep an import in the browser's copy.)
 - **Key handlers see only `event.key`, no modifier keys,** so there is no Alt+↑ to move a card from
   the keyboard. Workaround: an open card has Up, Down and "To the end of" buttons, which are forms, so
   they work without JavaScript, by keyboard and on touch screens (which start no drag in many mobile

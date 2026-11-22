@@ -2094,11 +2094,12 @@ Transpile := [].{
 
 	## The browser's copy without the imports only what it drops (a `<NoHydration>`'s children, or a route
 	## file's middleware) used: each such line left empty, so lines stay lines. `server` is the server's
-	## copy; an import its code doesn't use either is kept, for the compiler to warn about.
+	## copy; an import its code doesn't use either is kept, for the compiler to warn about. A module a
+	## comment or a string names (`## Behind Middlewares.member`) isn't used by that.
 	without_server_imports : Str, Str -> Str
 	without_server_imports = |browser, server| {
-		browser_code = Transpile.without_imports(browser)
-		server_code = Transpile.without_imports(server)
+		browser_code = Transpile.code_only(Transpile.without_imports(browser))
+		server_code = Transpile.code_only(Transpile.without_imports(server))
 		kept = browser.split_on("\n").map(
 			|line| {
 				match Transpile.import_at(line.to_utf8(), 0) {
@@ -2206,6 +2207,14 @@ Transpile := [].{
 			}
 		}
 		$mask
+	}
+
+	## `code` with what isn't code (`code_mask`'s) blanked, a space for each byte and its line breaks
+	## kept, so offsets and lines stay.
+	code_only : List(U8) -> List(U8)
+	code_only = |code| {
+		mask = Transpile.code_mask(code)
+		code.map_with_index(|b, i| if (b == '\n' or (mask.get(i) ?? Bool.True)) b else ' ')
 	}
 
 	## Where `name` occurs in `code` as a name, in its code (`mask`), not in a string's text or a
