@@ -208,7 +208,7 @@ metrics = |mount, counts, state, kind| {
 activity! : Str => Try(List({ bucket : I64, state : Str, count : I64 }), [DbErr(Str), BadRow(Str)])
 activity! = |kind|
 	Db.all!(
-		"select greatest(0, least(11, floor(extract(epoch from (now() - finished_at)) / 300)))::int8 as \"bucket!\", case when state = 'done' and attempts > 1 then 'retried' else state end as \"state!\", count(*)::int8 as \"count!\" from rocx_jobs where finished_at > now() - interval '60 minutes' and state in ('done', 'failed') and ($1 = '' or kind = $1) group by 1, 2",
+		"select greatest(0, least(11, floor(extract(epoch from (now() - finished_at)) / 300)))::int8 as bucket, case when state = 'done' and attempts > 1 then 'retried' else state end as state, count(*)::int8 as count from rocx_jobs where finished_at > now() - interval '60 minutes' and state in ('done', 'failed') and ($1 = '' or kind = $1) group by 1, 2",
 		[Text(kind)],
 	)
 

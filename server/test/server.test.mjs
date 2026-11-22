@@ -991,6 +991,7 @@ test("the jobs page: behind the app's guard; the states, the last hour, failures
 	assert.match(html, /<div class="shell" data-events="\/admin\/jobs\?events=1" data-now="\d+">/);
 	assert.match(html, /<a class="metric" href="\/admin\/jobs" aria-current="page"><span class="metric-label">All<\/span><strong>\d+<\/strong><\/a>/);
 	assert.match(html, /<h2>Finished jobs<\/h2>/, "the last hour");
+	assert.match(html, /<div class="bars" role="img" aria-label="In the last hour: \d+ done, \d+ done after a retry, [1-9]\d* failed">/, "its bars, the jobs that failed above among them, not an error");
 	assert.match(html, /<h2>Failures<\/h2>/, "the latest failures");
 	assert.match(html, /<a class="kind-name" href="\/admin\/jobs\?kind=twice"><code>twice<\/code><\/a><span class="kind-meta">2 attempts · no time limit<\/span>/, "a kind, its attempts and time limit");
 	assert.match(html, /kind=slow"><code>slow<\/code><\/a><span class="kind-meta">2 attempts · 300 ms limit<\/span>/);
