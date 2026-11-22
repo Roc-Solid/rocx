@@ -52,7 +52,10 @@ export function rocxBinary() {
 	const out = join(root, "bin", "rocx");
 	const sources = join(root, "src");
 	const newest = () => Math.max(...readdirSync(sources).filter((name) => !name.endsWith(".mjs")).map((name) => statSync(join(sources, name)).mtimeMs));
-	const fresh = () => existsSync(out) && statSync(out).mtimeMs >= newest();
+	// What it was built with (`dev` or `speed`), beside it: a dev build doesn't stand in for an optimized one.
+	const opt = process.env.ROCX_OPT === "dev" ? "dev" : "speed";
+	const stamp = join(root, "bin", ".rocx-opt");
+	const fresh = () => existsSync(out) && statSync(out).mtimeMs >= newest() && existsSync(stamp) && readFileSync(stamp, "utf8") === opt;
 	if (fresh()) return out;
 	const lock = join(root, "bin", ".rocx-building");
 	mkdirSync(dirname(lock), { recursive: true });
@@ -70,12 +73,12 @@ export function rocxBinary() {
 	try {
 		if (fresh()) return out;
 		const building = `${out}.building-${process.pid}`;
-		const opt = process.env.ROCX_OPT === "dev" ? "dev" : "speed";
 		const result = spawnSync(roc(), ["build", `--opt=${opt}`, `--output=${building}`, join(sources, "main.roc")], { encoding: "utf8" });
 		// 1: errors (the binary would crash where they are); 2: warnings only.
 		if (result.status === 1 || !existsSync(building)) throw new Error(`building rocx (src/main.roc) failed:\n${result.stdout}${result.stderr}`);
 		if (result.status === 2) process.stderr.write(`rocx (src/main.roc) built with warnings:\n${result.stdout}${result.stderr}`);
 		renameSync(building, out);
+		writeFileSync(stamp, opt);
 		return out;
 	} finally {
 		rmSync(lock, { recursive: true, force: true });

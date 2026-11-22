@@ -221,6 +221,15 @@ call! = |name, args| {
 	if known(formatted) {
 		return formatted
 	}
+	# Many calls in one process (src/rocx.mjs callMany): each `{ fn, args }`, their answers in order.
+	if name == "batch" {
+		var $answers = []
+		for each in Value.items(args.get(0) ?? Null) {
+			answer = call!(Value.str(Value.field(each, "fn")), Value.items(Value.field(each, "args")))?
+			$answers = $answers.append(answer)
+		}
+		return Ok(Array($answers))
+	}
 	if name == "build" {
 		arg = |i| args.get(i) ?? Null
 		options = arg(1)

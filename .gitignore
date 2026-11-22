@@ -41,3 +41,4 @@ spike/*/*.wasm
 bin/rocx
 bin/rocx.building-*
 bin/.rocx-building/
+bin/.rocx-opt

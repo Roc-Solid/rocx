@@ -38,6 +38,10 @@ export function call(fn, ...args) {
 	throw Object.assign(new Error(message), rest);
 }
 
+/** Many of rocx's functions in one process, each `[fn, ...args]`: their answers, in order (the
+ * first that throws, thrown). One process instead of one each: for a script that asks many times. */
+export const callMany = (calls) => call("batch", calls.map(([fn, ...args]) => ({ fn, args })));
+
 /** A Map's entries as an object, for JSON. */
 const plain = (value) => (value instanceof Map ? Object.fromEntries(value) : value);
 
@@ -92,6 +96,8 @@ export const APP = "App";
 export const findRouteFiles = (routes) => call("findRouteFiles", routes);
 export const routeTable = (paths) => call("routeTable", paths);
 export const definitions = (source) => call("definitions", source);
+/** `definitions` of each source, in one process. */
+export const definitionsOf = (sources) => callMany(sources.map((source) => ["definitions", source]));
 export const tagNames = (codes) => call("tagNames", codes);
 export const routeModule = (code, where) => call("routeModule", code, where);
 export const hasPages = (table) => table.pages.length > 0 || Boolean(table.error);

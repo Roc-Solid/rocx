@@ -31,7 +31,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync,
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { brotliCompressSync, constants, gzipSync } from "node:zlib";
-import { definitions, findRouteFiles, pathsModule, build as rocxBuild, RocxError, routesTable, routeTable, transpile } from "../src/rocx.mjs";
+import { definitionsOf, findRouteFiles, pathsModule, build as rocxBuild, RocxError, routesTable, routeTable, transpile } from "../src/rocx.mjs";
 import { platformReference, referenceModule, rocString } from "./reference.mjs";
 import { Runtime } from "../web/runtime.js";
 import { buildApp, buildHost, rocxBinary, start, syncShared, zig } from "../server/build.mjs";
@@ -46,10 +46,22 @@ export const client = join(out, "client");
 /** The pages, from site/routes (`/`, `/syntax`; `/blog/[slug]` would be one too). */
 const pages = () => routeTable(findRouteFiles(join(site, "routes"))).pages;
 
+/** What each of site/routes' files defines (`definitions`), by its path under routes/: one rocx call
+ * for them all, made once. */
+let routeDefs;
+const routeDefinitions = () => {
+	if (!routeDefs) {
+		const files = findRouteFiles(join(site, "routes"));
+		const found = definitionsOf(files.map((file) => readFileSync(join(site, "routes", file), "utf8")));
+		routeDefs = new Map(files.map((file, i) => [file, found[i]]));
+	}
+	return routeDefs;
+};
+
 /** The pages a static build writes: those with no params, and none behind middleware of its own,
  * which answers each request as it comes (`/members`: who is asking?). */
 export const ROUTES = pages()
-	.filter((page) => !page.params.length && !definitions(readFileSync(join(site, "routes", page.file), "utf8")).middleware)
+	.filter((page) => !page.params.length && !routeDefinitions().get(page.file).middleware)
 	.map((page) => page.path);
 
 
@@ -295,7 +307,7 @@ function routeTree() {
 	const files = findRouteFiles(join(site, "routes")).sort((a, b) => a.split("/").length - b.split("/").length || a.localeCompare(b));
 	const width = Math.max(...files.map((file) => file.length)) + 2;
 	const behind = (file) => {
-		const { middleware } = definitions(readFileSync(join(site, "routes", file), "utf8"));
+		const { middleware } = routeDefinitions().get(file);
 		return middleware ? `, behind ${middleware}` : "";
 	};
 	return { name: "route_tree", file: "site/routes", rocx: files.map((file) => `${file.padEnd(width)}# ${paths.get(file) ?? roles[file.split("/").pop()]}${behind(file)}`).join("\n"), roc: "", first: 1, call: "" };
