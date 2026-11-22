@@ -236,9 +236,11 @@ Every gap met, and what the app does about each:
 8. **The client's address isn't passed on**, so wrong passwords can't be counted per client. The
    sign-in allows ten tries a minute in all (`Kv.increment!` with a time to live), then says to
    wait.
-9. **packages/admin's pages have no way back to the app's own admin.** Its sidebar lists the tables
-   and nothing else, so the way back to `/admin` is the browser's. An option for a link in the
-   header would help.
+9. **Fixed: packages/admin's pages had no way back to the app's own admin.** Their sidebar listed
+   the tables and nothing else, so the way back to `/admin` was the browser's. Both the tables
+   admin (`Admin.Config`) and the jobs page (`JobsPage.plugin`) take `back` now, a link first in
+   the sidebar: here `{ label: "Acme Status admin", href: "/admin" }` (the HTTP test finds it on
+   both).
 10. **The Roc and rocx gotchas met:**
     - A one-field record written short is a block: `UptimeStrip.view({ days })` passes the list
       itself, so it has to be `{ days: days }`.

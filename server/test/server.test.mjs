@@ -1055,7 +1055,7 @@ test("jobs: listed newest first, by state and kind, a page at a time; one read b
 	for (const n of [1, 3]) assert.equal(await post(`/jobs/cancel?key=${run}list${n}`), "1");
 });
 
-test("the jobs page, as a plugin (JobsPage.plugin, packages/admin): behind the app's guard; the states, the last hour, failures, kinds, schedules and jobs; retry, cancel and run now as forms; one job in a drawer; its stream of changes", { skip: skipDb }, async () => {
+test("the jobs page, as a plugin (JobsPage.plugin, packages/admin): behind the app's guard; a link back to the app; the states, the last hour, failures, kinds, schedules and jobs; retry, cancel and run now as forms; one job in a drawer; its stream of changes", { skip: skipDb }, async () => {
 	const admin = { "x-admin": "yes" };
 	const page = (query = "", init = {}) => get(`/admin/jobs${query}`, { ...init, headers: { ...admin, ...init.headers }, redirect: "manual" });
 	const form = (fields, headers = {}) => page("", { method: "POST", body: new URLSearchParams(fields).toString(), headers: { "content-type": "application/x-www-form-urlencoded", ...headers } });
@@ -1066,6 +1066,7 @@ test("the jobs page, as a plugin (JobsPage.plugin, packages/admin): behind the a
 	const html = await listed.text();
 	assert.match(html, /<h1>Jobs<\/h1>/);
 	assert.match(html, /<div class="shell" data-events="\/admin\/jobs\?events=1" data-now="\d+">/);
+	assert.match(html, /<nav class="side-nav" aria-label="Jobs"><a class="back" href="\/"><svg[^>]*>.*?<\/svg><span class="label">Acme Tests<\/span><\/a><a href="\/admin\/jobs" aria-current="page">/, "the link back to the app, first in the sidebar (`back`)");
 	assert.match(html, /<a class="metric" href="\/admin\/jobs" aria-current="page"><span class="metric-label">All<\/span><strong>\d+<\/strong><\/a>/);
 	assert.match(html, /<h2>Finished jobs<\/h2>/, "the last hour");
 	assert.match(html, /<div class="bars" role="img" aria-label="In the last hour: \d+ done, \d+ done after a retry, [1-9]\d* failed">/, "its bars, the jobs that failed above among them, not an error");
@@ -1154,10 +1155,12 @@ test("the jobs page mounted by the app itself (JobsPage.respond!), at its own pa
 	assert.equal((await get("/admin/mounted")).status, 403);
 	const mounted = await get("/admin/mounted?state=failed", { headers: { "x-admin": "yes" } });
 	assert.equal(mounted.status, 200);
-	assert.match(await mounted.text(), /<div class="shell" data-events="\/admin\/mounted\?events=1" data-now="\d+">/);
+	const html = await mounted.text();
+	assert.match(html, /<div class="shell" data-events="\/admin\/mounted\?events=1" data-now="\d+">/);
+	assert.doesNotMatch(html, /class="back"/, "no link back unless the app gives one");
 });
 
-test("JobsPage.plugin without a guard doesn't compile: the record is missing the field guard", { skip }, () => {
+test("JobsPage.plugin without a guard doesn't compile: the record is missing the field guard (the hint lists the fields left out, defaulted ones too)", { skip }, () => {
 	const at = join(root, "server", "test", "build", "guardless");
 	mkdirSync(at, { recursive: true });
 	writeFileSync(
@@ -1166,7 +1169,7 @@ test("JobsPage.plugin without a guard doesn't compile: the record is missing the
 	);
 	const checked = spawnSync(roc(), ["check", join(at, "main.roc")], { encoding: "utf8" });
 	assert.notEqual(checked.status, 0);
-	assert.match(checked.stdout + checked.stderr, /This record is missing the field: guard/);
+	assert.match(checked.stdout + checked.stderr, /This record is missing these fields:\n - back\n - guard\n/);
 });
 
 // ---- Email ----

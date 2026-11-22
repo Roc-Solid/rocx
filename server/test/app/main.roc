@@ -80,8 +80,8 @@ plugins = [
 	),
 	# Email (packages/email): SMTP_URL and MAIL_FROM from the environment, the dev mailbox under --dev.
 	Email.plugin({}),
-	# The jobs page (packages/admin), behind a guard of the app's own.
-	JobsPage.plugin({ at: "/admin/jobs", guard: admins_only }),
+	# The jobs page (packages/admin), behind a guard of the app's own, with a link back to the app.
+	JobsPage.plugin({ at: "/admin/jobs", guard: admins_only, back: { label: "Acme Tests", href: "/" } }),
 	Fixture.plugin({ shown: |context| "the app's context, ${context}" }),
 	Fixture.third({}),
 	Fixture.second({}),

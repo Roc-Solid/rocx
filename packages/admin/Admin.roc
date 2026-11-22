@@ -66,6 +66,8 @@ Admin := [].{
 	##   other table of the schema too, with no options (but the platform's own, `rocx_…`, unless
 	##   listed). `Listed` by default: a table no one listed (one of passwords) stays out.
 	## - `schema`: the tables' schema (`public`); `title`: what its pages call it (`Database`).
+	## - `back`: a link back to the app's own pages, first in every page's sidebar
+	##   (`{ label: "Acme Status", href: "/admin" }`); none unless the app says (`href` "").
 	Config(context) := {
 		mount : Str,
 		access : context -> Access,
@@ -73,6 +75,7 @@ Admin := [].{
 		include : [Listed, All] ?? Listed,
 		schema : Str ?? "public",
 		title : Str ?? "Database",
+		back : { label : Str, href : Str } ?? { label: "", href: "" },
 	}
 
 	## A table the admin shows: what the catalog says of it, and the app's options.

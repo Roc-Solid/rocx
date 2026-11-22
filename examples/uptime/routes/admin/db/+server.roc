@@ -17,6 +17,7 @@ tables : Admin.Config({})
 tables = {
 	mount: "/admin/db",
 	title: "Acme Status",
+	back: { label: "Acme Status admin", href: "/admin" },
 	access: |_| Edit,
 	tables: [
 		{

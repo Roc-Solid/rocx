@@ -14,13 +14,14 @@ View := [].{
 
 	## What every page knows: the admin's path and title, the tables it shows, what the visitor may
 	## do, and the token its forms send back (against cross-site requests).
-	Frame : { mount : Str, title : Str, tables : List(Admin.Shown), access : Admin.Access, token : Str }
+	Frame : { mount : Str, title : Str, tables : List(Admin.Shown), access : Admin.Access, token : Str, back : { label : Str, href : Str } }
 
-	## The sidebar: the admin's name, a link to all its tables, then each table (`on`: the page
-	## shown, which the sidebar marks), and what the visitor may do.
+	## The sidebar: the admin's name, the link back to the app (`back`, if it has one), a link to
+	## all its tables, then each table (`on`: the page shown, which the sidebar marks), and what the
+	## visitor may do. With no tables (a refusal), only the link back.
 	side : Frame, [Overview, Table(Str), Elsewhere] -> Str
 	side = |frame, on| {
-		overview = Look.nav_link({ href: frame.mount, icon: "overview", tone: "accent", label: "All tables", count: "", on: on == Overview })
+		overview = if (frame.tables.is_empty()) "" else Look.nav_link({ href: frame.mount, icon: "overview", tone: "accent", label: "All tables", count: "", on: on == Overview })
 		tables = frame.tables.map(|shown| Look.nav_link({ href: Form.link(frame.mount, [("table", shown.table.name)]), icon: "table", tone: "neutral", label: Look.escape(Admin.label(shown)), count: "", on: on == Table(shown.table.name) }))
 		listed = if (tables.is_empty()) "" else "${Look.nav_label("Tables")}${Str.join_with(tables, "")}"
 		foot =
@@ -29,7 +30,7 @@ View := [].{
 				ReadOnly => "Read only: you may look here, not change anything."
 				Refused => ""
 			}
-		Look.side({ name: frame.title, note: "Tables, in Postgres", home: frame.mount, nav: "${overview}${listed}", foot })
+		Look.side({ name: frame.title, note: "Tables, in Postgres", home: frame.mount, nav: "${Look.back_link(frame.back)}${overview}${listed}", foot })
 	}
 
 	## The tables, each with about how many rows it has and what it is.
@@ -450,7 +451,7 @@ books = {
 }
 
 frame_of : Admin.Access -> View.Frame
-frame_of = |access| { mount: "/db", title: "Database", tables: [Admin.pair(books, { name: "books", search: ["title"] }), Admin.pair(authors, { name: "authors" }), shelf], access, token: "t0k" }
+frame_of = |access| { mount: "/db", title: "Database", tables: [Admin.pair(books, { name: "books", search: ["title"] }), Admin.pair(authors, { name: "authors" }), shelf], access, token: "t0k", back: { label: "", href: "" } }
 
 ## A table of each kind of filter: text, a foreign key, a boolean, an enum and a check (each may be
 ## null, or not), a number, a moment and a day; a hidden column, and one the list doesn't show.
@@ -623,6 +624,15 @@ expect {
 	side.contains("<a href=\"/db?table=books\" aria-current=\"page\">") and side.contains("<a href=\"/db?table=authors\"><svg") and !side.contains("<a href=\"/db\" aria-current")
 }
 expect View.side(frame_of(Edit), Overview).contains("<a href=\"/db\" aria-current=\"page\">") and View.side(frame_of(ReadOnly), Elsewhere).contains("Read only")
+# The link back to the app, first in the sidebar, when the app gives one; and alone, with no tables.
+expect !View.side(frame_of(Edit), Overview).contains("class=\"back\"")
+expect {
+	back = { label: "Acme Status", href: "/admin" }
+	side = View.side({ ..frame_of(Edit), back }, Overview)
+	alone = View.side({ ..frame_of(Refused), tables: [], back }, Elsewhere)
+	side.contains("<nav class=\"side-nav\" aria-label=\"Database\"><a class=\"back\" href=\"/admin\">") and side.contains("Acme Status</span></a><a href=\"/db\" aria-current=\"page\">")
+		and alone.contains("<nav class=\"side-nav\" aria-label=\"Database\"><a class=\"back\" href=\"/admin\">") and !alone.contains("All tables")
+}
 # A refusal has no way on to the tables; another problem has.
 expect !View.problem_page({ ..frame_of(Refused), tables: [] }, "Not for you", "No.").contains("All tables") and View.problem_page(frame_of(Edit), "No such table", "None.").contains(">All tables</a>")
 expect {

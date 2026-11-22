@@ -49,7 +49,7 @@ AdminPage := [].{
 	respond! : Request, context, Admin.Config(context), Effects => { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
 	respond! = |request, context, config, effects| {
 		access = (config.access)(context)
-		empty_frame = { mount: config.mount, title: config.title, tables: [], access, token: "" }
+		empty_frame = { mount: config.mount, title: config.title, tables: [], access, token: "", back: config.back }
 		method = if (request.method == "HEAD") "GET" else request.method
 		if access == Refused {
 			page(403, empty_frame, Elsewhere, "Not for you", View.problem_page(empty_frame, "Not for you", "This admin isn't open to you."))
@@ -145,11 +145,11 @@ cookie = |headers, name| {
 }
 
 ## A whole page: its main part, beside the sidebar of the admin's tables (`on`: the page shown);
-## with none, when it shows none (a refusal).
+## with none, when it shows none (a refusal), unless the app gave a link back (`back`).
 page : U16, View.Frame, [Overview, Table(Str), Elsewhere], Str, Str -> { status : U16, headers : List({ name : Str, value : Str }), body : [Text(Str), ..others] }
 page = |status, frame, on, title, body| {
 	full = if (title == frame.title) title else "${title} · ${frame.title}"
-	side = if (frame.tables.is_empty()) "" else View.side(frame, on)
+	side = if (frame.tables.is_empty() and frame.back.href.is_empty()) "" else View.side(frame, on)
 	{ status, headers: Look.headers, body: Text(Look.document(full, side, body)) }
 }
 

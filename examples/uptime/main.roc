@@ -23,7 +23,7 @@ program = App.program({
 	middleware: Middlewares.default,
 	plugins: [
 		Job.plugin({ jobs: App.jobs, crons: [Cron.every("*/10 * * * * *", Jobs.due, {}), Cron.every("0 3 * * *", Jobs.nightly, {})] }),
-		JobsPage.plugin({ at: "/admin/jobs", guard: Middlewares.admin }),
+		JobsPage.plugin({ at: "/admin/jobs", guard: Middlewares.admin, back: { label: "Acme Status admin", href: "/admin" } }),
 		Email.plugin({ from: "Acme Status <status@example.com>" }),
 	],
 })

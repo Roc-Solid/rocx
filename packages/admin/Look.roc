@@ -45,6 +45,17 @@ Look := [].{
 		"<a href=\"${escape(item.href)}\"${current}>${mark}<span class=\"label\">${item.label}</span>${number}</a>"
 	}
 
+	## A link back to the app's own pages, first in a sidebar's navigation: its `label`, to `href`
+	## (`{ label: "Acme Status", href: "/admin" }`); nothing when `href` is "", as an admin's option
+	## `back` is unless the app says.
+	back_link : { label : Str, href : Str } -> Str
+	back_link = |back|
+		if back.href.is_empty() {
+			""
+		} else {
+			"<a class=\"back\" href=\"${escape(back.href)}\">${Look.icon("back")}<span class=\"label\">${escape(back.label)}</span></a>"
+		}
+
 	## A heading between the sidebar's links.
 	nav_label : Str -> Str
 	nav_label = |text| "<p class=\"nav-label\">${escape(text)}</p>"
@@ -162,6 +173,7 @@ Look := [].{
 				".side-foot{margin:auto 0 0;padding:16px 20px 20px;border-top:1px solid var(--line);color:var(--subtle);font-size:12.5px}",
 				".dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--tone,var(--neutral));flex:none}",
 				".side-nav .dot{margin:0 4px}",
+				".side-nav a.back{margin-bottom:8px;border-color:var(--line);color:var(--text)}",
 			],
 			"",
 		),
@@ -348,5 +360,7 @@ own =
 expect Look.escape("<a href=\"x\">'&") == "&lt;a href=&quot;x&quot;&gt;&#39;&amp;"
 expect Look.document("A <b>", "", "<p>hi</p>").contains("<title>A &lt;b&gt;</title>") and Look.document("A", "", "").contains("<div class=\"shell bare\"><main>")
 expect Look.document("A", Look.side({ name: "Db", note: "", home: "/db", nav: "", foot: "" }), "").contains("<div class=\"shell\"><aside class=\"side\"><a class=\"brand\" href=\"/db\">")
+expect Look.back_link({ label: "", href: "" }) == ""
+expect Look.back_link({ label: "Acme <Status>", href: "/admin?a=1&b=2" }).starts_with("<a class=\"back\" href=\"/admin?a=1&amp;b=2\"><svg") and Look.back_link({ label: "Acme <Status>", href: "/admin" }).ends_with("<span class=\"label\">Acme &lt;Status&gt;</span></a>")
 expect Look.nav_link({ href: "/db?table=a&b", icon: "", tone: "good", label: "A", count: "", on: Bool.True }) == "<a href=\"/db?table=a&amp;b\" aria-current=\"page\"><i class=\"dot tone-good\"></i><span class=\"label\">A</span></a>"
 expect Look.icon("plus").contains("<path d=\"M12 5v14M5 12h14\"/>") and Look.icon("nothing").contains("aria-hidden=\"true\"></svg>")

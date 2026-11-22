@@ -137,6 +137,7 @@ filtering a column the list shows says nothing a visitor can't see. To filter by
 | `include : [Listed, All]` | `Listed` (the default): only those; `All`: every other table of the schema too, with no options, but the platform's own (`rocx_…`) |
 | `schema : Str` | `"public"` |
 | `title : Str` | what its pages call it: `"Database"` |
+| `back : { label : Str, href : Str }` | a link back to the app's own pages, first in every page's sidebar (`{ label: "Acme Status admin", href: "/admin" }`); none by default (`href` `""`) |
 
 `Admin.Table`: only `name` is needed. Columns are named as the table names them; a name it doesn't
 have is ignored.
@@ -203,9 +204,17 @@ plugins: [
 ]
 ```
 
+`back` adds a link back to the app's own pages, first in the page's sidebar, as the tables admin's
+option does (none by default):
+
+```roc
+JobsPage.plugin({ guard: Middlewares.admin, back: { label: "Acme Status admin", href: "/admin" } })
+```
+
 A request at `at` (any method: the page answers GET and POST, and 405 to the rest) passes the
 app's middleware, then `guard`, then the page; what the guard hands on isn't used. It needs the jobs plugin (`needs: [Plugin("jobs")]`: the server refuses to
-start without it). Leaving `guard` out doesn't compile: "This record is missing the field: guard".
+start without it). Leaving `guard` out doesn't compile: "This record is missing these fields: … guard" (the
+compiler lists the fields left out, those with a default too).
 An app that mounts the page itself answers a route with `respond!`:
 
 ```roc
@@ -215,7 +224,7 @@ import ../../../Middlewares
 
 middleware = Middlewares.admin
 
-respond! = |{ request, .. }| JobsPage.respond!(request, { mount: "/admin/jobs" })
+respond! = |{ request, .. }| JobsPage.respond!(request, { mount: "/admin/jobs" })   # and back, as above
 ```
 
 ## One look
@@ -245,7 +254,7 @@ packages/admin/main.roc` runs their `expect`s.
 | `View` | each page's HTML, a list's row of filters, and the sidebar of tables (`side`) |
 | `Look` | the admin look (`shared`, the rules every admin page shares, and the helpers), the tables admin's own rules, its `document` and its headers |
 | `Form` | a query's or a form's fields, decoded; links, encoded |
-| `JobsPage` | the jobs page (server only): `plugin({ at, guard })`, or `respond!(request, { mount })` |
+| `JobsPage` | the jobs page (server only): `plugin({ at, guard, back })`, or `respond!(request, { mount, back })` |
 | `AdminHtml` | the server's admin pages (the jobs page's, the dev mailbox's), on `Look`: a page, a stream of changes, times, links (server only) |
 
 Every statement answers with rows of one shape (each cell as text, and which were null), so one

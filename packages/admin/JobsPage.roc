@@ -20,6 +20,8 @@ import Look
 ## plugins: [
 ##     Job.plugin({ jobs: App.jobs }),
 ##     JobsPage.plugin({ at: "/admin/jobs", guard: Middlewares.admin }),   # `guard` has no default
+##     # or, with a link back to the app's own pages, first in its sidebar:
+##     JobsPage.plugin({ guard: Middlewares.admin, back: { label: "Acme Status", href: "/admin" } }),
 ## ]
 ## ```
 ##
@@ -28,7 +30,7 @@ import Look
 ## ```roc
 ## # routes/admin/jobs/+server.roc
 ## middleware = Middlewares.admin
-## respond! = |{ request, .. }| JobsPage.respond!(request, { mount: "/admin/jobs" })
+## respond! = |{ request, .. }| JobsPage.respond!(request, { mount: "/admin/jobs" })   # back: as above
 ## ```
 ##
 ## It answers GET (`?state=failed`, `?kind=…`, `?before=<id>` for older ones, `?id=123` for one
@@ -40,8 +42,13 @@ JobsPage := [].{
 	## Where the page is (`at`), and who may see it: `guard`, the app's middleware for its admins,
 	## which runs after the app's own and may refuse, or send a stranger to sign in. What it hands on
 	## isn't used. `guard` has no default: a jobs page is never public because an option was left
-	## out.
-	Options(ctx, out) := { at : Str ?? "/admin/jobs", guard : Middleware(ctx, out) }
+	## out. `back`: a link back to the app's own pages, first in the sidebar
+	## (`{ label: "Acme Status", href: "/admin" }`); none unless the app says (`href` "").
+	Options(ctx, out) := { at : Str ?? "/admin/jobs", guard : Middleware(ctx, out), back : { label : Str, href : Str } ?? { label: "", href: "" } }
+
+	## Where the page an app mounts itself is (`mount`), and its link back to the app (`back`, as
+	## `Options` has it).
+	Mount := { mount : Str, back : { label : Str, href : Str } ?? { label: "", href: "" } }
 
 	## The jobs page as a plugin (`jobs-page`): its page at `at`, behind `guard`, which answers GET
 	## and POST (and 405 to any other method). It needs the jobs plugin (`Job.plugin`), whose queue it
@@ -50,13 +57,14 @@ JobsPage := [].{
 	plugin = |options| {
 		at = options.at
 		guard = options.guard
+		back = options.back
 		{
 			name: "jobs-page",
 			# One route, for every method (`*`): two routes (GET and POST) whose closures each capture the
 			# guard crash a server built with --opt=speed as it starts (a compiler bug:
 			# test/compiler-bugs/two-guarded-routes-opt-speed). Back to a GET and a POST route once the
 			# compiler is fixed.
-			routes: [{ method: "*", path: at, kind: Page, answer!: |request, context| Middleware.run!(guard, request, context, |passed, _handed| JobsPage.respond!(passed, { mount: at })) }],
+			routes: [{ method: "*", path: at, kind: Page, answer!: |request, context| Middleware.run!(guard, request, context, |passed, _handed| JobsPage.respond!(passed, { mount: at, back })) }],
 			needs: [Plugin("jobs")],
 		}
 	}
@@ -64,19 +72,21 @@ JobsPage := [].{
 	## Answers a request to the jobs page at `mount`: a GET draws it (or streams its changes), a
 	## POST retries, cancels or runs a job, or runs a schedule, and redirects back; any other method
 	## is a 405.
-	respond! : Server.Request, { mount : Str } => Server.Response
-	respond! = |request, { mount }|
+	respond! : Server.Request, Mount => Server.Response
+	respond! = |request, mounted| {
+		mount = mounted.mount
 		if request.method == "POST" {
 			act!(request, mount)
 		} else if request.method == "GET" or request.method == "HEAD" {
 			if AdminHtml.asks(request.query, "events") {
 				AdminHtml.changes([Job.changes], "rocx_jobs")
 			} else {
-				shown!(mount, request.query)
+				shown!(mount, mounted.back, request.query)
 			}
 		} else {
 			Server.response(405, [{ name: "allow", value: "GET, HEAD, POST" }, { name: "content-type", value: "text/plain; charset=utf-8" }], "The jobs page answers GET and POST.")
 		}
+	}
 }
 
 states : List(Str)
@@ -119,8 +129,8 @@ kind_meta = |kinds, name|
 ## The page: how many there are in each state, then the jobs the query picks; with no filter, the
 ## last hour, the latest failures, the kinds and the schedules too; with `?id=`, that job in a
 ## drawer over it.
-shown! : Str, Str => Server.Response
-shown! = |mount, query| {
+shown! : Str, { label : Str, href : Str }, Str => Server.Response
+shown! = |mount, back, query| {
 	state = AdminHtml.param(query, "state")
 	kind = AdminHtml.param(query, "kind")
 	before = I64.from_str(AdminHtml.param(query, "before")) ?? 0
@@ -136,7 +146,8 @@ shown! = |mount, query| {
 	match read {
 		Err(why) => {
 			body = "${Look.header({ eyebrow: "Queue", title: "Jobs", actions: "" })}<section class=\"panel\"><div class=\"callout tone-bad\">${Look.icon("alert")}<div><strong>The queue can't be read</strong><p class=\"problem\">${Look.escape(why)}</p></div></div></section>"
-			AdminHtml.page(500, { title: "Jobs", events: "", now, side: "", body })
+			side = if (back.href.is_empty()) "" else Look.side({ name: "Jobs", note: "The queue, in Postgres", home: mount, nav: Look.back_link(back), foot: "" })
+			AdminHtml.page(500, { title: "Jobs", events: "", now, side, body })
 		}
 		Ok((counts, rows)) => {
 			filters = [("state", state), ("kind", kind), ("before", if (before == 0) "" else before.to_str())]
@@ -199,14 +210,15 @@ shown! = |mount, query| {
 					Ok(id) => "Job #${id.to_str()} · Jobs"
 					Err(_) => if (kind.is_empty()) titled else "${kind} · Jobs"
 				}
-			AdminHtml.page(opened.status, { title, events: AdminHtml.link(mount, [("events", "1")]), now, side: sidebar(mount, counts, kinds, state, kind), body })
+			AdminHtml.page(opened.status, { title, events: AdminHtml.link(mount, [("events", "1")]), now, side: sidebar(mount, back, counts, kinds, state, kind), body })
 		}
 	}
 }
 
-## The sidebar: the overview, each state and each kind, with how many jobs each has.
-sidebar : Str, List({ kind : Str, state : Str, count : U64 }), List(Job.KindInfo), Str, Str -> Str
-sidebar = |mount, counts, kinds, state, kind| {
+## The sidebar: the link back to the app (`back`, if it has one), the overview, each state and each
+## kind, with how many jobs each has.
+sidebar : Str, { label : Str, href : Str }, List({ kind : Str, state : Str, count : U64 }), List(Job.KindInfo), Str, Str -> Str
+sidebar = |mount, back, counts, kinds, state, kind| {
 	overview = Look.nav_link({ href: mount, icon: "overview", tone: "accent", label: "Overview", count: "", on: state.is_empty() and kind.is_empty() })
 	by_state = states.map(
 		|each| {
@@ -216,7 +228,7 @@ sidebar = |mount, counts, kinds, state, kind| {
 	)
 	by_kind = kind_names(kinds, counts).map(|name| Look.nav_link({ href: AdminHtml.link(mount, [("kind", name)]), icon: "layers", tone: "neutral", label: "<code>${Look.escape(name)}</code>", count: count_of(counts, name, "").to_str(), on: kind == name }))
 	kinds_nav = if (by_kind.is_empty()) "" else "${Look.nav_label("Kinds")}${Str.join_with(by_kind, "")}"
-	nav = "${overview}${Look.nav_label("States")}${Str.join_with(by_state, "")}${kinds_nav}"
+	nav = "${Look.back_link(back)}${overview}${Look.nav_label("States")}${Str.join_with(by_state, "")}${kinds_nav}"
 	Look.side({ name: "Jobs", note: "The queue, in Postgres", home: mount, nav, foot: "Times are UTC. Done jobs are kept for a week." })
 }
 
@@ -637,3 +649,7 @@ expect described("* * * * * *") == "every second"
 expect described("15 * * * *") == "hourly at :15"
 expect described("0 0 1 * *") == "monthly, on day 1, at 00:00"
 expect described("0 3 * 1 *") == ""
+
+# The link back to the app, first in the sidebar, when the app gives one.
+expect sidebar("/admin/jobs", { label: "Acme Status", href: "/admin" }, [], [], "", "").contains("<nav class=\"side-nav\" aria-label=\"Jobs\"><a class=\"back\" href=\"/admin\">")
+expect !sidebar("/admin/jobs", { label: "", href: "" }, [], [], "", "").contains("class=\"back\"")

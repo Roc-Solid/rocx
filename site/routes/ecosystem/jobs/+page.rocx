@@ -151,7 +151,9 @@ view! = |_|
 				(<code>/admin/jobs</code> unless it says; GET and POST) behind the app's middleware and then
 				<code>guard</code>, the middleware that knows who is an admin. <code>guard</code> has no default, so
 				a jobs page is never public because an option was left out: without it the app doesn't compile
-				(<code>This record is missing the field: guard</code>). It needs the jobs plugin. An app that mounts
+				(<code>This record is missing these fields: … guard</code>: the compiler lists the fields left out, those with a default too). It needs the jobs plugin. <code>back</code>, a
+				link back to the app's own pages, goes first in its sidebar (the snippet's <code>Acme Tests</code>;
+				none, unless it says). An app that mounts
 				the page itself answers a route with <code>{"JobsPage.respond!(request, { mount })"}</code>, a
 				<code>respond!</code> (<a href={"${Paths.platform_http}#routes"}>every method</a>):
 			</p>

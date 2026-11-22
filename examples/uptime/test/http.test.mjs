@@ -154,10 +154,13 @@ test("the admin: sign-in required, a wrong password told without a flash, then t
 	page.dom.getByRole("button", { name: "Break it" });
 	const data = await person.read("/admin");
 	assert.ok(data.monitors.some((monitor) => monitor.url === "/demo/flaky"));
-	assert.equal((await person.get("/admin/db?table=monitors")).status, 200);
+	const tables = await person.get("/admin/db?table=monitors");
+	assert.equal(tables.status, 200);
 	const jobs = await person.get("/admin/jobs");
 	assert.equal(jobs.status, 200);
 	assert.match(jobs.text, /check/);
+	// packages/admin's pages lead back to the app's own admin, first in their sidebars (`back`).
+	for (const html of [tables.text, jobs.text]) assert.match(html, /<nav class="side-nav" aria-label="[^"]+"><a class="back" href="\/admin">.*?<span class="label">Acme Status admin<\/span><\/a>/);
 
 	const out = await person.post("/admin/sign-out", {});
 	assert.equal(out.status, 303);
