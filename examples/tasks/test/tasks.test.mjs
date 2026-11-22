@@ -68,6 +68,8 @@ test("the front page shows the seeded lists, with their counts", { skip }, async
 	// The layout's lists, down the side, from GET /api/team.
 	page.dom.getByRole("navigation", { name: "Lists" });
 	page.dom.getByRole("link", { name: "Office move 3 open" });
+	// Its icon, an SVG in a data: URL, as the layout wrote it (Html allows one in <link href>).
+	assert.match(page.text, /<link rel="icon" type="image\/svg\+xml" href="data:image\/svg\+xml,%3Csvg [^"]*%3C\/svg%3E">/);
 });
 
 test("a list shows its tasks in order, each due day and person, and the open count", { skip }, async () => {

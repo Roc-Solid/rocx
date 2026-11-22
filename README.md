@@ -432,7 +432,9 @@ typed at both ends, which anything else that speaks HTTP may ask too.
 `Html` is opaque: nothing outside it can wrap a string as markup. Text and attribute values are
 escaped; `href`, `src`, `action`, `formaction`, `poster` and `cite` take only relative URLs or
 http, https, mailto and tel ones (`java\tscript:` included), anything else becomes
-`about:invalid#rocx-unsafe-url`; inline handlers (`onclick=`), a computed `style` and unquoted
+`about:invalid#rocx-unsafe-url`, except that an image's (`<img src>`, `<link href>`, `<source src>`,
+`<video poster>`) may also be a `data:image/…` URL, SVG too: the browser shows it as a picture,
+its scripts off, where an `<iframe>` or a link someone opens would run them; inline handlers (`onclick=`), a computed `style` and unquoted
 values are refused when building; handlers are Roc functions, never text in the page. The browser's
 runtime builds elements with `createElement` and sets text and attributes as such. `rocx lint`
 refuses `Html.source_text` in hand-written `.roc` files. The site's default middleware refuses a

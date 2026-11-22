@@ -240,8 +240,8 @@ Html :: [
 	serialize! : Html => Str
 	serialize! = |node|
 		match node {
-			Element(tag, attrs, children) => "{\"t\":\"e\",\"tag\":${json_str(tag)},\"a\":[${attributes!(attrs)}],\"c\":[${nodes!(children)}]}"
-			Void(tag, attrs) => "{\"t\":\"e\",\"tag\":${json_str(tag)},\"a\":[${attributes!(attrs)}],\"c\":[]}"
+			Element(tag, attrs, children) => "{\"t\":\"e\",\"tag\":${json_str(tag)},\"a\":[${attributes!(tag, attrs)}],\"c\":[${nodes!(children)}]}"
+			Void(tag, attrs) => "{\"t\":\"e\",\"tag\":${json_str(tag)},\"a\":[${attributes!(tag, attrs)}],\"c\":[]}"
 			Text(content) => "{\"t\":\"s\",\"v\":${json_str(content)}}"
 			Raw(content) => "{\"t\":\"raw\",\"v\":${json_str(content)}}"
 			Doctype => "{\"t\":\"doctype\"}"
@@ -335,16 +335,17 @@ nodes! = |parts| {
 	Str.join_with($out, ",")
 }
 
-attributes! : List(Html.Attr) => Str
-attributes! = |attrs| {
+## An element's attributes, `tag`'s (which URLs it may have depends on it: `safe_value`).
+attributes! : Str, List(Html.Attr) => Str
+attributes! = |tag, attrs| {
 	var $out = []
 	for attribute in attrs {
 		$out = $out.append(
 			match attribute {
-				Value(name, value) => "[\"v\",${json_str(name)},${json_str(safe_value(name, value))}]"
-				ValueOf(name, compute) => "[\"vo\",${json_str(name)},${keep!(|| json_str(safe_value(name, compute())))}]"
-				Optional(name, value) => "[\"o\",${json_str(name)},${json_str(safe_value(name, value))}]"
-				OptionalOf(name, compute) => "[\"oo\",${json_str(name)},${keep!(|| json_str(safe_value(name, compute())))}]"
+				Value(name, value) => "[\"v\",${json_str(name)},${json_str(safe_value(tag, name, value))}]"
+				ValueOf(name, compute) => "[\"vo\",${json_str(name)},${keep!(|| json_str(safe_value(tag, name, compute())))}]"
+				Optional(name, value) => "[\"o\",${json_str(name)},${json_str(safe_value(tag, name, value))}]"
+				OptionalOf(name, compute) => "[\"oo\",${json_str(name)},${keep!(|| json_str(safe_value(tag, name, compute())))}]"
 				StyleVar(name, value) => "[\"sv\",${json_str(name)},${json_str(safe_css(value))}]"
 				StyleOf(name, compute) => "[\"so\",${json_str(name)},${keep!(|| json_str(safe_css(compute())))}]"
 				Flag(name, is_on) => "[\"f\",${json_str(name)},${if (is_on) "true" else "false"}]"
@@ -384,11 +385,11 @@ static_str : Html, Bool -> Str
 static_str = |node, quiet|
 	match node {
 		Element(tag, attrs, children) => {
-			open = "<${tag}${static_attributes(attrs)}>"
+			open = "<${tag}${static_attributes(tag, attrs)}>"
 			if (void_elements.contains(tag)) open else "${open}${static_nodes(children, quiet)}</${tag}>"
 		}
 		Void(tag, attrs) => {
-			open = "<${tag}${static_attributes(attrs)}>"
+			open = "<${tag}${static_attributes(tag, attrs)}>"
 			if (void_elements.contains(tag)) open else "${open}</${tag}>"
 		}
 		Text(content) => escape(content)
@@ -413,16 +414,16 @@ static_nodes = |parts, quiet| parts.fold("", |out, part| out.concat(static_str(p
 ## An element's static attributes, as the server's walker writes them: its classes in one `class`
 ## first, the others as written, its styles in one `style` last. Values are made safe as
 ## `serialize!` makes them, and escaped.
-static_attributes : List(Html.Attr) -> Str
-static_attributes = |attrs| {
+static_attributes : Str, List(Html.Attr) -> Str
+static_attributes = |tag, attrs| {
 	found = attrs.fold(
 		{ classes: [], styles: [], others: [] },
 		|state, attribute|
 			match attribute {
 				Value("class", value) => { ..state, classes: state.classes.append(value) }
 				Value("style", value) => { ..state, styles: state.styles.append(value) }
-				Value(name, value) => { ..state, others: state.others.append("${name}=\"${escape(safe_value(name, value))}\"") }
-				Optional(name, value) => if (value.is_empty()) state else { ..state, others: state.others.append("${name}=\"${escape(safe_value(name, value))}\"") }
+				Value(name, value) => { ..state, others: state.others.append("${name}=\"${escape(safe_value(tag, name, value))}\"") }
+				Optional(name, value) => if (value.is_empty()) state else { ..state, others: state.others.append("${name}=\"${escape(safe_value(tag, name, value))}\"") }
 				Flag(name, is_on) => if (is_on) { ..state, others: state.others.append(name) } else state
 				ClassIf(name, is_on) => if (is_on) { ..state, classes: state.classes.append(name) } else state
 				StyleVar(name, value) => {
@@ -463,16 +464,41 @@ safe_css = |value|
 url_attributes : List(Str)
 url_attributes = ["href", "src", "action", "formaction", "poster", "cite"]
 
-## An attribute's value, made safe: a URL whose scheme could run script (`javascript:`) is replaced.
-safe_value : Str, Str -> Str
-safe_value = |name, value| if (url_attributes.contains(name) and !safe_url(value)) "about:invalid#rocx-unsafe-url" else value
+## The attributes in which the browser only ever shows a URL as an image: `<img src>`, `<link
+## href>` (an icon), `<source src>` and `<video poster>`. (`srcset`, `<img>`'s and `<source>`'s, is
+## never checked: it holds nothing but images.)
+image_attributes : List((Str, Str))
+image_attributes = [("img", "src"), ("link", "href"), ("source", "src"), ("video", "poster")]
+
+## An attribute's value on a `tag` element, made safe: a URL that could run script is replaced
+## with `about:invalid#rocx-unsafe-url`. Allowed anywhere: a relative URL, or http, https, mailto
+## and tel (`safe_url`). Allowed in an image attribute (`image_attributes`) too: a `data:image/…`
+## URL, svg included (`data:image/svg+xml,…`, a favicon an app writes inline). An image of any type
+## runs no script: the browser shows an SVG in an `<img>` or as an icon as a picture, its scripts
+## off. But an SVG the browser opens as a document runs its scripts, so a `data:` URL anywhere else
+## is refused as before: an `<iframe>`'s or `<embed>`'s `src`, an `<a href>` someone opens, a form's
+## `action`. The tag and the attribute are compared without case, as the browser reads them.
+safe_value : Str, Str, Str -> Str
+safe_value = |tag, name, value| {
+	if !url_attributes.any(|each| name.caseless_ascii_equals(each)) or safe_url(value) {
+		value
+	} else if image_attributes.any(|(element, attribute)| tag.caseless_ascii_equals(element) and name.caseless_ascii_equals(attribute)) and compact(value).starts_with("data:image/") {
+		value
+	} else {
+		"about:invalid#rocx-unsafe-url"
+	}
+}
+
+## A URL as the browser reads its scheme: case aside, without the tabs, line breaks and spaces it
+## ignores (`java\nscript:` runs; so does `DATA:image/…`).
+compact : Str -> Str
+compact = |url| Str.from_utf8_lossy(url.to_utf8().keep_if(|byte| byte > ' ')).with_ascii_lowercased()
 
 ## A relative URL, or one whose scheme is http, https, mailto or tel. Browsers ignore tabs, line
 ## breaks and leading spaces in a URL (`java\nscript:` runs), so those are dropped before looking.
 safe_url : Str -> Bool
 safe_url = |url| {
-	compact = Str.from_utf8_lossy(url.to_utf8().keep_if(|byte| byte > ' ')).with_ascii_lowercased()
-	match compact.split_first(":") {
+	match compact(url).split_first(":") {
 		Err(NotFound) => Bool.True
 		Ok({ before, after: _ }) =>
 			if before.contains("/") or before.contains("?") or before.contains("#") {
@@ -506,9 +532,26 @@ json_str = |text| {
 	Str.from_utf8_lossy($out.append('"'))
 }
 
-expect safe_value("href", "java\nscript:alert(1)") == "about:invalid#rocx-unsafe-url"
-expect safe_value("href", "/signals?x=1") == "/signals?x=1"
-expect safe_value("title", "javascript:fine as text") == "javascript:fine as text"
+expect safe_value("a", "href", "java\nscript:alert(1)") == "about:invalid#rocx-unsafe-url"
+expect safe_value("a", "href", "/signals?x=1") == "/signals?x=1"
+expect safe_value("a", "title", "javascript:fine as text") == "javascript:fine as text"
+unsafe = "about:invalid#rocx-unsafe-url"
+
+svg = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E"
+
+png = "data:image/png;base64,iVBORw0KGgo="
+
+# data:image/… only where it is shown as an image; svg too there.
+expect [("img", "src"), ("link", "href"), ("source", "src"), ("video", "poster")].all(|(tag, name)| safe_value(tag, name, svg) == svg and safe_value(tag, name, png) == png)
+expect [("a", "href"), ("iframe", "src"), ("embed", "src"), ("area", "href"), ("form", "action"), ("button", "formaction"), ("blockquote", "cite"), ("img", "href"), ("link", "src"), ("audio", "poster")].all(|(tag, name)| safe_value(tag, name, svg) == unsafe and safe_value(tag, name, png) == unsafe)
+expect safe_value("img", "srcset", "data:text/html,x 1x") == "data:text/html,x 1x"
+# Case and what the browser drops from a URL change nothing.
+expect safe_value("img", "src", "DATA:image/svg+xml,x") == "DATA:image/svg+xml,x" and safe_value("IMG", "SRC", " Data:Image/PNG;base64,x") == " Data:Image/PNG;base64,x"
+expect safe_value("link", "href", "data:\nimage/svg+xml,x") == "data:\nimage/svg+xml,x" and safe_value("source", "src", "da\tta:image/webp,x") == "da\tta:image/webp,x"
+expect safe_value("iframe", "src", "DATA:image/svg+xml,x") == unsafe and safe_value("a", "href", "data:\nimage/svg+xml,x") == unsafe and safe_value("A", "HREF", "javascript:x") == unsafe and safe_value("EMBED", "Src", " data:image/svg+xml,x") == unsafe
+# data:text/html, and any other data: that isn't an image, nowhere.
+expect [("img", "src"), ("link", "href"), ("source", "src"), ("video", "poster"), ("a", "href"), ("iframe", "src")].all(|(tag, name)| safe_value(tag, name, "data:text/html,<script>alert(1)</script>") == unsafe and safe_value(tag, name, "DATA:text/html;image/png,x") == unsafe and safe_value(tag, name, "data:,image/png") == unsafe)
+expect safe_value("img", "src", "javascript:alert(1)") == unsafe and safe_value("link", "href", "jav\nascript:alert(1)") == unsafe
 expect safe_css("12.5%") == "12.5%" and safe_css("red; background: url(x)") == ""
 expect frame_ms("16667") > 16.6 and frame_ms("16667") < 16.7 and frame_ms("500000") == 100.0
 expect Html.to_str(Html.join([Html.doctype({}), Html.element("p", [], [Html.text("Tom & 'Jerry' <b>"), Html.empty({})])])) == "<!doctype html><p>Tom &amp; &#39;Jerry&#39; &lt;b&gt;</p>"
@@ -516,6 +559,7 @@ expect Html.to_str(Html.element("style", [], [Html.source_text("p > a { color: r
 expect Html.to_str(Html.element("li", [Html.attr("id", "a"), Html.attr("class", "row"), Html.class_if("active", Bool.True), Html.class_if("gone", Bool.False)], [])) == "<li class=\"row active\" id=\"a\"></li>"
 expect Html.to_str(Html.void("input", [Html.attr("type", "checkbox"), Html.flag("checked", Bool.True), Html.flag("disabled", Bool.False), Html.optional("name", ""), Html.optional("title", "a \"b\"")])) == "<input type=\"checkbox\" checked title=\"a &quot;b&quot;\">"
 expect Html.to_str(Html.element("a", [Html.attr("href", " java\tscript:alert(1)"), Html.optional("formaction", "javascript:x")], [Html.text("x")])) == "<a href=\"about:invalid#rocx-unsafe-url\" formaction=\"about:invalid#rocx-unsafe-url\">x</a>"
+expect Html.to_str(Html.join([Html.void("link", [Html.attr("rel", "icon"), Html.attr("href", "data:image/svg+xml,<svg/>")]), Html.element("iframe", [Html.attr("src", "data:image/svg+xml,<svg/>")], [])])) == "<link rel=\"icon\" href=\"data:image/svg+xml,&lt;svg/&gt;\"><iframe src=\"about:invalid#rocx-unsafe-url\"></iframe>"
 expect Html.to_str(Html.element("span", [Html.style_var("--size", "32px"), Html.attr("style", "color: red"), Html.style_var("--bad", "1px; background: url(x)")], [])) == "<span style=\"--size: 32px; color: red\"></span>"
 expect Html.to_str(Html.element("div", [], [Html.void("br", []), Html.element("img", [Html.attr("src", "/a.png")], []), Html.void("p", [])])) == "<div><br><img src=\"/a.png\"><p></p></div>"
 expect Html.to_str(Html.element("button", [Html.on("click", || {}), Html.key("k")], [Html.join([Html.text("a"), Html.text("b")])])) == "<button>ab</button>"

@@ -153,8 +153,10 @@ instead. None needed a change to the platform; two needed one to packages/forms,
    the server's, which doesn't type-check there ("Api … has no associated openapi").
    `just examples-check` checks the browser's program only when the build wrote
    `static/rocx/start.js` beside it.
-10. **A favicon as a `data:` URL is refused** (`href` takes relative and http(s) URLs only), and the
-    app has no static files of its own: it has no favicon.
+10. **Fixed: a favicon as a `data:` URL was refused** (`href` took relative and http(s) URLs only),
+    and the app has no static files of its own. `Html` now allows a `data:image/…` URL where the
+    browser only shows it as an image (`<link href>`, `<img src>`, `<source src>`, `<video
+    poster>`), so the layout's icon is an inline SVG.
 11. Roc, met on the way: `{ me }` alone is a block, not a record (`{ me: me }`); a record update
     can't add a field (`{ ..fields, error }`); `Str.join_with(list, ", ")`, not `list.join_with`; a
     local can't share a name with a definition of its module (`toggled` in `Tasks.showing`).
