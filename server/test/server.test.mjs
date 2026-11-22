@@ -782,6 +782,25 @@ test("Postgres: statements with parameters, rows decoded into records, nulls as 
 	assert.equal(await bad.text(), '42P01: relation "nowhere" does not exist');
 });
 
+test("Postgres: a list as one parameter (Db.array), text or bigint, with = any, @> and unnest; quotes, backslashes, commas, braces, empty text, NULL as text, unicode and nulls as they were", { skip: skipDb }, async () => {
+	const answer = await get("/arrays");
+	const said = await answer.text();
+	assert.equal(answer.status, 200, said);
+	const arrays = JSON.parse(said);
+	const awkward = ["plain", "two words", "a,b", "{braces}", 'say "hi"', "back\\slash", "", "NULL", "zażółć ✓ 日本"];
+	assert.deepEqual(
+		arrays.unnested,
+		[...awkward, null].map((v, i) => ({ i: i + 1, v })),
+		"each text back as it was, in order, and a null a null (unnest($1::text[]))",
+	);
+	assert.deepEqual(arrays.found, ["", "a,b", "back\\slash", "two words"], "= any($1), $1 read as text[]");
+	assert.deepEqual(arrays.contains, [{ yes: true, no: false }], "@> $1");
+	assert.deepEqual(arrays.numbers, [{ total: 39999999999, nulls: 1, hit: true, miss: false, holds: true }], "bigint arrays: unnest, = any, @>");
+	assert.deepEqual(arrays.flags, [{ all: false, count: 2 }], "booleans");
+	assert.deepEqual(arrays.empty, [{ n: 0, none: true }], "an empty list");
+	assert.match(arrays.uncast, /^42725: function unnest\(unknown\) is not unique/, "unnest($1) alone: Postgres can't tell which array, so it takes a cast");
+});
+
 test("Postgres: effects wait on their own threads, so eight 0.3 s queries take about 0.3 s", { skip: skipDb }, async () => {
 	const started = performance.now();
 	const answers = await Promise.all(Array.from({ length: 8 }, () => text("/sleep")));

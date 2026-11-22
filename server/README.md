@@ -78,7 +78,9 @@ Db.transaction!(|{}| {
 ```
 
 A parameter is `Null`, `Text`, `Int` or `Bool`, sent as text: Postgres reads it as the type its
-place wants. Rows come back as JSON and `Json.parse` decodes each into the record the caller
+place wants. A list is one parameter with `Db.array` (a Postgres array in text, `{"a","b c",NULL}`,
+each text quoted): `where tag = any($1)`, `tags @> $1`, `unnest($1::bigint[])`, as
+`Db.array(tags.map(|tag| Text(tag)))`. Rows come back as JSON and `Json.parse` decodes each into the record the caller
 annotated, by column name: a null is JSON's `null`, any other value itself. A column that may be
 null is read as `Db.Nullable(a)` (`Null` or `Some(a)`, matched as a tag union; `null` or the value in
 JSON, both ways); a null in a column read as a plain value is `BadRow`, which names the column. The

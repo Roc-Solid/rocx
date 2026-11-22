@@ -87,6 +87,41 @@ plugins = [
 	Fixture.second({}),
 ]
 
+## Lists as parameters (`Db.array`), against Postgres, as JSON: text and bigint arrays with `= any`,
+## `@>` and `unnest`, text with every character an array's syntax has, nulls, booleans, an empty
+## list, and what Postgres says of `unnest($1)` with no cast.
+arrays! : {} => Try(Str, [DbErr(Str), BadRow(Str)])
+arrays! = |{}| {
+	awkward = [Text("plain"), Text("two words"), Text("a,b"), Text("{braces}"), Text("say \"hi\""), Text("back\\slash"), Text(""), Text("NULL"), Text("zażółć ✓ 日本")]
+	unnested : Try(List({ i : I64, v : Db.Nullable(Str) }), [DbErr(Str), BadRow(Str)])
+	unnested = Db.all!("select i, v from unnest($1::text[]) with ordinality as t(v, i) order by i", [Db.array(awkward.append(Null))])
+	found : Try(List({ v : Str }), [DbErr(Str), BadRow(Str)])
+	found = Db.all!("select v from (values ('two words'), ('a,b'), ('nope'), ('back\\slash'), ('')) as t(v) where v = any($1) order by v", [Db.array(awkward)])
+	contains : Try(List({ yes : Bool, no : Bool }), [DbErr(Str), BadRow(Str)])
+	contains = Db.all!(
+		"select array['two words', 'a,b', 'say \"hi\"']::text[] @> $1 as yes, array['two words']::text[] @> $2 as no",
+		[Db.array([Text("a,b"), Text("say \"hi\"")]), Db.array([Text("two words"), Text("two")])],
+	)
+	numbers : Try(List({ total : I64, nulls : I64, hit : Bool, miss : Bool, holds : Bool }), [DbErr(Str), BadRow(Str)])
+	numbers = Db.all!(
+		"select (select sum(x)::int8 from unnest($1::int8[]) as x) as total, (select count(*)::int8 from unnest($1::int8[]) as x where x is null) as nulls, 5::int8 = any($2) as hit, 6::int8 = any($2) as miss, array[1, 2, 3]::int8[] @> $3 as holds",
+		[Db.array([Int(1), Int(-2), Int(40_000_000_000), Null]), Db.array([Int(4), Int(5)]), Db.array([Int(3), Int(1)])],
+	)
+	flags : Try(List({ all : Bool, count : I64 }), [DbErr(Str), BadRow(Str)])
+	flags = Db.all!("select bool_and(b) as all, count(*)::int8 as count from unnest($1::bool[]) as b", [Db.array([Bool(Bool.True), Bool(Bool.False)])])
+	empty : Try(List({ n : I64, none : Bool }), [DbErr(Str), BadRow(Str)])
+	empty = Db.all!("select cardinality($1::text[])::int8 as n, not ('x' = any($1::text[])) as none", [Db.array([])])
+	uncast : Try(List({ x : Str }), [DbErr(Str), BadRow(Str)])
+	uncast = Db.all!("select x from unnest($1) as x", [Db.array([Text("a")])])
+	said =
+		match uncast {
+			Ok(_) => "read"
+			Err(DbErr(why)) => why
+			Err(BadRow(why)) => why
+		}
+	Ok(Json.to_str({ unnested: unnested?, found: found?.map(|row| row.v), contains: contains?, numbers: numbers?, flags: flags?, empty: empty?, uncast: said }))
+}
+
 respond! : Str, Str, Str, List(U8), Str => Server.Response
 respond! = |method, target, headers, body, context| {
 	request = Server.from_http(method, target, headers, body)
@@ -335,6 +370,12 @@ route! = |request, context| {
 				Err(BadRow(why)) => text(500, why)
 			}
 		}
+		("GET", "/arrays") =>
+			match arrays!({}) {
+				Ok(said) => text(200, said)
+				Err(DbErr(why)) => text(500, why)
+				Err(BadRow(why)) => text(500, why)
+			}
 		("GET", "/sleep") => {
 			slept : Try(List({ done : I64 }), [DbErr(Str), BadRow(Str)])
 			slept = Db.all!("select 1::int8 as done from pg_sleep(0.3)", [])

@@ -9,7 +9,8 @@ this file and the code disagree, the code is right.
 Every entry was checked against a few principles: SolidJS 2.0 parity on the UI side; one server
 instance; batteries included, as Rails and Phoenix have them; a few lines of our own over a
 dependency; and "would a second app want this?" Nothing goes into the platform that only one app
-needs. D-014 to D-016 are deferred; the rest were decided on 2026-11-21.
+needs. D-014 to D-016 are deferred (D-016's list parameters landed since); the rest were decided on
+2026-11-21.
 
 ---
 
@@ -518,7 +519,12 @@ direction) would make the limit matter less.
 
 ## D-016 List parameters and checked queries
 
-**Status.** Deferred. `Db.Value` is `[Null, Text(Str), Int(I64), Bool(Bool)]`, with no list, so
+**Status.** List parameters landed on 2026-11-22 as `Db.array : List(Value) -> Value`, a function
+that writes the Postgres array literal as a `Text` (the host sends every parameter as text, and
+Postgres reads it as the array its place wants), not as a new `Value` tag, so every match on
+`Db.Value` keeps compiling and the host is unchanged. Checked queries are still deferred.
+
+Before: `Db.Value` is `[Null, Text(Str), Int(I64), Bool(Bool)]`, with no list, so
 `in (…)` takes a JSON array (`jsonb_array_elements_text($1::jsonb)`) or an array literal
 (`any($1::text[])`). Queries aren't checked at build; rows are decoded by the record each caller
 annotates.

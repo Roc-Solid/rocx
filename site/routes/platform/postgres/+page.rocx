@@ -45,6 +45,18 @@ view! = |_|
 				text: Postgres reads it as the type its place wants (<code>$1</code> in <code>where id = $1</code> is
 				a <code>bigint</code>). A statement is never put together from strings: its values go as parameters.
 			</p>
+			<p>
+				A list is one parameter with <code>Db.array</code>: a Postgres array, written as Postgres writes one in
+				text (<code>{"{\"work\",\"to do\",NULL}"}</code>), which it reads as the array its place wants, of text or
+				of numbers: <code>= any($1)</code>, <code>{"@> $1"}</code>, <code>$1::bigint[]</code>,
+				<code>unnest($1::text[])</code> (alone, <code>unnest($1)</code> can't tell which array, so it takes the
+				cast). Each text is quoted, so a comma, a brace or the word NULL in one stays text.
+			</p>
+			<Code
+				title="An array as a parameter"
+				source={"tagged : Try(List({ id : I64 }), [DbErr(Str), BadRow(Str)])\ntagged = Db.all!(\"select id from notes where tags @> $1\", [Db.array(tags.map(|tag| Text(tag)))])\n\nDb.run!(\"delete from notes where id = any($1)\", [Db.array(ids.map(|id| Int(id)))])"}
+				numbers={Bool.False}
+			/>
 
 			<Heading id="rows">Rows, as records</Heading>
 			<p>
@@ -147,7 +159,7 @@ view! = |_|
 					<strong><code>Db</code>'s queries aren't checked at build:</strong> a row is decoded by the record
 					each caller annotates, and a mistake shows when the query runs. roc-pg's are checked.
 				</li>
-				<li><strong>Parameters</strong> are four kinds; arrays and bytes aren't yet.</li>
+				<li><strong>Parameters</strong> are four kinds and arrays of them; bytes aren't yet, and a row reads an array column through a cast (<code>array_to_json(tags)</code>).</li>
 				<li><strong>No cursors or streaming:</strong> a query's rows come back whole.</li>
 			</ul>
 		</NoHydration>

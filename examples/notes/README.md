@@ -256,8 +256,11 @@ What the app met, and how it works around each. None needed a change outside the
     With the runtime it never leaves the answer.
 13. **An unticked checkbox sends nothing**, so a form whose record has its field fails to read: the
     token's access is two radio buttons, one always ticked.
-14. **`Db.Value` has no list** (D-016): tags go as a JSON array, `array(select
-    jsonb_array_elements_text($1::jsonb))`, and come back as `array_to_json(tags)`.
+14. **Fixed: `Db.Value` had no list** (D-016), so tags went as a JSON array, `array(select
+    jsonb_array_elements_text($1::jsonb))`. `Db.array` makes a list one parameter now (a Postgres
+    array, in text), so `tags @> $3` and `set tags = $5` take `Db.array(tags.map(|tag| Text(tag)))`
+    (`Store.roc`). Tags still come back as `array_to_json(tags)`: a row reads JSON's types, and an
+    array column asks for a cast.
 15. **No modifier keys in key handlers**, so no Ctrl+S to save: the editor saves with its button.
 16. **Roc on the way**: `{ ttl_ms }` alone is a block, not a record (`{ ttl_ms: ttl_ms }`); a tag
     isn't a function (`map_err(|why| BadRequest(why))`, not `map_err(BadRequest)`); a list's

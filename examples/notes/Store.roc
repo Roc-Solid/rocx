@@ -84,8 +84,8 @@ Store := [].{
 	notes! = |person, { archived, tags }| {
 		rows : Try(List(Listed), [DbErr(Str), BadRow(Str)])
 		rows = Db.all!(
-			"select ${listed} left(plain, 220) as marked from notes where person_id = $1 and archived = $2 and tags @> array(select jsonb_array_elements_text($3::jsonb)) order by pinned desc, updated_at desc, id desc limit 200",
-			[Text(numbered(person)?), Bool(archived), Text(Json.to_str(tags))],
+			"select ${listed} left(plain, 220) as marked from notes where person_id = $1 and archived = $2 and tags @> $3 order by pinned desc, updated_at desc, id desc limit 200",
+			[Text(numbered(person)?), Bool(archived), Db.array(tags.map(|tag| Text(tag)))],
 		)
 		Ok(rows?.map(summary))
 	}
@@ -101,8 +101,8 @@ Store := [].{
 		} else {
 			rows : Try(List(Listed), [DbErr(Str), BadRow(Str)])
 			rows = Db.all!(
-				"select ${listed} ts_headline('english', plain, q, $4) as marked from notes, websearch_to_tsquery('english', $2) as q where person_id = $1 and search @@ q and tags @> array(select jsonb_array_elements_text($3::jsonb)) order by ts_rank(search, q) desc, updated_at desc limit 50",
-				[Text(numbered(person)?), Text(query.words), Text(Json.to_str(query.tags)), Text(headline)],
+				"select ${listed} ts_headline('english', plain, q, $4) as marked from notes, websearch_to_tsquery('english', $2) as q where person_id = $1 and search @@ q and tags @> $3 order by ts_rank(search, q) desc, updated_at desc limit 50",
+				[Text(numbered(person)?), Text(query.words), Db.array(query.tags.map(|tag| Text(tag))), Text(headline)],
 			)
 			Ok(rows?.map(summary))
 		}
@@ -126,16 +126,16 @@ Store := [].{
 	create! : Str, { title : Str, body : Str, tags : List(Str) } => Try(Note.Full, Store.Problem)
 	create! = |person, note|
 		one!(
-			"insert into notes (person_id, title, body, tags) values ($1, $2, $3, array(select jsonb_array_elements_text($4::jsonb))) returning ${full}",
-			[Text(numbered(person)?), Text(note.title), Text(note.body), Text(Json.to_str(note.tags))],
+			"insert into notes (person_id, title, body, tags) values ($1, $2, $3, $4) returning ${full}",
+			[Text(numbered(person)?), Text(note.title), Text(note.body), Db.array(note.tags.map(|tag| Text(tag)))],
 		)
 
 	## A note's title, body and tags, changed.
 	update! : Str, Str, { title : Str, body : Str, tags : List(Str) } => Try(Note.Full, Store.Problem)
 	update! = |person, id, note|
 		one!(
-			"update notes set title = $3, body = $4, tags = array(select jsonb_array_elements_text($5::jsonb)), updated_at = now() where person_id = $1 and id = $2 returning ${full}",
-			[Text(numbered(person)?), Text(numbered(id)?), Text(note.title), Text(note.body), Text(Json.to_str(note.tags))],
+			"update notes set title = $3, body = $4, tags = $5, updated_at = now() where person_id = $1 and id = $2 returning ${full}",
+			[Text(numbered(person)?), Text(numbered(id)?), Text(note.title), Text(note.body), Db.array(note.tags.map(|tag| Text(tag)))],
 		)
 
 	## `text` added at a note's end, a blank line before it. One statement, so two agents appending
@@ -152,8 +152,8 @@ Store := [].{
 	set_tags! : Str, Str, List(Str) => Try(Note.Full, Store.Problem)
 	set_tags! = |person, id, tags|
 		one!(
-			"update notes set tags = array(select jsonb_array_elements_text($3::jsonb)), updated_at = now() where person_id = $1 and id = $2 returning ${full}",
-			[Text(numbered(person)?), Text(numbered(id)?), Text(Json.to_str(tags))],
+			"update notes set tags = $3, updated_at = now() where person_id = $1 and id = $2 returning ${full}",
+			[Text(numbered(person)?), Text(numbered(id)?), Db.array(tags.map(|tag| Text(tag)))],
 		)
 
 	## A note archived (out of the way, kept, still found by search), or brought back.

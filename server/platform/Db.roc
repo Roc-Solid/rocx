@@ -75,6 +75,32 @@ Db := [].{
 	## A parameter.
 	Value : [Null, Text(Str), Int(I64), Bool(Bool)]
 
+	## A list as one parameter: a Postgres array, sent as Postgres writes one in text
+	## (`{"work","to do",NULL}`), which it reads as the array its place wants, of text or of numbers
+	## alike: `where tag = any($1)`, `where tags @> $1`, `$1::bigint[]`, `unnest($1::text[])` (a
+	## place that doesn't say which array, as `unnest($1)` alone, needs the cast). Each `Text` is
+	## quoted, its `"` and `\` escaped, so a comma, a brace, a space or the word NULL in one stays
+	## text; `Null` is a null; an `Int` and a `Bool` are as Postgres writes them (`-7`, `t`, `f`); an
+	## empty list is `{}`.
+	##
+	## ```roc
+	## tagged : Try(List({ id : I64 }), [DbErr(Str), BadRow(Str)])
+	## tagged = Db.all!("select id from notes where tags @> $1", [Db.array(tags.map(|tag| Text(tag)))])
+	## ```
+	array : List(Value) -> Value
+	array = |items| {
+		each = items.map(
+			|item|
+				match item {
+					Null => "NULL"
+					Text(text) => "\"${text.replace_each("\\", "\\\\").replace_each("\"", "\\\"")}\""
+					Int(number) => number.to_str()
+					Bool(yes) => if (yes) "t" else "f"
+				},
+		)
+		Text("{${Str.join_with(each, ",")}}")
+	}
+
 	## Every row a statement reads, each a record of its columns, by name. `BadRow` when a row
 	## doesn't fit the record: a column it lacks, a value of another type, or a null in a column the
 	## record doesn't read as `Nullable(a)` (the error names it).
@@ -179,3 +205,13 @@ encoded = |params| {
 	)
 	"[${Str.join_with(each, ",")}]"
 }
+
+expect Db.array([]) == Text("{}")
+expect Db.array([Text("work"), Text("to do")]) == Text("{\"work\",\"to do\"}")
+# A quote and a backslash are escaped; a comma, braces and a space stay inside the quotes.
+expect Db.array([Text("say \"hi\""), Text("C:\\dir"), Text("a,b"), Text("{x}"), Text(" ")]) == Text("{\"say \\\"hi\\\"\",\"C:\\\\dir\",\"a,b\",\"{x}\",\" \"}")
+# An empty text, a null, and the word NULL as text.
+expect Db.array([Text(""), Null, Text("NULL")]) == Text("{\"\",NULL,\"NULL\"}")
+expect Db.array([Text("zażółć ✓ 日本")]) == Text("{\"zażółć ✓ 日本\"}")
+expect Db.array([Int(7), Int(-12), Int(9_000_000_000), Null]) == Text("{7,-12,9000000000,NULL}")
+expect Db.array([Bool(Bool.True), Bool(Bool.False)]) == Text("{t,f}")
