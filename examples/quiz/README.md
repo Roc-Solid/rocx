@@ -133,7 +133,8 @@ Each gap this app met, and what it does about it:
   `Preview`), which the child renders. (Fixed in the platform since: a function child is effectful
   now, so it may hold a `<For>` or a `<Show>`; the components stay, as they read well.)
 - **A route file's components don't see the route file's own definitions**: helpers they use are
-  defined in their own block (`Asked.answered`, `Revealed.taken`).
+  defined in their own block (`Asked.answered`, `Revealed.taken`). (Fixed in rocx since: a route
+  file's components see its definitions, as its page does; the helpers stay, as they read well.)
 - **The browser has no clock.** The countdown counts down from the server's `left_ms` with
   `set_interval!` and starts again from each view, so a drifting or sleeping phone is put right by
   the next view; the server alone decides when a question closes (presence's PROPOSALS.md, W2).

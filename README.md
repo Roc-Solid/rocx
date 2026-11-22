@@ -293,7 +293,9 @@ and endpoints).
 
 A route file may define components of its own (`Board := [].{ view! = … }`) before its
 definitions or after them, not between: rocx writes them as types beside its module, where their
-`view` isn't the page's, and `<Board />` calls the file's own.
+`view` isn't the page's, and `<Board />` calls the file's own. They see the file's definitions as
+the page does: rocx names each one a component uses on the component's line (`Board := [].{ shown =
+LocalPage.shown`), unless the component binds that name itself.
 
 A route file that imports the platform's `Html` (`import pf.Html`) is a component: a page
 `view! = |{ params }| …`, a layout `view! = |{ meta, children, params }| …`, the error page

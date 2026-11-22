@@ -20,6 +20,7 @@
 import Value
 import Text
 import Fs
+import Transpile
 
 Routes := [].{
 
@@ -787,18 +788,55 @@ Routes := [].{
 			}
 			$k = $k + 1
 		}
-		owned = $owned
+		owned0 = $owned
 		first = $first
 		last = $last
+		# The file's own definitions (the page module's), which its components see: each component's
+		# line names those it uses as its own (`Asked := [].{ answered = HostCodePage.answered`), so
+		# line N here is still line N there.
+		var $page_names = []
+		var $p = first
+		while $has_first and $p <= last {
+			if top_level($p) and !own($p) {
+				match Routes.defined_name(line_at($p)) {
+					Some(name) => {
+						if !$page_names.contains(name) {
+							$page_names = $page_names.append(name)
+						}
+					}
+					None => {}
+				}
+			}
+			$p = $p + 1
+		}
+		page_names = $page_names
+		var $aliased = lines
+		if !page_names.is_empty() {
+			for at in owned0 {
+				# The component's lines: to its closing `}`, or to what comes next at the top level.
+				var $end = at + 1
+				var $closed = Bool.False
+				while !$closed and $end < lines.len() and !own($end) and !top_level($end) {
+					if line_at($end).starts_with("}") {
+						$closed = Bool.True
+					}
+					$end = $end + 1
+				}
+				body = Str.join_with(lines.sublist({ start: at, len: $end - at }), "\n")
+				$aliased = $aliased.set(at, Routes.with_aliases(line_at(at), body, page_names, place.name)) ?? $aliased
+			}
+		}
+		aliased = $aliased
+		owned = owned0
 		from = Fs.relative(Fs.dirname(generated), Fs.resolve(cwd, [source]))
 		ending = "${Routes.marker} ${from}: edit that file, not this one. Line N here is line N there.\n"
 		opening_line = "${place.name} := [].{"
 		# The module's line on the line `at`: alone on a blank one, or before a definition on its own.
 		open_at = |at, before|
 			if before {
-				lines.set(at, "${opening_line} ${line_at(at)}") ?? lines
+				aliased.set(at, "${opening_line} ${line_at(at)}") ?? aliased
 			} else {
-				lines.set(at, opening_line) ?? lines
+				aliased.set(at, opening_line) ?? aliased
 			}
 		if owned.is_empty() {
 			done = open_at(blank, inline)
@@ -895,6 +933,122 @@ Routes := [].{
 			}
 		at = Text.run_end(bytes, after_args, |b| b == ' ' or b == '\t')
 		Text.starts_with_at(bytes, ":=".to_utf8(), at)
+	}
+
+	## The name a line defines or annotates, from its start (`helper = …`, `beat! : …`):
+	## `^[a-z_][A-Za-z0-9_]*!?\s*(=|:)`, not `==` or `=>`.
+	defined_name : Str -> [Some(Str), None]
+	defined_name = |line| {
+		bytes = line.to_utf8()
+		c = Text.at(bytes, 0)
+		if !(Text.is_lower(c) or c == '_') {
+			return None
+		}
+		word_end = Text.run_end(bytes, 1, Text.is_word)
+		end = if (Text.at(bytes, word_end) == '!') word_end + 1 else word_end
+		after = Text.run_end(bytes, end, |b| b == ' ' or b == '\t')
+		d = Text.at(bytes, after)
+		next = Text.at(bytes, after + 1)
+		if d == ':' or (d == '=' and next != '=' and next != '>') {
+			Some(Text.cut(bytes, 0, end))
+		} else {
+			None
+		}
+	}
+
+	## A component's line (`Asked := [].{`) with the file's definitions its lines use (`body`, the
+	## line first) named as its own, after its `.{`: ` answered = HostCodePage.answered`. Not those it
+	## binds itself, as a definition, a lambda's parameter, a `for`'s or a match arm's pattern: the
+	## file's name would be one Roc says is defined twice.
+	with_aliases : Str, Str, List(Str), Str -> Str
+	with_aliases = |line, body, page_names, module_name| {
+		bytes = line.to_utf8()
+		code = Transpile.code_only(bytes)
+		match Text.index_of(code, ":=".to_utf8(), 0) {
+			Err(_) => line
+			Ok(declared) =>
+				match Text.index_of(code, ".{".to_utf8(), declared) {
+					Err(_) => line
+					Ok(opens) => {
+						names = Routes.names_in(Transpile.code_only(body.to_utf8()))
+						wanted = page_names.keep_if(|name| names.used.contains(name) and !names.bound.contains(name))
+						if wanted.is_empty() {
+							line
+						} else {
+							aliases = Str.join_with(wanted.map(|name| " ${name} = ${module_name}.${name}"), "")
+							"${Text.cut(bytes, 0, opens + 2)}${aliases}${Text.rest(bytes, opens + 2)}"
+						}
+					}
+				}
+		}
+	}
+
+	## The lower-case names in some code (Transpile.code_only's), a line at a time: those it binds
+	## (before a definition's `=`, a lambda's parameters between its bars, after `for`, before a match
+	## arm's `=>`) and those it uses (any other, but a field's or a module's member after a `.`, and a
+	## record's field or an annotation's name before a `:`).
+	names_in : List(U8) -> { used : List(Str), bound : List(Str) }
+	names_in = |code| {
+		var $used = []
+		var $bound = []
+		for text in Str.from_utf8_lossy(code).split_on("\n") {
+			line = text.to_utf8()
+			# Where the line's definition's `=` is (not `==`, `!=`, `<=`, `>=`, `:=` or `=>`), and its
+			# arm's `=>`: 0 when it has none.
+			var $eq = 0
+			var $arrow = 0
+			var $k = 0
+			while $k < line.len() {
+				if Text.at(line, $k) == '=' {
+					before = if ($k == 0) ' ' else Text.at(line, $k - 1)
+					after = Text.at(line, $k + 1)
+					if after == '>' {
+						if $arrow == 0 {
+							$arrow = $k
+						}
+					} else if $eq == 0 and after != '=' and before != '=' and before != '!' and before != '<' and before != '>' and before != ':' {
+						$eq = $k
+					}
+				}
+				$k = $k + 1
+			}
+			eq = $eq
+			arrow = $arrow
+			var $bars = 0
+			var $i = 0
+			while $i < line.len() {
+				c = Text.at(line, $i)
+				previous = if ($i == 0) ' ' else Text.at(line, $i - 1)
+				if c == '|' {
+					$bars = $bars + 1
+					$i = $i + 1
+				} else if (Text.is_lower(c) or c == '_') and !Text.is_word(previous) and previous != '.' and previous != '$' {
+					word_end = Text.run_end(line, $i + 1, Text.is_word)
+					end = if (Text.at(line, word_end) == '!') word_end + 1 else word_end
+					name = Text.cut(line, $i, end)
+					var $back = $i
+					while $back > 0 and Text.at(line, $back - 1) == ' ' {
+						$back = $back - 1
+					}
+					after_for = $back >= 3 and Text.cut(line, $back - 3, $back) == "for" and ($back == 3 or !Text.is_word(Text.at(line, $back - 4)))
+					binds = $i < eq or $i < arrow or $bars % 2 == 1 or after_for
+					next = Text.at(line, Text.run_end(line, end, |b| b == ' ' or b == '\t'))
+					if binds {
+						if !$bound.contains(name) {
+							$bound = $bound.append(name)
+						}
+					} else if next != ':' and !$used.contains(name) {
+						$used = $used.append(name)
+					}
+					$i = end
+				} else if Text.is_word(c) {
+					$i = Text.run_end(line, $i + 1, Text.is_word)
+				} else {
+					$i = $i + 1
+				}
+			}
+		}
+		{ used: $used, bound: $bound }
 	}
 
 	## A line's first word: up to a space, a tab, `(` or `:`.

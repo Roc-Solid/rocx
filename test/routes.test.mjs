@@ -68,6 +68,57 @@ test("routes: a route file's own components are types beside its module, not in 
 	assert.throws(() => routeModule(["import pf.Html", "", "meta = 1", "Board := [].{", "\tview! = |_| y", "}", "view! = |_| x"].join("\n"), where), /local\/\+page\.rocx:7: put the file's own components \(Board\) before its definitions or after them, not between/);
 });
 
+test("routes: a route file's own components see its definitions, each one it uses named on the component's line", () => {
+	const where = { name: "LocalPage", source: "/app/routes/local/+page.rocx", generated: "/app/Generated/LocalPage.roc" };
+	const source = [
+		"import pf.Html",
+		"",
+		"Intro := [].{",
+		"\tview = |_| <p>{greeting}</p>",
+		"}",
+		"",
+		"meta = { title: \"Local\" }",
+		"",
+		"view! = |_| <Board />",
+		"",
+		"greeting = \"Hello\"",
+		"shown : U64 -> Str",
+		"shown = |count| count.to_str()",
+		"beat! = |{}| {}",
+		"count = 3",
+		"label = \"x\"",
+		"unused = 1",
+		"",
+		"## A board.",
+		"Board := [].{",
+		"\tview! = |_| {",
+		"\t\tbeat!({})",
+		"\t\tlabel = shown(count)",
+		"\t\tsaid = \"unused ${Board.tally(LocalPage.greeting)}\" # and unused here",
+		"\t\t<p>{label} {said}</p>",
+		"\t}",
+		"",
+		"\ttally = |greeting| greeting",
+		"}",
+		"Tag := [].{ view = |{ text }| text }",
+		"",
+	];
+	const lines = routeModule(source.join("\n"), where).split("\n");
+	assert.equal(lines[2], "Intro := [].{ greeting = LocalPage.greeting", "a component before the page's definitions");
+	assert.equal(lines[19], "Board := [].{ shown = LocalPage.shown beat! = LocalPage.beat! count = LocalPage.count", "after them: a function, an effect, a value; in the order the file defines them");
+	assert.equal(lines[29], "Tag := [].{ view = |{ text }| text }", "one that uses none, as it was");
+	assert.deepEqual(lines.slice(20, 29), source.slice(20, 29), "the component's other lines as they were");
+	assert.equal(lines.length, source.length + 2, "line N is line N (and the marker after)");
+	// Not a name it binds (Roc would say it is defined twice), nor one in a string or a comment, nor
+	// one after a `.`; a component's own member is bound by it.
+	const own = routeModule(["import pf.Html", "", "view! = |_| x", "", "helper = 1", "", "Card := [].{", "\tview = |{ n }| helper(n)", "\thelper = |n| n", "}"].join("\n"), where).split("\n");
+	assert.equal(own[6], "Card := [].{", "its own helper: its own");
+	const tight = routeModule(["import pf.Html", "", "view! = |_| x", "helper = 1", "Card := [].{", "\tview = |_| helper", "}"].join("\n"), where).split("\n");
+	assert.equal(tight[4], "} Card := [].{ helper = LocalPage.helper", "closed at the start of the component's line, its names after the block's opening");
+	const bound = routeModule(["import pf.Html", "", "view! = |_| x", "", "a = 1", "b = 2", "c = 3", "d = 4", "", "Card := [].{", "\tview = |{ n }| {", "\t\tf = |a| a + n", "\t\tfor b in [] {}", "\t\tmatch n { c => c }", "\t\td + f(1)", "\t}", "}"].join("\n"), where).split("\n");
+	assert.equal(bound[9], "Card := [].{ d = LocalPage.d", "a lambda's parameter, a for's, a match arm's are its own");
+});
+
 test("routes: Routes answers a request: a page (Root's) for a browser's GET; an endpoint for its method; 405, 404", () => {
 	const table = routeTable(files);
 	const methods = { "blog/[slug]/+server.rocx": ["get!", "put!"], "feed/+server.roc": ["get!"] };

@@ -5,6 +5,7 @@ import pf.Solid exposing [create_signal!]
 meta = { title: "Local" }
 
 ## A page with components of its own, defined below it: one that may make signals, and a pure one.
+## They see the file's own definitions, as the page does (`shown`).
 view! = |_| {
 	(count!, set_count!) = create_signal!(0.U64)
 	<section class="local">
@@ -15,10 +16,14 @@ view! = |_| {
 	</section>
 }
 
+## A count, as the page shows it.
+shown : U64 -> Str
+shown = |count| count.to_str()
+
 ## The count, as a board shows it.
 Board := [].{
 	view! : { count! : () => U64 } => Html
-	view! = |{ count! }| <p class="board">{count!().to_str()}</p>
+	view! = |{ count! }| <p class="board">{shown(count!())}</p>
 
 	<style>
 		.board { font-weight: bold }

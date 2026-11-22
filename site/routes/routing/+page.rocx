@@ -88,6 +88,8 @@ view! = |_|
 					(<code>{"Board := [].{ view! = … }"}</code>), go before its definitions or after them, not between:
 					rocx writes them as types beside the page's module, where their <code>view</code> isn't the page's
 					(<a href={"${Paths.components}#title"}>an example</a>). <code>{"<Board />"}</code> calls the file's own.
+					They see the file's definitions as the page does: a helper defined beside <code>view!</code> is
+					theirs to call too, unless one names something of its own the same.
 				</li>
 			</ul>
 
