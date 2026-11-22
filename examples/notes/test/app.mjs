@@ -73,9 +73,10 @@ export async function signIn(app, email) {
 	return person;
 }
 
-/** A personal access token `person` makes in Settings (`access`: `read` or `write`): the token. */
+/** A personal access token `person` makes in Settings (`access`: `read` or `write`, the box "It may
+ * write too" ticked or not): the token. */
 export async function makeToken(person, name, access = "write") {
-	const made = await person.submit("/settings", { name, access });
+	const made = await person.submit("/settings", access === "write" ? { name, write: "on" } : { name });
 	assert.equal(made.status, 200, made.text);
 	return made.json().token;
 }

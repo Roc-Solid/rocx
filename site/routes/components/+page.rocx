@@ -394,7 +394,9 @@ view! = |_|
 			<p>
 				A handler can send an endpoint without a form, and without waiting for its answer:
 				<code>use_action!(endpoint)</code> (Solid Router's <code>useAction</code>) is a function a handler
-				calls with the endpoint's arg, and each call is a submission of its own.
+				calls with the endpoint's arg, and each call is a submission of its own. It sends the arg as JSON,
+				as a script would; a form posting to the same endpoint sends its fields, which the server reads by
+				the same type (a number from its text, a box left unticked as false), so one endpoint takes both.
 				<code>use_submissions!(endpoint)</code> (<code>useSubmissions</code>) lists them, each as it is now:
 				whether it is on its way, what it sent, and the result or the refusal. An optimistic value is the
 				server's, with what the submissions on their way sent applied to it. Drag a plan to another day:

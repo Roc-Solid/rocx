@@ -83,11 +83,7 @@ view! = |_| {
 					<h3>A new token</h3>
 					<label for="token-name">Name</label>
 					<input id="token-name" name="name" maxlength="60" required placeholder="Laptop: Claude Code" value={making.field!("name")} />
-					<fieldset>
-						<legend>It may</legend>
-						<label class="choice"><input type="radio" name="access" value="read" checked /> Search and read</label>
-						<label class="choice"><input type="radio" name="access" value="write" /> Search, read and write</label>
-					</fieldset>
+					<label class="choice"><input type="checkbox" name="write" /> It may write too (it always searches and reads)</label>
 					<button type="submit" class="primary" disabled?={making.pending!()}>Make a token</button>
 					<Show when!={making.error!()}>
 						{|problem!| <p class="problem" role="alert">{Server.explain(problem!())}</p>}
@@ -236,19 +232,6 @@ connect = |mcp, token| "claude mcp add --transport http acme-notes ${mcp} \\\n  
 	}
 
 	.make > label {
-		font-weight: 600;
-	}
-
-	fieldset {
-		display: grid;
-		gap: 0.3rem;
-		margin: 0.25rem 0;
-		padding: 0;
-		border: 0;
-	}
-
-	legend {
-		margin-bottom: 0.3rem;
 		font-weight: 600;
 	}
 

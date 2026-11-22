@@ -267,8 +267,10 @@ What the app met, and how it works around each. None needed a change outside the
     JavaScript rode in `rocx-flash` to the page that shows it. The platform now keeps a flash in the
     server's memory for a minute; the cookie holds a random id, and the page that shows the token
     takes it, once. With the runtime it never leaves the answer.
-13. **An unticked checkbox sends nothing**, so a form whose record has its field fails to read: the
-    token's access is two radio buttons, one always ticked.
+13. **Fixed: an unticked checkbox sends nothing**, so a form whose record had its field failed to
+    read, and the token's access was two radio buttons, one always ticked. A form's body is read by
+    its endpoint's types now (D-038): a box left unticked is `Bool.False`. The token's form has a box,
+    "It may write too", and the endpoint a `write : Bool`.
 14. **Fixed: `Db.Value` had no list** (D-016), so tags went as a JSON array, `array(select
     jsonb_array_elements_text($1::jsonb))`. `Db.array` makes a list one parameter now (a Postgres
     array, in text), so `tags @> $3` and `set tags = $5` take `Db.array(tags.map(|tag| Text(tag)))`

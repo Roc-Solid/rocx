@@ -287,7 +287,7 @@ and `domain` (each left out when empty). `Server.cookie_defaults` is `/`, `HttpO
 `clear_cookie` is given the path, domain and `secure` it was set with. The value is `%XX`-encoded
 (`Server.cookie` decodes it). These are the web platform's too (`web/platform/Server.roc`).
 
-### Forms: the flash, `Endpoint.respond!`
+### Forms: typed bodies, the flash, `Endpoint.respond!`
 
 ```roc
 # routes/members/join/+server.roc: a form posts { name }
@@ -295,7 +295,25 @@ post! = |{ body, .. }| if body.name.trim().is_empty() Err(BadRequest("a member h
 
 # the page it was posted from
 Server.flash!({})      # Ok({ url: "/members/join", fields: [{ name: "name", value: "" }], status: 400, body: "a member has a name" })
+
+# routes/orders/+server.roc: a form's fields, read by the body's types (D-038)
+# item=tea&count=2&gift=on&toppings=milk&toppings=honey&size=Large
+post! : { …, body : { item : Str, count : U64, gift : Bool, toppings : List(Str), size : [Small, Large] } } => …
 ```
+
+An endpoint's body is one type however it is sent: JSON (an action, a script) is read as JSON,
+strictly; a form's fields (a plain form, or the runtime's) by the body's types (`FormBody`). A
+number is read from its text (spaces around it dropped); a `Bool` is `on`, `true` or `1`, or
+`false`, `0` or empty, and missing (a box left unticked) is false; a `List` is every value its name
+has, in order, and missing is `[]`; a tag with no payload is the one its text names (a `<select>`).
+A `Str` is the text as typed. A `Str` or a number that is missing (a number left empty too), or
+text that isn't its type, is a 400 naming the field (`the field count needs a whole number, 0 or
+more, not "two"`). A field a non-list has twice is its last value (a hidden default before a
+checkbox); a field the body has and the record doesn't is let be. `Endpoint.local` makes the reader,
+where the route's types are known; a function generic in its arg as JSON alone (packages/mcp's
+tools) makes its endpoints with `Endpoint.local_json`, which reads a form's fields as strings. In
+the browser, a submission's `input!` reads a form's fields as strings until `Api` is typed in both
+copies (D-037).
 
 A form a browser posts without the runtime (a plain `<form method="post">`: a form's body,
 `application/x-www-form-urlencoded`, from a page, `accept: text/html`) would get a page of JSON, or

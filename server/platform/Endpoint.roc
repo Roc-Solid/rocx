@@ -2,6 +2,7 @@ import Server
 import Events
 import Call
 import Channel
+import FormBody
 import Host
 
 ## An HTTP endpoint: a method at a path, which a route's `+server.roc` defines (`get!`, `post!`,
@@ -19,30 +20,46 @@ import Host
 ## A handler is given the request, the context its middleware handed on, its path's params and its
 ## body, and answers `Ok(result)`, sent as JSON with the status 200, or a `Refusal`: a status and
 ## why, or an answer of its own (`Answer`: a redirect that sets a cookie).
-Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Request, context, arg => Try(result, Endpoint.Refusal) }.{
+##
+## Its arg is one type whoever sends it: JSON (an action, a script) is read as JSON; a form's fields
+## (a plain form, or one the runtime sent) are read by the arg's type too (`FormBody`, D-038), a
+## number from its text, a box left unticked `Bool.False`, the values a name has as a `List`. The
+## endpoint keeps that reader (`form`), made where its arg's type is known (`remote`, `local`).
+Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Request, context, arg => Try(result, Endpoint.Refusal), form : [Typed(List({ name : Str, value : Str }) -> Try(arg, Str)), Untyped] }.{
 
 	## What a handler may answer instead of its result: a status, and why; or exactly this answer.
 	Refusal : [BadRequest(Str), Unauthorized, Forbidden, NotFound, Conflict(Str), Status(U16, Str), Answer(Server.Response)]
 
 	## An endpoint of the app's own, with its handler, outside the routes: its method, its URL and
-	## what it does (a test's, or one made for `run!` alone).
-	local : Str, Str, (Server.Request, context, arg => Try(result, Refusal)) -> Endpoint(context, arg, result)
-	local = |method, url, handler| { method: method, url: url, run: handler }
+	## what it does (a test's, or one made for `run!` alone). Its reader of a form (`FormBody`) is
+	## made here, where its arg's type is known.
+	local : Str, Str, (Server.Request, context, arg => Try(result, Refusal)) -> Endpoint(context, arg, result) where [arg.FormBody.Readable]
+	local = |method, url, handler| { method: method, url: url, run: handler, form: Typed(|fields| FormBody.parse(fields)) }
+
+	## As `local`, for a function generic in its arg that knows it as JSON alone
+	## (`where [arg.Json.Parseable(…)]`, which can't be asked for with `FormBody`'s: see
+	## test/compiler-bugs/two-formats-one-where): an endpoint only code sends (`run!`). A form posted
+	## to it is read as a record of strings.
+	local_json : Str, Str, (Server.Request, context, arg => Try(result, Refusal)) -> Endpoint(context, arg, result)
+	local_json = |method, url, handler| { method: method, url: url, run: handler, form: Untyped }
 
 	## A contract: its method and URL, and nothing it does; its types are the annotation's of what
 	## names it (`Generated/Api.roc`'s, copied from its handler's). Its `run` captures nothing, so
 	## naming an endpoint allocates nothing: a read that isn't in yet unwinds the frame that named
-	## it, and what that held would never be let go of.
-	remote : Str, Str -> Endpoint(context, arg, result)
-	remote = |method, url| { method: method, url: url, run: |_, _, _| crash "Endpoint.run! was given a contract (Generated/Api), which has no handler: give it Generated/Handlers' endpoint of the same name. In the browser, send it (Endpoint.send!)" }
+	## it, and what that held would never be let go of. Its reader of a form's fields (`FormBody`,
+	## D-038) is made here, where Api's annotation gives the arg its type, in both copies: the
+	## server's router reads a form posted to it with it (`bind` keeps it), and the browser what a
+	## form sent (`Router.use_submission!`).
+	remote : Str, Str -> Endpoint(context, arg, result) where [arg.FormBody.Readable]
+	remote = |method, url| { method: method, url: url, run: |_, _, _| crash "Endpoint.run! was given a contract (Generated/Api), which has no handler: give it Generated/Handlers' endpoint of the same name. In the browser, send it (Endpoint.send!)", form: Typed(|fields| FormBody.parse(fields)) }
 
 	## On the server: the contract `endpoint` (Api's: its method, its URL, its types) with the
 	## handler that answers it, as `Generated/Handlers.roc` pairs each route's
 	## (`Endpoint.bind(Api.get_board(params), |request, context, {}| BoardServer.get!({ request, params,
 	## context }))`), so the compiler checks that they agree. The router answers with it (`respond!`,
-	## `stream!`, `channel!`), and `run!` runs it.
+	## `stream!`, `channel!`), and `run!` runs it. It keeps the contract's reader of a form.
 	bind : Endpoint(context, arg, result), (Server.Request, context, arg => Try(result, Refusal)) -> Endpoint(context, arg, result)
-	bind = |endpoint, handler| { method: endpoint.method, url: endpoint.url, run: handler }
+	bind = |endpoint, handler| { method: endpoint.method, url: endpoint.url, run: handler, form: endpoint.form }
 
 	## A GET endpoint's answer, as a plain value, for a component or a computation
 	## (`create_memo!(|| Endpoint.get!(Api.get_profile({ id })))`): one definition of a page's data,
@@ -351,9 +368,10 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 
 	## On the server: the answer to a request to it, given the context its middleware handed on. Its
 	## arg is the body, read when it says it is JSON (`application/json`, or a type ending `+json`)
-	## or a form (`application/x-www-form-urlencoded`: its fields, as a browser posts them, a record
-	## of strings). Any other body (an upload: `application/octet-stream`, `video/mp4`, or no type at
-	## all) isn't read: the arg is `{}`, and the handler reads `request.body`, the bytes as they came.
+	## or a form (`application/x-www-form-urlencoded`: its fields, as a browser posts them, read by
+	## the arg's type, `FormBody`; a field it lacks or can't read is a 400 naming it). Any other body
+	## (an upload: `application/octet-stream`, `video/mp4`, or no type at all) isn't read: the arg is
+	## `{}`, and the handler reads `request.body`, the bytes as they came.
 	## No body is `{}` too. Its result is sent as JSON, a refusal as its status and why, or as the
 	## answer it is. A body it doesn't read, for a handler that wants an arg, is 415.
 	##
@@ -368,10 +386,16 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 		where [arg.Json.Parseable([InvalidJson(Str)]), result.Json.Encodable(e)]
 	respond! = |endpoint, request, context| {
 		read = input_of(request)
-		input =
+		parsed : Try(arg, Str)
+		parsed =
 			match read {
-				Read(json) => json
-				Unread(_) => "{}"
+				Fields(fields) =>
+					match endpoint.form {
+						Typed(reader) => reader(fields)
+						Untyped => Json.parse(Server.form_json(Server.text_of(request))).map_err(|InvalidJson(why)| why)
+					}
+				Read(json) => Json.parse(json).map_err(|InvalidJson(why)| why)
+				Unread(_) => Json.parse("{}").map_err(|InvalidJson(why)| why)
 			}
 		posted = Endpoint.posted_by(request)
 		reply! = |status, body|
@@ -379,7 +403,7 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 				PlainForm => Server.flash_back!(request, { url: endpoint.url, input: Server.text_of(request), status, body })
 				_ => if (status == 200) Server.response(200, [{ name: "content-type", value: "application/json" }], body) else text(status, body)
 			}
-		match Json.parse(input) {
+		match parsed {
 			Ok(arg) => {
 				handler = endpoint.run
 				match handler(request, context, arg) {
@@ -399,10 +423,10 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 					}
 				}
 			}
-			Err(InvalidJson(why)) =>
+			Err(why) =>
 				match read {
-					Read(_) => reply!(400, "${endpoint.method} ${request.path} can't read its body: ${why}")
 					Unread(type) => text(415, "${endpoint.method} ${request.path} reads JSON (application/json) or a form, not ${if (type.is_empty()) "a body with no content-type" else type}")
+					_ => reply!(400, "${endpoint.method} ${request.path} can't read its body: ${why}")
 				}
 		}
 	}
@@ -528,14 +552,14 @@ json_answer = |json| Server.response(200, [{ name: "content-type", value: "appli
 closing : Str -> Try({ who : who, why : Channel.Closed }, [InvalidJson(Str)]) where [who.Json.Parseable([InvalidJson(Str)])]
 closing = |body| Json.parse(body)
 
-## What an endpoint's arg is read from, as JSON: the body, when it says it is JSON; a form's fields;
-## `{}` for no body. A body of any other type isn't read (`Unread`, with its type): an upload, which
-## the handler reads itself.
-input_of : Server.Request -> [Read(Str), Unread(Str)]
+## What an endpoint's arg is read from: a form's fields (`Fields`, read by the arg's type); the
+## body as JSON, when it says it is JSON, or `{}` for no body (`Read`). A body of any other type
+## isn't read (`Unread`, with its type): an upload, which the handler reads itself.
+input_of : Server.Request -> [Fields(List({ name : Str, value : Str })), Read(Str), Unread(Str)]
 input_of = |request| {
 	type = media_type(Server.header(request, "content-type") ?? "")
 	if type == "application/x-www-form-urlencoded" {
-		Read(Server.form_json(Server.text_of(request)))
+		Fields(Server.form_fields(Server.text_of(request)))
 	} else if type == "application/json" or type.ends_with("+json") {
 		body = Server.text_of(request)
 		Read(if (body.trim().is_empty()) "{}" else body)
@@ -587,7 +611,7 @@ expect Endpoint.url_of(Endpoint.with_query(Endpoint.with_query(shout, "weeks=1")
 expect Endpoint.url_of(Endpoint.with_query(shout, "")) == "/shout"
 expect input_of(Server.from_http("POST", "/shout", "content-type: application/json", "\"hi\"".to_utf8())) == Read("\"hi\"")
 expect input_of(Server.from_http("POST", "/shout", "Content-Type: application/merge-patch+json; charset=utf-8", "{}".to_utf8())) == Read("{}")
-expect input_of(Server.from_http("POST", "/shout", "content-type: application/x-www-form-urlencoded", "said=hi".to_utf8())) == Read("{\"said\":\"hi\"}")
+expect input_of(Server.from_http("POST", "/shout", "content-type: application/x-www-form-urlencoded", "said=hi".to_utf8())) == Fields([{ name: "said", value: "hi" }])
 expect input_of(Server.from_http("POST", "/shout", "content-type: application/json", " ".to_utf8())) == Read("{}")
 expect input_of(Server.from_http("PUT", "/upload", "content-type: video/mp4", [0, 0xFF, 0xD8])) == Unread("video/mp4")
 expect input_of(Server.from_http("PUT", "/upload", "content-type: text/plain", "\"hi\"".to_utf8())) == Unread("text/plain")

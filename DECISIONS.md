@@ -2045,6 +2045,64 @@ what reads a prop is patched, and no app's source changes, packages' components 
 **Reversible:** yes. It is the transpiler's and the runtime's, so no app's source changes; but code
 that relies on a child kept, or on untracked rows, would change behavior.
 
+## D-038 A form's body is read by its endpoint's types
+
+**Context.** A plain form posts urlencoded strings, and `Endpoint.respond!` read them as a JSON
+object of strings. So an endpoint that both a plain form and an action (`use_action!`, JSON) post to
+had to take a record of strings: examples/tasks' toggle took `{ id : Str, done : Str }` and its add
+read the body twice, typed strings for the list and again through packages/forms. A box left
+unticked sends nothing, so a record with a `Bool` for it failed to read: examples/notes used two
+radio buttons.
+
+**Options.**
+1. A form format beside `Json`, type-directed through the same decoding ability (`parser_for`):
+   the platform's `FormBody`, as `OpenApi`'s `Schema` is a format of its own.
+2. A lenient mode of JSON's decoder for form bodies. `Json` is the compiler's: its formats are a
+   closed set (`JsonEncoding`), so this is a change to the compiler.
+3. JSON built from the fields by guessing each value's type: `"2"` a number, but a title of `2`
+   too.
+
+**Choice.** 1. The rules the user approved:
+
+- a number (`U64`, `I32`, `Dec`, `F64`…) from its text, spaces around it dropped;
+- `Bool`: `on`, `true` and `1` are true; `false`, `0` and empty are false; missing (a box left
+  unticked) is false;
+- the values a field has, in order, as a `List`; a missing `List` is `[]`;
+- `Str` stays text (an empty one too); a missing `Str`, or a number missing or empty, is a 400
+  naming the field, as is text that isn't the field's type (`the field count needs a whole number,
+  0 or more, not "two"`);
+- and, as they come with the format: a tag with no payload by its name (a `<select>`); a field a
+  non-list has twice, its last value (a hidden default before a checkbox); a field the record lacks,
+  let be. A record in a field, a tuple or a dict has no form, and is refused saying so.
+
+JSON is read as before, strictly: only a form's body is read this way.
+
+```roc
+# web/platform/FormBody.roc (both platforms; not exposed)
+FormBody.parse : List({ name : Str, value : Str }) -> Try(a, Str) where [a.FormBody.Readable]
+
+# web/platform/Endpoint.roc
+Endpoint(c, a, r) :: { method, url, run, form : [Typed(List({ name : Str, value : Str }) -> Try(a, Str)), Untyped] }
+Endpoint.local : Str, Str, handler -> Endpoint(c, a, r) where [a.FormBody.Readable]   # the reader, made here
+Endpoint.local_json : Str, Str, handler -> Endpoint(c, a, r)                          # none: a form's fields as strings
+```
+
+- **Where the reader is made.** A where clause naming both formats
+  (`[a.FormBody.Readable, a.Json.Parseable(…)]`) crashes the compiler (test/compiler-bugs/
+  two-formats-one-where). So `respond!` asks for `Json.Parseable` alone, and uses the reader the
+  endpoint was made with: `Endpoint.local` makes it, where the route's arg type is known.
+- **`local_json`.** A function generic in its arg as JSON alone can't call `local`: packages/mcp's
+  `McpHttp.function` and its tools' type witness use `local_json`, whose endpoints read a form, if
+  one is ever posted to them, as strings, as before.
+- **The browser's half follows D-037.** The browser's `Api` is untyped (`Endpoint.remote`, the
+  route files aren't in its copy), so its endpoints have no reader yet, and a submission's
+  `input!`/`pending_inputs!` read a form's fields as strings, as before. Once D-037 types `Api` in
+  both copies, `remote` makes the reader too, the browser reads a form submission by its types, and
+  examples/tasks' toggle and move leave their strings.
+
+**Why.** One endpoint, one type, for every way it is sent; and the rules are the type's, not a
+guess. **Reversible:** yes: `local` without the reader reads strings again.
+
 ## D-040 Client-side navigation
 
 **Status.** Proposed (2026-11-22). Nothing is built; the design, with its phases and the questions

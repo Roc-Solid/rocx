@@ -194,6 +194,8 @@ route! = |request, context| {
 		# ---- An endpoint's body: read as JSON or a form, or left as it came for its handler ----
 		(_, "/endpoint/upload") => Endpoint.respond!(upload_endpoint, request, {})
 		(_, "/endpoint/shout") => Endpoint.respond!(shout_endpoint, request, {})
+		(_, "/endpoint/order") => Endpoint.respond!(order_endpoint, request, {})
+		(_, "/endpoint/order-json") => Endpoint.respond!(order_json_endpoint, request, {})
 
 		# ---- Forward: a body the host fetches from `url` and sends on, never through Roc ----
 		(_, "/forward") => {
@@ -1192,6 +1194,29 @@ upload_endpoint = Endpoint.local("PUT", "/endpoint/upload", |request, {}, {}| Ok
 ## An endpoint that reads JSON (or a form): the word, shouted.
 shout_endpoint : Endpoint({}, { word : Str }, Str)
 shout_endpoint = Endpoint.local("POST", "/endpoint/shout", |_, {}, { word }| Ok(word.with_ascii_uppercased()))
+
+## An order, typed (D-038): a plain form, the runtime's form, an action and a script's JSON all post
+## the same record, the form's fields read by its types.
+Order : { item : Str, count : U64, price : Dec, gift : Bool, toppings : List(Str), size : [Small, Large] }
+
+## POST /endpoint/order: the order, as the handler was given it.
+order_endpoint : Endpoint({}, Order, Str)
+order_endpoint = Endpoint.local("POST", "/endpoint/order", |_, {}, order| Ok(said_of(order)))
+
+## POST /endpoint/order-json: the same, made as a function generic in its arg makes one
+## (`local_json`): a form's fields are read as strings.
+order_json_endpoint : Endpoint({}, { item : Str, count : Str }, Str)
+order_json_endpoint = Endpoint.local_json("POST", "/endpoint/order-json", |_, {}, order| Ok("${order.count} ${order.item}"))
+
+said_of : Order -> Str
+said_of = |order| {
+	size =
+		match order.size {
+			Small => "small"
+			Large => "large"
+		}
+	"${order.count.to_str()} ${size} ${order.item} at ${order.price.to_str()}${if (order.gift) ", a gift" else ""}, with ${Str.join_with(order.toppings, " and ")}"
+}
 
 ## `size` bytes counting up, 0 to 255 and again: every byte, and not text.
 counting : U64 -> List(U8)

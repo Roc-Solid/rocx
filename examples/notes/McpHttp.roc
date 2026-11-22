@@ -123,7 +123,7 @@ McpHttp := [].{
 	## behind the MCP route's middleware.
 	function : (arg => result), About, Schemas(c, {}, arg, result) -> Tool(Caller(c))
 		where [arg.Json.Parseable([InvalidJson(Str)]), result.Json.Encodable(e)]
-	function = |called!, about, schemas| McpHttp.endpoint(|{}| Endpoint.local("POST", "/", |_, _, arg| Ok(called!(arg))), about, schemas)
+	function = |called!, about, schemas| McpHttp.endpoint(|{}| Endpoint.local_json("POST", "/", |_, _, arg| Ok(called!(arg))), about, schemas)
 
 	## A handler of the app's own as a tool: its arguments are a Roc type, its answer another, each
 	## with the schema the platform writes for it.
@@ -141,16 +141,16 @@ McpHttp := [].{
 
 ## An endpoint of a handler's types, for `OpenApi` to write their schemas: never run.
 witness_of : (arg, McpHttp.Caller(c) => Try(result, Str)) -> Endpoint(c, arg, result)
-witness_of = |_| Endpoint.local("POST", "/", |_, _, _| crash "McpHttp: a witness of a tool's types, never run")
+witness_of = |_| Endpoint.local_json("POST", "/", |_, _, _| crash "McpHttp: a witness of a tool's types, never run")
 
 ## An endpoint of the types an endpoint's function names, for `OpenApi` to write their schemas:
 ## never run.
 contract_of : (params -> Endpoint(c, arg, result)) -> Endpoint(c, arg, result)
-contract_of = |_| Endpoint.local("POST", "/", |_, _, _| crash "McpHttp: a witness of an endpoint's types, never run")
+contract_of = |_| Endpoint.local_json("POST", "/", |_, _, _| crash "McpHttp: a witness of an endpoint's types, never run")
 
 ## An endpoint sent an endpoint's params, for `OpenApi` to write their schema: never run.
 params_of : (params -> Endpoint(c, arg, result)) -> Endpoint(c, params, {})
-params_of = |_| Endpoint.local("POST", "/", |_, _, _| crash "McpHttp: a witness of an endpoint's params, never run")
+params_of = |_| Endpoint.local_json("POST", "/", |_, _, _| crash "McpHttp: a witness of an endpoint's params, never run")
 
 ## The schema in what `OpenApi.answer` writes (`"application/json":{"schema":…}`).
 answer_schema : Str -> Str

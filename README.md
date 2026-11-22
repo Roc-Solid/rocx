@@ -404,7 +404,9 @@ typed at both ends, which anything else that speaks HTTP may ask too.
 - **From handlers.** A component sends any endpoint from a handler with
   `Endpoint.send!(Api.post_api_shout({}), draft!(), Call.fetch!)`.
 - **Forms.** A `<form method="post" action={Endpoint.url_of(join)}>` posts to an endpoint, which reads
-  its fields as a record of strings. `submission = use_submission!(join)` is its latest submission,
+  its fields by its body's types (D-038): a number from its text, a box left unticked `Bool.False`,
+  the values a name has as a `List`; one missing or wrong is a 400 naming the field. So an action's
+  JSON and a plain form post one typed record. `submission = use_submission!(join)` is its latest submission,
   as Solid Router's `useSubmission`: `submission.pending!()`, `input!()` (what was typed, as the
   endpoint reads it), `field!("name")`, `result!()`, `error!()`, `clear!()`. With the runtime the
   form is sent with `fetch` and the page stays; without it (before it loads, or with no JavaScript)

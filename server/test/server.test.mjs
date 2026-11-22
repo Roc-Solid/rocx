@@ -602,6 +602,39 @@ test("endpoints: a body is read when it says it is JSON or a form; an upload of 
 	assert.equal(await until(async () => (await live()) === baseline), true, `the uploads were let go of: ${await live()} allocations, ${baseline} once started`);
 });
 
+test("endpoints: a typed body (D-038): a plain form, the runtime's form, an action and JSON post the same record; a form's numbers, boxes, lists and choices read by their types; what is missing or wrong is a 400 naming the field", { skip }, async () => {
+	const order = (body, type, headers = {}) => get("/endpoint/order", { method: "POST", body, redirect: "manual", headers: { "content-type": type, ...headers } });
+	const form = "application/x-www-form-urlencoded";
+	const said = "2 large tea at 3.5, a gift, with milk and honey";
+	const fields = "item=tea&count=2&price=3.5&gift=on&toppings=milk&toppings=honey&size=Large";
+	// A script's form, and the runtime's (a form it sends, or an action's JSON).
+	assert.deepEqual(await (await order(fields, form)).json(), said);
+	assert.deepEqual(await (await order(fields, form, { accept: "application/json", "x-rocx-submission": "1" })).json(), said);
+	const json = JSON.stringify({ item: "tea", count: 2, price: 3.5, gift: true, toppings: ["milk", "honey"], size: "Large" });
+	assert.deepEqual(await (await order(json, "application/json", { "x-rocx-submission": "1" })).json(), said, "an action");
+	assert.deepEqual(await (await order(json, "application/json")).json(), said);
+	// A plain form: back to its page with the result in the flash.
+	const plain = await order(fields, form, { accept: "text/html", referer: `${server.url}/flash/page` });
+	assert.equal(plain.status, 303);
+	assert.deepEqual(JSON.parse(decodeURIComponent(plain.headers.get("x-rocx-flash"))), { url: "/endpoint/order", status: 200, body: JSON.stringify(said) });
+	// A box left unticked is false; a list with no values, []; spaces around a number dropped.
+	assert.deepEqual(await (await order("item=tea&count=+1+&price=2&size=Small", form)).json(), "1 small tea at 2.0, with ");
+	// What is missing or wrong: 400, naming the field; the JSON API isn't read leniently.
+	const refused = async (body, type = form) => {
+		const answer = await order(body, type);
+		return [answer.status, await answer.text()];
+	};
+	assert.deepEqual(await refused("count=2&price=2&size=Small"), [400, "POST /endpoint/order can't read its body: the field item is missing"]);
+	assert.deepEqual(await refused("item=tea&count=&price=2&size=Small"), [400, "POST /endpoint/order can't read its body: the field count is missing"]);
+	assert.deepEqual(await refused("item=tea&count=two&price=2&size=Small"), [400, 'POST /endpoint/order can\'t read its body: the field count needs a whole number, 0 or more, not "two"']);
+	assert.deepEqual(await refused("item=tea&count=-1&price=2&size=Small"), [400, 'POST /endpoint/order can\'t read its body: the field count needs a whole number, 0 or more, not "-1"']);
+	assert.deepEqual(await refused("item=tea&count=1&price=2&gift=maybe&size=Small"), [400, 'POST /endpoint/order can\'t read its body: the field gift is yes or no (on, true or 1; false, 0 or nothing), not "maybe"']);
+	assert.deepEqual(await refused("item=tea&count=1&price=2&size=Huge"), [400, 'POST /endpoint/order can\'t read its body: the field size isn\'t one of its choices: "Huge"']);
+	assert.equal((await refused(JSON.stringify({ item: "tea", count: "2", price: 3.5, gift: true, toppings: [], size: "Large" }), "application/json"))[0], 400, "JSON's count is a number, not text");
+	// An endpoint made generic in its arg as JSON alone (local_json) reads a form's fields as strings.
+	assert.deepEqual(await (await get("/endpoint/order-json", { method: "POST", body: "item=tea&count=2", headers: { "content-type": form } })).json(), "2 tea");
+});
+
 // ---- Forward ----
 
 /** A server for `Server.forward` to fetch from (this file runs it): `/file`, 3 MiB with ranges, an

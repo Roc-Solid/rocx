@@ -305,13 +305,13 @@ describe("Acme Notes over HTTP", { skip: noDatabase }, () => {
 		page.dom.getByRole("button", { name: "Revoke Reader" });
 
 		// Without JavaScript, a new token comes back to the page in its flash, and is shown there once.
-		const shown = await ada.post("/settings", { name: "Laptop", access: "write" });
+		const shown = await ada.post("/settings", { name: "Laptop", write: "on" });
 		assert.equal(shown.status, 303);
 		const fresh = JSON.parse(ada.flash.body).token;
 		const landed = await shown.follow();
 		assert.equal(landed.dom.getByLabelText("Your new token").attr("value"), fresh);
 		assert.ok(!(await ada.get("/settings")).text.includes(fresh), "once only: the next page hasn't it");
-		await ada.post("/settings", { name: " ", access: "read" });
+		await ada.post("/settings", { name: " " });
 		assert.deepEqual([ada.flash.status, ada.flash.body], [400, "Give the token a name, to know it by later."]);
 
 		// Revoked: gone, and refused from then on.

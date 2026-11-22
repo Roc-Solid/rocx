@@ -209,7 +209,10 @@ same components natively; this one hydrates them.
   then the answer's status and body (status 0 and why with none). `x-rocx-redirect` (an endpoint's
   own redirect, which `Endpoint.respond!` gives the runtime as 200), or a redirect fetch followed,
   sends the browser there. The latest one forgotten (`clear!`), there is none until the next, nor
-  the flash. Without a submission in the browser, `Submission` reads the flash.
+  the flash. Without a submission in the browser, `Submission` reads the flash. The server reads a
+  form's fields by the endpoint's body's types (D-038, `FormBody`); the browser's copy of an
+  endpoint has no types yet, so `input!` and `pending_inputs!` read a form's fields as a record of
+  strings, until `Api` is typed in both copies (D-037).
 - **Actions and optimistic values** (D-030): `use_action!(endpoint)` is a function a handler calls
   with the endpoint's arg (`Host.submit!`): queued with the handler's writes, so a handler that
   waits and runs again sends it once, then sent as `Endpoint.send!` sends it (JSON, with

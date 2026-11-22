@@ -17,19 +17,16 @@ get! = |{ context, .. }|
 		Err(problem) => Err(Store.refused!(problem))
 	}
 
-## POST /settings, from its form (`name`, and `access`: `read` or `write`): a new personal access
-## token. The token itself is in this answer, and nowhere else, ever: only its SHA-256 is kept.
-post! : { request : Server.Request, params : {}, context : Middlewares.Me, body : { name : Str, access : Str } } => Try(Token.Made, Endpoint.Refusal)
+## POST /settings, from its form (`name`, and `write`, a box: ticked, the token may write too; left
+## unticked, it sends nothing, which is `Bool.False`): a new personal access token. The token itself
+## is in this answer, and nowhere else, ever: only its SHA-256 is kept.
+post! : { request : Server.Request, params : {}, context : Middlewares.Me, body : { name : Str, write : Bool } } => Try(Token.Made, Endpoint.Refusal)
 post! = |{ context, body, .. }|
 	match Token.name_of(body.name) {
 		Err(why) => Err(BadRequest(why))
 		Ok(name) =>
-			if body.access != "read" and body.access != "write" {
-				Err(BadRequest("A token may read, or read and write."))
-			} else {
-				match Account.make_token!(context.person.id, { name, read_only: body.access == "read" }) {
-					Ok(made) => Ok(made)
-					Err(problem) => Err(Store.refused!(problem))
-				}
+			match Account.make_token!(context.person.id, { name, read_only: !body.write }) {
+				Ok(made) => Ok(made)
+				Err(problem) => Err(Store.refused!(problem))
 			}
 	}

@@ -319,8 +319,11 @@ view! = |_|
 
 			<Heading id="forms">Forms: actions and submissions</Heading>
 			<p>
-				A form posts to an endpoint as any form posts: the endpoint reads its fields as a record of strings
-				(<code>{"{ name : Str }"}</code>), and answers. Solid Router calls that an action, and
+				A form posts to an endpoint as any form posts: the endpoint reads its fields by its body's types
+				(<code>{"{ name : Str, count : U64, gift : Bool, toppings : List(Str) }"}</code>: a number from its
+				text, a box left unticked <code>Bool.False</code>, the values a name has as a list; one missing or
+				wrong is a 400 naming the field), and answers. So an action's JSON and a plain form post one typed
+				record. Solid Router calls that an action, and
 				<code>useSubmission</code> says how the latest one went. Here the endpoint is the action: it has a
 				URL, a method and types already. <code>use_submission!(endpoint)</code>, in a component, is its
 				latest submission: whether it is on its way, what was typed, and the endpoint's result or its
