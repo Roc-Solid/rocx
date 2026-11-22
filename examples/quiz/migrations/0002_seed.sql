@@ -7,9 +7,7 @@ insert into quiz_sets (slug, title, blurb) values
 on conflict (slug) do nothing;
 
 insert into quiz_questions (set_id, position, prompt, choices, answer)
-select s.id, q.position, q.prompt, q.choices::jsonb, q.answer
-from quiz_sets s
-join (values
+with q (slug, position, prompt, choices, answer) as (values
 	('around-the-globe', 0, 'Which is the longest river in South America?', '["Orinoco", "Amazon", "Paraná", "Magdalena"]', 1),
 	('around-the-globe', 1, 'What is the capital of Canada?', '["Toronto", "Vancouver", "Ottawa", "Montreal"]', 2),
 	('around-the-globe', 2, 'Which desert covers much of northern Africa?', '["Sahara", "Gobi", "Atacama", "Kalahari"]', 0),
@@ -28,5 +26,9 @@ join (values
 	('words-and-wonders', 3, 'A tomato is a fruit, as a botanist sees it.', '["True", "False"]', 0),
 	('words-and-wonders', 4, 'Which instrument usually has 88 keys?', '["Piano", "Harp", "Accordion", "Xylophone"]', 0),
 	('words-and-wonders', 5, 'In which season do most trees drop their leaves?', '["Spring", "Summer", "Autumn", "Winter"]', 2)
-) as q (slug, position, prompt, choices, answer) on q.slug = s.slug
+)
+-- A where before the on conflict, as SQLite's upsert after a select asks (an `on` there could be a join's).
+select s.id, q.position, q.prompt, q.choices, q.answer
+from quiz_sets s, q
+where q.slug = s.slug
 on conflict (set_id, position) do nothing;

@@ -53,7 +53,7 @@ buttons only the host's.
 | `transition:move`: the leaderboard's rows gliding to their new places | `Ui/Board.rocx` |
 | packages/charts: how the room answered, as a `<BarChart>` | `Ui/Tally.rocx` |
 | packages/forms: one schema for a page and its endpoint (`LiveForm`, `<TextField>`, `<IssueSummary>`), a custom parser in `try_map`, refusals at their fields, plain posts that come back with a flash | `Draft.roc` + `routes/sets/`, `Joining.roc` + `routes/+page.rocx`, `routes/join/+server.roc`, `routes/play/[code]/` |
-| Postgres: migrations, idempotent seeds, a transaction | `migrations/`, `Sets.roc` |
+| SQLite in the server's process (`database: Sqlite("data/quiz.db")`, D-045): migrations, idempotent seeds, a transaction, a `json` column | `main.roc`, `migrations/`, `Sets.roc` |
 | Configuration from the environment: the question's and the reveal's length | `Rooms.timing!` (`QUIZ_QUESTION_MS`, `QUIZ_REVEAL_MS`) |
 | A middleware that hands every route the visitor (a cookie), and refuses other sites' posts | `Visitor.roc` |
 | Pure `view` components (`Logo`, `Mark`, `Countdown.view`, `SoundSwitch`, `Masthead`) and effectful `view!` ones (`Board`, `Lobby`, `Podium`, `Tally`, the pages' `Asked`, `Revealed`, `Choosing`, `Playing`) | `Ui/`, the route files |
@@ -63,20 +63,20 @@ buttons only the host's.
 
 ## Build and run it
 
-You need the repository's toolchain (`just setup`) and a Postgres (`just db`). From the
-repository's root, on port 18150:
+You need the repository's toolchain (`just setup`), and nothing else: the sets are a SQLite file,
+`data/quiz.db` from where the server starts (`--database-url sqlite:<path>` puts it elsewhere).
+From the repository's root, on port 18150:
 
 ```sh
-export DATABASE_URL=postgres://rocx:rocx@127.0.0.1:55432/rocx   # what `just db` prints
 bin/rocx build examples/quiz --client examples/quiz/build/client  # bin/rocx: any repo script builds it
 .tools/roc-active build --target=wasm32 --opt=size \
   --output=examples/quiz/build/client/static/rocx/app.wasm examples/quiz/build/client/main.roc
 node server/build.mjs examples/quiz/main.roc examples/quiz/build/quiz
-examples/quiz/build/quiz --port 18150 --database-url "$DATABASE_URL" \
-  --static examples/quiz/build/client/static --static examples/quiz/static
+cd examples/quiz && build/quiz --port 18150 --static build/client/static --static static
 ```
 
-Then http://localhost:18150. The server runs the migrations (and the seeds) as it starts. Open a
+Then http://localhost:18150. The server runs the migrations (and the seeds) as it starts, the first
+time making the file. Open a
 room, and join it from another browser (or a private window: a browser is one visitor). A question
 is open for 20 s and its answer shown for 7 s; `QUIZ_QUESTION_MS=8000 QUIZ_REVEAL_MS=3000` before
 the last command changes that. `node examples/quiz/sounds.mjs` makes the sounds again.
@@ -84,10 +84,9 @@ the last command changes that. `node examples/quiz/sounds.mjs` makes the sounds 
 ## Test it
 
 ```sh
-export DATABASE_URL=…                                          # a Postgres; each test makes its own database
 bin/rocx fmt --check examples/quiz
 bin/rocx check -- .tools/roc-active test examples/quiz/main.roc   # the expects: rules, scoring, components
-node --test 'examples/quiz/test/*.test.mjs'                    # over HTTP and channels, and in Chromium
+node --test 'examples/quiz/test/*.test.mjs'                    # over HTTP and channels, and in Chromium; a SQLite file each
 ```
 
 - **`expect`s** (about a hundred of the app's own): `Game.roc` plays games with a clock it chooses
@@ -95,7 +94,7 @@ node --test 'examples/quiz/test/*.test.mjs'                    # over HTTP and c
   tallies and points, advancing, Next, Again, versions, deadlines); `Score.roc` the points and the
   places; `Codes.roc`, `Draft.roc` (the editor's text, both ways) and `Joining.roc` the forms; and
   the components' helpers.
-- **`test/game.test.mjs`** builds the app, starts it on a database of its own with a 4 s question,
+- **`test/game.test.mjs`** builds the app, starts it on a SQLite file of its own with a 4 s question,
   and plays it as the pages do: a whole game with a host and three players over the room's channel,
   each question's tallies and points checked and the final scores against them; a question nobody
   answers closing on the room's own timer; presence (a phone that goes shows as dropped, and comes

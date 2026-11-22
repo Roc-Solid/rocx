@@ -2,7 +2,7 @@ import pf.Db
 import Draft
 import Game
 
-## Question sets, in Postgres (`migrations/`): the ones the app seeds, and the ones made in the
+## Question sets, in SQLite (`migrations/`): the ones the app seeds, and the ones made in the
 ## editor. Server-only: it imports `Db`.
 Sets := [].{
 
@@ -10,7 +10,7 @@ Sets := [].{
 	all! : {} => Try(List(Draft.Summary), [DbErr(Str), BadRow(Str)])
 	all! = |{}|
 		Db.all!(
-			"select s.id, s.title, s.blurb, count(q.position)::int8 as questions from quiz_sets s left join quiz_questions q on q.set_id = s.id group by s.id order by s.slug is not null, s.created_at desc, s.id",
+			"select s.id, s.title, s.blurb, count(q.position) as questions from quiz_sets s left join quiz_questions q on q.set_id = s.id group by s.id order by s.slug is not null, s.created_at desc, s.id",
 			[],
 		)
 
@@ -39,7 +39,7 @@ Sets := [].{
 				id = (ids.first() ?? { id: 0 }).id
 				for (asked, at) in made.questions.map_with_index(|asked, at| (asked, at)) {
 					_ = Db.run!(
-						"insert into quiz_questions (set_id, position, prompt, choices, answer) values ($1, $2, $3, $4::jsonb, $5)",
+						"insert into quiz_questions (set_id, position, prompt, choices, answer) values ($1, $2, $3, $4, $5)",
 						[Int(id), Int(at.to_i64_wrap()), Text(asked.prompt), Text(Json.to_str(asked.choices)), Int(asked.answer.to_i64_wrap())],
 					)?
 				}

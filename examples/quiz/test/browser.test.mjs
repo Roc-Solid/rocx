@@ -3,7 +3,7 @@
 // while the host runs the room over HTTP; then the host's big screen, as the host (its buttons
 // work) and as anyone else (no buttons). Skipped where there is no Chromium.
 //
-//   DATABASE_URL=… node --test 'examples/quiz/test/*.test.mjs'
+//   node --test 'examples/quiz/test/*.test.mjs'
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { launchBrowser } from "../../../packages/testing/index.mjs";
@@ -28,7 +28,8 @@ test("joining by code from the front page, and answering a question with a tap",
 	const code = await openRoom(host, "Words and Wonders");
 	const screen = await follow(host, code, "host-tab");
 	const [first] = await db.sql`select q.prompt, q.choices, q.answer from quiz_questions q join quiz_sets s on s.id = q.set_id where s.slug = ${"words-and-wonders"} and q.position = 0`;
-	const right = first.choices[first.answer];
+	// node:sqlite reads a json column as its text.
+	const right = JSON.parse(first.choices)[first.answer];
 
 	// The front page: the code (typed in lower case, with a dash) and a name, then Join.
 	const tab = await browser.open(`${app.url}/`);

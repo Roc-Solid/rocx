@@ -11,7 +11,7 @@ import Visitor
 
 ## Coming into a room, on the server: joining one as a player (the front page's form, and a room's
 ## own page), and opening one as its host. The endpoints that do these are a few lines each; what
-## they share is here. Server-only: it asks the rooms' actors, and reads the sets from Postgres.
+## they share is here. Server-only: it asks the rooms' actors, and reads the sets from the database.
 Entry := [].{
 
 	## The visitor joins room `code` as `name`, and is sent to its page (with their cookie, if they

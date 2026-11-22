@@ -10,7 +10,7 @@ import Game
 import Generated/Api
 
 ## One actor per room (D-021), keyed by the room's join code. It holds the room's state (a
-## `Game.State`, kept in Postgres after each turn that changes it) and takes one message at a
+## `Game.State`, kept in the database after each turn that changes it) and takes one message at a
 ## time, so two players answering at once, the clock running out and the host pressing Next never
 ## trip over each other. There is no lock anywhere.
 ##

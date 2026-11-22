@@ -1,10 +1,10 @@
 // Pinwheel over HTTP, as its pages use it: forms posted, endpoints read, and the room's channel
-// followed and spoken on (`/rocx/live`), on a database of the test's own. A whole game with a host
+// followed and spoken on (`/rocx/live`), on a SQLite file of the test's own. A whole game with a host
 // and three players, checked question by question and at the end; the timers that run a room
 // nobody answers; presence (a player who drops, and comes back); the join forms and the editor's
 // refusals; and seeding that changes nothing the second time.
 //
-//   DATABASE_URL=… node --test 'examples/quiz/test/*.test.mjs'
+//   node --test 'examples/quiz/test/*.test.mjs'
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -249,10 +249,14 @@ test("the editor: what it refuses, field by field; a new set, first on the host'
 
 test("seeding is idempotent: the seed run again adds nothing", { skip }, async () => {
 	const { db } = run;
-	const count = async () => (await db.sql`select (select count(*) from quiz_sets where slug is not null)::int as sets, (select count(*) from quiz_questions q join quiz_sets s on s.id = q.set_id where s.slug is not null)::int as questions`)[0];
+	const count = async () => (await db.sql`select (select count(*) from quiz_sets where slug is not null) as sets, (select count(*) from quiz_questions q join quiz_sets s on s.id = q.set_id where s.slug is not null) as questions`)[0];
 	const before = await count();
 	assert.deepEqual(before, { sets: 3, questions: 18 });
-	await db.query(readFileSync(join(dir, "migrations", "0002_seed.sql"), "utf8"));
+	// The seed is several statements: node:sqlite's exec runs them all (db.query prepares one).
+	const { DatabaseSync } = await import("node:sqlite");
+	const seeding = new DatabaseSync(db.path, { timeout: 10_000 });
+	seeding.exec(readFileSync(join(dir, "migrations", "0002_seed.sql"), "utf8"));
+	seeding.close();
 	assert.deepEqual(await count(), before);
 });
 
