@@ -1,0 +1,35 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+
+## Key handlers, for the tests (`shortcuts_app.roc`): one key, combinations of modifier keys and a
+## key, and the key with the modifier keys held (`.keys`).
+Shortcuts := [].{
+	view! : {} => Html
+	view! = |{}| {
+		(said!, set_said!) = create_signal!([])
+		say! = |what| set_said!(said!().append(what))
+		(last!, set_last!) = create_signal!("")
+		<div class="shortcuts">
+			<input
+				class="field"
+				on:keydown.Enter={|| say!("Enter")}
+				on:keydown.Shift+Enter={|| say!("Shift+Enter")}
+				on:keydown.Mod+K={|| say!("Mod+K")}
+				on:keydown.Alt+K={|| say!("Alt+K")}
+				on:keydown.Ctrl+Alt+Delete={|| say!("Ctrl+Alt+Delete")}
+				on:keydown.keys={|keys| set_last!(Shortcuts.described(keys))}
+			/>
+			<p class="said">{Str.join_with(said!(), ", ")}</p>
+			<p class="last">{last!()}</p>
+		</div>
+	}
+
+	## A key press, as the page shows it: the key, then the modifier keys held.
+	described : Html.Keys -> Str
+	described = |keys| {
+		held = [("shift", keys.shift), ("ctrl", keys.ctrl), ("alt", keys.alt), ("meta", keys.meta), ("mod", keys.mod)].keep_if(|(_, on)| on).map(|(name, _)| name)
+		Str.join_with([keys.key].concat(held), " ")
+	}
+}
+
+expect Shortcuts.described({ key: "K", shift: Bool.True, ctrl: Bool.False, alt: Bool.False, meta: Bool.True, mod: Bool.True }) == "K shift meta mod"

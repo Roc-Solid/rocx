@@ -336,9 +336,17 @@ same components natively; this one hydrates them.
   answers script and the bootstrap just before `</body>` (`Runtime.documentOf`). Any other markup is an app's range,
   `<!--app-->…<!--/app-->`, for `hydrate(container)`.
 - **Events**: `on:click` runs a handler; `.value`, `.checked`, `.key` give it what the event says; a
-  key's name (`on:keydown.ArrowUp`) runs it for that key only and prevents its default;
-  `.prevent` (`["onp",…]`) prevents its default first (a link's click taken over);
-  `on:frame.ms` runs it every animation frame while its element is on the page.
+  key's name (`on:keydown.ArrowUp`) runs it for that key only, with no modifier key held, and
+  prevents its default; so does a combination (`on:keydown.Shift+Enter`, `Mod+K`,
+  `Ctrl+Alt+Delete`: `["on",event,id,"Shift+Enter"]`), with exactly those modifier keys held, so
+  Shift+Enter isn't Enter (`keyCombo`). `Mod` is ⌘ on macOS and iOS, Ctrl elsewhere. A letter or
+  digit matches in either case, and by its place (`event.code`) when the layout types something
+  else there (Alt+K on macOS types ˚); nothing matches while an input method composes. `.keys`
+  (`Html.on_keys`, `["onk",event,id,"keys"]`) gives the handler the key and the modifier keys held,
+  a record (`Html.Keys`: `key`, `shift`, `ctrl`, `alt`, `meta`, `mod`), as five flags and the key
+  the host turns into one; `.key`'s handlers keep their `Str`. `.prevent` (`["onp",…]`) prevents
+  its default first (a link's click taken over); `on:frame.ms` runs it every animation frame while
+  its element is on the page.
 - **Drag and drop** (D-029) are events too (`dragAndDrop`): an element with a drop handler is a drop
   target, its dragenter's and dragover's default prevented, `dropEffect` a move (unless the drag
   allows only a copy or a link), and its drop's (a dropped link or file doesn't open);

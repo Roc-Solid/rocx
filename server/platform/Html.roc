@@ -39,6 +39,7 @@ Html :: [
 		OnValue(Str, Str => {}),
 		OnChecked(Str, Bool => {}),
 		OnKey(Str, Str => {}),
+		OnKeys(Str, Html.Keys => {}),
 		OnNamedKey(Str, Str, () => {}),
 		OnPrevent(Str, () => {}),
 		OnFrame(F64 => {}),
@@ -47,6 +48,12 @@ Html :: [
 		Animate([In, Out, Both, Move], Transition),
 		AnimateOf([In, Out, Both, Move], () => Transition),
 	]
+
+	## A key pressed, and the modifier keys held with it (`on:keydown.keys={|keys| …}`): the key as
+	## the browser names it (`event.key`: `"k"`, `"K"` with Shift, `"Enter"`, `"ArrowUp"`), and
+	## whether each modifier key was held. `mod` is ⌘ on macOS and Ctrl elsewhere: `meta` there,
+	## `ctrl` here.
+	Keys : { key : Str, shift : Bool, ctrl : Bool, alt : Bool, meta : Bool, mod : Bool }
 
 	text : Str -> Html
 	text = |content| Text(content)
@@ -131,8 +138,18 @@ Html :: [
 	on_key : Str, (Str => {}) -> Attr
 	on_key = |event, handler| OnKey(event, handler)
 
-	## A handler for one key (`on:keydown.ArrowUp={…}`): the browser doesn't also do what that key
-	## would (an arrow key a game takes doesn't scroll the page).
+	## A handler given the key pressed and the modifier keys held (`on:keydown.keys={|keys| …}`):
+	## `if keys.mod and keys.key == "Enter" …`.
+	on_keys : Str, (Html.Keys => {}) -> Attr
+	on_keys = |event, handler| OnKeys(event, handler)
+
+	## A handler for one key (`on:keydown.ArrowUp={…}`), pressed with no modifier key held, or for a
+	## combination (`on:keydown.Shift+Enter`, `Mod+K`), pressed with exactly those held: Shift+Enter
+	## isn't Enter. `wanted` is the key's name, as the browser has it, after the modifier keys
+	## (`Shift`, `Ctrl`, `Alt`, `Meta`, and `Mod`: ⌘ on macOS, Ctrl elsewhere), joined by `+`. A
+	## letter is the same in either case, and is the key in its place on the keyboard when the
+	## layout types something else there (Alt+K on macOS types ˚). The browser doesn't also do what
+	## the key would (an arrow key a game takes doesn't scroll the page; ⌘K doesn't focus its search).
 	on_named_key : Str, Str, (() => {}) -> Attr
 	on_named_key = |event, wanted, handler| OnNamedKey(event, wanted, handler)
 
@@ -356,6 +373,7 @@ attributes! = |tag, attrs| {
 				OnValue(event, handler) => "[\"on\",${json_str(event)},${keep!(|| handled!(|| handler(Host.event_value!({}))))}]"
 				OnChecked(event, handler) => "[\"on\",${json_str(event)},${keep!(|| handled!(|| handler(Host.event_value!({}) == "true")))}]"
 				OnKey(event, handler) => "[\"onk\",${json_str(event)},${keep!(|| handled!(|| handler(Host.event_value!({}))))}]"
+				OnKeys(event, handler) => "[\"onk\",${json_str(event)},${keep!(|| handled!(|| handler(keys_of(Host.event_value!({})))))},\"keys\"]"
 				OnNamedKey(event, wanted, handler) => "[\"on\",${json_str(event)},${keep!(|| handled!(handler))},${json_str(wanted)}]"
 				OnPrevent(event, handler) => "[\"onp\",${json_str(event)},${keep!(|| handled!(handler))}]"
 				OnFrame(handler) => "[\"frame\",\"frame\",${keep!(|| handled!(|| handler(frame_ms(Host.event_value!({})))))}]"
@@ -450,6 +468,19 @@ void_elements = ["area", "base", "br", "col", "embed", "hr", "img", "input", "li
 ## Text as HTML: `<`, `>`, `&` and quotes as entities.
 escape : Str -> Str
 escape = |text| text.replace_each("&", "&amp;").replace_each("<", "&lt;").replace_each(">", "&gt;").replace_each("\"", "&quot;").replace_each("'", "&#39;")
+
+## A key press, as the runtime says it for `.keys`: whether Shift, Ctrl, Alt, Meta and Mod were held
+## (`1` or `0` each), then the key.
+keys_of : Str -> Html.Keys
+keys_of = |said| {
+	bytes = said.to_utf8()
+	held = |at|
+		match bytes.get(at) {
+			Ok(byte) => byte == '1'
+			Err(_) => Bool.False
+		}
+	{ key: Str.from_utf8_lossy(bytes.drop_first(5)), shift: held(0), ctrl: held(1), alt: held(2), meta: held(3), mod: held(4) }
+}
 
 ## A frame's milliseconds, from the whole microseconds the runtime sends (Roc reads an integer with
 ## far less code than a float), at most 100.
@@ -553,6 +584,8 @@ expect safe_value("iframe", "src", "DATA:image/svg+xml,x") == unsafe and safe_va
 expect [("img", "src"), ("link", "href"), ("source", "src"), ("video", "poster"), ("a", "href"), ("iframe", "src")].all(|(tag, name)| safe_value(tag, name, "data:text/html,<script>alert(1)</script>") == unsafe and safe_value(tag, name, "DATA:text/html;image/png,x") == unsafe and safe_value(tag, name, "data:,image/png") == unsafe)
 expect safe_value("img", "src", "javascript:alert(1)") == unsafe and safe_value("link", "href", "jav\nascript:alert(1)") == unsafe
 expect safe_css("12.5%") == "12.5%" and safe_css("red; background: url(x)") == ""
+expect keys_of("01001k") == { key: "k", shift: Bool.False, ctrl: Bool.True, alt: Bool.False, meta: Bool.False, mod: Bool.True }
+expect keys_of("10000Enter").shift and keys_of("10000Enter").key == "Enter" and keys_of("").key == ""
 expect frame_ms("16667") > 16.6 and frame_ms("16667") < 16.7 and frame_ms("500000") == 100.0
 expect Html.to_str(Html.join([Html.doctype({}), Html.element("p", [], [Html.text("Tom & 'Jerry' <b>"), Html.empty({})])])) == "<!doctype html><p>Tom &amp; &#39;Jerry&#39; &lt;b&gt;</p>"
 expect Html.to_str(Html.element("style", [], [Html.source_text("p > a { color: red }")])) == "<style>p > a { color: red }</style>"

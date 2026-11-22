@@ -102,7 +102,8 @@ Transpile := [].{
 	keywords_before_expression = ["else", "return", "crash", "expect", "dbg", "in"]
 
 	## A component's handlers: `on:event={handler!}` runs an effect; `on:event.value={…}` and the others
-	## give it what the event says; `on:event.prevent={…}` takes over what the browser would do.
+	## give it what the event says (`.keys`: the key and the modifier keys held); `on:event.prevent={…}`
+	## takes over what the browser would do.
 	handler_fn : Str -> [Some(Str), None]
 	handler_fn = |takes|
 		if takes == "" {
@@ -113,6 +114,8 @@ Transpile := [].{
 			Some("on_checked")
 		} else if takes == "key" {
 			Some("on_key")
+		} else if takes == "keys" {
+			Some("on_keys")
 		} else if takes == "prevent" {
 			Some("on_prevent")
 		} else {
@@ -1936,7 +1939,7 @@ Transpile := [].{
 			if !(Text.is_letter(first) or first == '_' or first == '@') {
 				return Err(Transpile.fail(cfg, "unexpected ${Transpile.json_unit(src, pos)} in <${tag}>", pos))
 			}
-			name_end = Text.run_end(src, pos + 1, |b| Transpile.is_alnum_under(b) or b == ':' or b == '.' or b == '-')
+			name_end = Text.run_end(src, pos + 1, |b| Transpile.is_alnum_under(b) or b == ':' or b == '.' or b == '-' or b == '+')
 			# A component's prop may be an effect, named as Roc names one: `title!={title!}`.
 			banged = component and Text.at(src, name_end) == '!'
 			name = if (banged) Text.cut(src, pos, name_end + 1) else Text.cut(src, pos, name_end)
@@ -1950,6 +1953,8 @@ Transpile := [].{
 			handler = !component and name.starts_with("on:")
 			if handler {
 				_ = Transpile.handler_name(cfg, name, name_start)?
+			} else if name.contains("+") {
+				return Err(oops("unexpected + in ${name}: a + joins the keys of a combination, as in on:keydown.Shift+Enter"))
 			}
 			# Inside a <NoHydration>, nothing is ever hydrated: what would only work in the browser is refused.
 			if $st.in_region > 0 and !component {
@@ -2110,7 +2115,8 @@ Transpile := [].{
 	## `on:input.value` → the event (`input`) and what its handler is given (`value`; "" for nothing).
 	## `on:frame.ms` is the runtime's own event, each animation frame; `on:keydown.ArrowUp` (a key's
 	## name: capitalised, or one letter or digit; `.Space` for the space bar) runs its handler for that
-	## key only.
+	## key only, with no modifier key held; `on:keydown.Shift+Enter`, with exactly those held (`Shift`,
+	## `Ctrl`, `Alt`, `Meta`, and `Mod`: ⌘ on macOS, Ctrl elsewhere), each once, before the key.
 	handler_name : Cfg, Str, U64 -> Try({ event : Str, takes : Str, key : [Some(Str), None] }, [Rocx(RocxError), Crash(Str)])
 	handler_name = |cfg, attr, name_start| {
 		bytes = attr.to_utf8()
@@ -2120,7 +2126,7 @@ Transpile := [].{
 				None
 			} else if event_end == bytes.len() {
 				Some({ event: Text.cut(bytes, 3, event_end), takes: "" })
-			} else if Text.at(bytes, event_end) == '.' and event_end + 1 < bytes.len() and Text.run_end(bytes, event_end + 1, Text.is_alnum) == bytes.len() {
+			} else if Text.at(bytes, event_end) == '.' and event_end + 1 < bytes.len() and Text.run_end(bytes, event_end + 1, |b| Text.is_alnum(b) or b == '+') == bytes.len() {
 				Some({ event: Text.cut(bytes, 3, event_end), takes: Text.cut(bytes, event_end + 1, bytes.len()) })
 			} else {
 				None
@@ -2133,16 +2139,26 @@ Transpile := [].{
 				} else if Transpile.handler_fn(takes) != None {
 					Ok({ event, takes, key: None })
 				} else {
-					t = takes.to_utf8()
-					named_key = (Text.is_upper(Text.at(t, 0)) and t.all(Text.is_alnum)) or (t.len() == 1 and (Text.is_lower(Text.at(t, 0)) or Text.is_digit(Text.at(t, 0))))
-					if named_key {
-						if event != "keydown" and event != "keyup" {
-							Err(Transpile.fail(cfg, "${attr}: a key's name goes with on:keydown or on:keyup", name_start))
-						} else {
-							Ok({ event, takes, key: Some(if (takes == "Space") " " else takes) })
-						}
+					# A key's name, after the modifier keys held with it: `Mod+Shift+K`.
+					parts = takes.split_on("+")
+					held = parts.take_first(parts.len() - 1)
+					key = parts.get(parts.len() - 1) ?? ""
+					t = key.to_utf8()
+					named_key = !t.is_empty() and ((Text.is_upper(Text.at(t, 0)) and t.all(Text.is_alnum)) or (t.len() == 1 and (Text.is_lower(Text.at(t, 0)) or Text.is_digit(Text.at(t, 0)))))
+					modifiers = ["Shift", "Ctrl", "Alt", "Meta", "Mod"]
+					unknown = held.keep_if(|name| !modifiers.contains(name))
+					if !named_key {
+						Err(Transpile.fail(cfg, "${attr}: a handler takes .value, .checked, .key or .keys, a key's name (.Enter, .ArrowUp, .w) after any modifier keys (.Shift+Enter, .Mod+K), or .prevent, not .${takes}", name_start))
+					} else if event != "keydown" and event != "keyup" {
+						Err(Transpile.fail(cfg, "${attr}: a key's name goes with on:keydown or on:keyup", name_start))
+					} else if !unknown.is_empty() {
+						Err(Transpile.fail(cfg, "${attr}: ${Str.join_with(unknown, ", ")} isn't a modifier key: the keys held are Shift, Ctrl, Alt, Meta and Mod (⌘ on macOS, Ctrl elsewhere), before the key", name_start))
+					} else if held.any(|name| held.count_if(|other| other == name) > 1) {
+						Err(Transpile.fail(cfg, "${attr}: each modifier key goes in once", name_start))
+					} else if held.contains("Mod") and (held.contains("Ctrl") or held.contains("Meta")) {
+						Err(Transpile.fail(cfg, "${attr}: Mod is ⌘ on macOS and Ctrl elsewhere, so it goes with Shift and Alt, not Ctrl or Meta", name_start))
 					} else {
-						Err(Transpile.fail(cfg, "${attr}: a handler takes .value, .checked or .key, a key's name (.Enter, .ArrowUp, .w), or .prevent, not .${takes}", name_start))
+						Ok({ event, takes, key: Some(Str.join_with(held.append(if (key == "Space") " " else key), "+")) })
 					}
 				}
 		}

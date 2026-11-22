@@ -234,6 +234,11 @@ view! = |_|
 				the event says, if it asks: <code>on:input.value</code> the field's value, <code>on:change.checked</code>
 				whether it is ticked, <code>on:keydown.key</code> the key; <code>on:keydown.Escape</code> runs for that
 				key only, and <code>on:frame.ms</code> every animation frame, with the time since the last.
+				A key's name may follow the modifier keys held with it: <code>on:keydown.Shift+Enter</code>,
+				<code>on:keydown.Ctrl+Alt+Delete</code>, and <code>on:keydown.Mod+K</code>, where <code>Mod</code> is ⌘ on
+				macOS and Ctrl elsewhere. It runs with exactly those held (Shift+Enter isn't Enter), and the browser
+				doesn't also do what they would. <code>on:keydown.keys</code> gives the handler the key and the
+				modifier keys held, a record: <code>{"if keys.mod and keys.key == \"s\" { save!() }"}</code>.
 				<code>on:click.prevent</code> takes over what the browser would do: a link's click goes where the
 				handler says, not to its <code>href</code>. What a handler writes is applied when it is done, and what
 				reads it runs again then, once.

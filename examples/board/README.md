@@ -165,10 +165,11 @@ What the app met, and how it works around each:
   `pf.Actor` through Guard), and `rocx build` warned that the browser's build couldn't compile it.
   Workaround: the comment says "its middleware". (Fixed in rocx since: what a comment or a string
   says doesn't keep an import in the browser's copy.)
-- **Key handlers see only `event.key`, no modifier keys,** so there is no Alt+↑ to move a card from
-  the keyboard. Workaround: an open card has Up, Down and "To the end of" buttons, which are forms, so
-  they work without JavaScript, by keyboard and on touch screens (which start no drag in many mobile
-  browsers).
+- **Key handlers saw only `event.key`, no modifier keys,** so there was no Alt+↑ to move a card from
+  the keyboard. An open card has Up, Down and "To the end of" buttons, which are forms, so they work
+  without JavaScript, by keyboard and on touch screens (which start no drag in many mobile browsers).
+  (Fixed in the platform since: `on:keydown.Alt+ArrowUp` runs with exactly Alt held, so the open
+  card takes Alt+↑ and Alt+↓ too.)
 - **No client-side navigation.** Opening a card in place doesn't change the address, and Back
   doesn't close it. Workaround: a card's link is `?card=12`, which a click opens in place
   (`on:click.prevent`) and a new tab, a shared link or a browser without JavaScript open as a page.

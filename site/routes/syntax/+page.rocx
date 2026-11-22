@@ -173,8 +173,10 @@ view! = |_|
 				neither can't change, and is written once. And
 				<code>on:click={"{…}"}</code> is a handler, an effect, run when the event
 				reaches the element (<code>on:drop</code> and the rest of <a href={"${Paths.components}#drag"}>drag and drop</a> among them).
-				<code>.value</code>, <code>.checked</code> and <code>.key</code> give it what the event says; a key's
-				name (<code>on:keydown.Escape</code>) runs it for that key only; <code>.prevent</code> prevents the
+				<code>.value</code>, <code>.checked</code> and <code>.key</code> give it what the event says
+				(<code>.keys</code>, the key and the modifier keys held); a key's name (<code>on:keydown.Escape</code>)
+				runs it for that key only, and a combination (<code>on:keydown.Shift+Enter</code>,
+				<code>on:keydown.Mod+K</code>) for that key with exactly those modifier keys held; <code>.prevent</code> prevents the
 				event's default first (<code>on:click.prevent</code>: a link the page takes over). Handlers are
 				Roc functions, so the server renders nothing for them, and markup inside a
 				<code>{"<NoHydration>"}</code>, which the browser never hydrates, can't have one: rocx refuses it,

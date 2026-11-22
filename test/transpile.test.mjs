@@ -149,7 +149,16 @@ test("on: a component's handlers are effects, given what the event says", () => 
 	assert.match(refused(`x = <b on:click />`), /on:click needs \{a handler\}/);
 	assert.match(refused(`x = <b on:click?={a} />`), /takes \{a handler\}/);
 	assert.match(refused(`x = <b on:Click={a} />`), /write on:event=\{a handler\}/);
-	assert.match(refused(`x = <b on:input.files={a} />`), /takes .value, .checked or .key, a key's name \(.Enter, .ArrowUp, .w\), or .prevent, not .files/);
+	assert.match(refused(`x = <b on:input.files={a} />`), /takes .value, .checked, .key or .keys, a key's name \(.Enter, .ArrowUp, .w\) after any modifier keys \(.Shift\+Enter, .Mod\+K\), or .prevent, not .files/);
+	// Key combinations: the modifier keys held, each once, then the key; `.keys` gives them all.
+	assert.equal(component(`x = <input on:keydown.Shift+Enter={send!} on:keydown.Mod+K={open!} on:keydown.Ctrl+Alt+Delete={reset!} on:keyup.Mod+Space={go!} />`), `x = Html.void("input", [Html.on_named_key("keydown", "Shift+Enter", send!), Html.on_named_key("keydown", "Mod+K", open!), Html.on_named_key("keydown", "Ctrl+Alt+Delete", reset!), Html.on_named_key("keyup", "Mod+ ", go!),])`);
+	assert.equal(component(`x = <input on:keydown.keys={pressed!} />`), `x = Html.void("input", [Html.on_keys("keydown", pressed!),])`);
+	assert.match(refused(`x = <input on:keydown.Hyper+K={a} />`), /Hyper isn't a modifier key: the keys held are Shift, Ctrl, Alt, Meta and Mod/);
+	assert.match(refused(`x = <input on:keydown.Shift+Shift+K={a} />`), /each modifier key goes in once/);
+	assert.match(refused(`x = <input on:keydown.Mod+Ctrl+K={a} />`), /Mod is ⌘ on macOS and Ctrl elsewhere/);
+	assert.match(refused(`x = <input on:keydown.Shift+={a} />`), /not .Shift\+/);
+	assert.match(refused(`x = <input on:click.Shift+Enter={a} />`), /a key's name goes with on:keydown or on:keyup/);
+	assert.match(refused(`x = <input data-a+b="c" />`), /unexpected \+ in data-a\+b: a \+ joins the keys of a combination/);
 	// Drag and drop are events as any other; `.prevent` takes over what the browser would do.
 	assert.equal(component(`x = <li draggable="true" on:dragstart={start!} on:dragend={stop!}>a</li>`), `x = Html.element("li", [Html.attr("draggable", "true"), Html.on("dragstart", start!), Html.on("dragend", stop!),], [Html.text("a"),])`);
 	assert.equal(component(`x = <ul on:dragenter={over!} on:dragleave={out!} on:drop={|| put!(day)} on:drop.value={dropped!} />`), `x = Html.element("ul", [Html.on("dragenter", over!), Html.on("dragleave", out!), Html.on("drop", || put!(day)), Html.on_value("drop", dropped!),], [])`);

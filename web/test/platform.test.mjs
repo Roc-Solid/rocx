@@ -50,6 +50,7 @@ if (!skip) {
 		["nested", join(here, "app", "nested_app.roc"), "dev"],
 		["timers", join(here, "app", "timers_app.roc"), "dev"],
 		["props", join(here, "app", "props_app.roc"), "dev"],
+		["shortcuts", join(here, "app", "shortcuts_app.roc"), "dev"],
 		["fades", join(here, "app", "fades_app.roc"), "dev"],
 		["echo-server", join(here, "app", "echo_app.roc"), "dev"],
 		["echo", join(out, "app-client", "echo_app.roc"), "size"],
@@ -444,6 +445,69 @@ window.hydrated = true;
 		assert.deepEqual(tab.console, []);
 	} finally {
 		await site.close();
+	}
+});
+
+test("keys: a key's handler runs for that key with no modifier key held, a combination's with exactly its keys held (Mod is ⌘ on macOS, Ctrl elsewhere; a letter in its place when the layout types another), each preventing the default; .keys gives the key and the modifier keys held", { skip }, async () => {
+	const wasm = readFileSync(join(out, "shortcuts.wasm"));
+	const server = await Runtime.load(wasm);
+	const { html } = server.renderToString({ path: "/" });
+	assert.match(html, /<input class="field">/, "the server writes nothing for handlers");
+	const dir = mkdtempSync(join(tmpdir(), "rocx-shortcuts-"));
+	cpSync(join(web, "runtime.js"), join(dir, "runtime.js"));
+	writeFileSync(join(dir, "shortcuts.wasm"), wasm);
+	const page = `<!doctype html><html><body><div id="app">${html}</div>
+<script type="module">
+import { Runtime } from "/runtime.js";
+window.runtime = await Runtime.load(fetch("/shortcuts.wasm"));
+window.runtime.hydrate(document.getElementById("app"));
+window.hydrated = true;
+</script></body></html>`;
+	const site = await serve(dir, (path) => (path === "/" ? page : null));
+	try {
+		const tab = await browser.page();
+		await tab.goto(`${site.url}/`);
+		await tab.wait("window.hydrated === true", 3000);
+		assert.deepEqual(tab.console, [], "hydrated without a mismatch");
+		// A real key, through the browser's input pipeline, with modifier keys held (CDP's bits).
+		const bits = { Alt: 1, Ctrl: 2, Meta: 4, Shift: 8 };
+		const mac = await tab.eval("/mac|iphone|ipad|ipod/i.test(navigator.userAgentData?.platform ?? navigator.platform ?? '')");
+		const press = async (key, held = [], code = key.length === 1 ? `Key${key.toUpperCase()}` : key) => {
+			const modifiers = held.reduce((sum, name) => sum | bits[name === "Mod" ? (mac ? "Meta" : "Ctrl") : name], 0);
+			await tab.send("Input.dispatchKeyEvent", { type: "rawKeyDown", key, code, modifiers });
+			await tab.send("Input.dispatchKeyEvent", { type: "keyUp", key, code, modifiers });
+		};
+		const said = () => tab.eval("document.querySelector('.said').textContent");
+		await tab.eval("document.querySelector('.field').focus()");
+		await press("Enter");
+		await press("Enter", ["Shift"]);
+		await press("Enter", ["Alt"]);
+		await tab.wait("document.querySelector('.said').textContent.includes('Shift+Enter')");
+		assert.equal(await said(), "Enter, Shift+Enter", "Shift+Enter isn't Enter, and Alt+Enter is neither");
+		await press("k", ["Mod"]);
+		await press("k", [mac ? "Ctrl" : "Meta"]);
+		await press("K", ["Mod", "Shift"]);
+		// Alt+K on macOS types ˚: the key in K's place is K.
+		await press("˚", ["Alt"], "KeyK");
+		await press("Delete", ["Ctrl", "Alt"]);
+		await press("Delete", ["Ctrl", "Alt", "Shift"]);
+		await tab.wait("document.querySelector('.said').textContent.endsWith('Ctrl+Alt+Delete')");
+		assert.equal(await said(), "Enter, Shift+Enter, Mod+K, Alt+K, Ctrl+Alt+Delete", "each with exactly its modifier keys");
+		// What a combination's handler takes, the browser doesn't also do; another key it does.
+		const dispatched = (init) => tab.eval(`document.querySelector('.field').dispatchEvent(new KeyboardEvent("keydown", { cancelable: true, bubbles: true, ...${JSON.stringify(init)} }))`);
+		assert.equal(await dispatched({ key: "Enter", shiftKey: true }), false, "Shift+Enter's default prevented");
+		assert.equal(await dispatched({ key: "Enter", ctrlKey: true }), true, "Ctrl+Enter's isn't: no handler takes it");
+		// `.keys`: the key, and the modifier keys held, Mod among them.
+		await press("K", ["Shift", "Mod"]);
+		await tab.wait("document.querySelector('.last').textContent.startsWith('K ')");
+		assert.equal(await tab.eval("document.querySelector('.last').textContent"), mac ? "K shift meta mod" : "K shift ctrl mod");
+		await press("Escape");
+		await tab.wait("document.querySelector('.last').textContent === 'Escape'");
+		assert.deepEqual(tab.errors, []);
+		assert.deepEqual(tab.console, []);
+	} finally {
+		await site.close();
+		rmSync(dir, { recursive: true, force: true });
 	}
 });
 

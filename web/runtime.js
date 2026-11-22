@@ -346,6 +346,38 @@ const DRAG_EVENTS = new Set(["dragstart", "dragenter", "dragleave", "drop"]);
  * only a copy or a link is allowed. */
 const dropEffect = (allowed) => (/move|all|uninitialized/i.test(allowed ?? "all") ? "move" : /copy/i.test(allowed) ? "copy" : /link/i.test(allowed) ? "link" : "none");
 
+/** Whether Mod is ⌘ (macOS, iOS) or Ctrl (elsewhere), in key combinations (`on:keydown.Mod+K`). */
+const MAC = typeof navigator !== "undefined" && /mac|iphone|ipad|ipod/i.test(navigator.userAgentData?.platform ?? navigator.platform ?? "");
+
+/** The modifier keys, by their names in a combination, and the flag each sets on a key event; a
+ * modifier key's own name as `event.key` has it (its own flag is ignored, as it is that key). */
+const MODIFIERS = { Shift: ["shiftKey", "Shift"], Ctrl: ["ctrlKey", "Control"], Alt: ["altKey", "Alt"], Meta: ["metaKey", "Meta"] };
+
+/**
+ * What a key handler is for (`on:keydown.Enter`, `on:keydown.Shift+Enter`, `Mod+K`): a test of a key
+ * event, true when that key is pressed with exactly those modifier keys held, so Shift+Enter isn't
+ * Enter. Mod is ⌘ on macOS, Ctrl elsewhere. A letter or digit is the same in either case; when the
+ * layout types something else there (Alt+K on macOS types ˚; a Cyrillic layout, л), it is the key in
+ * its place (`event.code`). Nothing while an input method composes (an Enter that picks a word).
+ */
+function keyCombo(wanted) {
+	const parts = wanted.split("+");
+	const key = parts.pop();
+	const held = new Set(parts.map((name) => (name === "Mod" ? (MAC ? "Meta" : "Ctrl") : name)));
+	const single = /^[a-z0-9]$/i.test(key) ? key.toLowerCase() : null;
+	const code = single && (/[0-9]/.test(single) ? `Digit${single}` : `Key${single.toUpperCase()}`);
+	return (event) => {
+		if (event.isComposing) return false;
+		const pressed = event.key ?? "";
+		if (single ? (/^[a-z0-9]$/i.test(pressed) ? pressed.toLowerCase() !== single : event.code !== code) : pressed !== key) return false;
+		return Object.entries(MODIFIERS).every(([name, [flag, own]]) => key === own || Boolean(event[flag]) === held.has(name));
+	};
+}
+
+/** A key event as `.keys` gives it to Roc: whether Shift, Ctrl, Alt, Meta and Mod were held (`1`
+ * or `0` each), then the key. */
+const keysOf = (event) => [event.shiftKey, event.ctrlKey, event.altKey, event.metaKey, MAC ? event.metaKey : event.ctrlKey].map((on) => (on ? "1" : "0")).join("") + (event.key ?? "");
+
 /** A CSS property as `element.animate` names it: `transform-origin` is `transformOrigin`. */
 const camel = (property) => property.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
 
@@ -2745,11 +2777,14 @@ export class Runtime {
 				const computed = { vo: "attr", fo: "flag", co: "class", oo: "optional", so: "style" }[kind];
 				this.run(new Computation(this, { kind: computed, runner: this.kept.get(value), owner, scope, target: element, name }));
 			} else if (kind === "on" || kind === "onp") {
+				// A handler for one key, or a combination (`on:keydown.ArrowUp`, `on:keydown.Mod+K`): that
+				// key only, with those modifier keys held and no others.
+				const pressed = wanted === undefined ? null : keyCombo(wanted);
 				// By the box's id: when its owner runs again the box is released, and the element replaced.
 				const handler = (event) => {
-					// A handler for one key (`on:keydown.ArrowUp`): that key only, and the browser doesn't
-					// also do what it would (an arrow key a game takes doesn't scroll the page).
-					if (wanted !== undefined && event.key !== wanted) return;
+					// That key only, and the browser doesn't also do what it would (an arrow key a game
+					// takes doesn't scroll the page).
+					if (pressed && !pressed(event)) return;
 					// `.prevent`: what the browser would do (follow a link) is the handler's to do.
 					if (kind === "onp" || name === "submit" || wanted !== undefined) event.preventDefault();
 					const target = event.target;
@@ -2763,9 +2798,10 @@ export class Runtime {
 			} else if (kind === "k") this.keys.set(element, name);
 			else if (kind === "ko") this.run(new Computation(this, { kind: "key", runner: this.kept.get(name), owner, scope, target: element }));
 			else if (kind === "onk") {
-				// A handler given the key (`on:keydown.key`).
+				// A handler given the key (`on:keydown.key`), or the key and the modifier keys held
+				// (`on:keydown.keys`).
 				element.addEventListener(name, (event) => {
-					if (this.kept.has(value)) this.handle(value, event.key ?? "", scope, { owner });
+					if (this.kept.has(value)) this.handle(value, wanted === "keys" ? keysOf(event) : (event.key ?? ""), scope, { owner });
 				});
 			} else if (kind === "tr") this.setTransition(element, name, value);
 			else if (kind === "tro") this.run(new Computation(this, { kind: "transition", runner: this.kept.get(value), owner, scope, target: element, name }));

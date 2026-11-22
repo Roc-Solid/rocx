@@ -229,8 +229,9 @@ In a component only:
 | `on_settled!(\|\| …)` | once, in the browser, once the component is on the page (Solid 2.0's `onSettled`, `onMount` before it); never on the server |
 | `stop! = set_interval!(1000, \|\| set_seconds!(seconds!() + 1))` | the browser's timer, run as a handler; `set_timeout!(ms, done!)` runs once. Each answers its `clear!`, and stops with the cleanups of what started it (its component going, its effect's next apply) |
 | `<button on:click={\|\| set_count!(1)}>` | a handler: an effect, run when the event reaches the element |
-| `<input on:input.value={set_draft!}>` | the handler is given the value (`Str => {}`); `.checked` whether it is ticked, `.key` the key's name |
-| `<div on:keydown.ArrowUp={up!}>` | for that key only (`.Space`, `.w`), keeping it from scrolling the page |
+| `<input on:input.value={set_draft!}>` | the handler is given the value (`Str => {}`); `.checked` whether it is ticked, `.key` the key's name, `.keys` the key and the modifier keys held (`Html.Keys`: `key`, `shift`, `ctrl`, `alt`, `meta`, `mod`) |
+| `<div on:keydown.ArrowUp={up!}>` | for that key only (`.Space`, `.w`), with no modifier key held, keeping it from scrolling the page |
+| `<input on:keydown.Shift+Enter={send!}>` | for that key with exactly those modifier keys held (`Shift`, `Ctrl`, `Alt`, `Meta`, and `Mod`: ⌘ on macOS, Ctrl elsewhere): `Mod+K`, `Ctrl+Alt+Delete`; Shift+Enter isn't Enter |
 | `<a href="/next" on:click.prevent={go!}>` | the event's default prevented before the handler runs (a link's click taken over) |
 | `<li draggable="true" on:dragstart={…}>`, `<ul on:drop={…}>` | drag and drop, the browser's: an element with a drop handler takes drops (`on:drop.value`: the text dropped), and its `on:dragenter` and `on:dragleave` run as the drag comes over it and leaves it, not once per child |
 | `<i on:frame.ms={tick!}>` | every animation frame while the element is on the page, given the milliseconds since the last (`F64 => {}`) |
