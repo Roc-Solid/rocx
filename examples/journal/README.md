@@ -135,10 +135,11 @@ and start the server on a free port. They don't use `DATABASE_URL`.
 
 ## What it asked of the platform
 
-Every gap met, and what the journal does about it. Three were fixed in the platform while it was
+Every gap met, and what the journal does about it. Four were fixed in the platform while it was
 built: a route's directory may now name a file (`routes/sitemap.xml/`); packages/markdown parses
-footnotes; and packages/testing's `click()` scrolls instantly, so it no longer misses on a page with
-`scroll-behavior: smooth`. These are still open:
+footnotes; packages/testing's `click()` scrolls instantly, so it no longer misses on a page with
+`scroll-behavior: smooth`; and a `<For>` or `<Show>` may sit in a function child (the reactions'
+`<For>` is in their `<Show>`'s child). These are still open:
 
 1. **Collections aren't found by `rocx build`** (packages/markdown's PROPOSALS.md). Each post is
    imported as text and listed in `Posts.files`.
@@ -155,21 +156,18 @@ footnotes; and packages/testing's `click()` scrolls instantly, so it no longer m
    `buildForTests` throws. Every page reads its params outside it too, in its `<Title>` or an
    island's props. `<Title>` and `<HttpStatusCode>` work from inside `<NoHydration>`, which is how a
    post's title and a missing post's 404 are set.
-5. **`<Show>`'s function child must be pure**, so a `<For>` inside it doesn't compile (the same rule
-   as a `<For>` in a `<For>` row). The reactions use `<Show when!={shown!().is_ok()}>` with plain
-   children, and an accessor `tally!` that falls back to `Reaction.none`.
-6. **`<HttpStatusCode>` is effectful**, so a component that sets the status is a `view!`
+5. **`<HttpStatusCode>` is effectful**, so a component that sets the status is a `view!`
    (`Ui/NotFound.rocx`). Pure callers still write `<NotFound … />`, and rocx wraps it.
-7. **guard's CSP refuses the OpenAPI page**, which loads Scalar from jsDelivr. `Middlewares.security`
+6. **guard's CSP refuses the OpenAPI page**, which loads Scalar from jsDelivr. `Middlewares.security`
    leaves `/openapi.html` out, and every other answer has the headers.
-8. **`node --test examples/journal/test/` fails on Node 24**: a directory is taken as a module
+7. **`node --test examples/journal/test/` fails on Node 24**: a directory is taken as a module
    ("Cannot find module"). Use the glob, `node --test 'examples/journal/test/*.test.mjs'`.
-9. **The OpenAPI document gives the reactions' `POST` a JSON body only**, though the endpoint takes
+8. **The OpenAPI document gives the reactions' `POST` a JSON body only**, though the endpoint takes
    the same fields as a form, which is what the no-JavaScript buttons send (server/README.md, "Not
    yet").
-10. **The browser's copy of `Api` has no types** (known, D-030). The search's `posts` and the
+9. **The browser's copy of `Api` has no types** (known, D-030). The search's `posts` and the
     reactions' `toggles : Submissions(Reaction.Toggle, Reaction.Tally)` are annotated.
-11. **The Roc gotchas met:**
+10. **The Roc gotchas met:**
     - `{ lang }` alone is a block, not a record (`Paths.lang({ lang: lang })`).
     - A parameter can't share a name with a member of its type's block (hence `Rules.of_title`, …).
     - `join_with` is `Str.join_with(list, sep)`, not a method of a list.

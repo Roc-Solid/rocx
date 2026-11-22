@@ -19,10 +19,6 @@ Reaction := [].{
 	## this reader has given.
 	Tally : { counts : List({ kind : Str, count : I64 }), mine : List(Str) }
 
-	## No counts at all (what the island shows until the server's are in).
-	none : Reaction.Tally
-	none = { counts: [], mine: [] }
-
 	## What a reader sends: a kind, and whether it is to be given (`"true"`) or taken back
 	## (`"false"`). Text, not a `Bool`, so a plain form posts the same fields when there is no
 	## JavaScript.

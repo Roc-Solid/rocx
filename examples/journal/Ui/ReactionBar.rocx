@@ -37,14 +37,11 @@ ReactionBar := [].{
 				server.map_ok(|tally| pending.fold(tally, Reaction.apply))
 			},
 		)
-		# What is shown, once the server's counts are in (a post that isn't there has none: nothing shows).
-		tally! = ||
-			match shown!() {
-				Ok(tally) => tally
-				Err(_) => Reaction.none
-			}
-		<Show when!={shown!().is_ok()}>
-			<section class="reactions" aria-labelledby="reactions-title">
+		# Shown once the server's counts are in: a post that isn't there has none, and nothing shows.
+		# The child gets an accessor of the counts (`tally!`), and holds a <For> of its own.
+		<Show when!={shown!()}>
+			{|tally!|
+				<section class="reactions" aria-labelledby="reactions-title">
 					<h2 class="title" id="reactions-title">{intl.t("react.lead", [])}</h2>
 					<ul class="kinds" aria-label={intl.t("react.label", [])}>
 						<For each!={Reaction.kinds} keyed={|kind| kind.id}>
@@ -78,6 +75,7 @@ ReactionBar := [].{
 						}
 					</For>
 				</section>
+			}
 		</Show>
 	}
 
