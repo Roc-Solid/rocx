@@ -1,7 +1,7 @@
 import email.Email
+import pf.Env
 import pf.Html
 import Days
-import Origin
 import Store
 import Ui/AlertMail
 
@@ -28,7 +28,7 @@ Alerts := [].{
 	send! = |{ incident, kind, subscriber }|
 		match (Store.incident!(incident), Store.subscriber!(subscriber)) {
 			(Ok(found), Ok(who)) => {
-				origin = Origin.self!({}) ?? "http://localhost:18130"
+				origin = Env.public_url!({})
 				said = found.updates.first().map_ok(|update| update.body) ?? found.incident.title
 				message = Alerts.mail({ kind: if (kind == "closed") Closed else Opened, incident: found.incident, said, origin, to: who.email, token: who.token })
 				Email.send!(message).map_err(|EmailErr(why)| why)

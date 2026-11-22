@@ -18,7 +18,7 @@ use hyper_util::rt::TokioIo;
 use hyper_util::server::graceful::GracefulShutdown;
 use std::collections::HashSet;
 use std::convert::Infallible;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -52,6 +52,9 @@ pub struct Config {
     pub actor_idle_ms: u64,
     /// The most the key-value store (`Kv`) keeps, in MiB, before the least recently used goes.
     pub kv_max_mb: u64,
+    /// Where the app is, as the world reaches it (`--public-url`, `PUBLIC_URL`): `Env.public_url!`.
+    /// Without it, where the server listens.
+    pub public_url: Option<String>,
     /// Pages reload when the server restarts (after a rebuild); crashes show their message; plugins'
     /// early paths under it answer (the dev mailbox at `GET /__rocx/mail`: packages/email).
     pub dev: bool,
@@ -72,6 +75,7 @@ pub const USAGE: &str = "usage: <app> [options]
   --database-url URL                   Postgres (DATABASE_URL): Db, migrations, actors, plugins' tables
   --actor-idle-ms 900000               an actor idle this long is let go (0: never; kept in Postgres)
   --kv-max-mb 64                       the key-value store's limit (KV_MAX_MB): the least recently used goes past it
+  --public-url https://app.example     where the app is, for links it sends (PUBLIC_URL; else where it listens)
   --dev                                reload pages on restart, show crashes, plugins' dev pages (/__rocx/mail)
   --debug                              GET /__rocx/allocations, and plugins' debug paths
   --live-beat-ms 15000                 how often a channel stream beats, and its checks run again
@@ -88,6 +92,7 @@ impl Config {
         let mut database_url = env("DATABASE_URL");
         let mut actor_idle_ms = 15 * 60 * 1000;
         let mut kv_max_mb = env("KV_MAX_MB").and_then(|text| text.parse().ok()).unwrap_or(64);
+        let mut public_url = env("PUBLIC_URL");
         let mut dev = false;
         let mut debug = false;
         let mut live_beat_ms: u64 = 15_000;
@@ -117,6 +122,7 @@ impl Config {
                 "--actor-idle-ms" => actor_idle_ms = value()?.parse().map_err(|_| "--actor-idle-ms needs a number".to_string())?,
                 "--smtp-url" | "--mail-from" => return Err(format!("{arg} is gone: email is a plugin (packages/email, D-035), which reads SMTP_URL and MAIL_FROM from the environment (or its options say)")),
                 "--kv-max-mb" => kv_max_mb = value()?.parse().map_err(|_| "--kv-max-mb needs a number".to_string())?,
+                "--public-url" => public_url = Some(value()?),
                 "--dev" => dev = true,
                 "--debug" => debug = true,
                 "--live-beat-ms" => live_beat_ms = value()?.parse().ok().filter(|ms| *ms > 0).ok_or("--live-beat-ms needs a number above 0")?,
@@ -128,8 +134,31 @@ impl Config {
         }
         let address = format!("{host}:{port}").parse().map_err(|error| format!("{host}:{port}: {error}"))?;
         let live_beat = Duration::from_millis(live_beat_ms);
-        Ok(Config { address, statics, files, context, database_url, actor_idle_ms, kv_max_mb, dev, debug, live_beat, roc_threads })
+        let public_url = public_url.map(|url| public(&url)).transpose()?;
+        Ok(Config { address, statics, files, context, database_url, actor_idle_ms, kv_max_mb, public_url, dev, debug, live_beat, roc_threads })
     }
+}
+
+/// A public URL as given (`--public-url`, `PUBLIC_URL`): an http(s) URL, without the `/` at its end.
+fn public(url: &str) -> Result<String, String> {
+    let trimmed = url.trim().trim_end_matches('/');
+    let host = trimmed.strip_prefix("https://").or_else(|| trimmed.strip_prefix("http://"));
+    match host {
+        Some(host) if !host.is_empty() && !host.contains(char::is_whitespace) => Ok(trimmed.to_string()),
+        _ => Err(format!("--public-url (PUBLIC_URL) needs an http:// or https:// URL, not {url:?}")),
+    }
+}
+
+/// Where the server listens, as a URL (`http://127.0.0.1:8080`): its own address, the port it was
+/// given (the system's, for `--port 0`); an address that is every one of the machine's is this
+/// machine's loopback, the one it can surely be reached at.
+pub fn listening_url(address: SocketAddr) -> String {
+    let ip = match address.ip() {
+        IpAddr::V4(ip) if ip.is_unspecified() => IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+        IpAddr::V6(ip) if ip.is_unspecified() => IpAddr::V6(std::net::Ipv6Addr::LOCALHOST),
+        ip => ip,
+    };
+    format!("http://{}", SocketAddr::new(ip, address.port()))
 }
 
 /// The address the server listens on, taken before anything else starts: a port in use stops the

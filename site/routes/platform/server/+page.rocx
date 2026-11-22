@@ -217,7 +217,7 @@ view! = |_|
 			<Heading id="running">Running it</Heading>
 			<Code
 				title="The app's executable"
-				source={"<app> --port 8080 --host 127.0.0.1        where to listen (PORT)\n      --static DIR, --file /PATH=FILE     files served as they are\n      --context-file FILE                 what respond! is given besides each request\n      --database-url URL                  Postgres (DATABASE_URL): Db, migrations, actors, plugins' tables\n      --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in Postgres)\n      --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it\n      --dev                               reload pages on restart, show crashes, plugins' dev pages\n      --debug                             GET /__rocx/allocations, and plugins' debug paths\n      --live-beat-ms 15000                how often a channel stream beats, and its checks run again\n      --roc-threads N                     the threads Roc runs on (ROCX_ROC_THREADS; one a core)"}
+				source={"<app> --port 8080 --host 127.0.0.1        where to listen (PORT)\n      --static DIR, --file /PATH=FILE     files served as they are\n      --context-file FILE                 what respond! is given besides each request\n      --database-url URL                  Postgres (DATABASE_URL): Db, migrations, actors, plugins' tables\n      --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in Postgres)\n      --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it\n      --public-url https://app.example    where the app is, for links it sends (PUBLIC_URL; else where it listens)\n      --dev                               reload pages on restart, show crashes, plugins' dev pages\n      --debug                             GET /__rocx/allocations, and plugins' debug paths\n      --live-beat-ms 15000                how often a channel stream beats, and its checks run again\n      --roc-threads N                     the threads Roc runs on (ROCX_ROC_THREADS; one a core)"}
 				numbers={Bool.False}
 				plain={Bool.True}
 			/>
@@ -262,7 +262,8 @@ view! = |_|
 				<code>node server/build.mjs app.roc out/app --target=arm64musl</code> (or <code>x64musl</code>)
 				cross-compiles a static Linux executable from macOS: Rust's own musl target supplies the C library and
 				the unwinder, and Zig compiles the host's C. Its migrations are in it; copy it into a container with
-				the app's static files, give it a <code>DATABASE_URL</code>, and put a proxy in front for TLS. The platform's test
+				the app's static files, give it a <code>DATABASE_URL</code>, and put a proxy in front for TLS, telling
+				the app where that is with <code>PUBLIC_URL</code> (<code>Env.public_url!</code>, for the links it sends). The platform's test
 				app, built that way, runs every one of its tests in a container against <code>just db</code>'s
 				Postgres.
 			</p>

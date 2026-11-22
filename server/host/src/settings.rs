@@ -1,6 +1,7 @@
 //! What the server was started with, for Roc (`Host.setting!`): `database` ("yes" with one),
 //! `dev` ("yes" with `--dev`:
-//! `Env.dev!`), `debug` ("yes" with `--debug`).
+//! `Env.dev!`), `debug` ("yes" with `--debug`), `public_url` (`--public-url`, or where it listens:
+//! `Env.public_url!`).
 //! The platform's Roc reads them; the host only keeps them.
 
 use std::collections::HashMap;

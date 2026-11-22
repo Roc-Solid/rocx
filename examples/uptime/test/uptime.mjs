@@ -64,8 +64,8 @@ export async function fakeTarget() {
 /**
  * The app on a database of its own (`testDatabase`, at `DATABASE_URL`), started with the admin
  * password and its metrics sent to `target` every second. The seeded example.com monitor is paused
- * at once (its first check is a minute after the first start), so no test asks the internet, and a
- * first page teaches the app its own address (Origin.roc), which its checks of itself need.
+ * at once (its first check is a minute after the first start), so no test asks the internet. The
+ * app's checks of itself ask where the server says it listens (`Env.public_url!`).
  * `{ app, db, stop() }`.
  */
 export async function start(built, target) {
@@ -76,7 +76,6 @@ export async function start(built, target) {
 		env: { ADMIN_PASSWORD: password, OTEL_EXPORTER_OTLP_ENDPOINT: target.url, OTEL_METRIC_EXPORT_INTERVAL: "1000", OTEL_SERVICE_NAME: "acme-status" },
 	});
 	await db.sql`update monitors set paused = true where url like 'https://%'`;
-	await app.client().get("/");
 	return {
 		app,
 		db,

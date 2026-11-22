@@ -28,7 +28,8 @@ Host := [].{
 	now_nanos! : {} => U64
 
 	## A setting the server was started with: `database` ("yes" with one), `dev` ("yes" with
-	## `--dev`), `debug` ("yes" with `--debug`). Empty when it wasn't given.
+	## `--dev`), `debug` ("yes" with `--debug`), `public_url` (`--public-url`, or else where it
+	## listens). Empty when it wasn't given.
 	setting! : Str => Str
 
 	## Whether the server is stopping: a background loop's cue to end.

@@ -50,9 +50,14 @@ Samples := [].{
 
 	# ---- Settings: Env ----
 
-	## Where the app is: its environment's `ORIGIN`, or a dev server's.
+	## Where the app is, for a link in an email: `--public-url` or `PUBLIC_URL` when the server has
+	## one, else where it listens. Never a request's `Host`, which whoever asks writes.
 	origin! : {} => Str
-	origin! = |{}| Env.var!("ORIGIN") ?? "http://localhost:8080"
+	origin! = |{}| Env.public_url!({})
+
+	## A secret from the server's environment, or none.
+	signing_key! : {} => Try(Str, [NotFound])
+	signing_key! = |{}| Env.var!("APP_SECRET")
 
 	## Signing in as anyone, with no email: on a server started with `--dev` only.
 	dev_sign_in! : Str => Server.Response

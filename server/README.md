@@ -333,14 +333,15 @@ week) is sent as it is.
 ### Settings: `Env`
 
 ```roc
-origin = Env.var!("ORIGIN") ?? "http://localhost:8080"     # Try(Str, [NotFound])
+key = Env.var!("APP_SECRET")                                # Try(Str, [NotFound])
+link = "${Env.public_url!({})}/unsubscribe?token=${token}"  # PUBLIC_URL, or where it listens
 if (Env.dev!({})) dev_sign_in else Server.refused(404, "No page here.")     # started with --dev
 ```
 
 `Env.var!` reads the server's environment: the app's secrets and what differs between machines,
 read alike in a request, a job or a schedule (twelve-factor; Phoenix's `runtime.exs`). The context
 file stays for what a request is given. `Env.dev!` says whether the server was started with
-`--dev`. The platform's own settings stay flags or their variables (`DATABASE_URL`, …); a plugin
+`--dev`. `Env.public_url!` is where the app is, for the links it sends (Running, below). The platform's own settings stay flags or their variables (`DATABASE_URL`, …); a plugin
 reads its own (`SMTP_URL`, for packages/email).
 
 ### Time: `Time`
@@ -771,6 +772,7 @@ built `--target=arm64musl` runs in a container against `just db`'s Postgres, eve
       --database-url URL                  Postgres (DATABASE_URL): Db, migrations, actors, plugins' tables
       --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in Postgres)
       --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it
+      --public-url https://app.example    where the app is, for links it sends (PUBLIC_URL; else where it listens)
       --dev                               reload pages on restart, show crashes, plugins' dev pages, Env.dev!
       --debug                             GET /__rocx/allocations, and plugins' debug paths
       --live-beat-ms 15000                how often a channel stream beats, and its checks run again
@@ -778,7 +780,11 @@ built `--target=arm64musl` runs in a container against `just db`'s Postgres, eve
 ```
 
 A request's body may be 16 MiB at most (413 beyond). `ROCX_LOG` (`pretty` or `json`) chooses the
-log's format when the app's `program` says `Auto` (above).
+log's format when the app's `program` says `Auto` (above). `Env.public_url!` is the app's public URL,
+for the links it sends: `--public-url` or `PUBLIC_URL` (an `http://` or `https://` URL; its `/` at the
+end dropped; anything else stops the server), as behind a proxy; without either, where the server
+listens (`http://127.0.0.1:8080`, the port the system gave `--port 0`; an address that is all of the
+machine's is its loopback). Never a request's `Host`, which whoever asks writes.
 
 ## Tests
 

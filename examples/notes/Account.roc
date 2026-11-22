@@ -70,11 +70,11 @@ Account := [].{
 			Err(Gone)
 		}
 
-	## Where the app is, for links in email and the MCP server's address: `NOTES_ORIGIN`, or a local
-	## run's. Never the request's `Host`, which whoever asks for a link can set: a link to their own
-	## site, mailed to you, would hand them your token.
+	## Where the app is, for links in email and the MCP server's address: the server's public URL
+	## (`PUBLIC_URL`, or where it listens). Never the request's `Host`, which whoever asks for a link
+	## can set: a link to their own site, mailed to you, would hand them your token.
 	origin! : {} => Str
-	origin! = |{}| (Env.var!("NOTES_ORIGIN") ?? "http://localhost:18160").drop_suffix("/")
+	origin! = |{}| Env.public_url!({})
 
 	## A path of this site to go to after signing in: `then` if it is one (`/notes/4`), else `/`; never
 	## another site (`//elsewhere.example`), so a link can't send you off after you sign in.

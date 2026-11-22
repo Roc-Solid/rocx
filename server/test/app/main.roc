@@ -867,6 +867,7 @@ route! = |request, context| {
 				Err(NotFound) => text(200, "not found")
 			}
 		("GET", "/env/dev") => text(200, if (Env.dev!({})) "dev" else "not dev")
+		("GET", "/env/public-url") => text(200, Env.public_url!({}))
 		("POST", "/jobs/env") =>
 			match Job.enqueue!(env_job, { run, name: param(request.query, "name") }, { when: Now }) {
 				Ok({}) => text(202, "queued")

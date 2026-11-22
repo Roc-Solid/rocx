@@ -50,7 +50,7 @@ describe("Acme Notes over HTTP", { skip: noDatabase }, () => {
 		assert.deepEqual([visitor.flash.status, JSON.parse(visitor.flash.body)], [200, { sent: "cyd@example.com" }]);
 		(await asked.follow()).dom.getByRole("heading", { name: "Check your inbox" });
 
-		// The mail has one link, to NOTES_ORIGIN; opening it signs nobody in by itself.
+		// The mail has one link, to the public URL; opening it signs nobody in by itself.
 		const link = await mailedLink(app, "cyd@example.com", before);
 		const landing = await visitor.get(link);
 		assert.equal(landing.status, 200);

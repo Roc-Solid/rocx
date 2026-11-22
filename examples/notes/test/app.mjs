@@ -38,7 +38,7 @@ export async function built() {
 export async function started({ env = {} } = {}) {
 	const { server, statics } = await built();
 	const db = await testDatabase();
-	const app = await startServer(server, { statics, database: db.url, env: { NOTES_SECRET: "a secret for the tests, and only them", NOTES_ORIGIN: "http://notes.example", ...env } });
+	const app = await startServer(server, { statics, database: db.url, env: { NOTES_SECRET: "a secret for the tests, and only them", PUBLIC_URL: "http://notes.example", ...env } });
 	return {
 		app,
 		db,
@@ -55,7 +55,7 @@ export async function mailedLink(app, email, after = 0) {
 	const found = links(mail);
 	assert.equal(found.length, 1, JSON.stringify(found));
 	const url = new URL(found[0]);
-	assert.equal(url.origin, "http://notes.example", "a link goes to NOTES_ORIGIN, never to a Host a request names");
+	assert.equal(url.origin, "http://notes.example", "a link goes to the public URL, never to a Host a request names");
 	return url.pathname + url.search;
 }
 

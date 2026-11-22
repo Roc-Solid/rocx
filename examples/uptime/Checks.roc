@@ -1,9 +1,9 @@
+import pf.Env
 import pf.Http
 import pf.Log
 import pf.Time
 import Metrics
 import News
-import Origin
 import Store
 
 ## A check of one monitor, as the `check` job runs it (Jobs.roc): ask its URL (`Http.fetch!`), judge
@@ -30,23 +30,18 @@ Checks := [].{
 				if monitor.paused {
 					Ok({})
 				} else {
-					match Origin.resolve!(monitor.url) {
-						Err(Unknown) => {
-							Log.warn!("uptime: this app's address isn't known yet, so its own check waits (set ORIGIN, or open a page)", { monitor: monitor.name })
+					# A URL that starts with `/` is this app's own (`/health`): where the app is,
+					# as the server says (`--public-url`, or where it listens).
+					url = if (monitor.url.starts_with("/")) "${Env.public_url!({})}${monitor.url}" else monitor.url
+					found = Checks.probe!(monitor, url)
+					match Store.record!(monitor, found, alert!) {
+						Ok(outcome) => {
+							told!(monitor, found, outcome)
 							Ok({})
 						}
-						Ok(url) => {
-							found = Checks.probe!(monitor, url)
-							match Store.record!(monitor, found, alert!) {
-								Ok(outcome) => {
-									told!(monitor, found, outcome)
-									Ok({})
-								}
-								Err(DbErr(why)) => Err(why)
-								Err(BadRow(why)) => Err(why)
-								Err(JobErr(why)) => Err(why)
-							}
-						}
+						Err(DbErr(why)) => Err(why)
+						Err(BadRow(why)) => Err(why)
+						Err(JobErr(why)) => Err(why)
 					}
 				}
 		}

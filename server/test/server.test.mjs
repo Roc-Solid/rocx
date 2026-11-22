@@ -1754,6 +1754,23 @@ test("env: a variable read from a request, and whether the server runs under --d
 	}
 });
 
+test("env: the app's public URL: where it listens (the port the system gave --port 0), or --public-url, or PUBLIC_URL; never the asker's Host", { skip }, async () => {
+	assert.match(server.url, /^http:\/\/127\.0\.0\.1:\d+$/);
+	assert.notEqual(server.url, "http://127.0.0.1:0");
+	assert.equal(await text("/env/public-url"), server.url, "unset: where it listens, its port the one it was given");
+	assert.equal(await text("/env/public-url", { headers: { host: "evil.example" } }), server.url, "whatever Host says");
+	const flagged = await start(["--public-url", "https://status.example.com/"], app, { PUBLIC_URL: "https://ignored.example" });
+	const given = await start([], app, { PUBLIC_URL: "http://localhost:3000" });
+	try {
+		assert.equal(await flagged.text("/env/public-url"), "https://status.example.com", "the flag, over the variable, its / dropped");
+		assert.equal(await given.text("/env/public-url"), "http://localhost:3000");
+	} finally {
+		await flagged.stop();
+		await given.stop();
+	}
+	await assert.rejects(start(["--public-url", "status.example.com"]), /needs an http:\/\/ or https:\/\/ URL/, "a URL, or the server doesn't start");
+});
+
 test("env: a variable read from a job", { skip: skipDb }, async () => {
 	const job = `${run}env`;
 	assert.equal(await post(`/jobs/env?run=${job}&name=ROCX_TEST_SETTING`), "queued");
@@ -1844,7 +1861,7 @@ const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const MiB = 1 << 20;
 
 test("samples: what the docs show (Samples.roc) runs as they say: settings, crypto, cookies, bytes, requests to other servers and forwards", { skip }, async () => {
-	assert.equal(await text("/samples/origin"), "http://localhost:8080", "no ORIGIN: the default");
+	assert.equal(await text("/samples/origin"), server.url, "no PUBLIC_URL: where it listens");
 	const refused = await get("/samples/dev", { method: "POST", body: "ada", redirect: "manual" });
 	assert.deepEqual([refused.status, await refused.text()], [404, "No page here."], "not under --dev");
 	const [token, digest] = (await text("/samples/token?of=abc")).split(" ");

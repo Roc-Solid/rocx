@@ -617,7 +617,7 @@ function sourcesModule() {
 		whole("routes_local", "test/e2e/app/routes/local/+page.rocx"),
 		defined("platform_forecast", "server/test/app/Samples.roc", ["forecast!", "order!"]),
 		defined("platform_preview", "server/test/app/Samples.roc", ["preview!"]),
-		defined("platform_settings", "server/test/app/Samples.roc", ["origin!", "dev_sign_in!"]),
+		defined("platform_settings", "server/test/app/Samples.roc", ["origin!", "signing_key!", "dev_sign_in!"]),
 		defined("platform_tokens", "server/test/app/Samples.roc", ["token!", "digest"]),
 		defined("platform_links", "server/test/app/Samples.roc", ["signed_link!", "link_member!", "link_key!", "app_secret!"]),
 		defined("platform_sealed", "server/test/app/Samples.roc", ["seal!", "unseal!", "sealing_key!"]),

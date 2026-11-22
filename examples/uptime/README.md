@@ -100,7 +100,7 @@ docker exec rocx-postgres createdb -U rocx acme_status   # a database of its own
 bin/rocx build examples/uptime --client examples/uptime/build/client
 .tools/roc-active build --target=wasm32 --opt=size --output=examples/uptime/build/client/static/rocx/app.wasm examples/uptime/build/client/main.roc
 node server/build.mjs examples/uptime/main.roc examples/uptime/build/uptime
-ADMIN_PASSWORD=acme-demo ORIGIN=http://127.0.0.1:18130 examples/uptime/build/uptime --port 18130 --host 127.0.0.1 \
+ADMIN_PASSWORD=acme-demo examples/uptime/build/uptime --port 18130 --host 127.0.0.1 \
   --database-url postgres://rocx:rocx@127.0.0.1:55432/acme_status \
   --static examples/uptime/build/client/static --static examples/uptime/static --dev
 ```
@@ -114,7 +114,7 @@ The environment:
 | Variable | |
 |---|---|
 | `ADMIN_PASSWORD` | the admin's password; without it nobody can sign in |
-| `ORIGIN` | where the app is, for its checks of itself and the links in emails; without it, the loopback address a browser last asked it at (see "What it asked of the platform") |
+| `PUBLIC_URL` | where the app is, for its checks of itself and the links in emails (`https://status.example.com`; or `--public-url`); without it, where the server listens (`Env.public_url!`) |
 | `SMTP_URL` | where the alerts are sent (`smtp://user:password@host:587?tls=required`); without it they are kept for the dev mailbox |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | an OpenTelemetry collector for the metrics (`http://localhost:4318`); without it, nothing is measured |
 
@@ -138,8 +138,7 @@ DATABASE_URL=postgres://rocx:rocx@127.0.0.1:55432/rocx node --test 'examples/upt
   monitor's state, the banner and filling gaps in a line (`Uptime.roc`). They also cover the
   incident rules, including a whole up, down, down, down, down, up run (`Incident.roc`), judging an
   answer (`Checks.roc`), and the epoch-day calendar and how times read (`Days.roc`). And the words
-  around the numbers (`Words.roc`), which `Host` headers count as this machine (`Origin.roc`), the
-  alert emails (`Alerts.roc`), what counts as an email address (`routes/subscribe/+server.roc`),
+  around the numbers (`Words.roc`), the alert emails (`Alerts.roc`), what counts as an email address (`routes/subscribe/+server.roc`),
   and the pure components through `testing.Dom` (`StatePill`, `UptimeStrip`, `Banner`,
   `IncidentCard`).
 - **`test/http.test.mjs`** (10 tests) starts the server on a database of its own, with a fake target
@@ -199,12 +198,11 @@ Every gap met, and what the app does about each:
    `Metric.gauge` now (the last value set, sent as OTLP's `gauge`), and `uptime.check.up` is one:
    1 after a check that passed, 0 after one that failed (`Metrics.roc`; the HTTP test reads both
    off the fake collector).
-2. **The server doesn't tell the app the address it listens on.** With `--port 0` (the tests') nobody
-   knows it beforehand, and a check of `/health` needs a whole URL. `ORIGIN` says it. Without it,
-   the default middleware remembers the `Host` a request came with, but only a loopback one, since
-   a client writes that header (`Origin.roc`, with expects). Until a page has been asked, the app's
-   checks of itself wait and log why. A `Server.address!` or a setting with the port would remove
-   this.
+2. **Fixed: the server didn't tell the app the address it listens on.** With `--port 0` (the
+   tests') nobody knew it beforehand, and a check of `/health` needs a whole URL, so the app read
+   `ORIGIN`, or remembered the loopback `Host` a request came with (`Origin.roc`). Now
+   `Env.public_url!` says it: `--public-url` or `PUBLIC_URL` when the server is started with one,
+   else where it listens, the port it bound included. `Origin.roc` and its middleware are gone.
 3. **Fixed: a plain form's flash kept what the form sent**, so a password sent to the sign-in form
    would have sat in the `rocx-flash` cookie and in the page's flash script, and the sign-in
    answered its own redirect with `?problem=wrong` instead of refusing. The platform now keeps a

@@ -10,7 +10,7 @@ person sees only their own notes, whichever way they ask.
 
 1. Open the app and you are sent to sign in: type `ada@example.com` (the seeded person with notes)
    or any address. A link is mailed; on a local run it lands in the dev mailbox,
-   http://localhost:18160/__rocx/mail. The link opens a page with a **Sign in** button, so a mail
+   http://127.0.0.1:18160/__rocx/mail. The link opens a page with a **Sign in** button, so a mail
    scanner that follows links doesn't use yours up. A link works once, for 15 minutes. Someone new
    starts with a note of welcome.
 2. The notebook: cards with the start of each note, pinned ones first, and your tags down the side
@@ -75,15 +75,15 @@ node server/build.mjs examples/notes/main.roc examples/notes/build/server
 examples/notes/build/server --port 18160 --dev --static examples/notes/build/client/static
 ```
 
-Open http://localhost:18160 and sign in as `ada@example.com`; the link is in the dev mailbox,
-http://localhost:18160/__rocx/mail (`--dev` serves it). The server migrates and seeds the database
+Open http://127.0.0.1:18160 and sign in as `ada@example.com`; the link is in the dev mailbox,
+http://127.0.0.1:18160/__rocx/mail (`--dev` serves it), and goes to where the server listens. The server migrates and seeds the database
 as it starts.
 
 | Setting | |
 |---|---|
 | `DATABASE_URL` | the Postgres |
 | `NOTES_SECRET` | what session cookies are signed with (through HKDF). Unset, a key is made at random when first needed and kept in memory, so a restart signs everyone out (the log says so) |
-| `NOTES_ORIGIN` | the app's address, for the links in email and the MCP address Settings shows (`http://localhost:18160`) |
+| `PUBLIC_URL` | the app's address, for the links in email and the MCP address Settings shows (or `--public-url`; without either, where the server listens: `http://127.0.0.1:18160` as above) |
 | `SMTP_URL` | a mail server (`smtp://user:password@smtp.example.com:587?tls=required`); unset, mail goes to the dev mailbox |
 | `NOTES_LINK_TTL_MS` | how long a sign-in link works (900000: 15 minutes) |
 | `NOTES_MCP_PER_MINUTE` | MCP calls a minute for each token (120) |
@@ -259,9 +259,10 @@ What the app met, and how it works around each. None needed a change outside the
    than back on the form with a flash. With the runtime, the form shows it.
 10. **guard's CSP refuses the OpenAPI page**, which loads Scalar from jsDelivr: `Middlewares.security`
     leaves `/openapi.html` out (as examples/journal does).
-11. **The app's public address isn't the platform's to know.** A link in email needs it, and a
-    request's `Host` is whatever the asker sends (a link to their site, mailed to you, would hand them
-    your token). Workaround: `NOTES_ORIGIN`.
+11. **Fixed: the app's public address wasn't the platform's to know.** A link in email needs it, and
+    a request's `Host` is whatever the asker sends (a link to their site, mailed to you, would hand
+    them your token), so the app read `NOTES_ORIGIN`. Now it asks the server, `Env.public_url!`:
+    `PUBLIC_URL` (or `--public-url`), else where the server listens.
 12. **Fixed: a plain form's result travelled in the flash cookie**, so a token made without
     JavaScript rode in `rocx-flash` to the page that shows it. The platform now keeps a flash in the
     server's memory for a minute; the cookie holds a random id, and the page that shows the token

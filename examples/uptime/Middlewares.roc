@@ -1,6 +1,5 @@
 import pf.Middleware
 import pf.Server
-import Origin
 import Otel
 import Session
 
@@ -9,13 +8,12 @@ import Session
 Middlewares := [].{
 
 	## Around every request: timed for the metrics (first, so it times the rest too); a change sent
-	## by another site's page refused; where the app is remembered (Origin.roc); and headers that
-	## keep the pages out of frames and the browser from guessing types.
+	## by another site's page refused; and headers that keep the pages out of frames and the browser
+	## from guessing types.
 	default : Middleware({}, {})
 	default =
 		Otel.middleware({})
 			.then(Middleware.same_origin({}))
-			.then(Middlewares.learn)
 			.then(
 				Middleware.headers([
 					{ name: "x-content-type-options", value: "nosniff" },
@@ -23,15 +21,6 @@ Middlewares := [].{
 					{ name: "referrer-policy", value: "same-origin" },
 				]),
 			)
-
-	## Remembers where the app was asked, for its checks of itself (`Origin.learn!`).
-	learn : Middleware({}, {})
-	learn = Middleware.make(
-		|request, context, next!| {
-			Origin.learn!(request)
-			next!(request, context)
-		},
-	)
 
 	## The admin's pages and actions, and the jobs page: only with a session (Session.roc). A
 	## browser without one is sent to sign in, and back here after; anything else is refused (401).
