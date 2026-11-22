@@ -7,8 +7,8 @@ import Ip
 ##     ClientIp.of(Hops(1), peer, request.headers)    # behind one proxy (a load balancer, Caddy)
 ##     ClientIp.of(Header("fly-client-ip"), peer, request.headers)
 ##
-## `peer` is the address the connection came from, as text; "" when it isn't known (see the
-## package's PROPOSALS.md: the server platform doesn't pass it on yet).
+## `peer` is the address the connection came from, as text (`Server.Request`'s `peer` on the
+## server platform); "" when it isn't known.
 ClientIp := [].{
 
 	## Where the client's address comes from:

@@ -64,67 +64,13 @@ being copied by hand; nothing else changes.
 
 ## The client's address
 
-**Problem.** The host accepts each connection with its peer's address and drops it
-(`server/host/src/http.rs`: `let Ok((stream, _)) = accepted`), so Roc never learns who connected.
-A rate limit by address can then only trust what a proxy wrote (`X-Forwarded-For`):
-
-- `ClientIp.Direct` (no proxy in front) can't tell clients apart, so `Guard.ip(Direct)` gives no
-  key and doesn't limit;
-- `Proxies(cidrs)` can't check that the connection came from one of the app's proxies: a client that
-  reaches the server directly can send an `X-Forwarded-For` naming anyone.
-
-**Options.**
-
-1. A field on `Server.Request`, `peer : Str`. Typed and visible, but `Request` is built in many
-   places: `from_http`'s arguments, the `roc_respond` ABI, both platforms (`Server.roc` is shared),
-   and every request literal in tests.
-2. An effect, `Server.peer!({}) : Str`, read from the call's context, as `Server.request!` is. The
-   host keeps the address in its `Asked`, and an in-process call (a server function a page calls
-   while it renders) keeps its page's. In the browser, `""`.
-3. A header the host sets (`x-rocx-peer`), removing any the client sent. No new API, but a magic
-   name, and anything that passes a request's headers on could leak it.
-
-**Recommended: 2.** A sketch:
-
-```diff
- // server/host/src/http.rs
--                let Ok((stream, _)) = accepted else { continue };
-+                let Ok((stream, peer)) = accepted else { continue };
-                 let config = config.clone();
--                let service = service_fn(move |request| answer(request, config.clone()));
-+                let service = service_fn(move |request| answer(request, peer, config.clone()));
- …
--    let answering = hosted::Asked::new(method.as_str(), target, headers…, body, config.context.clone(), config.dev);
-+    let answering = hosted::Asked::new(method.as_str(), target, headers…, body, config.context.clone(), config.dev, peer.ip().to_canonical().to_string());
-
- // server/host/src/hosted.rs
-+/// The address the request being answered came from ("" with none: a job, a schedule).
-+#[no_mangle]
-+pub extern "C" fn roc_peer() -> RocStr {
-+    let peer = CALL.with(|context| context.borrow().asked.as_ref().map(|asked| asked.peer.clone()));
-+    roc_str(&peer.unwrap_or_default())
-+}
-```
-
-```roc
-# web/platform/Host.roc and server/platform/Host.roc (the web host answers "")
-peer! : {} => Str
-
-# web/platform/Server.roc (shared), beside `request!`
-## The address the request being answered came from (`203.0.113.7`, `2001:db8::1`): the
-## connection's, which a client can't make up. Behind a proxy, the proxy's. `""` in the browser,
-## and in a job or a schedule.
-peer! : {} => Str
-peer! = |{}| Host.peer!({})
-```
-
-and `"roc_peer": Host.peer!` in both platforms' `hosted` lists. In the package, `Guard`'s `peer`
-(today `""`) becomes `Server.peer!({})`; `ClientIp` takes the peer already, and its tests cover it.
-
-**What depends on it.** `Guard.ip(Direct)`, `Guard.ips` with `Direct`, and the safety of
-`Proxies(…)` when the server can be reached other than through its proxies.
-
-**Undoing it.** Remove the effect; the package's `peer` goes back to `""`.
+**Done (D-041).** The host hands Roc one record for each request, the connection's address in it,
+and `Server.Request` has it as `peer` (`""` in the browser and for a request made by hand; a GET a
+page reads as the server renders it has the page's). The field was chosen over an effect
+(`Server.peer!`), which this proposal had recommended: the request says where it came from, as it
+says its headers, and a middleware or a test sees it without asking the host. `Guard`'s `peer`
+reads it, so `Guard.ip(Direct)` limits by address, and `Proxies(…)` checks that a connection came
+from one of the app's proxies.
 
 ## Memory: state between requests
 

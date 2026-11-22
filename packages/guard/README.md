@@ -143,9 +143,10 @@ proxies wrote it:
 | `Hops(1)` | the address the outermost of so many proxies saw: that many places from the right of `X-Forwarded-For` |
 | `Proxies(Ip.private)` | the first address, from the right, that isn't one of the app's proxies (`Ip.cidrs([…])`) |
 
-The server platform doesn't pass on the connection's address yet (PROPOSALS.md, "The client's
-address"), so today `Direct` can't tell who a client is (its key is `""`: not limited), and an app
-limits by address behind a proxy (`Hops`, `Header`, `Proxies`), which is how most are served.
+The connection's address is the request's `peer` (`Server.Request`, D-041): with no proxy in
+front, `Direct` is the client; behind one, `peer` is the proxy, and `Hops` or `Proxies` read past it
+in `X-Forwarded-For`. `Proxies` also checks that the connection came from one of the app's proxies,
+so a client that reaches the server directly can't name anyone it likes.
 
 ## Feature flags
 
@@ -260,7 +261,6 @@ Waits on a proposal (PROPOSALS.md):
 
 - **Server-only modules in packages**: until then, `Guard`, `FlagStore` and `Kept` are copied into
   the app by hand.
-- **The client's address**: until then, `Direct` can't tell clients apart.
 - **Memory: state between requests**: the platform has a place for it now, `Kv` (D-028), but the
   guards haven't moved onto it. Until they do, they keep their state as actors' state, a message
   for each limited request and each read of the flags. With a database, the platform writes an

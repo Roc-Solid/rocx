@@ -242,7 +242,8 @@ What the app met, and how it works around each. None needed a change outside the
    fields is not known"), so check with the build.
 8. **The server doesn't pass on the client's address** (packages/guard's README), so `Guard.ip`
    can't tell clients apart. Sign-in links are limited by the address they are mailed to (what needs
-   keeping safe is the inbox), and MCP calls by the token.
+   keeping safe is the inbox), and MCP calls by the token. (Fixed in the platform since:
+   `Server.Request` has `peer`, the connection's address, and `Guard.ip(Direct)` reads it, D-041.)
 9. **guard's refusal of a plain form is a page of text**: the rate limit answers before the
    endpoint, so a browser without JavaScript gets "Too many requests" on a page of its own rather
    than back on the form with a flash. With the runtime, the form shows it.

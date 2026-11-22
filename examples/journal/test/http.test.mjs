@@ -300,4 +300,10 @@ test("reactions are rate limited by guard: 20 a minute from each reader", async 
 	const other = app.client();
 	await other.get("/en/posts/truing-a-wheel");
 	assert.equal((await other.json(url, { kind: "smile", on: "true" })).status, 200);
+	// Without the cookie, guard counts the connection's address (`request.peer`): each is refused
+	// (403) until the limit is reached, and then 429.
+	const strangers = [];
+	for (let i = 0; i < 21 && !strangers.includes(429); i++) strangers.push((await app.client().json(url, { kind: "smile", on: "true" })).status);
+	assert.equal(strangers.at(-1), 429, strangers.join(" "));
+	assert.ok(strangers.slice(0, -1).every((status) => status === 403), strangers.join(" "));
 });

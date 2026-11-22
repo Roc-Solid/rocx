@@ -59,9 +59,9 @@ Middlewares := [].{
 	is_reader = |id| id.starts_with("r") and id.count_utf8_bytes() > 1 and id.count_utf8_bytes() < 24 and id.drop_prefix("r").to_utf8().all(|b| b >= '0' and b <= '9')
 
 	## Reactions sent: 20 a minute from each reader, counted by guard (a token bucket, so a burst of
-	## 20, then one every 3 s). By the reader's cookie, or, for a request without one behind a proxy,
-	## by its address (`Hops(1)`: the last address in `X-Forwarded-For`). Reading the counts isn't
-	## limited: every post's page does it.
+	## 20, then one every 3 s). By the reader's cookie, or, for a request without one, by its address:
+	## the connection's (`request.peer`), or behind a proxy the address it saw (`Hops(1)`: the last
+	## in `X-Forwarded-For`). Reading the counts isn't limited: every post's page does it.
 	reactions_limit : Middleware(Middlewares.Context, Middlewares.Context)
 	reactions_limit = Middlewares.writes_only(Guard.rate_limit("reactions", RateLimit.per_minute(20), Guard.user(|context| context.reader, Hops(1))))
 

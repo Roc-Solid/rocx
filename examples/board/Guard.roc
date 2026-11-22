@@ -198,8 +198,8 @@ checked = |check|
 answered : Checks.Refusal -> Server.Response
 answered = |refused| Server.response(refused.status, refused.headers, refused.body)
 
-## The address the connection came from. The server platform doesn't pass it on yet
-## (PROPOSALS.md, "The client's address"), so it is `""`: `Direct` can't tell who a client is,
-## and `Hops` and `Proxies` read `X-Forwarded-For` alone.
+## The address the connection came from (`Server.Request`'s `peer`, D-041): the client's, or the
+## proxy's in front of the server, which `Hops` and `Proxies` look past. `""` only for a request
+## made by hand.
 peer : Server.Request -> Str
-peer = |_request| ""
+peer = |request| request.peer

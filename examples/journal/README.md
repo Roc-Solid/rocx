@@ -124,8 +124,8 @@ and start the server on a free port. They don't use `DATABASE_URL`.
   start at a small seed, the same for the same post each time, so the first run looks read.
   Memory only: a restart starts them again, which is acceptable for a friendly gesture.
 - **A reader is a cookie** (`reader`, random, HttpOnly, a year), given by the first page. Reactions
-  are remembered and rate limited by it, and a reaction sent without one is refused (403). See
-  "the client's address" below.
+  are remembered and rate limited by it (by the connection's address for a request without one),
+  and a reaction sent without one is refused (403).
 - **Search lives on its own page.** The masthead's search is a plain form to it, so the posts' index
   is carried only in the page that needs it.
 - **No code highlighting**: code blocks are labelled with their language and scroll on their own.
@@ -135,11 +135,13 @@ and start the server on a free port. They don't use `DATABASE_URL`.
 
 ## What it asked of the platform
 
-Every gap met, and what the journal does about it. Four were fixed in the platform while it was
+Every gap met, and what the journal does about it. Five were fixed in the platform while it was
 built: a route's directory may now name a file (`routes/sitemap.xml/`); packages/markdown parses
 footnotes; packages/testing's `click()` scrolls instantly, so it no longer misses on a page with
-`scroll-behavior: smooth`; and a `<For>` or `<Show>` may sit in a function child (the reactions'
-`<For>` is in their `<Show>`'s child). These are still open:
+`scroll-behavior: smooth`; a `<For>` or `<Show>` may sit in a function child (the reactions'
+`<For>` is in their `<Show>`'s child); and a request carries the address of the connection it came
+on (`Server.Request`'s `peer`, D-041), so guard's limit can count a reader without a cookie by
+address. These are still open:
 
 1. **Collections aren't found by `rocx build`** (packages/markdown's PROPOSALS.md). Each post is
    imported as text and listed in `Posts.files`.
@@ -147,27 +149,23 @@ footnotes; packages/testing's `click()` scrolls instantly, so it no longer misse
    packages"). `Guard.roc`, `FlagStore.roc` and `Kept.roc` are verbatim copies of
    `packages/guard/server/`. Its tallies are actors' state, not `Kv` yet ("Memory: state between
    requests"). With a database, each limited request writes to Postgres.
-3. **The client's address isn't passed on** (guard's "The client's address"). `Guard.ip(Direct)` can't
-   tell readers apart, and `Hops(1)` reads a header any client can write when there is no proxy.
-   The limit counts by the reader cookie (`Guard.user(|c| c.reader, Hops(1))`), and a reaction
-   without the cookie is refused.
-4. **A page whose params are read only inside `<NoHydration>` doesn't build for the browser.** The
+3. **A page whose params are read only inside `<NoHydration>` doesn't build for the browser.** The
    browser's copy drops `<NoHydration>`'s children, so `params` is unused. Roc warns, exits 2, and
    `buildForTests` throws. Every page reads its params outside it too, in its `<Title>` or an
    island's props. `<Title>` and `<HttpStatusCode>` work from inside `<NoHydration>`, which is how a
    post's title and a missing post's 404 are set.
-5. **`<HttpStatusCode>` is effectful**, so a component that sets the status is a `view!`
+4. **`<HttpStatusCode>` is effectful**, so a component that sets the status is a `view!`
    (`Ui/NotFound.rocx`). Pure callers still write `<NotFound … />`, and rocx wraps it.
-6. **guard's CSP refuses the OpenAPI page**, which loads Scalar from jsDelivr. `Middlewares.security`
+5. **guard's CSP refuses the OpenAPI page**, which loads Scalar from jsDelivr. `Middlewares.security`
    leaves `/openapi.html` out, and every other answer has the headers.
-7. **`node --test examples/journal/test/` fails on Node 24**: a directory is taken as a module
+6. **`node --test examples/journal/test/` fails on Node 24**: a directory is taken as a module
    ("Cannot find module"). Use the glob, `node --test 'examples/journal/test/*.test.mjs'`.
-8. **The OpenAPI document gives the reactions' `POST` a JSON body only**, though the endpoint takes
+7. **The OpenAPI document gives the reactions' `POST` a JSON body only**, though the endpoint takes
    the same fields as a form, which is what the no-JavaScript buttons send (server/README.md, "Not
    yet").
-9. **The browser's copy of `Api` has no types** (known, D-030). The search's `posts` and the
+8. **The browser's copy of `Api` has no types** (known, D-030). The search's `posts` and the
     reactions' `toggles : Submissions(Reaction.Toggle, Reaction.Tally)` are annotated.
-10. **The Roc gotchas met:**
+9. **The Roc gotchas met:**
     - `{ lang }` alone is a block, not a record (`Paths.lang({ lang: lang })`).
     - A parameter can't share a name with a member of its type's block (hence `Rules.of_title`, …).
     - `join_with` is `Str.join_with(list, sep)`, not a method of a list.

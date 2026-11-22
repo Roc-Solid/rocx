@@ -235,7 +235,8 @@ Every gap met, and what the app does about each:
    (D-024). The checks use `fetch!`, whose `timeout_ms` and `max_bytes` fit a monitor.
 8. **The client's address isn't passed on**, so wrong passwords can't be counted per client. The
    sign-in allows ten tries a minute in all (`Kv.increment!` with a time to live), then says to
-   wait.
+   wait. (Fixed in the platform since: `Server.Request` has `peer`, the connection's address,
+   D-041.)
 9. **Fixed: packages/admin's pages had no way back to the app's own admin.** Their sidebar listed
    the tables and nothing else, so the way back to `/admin` was the browser's. Both the tables
    admin (`Admin.Config`) and the jobs page (`JobsPage.plugin`) take `back` now, a link first in
