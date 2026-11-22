@@ -13,8 +13,11 @@ import Html
 ##
 ## keeps a row per position (Solid's `<Index>` before 2.0): an accessor of the item there, which
 ## changes, and its index, which doesn't.
+##
+## The child is effectful (`=>`): it runs when its row is made, and may do what a component does
+## there, hold another `<For>` or a `<Show>`; a child that is plain markup is fine too.
 For := [].{
-	PropsKeyed(a, k) := { each! : () => List(a), keyed : a -> k, fallback : Html ?? Html.empty({}), children : (() => a), (() => U64) -> Html }
+	PropsKeyed(a, k) := { each! : () => List(a), keyed : a -> k, fallback : Html ?? Html.empty({}), children : (() => a), (() => U64) => Html }
 
 	## What `<For keyed={|item| …}>` is: a row per key, made once, moved as the list changes, and
 	## dropped with its key; the child gets accessors of its item and its index. The fallback while
@@ -39,7 +42,7 @@ For := [].{
 		Html.each(rows!, props.fallback)
 	}
 
-	PropsUnkeyed(a) := { each! : () => List(a), fallback : Html ?? Html.empty({}), children : (() => a), U64 -> Html }
+	PropsUnkeyed(a) := { each! : () => List(a), fallback : Html ?? Html.empty({}), children : (() => a), U64 => Html }
 
 	## What `<For keyed={Bool.False}>` is: a row per position; the child gets an accessor of the
 	## item there and its index. The fallback while the list is empty.
@@ -63,7 +66,7 @@ For := [].{
 
 ## A row: its item kept by the host under its key (so the row's accessor reads the item there now),
 ## and how to make the row.
-row! : U64, Str, a, ((() => a) -> Html) => { key : Str, row : () => Html }
+row! : U64, Str, a, ((() => a) => Html) => { key : Str, row : () => Html }
 row! = |id, key, item, make| {
 	Host.row_set!(id, key, Box.box(|| item))
 	item! = || {

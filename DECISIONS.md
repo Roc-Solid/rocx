@@ -1817,3 +1817,39 @@ program = App.program({ …, plugins: [Email.plugin({ from: "Acme <hello@example
 **Costs.** An app names one more package and lists one more plugin. **Why.** The platform keeps what
 needs the host; email is Roc on `Tcp` and `Kv`, and now the example of a plugin with dev-only paths
 and a check. **Reversible:** yes.
+
+## D-036 A control-flow component's function child is effectful
+
+**Context.** `<For>`'s row and `<Show>`'s narrowed child (`{|post!, index!| …}`) were typed pure
+(`(() => a) -> Html`). rocx writes a component as `Html.component(|| X.view!(…))`, a value, so a
+component inside a function child was fine; but rocx calls the platform's own `<For>` and `<Show>`
+directly (`For.view_with_keyed!(…)`), an effect, so neither could sit inside a function child: a
+`<For>` in a `<For>`'s row, or in a `<Show>`'s child, was a type error about generated code.
+Three of the six examples (journal, quiz, notes) met it, and split the part into a `view!`
+component of its own, or showed it under a `Bool` and read an accessor with a default.
+
+**Options.**
+1. Leave it, and say so in the docs.
+2. Have rocx wrap a nested `<For>` or `<Show>` in `Html.component`, as it wraps components.
+3. Type the function child effectful (`=>`): it already runs inside the effectful thunk that
+   makes its row or its part (`row : () => Html`, `Html.shown_with`'s `() => Html`).
+
+**Choice.** 3: what makes markup that is alive (rows that come and go, parts that switch) is
+effectful, as a component's `view!` is.
+
+```roc
+For.PropsKeyed(a, k) := { …, children : (() => a), (() => U64) => Html }
+For.PropsUnkeyed(a) := { …, children : (() => a), U64 => Html }
+Show.PropsWith(a, e) := { …, children : (() => a) => Html }
+```
+
+- A pure child still type-checks where an effectful one is wanted, so no app changed: the docs
+  site and every example build as before.
+- The child runs when its row or part is made, owned by it, so a nested `<For>` or `<Show>` (or
+  anything a component's body may do) is the row's and goes with it. `web/test/app/Nested.rocx`
+  renders both nestings on the server, hydrates them strictly and follows their signals.
+- examples/journal's reactions put their `<For>` back inside their `<Show>`'s child.
+
+**Why.** The rule was a leftover of the types, not something the runtime needed, and it pushed
+apps into components or defaults that exist only to get around it. **Reversible:** yes, but code
+that nests would break.

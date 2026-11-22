@@ -47,6 +47,7 @@ if (!skip) {
 		["app-dev", join(here, "app", "main.roc"), "dev"],
 		["app-size", join(here, "app", "main.roc"), "size"],
 		["picks", join(here, "app", "picks_app.roc"), "size"],
+		["nested", join(here, "app", "nested_app.roc"), "dev"],
 		["timers", join(here, "app", "timers_app.roc"), "dev"],
 		["props", join(here, "app", "props_app.roc"), "dev"],
 		["fades", join(here, "app", "fades_app.roc"), "dev"],
@@ -324,6 +325,43 @@ window.hydrated = true;
 		await tab.wait("document.querySelector('.keyed .none') !== null");
 		await tab.click(".add");
 		await tab.wait("document.querySelector('.keyed .none') === null && document.querySelectorAll('.keyed li').length === 1");
+		assert.deepEqual(tab.errors, []);
+	} finally {
+		await site.close();
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("nested: a <For> in a <For>'s row, and a <For> in a <Show>'s function child, render on the server, hydrate, and follow their signals", { skip }, async () => {
+	const wasm = readFileSync(join(out, "nested.wasm"));
+	const server = await Runtime.load(wasm);
+	const { html, answers } = server.renderToString({ path: "/" });
+	assert.match(html, /<h3><!--x-->Fruit<!--\/x--><\/h3> <ol><!--for--><!--row--><li>0: <!--x-->apple<!--\/x--><\/li><!--\/row--><!--row--><li>1: <!--x-->pear<!--\/x--><\/li><!--\/row--><!--\/for--><\/ol>/);
+	assert.match(html, /<p class="first">First: <!--x-->Fruit<!--\/x--> <!--for--><!--row--><span class="item"><!--x-->apple<!--\/x--><\/span>/);
+	const dir = mkdtempSync(join(tmpdir(), "rocx-nested-"));
+	cpSync(join(web, "runtime.js"), join(dir, "runtime.js"));
+	writeFileSync(join(dir, "nested.wasm"), wasm);
+	const page = `<!doctype html><html><body><div id="app">${html}${Runtime.answersScript(answers)}</div>
+<script type="module">
+import { Runtime } from "/runtime.js";
+window.runtime = await Runtime.load(fetch("/nested.wasm"));
+window.runtime.hydrate(document.getElementById("app"));
+window.hydrated = true;
+</script></body></html>`;
+	const site = await serve(dir, (path) => (path === "/" ? page : null));
+	const tab = await browser.page();
+	const items = (selector) => tab.eval(`[...document.querySelectorAll(${JSON.stringify(selector)})].map((node) => node.textContent)`);
+	try {
+		await tab.goto(`${site.url}/`);
+		await tab.wait("window.hydrated === true", 3000);
+		assert.deepEqual(tab.console, [], "hydrated without a mismatch");
+		await tab.click(".add");
+		await tab.wait("document.querySelectorAll('.shelves > li:nth-child(2) li').length === 2");
+		assert.deepEqual(await items(".shelves > li:nth-child(2) li"), ["0: rye", "1: spelt"], "the inner <For> of a row follows its row's item");
+		await tab.click(".swap");
+		await tab.wait("document.querySelector('.first').textContent.startsWith('First: Bread')");
+		assert.deepEqual(await items(".first .item"), ["rye", "spelt"], "the <For> in the <Show>'s child follows its accessor");
+		assert.deepEqual(await items(".shelves h3"), ["Bread", "Fruit"]);
 		assert.deepEqual(tab.errors, []);
 	} finally {
 		await site.close();

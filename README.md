@@ -239,7 +239,7 @@ In a component only:
 | `<Shows label={word!()} />` | a value prop read from a signal: read where the component is rendered, before it runs (`Html.component_with`); in a hole, which renders it anew when the value changes; elsewhere, once |
 | `<Title>{post!().title} · Notes</Title>` | the document's title, from anywhere in the page: the last one rendered that is still there, put first in `<head>` by the server, kept by the browser (`import pf.Title`) |
 | `<Show when!={…} fallback={…}>` | what is inside while the condition holds; with a function child, `when!` is a `Try` it narrows |
-| `<For each!={…} keyed={\|row\| row.id}>{\|row!, index!\| …}</For>` | a row per key, kept and moved; `keyed={Bool.False}` a row per position |
+| `<For each!={…} keyed={\|row\| row.id}>{\|row!, index!\| …}</For>` | a row per key, kept and moved; `keyed={Bool.False}` a row per position. A function child (a row, a `<Show>`'s narrowed child) runs where its part is made, so it may hold another `<For>` or `<Show>` |
 | `<Loading fallback={…}>`, `<Errored fallback={\|problem, retry\| …}>` | while answers are on their way; when something inside failed |
 | `picks_context = create_context()`, `<PicksContext value={…}>` | Solid's context, named by rocx after its module and definition |
 | `Endpoint.get!(Api.get_api_shelf({}))` | a GET endpoint's answer, as a plain value: the server answers it as it renders the page, and the page carries it to the browser (`Endpoint.read!`: a refusal as a value; `import pf.Endpoint`) |

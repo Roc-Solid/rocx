@@ -482,6 +482,11 @@ view! = |_|
 						changes. With a function child, <code>when!</code> is a <code>Try</code>, and the child gets an
 						accessor of the value in it.
 					</li>
+					<li>
+						<strong>A function child</strong>, a <code>{"<For>"}</code>'s row or a <code>{"<Show>"}</code>'s
+						narrowed child, is effectful, as a component is: it runs where its part is made, so it may hold
+						another <code>{"<For>"}</code> or <code>{"<Show>"}</code>, or be plain markup.
+					</li>
 				</ul>
 				<details>
 					<summary>The whole component: <code>{Sources.signals_picks.file}</code></summary>

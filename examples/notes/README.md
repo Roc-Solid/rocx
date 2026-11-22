@@ -234,7 +234,8 @@ What the app met, and how it works around each. None needed a change outside the
 5. **`Endpoint.get!` of a 404 makes a 500 page** (examples/tasks met it too). The note's page and
    its editor read with `Endpoint.read!` and show `Ui/Missing.rocx` (`<HttpStatusCode code={404}/>`).
 6. **`<Show>`'s function child must be pure**, so a `<Show>` inside it doesn't compile. The sign-in
-   link's page shows its form under `when!={link!(token).is_ok()}`, with plain children.
+   link's page shows its form under `when!={link!(token).is_ok()}`, with plain children. (Fixed in
+   the platform since: a function child is effectful now, and may hold a `<Show>`.)
 7. **The browser's copy needs the types said** (D-030): each page's endpoint read and each
    `use_submission!` is annotated, with the pages' data in `Pages.roc`. `roc check` of the browser's
    program passed without them; its wasm build failed ("This decodes a record whose full set of

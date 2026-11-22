@@ -130,7 +130,8 @@ Each gap this app met, and what it does about it:
   narrowed child): the platform's components are effectful calls, and those children are pure, so
   the compiler says "This function is effectful, but a pure function is expected" about generated
   code. Each such part is a small `view!` component of its own (`Asked`, `Revealed`, `Choosing`,
-  `Preview`), which the child renders.
+  `Preview`), which the child renders. (Fixed in the platform since: a function child is effectful
+  now, so it may hold a `<For>` or a `<Show>`; the components stay, as they read well.)
 - **A route file's components don't see the route file's own definitions**: helpers they use are
   defined in their own block (`Asked.answered`, `Revealed.taken`).
 - **The browser has no clock.** The countdown counts down from the server's `left_ms` with

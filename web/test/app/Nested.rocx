@@ -1,0 +1,46 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+import pf.For
+import pf.Show
+
+## Control flow inside control flow: a <For> in a <For>'s row, and a <For> in a <Show>'s function
+## child. Their children are effectful, as a component's view! is, so they may hold control flow of
+## their own; the innermost ones here are plain markup, which they may be too.
+Nested := [].{
+	Shelf : { id : U64, name : Str, items : List(Str) }
+
+	view! : {} => Html
+	view! = |{}| {
+		(shelves!, set_shelves!) = create_signal!([{ id: 1, name: "Fruit", items: ["apple", "pear"] }, { id: 2, name: "Bread", items: ["rye"] }])
+		add! = || set_shelves!(shelves!().map(|shelf| if (shelf.id == 2) { ..shelf, items: shelf.items.append("spelt") } else shelf))
+		swap! = || set_shelves!(shelves!().rev())
+		<section class="nested">
+			<button class="add" on:click={add!}>Add</button>
+			<button class="swap" on:click={swap!}>Swap</button>
+			<ul class="shelves">
+				<For each!={shelves!()} keyed={|shelf| shelf.id}>
+					{|shelf!, _|
+						<li>
+							<h3>{shelf!().name}</h3>
+							<ol>
+								<For each!={shelf!().items} keyed={Bool.False}>
+									{|item!, index| <li>{index.to_str()}: {item!()}</li>}
+								</For>
+							</ol>
+						</li>
+					}
+				</For>
+			</ul>
+			<Show when!={shelves!().first()}>
+				{|first!|
+					<p class="first">
+						First: {first!().name}
+						<For each!={first!().items} keyed={Bool.False}>
+							{|item!, _| <span class="item">{item!()}</span>}
+						</For>
+					</p>
+				}
+			</Show>
+		</section>
+	}
+}

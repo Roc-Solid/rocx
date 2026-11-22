@@ -103,7 +103,9 @@ same components natively; this one hydrates them.
 - **Components run where they are rendered:** rocx writes `<Picks />` as
   `Html.component(|| Picks.view!({}))`, and the runtime runs it as it builds that place, once, its
   reads untracked, so it sees the contexts provided above it. A signal belongs to the run that made
-  it, and is let go of with it: a `<Show>` switching, a row going.
+  it, and is let go of with it: a `<Show>` switching, a row going. A `<For>`'s row and a `<Show>`'s
+  narrowed child are effectful functions run the same way, as their part is made (D-036), so they
+  may hold another `<For>` or `<Show>`, owned by the row or the part.
 - **Props.** A prop named as an effect (`label!={word!()}`) is an accessor, `|| word!()`: Solid's
   getter, read in the child's own holes, which track it and are patched, the child kept. A prop that
   is a value read from what changes (`label={word!()}`) has Roc's type, so it can't be a getter:
@@ -331,7 +333,8 @@ same components natively; this one hydrates them.
 
 The test app (`test/app`, in rocx) is built several ways: the profile (`Profile.rocx`: five
 answers, one spinner, regions that fail on their own, a rename that waits for the server) from the
-dev backend and optimized; the picks (`<For>` by key and by position, `<Show>`); the fades (`Fades.rocx`:
+dev backend and optimized; the picks (`<For>` by key and by position, `<Show>`); the nested
+(`Nested.rocx`: a `<For>` in a `<For>`'s row and in a `<Show>`'s child); the fades (`Fades.rocx`:
 rows and a part with transitions, a computed one, a list inside the part); the echo (`Echo.rocx`: a
 GET endpoint read with what is typed, rendered in Node from the answer the server gave, hydrated
 without asking again, and asked again as one types); the reads (`Reads.rocx`: a GET endpoint read
