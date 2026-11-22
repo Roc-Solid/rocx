@@ -697,7 +697,7 @@ export class Runtime {
 		 * Those named `rocx:…` are the runtime's own: `Audio.play!` is `rocx:audio`. */
 		this.effects = {};
 		this.calling = [];
-		this.builtins = { "rocx:audio": (arg) => this.playAudio(arg) };
+		this.builtins = { "rocx:audio": (arg) => this.playAudio(arg), "rocx:focus": (id) => this.page?.getElementById?.(id)?.focus() };
 		/** Each element's transitions (`transition={…}`), `{ in, out }`, as `Transition.json` writes
 		 * them; `animates` once there is one, so an app without any walks nothing for them. */
 		this.transitions = new WeakMap();

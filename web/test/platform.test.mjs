@@ -448,11 +448,11 @@ window.hydrated = true;
 	}
 });
 
-test("keys: a key's handler runs for that key with no modifier key held, a combination's with exactly its keys held (Mod is ⌘ on macOS, Ctrl elsewhere; a letter in its place when the layout types another), each preventing the default; .keys gives the key and the modifier keys held", { skip }, async () => {
+test("keys: a key's handler runs for that key with no modifier key held, a combination's with exactly its keys held (Mod is ⌘ on macOS, Ctrl elsewhere; a letter in its place when the layout types another), each preventing the default; .keys gives the key and the modifier keys held; Browser.focus! moves the focus once the handler is done, or as a part shows", { skip }, async () => {
 	const wasm = readFileSync(join(out, "shortcuts.wasm"));
 	const server = await Runtime.load(wasm);
 	const { html } = server.renderToString({ path: "/" });
-	assert.match(html, /<input class="field">/, "the server writes nothing for handlers");
+	assert.match(html, /<input class="field" id="field">/, "the server writes nothing for handlers");
 	const dir = mkdtempSync(join(tmpdir(), "rocx-shortcuts-"));
 	cpSync(join(web, "runtime.js"), join(dir, "runtime.js"));
 	writeFileSync(join(dir, "shortcuts.wasm"), wasm);
@@ -503,6 +503,15 @@ window.hydrated = true;
 		assert.equal(await tab.eval("document.querySelector('.last').textContent"), mac ? "K shift meta mod" : "K shift ctrl mod");
 		await press("Escape");
 		await tab.wait("document.querySelector('.last').textContent === 'Escape'");
+		// The focus, moved from Roc once the handler is done: to a field, to none, and by a part as
+		// it shows.
+		await tab.click(".focus");
+		await tab.wait("document.activeElement?.id === 'field'");
+		await tab.click(".nowhere");
+		await sleep(50);
+		assert.equal(await tab.eval("document.activeElement?.className"), "nowhere", "no element by that id: the focus stays");
+		await tab.click(".open");
+		await tab.wait("document.activeElement?.id === 'opened'");
 		assert.deepEqual(tab.errors, []);
 		assert.deepEqual(tab.console, []);
 	} finally {

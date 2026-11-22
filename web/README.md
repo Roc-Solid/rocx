@@ -330,7 +330,10 @@ same components natively; this one hydrates them.
   part of, once the page shows what it wrote. One that isn't there, or throws, is told on the
   console; a call while computing (an effect's compute among it) fails. Names beginning with
   `rocx:` are the runtime's own: `rocx:audio` plays a sound file (`Audio.play!`) with an `<audio>`
-  the runtime makes, at a volume and a rate (its pitch moving with it).
+  the runtime makes, at a volume and a rate (its pitch moving with it), and `rocx:focus` moves the
+  keyboard's focus to the element with that id (`Browser.focus!(id)`, nothing if there is none),
+  once the page shows what the handler wrote: from an effect's apply, `on_settled!(|| Browser.focus!(…))`
+  focuses a field as its part shows.
 - **`renderToString`** renders markup with `<html>` at its top as the server platform answers a page:
   `<!doctype html>` first unless the markup has one, then the flash the page read, if it did, the
   answers script and the bootstrap just before `</body>` (`Runtime.documentOf`). Any other markup is an app's range,

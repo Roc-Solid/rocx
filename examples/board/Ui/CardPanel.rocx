@@ -1,4 +1,5 @@
 import pf.Html
+import pf.Browser
 import pf.Call
 import pf.Endpoint
 import pf.For
@@ -17,8 +18,9 @@ import ../Generated/Api
 ## (`use_action!`) and shown at once (the card, with the changes on their way applied), as a move is.
 ##
 ## Every form here posts to its endpoint without JavaScript too (the page opens a card from its
-## address, `?card=12`), and the endpoint sends the browser back. From the keyboard, Alt+↑ and Alt+↓
-## move the open card up and down its column, as its Up and Down buttons do.
+## address, `?card=12`), and the endpoint sends the browser back. A card that opens takes the
+## keyboard's focus, at its title; Alt+↑ and Alt+↓ move it up and down its column, as its Up and
+## Down buttons do.
 CardPanel := [].{
 
 	view! : { card : Str, shared : Shared.State } => Html
@@ -163,7 +165,7 @@ Editor := [].{
 		on_settled!(
 			|| {
 				_ = set_interval!(Board.renew_every, take!)
-				{}
+				Browser.focus!("card-title")
 			},
 		)
 		# Closed (or archived, or another card opened): the lease goes, if it was this page's. A tab

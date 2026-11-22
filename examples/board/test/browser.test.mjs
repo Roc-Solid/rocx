@@ -20,6 +20,17 @@ const GLIDES = `document.addEventListener("rocx:ready", (event) => {
 	event.detail.runtime.observer = { glide: (detail) => window.__glides.push(detail.key ?? "") };
 });`;
 
+/** A key pressed and let go with Alt held, as a keyboard does it: over the DevTools protocol in
+ * Chromium, with WebDriver's key actions in Gecko (Alt is `\uE00A` there, ArrowDown `\uE015`). */
+async function pressAlt(tab, key) {
+	if (typeof tab.page.send === "function") {
+		for (const type of ["rawKeyDown", "keyUp"]) await tab.page.send("Input.dispatchKeyEvent", { type, key, code: key, modifiers: 1 });
+		return;
+	}
+	const value = { ArrowUp: "\uE013", ArrowDown: "\uE015" }[key] ?? key;
+	await tab.page.actions([{ type: "key", id: "keyboard", actions: [{ type: "keyDown", value: "\uE00A" }, { type: "keyDown", value }, { type: "keyUp", value }, { type: "keyUp", value: "\uE00A" }] }]);
+}
+
 describe(`Acme Board in two browsers (Ada's: ${engine})`, { skip: noDatabase || noChrome }, () => {
 	let running, seeded, browsers, people, open, ada, bo;
 	before(async () => {
@@ -88,6 +99,15 @@ describe(`Acme Board in two browsers (Ada's: ${engine})`, { skip: noDatabase || 
 		await (await ada.getByRole("link", { name: title })).click();
 		await ada.findByRole("heading", { level: 2, name: title });
 		assert.equal(await ada.page.eval("document.querySelector('.panel fieldset').disabled"), false);
+
+		// The card takes the keyboard's focus, at its title; Alt+↓ moves it down its column.
+		await ada.page.wait("document.activeElement?.id === 'card-title'", 5000);
+		const order = `[...document.querySelectorAll('[data-column="${seeded.columns["To do"]}"] .tile .open')].map((each) => each.textContent.trim()).join("|")`;
+		assert.equal(await ada.page.eval(order), "Book the launch pad|Weather go/no-go checklist|Fix the fuel gauge rounding");
+		await pressAlt(ada, "ArrowDown");
+		await ada.page.wait(`${order} === "Weather go/no-go checklist|Book the launch pad|Fix the fuel gauge rounding"`, 5000);
+		// Bo's board follows, the tile gliding down: it lands before he clicks it.
+		await bo.page.wait(`${order} === "Weather go/no-go checklist|Book the launch pad|Fix the fuel gauge rounding" && ![...document.querySelectorAll('.tile')].some((tile) => tile.getAnimations().length) && !document.querySelector('[data-rocx-lifted]')`, 5000);
 
 		// On Bo's board, the tile shows Ada has it open, and is editing it.
 		await bo.findByRole("group", { name: "Ada has this card open" });

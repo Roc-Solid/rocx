@@ -264,7 +264,10 @@ view! = |_|
 				platform has no module for (a vibration, the clipboard), it calls the page's own JavaScript:
 				<code>{"Browser.call!(\"vibrate\", { ms: 50 })"}</code> calls the function the page gave the runtime
 				as <code>vibrate</code> (<code>{"Runtime.load(wasm, { effects })"}</code>), with the argument as JSON,
-				parsed, as Elm's ports do. Either goes once the handler is done and the page patched.
+				parsed, as Elm's ports do. Either goes once the handler is done and the page patched, and so does
+				<code>{"Browser.focus!(\"card-title\")"}</code>, which moves the keyboard's focus to the element with
+				that id: from an effect, <code>{"on_settled!(|| Browser.focus!(\"card-title\"))"}</code> focuses a field
+				as its part shows.
 			</p>
 			<p>
 				A handler may ask the server (send an endpoint) and use the answer: until the answer is in it

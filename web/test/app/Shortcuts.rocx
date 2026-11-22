@@ -1,16 +1,22 @@
 import pf.Html
-import pf.Solid exposing [create_signal!]
+import pf.Browser
+import pf.Show
+import pf.Solid exposing [create_signal!, on_settled!]
 
 ## Key handlers, for the tests (`shortcuts_app.roc`): one key, combinations of modifier keys and a
-## key, and the key with the modifier keys held (`.keys`).
+## key, and the key with the modifier keys held (`.keys`). And the focus, moved from Roc
+## (`Browser.focus!`): by a handler, to a field there and to one that isn't; and by a component as
+## its part shows.
 Shortcuts := [].{
 	view! : {} => Html
 	view! = |{}| {
 		(said!, set_said!) = create_signal!([])
 		say! = |what| set_said!(said!().append(what))
 		(last!, set_last!) = create_signal!("")
+		(open!, set_open!) = create_signal!(Bool.False)
 		<div class="shortcuts">
 			<input
+				id="field"
 				class="field"
 				on:keydown.Enter={|| say!("Enter")}
 				on:keydown.Shift+Enter={|| say!("Shift+Enter")}
@@ -21,6 +27,12 @@ Shortcuts := [].{
 			/>
 			<p class="said">{Str.join_with(said!(), ", ")}</p>
 			<p class="last">{last!()}</p>
+			<button class="focus" on:click={|| Browser.focus!("field")}>Focus</button>
+			<button class="nowhere" on:click={|| Browser.focus!("nowhere")}>Nowhere</button>
+			<button class="open" on:click={|| set_open!(!open!())}>Open</button>
+			<Show when!={open!()}>
+				<Opened />
+			</Show>
 		</div>
 	}
 
@@ -29,6 +41,15 @@ Shortcuts := [].{
 	described = |keys| {
 		held = [("shift", keys.shift), ("ctrl", keys.ctrl), ("alt", keys.alt), ("meta", keys.meta), ("mod", keys.mod)].keep_if(|(_, on)| on).map(|(name, _)| name)
 		Str.join_with([keys.key].concat(held), " ")
+	}
+}
+
+## A field that takes the focus as it shows.
+Opened := [].{
+	view! : {} => Html
+	view! = |{}| {
+		on_settled!(|| Browser.focus!("opened"))
+		<input id="opened" class="opened" />
 	}
 }
 

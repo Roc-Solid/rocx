@@ -173,9 +173,10 @@ What the app met, and how it works around each:
 - **No client-side navigation.** Opening a card in place doesn't change the address, and Back
   doesn't close it. Workaround: a card's link is `?card=12`, which a click opens in place
   (`on:click.prevent`) and a new tab, a shared link or a browser without JavaScript open as a page.
-- **No way to move focus from Roc.** An open card doesn't take the keyboard's focus (there is no
-  focus effect, and `Browser.call!` needs a script of the page's own, which this app doesn't serve).
-  Workaround: none yet; keyboard users Tab to it. Escape closes it.
+- **No way to move focus from Roc.** An open card didn't take the keyboard's focus (there was no
+  focus effect, and `Browser.call!` needs a script of the page's own, which this app doesn't serve),
+  so keyboard users tabbed to it. (Fixed in the platform since: `Browser.focus!(id)`, so a card that
+  opens focuses its title, from the `on_settled!` that starts renewing its lease. Escape closes it.)
 - **Presence wasn't on channels**: its glue was an event stream per tab beside `/rocx/live`, a beat
   posted every 15 s, and a post when a card opened, three routes. (Fixed since: presence runs on a
   channel, its hooks the package's, so the page holds one stream, and what it says, its beat and the
