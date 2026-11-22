@@ -1202,8 +1202,9 @@ test("the jobs page's guard refuses whom it refuses, whatever they ask for: GET,
 		assert.equal(refused.status, 403, `${init.method ?? "GET"} ${path}`);
 		assert.match(await refused.text(), /admins only/, "the guard's answer, not the page's");
 	}
-	assert.equal((await get("/admin/jobs", { method: "PUT" })).status, 403, "every method at its path is the plugin's, behind the guard");
-	assert.equal((await get("/admin/jobs", { method: "PUT", headers: { "x-admin": "yes" } })).status, 405, "and the page answers GET and POST");
+	// Its routes are a GET (which answers HEAD too) and a POST: another method there is neither's.
+	assert.equal((await get("/admin/jobs", { method: "HEAD" })).status, 403, "a HEAD is the GET route's, behind the guard");
+	assert.equal((await get("/admin/jobs", { method: "PUT" })).status, 404, "a PUT is no route's");
 });
 
 test("the jobs page mounted by the app itself (JobsPage.respond!), at its own path, behind its own guard", { skip: skipDb }, async () => {
@@ -1444,7 +1445,7 @@ test("plugins: a plugin's route answers in the app, with the app's context and i
 		[
 			"rocx plugins: jobs: 1 early route, 1 migration, 1 call, 5 loops, 1 start",
 			"rocx plugins: email: 4 early routes, 1 start, 1 check",
-			"rocx plugins: jobs-page: 1 route",
+			"rocx plugins: jobs-page: 2 routes",
 			"rocx plugins: fixture: 5 routes, 1 early route, 1 migration, 1 call, 1 loop, 1 start, 1 check",
 			"rocx plugins: second: 1 route",
 			"rocx plugins: third: 1 route",

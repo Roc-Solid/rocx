@@ -31,7 +31,11 @@ plugin record) doesn't crash: not reduced further.
     NoCapture --opt=dev   GET /doc -> get, POST /doc -> post
     NoCapture --opt=speed GET /doc -> get, POST /doc -> post
 
-The same with the nightly and with the fork.
+The same with the nightly and with the fork up to 3f66e242ea.
 
-Workaround in rocx: `JobsPage.plugin` gives one route, for every method at `at` (`*`), so one
-closure captures the guard; the page itself answers GET, HEAD and POST, and 405 to the rest.
+**Fixed** in the fork since 9fcf362c0c: every program above answers under `--opt=speed` too. The fix is
+upstream's: upstream main 9e28b549e3 answers as well, without the fork's own fix for
+`list-map-reuse-opt-speed`. Most likely it is ae32726512, which the fork took with that fix: under
+`--opt=speed`, a `List.map` over closures (here `plugins.map(Plugin.running)`) read each item as a
+closure with no callable set, and calling one crashed. `JobsPage.plugin` is back to a GET and a POST route; for a day it gave one route,
+for every method at `at` (`*`), so one closure captured the guard.

@@ -50,21 +50,18 @@ JobsPage := [].{
 	## `Options` has it).
 	Mount := { mount : Str, back : { label : Str, href : Str } ?? { label: "", href: "" } }
 
-	## The jobs page as a plugin (`jobs-page`): its page at `at`, behind `guard`, which answers GET
-	## and POST (and 405 to any other method). It needs the jobs plugin (`Job.plugin`), whose queue it
-	## shows. Pages, not endpoints: not in the app's `/openapi.json`.
+	## The jobs page as a plugin (`jobs-page`): its page at `at`, a GET route (HEAD too) and a POST
+	## route, behind `guard`. It needs the jobs plugin (`Job.plugin`), whose queue it shows. Pages,
+	## not endpoints: not in the app's `/openapi.json`.
 	plugin : Options(ctx, out) -> Plugin.Value(ctx)
 	plugin = |options| {
 		at = options.at
 		guard = options.guard
 		back = options.back
+		answer! = |request, context| Middleware.run!(guard, request, context, |passed, _handed| JobsPage.respond!(passed, { mount: at, back }))
 		{
 			name: "jobs-page",
-			# One route, for every method (`*`): two routes (GET and POST) whose closures each capture the
-			# guard crash a server built with --opt=speed as it starts (a compiler bug:
-			# test/compiler-bugs/two-guarded-routes-opt-speed). Back to a GET and a POST route once the
-			# compiler is fixed.
-			routes: [{ method: "*", path: at, kind: Page, answer!: |request, context| Middleware.run!(guard, request, context, |passed, _handed| JobsPage.respond!(passed, { mount: at, back })) }],
+			routes: [{ method: "GET", path: at, kind: Page, answer! }, { method: "POST", path: at, kind: Page, answer! }],
 			needs: [Plugin("jobs")],
 		}
 	}

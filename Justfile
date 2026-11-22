@@ -20,7 +20,7 @@ rust_version := "1.100.0"
 # which may lack the fixes. test/compiler-bugs/ has each bug it fixes, and `just compiler-bugs`
 # shows which the nightly still has. The nightly stays in .tools/roc/.
 roc_fork := env_var_or_default("ROC_FORK", env_var("HOME") + "/roc-fork")
-roc_fork_commit := "3f66e242eafd37bad5c95e910e25f357d48bb7b2"
+roc_fork_commit := "9fcf362c0c329518117f9eff08b4614ca2598ff5"
 
 # Variables are worked out when a recipe uses them: `just setup` needs no compiler yet.
 set lazy

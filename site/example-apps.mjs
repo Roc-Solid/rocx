@@ -79,6 +79,16 @@ export function database(dir, main) {
 	return "";
 }
 
+/** The screenshots under site/static/shots, as `<app>/<scene>` (`tasks/list`), for the pages to show
+ * only those there are. */
+export function shotFiles(dir = join(root, "site", "static", "shots")) {
+	if (!existsSync(dir)) return [];
+	return readdirSync(dir, { withFileTypes: true })
+		.filter((entry) => entry.isDirectory())
+		.flatMap((app) => readdirSync(join(dir, app.name)).filter((file) => file.endsWith(".webp")).map((file) => `${app.name}/${file.replace(/\.webp$/, "")}`))
+		.sort();
+}
+
 /** What an example is made of, read from its files. */
 export function anatomy(name) {
 	const dir = join(root, "examples", name);
@@ -186,7 +196,7 @@ async function bench(rocx, seconds = 10) {
 }
 
 /** Roc for the site: `Examples`, the facts as values the page reads. */
-export function examplesModule(facts) {
+export function examplesModule(facts, shots = shotFiles()) {
 	const int = (n) => String(Math.round(n));
 	const size = (s) => (s ? `[{ bytes: ${int(s.bytes)}, gzip: ${int(s.gzip)}, brotli: ${int(s.brotli)} }]` : "[]");
 	const example = (e) =>
@@ -228,6 +238,10 @@ export function examplesModule(facts) {
 		"\tall = [",
 		...facts.examples.map(example),
 		"\t]",
+		"",
+		"\t## The screenshots there are under site/static/shots, as `<app>/<scene>` (`just example-shots`).",
+		"\tshots : List(Str)",
+		`\tshots = [${shots.map(rocString).join(", ")}]`,
 		"",
 		"\t## The server's benchmark (echo's), if one was run.",
 		"\tbench : List(Bench)",

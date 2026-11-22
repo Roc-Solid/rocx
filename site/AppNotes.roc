@@ -4,8 +4,8 @@ import Generated/Paths
 ## What the docs say of each example app, in the order the sidebar lists them: its page, a line for
 ## the sidebar, a summary, what it shows that the others don't, and its screenshots. The numbers
 ## beside them are measured (`ExampleApps`, from site/example-apps.json, `just example-apps`), and
-## so are the screenshots (site/static/shots/<app>/, `just example-shots`, each one named here shown,
-## and checked by the site's test to be there); this is the prose. An
+## so are the screenshots (site/static/shots/<app>/, `just example-shots`: a page shows those there
+## are, and the site's test checks that each one named here was taken); this is the prose. An
 ## app in examples/ that isn't here is on the overview, marked as having no notes yet, which the
 ## site's test refuses.
 AppNotes := [].{

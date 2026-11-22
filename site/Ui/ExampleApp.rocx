@@ -29,9 +29,7 @@ ExampleApp := [].{
 	page : AppNotes.About, ExampleApps.Example, List(Html) -> Html
 	page = |about, facts, extra| {
 		source = "https://github.com/Roc-Solid/rocx/tree/master/examples/${facts.name}"
-		# Every screenshot AppNotes names is shown: the site's test checks each was taken (`just
-		# example-shots`). Filtering them here by those there are miscompiled under --opt=speed.
-		shots = about.shots
+		shots = about.shots.keep_if(|each| ExampleApps.shots.contains("${facts.name}/${each.file}"))
 		<>
 			<PageHero
 				eyebrow={"Examples · examples/${facts.name}"}
@@ -79,10 +77,16 @@ ExampleApp := [].{
 		</>
 	}
 
-	## The screenshots, in AppNotes' order: a wide one across the page, phones side by side
-	## (`.screens` is a grid of two columns, a wide one spanning both).
+	## The screenshots: each wide one across the page, the phones' side by side.
 	screens : Str, List(AppNotes.Shot) -> Html
-	screens = |name, shots| <div class="screens">{...shots.map(|each| ExampleApp.shot(name, each))}</div>
+	screens = |name, shots| {
+		wide = shots.drop_if(|each| each.phone)
+		phones = shots.keep_if(|each| each.phone)
+		<div class="screens">
+			{...wide.map(|each| ExampleApp.shot(name, each))}
+			{=if (phones.is_empty()) Html.empty({}) else <div class="phones">{...phones.map(|each| ExampleApp.shot(name, each))}</div>}
+		</div>
+	}
 
 	shot : Str, AppNotes.Shot -> Html
 	shot = |name, it|
@@ -194,14 +198,14 @@ ExampleApp := [].{
 
 		.screens {
 			display: grid;
-			grid-template-columns: repeat(2, minmax(0, 1fr));
 			gap: var(--space-5);
 			margin: var(--space-4) 0;
 		}
 
-		/* A wide screenshot takes the whole row; phones share one. */
-		.shot:not(.phone) {
-			grid-column: 1 / -1;
+		.phones {
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+			gap: var(--space-5);
 		}
 
 		.shot {

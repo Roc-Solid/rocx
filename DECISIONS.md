@@ -1761,12 +1761,11 @@ Middleware(ctx, out) }`. `guard` has no default, so a page that acts on the queu
 because an option was left out: without it the app doesn't compile ("This record is missing the
 field: guard"; a server test checks the message). A request at `at` passes the app's middleware,
 then `guard` (what it hands on is ignored), then the page; it needs the jobs plugin
-(`needs: [Plugin("jobs")]`). It claims every method at its path (`*`; the page answers GET, HEAD
-and POST, and 405 to the rest), not a GET and a POST route: two closures that each capture the
-guard crash a server built with `--opt=speed` as it starts, with the pinned nightly and the fork
-alike (`test/compiler-bugs/two-guarded-routes-opt-speed`, reduced to 36 lines); back to two routes
-once the compiler is fixed. `JobsPage.respond!(request, { mount })` stays for an app that mounts it
-itself. And one look: `Look` (on no platform, so the browser's half can still show the tables
+(`needs: [Plugin("jobs")]`). Its routes are a GET (which answers HEAD too) and a POST at its path.
+For a day it claimed every method (`*`) instead: two closures that each capture the guard crashed a
+server built with `--opt=speed` as it started (`test/compiler-bugs/two-guarded-routes-opt-speed`), a
+compiler bug fixed upstream, in the fork since 9fcf362c0c. `JobsPage.respond!(request, { mount })`
+stays for an app that mounts it itself. And one look: `Look` (on no platform, so the browser's half can still show the tables
 admin) has the rules every admin page shares, part by part, and the helpers; the tables admin's
 stylesheet and `AdminHtml`'s (the server's pages) put their own rules among them. The copy the
 tables admin kept, and the test that held it to the platform's, are gone.
