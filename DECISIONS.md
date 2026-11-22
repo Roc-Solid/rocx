@@ -1860,6 +1860,86 @@ Show.PropsWith(a, e) := { …, children : (() => a) => Html }
 apps into components or defaults that exist only to get around it. **Reversible:** yes, but code
 that nests would break.
 
+## D-039 A value prop is a getter
+
+**Decided** 2026-11-22. The design, with the generated code before and after and the options
+weighed, is `spike/reactive-props/DESIGN.md`.
+
+**Context.** A component's value prop (`<Shows label={word!()} />`) had Roc's type, so it couldn't
+be a getter. rocx wrote `Html.component_with(|| { label: word!() }, Shows.view!)`, and the props were
+read before the component ran. In a hole, a change made the component anew, its signals with it.
+Outside a hole the props were read once. Two examples met it and worked around it:
+
+- examples/board: a stack's label inside a `<Show>`, made once, empty;
+- examples/quiz: the podium showing the lobby's scores.
+
+Solid's props are getters: the child is made once, and each place that reads a prop tracks it.
+
+**Options.**
+1. One accessor of the whole props record (`props! : () => { label : Str }`), reads rewritten to
+   `props!().label`.
+2. A getter per prop, as Solid's props object has: the caller passes `label: || word!()`, and rocx
+   rewrites the child's reads of `label` into `label!()` where they are written.
+3. Keep values, and make the child anew when one changes (`component_with` in a hole).
+
+**Choice.** 2. Option 1 has three problems:
+
+- a read of one prop runs, and tracks, every prop's expression (a markup hole made anew, an effect
+  applied again, when another prop changes);
+- one prop that waits holds every read;
+- Roc fills no `??` defaults in a record a thunk returns.
+
+Option 3 loses the child's state.
+
+```roc
+# Written, unchanged:
+Shows := [].{
+	view! : { label : Str } => Html
+	view! = |{ label }| <button>{label} {clicks!().to_str()}</button>
+}
+<Shows label={word!()} />
+
+# Generated:
+view! : { label : () => Str } => Html             # `max : U64 ?? 5` becomes `max : (() => U64) ?? (|| 5)`
+view! = |{ label: label! }| … Html.text_of(|| label!()) …
+Html.component(|| Shows.view!({ label: || word!() }))
+```
+
+- **Where a read runs**, as rocx writes it (`rocx-cli/Getters.roc` finds the views and writes their
+  types and patterns; `Transpile.read_code` rewrites the reads):
+  - in a hole, a computed attribute or a getter rocx writes: there, as a computation, tracked;
+  - in a lambda known to be an effect's (`|| …`, a handler, a function child, one given to a `!`
+    function, or bound to a `!` name or field): when it runs;
+  - in the component's body: once, untracked;
+  - in another lambda, which may be pure (`.keep_if(|i| i.owner == me)`, a helper bound to a plain
+    name): read where it is made, by a wrapper, `(|me| |i| i.owner == me)(me!())`. A root inside
+    another root's run names its own (`me_2`).
+- **A view that names its whole record** (`|props|`) reads `(props.label)()`: `props.label()` would
+  call a method of its nominal type. An accessor named through a prop (`left!={clock.left!}`) is
+  `|| (clock!().left!)()`.
+- **Route views**, too: Root passes a page's `params`, a layout's `meta` and `params`, and the error
+  page's `status` and `problem` as getters. So D-040 (client-side navigation) may keep a page or a
+  layout across a change of its params, if the user chooses that.
+- **What isn't a getter:**
+  - accessor props (`label!`), `children`, and the platform's own components' props;
+  - a pure `view`'s props: values. A call that passes one read from what changes becomes a hole of
+    its own, rendered anew.
+  - a file's own function component (`answer! = |{ said }|`) is rewritten only when the file uses
+    it only as a tag. Called directly too, it keeps values, and `rocx build` warns at a tag that
+    gives it one read from what changes.
+- **`<For>` rows and `<Show>` function children run untracked** (Solid's `mapArray`, `untrack`): a
+  computation flag in `runtime.js`. A read that waits still runs them again.
+- **`Html.component_with` goes.** D-044's browser-copy rewrite unbinds a getter's binding as
+  `params: _`.
+- **Examples:** board's stack is back in the tile with a plain `label`. Quiz's `Podium`, `Lobby` and
+  `Board` take plain props.
+
+**Why.** Solid's semantics with Roc's syntax. The child is made once and keeps its signals, only
+what reads a prop is patched, and no app's source changes, packages' components included.
+
+**Reversible:** yes. It is the transpiler's and the runtime's, so no app's source changes; but code
+that relies on a child kept, or on untracked rows, would change behavior.
+
 ## D-040 Client-side navigation
 
 **Status.** Proposed (2026-11-22). Nothing is built; the design, with its phases and the questions

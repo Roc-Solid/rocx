@@ -111,8 +111,9 @@ view! = |_|
 				nominal record with defaults (<code>title : Str ?? ""</code>). A pure component, a
 				<code>view</code> with no <code>!</code>, is that and no more: a function, called where it is
 				written. One that may make signals, a <code>view!</code>, is called as
-				<code>StatusPill.view!</code>, where it is rendered, once, and a prop named as an effect
-				(<code>{"text!={…}"}</code>) is passed as a function its holes call
+				<code>StatusPill.view!</code>, where it is rendered, once, and each of its props is passed as a
+				function, Solid's getter, which it reads where its code reads the prop; one named as an effect
+				(<code>{"text!={…}"}</code>) is one it calls itself
 				(<a href={"${Paths.components}#passing"}>passing them on</a>).
 			</p>
 			<Example source={Sources.components} output={Components.demo({})} live />
@@ -167,9 +168,9 @@ view! = |_|
 			<Heading id="events">In a component</Heading>
 			<p>
 				In a component, markup means more than HTML does: a hole or attribute that calls something named
-				with <code>!</code> (a signal, a memo, a prop that is an accessor) is a computation, which runs
-				again when a signal it read changes; one that calls nothing so named can't change, and is written
-				once. And
+				with <code>!</code> (a signal, a memo, a prop that is an accessor), or reads a prop of a
+				<code>view!</code>, is a computation, which runs again when a signal it read changes; one that does
+				neither can't change, and is written once. And
 				<code>on:click={"{…}"}</code> is a handler, an effect, run when the event
 				reaches the element (<code>on:drop</code> and the rest of <a href={"${Paths.components}#drag"}>drag and drop</a> among them).
 				<code>.value</code>, <code>.checked</code> and <code>.key</code> give it what the event says; a key's

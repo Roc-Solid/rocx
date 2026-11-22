@@ -105,26 +105,41 @@ same components natively; this one hydrates them.
   reads untracked, so it sees the contexts provided above it. A signal belongs to the run that made
   it, and is let go of with it: a `<Show>` switching, a row going. A `<For>`'s row and a `<Show>`'s
   narrowed child are effectful functions run the same way, as their part is made (D-036), so they
-  may hold another `<For>` or `<Show>`, owned by the row or the part.
+  may hold another `<For>` or `<Show>`, owned by the row or the part; and, as a component, once and
+  untracked (Solid's `mapArray` and `untrack`, D-039): a change of what one read at its top doesn't
+  make it anew (a read that waits runs it again once its value is in). Its holes, and the getters it
+  gives its components, follow the item.
 - **Parts are made as they show**, as Solid makes them. What a `<Show>` shows, and a fallback (a
   `<Show>`'s, a `<For>`'s, a `<Loading>`'s), is serialized as a component node
   (`{"t":"c"}`, `Html.serialize!`'s `made!`): its box is run where the part is rendered, once, its
-  reads untracked, owned by the part, and again each time the part shows again. So a value prop
-  in it is read as it shows, not as the page first rendered, and the holes inside aren't kept until
-  then. A `<For>`'s row (`"r"`) and a `<Show>`'s function child (`"with"`) are made as they come too,
-  but by computations of their own, which track what the row's or child's own code reads: a value
-  prop read there (`<PlannerDay day={day!()} />` in a row) makes the row anew when it changes.
-  D-039 (reactive value props) makes those runs untracked, as Solid's `mapArray` is, once value
-  props are patched in place.
-- **Props.** A prop named as an effect (`label!={word!()}`) is an accessor, `|| word!()`: Solid's
-  getter, read in the child's own holes, which track it and are patched, the child kept. A prop that
-  is a value read from what changes (`label={word!()}`) has Roc's type, so it can't be a getter:
-  rocx writes `Html.component_with(|| { label: word!() }, Shows.view!)`, and the props are read by
-  what serializes the markup the call is in (`ComponentWith`), before the component runs. In a hole
-  that is the hole's run, which tracks them: when they change it runs again and renders the
-  component anew (its signals made anew), as a pure component's call in a hole renders anew.
-  Outside a hole they are read once, as the place is made (in a `<Show>`, as its part shows). A context a prop reads is the place's where the
-  call is written, not the component's.
+  reads untracked, owned by the part, and again each time the part shows again. So the holes inside
+  aren't kept until then. A `<For>`'s row (`"r"`) and a `<Show>`'s function child (`"with"`) are made
+  as they come too, by computations of their own, run untracked as above (D-039): a value prop read
+  there (`<PlannerDay day={day!()} />` in a row) is a getter the component reads, so the row is kept.
+- **Props are getters** (D-039), as Solid's are. rocx writes `<Shows label={word!()} />` as
+  `Html.component(|| Shows.view!({ label: || word!() }))`, every value prop a function that computes
+  it (a static one too: `size: || 2`), and writes the component, as its author wrote it with
+  `view! : { label : Str } => Html` and `|{ label }|`, so that it takes them: its type
+  `{ label : () => Str }` (a default `max : U64 ?? 5` is `(() => U64) ?? (|| 5)`), its pattern
+  `|{ label: label! }|`, and each read of `label` in its definition `label!()`, where it is written.
+  So the read runs where the code is: in a hole, a computed attribute, a memo or an effect's compute,
+  tracked there, and only that is patched, the component and its signals kept; in a handler, an
+  effect's apply or a timer, when it runs, the current value; in the component's body, once, as it
+  runs (`first = label` keeps the first), as `props.label` at a Solid component's top. A lambda that
+  may be pure (given to `.map`, `.keep_if`, bound to a name without `!`) can't call a getter: rocx
+  reads the prop where that lambda is made, `(|label| |x| … label …)(label!())`, so in a hole the hole
+  tracks it. One known to run as an effect reads it when it runs: `|| …`, a handler, a function
+  child, one given to a `!` function (`create_effect!(…, |r| …)`) or bound to a `!` name. A
+  component that names its whole record (`|props|`) reads `(props.label)()`. Not getters: a prop
+  named as an effect (`label!={word!()}`, an accessor, `|| word!()`, which the child types and calls
+  itself), `children` (markup, whose holes are already live), and the props of the platform's own
+  components (`<Show>`, `<For>`…). A pure component's (`view`) props are values, its call made where
+  it is written; given one read from what changes, the call is a hole of its own
+  (`Html.html_of(|| Heading.view({…}))`), made anew when it changes. A prop's expression runs where the
+  child reads it: a context it reads is that place's, an async read in it waits in the child's hole
+  (and, read in the child's body, is refused, as the component's own would be), and each read
+  computes it again, as a Solid getter does (a memo shares it). A `.roc` component written by hand
+  types its value props as getters (`label : () => Str`).
 - **Effects** are Solid 2.0's split ones: `create_effect!(compute, apply)`. The runtime makes a
   computation of `compute` (tracked, owned by the component or computation running), and its answer
   is the id of a box `apply` is in, its value inside. `apply` runs after the flush, once nothing is
@@ -358,7 +373,7 @@ false on the first load, true while a refresh is on its way, false on the server
 context); the tally with nothing to provide its store (`Alone.rocx`); and a whole document
 (`Document.rocx`; inside an `<Errored>`, `Wrapped.rocx`), rendered in Node as the server platform answers a page and hydrated by
 `start.js`; effects, a cleanup, a timer and a listen (`Effects.rocx`); a form's submission
-(`Form.rocx`); props read in a hole and outside one, and an accessor (`Props.rocx`); `<Title>`s
+(`Form.rocx`); value props, getters (D-039), given in a hole, outside one, in a `<Show>` and in a row, read every way a component may, and an accessor (`Props.rocx`); `<Title>`s
 (`Titles.rocx`); channels (`Channels.rocx`: two feeds on one org's news, a third on another's); and a
 planner (`Planner.rocx`: cards dragged between days, moved optimistically with `use_action!` and
 `use_submissions!`, gliding).
@@ -368,8 +383,10 @@ transitions are over (and none with less motion asked for), hydration without a 
 host's `data-rocx` elements passed over, `start.js` under `/rocx/` asking for nothing outside it,
 an effect run after hydration and again after its cleanup (none on the server), a timer and a
 listen stopping with their component, a flash hydrated as the server rendered it, a form sent with
-`fetch` (pending, refused, answered, redirected), a hole rendering a component anew when a value
-prop it read changes, the document's title kept to the last `<Title>` there (hydrated strictly, the
+`fetch` (pending, refused, answered, redirected), a component given a value prop (in a
+hole, outside one, in a `<Show>`, in a row) kept, its signals with it, and only what reads the
+prop patched (in its body, once; in a pure lambda, by its hole; in an effect and a handler, as they
+run), rows made once, the document's title kept to the last `<Title>` there (hydrated strictly, the
 server's `<title data-rocx>` first in `<head>`), a `<NoHydration>` the browser's wasm hasn't (its
 nodes kept, strictly and after `<body>` is rendered again; the browser's build rendered against
 the page's answers and regions, byte for byte), one channel stream for three subscriptions (one
@@ -396,9 +413,11 @@ glides (none with less motion asked for); a link's click taken over; and no allo
   than text for other pages to read.
 - **Moves that resize:** a glide moves an element (`translate`), it doesn't scale it from its old
   size; one inside a box that clips (`overflow`) is clipped as it crosses into another.
-- **The rest of @solidjs/meta:** `<Meta>`, `<Link>`, `<Style>`; only `<Title>` is there. And a
-  value prop of an effectful component patched in place: Roc's types can't make it a getter, so it
-  is an accessor (`label!={…}`) or rendered anew.
+- **The rest of @solidjs/meta:** `<Meta>`, `<Link>`, `<Style>`; only `<Title>` is there.
+- **`untrack`** (Solid's), and Solid 2.0's dev warning for a reactive read at a component's top
+  (a prop's getter, a signal) that it would silence; and `merge`/`omit` for passing props on.
+- **A pure component patched in place:** given a value read from what changes, its call is a hole
+  made anew (it keeps no state); a `view!` is kept.
 - **`Try` across the wire:** the builtin has no JSON encoder or parser on this Roc; a tag union
   stands in.
 - **The rules a component must keep:** read async values in holes, not in its body, and write

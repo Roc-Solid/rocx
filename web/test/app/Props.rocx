@@ -1,33 +1,49 @@
 import pf.Html
-import pf.Solid exposing [create_signal!]
 import pf.Show
 import pf.For
+import pf.Solid exposing [create_signal!, create_effect!]
 
-## Props, for the tests (`props_app.roc`): a value prop read from a signal, in a hole and outside
-## one, given to an effectful component; and the same signal as an accessor prop. Then value props
-## in what a `<Show>` shows and in fallbacks, made when they show.
+## Props, for the tests (`props_app.roc`): a value prop read from a signal (D-039: a getter), given to
+## an effectful component in a hole, outside one and inside a `<Show>`; the same signal as an accessor
+## prop; a component that reads its prop in its body, in a pure lambda, in an effect and in a handler;
+## and a `<For>` whose rows are made once (untracked). Then what a `<Show>` shows, and fallbacks, made
+## when they show, with value props in them.
 Props := [].{
 	view! : {} => Html
 	view! = |{}| {
 		(word!, set_word!) = create_signal!("one")
+		(items!, set_items!) = create_signal!([{ id: "a", name: "Ada" }, { id: "b", name: "Bo" }])
 		(open!, set_open!) = create_signal!(Bool.False)
-		(items!, set_items!) = create_signal!([])
+		(entries!, set_entries!) = create_signal!([])
 		<div>
 			<button class="set" on:click={|| set_word!("two")}>Set</button>
+			<button class="rename" on:click={|| set_items!(items!().map(|item| if (item.id == "a") { ..item, name: "Ana" } else item))}>Rename</button>
 			<button class="again" on:click={|| set_word!("three")}>Again</button>
 			<button class="toggle" on:click={|| set_open!(!open!())}>Toggle</button>
-			<button class="fill" on:click={|| set_items!(if (items!().is_empty()) ["an item"] else [])}>Fill</button>
+			<button class="fill" on:click={|| set_entries!(if (entries!().is_empty()) ["an item"] else [])}>Fill</button>
 			<p class="hole">{=<Shows label={word!()} />}</p>
 			<p class="once"><Shows label={word!()} /></p>
 			<p class="getter"><Getter label!={word!()} /></p>
-			<p class="shown">
+			<Show when!={!word!().is_empty()}>
+				<p class="shown"><Shows label={word!()} /></p>
+			</Show>
+			<Detail label={word!()} />
+			<ul class="rows">
+				<For each!={items!()} keyed={|item| item.id}>
+					{|item!, _| {
+						first = item!().name
+						<li data-id={item!().id}><Shows label={item!().name} /> <span class="first">{first}</span></li>
+					}}
+				</For>
+			</ul>
+			<p class="toggled">
 				<Show when!={open!()} fallback={<Shows label={"no ${word!()}"} />}>
 					<Shows label={word!()} />
 				</Show>
 			</p>
 			<p class="listed">
-				<For each!={items!()} keyed={Bool.False} fallback={<Shows label={"none, ${word!()}"} />}>
-					{|item!, _| <span class="item">{item!()}</span>}
+				<For each!={entries!()} keyed={Bool.False} fallback={<Shows label={"none, ${word!()}"} />}>
+					{|entry!, _| <span class="item">{entry!()}</span>}
 				</For>
 			</p>
 		</div>
@@ -49,5 +65,23 @@ Getter := [].{
 	view! = |{ label! }| {
 		(clicks!, set_clicks!) = create_signal!(0.U64)
 		<button class="getter" on:click={|| set_clicks!(clicks!() + 1)}>{label!()} {clicks!().to_str()}</button>
+	}
+}
+
+## Reads its label every way a component may: in its body (once), in a pure lambda (read where the
+## lambda is made: in the hole), in an effect (tracked), and in a handler (the current value).
+Detail := [].{
+	view! : { label : Str } => Html
+	view! = |{ label }| {
+		first = label
+		(seen!, set_seen!) = create_signal!("")
+		(said!, set_said!) = create_signal!("")
+		create_effect!(|| label, |now| set_seen!(now))
+		<div class="detail">
+			<span class="first">{first}</span>
+			<span class="joined">{Str.join_with(["a", "b"].map(|x| "${x}-${label}"), ",")}</span>
+			<span class="seen">{seen!()}</span>
+			<button class="say" on:click={|| set_said!(label)}>{said!()}</button>
+		</div>
 	}
 }

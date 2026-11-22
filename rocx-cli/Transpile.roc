@@ -10,6 +10,7 @@
 import Text
 import Value
 import Styles
+import Getters
 
 Transpile := [].{
 
@@ -27,7 +28,7 @@ Transpile := [].{
 	## What a file is, transpiled: its code; how many `<NoHydration>`s it has; its <style>s, scoped (a
 	## component's, or the file's when `component` is `None`); its stories (`<story>` in a component's
 	## block).
-	Module : { code : Str, regions : U64, styles : List({ css : Str, line : U64, component : [Some(Str), None] }), stories : List({ component : Str, name : Str, def : Str, line : U64 }) }
+	Module : { code : Str, regions : U64, styles : List({ css : Str, line : U64, component : [Some(Str), None] }), stories : List({ component : Str, name : Str, def : Str, line : U64 }), warnings : List(RocxError) }
 
 	## What a transpiler knows of the file, which doesn't change as it reads.
 	Cfg : {
@@ -40,6 +41,12 @@ Transpile := [].{
 		packaged : List(Str),
 		contexts : List({ key : Str, value : Str }),
 		pure : List(Str),
+		# D-039: the views whose value props are getters, the code written otherwise for them, and the
+		# file's function components that take getters, and those kept with values.
+		getters : List(Getters.View),
+		swaps : List(Getters.Swap),
+		fns : List(Str),
+		plain_fns : List(Str),
 	}
 
 	## Where a transpiler is in the file, and what it has found so far.
@@ -54,7 +61,20 @@ Transpile := [].{
 		in_region : U64,
 		closed : List({ id : U64, to : U64 }),
 		next_block : U64,
+		# The closures being read, innermost last (D-039): where a prop's read goes.
+		frames : List(Frame),
+		# Where a lambda starts that is known to be an effect's (a handler's, a function child's).
+		effectful_at : List(U64),
+		warnings : List({ reason : Str, at : U64 }),
 	}
+
+	## A closure being read, for a prop's reads (D-039). An effectful one (a hole's, an attribute's, a
+	## getter's that rocx writes; `|| …`; a handler; a function child; a lambda given to an effect)
+	## reads a prop where it is written: `label!()`. One that may be pure (a lambda given to `.map`)
+	## can't call a getter: its reads go to its `root`, the outermost of the pure ones above an
+	## effectful one, which reads them where it is made, `(|label| |x| …)(label!())`; `level` tells
+	## nested roots' names apart (`label_2`), and `names` are the props its run read.
+	Frame : { pure : Bool, root : Bool, level : U64, names : List(Str) }
 
 	## An item of a Roc list or record: a newline (with the indentation the next source line has), an
 	## item, or a component's function child (`{|post, index!| …}`).
@@ -530,7 +550,7 @@ Transpile := [].{
 		src = source.to_utf8()
 		file_name = Transpile.last_part(file)
 		module_path = if (opts.module_path == "") (if (file_name.ends_with(".rocx")) file_name.drop_suffix(".rocx") else file_name) else opts.module_path
-		base = { src, file, module_path, client: opts.client, scopes, modules: [], packaged: [], contexts: [], pure: [] }
+		base = { src, file, module_path, client: opts.client, scopes, modules: [], packaged: [], contexts: [], pure: [], getters: [], swaps: [], fns: [], plain_fns: [] }
 		starts = Transpile.line_starts(src)
 		# Markup is components, written with the platform's Html (both platforms have it): there is no
 		# other (the html package, which rendered static pages, is gone).
@@ -632,12 +652,17 @@ Transpile := [].{
 				}
 			}
 		}
-		Ok({ ..base, modules: $modules, packaged: $packaged, contexts: $contexts, pure: $pure })
+		found =
+			match Getters.find(src, Transpile.type_blocks(src)) {
+				Ok(f) => f
+				Err(Problem(problem)) => return Err(Transpile.fail(base, problem.reason, problem.at))
+			}
+		Ok({ ..base, modules: $modules, packaged: $packaged, contexts: $contexts, pure: $pure, getters: found.views, swaps: found.swaps, fns: found.fns, plain_fns: found.plain_fns })
 	}
 
 	## A transpiler at the start of the file.
 	fresh : St
-	fresh = { pos: 0, styles: [], stories: [], preformatted: 0, spans: [], effects: 0, regions: 0, in_region: 0, closed: [], next_block: 0 }
+	fresh = { pos: 0, styles: [], stories: [], preformatted: 0, spans: [], effects: 0, regions: 0, in_region: 0, closed: [], next_block: 0, frames: [], effectful_at: [], warnings: [] }
 
 	## Items of a Roc list or record, separated by commas, with newlines where the source had them.
 	render_items : List(Part) -> Str
@@ -803,6 +828,10 @@ Transpile := [].{
 		)
 	}
 
+	## A component's static prop: a getter for a component that takes them (D-039), else the value.
+	static_prop : Bool, Str, Str -> Str
+	static_prop = |getters, name, value| if (getters and Getters.is_value(name)) "|| ${value}" else value
+
 	## Reactive, a component's prop named as an effect (`title!`) is an accessor, as Solid's compiler
 	## makes a prop a getter: `title!={user!().name}` passes `|| user!().name`. A prop that already is a
 	## function, an accessor's name or a lambda, is passed as it is. Other props are values.
@@ -815,6 +844,199 @@ Transpile := [].{
 		if (Transpile.is_accessor_name(code) or code.starts_with("|")) expr else "|| ${expr}"
 	}
 
+	## A closure opened (D-039): effectful, or one that may be pure, which is a root when what is
+	## around it is effectful (or the component's body).
+	opened : St, Bool -> St
+	opened = |st, pure| {
+		outer_pure =
+			match st.frames.last() {
+				Ok(f) => f.pure
+				Err(_) => Bool.False
+			}
+		root = pure and !outer_pure
+		level = if (root) st.frames.keep_if(|f| f.root).len() + 1 else 0
+		{ ..st, frames: st.frames.append({ pure, root, level, names: [] }) }
+	}
+
+	## The root of the pure closures a read is in (the first root below the innermost), if it is in one.
+	root_of : List(Frame) -> [Some(U64), None]
+	root_of = |frames| {
+		var $i = frames.len()
+		while $i > 0 {
+			match frames.get($i - 1) {
+				Ok(f) => {
+					if !f.pure {
+						return None
+					}
+					if f.root {
+						return Some($i - 1)
+					}
+				}
+				Err(_) => return None
+			}
+			$i = $i - 1
+		}
+		None
+	}
+
+	## A prop read here (`key`: `label`, or `props.label` for a view that names its whole record): its
+	## getter called (`label!()`) where the closure around it is effectful, or it is the body; in one
+	## that may be pure, the name its root binds the value to.
+	read_prop : St, Str -> { st : St, text : Str }
+	read_prop = |st, key|
+		match Transpile.root_of(st.frames) {
+			Some(at) =>
+				match st.frames.get(at) {
+					Ok(root) => {
+						names = if (root.names.contains(key)) root.names else root.names.append(key)
+						{ st: { ..st, frames: st.frames.set(at, { ..root, names }) ?? st.frames }, text: Transpile.lent_name(key, root.level) }
+					}
+					Err(_) => { st, text: key }
+				}
+			None => { st: { ..st, effects: st.effects + 1 }, text: Transpile.getter_call(key) }
+		}
+
+	## The name a pure root binds a prop's value to: `label`, `props_label`; `label_2` in a root inside
+	## another.
+	lent_name : Str, U64 -> Str
+	lent_name = |key, level| {
+		base = key.replace_each(".", "_")
+		if (level > 1) "${base}_${level.to_str()}" else base
+	}
+
+	## A prop's getter called: `label!()`, or `(props.label)()` (`props.label()` would be a method's call).
+	getter_call : Str -> Str
+	getter_call = |key| if (key.contains(".")) "(${key})()" else "${key}!()"
+
+	## A closure closed (D-039): its frame let go of. A pure root whose run read props reads them where
+	## it is made: what was written from `out_at` on (`it`) becomes `(|label| it)(label!())`.
+	closed : St, Str, U64 -> { st : St, out : Str }
+	closed = |st, out, out_at| {
+		match st.frames.last() {
+			Ok(frame) => {
+				st1 = { ..st, frames: st.frames.drop_last(1) }
+				if frame.root and !frame.names.is_empty() {
+					bytes = out.to_utf8()
+					bound = Str.join_with(frame.names.map(|key| Transpile.lent_name(key, frame.level)), ", ")
+					reads = Str.join_with(frame.names.map(Transpile.getter_call), ", ")
+					{ st: { ..st1, effects: st1.effects + 1 }, out: "${Text.cut(bytes, 0, out_at)}(|${bound}| ${Text.rest(bytes, out_at)})(${reads})" }
+				} else {
+					{ st: st1, out }
+				}
+			}
+			Err(_) => { st, out }
+		}
+	}
+
+	## Every lambda a read opened, closed, the innermost first.
+	close_all : St, Str, List({ out_at : U64, brackets : U64, line_indent : U64 }) -> { st : St, out : Str }
+	close_all = |st, out, lambdas|
+		lambdas.fold_rev(
+			{ st, out },
+			|lambda, done| Transpile.closed(done.st, done.out, lambda.out_at),
+		)
+
+	## Whether the lambda ends at `pos`, `brackets` being open: at a `,` or a closer of the brackets it
+	## is in, at `else`, or at a line break before a line indented no deeper than the line it began on.
+	lambda_ends : List(U8), U64, U64, { out_at : U64, brackets : U64, line_indent : U64 } -> Bool
+	lambda_ends = |src, pos, brackets, lambda| {
+		if brackets != lambda.brackets {
+			return Bool.False
+		}
+		c = Text.at(src, pos)
+		if c == ')' or c == ']' or c == '}' or c == ',' {
+			return Bool.True
+		}
+		if Text.starts_with_at(src, "else".to_utf8(), pos) and !Transpile.is_ident_part(Text.at(src, pos + 4)) and (pos == 0 or !Transpile.is_ident_part(Text.at(src, pos - 1))) {
+			return Bool.True
+		}
+		if c != '\n' {
+			return Bool.False
+		}
+		var $ls = pos + 1
+		var $first = Text.run_end(src, $ls, Transpile.is_space_or_tab)
+		while $first < src.len() and (Text.at(src, $first) == '\n' or Text.at(src, $first) == '\r') {
+			$ls = $first + 1
+			$first = Text.run_end(src, $ls, Transpile.is_space_or_tab)
+		}
+		$first >= src.len() or $first - $ls <= lambda.line_indent
+	}
+
+	## Whether a `|` after `last` starts a lambda: an expression may begin there (not after a value,
+	## where it is a pattern's alternative).
+	lambda_here : Str -> Bool
+	lambda_here = |last| {
+		if last == "" or Transpile.keywords_before_expression.contains(last) {
+			return Bool.True
+		}
+		end = Text.at(last.to_utf8(), last.to_utf8().len() - 1)
+		!(Transpile.is_ident_part(end) or end == ')' or end == ']' or end == '}' or end == '"' or end == '\'' or end == '?')
+	}
+
+	## Whether a lambda's parameters (`|{ day, x }|`) bind `name`.
+	binds : List(U8), Str -> Bool
+	binds = |params, name| {
+		needle = name.to_utf8()
+		var $i = 0
+		while $i < params.len() {
+			match Text.index_of(params, needle, $i) {
+				Ok(k) => {
+					e = k + needle.len()
+					before = if (k == 0) ' ' else Text.at(params, k - 1)
+					after = Text.run_end(params, e, Transpile.is_space_or_tab)
+					if !Transpile.is_ident_part(before) and before != '.' and !Transpile.is_ident_part(Text.at(params, e)) and Text.at(params, after) != ':' {
+						return Bool.True
+					}
+					$i = k + 1
+				}
+				Err(_) => return Bool.False
+			}
+		}
+		Bool.False
+	}
+
+	## A view's prop read at `pos` (D-039): the prop (`label`; `props.label` for a view that names its
+	## whole record), where its name ends, and whether it is a record's punned field (`{ id, label }`).
+	## Not a read: after a `.`, or a record's label (`label: …`). A prop's name bound again is refused.
+	prop_at : Cfg, Getters.View, U64, U64, Str, Str, List({ c : U8, bang : Bool }) -> Try([Read({ key : Str, end : U64, punned : Bool }), NotRead], [Rocx(RocxError), Crash(Str)])
+	prop_at = |cfg, view, pos, end, word, last, open| {
+		src = cfg.src
+		before = if (pos > 0) Text.at(src, pos - 1) else ' '
+		spread = pos >= 2 and before == '.' and Text.at(src, pos - 2) == '.'
+		if before == '.' and !spread {
+			return Ok(NotRead)
+		}
+		match view.record {
+			Some(record) =>
+				if word == record and Text.at(src, end) == '.' {
+					f_end = Text.run_end(src, end + 1, Transpile.is_ident_part)
+					field = Text.cut(src, end + 1, f_end)
+					return if (Getters.is_value(field) and (view.fields.is_empty() or view.fields.contains(field))) Ok(Read({ key: "${record}.${field}", end: f_end, punned: Bool.False })) else Ok(NotRead)
+				}
+			None => {}
+		}
+		if !view.props.contains(word) {
+			return Ok(NotRead)
+		}
+		next = Text.run_end(src, end, Transpile.is_space_or_tab)
+		nc = Text.at(src, next)
+		if nc == ':' and Text.at(src, next + 1) != ':' and Text.at(src, next + 1) != '=' {
+			return Ok(NotRead)
+		}
+		first_on_line = Text.run_end(src, Text.line_start(src, pos), Transpile.is_space_or_tab) == pos
+		if (nc == '=' and Text.at(src, next + 1) != '=' and Text.at(src, next + 1) != '>' and first_on_line) or last == "for" {
+			return Err(Transpile.fail(cfg, "${word} is a prop of this component, which rocx reads through its getter (D-039): give this another name", pos))
+		}
+		in_record =
+			match open.last() {
+				Ok(o) => o.c == '{'
+				Err(_) => Bool.False
+			}
+		na = Text.at(src, Getters.skip_blank(src, end, src.len()))
+		punned = in_record and (last == "," or last == "{") and (na == ',' or na == '}') and !(last == "{" and na == '}')
+		Ok(Read({ key: word, end, punned }))
+	}
+
 	## Roc code, with any markup in it turned into calls; up to an unmatched `}` when inside a hole.
 	read_code : Cfg, St, Bool -> Try({ st : St, out : Str }, [Rocx(RocxError), Crash(Str)])
 	read_code = |cfg, st0, inside_braces| {
@@ -825,6 +1047,13 @@ Transpile := [].{
 		var $depth = Transpile.zero
 		# The last significant token: after a value, `<` is the less-than operator.
 		var $last = ""
+		# The significant token before it (`x!` in `x! = |…|`).
+		var $prev = ""
+		# Each open bracket, innermost last, and whether a `(` calls an effect (`create_effect!(`).
+		var $open = []
+		# The lambdas this read opened and hasn't closed (D-039), innermost last: where each began in
+		# `$out`, how many brackets were open there, and its line's indentation.
+		var $lambdas = []
 		# Whether each open `(` holds an `if` or `while` condition: after its `)`, an expression starts.
 		var $parens = []
 		# Each open `{`: a type's block (`Counter := [].{`), where a <style> styles that component, or none.
@@ -834,21 +1063,45 @@ Transpile := [].{
 		while $st.pos < src.len() {
 			pos = $st.pos
 			c = Text.at(src, pos)
+			last_before = $last
+			var $closing = !$lambdas.is_empty()
+			while $closing {
+				match $lambdas.last() {
+					Ok(lambda) if Transpile.lambda_ends(src, pos, $open.len(), lambda) => {
+						done = Transpile.closed($st, $out, lambda.out_at)
+						$st = done.st
+						$out = done.out
+						$lambdas = $lambdas.drop_last(1)
+					}
+					_ => {
+						$closing = Bool.False
+					}
+				}
+			}
 			if c == '}' and inside_braces and $depth == 0 {
 				return Ok({ st: $st, out: $out })
 			}
-			if c == '(' {
+			if (c == '{' or c == '|') and cfg.swaps.any(|swap| swap.from == pos) {
+				# Written otherwise (D-039): a view's props type, made of getters, or its pattern.
+				swap = cfg.swaps.find_first(|each| each.from == pos) ?? { from: pos, to: pos + 1, text: "" }
+				$out = $out.concat(swap.text)
+				$st = { ..$st, pos: swap.to }
+				$last = if (c == '|') "|" else "}"
+			} else if c == '(' {
 				$parens = $parens.append($last == "if" or $last == "while")
+				$open = $open.append({ c, bang: $last.ends_with("!") and $last != "!" })
 				$out = $out.concat("(")
 				$st = { ..$st, pos: pos + 1 }
 				$last = "("
 			} else if c == ')' {
 				condition = $parens.last() ?? Bool.False
 				$parens = $parens.drop_last(1)
+				$open = $open.drop_last(1)
 				$out = $out.concat(")")
 				$st = { ..$st, pos: pos + 1 }
 				$last = if (condition) "(" else ")"
 			} else if c == '{' or c == '[' {
+				$open = $open.append({ c, bang: Bool.False })
 				if c == '{' {
 					$depth = $depth + 1
 					back = Text.skip_space_back(src, pos)
@@ -868,7 +1121,39 @@ Transpile := [].{
 				$out = $out.concat(if (c == '{') "{" else "[")
 				$st = { ..$st, pos: pos + 1 }
 				$last = if (c == '{') "{" else "["
+			} else if c == ']' {
+				$open = $open.drop_last(1)
+				$out = $out.concat("]")
+				$st = { ..$st, pos: pos + 1 }
+				$last = "]"
+			} else if c == '|' and Transpile.lambda_here($last) {
+				# A lambda (D-039): effectful (`|| …`; a handler's, a function child's; given to an effect,
+				# `create_effect!(…, |r| …)`; bound to an effect's name, `ended! = |x| …`, or field), or one
+				# that may be pure, which can't call a prop's getter.
+				params_end = if (Text.at(src, pos + 1) == '|') pos + 2 else Getters.top_level(src, pos + 1, src.len(), ['|']) + 1
+				params = Text.slice(src, pos, params_end)
+				match cfg.getters.find_first(|v| v.from <= pos and pos < v.to) {
+					Ok(view) =>
+						match view.props.find_first(|prop| Transpile.binds(params, prop)) {
+							Ok(prop) => return Err(Transpile.fail(cfg, "${prop} is a prop of this component, which rocx reads through its getter (D-039): give this parameter another name", pos))
+							Err(_) => {}
+						}
+					Err(_) => {}
+				}
+				bang_arg = ($last == "(" or $last == ",") and (
+					match $open.last() {
+						Ok(o) => o.c == '(' and o.bang
+						Err(_) => Bool.False
+					}
+				)
+				named = ($last == "=" or $last == ":") and $prev.ends_with("!")
+				effectful = params_end == pos + 2 or $st.effectful_at.contains(pos) or bang_arg or named
+				$lambdas = $lambdas.append({ out_at: $out.to_utf8().len(), brackets: $open.len(), line_indent: Text.run_end(src, Text.line_start(src, pos), Transpile.is_space_or_tab) - Text.line_start(src, pos) })
+				$st = Transpile.opened({ ..$st, pos: params_end }, !effectful)
+				$out = $out.concat(Str.from_utf8_lossy(params))
+				$last = "|"
 			} else if c == '}' {
+				$open = $open.drop_last(1)
 				$depth = $depth - 1
 				match $blocks.last() {
 					Ok(Opened(b)) => {
@@ -924,21 +1209,38 @@ Transpile := [].{
 					$st = made.st
 					if made.open {
 						$parens = $parens.append(Bool.False)
+						$open = $open.append({ c: '(', bang: Bool.False })
 					}
 					$last = if (made.open) "(" else ")"
 				} else {
 					if word == "server!" and Text.at(src, end) == '(' {
 						return Err(Transpile.fail(cfg, "server!(…) is gone (D-023): define a GET endpoint (get! in a route's +server.roc) and read it with Endpoint.get!(Api.get_…(params))", pos))
 					}
-					if Text.is_upper(c) and Transpile.declares_type(src, end) {
-						$declared = Some(word)
+					read =
+						match cfg.getters.find_first(|v| v.from <= pos and pos < v.to) {
+							Ok(view) => Transpile.prop_at(cfg, view, pos, end, word, $last, $open)?
+							Err(_) => NotRead
+						}
+					match read {
+						Read(prop) => {
+							# A prop, read through its getter (D-039).
+							given = Transpile.read_prop($st, prop.key)
+							$out = $out.concat(if (prop.punned) "${word}: ${given.text}" else given.text)
+							$st = { ..given.st, pos: prop.end }
+							$last = ")"
+						}
+						NotRead => {
+							if Text.is_upper(c) and Transpile.declares_type(src, end) {
+								$declared = Some(word)
+							}
+							if word.ends_with("!") {
+								$st = { ..$st, effects: $st.effects + 1 }
+							}
+							$out = $out.concat(word)
+							$st = { ..$st, pos: end }
+							$last = word
+						}
 					}
-					if word.ends_with("!") {
-						$st = { ..$st, effects: $st.effects + 1 }
-					}
-					$out = $out.concat(word)
-					$st = { ..$st, pos: end }
-					$last = word
 				}
 			} else {
 				spaced = Text.space_at(src, pos)
@@ -952,11 +1254,15 @@ Transpile := [].{
 					$last = character
 				}
 			}
+			if $last != last_before {
+				$prev = last_before
+			}
 		}
 		if inside_braces {
 			return Err(Transpile.fail(cfg, "this { is never closed", start - 1))
 		}
-		Ok({ st: $st, out: $out })
+		done = Transpile.close_all($st, $out, $lambdas)
+		Ok({ st: done.st, out: done.out })
 	}
 
 	## Whether a type is declared after a capitalised word ending at `end` (`/^[ \t]*(\([^)\n]*\))?[ \t]*:=/`).
@@ -1388,7 +1694,16 @@ Transpile := [].{
 		if !component and name != lowered {
 			return Err(Transpile.fail(cfg, "write HTML tags in lower case: <${lowered}>", start))
 		}
-		read = Transpile.read_attributes(cfg, { ..st0, pos: name_end }, name, component, start)?
+		# How a component is given its props (D-039). The platform's (`<Show>`) and a context's provider
+		# take what their types say, where they are written; a pure one (`view`), values, its call a hole
+		# of its own when one is read from what changes; any other, getters, unless it is a function of
+		# this file's that the file also calls (values then, and the call a hole).
+		packaged = component and cfg.packaged.contains(name)
+		provider = component and Transpile.lookup(cfg.contexts, name) != None
+		pure = component and cfg.pure.contains(name)
+		own_fn = component and !cfg.modules.contains(name)
+		getters = component and !packaged and !provider and !pure and (!own_fn or cfg.fns.contains(name))
+		read = Transpile.read_attributes(cfg, { ..st0, pos: name_end }, name, component, getters, component and !packaged and !provider, start)?
 		attrs = read.attrs
 		self_closing = read.self_closing
 		if name == "NoHydration" {
@@ -1396,7 +1711,6 @@ Transpile := [].{
 		}
 		# A component is an effect (`Picks.view!`), and so is a provider (`Context.provide!`); a pure one
 		# (`Heading.view`) isn't.
-		pure = component and cfg.pure.contains(name)
 		st1 = if (component and !pure) { ..read.st, effects: read.st.effects + 1 } else read.st
 		if component and Transpile.lookup(cfg.contexts, name) != None {
 			if self_closing {
@@ -1470,16 +1784,30 @@ Transpile := [].{
 			rendered = Transpile.render_items($fields)
 			call = "${callee}({ ${rendered} })".replace_first("({  })", "({})")
 			# A component runs where it is rendered, and once, as in Solid, so it sees the contexts
-			# provided above that place: its call is put off (`Html.component`). A platform's (`<Show>`,
-			# `<For>`…) is markup, made now, and so is a pure one's. A prop that is a value read from
-			# something that changes is read by the place that renders the component (`Html.component_with`).
+			# provided above that place: its call is put off (`Html.component`), and its value props are
+			# getters, read where it reads them (D-039). A platform's (`<Show>`, `<For>`…) is markup, made
+			# now, and so is a pure one's: given a value read from what changes, that call is a hole of
+			# its own, made anew when the value changes. So is a function of this file's that the file
+			# also calls, which keeps values.
 			out =
-				if !cfg.packaged.contains(name) and !pure {
-					if (read.reads_props) "Html.component_with(|| { ${rendered} }, ${callee})" else "Html.component(|| ${call})"
-				} else {
+				if packaged {
 					call
+				} else if pure {
+					if (read.reads_props) "Html.html_of(|| ${call})" else call
+				} else if getters or !read.reads_props {
+					"Html.component(|| ${call})"
+				} else {
+					"Html.html_of(|| (|props| Html.component(|| ${callee}(props)))({ ${rendered} }))"
 				}
-			return Ok({ st: $st, out })
+			kept =
+				if !getters and !pure and !packaged and read.reads_props and cfg.plain_fns.contains(name) {
+					fn_name = Transpile.snake_case(name)
+					reason = "<${name}> keeps values for props (D-039), since this file also calls ${fn_name}${effect} directly: a value read from what changes is read here, and <${name}> made anew when it changes, its signals with it; render it only as a tag (then its props are getters), or pass an accessor (name!={…})"
+					{ ..$st, warnings: $st.warnings.append({ reason, at: start }) }
+				} else {
+					$st
+				}
+			return Ok({ st: kept, out })
 		}
 		function_child = |list|
 			if list.any(Transpile.is_fn) {
@@ -1564,9 +1892,12 @@ Transpile := [].{
 		attr.starts_with("style:--") and !rest.is_empty() and rest.all(|b| Transpile.is_alnum_under(b) or b == '-')
 	}
 
-	## Attributes up to `>` or `/>`, as Html.attr calls (elements) or record fields (components).
-	read_attributes : Cfg, St, Str, Bool, U64 -> Try({ st : St, attrs : List(Part), self_closing : Bool, reads_props : Bool }, [Rocx(RocxError), Crash(Str)])
-	read_attributes = |cfg, st0, tag, component, at_pos| {
+	## Attributes up to `>` or `/>`, as Html.attr calls (elements) or record fields (components). A
+	## component that takes getters (D-039) is given each value prop as one (`label: || word!()`); with
+	## `framed`, a component's value props are read as a computation's code is (a getter's, or a pure
+	## component's call in a hole of its own).
+	read_attributes : Cfg, St, Str, Bool, Bool, Bool, U64 -> Try({ st : St, attrs : List(Part), self_closing : Bool, reads_props : Bool }, [Rocx(RocxError), Crash(Str)])
+	read_attributes = |cfg, st0, tag, component, getters, framed, at_pos| {
 		src = cfg.src
 		# Inside a component with a <style> (or a file with one), the element's classes end with its
 		# (`rx-k3j9qa`): joined to its `class`, or a `class` of its own.
@@ -1671,7 +2002,7 @@ Transpile := [].{
 				if name.starts_with("style:") {
 					return Err(oops("${name} needs {a value}: write ${name}={…}"))
 				}
-				$attrs = $attrs.append(Item(if (component) "${name}: Bool.True" else "Html.flag(${Text.roc_string(name)}, Bool.True)"))
+				$attrs = $attrs.append(Item(if (component) "${name}: ${Transpile.static_prop(getters, name, "Bool.True")}" else "Html.flag(${Text.roc_string(name)}, Bool.True)"))
 				$st = { ..$st, pos: eq }
 			} else {
 				vpos = eq + 1
@@ -1711,12 +2042,22 @@ Transpile := [].{
 							decoded0
 						}
 					value = Text.roc_string(decoded)
-					$attrs = $attrs.append(Item(if (component) "${name}: ${value}" else if (name == "key") "Html.key(${value})" else "Html.attr(${Text.roc_string(name)}, ${value})"))
+					$attrs = $attrs.append(Item(if (component) "${name}: ${Transpile.static_prop(getters, name, value)}" else if (name == "key") "Html.key(${value})" else "Html.attr(${Text.roc_string(name)}, ${value})"))
 					$st = { ..$st, pos: end + 1 }
 				} else if quote == '{' {
 					effects_before = $st.effects
-					inner = Transpile.read_code(cfg, { ..$st, pos: vpos + 1 }, Bool.True)?
-					$st = { ..inner.st, pos: inner.st.pos + 1 }
+					# Where a prop read in it goes (D-039): an element's attribute that computes is a computation,
+					# and so is a component's getter (or a pure one's call, in a hole of its own); a handler, and
+					# a platform's component's value, are what is around them. A lambda given as a handler or
+					# as an effect's prop (`pick!={|id| …}`) is an effect's.
+					code_at = Text.skip_space(src, vpos + 1)
+					effect_value = handler or (component and name.ends_with("!"))
+					framed_here = if (component) (name.ends_with("!") or framed) else !handler
+					marked = if (effect_value and Text.at(src, code_at) == '|') { ..$st, effectful_at: $st.effectful_at.append(code_at) } else $st
+					entered = if (framed_here) Transpile.opened(marked, Bool.False) else marked
+					inner = Transpile.read_code(cfg, { ..entered, pos: vpos + 1 }, Bool.True)?
+					left = if (framed_here) { ..inner.st, frames: inner.st.frames.drop_last(1) } else inner.st
+					$st = { ..left, pos: inner.st.pos + 1 }
 					# An expression that calls nothing named with `!` reads nothing that changes: static.
 					computed = $st.effects > effects_before
 					if Text.trim(inner.out) == "" {
@@ -1735,7 +2076,11 @@ Transpile := [].{
 					}
 					attr =
 						if component {
-							Ok("${name}: ${Transpile.accessor_prop(name, expr)}")
+							# An accessor named through a prop (`left!={clock.left!}`, `clock` a getter now: D-039) is
+							# called by an accessor of its own, so it follows the prop.
+							written = Text.trim(Text.cut(src, vpos + 1, inner.st.pos))
+							through_prop = name.ends_with("!") and Transpile.is_accessor_name(written) and Text.trim(expr) != written
+							Ok("${name}: ${if (getters and Getters.is_value(name)) "|| ${expr}" else if (through_prop) "|| (${Text.trim(expr)})()" else Transpile.accessor_prop(name, expr)}")
 						} else if transition {
 							Ok(if (computed) "Html.transition_of(${Transpile.transition_way(name)}, || ${expr})" else "Html.transition(${Transpile.transition_way(name)}, ${expr})")
 						} else if computed or handler or name == "key" {
@@ -1995,8 +2340,12 @@ Transpile := [].{
 			} else {
 				{ name: "text", skip: 0 }
 			}
-		inner = Transpile.read_code(cfg, { ..st0, pos: start + 1 + kind.skip }, Bool.True)?
-		st1 = { ..inner.st, pos: inner.st.pos + 1 }
+		# A hole is a computation of its own, or markup made where it is: either way, a prop read in it is
+		# read there (D-039). A function child (`{|post!, index!| …}`) is an effect's lambda.
+		code_at = Text.skip_space(src, start + 1 + kind.skip)
+		marked = if (kind.name == "text" and Text.at(src, code_at) == '|') { ..st0, effectful_at: st0.effectful_at.append(code_at) } else st0
+		inner = Transpile.read_code(cfg, Transpile.opened({ ..marked, pos: start + 1 + kind.skip }, Bool.False), Bool.True)?
+		st1 = { ..inner.st, pos: inner.st.pos + 1, frames: inner.st.frames.drop_last(1) }
 		expr = inner.out
 		trimmed = Text.trim(expr)
 		if trimmed == "" {
@@ -2131,15 +2480,17 @@ Transpile := [].{
 		mask = Transpile.code_mask(code)
 		server_mask = Transpile.code_mask(server_code)
 		var $out = code
-		var $shift = 0
+		# How far what was rewritten so far moved the rest: a rewrite may be shorter (`params!` → `_`).
+		var $shift = 0.I64
 		for name in Transpile.bound_names(code, mask) {
 			found = Transpile.occurrences(code, mask, name)
 			if found.len() == 1 and Transpile.occurrences(server_code, server_mask, name).len() > 1 {
 				at = found.first() ?? 0
 				match Transpile.unbound(code, mask, at, name) {
 					Ok(rewritten) => {
-						$out = $out.take_first(at + $shift).concat(rewritten.to_utf8()).concat($out.drop_first(at + $shift + name.count_utf8_bytes()))
-						$shift = $shift + rewritten.count_utf8_bytes() - name.count_utf8_bytes()
+						moved = (at.to_i64_wrap() + $shift).to_u64_wrap()
+						$out = $out.take_first(moved).concat(rewritten.to_utf8()).concat($out.drop_first(moved + name.count_utf8_bytes()))
+						$shift = $shift + rewritten.count_utf8_bytes().to_i64_wrap() - name.count_utf8_bytes().to_i64_wrap()
 					}
 					Err(Unsure) => {}
 				}
@@ -2312,7 +2663,11 @@ Transpile := [].{
 				$inside = Bars
 			}
 		}
+		# A field bound to a name of its own (`{ params: params! }`, a prop's getter, D-039): `_` alone.
+		back = Text.skip_space_back(code, at)
+		renamed = back > 0 and Text.at(code, back - 1) == ':'
 		match $inside {
+			Braces if (next == ',' or next == '}') and renamed => Ok("_")
 			Braces if next == ',' or next == '}' => Ok("${name}: _")
 			Bars if next == ',' or next == '|' => Ok("_${name}")
 			_ => Err(Unsure)
@@ -2387,7 +2742,8 @@ Transpile := [].{
 		}
 		name = Transpile.last_part(file)
 		code = "${Text.cut(body_bytes, 0, $end)}\n\n${Transpile.marker} ${name}: edit that file, not this one. Line N here is line N there.\n"
-		Ok({ code, regions: second.st.regions, styles: styles.map(|s| { css: s.css, line: s.line, component: s.component }), stories: first.st.stories })
+		warnings = first.st.warnings.map(|w| { reason: w.reason, file, line: Text.line_of(cfg1.src, w.at), column: Text.column(cfg1.src, w.at) })
+		Ok({ code, regions: second.st.regions, styles: styles.map(|s| { css: s.css, line: s.line, component: s.component }), stories: first.st.stories, warnings })
 	}
 
 	## Where a .rocx file's markup is, for rocx fmt: each markup expression its Roc has, those in holes too
@@ -2440,6 +2796,7 @@ Transpile := [].{
 								{ key: "regions", value: Value.count(m.regions) },
 								{ key: "styles", value: Array(m.styles.map(|s| Object([{ key: "css", value: Text(s.css) }, { key: "line", value: Value.count(s.line) }, { key: "component", value: Value.text_or_null(s.component) }]))) },
 								{ key: "stories", value: Array(m.stories.map(|s| Object([{ key: "component", value: Text(s.component) }, { key: "name", value: Text(s.name) }, { key: "def", value: Text(s.def) }, { key: "line", value: Value.count(s.line) }]))) },
+								{ key: "warnings", value: Array(m.warnings.map(|w| Object([{ key: "reason", value: Text(w.reason) }, { key: "line", value: Value.count(w.line) }, { key: "column", value: Value.count(w.column) }]))) },
 							]),
 						)
 					Err(problem) => Err(Failed(Transpile.problem_value(problem)))

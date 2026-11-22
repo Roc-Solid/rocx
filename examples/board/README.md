@@ -174,10 +174,12 @@ What the app met, and how it works around each:
   package's documented glue, as it is.
 - **The browser has no clock.** Workaround: the board's data carries the server's date (`today`),
   which says which cards are overdue.
-- **A value prop is read once outside a hole**, as web/README.md says, which is easy to miss: the
-  tile's "Ada has this card open" label, a plain `label` prop of `<AvatarStack>` inside a `<Show>`,
-  was made once, empty, and never changed. Workaround: that stack is rendered in a hole
-  (`CardTile.viewing`), made anew when who has the card open changes.
+- **A value prop was read once outside a hole**, which was easy to miss: the tile's "Ada has this
+  card open" label, a plain `label` prop of `<AvatarStack>` inside a `<Show>`, was made once, empty,
+  and never changed. The workaround rendered the stack in a hole, made anew when who has the card
+  open changed. (Fixed in the platform since: a value prop is a getter, as Solid's are (D-039). The
+  stack is in the tile's markup again with a plain `label`, kept while who has the card open
+  changes, its label patched; the browser test checks it with a third person opening the card.)
 - **A glide is clipped by a box that scrolls** (D-031's own limit): seen in Zen as cards vanishing on
   their way into another column. Workaround: columns don't scroll on their own.
 - **Under `--dev`, Firefox reports the dev server's inline reload script** against packages/guard's

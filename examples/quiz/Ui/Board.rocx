@@ -14,11 +14,11 @@ Board := [].{
 	## A player, with their score before the question and the points it earned them.
 	Row : { id : Str, name : Str, score : U64, gained : U64, here : Bool }
 
-	view! : { rows! : () => List(Board.Row), limit : U64, me : Str } => Html
-	view! = |{ rows!, limit, me }| {
+	view! : { rows : List(Board.Row), limit : U64, me : Str } => Html
+	view! = |{ rows, limit, me }| {
 		(landed!, set_landed!) = create_signal!(Bool.False)
 		_land = set_timeout!(Board.pause, || set_landed!(Bool.True))
-		placed! = create_memo!(|| Board.placed(rows!(), landed!()).take_first(limit))
+		placed! = create_memo!(|| Board.placed(rows, landed!()).take_first(limit))
 		<ol class="board" aria-label="Leaderboard">
 			<For each!={placed!()} keyed={|row| row.id}>
 				{|row!, _|
@@ -129,7 +129,7 @@ Board := [].{
 	</style>
 
 	<story name="After a question">
-		<Board rows!={|| [{ id: "p1", name: "Ada", score: 900, gained: 0, here: Bool.True }, { id: "p2", name: "Bo", score: 1700, gained: 950, here: Bool.True }, { id: "p3", name: "Cy", score: 1200, gained: 600, here: Bool.False }]} limit={5} me="p2" />
+		<Board rows={[{ id: "p1", name: "Ada", score: 900, gained: 0, here: Bool.True }, { id: "p2", name: "Bo", score: 1700, gained: 950, here: Bool.True }, { id: "p3", name: "Cy", score: 1200, gained: 600, here: Bool.False }]} limit={5} me="p2" />
 	</story>
 }
 

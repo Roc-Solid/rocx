@@ -1,4 +1,5 @@
 import pf.Html
+import pf.Show
 import pf.Transition
 import presence.AvatarStack
 import presence.Stack
@@ -48,7 +49,9 @@ CardTile := [].{
 				{=CardTile.progress(Board.progress(card!().checklist))}
 				{=if (card!().description.is_empty()) Html.empty({}) else <span class="has-notes" title="Has a description" role="img" aria-label="Has a description">≡</span>}
 				<span class="space"></span>
-				{=CardTile.viewing(viewers!())}
+				<Show when!={!viewers!().is_empty()}>
+					<AvatarStack faces!={viewers!} max={3} label={CardTile.viewing(viewers!())} />
+				</Show>
 				{=CardTile.assignee(board!().people, card!().assignee)}
 			</div>
 			{=CardTile.editing(board!(), card!().id)}
@@ -79,15 +82,10 @@ CardTile := [].{
 			</span>
 		}
 
-	## Who else has the card open: a small avatar stack, which a screen reader hears as "Ada has
-	## this card open". Made anew when they change (in a hole), since its label is a plain value.
-	viewing : List(Stack.Face) -> Html
-	viewing = |faces|
-		if faces.is_empty() {
-			Html.empty({})
-		} else {
-			<AvatarStack faces!={faces} max={3} label={"${Stack.names(faces.map(|face| face.name), 2)} ${if (faces.len() == 1) "has" else "have"} this card open"} />
-		}
+	## What a screen reader hears of who else has the card open, a small avatar stack: "Ada has this
+	## card open". The stack is kept while they change, its label patched (D-039).
+	viewing : List(Stack.Face) -> Str
+	viewing = |faces| "${Stack.names(faces.map(|face| face.name), 2)} ${if (faces.len() == 1) "has" else "have"} this card open"
 
 	## Who a card is assigned to.
 	assignee : List(Board.Person), Str -> Html

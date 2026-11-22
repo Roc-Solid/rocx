@@ -37,7 +37,7 @@ test("packages: rocx build copies a package's components into the app, and `impo
 		const chart = readFileSync(join(app, "Demos", "Chart.roc"), "utf8").split("\n");
 		assert.equal(chart[1], "import ../Generated/plots/Bars", "a component: its copy, from where the file is");
 		assert.equal(chart[2], "import plots.Scale", "a module of the package: as it was");
-		assert.match(chart.join("\n"), /Html\.component\(\|\| Bars\.view!\(\{ n: 1, \}\)\)/, "a component of the app's, run where it is rendered");
+		assert.match(chart.join("\n"), /Html\.component\(\|\| Bars\.view!\(\{ n: \|\| 1, \}\)\)/, "a component of the app's, run where it is rendered, given getters (D-039)");
 
 		const styles = readFileSync(join(app, "Generated", "Styles.roc"), "utf8");
 		assert.ok(styles.includes(`".bars.${scopeClass("Generated/plots/Bars.Bars")} { color: red }",`), styles);

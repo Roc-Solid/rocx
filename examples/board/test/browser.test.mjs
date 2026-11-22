@@ -17,13 +17,13 @@ const GLIDES = `document.addEventListener("rocx:ready", (event) => {
 });`;
 
 describe("Acme Board in two browsers", { skip: noDatabase || noChrome }, () => {
-	let running, seeded, browsers, ada, bo;
+	let running, seeded, browsers, people, open, ada, bo;
 	before(async () => {
 		running = await started();
 		seeded = await ids(running.db);
-		const people = Object.fromEntries((await running.db.sql`select name, id::text as id from people`).map((row) => [row.name, row.id]));
+		people = Object.fromEntries((await running.db.sql`select name, id::text as id from people`).map((row) => [row.name, row.id]));
 		browsers = [await launchBrowser(), await launchBrowser()];
-		const open = async (browser, person) => {
+		open = async (browser, person) => {
 			const url = `${running.app.url}/b/launch`;
 			const tab = await browser.open(url, { cookies: [["acme_board_person", person]] });
 			await tab.page.send("Page.addScriptToEvaluateOnNewDocument", { source: GLIDES });
@@ -102,6 +102,31 @@ describe("Acme Board in two browsers", { skip: noDatabase || noChrome }, () => {
 		await ada.findByRole("link", { name: "Book the launch pad for Tuesday" }, { ms: 5000 });
 		await (await bo.getByRole("button", { name: "Done" })).click();
 		await ada.page.wait(`!document.querySelector('[data-card="${card}"] .editing')`, 5000);
+	});
+
+	test("Cyd opens the card Ada has open: on Bo's board the tile's stack is kept, its label patched (D-039)", async () => {
+		const title = "Telemetry dashboard";
+		const card = seeded.cards[title];
+		const stack = `document.querySelector('[data-card="${card}"] .avatar-stack')`;
+		await (await ada.getByRole("link", { name: title })).click();
+		await ada.findByRole("heading", { level: 2, name: title });
+		await bo.findByRole("group", { name: "Ada has this card open" });
+		await bo.page.eval(`window.__stack = ${stack}`);
+
+		// Cyd, in a browser of their own, opens it too: Bo's tile now says both, the same stack.
+		browsers.push(await launchBrowser());
+		const cyd = await open(browsers[2], people.Cyd);
+		await (await cyd.getByRole("link", { name: title })).click();
+		await cyd.findByRole("heading", { level: 2, name: title });
+		await bo.findByRole("group", { name: "Ada and Cyd have this card open" }, { ms: 5000 });
+		assert.equal(await bo.page.eval(`window.__stack === ${stack}`), true, "the stack kept: its label patched where the prop is read, as Solid's props are");
+		assert.equal(await bo.page.eval(`${stack}.querySelectorAll(".avatar").length`), 2, "the newcomer's avatar came into the kept stack");
+
+		await (await ada.getByRole("button", { name: "Done" })).click();
+		await bo.findByRole("group", { name: "Cyd has this card open" }, { ms: 5000 });
+		assert.equal(await bo.page.eval(`window.__stack === ${stack}`), true);
+		assert.deepEqual(cyd.errors, []);
+		await browsers.pop().close();
 	});
 
 	test("neither page threw or warned", () => {

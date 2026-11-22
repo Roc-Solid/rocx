@@ -8,8 +8,8 @@ import Html
 ##
 ## Each is made when it shows, as Solid makes them: as a component is, where it is rendered, once,
 ## its reads untracked, and made again each time it shows again. So a value prop inside
-## (`<Podium players={game!().players} />`) is read as the part shows, not as the page first
-## rendered.
+## (`<Podium players={game!().players} />`), a getter (D-039), is read where the component reads
+## it, as the part shows and while it does.
 ##
 ## With a function child, `when!` is a Try, and the child gets an accessor of the value inside it
 ## (Solid's narrowing, non-keyed): `<Show when!={users!().first()}>{|first!| <p>{first!().name}</p>}</Show>`.

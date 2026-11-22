@@ -123,10 +123,12 @@ Each gap this app met, and what it does about it:
   types in both copies, would catch it at build.
 - **A value prop inside a `<Show>`'s children was read when the page first rendered**, not when the
   part showed: the podium, written `<Podium players={current!().players} />` inside the finished
-  phase's `<Show>`, showed every score as it was in the lobby, so `Podium` took an accessor. (Fixed
-  in the platform since: what a `<Show>` shows is made as it shows, as Solid makes it, so the
-  podium takes the final scores as a plain value again; the browser test checks a score made after
-  the page rendered.)
+  phase's `<Show>`, showed every score as it was in the lobby. The workaround was an accessor
+  (`players!`). (Fixed in the platform since, twice over: what a `<Show>` shows is made as it shows,
+  as Solid makes it, and a value prop is a getter, as Solid's are (D-039), read where the component
+  reads it, so the podium follows the scores while it shows. `Podium`, `Lobby` and `Board` take
+  plain props again (`players`, `rows`), and the browser test checks a score made after the page
+  rendered.)
 - **`<For>` and `<Show>` can't sit inside a pure function child** (a `<For>` row's, a `<Show>`'s
   narrowed child): the platform's components are effectful calls, and those children are pure, so
   the compiler says "This function is effectful, but a pure function is expected" about generated

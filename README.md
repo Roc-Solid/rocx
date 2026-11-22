@@ -122,9 +122,12 @@ layouts and the error page are components too, so a page puts a component where 
 
 A component's view is pure or effectful, and Roc checks which. `view!` may make signals, read a
 context or read an endpoint, so it runs once, where it is rendered
-(`Html.component(|| Counter.view!({ start_value: 3 }))`). `view`, without the `!`, can't: it makes markup
-from its props, so it is called where it is written (`Heading.view({ id: "why", children: […] })`).
-Its holes may still read accessors it was given; those are computations, as anywhere. `rocx build`
+(`Html.component(|| Counter.view!({ start_value: || 3 }))`), and its props are getters, as Solid's
+are (D-039): written `start_value : U64` and `|{ start_value }|`, read where its code reads them, so a
+hole that reads one is patched and the component kept. `view`, without the `!`, can't: it makes
+markup from its props, values, so it is called where it is written (`Heading.view({ id: "why",
+children: […] })`), and given a value read from what changes, its call is a hole of its own. Its
+holes may still read accessors it was given; those are computations, as anywhere. `rocx build`
 writes whichever call fits, so callers don't change when a component does.
 
 ## Styles
@@ -235,11 +238,11 @@ In a component only:
 | `<li key={card!().id} transition:move={Transition.glide}>` | glides to where a change puts it (FLIP); one that leaves a place as one with the same `key` comes in another glides from there |
 | `Audio.play!("/sounds/eat.wav")` | in a handler: plays a sound file, any the browser can, once the handler is done (`Audio.play_with!(url, { volume, rate })`; `import pf.Audio`) |
 | `Browser.call!("vibrate", { ms: 50 })` | in a handler: the page's own function `vibrate` (given to the runtime: `Runtime.load(wasm, { effects })`), with the argument as JSON, called once the handler is done and the page patched (`import pf.Browser`) |
-| `<Heading text!={user!().name} />` | a prop named as an effect is an accessor: rocx passes `\|\| user!().name`, read in the child's holes, patched there |
-| `<Shows label={word!()} />` | a value prop read from a signal: read where the component is rendered, before it runs (`Html.component_with`); in a hole, which renders it anew when the value changes; elsewhere, once |
+| `<Shows label={word!()} />` | a prop is a getter, as Solid's are (D-039): rocx passes `label: \|\| word!()`, and the child, written with `label : Str` and `\|{ label }\|`, reads it where its code says `label`: tracked in a hole, a memo or an effect (only that part patched, the child kept), current in a handler, once in its body |
+| `<Heading text!={user!().name} />` | a prop named as an effect is an accessor: the same getter, which the child types (`text! : () => Str`) and calls (`text!()`) itself |
 | `<Title>{post!().title} · Notes</Title>` | the document's title, from anywhere in the page: the last one rendered that is still there, put first in `<head>` by the server, kept by the browser (`import pf.Title`) |
 | `<Show when!={…} fallback={…}>` | what is inside while the condition holds; with a function child, `when!` is a `Try` it narrows |
-| `<For each!={…} keyed={\|row\| row.id}>{\|row!, index!\| …}</For>` | a row per key, kept and moved; `keyed={Bool.False}` a row per position. A function child (a row, a `<Show>`'s narrowed child) runs where its part is made, so it may hold another `<For>` or `<Show>` |
+| `<For each!={…} keyed={\|row\| row.id}>{\|row!, index!\| …}</For>` | a row per key, kept and moved; `keyed={Bool.False}` a row per position. A function child (a row, a `<Show>`'s narrowed child) runs where its part is made, once and untracked (Solid's `mapArray`), so it may hold another `<For>` or `<Show>`, and its holes follow the item |
 | `<Loading fallback={…}>`, `<Errored fallback={\|problem, retry\| …}>` | while answers are on their way; when something inside failed |
 | `picks_context = create_context()`, `<PicksContext value={…}>` | Solid's context, named by rocx after its module and definition |
 | `Endpoint.get!(Api.get_api_shelf({}))` | a GET endpoint's answer, as a plain value: the server answers it as it renders the page, and the page carries it to the browser (`Endpoint.read!`: a refusal as a value; `import pf.Endpoint`) |

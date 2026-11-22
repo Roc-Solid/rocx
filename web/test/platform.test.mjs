@@ -371,13 +371,17 @@ window.hydrated = true;
 
 // ---- Timers: the browser's, owned by what started them ----
 
-test("props: a value prop read from a signal is read by the hole it is in, which renders the component anew when it changes; outside a hole, once; an accessor prop patches in place; in what a <Show> shows and in a fallback, as it shows", { skip }, async () => {
+test("props: a value prop is a getter (D-039): the component is made once and keeps its signals, and only what reads the prop is patched, in a hole, outside one, in a <Show>; read in the body, once; in a pure lambda, by its hole; in an effect and a handler, as they run; rows made once; what a <Show> shows and a fallback made as they show", { skip }, async () => {
 	const wasm = readFileSync(join(out, "props.wasm"));
 	const server = await Runtime.load(wasm);
 	const { html } = server.renderToString({ path: "/" });
-	assert.match(html, /<p class="hole"><!--html--><button class="shows">one <!--x-->0<!--\/x--><\/button><!--\/html--><\/p>/);
-	assert.match(html, /<p class="shown"><!--show--><button class="shows">no one <!--x-->0<!--\/x--><\/button><!--\/show--><\/p>/, "a <Show>'s fallback, made as it shows");
-	assert.match(html, /<p class="listed"><!--for--><!--fallback--><button class="shows">none, one <!--x-->0<!--\/x--><\/button><!--\/fallback--><!--\/for--><\/p>/, "a <For>'s fallback, made as it shows");
+	const label = (text, clicks = 0) => `<button class="shows"><!--x-->${text}<!--/x--> <!--x-->${clicks}<!--/x--></button>`;
+	assert.ok(html.includes(`<p class="hole"><!--html-->${label("one")}<!--/html--></p>`), "the server renders the label in a hole of the component's");
+	assert.ok(html.includes(`<p class="once">${label("one")}</p>`));
+	assert.ok(html.includes(`<span class="first">one</span> <span class="joined"><!--x-->a-one,b-one<!--/x--></span>`), "read in the body: static; in a pure lambda: its hole's");
+	assert.ok(html.includes(`<li data-id="a">${label("Ada")} <span class="first">Ada</span></li>`));
+	assert.ok(html.includes(`<p class="toggled"><!--show-->${label("no one")}<!--/show--></p>`), "a <Show>'s fallback, made as it shows");
+	assert.ok(html.includes(`<p class="listed"><!--for--><!--fallback-->${label("none, one")}<!--/fallback--><!--/for--></p>`), "a <For>'s fallback, made as it shows");
 	const dir = mkdtempSync(join(tmpdir(), "rocx-props-"));
 	cpSync(join(web, "runtime.js"), join(dir, "runtime.js"));
 	writeFileSync(join(dir, "props.wasm"), wasm);
@@ -385,7 +389,7 @@ test("props: a value prop read from a signal is read by the hole it is in, which
 <script type="module">
 import { Runtime } from "/runtime.js";
 window.runtime = await Runtime.load(fetch("/props.wasm"));
-window.runtime.hydrate(document.getElementById("app"));
+window.runtime.hydrate(document.getElementById("app"), { strict: true });
 window.hydrated = true;
 </script></body></html>`;
 	const site = await serve(dir, (path) => (path === "/" ? page : null));
@@ -393,38 +397,51 @@ window.hydrated = true;
 		const tab = await browser.page();
 		await tab.goto(`${site.url}/`);
 		await tab.wait("window.hydrated === true", 3000);
-		assert.deepEqual(tab.console, [], "hydrated without a mismatch (one would be told on the console)");
-		const shown = () => tab.eval(`["p.hole", "p.once", "p.getter"].map((p) => document.querySelector(p).textContent)`);
-		assert.deepEqual(await shown(), ["one 0", "one 0", "one 0"]);
-		for (const button of ["p.hole button", "p.once button", "p.getter button"]) await tab.click(button);
-		await tab.wait(`document.querySelector("p.getter").textContent === "one 1"`);
-		assert.deepEqual(await shown(), ["one 1", "one 1", "one 1"], "each its own clicks");
+		assert.deepEqual(tab.console, [], "hydrated strictly, asking for nothing");
+		const shown = () => tab.eval(`["p.hole", "p.once", "p.getter", "p.shown", "li[data-id=a] button", "li[data-id=b] button"].map((p) => document.querySelector(p).textContent)`);
+		const detail = () => tab.eval(`["span.first", "span.joined", "span.seen", "button.say"].map((p) => document.querySelector(".detail " + p).textContent)`);
+		await tab.wait(`document.querySelector(".detail .seen").textContent === "one"`);
+		assert.deepEqual(await shown(), ["one 0", "one 0", "one 0", "one 0", "Ada 0", "Bo 0"]);
+		for (const button of ["p.hole button", "p.once button", "p.getter button", "p.shown button", "li[data-id=a] button"]) await tab.click(button);
+		await tab.wait(`document.querySelector("li[data-id=a] button").textContent === "Ada 1"`);
+		assert.deepEqual(await shown(), ["one 1", "one 1", "one 1", "one 1", "Ada 1", "Bo 0"], "each its own clicks");
+		// The elements, to see they are kept; and what is patched.
+		await tab.eval(`window.kept = ["p.hole button", "p.once button", "p.shown button", "li[data-id=a]", ".detail"].map((p) => document.querySelector(p)); window.patched = []; window.runtime.observer = { patch: ({ node }) => window.patched.push((node.nodeType === 1 ? node : node.parentElement)?.className || node.parentElement?.localName || "detached") }`);
 		await tab.click(".set");
-		await tab.wait(`document.querySelector("p.hole").textContent.startsWith("two")`);
-		assert.deepEqual(
-			await shown(),
-			["two 0", "one 1", "two 1"],
-			"in a hole, the component made anew with the new label (its clicks made anew too); outside one, read once; an accessor, patched where it is read, the component kept",
-		);
-		// What a <Show> shows, and a fallback, is made when it shows: a value prop in it is read then.
+		await tab.wait(`document.querySelector("p.once").textContent.startsWith("two")`);
+		assert.deepEqual(await shown(), ["two 1", "two 1", "two 1", "two 1", "Ada 1", "Bo 0"], "patched where the label is read, the component kept, its clicks with it (in a hole too)");
+		await tab.wait(`document.querySelector(".detail .seen").textContent === "two"`);
+		assert.deepEqual(await detail(), ["one", "a-two,b-two", "two", ""], "the body's read is the first; the pure lambda's hole, and the effect, follow");
+		assert.deepEqual(await tab.eval(`window.patched.sort()`), ["getter", "joined", "seen", "shows", "shows", "shows", "shows", "shows"], "only what reads the label: six labels (one an accessor's, two in fallbacks), the pure lambda's hole, and what the effect set");
+		assert.equal(await tab.eval(`window.kept.every((node, i) => node === document.querySelector(["p.hole button", "p.once button", "p.shown button", "li[data-id=a]", ".detail"][i]))`), true, "the same elements");
+		await tab.eval("window.runtime.observer = null");
+		await tab.click(".detail .say");
+		await tab.wait(`document.querySelector(".detail .say").textContent === "two"`, 2000);
+		await tab.click(".rename");
+		await tab.wait(`document.querySelector("li[data-id=a] button").textContent === "Ana 1"`);
+		assert.equal(await tab.eval(`document.querySelector("li[data-id=a] .first").textContent`), "Ada", "a row's own read, at its top, is once: the row is made once");
+		assert.equal(await tab.eval(`window.kept[3] === document.querySelector("li[data-id=a]")`), true, "the row kept; its component patched, its clicks kept");
+		// What a <Show> shows, and a fallback, is made when it shows; a value prop in it, a getter, is
+		// patched while it shows.
 		const part = (p) => tab.eval(`document.querySelector(${JSON.stringify(p)}).textContent.trim()`);
-		assert.equal(await part("p.shown"), "no one 0", "the fallback, as it was made");
+		assert.equal(await part("p.toggled"), "no two 0", "the fallback, its label patched where it is read");
 		await tab.click(".toggle");
-		await tab.wait(`document.querySelector("p.shown").textContent.trim() === "two 0"`);
+		await tab.wait(`document.querySelector("p.toggled").textContent.trim() === "two 0"`);
 		await tab.click(".again");
+		await tab.wait(`document.querySelector("p.toggled").textContent.trim() === "three 0"`);
 		await tab.click(".toggle");
-		await tab.wait(`document.querySelector("p.shown").textContent.trim() === "no three 0"`);
+		await tab.wait(`document.querySelector("p.toggled").textContent.trim() === "no three 0"`);
 		await tab.click(".toggle");
-		await tab.wait(`document.querySelector("p.shown").textContent.trim() === "three 0"`);
-		await tab.click("p.shown button");
-		await tab.wait(`document.querySelector("p.shown").textContent.trim() === "three 1"`);
-		assert.equal(await part("p.listed"), "none, one 0");
+		await tab.wait(`document.querySelector("p.toggled").textContent.trim() === "three 0"`);
+		await tab.click("p.toggled button");
+		await tab.wait(`document.querySelector("p.toggled").textContent.trim() === "three 1"`);
+		assert.equal(await part("p.listed"), "none, three 0");
 		await tab.click(".fill");
 		await tab.wait(`document.querySelector("p.listed .item")?.textContent === "an item"`);
 		await tab.click(".fill");
 		await tab.wait(`document.querySelector("p.listed").textContent.trim() === "none, three 0"`);
-		assert.deepEqual(tab.console, []);
 		assert.deepEqual(tab.errors, []);
+		assert.deepEqual(tab.console, []);
 	} finally {
 		await site.close();
 	}

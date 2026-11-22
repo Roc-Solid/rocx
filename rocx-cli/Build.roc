@@ -145,6 +145,9 @@ Build := [].{
 						$failed = Bool.True
 					}
 					Ok({ made, server_module, browser_text }) => {
+						for warning in made.warnings {
+							$said = $said.append(Build.rocx_warning!(path, warning))
+						}
 						$codes = $codes.append(made.code)
 						file_in_app = Fs.relative(dir, path)
 						$styles = $styles.concat(made.styles.map(|style| { file: file_in_app, line: style.line, component: style.component, css: style.css }))
@@ -180,6 +183,9 @@ Build := [].{
 						}
 						Err(Crash(message)) => return Err(Problem(message))
 						Ok(made) => {
+							for warning in made.warnings {
+								$said = $said.append(Build.rocx_warning!(path, warning))
+							}
 							$codes = $codes.append(made.code)
 							file_in_app = Fs.relative(dir, path)
 							$styles = $styles.concat(made.styles.map(|style| { file: file_in_app, line: style.line, component: style.component, css: style.css }))
@@ -462,6 +468,13 @@ Build := [].{
 	rocx_message! = |path, problem| {
 		line = Text.lines(Fs.read_or_empty!(path)).get(problem.line - 1) ?? ""
 		"✗ ${problem.file}:${problem.line.to_str()}:${problem.column.to_str()}: ${problem.reason}\n    ${line}\n    ${" ".repeat(problem.column - 1)}^"
+	}
+
+	## A warning in a .rocx file, as `rocx_message!` says a problem, which doesn't fail the build.
+	rocx_warning! : Str, { reason : Str, file : Str, line : U64, column : U64 } => Str
+	rocx_warning! = |path, warning| {
+		line = Text.lines(Fs.read_or_empty!(path)).get(warning.line - 1) ?? ""
+		"⚠ ${warning.file}:${warning.line.to_str()}:${warning.column.to_str()}: ${warning.reason}\n    ${line}\n    ${" ".repeat(warning.column - 1)}^"
 	}
 
 	## `list` with `key` set to `value` (replacing what it had).

@@ -39,7 +39,7 @@ test("stories: each is a definition in its place, its lines kept: an effect's na
 	]);
 	const source = 'import pf.Html\n\nCounter := [].{\n\tview! = |{ start }| <button>{start.to_str()}</button>\n\n\t<story name="At three">\n\t\t<Counter start={3} />\n\t</story>\n}\n';
 	const counter = transpileModule(source, "Counter.rocx", { module: "Counter", views: { Counter: "view!" } });
-	assert.equal(counter.code.split("\n")[6], "\t\tHtml.component(|| Counter.view!({ start: 3, })),", "an effectful one, put off");
+	assert.equal(counter.code.split("\n")[6], "\t\tHtml.component(|| Counter.view!({ start: || 3, })),", "an effectful one, put off, given getters (D-039)");
 	assert.deepEqual(counter.stories, [{ component: "Counter", name: "At three", def: "story_at_three!", line: 6 }]);
 });
 
@@ -115,8 +115,8 @@ test("stories: a dev build's Routes answers them: the catalog, and each story, t
 	assert.doesNotMatch(routesModule(table, { sources }), /__rocx\/stories|Stories|story/);
 	const root = rootModule(table, { sources, stories: [story] });
 	assert.match(root, /^import \.\.\/Counter as StoryCounter$/m);
-	assert.match(root, /if \(path\.starts_with\("\/__rocx\/stories\/"\)\) \{\n\t\t\tid = path\.drop_prefix\("\/__rocx\/stories\/"\)\n\t\t\tparams = \{\}\n\t\t\tif \(id == "Counter\/at-three"\) \{\n\t\t\t\tHtml\.component\(\|\| RootLayout\.view!\(\{ params: params, meta: RootPage\.meta, children: \[Root\.guarded!\(\[Html\.component\(\|\| StoryCounter\.story_at_three!\(\{\}\)\)\]\)\] \}\)\)/);
-	assert.match(root, /\} else \{\n\t\t\t\tHtml\.component\(\|\| RootLayout\.view!\(\{ params: params, meta: RootPage\.meta, children: \[Root\.failed\(404, "no story at \$\{path\}"\)\] \}\)\)/);
+	assert.match(root, /if \(path\.starts_with\("\/__rocx\/stories\/"\)\) \{\n\t\t\tid = path\.drop_prefix\("\/__rocx\/stories\/"\)\n\t\t\tparams = \{\}\n\t\t\tif \(id == "Counter\/at-three"\) \{\n\t\t\t\tHtml\.component\(\|\| RootLayout\.view!\(\{ params: \|\| params, meta: \|\| RootPage\.meta, children: \[Root\.guarded!\(\[Html\.component\(\|\| StoryCounter\.story_at_three!\(\{\}\)\)\]\)\] \}\)\)/);
+	assert.match(root, /\} else \{\n\t\t\t\tHtml\.component\(\|\| RootLayout\.view!\(\{ params: \|\| params, meta: \|\| RootPage\.meta, children: \[Root\.failed\(404, "no story at \$\{path\}"\)\] \}\)\)/);
 	assert.doesNotMatch(rootModule(table, { sources }), /__rocx/, "without stories, nothing");
 });
 

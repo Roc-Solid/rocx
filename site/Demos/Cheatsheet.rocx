@@ -34,7 +34,7 @@ Cheatsheet := [].{
 		{ write: "<Errored fallback={|problem, retry| …}>", means: "What shows when something inside failed, and a way to try again." },
 		{ write: "get! = |{ params, context, .. }| Ok(…)", means: "In a route's +server.roc: its GET endpoint, given its path's params and what its middleware handed on." },
 		{ write: "Endpoint.get!(Api.get_profile({ id }))", means: "A GET endpoint's answer as a plain value: the server answers it as it renders the page, which carries it to the browser." },
-		{ write: "<StatusPill status={s} />", means: "A component: StatusPill.view!({ status: s }), run once, where it is rendered." },
+		{ write: "<StatusPill status={s} />", means: "A component: StatusPill.view!({ status: || s }), run once, where it is rendered; its props are getters, read where it reads them." },
 		{ write: "<Card>children</Card>", means: "Children become a children : List(Html) prop." },
 		{ write: "<>…</>", means: "A fragment: its children, joined." },
 		{ write: "<!doctype html>", means: "The doctype." },

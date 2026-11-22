@@ -9,13 +9,13 @@ import ../Game
 ## each in a blade's colour), and every player by name, one who dropped (their last tab gone for a
 ## few seconds) greyed and said to have. A name that comes grows in.
 Lobby := [].{
-	view! : { players! : () => List(Game.Face), max : U64 } => Html
-	view! = |{ players!, max }|
+	view! : { players : List(Game.Face), max : U64 } => Html
+	view! = |{ players, max }|
 		<div class="lobby">
-			<AvatarStack faces!={Lobby.faces(players!())} max={max} />
-			<p class="count" aria-live="polite">{Lobby.label(players!())}</p>
+			<AvatarStack faces!={Lobby.faces(players)} max={max} />
+			<p class="count" aria-live="polite">{Lobby.label(players)}</p>
 			<ul class="names" aria-label="Players">
-				<For each!={players!()} keyed={|player| player.id}>
+				<For each!={players} keyed={|player| player.id}>
 					{|player!, index!|
 						<li class={"name blade-${(index!() % 4 + 1).to_str()}"} class:gone={!player!().here} transition={Transition.scale(0.6).ms(260)}>
 							{player!().name}

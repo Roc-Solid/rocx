@@ -79,7 +79,7 @@ view! = |{ params }| {
 						<b>{Paths.play_code({ code: code })}</b>
 						on this site, or type the code on its front page.
 					</p>
-					<Lobby players!={|| current!().players} max={14} />
+					<Lobby players={current!().players} max={14} />
 					{=
 						if hosting {
 							<button type="button" class="big go" disabled?={current!().players.is_empty()} on:click={|| (room.say!)(Start)}>
@@ -177,7 +177,7 @@ Revealed := [].{
 				</div>
 				<div class="standing">
 					<h2>The board</h2>
-					<Board rows!={|| Board.rows(current!(), revealing!())} limit={6} me="" />
+					<Board rows={Board.rows(current!(), revealing!())} limit={6} me="" />
 				</div>
 			</div>
 			<div class="foot">

@@ -1588,7 +1588,8 @@ Routes := [].{
 				Some(entry) => if (Routes.defs_of(sources, entry.file).meta) "${entry.module_name}.meta" else "{}"
 				None => "{}"
 			}
-		layout = |mod_name, meta_of, children| "Html.component(|| ${mod_name}.view!({ params: params, meta: ${meta_of}, children: [${children}] }))"
+		# A route's view is a component, given getters for its value props (D-039).
+		layout = |mod_name, meta_of, children| "Html.component(|| ${mod_name}.view!({ params: || params, meta: || ${meta_of}, children: [${children}] }))"
 		documented = |meta_of, inside|
 			match root {
 				Ok(found) => layout(found.module_name, meta_of, inside)
@@ -1600,7 +1601,7 @@ Routes := [].{
 				Err(_) => ""
 			}
 		branch = |page| {
-			inner = page.layouts.keep_if(|each| each.file != root_file).fold_rev("Html.component(|| ${page.module_name}.view!({ params: params }))", |each, html| layout(each.module_name, meta(Some(page)), html))
+			inner = page.layouts.keep_if(|each| each.file != root_file).fold_rev("Html.component(|| ${page.module_name}.view!({ params: || params }))", |each, html| layout(each.module_name, meta(Some(page)), html))
 			Str.join_with(["if (${Routes.matched_by(page.parts, page.params)}) {", "\t\t\tparams = ${Routes.params_of(page.params)}", "\t\t\t${documented(meta(Some(page)), "${Routes.root_name}.guarded!([${inner}])")}", "\t\t}"], "\n")
 		}
 		missing = Str.join_with((if (has_root) ["\t\t\tparams = {}"] else []).append("\t\t\t${documented(meta(table.error), "${Routes.root_name}.failed(404, \"nothing at \${path}\")")}"), "\n")
@@ -1640,7 +1641,7 @@ Routes := [].{
 				.sort_with(|a, b| Text.order("${a.module_path},${a.alias}", "${b.module_path},${b.alias}"))
 		error =
 			match table.error {
-				Some(entry) => "Html.component(|| ${entry.module_name}.view!({ status: status, problem: problem }))"
+				Some(entry) => "Html.component(|| ${entry.module_name}.view!({ status: || status, problem: || problem }))"
 				None => "Html.element(\"main\", [], [Html.element(\"h1\", [], [Html.text(status.to_str())]), Html.element(\"p\", [], [Html.text(problem)])])"
 			}
 		error_modules =

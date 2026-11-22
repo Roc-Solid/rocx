@@ -1,20 +1,22 @@
 import pf.Html
 import pf.For
 import pf.Transition
+import pf.Solid exposing [create_memo!]
 import ../Game
 import ../Score
 
 ## The end of a game: the first three on a podium, second on the left and third on the right, each
 ## rising in turn (third, then second, then first) when the game ends; then everyone, in order.
-## The pages show it in the finished phase's `<Show>`, which makes it as that phase shows, so
-## `players` are the final scores.
+##
+## `players` is a plain prop, read in the memo that ranks them: it follows the room's scores while
+## the podium shows (D-039), as Solid's `props.players` would.
 Podium := [].{
 	view! : { players : List(Game.Face), me : Str } => Html
 	view! = |{ players, me }| {
-		ranked = Score.ranked(players.map(|player| { id: player.id, name: player.name, score: player.score }))
+		ranked! = create_memo!(|| Score.ranked(players.map(|player| { id: player.id, name: player.name, score: player.score })))
 		<section class="podium" aria-label="Podium">
 			<ol class="steps">
-				<For each!={Podium.steps(ranked)} keyed={|row| row.id}>
+				<For each!={Podium.steps(ranked!())} keyed={|row| row.id}>
 					{|row!, _|
 						<li
 							class={"step ${row!().slot}"}
@@ -29,7 +31,7 @@ Podium := [].{
 				</For>
 			</ol>
 			<ol class="rest" aria-label="Everyone else">
-				<For each!={ranked.drop_first(3)} keyed={|row| row.id}>
+				<For each!={ranked!().drop_first(3)} keyed={|row| row.id}>
 					{|row!, _|
 						<li class:me={row!().id == me}>
 							<span>{Score.ordinal(row!().place)}</span>

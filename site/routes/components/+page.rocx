@@ -123,8 +123,9 @@ view! = |_|
 					<p>
 						It may make signals and memos, read a context, read an endpoint. So it runs where it is
 						rendered, once, as in Solid: <code>{"<Counter start_value={3} />"}</code> becomes
-						<code>{"Html.component(|| Counter.view!({ start_value: 3 }))"}</code>, which the runtime calls at its
-						place in the tree, under the contexts provided above it.
+						<code>{"Html.component(|| Counter.view!({ start_value: || 3 }))"}</code>, which the runtime calls at its
+						place in the tree, under the contexts provided above it. Its props are getters
+						(<a href="#passing">passing them on</a>).
 					</p>
 				</Feature>
 			</FeatureGrid>
@@ -202,26 +203,29 @@ view! = |_|
 			<p>
 				A component runs once, as in Solid, so a prop that changes has to be read where it is used, not
 				when the component is called. Solid's compiler makes <code>{"<Heading text={user().name} />"}</code>
-				a getter, which the child's <code>props.text</code> runs. In rocx, a prop named as an effect is an
-				accessor: write the expression as in Solid, and rocx passes a function that computes it.
+				a getter, which the child's <code>props.text</code> runs. rocx does the same with Roc's types: it
+				passes each prop as a function that computes it, and the child, written with a plain
+				<code>text : Str</code>, reads it through that function wherever its code says <code>text</code>.
 			</p>
-			<Code title="rocx" source={"<Heading text!={user!().name} />\n# heading!({ text!: || user!().name })\n\n<Answer said!={said!} />\n# an accessor already: passed as it is\n\n<Field save!={|text| set_title!(text)} label=\"Title\" />\n# a lambda, as it is; label is a value"} numbers={Bool.False} />
+			<Code title="rocx" source={"<Heading text={user!().name} level={2} />\n# Html.component(|| Heading.view!({ text: || user!().name, level: || 2 }))\n\nview! = |{ text, level }| <h2 class={level.to_str()}>{text}</h2>\n# |{ text: text!, level: level! }| … class: || level!().to_str() … || text!()"} numbers={Bool.False} />
 			<p>
-				The child calls <code>text!()</code> in its holes, so it is patched when the value changes,
-				wherever the value lives, and it can't write it. Destructuring props is safe here (in Solid it
-				loses reactivity): what you take out is the function. To let a child write, give it the setter
-				too; a setter is already a handler, so <code>{"on:input.value={set_draft!}"}</code> needs nothing
-				around it. A prop not named as an effect is a value, given once: the counter's
-				<code>{"start={3}"}</code>, the to-do list's first items.
+				Where the child reads it decides what follows it, as in Solid. A hole, an attribute, a memo or an
+				effect that reads <code>text</code> runs again when it changes, and only it is patched: the
+				component is kept, and its signals with it. A handler reads the value as it is when it runs. The
+				component's body reads it once, as it runs (<code>{"first = text"}</code> keeps the first), as a
+				read of <code>props.text</code> at a Solid component's top does. So destructuring is safe here (in
+				Solid it loses reactivity): <code>{"|{ text }|"}</code> means what <code>props.text</code> means. A pure
+				function the component makes (<code>{"items.keep_if(|item| item.owner == me)"}</code>) can't call a
+				getter: it is given the value, read where the function is made, by the hole or memo around it.
 			</p>
 			<p>
-				Given once where it is written, that is. A value read from a signal
-				(<code>{"<Shows label={word!()} />"}</code>) is read by the place that renders the component, before it
-				runs: in a hole, by the hole, which runs again when the value changes and renders the component anew
-				with it, its signals made anew too, as it renders a pure component's markup anew; outside one, once.
-				To have the component patched where it reads the value, and keep its state, pass an accessor,
-				<code>{"label!={word!()}"}</code>, which is Solid's getter: the child's hole reads it, and is the one that
-				runs again.
+				A prop named as an effect, <code>{"text!={user!().name}"}</code>, is the same getter written by hand:
+				the child types it (<code>{"text! : () => Str"}</code>) and calls it (<code>text!()</code>). To let a
+				child write, give it the setter too; a setter is already a handler, so
+				<code>{"on:input.value={set_draft!}"}</code> needs nothing around it. <code>children</code> is markup,
+				whose holes are already live. A pure component (<code>view</code>) is a function of values: given one
+				read from what changes, its call is a hole of its own, made anew when the value changes (it has no
+				state to lose; make it a <code>view!</code> to keep its elements).
 			</p>
 
 			<Heading id="handlers">Handlers</Heading>
@@ -485,14 +489,16 @@ view! = |_|
 					<li>
 						<strong>A part is made when it shows</strong>, as Solid makes it: what a
 						<code>{"<Show>"}</code> shows, its fallback and a <code>{"<For>"}</code>'s, each once, as a
-						component is, and again each time it shows again; a row when it comes. So a value prop inside,
-						<code>{"<Podium players={game!().players} />"}</code>, is read as the part shows, not as the page
-						was first rendered.
+						component is, and again each time it shows again; a row when it comes. So its holes are made
+						then, and a value prop inside, <code>{"<Podium players={game!().players} />"}</code>, a getter, is
+						read where the component reads it, as the part shows and while it does.
 					</li>
 					<li>
 						<strong>A function child</strong>, a <code>{"<For>"}</code>'s row or a <code>{"<Show>"}</code>'s
 						narrowed child, is effectful, as a component is: it runs where its part is made, so it may hold
-						another <code>{"<For>"}</code> or <code>{"<Show>"}</code>, or be plain markup.
+						another <code>{"<For>"}</code> or <code>{"<Show>"}</code>, or be plain markup. Like a component, it
+						runs once, untracked (Solid's <code>mapArray</code>): what it reads at its top is read once, and its
+						holes, and the props it gives its components, follow the item.
 					</li>
 				</ul>
 				<details>
@@ -807,9 +813,10 @@ view! = |_|
 					patterns can't take a list apart into names.
 				</li>
 				<li>
-					<strong>A prop that changes is named as one.</strong> Roc's records have no getters, so where
-					Solid's compiler makes <code>text</code> a getter, rocx passes <code>text!</code> as a function
-					(<a href="#passing">passing them on</a>).
+					<strong>Props are getters, and destructuring keeps them.</strong> Where Solid's compiler makes
+					<code>text</code> a getter, rocx passes a function that computes it, and reads it where the child
+					reads <code>text</code>; a Roc pattern is the only way to name props, so <code>{"|{ text }|"}</code>
+					reads as <code>props.text</code> does (<a href="#passing">passing them on</a>).
 				</li>
 				<li>
 					<strong><code>{"<For>"}</code> says how it keys its rows.</strong> Solid's default, a row per
@@ -888,7 +895,7 @@ view! = |_|
 					<ul>
 						<li>Signals, memos, <code>refresh!</code>, <code>is_pending!</code></li>
 						<li>Holes: text, attributes, classes, custom properties</li>
-						<li>Accessor props</li>
+						<li>Props as Solid's getters, patched where they are read; accessor props</li>
 						<li>Contexts, and components that run where they are rendered</li>
 						<li>A page as one tree, hydrated whole; <code>{"<NoHydration>"}</code> for what stays the server's</li>
 						<li>A signal goes with the part that made it</li>

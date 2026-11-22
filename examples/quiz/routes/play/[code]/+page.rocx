@@ -138,7 +138,7 @@ Playing := [].{
 						<Logo size="2.5rem" spinning={Bool.True} />
 						<h1>You're in, {face!().name}!</h1>
 						<p class="hint">Watch the big screen: the host starts when everyone's here.</p>
-						<Lobby players!={|| current!().players} max={8} />
+						<Lobby players={current!().players} max={8} />
 					</section>
 				</Show>
 				<Show when!={Feed.asking(current!())}>

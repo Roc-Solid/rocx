@@ -239,19 +239,19 @@ test("Root: the page at where it is, in its layouts, the root layout's <Errored>
 	assert.match(root, /\tview! = \|\{\}\| \{\n\t\tpath = Router\.location!\(\{\}\)\.path\n\t\tsegments = path\.split_on\("\/"\)\.keep_if\(\|segment\| !segment\.is_empty\(\)\)\.map\(Server\.decode_segment\)\n\t\tif \(segments == \["blog", "new"\]\) \{/, "matched as Routes matches, the fixed first");
 	assert.match(
 		root,
-		/\} else if \(segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("blog"\)\) \{\n\t\t\tparams = \{ slug: segments\.get\(1\) \?\? "" \}\n\t\t\tHtml\.component\(\|\| RootLayout\.view!\(\{ params: params, meta: BlogSlugPage\.meta, children: \[Root\.guarded!\(\[Html\.component\(\|\| BlogLayout\.view!\(\{ params: params, meta: BlogSlugPage\.meta, children: \[Html\.component\(\|\| BlogSlugPage\.view!\(\{ params: params \}\)\)\] \}\)\)\]\)\] \}\)\)\n/,
+		/\} else if \(segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("blog"\)\) \{\n\t\t\tparams = \{ slug: segments\.get\(1\) \?\? "" \}\n\t\t\tHtml\.component\(\|\| RootLayout\.view!\(\{ params: \|\| params, meta: \|\| BlogSlugPage\.meta, children: \[Root\.guarded!\(\[Html\.component\(\|\| BlogLayout\.view!\(\{ params: \|\| params, meta: \|\| BlogSlugPage\.meta, children: \[Html\.component\(\|\| BlogSlugPage\.view!\(\{ params: \|\| params \}\)\)\] \}\)\)\]\)\] \}\)\)\n/,
 		"the root layout, then the <Errored>, then the layouts inside it and the page, each given the params and the page's meta",
 	);
-	assert.match(root, /\} else if \(segments == \[\]\) \{\n\t\t\tparams = \{\}\n\t\t\tHtml\.component\(\|\| RootLayout\.view!\(\{ params: params, meta: \{\}, children: \[Root\.guarded!\(\[Html\.component\(\|\| RootPage\.view!\(\{ params: params \}\)\)\]\)\] \}\)\)/, "a page with no meta: {}");
-	assert.match(root, /\t\t\} else \{\n\t\t\tparams = \{\}\n\t\t\tHtml\.component\(\|\| RootLayout\.view!\(\{ params: params, meta: RootError\.meta, children: \[Root\.failed\(404, "nothing at \$\{path\}"\)\] \}\)\)\n\t\t\}/, "no page: the error page, in the root layout");
+	assert.match(root, /\} else if \(segments == \[\]\) \{\n\t\t\tparams = \{\}\n\t\t\tHtml\.component\(\|\| RootLayout\.view!\(\{ params: \|\| params, meta: \|\| \{\}, children: \[Root\.guarded!\(\[Html\.component\(\|\| RootPage\.view!\(\{ params: \|\| params \}\)\)\]\)\] \}\)\)/, "a page with no meta: {}");
+	assert.match(root, /\t\t\} else \{\n\t\t\tparams = \{\}\n\t\t\tHtml\.component\(\|\| RootLayout\.view!\(\{ params: \|\| params, meta: \|\| RootError\.meta, children: \[Root\.failed\(404, "nothing at \$\{path\}"\)\] \}\)\)\n\t\t\}/, "no page: the error page, in the root layout");
 	assert.match(root, /\tguarded! = \|children\| Errored\.view!\(\{ fallback: \|problem, _retry\| Root\.failed\(500, problem\), children: children \}\)/);
-	assert.match(root, /\tfailed = \|status, problem\| Html\.join\(\[Html\.component\(\|\| HttpStatusCode\.view!\(\{ code: status \}\)\), Html\.component\(\|\| RootError\.view!\(\{ status: status, problem: problem \}\)\)\]\)/);
+	assert.match(root, /\tfailed = \|status, problem\| Html\.join\(\[Html\.component\(\|\| HttpStatusCode\.view!\(\{ code: status \}\)\), Html\.component\(\|\| RootError\.view!\(\{ status: \|\| status, problem: \|\| problem \}\)\)\]\)/);
 	assert.doesNotMatch(root, /document|Styles/, "the root layout is the document");
 	// No root layout, no error page: a default document, and a default error page.
 	const bare = routeTable(["+page.rocx", "blog/+layout.rocx", "blog/+page.rocx"]);
 	const bareSources = new Map(["+page.rocx", "blog/+layout.rocx", "blog/+page.rocx"].map((file) => [file, component()]));
 	const plain = rootModule(bare, { sources: bareSources });
-	assert.match(plain, /\t\t\tRoot\.document\(\[Root\.guarded!\(\[Html\.component\(\|\| BlogLayout\.view!\(\{ params: params, meta: \{\}, children: \[Html\.component\(\|\| BlogPage\.view!\(\{ params: params \}\)\)\] \}\)\)\]\)\]\)/);
+	assert.match(plain, /\t\t\tRoot\.document\(\[Root\.guarded!\(\[Html\.component\(\|\| BlogLayout\.view!\(\{ params: \|\| params, meta: \|\| \{\}, children: \[Html\.component\(\|\| BlogPage\.view!\(\{ params: \|\| params \}\)\)\] \}\)\)\]\)\]\)/);
 	assert.match(plain, /\t\t\} else \{\n\t\t\tRoot\.document\(\[Root\.failed\(404, "nothing at \$\{path\}"\)\]\)\n\t\t\}/);
 	assert.match(plain, /Html\.element\("main", \[\], \[Html\.element\("h1", \[\], \[Html\.text\(status\.to_str\(\)\)\]\), Html\.element\("p", \[\], \[Html\.text\(problem\)\]\)\]\)/);
 	assert.match(plain, /\tdocument : List\(Html\) -> Html\n\tdocument = \|children\|\n\t\tHtml\.join\(\n\t\t\t\[\n\t\t\t\tHtml\.doctype\(\{\}\),\n\t\t\t\tHtml\.element\("html", \[Html\.attr\("lang", "en"\)\], \[\n\t\t\t\t\tHtml\.element\("head", \[\], \[Html\.void\("meta", \[Html\.attr\("charset", "utf-8"\)\]\), Html\.void\("meta", \[Html\.attr\("name", "viewport"\), Html\.attr\("content", "width=device-width, initial-scale=1"\)\]\), Styles\.style\]\),\n\t\t\t\t\tHtml\.element\("body", \[\], children\),/);

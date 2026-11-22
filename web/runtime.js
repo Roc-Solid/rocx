@@ -63,6 +63,9 @@ class Computation {
 		/** Its requests' answers, by method, URL and body: a run again reads them. */
 		this.calls = new Map();
 		this.disposed = false;
+		/** Run untracked (a <For>'s row, a <Show>'s function child: Solid's mapArray and untrack,
+		 * D-039): what it reads doesn't run it again; only a read that waits does, once it is in. */
+		this.untracked = false;
 		owner?.adopt(this);
 	}
 
@@ -1462,9 +1465,10 @@ export class Runtime {
 		} finally {
 			this.current = previous;
 		}
-		// What it reads now is what it depends on, whatever the outcome.
+		// What it reads now is what it depends on, whatever the outcome; an untracked run depends on
+		// nothing (a read that waits runs it again, above).
 		for (const source of computation.sources) source.observers.delete(computation);
-		computation.sources = making.sources;
+		computation.sources = computation.untracked ? new Set() : making.sources;
 		for (const source of computation.sources) source.observers.add(computation);
 		if (outcome === "ok") {
 			computation.making = making;
@@ -1950,6 +1954,8 @@ export class Runtime {
 			// A function child: made when it shows, by its own computation (it reads the narrowed value).
 			const made = new Computation(this, { kind: "html", runner: this.kept.get(node.with), owner: null, scope, target });
 			made.adopting = adopting;
+			// Made once, as a component is: its holes, and the getters it gives its components, follow.
+			made.untracked = true;
 			computation.part = made;
 			this.run(made);
 		} else computation.part = this.part(holds ? node.c : [node.fallback], scope, target, adopting);
@@ -1995,6 +2001,9 @@ export class Runtime {
 				row = { key: k, runner: r, range, fresh: !adopting };
 				row.computation = new Computation(this, { kind: "html", runner: this.kept.get(r), owner: null, scope, target: range });
 				row.computation.adopting = adopting;
+				// Made once, as Solid's mapArray makes a row: its holes, and the getters it gives its
+				// components, follow its item (D-039).
+				row.computation.untracked = true;
 				this.run(row.computation);
 				if (later && !adopting) this.entered(range);
 				if (adopting) cursor.node = range.end.nextSibling;

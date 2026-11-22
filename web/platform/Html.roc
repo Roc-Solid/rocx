@@ -21,7 +21,6 @@ Html :: [
 	ShownWith(() => Bool, () => Html, Html),
 	Each(U64 => List({ key : Str, row : () => Html }), Html),
 	Component(() => Html),
-	ComponentWith(() => (() => Html)),
 	Provided(Str, U64, List(Html)),
 	NoHydration(List(Html)),
 ].{
@@ -193,21 +192,11 @@ Html :: [
 
 	## A component, as Solid runs one: where it is rendered, once, its reads not tracked. rocx writes
 	## a component's call (`<Picks />`) inside one, so what it reads from a context is what is above
-	## the place it is rendered.
+	## the place it is rendered. Its value props are getters (D-039): `<Shows label={word!()} />` is
+	## `Html.component(|| Shows.view!({ label: || word!() }))`, and the component reads `label!()`
+	## where its code reads `label`, so a hole that reads it is patched and the component is kept.
 	component : (() => Html) -> Html
 	component = |run!| Component(run!)
-
-	## A component given props that are values read from what changes (`<Shows label={word!()} />`):
-	## the props are read by the place that renders it, as that place reads its own (a hole tracks
-	## them, and runs again when they change, rendering the component anew), and the component then
-	## runs as `component` runs one, given them. rocx writes it for such a call.
-	component_with : (() => props), (props => Html) -> Html
-	component_with = |props!, view!| ComponentWith(
-		|| {
-			props = props!()
-			|| view!(props)
-		},
-	)
 
 	## The document's title (`<Title>`, `Title.view!`): the text `children` say (their text, and
 	## what their holes compute), told to the runtime by a hole of its own, which renders nothing,
@@ -283,11 +272,6 @@ Html :: [
 				"{\"t\":\"for\",\"id\":${id.to_str()},\"r\":${keep!(listed!)},\"fallback\":${made!(fallback)}}"
 			}
 			Component(run!) => "{\"t\":\"c\",\"r\":${keep!(|| serialize!(run!()))}}"
-			ComponentWith(make!) => {
-				# Its props, read here, by what is serializing the markup it is in (a hole's run).
-				run! = make!()
-				"{\"t\":\"c\",\"r\":${keep!(|| serialize!(run!()))}}"
-			}
 			Provided(name, value, children) => "{\"t\":\"ctx\",\"n\":${json_str(name)},\"v\":${value.to_str()},\"c\":[${nodes!(children)}]}"
 			NoHydration(children) => "{\"t\":\"nh\",\"c\":[${nodes!(children)}]}"
 		}

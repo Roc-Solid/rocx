@@ -31,7 +31,7 @@ test("components: imported modules' view!, others a local snake_case function's,
 	const source = `import ui.StatusPill\nimport Button as Btn\n\nx = <StatusPill status={s} />\ny = <Btn label="Go" primary />\nz = <LocalThing>hi</LocalThing>\nw = <Empty />`;
 	const lines = roc(source).split("\n");
 	assert.equal(lines[3], `x = StatusPill.view!({ status: s, })`, "a package's is markup, made where it is written");
-	assert.equal(lines[4], `y = Html.component(|| Btn.view!({ label: "Go", primary: Bool.True, }))`);
+	assert.equal(lines[4], `y = Html.component(|| Btn.view!({ label: || "Go", primary: || Bool.True, }))`, "its value props are getters (D-039)");
 	assert.equal(lines[5], `z = Html.component(|| local_thing!({ children: [Html.text("hi"),], }))`);
 	assert.equal(lines[6], `w = Html.component(|| empty!({}))`);
 	const paths = roc(`import Ui/Card\nimport ../Ui/Pill as P\n\nx = <Card><P /></Card>`).split("\n");
@@ -299,23 +299,73 @@ test("components: one runs where it is rendered; a context is named, and provide
 	assert.throws(() => reactive(`import pf.Context\n\tpicks_context = create_context()\nx = <PicksContext value={s} />`), /it needs children/);
 });
 
-test("components: a value prop read from something that changes is read by the place that renders the component (Html.component_with); an accessor, a lambda or a constant isn't", () => {
+test("components: a value prop is a getter (D-039), read where the component reads it; an accessor, a function and children are given as they are", () => {
 	const reactive = (source) => transpileModule(source, "Page.rocx", { module: "Page" }).code.split("\n")[1];
-	assert.equal(reactive(`import Shows\nx = <p>{=<Shows label={word!()} />}</p>`), `x = Html.element("p", [], [Html.html_of(|| Html.component_with(|| { label: word!(), }, Shows.view!)),])`, "the hole reads label, and renders Shows anew when it changes");
-	assert.equal(reactive(`import Shows\nx = <Shows label={word!()} size={2} />`), `x = Html.component_with(|| { label: word!(), size: 2, }, Shows.view!)`, "outside a hole, read once, before it runs");
-	assert.equal(reactive(`import Shows\nx = <Shows label!={word!()} save={save!} pick={|it| pick!(it)} size={2} />`), `x = Html.component(|| Shows.view!({ label!: || word!(), save: save!, pick: |it| pick!(it), size: 2, }))`, "an accessor (Solid's getter), a function and a constant: nothing to read");
+	assert.equal(reactive(`import Shows\nx = <p>{=<Shows label={word!()} />}</p>`), `x = Html.element("p", [], [Html.html_of(|| Html.component(|| Shows.view!({ label: || word!(), }))),])`, "the hole reads nothing: Shows reads label");
+	assert.equal(reactive(`import Shows\nx = <Shows label={word!()} size={2} />`), `x = Html.component(|| Shows.view!({ label: || word!(), size: || 2, }))`, "outside a hole, the same");
+	assert.equal(reactive(`import Shows\nx = <Shows label!={word!()} save!={save!} pick={|it| pick!(it)} size="2" on>Hi</Shows>`), `x = Html.component(|| Shows.view!({ label!: || word!(), save!: save!, pick: || |it| pick!(it), size: || "2", on: || Bool.True, children: [Html.text("Hi"),], }))`, "an accessor and an effect as they are; a lambda, a string and a flag as getters; children as markup");
+});
+
+test("components: a component's value props are getters inside it (D-039): its type, its pattern, and each read where it is written", () => {
+	const code = (source) => transpileModule(source, "Page.rocx", { module: "Page" }).code.replace(/\n\n# rocx: generated from[^\n]*\n$/, "");
+	const shows = code(["Shows := [].{", "\tview! : { label : Str, n : U64 } => Html", "\tview! = |{ label, n }| {", "\t\tfirst = label", "\t\t<p title={label} on:click={|| say!(label)}>{label} {first} {n.to_str()}</p>", "\t}", "}"].join("\n")).split("\n");
+	assert.equal(shows[1], "\tview! : { label : () => Str, n : () => U64 } => Html", "its type: getters");
+	assert.equal(shows[2], "\tview! = |{ label: label!, n: n! }| {", "its pattern binds the getters");
+	assert.equal(shows[3], "\t\tfirst = label!()", "a read in its body: once, as it runs");
+	assert.equal(shows[4], `\t\tHtml.element("p", [Html.attr_of("title", || label!()), Html.on("click", || say!(label!())),], [Html.text_of(|| label!()), Html.text(" "), Html.text(first), Html.text(" "), Html.text_of(|| n!().to_str()),])`, "a read in a hole or an attribute is a computation's; a handler's when it runs; what the body read is static");
+	const props = code(["Card := [].{", "\tProps := { title : Str, max : U64 ?? 5, pick! : Str => {}, children : List(Html) }", "", "\tview! : Props => Html", "\tview! = |{ title, max, pick!, children }| <div class={title}>{max.to_str()}{...children}</div>", "}"].join("\n")).split("\n");
+	assert.equal(props[1], "\tProps := { title : () => Str, max : (() => U64) ?? (|| 5), pick! : Str => {}, children : List(Html) }", "the block's Props: getters, a default as one");
+	assert.equal(props[4], `\tview! = |{ title: title!, max: max!, pick!, children }| Html.element("div", [Html.attr_of("class", || title!()),], [Html.text_of(|| max!().to_str()), Html.join(children),])`);
+	const whole = code(["Chart := [].{", "\tview! : { label : Str, data! : () => List(U64) } => Html", "\tview! = |props| {", "\t\tdata! = props.data!", "\t\t<p>{props.label}</p>", "\t}", "}"].join("\n")).split("\n");
+	assert.equal(whole[3], "\t\tdata! = props.data!", "an accessor field as it is");
+	assert.equal(whole[4], `\t\tHtml.element("p", [], [Html.text_of(|| (props.label)()),])`, "a value field through its getter (in parentheses: `props.label()` would call a method)");
+});
+
+test("components: a prop read in a lambda that may be pure is read where that lambda is made (D-039)", () => {
+	const line = (body) => transpileModule(["Day := [].{", "\tview! = |{ day, me }| {", `\t\t${body}`, "\t}", "}"].join("\n"), "Page.rocx", { module: "Page" }).code.split("\n")[2];
+	assert.equal(line("here! = || plans!().keep_if(|plan| plan.day == day.id)"), "\t\there! = || plans!().keep_if((|day| |plan| plan.day == day.id)(day!()))", "given to keep_if: read when the lambda is made, in here!");
+	assert.equal(line("<p>{xs.map(|x| x.concat(me).concat(day)).join(\",\")}</p>"), `\t\tHtml.element("p", [], [Html.text_of(|| xs.map((|me, day| |x| x.concat(me).concat(day))(me!(), day!())).join(",")),])`, "in a hole, the hole reads them: it is a computation");
+	assert.equal(line("fmt = |x| \"${x} ${me}\""), "\t\tfmt = (|me| |x| \"${x} ${me}\")(me!())", "a pure helper in the body: read once, as it is made");
+	assert.equal(line("fmt! = |x| \"${x} ${me}\""), "\t\tfmt! = |x| \"${x} ${me!()}\"", "one named as an effect reads it when called");
+	assert.equal(line("create_effect!(|| day.id, |id| log!(id, me))"), "\t\tcreate_effect!(|| day!().id, |id| log!(id, me!()))", "an effect's halves");
+	assert.equal(line("rows = xs.map(|x| <li on:click={|| pick!(xs.keep_if(|y| y == me))}>{me}</li>)"), `\t\trows = xs.map(|x| Html.element("li", [Html.on("click", || pick!(xs.keep_if((|me_2| |y| y == me_2)(me!())))),], [Html.text_of(|| me!()),]))`, "markup in a pure lambda reads for itself; a handler there too (a root inside another's run names its own)");
+	assert.equal(line("rows = xs.map(|x| (x, me, <b on:click={|| f!(xs.keep_if(|y| y == me))} />))"), `\t\trows = xs.map((|me| |x| (x, me, Html.element("b", [Html.on("click", || f!(xs.keep_if((|me_2| |y| y == me_2)(me!())))),], [])))(me!()))`, "a root inside another's run: its own names, read where it is made");
+	assert.equal(line("x = { id: day.id, me }"), "\t\tx = { id: day!().id, me: me!() }", "a record's label is no read; a punned field is");
+	assert.equal(line("x = card.me"), "\t\tx = card.me", "a field of something else");
+});
+
+test("components: a prop's name can't be bound again in its view (D-039)", () => {
+	const fails = (body) => assert.throws(() => transpileModule(["Day := [].{", "\tview! = |{ day }| {", `\t\t${body}`, "\t\tday", "\t}", "}"].join("\n"), "Page.rocx", { module: "Page" }), /day is a prop of this component/);
+	fails("day = 1");
+	fails("xs.map(|day| day)");
+	fails("for day in days {}");
+});
+
+test("components: a function of the file's renders with getters when the file only renders it; called too, it keeps values and says so (D-039)", () => {
+	const code = (source) => transpileModule(source, "Page.rocx", { module: "Page" });
+	const only = code("stats! = |{ n }| <p>{n}</p>\nx = <Stats n={count!()} />").code.split("\n");
+	assert.equal(only[0], `stats! = |{ n: n! }| Html.element("p", [], [Html.text_of(|| n!()),])`);
+	assert.equal(only[1], `x = Html.component(|| stats!({ n: || count!(), }))`);
+	const both = code("stats! = |{ n }| <p>{n}</p>\nx = <Stats n={count!()} />\ny = stats!({ n: 1 })");
+	const lines = both.code.split("\n");
+	assert.equal(lines[0], `stats! = |{ n }| Html.element("p", [], [Html.text(n),])`, "kept as written");
+	assert.equal(lines[1], `x = Html.html_of(|| (|props| Html.component(|| stats!(props)))({ n: count!(), }))`, "a hole of its own, made anew");
+	assert.equal(both.warnings.length, 1);
+	assert.match(both.warnings[0].reason, /<Stats> keeps values for props \(D-039\), since this file also calls stats! directly/);
+	assert.equal(both.warnings[0].line, 2);
 });
 
 test("components: a pure one (`view`, no `!`) is called where it is written, as a function; it makes the hole it is in no computation", () => {
 	const reactive = (source, options = {}) => transpileModule(source, "Page.rocx", { module: "Page", ...options }).code.replace(/\n\n# rocx: generated from[^\n]*\n$/, "");
 	const views = { Heading: "view", Counter: "view!" };
 	assert.equal(reactive(`import Ui/Heading\nx = <Heading id="a">Hi</Heading>`, { views }).split("\n")[1], `x = Heading.view({ id: "a", children: [Html.text("Hi"),], })`, "rocx build says Heading's view is pure");
-	assert.equal(reactive(`import Counter\nx = <Counter start={1} />`, { views }).split("\n")[1], `x = Html.component(|| Counter.view!({ start: 1, }))`, "a view! is put off, as before");
+	assert.equal(reactive(`import Counter\nx = <Counter start={1} />`, { views }).split("\n")[1], `x = Html.component(|| Counter.view!({ start: || 1, }))`, "a view! is put off, given getters");
+	assert.equal(reactive(`import Ui/Heading\nx = <Heading id={id!()}>Hi</Heading>`, { views }).split("\n")[1], `x = Html.html_of(|| Heading.view({ id: id!(), children: [Html.text("Hi"),], }))`, "given a value read from what changes, its call is a hole of its own (D-039)");
 	assert.equal(reactive(`import Badge\nx = <Badge />`).split("\n")[1], `x = Html.component(|| Badge.view!({}))`, "not known to be pure: view!");
 	assert.equal(reactive(`import Ui/Heading\nx = <ul>{...items.map(|item| <li><Heading id={item}>{item}</Heading></li>)}</ul>`, { views }).split("\n")[1], `x = Html.element("ul", [], [Html.join(items.map(|item| Html.element("li", [], [Heading.view({ id: item, children: [Html.text(item),], }),]))),])`, "static: nothing in the hole is an effect");
 	assert.equal(reactive(`Card := [].{\n\tview = |{ title }| <h2>{title}</h2>\n}\nx = <Card title="T" />`).split("\n")[3], `x = Card.view({ title: "T", })`, "this file's own");
 	assert.equal(reactive(`card = |{ title }| <h2>{title}</h2>\nx = <p><Card title="T" /></p>`).split("\n")[1], `x = Html.element("p", [], [card({ title: "T", }),])`, "a function of this file's, defined with no !");
-	assert.equal(reactive(`stats! = |{ n }| <p>{n}</p>\nx = <Stats n={1} />`).split("\n")[1], `x = Html.component(|| stats!({ n: 1, }))`, "one defined with ! is put off");
+	assert.equal(reactive(`stats! = |{ n }| <p>{n}</p>\nx = <Stats n={1} />`).split("\n")[1], `x = Html.component(|| stats!({ n: || 1, }))`, "one defined with ! is put off, given getters");
 	assert.equal(reactive(`import pf.Show\nx = <Show when!={a!()}><p /></Show>`, { views: { Show: "view" } }).split("\n")[1], `x = Show.view!({ when!: || a!(), children: [Html.element("p", [], []),], })`, "a platform's is the platform's");
 	assert.deepEqual(viewsDefined("Heading := [].{\n\tview : { id : Str } -> Html\n\tview = |_| x\n}\n\nCounter := [].{\n\tview! = |_| x\n\tview_with = 1\n}\n\nOther := [].{\n\tx = 1\n}\n"), { Heading: "view", Counter: "view!" });
 	// A type nested above the view: the view is the outer block's.
@@ -373,28 +423,28 @@ test("<NoHydration>: what is inside renders on the server only; the browser's co
 
 test("<NoHydration>: a name only what is inside used is rewritten in the browser's copy where it is bound, so the compiler doesn't warn (D-044)", () => {
 	const browserOf = (source) => transpileModule(source, "P.rocx", { module: "P", client: true }).code;
-	// A field of the view's record pattern: `params: _`.
+	// A field of the view's record pattern: `params: _` (its getter's binding, `params: params!`, D-039).
 	const page = browserOf("import pf.Html\n\nview! = |{ params }|\n\t<main>\n\t\t<NoHydration><p>{params.lang}</p></NoHydration>\n\t</main>\n");
 	assert.match(page, /^view! = \|\{ params: _ \}\|$/m);
 	// Two fields, one still used: only the other.
 	const error = browserOf("import pf.Html\n\nview! = |{ status, problem }|\n\t<main>\n\t\t<h1>{status.to_str()}</h1>\n\t\t<NoHydration><p>{problem}</p></NoHydration>\n\t</main>\n");
-	assert.match(error, /^view! = \|\{ status, problem: _ \}\|$/m);
+	assert.match(error, /^view! = \|\{ status: status!, problem: _ \}\|$/m);
 	// A plain parameter: `_props`.
 	assert.match(browserOf("import pf.Html\n\nview! = |props|\n\t<main><NoHydration><p>{props.text}</p></NoHydration></main>\n"), /^view! = \|_props\|$/m);
 	// A local definition: `_lang = …`; what it reads (`params`) is still used, so it stays.
 	const local = browserOf("import pf.Html\n\nview! = |{ params }| {\n\tlang = params.lang\n\t<main><NoHydration><p>{lang}</p></NoHydration></main>\n}\n");
-	assert.match(local, /^\t_lang = params\.lang$/m);
-	assert.match(local, /^view! = \|\{ params \}\| \{$/m);
+	assert.match(local, /^\t_lang = params!\(\)\.lang$/m);
+	assert.match(local, /^view! = \|\{ params: params! \}\| \{$/m);
 	// What the browser's copy still uses, and a member of a block (another module may read it), are left as they are.
 	const kept = browserOf("import pf.Html\n\nview! = |{ name }|\n\t<main><p>{name}</p><NoHydration><p>{name}</p></NoHydration></main>\n");
-	assert.match(kept, /^view! = \|\{ name \}\|$/m);
+	assert.match(kept, /^view! = \|\{ name: name! \}\|$/m);
 	const member = browserOf("import pf.Html\n\nCard := [].{\n\ttitle = \"Hi\"\n\n\tview! : {} => Html\n\tview! = |{}| <main><NoHydration><p>{title}</p></NoHydration></main>\n}\n");
 	assert.match(member, /^\ttitle = "Hi"$/m);
 	// A word in a string's text or a comment is no name: left as it is, though the server's copy has it twice.
 	const text = browserOf("import pf.Html\n\nview! = |{}| {\n\titem = { label: \"Comments, entities, raw ${\"text\"}\", sign: '\"' } # entities, too\n\t<main><p>{item.label}</p><NoHydration><p>{\"entities, \"}</p></NoHydration></main>\n}\n");
 	assert.match(text, /^\titem = \{ label: "Comments, entities, raw \$\{"text"\}", sign: '"' \} # entities, too$/m);
 	// A file with no <NoHydration> is untouched (and so is the server's copy).
-	assert.match(transpileModule("import pf.Html\n\nview! = |{ params }|\n\t<main><NoHydration><p>{params.lang}</p></NoHydration></main>\n", "P.rocx", { module: "P" }).code, /^view! = \|\{ params \}\|$/m);
+	assert.match(transpileModule("import pf.Html\n\nview! = |{ params }|\n\t<main><NoHydration><p>{params.lang}</p></NoHydration></main>\n", "P.rocx", { module: "P" }).code, /^view! = \|\{ params: params! \}\|$/m);
 });
 
 test("<NoHydration>: a handler, a key or a transition written inside is refused (it would never run), as is one with attributes", () => {

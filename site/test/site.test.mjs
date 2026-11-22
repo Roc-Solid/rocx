@@ -759,6 +759,9 @@ test("charts: each glides to other data and stops, Auto gives it more until pres
 	const neon = await bar();
 	await page.click("[data-demo=chart-bar] .looks button:nth-child(2)");
 	assert.equal(await page.eval(`document.querySelector("[data-demo=chart-bar] .stage").dataset.look`), "blueprint");
+	// The chart is kept (its padding is a prop, a getter: D-039), so its bars fade to the look's fill
+	// (a CSS transition, 0.15 s) rather than being made anew in it.
+	await page.wait(`getComputedStyle(document.querySelector("[data-demo=chart-bar] .bar rect")).fillOpacity === "0.2"`, 2000);
 	const blueprint = await bar();
 	assert.ok(blueprint.width < neon.width, "thinner bars");
 	assert.equal(blueprint.fill, "0.2", "outlined, barely filled");
