@@ -2,12 +2,14 @@
 
 Roc compiled to native code, in a Rust host: one executable that answers HTTP, streams events,
 renders pages of components, keeps live rooms, channels, actors and values in memory, and runs what
-plugins add (jobs and cron, email: packages/jobs, packages/email), with Postgres beneath all of it. The
+plugins add (jobs and cron, email: packages/jobs, packages/email), with a database beneath all of it:
+Postgres, or SQLite in the server's own process (D-045). The
 browser's platform is `web/` (wasm): an app is two programs, one on each, talking over HTTP. The docs site's platform pages (`/platform`)
 say all this at more length.
 
 The host (`host/`, Rust) gives Roc general things: HTTP, coroutines that Roc's calls run on (below),
-a pool of Postgres connections and one that listens, TCP and TLS sockets, requests to other
+the database (a pool of Postgres connections and one that listens, or SQLite's file, its calls on
+threads of their own), time zones, TCP and TLS sockets, requests to other
 servers, live topics and rooms, channels' streams, background loops that sleep until woken,
 isolated calls, actors' mailboxes and timers, a key-value store in memory, the environment, secure
 random numbers, AES-GCM, and rendering components. Migrations, plugins and actors' state are the
@@ -18,7 +20,7 @@ D-025).
 
 ```sh
 just dev        # the docs site on it: http://localhost:8080, rebuilt on save
-just db         # a Postgres in Docker; prints its DATABASE_URL
+just db         # a Postgres in Docker; prints its DATABASE_URL (a SQLite app needs none)
 node server/build.mjs app.roc out/app [--opt=speed] [--target=arm64musl]
 ```
 
@@ -95,7 +97,28 @@ import. `run!` given Api's contract crashes, saying to use Handlers'. A route fi
 another route's handler binds it itself (`Endpoint.bind(Api.x(params), |r, c, b| XServer.post!(…))`),
 as `site/routes/calls/+server.roc` does.
 
-### Postgres: `Db`
+### The database: `Db` (Postgres or SQLite, D-045)
+
+An app picks its database in its program, and writes its SQL for it: nothing is translated, and an
+app runs on one. `Postgres`, the default, is at `--database-url` (or `DATABASE_URL`), and an app
+without one has no database. `Sqlite(path)` is a file in the server's process at `path`, from where
+the server starts, made with its directory when missing, so the app runs with nothing set:
+
+```roc
+program = App.program({ context: |_| {}, middleware: Middlewares.default, database: Sqlite("data/plate.db") })
+```
+
+`--database-url sqlite:<path>` puts a SQLite app's file elsewhere; a URL of the other kind stops the
+server as it starts, saying which the app wants. The host has a backend a kind
+(`host/src/db/`: `postgres.rs`, `sqlite.rs`), behind the same calls. SQLite is rusqlite with SQLite
+compiled in (FTS5 and JSON with it), in WAL mode: a pool of 8 connections whose calls run on
+tokio's blocking threads, reads beside a write, writes taking turns (each waits up to 10 s for the
+one before), a transaction begun `immediate` (it holds the write lock from its start: keep anything
+slow out of one), a statement past its call's time limit interrupted and its connection closed. A
+package says which it works with in its plugin's `needs` (`Database` for either, `Postgres`,
+`Sqlite`), and a migration which it is for (`on: Sqlite`; any by default): the start check refuses a
+package that needs the other, and applies the platform's and the plugins' migrations for the app's
+kind. `Db.backend!` says which the server has, for a package with SQL for both (packages/jobs).
 
 ```roc
 notes : Try(List({ id : I64, body : Str, note : Db.Nullable(Str) }), [DbErr(Str), BadRow(Str)])
@@ -110,32 +133,41 @@ Db.transaction!(|{}| {
 })
 ```
 
-A parameter is `Null`, `Text`, `Int` or `Bool`, sent as text: Postgres reads it as the type its
-place wants. A list is one parameter with `Db.array` (a Postgres array in text, `{"a","b c",NULL}`,
-each text quoted): `where tag = any($1)`, `tags @> $1`, `unnest($1::bigint[])`, as
-`Db.array(tags.map(|tag| Text(tag)))`. Rows come back as JSON and `Json.parse` decodes each into the record the caller
+A parameter is `Null`, `Text`, `Int` or `Bool`, named `$1`, `$2`… in both, and goes to the host as
+JSON of its kind. Postgres is sent each as text, which it reads as the type its place wants; SQLite
+binds each as it is (a `Bool` as 1 or 0), at its name, and a parameter given and unused, or used and
+not given, is an error in both. A list is one parameter on Postgres with `Db.array` (a Postgres
+array in text, `{"a","b c",NULL}`, each text quoted): `where tag = any($1)`, `tags @> $1`,
+`unnest($1::bigint[])`, as `Db.array(tags.map(|tag| Text(tag)))`; on SQLite, JSON text read with
+`json_each($1)`. Rows come back as JSON and `Json.parse` decodes each into the record the caller
 annotated, by column name: a null is JSON's `null`, any other value itself. A column that may be
 null is read as `Db.Nullable(a)` (`Null` or `Some(a)`, matched as a tag union; `null` or the value in
 JSON, both ways); a null in a column read as a plain value is `BadRow`, which names the column. The
-record says what may be null, so the host asks the catalog nothing (D-022). Booleans, integers,
-floats, text, `json`/`jsonb`, `uuid`, timestamps and dates are read; anything else asks for a cast
-(`::text`).
+record says what may be null, so the host asks the catalog nothing (D-022). From Postgres, booleans,
+integers, floats, text, `json`/`jsonb`, `uuid`, timestamps and dates are read; anything else asks for
+a cast (`::text`). From SQLite, each value as what it is (an integer or a real a number, text a
+string), a column declared `boolean` a `Bool` and one declared `json` its JSON; a boolean worked out
+in a statement is 0 or 1 (an `I64`), and a blob is read through `hex(…)`.
 
 `Db.transaction!` keeps one connection for the call: what the body writes, and the jobs it queues,
 stay only if it returns `Ok`. An `Err`, a failing statement or a crash rolls it all back, and a call
 that ends with a transaction open has it rolled back. `Db.script!` runs statements with no
-parameters.
+parameters. `Db.notify!(channel, payload)` tells `Db.listen!`'s listeners (the topic
+`db:<channel>`, `Live.next!`) when the call's transaction commits, never if it rolls back, or at once
+outside one: Postgres's `pg_notify`, or the server's own on SQLite.
 
 **Migrations** are in the executable: `program.migrations` lists them, each a name and its SQL
 (`import "migrations/0001_tables.sql" as tables : Str` reads a file when the app is compiled). When
 the server starts they are applied in the order listed, each once, each in a transaction (recorded
 by name in `rocx_migrations`); two starting at once (a deploy's old server and its new one) take
-turns (an advisory lock). The platform's own tables (`rocx_actors`: `rocx/0001`, …) come first,
+turns (on Postgres an advisory lock, on SQLite its write lock). The platform's own tables (`rocx_actors`: `rocx/0001`, …) come first,
 then the plugins' (each recorded as `<plugin>/<name>`: the jobs plugin's `rocx_jobs` is
 `jobs/0001_jobs`), then the app's; one that fails stops the server.
 
-Connections use TLS when the database offers it (or the URL's `sslmode` asks), checked against the
-web's certificate authorities.
+Postgres connections use TLS when the database offers it (or the URL's `sslmode` asks), checked
+against the web's certificate authorities. `Time.offset!(zone, at)` gives an IANA time zone's offset
+from UTC at a moment (the host's chrono-tz), which a SQLite app works a local day out from, as SQLite
+knows no zones.
 
 **roc-pg** ([niclas-ahden/roc-pg](https://github.com/niclas-ahden/roc-pg)), a Postgres client in
 Roc whose queries are checked against a schema when the app is compiled, runs on this platform: it
@@ -145,8 +177,8 @@ From cold, checking it takes 0.8 s, a dev build 1.2 s, an optimized one 6.3 s.
 
 ### Jobs and cron: packages/jobs (D-034)
 
-Jobs and cron are a package and a plugin, on the platform's general effects (Postgres and its
-notifications, background loops, isolated calls): `Job.plugin({ jobs: App.jobs, crons })` adds the
+Jobs and cron are a package and a plugin, on the platform's general effects (the database and its
+notifications, background loops, isolated calls), on Postgres or SQLite: `Job.plugin({ jobs: App.jobs, crons })` adds the
 queue's table, its workers and its schedules. The jobs page is packages/admin's (`JobsPage`).
 `packages/jobs/README.md` says how they work.
 
@@ -546,10 +578,10 @@ doesn't parse as its kind's: a caller built against an older kind, say), a kind 
 of, and a crash in `receive!` are logged as errors (`rocx actor: a message failed`, with `actor`,
 `key` and `error`) and told to the asker, and the actor goes on with its state as it was.
 
-With a database, an actor's state is read from Postgres (`rocx_actors`) by its first turn and
+With a database, an actor's state is read from it (`rocx_actors`) by its first turn and
 written after each turn that changes it, so it is there after a restart. An actor idle for
 `--actor-idle-ms` (15 minutes) is let go: it tells the router, which lets it go if nothing was sent
-to it meanwhile, and the next message wakes it as Postgres has it. Without a database, its state is
+to it meanwhile, and the next message wakes it as the database has it. Without a database, its state is
 in its task alone, and it stays awake. An actor may ask another: one that asks itself, or any actor
 whose turn waits on its answer up the chain of asks, is refused at once; an ask not answered in
 30 s (a cycle through two mailboxes) is given up on, and a message whose asker gave up before its
@@ -790,8 +822,8 @@ built `--target=arm64musl` runs in a container against `just db`'s Postgres, eve
 <app> --port 8080 --host 127.0.0.1        where to listen (PORT)
       --static DIR, --file /PATH=FILE     files served as they are
       --context-file FILE                 what respond! is given besides each request
-      --database-url URL                  Postgres (DATABASE_URL): Db, migrations, actors, plugins' tables
-      --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in Postgres)
+      --database-url URL                  the database (DATABASE_URL): postgres://…, or sqlite:<path> for a SQLite app's file elsewhere
+      --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in the database)
       --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it
       --public-url https://app.example    where the app is, for links it sends (PUBLIC_URL; else where it listens)
       --dev                               reload pages on restart, show crashes, plugins' dev pages, Env.dev!
@@ -841,7 +873,7 @@ read, taken once, deleted; a time to live and a counter's window; 200 increments
 list; past `--kv-max-mb`; `kv.rs`'s own unit tests, compiled alone), actors
 (one message at a time, a crash, asking another, itself or one waiting on it, tells in order,
 timers and a cancelled one, a message an actor doesn't take and a kind the app has none of, logged,
-a restart, one idle let go and woken as Postgres has it), `Http` (to servers the test runs: redirects, a timeout, a body too large, TLS
+a restart, one idle let go and woken as the database has it), `Http` (to servers the test runs: redirects, a timeout, a body too large, TLS
 that fails), `Env` (from a request and a job), AES-GCM and packages/crypto against Node's, random
 bytes, packages/s3 (objects whole and in part, missing ones, a multipart upload of three parts and
 an aborted one, presigned URLs Node's fetch uses, `serve!` with a range (and one the app dropped),
@@ -859,6 +891,13 @@ a stop in the middle of a request. With
 may write to: rustfs or MinIO in Docker, say, with a bucket made), what needs S3; a
 request over the internet runs only with `ROCX_TEST_INTERNET=1`; `ROCX_TEST_OPT=speed` builds the
 app optimized.
+`server/test/sqlite.test.mjs` builds `server/test/sqlite`, an app whose database is SQLite, and needs
+no database server: its file where the program says or `--database-url` does, a Postgres URL refused,
+typed parameters and rows, transactions and a failing script, 40 read-then-write transactions at
+once that each see the one before, a read beside a held write, notifications heard on commit only,
+the platform's and a plugin's SQLite tables made once, an actor's state across a restart, a plugin
+that needs Postgres refused; jobs (in a transaction, retried, keyed, cut off at their time limit with
+the statement interrupted and the transaction rolled back), cron, and the jobs page.
 `site/test/site.test.mjs` runs the docs site on it, in Chromium, and compares its pages with the
 browser runtime's own render.
 

@@ -40,13 +40,14 @@ view! = |_|
 
 			<Heading id="layers">What is Rust, what is Roc</Heading>
 			<p>
-				The host gives Roc general things: HTTP, threads, Postgres connections, sockets, sleeping and
+				The host gives Roc general things: HTTP, threads, database connections, sockets, sleeping and
 				waking, a crash that ends one call. What an app is built from is the platform's Roc, on top of
 				those, and an app could write its own the same way:
 			</p>
 			<ul>
 				<li>
-					<strong>Rust:</strong> HTTP (tokio, hyper), a pool of Postgres connections and one that listens,
+					<strong>Rust:</strong> HTTP (tokio, hyper), the database (a pool of Postgres connections and one
+					that listens, or SQLite's file in the process, its calls on threads of their own), time zones,
 					TCP and TLS sockets, live topics and rooms, background loops, isolated calls, actors' mailboxes
 					and timers, values in memory (<code>Kv</code>), secure random numbers, rendering pages of
 					components.
@@ -65,7 +66,7 @@ view! = |_|
 				<code>ROCX_ROC_THREADS</code>, says otherwise), beside tokio's, which answer HTTP and drive every
 				socket and timer. Each call into Roc (a request and the page it renders, a stream, an actor's turn,
 				a background loop) is a coroutine on one of them, with a stack of its own: 8 MiB, Roc's default,
-				reserved rather than used. When an effect waits (Postgres, a socket, another server, a sleep), the
+				reserved rather than used. When an effect waits (the database, a socket, another server, a sleep), the
 				call pauses: its stack stays as it is, its thread runs other calls meanwhile, and the call resumes
 				where it was, on the same thread, when what it waited on is done. So a call that waits holds no
 				thread, and any number of them can wait at once. Eight requests that each wait 0.3 s on Postgres
@@ -167,7 +168,7 @@ view! = |_|
 				At start, the host asks the platform's Roc which loops to run in the background (the plugins' loops
 				and checks: the jobs plugin's workers and its schedules, the email plugin's look at the SMTP
 				server) and runs each, a call of its own, until the server stops. A loop sleeps with <code>Live.next!</code>, which wakes when what it listens to is published
-				(Postgres's <code>NOTIFY</code> is published on <code>pg:channel</code>), when its time is up, or
+				(<code>Db.notify!</code>, and Postgres's <code>NOTIFY</code>, are published on <code>db:channel</code>), when its time is up, or
 				with <code>Gone</code> when the server stops. One that crashes is started again a second later.
 			</p>
 			<p>
@@ -210,14 +211,14 @@ view! = |_|
 				<code>read_up_to!</code> and <code>read_until!</code> use it, the call paused while each waits. TLS is
 				rustls, checked against the web's certificate authorities. A socket the call leaves open is closed
 				when it ends. <code>Random.seed_u64!</code> is the operating system's randomness. The email package's
-				SMTP client is written on these, and so is <a href={"${Paths.platform_postgres}#roc-pg"}>roc-pg</a>, a
+				SMTP client is written on these, and so is <a href={"${Paths.platform_database}#roc-pg"}>roc-pg</a>, a
 				Postgres client in Roc.
 			</p>
 
 			<Heading id="running">Running it</Heading>
 			<Code
 				title="The app's executable"
-				source={"<app> --port 8080 --host 127.0.0.1        where to listen (PORT)\n      --static DIR, --file /PATH=FILE     files served as they are\n      --context-file FILE                 what respond! is given besides each request\n      --database-url URL                  Postgres (DATABASE_URL): Db, migrations, actors, plugins' tables\n      --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in Postgres)\n      --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it\n      --public-url https://app.example    where the app is, for links it sends (PUBLIC_URL; else where it listens)\n      --dev                               reload pages on restart, show crashes, plugins' dev pages\n      --debug                             GET /__rocx/allocations, and plugins' debug paths\n      --live-beat-ms 15000                how often a channel stream beats, and its checks run again\n      --roc-threads N                     the threads Roc runs on (ROCX_ROC_THREADS; one a core)"}
+				source={"<app> --port 8080 --host 127.0.0.1        where to listen (PORT)\n      --static DIR, --file /PATH=FILE     files served as they are\n      --context-file FILE                 what respond! is given besides each request\n      --database-url URL                  the database (DATABASE_URL): postgres://…, or sqlite:<path> for a SQLite app's file elsewhere\n      --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in the database)\n      --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it\n      --public-url https://app.example    where the app is, for links it sends (PUBLIC_URL; else where it listens)\n      --dev                               reload pages on restart, show crashes, plugins' dev pages\n      --debug                             GET /__rocx/allocations, and plugins' debug paths\n      --live-beat-ms 15000                how often a channel stream beats, and its checks run again\n      --roc-threads N                     the threads Roc runs on (ROCX_ROC_THREADS; one a core)"}
 				numbers={Bool.False}
 				plain={Bool.True}
 			/>
@@ -262,7 +263,8 @@ view! = |_|
 				<code>node server/build.mjs app.roc out/app --target=arm64musl</code> (or <code>x64musl</code>)
 				cross-compiles a static Linux executable from macOS: Rust's own musl target supplies the C library and
 				the unwinder, and Zig compiles the host's C. Its migrations are in it; copy it into a container with
-				the app's static files, give it a <code>DATABASE_URL</code>, and put a proxy in front for TLS, telling
+				the app's static files, give it a <code>DATABASE_URL</code> (a Postgres app's; a SQLite app's file goes
+				on a volume, <code>sqlite:/data/app.db</code>), and put a proxy in front for TLS, telling
 				the app where that is with <code>PUBLIC_URL</code> (<code>Env.public_url!</code>, for the links it sends). The platform's test
 				app, built that way, runs every one of its tests in a container against <code>just db</code>'s
 				Postgres.
@@ -275,7 +277,8 @@ view! = |_|
 			</ul>
 			<Callout kind="note" title="Built on">
 				<p>
-					tokio and hyper (HTTP), tokio-postgres with deadpool, rustls with ring (TLS, and random numbers),
+					tokio and hyper (HTTP), tokio-postgres with deadpool, rusqlite with SQLite compiled in, chrono-tz
+					(time zones), rustls with ring (TLS, and random numbers),
 					and Roc's glue for the types the header names (<code>just glue</code> writes
 					<code>server/host/src/roc_platform_abi.rs</code>).
 				</p>

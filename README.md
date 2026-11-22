@@ -8,7 +8,8 @@ browser, in three parts.
   every value put in a page, and reports at your lines. `rocx` is the command-line tool, too: Roc
   itself, on [basic-cli](https://github.com/roc-lang/basic-cli), one native executable.
 - **The platform**, what an app runs on: on the server, Roc compiled to native code in a Rust host
-  (`server/`), with Postgres, channels and live rooms, a key-value store, actors and plugins;
+  (`server/`), with a database (Postgres, or SQLite in the server's process), channels and live
+  rooms, a key-value store, actors and plugins;
   in the browser, the components, compiled to WebAssembly (`web/`).
 - **The ecosystem**: packages of plain Roc, components and plugins that any app can use, in
   `packages/`: charts, forms, Markdown, intl, an admin, guards, jobs and cron, email, MCP, presence,
@@ -65,7 +66,7 @@ just setup   # the Roc fork rocx builds with, the pinned nightly, Zig and Rust i
 just compiler-bugs   # each Roc bug rocx has met, with the nightly and with the fork
 just test    # the transpiler, both platforms, every package, the site in Chromium
 just dev     # the docs site, its server (native) answering each page, rebuilt on save
-just db      # a Postgres in Docker for the server platform (prints its DATABASE_URL)
+just db      # a Postgres in Docker for the server platform (prints its DATABASE_URL); SQLite apps need none
 just site    # the docs site as static files in site/dist, every page as its server answers it
 just deploy-pages  # build that and publish it to roc-solid.github.io (site/dist, one commit)
 just check   # type-check the site's two programs (reports at .rocx lines) and the packages' server modules, and lint it
@@ -77,11 +78,11 @@ just check   # type-check the site's two programs (reports at .rocx lines) and t
 | `packages/charts` | bar, stacked bar, line, sparkline, donut, scatter and heatmap charts, styled by custom properties: their arithmetic a Roc package (scales, round ticks, SVG paths, in `Dec`), their components copied into each app by `rocx build`; see its README |
 | `packages/crypto` | SHA-256, HMAC, HKDF, Base64 and hex in plain Roc, on no platform, each checked against its RFC's vectors; see its README |
 | `packages/s3` | files in any S3: objects, multipart uploads, presigned URLs, and objects served as they stream, a bucket made from its URL and the server platform's `Http.send!`; see its README |
-| `packages/jobs` | jobs and cron as a plugin (D-034): work queued in Postgres and run by workers, again if it fails, and schedules; `Job.plugin({ jobs: App.jobs, crons })`; see its README |
+| `packages/jobs` | jobs and cron as a plugin (D-034): work queued in the app's database (Postgres or SQLite) and run by workers, again if it fails, and schedules; `Job.plugin({ jobs: App.jobs, crons })`; see its README |
 | `packages/email` | email as a plugin (D-035): over SMTP (`SMTP_URL`, `MAIL_FROM`), or kept for the dev mailbox at `/__rocx/mail` under `--dev`; `Email.plugin({})`, `Email.send!`; see its README |
 | `packages/*` | the other packages: `admin` (a Django-style admin for Postgres tables, and the jobs page), `forms`, `guard` (rate limits, feature flags, request guards), `intl`, `markdown`, `mcp`, `otel` (OpenTelemetry metrics and logs), `presence`, `push` (Web Push) and `testing`; each has a README, a PROPOSALS.md of what it waits on, and a page on the docs site. A package's modules for the server alone are a package of their own, `server/main.roc`, which names the server platform |
 | `web/` | the browser's platform: the modules components are written with (`Html`, `Solid`, `Show`, `For`, …) and HTTP's (`Server`, requests and answers; `Endpoint`, `Channel`, `Events`, `Middleware`, `OpenApi`), which the server's platform has too; its Zig host, `runtime.js`; see `web/README.md` |
-| `server/` | the server's platform: native Roc in a Rust host (tokio, hyper, Postgres, plugins, channels, actors, `Kv`), rendering pages of components; see `server/README.md` |
+| `server/` | the server's platform: native Roc in a Rust host (tokio, hyper, Postgres or SQLite, plugins, channels, actors, `Kv`), rendering pages of components; see `server/README.md` |
 | `site/` | the docs site: pages in `routes/`, the demos on them in `Demos/`, its program in `main.roc`, real examples in `examples/` |
 | `test/`, `web/test/`, `site/test/`, `server/test/`, `packages/testing/test/` | the transpiler and routes; the browser's platform; the site in a browser; the server's platform; the testing package's helpers |
 | `examples/` | whole apps, each small enough to read end to end, with its README and its tests (below) |
@@ -115,8 +116,8 @@ runs echo under bombardier too).
 - [`notes`](examples/notes): Notes, personal notes in Markdown that AI agents use over MCP:
   sign-in by a mailed link, a signed session cookie, personal access tokens kept as hashes,
   Postgres full-text search, a live preview, and a JSON API with its OpenAPI page.
-- [`plate`](examples/plate): Plate, a food diary for a phone: the USDA's 7,500 foods seeded
-  into Postgres, packets looked up by barcode in Open Food Facts, recipes that log like foods,
+- [`plate`](examples/plate): Plate, a food diary for a phone, on SQLite (a file beside the server,
+  nothing to run with it): the USDA's 7,500 foods seeded into it, packets looked up by barcode in Open Food Facts, recipes that log like foods,
   targets worked out from a profile, trends charted, and a search that follows the typing.
 
 ## Pages and components
@@ -513,17 +514,18 @@ components or a stream, `migrations`, `actors`, `logs`, `plugins` and `routes`; 
 it). Each call into Roc is a coroutine on one of a few threads of Roc's own, paused while an effect
 waits, so a call that waits holds up nothing else and holds no thread (D-027); a crash ends only
 its call (a 500, a stream ended, a job run again), its memory freed and its transaction rolled
-back. It renders a page of components, byte for byte as the browser's runtime would. Postgres
-(`Db`, migrations, transactions), plugins (what a package adds to an app: routes, tables, loops,
+back. It renders a page of components, byte for byte as the browser's runtime would. A database,
+Postgres or SQLite in the server's process, as the app's program says (`Db`, migrations,
+transactions, notifications: D-045), plugins (what a package adds to an app: routes, tables, loops,
 paths for development, checked when the server starts: D-033), requests to
 other servers (`Http.fetch!(url, init)`, as JavaScript's `fetch`), bodies as bytes and from elsewhere
 (`Server.forward`), cookies, settings (`Env`), encryption (`AesGcm`) and random bytes, values in
 memory by key (`Kv`: TTLs, atomic counters, an LRU limit), live topics and rooms, channels (typed
 live updates, one stream per tab), and actors (typed asks, tells and timers, one message at a time,
-their state kept in Postgres when there is a database). Files in S3 and the crypto written in Roc
+their state kept in the database when there is one). Files in S3 and the crypto written in Roc
 are packages (`packages/s3`, `packages/crypto`), and so are jobs and cron (`packages/jobs`, a plugin:
 options, keys, listing, and a jobs page in `packages/admin`, a plugin behind the app's guard) and
-email (`packages/email`, a plugin: SMTP, or a dev mailbox at `/__rocx/mail`). The Rust host gives general things (HTTP, Postgres connections, TCP and TLS,
+email (`packages/email`, a plugin: SMTP, or a dev mailbox at `/__rocx/mail`). The Rust host gives general things (HTTP, database connections, TCP and TLS,
 background loops, isolated calls, the key-value store, channels' streams, actors' mailboxes and
 timers); migrations, plugins and actors' state are the platform's Roc, written on them, and so are
 the jobs and email packages, and
@@ -587,7 +589,8 @@ with the browser's build's own render, byte for byte outside its `<NoHydration>`
 the files GitHub Pages serves. `server/test/server.test.mjs` asks a small app on the server's
 platform over HTTP: crashes and memory, streams, pages of components, and, with `DATABASE_URL` set (`just db`),
 Postgres, transactions, migrations, jobs, cron, email over SMTP, live rooms, actors across a
-restart, and a graceful stop. `roc test packages/<name>/main.roc` runs each package's `expect`s,
+restart, and a graceful stop; `server/test/sqlite.test.mjs` asks an app on SQLite, which needs no
+database server, the same of its database, jobs and cron. `roc test packages/<name>/main.roc` runs each package's `expect`s,
 and `packages/testing/test/` tests that package's helpers against an app it builds. The browser
 tests drive Chromium's headless shell over the DevTools protocol with no dependencies: `$CHROME`,
 or Playwright's cached one; without it they are skipped. packages/testing's (and the board

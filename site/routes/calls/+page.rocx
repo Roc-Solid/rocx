@@ -171,7 +171,7 @@ view! = |_|
 				<code>middleware</code>, as its page has. What the middleware handed on (who is signed in, say) is the
 				handler's <code>context</code>: <code>{"get! = |{ context, .. }| Ok({ member: context.member })"}</code>.
 				Its body may use what only the server has: <code>Db</code>, <code>Job</code>, <code>Email</code>
-				(<a href={Paths.platform_postgres}>Postgres</a>). The browser's copy of <code>Api</code> holds the
+				(<a href={Paths.platform_database}>the database</a>). The browser's copy of <code>Api</code> holds the
 				endpoint's method and URL, and nothing it does.
 			</p>
 

@@ -8,7 +8,7 @@ import ../../../Ui/PageHero
 
 meta = {
 	title: "Jobs and cron",
-	description: "packages/jobs, a plugin for Roc Solid's server: jobs queued in Postgres and run by workers until they succeed, schedules, and a page of the queue.",
+	description: "packages/jobs, a plugin for Roc Solid's server: jobs queued in the app's database (Postgres or SQLite) and run by workers until they succeed, schedules, and a page of the queue.",
 	toc: [
 		{ id: "install", label: "Installing it" },
 		{ id: "jobs", label: "A job" },
@@ -29,7 +29,8 @@ view! = |_|
 				title="Work that runs later, and again until it is done"
 			>
 				Some work shouldn't hold up a request: sending a welcome mail, a nightly cleanup, a call to a slow
-				service. A job is that work, queued as a row in Postgres, run by workers in the background, and run
+				service. A job is that work, queued as a row in the app's database (Postgres or SQLite), run by
+				workers in the background, and run
 				again if it fails. A schedule queues one when its time comes. Email is best sent from one
 				(<a href={Paths.ecosystem_email}>packages/email</a>), so a mail server that doesn't answer is tried
 				again.
@@ -37,7 +38,7 @@ view! = |_|
 			<p>
 				Jobs and cron are a package, <code>packages/jobs</code>, and a plugin (D-034): Roc
 				(<code>Job.roc</code>, <code>Cron.roc</code>, the workers and the schedules' loop) on what the
-				server platform gives any plugin: Postgres and its notifications, background loops, sleeping until
+				server platform gives any plugin: the database and its notifications, background loops, sleeping until
 				woken, and calls run on their own (<a href={"${Paths.platform_server}#plugins"}>plugins</a>).
 			</p>
 
@@ -74,7 +75,7 @@ view! = |_|
 				<code>At(ms)</code>: not before that moment, in milliseconds since the epoch, as
 				<code>Time.now_millis!</code> tells it (a moment past is now). The options are a record, so more
 				can be added later. The input is written as JSON, and read back as the kind's type when it runs. Queued inside <code>Db.transaction!</code>, a job is a row in the transaction: it runs only
-				if the transaction commits (<a href={"${Paths.platform_postgres}#transactions"}>transactions</a>).
+				if the transaction commits (<a href={"${Paths.platform_database}#transactions"}>transactions</a>).
 				<code>Job</code>'s errors are open unions (<code>[JobErr(Str), ..others]</code>), as <code>Db</code>'s
 				are, so a transaction's body <code>?</code>s a job, its statements and the app's own errors together,
 				and its caller matches <code>JobErr</code> beside <code>DbErr</code>.
@@ -90,8 +91,9 @@ view! = |_|
 					in a job is that job's failure, not the worker's. They take only the kinds the plugin runs.
 				</li>
 				<li>
-					<strong>Woken, not polling.</strong> Queueing a job sends Postgres a <code>NOTIFY</code>, delivered
-					when its transaction commits, and that wakes the workers; otherwise a worker sleeps until the next
+					<strong>Woken, not polling.</strong> Queueing a job notifies <code>rocx_jobs</code> (Postgres's
+					<code>NOTIFY</code>, or <code>Db.notify!</code> on SQLite), delivered when its transaction commits,
+					and that wakes the workers; otherwise a worker sleeps until the next
 					delayed job or retry falls due.
 				</li>
 				<li>
@@ -102,9 +104,9 @@ view! = |_|
 				</li>
 				<li>
 					<strong>Within a time limit.</strong> A kind's <code>timeout_ms</code> is a deadline on each run:
-					the first effect that waits past it (a Postgres statement, a socket, a request to another server)
+					the first effect that waits past it (a database statement, a socket, a request to another server)
 					ends the run, as a crash would, whatever the job does with errors. The statement is cancelled and
-					its connection closed, what the run allocated is freed, and it fails with
+					its connection closed (SQLite's interrupted), what the run allocated is freed, and it fails with
 					<code>timed out after …</code>.
 				</li>
 				<li>
@@ -203,7 +205,7 @@ view! = |_|
 			<Callout kind="tip" title="Tested">
 				<p>
 					The server's tests queue jobs now, later, in transactions that commit and that roll back; fail
-					them a few times, and for good; crash them; cut them off at their time limit, on Postgres, a socket
+					them a few times, and for good; crash them; cut them off at their time limit, on Postgres, on SQLite, a socket
 					and another server, leaving nothing held; queue, cancel and move them by key; list them; use the
 					jobs page's forms behind a guard; leave alone a job another app queued; run a schedule every
 					second; start on a database the platform migrated before jobs were a package, and find its jobs

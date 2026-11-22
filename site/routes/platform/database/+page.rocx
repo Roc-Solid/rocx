@@ -7,14 +7,16 @@ import ../../../Generated/Paths
 import ../../../Ui/PageHero
 
 meta = {
-	title: "Postgres",
-	description: "Postgres on the Roc Solid server platform: queries whose rows decode into the record you annotate, transactions that take jobs with them, migrations built into the app, and roc-pg, a client in Roc whose queries are checked when the app is built.",
+	title: "The database",
+	description: "The Roc Solid server platform's database, Postgres or SQLite in the server's process, as the app's program says: queries whose rows decode into the record you annotate, transactions that take jobs with them, migrations built into the app, notifications, and roc-pg, a client in Roc whose queries are checked when the app is built.",
 	toc: [
+		{ id: "choose", label: "Postgres or SQLite" },
 		{ id: "query", label: "A query" },
 		{ id: "rows", label: "Rows, as records" },
 		{ id: "write", label: "Writing" },
 		{ id: "transactions", label: "Transactions" },
 		{ id: "migrations", label: "Migrations" },
+		{ id: "notify", label: "Notifications" },
 		{ id: "where", label: "Where it can be used" },
 		{ id: "roc-pg", label: "roc-pg: queries checked at build" },
 		{ id: "limits", label: "Not yet" },
@@ -25,14 +27,42 @@ view! = |_|
 	<>
 		<NoHydration>
 			<PageHero
-				eyebrow="The platform · Postgres"
+				eyebrow="The platform · The database"
 				title="One database, and the types you say"
 			>
-				The server platform is opinionated: an app's data is in Postgres. <code>Db</code> runs a statement
-				with its parameters and gives back the rows, decoded into the record the caller annotated; a
-				transaction keeps one connection for a call; migrations run once each, when the server starts.
-				The jobs queue and the actors' state live there too.
+				The server platform is opinionated: an app has one database, Postgres or SQLite, as its program
+				says. <code>Db</code> runs a statement with its parameters and gives back the rows, decoded into the
+				record the caller annotated; a transaction keeps one connection for a call; migrations run once
+				each, when the server starts. The jobs queue and the actors' state live there too.
 			</PageHero>
+
+			<Heading id="choose">Postgres or SQLite</Heading>
+			<p>
+				An app picks its database when it is made, in its program, and writes its SQL for it: nothing is
+				translated, and an app runs on one. <code>Postgres</code> is the default: it is at
+				<code>--database-url</code> (or <code>DATABASE_URL</code>), and without one the app has no database.
+				<code>Sqlite(path)</code> is a file in the server's own process, at <code>path</code> from where the
+				server starts, made (with its directory) when it is missing, so the app runs with nothing set and
+				nothing beside it.
+			</p>
+			<Code
+				title="main.roc"
+				source={"program = App.program({\n\tcontext: |_started| {},\n\tmiddleware: Middlewares.default,\n\tdatabase: Sqlite(\"data/plate.db\"),\n})"}
+				numbers={Bool.False}
+			/>
+			<p>
+				<code>--database-url sqlite:/var/lib/plate.db</code> puts a SQLite app's file elsewhere (on a volume, a
+				test's own); a URL of the other kind stops the server as it starts, saying which the app wants.
+				SQLite suits an app on one server (the platform runs one), with no database to run beside it:
+				<code>examples/plate</code> is one. Postgres suits data other programs share, or more than a server's
+				disk holds.
+			</p>
+			<p>
+				A package says which it works with, in its plugin's needs: <code>Database</code> (either),
+				<code>Postgres</code> or <code>Sqlite</code>; one that needs the other stops the server as it starts,
+				saying so. A package with SQL for both asks <code>Db.backend!</code> which to run, and lists a migration
+				for each (<code>{"{ name: \"0001_jobs\", sql: lite, on: Sqlite }"}</code>): the jobs plugin does both.
+			</p>
 
 			<Heading id="query">A query</Heading>
 			<p>
@@ -41,16 +71,20 @@ view! = |_|
 			</p>
 			<Code title={"${Sources.platform_notes.file}, in part"} source={Sources.platform_notes.rocx} numbers={Bool.False} />
 			<p>
-				A parameter is <code>Null</code>, <code>Text</code>, <code>Int</code> or <code>Bool</code>, sent as
-				text: Postgres reads it as the type its place wants (<code>$1</code> in <code>where id = $1</code> is
-				a <code>bigint</code>). A statement is never put together from strings: its values go as parameters.
+				A parameter is <code>Null</code>, <code>Text</code>, <code>Int</code> or <code>Bool</code>, named
+				<code>$1</code>, <code>$2</code>… in both. Postgres is sent each as text, which it reads as the type its
+				place wants (<code>$1</code> in <code>where id = $1</code> is a <code>bigint</code>); SQLite is given each
+				as it is (a <code>Bool</code> as 1 or 0), and a column of numbers takes text that is one. A statement is
+				never put together from strings: its values go as parameters.
 			</p>
 			<p>
-				A list is one parameter with <code>Db.array</code>: a Postgres array, written as Postgres writes one in
+				A list is one parameter with <code>Db.array</code>, on Postgres: an array, written as Postgres writes one in
 				text (<code>{"{\"work\",\"to do\",NULL}"}</code>), which it reads as the array its place wants, of text or
 				of numbers: <code>= any($1)</code>, <code>{"@> $1"}</code>, <code>$1::bigint[]</code>,
 				<code>unnest($1::text[])</code> (alone, <code>unnest($1)</code> can't tell which array, so it takes the
-				cast). Each text is quoted, so a comma, a brace or the word NULL in one stays text.
+				cast). Each text is quoted, so a comma, a brace or the word NULL in one stays text. SQLite has no
+				arrays: a list is JSON text there, read with <code>json_each</code>
+				(<code>where tag in (select value from json_each($1))</code>).
 			</p>
 			<Code
 				title="An array as a parameter"
@@ -72,9 +106,15 @@ view! = |_|
 					<code>BadRow</code>, which names the column.
 				</li>
 				<li>
-					<strong>What is read:</strong> booleans, integers, floats, text, <code>json</code> and
+					<strong>What is read, from Postgres:</strong> booleans, integers, floats, text, <code>json</code> and
 					<code>jsonb</code>, <code>uuid</code>, timestamps and dates (as text). Anything else asks for a cast
 					(<code>::text</code>).
+				</li>
+				<li>
+					<strong>From SQLite:</strong> each value as what it is (an integer or a real a number, text a
+					string), a column declared <code>boolean</code> as a <code>Bool</code> and one declared
+					<code>json</code> as its JSON. A boolean worked out in a statement (<code>exists (…)</code>) is 0 or 1,
+					an <code>I64</code>. SQLite has no time of its own: milliseconds in an integer are the advice.
 				</li>
 			</ul>
 
@@ -91,6 +131,11 @@ view! = |_|
 				<code>Db.transaction!</code> keeps one connection for the call: what its body writes, and the jobs it
 				queues, stay only if it returns <code>Ok</code>. An <code>Err</code>, a failing statement or a crash
 				rolls it all back, and a call that ends with a transaction still open has it rolled back.
+			</p>
+			<p>
+				On SQLite writes take turns, and reads go on beside them: a transaction holds the write lock from
+				its start, so every other write waits until it ends. Keep anything slow (a request to another
+				server, a wait) out of one; on Postgres it would hold only the rows it wrote.
 			</p>
 			<Code title={"${Sources.platform_transaction.file}, in part"} source={Sources.platform_transaction.rocx} numbers={Bool.False} />
 			<p>
@@ -111,12 +156,21 @@ view! = |_|
 				its SQL, which Roc reads from a <code>.sql</code> file when the app is compiled. When the server
 				starts, the platform's Roc applies them in the order listed, each once, each in a transaction,
 				recorded by name in <code>rocx_migrations</code>; two starting at once (a deploy's old server and its
-				new one) take turns (an advisory lock). The platform's own tables (<code>rocx_actors</code>) come
+				new one) take turns (on Postgres an advisory lock, on SQLite its write lock). The platform's own tables (<code>rocx_actors</code>) come
 				first, then the plugins' (the jobs plugin's <code>rocx_jobs</code>, recorded as <code>jobs/0001_jobs</code>),
 				then the app's. One that fails stops the server, saying why.
 			</p>
 			<Code title={"${Sources.platform_migrations.file}, in part"} source={Sources.platform_migrations.rocx} numbers={Bool.False} />
 			<Code title={Sources.platform_migration.file} source={Sources.platform_migration.rocx} numbers={Bool.False} plain={Bool.True} />
+
+			<Heading id="notify">Notifications</Heading>
+			<p>
+				<code>Db.notify!(channel, payload)</code> tells whoever listens to <code>channel</code>
+				(<code>Db.listen!</code>, then <code>Live.next!</code>): when the call's transaction commits, never if it
+				rolls back, or at once outside one. On Postgres it is <code>pg_notify</code>, which another process
+				that writes to the database can send too; on SQLite it is the server's own. It is how the job workers
+				sleep until a job is queued.
+			</p>
 
 			<Heading id="where">Where it can be used</Heading>
 			<p>
@@ -125,19 +179,22 @@ view! = |_|
 				(<code>Endpoint.get!</code>, answered in-process as the server renders the page): the handler runs
 				only on the server, so it may query, and the browser's copy has only the endpoint's method and URL
 				(<a href={"${Paths.calls}#user"}>who is asking</a>). A
-				statement takes a connection from a pool of 16, and gives it back; a transaction keeps one until it
-				ends. Statements are prepared once per connection, and kept.
+				statement takes a connection from a pool (16 to Postgres, 8 to SQLite's file), and gives it back; a
+				transaction keeps one until it ends. Statements are prepared once per connection, and kept.
+				SQLite's run on threads of their own, so a call waiting on one holds none of Roc's.
 			</p>
 			<p>
 				<code>just db</code> runs a Postgres in Docker and prints its URL; the server takes it as
 				<code>--database-url</code> or <code>DATABASE_URL</code>. With none, a query answers that there is no
 				database, and the server's other parts work. Connections use TLS when the database offers it (or the
-				URL's <code>sslmode</code> asks for it), checked against the web's certificate authorities.
+				URL's <code>sslmode</code> asks for it), checked against the web's certificate authorities. SQLite's
+				file is in WAL mode, with its <code>-wal</code> and <code>-shm</code> beside it; a backup is
+				<code>sqlite3 data/plate.db ".backup copy.db"</code>, or the file with the server stopped.
 			</p>
 
 			<Heading id="roc-pg">roc-pg: queries checked at build</Heading>
 			<p>
-				<a href="https://github.com/niclas-ahden/roc-pg">roc-pg</a> is a Postgres client written in Roc. It
+				For Postgres, <a href="https://github.com/niclas-ahden/roc-pg">roc-pg</a> is a client written in Roc. It
 				speaks Postgres's protocol over a socket the platform gives it (<code>Tcp</code>), logs in with the
 				platform's <code>Random</code>, and checks each query against a schema when the app is compiled: a
 				column that isn't there, a parameter of the wrong type, a column that may be null read as one that
@@ -161,6 +218,7 @@ view! = |_|
 				</li>
 				<li><strong>Parameters</strong> are four kinds and arrays of them; bytes aren't yet, and a row reads an array column through a cast (<code>array_to_json(tags)</code>).</li>
 				<li><strong>No cursors or streaming:</strong> a query's rows come back whole.</li>
+				<li><strong>SQLite</strong> is a file: no database in memory alone (the server's connections couldn't share it), and a blob is read through <code>hex(…)</code>.</li>
 			</ul>
 		</NoHydration>
 	</>

@@ -1,6 +1,7 @@
 # jobs
 
-Jobs and cron for a Roc Solid app's server, as a plugin (D-034): work queued in Postgres and run in
+Jobs and cron for a Roc Solid app's server, as a plugin (D-034): work queued in the app's database
+(Postgres or SQLite, D-045: the plugin has its table and statements for each) and run in
 the background by workers, each job in a call of its own, tried again if it fails, a little later
 each time; jobs on a schedule; and the queue's table. It names the server platform, so only an app
 on it names this package: the browser's half doesn't see it.
@@ -83,8 +84,9 @@ runs it in a call of its own, so a crash is that job's failure, not the worker's
 (an `Err`, a crash, or its time limit passing) runs again after `retry_ms` (1000), then twice that,
 and so on, as many attempts in all as its kind says (`attempts`; five with `Job.define`); then it is
 `failed`, with its last error, said on the log, and given to the plugin's `on_failed!` (nothing more
-unless the app says: an error tracker's report, as packages/posthog's `PostHog.job_failed!`). Queueing one sends `NOTIFY rocx_jobs`, which Postgres delivers when
-the transaction commits (`Db.listen!` hears it as the live topic `pg:rocx_jobs`); a worker sleeps
+unless the app says: an error tracker's report, as packages/posthog's `PostHog.job_failed!`). Queueing one notifies `rocx_jobs` (Postgres's `NOTIFY`, or
+`Db.notify!` on SQLite), delivered when the transaction commits (`Db.listen!` hears it as the live
+topic `db:rocx_jobs`); a worker sleeps
 on it (`Live.next!`) until then, or until the next delayed job or retry falls due. Queued in a
 transaction (`Db.transaction!`), a job is a row in it: there only if it commits. A job running when
 the server stopped runs again at the next start.
@@ -112,8 +114,9 @@ match paused {
 ```
 
 **A time limit** (`timeout_ms`, 0 for none) is a deadline on the job's call. The first effect that
-waits past it ends the call, wherever the job is: a Postgres statement (cancelled, and its
-connection closed rather than given back to the pool, a transaction on it with it), a socket's read
+waits past it ends the call, wherever the job is: a database statement (cancelled, or on SQLite
+interrupted, and its connection closed rather than given back to the pool, a transaction on it
+with it), a socket's read
 or write, a request to another server, an actor's answer, a live topic. The effect doesn't return
 an error the job could ignore: it jumps back to the call's guard, as a crash does, so what the call
 allocated is freed and what it held (its transaction, sockets, rooms) is given back. The job fails

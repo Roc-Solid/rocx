@@ -186,7 +186,7 @@ view! = |_|
 				<code>pf.Endpoint</code>, <code>pf.Middleware</code>, <code>pf.Events</code>, <code>pf.OpenApi</code>),
 				and so are the modules components are written with, so the same component compiles on both.
 				Pages need the <code>web/</code> platform in the browser, and the server platform to render them,
-				natively; Postgres, channels, live rooms and actors are the server platform's, and jobs, cron
+				natively; the database (Postgres or SQLite), channels, live rooms and actors are the server platform's, and jobs, cron
 				and email are packages for it (<a href={Paths.ecosystem}>the ecosystem</a>).
 			</p>
 

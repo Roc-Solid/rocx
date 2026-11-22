@@ -35,7 +35,7 @@ Nav := [].{
 			{ path: Paths.platform_, label: "Overview", blurb: "Two platforms, one app" },
 			{ path: Paths.platform_server, label: "The server", blurb: "Native Roc in a Rust host" },
 			{ path: Paths.platform_http, label: "HTTP", blurb: "Other servers, bodies, forwards, cookies" },
-			{ path: Paths.platform_postgres, label: "Postgres", blurb: "Queries, transactions, migrations" },
+			{ path: Paths.platform_database, label: "Database", blurb: "Postgres or SQLite: queries, transactions, migrations" },
 			{ path: Paths.platform_secrets, label: "Settings and crypto", blurb: "Env, signed links, sealed secrets" },
 			{ path: Paths.platform_live, label: "Live and actors", blurb: "State that outlives a request" },
 			{ path: Paths.platform_browser, label: "The browser", blurb: "Wasm, a Zig host, a runtime" },
@@ -99,7 +99,7 @@ Nav := [].{
 	}
 }
 
-expect Nav.section_of(Paths.platform_postgres).name == "Platform"
+expect Nav.section_of(Paths.platform_database).name == "Platform"
 expect Nav.section_of("/platform/nowhere").name == "Platform"
 expect Nav.section_of(Paths.ecosystem_charts).name == "Ecosystem"
 expect Nav.section_of("/ecosystem/nowhere").name == "Ecosystem"

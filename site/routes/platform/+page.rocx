@@ -15,7 +15,7 @@ import ../../Ui/ArchBox
 
 meta = {
 	title: "The platform",
-	description: "What a rocx app runs on: a server platform, Roc compiled to native code in a Rust host with Postgres, values in memory, actors and plugins (jobs, email); and a browser platform, the same pages hydrated from WebAssembly.",
+	description: "What a rocx app runs on: a server platform, Roc compiled to native code in a Rust host with Postgres or SQLite, values in memory, actors and plugins (jobs, email); and a browser platform, the same pages hydrated from WebAssembly.",
 	toc: [
 		{ id: "two", label: "Two platforms, one app" },
 		{ id: "server", label: "What the server gives" },
@@ -39,7 +39,8 @@ view! = |_|
 			>
 				A Roc program runs on a platform: the host that gives it the effects it may have. A rocx app is
 				two programs. The server's is Roc compiled to native code, linked with a Rust host into one
-				executable, which answers HTTP and does what a single server does: Postgres, state that outlives a
+				executable, which answers HTTP and does what a single server does: a database (Postgres or SQLite),
+				state that outlives a
 				request, and what packages plug in (jobs, cron, email). The browser's is the same pages, compiled to WebAssembly with a small
 				Zig host and a page of JavaScript, which take over what the server rendered. The two talk over HTTP.
 			</PageHero>
@@ -50,7 +51,7 @@ view! = |_|
 					<ArchBox kind="roc" name={[<code>server/</code>, <>: native</>]}>
 						<p>
 							Roc compiled to machine code, in a Rust host (tokio, hyper). Pages rendered whole, endpoints;
-							Postgres, values in memory, live rooms and channels, actors, plugins (jobs and cron, email). One executable,
+							Postgres or SQLite, values in memory, live rooms and channels, actors, plugins (jobs and cron, email). One executable,
 							one server.
 						</p>
 					</ArchBox>,
@@ -95,10 +96,11 @@ view! = |_|
 						app signs with: SHA-256, HMAC, HKDF.
 					</p>
 				</Feature>
-				<Feature title="Postgres" href={Paths.platform_postgres}>
+				<Feature title="The database" href={Paths.platform_database}>
 					<p>
-						Queries whose rows decode into the record you annotate, transactions, migrations built into the
-						app; or roc-pg, whose queries are checked at build.
+						Postgres, or SQLite in the server's process, as the program says: queries whose rows decode into
+						the record you annotate, transactions, migrations built into the app; or roc-pg, whose queries are
+						checked at build.
 					</p>
 				</Feature>
 				<Feature title="Plugins" href={"${Paths.platform_server}#plugins"}>
@@ -110,13 +112,13 @@ view! = |_|
 				<Feature title="Live and actors" href={Paths.platform_live}>
 					<p>
 						Topics, rooms and channels (who is here, what was said, live data for pages), values in memory
-						with a time to live (<code>Kv</code>), and actors: state one message at a time, kept in Postgres.
+						with a time to live (<code>Kv</code>), and actors: state one message at a time, kept in the database.
 					</p>
 				</Feature>
 			</FeatureGrid>
 			<p>
-				It is opinionated on purpose: one server, Roc and Postgres. The host, in Rust, gives Roc general
-				things: HTTP, Postgres connections, sockets with TLS, background loops that sleep until woken, calls
+				It is opinionated on purpose: one server, Roc, and one database, Postgres or SQLite. The host, in
+				Rust, gives Roc general things: HTTP, database connections, sockets with TLS, background loops that sleep until woken, calls
 				isolated from their caller, actors' mailboxes and timers, values in memory. Migrations, plugins and
 				actors' state are the platform's Roc, written on those
 				(<a href={"${Paths.platform_server}#layers"}>what is Rust, what is Roc</a>). What needs neither the
@@ -210,12 +212,12 @@ view! = |_|
 				</li>
 				<li>
 					<strong>One server.</strong> An app runs as one instance, by design: live rooms, topics, channels,
-					values in memory and actors' mailboxes are in its memory; jobs and actors' state are in Postgres.
+					values in memory and actors' mailboxes are in its memory; jobs and actors' state are in its database.
 				</li>
 			</ul>
 			<Callout kind="note" title="A working prototype">
 				<p>
-					Both platforms are tested, together and apart: the server's against Postgres, crashes and all; the
+					Both platforms are tested, together and apart: the server's against Postgres and SQLite, crashes and all; the
 					browser's in Chromium; this site on both. Each page here says what isn't there yet.
 				</p>
 			</Callout>

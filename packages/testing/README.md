@@ -125,6 +125,21 @@ await app.stop();
 await db.drop();
 ```
 
+An app on SQLite (`database: Sqlite(…)`, D-045) needs no database server: `testSqlite()` is a file
+of the test's own in a directory of its own, its `url` (`sqlite:<file>`) for the server, `db.sql`
+and `db.query` over Node's own SQLite (`node:sqlite`) beside it, and `drop()` removes the directory.
+The server makes the file, and its tables, when it starts.
+
+```js
+import { testSqlite } from "../packages/testing/index.mjs";
+
+const db = testSqlite();
+const app = await startServer(server, { statics, database: db.url });
+const [{ count }] = await db.sql`select count(*) as count from foods where source = ${"usda"}`;
+await app.stop();
+await db.drop();
+```
+
 **4. In a browser.** `launchBrowser()` starts Chromium's headless shell, or gives null when there
 is none, so the test can skip. A tab hydrates strictly: a page that isn't what the browser's half
 renders throws. You find things in it with the same queries, and use them with real clicks and
@@ -194,6 +209,7 @@ labels skip what a reader can't see: `hidden`, `aria-hidden="true"`, `display: n
 | `dom.mjs` | `parse(html)`, `within(node)`: Testing Library's queries, `getByRole(role, { name, level, hidden })`, `getByText`, `getByLabelText`, `getByTestId`, each as `queryBy…` (null), `getAllBy…`, `queryAllBy…`. A name or text is a string, matched whole with its whitespace collapsed, or a RegExp. A node has `text`, `attr(name)`, `role`, `name`, `hasClass`, `elements`. The rules are `Dom.roc`'s. |
 | `server.mjs` | `startServer(executable, { statics, database, dev, flags, env })`: the server on a free port, with `--debug`. Its `client()` is a cookie jar: `get`, `post` (a plain form, from the last page), `submit` (as the runtime sends a form), `json`, `put`, `read(path)` (a GET endpoint, as a page reads it), `events(path)`, and `flash` (what a plain post's flash holds, which the server keeps and says with `--debug`: its URL, status and body). Each `Answer` has `status`, `location`, `text`, `json()`, `dom`, `follow()`. Also `mail()`, `waitForMail(match, { after })`, `logs()` (the JSON log), `stop()`; `links(message)`, `until(check)`, `storyPath(module, name)`. |
 | `postgres.mjs` | `testDatabase(url, { template })`: a database of the test's own, with `url`, `query`, `` sql`…${value}` `` (values as literals), `jobs`, `enqueue`, `settleJobs`, `drop`. `connect(url)`. A client of its own, over Node's sockets: SCRAM-SHA-256, the simple query protocol, rows as objects of numbers, booleans, JSON and text. |
+| `sqlite.mjs` | `testSqlite()`: a SQLite file of the test's own, with `url`, `path`, `query(sql, params)`, `` sql`…${value}` `` (values as parameters: a boolean as 1 or 0, an object as JSON), `close`, `drop`, over `node:sqlite`. |
 | `browser.mjs` | `launchBrowser({ engine })` (`"chromium"`, or `"gecko"`), `browser.open(url, { strict, cookies, script })`: a `Tab` with the queries (async), `findBy…`, `waitFor(check)`, `dom()`, `text()`, `requested()`, `errors`, `console`, `screenshot()`, `drag(source, target)`, `finish()`. Each `Element` has `click()`, `fill(text)`, `type(text)`, `press(key)`, `value()`, `checked()`, `selector()`. |
 | `build.mjs` | `buildForTests(dir, { client, dev, opt })`: `rocx build`, the browser's wasm, the server; `{ server, statics }` |
 | `index.mjs` | all of the above |
@@ -206,6 +222,7 @@ Works today, and is tested here. `roc test packages/testing/main.roc` runs `Dom`
 - `dom.test.mjs` (HTML parsing and queries) and `server.test.mjs` (the client against a stand-in
   server). They need nothing else.
 - `postgres.test.mjs`: the client, and a database of a test's own. It needs `DATABASE_URL`.
+- `sqlite.test.mjs`: a SQLite file of a test's own, read and written, and removed. It needs nothing.
 - `roc.test.mjs`: an app's expects using `testing.Dom`, and a failing one reported at its `.rocx`
   line. It needs Roc.
 - `app.test.mjs`: everything above against a real app it builds (`test/fixture.mjs`), with
