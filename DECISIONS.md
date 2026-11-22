@@ -408,6 +408,8 @@ store, where `Cron` and the jobs page read them.
 **Changed while building.** `next_at` became optional: a schedule that never comes round again (the
 30th of February) has no next time. **Reversible:** yes (additive).
 
+**Later (2026-11-22):** jobs are packages/jobs's, a plugin (D-034); these functions are its `Job`'s and `Cron`'s, unchanged.
+
 ## D-011 The jobs page: drawn by the platform, mounted by the app
 
 **Context.** An app whose admins need to see scheduled jobs wants what is queued, running and
@@ -444,6 +446,8 @@ respond! = |{ request, .. }| JobsPage.respond!(request, { mount: "/admin/jobs" }
 
 **Why.** The Sidekiq::Web and Oban Web model: mount it behind your own auth. **Reversible:** yes.
 
+**Later (2026-11-22):** the jobs page is packages/admin's, a plugin with a required guard (`JobsPage.plugin({ at, guard })`), its look one with the tables admin's (D-034); `JobsPage.respond!` still mounts it from a route file.
+
 ## D-012 The dev mailbox
 
 **Context.** With no `--smtp-url`, mail was kept in memory (the last 100) as JSON at
@@ -469,6 +473,8 @@ way to read an email.
 
 **Why.** Phoenix's Swoosh `/dev/mailbox`, Rails' letter_opener_web: no mail client needed.
 **Reversible:** yes.
+
+**Later (2026-11-22):** the mailbox is packages/email's, the email plugin's early paths, at the same paths (D-035).
 
 ## D-013 Routing edges: raw bodies, `respond!`, `.well-known`
 
@@ -1108,6 +1114,8 @@ change.
 `packages/crypto` instead of keeping copies. mcp decoded more loosely (an `=` anywhere, bits left
 over); its one decode, a client's `=?base64?…?=` header, falls back to the text as it came, so
 input that isn't Base64 is now shown as it came rather than half decoded.
+
+**Later (2026-11-22):** plugins (D-033) let the rest follow the same rule: jobs and cron, and the jobs page with its look (D-034), and email with its mailbox (D-035) are packages.
 
 ## D-026 A finer clock, and the route that answers a request
 

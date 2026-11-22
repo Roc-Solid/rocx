@@ -15,7 +15,7 @@ import ../../Ui/ArchBox
 
 meta = {
 	title: "The platform",
-	description: "What a rocx app runs on: a server platform, Roc compiled to native code in a Rust host with Postgres, jobs, email, values in memory and actors; and a browser platform, the same pages hydrated from WebAssembly.",
+	description: "What a rocx app runs on: a server platform, Roc compiled to native code in a Rust host with Postgres, values in memory, actors and plugins (jobs, email); and a browser platform, the same pages hydrated from WebAssembly.",
 	toc: [
 		{ id: "two", label: "Two platforms, one app" },
 		{ id: "server", label: "What the server gives" },
@@ -39,8 +39,8 @@ view! = |_|
 			>
 				A Roc program runs on a platform: the host that gives it the effects it may have. A rocx app is
 				two programs. The server's is Roc compiled to native code, linked with a Rust host into one
-				executable, which answers HTTP and does what a single server does: Postgres, jobs, cron, email,
-				state that outlives a request. The browser's is the same pages, compiled to WebAssembly with a small
+				executable, which answers HTTP and does what a single server does: Postgres, state that outlives a
+				request, and what packages plug in (jobs, cron, email). The browser's is the same pages, compiled to WebAssembly with a small
 				Zig host and a page of JavaScript, which take over what the server rendered. The two talk over HTTP.
 			</PageHero>
 
@@ -50,7 +50,7 @@ view! = |_|
 					<ArchBox kind="roc" name={[<code>server/</code>, <>: native</>]}>
 						<p>
 							Roc compiled to machine code, in a Rust host (tokio, hyper). Pages rendered whole, endpoints;
-							Postgres, jobs and cron, email, values in memory, live rooms and channels, actors. One executable,
+							Postgres, values in memory, live rooms and channels, actors, plugins (jobs and cron, email). One executable,
 							one server.
 						</p>
 					</ArchBox>,

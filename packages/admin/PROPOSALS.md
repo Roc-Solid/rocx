@@ -6,6 +6,11 @@ removes a copy.
 
 ## Server-only modules in packages
 
+**Status (2026-11-22).** Done another way (D-033): a package whose modules use the server platform
+names it in its header, and lists the modules the browser can compile in `browser.roc`. This package
+does, for the jobs page (D-034). `AdminPage` stays on no platform, effects handed in, so a page in the
+browser can still show the tables admin; it could take `Db` itself in a server-only module now.
+
 **Problem.** `AdminPage.respond!` runs Postgres statements and draws random bytes, which are the
 server platform's (`Db.all!`, `Db.run!`, `Random.bytes!`). A Roc package can name a platform only
 if it is the app's own, and a Roc Solid app is two apps (the browser's on `web/platform`, the
@@ -110,6 +115,8 @@ themselves, and `Sql.text_of` would keep only its formatting of moments.
 **Undoing it.** Remove `texts!`; the wrapping still works.
 
 ## The admin as a platform feature, next to the jobs page?
+
+**Status (2026-11-22).** Settled the other way: the jobs page moved here (D-034).
 
 The task asked whether the admin is better as a platform module (`TablesPage.respond!(request,
 context, config)`, as `JobsPage.respond!` is) than as a package.

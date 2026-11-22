@@ -215,6 +215,12 @@ failing every delivery with a reason.
 
 ## 2. Server-only modules in packages
 
+**Status (2026-11-22).** Done another way (D-033): a package whose modules use the server platform
+names it in its header (`browser.roc` lists what the browser can compile), and gives a plugin. Jobs
+are packages/jobs's now (D-034): `server/Push.roc` imports `jobs.Job`, and its `deliver` job reaches
+the workers through `App.jobs` and `Job.plugin`. Push could become a plugin (its table, its job, its
+endpoints as routes); its static files (section 3) wait for plugins' `files`, which aren't built.
+
 **Problem.** `server/Push.roc` and `server/PushStore.roc` import the server platform (`pf.Db`,
 `pf.Http`, `pf.Job`, `pf.Env`, `pf.Log`, `pf.Random`, `pf.Time`) and the pure package
 (`push.WebPush`, …). The package needs four things from an app:
@@ -314,6 +320,10 @@ and assumes it is at the root.
 ---
 
 ## 4. Jobs: give up, or come back at a time
+
+**Status (2026-11-22).** Jobs are packages/jobs's (D-034): the backoff is the jobs plugin's
+`retry_ms`, and the kinds are its `jobs` (`App.jobs`), not `program.jobs`; the options below would be
+that package's to build.
 
 **Problem.** A job's `run!` answers `Ok` or `Err(why)`, and every `Err` is retried with the
 worker's backoff (`--job-retry-ms`, doubled each time). A push service's answers need two more:

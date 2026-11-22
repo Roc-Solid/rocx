@@ -1,6 +1,10 @@
 # Plugins, from the app's side
 
-> Ideation, 2026-11-21. Nothing here is built. It starts from what an app's author writes, and only
+> Ideation, 2026-11-21. **Built (2026-11-22)** as D-033 (plugins), D-034 (jobs and cron, and the
+> jobs page: `JobsPage.plugin({ at, guard })`) and D-035 (email: `Email.plugin({})`); what differs is
+> recorded there (no copying of `server/*.roc`; `Email.Options` is `{ from, smtp_url! }`).
+>
+> It starts from what an app's author writes, and only
 > then asks what packages and the platform must do to make that work.
 >
 > **Decided (the user, 2026-11-21):** A, plugins listed in the program; two routes at one path stop

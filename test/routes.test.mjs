@@ -251,10 +251,10 @@ test("App: the program, with the jobs the app's modules define (found by rocx bu
 		writeFileSync(join(dir, path), text);
 	};
 	try {
-		put("Jobs.roc", 'import pf.Job\n\nJobs := [].{\n\twelcome : Job.Kind({ member : I64 })\n\twelcome = Job.define(\n\t\t"welcome",\n\t\t|_| Ok({}),\n\t)\n\n\tnightly = Job.define("nightly", |{}| Ok({}))\n\n\tonce = Job.define_with("once", { attempts: 1, timeout_ms: 60_000 }, |{}| Ok({}))\n}\n');
-		put("Server/Mail.rocx", 'import pf.Job\n\nMail := [].{\n\t# old = Job.define("old", |{}| Ok({}))\n\tsend = Job.define("mail", |{}| Ok({}))\n}\n');
+		put("Jobs.roc", 'import jobs.Job\n\nJobs := [].{\n\twelcome : Job.Kind({ member : I64 })\n\twelcome = Job.define(\n\t\t"welcome",\n\t\t|_| Ok({}),\n\t)\n\n\tnightly = Job.define("nightly", |{}| Ok({}))\n\n\tonce = Job.define_with("once", { attempts: 1, timeout_ms: 60_000 }, |{}| Ok({}))\n}\n');
+		put("Server/Mail.rocx", 'import jobs.Job\n\nMail := [].{\n\t# old = Job.define("old", |{}| Ok({}))\n\tsend = Job.define("mail", |{}| Ok({}))\n}\n');
 		put("Server/Mail.roc", 'Mail := [].{\n\tsend = Job.define("mail", |{}| Ok({}))\n}\n\n# rocx: generated from Mail.rocx: edit that file\n');
-		put("routes/members/+server.roc", 'import pf.Job\n\nreminder = Job.define("reminder", |{}| Ok({}))\n\nget! = |_| Ok(1)\n');
+		put("routes/members/+server.roc", 'import jobs.Job\n\nreminder = Job.define("reminder", |{}| Ok({}))\n\nget! = |_| Ok(1)\n');
 		put("Generated/Copy.roc", 'Copy := [].{\n\tx = Job.define("welcome", |{}| Ok({}))\n}\n');
 		put("build/client/Jobs.roc", 'Jobs := [].{\n\twelcome = Job.define("welcome", |{}| Ok({}))\n}\n');
 		put("migrations/0010_later.sql", "select 2;");
@@ -286,7 +286,7 @@ test("App: the program, with the jobs the app's modules define (found by rocx bu
 		assert.match(none, /\t\tlogs: \{ format: Auto \},\n\t\tplugins: config\.plugins\.map\(Plugin\.running\),\n\t\troutes: Routes\.claims,\n\t\}\n\}/, "App.program's log format is Auto; the platform gets the plugins and the app's routes, to check them at start");
 		assert.doesNotMatch(none, /jobs\.Job|pf\.Actor|import "|\tjobs = /, "no jobs package named: no App.jobs");
 		// A job outside its module's block, or inside a definition, can't be named; two with one name are refused.
-		put("Loose.roc", 'import pf.Job\n\nloose = Job.define("loose", |{}| Ok({}))\n\nLoose := [].{\n\tmake = |{}| {\n\t\tdeep = Job.define("deep", |{}| Ok({}))\n\t\tdeep\n\t}\n}\n');
+		put("Loose.roc", 'import jobs.Job\n\nloose = Job.define("loose", |{}| Ok({}))\n\nLoose := [].{\n\tmake = |{}| {\n\t\tdeep = Job.define("deep", |{}| Ok({}))\n\t\tdeep\n\t}\n}\n');
 		put("Again.roc", 'Again := [].{\n\tagain = Job.define("welcome", |{}| Ok({}))\n}\n');
 		assert.deepEqual(jobsIn(dir, table).problems, [
 			'Loose.roc:3: the job "loose" is defined outside its module\'s block: define it at the top of `Loose := [].{ … }`, as `\tloose = Job.define(…)`, so Generated/App can name it (`Loose.loose`)',
@@ -308,7 +308,7 @@ test("App: the kinds of actor the app's modules define (found by rocx build), ea
 		put("Carts.roc", 'import pf.Actor\n\nCarts := [].{\n\tcart : Actor.Kind({ items : List(Str) }, [Add(Str)], U64)\n\tcart = Actor.define({\n\t\tname: "cart",\n\t\tinitial: |_| { items: [] },\n\t\treceive!: |_, state, Add(item)| { state: { items: state.items.append(item) }, reply: 1 },\n\t})\n\n\tmirror = |{}|\n\t\tActor.define({ name: "mirror", initial: |_| {}, receive!: |_, state, _| { state, reply: 0 } })\n}\n');
 		put("routes/rooms/+server.roc", 'import pf.Actor\n\nroom = Actor.define({ name: "room", initial: |_| 0, receive!: |_, n, _| { state: n, reply: n } })\n\nget! = |_| Ok(1)\n');
 		put("Generated/Copy.roc", 'Copy := [].{\n\tx = Actor.define({ name: "cart", initial: |_| 0, receive!: |_, n, _| { state: n, reply: n } })\n}\n');
-		put("Jobs.roc", 'import pf.Job\n\nJobs := [].{\n\tdaily = Job.define("daily", |{}| Ok({}))\n}\n');
+		put("Jobs.roc", 'import jobs.Job\n\nJobs := [].{\n\tdaily = Job.define("daily", |{}| Ok({}))\n}\n');
 		const table = routeTable(["rooms/+server.roc"]);
 		const { actors, problems } = actorsIn(dir, table);
 		assert.deepEqual(problems, []);

@@ -7,7 +7,9 @@
 > platform names it in its header (with a `browser.roc` beside `main.roc` for the browser's half)
 > instead of `rocx build` copying `server/*.roc`; `calls` and `starts` added, `files`, `scripts`,
 > `jobs`, `crons` and `actors` not (yet); early paths anywhere under `/__rocx/`. Jobs and cron became
-> a plugin package themselves (D-034), so `Job.kinds!` and `Job.changes` are that package's.
+> a plugin package themselves (D-034), so `Job.kinds!` and `Job.changes` are that package's; the jobs
+> page is packages/admin's `JobsPage.plugin({ at, guard })` with one look (D-034), and email with its
+> mailbox and SMTP check is packages/email's `Email.plugin({})` (D-035).
 >
 > **Decided (the user, 2026-11-21):** plugins are listed in `App.program({ plugins: [...] })`; each
 > plugin declares what it needs as its own options type; two claims on one path stop the server at

@@ -349,10 +349,10 @@ test("an app of components: rocx build refuses a job outside its module's block,
 			rmSync(dir, { recursive: true, force: true });
 		}
 	};
-	const outside = attempt((dir) => writeFileSync(join(dir, "Loose.roc"), 'import pf.Job\n\nloose = Job.define("loose", |{}| Ok({}))\n\nLoose := [].{}\n'));
+	const outside = attempt((dir) => writeFileSync(join(dir, "Loose.roc"), 'import jobs.Job\n\nloose = Job.define("loose", |{}| Ok({}))\n\nLoose := [].{}\n'));
 	assert.equal(outside.status, 1);
 	assert.match(outside.stderr, /Loose\.roc:3: the job "loose" is defined outside its module's block: define it at the top of `Loose := \[\]\.\{ … \}`/);
-	const twice = attempt((dir) => writeFileSync(join(dir, "Again.roc"), 'import pf.Job\n\nAgain := [].{\n\twelcome = Job.define("welcome", |{}| Ok({}))\n}\n'));
+	const twice = attempt((dir) => writeFileSync(join(dir, "Again.roc"), 'import jobs.Job\n\nAgain := [].{\n\twelcome = Job.define("welcome", |{}| Ok({}))\n}\n'));
 	assert.equal(twice.status, 1);
 	assert.match(twice.stderr, /Jobs\.roc:\d+: there is a job called "welcome" already \(Again\.roc:4\)/);
 	const old = attempt((dir) => {

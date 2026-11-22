@@ -68,6 +68,11 @@ The other eight package workers each need the same thing; this is this package's
 
 ## 2. A test mode for the server: `--test`, and its control paths
 
+**Status (2026-11-22).** The mailbox is packages/email's now, answered as a plugin's early paths
+(`Plugin.Early`, under `--dev` or `--debug`: D-033, D-035), not by the platform's `Outbox`. A test
+mode would be the same mechanism with a `Test` flag: a plugin (this package's) giving early paths
+under `--test`.
+
 **Problem.** A test can reach a server only as a browser does. It can't set the time, seed the
 randomness, stub what the server asks of other servers, run a cron now or empty the mailbox,
 because nothing in the platform listens for that. The dev mailbox shows the way: under `--dev` or
@@ -267,6 +272,9 @@ are the way today.
 ---
 
 ## 7. The dev mailbox, for tests: ids, and clearing it
+
+**Status (2026-11-22).** Messages have ids (`Kv`'s counter, D-028); the mailbox is packages/email's
+`Mailbox.roc` (D-035), where clearing under `--debug` would go.
 
 **Problem.** Messages kept in memory (no database) have no `id`, where Postgres's do, so a test
 can't say "the mail after this one" except by counting (`waitForMail(match, { after: n })`). And

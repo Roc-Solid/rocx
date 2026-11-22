@@ -80,7 +80,7 @@ was given, which the admin keeps in a cookie (`rocx_admin_csrf`: for the admin's
 | `?table=books&new` | a new row's form, its constant defaults filled in (`true`, `'draft'`, `0`) |
 | `?table=books&k.id=7&delete` | the question before a row is deleted |
 
-Every page is drawn in the platform's admin look, the jobs page's and the dev mailbox's: the tables
+Every page is drawn in the admin look (`Look`), the jobs page's and the dev mailbox's: the tables
 in a sidebar (on a phone, a row of links across the top), a header with the page's actions (Add,
 Delete), panels, light or dark as the reader's system is, and no script.
 
