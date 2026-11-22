@@ -1,7 +1,7 @@
 ## Status: an uptime monitor and its public status page. rocx build writes nearly all of the
 ## program from routes/ (`Generated/App`: every page, endpoint and channel, the migrations in
 ## migrations/, the jobs Jobs.roc defines and the actor packages/otel's Otel.roc does); this says the
-## rest: what every request goes through first, and the plugins.
+## rest: what every request goes through first, the plugins, and its database, SQLite (D-045).
 ##
 ## - packages/jobs runs the jobs: a sweep every 10 seconds that queues the checks due, the checks,
 ##   the alerts, and a roll-up each night at 03:00 UTC.
@@ -21,6 +21,8 @@ import Middlewares
 program = App.program({
 	context: |_started| {},
 	middleware: Middlewares.default,
+	# A file beside where the server starts (`--database-url sqlite:<path>` puts it elsewhere).
+	database: Sqlite("data/uptime.db"),
 	plugins: [
 		Job.plugin({ jobs: App.jobs, crons: [Cron.every("*/10 * * * * *", Jobs.due, {}), Cron.every("0 3 * * *", Jobs.nightly, {})] }),
 		JobsPage.plugin({ at: "/admin/jobs", guard: Middlewares.admin, back: { label: "Status admin", href: "/admin" } }),

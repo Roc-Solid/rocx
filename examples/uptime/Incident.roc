@@ -32,7 +32,7 @@ Incident := [].{
 	stages : List(Incident.Stage)
 	stages = [Investigating, Identified, Monitoring, Resolved]
 
-	## A stage as Postgres keeps it (`incident_updates.state`).
+	## A stage as the database keeps it (`incident_updates.state`).
 	stage_name : Incident.Stage -> Str
 	stage_name = |stage|
 		match stage {
@@ -52,7 +52,7 @@ Incident := [].{
 			Resolved => "Resolved"
 		}
 
-	## The stage Postgres keeps as `name`.
+	## The stage the database keeps as `name`.
 	stage_of : Str -> Try(Incident.Stage, [Unknown])
 	stage_of = |name|
 		match name {
@@ -63,7 +63,7 @@ Incident := [].{
 			_ => Err(Unknown)
 		}
 
-	## A stage's label, from the name Postgres keeps.
+	## A stage's label, from the name the database keeps.
 	label_of : Str -> Str
 	label_of = |name|
 		match Incident.stage_of(name) {

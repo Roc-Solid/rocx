@@ -1,5 +1,5 @@
 ## Days and moments as the status page shows them, in UTC: the browser has no clock of the server's,
-## and a status page read in several time zones is clearest in one. Postgres writes a day as
+## and a status page read in several time zones is clearest in one. SQLite writes a day as
 ## `2026-11-22` and a moment as `2026-11-22T14:05:09Z` (Store's queries ask it to); these read
 ## them, and count days from the epoch, as the 90-day strip needs.
 Days := [].{

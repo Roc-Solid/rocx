@@ -7,9 +7,9 @@ again; subscribers get an email each time. The status page shows every service's
 over 24 hours, 7 and 90 days, its response time and its last 90 days, and it changes as checks come
 in, without a reload.
 
-It is a small, whole app on Postgres: jobs and cron through packages/jobs, email through
-packages/email, metrics through packages/otel, its tables in packages/admin, charts from
-packages/charts, and a channel for the live page.
+It is a small, whole app on SQLite, a file beside the server (D-045), so it runs with nothing else:
+jobs and cron through packages/jobs, email through packages/email, metrics through packages/otel,
+its tables in packages/admin, charts from packages/charts, and a channel for the live page.
 
 ## A tour
 
@@ -42,7 +42,7 @@ packages/charts, and a channel for the live page.
 
 What it starts with (`migrations/0002_seed.sql`): three monitors, ninety days of history, a past
 incident with four updates, and one subscriber, so the page looks lived in the first time. Two
-monitors ask the app itself: `/health` ("Status page", which also asks Postgres) and `/demo/flaky`
+monitors ask the app itself: `/health` ("Status page", which also asks the database) and `/demo/flaky`
 ("Payments API", which takes 40 to 200 ms, fails about one answer in 250, and fails every one while
 the admin's switch says so). The third asks https://example.com every five minutes, first a minute
 after the first start.
@@ -54,7 +54,7 @@ after the first start.
 | packages/jobs as a plugin (D-034): `Job.plugin({ jobs: App.jobs, crons })`, a cron every 10 seconds that queues the checks due, one job a check, tried three times, alert jobs tried again while the mail server doesn't answer, and a nightly roll-up | `main.roc`, `Jobs.roc` |
 | The sweep: monitors due claimed with one `update … returning` and their checks queued in the same transaction, keyed by monitor (`Job.enqueue_keyed!`), so a check still waiting isn't queued twice | `Jobs.roc` (`sweep!`), `Store.claim_due!` |
 | A check: `Http.fetch!` with the monitor's method and time limit, timed with `Time.now_nanos!`, judged (`Checks.judge`, its expects) | `Checks.roc` |
-| Storing a check in one transaction: the check, the streak of failures (atomic in Postgres), the incident `Incident.decide` opens or closes, its update, and the alerts it queues, so all of it stays or none does | `Store.record!` |
+| Storing a check in one transaction: the check, the streak of failures (one `update … returning`), the incident `Incident.decide` opens or closes, its update, and the alerts it queues, so all of it stays or none does | `Store.record!` |
 | The incident rules, as expects: open when the streak reaches the threshold, close on the next pass, no new one after a manual close until the monitor has passed and failed again | `Incident.roc` |
 | Uptime arithmetic, as expects: shares rounded down (100% only when nothing failed), roll-ups and the days not rolled up yet put together, the 7- and 90-day windows, each day's level, the banner | `Uptime.roc`, `Days.roc` |
 | The nightly roll-up: each past day into `daily` (once: `on conflict do nothing`), checks older than a week deleted when their day is rolled up | `Store.roll_up!`, `Jobs.nightly` |
@@ -62,7 +62,8 @@ after the first start.
 | The live page: a channel (D-020), published on by each check and each admin change from jobs and endpoints alike; pages read their data again when they hear it (`refresh!`), rows kept by id, sparklines gliding, changes announced to screen readers (`aria-live`) | `routes/live/+server.roc`, `News.roc`, `routes/+page.rocx` |
 | packages/otel: every request timed by route, a histogram of check latency by monitor and outcome, and a gauge of each monitor's up/down (`Otel.roc` copied from the package, as its README says) | `Metrics.roc`, `Middlewares.roc`, `Otel.roc`, `test/copies.test.mjs` |
 | packages/charts: `<Sparkline>` on each card, `<LineChart>` and `<Heatmap>` on a monitor's page; the 90-day strip is a pure component of its own (its colours are thresholds, not a scale) | `Ui/MonitorCard.rocx`, `routes/monitors/[id]/+page.rocx`, `Ui/UptimeStrip.rocx` |
-| packages/admin for the tables, mounted behind the admin's middleware, with labels; Postgres's checks refuse what makes no sense and the form shows why | `routes/admin/db/+server.roc`, `migrations/0001_uptime.sql` |
+| packages/admin for the tables, mounted behind the admin's middleware, with labels; the tables' checks refuse what makes no sense (the long ones named, `monitors_url_check`) and the form shows why | `routes/admin/db/+server.roc`, `migrations/0001_uptime.sql` |
+| SQLite in the server's process (`database: Sqlite("data/uptime.db")`, D-045): moments in milliseconds given from Roc, read as ISO 8601 with `strftime`, days with `date`, the last check of each monitor joined by its id (no lateral join), the checks a regular expression made in Postgres written as globs | `main.roc`, `Store.roc`, `migrations/` |
 | packages/admin's jobs page as a plugin behind the same guard (`JobsPage.plugin({ at, guard })`) | `main.roc` |
 | The admin's own pages: a password from the environment, a random session token in `Kv` with a time to live, a cookie, a middleware that sends a stranger to sign in and back | `Session.roc`, `Middlewares.admin`, `routes/admin/` |
 | Forms that work without JavaScript and with it (`use_submission!`): subscribe, sign in, check now, pause, post an update, break the demo | `Ui/SubscribeForm.rocx`, `Ui/AdminRow.rocx`, `Ui/UpdateForm.rocx`, `routes/admin/+page.rocx` |
@@ -92,21 +93,20 @@ again, so what a page shows is always what its endpoint answers.
 
 ## Build and run it
 
-From the repository's root, with the toolchain (`just setup`) and a Postgres (`just db`, which
-prints its URL):
+From the repository's root, with the toolchain (`just setup`). Nothing else: the app's data is a
+SQLite file, `data/uptime.db` from where the server starts (`--database-url sqlite:<path>` puts it
+elsewhere).
 
 ```sh
-docker exec rocx-postgres createdb -U rocx uptime   # a database of its own
 bin/rocx build examples/uptime --client examples/uptime/build/client
 .tools/roc-active build --target=wasm32 --opt=size --output=examples/uptime/build/client/static/rocx/app.wasm examples/uptime/build/client/main.roc
 node server/build.mjs examples/uptime/main.roc examples/uptime/build/uptime
-ADMIN_PASSWORD=acme-demo examples/uptime/build/uptime --port 18130 --host 127.0.0.1 \
-  --database-url postgres://rocx:rocx@127.0.0.1:55432/uptime \
-  --static examples/uptime/build/client/static --static examples/uptime/static --dev
+cd examples/uptime && ADMIN_PASSWORD=acme-demo build/uptime --port 18130 --host 127.0.0.1 \
+  --static build/client/static --static static --dev
 ```
 
 Then open http://127.0.0.1:18130, and http://127.0.0.1:18130/admin with the password `acme-demo`.
-The first start makes the tables and the seed. `--dev` serves the dev mailbox at `/__rocx/mail`,
+The first start makes the file, its tables and the seed. `--dev` serves the dev mailbox at `/__rocx/mail`,
 which is where the alerts go without `SMTP_URL`.
 
 The environment:
@@ -124,16 +124,16 @@ The environment:
 just examples uptime
 ```
 
-That builds and type-checks both halves, lints, and runs the expects and the node tests. Or by hand,
-with `DATABASE_URL` set (each test file makes a database of its own there):
+That builds and type-checks both halves, lints, and runs the expects and the node tests. Or by hand
+(each test file makes a SQLite file of its own in a temporary directory, and removes it after):
 
 ```sh
 bin/rocx build examples/uptime
 bin/rocx check -- .tools/roc-active test examples/uptime/main.roc   # the expects
-DATABASE_URL=postgres://rocx:rocx@127.0.0.1:55432/rocx node --test 'examples/uptime/test/*.test.mjs'
+node --test 'examples/uptime/test/*.test.mjs'
 ```
 
-- **Expects** (106 of the app's own, 791 with the packages'). They cover uptime shares and their
+- **Expects** (107 of the app's own, 842 with the packages'). They cover uptime shares and their
   rounding, combining roll-ups with raw days, the 7- and 90-day windows, each day's level, a
   monitor's state, the banner and filling gaps in a line (`Uptime.roc`). They also cover the
   incident rules, including a whole up, down, down, down, down, up run (`Incident.roc`), judging an
@@ -141,7 +141,7 @@ DATABASE_URL=postgres://rocx:rocx@127.0.0.1:55432/rocx node --test 'examples/upt
   around the numbers (`Words.roc`), the alert emails (`Alerts.roc`), what counts as an email address (`routes/subscribe/+server.roc`),
   and the pure components through `testing.Dom` (`StatePill`, `UptimeStrip`, `Banner`,
   `IncidentCard`).
-- **`test/http.test.mjs`** (10 tests) starts the server on a database of its own, with a fake target
+- **`test/http.test.mjs`** (10 tests) starts the server on a SQLite file of its own, with a fake target
   (`http.createServer`, answering 200 or 500 as a test says) that is also a fake OpenTelemetry
   collector. Its tests:
   - the status page and its JSON (banner, groups, 90 days, the past incident);
@@ -150,7 +150,8 @@ DATABASE_URL=postgres://rocx:rocx@127.0.0.1:55432/rocx node --test 'examples/upt
   - subscribing, as a plain form and as the runtime sends it, a wrong address, the unsubscribe link;
   - the admin's sign-in, a wrong password refused and never sent back (no cookie, no `value`), the
     pages, packages/admin and the jobs page;
-  - **up → down → up**: checks queued with `enqueue()` and run with `settleJobs()`; two failures
+  - **up → down → up**: checks queued with `enqueue()` and run with `settleJobs()` (which, on
+    SQLite, wake the server's workers through the jobs plugin's `/__rocx/jobs/wake`); two failures
     give "degraded", the third opens the incident; the alert mail arrives (`waitForMail`) for the
     test's subscriber and the seeded one; the status page and its JSON say "Partial outage"; a
     fourth failure changes nothing; the pass closes it with a second mail; the six checks are
@@ -261,3 +262,19 @@ Every gap met, and what the app does about each:
       `Ui/AlertMail.rocx` has one heading.)
     - A heatmap's row labels are a value prop: reading them from the page's data would make the
       chart anew on every check, so they are fixed words ("6 days ago" … "Today").
+11. **Moving from Postgres to SQLite (D-045).** The SQL is SQLite's now, and what it has no form
+    for is written another way:
+    - **Fixed: a test couldn't wake the server's job workers.** packages/testing's `enqueue()` and
+      `settleJobs()` write the queue from the test's process, which Postgres's `NOTIFY` tells the
+      server of and SQLite can't (it tells only its own process). packages/jobs answers
+      `POST /__rocx/jobs/wake` under `--debug` now, and a `testSqlite()` database given to
+      `startServer` itself (`database: db`, not `db.url`) asks it.
+    - No functions of the app's own: Postgres's `iso()`, `utc_day()` and `utc_today()` are SQL
+      that Store writes (`iso`, `day`), and now is a parameter (`Time.now_millis!`).
+    - No lateral join: a monitor's last check is joined by the id of its newest one.
+    - No regular expressions: the URL's and the email's checks are globs (the same rules), named
+      so a refusal says which.
+    - A boolean worked out (`exists (…)`) is 0 or 1, read as an `I64` and made a `Bool` in Store.
+    - No comments on tables, which packages/admin showed under a table's name.
+    - The seed's history comes from a hash of the monitor's id and the day (Postgres's `hashtext`
+      isn't there), so it differs from the old one but is the same in every database.

@@ -1,13 +1,13 @@
 // What the app's tests share: the app built one test file at a time (rocx build writes
 // Generated/ in the app's own folder, so two files building at once would race: a lock directory
-// takes turns), its server started on a database of its own with its static files and an admin
+// takes turns), its server started on a SQLite file of its own with its static files and an admin
 // password, and a fake target: an HTTP server that answers 200 or 500 as a test says, and doubles
 // as an OpenTelemetry collector (`POST /v1/metrics`), so checks and metrics need no network.
 import { createServer } from "node:http";
 import { mkdirSync, rmSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildForTests, startServer, testDatabase } from "../../../packages/testing/index.mjs";
+import { buildForTests, startServer, testSqlite } from "../../../packages/testing/index.mjs";
 
 /** The app's folder. */
 export const dir = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -62,17 +62,18 @@ export async function fakeTarget() {
 }
 
 /**
- * The app on a database of its own (`testDatabase`, at `DATABASE_URL`), started with the admin
- * password and its metrics sent to `target` every second. The seeded example.com monitor is paused
- * at once (its first check is a minute after the first start), so no test asks the internet. The
- * app's checks of itself ask where the server says it listens (`Env.public_url!`).
- * `{ app, db, stop() }`.
+ * The app on a SQLite file of its own (`testSqlite`, in a temporary directory: no database server),
+ * started with the admin password and its metrics sent to `target` every second. The server is
+ * given the database itself, so that `db.enqueue` and `db.settleJobs` can wake its job workers. The
+ * seeded example.com monitor is paused at once (its first check is a minute after the first start),
+ * so no test asks the internet. The app's checks of itself ask where the server says it listens
+ * (`Env.public_url!`). `{ app, db, stop() }`.
  */
 export async function start(built, target) {
-	const db = await testDatabase();
+	const db = testSqlite();
 	const app = await startServer(built.server, {
 		statics: [...built.statics, join(dir, "static")],
-		database: db.url,
+		database: db,
 		env: { ADMIN_PASSWORD: password, OTEL_EXPORTER_OTLP_ENDPOINT: target.url, OTEL_METRIC_EXPORT_INTERVAL: "1000", OTEL_SERVICE_NAME: "acme-status" },
 	});
 	await db.sql`update monitors set paused = true where url like 'https://%'`;
@@ -88,7 +89,8 @@ export async function start(built, target) {
 
 /** A monitor of `target` (`path` on it), checked only when a test queues its check. Its id. */
 export async function watch(db, target, { name, path = "/", threshold = 3 }) {
-	const [row] = await db.sql`insert into monitors (name, url, interval_s, group_name, threshold, next_check_at) values (${name}, ${`${target.url}${path}`}, 3600, ${"Tests"}, ${threshold}, now() + interval '1 day') returning id`;
+	const tomorrow = Date.now() + 24 * 60 * 60 * 1000;
+	const [row] = await db.sql`insert into monitors (name, url, interval_s, group_name, threshold, next_check_at) values (${name}, ${`${target.url}${path}`}, 3600, ${"Tests"}, ${threshold}, ${tomorrow}) returning id`;
 	return Number(row.id);
 }
 

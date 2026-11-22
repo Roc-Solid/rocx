@@ -1,18 +1,16 @@
 // The app in a real browser (Chromium's headless shell), each page hydrated strictly: the
 // status page follows a monitor down and up again without a reload, through the live channel; and
-// the subscribe form answers in place. Skipped without Chromium or DATABASE_URL.
+// the subscribe form answers in place, on a SQLite file of its own. Skipped without Chromium.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { launchBrowser } from "../../../packages/testing/index.mjs";
 import { build, check, fakeTarget, start, watch } from "./uptime.mjs";
 
-const database = Boolean(process.env.DATABASE_URL);
 let target;
 let running;
 let browser;
 
 before(async () => {
-	if (!database) return;
 	browser = await launchBrowser();
 	if (!browser) return;
 	target = await fakeTarget();
@@ -26,7 +24,6 @@ after(async () => {
 });
 
 const skip = (t) => {
-	if (!database) return (t.skip("needs DATABASE_URL (`just db`)"), true);
 	if (!browser) return (t.skip("no Chromium (see packages/testing/README.md)"), true);
 	return false;
 };
@@ -65,7 +62,7 @@ test("subscribing from the status page answers in place", async (t) => {
 	await (await tab.getByRole("button", { name: "Subscribe" })).click();
 	await tab.findByText("Subscribed: linus@example.com hears about incidents as they open and close.");
 	assert.equal(await tab.page.eval("location.pathname"), "/");
-	const [{ count }] = await db.sql`select count(*)::int as count from subscribers where email = 'linus@example.com'`;
+	const [{ count }] = await db.sql`select count(*) as count from subscribers where email = 'linus@example.com'`;
 	assert.equal(count, 1);
 	assert.deepEqual(tab.errors, []);
 });

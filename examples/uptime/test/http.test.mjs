@@ -1,20 +1,21 @@
-// The app over HTTP, as a browser and as other programs ask it, against a database of its own:
+// The app over HTTP, as a browser and as other programs ask it, against a SQLite file of its own:
 // the status page and its JSON, monitors' and incidents' pages, subscribing, the admin's sign-in
 // and actions, and, through packages/jobs, a fake target driven up, down and up again: checks
 // stored, an incident opened after three failures and closed on recovery, the alert mails, the
-// nightly roll-up, and the metrics a collector gets. Needs DATABASE_URL (skipped without it).
+// nightly roll-up, and the metrics a collector gets. No database server is needed.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { admin, build, check, fakeTarget, start, watch } from "./uptime.mjs";
 
-const database = Boolean(process.env.DATABASE_URL);
 let target;
 let running;
 let app;
 let db;
 
+/** A day, in milliseconds: a moment is milliseconds since the epoch in the tables. */
+const day = 24 * 60 * 60 * 1000;
+
 before(async () => {
-	if (!database) return;
 	target = await fakeTarget();
 	running = await start(await build(), target);
 	({ app, db } = running);
@@ -25,8 +26,6 @@ after(async () => {
 	await target?.close();
 });
 
-const skip = (t) => (database ? false : (t.skip("needs DATABASE_URL (`just db`)"), true));
-
 /** The monitor called `name` on the status page's JSON, and the JSON. */
 async function monitorNamed(name) {
 	const overview = await app.client().read("/");
@@ -34,8 +33,7 @@ async function monitorNamed(name) {
 	return { overview, monitor };
 }
 
-test("the status page: the banner, each monitor by group with its uptime and 90 days, and the past incident", async (t) => {
-	if (skip(t)) return;
+test("the status page: the banner, each monitor by group with its uptime and 90 days, and the past incident", async () => {
 	const page = await app.client().get("/");
 	assert.equal(page.status, 200);
 	const { dom } = page;
@@ -60,13 +58,13 @@ test("the status page: the banner, each monitor by group with its uptime and 90 
 	assert.equal(paused.state, "paused");
 });
 
-test("the app's own monitors check /health and /demo/flaky, and the flaky one breaks on purpose", async (t) => {
-	if (skip(t)) return;
+test("the app's own monitors check /health and /demo/flaky, and the flaky one breaks on purpose", async () => {
 	assert.deepEqual(await app.client().read("/health"), { ok: true, database: "up" });
 	const ids = await db.sql`select id, url from monitors where url like '/%' order by id`;
 	for (const { id } of ids) await check(db, Number(id));
-	const stored = await db.sql`select m.url, c.up, c.status from checks c join monitors m on m.id = c.monitor_id where m.url like '/%' and c.at > now() - interval '1 minute' order by c.id`;
-	assert.ok(stored.some((row) => row.url === "/health" && row.up && row.status === 200), JSON.stringify(stored));
+	const stored = await db.sql`select m.url, c.up, c.status from checks c join monitors m on m.id = c.monitor_id where m.url like '/%' and c.at > ${Date.now() - 60_000} order by c.id`;
+	// SQLite keeps a boolean as 1 or 0, which is what node:sqlite reads (Db reads `up` as a Bool).
+	assert.ok(stored.some((row) => row.url === "/health" && row.up === 1 && row.status === 200), JSON.stringify(stored));
 
 	const person = await admin(app);
 	assert.equal((await person.json("/admin/demo", { broken: "yes" })).status, 200);
@@ -79,8 +77,7 @@ test("the app's own monitors check /health and /demo/flaky, and the flaky one br
 	assert.ok(answers.includes(200), JSON.stringify(answers));
 });
 
-test("a monitor's page and its JSON; a 404 for one that isn't there", async (t) => {
-	if (skip(t)) return;
+test("a monitor's page and its JSON; a 404 for one that isn't there", async () => {
 	const [{ id }] = await db.sql`select id from monitors where url = '/demo/flaky'`;
 	const page = await app.client().get(`/monitors/${id}`);
 	assert.equal(page.status, 200);
@@ -102,8 +99,7 @@ test("a monitor's page and its JSON; a 404 for one that isn't there", async (t) 
 	assert.equal((await app.client().get("/no/such/page")).status, 404);
 });
 
-test("subscribing: a plain form, the runtime's, a wrong address, and the unsubscribe link", async (t) => {
-	if (skip(t)) return;
+test("subscribing: a plain form, the runtime's, a wrong address, and the unsubscribe link", async () => {
 	const person = app.client();
 	await person.get("/");
 	const posted = await person.post("/subscribe", { email: "grace@example.com" });
@@ -117,7 +113,7 @@ test("subscribing: a plain form, the runtime's, a wrong address, and the unsubsc
 	const wrong = await person.submit("/subscribe", { email: "grace" });
 	assert.equal(wrong.status, 400);
 	assert.match(wrong.text, /doesn't look like an email address/);
-	const [{ count }] = await db.sql`select count(*)::int as count from subscribers where lower(email) = 'grace@example.com'`;
+	const [{ count }] = await db.sql`select count(*) as count from subscribers where lower(email) = 'grace@example.com'`;
 	assert.equal(count, 1);
 
 	const [{ token }] = await db.sql`select token from subscribers where email = 'grace@example.com'`;
@@ -129,8 +125,7 @@ test("subscribing: a plain form, the runtime's, a wrong address, and the unsubsc
 	assert.equal((await person.submit("/unsubscribe", { token })).status, 400);
 });
 
-test("the admin: sign-in required, a wrong password refused and never sent back, then the pages and the tables", async (t) => {
-	if (skip(t)) return;
+test("the admin: sign-in required, a wrong password refused and never sent back, then the pages and the tables", async () => {
 	const stranger = app.client();
 	const sent = await stranger.get("/admin");
 	assert.equal(sent.status, 303);
@@ -171,8 +166,7 @@ test("the admin: sign-in required, a wrong password refused and never sent back,
 	assert.equal((await person.get("/admin")).status, 303);
 });
 
-test("up, down three times, up: checks stored, an incident opened and closed, mailed, and the status page says so", async (t) => {
-	if (skip(t)) return;
+test("up, down three times, up: checks stored, an incident opened and closed, mailed, and the status page says so", async () => {
 	await app.client().json("/subscribe", { email: "ada@example.com" });
 	const id = await watch(db, target, { name: "Acme Widgets", path: "/widgets" });
 	const mailed = (await app.mail()).length;
@@ -205,7 +199,7 @@ test("up, down three times, up: checks stored, an incident opened and closed, ma
 
 	// A fourth failure changes nothing: one incident, one alert each.
 	await check(db, id);
-	const [{ incidents }] = await db.sql`select count(*)::int as incidents from incidents where monitor_id = ${id}`;
+	const [{ incidents }] = await db.sql`select count(*) as incidents from incidents where monitor_id = ${id}`;
 	assert.equal(incidents, 1);
 
 	target.status = 200;
@@ -228,8 +222,7 @@ test("up, down three times, up: checks stored, an incident opened and closed, ma
 	assert.ok(done.every((job) => job.state === "done"), JSON.stringify(done.filter((job) => job.state !== "done")));
 });
 
-test("an admin's update on an incident, and a resolved one that closes it and mails", async (t) => {
-	if (skip(t)) return;
+test("an admin's update on an incident, and a resolved one that closes it and mails", async () => {
 	const id = await watch(db, target, { name: "Acme Search", path: "/search", threshold: 1 });
 	target.status = 500;
 	await check(db, id);
@@ -253,54 +246,51 @@ test("an admin's update on an incident, and a resolved one that closes it and ma
 	assert.equal((await app.client().submit(`/admin/incidents/${incident}`, { state: "monitoring", body: "Me too" })).status, 401);
 });
 
-test("the admin's Check now and Pause", async (t) => {
-	if (skip(t)) return;
+test("the admin's Check now and Pause", async () => {
 	const id = await watch(db, target, { name: "Acme Docs", path: "/docs" });
 	const person = await admin(app);
 	target.status = 200;
 	assert.equal((await person.submit(`/admin/monitors/${id}/check`, {})).status, 200);
 	await db.settleJobs();
-	const [{ count }] = await db.sql`select count(*)::int as count from checks where monitor_id = ${id}`;
+	const [{ count }] = await db.sql`select count(*) as count from checks where monitor_id = ${id}`;
 	assert.equal(count, 1);
 
 	assert.equal(JSON.parse((await person.submit(`/admin/monitors/${id}/pause`, {})).text), "Paused.");
 	assert.equal((await monitorNamed("Acme Docs")).monitor.state, "paused");
 	await check(db, id);
-	const [{ after }] = await db.sql`select count(*)::int as after from checks where monitor_id = ${id}`;
+	const [{ after }] = await db.sql`select count(*) as after from checks where monitor_id = ${id}`;
 	assert.equal(after, 1, "a paused monitor's check does nothing");
 	assert.equal(JSON.parse((await person.submit(`/admin/monitors/${id}/pause`, {})).text), "Running again.");
 	assert.equal((await app.client().submit(`/admin/monitors/${id}/pause`, {})).status, 401);
 });
 
-test("the nightly roll-up: past days into `daily`, checks older than a week deleted, today's kept", async (t) => {
-	if (skip(t)) return;
+test("the nightly roll-up: past days into `daily`, checks older than a week deleted, today's kept", async () => {
 	const id = await watch(db, target, { name: "Acme Archive", path: "/archive" });
-	await db.query(
-		`insert into checks (monitor_id, at, up, status, latency_ms) values (${id}, now() - interval '9 days', true, 200, 100), (${id}, now() - interval '9 days', false, 500, 300), (${id}, now() - interval '2 days', true, 200, 50), (${id}, now(), true, 200, 70)`,
-	);
+	const now = Date.now();
+	await db.sql`insert into checks (monitor_id, at, up, status, latency_ms) values (${id}, ${now - 9 * day}, ${true}, 200, 100), (${id}, ${now - 9 * day}, ${false}, 500, 300), (${id}, ${now - 2 * day}, ${true}, 200, 50), (${id}, ${now}, ${true}, 200, 70)`;
 	await db.enqueue("nightly", {});
 	const ran = await db.settleJobs();
 	assert.ok(ran.some((job) => job.kind === "nightly" && job.state === "done"), JSON.stringify(ran));
-	const days = await db.sql`select (utc_today() - day)::int as ago, checks, up, latency_ms_sum::int as latency from daily where monitor_id = ${id} order by day`;
+	// Days back from today (UTC), as julianday counts them.
+	const days = await db.sql`select cast(julianday(date('now')) - julianday(day) as integer) as ago, checks, up, latency_ms_sum as latency from daily where monitor_id = ${id} order by day`;
 	assert.deepEqual(days, [
 		{ ago: 9, checks: 2, up: 1, latency: 400 },
 		{ ago: 2, checks: 1, up: 1, latency: 50 },
 	]);
-	const kept = await db.sql`select (utc_today() - utc_day(at))::int as ago from checks where monitor_id = ${id} order by at`;
+	const kept = await db.sql`select cast(julianday(date('now')) - julianday(date(at / 1000, 'unixepoch')) as integer) as ago from checks where monitor_id = ${id} order by at`;
 	assert.deepEqual(kept.map((row) => row.ago), [2, 0]);
 
 	// Run again, it changes nothing.
 	await db.enqueue("nightly", {});
 	await db.settleJobs();
-	const [{ rows }] = await db.sql`select count(*)::int as rows from daily where monitor_id = ${id}`;
+	const [{ rows }] = await db.sql`select count(*) as rows from daily where monitor_id = ${id}`;
 	assert.equal(rows, 2);
 	const { monitor } = await monitorNamed("Acme Archive");
 	assert.equal(monitor.uptime_90d, "75.00%");
 	assert.equal(monitor.uptime_7d, "100%");
 });
 
-test("metrics reach the collector: the check latency histogram, and the up/down gauge per monitor, 1 then 0", async (t) => {
-	if (skip(t)) return;
+test("metrics reach the collector: the check latency histogram, and the up/down gauge per monitor, 1 then 0", async () => {
 	const id = await watch(db, target, { name: "Acme Metrics", path: "/metrics" });
 	target.status = 200;
 	await check(db, id);
