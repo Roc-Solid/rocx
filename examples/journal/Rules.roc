@@ -2,7 +2,6 @@ import intl.Date
 import markdown.Block
 import markdown.Md
 import Authors
-import Footnotes
 import I18n
 import Post
 
@@ -19,7 +18,7 @@ Rules := [].{
 	check : Rules.Draft -> List(Str)
 	check = |{ lang, slug, post, body }| {
 		file = "content/${lang}/${slug}.md"
-		doc = Md.parse(Footnotes.split(body).body)
+		doc = Md.parse(body)
 		found = [
 			if (I18n.known(lang)) [] else ["${lang} isn't one of the journal's languages (${Str.join_with(I18n.langs, ", ")})"],
 			if (Rules.is_slug(slug)) [] else ["its file name isn't a slug (lowercase letters, digits and single hyphens): ${slug}"],
@@ -30,7 +29,7 @@ Rules := [].{
 			Rules.of_summary(post.summary),
 			Rules.of_cover(post.cover, post.cover_alt),
 			Rules.of_body(doc),
-			Footnotes.problems(body),
+			Md.footnote_problems(body),
 		]
 		found.join_map(|problems| problems).map(|problem| "${file}: ${problem}")
 	}

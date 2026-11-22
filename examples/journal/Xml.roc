@@ -1,6 +1,6 @@
 ## The journal's machine-readable documents: an Atom feed for each language and the sitemap, with
 ## its hreflang alternates. Plain Roc that writes XML text from what it is given; the routes
-## (`routes/[lang]/feed/+server.roc`, `routes/sitemap/+server.roc`) give it the posts and the
+## (`routes/[lang]/feed.xml/+server.roc`, `routes/sitemap.xml/+server.roc`) give it the posts and the
 ## site's origin, since feeds and sitemaps want whole URLs.
 Xml := [].{
 

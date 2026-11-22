@@ -1,7 +1,6 @@
 import pf.Html
 import markdown.Md
 import ../Authors
-import ../Footnotes
 import ../I18n
 import ../Posts
 import ../Generated/Paths
@@ -41,27 +40,11 @@ Article := [].{
 			<div class="layout" class:with-toc={headings.count_if(|heading| heading.level == 2) >= 2}>
 				{=toc}
 				<div class="body">
-					<Prose doc={entry.doc} />
-					{=Article.notes(lang, entry.notes)}
+					<Prose doc={entry.doc} lang={lang} />
 				</div>
 			</div>
 		</article>
 	}
-
-	## The notes, numbered, each with a link back to where the text refers to it.
-	notes : Str, List(Footnotes.Note) -> Html
-	notes = |lang, found|
-		if found.is_empty() {
-			Html.empty({})
-		} else {
-			intl = I18n.intl(lang)
-			<section class="notes" aria-labelledby="footnotes">
-				<h2 id="footnotes">{intl.t("post.notes", [])}</h2>
-				<ol>
-					{...found.map(|note| <li id={Footnotes.anchor(note.id)}><Prose doc={Md.parse(note.text)} /><a class="back" href={"#${Footnotes.back(note.id)}"} aria-label={intl.t("post.back", [])}>↩</a></li>)}
-				</ol>
-			</section>
-		}
 
 	## Below the reactions: the newer and the older post in the same language.
 	around : { entry : Posts.Entry } -> Html
@@ -152,57 +135,6 @@ Article := [].{
 			min-width: 0;
 		}
 
-		.notes {
-			margin-top: var(--space-6);
-			padding-top: var(--space-4);
-			border-top: 1px solid var(--rule);
-			font-size: var(--size-sm);
-		}
-
-		.notes h2 {
-			margin: 0 0 var(--space-3);
-			color: var(--muted);
-			font-size: var(--size-xs);
-			letter-spacing: 0.08em;
-			text-transform: uppercase;
-		}
-
-		.notes ol {
-			margin: 0;
-			padding-left: var(--space-5);
-		}
-
-		.notes li {
-			margin-bottom: var(--space-2);
-			padding-left: var(--space-1);
-		}
-
-		.notes li::marker {
-			color: var(--muted);
-			font-family: var(--sans);
-		}
-
-		.notes li:target {
-			border-radius: var(--radius);
-			background: var(--accent-soft);
-		}
-
-		.notes :global(.prose) {
-			font-size: 1rem;
-		}
-
-		.notes :global(.prose),
-		.notes :global(.markdown),
-		.notes :global(.prose p) {
-			display: inline;
-			margin: 0;
-		}
-
-		.back {
-			margin-left: var(--space-2);
-			text-decoration: none;
-		}
-
 		.around {
 			display: grid;
 			grid-template-columns: 1fr 1fr;
@@ -264,8 +196,7 @@ Article := [].{
 
 		@media print {
 			.around,
-			.translation,
-			.back {
+			.translation {
 				display: none;
 			}
 

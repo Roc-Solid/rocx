@@ -3,19 +3,20 @@ import markdown.Block
 import markdown.Markdown
 import markdown.Md
 import testing.Dom
-import ../Footnotes
+import ../I18n
 
 ## A post's body: packages/markdown's `<Markdown>`, with hooks for what the journal draws its own
 ## way. A heading gets an anchor to link to it by; a code block a label with its language, and a
-## scroll of its own (focusable, for the keyboard); a footnote's reference (`[1](#fn-salt)`, from
-## `Footnotes.split`) is a superscript that its note links back to; an image is a figure with its
-## title as the caption, loaded lazily. The typography is here too: the elements `<Markdown>`
-## makes are its own, so they are styled through `:global(…)` under this component's `.prose`.
+## scroll of its own (focusable, for the keyboard); an image is a figure with its title as the
+## caption, loaded lazily. Footnotes (`[^salt]`, packages/markdown's) are numbered superscripts,
+## and the notes at the end have a heading and links back in the post's language. The typography
+## is here too: the elements `<Markdown>` makes are its own, so they are styled through
+## `:global(…)` under this component's `.prose`.
 Prose := [].{
-	view : { doc : List(Block) } -> Html
-	view = |{ doc }|
+	view : { doc : List(Block), lang : Str } -> Html
+	view = |{ doc, lang }|
 		<div class="prose">
-			<Markdown doc={doc} class="markdown" heading={Prose.heading} code={Prose.code} link={Prose.link} image={Prose.image} />
+			<Markdown doc={doc} class="markdown" heading={Prose.heading} code={Prose.code} image={Prose.image} footnote={Prose.footnote} notes={Prose.notes(lang)} />
 		</div>
 
 	## A heading, and a link to it after its text (hidden from screen readers, which list headings
@@ -33,15 +34,22 @@ Prose := [].{
 		</div>
 	}
 
-	## A link: a footnote's reference as a numbered superscript; any other as `<Markdown>` has it.
-	link : Markdown.Link -> Html
-	link = |found|
-		if found.url.starts_with("#fn-") {
-			id = found.url.drop_prefix("#fn-")
-			<sup class="ref"><a href={found.url} id={Footnotes.back(id)} aria-describedby="footnotes">{...found.children}</a></sup>
-		} else {
-			Markdown.link(found)
-		}
+	## A footnote's reference: its number, raised, described by the notes' heading for a screen
+	## reader.
+	footnote : Markdown.Footnote -> Html
+	footnote = |found| <sup class="ref"><a href={found.href} id={found.id} aria-describedby="footnotes">{found.number.to_str()}</a></sup>
+
+	## The notes, under a heading in `lang`, each with a link back to each place that refers to it.
+	notes : Str -> (List(Markdown.Note) -> Html)
+	notes = |lang| |found| {
+		intl = I18n.intl(lang)
+		<section class="notes" aria-labelledby="footnotes">
+			<h2 id="footnotes">{intl.t("post.notes", [])}</h2>
+			<ol>
+				{...found.map(|note| <li id={note.id}>{...note.children}{...note.backs.map(|href| <a class="back" href={href} aria-label={intl.t("post.back", [])}>↩</a>)}</li>)}
+			</ol>
+		</section>
+	}
 
 	## An image as a figure (spans, since Markdown puts images inside paragraphs), its title the
 	## caption.
@@ -53,7 +61,7 @@ Prose := [].{
 		</span>
 
 	<story name="Everything a post may have">
-		<Prose doc={Md.parse(sample)} />
+		<Prose doc={Md.parse(sample)} lang="en" />
 	</story>
 
 	<style>
@@ -250,7 +258,59 @@ Prose := [].{
 			text-align: center;
 		}
 
+		.notes {
+			margin-top: var(--space-6);
+			padding-top: var(--space-4);
+			border-top: 1px solid var(--rule);
+			font-family: var(--sans);
+			font-size: var(--size-sm);
+			line-height: 1.55;
+			hyphens: manual;
+		}
+
+		.notes h2 {
+			margin: 0 0 var(--space-3);
+			color: var(--muted);
+			font-family: var(--sans);
+			font-size: var(--size-xs);
+			letter-spacing: 0.08em;
+			text-transform: uppercase;
+		}
+
+		.notes ol {
+			margin: 0;
+			padding-left: var(--space-5);
+		}
+
+		.notes li {
+			margin-bottom: var(--space-2);
+			padding-left: var(--space-1);
+		}
+
+		.notes li::marker {
+			color: var(--muted);
+		}
+
+		.notes li:target {
+			border-radius: var(--radius);
+			background: var(--accent-soft);
+		}
+
+		.notes li > :global(p) {
+			display: inline;
+			margin: 0;
+		}
+
+		.back {
+			margin-left: var(--space-2);
+			text-decoration: none;
+		}
+
 		@media print {
+			.back {
+				display: none;
+			}
+
 			.anchor,
 			.lang {
 				display: none;
@@ -269,14 +329,16 @@ Prose := [].{
 }
 
 sample : Str
-sample = "## A heading\n\nA line with `code`, a [link](https://example.com) and a note[1](#fn-salt).\n\n```sh\necho hello\n```\n\n| Flour | Water |\n|:--|--:|\n| 500 g | 350 g |\n\n![A round loaf](/images/bread.svg \"The loaf, two days in\")"
+sample = "## A heading\n\nA line with `code`, a [link](https://example.com) and a note[^salt].\n\n```sh\necho hello\n```\n\n| Flour | Water |\n|:--|--:|\n| 500 g | 350 g |\n\n![A round loaf](/images/bread.svg \"The loaf, two days in\")\n\n[^salt]: About 2% of the flour."
 
 rendered : Dom
-rendered = Dom.parse(Html.to_str(Prose.view({ doc: Md.parse(sample) })))
+rendered = Dom.parse(Html.to_str(Prose.view({ doc: Md.parse(sample), lang: "pl" })))
 
 expect rendered.get(Named("heading", "A heading")).map_ok(|heading| heading.attr("id")) == Ok(Ok("a-heading"))
 expect rendered.get(Tag("sup")).map_ok(|sup| sup.text()) == Ok("1")
 expect rendered.get(Named("link", "1")).map_ok(|link| link.attr("id")) == Ok(Ok("fnref-salt"))
+expect rendered.get(Named("region", "Przypisy")).map_ok(|notes| notes.texts(Role("listitem"))) == Ok(["About 2% of the flour.↩"])
+expect rendered.get(Named("link", "Wróć do tekstu")).map_ok(|back| back.attr("href")) == Ok(Ok("#fnref-salt"))
 expect rendered.get(Label("Code: sh")).map_ok(|pre| pre.text()) == Ok("echo hello")
 expect rendered.get(Named("img", "A round loaf")).map_ok(|img| img.attr("loading")) == Ok(Ok("lazy"))
 expect rendered.contains(Text("The loaf, two days in"))

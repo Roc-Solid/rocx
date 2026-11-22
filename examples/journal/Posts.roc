@@ -3,7 +3,6 @@ import markdown.Collection
 import markdown.Md
 import intl.Date
 import Authors
-import Footnotes
 import I18n
 import Listing
 import Post
@@ -39,9 +38,9 @@ import "content/pl/winter-garden.md" as pl_winter_garden : Str
 ## imported as text above and listed in `files`: a new post is a file and two lines.
 Posts := [].{
 
-	## A post, read: where it is, its frontmatter, its body parsed (footnotes made links to its
-	## notes), its notes, its day, and how long it is.
-	Entry : { lang : Str, slug : Str, post : Post, doc : List(Block), notes : List(Footnotes.Note), day : Date, words : U64, minutes : U64 }
+	## A post, read: where it is, its frontmatter, its body parsed (its footnotes' notes last), its
+	## day, and how long it is.
+	Entry : { lang : Str, slug : Str, post : Post, doc : List(Block), day : Date, words : U64, minutes : U64 }
 
 	## How many posts a page of the index lists.
 	per_page : U64
@@ -78,11 +77,12 @@ Posts := [].{
 		read = Posts.files.map(
 			|file|
 				match Collection.entry(file.path, file.source) {
-					Ok(entry) => { lang: file.lang, slug: entry.id, post: entry.data, body: entry.body }
+					Ok(entry) => { lang: file.lang, slug: entry.id, post: entry.data, body: entry.body, doc: entry.doc }
 					Err(failed) => crash "content/${file.lang}/${Collection.describe(failed)}"
 				},
 		)
-		problems = read.join_map(Rules.check).concat(Rules.across(read))
+		drafts = read.map(|each| { lang: each.lang, slug: each.slug, post: each.post, body: each.body })
+		problems = drafts.join_map(Rules.check).concat(Rules.across(drafts))
 		if !problems.is_empty() {
 			crash "The journal's content has problems:\n${Str.join_with(problems, "\n")}"
 		}
@@ -177,27 +177,18 @@ Posts := [].{
 		}
 	}
 
-	## The post's body as HTML text, its notes after it: for the feed and the JSON API, which
-	## readers render themselves. (Pages render the same document as the platform's markup.)
+	## The post's body as HTML text, its notes at the end (as GitHub writes them): for the feed and
+	## the JSON API, which readers render themselves. (Pages render the same document as the
+	## platform's markup.)
 	html : Posts.Entry -> Str
-	html = |entry| {
-		body = Md.to_html_with(entry.doc, { ids: Bool.True })
-		if entry.notes.is_empty() {
-			body
-		} else {
-			items = entry.notes.map(|note| "<li id=\"${Footnotes.anchor(note.id)}\">${Md.to_html(Md.parse(note.text)).trim()} <a href=\"#${Footnotes.back(note.id)}\">↩</a></li>")
-			"${body}<section class=\"footnotes\"><h2>${I18n.t(entry.lang, "post.notes")}</h2><ol>${Str.join_with(items, "")}</ol></section>"
-		}
-	}
+	html = |entry| Md.to_html_with(entry.doc, { ids: Bool.True })
 }
 
-## A post read: its body's notes split off and the rest parsed, its day, its length.
-entry_of : Rules.Draft -> Posts.Entry
-entry_of = |{ lang, slug, post, body }| {
-	split = Footnotes.split(body)
-	doc = Md.parse(split.body)
+## A post read: its day and its length (its body parsed already, by the collection).
+entry_of : { lang : Str, slug : Str, post : Post, body : Str, doc : List(Block) } -> Posts.Entry
+entry_of = |{ lang, slug, post, doc, .. }| {
 	day = Date.parse_iso(post.date) ?? Date.ymd(1970, 1, 1)
-	{ lang, slug, post, doc, notes: split.notes, day, words: Md.words(doc), minutes: U64.max(Md.reading_minutes(doc), 1) }
+	{ lang, slug, post, doc, day, words: Md.words(doc), minutes: U64.max(Md.reading_minutes(doc), 1) }
 }
 
 newest_first : Posts.Entry, Posts.Entry -> [Before, Same, After]

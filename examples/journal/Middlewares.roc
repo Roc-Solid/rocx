@@ -14,32 +14,13 @@ Middlewares := [].{
 	## (`""` until it has one). Reactions are remembered and rate limited by it.
 	Context : { reader : Str }
 
-	## Around every request: a change sent by another site's page is refused; the feed and the
-	## sitemap answer at their usual names; every answer has guard's security headers; and the
-	## reader is known.
+	## Around every request: a change sent by another site's page is refused; every answer has
+	## guard's security headers; and the reader is known.
 	default : Middleware({}, Middlewares.Context)
 	default =
 		Middleware.same_origin({})
-			.then(Middlewares.file_names)
 			.then(Middlewares.security)
 			.then(Middlewares.reader)
-
-	## `/sitemap.xml` and `/<lang>/feed.xml`, the names search engines and feed readers look for, as
-	## the routes that answer them: `routes/sitemap/` and `routes/[lang]/feed/`. A route's directory
-	## can't have a dot in its name, so the path is renamed before the routes see it.
-	file_names : Middleware({}, {})
-	file_names = Middleware.make(|request, context, next!| next!({ ..request, path: Middlewares.routed(request.path) }, context))
-
-	## The path a file's name is routed at.
-	routed : Str -> Str
-	routed = |path|
-		if path == "/sitemap.xml" {
-			"/sitemap"
-		} else if path.ends_with("/feed.xml") {
-			path.drop_suffix(".xml")
-		} else {
-			path
-		}
 
 	## guard's security headers (a Content-Security-Policy that lets the page run only its own
 	## scripts and wasm, and the rest), but on the OpenAPI page, which loads Scalar from jsDelivr.
@@ -89,7 +70,4 @@ Middlewares := [].{
 	writes_only = |guard| Middleware.make(|request, context, next!| if (Server.changes(request)) Middleware.run!(guard, request, context, next!) else next!(request, context))
 }
 
-expect Middlewares.routed("/sitemap.xml") == "/sitemap"
-expect Middlewares.routed("/pl/feed.xml") == "/pl/feed"
-expect Middlewares.routed("/en/posts/slow-bread") == "/en/posts/slow-bread"
 expect Middlewares.is_reader("r1234567890") and !Middlewares.is_reader("r") and !Middlewares.is_reader("admin")

@@ -42,7 +42,7 @@ the program is built:
 | one to five tags, each a slug          | so every tag has a tidy address           |
 | a cover has a description              | for readers who can't see the image       |
 | no `#` headings in the body            | the title is the page's only top heading  |
-| every footnote is referred to, once    | so each back link has one place to go     |
+| every footnote has its note, and each note is used | so no number points nowhere |
 
 If any rule fails, the build fails and lists every problem at once.
 

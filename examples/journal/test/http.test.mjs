@@ -50,7 +50,7 @@ test("each language's index: its latest writing, newest first, four to a page", 
 test("dates, numbers and plurals are written as each language writes them", async () => {
 	const en = await app.client().get("/en/posts/slow-bread");
 	assert.match(en.text, /February 14, 2026/);
-	assert.match(en.text, /2 min read/);
+	assert.match(en.text, /3 min read/);
 	const pl = await app.client().get("/pl/posts/slow-bread");
 	assert.match(pl.text, /14 lutego 2026/);
 	assert.match(pl.text, /2 minuty czytania/);
@@ -154,7 +154,7 @@ test("an Atom feed for each language, well-formed, every post whole", async () =
 	const en = (await client.request("/en/feed.xml")).text;
 	// The newest first, with whole URLs, and the HTML of the body (its notes too) escaped.
 	assert.match(en, new RegExp(`<entry><title>How this journal is made</title><link rel="alternate" type="text/html" href="${app.url}/en/posts/how-this-journal-is-made"/>`));
-	assert.match(en, /&lt;section class=&quot;footnotes&quot;&gt;/);
+	assert.match(en, /&lt;section class=&quot;footnotes&quot; data-footnotes&gt;/);
 	assert.equal((await client.request("/xx/feed.xml")).status, 404);
 });
 

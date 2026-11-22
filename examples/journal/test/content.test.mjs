@@ -73,5 +73,5 @@ test("a footnote referred to but never written fails the build", () => {
 	assert.notEqual(status, 0);
 	const flat = said.replace(/\s+/g, " ");
 	assert.match(flat, /content\/en\/json-by-hand\.md: \[\^postcard\] refers to a note that isn't there/);
-	assert.match(flat, /content\/en\/json-by-hand\.md: \[\^post-card\] is given but nothing refers to it/);
+	assert.match(flat, /content\/en\/json-by-hand\.md: \[\^post-card\] is a note nothing refers to/);
 });

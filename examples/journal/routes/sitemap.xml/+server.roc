@@ -7,7 +7,7 @@ import ../../Xml
 import ../../Authors
 import ../../Generated/Paths
 
-## `/sitemap.xml` (the default middleware routes it here): every page of the journal in each
+## `/sitemap.xml` (a route's directory may name a file): every page of the journal in each
 ## language (the indexes and their pages, every post, tag and writer), each with its translations
 ## as `hreflang` alternates, so a search engine shows a reader the one in their language.
 respond! : { request : Server.Request, params : {}, context : c } => Server.Response

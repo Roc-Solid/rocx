@@ -45,22 +45,21 @@ Polish-only Sunday of pierogi. Their writers, Iris Vale, Hanna Wierzba and Theo 
 | Feature | Where |
 |---|---|
 | A collection with typed frontmatter (packages/markdown's `Collection`, `Frontmatter`): title, date, writer, tags, summary, optional cover and its description; a translation is the file of the same name in the other language's folder | `Post.roc`, `Posts.roc` |
-| Content rules a type can't say: a real day, a known writer, one to five slug tags, a described cover, no `#` headings in the body, footnotes all used once, a translation by the same writer. A wrong post fails the build, with every problem named | `Rules.roc` (its expects), `Posts.all`, `test/content.test.mjs` |
-| Footnotes, which packages/markdown doesn't parse yet: `[^name]` made links, the notes numbered and drawn at the end with links back | `Footnotes.roc`, `Ui/Prose.rocx` (`link` hook), `Ui/Article.rocx` (`notes`) |
-| `<Markdown>` with hooks: heading anchors, labelled code blocks in a scroll of their own, images as captioned figures, footnote superscripts; the typography through `:global(…)` under a scoped `.prose` | `Ui/Prose.rocx` |
+| Content rules a type can't say: a real day, a known writer, one to five slug tags, a described cover, no `#` headings in the body, every footnote with its note and every note used (`Md.footnote_problems`), a translation by the same writer. A wrong post fails the build, with every problem named | `Rules.roc` (its expects), `Posts.all`, `test/content.test.mjs` |
+| `<Markdown>` with hooks: heading anchors, labelled code blocks in a scroll of their own, images as captioned figures, packages/markdown's footnotes as superscripts and notes under a heading in the post's language (`footnote` and `notes` hooks); the typography through `:global(…)` under a scoped `.prose` | `Ui/Prose.rocx` |
 | Reading time, table of contents, previous and next posts | `Posts.roc` (`minutes`, `newer`, `older`), `Ui/Toc.rocx`, `Ui/Article.rocx` |
 | Index with pagination; tag, tags and writer pages; generated `Paths` for every link | `Ui/Listings.rocx`, `Ui/Pagination.rocx`, `routes/[lang]/…` |
 | 404 through `+error.rocx`, and the same component for a post, tag or writer that isn't there (`<HttpStatusCode code={404} />`) | `routes/+error.rocx`, `Ui/NotFound.rocx` |
 | packages/intl: dates ("February 14, 2026" / "14 lutego 2026"), numbers, plurals ("5 min read" / "5 minut czytania", "2 wpisy" / "12 wpisów"), and every interface word in both languages | `I18n.roc` (its expects check the catalog and the plurals) |
 | The locale in the URL; `<html lang>` from the address; the switcher and `hreflang` alternates that know which posts are translated | `routes/+layout.rocx`, `Links.roc`, `Ui/Masthead.rocx` |
-| Atom feeds, the sitemap with `hreflang` alternates: `+server.roc` files answering with `respond!` | `routes/[lang]/feed/+server.roc`, `routes/sitemap/+server.roc`, `Xml.roc` |
+| Atom feeds, the sitemap with `hreflang` alternates: `+server.roc` files answering with `respond!`, in directories named for the file (`feed.xml`, `sitemap.xml`) | `routes/[lang]/feed.xml/+server.roc`, `routes/sitemap.xml/+server.roc`, `Xml.roc` |
 | A JSON API of posts, typed, with its OpenAPI document and Scalar page, opted in through `App.program({ openapi: Page(Scalar) })` | `routes/api/posts/…`, `Listing.roc`, `main.roc` |
 | Mostly static pages: everything but the islands inside `<NoHydration>` (the posts and the Markdown parser stay out of the wasm), `<Title>` set from inside it | every page in `routes/`, `routes/+layout.rocx` |
 | Island 1, search as you type: a signal and a memo over the JSON API's answer, read as the page renders and carried in it, so typing asks the server nothing. The results reuse the server's pure `PostCard` | `Ui/SearchBox.rocx`, `Search.roc`, `Ui/PostCard.rocx` |
 | Island 2, reactions: optimistic through `use_action!` and `use_submissions!` (the server's tally with the toggles on their way applied, `Reaction.apply`), refusals shown and dismissable; each button also a plain form for no JavaScript (`on:click.prevent`) | `Ui/ReactionBar.rocx`, `Reaction.roc` |
 | `Kv` with atomic operations: counters (`increment!`), a reader's mark that one request alone sets (`add!`) or takes back (`take!`), and idempotent seeding (`add!` of each counter's seed) | `Reactions.roc` |
 | packages/guard: a rate limit on sending reactions (20 a minute a reader, 429 with `Retry-After`), and the security headers (CSP) on every answer | `Middlewares.roc`, `routes/api/posts/[lang]/[slug]/reactions/+server.roc`, `Guard.roc` |
-| Middleware: same-origin writes, the reader cookie in the context, the `.xml` names | `Middlewares.roc` |
+| Middleware: same-origin writes, the reader cookie in the context | `Middlewares.roc` |
 | Scoped styles for each component; tokens and base in `static/journal.css` (light and dark); a print stylesheet (`static/print.css`, and `@media print` in the components) | `Ui/*.rocx`, `static/` |
 | Pure `view` components (cards, lists, the article) and effectful `view!` ones (the islands, and `NotFound`, which sets the status) | `Ui/` |
 | Stories for the components (`rocx build --dev`, `/__rocx/stories`) | `<story>` in `Ui/*.rocx` |
@@ -93,12 +92,12 @@ bin/rocx check -- .tools/roc-active test examples/journal/main.roc   # the expec
 node --test 'examples/journal/test/*.test.mjs'                        # HTTP, browser, content
 ```
 
-- **Expects** (with the packages' own: 997 in all) cover the content rules (`Rules.roc`), footnotes,
-  reading time and slugs. They also cover the catalog and the plurals in both languages
+- **Expects** (with the packages' own: 956 in all) cover the content rules (`Rules.roc`): frontmatter,
+  footnotes, reading time and slugs. They also cover the catalog and the plurals in both languages
   (`I18n.roc`), search folding, matching and marking (`Search.roc`), the optimistic `apply` and the
   seeds (`Reaction.roc`), the XML and its escaping (`Xml.roc`), the links between languages
-  (`Links.roc`), the middleware's renames, and the pure components through `testing.Dom` (`PostCard`,
-  `Pagination`, `Prose`).
+  (`Links.roc`), and the pure components through `testing.Dom` (`PostCard`, `Pagination`, `Prose`
+  with its footnotes).
 - **`test/http.test.mjs`** (15 tests) asks the server as a browser and as other programs do. It
   covers the redirect from `/`, each language's index and pages, dates and plurals, a post's parts,
   the switcher, tag and writer pages, every kind of 404, both feeds and the sitemap (well-formed XML,
@@ -136,49 +135,41 @@ and start the server on a free port. They don't use `DATABASE_URL`.
 
 ## What it asked of the platform
 
-Every gap met, and what the journal does about it:
+Every gap met, and what the journal does about it. Three were fixed in the platform while it was
+built: a route's directory may now name a file (`routes/sitemap.xml/`); packages/markdown parses
+footnotes; and packages/testing's `click()` scrolls instantly, so it no longer misses on a page with
+`scroll-behavior: smooth`. These are still open:
 
-1. **A route's directory can't have a dot** (`routes/sitemap.xml/` is refused: "a directory is a
-   path's part in lower case … or a param"). The routes are `routes/sitemap/` and
-   `routes/[lang]/feed/`. `Middlewares.file_names` renames `/sitemap.xml` and `/<lang>/feed.xml` to
-   them before the routes see the request, so both names answer.
-2. **packages/markdown has no footnotes** (its README, "Limits"). `Footnotes.roc` turns `[^name]` into
-   links (`[1](#fn-name)`) and lifts the notes out before parsing. The article's `link` hook draws the
-   links as superscripts, and `Article.notes` draws the notes. The content rules check them.
-3. **Collections aren't found by `rocx build`** (packages/markdown's PROPOSALS.md). Each post is
+1. **Collections aren't found by `rocx build`** (packages/markdown's PROPOSALS.md). Each post is
    imported as text and listed in `Posts.files`.
-4. **guard's middleware is copied by hand** (packages/guard's PROPOSALS.md, "Server-only modules in
+2. **guard's middleware is copied by hand** (packages/guard's PROPOSALS.md, "Server-only modules in
    packages"). `Guard.roc`, `FlagStore.roc` and `Kept.roc` are verbatim copies of
    `packages/guard/server/`. Its tallies are actors' state, not `Kv` yet ("Memory: state between
    requests"). With a database, each limited request writes to Postgres.
-5. **The client's address isn't passed on** (guard's "The client's address"). `Guard.ip(Direct)` can't
+3. **The client's address isn't passed on** (guard's "The client's address"). `Guard.ip(Direct)` can't
    tell readers apart, and `Hops(1)` reads a header any client can write when there is no proxy.
    The limit counts by the reader cookie (`Guard.user(|c| c.reader, Hops(1))`), and a reaction
    without the cookie is refused.
-6. **A page whose params are read only inside `<NoHydration>` doesn't build for the browser.** The
+4. **A page whose params are read only inside `<NoHydration>` doesn't build for the browser.** The
    browser's copy drops `<NoHydration>`'s children, so `params` is unused. Roc warns, exits 2, and
    `buildForTests` throws. Every page reads its params outside it too, in its `<Title>` or an
    island's props. `<Title>` and `<HttpStatusCode>` work from inside `<NoHydration>`, which is how a
    post's title and a missing post's 404 are set.
-7. **`<Show>`'s function child must be pure**, so a `<For>` inside it doesn't compile (the same rule
+5. **`<Show>`'s function child must be pure**, so a `<For>` inside it doesn't compile (the same rule
    as a `<For>` in a `<For>` row). The reactions use `<Show when!={shown!().is_ok()}>` with plain
    children, and an accessor `tally!` that falls back to `Reaction.none`.
-8. **`<HttpStatusCode>` is effectful**, so a component that sets the status is a `view!`
+6. **`<HttpStatusCode>` is effectful**, so a component that sets the status is a `view!`
    (`Ui/NotFound.rocx`). Pure callers still write `<NotFound … />`, and rocx wraps it.
-9. **guard's CSP refuses the OpenAPI page**, which loads Scalar from jsDelivr. `Middlewares.security`
+7. **guard's CSP refuses the OpenAPI page**, which loads Scalar from jsDelivr. `Middlewares.security`
    leaves `/openapi.html` out, and every other answer has the headers.
-10. **packages/testing's `Element.click()` measures an element right after `scrollIntoView`.** With
-    `scroll-behavior: smooth` the scroll hasn't arrived, so the click lands where the button was:
-    no handler ran, and nothing said so. The journal doesn't scroll smoothly. (`behavior: "instant"`
-    in the helper's `scrollIntoView` would fix it.)
-11. **`node --test examples/journal/test/` fails on Node 24**: a directory is taken as a module
-    ("Cannot find module"). Use the glob, `node --test 'examples/journal/test/*.test.mjs'`.
-12. **The OpenAPI document gives the reactions' `POST` a JSON body only**, though the endpoint takes
-    the same fields as a form, which is what the no-JavaScript buttons send. The document is right
-    about JSON and silent about forms.
-13. **The browser's copy of `Api` has no types** (known, D-030). The search's `posts` and the
+8. **`node --test examples/journal/test/` fails on Node 24**: a directory is taken as a module
+   ("Cannot find module"). Use the glob, `node --test 'examples/journal/test/*.test.mjs'`.
+9. **The OpenAPI document gives the reactions' `POST` a JSON body only**, though the endpoint takes
+   the same fields as a form, which is what the no-JavaScript buttons send (server/README.md, "Not
+   yet").
+10. **The browser's copy of `Api` has no types** (known, D-030). The search's `posts` and the
     reactions' `toggles : Submissions(Reaction.Toggle, Reaction.Tally)` are annotated.
-14. **The Roc gotchas met:**
+11. **The Roc gotchas met:**
     - `{ lang }` alone is a block, not a record (`Paths.lang({ lang: lang })`).
     - A parameter can't share a name with a member of its type's block (hence `Rules.of_title`, …).
     - `join_with` is `Str.join_with(list, sep)`, not a method of a list.

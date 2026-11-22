@@ -5,9 +5,8 @@ import ../../../Site
 import ../../../Xml
 import ../../../Authors
 
-## `/en/feed.xml` and `/pl/feed.xml` (the default middleware routes the `.xml` names here): each
-## language's Atom feed, every post with its whole text. A language the journal isn't written in
-## has none.
+## `/en/feed.xml` and `/pl/feed.xml` (a route's directory may name a file): each language's Atom
+## feed, every post with its whole text. A language the journal isn't written in has none.
 respond! : { request : Server.Request, params : { lang : Str }, context : c } => Server.Response
 respond! = |{ request, params, .. }| {
 	lang = params.lang
