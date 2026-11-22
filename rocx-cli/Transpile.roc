@@ -743,27 +743,40 @@ Transpile := [].{
 	}
 
 	## HTML's whitespace rule, as Svelte applies it: each run of spaces, tabs and newlines in text is
-	## one space, and whitespace at the start and end of an element's children is dropped. (`&nbsp;`
-	## is not whitespace.)
+	## one space. At the start of an element's children (`first`) and at their end (`last`), a run
+	## with a line break in it goes, and one on the same line as the tag stays, a space
+	## (`<b>x </b>`). (`&nbsp;` is not whitespace.)
 	collapse_whitespace : Str, Bool, Bool -> Str
 	collapse_whitespace = |raw, first, last| {
 		bytes = raw.to_utf8()
 		var $out = []
 		var $in_run = Bool.False
+		# Whether the run at the start, and the one at the end so far, has a line break in it.
+		var $leading_break = Bool.False
+		var $trailing_break = Bool.False
+		var $started = Bool.False
 		for b in bytes {
 			if b == ' ' or b == '\t' or b == '\n' or b == '\r' or b == 0x0C {
 				if !$in_run {
 					$out = $out.append(' ')
+					$trailing_break = Bool.False
 				}
 				$in_run = Bool.True
+				if b == '\n' or b == '\r' {
+					$trailing_break = Bool.True
+					if !$started {
+						$leading_break = Bool.True
+					}
+				}
 			} else {
 				$out = $out.append(b)
 				$in_run = Bool.False
+				$started = Bool.True
 			}
 		}
 		collapsed = Str.from_utf8_lossy($out)
-		started = if (first) Text.trim_start(collapsed) else collapsed
-		if (last) Text.trim_end(started) else started
+		started = if (first and $leading_break) Text.trim_start(collapsed) else collapsed
+		if (last and $trailing_break and $in_run) Text.trim_end(started) else started
 	}
 
 	## `/^([A-Za-z_][A-Za-z0-9_]*\.)*[a-z_][A-Za-z0-9_]*!$/`: an accessor's name (`title!`, `Store.title!`).

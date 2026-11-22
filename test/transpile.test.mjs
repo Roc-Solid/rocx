@@ -81,11 +81,19 @@ test("< is markup only where an expression can start", () => {
 	assert.equal(roc(`x = "\${<b/>}"`), `x = "\${Html.element("b", [], [])}"`);
 });
 
-test("HTML's whitespace rule, as Svelte has it", () => {
+test("HTML's whitespace rule, as Svelte has it, but for a space on the tag's line", () => {
 	assert.equal(roc(`x = <p>Published {at}</p>`), `x = Html.element("p", [], [Html.text("Published "), Html.text(at),])`);
 	assert.equal(roc(`x = <p>a <b>b</b> c</p>`), `x = Html.element("p", [], [Html.text("a "), Html.element("b", [], [Html.text("b"),]), Html.text(" c"),])`);
 	assert.equal(roc(`x = <p>\n\t\tone\n\t\ttwo\n\t</p>`), `x = Html.element("p", [], [\n\t\tHtml.text("one two"),\n\t\t\n\t])`);
-	assert.equal(roc(`x = <p>  spaced   out  </p>`), `x = Html.element("p", [], [Html.text("spaced out"),])`, "ends trimmed, runs collapsed");
+	assert.equal(roc(`x = <p>  spaced   out  </p>`), `x = Html.element("p", [], [Html.text(" spaced out "),])`, "runs collapsed; a space on the tag's line stays");
+	assert.equal(roc(`x = <span>You are </span>`), `x = Html.element("span", [], [Html.text("You are "),])`, "a space before the closing tag, on its line, stays");
+	assert.equal(roc(`x = <b> x</b>`), `x = Html.element("b", [], [Html.text(" x"),])`, "and one after the opening tag");
+	assert.equal(roc(`x = <span> </span>`), `x = Html.element("span", [], [Html.text(" "),])`, "a space alone is a space");
+	assert.equal(roc(`x = <span>\n</span>`), `x = Html.element("span", [], [\n])`, "a line break alone is nothing");
+	assert.equal(roc(`x = <p> one \n</p>`), `x = Html.element("p", [], [Html.text(" one"),\n])`, "whitespace with a line break before the closing tag goes, spaces before the break too");
+	assert.equal(roc(`x = <p>\t \n\tone </p>`), `x = Html.element("p", [], [\n\tHtml.text("one "),])`, "and after the opening tag");
+	assert.equal(roc(`x = <p>Hi <!-- a comment -->\n</p>`), `x = Html.element("p", [], [Html.text("Hi"),\n])`, "a comment's whitespace is the run's");
+	assert.equal(roc(`x = <p><b>a</b> </p>`), `x = Html.element("p", [], [Html.element("b", [], [Html.text("a"),]), Html.text(" "),])`, "between an element and the closing tag, on one line");
 	assert.equal(
 		roc(`x = <p>\n\tthe <a href="/t">terms</a> and\n\t<a href="/p">policy</a> of\n\t{name}\n</p>`),
 		`x = Html.element("p", [], [\n\tHtml.text("the "), Html.element("a", [Html.attr("href", "/t"),], [Html.text("terms"),]), Html.text(" and "),\n\tHtml.element("a", [Html.attr("href", "/p"),], [Html.text("policy"),]), Html.text(" of "),\n\tHtml.text(name),\n])`,
@@ -93,7 +101,7 @@ test("HTML's whitespace rule, as Svelte has it", () => {
 	);
 	assert.equal(roc(`x = <ul>\n\t<li>a</li>\n\t<li>b</li>\n</ul>`), `x = Html.element("ul", [], [\n\tHtml.element("li", [], [Html.text("a"),]), Html.text(" "),\n\tHtml.element("li", [], [Html.text("b"),]),\n])`);
 	assert.equal(roc(`x = <pre>  a\n  <b>b</b>  </pre>`), `x = Html.element("pre", [], [Html.text("  a\\n  "),\n  Html.element("b", [], [Html.text("b"),]), Html.text("  "),])`, "pre keeps it");
-	assert.equal(roc(`x = <p>a&nbsp; </p>`), `x = Html.element("p", [], [Html.text("a\u00a0"),])`, "&nbsp; is not whitespace");
+	assert.equal(roc(`x = <p>a&nbsp;\n</p>`), `x = Html.element("p", [], [Html.text("a\u00a0"),\n])`, "&nbsp; is not whitespace");
 	assert.equal(roc(`x = <Button>\n\tSave\n</Button>`), `x = Html.component(|| button!({ children: [\n\tHtml.text("Save"),\n], }))`);
 });
 

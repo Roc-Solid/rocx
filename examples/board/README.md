@@ -184,6 +184,7 @@ What the app met, and how it works around each:
   `--dev` there are none.
 - **Roc on the way:** `has` is a keyword (a SQL column alias called `has` didn't parse as a record
   field); `{ me }` alone is a block, not a record (`{ me: me }`); whitespace at the end of an
-  element's text goes, so `<span>You are </span>` lost its space (`{"You are "}` keeps it); and in
+  element's text went, so `<span>You are </span>` lost its space (`{"You are "}` keeps it; fixed in
+  rocx since: a space on the tag's line stays); and in
   the browser's copy every endpoint read and submission list needs its type written down
   (`moves : Submissions(Board.Move, Str)`, `home! : {} => …`), as D-030 says.

@@ -247,8 +247,9 @@ In a component only:
 | `move! = use_action!(Api.post_move({}))`, `moves = use_submissions!(Api.post_move({}))` | an action: `move!(arg)`, in a handler, sends the endpoint without a form or waiting; `moves` is every submission to it (`all!()`, `pending!()`, `pending_inputs!()`, `clear!(id)`), for an optimistic value: the server's data with `pending_inputs!()` applied |
 
 Whitespace in text follows HTML, as Svelte has it, not JSX: each run of spaces, tabs and line breaks
-is one space, and whitespace at the start and end of an element's children goes. Inside `<pre>` and
-`<textarea>` text stays as written. Write a literal `<`, `>`, `{` or `}` in text as an entity or
+is one space. Whitespace with a line break next to an element's own opening or closing tag goes, and a
+space on the tag's line stays (`<b>Note: </b>`). Inside `<pre>` and `<textarea>` text stays as
+written. Write a literal `<`, `>`, `{` or `}` in text as an entity or
 `{"<"}`. `<` starts markup only where an expression can begin (after `=`, `(`, `[`, `,`, `=>`, a
 lambda's `|…|`, an `if (…)` condition, `else`, `return`, or first on its line) and only when a
 letter or `>` follows; after a value on the same line (`a < b`) it is the comparison.

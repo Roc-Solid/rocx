@@ -100,6 +100,23 @@ test("a file's and a component's <style> are kept as written", needsRoc, () => {
 	assert.equal(format(written), written.replace("|_|    <p", "|_| <p"));
 });
 
+test("formatting keeps a space on a tag's line, and a line break next to one, as written: the text is the same", needsRoc, () => {
+	const written = [
+		"Page := [].{",
+		"\tview = |name|    Html.fragment(",
+		"\t\t\t\t<p><b>Note: </b>a space on the tag's line stays.<span> </span>",
+		"\t\t\t\t\tand one after {name} too </p>",
+		"\t\t)",
+		"}",
+		"",
+	].join("\n");
+	const formatted = format(written);
+	assert.notEqual(formatted, written, "the code around the markup was formatted");
+	const texts = (source) => transpileModule(source, "Page.rocx").code.match(/Html\.text\([^)]*\)/g);
+	assert.deepEqual(texts(formatted), ['Html.text("Note: ")', 'Html.text("a space on the tag\'s line stays.")', 'Html.text(" ")', 'Html.text(" and one after ")', "Html.text(name)", 'Html.text(" too ")']);
+	assert.deepEqual(texts(formatted), texts(written));
+});
+
 test("what roc can't read is reported at the file's line, past markup that took several", needsRoc, () => {
 	const written = "Page := [].{\n\tview = |_| Html.fragment(<div>\n\t\t<p>hi</p>\n\t</div>)\n\tbroken = = 1\n}\n";
 	assert.throws(() => format(written, "Broken.rocx"), (error) => error instanceof FormatError && /^Broken\.rocx:5:\d+: /.test(error.message));
@@ -112,7 +129,7 @@ test("every .rocx file here: formatting it keeps its code, and formatting it aga
 			if (statSync(path).isDirectory()) return /^(build|dist|Generated|node_modules|run-.*)$/.test(entry) ? [] : rocxFiles(path);
 			return path.endsWith(".rocx") ? [path] : [];
 		});
-	const files = ["site", "web/test/app", "test/e2e"].flatMap((dir) => rocxFiles(join(root, dir)));
+	const files = ["site", "web/test/app", "test/e2e", "packages", "examples"].flatMap((dir) => rocxFiles(join(root, dir)));
 	assert.ok(files.length > 20);
 	for (const file of files) {
 		const source = readFileSync(file, "utf8");

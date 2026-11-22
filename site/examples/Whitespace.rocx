@@ -10,6 +10,7 @@ Whitespace := [].{
 				<a href="/links">link</a> or a value like
 				{name}, and each break is one space.
 			</p>
+			<p><b>On the tag's line: </b>a space stays.</p>
 			<pre>kept   as
   written</pre>
 		</div>
