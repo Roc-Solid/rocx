@@ -22,7 +22,7 @@ import ../../Ui/Versus
 
 meta = {
 	title: "Components",
-	description: "rocx components: Solid 2.0-style signals in Roc. Rendered on the server into a page's islands, hydrated in the browser, patched where they change.",
+	description: "rocx components: Solid 2.0-style signals in Roc. A page is one tree of them, rendered on the server, hydrated in the browser, patched where they change.",
 	toc: [
 		{ id: "glance", label: "At a glance" },
 		{ id: "kinds", label: "Pure and effectful components" },
@@ -38,7 +38,7 @@ meta = {
 		{ id: "control", label: "Show and For" },
 		{ id: "transitions", label: "Transitions" },
 		{ id: "contexts", label: "Contexts" },
-		{ id: "islands", label: "Islands: one app, many places" },
+		{ id: "tree", label: "One page, one tree" },
 		{ id: "waiting", label: "Waiting and failing" },
 		{ id: "pending", label: "Loading again: is_pending!" },
 		{ id: "solid", label: "Coming from Solid" },
@@ -55,14 +55,14 @@ view! = |_|
 				title="Values that change, and values that are on their way"
 				actions={[
 					<Button href="#todos" primary>Try it</Button>,
-					<Button href="#islands">Putting one on a page</Button>,
+					<Button href="#tree">Putting one on a page</Button>,
 					<Button href="#solid">Coming from Solid</Button>,
 				]}
 			>
 				The interactive parts of a page, after Solid 2.0, written in Roc. A component runs once; each hole
 				in its markup runs again when what it reads changes, and patches its own node. An answer from the
 				server is read as a plain value, and boundaries say what shows while it is on its way, or when it
-				fails. A page's islands are one app, sharing its signals and contexts.
+				fails. A page is one tree of components: the server renders it, and the browser hydrates it.
 			</PageHero>
 
 			<Heading id="glance">At a glance</Heading>
@@ -448,7 +448,7 @@ view! = |_|
 				Solid 2.0's control flow: a part made once, then switched, moved or dropped, never compared.
 				Below, the same picks twice, a row per id on the left and a row per position on the right. Click,
 				and watch what each does: a ring shows what changed, in the colour of what happened to it. (The
-				picks come from a <a href="#contexts">context</a>, which the <a href="#islands">tally</a> further
+				picks come from a <a href="#contexts">context</a>, which the <a href="#tree">tally</a> further
 				down reads too.)
 			</p>
 		</NoHydration>
@@ -570,36 +570,37 @@ view! = |_|
 					</li>
 				</ul>
 
-				<Heading id="islands">Islands: one app, many places</Heading>
+				<Heading id="tree">One page, one tree</Heading>
 				<p>
-					A page is rendered once, on the server, and runs nothing in the browser. Where it wants a component,
-					it says which, by name:
+					A route answers with a page, and a page is one tree of components: its layouts, then the page, then
+					the components in it. A component goes on a page as it goes in another component, by its tag, with
+					its props. There is nothing to register and nothing to name.
 				</p>
-				<Code title="A page, in part" source={"<div class=\"demo\">{=Html.island(\"todos\")}</div>\n# <rocx-island data-island=\"todos\"></rocx-island>"} numbers={Bool.False} />
 				<p>
-					The app's islands are one component, its root, which renders each in an <code>{"<Island name>"}</code>,
-					under the contexts it provides them all. The server renders the islands a page has places for into
-					those places, and the browser hydrates them, all at once, from one wasm, as Solid's
-					<code>{"<Portal>"}</code> renders its children elsewhere. This site's root:
+					The server renders the whole tree, and the browser hydrates the whole document. So two components
+					far apart on a page share what a component above both of them provides: a context. The picks above
+					and this tally are far apart, and this page puts one <code>{"<PicksContext>"}</code> around both, the
+					prose between them included. Further down, one <code>{"<BagContext>"}</code> holds the shelf and the
+					bag:
 				</p>
-				<Code title={Sources.components_demos.file} source={Sources.components_demos.rocx} />
+				<Code title={"${Sources.components_demos.file}, in part"} source={Sources.components_demos.rocx} numbers={Bool.False} />
 				<p>
-					So the picks above and this tally, far apart on the page, are one app. Add Zig here, then look at
-					the picks; clear the picks, and the tally says so.
+					A layout can provide one the same way, for every page under it. Add Zig here, then look at the
+					picks; clear the picks, and the tally says so.
 				</p>
 			</NoHydration>
 			<Demo inspect="tally">
 				<div data-demo="tally" data-flash="yes"><Tally /></div>
 				<NoHydration>
-					<Note>An island of its own, sharing the picks' store with the one in <a href="#control">Show and For</a>.</Note>
+					<Note>A component of its own, reading the same store as the picks in <a href="#control">Show and For</a>.</Note>
 				</NoHydration>
 			</Demo>
 		</PicksContext>
 		<NoHydration>
 			<p>
-				And a shelf and a bag, two more islands sharing a store. The shelf's stock and who is reading are
+				And a shelf and a bag, two more components sharing a store. The shelf's stock and who is reading are
 				GET endpoints' answers (<code>/api/shelf</code>, <code>/api/reader</code>): the server read both as
-				it rendered the islands, and put the answers in the page, so the browser asked for neither.
+				it rendered the page, and put the answers in it, so the browser asked for neither.
 			</p>
 		</NoHydration>
 		<BagContext value={Bag.store!({})}>
@@ -616,24 +617,35 @@ view! = |_|
 			</details>
 			<ul>
 				<li>
-					<strong>Sharing a store is sharing a signal.</strong> Nothing is copied or sent between islands: a
-					write in one patches what reads it in the other, as in one component.
+					<strong>Sharing a store is sharing a signal.</strong> Nothing is copied or sent between components
+					that share one: a write in one patches what reads it in the other, as in one component.
 				</li>
 				<li>
-					<strong>Per request, by construction.</strong> Solid's islands usually share module-level signals,
-					which on a server every request shares too (SolidStart warns against it; context is its answer).
-					Roc has no module-level state: the root makes the store, once per page on the server and once in
-					the browser, and provides it.
+					<strong>Per request, by construction.</strong> In Solid, components far apart often share a signal
+					made at a module's top level, which on a server every request shares too (SolidStart warns against
+					it; context is its answer). Roc has no module-level state, and each request renders its own tree:
+					this page makes the store as it runs (<code>{"Picks.store!({})"}</code>, the provider's value), once
+					for each request on the server, and once in the browser as it hydrates.
 				</li>
 				<li>
-					<strong>Only the page's islands run.</strong> The server renders the islands the page has places
-					for, and nothing in the others: on a page without the shelf, its endpoint isn't read. The answers
-					go once, at the end of the page, and the browser hydrates every island at once.
-					A page with no islands loads no wasm.
+					<strong>Only the page's tree runs.</strong> The server renders the route's layouts, its page and the
+					components in them, and nothing else: on a page without the shelf, its endpoint isn't read. The
+					answers go once, at the end of the page, beside <code>/rocx/start.js</code>, which loads the runtime
+					and the app's wasm and hydrates the document. Every page loads the same wasm, with every page's
+					components in it.
 				</li>
 				<li>
-					<strong>One that doesn't match</strong> what the app renders is rendered again alone, with a
-					warning; the others keep the server's nodes.
+					<strong>What stays the server's goes in a <code>{"<NoHydration>"}</code></strong> (Solid's name):
+					prose, listings, anything that never changes in the browser. The server renders it as plain HTML.
+					The browser's copy of it is a placeholder, so none of it is in the wasm, and hydrating passes over
+					it. An endpoint read inside isn't put in the page, since the browser never makes it. This page's
+					prose is in them, between the demos.
+				</li>
+				<li>
+					<strong>A page that doesn't match</strong> what the app renders (a browser extension added a node,
+					the parser repaired the markup) has its <code>{"<body>"}</code> rendered again from the same answers,
+					with a warning. <code>{"<head>"}</code> and the <code>{"<NoHydration>"}</code> regions keep the
+					server's nodes.
 				</li>
 			</ul>
 
@@ -676,8 +688,8 @@ view! = |_|
 				</li>
 			</ul>
 			<p>
-				On the server nothing waits: an endpoint read there is answered in-process, there and then, so an
-				island is rendered with its answers in. <a href={Paths.calls}>Talking to the server</a> follows one,
+				On the server nothing waits: an endpoint read there is answered in-process, there and then, so a
+				page is rendered with its answers in. <a href={Paths.calls}>Talking to the server</a> follows one,
 				from the server's render to a key in the browser.
 			</p>
 			<details>
@@ -766,7 +778,8 @@ view! = |_|
 						<tr><td><code>{"<PicksContext value={store}>"}</code></td><td>the same</td></tr>
 						<tr><td><code>{"useContext(PicksContext)"}</code></td><td><code>{"use_context!(picks_context)"}</code></td></tr>
 						<tr><td><code>{"<Loading>"}</code>, <code>{"<Errored>"}</code></td><td>the same</td></tr>
-						<tr><td>islands (SolidStart, Astro)</td><td><code>{"<Island name>"}</code> in the root, <code>Html.island</code> on a page</td></tr>
+						<tr><td><code>{"<NoHydration>"}</code></td><td>the same (<code>Html.no_hydration</code>)</td></tr>
+						<tr><td>islands (SolidStart, Astro)</td><td>none: a page is one tree, hydrated whole, with what stays the server's in a <code>{"<NoHydration>"}</code></td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
@@ -835,20 +848,21 @@ view! = |_|
 				<li>
 					<strong>On the server, nothing waits</strong>
 					<span>
-						An endpoint read there is answered in-process, so each island renders with every answer in,
-						comments where its holes are, into its place on the page, and the answers go at the end of it.
+						An endpoint read there is answered in-process, so the page renders with every answer in,
+						comments where its holes are, and the answers go at the end of it, with the script that starts
+						the browser's side.
 					</span>
 				</li>
 				<li>
 					<strong>In the browser, nothing is made twice</strong>
 					<span>
-						One runtime walks every island's nodes and binds each computation to its own, reading the
-						answers from the page. An island that isn't what the app renders is rendered again, with a
-						warning.
+						The runtime walks the whole document and binds each computation to its own node, reading the
+						answers from the page, and passes over every <code>{"<NoHydration>"}</code>. A page that isn't
+						what the app renders has its <code>{"<body>"}</code> rendered again, with a warning.
 					</span>
 				</li>
 			</ol>
-			<Code title="What the server sends for the echo's island (spaced out)" source={Sources.echo_rendered.rocx} markup={Bool.True} numbers={Bool.False} />
+			<Code title="What the server sends for the echo, in part (spaced out)" source={Sources.echo_rendered.rocx} markup={Bool.True} numbers={Bool.False} />
 			<p>
 				<a href={Paths.platform_browser}>The browser's platform</a> has the rest: the wasm, its host, the
 				runtime, and the numbers.
@@ -860,11 +874,11 @@ view! = |_|
 				<div class="roadmap-done">
 					<h3>Works now</h3>
 					<ul>
-						<li>Signals, memos, <code>refresh!</code></li>
+						<li>Signals, memos, <code>refresh!</code>, <code>is_pending!</code></li>
 						<li>Holes: text, attributes, classes, custom properties</li>
 						<li>Accessor props</li>
 						<li>Contexts, and components that run where they are rendered</li>
-						<li>A page's islands as one app, sharing signals and contexts</li>
+						<li>A page as one tree, hydrated whole; <code>{"<NoHydration>"}</code> for what stays the server's</li>
 						<li>A signal goes with the part that made it</li>
 						<li><code>{"<Show>"}</code>, with a <code>Try</code> to narrow</li>
 						<li><code>{"<For>"}</code>, by key and by position</li>
@@ -888,7 +902,7 @@ view! = |_|
 					<ul>
 						<li><code>{"<Switch>"}</code>, <code>{"<Match>"}</code>, <code>{"<Repeat>"}</code>, keyed <code>{"<Show>"}</code></li>
 						<li><code>untrack</code>, an effect's <code>error</code> handler</li>
-						<li><code>isPending</code> and <code>latest</code>: a refresh shows the old value until the new one is in, and nothing says it is coming</li>
+						<li><code>latest</code>, which Solid 2.0 has beside <code>isPending</code></li>
 						<li>Stores, as <code>createStore</code> makes them: nested, each field its own signal</li>
 					</ul>
 				</div>
@@ -896,7 +910,7 @@ view! = |_|
 					<h3>Later, or not yet</h3>
 					<ul>
 						<li>The rest of the router's actions: <code>.with</code>, <code>retry</code>, saying which reads a result reads again</li>
-						<li>Props for an island from its page (today the root gives each its own)</li>
+						<li>Going to another page without loading it: a link is a page load, for now</li>
 						<li>
 							Two rules the runtime enforces: read async values in holes, not in a component's body, and
 							write signals in handlers

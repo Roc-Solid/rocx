@@ -2,8 +2,8 @@ import pf.Html
 import pf.Solid exposing [use_context!]
 import Picks
 
-## The picks, counted: another island, elsewhere on the page, given the
-## same store by the <PicksContext> above every island. What it adds shows in
+## The picks, counted: another component, elsewhere on the page, given the
+## same store by the <PicksContext> the page puts around both. What it adds shows in
 ## the picks, and what they change shows here.
 Tally := [].{
 	view! : {} => Html

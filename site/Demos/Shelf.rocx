@@ -7,8 +7,8 @@ import Bag
 import ../Generated/Api
 
 ## A shelf of things to put in the bag: what is on it is a GET endpoint's answer
-## (`routes/api/shelf/+server.roc`), which the server renders the shelf with; what is in the bag is the store the islands share, so a thing put
-## in it shows in the bag, another island, and the bag emptied shows here.
+## (`routes/api/shelf/+server.roc`), which the server renders the shelf with; what is in the bag is
+## the store the shelf and the bag share: a thing put in it shows in the bag, the bag emptied shows here.
 Shelf := [].{
 
 	## What is on the shelf: `GET /api/shelf`, read as a plain value.

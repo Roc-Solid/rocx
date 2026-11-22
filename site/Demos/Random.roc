@@ -1,5 +1,5 @@
-## Pseudo-random numbers, purely: each one comes with the seed for the next. An island keeps the
-## seed in its model, so the same moves always give the same game.
+## Pseudo-random numbers, purely: each one comes with the seed for the next. A component keeps the
+## seed in a signal, so the same steps always give the same numbers.
 Random := [].{
 
 	## A number from 0 up to (not including) 1, and the next seed.

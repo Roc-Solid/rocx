@@ -6,9 +6,9 @@ import pf.For
 import pf.Show
 import ../Generated/Api
 
-## The bag the shelf puts things in, and an island that shows it. The bag is a store: signals in a
-## context, which the islands' root provides (`<BagContext>`), so the shelf and the bag, apart on
-## the page, read and write the same one.
+## The bag the shelf puts things in, and a component that shows it. The bag is a store: signals in
+## a context, which the page provides around both (`<BagContext>`), so the shelf and the bag, apart
+## on the page, read and write the same one.
 Bag := [].{
 	Thing : { name : Str, price : U64 }
 

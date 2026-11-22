@@ -32,10 +32,11 @@
 ##   kept rather than sent.
 ## - A page's components are Solid-style (web/runtime.js hydrates the document in the browser). A
 ##   GET endpoint a component reads while the host renders the page (`Endpoint.get!`) is answered by
-##   its route, in-process (`Host.fetch!`). The modules components are written with (`Html`, `Solid`, `Show`,
-##   `For`, `Loading`, `Errored`, `Context`, `Call`, `Router`, `HttpStatusCode`), and HTTP's
-##   (`Server`, `Endpoint`, `Channel`, `Middleware`, `Events`, `OpenApi`), are the browser's platform's
-##   (web/platform), copied here by the build, so the same code compiles on both.
+##   its route, in-process (`Host.fetch!`). The modules components are written with (`Html`, `Solid`,
+##   `Show`, `For`, `Loading`, `Errored`, `Context`, `Call`, `Router`, `HttpStatusCode`, `Transition`,
+##   `Title`, `Browser`, `Audio`, `Submission`, `Submissions`), and HTTP's (`Server`, `Endpoint`,
+##   `Channel`, `Middleware`, `Events`, `OpenApi`), are the browser's platform's (web/platform),
+##   copied here by the build, so the same code compiles on both.
 ##
 ## Each call is a coroutine on one of a few threads of Roc's own (D-027), which pauses while an
 ## effect (`Db.all!`, a stream's `sleep!`) waits, so it holds up no other request and holds no

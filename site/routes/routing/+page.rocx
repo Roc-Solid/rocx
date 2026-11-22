@@ -359,8 +359,8 @@ view! = |_|
 			<Heading id="limits">Not yet</Heading>
 			<Callout kind="note" title="Navigation is a page load">
 				<p>
-					A link loads the next page from the server, its islands with it, as on any page of plain HTML.
-					Navigating in the browser, without a page load, is next.
+					A link loads the next page from the server, as on any page of plain HTML, and the browser
+					hydrates it from the start. Navigating in the browser, without a page load, is next.
 				</p>
 			</Callout>
 			<ul>

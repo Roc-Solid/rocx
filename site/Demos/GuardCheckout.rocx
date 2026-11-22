@@ -5,8 +5,8 @@ import guard.Flagged
 import GuardFlags
 
 ## The page a visitor gets, with the new checkout or the old: the flags decided for them, in the
-## context `<Flagged>` reads. An app decides them in a server function (`FlagStore.values!`); here
-## they are decided where the page is rendered, when the site is built.
+## context `<Flagged>` reads. An app decides them on the server, in a GET endpoint the page reads
+## (`FlagStore.values!`); here they are decided where the page is rendered, when the site is built.
 GuardCheckout := [].{
 
 	view! : { who : Flags.Who } => Html

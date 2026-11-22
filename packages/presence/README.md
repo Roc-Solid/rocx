@@ -18,7 +18,7 @@ here = Presence.create_room!(|| {})
 <TypingIndicator names!={Wire.names((here.members!)(), (here.typing!)())} />
 ```
 
-The server keeps the room in memory: one server instance, so there is no broker to run.
+The server keeps each room itself, as an actor: one server instance, so there is no broker to run.
 
 ## Three parts
 
@@ -49,8 +49,8 @@ package in the app's header, by its directory's name:
 app [program] { presence: "../packages/presence/main.roc", pf: platform "…" }
 ```
 
-**The server's side is `server/PresenceServer.roc`.** It imports `Actor`, `Live` and `Events`, which
-only the server's platform has, and `rocx build` doesn't copy a package's server modules yet (see
+**The server's side is `server/PresenceServer.roc`.** It imports `Actor`, `Live`, `Random` and
+`Time`, which only the server's platform has, and `rocx build` doesn't copy a package's server modules yet (see
 PROPOSALS.md, "Server-only modules in packages"). For now, copy it into the app, beside `main.roc`,
 and import it from there (`import ../PresenceServer` in a route file).
 
@@ -167,10 +167,11 @@ topic as it makes it; each page's stream listens, sends a snapshot, then the cha
 whose beats stop is swept out 75 s after the last (a browser may hold a hidden tab's timers back to
 once a minute).
 
-**With channels** (D-020, coming), the three endpoints become one channel, and nothing in the
-components or the stores changes: `Channel.subscribe!(lobby, { room }, |event| …)` feeds `heard!`,
-and `Channel.send!` replaces the posts. PROPOSALS.md lists what presence asks
-of channels.
+**Channels** (D-020) have landed since, with hooks for what presence asked of them (PROPOSALS.md,
+C1 to C9); this glue doesn't use them yet. On a channel, the three endpoints would be one route's
+`channel!` (its `on_open!` sending the snapshot, `on_close!` leaving, `receive!` taking what pages
+say), `Endpoint.subscribe!(Api.channel_presence_room({ room: room }), …)` would feed `heard!`, and
+`Endpoint.say!` would replace the posts. Nothing in the components or the stores would change.
 
 ## `<AvatarStack>`
 
@@ -244,11 +245,12 @@ Works today:
   later (the 5 s grace, then the next sweep); over plain HTTP, a tab that beat once and went silent
   was swept out after the 75 s timeout.
 
+Not done yet: the glue on channels (D-020, landed), for one stream for every room on a page, and
+messages from the page without a request each.
+
 Waits on a proposal (PROPOSALS.md):
 
 - `rocx build` copying `server/` into the server's half (Server-only modules in packages);
-- one stream for every room on a page, and messages from the page without a request each
-  (channels: C1 to C9);
 - sending your own cursor (W1), a clock in the browser (W2), `away` when a tab is hidden (W3);
 - presence without a database write per beat (S1);
 - the app's own metadata type on the wire, instead of `Wire.Meta` (R1).

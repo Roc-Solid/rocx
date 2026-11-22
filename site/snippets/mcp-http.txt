@@ -5,7 +5,7 @@ program = App.program({
 	crons: [],
 })
 
-# Agents.roc: an endpoint, a server function and a handler of the app's own, a tool each
+# Agents.roc: an endpoint, a function and a handler of the app's own, a tool each
 server : Mcp.Server(McpHttp.Caller(Context))
 server = {
 	name: "notes",

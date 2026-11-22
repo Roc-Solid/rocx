@@ -36,9 +36,9 @@ view! = |_|
 			>
 				A <code>.rocx</code> file is Roc in which markup may stand wherever an expression can.
 				<code>rocx build</code> turns it into the plain Roc beside it, line for line, so the Roc
-				compiler checks every value you put in a page. Pages are rendered on the server, once. The
-				parts that answer the reader are components, as in Solid: the server renders them into the
-				page, and in the browser the same Roc, compiled to WebAssembly, takes them over.
+				compiler checks every value you put in a page. A page is components, as in Solid: the server
+				renders it whole, and in the browser the same Roc, compiled to WebAssembly, takes it over. What
+				only the server needs to show stays plain HTML, in a <code>{"<NoHydration>"}</code>.
 			</PageHero>
 
 			<Heading id="why">Why rocx</Heading>
@@ -64,23 +64,24 @@ view! = |_|
 						maps to break.
 					</p>
 				</Feature>
-				<Feature title="Fine-grained islands">
+				<Feature title="Fine-grained, end to end">
 					<p>
-						Pages are plain HTML. Only the islands hydrate, and in them a component runs once: a change
-						runs only the holes that read what changed, and each patches its own node. Nothing is
-						rendered twice to find out what changed.
+						The server renders the page whole, and the browser hydrates it: a component runs once, and a
+						change runs only the holes that read what changed, each patching its own node. Nothing is
+						rendered twice to find out what changed, and a <code>{"<NoHydration>"}</code> stays plain HTML.
 					</p>
 				</Feature>
 			</FeatureGrid>
 
 			<Heading id="kinds">Pages, components, the server</Heading>
 			<Way kind="Pages" href={Paths.routing} more="Routing →" code={[<Code source={Sources.hello.rocx} numbers={Bool.False} />]}>
-				A page is a file, <code>routes/…/+page.rocx</code>: markup the server renders once per
-				request, with layouts around it. It runs nothing in the browser.
+				A page is a file, <code>routes/…/+page.rocx</code>: a component the server renders per request,
+				with layouts around it, and the browser hydrates. What it wraps in
+				<code>{"<NoHydration>"}</code> stays the server's.
 			</Way>
 			<Way kind="Components" href={Paths.components} more="Components →" code={[<Code source={Sources.home_update.rocx} numbers={Bool.False} />]}>
 				Solid 2.0's model: a component runs once and makes signals; its holes that read them are
-				computations that patch their own nodes. A page puts one where it wants it, as an island.
+				computations that patch their own nodes. A page puts one where it wants it, as any element.
 			</Way>
 			<Way kind="Endpoints" href={Paths.calls} more="Talking to the server →" code={[<Code source={Sources.way_endpoint.rocx} numbers={Bool.False} />]}>
 				A route's <code>+server.roc</code>: a method at a URL, typed at both ends. A component reads a

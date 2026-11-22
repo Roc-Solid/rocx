@@ -38,11 +38,11 @@ platform, but only the very one the app names, and an app is two apps, one on th
 (the browser's) and one on the server's. So `rocx build` copies them into the app, where `pf` means
 whichever platform each half is on:
 
-1. Name the package in both of the app's headers (`client.roc` and `server.roc`), by its
-   directory's name:
+1. Name the package in the app's header (`main.roc`), by its directory's name. The browser's
+   app, which `rocx build --client` writes, names the same packages:
 
    ```roc
-   app [...] { charts: "../packages/charts/main.roc", pf: platform "…" }
+   app [program] { charts: "../packages/charts/main.roc", pf: platform "…/server/platform/main.roc" }
    ```
 
 2. `rocx build` writes each component to the app's `Generated/charts/` (`Generated/charts/BarChart.roc`),

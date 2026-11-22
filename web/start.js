@@ -6,7 +6,7 @@
 // Everything is beside this file, so the site may be served under a path of its own: at
 // example.github.io/rocx/ this is /rocx/rocx/start.js, the runtime /rocx/rocx/runtime.js, the wasm
 // /rocx/rocx/app.wasm, and the base, the directory above, /rocx/. The runtime asks for the URLs Roc
-// gives (server functions, fetches, streams) under that base, and `Router.location!` takes it off
+// gives (endpoints, fetches, streams) under that base, and `Router.location!` takes it off
 // the page's path.
 //
 // A page that sets `window.rocxStrict = true` before this runs (the tests do) hydrates strictly: a

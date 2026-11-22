@@ -319,8 +319,9 @@ view! = |_|
 			<ul>
 				<li>
 					<strong>Server-only modules in packages.</strong> <code>rocx build</code> copies a package's
-					components into an app, but not its server-only modules. Until it does,
-					<code>packages/guard/server/*.roc</code> is copied into the app by hand.
+					components into an app, but not its server-only modules. Until it does, <code>Guard.roc</code>,
+					<code>FlagStore.roc</code> and <code>Kept.roc</code> from <code>packages/guard/server/</code> are
+					copied into the app by hand.
 				</li>
 				<li>
 					<strong>The client's address.</strong> The server platform doesn't hand Roc the address a

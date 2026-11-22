@@ -196,10 +196,10 @@ browser's half):
 
 - The official clients: the MCP Inspector's CLI (2.16.0, which speaks 2025-11-25) and the
   TypeScript SDK's v2 client (`@modelcontextprotocol/client` 2.4.0) pinned to 2026-07-28 and in
-  `auto` mode (it asks `server/discover`, and stays current). Tools from an endpoint, a server
-  function and handlers, a refusal, an unknown tool, resources, a template, a prompt, and a
+  `auto` mode (it asks `server/discover`, and stays current). Tools from an endpoint, a function of
+  the app's and handlers, a refusal, an unknown tool, resources, a template, a prompt, and a
   reporting tool's progress, streamed as events, all as the spec says.
-- The protocol package: 150 expects.
+- The protocol package: 137 expects.
 
 Waits on a proposal (PROPOSALS.md):
 
@@ -214,7 +214,7 @@ Waits on a proposal (PROPOSALS.md):
 - No list-change notifications or resource subscriptions (`subscriptions/listen`), no
   `completion/complete`, no logging to the client, no requests from the server (sampling,
   elicitation, or 2026-07-28's `input_required`).
-- One server instance, no sessions: nothing is kept between requests.
+- No sessions: nothing is kept between requests.
 - Every record field of a tool's arguments is required (as the platform's schemas say); an optional
   argument is a `Tool.new` tool's.
 - Batches (a JSON array of messages) are refused: no revision since 2025-06-18 has them.

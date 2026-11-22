@@ -10,8 +10,8 @@ import Server
 ##     weather = Http.fetch!("${api}/forecast", { query: [("city", city)] })?.json()?
 ##     Http.fetch!(url, { method: Post, body: Http.json(order) })?
 ##
-## The host makes each request (`server/host/src/client.rs`), waiting on the call's thread, as `Db`
-## and `Tcp` do. Any status is an answer (`Ok`, an `HttpResponse`): a 404 or a 500 is the other
+## The host makes each request (`server/host/src/client.rs`), the call pausing while it waits, as
+## with `Db` and `Tcp`. Any status is an answer (`Ok`, an `HttpResponse`): a 404 or a 500 is the other
 ## server's to give, and `res.ok` says whether it is a success. An `Err` means there was none: it
 ## couldn't be reached, TLS failed, or it broke off (`HttpErr`); it didn't answer whole in time
 ## (`TimedOut`); its body was larger than allowed (`TooLarge`).

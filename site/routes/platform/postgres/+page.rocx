@@ -8,7 +8,7 @@ import ../../../Ui/PageHero
 
 meta = {
 	title: "Postgres",
-	description: "Postgres on the rocx server platform: queries whose rows decode into the record you annotate, transactions that take jobs with them, migrations built into the app, and roc-pg, a client in Roc whose queries are checked when the app is built.",
+	description: "Postgres on the Roc Solid server platform: queries whose rows decode into the record you annotate, transactions that take jobs with them, migrations built into the app, and roc-pg, a client in Roc whose queries are checked when the app is built.",
 	toc: [
 		{ id: "query", label: "A query" },
 		{ id: "rows", label: "Rows, as records" },
@@ -91,8 +91,8 @@ view! = |_|
 				An app's migrations are in its executable: <code>program.migrations</code> lists them, each a name and
 				its SQL, which Roc reads from a <code>.sql</code> file when the app is compiled. When the server
 				starts, the platform's Roc applies them in the order listed, each once, each in a transaction,
-				recorded by name in <code>rocx_migrations</code>; two servers starting at once take turns (an
-				advisory lock). The platform's own tables (<code>rocx_jobs</code>, <code>rocx_actors</code>) come
+				recorded by name in <code>rocx_migrations</code>; two starting at once (a deploy's old server and its
+				new one) take turns (an advisory lock). The platform's own tables (<code>rocx_jobs</code>, <code>rocx_actors</code>) come
 				first. One that fails stops the server, saying why.
 			</p>
 			<Code title={"${Sources.platform_migrations.file}, in part"} source={Sources.platform_migrations.rocx} numbers={Bool.False} />
@@ -100,9 +100,10 @@ view! = |_|
 
 			<Heading id="where">Where it can be used</Heading>
 			<p>
-				Anywhere on the server: a page as it renders, an endpoint, a job, an actor, a stream. So a component
-				reads its data from a database through a GET endpoint: the handler runs only on the server, so it
-				may query, and the browser's copy has only the endpoint's method and URL
+				Anywhere only the server runs: an endpoint, a middleware, a job, an actor, a stream. A component is
+				compiled for the browser too, so it reads its data from a database through a GET endpoint
+				(<code>Endpoint.get!</code>, answered in-process as the server renders the page): the handler runs
+				only on the server, so it may query, and the browser's copy has only the endpoint's method and URL
 				(<a href={"${Paths.calls}#user"}>who is asking</a>). A
 				statement takes a connection from a pool of 16, and gives it back; a transaction keeps one until it
 				ends. Statements are prepared once per connection, and kept.

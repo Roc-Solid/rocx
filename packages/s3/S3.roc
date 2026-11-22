@@ -19,8 +19,8 @@ import SigV4
 ## speaks plain `http`; otherwise `https`. A character in the key or the secret that a URL would
 ## read otherwise is written `%XX` (a `/` in the secret may stay as it is).
 ##
-## Requests are signed here (`SigV4`) and sent with the bucket's `send!`, waiting on the call's
-## thread. A key is an object's name in the bucket, `/`s and all (`videos/41`); bytes are
+## Requests are signed here (`SigV4`) and sent with the bucket's `send!`, the call pausing while it
+## waits. A key is an object's name in the bucket, `/`s and all (`videos/41`); bytes are
 ## `List(U8)`, read and sent whole: `get_range!` reads a large object a piece at a time, and `serve!`
 ## answers a request with one of any size, streamed by the server, never read into Roc. Every
 ## operation but `signed_url!` is a request to S3, and may fail with `S3Err` (S3 answered, refusing:

@@ -55,8 +55,8 @@ When a query finds nothing, `get` says what there is instead (`NotFound("nothing
 for a `dbg`.
 
 **2. The app, from Node: `node:test` over HTTP.** Build the app as a deploy builds it, start its
-server on a port of its own, and ask it as a browser would: a cookie jar, forms, JSON, server
-functions, events. Each answer's `dom` holds the same queries, with Testing Library's names.
+server on a port of its own, and ask it as a browser would: a cookie jar, forms, JSON, the
+endpoints a page reads, events. Each answer's `dom` holds the same queries, with Testing Library's names.
 
 ```js
 import { test, before, after } from "node:test";
@@ -93,7 +93,13 @@ test("a welcome is mailed", async () => {
 });
 ```
 
-`rocx routes <dir>` lists the endpoints a page may read (`GET /notes`).
+`rocx routes <dir>` lists the app's routes, each with its method, path, file and middleware
+(`GET /notes`).
+
+`mail()` and `waitForMail` read the dev mailbox's JSON (`/__rocx/mail.json`, which `--debug`
+serves): the last 100 messages `Email.send!` kept rather than sent (no `--smtp-url`), oldest first,
+each with an `id`. The server keeps them in its memory (`Kv`), database or not, so each server a
+test starts has an empty mailbox, and a restart forgets it.
 
 **3. Its database and its jobs.** `testDatabase()` makes a database of the test's own in the
 Postgres at `DATABASE_URL`, and `drop()` removes it. The server runs its migrations into it when it
@@ -188,7 +194,7 @@ Works today, and is tested here. `roc test packages/testing/main.roc` runs `Dom`
 Waits on a proposal (PROPOSALS.md):
 
 - a clock a test sets, and seeded randomness (a test mode in the server);
-- outbound `Http` and `Storage` stubbed, so a test makes no network calls;
+- outbound `Http` stubbed (an S3 bucket's requests too, packages/s3), so a test makes no network calls;
 - jobs and crons run by a request, without SQL;
 - clearing the dev mailbox between tests;
 - requests answered in-process from Roc, and `view!` components rendered in a Roc test (`rocx test`);

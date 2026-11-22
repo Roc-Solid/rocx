@@ -4,8 +4,8 @@ A Django-style admin for a Roc Solid app's Postgres tables: an index of tables, 
 with a search, a filter in every column, sorting and pages, a form for each row, adding and deleting
 rows. It reads
 the tables from Postgres's catalog when a page is asked for, so there is nothing to generate and
-nothing to keep in step with the schema. It looks like the platform's jobs page and dev mailbox,
-and is mounted the same way: one route file, behind the app's own middleware.
+nothing to keep in step with the schema. It is mounted as the platform's jobs page is: one route
+file, behind the app's own middleware.
 
 ```roc
 # routes/admin/db/+server.roc
@@ -198,7 +198,7 @@ packages/admin/main.roc` runs their `expect`s.
 | `Listing` | a list's search, filters, sort and page from the query, and back (`read`, `params`, `conditions`, `order`); each column's filter (`kind`) and the check of its values (`check`) |
 | `Paging` | `of(total, size, asked)`, `offset`, `shows`, `links` (Django's: the first two, three each side, the last two) |
 | `View` | each page's HTML, and a list's row of filters |
-| `Look` | the page around it: the jobs page's stylesheet, and the headers |
+| `Look` | the page around it: a copy of the stylesheet the platform's jobs page had before its redesign, and the headers |
 | `Form` | a query's or a form's fields, decoded; links, encoded |
 
 Every statement answers with rows of one shape (each cell as text, and which were null), so one
@@ -216,7 +216,8 @@ Waits on a proposal (PROPOSALS.md):
 - **Server-only modules in packages**: then `AdminPage` moves to the package's `server/`, imports
   `Db` and `Random` itself, and the route's `respond!` is
   `AdminPage.respond!(request, context, admin)`.
-- **The platform's admin look for apps** (`AdminHtml`): `Look` is a copy of its stylesheet today.
+- **The platform's admin look for apps** (`AdminHtml`): `Look` is a copy of its stylesheet from
+  before the jobs page's redesign, so the admin and the jobs page look different today.
 
 ## Limits, for now
 

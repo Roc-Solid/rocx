@@ -40,8 +40,8 @@ view! = |_|
 				Django's admin, for a Roc Solid app: a page for each table, its rows with a search, a filter in
 				every column, sorting and pages, a form for each row, and a way to add and delete rows. It reads the tables from
 				Postgres's own catalog when a page is asked for, so there is nothing to generate, and nothing to keep
-				in step with the schema. It looks like the platform's <a href={"${Paths.platform_jobs}#page"}>jobs page</a>,
-				and is mounted the same way: one route file, behind the app's own middleware.
+				in step with the schema. It is mounted as the platform's <a href={"${Paths.platform_jobs}#page"}>jobs page</a>
+				is: one route file, behind the app's own middleware.
 			</PageHero>
 
 			<Heading id="first">A first admin</Heading>
@@ -286,7 +286,7 @@ view! = |_|
 						<tr><td><code>Listing</code></td><td>a list's search, filters, sort and page from the query, and back (<code>read</code>, <code>params</code>, <code>conditions</code>, <code>order</code>, <code>key</code>), each column's filter (<code>kind</code>) and the check of its values (<code>check</code>)</td></tr>
 						<tr><td><code>Paging</code></td><td><code>of(total, size, asked)</code>, <code>offset</code>, <code>shows</code>, <code>links</code>: the first two pages, three each side of this one, the last two</td></tr>
 						<tr><td><code>View</code></td><td>each page's HTML: <code>index_page</code>, <code>list_page</code>, <code>row_page</code>, <code>delete_page</code>, <code>problem_page</code></td></tr>
-						<tr><td><code>Look</code></td><td>the document around a page, its stylesheet (the jobs page's), and the headers it is sent with</td></tr>
+						<tr><td><code>Look</code></td><td>the document around a page, its stylesheet (a copy of the jobs page's from before its redesign), and the headers it is sent with</td></tr>
 						<tr><td><code>Form</code></td><td>a query's or a form's fields, decoded, and links, encoded</td></tr>
 					</tbody>
 				</table>
@@ -294,7 +294,7 @@ view! = |_|
 
 			<Heading id="status">Status</Heading>
 			<p>
-				Everything on this page works today, with the server platform as it is. The package's 141
+				Everything on this page works today, with the server platform as it is. The package's 165
 				<code>expect</code>s test its plain modules. The whole admin was tried end to end in a scratch app
 				against Postgres 18: an enum, a check, foreign keys, a key of two columns, generated and identity
 				columns, every page and form, and the refusals. That test isn't in the repository's suite yet, since
@@ -311,7 +311,8 @@ view! = |_|
 				<li>
 					<strong>The platform's admin look for apps</strong>: the server platform draws the jobs page with a
 					module apps can't import yet (<code>AdminHtml</code>), so <code>Look</code> holds a copy of its
-					stylesheet. Exposed, it would be one look in one place.
+					stylesheet from before the jobs page's redesign, and the two look different today. Exposed, it would
+					be one look in one place.
 				</li>
 			</ul>
 			<p>Not yet:</p>

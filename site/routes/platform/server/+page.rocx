@@ -15,7 +15,7 @@ meta = {
 		{ id: "streams", label: "Streams" },
 		{ id: "crashes", label: "A crash ends one call" },
 		{ id: "memory", label: "Memory" },
-		{ id: "islands", label: "Islands, rendered here" },
+		{ id: "pages", label: "Pages, rendered here" },
 		{ id: "background", label: "Background loops, isolated calls" },
 		{ id: "tcp", label: "Tcp and Random" },
 		{ id: "running", label: "Running it" },
@@ -47,7 +47,8 @@ view! = |_|
 				<li>
 					<strong>Rust:</strong> HTTP (tokio, hyper), a pool of Postgres connections and one that listens,
 					TCP and TLS sockets, live topics and rooms, background loops, isolated calls, actors' mailboxes
-					and timers, a store in memory, secure random numbers, rendering islands.
+					and timers, values in memory (<code>Kv</code>), secure random numbers, rendering pages of
+					components.
 				</li>
 				<li>
 					<strong>Roc</strong> (<code>server/platform/*.roc</code>): migrations, the jobs queue and its
@@ -130,23 +131,24 @@ view! = |_|
 			<p>
 				The tests crash 200 requests at once, half of them after allocating 2,000 strings, and check that Roc
 				holds no allocation afterwards (<code>--debug</code> serves the count at
-				<code>/__rocx/allocations</code>). This site's tests render its pages' islands again and again and
-				check the same.
+				<code>/__rocx/allocations</code>). This site's tests render its pages again and again and check the
+				same.
 			</p>
 
-			<Heading id="islands">Islands, rendered here</Heading>
+			<Heading id="pages">Pages, rendered here</Heading>
 			<p>
-				When a page the app answers has <code>{"<rocx-island data-island=\"name\">"}</code> elements, the host
-				renders those islands into them (<code>server/host/src/signals.rs</code>), as the browser's runtime
-				would: every component run once, every hole once, nothing tracked and nothing waiting, a memo
-				computed when it is made, an endpoint a component reads answered by its route, in-process. The
-				answers go in a script at the end of the page, each under its URL, so the browser reads them instead
-				of asking. An island the page hasn't isn't run.
+				A page the app answers is one tree of components: its layouts, the page, and what they hold. The
+				host renders it whole (<code>server/host/src/signals.rs</code>), as the browser's runtime would:
+				every component run once, every hole once, nothing tracked and nothing waiting, a memo computed when
+				it is made, an endpoint a component reads answered by its route, in-process. The answers go in a
+				script at the end of the page, each under its URL, with <code>/rocx/start.js</code>, so the browser
+				reads them instead of asking. A <code>{"<NoHydration>"}</code> is rendered as plain HTML, with no
+				markers in it: the browser never hydrates it.
 			</p>
 			<p>
 				A failure (a context nothing provides, a memo that failed) shows the nearest
-				<code>{"<Errored>"}</code>'s fallback, as in the browser; a crash leaves the islands empty, and the
-				browser renders them itself. A read (<code>Endpoint.get!</code>) is a GET of one of the app's own
+				<code>{"<Errored>"}</code>'s fallback, as in the browser; a crash ends the render, and the page is
+				answered with 500. A read (<code>Endpoint.get!</code>) is a GET of one of the app's own
 				paths, which the app's <code>respond!</code> answers, behind the route's middleware. While the host
 				renders, it is that request, made in-process (<code>Host.fetch!</code>):
 				<code>accept: application/json</code>, the page's headers, cookies among them, the context the server
@@ -155,7 +157,7 @@ view! = |_|
 				reads the browser never makes. An answer that isn't 200 fails the read, and the nearest
 				<code>{"<Errored>"}</code> shows its status and text; a redirect makes the page that redirect. The
 				site's tests compare what the host renders with what the browser's
-				runtime renders, byte for byte, on every page with islands.
+				runtime renders, byte for byte, on every page.
 			</p>
 
 			<Heading id="background">Background loops, isolated calls</Heading>
@@ -241,10 +243,6 @@ view! = |_|
 
 			<Heading id="limits">Not yet</Heading>
 			<ul>
-				<li>
-					<strong>One server.</strong> Live rooms, topics and actors' mailboxes are in its memory (jobs and
-					actors' state are in Postgres already).
-				</li>
 				<li><strong>HTTP/1.1, no TLS:</strong> put it behind a proxy.</li>
 				<li><strong>A stack overflow in Roc</strong> still ends the process (it says so first).</li>
 			</ul>

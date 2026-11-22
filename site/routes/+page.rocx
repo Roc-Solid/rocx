@@ -54,12 +54,13 @@ view! = |_| {
 			</Way>
 			<Way kind="Platform" href={Paths.platform_} more="The platform →" code={[<Code source={Sources.platform_job.rocx} numbers={Bool.False} />]}>
 				What it runs on. On the server, Roc compiled to native code in a Rust host, with Postgres,
-				jobs and cron, email, live rooms and actors. In the browser, the components, compiled to
-				WebAssembly, and a page of JavaScript.
+				jobs and cron, email, values in memory, live rooms, channels and actors. In the browser, the
+				components, compiled to WebAssembly, and a page of JavaScript.
 			</Way>
 			<Way kind="Ecosystem" href={Paths.ecosystem} more="The ecosystem →" code={[<Code source={Sources.charts_use.rocx} numbers={Bool.False} />]}>
 				What it can use: packages of plain Roc and components, which work in both halves of an app.
-				Twelve so far: charts, crypto, files in S3, forms, Markdown, intl, an admin, guards, MCP, presence, Web Push and testing.
+				Thirteen so far: charts, crypto, files in S3, forms, Markdown, intl, an admin, guards, MCP,
+				OpenTelemetry, presence, Web Push and testing.
 			</Way>
 
 
@@ -76,19 +77,19 @@ view! = |_| {
 				<li class="pipeline-fork">
 					<div>
 						<span class="pipeline-file">server</span>
-						<span class="pipeline-step">native: pages, endpoints, islands rendered</span>
+						<span class="pipeline-step">native: pages rendered whole, endpoints</span>
 					</div>
 					<div>
 						<span class="pipeline-file">client.wasm</span>
-						<span class="pipeline-step">the islands only: the browser hydrates and runs them</span>
+						<span class="pipeline-step">the same pages: the browser hydrates and runs them</span>
 					</div>
 				</li>
 			</ol>
 			<p>
 				An app is two programs on two platforms, talking over HTTP. The server's is Roc compiled to native
 				code in a Rust host, which also runs jobs and cron, sends email, and keeps live rooms and actors,
-				with Postgres beneath it. The browser's is the islands, compiled to WebAssembly with a small Zig
-				host, and a page of JavaScript that hydrates them and applies what they change. The
+				with Postgres beneath it. The browser's is the same pages, compiled to WebAssembly with a small Zig
+				host, and a page of JavaScript that hydrates what the server rendered and applies what changes. The
 				<a href={Paths.platform_}>platform docs</a> describe both.
 			</p>
 

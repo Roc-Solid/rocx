@@ -81,8 +81,10 @@ flag is decided by the same function on the server and in the browser.
 
 **The middleware is server-only Roc** (`server/`): `Guard` (every guard), `FlagStore` (flags while
 the server runs) and `Kept` (what the guards keep between requests). They import the server
-platform (`Middleware`, `Server`, `Time`, `Actor`), which a package can't: a Roc Solid app is two
-apps, and a package may only name the very platform its app does.
+platform (`Middleware`, `Server`, `Time`, `Env`, `Log`, `Actor`), which a package can't: a Roc Solid
+app is two apps, and a package may only name the very platform its app does. (`server/main.roc`
+names the server platform so that `roc check packages/guard/server/main.roc` checks the three on
+their own; it isn't copied.)
 
 **The component is a `.rocx` file** (`components/Flagged.rocx`), which `rocx build` copies into the
 app, as it copies packages/charts' charts.
@@ -91,12 +93,13 @@ app, as it copies packages/charts' charts.
 
 1. Name the package in the app's header (main.roc's, and the browser's, which `rocx build --client`
    writes from it): `guard: "../packages/guard/main.roc"`.
-2. Copy `server/*.roc` into the app, beside its main.roc, and import them by name (`import Guard`,
-   `import FlagStore`). `rocx build` doesn't copy a package's server-only modules yet: PROPOSALS.md,
-   "Server-only modules in packages", asks it to, into the server's half only.
+2. Copy `server/Guard.roc`, `server/FlagStore.roc` and `server/Kept.roc` into the app, beside its
+   main.roc, and import them by name (`import Guard`, `import FlagStore`). `rocx build` doesn't
+   copy a package's server-only modules yet: PROPOSALS.md, "Server-only modules in packages", asks
+   it to, into the server's half only.
 3. `import guard.Flagged` in a `.rocx` file: `rocx build` copies the component.
 
-`example/` does all three: copy `server/*.roc` into it, then `rocx build .` there.
+`example/` does all three: copy those three modules into it, then `rocx build .` there.
 
 ## Rate limits
 
@@ -255,7 +258,8 @@ Chromium, under the default CSP.
 
 Waits on a proposal (PROPOSALS.md):
 
-- **Server-only modules in packages**: until then, `server/*.roc` is copied into the app by hand.
+- **Server-only modules in packages**: until then, `Guard`, `FlagStore` and `Kept` are copied into
+  the app by hand.
 - **The client's address**: until then, `Direct` can't tell clients apart.
 - **Memory: state between requests**: the platform has a place for it now, `Kv` (D-028), but the
   guards haven't moved onto it. Until they do, they keep their state as actors' state, a message

@@ -1,6 +1,6 @@
 ## The site's program, on the server platform (`server/platform`: native code, in a Rust host). rocx
-## build writes nearly all of it from site/routes (`Generated/App`: every page, endpoint and server
-## function, behind the site's default middleware); this says what only the site can: what its
+## build writes nearly all of it from site/routes (`Generated/App`: every page and endpoint, behind
+## the site's default middleware); this says what only the site can: what its
 ## middleware is given, which middleware that is, its schedules (none), and that it serves its
 ## endpoints' OpenAPI document, with a page to read it in (`/openapi.json`, and `/openapi.html` in
 ## Swagger UI). The browser's half is the same pages, compiled to WebAssembly from the browser's copy

@@ -99,8 +99,9 @@ needs no platform itself. A middleware can call it as well, and hand the tag on 
 
 ## In components: the `Language` context
 
-`rocx build` copies `components/Language.rocx` into the app (as charts' components are copied).
-The root layout makes the store and provides it; `<html lang dir>` follow it:
+Name the package in the app's header (`main.roc`), as charts is named:
+`intl: "../packages/intl/main.roc"`. `rocx build` copies `components/Language.rocx` into the app
+(as charts' components are copied). The root layout makes the store and provides it; `<html lang dir>` follow it:
 
 ```roc
 # routes/+layout.rocx

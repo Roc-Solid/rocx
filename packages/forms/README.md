@@ -30,8 +30,8 @@ signup.parse_body("name=&email=ada%40&age=12&plan=gold")
 
 ## A whole example: one schema, a page, an endpoint
 
-Name the package in the app's header, as `charts` is named (`rocx build` gives the browser's half
-the same packages):
+Name the package in the app's header, as `charts` is named (`rocx build --client` gives the
+browser's half the same packages):
 
 ```roc
 app [program] { forms: "../packages/forms/main.roc", pf: platform "../server/platform/main.roc" }

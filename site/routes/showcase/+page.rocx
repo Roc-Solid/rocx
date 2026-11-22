@@ -32,7 +32,7 @@ view! = |_|
 				eyebrow="Showcase"
 				title="A game and a flock, run by Roc"
 			>
-				They are islands like the rest: the server rendered them, and your browser woke them up. But
+				They are components like the rest: the server rendered them, and your browser hydrated them. But
 				these run on time, not only on clicks. Every animation frame goes to Roc, which moves things;
 				only the holes that read what moved run again, and patch the few attributes that changed.
 			</PageHero>
@@ -173,7 +173,7 @@ view! = |_|
 			<Callout kind="note" title="The server starts none">
 				<p>
 					While the server renders the page, no timer runs: the clock is rendered at 0, and the browser,
-					waking the island up, starts its interval.
+					hydrating the page, starts its interval.
 				</p>
 			</Callout>
 			<details>

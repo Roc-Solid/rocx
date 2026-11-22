@@ -39,6 +39,11 @@ files! : {} => Try(S3.Bucket, [StorageErr(Str)])
 files! = |{}| S3.from_url(Env.var!("STORAGE_URL") ?? "", { send!: Http.send!, now!: Time.now_millis! })
 ```
 
+`Http.send!` is deprecated for an app's own requests (D-024: `Http.fetch!`), but it is the one a
+bucket takes. `fetch!` answers with the platform's `HttpResponse`, a type a package on no platform
+can't name; `send!`'s request, options and answer are plain records, which `S3.Request`, `S3.Opts`
+and `S3.Response` write out.
+
 The URL:
 
 ```

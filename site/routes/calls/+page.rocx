@@ -104,8 +104,9 @@ view! = |_|
 				</li>
 				<li>
 					<Who kind="browser">browser</Who> A read whose answer isn't in the page (its URL built from a
-					signal an <code>{"<input>"}</code> writes, say), or one read again with
-					<code>refresh!(memo!)</code>, is a GET of the endpoint's own URL, for JSON. Until the answer is
+					signal an <code>{"<input>"}</code> writes, say), or one read again (<code>refresh!(memo!)</code>,
+					or every read on the page once a submission is answered with a result), is a GET of the endpoint's
+					own URL, for JSON. Until the answer is
 					in, the memo keeps its last value, so what is shown stays; <code>{"<Loading>"}</code> only waits for
 					first values, and <a href={"${Paths.components}#pending"}><code>is_pending!(memo!)</code></a> is
 					true meanwhile. Answers may come back in any order: the memo only takes the one for what it asked
@@ -150,7 +151,7 @@ view! = |_|
 			<p>
 				The GET the server makes as it renders carries the page's cookies and headers. So a handler reads who
 				is asking from the request, whether the browser sent it or the server made it, and never takes the
-				browser's word for it. The bag on the <a href={"${Paths.components}#islands"}>components page</a> says
+				browser's word for it. The bag on the <a href={"${Paths.components}#tree"}>components page</a> says
 				whose bag it is this way:
 			</p>
 			<Versus>
@@ -278,6 +279,14 @@ view! = |_|
 					<strong>Behind middleware, as any endpoint.</strong> A guard refuses a stream as it refuses
 					anything else, before the loop runs.
 				</li>
+				<li>
+					<strong>For live data a page follows, a channel.</strong> Each <code>listen!</code> is a stream of
+					its own, checked once as it starts. Channels (a route's <code>channel!</code>) share one stream a
+					tab, whatever it subscribes to; each is checked again every 15 s, and a subscriber is told to read
+					its data again (<code>Resync</code>) when it may have missed something: <code>Endpoint.subscribe!</code>
+					from an effect, <code>Endpoint.publish!</code> from a request, a job or an actor. See
+					<a href={"${Paths.platform_live}#channels"}>channels</a>.
+				</li>
 			</ul>
 			<Code title={"${Sources.demo_count.file}, in part"} source={Sources.demo_count_update.rocx} numbers={Bool.False} />
 			<p>
@@ -310,7 +319,9 @@ view! = |_|
 				<li>
 					<strong>With the runtime</strong>, a form posting to the endpoint of a submission a component reads
 					is sent with <code>fetch</code>, and the page stays. <code>pending!()</code> holds until the answer
-					is in; then <code>result!()</code> is the endpoint's result, or <code>error!()</code> its refusal
+					is in, and after a result until the page's reads have been read again (as Solid Router revalidates
+					after an action), so the server's new data and the result show at once. Then
+					<code>result!()</code> is the endpoint's result, or <code>error!()</code> its refusal
 					(<code>Refused(409, "…")</code>), or why there was no answer. <code>input!()</code> is what was sent,
 					as the endpoint reads it, and <code>field!(name)</code> one field. The latest submission is the one
 					that counts; <code>clear!()</code>, in a handler, forgets it. A redirect of the endpoint's own
@@ -330,11 +341,20 @@ view! = |_|
 					behind this site's <a href={Paths.members_join}>joining page</a> does (it sets a cookie too).
 				</li>
 				<li>
+					<strong>Without a form, and every submission.</strong> <code>use_action!(endpoint)</code>
+					(<code>useAction</code>) is a function a handler calls with the endpoint's arg: a submission of its
+					own, sent without waiting. <code>use_submissions!(endpoint)</code> (<code>useSubmissions</code>)
+					lists every submission to it, a form's or an action's: <code>all!()</code>,
+					<code>pending!()</code>, <code>pending_inputs!()</code> and <code>clear!(id)</code>. An optimistic
+					value is a memo of the endpoint's data with <code>pending_inputs!()</code> applied: see
+					<a href={"${Paths.components}#actions"}>actions</a> on the components page.
+				</li>
+				<li>
 					<strong>Where it differs from Solid:</strong> a record has no getters, so the fields are methods;
 					the form's <code>action</code> is the endpoint's URL (<code>Endpoint.url_of</code>), since Roc can't
 					turn an endpoint into a string by itself; <code>input!()</code> is the endpoint's own type, not a
-					<code>FormData</code>. There is no <code>useSubmissions</code>, <code>useAction</code> or
-					<code>.with</code> yet.
+					<code>FormData</code>. There is no <code>.with</code> or <code>retry</code> yet, and a result
+					reads every GET the page read again, with no keys to narrow it.
 				</li>
 			</ul>
 
@@ -388,7 +408,8 @@ view! = |_|
 				<li>
 					<strong>A page reads with GET.</strong> While it renders, the server answers GETs of the app's own
 					endpoints (a path, <code>/…</code>); anything else, a POST or another site's URL, is a handler's,
-					sent from the browser.
+					sent from the browser. Another server's data a page needs as it renders comes through an endpoint
+					of the app's own, whose handler asks for it with <code>Http.fetch!(url, init)</code>.
 				</li>
 				<li>
 					<strong>A form the runtime sends is URL-encoded.</strong> A form with files
@@ -408,11 +429,12 @@ view! = |_|
 				</li>
 				<li>
 					<strong>A static copy of the site has no server.</strong> Its pages are files, and so are the answers
-					the server gave as it was built: each page's GETs, in the page, and the GETs its islands make from
-					handlers (<code>just site</code> writes those). A read it didn't make then, a POST, a stream: those
-					need the server, <code>just dev</code> or wherever the server's app runs. This site's demos need
-					none: <a href="https://roc-solid.github.io/">roc-solid.github.io</a> is such a copy, files on GitHub
-					Pages, and every demo works there.
+					the server gave as it was built: each page's GETs, in the page, and the GETs its components make
+					from handlers (<code>just site</code> writes those). A read it didn't make then, a POST, a stream: those
+					need the server, <code>just dev</code> or wherever the server's app runs. This page's echo and shout
+					need none: <a href="https://roc-solid.github.io/">roc-solid.github.io</a> is such a copy, files on
+					GitHub Pages, and they work there. A demo that sends or follows something (the planner's moves, the
+					lobby's channel) says there that no server answers.
 				</li>
 				<li>
 					<strong>Only what a handler does leaves the browser's copy.</strong> Anything else a component

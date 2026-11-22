@@ -205,7 +205,7 @@ view! = |_|
 		<p>Works today:</p>
 		<ul>
 			<li>
-				The protocol, both eras: 150 <code>expect</code>s. And over HTTP, in an app built with
+				The protocol, both eras: 137 <code>expect</code>s. And over HTTP, in an app built with
 				<code>rocx build</code> on the server platform, with the official clients: the MCP Inspector's
 				command line (2.16.0, which speaks 2025-11-25), and the TypeScript SDK's client (2.4.0) on 2026-07-28.
 				Tools from an endpoint, a function and handlers, refusals, resources, a template, a prompt,
@@ -233,7 +233,7 @@ view! = |_|
 				No list-change notifications or resource subscriptions, no completions, no logging to the client,
 				and no requests from the server to the client (sampling, asking the user).
 			</li>
-			<li>Nothing is kept between requests: one server, no sessions.</li>
+			<li>No sessions: nothing is kept between requests.</li>
 			<li>
 				Every field of a tool's arguments is required, as the platform's schemas say; an optional argument
 				is a <code>Tool.new</code> tool's, which reads any JSON.

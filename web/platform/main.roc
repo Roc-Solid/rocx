@@ -1,13 +1,13 @@
 ## The browser's platform: an app's page, Solid 2.0-style components, in one wasm module the
 ## browser loads (web/start.js and web/runtime.js run it). A component runs once; its markup's holes
-## are computations the runtime runs again when what they read changes; an async read (a server
-## function's answer, a memo waiting for one) aborts its computation until it is in, and the
+## are computations the runtime runs again when what they read changes; an async read (an
+## endpoint's answer, a memo waiting for one) aborts its computation until it is in, and the
 ## nearest <Loading> or <Errored> shows instead.
 ##
 ## - `main!`: the app's root, the page (`rocx build --client` writes it: `Generated/Root`), which
 ##   the browser hydrates from the document the server rendered. The server platform
-##   (`server/platform`) renders the same components natively, and answers their calls to server
-##   functions; the browser's copy of an app answers none.
+##   (`server/platform`) renders the same components natively, and answers the endpoints they read;
+##   the browser's copy of an app answers none.
 ##
 ## The modules both platforms have are written here, and the server platform's build copies them:
 ## the components' (`Html`, `Solid`, `Show`, `For`, `Transition`, `Loading`, `Errored`, `Context`,

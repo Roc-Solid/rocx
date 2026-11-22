@@ -11,7 +11,7 @@ import ../../../Demos/Lobby
 
 meta = {
 	title: "Live, channels and actors",
-	description: "State that outlives a request on the rocx server platform: live topics and rooms that streams share; channels, typed and checked, that pages subscribe to over one stream a tab; and actors that handle one message at a time, in order, with typed asks, tells and timers, their state kept in Postgres.",
+	description: "State that outlives a request on the Roc Solid server platform: live topics and rooms that streams share; channels, typed and checked, that pages subscribe to over one stream a tab; actors that handle one message at a time, in order, with typed asks, tells and timers, their state kept in Postgres; and values kept in memory by key (Kv).",
 	toc: [
 		{ id: "rooms", label: "Rooms: who is here" },
 		{ id: "topics", label: "Topics: what was said" },
@@ -274,7 +274,7 @@ view! = |_|
 					<code>{"Kv.push!(key, value, { keep })"}</code> and <code>Kv.list!(key)</code>: a capped list, newest first.
 				</li>
 				<li>
-					It holds 64 MiB (<code>--kv-max-mb</code>); past that the least recently used values go. Keys name
+					It holds 64 MiB (<code>--kv-max-mb</code>, or <code>KV_MAX_MB</code>); past that the least recently used values go. Keys name
 					their owner first (<code>login:…</code>, <code>email:outbox</code>), so a package's never meet an app's.
 				</li>
 			</ul>
@@ -297,11 +297,6 @@ view! = |_|
 
 			<Heading id="limits">Not yet</Heading>
 			<ul>
-				<li>
-					<strong>One server.</strong> Rooms, topics, channels and actors' mailboxes are in its memory; with
-					two servers, each would have its own. Postgres's <code>listen</code>/<code>notify</code> could carry
-					them between servers later.
-				</li>
 				<li><strong>An actor's state is JSON</strong> in one row, written after each message that changes it: fine for a cart, not for a ledger.</li>
 				<li>
 					<strong>Timers and tells are in memory.</strong> A restart loses those not yet handled: a job is
@@ -312,12 +307,14 @@ view! = |_|
 				<p>
 					The platform's tests open streams that join a room and count each other, publish to listeners,
 					open one stream for many channels (one refused), say things on one, end one whose check fails at a
-					beat, fall behind on one, and keep 40 streams open on 8 threads while requests still answer; in a
+					beat, fall behind on one, and keep 40 streams open on two Roc threads while requests still answer; in a
 					browser, two components share one stream, a change reconnects once, and a drop reconnects a
 					little later each time;
 					ask an actor a hundred times at once, crash one, have one ask another, itself and one waiting on
 					it, tell one in order, set and cancel timers, send one a message it doesn't take, let one go
-					when idle and wake it, and restart the server to find an actor's state where it was.
+					when idle and wake it, and restart the server to find an actor's state where it was; and in
+					<code>Kv</code>, let a value expire, count 200 increments at once, cap a list, and go past the limit
+					to see the least recently used values go.
 				</p>
 			</Callout>
 		</NoHydration>

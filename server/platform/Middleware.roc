@@ -35,8 +35,8 @@ Middleware(given, handed) :: { run : Server.Request, given, (Server.Request, han
 		go(request, context, last!)
 	}
 
-	## A request that would change something (POST, PUT, PATCH, DELETE: a call to a server function,
-	## a form, an endpoint) sent by another site's page refused, with a 403. A page of another site
+	## A request that would change something (POST, PUT, PATCH, DELETE: a form, an endpoint's send,
+	## an action) sent by another site's page refused, with a 403. A page of another site
 	## can make a browser send one, with this site's cookies; a browser says which site's page did
 	## (`Origin`). A client that isn't a page (`curl`) sends none, and is let through.
 	same_origin : {} -> Middleware(context, context)

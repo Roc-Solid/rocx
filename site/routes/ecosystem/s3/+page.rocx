@@ -55,6 +55,12 @@ view! = |_|
 				at. <code>S3.from_url</code> reads the URL and asks nothing of S3 yet; an app keeps the URL in its
 				environment and makes its bucket where it needs one.
 			</p>
+			<p>
+				An app's own requests use <code>Http.fetch!</code>, and <code>Http.send!</code> is deprecated, but a
+				bucket takes <code>send!</code>: <code>fetch!</code> answers with the platform's
+				<code>HttpResponse</code>, a type a package on no platform can't name, while <code>send!</code>'s
+				request and answer are plain records the package writes out itself.
+			</p>
 			<Code
 				title="STORAGE_URL"
 				source={"s3://KEY:SECRET@127.0.0.1:9000/uploads?region=us-east-1&style=path&tls=no   # rustfs or MinIO, here\ns3://KEY:SECRET@<account>.r2.cloudflarestorage.com/uploads?region=auto       # R2\ns3://KEY:SECRET@s3.eu-west-1.amazonaws.com/uploads?region=eu-west-1          # AWS"}

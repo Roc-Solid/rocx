@@ -5,7 +5,8 @@ A component runs once, where it is rendered. Its markup's holes are computations
 again when what they read changes, patching only their own node. An async value (an endpoint's
 answer, a memo waiting for one) is read as a plain value: until it is in, the read aborts
 its computation, which runs again once it is. The nearest `<Loading>` shows its fallback until
-everything inside has its first values; a failure shows the nearest `<Errored>`. A context gives a
+everything inside has its first values; a memo read again keeps its last value meanwhile, and
+`is_pending!` says it is waiting; a failure shows the nearest `<Errored>`. A context gives a
 value to everything under its provider. An effect runs once the markup is on the page, and again
 when what it read changes, after its cleanup; a timer ticks until its component goes. A form posting
 to an endpoint a component reads the submission of is sent with `fetch`, and the page stays; a
@@ -22,9 +23,9 @@ same components natively; this one hydrates them.
 ## The parts
 
 - `platform/main.roc`, the header: an app provides `main!`, its root: a whole document (`rocx build
-  --client` writes it: the app's `Root`). The host provides `roc_mount` and `roc_run` (run a kept
-  box). The browser answers no requests: the server platform answers every endpoint, the GETs a
-  page reads as it renders among them.
+  --client` writes it: the app's `Root`). The platform gives the host `roc_mount` and `roc_run` (run
+  a kept box). The browser answers no requests: the server platform answers every endpoint, the
+  GETs a page reads as it renders among them.
 - `platform/*.roc`, what components are written with: `Html` (markup whose holes are closures,
   escaping, safe URLs), `Solid` (`create_signal!`, `create_memo!`, `create_effect!`,
   `on_cleanup!`, `on_settled!`, `refresh!`, `is_pending!`, `use_context!`, and the browser's timers, `set_interval!` and
@@ -33,15 +34,21 @@ same components natively; this one hydrates them.
   `Show`, `For`, `Loading`, `Errored`, `Context`, `Call` (`fetch!`, `listen!`), `Router` (`location!`: the page's path and query; `use_submission!`: the latest
   submission to an endpoint; `use_submissions!`: all of them; `use_action!`: one a handler sends
   without a form), `Submission` (its `pending!`, `input!`, `field!`, `result!`, `error!`,
-  `clear!`), `Submissions` (`all!`, as records, `pending!`, `pending_inputs!`, `clear!`), `Title` (`<Title>`: the document's title, from anywhere in the
-  page) and `HttpStatusCode` (the status a page is answered with); and HTTP's: `Server` (a request,
-  its body the bytes as they came, which `text_of` reads as text, and its answer: text, bytes, a
+  `clear!`), `Submissions` (`all!`, as records, `pending!`, `pending_inputs!`, `clear!`),
+  `Transition` (what `transition`, `transition:in`, `transition:out` and `transition:move` play:
+  `fade`, `fly`, `scale`, `grow`, `glide`, `style`; `ms`, `delay`, `easing`, `origin`, `plus`),
+  `Title` (`<Title>`: the document's title, from anywhere in the page) and `HttpStatusCode` (the status a
+  page is answered with); and HTTP's: `Server` (a request, its body the bytes as they came, which `text_of` reads as text, and its answer: text, bytes, a
   page, events, or a body the server fetches from elsewhere and sends on, `forward`, with what of
   the request it passes on, `passed_on`; cookies and redirects; the flash a plain form's post comes
   back with, `flash!`, `flash_back`, `clear_flash`), `Endpoint` (a
   GET endpoint read as a plain value, `get!` or `read!`, with a query, `with_query`; any endpoint
-  sent from a handler, `send!`, or listened to, `listen!`), `Events`, `Middleware` and `OpenApi`. The server platform's build copies them into `server/platform`, so the same code
-  compiles on both.
+  sent from a handler, `send!`, or listened to, `listen!`; a form's `action`, `url_of`; a channel
+  subscribed to, `subscribe!`, said to, `say!`, or resynced, `resync!`, and, on the server,
+  published on, `publish!` and `publish_latest!`, or an endpoint run there and then, `run!`),
+  `Channel` (what a route's `channel!` answers, `Channel.allow(who)`, and what a subscriber hears),
+  `Events`, `Middleware` and `OpenApi`. The server platform's build copies them into
+  `server/platform`, so the same code compiles on both.
 - `host/host.zig`, inside the wasm: Roc's memory (its allocator, and a count of live allocations),
   and every hosted function passed through to JavaScript.
 - `runtime.js`: keeps Roc's closures as boxes by id; signals, memos, effects and computations, and
@@ -313,7 +320,7 @@ same components natively; this one hydrates them.
   moves with it; a glide playing is stopped and the next starts from where the element is seen.
   Hydrating and mounting measure nothing; with `prefers-reduced-motion: reduce`, nothing glides.
   The server writes nothing for them.
-- **An observer** (`runtime.observer`: `seeded`, `call`, `answer`, `fetch`, `fetched`, `listen`,
+- **An observer** (`runtime.observer`: `seeded`, `fetch`, `fetched`, `listen`,
   `heard`, `unlisten`, `patch`, `row`, `show`, `frame`, `effect` (a call of the page's own
   function), `apply` (an effect's apply), `submit`, `submitted`, `revalidate` (a result reading the
   page's reads again), `glide` (an element moving), and the hub's `subscribe`, `unsubscribe`,
@@ -325,13 +332,15 @@ same components natively; this one hydrates them.
 The test app (`test/app`, in rocx) is built several ways: the profile (`Profile.rocx`: five
 answers, one spinner, regions that fail on their own, a rename that waits for the server) from the
 dev backend and optimized; the picks (`<For>` by key and by position, `<Show>`); the fades (`Fades.rocx`:
-rows and a part with transitions, a computed one, a list inside the part); the echo (a server
-function, rendered in Node and hydrated); the reads (`Reads.rocx`: a GET endpoint read as the page
-renders, with the page's query, rendered from the answer the server noted, hydrated strictly without
-asking again, and read from its URL again when its events say so); the docs' demos, a whole document, far apart, sharing a
-store through a context; the tally
-with nothing to provide its store; and a whole document (`Document.rocx`; inside an `<Errored>`,
-`Wrapped.rocx`), rendered in Node as the server platform answers a page and hydrated by
+rows and a part with transitions, a computed one, a list inside the part); the echo (`Echo.rocx`: a
+GET endpoint read with what is typed, rendered in Node from the answer the server gave, hydrated
+without asking again, and asked again as one types); the reads (`Reads.rocx`: a GET endpoint read
+as the page renders, with the page's query, rendered from the answer the server noted, hydrated strictly without
+asking again, and read from its URL again when its events say so); `is_pending!` (`Pending.rocx`:
+false on the first load, true while a refresh is on its way, false on the server); the docs' demos
+(`Docs.rocx`: one document, its parts far apart, the picks and the tally sharing a store through a
+context); the tally with nothing to provide its store (`Alone.rocx`); and a whole document
+(`Document.rocx`; inside an `<Errored>`, `Wrapped.rocx`), rendered in Node as the server platform answers a page and hydrated by
 `start.js`; effects, a cleanup, a timer and a listen (`Effects.rocx`); a form's submission
 (`Form.rocx`); props read in a hole and outside one, and an accessor (`Props.rocx`); `<Title>`s
 (`Titles.rocx`); channels (`Channels.rocx`: two feeds on one org's news, a third on another's); and a

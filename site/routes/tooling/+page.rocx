@@ -24,10 +24,11 @@ view! = |_|
 		<NoHydration>
 			<PageHero
 				eyebrow="Tooling"
-				title="Three commands, and the compiler you already have"
+				title="A few commands, and the compiler you already have"
 			>
-				rocx is a transpiler with no dependencies: one file of JavaScript turns markup into Roc, and the
-				Roc compiler does the rest. The tooling is about keeping that invisible.
+				rocx is a transpiler, written in Roc and built into one executable (<code>bin/rocx</code>): it
+				turns markup into Roc, and the Roc compiler does the rest. The tooling is about keeping that
+				invisible.
 			</PageHero>
 
 			<Heading id="commands">Commands</Heading>
@@ -36,19 +37,19 @@ view! = |_|
 					<p class="command-usage">rocx build {"<dir>…"}<span>--client {"<out>"}</span></p>
 					<div>
 						<p>
-							Each <code>.rocx</code> under the directories becomes the <code>.roc</code> beside it: a page's
-							markup (<code>import html.Html</code>) rendered once, a component's (<code>import pf.Html</code>)
-							with computations and handlers. An app's <code>routes/</code> become
+							Each <code>.rocx</code> under the directories becomes the <code>.roc</code> beside it, its
+							markup written with the platform's <code>Html</code> (<code>import pf.Html</code>), with
+							computations and handlers. An app's <code>routes/</code> become
 							<code>Generated/Routes.roc</code>, <code>Paths.roc</code>, with endpoints, <code>Api.roc</code>,
 							and <code>Generated/App.roc</code>, the program its
 							<code>main.roc</code> gives what only it can say (<code>App.program</code>, with the jobs the app
-							defines and its <code>migrations/*.sql</code>). Route files that are components
-							(<code>import pf.Html</code>, <code>view!</code>) also get <code>Generated/Root.roc</code>, the page
-							at where it is in its layouts.
-							<code>--client</code> also writes the browser's copy of the app, where an endpoint in
-							<code>Api</code> is only its method and URL, a route file has no <code>middleware</code>, and
-							the imports only those used are gone; for components,
-							its <code>main.roc</code> and <code>static/rocx/</code>, where start.js loads the runtime and wasm.
+							defines and its <code>migrations/*.sql</code>). An app with pages (<code>view!</code> in a
+							route file) also gets <code>Generated/Root.roc</code>, the page at the browser's path, in its
+							layouts. <code>--client</code> also writes the browser's copy of the app, where an endpoint in
+							<code>Api</code> is only its method and URL, a route file has no <code>middleware</code>, a
+							<code>{"<NoHydration>"}</code> has no children, and the imports only those used are gone; for
+							an app with pages, its <code>main.roc</code> and <code>static/rocx/</code>, where start.js
+							loads the runtime and wasm.
 							If the browser's app reaches a module that imports what only the server has
 							(<code>pf.Db</code>, itself or through another module), the build warns at the import a page or
 							component makes, before the browser's build fails far from it.
@@ -126,15 +127,14 @@ view! = |_|
 				catalog of them at <code>/__rocx/stories</code>: every story down the side, which folds away
 				(<kbd>S</kbd>); the one picked in a frame, with the line it is written at, which can fill the
 				window (<kbd>F</kbd>, and <kbd>Esc</kbd> to come back); and a component's stories side by side.
-				A component's story is the app's page at its path, which the browser hydrates; one of
-				<code>html.Html</code> markup is shown in the front page's layouts, which can tell it by its
-				path (<code>/__rocx/stories/…</code>): this site's shows it on its own. The site's own build,
-				and what <code>just site</code> publishes, has no stories at all.
+				A story is the app's page at its path, which <code>Root</code> renders in the root layout and the
+				browser hydrates; the layout can tell it is a story by its path (<code>/__rocx/stories/…</code>):
+				this site's shows it on its own. The site's own build, and what <code>just site</code> publishes,
+				has no stories at all.
 			</p>
 			<Code title={Sources.ui_callout.file} source={Sources.ui_callout.rocx} />
 			<p>
-				A story may use the page (<code>page.request</code>, <code>page.context</code>). An app's
-				<code>stories/</code> directory holds modules of stories alone: drafts of something new, each a
+				An app's <code>stories/</code> directory holds modules of stories alone: drafts of something new, each a
 				component with its own <code>{"<style>"}</code>, side by side in the catalog. Only a dev build
 				has it, so nothing in it is published, its styles neither. This site's
 				<code>site/stories/Landing.rocx</code> has the front page as it is, and drafts of it in six
@@ -143,33 +143,35 @@ view! = |_|
 
 			<Heading id="setup">Setting up an app</Heading>
 			<p>
-				<code>html/</code> is a Roc package: the <code>Html</code> pages are written with. Add it to your
-				app's headers, run <code>rocx build</code> before <code>roc build</code>, and <code>rocx check</code>
-				instead of <code>roc check</code>. An app is two
-				programs (<a href={Paths.platform_}>the platform</a>): the server's, on the server platform (native, in
-				a Rust host), and the browser's, its islands, on the web platform (wasm). With pages in
-				<code>routes/</code> (<a href={Paths.routing}>routing</a>), the server's app answers every request
-				through the router rocx writes (the GETs it makes as a page renders too), behind its default
-				middleware, and gives the platform its islands' root:
+				Run <code>rocx build</code> before <code>roc build</code>, and <code>rocx check</code> instead of
+				<code>roc check</code>. An app is two programs (<a href={Paths.platform_}>the platform</a>): the
+				server's, on the server platform (native, in a Rust host), and the browser's, the same pages, on the
+				web platform (wasm). With pages in <code>routes/</code> (<a href={Paths.routing}>routing</a>), the
+				server's app answers every request through the router rocx writes (the GETs a page reads as it
+				renders too), behind its default middleware. rocx writes that program
+				(<code>Generated/App.roc</code>); the app's <code>main.roc</code> says what only it can:
 			</p>
 			<Code
-				title="server.roc"
-				source={"app [program] {\n\tpf: platform \"../server/platform/main.roc\",\n\thtml: \"../html/main.roc\",\n}\n\nimport pf.Server\nimport pf.Middleware\nimport Generated/Routes\nimport Islands\n\nprogram = {\n\trespond!,\n\tmigrations: [],\n\tjobs: [],\n\tcrons: [],\n\tsignals: { main!: Islands.view! },\n}\n\nrespond! = |method, target, headers, body, facts| {\n\trequest = Server.from_http(method, target, headers, body)\n\tMiddleware.same_origin({}).run!(request, { facts: facts }, |passed, context|\n\t\tRoutes.respond!(passed, context))\n}"}
+				title="main.roc"
+				source={"app [program] { pf: platform \"../rocx/server/platform/main.roc\" }\n\nimport pf.Middleware\nimport Generated/App\n\nprogram = App.program({\n\tcontext: |_started| {},\n\tmiddleware: Middleware.same_origin({}),\n\tcrons: [],\n})"}
 			/>
+			<p>
+				The browser's app is rocx's to write (<code>rocx build --client</code>): its root is the page,
+				which the browser hydrates. This site's:
+			</p>
 			<Code title={Sources.client_app.file} source={Sources.client_app.rocx} />
 			<Code
 				title="Justfile"
-				source={"build:\n\trocx/bin/rocx build app --client build/client\n\troc build --target=wasm32 --opt=size --specialize=yes --output=build/client.wasm build/client/client.roc\n\tnode rocx/server/build.mjs app/server.roc build/server --opt=speed\n\ncheck:\n\trocx/bin/rocx lint app\n\trocx/bin/rocx check -- roc check app/server.roc"}
+				source={"build:\n\t# The browser platform's host, a Zig object the wasm links with (once; site/build.mjs does the same)\n\tzig build-obj rocx/web/host/host.zig -target wasm32-freestanding -O ReleaseSmall -fcompiler-rt -femit-bin=rocx/web/platform/targets/wasm32/host.wasm\n\trocx/bin/rocx build app --client build/client\n\troc build --target=wasm32 --opt=size --specialize=yes --output=build/client/static/rocx/app.wasm build/client/main.roc\n\tnode rocx/server/build.mjs app/main.roc build/server --opt=speed\n\nserve:\n\tbuild/server --port 8080 --static build/client/static\n\ncheck:\n\trocx/bin/rocx lint app\n\trocx/bin/rocx check -- roc check app/main.roc"}
 				numbers={Bool.False}
 				plain
 			/>
 			<p>
-				Pages alone need no particular platform: the <code>html</code> package renders strings on any.
 				Requests, routes, endpoints, events and middleware are both platforms' (<code>pf.Server</code>,
-				<code>pf.Endpoint</code>, <code>pf.Middleware</code>, <code>pf.Events</code>, <code>pf.OpenApi</code>).
-				Islands need the <code>web/</code> platform in the browser, and a server that renders them (the
-				server platform does, natively); jobs, cron, email, Postgres, live rooms and actors are the server
-				platform's.
+				<code>pf.Endpoint</code>, <code>pf.Middleware</code>, <code>pf.Events</code>, <code>pf.OpenApi</code>),
+				and so are the modules components are written with, so the same component compiles on both.
+				Pages need the <code>web/</code> platform in the browser, and the server platform to render them,
+				natively; jobs, cron, email, Postgres, live rooms and actors are the server platform's.
 			</p>
 
 			<Heading id="repository">This repository</Heading>
@@ -177,8 +179,7 @@ view! = |_|
 				<table>
 					<thead><tr><th>Where</th><th>What</th></tr></thead>
 					<tbody>
-						<tr><td><code>src/</code></td><td>rocx: the transpiler and the command, in Roc on basic-cli, built into <code>bin/rocx</code></td></tr>
-						<tr><td><code>html/</code></td><td>the package pages are written with: markup, rendering, safety</td></tr>
+						<tr><td><code>rocx-cli/</code></td><td>rocx: the transpiler and the command, in Roc on basic-cli, built into <code>bin/rocx</code></td></tr>
 						<tr><td><code>web/</code></td><td>the browser's platform: its Roc header, the modules both platforms have (components'; and requests, endpoints, events, middleware), the Zig host, the runtime</td></tr>
 						<tr><td><code>server/</code></td><td>the server's platform: its Roc header and modules, the Rust host, the build</td></tr>
 						<tr><td><code>site/</code></td><td>this site: its pages in <code>routes/</code>, in rocx; <code>build.mjs</code> builds them, <code>serve.mjs</code> serves them</td></tr>

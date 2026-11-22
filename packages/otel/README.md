@@ -58,7 +58,7 @@ would make a series for each, so past 2000 series an instrument drops new ones (
 | --- | --- |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | the collector, `/v1/metrics` added (`http://localhost:4318`) |
 | `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | the URL itself, instead |
-| `OTEL_EXPORTER_OTLP_HEADERS` | `name=value,…`, percent-decoded (`Authorization=Basic%20…`) |
+| `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_METRICS_HEADERS` | `name=value,…`, percent-decoded (`Authorization=Basic%20…`); the second, if set, instead |
 | `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES` | the service (`unknown_service` without either) |
 | `OTEL_METRIC_EXPORT_INTERVAL` | milliseconds between sends (60000, at least 1000) |
 | `OTEL_METRIC_EXPORT_TIMEOUT` | milliseconds a send may take (30000) |
@@ -128,7 +128,7 @@ In Docker or Kubernetes, point `include` at the container's log files instead.
    `program.actors` itself.
 3. `Otel.middleware({})` first in the app's middleware.
 
-`example/` does all three (`cp ../server/*.roc . && rocx build .`): `GET /hello/<name>` counts
+`example/` does all three (`cp ../server/Otel.roc . && rocx build .`): `GET /hello/<name>` counts
 `app.greetings`.
 
 ## Checked against
@@ -142,7 +142,7 @@ In Docker or Kubernetes, point `include` at the container's log files instead.
 
 ## Not yet
 
-- **Traces.** They need to know, in `Db.all!` and `Http.send!`, which request they run for, with
+- **Traces.** They need to know, in `Db.all!` and `Http.fetch!`, which request they run for, with
   nothing passed by hand. Roc has no such context, so that waits on a talk with Roc's designers.
 - Gauges and up-down counters; exemplars; Prometheus's `/metrics` for pulling instead.
 - A job's duration and outcome (a wrapper for `Job.define`).

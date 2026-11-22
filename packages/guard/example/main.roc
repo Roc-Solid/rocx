@@ -3,7 +3,7 @@
 ## shows the new checkout to those who have it on. Its server-only modules aren't copied in by
 ## rocx build yet (PROPOSALS.md, "Server-only modules in packages"), so copy them by hand first:
 ##
-##     cp ../server/*.roc .
+##     cp ../server/Guard.roc ../server/FlagStore.roc ../server/Kept.roc .
 ##     rocx build .
 app [program] { guard: "../main.roc", pf: platform "../../../server/platform/main.roc" }
 

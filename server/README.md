@@ -1,14 +1,16 @@
 # Roc Solid's server platform
 
 Roc compiled to native code, in a Rust host: one executable that answers HTTP, streams events,
-renders pages of components, runs jobs and cron, sends email, keeps live rooms and actors, with
-Postgres beneath all of it. The browser's platform is `web/` (wasm): an app is two programs, one on
-each, talking over HTTP. The docs site's platform pages (`/platform`) say all this at more length.
+renders pages of components, runs jobs and cron, sends email, keeps live rooms, channels, actors
+and values in memory, with Postgres beneath all of it. The browser's platform is `web/` (wasm): an
+app is two programs, one on each, talking over HTTP. The docs site's platform pages (`/platform`)
+say all this at more length.
 
-The host (`host/`, Rust) gives Roc general things: HTTP, threads, a pool of Postgres connections
-and one that listens, TCP and TLS sockets, requests to other servers, live topics and rooms,
-background loops that sleep until woken, isolated calls, actors' mailboxes and timers, a store in
-memory, the environment, secure random numbers, AES-GCM, and rendering components. Migrations, the
+The host (`host/`, Rust) gives Roc general things: HTTP, coroutines that Roc's calls run on (below),
+a pool of Postgres connections and one that listens, TCP and TLS sockets, requests to other
+servers, live topics and rooms, channels' streams, background loops that sleep until woken,
+isolated calls, actors' mailboxes and timers, a key-value store in memory, the environment, secure
+random numbers, AES-GCM, and rendering components. Migrations, the
 jobs queue and its workers, cron, email (an SMTP client, MIME) and actors' state are the platform's
 Roc (`platform/*.roc`), written on those. Files in S3 and the crypto written in Roc (SHA-256, HMAC,
 HKDF, Base64, hex) are packages an app names, on no platform (`packages/s3`, `packages/crypto`:
@@ -30,13 +32,18 @@ program = {
     migrations: [{ name: "0001_tables.sql", sql: tables }],   # import "0001_tables.sql" as tables : Str
     jobs: [Job.handler(welcome)],               # what the job workers run
     crons: [Cron.every("0 3 * * *", nightly, {})],
+    actors: [Actor.handler(cart)],              # the kinds of actor (below)
     logs: { format: Auto },                     # the log's format: Auto, Pretty or Json (below)
 }
 ```
 
 `respond!` takes a request's method, target, headers (`name: value` a line), body (`List(U8)`, the
 bytes as they came) and what the server was started with (`--context-file`), and answers with a
-`Server.Response`: `Server.from_http` makes the request (`site/server.roc` is a whole app). The
+`Server.Response`: `Server.from_http` makes the request. An app with routes writes none of this
+record: `rocx build` writes `Generated/App`, whose `App.program({ context, middleware, crons,
+openapi })` is a program that answers every request with the app's routes (pages, `+server.roc`
+endpoints and channels) behind its middleware, and lists the jobs and kinds of actor its modules
+define and its `migrations/*.sql` (`site/main.roc` is a whole app). The
 response's body is text; bytes (`Server.bytes`, below); a body the host fetches from elsewhere and
 sends on (`Server.forward`, below); a page of components (`Page`), which the host renders (below); or
 a stream of `Events`, which the host runs in a call of its own with `{ send!, sleep! }`.
@@ -46,12 +53,13 @@ markup, made once per answer), 2 for the `feed`, 3 for the `bytes`, 4 for the `u
 method, URL and headers); the boxes an answer doesn't send do nothing, and the host releases them.
 `program.actors` lists the app's kinds of actor (`Actor.handler`), so the host can run an actor's
 turn when nobody waits on it (a tell, a timer). The platform exposes `Db`, `Job`, `Cron`, `Email`,
-`Kv`, `Live`, `Actor`, `Log`, `Time`, `Tcp`, `Http`, `Env`, `Random`, and `AesGcm`; the jobs page
-(`JobsPage`); the modules
-components are written with (`Html`, `Solid`, `Show`, `For`, `Loading`, `Errored`, `Context`,
-`Call`); and HTTP's (`Server`, `Endpoint`, `Middleware`, `Events`, `OpenApi`). Those last
-two kinds are the web platform's too: their source is in `web/platform`, and the build copies them
-here.
+`Kv`, `Live`, `Actor`, `Log`, `Time`, `Tcp`, `Http` (and `HttpResponse`, its answer), `Env`,
+`Random` and `AesGcm`; the jobs page (`JobsPage`); the modules components are written with
+(`Html`, `Solid`, `Show`, `For`, `Loading`, `Errored`, `Context`, `Call`, `Router`, `Title`,
+`HttpStatusCode`, `Transition`, `Submission`, `Submissions`, `Browser`, `Audio`); and HTTP's
+(`Server`, `Endpoint`, `Channel`, `Middleware`, `Events`, `OpenApi`). Those last two kinds are the
+web platform's too: their source is in `web/platform`, and the build copies them here
+(`SHARED_MODULES` in `build.mjs`).
 
 ### Postgres: `Db`
 
@@ -85,7 +93,8 @@ parameters.
 **Migrations** are in the executable: `program.migrations` lists them, each a name and its SQL
 (`import "migrations/0001_tables.sql" as tables : Str` reads a file when the app is compiled). When
 the server starts they are applied in the order listed, each once, each in a transaction (recorded
-by name in `rocx_migrations`); two servers starting at once take turns (an advisory lock). The
+by name in `rocx_migrations`); two starting at once (a deploy's old server and its new one) take
+turns (an advisory lock). The
 platform's own tables (`rocx_jobs`, `rocx_actors`: `rocx/0001`, `rocx/0002`, …)
 come first; one that fails stops the server.
 
@@ -115,7 +124,8 @@ Job.move!("reminder:ada", At(due))                        # the queued one with 
 Cron.every("0 3 * * *", nightly, {})                      # five fields, UTC; six begin with seconds
 ```
 
-A job is a row in `rocx_jobs`. Workers (`--job-workers`, 4; none if the app lists no jobs) are
+A job is a row in `rocx_jobs`. Workers (`--job-workers`, 4; none if the app lists no jobs or has no
+database) are
 background loops (`platform/JobWorker.roc`): each takes the next job due of a kind the app lists
 (apps may share a database) with `for update skip locked`, so none is taken twice, and runs it in an
 isolated call, so a crash is that job's failure, not the worker's. A job that fails (an `Err`, a
@@ -177,22 +187,26 @@ middleware = Middlewares.admin
 respond! = |{ request, .. }| JobsPage.respond!(request, { mount: "/admin/jobs" })   # every method
 ```
 
-The platform draws it (`platform/JobsPage.roc`), as a whole HTML page answered at `mount`: how many
-jobs are in each state (filters), each kind with its attempts, time limit and counts by state, the
-schedules with when each comes round next and a **Run now** button, and the jobs (newest first, fifty
-a page, **Older** for the next) with their state, attempts, when they run or ran, key and last
-error. `?state=failed`, `?kind=…`, `?before=<id>` choose them; `?id=<id>` shows one job: its input,
-its times, its attempts and time limit, its last error whole. **Retry** (a failed or canceled job),
+The platform draws it (`platform/JobsPage.roc`, on `AdminHtml.roc`), as a whole HTML page answered
+at `mount`, a console of the queue: how many jobs are queued, running, failed, done and canceled;
+what finished in each five minutes of the last hour (done, done after a retry, failed) and the
+latest failures; each kind with its attempts, time limit and jobs by state; the schedules, in words
+where it can (`daily at 03:00`), with when each comes round next and a **Run now** button; and the
+jobs (newest first, fifty a page, **Older** for the next) with their state, attempts, times, key and
+last error. A sidebar narrows it to a state or a kind. `?state=failed`, `?kind=…`, `?before=<id>`
+choose them; `?id=<id>` opens one job in a drawer over the list: its input, its timeline, its
+attempts and time limit, its last error whole. **Retry** (a failed or canceled job),
 **Cancel** and **Run now** (a queued one) are plain forms posting to `mount` (`action=retry|cancel|
 run_now&id=…`, `action=run_schedule&name=…`), answered with a 303 back to the view they came from;
 one that can't be done is a page saying why (409), and a POST another site's page sent is refused
 (403, as `Middleware.same_origin` refuses it; the app's own same-origin middleware should run in
-front too). It refreshes itself as jobs change: its main part listens to `mount?events` (a stream
-of events that says `changed` when a worker starts or finishes a job, or Postgres says one was
-queued or changed: the topics `rocx:jobs` and `pg:rocx_jobs`), and a few lines of script fetch the
-page again and put its main part in place, keeping where the reader is. Without script it is the
-same page, with a **Refresh** link. No hydration, no components: it works whatever the app's pages
-are made of. Its stylesheet is its own, under the class `rocx-admin`.
+front too). It refreshes itself as jobs change: it listens to `mount?events` (a stream of events
+that says `changed` when a worker starts or finishes a job, or Postgres says one was queued or
+changed: the topics `rocx:jobs` and `pg:rocx_jobs`), and a few lines of script fetch the page again
+and put its sidebar and main part in place, keeping an open drawer where the reader was. Without
+script it is the same page, with a button that refreshes it. No hydration, no components: it works
+whatever the app's pages are made of. Its stylesheet is its own, under the class `rocx-admin`, and
+follows the reader's light or dark scheme.
 
 ### Email: `Email`
 
@@ -202,7 +216,7 @@ Email.send!({ to: "ada@example.com", subject: "Welcome", text: "…", html: "<p>
 
 With `--smtp-url` (`smtp://user:password@host:587?tls=required`, `smtps://…:465`; or `SMTP_URL`)
 it is sent, from `--mail-from` (`MAIL_FROM`), as text, or text and HTML. Without one it is kept in
-an outbox and logged, so development sends nothing: the dev mailbox shows it.
+an outbox in the server's memory and logged, so development sends nothing: the dev mailbox shows it.
 At start the server connects to the SMTP server (TLS and all) and logs whether it answers. Send from
 a job, so a mail server that doesn't answer is tried again. The client is Roc (`platform/Smtp.roc`,
 over `Tcp`): STARTTLS or TLS from the start, `AUTH PLAIN`; a subject that isn't ASCII is encoded, a
@@ -273,7 +287,8 @@ has no body, so its `content-length` is never too large.
 
 Any S3 (rustfs or MinIO in development, R2 or AWS in production) is a package, on no platform
 (D-025). An app makes a bucket from a URL it keeps in its environment and the two effects the
-package needs, the platform's own:
+package needs, the platform's own. The package names no platform, so it can't name `Http.Init` or
+`HttpResponse`: it is given `Http.send!`, the deprecated shape, whose records it writes out (D-024).
 
 ```roc
 # main.roc's header: s3: "../packages/s3/main.roc"
@@ -300,8 +315,8 @@ endpoint that takes JSON doesn't change. An endpoint reads its body only when it
 (`application/json`, or a type ending `+json`) or a form; an upload of any other type (or of none)
 gives its handler `{}`, and the handler reads `request.body`. A body it doesn't read, sent to a
 handler that wants an arg, is a 415. A very large answer is better a `Forward` (below) than
-bytes: those are held whole. `Server.request!({})`, the request a page or a server
-function is answering, comes over from the host as text, so its body is `text_of`'s. An answer of
+bytes: those are held whole. `Server.request!({})`, the request a page or an endpoint is
+answering, comes over from the host as text, so its body is `text_of`'s. An answer of
 `Bytes` is sent as it is; `Server.body_text` reads one as text.
 
 ### Bodies from elsewhere: `Server.forward`
@@ -469,7 +484,7 @@ Events.stream(|{ send!, .. }| {
 Topics carry messages (`Live.publish!`, `Live.listen!`, `Live.next!`) to every call listening;
 rooms count who is in them (`Live.join!`, `Live.count!`), and tell those in them `join` and `leave`.
 What a call joins or listens to lasts until it ends: a stream's, until its client goes, or it
-crashes. It is all in the server's memory: one server.
+crashes. It is all in the server's memory.
 
 ### Channels: `channel!`, `Endpoint.subscribe!`, `Endpoint.publish!` (D-020)
 
@@ -519,8 +534,8 @@ The host answers the tab's stream itself, on the async side, holding no thread o
   `x-rocx-channel: close`, its body who the check said it was and why: `App` answers it outside the
   middleware, with the route's `on_close!`.
 - The host drops `x-rocx-channel` and `x-rocx-tab` from every request it is sent, so only it asks.
-- `/rocx/live` never reaches the app's middleware: an auth middleware that lets `/rocx/call/`
-  through had to; a channel is guarded by its own path's middleware instead, nothing to let through.
+- `/rocx/live` never reaches the app's middleware, so an auth middleware has nothing to let
+  through: a channel is guarded by its own path's middleware instead.
 - Order: a channel's messages arrive in the order they were published (`Live`'s order per topic, one
   queue per stream). One that falls behind its topic's backlog (256) gets `resync` instead of what it
   missed. `publish_latest!` messages are a topic of their own, `latest:<url>`: a subscriber behind
@@ -528,8 +543,8 @@ The host answers the tab's stream itself, on the async side, holding no thread o
 - A client whose network went: the host sets a 20 s deadline on what it sent going unacknowledged
   (`TCP_USER_TIMEOUT` on Linux, `TCP_RXT_CONNDROPTIME` on macOS), so a beat's write ends the stream
   about 35 s after the client vanished, and `on_close!` is told `Gone`.
-- Published on `Live` topics (`channel:<url>`): one server, in memory. A Postgres `listen`/`notify`
-  backend could carry them later, behind the same `publish!`.
+- Published on `Live` topics (`channel:<url>`, and `latest:<url>` for `publish_latest!`), in the
+  server's memory.
 
 ### Actors: `Actor`
 
@@ -596,8 +611,10 @@ it in the browser. It is `text/html; charset=utf-8` unless the answer says other
 is the answer's, or the one the page set as it rendered (`<HttpStatusCode code={404} />`,
 `Host.status!`). A HEAD isn't rendered: the answer's status and headers, and the page's box
 released. A crash, or a failure no `<Errored>` catches, is a 500 (with the message under `--dev`).
-Effects, cleanups and timers (`create_effect!`, `on_cleanup!`, `set_interval!`, `set_timeout!`) don't run on the
-server, as in Solid: their boxes are let go of, since nothing they would undo started. A flash the
+Effects, cleanups and timers (`create_effect!`, `on_settled!`, `on_cleanup!`, `set_interval!`,
+`set_timeout!`) don't run on the server, as in Solid: their boxes are let go of, since nothing they
+would undo started; `is_pending!` is false. A `<NoHydration>` is markup only the server renders:
+written between its own markers with none inside, and left as it is by the browser. A flash the
 page read (`Server.flash!`) goes in a script before the answers. The title the last `<Title>`
 rendered said (`Host.title!`) goes first in `<head>`, as `<title data-rocx>…</title>` before the
 layout's own `<title>` (`titled`, as `web/runtime.js`'s `Runtime.titled`), which hydration passes
@@ -615,8 +632,9 @@ not.
 
 ### Endpoint reads, as a page renders
 
-A component reads a GET endpoint with `Endpoint.get!` (or `Endpoint.read!`), which asks the host
-(`Host.fetch!`, `roc_fetch` in `host/src/signals.rs`). While the host renders a page, a GET of one
+A component reads a GET endpoint with `Endpoint.get!` (or `Endpoint.read!`, its refusal a value;
+`Endpoint.with_query` adds a query), which asks the host (`Host.fetch!`, `roc_fetch` in
+`host/src/signals.rs`). While the host renders a page, a GET of one
 of the app's own paths (`/…`) is that request, made in-process and answered by the app's `respond!`
 as the browser's GET would be, behind the route's middleware: the page's headers (cookies among
 them, `origin` this host), `accept: application/json`, the context the server started with, and its
@@ -649,7 +667,7 @@ Log.line!("migrated")                                          # a message alone
 Every line the server writes to stderr is an event: a level, a message and fields. The host's own
 lines (`rocx server: http://… (Roc, native)`, stopping, a crash with its `method`, `target` and
 `error`, forwarding, a background loop that crashed), the platform's Roc's (jobs, cron, mail,
-storage, migrations: `Log.line!` for now) and the app's all go through one formatter in the host.
+migrations: `Log.line!` for now) and the app's all go through one formatter in the host.
 The fields are any record (`Json.Encodable`), written as JSON; `{}` is none; one record with a
 single field has to say its name twice (`{ id: id }`: `{ id }` alone is a block, which is `id`).
 
@@ -748,8 +766,9 @@ running.
 
 ## Building
 
-`server/build.mjs` builds the host with cargo (`.tools/rust`, from `just setup`) into
-`server/platform/targets/<target>/libhost.a`, then the app with `roc build`, which links the two
+`server/build.mjs` builds the host with cargo (the one on PATH, from Nix say, or else `.tools/rust`,
+from `just setup`) into `server/platform/targets/<target>/libhost.a`, then the app with `roc build`
+(the Roc fork `just setup` links as `.tools/roc-active`), which links the two
 into one executable. `arm64mac` and `x64mac` link against the system; `arm64musl` and `x64musl` are
 static Linux executables, cross-compiled from macOS: Rust's own musl target supplies `rcrt1.o`,
 `libc.a` and `libunwind.a`, and Zig compiles the host's C (and `ring`'s, for TLS). The test app
@@ -785,7 +804,8 @@ server the test runs: whole, a range, a 304, HEAD, a redirect, 40 MiB with nothi
 not passed on, a body cut short, no answer, no range or cache question the request record doesn't
 pass on), streams, pages of components (a whole document with its answers and start.js, `<Loading>`,
 `<Errored>`, an endpoint read behind middleware, `<HttpStatusCode>`, HEAD, crashes, effects that
-don't run, holes in `<title>` and `<textarea>`, a call redirected by its middleware, no leaks),
+don't run, holes in `<title>` and `<textarea>`, a `<NoHydration>`, a read redirected by its
+middleware, no leaks),
 endpoint reads (answered in-process as a page renders, with its query, cookies and headers, noted
 once and none from a `<NoHydration>`; one its middleware redirects; a handler reading the page's
 flash), form actions (a plain form's refusal and result back to its page with a
@@ -799,7 +819,11 @@ the dev mailbox, forgotten by a restart, and not without `--dev`, and SMTP to a 
 `Tcp`, roc-pg, the log (JSON with `ROCX_LOG=json` or unset on a pipe, pretty lines with
 `ROCX_LOG=pretty`, an app's fields beside `time`, `level` and `msg` and never in their place, a
 program's `Pretty` winning over `Auto` and `ROCX_LOG`, 200 requests logging at once with every line
-whole and each request's in order, and the queue flushed at a stop), live rooms and topics, actors
+whole and each request's in order, and the queue flushed at a stop), live rooms and topics,
+channels (each checked as its stream opens and at every beat, one refused while the rest go on,
+what pages say, a subscriber behind its backlog, 40 streams open on two Roc threads), `Kv` (kept,
+read, taken once, deleted; a time to live and a counter's window; 200 increments at once; a capped
+list; past `--kv-max-mb`; `kv.rs`'s own unit tests, compiled alone), actors
 (one message at a time, a crash, asking another, itself or one waiting on it, tells in order,
 timers and a cancelled one, a message an actor doesn't take and a kind the app has none of, logged,
 a restart, one idle let go and woken as Postgres has it), `Http` (to servers the test runs: redirects, a timeout, a body too large, TLS
@@ -810,7 +834,8 @@ an ETag and HEAD, keys S3
 refuses, a bucket or S3 that isn't there, a URL that can't be read), the `Set-Cookie` lines cookies make, endpoints
 that take and answer `F64`s (and refuse an infinity) and a tag union in a `Try`'s place, what the
 docs' platform pages show (`server/test/app/Samples.roc`, which the site's build picks its samples
-from: settings, crypto, cookies, bytes, other servers, forwards and storage), calls that wait on two
+from: settings, crypto, jobs, `Kv`, cookies, bytes, other servers, forwards and S3), calls that
+wait on two
 Roc threads (2,000 requests that wait a second each, answered in about a second; 2,000 open
 streams beside a request answered at once; waits, crashes, pages, refusals and sockets interleaved,
 each answered as its own, nothing left held; a stack overflow that ends the process saying so), and
@@ -826,8 +851,6 @@ browser runtime's own render.
 
 - `Db`'s queries aren't checked at build (rows are decoded by the record each caller annotates);
   roc-pg's are.
-- Several servers: live rooms, topics, channels and actors' mailboxes are in one server's memory
-  (jobs and actors' state are in Postgres already).
 - Channels: a change of what a tab subscribes to opens its stream again, so `on_close!` can't tell
   a subscription the page dropped from a tab that went (both are `Gone`); a connection id with
   subscribe and unsubscribe posts would, if reconnects ever cost too much.

@@ -190,8 +190,9 @@ view! = |_|
 		</p>
 		<Code title={Sources.testing_node_form.file} source={Sources.testing_node_form.rocx} numbers={Bool.False} />
 		<p>
-			With no <code>--smtp-url</code> the server keeps the mail it sends. <code>waitForMail</code> waits for a
-			message, and <code>links</code> finds the links in it:
+			With no <code>--smtp-url</code> the server keeps the mail it sends: the last 100 messages, in its memory
+			(<code>Kv</code>), so each server a test starts has an empty mailbox. <code>mail()</code> reads them,
+			<code>waitForMail</code> waits for a message, and <code>links</code> finds the links in it:
 		</p>
 		<Code title={Sources.testing_node_mail.file} source={Sources.testing_node_mail.rocx} numbers={Bool.False} />
 
@@ -243,7 +244,7 @@ view! = |_|
 						<td>
 							<code>{"startServer(executable, { statics, database, dev, flags, env })"}</code>; its
 							<code>client()</code>, with <code>get</code>, <code>post</code>, <code>submit</code>,
-							<code>json</code>, <code>put</code>, <code>call</code>, <code>events</code> and <code>flash</code>;
+							<code>json</code>, <code>put</code>, <code>read</code>, <code>events</code> and <code>flash</code>;
 							<code>mail()</code>, <code>waitForMail</code>, <code>logs()</code>, <code>stop()</code>; and
 							<code>links</code>, <code>until</code>, <code>storyPath</code>
 						</td>

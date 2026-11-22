@@ -16,8 +16,8 @@ import presence.Wire
 ## without a word (a laptop shut, a network gone) is swept out 75 s after its last beat. (Its stream
 ## doesn't count as a beat: with the network gone, a stream's end may never reach the server.)
 ##
-## Who a member is (their key and metadata) is the server's say: the endpoint and the server
-## functions read it from the middleware's context, never from what a page sends.
+## Who a member is (their key and metadata) is the server's say: the endpoints read it from the
+## middleware's context, never from what a page sends.
 ##
 ## Server-only: it imports `Actor` and `Live`, which only the server's platform has. See
 ## PROPOSALS.md, "Server-only modules in packages".

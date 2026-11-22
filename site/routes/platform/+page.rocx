@@ -15,7 +15,7 @@ import ../../Ui/ArchBox
 
 meta = {
 	title: "The platform",
-	description: "What a rocx app runs on: a server platform, Roc compiled to native code in a Rust host with Postgres, jobs, email and actors; and a browser platform, the islands in WebAssembly.",
+	description: "What a rocx app runs on: a server platform, Roc compiled to native code in a Rust host with Postgres, jobs, email, values in memory and actors; and a browser platform, the same pages hydrated from WebAssembly.",
 	toc: [
 		{ id: "two", label: "Two platforms, one app" },
 		{ id: "server", label: "What the server gives" },
@@ -40,8 +40,8 @@ view! = |_|
 				A Roc program runs on a platform: the host that gives it the effects it may have. A rocx app is
 				two programs. The server's is Roc compiled to native code, linked with a Rust host into one
 				executable, which answers HTTP and does what a single server does: Postgres, jobs, cron, email,
-				state that outlives a request. The browser's is the app's islands, compiled to WebAssembly, with a
-				small Zig host and a page of JavaScript. The two talk over HTTP.
+				state that outlives a request. The browser's is the same pages, compiled to WebAssembly with a small
+				Zig host and a page of JavaScript, which take over what the server rendered. The two talk over HTTP.
 			</PageHero>
 
 			<Heading id="two">Two platforms, one app</Heading>
@@ -49,9 +49,9 @@ view! = |_|
 				left={[
 					<ArchBox kind="roc" name={[<code>server/</code>, <>: native</>]}>
 						<p>
-							Roc compiled to machine code, in a Rust host (tokio, hyper). Pages and endpoints, the islands
-							rendered into pages; Postgres, jobs and cron, email, live rooms, actors. One executable, one
-							server.
+							Roc compiled to machine code, in a Rust host (tokio, hyper). Pages rendered whole, endpoints;
+							Postgres, jobs and cron, email, values in memory, live rooms and channels, actors. One executable,
+							one server.
 						</p>
 					</ArchBox>,
 				]}
@@ -59,8 +59,9 @@ view! = |_|
 				right={[
 					<ArchBox kind="wasm" name={[<code>web/</code>, <>: wasm</>]}>
 						<p>
-							The islands only, compiled to WebAssembly with a Zig host, and <code>web/runtime.js</code>, which
-							hydrates them, runs their holes again when signals change, and sends their requests.
+							The app's components, compiled to WebAssembly with a Zig host, and <code>web/runtime.js</code>,
+							which hydrates the page the server sent, runs its holes again when signals change, and sends its
+							requests.
 						</p>
 					</ArchBox>,
 				]}
@@ -68,9 +69,10 @@ view! = |_|
 			<p>
 				The same components compile on both: the modules they are written with (<code>Html</code>,
 				<code>Solid</code>, <code>Show</code>, <code>For</code>, <code>Loading</code>, <code>Errored</code>,
-				<code>Context</code>, <code>Island</code>, <code>Server</code>, <code>Call</code>) are the browser
-				platform's, and the build copies them into the server platform, whose host renders them as the
-				browser's runtime would, byte for byte.
+				<code>Context</code>, <code>Transition</code>, <code>Router</code>) and HTTP's (<code>Server</code>,
+				<code>Endpoint</code>, <code>Call</code>, <code>Middleware</code>, <code>Channel</code>) are the
+				browser platform's, and the build copies them into the server platform, whose host renders them as
+				the browser's runtime would, byte for byte.
 			</p>
 
 			<Heading id="server">What the server gives</Heading>
@@ -107,26 +109,28 @@ view! = |_|
 				</Feature>
 				<Feature title="Live and actors" href={Paths.platform_live}>
 					<p>
-						Topics and rooms streams share (who is here, what was said), and actors: state one message at a
-						time, kept in Postgres.
+						Topics, rooms and channels (who is here, what was said, live data for pages), values in memory
+						with a time to live (<code>Kv</code>), and actors: state one message at a time, kept in Postgres.
 					</p>
 				</Feature>
 			</FeatureGrid>
 			<p>
 				It is opinionated on purpose: one server, Roc and Postgres. The host, in Rust, gives Roc general
 				things: HTTP, Postgres connections, sockets with TLS, background loops that sleep until woken, calls
-				isolated from their caller, actors' mailboxes and timers. Jobs, cron, migrations, email and actors'
-				state are the platform's Roc, written on those
-				(<a href={"${Paths.platform_server}#layers"}>what is Rust, what is Roc</a>).
+				isolated from their caller, actors' mailboxes and timers, values in memory. Jobs, cron, migrations,
+				email and actors' state are the platform's Roc, written on those
+				(<a href={"${Paths.platform_server}#layers"}>what is Rust, what is Roc</a>). What needs neither the
+				host nor the compiler is a package, not the platform: files in S3, and the crypto written in Roc,
+				are <a href={Paths.ecosystem}>the ecosystem's</a>.
 			</p>
 
 			<Heading id="app">An app</Heading>
 			<p>
 				On the server platform an app is a record: how it answers a request, its migrations, the kinds of
-				job its workers run, its schedules, and its islands. The platform's tests' app has all of them:
+				job its workers run, its schedules, and its kinds of actor. The platform's tests' app has all of them:
 			</p>
 			<Code title={"${Sources.platform_program.file}, in part"} source={Sources.platform_program.rocx} numbers={Bool.False} />
-			<p>This site has pages, endpoints and islands, and none of the rest:</p>
+			<p>This site has pages and endpoints, and none of the rest; <code>rocx build</code> writes its program:</p>
 			<Code title={"${Sources.platform_site_program.file}, in part"} source={Sources.platform_site_program.rocx} numbers={Bool.False} />
 			<p>
 				<code>respond!</code> takes a request's method, target, headers, body and what the server was
@@ -135,7 +139,8 @@ view! = |_|
 				(<a href={Paths.routing}>routing</a>). An answer that is a stream carries it: a function the host
 				runs as a call of its own, with its <code>send!</code> and <code>sleep!</code>. <code>actors</code>
 				lists the app's kinds of actor, which <code>rocx build</code> finds, so the host can run one when
-				nobody waits on it (a tell, a timer). The browser's app is the islands alone:
+				nobody waits on it (a tell, a timer). The browser's app is the page's components, the same root the
+				server rendered:
 			</p>
 			<Code title={Sources.client_app.file} source={Sources.client_app.rocx} />
 
@@ -148,18 +153,20 @@ view! = |_|
 				</li>
 				<li>
 					<Who kind="server">server</Who> The app's <code>respond!</code> runs its middleware and
-					routes, and renders the page: plain HTML, with a <code>{"<rocx-island data-island=\"todos\">"}</code>
-					where an island goes. Its effects (a query, a job queued) block that thread, and no other.
+					routes, and answers with the page: its layouts, the page, and the components in it, one tree. Its
+					effects (a query, a job queued) pause that call, and no other.
 				</li>
 				<li>
-					<Who kind="server">server</Who> The host sees the page has islands, and runs the app's
-					islands' root: each island the page has is rendered into its place, the endpoints it reads
-					answered there and then, in-process, and their answers put at the end of the page.
+					<Who kind="server">server</Who> The host renders the tree, every hole once: each endpoint a
+					component reads is answered there and then, in-process, through its route, and the answers go in
+					a script at the end of the page, with <code>/rocx/start.js</code>. A
+					<code>{"<NoHydration>"}</code> is rendered as plain HTML, for the server alone.
 				</li>
 				<li>
-					<Who kind="browser">browser</Who> The page shows at once, islands and all. Its script
-					finds the islands, fetches the wasm, and hydrates them: the same components run again, bound to the
-					server's nodes, reading the answers from the page instead of asking.
+					<Who kind="browser">browser</Who> The page shows at once. Its script fetches the wasm and
+					hydrates the document: the same components run again, bound to the server's nodes, reading the
+					answers from the page instead of asking. What is inside a <code>{"<NoHydration>"}</code> is left as
+					it came.
 				</li>
 				<li>
 					<Who kind="browser">browser</Who> A click writes a signal; what reads it runs again and
@@ -188,20 +195,20 @@ view! = |_|
 			<ul>
 				<li>
 					<strong>Native on the server.</strong> Roc compiles to machine code, so the server runs it as such:
-					threads for every request, effects that block a thread and nothing else, and Rust where Roc can't
-					reach (sockets, TLS, threads). No wasm runtime between them.
+					each request a call of its own on a few threads of Roc's, pausing while an effect waits, and Rust
+					where Roc can't reach (sockets, TLS, threads). No wasm runtime between them.
 				</li>
 				<li>
-					<strong>Wasm in the browser.</strong> The browser runs WebAssembly, and only the islands go there:
-					no page's markup, and nothing an endpoint's handler does.
+					<strong>Wasm in the browser.</strong> The browser runs WebAssembly: the components that hydrate, and
+					nothing an endpoint's handler does. A <code>{"<NoHydration>"}</code> stays the server's.
 				</li>
 				<li>
-					<strong>One component model.</strong> Islands are Solid-style components on both, so the server
+					<strong>One component model.</strong> Pages are Solid-style components on both, so the server
 					renders what the browser will hydrate, with the answers it will need.
 				</li>
 				<li>
-					<strong>One server.</strong> Live rooms, topics and actors' mailboxes are in its memory; jobs and
-					actors' state are in Postgres already. Several servers are on the roadmap, not here yet.
+					<strong>One server.</strong> An app runs as one instance, by design: live rooms, topics, channels,
+					values in memory and actors' mailboxes are in its memory; jobs and actors' state are in Postgres.
 				</li>
 			</ul>
 			<Callout kind="note" title="A working prototype">

@@ -39,7 +39,8 @@ view! = |_|
 			<Code title={"${Sources.platform_forecast.file}, in part"} source={Sources.platform_forecast.rocx} numbers={Bool.False} />
 			<p>
 				<code>{"Http.fetch!(url, init)"}</code> is JS's <code>fetch</code>: it sends a request and waits for
-				the whole answer, on the call's thread, as a query to Postgres waits: the rest of the server goes on.
+				the whole answer. The call pauses while it waits, holding no thread, as a query to Postgres does: the
+				rest of the server goes on.
 				<code>init</code> (an <code>Http.Init</code>) has a default for every field, so <code>{"{}"}</code> is
 				a GET:
 			</p>
@@ -75,7 +76,8 @@ view! = |_|
 				The API before <code>fetch!</code> (<code>Http.get</code>, <code>post_form</code>,
 				<code>post_json</code>, <code>with_header</code>, <code>{"send!(request, opts)"}</code>,
 				<code>send_request!</code>, <code>Http.header</code>, <code>Http.text</code>) still works, deprecated:
-				each is <code>fetch!</code> underneath.
+				each is <code>fetch!</code> underneath. The s3 package is given <code>Http.send!</code>: it names no
+				platform, so it can't name <code>Http.Init</code>.
 			</p>
 
 			<Heading id="limits-out">Limits and errors</Heading>

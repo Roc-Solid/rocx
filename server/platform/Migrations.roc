@@ -2,7 +2,7 @@ import Db
 import Log
 
 ## The schema, applied when the server starts: the platform's own tables first (the jobs queue,
-## the actors' state, the outbox), then the app's (`program.migrations`). Each is applied once, in order, in a
+## the actors' state), then the app's (`program.migrations`). Each is applied once, in order, in a
 ## transaction of its own, and recorded in `rocx_migrations`; two servers starting at once take
 ## turns (an advisory lock), so none is applied twice.
 Migrations := [].{

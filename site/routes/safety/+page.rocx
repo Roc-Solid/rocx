@@ -65,10 +65,10 @@ view! = |_|
 
 			<Heading id="lab">Try to break it</Heading>
 			<p>
-				This island renders <code>{"<a href={url} title={text}>{text}</a>"}</code> with whatever you type,
-				twice: as a page would, with <code>Html.render</code>, the same function, compiled to WebAssembly,
-				that rendered this page on the server, which shows the markup it made; and live, as a component,
-				whose holes the runtime sets as text and attributes, never as markup.
+				This component renders <code>{"<a href={url} title={text}>{text}</a>"}</code> with whatever you
+				type, twice: as the markup <code>Html.to_str</code> writes for it, as the server would write it
+				(here compiled to WebAssembly, running in your browser); and live, whose holes the runtime sets as
+				text and attributes, never as markup.
 			</p>
 		</NoHydration>
 		<Demo><div data-demo="escape-lab"><EscapeLab /></div></Demo>
@@ -80,8 +80,8 @@ view! = |_|
 				<code>https</code>, <code>mailto</code> or <code>tel</code>. Anything else becomes
 				<code>about:invalid#rocx-unsafe-url</code>. Browsers ignore tabs, line breaks and leading spaces in a
 				scheme (<code>{"java\\tscript:"}</code> runs), so those are dropped before looking. The check runs
-				when the value becomes an attribute, in a page's <code>Html</code> and in a component's alike, so the
-				server's markup and the browser's patches get the same answer. Here is what Roc rendered for these, as this page was rendered:
+				in Roc, in the platform's <code>Html</code>, when the value becomes an attribute, on the server and
+				in the browser alike, so the server's markup and the browser's patches get the same answer. Here is what Roc rendered for these, as this page was rendered:
 			</p>
 			<TableWrap>
 				<UrlChecks urls={urls} />
@@ -102,7 +102,8 @@ view! = |_|
 				to prevent. A component's <code>on:click={"{…}"}</code> is a Roc function. The server renders nothing
 				for it, the browser never sees it as text, and when it fires, Roc decides what happens. The runtime
 				builds elements with <code>createElement</code> and sets text and attributes as such, never by
-				parsing markup, so a value can't become a tag. A page has no handlers at all: rocx refuses one there.
+				parsing markup, so a value can't become a tag. Inside a <code>{"<NoHydration>"}</code>, which the
+				browser never hydrates, there are no handlers at all: rocx refuses one there, at its line.
 			</p>
 			<Callout kind="note" title="What the server sends the browser is data too">
 				<p>

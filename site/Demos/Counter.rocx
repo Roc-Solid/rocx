@@ -1,7 +1,7 @@
 import pf.Html
 import pf.Solid exposing [create_signal!]
 
-## The smallest island: a number, and buttons that change it. The number is a signal; what reads it
+## The smallest component: a number, and buttons that change it. The number is a signal; what reads it
 ## (the text, the class, the Reset button's `disabled`) runs again when it changes, and patches its
 ## own node. The component itself runs once. Its styles are its own: the `<style>` in its block is
 ## scoped to its markup, so `.counter button` here is no other component's button.

@@ -7,7 +7,7 @@ import pf.Server as Http
 import ../Generated/Api
 
 ## Listens to an endpoint's events, `GET /api/count/[to]` (a route's `events!`): Start, and the
-## server sends each count as it makes it; the island shows each as it comes, says when the server
+## server sends each count as it makes it; the component shows each as it comes, says when the server
 ## stopped sending (it ended the stream), and can start again. `Api.events_api_count_to` is what
 ## rocx wrote for it: on the server, the handler; in the browser's copy, its URL.
 Count := [].{

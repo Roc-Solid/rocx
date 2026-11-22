@@ -10,8 +10,8 @@ import Html
 ##     <PicksContext value={store!({})}>…</PicksContext>
 ##     store = use_context!(picks_context)     # import pf.Solid exposing [use_context!]
 ##
-## rocx names a context after its module and definition (`Picks.picks_context`), as it names a server
-## function: Roc's values have no identity to tell two contexts apart. It writes `create_context(…)`
+## rocx names a context after its module and definition (`Picks.picks_context`): Roc's values have
+## no identity to tell two contexts apart. It writes `create_context(…)`
 ## as `Context.define` or `Context.required`, and a provider's tag as `Context.provide!`. A context
 ## with no default fails, when nothing above provides it, and the nearest <Errored> shows why.
 Context(a) := { name : Str, default : [Given(a), NotGiven] }.{
