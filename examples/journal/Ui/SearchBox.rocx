@@ -4,7 +4,6 @@ import pf.Endpoint
 import pf.Router
 import pf.For
 import ../I18n
-import ../Listing
 import ../Search
 import ../Generated/Api
 import ../Generated/Paths
@@ -21,9 +20,7 @@ SearchBox := [].{
 	view! : { lang : Str } => Html
 	view! = |{ lang }| {
 		intl = I18n.intl(lang)
-		# Read once, where the page is rendered. The browser's copy of `Api` has no types (its route
-		# file isn't there), so say what the answer is.
-		posts : List(Listing.Summary)
+		# Read once, where the page is rendered.
 		posts = Endpoint.get!(Endpoint.with_query(Api.get_api_posts({}), "lang=${lang}"))
 		(query!, set_query!) = create_signal!(Search.query_of(Router.location!({}).query))
 		found! = create_memo!(|| Search.results(query!(), posts))

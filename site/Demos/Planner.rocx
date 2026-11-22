@@ -4,7 +4,6 @@ import pf.Router exposing [use_action!, use_submissions!]
 import pf.Endpoint
 import pf.Server
 import pf.For
-import pf.Submissions
 import PlannerDay
 import ../Generated/Api
 
@@ -32,8 +31,6 @@ Planner := [].{
 
 	view! : {} => Html
 	view! = |{}| {
-		# Its types said: in the browser's copy an endpoint has none (its route file isn't there).
-		moves : Submissions(PlannerDay.Move, Str)
 		moves = use_submissions!(Api.post_api_planner_move({}))
 		move! = use_action!(Api.post_api_planner_move({}))
 		(dragging!, set_dragging!) = create_signal!("")

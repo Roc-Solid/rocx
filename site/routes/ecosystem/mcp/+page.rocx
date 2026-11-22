@@ -87,7 +87,7 @@ view! = |_|
 				<tbody>
 					<tr><td><code>middleware(path, server)</code></td><td>the MCP server as a middleware: it answers <code>path</code>, and hands every other request on</td></tr>
 					<tr><td><code>respond!(server, request, context)</code></td><td>the answer to a request to the MCP route, for a route file's <code>respond!</code></td></tr>
-					<tr><td><code>endpoint(Api.x({"{}"}), about, McpHttp.openapi({"{}"}))</code></td><td>an endpoint as a tool: its body is the arguments, its answer the tool's, a refusal goes back to the model</td></tr>
+					<tr><td><code>endpoint(Handlers.x({"{}"}), about, McpHttp.openapi({"{}"}))</code></td><td>an endpoint as a tool (<code>Generated/Handlers</code>', which has its handler, D-037): its body is the arguments, its answer the tool's, a refusal goes back to the model</td></tr>
 					<tr><td><code>function(Module.name!, about, McpHttp.openapi({"{}"}))</code></td><td>a function of the app's own as a tool, run in the MCP request, behind the MCP route's middleware</td></tr>
 					<tr><td><code>tool(about, handler!, McpHttp.openapi({"{}"}))</code></td><td>a handler of the app's own, its schemas from its types</td></tr>
 					<tr><td><code>Caller(c)</code></td><td>what a handler is given: <code>{"{ request, context, progress! }"}</code>; <code>context</code> is what the middleware handed on, who is asking</td></tr>

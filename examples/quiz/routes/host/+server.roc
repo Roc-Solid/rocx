@@ -1,10 +1,11 @@
 import pf.Server
 import pf.Endpoint
+import ../../Draft
 import ../../Sets
 import ../../Visitor
 
 ## GET /host: the question sets a room can be opened for, the newest made first.
-get! : { request : Server.Request, params : {}, context : Visitor.Context } => Try(List(Sets.Summary), Endpoint.Refusal)
+get! : { request : Server.Request, params : {}, context : Visitor.Context } => Try(List(Draft.Summary), Endpoint.Refusal)
 get! = |_|
 	match Sets.all!({}) {
 		Ok(sets) => Ok(sets)

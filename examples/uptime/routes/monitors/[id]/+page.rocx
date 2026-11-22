@@ -9,7 +9,6 @@ import charts.Format
 import charts.Heatmap
 import charts.LineChart
 import ../../../Days
-import ../../../News
 import ../../../Report
 import ../../../Words
 import ../../../Generated/Api
@@ -29,7 +28,7 @@ view! = |{ params }| {
 	read = Api.get_monitors_id({ id: id })
 	detail! : () => Report.Detail
 	detail! = create_memo!(|| Endpoint.get!(read))
-	heard! : Channel.Event(News.Said) => {}
+	heard! : Channel.Event(Report.News) => {}
 	heard! = |event|
 		match event {
 			Resync => refresh!(detail!)

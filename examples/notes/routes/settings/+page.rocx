@@ -3,7 +3,6 @@ import pf.Endpoint
 import pf.For
 import pf.Server
 import pf.Show
-import pf.Submission
 import pf.Router exposing [use_submission!]
 import ../../Middlewares
 import ../../Note
@@ -23,9 +22,7 @@ settings! : {} => Pages.Settings
 settings! = |{}| Endpoint.get!(Api.get_settings({}))
 
 view! = |_| {
-	making : Submission({ name : Str, access : Str }, Token.Made)
 	making = use_submission!(Api.post_settings({}))
-	revoking : Submission({ id : Str }, { revoked : Str })
 	revoking = use_submission!(Api.post_settings_revoke({}))
 	first = settings!({})
 	<div>

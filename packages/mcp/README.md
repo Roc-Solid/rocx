@@ -10,6 +10,7 @@ for `/openapi.json`, from the same types.
 import mcp.Mcp
 import mcp.Tool
 import McpHttp
+import Generated/Handlers   # each endpoint with its handler, which a tool runs (D-037)
 
 ## What the app offers agents.
 server : Mcp.Server(McpHttp.Caller(Context))
@@ -18,13 +19,17 @@ server = {
     version: "1.0.0",
     instructions: "Notes, by id: list them, then read or add one.",
     tools: [
-        McpHttp.endpoint(Api.post_api_notes({}), { name: "add_note", description: "Adds a note" }, McpHttp.openapi({})),
+        McpHttp.endpoint(Handlers.post_api_notes({}), { name: "add_note", description: "Adds a note" }, McpHttp.openapi({})),
         McpHttp.function(Notes.search!, { name: "search", description: "Finds notes by their words" }, McpHttp.openapi({})).read_only(),
     ],
 }
 ```
 
-and, in `main.roc`, behind the middleware that decides who may ask:
+and, in `main.roc`, behind the middleware that decides who may ask. `main.roc` is the place for what
+sits in front of the routes and runs their handlers: `Generated/Handlers` imports the route files
+with endpoints, so a module they import can't import it, and `main.roc` (or a module only it
+imports) can. A route of `respond!` alone may too (`routes/mcp/+server.roc`, with its own
+`middleware`), since Handlers doesn't import it:
 
 ```roc
 program = App.program({
@@ -71,8 +76,8 @@ app [program] { mcp: "../packages/mcp/main.roc", pf: platform "../server/platfor
 | `McpHttp.` | |
 |---|---|
 | `middleware(path, server)` | the MCP server as a middleware: it answers `path`, and hands every other request on. Put it after the middleware that decides who may ask |
-| `respond!(server, request, context)` | the answer to a request to the MCP route; a route file's `respond!` can call it (`routes/mcp/+server.roc`), for a server whose tools aren't `Api`'s (a route file can't import `Api` yet: PROPOSALS.md) |
-| `endpoint(Api.x({}), about, McpHttp.openapi({}))` | an endpoint as a tool: its body is the arguments, its answer the tool's; run as `Endpoint.run!` runs it; a refusal goes back to the model |
+| `respond!(server, request, context)` | the answer to a request to the MCP route; a route file's `respond!` can call it (`routes/mcp/+server.roc`): a route of `respond!` alone may import `Generated/Handlers` (D-037), which imports only the route files with endpoints |
+| `endpoint(Handlers.x({}), about, McpHttp.openapi({}))` | an endpoint as a tool: its body is the arguments, its answer the tool's; run as `Endpoint.run!` runs it, so it is `Generated/Handlers`' endpoint (with its handler), not `Generated/Api`'s contract; a refusal goes back to the model |
 | `function(Module.name!, about, McpHttp.openapi({}))` | a function of the app's own (`arg => result`) as a tool, run in the MCP request, behind the MCP route's middleware |
 | `tool(about, handler!, McpHttp.openapi({}))` | a handler of the app's own, `arg, Caller(c) => Try(result, Str)`, its schemas from its types |
 | `Caller(c)` | what a tool is given: `{ request, context, progress! }`. `context` is what the middleware handed on: who is asking |
@@ -203,7 +208,6 @@ browser's half):
 Waits on a proposal (PROPOSALS.md):
 
 - naming `server/` as a package (or rocx copying it): today it is copied by hand;
-- mounting MCP from a route file when its tools are `Api`'s (an import cycle): today, `McpHttp.middleware` in `main.roc`;
 - a union's tags in a tool's schema (`Api.tags`): today a tag union none of whose tags are given is "any value";
 - the description of an endpoint's tool from its doc comment;
 - an authorization server (OAuth) of the platform's own.

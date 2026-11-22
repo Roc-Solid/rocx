@@ -24,6 +24,10 @@ Build := [].{
 	app_module_name : Str
 	app_module_name = "App"
 
+	## The line of a browser's copy's `.rocx-client` that says where its app is, from the copy.
+	client_app_lead : Str
+	client_app_lead = "app: "
+
 	## `rocx build`: whether every file built, and what it had to say, a message each. Paths are
 	## relative to `cwd`; `rocx` is where rocx is (the repo: web/platform, web/start.js and
 	## web/runtime.js are there). `Err` for what the JavaScript threw (a wrong `--client`).
@@ -255,12 +259,20 @@ Build := [].{
 		}
 		# The browser's app, for an app of component pages (`--client`): written with its copy.
 		var $main = None
+		# What each of Api's imports is for (the routes' types that name the module), for the browser's
+		# copy, which reaches them through it.
+		var $contract = []
 		if !route_files.is_empty() {
 			var $sources = []
 			for entry in Routes.entries(table) {
 				$sources = $sources.append({ file: entry.file, defs: Routes.definitions(Fs.read_or_empty!(Fs.join([routes].concat(entry.file.split_on("/"))))) })
 			}
 			sources = $sources
+			$contract = Routes.contract_imports(table, sources)
+			for problem in Build.contract_cycles!(dir, $contract, here) {
+				$said = $said.append(problem)
+				$failed = Bool.True
+			}
 			for server in table.servers {
 				defined = Routes.defs_of(sources, server.file)
 				file = Fs.relative(cwd, Fs.join([routes].concat(server.file.split_on("/"))))
@@ -280,7 +292,7 @@ Build := [].{
 					$failed = Bool.True
 				}
 			}
-			for problem in Routes.view_problems(table, sources) {
+			for problem in Routes.view_problems(table, sources).concat(Routes.contract_problems(table, sources)) {
 				$said = $said.append("✗ ${here}/${problem}")
 				$failed = Bool.True
 			}
@@ -332,10 +344,11 @@ Build := [].{
 					Some(ids) => [{ name: "Stories", content: Stories.stories_module(ids, title, dir) }]
 					None => []
 				}
+			# The contract (Api), and each of its endpoints with its handler (Handlers, the server's alone).
 			api =
 				if endpoints {
 					tags = Routes.tag_names($codes.concat(Build.roc_code!(dir)))
-					[{ name: "Api", content: Routes.api_module(table, sources, { client: Bool.False, tags, title }) }]
+					[{ name: "Api", content: Routes.api_module(table, sources, { client: Bool.False, tags, title }) }, { name: "Handlers", content: Routes.handlers_module(table, sources) }]
 				} else {
 					[]
 				}
@@ -447,13 +460,132 @@ Build := [].{
 					}
 				platform_only = ServerOnly.server_only_modules!(Fs.join([options.rocx, "server", "platform", "main.roc"]), web)
 				server_only = [{ alias: "pf", modules: platform_only }].concat(Build.server_packages!(dir))
+				api_file = Fs.join([target, Build.generated, "Api.roc"])
 				for reached in ServerOnly.server_only_reached!(target, roots, server_only) {
-					$said = $said.append(ServerOnly.warning!(target, here, reached))
+					match Build.contract_problems(reached, api_file, $contract, here) {
+						[] => {
+							$said = $said.append(ServerOnly.warning!(target, here, reached))
+						}
+						problems => {
+							$said = $said.concat(problems)
+							$failed = Bool.True
+						}
+					}
 				}
 			}
 			None => {}
 		}
 		Ok({ failed: $failed, written: $written, said: $said })
+	}
+
+	## A module the browser's copy reaches through Api, the contract, that imports what only the
+	## server has: Api imports what a route's types name, so each route whose type names it is an
+	## error, at its handler, naming the type and the module. None when Api isn't on the way.
+	contract_problems : ServerOnly.Reached, Str, List(Routes.ContractImport), Str -> List(Str)
+	contract_problems = |reached, api_file, uses, here| {
+		server_module = reached.server_module
+		# The imports from Api on: its own (the module a type names), then the ones after it.
+		after_api =
+			if reached.module_file == api_file {
+				[]
+			} else {
+				match reached.chain.find_first_index(|step| step.file == api_file) {
+					Ok(i) => reached.chain.drop_first(i).map(|step| step.written)
+					Err(_) => return []
+				}
+			}
+		named = after_api.first() ?? server_module
+		reaches = |alias|
+			if after_api.is_empty() {
+				"names ${server_module}"
+			} else {
+				"names ${alias}, a module that imports ${Str.join_with(after_api.drop_first(1).append(server_module), ", which imports ")}"
+			}
+		Text.unique(
+			uses
+				.keep_if(|each| each.target == named)
+				.map(|each| "✗ ${here}/routes/${each.file}:${each.at.to_str()}: ${each.method}'s type ${each.type} ${reaches(each.alias)}, which only the server has. The browser's copy of Generated/Api, the app's contract (D-037), imports the modules a route's types name, so the browser's build can't compile it: move the type into a module that doesn't import ${server_module}, and name it from there"),
+		)
+	}
+
+	## A module of the app's that Api imports for a route's type and that imports Api itself (or a
+	## module that does): Roc refuses the cycle, and says so without saying which modules. Each is an
+	## error at the import of Api, naming the route's type and saying what to do.
+	contract_cycles! : Str, List(Routes.ContractImport), Str => List(Str)
+	contract_cycles! = |dir, uses, here| {
+		generated_dir = Fs.join([dir, Build.generated])
+		api = Fs.join([generated_dir, "Api.roc"])
+		var $problems = []
+		for target in Text.unique(uses.map(|each| each.target)) {
+			if !Routes.package_name(target) {
+				start = Fs.resolve(generated_dir, ["${target}.roc"])
+				# The shortest way from the module to Api, by its imports: each file, and its line that imports the next.
+				var $via = [{ file: start, step: None }]
+				var $queue = [start]
+				var $found = None
+				while !$queue.is_empty() and $found == None {
+					file = $queue.first() ?? ""
+					$queue = $queue.drop_first(1)
+					for each in ServerOnly.imports_of(file, Fs.read_or_empty!(file), []) {
+						match each.target {
+							File(path) =>
+								if path == api and $found == None {
+									$found = Some({ file, line: each.line })
+								} else if !$via.any(|seen| seen.file == path) and path.starts_with("${dir}/") and !path.starts_with("${generated_dir}/") and Fs.exists!(path) {
+									$via = $via.append({ file: path, step: Some({ file, written: each.written }) })
+									$queue = $queue.append(path)
+								}
+							Platform(_) => {}
+						}
+					}
+				}
+				match $found {
+					None => {}
+					Some(at) => {
+						var $chain = []
+						var $back = at.file
+						var $walking = Bool.True
+						while $walking {
+							match $via.find_first(|each| each.file == $back) {
+								Ok({ step: Some(step), .. }) => {
+									$chain = $chain.prepend(step.written)
+									$back = step.file
+								}
+								_ => {
+									$walking = Bool.False
+								}
+							}
+						}
+						module_file = Fs.relative(dir, start)
+						way = Str.join_with($chain.append("Generated/Api").map(|written| "imports ${written}"), ", which ")
+						for each in uses.keep_if(|use| use.target == target) {
+							named = Build.qualified_in(each.type, each.alias)
+							$problems = $problems.append("✗ ${here}/${Fs.relative(dir, at.file)}:${at.line.to_str()}: ${module_file} ${way}, and Generated/Api imports ${module_file} for routes/${each.file}'s ${each.method}, whose type ${each.type} names ${named}: a cycle, which Roc refuses. Move ${named} into a module of its own that doesn't import Generated/Api, and name it from there")
+						}
+					}
+				}
+			}
+		}
+		Text.unique($problems)
+	}
+
+	## The names in a type's text that `alias` qualifies (`News.Said`), or the alias alone.
+	qualified_in : Str, Str -> Str
+	qualified_in = |type, alias| {
+		bytes = type.to_utf8()
+		lead = "${alias}.".to_utf8()
+		var $names = []
+		var $i = 0
+		while $i < bytes.len() {
+			if Text.starts_with_at(bytes, lead, $i) and ($i == 0 or !Text.is_word(Text.at(bytes, $i - 1))) {
+				end = Text.run_end(bytes, $i + lead.len(), Text.is_word)
+				$names = $names.append(Text.cut(bytes, $i, end))
+				$i = end
+			} else {
+				$i = $i + 1
+			}
+		}
+		if ($names.is_empty()) alias else Str.join_with(Text.unique($names), ", ")
 	}
 
 	## A path as the build's messages show it: relative to `cwd`, `.` for `cwd` itself.
@@ -744,7 +876,8 @@ Build := [].{
 			}
 			None => {}
 		}
-		_ = Fs.write!(ours, "The browser's copy of an app, written by rocx build --client: don't edit.\n")
+		# Where the app is, from here: rocx check points a report about the copy at the app's file.
+		_ = Fs.write!(ours, "The browser's copy of an app, written by rocx build --client: don't edit.\n${Build.client_app_lead}${Fs.relative(target, root)}\n")
 		Ok({})
 	}
 

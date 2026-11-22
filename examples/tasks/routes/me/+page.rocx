@@ -16,8 +16,6 @@ meta = { title: "Who are you?" }
 
 view! = |_| {
 	team = Api.get_api_team({})
-	# Its type said: in the browser's copy of the app an endpoint has none.
-	team! : () => Tasks.Team
 	team! = create_memo!(|| Endpoint.get!(team))
 	choose = Api.post_me({})
 	# The latest submission: after a refused plain post, the flash it came back with.

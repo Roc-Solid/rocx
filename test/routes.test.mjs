@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { build } from "../rocx-cli/rocx.mjs";
-import { actorsIn, apiModule, appModule, clientMainModule, definitions, findRouteFiles, jobsIn, matches, migrationsIn, pathsModule, rootModule, routeList, routeModule, routesModule, routesTable, routeTable, tagNames, viewProblems } from "../rocx-cli/rocx.mjs";
+import { actorsIn, apiModule, appModule, clientMainModule, contractProblems, definitions, findRouteFiles, handlersModule, jobsIn, matches, migrationsIn, pathsModule, rootModule, routeList, routeModule, routesModule, routesTable, routeTable, tagNames, viewProblems } from "../rocx-cli/rocx.mjs";
 
 const files = ["+layout.rocx", "+page.rocx", "+error.rocx", "blog/+layout.rocx", "blog/+page.rocx", "blog/[slug]/+page.rocx", "blog/[slug]/+server.rocx", "blog/new/+page.rocx", "getting-started/+page.rocx", "feed/+server.roc"];
 
@@ -34,7 +34,15 @@ test("routes: each page's path, params, name and layouts; the fixed tried before
 test("routes: what a route file defines; a path matched against a route", () => {
 	assert.deepEqual(definitions("import pf.Html\n\nmeta = {}\n\nview! = |_| x"), { view: "view!", meta: true, methods: [], middleware: null, docs: {} });
 	assert.deepEqual(definitions("view = |_| x"), { view: "view", meta: false, methods: [], middleware: null, docs: {} });
-	assert.deepEqual(definitions("middleware = Guards.member\n\nget! = |_| Ok(1)\n\ndelete! = |_| Ok({})\n\nhelper = 1"), { view: null, meta: false, methods: ["get!", "delete!"], middleware: "Guards.member", docs: {} });
+	assert.deepEqual(definitions("middleware = Guards.member\n\nget! = |_| Ok(1)\n\ndelete! = |_| Ok({})\n\nhelper = 1"), {
+		view: null,
+		meta: false,
+		methods: ["get!", "delete!"],
+		middleware: "Guards.member",
+		docs: {},
+		handlers: { "get!": { line: 3, unannotated: true }, "delete!": { line: 5, unannotated: true } },
+		imports: [],
+	});
 	assert.ok(matches("/blog/[slug]", "/blog/rocx"));
 	assert.ok(matches("/", "/"));
 	assert.ok(!matches("/blog/[slug]", "/blog"));
@@ -123,16 +131,23 @@ test("routes: Routes answers a request: a page (Root's) for a browser's GET; an 
 	const table = routeTable(files);
 	const methods = { "blog/[slug]/+server.rocx": ["get!", "put!"], "feed/+server.roc": ["get!"] };
 	const middleware = { "blog/new/+page.rocx": "Guards.writer", "blog/[slug]/+server.rocx": "Guards.member" };
-	const sources = new Map(files.map((file) => [file, { view: "view!", meta: file.endsWith("+page.rocx"), methods: methods[file] ?? [], middleware: middleware[file] ?? null }]));
+	// The post's handlers' types, as their annotations give them; the feed's, none (a source made by hand).
+	const typed = {
+		"blog/[slug]/+server.rocx": {
+			handlers: { "get!": { line: 6, body: "", answer: "Post.Full" }, "put!": { line: 9, body: "Post.Edit", answer: "{}" } },
+			imports: ["import pf.Server", "import pf.Endpoint", "import ../../../Post", "import ../../../Guards"],
+		},
+	};
+	const sources = new Map(files.map((file) => [file, { view: "view!", meta: file.endsWith("+page.rocx"), methods: methods[file] ?? [], middleware: middleware[file] ?? null, ...typed[file] }]));
 	const routes = routesModule(table, { sources });
 	assert.match(routes, /if \(segments == \["blog", "new"\]\) \{\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tMiddleware\.run!\(BlogNewPage\.middleware, request, context, \|_passed, _handed\| Routes\.page\(200\)\)/, "a page's middleware, before Root renders it");
 	assert.match(routes, /else if \(segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("blog"\)\) \{\n\t\t\tparams = \{ slug: segments\.get\(1\) \?\? "" \}/);
 	// A page and endpoints at one path: a GET a browser sends is the page's.
-	assert.match(routes, /if \(method == "GET" and wants_html\) \{\n\t\t\t\tRoutes\.page\(200\)\n\t\t\t\} else if \(method == "GET"\) \{\n\t\t\t\tMiddleware\.run!\(BlogSlugServer\.middleware, request, context, \|passed, handed\| Endpoint\.respond!\(Api\.get_blog_slug\(params\), passed, handed\)\)\n\t\t\t\} else if \(method == "PUT"\) \{\n\t\t\t\tMiddleware\.run!\(BlogSlugServer\.middleware, request, context, \|passed, handed\| Endpoint\.respond!\(Api\.put_blog_slug\(params\), passed, handed\)\)\n\t\t\t\} else \{\n\t\t\t\tEndpoint\.not_allowed\(request, \["GET", "PUT"\]\)/);
-	assert.match(routes, /if \(segments == \["feed"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tEndpoint\.respond!\(Api\.get_feed\(params\), request, context\)/, "an endpoint with no page, and no middleware of its own");
+	assert.match(routes, /if \(method == "GET" and wants_html\) \{\n\t\t\t\tRoutes\.page\(200\)\n\t\t\t\} else if \(method == "GET"\) \{\n\t\t\t\tMiddleware\.run!\(BlogSlugServer\.middleware, request, context, \|passed, handed\| Endpoint\.respond!\(Handlers\.get_blog_slug\(params\), passed, handed\)\)\n\t\t\t\} else if \(method == "PUT"\) \{\n\t\t\t\tMiddleware\.run!\(BlogSlugServer\.middleware, request, context, \|passed, handed\| Endpoint\.respond!\(Handlers\.put_blog_slug\(params\), passed, handed\)\)\n\t\t\t\} else \{\n\t\t\t\tEndpoint\.not_allowed\(request, \["GET", "PUT"\]\)/);
+	assert.match(routes, /if \(segments == \["feed"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tEndpoint\.respond!\(Handlers\.get_feed\(params\), request, context\)/, "an endpoint with no page, and no middleware of its own");
 	assert.match(routes, /if \(wants_html\) \{\n\t\t\t\tRoutes\.page\(404\)/);
-	assert.match(routes, /^import Api$/m);
-	assert.match(routes, /^import pf\.Server\nimport pf\.Endpoint\nimport pf\.Middleware\nimport Api\nimport Root\n/m, "the platform's modules; no Html: no page is rendered here");
+	assert.match(routes, /^import pf\.Server\nimport pf\.Endpoint\nimport pf\.Middleware\nimport Handlers\nimport Root\n/m, "the platform's modules; each endpoint with its handler (Handlers); no Html: no page is rendered here");
+	assert.doesNotMatch(routes, /^import Api$/m, "Api only for a channel's hooks");
 	assert.match(routes, /^import BlogSlugServer$/m, "an endpoint's module, for its middleware");
 	assert.doesNotMatch(routes, /^import FeedServer$/m);
 	assert.deepEqual(
@@ -145,16 +160,22 @@ test("routes: Routes answers a request: a page (Root's) for a browser's GET; an 
 	assert.match(paths, /\tgetting_started = "\/getting-started"/);
 	assert.match(paths, /\tall = \["\/blog\/new", "\/blog", "\/getting-started", "\/"\]/);
 	assert.doesNotMatch(paths, /feed/, "an endpoint isn't a page to link to");
-	// Api: each endpoint, the handler on the server, its method and URL in the browser.
+	// Api, the contract (D-037): each endpoint's method, URL and types, the handler's annotation's;
+	// the same in the browser's copy, but for the OpenAPI document. No route file.
 	const api = apiModule(table, { sources });
-	assert.match(api, /\tput_blog_slug = \|params\| Endpoint\.local\("PUT", "\/blog\/\$\{Server\.encode_segment\(params\.slug\)\}", \|request, context, body\| BlogSlugServer\.put!\(\{ request: request, params: params, context: context, body: body \}\)\)/);
-	assert.match(api, /\tget_feed = \|params\| Endpoint\.local\("GET", "\/feed", \|request, context, \{\}\| FeedServer\.get!\(\{ request: request, params: params, context: context \}\)\)/);
-	assert.match(api, /^import BlogSlugServer$/m);
-	assert.match(api, /^import pf\.Endpoint\nimport pf\.Server\nimport pf\.OpenApi$/m);
+	assert.match(api, /\t## PUT \/blog\/\[slug\], from routes\/blog\/\[slug\]\/\+server\.rocx\n\tput_blog_slug : \{ slug : Str \} -> Endpoint\(context, Post\.Edit, \{\}\)\n\tput_blog_slug = \|params\| Endpoint\.remote\("PUT", "\/blog\/\$\{Server\.encode_segment\(params\.slug\)\}"\)\n/, "its params, its body, its answer; any context");
+	assert.match(api, /\tget_blog_slug : \{ slug : Str \} -> Endpoint\(context, \{\}, Post\.Full\)\n/, "a GET is sent nothing");
+	assert.match(api, /\t## GET \/feed, from routes\/feed\/\+server\.roc\n\tget_feed = \|_params\| Endpoint\.remote\("GET", "\/feed"\)\n/, "a handler whose types rocx doesn't have: no annotation (rocx build refuses one)");
+	assert.match(api, /^import pf\.Endpoint\nimport pf\.Server\nimport pf\.OpenApi\nimport \.\.\/Post\n\nApi := /m, "the module its types name, from Generated/; not Guards, which they don't; no route file");
+	assert.doesNotMatch(api, /BlogSlugServer|FeedServer/, "nothing a handler does");
 	const browser = apiModule(table, { sources, client: true });
-	assert.match(browser, /^import pf\.Endpoint\nimport pf\.Server\n\n/m);
-	assert.match(browser, /\tput_blog_slug = \|params\| Endpoint\.remote\("PUT", "\/blog\/\$\{Server\.encode_segment\(params\.slug\)\}"\)/);
-	assert.doesNotMatch(browser, /BlogSlugServer/, "nothing a handler does, in the browser's copy");
+	assert.match(browser, /^import pf\.Endpoint\nimport pf\.Server\nimport \.\.\/Post\n\n/m);
+	assert.equal(browser.slice(browser.indexOf("Api := ")), api.slice(api.indexOf("Api := "), api.indexOf("\t## The OpenAPI document")) + "}\n\n# rocx: generated from the routes: rocx build writes it.\n", "the browser's copy: the same contract");
+	// Handlers: each of Api's endpoints with its handler, the server's alone.
+	const handlers = handlersModule(table, { sources });
+	assert.match(handlers, /^import pf\.Endpoint\nimport Api\nimport BlogSlugServer\nimport FeedServer\n\nHandlers := /m);
+	assert.match(handlers, /\tput_blog_slug = \|params\| Endpoint\.bind\(Api\.put_blog_slug\(params\), \|request, context, body\| BlogSlugServer\.put!\(\{ request: request, params: params, context: context, body: body \}\)\)\n/);
+	assert.match(handlers, /\tget_feed = \|params\| Endpoint\.bind\(Api\.get_feed\(params\), \|request, context, \{\}\| FeedServer\.get!\(\{ request: request, params: params, context: context \}\)\)\n/);
 });
 
 test("routes: events! answers a GET that asks for events; beside a page and get!, each GET goes to what it accepts", () => {
@@ -164,13 +185,13 @@ test("routes: events! answers a GET that asks for events; beside a page and get!
 	const routes = routesModule(table, { sources });
 	assert.match(
 		routes,
-		/if \(method == "GET" and wants_html\) \{\n\t\t\t\tRoutes\.page\(200\)\n\t\t\t\} else if \(method == "GET" and wants_events\) \{\n\t\t\t\tEndpoint\.stream!\(Api\.events_live\(params\), request, context\)\n\t\t\t\} else if \(method == "GET"\) \{\n\t\t\t\tEndpoint\.respond!\(Api\.get_live\(params\), request, context\)\n\t\t\t\} else \{\n\t\t\t\tEndpoint\.not_allowed\(request, \["GET"\]\)/,
+		/if \(method == "GET" and wants_html\) \{\n\t\t\t\tRoutes\.page\(200\)\n\t\t\t\} else if \(method == "GET" and wants_events\) \{\n\t\t\t\tEndpoint\.stream!\(Handlers\.events_live\(params\), request, context\)\n\t\t\t\} else if \(method == "GET"\) \{\n\t\t\t\tEndpoint\.respond!\(Handlers\.get_live\(params\), request, context\)\n\t\t\t\} else \{\n\t\t\t\tEndpoint\.not_allowed\(request, \["GET"\]\)/,
 	);
-	assert.match(routes, /if \(segments == \["ticks"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tEndpoint\.stream!\(Api\.events_ticks\(params\), request, context\)/, "alone, events! answers any GET");
+	assert.match(routes, /if \(segments == \["ticks"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tEndpoint\.stream!\(Handlers\.events_ticks\(params\), request, context\)/, "alone, events! answers any GET");
 	assert.match(routes, /\t\twants_events = \(Server\.header\(request, "accept"\) \?\? ""\)\.contains\("text\/event-stream"\)/);
 	assert.doesNotMatch(routesModule(routeTable(["feed/+server.roc"]), { sources: new Map([["feed/+server.roc", { view: null, meta: false, methods: ["get!"], middleware: null }]]) }), /wants_events|wants_html/, "neither, where nothing reads them");
-	const api = apiModule(table, { sources });
-	assert.match(api, /\tevents_ticks = \|params\| Endpoint\.local\("GET", "\/ticks", \|request, context, \{\}\| TicksServer\.events!\(\{ request: request, params: params, context: context \}\)\)/);
+	assert.match(apiModule(table, { sources }), /\t## GET \/ticks, its events \(`Endpoint\.listen!`\), from routes\/ticks\/\+server\.roc\n\tevents_ticks = \|_params\| Endpoint\.remote\("GET", "\/ticks"\)/);
+	assert.match(handlersModule(table, { sources }), /\tevents_ticks = \|params\| Endpoint\.bind\(Api\.events_ticks\(params\), \|request, context, \{\}\| TicksServer\.events!\(\{ request: request, params: params, context: context \}\)\)/);
 	assert.deepEqual(routeList(table, sources).map((row) => `${row.method} ${row.path}`), ["GET /", "GET /live", "GET /live", "EVENTS /live", "EVENTS /ticks"]);
 });
 
@@ -263,10 +284,10 @@ test("Routes: a component page's GET is Root's page, after its route file's midd
 	const table = routeTable(files);
 	const sources = new Map(files.map((file) => [file, file.endsWith("+server.roc") ? { view: null, meta: false, methods: ["put!"], middleware: null, docs: {} } : component({ middleware: file === "members/+page.rocx" ? "Guards.member" : null })]));
 	const routes = routesModule(table, { sources });
-	assert.match(routes, /^import pf\.Server\nimport pf\.Endpoint\nimport pf\.Middleware\nimport Api\nimport Root\nimport MembersPage\n\nRoutes := /m, "no Html (no page is rendered here); a page's module only for its middleware");
+	assert.match(routes, /^import pf\.Server\nimport pf\.Endpoint\nimport pf\.Middleware\nimport Handlers\nimport Root\nimport MembersPage\n\nRoutes := /m, "no Html (no page is rendered here); a page's module only for its middleware");
 	assert.match(routes, /\t\t\} else if \(segments == \["members"\]\) \{\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tMiddleware\.run!\(MembersPage\.middleware, request, context, \|_passed, _handed\| Routes\.page\(200\)\)\n/);
 	assert.match(routes, /\} else if \(segments == \[\]\) \{\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tRoutes\.page\(200\)\n/, "no params read: Root reads them");
-	assert.match(routes, /\} else if \(segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("blog"\)\) \{\n\t\t\tparams = \{ slug: segments\.get\(1\) \?\? "" \}\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tRoutes\.page\(200\)\n\t\t\t\} else if \(method == "PUT"\) \{\n\t\t\t\tEndpoint\.respond!\(Api\.put_blog_slug\(params\), request, context\)/, "a page and an endpoint at one path");
+	assert.match(routes, /\} else if \(segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("blog"\)\) \{\n\t\t\tparams = \{ slug: segments\.get\(1\) \?\? "" \}\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tRoutes\.page\(200\)\n\t\t\t\} else if \(method == "PUT"\) \{\n\t\t\t\tEndpoint\.respond!\(Handlers\.put_blog_slug\(params\), request, context\)/, "a page and an endpoint at one path");
 	assert.match(routes, /\t\t\} else \{\n\t\t\tif \(wants_html\) \{\n\t\t\t\tRoutes\.page\(404\)\n\t\t\t\} else \{\n\t\t\t\tRoutes\.text\(404, "nothing at \$\{request\.path\}"\)\n\t\t\t\}\n\t\t\}/);
 	assert.match(routes, /\tpage : U16 -> Server\.Response\n\tpage = \|status\| \{ status: status, headers: \[\], body: Page\(Root\.view!\) \}/);
 	assert.doesNotMatch(routes, /Routes\.html|\thtml :|RootLayout|RootError/);
@@ -448,7 +469,7 @@ test("rocx build --client, for an app of component pages: the browser's main.roc
 		assert.equal(build([join(dir, "site")], { cwd: dir, log: (line) => said.push(line) }), false);
 		assert.match(said.join("\n"), /site\/routes\/\+page\.rocx: a page is a component, which defines view!: `view! = \|\{ params \}\| …`/);
 		// An app of endpoints alone: its program, with its jobs (Job.define_with's too) and migrations.
-		put("api/routes/notes/+server.roc", "import pf.Server\n\nget! = |_| Ok(1)\n");
+		put("api/routes/notes/+server.roc", "import pf.Server\nimport pf.Endpoint\n\nget! : { request : Server.Request, params : {}, context : c } => Try(U64, Endpoint.Refusal)\nget! = |_| Ok(1)\n");
 		put("api/Jobs.roc", 'import jobs.Job\n\nJobs := [].{\n\tdaily = Job.define_with("daily", { attempts: 1, timeout_ms: 0 }, |{}| Ok({}))\n}\n');
 		put("api/migrations/0001_notes.sql", "create table notes (id bigint);");
 		// Jobs, and no jobs package in the header: refused, saying what to add.
@@ -577,10 +598,18 @@ test("routes: a directory may name a file (sitemap.xml, feed.xml): a dot between
 	assert.ok(matches("/sitemap.xml", "/sitemap.xml"));
 	assert.ok(!matches("/sitemap.xml", "/sitemapxxml"));
 	assert.ok(matches("/[lang]/feed.xml", "/en/feed.xml"));
-	const sources = new Map(files.map((file) => [file, file.endsWith("+page.rocx") ? { view: "view!", meta: false, methods: [], middleware: null, docs: {} } : { view: null, meta: false, methods: ["get!"], middleware: null, docs: {} }]));
+	const sources = new Map(files.map((file) => [file, file.endsWith("+page.rocx") ? { view: "view!", meta: false, methods: [], middleware: null, docs: {} } : { view: null, meta: false, methods: ["get!"], middleware: null, docs: {}, handlers: { "get!": { line: 4, body: "", answer: "Str" } }, imports: [] }]));
 	const routes = routesModule(table, { sources });
 	assert.match(routes, /if \(segments == \["sitemap\.xml"\]\) \{/);
-	assert.match(apiModule(table, { sources }), /get_sitemap_xml = \|params\| Endpoint\.local\("GET", "\/sitemap\.xml"/);
+	assert.match(routes, /Endpoint\.respond!\(Handlers\.get_lang_feed_xml\(params\), request, context\)/);
+	// The contract's names, and the handlers' modules, without the dots; its URLs with them (D-037).
+	const api = apiModule(table, { sources });
+	assert.match(api, /\t## GET \/sitemap\.xml, from routes\/sitemap\.xml\/\+server\.roc\n\tget_sitemap_xml : \{\} -> Endpoint\(context, \{\}, Str\)\n\tget_sitemap_xml = \|_params\| Endpoint\.remote\("GET", "\/sitemap\.xml"\)\n/);
+	assert.match(api, /\tget_lang_feed_xml : \{ lang : Str \} -> Endpoint\(context, \{\}, Str\)\n\tget_lang_feed_xml = \|params\| Endpoint\.remote\("GET", "\/\$\{Server\.encode_segment\(params\.lang\)\}\/feed\.xml"\)\n/);
+	assert.match(api, /OpenApi\.path\("\/sitemap\.xml", \[\], \[/);
+	const handlers = handlersModule(table, { sources });
+	assert.match(handlers, /^import LangFeedXmlServer\nimport SitemapXmlServer$/m);
+	assert.match(handlers, /\tget_sitemap_xml = \|params\| Endpoint\.bind\(Api\.get_sitemap_xml\(params\), \|request, context, \{\}\| SitemapXmlServer\.get!\(/);
 	// A dot that isn't between two letters or digits would make a name Roc can't read.
 	for (const part of ["feed.", "a..b", "a.-b", "a-.b"]) assert.throws(() => routeTable([`${part}/+page.rocx`]), /a directory is a path's part in lower case/, part);
 	assert.throws(() => routeTable(["feed.xml/+server.roc", "feed-xml/+server.roc"]), /would both be/);
@@ -611,10 +640,10 @@ test("routes: .well-known is routed, and no other directory starting with a dot;
 		[files[3], { view: null, meta: false, methods: [], middleware: null, docs: {}, respond: true }],
 	]);
 	const routes = routesModule(table, { sources });
-	assert.match(routes, /if \(segments == \["\.well-known", "oauth-authorization-server"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tEndpoint\.respond!\(Api\.get_well_known_oauth_authorization_server\(params\), request, context\)/);
+	assert.match(routes, /if \(segments == \["\.well-known", "oauth-authorization-server"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tEndpoint\.respond!\(Handlers\.get_well_known_oauth_authorization_server\(params\), request, context\)/);
 	assert.match(
 		routes,
-		/if \(segments == \["mcp"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tif \(method == "POST"\) \{\n[^\n]*Api\.post_mcp[^\n]*\n\t\t\t\} else \{\n\t\t\t\tMiddleware\.run!\(McpServer\.middleware, request, context, \|passed, handed\| McpServer\.respond!\(\{ request: passed, params: params, context: handed \}\)\)\n\t\t\t\}/,
+		/if \(segments == \["mcp"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tif \(method == "POST"\) \{\n[^\n]*Handlers\.post_mcp[^\n]*\n\t\t\t\} else \{\n\t\t\t\tMiddleware\.run!\(McpServer\.middleware, request, context, \|passed, handed\| McpServer\.respond!\(\{ request: passed, params: params, context: handed \}\)\)\n\t\t\t\}/,
 		"post! for a POST; every other method, respond!, behind the file's middleware",
 	);
 	assert.match(
@@ -658,30 +687,35 @@ test("channels: a +server.roc's channel! is Api's channel_<path> (CHANNEL, its U
 		"",
 	].join("\n");
 	assert.deepEqual(definitions(room).channel, { hooks: ["receive!", "on_open!", "on_close!"] });
+	assert.deepEqual(definitions(room).handlers, { "channel!": { line: 9, body: "", answer: "Channel(Str, Str, Str)" } }, "its types, from its annotation: what Api's copy is");
 	assert.deepEqual(definitions(room).methods, [], "a channel is no HTTP method");
 	assert.deepEqual(definitions("get! = |_| Ok(1)\n").channel, undefined);
 	assert.deepEqual(definitions("on_open! = |_| []\n").hooks, ["on_open!"], "a hook with no channel, for rocx build to refuse");
 	const table = routeTable(["+page.rocx", "rooms/[room]/+server.roc", "news/+server.roc", "news/+page.rocx"]);
 	const sources = new Map([
 		["+page.rocx", { view: "view!", meta: false, methods: [], middleware: null, docs: {} }],
-		["rooms/[room]/+server.roc", { view: null, meta: false, methods: [], middleware: "Members.signed_in", docs: {}, channel: { hooks: ["receive!", "on_open!", "on_close!"] } }],
+		["rooms/[room]/+server.roc", { view: null, meta: false, methods: [], middleware: "Members.signed_in", docs: {}, channel: { hooks: ["receive!", "on_open!", "on_close!"] }, handlers: definitions(room).handlers, imports: definitions(room).imports }],
 		["news/+server.roc", { view: null, meta: false, methods: ["get!"], middleware: null, docs: {}, channel: { hooks: [] } }],
 		["news/+page.rocx", { view: "view!", meta: false, methods: [], middleware: null, docs: {} }],
 	]);
 	const api = apiModule(table, { sources, title: "app" });
-	assert.match(api, /\t## The channel at \/rooms\/\[room\], from routes\/rooms\/\[room\]\/\+server\.roc \(`Endpoint\.subscribe!`, `Endpoint\.publish!`\)\n\tchannel_rooms_room = \|params\| Endpoint\.local\("CHANNEL", "\/rooms\/\$\{Server\.encode_segment\(params\.room\)\}", \|request, context, \{\}\| RoomsRoomServer\.channel!\(\{ request: request, params: params, context: context \}\)\)\n/);
-	assert.match(api, /\tchannel_news = \|params\| Endpoint\.local\("CHANNEL", "\/news", /);
+	assert.match(api, /\t## The channel at \/rooms\/\[room\], from routes\/rooms\/\[room\]\/\+server\.roc \(`Endpoint\.subscribe!`, `Endpoint\.publish!`\)\n\tchannel_rooms_room : \{ room : Str \} -> Endpoint\(context, \{\}, Channel\(Str, Str, Str\)\)\n\tchannel_rooms_room = \|params\| Endpoint\.remote\("CHANNEL", "\/rooms\/\$\{Server\.encode_segment\(params\.room\)\}"\)\n/, "its Channel(who, message, said), from channel!'s annotation");
+	assert.match(api, /^import pf\.Channel$/m, "the module its type names");
+	assert.match(api, /\tchannel_news = \|_params\| Endpoint\.remote\("CHANNEL", "\/news"\)/);
+	assert.match(handlersModule(table, { sources }), /\tchannel_rooms_room = \|params\| Endpoint\.bind\(Api\.channel_rooms_room\(params\), \|request, context, \{\}\| RoomsRoomServer\.channel!\(\{ request: request, params: params, context: context \}\)\)\n/);
 	assert.doesNotMatch(api, /OpenApi\.path\("\/rooms/, "a channel isn't in the OpenAPI document");
 	const browser = apiModule(table, { sources, client: true });
 	assert.match(browser, /\tchannel_rooms_room = \|params\| Endpoint\.remote\("CHANNEL", "\/rooms\/\$\{Server\.encode_segment\(params\.room\)\}"\)\n/);
 	assert.match(browser, /\tchannel_news = \|_params\| Endpoint\.remote\("CHANNEL", "\/news"\)\n/);
-	assert.doesNotMatch(browser, /RoomsRoomServer|on_open|receive/, "the browser's copy: its method and URL alone");
+	assert.doesNotMatch(browser, /RoomsRoomServer|on_open|receive/, "the browser's copy: its method, URL and types alone");
+	assert.match(browser, /\tchannel_rooms_room : \{ room : Str \} -> Endpoint\(context, \{\}, Channel\(Str, Str, Str\)\)\n/);
 	const routes = routesModule(table, { sources });
 	assert.match(routes, /^import RoomsRoomServer$/m, "the module whose hooks it calls");
+	assert.match(routes, /^import Api\nimport Handlers$/m, "Handlers for each channel's check, Api for what its hooks are given");
 	assert.match(routes, /\t\tif \(Endpoint\.channel_asked\(request\) != ""\) \{\n\t\t\tRoutes\.channel!\(segments, request, context\)\n\t\t\} else if /, "the host's asks first, whatever the path");
 	assert.match(
 		routes,
-		/\tchannel! = \|segments, request, context\| \{\n\t\tif \(segments == \["news"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tEndpoint\.channel!\(Api\.channel_news\(params\), request, context, \{ opened!: \|_who, _tab\| \[\], received!: \|_who, _tab, _said\| Err\(Status\(404, "\/news takes nothing pages say: its route has no receive!"\)\), closes: Bool\.False \}\)\n\t\t\} else if \(segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("rooms"\)\) \{\n\t\t\tparams = \{ room: segments\.get\(1\) \?\? "" \}\n\t\t\tMiddleware\.run!\(RoomsRoomServer\.middleware, request, context, \|passed, handed\| Endpoint\.channel!\(Api\.channel_rooms_room\(params\), passed, handed, \{ opened!: \|who, tab\| RoomsRoomServer\.on_open!\(\{ params: params, who: who, tab: tab, channel: Api\.channel_rooms_room\(params\) \}\), received!: Endpoint\.receiving\(Api\.channel_rooms_room\(params\), \|who, tab, said\| RoomsRoomServer\.receive!\(\{ params: params, who: who, tab: tab, said: said, channel: Api\.channel_rooms_room\(params\) \}\)\), closes: Bool\.True \}\)\)\n\t\t\} else \{\n\t\t\tRoutes\.text\(404, "no channel at \$\{request\.path\}"\)\n\t\t\}\n\t\}/,
+		/\tchannel! = \|segments, request, context\| \{\n\t\tif \(segments == \["news"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tEndpoint\.channel!\(Handlers\.channel_news\(params\), request, context, \{ opened!: \|_who, _tab\| \[\], received!: \|_who, _tab, _said\| Err\(Status\(404, "\/news takes nothing pages say: its route has no receive!"\)\), closes: Bool\.False \}\)\n\t\t\} else if \(segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("rooms"\)\) \{\n\t\t\tparams = \{ room: segments\.get\(1\) \?\? "" \}\n\t\t\tMiddleware\.run!\(RoomsRoomServer\.middleware, request, context, \|passed, handed\| Endpoint\.channel!\(Handlers\.channel_rooms_room\(params\), passed, handed, \{ opened!: \|who, tab\| RoomsRoomServer\.on_open!\(\{ params: params, who: who, tab: tab, channel: Api\.channel_rooms_room\(params\) \}\), received!: Endpoint\.receiving\(Api\.channel_rooms_room\(params\), \|who, tab, said\| RoomsRoomServer\.receive!\(\{ params: params, who: who, tab: tab, said: said, channel: Api\.channel_rooms_room\(params\) \}\)\), closes: Bool\.True \}\)\)\n\t\t\} else \{\n\t\t\tRoutes\.text\(404, "no channel at \$\{request\.path\}"\)\n\t\t\}\n\t\}/,
 		"each behind its file's middleware, the hooks it has, defaults for the others",
 	);
 	assert.match(
@@ -719,6 +753,142 @@ test("channels: a +server.roc's channel! is Api's channel_<path> (CHANNEL, its U
 		said.length = 0;
 		assert.equal(build([join(dir, "app")], { cwd: dir, log: (line) => said.push(line) }), false);
 		assert.match(said.join("\n"), /routes\/lobby\/\+server\.roc: on_open! is a channel's hook, and it defines no channel: define channel!, its check/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("the contract (D-037): Api's types are copied from each handler's annotation, with the imports they name, from Generated/; a handler rocx can't read is refused", () => {
+	const board = [
+		"import pf.Server",
+		"import pf.Endpoint",
+		"import pf.Events",
+		"import pf.Channel",
+		"import ../../../Board exposing [Card]",
+		"import ../../../Store",
+		"import shop.Cart as C",
+		"import ../../../Guards",
+		"",
+		"middleware = Guards.member",
+		"",
+		"## The board.",
+		"get! : { request : Server.Request, params : { board : Str }, context : Guards.Member }",
+		"\t=> Try(List(Board.Column), Endpoint.Refusal)",
+		"get! = |{ params, .. }| Store.columns!(params.board)",
+		"",
+		"post! : {",
+		"\trequest : Server.Request,",
+		"\tparams : { board : Str },",
+		"\tcontext : Guards.Member,",
+		"\tbody : { card : Card, totals : List(C.Total) },",
+		"} => Try(Str, Endpoint.Refusal)",
+		"post! = |_| Ok(\"\")",
+		"",
+		"events! : { request : Server.Request, params : { board : Str }, context : c } => Try(Events({ at : U64 }), Endpoint.Refusal)",
+		"events! = |_| Ok(Events.from_list([], 0))",
+		"",
+		"channel! : { request : Server.Request, params : { board : Str }, context : c } => Try(Channel(Str, Board.News, []), Endpoint.Refusal)",
+		"channel! = |_| Ok(Channel.allow(\"x\"))",
+		"",
+	].join("\n");
+	const defs = definitions(board);
+	assert.deepEqual(defs.handlers, {
+		"get!": { line: 15, body: "", answer: "List(Board.Column)" },
+		"post!": { line: 23, body: "{ card : Card, totals : List(C.Total) }", answer: "Str" },
+		"events!": { line: 26, body: "", answer: "Events({ at : U64 })" },
+		"channel!": { line: 29, body: "", answer: "Channel(Str, Board.News, [])" },
+	}, "an annotation over several lines too; the line each is defined at");
+	assert.deepEqual(defs.imports.length, 8);
+	const table = routeTable(["b/[board]/+server.roc"]);
+	const sources = new Map([["b/[board]/+server.roc", defs]]);
+	const api = apiModule(table, { sources });
+	assert.match(api, /^import pf\.Endpoint\nimport pf\.Server\nimport pf\.OpenApi\nimport pf\.Channel\nimport pf\.Events\nimport shop\.Cart as C\nimport \.\.\/Board exposing \[Card\]\n\nApi := /m, "the packages' modules, then the app's, as Generated/ names them: what the types name (Card exposed, C an alias), not Store or Guards");
+	assert.match(api, /\tget_b_board : \{ board : Str \} -> Endpoint\(context, \{\}, List\(Board\.Column\)\)\n/);
+	assert.match(api, /\tpost_b_board : \{ board : Str \} -> Endpoint\(context, \{ card : Card, totals : List\(C\.Total\) \}, Str\)\n/);
+	assert.match(api, /\tevents_b_board : \{ board : Str \} -> Endpoint\(context, \{\}, Events\(\{ at : U64 \}\)\)\n/);
+	assert.match(api, /\tchannel_b_board : \{ board : Str \} -> Endpoint\(context, \{\}, Channel\(Str, Board\.News, \[\]\)\)\n/);
+	assert.doesNotMatch(api, /Guards|BBoardServer/, "the context stays any: only the handler cares");
+	assert.deepEqual(contractProblems(table, sources), []);
+	// What rocx build refuses, each at its handler's line.
+	const refused = (source, file = "notes/+server.roc") => contractProblems(routeTable([file]), new Map([[file, definitions(source)]]));
+	assert.deepEqual(refused("import pf.Server\n\n## Notes.\nget! = |_| Ok([])\n"), [
+		"routes/notes/+server.roc:4: get! has no type annotation, and rocx build copies its types into Generated/Api, the app's contract (D-037): annotate it, as get! : { request : Server.Request, params : {}, context : c } => Try(…, Endpoint.Refusal)",
+	]);
+	assert.deepEqual(refused("channel! = |_| Ok(Channel.allow(1))\n", "rooms/[room]/+server.roc"), [
+		"routes/rooms/[room]/+server.roc:1: channel! has no type annotation, and rocx build copies its types into Generated/Api, the app's contract (D-037): annotate it, as channel! : { request : Server.Request, params : { room : Str }, context : c } => Try(Channel(who, message, said), Endpoint.Refusal)",
+	]);
+	assert.match(refused("post! : Handler\npost! = |_| Ok(1)\n")[0], /^routes\/notes\/\+server\.roc:2: rocx build can't read post!'s types for Generated\/Api: its annotation should be a record of what it is given, then => and a Try of its answer/);
+	assert.match(refused("get! : { request : Server.Request, params : {}, context : c } => Try(a, Endpoint.Refusal) where [a.X]\nget! = |_| Ok(1)\n")[0], /a where clause\?/);
+	assert.deepEqual(refused("put! : { request : Server.Request, params : {}, context : c } => Try({}, Endpoint.Refusal)\nput! = |_| Ok({})\n"), [
+		"routes/notes/+server.roc:2: put! is sent a body (PUT): its annotation's record needs body : … ({} for none), as put! : { request : Server.Request, params : {}, context : c, body : … } => Try(…, Endpoint.Refusal)",
+	]);
+	// One module that two route files import differently (one exposing a name): imported once.
+	const merged = routeTable(["a/+server.roc", "b/c/+server.roc"]);
+	const mergedSources = new Map([
+		["a/+server.roc", definitions("import ../../Board exposing [Card]\n\nget! : { request : Server.Request, params : {}, context : c } => Try(Card, Endpoint.Refusal)\nget! = |_| Ok(1)\n")],
+		["b/c/+server.roc", definitions("import ../../../Board\n\nget! : { request : Server.Request, params : {}, context : c } => Try(Board.Column, Endpoint.Refusal)\nget! = |_| Ok(1)\n")],
+	]);
+	assert.deepEqual(contractProblems(merged, mergedSources), []);
+	assert.match(apiModule(merged, { sources: mergedSources }), /^import pf\.OpenApi\nimport \.\.\/Board exposing \[Card\]\n\nApi := /m, "once, with what either exposes");
+	// Two route files whose types name different modules by one name: Api can't import both.
+	const two = routeTable(["a/+server.roc", "b/+server.roc"]);
+	const clash = contractProblems(two, new Map([
+		["a/+server.roc", definitions("import ../../Store\n\nget! : { request : Server.Request, params : {}, context : c } => Try(Store.Item, Endpoint.Refusal)\nget! = |_| Ok(1)\n")],
+		["b/+server.roc", definitions("import shop.Store\n\nget! : { request : Server.Request, params : {}, context : c } => Try(Store.Item, Endpoint.Refusal)\nget! = |_| Ok(1)\n")],
+	]));
+	assert.deepEqual(clash, [
+		"routes/b/+server.roc:4: its get! names Store (shop.Store, as Generated/ has it), and routes/a/+server.roc's get! names another Store (../Store): Generated/Api imports the modules both name, so give one of them another name (import … as …)",
+	]);
+});
+
+test("rocx build (D-037): refuses an unannotated handler; a type's module that imports Api is a cycle, said at that import; the browser's copy reaching pf.Db through Api's types is an error at the route", () => {
+	const dir = mkdtempSync(join(tmpdir(), "rocx-contract-"));
+	const put = (path, text) => {
+		mkdirSync(dirname(join(dir, path)), { recursive: true });
+		writeFileSync(join(dir, path), text);
+	};
+	const said = [];
+	const built = (options = {}) => {
+		said.length = 0;
+		return build([join(dir, "app")], { cwd: dir, log: (line) => said.push(line), ...options });
+	};
+	try {
+		put("app/main.roc", 'app [program] { pf: platform "../server/platform/main.roc" }\n\nimport Generated/App\n');
+		put("app/routes/+page.rocx", "import pf.Html\n\nview! = |_| <p>Home</p>\n");
+		put("app/routes/hello/+server.roc", "## GET /hello.\nget! = |_| Ok(\"hi\")\n");
+		assert.equal(built(), false);
+		assert.deepEqual(said.filter((line) => line.startsWith("✗")), [
+			"✗ app/routes/hello/+server.roc:2: get! has no type annotation, and rocx build copies its types into Generated/Api, the app's contract (D-037): annotate it, as get! : { request : Server.Request, params : {}, context : c } => Try(…, Endpoint.Refusal)",
+		]);
+		put("app/routes/hello/+server.roc", "import pf.Server\nimport pf.Endpoint\nimport ../../News\n\n## GET /hello.\nget! : { request : Server.Request, params : {}, context : c } => Try(News.Said, Endpoint.Refusal)\nget! = |_| Ok({ text: \"hi\" })\n");
+		// News defines the answer's type and imports Api, through Feed: Api imports News, so a cycle.
+		put("app/News.roc", "import Feed\n\nNews := [].{\n\tSaid : { text : Str }\n}\n");
+		put("app/Feed.roc", "import pf.Endpoint\nimport Generated/Api\n\nFeed := [].{\n\thello = Api.get_hello({})\n}\n");
+		assert.equal(built(), false);
+		assert.deepEqual(said.filter((line) => line.startsWith("✗")), [
+			"✗ app/Feed.roc:2: News.roc imports Feed, which imports Generated/Api, and Generated/Api imports News.roc for routes/hello/+server.roc's get!, whose type News.Said names News.Said: a cycle, which Roc refuses. Move News.Said into a module of its own that doesn't import Generated/Api, and name it from there",
+		]);
+		// The type in a module of its own: no cycle. Feed, which the routes may import, may import Api.
+		put("app/News.roc", "News := [].{\n\tSaid : { text : Str }\n}\n");
+		// The page reads the endpoint: the browser's copy reaches Api, and what its types name.
+		put("app/routes/+page.rocx", "import pf.Html\nimport pf.Endpoint\nimport ../Generated/Api\n\nview! = |_| <p>{Endpoint.get!(Api.get_hello({})).text}</p>\n");
+		assert.equal(built({ client: join(dir, "app", "build", "client") }), true, said.join("\n"));
+		assert.match(readFileSync(join(dir, "app", "Generated", "Api.roc"), "utf8"), /^import \.\.\/News\n[^]*\tget_hello : \{\} -> Endpoint\(context, \{\}, News\.Said\)\n/m);
+		assert.match(readFileSync(join(dir, "app", "build", "client", "Generated", "Api.roc"), "utf8"), /\tget_hello : \{\} -> Endpoint\(context, \{\}, News\.Said\)\n/, "the browser's copy: the same types");
+		assert.ok(existsSync(join(dir, "app", "Generated", "Handlers.roc")) && readFileSync(join(dir, "app", "build", "client", ".rocx-client"), "utf8").includes("\napp: ../..\n"), "Handlers, for the server; the copy says where its app is, for rocx check");
+		// A type whose module imports pf.Db: the browser's copy of Api can't compile it.
+		put("app/News.roc", "import pf.Db\n\nNews := [].{\n\tSaid : { text : Str }\n}\n");
+		assert.equal(built({ client: join(dir, "app", "build", "client") }), false);
+		assert.deepEqual(said.filter((line) => line.startsWith("✗") || line.startsWith("⚠")), [
+			"✗ app/routes/hello/+server.roc:7: get!'s type News.Said names News, a module that imports pf.Db, which only the server has. The browser's copy of Generated/Api, the app's contract (D-037), imports the modules a route's types name, so the browser's build can't compile it: move the type into a module that doesn't import pf.Db, and name it from there",
+		]);
+		assert.equal(built(), true, "without --client, nothing to say: the server's copy compiles");
+		// A type the route file defines itself: Api, which imports no route file, can't name it.
+		put("app/routes/hello/+server.roc", "import pf.Server\nimport pf.Endpoint\n\nGreeting : { text : Str }\n\n## GET /hello.\nget! : { request : Server.Request, params : {}, context : c } => Try(List(Greeting), Endpoint.Refusal)\nget! = |_| Ok([{ text: \"hi\" }])\n");
+		assert.equal(built(), false);
+		assert.deepEqual(said.filter((line) => line.startsWith("✗")), [
+			"✗ app/routes/hello/+server.roc:8: get!'s type names Greeting, which this route file defines, and Generated/Api, the app's contract (D-037), imports no route file: move Greeting into a module of its own (Greeting.roc beside routes/) and import it here",
+		]);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

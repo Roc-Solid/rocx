@@ -134,17 +134,19 @@ and start the server on a free port. They don't use `DATABASE_URL`.
 
 ## What it asked of the platform
 
-Every gap met, and what the journal does about it. Eight were fixed in the platform while it was
+Every gap met, and what the journal does about it. Nine were fixed in the platform while it was
 built: a route's directory may now name a file (`routes/sitemap.xml/`); packages/markdown parses
 footnotes; packages/testing's `click()` scrolls instantly, so it no longer misses on a page with
 `scroll-behavior: smooth`; a `<For>` or `<Show>` may sit in a function child (the reactions'
-`<For>` is in their `<Show>`'s child); and a request carries the address of the connection it came
+`<For>` is in their `<Show>`'s child); a request carries the address of the connection it came
 on (`Server.Request`'s `peer`, D-041), so guard's limit can count a reader without a cookie by
 address; and a page may read its params only inside `<NoHydration>` (D-044: the browser's copy
 unbinds them; the pages here read theirs in a `<Title>` too, which they want anyway); and `rocx
 build` finds the posts (D-042: `Generated/Content/En` and `Pl`, every file in `content/en/` and
 `content/pl/` imported); and guard keeps its state in `Kv` and names the server platform itself
-(D-043), so its middleware is imported (`guard.Guard`) rather than copied. These are still open:
+(D-043), so its middleware is imported (`guard.Guard`) rather than copied; and the browser's copy of
+`Api` has the endpoints' types, copied from each handler's annotation (D-037), so the search's
+`posts` and the reactions' `toggles` are no longer annotated. These are still open:
 
 1. **`<HttpStatusCode>` is effectful**, so a component that sets the status is a `view!`
    (`Ui/NotFound.rocx`). Pure callers still write `<NotFound … />`, and rocx wraps it.
@@ -155,9 +157,7 @@ build` finds the posts (D-042: `Generated/Content/En` and `Pl`, every file in `c
 4. **The OpenAPI document gives the reactions' `POST` a JSON body only**, though the endpoint takes
    the same fields as a form, which is what the no-JavaScript buttons send (server/README.md, "Not
    yet").
-5. **The browser's copy of `Api` has no types** (known, D-030). The search's `posts` and the
-    reactions' `toggles : Submissions(Reaction.Toggle, Reaction.Tally)` are annotated.
-6. **The Roc gotchas met:**
+5. **The Roc gotchas met:**
     - `{ lang }` alone is a block, not a record (`Paths.lang({ lang: lang })`).
     - A parameter can't share a name with a member of its type's block (hence `Rules.of_title`, …).
     - `join_with` is `Str.join_with(list, sep)`, not a method of a list.

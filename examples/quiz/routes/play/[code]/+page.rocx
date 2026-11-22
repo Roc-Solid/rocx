@@ -29,8 +29,6 @@ meta = { title: "Play" }
 ## game that is over, says so.
 view! = |{ params }| {
 	code = params.code
-	# The browser's copy of an endpoint is only its URL: what it answers is said here.
-	seat : Game.Seat
 	seat = Endpoint.get!(Api.get_rooms_code({ code: code }))
 	<main class="phone">
 		<Title>{"Room ${code}"}</Title>

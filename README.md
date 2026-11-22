@@ -289,8 +289,15 @@ rocx writes each route file as a module under `Generated/` (its lines kept), and
 layouts for a GET a browser sends, the endpoint for the method otherwise, a 405 with `Allow`, or
 the error page; `Generated/Paths.roc`, a path for every page (`Paths.blog_slug({ slug })`, so a
 link to a page that isn't there doesn't compile; a name Roc keeps gets a `_`: `Paths.platform_`);
-and `Generated/Api.roc`, a function for every endpoint, which runs its handler on the server and is
-its method and URL in the browser's copy. Middleware (the platform's `Middleware`) runs around answers:
+`Generated/Api.roc`, the app's contract: a function for every endpoint and channel, its method, URL and
+the types its handler's annotation gives (`get_blog_slug : { slug : Str } -> Endpoint(context, {},
+Post)`), the same in the browser's copy, importing no route file, so any module may import it (a
+store, a job, an actor that publishes on a channel); and `Generated/Handlers.roc`, the server's
+alone, each of them bound to its handler (`Endpoint.bind`), which the router answers with and
+`Endpoint.run!` runs (D-037). So every handler is annotated, as `get! : { request : Server.Request,
+params : { slug : Str }, context : c } => Try(Post, Endpoint.Refusal)`: `rocx build` refuses one
+that isn't. `main.roc`, which may import Handlers, is where to mount what runs handlers in front of
+the routes (an MCP server). Middleware (the platform's `Middleware`) runs around answers:
 the app's default around every request, and the one a route file names around its own (its page
 and endpoints).
 
@@ -370,8 +377,10 @@ typed at both ends, which anything else that speaks HTTP may ask too.
   page's own URL (`routes/members/+server.roc` answers `GET /members` for JSON, behind the same
   middleware as the page there); a layout, which many pages share, reads an endpoint at a path of
   its own (the docs site's footer reads `GET /api/facts`). A handler runs only on the server, so it
-  may use what only the server has (`Db`, `Job`); the browser's copy of `Api` is each endpoint's
-  method and URL. What goes and comes is JSON: an `F64` as a number (one JSON can't write, NaN or an
+  may use what only the server has (`Db`, `Job`); the browser's copy of `Api` is the same contract,
+  each endpoint's method, URL and types, so a type a route's annotation names must compile in the
+  browser (`rocx build` refuses one from a module that imports `pf.Db`, naming the route, the type
+  and the module), and a wrong body or answer doesn't compile in either copy. What goes and comes is JSON: an `F64` as a number (one JSON can't write, NaN or an
   infinity, is a 500 that says so). The builtin `Try` has no JSON encoder or parser on this Roc, so a
   result can't hold one: write the tag union instead (`[Ok(Str), Err([NotFound])]`, which a `match`
   reads as it reads a `Try`); `rocx check` says so under the compiler's report.

@@ -2,7 +2,6 @@ import pf.Html
 import pf.Endpoint
 import pf.Server
 import pf.Show
-import pf.Submission
 import pf.Title
 import pf.Router exposing [use_submission!]
 import ../../../Middlewares
@@ -33,7 +32,6 @@ Shown := [].{
 		read = Api.get_notes_id({ id: id })
 		opened! : {} => Pages.Opened
 		opened! = |{}| Endpoint.get!(read)
-		acting : Submission({ action : Str }, Note.Full)
 		acting = use_submission!(Api.post_notes_id({ id: id }))
 		action = Endpoint.url_of(Api.post_notes_id({ id: id }))
 		<div>

@@ -64,6 +64,37 @@ and `Plugin`; the modules components are written with
 web platform's too: their source is in `web/platform`, and the build copies them here
 (`SHARED_MODULES` in `build.mjs`).
 
+### Endpoints: the contract and its handlers (D-037)
+
+```roc
+# routes/b/[board]/+server.roc: every handler annotated; rocx build copies its types into Api
+get! : { request : Server.Request, params : { board : Str }, context : Middlewares.Member } => Try(Board.Data, Endpoint.Refusal)
+
+# Generated/Api.roc, the contract: the same in the browser's copy; any module may import it
+get_b_board : { board : Str } -> Endpoint(context, {}, Board.Data)
+get_b_board = |params| Endpoint.remote("GET", "/b/${Server.encode_segment(params.board)}")
+
+# Generated/Handlers.roc, the server's alone: what Routes answers with, and Endpoint.run! runs
+get_b_board = |params| Endpoint.bind(Api.get_b_board(params), |request, context, {}| BBoardServer.get!({ request, params, context }))
+
+# main.roc, or a module only it imports (an MCP server's tools): a handler, without its middleware
+Endpoint.run!(Handlers.get_b_board({ board: "launch" }), request, context, {})
+```
+
+`Generated/Api` is what an endpoint is: its method, its URL, and the types its handler's
+annotation gives (its params, its body, its answer; a channel's `Channel(who, message, said)`; what
+`events!` streams), its context any. It imports what those types name and no route file, so a
+store, a job, an actor or a route imports it: `Endpoint.publish!(Api.channel_b_board({ board }),
+news)`, typed. `rocx build` refuses a handler without an annotation, or one it can't read, or
+whose types name a type its route file defines (Api can't import the file: the type goes into a
+module of its own), at its line. `Generated/Handlers` binds each contract to its handler (`Endpoint.bind`: the compiler checks
+that they agree), and imports every route file: `Generated/Routes` answers with its endpoints,
+and `Endpoint.run!` runs one there and then (no HTTP, no middleware: the caller ran its own). Only
+what is outside the routes' imports may import it: `main.roc`, a plugin, a module only they
+import. `run!` given Api's contract crashes, saying to use Handlers'. A route file that runs
+another route's handler binds it itself (`Endpoint.bind(Api.x(params), |r, c, b| XServer.post!(…))`),
+as `site/routes/calls/+server.roc` does.
+
 ### Postgres: `Db`
 
 ```roc
@@ -401,7 +432,11 @@ Endpoint.publish_latest!(Api.channel_rooms_room({ room }), member, cursor)   # o
 
 A channel is a route's `channel!` (`Channel(who, message, said)`): its check answers who the
 subscriber is, or a refusal. `rocx build` puts it in `Generated/Api` (`Api.channel_<path>(params)`,
-method `CHANNEL`), and pages subscribe to it with `Endpoint.subscribe!` (web/README.md). Its hooks,
+method `CHANNEL`, typed with its `Channel(who, message, said)`, copied from `channel!`'s annotation), and
+pages subscribe to it with `Endpoint.subscribe!` (web/README.md). Api imports no route file (D-037),
+so a job, an actor or a store module imports `Generated/Api` and publishes by name, typed: what it
+publishes must be the channel's `message`. The module that defines that type can't import Api too
+(Api imports it): `rocx build` says so, and to move the type into a module of its own. Its hooks,
 each optional: `receive!`, what pages say, after the same middleware and check; `on_open!`, what a
 subscriber is sent first, each time it subscribes; `on_close!`, told when a subscription ends,
 outside the middleware. Each is given the path's params, `who`, the tab's id, and the channel.
@@ -547,8 +582,9 @@ POST, another site's URL) is a handler's, sent from the browser: the render fail
 
 The modules components are written with are the browser's platform's (`web/platform`), copied into
 this one by the build (`server/build.mjs`), so the same components compile on both. An endpoint's
-handler runs only here, so it may use `Db`, `Job` and the rest: in the browser's copy, `Api` is each
-endpoint's method and URL, and a route file has no middleware.
+handler runs only here, so it may use `Db`, `Job` and the rest: `Api` is the contract in both copies
+(each endpoint's method, URL and types), its handlers are `Generated/Handlers`', which only the
+server has, and in the browser's copy a route file has no middleware.
 
 ### The log: `Log`
 

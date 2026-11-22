@@ -20,7 +20,7 @@ Trace := [].{
 		<Trace>
 			<li>
 				<p><strong>Names it</strong> after its method and path:</p>
-				<Code source={"post_api_shout = |_params| Endpoint.remote(\"POST\", \"/api/shout\")"} numbers={Bool.False} />
+				<Code source={"post_api_shout : {} -> Endpoint(context, Str, Str)\npost_api_shout = |_params| Endpoint.remote(\"POST\", \"/api/shout\")"} numbers={Bool.False} />
 			</li>
 			<li><p><strong>Routes it</strong>, past the app's middleware.</p></li>
 		</Trace>

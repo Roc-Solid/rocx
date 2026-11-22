@@ -12,6 +12,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildApp, buildHost, hasRust, roc as findRoc, rocxBinary, start, syncShared, zig } from "../server/build.mjs";
 import { findChrome, launch } from "../web/test/browser.mjs";
+import { testDatabase } from "../packages/testing/postgres.mjs";
 import { Runtime } from "../web/runtime.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -162,16 +163,18 @@ test("routes: a route file with no blank line before its definitions builds, its
 	} finally {
 		rmSync(wrong, { recursive: true, force: true });
 	}
-	// An endpoint of one line: its module's line before it, and a mistake in it at its column there.
+	// An endpoint with no blank line after its imports: its module's line before its first definition
+	// (the annotation rocx build copies into Api), and a mistake in it at its column there.
 	const endpoint = routesCopy();
 	try {
 		mkdirSync(join(endpoint, "routes", "feed"));
-		writeFileSync(join(endpoint, "routes", "feed", "+server.roc"), "get! = |_| Ok(nobody)\n");
-		assert.equal(run("build", endpoint).status, 0);
-		assert.equal(readFileSync(join(endpoint, "Generated", "FeedServer.roc"), "utf8").split("\n")[0], "FeedServer := [].{ get! = |_| Ok(nobody)");
+		writeFileSync(join(endpoint, "routes", "feed", "+server.roc"), "import pf.Server\nimport pf.Endpoint\nget! : { request : Server.Request, params : {}, context : c } => Try(Str, Endpoint.Refusal)\nget! = |_| Ok(nobody)\n");
+		const built = run("build", endpoint);
+		assert.equal(built.status, 0, built.stderr);
+		assert.equal(readFileSync(join(endpoint, "Generated", "FeedServer.roc"), "utf8").split("\n")[2], "FeedServer := [].{ get! : { request : Server.Request, params : {}, context : c } => Try(Str, Endpoint.Refusal)");
 		const checked = run("check", "--", roc, "check", join(endpoint, "main.roc"));
 		assert.notEqual(checked.status, 0);
-		assert.match(checked.stdout, /routes\/feed\/\+server\.roc:1:15\n\nNothing is named nobody in this scope\.\n\nget! = \|_\| Ok\(nobody\)\n {14}\^{6}/, `the endpoint's line and column, quoted:\n${checked.stdout}`);
+		assert.match(checked.stdout, /routes\/feed\/\+server\.roc:4:15\n\nNothing is named nobody in this scope\.\n\nget! = \|_\| Ok\(nobody\)\n {14}\^{6}/, `the endpoint's line and column, quoted:\n${checked.stdout}`);
 	} finally {
 		rmSync(endpoint, { recursive: true, force: true });
 	}
@@ -451,6 +454,123 @@ test("routes, served natively: each page in its layouts, a param a page's, a pat
 		assert.equal((await fetch(`${server.url}/openapi.html`)).status, 404, "Document: no page");
 	} finally {
 		await server?.stop();
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+// ---- The contract (D-037): Generated/Api imports no route file, so anything may publish through it ----
+
+/** An app on the server platform whose live channel (`routes/news/+server.roc`) a route, an actor and
+ * a job each publish on through `Generated/Api`, and whose page reads and sends its endpoints. */
+function contractApp() {
+	syncShared();
+	const dir = mkdtempSync(join(here, "e2e", "run-"));
+	const put = (path, text) => {
+		mkdirSync(dirname(join(dir, path)), { recursive: true });
+		writeFileSync(join(dir, path), text);
+	};
+	put("main.roc", 'app [program] { jobs: "../../../packages/jobs/main.roc", pf: platform "../../../server/platform/main.roc" }\n\nimport pf.Middleware\nimport jobs.Job\nimport Generated/App\n\nprogram = App.program({\n\tcontext: |_started| {},\n\tmiddleware: Middleware.headers([]),\n\tplugins: [Job.plugin({ jobs: App.jobs })],\n})\n');
+	// The channel's message, in a module of its own: Api imports it, and the modules below import Api.
+	put("News.roc", "## What the news channel says: who said it, and a number.\nNews := [].{\n\tSaid : { from : Str, n : U64 }\n}\n");
+	put("routes/news/+server.roc", 'import pf.Server\nimport pf.Endpoint\nimport pf.Channel\nimport ../../News\n\n## The news: anyone may listen.\nchannel! : { request : Server.Request, params : {}, context : {} } => Try(Channel(Str, News.Said, []), Endpoint.Refusal)\nchannel! = |_| Ok(Channel.allow("anyone"))\n');
+	// An actor and a job, each publishing on it through Api.
+	put("Room.roc", 'import pf.Actor\nimport pf.Endpoint\nimport Generated/Api\n\nRoom := [].{\n\troom : Actor.Kind(U64, [Bump], U64)\n\troom = Actor.define({\n\t\tname: "room",\n\t\tinitial: |_| 0,\n\t\treceive!: |_, n, Bump| {\n\t\t\tEndpoint.publish!(Api.channel_news({}), { from: "actor", n: n + 1 })\n\t\t\t{ state: n + 1, reply: n + 1 }\n\t\t},\n\t})\n}\n');
+	put("Jobs.roc", 'import jobs.Job\nimport pf.Endpoint\nimport Generated/Api\n\nJobs := [].{\n\tshout : Job.Kind({ n : U64 })\n\tshout = Job.define("shout", |{ n }| {\n\t\tEndpoint.publish!(Api.channel_news({}), { from: "job", n })\n\t\tOk({})\n\t})\n}\n');
+	// A route that publishes itself, asks the actor, and queues the job (`?job=yes`: with a database).
+	put("routes/publish/+server.roc", 'import pf.Server\nimport pf.Endpoint\nimport pf.Actor\nimport jobs.Job\nimport ../../Generated/Api\nimport ../../Room\nimport ../../Jobs\n\n## Publishes on the news, from here, from the actor, and from a job.\npost! : { request : Server.Request, params : {}, context : {}, body : { n : U64 } } => Try(Str, Endpoint.Refusal)\npost! = |{ request, body, .. }| {\n\tEndpoint.publish!(Api.channel_news({}), { from: "route", n: body.n })\n\t_ = Actor.ask!(Room.room, "lobby", Bump)\n\tqueued = if (request.query.contains("job=yes")) Job.enqueue!(Jobs.shout, { n: body.n }, { when: Now }) else Ok({})\n\tmatch queued {\n\t\tOk({}) => Ok("published")\n\t\tErr(JobErr(why)) => Err(Status(503, why))\n\t}\n}\n');
+	// A page that reads an endpoint, and sends one: typed by the contract in both copies.
+	put("routes/hello/+server.roc", 'import pf.Server\nimport pf.Endpoint\nimport ../../News\n\n## The latest news.\nget! : { request : Server.Request, params : {}, context : {} } => Try(News.Said, Endpoint.Refusal)\nget! = |_| Ok({ from: "hello", n: 7 })\n');
+	// A route of respond! alone, which Handlers doesn't import, so it may import Handlers (an MCP route
+	// would): it runs another route's handler there and then.
+	put("routes/raw/+server.roc", 'import pf.Server\nimport pf.Endpoint\nimport ../../Generated/Handlers\n\n## Every method: the hello endpoint\'s answer, run here.\nrespond! : { request : Server.Request, params : {}, context : {} } => Server.Response\nrespond! = |{ request, context, .. }|\n\tmatch Endpoint.run!(Handlers.get_hello({}), request, context, {}) {\n\t\tOk(said) => Server.response(200, [], "${said.from} ${said.n.to_str()}")\n\t\tErr(_) => Server.response(500, [], "no answer")\n\t}\n');
+	put("routes/+page.rocx", 'import pf.Html\nimport pf.Endpoint\nimport pf.Call\nimport ../Generated/Api\n\nview! = |_| {\n\tlatest = Endpoint.get!(Api.get_hello({}))\n\tsend! = || {\n\t\t_ = Endpoint.send!(Api.post_publish({}), { n: latest.n }, Call.fetch!)\n\t\t{}\n\t}\n\t<button type="button" on:click={send!}>{latest.from}</button>\n}\n');
+	return dir;
+}
+
+test("the contract (D-037): a route, an actor and a job each import Generated/Api and publish on a channel; a subscriber hears each", { skip: (!hasRoc && "no Roc (run `just setup`, or set ROC)") || (!hasRust() && "no Rust (run `just setup`)") }, async () => {
+	const dir = contractApp();
+	const db = process.env.DATABASE_URL ? await testDatabase() : null;
+	let server;
+	const gone = new AbortController();
+	try {
+		const built = run("build", dir);
+		assert.equal(built.status, 0, built.stderr);
+		const api = readFileSync(join(dir, "Generated", "Api.roc"), "utf8");
+		assert.match(api, /^import pf\.Channel\nimport \.\.\/News\n\nApi := /m, "the modules its types name, and no route file");
+		assert.match(api, /\tchannel_news : \{\} -> Endpoint\(context, \{\}, Channel\(Str, News\.Said, \[\]\)\)\n/);
+		buildHost();
+		buildApp(join(dir, "main.roc"), join(dir, "build", "server"));
+		server = await start(join(dir, "build", "server"), db ? ["--database-url", db.url] : []);
+		// A tab's stream of its channels, as the runtime opens it: `resync`, then each message.
+		const response = await fetch(`${server.url}/rocx/live?tab=t1&c=${encodeURIComponent("/news")}`, { headers: { accept: "text/event-stream" }, signal: gone.signal });
+		assert.equal(response.status, 200);
+		const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+		let buffered = "";
+		const next = async () => {
+			for (;;) {
+				const end = buffered.indexOf("\n\n");
+				if (end >= 0) {
+					const block = buffered.slice(0, end);
+					buffered = buffered.slice(end + 2);
+					if (block.startsWith(":")) continue;
+					const lines = block.split("\n");
+					const field = (name) => lines.filter((line) => line.startsWith(`${name}: `)).map((line) => line.slice(name.length + 2));
+					const [url, ...rest] = field("data");
+					return { event: field("event")[0], url, said: rest.length ? JSON.parse(rest.join("\n")) : null };
+				}
+				const read = await reader.read();
+				if (read.done) return null;
+				buffered += read.value;
+			}
+		};
+		assert.equal(await (await fetch(`${server.url}/raw`)).text(), "hello 7", "a respond! route ran a handler of Handlers'");
+		assert.deepEqual(await next(), { event: "resync", url: "/news", said: null });
+		const publish = (n, job) => fetch(`${server.url}/publish${job ? "?job=yes" : ""}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ n }) });
+		const answered = await publish(1, false);
+		assert.deepEqual([answered.status, await answered.text()], [200, '"published"']);
+		assert.deepEqual(await next(), { event: "message", url: "/news", said: { from: "route", n: 1 } }, "the route's");
+		assert.deepEqual(await next(), { event: "message", url: "/news", said: { from: "actor", n: 1 } }, "the actor's, in its turn");
+		if (db) {
+			assert.equal((await publish(2, true)).status, 200);
+			const heard = [await next(), await next(), await next()];
+			assert.deepEqual(heard.slice(0, 2), [{ event: "message", url: "/news", said: { from: "route", n: 2 } }, { event: "message", url: "/news", said: { from: "actor", n: 2 } }]);
+			assert.deepEqual(heard[2], { event: "message", url: "/news", said: { from: "job", n: 2 } }, "the job's, as a worker ran it");
+		}
+	} finally {
+		gone.abort();
+		await server?.stop();
+		await db?.drop();
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("the contract (D-037): a wrong body or answer against it doesn't compile, in the server's program or the browser's, each reported at its line", { skip: !hasRoc && "no Roc (run `just setup`, or set ROC)" }, () => {
+	const dir = contractApp();
+	try {
+		const client = join(dir, "build", "client");
+		const both = () => {
+			const built = run("build", dir, "--client", client);
+			assert.equal(built.status, 0, built.stderr);
+			return [run("check", "--", roc, "check", join(dir, "main.roc")), run("check", "--", roc, "check", join(client, "main.roc"))];
+		};
+		for (const checked of both()) assert.equal(checked.status, 0, checked.stdout);
+		// The page sends what the endpoint isn't sent, and reads its answer as what it isn't.
+		const page = join(dir, "routes", "+page.rocx");
+		writeFileSync(page, readFileSync(page, "utf8").replace("{ n: latest.n }", '{ n: "one" }').replace("{latest.from}", "{latest.title}"));
+		for (const [checked, copy] of both().map((each, i) => [each, i ? "browser" : "server"])) {
+			assert.notEqual(checked.status, 0, copy);
+			assert.match(checked.stdout, /routes\/\+page\.rocx:9:\d+/, `${copy}: the send, at the .rocx line:\n${checked.stdout}`);
+			assert.match(checked.stdout, /_ = Endpoint\.send!\(Api\.post_publish\(\{\}\), \{ n: "one" \}, Call\.fetch!\)/, `${copy}: the .rocx line, quoted`);
+			assert.match(checked.stdout, /routes\/\+page\.rocx:12:\d+/, `${copy}: the read, at its line`);
+			assert.doesNotMatch(checked.stdout, /(build\/client\/|Generated\/)\S*\.roc:\d+:\d+/, `${copy}: never a line of rocx's copy`);
+		}
+		// An actor publishes what the channel doesn't carry: at its line in Room.roc.
+		writeFileSync(join(dir, "routes", "+page.rocx"), readFileSync(join(dir, "routes", "+page.rocx"), "utf8").replace('{ n: "one" }', "{ n: latest.n }").replace("{latest.title}", "{latest.from}"));
+		writeFileSync(join(dir, "Room.roc"), readFileSync(join(dir, "Room.roc"), "utf8").replace('{ from: "actor", n: n + 1 }', '{ from: "actor", n: "many" }'));
+		const [server] = both();
+		assert.notEqual(server.status, 0);
+		assert.match(server.stdout, /Room\.roc:11:\d+/, server.stdout);
+	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
 });

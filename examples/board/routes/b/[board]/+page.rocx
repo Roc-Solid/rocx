@@ -8,7 +8,6 @@ import pf.Title
 import pf.Solid exposing [create_effect!, create_memo!, create_signal!, is_pending!, refresh!]
 import pf.Router exposing [use_action!, use_submissions!]
 import pf.Router
-import pf.Submissions
 import presence.AvatarStack
 import presence.Presence
 import ../../../Board
@@ -38,10 +37,8 @@ meta = { title: "Board · Acme Board" }
 view! = |{ params }| {
 	board = params.board
 	read = Api.get_b_board({ board: board })
-	moves : Submissions(Board.Move, Str)
 	moves = use_submissions!(Api.post_b_board_move({ board: board }))
 	move! = use_action!(Api.post_b_board_move({ board: board }))
-	adds : Submissions(Shared.Adding, Str)
 	adds = use_submissions!(Api.post_b_board_cards({ board: board }))
 	add! = use_action!(Api.post_b_board_cards({ board: board }))
 	# The board as it shows: the server's, with the moves on their way applied.

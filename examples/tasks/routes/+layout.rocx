@@ -18,8 +18,6 @@ import ../components/Avatar
 ## catalog, `/__rocx/stories/…`) is the component alone, in the page's frame, without the rest.
 view! = |{ meta, children, .. }| {
 	team = Api.get_api_team({})
-	# Its type said: in the browser's copy of the app an endpoint has none.
-	team! : () => Tasks.Team
 	team! = create_memo!(|| Endpoint.get!(team))
 	path = Router.location!({}).path
 	story = path.starts_with("/__rocx/stories/")

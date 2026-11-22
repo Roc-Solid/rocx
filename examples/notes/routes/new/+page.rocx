@@ -2,7 +2,6 @@ import pf.Html
 import pf.Endpoint
 import pf.Server
 import pf.Show
-import pf.Submission
 import pf.Router exposing [use_submission!]
 import ../../Middlewares
 import ../../Pages
@@ -19,7 +18,6 @@ blank! : {} => Pages.Blank
 blank! = |{}| Endpoint.get!(Api.get_new({}))
 
 view! = |_| {
-	saving : Submission({ title : Str, body : Str, tags : Str }, Str)
 	saving = use_submission!(Api.post_new({}))
 	<div>
 		{=Topbar.view({ email: blank!({}).email, query: "" })}

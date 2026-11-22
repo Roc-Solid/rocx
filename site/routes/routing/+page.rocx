@@ -145,9 +145,11 @@ view! = |_|
 				request, the params and the context, answers every method the file doesn't name with a
 				<code>Server.Response</code> of its own: a page mounted from elsewhere, a JSON-RPC endpoint. <code>events!</code> answers a GET
 				that asks for events with a stream of them, sent as they are made. Beside a page, a GET a browser
-				sends is the page's, and every other request the endpoints'. rocx writes
-				<code>Generated/Api.roc</code>, a function for each, which the app calls: the handler on the server, a
-				request in the browser. <a href={"${Paths.calls}#endpoints"}>Talking to the server</a> has this site's,
+				sends is the page's, and every other request the endpoints'. Each handler is annotated, and rocx
+				writes <code>Generated/Api.roc</code> from those annotations, the app's contract: a function for
+				each, its method, URL and types, which the app calls and any module may import (a job, an actor);
+				<code>Generated/Handlers.roc</code> binds each to its handler, for the server.
+				<a href={"${Paths.calls}#endpoints"}>Talking to the server</a> has this site's,
 				live, and <a href={"${Paths.calls}#events"}>a stream</a> too. This one answers a form, and sets a
 				cookie:
 			</p>
@@ -234,8 +236,8 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				The browser's build (wasm) has none of it: its copy of <code>Api</code> is each endpoint's method and
-				URL, and no document. What rocx writes for this site, in part:
+				The browser's build (wasm) has none of it: its copy of <code>Api</code> is the same contract (each
+				endpoint's method, URL and types), and no document. What rocx writes for this site, in part:
 			</p>
 			<Code title={"${Sources.openapi_api.file}, in part"} source={Sources.openapi_api.rocx} numbers={Bool.False} />
 			<h3>A parser that writes</h3>

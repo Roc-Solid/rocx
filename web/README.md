@@ -45,7 +45,9 @@ same components natively; this one hydrates them.
   GET endpoint read as a plain value, `get!` or `read!`, with a query, `with_query`; any endpoint
   sent from a handler, `send!`, or listened to, `listen!`; a form's `action`, `url_of`; a channel
   subscribed to, `subscribe!`, said to, `say!`, or resynced, `resync!`, and, on the server,
-  published on, `publish!` and `publish_latest!`, or an endpoint run there and then, `run!`),
+  published on, `publish!` and `publish_latest!`, or an endpoint run there and then, `run!`, given
+  its handler with `bind`: `Generated/Api` is the app's contract, each endpoint's method, URL and
+  types, the same in the browser's copy as on the server, D-037),
   `Channel` (what a route's `channel!` answers, `Channel.allow(who)`, and what a subscriber hears),
   `Events`, `Middleware` and `OpenApi`. The server platform's build copies them into
   `server/platform`, so the same code compiles on both.
@@ -216,9 +218,9 @@ same components natively; this one hydrates them.
   value is the server's again, the refusal in `error`. Several may be on their way, each answered on
   its own; an input still on its way is applied to the data read again, so applying one should be
   idempotent (a card's day, not one more). On the server, there are no submissions: `all!` is the
-  flash or none, and nothing is applied, so the page hydrates as rendered. In an app's browser copy
-  an endpoint has no types, so a component says its submissions' (`moves : Submissions(Move, Str)`):
-  a result nothing reads would stay a type variable, which the compiler can't specialize `all!` for.
+  flash or none, and nothing is applied, so the page hydrates as rendered. The endpoint's contract
+  (`Generated/Api`, D-037) types its submissions in both copies of the app: `use_submissions!(Api.post_move({}))`
+  is a `Submissions(Move, Str)`, with nothing for a component to say.
 - **The flash**: on the server, `Server.flash!` reads the `rocx-flash` cookie a plain form's post came
   back with, and the runtime notes what the page read (`Host.flash!`). The page carries it in
   `<script type="application/json" class="rocx-flash">`, before the answers, which hydration reads

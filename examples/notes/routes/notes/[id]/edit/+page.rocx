@@ -2,7 +2,6 @@ import pf.Html
 import pf.Endpoint
 import pf.Server
 import pf.Show
-import pf.Submission
 import pf.Title
 import pf.Router exposing [use_submission!]
 import ../../../../Middlewares
@@ -30,7 +29,6 @@ view! = |{ params }|
 Editing := [].{
 	view! : { id : Str, opened : Pages.Opened } => Html
 	view! = |{ id, opened }| {
-		saving : Submission({ title : Str, body : Str, tags : Str }, Str)
 		saving = use_submission!(Api.post_notes_id_edit({ id: id }))
 		typed! = |name, saved| if (saving.error!().is_ok()) saving.field!(name) else saved
 		<div>

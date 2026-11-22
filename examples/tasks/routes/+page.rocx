@@ -16,8 +16,6 @@ meta = { title: "Your lists" }
 
 view! = |_| {
 	team = Api.get_api_team({})
-	# Its type said: in the browser's copy of the app an endpoint has none.
-	team! : () => Tasks.Team
 	team! = create_memo!(|| Endpoint.get!(team))
 	live = LiveForm.of!(TaskForm.new_list, Api.post_root({}))
 	me! = || Tasks.name_of(team!().people, team!().me)

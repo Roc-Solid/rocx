@@ -16,9 +16,8 @@ import Submission
 ##     cards! = create_memo!(|| moves.pending_inputs!().fold(Endpoint.get!(Api.get_planner({})), moved))
 ##
 ## Submissions are kept by the endpoint's URL: an endpoint with params in its path has a list for
-## each URL, so what varies goes in its body. In an app's browser copy an endpoint has no types (its
-## route file isn't there): say the submissions' (`moves : Submissions(Move, Str)`), or a result
-## nothing reads stays a type variable, which the compiler can't specialize `all!` for.
+## each URL, so what varies goes in its body. Their types are the endpoint's, from the app's
+## contract (`Generated/Api`, D-037), in the browser's copy as on the server.
 Submissions(arg, result) :: { url : Str }.{
 
 	## A submission as it is now, Solid's fields: whether it is on its way (`pending`), what it sent,

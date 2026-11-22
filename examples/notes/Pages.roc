@@ -2,8 +2,8 @@ import Note
 import Token
 
 ## What each signed-in page reads from the server, as its endpoint answers it (at the page's own
-## address: `GET /` for the notebook). Written here so both halves agree: in the browser's copy of
-## the app an endpoint has no types, so each page says what it reads.
+## address: `GET /` for the notebook). The route files answer with these, and `Generated/Api`, the
+## app's contract, gives each page's read the same type in both halves (D-037).
 Pages := [].{
 
 	## The notebook (`/`): your notes, or a search's, and your tags.

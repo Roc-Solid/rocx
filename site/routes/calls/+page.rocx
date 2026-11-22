@@ -195,13 +195,17 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				The app asks them as functions. rocx writes <code>Generated/Api.roc</code> from the routes: a function
-				for each endpoint, of its params (<code>{"{}"}</code> with none). On the server it has the handler; in
-				the browser's copy it is the method and the URL, and nothing the handler does:
+				The app asks them as functions. rocx writes <code>Generated/Api.roc</code> from the routes, the app's
+				contract: a function for each endpoint, of its params (<code>{"{}"}</code> with none), typed with what
+				its handler's annotation says it is sent and answers. It is the method, the URL and those types, and
+				nothing the handler does, the same in the browser's copy, so any module may import it: a component, a
+				route, a job, an actor. <code>Generated/Handlers.roc</code>, the server's alone, binds each to its
+				handler (<code>Endpoint.bind</code>, which checks that they agree), for the router and for
+				<code>Endpoint.run!</code>:
 			</p>
 			<Versus>
-				<Code title="On the server" source={Sources.endpoint_api.rocx} numbers={Bool.False} />
-				<Code title="In the browser's copy" source={Sources.endpoint_api_browser.rocx} numbers={Bool.False} />
+				<Code title="Generated/Api.roc, both copies" source={Sources.endpoint_api.rocx} numbers={Bool.False} />
+				<Code title="Generated/Handlers.roc, the server's" source={Sources.endpoint_handlers.rocx} numbers={Bool.False} />
 			</Versus>
 			<p>
 				This component asks the other one from a handler, for the word clicked,
@@ -216,8 +220,11 @@ view! = |_|
 		<NoHydration>
 			<p>
 				And this page's endpoint asked it as a function run there and then,
-				<code>{"Endpoint.run!(endpoint, request, context, {})"}</code>, with no HTTP:
-				<strong>{asked!({}).shouted}</strong>.
+				<code>{"Endpoint.run!(endpoint, request, context, {})"}</code>, with no HTTP and without its middleware
+				(the caller has run its own): <strong>{asked!({}).shouted}</strong>. <code>run!</code> needs the
+				endpoint with its handler: <code>Generated/Handlers</code>' (from <code>main.roc</code>, a plugin, or
+				a module only they import, such as an MCP server's tools), or, in a route file, which Handlers imports,
+				the contract bound to the handler as Handlers binds it.
 			</p>
 			<ul>
 				<li>
@@ -233,9 +240,10 @@ view! = |_|
 					see <a href={"${Paths.routing}#middleware"}>middleware</a>.
 				</li>
 				<li>
-					<strong>Typed at both ends.</strong> The browser's copy can't hold the handler, so its types come
-					from where the component uses it; the same component is built for the server too, against the
-					handler, so a mismatch doesn't compile there.
+					<strong>Typed at both ends.</strong> Api's types are the handler's annotation's, in the server's
+					copy and the browser's: a component that sends the wrong body, or reads the answer as anything else,
+					compiles in neither, and <code>rocx check</code> points at its line. A handler without an annotation
+					is refused by <code>rocx build</code>, which copies its types.
 				</li>
 			</ul>
 			<details>
@@ -365,23 +373,31 @@ view! = |_|
 						<strong>Names each endpoint</strong> after its method and its path, in
 						<code>Generated/Api.roc</code>: <code>get_api_echo_message</code> for <code>get!</code> in
 						<code>routes/api/echo/[message]/+server.roc</code>, a function of the path's params, so no URL is
-						written twice and a link with the wrong params doesn't compile.
+						written twice and a link with the wrong params doesn't compile. Its type is copied from the
+						handler's annotation (its body and its answer; a channel's <code>Channel(who, message, said)</code>),
+						with the imports those types need, and no route file: so a module a route imports (a store, a
+						job, an actor) may import Api, and publish on a channel by its name. A module that defines a
+						type a route's annotation names can't import Api too (Api imports it): <code>rocx build</code>
+						says so, and to move the type into a module of its own.
 					</p>
 				</li>
 				<li>
 					<p>
 						<strong>Routes it.</strong> <code>Generated/Routes.roc</code> gives each path's requests to its
 						page (a GET that accepts HTML) or to its endpoints, past the app's default middleware and the route
-						file's own. The GETs the server makes as it renders go the same way.
+						file's own, each endpoint with its handler (<code>Generated/Handlers.roc</code>). The GETs the
+						server makes as it renders go the same way.
 					</p>
 				</li>
 				<li>
 					<p>
 						<strong>Leaves what it does out of the browser's copy.</strong> The browser's app is built from a
-						copy of the site rocx writes (<code>--client site/build/client</code>), in which <code>Api</code>
-						is each endpoint's method and URL and nothing else, and a route file has no
+						copy of the site rocx writes (<code>--client site/build/client</code>), with the same
+						<code>Api</code>, and no <code>Handlers</code>, and in which a route file has no
 						<code>middleware</code> (only the server runs it, and it may read the environment or the
-						database), as the <a href="#endpoints">endpoints</a> above show.
+						database), as the <a href="#endpoints">endpoints</a> above show. So the types a route's
+						annotation names must compile in the browser: a type from a module that imports <code>pf.Db</code>
+						is refused by <code>rocx build</code>, at the route's line, naming the type and the module.
 					</p>
 				</li>
 			</Trace>

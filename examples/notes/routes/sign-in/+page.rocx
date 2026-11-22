@@ -3,7 +3,6 @@ import pf.Endpoint
 import pf.Router
 import pf.Server
 import pf.Show
-import pf.Submission
 import pf.Router exposing [use_submission!]
 import ../../Query
 import ../../Generated/Api
@@ -16,7 +15,6 @@ meta = { title: "Sign in · Acme Notes" }
 
 view! = |_| {
 	then = Query.value(Router.location!({}).query, "then")
-	sending : Submission({ email : Str, then : Str }, { sent : Str })
 	sending = use_submission!(Api.post_sign_in({}))
 	<main id="main" class="sign-in">
 		<div class="card">

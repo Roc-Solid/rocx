@@ -153,7 +153,7 @@ test("stories: rocx build --dev writes the catalog, the routes and stories/; wit
 
 		// A story is shown as the app's page, which Root renders: an app with no pages has none.
 		rmSync(join(dir, "routes"), { recursive: true });
-		file("routes/api/+server.roc", 'import pf.Server\n\nget! = |_| Server.response(200, [], "hi")\n');
+		file("routes/api/+server.roc", 'import pf.Server\nimport pf.Endpoint\n\nget! : { request : Server.Request, params : {}, context : c } => Try(Str, Endpoint.Refusal)\nget! = |_| Ok("hi")\n');
 		said.length = 0;
 		assert.ok(!build([dir], { log, dev: true }));
 		assert.match(said.join("\n"), /Ui\/Callout\.rocx:7: the story "Tip" is shown as the app's page, and the app has none: give it routes\/ with a \+page\.rocx/);

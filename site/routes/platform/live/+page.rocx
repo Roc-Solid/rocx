@@ -86,7 +86,9 @@ view! = |_|
 			<p>
 				<code>rocx build</code> puts it in <code>Generated/Api</code> as a function of its params
 				(<code>Api.channel_platform_live_lobby({"{}"})</code>; with params,
-				<code>Api.channel_org_org_news({"{ org }"})</code>), as it puts endpoints. A component subscribes
+				<code>Api.channel_org_org_news({"{ org }"})</code>), as it puts endpoints, typed with the
+				<code>Channel(who, message, said)</code> its <code>channel!</code>'s annotation gives. Api imports no
+				route file, so a job, an actor or a store imports it and publishes by name, typed (D-037). A component subscribes
 				from an effect, and the subscription ends when the effect runs again or the component goes:
 			</p>
 			<Code title={"${Sources.demo_lobby.file}, in part"} source={Sources.demo_lobby.rocx} numbers={Bool.False} />

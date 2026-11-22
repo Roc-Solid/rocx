@@ -6,7 +6,6 @@ import pf.Title
 import pf.Solid exposing [create_effect!, create_memo!, refresh!]
 import ../../../Generated/Api
 import ../../../Generated/Paths
-import ../../../News
 import ../../../Report
 import ../../../Ui/IncidentCard
 import ../../../Ui/Missing
@@ -20,7 +19,7 @@ view! = |{ params }| {
 	read = Api.get_incidents_id({ id: params.id })
 	incident! : () => Report.Incident
 	incident! = create_memo!(|| Endpoint.get!(read))
-	heard! : Channel.Event(News.Said) => {}
+	heard! : Channel.Event(Report.News) => {}
 	heard! = |event|
 		match event {
 			Resync => refresh!(incident!)

@@ -115,12 +115,17 @@ Each gap this app met, and what it does about it:
   would be an import cycle, which Roc refuses. `Rooms.channel` names the channel by its URL instead
   (`Endpoint.remote("CHANNEL", "/rooms/${code}")`), which is all `Endpoint.publish!` reads. A typed
   name for a channel that a module below the routes could import would remove the duplication.
+  (Fixed in the platform since: `Generated/Api` is the app's contract and imports no route file
+  (D-037), so `Rooms` imports it and publishes on `Api.channel_rooms_code({ code })`, typed.)
 - **An endpoint's answer has no type in the browser's copy.** The host's screen read
   `Endpoint.get!(Api.get_rooms_code(…))` and compared `seat.who == Host`; in the browser that made
   `who`'s type `[Host]`, so a watcher's `"Watcher"` failed to parse ("Invalid JSON"), and only in the
   browser, so the page hydrated into the error page. Both room pages say the type (`seat : Game.Seat`).
   The platform does document it (for `use_submissions!`); a reported type at the read, or the same
-  types in both copies, would catch it at build.
+  types in both copies, would catch it at build. (Fixed in the platform since: the browser's copy of
+  `Api` has the same types as the server's, copied from each handler's annotation (D-037), so the
+  pages say no type. The host's list's sets, `Sets.Summary`, became `Draft.Summary`: `Sets` imports
+  `Db`, which the browser's copy can't compile, and `rocx build` said so at the route.)
 - **A value prop inside a `<Show>`'s children was read when the page first rendered**, not when the
   part showed: the podium, written `<Podium players={current!().players} />` inside the finished
   phase's `<Show>`, showed every score as it was in the lobby. The workaround was an accessor

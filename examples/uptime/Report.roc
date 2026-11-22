@@ -4,6 +4,12 @@
 ## (`99.95%`, `—`), worked out by `Uptime.percent`.
 Report := [].{
 
+	## What the live channel says (`routes/live/+server.roc`, `News.tell!`): which monitor, and what
+	## happened: `up` or `down` (a check), `opened` or `closed` (its incident), `paused`, `resumed`
+	## or `updated` (the admin). Here, not in News, which imports `Generated/Api`: Api imports the
+	## module this type is in, so it can't be one that imports Api (D-037).
+	News : { monitor : I64, name : Str, what : Str }
+
 	## One day of the 90-day strip: its date, how it went (`good`, `minor`, `major`, `none`) and its
 	## uptime.
 	Day : { day : Str, level : Str, uptime : Str }

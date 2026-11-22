@@ -5,7 +5,6 @@ import pf.For
 import pf.Show
 import pf.Solid exposing [create_effect!, create_memo!, create_signal!, is_pending!, refresh!]
 import ../Days
-import ../News
 import ../Report
 import ../Words
 import ../Generated/Api
@@ -32,7 +31,7 @@ view! = |_| {
 	overview! = create_memo!(|| Endpoint.get!(read))
 	(live!, set_live!) = create_signal!(Bool.False)
 	(said!, set_said!) = create_signal!("")
-	heard! : Channel.Event(News.Said) => {}
+	heard! : Channel.Event(Report.News) => {}
 	heard! = |event|
 		match event {
 			Resync => {

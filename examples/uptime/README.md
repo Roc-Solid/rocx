@@ -87,7 +87,7 @@ The status page follows the live channel (`routes/live/+server.roc`), and not an
 - **Reconnects are handled.** On every connect and reconnect, and when a page falls behind, the
   page hears `Resync` and reads its data again. So a laptop waking from sleep shows the truth.
 
-The message says only which monitor changed and how (`News.Said`). Each page reads its own data
+The message says only which monitor changed and how (`Report.News`). Each page reads its own data
 again, so what a page shows is always what its endpoint answers.
 
 ## Build and run it
@@ -215,7 +215,11 @@ Every gap met, and what the app does about each:
    `test/copies.test.mjs` fails if it drifts.
 5. **A module the routes import can't import `Generated/Api`**, which is made of the routes. The job
    that publishes on the live channel names it by its path:
-   `Endpoint.remote("CHANNEL", "/live")` (`News.roc`). The board example met this too.
+   `Endpoint.remote("CHANNEL", "/live")` (`News.roc`). The board example met this too. (Fixed in the
+   platform since: `Generated/Api` is the app's contract and imports no route file, D-037, so
+   `News.tell!` publishes on `Api.channel_live({})`, typed. The message's type moved from `News` to
+   `Report.News`: Api imports the module that defines it, so that module can't import Api, and
+   `rocx build` said so, naming the type.)
 6. **packages/jobs, as its first real user** (D-034). The plugin, `App.jobs`, `Cron.every`,
    `define_with`'s attempts and time limit, the jobs page plugin and packages/testing's
    `enqueue()` and `settleJobs()` all worked as documented, and `settleJobs()` waits for the jobs a

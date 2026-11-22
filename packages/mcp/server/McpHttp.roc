@@ -69,9 +69,9 @@ McpHttp := [].{
 	response = |answer| Server.response(answer.status, answer.headers, answer.body)
 
 	## The MCP server as a middleware: it answers requests to `path` (`respond!`), and hands every
-	## other request on. An app whose tools are its endpoints mounts it this way, in `main.roc`
-	## (a route file can't import `Api`: PROPOSALS.md, "Api imports only endpoints"), after the
-	## middleware that decides who may ask:
+	## other request on. An app whose tools are its endpoints mounts it this way, in `main.roc` (its
+	## tools run `Generated/Handlers`' endpoints, which a module the routes import can't import,
+	## D-037), after the middleware that decides who may ask:
 	##
 	##     middleware: Middlewares.default.then(McpHttp.middleware("/mcp", Agents.server)),
 	middleware : Str, Mcp.Server(Caller(c)) -> Middleware(c, c)
@@ -94,9 +94,10 @@ McpHttp := [].{
 	## The platform's schemas, as /openapi.json has them.
 	openapi = |{}| { body: OpenApi.body, answer: OpenApi.answer }
 
-	## An endpoint as a tool (`McpHttp.endpoint(Api.post_api_notes({}), { name: "add_note",
+	## An endpoint as a tool (`McpHttp.endpoint(Handlers.post_api_notes({}), { name: "add_note",
 	## description: "Adds a note" }, McpHttp.openapi)`): its body is the tool's arguments, and its
-	## answer the tool's. It runs as `Endpoint.run!` runs it, given the MCP route's request and
+	## answer the tool's. It runs as `Endpoint.run!` runs it (so it is `Generated/Handlers`'
+	## endpoint, with its handler, not Api's contract), given the MCP route's request and
 	## context; its own middleware doesn't run (the MCP route's has). A refusal (`NotFound`,
 	## `BadRequest`) goes back to the model as a tool error.
 	endpoint : Endpoint(c, arg, result), About, Schemas(c, arg, result) -> Tool(Caller(c))

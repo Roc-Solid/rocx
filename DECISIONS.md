@@ -1870,6 +1870,93 @@ Show.PropsWith(a, e) := { …, children : (() => a) => Html }
 apps into components or defaults that exist only to get around it. **Reversible:** yes, but code
 that nests would break.
 
+## D-037 Generated/Api is the app's contract; the router owns the handlers
+
+**Context.** `Generated/Api.roc` was what an endpoint *is* and what *runs* it at once: each entry
+was `Endpoint.local(method, url, handler)`, so Api imported every route's `+server.roc` module.
+Nothing a route imports (a store, a job, an actor) could import Api: that was an import cycle.
+Four example apps met it. board, quiz and uptime published on their channels through a
+hand-written `Endpoint.remote("CHANNEL", url)` with a hand-copied type, where a typo in the path or
+the type compiled and published to nowhere; notes mounted its MCP server from `main.roc`, because a
+route couldn't import Api. The browser's copy had the same root: it was an untyped
+`Endpoint.remote`, so apps spelled out memo, submission and read types by hand, and `roc check`
+passed where the wasm build then failed ("This decodes a record whose full set of fields is not
+known"). Yet most callers never need the handler: `publish!` reads the URL, and `get!`/`read!` on
+the server already go through the route by URL. Only the router (`respond!`, `stream!`,
+`channel!`) and `Endpoint.run!` (an in-process call that skips the middleware: packages/mcp's
+`McpHttp`, the calls page) run it.
+
+**Options.**
+1. Leave it: hand-written contracts where a module below the routes needs one.
+2. Keep the handlers in Api, and let a route module's dependencies take the endpoint as an
+   argument (passed down from the route): every caller threads it, and an actor or a job has no
+   route to be given it by.
+3. Api the contract alone (method, URL and types, copied from each handler's annotation), the same
+   in both copies; the handlers bound to it in a module of their own, which the router imports.
+4. As 3, with `run!` going through the router by URL and skipping the middleware, so no module of
+   handlers is needed. But each route's middleware hands its handler a context of its own type, and
+   one function can't take them all: the call would be JSON in, JSON out, untyped.
+
+**Choice.** 3.
+
+```roc
+# Generated/Api.roc: imports pf.Endpoint, pf.Server, and what the types name; no route file
+get_b_board : { board : Str } -> Endpoint(context, {}, Board.Data)
+get_b_board = |params| Endpoint.remote("GET", "/b/${Server.encode_segment(params.board)}")
+channel_b_board : { board : Str } -> Endpoint(context, {}, Channel(Str, Board.News, []))
+channel_b_board = |params| Endpoint.remote("CHANNEL", "/b/${Server.encode_segment(params.board)}")
+
+# Generated/Handlers.roc, the server's alone: each contract bound to its handler
+get_b_board = |params| Endpoint.bind(Api.get_b_board(params), |request, context, {}| BBoardServer.get!({ request, params, context }))
+
+# web/platform/Endpoint.roc (and the server's copy)
+bind : Endpoint(c, a, r), (Server.Request, c, a => Try(r, Refusal)) -> Endpoint(c, a, r)
+```
+
+- **The contract.** `rocx build` copies each handler's types from its annotation: its params (from
+  the path), its body (POST, PUT, PATCH; `{}` for the rest) and its answer; for `channel!` its
+  `Channel(who, message, said)`, for `events!` what it streams. The `context` stays a type
+  variable: only the handler cares. Api imports the modules those types name (the route file's
+  imports, their paths rewritten from `Generated/`, as the route modules' copies have them), and
+  no route module, so any module may import it: a store, a job, an actor, a route.
+  `Api.openapi` is written from these typed values as before.
+- **Every handler is annotated.** `rocx build` refuses one that isn't, or whose annotation it can't
+  read (a type alias for the whole, a `where` clause), at its line, saying what to write. It
+  refuses a POST, PUT or PATCH handler whose record has no `body`, a type the route file defines
+  itself (Api imports no route file: the type goes into a module of its own), and two route files
+  whose types name different modules by one name. 107 of the repo's 111 handlers were annotated; the other
+  four are now.
+- **The router owns the handlers.** `Generated/Handlers.roc` binds each contract to its handler
+  (`Endpoint.bind`), so the compiler checks that they agree; `Generated/Routes.roc` answers with
+  Handlers' endpoints, and gives a channel's hooks Api's. Handlers imports every route file, so a
+  module a route file imports can't import it: `main.roc` can, a plugin can, and so can a module
+  only they import. It is what `Endpoint.run!` runs (Api's contract has no handler; `run!` on one
+  crashes, saying to use Handlers'). `main.roc` is the place to mount what sits in front of the
+  routes and runs their handlers, as examples/notes mounts its MCP server; a route file that runs
+  another route's handler binds it itself (`site/routes/calls/+server.roc`).
+- **The browser's copy is the same contract** (step 4 of the plan, landed). A component that sends
+  the wrong body or reads the answer as anything else compiles in neither copy, and `rocx check`
+  points at its `.rocx` line in both (the browser's copy's `.rocx-client` says where its app is, so
+  a report about the copy follows the marker back to the app's file). So a type a route's
+  annotation names must compile in the browser: when the browser's copy reaches a module that
+  imports what only the server has (`pf.Db`) through Api, `rocx build` stops, at the route's
+  handler, naming the type and the module. Measured on the site, the eight examples, `test/e2e`,
+  `web/test/app` and the packages' example apps: one type moved (quiz's `Sets.Summary`, in a module
+  that imports `Db`, is `Draft.Summary`).
+- **A narrow cycle remains.** A module that defines a type a route's annotation names and imports
+  Api (or imports a module that does) is a cycle, which Roc refuses without naming either module.
+  `rocx build` says so at the import of Api, naming the route and the type, and says to move the
+  type into a module of its own: uptime's `News.Said` became `Report.News`.
+- The workarounds went: board's `News.channel`, quiz's `Rooms.channel` and uptime's `News.channel`
+  publish through Api; notes' tools run Handlers' endpoints; the memo, submission and read
+  annotations tasks, quiz, notes, board and journal had for the browser are gone (top-level reads
+  with a doc comment kept theirs).
+
+**Why.** The contract is what both halves and every module agree on; what runs it is the server's
+business, and only two things need it. With the types copied from the handler, a typo in a path or
+a type is a compile error, in both halves, and an app writes each type once. **Reversible:** yes;
+apps would lose the imports of Api below the routes, and annotations would be optional again.
+
 ## D-039 A value prop is a getter
 
 **Decided** 2026-11-22. The design, with the generated code before and after and the options

@@ -14,8 +14,10 @@
 ## its file, and `+page` isn't a name, so rocx writes each as a module of its own under `Generated/`
 ## (`ShowcasePage.roc`), putting the module's line on the blank line between them (or at the start
 ## of the first definition's line), so line N there is still line N of the route file. Then `Generated/Routes.roc` matches a request's path to its
-## page, `Generated/Paths.roc` has a path for every page, and `Generated/Api.roc` has each endpoint,
-## a function of its params, and their OpenAPI document (`Api.openapi`). (A record field can't be
+## page, `Generated/Paths.roc` has a path for every page, `Generated/Api.roc` is the app's contract
+## (each endpoint and channel, a function of its params, its method, URL and types copied from its
+## handler's annotation, and their OpenAPI document, `Api.openapi`), and `Generated/Handlers.roc`
+## binds each to its handler, for the router and `Endpoint.run!` (D-037). (A record field can't be
 ## called `module` in Roc: these records call a route's module `mod`.)
 import Value
 import Text
@@ -26,6 +28,9 @@ Routes := [].{
 
 	## A route's param: its name, and which of the path's parts it is.
 	Param : { name : Str, at : U64 }
+
+	## An import Api makes for a route's type (`contract_imports`).
+	ContractImport : { target : Str, alias : Str, renamed : Bool, exposed : List(Str), file : Str, method : Str, at : U64, type : Str }
 
 	## A route file, from its path under `routes/`: its kind (`page`, `layout`, `error`, `server`),
 	## its directories, its module (`BlogSlugPage`) and its name (`blog_slug`, for Paths).
@@ -43,8 +48,17 @@ Routes := [].{
 	Table : { pages : List(Entry), servers : List(Entry), layouts : List(Layout), error : [Some(Entry), None], paths : List(At), files : List(Str) }
 
 	## What a route file defines (`definitions`). `channel`: its channel's hooks, if it defines
-	## `channel!`; `hooks`: the hooks it defines when it defines no channel (for rocx build to refuse).
-	Defs : { view : [Some(Str), None], meta : Bool, methods : List(Str), middleware : [Some(Str), None], docs : List({ key : Str, value : Str }), respond : Bool, channel : [Some(List(Str)), None], hooks : List(Str) }
+	## `channel!`; `hooks`: the hooks it defines when it defines no channel (for rocx build to refuse);
+	## `handlers`: the types of each method and of its channel, from their annotations (for Api, the
+	## contract); `imported`: its import lines, for the modules those types name.
+	Defs : { view : [Some(Str), None], meta : Bool, methods : List(Str), middleware : [Some(Str), None], docs : List({ key : Str, value : Str }), respond : Bool, channel : [Some(List(Str)), None], hooks : List(Str), handlers : List(Handler), imported : List(Str) }
+
+	## A method's or a channel's types, from its annotation (`get! : { request : Server.Request,
+	## params : {}, context : c } => Try(Str, Endpoint.Refusal)`): what it is sent (`body`'s type; `""`
+	## when its record has none) and what it answers (its `Try`'s first). `line`: its definition's
+	## (from 1). Without an annotation, or one rocx can't read (`Unreadable`, why), it has none; one
+	## that names a type the route file defines (`Defined`, those types) has none Api can name.
+	Handler : { method : Str, line : U64, types : [Typed({ body : Str, answer : Str }), Unreadable(Str), Unannotated, Defined(List(Str))] }
 
 	## Each route file's definitions, by its path under `routes/`.
 	Source : { file : Str, defs : Defs }
@@ -143,7 +157,7 @@ Routes := [].{
 	defs_of = |sources, file|
 		match sources.find_first(|source| source.file == file) {
 			Ok(source) => source.defs
-			Err(_) => { view: None, meta: Bool.False, methods: [], middleware: None, docs: [], respond: Bool.False, channel: None, hooks: [] }
+			Err(_) => { view: None, meta: Bool.False, methods: [], middleware: None, docs: [], respond: Bool.False, channel: None, hooks: [], handlers: [], imported: [] }
 		}
 
 	## Whether the file names a middleware.
@@ -549,6 +563,7 @@ Routes := [].{
 		)
 		hooks = Routes.channel_hooks.keep_if(defined)
 		channel = defined(Routes.channel_name)
+		typed = methods.concat(if (channel) [Routes.channel_name] else [])
 		{
 			view: if (defined("view!")) Some("view!") else if (defined("view")) Some("view") else None,
 			meta: defined("meta"),
@@ -558,6 +573,187 @@ Routes := [].{
 			respond: defined("respond!"),
 			channel: if (channel) Some(hooks) else None,
 			hooks: if (channel) [] else hooks,
+			handlers: typed.map(|method| Routes.handler_of(lines, method)),
+			imported: lines.map(Text.trim).keep_if(|line| line.starts_with("import ")),
+		}
+	}
+
+	## A method's types, from its annotation in a route file's `lines`: `method : …`, at the start of
+	## a line, and the lines after it that are indented.
+	handler_of : List(Str), Str -> Handler
+	handler_of = |lines, method| {
+		defined_at = lines.find_first_index(|line| Routes.line_defines(line, method) and !Routes.annotates(line, method)) ?? 0
+		match lines.find_first_index(|line| Routes.annotates(line, method)) {
+			Err(_) => { method, line: defined_at + 1, types: Unannotated }
+			Ok(at) => {
+				first = Text.trim((lines.get(at) ?? "").drop_prefix(method)).drop_prefix(":")
+				# The lines after it while a bracket is open (`} => Try(…)` closes a record at the start
+				# of its line), or while they are indented.
+				var $taken = [first]
+				var $depth = Routes.depth_of(first)
+				var $next = at + 1
+				var $going = Bool.True
+				while $going and $next < lines.len() {
+					line = lines.get($next) ?? ""
+					if $depth > 0 or line.starts_with("\t") or line.starts_with(" ") {
+						$taken = $taken.append(Text.trim(line))
+						$depth = $depth + Routes.depth_of(line)
+						$next = $next + 1
+					} else {
+						$going = Bool.False
+					}
+				}
+				annotation = Text.trim(Str.join_with($taken.keep_if(|part| !part.is_empty()), " "))
+				types =
+					match Routes.signature(annotation) {
+						Ok(found) => {
+							own = Routes.types_defined(lines)
+							named = Routes.type_names("${found.body} ${found.answer}").keep_if(|name| own.contains(name))
+							if (named.is_empty()) Typed(found) else Defined(named)
+						}
+						Err(Unreadable(why)) => Unreadable(why)
+					}
+				{ method, line: defined_at + 1, types }
+			}
+		}
+	}
+
+	## The types a route file defines at its top level (`Thing : { name : Str }`, `Pair(a) : (a, a)`).
+	types_defined : List(Str) -> List(Str)
+	types_defined = |lines|
+		lines.keep_oks(
+			|line| {
+				bytes = line.to_utf8()
+				if bytes.is_empty() or !Text.is_upper(Text.at(bytes, 0)) {
+					return Err(NotAType)
+				}
+				end = Text.run_end(bytes, 0, Text.is_word)
+				after_args =
+					if Text.at(bytes, end) == '(' {
+						match Routes.closing_at(bytes, end) {
+							Ok(close) => close + 1
+							Err(Unclosed) => return Err(NotAType)
+						}
+					} else {
+						end
+					}
+				if (Text.at(bytes, Text.skip_space(bytes, after_args)) == ':') Ok(Text.cut(bytes, 0, end)) else Err(NotAType)
+			},
+		)
+
+	## How many more brackets a line opens than it closes (negative: closes more).
+	depth_of : Str -> I64
+	depth_of = |line|
+		line.to_utf8().fold(
+			0,
+			|depth, c|
+				if c == '{' or c == '(' or c == '[' {
+					depth + 1
+				} else if c == '}' or c == ')' or c == ']' {
+					depth - 1
+				} else {
+					depth
+				},
+		)
+
+	## Whether a line annotates `name`: `name`, then whitespace, then `:` (and not `:=`).
+	annotates : Str, Str -> Bool
+	annotates = |line, name| {
+		bytes = line.to_utf8()
+		if line.starts_with(name) {
+			after = Text.skip_space(bytes, name.to_utf8().len())
+			after < bytes.len() and Text.at(bytes, after) == ':' and Text.at(bytes, after + 1) != '='
+		} else {
+			Bool.False
+		}
+	}
+
+	## Where the bracket that opens at `open` (`{`, `(` or `[`) closes, past the ones inside it.
+	closing_at : List(U8), U64 -> Try(U64, [Unclosed])
+	closing_at = |bytes, open| {
+		var $depth = 0
+		var $i = open
+		while $i < bytes.len() {
+			c = Text.at(bytes, $i)
+			if c == '{' or c == '(' or c == '[' {
+				$depth = $depth + 1
+			} else if c == '}' or c == ')' or c == ']' {
+				$depth = $depth - 1
+				if $depth == 0 {
+					return Ok($i)
+				}
+			}
+			$i = $i + 1
+		}
+		Err(Unclosed)
+	}
+
+	## Text split at its commas outside brackets, each part trimmed; empty ones (a trailing comma's) gone.
+	top_level_parts : Str -> List(Str)
+	top_level_parts = |text| {
+		bytes = text.to_utf8()
+		var $parts = []
+		var $depth = 0
+		var $start = 0
+		var $i = 0
+		while $i < bytes.len() {
+			c = Text.at(bytes, $i)
+			if c == '{' or c == '(' or c == '[' {
+				$depth = $depth + 1
+			} else if (c == '}' or c == ')' or c == ']') and $depth > 0 {
+				$depth = $depth - 1
+			} else if c == ',' and $depth == 0 {
+				$parts = $parts.append(Text.cut(bytes, $start, $i))
+				$start = $i + 1
+			}
+			$i = $i + 1
+		}
+		$parts.append(Text.rest(bytes, $start)).map(Text.trim).keep_if(|part| !part.is_empty())
+	}
+
+	## A handler's types, from its annotation (what follows its `:`): `{ request : …, params : …,
+	## context : …, body : B } => Try(A, …)` is `{ body: "B", answer: "A" }` (`body` is `""` when
+	## the record has none).
+	signature : Str -> Try({ body : Str, answer : Str }, [Unreadable(Str)])
+	signature = |annotation| {
+		shape = "its annotation should be a record of what it is given, then => and a Try of its answer: { request : Server.Request, params : …, context : …, body : … } => Try(…, Endpoint.Refusal)"
+		bytes = annotation.to_utf8()
+		if Text.at(bytes, 0) != '{' {
+			return Err(Unreadable(shape))
+		}
+		close =
+			match Routes.closing_at(bytes, 0) {
+				Ok(at) => at
+				Err(Unclosed) => return Err(Unreadable(shape))
+			}
+		fields = Routes.top_level_parts(Text.cut(bytes, 1, close))
+		body =
+			match fields.find_first(|field| field.starts_with("body") and Text.trim(field.drop_prefix("body")).starts_with(":")) {
+				Ok(field) => Text.trim(Text.trim(field.drop_prefix("body")).drop_prefix(":"))
+				Err(_) => ""
+			}
+		arrow = Text.trim(Text.rest(bytes, close + 1))
+		if !(arrow.starts_with("=>") or arrow.starts_with("->")) {
+			return Err(Unreadable(shape))
+		}
+		answered = Text.trim(arrow.drop_prefix("=>").drop_prefix("->"))
+		if !answered.starts_with("Try(") {
+			return Err(Unreadable(shape))
+		}
+		answer_bytes = answered.to_utf8()
+		ends =
+			match Routes.closing_at(answer_bytes, 3) {
+				Ok(at) => at
+				Err(Unclosed) => return Err(Unreadable(shape))
+			}
+		if !Text.trim(Text.rest(answer_bytes, ends + 1)).is_empty() {
+			return Err(Unreadable("its annotation has more after its Try(…) than rocx reads (a where clause?): ${shape}"))
+		}
+		parts = Routes.top_level_parts(Text.cut(answer_bytes, 4, ends))
+		if parts.len() == 2 {
+			Ok({ body, answer: parts.first() ?? "" })
+		} else {
+			Err(Unreadable(shape))
 		}
 	}
 
@@ -1179,7 +1375,7 @@ Routes := [].{
 	routes_module = |table, sources, stories| {
 		pages = Routes.has_pages(table)
 		page_answer = |entry| if (Routes.guards(sources, entry.file)) "Middleware.run!(${entry.module_name}.middleware, request, context, |_passed, _handed| Routes.page(200))" else "Routes.page(200)"
-		endpoint = |at, method| Routes.guarded(sources, Routes.server_of(at), |request, context| "Endpoint.${if (method == "events!") "stream!" else "respond!"}(Api.${Routes.api_name(method, at.name)}(params), ${request}, ${context})")
+		endpoint = |at, method| Routes.guarded(sources, Routes.server_of(at), |request, context| "Endpoint.${if (method == "events!") "stream!" else "respond!"}(Handlers.${Routes.api_name(method, at.name)}(params), ${request}, ${context})")
 		branch = |at| {
 			condition = Routes.matched_by(at.parts, at.params)
 			params = Routes.params_of(at.params)
@@ -1265,7 +1461,7 @@ Routes := [].{
 					"|_who, _tab, _said| Err(Status(404, ${Text.roc_string("${at.path} takes nothing pages say: its route has no receive!")}))"
 				}
 			closes = if (hooked(at, "on_close!")) "Bool.True" else "Bool.False"
-			answer = |request, context| "Endpoint.channel!(Api.${Routes.api_name(Routes.channel_name, at.name)}(params), ${request}, ${context}, { opened!: ${opened}, received!: ${received}, closes: ${closes} })"
+			answer = |request, context| "Endpoint.channel!(Handlers.${Routes.api_name(Routes.channel_name, at.name)}(params), ${request}, ${context}, { opened!: ${opened}, received!: ${received}, closes: ${closes} })"
 			Str.join_with(["if (${Routes.matched_by(at.parts, at.params)}) {", "\t\t\tparams = ${Routes.params_of(at.params)}", "\t\t\t${Routes.guarded(sources, server, answer)}", "\t\t}"], "\n")
 		}
 		no_channel = "Routes.text(404, \"no channel at \${request.path}\")"
@@ -1364,6 +1560,8 @@ Routes := [].{
 		chained = if (branches.is_empty()) "\t\t${missing}" else "\t\t${Str.join_with(branches, " else ")} else {\n\t\t\t${missing.replace_each("\n", "\n\t")}\n\t\t}"
 		wants_html = branches.any(|each| each.contains("wants_html")) or missing.contains("wants_html")
 		wants_events = branches.any(|each| each.contains("wants_events"))
+		# Api for the channels' hooks (each is given its channel), Handlers for what answers.
+		named = |prefix| branches.concat(channel_function).concat(closed_function).any(|each| each.contains(prefix))
 		lines =
 			[
 				"## Written by rocx build from the app's routes/: a page for each +page.rocx, in the +layout.rocx",
@@ -1373,7 +1571,8 @@ Routes := [].{
 			]
 				.concat(if (branches.any(|each| each.contains("Endpoint."))) ["import pf.Endpoint"] else [])
 				.concat(if (uses_middleware) ["import pf.Middleware"] else [])
-				.concat(if (table.servers.is_empty()) [] else ["import Api"])
+				.concat(if (named("Api.")) ["import Api"] else [])
+				.concat(if (named("Handlers.")) ["import Handlers"] else [])
 				.concat(if (pages) ["import ${Routes.root_name}"] else [])
 				.concat(modules.map(|module_name| "import ${module_name}"))
 				.concat(if (storied) ["import Stories"] else [])
@@ -1499,44 +1698,322 @@ Routes := [].{
 			.concat(["\t\t])", "\t}"])
 	}
 
-	## `Generated/Api.roc`: each endpoint, a function of its params; each channel too.
-	api_module : Table, List(Source), { client : Bool, tags : List(Str), title : Str } -> Str
-	api_module = |table, sources, options| {
-		client = options.client
-		endpoints = table.servers.join_map(
+	## The handler a route file's `method` has, if it has one (a source made by hand may not).
+	handler_in : List(Source), Str, Str -> [Some(Handler), None]
+	handler_in = |sources, file, method|
+		match Routes.defs_of(sources, file).handlers.find_first(|handler| handler.method == method) {
+			Ok(handler) => Some(handler)
+			Err(_) => None
+		}
+
+	## The method's verb in Api: its HTTP method's, or `CHANNEL`.
+	contract_verb : Str -> Str
+	contract_verb = |method| if (method == Routes.channel_name) "CHANNEL" else Routes.verb_of(method)
+
+	## Whether a verb's requests have a body (the handler's `body`).
+	takes_body : Str -> Bool
+	takes_body = |verb| verb == "POST" or verb == "PUT" or verb == "PATCH"
+
+	## What an endpoint is sent and what it answers, as Api's types: its handler's `body` (`{}` for a
+	## method without one) and its answer. None for a handler rocx can't read the types of.
+	contract_types : List(Source), Entry, Str -> [Some({ arg : Str, answer : Str }), None]
+	contract_types = |sources, server, method|
+		match Routes.handler_in(sources, server.file, method) {
+			Some(handler) =>
+				match handler.types {
+					Typed(types) => Some({ arg: if (Routes.takes_body(Routes.contract_verb(method)) and !types.body.is_empty()) types.body else "{}", answer: types.answer })
+					_ => None
+				}
+			None => None
+		}
+
+	## The record of a route's params, as a type: `{ board : Str, card : Str }`, or `{}`.
+	params_type : List(Param) -> Str
+	params_type = |params| if (params.is_empty()) "{}" else "{ ${Str.join_with(params.map(|param| "${param.name} : Str"), ", ")} }"
+
+	## An endpoint's or a channel's lines in Api: its comment, its type (from its handler's: its
+	## params to an endpoint of any context, the handler's body and its answer) and its contract,
+	## its method and URL. The browser's copy is the same.
+	contract_lines : List(Source), Entry, Str -> List(Str)
+	contract_lines = |sources, server, method| {
+		verb = Routes.contract_verb(method)
+		name = Routes.api_name(method, server.name)
+		comment =
+			if method == Routes.channel_name {
+				"The channel at ${server.path}, from routes/${server.file} (`Endpoint.subscribe!`, `Endpoint.publish!`)"
+			} else if method == "events!" {
+				"${verb} ${server.path}, its events (`Endpoint.listen!`), from routes/${server.file}"
+			} else {
+				"${verb} ${server.path}, from routes/${server.file}"
+			}
+		annotation =
+			match Routes.contract_types(sources, server, method) {
+				Some(types) => ["\t${name} : ${Routes.params_type(server.params)} -> Endpoint(context, ${types.arg}, ${types.answer})"]
+				None => []
+			}
+		takes_params = if (server.params.is_empty()) "_params" else "params"
+		["\t## ${comment}"].concat(annotation).concat(["\t${name} = |${takes_params}| Endpoint.remote(${Text.json_string(verb)}, ${Routes.url_of(server.parts)})", ""])
+	}
+
+	## A route file's methods with endpoints in Api, then its channel (`channel!`), if it has one.
+	contracted : List(Source), Entry -> List(Str)
+	contracted = |sources, server| Routes.defs_of(sources, server.file).methods.concat(if (Routes.has_channel(sources, server.file)) [Routes.channel_name] else [])
+
+	## An import line's parts: what it names (`../../Board`, `pf.Channel`), the name the file calls it
+	## by (its last part, or what follows `as`), and what it exposes (`exposing [Card, Column]`).
+	import_parts : Str -> { target : Str, alias : Str, exposed : List(Str) }
+	import_parts = |line| {
+		bytes = line.to_utf8()
+		start = Text.skip_space(bytes, 6)
+		end = Text.run_end(bytes, start, |b| b != ' ' and b != '\t')
+		target = Text.cut(bytes, start, end)
+		rest = Text.rest(bytes, end)
+		last = (target.split_on("/").last() ?? target).split_on(".").last() ?? target
+		alias =
+			match rest.split_first(" as ") {
+				Ok({ after, .. }) => {
+					named = Text.trim_start(after).to_utf8()
+					Text.cut(named, 0, Text.run_end(named, 0, Text.is_word))
+				}
+				Err(_) => last
+			}
+		exposed =
+			match rest.split_first("exposing") {
+				Ok({ after, .. }) => {
+					inside = Text.trim(after).drop_prefix("[").split_on("]").first() ?? ""
+					inside.split_on(",").map(Text.trim).keep_if(|each| !each.is_empty())
+				}
+				Err(_) => []
+			}
+		{ target, alias, exposed }
+	}
+
+	## The capitalized names a type's text has, but after a `.`: a module's (`Board` in
+	## `Board.Data`), a type's (`Channel`, `Str`); each once.
+	type_names : Str -> List(Str)
+	type_names = |text| {
+		bytes = text.to_utf8()
+		var $names = []
+		var $i = 0
+		while $i < bytes.len() {
+			c = Text.at(bytes, $i)
+			if Text.is_word(c) {
+				end = Text.run_end(bytes, $i, Text.is_word)
+				if Text.is_upper(c) and ($i == 0 or Text.at(bytes, $i - 1) != '.') {
+					$names = $names.append(Text.cut(bytes, $i, end))
+				}
+				$i = end
+			} else {
+				$i = $i + 1
+			}
+		}
+		Text.unique($names)
+	}
+
+	## What a route file's import names, as a module under Generated/ names it: a module of the app's
+	## by its path from there (`../../../Board` in `routes/b/[board]/+server.roc` is `../Board`), a
+	## package's as it is (`pf.Channel`).
+	target_from_generated : Str, Str -> Str
+	target_from_generated = |file, target|
+		if Routes.package_name(target) {
+			target
+		} else {
+			Fs.relative("/app/${Routes.generated_dir}", Fs.resolve("/", [Fs.dirname("/app/routes/${file}"), target]))
+		}
+
+	## An import's line, from what it names, the name it gives it if it gives one, and what it
+	## exposes.
+	import_written : Str, [Some(Str), None], List(Str) -> Str
+	import_written = |target, alias, exposed| {
+		named =
+			match alias {
+				Some(name) => " as ${name}"
+				None => ""
+			}
+		"import ${target}${named}${if (exposed.is_empty()) "" else " exposing [${Str.join_with(exposed, ", ")}]"}"
+	}
+
+	## What Api imports for its types: each route file's import of a module its contract's types
+	## name (`import ../Board` for `Board.Data`): what it names as Generated/ names it (`target`),
+	## the name it gives it (`alias`; `renamed` when `as` gives it) and what it exposes, with the
+	## route file, its method, the method's line and the type that needs it; for each import that
+	## many times.
+	contract_imports : Table, List(Source) -> List(ContractImport)
+	contract_imports = |table, sources|
+		table.servers.join_map(
+			|server| {
+				defs = Routes.defs_of(sources, server.file)
+				Routes.contracted(sources, server).join_map(
+					|method|
+						match Routes.contract_types(sources, server, method) {
+							None => []
+							Some(types) => {
+								at =
+									match Routes.handler_in(sources, server.file, method) {
+										Some(handler) => handler.line
+										None => 0
+									}
+								[types.arg, types.answer].join_map(
+									|type| {
+										names = Routes.type_names(type)
+										defs.imported.keep_if(
+											|line| {
+												parts = Routes.import_parts(line)
+												names.contains(parts.alias) or parts.exposed.any(|each| names.contains(each))
+											},
+										)
+											.map(
+												|line| {
+													parts = Routes.import_parts(line)
+													{ target: Routes.target_from_generated(server.file, parts.target), alias: parts.alias, renamed: line.contains(" as "), exposed: parts.exposed, file: server.file, method, at, type }
+												},
+											)
+									},
+								)
+							}
+						},
+				)
+			},
+		)
+
+	## Api's import lines, from `contract_imports`: each module once, by the name the first route
+	## file gives it, with what any of them expose; a package's modules (`pf.Channel`) first.
+	contract_import_lines : List(ContractImport) -> List(Str)
+	contract_import_lines = |uses| {
+		named_modules = Text.unique(uses.map(|each| each.target))
+		lines = named_modules.map(
+			|target| {
+				all = uses.keep_if(|each| each.target == target)
+				first = all.first() ?? { target, alias: "", renamed: Bool.False, exposed: [], file: "", method: "", at: 0, type: "" }
+				Routes.import_written(target, if (first.renamed) Some(first.alias) else None, Text.unique(all.join_map(|each| each.exposed)))
+			},
+		)
+		sorted = Text.sorted(lines)
+		sorted.keep_if(|line| Routes.package_name(line.drop_prefix("import "))).concat(sorted.keep_if(|line| !Routes.package_name(line.drop_prefix("import "))))
+	}
+
+	## Two route files whose types name different modules by one name (`import ../Store` and `import
+	## shop.Store`), or one module by two: Api, which imports what both name, can't have both.
+	contract_clashes : Table, List(Source) -> List(Str)
+	contract_clashes = |table, sources| {
+		var $seen = []
+		var $problems = []
+		for each in Routes.contract_imports(table, sources) {
+			match $seen.find_first(|before| (before.alias == each.alias) != (before.target == each.target)) {
+				Ok(before) => {
+					problem =
+						if before.alias == each.alias {
+							"routes/${each.file}:${each.at.to_str()}: its ${each.method} names ${each.alias} (${each.target}, as Generated/ has it), and routes/${before.file}'s ${before.method} names another ${each.alias} (${before.target}): Generated/Api imports the modules both name, so give one of them another name (import … as …)"
+						} else {
+							"routes/${each.file}:${each.at.to_str()}: its ${each.method} names ${each.target} as ${each.alias}, and routes/${before.file}'s ${before.method} names it as ${before.alias}: Generated/Api imports the module once, so give it one name in both"
+						}
+					if !$problems.contains(problem) {
+						$problems = $problems.append(problem)
+					}
+				}
+				Err(_) => {
+					$seen = $seen.append(each)
+				}
+			}
+		}
+		$problems
+	}
+
+	## What keeps rocx build from writing the contract: a method or channel with no annotation, or
+	## one it can't read; one sent a body whose record has none; two modules Api would import by one
+	## name. Each says where (`routes/…:line: …`).
+	contract_problems : Table, List(Source) -> List(Str)
+	contract_problems = |table, sources| {
+		problems = table.servers.join_map(
 			|server|
-				Routes.defs_of(sources, server.file).methods.join_map(
+				Routes.contracted(sources, server).join_map(
 					|method| {
-						verb = Routes.verb_of(method)
-						takes = verb == "POST" or verb == "PUT" or verb == "PATCH"
-						handler = "|request, context, ${if (takes) "body" else "{}"}| ${server.module_name}.${method}({ request: request, params: params, context: context${if (takes) ", body: body" else ""} })"
-						made = if (client) "Endpoint.remote(${Text.json_string(verb)}, ${Routes.url_of(server.parts)})" else "Endpoint.local(${Text.json_string(verb)}, ${Routes.url_of(server.parts)}, ${handler})"
-						takes_params = if (client and server.params.is_empty()) "_params" else "params"
-						what = if (method == "events!") "${verb} ${server.path}, its events (`Endpoint.listen!`)" else "${verb} ${server.path}"
-						["\t## ${what}, from routes/${server.file}", "\t${Routes.api_name(method, server.name)} = |${takes_params}| ${made}", ""]
+						verb = Routes.contract_verb(method)
+						takes = Routes.takes_body(verb)
+						answer = if (method == Routes.channel_name) "Channel(who, message, said)" else if (method == "events!") "Events(…)" else "…"
+						wanted = "${method} : { request : Server.Request, params : ${Routes.params_type(server.params)}, context : c${if (takes) ", body : …" else ""} } => Try(${answer}, Endpoint.Refusal)"
+						match Routes.handler_in(sources, server.file, method) {
+							None => []
+							Some(handler) => {
+								at = "routes/${server.file}:${handler.line.to_str()}"
+								match handler.types {
+									Unannotated => ["${at}: ${method} has no type annotation, and rocx build copies its types into Generated/Api, the app's contract (D-037): annotate it, as ${wanted}"]
+									Unreadable(why) => ["${at}: rocx build can't read ${method}'s types for Generated/Api: ${why}"]
+									Defined(named) => {
+										these = Str.join_with(named, ", ")
+										["${at}: ${method}'s type names ${these}, which this route file defines, and Generated/Api, the app's contract (D-037), imports no route file: move ${these} into a module of its own (${named.first() ?? these}.roc beside routes/) and import it here"]
+									}
+									Typed(types) => if (takes and types.body.is_empty()) ["${at}: ${method} is sent a body (${verb}): its annotation's record needs body : … ({} for none), as ${wanted}"] else []
+								}
+							}
+						}
 					},
 				),
 		)
-		channels = table.servers.keep_if(|server| Routes.has_channel(sources, server.file)).join_map(
-			|server| {
-				made = if (client) "Endpoint.remote(\"CHANNEL\", ${Routes.url_of(server.parts)})" else "Endpoint.local(\"CHANNEL\", ${Routes.url_of(server.parts)}, |request, context, {}| ${server.module_name}.channel!({ request: request, params: params, context: context }))"
-				takes_params = if (client and server.params.is_empty()) "_params" else "params"
-				["\t## The channel at ${server.path}, from routes/${server.file} (`Endpoint.subscribe!`, `Endpoint.publish!`)", "\t${Routes.api_name(Routes.channel_name, server.name)} = |${takes_params}| ${made}", ""]
-			},
-		)
-		server_imports = Text.sorted(Text.unique(table.servers.map(|server| server.module_name))).map(|module_name| "import ${module_name}")
+		problems.concat(Routes.contract_clashes(table, sources))
+	}
+
+	## `Generated/Api.roc`: the app's contract. Each endpoint, a function of its params, with its
+	## method, its URL and the types its handler's annotation gives (`Endpoint.remote`); each channel
+	## too. It imports what those types name, and no route file, so any module of the app's may
+	## import it (D-037); the server's has the OpenAPI document too, and the browser's is the same
+	## contract. The handlers are `Generated/Handlers.roc`'s.
+	api_module : Table, List(Source), { client : Bool, tags : List(Str), title : Str } -> Str
+	api_module = |table, sources, options| {
+		client = options.client
+		endpoints = table.servers.join_map(|server| Routes.defs_of(sources, server.file).methods.join_map(|method| Routes.contract_lines(sources, server, method)))
+		channels = table.servers.keep_if(|server| Routes.has_channel(sources, server.file)).join_map(|server| Routes.contract_lines(sources, server, Routes.channel_name))
+		known = ["import pf.Endpoint", "import pf.Server", "import pf.OpenApi"]
+		typed = Routes.contract_import_lines(Routes.contract_imports(table, sources)).keep_if(|line| !known.contains(line))
 		lines =
 			[
-				"## Written by rocx build from the app's routes/: each endpoint a +server.rocx has, as a function",
-				if (client) "## of its params. This is the browser's copy: an endpoint is its method and URL (`Endpoint.send!`)." else "## of its params: `Endpoint.run!` runs it on the server, `Endpoint.send!` from a component. Edit the routes.",
+				"## Written by rocx build from the app's routes/: the app's contract. Each endpoint a +server.roc has,",
+				"## as a function of its params: its method, its URL and the types its handler's annotation gives,",
+				if (client) "## and nothing it does. This is the browser's copy (`Endpoint.send!`, `Endpoint.get!`)." else "## and nothing it does, so any module may import it (`Endpoint.publish!`, `Endpoint.get!`). The",
+				if (client) "## Edit the routes." else "## handlers are Generated/Handlers'. Edit the routes.",
 				"import pf.Endpoint",
 				"import pf.Server",
 			]
-				.concat(if (client) [] else ["import pf.OpenApi"].concat(server_imports))
+				.concat(if (client) [] else ["import pf.OpenApi"])
+				.concat(typed)
 				.concat(["", "Api := [].{"])
 				.concat(endpoints)
 				.concat(channels)
 				.concat(if (client) [] else Routes.open_api_document(table, sources, options.tags, options.title))
+				.concat(["}", "", "${Routes.marker} the routes: rocx build writes it.", ""])
+		Str.join_with(lines, "\n")
+	}
+
+	## `Generated/Handlers.roc`, the server's alone: each endpoint and channel of Api with its
+	## handler (`Endpoint.bind`), which the router answers with and `Endpoint.run!` runs. It imports
+	## every route file with one, so a module a route file imports can't import it: main.roc can, and
+	## a plugin, or a module only they import.
+	handlers_module : Table, List(Source) -> Str
+	handlers_module = |table, sources| {
+		bound = |server, method| {
+			verb = Routes.contract_verb(method)
+			takes = Routes.takes_body(verb)
+			name = Routes.api_name(method, server.name)
+			handler = "|request, context, ${if (takes) "body" else "{}"}| ${server.module_name}.${method}({ request: request, params: params, context: context${if (takes) ", body: body" else ""} })"
+			what = if (method == Routes.channel_name) "The channel at ${server.path}" else if (method == "events!") "${verb} ${server.path}, its events" else "${verb} ${server.path}"
+			["\t## ${what}, from routes/${server.file}", "\t${name} = |params| Endpoint.bind(Api.${name}(params), ${handler})", ""]
+		}
+		bound_endpoints = table.servers.join_map(|server| Routes.defs_of(sources, server.file).methods.join_map(|method| bound(server, method)))
+		channels = table.servers.keep_if(|server| Routes.has_channel(sources, server.file)).join_map(|server| bound(server, Routes.channel_name))
+		modules = Text.sorted(Text.unique(table.servers.keep_if(|server| !Routes.contracted(sources, server).is_empty()).map(|server| server.module_name)))
+		lines =
+			[
+				"## Written by rocx build from the app's routes/: each endpoint and channel of Api with its handler,",
+				"## for the server alone: the router answers with them, and `Endpoint.run!` runs one (skipping its",
+				"## middleware). It imports every route file, so a module they import can't import it: main.roc",
+				"## can, a plugin can. Edit the routes.",
+				"import pf.Endpoint",
+				"import Api",
+			]
+				.concat(modules.map(|module_name| "import ${module_name}"))
+				.concat(["", "Handlers := [].{"])
+				.concat(bound_endpoints)
+				.concat(channels)
 				.concat(["}", "", "${Routes.marker} the routes: rocx build writes it.", ""])
 		Str.join_with(lines, "\n")
 	}
@@ -2266,6 +2743,23 @@ Routes := [].{
 			respond: Routes.truthy(Value.field(value, "respond")),
 			channel: if (Routes.truthy(channel)) Some(Value.items(Value.field(channel, "hooks")).map(Value.str)) else None,
 			hooks: Value.items(Value.field(value, "hooks")).map(Value.str),
+			handlers: Value.fields(Value.field(value, "handlers")).map(
+				|each| {
+					given = each.value
+					types =
+						if Routes.truthy(Value.field(given, "unannotated")) {
+							Unannotated
+						} else if Routes.truthy(Value.field(given, "defined")) {
+							Defined(Value.items(Value.field(given, "defined")).map(Value.str))
+						} else if Routes.truthy(Value.field(given, "unreadable")) {
+							Unreadable(Value.str(Value.field(given, "unreadable")))
+						} else {
+							Typed({ body: Value.str_or(Value.field(given, "body"), ""), answer: Value.str_or(Value.field(given, "answer"), "{}") })
+						}
+					{ method: each.key, line: Routes.count_of(Value.field(given, "line")), types }
+				},
+			),
+			imported: Value.items(Value.field(value, "imports")).map(Value.str),
 		}
 	}
 
@@ -2358,6 +2852,16 @@ Routes := [].{
 				Some(hooks) => [{ key: "channel", value: Object([{ key: "hooks", value: Value.strs(hooks) }]) }]
 				None => if (defs.hooks.is_empty()) [] else [{ key: "hooks", value: Value.strs(defs.hooks) }]
 			}
+		handler_value = |handler| {
+			types =
+				match handler.types {
+					Typed(found) => [{ key: "body", value: Text(found.body) }, { key: "answer", value: Text(found.answer) }]
+					Unreadable(why) => [{ key: "unreadable", value: Text(why) }]
+					Unannotated => [{ key: "unannotated", value: Boolean(Bool.True) }]
+					Defined(named) => [{ key: "defined", value: Value.strs(named) }]
+				}
+			{ key: handler.method, value: Object([{ key: "line", value: Value.count(handler.line) }].concat(types)) }
+		}
 		Object(
 			[
 				{ key: "view", value: Value.text_or_null(defs.view) },
@@ -2367,7 +2871,9 @@ Routes := [].{
 				{ key: "docs", value: Object(defs.docs.map(|doc| { key: doc.key, value: Text(doc.value) })) },
 			]
 				.concat(respond)
-				.concat(channel),
+				.concat(channel)
+				.concat(if (defs.handlers.is_empty()) [] else [{ key: "handlers", value: Object(defs.handlers.map(handler_value)) }])
+				.concat(if (defs.handlers.is_empty()) [] else [{ key: "imports", value: Value.strs(defs.imported) }]),
 		)
 	}
 
@@ -2428,6 +2934,14 @@ Routes := [].{
 			"apiModule" => {
 				table = Routes.table_from(arg(0))?
 				Ok(Text(Routes.api_module(table, Routes.sources_from(option("sources")), { client: Value.bool_or(option("client"), Bool.False), tags: Value.items(option("tags")).map(Value.str), title: Value.str_or(option("title"), "app") })))
+			}
+			"handlersModule" => {
+				table = Routes.table_from(arg(0))?
+				Ok(Text(Routes.handlers_module(table, Routes.sources_from(option("sources")))))
+			}
+			"contractProblems" => {
+				table = Routes.table_from(arg(0))?
+				Ok(Value.strs(Routes.contract_problems(table, Routes.sources_from(arg(1)))))
 			}
 			"pathsModule" => {
 				table = Routes.table_from(arg(0))?

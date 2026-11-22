@@ -155,9 +155,11 @@ What the app met, and how it works around each:
   does presence, on a channel; the header names both, and the routes import `guard.Guard` and
   `presence.PresenceServer`. No copies are left.)
 - **A handler can't name another route's channel.** Every write publishes on the board's channel,
-  but route files can't import `Generated/Api` (it is made of them). Workaround: `News.channel`
-  builds the same endpoint by its path, `Endpoint.remote("CHANNEL", "/b/<board>")`; moving the
-  channel's route means changing it there too.
+  but route files can't import `Generated/Api` (it is made of them). (Fixed in the platform since:
+  `Generated/Api` is the app's contract and imports no route file, D-037; `News.tell!` publishes on
+  `Api.channel_b_board({ board })`, and `CardPanel`'s submissions are typed by it in both copies.)
+  The workaround was `News.channel`, which built the same endpoint by its path,
+  `Endpoint.remote("CHANNEL", "/b/<board>")`, so moving the channel's route meant changing it there too.
 - **An import a doc comment mentions stays in the browser's copy.** The front page's `##` comment
   named `Middlewares.member`; the browser's copy then kept `import ../Middlewares` (which reaches
   `pf.Actor` through Guard), and `rocx build` warned that the browser's build couldn't compile it.
@@ -195,5 +197,6 @@ What the app met, and how it works around each:
   field); `{ me }` alone is a block, not a record (`{ me: me }`); whitespace at the end of an
   element's text went, so `<span>You are </span>` lost its space (`{"You are "}` keeps it; fixed in
   rocx since: a space on the tag's line stays); and in
-  the browser's copy every endpoint read and submission list needs its type written down
-  (`moves : Submissions(Board.Move, Str)`, `home! : {} => …`), as D-030 says.
+  the browser's copy every endpoint read and submission list needed its type written down
+  (`moves : Submissions(Board.Move, Str)`, `home! : {} => …`), as D-030 said (fixed in the platform
+  since: the browser's copy of `Api` has each endpoint's types, D-037).

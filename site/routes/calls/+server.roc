@@ -1,5 +1,6 @@
 import pf.Server
 import pf.Endpoint
+import ../../Generated/Api
 import ../../Generated/ApiShoutServer
 import ../../Generated/ApiShoutWordServer
 
@@ -25,8 +26,8 @@ get! = |{ request, context, .. }| {
 	Ok({ asked: asked.map(answered), shouted })
 }
 
-## The shout endpoints, made as `Generated/Api` makes them: this file can't import Api, which
-## imports it.
-shout = Endpoint.local("POST", "/api/shout", |request, context, body| ApiShoutServer.post!({ request, params: {}, context, body }))
+## The shout endpoints, each Api's contract bound to its handler, as `Generated/Handlers` binds
+## them (`Endpoint.bind`): this file can't import Handlers, which imports it.
+shout = Endpoint.bind(Api.post_api_shout({}), |request, context, body| ApiShoutServer.post!({ request, params: {}, context, body }))
 
-shout_word = |word| Endpoint.local("GET", "/api/shout/${Server.encode_segment(word)}", |request, context, {}| ApiShoutWordServer.get!({ request, params: { word }, context }))
+shout_word = |word| Endpoint.bind(Api.get_api_shout_word({ word: word }), |request, context, {}| ApiShoutWordServer.get!({ request, params: { word }, context }))

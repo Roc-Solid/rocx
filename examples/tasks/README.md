@@ -138,9 +138,12 @@ instead. None needed a change to the platform; two needed one to packages/forms,
    so the list can show a task while it is on its way (`pending_inputs!` gives the endpoint's arg),
    and `TaskForm.adding.parse_body(Server.text_of(request))` reads the same body again, checked.
 5. **The browser's copy needs the types said** (D-030 says why): every memo that reads an
-   endpoint, and every `use_submissions!` and `use_submission!`, is annotated
+   endpoint, and every `use_submissions!` and `use_submission!`, was annotated
    (`team! : () => Tasks.Team`, `toggles : Submissions(Tasks.Toggle, {})`), or the browser's
-   program doesn't compile ("This decodes a record whose full set of fields is not known").
+   program didn't compile ("This decodes a record whose full set of fields is not known"). (Fixed
+   in the platform since: the browser's copy of `Api` has the endpoints' types, copied from each
+   handler's annotation (D-037), so the annotations are gone; the list's `sheet!` keeps its, which
+   says a refusal is a value there.)
 6. **`Endpoint.get!` of a 404 is a 500 page.** A refusal fails the read, and the root `<Errored>`
    answers 500. The list and task pages read with `Endpoint.read!` and show their own 404
    (`<HttpStatusCode code={404} />`); any refusal shows as "no such list", a failing database too.

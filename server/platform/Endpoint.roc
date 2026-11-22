@@ -7,11 +7,14 @@ import Host
 ## An HTTP endpoint: a method at a path, which a route's `+server.roc` defines (`get!`, `post!`,
 ## `put!`, `patch!`, `delete!`; `events!`, a stream of events, asked for with GET). Anyone may call
 ## it over HTTP. The app calls it through what rocx writes from the routes (`Generated/Api.roc`), as
-## a function of its params. A component reads a GET endpoint as a plain value (`get!`, or `read!`
-## for its refusal too): while the server renders the page, the server answers it, and the page
-## carries the answer to the browser. It sends any endpoint from a handler (`send!`, with the
-## platform's `Call.fetch!`), or listens to one's events (`listen!`). On the server, `run!` runs
-## one there and then.
+## a function of its params: its contract, the method, the URL and the types its handler's
+## annotation gives, and nothing the handler does, so any module may import it (D-037). A component
+## reads a GET endpoint as a plain value (`get!`, or `read!` for its refusal too): while the server
+## renders the page, the server answers it, and the page carries the answer to the browser. It sends
+## any endpoint from a handler (`send!`, with the platform's `Call.fetch!`), or listens to one's
+## events (`listen!`). On the server, a channel's messages are published to it (`publish!`), and
+## `run!` runs an endpoint there and then, with its handler (`Generated/Handlers.roc`, which `bind`s
+## each contract to its handler).
 ##
 ## A handler is given the request, the context its middleware handed on, its path's params and its
 ## body, and answers `Ok(result)`, sent as JSON with the status 200, or a `Refusal`: a status and
@@ -21,15 +24,25 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	## What a handler may answer instead of its result: a status, and why; or exactly this answer.
 	Refusal : [BadRequest(Str), Unauthorized, Forbidden, NotFound, Conflict(Str), Status(U16, Str), Answer(Server.Response)]
 
-	## The server's: what its handler does.
+	## An endpoint of the app's own, with its handler, outside the routes: its method, its URL and
+	## what it does (a test's, or one made for `run!` alone).
 	local : Str, Str, (Server.Request, context, arg => Try(result, Refusal)) -> Endpoint(context, arg, result)
 	local = |method, url, handler| { method: method, url: url, run: handler }
 
-	## The browser's copy: its method and URL, and nothing it does. Its `run` captures nothing, so
+	## A contract: its method and URL, and nothing it does; its types are the annotation's of what
+	## names it (`Generated/Api.roc`'s, copied from its handler's). Its `run` captures nothing, so
 	## naming an endpoint allocates nothing: a read that isn't in yet unwinds the frame that named
 	## it, and what that held would never be let go of.
 	remote : Str, Str -> Endpoint(context, arg, result)
-	remote = |method, url| { method: method, url: url, run: |_, _, _| crash "an endpoint runs on the server: the browser sends it (Endpoint.send!)" }
+	remote = |method, url| { method: method, url: url, run: |_, _, _| crash "Endpoint.run! was given a contract (Generated/Api), which has no handler: give it Generated/Handlers' endpoint of the same name. In the browser, send it (Endpoint.send!)" }
+
+	## On the server: the contract `endpoint` (Api's: its method, its URL, its types) with the
+	## handler that answers it, as `Generated/Handlers.roc` pairs each route's
+	## (`Endpoint.bind(Api.get_board(params), |request, context, {}| BoardServer.get!({ request, params,
+	## context }))`), so the compiler checks that they agree. The router answers with it (`respond!`,
+	## `stream!`, `channel!`), and `run!` runs it.
+	bind : Endpoint(context, arg, result), (Server.Request, context, arg => Try(result, Refusal)) -> Endpoint(context, arg, result)
+	bind = |endpoint, handler| { method: endpoint.method, url: endpoint.url, run: handler }
 
 	## A GET endpoint's answer, as a plain value, for a component or a computation
 	## (`create_memo!(|| Endpoint.get!(Api.get_profile({ id })))`): one definition of a page's data,
@@ -283,7 +296,8 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 
 	## On the server: runs it there and then, with the request being answered and the context its
 	## handler is given (its middleware doesn't run: the caller ran its own); a refusal as the
-	## browser would see it.
+	## browser would see it. It needs the endpoint with its handler: `Generated/Handlers`'s
+	## (`Endpoint.run!(Handlers.get_note({ id }), request, context, {})`), not Api's contract.
 	run! : Endpoint(context, arg, result), Server.Request, context, arg => Try(result, Server.Problem)
 	run! = |endpoint, request, context, arg| {
 		handler = endpoint.run
@@ -557,6 +571,7 @@ expect Endpoint.to_request(shout, "hi") == { method: "POST", url: "/shout", head
 expect Endpoint.answer(shout, Ok({ status: 200, headers: [], body: "\"HI\"" })) == Ok("HI")
 expect Endpoint.answer(shout, Ok({ status: 400, headers: [], body: "say something" })) == Err(Refused(400, "say something"))
 expect Endpoint.refused(NotFound) == (404, "Not found")
+expect Endpoint.url_of(Endpoint.bind(Endpoint.remote("POST", "/shout"), |_, _, said| Ok(Str.concat(said, "!")))) == "/shout"
 expect Endpoint.url_of(Endpoint.with_query(shout, "weeks=1")) == "/shout?weeks=1"
 expect Endpoint.url_of(Endpoint.with_query(Endpoint.with_query(shout, "weeks=1"), "weeks=2")) == "/shout?weeks=2"
 expect Endpoint.url_of(Endpoint.with_query(shout, "")) == "/shout"

@@ -223,11 +223,14 @@ What the app met, and how it works around each. None needed a change outside the
    with endpoints"): its tools are `Api`'s endpoints, and a route file can't import `Api`.
    Workaround: `Agents.mount`, a middleware main.roc puts after the default one, which answers
    `/mcp` behind its own middleware (`Middlewares.agent`, `agent_limit`). `rocx routes` doesn't list
-   `/mcp`.
+   `/mcp`. (Changed in the platform since, D-037: `Generated/Api` is the contract, and the tools run
+   `Generated/Handlers`' endpoints, which only what is outside the routes' imports may import.
+   `main.roc` is the documented place to mount MCP, so the mount stays; a route of `respond!` alone
+   could serve it too now.)
 3. **`McpHttp.endpoint` can't fill an endpoint's path from a tool's arguments**: `Api.get_api_notes_id({ id })`
    needs its `id` when the tool is made. Workaround: `search_notes` and `create_note` are endpoints
    whole, and the four tools that take an `id` are `McpHttp.tool`s that run the endpoint for that id
-   (`Endpoint.run!(Api.get_api_notes_id({ id: id }), caller.request, caller.context, {})`), so they
+   (`Endpoint.run!(Handlers.get_api_notes_id({ id: id }), caller.request, caller.context, {})`), so they
    still go through the API's code. Something like `McpHttp.endpoint_for(|args| Api.x({ id: args.id }), …)`
    would make them a line each.
 4. **Every field of a tool's arguments is required** (packages/mcp's README), so an agent sends
@@ -238,9 +241,12 @@ What the app met, and how it works around each. None needed a change outside the
    link's page shows its form under `when!={link!(token).is_ok()}`, with plain children. (Fixed in
    the platform since: a function child is effectful now, and may hold a `<Show>`.)
 7. **The browser's copy needs the types said** (D-030): each page's endpoint read and each
-   `use_submission!` is annotated, with the pages' data in `Pages.roc`. `roc check` of the browser's
+   `use_submission!` was annotated, with the pages' data in `Pages.roc`. `roc check` of the browser's
    program passed without them; its wasm build failed ("This decodes a record whose full set of
-   fields is not known"), so check with the build.
+   fields is not known"), so check with the build. (Fixed in the platform since: the browser's copy
+   of `Api` has the endpoints' types (D-037), so the submissions aren't annotated; the pages' reads,
+   top-level functions with a doc comment, keep theirs, and `Pages.roc` keeps the types the routes
+   answer with.)
 8. **The server doesn't pass on the client's address** (packages/guard's README), so `Guard.ip`
    can't tell clients apart. Sign-in links are limited by the address they are mailed to (what needs
    keeping safe is the inbox), and MCP calls by the token. (Fixed in the platform since:

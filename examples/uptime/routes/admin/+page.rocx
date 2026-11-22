@@ -6,7 +6,6 @@ import pf.Title
 import pf.Solid exposing [create_effect!, create_memo!, refresh!]
 import pf.Router exposing [use_submission!]
 import ../../Middlewares
-import ../../News
 import ../../Report
 import ../../Generated/Api
 import ../../Ui/AdminRow
@@ -26,7 +25,7 @@ view! = |_| {
 	read = Api.get_admin({})
 	admin! : () => Report.Admin
 	admin! = create_memo!(|| Endpoint.get!(read))
-	heard! : Channel.Event(News.Said) => {}
+	heard! : Channel.Event(Report.News) => {}
 	heard! = |event|
 		match event {
 			Resync | Message(_) => refresh!(admin!)

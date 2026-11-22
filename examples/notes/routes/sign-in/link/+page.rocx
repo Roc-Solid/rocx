@@ -3,7 +3,6 @@ import pf.Endpoint
 import pf.Router
 import pf.Server
 import pf.Show
-import pf.Submission
 import pf.Router exposing [use_submission!]
 import ../../../Query
 import ../../../Generated/Api
@@ -19,7 +18,6 @@ link! = |token| Endpoint.read!(Api.get_sign_in_link({}).with_query("token=${Serv
 
 view! = |_| {
 	token = Query.value(Router.location!({}).query, "token")
-	using : Submission({ token : Str }, Str)
 	using = use_submission!(Api.post_sign_in_link({}))
 	<main id="main" class="link">
 		<div class="card">

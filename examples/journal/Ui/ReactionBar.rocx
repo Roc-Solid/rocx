@@ -5,7 +5,6 @@ import pf.Endpoint
 import pf.Server
 import pf.Show
 import pf.For
-import pf.Submissions
 import ../I18n
 import ../Reaction
 import ../Generated/Api
@@ -26,8 +25,6 @@ ReactionBar := [].{
 		# The read named outside the memo: a computation's read that waits mustn't lose what it made.
 		counts = Api.get_api_posts_lang_slug_reactions({ lang, slug })
 		sender = Api.post_api_posts_lang_slug_reactions({ lang, slug })
-		# Their types said: in the browser's copy an endpoint has none.
-		toggles : Submissions(Reaction.Toggle, Reaction.Tally)
 		toggles = use_submissions!(sender)
 		toggle! = use_action!(sender)
 		shown! = create_memo!(

@@ -9,15 +9,15 @@ import ../Generated/Api
 ## Listens to an endpoint's events, `GET /api/count/[to]` (a route's `events!`): Start, and the
 ## server sends each count as it makes it; the component shows each as it comes, says when the server
 ## stopped sending (it ended the stream), and can start again. `Api.events_api_count_to` is what
-## rocx wrote for it: on the server, the handler; in the browser's copy, its URL.
+## rocx wrote for it, the same in both copies: its URL, and the type of its events, copied from the
+## handler's annotation (D-037).
 Count := [].{
-	Counted : { count : U64, of : U64, square : U64 }
 	State : [Idle, Listening, Done, Failed(Str)]
 
 	view! : {} => Html
 	view! = |{}| {
 		(to!, set_to!) = create_signal!("5")
-		(heard!, set_heard!) = create_signal!(nothing_heard)
+		(heard!, set_heard!) = create_signal!([])
 		(state!, set_state!) = create_signal!(idle)
 		# Each event is a handler's run: what it writes is applied, as a click's is.
 		start! = || {
@@ -149,11 +149,6 @@ Count := [].{
 
 idle : Count.State
 idle = Idle
-
-## What the browser's copy knows of the events' type: what this says. (Its copy of the endpoint is
-## a URL, no handler to learn it from.)
-nothing_heard : List(Count.Counted)
-nothing_heard = []
 
 button : Count.State -> Str
 button = |state|

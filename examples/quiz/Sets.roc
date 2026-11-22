@@ -6,11 +6,8 @@ import Game
 ## editor. Server-only: it imports `Db`.
 Sets := [].{
 
-	## A set, as the host's list shows it.
-	Summary : { id : I64, title : Str, blurb : Str, questions : I64 }
-
 	## Every set, the newest made first, then the seeded ones in the order they were seeded.
-	all! : {} => Try(List(Sets.Summary), [DbErr(Str), BadRow(Str)])
+	all! : {} => Try(List(Draft.Summary), [DbErr(Str), BadRow(Str)])
 	all! = |{}|
 		Db.all!(
 			"select s.id, s.title, s.blurb, count(q.position)::int8 as questions from quiz_sets s left join quiz_questions q on q.set_id = s.id group by s.id order by s.slug is not null, s.created_at desc, s.id",

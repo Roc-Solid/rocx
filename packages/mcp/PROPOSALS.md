@@ -65,6 +65,12 @@ changes.
 
 ## 2. `Api` imports only route files with endpoints
 
+**Done, differently (D-037).** `Generated/Api` is the app's contract and imports no route file at
+all; each endpoint with its handler is `Generated/Handlers`', which imports only the route files
+with endpoints or a channel. So a route of `respond!` alone (`routes/mcp/+server.roc`) may import a
+module that imports Handlers, and serve an MCP server whose tools are the app's endpoints
+(`test/e2e.test.mjs` runs a handler from such a route). What follows is the proposal as it was.
+
 **Problem.** `Generated/Api.roc` imports every `+server` module (`apiModule` in `src/routes.mjs`),
 including one with only `respond!` (D-013), which has no endpoints in `Api`. So a route file can't
 import `Api`, or any module that does: `routes/mcp/+server.roc` → `Agents` → `Api` →

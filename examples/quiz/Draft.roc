@@ -25,6 +25,10 @@ Draft := [].{
 	## A set, read: what `Sets.create!` writes.
 	Made : { title : Str, blurb : Str, questions : List(Game.Question) }
 
+	## A set, as the host's list shows it (`Sets.all!`, `GET /host`). Here, not in `Sets`, which
+	## imports `Db`: the browser's copy of `Generated/Api` names it too.
+	Summary : { id : I64, title : Str, blurb : Str, questions : I64 }
+
 	## The most questions a set may have.
 	most_questions : U64
 	most_questions = 30

@@ -5,7 +5,7 @@ import mcp.Mcp
 import mcp.Prompt
 import mcp.Resource
 import mcp.Template
-import Generated/Api
+import Generated/Handlers
 import McpHttp
 import Middlewares
 import Note
@@ -17,9 +17,10 @@ import Notebook
 ## endpoint whole (`McpHttp.endpoint`), and the rest call the endpoint for the note their `id`
 ## names (`Endpoint.run!`), since a tool's arguments can't fill an endpoint's path.
 ##
-## The server is mounted from main.roc, not from a route file: it reads `Generated/Api`, which a
-## route file can't import (packages/mcp's PROPOSALS.md, "`Api` imports only route files with
-## endpoints").
+## The server is mounted from main.roc, the place for what sits in front of the routes: its tools
+## run the endpoints' handlers (`Generated/Handlers`, D-037), which import every route file, so
+## no module a route file imports may import them; main.roc, and this module, which only it
+## imports, may.
 Agents := [].{
 
 	## What every tool, resource and prompt is given: the request, and who is asking
@@ -34,9 +35,9 @@ Agents := [].{
 		title: "Acme Notes",
 		instructions: "Someone's personal notes, in Markdown, with tags. Find notes with search_notes (words, \"a phrase\", -without, #tag), then read one whole with read_note before changing it. Prefer append_to_note for adding to a note: it never overwrites. Archive a note rather than asking to delete it; archived notes are still found by search. A token may be read-only: then the tools that write are refused.",
 		tools: [
-			McpHttp.endpoint(Api.post_api_search({}), { name: "search_notes", title: "Search notes", description: "Finds notes by their words, best match first, archived ones too. The query takes words, \"an exact phrase\", or, -without, and #tag to look only at notes with that tag (\"#work\" alone lists them). Each result has the note's id, title, tags and the parts that matched." }, McpHttp.openapi({})).read_only(),
+			McpHttp.endpoint(Handlers.post_api_search({}), { name: "search_notes", title: "Search notes", description: "Finds notes by their words, best match first, archived ones too. The query takes words, \"an exact phrase\", or, -without, and #tag to look only at notes with that tag (\"#work\" alone lists them). Each result has the note's id, title, tags and the parts that matched." }, McpHttp.openapi({})).read_only(),
 			McpHttp.tool({ name: "read_note", title: "Read a note", description: "A note whole, by its id: its title, its body in Markdown, its tags, and whether it is pinned or archived." }, read_note!, McpHttp.openapi({})).read_only(),
-			McpHttp.endpoint(Api.post_api_notes({}), { name: "create_note", title: "Create a note", description: "Writes a new note: a title (up to 200 characters), a body in Markdown, and tags (lower case letters, digits and dashes; up to 12; [] for none). Answers the note, with its id." }, McpHttp.openapi({})).additive(),
+			McpHttp.endpoint(Handlers.post_api_notes({}), { name: "create_note", title: "Create a note", description: "Writes a new note: a title (up to 200 characters), a body in Markdown, and tags (lower case letters, digits and dashes; up to 12; [] for none). Answers the note, with its id." }, McpHttp.openapi({})).additive(),
 			McpHttp.tool({ name: "append_to_note", title: "Add to a note", description: "Adds text (Markdown) at the end of a note, after a blank line, keeping everything already there. Answers the note as it is now." }, append_to_note!, McpHttp.openapi({})).additive(),
 			McpHttp.tool({ name: "tag_note", title: "Tag a note", description: "Sets a note's tags: all of them, so read the note first to keep the ones it has. Tags are lower case letters, digits and dashes; up to 12." }, tag_note!, McpHttp.openapi({})).idempotent(),
 			McpHttp.tool({ name: "archive_note", title: "Archive a note", description: "Archives a note (archived: true), which takes it out of the list but keeps it, still found by search; or brings it back (archived: false)." }, archive_note!, McpHttp.openapi({})).idempotent().additive(),
@@ -70,19 +71,19 @@ Agents := [].{
 
 ## `read_note`: `GET /api/notes/<id>`.
 read_note! : { id : Str }, Agents.Caller => Try(Note.Full, Str)
-read_note! = |{ id }, caller| ran(Endpoint.run!(Api.get_api_notes_id({ id: id }), caller.request, caller.context, {}))
+read_note! = |{ id }, caller| ran(Endpoint.run!(Handlers.get_api_notes_id({ id: id }), caller.request, caller.context, {}))
 
 ## `append_to_note`: `POST /api/notes/<id>/append`.
 append_to_note! : { id : Str, text : Str }, Agents.Caller => Try(Note.Full, Str)
-append_to_note! = |{ id, text }, caller| ran(Endpoint.run!(Api.post_api_notes_id_append({ id: id }), caller.request, caller.context, { text: text }))
+append_to_note! = |{ id, text }, caller| ran(Endpoint.run!(Handlers.post_api_notes_id_append({ id: id }), caller.request, caller.context, { text: text }))
 
 ## `tag_note`: `PUT /api/notes/<id>/tags`.
 tag_note! : { id : Str, tags : List(Str) }, Agents.Caller => Try(Note.Full, Str)
-tag_note! = |{ id, tags }, caller| ran(Endpoint.run!(Api.put_api_notes_id_tags({ id: id }), caller.request, caller.context, { tags: tags }))
+tag_note! = |{ id, tags }, caller| ran(Endpoint.run!(Handlers.put_api_notes_id_tags({ id: id }), caller.request, caller.context, { tags: tags }))
 
 ## `archive_note`: `PUT /api/notes/<id>/archived`.
 archive_note! : { id : Str, archived : Bool }, Agents.Caller => Try(Note.Full, Str)
-archive_note! = |{ id, archived }, caller| ran(Endpoint.run!(Api.put_api_notes_id_archived({ id: id }), caller.request, caller.context, { archived: archived }))
+archive_note! = |{ id, archived }, caller| ran(Endpoint.run!(Handlers.put_api_notes_id_archived({ id: id }), caller.request, caller.context, { archived: archived }))
 
 ## `notes://index`: the notes that aren't archived, as a Markdown list.
 index! : Agents.Caller => Try(Str, Str)

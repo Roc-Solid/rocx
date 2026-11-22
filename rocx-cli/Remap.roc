@@ -188,17 +188,62 @@ Remap := [].{
 					None => None
 				}
 			}
+		shown = |path| {
+			relative = Fs.relative(cwd, Fs.resolve(cwd, [path]))
+			if (relative.is_empty()) path else relative
+		}
 		match rocx {
-			Some(path) if last.starts_with(Remap.marker) and Fs.exists!(path) => {
-				relative = Fs.relative(cwd, Fs.resolve(cwd, [path]))
+			Some(path) if last.starts_with(Remap.marker) and Fs.exists!(path) =>
 				Some({
-					rocx: if (relative.is_empty()) path else relative,
+					rocx: shown(path),
 					generated: text.split_on("\n"),
 					source: Fs.read_or_empty!(path).split_on("\n"),
 				})
-			}
-			_ => None
+			_ =>
+			# A file of a browser's copy (`rocx build --client`), which has no .rocx files: the app's,
+			# where the copy's `.rocx-client` says the app is. A file rocx wrote there for a .rocx file
+			# keeps its lines; any other is the app's, copied as it is.
+				match Remap.app_of!(Fs.resolve(cwd, [file])) {
+					None => None
+					Some(twin) =>
+						match named_rocx {
+							Some(name) if last.starts_with(Remap.marker) => {
+								source = Fs.join([Fs.dirname(twin), name])
+								if (Fs.exists!(source)) Some({ rocx: shown(source), generated: text.split_on("\n"), source: Fs.read_or_empty!(source).split_on("\n") }) else None
+							}
+							_ =>
+								if Fs.exists!(twin) and Fs.read_or_empty!(twin) == text {
+									lines = text.split_on("\n")
+									Some({ rocx: shown(twin), generated: lines, source: lines })
+								} else {
+									None
+								}
+						}
+				}
 		}
+	}
+
+	## The app's file a file of a browser's copy is a copy of: at the same place under the app, which
+	## the copy's `.rocx-client` names (`app: ../..`). None for a file of no copy.
+	app_of! : Str => [Some(Str), None]
+	app_of! = |file| {
+		var $at = Fs.dirname(file)
+		var $looking = Bool.True
+		while $looking {
+			ours = Fs.join([$at, ".rocx-client"])
+			if Fs.exists!(ours) {
+				said = Fs.read_or_empty!(ours).split_on("\n").find_first(|line| line.starts_with("app: "))
+				return
+					match said {
+						Ok(line) => Some(Fs.resolve($at, [line.drop_prefix("app: "), Fs.relative($at, file)]))
+						Err(_) => None
+					}
+			}
+			up = Fs.dirname($at)
+			$looking = up != $at
+			$at = up
+		}
+		None
 	}
 
 	## The file a generated file's last line names (`# rocx: generated from (\S+\.rocx):`), or a

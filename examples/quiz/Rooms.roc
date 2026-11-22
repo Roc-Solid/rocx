@@ -1,5 +1,4 @@
 import pf.Actor
-import pf.Channel
 import pf.Endpoint
 import pf.Env
 import pf.Log
@@ -8,6 +7,7 @@ import presence.Room
 import presence.Wire
 import Codes
 import Game
+import Generated/Api
 
 ## One actor per room (D-021), keyed by the room's join code. It holds the room's state (a
 ## `Game.State`, kept in Postgres after each turn that changes it) and takes one message at a
@@ -18,7 +18,8 @@ import Game
 ## phase it left the room in: if that changed, it cancels the timer the old phase had and sets one
 ## for the new phase's deadline (`Actor.after!`), whose message (`Close`, `Advance`) comes back to
 ## it like any other. If the room changed, it publishes the room's view on the room's channel,
-## which every host's screen and player's phone follows.
+## which every host's screen and player's phone follows (`Api.channel_rooms_code`: an actor may
+## import the app's contract, which imports no route file, D-037).
 ##
 ## Who is in the room is packages/presence's `Room`: each tab that subscribes to the channel joins
 ## (`Opened`), each one that goes leaves (`Closed`), the channel's beats keep tabs fresh (`Beat`),
@@ -63,12 +64,6 @@ Rooms := [].{
 	## and one that left is kept four seconds, in case it is only reconnecting.
 	presence : Room.Settings
 	presence = { timeout: 120_000, grace: 4_000 }
-
-	## The room's channel (`routes/rooms/[code]/+server.roc`), to publish on. Named by its URL:
-	## the route file imports this module, so this module can't import `Generated/Api`, which
-	## imports the route file (Roc has no import cycles).
-	channel : Str -> Endpoint(c, {}, Channel(Str, Game.View, Game.Said))
-	channel = |code| Endpoint.remote("CHANNEL", "/rooms/${code}")
 
 	## How long a question is open and its answer shown, from the environment (`QUIZ_QUESTION_MS`,
 	## `QUIZ_REVEAL_MS`): 20 and 7 seconds unless they say. The tests make them short.
@@ -119,7 +114,7 @@ Rooms := [].{
 		(handled, reply) = Rooms.handle!(me, swept, message, now)
 		timed = Rooms.timed!(me, state.game, handled, now)
 		if timed.game.version != state.game.version {
-			Endpoint.publish!(Rooms.channel(code), Game.view(timed.game, now))
+			Endpoint.publish!(Api.channel_rooms_code({ code: code }), Game.view(timed.game, now))
 		}
 		{ state: timed, reply }
 	}
