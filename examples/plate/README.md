@@ -2,7 +2,7 @@
 
 A food diary, in Roc Solid. You log what you eat to a day's four meals, and see the day's energy
 against a target, with protein, carbohydrate and fat beside it. Foods come from three places: the
-USDA's reference foods (about 7,500, seeded into Postgres), packets looked up by their barcode in
+USDA's reference foods (about 7,500, seeded into its SQLite file), packets looked up by their barcode in
 Open Food Facts, and foods you make yourself from a label. Recipes are made from foods and logged
 like one. Your target is worked out from a profile, and the trends page charts the days and your
 weight.
@@ -62,7 +62,8 @@ screen, every control is big enough for a thumb, and everything works without Ja
 | File routing: a layout with tabs (along the bottom on a phone), pages, an error page | [`routes/+layout.rocx`](routes/+layout.rocx), [`routes/+error.rocx`](routes/+error.rocx) |
 | One component for two routes: today at `/`, any day at `/days/:day` (a 404 of its own for one that isn't a day) | [`components/Diary.rocx`](components/Diary.rocx), [`routes/+page.rocx`](routes/+page.rocx), [`routes/days/[day]/+page.rocx`](routes/days/[day]/+page.rocx) |
 | A search that follows the typing: a signal, and a memo that reads the endpoint with its words (`Endpoint.with_query`); a plain `GET` form without JavaScript | [`routes/add/+page.rocx`](routes/add/+page.rocx), [`routes/recipes/[id]/+page.rocx`](routes/recipes/[id]/+page.rocx) |
-| Postgres full-text search by each word's start (`to_tsquery('simple', 'chick:* & brea:*')`), ranked by use | [`Store.roc`](Store.roc) (`search!`, `words`) |
+| SQLite in the server's process (`database: Sqlite("data/plate.db")`, D-045): a file beside it, no database server | [`main.roc`](main.roc), [`migrations/0001_tables.sql`](migrations/0001_tables.sql) |
+| Full-text search by each word's start (SQLite's FTS5, `"chick"* "brea"*`, kept in step by triggers), ranked by use | [`Store.roc`](Store.roc) (`search!`, `words`), [`migrations/0001_tables.sql`](migrations/0001_tables.sql) |
 | A seed generated from open data, embedded as a migration | [`data/usda.mjs`](data/usda.mjs), [`migrations/`](migrations) |
 | `Http.fetch!` to another service, its JSON read a field at a time (packages/mcp's `JsonValue`), and kept | [`OpenFoodFacts.roc`](OpenFoodFacts.roc), [`routes/barcode/+server.roc`](routes/barcode/+server.roc) |
 | A stand-in for that service in the tests (`OFF_URL`) | [`test/plate.test.mjs`](test/plate.test.mjs) |
@@ -74,26 +75,27 @@ screen, every control is big enough for a thumb, and everything works without Ja
 | Optimistic removal (`use_submissions!`): an entry or an ingredient goes at once | [`components/Diary.rocx`](components/Diary.rocx), [`routes/recipes/[id]/+page.rocx`](routes/recipes/[id]/+page.rocx) |
 | Charts: energy each day (`BarChart`), weight (`LineChart`), in the app's colours | [`routes/trends/+page.rocx`](routes/trends/+page.rocx) |
 | An SVG ring drawn from data (`stroke-dasharray`), and bars from `style:--share` | [`components/Summary.rocx`](components/Summary.rocx) |
-| A password, only when one is set (`PLATE_PASSWORD`): a session in Postgres (its token's hash), 90 days, back to where you were going | [`Session.roc`](Session.roc), [`Middlewares.roc`](Middlewares.roc), [`routes/sign-in`](routes/sign-in) |
-| A time zone the day starts in, worked out in Postgres (`now() at time zone …`) | [`Store.roc`](Store.roc) (`today!`, `hour!`) |
+| A password, only when one is set (`PLATE_PASSWORD`): a session in the database (its token's hash), 90 days, back to where you were going | [`Session.roc`](Session.roc), [`Middlewares.roc`](Middlewares.roc), [`routes/sign-in`](routes/sign-in) |
+| A time zone the day starts in: its offset from the platform (`Time.offset!`), the day from SQLite's `date(…, 'unixepoch')` | [`Store.roc`](Store.roc) (`local_now!`, `today!`, `hour!`) |
 | Pure components with stories and expects | [`components/Summary.rocx`](components/Summary.rocx), [`HitRow.rocx`](components/HitRow.rocx), [`Facts.rocx`](components/Facts.rocx) |
 | Tests: expects, HTTP, the database, a stand-in service, a real browser | [`test/plate.test.mjs`](test/plate.test.mjs) |
 
 ## Build and run it
 
-From the repository's root, with the toolchain (`just setup`) and a Postgres (`just db`, which
-prints its URL):
+From the repository's root, with the toolchain (`just setup`). Nothing else: the diary is a SQLite
+file, `data/plate.db` from where the server starts (`--database-url sqlite:<path>` puts it
+elsewhere, on a volume, say).
 
 ```sh
-docker exec rocx-postgres createdb -U rocx plate   # a database of its own
 bin/rocx build examples/plate --client examples/plate/build/client
 .tools/roc-active build --target=wasm32 --opt=size --output=examples/plate/build/client/static/rocx/app.wasm examples/plate/build/client/main.roc
 node server/build.mjs examples/plate/main.roc examples/plate/build/plate
-examples/plate/build/plate --port 18190 --static examples/plate/build/client/static \
-  --database-url postgres://rocx:rocx@127.0.0.1:55432/plate
+cd examples/plate && build/plate --port 18190 --static build/client/static
 ```
 
-Then http://localhost:18190. The first start makes the tables and seeds the foods. Set your
+Then http://localhost:18190. The first start makes the file and its tables, and seeds the foods.
+Copy `data/plate.db` (with the server stopped, or `sqlite3 data/plate.db ".backup copy.db"`) to keep
+a backup. Set your
 profile on Goals (the time zone above all), then log your first meal.
 
 - `PLATE_PASSWORD=…`: the diary asks for it (once a browser, for 90 days). Set it whenever the
@@ -105,7 +107,7 @@ profile on Goals (the time zone above all), then log your first meal.
 ```sh
 bin/rocx fmt --check examples/plate
 bin/rocx check -- .tools/roc-active test examples/plate/main.roc   # the expects
-DATABASE_URL=postgres://rocx:rocx@127.0.0.1:55432/rocx node --test 'examples/plate/test/*.test.mjs'
+node --test 'examples/plate/test/*.test.mjs'                         # a SQLite file of their own
 just examples plate                                                # all of it
 ```
 
@@ -139,11 +141,11 @@ preview as its amount is typed, logging it, and an entry taken off at once.
 What the platform didn't do, or did in a way an app has to know about, and what the app does
 instead. None needed a change to the platform.
 
-1. **Db reads no `numeric`, and writes no decimal.** A `numeric` column must be cast to be read
-   (`kcal::float8`, then a JSON number that `Dec` reads exactly), and a `Dec` goes to Postgres as
-   text, cast back (`$1::numeric`): `Db.Value` is `Null`, `Text`, `Int` and `Bool`. Every query in
-   `Store.roc` does one or the other. `Db` reading `numeric` as a `Dec`, and a `Dec(Dec)` value,
-   would take both away.
+1. **Db writes no decimal.** `Db.Value` is `Null`, `Text`, `Int` and `Bool`, so a `Dec` goes to
+   SQLite as text, which a `real` column takes as its number (`dec` in `Store.roc`). On Postgres
+   (where Plate began) a `numeric` had to be cast both ways (`kcal::float8`, `$1::numeric`); on
+   SQLite a `real` is read as a JSON number, which `Dec` reads as written. A `Dec(Dec)` value would
+   take the text away.
 2. **A JSON reader for keys a record can't name is in packages/mcp.** Open Food Facts names
    nutrients with dashes (`energy-kcal_100g`), so its answer is read with `mcp.JsonValue`, and a
    food diary imports the MCP package. `JsonValue` would be at home in a package of its own.

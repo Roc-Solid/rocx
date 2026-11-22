@@ -3,13 +3,14 @@ import pf.Env
 import pf.Kv
 import pf.Random
 import pf.Server
+import pf.Time
 import crypto.Hex
 import crypto.Hmac
 import crypto.Sha256
 
 ## Who may use the diary. Without `PLATE_PASSWORD` set it is open, as an app on your own machine
 ## is. With it, signing in with that password gives the browser a random token in a cookie
-## (`plate_session`, HttpOnly, 90 days), whose SHA-256 is kept in Postgres (`sessions`), so a
+## (`plate_session`, HttpOnly, 90 days), whose SHA-256 is kept in the database (`sessions`), so a
 ## phone stays signed in across restarts and the table alone signs nobody in.
 ##
 ## The server doesn't pass each client's tries apart, so ten wrong passwords a minute are allowed
@@ -43,10 +44,11 @@ Session := [].{
 			Ok(wanted) =>
 				if Hmac.equal(wanted.to_utf8(), password.to_utf8()) {
 					token = Hex.encode(Random.bytes!(24))
-					_ = Db.run!("delete from sessions where expires_at < now()", [])?
+					now = Time.now_millis!({}).to_i64_wrap()
+					_ = Db.run!("delete from sessions where expires_at < $1", [Int(now)])?
 					_ = Db.run!(
-						"insert into sessions (token_hash, expires_at) values ($1, now() + make_interval(days => $2))",
-						[Text(hashed(token)), Int(Session.days.to_i64_wrap())],
+						"insert into sessions (token_hash, expires_at) values ($1, $2)",
+						[Text(hashed(token)), Int(now + Session.days.to_i64_wrap() * 86_400_000)],
 					)?
 					Ok(token)
 				} else {
@@ -61,7 +63,7 @@ Session := [].{
 		match Server.cookie(request, Session.cookie) {
 			Ok(token) if !token.is_empty() => {
 				found : Try(List({ token_hash : Str }), [DbErr(Str), BadRow(Str)])
-				found = Db.all!("select token_hash from sessions where token_hash = $1 and expires_at > now()", [Text(hashed(token))])
+				found = Db.all!("select token_hash from sessions where token_hash = $1 and expires_at > $2", [Text(hashed(token)), Int(Time.now_millis!({}).to_i64_wrap())])
 				match found {
 					Ok(rows) => !rows.is_empty()
 					Err(_) => Bool.False

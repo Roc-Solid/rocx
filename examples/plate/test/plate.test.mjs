@@ -1,18 +1,17 @@
 // Plate, tested as people use it: over HTTP (pages, plain forms, the runtime's posts, the
 // endpoints as JSON, the database), then in a real browser. The app is built once (rocx build, the
-// browser's wasm, the server), and started against a database of the tests' own, which its
+// browser's wasm, the server), and started against a SQLite file of the tests' own, which its
 // migrations make and fill with the USDA's foods. Open Food Facts is a stand-in on a local port
-// (`OFF_URL`), so no test leaves the machine.
+// (`OFF_URL`), so no test leaves the machine. No database server is needed.
 //
-//   DATABASE_URL=postgres://… node --test 'examples/plate/test/*.test.mjs'
+//   node --test 'examples/plate/test/*.test.mjs'
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { join } from "node:path";
-import { buildForTests, startServer, testDatabase, launchBrowser, until, repo } from "../../../packages/testing/index.mjs";
+import { buildForTests, startServer, testSqlite, launchBrowser, until, repo } from "../../../packages/testing/index.mjs";
 
-const database = process.env.DATABASE_URL;
-const skip = database ? false : "needs DATABASE_URL (a Postgres the tests may make databases in: `just db`)";
+const skip = false;
 
 let db;
 let app;
@@ -49,7 +48,7 @@ before(async () => {
 	});
 	await new Promise((resolve) => off.listen(0, "127.0.0.1", resolve));
 	built = await buildForTests(join(repo, "examples", "plate"));
-	db = await testDatabase(database);
+	db = testSqlite();
 	app = await startServer(built.server, { statics: built.statics, database: db.url, env: { OFF_URL: `http://127.0.0.1:${off.address().port}` } });
 	browser = await launchBrowser();
 });
@@ -82,7 +81,7 @@ function shifted(day, days) {
 
 test("the USDA's foods are there, and a search finds each word's start", { skip }, async () => {
 	const person = app.client();
-	const [{ count }] = await db.sql`select count(*)::int as count from foods where source = 'usda'`;
+	const [{ count }] = await db.sql`select count(*) as count from foods where source = 'usda'`;
 	assert.ok(count > 7000, `${count} foods`);
 	const banana = await found(person, "bananas raw");
 	assert.equal(banana.name, "Bananas, raw");
@@ -129,7 +128,7 @@ test("logging without JavaScript: a plain form, a 303 to the day, and the entry 
 	const logged = await person.post(`/foods/${banana.id}`, { amount: "2", unit: String(medium), meal: "breakfast", day });
 	assert.equal(logged.status, 303);
 	assert.equal(logged.location, `/days/${day}`);
-	const [row] = await db.sql`select meal, name, amount, grams::float8, kcal::float8 from entries where day = ${day}`;
+	const [row] = await db.sql`select meal, name, amount, grams, kcal from entries where day = ${day}`;
 	const grams = 2 * pick.food.portions[medium].grams;
 	assert.deepEqual(row, { meal: "breakfast", name: "Bananas, raw", amount: `2 × ${pick.food.portions[medium].label}`, grams, kcal: Math.round(89 * grams) / 100 });
 	const page = await logged.follow();
@@ -143,7 +142,7 @@ test("logging without JavaScript: a plain form, a 303 to the day, and the entry 
 	// Grams, as typed.
 	await person.get(`/foods/${banana.id}`);
 	await person.post(`/foods/${banana.id}`, { amount: "37.5", unit: "g", meal: "snacks", day });
-	const [snack] = await db.sql`select amount, grams::float8 from entries where day = ${day} and meal = 'snacks'`;
+	const [snack] = await db.sql`select amount, grams from entries where day = ${day} and meal = 'snacks'`;
 	assert.deepEqual(snack, { amount: "37.5 g", grams: 37.5 });
 });
 
@@ -200,7 +199,7 @@ test("a food of your own: as its label says it, kept per 100 g, found first", { 
 	assert.equal(made.status, 303);
 	const id = /^\/foods\/(\d+)\?day=2026-11-20&meal=snacks$/.exec(made.location)?.[1];
 	assert.ok(id, made.location);
-	const [food] = await db.sql`select source, name, brand, barcode, kcal::float8, protein::float8, fiber::float8, sugars from foods where id = ${Number(id)}`;
+	const [food] = await db.sql`select source, name, brand, barcode, kcal, protein, fiber, sugars from foods where id = ${Number(id)}`;
 	assert.deepEqual(food, { source: "mine", name: "Oat bar", brand: "Acme Mills", barcode: "0012345678905", kcal: 450, protein: 10, fiber: 7.5, sugars: null });
 	const pick = await person.read(`/foods/${id}`);
 	assert.deepEqual(pick.food.portions, [{ label: "1 bar", grams: 40 }]);
@@ -415,7 +414,7 @@ test("in a browser: a search follows the typing, and a food is logged with its p
 	await tab.close();
 });
 
-test("in a browser: an entry taken off goes at once, and from Postgres", { skip }, async (t) => {
+test("in a browser: an entry taken off goes at once, and from the database", { skip }, async (t) => {
 	if (!browser) return t.skip("no Chromium");
 	const person = app.client();
 	const now = await today(person);
@@ -425,7 +424,7 @@ test("in a browser: an entry taken off goes at once, and from Postgres", { skip 
 	const remove = await tab.findByRole("button", { name: /^Remove Pears, raw/ });
 	await remove.click();
 	await tab.waitFor((dom) => !dom.queryByRole("button", { name: /^Remove Pears, raw/ }));
-	await until(async () => (await db.sql`select id from entries where name like 'Pears, raw%' and day = ${now}`).length === 0, { what: "the entry gone from Postgres" });
+	await until(async () => (await db.sql`select id from entries where name like 'Pears, raw%' and day = ${now}`).length === 0, { what: "the entry gone from the database" });
 	// Sent by the runtime with fetch: the page didn't load again.
 	await until(async () => (await tab.requested()).includes("/api/entries/delete"), { what: "the runtime's post" });
 	assert.deepEqual(tab.errors, []);

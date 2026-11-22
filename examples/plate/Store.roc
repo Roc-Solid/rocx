@@ -1,15 +1,18 @@
 import pf.Db
 import pf.Endpoint
+import pf.Time
 import charts.Format
 import forms.Date
 import Plate
 
-## Plate's data in Postgres (the tables are `migrations/0001_tables.sql`). Only the endpoints
-## (`routes/**/+server.roc`) use it: it imports `pf.Db`, which only the server has.
+## Plate's data in SQLite, a file beside the server (the tables are `migrations/0001_tables.sql`).
+## Only the endpoints (`routes/**/+server.roc`) use it: it imports `pf.Db`, which only the server
+## has.
 ##
-## Postgres keeps amounts as `numeric`, which Db reads once they are cast (`kcal::float8`): a JSON
-## number, which `Dec` reads exactly as written. A `Dec` goes to Postgres as text, cast back
-## (`$1::numeric`): `Db.Value` has no decimal of its own.
+## SQLite keeps amounts as `real`, which Db reads as a JSON number, which `Dec` reads as written. A
+## `Dec` goes to SQLite as text (`Db.Value` has no decimal of its own), which a `real` column takes
+## as its number. A day is text (`2026-11-22`); SQLite's `date()` works days out, from the time in
+## the profile's time zone (`Time.offset!`), as SQLite knows no zones.
 Store := [].{
 
 	## Why the store couldn't do something.
@@ -26,20 +29,30 @@ Store := [].{
 
 	# ---- Days ----
 
+	## Now, in the profile's time zone: seconds since the epoch as its clocks read them (a zone
+	## the zone database doesn't have is UTC). SQLite's `date($1, 'unixepoch')` is today there.
+	local_now! : {} => Try(I64, Problem)
+	local_now! = |{}| {
+		rows : List({ timezone : Str })
+		rows = Db.all!("select timezone from profile", [])?
+		zone = rows.first().map_ok(|row| row.timezone) ?? "UTC"
+		now = Time.now_millis!({}).to_i64_wrap()
+		Ok(now // 1000 + (Time.offset!(zone, now) ?? 0))
+	}
+
 	## Today, in the profile's time zone (`2026-11-22`).
 	today! : {} => Try(Str, Problem)
 	today! = |{}| {
 		rows : List({ today : Str })
-		rows = Db.all!("select (now() at time zone timezone)::date::text as today from profile", [])?
+		rows = Db.all!("select date($1, 'unixepoch') as today", [Int(Store.local_now!({})?)])?
 		rows.first().map_ok(|row| row.today).map_err(|_| NotFound)
 	}
 
 	## The hour it is now, in the profile's time zone (0 to 23): which meal the time suggests.
 	hour! : {} => Try(U64, Problem)
 	hour! = |{}| {
-		rows : List({ hour : I64 })
-		rows = Db.all!("select extract(hour from now() at time zone timezone)::int8 as hour from profile", [])?
-		rows.first().map_ok(|row| row.hour.to_u64_wrap()).map_err(|_| NotFound)
+		local = Store.local_now!({})?
+		Ok(((local % 86_400 + 86_400) % 86_400 // 3_600).to_u64_wrap())
 	}
 
 	## The meal the time of day suggests, as its id (`lunch`).
@@ -52,11 +65,11 @@ Store := [].{
 	day! = |day| {
 		_ = Date.from_str(day).map_err(|_| NotFound)?
 		around : List({ previous : Str, next : Str })
-		around = Db.all!("select ($1::date - 1)::text as previous, ($1::date + 1)::text as next", [Text(day)])?
+		around = Db.all!("select date($1, '-1 day') as previous, date($1, '+1 day') as next", [Text(day)])?
 		sides = around.first().map_err(|_| NotFound)?
 		entries : List(Plate.Entry)
 		entries = Db.all!(
-			"select id::text as id, meal, coalesce(food_id::text, '') as food, name, amount, grams::float8 as grams, kcal::float8 as kcal, protein::float8 as protein, carbs::float8 as carbs, fat::float8 as fat from entries where day = $1::date order by id",
+			"select cast(id as text) as id, meal, coalesce(cast(food_id as text), '') as food, name, amount, grams, kcal, protein, carbs, fat from entries where day = $1 order by id",
 			[Text(day)],
 		)?
 		today = Store.today!({})?
@@ -73,7 +86,7 @@ Store := [].{
 		eaten = Plate.scaled(found.per100, grams)
 		rows : List({ id : I64 })
 		rows = Db.all!(
-			"insert into entries (day, meal, food_id, name, amount, grams, kcal, protein, carbs, fat) values ($1::date, $2, $3, $4, $5, $6::numeric, $7::numeric, $8::numeric, $9::numeric, $10::numeric) returning id",
+			"insert into entries (day, meal, food_id, name, amount, grams, kcal, protein, carbs, fat) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id",
 			[
 				Text(day),
 				Text(Plate.meal_id(meal)),
@@ -95,7 +108,7 @@ Store := [].{
 	unlog! : Str => Try(Str, Problem)
 	unlog! = |id| {
 		rows : List({ day : Str })
-		rows = Db.all!("delete from entries where id = $1 returning day::text as day", [Int(number(id)?)])?
+		rows = Db.all!("delete from entries where id = $1 returning day", [Int(number(id)?)])?
 		Ok(rows.first().map_ok(|row| row.day) ?? "")
 	}
 
@@ -107,12 +120,12 @@ Store := [].{
 		key = number(id)?
 		rows : List({ id : I64, name : Str, brand : Str, food_group : Str, source : Str, source_id : Str, kcal : Dec, protein : Dec, carbs : Dec, fat : Dec, fiber : Db.Nullable(Dec), sugars : Db.Nullable(Dec), sat_fat : Db.Nullable(Dec), sodium : Db.Nullable(Dec), recipe : Str })
 		rows = Db.all!(
-			"select f.id, f.name, f.brand, f.food_group, f.source, f.source_id, f.kcal::float8 as kcal, f.protein::float8 as protein, f.carbs::float8 as carbs, f.fat::float8 as fat, f.fiber::float8 as fiber, f.sugars::float8 as sugars, f.sat_fat::float8 as sat_fat, f.sodium::float8 as sodium, coalesce(r.id::text, '') as recipe from foods f left join recipes r on r.food_id = f.id where f.id = $1",
+			"select f.id, f.name, f.brand, f.food_group, f.source, f.source_id, f.kcal, f.protein, f.carbs, f.fat, f.fiber, f.sugars, f.sat_fat, f.sodium, coalesce(cast(r.id as text), '') as recipe from foods f left join recipes r on r.food_id = f.id where f.id = $1",
 			[Int(key)],
 		)?
 		row = rows.first().map_err(|_| NotFound)?
 		portions : List(Plate.Portion)
-		portions = Db.all!("select label, grams::float8 as grams from portions where food_id = $1 order by position, id", [Int(key)])?
+		portions = Db.all!("select label, grams from portions where food_id = $1 order by position, id", [Int(key)])?
 		extras = [
 			("Fibre", row.fiber, "g"),
 			("Sugars", row.sugars, "g"),
@@ -151,15 +164,16 @@ Store := [].{
 			Ok([])
 		} else {
 			Db.all!(
-				"select f.id::text as id, f.name, f.brand, f.source, f.kcal::float8 as kcal, coalesce((select label from portions p where p.food_id = f.id order by position, id limit 1), '') as portion from foods f left join (select food_id, count(*) as used from entries where food_id is not null group by food_id) u on u.food_id = f.id where f.words @@ to_tsquery('simple', $1) and f.id::text <> $3 order by coalesce(u.used, 0) desc, case f.source when 'recipe' then 0 when 'mine' then 1 when 'off' then 2 else 3 end, length(f.name), f.name limit $2",
-				[Text(Str.join_with(asked.map(|word| "${word}:*"), " & ")), Int(limit.to_i64_wrap()), Text(except)],
+				"select cast(f.id as text) as id, f.name, f.brand, f.source, f.kcal, coalesce((select label from portions p where p.food_id = f.id order by position, id limit 1), '') as portion from food_words join foods f on f.id = food_words.rowid left join (select food_id, count(*) as used from entries where food_id is not null group by food_id) u on u.food_id = f.id where food_words match $1 and cast(f.id as text) <> $3 order by coalesce(u.used, 0) desc, case f.source when 'recipe' then 0 when 'mine' then 1 when 'off' then 2 else 3 end, length(f.name), f.name limit $2",
+				[Text(Str.join_with(asked.map(|word| "\"${word}\"*"), " ")), Int(limit.to_i64_wrap()), Text(except)],
 			)
 				.map_err(Store.widen)
 		}
 	}
 
 	## The words a search looks for: letters and digits (any script), lower case; the rest, which
-	## a text search query would read as its own syntax (`&`, `:`, `!`, quotes), splits words.
+	## a full-text query would read as its own syntax (`*`, `:`, `^`, quotes), splits words. Each is
+	## asked for as a word's start (`"chick"*`), all of them at once.
 	words : Str -> List(Str)
 	words = |query| {
 		bytes = query.to_utf8()
@@ -171,7 +185,7 @@ Store := [].{
 	recent! : U64 => Try(List(Plate.Hit), Problem)
 	recent! = |limit|
 		Db.all!(
-			"select f.id::text as id, f.name, f.brand, f.source, f.kcal::float8 as kcal, coalesce((select label from portions p where p.food_id = f.id order by position, id limit 1), '') as portion from foods f join (select food_id, max(id) as last from entries where food_id is not null group by food_id) r on r.food_id = f.id order by r.last desc limit $1",
+			"select cast(f.id as text) as id, f.name, f.brand, f.source, f.kcal, coalesce((select label from portions p where p.food_id = f.id order by position, id limit 1), '') as portion from foods f join (select food_id, max(id) as last from entries where food_id is not null group by food_id) r on r.food_id = f.id order by r.last desc limit $1",
 			[Int(limit.to_i64_wrap())],
 		)
 			.map_err(Store.widen)
@@ -193,7 +207,7 @@ Store := [].{
 				extra = |name| food.extras.find_first(|each| each.name == name).map_ok(|each| dec(each.amount)) ?? Null
 				rows : List({ id : I64 })
 				rows = Db.all!(
-					"insert into foods (source, source_id, name, brand, barcode, kcal, protein, carbs, fat, fiber, sugars, sat_fat, sodium) values ($1, $2, $3, $4, nullif($2, ''), $5::numeric, $6::numeric, $7::numeric, $8::numeric, $9::numeric, $10::numeric, $11::numeric, $12::numeric) returning id",
+					"insert into foods (source, source_id, name, brand, barcode, kcal, protein, carbs, fat, fiber, sugars, sat_fat, sodium) values ($1, $2, $3, $4, nullif($2, ''), $5, $6, $7, $8, $9, $10, $11, $12) returning id",
 					[
 						Text(food.source),
 						Text(food.barcode),
@@ -212,7 +226,7 @@ Store := [].{
 				row = rows.first().map_err(|_| NotFound)?
 				match food.portion {
 					Ok(portion) => {
-						_ = Db.run!("insert into portions (food_id, label, grams) values ($1, $2, $3::numeric)", [Int(row.id), Text(portion.label), dec(portion.grams)])?
+						_ = Db.run!("insert into portions (food_id, label, grams) values ($1, $2, $3)", [Int(row.id), Text(portion.label), dec(portion.grams)])?
 						{}
 					}
 					Err(Missing) => {}
@@ -228,7 +242,7 @@ Store := [].{
 	recipes! = |{}| {
 		rows : List(Plate.Card)
 		rows = Db.all!(
-			"select r.id::text as id, r.food_id::text as food, r.name, r.servings::int8 as servings, coalesce((select sum(i.grams * f.kcal / 100) from ingredients i join foods f on f.id = i.food_id where i.recipe_id = r.id), 0)::float8 / r.servings as kcal, (select count(*) from ingredients i where i.recipe_id = r.id) as ingredients from recipes r order by lower(r.name), r.id",
+			"select cast(r.id as text) as id, cast(r.food_id as text) as food, r.name, r.servings, round(coalesce((select sum(i.grams * f.kcal / 100) from ingredients i join foods f on f.id = i.food_id where i.recipe_id = r.id), 0) * 1.0 / r.servings, 2) as kcal, (select count(*) from ingredients i where i.recipe_id = r.id) as ingredients from recipes r order by lower(r.name), r.id",
 			[],
 		)?
 		Ok(rows)
@@ -239,11 +253,11 @@ Store := [].{
 	recipe! = |id| {
 		key = number(id)?
 		rows : List({ food : Str, name : Str, servings : I64, notes : Str })
-		rows = Db.all!("select food_id::text as food, name, servings::int8 as servings, notes from recipes where id = $1", [Int(key)])?
+		rows = Db.all!("select cast(food_id as text) as food, name, servings, notes from recipes where id = $1", [Int(key)])?
 		recipe = rows.first().map_err(|_| NotFound)?
 		parts : List({ id : Str, food : Str, name : Str, brand : Str, grams : Dec, kcal : Dec, protein : Dec, carbs : Dec, fat : Dec })
 		parts = Db.all!(
-			"select i.id::text as id, f.id::text as food, f.name, f.brand, i.grams::float8 as grams, f.kcal::float8 as kcal, f.protein::float8 as protein, f.carbs::float8 as carbs, f.fat::float8 as fat from ingredients i join foods f on f.id = i.food_id where i.recipe_id = $1 order by i.position, i.id",
+			"select cast(i.id as text) as id, cast(f.id as text) as food, f.name, f.brand, i.grams, f.kcal, f.protein, f.carbs, f.fat from ingredients i join foods f on f.id = i.food_id where i.recipe_id = $1 order by i.position, i.id",
 			[Int(key)],
 		)?
 		ingredients = parts.map(|part| { id: part.id, food: part.food, name: Plate.full_name(part.name, part.brand), grams: part.grams, nutrients: Plate.scaled({ kcal: part.kcal, protein: part.protein, carbs: part.carbs, fat: part.fat }, part.grams) })
@@ -289,7 +303,7 @@ Store := [].{
 			|{}| {
 				key = number(id)?
 				changed = Db.run!(
-					"insert into ingredients (recipe_id, food_id, grams, position) select r.id, f.id, $3::numeric, (select coalesce(max(position) + 1, 0) from ingredients where recipe_id = r.id) from recipes r join foods f on f.id = $2 and f.id <> r.food_id where r.id = $1",
+					"insert into ingredients (recipe_id, food_id, grams, position) select r.id, f.id, $3, (select coalesce(max(position) + 1, 0) from ingredients where recipe_id = r.id) from recipes r join foods f on f.id = $2 and f.id <> r.food_id where r.id = $1",
 					[Int(key), Int(number(food)?), dec(grams)],
 				)?
 				if (changed == 0) Err(NotFound) else Store.mix!(key)
@@ -318,23 +332,23 @@ Store := [].{
 	mix! : I64 => Try({}, Problem)
 	mix! = |recipe| {
 		rows : List({ food : I64, servings : I64 })
-		rows = Db.all!("select food_id as food, servings::int8 as servings from recipes where id = $1", [Int(recipe)])?
+		rows = Db.all!("select food_id as food, servings from recipes where id = $1", [Int(recipe)])?
 		found = rows.first().map_err(|_| NotFound)?
 		parts : List({ grams : Dec, kcal : Dec, protein : Dec, carbs : Dec, fat : Dec })
 		parts = Db.all!(
-			"select i.grams::float8 as grams, f.kcal::float8 as kcal, f.protein::float8 as protein, f.carbs::float8 as carbs, f.fat::float8 as fat from ingredients i join foods f on f.id = i.food_id where i.recipe_id = $1",
+			"select i.grams, f.kcal, f.protein, f.carbs, f.fat from ingredients i join foods f on f.id = i.food_id where i.recipe_id = $1",
 			[Int(recipe)],
 		)?
 		per100 = Plate.mixed(parts.map(|part| { per100: { kcal: part.kcal, protein: part.protein, carbs: part.carbs, fat: part.fat }, grams: part.grams }))
 		weight = parts.fold(0.0, |sum, part| sum + part.grams)
 		_ = Db.run!(
-			"update foods set kcal = $2::numeric, protein = $3::numeric, carbs = $4::numeric, fat = $5::numeric where id = $1",
+			"update foods set kcal = $2, protein = $3, carbs = $4, fat = $5 where id = $1",
 			[Int(found.food), dec(per100.kcal), dec(per100.protein), dec(per100.carbs), dec(per100.fat)],
 		)?
 		_ = Db.run!("delete from portions where food_id = $1", [Int(found.food)])?
 		if weight > 0.0 {
 			serving = weight / found.servings.to_dec()
-			_ = Db.run!("insert into portions (food_id, label, grams) values ($1, '1 serving', $2::numeric)", [Int(found.food), dec(serving)])?
+			_ = Db.run!("insert into portions (food_id, label, grams) values ($1, '1 serving', $2)", [Int(found.food), dec(serving)])?
 			Ok({})
 		} else {
 			Ok({})
@@ -348,20 +362,20 @@ Store := [].{
 	profile! = |{}| {
 		rows : List(Plate.Profile)
 		rows = Db.all!(
-			"select sex, birth_year::int8 as birth_year, height_cm::float8 as height_cm, weight_kg::float8 as weight_kg, activity, goal, kcal_target::float8 as kcal_target, timezone from profile",
+			"select sex, birth_year, height_cm, weight_kg, activity, goal, kcal_target, timezone from profile",
 			[],
 		)?
 		rows.first().map_err(|_| NotFound)
 	}
 
-	## The profile, changed. A time zone Postgres doesn't know is `BadZone`.
+	## The profile, changed. A time zone the zone database doesn't have (`Time.offset!`) is
+	## `BadZone`.
 	save_profile! : Plate.Profile => Try({}, [BadZone, NotFound, DbErr(Str), BadRow(Str)])
 	save_profile! = |profile| {
-		zones : List({ known : Bool })
-		zones = Db.all!("select exists (select 1 from pg_timezone_names where name = $1) as known", [Text(profile.timezone)])?
-		if zones.first().map_ok(|row| row.known) == Ok(Bool.True) {
+		known = Time.offset!(profile.timezone, Time.now_millis!({}).to_i64_wrap()).is_ok()
+		if known {
 			_ = Db.run!(
-				"update profile set sex = $1, birth_year = $2, height_cm = $3::numeric, weight_kg = $4::numeric, activity = $5, goal = $6, kcal_target = $7::numeric, timezone = $8",
+				"update profile set sex = $1, birth_year = $2, height_cm = $3, weight_kg = $4, activity = $5, goal = $6, kcal_target = $7, timezone = $8",
 				[Text(profile.sex), Int(profile.birth_year), dec(profile.height_cm), dec(profile.weight_kg), Text(profile.activity), Text(profile.goal), dec(profile.kcal_target), Text(profile.timezone)],
 			)?
 			Ok({})
@@ -382,21 +396,25 @@ Store := [].{
 	## Each of the last `days` days to today, oldest first, with what its entries had (nothing, on a
 	## day with none).
 	totals! : U64 => Try(List(Plate.Totals), Problem)
-	totals! = |days|
+	totals! = |days| {
+		local = Store.local_now!({})?
 		Db.all!(
-			"select d.day::date::text as day, coalesce(sum(e.kcal), 0)::float8 as kcal, coalesce(sum(e.protein), 0)::float8 as protein, coalesce(sum(e.carbs), 0)::float8 as carbs, coalesce(sum(e.fat), 0)::float8 as fat from generate_series((select (now() at time zone timezone)::date from profile) - ($1::int - 1), (select (now() at time zone timezone)::date from profile), interval '1 day') as d (day) left join entries e on e.day = d.day::date group by d.day order by d.day",
-			[Int(days.to_i64_wrap())],
+			"with recursive d (day) as (select date($2, 'unixepoch', '-' || ($1 - 1) || ' days') union all select date(day, '+1 day') from d where day < date($2, 'unixepoch')) select d.day as day, round(coalesce(sum(e.kcal), 0), 2) as kcal, round(coalesce(sum(e.protein), 0), 2) as protein, round(coalesce(sum(e.carbs), 0), 2) as carbs, round(coalesce(sum(e.fat), 0), 2) as fat from d left join entries e on e.day = d.day group by d.day order by d.day",
+			[Int(days.to_i64_wrap()), Int(local)],
 		)
 			.map_err(Store.widen)
+	}
 
 	## The weights of the last `days` days, oldest first.
 	weights! : U64 => Try(List(Plate.Weight), Problem)
-	weights! = |days|
+	weights! = |days| {
+		local = Store.local_now!({})?
 		Db.all!(
-			"select day::text as day, kg::float8 as kg from weights where day > (select (now() at time zone timezone)::date from profile) - $1::int order by day",
-			[Int(days.to_i64_wrap())],
+			"select day, kg from weights where day > date($2, 'unixepoch', '-' || $1 || ' days') order by day",
+			[Int(days.to_i64_wrap()), Int(local)],
 		)
 			.map_err(Store.widen)
+	}
 
 	## A weight for `day`, in place of one it had; the profile's too, when it is the latest.
 	weigh! : Str, Dec => Try({}, Problem)
@@ -404,8 +422,8 @@ Store := [].{
 		_ = Date.from_str(day).map_err(|_| NotFound)?
 		Db.transaction!(
 			|{}| {
-				_ = Db.run!("insert into weights (day, kg) values ($1::date, $2::numeric) on conflict (day) do update set kg = excluded.kg", [Text(day), dec(kg)])?
-				_ = Db.run!("update profile set weight_kg = $2::numeric where not exists (select 1 from weights where day > $1::date)", [Text(day), dec(kg)])?
+				_ = Db.run!("insert into weights (day, kg) values ($1, $2) on conflict (day) do update set kg = excluded.kg", [Text(day), dec(kg)])?
+				_ = Db.run!("update profile set weight_kg = $2 where not exists (select 1 from weights where day > $1)", [Text(day), dec(kg)])?
 				Ok({})
 			},
 		)
@@ -424,7 +442,7 @@ Store := [].{
 number : Str -> Try(I64, [NotFound])
 number = |text| I64.from_str(text.trim()).map_err(|_| NotFound)
 
-## A decimal as Postgres reads it (`$1::numeric`): to two places.
+## A decimal as a `real` column takes it: text, to two places.
 dec : Dec -> Db.Value
 dec = |x| Text(Format.num(x, 2))
 

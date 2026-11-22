@@ -7603,8 +7603,7 @@ insert into foods (source, source_id, name, food_group, kcal, protein, carbs, fa
 ('usda','2779267','Chickpea flour, pre-gelatinized','Cereal Grains and Pasta',391,22.06,59.82,7.05,8.73,2.81,0.9,2.87),
 ('usda','2779268','Kernza flour, pre-gelatinized','Cereal Grains and Pasta',386.82,19.63,68.44,3.84,16,1.7,0.52,0);
 
-insert into portions (food_id, label, grams, position)
-select f.id, p.label, p.grams, p.position from foods f join (values
+with p (source_id, label, grams, position) as (values
 ('167512','1 serving',34,0),
 ('167513','1 serving 1 roll with icing',44,0),
 ('167514','1 serving',28,0),
@@ -8605,10 +8604,11 @@ select f.id, p.label, p.grams, p.position from foods f join (values
 ('168193','1 cup, chunks',165,0),
 ('168193','1 slice (4-2/3" dia x 3/4" thick)',175,1),
 ('168193','1 fruit',1002,2)
-) as p (source_id, label, grams, position) on f.source = 'usda' and f.source_id = p.source_id;
-
+)
 insert into portions (food_id, label, grams, position)
-select f.id, p.label, p.grams, p.position from foods f join (values
+select f.id, p.label, p.grams, p.position from foods f join p on f.source = 'usda' and f.source_id = p.source_id;
+
+with p (source_id, label, grams, position) as (values
 ('168193','1 NLEA serving',112,3),
 ('168194','1 cup, chunks',165,0),
 ('168194','1 slice (4-2/3" dia x 3/4" thick)',166,1),
@@ -9609,10 +9609,11 @@ select f.id, p.label, p.grams, p.position from foods f join (values
 ('168728','1 lb',453.6,1),
 ('168729','3 oz',85,0),
 ('168729','1 piece, cooked, excluding refuse (yield from 1 lb raw meat with refuse)',306,1)
-) as p (source_id, label, grams, position) on f.source = 'usda' and f.source_id = p.source_id;
-
+)
 insert into portions (food_id, label, grams, position)
-select f.id, p.label, p.grams, p.position from foods f join (values
+select f.id, p.label, p.grams, p.position from foods f join p on f.source = 'usda' and f.source_id = p.source_id;
+
+with p (source_id, label, grams, position) as (values
 ('168730','3 oz',85,0),
 ('168731','3 oz ( 1 serving )',85,0),
 ('168732','3 oz',85,0),
@@ -10613,10 +10614,11 @@ select f.id, p.label, p.grams, p.position from foods f join (values
 ('169375','10 beans',62,1),
 ('169375','1 can (303 x 406)',262,2),
 ('169376','1 cup pieces or slices',70,0)
-) as p (source_id, label, grams, position) on f.source = 'usda' and f.source_id = p.source_id;
-
+)
 insert into portions (food_id, label, grams, position)
-select f.id, p.label, p.grams, p.position from foods f join (values
+select f.id, p.label, p.grams, p.position from foods f join p on f.source = 'usda' and f.source_id = p.source_id;
+
+with p (source_id, label, grams, position) as (values
 ('169376','1 cup whole',96,1),
 ('169376','1 large',23,2),
 ('169376','1 slice',6,3),
@@ -11617,10 +11619,11 @@ select f.id, p.label, p.grams, p.position from foods f join (values
 ('169980','1 cup, shredded',119,0),
 ('169980','1 leaf',14,1),
 ('169981','1 cup, shredded',178,0)
-) as p (source_id, label, grams, position) on f.source = 'usda' and f.source_id = p.source_id;
-
+)
 insert into portions (food_id, label, grams, position)
-select f.id, p.label, p.grams, p.position from foods f join (values
+select f.id, p.label, p.grams, p.position from foods f join p on f.source = 'usda' and f.source_id = p.source_id;
+
+with p (source_id, label, grams, position) as (values
 ('169984','1 cup, sliced',146,0),
 ('169985','1 cup',206,0),
 ('169985','1 root',408,1),
@@ -12621,10 +12624,11 @@ select f.id, p.label, p.grams, p.position from foods f join (values
 ('170561','1 oz',28.35,0),
 ('170562','1 cup, with hulls, edible yield',46,0),
 ('170562','1 cup',140,1)
-) as p (source_id, label, grams, position) on f.source = 'usda' and f.source_id = p.source_id;
-
+)
 insert into portions (food_id, label, grams, position)
-select f.id, p.label, p.grams, p.position from foods f join (values
+select f.id, p.label, p.grams, p.position from foods f join p on f.source = 'usda' and f.source_id = p.source_id;
+
+with p (source_id, label, grams, position) as (values
 ('170563','1 cup',128,0),
 ('170563','1 oz',28.35,1),
 ('170564','1 cup',135,0),
@@ -13625,10 +13629,11 @@ select f.id, p.label, p.grams, p.position from foods f join (values
 ('171125','3 oz',85,0),
 ('171125','1 breast',384,1),
 ('171126','3 oz',85,0)
-) as p (source_id, label, grams, position) on f.source = 'usda' and f.source_id = p.source_id;
-
+)
 insert into portions (food_id, label, grams, position)
-select f.id, p.label, p.grams, p.position from foods f join (values
+select f.id, p.label, p.grams, p.position from foods f join p on f.source = 'usda' and f.source_id = p.source_id;
+
+with p (source_id, label, grams, position) as (values
 ('171126','1 drumstick',71,1),
 ('171127','3 oz',85,0),
 ('171127','1 thigh',95,1),
@@ -14629,10 +14634,11 @@ select f.id, p.label, p.grams, p.position from foods f join (values
 ('171710','1 package (18 oz)',510,1),
 ('171712','1 cup',256,0),
 ('171713','1 cup, unthawed',132,0)
-) as p (source_id, label, grams, position) on f.source = 'usda' and f.source_id = p.source_id;
-
+)
 insert into portions (food_id, label, grams, position)
-select f.id, p.label, p.grams, p.position from foods f join (values
+select f.id, p.label, p.grams, p.position from foods f join p on f.source = 'usda' and f.source_id = p.source_id;
+
+with p (source_id, label, grams, position) as (values
 ('171713','1 package (10 oz)',284,1),
 ('171714','1 cup',220,0),
 ('171714','0.25 fruit, small',96,1),
@@ -15633,10 +15639,11 @@ select f.id, p.label, p.grams, p.position from foods f join (values
 ('172368','1 tsp',4.5,2),
 ('172369','1 tbsp',14,0),
 ('172369','1 cup',227,1)
-) as p (source_id, label, grams, position) on f.source = 'usda' and f.source_id = p.source_id;
-
+)
 insert into portions (food_id, label, grams, position)
-select f.id, p.label, p.grams, p.position from foods f join (values
+select f.id, p.label, p.grams, p.position from foods f join p on f.source = 'usda' and f.source_id = p.source_id;
+
+with p (source_id, label, grams, position) as (values
 ('172369','1 tsp',4.7,2),
 ('172370','1 tablespoon',13.6,0),
 ('172370','1 cup',218,1),
@@ -16637,10 +16644,11 @@ select f.id, p.label, p.grams, p.position from foods f join (values
 ('172815','1 package (8.5 oz)',241,1),
 ('172816','1 oz',28.35,0),
 ('172816','1 pita, large (6-1/2" dia)',60,1)
-) as p (source_id, label, grams, position) on f.source = 'usda' and f.source_id = p.source_id;
-
+)
 insert into portions (food_id, label, grams, position)
-select f.id, p.label, p.grams, p.position from foods f join (values
+select f.id, p.label, p.grams, p.position from foods f join p on f.source = 'usda' and f.source_id = p.source_id;
+
+with p (source_id, label, grams, position) as (values
 ('172817','1 oz',28.35,0),
 ('172817','1 slice, large',32,1),
 ('172817','1 slice',26,2),
@@ -17641,10 +17649,11 @@ select f.id, p.label, p.grams, p.position from foods f join (values
 ('173413','1 oz',28.35,0),
 ('173414','1 cup, diced',132,0),
 ('173414','1 cup, melted',244,1)
-) as p (source_id, label, grams, position) on f.source = 'usda' and f.source_id = p.source_id;
-
+)
 insert into portions (food_id, label, grams, position)
-select f.id, p.label, p.grams, p.position from foods f join (values
+select f.id, p.label, p.grams, p.position from foods f join p on f.source = 'usda' and f.source_id = p.source_id;
+
+with p (source_id, label, grams, position) as (values
 ('173414','1 cup, shredded',113,2),
 ('173414','1 oz',28.35,3),
 ('173414','1 cubic inch',17,4),
@@ -18645,10 +18654,11 @@ select f.id, p.label, p.grams, p.position from foods f join (values
 ('174049','1 lb',453.6,1),
 ('174050','3 oz',85,0),
 ('174050','1 lb',453.6,1)
-) as p (source_id, label, grams, position) on f.source = 'usda' and f.source_id = p.source_id;
-
+)
 insert into portions (food_id, label, grams, position)
-select f.id, p.label, p.grams, p.position from foods f join (values
+select f.id, p.label, p.grams, p.position from foods f join p on f.source = 'usda' and f.source_id = p.source_id;
+
+with p (source_id, label, grams, position) as (values
 ('174051','4 oz',113,0),
 ('174051','1 lb',453.6,1),
 ('174052','3 oz',85,0),
@@ -19649,10 +19659,11 @@ select f.id, p.label, p.grams, p.position from foods f join (values
 ('174656','1 cup',128,1),
 ('174657','0.75 cup (1 NLEA serving)',26,0),
 ('174658','0.5 cup (1 NLEA serving)',49,0)
-) as p (source_id, label, grams, position) on f.source = 'usda' and f.source_id = p.source_id;
-
+)
 insert into portions (food_id, label, grams, position)
-select f.id, p.label, p.grams, p.position from foods f join (values
+select f.id, p.label, p.grams, p.position from foods f join p on f.source = 'usda' and f.source_id = p.source_id;
+
+with p (source_id, label, grams, position) as (values
 ('174659','0.75 cup (1 NLEA serving)',32,0),
 ('174660','1 packet',41,0),
 ('174661','1 packet',33,0),
@@ -20653,10 +20664,11 @@ select f.id, p.label, p.grams, p.position from foods f join (values
 ('175135','1 can',369,1),
 ('175136','3 oz',85,0),
 ('175136','0.5 fillet',198,1)
-) as p (source_id, label, grams, position) on f.source = 'usda' and f.source_id = p.source_id;
-
+)
 insert into portions (food_id, label, grams, position)
-select f.id, p.label, p.grams, p.position from foods f join (values
+select f.id, p.label, p.grams, p.position from foods f join p on f.source = 'usda' and f.source_id = p.source_id;
+
+with p (source_id, label, grams, position) as (values
 ('175137','3 oz',85,0),
 ('175137','0.5 fillet',155,1),
 ('175138','3 oz',85,0),
@@ -21066,4 +21078,6 @@ select f.id, p.label, p.grams, p.position from foods f join (values
 ('790646','1 Onion, Edible',143,0),
 ('1105073','1 Banana, Peeled',110,0),
 ('1105314','1 Banana, Peeled',115,0)
-) as p (source_id, label, grams, position) on f.source = 'usda' and f.source_id = p.source_id;
+)
+insert into portions (food_id, label, grams, position)
+select f.id, p.label, p.grams, p.position from foods f join p on f.source = 'usda' and f.source_id = p.source_id;

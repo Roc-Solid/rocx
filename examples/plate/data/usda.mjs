@@ -147,11 +147,13 @@ for (let start = 0; start < all.length; start += batch) {
 }
 const portions = all.flatMap((food) => food.portions.map((portion, place) => ({ food: food.id, place, ...portion })));
 for (let start = 0; start < portions.length; start += batch * 2) {
-	out.push("insert into portions (food_id, label, grams, position)");
-	out.push("select f.id, p.label, p.grams, p.position from foods f join (values");
+	// A named `with` of the values, which SQLite reads (it has no column list on a VALUES alias).
+	out.push("with p (source_id, label, grams, position) as (values");
 	const values = portions.slice(start, start + batch * 2).map((portion) => `('${portion.food}',${text(portion.label)},${number(portion.grams)},${portion.place})`);
 	out.push(values.join(",\n"));
-	out.push(") as p (source_id, label, grams, position) on f.source = 'usda' and f.source_id = p.source_id;", "");
+	out.push(")");
+	out.push("insert into portions (food_id, label, grams, position)");
+	out.push("select f.id, p.label, p.grams, p.position from foods f join p on f.source = 'usda' and f.source_id = p.source_id;", "");
 }
 process.stdout.write(out.join("\n"));
 console.error(`${all.length} foods, ${portions.length} portions`);
