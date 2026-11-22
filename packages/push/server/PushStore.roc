@@ -1,9 +1,12 @@
 import pf.Db
+import pf.Time
 import push.Subscription
 
-## The subscriptions table (`migrations/0001_push_subscriptions.sql`): a row for each browser that
-## subscribed, by its endpoint, and whose it is (`owner`: the app's id for a user, "" for a
-## visitor). Server-only: it imports the server platform's `Db`.
+## The subscriptions table (`migrations/0001_push_subscriptions.sql` on Postgres,
+## `0001_push_subscriptions_sqlite.sql` on SQLite): a row for each browser that subscribed, by its
+## endpoint, and whose it is (`owner`: the app's id for a user, "" for a visitor). Its statements
+## work on both databases (D-045) but one, which asks `Db.backend!` which to run: on SQLite a moment
+## is milliseconds, given from here. Server-only: it imports the server platform's `Db`.
 PushStore := [].{
 
 	## A row: its id, the subscription's texts, and whose it is.
@@ -51,7 +54,12 @@ PushStore := [].{
 
 	## Notes that a message reached subscription `id`'s push service.
 	delivered! : I64 => Try(U64, [DbErr(Str)])
-	delivered! = |id| Db.run!("update push_subscriptions set last_sent_at = now(), last_error = null where id = $1", [Int(id)])
+	delivered! = |id|
+		if Db.backend!({}) == Sqlite {
+			Db.run!("update push_subscriptions set last_sent_at = $2, last_error = null where id = $1", [Int(id), Int(Time.now_millis!({}).to_i64_wrap())])
+		} else {
+			Db.run!("update push_subscriptions set last_sent_at = now(), last_error = null where id = $1", [Int(id)])
+		}
 
 	## Notes why a push service refused a message for subscription `id`.
 	refused! : I64, Str => Try(U64, [DbErr(Str)])

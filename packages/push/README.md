@@ -2,8 +2,8 @@
 
 Web Push notifications for Roc Solid apps. A page asks the user's permission and subscribes; the
 server keeps the subscription; later the server sends a notification, and the browser shows it even
-with every tab of the site closed. The server's half keeps subscriptions in Postgres (D-045: its
-statements are Postgres's; an app on SQLite can't use it yet).
+with every tab of the site closed. The server's half keeps subscriptions in the app's database,
+Postgres or SQLite (D-045): its table has a migration for each, and its statements run on both.
 
 ```roc
 import push.Notification
@@ -29,10 +29,13 @@ What works today:
   header, records, padding, keys and nonces (RFC 8188), the message's key derivation (RFC 8291,
   appendix A, reproduced up to the AES), the request's headers (RFC 8030), reading a
   `PushSubscription`'s JSON, and what each answer from a push service means.
-- The server's glue (`server/`): the subscriptions table and its migration, saving and forgetting
-  subscriptions, and a job that delivers a message to each, with retries. Built into an app and run
-  against Postgres and a stand-in push service, it sends the request RFC 8030 and RFC 8291 describe
-  and handles every answer.
+- The server's glue (`server/`): the subscriptions table and its migration (one for Postgres, one
+  for SQLite), saving and forgetting subscriptions, and a job that delivers a message to each, with
+  retries. Built into an app and run against Postgres and a stand-in push service, it sends the
+  request RFC 8030 and RFC 8291 describe and handles every answer. `example/test/push.test.mjs`
+  builds the example with the glue copied in, on SQLite (a file of its own) and, when
+  `DATABASE_URL` is set, on Postgres, and asks it over HTTP: subscribing, each of `PushStore`'s
+  statements, a broadcast's jobs, unsubscribing (`node --test 'packages/push/example/test/*.test.mjs'`).
 - The browser's part: the service worker, the script that subscribes from a click, and
   `<PushButton>`.
 
@@ -63,12 +66,14 @@ itself: an app names `push` alone.
 | `PushState` | Where a browser stands (`On`, `Off`, `Blocked`, `Unsupported`, `Working`, `Failed(why)`), as the page's script says it; what `<PushButton>` shows |
 
 **The server's glue** (`server/`): modules that import the server platform (`Db`, `Http`, `Job`,
-`Env`), so they can't be in the package; and `migrations/0001_push_subscriptions.sql`.
+`Env`), so they can't be in the package; and the table's migration, for the app's database:
+`migrations/0001_push_subscriptions.sql` on Postgres, `migrations/0001_push_subscriptions_sqlite.sql`
+on SQLite (its moments milliseconds).
 
 | Module | What it does |
 |---|---|
 | `Push` | `subscribe!(body, owner)`, `unsubscribe!(endpoint, owner)`: for the app's endpoints. `notify!(owner, notification, options)`, `broadcast!(notification, options)`: queue a `deliver` job per subscription, how many. `public_key!`, `keys!` (from the environment). `deliver`: the job. `send!`: one attempt, given the host's primitives (`Primitives`) |
-| `PushStore` | The `push_subscriptions` table: `save!` (one row per endpoint), `remove!`, `remove_id!`, `find!`, `of_owner!`, `everyone!`, `delivered!`, `refused!` |
+| `PushStore` | The `push_subscriptions` table: `save!` (one row per endpoint), `remove!`, `remove_id!`, `find!`, `of_owner!`, `everyone!`, `delivered!`, `refused!`. Each statement runs on Postgres and SQLite; `delivered!`, which notes when, asks `Db.backend!` which to run |
 
 `owner` is the app's id for a user, as text, or `""` for a visitor.
 
@@ -106,9 +111,11 @@ site's page for this package shows its files.
    ```
 
 3. **The glue, by hand for now**: copy `server/Push.roc` and `server/PushStore.roc` into the app's
-   directory, and `migrations/0001_push_subscriptions.sql` into its `migrations/`. `rocx build`
-   finds the `deliver` job and the migration there, as it finds the app's own, and lists the job in
-   `App.jobs`.
+   directory, and the migration for the app's database into its `migrations/`:
+   `migrations/0001_push_subscriptions.sql` for Postgres (the default),
+   `migrations/0001_push_subscriptions_sqlite.sql` for an app whose program says
+   `database: Sqlite(…)`. `rocx build` finds the `deliver` job and the migration there, as it finds
+   the app's own, and lists the job in `App.jobs`.
 
 4. **Three endpoints**, where `<PushButton api="/push">` looks for them:
 
@@ -147,7 +154,7 @@ site's page for this package shows its files.
    ```
 
    ```sh
-   ./server --static build/client/static --static ../packages/push/static --database-url …
+   ./server --static build/client/static --static ../packages/push/static   # and --database-url … on Postgres
    ```
 
 6. **A button**, anywhere: `<PushButton api="/push" />`.
