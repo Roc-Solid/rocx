@@ -72,7 +72,7 @@ platform ""
 		wasm32: {
 			inputs: ["host.wasm", app],
 			output: Shared,
-			exports: ["mount", "run", "release", "result_ptr", "result_len", "live_allocations"],
+			exports: ["mount", "run", "release", "result_ptr", "result_len", "live_allocations", "frame_begin", "frame_end", "frame_unwound", "reclaim"],
 			initial_stack_size: 1048576,
 		},
 	}

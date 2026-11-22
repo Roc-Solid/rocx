@@ -1462,7 +1462,9 @@ which skips Roc's drops: what the run made before the read is lost, and revalida
 runs common. The host's own part is fixed (`js_fetch` answers "waits" and `js_waits` throws once the
 host has let go of the request's text), `Endpoint.read!` passes its header as text rather than a
 list, and `Endpoint.remote`'s `run` captures nothing; the rest is the app's to keep in mind: read
-first, and name the endpoint outside the computation. In an app's browser copy an endpoint has no
+first, and name the endpoint outside the computation. (Since 2026-11-22 the host frees what an
+unwound run made, once the runtime has let go of what it handed over: web/README.md, Waiting. An
+app need not order its reads for it.) In an app's browser copy an endpoint has no
 types (its route file isn't there), so a submission's result nothing reads stays a type variable,
 and the compiler can't specialize `all!` for it (`--specialize=yes`, as the site builds: a missing
 `parser_for` in a small app, a crash of the fork's compiler in the site's): the app says the

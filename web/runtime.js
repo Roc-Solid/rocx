@@ -745,16 +745,28 @@ export class Runtime {
 		return decoder.decode(new Uint8Array(this.ex.memory.buffer, ptr >>> 0, len >>> 0));
 	}
 
-	/** Calls an export; an abort leaves Roc's stack pointer where the unwound frames left it: restore it. */
+	/** Calls an export, in a frame of the host's (what it allocates is noted). An abort leaves Roc's
+	 * stack pointer where the unwound frames left it: restore it. The error thrown says which frame
+	 * unwound (`frame`): whoever catches it lets go of what the run made, then `reclaim`s it. */
 	enter(call) {
 		const sp = this.ex.__stack_pointer.value;
+		const frame = this.ex.frame_begin();
 		try {
 			call();
+			this.ex.frame_end(frame);
 			return this.text(this.ex.result_ptr(), this.ex.result_len());
 		} catch (error) {
 			this.ex.__stack_pointer.value = sp;
+			this.ex.frame_unwound(frame);
+			if (error && typeof error === "object") error.frame = frame;
 			throw error;
 		}
+	}
+
+	/** What an unwound run made, freed now that the runtime has let go of what it handed over. */
+	reclaim(error) {
+		if (error?.frame) this.ex.reclaim(error.frame);
+		if (error) error.frame = 0;
 	}
 
 	/** Answers an import with text: its length now, its bytes with `js_take`. */
@@ -1451,11 +1463,13 @@ export class Runtime {
 		let out;
 		let outcome = "ok";
 		let failure = null;
+		let waited = null;
 		try {
 			out = this.enter(() => (computation.kind === "root" ? this.ex.mount() : this.ex.run(computation.runner)));
 		} catch (error) {
 			if (error instanceof NotReady) {
 				outcome = "pending";
+				waited = error;
 				this.stats.aborts++;
 				error.wait.then(() => this.schedule(computation));
 			} else if (error instanceof Failed) {
@@ -1493,6 +1507,7 @@ export class Runtime {
 				if (computation.next) this.ex.release(computation.next);
 				computation.next = 0;
 			}
+			this.reclaim(failure ?? waited);
 			if (outcome === "pending" && computation.kind === "root") {
 				// Run again, a component would make its memos again, and ask the server again, forever.
 				throw new Error("rocx: a component read a value that isn't in yet outside its markup: read it in a hole ({…}), which waits");
@@ -1564,6 +1579,7 @@ export class Runtime {
 			this.enter(() => this.ex.run(ptr));
 		} catch (error) {
 			if (!(error instanceof NotReady || error instanceof Failed)) throw error;
+			this.reclaim(error);
 		} finally {
 			this.current = previous;
 		}
@@ -1891,6 +1907,7 @@ export class Runtime {
 					this.current = previous;
 					this.cleanUp(cleanups.splice(mark));
 				}
+				if (error instanceof NotReady || error instanceof Failed) this.reclaim(error);
 				if (error instanceof NotReady) {
 					this.stats.aborts++;
 					error.wait.then(() => this.kept.has(handler.runner) && go());
@@ -3057,6 +3074,7 @@ export class Runtime {
 			if (error instanceof NotReady) throw new Error("rocx: a component read a value that isn't in yet outside its markup: read it in a hole ({…}), which waits");
 			if (!(error instanceof Failed)) throw error;
 			this.failed(computation, error);
+			this.reclaim(error);
 			return { computation, nodes: [] };
 		} finally {
 			this.current = previous;

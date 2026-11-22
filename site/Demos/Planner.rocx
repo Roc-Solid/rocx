@@ -38,8 +38,6 @@ Planner := [].{
 		move! = use_action!(Api.post_api_planner_move({}))
 		(dragging!, set_dragging!) = create_signal!("")
 		(over!, set_over!) = create_signal!("")
-		# The read first, its endpoint named outside it: what a computation made before a read that
-		# isn't in yet would be lost when that read stops it.
 		week = Api.get_api_planner({})
 		plans! = create_memo!(
 			|| {

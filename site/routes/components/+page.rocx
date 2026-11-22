@@ -417,11 +417,6 @@ view! = |_|
 					submission, as the browser hydrates it. Submissions are kept by the endpoint's URL, so what varies
 					goes in the body, not the path.
 				</li>
-				<li>
-					<strong>Read first.</strong> A read that isn't in yet stops its computation, and what the
-					computation made before it is lost: the memo reads the week before the moves, its endpoint named
-					outside it.
-				</li>
 			</ul>
 
 			<Heading id="title">The document's title</Heading>
@@ -934,7 +929,6 @@ view! = |_|
 							Two rules the runtime enforces: read async values in holes, not in a component's body, and
 							write signals in handlers
 						</li>
-						<li>An abort loses what the aborted run made before the read that stopped it (read first; the host lets go of its own part)</li>
 					</ul>
 				</div>
 			</div>

@@ -837,10 +837,20 @@ window.hydrated = true;
 // ---- is_pending!: Solid 2.0's isPending, a read revalidating with its old value shown ----
 
 /** A slow endpoint for the pending page: `GET /api/slow?page=N` answers `{ page, version }` after
- * `delay` ms, `version` counting the answers; `fail` fails the next ones (500). */
+ * `delay` ms, `version` counting the answers; `fail` fails the next ones (500). Its <Upstream>'s,
+ * `GET /api/flaky`, answers `{ n }`, `n` counting its answers, and fails the next `flaky.fail`. */
 function slowApi() {
-	const slow = { delay: 300, fail: 0, version: 0, asked: [] };
+	const slow = { delay: 300, fail: 0, version: 0, asked: [], flaky: { fail: 0, n: 0, asked: 0 } };
 	slow.api = async (method, path, body, url) => {
+		if (path === "/api/flaky") {
+			slow.flaky.asked++;
+			await sleep(slow.delay);
+			if (slow.flaky.fail > 0) {
+				slow.flaky.fail--;
+				return { status: 500, body: "the upstream is down" };
+			}
+			return json({ n: ++slow.flaky.n });
+		}
 		if (path !== "/api/slow") return null;
 		slow.asked.push(`${method} ${url}`);
 		await sleep(slow.delay);
@@ -928,6 +938,48 @@ test("is_pending!: false on the first load (<Loading> shows); a refresh or a new
 		await tab.wait("document.querySelector('.outside').textContent === 'settled'", 3000);
 		assert.deepEqual(await state(), { outside: "settled", loading: null, item: "page 2, version 7", stale: false, label: "page 2, version 7", derived: "derived settled", problem: null });
 		assert.deepEqual(await tab.eval("window.seen"), [false, ...Array(7).fill([true, false]).flat()], "a change of answer a run: two for each of the seven reads again");
+		assert.deepEqual(tab.errors, []);
+		assert.deepEqual(tab.console, []);
+	} finally {
+		await site.close();
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("a run that waits lets go of what it made: refreshes, new pages and memos made again and again, each run aborted until its read is in, leave no allocation behind", { skip }, async () => {
+	const slow = slowApi();
+	slow.delay = 20;
+	const dir = mkdtempSync(join(tmpdir(), "rocx-aborts-"));
+	cpSync(join(web, "runtime.js"), join(dir, "runtime.js"));
+	cpSync(join(out, "pending.wasm"), join(dir, "pending.wasm"));
+	writeFileSync(join(dir, "index.html"), `<!doctype html><html><body><div id="app"></div>${pendingScript("mount")}</body></html>`);
+	const site = await serve(dir, () => null, slow.api);
+	try {
+		const tab = await browser.page();
+		await tab.goto(`${site.url}/`);
+		await tab.wait("window.started === true", 3000);
+		await tab.wait("document.querySelector('.item') !== null", 3000);
+		const live = () => tab.eval("window.runtime.live()");
+		const aborts = () => tab.eval("window.runtime.stats.aborts");
+		const before = await live();
+		const aborted = await aborts();
+		// The memo's run builds the read's URL, and aborts at the read: 30 times.
+		for (let i = 0; i < 30; i++) {
+			const version = slow.version;
+			await tab.click(i % 3 === 0 ? ".next" : ".refresh");
+			await tab.wait(`document.querySelector('.item').textContent.includes('version ${version + 1}')`, 3000);
+			await tab.wait("document.querySelector('.outside').textContent === 'settled'", 3000);
+		}
+		// Made again each time it shows, its memos wait for their first values: the read's, and the
+		// memo that reads that one's (`js_memo_get` aborts it), and its hole's.
+		for (let i = 0; i < 10; i++) {
+			await tab.click(".upstream-toggle");
+			await tab.wait("document.querySelector('.doubled') !== null", 3000);
+			await tab.click(".upstream-toggle");
+			await tab.wait("document.querySelector('.upstream') === null", 3000);
+		}
+		assert.ok((await aborts()) - aborted >= 60, `runs aborted: ${(await aborts()) - aborted}`);
+		assert.equal(await live(), before, "what the aborted runs had made, let go of");
 		assert.deepEqual(tab.errors, []);
 		assert.deepEqual(tab.console, []);
 	} finally {

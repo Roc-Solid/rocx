@@ -4,13 +4,15 @@ import pf.Loading
 import pf.Errored
 import pf.Endpoint
 import pf.Browser
+import pf.Show
 import Api
+import Upstream
 
 ## A slow endpoint read (D-023) and what is_pending! says of it: false while it loads the first
 ## time (<Loading>'s fallback shows), true while it is read again with the old answer still shown (a
 ## refresh, or the next page), false with the new one. A memo that reads it (`label!`) is pending
 ## while it is. An effect tells the page (`pending`) each answer its compute gets, so the tests can
-## count its runs.
+## count its runs. A button shows and hides an <Upstream> (a memo read only through another).
 Pending := [].{
 	view! : {} => Html
 	view! = |{}| {
@@ -18,6 +20,7 @@ Pending := [].{
 		item! = create_memo!(|| Endpoint.get!(Endpoint.with_query(Api.slow({}), "page=${page!().to_str()}")))
 		label! = create_memo!(|| "page ${item!().page.to_str()}, version ${item!().version.to_str()}")
 		create_effect!(|| is_pending!(item!), |pending| Browser.call!("pending", pending))
+		(upstream!, set_upstream!) = create_signal!(Bool.False)
 		<div class="pending">
 			<p class="outside">{if (is_pending!(item!)) "pending" else "settled"}</p>
 			<Errored fallback={|problem, retry|
@@ -35,6 +38,10 @@ Pending := [].{
 			</Errored>
 			<button class="refresh" on:click={|| refresh!(item!)}>Refresh</button>
 			<button class="next" on:click={|| set_page!(page!() + 1)}>Next</button>
+			<button class="upstream-toggle" on:click={|| set_upstream!(!upstream!())}>Upstream</button>
+			<Show when!={upstream!()}>
+				<Upstream />
+			</Show>
 		</div>
 	}
 }

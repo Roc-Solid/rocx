@@ -1,0 +1,29 @@
+import pf.Html
+import pf.Solid exposing [create_memo!]
+import pf.Loading
+import pf.Errored
+import pf.Endpoint
+import Api
+
+## A memo read only through another: `doubled!` reads `source!`, a slow read that the tests can fail,
+## and only `doubled!` is shown, under an <Errored>. When the read fails, so does `doubled!`, and the
+## fallback shows; its retry reads it again, `source!` with it, though nothing there reads `source!`
+## itself. Shown and hidden again and again, its memos wait for their first values each time.
+Upstream := [].{
+	view! : {} => Html
+	view! = |{}| {
+		source! = create_memo!(|| Endpoint.get!(Api.flaky({})))
+		doubled! = create_memo!(|| "doubled ${(source!().n * 2).to_str()}")
+		<div class="upstream">
+			<Errored fallback={|problem, retry|
+				<p class="upstream-problem">
+					{problem} <button class="upstream-again" on:click={retry}>Again</button>
+				</p>
+			}>
+				<Loading fallback={<p class="upstream-loading">Loading…</p>}>
+					<p class="doubled">{doubled!()}</p>
+				</Loading>
+			</Errored>
+		</div>
+	}
+}

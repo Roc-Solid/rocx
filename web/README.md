@@ -49,8 +49,9 @@ same components natively; this one hydrates them.
   `Channel` (what a route's `channel!` answers, `Channel.allow(who)`, and what a subscriber hears),
   `Events`, `Middleware` and `OpenApi`. The server platform's build copies them into
   `server/platform`, so the same code compiles on both.
-- `host/host.zig`, inside the wasm: Roc's memory (its allocator, and a count of live allocations),
-  and every hosted function passed through to JavaScript.
+- `host/host.zig`, inside the wasm: Roc's memory (its allocator, a count of live allocations, and
+  what each run allocated, freed when the run unwinds: see Waiting), and every hosted function
+  passed through to JavaScript.
 - `runtime.js`: keeps Roc's closures as boxes by id; signals, memos, effects and computations, and
   which reads which, and who owns what; builds, hydrates and patches the DOM; asks the server
   (`fetch`, an endpoint's read among them; streams of events; forms); renders as a server would too
@@ -83,12 +84,18 @@ same components natively; this one hydrates them.
 - **Waiting.** A read whose value isn't in throws, in JavaScript, through Roc's frames; the runtime
   restores Roc's stack pointer and runs the computation again when the value comes. A handler that
   waits drops its writes and runs again; its calls' answers are kept, so a command is sent once.
-  The throw skips Roc's drops: what the run made before the read that waits is never let go of. So
-  a computation reads first, and names its endpoint outside itself (`week = Api.get_week({})`, then
-  `create_memo!(|| Endpoint.get!(week) …)`): `Endpoint.read!` passes its header as the host takes
-  it, `Endpoint.remote` captures nothing, and the host's `js_fetch` answers "waits" and has
-  `js_waits` throw only once it has let go of the request's text, so a read made that way loses
-  nothing.
+  The throw skips Roc's drops, so the host keeps count: the runtime opens a frame of the host's
+  around each call into Roc (`frame_begin`), in which the host notes every allocation made and every
+  box handed to the runtime. A call that returns closes it (`frame_end`), its notes going to the
+  frame around it, if any. A run that unwinds keeps them (`frame_unwound`) until the runtime has let
+  go of what the run made (its computations, signals, cleanups and boxes); then what the run had
+  allocated and still holds is held by nothing but the unwound frames, and is freed (`reclaim`):
+  Roc's values are immutable, and a value the runtime gives Roc comes with a reference of the
+  runtime's own, so nothing older points at it. If a box the run handed over is still allocated,
+  nothing is freed (a leak, never a use after free). A run that fails, or a probe or a handler that
+  waits, is reclaimed the same way. What the unwound frames held of older values (a value read,
+  counted once more) stays counted, so the host's `js_fetch` still answers "waits" and has
+  `js_waits` throw only once it has let go of the request's text.
 - **Pending** (`is_pending!`, Solid 2.0's `isPending`). A memo whose run waits while it has a value
   (not failed) is `refreshing`, from the flush that started that run until it settles or fails; it
   is `stale` if it is refreshing or a memo it reads is, set again after each run and passed down to
@@ -395,7 +402,8 @@ reconnect, one reconnect for a change, waits that double after drops, a host wit
 once, a card dragged to another day (a real drag, CDP's `Input.dispatchDragEvent`) shown there before
 the slow endpoint answers and kept while the board is read again, never shown where it was; two on
 their way at once, the refused one back with its refusal; a list with no drop handler taking no drop;
-glides (none with less motion asked for); a link's click taken over; and no allocation left behind.
+glides (none with less motion asked for); a link's click taken over; and no allocation left behind,
+after many runs that waited (refreshes, new pages, memos made again: `Upstream.rocx`) too.
 
 ## Not yet
 

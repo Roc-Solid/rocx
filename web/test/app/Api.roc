@@ -53,4 +53,8 @@ Api := [].{
 	## how many times it has been asked (`version`).
 	slow : {} -> Endpoint({}, {}, { page : U64, version : U64 })
 	slow = |{}| Endpoint.remote("GET", "/api/slow")
+
+	## GET /api/flaky: a read the tests answer slowly, or fail when told to.
+	flaky : {} -> Endpoint({}, {}, { n : U64 })
+	flaky = |{}| Endpoint.remote("GET", "/api/flaky")
 }

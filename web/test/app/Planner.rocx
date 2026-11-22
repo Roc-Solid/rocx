@@ -46,8 +46,6 @@ Planner := [].{
 		(dragging!, set_dragging!) = create_signal!("")
 		(over!, set_over!) = create_signal!("")
 		(note!, set_note!) = create_signal!("")
-		# The read first, its endpoint named outside: what a computation made before a read that isn't
-		# in yet is lost when the read unwinds it.
 		shared = Planner.board({})
 		cards! = create_memo!(|| {
 			server = Endpoint.get!(shared)
