@@ -136,11 +136,19 @@ class Errored {
 		});
 	}
 
+	/** Shows what is inside again, and reads again what failed: the memos it saw fail, and every
+	 * failed memo they read, all the way up, as Solid 2.0's boundary reset does. A memo that reads
+	 * one that failed fails with it, and may be all the boundary saw: read again alone, it would
+	 * find the memo it reads still failed, and fail again. */
 	retry() {
 		if (this.failed === null) return;
 		this.failed = null;
 		this.runtime.dispose(this.fallback);
-		for (const memo of this.memos) this.runtime.refresh(memo);
+		const failed = new Set(this.memos);
+		for (const memo of failed) {
+			for (const source of memo.sources) if (source.kind === "memo" && source.state === "failed") failed.add(source);
+		}
+		for (const memo of failed) this.runtime.refresh(memo);
 		this.memos.clear();
 		replaceRange(this.range, this.build());
 	}

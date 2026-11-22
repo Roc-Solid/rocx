@@ -403,7 +403,8 @@ once, a card dragged to another day (a real drag, CDP's `Input.dispatchDragEvent
 the slow endpoint answers and kept while the board is read again, never shown where it was; two on
 their way at once, the refused one back with its refusal; a list with no drop handler taking no drop;
 glides (none with less motion asked for); a link's click taken over; and no allocation left behind,
-after many runs that waited (refreshes, new pages, memos made again: `Upstream.rocx`) too.
+after many runs that waited (refreshes, new pages, memos made again: `Upstream.rocx`) too; and an
+`<Errored>`'s retry reading again the failed read a memo it shows reads.
 
 ## Not yet
 

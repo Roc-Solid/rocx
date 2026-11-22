@@ -697,7 +697,8 @@ view! = |_|
 				</li>
 				<li>
 					<strong><code>{"<Errored fallback={|problem, retry| …}>"}</code></strong> shows its fallback
-					when something inside fails, given why, and a handler that asks again.
+					when something inside fails, given why, and a handler that asks again: what failed, and the
+					failed reads it was computed from, even ones nothing inside reads itself.
 				</li>
 			</ul>
 			<p>

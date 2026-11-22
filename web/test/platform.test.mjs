@@ -988,6 +988,49 @@ test("a run that waits lets go of what it made: refreshes, new pages and memos m
 	}
 });
 
+test("Errored's retry reads again what failed upstream: a memo shown only through another fails with the read it reads, and trying again reads that too, then shows the memo", { skip }, async () => {
+	const slow = slowApi();
+	slow.delay = 40;
+	slow.flaky.fail = 1;
+	const dir = mkdtempSync(join(tmpdir(), "rocx-upstream-"));
+	cpSync(join(web, "runtime.js"), join(dir, "runtime.js"));
+	cpSync(join(out, "pending.wasm"), join(dir, "pending.wasm"));
+	writeFileSync(join(dir, "index.html"), `<!doctype html><html><body><div id="app"></div>${pendingScript("mount")}</body></html>`);
+	const site = await serve(dir, () => null, slow.api);
+	try {
+		const tab = await browser.page();
+		await tab.goto(`${site.url}/`);
+		await tab.wait("window.started === true", 3000);
+		await tab.click(".upstream-toggle");
+		await tab.wait("document.querySelector('.upstream-problem') !== null", 3000);
+		assert.equal(await textOf(tab, ".upstream-problem"), "GET /api/flaky: 500: the upstream is down Again");
+		assert.equal(slow.flaky.asked, 1);
+		// The read is fixed; trying again reads it again (nothing inside reads it but `doubled!`).
+		await tab.click(".upstream-again");
+		await tab.wait("document.querySelector('.doubled') !== null", 3000);
+		assert.equal(await textOf(tab, ".doubled"), "doubled 2");
+		assert.equal(slow.flaky.asked, 2, "asked again once");
+		assert.equal(await tab.eval("document.querySelector('.upstream-problem')"), null);
+		const live = await tab.eval("window.runtime.live()");
+		// Failing and trying again, again and again, leaves nothing behind.
+		for (let i = 0; i < 5; i++) {
+			await tab.click(".upstream-toggle");
+			await tab.wait("document.querySelector('.upstream') === null", 3000);
+			slow.flaky.fail = 1;
+			await tab.click(".upstream-toggle");
+			await tab.wait("document.querySelector('.upstream-problem') !== null", 3000);
+			await tab.click(".upstream-again");
+			await tab.wait(`document.querySelector('.doubled')?.textContent === 'doubled ${2 * (i + 2)}'`, 3000);
+		}
+		assert.equal(await tab.eval("window.runtime.live()"), live, "the failed runs and the memos made again, let go of");
+		assert.deepEqual(tab.errors, []);
+		assert.deepEqual(tab.console, []);
+	} finally {
+		await site.close();
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 test("is_pending!: rendered as the server would, false; hydrated strictly, no mismatch and nothing asked; then a refresh is pending", { skip }, async () => {
 	const server = await Runtime.load(readFileSync(join(out, "pending-server.wasm")));
 	const rendered = [["GET /api/slow?page=1", "", JSON.stringify({ status: 200, body: JSON.stringify({ page: 1, version: 1 }) })]];
