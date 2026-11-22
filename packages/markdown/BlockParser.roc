@@ -6,14 +6,21 @@ import Inline
 ## them. Each line goes through the containers that are open (block quotes, lists and their
 ## items), then may open new ones, and what is left goes to a paragraph, a code block, an HTML
 ## block or a table. A paragraph's text is kept as one `Text` until the second pass parses its
-## inlines, once every reference definition (`[label]: /url`) is known. Not exposed: `Md.parse`.
+## inlines, once every reference definition (`[label]: /url`) is known. A footnote's definition
+## (`[^label]: …`, GitHub's) is a container, as a list's item is: its lines after the first
+## indented four columns (or a paragraph's lazy continuation), and it goes to `notes`, not to the
+## document, which shows the notes last. Not exposed: `Md.parse`.
 BlockParser := [].{
 	Ref : { label : Str, url : Str, title : Str }
 
-	## The blocks, their paragraphs' and headings' text not parsed yet, and the references.
-	parse : Str -> { blocks : List(Block), refs : List(BlockParser.Ref) }
+	## A footnote's definition: its label (lower case, as references match it) and its blocks.
+	Note : { label : Str, blocks : List(Block) }
+
+	## The blocks, their paragraphs' and headings' text not parsed yet, the references, and the
+	## footnotes' definitions, in the order they were written.
+	parse : Str -> { blocks : List(Block), refs : List(BlockParser.Ref), notes : List(BlockParser.Note) }
 	parse = |source| {
-		var $state = { stack: [{ kind: Document, children: [] }], leaf: NoLeaf, refs: [], line: 0 }
+		var $state = { stack: [{ kind: Document, children: [] }], leaf: NoLeaf, refs: [], notes: [], line: 0 }
 		for line in lines_of(source) {
 			$state = process_line({ ..$state, line: $state.line + 1 }, line)
 		}
@@ -22,7 +29,7 @@ BlockParser := [].{
 			Ok(document) => document.children
 			Err(_) => []
 		}
-		{ blocks: blocks_of(children), refs: done.refs }
+		{ blocks: blocks_of(children), refs: done.refs, notes: done.notes }
 	}
 
 	## A reference definition at `i`: `[label]: destination "title"`, on its own lines.
@@ -81,7 +88,7 @@ BlockParser := [].{
 }
 
 ## What is open: the document, a block quote, a list, or one of its items, and what it holds so far.
-Kind : [Document, Quote, Listing({ ordered : Bool, mark : U8, start : U64 }), Item({ width : U64, line : U64 })]
+Kind : [Document, Quote, Listing({ ordered : Bool, mark : U8, start : U64 }), Item({ width : U64, line : U64 }), Note(Str)]
 
 Open : { kind : Kind, children : List(Child) }
 
@@ -99,7 +106,7 @@ Leaf : [
 	TableLeaf({ align : List([Default, Left, Center, Right]), head : List(Str), rows : List(List(Str)) }),
 ]
 
-State : { stack : List(Open), leaf : Leaf, refs : List(BlockParser.Ref), line : U64 }
+State : { stack : List(Open), leaf : Leaf, refs : List(BlockParser.Ref), notes : List(BlockParser.Note), line : U64 }
 
 ## A line, as far as the containers have read it: the byte at `pos` is at column `col` (a tab goes to
 ## the next multiple of 4), and when `partial`, the tab there is partly read.
@@ -116,6 +123,7 @@ Start : [
 	TableStart(List([Default, Left, Center, Right])),
 	RuleStart,
 	ItemStart({ ordered : Bool, mark : U8, start : U64, width : U64, advance : U64 }),
+	NoteStart({ label : Str, width : U64 }),
 	NoStart,
 ]
 
@@ -174,6 +182,15 @@ match_containers = |state, start| {
 					if ns.indent >= item.width {
 						Ok(advance_cols($cur, item.width))
 					} else if blank and has_content(state, $count) {
+						Ok(to_nonspace($cur, ns))
+					} else {
+						Err(NoMatch)
+					}
+				# A footnote holds its lines indented four columns, and blank lines.
+				Note(_) =>
+					if ns.indent >= 4 {
+						Ok(advance_cols($cur, 4))
+					} else if blank {
 						Ok(to_nonspace($cur, ns))
 					} else {
 						Err(NoMatch)
@@ -290,6 +307,12 @@ starts = |state, cur, matched| {
 				$matched = $state.stack.len()
 				$opened = Bool.True
 			}
+			NoteStart(note) => {
+				$state = push(make_room(close_unmatched($state, $matched)), Note(note.label))
+				$cur = advance_cols(to_nonspace($cur, ns), note.width)
+				$matched = $state.stack.len()
+				$opened = Bool.True
+			}
 			NoStart => {
 				$going = Bool.False
 			}
@@ -324,6 +347,12 @@ detect = |state, cur, matched| {
 	}
 	match html_start(bytes, ns.pos) {
 		Ok(html) if !(html.kind == 7 and interrupts) => return HtmlStart(html.end)
+		_ => {}
+	}
+	# A footnote's definition, `[^label]:`, which may interrupt a paragraph (a note written on the
+	# line after the text that refers to it).
+	match Chars.note_label(bytes, ns.pos) {
+		Ok(found) if Chars.at(bytes, found.end) == ':' => return NoteStart({ label: found.label, width: found.end + 1 - ns.pos })
 		_ => {}
 	}
 	if interrupts {
@@ -452,6 +481,7 @@ close_top = |state| {
 				Quote => append_child(below, Done(Quote(blocks_of(top.children))))
 				Item(_) => append_child(below, ItemDone(top.children))
 				Listing(list) => append_child(below, listing(list, top.children))
+				Note(label) => { ..below, notes: below.notes.append({ label, blocks: blocks_of(top.children) }) }
 				Document => closed
 			}
 		}
@@ -958,6 +988,7 @@ shape = |blocks|
 					Table(table) => "table(${Str.join_with(table.head.map(Inline.plain), ",")};${Str.join_with(table.rows.map(|row| Str.join_with(row.map(Inline.plain), ",")), ";")})"
 					Raw(html) => "html(${html})"
 					Rule => "hr"
+					Footnotes(notes) => "notes(${Str.join_with(notes.map(|note| shape(note.blocks)), "|")})"
 				},
 		),
 		" ",
@@ -989,3 +1020,13 @@ expect blocks("[a]: /url \"t\"\n\n[a]") == "p([a])"
 expect BlockParser.parse("[a]: /url \"t\"\n[B]:\n  <x y>\n").refs == [{ label: "a", url: "/url", title: "t" }, { label: "b", url: "x y", title: "" }]
 expect blocks("-\tfoo\n\n\tbar") == "ul!(p(foo) p(bar))"
 expect blocks("- a\n  - b\n\n    c\n- d") == "ul(p(a) ul!(p(b) p(c))|p(d))"
+
+notes : Str -> List(Str)
+notes = |source| BlockParser.parse(source).notes.map(|note| "${note.label}:${shape(note.blocks)}")
+
+expect blocks("Text[^a].\n\n[^a]: The note.") == "p(Text[^a].)"
+expect notes("Text[^a].\n\n[^a]: The note.") == ["a:p(The note.)"]
+expect notes("Text[^A].\n[^A]: Right after,\nlazily.\n\n    And a second paragraph.\n\nNot the note's.") == ["a:p(Right after,\nlazily.) p(And a second paragraph.)"]
+expect blocks("Text[^A].\n[^A]: Right after,\nlazily.\n\n    And a second paragraph.\n\nNot the note's.") == "p(Text[^A].) p(Not the note's.)"
+expect notes("[^1]: One.\n[^2]: Two.\n    - a list") == ["1:p(One.)", "2:p(Two.) ul(p(a list))"]
+expect notes("[^no space]: x\n[^]: y\n[^x] no colon") == []

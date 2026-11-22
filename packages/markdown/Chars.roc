@@ -40,6 +40,20 @@ Chars := [].{
 		Bool.True
 	}
 
+	## A footnote's label at `i`, `[^label]` (no spaces or brackets in it), and where it ends (after
+	## the `]`). Both passes read it: definitions and references.
+	note_label : List(U8), U64 -> Try({ label : Str, end : U64 }, [NoLabel])
+	note_label = |bytes, i| {
+		if Chars.at(bytes, i) != '[' or Chars.at(bytes, i + 1) != '^' {
+			return Err(NoLabel)
+		}
+		close = Chars.until(bytes, i + 2, |b| b == ']' or b == '[' or Chars.is_space_or_tab(b) or b == '\n')
+		if close == i + 2 or Chars.at(bytes, close) != ']' {
+			return Err(NoLabel)
+		}
+		Ok({ label: Chars.label_key(Chars.slice(bytes, i + 2, close)), end: close + 1 })
+	}
+
 	## The first index from `i` where `stop` holds, or the end.
 	until : List(U8), U64, (U8 -> Bool) -> U64
 	until = |bytes, i, stop| {

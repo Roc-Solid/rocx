@@ -13,9 +13,10 @@ import markdown.Md
 ##
 ## Each kind of node that an app may want drawn its own way has a hook, given what the node says
 ## and its children already rendered: `heading` (an anchor beside it), `code` (highlighting:
-## `Markdown.highlight`), `link` (outside links in a new tab) and `image` (lazy loading). The
-## defaults are `Markdown.heading`, `Markdown.code`, `Markdown.link` and `Markdown.image`, for a hook
-## to fall back on.
+## `Markdown.highlight`), `link` (outside links in a new tab), `image` (lazy loading), and a
+## footnote's reference (`footnote`) and the notes at the end (`notes`: a heading in the page's
+## language, say). The defaults are `Markdown.heading`, `Markdown.code`, `Markdown.link`,
+## `Markdown.image`, `Markdown.footnote` and `Markdown.notes`, for a hook to fall back on.
 Markdown := [].{
 	Props := {
 		source : Str ?? "",
@@ -26,6 +27,8 @@ Markdown := [].{
 		code : (Markdown.Code -> Html) ?? Markdown.code,
 		link : (Markdown.Link -> Html) ?? Markdown.link,
 		image : (Markdown.Image -> Html) ?? Markdown.image,
+		footnote : (Markdown.Footnote -> Html) ?? Markdown.footnote,
+		notes : (List(Markdown.Note) -> Html) ?? Markdown.notes,
 	}
 
 	## A heading: its level (1 to 6), its id (unique in the document), its text, and its content.
@@ -38,6 +41,14 @@ Markdown := [].{
 	Link : { url : Str, title : Str, children : List(Html) }
 
 	Image : { url : Str, title : Str, alt : Str }
+
+	## A footnote's reference in the text: its note's number, where the note is (`#fn-salt`), and
+	## this reference's own anchor (`fnref-salt`), which the note links back to.
+	Footnote : { number : U64, href : Str, id : Str }
+
+	## A note, at the document's end: its number, its anchor (`fn-salt`), what it says (rendered),
+	## and where each reference to it is (`#fnref-salt`, `#fnref-salt-2`), for the links back.
+	Note : { number : U64, id : Str, children : List(Html), backs : List(Str) }
 
 	## A highlighter's token: the kind of thing it is (`keyword`, `string`; `""` for plain), and its
 	## text. `site/Ui/Highlight.roc`'s tokens are these.
@@ -65,6 +76,21 @@ Markdown := [].{
 	image : Markdown.Image -> Html
 	image = |found| <img src={Md.href(found.url)} alt={found.alt} title??={found.title} />
 
+	## `<sup class="footnote-ref"><a href="#fn-salt" id="fnref-salt">1</a></sup>`, as GitHub has it.
+	footnote : Markdown.Footnote -> Html
+	footnote = |found| <sup class="footnote-ref"><a href={found.href} id={found.id}>{found.number.to_str()}</a></sup>
+
+	## `<section class="footnotes"><ol><li id="fn-salt">…</li></ol></section>`, each note followed by
+	## a link back to each reference to it (`↩`, labelled "Back to reference 1" in English: a hook
+	## says it in another language).
+	notes : List(Markdown.Note) -> Html
+	notes = |found|
+		<section class="footnotes">
+			<ol>
+				{...found.map(|note| <li id={note.id}>{...note.children.concat(note.backs.map_with_index(|href, i| <a href={href} class="footnote-backref" aria-label={"Back to reference ${note.number.to_str()}${if (i == 0) "" else "-${(i + 1).to_str()}"}"}>↩</a>))}</li>)}
+			</ol>
+		</section>
+
 	## A `code` hook that colours code with a highlighter: `lines(text, lang)` is the code's lines,
 	## each a list of tokens, and each token that has a kind is a `<span class="t-kind">`. A
 	## highlighter that doesn't know the language can give each line as one plain token.
@@ -83,6 +109,10 @@ Markdown := [].{
 
 	<story name="Tables and tasks">
 		<Markdown source={"| Name | Count |\n|:-----|------:|\n| Apples | 3 |\n| Pears | 12 |\n\n- [x] parse\n- [ ] render"} />
+	</story>
+
+	<story name="Footnotes">
+		<Markdown source={"Bread keeps for days[^salt], longer in a cloth[^cloth].\n\n[^salt]: About 2% of the flour's weight.\n[^cloth]: Linen, not plastic."} />
 	</story>
 
 	<story name="Raw HTML, escaped">
@@ -124,6 +154,17 @@ render_block = |block, props|
 				Drop => Html.empty({})
 			}
 		Rule => <hr />
+		Footnotes(found) =>
+			(props.notes)(
+				found.map(
+					|note| {
+						number: note.number,
+						id: Md.footnote_id(note.label),
+						children: render_blocks(note.blocks, props),
+						backs: List.repeat(0, note.refs).map_with_index(|_, i| "#${Md.footnote_ref_id(note.label, i + 1)}"),
+					},
+				),
+			)
 	}
 
 ## An item: in a tight list, its paragraphs without their `<p>`; a task's box first.
@@ -171,6 +212,7 @@ render_inline = |inline, props|
 				Escape => Html.text(html)
 				Drop => Html.empty({})
 			}
+		Footnote(found) => (props.footnote)({ number: found.number, href: "#${Md.footnote_id(found.label)}", id: Md.footnote_ref_id(found.label, found.nth) })
 		Break => <br />
 		SoftBreak => Html.text("\n")
 	}

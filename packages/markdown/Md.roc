@@ -4,7 +4,7 @@ import Chars
 import Inline
 import InlineParser
 
-## Markdown: CommonMark, and GitHub's tables, strikethrough, task lists and bare links.
+## Markdown: CommonMark, and GitHub's tables, strikethrough, task lists, bare links and footnotes.
 ## `Md.parse` makes a document a list of `Block`s, which an app can walk (`Md.headings` is a table of
 ## contents) and render: `Md.to_html` as HTML text, `<Markdown>` as the platform's `Html`.
 ##
@@ -18,11 +18,49 @@ Md := [].{
 	Options := { raw : [Escape, Drop, Trusted] ?? Escape, ids : Bool ?? Bool.False }
 
 	## A document's blocks. Each heading's `id` comes from its text (`Md.slug`), numbered when an
-	## earlier heading has it already (`intro`, `intro-1`).
+	## earlier heading has it already (`intro`, `intro-1`). Footnotes (`[^salt]` in the text,
+	## `[^salt]: …` on a line of its own) are numbered in the order the text first refers to them,
+	## and their notes are the document's last block (`Footnotes`); a note nothing refers to is left
+	## out, and a reference to no note is text, as GitHub has them.
 	parse : Str -> List(Block)
 	parse = |source| {
 		found = BlockParser.parse(source)
-		with_ids(found.blocks.map(|block| inlines_of(block, found.refs)), []).blocks
+		labels = found.notes.map(|note| note.label)
+		inline = |block| inlines_of(block, found.refs, labels)
+		done = numbered(found.blocks.map(inline), found.notes.map(|note| { label: note.label, blocks: note.blocks.map(inline) }))
+		blocks = with_ids(done.blocks, []).blocks
+		if (done.notes.is_empty()) blocks else blocks.append(Footnotes(done.notes))
+	}
+
+	## The document's footnotes, in order: what its `Footnotes` block holds (none without one).
+	footnotes : List(Block) -> List(Block.Note)
+	footnotes = |blocks|
+		match blocks.last() {
+			Ok(Footnotes(notes)) => notes
+			_ => []
+		}
+
+	## A note's anchor on the page: `fn-salt`.
+	footnote_id : Str -> Str
+	footnote_id = |label| "fn-${label}"
+
+	## A reference's anchor, which its note links back to: `fnref-salt`, and `fnref-salt-2` for the
+	## second reference to the same note.
+	footnote_ref_id : Str, U64 -> Str
+	footnote_ref_id = |label, nth| if (nth <= 1) "fnref-${label}" else "fnref-${label}-${nth.to_str()}"
+
+	## What is wrong with a source's footnotes, each a sentence: a reference to a note that isn't
+	## there (which shows as text), a note given twice (the first is kept), and a note nothing refers
+	## to (which isn't shown). For a build's or a test's checks of what writers write.
+	footnote_problems : Str -> List(Str)
+	footnote_problems = |source| {
+		defined = BlockParser.parse(source).notes.map(|note| note.label)
+		doc = Md.parse(source)
+		used = Md.footnotes(doc).map(|note| note.label)
+		missing = inline_lists(doc).join_map(text_runs).join_map(unresolved).map(|label| "[^${label}] refers to a note that isn't there")
+		twice = defined.keep_if(|label| defined.count_if(|other| other == label) > 1).map(|label| "[^${label}] is given twice")
+		unused = defined.drop_if(|label| used.contains(label)).map(|label| "[^${label}] is a note nothing refers to")
+		missing.concat(twice).concat(unused).fold([], |kept, problem| if (kept.contains(problem)) kept else kept.append(problem))
 	}
 
 	## The document as HTML, CommonMark's way, raw HTML escaped.
@@ -107,24 +145,195 @@ Md := [].{
 hex : U8 -> U8
 hex = |digit| if (digit < 10) '0' + digit else 'A' + digit - 10
 
-## The second pass: each paragraph's, heading's and cell's text as inlines.
-inlines_of : Block, List({ label : Str, url : Str, title : Str }) -> Block
-inlines_of = |block, refs| {
+## The second pass: each paragraph's, heading's and cell's text as inlines; `labels` are the
+## footnotes' that are defined.
+inlines_of : Block, List({ label : Str, url : Str, title : Str }), List(Str) -> Block
+inlines_of = |block, refs, labels| {
 	parse = |content|
 		match content {
-			[Text(raw)] => InlineParser.parse(raw, refs)
+			[Text(raw)] => InlineParser.parse(raw, refs, labels)
 			_ => content
 		}
-	item = |it| { ..it, blocks: it.blocks.map(|inner| inlines_of(inner, refs)) }
+	item = |it| { ..it, blocks: it.blocks.map(|inner| inlines_of(inner, refs, labels)) }
 	match block {
 		Paragraph(content) => Paragraph(parse(content))
 		Heading(heading) => Heading({ ..heading, content: parse(heading.content) })
-		Quote(inner) => Quote(inner.map(|b| inlines_of(b, refs)))
+		Quote(inner) => Quote(inner.map(|b| inlines_of(b, refs, labels)))
 		Unordered(list) => Unordered({ ..list, items: list.items.map(item) })
 		Ordered(list) => Ordered({ ..list, items: list.items.map(item) })
 		Table(table) => Table({ ..table, head: table.head.map(parse), rows: table.rows.map(|row| row.map(parse)) })
 		_ => block
 	}
+}
+
+## The references numbered in the order the text first makes them (each with which reference to
+## its note it is), and the notes they refer to, in that order, the first definition of a label
+## kept. A note may refer to another: the notes are numbered after the text, in their order.
+numbered : List(Block), List(BlockParser.Note) -> { blocks : List(Block), notes : List(Block.Note) }
+numbered = |blocks, defs| {
+	main = number_blocks(blocks, [])
+	var $seen = main.seen
+	var $notes = []
+	var $i = 0
+	while $i < $seen.len() {
+		label = $seen.get($i).map_ok(|each| each.label) ?? ""
+		given = defs.find_first(|def| def.label == label).map_ok(|def| def.blocks) ?? []
+		inner = number_blocks(given, $seen)
+		$seen = inner.seen
+		$notes = $notes.append({ label, number: $i + 1, refs: 0, blocks: inner.blocks })
+		$i = $i + 1
+	}
+	seen = $seen
+	{ blocks: main.blocks, notes: $notes.map(|note| { ..note, refs: seen.find_first(|each| each.label == note.label).map_ok(|each| each.count) ?? 1 }) }
+}
+
+## The labels referred to so far, in order, each with how often.
+Seen : List({ label : Str, count : U64 })
+
+number_blocks : List(Block), Seen -> { blocks : List(Block), seen : Seen }
+number_blocks = |blocks, seen|
+	blocks.fold(
+		{ blocks: [], seen },
+		|so_far, block| {
+			done = number_block(block, so_far.seen)
+			{ blocks: so_far.blocks.append(done.block), seen: done.seen }
+		},
+	)
+
+number_block : Block, Seen -> { block : Block, seen : Seen }
+number_block = |block, seen| {
+	items = |list_items|
+		list_items.fold(
+			{ items: [], seen },
+			|so_far, it| {
+				done = number_blocks(it.blocks, so_far.seen)
+				{ items: so_far.items.append({ ..it, blocks: done.blocks }), seen: done.seen }
+			},
+		)
+	cells = |row, start|
+		row.fold(
+			{ cells: [], seen: start },
+			|so_far, content| {
+				done = number_inlines(content, so_far.seen)
+				{ cells: so_far.cells.append(done.inlines), seen: done.seen }
+			},
+		)
+	match block {
+		Paragraph(content) => {
+			done = number_inlines(content, seen)
+			{ block: Paragraph(done.inlines), seen: done.seen }
+		}
+		Heading(heading) => {
+			done = number_inlines(heading.content, seen)
+			{ block: Heading({ ..heading, content: done.inlines }), seen: done.seen }
+		}
+		Quote(inner) => {
+			done = number_blocks(inner, seen)
+			{ block: Quote(done.blocks), seen: done.seen }
+		}
+		Unordered(list) => {
+			done = items(list.items)
+			{ block: Unordered({ ..list, items: done.items }), seen: done.seen }
+		}
+		Ordered(list) => {
+			done = items(list.items)
+			{ block: Ordered({ ..list, items: done.items }), seen: done.seen }
+		}
+		Table(table) => {
+			head = cells(table.head, seen)
+			rows = table.rows.fold(
+				{ rows: [], seen: head.seen },
+				|so_far, row| {
+					done = cells(row, so_far.seen)
+					{ rows: so_far.rows.append(done.cells), seen: done.seen }
+				},
+			)
+			{ block: Table({ ..table, head: head.cells, rows: rows.rows }), seen: rows.seen }
+		}
+		_ => { block, seen }
+	}
+}
+
+number_inlines : List(Inline), Seen -> { inlines : List(Inline), seen : Seen }
+number_inlines = |inlines, seen|
+	inlines.fold(
+		{ inlines: [], seen },
+		|so_far, inline| {
+			inner = |content, wrap| {
+				done = number_inlines(content, so_far.seen)
+				{ inlines: so_far.inlines.append(wrap(done.inlines)), seen: done.seen }
+			}
+			match inline {
+				Footnote(note) =>
+					match so_far.seen.find_first_index(|each| each.label == note.label) {
+						Ok(index) => {
+							count = (so_far.seen.get(index).map_ok(|each| each.count) ?? 0) + 1
+							{ inlines: so_far.inlines.append(Footnote({ label: note.label, number: index + 1, nth: count })), seen: so_far.seen.set(index, { label: note.label, count }) ?? so_far.seen }
+						}
+						Err(_) => { inlines: so_far.inlines.append(Footnote({ label: note.label, number: so_far.seen.len() + 1, nth: 1 })), seen: so_far.seen.append({ label: note.label, count: 1 }) }
+					}
+				Emph(content) => inner(content, |done| Emph(done))
+				Strong(content) => inner(content, |done| Strong(done))
+				Strike(content) => inner(content, |done| Strike(done))
+				Link(link) => inner(link.content, |done| Link({ ..link, content: done }))
+				_ => { inlines: so_far.inlines.append(inline), seen: so_far.seen }
+			}
+		},
+	)
+
+## Every list of inlines in the blocks: paragraphs', headings' and cells'.
+inline_lists : List(Block) -> List(List(Inline))
+inline_lists = |blocks|
+	blocks.join_map(
+		|block|
+			match block {
+				Paragraph(content) => [content]
+				Heading(heading) => [heading.content]
+				Quote(inner) => inline_lists(inner)
+				Unordered(list) => list.items.join_map(|it| inline_lists(it.blocks))
+				Ordered(list) => list.items.join_map(|it| inline_lists(it.blocks))
+				Table(table) => table.head.concat(table.rows.join())
+				Footnotes(notes) => notes.join_map(|note| inline_lists(note.blocks))
+				_ => []
+			},
+	)
+
+## The text of each run of `Text` side by side (what the inline pass left as text), nested ones too.
+text_runs : List(Inline) -> List(Str)
+text_runs = |inlines| {
+	folded = inlines.fold(
+		{ runs: [], current: "" },
+		|so_far, inline| {
+			ended = if (so_far.current.is_empty()) so_far.runs else so_far.runs.append(so_far.current)
+			match inline {
+				Text(text) => { ..so_far, current: so_far.current.concat(text) }
+				Emph(content) | Strong(content) | Strike(content) => { runs: ended.concat(text_runs(content)), current: "" }
+				Link(link) => { runs: ended.concat(text_runs(link.content)), current: "" }
+				_ => { runs: ended, current: "" }
+			}
+		},
+	)
+	if (folded.current.is_empty()) folded.runs else folded.runs.append(folded.current)
+}
+
+## The labels of the `[^label]`s in a text: references the inline pass left as text, to no note.
+unresolved : Str -> List(Str)
+unresolved = |text| {
+	bytes = text.to_utf8()
+	var $found = []
+	var $i = 0
+	while $i < bytes.len() {
+		match Chars.note_label(bytes, $i) {
+			Ok(note) => {
+				$found = $found.append(note.label)
+				$i = note.end
+			}
+			Err(_) => {
+				$i = $i + 1
+			}
+		}
+	}
+	$found
 }
 
 ## Each heading's id, unique in the document: its slug, or the slug numbered.
@@ -225,7 +434,29 @@ render_block = |out, block, options, tight|
 				Drop => out
 			}
 		Rule => "${cr(out)}<hr />\n"
+		Footnotes(notes) => {
+			items = notes.map(
+				|note| {
+					backs = Str.join_with(List.repeat(0, note.refs).map_with_index(|_, i| backref(note, i + 1)), " ")
+					inside =
+						match note.blocks.last() {
+							Ok(Paragraph(content)) => "${cr(render_blocks("", note.blocks.drop_last(1), options, Bool.False))}<p>${render_inlines(content, options)} ${backs}</p>\n"
+							_ => "${cr(render_blocks("", note.blocks, options, Bool.False))}<p>${backs}</p>\n"
+						}
+					"<li id=\"${Md.escape(Md.footnote_id(note.label))}\">\n${inside.drop_prefix("\n")}</li>\n"
+				},
+			)
+			"${cr(out)}<section class=\"footnotes\" data-footnotes>\n<ol>\n${Str.join_with(items, "")}</ol>\n</section>\n"
+		}
 	}
+
+## The link from a note back to its `nth` reference, as cmark-gfm writes it.
+backref : Block.Note, U64 -> Str
+backref = |note, nth| {
+	idx = if (nth <= 1) note.number.to_str() else "${note.number.to_str()}-${nth.to_str()}"
+	mark = if (nth <= 1) "↩" else "↩<sup class=\"footnote-ref\">${nth.to_str()}</sup>"
+	"<a href=\"#${Md.escape(Md.footnote_ref_id(note.label, nth))}\" class=\"footnote-backref\" data-footnote-backref data-footnote-backref-idx=\"${idx}\" aria-label=\"Back to reference ${idx}\">${mark}</a>"
+}
 
 render_items : Str, List(Block.Item), Chosen, Bool -> Str
 render_items = |start, items, options, tight|
@@ -267,6 +498,7 @@ render_inlines = |inlines, options|
 							Escape => Md.escape(html)
 							Drop => ""
 						}
+					Footnote(note) => "<sup class=\"footnote-ref\"><a href=\"#${Md.escape(Md.footnote_id(note.label))}\" id=\"${Md.escape(Md.footnote_ref_id(note.label, note.nth))}\" data-footnote-ref>${note.number.to_str()}</a></sup>"
 					Break => "<br />\n"
 					SoftBreak => "\n"
 				},
@@ -302,4 +534,13 @@ expect Md.slug("Hello, World! It's 2026") == "hello-world-its-2026"
 expect Md.words(Md.parse("# Two words\n\nand *three more* here")) == 6
 expect Md.reading_minutes(Md.parse("word")) == 1 and Md.reading_minutes([]) == 0
 expect Md.href("a b/ä\\[x]") == "a%20b/%C3%A4%5C%5Bx%5D"
+expect html("Bread[^salt] keeps[^time].\n\n[^time]: Two days.\n[^salt]: About *2%*.\n[^unused]: Never shown.") == "<p>Bread<sup class=\"footnote-ref\"><a href=\"#fn-salt\" id=\"fnref-salt\" data-footnote-ref>1</a></sup> keeps<sup class=\"footnote-ref\"><a href=\"#fn-time\" id=\"fnref-time\" data-footnote-ref>2</a></sup>.</p>\n<section class=\"footnotes\" data-footnotes>\n<ol>\n<li id=\"fn-salt\">\n<p>About <em>2%</em>. <a href=\"#fnref-salt\" class=\"footnote-backref\" data-footnote-backref data-footnote-backref-idx=\"1\" aria-label=\"Back to reference 1\">↩</a></p>\n</li>\n<li id=\"fn-time\">\n<p>Two days. <a href=\"#fnref-time\" class=\"footnote-backref\" data-footnote-backref data-footnote-backref-idx=\"2\" aria-label=\"Back to reference 2\">↩</a></p>\n</li>\n</ol>\n</section>\n"
+expect html("One[^a], two[^a].\n\n[^a]: Note.") == "<p>One<sup class=\"footnote-ref\"><a href=\"#fn-a\" id=\"fnref-a\" data-footnote-ref>1</a></sup>, two<sup class=\"footnote-ref\"><a href=\"#fn-a\" id=\"fnref-a-2\" data-footnote-ref>1</a></sup>.</p>\n<section class=\"footnotes\" data-footnotes>\n<ol>\n<li id=\"fn-a\">\n<p>Note. <a href=\"#fnref-a\" class=\"footnote-backref\" data-footnote-backref data-footnote-backref-idx=\"1\" aria-label=\"Back to reference 1\">↩</a> <a href=\"#fnref-a-2\" class=\"footnote-backref\" data-footnote-backref data-footnote-backref-idx=\"1-2\" aria-label=\"Back to reference 1-2\">↩<sup class=\"footnote-ref\">2</sup></a></p>\n</li>\n</ol>\n</section>\n"
+expect html("No note[^x] here.") == "<p>No note[^x] here.</p>\n"
+expect Md.footnotes(Md.parse("A[^b] and C[^a].\n\n[^a]: First given.\n[^b]: Second given.")).map(|note| (note.label, note.number, note.refs)) == [("b", 1, 1), ("a", 2, 1)]
+expect Md.footnotes(Md.parse("Text[^a].\n\n[^a]: Refers on[^b].\n[^b]: The last.")).map(|note| note.label) == ["a", "b"]
+expect Md.headings(Md.parse("## Why[^a]\n\n[^a]: Because.")) == [{ level: 2, id: "why", text: "Why" }]
+expect Md.footnote_problems("A[^a], B[^b], `[^c]` code.\n\n[^a]: A.\n[^a]: Again.\n[^d]: D.") == ["[^b] refers to a note that isn't there", "[^a] is given twice", "[^d] is a note nothing refers to"]
+expect Md.footnote_problems("A[^a].\n\n[^a]: A.") == []
+expect Md.words(Md.parse("Two words[^a].\n\n[^a]: And three more.")) == 5
 expect Md.safe_url("/a:b") and Md.safe_url("mailto:x@y.z") and !Md.safe_url(" javascript:x") and !Md.safe_url("vbscript:x")

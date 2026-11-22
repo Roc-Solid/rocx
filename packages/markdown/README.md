@@ -1,7 +1,7 @@
 # markdown
 
 Markdown for Roc Solid apps: a parser in plain Roc (CommonMark, with GitHub's tables,
-strikethrough, task lists and bare links), a `<Markdown>` component that renders it as the
+strikethrough, task lists, bare links and footnotes), a `<Markdown>` component that renders it as the
 platform's markup, frontmatter read into a record the app declares, and Astro-style collections of
 Markdown files.
 
@@ -58,6 +58,8 @@ so `rocx build` copies it into the app, where `pf` is each half's own platform:
 | `code : Markdown.Code -> Html` | how a code block renders, given `{ lang, info, text }`; `Markdown.code` is `<pre><code class="language-…">` |
 | `link : Markdown.Link -> Html` | how a link renders, given `{ url, title, children }`; `Markdown.link` |
 | `image : Markdown.Image -> Html` | how an image renders, given `{ url, title, alt }`; `Markdown.image` |
+| `footnote : Markdown.Footnote -> Html` | how a footnote's reference renders, given `{ number, href, id }` (`#fn-salt`, `fnref-salt`); `Markdown.footnote` is `<sup class="footnote-ref"><a …>1</a></sup>` |
+| `notes : List(Markdown.Note) -> Html` | how the notes at the end render, given each one's `{ number, id, children, backs }` (`backs`: where each reference to it is, for links back); `Markdown.notes` is `<section class="footnotes"><ol>…</ol></section>` with `↩` links labelled in English |
 
 Each hook is given what the node says, its children already rendered, so it decides only its own
 element. Anchors beside headings:
@@ -87,6 +89,45 @@ exactly these:
 ```
 
 PROPOSALS.md proposes moving it into a package of its own, so any app can.
+
+## Footnotes
+
+GitHub's: `[^label]` where the text refers to a note, and `[^label]: what it says` on a line of its
+own, anywhere in the document; the note's further lines are indented four spaces (or continue its
+paragraph), so a note may hold paragraphs, lists or code.
+
+```markdown
+A loaf keeps for days[^salt], longer in a cloth[^cloth].
+
+[^salt]: About 2% of the flour's weight.
+[^cloth]: Linen, not plastic.
+
+    A second paragraph of the same note.
+```
+
+`Md.parse` numbers the notes in the order the text first refers to them, and puts them last in the
+document, as a `Footnotes` block of `Block.Note`s (`{ label, number, refs, blocks }`); a reference
+is an `Inline.Footnote` (`{ label, number, nth }`, `nth` saying which reference to its note it is).
+A note nothing refers to is left out, and a reference to no note stays text, as on GitHub; labels
+match without case. `Md.to_html` writes them as cmark-gfm does: `<sup class="footnote-ref"><a
+href="#fn-salt" id="fnref-salt" data-footnote-ref>1</a></sup>`, then `<section class="footnotes"
+data-footnotes>` with a link back (`↩`) to each reference. `<Markdown>` draws them through its
+`footnote` and `notes` hooks, so a page gives the notes a heading in its own language:
+
+```roc
+notes = |found|
+	<section class="notes" aria-labelledby="notes-title">
+		<h2 id="notes-title">Przypisy</h2>
+		<ol>{...found.map(|note| <li id={note.id}>{...note.children}{...note.backs.map(|href| <a href={href} aria-label="Wróć do tekstu">↩</a>)}</li>)}</ol>
+	</section>
+
+<Markdown source={post.body} notes={notes} />
+```
+
+`Md.footnotes(doc)` is the notes; `Md.footnote_id("salt")` and `Md.footnote_ref_id("salt", 2)` are
+the anchors (`fn-salt`, `fnref-salt-2`). `Md.footnote_problems(source)` says what is wrong, for a
+build's checks of what writers write: a reference to a note that isn't there, a note given twice,
+and a note nothing refers to (`[^cloth] is a note nothing refers to`).
 
 ## Walking the document
 
@@ -206,4 +247,6 @@ Waits on a proposal (PROPOSALS.md):
 
 - A reference's label is case folded for ASCII, Latin-1, Latin Extended-A, Greek, Cyrillic and
   `ß`, not all of Unicode; emphasis knows Unicode's punctuation by its main blocks.
-- No footnotes, heading attributes (`{#id}`), smart quotes or math.
+- No heading attributes (`{#id}`), smart quotes or math.
+- A footnote's label has no spaces or brackets in it; references inside a note number the notes
+  they refer to after the text's.

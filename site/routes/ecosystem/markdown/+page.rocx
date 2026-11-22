@@ -39,8 +39,8 @@ view! = |_|
 				kicker={[<>{"The ecosystem · "}</>, <code>packages/markdown</code>]}
 				title="Markdown, parsed in Roc and rendered as markup"
 			>
-				A Markdown parser in plain Roc: CommonMark, and GitHub's tables, strikethrough, task lists and
-				bare links. The <code>{"<Markdown>"}</code> component renders it as the platform's markup, so a
+				A Markdown parser in plain Roc: CommonMark, and GitHub's tables, strikethrough, task lists, bare
+				links and footnotes. The <code>{"<Markdown>"}</code> component renders it as the platform's markup, so a
 				post or a docs page is one tag. Raw HTML in the source is shown as text, and a link that could
 				run script points nowhere, unless you say otherwise. Frontmatter is read into a record you
 				declare, and a folder of posts becomes a typed list, checked when the app is built.
@@ -246,8 +246,9 @@ view! = |_|
 			</ul>
 			<p>
 				Limits: a reference's label is case folded for ASCII, Latin-1, Latin Extended-A, Greek, Cyrillic and
-				<code>ß</code>, not all of Unicode; there are no footnotes, heading attributes (<code>{"{#id}"}</code>),
-				smart quotes or maths.
+				<code>ß</code>, not all of Unicode; there are no heading attributes (<code>{"{#id}"}</code>), smart
+				quotes or maths. Footnotes are GitHub's (<code>{"[^label]"}</code>), drawn through the component's
+				<code>footnote</code> and <code>notes</code> hooks.
 			</p>
 			<details>
 				<summary>The component: <code>{Sources.markdown_component.file}</code></summary>

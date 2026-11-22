@@ -3,7 +3,9 @@ import Inline
 ## A document's blocks, as `Md.parse` makes them: a list of these is a document. A heading has its
 ## `id` (from its text, made unique in the document), for anchors and a table of contents. A code
 ## block's `lang` is the first word of its info string (```` ```roc ````), `""` for none. `Raw` is an
-## HTML block as the source wrote it, which renderers escape unless told otherwise.
+## HTML block as the source wrote it, which renderers escape unless told otherwise. `Footnotes` is
+## the document's notes (`[^label]: …`, GitHub's), last, in the order the text first refers to them:
+## only the notes something refers to.
 Block := [
 	Paragraph(List(Inline)),
 	Heading({ level : U64, id : Str, content : List(Inline) }),
@@ -14,6 +16,7 @@ Block := [
 	Table({ align : List([Default, Left, Center, Right]), head : List(List(Inline)), rows : List(List(List(Inline))) }),
 	Raw(Str),
 	Rule,
+	Footnotes(List(Note)),
 ].{
 
 	## Two the same: compared with `==`.
@@ -22,6 +25,10 @@ Block := [
 	## A list's item: its blocks, and its box if it is a task (`- [ ] write it`, `- [x] done`). In a
 	## tight list (no blank lines between its items) a paragraph shows without its `<p>`.
 	Item : { task : [None, Open, Done], blocks : List(Block) }
+
+	## A footnote: its label (as references match it: lower case), its number, how many references
+	## the text makes to it (each gets a link back), and what it says.
+	Note : { label : Str, number : U64, refs : U64, blocks : List(Block) }
 
 	## The words of a document's text, code blocks included, without the marks.
 	plain : List(Block) -> Str
@@ -40,6 +47,7 @@ Block := [
 			Table(table) => Str.join_with(table.head.concat(table.rows.join()).map(Inline.plain), " ")
 			Raw(_) => ""
 			Rule => ""
+			Footnotes(notes) => Str.join_with(notes.map(|note| Block.plain(note.blocks)), "\n")
 		}
 }
 

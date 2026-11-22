@@ -6,10 +6,11 @@ import Inline
 ## and line breaks, and notes each run of `*`, `_` or `~` and each `[` or `![`. A `]` makes a link
 ## or an image of what follows its `[` when a destination or a known reference follows; then the
 ## runs pair up into emphasis as CommonMark's delimiter algorithm pairs them. Last, bare
-## `https://…` and `www.…` become links (GitHub's extension). Not exposed: `Md.parse`.
+## `https://…` and `www.…` become links (GitHub's extension). `[^label]` is a footnote's reference
+## when `notes` has its label (GitHub's), and text otherwise. Not exposed: `Md.parse`.
 InlineParser := [].{
-	parse : Str, List({ label : Str, url : Str, title : Str }) -> List(Inline)
-	parse = |source, refs| {
+	parse : Str, List({ label : Str, url : Str, title : Str }), List(Str) -> List(Inline)
+	parse = |source, refs, notes| {
 		bytes = source.to_utf8()
 		var $items = []
 		var $brackets = []
@@ -56,9 +57,18 @@ InlineParser := [].{
 				$items = $items.append(Bracket({ image: Bool.True, active: Bool.True, at: $i + 2 }))
 				$i = $i + 2
 			} else if b == '[' {
-				$brackets = $brackets.append($items.len())
-				$items = $items.append(Bracket({ image: Bool.False, active: Bool.True, at: $i + 1 }))
-				$i = $i + 1
+				match Chars.note_label(bytes, $i) {
+					Ok(found) if notes.contains(found.label) => {
+						# Numbered once the whole document is read (`Md.parse`).
+						$items = $items.append(Node(Footnote({ label: found.label, number: 0, nth: 0 })))
+						$i = found.end
+					}
+					_ => {
+						$brackets = $brackets.append($items.len())
+						$items = $items.append(Bracket({ image: Bool.False, active: Bool.True, at: $i + 1 }))
+						$i = $i + 1
+					}
+				}
 			} else if b == ']' {
 				closed = close_bracket(bytes, $i, $items, $brackets, refs)
 				$items = closed.items
@@ -533,6 +543,7 @@ shape = |inlines|
 					Link(link) => "<a ${link.url}${if (link.title.is_empty()) "" else " \"${link.title}\""}>${shape(link.content)}</a>"
 					Image(image) => "<img ${image.url} ${image.alt}>"
 					Raw(html) => "raw(${html})"
+					Footnote(note) => "fn(${note.label})"
 					Break => "<br>"
 					SoftBreak => "\n"
 				},
@@ -541,7 +552,7 @@ shape = |inlines|
 	)
 
 inlines : Str -> Str
-inlines = |source| shape(InlineParser.parse(source, [{ label: "ref", url: "/r", title: "R" }]))
+inlines = |source| shape(InlineParser.parse(source, [{ label: "ref", url: "/r", title: "R" }], ["salt", "a"]))
 
 expect inlines("*a* **b** _c_ __d__ ~~e~~") == "<em>a</em> <strong>b</strong> <em>c</em> <strong>d</strong> <del>e</del>"
 expect inlines("*foo**bar**baz*") == "<em>foo<strong>bar</strong>baz</em>"
@@ -559,3 +570,5 @@ expect inlines("See www.example.com/a_b. And https://x.org/(y)) ok") == "See <a 
 expect inlines("[not a `link]`") == "[not a `link]`"
 expect inlines("~one~ and ~~~three~~~") == "<del>one</del> and ~~~three~~~"
 expect inlines("![a [b](/u)](/i)") == "<img /i a b>"
+expect inlines("Bread[^salt] keeps[^A], and [^none] is text, `[^salt]` code.") == "Breadfn(salt) keepsfn(a), and [^none] is text, `[^salt]` code."
+expect inlines("*a note[^salt]* in [a link[^a]](/u)") == "<em>a notefn(salt)</em> in <a /u>a linkfn(a)</a>"

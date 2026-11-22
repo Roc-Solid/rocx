@@ -1,6 +1,8 @@
 ## What a paragraph, a heading or a table's cell is made of: text, and the spans Markdown marks in
 ## it. `Md.parse` makes these; a renderer (`Md.to_html`, `<Markdown>`) or an app's own walk reads
-## them. `Raw` is HTML as the source wrote it, which renderers escape unless told otherwise.
+## them. `Raw` is HTML as the source wrote it, which renderers escape unless told otherwise. A
+## `Footnote` is a reference to a note (`[^label]`, GitHub's): its label, its note's number (in the
+## order the text first refers to each), and which reference to that note it is (1 for the first).
 Inline := [
 	Text(Str),
 	Code(Str),
@@ -10,6 +12,7 @@ Inline := [
 	Link({ url : Str, title : Str, content : List(Inline) }),
 	Image({ url : Str, title : Str, alt : Str }),
 	Raw(Str),
+	Footnote({ label : Str, number : U64, nth : U64 }),
 	Break,
 	SoftBreak,
 ].{
@@ -18,7 +21,7 @@ Inline := [
 	is_eq : _
 
 	## The words, without the marks: what a screen reader or a search index wants. A line break is
-	## a space; raw HTML is nothing.
+	## a space; raw HTML and a footnote's reference are nothing.
 	plain : List(Inline) -> Str
 	plain = |inlines|
 		inlines.fold(
@@ -34,6 +37,7 @@ Inline := [
 						Link(link) => Inline.plain(link.content)
 						Image(image) => image.alt
 						Raw(_) => ""
+						Footnote(_) => ""
 						Break => " "
 						SoftBreak => " "
 					},
