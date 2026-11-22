@@ -255,7 +255,9 @@ letter or `>` follows; after a value on the same line (`a < b`) it is the compar
 
 `{x}` is text and `{=x}` is markup because a hole's type isn't known when the file is turned into
 Roc: the syntax says which, and the compiler checks it. Markup inside a `<NoHydration>` has no
-handlers, keys or transitions (rocx refuses them at their line: the browser never runs it); a
+handlers, keys or transitions (rocx refuses them at their line: the browser never runs it), and a
+name only it used (a page's `params`, a local) is rewritten in the browser's copy where it is bound
+(`{ params: _ }`, `_lang = …`), so the compiler doesn't warn of it there (D-044); a
 component's names end in `!` where Roc's effects do (`count!()`, `Picks.view!`). The docs' Syntax
 and Components pages have it all, with every example a real file the build compiles.
 

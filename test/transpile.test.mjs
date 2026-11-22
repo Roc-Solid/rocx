@@ -363,6 +363,29 @@ test("<NoHydration>: what is inside renders on the server only; the browser's co
 	assert.equal(transpileModule(plain, "P.rocx").regions, 0);
 });
 
+test("<NoHydration>: a name only what is inside used is rewritten in the browser's copy where it is bound, so the compiler doesn't warn (D-044)", () => {
+	const browserOf = (source) => transpileModule(source, "P.rocx", { module: "P", client: true }).code;
+	// A field of the view's record pattern: `params: _`.
+	const page = browserOf("import pf.Html\n\nview! = |{ params }|\n\t<main>\n\t\t<NoHydration><p>{params.lang}</p></NoHydration>\n\t</main>\n");
+	assert.match(page, /^view! = \|\{ params: _ \}\|$/m);
+	// Two fields, one still used: only the other.
+	const error = browserOf("import pf.Html\n\nview! = |{ status, problem }|\n\t<main>\n\t\t<h1>{status.to_str()}</h1>\n\t\t<NoHydration><p>{problem}</p></NoHydration>\n\t</main>\n");
+	assert.match(error, /^view! = \|\{ status, problem: _ \}\|$/m);
+	// A plain parameter: `_props`.
+	assert.match(browserOf("import pf.Html\n\nview! = |props|\n\t<main><NoHydration><p>{props.text}</p></NoHydration></main>\n"), /^view! = \|_props\|$/m);
+	// A local definition: `_lang = …`; what it reads (`params`) is still used, so it stays.
+	const local = browserOf("import pf.Html\n\nview! = |{ params }| {\n\tlang = params.lang\n\t<main><NoHydration><p>{lang}</p></NoHydration></main>\n}\n");
+	assert.match(local, /^\t_lang = params\.lang$/m);
+	assert.match(local, /^view! = \|\{ params \}\| \{$/m);
+	// What the browser's copy still uses, and a member of a block (another module may read it), are left as they are.
+	const kept = browserOf("import pf.Html\n\nview! = |{ name }|\n\t<main><p>{name}</p><NoHydration><p>{name}</p></NoHydration></main>\n");
+	assert.match(kept, /^view! = \|\{ name \}\|$/m);
+	const member = browserOf("import pf.Html\n\nCard := [].{\n\ttitle = \"Hi\"\n\n\tview! : {} => Html\n\tview! = |{}| <main><NoHydration><p>{title}</p></NoHydration></main>\n}\n");
+	assert.match(member, /^\ttitle = "Hi"$/m);
+	// A file with no <NoHydration> is untouched (and so is the server's copy).
+	assert.match(transpileModule("import pf.Html\n\nview! = |{ params }|\n\t<main><NoHydration><p>{params.lang}</p></NoHydration></main>\n", "P.rocx", { module: "P" }).code, /^view! = \|\{ params \}\|$/m);
+});
+
 test("<NoHydration>: a handler, a key or a transition written inside is refused (it would never run), as is one with attributes", () => {
 	const refused = (inner) => {
 		try {

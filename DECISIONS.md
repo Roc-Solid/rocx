@@ -1939,3 +1939,29 @@ Server.Request : { method, path, query, headers, body, route, peer : Str }
 
 **Why.** The host had the address and threw it away; a record keeps the call stable as the host
 learns more of a request. **Reversible:** yes, at the cost of the field.
+
+## D-044 A name only `<NoHydration>` used is unbound in the browser's copy
+
+**Context.** The browser's copy of a `.rocx` file drops a `<NoHydration>`'s children, and the imports
+only they used. A name only they used stayed: a page whose `params` (or a local, `lang =
+params.lang`) is read only inside `<NoHydration>` was an unused variable in the browser's copy. Roc
+warned, `roc build` exited 2, and a script that reads that as failure (packages/testing's
+`buildForTests`) failed the app. examples/journal read its params in a `<Title>` too, to get round
+it.
+
+**Options.**
+1. Rewrite such a name where it is bound, in the browser's copy only.
+2. Let the browser's build pass on warnings (exit 2): it would hide the app's own warnings too.
+3. Leave it, and document it.
+
+**Choice.** 1. rocx compares the two copies: a name the server's copy uses, whose one occurrence
+left in the browser's is where it is bound, is rewritten there.
+
+- A field of a record pattern: `|{ params }|` is `|{ params: _ }|`.
+- A lambda's parameter: `|props|` is `|_props|`.
+- A local definition in a function's body: `lang = params.lang` is `_lang = params.lang`.
+- Anything else (a member of a block, which another module may read; a place it can't read for
+  certain) is left as it is, and warns as before. The server's copy is never touched.
+
+**Why.** The warning was rocx's doing, not the app's. **Reversible:** yes.
+

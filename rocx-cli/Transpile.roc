@@ -2104,6 +2104,155 @@ Transpile := [].{
 		Str.join_with(kept, "\n")
 	}
 
+	## The browser's copy with each name that only what it drops used (a `<NoHydration>`'s children)
+	## rewritten where it is bound, so the compiler doesn't warn that it is unused (a warning is
+	## `roc build`'s exit code 2, which a script reads as a failure): a field of a record pattern,
+	## `|{ params }|`, is `params: _`; a lambda's parameter, `|props|`, or a definition, `lang = …`,
+	## takes a `_` (`_props`, `_lang = …`). Only a name the server's copy uses, whose one occurrence
+	## left in the browser's is where it is bound; one in a place this can't tell is left as it is.
+	without_server_bindings : Str, Str -> Str
+	without_server_bindings = |browser, server| {
+		code = browser.to_utf8()
+		server_code = server.to_utf8()
+		var $out = code
+		var $shift = 0
+		for name in Transpile.bound_names(code) {
+			found = Transpile.occurrences(code, name)
+			if found.len() == 1 and Transpile.occurrences(server_code, name).len() > 1 {
+				at = found.first() ?? 0
+				match Transpile.unbound(code, at, name) {
+					Ok(rewritten) => {
+						$out = $out.take_first(at + $shift).concat(rewritten.to_utf8()).concat($out.drop_first(at + $shift + name.count_utf8_bytes()))
+						$shift = $shift + rewritten.count_utf8_bytes() - name.count_utf8_bytes()
+					}
+					Err(Unsure) => {}
+				}
+			}
+		}
+		Str.from_utf8_lossy($out)
+	}
+
+	## Where `name` occurs in `code` as a name: not part of a longer one (`params` isn't in
+	## `params2`, `intl` isn't `intl!`) and not a field read (`.params`), in the order it occurs.
+	occurrences : List(U8), Str -> List(U64)
+	occurrences = |code, name| {
+		needle = name.to_utf8()
+		size = needle.len()
+		var $found = []
+		var $i = 0
+		while $i < code.len() {
+			match Text.index_of(code, needle, $i) {
+				Ok(k) => {
+					before = if (k == 0) ' ' else Text.at(code, k - 1)
+					after = Text.at(code, k + size)
+					longer = Transpile.is_alnum_under(after) or (after == '!' and Text.at(code, k + size + 1) != '=' and !name.ends_with("!"))
+					if !(Transpile.is_alnum_under(before) or before == '.' or before == '$') and !longer {
+						$found = $found.append(k)
+					}
+					$i = k + 1
+				}
+				Err(_) => {
+					$i = code.len()
+				}
+			}
+		}
+		$found
+	}
+
+	## The names the code binds that a rewrite may touch: each lowercase word followed, past spaces,
+	## by `,`, `}`, `|` or a lone `=` (a pattern's field, a parameter, a definition), each once.
+	bound_names : List(U8) -> List(Str)
+	bound_names = |code| {
+		var $names = []
+		var $i = 0
+		while $i < code.len() {
+			b = Text.at(code, $i)
+			before = if ($i == 0) ' ' else Text.at(code, $i - 1)
+			if Text.is_lower(b) and !(Transpile.is_alnum_under(before) or before == '.' or before == '$' or before == '"') {
+				var $j = $i
+				while $j < code.len() and Transpile.is_alnum_under(Text.at(code, $j)) {
+					$j = $j + 1
+				}
+				if Text.at(code, $j) == '!' and Text.at(code, $j + 1) != '=' {
+					$j = $j + 1
+				}
+				name = Str.from_utf8_lossy(code.sublist({ start: $i, len: $j - $i }))
+				next = Text.at(code, Text.skip_space(code, $j))
+				single = next == '=' and Text.at(code, Text.skip_space(code, $j) + 1) != '='
+				if (next == ',' or next == '}' or next == '|' or single) and !$names.contains(name) {
+					$names = $names.append(name)
+				}
+				$i = $j
+			} else {
+				$i = $i + 1
+			}
+		}
+		$names
+	}
+
+	## `name` at `at`, rewritten so it binds nothing the compiler would call unused: in a record
+	## pattern, `name: _`; a lambda's parameter or a definition at the start of its line, `_name`.
+	## `Unsure` anywhere else.
+	unbound : List(U8), U64, Str -> Try(Str, [Unsure])
+	unbound = |code, at, name| {
+		end = at + name.count_utf8_bytes()
+		next_at = Text.skip_space(code, end)
+		next = Text.at(code, next_at)
+		var $start = at
+		while $start > 0 and Text.at(code, $start - 1) != '\n' {
+			$start = $start - 1
+		}
+		lead = code.sublist({ start: $start, len: at - $start })
+		if lead.all(|b| b == ' ' or b == '\t') {
+			# A definition: a local in a function's body (the nearest line above, less indented, has a
+			# lambda), never a member of a block or the module, which another module may read.
+			definition = next == '=' and Text.at(code, next_at + 1) != '='
+			return if (definition and !lead.is_empty() and Transpile.in_lambda(code, $start, lead.len())) Ok("_${name}") else Err(Unsure)
+		}
+		# Inside what, on its own line: the nearest `{` or `|` before it that isn't closed.
+		var $depth = 0
+		var $k = at
+		var $inside = Nothing
+		while $k > $start and $inside == Nothing {
+			$k = $k - 1
+			c = Text.at(code, $k)
+			if c == '}' {
+				$depth = $depth + 1
+			} else if c == '{' and $depth == 0 {
+				$inside = Braces
+			} else if c == '{' {
+				$depth = $depth - 1
+			} else if c == '|' and $depth == 0 {
+				$inside = Bars
+			}
+		}
+		match $inside {
+			Braces if next == ',' or next == '}' => Ok("${name}: _")
+			Bars if next == ',' or next == '|' => Ok("_${name}")
+			_ => Err(Unsure)
+		}
+	}
+
+	## Whether the nearest line above the one at `start` that isn't blank and is indented less than
+	## `indent` has a lambda (`|`): a definition there is a local of its body.
+	in_lambda : List(U8), U64, U64 -> Bool
+	in_lambda = |code, start, indent| {
+		var $end = start
+		while $end > 0 {
+			var $begin = $end - 1
+			while $begin > 0 and Text.at(code, $begin - 1) != '\n' {
+				$begin = $begin - 1
+			}
+			line = code.sublist({ start: $begin, len: $end - 1 - $begin })
+			lead = line.take_first(line.find_first_index(|b| b != ' ' and b != '\t') ?? line.len())
+			if lead.len() < line.len() and lead.len() < indent {
+				return line.contains('|')
+			}
+			$end = $begin
+		}
+		Bool.False
+	}
+
 	## `transpile`, and what the file has besides its code (`Module`). A <style> may come after the markup
 	## it styles: a first run finds them, and a second, when there are any, gives each element the classes
 	## of those whose markup it is in.
@@ -2141,7 +2290,7 @@ Transpile := [].{
 			if opts.client and (second.st.regions > 0 or kept != body0) {
 				server_cfg = Transpile.new_cfg(source, file, { ..opts, client: Bool.False }, scopes)?
 				server = Transpile.read_code(server_cfg, Transpile.fresh, Bool.False)?
-				Transpile.without_server_imports(kept, server.out)
+				Transpile.without_server_bindings(Transpile.without_server_imports(kept, server.out), server.out)
 			} else {
 				body0
 			}

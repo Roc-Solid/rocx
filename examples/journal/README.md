@@ -135,13 +135,15 @@ and start the server on a free port. They don't use `DATABASE_URL`.
 
 ## What it asked of the platform
 
-Every gap met, and what the journal does about it. Five were fixed in the platform while it was
+Every gap met, and what the journal does about it. Six were fixed in the platform while it was
 built: a route's directory may now name a file (`routes/sitemap.xml/`); packages/markdown parses
 footnotes; packages/testing's `click()` scrolls instantly, so it no longer misses on a page with
 `scroll-behavior: smooth`; a `<For>` or `<Show>` may sit in a function child (the reactions'
 `<For>` is in their `<Show>`'s child); and a request carries the address of the connection it came
 on (`Server.Request`'s `peer`, D-041), so guard's limit can count a reader without a cookie by
-address. These are still open:
+address; and a page may read its params only inside `<NoHydration>` (D-044: the browser's copy
+unbinds them; the pages here read theirs in a `<Title>` too, which they want anyway). These are
+still open:
 
 1. **Collections aren't found by `rocx build`** (packages/markdown's PROPOSALS.md). Each post is
    imported as text and listed in `Posts.files`.
@@ -149,23 +151,18 @@ address. These are still open:
    packages"). `Guard.roc`, `FlagStore.roc` and `Kept.roc` are verbatim copies of
    `packages/guard/server/`. Its tallies are actors' state, not `Kv` yet ("Memory: state between
    requests"). With a database, each limited request writes to Postgres.
-3. **A page whose params are read only inside `<NoHydration>` doesn't build for the browser.** The
-   browser's copy drops `<NoHydration>`'s children, so `params` is unused. Roc warns, exits 2, and
-   `buildForTests` throws. Every page reads its params outside it too, in its `<Title>` or an
-   island's props. `<Title>` and `<HttpStatusCode>` work from inside `<NoHydration>`, which is how a
-   post's title and a missing post's 404 are set.
-4. **`<HttpStatusCode>` is effectful**, so a component that sets the status is a `view!`
+3. **`<HttpStatusCode>` is effectful**, so a component that sets the status is a `view!`
    (`Ui/NotFound.rocx`). Pure callers still write `<NotFound … />`, and rocx wraps it.
-5. **guard's CSP refuses the OpenAPI page**, which loads Scalar from jsDelivr. `Middlewares.security`
+4. **guard's CSP refuses the OpenAPI page**, which loads Scalar from jsDelivr. `Middlewares.security`
    leaves `/openapi.html` out, and every other answer has the headers.
-6. **`node --test examples/journal/test/` fails on Node 24**: a directory is taken as a module
+5. **`node --test examples/journal/test/` fails on Node 24**: a directory is taken as a module
    ("Cannot find module"). Use the glob, `node --test 'examples/journal/test/*.test.mjs'`.
-7. **The OpenAPI document gives the reactions' `POST` a JSON body only**, though the endpoint takes
+6. **The OpenAPI document gives the reactions' `POST` a JSON body only**, though the endpoint takes
    the same fields as a form, which is what the no-JavaScript buttons send (server/README.md, "Not
    yet").
-8. **The browser's copy of `Api` has no types** (known, D-030). The search's `posts` and the
+7. **The browser's copy of `Api` has no types** (known, D-030). The search's `posts` and the
     reactions' `toggles : Submissions(Reaction.Toggle, Reaction.Tally)` are annotated.
-9. **The Roc gotchas met:**
+8. **The Roc gotchas met:**
     - `{ lang }` alone is a block, not a record (`Paths.lang({ lang: lang })`).
     - A parameter can't share a name with a member of its type's block (hence `Rules.of_title`, …).
     - `join_with` is `Str.join_with(list, sep)`, not a method of a list.

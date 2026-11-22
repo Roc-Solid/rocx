@@ -247,7 +247,9 @@ same components natively; this one hydrates them.
     answers script, since the browser never reads it.
   - **In the browser's copy** of a `.rocx` file (`rocx build --client`), it has no children, and an
     import only they used is gone, as one only a route file's `middleware` used is: none of it is in
-    the wasm. What is left is a placeholder. Hydrating passes over the server's nodes between the markers, and never builds,
+    the wasm. A name only they used is rewritten where it is bound, a record pattern's field as
+    `params: _`, a parameter or a local as `_lang`, so the browser's build has no warning of it
+    (D-044). What is left is a placeholder. Hydrating passes over the server's nodes between the markers, and never builds,
     adopts or patches them. A `<body>` rendered again after a mismatch keeps the server's regions,
     in order. One the browser builds where the server rendered none (a
     `<Show>` switching to a part that has one) is empty, with a warning.
