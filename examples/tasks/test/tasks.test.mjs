@@ -106,13 +106,14 @@ test("the filters are links, and the counts beside them follow the tasks", { ski
 	mine.dom.getByText("Say who you are (at the top) to see your tasks.");
 });
 
-test("a list or a task that isn't there is a 404", { skip }, async () => {
+test("a list or a task that isn't there is a 404: the app's error page, as a path no page has is", { skip }, async () => {
 	const person = app.client();
-	assert.equal((await person.get("/lists/999")).status, 404);
-	assert.equal((await person.get("/lists/nope")).status, 404);
-	const task = await person.get("/tasks/999");
-	assert.equal(task.status, 404);
-	task.dom.getByRole("heading", { name: "There's no such task" });
+	for (const path of ["/lists/999", "/lists/nope", "/tasks/999"]) {
+		const missing = await person.get(path);
+		assert.equal(missing.status, 404, path);
+		missing.dom.getByRole("heading", { name: "There's nothing here" });
+		assert.equal(missing.dom.getByRole("link", { name: "Back to your lists" }).attr("href"), "/");
+	}
 	assert.equal((await person.get("/no/such/page")).status, 404);
 	assert.equal((await person.read("/lists/999").catch((error) => error.status)), 404);
 });

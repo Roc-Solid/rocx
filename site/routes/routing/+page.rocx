@@ -55,7 +55,7 @@ view! = |_|
 						<tr><td><code>+layout.rocx</code></td><td>around every page in its directory and below</td></tr>
 						<tr><td><code>routes/blog/+server.roc</code></td><td>the endpoints at <code>/blog</code>: <code>get!</code>, <code>post!</code>, <code>put!</code>, <code>patch!</code>, <code>delete!</code>, and <code>events!</code>, a stream; <code>respond!</code>, any other method, answered as it likes</td></tr>
 						<tr><td><code>routes/.well-known/…</code></td><td>routed, as RFC 8615 has it; another directory starting with a dot isn't</td></tr>
-						<tr><td><code>routes/+error.rocx</code></td><td>what a path nothing answers shows, with the status 404</td></tr>
+						<tr><td><code>routes/+error.rocx</code></td><td>what a path nothing answers shows, with the status 404, and a page that failed (404 when its data isn't there, else 500)</td></tr>
 						<tr><td><code>middleware = …</code></td><td>in a page or a <code>+server</code>: what it runs behind</td></tr>
 					</tbody>
 				</table>
@@ -358,7 +358,9 @@ view! = |_|
 			<Heading id="error">Where no page is</Heading>
 			<p>
 				<code>routes/+error.rocx</code> renders what a path nothing answers shows, in the layouts at the root,
-				for a browser, and the status is 404. This site's lists the pages of the part of the docs the path is in (try <a href="/nowhere">/nowhere</a>, or <a href="/platform/nowhere">/platform/nowhere</a>):
+				for a browser, and the status is 404. It is also what a page shows when it fails and nothing in it
+				catches that: a read its endpoint refused with a 4xx keeps that status (<code>NotFound</code>, the
+				page's 404), and anything else is a 500. This site's lists the pages of the part of the docs the path is in (try <a href="/nowhere">/nowhere</a>, or <a href="/platform/nowhere">/platform/nowhere</a>):
 			</p>
 			<Code title={Sources.route_error.file} source={Sources.route_error.rocx} />
 

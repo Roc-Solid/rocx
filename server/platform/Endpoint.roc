@@ -55,8 +55,14 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	## - Asked again later (`refresh!`), the browser GETs the endpoint's URL.
 	##
 	## An answer that isn't 200 fails the computation: the nearest <Errored> shows its status and
-	## why (`GET /api/likes: 500: the database is down`). A redirect, while the page renders (a signed-out visitor sent to sign in), is the page's
-	## answer instead. `with_query` adds a query.
+	## why (`GET /api/likes: 500: the database is down`). One no <Errored> of the page's catches
+	## reaches the app's root one (rocx writes it), and the page is the app's error page
+	## (`+error.rocx`), answered with the refusal's status when it is a 4xx (`GET /notes/9: 404: Not
+	## found` is a 404, as a path no page has is: `Errored.status_of`), else 500. A boundary of the
+	## page's own that catches it shows its fallback, as it would in the browser, and the page is
+	## answered as it is (200, unless the fallback says otherwise with `<HttpStatusCode>`). A
+	## redirect, while the page renders (a signed-out visitor sent to sign in), is the page's answer
+	## instead. `with_query` adds a query.
 	get! : Endpoint(context, {}, result) => result
 		where [result.Json.Parseable([InvalidJson(Str)])]
 	get! = |endpoint|

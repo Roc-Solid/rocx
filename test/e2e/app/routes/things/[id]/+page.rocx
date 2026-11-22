@@ -1,0 +1,9 @@
+import pf.Html
+import pf.Endpoint
+import ../../../Generated/Api
+
+meta = { title: "A thing" }
+
+## A thing, read from this path's endpoint with `get!`: one that isn't there is the app's error
+## page, 404; a shelf that is down, 500.
+view! = |{ params }| <p class="thing">{Endpoint.get!(Api.get_things_id({ id: params.id }))}</p>

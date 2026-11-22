@@ -271,6 +271,17 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		const broken = await get("/broken");
 		assert.equal(broken.status, 500);
 		assert.match(broken.html, /<title>Broken<\/title>.*<main><!--errored:failed--><section class="error"><h1><!--x-->500<!--\/x--><\/h1> <p class="problem"><!--x-->nothing above provides Generated\/BrokenPage\.missing[^<]*<!--\/x--><\/p><\/section><!--\/errored--><\/main>/, "the error page, inside the layout");
+		// A page whose read its endpoint refuses (`Endpoint.get!`): a 404 is the page's 404, the error
+		// page with why; a 5xx is a 500, as any failure is.
+		const thing = await get("/things/1");
+		assert.equal(thing.status, 200);
+		assert.match(thing.html, /<p class="thing"><!--x-->Thing 1<!--\/x--><\/p>/);
+		const gone = await get("/things/gone");
+		assert.equal(gone.status, 404, "not a 500: the data isn't there");
+		assert.match(gone.html, /<title>A thing<\/title>.*<main><!--errored:failed--><section class="error"><h1><!--x-->404<!--\/x--><\/h1> <p class="problem"><!--x-->GET \/things\/gone: 404: Not found<!--\/x--><\/p><\/section><!--\/errored--><\/main>/, "the app's error page, with the status and why");
+		const down = await get("/things/down");
+		assert.equal(down.status, 500);
+		assert.match(down.html, /<h1><!--x-->500<!--\/x--><\/h1> <p class="problem"><!--x-->GET \/things\/down: 503: the shelf is down<!--\/x--><\/p>/);
 		assert.deepEqual([(await get("/members")).status, (await get("/members")).html], [401, "members only"]);
 		// The jobs page, a plugin's page: behind the app's middleware (its header), then its guard.
 		assert.deepEqual(await get("/admin/jobs"), { status: 401, app: "e2e", html: "members only" }, "the guard refuses a stranger");
@@ -306,7 +317,7 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		// recorded (nothing is answered that the page didn't record): byte for byte outside each
 		// <NoHydration>, and inside it the native page's own, which only the server renders.
 		const runtime = await Runtime.load(wasmBytes);
-		for (const [path, headers, native, regions] of [["/", [], home, 1], ["/posts/hello", [], post, 0], ["/local", [], local, 0], ["/nope", [], missing, 0], ["/broken", [], broken, 0], ["/members", [["cookie", "member=Ada"]], member, 1], ["/__rocx/stories/Counter/at-ten", [], story, 0]]) {
+		for (const [path, headers, native, regions] of [["/", [], home, 1], ["/posts/hello", [], post, 0], ["/local", [], local, 0], ["/nope", [], missing, 0], ["/broken", [], broken, 0], ["/things/gone", [], gone, 0], ["/things/down", [], down, 0], ["/members", [["cookie", "member=Ada"]], member, 1], ["/__rocx/stories/Counter/at-ten", [], story, 0]]) {
 			const answers = JSON.parse(/<script type="application\/json" class="rocx-answers">(.*?)<\/script>/.exec(native.html)[1]);
 			assert.equal(Runtime.regionsOf(native.html).length, regions, `${path}'s <NoHydration>s`);
 			assert.equal(runtime.renderToString({ path, headers, answers, regions: Runtime.regionsOf(native.html) }).html, native.html, path);
@@ -323,6 +334,7 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 			["/local", "document.querySelector('.local .board').textContent === '0' && document.querySelector('.local .tag').textContent === 'its own' && document.title === 'Local 0'"],
 			["/nope", "document.querySelector('.error h1').textContent === '404' && performance.getEntriesByType('navigation')[0].responseStatus === 404"],
 			["/broken", "document.querySelector('main .error h1').textContent === '500' && document.querySelector('.broken') === null && performance.getEntriesByType('navigation')[0].responseStatus === 500"],
+			["/things/gone", "document.querySelector('main .error h1').textContent === '404' && document.querySelector('.thing') === null && performance.getEntriesByType('navigation')[0].responseStatus === 404"],
 			["/__rocx/stories/Counter/at-ten", "document.querySelector('main .count').textContent === 'Clicked 10' && document.title === 'Home'"],
 		]) {
 			const tab = await strictTab(browser);
@@ -342,7 +354,7 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 				await tab.click(".bump");
 				await tab.wait("document.querySelector('.local .board').textContent === '1' && document.title === 'Local 1'");
 				assert.equal(await tab.eval("[...document.head.querySelectorAll('title')].map((title) => title.textContent).join(' | ')"), "Local 1 | Local", "the page's <Title>, kept by the browser, before the layout's own");
-			} else assert.equal(await tab.eval("window.ready.runtime.stats.patches"), path === "/broken" ? 3 : 0, "a boundary that failed on the server is built again: its inside runs again, and fails again, and the error page's two holes that read its props (getters, D-039) are made with it");
+			} else assert.equal(await tab.eval("window.ready.runtime.stats.patches"), path === "/broken" || path === "/things/gone" ? 3 : 0, "a boundary that failed on the server is built again: its inside runs again, and fails again, and the error page's two holes that read its props (getters, D-039) are made with it");
 		}
 		const tab = await strictTab(browser);
 		await tab.goto(`${server.url}/`);

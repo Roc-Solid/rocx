@@ -8,7 +8,6 @@ import ../../../Middlewares
 import ../../../Note
 import ../../../Pages
 import ../../../Generated/Api
-import ../../../Ui/Missing
 import ../../../Ui/Prose
 import ../../../Ui/Topbar
 
@@ -18,11 +17,9 @@ middleware = Middlewares.signed_in
 
 meta = { title: "Note · Acme Notes" }
 
-view! = |{ params }|
-	match Endpoint.read!(Api.get_notes_id({ id: params.id })) {
-		Ok(first) => <Shown id={params.id} first={first} />
-		Err(problem) => <Missing problem={problem} />
-	}
+## A note that isn't there, or isn't yours (its endpoint refuses both alike, so nobody learns which
+## ids are someone else's), is the app's error page, a 404 (`get!` fails the page).
+view! = |{ params }| <Shown id={params.id} first={Endpoint.get!(Api.get_notes_id({ id: params.id }))} />
 
 ## The note, once it is found: what the page shows of it, read again (`opened!`) where a button
 ## changes it.

@@ -3,7 +3,6 @@ import pf.Endpoint
 import pf.Show
 import pf.For
 import pf.Title
-import pf.HttpStatusCode
 import forms.LiveForm
 import forms.TextField
 import forms.CheckboxField
@@ -17,20 +16,11 @@ import ../../../Generated/Paths
 ## (`POST /tasks/:id`), whose endpoint reads the form with `TaskForm.editing` (packages/forms) and
 ## sends you back to the list, or refuses it (422) with each field's issues, which show here under
 ## their fields, with what was typed: without JavaScript the browser posts and comes back (a 303,
-## and a flash); with it, the runtime sends the form with fetch and the page stays.
+## and a flash); with it, the runtime sends the form with fetch and the page stays. A task that
+## isn't there is the app's error page, a 404 (its endpoint refuses it, and `get!` fails the page).
 meta = { title: "A task" }
 
-view! = |{ params, .. }|
-	match Endpoint.read!(Api.get_tasks_id({ id: params.id })) {
-		Ok(detail) => <Editor detail={detail} />
-		Err(_) =>
-			<section class="missing">
-				<HttpStatusCode code={404} />
-				<Title>No such task · Acme Tasks</Title>
-				<h1>There's no such task</h1>
-				<p>It may have been deleted. <a href={Paths.root}>See all the lists</a></p>
-			</section>
-	}
+view! = |{ params, .. }| <Editor detail={Endpoint.get!(Api.get_tasks_id({ id: params.id }))} />
 
 ## The form, filled in with the task as it is (`LiveForm.filled!`), checked as it is typed with the
 ## same `TaskForm.editing` the endpoint reads it with; after a refusal, what was typed and the
@@ -123,7 +113,6 @@ Field := [].{
 	}
 
 	.crumb a,
-	.missing a,
 	.actions a {
 		color: var(--accent-strong);
 		font-weight: 600;

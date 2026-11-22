@@ -327,8 +327,12 @@ describe("Acme Notes over HTTP", { skip: noDatabase }, () => {
 		const theirs = bos["Telemetry dashboard"];
 
 		// Pages and their endpoints: as if the note weren't there.
-		assert.equal((await ada.get(`/notes/${theirs}`)).status, 404);
-		assert.equal((await ada.get(`/notes/${theirs}/edit`)).status, 404);
+		for (const path of [`/notes/${theirs}`, `/notes/${theirs}/edit`, "/notes/99999999", "/notes/99999999/edit"]) {
+			const missing = await ada.get(path);
+			assert.equal(missing.status, 404, path);
+			missing.dom.getByRole("heading", { name: "There's no page here" });
+			missing.dom.getByText("The note may have been deleted, or the address is wrong.");
+		}
 		assert.equal((await ada.json(`/notes/${theirs}`, undefined, "GET")).status, 404);
 		await ada.get("/");
 		await ada.post(`/notes/${theirs}`, { action: "archive" });

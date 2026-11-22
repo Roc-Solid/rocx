@@ -146,6 +146,14 @@ view! = |_|
 				page's visitors: nothing is above the root layout to catch a failure there, so it puts an
 				<code>{"<Errored>"}</code> around the holes that read, or the page is a 500.
 			</p>
+			<p>
+				A failure no <code>{"<Errored>"}</code> of the page's catches is the app's error page
+				(<code>routes/+error.rocx</code>), and its status is the refusal's when that is a 4xx: a page whose
+				endpoint answers <code>NotFound</code> (a note that isn't there) is a 404, as a path no page has is,
+				with the status and why. A 5xx, or no answer, is a 500. An <code>{"<Errored>"}</code> of the page's
+				own that catches it shows its fallback instead, and the page is answered as it is, unless the
+				fallback says otherwise with <code>{"<HttpStatusCode>"}</code>.
+			</p>
 
 			<Heading id="user">Who is asking</Heading>
 			<p>

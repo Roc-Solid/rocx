@@ -6,7 +6,6 @@ import pf.Server
 import pf.Show
 import pf.For
 import pf.Title
-import pf.HttpStatusCode
 import ../../../Tasks
 import ../../../Generated/Api
 import ../../../Generated/Paths
@@ -17,17 +16,16 @@ import ../../../components/FilterTabs
 ## A list: its tasks, filtered by the address (`?show=open`), with a box to tick on each, buttons
 ## to move and delete, and the form that adds one. Its data is its own URL's (`GET /lists/:id`,
 ## in `+server.roc` beside this file), read in a memo: once a change is in, the runtime reads it
-## again, and shows the server's list in place of the one it guessed.
+## again, and shows the server's list in place of the one it guessed. A list that isn't there is
+## the app's error page, a 404: its endpoint refuses it (`NotFound`), and `get!` fails the page.
 meta = { title: "A list" }
 
 view! = |{ params, .. }| {
 	page = Api.get_lists_id({ id: params.id })
-	sheet! : () => Try(Tasks.Sheet, Server.Problem)
-	sheet! = create_memo!(|| Endpoint.read!(page))
+	sheet! : () => Tasks.Sheet
+	sheet! = create_memo!(|| Endpoint.get!(page))
 	location = Router.location!({})
-	<Show when!={sheet!()} fallback={<Missing />}>
-		{|found!| <Board list={params.id} sheet!={found!()} stale!={is_pending!(sheet!)} reload!={refresh!(sheet!)} filter={Tasks.filter_of(location.query)} path={location.path} />}
-	</Show>
+	<Board list={params.id} sheet!={sheet!()} stale!={is_pending!(sheet!)} reload!={refresh!(sheet!)} filter={Tasks.filter_of(location.query)} path={location.path} />
 }
 
 ## The list, once it has been read: `sheet!` is the server's, `stale!` whether it is being read
@@ -165,18 +163,6 @@ Board := [].{
 		}
 }
 
-## A list that isn't there (deleted, or never was): a 404.
-Missing := [].{
-	view! : {} => Html
-	view! = |{}|
-		<section class="missing">
-			<HttpStatusCode code={404} />
-			<Title>No such list · Acme Tasks</Title>
-			<h1>There's no such list</h1>
-			<p><a href={Paths.root}>See all the lists</a></p>
-		</section>
-}
-
 <style>
 	.board {
 		display: grid;
@@ -244,10 +230,5 @@ Missing := [].{
 		color: inherit;
 		font: inherit;
 		cursor: pointer;
-	}
-
-	.missing a {
-		color: var(--accent-strong);
-		font-weight: 600;
 	}
 </style>

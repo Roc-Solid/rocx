@@ -321,8 +321,9 @@ writes more for it:
 - `Generated/Root.roc`, in both copies: `Root.view!` reads `Router.location!`, matches it as
   `Routes` does, and renders the page in its layouts. The root layout is the document (with none, a
   default one). Inside it, around the rest, an `<Errored>`: a failure nothing else catches is the
-  error page with `<HttpStatusCode code={500}/>`. A path no page has is the error page with
-  `<HttpStatusCode code={404}/>`.
+  error page with `<HttpStatusCode code={500}/>`, or the status a read was refused with, when it is
+  a 4xx (`Endpoint.get!` of a note that isn't there is the page's 404: `Errored.status_of`). A path
+  no page has is the error page with `<HttpStatusCode code={404}/>`.
 - In `Routes`, a component page's GET runs its route file's middleware, then answers `Root`'s page
   (`Routes.page(200)`); a path nothing has is `Routes.page(404)` for a browser, text otherwise.
 - With `--client <out>`, `<out>/main.roc`, the browser's app (`Root.view!`), and

@@ -265,7 +265,7 @@ test("Root: the page at where it is, in its layouts, the root layout's <Errored>
 	);
 	assert.match(root, /\} else if \(segments == \[\]\) \{\n\t\t\tparams = \{\}\n\t\t\tHtml\.component\(\|\| RootLayout\.view!\(\{ params: \|\| params, meta: \|\| \{\}, children: \[Root\.guarded!\(\[Html\.component\(\|\| RootPage\.view!\(\{ params: \|\| params \}\)\)\]\)\] \}\)\)/, "a page with no meta: {}");
 	assert.match(root, /\t\t\} else \{\n\t\t\tparams = \{\}\n\t\t\tHtml\.component\(\|\| RootLayout\.view!\(\{ params: \|\| params, meta: \|\| RootError\.meta, children: \[Root\.failed\(404, "nothing at \$\{path\}"\)\] \}\)\)\n\t\t\}/, "no page: the error page, in the root layout");
-	assert.match(root, /\tguarded! = \|children\| Errored\.view!\(\{ fallback: \|problem, _retry\| Root\.failed\(500, problem\), children: children \}\)/);
+	assert.match(root, /\tguarded! = \|children\| Errored\.view!\(\{ fallback: \|problem, _retry\| Root\.failed\(Errored\.status_of\(problem\), problem\), children: children \}\)/, "its status the failure's: a refused read's 4xx, else 500");
 	assert.match(root, /\tfailed = \|status, problem\| Html\.join\(\[Html\.component\(\|\| HttpStatusCode\.view!\(\{ code: status \}\)\), Html\.component\(\|\| RootError\.view!\(\{ status: \|\| status, problem: \|\| problem \}\)\)\]\)/);
 	assert.doesNotMatch(root, /document|Styles/, "the root layout is the document");
 	// No root layout, no error page: a default document, and a default error page.

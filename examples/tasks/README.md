@@ -42,7 +42,7 @@ each piece is where it is.
 | A cookie set and cleared by an endpoint, then a redirect | [`routes/me/+server.roc`](routes/me/+server.roc) |
 | Postgres: migrations, and a seed that is safe to run twice | [`migrations/0001_tables.sql`](migrations/0001_tables.sql), [`0002_seed.sql`](migrations/0002_seed.sql) |
 | `Db.all!`, `Db.run!`, a transaction, typed rows, `Db.Nullable` for the optional fields | [`Store.roc`](Store.roc) (`Row`, `task_of`, `move!`) |
-| Pages that read endpoints: `Endpoint.get!` in a memo, `Endpoint.read!` for a 404 | [`+layout.rocx`](routes/+layout.rocx), [`lists/[id]/+page.rocx`](routes/lists/[id]/+page.rocx), [`tasks/[id]/+page.rocx`](routes/tasks/[id]/+page.rocx) |
+| Pages that read endpoints with `Endpoint.get!` (in a memo, for the list): one its endpoint refuses with `NotFound` is the error page, a 404 | [`+layout.rocx`](routes/+layout.rocx), [`lists/[id]/+page.rocx`](routes/lists/[id]/+page.rocx), [`tasks/[id]/+page.rocx`](routes/tasks/[id]/+page.rocx) |
 | Rules written once, run by the server and the browser, with expects | [`Tasks.roc`](Tasks.roc) (filters, toggles, moves, places, due badges) |
 | Forms with packages/forms: one schema for the page and the endpoint; issues in place, with what was typed | [`TaskForm.roc`](TaskForm.roc), [`components/AddTask.rocx`](components/AddTask.rocx) (`LiveForm`, `<TextField>`), [`routes/lists/[id]/+server.roc`](routes/lists/[id]/+server.roc) (`Issues.refusal`) |
 | An edit form that starts filled in, and an add form that starts afresh once it is accepted | [`routes/tasks/[id]/+page.rocx`](routes/tasks/[id]/+page.rocx) (`LiveForm.filled!`), [`components/AddTask.rocx`](components/AddTask.rocx) (`accepted!`, `reset!`) |
@@ -143,11 +143,12 @@ Two more were fixed in rocx and the platform since (9, 10).
    (`team! : () => Tasks.Team`, `toggles : Submissions(Tasks.Toggle, {})`), or the browser's
    program didn't compile ("This decodes a record whose full set of fields is not known"). (Fixed
    in the platform since: the browser's copy of `Api` has the endpoints' types, copied from each
-   handler's annotation (D-037), so the annotations are gone; the list's `sheet!` keeps its, which
-   says a refusal is a value there.)
-6. **`Endpoint.get!` of a 404 is a 500 page.** A refusal fails the read, and the root `<Errored>`
-   answers 500. The list and task pages read with `Endpoint.read!` and show their own 404
-   (`<HttpStatusCode code={404} />`); any refusal shows as "no such list", a failing database too.
+   handler's annotation (D-037), so the annotations are gone; the list's `sheet!` keeps its.)
+6. **Fixed: `Endpoint.get!` of a 404 was a 500 page.** A refusal failed the read, and the root
+   `<Errored>` answered 500, so the list and task pages read with `Endpoint.read!` and showed their
+   own 404, for any refusal (a failing database too). Now a read its endpoint refuses with a 4xx
+   makes the page that status, with the app's error page (`routes/+error.rocx`), as a path no page
+   has does; a 5xx is still a 500. Both pages read with `get!`.
 7. **A plain form and the runtime need different answers from delete.** From the task's own page a
    browser should go to the list, not back to the deleted task; from the list, the runtime wants
    JSON. `Endpoint.posted_by` is private, so the endpoint asks `Server.wants_html(request)`.

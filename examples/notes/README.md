@@ -52,9 +52,9 @@ person sees only their own notes, whichever way they ask.
 | Appends that never overwrite each other (one statement) | `Store.append!` |
 | Tags, pinning and archiving | `Notebook.tag!`, `pin!`, `archive!`; `routes/notes/[id]/+server.roc` |
 | Pages that read their own endpoint, typed for both halves | `Pages.roc`, each page's `Endpoint.get!` / `read!` |
-| A 404 for a note that isn't there or isn't yours (the same page, so ids tell nothing) | `Ui/Missing.rocx` (`<HttpStatusCode>`) |
+| A 404 for a note that isn't there or isn't yours (the same page, so ids tell nothing): the endpoint refuses both alike, and `Endpoint.get!` makes the page the app's error page | `routes/notes/[id]/+page.rocx`, `routes/+error.rocx` |
 | Forms without JavaScript, and the same forms sent by the page with it (`use_submission!`) | every `<form method="post">` |
-| Pure and effectful components: `view` for what only shows its props, `view!` for what keeps state or sets the status | `Ui/NoteCard.rocx`, `Ui/Topbar.rocx`, `Ui/Prose.rocx` (pure); `Ui/Editor.rocx`, `Ui/Missing.rocx` (effectful) |
+| Pure and effectful components: `view` for what only shows its props, `view!` for what keeps state or sets the status | `Ui/NoteCard.rocx`, `Ui/Topbar.rocx`, `Ui/Prose.rocx` (pure); `Ui/Editor.rocx` (effectful) |
 | Scoped styles and a look of its own (ink, paper, a highlighter), light and dark, narrow screens | each component's `<style>`; the tokens in `routes/+layout.rocx` |
 | Stories for the components (`rocx build --dev`, `/__rocx/stories`) | `<story>` in `Ui/*.rocx` |
 | Postgres by migrations, and an idempotent seed | `migrations/` |
@@ -236,8 +236,10 @@ What the app met, and how it works around each. None needed a change outside the
    body field named as a param is a problem `Mcp.problems` reports.)
 4. **Every field of a tool's arguments is required** (packages/mcp's README), so an agent sends
    `"tags": []` to `create_note`. The search box's `#tag` syntax keeps `search_notes` to one field.
-5. **`Endpoint.get!` of a 404 makes a 500 page** (examples/tasks met it too). The note's page and
-   its editor read with `Endpoint.read!` and show `Ui/Missing.rocx` (`<HttpStatusCode code={404}/>`).
+5. **Fixed: `Endpoint.get!` of a 404 made a 500 page** (examples/tasks met it too), so the note's
+   page and its editor read with `Endpoint.read!` and showed a `Ui/Missing.rocx` of their own. Now a
+   read its endpoint refuses with a 4xx makes the page that status, with the app's error page
+   (`routes/+error.rocx`); both read with `get!`, and `Ui/Missing.rocx` is gone.
 6. **`<Show>`'s function child must be pure**, so a `<Show>` inside it doesn't compile. The sign-in
    link's page shows its form under `when!={link!(token).is_ok()}`, with plain children. (Fixed in
    the platform since: a function child is effectful now, and may hold a `<Show>`.)

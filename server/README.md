@@ -582,6 +582,12 @@ render, so a URL is asked once, and noted for the page under `GET <url>`, unless
 `<NoHydration>`. A crash in it is a 500 (why, under `--dev`), logged; an answer that is a stream of
 events, a page or a body from elsewhere isn't one to read, and fails the read. Any other request (a
 POST, another site's URL) is a handler's, sent from the browser: the render fails it.
+A read that isn't 200 fails what read it, and the nearest `<Errored>` shows its fallback. One that
+no `<Errored>` of the page's catches reaches the root one rocx writes, whose fallback is the app's
+`+error.rocx`, answered with the refusal's status when it is a 4xx (`Errored.status_of`: a
+`NotFound` is the page's 404, as a path no page has is), else 500. A boundary of the page's own that
+catches it shows its fallback, and the page is answered as it is (200, unless that fallback says
+otherwise with `<HttpStatusCode>`), as in the browser.
 `Host.request!` is the request being answered, whole; `Host.location!` its path and query
 (`Router.location!`), and `Host.status!` the status its page is to be answered with
 (`<HttpStatusCode>`, for pages of components).
