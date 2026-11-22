@@ -101,11 +101,12 @@ class Page {
 		});
 	}
 
-	/** The middle of an element, scrolled into view: where a real pointer would press it. */
+	/** The middle of an element, scrolled into view (at once, even on a page that scrolls smoothly):
+	 * where a real pointer would press it. */
 	center(selector) {
 		return this.eval(`(() => {
 			const element = document.querySelector(${JSON.stringify(selector)});
-			element.scrollIntoView({ block: "center" });
+			element.scrollIntoView({ block: "center", behavior: "instant" });
 			const r = element.getBoundingClientRect();
 			return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
 		})()`);
@@ -172,7 +173,7 @@ class Page {
 	async click(selector) {
 		const box = await this.eval(`(() => {
 			const element = document.querySelector(${JSON.stringify(selector)});
-			element.scrollIntoView({ block: "center" });
+			element.scrollIntoView({ block: "center", behavior: "instant" });
 			const r = element.getBoundingClientRect();
 			return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
 		})()`);

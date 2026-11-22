@@ -185,9 +185,13 @@ export class Element {
 		return value.value;
 	}
 
-	/** A real click, at its middle, through the browser's input (after scrolling it into view). */
+	/**
+	 * A real click, at its middle, through the browser's input (after scrolling it into view). The
+	 * scroll is instant whatever the page's CSS says: with `scroll-behavior: smooth` the element
+	 * would still be on its way when it is measured, and the click would land where it was.
+	 */
 	async click() {
-		const box = await this.#in('element.scrollIntoView({ block: "center" }); const r = element.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 };');
+		const box = await this.#in('element.scrollIntoView({ block: "center", behavior: "instant" }); const r = element.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 };');
 		for (const type of ["mousePressed", "mouseReleased"]) await this.tab.page.send("Input.dispatchMouseEvent", { type, x: box.x, y: box.y, button: "left", clickCount: 1 });
 	}
 
