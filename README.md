@@ -380,6 +380,12 @@ rocx fmt <path>…         # format the Roc in .rocx files and hand-written .roc
   --check                # only say which files aren't formatted
 ```
 
+`rocx` is `bin/rocx` in this repo, a native executable built from its Roc (`src/`) the first time a
+script asks for it, and again whenever `src/` changes (D-032). From outside the repo, run
+`<repo>/bin/rocx …` where you ran `node <repo>/bin/rocx.mjs …`; a Node script gets its path from
+`rocxBinary()` (`import { rocxBinary } from "<repo>/server/build.mjs"`), which builds it if it is
+missing or stale, and calls rocx's functions by their old names from `<repo>/src/rocx.mjs`.
+
 `build` writes a file only when its content changes, deletes `.roc` files it wrote whose `.rocx`
 is gone, and stops at the first markup problem with its line and column. Because the lines match,
 the compiler's reports are already at the right line; `check` rewrites `Page.roc:22:48` to the

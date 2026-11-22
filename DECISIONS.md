@@ -1552,6 +1552,12 @@ Measured on the same files, interleaved, the machine loaded by other work (media
 
 `bin/rocx` is 5.9 MB for macOS (arm64); the same Roc cross-builds to 3.5 MB static Linux binaries.
 
+**Moving to it.** Whatever ran `node bin/rocx.mjs …` runs `bin/rocx …`: outside the repo too (an app
+of its own, a script), where `bin/rocx.mjs` is gone ("Cannot find module"). A Node script gets the
+binary's path from `server/build.mjs`'s `rocxBinary()`, which builds it if it is missing or stale; one
+that imported `src/transpile.mjs`, `src/routes.mjs` and the others imports the same names from
+`src/rocx.mjs`.
+
 **Costs.** An optimized rocx takes about a minute and a half to build (a dev build, seconds); the
 binary rebuilds when `src/` changes. Roc keeps more words than JavaScript (`module`, `packages`,
 `where`, `platform` can't be names), and the compiler's bugs are rocx's now too. basic-cli has no
