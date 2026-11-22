@@ -1,6 +1,6 @@
-## Paths and files, as rocx's JavaScript had them from Node: posix paths as text (`join`,
+## Paths and files for rocx: posix paths as text (`join`,
 ## `resolve`, `relative`, `dirname`, `basename`, with Node's rules), and the effects rocx needs on
-## files and directories. A directory's entries come sorted by their bytes, as Node gave them.
+## files and directories. A directory's entries come sorted by their bytes.
 import pf.Path
 import pf.Env
 import Text
@@ -225,7 +225,7 @@ Fs := [].{
 	}
 
 	## Every file under `dir` whose name ends with `extension`, depth first, each directory's
-	## entries sorted (rocx's JavaScript `files()`): names starting with `.` and `node_modules` aren't
+	## entries sorted: names starting with `.` and `node_modules` aren't
 	## gone into, nor a directory `skip` says to skip (given its path).
 	files! : Str, Str, (Str -> Bool) => List(Str)
 	files! = |dir, extension, skip| Fs.files_into!(dir, extension, skip, [])

@@ -1,4 +1,4 @@
-## Scoped styles, as Svelte has them (was src/styles.mjs). A .rocx file's top-level <style> styles
+## Scoped styles, as Svelte has them. A .rocx file's top-level <style> styles
 ## the markup that file writes, and nothing else: rocx gives each of the file's elements a class
 ## named after the file (`rx-k3j9qa`), and adds that class to each selector in the file's CSS. So
 ## `.counter` in one file and `.counter` in another never meet, and a component's styles don't reach

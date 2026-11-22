@@ -1,7 +1,6 @@
 // The repo's JavaScript (its tests, the site's build) calling rocx, which is Roc (rocx-cli/*.roc, built
 // into bin/rocx): each function here is one of rocx's, run by `rocx internal` with its arguments as
-// JSON, its answer back as JSON. Its names are the ones rocx's JavaScript had (src/transpile.mjs,
-// routes.mjs, … before the port), so what tested those tests the Roc.
+// JSON, its answer back as JSON.
 import { spawnSync } from "node:child_process";
 import { rocxBinary } from "../server/build.mjs";
 

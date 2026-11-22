@@ -1,5 +1,5 @@
-## rocx fmt: a .rocx file's Roc formatted by `roc fmt`, its markup kept as written (was
-## src/format.mjs). Roc can't read markup, so each markup expression, and each <style> stylesheet, is
+## rocx fmt: a .rocx file's Roc formatted by `roc fmt`, its markup kept as written.
+## Roc can't read markup, so each markup expression, and each <style> stylesheet, is
 ## swapped for a placeholder Roc formats as it would anything in its place, and put back afterwards,
 ## its later lines moved as far as its first line's line moved. The markup, and the Roc in its holes,
 ## stay as they are.

@@ -1,7 +1,6 @@
-## Bytes and text, the way rocx's JavaScript had them, for its Roc: a file's bytes scanned by index
-## (every character rocx reads is ASCII; the rest is copied as it is), Roc's and JSON's string
-## literals, JavaScript's whitespace (what `\s` and `trim()` meant there), columns in UTF-16 units
-## (what a JavaScript string's index was), and the orders JavaScript sorted strings in.
+## Bytes and text for rocx: a file's bytes scanned by index (every character rocx reads is ASCII;
+## the rest is copied as it is), Roc's and JSON's string literals, whitespace as JavaScript's `\s`
+## and `trim()` define it, columns in UTF-16 units, and strings sorted as JavaScript sorts them.
 Text := [].{
 
 	## The byte at `i`, or 0 past the end.

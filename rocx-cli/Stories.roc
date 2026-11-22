@@ -7,7 +7,6 @@
 ## A story is a component's. An app's stories/ directory holds modules of stories alone, of drafts
 ## beside one another (`stories/Landing.rocx`): a dev build compiles them for their stories, and the
 ## app's own build skips the directory, so nothing in it (its <style>s neither) is published.
-## (Was src/stories.mjs.)
 import Value
 import Text
 import "catalog.html" as catalog_template : Str

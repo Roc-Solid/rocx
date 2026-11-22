@@ -1,4 +1,4 @@
-## File-based routing, as SvelteKit has it (was src/routes.mjs): under an app's `routes/`, a
+## File-based routing, as SvelteKit has it: under an app's `routes/`, a
 ## `+page.rocx` is a page at the path its directory names (`routes/blog/[slug]/+page.rocx` is
 ## `/blog/:slug`), each `+layout.rocx` above it wraps it, `+server.rocx` answers HTTP methods there
 ## (`get!`, `post!`, `put!`, `patch!`, `delete!`: endpoints; `events!`: a stream of events;

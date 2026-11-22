@@ -1,7 +1,7 @@
 ## `rocx build`: every .rocx file under an app's directory into the .roc beside it, its route files
 ## into modules under Generated/ with Routes, Paths, Styles, Api, Root and App, the components of the
 ## packages its headers name into Generated/<package>/, a dev build's stories, and with `--client`
-## the browser's copy of the app (was bin/rocx.mjs's build()).
+## the browser's copy of the app.
 import Fs
 import Text
 import Transpile

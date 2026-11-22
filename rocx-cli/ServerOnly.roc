@@ -1,7 +1,7 @@
 ## What the browser's copy of an app (`rocx build --client`) can't compile: a module it reaches that
 ## imports what only the server platform has (`pf.Db`, `pf.Env`, `pf.Job`: a module the server
 ## platform exposes and the browser's doesn't). The browser's build would fail on it, far from the
-## import that pulled it in; rocx build says where that import is instead (was src/browser.mjs).
+## import that pulled it in; rocx build says where that import is instead.
 import Fs
 import Text
 

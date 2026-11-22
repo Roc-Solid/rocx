@@ -1,4 +1,4 @@
-## rocx: JSX-like markup in Roc (was src/transpile.mjs). A .rocx file is Roc in which markup may
+## rocx: JSX-like markup in Roc. A .rocx file is Roc in which markup may
 ## stand wherever an expression can; `transpile_module` turns it into plain Roc that calls the
 ## platform's Html (web/platform/Html.roc: components, Solid-style), line for line, so that line N of
 ## the output is line N of the input and the compiler's line numbers point into the .rocx file.

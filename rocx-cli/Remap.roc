@@ -2,8 +2,7 @@
 ## lines, so a report at `Page.roc:22:48` is about line 22 of Page.rocx; this rewrites the
 ## location, prints the .rocx line instead of the generated one, and moves the caret onto the
 ## same code there (a hole's expression is copied as written, so it can be found again).
-## Columns are counted as the JavaScript this was counted them: in UTF-16 units.
-## (Was src/remap.mjs.)
+## Columns are counted in UTF-16 units.
 import Value
 import Text
 import Fs

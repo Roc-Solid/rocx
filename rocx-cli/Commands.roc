@@ -1,4 +1,4 @@
-## `rocx check` and `rocx lint` (were check() and lint() in bin/rocx.mjs).
+## `rocx check` and `rocx lint`.
 import pf.Cmd
 import pf.OsStr
 import pf.Stdout
