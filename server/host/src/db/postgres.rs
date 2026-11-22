@@ -1,15 +1,15 @@
-//! Postgres, for `Db` (`server/platform/Db.roc`): one pool of connections, and statements whose
-//! parameters arrive as text and whose rows leave as JSON, for Roc to decode into records. A call
-//! that begins a transaction keeps a connection (`Client`) until it commits or rolls back, and its
-//! statements go there. Connections use TLS when the server offers it (or the URL's `sslmode`
-//! requires it), checked against the web's certificate authorities.
+//! Postgres, the database of an app whose program says `Postgres` (`db`): one pool of connections,
+//! and statements whose parameters are sent as text, which Postgres reads as the type each place
+//! wants, and whose rows leave as JSON. Connections use TLS when the server offers it (or the URL's
+//! `sslmode` requires it), checked against the web's certificate authorities.
 //!
 //! One more connection listens (`LISTEN`): what Postgres is told (`NOTIFY`, delivered when the
-//! transaction that sent it commits) is published on the live topic `pg:<channel>`. That is how
+//! transaction that sent it commits) is published on the live topic `db:<channel>`. That is how
 //! the job workers, in Roc, hear that a job was queued.
 
 use deadpool_postgres::{Manager, ManagerConfig, Pool, RecyclingMethod};
 use futures_util::StreamExt;
+use super::Param;
 use serde_json::{Map, Value};
 use std::collections::HashSet;
 use std::error::Error;
@@ -39,10 +39,6 @@ pub fn connect(url: &str) -> Result<(), String> {
 /// A connection from the pool, kept while it is out.
 pub type Client = deadpool_postgres::Object;
 
-pub fn connected() -> bool {
-    POOL.get().is_some()
-}
-
 /// Opens the connection that listens, and publishes what it hears.
 pub async fn start_listening(url: &str) -> Result<(), String> {
     let config: tokio_postgres::Config = url.parse().map_err(|error| format!("database url: {error}"))?;
@@ -51,7 +47,7 @@ pub async fn start_listening(url: &str) -> Result<(), String> {
         let mut messages = futures_util::stream::poll_fn(move |context| connection.poll_message(context));
         while let Some(message) = messages.next().await {
             match message {
-                Ok(AsyncMessage::Notification(notice)) => crate::live::publish(&format!("pg:{}", notice.channel()), notice.payload()),
+                Ok(AsyncMessage::Notification(notice)) => crate::live::publish(&format!("db:{}", notice.channel()), notice.payload()),
                 Ok(_) => {}
                 Err(error) => {
                     crate::logging::error("rocx server: the connection that listens to Postgres failed", &[("error", described(error).into())]);
@@ -65,9 +61,7 @@ pub async fn start_listening(url: &str) -> Result<(), String> {
 
 /// Listens to `channel`, if nothing has yet.
 pub async fn listen(channel: &str) -> Result<(), String> {
-    let Some(client) = LISTENER.get() else {
-        return Err("no database: start the server with --database-url (or DATABASE_URL)".into());
-    };
+    let Some(client) = LISTENER.get() else { return Err(super::NONE.into()) };
     let fresh = CHANNELS.lock().unwrap().get_or_insert_with(HashSet::new).insert(channel.to_string());
     if fresh {
         let quoted = channel.replace('"', "\"\"");
@@ -84,7 +78,7 @@ pub async fn client() -> Result<Client, String> {
 }
 
 fn pool() -> Result<&'static Pool, String> {
-    POOL.get().ok_or_else(|| "no database: start the server with --database-url (or DATABASE_URL)".to_string())
+    POOL.get().ok_or_else(|| super::NONE.to_string())
 }
 
 /// A parameter as Roc gave it: text, which Postgres reads as the type its place in the statement
@@ -114,16 +108,16 @@ impl ToSql for Text {
     to_sql_checked!();
 }
 
-fn parameters(json: &str) -> Result<Vec<Text>, String> {
-    let Value::Array(items) = serde_json::from_str(json).map_err(|error| format!("parameters: {error}"))? else {
-        return Err("parameters: not a list".into());
-    };
-    items
-        .into_iter()
-        .map(|item| match item {
-            Value::String(text) => Ok(Text(Some(text))),
-            Value::Null => Ok(Text(None)),
-            other => Err(format!("parameters: {other} is neither text nor null")),
+/// The parameters as Postgres is sent them: text (a number as it is written, a `Bool` as `true` or
+/// `false`), or null.
+fn parameters(params: &[Param]) -> Vec<Text> {
+    params
+        .iter()
+        .map(|param| match param {
+            Param::Null => Text(None),
+            Param::Text(text) => Text(Some(text.clone())),
+            Param::Int(number) => Text(Some(number.to_string())),
+            Param::Bool(yes) => Text(Some(yes.to_string())),
         })
         .collect()
 }
@@ -141,8 +135,8 @@ pub fn described(error: tokio_postgres::Error) -> String {
 /// The rows `sql` reads, as a JSON array of objects, each column by its name: a null is `null`,
 /// anything else its value. Whether a column may be null is the reader's to say, in the record it
 /// decodes a row into (`Db.Nullable(a)`), not the host's to look up.
-pub async fn query(client: &Client, sql: &str, params: &str) -> Result<String, String> {
-    let params = parameters(params)?;
+pub async fn query(client: &Client, sql: &str, params: &[Param]) -> Result<String, String> {
+    let params = parameters(params);
     let statement = client.prepare_cached(sql).await.map_err(described)?;
     let refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|param| param as &(dyn ToSql + Sync)).collect();
     let rows = client.query(&statement, &refs).await.map_err(described)?;
@@ -170,8 +164,8 @@ pub async fn query(client: &Client, sql: &str, params: &str) -> Result<String, S
 }
 
 /// How many rows `sql` changed.
-pub async fn execute(client: &Client, sql: &str, params: &str) -> Result<u64, String> {
-    let params = parameters(params)?;
+pub async fn execute(client: &Client, sql: &str, params: &[Param]) -> Result<u64, String> {
+    let params = parameters(params);
     let statement = client.prepare_cached(sql).await.map_err(described)?;
     let refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|param| param as &(dyn ToSql + Sync)).collect();
     client.execute(&statement, &refs).await.map_err(described)
@@ -203,6 +197,12 @@ pub fn abandon(client: Client, runtime: &tokio::runtime::Handle) {
         let _ = token.cancel_query(tls()).await;
     });
     drop(deadpool_postgres::Object::take(client));
+}
+
+/// Tells Postgres's listeners `payload` on `channel` (`pg_notify`): when the transaction `client` is
+/// in commits, or at once outside one.
+pub async fn notify(client: &Client, channel: &str, payload: &str) -> Result<(), String> {
+    client.execute("select pg_notify($1, $2)", &[&channel, &payload]).await.map(|_| ()).map_err(described)
 }
 
 /// Begins a transaction on `client`, which the call that asked keeps until it ends.

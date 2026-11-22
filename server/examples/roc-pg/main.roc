@@ -26,6 +26,7 @@ Schema := [].{
 
 program = {
 	respond!,
+	database: Postgres,
 	migrations: [{ name: "roc-pg example: planets", sql: schema_sql }],
 	actors: [],
 	logs: { format: Auto },

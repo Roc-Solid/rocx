@@ -2307,7 +2307,8 @@ reads and writes back.
 
 ## D-045 The database is pluggable: Postgres or SQLite, as the app chooses
 
-**Status.** Proposed (2026-11-22). Nothing is built.
+**Status.** Accepted (2026-11-22), with the user's answers: the path is the program's, the
+examples are on SQLite, Plate moves without its data. Being built on the branch `db-backends`.
 
 **Context.** Postgres is the platform's one database (`--database-url`). The platform runs one
 server an app (one instance), and many apps on one server need no database server beside it:
@@ -2320,12 +2321,13 @@ calls. What can't be shared is SQL: Postgres's and SQLite's differ, and the SQL 
 **Proposal.**
 
 - **The app picks its database's flavor when it is made, and writes its SQL for it.**
-  `App.program({ ..., database: Sqlite })`, `Postgres` by default (every app today). Where the
-  database is stays the server's to be told (`--database-url`, `DATABASE_URL`: `postgres://…`, or
-  `sqlite:data/plate.db`); a URL of the other flavor stops the server at start, saying which the
-  app wants. No SQL is translated, and no app runs on both. `rocx new` asks for the flavor
-  (postgres, sqlite, none) when it is built, and writes the program's `database` and a first
-  migration in it.
+  `App.program({ ..., database: Sqlite("data/plate.db") })`, the file's path from where the server
+  starts (made, with its directory, when missing), so a SQLite app runs with nothing set; or
+  `Postgres`, the default (every app today), at `--database-url` (`DATABASE_URL`), with no database
+  without one. `--database-url` puts a SQLite app's file elsewhere (`sqlite:/var/lib/plate.db`, a
+  test's own); a URL of the other flavor stops the server at start, saying which the app wants. No SQL is translated, and no app runs on both. `rocx new` asks for the flavor
+  (postgres, sqlite, none) when it is built, and writes the program's `database`
+  (`Sqlite("data/app.db")`) and a first migration in it.
 - **A package says which flavors it works with; it may work with one.** A plugin's `needs` gets
   `Postgres` and `Sqlite` beside `Database` (any): the server's start check (`Plugins.unmet!`) says,
   with the rest, "admin needs Postgres; this app's database is SQLite". A package with SQL for both
@@ -2365,7 +2367,9 @@ calls. What can't be shared is SQL: Postgres's and SQLite's differ, and the SQL 
   `on conflict (unique_key) where state in (…) do nothing` is SQLite's too. `Job.Row` is
   milliseconds already, so the jobs page reads both. Cron's ticker is Roc, and changes only in the
   statement that queues.
-- **Plate moves to SQLite**, the example of an app on one: its search on FTS5 (a word's start is
+- **The examples are on SQLite**, so running one needs nothing beside it: board, notes, plate,
+  quiz and tasks; uptime once admin has SQLite's statements.
+- **Plate moves to SQLite** (its data isn't copied): its search on FTS5 (a word's start is
   `word*`), `real` for its amounts (no `::float8` or `::numeric`, which is its README's gap 1), its
   days from a recursive `with`. Its day begins in the profile's time zone, which it asks of Postgres
   (`at time zone`, `pg_timezone_names`); SQLite knows no zones, so `Time` learns them from the host
@@ -2379,12 +2383,7 @@ statements.
 
 **Phases.** 1: the SQLite backend, typed parameters, `Db.notify!` and `Db.backend!`, the program's
 `database`, migrations a flavor, the needs; the server's test app on both. 2: jobs and cron on
-both, the jobs page. 3: `Time`'s zones; Plate on SQLite. 4: the docs (`/platform/postgres` becomes
+both, the jobs page. 3: `Time`'s zones; Plate and the other examples on SQLite. 4: the docs (`/platform/postgres` becomes
 `/platform/database`). Later: `rocx new`'s question, libSQL/Turso, admin's SQLite catalog.
-
-**Waits on the user.** (1) A SQLite app given no URL: its file at `data/app.db`, made when missing,
-so `rocx dev` needs nothing set (recommended), or no database, as a Postgres app given none.
-(2) Plate's own diary is in Postgres: copied once into its SQLite file (recommended), or begun
-again.
 
 **Reversible:** yes. A Postgres app changes in nothing; packages trade `pg_notify` for `Db.notify!`.

@@ -1,11 +1,18 @@
 import Host
 
-## Postgres, the platform's one database (`--database-url`, or `DATABASE_URL`).
+## The app's database: Postgres or SQLite, as its program says (`database`, D-045). Its SQL is the
+## app's, in its database's flavor: nothing is translated.
 ##
-## A statement's parameters are `$1`, `$2`, …, given as `Value`s; Postgres reads each as the type
-## its place wants (`where id = $1` reads `Int(7)` as an integer). Rows come back as records:
-## `all!` decodes each row's columns, by name, into the record its caller wants. A column that may
-## be null is read as `Nullable(a)`:
+## - Postgres is at `--database-url` (or `DATABASE_URL`); without one the app has no database.
+## - SQLite is a file in the server's process, at the program's `Sqlite(path)` (or a `sqlite:<path>`
+##   `--database-url`), made when missing. Reads go on while a write does; writes take turns. So keep
+##   anything slow (`Http.fetch!`, a wait) out of a transaction: on SQLite it holds every other write
+##   back until it ends.
+##
+## A statement's parameters are `$1`, `$2`, …, given as `Value`s, in both. Postgres reads each as the
+## type its place wants (`where id = $1` reads `Int(7)` as an integer); SQLite is given each as it
+## is (a `Bool` as 1 or 0). Rows come back as records: `all!` decodes each row's columns, by name,
+## into the record its caller wants. A column that may be null is read as `Nullable(a)`:
 ##
 ## ```roc
 ## notes : Try(List({ id : I64, body : Str, note : Db.Nullable(Str) }), [DbErr(Str), BadRow(Str)])
@@ -16,6 +23,10 @@ import Host
 ##     Some(text) => text
 ## }
 ## ```
+##
+## SQLite has no types of its own for a boolean, a time or JSON: a column declared `boolean` is read
+## as a `Bool`, one declared `json` as its JSON, and a boolean worked out in a statement
+## (`exists (…)`) is 0 or 1, an `I64`. A time is best kept as milliseconds (`Time.now_millis!`).
 ##
 ## Each function's error is an open union (`[DbErr(Str), ..others]`), so a function `?`s a statement
 ## beside other errors (packages/jobs' `JobErr`, the app's own) with nothing mapped, and its caller
@@ -75,7 +86,7 @@ Db := [].{
 	## A parameter.
 	Value : [Null, Text(Str), Int(I64), Bool(Bool)]
 
-	## A list as one parameter: a Postgres array, sent as Postgres writes one in text
+	## A list as one parameter, on Postgres: an array, sent as Postgres writes one in text
 	## (`{"work","to do",NULL}`), which it reads as the array its place wants, of text or of numbers
 	## alike: `where tag = any($1)`, `where tags @> $1`, `$1::bigint[]`, `unnest($1::text[])` (a
 	## place that doesn't say which array, as `unnest($1)` alone, needs the cast). Each `Text` is
@@ -87,6 +98,9 @@ Db := [].{
 	## tagged : Try(List({ id : I64 }), [DbErr(Str), BadRow(Str)])
 	## tagged = Db.all!("select id from notes where tags @> $1", [Db.array(tags.map(|tag| Text(tag)))])
 	## ```
+	##
+	## SQLite has no arrays: a list is JSON text there, read with `json_each`
+	## (`where tag in (select value from json_each($1))`).
 	array : List(Value) -> Value
 	array = |items| {
 		each = items.map(
@@ -134,14 +148,33 @@ Db := [].{
 			Err(why) => Err(DbErr(why))
 		}
 
-	## Whether the server has a database (`--database-url`, or `DATABASE_URL`): a plugin that
-	## works without one (the job workers) does nothing instead.
+	## Whether the server has a database: a plugin that works without one (the job workers) does
+	## nothing instead.
 	connected! : {} => Bool
-	connected! = |{}| !Host.setting!("database").is_empty()
+	connected! = |{}| !Host.db_flavor!({}).is_empty()
 
-	## From now until this call ends, it hears Postgres's notifications on `channel` (`notify`,
-	## sent when the transaction that sent them commits) as messages on the topic `pg:<channel>`
-	## (`Live.next!`): how a background loop sleeps until there is work.
+	## The database the server has: a package with SQL for both runs its flavor's.
+	backend! : {} => [Postgres, Sqlite, None]
+	backend! = |{}|
+		match Host.db_flavor!({}) {
+			"postgres" => Postgres
+			"sqlite" => Sqlite
+			_ => None
+		}
+
+	## Tells `channel`'s listeners (`listen!`) `payload`: when this call's transaction commits (never,
+	## if it rolls back), or at once outside one. On Postgres it is `pg_notify`, which other
+	## processes hear too; on SQLite it is the server's own.
+	notify! : Str, Str => Try({}, [DbErr(Str), ..others])
+	notify! = |channel, payload|
+		match Host.db_notify!(channel, payload) {
+			Ok({}) => Ok({})
+			Err(why) => Err(DbErr(why))
+		}
+
+	## From now until this call ends, it hears what is notified on `channel` (`notify!`, or
+	## Postgres's `pg_notify` from anywhere) as messages on the topic `db:<channel>` (`Live.next!`):
+	## how a background loop sleeps until there is work.
 	listen! : Str => Try({}, [DbErr(Str), ..others])
 	listen! = |channel|
 		match Host.db_listen!(channel) {
@@ -151,7 +184,8 @@ Db := [].{
 
 	## Runs `body!` in a transaction: what it writes, and the jobs it queues, stay only if it
 	## returns `Ok`; an `Err` (or a crash) rolls all of it back. Its error is the body's, or the
-	## database's.
+	## database's. On SQLite it holds the write lock from its start (`begin immediate`): keep it
+	## short.
 	transaction! : ({} => Try(a, [DbErr(Str), ..others])) => Try(a, [DbErr(Str), ..others])
 	transaction! = |body!|
 		match Host.db_begin!({}) {
@@ -191,7 +225,7 @@ misread = |rows, why| {
 	}
 }
 
-## The parameters as the host takes them: a JSON array of strings and nulls.
+## The parameters as the host takes them: a JSON array of text, integers, booleans and nulls.
 encoded : List(Db.Value) -> Str
 encoded = |params| {
 	each = params.map(
@@ -199,8 +233,8 @@ encoded = |params| {
 			match param {
 				Null => "null"
 				Text(text) => Json.to_str(text)
-				Int(number) => Json.to_str(number.to_str())
-				Bool(yes) => if (yes) "\"true\"" else "\"false\""
+				Int(number) => number.to_str()
+				Bool(yes) => if (yes) "true" else "false"
 			},
 	)
 	"[${Str.join_with(each, ",")}]"

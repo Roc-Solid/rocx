@@ -7,6 +7,7 @@ import pf.Server
 
 program = {
 	respond!: |_, _| Server.response(200, [], "never"),
+	database: Postgres,
 	migrations: [],
 	actors: [],
 	logs: { format: Auto },

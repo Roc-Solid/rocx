@@ -29,6 +29,7 @@ pass_on = Mw.make(|path, next!| next!(path))
 ## "fell through". The shape it was found in: a middleware type, as a platform's is.
 program = {
 	respond!: |request, _started| Server.response(200, [], pass_on.then(pass_on).then(Mw.make(|_, _| "doc")).run!(request.path, |_| "fell through")),
+	database: Postgres,
 	migrations: [],
 	actors: [],
 	logs: { format: Auto },

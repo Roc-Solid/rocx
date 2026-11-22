@@ -39,6 +39,7 @@ import Generated/Content/Notes
 
 program = {
 	respond!: |_, _| Server.response(200, [], Str.join_with(Posts.all.map(|post| post.data.title), ", ")),
+	database: Postgres,
 	migrations: [],
 	actors: [],
 	logs: { format: Auto },

@@ -11,6 +11,7 @@ make = |plugins| {
 	respond!: |request, started| {
 		Plugin.respond!(plugins, request, started, |_, _| Server.response(404, [], "fell through"))
 	},
+	database: Postgres,
 	migrations: [],
 	actors: [],
 	logs: { format: Auto },

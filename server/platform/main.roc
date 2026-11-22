@@ -1,5 +1,6 @@
 ## The server's platform: Roc compiled to native code, in a Rust host (`server/host`). The host
-## answers HTTP with tokio and hyper and gives Roc a few general effects: Postgres, time, live
+## answers HTTP with tokio and hyper and gives Roc a few general effects: a database (Postgres or
+## SQLite, D-045), time, live
 ## topics and rooms, background loops, calls run in isolation, actors' mailboxes and timers, TCP and
 ## TLS. Migrations, plugins and actors' state are Roc, here, built on them; jobs and cron, and email,
 ## are packages' plugins (packages/jobs, packages/email: D-034, D-035), on the same effects. The browser's
@@ -18,8 +19,14 @@
 ##   (server-sent events, `Events`): a loop the host runs as a call of its own, to its end, with
 ##   `{ send!, sleep! }`. `send!` writes to the response and says whether the client is still
 ##   there, `sleep!` waits that many milliseconds (and wakes early if the client goes).
+## - `database`: the app's database (D-045). `Postgres`, at `--database-url` (`DATABASE_URL`), and
+##   none without it; or `Sqlite(path)`, a file in the server's process at `path` (from where the
+##   server starts; made, with its directory, when missing), or at `--database-url`
+##   (`sqlite:<path>`) when it is given. A URL of the other flavor stops the server at start. The
+##   app's SQL is its database's: nothing is translated.
 ## - `migrations`: the app's schema, applied once each, in order, when the server starts (each a
-##   name and its SQL: `import "migrations/0001_notes.sql" as notes : Str` embeds a file).
+##   name and its SQL, in its database's flavor: `import "migrations/0001_notes.sql" as notes : Str`
+##   embeds a file).
 ## - `actors`: the kinds of actor the app defines (`Actor.handler(kind)`), which `rocx build` lists:
 ##   the host runs their turns (`actor_for_host!`), one message at a time each, and refuses a
 ##   message to a kind that isn't here.
@@ -47,6 +54,7 @@ platform ""
 	requires {
 		program : {
 			respond! : Server.Request, Str => Server.Response,
+			database : [Postgres, Sqlite(Str)],
 			migrations : List({ name : Str, sql : Str }),
 			actors : List({ name : Str, run! : Str, Str, Str => Try({ state : Str, reply : Str }, Str) }),
 			logs : { format : [Auto, Pretty, Json] },
@@ -92,7 +100,10 @@ platform ""
 		"roc_host_db_begin": Host.db_begin!,
 		"roc_host_db_commit": Host.db_commit!,
 		"roc_host_db_execute": Host.db_execute!,
+		"roc_host_db_flavor": Host.db_flavor!,
 		"roc_host_db_listen": Host.db_listen!,
+		"roc_host_db_notify": Host.db_notify!,
+		"roc_host_db_open": Host.db_open!,
 		"roc_host_db_query": Host.db_query!,
 		"roc_host_db_rollback": Host.db_rollback!,
 		"roc_host_db_script": Host.db_script!,
@@ -264,11 +275,12 @@ stream_for_host! = |boxed| {
 drop_feed_for_host : Box(Feed) -> {}
 drop_feed_for_host = |_| {}
 
-## The server is starting, connected to its database if it has one: the log takes the app's format
-## (before anything is logged: a migration, a plugin's problem); the plugins are checked (any
-## problem stops it here, with every one) and put in order; the host is told the kinds of actor;
-## then the platform's tables, the plugins' and the app's migrations are applied, and the plugins'
-## starts run (a jobs plugin's queues again the jobs a stop cut short).
+## The server is starting: the log takes the app's format (before anything is logged: a migration,
+## a plugin's problem); the app's database is opened, where its program and `--database-url` say;
+## the plugins are checked (any problem stops it here, with every one) and put in order; the host
+## is told the kinds of actor; then the platform's tables, the plugins' and the app's migrations
+## are applied (the platform's and the plugins' for its database), and the plugins' starts run (a
+## jobs plugin's queues again the jobs a stop cut short).
 init_for_host! : {} => Try({}, Str)
 init_for_host! = |{}| {
 	Host.log_format!(
@@ -278,6 +290,7 @@ init_for_host! = |{}| {
 			Json => 2
 		},
 	)
+	database_opened!(program.database)?
 	# The plugins, checked all at once: any problem stops the server, with every one.
 	problems = Plugins.problems(program.plugins, program.routes).concat(Plugins.unmet!(program.plugins))
 	if !problems.is_empty() {
@@ -285,17 +298,68 @@ init_for_host! = |{}| {
 	}
 	plugins = Plugins.ordered(program.plugins)
 	Host.actor_kinds!(Str.join_with(program.actors.map(|actor| actor.name), "\n"))
-	if Setting.database!({}) {
-		# The platform's tables, then each plugin's (recorded as `<plugin>/<name>`), then the app's.
-		theirs = plugins.join_map(|plugin| plugin.migrations.map(|migration| { name: "${plugin.name}/${migration.name}", sql: migration.sql }))
-		match Migrations.apply!(Migrations.own.concat(theirs).concat(program.migrations)) {
-			Err(why) => Err(why)
-			Ok({}) => started!(plugins)
+	flavor =
+		match Db.backend!({}) {
+			Postgres => Ok(Postgres)
+			Sqlite => Ok(Sqlite)
+			None => Err(None)
 		}
-	} else {
-		started!(plugins)
+	match flavor {
+		Ok(on) => {
+			# The platform's tables, then each plugin's (recorded as `<plugin>/<name>`), then the app's.
+			theirs = plugins.join_map(|plugin| plugin.migrations.keep_if(|migration| applies(migration.on, on)).map(|migration| { name: "${plugin.name}/${migration.name}", sql: migration.sql }))
+			match Migrations.apply!(Migrations.own(on).concat(theirs).concat(program.migrations)) {
+				Err(why) => Err(why)
+				Ok({}) => started!(plugins)
+			}
+		}
+		Err(None) => started!(plugins)
 	}
 }
+
+## Whether a plugin's migration for `on` (`Plugin.Migration`) is one for the database the server has.
+applies : [Any, Postgres, Sqlite], [Postgres, Sqlite] -> Bool
+applies = |on, flavor|
+	match (on, flavor) {
+		(Any, _) => Bool.True
+		(Postgres, Postgres) => Bool.True
+		(Sqlite, Sqlite) => Bool.True
+		_ => Bool.False
+	}
+
+## The app's database, opened where its program and `--database-url` say (D-045): `Postgres` at the
+## URL, and none without one; `Sqlite(path)` at the URL when it is a `sqlite:` one, or else at
+## `path`. A URL of the other flavor stops the server, saying which the app wants.
+database_opened! : [Postgres, Sqlite(Str)] => Try({}, Str)
+database_opened! = |wanted| {
+	given = Host.setting!("database_url")
+	sqlite_url = given.starts_with("sqlite:")
+	match wanted {
+		Postgres =>
+			if given.is_empty() {
+				Ok({})
+			} else if sqlite_url {
+				Err("the app's database is Postgres (its program's `database`), and --database-url (or DATABASE_URL) is a sqlite: one: give it a postgres:// URL, or say `database: Sqlite(path)` in the program")
+			} else {
+				opened!(given)
+			}
+		Sqlite(path) =>
+			if given.is_empty() {
+				opened!("sqlite:${path}")
+			} else if sqlite_url {
+				opened!(given)
+			} else {
+				Err("the app's database is SQLite (its program's `database: Sqlite(\"${path}\")`), and --database-url (or DATABASE_URL) isn't a sqlite:<path> one: leave it unset (DATABASE_URL too) for ${path}, or say `database: Postgres` in the program")
+			}
+	}
+}
+
+opened! : Str => Try({}, Str)
+opened! = |url|
+	match Host.db_open!(url) {
+		Ok(_) => Ok({})
+		Err(why) => Err("the database: ${why}")
+	}
 
 ## The plugins' starts, in their order: the first `Err` stops the server. Then a line a plugin on
 ## the log.

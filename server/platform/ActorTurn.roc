@@ -2,7 +2,7 @@ import Actor
 import Db
 import Setting
 
-## An actor's turn, as the host runs it (`actor_for_host!`): its state read from Postgres the first
+## An actor's turn, as the host runs it (`actor_for_host!`): its state read from the database the first
 ## time (after that, the host keeps it as the last turn left it), its message handled
 ## (`Actor.Handler`), and its next state written, if it changed (an ask that only reads writes
 ## nothing). Without a database, its state is the host's alone.
@@ -33,7 +33,7 @@ ActorTurn := [].{
 	}
 }
 
-## The state Postgres keeps for the actor ("" when it is new, or there is no database).
+## The state the database keeps for the actor ("" when it is new, or there is no database).
 load! : Str, Str => Try(Str, Str)
 load! = |kind, key|
 	if Setting.database!({}) {
@@ -53,7 +53,7 @@ save! : Str, Str, Str => Try({}, Str)
 save! = |kind, key, state|
 	if Setting.database!({}) {
 		saved = Db.run!(
-			"insert into rocx_actors (kind, key, state) values ($1, $2, $3) on conflict (kind, key) do update set state = excluded.state, updated_at = now()",
+			"insert into rocx_actors (kind, key, state) values ($1, $2, $3) on conflict (kind, key) do update set state = excluded.state, updated_at = current_timestamp",
 			[Text(kind), Text(key), Text(state)],
 		)
 		match saved {

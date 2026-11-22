@@ -233,6 +233,8 @@ impl Router {
 async fn live(id: Id, life: u64, mut letters: mpsc::UnboundedReceiver<Letter>, router: mpsc::UnboundedSender<Order>, idle: Option<Duration>) {
     let mut kept: Option<String> = None;
     let mut handled = 0u64;
+    // Let go only when its state is kept in the database, which the platform's start opened.
+    let idle = idle.filter(|_| crate::db::flavor().is_some());
     loop {
         let next = match idle {
             Some(idle) => match tokio::time::timeout(idle, letters.recv()).await {

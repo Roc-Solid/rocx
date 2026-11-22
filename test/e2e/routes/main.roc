@@ -8,6 +8,7 @@ import Generated/Paths
 
 program = {
 	respond!: |request, context| Routes.respond!(request, context),
+	database: Postgres,
 	migrations: [],
 	actors: [],
 	logs: { format: Auto },

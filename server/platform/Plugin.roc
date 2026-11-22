@@ -22,7 +22,8 @@ import Server
 ## When the server starts it checks every plugin at once, and any problem stops it, with the whole
 ## list: a name used twice; a call, loop or check not named `<plugin>.<name>`; an early path not
 ## under `/__rocx/`; two routes at one method and path (the app's and a plugin's, or two plugins');
-## a need not met (an environment variable unset, no `--database-url`, a plugin not in the list);
+## a need not met (an environment variable unset, no database or one of the other flavor, a plugin
+## not in the list);
 ## needs that go round in a circle. It orders the plugins by what they need (the list's order
 ## breaking ties), applies their migrations after the platform's and before the app's, each
 ## recorded as `<plugin>/<name>`, runs their `starts` (an `Err` stops the server), and logs a line a
@@ -54,8 +55,10 @@ Plugin := [].{
 	## middleware never meet it. Without the flag the path is the app's, as any other.
 	Early : { method : Str, path : Str, under : List([Dev, Debug]), answer! : Server.Request => Server.Response }
 
-	## A table: its SQL, applied once, recorded as `<plugin>/<name>`.
-	Migration : { name : Str, sql : Str }
+	## A table: its SQL, applied once, recorded as `<plugin>/<name>`. `on` says which database it is
+	## for (D-045): `Any` (the default), `Postgres` or `Sqlite`; the server applies those of its own,
+	## so a plugin that works with both lists one of each under one name.
+	Migration := { name : Str, sql : Str, on : [Any, Postgres, Sqlite] ?? Any }
 
 	## A function the plugin runs in a call of its own (`Plugin.isolated!`), named
 	## `<plugin>.<name>`: its answer, or why it failed. A crash in it ends that call only.
@@ -75,9 +78,10 @@ Plugin := [].{
 	## warning. "" says nothing. A failing check doesn't stop the server.
 	Check : { name : Str, run! : {} => Try(Str, Str) }
 
-	## What a plugin needs that the compiler can't see: an environment variable that is set, a
-	## database (`--database-url`), another plugin in the app's list (which then comes first).
-	Need : [Env(Str), Database, Plugin(Str)]
+	## What a plugin needs that the compiler can't see: an environment variable that is set; a
+	## database, any (`Database`), or one flavor (`Postgres`, `Sqlite`: a package may work with one
+	## alone, D-045); another plugin in the app's list (which then comes first).
+	Need : [Env(Str), Database, Postgres, Sqlite, Plugin(Str)]
 
 	## What the platform keeps of a plugin (`program.plugins`): all but its routes, which the app's
 	## `respond!` answers (`Plugin.respond!`); their methods and paths, for the checks.

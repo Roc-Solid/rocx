@@ -16,6 +16,7 @@ make = |config| {
 	respond!: |request, started| {
 		Middleware.run!(config.middleware, request, (config.context)(started), |passed, context| Plugin.respond!(config.plugins, passed, context, |_, _| Server.response(404, [], "fell through")))
 	},
+	database: Postgres,
 	migrations: [],
 	actors: [],
 	logs: { format: Auto },

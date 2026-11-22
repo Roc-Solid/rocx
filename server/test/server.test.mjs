@@ -30,7 +30,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createCipheriv, createDecipheriv, createHash, createHmac, hkdfSync, randomBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { createServer } from "node:net";
@@ -1219,7 +1219,7 @@ test("JobsPage.plugin without a guard doesn't compile: the record is missing the
 	mkdirSync(at, { recursive: true });
 	writeFileSync(
 		join(at, "main.roc"),
-		'app [program] { pf: platform "../../../platform/main.roc", admin: "../../../../packages/admin/main.roc" }\n\nimport pf.Plugin\nimport pf.Server\nimport admin.JobsPage\n\nprogram = {\n\trespond!: |_, _| Server.response(200, [], ""),\n\tmigrations: [],\n\tactors: [],\n\tlogs: { format: Auto },\n\tplugins: [Plugin.running(JobsPage.plugin({ at: "/admin/jobs" }))],\n\troutes: [],\n}\n',
+		'app [program] { pf: platform "../../../platform/main.roc", admin: "../../../../packages/admin/main.roc" }\n\nimport pf.Plugin\nimport pf.Server\nimport admin.JobsPage\n\nprogram = {\n\trespond!: |_, _| Server.response(200, [], ""),\n\tdatabase: Postgres,\n\tmigrations: [],\n\tactors: [],\n\tlogs: { format: Auto },\n\tplugins: [Plugin.running(JobsPage.plugin({ at: "/admin/jobs" }))],\n\troutes: [],\n}\n',
 	);
 	const checked = spawnSync(roc(), ["check", join(at, "main.roc")], { encoding: "utf8" });
 	assert.notEqual(checked.status, 0);
@@ -1459,6 +1459,16 @@ test("plugins: an early path is answered before the app, only under the flag it 
 	} finally {
 		await dev.stop();
 	}
+});
+
+test("a sqlite: URL stops a Postgres app at start, saying which it wants (D-045), and makes no file", { skip }, async () => {
+	const wrong = join(dir, "wrong", "app.db");
+	const refused = await start(["--database-url", `sqlite:${wrong}`], app, mailEnv()).then(
+		() => assert.fail("it started"),
+		(error) => error,
+	);
+	assert.match(refused.message, /the app's database is Postgres \(its program's `database`\), and --database-url \(or DATABASE_URL\) is a sqlite: one/);
+	assert.ok(!existsSync(wrong));
 });
 
 test("plugins: a plugin's table, applied after the platform's and before the app's, recorded under the plugin's name", { skip: skipDb }, async () => {

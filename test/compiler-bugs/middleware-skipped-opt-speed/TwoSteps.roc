@@ -20,6 +20,7 @@ program = {
 		chain = then(pass_on!, answer_doc)
 		Server.response(200, [], chain(request.path, |_| "fell through"))
 	},
+	database: Postgres,
 	migrations: [],
 	actors: [],
 	logs: { format: Auto },

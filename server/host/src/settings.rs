@@ -1,4 +1,4 @@
-//! What the server was started with, for Roc (`Host.setting!`): `database` ("yes" with one),
+//! What the server was started with, for Roc (`Host.setting!`): `database_url` (`--database-url`),
 //! `dev` ("yes" with `--dev`:
 //! `Env.dev!`), `debug` ("yes" with `--debug`), `public_url` (`--public-url`, or where it listens:
 //! `Env.public_url!`).

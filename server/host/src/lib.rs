@@ -1,14 +1,14 @@
 //! The server platform's host (`server/platform`): Roc compiled to native code, linked with this
 //! library into one executable. It answers HTTP with tokio and hyper (`http`), keeps Roc's memory
-//! and catches its crashes (`roc`), and gives Roc general effects (`hosted`): Postgres (`db`), live
-//! topics and rooms (`live`), actors' mailboxes and timers (`actors`), named values (`memory`), TCP
+//! and catches its crashes (`roc`), and gives Roc general effects (`hosted`): the app's database,
+//! Postgres or SQLite (`db`), live topics and rooms (`live`), actors' mailboxes and timers (`actors`), named values (`memory`), TCP
 //! and TLS (`tcp`, `tls`), HTTP requests to other servers (`client`), the settings it was started
 //! with (`settings`), values by key in memory (`kv`, for `Kv`); and it renders a page of components
 //! (`signals`). Jobs, cron, migrations, actors' state and email are the platform's Roc.
 //!
 //! Starting: the address is taken (a port in use stops the server before anything starts); the
-//! database is connected, and a connection listens to it; the platform's start runs in Roc (the
-//! app's plugins checked, its tables, the plugins' and the app's migrations applied, the plugins'
+//! platform's start runs in Roc (the app's database opened, where its program and `--database-url`
+//! say, and for Postgres a connection that listens to it; the app's plugins checked, its tables, the plugins' and the app's migrations applied, the plugins'
 //! starts run: the jobs plugin's queues again the jobs a stop cut short); its background loops
 //! start (the plugins': the job workers, the schedules), each a call of its own that pauses while
 //! it waits; then it answers. Stopping (SIGTERM, or ^C): it stops listening, the
@@ -113,8 +113,9 @@ fn served(args: Vec<String>) -> c_int {
 
 async fn run(config: http::Config) -> Result<(), String> {
     let mut given = std::collections::HashMap::new();
-    if config.database_url.is_some() {
-        given.insert("database".to_string(), "yes".to_string());
+    // The platform's start opens the database (`Host.db_open!`): at this URL, or the program's file.
+    if let Some(url) = &config.database_url {
+        given.insert("database_url".to_string(), url.clone());
     }
     if config.dev {
         given.insert("dev".to_string(), "yes".to_string());
@@ -134,13 +135,9 @@ async fn run(config: http::Config) -> Result<(), String> {
     settings::set(given);
     let (stop, stopping) = tokio::sync::watch::channel(false);
     hosted::set_stop(stopping.clone());
-    if let Some(url) = &config.database_url {
-        db::connect(url)?;
-        db::start_listening(url).await?;
-    }
-    // Actors: their router, before the platform's start tells it the app's kinds. Kept in Postgres,
-    // an actor idle for long enough is let go; without it, its task is all it has.
-    let idle = (config.database_url.is_some() && config.actor_idle_ms > 0).then(|| Duration::from_millis(config.actor_idle_ms));
+    // Actors: their router, before the platform's start tells it the app's kinds. Kept in the
+    // database, an actor idle for long enough is let go; without one, its task is all it has.
+    let idle = (config.actor_idle_ms > 0).then(|| Duration::from_millis(config.actor_idle_ms));
     actors::start(idle);
     // The platform's start, in Roc: a bad schedule or a migration that fails stops the server here.
     let started = coroutine::run(|| hosted::call(None, roc::init)).await.map_err(|_| "starting failed".to_string())?;

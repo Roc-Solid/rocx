@@ -161,6 +161,8 @@ struct Context {
     cut_off: bool,
     /// The connection of the transaction this call began.
     transaction: Option<db::Client>,
+    /// What its transaction notified, on SQLite: published when it commits (`Db.notify!`).
+    notices: Vec<(String, String)>,
     listening: Vec<broadcast::Receiver<live::Message>>,
     rooms: Vec<String>,
     sockets: Vec<u64>,
@@ -183,6 +185,7 @@ impl Context {
             crate::logging::warn("rocx server: a call ended with its transaction open: rolled back", &[]);
             rolled_back(client);
         }
+        self.notices.clear();
         for room in self.rooms.drain(..) {
             live::leave(&room);
         }
@@ -411,6 +414,8 @@ fn on_db<T>(work: impl AsyncFnOnce(&db::Client, bool) -> Result<T, String>) -> R
         Some(client) => match within(work(&client, true)) {
             Err(Late) => {
                 abandon(client);
+                // Its transaction ends with the connection: what it notified goes too.
+                CALL.with(|context| context.borrow_mut().notices.clear());
                 (Err(Late), None)
             }
             done => (done, Some(client)),
@@ -740,7 +745,57 @@ pub extern "C" fn roc_host_env_var(name: RocStr) -> TextResult {
     text_or_error(guarded(|| std::env::var_os(&name).map(|value| value.to_string_lossy().into_owned()).ok_or_else(String::new)))
 }
 
-// ---- Postgres ----
+// ---- The database (Postgres or SQLite) ----
+
+/// Opens the app's database at `url` (`postgres://…`, `sqlite:<path>`), which the platform's start
+/// works out from the program and `--database-url`: its flavor ("postgres", "sqlite").
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_db_open(url: RocStr) -> TextResult {
+    let url = taken(url);
+    text_or_error(wait(async { db::open(&url).await.map(|flavor| flavor.name().to_string()) }))
+}
+
+/// The database the server opened: "postgres", "sqlite", or "" for none.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_db_flavor() -> RocStr {
+    roc_str(db::flavor().map(db::Flavor::name).unwrap_or(""))
+}
+
+/// Tells the listeners of `channel` (the topic `db:<channel>`) `payload`, when the call's transaction
+/// commits (never, if it rolls back), or at once outside one: on Postgres with `pg_notify`, which
+/// other processes hear too; on SQLite in the process, the host keeping the call's notices.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_db_notify(channel: RocStr, payload: RocStr) -> HostDbScriptResult {
+    if db::flavor() == Some(db::Flavor::Sqlite) {
+        let (channel, payload) = (taken(channel), taken(payload));
+        let kept = CALL.with(|context| {
+            let mut context = context.borrow_mut();
+            if context.transaction.is_some() {
+                context.notices.push((channel.clone(), payload.clone()));
+                true
+            } else {
+                false
+            }
+        });
+        if !kept {
+            live::publish(&format!("db:{channel}"), &payload);
+        }
+        return done(Ok(()));
+    }
+    let waited = {
+        let (channel, payload) = (taken(channel), taken(payload));
+        on_db(async |client, _| db::notify(client, &channel, &payload).await)
+    };
+    done(in_time(waited))
+}
+
+/// What the call's transaction notified, published now that it has committed.
+fn publish_notices() {
+    let notices = CALL.with(|context| std::mem::take(&mut context.borrow_mut().notices));
+    for (channel, payload) in notices {
+        live::publish(&format!("db:{channel}"), &payload);
+    }
+}
 
 // Each runs its statement in `on_db` and drops what it took before `in_time`, which may cut the call
 // off (the frame must hold nothing to drop then).
@@ -809,23 +864,32 @@ pub extern "C" fn roc_host_db_commit() -> HostDbScriptResult {
             Ok(committed)
         }
     };
+    match &waited {
+        Ok(Ok(())) => publish_notices(),
+        _ => CALL.with(|context| context.borrow_mut().notices.clear()),
+    }
     done(in_time(waited))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_db_rollback() {
-    let pinned = CALL.with(|context| context.borrow_mut().transaction.take());
+    let pinned = CALL.with(|context| {
+        let mut context = context.borrow_mut();
+        context.notices.clear();
+        context.transaction.take()
+    });
     if let Some(client) = pinned {
         rolled_back(client);
     }
 }
 
-/// Listens to a Postgres channel: this call hears its notifications on the topic `pg:<channel>`.
+/// Listens to a channel of the database's: this call hears what is notified on it (`Db.notify!`,
+/// or Postgres's `pg_notify`) on the topic `db:<channel>`.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_db_listen(channel: RocStr) -> HostDbScriptResult {
     let channel = taken(channel);
     // Listening on the topic first, so a notification while Postgres is told isn't missed.
-    let receiver = live::listen(&format!("pg:{channel}"));
+    let receiver = live::listen(&format!("db:{channel}"));
     CALL.with(|context| context.borrow_mut().listening.push(receiver));
     done(wait(db::listen(&channel)))
 }

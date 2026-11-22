@@ -1,4 +1,5 @@
 import Env
+import Host
 import Log
 import Plugin
 import Setting
@@ -64,7 +65,15 @@ Plugins := [].{
 						}
 					Database =>
 						if !Setting.database!({}) {
-							$found = $found.append("${plugin.name}: it needs a database: start the server with --database-url (or DATABASE_URL)")
+							$found = $found.append("${plugin.name}: it needs a database: say `database: Sqlite(path)` in the app's program, or start the server with --database-url (or DATABASE_URL)")
+						}
+					Postgres =>
+						if Host.db_flavor!({}) != "postgres" {
+							$found = $found.append("${plugin.name}: it needs Postgres, and the app's database is ${described(Host.db_flavor!({}))}")
+						}
+					Sqlite =>
+						if Host.db_flavor!({}) != "sqlite" {
+							$found = $found.append("${plugin.name}: it needs SQLite, and the app's database is ${described(Host.db_flavor!({}))}")
 						}
 					Plugin(_) => {}
 				}
@@ -242,3 +251,12 @@ expect Plugins.problems([{ ..none, name: "push", loops: [{ name: "deliver", run!
 expect Plugins.problems([{ ..none, name: "a" }, { ..none, name: "a" }], []) == ["two plugins are called a"]
 expect Plugins.ordered([{ ..none, name: "auth", needs: [Plugin("email")] }, { ..none, name: "email" }]).map(|plugin| plugin.name) == ["email", "auth"]
 expect Plugins.summary({ ..none, name: "jobs", migrations: [{ name: "0001", sql: "" }], loops: [{ name: "jobs.a", run!: |{}| {} }, { name: "jobs.b", run!: |{}| {} }] }) == "jobs: 1 migration, 2 loops"
+
+## The database the server opened (`Host.db_flavor!`), for a message.
+described : Str -> Str
+described = |flavor|
+	match flavor {
+		"postgres" => "Postgres"
+		"sqlite" => "SQLite"
+		_ => "none"
+	}

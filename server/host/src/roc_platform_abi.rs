@@ -2679,6 +2679,25 @@ pub struct HostDbListenArgs {
     pub arg0: RocStr,
 }
 
+/// Arguments for Host.db_notify!
+/// Roc signature: Str, Str => Try({}, Str)
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostDbNotifyArgs {
+    pub arg0: RocStr,
+    pub arg1: RocStr,
+}
+
+/// Arguments for Host.db_open!
+/// Roc signature: Str => Try(Str, Str)
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostDbOpenArgs {
+    pub arg0: RocStr,
+}
+
 /// Arguments for Host.db_query!
 /// Roc signature: Str, Str => Try(Str, Str)
 /// Refcounted fields are owned by the hosted function.
@@ -3267,6 +3286,12 @@ pub type HostDbCommitResultTag = HostDbBeginResultTag;
 pub type HostDbListenResult = HostDbBeginResult;
 pub type HostDbListenResultPayload = HostDbBeginResultPayload;
 pub type HostDbListenResultTag = HostDbBeginResultTag;
+pub type HostDbNotifyResult = HostDbBeginResult;
+pub type HostDbNotifyResultPayload = HostDbBeginResultPayload;
+pub type HostDbNotifyResultTag = HostDbBeginResultTag;
+pub type HostDbOpenResult = HostActorAskResult;
+pub type HostDbOpenResultPayload = HostActorAskResultPayload;
+pub type HostDbOpenResultTag = HostActorAskResultTag;
 pub type HostDbQueryResult = HostActorAskResult;
 pub type HostDbQueryResultPayload = HostActorAskResultPayload;
 pub type HostDbQueryResultTag = HostActorAskResultTag;
@@ -4233,6 +4258,11 @@ unsafe extern "C" {
     /// The result is owned by Roc: return exactly one owned reference.
     pub fn roc_host_db_execute(arg0: RocStr, arg1: RocStr) -> HostDbExecuteResult;
 
+    /// Hosted symbol for Host.db_flavor!
+    /// Roc signature: {} => Str
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_db_flavor() -> RocStr;
+
     /// Hosted symbol for Host.db_listen!
     /// Roc signature: Str => Try({}, Str)
     /// Owned arguments. Release each exactly once before returning, unless it is
@@ -4240,6 +4270,23 @@ unsafe extern "C" {
     ///     unsafe { arg0.decref(roc_host); }
     /// The result is owned by Roc: return exactly one owned reference.
     pub fn roc_host_db_listen(arg0: RocStr) -> HostDbBeginResult;
+
+    /// Hosted symbol for Host.db_notify!
+    /// Roc signature: Str, Str => Try({}, Str)
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    ///     unsafe { arg1.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_db_notify(arg0: RocStr, arg1: RocStr) -> HostDbBeginResult;
+
+    /// Hosted symbol for Host.db_open!
+    /// Roc signature: Str => Try(Str, Str)
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_db_open(arg0: RocStr) -> HostActorAskResult;
 
     /// Hosted symbol for Host.db_query!
     /// Roc signature: Str, Str => Try(Str, Str)

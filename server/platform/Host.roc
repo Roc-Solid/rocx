@@ -27,7 +27,7 @@ Host := [].{
 	## system clock's when the server started, plus a steady clock's time since.
 	now_nanos! : {} => U64
 
-	## A setting the server was started with: `database` ("yes" with one), `dev` ("yes" with
+	## A setting the server was started with: `database_url` (`--database-url`), `dev` ("yes" with
 	## `--dev`), `debug` ("yes" with `--debug`), `public_url` (`--public-url`, or else where it
 	## listens). Empty when it wasn't given.
 	setting! : Str => Str
@@ -120,9 +120,16 @@ Host := [].{
 	## an `Err` means there was none: "timed out", "too large", or why.
 	http_send! : Str, Str, Str, List(U8), U64, U64, Bool => Try({ status : U16, headers : Str, body : List(U8) }, Str)
 
+	## Opens the app's database at a URL (`postgres://…`, or `sqlite:<path>`): its flavor,
+	## "postgres" or "sqlite". The platform's start calls it once, before anything reads.
+	db_open! : Str => Try(Str, Str)
+
+	## The database the server opened: "postgres", "sqlite", or "" for none.
+	db_flavor! : {} => Str
+
 	## The rows a statement reads, as a JSON array of objects (a column's name, its value), for
-	## the parameters in `params`, a JSON array of strings and nulls: Postgres reads each as the
-	## type its place in the statement wants.
+	## the parameters in `params`, a JSON array of text, integers, booleans and nulls (Postgres is
+	## sent each as text, which it reads as the type its place wants; SQLite binds each as it is).
 	db_query! : Str, Str => Try(Str, Str)
 
 	## How many rows a statement changed.
@@ -139,10 +146,13 @@ Host := [].{
 
 	db_rollback! : {} => {}
 
-	## From now until this call ends, it hears Postgres's notifications on `channel` (`notify`,
-	## sent when the transaction that sent them commits) as messages on the topic `pg:<channel>`
-	## (`live_next!`).
+	## From now until this call ends, it hears what is notified on `channel` (`db_notify!`, or
+	## Postgres's `pg_notify`) as messages on the topic `db:<channel>` (`live_next!`).
 	db_listen! : Str => Try({}, Str)
+
+	## Tells `channel`'s listeners a payload: when this call's transaction commits (never, if it
+	## rolls back), or at once outside one.
+	db_notify! : Str, Str => Try({}, Str)
 
 	## Sends `message` to every call listening to `topic`.
 	live_publish! : Str, Str => {}

@@ -11,6 +11,7 @@ program = {
 		Log.info!("an event from Roc", { target: request.path, note: "two words" })
 		Server.response(200, [{ name: "content-type", value: "text/plain; charset=utf-8" }], "logged")
 	},
+	database: Postgres,
 	migrations: [],
 	actors: [],
 	logs: { format: Pretty },
