@@ -1,0 +1,123 @@
+/* Acme Journal: the tokens every component's scoped <style> reads (colours, type, space), light and
+   dark, and the base for elements alone. Everything with a class is in a component's own <style>. */
+
+:root {
+	color-scheme: light dark;
+
+	--paper: #f6f1e7;
+	--surface: #fffcf6;
+	--ink: #211d17;
+	--ink-soft: #4b443a;
+	--muted: #766c5e;
+	--rule: #e3d9c6;
+	--rule-strong: #c9bba3;
+	--accent: #a3381c;
+	--accent-soft: #f5e0d4;
+	--mark: #ffe08a;
+	--code-bg: #efe7d7;
+	--focus: #1b6db3;
+
+	--serif: "Iowan Old Style", "Charter", "Bitstream Charter", "Sitka Text", Cambria, Georgia, serif;
+	--sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+	--mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+	--size-xs: 0.78rem;
+	--size-sm: 0.875rem;
+	--size-lg: 1.25rem;
+	--size-xl: 1.6rem;
+	--size-2xl: clamp(1.9rem, 1.5rem + 1.6vw, 2.6rem);
+
+	--space-1: 0.25rem;
+	--space-2: 0.5rem;
+	--space-3: 0.75rem;
+	--space-4: 1rem;
+	--space-5: 1.5rem;
+	--space-6: 2.5rem;
+	--space-7: 4rem;
+
+	--measure: 40rem;
+	--wide: 72rem;
+	--gutter: clamp(1rem, 4vw, 2rem);
+	--radius: 0.5rem;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--paper: #16130f;
+		--surface: #1e1a15;
+		--ink: #ede5d7;
+		--ink-soft: #cfc5b4;
+		--muted: #a0957f;
+		--rule: #342e26;
+		--rule-strong: #514839;
+		--accent: #f08c62;
+		--accent-soft: #3a241b;
+		--mark: #6d5414;
+		--code-bg: #241f19;
+		--focus: #7db9ff;
+	}
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+/* No smooth scrolling: packages/testing's click() measures an element right after scrolling it into
+   view, and a smooth scroll hasn't arrived yet (the journal's README, "What it asked of the platform"). */
+html {
+	-webkit-text-size-adjust: 100%;
+}
+
+body {
+	margin: 0;
+	background: var(--paper);
+	color: var(--ink);
+	font: 1.0625rem/1.6 var(--sans);
+	text-rendering: optimizeLegibility;
+}
+
+a {
+	color: var(--accent);
+	text-decoration-thickness: 0.07em;
+	text-underline-offset: 0.18em;
+}
+
+a:hover {
+	text-decoration-thickness: 0.12em;
+}
+
+:focus-visible {
+	outline: 3px solid var(--focus);
+	outline-offset: 2px;
+	border-radius: 2px;
+}
+
+img {
+	max-width: 100%;
+}
+
+::selection {
+	background: var(--mark);
+	color: var(--ink);
+}
+
+/* For a screen reader alone. */
+.visually-hidden {
+	position: absolute !important;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		transition: none !important;
+		animation: none !important;
+	}
+}

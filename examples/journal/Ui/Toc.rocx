@@ -1,0 +1,70 @@
+import pf.Html
+import ../I18n
+
+## A post's table of contents: its sections (level 2) and their parts (level 3), each a link to the
+## heading's id. Beside the text on a wide screen, above it on a narrow one.
+Toc := [].{
+	view : { lang : Str, headings : List({ level : U64, id : Str, text : Str }) } -> Html
+	view = |{ lang, headings }|
+		<nav class="toc" aria-labelledby="toc-title">
+			<p class="title" id="toc-title">{I18n.t(lang, "post.contents")}</p>
+			<ol>
+				{...headings.keep_if(|heading| heading.level == 2 or heading.level == 3).map(|heading| <li class:sub={heading.level == 3}><a href={"#${heading.id}"}>{heading.text}</a></li>)}
+			</ol>
+		</nav>
+
+	<story name="Sections">
+		<Toc lang="en" headings={[{ level: 2, id: "why", text: "Why it takes two days" }, { level: 3, id: "salt", text: "Salt" }, { level: 2, id: "bake", text: "Baking" }]} />
+	</story>
+
+	<style>
+		.toc {
+			font-size: var(--size-sm);
+		}
+
+		.title {
+			margin: 0 0 var(--space-2);
+			color: var(--muted);
+			font-size: var(--size-xs);
+			font-weight: 700;
+			letter-spacing: 0.08em;
+			text-transform: uppercase;
+		}
+
+		ol {
+			margin: 0;
+			padding: 0;
+			list-style: none;
+			counter-reset: section;
+		}
+
+		li {
+			margin: 0;
+		}
+
+		a {
+			display: block;
+			padding: var(--space-1) 0 var(--space-1) var(--space-3);
+			border-left: 2px solid var(--rule);
+			color: var(--ink-soft);
+			line-height: 1.35;
+			text-decoration: none;
+		}
+
+		.sub a {
+			padding-left: var(--space-5);
+			font-size: var(--size-xs);
+		}
+
+		a:hover {
+			border-left-color: var(--accent);
+			color: var(--accent);
+		}
+
+		@media print {
+			.toc {
+				display: none;
+			}
+		}
+	</style>
+}

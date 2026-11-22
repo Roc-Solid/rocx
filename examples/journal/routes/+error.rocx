@@ -1,0 +1,15 @@
+import pf.Html
+import pf.Router
+import pf.Title
+import ../I18n
+import ../Ui/NotFound
+
+## What a path no route has shows (404), and what a page that failed shows (500), in the language
+## of its address.
+view! = |{ status, problem }| {
+	lang = I18n.of_path(Router.location!({}).path)
+	<>
+		<Title>{status.to_str()} · Acme Journal</Title>
+		<NotFound lang={lang} status={status} problem={problem} />
+	</>
+}

@@ -1,0 +1,128 @@
+import pf.Html
+import testing.Dom
+import ../I18n
+import ../Listing
+import ../Search
+import ./TagList
+
+## A post in a list: its cover, title, day, reading time, summary and tags. Pure (`view`), and it
+## needs nothing only the server has, so the index's lists (rendered once, on the server) and the
+## search island's results (rendered again in the browser as you type) are the same component.
+## `marked` is the search being made: the title's matching letters are marked (`<mark>`).
+PostCard := [].{
+	view : { post : Listing.Summary, lang : Str, marked : Str } -> Html
+	view = |{ post, lang, marked }| {
+		title = Search.pieces(post.title, marked).map(|piece| if (piece.hit) <mark>{piece.text}</mark> else Html.text(piece.text))
+		cover = if (post.cover.is_empty()) Html.empty({}) else <img class="cover" src={post.cover} alt="" loading="lazy" decoding="async" width="120" height="90" />
+		<article class="card" class:covered={!post.cover.is_empty()}>
+			{=cover}
+			<div class="text">
+				<h2 class="title"><a href={post.url}>{...title}</a></h2>
+				<p class="meta"><time datetime={post.date}>{I18n.day(lang, post.date)}</time> · {I18n.reading(lang, post.minutes)} · {post.author_name}</p>
+				<p class="summary">{post.summary}</p>
+				<TagList lang={lang} tags={post.tags} label={I18n.t(lang, "post.tags")} />
+			</div>
+		</article>
+	}
+
+	<story name="With a cover">
+		<PostCard post={sample} lang="en" marked="" />
+	</story>
+
+	<story name="Marked by a search, in Polish">
+		<PostCard post={{ ..sample, lang: "pl", title: "Ogród zimą", summary: "Z okna kuchni grządki wyglądają na puste." }} lang="pl" marked="ogrod" />
+	</story>
+
+	<style>
+		.card {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr);
+			gap: var(--space-4);
+			padding: var(--space-5) 0;
+			border-bottom: 1px solid var(--rule);
+		}
+
+		.card.covered {
+			grid-template-columns: 7.5rem minmax(0, 1fr);
+		}
+
+		.cover {
+			width: 7.5rem;
+			height: auto;
+			aspect-ratio: 4 / 3;
+			border-radius: var(--radius);
+			object-fit: cover;
+			background: var(--code-bg);
+		}
+
+		.title {
+			margin: 0;
+			font-family: var(--serif);
+			font-size: var(--size-lg);
+			line-height: 1.25;
+		}
+
+		.title a {
+			color: var(--ink);
+			text-decoration: none;
+		}
+
+		.title a:hover {
+			color: var(--accent);
+			text-decoration: underline;
+		}
+
+		mark {
+			border-radius: 2px;
+			background: var(--mark);
+			color: inherit;
+		}
+
+		.meta {
+			margin: var(--space-1) 0 var(--space-2);
+			color: var(--muted);
+			font-size: var(--size-sm);
+		}
+
+		.summary {
+			margin: 0 0 var(--space-2);
+			color: var(--ink-soft);
+			font-family: var(--serif);
+		}
+
+		@media (max-width: 30rem) {
+			.card.covered {
+				grid-template-columns: 4.5rem minmax(0, 1fr);
+			}
+
+			.cover {
+				width: 4.5rem;
+			}
+		}
+	</style>
+}
+
+sample : Listing.Summary
+sample = {
+	lang: "en",
+	slug: "winter-garden",
+	url: "/en/posts/winter-garden",
+	title: "A garden in winter",
+	date: "2026-01-10",
+	author: "hanna-wierzba",
+	author_name: "Hanna Wierzba",
+	tags: ["garden", "seasons"],
+	summary: "The beds look empty from the kitchen window.",
+	cover: "/images/garden.svg",
+	minutes: 3,
+	translations: [],
+}
+
+card : Listing.Summary, Str -> Dom
+card = |post, marked| Dom.parse(Html.to_str(PostCard.view({ post, lang: post.lang, marked })))
+
+expect card(sample, "").text_of(Role("heading")) == Ok("A garden in winter")
+expect card(sample, "").get(Named("link", "A garden in winter")).map_ok(|link| link.attr("href")) == Ok(Ok("/en/posts/winter-garden"))
+expect card(sample, "").texts(Role("link")) == ["A garden in winter", "#garden", "#seasons"]
+expect card({ ..sample, lang: "pl", minutes: 5 }, "").texts(Tag("p")).any(|text| text.contains("10 stycznia 2026 · 5 minut czytania"))
+expect card(sample, "garden").texts(Tag("mark")) == ["garden"]

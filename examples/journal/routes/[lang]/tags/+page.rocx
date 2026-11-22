@@ -1,0 +1,11 @@
+import pf.Html
+import pf.Title
+import ../../../I18n
+import ../../../Ui/Listings
+
+## Every tag a language's posts have, the most used first (`/en/tags`).
+view! = |{ params }|
+	<>
+		<Title>{I18n.t(params.lang, "tags.title")} · Acme Journal</Title>
+		<NoHydration>{=Listings.tags(params.lang)}</NoHydration>
+	</>

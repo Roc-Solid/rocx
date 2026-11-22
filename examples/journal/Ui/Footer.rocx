@@ -1,0 +1,60 @@
+import pf.Html
+import ../I18n
+
+## The foot of every page: what the journal is, and its machine-readable parts (the language's
+## Atom feed, the JSON API and its OpenAPI page). Static, rendered inside `<NoHydration>`.
+Footer := [].{
+	view : { lang : Str } -> Html
+	view = |{ lang }| {
+		intl = I18n.intl(lang)
+		<footer class="footer">
+			<p class="about">{intl.t("footer.about", [])}</p>
+			<ul>
+				<li><a href={"/${lang}/feed.xml"} type="application/atom+xml">{intl.t("footer.feed", [])}</a></li>
+				<li><a href="/openapi.html">{intl.t("footer.api", [])}</a></li>
+				<li><a href="/sitemap.xml">sitemap.xml</a></li>
+				<li class="made">{intl.t("footer.made", [])}</li>
+			</ul>
+		</footer>
+	}
+
+	<story name="In Polish">
+		<Footer lang="pl" />
+	</story>
+
+	<style>
+		.footer {
+			width: calc(100% - 2 * var(--gutter));
+			max-width: calc(var(--wide) - 2 * var(--gutter));
+			margin: var(--space-7) auto 0;
+			padding: var(--space-5) 0 var(--space-6);
+			border-top: 1px solid var(--rule);
+			color: var(--muted);
+			font-size: var(--size-sm);
+		}
+
+		.about {
+			max-width: var(--measure);
+			margin: 0 0 var(--space-3);
+			font-family: var(--serif);
+			font-style: italic;
+		}
+
+		ul {
+			display: flex;
+			flex-wrap: wrap;
+			gap: var(--space-2) var(--space-4);
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		a {
+			color: var(--ink-soft);
+		}
+
+		.made {
+			margin-left: auto;
+		}
+	</style>
+}

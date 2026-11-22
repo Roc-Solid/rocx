@@ -1,0 +1,165 @@
+import pf.Html
+import ../Authors
+import ../I18n
+import ../Posts
+import ../Generated/Paths
+import ./NotFound
+import ./Pagination
+import ./PostCard
+
+## The journal's lists, each a page's whole content: the index and its pages, a tag's posts, a
+## writer's, and every tag. They read the posts, which only the server has, so their pages render
+## them inside `<NoHydration>`. A page that isn't there (a language the journal isn't written in,
+## a page past the last, a tag no post has, a writer who isn't one) is the 404.
+Listings := [].{
+
+	## Page `number` of the language's index.
+	index : Str, Str -> Html
+	index = |lang, number| {
+		pages = Posts.pages(lang)
+		match U64.from_str(number) {
+			Ok(page) if I18n.known(lang) and page >= 1 and page <= pages => {
+				intl = I18n.intl(lang)
+				<section class="listing" aria-labelledby="listing-title">
+					<header class="intro">
+						<h1 id="listing-title">{intl.t("index.title", [])}</h1>
+						<p>{intl.t("site.description", [])}</p>
+						{=if (pages > 1) <p class="where">{intl.t("index.page", [("page", Int(page.to_i64_wrap())), ("pages", Int(pages.to_i64_wrap()))])}</p> else Html.empty({})}
+					</header>
+					{=Listings.cards(lang, Posts.page(lang, page))}
+					<Pagination lang={lang} page={page} pages={pages} />
+				</section>
+			}
+			_ => Listings.missing(lang)
+		}
+	}
+
+	## The language's posts with `tag`.
+	tag : Str, Str -> Html
+	tag = |lang, wanted| {
+		posts = Posts.tagged(lang, wanted)
+		if posts.is_empty() {
+			Listings.missing(lang)
+		} else {
+			intl = I18n.intl(lang)
+			<section class="listing" aria-labelledby="listing-title">
+				<header class="intro">
+					<p class="kicker"><a href={Paths.lang_tags({ lang: lang })}>{intl.t("tags.title", [])}</a></p>
+					<h1 id="listing-title">{intl.t("tag.title", [("tag", Text(wanted))])}</h1>
+					<p>{intl.t("posts.count", [("count", Int(posts.len().to_i64_wrap()))])}</p>
+				</header>
+				{=Listings.cards(lang, posts)}
+			</section>
+		}
+	}
+
+	## A writer, and their posts in the language.
+	author : Str, Str -> Html
+	author = |lang, id|
+		match Authors.find(id) {
+			Ok(found) if I18n.known(lang) => {
+				intl = I18n.intl(lang)
+				posts = Posts.by(lang, id)
+				<section class="listing" aria-labelledby="listing-title">
+					<header class="intro">
+						<h1 id="listing-title">{intl.t("author.title", [("name", Text(found.name))])}</h1>
+						<p class="bio">{Authors.bio(found, lang)}</p>
+						<p>{intl.t("posts.count", [("count", Int(posts.len().to_i64_wrap()))])}</p>
+					</header>
+					{=Listings.cards(lang, posts)}
+				</section>
+			}
+			_ => Listings.missing(lang)
+		}
+
+	## Every tag the language's posts have, the most used first.
+	tags : Str -> Html
+	tags = |lang|
+		if I18n.known(lang) {
+			intl = I18n.intl(lang)
+			<section class="listing" aria-labelledby="listing-title">
+				<header class="intro">
+					<h1 id="listing-title">{intl.t("tags.title", [])}</h1>
+					<p>{intl.t("tags.lead", [])}</p>
+				</header>
+				<ul class="cloud">
+					{...Posts.tags(lang).map(|found| <li><a href={Paths.lang_tags_tag({ lang, tag: found.tag })}>{"#${found.tag}"}</a> <span class="count">{intl.t("posts.count", [("count", Int(found.count.to_i64_wrap()))])}</span></li>)}
+				</ul>
+			</section>
+		} else {
+			Listings.missing(lang)
+		}
+
+	## The posts, as cards.
+	cards : Str, List(Posts.Entry) -> Html
+	cards = |lang, posts|
+		<ol class="posts">
+			{...posts.map(|entry| <li><PostCard post={Posts.summary(entry)} lang={lang} marked="" /></li>)}
+		</ol>
+
+	## The 404, in `lang` (or the default, for a language the journal isn't written in).
+	missing : Str -> Html
+	missing = |lang| <NotFound lang={if (I18n.known(lang)) lang else I18n.default} status={404} problem="" />
+
+	<style>
+		.listing {
+			max-width: var(--measure);
+			margin: 0 auto;
+		}
+
+		.intro {
+			margin: var(--space-6) 0 var(--space-3);
+		}
+
+		h1 {
+			margin: 0 0 var(--space-2);
+			font-family: var(--serif);
+			font-size: var(--size-2xl);
+			line-height: 1.1;
+		}
+
+		.intro p {
+			margin: 0 0 var(--space-2);
+			color: var(--ink-soft);
+			font-family: var(--serif);
+		}
+
+		.intro .where,
+		.kicker {
+			color: var(--muted);
+			font-family: var(--sans);
+			font-size: var(--size-sm);
+		}
+
+		.bio {
+			font-size: var(--size-lg);
+			font-style: italic;
+		}
+
+		.posts {
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		.cloud {
+			display: flex;
+			flex-wrap: wrap;
+			gap: var(--space-3) var(--space-5);
+			margin: var(--space-5) 0 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		.cloud a {
+			font-family: var(--serif);
+			font-size: var(--size-lg);
+			text-decoration: none;
+		}
+
+		.cloud .count {
+			color: var(--muted);
+			font-size: var(--size-sm);
+		}
+	</style>
+}

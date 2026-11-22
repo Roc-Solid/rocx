@@ -1,0 +1,104 @@
+import pf.Html
+import pf.Solid exposing [create_memo!, create_signal!]
+import pf.Endpoint
+import pf.Router
+import pf.For
+import ../I18n
+import ../Listing
+import ../Search
+import ../Generated/Api
+import ../Generated/Paths
+import ./PostCard
+
+## The search page's island: a field, and the posts whose titles and tags match what is typed, the
+## matching letters marked, filtered again on every key. A signal (what is typed) and a memo (the
+## results) are all it keeps. The posts come from the JSON API (`GET /api/posts?lang=en`), read as
+## the server renders the page and carried in it, so typing asks the server nothing.
+##
+## Without JavaScript it is a plain form: `GET /en/search?q=bread`, and the server renders the
+## results for `q`, as the browser would.
+SearchBox := [].{
+	view! : { lang : Str } => Html
+	view! = |{ lang }| {
+		intl = I18n.intl(lang)
+		# Read once, where the page is rendered. The browser's copy of `Api` has no types (its route
+		# file isn't there), so say what the answer is.
+		posts : List(Listing.Summary)
+		posts = Endpoint.get!(Endpoint.with_query(Api.get_api_posts({}), "lang=${lang}"))
+		(query!, set_query!) = create_signal!(Search.query_of(Router.location!({}).query))
+		found! = create_memo!(|| Search.results(query!(), posts))
+		said! = || {
+			count = Int(found!().len().to_i64_wrap())
+			if (query!().trim().is_empty()) intl.t("search.all", [("count", count)]) else intl.t("search.found", [("count", count), ("query", Text(query!().trim()))])
+		}
+		<div class="search">
+			<form role="search" method="get" action={Paths.lang_search({ lang: lang })}>
+				<label class="label" for="search-q">{intl.t("search.label", [])}</label>
+				<div class="field">
+					<input id="search-q" name="q" type="search" value={query!()} autocomplete="off" spellcheck="false" on:input.value={set_query!} />
+					<button type="submit">{intl.t("search.button", [])}</button>
+				</div>
+			</form>
+			<p class="count" role="status">{said!()}</p>
+			<ol class="results">
+				<For each!={found!()} keyed={|post| post.url}>
+					{|post!, _| <li>{=<PostCard post={post!()} lang={lang} marked={query!()} />}</li>}
+				</For>
+			</ol>
+		</div>
+	}
+
+	<style>
+		.search {
+			max-width: var(--measure);
+			margin: 0 auto;
+		}
+
+		.label {
+			display: block;
+			margin-bottom: var(--space-2);
+			color: var(--muted);
+			font-size: var(--size-sm);
+		}
+
+		.field {
+			display: flex;
+			gap: var(--space-2);
+		}
+
+		input {
+			flex: 1;
+			min-width: 0;
+			padding: var(--space-3) var(--space-4);
+			border: 1px solid var(--rule-strong);
+			border-radius: var(--radius);
+			background: var(--surface);
+			color: var(--ink);
+			font: inherit;
+			font-family: var(--serif);
+			font-size: var(--size-lg);
+		}
+
+		button {
+			padding: var(--space-2) var(--space-4);
+			border: 0;
+			border-radius: var(--radius);
+			background: var(--ink);
+			color: var(--paper);
+			font: inherit;
+			cursor: pointer;
+		}
+
+		.count {
+			margin: var(--space-4) 0 0;
+			color: var(--muted);
+			font-size: var(--size-sm);
+		}
+
+		.results {
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+	</style>
+}

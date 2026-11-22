@@ -1,0 +1,73 @@
+/* Acme Journal on paper: black on white, the reading column only, the address of every link written
+   after it. The layout links it with media="print"; components hide their own interactive parts
+   (the reactions, the table of contents) in an @media print of their scoped <style>. */
+
+:root {
+	--paper: #fff;
+	--surface: #fff;
+	--ink: #000;
+	--ink-soft: #222;
+	--muted: #555;
+	--rule: #bbb;
+	--rule-strong: #888;
+	--accent: #000;
+	--accent-soft: #eee;
+	--code-bg: #f4f4f4;
+	color-scheme: light;
+}
+
+@page {
+	margin: 2cm 2.2cm;
+}
+
+body {
+	background: #fff;
+	color: #000;
+	font-size: 11pt;
+}
+
+header.masthead nav,
+header.masthead form,
+header.masthead .skip,
+footer.footer ul {
+	display: none !important;
+}
+
+main {
+	max-width: none !important;
+	padding: 0 !important;
+}
+
+article a[href^="http"]::after,
+article a[href^="/"]:not([aria-hidden])::after {
+	content: " (" attr(href) ")";
+	color: #555;
+	font-size: 0.85em;
+	word-break: break-all;
+}
+
+article sup a::after,
+article .tags a::after,
+article .byline a::after {
+	content: none !important;
+}
+
+h1,
+h2,
+h3 {
+	break-after: avoid;
+}
+
+p,
+li,
+blockquote {
+	orphans: 3;
+	widows: 3;
+}
+
+pre,
+table,
+figure,
+blockquote {
+	break-inside: avoid;
+}

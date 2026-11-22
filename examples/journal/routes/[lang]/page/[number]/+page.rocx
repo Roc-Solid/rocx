@@ -1,0 +1,11 @@
+import pf.Html
+import pf.Title
+import ../../../../I18n
+import ../../../../Ui/Listings
+
+## The index's later pages: `/en/page/2`, ….
+view! = |{ params }|
+	<>
+		<Title>{I18n.intl(params.lang).t("index.numbered", [("page", Text(params.number))])} · Acme Journal</Title>
+		<NoHydration>{=Listings.index(params.lang, params.number)}</NoHydration>
+	</>

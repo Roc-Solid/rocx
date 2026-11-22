@@ -1,0 +1,278 @@
+import pf.Html
+import markdown.Md
+import ../Authors
+import ../Footnotes
+import ../I18n
+import ../Posts
+import ../Generated/Paths
+import ./Prose
+import ./TagList
+import ./Toc
+
+## A post's page, but its reactions (an island of their own between these two parts): the article
+## (its title, summary, writer, day, reading time, a link to its translation, its cover, its table
+## of contents, its body and its notes), and then the posts around it. It reads the posts, which
+## only the server has, so the page renders it inside `<NoHydration>`.
+Article := [].{
+	view : { entry : Posts.Entry } -> Html
+	view = |{ entry }| {
+		lang = entry.lang
+		post = entry.post
+		intl = I18n.intl(lang)
+		headings = Md.headings(entry.doc)
+		toc = if (headings.count_if(|heading| heading.level == 2) >= 2) <Toc lang={lang} headings={headings} /> else Html.empty({})
+		cover = if (post.cover.is_empty()) Html.empty({}) else <figure class="cover"><img src={post.cover} alt={post.cover_alt} width="1200" height="630" /></figure>
+		translations = Posts.translations(entry).map(|other| <a class="translation" href={Posts.url(other)} lang={other.lang} hreflang={other.lang}>{I18n.t(other.lang, "post.read_here")} →</a>)
+		<article class="article" aria-labelledby="title">
+			<header class="head">
+				<TagList lang={lang} tags={post.tags} label={intl.t("post.tags", [])} />
+				<h1 id="title">{post.title}</h1>
+				<p class="dek">{post.summary}</p>
+				<p class="byline">
+					<a href={Paths.lang_authors_author({ lang, author: post.author })}>{Authors.name_of(post.author)}</a>
+					<span aria-hidden="true">·</span>
+					<time datetime={post.date}>{I18n.day(lang, post.date)}</time>
+					<span aria-hidden="true">·</span>
+					<span>{I18n.reading(lang, entry.minutes)}</span>
+					{...translations}
+				</p>
+			</header>
+			{=cover}
+			<div class="layout" class:with-toc={headings.count_if(|heading| heading.level == 2) >= 2}>
+				{=toc}
+				<div class="body">
+					<Prose doc={entry.doc} />
+					{=Article.notes(lang, entry.notes)}
+				</div>
+			</div>
+		</article>
+	}
+
+	## The notes, numbered, each with a link back to where the text refers to it.
+	notes : Str, List(Footnotes.Note) -> Html
+	notes = |lang, found|
+		if found.is_empty() {
+			Html.empty({})
+		} else {
+			intl = I18n.intl(lang)
+			<section class="notes" aria-labelledby="footnotes">
+				<h2 id="footnotes">{intl.t("post.notes", [])}</h2>
+				<ol>
+					{...found.map(|note| <li id={Footnotes.anchor(note.id)}><Prose doc={Md.parse(note.text)} /><a class="back" href={"#${Footnotes.back(note.id)}"} aria-label={intl.t("post.back", [])}>↩</a></li>)}
+				</ol>
+			</section>
+		}
+
+	## Below the reactions: the newer and the older post in the same language.
+	around : { entry : Posts.Entry } -> Html
+	around = |{ entry }| {
+		intl = I18n.intl(entry.lang)
+		step = |found, rel, label|
+			match found {
+				Ok(other) => <a class={"step ${rel}"} rel={rel} href={Posts.url(other)}><span class="label">{label}</span><span class="name">{other.post.title}</span></a>
+				Err(NotFound) => <span class="step"></span>
+			}
+		<nav class="around" aria-label={intl.t("post.around", [])}>
+			{=step(Posts.newer(entry), "prev", "← ${intl.t("post.newer", [])}")}
+			{=step(Posts.older(entry), "next", "${intl.t("post.older", [])} →")}
+		</nav>
+	}
+
+	<style>
+		.article {
+			margin-top: var(--space-6);
+		}
+
+		.head {
+			max-width: var(--measure);
+			margin: 0 auto var(--space-5);
+		}
+
+		h1 {
+			margin: var(--space-2) 0 var(--space-3);
+			font-family: var(--serif);
+			font-size: clamp(2rem, 1.4rem + 2.6vw, 3.1rem);
+			font-weight: 700;
+			letter-spacing: -0.01em;
+			line-height: 1.08;
+			text-wrap: balance;
+		}
+
+		.dek {
+			margin: 0 0 var(--space-4);
+			color: var(--ink-soft);
+			font-family: var(--serif);
+			font-size: var(--size-lg);
+			font-style: italic;
+			line-height: 1.45;
+		}
+
+		.byline {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: baseline;
+			gap: var(--space-1) var(--space-2);
+			margin: 0;
+			color: var(--muted);
+			font-size: var(--size-sm);
+		}
+
+		.byline a {
+			color: var(--ink);
+			font-weight: 600;
+		}
+
+		.byline .translation {
+			margin-left: auto;
+			color: var(--accent);
+			font-weight: 600;
+		}
+
+		.cover {
+			max-width: 56rem;
+			margin: 0 auto var(--space-6);
+		}
+
+		.cover img {
+			display: block;
+			width: 100%;
+			height: auto;
+			border-radius: var(--radius);
+			background: var(--code-bg);
+		}
+
+		.layout {
+			display: grid;
+			grid-template-columns: minmax(0, var(--measure));
+			justify-content: center;
+			gap: var(--space-5);
+		}
+
+		.body {
+			min-width: 0;
+		}
+
+		.notes {
+			margin-top: var(--space-6);
+			padding-top: var(--space-4);
+			border-top: 1px solid var(--rule);
+			font-size: var(--size-sm);
+		}
+
+		.notes h2 {
+			margin: 0 0 var(--space-3);
+			color: var(--muted);
+			font-size: var(--size-xs);
+			letter-spacing: 0.08em;
+			text-transform: uppercase;
+		}
+
+		.notes ol {
+			margin: 0;
+			padding-left: var(--space-5);
+		}
+
+		.notes li {
+			margin-bottom: var(--space-2);
+			padding-left: var(--space-1);
+		}
+
+		.notes li::marker {
+			color: var(--muted);
+			font-family: var(--sans);
+		}
+
+		.notes li:target {
+			border-radius: var(--radius);
+			background: var(--accent-soft);
+		}
+
+		.notes :global(.prose) {
+			font-size: 1rem;
+		}
+
+		.notes :global(.prose),
+		.notes :global(.markdown),
+		.notes :global(.prose p) {
+			display: inline;
+			margin: 0;
+		}
+
+		.back {
+			margin-left: var(--space-2);
+			text-decoration: none;
+		}
+
+		.around {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: var(--space-4);
+			max-width: var(--measure);
+			margin: var(--space-6) auto 0;
+			padding-top: var(--space-4);
+			border-top: 1px solid var(--rule);
+		}
+
+		.step {
+			display: grid;
+			gap: var(--space-1);
+			text-decoration: none;
+		}
+
+		.step.next {
+			text-align: right;
+		}
+
+		.label {
+			color: var(--muted);
+			font-size: var(--size-xs);
+			letter-spacing: 0.06em;
+			text-transform: uppercase;
+		}
+
+		.name {
+			color: var(--ink);
+			font-family: var(--serif);
+			font-size: var(--size-lg);
+			line-height: 1.25;
+		}
+
+		.step:hover .name {
+			color: var(--accent);
+		}
+
+		@media (min-width: 72rem) {
+			.layout.with-toc {
+				grid-template-columns: 13rem minmax(0, var(--measure)) 13rem;
+			}
+
+			.layout.with-toc > :global(.toc) {
+				position: sticky;
+				top: var(--space-4);
+				align-self: start;
+			}
+		}
+
+		@media (max-width: 71.99rem) {
+			.layout.with-toc > :global(.toc) {
+				padding: var(--space-3) var(--space-4);
+				border: 1px solid var(--rule);
+				border-radius: var(--radius);
+				background: var(--surface);
+			}
+		}
+
+		@media print {
+			.around,
+			.translation,
+			.back {
+				display: none;
+			}
+
+			.layout,
+			.layout.with-toc {
+				grid-template-columns: minmax(0, 1fr);
+			}
+		}
+	</style>
+}

@@ -1,0 +1,28 @@
+import pf.Html
+import pf.Title
+import ../../../../I18n
+import ../../../../Posts
+import ../../../../Ui/Article
+import ../../../../Ui/NotFound
+import ../../../../Ui/ReactionBar
+
+## A post (`/en/posts/slow-bread`): the article and the posts around it, rendered on the server
+## alone (`<NoHydration>`), and between them the reactions, the page's one island. A post this
+## language doesn't have is a 404, and its reactions' endpoint refuses it too, so the island shows
+## nothing.
+view! = |{ params }|
+	<>
+		<NoHydration>
+			{=match Posts.find(params.lang, params.slug) {
+				Ok(entry) => <><Title>{entry.post.title} · Acme Journal</Title><Article entry={entry} /></>
+				Err(NotFound) => <NotFound lang={I18n.of_path("/${params.lang}")} status={404} problem="" />
+			}}
+		</NoHydration>
+		<ReactionBar lang={params.lang} slug={params.slug} />
+		<NoHydration>
+			{=match Posts.find(params.lang, params.slug) {
+				Ok(entry) => Article.around({ entry: entry })
+				Err(NotFound) => Html.empty({})
+			}}
+		</NoHydration>
+	</>

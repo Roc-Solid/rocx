@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" role="img">
+  <rect width="1200" height="520" fill="#eef3f4"/>
+  <g stroke="#c7d5d8" stroke-width="2">
+    <path d="M100 80 H1140"/><path d="M100 170 H1140"/><path d="M100 260 H1140"/><path d="M100 350 H1140"/><path d="M100 440 H1140"/>
+  </g>
+  <g stroke="#c7d5d8" stroke-width="2" stroke-dasharray="6 8">
+    <path d="M100 60 V440"/><path d="M360 60 V440"/><path d="M620 60 V440"/><path d="M880 60 V440"/><path d="M1140 60 V440"/>
+  </g>
+  <path d="M100 440 V410 C160 410 200 430 245 430 C330 430 380 95 512 95 C640 95 700 420 795 420 C900 420 950 105 1080 105 C1110 105 1130 110 1140 118 V440 Z" fill="#9cc3cc" opacity="0.55"/>
+  <path d="M100 410 C160 410 200 430 245 430 C330 430 380 95 512 95 C640 95 700 420 795 420 C900 420 950 105 1080 105 C1110 105 1130 110 1140 118" fill="none" stroke="#1f6f84" stroke-width="6" stroke-linecap="round"/>
+  <g fill="#1f6f84">
+    <circle cx="245" cy="430" r="10"/><circle cx="512" cy="95" r="10"/><circle cx="795" cy="420" r="10"/><circle cx="1080" cy="105" r="10"/>
+  </g>
+  <g font-family="ui-sans-serif, system-ui, sans-serif" font-size="26" fill="#2b4a52">
+    <text x="245" y="400" text-anchor="middle">04:12</text>
+    <text x="512" y="72" text-anchor="middle">10:31</text>
+    <text x="795" y="392" text-anchor="middle">16:40</text>
+    <text x="1080" y="82" text-anchor="middle">22:55</text>
+    <text x="100" y="490">00:00</text><text x="360" y="490" text-anchor="middle">06:00</text><text x="620" y="490" text-anchor="middle">12:00</text><text x="880" y="490" text-anchor="middle">18:00</text><text x="1140" y="490" text-anchor="end">24:00</text>
+  </g>
+</svg>

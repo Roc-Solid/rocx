@@ -1,0 +1,190 @@
+import pf.Html
+import ../I18n
+import ../Generated/Paths
+
+## The top of every page: a link past it to the content, the journal's name, its sections, a search
+## form and the language switcher. A plain form and plain links, so all of it works before (and
+## without) JavaScript; the layout renders it inside `<NoHydration>`, since nothing in it changes.
+## `alternates` is this page in each language (`Links.alternates`): the switcher keeps a reader on
+## the same post when it has a translation.
+Masthead := [].{
+	view : { lang : Str, path : Str, alternates : List({ lang : Str, url : Str, same : Bool }) } -> Html
+	view = |{ lang, path, alternates }| {
+		intl = I18n.intl(lang)
+		home = Paths.lang({ lang: lang })
+		tags = Paths.lang_tags({ lang: lang })
+		here = |url| if (path == url) "page" else ""
+		<header class="masthead">
+			<a class="skip" href="#content">{intl.t("skip", [])}</a>
+			<div class="bar">
+				<a class="brand" href={home}>
+					<img class="mark" src="/images/mark.svg" alt="" width="36" height="36" />
+					<span class="name">Acme Journal</span>
+					<span class="tagline">{intl.t("site.tagline", [])}</span>
+				</a>
+				<nav class="languages" aria-label={intl.t("nav.language", [])}>
+					<ul>
+						{...alternates.map(|other| <li><a href={other.url} lang={other.lang} hreflang={other.lang} aria-current??={if (other.lang == lang) "true" else ""} class:current={other.lang == lang}>{I18n.name(other.lang)}</a></li>)}
+					</ul>
+				</nav>
+			</div>
+			<div class="bar sections">
+				<nav aria-label={intl.t("nav.label", [])}>
+					<ul>
+						<li><a href={home} aria-current??={here(home)}>{intl.t("nav.latest", [])}</a></li>
+						<li><a href={tags} aria-current??={here(tags)}>{intl.t("nav.tags", [])}</a></li>
+					</ul>
+				</nav>
+				<form class="search" role="search" method="get" action={Paths.lang_search({ lang: lang })}>
+					<label class="visually-hidden" for="masthead-q">{intl.t("nav.search_label", [])}</label>
+					<input id="masthead-q" name="q" type="search" placeholder={intl.t("nav.search", [])} autocomplete="off" />
+					<button type="submit">{intl.t("search.button", [])}</button>
+				</form>
+			</div>
+		</header>
+	}
+
+	<style>
+		.masthead {
+			max-width: var(--wide);
+			margin: 0 auto;
+			padding: var(--space-4) var(--gutter) 0;
+		}
+
+		.skip {
+			position: absolute;
+			left: var(--space-3);
+			top: -4rem;
+			padding: var(--space-2) var(--space-3);
+			border-radius: var(--radius);
+			background: var(--ink);
+			color: var(--paper);
+			z-index: 10;
+		}
+
+		.skip:focus {
+			top: var(--space-3);
+		}
+
+		.bar {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			justify-content: space-between;
+			gap: var(--space-3) var(--space-5);
+		}
+
+		.brand {
+			display: grid;
+			grid-template-columns: auto 1fr;
+			column-gap: var(--space-3);
+			align-items: center;
+			color: var(--ink);
+			text-decoration: none;
+		}
+
+		.mark {
+			grid-row: span 2;
+			width: 2.25rem;
+			height: 2.25rem;
+		}
+
+		.name {
+			font-family: var(--serif);
+			font-size: var(--size-xl);
+			font-weight: 700;
+			letter-spacing: 0.01em;
+			line-height: 1.1;
+		}
+
+		.tagline {
+			color: var(--muted);
+			font-family: var(--serif);
+			font-size: var(--size-sm);
+			font-style: italic;
+		}
+
+		ul {
+			display: flex;
+			flex-wrap: wrap;
+			gap: var(--space-1) var(--space-4);
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		.languages a {
+			display: inline-block;
+			padding: var(--space-1) var(--space-2);
+			border-radius: var(--radius);
+			color: var(--ink-soft);
+			font-size: var(--size-sm);
+			text-decoration: none;
+		}
+
+		.languages a.current {
+			background: var(--ink);
+			color: var(--paper);
+		}
+
+		.sections {
+			margin-top: var(--space-4);
+			padding: var(--space-2) 0;
+			border-top: 3px double var(--rule-strong);
+			border-bottom: 1px solid var(--rule);
+		}
+
+		.sections a {
+			color: var(--ink);
+			font-size: var(--size-sm);
+			font-weight: 600;
+			letter-spacing: 0.06em;
+			text-decoration: none;
+			text-transform: uppercase;
+		}
+
+		.sections a[aria-current="page"],
+		.sections a:hover {
+			color: var(--accent);
+		}
+
+		.search {
+			display: flex;
+			gap: var(--space-2);
+		}
+
+		input {
+			width: 12rem;
+			min-width: 0;
+			padding: var(--space-1) var(--space-3);
+			border: 1px solid var(--rule-strong);
+			border-radius: 999px;
+			background: var(--surface);
+			color: var(--ink);
+			font: inherit;
+			font-size: var(--size-sm);
+		}
+
+		button {
+			padding: var(--space-1) var(--space-3);
+			border: 0;
+			border-radius: 999px;
+			background: var(--ink);
+			color: var(--paper);
+			font: inherit;
+			font-size: var(--size-sm);
+			cursor: pointer;
+		}
+
+		@media (max-width: 36rem) {
+			.tagline {
+				display: none;
+			}
+
+			.search,
+			input {
+				flex: 1;
+			}
+		}
+	</style>
+}

@@ -1,0 +1,282 @@
+import pf.Html
+import markdown.Block
+import markdown.Markdown
+import markdown.Md
+import testing.Dom
+import ../Footnotes
+
+## A post's body: packages/markdown's `<Markdown>`, with hooks for what the journal draws its own
+## way. A heading gets an anchor to link to it by; a code block a label with its language, and a
+## scroll of its own (focusable, for the keyboard); a footnote's reference (`[1](#fn-salt)`, from
+## `Footnotes.split`) is a superscript that its note links back to; an image is a figure with its
+## title as the caption, loaded lazily. The typography is here too: the elements `<Markdown>`
+## makes are its own, so they are styled through `:global(…)` under this component's `.prose`.
+Prose := [].{
+	view : { doc : List(Block) } -> Html
+	view = |{ doc }|
+		<div class="prose">
+			<Markdown doc={doc} class="markdown" heading={Prose.heading} code={Prose.code} link={Prose.link} image={Prose.image} />
+		</div>
+
+	## A heading, and a link to it after its text (hidden from screen readers, which list headings
+	## themselves).
+	heading : Markdown.Heading -> Html
+	heading = |found| Html.element("h${found.level.to_str()}", [Html.attr("id", found.id)], found.children.append(<a class="anchor" href={"#${found.id}"} aria-hidden="true" tabindex="-1">#</a>))
+
+	## A code block: its language as a label, its lines in a scroll of their own.
+	code : Markdown.Code -> Html
+	code = |block| {
+		label = if (block.lang.is_empty()) "code" else block.lang
+		<div class="code">
+			<span class="lang" aria-hidden="true">{label}</span>
+			<pre tabindex="0" aria-label={"Code: ${label}"}><code class??={if (block.lang.is_empty()) "" else "language-${block.lang}"}>{block.text}</code></pre>
+		</div>
+	}
+
+	## A link: a footnote's reference as a numbered superscript; any other as `<Markdown>` has it.
+	link : Markdown.Link -> Html
+	link = |found|
+		if found.url.starts_with("#fn-") {
+			id = found.url.drop_prefix("#fn-")
+			<sup class="ref"><a href={found.url} id={Footnotes.back(id)} aria-describedby="footnotes">{...found.children}</a></sup>
+		} else {
+			Markdown.link(found)
+		}
+
+	## An image as a figure (spans, since Markdown puts images inside paragraphs), its title the
+	## caption.
+	image : Markdown.Image -> Html
+	image = |found|
+		<span class="figure">
+			<img src={Md.href(found.url)} alt={found.alt} loading="lazy" decoding="async" />
+			{=if (found.title.is_empty()) Html.empty({}) else <span class="caption">{found.title}</span>}
+		</span>
+
+	<story name="Everything a post may have">
+		<Prose doc={Md.parse(sample)} />
+	</story>
+
+	<style>
+		.prose {
+			font-family: var(--serif);
+			font-size: 1.1875rem;
+			line-height: 1.7;
+			color: var(--ink);
+			hyphens: auto;
+			overflow-wrap: break-word;
+		}
+
+		.prose :global(p),
+		.prose :global(ul),
+		.prose :global(ol),
+		.prose :global(blockquote),
+		.prose :global(table) {
+			margin: 0 0 1.1em;
+		}
+
+		.prose :global(h2),
+		.prose :global(h3),
+		.prose :global(h4) {
+			margin: 1.8em 0 0.5em;
+			font-family: var(--serif);
+			line-height: 1.25;
+			scroll-margin-top: var(--space-4);
+		}
+
+		.prose :global(h2) {
+			font-size: 1.45em;
+		}
+
+		.prose :global(h3) {
+			font-size: 1.2em;
+		}
+
+		.anchor {
+			margin-left: 0.35em;
+			color: var(--rule-strong);
+			font-weight: 400;
+			text-decoration: none;
+			opacity: 0;
+			transition: opacity 120ms;
+		}
+
+		.prose :global(h2:hover) .anchor,
+		.prose :global(h3:hover) .anchor,
+		.anchor:focus {
+			opacity: 1;
+		}
+
+		.prose :global(a) {
+			color: var(--accent);
+		}
+
+		.prose :global(li) {
+			margin: 0.25em 0;
+		}
+
+		.prose :global(li::marker) {
+			color: var(--muted);
+		}
+
+		.prose :global(blockquote) {
+			margin-left: 0;
+			padding: 0.2em 0 0.2em 1.2em;
+			border-left: 3px solid var(--accent);
+			color: var(--ink-soft);
+			font-size: 1.1em;
+			font-style: italic;
+		}
+
+		.prose :global(blockquote p:last-child) {
+			margin-bottom: 0;
+		}
+
+		.prose :global(hr) {
+			margin: 2.4em auto;
+			width: 30%;
+			border: 0;
+			border-top: 1px solid var(--rule-strong);
+		}
+
+		.prose :global(:not(pre) > code) {
+			padding: 0.1em 0.3em;
+			border-radius: 4px;
+			background: var(--code-bg);
+			font-family: var(--mono);
+			font-size: 0.82em;
+		}
+
+		.code {
+			position: relative;
+			margin: 0 0 1.3em;
+		}
+
+		.lang {
+			position: absolute;
+			top: 0;
+			right: var(--space-3);
+			padding: 0.15em 0.55em;
+			border-radius: 0 0 4px 4px;
+			background: var(--rule);
+			color: var(--muted);
+			font-family: var(--sans);
+			font-size: var(--size-xs);
+			letter-spacing: 0.04em;
+		}
+
+		pre {
+			margin: 0;
+			padding: var(--space-5) var(--space-4) var(--space-4);
+			overflow-x: auto;
+			border: 1px solid var(--rule);
+			border-radius: var(--radius);
+			background: var(--code-bg);
+			font-family: var(--mono);
+			font-size: 0.84rem;
+			line-height: 1.6;
+			hyphens: none;
+			tab-size: 4;
+		}
+
+		.prose :global(table) {
+			display: block;
+			max-width: 100%;
+			overflow-x: auto;
+			border-collapse: collapse;
+			font-family: var(--sans);
+			font-size: var(--size-sm);
+			font-variant-numeric: tabular-nums;
+			hyphens: none;
+		}
+
+		.prose :global(th),
+		.prose :global(td) {
+			padding: 0.45em 0.9em;
+			border-bottom: 1px solid var(--rule);
+			text-align: left;
+		}
+
+		.prose :global(th) {
+			border-bottom: 2px solid var(--rule-strong);
+			font-weight: 650;
+		}
+
+		.prose :global(td[align="right"]),
+		.prose :global(th[align="right"]) {
+			text-align: right;
+		}
+
+		.prose :global(td[align="center"]),
+		.prose :global(th[align="center"]) {
+			text-align: center;
+		}
+
+		.ref {
+			line-height: 0;
+			font-family: var(--sans);
+			font-size: 0.7em;
+		}
+
+		.ref a {
+			padding: 0 0.15em;
+			text-decoration: none;
+		}
+
+		.ref a:target,
+		.ref a:hover {
+			border-radius: 3px;
+			background: var(--accent-soft);
+		}
+
+		.figure {
+			display: block;
+			margin: 1.6em 0;
+		}
+
+		img {
+			display: block;
+			width: 100%;
+			height: auto;
+			border-radius: var(--radius);
+			background: var(--code-bg);
+		}
+
+		.caption {
+			display: block;
+			margin-top: var(--space-2);
+			color: var(--muted);
+			font-family: var(--sans);
+			font-size: var(--size-sm);
+			text-align: center;
+		}
+
+		@media print {
+			.anchor,
+			.lang {
+				display: none;
+			}
+
+			pre {
+				white-space: pre-wrap;
+				border-color: #999;
+			}
+
+			.figure {
+				break-inside: avoid;
+			}
+		}
+	</style>
+}
+
+sample : Str
+sample = "## A heading\n\nA line with `code`, a [link](https://example.com) and a note[1](#fn-salt).\n\n```sh\necho hello\n```\n\n| Flour | Water |\n|:--|--:|\n| 500 g | 350 g |\n\n![A round loaf](/images/bread.svg \"The loaf, two days in\")"
+
+rendered : Dom
+rendered = Dom.parse(Html.to_str(Prose.view({ doc: Md.parse(sample) })))
+
+expect rendered.get(Named("heading", "A heading")).map_ok(|heading| heading.attr("id")) == Ok(Ok("a-heading"))
+expect rendered.get(Tag("sup")).map_ok(|sup| sup.text()) == Ok("1")
+expect rendered.get(Named("link", "1")).map_ok(|link| link.attr("id")) == Ok(Ok("fnref-salt"))
+expect rendered.get(Label("Code: sh")).map_ok(|pre| pre.text()) == Ok("echo hello")
+expect rendered.get(Named("img", "A round loaf")).map_ok(|img| img.attr("loading")) == Ok(Ok("lazy"))
+expect rendered.contains(Text("The loaf, two days in"))

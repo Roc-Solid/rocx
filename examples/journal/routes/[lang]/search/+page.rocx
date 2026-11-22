@@ -1,0 +1,29 @@
+import pf.Html
+import pf.Title
+import ../../../I18n
+import ../../../Ui/NotFound
+import ../../../Ui/SearchBox
+
+## Search (`/en/search?q=bread`): titles and tags, filtered as you type by the search island, or by
+## the server for a plain form's `q`.
+view! = |{ params }|
+	<>
+		<Title>{I18n.t(params.lang, "search.title")} · Acme Journal</Title>
+		{=if I18n.known(params.lang) {
+			<section class="page-search">
+				<h1>{I18n.t(params.lang, "search.title")}</h1>
+				<SearchBox lang={params.lang} />
+			</section>
+		} else {
+			<NotFound lang={I18n.default} status={404} problem="" />
+		}}
+	</>
+
+<style>
+	.page-search h1 {
+		max-width: var(--measure);
+		margin: var(--space-6) auto var(--space-4);
+		font-family: var(--serif);
+		font-size: var(--size-2xl);
+	}
+</style>

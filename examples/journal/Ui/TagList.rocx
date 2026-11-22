@@ -1,0 +1,40 @@
+import pf.Html
+import ../Generated/Paths
+
+## A post's tags, each a link to its page (`/en/tags/bread`).
+TagList := [].{
+	view : { lang : Str, tags : List(Str), label : Str } -> Html
+	view = |{ lang, tags, label }|
+		<ul class="tags" aria-label={label}>
+			{...tags.map(|tag| <li><a href={Paths.lang_tags_tag({ lang, tag })}>{"#${tag}"}</a></li>)}
+		</ul>
+
+	<story name="Three">
+		<TagList lang="en" tags={["bread", "kitchen", "slow"]} label="Tags" />
+	</story>
+
+	<style>
+		.tags {
+			display: flex;
+			flex-wrap: wrap;
+			gap: var(--space-1) var(--space-2);
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		a {
+			color: var(--muted);
+			font-size: var(--size-xs);
+			font-weight: 600;
+			letter-spacing: 0.04em;
+			text-decoration: none;
+			text-transform: lowercase;
+		}
+
+		a:hover {
+			color: var(--accent);
+			text-decoration: underline;
+		}
+	</style>
+}

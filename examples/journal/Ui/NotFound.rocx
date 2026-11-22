@@ -1,0 +1,58 @@
+import pf.Html
+import pf.HttpStatusCode
+import ../I18n
+import ../Generated/Paths
+
+## What a page that isn't there shows, in the language of its address: the error page's (a path no
+## route has, `routes/+error.rocx`) and a page's own for a post, tag or writer that doesn't exist
+## (with `<HttpStatusCode code={404} />`, so it is answered 404 as well). Any other status is a
+## failure: it says so, and what went wrong. Effectful (`view!`), since it sets the answer's status.
+NotFound := [].{
+	view! : { lang : Str, status : U16, problem : Str } => Html
+	view! = |{ lang, status, problem }| {
+		intl = I18n.intl(lang)
+		missing = status == 404
+		<section class="missing" aria-labelledby="missing-title">
+			<HttpStatusCode code={status} />
+			<p class="code" aria-hidden="true">{status.to_str()}</p>
+			<h1 id="missing-title">{intl.t(if (missing) "notfound.title" else "failed.title", [])}</h1>
+			<p>{intl.t(if (missing) "notfound.text" else "failed.text", [])}</p>
+			{=if (missing or problem.is_empty()) Html.empty({}) else <p class="problem"><code>{problem}</code></p>}
+			<p><a href={Paths.lang({ lang: lang })}>{intl.t("notfound.home", [])}</a> · <a href={Paths.lang_search({ lang: lang })}>{intl.t("nav.search", [])}</a></p>
+		</section>
+	}
+
+	<story name="Not found, in Polish">
+		<NotFound lang="pl" status={404} problem="" />
+	</story>
+
+	<style>
+		.missing {
+			max-width: var(--measure);
+			margin: var(--space-7) auto;
+			text-align: center;
+		}
+
+		.code {
+			margin: 0;
+			color: var(--accent);
+			font-family: var(--serif);
+			font-size: 4.5rem;
+			font-style: italic;
+			line-height: 1;
+		}
+
+		h1 {
+			margin: var(--space-3) 0;
+			font-family: var(--serif);
+		}
+
+		p {
+			color: var(--ink-soft);
+		}
+
+		.problem {
+			font-size: var(--size-sm);
+		}
+	</style>
+}
