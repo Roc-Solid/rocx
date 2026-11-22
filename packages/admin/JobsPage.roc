@@ -137,7 +137,7 @@ shown! = |mount, back, query| {
 	wanted = I64.from_str(AdminHtml.param(query, "id"))
 	now = Time.now_millis!({}).to_i64_wrap()
 	kinds = Job.kinds!({})
-	note = queue_note(Db.backend!({}))
+	note = queue_note(Db.engine!({}))
 	read =
 		match (Job.counts!({}), Job.list!({ state, kind, before_id: before, limit: per_page })) {
 			(Ok(counts), Ok(rows)) => Ok((counts, rows))
@@ -216,12 +216,14 @@ shown! = |mount, back, query| {
 	}
 }
 
-## What the sidebar says of the queue under its name: the database it is in (`Db.backend!`).
-queue_note : [Postgres, Sqlite, None] -> Str
-queue_note = |backend|
-	match backend {
+## What the sidebar says of the queue under its name: the database it is in (`Db.engine!`: Turso
+## by its name, though its SQL is SQLite's).
+queue_note : [Postgres, Sqlite, Turso, None] -> Str
+queue_note = |engine|
+	match engine {
 		Postgres => "The queue, in Postgres"
 		Sqlite => "The queue, in SQLite"
+		Turso => "The queue, in Turso"
 		None => "The queue"
 	}
 
@@ -661,6 +663,7 @@ act! = |request, mount|
 
 expect queue_note(Postgres) == "The queue, in Postgres"
 expect queue_note(Sqlite) == "The queue, in SQLite"
+expect queue_note(Turso) == "The queue, in Turso"
 expect queue_note(None) == "The queue"
 expect described("*/5 * * * *") == "every 5 minutes"
 expect described("0 3 * * *") == "daily at 03:00"

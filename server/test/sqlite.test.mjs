@@ -331,10 +331,11 @@ function suite({ engine, name, tag, run, server, home }) {
 		assert.match(await server().text("/jobs/counts"), /^tick done \d+$/m);
 	});
 
-	test("the jobs page shows the queue and the last hour, with no problem", { skip }, async () => {
+	test(`the jobs page shows the queue and the last hour, with no problem, and names ${name}`, { skip }, async () => {
 		const page = await (await fetch(`${server().url}/admin/jobs`)).text();
 		assert.match(page, /Finished jobs/);
 		assert.doesNotMatch(page, /class="problem"/);
+		assert.match(page, new RegExp(`The queue, in ${name}`));
 	});
 
 	test(`packages/admin on ${name}: its catalog read from SQLite's pragmas, a check's values and a foreign key as choices, a row created, found, changed and deleted, a boolean written as 1 or 0 and read back`, { skip }, async () => {
