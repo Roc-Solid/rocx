@@ -794,6 +794,9 @@ browser runtime's own render.
   Roc whole.
 - `Forward`: an upstream's body only, not the other way (a request's body streamed to S3 as it
   comes: an upload is still read whole, 16 MiB at most); one connection a request.
+- The OpenAPI document (`Api.openapi`) gives each endpoint's body as JSON only, though an
+  endpoint reads the same fields from a form (`application/x-www-form-urlencoded`), as a plain
+  form posts them without JavaScript (examples/journal's reactions take both).
 - A stack overflow in Roc still ends the process.
 - HTTP/1.1 only, no TLS: put it behind a proxy. `x64musl` and `x64mac` are configured, not yet run.
 - `roc test` on a module with no `expect` (`Migrations.roc`) never ends; nor does it on
