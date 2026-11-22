@@ -56,7 +56,7 @@ middleware = Middlewares.login_limit
 ```
 
 The sixth try in a minute is answered `429 Too Many Requests`, with `Retry-After` and the
-`RateLimit-*` headers. Every guard hands on the context it is given, so they go anywhere in a
+`RateLimit-*` headers (a browser's plain form goes back to its page with a flash instead). Every guard hands on the context it is given, so they go anywhere in a
 chain. (This is `example/Middlewares.roc`: `example/` is a whole app that builds and runs with the
 package. See "Status".)
 
@@ -120,6 +120,9 @@ Guard.rate_limit_with({ name, policy, key, max_keys: 50_000 })
 - **Answers.** Allowed: `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset` (seconds until
   the whole limit is back) and `RateLimit-Policy` (`5;w=60`). Refused: 429, those, `Retry-After`
   (seconds until one more would be allowed, exactly), and `Too many requests: try again in 12 s.`
+  A browser's form posted without the runtime (`Endpoint.posted_by` is `PlainForm`) is refused as
+  an endpoint refuses one: a 303 back to its page with a flash of the 429 and that line, and what
+  was typed (`Server.flash_back!`), so the form shows it where it shows any refusal.
 - **Memory stays bounded.** Each limit keeps at most `max_keys` clients. A client whose limit is
   whole again is forgotten first (that changes nothing); past `max_keys`, the one seen longest ago
   (it starts again). The clients are split over 64 tallies, so a request reads and writes about a
@@ -251,8 +254,8 @@ write `style="…"`), its calls to its own server. To allow images from elsewher
 ## Status
 
 Works today, tested: every module of the package (211 `expect`s), and `example/`, which
-`example/test/guard.test.mjs` asks over HTTP (`just test` runs it): the login limit by address, a
-flag set and reset by an admin, maintenance mode and the feature route. Its admin endpoint answered 403 to anyone but an admin. Its login
+`example/test/guard.test.mjs` asks over HTTP (`just test` runs it): the login limit by address (a
+plain form's refusal back to its page, with a flash), a flag set and reset by an admin, maintenance mode and the feature route. Its admin endpoint answered 403 to anyone but an admin. Its login
 limit answered 429 on the sixth try, with the headers above; its `/api` limit counted users and
 addresses apart; flags and their overrides, the feature route and maintenance mode worked, set at
 runtime; and a page with `<Flagged>` rendered the right part for each user and hydrated strictly in

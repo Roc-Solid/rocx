@@ -1,5 +1,6 @@
 import pf.Middleware
 import pf.Server
+import pf.Endpoint
 import pf.Time
 import pf.Env
 import pf.Log
@@ -35,9 +36,11 @@ Guard := [].{
 	Key(c) : Server.Request, c -> Str
 
 	## Refuses a client past `policy` with a 429 (`Retry-After`, `RateLimit-*`), and tells an
-	## allowed one where it stands (`RateLimit-*`). `name` keeps this limit's count apart from
-	## other limits' (`"login"`, `"api"`); `key` says who is counted (`Guard.ip`, `Guard.user`).
-	## Keeps up to 10,000 clients (`rate_limit_with` for more or fewer).
+	## allowed one where it stands (`RateLimit-*`). A browser's form posted without the runtime is
+	## refused as an endpoint refuses one: back to its page, with a flash of the 429 and when to try
+	## again, and what was typed (`Endpoint.posted_by`, `Server.flash_back!`). `name` keeps this
+	## limit's count apart from other limits' (`"login"`, `"api"`); `key` says who is counted
+	## (`Guard.ip`, `Guard.user`). Keeps up to 10,000 clients (`rate_limit_with` for more or fewer).
 	rate_limit : Str, RateLimit, Key(c) -> Middleware(c, c)
 	rate_limit = |name, policy, key| Guard.rate_limit_with({ name, policy, key, max_keys: 10000 })
 
@@ -60,7 +63,10 @@ Guard := [].{
 								{ ..answer, headers: answer.headers.concat(RateLimit.headers(policy, decision)) }
 							} else {
 								Log.info!("guard: rate limited", { limit: config.name, path: request.path, retry_after_ms: decision.retry_after_ms })
-								Server.response(429, RateLimit.headers(policy, decision).append({ name: "content-type", value: "text/plain; charset=utf-8" }), RateLimit.explain(decision))
+								match Endpoint.posted_by(request) {
+									PlainForm => Server.flash_back!(request, { url: request.path, input: Server.text_of(request), status: 429, body: RateLimit.explain(decision) })
+									_ => Server.response(429, RateLimit.headers(policy, decision).append({ name: "content-type", value: "text/plain; charset=utf-8" }), RateLimit.explain(decision))
+								}
 							}
 						Err(KeptErr(why)) => {
 							Log.warn!("guard: rate limit not checked; let through", { limit: config.name, error: why })

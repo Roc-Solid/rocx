@@ -385,13 +385,22 @@ describe("Acme Notes over HTTP", { skip: noDatabase }, () => {
 		assert.ok((await visitor.get("/sign-in")).headers.get("content-security-policy") !== null);
 	});
 
-	test("sign-in mail is limited for each address: five, then a refusal", async () => {
+	test("sign-in mail is limited for each address: five, then a refusal (a plain form's on its page)", async () => {
 		const visitor = app.client();
 		await visitor.get("/sign-in");
 		for (let sent = 0; sent < 5; sent++) assert.equal((await visitor.submit("/sign-in", { email: "gus@example.com", then: "/" })).status, 200);
 		const limited = await visitor.submit("/sign-in", { email: "GUS@example.com", then: "/" });
 		assert.equal(limited.status, 429);
 		assert.match(limited.headers.get("retry-after"), /^\d+$/);
+		// Without JavaScript the form goes back to its page, as any refusal does: the 429 and when to
+		// try again under the form, the address typed still in it.
+		await visitor.get("/sign-in");
+		const posted = await visitor.post("/sign-in", { email: "gus@example.com", then: "/" });
+		assert.equal(posted.status, 303);
+		assert.equal(visitor.flash.status, 429);
+		const back = await posted.follow();
+		assert.match(back.dom.getByRole("alert").text, /^Too many requests: try again in \d+ s\.$/);
+		assert.equal(back.dom.getByLabelText("Email address").attr("value"), "gus@example.com");
 		assert.equal((await visitor.submit("/sign-in", { email: "hal@example.com", then: "/" })).status, 200, "another address isn't counted with it");
 		const sent = (await app.mail()).filter((message) => message.to === "gus@example.com");
 		assert.equal(sent.length, 5);

@@ -254,9 +254,10 @@ What the app met, and how it works around each. None needed a change outside the
    can't tell clients apart. Sign-in links are limited by the address they are mailed to (what needs
    keeping safe is the inbox), and MCP calls by the token. (Fixed in the platform since:
    `Server.Request` has `peer`, the connection's address, and `Guard.ip(Direct)` reads it, D-041.)
-9. **guard's refusal of a plain form is a page of text**: the rate limit answers before the
-   endpoint, so a browser without JavaScript gets "Too many requests" on a page of its own rather
-   than back on the form with a flash. With the runtime, the form shows it.
+9. **Fixed: guard's refusal of a plain form was a page of text**: the rate limit answers before the
+   endpoint, so a browser without JavaScript got "Too many requests" on a page of its own rather
+   than back on the form with a flash. Now guard refuses a plain form as an endpoint does: back to
+   its page with a flash of the 429 and when to try again, the address typed still in the form.
 10. **guard's CSP refuses the OpenAPI page**, which loads Scalar from jsDelivr: `Middlewares.security`
     leaves `/openapi.html` out (as examples/journal does).
 11. **Fixed: the app's public address wasn't the platform's to know.** A link in email needs it, and

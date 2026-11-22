@@ -1,8 +1,8 @@
 // packages/guard's example app over HTTP: the package's middleware, imported (`guard.Guard`), its
 // state in the server's memory (`Kv`, D-043). A limit counts each client by its address and
-// refuses the sixth try in a minute; a flag's override, set by an admin, turns maintenance on and
-// off; a feature's route is there only for those who have it. Run it with
-// `node --test 'packages/guard/example/test/*.test.mjs'`.
+// refuses the sixth try in a minute (a plain form back to its page, with a flash); a flag's
+// override, set by an admin, turns maintenance on and off; a feature's route is there only for
+// those who have it. Run it with `node --test 'packages/guard/example/test/*.test.mjs'`.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { dirname, join } from "node:path";
@@ -25,6 +25,17 @@ test("a limit counts each client by its address: the sixth try in a minute is re
 	assert.equal(refused.status, 429);
 	assert.ok(Number(refused.headers.get("retry-after")) > 0);
 	assert.equal(refused.headers.get("ratelimit-policy"), "5;w=60");
+	// A browser's form posted without the runtime goes back to its page, as any refusal does: a 303
+	// and a flash of the 429 and when to try again, not a page of text.
+	const browser = app.client();
+	await browser.get("/");
+	const plain = await browser.post("/login");
+	assert.equal(plain.status, 303);
+	assert.equal(plain.headers.get("location"), "/");
+	assert.equal(plain.headers.get("retry-after"), null);
+	assert.equal(browser.flash.url, "/login");
+	assert.equal(browser.flash.status, 429);
+	assert.match(browser.flash.body, /^Too many requests: try again in \d+ s\.$/);
 });
 
 test("a flag's override: an admin turns maintenance on (every page 503, but /admin) and resets it", async () => {

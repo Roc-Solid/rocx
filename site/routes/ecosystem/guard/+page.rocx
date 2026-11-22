@@ -132,7 +132,9 @@ view! = |_|
 				<code>RateLimit-Remaining</code>, <code>RateLimit-Reset</code> (seconds until the whole limit is
 				back) and <code>RateLimit-Policy</code> (<code>5;w=60</code>: 5 in 60 seconds). A refused one is
 				a <code>429</code> with those, <code>Retry-After</code> (seconds until one more would be allowed,
-				exactly), and a line of text.
+				exactly), and a line of text. A browser's form posted without the runtime is refused as an
+				endpoint refuses one: back to its page, with a flash of the <code>429</code> and that line,
+				and what was typed, so the form shows it where it shows any refusal.
 			</p>
 
 			<h3>Memory stays bounded</h3>
