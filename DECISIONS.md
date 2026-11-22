@@ -1556,7 +1556,9 @@ Measured on the same files, interleaved, the machine loaded by other work (media
 binary rebuilds when `src/` changes. Roc keeps more words than JavaScript (`module`, `packages`,
 `where`, `platform` can't be names), and the compiler's bugs are rocx's now too. basic-cli has no
 file watcher (rocx needs none: `site/serve.mjs` watches). The repo's own scripts, its tests and the
-testing package's helpers are still JavaScript on Node; an app no longer needs Node to build.
+testing package's helpers are still JavaScript on Node; an app no longer needs Node to build. Each call
+the repo's JavaScript makes starts the binary (a few milliseconds), so a script that asks many
+times asks once (`callMany`, as the site's build does for its route files).
 
 **Why.** One small executable for each platform, built from one machine, and faster than the
 JavaScript at everything it does.
