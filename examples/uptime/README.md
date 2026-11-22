@@ -60,7 +60,7 @@ after the first start.
 | The nightly roll-up: each past day into `daily` (once: `on conflict do nothing`), checks older than a week deleted when their day is rolled up | `Store.roll_up!`, `Jobs.nightly` |
 | Email alerts through packages/email (D-035), one job per subscriber, the HTML a pure component (`Html.to_str`), an unsubscribe link whose page posts (opening it changes nothing) | `Alerts.roc`, `Ui/AlertMail.rocx`, `routes/unsubscribe/` |
 | The live page: a channel (D-020), published on by each check and each admin change from jobs and endpoints alike; pages read their data again when they hear it (`refresh!`), rows kept by id, sparklines gliding, changes announced to screen readers (`aria-live`) | `routes/live/+server.roc`, `News.roc`, `routes/+page.rocx` |
-| packages/otel: every request timed by route, a histogram of check latency by monitor and outcome, and each monitor's up/down (`Otel.roc` copied from the package, as its README says) | `Metrics.roc`, `Middlewares.roc`, `Otel.roc`, `test/copies.test.mjs` |
+| packages/otel: every request timed by route, a histogram of check latency by monitor and outcome, and a gauge of each monitor's up/down (`Otel.roc` copied from the package, as its README says) | `Metrics.roc`, `Middlewares.roc`, `Otel.roc`, `test/copies.test.mjs` |
 | packages/charts: `<Sparkline>` on each card, `<LineChart>` and `<Heatmap>` on a monitor's page; the 90-day strip is a pure component of its own (its colours are thresholds, not a scale) | `Ui/MonitorCard.rocx`, `routes/monitors/[id]/+page.rocx`, `Ui/UptimeStrip.rocx` |
 | packages/admin for the tables, mounted behind the admin's middleware, with labels; Postgres's checks refuse what makes no sense and the form shows why | `routes/admin/db/+server.roc`, `migrations/0001_uptime.sql` |
 | packages/admin's jobs page as a plugin behind the same guard (`JobsPage.plugin({ at, guard })`) | `main.roc` |
@@ -193,12 +193,11 @@ DATABASE_URL=postgres://rocx:rocx@127.0.0.1:55432/rocx node --test 'examples/upt
 
 Every gap met, and what the app does about each:
 
-1. **packages/otel has no gauge** (its README, "Not yet"), and the brief asked for an up/down gauge
-   per monitor. `uptime.check.up` is a histogram with one bucket boundary, 0.5, recorded 1 for a
-   pass and 0 for a failure. Its sum over its count is the share of checks that passed, and a
-   collector's `max` over a short window says whether the monitor is up (`Metrics.roc`). A real
-   gauge (last value) needs `Metric.gauge` in the package, with a last-value point in `Points` and
-   OTLP's `gauge` in `Otlp`.
+1. **Fixed: packages/otel had no gauge**, and the brief asked for an up/down gauge per monitor, so
+   `uptime.check.up` was a histogram with one bucket boundary, 0.5. The package has
+   `Metric.gauge` now (the last value set, sent as OTLP's `gauge`), and `uptime.check.up` is one:
+   1 after a check that passed, 0 after one that failed (`Metrics.roc`; the HTTP test reads both
+   off the fake collector).
 2. **The server doesn't tell the app the address it listens on.** With `--port 0` (the tests') nobody
    knows it beforehand, and a check of `/health` needs a whole URL. `ORIGIN` says it. Without it,
    the default middleware remembers the `Host` a request came with, but only a loopback one, since

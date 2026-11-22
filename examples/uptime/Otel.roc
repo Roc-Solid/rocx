@@ -22,10 +22,11 @@ import otel.Points
 Otel := [].{
 
 	## The sums of the instrument its key names, and when they are next sent (`rocx build` lists it
-	## in the app's `program.actors`).
+	## in the app's `program.actors`). Its name says which shape of state it keeps: one kept before
+	## gauges (`rocx_otel_meter`) wouldn't read as this, so it is let be, and the sums start again.
 	meter : Actor.Kind(Points.State, Message, Bool)
 	meter = Actor.define({
-		name: "rocx_otel_meter",
+		name: "rocx_otel_meter_2",
 		initial: |_name| Points.empty,
 		receive!: |me, state, message| {
 			now_ms = Time.now_millis!({})
@@ -58,10 +59,11 @@ Otel := [].{
 	## What the meter is told: measurements to add, or that its time to send has come.
 	Message : { measurements : List(Metric.Measurement), export : Bool }
 
-	## A measurement of `instrument`, labelled with `attributes`: added to its sums, which go out with
-	## the next export. Nothing, with metrics off.
+	## A measurement of `instrument`, labelled with `attributes`: added to its sums (a gauge's: its
+	## value now), which go out with the next export. Nothing, with metrics off.
 	##
 	##     Otel.record!(signups, 1, [("plan", "pro")])
+	##     Otel.record!(waiting, 12, [])
 	record! : Metric.Instrument, Dec, List((Str, Str)) => {}
 	record! = |instrument, value, attributes|
 		match settings!({}) {

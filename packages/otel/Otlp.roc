@@ -5,7 +5,8 @@ import Points
 ## `/v1/metrics`): one resource (the service: `service.name` and the other resource attributes),
 ## one scope (`rocx.otel`), a metric for each instrument, a data point for each series. Sums and
 ## histograms are cumulative (`aggregationTemporality` 2): each request says what has added up since
-## `start_nanos`, so one that is lost loses nothing.
+## `start_nanos`, so one that is lost loses nothing. A gauge is its last value (`gauge`, which has no
+## temporality), sent again each time until it is set to another.
 Otlp := [].{
 
 	## The request's body for the sums in `state`, as of `now_nanos` (Unix nanoseconds).
@@ -27,6 +28,8 @@ metric = |series, start, now|
 			points = Str.join_with(series.map(|one| point(one, start, now)), ",")
 			if first.histogram {
 				"{${head},\"histogram\":{\"aggregationTemporality\":2,\"dataPoints\":[${points}]}}"
+			} else if first.gauge {
+				"{${head},\"gauge\":{\"dataPoints\":[${points}]}}"
 			} else {
 				"{${head},\"sum\":{\"aggregationTemporality\":2,\"isMonotonic\":true,\"dataPoints\":[${points}]}}"
 			}
@@ -70,6 +73,13 @@ expect {
 	state = Points.add(Points.add(Points.empty, Metric.measure(took, 0.05, [("route", "/a")])), Metric.measure(took, 0.5, [("route", "/b")]))
 	written = Otlp.metrics([], state, 1)
 	written.contains("\"metrics\":[{\"name\":\"took\",\"description\":\"\",\"unit\":\"s\",\"histogram\":{\"aggregationTemporality\":2,\"dataPoints\":[{\"attributes\":[{\"key\":\"route\",\"value\":{\"stringValue\":\"/a\"}}],\"startTimeUnixNano\":\"0\",\"timeUnixNano\":\"1\",\"count\":\"1\",\"sum\":0.05,\"bucketCounts\":[\"1\",\"0\",\"0\"],\"explicitBounds\":[0.1,1.0]},{")
+}
+
+expect {
+	up = Metric.gauge({ name: "uptime.up", description: "Up (1) or down (0)", unit: "1" })
+	state = { ..Points.add(Points.add(Points.add(Points.empty, Metric.measure(up, 1.0, [("monitor", "api")])), Metric.measure(up, 0.0, [("monitor", "api")])), Metric.measure(up, -1.5, [("monitor", "web")])), start_nanos: 5 }
+	Otlp.metrics([], state, 9)
+		== "{\"resourceMetrics\":[{\"resource\":{\"attributes\":[]},\"scopeMetrics\":[{\"scope\":{\"name\":\"rocx.otel\",\"version\":\"0.1.0\"},\"metrics\":[{\"name\":\"uptime.up\",\"description\":\"Up (1) or down (0)\",\"unit\":\"1\",\"gauge\":{\"dataPoints\":[{\"attributes\":[{\"key\":\"monitor\",\"value\":{\"stringValue\":\"api\"}}],\"startTimeUnixNano\":\"5\",\"timeUnixNano\":\"9\",\"asDouble\":0.0},{\"attributes\":[{\"key\":\"monitor\",\"value\":{\"stringValue\":\"web\"}}],\"startTimeUnixNano\":\"5\",\"timeUnixNano\":\"9\",\"asDouble\":-1.5}]}}]}]}]}"
 }
 
 # A name or value with quotes in it stays JSON.

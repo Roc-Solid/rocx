@@ -5,21 +5,16 @@ import Otel
 ## `OTEL_EXPORTER_OTLP_ENDPOINT` is set (and nothing at all when it isn't):
 ##
 ## - `uptime.check.duration`, a histogram of each check's latency in seconds, by monitor and outcome;
-## - `uptime.check.up`, each monitor's state as of its last check, 1 up and 0 down.
-##
-## packages/otel has counters and histograms but no gauge yet, so `uptime.check.up` is a histogram
-## with one bucket boundary, 0.5: its last interval's sum over its count is the share of checks that
-## passed, and a collector's `max` over a short window is whether it is up (README, "What it asked of
-## the platform").
+## - `uptime.check.up`, a gauge of each monitor's state as of its last check, 1 up and 0 down.
 Metrics := [].{
 
 	## Each check's latency, in seconds.
 	duration : Metric.Instrument
 	duration = Metric.histogram({ name: "uptime.check.duration", description: "How long each check of a monitor took.", unit: "s", buckets: Metric.seconds })
 
-	## 1 for a check that passed, 0 for one that failed.
+	## Each monitor's state as of its last check: 1 when it passed, 0 when it failed.
 	up : Metric.Instrument
-	up = Metric.histogram({ name: "uptime.check.up", description: "Whether a monitor's check passed (1) or failed (0).", unit: "1", buckets: [0.5] })
+	up = Metric.gauge({ name: "uptime.check.up", description: "Whether a monitor's last check passed (1) or failed (0).", unit: "1" })
 
 	## A check of `monitor` that took `latency_ms` and passed or not.
 	record! : Str, U64, Bool => {}

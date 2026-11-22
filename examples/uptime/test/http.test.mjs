@@ -292,20 +292,37 @@ test("the nightly roll-up: past days into `daily`, checks older than a week dele
 	assert.equal(monitor.uptime_7d, "100%");
 });
 
-test("metrics reach the collector: the check latency histogram and the up/down per monitor", async (t) => {
+test("metrics reach the collector: the check latency histogram, and the up/down gauge per monitor, 1 then 0", async (t) => {
 	if (skip(t)) return;
 	const id = await watch(db, target, { name: "Acme Metrics", path: "/metrics" });
 	target.status = 200;
 	await check(db, id);
-	const names = () => new Set(target.metrics.flatMap((body) => body.resourceMetrics.flatMap((resource) => resource.scopeMetrics.flatMap((scope) => scope.metrics.map((metric) => metric.name)))));
+	const metrics = () => target.metrics.flatMap((body) => body.resourceMetrics.flatMap((resource) => resource.scopeMetrics.flatMap((scope) => scope.metrics)));
+	const names = () => new Set(metrics().map((metric) => metric.name));
+	// The gauge's value for this monitor in the newest export that has it.
+	const up = () =>
+		metrics()
+			.filter((metric) => metric.name === "uptime.check.up")
+			.flatMap((metric) => metric.gauge?.dataPoints ?? [])
+			.filter((point) => point.attributes.some((attribute) => attribute.key === "monitor" && attribute.value.stringValue === "Acme Metrics"))
+			.map((point) => point.asDouble)
+			.at(-1);
 	// Each instrument's sums are sent every second (OTEL_METRIC_EXPORT_INTERVAL), cumulative: wait
 	// for an export that has this monitor's series.
 	const seen = () => JSON.stringify(target.metrics).includes('"Acme Metrics"');
-	const deadline = Date.now() + 10_000;
-	while (!(names().has("uptime.check.duration") && names().has("uptime.check.up") && seen()) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 200));
+	const until = async (done) => {
+		const deadline = Date.now() + 10_000;
+		while (!done() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 200));
+	};
+	await until(() => names().has("uptime.check.duration") && up() === 1 && seen());
 	assert.ok(names().has("uptime.check.duration"), [...names()].join(", "));
-	assert.ok(names().has("uptime.check.up"), [...names()].join(", "));
 	assert.ok(names().has("http.server.request.duration"), [...names()].join(", "));
 	assert.ok(seen(), "the monitor's own series");
+	assert.equal(up(), 1, "a gauge (OTLP's `gauge`, no histogram), 1 after a check that passed");
 	assert.ok(JSON.stringify(target.metrics).includes('"acme-status"'), "the service's name");
+	target.status = 500;
+	await check(db, id);
+	await until(() => up() === 0);
+	assert.equal(up(), 0, "its last value: 0 after a check that failed");
+	target.status = 200;
 });

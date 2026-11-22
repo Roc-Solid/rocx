@@ -5,11 +5,12 @@ import ../../../Ui/PageHero
 import ../../../Ui/TableWrap
 
 ## The otel package: OpenTelemetry metrics sent over OTLP, every request timed by its route, the
-## app's own counters and histograms, the server's JSON log for a collector, and setting it up.
+## app's own counters, histograms and gauges, the server's JSON log for a collector, and setting it
+## up.
 ## Static: a collector is a server.
 meta = {
 	title: "OpenTelemetry",
-	description: "The otel package for Roc Solid apps: metrics sent over OTLP to any OpenTelemetry Collector or backend, every request timed by its route, the app's own counters and histograms, and the server's JSON log for a collector to read.",
+	description: "The otel package for Roc Solid apps: metrics sent over OTLP to any OpenTelemetry Collector or backend, every request timed by its route, the app's own counters, histograms and gauges, and the server's JSON log for a collector to read.",
 	toc: [
 		{ id: "requests", label: "Every request, timed" },
 		{ id: "instruments", label: "The app's own" },
@@ -49,12 +50,13 @@ view! = |_|
 			<Heading id="instruments">The app's own</Heading>
 			<Code
 				title="Anywhere on the server"
-				source={"signups = Metric.counter({ name: \"app.signups\", description: \"Members who signed up.\", unit: \"{member}\" })\nOtel.record!(signups, 1, [(\"plan\", \"pro\")])\n\ncheckout = Metric.histogram({ name: \"app.checkout.duration\", description: \"Checkout.\", unit: \"s\", buckets: Metric.seconds })\nOtel.record!(checkout, seconds, [(\"method\", \"card\")])"}
+				source={"signups = Metric.counter({ name: \"app.signups\", description: \"Members who signed up.\", unit: \"{member}\" })\nOtel.record!(signups, 1, [(\"plan\", \"pro\")])\n\ncheckout = Metric.histogram({ name: \"app.checkout.duration\", description: \"Checkout.\", unit: \"s\", buckets: Metric.seconds })\nOtel.record!(checkout, seconds, [(\"method\", \"card\")])\n\nup = Metric.gauge({ name: \"app.service.up\", description: \"Whether the service answered (1) or not (0).\", unit: \"1\" })\nOtel.record!(up, 1, [(\"service\", \"payments\")])"}
 				numbers={Bool.False}
 			/>
 			<p>
 				A counter sums what it is given; a histogram counts values into buckets and sums them
-				(<code>Metric.seconds</code>: 5 ms to 10 s). Attributes are text, and each combination is a series, so
+				(<code>Metric.seconds</code>: 5 ms to 10 s); a gauge keeps the last value set, negative too, and is
+				sent as OpenTelemetry's <code>Gauge</code> at each export until it is set again. Attributes are text, and each combination is a series, so
 				keep their values few: past 2000 series an instrument drops new ones. Each instrument's sums are an
 				actor's state; a measurement is a tell, so a request never waits for it, and the actor sends what it
 				has on a timer. The sums are cumulative, so a send that fails loses nothing.
@@ -100,7 +102,7 @@ view! = |_|
 			<Heading id="limits">Not yet</Heading>
 			<ul>
 				<li><strong>Traces</strong>: they need to know which request a query or a fetch runs for, with nothing passed by hand.</li>
-				<li>Gauges and up-down counters; Prometheus's <code>/metrics</code> to pull from; a job's duration and outcome.</li>
+				<li>Up-down counters; Prometheus's <code>/metrics</code> to pull from; a job's duration and outcome.</li>
 			</ul>
 		</NoHydration>
 	</>

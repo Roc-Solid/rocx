@@ -2,8 +2,9 @@ import Metric
 
 ## What an app's measurements add up to since `start_nanos`: a series for each instrument and set
 ## of attributes, as OpenTelemetry's cumulative sums. A counter's series is how many measurements
-## and their sum; a histogram's adds how many fell in each bucket. Kept as an actor's state, so it is
-## plain data (JSON): `Dec`, not `F64`, which JSON can't always write.
+## and their sum; a histogram's adds how many fell in each bucket; a gauge's is how many times it was
+## set and the last value (`sum`). Kept as an actor's state, so it is plain data (JSON): `Dec`, not
+## `F64`, which JSON can't always write.
 Points := [].{
 
 	Series : {
@@ -11,6 +12,7 @@ Points := [].{
 		description : Str,
 		unit : Str,
 		histogram : Bool,
+		gauge : Bool,
 		bounds : List(Dec),
 		attributes : List(Metric.Attribute),
 		count : U64,
@@ -36,14 +38,14 @@ Points := [].{
 	add : State, Metric.Measurement -> State
 	add = |state, measurement| {
 		dropped = { ..state, dropped: state.dropped + 1 }
-		if !measurement.histogram and measurement.value < 0 {
+		if !measurement.histogram and !measurement.gauge and measurement.value < 0 {
 			dropped
 		} else {
 			match state.series.find_first_index(|series| series.name == measurement.name and same(series.attributes, measurement.attributes)) {
 				Ok(index) =>
 					match state.series.get(index) {
 						Ok(found) =>
-							if found.histogram == measurement.histogram and found.bounds == measurement.bounds {
+							if found.histogram == measurement.histogram and found.gauge == measurement.gauge and found.bounds == measurement.bounds {
 								{ ..state, series: state.series.update(index, |series| grown(series, measurement)) ?? state.series }
 							} else {
 								dropped
@@ -72,6 +74,7 @@ started = |measurement| {
 	description: measurement.description,
 	unit: measurement.unit,
 	histogram: measurement.histogram,
+	gauge: measurement.gauge,
 	bounds: measurement.bounds,
 	attributes: measurement.attributes,
 	count: 0,
@@ -79,11 +82,12 @@ started = |measurement| {
 	buckets: if (measurement.histogram) List.repeat(0, measurement.bounds.len() + 1) else [],
 }
 
+## `series` with `measurement` in it: added to a counter's or a histogram's sum, a gauge's last value.
 grown : Points.Series, Metric.Measurement -> Points.Series
 grown = |series, measurement| {
 	..series,
 	count: series.count + 1,
-	sum: series.sum + measurement.value,
+	sum: if (series.gauge) measurement.value else series.sum + measurement.value,
 	buckets: if (series.histogram) series.buckets.update(Points.bucket_of(series.bounds, measurement.value), |n| n + 1) ?? series.buckets else series.buckets,
 }
 
@@ -94,6 +98,8 @@ same = |a, b| a.len() == b.len() and a.all(|attribute| b.contains(attribute))
 signups = Metric.counter({ name: "app.signups", description: "", unit: "1" })
 
 took = Metric.histogram({ name: "took", description: "", unit: "s", buckets: [0.1, 1.0] })
+
+up = Metric.gauge({ name: "up", description: "", unit: "1" })
 
 ## The sums of `measurements`, one after another.
 of : List(Metric.Measurement) -> Points.State
@@ -124,6 +130,18 @@ expect {
 	state.dropped == 2 and state.series.len() == 1
 }
 
+# A gauge keeps the last value set for each set of attributes, negative ones too.
+expect {
+	state = of([Metric.measure(up, 1.0, [("monitor", "api")]), Metric.measure(up, 0.0, [("monitor", "web")]), Metric.measure(up, 0.0, [("monitor", "api")]), Metric.measure(up, -3.5, [("monitor", "web")])])
+	state.series.map(|series| (series.attributes, series.count, series.sum)) == [([{ key: "monitor", value: "api" }], 2, 0.0), ([{ key: "monitor", value: "web" }], 2, -3.5)] and state.dropped == 0
+}
+
+# A gauge and a counter (or a histogram) of one name don't mix: the second kind is dropped.
+expect {
+	state = of([Metric.measure(up, 1.0, []), Metric.measure({ ..signups, name: "up" }, 1.0, []), Metric.measure({ ..took, name: "up" }, 1.0, [])])
+	state.dropped == 2 and state.series.map(|series| (series.gauge, series.sum)) == [(Bool.True, 1.0)]
+}
+
 # Past the limit, new series are dropped and the kept ones go on.
 expect {
 	filled = |state, n| if (n == 0) state else filled(Points.add(state, Metric.measure(signups, 1.0, [("n", n.to_str())])), n - 1)
@@ -134,7 +152,7 @@ expect {
 
 # It is what an actor keeps: JSON, both ways.
 expect {
-	state = of([Metric.measure(took, 0.25, [("route", "/posts/[id]")])])
+	state = of([Metric.measure(took, 0.25, [("route", "/posts/[id]")]), Metric.measure(up, 1.0, [])])
 	parsed : Try(Points.State, _)
 	parsed = Json.parse(Json.to_str(state))
 	parsed == Ok(state)

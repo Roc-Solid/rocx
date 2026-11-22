@@ -37,8 +37,9 @@ name it: `http.server.request.duration`, a histogram in seconds, by
 Put it first, so it times the rest of the middleware too.
 
 **Instruments** (`Metric`): a counter sums what it's given (signups, emails sent); a histogram
-counts values into buckets and sums them (how long a checkout took). `Metric.seconds` is
-OpenTelemetry's buckets for durations, 5 ms to 10 s.
+counts values into buckets and sums them (how long a checkout took); a gauge keeps the last value
+set for each set of attributes (whether a service is up, how many jobs wait), negative values
+too. `Metric.seconds` is OpenTelemetry's buckets for durations, 5 ms to 10 s.
 
 ```roc
 checkout = Metric.histogram({ name: "app.checkout.duration", description: "Checkout.", unit: "s", buckets: Metric.seconds })
@@ -46,7 +47,14 @@ checkout = Metric.histogram({ name: "app.checkout.duration", description: "Check
 started = Time.now_nanos!({})
 …
 Otel.record!(checkout, (Time.now_nanos!({}) - started).to_dec() / 1_000_000_000, [("method", "card")])
+
+up = Metric.gauge({ name: "app.service.up", description: "Whether the service answered (1) or not (0).", unit: "1" })
+Otel.record!(up, 1, [("service", "payments")])
 ```
+
+A gauge is sent as OTLP's `gauge` (a data point a series, its last value, `asDouble`), again at each
+export until it is set to another; counters and histograms are cumulative sums. One name is one
+kind: a measurement of another kind under a name already measured is dropped.
 
 Attributes are text. Keep their values few: each combination is a series. A user's id or a URL
 would make a series for each, so past 2000 series an instrument drops new ones (`Points.limit`).
@@ -71,7 +79,9 @@ instrument's name). A measurement is a `tell!`, so the request doesn't wait for 
 itself a timer (`Actor.after!`) and sends its sums when it fires, as OTLP/HTTP JSON (`Otlp`). The
 sums are cumulative since the actor started, so a send that fails loses nothing: the next one has it
 all, and the failure is logged (`otel: the metrics couldn't be sent`). With a database, the
-sums outlive a restart, and keep their start time.
+sums outlive a restart, and keep their start time. (The meter's state took a gauge's kind on
+2026-11-22, and its actor a new name, `rocx_otel_meter_2`: sums kept before then aren't read, and
+start again.)
 
 **What it costs.** One actor message for each measurement, so two for a request that records one
 of its own. With a database, the platform writes an actor's state to Postgres after each message
@@ -132,8 +142,8 @@ In Docker or Kubernetes, point `include` at the container's log files instead.
 
 ## Checked against
 
-- `roc test packages/otel/main.roc`: instruments, sums, buckets, the series limit, the state as
-  JSON both ways, OTLP's JSON, the variables.
+- `roc test packages/otel/main.roc`: instruments, sums, buckets, gauges' last values, the series
+  limit, the state as JSON both ways, OTLP's JSON (sums, histograms, gauges), the variables.
 - The example, built native, sending to OpenTelemetry Collector 0.165.0 (`otlp` receiver, `debug`
   exporter): sums, histograms, attributes, timestamps and the resource all read back. Also run
   against Postgres, across a restart.
@@ -143,5 +153,5 @@ In Docker or Kubernetes, point `include` at the container's log files instead.
 
 - **Traces.** They need to know, in `Db.all!` and `Http.fetch!`, which request they run for, with
   nothing passed by hand. Roc has no such context, so that waits on a talk with Roc's designers.
-- Gauges and up-down counters; exemplars; Prometheus's `/metrics` for pulling instead.
+- Up-down counters; exemplars; Prometheus's `/metrics` for pulling instead.
 - A job's duration and outcome (a wrapper for `Job.define`).
