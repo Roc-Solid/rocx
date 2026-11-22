@@ -1,18 +1,17 @@
 // The app, tested as people use it: over HTTP (pages, plain forms, the runtime's posts, the
 // endpoints as JSON, the database), then in a real browser. The app is built once (rocx build, the
-// browser's wasm, the server), and started against a database of the tests' own, which its
+// browser's wasm, the server), and started against a SQLite file of the tests' own, which its
 // migrations make and seed. Each test that changes things makes a list of its own first, so the
-// tests don't lean on each other.
+// tests don't lean on each other. No database server is needed.
 //
-//   DATABASE_URL=postgres://… node --test 'examples/tasks/test/*.test.mjs'
+//   node --test 'examples/tasks/test/*.test.mjs'
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildForTests, startServer, testDatabase, launchBrowser, until, repo } from "../../../packages/testing/index.mjs";
+import { buildForTests, startServer, testSqlite, launchBrowser, until, repo } from "../../../packages/testing/index.mjs";
 
-const database = process.env.DATABASE_URL;
-const skip = database ? false : "needs DATABASE_URL (a Postgres the tests may make databases in: `just db`)";
+const skip = false;
 
 let db;
 let app;
@@ -22,7 +21,7 @@ let browser = null;
 before(async () => {
 	if (skip) return;
 	const built = await buildForTests(join(repo, "examples", "tasks"));
-	db = await testDatabase(database);
+	db = testSqlite();
 	app = await startServer(built.server, { statics: built.statics, database: db.url });
 	browser = await launchBrowser();
 });
@@ -48,7 +47,7 @@ async function addTask(person, id, fields) {
 	await person.get(`/lists/${id}`);
 	const added = await person.post(`/lists/${id}`, { due: "", assignee: "", ...fields });
 	assert.equal(added.status, 303);
-	const [row] = await db.sql`select id::text from tasks where list_id = ${Number(id)} and title = ${fields.title}`;
+	const [row] = await db.sql`select cast(id as text) as id from tasks where list_id = ${Number(id)} and title = ${fields.title}`;
 	return row.id;
 }
 
@@ -131,9 +130,10 @@ test("adding a task without JavaScript: a plain form, a 303 back, and it is on t
 	assert.equal(page.dom.getByLabelText("New task").attr("value"), "");
 	page.dom.getByRole("img", { name: "Mila Novak" });
 	page.dom.getByText("Jan 15, 2030");
-	const [row] = await db.sql`select title, due::text, assignee, done, position from tasks where list_id = ${Number(id)}`;
-	assert.deepEqual(row, { title: "Buy milk", due: "2030-01-15", assignee: "mila", done: false, position: 0 });
-	// Left empty, the optional fields are null in Postgres.
+	// SQLite keeps a boolean as 1 or 0, which is what node:sqlite reads (Db reads `done` as a Bool).
+	const [row] = await db.sql`select title, due, assignee, done, position from tasks where list_id = ${Number(id)}`;
+	assert.deepEqual(row, { title: "Buy milk", due: "2030-01-15", assignee: "mila", done: 0, position: 0 });
+	// Left empty, the optional fields are null in the database.
 	await addTask(person, id, { title: "Bread" });
 	const [bread] = await db.sql`select due, assignee, position from tasks where title = ${"Bread"}`;
 	assert.deepEqual(bread, { due: null, assignee: null, position: 1 });
@@ -176,10 +176,10 @@ test("completing a task without JavaScript: its box is a form, and the list come
 	// The runtime's post of the same form gets JSON, and the page stays.
 	const again = await person.submit("/api/tasks/toggle", { id: task, done: "false" });
 	assert.equal(again.status, 200);
-	assert.deepEqual(await db.sql`select done from tasks where id = ${Number(task)}`, [{ done: false }]);
+	assert.deepEqual(await db.sql`select done from tasks where id = ${Number(task)}`, [{ done: 0 }]);
 	// A toggle says where it ends up, so sending it twice is sending it once.
 	await person.submit("/api/tasks/toggle", { id: task, done: "false" });
-	assert.deepEqual(await db.sql`select done from tasks where id = ${Number(task)}`, [{ done: false }]);
+	assert.deepEqual(await db.sql`select done from tasks where id = ${Number(task)}`, [{ done: 0 }]);
 	assert.equal((await person.submit("/api/tasks/toggle", { id: "999999", done: "true" })).status, 404);
 });
 
@@ -238,7 +238,7 @@ test("a task's page edits everything about it, and shows a refusal's issues unde
 	assert.equal(saved.status, 303);
 	assert.equal(saved.location, `/lists/${id}`);
 	const [row] = await db.sql`select notes, due, assignee, done from tasks where id = ${Number(task)}`;
-	assert.deepEqual(row, { notes: "Cake!", due: null, assignee: null, done: true });
+	assert.deepEqual(row, { notes: "Cake!", due: null, assignee: null, done: 1 });
 	// With the runtime, the redirect comes back for it to follow.
 	const runtime = await person.submit(`/tasks/${task}`, { title: "Plan the party", notes: "", due: "", assignee: "" });
 	assert.equal(runtime.headers.get("x-rocx-redirect"), `/lists/${id}`);
@@ -278,9 +278,13 @@ test("the middleware logs every answer, and refuses a change from another site",
 });
 
 test("seeding is idempotent: running the seed again changes nothing", { skip }, async () => {
-	const before = await db.sql`select (select count(*) from people)::int as people, (select count(*) from lists)::int as lists, (select count(*) from tasks)::int as tasks`;
-	await db.query(readFileSync(join(repo, "examples", "tasks", "migrations", "0002_seed.sql"), "utf8"));
-	const after = await db.sql`select (select count(*) from people)::int as people, (select count(*) from lists)::int as lists, (select count(*) from tasks)::int as tasks`;
+	const before = await db.sql`select (select count(*) from people) as people, (select count(*) from lists) as lists, (select count(*) from tasks) as tasks`;
+	// The seed is several statements: node:sqlite's exec runs them all (db.query prepares one).
+	const { DatabaseSync } = await import("node:sqlite");
+	const seeding = new DatabaseSync(db.path, { timeout: 10_000 });
+	seeding.exec(readFileSync(join(repo, "examples", "tasks", "migrations", "0002_seed.sql"), "utf8"));
+	seeding.close();
+	const after = await db.sql`select (select count(*) from people) as people, (select count(*) from lists) as lists, (select count(*) from tasks) as tasks`;
 	assert.deepEqual(after, before);
 	assert.deepEqual(await db.sql`select name from rocx_migrations where name like '0%' order by name`, [{ name: "0001_tables.sql" }, { name: "0002_seed.sql" }]);
 });
@@ -312,7 +316,7 @@ test("in a browser: ticking a task shows at once, saves, and the counts follow",
 	await (await tab.getByRole("checkbox", { name: "Feed the cat" })).click();
 	await tab.waitFor((dom) => dom.getByRole("checkbox", { name: "Feed the cat" }).attr("aria-checked") === "true");
 	await tab.findByText("1 open");
-	await until(async () => (await db.sql`select done from tasks where id = ${Number(task)}`)[0].done === true, { what: "the task done in the database" });
+	await until(async () => (await db.sql`select done from tasks where id = ${Number(task)}`)[0].done === 1, { what: "the task done in the database" });
 	// Read again once it is in: the layout's count down the side too.
 	await tab.findByRole("link", { name: "Browser chores 1 open" });
 	assert.deepEqual(tab.errors, []);
@@ -344,7 +348,7 @@ test("in a browser: adding, moving and deleting tasks without leaving the page",
 	await until(async () => !(await tab.dom()).queryByText("Fill this in"), { what: "the issue gone" });
 	assert.equal((await tab.getByLabelText("New task")).attr("aria-invalid"), "false");
 	assert.equal(await tab.page.eval("document.activeElement?.id ?? null"), "field-title", "the title field keeps focus");
-	await until(async () => (await db.sql`select count(*)::int as n from tasks where list_id = ${Number(id)}`)[0].n === 2, { what: "the task in the database" });
+	await until(async () => (await db.sql`select count(*) as n from tasks where list_id = ${Number(id)}`)[0].n === 2, { what: "the task in the database" });
 	await still(tab);
 	await (await tab.findByRole("button", { name: "Move up: Return the books" })).click();
 	await until(async () => (await tab.dom()).getAllByRole("checkbox")[0]?.name === "Return the books", { what: "the task moved up on the page" });
@@ -352,7 +356,7 @@ test("in a browser: adding, moving and deleting tasks without leaving the page",
 	await still(tab);
 	await (await tab.getByRole("button", { name: "Delete: Post the letter" })).click();
 	await until(async () => !(await tab.dom()).queryByRole("link", { name: "Post the letter" }), { what: "the task gone from the page" });
-	await until(async () => (await db.sql`select count(*)::int as n from tasks where list_id = ${Number(id)}`)[0].n === 1, { what: "the task gone from the database" });
+	await until(async () => (await db.sql`select count(*) as n from tasks where list_id = ${Number(id)}`)[0].n === 1, { what: "the task gone from the database" });
 	assert.deepEqual(tab.errors, []);
 	assert.deepEqual(tab.console.filter((line) => line.type === "error"), []);
 	await tab.close();
@@ -396,7 +400,7 @@ test("in a browser: a task's page starts filled in with the task, checks it as i
 	await until(async () => !(await tab.dom()).queryByText("Fill this in"), { what: "the issue gone as it is typed" });
 	await (await tab.getByRole("button", { name: "Save" })).click();
 	await until(async () => new URL(await tab.page.eval("location.href")).pathname === `/lists/${id}`, { what: "back on the list" });
-	const [row] = await db.sql`select title, due::text, assignee from tasks where id = ${Number(task)}`;
+	const [row] = await db.sql`select title, due, assignee from tasks where id = ${Number(task)}`;
 	assert.deepEqual(row, { title: "Wrap the presents", due: "2030-12-20", assignee: "jun" });
 	assert.deepEqual(tab.errors, []);
 	assert.deepEqual(tab.console.filter((line) => line.type === "error"), []);

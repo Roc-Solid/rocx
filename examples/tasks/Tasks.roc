@@ -7,7 +7,7 @@ import forms.Date
 Tasks := [].{
 
 	## A task, as the endpoints send it. `due` is a day (`2026-11-24`) and `assignee` a person's id;
-	## each is `""` when there is none, as a form posts it. (In Postgres they are null, and `Store`
+	## each is `""` when there is none, as a form posts it. (In the database they are null, and `Store`
 	## reads them as `Db.Nullable(Str)`.)
 	Task : { id : Str, title : Str, notes : Str, due : Str, assignee : Str, done : Bool }
 

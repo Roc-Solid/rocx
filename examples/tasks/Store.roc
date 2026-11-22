@@ -3,12 +3,13 @@ import pf.Endpoint
 import forms.Date
 import Tasks
 
-## The app's data in Postgres (the tables are `migrations/0001_tables.sql`). Only the endpoints
-## (`routes/**/+server.roc`) use it: it imports `pf.Db`, which only the server has, so no page or
-## component may import it (`rocx build --client` warns if one does).
+## The app's data in SQLite, a file beside the server (the tables are
+## `migrations/0001_tables.sql`). Only the endpoints (`routes/**/+server.roc`) use it: it imports
+## `pf.Db`, which only the server has, so no page or component may import it (`rocx build --client`
+## warns if one does).
 Store := [].{
 
-	## What a task's row reads into. `due` and `assignee` may be null in Postgres, so they are
+	## What a task's row reads into. `due` and `assignee` may be null in the database, so they are
 	## `Db.Nullable`: `Null`, or `Some(value)`.
 	Row : { id : I64, title : Str, notes : Str, due : Db.Nullable(Str), assignee : Db.Nullable(Str), done : Bool }
 
@@ -35,11 +36,11 @@ Store := [].{
 			DbErr(why) | BadRow(why) => Status(500, "The database failed: ${why}")
 		}
 
-	## Today, as Postgres has it (`2026-11-24`): what a task's due day is counted from.
+	## Today, as SQLite has it (`2026-11-24`, in UTC): what a task's due day is counted from.
 	today! : {} => Try(Str, Problem)
 	today! = |{}| {
 		rows : List({ today : Str })
-		rows = Db.all!("select current_date::text as today", [])?
+		rows = Db.all!("select date('now') as today", [])?
 		rows.first().map_ok(|row| row.today).map_err(|_| NotFound)
 	}
 
@@ -80,7 +81,7 @@ Store := [].{
 	tasks! = |list| {
 		key = number(list)?
 		rows : List(Row)
-		rows = Db.all!("select id, title, notes, due::text as due, assignee, done from tasks where list_id = $1 order by position, id", [Int(key)])?
+		rows = Db.all!("select id, title, notes, due, assignee, done from tasks where list_id = $1 order by position, id", [Int(key)])?
 		Ok(rows.map(Store.task_of))
 	}
 
@@ -90,7 +91,7 @@ Store := [].{
 		key = number(id)?
 		rows : List({ id : I64, title : Str, notes : Str, due : Db.Nullable(Str), assignee : Db.Nullable(Str), done : Bool, list_id : I64, list_name : Str })
 		rows = Db.all!(
-			"select t.id, t.title, t.notes, t.due::text as due, t.assignee, t.done, l.id as list_id, l.name as list_name from tasks t join lists l on l.id = t.list_id where t.id = $1",
+			"select t.id, t.title, t.notes, t.due, t.assignee, t.done, l.id as list_id, l.name as list_name from tasks t join lists l on l.id = t.list_id where t.id = $1",
 			[Int(key)],
 		)?
 		match rows.first() {
@@ -142,20 +143,22 @@ Store := [].{
 
 	## The task `id` moved to place `to` on its list, the others closing up around it: the same
 	## `Tasks.moved` the page applied while the move was on its way, then each task's position
-	## written as its place in that order. In a transaction, so two moves at once take turns.
+	## written as its place in that order. In a transaction, so two moves at once take turns (on
+	## SQLite it holds the write lock from its start).
 	move! : Tasks.Move => Try({}, Problem)
 	move! = |move|
 		Db.transaction!(
 			|{}| {
 				key = number(move.id)?
 				lists : List({ list_id : I64 })
-				lists = Db.all!("select list_id from tasks where id = $1 for update", [Int(key)])?
+				lists = Db.all!("select list_id from tasks where id = $1", [Int(key)])?
 				list = lists.first().map_err(|_| NotFound)?
 				order = Tasks.moved(Store.tasks!(list.list_id.to_str())?, move)
-				# Each task's position is where its id is in `order` (array_position counts from 1).
+				# Each task's position is where its id is in `order`, a JSON list (json_each's key
+				# is its place, from 0).
 				_ = Db.run!(
-					"update tasks set position = array_position(string_to_array($2, ',')::bigint[], id) - 1 where list_id = $1",
-					[Int(list.list_id), Text(Str.join_with(order.map(|task| task.id), ","))],
+					"update tasks set position = (select key from json_each($2) where value = cast(tasks.id as text)) where list_id = $1",
+					[Int(list.list_id), Text(Json.to_str(order.map(|task| task.id)))],
 				)?
 				Ok({})
 			},
@@ -174,7 +177,7 @@ Store := [].{
 number : Str -> Try(I64, [NotFound])
 number = |text| I64.from_str(text.trim()).map_err(|_| NotFound)
 
-## `Null` for a value left out, as Postgres stores it.
+## `Null` for a value left out, as the database stores it.
 nullable : Try(Str, [Missing]) -> Db.Value
 nullable = |value|
 	match value {

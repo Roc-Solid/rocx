@@ -40,7 +40,7 @@ each piece is where it is.
 | `+server.roc` endpoints of their own (JSON for scripts too) | [`routes/api/team`](routes/api/team/+server.roc), [`routes/api/tasks/toggle`](routes/api/tasks/toggle/+server.roc), [`move`](routes/api/tasks/move/+server.roc), [`delete`](routes/api/tasks/delete/+server.roc) |
 | A `Middleware`: who you are, from a cookie, into every handler's `context`; each answer logged with `Log.info!` (`Log.error!` with why for a 5xx); `Middleware.same_origin` before it | [`Middlewares.roc`](Middlewares.roc), named in [`main.roc`](main.roc) |
 | A cookie set and cleared by an endpoint, then a redirect | [`routes/me/+server.roc`](routes/me/+server.roc) |
-| Postgres: migrations, and a seed that is safe to run twice | [`migrations/0001_tables.sql`](migrations/0001_tables.sql), [`0002_seed.sql`](migrations/0002_seed.sql) |
+| SQLite in the server's process (`database: Sqlite("data/tasks.db")`, D-045): migrations, and a seed that is safe to run twice | [`migrations/0001_tables.sql`](migrations/0001_tables.sql), [`0002_seed.sql`](migrations/0002_seed.sql) |
 | `Db.all!`, `Db.run!`, a transaction, typed rows, `Db.Nullable` for the optional fields | [`Store.roc`](Store.roc) (`Row`, `task_of`, `move!`) |
 | Pages that read endpoints with `Endpoint.get!` (in a memo, for the list): one its endpoint refuses with `NotFound` is the error page, a 404 | [`+layout.rocx`](routes/+layout.rocx), [`lists/[id]/+page.rocx`](routes/lists/[id]/+page.rocx), [`tasks/[id]/+page.rocx`](routes/tasks/[id]/+page.rocx) |
 | Rules written once, run by the server and the browser, with expects | [`Tasks.roc`](Tasks.roc) (filters, toggles, moves, places, due badges) |
@@ -59,39 +59,39 @@ each piece is where it is.
 
 ## Build and run it
 
-From the repository's root, with the toolchain (`just setup`) and a Postgres (`just db`, which
-prints its URL):
+From the repository's root, with the toolchain (`just setup`). Nothing else: the tasks are a SQLite
+file, `data/tasks.db` from where the server starts (`--database-url sqlite:<path>` puts it
+elsewhere).
 
 ```sh
-docker exec rocx-postgres createdb -U rocx tasks   # a database of its own
 bin/rocx build examples/tasks --client examples/tasks/build/client   # bin/rocx: any repo script builds it
 .tools/roc-active build --target=wasm32 --opt=size --output=examples/tasks/build/client/static/rocx/app.wasm examples/tasks/build/client/main.roc
 node server/build.mjs examples/tasks/main.roc examples/tasks/build/tasks
-examples/tasks/build/tasks --port 18110 --static examples/tasks/build/client/static \
-  --database-url postgres://rocx:rocx@127.0.0.1:55432/tasks
+cd examples/tasks && build/tasks --port 18110 --static build/client/static
 ```
 
 Then http://localhost:18110. The server runs the migrations as it starts, so the first start makes
-the tables and the seed. Add `--dev` to see crashes in the page and reload it on restart, and
-`rocx build examples/tasks --dev` (the same `--client`) for the stories at `/__rocx/stories`.
+the file, its tables and the seed. Add `--dev` to see crashes in the page and reload it on
+restart, and `rocx build examples/tasks --dev` (the same `--client`) for the stories at
+`/__rocx/stories`.
 
 ## Test it
 
 ```sh
 bin/rocx fmt --check examples/tasks
 bin/rocx check -- .tools/roc-active test examples/tasks/main.roc   # the expects: rules, forms, pure components
-DATABASE_URL=postgres://rocx:rocx@127.0.0.1:55432/rocx node --test 'examples/tasks/test/*.test.mjs'
+node --test 'examples/tasks/test/*.test.mjs'                       # a SQLite file of their own
 just examples tasks                                                # all of it, as `just examples` does each example
 ```
 
-The node tests build the app, make a database of their own in the Postgres at `DATABASE_URL` (and
-drop it after), and start the server on a free port. Over HTTP: the pages, each form as a browser
+The node tests build the app, make a SQLite file of their own in a temporary directory (and
+remove it after), and start the server on a free port. Over HTTP: the pages, each form as a browser
 without JavaScript posts it and as the runtime sends it, the endpoints as JSON, what lands in
-Postgres (nulls included), the cookie, the middleware's log and its refusal of another site's post,
+the database (nulls included), the cookie, the middleware's log and its refusal of another site's post,
 404s, and the seed run twice. In Chromium (skipped when there is none): ticking a task, which shows
 at once and then in the counts down the side; adding one (refused when empty, then added, the form
 emptied), moving it up, and deleting another, each without the page loading again, and each in
-Postgres after; and a change the server refuses (a task deleted elsewhere, then ticked), undone,
+the database after; and a change the server refuses (a task deleted elsewhere, then ticked), undone,
 said why, and dismissed, which reads the list again. Rows glide to their places when the list
 changes, so the browser's tests wait for the page to stop moving before they click.
 
