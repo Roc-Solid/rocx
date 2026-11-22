@@ -20,7 +20,7 @@ Checks := [].{
 
 	## Checks the monitor `id`. One deleted or paused since it was queued is let be. An `Err` (the
 	## check couldn't be stored) has the job tried again. `alert!` queues an incident's alerts.
-	run! : I64, (I64, [Opened, Closed] => Try({}, [DbErr(Str), BadRow(Str)])) => Try({}, Str)
+	run! : I64, (I64, [Opened, Closed] => Try({}, [DbErr(Str), BadRow(Str), JobErr(Str)])) => Try({}, Str)
 	run! = |id, alert!|
 		match Store.monitor!(id) {
 			Err(NotFound) => Ok({})
@@ -44,6 +44,7 @@ Checks := [].{
 								}
 								Err(DbErr(why)) => Err(why)
 								Err(BadRow(why)) => Err(why)
+								Err(JobErr(why)) => Err(why)
 							}
 						}
 					}

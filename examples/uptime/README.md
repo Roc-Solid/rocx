@@ -228,8 +228,10 @@ Every gap met, and what the app does about each:
      queue them.** `Jobs.check` runs `Checks.run!`, and a check queues alerts (`Jobs.alert`), so
      `Jobs` passes its own `alert!` down as an argument to avoid an import cycle. Queueing by a
      kind's name, typed, would let any module queue any kind.
-   - **`JobErr` and `DbErr` are different tags**, so queueing inside a `Db.transaction!` needs a
-     `match` to turn one into the other (`Err(JobErr(why)) => return Err(DbErr(why))`).
+   - **Fixed: `JobErr` and `DbErr` were different tags**, so queueing inside a `Db.transaction!`
+     took a `match` to turn one into the other. `Db`'s and `Job`'s errors are open unions now
+     (`[JobErr(Str), ..others]`), so a transaction's body `?`s both (the sweep, `alert!`), and
+     `Store.record!` and `Store.post_update!` say `JobErr` beside `DbErr` for the alerts they queue.
 7. **`Http.fetch!`, not `Http.send!`.** The brief said `Http.send!`, which is the deprecated shape
    (D-024). The checks use `fetch!`, whose `timeout_ms` and `max_bytes` fit a monitor.
 8. **The client's address isn't passed on**, so wrong passwords can't be counted per client. The

@@ -82,6 +82,13 @@ view! = |_|
 			</p>
 			<Code title={"${Sources.platform_transaction.file}, in part"} source={Sources.platform_transaction.rocx} numbers={Bool.False} />
 			<p>
+				The body can <code>?</code> what <code>Db</code>, <code>Job</code> and the app itself return, with
+				nothing mapped from one to another: their errors are open unions (<code>Db.run!</code>'s is
+				<code>[DbErr(Str), ..others]</code>, <code>Job.enqueue!</code>'s <code>[JobErr(Str), ..others]</code>),
+				so the transaction's error is every one of them (with an app's own <code>Err(Refused)</code>,
+				<code>[DbErr(Str), JobErr(Str), Refused]</code>), and the caller matches each case.
+			</p>
+			<p>
 				A job queued in a transaction is a row in it, so it runs only if the transaction commits, and the
 				workers are woken when it does (<a href={Paths.ecosystem_jobs}>jobs</a>).
 			</p>

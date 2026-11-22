@@ -916,15 +916,24 @@ test("jobs: one that fails runs again, a little later each time, and one that al
 	assert.equal(await text("/"), "Hello from Roc, natively.", "crashing jobs didn't stop the server");
 });
 
-test("jobs: queued in a transaction, a job is there only if the transaction commits", { skip: skipDb }, async () => {
+test("jobs: queued in a transaction, a job is there only if the transaction commits; one body `?`s Db, Job and the app's own error, and its caller matches each", { skip: skipDb }, async () => {
 	const kept = `${run}kept`;
 	assert.equal(await post(`/jobs/commit?run=${kept}`), "queued");
 	assert.equal(await until(() => text(`/jobs/log?run=${kept}`)), `note: ${kept} committed`);
 	const dropped = `${run}dropped`;
-	assert.equal((await get(`/jobs/rollback?run=${dropped}`, { method: "POST" })).status, 409);
+	const refused = await get(`/jobs/rollback?run=${dropped}`, { method: "POST" });
+	assert.equal(refused.status, 409);
+	assert.equal(await refused.text(), "Refused", "the app's own error");
+	const statement = await get(`/jobs/rollback?run=${dropped}&how=statement`, { method: "POST" });
+	assert.equal(statement.status, 500);
+	assert.equal(await statement.text(), 'DbErr: 42P01: relation "nowhere" does not exist', "a statement's error, from Db.run!");
+	const queue = await get(`/jobs/rollback?run=${dropped}&how=queue`, { method: "POST" });
+	assert.equal(queue.status, 500);
+	assert.match(await queue.text(), /^JobErr: 25P02: current transaction is aborted/, "the queue's error, from Job.enqueue!");
 	await new Promise((resolve) => setTimeout(resolve, 300));
 	assert.equal(await text(`/jobs/state?run=${dropped}`), "", "never queued");
 	assert.equal(await text(`/jobs/log?run=${dropped}`), "");
+	assert.equal(await text(`/tx/notes?run=${dropped}`), "", "nor the notes written before");
 });
 
 test("jobs: a job of a kind the app doesn't list (another app's, sharing the database) is left alone", { skip: skipDb }, async () => {

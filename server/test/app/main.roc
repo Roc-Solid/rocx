@@ -437,33 +437,46 @@ route! = |request, context| {
 				Err(JobErr(why)) => text(500, why)
 			}
 		("POST", "/jobs/commit") => {
+			# One body `?`s Db and Job, with nothing mapped: the transaction's error is both (and
+			# any error of the app's own), and the caller matches each.
 			done = Db.transaction!(
 				|{}| {
 					_ = Db.run!("insert into notes (body) values ($1)", [Text("with a job ${run}")])?
-					match Job.enqueue!(note_job, { run, said: "committed" }, { when: Now }) {
-						Ok({}) => Ok("queued")
-						Err(JobErr(why)) => Err(DbErr(why))
-					}
+					Job.enqueue!(note_job, { run, said: "committed" }, { when: Now })?
+					Ok("queued")
 				},
 			)
 			match done {
 				Ok(said) => text(202, said)
 				Err(DbErr(why)) => text(500, why)
+				Err(JobErr(why)) => text(500, why)
 			}
 		}
 		("POST", "/jobs/rollback") => {
+			# A note and a job, then the app's own error (`Refused`), a statement that fails
+			# (`DbErr`), or the queue refusing a job in a transaction Postgres has aborted (`JobErr`):
+			# each rolls back what came before, and the caller matches each case.
+			how = param(request.query, "how")
 			done = Db.transaction!(
 				|{}| {
-					match Job.enqueue!(note_job, { run, said: "rolled back" }, { when: Now }) {
-						Ok({}) => Err(Refused)
-						Err(JobErr(why)) => Err(DbErr(why))
+					_ = Db.run!("insert into notes (body) values ($1)", [Text("rolled back ${run}")])?
+					if how == "statement" {
+						_ = Db.run!("insert into nowhere values (1)", [])?
 					}
+					if how == "queue" {
+						aborted : Try(U64, [DbErr(Str)])
+						aborted = Db.run!("insert into nowhere values (1)", [])
+						_ = aborted
+					}
+					Job.enqueue!(note_job, { run, said: "rolled back" }, { when: Now })?
+					if how == "" or how == "refused" Err(Refused) else Ok("?")
 				},
 			)
 			match done {
-				Ok(_) => text(200, "?")
-				Err(Refused) => text(409, "refused, rolled back")
-				Err(DbErr(why)) => text(500, why)
+				Ok(said) => text(200, said)
+				Err(Refused) => text(409, "Refused")
+				Err(DbErr(why)) => text(500, "DbErr: ${why}")
+				Err(JobErr(why)) => text(500, "JobErr: ${why}")
 			}
 		}
 		("GET", "/jobs/log") => {

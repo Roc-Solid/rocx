@@ -89,6 +89,28 @@ on it (`Live.next!`) until then, or until the next delayed job or retry falls du
 transaction (`Db.transaction!`), a job is a row in it: there only if it commits. A job running when
 the server stopped runs again at the next start.
 
+`Job`'s errors are open unions (`[JobErr(Str), ..others]`), as `Db`'s are (`[DbErr(Str), ..others]`),
+so one transaction's body `?`s its statements, its jobs and the app's own errors, with nothing
+mapped from one to another, and the caller matches each:
+
+```roc
+paused = Db.transaction!(|{}| {
+    changed = Db.run!("update monitors set paused = true where id = $1", [Int(id)])?
+    if changed == 0 {
+        Err(NotFound)
+    } else {
+        Job.enqueue!(Jobs.paused, { monitor: id }, { when: Now })?
+        Ok({})
+    }
+})
+match paused {
+    Ok({}) => …
+    Err(NotFound) => …      # the app's own: no such monitor
+    Err(DbErr(why)) => …    # a statement's
+    Err(JobErr(why)) => …   # the queue's
+}
+```
+
 **A time limit** (`timeout_ms`, 0 for none) is a deadline on the job's call. The first effect that
 waits past it ends the call, wherever the job is: a Postgres statement (cancelled, and its
 connection closed rather than given back to the pool, a transaction on it with it), a socket's read

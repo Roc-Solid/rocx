@@ -16,6 +16,10 @@ import Host
 ##     Some(text) => text
 ## }
 ## ```
+##
+## Each function's error is an open union (`[DbErr(Str), ..others]`), so a function `?`s a statement
+## beside other errors (packages/jobs' `JobErr`, the app's own) with nothing mapped, and its caller
+## matches each.
 Db := [].{
 
 	## A column that may be null: `Null`, or `Some(value)`. In JSON, `null` or the value as it is,
@@ -74,7 +78,7 @@ Db := [].{
 	## Every row a statement reads, each a record of its columns, by name. `BadRow` when a row
 	## doesn't fit the record: a column it lacks, a value of another type, or a null in a column the
 	## record doesn't read as `Nullable(a)` (the error names it).
-	all! : Str, List(Value) => Try(List(row), [DbErr(Str), BadRow(Str)])
+	all! : Str, List(Value) => Try(List(row), [DbErr(Str), BadRow(Str), ..others])
 		where [row.Json.Parseable([InvalidJson(Str)])]
 	all! = |sql, params|
 		match Host.db_query!(sql, encoded(params)) {
@@ -88,7 +92,7 @@ Db := [].{
 
 	## How many rows a statement changed (`insert`, `update`, `delete`), or the statement's
 	## error.
-	run! : Str, List(Value) => Try(U64, [DbErr(Str)])
+	run! : Str, List(Value) => Try(U64, [DbErr(Str), ..others])
 	run! = |sql, params|
 		match Host.db_execute!(sql, encoded(params)) {
 			Ok(count) => Ok(count)
@@ -97,7 +101,7 @@ Db := [].{
 
 	## Runs `sql`, one statement after another (`;` between them), with no parameters: a schema,
 	## a migration. They run as one transaction: if one fails, none stays.
-	script! : Str => Try({}, [DbErr(Str)])
+	script! : Str => Try({}, [DbErr(Str), ..others])
 	script! = |sql|
 		match Host.db_script!(sql) {
 			Ok({}) => Ok({})
@@ -112,7 +116,7 @@ Db := [].{
 	## From now until this call ends, it hears Postgres's notifications on `channel` (`notify`,
 	## sent when the transaction that sent them commits) as messages on the topic `pg:<channel>`
 	## (`Live.next!`): how a background loop sleeps until there is work.
-	listen! : Str => Try({}, [DbErr(Str)])
+	listen! : Str => Try({}, [DbErr(Str), ..others])
 	listen! = |channel|
 		match Host.db_listen!(channel) {
 			Ok({}) => Ok({})

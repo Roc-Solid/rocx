@@ -25,6 +25,10 @@ import "migrations/0001_jobs.sql" as jobs_table : Str
 ## Job.cancel!("reminder:ada")
 ## ```
 ##
+## Each function's error is an open union (`[JobErr(Str), ..others]`), as `Db`'s are, so a
+## transaction's body `?`s a job, its statements and the app's own errors together, and the caller
+## matches `JobErr` beside `DbErr`.
+##
 ## The app lists the plugin, with the kinds its workers run and its schedules:
 ##
 ## ```roc
@@ -125,7 +129,7 @@ Job := [].{
 	## Queues a job of `kind` with `input`, to run when `opts` says. The workers hear of it
 	## (`pg_notify`) once it is there for them: now, or when its transaction commits. A `JobErr`
 	## when the app has no jobs plugin (`Job.plugin`), or the database refuses.
-	enqueue! : Kind(input), input, Opts => Try({}, [JobErr(Str)])
+	enqueue! : Kind(input), input, Opts => Try({}, [JobErr(Str), ..others])
 		where [input.Json.Encodable([])]
 	enqueue! = |kind, input, opts|
 		match queue!(kind.name, Json.to_str(input), kind.attempts, opts.when, Null) {
@@ -137,7 +141,7 @@ Job := [].{
 	## `Queued`; or nothing, if one has it (`Exists`). Once that one is done, failed or canceled,
 	## the key is free again. A key names what the job is for (`reminder:ada`), so that it can be
 	## cancelled or moved by it.
-	enqueue_keyed! : Kind(input), input, KeyedOpts => Try([Queued, Exists], [JobErr(Str)])
+	enqueue_keyed! : Kind(input), input, KeyedOpts => Try([Queued, Exists], [JobErr(Str), ..others])
 		where [input.Json.Encodable([])]
 	enqueue_keyed! = |kind, input, opts|
 		match queue!(kind.name, Json.to_str(input), kind.attempts, opts.when, if (opts.key.is_empty()) Null else Text(opts.key)) {
@@ -147,11 +151,11 @@ Job := [].{
 		}
 
 	## Cancels the queued jobs with `key`: how many there were. One that is running isn't stopped.
-	cancel! : Str => Try(U64, [JobErr(Str)])
+	cancel! : Str => Try(U64, [JobErr(Str), ..others])
 	cancel! = |key| changed!("update rocx_jobs set state = 'canceled', finished_at = now() where unique_key = $1 and state = 'queued' returning id", [Text(key)])
 
 	## Moves the queued job with `key` to run `when` instead: how many there were (0 or 1).
-	move! : Str, When => Try(U64, [JobErr(Str)])
+	move! : Str, When => Try(U64, [JobErr(Str), ..others])
 	move! = |key, when| changed!("update rocx_jobs set run_at = coalesce(to_timestamp($2::bigint / 1000.0), now()) where unique_key = $1 and state = 'queued' returning id", [Text(key), at(when)])
 
 	## How the workers run jobs of `kind`, for the plugin's `jobs`: their input decoded from JSON.
@@ -191,7 +195,7 @@ Job := [].{
 	Filter : { state : Str, kind : Str, before_id : I64, limit : U64 }
 
 	## The jobs `filter` picks, newest first. A page goes on with `before_id` set to the last one's id.
-	list! : Filter => Try(List(Row), [JobErr(Str)])
+	list! : Filter => Try(List(Row), [JobErr(Str), ..others])
 	list! = |filter|
 		rows!(
 			"${columns} where ($1 = '' or state = $1) and ($2 = '' or kind = $2) and ($3::int8 = 0 or id < $3::int8) order by id desc limit nullif($4::int8, 0)",
@@ -199,7 +203,7 @@ Job := [].{
 		)
 
 	## The job with this id; `NotFound` if there is none.
-	get! : I64 => Try(Row, [NotFound, JobErr(Str)])
+	get! : I64 => Try(Row, [NotFound, JobErr(Str), ..others])
 	get! = |id|
 		match rows!("${columns} where id = $1", [Int(id)]) {
 			Ok([row]) => Ok(row)
@@ -208,7 +212,7 @@ Job := [].{
 		}
 
 	## How many jobs there are of each kind in each state.
-	counts! : {} => Try(List({ kind : Str, state : Str, count : U64 }), [JobErr(Str)])
+	counts! : {} => Try(List({ kind : Str, state : Str, count : U64 }), [JobErr(Str), ..others])
 	counts! = |{}| {
 		counted : Try(List({ kind : Str, state : Str, count : U64 }), [DbErr(Str), BadRow(Str)])
 		counted = Db.all!("select kind, state, count(*) as count from rocx_jobs group by kind, state order by kind, state", [])
@@ -221,7 +225,7 @@ Job := [].{
 
 	## Queues a failed or canceled job again, due now, its attempts back to none. A job with a key
 	## another pending job has now can't be.
-	retry! : I64 => Try({}, [NotFound, JobErr(Str)])
+	retry! : I64 => Try({}, [NotFound, JobErr(Str), ..others])
 	retry! = |id|
 		acted!(
 			id,
@@ -230,11 +234,11 @@ Job := [].{
 		)
 
 	## Cancels a queued job.
-	cancel_id! : I64 => Try({}, [NotFound, JobErr(Str)])
+	cancel_id! : I64 => Try({}, [NotFound, JobErr(Str), ..others])
 	cancel_id! = |id| acted!(id, "canceled", "update rocx_jobs set state = 'canceled', finished_at = now() where id = $1 and state = 'queued' returning id")
 
 	## Makes a queued job due now (one queued for later, or waiting to be tried again).
-	run_now! : I64 => Try({}, [NotFound, JobErr(Str)])
+	run_now! : I64 => Try({}, [NotFound, JobErr(Str), ..others])
 	run_now! = |id| acted!(id, "run now", "update rocx_jobs set run_at = now() where id = $1 and state = 'queued' returning id")
 }
 
@@ -265,7 +269,7 @@ at = |when|
 columns : Str
 columns = "select id, kind, input, state, attempts, max_attempts, unique_key as key, (extract(epoch from run_at) * 1000)::int8 as run_at, (extract(epoch from locked_at) * 1000)::int8 as locked_at, (extract(epoch from finished_at) * 1000)::int8 as finished_at, last_error, (extract(epoch from created_at) * 1000)::int8 as created_at from rocx_jobs"
 
-rows! : Str, List(Db.Value) => Try(List(Job.Row), [JobErr(Str)])
+rows! : Str, List(Db.Value) => Try(List(Job.Row), [JobErr(Str), ..others])
 rows! = |sql, params| {
 	found : Try(List(Job.Row), [DbErr(Str), BadRow(Str)])
 	found = Db.all!(sql, params)
@@ -278,7 +282,7 @@ rows! = |sql, params| {
 
 ## Runs `sql` (an `update … returning id`), then tells the workers and the jobs page (`pg_notify`,
 ## when its transaction commits): how many jobs it changed.
-changed! : Str, List(Db.Value) => Try(U64, [JobErr(Str)])
+changed! : Str, List(Db.Value) => Try(U64, [JobErr(Str), ..others])
 changed! = |sql, params|
 	match Db.run!("with changed as (${sql}) select pg_notify('rocx_jobs', id::text) from changed", params) {
 		Ok(count) => Ok(count)
@@ -287,7 +291,7 @@ changed! = |sql, params|
 
 ## Acts on job `id` (`sql`, which changes it only in the states it may be in): `NotFound` when there
 ## is no such job; why not, when it is in another state.
-acted! : I64, Str, Str => Try({}, [NotFound, JobErr(Str)])
+acted! : I64, Str, Str => Try({}, [NotFound, JobErr(Str), ..others])
 acted! = |id, done, sql|
 	match changed!(sql, [Int(id)]) {
 		Ok(0) =>

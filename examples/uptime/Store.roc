@@ -38,8 +38,9 @@ Store := [].{
 	CheckRow : { at : Str, up : Bool, status : Db.Nullable(U64), latency_ms : U64, error : Str }
 
 	## What a route answers for a query that failed: a 404 for a row that isn't there, a 500 for the
-	## rest, its details in the server's log rather than in the answer.
-	refused! : Store.Problem => Endpoint.Refusal
+	## rest (the database's error, or the job queue's when it queued alerts), its details in the
+	## server's log rather than in the answer.
+	refused! : [NotFound, DbErr(Str), BadRow(Str), JobErr(Str)] => Endpoint.Refusal
 	refused! = |problem|
 		match problem {
 			NotFound => NotFound
@@ -49,6 +50,10 @@ Store := [].{
 			}
 			BadRow(why) => {
 				Log.error!("uptime: a row didn't read", { error: why })
+				Status(500, "Acme Status couldn't read or save that just now; try again.")
+			}
+			JobErr(why) => {
+				Log.error!("uptime: a job wasn't queued", { error: why })
 				Status(500, "Acme Status couldn't read or save that just now; try again.")
 			}
 		}
@@ -80,8 +85,9 @@ Store := [].{
 	## Stores what a check of `monitor` found, in one transaction: the check, the monitor's streak of
 	## failures, and the incident `Incident.decide` says to open or close, with its update and the
 	## alerts it queues (`alert!`, given the incident and whether it opened). If anything fails,
-	## none of it stays, and the job is tried again.
-	record! : Store.Monitor, Store.Found, (I64, [Opened, Closed] => Try({}, [DbErr(Str), BadRow(Str)])) => Try(Store.Outcome, [DbErr(Str), BadRow(Str)])
+	## none of it stays, and the job is tried again. Its errors are the database's and the job
+	## queue's (`alert!`'s), each as it came: the transaction's body `?`s both.
+	record! : Store.Monitor, Store.Found, (I64, [Opened, Closed] => Try({}, [DbErr(Str), BadRow(Str), JobErr(Str)])) => Try(Store.Outcome, [DbErr(Str), BadRow(Str), JobErr(Str)])
 	record! = |monitor, found, alert!|
 		Db.transaction!(
 			|{}| {
@@ -321,7 +327,7 @@ Store := [].{
 
 	## Adds an update to an open incident, by `author`; a `resolved` one closes it, and queues the
 	## alerts that say so (`alert!`, as `record!` does).
-	post_update! : I64, Incident.Stage, Str, Str, (I64, [Opened, Closed] => Try({}, [DbErr(Str), BadRow(Str)])) => Try({}, Store.Problem)
+	post_update! : I64, Incident.Stage, Str, Str, (I64, [Opened, Closed] => Try({}, [DbErr(Str), BadRow(Str), JobErr(Str)])) => Try({}, [NotFound, DbErr(Str), BadRow(Str), JobErr(Str)])
 	post_update! = |id, stage, body, author, alert!|
 		Db.transaction!(
 			|{}| {

@@ -75,6 +75,9 @@ view! = |_|
 				<code>Time.now_millis!</code> tells it (a moment past is now). The options are a record, so more
 				can be added later. The input is written as JSON, and read back as the kind's type when it runs. Queued inside <code>Db.transaction!</code>, a job is a row in the transaction: it runs only
 				if the transaction commits (<a href={"${Paths.platform_postgres}#transactions"}>transactions</a>).
+				<code>Job</code>'s errors are open unions (<code>[JobErr(Str), ..others]</code>), as <code>Db</code>'s
+				are, so a transaction's body <code>?</code>s a job, its statements and the app's own errors together,
+				and its caller matches <code>JobErr</code> beside <code>DbErr</code>.
 			</p>
 
 			<Heading id="workers">Workers, and trying again</Heading>

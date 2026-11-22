@@ -603,7 +603,7 @@ function sourcesModule() {
 		pick("platform_site_program", "site/main.roc", ["program = App.program({", "context:", "middleware:", "openapi:", "})"]),
 		pick("platform_notes", "server/test/app/main.roc", ["(\"GET\", \"/notes\") => {", "found : Try(", "found = Db.all!(", "match found {", "Ok(notes) =>", "Err(DbErr(why))", "Err(BadRow(why))", "}", "}"]),
 		pick("platform_insert", "server/test/app/main.roc", ["(\"POST\", \"/notes\") =>", "match Db.run!(", "Ok(count) =>", "Err(DbErr(why))", "}"]),
-		pick("platform_transaction", "server/test/app/main.roc", ["(\"POST\", \"/jobs/commit\") => {", "done = Db.transaction!(", "|{}| {", "_ = Db.run!(", "match Job.enqueue!(", "Ok({}) =>", "Err(JobErr(why))", "}", "},", ")", "match done {", "Ok(said) =>", "Err(DbErr(why))", "}", "}"]),
+		pick("platform_transaction", "server/test/app/main.roc", ["(\"POST\", \"/jobs/commit\") => {", "# One body", "# any error", "done = Db.transaction!(", "|{}| {", "_ = Db.run!(", "Job.enqueue!(", "Ok(\"queued\")", "},", ")", "match done {", "Ok(said) =>", "Err(DbErr(why))", "Err(JobErr(why))", "}", "}"]),
 		whole("platform_migration", "server/test/app/migrations/0001_tables.sql"),
 		pick("platform_migrations", "server/test/app/main.roc", ["import \"migrations/0001_tables.sql\" as tables : Str", "import \"migrations/0002_note_index.sql\"", "program = {", "# The app's schema", "migrations: ["]),
 		pick("platform_rocpg", "server/examples/roc-pg/main.roc", ["planets! = |url| {", "db : Client.Client", "db = Client.connect_url!", "_ = db.execute!", "found : List(", "found = db.query!", "db.close!()", "Ok(Str.join_with", "}"]),

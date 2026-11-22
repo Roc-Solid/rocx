@@ -31,7 +31,7 @@ Jobs := [].{
 
 	## Queues an incident's alerts (what a check does when it opens or closes one, and the admin's
 	## "Resolved" update): for a transaction that changes an incident.
-	alerts! : I64, [Opened, Closed] => Try({}, [DbErr(Str), BadRow(Str)])
+	alerts! : I64, [Opened, Closed] => Try({}, [DbErr(Str), BadRow(Str), JobErr(Str)])
 	alerts! = |incident, what| alert!(incident, what)
 
 	## Rolls up the days before today, and deletes checks older than a week.
@@ -57,10 +57,7 @@ sweep! = |{}| {
 		|{}| {
 			ids = Store.claim_due!({})?
 			for id in ids {
-				match Job.enqueue_keyed!(Jobs.check, { monitor: id }, { when: Now, key: "check:${id.to_str()}" }) {
-					Ok(_) => {}
-					Err(JobErr(why)) => return Err(DbErr(why))
-				}
+				_ = Job.enqueue_keyed!(Jobs.check, { monitor: id }, { when: Now, key: "check:${id.to_str()}" })?
 			}
 			Ok({})
 		},
@@ -69,19 +66,17 @@ sweep! = |{}| {
 		Ok({}) => Ok({})
 		Err(DbErr(why)) => Err(why)
 		Err(BadRow(why)) => Err(why)
+		Err(JobErr(why)) => Err(why)
 	}
 }
 
 ## Queues an incident's alerts, one job a subscriber, in the transaction that opened or closed it,
 ## so they go only if it commits.
-alert! : I64, [Opened, Closed] => Try({}, [DbErr(Str), BadRow(Str)])
+alert! : I64, [Opened, Closed] => Try({}, [DbErr(Str), BadRow(Str), JobErr(Str)])
 alert! = |incident, what| {
 	kind = Alerts.kind_name(what)
 	for subscriber in Store.subscribers!({})? {
-		match Job.enqueue_keyed!(Jobs.alert, { incident, kind, subscriber: subscriber.id }, { when: Now, key: "alert:${incident.to_str()}:${kind}:${subscriber.id.to_str()}" }) {
-			Ok(_) => {}
-			Err(JobErr(why)) => return Err(DbErr(why))
-		}
+		_ = Job.enqueue_keyed!(Jobs.alert, { incident, kind, subscriber: subscriber.id }, { when: Now, key: "alert:${incident.to_str()}:${kind}:${subscriber.id.to_str()}" })?
 	}
 	Ok({})
 }

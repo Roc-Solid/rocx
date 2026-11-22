@@ -84,7 +84,7 @@ Cron := [].{
 
 	## Queues the job of the schedule called `name` now, besides its own times (tried as many times
 	## as its kind says).
-	run_now! : Str => Try({}, [NotFound, JobErr(Str)])
+	run_now! : Str => Try({}, [NotFound, JobErr(Str), ..others])
 	run_now! = |name|
 		match Registry.schedules!({}).find_first(|each| each.name == name) {
 			Err(_) => Err(NotFound)
