@@ -31,6 +31,8 @@ program = {
 	crons: [],
 	actors: [],
 	logs: { format: Auto },
+	plugins: [],
+	routes: [],
 }
 
 respond! = |_method, _target, _headers, _body, url|

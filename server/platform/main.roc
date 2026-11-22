@@ -30,6 +30,9 @@
 ##   `{ ..App.program(…), logs: { format: Json } }`.
 ## - Under `--dev`, the platform answers `/__rocx/mail` itself: the dev mailbox (`Outbox`), email
 ##   kept rather than sent.
+## - `plugins`: what packages add to the app (`Plugin`), all but their routes, which `respond!`
+##   answers: early paths, tables, calls, loops, starts, checks and needs, checked when the server
+##   starts (`Plugins`); `routes`, the app's own (`Routes.claims`), which no plugin's may meet.
 ## - A page's components are Solid-style (web/runtime.js hydrates the document in the browser). A
 ##   GET endpoint a component reads while the host renders the page (`Endpoint.get!`) is answered by
 ##   its route, in-process (`Host.fetch!`). The modules components are written with (`Html`, `Solid`,
@@ -52,9 +55,11 @@ platform ""
 			crons : List({ name : Str, schedule : Str, job : Str, input : Str }),
 			actors : List({ name : Str, run! : Str, Str, Str => Try({ state : Str, reply : Str }, Str) }),
 			logs : { format : [Auto, Pretty, Json] },
+			plugins : List(Plugin.Running),
+			routes : List({ method : Str, path : Str, file : Str }),
 		}
 	}
-	exposes [Actor, AesGcm, Audio, Browser, Call, Channel, Context, Cron, Db, Email, Endpoint, Env, Errored, Events, For, Html, Http, HttpResponse, HttpStatusCode, Job, JobsPage, Kv, Live, Loading, Log, Middleware, OpenApi, Random, Router, Server, Show, Solid, Submission, Submissions, Tcp, Time, Title, Transition]
+	exposes [Actor, AesGcm, Audio, Browser, Call, Channel, Context, Cron, Db, Email, Endpoint, Env, Errored, Events, For, Html, Http, HttpResponse, HttpStatusCode, Job, JobsPage, Kv, Live, Loading, Log, Middleware, OpenApi, Plugin, Random, Router, Server, Show, Solid, Submission, Submissions, Tcp, Time, Title, Transition]
 	packages {}
 	provides {
 		"roc_actor": actor_for_host!,
@@ -201,6 +206,8 @@ import Outbox
 import Middleware
 import Migrations
 import OpenApi
+import Plugin
+import Plugins
 import Random
 import Registry
 import Router
@@ -229,10 +236,14 @@ Feed : { run! : { send! : Str => Bool, sleep! : U64 => {} } => {} }
 respond_for_host! : Str, Str, Str, List(U8), Str => { status : U16, headers : Str, kind : U8, text : Str, bytes : List(U8), upstream : { method : Str, url : Str, headers : Str }, page : Box(() => Str), feed : Box(Feed) }
 respond_for_host! = |method, target, headers, body, context| {
 	answered =
-		if Outbox.serves!(target) {
-			Outbox.respond!(Server.from_http(method, target, headers, body))
-		} else {
-			(program.respond!)(method, target, headers, body, context)
+		match early!(method, target) {
+			Ok(early) => (early.answer!)({ ..Server.from_http(method, target, headers, body), route: early.path })
+			Err(NotEarly) =>
+				if Outbox.serves!(target) {
+					Outbox.respond!(Server.from_http(method, target, headers, body))
+				} else {
+					(program.respond!)(method, target, headers, body, context)
+				}
 		}
 	answer = Server.for_host(answered)
 	view! = answer.page
@@ -277,6 +288,12 @@ init_for_host! = |{}| {
 			Json => 2
 		},
 	)
+	# The plugins, checked all at once: any problem stops the server, with every one.
+	problems = Plugins.problems(program.plugins, program.routes).concat(Plugins.unmet!(program.plugins))
+	if !problems.is_empty() {
+		return Err(Str.join_with(problems, "\n"))
+	}
+	plugins = Plugins.ordered(program.plugins)
 	# The kinds of job the app runs (names, attempts, time limits): its workers take only these.
 	kinds = program.jobs.map(|job| { name: job.name, attempts: job.attempts, timeout_ms: job.timeout_ms })
 	names = kinds.map(|kind| kind.name)
@@ -286,19 +303,63 @@ init_for_host! = |{}| {
 		Err(why) => Err(why)
 		Ok({}) =>
 			if Setting.database!({}) {
-				match Migrations.apply!(Migrations.own.concat(program.migrations)) {
+				# The platform's tables, then each plugin's (recorded as `<plugin>/<name>`), then the app's.
+				theirs = plugins.join_map(|plugin| plugin.migrations.map(|migration| { name: "${plugin.name}/${migration.name}", sql: migration.sql }))
+				match Migrations.apply!(Migrations.own.concat(theirs).concat(program.migrations)) {
 					Err(why) => Err(why)
-					Ok({}) => JobWorker.recover!(names)
+					Ok({}) =>
+						match JobWorker.recover!(names) {
+							Err(why) => Err(why)
+							Ok({}) => started!(plugins)
+						}
 				}
 			} else {
-				Ok({})
+				started!(plugins)
 			}
 	}
 }
 
+## The plugins' starts, in their order: the first `Err` stops the server. Then a line a plugin on
+## the log.
+started! : List(Plugin.Running) => Try({}, Str)
+started! = |plugins| {
+	for plugin in plugins {
+		for start! in plugin.starts {
+			match start!({}) {
+				Ok({}) => {}
+				Err(why) => return Err("${plugin.name}: ${why}")
+			}
+		}
+	}
+	Plugins.log!(plugins)
+	Ok({})
+}
+
+## The early path `target` is (a path and its query), when the server has a flag it is under.
+early! : Str, Str => Try(Plugin.Early, [NotEarly])
+early! = |method, target| {
+	path =
+		match target.split_first("?") {
+			Ok({ before, .. }) => before
+			Err(_) => target
+		}
+	if !path.starts_with("/__rocx/") {
+		return Err(NotEarly)
+	}
+	dev = !Setting.text!("dev").is_empty()
+	debug = !Setting.text!("debug").is_empty()
+	flagged = |under| under.any(|flag| (flag == Dev and dev) or (flag == Debug and debug))
+	wanted = |each| each.method == method or each.method == "*" or (each.method == "GET" and method == "HEAD")
+	match program.plugins.join_map(|plugin| plugin.early).find_first(|each| wanted(each) and Plugin.matches(each.path, path) and flagged(each.under)) {
+		Ok(each) => Ok(each)
+		Err(_) => Err(NotEarly)
+	}
+}
+
 ## What the server runs in the background, each loop a call of its own: the job workers and
-## the schedules (with a database), and a look at the SMTP server (with one).
-Loop : [Work, Schedules, CheckMail]
+## the schedules (with a database), and a look at the SMTP server (with one); then each plugin's
+## loops, and its checks (each run once), by where they are in the plugins' order.
+Loop : [Work, Schedules, CheckMail, Plugged(U64, U64), Checked(U64, U64)]
 
 loops! : {} => List(Loop)
 loops! = |{}| {
@@ -306,7 +367,9 @@ loops! = |{}| {
 	workers = if (database and !program.jobs.is_empty()) List.repeat(Work, Setting.number!("job-workers", 4)) else []
 	schedules = if (database and !program.crons.is_empty()) [Schedules] else []
 	mail = if (Setting.text!("smtp-url").is_empty()) [] else [CheckMail]
-	workers.concat(schedules).concat(mail)
+	plugins = Plugins.ordered(program.plugins)
+	theirs = plugins.map_with_index(|plugin, p| plugin.loops.map_with_index(|_, l| Plugged(p, l)).concat(plugin.checks.map_with_index(|_, c| Checked(p, c)))).join_map(|each| each)
+	workers.concat(schedules).concat(mail).concat(theirs)
 }
 
 background_count_for_host! : {} => U64
@@ -320,11 +383,34 @@ background_for_host! = |index|
 		Ok(Work) => JobWorker.run!(Registry.kinds!({}))
 		Ok(Schedules) => CronTicker.run!(program.crons)
 		Ok(CheckMail) => Email.check!({})
+		Ok(Plugged(p, l)) =>
+			match Plugins.ordered(program.plugins).get(p) {
+				Ok(plugin) =>
+					match plugin.loops.get(l) {
+						Ok(each) => (each.run!)({})
+						Err(_) => {}
+					}
+				Err(_) => {}
+			}
+		Ok(Checked(p, c)) =>
+			match Plugins.ordered(program.plugins).get(p) {
+				Ok(plugin) =>
+					match plugin.checks.get(c) {
+						Ok(check) =>
+							match (check.run!)({}) {
+								Ok(said) => if (said.is_empty()) {} else Log.line!("${check.name}: ${said}")
+								Err(why) => Log.warn!("${check.name}: ${why}", {})
+							}
+						Err(_) => {}
+					}
+				Err(_) => {}
+			}
 		Err(_) => {}
 	}
 
-## Runs a part of the app in a call of its own (`Host.isolated!`): a job (`job:<kind>`, its input).
-## What it answers, or why it failed; a crash in it ends this call only.
+## Runs a part of the app in a call of its own (`Host.isolated!`): a job (`job:<kind>`, its input),
+## or a plugin's call (`<plugin>.<name>`, `Plugin.isolated!`). What it answers, or why it failed; a
+## crash in it ends this call only.
 isolated_for_host! : Str, Str => Try(Str, Str)
 isolated_for_host! = |what, input|
 	if what.starts_with("job:") {
@@ -338,7 +424,10 @@ isolated_for_host! = |what, input|
 			Err(_) => Err("no job is called ${name}: list it in the app's `jobs`")
 		}
 	} else {
-		Err("nothing in the app is called ${what}")
+		match program.plugins.join_map(|plugin| plugin.calls).find_first(|call| call.name == what) {
+			Ok(call) => (call.run!)(input)
+			Err(_) => Err("nothing in the app is called ${what}")
+		}
 	}
 
 ## An actor's turn, which its mailbox in the host runs (`actors.rs`): the actor of kind `kind`

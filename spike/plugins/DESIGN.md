@@ -1,8 +1,13 @@
 # Design: plugins
 
-> A design spec, 2026-11-21. Nothing here is built. It turns the app's side settled in
-> `CLIENT-API.md` into what a package, `rocx build` and the server platform do, in three phases.
-> When phase 1 lands it becomes a decision of its own (D-027 and D-028 are taken).
+> A design spec, 2026-11-21. It turns the app's side settled in `CLIENT-API.md` into what a
+> package, `rocx build` and the server platform do, in three phases.
+>
+> **Built (2026-11-22) as D-033**, with changes recorded there: a package that needs the server
+> platform names it in its header (with a `browser.roc` beside `main.roc` for the browser's half)
+> instead of `rocx build` copying `server/*.roc`; `calls` and `starts` added, `files`, `scripts`,
+> `jobs`, `crons` and `actors` not (yet); early paths anywhere under `/__rocx/`. Jobs and cron became
+> a plugin package themselves (D-034), so `Job.kinds!` and `Job.changes` are that package's.
 >
 > **Decided (the user, 2026-11-21):** plugins are listed in `App.program({ plugins: [...] })`; each
 > plugin declares what it needs as its own options type; two claims on one path stop the server at

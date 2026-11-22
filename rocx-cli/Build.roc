@@ -400,7 +400,8 @@ Build := [].{
 						Some(_) => [Fs.join([target, "main.roc"])]
 						None => ServerOnly.web_apps!(target, web)
 					}
-				server_only = ServerOnly.server_only_modules!(Fs.join([options.rocx, "server", "platform", "main.roc"]), web)
+				platform_only = ServerOnly.server_only_modules!(Fs.join([options.rocx, "server", "platform", "main.roc"]), web)
+				server_only = [{ alias: "pf", modules: platform_only }].concat(Build.server_packages!(dir))
 				for reached in ServerOnly.server_only_reached!(target, roots, server_only) {
 					$said = $said.append(ServerOnly.warning!(target, here, reached))
 				}
@@ -845,8 +846,22 @@ Build := [].{
 							if !(each.path.starts_with("./") or each.path.starts_with("../")) {
 								$lines = $lines.append("${each.name}: ${Text.json_string(each.path)}")
 							} else {
-								moved = Fs.relative(Build.real!(out), Build.real!(Fs.resolve(dir, [each.path])))
-								$lines = $lines.append("${each.name}: ${Text.json_string(if (moved.starts_with(".")) moved else "./${moved}")}")
+								# A package of the server's half (it names the server platform) is the browser's as
+								# its browser.roc says, or not at all.
+								resolved = Fs.resolve(dir, [each.path])
+								seen =
+									match ServerOnly.for_browser!(resolved).seen {
+										Same => Some(resolved)
+										Browser(browser) => Some(browser)
+										Hidden => None
+									}
+								match seen {
+									Some(path) => {
+										moved = Fs.relative(Build.real!(out), Build.real!(path))
+										$lines = $lines.append("${each.name}: ${Text.json_string(if (moved.starts_with(".")) moved else "./${moved}")}")
+									}
+									None => {}
+								}
 							}
 						}
 					}
@@ -855,6 +870,28 @@ Build := [].{
 			}
 		}
 		[]
+	}
+
+	## The packages the app's headers name that name the server platform, each by the name the app
+	## gives it, with the modules only the server's half has (its main.roc's, but those its
+	## browser.roc lists too).
+	server_packages! : Str => List({ alias : Str, modules : List(Str) })
+	server_packages! = |dir| {
+		var $found = []
+		for entry in Fs.entries!(dir) {
+			if entry.ends_with(".roc") and !Fs.is_dir!(Fs.join([dir, entry])) {
+				header = Build.app_header(Fs.read_or_empty!(Fs.join([dir, entry])), Bool.False) ?? ""
+				for each in Build.named_paths(header, Bool.False) {
+					if (each.path.starts_with("./") or each.path.starts_with("../")) and !$found.any(|pkg| pkg.alias == each.name) {
+						modules = ServerOnly.for_browser!(Fs.resolve(dir, [each.path])).server_only
+						if !modules.is_empty() {
+							$found = $found.append({ alias: each.name, modules })
+						}
+					}
+				}
+			}
+		}
+		$found
 	}
 
 	## The Roc an app is written in besides its .rocx files: its own .roc files (not rocx's, nor its

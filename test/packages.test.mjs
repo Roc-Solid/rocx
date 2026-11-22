@@ -51,3 +51,35 @@ test("packages: rocx build copies a package's components into the app, and `impo
 		rmSync(root, { recursive: true, force: true });
 	}
 });
+
+test("packages: one that names the server platform is the browser's half as its browser.roc says, or not at all; a page that imports what only the server has is told where", () => {
+	const root = mkdtempSync(join(tmpdir(), "rocx-packages-"));
+	try {
+		const file = (path, content) => {
+			mkdirSync(dirname(join(root, path)), { recursive: true });
+			writeFileSync(join(root, path), content);
+		};
+		// jobs: the server's alone. admin: its look for both halves, its jobs page for the server's.
+		file("packages/jobs/main.roc", 'package [Job] { pf: platform "../../server/platform/main.roc" }\n');
+		file("packages/jobs/Job.roc", "import pf.Db\n\nJob := [].{\n\tnone = 0\n}\n");
+		file("packages/admin/main.roc", 'package [Look, JobsPage] { pf: platform "../../server/platform/main.roc", jobs: "../jobs/main.roc" }\n');
+		file("packages/admin/browser.roc", "package [Look] {}\n");
+		file("packages/admin/Look.roc", "Look := [].{\n\tcolour = \"teal\"\n}\n");
+		file("packages/admin/JobsPage.roc", "import pf.Server\nimport jobs.Job\n\nJobsPage := [].{\n\tnone = Job.none\n}\n");
+		file("app/main.roc", 'app [program] { admin: "../packages/admin/main.roc", jobs: "../packages/jobs/main.roc", pf: platform "../server/platform/main.roc" }\n');
+		file("app/routes/+layout.rocx", "import pf.Html\n\nview! = |{ children, .. }|\n\t<main>{...children}</main>\n");
+		file("app/routes/+page.rocx", "import pf.Html\nimport admin.Look\n\nview! = |_|\n\t<p>{Look.colour}</p>\n");
+		file("app/routes/jobs/+page.rocx", "import pf.Html\nimport admin.JobsPage\n\nview! = |_|\n\t<p>{JobsPage.none.to_str()}</p>\n");
+		const app = join(root, "app");
+		const said = [];
+		assert.ok(build([app], { client: join(app, "build", "client"), cwd: root, log: (line) => said.push(line) }), said.join("\n"));
+		const main = readFileSync(join(app, "build", "client", "main.roc"), "utf8");
+		const header = /^app \[main!\] \{ (.*) \}$/m.exec(main)?.[1] ?? "";
+		assert.match(header, /^admin: "\.\.\/\.\.\/\.\.\/packages\/admin\/browser\.roc", pf: platform "/, "admin as its browser.roc says; jobs not at all");
+		const warnings = said.filter((line) => line.startsWith("⚠"));
+		assert.equal(warnings.length, 1, said.join("\n"));
+		assert.match(warnings[0], /^⚠ app\/routes\/jobs\/\+page\.rocx:2: the browser's copy imports admin\.JobsPage, which only the server has/);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});

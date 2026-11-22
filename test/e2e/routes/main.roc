@@ -14,6 +14,8 @@ program = {
 	crons: [],
 	actors: [],
 	logs: { format: Auto },
+	plugins: [],
+	routes: [],
 }
 
 expect Paths.blog_slug({ slug: "x" }) == "/blog/x"

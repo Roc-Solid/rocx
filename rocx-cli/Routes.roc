@@ -1237,6 +1237,8 @@ Routes := [].{
 				])
 				.concat(Routes.pattern_body(table, storied))
 				.concat([""])
+				.concat(Routes.claims_lines(table, sources))
+				.concat([""])
 				.concat(channel_function)
 				.concat([
 					"\t## A channel's subscription has ended, as the host tells it (`x-rocx-channel: close`): its route's",
@@ -1807,6 +1809,21 @@ Routes := [].{
 		Str.from_utf8_lossy($out)
 	}
 
+	## `Routes.claims`'s lines: each of the app's routes, its method (`*` for `respond!`; GET for a
+	## stream of events) and its path, and its file, which the server compares plugins' routes with
+	## when it starts.
+	claims_lines : Table, List(Source) -> List(Str)
+	claims_lines = |table, sources| {
+		rows = Routes.route_list(table, sources).keep_if(|row| row.path.starts_with("/"))
+		listed = rows.map(|row| "\t\t{ method: ${Text.roc_string(if (row.method == "EVENTS") "GET" else row.method)}, path: ${Text.roc_string(row.path)}, file: ${Text.roc_string(row.file)} },")
+		[
+			"\t## The app's routes, each a method and a path (`*`: any), and the file it is in: what the server",
+			"\t## checks plugins' routes against when it starts (`program.routes`).",
+			"\tclaims : List({ method : Str, path : Str, file : Str })",
+		]
+			.concat(if (listed.is_empty()) ["\tclaims = []"] else ["\tclaims = ["].concat(listed).append("\t]"))
+	}
+
 	## `Generated/App.roc`, the server's program.
 	app_module : { jobs : List(Found), actors : List(Found), migrations : List(Str), endpoints : Bool } -> Str
 	app_module = |input| {
@@ -1863,6 +1880,7 @@ Routes := [].{
 				"import pf.Endpoint",
 				"import pf.Middleware",
 				"import pf.OpenApi",
+				"import pf.Plugin",
 			]
 				.concat(if (input.jobs.is_empty()) [] else ["import pf.Job"])
 				.concat(if (input.actors.is_empty()) [] else ["import pf.Actor"])
@@ -1875,14 +1893,16 @@ Routes := [].{
 					"${Routes.app_name} := [].{",
 					"\t## What only the app can say: `context`, what its middleware is given from what the server was",
 					"\t## started with (`--context-file`: `|started| …`); `middleware`, which runs around every",
-					"\t## request; `crons`, the jobs on a schedule (`Cron.every`); and `openapi`, whether it serves its",
+					"\t## request; `crons`, the jobs on a schedule (`Cron.every`); `openapi`, whether it serves its",
 					"\t## endpoints' OpenAPI document, and a page to read it in (`OpenApi.Serving`): `Off` unless it",
-					"\t## says.",
+					"\t## says; and `plugins`, what packages add to it (`Plugin`): their routes answer behind the",
+					"\t## middleware, before the app's own, and the platform runs the rest.",
 					"\tConfig(given, handed) := {",
 					"\t\tcontext : Str -> given,",
 					"\t\tmiddleware : Middleware(given, handed),",
 					"\t\tcrons : List({ name : Str, schedule : Str, job : Str, input : Str }),",
 					"\t\topenapi : OpenApi.Serving ?? Off,",
+					"\t\tplugins : List(Plugin.Value(handed)) ?? [],",
 					"\t}",
 					"",
 					"\t## The platform's program, from what the app says (`Config`).",
@@ -1891,7 +1911,7 @@ Routes := [].{
 					"\t\trespond!: |method, target, headers, body, started| {",
 					"\t\t\tparsed = Server.from_http(method, target, headers, body)",
 					"\t\t\t# The route that answers it (`/blog/[slug]`), for the middleware: what a metric groups requests by.",
-					"\t\t\trequest = { ..parsed, route: Routes.pattern(parsed.path) }",
+					"\t\t\trequest = { ..parsed, route: Plugin.pattern(config.plugins, parsed.method, parsed.path) ?? Routes.pattern(parsed.path) }",
 					"\t\t\t# The end of a channel's subscription, as the host tells it: its route's `on_close!`, outside",
 					"\t\t\t# the middleware (a subscriber refused at a beat ends too).",
 					"\t\t\tif (Endpoint.channel_asked(request) == \"close\") {",
@@ -1911,7 +1931,8 @@ Routes := [].{
 					},
 				)
 				.concat([
-					"\t\t\t\tServer.clear_flash(request, Middleware.run!(chain, request, (config.context)(started), |passed, context| Routes.respond!(passed, context)))",
+					"\t\t\t\t# A plugin's route, or the app's.",
+					"\t\t\t\tServer.clear_flash(request, Middleware.run!(chain, request, (config.context)(started), |passed, context| Plugin.respond!(config.plugins, passed, context, |routed, handed| Routes.respond!(routed, handed))))",
 					"\t\t\t}",
 					"\t\t},",
 					"\t\tmigrations: [${Str.join_with(embedded.map(|each| "{ name: ${Text.roc_string(each.name)}, sql: ${each.as_name} }"), ", ")}],",
@@ -1919,6 +1940,8 @@ Routes := [].{
 					"\t\tcrons: config.crons,",
 					"\t\tactors: [${Str.join_with(input.actors.map(|actor| "Actor.handler(${alias(actor)}.${actor.define}${if (actor.thunk) "({})" else ""})"), ", ")}],",
 					"\t\tlogs: { format: Auto },",
+					"\t\tplugins: config.plugins.map(Plugin.running),",
+					"\t\troutes: Routes.claims,",
 					"\t}",
 					"}",
 					"",

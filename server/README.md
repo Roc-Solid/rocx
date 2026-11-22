@@ -34,6 +34,8 @@ program = {
     crons: [Cron.every("0 3 * * *", nightly, {})],
     actors: [Actor.handler(cart)],              # the kinds of actor (below)
     logs: { format: Auto },                     # the log's format: Auto, Pretty or Json (below)
+    plugins: plugins.map(Plugin.running),       # what packages add (below); [] for none
+    routes: [],                                 # the app's own routes, which plugins' mustn't meet
 }
 ```
 
@@ -693,6 +695,44 @@ grows without bound turns a flood of lines into a server out of memory), which s
 what stderr takes. The queue is flushed before the process exits: after a stop, after a server that
 couldn't start, before an abort (a crash outside a guarded call, out of memory), and on a panic
 (itself an event, `rocx server: the host panicked`). `--help` prints its usage as it is.
+
+### Plugins: `Plugin` (D-033)
+
+```roc
+# main.roc: the header names the package, `plugins` lists what it adds
+app [program] { pf: platform "../server/platform/main.roc", acme: "../packages/acme/main.roc" }
+
+import acme.Acme
+
+program = App.program({ context, middleware, crons: [], plugins: [Acme.plugin({ at: "/acme" })] })
+```
+
+A plugin is a `Plugin.Value(ctx)`: a name, and what a package adds to the app, every field but the
+name defaulting to `[]`. `routes` answer behind the app's middleware, before its own routes (`ctx`
+is what that middleware hands on: a plugin's routes get it without knowing its type); `early` paths
+are answered before the app, under `/__rocx/`, only with `--dev` or `--debug`; `migrations` are
+applied after the platform's and before the app's, recorded as `<plugin>/<name>`; `calls` run in a
+call of their own (`Plugin.isolated!("acme.render", input, limit_ms)`), so a crash ends only that;
+`loops` run in the background until the server stops (`Plugin.stopping!`); `starts` run after the
+migrations (an `Err` stops the server); `checks` run once in the background, what they say logged;
+and `needs` (`Env("ACME_KEY")`, `Database`, `Plugin("other")`) are checked at start. Calls, loops
+and checks are named `<plugin>.<name>`. A package makes its plugin from options of its own (a
+nominal record whose fields without a default are required), and a plugin generic in the app's
+context is a function even with none (`Acme.plugin({})`).
+
+At start, every problem with the plugins stops the server, all of them, a line each: a name used
+twice or not lowercase letters, digits and `-`; a call, loop or check without the plugin's name
+first; an early path outside `/__rocx/`; two routes at one method and path (the app's, which
+`rocx build` lists in `Routes.claims`, and a plugin's, or two plugins'); a variable unset, no
+database, a plugin not in the list, or needs in a circle. Then the plugins are ordered by their
+needs, and the log says what each added (`rocx plugins: acme: 2 routes, 1 migration`).
+
+A package whose modules use the platform names it in its header, as an app does
+(`package [Acme] { pf: platform "../../server/platform/main.roc" }`): it must be the same file the
+app names. Modules both halves can compile go in a second header beside it, `browser.roc`, which
+`rocx build --client` names for the browser's half instead (without one, the browser's half doesn't
+see the package, and a page that imports it is told where). `server/test/fixture` is a plugin
+package, for the tests.
 
 ## How a call runs
 

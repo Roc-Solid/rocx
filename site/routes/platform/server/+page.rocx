@@ -17,6 +17,7 @@ meta = {
 		{ id: "memory", label: "Memory" },
 		{ id: "pages", label: "Pages, rendered here" },
 		{ id: "background", label: "Background loops, isolated calls" },
+		{ id: "plugins", label: "Plugins" },
 		{ id: "tcp", label: "Tcp and Random" },
 		{ id: "running", label: "Running it" },
 		{ id: "logging", label: "The log" },
@@ -175,6 +176,29 @@ view! = |_|
 				the host runs as a call of its own with the kind, key, state and message as strings, so a crash
 				frees all of them. No lock is taken anywhere: one task routes every message to its actor's mailbox,
 				and each actor handles its own, one at a time.
+			</p>
+
+			<Heading id="plugins">Plugins</Heading>
+			<p>
+				A package can add to an app what only the server runs: routes, paths for development, tables,
+				background loops, calls run on their own, work at start, checks. It gives one value, a
+				<code>Plugin.Value</code>, made from options of its own; the app names the package in its header and
+				lists the plugin in its program. A plugin's routes answer behind the app's middleware, with what it
+				hands on, before the app's own routes; its tables are applied after the platform's and before the
+				app's, recorded under the plugin's name.
+			</p>
+			<Code
+				title="main.roc"
+				source={"app [program] { pf: platform \"../server/platform/main.roc\", acme: \"../packages/acme/main.roc\" }\n\nimport acme.Acme\n\nprogram = App.program({\n\tcontext,\n\tmiddleware: Middlewares.default,\n\tcrons: [],\n\tplugins: [Acme.plugin({ at: \"/acme\" })],\n})"}
+				numbers={Bool.False}
+			/>
+			<p>
+				Starting, the server checks every plugin at once, and any problem stops it, with all of them: two
+				routes at one path (the app's and a plugin's, or two plugins'), a name used twice, an environment
+				variable a plugin needs and doesn't have, a database it needs, a plugin it needs that isn't listed.
+				Then it says on the log what each added. A plugin package names the server platform in its header, as
+				an app does; what the browser can compile too it lists in a second header, <code>browser.roc</code>,
+				which the browser's half sees instead (D-033).
 			</p>
 
 			<Heading id="tcp">Tcp and Random</Heading>

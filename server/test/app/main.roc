@@ -5,7 +5,7 @@
 ## answered by their routes, requests to other servers, the environment, AES-GCM, random
 ## bytes, the crypto written in Roc (packages/crypto), S3 storage (packages/s3), and cookies; and what the docs show of them
 ## (`Samples.roc`), as an app would write it.
-app [program] { pf: platform "../../platform/main.roc", crypto: "../../../packages/crypto/main.roc", s3: "../../../packages/s3/main.roc" }
+app [program] { pf: platform "../../platform/main.roc", crypto: "../../../packages/crypto/main.roc", fixture: "../fixture/main.roc", s3: "../../../packages/s3/main.roc" }
 
 import crypto.Base64
 import crypto.Hex
@@ -13,6 +13,7 @@ import crypto.Hkdf
 import crypto.Hmac
 import crypto.Sha256
 import s3.S3
+import fixture.Fixture
 import pf.Actor
 import pf.AesGcm
 import pf.Cron
@@ -41,6 +42,7 @@ import pf.Server
 import pf.Endpoint
 import pf.Channel
 import pf.Middleware
+import pf.Plugin
 import pf.Events
 import pf.Router
 import Samples
@@ -57,7 +59,16 @@ program = {
 	actors: [Actor.handler(counter), Actor.handler(mirror({})), Actor.handler(bouncer({})), Actor.handler(ticker)],
 	# The log's format: `ROCX_LOG` if it's set, or else pretty on a terminal and JSON elsewhere.
 	logs: { format: Auto },
+	# A plugin package's plugins (server/test/fixture): their routes answer in `respond!`
+	# (`Plugin.respond!`), the platform runs the rest.
+	plugins: plugins.map(Plugin.running),
+	routes: [],
 }
+
+## The plugins: the fixture's routes show the server's context as the app has it; `third` needs
+## `second`, so it starts after it.
+plugins : List(Plugin.Value(Str))
+plugins = [Fixture.plugin({ shown: |context| "the app's context, ${context}" }), Fixture.third({}), Fixture.second({})]
 
 respond! : Str, Str, Str, List(U8), Str => Server.Response
 respond! = |method, target, headers, body, context| {
@@ -70,8 +81,8 @@ respond! = |method, target, headers, body, context| {
 	} else if asked != "" {
 		channel!(request)
 	} else {
-		# A page view lets a plain form's flash go, as `App.program` does.
-		Server.clear_flash(request, route!(request, context))
+		# A page view lets a plain form's flash go, as `App.program` does. A plugin's route first.
+		Server.clear_flash(request, Plugin.respond!(plugins, { ..request, route: Plugin.pattern(plugins, request.method, request.path) ?? "" }, context, route!))
 	}
 }
 

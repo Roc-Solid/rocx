@@ -16,4 +16,6 @@ program = {
 	crons: [],
 	actors: [],
 	logs: { format: Pretty },
+	plugins: [],
+	routes: [],
 }

@@ -1,21 +1,28 @@
 ## What the browser's copy of an app (`rocx build --client`) can't compile: a module it reaches that
-## imports what only the server platform has (`pf.Db`, `pf.Env`, `pf.Job`: a module the server
-## platform exposes and the browser's doesn't). The browser's build would fail on it, far from the
+## imports what only the server has: a module the server platform exposes and the browser's doesn't
+## (`pf.Db`, `pf.Env`), or a module of a package that names the server platform and that its
+## `browser.roc` doesn't list (`jobs.Job`). The browser's build would fail on it, far from the
 ## import that pulled it in; rocx build says where that import is instead.
 import Fs
 import Text
 
 ServerOnly := [].{
 
-	## An import a file makes: of the platform's module (`import pf.Db`: `platform`), or of a module
-	## of the app's (`import ../Db/Users`: `path`, the file it names, relative to the importer).
+	## An import a file makes: of a package's or the platform's module (`import pf.Db`: `Platform`,
+	## as it is written), or of a module of the app's (`import ../Db/Users`: `path`, the file it
+	## names, relative to the importer).
 	Import : { line : U64, written : Str, target : [Platform(Str), File(Str)] }
+
+	## The modules only the server has, by the name the app gives what they are in: `pf`, or a
+	## package's alias.
+	Only : { alias : Str, modules : List(Str) }
 
 	## A step on the way from a root to a module: the file, and its line that imports the next.
 	Step : { file : Str, line : U64, written : Str }
 
-	## A module the browser's copy reaches that imports a module only the server has.
-	Reached : { module_file : Str, platform_module : Str, line : U64, chain : List(Step) }
+	## A module the browser's copy reaches that imports a module only the server has (`pf.Db`,
+	## `jobs.Job`).
+	Reached : { module_file : Str, server_module : Str, line : U64, chain : List(Step) }
 
 	## The modules a platform's main.roc exposes (`exposes [Audio, Browser, …]`).
 	exposed_by! : Str => List(Str)
@@ -48,6 +55,70 @@ ServerOnly := [].{
 	server_only_modules! = |server, web| {
 		browser = ServerOnly.exposed_by!(web)
 		ServerOnly.exposed_by!(server).keep_if(|name| !browser.contains(name))
+	}
+
+	## The `[…]` and the `{…}` of a package's header (`package [Job, Cron] { pf: platform "…" }`) in
+	## `code`; `NotFound` if it has none.
+	package_header : Str -> Try({ listed : List(Str), deps : Str }, [NotFound])
+	package_header = |code| {
+		bytes = code.to_utf8()
+		var $at = 0
+		while $at <= bytes.len() {
+			if Text.starts_with_at(bytes, "package".to_utf8(), $at) and !Text.is_word(Text.at(bytes, $at + 7)) {
+				open = Text.skip_space(bytes, $at + 7)
+				if Text.at(bytes, open) == '[' {
+					close = Text.index_of_byte(bytes, ']', open + 1) ?? bytes.len()
+					brace = Text.skip_space(bytes, close + 1)
+					if close < bytes.len() and Text.at(bytes, brace) == '{' {
+						end = Text.index_of_byte(bytes, '}', brace + 1) ?? bytes.len()
+						names = Text.cut(bytes, open + 1, close).split_on(",").map(Text.trim).keep_if(|name| !name.is_empty())
+						return Ok({ listed: names, deps: Text.cut(bytes, brace + 1, end) })
+					}
+				}
+			}
+			$at =
+				match Text.index_of_byte(bytes, '\n', $at) {
+					Ok(newline) => newline + 1
+					Err(_) => bytes.len() + 1
+				}
+		}
+		Err(NotFound)
+	}
+
+	## Whether a package's header (`package_header`'s `deps`) names a platform: a package of
+	## the server's half, which only an app on that platform can name.
+	names_platform : Str -> Bool
+	names_platform = |deps| {
+		bytes = deps.to_utf8()
+		var $i = 0
+		var $found = Bool.False
+		while $i < bytes.len() and !$found {
+			boundary = $i == 0 or !Text.is_word(Text.at(bytes, $i - 1))
+			if boundary and Text.starts_with_at(bytes, "platform".to_utf8(), $i) {
+				quote = Text.skip_space(bytes, $i + 8)
+				$found = quote > $i + 8 and Text.at(bytes, quote) == '"'
+			}
+			$i = $i + 1
+		}
+		$found
+	}
+
+	## How the browser's half sees the package whose header is the file at `path`: as it is (a
+	## package on no platform); as its `browser.roc` beside it, the modules of it the browser can
+	## compile (a package that names the server platform, with modules for both); or not at all
+	## (one with none). With the modules only the server has.
+	for_browser! : Str => { seen : [Same, Browser(Str), Hidden], server_only : List(Str) }
+	for_browser! = |path| {
+		header = ServerOnly.package_header(Fs.read_or_empty!(path)) ?? { listed: [], deps: "" }
+		if !ServerOnly.names_platform(header.deps) {
+			return { seen: Same, server_only: [] }
+		}
+		browser = Fs.join([Fs.dirname(path), "browser.roc"])
+		if !Fs.exists!(browser) {
+			return { seen: Hidden, server_only: header.listed }
+		}
+		shared = (ServerOnly.package_header(Fs.read_or_empty!(browser)) ?? { listed: [], deps: "" }).listed
+		{ seen: Browser(browser), server_only: header.listed.keep_if(|name| !shared.contains(name)) }
 	}
 
 	## What `import ` is followed by, as `^import\s+((?:\.{1,2}\/)*(?:[A-Za-z0-9_]+\/)*[A-Za-z0-9_.]+)`
@@ -133,10 +204,11 @@ ServerOnly := [].{
 		dirs_ok and !last.is_empty() and Text.is_upper(Text.at(last, 0)) and last.all(Text.is_word)
 	}
 
-	## A module's imports, each with its line (from 1): of the platform (`alias`), or of a module of
-	## the app's. A package's module and an embedded file are left out.
-	imports_of : Str, Str, Str -> List(Import)
-	imports_of = |file, code, alias| {
+	## A module's imports, each with its line (from 1): of a package or the platform `aliases` name
+	## (`pf.Db`), or of a module of the app's. Another package's module and an embedded file are left
+	## out.
+	imports_of : Str, Str, List(Str) -> List(Import)
+	imports_of = |file, code, aliases| {
 		var $found = []
 		var $n = 0
 		for text in Text.lines(code) {
@@ -146,8 +218,8 @@ ServerOnly := [].{
 				Some(written) =>
 					match ServerOnly.dotted(written) {
 						Some(names) =>
-							if names.alias == alias {
-								$found = $found.append({ line: $n, written, target: Platform(names.module_name) })
+							if aliases.contains(names.alias) {
+								$found = $found.append({ line: $n, written, target: Platform(written) })
 							}
 						None =>
 							if ServerOnly.is_module_path(written) {
@@ -160,10 +232,16 @@ ServerOnly := [].{
 	}
 
 	## Every module of the browser's copy in `target` that its `roots` reach, and that imports a
-	## platform module in `server_only`, each once, by the shortest chain of imports from a root (root
-	## first; none when the root itself imports it).
-	server_only_reached! : Str, List(Str), List(Str) => List(Reached)
+	## module in `server_only`, each once, by the shortest chain of imports from a root (root first;
+	## none when the root itself imports it).
+	server_only_reached! : Str, List(Str), List(Only) => List(Reached)
 	server_only_reached! = |target, roots, server_only| {
+		aliases = server_only.map(|only| only.alias)
+		is_server_only = |written|
+			match ServerOnly.dotted(written) {
+				Some(names) => server_only.any(|only| only.alias == names.alias and only.modules.contains(names.module_name))
+				None => Bool.False
+			}
 		inside = |file| !Fs.relative(target, file).split_on("/").contains("..")
 		var $via = roots.map(|root| { file: Fs.resolve(root, []), step: None })
 		var $queue = $via.map(|each| each.file)
@@ -171,22 +249,22 @@ ServerOnly := [].{
 		while !$queue.is_empty() {
 			file = $queue.first() ?? ""
 			$queue = $queue.drop_first(1)
-			file_imports = if (Fs.exists!(file)) ServerOnly.imports_of(file, Fs.read_or_empty!(file), "pf") else []
+			file_imports = if (Fs.exists!(file)) ServerOnly.imports_of(file, Fs.read_or_empty!(file), aliases) else []
 			first_server_only = file_imports.find_first(
 				|each|
 					match each.target {
-						Platform(name) => server_only.contains(name)
+						Platform(written) => is_server_only(written)
 						File(_) => Bool.False
 					},
 			)
 			match first_server_only {
 				Ok(each) => {
-					platform_module =
+					server_module =
 						match each.target {
-							Platform(name) => name
+							Platform(written) => written
 							File(_) => ""
 						}
-					$found = $found.append({ module_file: file, platform_module, line: each.line, chain: ServerOnly.chain_to($via, file) })
+					$found = $found.append({ module_file: file, server_module, line: each.line, chain: ServerOnly.chain_to($via, file) })
 				}
 				Err(_) => {}
 			}
@@ -373,11 +451,15 @@ ServerOnly := [].{
 			}
 		file_imports =
 			if steps.is_empty() {
-				"imports pf.${reached.platform_module}"
+				"imports ${reached.server_module}"
 			} else {
-				"imports ${Str.join_with(steps.map(|step| step.written), ", which imports ")}, which imports pf.${reached.platform_module}"
+				"imports ${Str.join_with(steps.map(|step| step.written), ", which imports ")}, which imports ${reached.server_module}"
 			}
 		source = Str.join_with([app_dir, ServerOnly.source_of!(target, place.file)].keep_if(|part| !part.is_empty() and part != "."), "/")
 		"⚠ ${source}:${place.line.to_str()}: the browser's copy ${file_imports}, which only the server has, so the browser's build can't compile it. Use it in an endpoint (+server.roc) or middleware, which the browser's copy leaves out."
 	}
 }
+
+expect ServerOnly.package_header("## Jobs\npackage [Job, Cron] { pf: platform \"../../server/platform/main.roc\" }\n") == Ok({ listed: ["Job", "Cron"], deps: " pf: platform \"../../server/platform/main.roc\" " })
+expect ServerOnly.names_platform(" pf: platform \"../x/main.roc\", jobs: \"../jobs/main.roc\" ")
+expect !ServerOnly.names_platform(" crypto: \"../crypto/main.roc\" ")

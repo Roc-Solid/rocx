@@ -1573,3 +1573,95 @@ JavaScript at everything it does.
 rocx by the JavaScript's names (`rocx-cli/rocx.mjs`).
 
 **Renamed (2026-11-22):** rocx's Roc moved from `src/` to `rocx-cli/`, since the repo holds much more than rocx (two platforms, packages, the site). `bin/rocx` stays where it is. A script outside the repo that imported `<repo>/src/rocx.mjs` imports `<repo>/rocx-cli/rocx.mjs`.
+
+## D-033 Plugins: what a package adds to an app
+
+**Context.** A package could give an app pure Roc, and components, which `rocx build` copies into
+both halves. Anything that needed the server platform (a route, a table, a job, a background loop,
+a page only for development) was copied into the app by hand (push's README had six steps for
+it), or stayed in the platform (jobs, cron, the jobs page, email), against D-025's rule that a
+platform module stays only if it needs the host or the transpiler. The app's side was decided on
+2026-11-21 (`spike/plugins/CLIENT-API.md`): plugins listed in `App.program({ plugins: [...] })`,
+each plugin with an options type of its own, two routes at one path stopping the server at start,
+a plugin reading its documented environment variables unless the app passes a function.
+`spike/plugins/DESIGN.md` specified the rest.
+
+**Options.**
+1. As designed: `rocx build` copies a package's `server/*.roc` into the app's `Generated/<package>/`
+   and rewrites imports of them.
+2. A package whose modules need the server platform names it in its header, as an app does; the
+   browser's half sees its `browser.roc`, a second header beside `main.roc` listing the modules the
+   browser can compile.
+
+**Choice.** 2, and the plugin type as designed, with the changes below.
+
+- Roc resolves `import email.Email` in an app's own `.roc` files (`main.roc`, `Jobs.roc`), which
+  rocx doesn't write, only through the app's header; and a module that imports `pf.X` must be in a
+  package that names the platform. A package may name the platform its app names (the same file,
+  by a path of its own; checked on the pinned compiler), and one directory may hold two package
+  headers. So one name in the header (`admin`) gives the server's half all of a package and the
+  browser's half what it can compile. Copying would make the import work only in the files rocx
+  writes, and one line mean two things.
+- `rocx build --client` names such a package's `browser.roc` in the browser's `main.roc` (or leaves
+  the package out when it has none), and warns at the line of a page that imports one of its
+  server's modules, as it does for `pf.Db`.
+
+```roc
+Plugin.Value(ctx) := {
+    name : Str,
+    routes : List(Plugin.Route(ctx)) ?? [],     # behind the app's middleware, before its own routes
+    early : List(Plugin.Early) ?? [],           # /__rocx/…, before the app, under --dev or --debug
+    migrations : List(Plugin.Migration) ?? [],  # recorded as <plugin>/<name>
+    calls : List(Plugin.Call) ?? [],            # <plugin>.<name>, each run in a call of its own
+    loops : List(Plugin.Loop) ?? [],            # <plugin>.<name>, in the background
+    starts : List(Plugin.Start) ?? [],          # after every migration; an Err stops the server
+    checks : List(Plugin.Check) ?? [],          # <plugin>.<name>, once, in the background; logged
+    needs : List(Plugin.Need) ?? [],            # Env("NAME"), Database, Plugin("other")
+}
+```
+
+- `App.Config` has `plugins : List(Plugin.Value(handed)) ?? []`. Generated/App answers a request,
+  inside the app's middleware, with the first plugin route whose method and path match (`[param]`
+  segments as the app's; GET answers HEAD; `*` any method; `request.route` the plugin's pattern),
+  or else with the app's routes; and hands the platform each plugin's other parts
+  (`Plugin.running`) and the app's own routes (`Routes.claims`, which rocx build writes).
+- At start, before anything is applied, every problem at once stops the server, a line each: a
+  name that isn't lowercase letters, digits and `-`, or is used twice; a call, loop or check not
+  named `<plugin>.<name>`; an early path outside `/__rocx/`; two routes at one method and path (the
+  app's and a plugin's, or two plugins'; `*` meets every method, and params' names don't count); an
+  environment variable unset or empty; `Database` without `--database-url`; a plugin not in the
+  list; needs in a circle. Then the plugins are put in the order their needs say (the list's order
+  breaking ties), their migrations applied after the platform's and before the app's, their starts
+  run, and the log says what each added (`rocx plugins: push: 3 routes, 1 migration, 1 call`).
+- What a plugin's own Roc needs from the platform: `Plugin.isolated!` (run one of its calls, as a
+  job is run), `Plugin.stopping!` (a loop's cue), `Plugin.keep!` and `kept!` (what it keeps at
+  start, for its modules: the host's store, which `Kv`'s evictions never touch).
+- A fixture plugin package (`server/test/fixture`) is in the server's tests: a route with the app's
+  context, an early path, a table, a call that crashes, a loop, a start, a check, a need; and an
+  app whose plugins break every rule (`server/test/refused`), whose whole message is checked.
+
+Different from the design:
+- No copying of `server/*.roc` (above).
+- No `files` and `scripts` yet (push and Audio need them), and no `jobs`, `crons` or `actors`:
+  jobs and cron leave the platform as a plugin of their own (D-034); actors stay (D-021).
+- `calls` and `starts` are new: what jobs need (a job run isolated; the kinds kept, and jobs a stop
+  cut short queued again, at start).
+- Early paths are anywhere under `/__rocx/`, not under `/__rocx/<plugin>/`: the dev mailbox keeps
+  `/__rocx/mail`, which packages/testing reads. `under` is a list (`[Dev, Debug]`): the mailbox's
+  JSON answers under either. The host has no `--test`.
+- A plugin generic in the app's context is a function even with no options (`Acme.plugin({})`):
+  a value can have only one type.
+
+**Moving to it.** An app on `App.program` changes nothing: `plugins` is `[]` unless it lists some. A
+program written by hand (not `App.program`) adds `plugins: []` and `routes: []`; with plugins, it
+lists `plugins.map(Plugin.running)` and answers their routes with `Plugin.respond!` (as
+server/test/app does).
+
+**Costs.** A plugin package names the server platform by a path, so the app must name the same
+file: a platform from a URL (a bundle) would need the copying after all. A list of records holding
+functions has crashed `--opt=speed` builds before; the test app builds and runs optimized with none,
+one and three plugins, and its tests pass optimized (`ROCX_TEST_OPT=speed`).
+
+**Why.** Installing is a line in the header and one in `plugins`; what a plugin adds is checked
+before the first request and listed in the log; and the jobs, the jobs page and email can leave the
+platform (D-034, D-035). **Reversible:** yes.

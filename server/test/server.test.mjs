@@ -72,7 +72,8 @@ const run = `t${Date.now().toString(36)}`;
  * listens. */
 async function start(flags = [], executable = app, environment = {}, { debug = true } = {}) {
 	// `ROCX_LOG` unset (empty) unless given: stderr is a pipe, so the log is JSON.
-	const env = { ...process.env, ROCX_LOG: "", ROCX_TEST_SETTING: SETTING, ...environment };
+	// FIXTURE_KEY: the fixture plugin needs it set (`needs: [Env("FIXTURE_KEY")]`).
+	const env = { ...process.env, ROCX_LOG: "", ROCX_TEST_SETTING: SETTING, FIXTURE_KEY: "set", ...environment };
 	const child = spawn(executable, ["--port", "0", ...(debug ? ["--debug"] : []), "--context-file", join(dir, "context.txt"), ...flags], { stdio: ["ignore", "ignore", "pipe"], env });
 	let logged = "";
 	const url = await new Promise((resolve, reject) => {
@@ -221,7 +222,8 @@ const PRETTY = /^\d\d:\d\d:\d\d (DEBUG|INFO |WARN |ERROR) \S/;
 
 /** What the platform may say as a server starts, whatever a test does: a migration applied, jobs a
  * stop cut short queued again, a look at S3 (`STORAGE_URL`). */
-const STARTING = /^\S+\s+(rocx server: migrated:|rocx jobs:|rocx storage:)/;
+// A plugin's own lines (what each added; the fixture's check, logged in the background) too.
+const STARTING = /^\S+\s+(rocx server: migrated:|rocx jobs:|rocx storage:|rocx plugins:|fixture\.look:)/;
 
 /** Waits for a stopped server's stderr to end: everything it wrote, read. */
 const ended = (of) => new Promise((resolve) => (of.child.stderr.readableEnded ? resolve() : of.child.stderr.once("end", resolve)));
@@ -1233,6 +1235,79 @@ test("the dev mailbox: under --dev, each email kept is a page (headers, text, it
 	} finally {
 		await debug.stop();
 	}
+});
+
+// ---- Plugins: what a package adds to an app (server/test/fixture) ----
+
+test("plugins: a plugin's route answers in the app, with the app's context and its own pattern as the route; its call runs in a call of its own, a crash ending only that; its loop ran, its start kept, its check logged; the log says what each added, in the order their needs put them", { skip }, async () => {
+	assert.equal(await text("/fixture/context"), "/fixture/context: the app's context, facts=yes");
+	assert.equal(await text("/fixture/notes/42"), "note 42 at /fixture/notes/[id]");
+	assert.equal((await server.get("/fixture/context", { method: "HEAD" })).status, 200, "GET answers HEAD");
+	assert.equal(await text("/fixture/shout?word=quiet"), "QUIET");
+	const crashed = await server.get("/fixture/shout?word=crash");
+	assert.equal(crashed.status, 500);
+	assert.equal(await crashed.text(), "crashed: the fixture's call crashed");
+	assert.equal(await text("/fixture/shout?word=again"), "AGAIN", "the server goes on");
+	assert.equal(await text("/fixture/state"), "started, 1 beat");
+	assert.equal(await text("/second"), "second");
+	assert.equal(await text("/third", { method: "POST" }), "third POST", "a route for every method");
+	assert.equal(await text("/"), "Hello from Roc, natively.", "the app's own routes, after the plugins'");
+	const said = events().map((event) => event.msg);
+	assert.deepEqual(
+		said.filter((msg) => msg.startsWith("rocx plugins:")),
+		["rocx plugins: fixture: 5 routes, 1 early route, 1 migration, 1 call, 1 loop, 1 start, 1 check", "rocx plugins: second: 1 route", "rocx plugins: third: 1 route"],
+		"listed fixture, third, second: third needs second, so it comes after it",
+	);
+	assert.ok(said.includes("fixture.look: the fixture looked"), "the check, run once after the start");
+});
+
+test("plugins: an early path is answered before the app, only under the flag it names (--dev)", { skip }, async () => {
+	const answer = await server.get("/__rocx/fixture");
+	assert.equal(answer.status, 404, "without --dev, the path is the app's");
+	assert.equal(await answer.text(), "No page at /__rocx/fixture.");
+	const dev = await start(["--dev"]);
+	try {
+		assert.equal(await dev.text("/__rocx/fixture"), "early /__rocx/fixture");
+	} finally {
+		await dev.stop();
+	}
+});
+
+test("plugins: a plugin's table, applied after the platform's and before the app's, recorded under the plugin's name", { skip: skipDb }, async () => {
+	assert.equal(await text("/fixture/migrated"), "fixture/0001_notes");
+	const order = events()
+		.map((event) => event.msg)
+		.filter((msg) => msg.startsWith("rocx server: migrated:"));
+	if (order.length > 0) {
+		// A fresh database: the first start applied them all, in order.
+		const at = (name) => order.findIndex((msg) => msg.endsWith(name));
+		assert.ok(at("rocx/0001 jobs and actors") < at("fixture/0001_notes") && at("fixture/0001_notes") < at("0001_tables.sql"), order.join("\n"));
+	}
+});
+
+test("plugins: what stops the server at start, every problem a line: a route the app has, two plugins at one path, a loop without the plugin's name first, an early path outside /__rocx/, a variable unset, a plugin not in the list, needs in a circle, a name twice, a name that isn't one", { skip }, async () => {
+	const executable = join(dir, "refused");
+	buildApp(join(root, "server", "test", "refused", "main.roc"), executable, { opt: process.env.ROCX_TEST_OPT ?? "dev" });
+	const refused = await start([], executable, { REFUSED_UNSET: "" }).then(
+		() => assert.fail("it started"),
+		(error) => error.message,
+	);
+	const line = refused.split("\n").find((each) => each.includes("can't start"));
+	assert.ok(line, refused);
+	assert.equal(
+		JSON.parse(line).error,
+		[
+			"clash: the loop beat is named clash.beat, with the plugin's name first",
+			"clash: the early path /mail is under /__rocx/, where the app's paths never are",
+			"auth needs the email plugin, which isn't in plugins",
+			"two plugins are called two",
+			"plugin \"Bad Name\": a plugin's name is lowercase letters, digits and -",
+			"GET /x: routes/x/+page.rocx, and the clash plugin",
+			"POST /y/[id]: the one plugin, and the two plugin",
+			"left needs right, which needs left",
+			"one: REFUSED_UNSET isn't set",
+		].join("\n"),
+	);
 });
 
 // ---- TCP ----
