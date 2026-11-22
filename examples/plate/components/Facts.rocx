@@ -1,0 +1,121 @@
+import pf.Html
+import testing.Dom
+import ../Plate
+
+## A food's nutrition facts: what 100 g has, and what the amount chosen has, side by side; the
+## nutrients its data doesn't give aren't listed, rather than shown as 0. Pure.
+Facts := [].{
+	view : { food : Plate.Food, grams : Dec } -> Html
+	view = |{ food, grams }| {
+		got = Plate.scaled(food.per100, grams)
+		times = grams / 100.0
+		<table class="facts">
+			<caption>Nutrition facts</caption>
+			<thead>
+				<tr>
+					<th scope="col"><span class="hidden">Nutrient</span></th>
+					<th scope="col">100 g</th>
+					<th scope="col">{Plate.grams_label(grams)}</th>
+				</tr>
+			</thead>
+			<tbody>
+				<tr class="energy">
+					<th scope="row">Energy</th>
+					<td>{Plate.whole(food.per100.kcal)} kcal</td>
+					<td>{Plate.whole(got.kcal)} kcal</td>
+				</tr>
+				{=Facts.row("Protein", food.per100.protein, got.protein, "g")}
+				{=Facts.row("Carbohydrate", food.per100.carbs, got.carbs, "g")}
+				{=Facts.row("Fat", food.per100.fat, got.fat, "g")}
+				{...food.extras.map(|extra| Facts.row(extra.name, extra.amount, extra.amount * times, extra.unit))}
+			</tbody>
+		</table>
+	}
+
+	## A nutrient's row: per 100 g, and in the amount.
+	row : Str, Dec, Dec, Str -> Html
+	row = |name, per100, eaten, unit|
+		<tr class={if (name == "Protein" or name == "Carbohydrate" or name == "Fat") "macro" else "extra"}>
+			<th scope="row">{name}</th>
+			<td>{Facts.amount(per100, unit)}</td>
+			<td>{Facts.amount(eaten, unit)}</td>
+		</tr>
+
+	## An amount and its unit: "12 g", "0.4 g", "320 mg".
+	amount : Dec, Str -> Str
+	amount = |x, unit| if (unit == "g") Plate.grams_label(x) else "${Plate.whole(x)} ${unit}"
+
+	<style>
+		.facts {
+			width: 100%;
+			border-collapse: collapse;
+			font-variant-numeric: tabular-nums;
+		}
+
+		caption {
+			padding-bottom: 0.5rem;
+			font-weight: 800;
+			text-align: left;
+		}
+
+		th,
+		td {
+			padding: 0.4rem 0.25rem;
+			border-top: 1px solid var(--line);
+			text-align: right;
+		}
+
+		th[scope="row"] {
+			font-weight: 550;
+			text-align: left;
+		}
+
+		thead th {
+			border-top: 0;
+			color: var(--ink-faint);
+			font-size: 0.8rem;
+		}
+
+		.energy th,
+		.energy td {
+			border-top: 2px solid var(--ink);
+			font-weight: 800;
+		}
+
+		.extra th {
+			padding-left: 1rem;
+			color: var(--ink-soft);
+			font-weight: 400;
+		}
+
+		.hidden {
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			overflow: hidden;
+			clip-path: inset(50%);
+		}
+	</style>
+}
+
+banana : Plate.Food
+banana = {
+	id: "1",
+	name: "Bananas, raw",
+	brand: "",
+	group: "Fruits and Fruit Juices",
+	source: "usda",
+	source_id: "173944",
+	per100: { kcal: 89.0, protein: 1.09, carbs: 22.84, fat: 0.33 },
+	extras: [{ name: "Fibre", amount: 2.6, unit: "g" }, { name: "Sodium", amount: 1.0, unit: "mg" }],
+	portions: [],
+	recipe: "",
+}
+
+table : Dec -> Dom
+table = |grams| Dom.parse(Html.to_str(Facts.view({ food: banana, grams })))
+
+expect table(118.0).contains(Text("105 kcal"))
+expect table(118.0).contains(Text("3.1 g"))
+expect table(118.0).count(Role("row")) == 7
+expect !table(118.0).contains(Text("Sugars"))

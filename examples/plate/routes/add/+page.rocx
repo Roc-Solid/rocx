@@ -1,0 +1,214 @@
+import pf.Html
+import pf.Solid exposing [create_memo!, create_signal!, is_pending!]
+import pf.Endpoint
+import pf.Router
+import pf.Show
+import pf.For
+import pf.Title
+import ../../Plate
+import ../../Query
+import ../../Links
+import ../../Generated/Api
+import ../../Generated/Paths
+import ../../components/HitRow
+
+## Adding to the diary: a search of every food (the USDA's, yours, your recipes, packets looked up
+## by barcode), for a day and a meal the address says (`?day=2026-11-22&meal=lunch`). A result is a
+## link to the food's page, where its amount is chosen. Before a search, the foods logged lately.
+##
+## The search box is a form that asks this page again (`?q=…`), so it works without JavaScript;
+## with it, each letter typed sets a signal, and the memo that reads `GET /add` reads it again
+## with the new words, so results follow the typing.
+meta = { title: "Add food" }
+
+view! = |_| {
+	location = Router.location!({})
+	asked_day = Query.value(location.query, "day")
+	asked_meal = Query.value(location.query, "meal")
+	(query!, set_query!) = create_signal!(Query.value(location.query, "q"))
+	found! : () => Plate.Search
+	found! = create_memo!(|| Endpoint.get!(Endpoint.with_query(Api.get_add({}), Query.of([("q", query!()), ("day", asked_day), ("meal", asked_meal)]))))
+	meal! = || Plate.meal_of(found!().meal)
+	where! = || { day: found!().day, meal: found!().meal }
+	<section class="add">
+		<Title>Add to {Plate.meal_name(meal!())} · Acme Plate</Title>
+		<header>
+			<a class="back" href={Links.diary(found!().day, found!().today)} aria-label="Back to the diary">
+				<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3L5 8l5 5" /></svg>
+			</a>
+			<div>
+				<h1>Add to {Plate.meal_name(meal!())}</h1>
+				<p class="quiet">{Plate.day_label(found!().day, found!().today)}</p>
+			</div>
+		</header>
+		<nav class="meals" aria-label="Meal">
+			{...Plate.meals.map(|meal| <a class="chip" href={Links.add({ day: asked_day, meal: Plate.meal_id(meal), query: query!() })} aria-current??={if (meal!() == meal) "true" else ""}>{Plate.meal_name(meal)}</a>)}
+		</nav>
+		<form class="search" method="get" action={Paths.add} role="search">
+			<input type="hidden" name="day" value={found!().day} />
+			<input type="hidden" name="meal" value={found!().meal} />
+			<label class="hidden" for="q">Search foods</label>
+			<input id="q" type="search" name="q" value={query!()} placeholder="Search: oats, banana, chicken breast…" autocomplete="off" on:input.value={set_query!} />
+			<button class="button" type="submit">Search</button>
+		</form>
+		<div class="ways">
+			<a class="button quiet" href={Query.link(Paths.barcode, Query.of([("day", found!().day), ("meal", found!().meal)]))}>
+				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5v14M7 5v14M10 5v14M14 5v14M17 5v14M20 5v14" /></svg>
+				Barcode
+			</a>
+			<a class="button quiet" href={Query.link(Paths.foods_new, Query.of([("day", found!().day), ("meal", found!().meal)]))}>Make a food</a>
+		</div>
+		<div class="results" class:stale={is_pending!(found!)}>
+			<Show when!={!found!().query.is_empty()} fallback={<Recent found!={found!()} />}>
+				<h2 class="count">{Found.count(found!())}</h2>
+				<ul class="card list" aria-label="Foods found">
+					<For each!={found!().hits} keyed={|hit| hit.id}>
+						{|hit!, _| HitRow.view({ hit: hit!(), href: Links.food(hit!().id, where!()) })}
+					</For>
+				</ul>
+			</Show>
+		</div>
+	</section>
+}
+
+## Before a search: the foods logged lately, to log one again.
+Recent := [].{
+	view! : { found! : () => Plate.Search } => Html
+	view! = |{ found! }|
+		<Show when!={!found!().recent.is_empty()} fallback={<p class="quiet">Foods you add show up here, to add again in a tap.</p>}>
+			<h2 class="count">Lately</h2>
+			<ul class="card list" aria-label="Foods added lately">
+				<For each!={found!().recent} keyed={|hit| hit.id}>
+					{|hit!, _| HitRow.view({ hit: hit!(), href: Links.food(hit!().id, { day: found!().day, meal: found!().meal }) })}
+				</For>
+			</ul>
+		</Show>
+}
+
+## What a search says it found.
+Found := [].{
+	count : Plate.Search -> Str
+	count = |found|
+		match found.hits.len() {
+			0 => "Nothing matches “${found.query}”"
+			1 => "1 food"
+			n if n >= 30 => "The first 30 foods"
+			n => "${n.to_str()} foods"
+		}
+}
+
+<style>
+	.add {
+		display: grid;
+		gap: 1rem;
+	}
+
+	header {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	header p {
+		margin: 0;
+	}
+
+	.back {
+		display: grid;
+		place-items: center;
+		width: 2.75rem;
+		height: 2.75rem;
+		border: 1px solid var(--line);
+		border-radius: 50%;
+		background: var(--surface);
+		color: var(--ink-soft);
+	}
+
+	.back svg,
+	.ways svg {
+		width: 1.1rem;
+		height: 1.1rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 2;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	.meals {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+	}
+
+	.chip {
+		padding: 0.35rem 0.85rem;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: var(--surface);
+		color: var(--ink-soft);
+		font-size: 0.9rem;
+		font-weight: 600;
+		text-decoration: none;
+	}
+
+	.chip[aria-current="true"] {
+		border-color: var(--accent);
+		background: var(--accent-soft);
+		color: var(--accent-strong);
+	}
+
+	.search {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.search input[type="search"] {
+		flex: 1;
+		min-width: 0;
+		min-height: 2.75rem;
+		padding: 0.5rem 0.85rem;
+		border: 1px solid var(--line-strong);
+		border-radius: 0.7rem;
+		font-size: 1rem;
+	}
+
+	.hidden {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+	}
+
+	.ways {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+	}
+
+	.results {
+		display: grid;
+		gap: 0.5rem;
+		transition: opacity 160ms;
+	}
+
+	.results.stale {
+		opacity: 0.7;
+	}
+
+	.count {
+		color: var(--ink-soft);
+		font-size: 0.85rem;
+		font-weight: 700;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+	}
+
+	.list {
+		margin: 0;
+		padding: 0;
+		overflow: hidden;
+		list-style: none;
+	}
+</style>

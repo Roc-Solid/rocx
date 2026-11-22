@@ -1,0 +1,17 @@
+import pf.Html
+import pf.Solid exposing [create_memo!, is_pending!]
+import pf.Endpoint
+import ../Plate
+import ../Generated/Api
+import ../components/Diary
+
+## Today's page of the diary. Its data is its own URL's (`GET /`, in `+server.roc` beside this
+## file): today, in the profile's time zone. Any other day is `/days/:day`, the same `Diary`.
+meta = { title: "Today" }
+
+view! = |_| {
+	read = Api.get_root({})
+	day! : () => Plate.Day
+	day! = create_memo!(|| Endpoint.get!(read))
+	<Diary day!={day!()} stale!={is_pending!(day!)} />
+}

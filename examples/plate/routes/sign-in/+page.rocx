@@ -1,0 +1,47 @@
+import pf.Html
+import pf.Router
+import forms.LiveForm
+import forms.TextField
+import ../../PlateForm
+import ../../Query
+import ../../Generated/Api
+
+## Signing in, when the diary has a password (`PLATE_PASSWORD`): one field, and back to where you
+## were going (`?then=/trends`). The browser stays signed in for 90 days.
+meta = { title: "Sign in" }
+
+view! = |_| {
+	location = Router.location!({})
+	live = LiveForm.of!(PlateForm.password, Api.post_sign_in({}))
+	<section class="sign-in card">
+		<h1>Acme Plate</h1>
+		<p class="quiet">This diary has a password.</p>
+		<form method="post" action={live.url()} novalidate>
+			<input type="hidden" name="then" value={Query.value(location.query, "then")} />
+			<TextField live={live} name="password" label="Password" type="password" autocomplete="current-password" />
+			<button class="button" type="submit" disabled?={live.pending!()}>Sign in</button>
+		</form>
+	</section>
+}
+
+<style>
+	.sign-in {
+		display: grid;
+		gap: 0.5rem;
+		max-width: 24rem;
+		margin: 2rem auto;
+	}
+
+	p {
+		margin: 0;
+	}
+
+	form {
+		display: grid;
+		margin-top: 0.5rem;
+	}
+
+	button {
+		justify-self: start;
+	}
+</style>

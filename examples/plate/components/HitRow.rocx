@@ -1,0 +1,88 @@
+import pf.Html
+import testing.Dom
+import ../Plate
+
+## A food found by a search: its name (a link to `href`), where it's from when it's yours (a recipe,
+## a food you made, a packet's barcode), and its energy per 100 g with its usual portion. Pure.
+HitRow := [].{
+	view : { hit : Plate.Hit, href : Str } -> Html
+	view = |{ hit, href }|
+		<li class="hit">
+			<a href={href}>
+				<span class="name">{Plate.full_name(hit.name, hit.brand)}</span>
+				<span class="meta">
+					{=HitRow.tag(hit.source)}
+					<span>{"${Plate.whole(hit.kcal)} kcal / 100 g${if (hit.portion.is_empty()) "" else " · ${hit.portion}"}"}</span>
+				</span>
+			</a>
+		</li>
+
+	## Where a food is from, when it's yours or a packet's: nothing for the USDA's.
+	tag : Str -> Html
+	tag = |source|
+		match source {
+			"recipe" => <span class="tag recipe">Recipe</span>
+			"mine" => <span class="tag mine">Yours</span>
+			"off" => <span class="tag">Packet</span>
+			_ => Html.empty({})
+		}
+
+	<story name="A USDA food">
+		<ul class="story-list">
+			<HitRow hit={{ id: "1", name: "Bananas, raw", brand: "", source: "usda", kcal: 89.0, portion: "1 medium (7\" to 7-7/8\" long)" }} href="#" />
+		</ul>
+	</story>
+
+	<story name="A recipe and a packet">
+		<ul class="story-list">
+			<HitRow hit={{ id: "2", name: "Overnight oats", brand: "", source: "recipe", kcal: 112.0, portion: "1 serving" }} href="#" />
+			<HitRow hit={{ id: "3", name: "Honey granola", brand: "Acme Mills", source: "off", kcal: 412.0, portion: "1 bowl (45 g)" }} href="#" />
+		</ul>
+	</story>
+
+	<style>
+		.hit a {
+			display: grid;
+			gap: 0.15rem;
+			padding: 0.65rem 0.85rem;
+			border-top: 1px solid var(--line);
+			color: var(--ink);
+			text-decoration: none;
+		}
+
+		.hit:first-child a {
+			border-top: 0;
+		}
+
+		.hit a:hover {
+			background: var(--chip);
+		}
+
+		.name {
+			font-weight: 600;
+		}
+
+		.meta {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 0.4rem;
+			color: var(--ink-faint);
+			font-size: 0.82rem;
+		}
+
+		:global(.story-list) {
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+	</style>
+}
+
+row : Plate.Hit -> Dom
+row = |hit| Dom.parse(Html.to_str(HitRow.view({ hit, href: "/foods/1" })))
+
+expect row({ id: "1", name: "Bananas, raw", brand: "", source: "usda", kcal: 89.0, portion: "1 medium" }).contains(Text("89 kcal / 100 g · 1 medium"))
+expect row({ id: "1", name: "Bananas, raw", brand: "", source: "usda", kcal: 89.0, portion: "" }).contains(Text("89 kcal / 100 g"))
+expect row({ id: "3", name: "Honey granola", brand: "Acme Mills", source: "off", kcal: 412.0, portion: "" }).contains(Text("Honey granola · Acme Mills"))
+expect row({ id: "2", name: "Oats", brand: "", source: "recipe", kcal: 112.0, portion: "" }).contains(Text("Recipe"))

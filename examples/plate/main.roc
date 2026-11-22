@@ -1,0 +1,17 @@
+## Acme Plate: a food diary on Roc Solid. The README says what it shows, and where.
+##
+## This is the server's program. rocx build writes nearly all of it from the app's routes
+## (`routes/`: pages, layouts and endpoints) into `Generated/App`, with the migrations
+## (`migrations/*.sql`, the USDA foods among them) embedded; this file says only what the routes
+## can't: what every request's context starts as, and the middleware around every request. The
+## browser's program is the same pages, compiled to WebAssembly from the copy `rocx build --client`
+## writes.
+app [program] { charts: "../../packages/charts/main.roc", crypto: "../../packages/crypto/main.roc", forms: "../../packages/forms/main.roc", mcp: "../../packages/mcp/main.roc", pf: platform "../../server/platform/main.roc", testing: "../../packages/testing/main.roc" }
+
+import Generated/App
+import Middlewares
+
+program = App.program({
+	context: |_started| {},
+	middleware: Middlewares.default,
+})

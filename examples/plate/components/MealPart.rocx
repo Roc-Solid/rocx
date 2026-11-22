@@ -1,0 +1,172 @@
+import pf.Html
+import pf.For
+import pf.Show
+import pf.Transition
+import ../Plate
+import ../Query
+import ../Generated/Paths
+
+## A meal on a day of the diary: what was eaten, each with its amount and energy and a button that
+## takes it off, the meal's energy together, and the way to add to it. Each remove button is a
+## plain form that posts to `/api/entries/delete`, so the diary works without JavaScript; with it,
+## the runtime sends it with `fetch` (the diary reads that endpoint's submissions), and the entry
+## goes at once.
+MealPart := [].{
+	view! : { meal : Plate.Meal, entries! : () => List(Plate.Entry), day : Str, remove : Str } => Html
+	view! = |{ meal, entries!, day, remove }| {
+		id = Plate.meal_id(meal)
+		name = Plate.meal_name(meal)
+		<section class="meal card" aria-labelledby={"meal-${id}"}>
+			<header>
+				<h2 id={"meal-${id}"}>{name}</h2>
+				<span class="kcal">{"${Plate.whole(Plate.total(entries!()).kcal)} kcal"}</span>
+			</header>
+			<Show when!={!entries!().is_empty()}>
+				<ul class="entries">
+					<For each!={entries!()} keyed={|entry| entry.id}>
+						{|entry!, _|
+							<li class="entry" transition:in={Transition.fade} transition:out={Transition.fade}>
+								<div class="what">
+									<Show when!={!entry!().food.is_empty()} fallback={<span class="name">{entry!().name}</span>}>
+										<a class="name" href={Query.link(Paths.foods_id({ id: entry!().food }), Query.of([("day", day), ("meal", id)]))}>{entry!().name}</a>
+									</Show>
+									<span class="amount">{if (entry!().amount.ends_with(" g")) entry!().amount else "${entry!().amount} · ${Plate.grams_label(entry!().grams)}"}</span>
+								</div>
+								<span class="entry-kcal">{Plate.whole(entry!().kcal)}</span>
+								<form method="post" action={remove}>
+									<input type="hidden" name="id" value={entry!().id} />
+									<button class="remove" type="submit" aria-label={"Remove ${entry!().name}"}>
+										<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+									</button>
+								</form>
+							</li>
+						}
+					</For>
+				</ul>
+			</Show>
+			<a class="add" href={Query.link(Paths.add, Query.of([("day", day), ("meal", id)]))}>
+				<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" /></svg>
+				Add to {name}
+			</a>
+		</section>
+	}
+
+	<style>
+		.meal {
+			display: grid;
+			align-content: start;
+			gap: 0.5rem;
+			padding: 0.85rem 1rem;
+		}
+
+		header {
+			display: flex;
+			align-items: baseline;
+			justify-content: space-between;
+			gap: 1rem;
+		}
+
+		.kcal {
+			color: var(--ink-soft);
+			font-size: 0.9rem;
+			font-weight: 600;
+			font-variant-numeric: tabular-nums;
+		}
+
+		.entries {
+			display: grid;
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		.entry {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) auto auto;
+			align-items: center;
+			gap: 0.5rem;
+			padding: 0.45rem 0;
+			border-top: 1px solid var(--line);
+		}
+
+		.what {
+			display: grid;
+			min-width: 0;
+		}
+
+		.name {
+			overflow: hidden;
+			color: var(--ink);
+			font-weight: 550;
+			text-decoration: none;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+
+		a.name:hover {
+			text-decoration: underline;
+			text-underline-offset: 0.2em;
+		}
+
+		.amount {
+			color: var(--ink-faint);
+			font-size: 0.8rem;
+		}
+
+		.entry-kcal {
+			font-variant-numeric: tabular-nums;
+			font-weight: 600;
+		}
+
+		form {
+			display: contents;
+		}
+
+		.remove {
+			display: grid;
+			place-items: center;
+			width: 2.25rem;
+			height: 2.25rem;
+			padding: 0;
+			border: 0;
+			border-radius: 0.5rem;
+			background: transparent;
+			color: var(--ink-faint);
+			cursor: pointer;
+		}
+
+		.remove:hover {
+			background: var(--over-soft);
+			color: var(--over);
+		}
+
+		svg {
+			width: 1rem;
+			height: 1rem;
+			fill: none;
+			stroke: currentColor;
+			stroke-width: 2;
+			stroke-linecap: round;
+		}
+
+		.add {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.35rem;
+			justify-self: start;
+			min-height: 2.5rem;
+			padding: 0.35rem 0.8rem 0.35rem 0.6rem;
+			border-radius: 999px;
+			background: var(--accent-soft);
+			color: var(--accent-strong);
+			font-size: 0.9rem;
+			font-weight: 700;
+			text-decoration: none;
+		}
+
+		.add:hover {
+			background: var(--accent);
+			color: var(--on-accent);
+		}
+	</style>
+}

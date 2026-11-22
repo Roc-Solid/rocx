@@ -1,0 +1,354 @@
+import pf.Html
+import pf.Router
+import pf.Show
+import ../Generated/Paths
+import ../Generated/Styles
+
+## The document around every page: the app's name and its sections. On a wide screen they are
+## across the top; on a phone, where the diary is mostly used, they are a bar of tabs along the
+## bottom, in reach of a thumb. A story (a dev build's catalog, `/__rocx/stories/…`) is the
+## component alone, in the page's frame.
+view! = |{ meta, children, .. }| {
+	path = Router.location!({}).path
+	story = path.starts_with("/__rocx/stories/")
+	<>
+		<!doctype html>
+		<html lang="en">
+			<head>
+				<meta charset="utf-8" />
+				<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+				<title>{meta.title} · Acme Plate</title>
+				<meta name="color-scheme" content="light dark" />
+				<meta name="theme-color" content="#2b8a3e" />
+				<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232b8a3e'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='white' stroke-width='2.5'/%3E%3Ccircle cx='16' cy='16' r='4.5' fill='white'/%3E%3C/svg%3E" />
+				<NoHydration>{=Styles.style}</NoHydration>
+			</head>
+			<body>
+				<Show when!={!story}>
+					<a class="skip" href="#main">Skip to the page</a>
+					<header class="bar">
+						<a class="brand" href={Paths.root}>
+							<svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+								<rect width="32" height="32" rx="8" />
+								<circle class="rim" cx="16" cy="16" r="9" />
+								<circle class="dot" cx="16" cy="16" r="4.5" />
+							</svg>
+							Acme Plate
+						</a>
+						<nav class="tabs" aria-label="Sections">
+							{=Tab.view({ href: Paths.root, label: "Diary", icon: "M4 5h16M4 12h16M4 19h10", current: path == Paths.root or path.starts_with("/days/") })}
+							{=Tab.view({ href: Paths.recipes, label: "Recipes", icon: "M6 3v8a3 3 0 006 0V3M9 3v18M17 3c-2 2-2 7 0 9v9", current: path.starts_with(Paths.recipes) })}
+							{=Tab.view({ href: Paths.trends, label: "Trends", icon: "M4 19l5-6 4 3 7-9M4 4v15h16", current: path.starts_with(Paths.trends) })}
+							{=Tab.view({ href: Paths.goals, label: "Goals", icon: "M12 21a9 9 0 110-18 9 9 0 010 18zM12 16a4 4 0 110-8 4 4 0 010 8z", current: path.starts_with(Paths.goals) })}
+						</nav>
+					</header>
+				</Show>
+				<main id="main" class:story={story}>{...children}</main>
+			</body>
+		</html>
+	</>
+}
+
+## A section's tab: its icon (one SVG path) and its name.
+Tab := [].{
+	view : { href : Str, label : Str, icon : Str, current : Bool } -> Html
+	view = |{ href, label, icon, current }|
+		<a class="tab" href={href} aria-current??={if (current) "page" else ""}>
+			<svg viewBox="0 0 24 24" aria-hidden="true"><path d={icon} /></svg>
+			<span>{label}</span>
+		</a>
+}
+
+<style>
+	/* The app's look, for every page: tokens on :root (light, and dark when the system is), and the
+	   elements' defaults. Each component styles its own markup in its own <style>. */
+	:global {
+		:root {
+			--paper: #f6f5f0;
+			--surface: #ffffff;
+			--ink: #1d211c;
+			--ink-soft: #4f564d;
+			--ink-faint: #858c82;
+			--line: #e3e5dc;
+			--line-strong: #c9cdc0;
+			--chip: #eef0e8;
+			--accent: #2b8a3e;
+			--accent-strong: #237032;
+			--accent-soft: #dcf2e0;
+			--on-accent: #ffffff;
+			--protein: #1c7ed6;
+			--carbs: #e8890c;
+			--fat: #d6336c;
+			--over: #c92a2a;
+			--over-soft: #ffe3e3;
+			--shadow-sm: 0 1px 2px rgb(29 33 28 / 0.06);
+			--radius: 0.9rem;
+			--form-border: var(--line-strong);
+			--form-invalid: var(--over);
+			--form-muted: var(--ink-faint);
+			--form-radius: 0.55rem;
+		}
+
+		@media (prefers-color-scheme: dark) {
+			:root {
+				--paper: #151814;
+				--surface: #1f231e;
+				--ink: #eef1ea;
+				--ink-soft: #bcc4b8;
+				--ink-faint: #858e82;
+				--line: #30362e;
+				--line-strong: #474f44;
+				--chip: #283026;
+				--accent: #51cf66;
+				--accent-strong: #69db7c;
+				--accent-soft: #1d3b23;
+				--on-accent: #0b1a0e;
+				--protein: #74c0fc;
+				--carbs: #ffc078;
+				--fat: #f783ac;
+				--over: #ff8787;
+				--over-soft: #4a1f1f;
+				--shadow-sm: none;
+			}
+		}
+
+		*,
+		*::before,
+		*::after {
+			box-sizing: border-box;
+		}
+
+		body {
+			margin: 0;
+			background: var(--paper);
+			color: var(--ink);
+			font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+			-webkit-tap-highlight-color: transparent;
+		}
+
+		input,
+		textarea,
+		select,
+		button {
+			font: inherit;
+		}
+
+		input,
+		textarea,
+		select {
+			background: var(--surface);
+			color: var(--ink);
+		}
+
+		:focus-visible {
+			outline: 2px solid var(--accent);
+			outline-offset: 2px;
+		}
+
+		h1 {
+			margin: 0;
+			font-size: 1.5rem;
+			line-height: 1.2;
+			letter-spacing: -0.01em;
+		}
+
+		h2 {
+			margin: 0;
+			font-size: 1.05rem;
+		}
+
+		/* Buttons and links that look like them, the same on every page. */
+		.button {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			gap: 0.4rem;
+			min-height: 2.75rem;
+			padding: 0.5rem 1.1rem;
+			border: 0;
+			border-radius: 0.7rem;
+			background: var(--accent);
+			color: var(--on-accent);
+			font-weight: 700;
+			text-decoration: none;
+			cursor: pointer;
+		}
+
+		.button:hover {
+			background: var(--accent-strong);
+		}
+
+		.button:disabled {
+			opacity: 0.6;
+			cursor: progress;
+		}
+
+		.button.quiet {
+			border: 1px solid var(--line-strong);
+			background: var(--surface);
+			color: var(--ink);
+		}
+
+		.button.quiet:hover {
+			border-color: var(--accent);
+		}
+
+		.card {
+			padding: 1rem 1.1rem;
+			border: 1px solid var(--line);
+			border-radius: var(--radius);
+			background: var(--surface);
+			box-shadow: var(--shadow-sm);
+		}
+
+		.quiet {
+			color: var(--ink-faint);
+		}
+
+		.tag {
+			display: inline-block;
+			padding: 0 0.45rem;
+			border-radius: 999px;
+			background: var(--chip);
+			color: var(--ink-soft);
+			font-size: 0.72rem;
+			font-weight: 600;
+			white-space: nowrap;
+		}
+
+		.tag.recipe,
+		.tag.mine {
+			background: var(--accent-soft);
+			color: var(--accent-strong);
+		}
+	}
+
+	.skip {
+		position: absolute;
+		left: -100vw;
+	}
+
+	.skip:focus {
+		left: 1rem;
+		top: 1rem;
+		z-index: 2;
+		padding: 0.5rem 0.75rem;
+		background: var(--surface);
+	}
+
+	.bar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		max-width: 60rem;
+		margin: 0 auto;
+		padding: 0.75rem clamp(1rem, 3vw, 2rem);
+	}
+
+	.brand {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.55rem;
+		color: var(--ink);
+		font-weight: 800;
+		letter-spacing: -0.01em;
+		text-decoration: none;
+	}
+
+	.logo {
+		width: 1.9rem;
+		height: 1.9rem;
+	}
+
+	.logo rect {
+		fill: var(--accent);
+	}
+
+	.logo .rim {
+		fill: none;
+		stroke: var(--on-accent);
+		stroke-width: 2.5;
+	}
+
+	.logo .dot {
+		fill: var(--on-accent);
+	}
+
+	.tabs {
+		display: flex;
+		gap: 0.25rem;
+	}
+
+	.tab {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.45rem 0.75rem;
+		border-radius: 999px;
+		color: var(--ink-soft);
+		font-weight: 600;
+		text-decoration: none;
+	}
+
+	.tab svg {
+		width: 1.15rem;
+		height: 1.15rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 2;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	.tab:hover {
+		background: var(--chip);
+		color: var(--ink);
+	}
+
+	.tab[aria-current="page"] {
+		background: var(--accent-soft);
+		color: var(--accent-strong);
+	}
+
+	main {
+		max-width: 60rem;
+		margin: 0 auto;
+		padding: 0.5rem clamp(1rem, 3vw, 2rem) 3rem;
+	}
+
+	/* A phone: the sections along the bottom, each a tab with its icon over its name. */
+	@media (max-width: 40rem) {
+		.tabs {
+			position: fixed;
+			inset: auto 0 0 0;
+			z-index: 1;
+			justify-content: space-around;
+			padding: 0.35rem 0.5rem calc(0.35rem + env(safe-area-inset-bottom));
+			border-top: 1px solid var(--line);
+			background: var(--surface);
+		}
+
+		.tab {
+			flex-direction: column;
+			gap: 0.1rem;
+			min-width: 4rem;
+			padding: 0.3rem 0.5rem;
+			border-radius: 0.7rem;
+			font-size: 0.72rem;
+		}
+
+		.tab svg {
+			width: 1.4rem;
+			height: 1.4rem;
+		}
+
+		main {
+			padding-bottom: 6rem;
+		}
+
+		main.story {
+			padding-bottom: 1rem;
+		}
+	}
+</style>

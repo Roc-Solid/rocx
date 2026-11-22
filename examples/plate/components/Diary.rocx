@@ -1,0 +1,118 @@
+import pf.Html
+import pf.Solid exposing [create_memo!]
+import pf.Router exposing [use_submissions!]
+import pf.Endpoint
+import pf.Title
+import ../Plate
+import ../Generated/Api
+import ../Generated/Paths
+import Summary
+import MealPart
+
+## A day of the diary: the days either side, the day at a glance (`Summary`), and its four meals.
+## Its data is the day's endpoint (today's at `/`, any other at `/days/:day`), which the page reads
+## in a memo: once a change is in, the runtime reads it again. An entry being removed is gone at
+## once (`use_submissions!`), and the summary with it.
+Diary := [].{
+	view! : { day! : () => Plate.Day, stale! : () => Bool } => Html
+	view! = |{ day!, stale! }| {
+		removes = use_submissions!(Api.post_api_entries_delete({}))
+		entries! = create_memo!(
+			|| {
+				gone = removes.pending_inputs!().map(|sent| sent.id)
+				day!().entries.drop_if(|entry| gone.contains(entry.id))
+			},
+		)
+		label! = || Plate.day_label(day!().day, day!().today)
+		remove = Endpoint.url_of(Api.post_api_entries_delete({}))
+		<section class="diary" class:stale={stale!()} aria-labelledby="day-name">
+			<Title>{label!()} · Acme Plate</Title>
+			<nav class="days" aria-label="Days">
+				<a class="step" href={Diary.path(day!().previous, day!().today)} aria-label="The day before">
+					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3L5 8l5 5" /></svg>
+				</a>
+				<div class="which">
+					<h1 id="day-name">{label!()}</h1>
+					<time datetime={day!().day}>{Diary.date(day!().day)}</time>
+				</div>
+				<a class="step" href={Diary.path(day!().next, day!().today)} aria-label="The day after">
+					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5" /></svg>
+				</a>
+			</nav>
+			{=Summary.view({ eaten: Plate.total(entries!()), target: day!().target })}
+			<div class="meals">
+				{...Plate.meals.map(|meal| <MealPart meal={meal} entries!={Plate.in_meal(entries!(), meal)} day={day!().day} remove={remove} />)}
+			</div>
+		</section>
+	}
+
+	## Where a day's page is: `/` for today.
+	path : Str, Str -> Str
+	path = |day, today| if (day == today) Paths.root else Paths.days_day({ day: day })
+
+	## A day under its name: "Nov 22, 2026".
+	date : Str -> Str
+	date = |day| "${Plate.short_day(day)}, ${day.split_on("-").first() ?? ""}"
+
+	<style>
+		.diary {
+			display: grid;
+			gap: 1rem;
+			transition: opacity 160ms;
+		}
+
+		.diary.stale {
+			opacity: 0.75;
+		}
+
+		.days {
+			display: grid;
+			grid-template-columns: auto minmax(0, 1fr) auto;
+			align-items: center;
+			gap: 0.75rem;
+		}
+
+		.which {
+			display: grid;
+			justify-items: center;
+			text-align: center;
+		}
+
+		time {
+			color: var(--ink-faint);
+			font-size: 0.85rem;
+		}
+
+		.step {
+			display: grid;
+			place-items: center;
+			width: 2.75rem;
+			height: 2.75rem;
+			border: 1px solid var(--line);
+			border-radius: 50%;
+			background: var(--surface);
+			color: var(--ink-soft);
+		}
+
+		.step:hover {
+			border-color: var(--accent);
+			color: var(--accent-strong);
+		}
+
+		.step svg {
+			width: 1.1rem;
+			height: 1.1rem;
+			fill: none;
+			stroke: currentColor;
+			stroke-width: 2;
+			stroke-linecap: round;
+			stroke-linejoin: round;
+		}
+
+		.meals {
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+			gap: 0.75rem;
+		}
+	</style>
+}

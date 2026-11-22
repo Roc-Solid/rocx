@@ -1,0 +1,30 @@
+import pf.Server
+import pf.Endpoint
+import forms.Issues
+import ../../PlateForm
+import ../../Query
+import ../../Session
+
+## POST /sign-in, from its form: with the right password, a session's cookie and on to where you
+## were going (`then`, a path of this site's); a wrong one is refused under the field. A diary with
+## no password has nothing to sign in to, and sends you to it.
+post! : { request : Server.Request, params : {}, context : {}, body : { password : Str } } => Try({}, Endpoint.Refusal)
+post! = |{ request, .. }| {
+	posted = Server.text_of(request)
+	then = Query.value(posted, "then")
+	going = if (then.starts_with("/") and !then.starts_with("//")) then else "/"
+	match PlateForm.password.parse_body(posted) {
+		Ok(password) =>
+			match Session.sign_in!(password) {
+				Ok(token) => Err(Answer(Session.keep(Server.redirect(going), token)))
+				Err(Open) => Err(Answer(Server.redirect("/")))
+				Err(Wrong) => refused("That isn't the password")
+				Err(TooMany) => refused("Too many tries: wait a minute, then try again")
+				Err(DbErr(why)) => Err(Status(500, "The database failed: ${why}"))
+			}
+		Err(issues) => Err(Issues.refusal(issues))
+	}
+}
+
+refused : Str -> Try({}, Endpoint.Refusal)
+refused = |why| Err(Issues.refusal([{ field: "password", code: Custom("wrong", why), message: why }]))

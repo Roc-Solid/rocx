@@ -1,0 +1,208 @@
+import pf.Html
+import charts.Format
+import testing.Dom
+import ../Plate
+
+## A day at a glance: a ring of the energy eaten against the day's target (red once it is past
+## it), what's left, and a bar for each macronutrient against its own. Pure: what it shows is its
+## props, so its stories (a dev build's catalog, `/__rocx/stories`) and the expects below show it
+## without a server.
+Summary := [].{
+	view : { eaten : Plate.Nutrients, target : Plate.Nutrients } -> Html
+	view = |{ eaten, target }| {
+		over = eaten.kcal > target.kcal + 0.5
+		<div class="summary card">
+			<div class="energy">
+				<svg class="ring" viewBox="0 0 120 120" role="img" aria-label={"${Plate.whole(eaten.kcal)} of ${Plate.whole(target.kcal)} kcal"}>
+					<circle class="track" cx="60" cy="60" r="52" />
+					<circle class="fill" class:over={over} cx="60" cy="60" r="52" stroke-dasharray={"${Summary.arc(eaten.kcal, target.kcal)} 400"} transform="rotate(-90 60 60)" />
+				</svg>
+				<div class="numbers">
+					<strong>{Plate.whole(eaten.kcal)}</strong>
+					<span>of {Plate.whole(target.kcal)} kcal</span>
+				</div>
+			</div>
+			<div class="detail">
+				<p class="left" class:over={over}>{Plate.left(eaten.kcal, target.kcal)}</p>
+				<ul class="macros" aria-label="Macronutrients">
+					{=Summary.macro("Protein", "protein", eaten.protein, target.protein)}
+					{=Summary.macro("Carbs", "carbs", eaten.carbs, target.carbs)}
+					{=Summary.macro("Fat", "fat", eaten.fat, target.fat)}
+				</ul>
+			</div>
+		</div>
+	}
+
+	## A macronutrient's row: its name, a bar of how much of its target is eaten, and the grams.
+	macro : Str, Str, Dec, Dec -> Html
+	macro = |name, kind, eaten, target|
+		<li class={"macro ${kind}"}>
+			<span class="name">{name}</span>
+			<span class="bar" aria-hidden="true"><span style:--share={Plate.share(eaten, target)}></span></span>
+			<span class="grams">{Format.num(Dec.round_to(eaten, { step: 1.0, ties: AwayFromZero }), 0)} / {Plate.grams_label(target)}</span>
+		</li>
+
+	## How long the ring's arc is, of its 326.7 (2π × 52): as much of it as the target is eaten,
+	## all of it at most.
+	arc : Dec, Dec -> Str
+	arc = |eaten, target|
+		if target <= 0.0 {
+			"0"
+		} else {
+			Format.num(Dec.min(1.0, Dec.max(0.0, eaten / target)) * 326.73, 2)
+		}
+
+	<story name="Nothing yet">
+		<Summary eaten={Plate.none} target={{ kcal: 2100.0, protein: 131.0, carbs: 236.0, fat: 70.0 }} />
+	</story>
+
+	<story name="Halfway">
+		<Summary eaten={{ kcal: 1240.0, protein: 62.0, carbs: 150.0, fat: 41.0 }} target={{ kcal: 2100.0, protein: 131.0, carbs: 236.0, fat: 70.0 }} />
+	</story>
+
+	<story name="Over">
+		<Summary eaten={{ kcal: 2320.0, protein: 98.0, carbs: 260.0, fat: 92.0 }} target={{ kcal: 2100.0, protein: 131.0, carbs: 236.0, fat: 70.0 }} />
+	</story>
+
+	<style>
+		.summary {
+			display: grid;
+			grid-template-columns: auto minmax(0, 1fr);
+			align-items: center;
+			gap: 1.25rem;
+		}
+
+		.energy {
+			position: relative;
+			width: 8.5rem;
+			height: 8.5rem;
+		}
+
+		.ring {
+			width: 100%;
+			height: 100%;
+		}
+
+		.track {
+			fill: none;
+			stroke: var(--chip);
+			stroke-width: 11;
+		}
+
+		.fill {
+			fill: none;
+			stroke: var(--accent);
+			stroke-width: 11;
+			stroke-linecap: round;
+			transition: stroke-dasharray 400ms ease;
+		}
+
+		.fill.over {
+			stroke: var(--over);
+		}
+
+		.numbers {
+			position: absolute;
+			inset: 0;
+			display: grid;
+			place-content: center;
+			text-align: center;
+			line-height: 1.15;
+		}
+
+		.numbers strong {
+			font-size: 1.6rem;
+			font-variant-numeric: tabular-nums;
+		}
+
+		.numbers span {
+			color: var(--ink-soft);
+			font-size: 0.8rem;
+		}
+
+		.left {
+			margin: 0 0 0.6rem;
+			font-weight: 700;
+		}
+
+		.left.over {
+			color: var(--over);
+		}
+
+		.macros {
+			display: grid;
+			gap: 0.45rem;
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		.macro {
+			display: grid;
+			grid-template-columns: 4rem minmax(0, 1fr) auto;
+			align-items: center;
+			gap: 0.6rem;
+			font-size: 0.9rem;
+		}
+
+		.name {
+			color: var(--ink-soft);
+			font-weight: 600;
+		}
+
+		.bar {
+			height: 0.5rem;
+			overflow: hidden;
+			border-radius: 999px;
+			background: var(--chip);
+		}
+
+		.bar span {
+			display: block;
+			width: var(--share);
+			height: 100%;
+			border-radius: inherit;
+			transition: width 400ms ease;
+		}
+
+		.protein .bar span {
+			background: var(--protein);
+		}
+
+		.carbs .bar span {
+			background: var(--carbs);
+		}
+
+		.fat .bar span {
+			background: var(--fat);
+		}
+
+		.grams {
+			color: var(--ink-soft);
+			font-size: 0.8rem;
+			font-variant-numeric: tabular-nums;
+			white-space: nowrap;
+		}
+
+		@media (max-width: 26rem) {
+			.summary {
+				grid-template-columns: minmax(0, 1fr);
+				justify-items: center;
+			}
+
+			.detail {
+				width: 100%;
+			}
+		}
+	</style>
+}
+
+drawn : Plate.Nutrients -> Dom
+drawn = |eaten| Dom.parse(Html.to_str(Summary.view({ eaten, target: { kcal: 2000.0, protein: 125.0, carbs: 225.0, fat: 67.0 } })))
+
+expect drawn({ kcal: 500.0, protein: 25.0, carbs: 60.0, fat: 20.0 }).text_of(Tag("strong")) == Ok("500")
+expect drawn({ kcal: 500.0, protein: 25.0, carbs: 60.0, fat: 20.0 }).contains(Text("1,500 kcal left"))
+expect drawn({ kcal: 2500.0, protein: 25.0, carbs: 60.0, fat: 20.0 }).first(Text("500 kcal over")).map_ok(|left| left.has_class("over")) == Ok(Bool.True)
+expect Summary.arc(1000.0, 2000.0) == "163.37"
+expect Summary.arc(3000.0, 2000.0) == "326.73"
+expect Summary.arc(10.0, 0.0) == "0"

@@ -1,0 +1,6 @@
+# Written by rocx build: the .roc beside each component's .rocx, and Generated/ (the routes, Api,
+# Paths, App, Styles, and the packages' components)
+components/*.roc
+Generated/
+# The tests' builds (packages/testing's buildForTests), and `rocx build --client`'s copy
+build/
