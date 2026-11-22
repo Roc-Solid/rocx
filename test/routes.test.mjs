@@ -517,6 +517,24 @@ test("rocx build --client: an app of components with no routes is checked from i
 	}
 });
 
+test("routes: a directory may name a file (sitemap.xml, feed.xml): a dot between letters or digits, its names without it", () => {
+	const files = ["sitemap.xml/+server.roc", "[lang]/feed.xml/+server.roc", "[lang]/+page.rocx"];
+	const table = routeTable(files);
+	const row = (path) => table.servers.find((server) => server.path === path);
+	assert.deepEqual([row("/sitemap.xml").name, row("/sitemap.xml").module], ["sitemap_xml", "SitemapXmlServer"]);
+	assert.deepEqual([row("/[lang]/feed.xml").name, row("/[lang]/feed.xml").module], ["lang_feed_xml", "LangFeedXmlServer"]);
+	assert.ok(matches("/sitemap.xml", "/sitemap.xml"));
+	assert.ok(!matches("/sitemap.xml", "/sitemapxxml"));
+	assert.ok(matches("/[lang]/feed.xml", "/en/feed.xml"));
+	const sources = new Map(files.map((file) => [file, file.endsWith("+page.rocx") ? { view: "view!", meta: false, methods: [], middleware: null, docs: {} } : { view: null, meta: false, methods: ["get!"], middleware: null, docs: {} }]));
+	const routes = routesModule(table, { sources });
+	assert.match(routes, /if \(segments == \["sitemap\.xml"\]\) \{/);
+	assert.match(apiModule(table, { sources }), /get_sitemap_xml = \|params\| Endpoint\.local\("GET", "\/sitemap\.xml"/);
+	// A dot that isn't between two letters or digits would make a name Roc can't read.
+	for (const part of ["feed.", "a..b", "a.-b", "a-.b"]) assert.throws(() => routeTable([`${part}/+page.rocx`]), /a directory is a path's part in lower case/, part);
+	assert.throws(() => routeTable(["feed.xml/+server.roc", "feed-xml/+server.roc"]), /would both be/);
+});
+
 test("routes: .well-known is routed, and no other directory starting with a dot; respond! answers every method nothing else at its path does", () => {
 	const dir = mkdtempSync(join(tmpdir(), "rocx-routes-"));
 	try {

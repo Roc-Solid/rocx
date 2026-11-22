@@ -5,8 +5,10 @@
 ## `respond!`: every method the others don't, with a `Server.Response` of its own; `channel!`: a
 ## channel, which pages subscribe to over the tab's one stream, `/rocx/live`, with its hooks
 ## `receive!`, `on_open!` and `on_close!`), and `+error.rocx` is what a path nothing has shows. A
-## route file names its `middleware`, which runs around it. Directories that start with a dot are
-## skipped, but for `.well-known` (`routes/.well-known/openid-configuration/+server.roc`).
+## route file names its `middleware`, which runs around it. A directory may have dots after its
+## first character, for a file's name (`routes/sitemap.xml/+server.roc` answers `/sitemap.xml`; its
+## names are `SitemapXmlServer` and `sitemap_xml`). Directories that start with a dot are skipped,
+## but for `.well-known` (`routes/.well-known/openid-configuration/+server.roc`).
 ##
 ## A route file is bare: imports, then its definitions (`meta`, `view`). Roc names a module after
 ## its file, and `+page` isn't a name, so rocx writes each as a module of its own under `Generated/`
@@ -184,7 +186,7 @@ Routes := [].{
 	up : U8 -> U8
 	up = |b| if (Text.is_lower(b)) b - 32 else b
 
-	## `blog-post` → `BlogPost`, `getting_started` → `GettingStarted`.
+	## `blog-post` → `BlogPost`, `getting_started` → `GettingStarted`, `feed.xml` → `FeedXml`.
 	pascal : Str -> Str
 	pascal = |word| {
 		bytes = word.to_utf8()
@@ -195,7 +197,7 @@ Routes := [].{
 			if $i == 0 and Routes.lower_or_digit(c) {
 				$out = $out.append(Routes.up(c))
 				$i = $i + 1
-			} else if (c == '_' or c == '-') and $i + 1 < bytes.len() and Routes.lower_or_digit(Text.at(bytes, $i + 1)) {
+			} else if (c == '_' or c == '-' or c == '.') and $i + 1 < bytes.len() and Routes.lower_or_digit(Text.at(bytes, $i + 1)) {
 				$out = $out.append(Routes.up(Text.at(bytes, $i + 1)))
 				$i = $i + 2
 			} else {
@@ -206,7 +208,8 @@ Routes := [].{
 		Str.from_utf8_lossy($out)
 	}
 
-	## Whether a directory is a path's part: lower case (`blog`, `getting-started`) or a param (`[slug]`).
+	## Whether a directory is a path's part: lower case (`blog`, `getting-started`, `feed.xml`: a dot
+	## after the first character, for a file's name) or a param (`[slug]`).
 	is_path_part : Str -> Bool
 	is_path_part = |part| {
 		bytes = part.to_utf8()
@@ -215,7 +218,9 @@ Routes := [].{
 			inner = Text.slice(bytes, 1, n - 1)
 			Text.is_lower(Text.at(inner, 0)) and inner.all(|b| Text.is_lower(b) or Text.is_digit(b) or b == '_')
 		} else {
-			n > 0 and Routes.lower_or_digit(Text.at(bytes, 0)) and bytes.all(|b| Text.is_lower(b) or Text.is_digit(b) or b == '_' or b == '-')
+			# A dot only between two letters or digits (`feed.xml`), so the names made from it are Roc's.
+			dotted = bytes.map_with_index(|b, i| { b, i }).keep_if(|each| each.b == '.').all(|each| each.i > 0 and each.i + 1 < n and Routes.lower_or_digit(Text.at(bytes, each.i - 1)) and Routes.lower_or_digit(Text.at(bytes, each.i + 1)))
+			n > 0 and Routes.lower_or_digit(Text.at(bytes, 0)) and dotted and bytes.all(|b| Text.is_lower(b) or Text.is_digit(b) or b == '_' or b == '-' or b == '.')
 		}
 	}
 
@@ -329,12 +334,12 @@ Routes := [].{
 				return Err(Problem("routes/${path} and routes/${path}x are the same route: keep one"))
 			}
 			match parts.find_first(|part| !(Routes.is_path_part(part) or part == Routes.well_known)) {
-				Ok(part) => return Err(Problem("routes/${path}: a directory is a path's part in lower case (`blog`, `getting-started`) or a param (`[slug]`): not `${part}`"))
+				Ok(part) => return Err(Problem("routes/${path}: a directory is a path's part in lower case (`blog`, `getting-started`, `feed.xml`) or a param (`[slug]`): not `${part}`"))
 				Err(_) => {}
 			}
 			words = parts.map(Routes.word_of)
 			stem = if (words.is_empty()) "Root" else Str.join_with(words.map(Routes.pascal), "")
-			named = if (words.is_empty()) "root" else Str.join_with(words, "_").replace_each("-", "_")
+			named = if (words.is_empty()) "root" else Str.join_with(words, "_").replace_each("-", "_").replace_each(".", "_")
 			$made = $made.append({ file: path, kind, parts, module_name: "${stem}${Routes.pascal(kind)}", name: if (Routes.keywords.contains(named)) "${named}_" else named })
 		}
 		made = $made

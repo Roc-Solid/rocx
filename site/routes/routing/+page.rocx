@@ -113,7 +113,9 @@ view! = |_|
 			<p>
 				A directory in brackets is a param: <code>routes/blog/[slug]/+page.rocx</code> is the page at any
 				<code>/blog/…</code>, given <code>{"params : { slug : Str }"}</code>. A path with a fixed part is
-				tried before one with a param there, so <code>/blog/new</code> can be a page of its own. This page,
+				tried before one with a param there, so <code>/blog/new</code> can be a page of its own. A
+				directory may name a file, with dots between letters or digits: <code>routes/sitemap.xml/+server.roc</code>
+				answers <code>/sitemap.xml</code>, and its names drop the dot (<code>Api.get_sitemap_xml</code>). This page,
 				from the app the tests build:
 			</p>
 			<Code title="test/e2e/routes/routes/blog/[slug]/+page.rocx" source={Sources.route_fixture_page.rocx} />

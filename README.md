@@ -270,8 +270,13 @@ routes/+layout.rocx              view = |{ meta, children, .. }| <html>…{...ch
 routes/+page.rocx                /
 routes/blog/[slug]/+page.rocx    /blog/:slug, its view given params : { slug : Str }
 routes/blog/[slug]/+server.roc   get! = |{ params, .. }| …, put! = |{ params, body, .. }| …
+routes/sitemap.xml/+server.roc   /sitemap.xml (a directory may name a file)
 routes/+error.rocx               where nothing is
 ```
+
+A directory is a path's part in lower case (`blog`, `getting-started`), with dots between letters or
+digits for a file's name (`sitemap.xml`, `feed.xml`: its names in `Api` and `Paths` are
+`sitemap_xml`), or a param in brackets (`[slug]`).
 
 rocx writes each route file as a module under `Generated/` (its lines kept), and
 `Generated/Routes.roc`, whose `Routes.respond!(request, context)` answers a request: a page in its
