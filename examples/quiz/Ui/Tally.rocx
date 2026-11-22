@@ -1,0 +1,66 @@
+import pf.Html
+import pf.Solid exposing [create_signal!, set_timeout!]
+import charts.BarChart
+import charts.Format
+import ../Game
+import Mark
+
+## How the room answered a question: a bar for each choice (packages/charts' `<BarChart>`), the
+## right one's label ticked. The bars start at nothing and rise to their counts a moment after the
+## reveal, so the room watches them go.
+Tally := [].{
+	view! : { revealing! : () => Game.Revealing } => Html
+	view! = |{ revealing! }| {
+		(risen!, set_risen!) = create_signal!(Bool.False)
+		_rise = set_timeout!(Tally.pause, || set_risen!(Bool.True))
+		<figure class="tally">
+			<BarChart data!={Tally.bars(revealing!(), risen!())} label="How the room answered, by choice" format={Tally.count} padding={0.35} />
+			<figcaption>How the room answered</figcaption>
+		</figure>
+	}
+
+	## How long the bars wait before they rise, in milliseconds.
+	pause : U64
+	pause = 350
+
+	## A count, as the axis and a bar say it: whole numbers only (an axis up to 2 has a tick at 1.5,
+	## which says nothing).
+	count : Dec -> Str
+	count = |value| {
+		text = Format.num(value, 1)
+		if (text.contains(".")) "" else text
+	}
+
+	## A bar for each choice: its letter (ticked if it is the right one), and how many took it, or
+	## nothing before the bars have risen.
+	bars : Game.Revealing, Bool -> List({ label : Str, value : Dec })
+	bars = |revealing, risen|
+		revealing.tallies.map_with_index(
+			|took, at| {
+				label = if (at == revealing.answer) "${Mark.letter(at)} ✓" else Mark.letter(at)
+				{ label, value: if (risen) took.to_dec() else 0 }
+			},
+		)
+
+	<style>
+		.tally {
+			display: grid;
+			gap: 0.25rem;
+			margin: 0;
+		}
+
+		figcaption {
+			color: var(--ink-soft);
+			font-weight: 700;
+			text-align: center;
+		}
+	</style>
+}
+
+expect Tally.count(2) == "2" and Tally.count(1.5) == "" and Tally.count(0) == "0"
+
+expect {
+	revealing = { index: 0, prompt: "?", choices: ["a", "b", "c"], answer: 1, tallies: [2, 5, 0], gains: [], left_ms: 0, last: Bool.False }
+	Tally.bars(revealing, Bool.True) == [{ label: "A", value: 2 }, { label: "B ✓", value: 5 }, { label: "C", value: 0 }]
+		and Tally.bars(revealing, Bool.False).all(|bar| bar.value == 0)
+}

@@ -1,0 +1,87 @@
+import pf.Html
+
+## Pinwheel's mark, four blades around a pin, one in each choice's colour, and its name beside it.
+## It turns a little when pointed at, and turns slowly while `spinning` (a room waiting for its
+## players).
+Logo := [].{
+	view : { size : Str, spinning : Bool } -> Html
+	view = |{ size, spinning }|
+		<span class="logo" class:spinning={spinning} style:--logo-size={size}>
+			<svg class="mark" viewBox="-50 -50 100 100" aria-hidden="true">
+				<g class="blades">
+					<path class="b1" d="M0 0 L0 -44 Q30 -36 0 0Z" />
+					<path class="b2" d="M0 0 L44 0 Q36 30 0 0Z" />
+					<path class="b3" d="M0 0 L0 44 Q-30 36 0 0Z" />
+					<path class="b4" d="M0 0 L-44 0 Q-36 -30 0 0Z" />
+				</g>
+				<circle r="6" />
+			</svg>
+			<span class="word">Pinwheel</span>
+		</span>
+
+	<style>
+		.logo {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.4em;
+			font-size: var(--logo-size, 1.5rem);
+			font-weight: 800;
+			letter-spacing: -0.02em;
+		}
+
+		.mark {
+			width: 1.35em;
+			height: 1.35em;
+			overflow: visible;
+		}
+
+		.blades {
+			transition: rotate 0.6s cubic-bezier(0.3, 1.6, 0.5, 1);
+		}
+
+		.logo:hover .blades {
+			rotate: 90deg;
+		}
+
+		.spinning .blades {
+			animation: turn 6s linear infinite;
+		}
+
+		@keyframes turn {
+			to {
+				rotate: 360deg;
+			}
+		}
+
+		path,
+		circle {
+			stroke: var(--ink);
+			stroke-width: 4;
+			stroke-linejoin: round;
+		}
+
+		.b1 {
+			fill: var(--blade-1);
+		}
+
+		.b2 {
+			fill: var(--blade-2);
+		}
+
+		.b3 {
+			fill: var(--blade-3);
+		}
+
+		.b4 {
+			fill: var(--blade-4);
+		}
+
+		circle {
+			fill: var(--paper);
+		}
+	</style>
+
+	<story name="Waiting">
+		<Logo size="3rem" spinning={Bool.True} />
+	</story>
+}

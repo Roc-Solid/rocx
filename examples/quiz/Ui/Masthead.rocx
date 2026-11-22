@@ -1,0 +1,64 @@
+import pf.Html
+import ../Generated/Paths
+import Logo
+
+## The bar over the front page, the host's list of sets and the editor: the mark, home, and the
+## three ways in. `here` is the page's own path, which is marked as the current one.
+Masthead := [].{
+	view : { here : Str } -> Html
+	view = |{ here }|
+		<header class="masthead">
+			<a class="home" href={Paths.root} aria-label="Pinwheel, home"><Logo size="1.5rem" spinning={Bool.False} /></a>
+			<nav aria-label="Main">
+				<a href={Paths.root} aria-current??={Masthead.current(here, Paths.root)}>Join</a>
+				<a href={Paths.host} aria-current??={Masthead.current(here, Paths.host)}>Host</a>
+				<a href={Paths.sets_new} aria-current??={Masthead.current(here, Paths.sets_new)}>Make a set</a>
+			</nav>
+		</header>
+
+	## `aria-current` for a link to `path`: `page` on its own page.
+	current : Str, Str -> Str
+	current = |here, path| if (here == path) "page" else ""
+
+	<style>
+		.masthead {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			justify-content: space-between;
+			gap: 0.75rem 1.5rem;
+			max-width: 68rem;
+			margin: 0 auto;
+			padding: 1rem 1.25rem;
+		}
+
+		.home {
+			text-decoration: none;
+		}
+
+		nav {
+			display: flex;
+			gap: 0.35rem;
+		}
+
+		nav a {
+			padding: 0.3em 0.85em;
+			border: 2px solid transparent;
+			border-radius: var(--pill);
+			font-weight: 700;
+			text-decoration: none;
+		}
+
+		nav a:hover {
+			border-color: var(--ink);
+		}
+
+		nav a[aria-current="page"] {
+			border-color: var(--ink);
+			background: var(--card);
+			box-shadow: var(--lift-low);
+		}
+	</style>
+}
+
+expect Masthead.current("/host", "/host") == "page" and Masthead.current("/", "/host") == ""

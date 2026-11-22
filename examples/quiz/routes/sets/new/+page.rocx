@@ -1,0 +1,241 @@
+import pf.Html
+import pf.For
+import pf.Show
+import forms.IssueSummary
+import forms.LiveForm
+import forms.TextField
+import ../../../Draft
+import ../../../Generated/Api
+import ../../../Generated/Paths
+import ../../../Ui/Mark
+import ../../../Ui/Masthead
+
+meta = { title: "Make a set" }
+
+## The editor: a new question set, its questions written as text (`Draft.roc` says how), checked
+## as it is typed with the same schema its endpoint (`POST /sets`) reads it with, and shown beside
+## it as the questions it makes. Saved, it is first on the host's page. Without JavaScript the form
+## posts, and comes back with what was wrong.
+view! = |_| {
+	live = LiveForm.of!(Draft.form, Api.post_sets({}))
+	read! = || Draft.read(live.value!("questions"))
+	<>
+		<Masthead here={Paths.sets_new} />
+		<main class="editor">
+			<header>
+				<h1>Make a set</h1>
+				<p>
+					A title, a line about it, and the questions: one block each, the question first, then its choices,
+					the right one starting with <code>*</code> and the others with <code>-</code>. Two to four choices; up
+					to {Draft.most_questions.to_str()} questions.
+				</p>
+			</header>
+			<IssueSummary live={live} title="Fix these, then save again" labels={[("title", "Title"), ("blurb", "About it"), ("questions", "Questions")]} />
+			<form method="post" action={live.url()} novalidate>
+				<TextField live={live} name="title" label="Title" hint="Up to 60 letters." />
+				<TextField live={live} name="blurb" label="About it" hint="Optional: a line the host's page shows under the title." />
+				<div class="field" class:invalid={live.invalid!("questions")}>
+					<label for={LiveForm.field_id("questions")}>Questions</label>
+					<textarea
+						id={LiveForm.field_id("questions")}
+						name="questions"
+						rows="14"
+						spellcheck="true"
+						required
+						placeholder={Draft.write(example)}
+						aria-invalid={if (live.invalid!("questions")) "true" else "false"}
+						aria-describedby="questions-issues"
+						on:input.value={|typed| live.input!("questions", typed)}
+						on:blur={|| live.leave!("questions")}
+					>{live.value!("questions")}</textarea>
+					<ul id="questions-issues" class="issues" aria-live="polite">
+						<For each!={live.issues!("questions")} keyed={|issue| issue.message}>
+							{|issue!, _| <li>{issue!().message}</li>}
+						</For>
+					</ul>
+				</div>
+				<button type="submit" disabled?={live.pending!()}>Save the set</button>
+			</form>
+			<aside class="preview" aria-labelledby="preview-title">
+				<h2 id="preview-title">As it will play</h2>
+				<Show when!={read!()} fallback={<p class="empty">The questions show here as you write them.</p>}>
+					{|questions!| <Preview questions!={questions!} />}
+				</Show>
+			</aside>
+		</main>
+	</>
+}
+
+## What the empty editor suggests.
+example : List({ prompt : Str, choices : List(Str), answer : U64 })
+example = [
+	{ prompt: "Which planet has the most moons?", choices: ["Mars", "Saturn", "Venus"], answer: 1 },
+	{ prompt: "How many legs has a spider?", choices: ["Six", "Eight"], answer: 1 },
+]
+
+## The questions as they will play: each prompt, and its choices with their marks, the right one
+## ticked.
+Preview := [].{
+	view! : { questions! : () => List({ prompt : Str, choices : List(Str), answer : U64 }) } => Html
+	view! = |{ questions! }|
+		<ol class="questions">
+			<For each!={questions!()} keyed={Bool.False}>
+				{|asked!, _|
+					<li>
+						<p class="prompt">{asked!().prompt}</p>
+						<ul class="choices">{...asked!().choices.map_with_index(|choice, at| <li class={if (at == asked!().answer) "right" else ""}><Mark index={at} /> <span>{choice}</span></li>)}</ul>
+					</li>}
+			</For>
+		</ol>
+}
+
+<style>
+	.editor {
+		display: grid;
+		grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+		gap: 1.5rem 2rem;
+		max-width: 68rem;
+		margin: 0 auto;
+		padding: 1rem 1.25rem 4rem;
+	}
+
+	header {
+		grid-column: 1 / -1;
+		display: grid;
+		gap: 0.5rem;
+	}
+
+	header p {
+		max-width: 46rem;
+		color: var(--ink-soft);
+	}
+
+	h1 {
+		font-size: clamp(2rem, 5vw, 3rem);
+	}
+
+	code {
+		padding: 0 0.3em;
+		border-radius: 4px;
+		background: var(--paper-deep);
+		font-family: var(--mono);
+		font-weight: 700;
+	}
+
+	.editor > :global(.issue-summary) {
+		grid-column: 1 / -1;
+	}
+
+	form {
+		display: grid;
+		align-content: start;
+		gap: 0.25rem;
+	}
+
+	form :global(input) {
+		width: 100%;
+	}
+
+	.field {
+		display: grid;
+		gap: 0.25rem;
+	}
+
+	label {
+		font-weight: 600;
+	}
+
+	textarea {
+		width: 100%;
+		font-family: var(--mono);
+		font-size: 0.95rem;
+		line-height: 1.6;
+		resize: vertical;
+	}
+
+	.invalid textarea {
+		border-color: var(--bad);
+	}
+
+	.issues {
+		min-height: 1.5em;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		color: var(--bad);
+	}
+
+	button {
+		justify-self: start;
+		margin-top: 0.5rem;
+		padding: 0.6em 1.6em;
+		border: var(--outline);
+		border-radius: var(--pill);
+		background: var(--blade-2);
+		box-shadow: var(--lift-low);
+		color: #fff;
+		font-weight: 800;
+	}
+
+	button:disabled {
+		opacity: 0.6;
+	}
+
+	.preview {
+		display: grid;
+		align-content: start;
+		gap: 1rem;
+		padding: 1.25rem;
+		border: 2px dashed var(--ink-faint);
+		border-radius: var(--radius);
+	}
+
+	h2 {
+		font-size: 1.2rem;
+	}
+
+	.empty {
+		color: var(--ink-faint);
+	}
+
+	.questions {
+		display: grid;
+		gap: 1.25rem;
+		margin: 0;
+		padding-left: 1.4rem;
+	}
+
+	.prompt {
+		font-weight: 700;
+	}
+
+	.choices {
+		display: grid;
+		gap: 0.35rem;
+		margin: 0.5rem 0 0;
+		padding: 0;
+		list-style: none;
+		font-size: 0.85rem;
+	}
+
+	.choices li {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.choices li.right span {
+		font-weight: 800;
+	}
+
+	.choices li.right span::after {
+		content: " ✓";
+		color: var(--good);
+	}
+
+	@media (max-width: 48rem) {
+		.editor {
+			grid-template-columns: minmax(0, 1fr);
+		}
+	}
+</style>

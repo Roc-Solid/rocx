@@ -1,0 +1,492 @@
+import pf.Html
+import pf.Endpoint
+import pf.For
+import pf.Show
+import pf.Title
+import pf.Transition
+import pf.Solid exposing [create_effect!, create_signal!]
+import ../../../Feed
+import ../../../Game
+import ../../../Generated/Api
+import ../../../Generated/Paths
+import ../../../Sound
+import ../../../Ui/Board
+import ../../../Ui/Countdown
+import ../../../Ui/Lobby
+import ../../../Ui/Logo
+import ../../../Ui/Mark
+import ../../../Ui/Podium
+import ../../../Ui/SoundSwitch
+import ../../../Ui/Tally
+
+meta = { title: "Host" }
+
+## The host's screen, made for a big one across a room: the code to join with and who has, then
+## each question with its clock, then how the room answered and the board, then the podium. It
+## follows the room's channel (`Feed`), and its host runs the game from it (Start, Next, Again:
+## said on the channel). Anyone else who opens it sees the room without the buttons.
+##
+## Each phase is a `<Show>` of its own, so a phase stays put while the room changes inside it (an
+## answer coming in), and the next one flies in as the last fades (`transition:in`, `transition:out`).
+view! = |{ params }| {
+	code = params.code
+	# The browser's copy of an endpoint is only its URL: what it answers is said here.
+	seat : Game.Seat
+	seat = Endpoint.get!(Api.get_rooms_code({ code: code }))
+	room = Feed.follow!(code, seat.view)
+	current! = room.view!
+	hosting = seat.who == Host
+	(sound!, set_sound!) = create_signal!(Bool.True)
+	# The clock ticks out loud in its last five seconds, and knocks at nought.
+	clock = Countdown.create!(current!, |left| Sound.play!(sound!(), if (left == 0) Tock else Tick))
+	# A sound when the phase changes (and only then: a view comes with each answer too), and when
+	# someone joins the lobby. What was heard last is kept where nothing reads it.
+	(last!, set_last!) = create_signal!({ moment: Feed.moment(seat.view), players: seat.view.players.len() })
+	create_effect!(
+		|| { moment: Feed.moment(current!()), players: current!().players.len() },
+		|now| {
+			before = last!()
+			if now.moment != before.moment {
+				if (now.moment.starts_with("asking")) Sound.play!(sound!(), Go) else if (now.moment.starts_with("revealing")) Sound.play!(sound!(), Right) else if (now.moment == "finished") Sound.play!(sound!(), Podium) else {}
+			} else if now.moment == "lobby" and now.players > before.players {
+				Sound.play!(sound!(), Join)
+			}
+			set_last!(now)
+		},
+	)
+	<main class="screen">
+		<Title>{"Room ${code}"}</Title>
+		<header class="top">
+			<a class="home" href={Paths.root} aria-label="Pinwheel, home"><Logo size="1.3rem" spinning={Bool.False} /></a>
+			<p class="set">{current!().title}</p>
+			<p class="chip">Room <b>{code}</b></p>
+			<p class="live" class:on={(room.live!)()} aria-live="polite">{if ((room.live!)()) "Live" else "Connecting…"}</p>
+			<SoundSwitch on!={sound!} toggle!={|| set_sound!(!sound!())} />
+		</header>
+		<div class="stage">
+			<Show when!={Feed.vacant(current!())}>
+				<section class="phase vacant">
+					<h1>There's no room {code}</h1>
+					<p>It may have been a different code. <a href={Paths.host}>Open a new room</a></p>
+				</section>
+			</Show>
+			<Show when!={Feed.in_lobby(current!())}>
+				<section class="phase lobby" aria-labelledby="lobby-title" transition:in={Transition.fly({ x: 0, y: 40 }).ms(450)} transition:out={Transition.fade.ms(200)}>
+					<h1 id="lobby-title" class="eyebrow">Join on your phone with</h1>
+					<p class="code" aria-label={"Room code: ${Str.join_with(code.to_utf8().map(|byte| Str.from_utf8_lossy([byte])), " ")}"}>{code}</p>
+					<p class="how">
+						Open
+						<b>{Paths.play_code({ code: code })}</b>
+						on this site, or type the code on its front page.
+					</p>
+					<Lobby players!={|| current!().players} max={14} />
+					{=
+						if hosting {
+							<button type="button" class="big go" disabled?={current!().players.is_empty()} on:click={|| (room.say!)(Start)}>
+								{if (current!().players.is_empty()) "Waiting for players…" else "Start the game"}
+							</button>
+						} else {
+							<p class="note">Waiting for the host to start.</p>
+						}
+					}
+				</section>
+			</Show>
+			<Show when!={Feed.asking(current!())}>
+				{|asking!| <Asked asking!={asking!} current!={current!} clock={clock} room={room} hosting={hosting} />}
+			</Show>
+			<Show when!={Feed.revealing(current!())}>
+				{|revealing!| <Revealed revealing!={revealing!} current!={current!} room={room} hosting={hosting} />}
+			</Show>
+			<Show when!={Feed.finished(current!())}>
+				<section class="phase finished" aria-labelledby="finished-title" transition:in={Transition.fade.ms(400)} transition:out={Transition.fade.ms(180)}>
+					<h1 id="finished-title">That's the game!</h1>
+					<Podium players!={|| current!().players} me="" />
+					{=
+						if hosting {
+							<div class="again">
+								<button type="button" class="big go" on:click={|| (room.say!)(Again)}>Play it again</button>
+								<a class="other" href={Paths.host}>Pick another set</a>
+							</div>
+						} else {
+							Html.empty({})
+						}
+					}
+				</section>
+			</Show>
+		</div>
+	</main>
+}
+
+expect Asked.answered(2, [{ id: "p1", name: "Ada", score: 0, here: Bool.True, answered: Bool.True }, { id: "p2", name: "Bo", score: 0, here: Bool.False, answered: Bool.False }]) == "2 of 2 answered"
+expect Revealed.taken(0) == "nobody" and Revealed.taken(3) == "3 took it"
+
+## A question being asked, on the big screen: its number and clock, the prompt, the choices in
+## their colours, and how many have answered. The host may close it early.
+Asked := [].{
+	view! : { asking! : () => Game.Asking, current! : () => Game.View, clock : Countdown.Clock, room : Feed.Room, hosting : Bool } => Html
+	view! = |{ asking!, current!, clock, room, hosting }|
+		<section class="phase asking" aria-labelledby="asking-title" transition:in={Transition.fly({ x: 60, y: 0 }).ms(400)} transition:out={Transition.fade.ms(180)}>
+			<div class="head">
+				<p class="count">Question {(asking!().index + 1).to_str()} of {current!().total.to_str()}</p>
+				<Countdown left!={clock.left!} limit!={|| asking!().limit_ms} big={Bool.True} />
+			</div>
+			<h1 id="asking-title" class="prompt">{asking!().prompt}</h1>
+			<ul class="choices">
+				<For each!={asking!().choices} keyed={Bool.False}>
+					{|choice!, index|
+						<li class={"choice blade-${(index % 4 + 1).to_str()}"}>
+							<Mark index={index} />
+							<span>{choice!()}</span>
+						</li>}
+				</For>
+			</ul>
+			<div class="foot">
+				<p class="answered" aria-live="polite">{Asked.answered(asking!().answered, current!().players)}</p>
+				{=if (hosting) <button type="button" class="next" on:click={|| (room.say!)(Next)}>Close it now</button> else Html.empty({})}
+			</div>
+		</section>
+
+	## How many have answered, of the room's players: "3 of 5 answered".
+	answered : U64, List(Game.Face) -> Str
+	answered = |count, players| "${count.to_str()} of ${players.len().to_str()} answered"
+}
+
+## A question's answer, on the big screen: the right choice and how many took each, the room's
+## answers as bars, and the board turning. The host may go on early.
+Revealed := [].{
+	view! : { revealing! : () => Game.Revealing, current! : () => Game.View, room : Feed.Room, hosting : Bool } => Html
+	view! = |{ revealing!, current!, room, hosting }|
+		<section class="phase revealing" aria-labelledby="revealing-title" transition:in={Transition.scale(0.94).ms(350)} transition:out={Transition.fade.ms(180)}>
+			<div class="head">
+				<p class="count">Question {(revealing!().index + 1).to_str()} of {current!().total.to_str()}</p>
+				<h1 id="revealing-title" class="prompt small">{revealing!().prompt}</h1>
+			</div>
+			<div class="split">
+				<div class="answer">
+					<ul class="choices revealed">
+						<For each!={revealing!().choices} keyed={Bool.False}>
+							{|choice!, index|
+								<li class={"choice blade-${(index % 4 + 1).to_str()}"} class:right={index == revealing!().answer} class:wrong={index != revealing!().answer}>
+									<Mark index={index} />
+									<span>{choice!()}</span>
+									<b class="took">{Revealed.taken(revealing!().tallies.get(index) ?? 0)}</b>
+								</li>}
+						</For>
+					</ul>
+					<Tally revealing!={revealing!} />
+				</div>
+				<div class="standing">
+					<h2>The board</h2>
+					<Board rows!={|| Board.rows(current!(), revealing!())} limit={6} me="" />
+				</div>
+			</div>
+			<div class="foot">
+				<p class="next-up">{if (revealing!().last) "The podium is next" else "The next question is coming"}</p>
+				{=if (hosting) <button type="button" class="next" on:click={|| (room.say!)(Next)}>Go on now</button> else Html.empty({})}
+			</div>
+		</section>
+
+	## How many took a choice: "1 took it", "4 took it", "nobody".
+	taken : U64 -> Str
+	taken = |count| if (count == 0) "nobody" else "${count.to_str()} took it"
+}
+
+<style>
+	.screen {
+		display: grid;
+		grid-template-rows: auto 1fr;
+		min-height: 100vh;
+		min-height: 100dvh;
+		font-size: clamp(1rem, 1.6vw, 1.6rem);
+	}
+
+	.top {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.75rem 1.25rem;
+		padding: 0.75rem 1.5rem;
+		border-bottom: var(--outline);
+		background: var(--card);
+		font-size: 1rem;
+	}
+
+	.home {
+		text-decoration: none;
+	}
+
+	.set {
+		flex: 1;
+		overflow: hidden;
+		color: var(--ink-soft);
+		font-weight: 700;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.chip {
+		padding: 0.2em 0.8em;
+		border: var(--outline);
+		border-radius: var(--pill);
+	}
+
+	.chip b {
+		font-family: var(--mono);
+		letter-spacing: 0.15em;
+	}
+
+	.live {
+		color: var(--ink-faint);
+		font-weight: 700;
+	}
+
+	.live.on {
+		color: var(--good);
+	}
+
+	.live.on::before {
+		content: "● ";
+	}
+
+	/* The phases share one cell, so one fading out and the next coming in overlap, and nothing jumps. */
+	.stage {
+		display: grid;
+		padding: clamp(1rem, 3vw, 3rem);
+	}
+
+	.phase {
+		grid-area: 1 / 1;
+		display: grid;
+		align-content: center;
+		gap: clamp(1rem, 2.5vw, 2.5rem);
+		width: 100%;
+		max-width: 90rem;
+		margin: 0 auto;
+	}
+
+	.vacant,
+	.lobby,
+	.finished {
+		justify-items: center;
+		text-align: center;
+	}
+
+	.eyebrow {
+		color: var(--ink-soft);
+		font-size: 1.4em;
+		font-weight: 700;
+	}
+
+	.code {
+		padding: 0.1em 0.5em;
+		border: var(--outline);
+		border-radius: var(--radius);
+		background: var(--card);
+		box-shadow: 8px 8px 0 var(--ink);
+		font-family: var(--mono);
+		font-size: clamp(4rem, 14vw, 12rem);
+		font-weight: 800;
+		letter-spacing: 0.12em;
+		line-height: 1.1;
+	}
+
+	.how,
+	.note,
+	.next-up {
+		color: var(--ink-soft);
+	}
+
+	.how b {
+		color: var(--ink);
+		font-family: var(--mono);
+	}
+
+	.big {
+		padding: 0.6em 1.8em;
+		font-size: 1.3em;
+	}
+
+	.go,
+	.next {
+		border: var(--outline);
+		border-radius: var(--pill);
+		box-shadow: var(--lift);
+		font-weight: 800;
+	}
+
+	.go {
+		background: var(--blade-3);
+		color: #fff;
+	}
+
+	.go:disabled {
+		background: var(--paper-deep);
+		box-shadow: none;
+		color: var(--ink-faint);
+	}
+
+	.next {
+		padding: 0.45em 1.3em;
+		background: var(--card);
+		font-size: 0.85em;
+	}
+
+	.go:not(:disabled):active,
+	.next:active {
+		translate: 3px 3px;
+		box-shadow: none;
+	}
+
+	.head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+	}
+
+	.count {
+		color: var(--ink-soft);
+		font-weight: 800;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+	}
+
+	.prompt {
+		font-size: clamp(2rem, 4.6vw, 4.5rem);
+		text-wrap: balance;
+	}
+
+	.prompt.small {
+		font-size: clamp(1.4rem, 2.6vw, 2.6rem);
+	}
+
+	.revealing .head {
+		display: grid;
+		justify-content: start;
+		gap: 0.4rem;
+	}
+
+	.choices {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: clamp(0.75rem, 1.5vw, 1.5rem);
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.choice {
+		display: flex;
+		align-items: center;
+		gap: 0.8em;
+		padding: 0.7em 1em;
+		border: var(--outline);
+		border-radius: var(--radius);
+		box-shadow: var(--lift);
+		color: #fff;
+		font-size: 1.35em;
+		font-weight: 800;
+	}
+
+	.choice :global(.mark) {
+		color: var(--ink);
+	}
+
+	.blade-1 {
+		background: var(--blade-1);
+	}
+
+	.blade-2 {
+		background: var(--blade-2);
+	}
+
+	.blade-3 {
+		background: var(--blade-3);
+	}
+
+	.blade-4 {
+		background: var(--blade-4);
+	}
+
+	.revealed .choice {
+		font-size: 1em;
+		transition: opacity 0.4s, filter 0.4s;
+	}
+
+	.revealed .choice.wrong {
+		filter: grayscale(0.85);
+		opacity: 0.45;
+	}
+
+	.revealed .choice.right {
+		outline: 4px solid var(--ink);
+		outline-offset: 3px;
+	}
+
+	.took {
+		margin-left: auto;
+		font-size: 0.8em;
+		white-space: nowrap;
+	}
+
+	.split {
+		display: grid;
+		grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+		gap: clamp(1rem, 3vw, 3rem);
+		align-items: start;
+	}
+
+	.answer {
+		display: grid;
+		gap: 1.5rem;
+	}
+
+	.answer .choices {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 0.6rem;
+	}
+
+	.standing {
+		display: grid;
+		gap: 0.75rem;
+	}
+
+	.standing h2 {
+		font-size: 1.2em;
+	}
+
+	.foot {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+	}
+
+	.answered {
+		font-weight: 800;
+		font-size: 1.2em;
+	}
+
+	.finished h1 {
+		font-size: clamp(2.5rem, 6vw, 5rem);
+	}
+
+	.again {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: center;
+		gap: 1.5rem;
+	}
+
+	.other {
+		font-weight: 700;
+	}
+
+	@media (max-width: 50rem) {
+		.split,
+		.choices {
+			grid-template-columns: minmax(0, 1fr);
+		}
+	}
+</style>

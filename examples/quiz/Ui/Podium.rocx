@@ -1,0 +1,181 @@
+import pf.Html
+import pf.For
+import pf.Transition
+import pf.Solid exposing [create_memo!]
+import ../Game
+import ../Score
+
+## The end of a game: the first three on a podium, second on the left and third on the right, each
+## rising in turn (third, then second, then first) when the game ends; then everyone, in order.
+##
+## `players!` is an accessor, read in the podium's own holes: a value prop would be read where the
+## podium is written, which, inside a `<Show>`'s children, is when the page is first rendered.
+Podium := [].{
+	view! : { players! : () => List(Game.Face), me : Str } => Html
+	view! = |{ players!, me }| {
+		ranked! = create_memo!(|| Score.ranked(players!().map(|player| { id: player.id, name: player.name, score: player.score })))
+		<section class="podium" aria-label="Podium">
+			<ol class="steps">
+				<For each!={Podium.steps(ranked!())} keyed={|row| row.id}>
+					{|row!, _|
+						<li
+							class={"step ${row!().slot}"}
+							class:me={row!().id == me}
+							transition:in={Transition.grow(Bottom).ms(550).delay(Podium.delay(row!().slot))}
+						>
+							<span class="who">{row!().name}</span>
+							<span class="score">{row!().score.to_str()}</span>
+							<span class="block" aria-hidden="true">{row!().place.to_str()}</span>
+							<span class="visually-hidden">{"${Score.ordinal(row!().place)} place"}</span>
+						</li>}
+				</For>
+			</ol>
+			<ol class="rest" aria-label="Everyone else">
+				<For each!={ranked!().drop_first(3)} keyed={|row| row.id}>
+					{|row!, _|
+						<li class:me={row!().id == me}>
+							<span>{Score.ordinal(row!().place)}</span>
+							<span>{row!().name}</span>
+							<span class="score">{row!().score.to_str()}</span>
+						</li>}
+				</For>
+			</ol>
+		</section>
+	}
+
+	## The podium's steps, left to right: the second, the first and the third on the board, each
+	## with the step it stands on (`slot`), so the middle one is the tallest even when places are
+	## tied. Fewer than three players fill fewer steps.
+	steps : List({ id : Str, name : Str, score : U64, place : U64 }) -> List({ id : Str, name : Str, score : U64, place : U64, slot : Str })
+	steps = |ranked|
+		[(1, "second"), (0, "first"), (2, "third")].keep_oks(
+			|(at, slot)| ranked.get(at).map_ok(|row| { id: row.id, name: row.name, score: row.score, place: row.place, slot }),
+		)
+
+	## When a step rises: the third first, the first last.
+	delay : Str -> U64
+	delay = |slot|
+		match slot {
+			"first" => 1400
+			"second" => 700
+			_ => 0
+		}
+
+	<style>
+		.podium {
+			display: grid;
+			gap: 1.5rem;
+			justify-items: center;
+			width: min(100%, 52rem);
+		}
+
+		.steps {
+			display: flex;
+			align-items: flex-end;
+			justify-content: center;
+			gap: 0.75rem;
+			width: 100%;
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		.step {
+			display: grid;
+			justify-items: center;
+			gap: 0.25rem;
+			width: min(30%, 14rem);
+		}
+
+		.who {
+			max-width: 100%;
+			overflow: hidden;
+			font-weight: 800;
+			font-size: 1.2em;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+
+		.score {
+			color: var(--ink-soft);
+			font-weight: 700;
+			font-variant-numeric: tabular-nums;
+		}
+
+		.block {
+			display: grid;
+			place-items: center;
+			width: 100%;
+			border: var(--outline);
+			border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+			box-shadow: var(--lift);
+			color: #fff;
+			font-size: 2.5em;
+			font-weight: 800;
+		}
+
+		.first .block {
+			height: min(10em, 30vh);
+			background: var(--blade-1);
+		}
+
+		.second .block {
+			height: min(7em, 21vh);
+			background: var(--blade-3);
+		}
+
+		.third .block {
+			height: min(5em, 15vh);
+			background: var(--blade-2);
+		}
+
+		.me .who::after {
+			content: " (you)";
+			color: var(--ink-soft);
+		}
+
+		.rest {
+			display: grid;
+			gap: 0.25rem;
+			width: min(100%, 28rem);
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		.rest li {
+			display: grid;
+			grid-template-columns: 3em 1fr auto;
+			gap: 0.5rem;
+			padding: 0.3em 0.6em;
+			border-bottom: 1px dashed var(--rule);
+		}
+
+		.rest li.me {
+			background: #fff3c4;
+		}
+
+		.visually-hidden {
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			overflow: hidden;
+			clip-path: inset(50%);
+			white-space: nowrap;
+		}
+	</style>
+
+	<story name="One player">
+		<Podium players!={|| [{ id: "p1", name: "Ada", score: 3100, here: Bool.True, answered: Bool.False }]} me="p1" />
+	</story>
+
+	<story name="Four players">
+		<Podium players!={|| [{ id: "p1", name: "Ada", score: 3100, here: Bool.True, answered: Bool.False }, { id: "p2", name: "Bo", score: 4250, here: Bool.True, answered: Bool.False }, { id: "p3", name: "Cy", score: 2800, here: Bool.True, answered: Bool.False }, { id: "p4", name: "Di", score: 900, here: Bool.False, answered: Bool.False }]} me="p1" />
+	</story>
+}
+
+expect Podium.steps([]) == []
+expect Podium.steps([{ id: "p1", name: "Ada", score: 900, place: 1 }]).map(|step| (step.id, step.slot)) == [("p1", "first")]
+expect
+	Podium.steps([{ id: "p1", name: "Ada", score: 900, place: 1 }, { id: "p2", name: "Bo", score: 800, place: 2 }, { id: "p3", name: "Cy", score: 800, place: 2 }, { id: "p4", name: "Di", score: 0, place: 4 }]).map(|step| (step.id, step.slot))
+		== [("p2", "second"), ("p1", "first"), ("p3", "third")]

@@ -1,0 +1,131 @@
+import pf.Html
+import pf.For
+import pf.Router
+import pf.Endpoint
+import ../../Generated/Api
+import ../../Generated/Paths
+import ../../Ui/Masthead
+
+meta = { title: "Host a game" }
+
+## The host's page: every question set, each with a button that opens a room for it (a plain form,
+## `POST /rooms`, which goes on to the room's screen). A set just made in the editor comes first,
+## marked (`?made=<id>`).
+view! = |_| {
+	sets : List({ id : I64, title : Str, blurb : Str, questions : I64 })
+	sets = Endpoint.get!(Api.get_host({}))
+	made = Router.location!({}).query.drop_prefix("made=")
+	<>
+		<Masthead here={Paths.host} />
+		<main class="host">
+			<header>
+				<h1>Host a game</h1>
+				<p>Pick a set. Its room opens on this screen: put it somewhere everyone can see it.</p>
+			</header>
+			<ul class="sets">
+				<For each!={sets} keyed={|set| set.id}>
+					{|set!, _|
+						<li class="set" class:made={set!().id.to_str() == made}>
+							<h2>{set!().title}</h2>
+							<p class="blurb">{set!().blurb}</p>
+							<p class="count">{if (set!().questions == 1) "1 question" else "${set!().questions.to_str()} questions"}</p>
+							<form method="post" action={Endpoint.url_of(Api.post_rooms({}))}>
+								<input type="hidden" name="set" value={set!().id.to_str()} />
+								<button type="submit" aria-label={"Open a room for ${set!().title}"}>Open a room</button>
+							</form>
+						</li>}
+				</For>
+			</ul>
+			<p class="more">Want your own questions? <a href={Paths.sets_new}>Write a set</a>: it takes a minute.</p>
+		</main>
+	</>
+}
+
+<style>
+	.host {
+		display: grid;
+		gap: 1.5rem;
+		max-width: 68rem;
+		margin: 0 auto;
+		padding: 1rem 1.25rem 4rem;
+	}
+
+	header {
+		display: grid;
+		gap: 0.5rem;
+	}
+
+	h1 {
+		font-size: clamp(2rem, 5vw, 3rem);
+	}
+
+	header p,
+	.blurb,
+	.more {
+		color: var(--ink-soft);
+	}
+
+	.sets {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+		gap: 1.25rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.set {
+		display: grid;
+		grid-template-rows: auto 1fr auto auto;
+		gap: 0.6rem;
+		padding: 1.25rem;
+		border: var(--outline);
+		border-radius: var(--radius);
+		background: var(--card);
+		box-shadow: var(--lift);
+	}
+
+	.set.made {
+		background: #fff3c4;
+	}
+
+	.set.made h2::after {
+		content: "new";
+		margin-left: 0.5em;
+		padding: 0.1em 0.5em;
+		border-radius: var(--pill);
+		background: var(--blade-2);
+		color: #fff;
+		font-size: 0.6em;
+		vertical-align: middle;
+	}
+
+	h2 {
+		font-size: 1.35rem;
+	}
+
+	.count {
+		font-weight: 700;
+	}
+
+	button {
+		width: 100%;
+		padding: 0.6em 1em;
+		border: var(--outline);
+		border-radius: var(--pill);
+		background: var(--blade-1);
+		box-shadow: var(--lift-low);
+		color: #fff;
+		font-weight: 800;
+	}
+
+	button:hover {
+		translate: -1px -1px;
+		box-shadow: var(--lift);
+	}
+
+	button:active {
+		translate: 2px 2px;
+		box-shadow: none;
+	}
+</style>

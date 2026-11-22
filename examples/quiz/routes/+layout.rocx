@@ -1,0 +1,25 @@
+import pf.Html
+import ../Generated/Styles
+
+## The document around every page: the stylesheet of tokens (`static/pinwheel.css`), every
+## component's scoped styles (`Generated/Styles`), and the page. Each page says its own title
+## (`meta`), and brings its own header: the host's screen and a player's phone have none.
+view! = |{ meta, children, .. }|
+	<>
+		<!doctype html>
+		<html lang="en">
+			<head>
+				<meta charset="utf-8" />
+				<meta name="viewport" content="width=device-width, initial-scale=1" />
+				<title>{meta.title} · Pinwheel</title>
+				<meta name="description" content="Pinwheel: a live quiz for a room full of phones." />
+				<meta name="theme-color" content="#fbf5ea" />
+				<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+				<link rel="stylesheet" href="/pinwheel.css" />
+				<NoHydration>{=Styles.style}</NoHydration>
+			</head>
+			<body>
+				{...children}
+			</body>
+		</html>
+	</>

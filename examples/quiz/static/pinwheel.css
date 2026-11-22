@@ -1,0 +1,128 @@
+/* Pinwheel's tokens and base: what every page shares, as custom properties, and the elements'
+   own look (no classes). Each component styles itself in a scoped <style> of its own. */
+:root {
+	/* Paper and ink. */
+	--paper: #fbf5ea;
+	--paper-deep: #f2e7d3;
+	--card: #fffdf8;
+	--ink: #221a2e;
+	--ink-soft: #574d68;
+	--ink-faint: #8c8299;
+	--rule: #e2d5bd;
+
+	/* The four blades, one for each choice: deep enough for white text on them (4.5:1 and more). */
+	--blade-1: #c2410c;
+	--blade-2: #be185d;
+	--blade-3: #0f766e;
+	--blade-4: #6d28d9;
+
+	--good: #15803d;
+	--good-soft: #dcfce7;
+	--bad: #b91c1c;
+	--bad-soft: #fee2e2;
+
+	--radius: 18px;
+	--radius-sm: 10px;
+	--pill: 999px;
+	/* A printed card: an ink outline and a hard shadow, offset. */
+	--outline: 2px solid var(--ink);
+	--lift: 4px 4px 0 var(--ink);
+	--lift-low: 2px 2px 0 var(--ink);
+
+	--font: ui-rounded, "SF Pro Rounded", "Nunito", "Varela Round", "Segoe UI", system-ui, sans-serif;
+	--mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+
+	/* The charts package's colours, in Pinwheel's ink. */
+	--chart-color: var(--ink);
+	--chart-active: var(--blade-2);
+	--chart-grid: var(--rule);
+	--chart-axis: var(--ink-soft);
+	--chart-muted: var(--ink-soft);
+	--chart-surface: var(--card);
+	--chart-font: var(--font);
+	--chart-radius: 6px;
+
+	/* The presence package's avatars, ringed in paper. */
+	--avatar-ring: var(--paper);
+	--avatar-font: var(--font);
+
+	/* The forms package's fields. */
+	--form-invalid: var(--bad);
+	--form-border: var(--ink);
+	--form-muted: var(--ink-soft);
+	--form-radius: var(--radius-sm);
+
+	color-scheme: light;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html {
+	-webkit-text-size-adjust: 100%;
+}
+
+body {
+	margin: 0;
+	min-height: 100vh;
+	min-height: 100dvh;
+	background: var(--paper);
+	color: var(--ink);
+	font: 400 1.0625rem/1.5 var(--font);
+}
+
+h1,
+h2,
+h3 {
+	margin: 0;
+	line-height: 1.1;
+	font-weight: 800;
+	letter-spacing: -0.01em;
+}
+
+p {
+	margin: 0;
+}
+
+a {
+	color: inherit;
+	text-decoration-thickness: 2px;
+	text-underline-offset: 3px;
+}
+
+button,
+input,
+textarea,
+select {
+	font: inherit;
+	color: inherit;
+}
+
+button {
+	cursor: pointer;
+}
+
+button:disabled {
+	cursor: not-allowed;
+}
+
+input,
+textarea {
+	background: var(--card);
+	border: var(--outline);
+	border-radius: var(--radius-sm);
+	padding: 0.55rem 0.7rem;
+}
+
+:focus-visible {
+	outline: 3px solid var(--blade-4);
+	outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	* {
+		animation-duration: 0.01ms !important;
+		transition-duration: 0.01ms !important;
+	}
+}

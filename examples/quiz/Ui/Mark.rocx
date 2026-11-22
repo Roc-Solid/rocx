@@ -1,0 +1,76 @@
+import pf.Html
+
+## A choice's mark: its letter on a blade of its own colour, turned a quarter more for each choice,
+## so the four tell apart by colour, by letter and by the way the blade points.
+Mark := [].{
+	view : { index : U64 } -> Html
+	view = |{ index }|
+		<span class={"mark blade-${(index % 4 + 1).to_str()}"} aria-hidden="true">
+			<svg viewBox="-50 -50 100 100">
+				<path d="M0 0 L0 -50 Q38 -42 0 0Z" transform={"rotate(${(index % 4 * 90).to_str()})"} />
+			</svg>
+			<b>{Mark.letter(index)}</b>
+		</span>
+
+	## A choice's letter: A, B, C, D.
+	letter : U64 -> Str
+	letter = |index| Str.from_utf8_lossy(['A' + index.to_u8_wrap()])
+
+	<style>
+		.mark {
+			position: relative;
+			display: inline-grid;
+			place-items: center;
+			width: 2.4em;
+			height: 2.4em;
+			flex: none;
+			border: var(--outline);
+			border-radius: 50%;
+			background: var(--card);
+		}
+
+		svg {
+			position: absolute;
+			inset: 0;
+			overflow: hidden;
+			border-radius: 50%;
+		}
+
+		path {
+			fill: currentColor;
+			opacity: 0.3;
+		}
+
+		b {
+			position: relative;
+			font-weight: 800;
+		}
+
+		.blade-1 {
+			color: var(--blade-1);
+		}
+
+		.blade-2 {
+			color: var(--blade-2);
+		}
+
+		.blade-3 {
+			color: var(--blade-3);
+		}
+
+		.blade-4 {
+			color: var(--blade-4);
+		}
+	</style>
+
+	<story name="All four">
+		<span>
+			<Mark index={0} />
+			<Mark index={1} />
+			<Mark index={2} />
+			<Mark index={3} />
+		</span>
+	</story>
+}
+
+expect [0, 1, 2, 3].map(Mark.letter) == ["A", "B", "C", "D"]

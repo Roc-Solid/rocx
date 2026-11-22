@@ -1,0 +1,90 @@
+import pf.Html
+import pf.Channel
+import pf.Endpoint
+import pf.Solid exposing [create_effect!, create_signal!]
+import Generated/Api
+import Game
+
+## A room, followed live: the room's view as its channel (D-020) publishes it, for a component to
+## read (`view!`), and what the page says on it (`say!`). Both the host's screen and a player's
+## phone follow their room through this.
+##
+## The page starts from the view the server rendered it with (`GET /rooms/:code`), then subscribes
+## from an effect: on each (re)connect the channel says `Resync`, and its `on_open!` sends the room
+## as it is now, so a phone that slept catches up at once. Views carry a version, and a view older
+## than the one shown (published while the stream was opening) is passed over; the first after a
+## resync is taken whatever its version (a server that lost its rooms starts again).
+Feed := [].{
+
+	## A followed room: its latest view, whether the stream is up, and what to say on it.
+	Room : { view! : () => Game.View, live! : () => Bool, say! : Game.Said => {} }
+
+	## The room `code`, followed from `first`. Call it in a component, as a signal is made: once.
+	follow! : Str, Game.View => Feed.Room
+	follow! = |code, first| {
+		(view!, set_view!) = create_signal!(first)
+		(live!, set_live!) = create_signal!(Bool.False)
+		(fresh!, set_fresh!) = create_signal!(Bool.False)
+		channel = Api.channel_rooms_code({ code: code })
+		# The browser's copy of an endpoint is only its URL: what it carries is said here.
+		heard! : Channel.Event(Game.View) => {}
+		heard! = |event|
+			match event {
+				Resync => {
+					set_fresh!(Bool.True)
+					set_live!(Bool.True)
+				}
+				Message(view) =>
+					if fresh!() or view.version >= view!().version {
+						set_view!(view)
+						set_fresh!(Bool.False)
+					}
+				Refused(_, _) => set_live!(Bool.False)
+				Ended(_) => set_live!(Bool.False)
+			}
+		create_effect!(|| {}, |{}| Endpoint.subscribe!(channel, heard!))
+		said! : Game.Said => {}
+		said! = |words| Endpoint.say!(channel, words)
+		{ view!, live!, say!: said! }
+	}
+
+	## The question being asked, if one is.
+	asking : Game.View -> Try(Game.Asking, [NotAsking])
+	asking = |view|
+		match view.stage {
+			Asking(question) => Ok(question)
+			_ => Err(NotAsking)
+		}
+
+	## The answer being shown, if one is.
+	revealing : Game.View -> Try(Game.Revealing, [NotRevealing])
+	revealing = |view|
+		match view.stage {
+			Revealing(answer) => Ok(answer)
+			_ => Err(NotRevealing)
+		}
+
+	## Whether the room is in its lobby.
+	in_lobby : Game.View -> Bool
+	in_lobby = |view| view.stage == Lobby
+
+	## Whether the game is over.
+	finished : Game.View -> Bool
+	finished = |view| view.stage == Finished
+
+	## Whether there is no room at all.
+	vacant : Game.View -> Bool
+	vacant = |view| view.stage == Vacant
+
+	## Where the room is, as a word that changes when the phase does (`asking 2`): for effects
+	## that play a sound once per phase.
+	moment : Game.View -> Str
+	moment = |view|
+		match view.stage {
+			Vacant => "vacant"
+			Lobby => "lobby"
+			Asking(question) => "asking ${question.index.to_str()}"
+			Revealing(answer) => "revealing ${answer.index.to_str()}"
+			Finished => "finished"
+		}
+}

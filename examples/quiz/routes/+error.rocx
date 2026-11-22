@@ -1,0 +1,35 @@
+import pf.Html
+import ../Generated/Paths
+import ../Ui/Masthead
+
+meta = { title: "Not here" }
+
+## What a path nothing answers shows (404), and a failure nothing caught (500).
+view! = |{ status, problem }|
+	<>
+		<Masthead here="" />
+		<main class="lost">
+			<h1>{if (status == 404) "Nothing here" else "Something went wrong"}</h1>
+			<p>{if (status == 404) "That page blew away. Check the address, or start again from the front page." else problem}</p>
+			<a class="back" href={Paths.root}>To the front page</a>
+		</main>
+	</>
+
+<style>
+	.lost {
+		display: grid;
+		justify-items: start;
+		gap: 1rem;
+		max-width: 40rem;
+		margin: 3rem auto;
+		padding: 0 1.25rem;
+	}
+
+	h1 {
+		font-size: 2.5rem;
+	}
+
+	.back {
+		font-weight: 700;
+	}
+</style>

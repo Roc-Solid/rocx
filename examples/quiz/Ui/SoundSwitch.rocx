@@ -1,0 +1,36 @@
+import pf.Html
+
+## Sound on or off: a toggle button (`aria-pressed`), for a page whose sounds a room may not want.
+SoundSwitch := [].{
+	view : { on! : () => Bool, toggle! : () => {} } -> Html
+	view = |{ on!, toggle! }|
+		<button type="button" class="sound" aria-pressed={if (on!()) "true" else "false"} on:click={toggle!}>
+			<span aria-hidden="true">{if (on!()) "♪" else "∅"}</span>
+			Sound
+		</button>
+
+	<style>
+		.sound {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.4em;
+			padding: 0.3em 0.8em;
+			border: var(--outline);
+			border-radius: var(--pill);
+			background: var(--card);
+			box-shadow: var(--lift-low);
+			font-weight: 700;
+		}
+
+		.sound[aria-pressed="false"] {
+			color: var(--ink-faint);
+			box-shadow: none;
+		}
+
+		span {
+			display: inline-block;
+			width: 1em;
+			text-align: center;
+		}
+	</style>
+}

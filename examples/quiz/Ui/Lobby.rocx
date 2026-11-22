@@ -1,0 +1,113 @@
+import pf.Html
+import pf.For
+import pf.Transition
+import presence.AvatarStack
+import presence.Stack
+import ../Game
+
+## Who is in the room, from packages/presence: everyone here as a row of avatars (`<AvatarStack>`,
+## each in a blade's colour), and every player by name, one who dropped (their last tab gone for a
+## few seconds) greyed and said to have. A name that comes grows in.
+Lobby := [].{
+	view! : { players! : () => List(Game.Face), max : U64 } => Html
+	view! = |{ players!, max }|
+		<div class="lobby">
+			<AvatarStack faces!={Lobby.faces(players!())} max={max} />
+			<p class="count" aria-live="polite">{Lobby.label(players!())}</p>
+			<ul class="names" aria-label="Players">
+				<For each!={players!()} keyed={|player| player.id}>
+					{|player!, index!|
+						<li class={"name blade-${(index!() % 4 + 1).to_str()}"} class:gone={!player!().here} transition={Transition.scale(0.6).ms(260)}>
+							{player!().name}
+							{if (player!().here) "" else " · dropped"}
+						</li>}
+				</For>
+			</ul>
+		</div>
+
+	## Players as avatars: here, or dropped (a status of the app's own, which it styles).
+	faces : List(Game.Face) -> List(Stack.Face)
+	faces = |players|
+		players.map_with_index(
+			|player, at| {
+				status = if (player.here) "" else "dropped"
+				{ key: player.id, name: player.name, image: "", color: Lobby.color(at), status }
+			},
+		)
+
+	## The `at`th player's colour: the blades in turn.
+	color : U64 -> Str
+	color = |at| ["#c2410c", "#be185d", "#0f766e", "#6d28d9"].get(at % 4) ?? "#221a2e"
+
+	## What a screen reader hears for the avatars.
+	label : List(Game.Face) -> Str
+	label = |players| {
+		here = players.count_if(|player| player.here)
+		dropped = players.len() - here
+		count = if (here == 1) "1 player here" else "${here.to_str()} players here"
+		if (dropped == 0) count else "${count}, ${dropped.to_str()} dropped"
+	}
+
+	<style>
+		.lobby {
+			display: grid;
+			gap: 1rem;
+			justify-items: center;
+			--avatar-size: 2.75rem;
+		}
+
+		.count {
+			color: var(--ink-soft);
+			font-weight: 700;
+		}
+
+		.lobby :global(.avatar.status-dropped) {
+			filter: grayscale(1);
+			opacity: 0.5;
+		}
+
+		.names {
+			display: flex;
+			flex-wrap: wrap;
+			justify-content: center;
+			gap: 0.5rem;
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		.name {
+			padding: 0.3em 0.9em;
+			border: var(--outline);
+			border-radius: var(--pill);
+			background: var(--card);
+			box-shadow: var(--lift-low);
+			font-weight: 700;
+		}
+
+		.blade-1 {
+			border-left: 0.6em solid var(--blade-1);
+		}
+
+		.blade-2 {
+			border-left: 0.6em solid var(--blade-2);
+		}
+
+		.blade-3 {
+			border-left: 0.6em solid var(--blade-3);
+		}
+
+		.blade-4 {
+			border-left: 0.6em solid var(--blade-4);
+		}
+
+		.name.gone {
+			opacity: 0.5;
+			text-decoration: line-through;
+		}
+	</style>
+}
+
+expect Lobby.label([]) == "0 players here"
+expect Lobby.label([{ id: "p1", name: "Ada", score: 0, here: Bool.True, answered: Bool.False }, { id: "p2", name: "Bo", score: 0, here: Bool.False, answered: Bool.False }]) == "1 player here, 1 dropped"
+expect Lobby.faces([{ id: "p2", name: "Bo", score: 0, here: Bool.False, answered: Bool.False }]) == [{ key: "p2", name: "Bo", image: "", color: "#c2410c", status: "dropped" }]

@@ -1,0 +1,188 @@
+import pf.Html
+import forms.IssueSummary
+import forms.LiveForm
+import forms.TextField
+import ../Generated/Api
+import ../Generated/Paths
+import ../Joining
+import ../Ui/Logo
+import ../Ui/Mark
+import ../Ui/Masthead
+
+meta = { title: "A live quiz for a room full of phones" }
+
+## The front page: join a game with its code, or host one. The join form is checked as it is typed
+## (packages/forms' `LiveForm`, with the same rules its endpoint reads it with); without
+## JavaScript it posts, and comes back with what was wrong.
+view! = |_| {
+	live = LiveForm.of!(Joining.form, Api.post_join({}))
+	<>
+		<Masthead here={Paths.root} />
+		<main class="home">
+			<section class="hero">
+				<Logo size="clamp(2.5rem, 8vw, 4.5rem)" spinning={Bool.True} />
+				<h1>Spin up a room. Answer fast. Watch the board turn.</h1>
+				<p class="lede">
+					A quiz you play live: one big screen asks, every phone in the room answers, and the quickest right
+					answers score the most.
+				</p>
+			</section>
+			<section class="card join" aria-labelledby="join-title">
+				<h2 id="join-title">Join a game</h2>
+				<IssueSummary live={live} title="Check these, then join again" labels={[("code", "Room code"), ("name", "Your name")]} />
+				<form method="post" action={live.url()} novalidate>
+					<TextField live={live} name="code" label="Room code" hint="Four letters, on the host's screen." autocomplete="off" />
+					<TextField live={live} name="name" label="Your name" hint="What the room will see." autocomplete="nickname" />
+					<button type="submit" class="go" disabled?={live.pending!()}>Join</button>
+				</form>
+			</section>
+			<section class="card host" aria-labelledby="host-title">
+				<h2 id="host-title">Host a game</h2>
+				<p>Put a room on a big screen, pick a set of questions, and read out the code.</p>
+				<a class="go" href={Paths.host}>Open a room</a>
+				<p class="aside">or <a href={Paths.sets_new}>write a set of your own</a></p>
+			</section>
+			<ol class="steps" aria-label="How it plays">
+				<li>
+					<Mark index={0} />
+					<p><b>Join.</b> Everyone types the room's code on their phone, and picks a name.</p>
+				</li>
+				<li>
+					<Mark index={1} />
+					<p><b>Answer.</b> Each question shows on the big screen with a clock; the choices are on every phone.</p>
+				</li>
+				<li>
+					<Mark index={2} />
+					<p><b>Score.</b> A right answer earns 500 points, and up to 500 more for speed.</p>
+				</li>
+				<li>
+					<Mark index={3} />
+					<p><b>Climb.</b> After each answer the board turns; after the last, the podium.</p>
+				</li>
+			</ol>
+		</main>
+	</>
+}
+
+<style>
+	.home {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 1.5rem;
+		max-width: 68rem;
+		margin: 0 auto;
+		padding: 1rem 1.25rem 4rem;
+	}
+
+	.hero {
+		grid-column: 1 / -1;
+		display: grid;
+		justify-items: start;
+		gap: 1rem;
+		padding: 2rem 0 1rem;
+	}
+
+	h1 {
+		max-width: 18ch;
+		font-size: clamp(2.2rem, 6vw, 4rem);
+	}
+
+	.lede {
+		max-width: 40rem;
+		color: var(--ink-soft);
+		font-size: 1.2rem;
+	}
+
+	.card {
+		display: grid;
+		align-content: start;
+		gap: 1rem;
+		padding: 1.5rem;
+		border: var(--outline);
+		border-radius: var(--radius);
+		background: var(--card);
+		box-shadow: var(--lift);
+	}
+
+	.join form {
+		display: grid;
+		gap: 0.25rem;
+	}
+
+	.join :global(input) {
+		width: 100%;
+	}
+
+	.join :global(#field-code) {
+		font-family: var(--mono);
+		font-size: 1.5rem;
+		font-weight: 700;
+		letter-spacing: 0.3em;
+		text-transform: uppercase;
+	}
+
+	.go {
+		justify-self: start;
+		padding: 0.6em 1.6em;
+		border: var(--outline);
+		border-radius: var(--pill);
+		background: var(--blade-3);
+		box-shadow: var(--lift-low);
+		color: #fff;
+		font-weight: 800;
+		font-size: 1.1rem;
+		text-decoration: none;
+	}
+
+	.host .go {
+		background: var(--blade-1);
+	}
+
+	.go:hover {
+		translate: -1px -1px;
+		box-shadow: var(--lift);
+	}
+
+	.go:active {
+		translate: 2px 2px;
+		box-shadow: none;
+	}
+
+	.go:disabled {
+		opacity: 0.6;
+	}
+
+	.aside {
+		color: var(--ink-soft);
+	}
+
+	.steps {
+		grid-column: 1 / -1;
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+		gap: 1rem;
+		margin: 1rem 0 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.steps li {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.75rem;
+	}
+
+	.steps p {
+		color: var(--ink-soft);
+	}
+
+	.steps b {
+		color: var(--ink);
+	}
+
+	@media (max-width: 44rem) {
+		.home {
+			grid-template-columns: minmax(0, 1fr);
+		}
+	}
+</style>

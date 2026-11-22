@@ -1,0 +1,151 @@
+import pf.Html
+import pf.Solid exposing [create_effect!, create_signal!, set_interval!, set_timeout!]
+import ../Game
+
+## A question's countdown, kept honest by the server. The browser has no clock of its own to read,
+## and a phone's timers drift and stall, so the server decides when time is up (the room's actor
+## closes the question), and every view the room publishes says how long its question has left.
+## This counts down from that, a tenth of a second at a time (`set_interval!`), and starts again
+## from each new view: an answer coming in, or a phone that slept, puts it right.
+##
+## A timeout (`set_timeout!`) says when the time runs out here (`over!`), so a phone stops taking
+## answers on time even if the room's next view is slow to come; the interval stops itself at zero
+## with its `clear!`. Both stop when the next view comes (an effect's timers stop before its next
+## apply) or the countdown goes.
+Countdown := [].{
+
+	## How it ticks: on each whole second left, at five or fewer, `second!` is told how many (the
+	## host's screen plays a tick).
+	Clock : { left! : () => U64, over! : () => Bool }
+
+	## The interval, while it runs: its `clear!`.
+	Ticking : [Stopped, Running(() => {})]
+
+	stopped : Countdown.Ticking
+	stopped = Stopped
+
+	## The countdown of the question `view!` is asking, if it is.
+	create! : (() => Game.View), (U64 => {}) => Countdown.Clock
+	create! = |view!, second!| {
+		(left!, set_left!) = create_signal!(Countdown.left_of(view!()))
+		(over!, set_over!) = create_signal!(Bool.False)
+		# The interval's clear!, while it runs: what it calls to stop itself at zero.
+		(ticking!, set_ticking!) = create_signal!(Countdown.stopped)
+		create_effect!(
+			|| Countdown.left_of(view!()),
+			|from| {
+				set_left!(from)
+				set_over!(from == 0)
+				if from > 0 {
+					tick! = || {
+						before = left!()
+						after = before - U64.min(before, Countdown.step)
+						set_left!(after)
+						if Countdown.seconds(after) < Countdown.seconds(before) and Countdown.seconds(after) <= 5 {
+							second!(Countdown.seconds(after))
+						}
+						if after == 0 {
+							match ticking!() {
+								Running(clear!) => clear!()
+								Stopped => {}
+							}
+						}
+					}
+					set_ticking!(Running(set_interval!(Countdown.step, tick!)))
+					_out = set_timeout!(from, || set_over!(Bool.True))
+				}
+			},
+		)
+		{ left!, over! }
+	}
+
+	## How often it ticks, in milliseconds.
+	step : U64
+	step = 100
+
+	## What a view says is left of its question; nothing when it isn't asking one.
+	left_of : Game.View -> U64
+	left_of = |room|
+		match room.stage {
+			Asking(asking) => asking.left_ms
+			_ => 0
+		}
+
+	## Whole seconds left, rounded up: 0.1 s left shows 1, as a clock on a wall would.
+	seconds : U64 -> U64
+	seconds = |ms| (ms + 999) // 1000
+
+	## A ring that empties as the time does, the seconds in it: `limit` is the whole time.
+	view : { left! : () => U64, limit! : () => U64, big : Bool } -> Html
+	view = |{ left!, limit!, big }|
+		<div class="countdown" class:big={big} class:hurry={Countdown.seconds(left!()) <= 5} role="timer" aria-label={"${Countdown.seconds(left!()).to_str()} seconds left"}>
+			<svg viewBox="0 0 100 100" aria-hidden="true">
+				<circle class="track" cx="50" cy="50" r="44" />
+				<circle class="sweep" cx="50" cy="50" r="44" pathLength="1000" stroke-dasharray={"${Countdown.share(left!(), limit!()).to_str()} 1000"} />
+			</svg>
+			<span class="seconds" aria-hidden="true">{Countdown.seconds(left!()).to_str()}</span>
+		</div>
+
+	## The ring's share left, in thousandths.
+	share : U64, U64 -> U64
+	share = |left, limit| if (limit == 0) 0 else U64.min(1000, left * 1000 // limit)
+
+	<style>
+		.countdown {
+			--size: 4.5rem;
+			position: relative;
+			display: inline-grid;
+			place-items: center;
+			width: var(--size);
+			height: var(--size);
+			flex: none;
+		}
+
+		.countdown.big {
+			--size: clamp(6rem, 11vw, 10rem);
+		}
+
+		svg {
+			position: absolute;
+			inset: 0;
+			transform: rotate(-90deg) scaleY(-1);
+		}
+
+		circle {
+			fill: none;
+			stroke-width: 9;
+		}
+
+		.track {
+			stroke: var(--paper-deep);
+		}
+
+		.sweep {
+			stroke: var(--ink);
+			stroke-linecap: round;
+			transition: stroke-dasharray 0.1s linear;
+		}
+
+		.hurry .sweep {
+			stroke: var(--blade-1);
+		}
+
+		.seconds {
+			position: relative;
+			font-weight: 800;
+			font-size: calc(var(--size) * 0.38);
+			font-variant-numeric: tabular-nums;
+		}
+
+		.hurry .seconds {
+			color: var(--blade-1);
+		}
+	</style>
+
+	<story name="Seven seconds of twenty">
+		<Countdown left!={|| 7_000} limit!={|| 20_000} big={Bool.False} />
+	</story>
+}
+
+expect Countdown.seconds(0) == 0 and Countdown.seconds(1) == 1 and Countdown.seconds(1000) == 1 and Countdown.seconds(1001) == 2
+expect Countdown.share(5_000, 20_000) == 250 and Countdown.share(0, 0) == 0 and Countdown.share(30_000, 20_000) == 1000

@@ -1,0 +1,528 @@
+import pf.Html
+import pf.Endpoint
+import pf.For
+import pf.Show
+import pf.Title
+import pf.Transition
+import pf.Solid exposing [create_effect!, create_memo!, create_signal!]
+import forms.IssueSummary
+import forms.LiveForm
+import forms.TextField
+import ../../../Feed
+import ../../../Game
+import ../../../Generated/Api
+import ../../../Generated/Paths
+import ../../../Joining
+import ../../../Score
+import ../../../Sound
+import ../../../Ui/Countdown
+import ../../../Ui/Lobby
+import ../../../Ui/Logo
+import ../../../Ui/Mark
+import ../../../Ui/Podium
+import ../../../Ui/SoundSwitch
+
+meta = { title: "Play" }
+
+## A room on a player's phone. One who has joined plays (`Playing`); anyone else is asked for a
+## name first (`Joining`), and the room's host is sent to their screen. A code with no room, or a
+## game that is over, says so.
+view! = |{ params }| {
+	code = params.code
+	# The browser's copy of an endpoint is only its URL: what it answers is said here.
+	seat : Game.Seat
+	seat = Endpoint.get!(Api.get_rooms_code({ code: code }))
+	<main class="phone">
+		<Title>{"Room ${code}"}</Title>
+		{=
+			match (seat.who, seat.view.stage) {
+				(Player(me), _) => <Playing code={code} seat={seat} me={me} />
+				(Host, _) =>
+					<section class="note">
+						<h1>You're hosting this room</h1>
+						<p><a href={Paths.host_code({ code: code })}>Open the host's screen</a> to run the game.</p>
+					</section>
+				(Watcher, Vacant) =>
+					<section class="note">
+						<h1>There's no room {code}</h1>
+						<p>Check the code on the host's screen, and <a href={Paths.root}>try again</a>.</p>
+					</section>
+				(Watcher, Finished) =>
+					<section class="note">
+						<h1>That game is over</h1>
+						<p>Ask the host for the next room's code.</p>
+					</section>
+				(Watcher, _) => <Entering code={code} title={seat.view.title} />
+			}
+		}
+	</main>
+}
+
+expect Playing.status(Ok(1), Bool.False, Bool.True) == "Locked in: B. The room has it."
+expect Playing.status(Err(None), Bool.True, Bool.False) == "Time's up."
+expect Playing.can_pick(Picked({ index: 2, choice: 0 }), 2) == Bool.False and Playing.can_pick(Picked({ index: 2, choice: 0 }), 3)
+
+## Someone who hasn't joined: the room's name, and a name to play under. The form posts to
+## `POST /play/:code`, which goes on to this page, now as a player.
+Entering := [].{
+	view! : { code : Str, title : Str } => Html
+	view! = |{ code, title }| {
+		live = LiveForm.of!(Joining.named, Api.post_play_code({ code: code }))
+		<section class="entering" aria-labelledby="entering-title">
+			<Logo size="2rem" spinning={Bool.True} />
+			<h1 id="entering-title">Join room <span class="code">{code}</span></h1>
+			<p class="set">{title}</p>
+			<IssueSummary live={live} title="Check this, then join again" labels={[("name", "Your name")]} />
+			<form method="post" action={live.url()} novalidate>
+				<TextField live={live} name="name" label="Your name" hint="What the room will see." autocomplete="nickname" />
+				<button type="submit" class="go" disabled?={live.pending!()}>Join</button>
+			</form>
+		</section>
+	}
+}
+
+## A player in the room, following it (`Feed`): waiting in the lobby, answering each question as
+## its clock runs (a tap says the choice on the room's channel), seeing how they did, and where
+## they finished. The tap shows at once, before the room has it; the room's next view says
+## whether it did (`answered`).
+Playing := [].{
+
+	## What this phone picked, and for which question: kept here, so a new question starts clear.
+	Picked : [Nothing, Picked({ index : U64, choice : U64 })]
+
+	view! : { code : Str, seat : Game.Seat, me : Str } => Html
+	view! = |{ code, seat, me }| {
+		room = Feed.follow!(code, seat.view)
+		current! = room.view!
+		(sound!, set_sound!) = create_signal!(Bool.True)
+		clock = Countdown.create!(current!, |_| {})
+		(picked!, set_picked!) = create_signal!(Playing.first_pick(seat))
+		# This phone's choice for the question being asked, if it made one.
+		mine! = create_memo!(|| Playing.mine(picked!(), current!()))
+		pick! = |index, choice|
+			if Playing.can_pick(picked!(), index) and !(clock.over!)() {
+				set_picked!(Picked({ index, choice }))
+				(room.say!)(Pick({ index, choice }))
+				Sound.play!(sound!(), Pick)
+			}
+		# The news of each reveal, out loud: right or wrong (or nothing, for no answer).
+		(last!, set_last!) = create_signal!(Feed.moment(seat.view))
+		create_effect!(
+			|| current!(),
+			|now| {
+				moment = Feed.moment(now)
+				if moment != last!() {
+					set_last!(moment)
+					match Feed.revealing(now) {
+						Ok(revealing) =>
+							match Playing.result(revealing, me) {
+								Earned(_) => Sound.play!(sound!(), Right)
+								Missed(_) => Sound.play!(sound!(), Wrong)
+								Silent => {}
+							}
+						Err(_) => {}
+					}
+				}
+			},
+		)
+		face! = || Playing.face(current!(), me)
+		<div class="playing">
+			<header class="top">
+				<span class="who">{face!().name}</span>
+				<span class="score" aria-label={"Score: ${face!().score.to_str()}"}>{face!().score.to_str()}</span>
+				<SoundSwitch on!={sound!} toggle!={|| set_sound!(!sound!())} />
+			</header>
+			<div class="stage">
+				<Show when!={Feed.in_lobby(current!())}>
+					<section class="phase lobby" transition:in={Transition.fly({ x: 0, y: 24 }).ms(350)} transition:out={Transition.fade.ms(150)}>
+						<Logo size="2.5rem" spinning={Bool.True} />
+						<h1>You're in, {face!().name}!</h1>
+						<p class="hint">Watch the big screen: the host starts when everyone's here.</p>
+						<Lobby players!={|| current!().players} max={8} />
+					</section>
+				</Show>
+				<Show when!={Feed.asking(current!())}>
+					{|asking!| <Choosing asking!={asking!} total={current!().total} clock={clock} mine!={mine!} pick!={pick!} answered!={|| face!().answered} />}
+				</Show>
+				<Show when!={Feed.revealing(current!())}>
+					{|revealing!|
+						<section class="phase revealing" transition:in={Transition.scale(0.9).ms(300)} transition:out={Transition.fade.ms(150)}>
+							{=Playing.verdict(Playing.result(revealing!(), me))}
+							<p class="answer">
+								The answer:
+								<b>{"${Mark.letter(revealing!().answer)}, ${revealing!().choices.get(revealing!().answer) ?? ""}"}</b>
+							</p>
+							<p class="standing">{Playing.standing(current!(), me)}</p>
+						</section>}
+				</Show>
+				<Show when!={Feed.finished(current!())}>
+					<section class="phase finished" transition:in={Transition.fade.ms(400)} transition:out={Transition.fade.ms(150)}>
+						<h1>{Playing.finish(current!(), me)}</h1>
+						<Podium players!={|| current!().players} me={me} />
+						<p class="hint">Thanks for playing. The host may start another round.</p>
+					</section>
+				</Show>
+			</div>
+		</div>
+	}
+
+	## What the page knew this phone had picked, as the server rendered it.
+	first_pick : Game.Seat -> Playing.Picked
+	first_pick = |seat|
+		match (seat.picked, Feed.asking(seat.view)) {
+			(Picked(choice), Ok(asking)) => Picked({ index: asking.index, choice })
+			_ => Nothing
+		}
+
+	## This phone's choice for the question being asked.
+	mine : Playing.Picked, Game.View -> Try(U64, [None])
+	mine = |picked, view|
+		match (picked, Feed.asking(view)) {
+			(Picked(pick), Ok(asking)) if pick.index == asking.index => Ok(pick.choice)
+			_ => Err(None)
+		}
+
+	## Whether question `index` may still be answered here: not if it already has been.
+	can_pick : Playing.Picked, U64 -> Bool
+	can_pick = |picked, index|
+		match picked {
+			Picked(pick) => pick.index != index
+			Nothing => Bool.True
+		}
+
+	## How this player did on a revealed question: earned points, picked wrong, or said nothing.
+	result : Game.Revealing, Str -> [Earned(U64), Missed(U64), Silent]
+	result = |revealing, me|
+		match revealing.gains.find_first(|gain| gain.id == me) {
+			Ok(gain) if gain.gained > 0 => Earned(gain.gained)
+			Ok(gain) => Missed(gain.choice)
+			Err(_) => Silent
+		}
+
+	## The reveal's headline.
+	verdict : [Earned(U64), Missed(U64), Silent] -> Html
+	verdict = |how|
+		match how {
+			Earned(points) =>
+				<div class="verdict right">
+					<h1>Right!</h1>
+					<p class="points">+{points.to_str()}</p>
+				</div>
+			Missed(_) =>
+				<div class="verdict wrong">
+					<h1>Not this time</h1>
+				</div>
+			Silent =>
+				<div class="verdict silent">
+					<h1>No answer</h1>
+					<p>The clock beat you to it.</p>
+				</div>
+		}
+
+	## What the status line under the choices says.
+	status : Try(U64, [None]), Bool, Bool -> Str
+	status = |chosen, over, answered|
+		match chosen {
+			Ok(choice) => if (answered) "Locked in: ${Mark.letter(choice)}. The room has it." else "Sending ${Mark.letter(choice)}…"
+			Err(None) => if (over) "Time's up." else "Tap your answer."
+		}
+
+	## This player, as the room has them.
+	face : Game.View, Str -> Game.Face
+	face = |view, me| view.players.find_first(|player| player.id == me) ?? { id: me, name: "You", score: 0, here: Bool.True, answered: Bool.False }
+
+	## Where this player stands: "2nd of 5, with 1,700".
+	standing : Game.View, Str -> Str
+	standing = |view, me| {
+		ranked = Score.ranked(view.players.map(|player| { id: player.id, name: player.name, score: player.score }))
+		match ranked.find_first(|row| row.id == me) {
+			Ok(row) => "You're ${Score.ordinal(row.place)} of ${ranked.len().to_str()}, with ${row.score.to_str()} points."
+			Err(_) => ""
+		}
+	}
+
+	## The last word: where they came.
+	finish : Game.View, Str -> Str
+	finish = |view, me| {
+		ranked = Score.ranked(view.players.map(|player| { id: player.id, name: player.name, score: player.score }))
+		match ranked.find_first(|row| row.id == me) {
+			Ok(row) if row.place == 1 => "You won!"
+			Ok(row) => "You came ${Score.ordinal(row.place)}"
+			Err(_) => "That's the game"
+		}
+	}
+}
+
+## A question on the phone: its number and clock, the prompt, and a big button for each choice.
+## A tap picks one (`pick!`), and the others fade; once picked, or once the clock has run out, the
+## buttons are done.
+Choosing := [].{
+	view! : { asking! : () => Game.Asking, total : U64, clock : Countdown.Clock, mine! : () => Try(U64, [None]), pick! : U64, U64 => {}, answered! : () => Bool } => Html
+	view! = |{ asking!, total, clock, mine!, pick!, answered! }|
+		<section class="phase asking" aria-labelledby="question-title" transition:in={Transition.fly({ x: 40, y: 0 }).ms(300)} transition:out={Transition.fade.ms(150)}>
+			<div class="head">
+				<p class="count">Question {(asking!().index + 1).to_str()} of {total.to_str()}</p>
+				<Countdown left!={clock.left!} limit!={|| asking!().limit_ms} big={Bool.False} />
+			</div>
+			<h1 id="question-title" class="prompt">{asking!().prompt}</h1>
+			<div class="choices" role="group" aria-labelledby="question-title">
+				<For each!={asking!().choices} keyed={Bool.False}>
+					{|choice!, index|
+						<button
+							type="button"
+							class={"choice blade-${(index % 4 + 1).to_str()}"}
+							class:chosen={mine!() == Ok(index)}
+							class:faded={mine!().is_ok() and mine!() != Ok(index)}
+							aria-pressed={if (mine!() == Ok(index)) "true" else "false"}
+							disabled?={mine!().is_ok() or (clock.over!)()}
+							on:click={|| pick!(asking!().index, index)}
+						>
+							<Mark index={index} />
+							<span>{choice!()}</span>
+						</button>}
+				</For>
+			</div>
+			<p class="status" role="status">{Playing.status(mine!(), (clock.over!)(), answered!())}</p>
+		</section>
+}
+
+<style>
+	.phone {
+		min-height: 100vh;
+		min-height: 100dvh;
+		max-width: 34rem;
+		margin: 0 auto;
+		padding: 0 1rem 2rem;
+	}
+
+	.note,
+	.entering {
+		display: grid;
+		justify-items: center;
+		gap: 1rem;
+		padding-top: 3rem;
+		text-align: center;
+	}
+
+	.entering form {
+		display: grid;
+		gap: 0.25rem;
+		width: 100%;
+		text-align: left;
+	}
+
+	.entering :global(input) {
+		width: 100%;
+		font-size: 1.2rem;
+	}
+
+	.code {
+		font-family: var(--mono);
+		letter-spacing: 0.12em;
+	}
+
+	.set {
+		color: var(--ink-soft);
+	}
+
+	.go {
+		justify-self: stretch;
+		padding: 0.7em;
+		border: var(--outline);
+		border-radius: var(--pill);
+		background: var(--blade-3);
+		box-shadow: var(--lift-low);
+		color: #fff;
+		font-size: 1.15rem;
+		font-weight: 800;
+	}
+
+	.top {
+		position: sticky;
+		top: 0;
+		z-index: 1;
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		margin: 0 -1rem;
+		padding: 0.6rem 1rem;
+		border-bottom: var(--outline);
+		background: var(--card);
+	}
+
+	.who {
+		flex: 1;
+		overflow: hidden;
+		font-weight: 800;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.score {
+		font-weight: 800;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.stage {
+		display: grid;
+		padding-top: 1.25rem;
+	}
+
+	.phase {
+		grid-area: 1 / 1;
+		display: grid;
+		align-content: start;
+		gap: 1rem;
+	}
+
+	.lobby,
+	.revealing,
+	.finished {
+		justify-items: center;
+		text-align: center;
+	}
+
+	.lobby h1,
+	.finished h1 {
+		font-size: 2rem;
+	}
+
+	.hint {
+		color: var(--ink-soft);
+	}
+
+	.head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.count {
+		color: var(--ink-soft);
+		font-weight: 800;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		font-size: 0.85rem;
+	}
+
+	.prompt {
+		font-size: 1.35rem;
+	}
+
+	.choices {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.75rem;
+	}
+
+	.choice {
+		display: grid;
+		justify-items: center;
+		align-content: center;
+		gap: 0.5rem;
+		min-height: 7.5rem;
+		padding: 0.75rem;
+		border: var(--outline);
+		border-radius: var(--radius);
+		box-shadow: var(--lift);
+		color: #fff;
+		font-weight: 800;
+		font-size: 1.05rem;
+		text-align: center;
+		transition: opacity 0.2s, translate 0.1s, box-shadow 0.1s;
+	}
+
+	.choice :global(.mark) {
+		color: var(--ink);
+	}
+
+	.choice:active:not(:disabled) {
+		translate: 3px 3px;
+		box-shadow: none;
+	}
+
+	.choice:disabled {
+		cursor: default;
+	}
+
+	.choice.chosen {
+		outline: 4px solid var(--ink);
+		outline-offset: 3px;
+	}
+
+	.choice.faded,
+	.choice:disabled:not(.chosen) {
+		opacity: 0.35;
+	}
+
+	.blade-1 {
+		background: var(--blade-1);
+	}
+
+	.blade-2 {
+		background: var(--blade-2);
+	}
+
+	.blade-3 {
+		background: var(--blade-3);
+	}
+
+	.blade-4 {
+		background: var(--blade-4);
+	}
+
+	.status {
+		min-height: 1.5em;
+		color: var(--ink-soft);
+		font-weight: 700;
+		text-align: center;
+	}
+
+	.verdict {
+		display: grid;
+		justify-items: center;
+		gap: 0.25rem;
+		width: 100%;
+		padding: 1.5rem 1rem;
+		border: var(--outline);
+		border-radius: var(--radius);
+		box-shadow: var(--lift);
+	}
+
+	.verdict h1 {
+		font-size: 2.4rem;
+	}
+
+	.verdict.right {
+		background: var(--good-soft);
+		color: var(--good);
+	}
+
+	.verdict.wrong {
+		background: var(--bad-soft);
+		color: var(--bad);
+	}
+
+	.verdict.silent {
+		background: var(--paper-deep);
+	}
+
+	.points {
+		font-size: 2rem;
+		font-weight: 800;
+	}
+
+	.standing {
+		font-weight: 700;
+	}
+
+	@media (max-width: 22rem) {
+		.choices {
+			grid-template-columns: minmax(0, 1fr);
+		}
+
+		.choice {
+			min-height: 4.5rem;
+		}
+	}
+</style>
