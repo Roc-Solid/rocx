@@ -860,6 +860,19 @@ test("forms: the page shows what the schema says and the endpoint answers, and t
 	await page.wait(`document.querySelector(".issue-summary") === null`);
 	assert.equal(await text(page, "[data-demo=forms] .read"), 'It reads: { name: "Ada", email: "ada@example.com", age: 36, terms: Bool.True, passwords: … }');
 	assert.equal(await page.eval("location.pathname"), "/ecosystem/forms", "the page stays");
+	assert.equal(await page.eval(`document.querySelector("#field-password").getAttribute("value") ?? ""`), "", "a password typed is never written into the page");
+	// Start again (`reset!`): every field as it started (empty), nothing said, nothing read, and the
+	// inputs the same ones, focus kept.
+	await page.eval(`document.querySelector("#field-name").focus()`);
+	await page.eval(`document.querySelector("#field-name").dataset.kept = "yes"`);
+	await page.eval(`document.querySelector('[data-demo="forms"] .again').click()`);
+	await page.wait(`document.querySelector("#field-name").value === ""`);
+	assert.deepEqual(await page.eval(`["name", "email", "age", "password", "confirm"].map((name) => document.querySelector("#field-" + name).value)`), ["", "", "", "", ""]);
+	assert.equal(await page.eval(`document.querySelector("#field-terms").checked`), false);
+	assert.equal(await page.eval(`document.querySelectorAll('[data-demo="forms"] .issues li').length`), 0, "no issue shows");
+	assert.equal(await invalid("name"), "false");
+	assert.equal(await text(page, "[data-demo=forms] .read"), "");
+	assert.equal(await page.eval(`document.querySelector("#field-name").dataset.kept ?? null`), "yes", "the same input");
 	assert.deepEqual((await asked(page)).filter((path) => !loads().includes(path)), [], "and asks for nothing");
 	assert.deepEqual(page.errors, []);
 });

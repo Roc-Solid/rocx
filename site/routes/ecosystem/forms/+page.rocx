@@ -119,6 +119,14 @@ view! = |_|
 				issues) or without it (the form posts, and the page comes back with what was typed and the issues,
 				from the flash: a <a href={"${Paths.calls}#forms"}>submission</a>).
 			</p>
+			<p>
+				An edit form starts filled in with the record as it is:
+				<code>{"LiveForm.filled!(TaskForm.editing, save, [(\"title\", task.title), (\"notes\", task.notes)])"}</code>.
+				Any form can start afresh, from a handler: <code>live.reset!()</code> types in again what it started
+				with and forgets every issue, its inputs staying where they are, focus too (Start again, in the
+				demo). An add form does once the endpoint has accepted what it sent:
+				<code>{"create_effect!(|| live.accepted!(), |accepted| if (accepted) live.reset!() else {})"}</code>.
+			</p>
 
 			<Heading id="values">Values and their checks</Heading>
 			<p>
@@ -243,7 +251,9 @@ view! = |_|
 					<thead><tr><th>LiveForm</th><th>What it is</th></tr></thead>
 					<tbody>
 						<tr><td><code>LiveForm.of!(form, endpoint)</code></td><td>a form that posts to <code>endpoint</code> (<code>Router.use_submission!</code>): the endpoint's issues show at their fields</td></tr>
-						<tr><td><code>LiveForm.local!(form)</code></td><td>a form that posts nowhere, checked as it is typed, for an <code>on:submit</code> handler to read</td></tr>
+						<tr><td><code>LiveForm.filled!(form, endpoint, values)</code></td><td>the same, starting with <code>values</code> typed in, field by field (<code>[("title", task.title)]</code>; a box ticked is <code>("done", "on")</code>)</td></tr>
+						<tr><td><code>LiveForm.local!(form)</code>, <code>local_filled!(form, values)</code></td><td>a form that posts nowhere, checked as it is typed, for an <code>on:submit</code> handler to read</td></tr>
+						<tr><td><code>live.reset!()</code>, <code>accepted!()</code></td><td>from a handler, starts afresh where it is, issues forgotten; whether the endpoint accepted what was last sent</td></tr>
 						<tr><td><code>live.value!(name)</code>, <code>input!(name, value)</code>, <code>leave!(name)</code></td><td>what a field holds; from <code>on:input.value</code>; from <code>on:blur</code></td></tr>
 						<tr><td><code>live.issues!(name)</code>, <code>invalid!(name)</code>, <code>all_issues!()</code></td><td>the issues to show now: a field's once it is left, every field's once the form is sent</td></tr>
 						<tr><td><code>live.show_all!()</code>, <code>fields!()</code>, <code>url()</code></td><td>every issue from now on; what is typed, for <code>form.parse</code>; the form's <code>action</code></td></tr>

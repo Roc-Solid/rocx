@@ -1,5 +1,5 @@
 import pf.Html
-import pf.Endpoint
+import pf.Solid exposing [create_effect!]
 import forms.LiveForm
 import forms.TextField
 import ../Tasks
@@ -11,11 +11,13 @@ import ../Generated/Api
 ## `TaskForm.adding` this checks it with as it is typed (`LiveForm`, from packages/forms): a title
 ## left empty is refused there too, with the same words, shown under the field with what was typed.
 ## Without JavaScript it is a plain form: the browser posts it, and the endpoint sends it back to
-## the list (303), with the refusal and what was typed if there was one.
+## the list (303), with the refusal and what was typed if there was one. With it, once a task is
+## added the form starts afresh (`reset!`), where it is: the title field keeps focus for the next.
 AddTask := [].{
 	view! : { list : Str, people : List(Tasks.Person), me : Str } => Html
 	view! = |{ list, people, me }| {
 		live = LiveForm.of!(TaskForm.adding, Api.post_lists_id({ id: list }))
+		create_effect!(|| live.accepted!(), |accepted| if (accepted) live.reset!() else {})
 		# Whom a new task goes to unless you pick someone else: you, once the app knows who you are.
 		assignee! = || if (live.sent!()) live.value!("assignee") else me
 		<form class="add" method="post" action={live.url()} novalidate>

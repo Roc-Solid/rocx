@@ -257,7 +257,10 @@ fields were left, whether it was sent, what the endpoint refused (`Router.use_su
 
 | | |
 |---|---|
-| `LiveForm.local!(form)` | a live form that posts nowhere: for one whose `on:submit` handler checks it (`show_all!`) and reads it (`form.parse(live.fields!())`), then sends it itself or keeps it |
+| `LiveForm.filled!(form, endpoint, values)` | the same, starting with `values` typed in, field by field: an edit form's record as it is now, `[("title", task.title), ("notes", task.notes)]` (a box ticked is `("done", "on")`; leave out one that isn't) |
+| `LiveForm.local!(form)`, `local_filled!(form, values)` | a live form that posts nowhere: for one whose `on:submit` handler checks it (`show_all!`) and reads it (`form.parse(live.fields!())`), then sends it itself or keeps it |
+| `live.reset!()` | from a handler: starts afresh, where it is (its inputs, focus too): what it started with typed in again, no field left, not sent, the endpoint's answer forgotten, so no issue shows |
+| `live.accepted!()` | whether the endpoint accepted what the runtime last sent (its result, not a refusal), until the form starts afresh: `create_effect!(\|\| live.accepted!(), \|accepted\| if (accepted) live.reset!() else {})` resets an add form once a task is in |
 | `live.url()` | the endpoint's URL: the form's `action` (`""` for a local one) |
 | `live.value!(name)`, `values!(name)`, `checked!(name, value)` | what is typed in a field; all of a list's values; whether a box is ticked |
 | `live.input!(name, value)` | from `on:input.value`: what a field holds now |
@@ -270,8 +273,10 @@ fields were left, whether it was sent, what the endpoint refused (`Router.use_su
 
 When an issue shows: a field's own, once it has been left, and from then on as it is typed; every
 field's, once the form has been sent. The endpoint's issues stay at a field until it is typed in
-again. After a plain post the page comes back with what was typed (not a `Secret`) and the
-endpoint's issues, from the flash; with the runtime the page stays as it was.
+again. After a plain post the endpoint refused, the page comes back with what was typed (not a
+`Secret`) and the endpoint's issues, from the flash; after one it accepted, the form starts afresh
+(with its `values`, if it was `filled!`). With the runtime the page stays as it was, and the form
+too, until `reset!`.
 
 | Component | Props |
 |---|---|

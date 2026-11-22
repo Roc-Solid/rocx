@@ -19,8 +19,11 @@ import forms.Issues
 ## them once the form has been sent. The endpoint's issues show at their fields until a field is
 ## typed in again, the browser's own from then on. The form goes to the endpoint whatever the
 ## browser thinks of it (the endpoint has the last word, and refuses with the same issues), with
-## the runtime as without it (`Router.use_submission!`): after a plain post, what was typed and the
-## endpoint's issues come back with the page.
+## the runtime as without it (`Router.use_submission!`): after a plain post the endpoint refused,
+## what was typed and the endpoint's issues come back with the page.
+##
+## An edit form starts filled in (`filled!`, with the record's values), and any form can start
+## afresh (`reset!`): an add form does once the endpoint has accepted what it sent (`accepted!`).
 LiveForm := {
 	url : Str,
 	check : List({ name : Str, value : Str }) -> List(Issues.Issue),
@@ -35,25 +38,32 @@ LiveForm := {
 	set_edited : List(Str) => {},
 	refused : () => List(Issues.Issue),
 	pending : () => Bool,
+	accepted : () => Bool,
+	reset : () => {},
 }.{
 
-	## The live form for `form`, which posts to `endpoint`. Call it in a component, as a signal is
-	## made: once.
+	## The live form for `form`, which posts to `endpoint`, empty. Call it in a component, as a
+	## signal is made: once.
 	of! : Form(a), Endpoint(context, arg, result) => LiveForm
-	of! = |form, endpoint| {
+	of! = |form, endpoint| LiveForm.filled!(form, endpoint, [])
+
+	## The live form for `form`, which posts to `endpoint`, starting with `values` typed in, field
+	## by field: an edit form's record as it is now. A box ticked is `("done", "on")`; leave out one
+	## that isn't. After a plain post the endpoint refused, what was typed shows instead.
+	##
+	##     live = LiveForm.filled!(TaskForm.editing, save, [("title", task.title), ("notes", task.notes)])
+	filled! : Form(a), Endpoint(context, arg, result), List((Str, Str)) => LiveForm
+	filled! = |form, endpoint, values| {
 		submission = use_submission!(endpoint)
 		action = Endpoint.url_of(endpoint)
-		# After a plain post, the page comes back with what was typed, in the flash: a secret
-		# (a password) is typed again.
-		flashed =
-			match Server.flash!({}) {
-				Ok(flash) => if (flash.url == action) Ok(flash.fields.drop_if(|field| form.secrets().contains(field.name))) else Err(NoFlash)
-				Err(NoFlash) => Err(NoFlash)
-			}
-		(typed!, set_typed!) = create_signal!(flashed ?? [])
+		start = LiveForm.starting(values, Err(NoFlash), action, [])
+		first = LiveForm.starting(values, Server.flash!({}), action, form.secrets())
+		(typed!, set_typed!) = create_signal!(first.typed)
 		(left!, set_left!) = create_signal!([])
-		(was_sent!, set_sent!) = create_signal!(flashed.is_ok())
+		(was_sent!, set_sent!) = create_signal!(first.sent)
 		(edited!, set_edited!) = create_signal!([])
+		# Whether the runtime has sent it since it was made, or last started afresh.
+		(sending!, set_sending!) = create_signal!(Bool.False)
 		refused! = create_memo!(
 			||
 				match submission.error!() {
@@ -69,6 +79,7 @@ LiveForm := {
 				if pending {
 					set_sent!(Bool.True)
 					set_edited!([])
+					set_sending!(Bool.True)
 				} else {
 					{}
 				},
@@ -87,6 +98,16 @@ LiveForm := {
 			set_edited: set_edited!,
 			refused: refused!,
 			pending: waiting!,
+			accepted: || sending!() and !submission.pending!() and submission.error!().is_err(),
+			reset: || {
+				set_typed!(start.typed)
+				set_left!([])
+				set_sent!(Bool.False)
+				set_edited!([])
+				set_sending!(Bool.False)
+				# The endpoint's answer, and a plain post's flash, forgotten.
+				submission.clear!()
+			},
 		}
 	}
 
@@ -95,8 +116,13 @@ LiveForm := {
 	## (`form.parse(live.fields!())`): one it sends itself (`Endpoint.send!`), or one only the
 	## browser reads. Its `url()` is `""`.
 	local! : Form(a) => LiveForm
-	local! = |form| {
-		(typed!, set_typed!) = create_signal!([])
+	local! = |form| LiveForm.local_filled!(form, [])
+
+	## A live form that posts nowhere, starting with `values` typed in, as `filled!`'s does.
+	local_filled! : Form(a), List((Str, Str)) => LiveForm
+	local_filled! = |form, values| {
+		start = LiveForm.starting(values, Err(NoFlash), "", []).typed
+		(typed!, set_typed!) = create_signal!(start)
 		(left!, set_left!) = create_signal!([])
 		(was_sent!, set_sent!) = create_signal!(Bool.False)
 		(edited!, set_edited!) = create_signal!([])
@@ -114,7 +140,49 @@ LiveForm := {
 			set_edited: set_edited!,
 			refused: || [],
 			pending: || Bool.False,
+			accepted: || Bool.False,
+			reset: || {
+				set_typed!(start)
+				set_left!([])
+				set_sent!(Bool.False)
+				set_edited!([])
+			},
 		}
+	}
+
+	## What a form posting to `action` starts with: what was typed in a plain post the endpoint
+	## refused (the flash), its secrets left out to be typed again, and sent, so its issues show; or,
+	## with no such flash (none, another form's, or one the endpoint accepted), `values`, field by
+	## field, not sent.
+	starting : List((Str, Str)), Try(Server.Flash, [NoFlash]), Str, List(Str) -> { typed : List({ name : Str, value : Str }), sent : Bool }
+	starting = |values, flash, action, secrets|
+		match flash {
+			Ok(flashed) =>
+				if flashed.url == action and flashed.status != 200 {
+					{ typed: flashed.fields.drop_if(|field| secrets.contains(field.name)), sent: Bool.True }
+				} else {
+					{ typed: values.map(|(name, value)| { name, value }), sent: Bool.False }
+				}
+			Err(NoFlash) => { typed: values.map(|(name, value)| { name, value }), sent: Bool.False }
+		}
+
+	## Starts afresh, from a handler: what it started with typed in again (`filled!`'s values;
+	## nothing, for `of!`'s), no field left, not sent, and the endpoint's answer forgotten, so no
+	## issue shows. The inputs stay where they are, focus too.
+	reset! : LiveForm => {}
+	reset! = |live| {
+		reset_it! = live.reset
+		reset_it!()
+	}
+
+	## Whether the endpoint accepted what the runtime last sent (answered with its result, not a
+	## refusal), until the form starts afresh: an add form resets once it has.
+	##
+	##     create_effect!(|| live.accepted!(), |accepted| if accepted live.reset!() else {})
+	accepted! : LiveForm => Bool
+	accepted! = |live| {
+		was_accepted! = live.accepted
+		was_accepted!()
 	}
 
 	## Every field's issues show from now on, as after a send: from a form's `on:submit` (which
@@ -268,3 +336,9 @@ base_name = |field|
 		Ok({ before, .. }) => before
 		Err(_) => field
 	}
+
+expect LiveForm.starting([("title", "Buy milk"), ("done", "on")], Err(NoFlash), "/tasks/1", []).typed == [{ name: "title", value: "Buy milk" }, { name: "done", value: "on" }]
+expect !LiveForm.starting([("title", "Buy milk")], Err(NoFlash), "/tasks/1", []).sent
+expect LiveForm.starting([("title", "Buy milk")], Ok({ url: "/tasks/1", fields: [{ name: "title", value: "" }, { name: "password", value: "hunter2" }], status: 422, body: "[]" }), "/tasks/1", ["password"]) == { typed: [{ name: "title", value: "" }], sent: Bool.True }
+expect LiveForm.starting([("title", "Buy milk")], Ok({ url: "/tasks/1", fields: [{ name: "title", value: "Buy bread" }], status: 200, body: "\"1\"" }), "/tasks/1", []) == { typed: [{ name: "title", value: "Buy milk" }], sent: Bool.False }
+expect LiveForm.starting([], Ok({ url: "/lists/2", fields: [{ name: "title", value: "Elsewhere" }], status: 422, body: "[]" }), "/tasks/1", []) == { typed: [], sent: Bool.False }

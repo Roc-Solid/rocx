@@ -124,6 +124,8 @@ test("adding a task without JavaScript: a plain form, a 303 back, and it is on t
 	assert.equal(new URL(added.location, app.url).pathname, `/lists/${id}`);
 	const page = await added.follow();
 	page.dom.getByRole("checkbox", { name: "Buy milk" });
+	// The form starts afresh: what an accepted post typed doesn't come back into it.
+	assert.equal(page.dom.getByLabelText("New task").attr("value"), "");
 	page.dom.getByRole("img", { name: "Mila Novak" });
 	page.dom.getByText("Jan 15, 2030");
 	const [row] = await db.sql`select title, due::text, assignee, done, position from tasks where list_id = ${Number(id)}`;
@@ -326,11 +328,14 @@ test("in a browser: adding, moving and deleting tasks without leaving the page",
 	await (await tab.getByRole("button", { name: "Add" })).click();
 	await tab.findByText("Fill this in");
 	await (await tab.getByLabelText("New task")).fill("Return the books");
-	// The issue shows as the form is sent; the button is "Adding…" until the refusal is in.
-	await (await tab.findByRole("button", { name: "Add" })).click();
+	// Sent with Enter from the title field: the task is added, and the form starts afresh where it
+	// is (LiveForm's reset!), the field empty, no issue shown, and focus still in it for the next.
+	await (await tab.getByLabelText("New task")).press("Enter");
 	await tab.findByRole("link", { name: "Return the books" });
-	// The form starts afresh for the next one.
 	await until(async () => (await (await tab.getByLabelText("New task")).value()) === "", { what: "the title field emptied" });
+	await until(async () => !(await tab.dom()).queryByText("Fill this in"), { what: "the issue gone" });
+	assert.equal((await tab.getByLabelText("New task")).attr("aria-invalid"), "false");
+	assert.equal(await tab.page.eval("document.activeElement?.id ?? null"), "field-title", "the title field keeps focus");
 	await until(async () => (await db.sql`select count(*)::int as n from tasks where list_id = ${Number(id)}`)[0].n === 2, { what: "the task in the database" });
 	await still(tab);
 	await (await tab.findByRole("button", { name: "Move up: Return the books" })).click();
@@ -362,5 +367,30 @@ test("in a browser: a change the server refuses is undone, says why, and Dismiss
 	await until(async () => !(await tab.dom()).queryByRole("alert"), { what: "the alert gone" });
 	await tab.findByText("Nothing on this list yet. Add the first task below.");
 	assert.deepEqual(tab.errors, []);
+	await tab.close();
+});
+
+test("in a browser: a task's page starts filled in with the task, checks it as it is typed, and saves", { skip }, async (t) => {
+	if (!browser) return t.skip(noBrowser);
+	const person = app.client();
+	const id = await newList(person, "Browser edits");
+	const task = await addTask(person, id, { title: "Wrap the gifts", due: "2030-12-20", assignee: "jun" });
+	const tab = await browser.open(`${app.url}/tasks/${task}`);
+	// Hydrated strictly over the server's page: the form the browser makes starts with the task too
+	// (LiveForm.filled!).
+	assert.equal(await (await tab.getByLabelText("Title")).value(), "Wrap the gifts");
+	assert.equal(await (await tab.getByLabelText("Due")).value(), "2030-12-20");
+	// Emptied and left: the same check the endpoint makes shows under it, before anything is sent.
+	await (await tab.getByLabelText("Title")).fill("");
+	await (await tab.getByLabelText("Notes")).focus();
+	await tab.findByText("Fill this in");
+	await (await tab.getByLabelText("Title")).fill("Wrap the presents");
+	await until(async () => !(await tab.dom()).queryByText("Fill this in"), { what: "the issue gone as it is typed" });
+	await (await tab.getByRole("button", { name: "Save" })).click();
+	await until(async () => new URL(await tab.page.eval("location.href")).pathname === `/lists/${id}`, { what: "back on the list" });
+	const [row] = await db.sql`select title, due::text, assignee from tasks where id = ${Number(task)}`;
+	assert.deepEqual(row, { title: "Wrap the presents", due: "2030-12-20", assignee: "jun" });
+	assert.deepEqual(tab.errors, []);
+	assert.deepEqual(tab.console.filter((line) => line.type === "error"), []);
 	await tab.close();
 });

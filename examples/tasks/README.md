@@ -45,7 +45,7 @@ each piece is where it is.
 | Pages that read endpoints: `Endpoint.get!` in a memo, `Endpoint.read!` for a 404 | [`+layout.rocx`](routes/+layout.rocx), [`lists/[id]/+page.rocx`](routes/lists/[id]/+page.rocx), [`tasks/[id]/+page.rocx`](routes/tasks/[id]/+page.rocx) |
 | Rules written once, run by the server and the browser, with expects | [`Tasks.roc`](Tasks.roc) (filters, toggles, moves, places, due badges) |
 | Forms with packages/forms: one schema for the page and the endpoint; issues in place, with what was typed | [`TaskForm.roc`](TaskForm.roc), [`components/AddTask.rocx`](components/AddTask.rocx) (`LiveForm`, `<TextField>`), [`routes/lists/[id]/+server.roc`](routes/lists/[id]/+server.roc) (`Issues.refusal`) |
-| A form's issues read from its submission, without `LiveForm` | [`routes/tasks/[id]/+page.rocx`](routes/tasks/[id]/+page.rocx) (`use_submission!`, `Issues.from_problem`) |
+| An edit form that starts filled in, and an add form that starts afresh once it is accepted | [`routes/tasks/[id]/+page.rocx`](routes/tasks/[id]/+page.rocx) (`LiveForm.filled!`), [`components/AddTask.rocx`](components/AddTask.rocx) (`accepted!`, `reset!`) |
 | Adding and completing without JavaScript: a plain form post, then a 303 back | [`components/AddTask.rocx`](components/AddTask.rocx), [`components/TaskRow.rocx`](components/TaskRow.rocx) |
 | Actions (D-030): every submission to an endpoint (`use_submissions!`), an optimistic list, revalidation; a drop sent as an action (`use_action!`) | [`routes/lists/[id]/+page.rocx`](routes/lists/[id]/+page.rocx) (`Board`), [`components/TaskRow.rocx`](components/TaskRow.rocx) (`dropped!`) |
 | A pending state: `is_pending!` dims the list while it is read again; "Saving…" while changes are on their way | [`routes/lists/[id]/+page.rocx`](routes/lists/[id]/+page.rocx) |
@@ -116,19 +116,20 @@ changes, so the browser's tests wait for the page to stop moving before they cli
 ## What it asked of the platform
 
 What the platform didn't do, or did in a way an app has to know about, and what the app does
-instead. None needed a change to the platform.
+instead. None needed a change to the platform; two needed one to packages/forms, since made.
 
-1. **A `LiveForm` can't start filled in.** It starts empty, or with what a refused plain post typed
-   (the flash); there is no way to give it a record's values, and a signal can't be written while a
-   component renders ("a signal is written in a handler, not while computing"), so filling it in
-   with `live.input!` as the page renders fails the page. An edit form is what most apps have. The
-   task's page reads its submission itself instead (`use_submission!`: `field!` for what was typed,
-   `error!` and `Issues.from_problem` for the issues) with fields of its own. A
-   `LiveForm.of_with!(form, endpoint, values)` in packages/forms would let it use `<TextField>`.
-2. **A `LiveForm` can't be reset.** After a successful add, the form still holds the title, and
-   once sent it shows every field's issues, so emptying the field by hand would show "Fill this in".
-   The list renders the form inside a `<For>` keyed by how many adds have succeeded, so each success
-   makes a new form; focus leaves the title field when it does. A `LiveForm.reset!` would keep it.
+1. **Fixed: a `LiveForm` couldn't start filled in.** It started empty, or with what a refused
+   plain post typed (the flash), and a signal can't be written while a component renders, so the
+   task's page read its submission itself (`use_submission!`, `Issues.from_problem`) with fields of
+   its own. packages/forms has `LiveForm.filled!(form, endpoint, values)` now: the task's page
+   (`routes/tasks/[id]/+page.rocx`) starts its form with the task, checks it as it is typed with
+   `TaskForm.editing`, and uses `<TextField>` and `<CheckboxField>`.
+2. **Fixed: a `LiveForm` couldn't be reset.** After a successful add the form still held the
+   title, and once sent it showed every field's issues, so the list rendered the form inside a
+   `<For>` keyed by how many adds had succeeded, and focus left the title field each time.
+   `live.reset!()` starts a form afresh where it is, and `live.accepted!()` says the endpoint took
+   what was sent: `AddTask` resets once it has, and the title field keeps focus (and, its props
+   being getters since D-039, the list read again after an add doesn't make it anew either).
 3. **One endpoint for a form and an action takes a record of strings.** A plain form posts strings,
    and the runtime sends an action's arg as JSON, so an endpoint both reach reads strings:
    `{ id : Str, done : Str }`, `done` `"true"`, and `to` a place as text (`Tasks.Toggle`,

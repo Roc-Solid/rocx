@@ -12,7 +12,8 @@ import LiveForm
 ##
 ## `hint` is said under the label (and read with the input); `type` is the input's own, for one its
 ## checks don't give (`tel`, `search`); `autocomplete`, what a browser may fill it with. A `Secret`
-## (a password) is never written back into the page.
+## (a password) is never written back into the page: a refused post's flash leaves it out, and what
+## is typed is the input's own already (its `value` changes only when the form starts afresh).
 TextField := [].{
 	Props := { live : LiveForm, name : Str, label : Str, hint : Str ?? "", type : Str ?? "", autocomplete : Str ?? "" }
 
@@ -31,7 +32,7 @@ TextField := [].{
 				name={name}
 				type={if (type.is_empty()) attributes.type else type}
 				autocomplete??={autocomplete}
-				value={if (attributes.type == "password") "" else live.value!(name)}
+				value={live.value!(name)}
 				required?={attributes.required}
 				minlength??={attributes.minlength}
 				maxlength??={attributes.maxlength}

@@ -22,8 +22,6 @@ import ../../../components/FilterTabs
 meta = { title: "A list" }
 
 view! = |{ params, .. }| {
-	# The read, its endpoint named outside the memo (D-030: what a computation made before a read
-	# that isn't in yet would be lost).
 	page = Api.get_lists_id({ id: params.id })
 	sheet! : () => Try(Tasks.Sheet, Server.Problem)
 	sheet! = create_memo!(|| Endpoint.read!(page))
@@ -112,8 +110,6 @@ Board := [].{
 			}
 			reload!()
 		}
-		# A successful add starts the form afresh (see AddTask).
-		added! = || adds.all!().count_if(|sent| sent.result.is_ok())
 		board = {
 			tasks!,
 			shown!,
@@ -151,9 +147,7 @@ Board := [].{
 					{|task!, _| <TaskRow task!={task!()} board={board} />}
 				</For>
 			</ul>
-			<For each!={[added!()]} keyed={|count| count}>
-				{|_, _| <AddTask list={list} people={sheet!().people} me={sheet!().me} />}
-			</For>
+			<AddTask list={list} people={sheet!().people} me={sheet!().me} />
 		</section>
 	}
 
