@@ -19,7 +19,7 @@ import ../../Ui/UpdateForm
 ## channel says something changed.
 middleware = Middlewares.admin
 
-meta = { title: "Admin · Acme Status" }
+meta = { title: "Admin · Status" }
 
 view! = |_| {
 	read = Api.get_admin({})
@@ -35,7 +35,7 @@ view! = |_| {
 	demo = Api.post_admin_demo({})
 	switched = use_submission!(demo)
 	<div class="admin">
-		<Title>Admin · Acme Status</Title>
+		<Title>Admin · Status</Title>
 		<header>
 			<h1>Admin</h1>
 			<nav aria-label="Admin">

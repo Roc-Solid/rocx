@@ -19,7 +19,7 @@ Masthead := [].{
 			<div class="bar">
 				<a class="brand" href={home}>
 					<img class="mark" src="/images/mark.svg" alt="" width="36" height="36" />
-					<span class="name">Acme Journal</span>
+					<span class="name">Journal</span>
 					<span class="tagline">{intl.t("site.tagline", [])}</span>
 				</a>
 				<nav class="languages" aria-label={intl.t("nav.language", [])}>

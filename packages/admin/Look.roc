@@ -46,7 +46,7 @@ Look := [].{
 	}
 
 	## A link back to the app's own pages, first in a sidebar's navigation: its `label`, to `href`
-	## (`{ label: "Acme Status", href: "/admin" }`); nothing when `href` is "", as an admin's option
+	## (`{ label: "Status", href: "/admin" }`); nothing when `href` is "", as an admin's option
 	## `back` is unless the app says.
 	back_link : { label : Str, href : Str } -> Str
 	back_link = |back|

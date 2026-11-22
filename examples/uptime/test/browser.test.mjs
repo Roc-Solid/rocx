@@ -1,4 +1,4 @@
-// Acme Status in a real browser (Chromium's headless shell), each page hydrated strictly: the
+// The app in a real browser (Chromium's headless shell), each page hydrated strictly: the
 // status page follows a monitor down and up again without a reload, through the live channel; and
 // the subscribe form answers in place. Skipped without Chromium or DATABASE_URL.
 import { test, before, after } from "node:test";

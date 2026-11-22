@@ -1,6 +1,6 @@
 import forms.Date
 
-## Acme Tasks' rules: what a task is, which tasks a filter shows, and what each change the page
+## The app's rules: what a task is, which tasks a filter shows, and what each change the page
 ## sends (a toggle, a move, a delete, an add) does to a list. Plain Roc on no platform, so the
 ## server and the browser run the same functions: the page shows a change at once, before the
 ## server has it (`Tasks.showing`), and the server makes the very same change (`Store`).

@@ -1,6 +1,6 @@
 import pf.Html
 
-## Acme Notes' mark and name: a page of notes, half highlighted, half in ink. In the bar across the
+## The app's mark and name: a page of notes, half highlighted, half in ink. In the bar across the
 ## top of every signed-in page (a link home), and on the sign-in pages.
 Brand := [].{
 
@@ -8,7 +8,7 @@ Brand := [].{
 	view = |{}|
 		<span class="brand">
 			<span class="logo" aria-hidden="true">✎</span>
-			<span>Acme Notes</span>
+			<span>Notes</span>
 		</span>
 
 	<story name="The mark">

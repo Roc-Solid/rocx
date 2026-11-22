@@ -4,7 +4,7 @@ import pf.Log
 import Board
 import Rank
 
-## Acme Board in Postgres: every query the app makes, in one place. The tables are
+## Board in Postgres: every query the app makes, in one place. The tables are
 ## migrations/0001_board.sql; the route files call these and say what each answer means to whoever
 ## asked. A row comes back as the record its query is annotated with, by column name (`Db.all!`).
 ##

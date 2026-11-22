@@ -65,7 +65,7 @@ test("a post: its table of contents, reading time, notes, translation, and the p
 	assert.equal(page.status, 200);
 	const { dom } = page;
 	dom.getByRole("heading", { level: 1, name: "Notes on slow bread" });
-	assert.match(page.text, /<title data-rocx>Notes on slow bread · Acme Journal<\/title>/);
+	assert.match(page.text, /<title data-rocx>Notes on slow bread · Journal<\/title>/);
 	const contents = within(dom.getByRole("navigation", { name: "Contents" }));
 	assert.deepEqual(
 		contents.getAllByRole("link").map((link) => link.attr("href")),

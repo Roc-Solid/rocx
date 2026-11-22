@@ -627,10 +627,10 @@ expect View.side(frame_of(Edit), Overview).contains("<a href=\"/db\" aria-curren
 # The link back to the app, first in the sidebar, when the app gives one; and alone, with no tables.
 expect !View.side(frame_of(Edit), Overview).contains("class=\"back\"")
 expect {
-	back = { label: "Acme Status", href: "/admin" }
+	back = { label: "Status", href: "/admin" }
 	side = View.side({ ..frame_of(Edit), back }, Overview)
 	alone = View.side({ ..frame_of(Refused), tables: [], back }, Elsewhere)
-	side.contains("<nav class=\"side-nav\" aria-label=\"Database\"><a class=\"back\" href=\"/admin\">") and side.contains("Acme Status</span></a><a href=\"/db\" aria-current=\"page\">")
+	side.contains("<nav class=\"side-nav\" aria-label=\"Database\"><a class=\"back\" href=\"/admin\">") and side.contains("Status</span></a><a href=\"/db\" aria-current=\"page\">")
 		and alone.contains("<nav class=\"side-nav\" aria-label=\"Database\"><a class=\"back\" href=\"/admin\">") and !alone.contains("All tables")
 }
 # A refusal has no way on to the tables; another problem has.

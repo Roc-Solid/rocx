@@ -5,7 +5,7 @@ import Alerts
 import Checks
 import Store
 
-## Acme Status's jobs, run by packages/jobs's workers (main.roc lists the plugin). `rocx build` finds
+## The app's jobs, run by packages/jobs's workers (main.roc lists the plugin). `rocx build` finds
 ## each kind at the top of this block and lists it in `App.jobs`.
 ##
 ## - `due`, every 10 seconds (main.roc's cron): claims the monitors whose check is due and queues a

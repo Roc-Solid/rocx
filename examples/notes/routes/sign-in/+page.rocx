@@ -11,7 +11,7 @@ import ../../Ui/Brand
 ## Signing in: an address, and a link mailed to it. No passwords. A plain form, so it works before
 ## the page's JavaScript has loaded, and without it; with it, the page stays and says where the link
 ## went.
-meta = { title: "Sign in · Acme Notes" }
+meta = { title: "Sign in · Notes" }
 
 view! = |_| {
 	then = Query.value(Router.location!({}).query, "then")
@@ -39,7 +39,7 @@ view! = |_| {
 					<div class="sent" role="status">
 						<h1>Check your inbox</h1>
 						<p>We sent a sign-in link to <strong>{sent!().sent}</strong>. It works once, for the next 15 minutes.</p>
-						<p class="small">Running Acme Notes yourself? With <code>--dev</code> and no mail server, it lands in the dev mailbox: <a href="/__rocx/mail">/__rocx/mail</a>.</p>
+						<p class="small">Running the app yourself? With <code>--dev</code> and no mail server, it lands in the dev mailbox: <a href="/__rocx/mail">/__rocx/mail</a>.</p>
 					</div>
 				}
 			</Show>

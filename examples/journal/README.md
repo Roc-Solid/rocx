@@ -1,4 +1,4 @@
-# journal: Acme Journal
+# Journal
 
 A small publication in two languages, English and Polish. Its posts are Markdown files in
 `content/`, its pages are rendered once on the server, and two small islands run in the browser:

@@ -20,14 +20,14 @@ view! = |{ children, .. }| {
 			<head>
 				<meta charset="utf-8" />
 				<meta name="viewport" content="width=device-width, initial-scale=1" />
-				<title>Acme Journal</title>
+				<title>Journal</title>
 				<meta name="color-scheme" content="light dark" />
 				<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 				<link rel="stylesheet" href="/journal.css" />
 				<link rel="stylesheet" href="/print.css" media="print" />
 				<NoHydration>
 					<meta name="description" content={Links.description(path)} />
-					{...I18n.langs.map(|each| <link rel="alternate" type="application/atom+xml" href={"/${each}/feed.xml"} title={"Acme Journal (${I18n.name(each)})"} />)}
+					{...I18n.langs.map(|each| <link rel="alternate" type="application/atom+xml" href={"/${each}/feed.xml"} title={"Journal (${I18n.name(each)})"} />)}
 					{...Links.alternates(path).keep_if(|other| other.same).map(|other| <link rel="alternate" hreflang={other.lang} href={other.url} />)}
 					{=Styles.style}
 				</NoHydration>

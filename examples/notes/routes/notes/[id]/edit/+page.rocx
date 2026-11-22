@@ -16,7 +16,7 @@ import ../../../../Ui/Topbar
 ## filled from the submission then, rather than the note.
 middleware = Middlewares.signed_in
 
-meta = { title: "Edit · Acme Notes" }
+meta = { title: "Edit · Notes" }
 
 ## A note that isn't there, or isn't yours, is the app's error page, a 404 (`get!` fails the page).
 view! = |{ params }| <Editing id={params.id} opened={Endpoint.get!(Api.get_notes_id({ id: params.id }))} />
@@ -28,7 +28,7 @@ Editing := [].{
 		saving = use_submission!(Api.post_notes_id_edit({ id: id }))
 		typed! = |name, saved| if (saving.error!().is_ok()) saving.field!(name) else saved
 		<div>
-			<Title>{"Editing ${opened.note.title} · Acme Notes"}</Title>
+			<Title>{"Editing ${opened.note.title} · Notes"}</Title>
 			{=Topbar.view({ email: opened.email, query: "" })}
 			<main id="main" class="page">
 				<form method="post" action={Endpoint.url_of(Api.post_notes_id_edit({ id: id }))} class="sheet">

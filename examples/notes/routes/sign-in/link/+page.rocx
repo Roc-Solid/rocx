@@ -10,7 +10,7 @@ import ../../../Ui/Brand
 
 ## Where a sign-in link lands: who it signs in, and a button that does. Following the link signs
 ## nobody in by itself, so a mail scanner that opens links doesn't use yours up; the button posts it.
-meta = { title: "Sign in · Acme Notes" }
+meta = { title: "Sign in · Notes" }
 
 ## Who the link signs in, or why it doesn't (used, or expired: 410).
 link! : Str => Try({ email : Str }, Server.Problem)

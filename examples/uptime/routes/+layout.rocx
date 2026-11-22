@@ -11,7 +11,7 @@ view! = |{ children, .. }|
 			<head>
 				<meta charset="utf-8" />
 				<meta name="viewport" content="width=device-width, initial-scale=1" />
-				<title>Acme Status</title>
+				<title>Status</title>
 				<meta name="description" content="Whether Acme's services are up, how they have been, and what we are doing when they aren't." />
 				<meta name="color-scheme" content="light dark" />
 				<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -29,7 +29,7 @@ view! = |{ children, .. }|
 								<rect width="32" height="32" rx="8" fill="currentColor" />
 								<path d="M5 17h5l3-7 5 13 3-6h6" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
 							</svg>
-							<span>Acme <strong>Status</strong></span>
+							<span><strong>Status</strong></span>
 						</a>
 						<nav aria-label="Main">
 							<a href="/#subscribe">Subscribe</a>
@@ -41,7 +41,7 @@ view! = |{ children, .. }|
 				<NoHydration>
 					<footer class="bottom">
 						<p>Times are in UTC. Each page is JSON too: <code>curl -H 'accept: application/json' …/</code></p>
-						<p>Acme Status is an example app of <a href="https://roc-solid.github.io/">Roc Solid</a>.</p>
+						<p>This status page is an example app of <a href="https://roc-solid.github.io/">Roc Solid</a>.</p>
 					</footer>
 				</NoHydration>
 			</body>

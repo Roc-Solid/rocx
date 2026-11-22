@@ -15,7 +15,7 @@ import ../../../Ui/Topbar
 ## posting to `/notes/<id>`; with JavaScript the page stays, and reads the note again after each.
 middleware = Middlewares.signed_in
 
-meta = { title: "Note · Acme Notes" }
+meta = { title: "Note · Notes" }
 
 ## A note that isn't there, or isn't yours (its endpoint refuses both alike, so nobody learns which
 ## ids are someone else's), is the app's error page, a 404 (`get!` fails the page).
@@ -32,7 +32,7 @@ Shown := [].{
 		acting = use_submission!(Api.post_notes_id({ id: id }))
 		action = Endpoint.url_of(Api.post_notes_id({ id: id }))
 		<div>
-			<Title>{"${first.note.title} · Acme Notes"}</Title>
+			<Title>{"${first.note.title} · Notes"}</Title>
 			{=Topbar.view({ email: first.email, query: "" })}
 			<main id="main" class="page">
 				<a class="back" href={if (first.note.archived) "/?archived=true" else "/"}>← {if (first.note.archived) "Archive" else "All notes"}</a>

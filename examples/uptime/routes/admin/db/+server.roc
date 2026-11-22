@@ -7,7 +7,7 @@ import ../../../Middlewares
 
 middleware = Middlewares.admin
 
-## /admin/db: packages/admin's pages for Acme Status's tables, where monitors are added, edited and
+## /admin/db: packages/admin's pages for the app's tables, where monitors are added, edited and
 ## deleted (Postgres's checks, in migrations/0001_uptime.sql, refuse what doesn't make sense, and
 ## the form shows why). Only with the admin's session.
 respond! : { request : Server.Request, params : {}, context : {} } => Server.Response
@@ -16,8 +16,8 @@ respond! = |{ request, context, .. }| AdminPage.respond!(request, context, table
 tables : Admin.Config({})
 tables = {
 	mount: "/admin/db",
-	title: "Acme Status",
-	back: { label: "Acme Status admin", href: "/admin" },
+	title: "Status",
+	back: { label: "Status admin", href: "/admin" },
 	access: |_| Edit,
 	tables: [
 		{

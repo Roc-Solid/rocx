@@ -21,7 +21,7 @@ import ../../../Ui/UptimeStrip
 ## (`<LineChart>`), when its checks failed over the last week (`<Heatmap>`, by day and hour), its 90
 ## days, its last checks and its incidents. Its data is `GET /monitors/<id>` as JSON, read again when
 ## the live channel says this monitor was checked or changed.
-meta = { title: "Monitor · Acme Status" }
+meta = { title: "Monitor · Status" }
 
 view! = |{ params }| {
 	id = params.id
@@ -38,7 +38,7 @@ view! = |{ params }| {
 	create_effect!(|| {}, |{}| Endpoint.subscribe!(Api.channel_live({}), heard!))
 	<Errored fallback={|why, _| <Missing why={why} what="monitor" />}>
 		<article class="detail">
-			<Title>{detail!().monitor.name} · Acme Status</Title>
+			<Title>{detail!().monitor.name} · Status</Title>
 			<p class="crumbs"><a href="/">All services</a> <span aria-hidden="true">/</span> {detail!().group_name}</p>
 			<header>
 				<h1>{detail!().monitor.name}</h1>

@@ -23,7 +23,7 @@ import ../Ui/SubscribeForm
 ## data again when it hears one, so a monitor going down shows on every open page within a
 ## second, without a reload. Rows are kept by id, so only what changed is patched, and the
 ## sparklines glide.
-meta = { title: "Acme Status" }
+meta = { title: "Status" }
 
 view! = |_| {
 	read = Api.get_root({})

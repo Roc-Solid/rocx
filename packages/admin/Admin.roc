@@ -67,7 +67,7 @@ Admin := [].{
 	##   listed). `Listed` by default: a table no one listed (one of passwords) stays out.
 	## - `schema`: the tables' schema (`public`); `title`: what its pages call it (`Database`).
 	## - `back`: a link back to the app's own pages, first in every page's sidebar
-	##   (`{ label: "Acme Status", href: "/admin" }`); none unless the app says (`href` "").
+	##   (`{ label: "Status", href: "/admin" }`); none unless the app says (`href` "").
 	Config(context) := {
 		mount : Str,
 		access : context -> Access,

@@ -17,7 +17,7 @@ import ../Ui/Topbar
 ## is a link or a plain form, so it works the same without JavaScript.
 middleware = Middlewares.signed_in
 
-meta = { title: "Acme Notes" }
+meta = { title: "Notes" }
 
 ## The notebook, as `GET /` answers it for this page's query (`?q=`, `?tag=`, `?archived=true`).
 home! : {} => Pages.Home
@@ -27,7 +27,7 @@ view! = |_| {
 	home = home!({})
 	heading = heading_of(home)
 	<div class="notebook">
-		<Title>{"${heading} · Acme Notes"}</Title>
+		<Title>{"${heading} · Notes"}</Title>
 		{=Topbar.view({ email: home.email, query: home.query })}
 		<div class="columns">
 			<nav class="side" aria-label="Notebook">

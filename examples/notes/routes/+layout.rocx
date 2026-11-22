@@ -2,7 +2,7 @@ import pf.Html
 import ../Generated/Styles
 
 ## The document around every page: its head, the stylesheet every component's `<style>` is in
-## (`Generated/Styles`), and Acme Notes' look: its tokens and base styles, below. A page's title
+## (`Generated/Styles`), and the app's look: its tokens and base styles, below. A page's title
 ## comes from its `meta`, or from a `<Title>` it renders (a note's title).
 view! = |{ meta, children, .. }|
 	<>
@@ -23,7 +23,7 @@ view! = |{ meta, children, .. }|
 	</>
 
 <style>
-	/* Acme Notes' look: ink on warm paper, an indigo pen for what you can do, and a yellow
+	/* The app's look: ink on warm paper, an indigo pen for what you can do, and a yellow
 	   highlighter for what a search found. */
 	:global(:root) {
 		--paper: #f7f5ef;

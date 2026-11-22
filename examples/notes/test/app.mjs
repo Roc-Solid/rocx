@@ -51,7 +51,7 @@ export async function started({ env = {} } = {}) {
 
 /** The sign-in link the app last mailed `email`, after the first `after` messages: its path. */
 export async function mailedLink(app, email, after = 0) {
-	const mail = await app.waitForMail({ to: email, subject: "Your sign-in link for Acme Notes" }, { after });
+	const mail = await app.waitForMail({ to: email, subject: "Your sign-in link for Notes" }, { after });
 	const found = links(mail);
 	assert.equal(found.length, 1, JSON.stringify(found));
 	const url = new URL(found[0]);

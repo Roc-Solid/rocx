@@ -13,7 +13,7 @@ import ../Ui/Avatar
 ## who hasn't joined is sent to join first.
 middleware = Middlewares.member
 
-meta = { title: "Acme Board" }
+meta = { title: "Board" }
 
 ## Who is asking, and every board (`GET /`). Its type is said here: in the browser's copy of the
 ## app, an endpoint has none.
@@ -24,7 +24,7 @@ view! = |_| {
 	creating = use_submission!(Api.post_root({}))
 	<div class="home">
 		<header class="top">
-			<span class="brand"><span class="mark" aria-hidden="true">▲</span> Acme Board</span>
+			<span class="brand"><span class="mark" aria-hidden="true">▲</span> Board</span>
 			<a class="me" href="/join?then=/" title="Not you? Pick another name">
 				{=Avatar.view({ person: home!({}).me, label: "" })}
 				<span><span class="hidden">{"You are "}</span>{home!({}).me.name}</span>

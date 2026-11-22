@@ -8,7 +8,7 @@ import ../../../Ui/SearchBox
 ## the server for a plain form's `q`.
 view! = |{ params }|
 	<>
-		<Title>{I18n.t(params.lang, "search.title")} · Acme Journal</Title>
+		<Title>{I18n.t(params.lang, "search.title")} · Journal</Title>
 		{=if I18n.known(params.lang) {
 			<section class="page-search">
 				<h1>{I18n.t(params.lang, "search.title")}</h1>

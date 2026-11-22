@@ -1,4 +1,4 @@
-## Acme Notes: personal notes in Markdown, which AI clients can search, read and write over MCP with
+## Notes: personal notes in Markdown, which AI clients can search, read and write over MCP with
 ## a personal access token. rocx build writes nearly all of the program from routes/
 ## (`Generated/App`: every page and endpoint, the migrations in migrations/, the actors packages/guard
 ## keeps its counts in); this says the rest: what every request goes through first (the default
@@ -16,5 +16,5 @@ program = App.program({
 	context: |_started| {},
 	middleware: Middlewares.default.then(Agents.mount),
 	openapi: Page(Scalar),
-	plugins: [Email.plugin({ from: "Acme Notes <notes@example.com>" })],
+	plugins: [Email.plugin({ from: "Notes <notes@example.com>" })],
 })

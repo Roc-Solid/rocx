@@ -10,17 +10,17 @@ import ../../Generated/Api
 
 ## The page an alert's "Unsubscribe" link opens (`/unsubscribe?token=…`). Opening it changes
 ## nothing (mail scanners open links): its button posts the token, and then it says it is done.
-meta = { title: "Unsubscribe · Acme Status" }
+meta = { title: "Unsubscribe · Status" }
 
 view! = |_| {
 	token = Words.query_value(Router.location!({}).query, "token")
 	unsubscribe = Api.post_unsubscribe({})
 	submission = use_submission!(unsubscribe)
 	<section class="unsubscribe">
-		<Title>Unsubscribe · Acme Status</Title>
+		<Title>Unsubscribe · Status</Title>
 		<h1>Stop the alert emails?</h1>
 		<Show when!={submission.result!().is_err()}>
-			<p>You get an email from Acme Status when an incident opens or closes. You can subscribe again on the status page whenever you like.</p>
+			<p>You get an email from this status page when an incident opens or closes. You can subscribe again on the status page whenever you like.</p>
 			<form method="post" action={Endpoint.url_of(unsubscribe)}>
 				<input type="hidden" name="token" value={token} />
 				<button disabled?={submission.pending!()}>Unsubscribe</button>

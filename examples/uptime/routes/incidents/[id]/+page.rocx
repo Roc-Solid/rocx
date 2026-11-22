@@ -13,7 +13,7 @@ import ../../../Ui/Missing
 ## An incident's page, the one its alert emails link to: its timeline, which grows as the admin
 ## posts updates and closes when its monitor passes a check, read again when the live channel says
 ## its monitor changed.
-meta = { title: "Incident · Acme Status" }
+meta = { title: "Incident · Status" }
 
 view! = |{ params }| {
 	read = Api.get_incidents_id({ id: params.id })
@@ -29,7 +29,7 @@ view! = |{ params }| {
 	create_effect!(|| {}, |{}| Endpoint.subscribe!(Api.channel_live({}), heard!))
 	<Errored fallback={|why, _| <Missing why={why} what="incident" />}>
 		<div class="incident-page">
-			<Title>{incident!().title} · Acme Status</Title>
+			<Title>{incident!().title} · Status</Title>
 			<p class="crumbs">
 				<a href="/">All services</a>
 				<span aria-hidden="true">/</span>

@@ -1,4 +1,4 @@
--- What Acme Status starts with, so its status page looks alive the first time it runs: three
+-- What the app starts with, so its status page looks alive the first time it runs: three
 -- monitors, ninety days of history, one past incident with its updates, and a subscriber whose
 -- alerts the dev mailbox shows (/__rocx/mail). A migration runs once, so none of this is ever added
 -- twice; rows deleted in the admin stay deleted.
@@ -60,10 +60,10 @@ with opened as (
 insert into incident_updates (incident_id, at, state, body, author)
 select opened.id, opened.opened_at + u.after, u.state, u.body, u.author
 from opened, (values
-    (interval '0 minutes', 'investigating', 'Payments API failed 3 checks in a row (expected 200, got 503).', 'Acme Status'),
+    (interval '0 minutes', 'investigating', 'Payments API failed 3 checks in a row (expected 200, got 503).', 'Status'),
     (interval '6 minutes', 'identified', 'A slow database migration is holding a lock on the payments table. We are rolling it back.', 'On-call team'),
     (interval '17 minutes', 'monitoring', 'The migration is rolled back and payments are going through again. We are watching the error rate.', 'On-call team'),
-    (interval '23 minutes', 'resolved', 'Payments API answers again (200 in 96 ms) after 23 minutes.', 'Acme Status')
+    (interval '23 minutes', 'resolved', 'Payments API answers again (200 in 96 ms) after 23 minutes.', 'Status')
 ) as u(after, state, body, author);
 
 insert into subscribers (email) values ('oncall@example.com');

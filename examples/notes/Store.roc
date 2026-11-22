@@ -4,7 +4,7 @@ import pf.Log
 import Note
 import Token
 
-## Acme Notes in Postgres: every query the app makes, in one place (the tables are
+## Notes in Postgres: every query the app makes, in one place (the tables are
 ## migrations/0001_notes.sql). Every query about notes or tokens names the person they are for, in
 ## its `where`: a note that isn't theirs is a note that isn't there, so one person's id in another's
 ## request finds nothing, whichever way it came (a page, the API, MCP).
@@ -271,8 +271,8 @@ one! = |sql, params| {
 ## The note every new notebook starts with.
 welcome : { title : Str, body : Str, tags : List(Str) }
 welcome = {
-	title: "Welcome to Acme Notes",
-	tags: ["acme-notes"],
+	title: "Welcome to Notes",
+	tags: ["notes"],
 	body: Str.join_with(
 		[
 			"Notes are written in **Markdown**: `#` for a heading, `-` for a list, `- [ ]` for a task,",

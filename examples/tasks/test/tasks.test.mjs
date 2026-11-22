@@ -1,4 +1,4 @@
-// Acme Tasks, tested as people use it: over HTTP (pages, plain forms, the runtime's posts, the
+// The app, tested as people use it: over HTTP (pages, plain forms, the runtime's posts, the
 // endpoints as JSON, the database), then in a real browser. The app is built once (rocx build, the
 // browser's wasm, the server), and started against a database of the tests' own, which its
 // migrations make and seed. Each test that changes things makes a list of its own first, so the

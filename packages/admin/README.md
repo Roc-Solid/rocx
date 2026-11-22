@@ -137,7 +137,7 @@ filtering a column the list shows says nothing a visitor can't see. To filter by
 | `include : [Listed, All]` | `Listed` (the default): only those; `All`: every other table of the schema too, with no options, but the platform's own (`rocx_…`) |
 | `schema : Str` | `"public"` |
 | `title : Str` | what its pages call it: `"Database"` |
-| `back : { label : Str, href : Str }` | a link back to the app's own pages, first in every page's sidebar (`{ label: "Acme Status admin", href: "/admin" }`); none by default (`href` `""`) |
+| `back : { label : Str, href : Str }` | a link back to the app's own pages, first in every page's sidebar (`{ label: "Status admin", href: "/admin" }`); none by default (`href` `""`) |
 
 `Admin.Table`: only `name` is needed. Columns are named as the table names them; a name it doesn't
 have is ignored.
@@ -208,7 +208,7 @@ plugins: [
 option does (none by default):
 
 ```roc
-JobsPage.plugin({ guard: Middlewares.admin, back: { label: "Acme Status admin", href: "/admin" } })
+JobsPage.plugin({ guard: Middlewares.admin, back: { label: "Status admin", href: "/admin" } })
 ```
 
 A request at `at` (any method: the page answers GET and POST, and 405 to the rest) passes the

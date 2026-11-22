@@ -1,4 +1,4 @@
-// Acme Notes' MCP server (/mcp) as an AI client talks to it: JSON-RPC over Streamable HTTP, with a
+// The app's MCP server (/mcp) as an AI client talks to it: JSON-RPC over Streamable HTTP, with a
 // personal access token. The handshake, the tools listed with their hints, each tool called, the
 // resources and prompts; refused without a token, writes refused to a read-only one, another
 // person's notes out of reach, and the limit on calls.
@@ -6,7 +6,7 @@ import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { bearer, makeToken, noDatabase, noteIds, signIn, started } from "./app.mjs";
 
-describe("Acme Notes over MCP", { skip: noDatabase }, () => {
+describe("Notes over MCP", { skip: noDatabase }, () => {
 	let running, app, db, ada, writer, reader;
 	before(async () => {
 		// 40 calls a minute for each token here, so the limit's test can reach it.
@@ -40,7 +40,7 @@ describe("Acme Notes over MCP", { skip: noDatabase }, () => {
 	test("initialize: the server, its version, what it offers, and how to use it", async () => {
 		const result = await rpc(writer, "initialize", { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "test", version: "1" } });
 		assert.equal(result.protocolVersion, "2025-11-25");
-		assert.deepEqual(result.serverInfo, { name: "acme-notes", title: "Acme Notes", version: "1.0.0" });
+		assert.deepEqual(result.serverInfo, { name: "acme-notes", title: "Notes", version: "1.0.0" });
 		assert.deepEqual(Object.keys(result.capabilities).sort(), ["prompts", "resources", "tools"]);
 		assert.match(result.instructions, /search_notes/);
 		const initialized = await bearer(app, writer).json("/mcp", { jsonrpc: "2.0", method: "notifications/initialized" }, "POST", { accept: "application/json, text/event-stream" });

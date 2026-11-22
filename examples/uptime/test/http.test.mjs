@@ -1,4 +1,4 @@
-// Acme Status over HTTP, as a browser and as other programs ask it, against a database of its own:
+// The app over HTTP, as a browser and as other programs ask it, against a database of its own:
 // the status page and its JSON, monitors' and incidents' pages, subscribing, the admin's sign-in
 // and actions, and, through packages/jobs, a fake target driven up, down and up again: checks
 // stored, an incident opened after three failures and closed on recovery, the alert mails, the
@@ -164,7 +164,7 @@ test("the admin: sign-in required, a wrong password refused and never sent back,
 	assert.equal(jobs.status, 200);
 	assert.match(jobs.text, /check/);
 	// packages/admin's pages lead back to the app's own admin, first in their sidebars (`back`).
-	for (const html of [tables.text, jobs.text]) assert.match(html, /<nav class="side-nav" aria-label="[^"]+"><a class="back" href="\/admin">.*?<span class="label">Acme Status admin<\/span><\/a>/);
+	for (const html of [tables.text, jobs.text]) assert.match(html, /<nav class="side-nav" aria-label="[^"]+"><a class="back" href="\/admin">.*?<span class="label">Status admin<\/span><\/a>/);
 
 	const out = await person.post("/admin/sign-out", {});
 	assert.equal(out.status, 303);
@@ -195,10 +195,10 @@ test("up, down three times, up: checks stored, an incident opened and closed, ma
 	const open = down.overview.incidents.find((incident) => incident.open);
 	assert.equal(open.title, "Acme Widgets is down");
 	assert.equal(open.updates[0].body, "Acme Widgets failed 3 checks in a row (expected 200, got 500).");
-	const opened = await app.waitForMail({ to: "ada@example.com", subject: "[Acme Status] Acme Widgets is down" }, { after: mailed });
+	const opened = await app.waitForMail({ to: "ada@example.com", subject: "[Status] Acme Widgets is down" }, { after: mailed });
 	assert.match(opened.text, new RegExp(`${app.url}/incidents/${open.id}`));
 	assert.match(opened.text, /unsubscribe\?token=/);
-	await app.waitForMail({ to: "oncall@example.com", subject: "[Acme Status] Acme Widgets is down" }, { after: mailed });
+	await app.waitForMail({ to: "oncall@example.com", subject: "[Status] Acme Widgets is down" }, { after: mailed });
 	const page = await app.client().get("/");
 	page.dom.getByRole("heading", { level: 2, name: "Happening now" });
 	page.dom.getByRole("heading", { level: 1, name: "Partial outage" });
@@ -215,7 +215,7 @@ test("up, down three times, up: checks stored, an incident opened and closed, ma
 	const closed = up.overview.incidents.find((incident) => incident.id === open.id);
 	assert.equal(closed.open, false);
 	assert.match(closed.updates[0].body, /^Acme Widgets answers again \(200 in \d+ ms\) after 1 minute\.$/);
-	const resolved = await app.waitForMail({ to: "ada@example.com", subject: "[Acme Status] Resolved: Acme Widgets is back" }, { after: mailed });
+	const resolved = await app.waitForMail({ to: "ada@example.com", subject: "[Status] Resolved: Acme Widgets is back" }, { after: mailed });
 	assert.match(resolved.html, /Acme Widgets is back/);
 	const alerts = (await app.mail()).slice(mailed).filter((mail) => mail.to === "ada@example.com");
 	assert.equal(alerts.length, 2);
@@ -241,14 +241,14 @@ test("an admin's update on an incident, and a resolved one that closes it and ma
 	const refused = await person.submit(`/admin/incidents/${incident}`, { state: "fixed", body: "?" });
 	assert.equal(refused.status, 400);
 	let read = await app.client().read(`/incidents/${incident}`);
-	assert.deepEqual(read.updates.map((update) => [update.state, update.author]), [["identified", "Acme Status team"], ["investigating", "Acme Status"]]);
+	assert.deepEqual(read.updates.map((update) => [update.state, update.author]), [["identified", "Status team"], ["investigating", "Status"]]);
 
 	const mailed = (await app.mail()).length;
 	assert.equal((await person.submit(`/admin/incidents/${incident}`, { state: "resolved", body: "The index is back." })).status, 200);
 	read = await app.client().read(`/incidents/${incident}`);
 	assert.equal(read.open, false);
 	await db.settleJobs();
-	await app.waitForMail({ to: "oncall@example.com", subject: "[Acme Status] Resolved: Acme Search is back" }, { after: mailed });
+	await app.waitForMail({ to: "oncall@example.com", subject: "[Status] Resolved: Acme Search is back" }, { after: mailed });
 	assert.equal((await person.submit(`/admin/incidents/${incident}`, { state: "monitoring", body: "Again?" })).status, 409);
 	assert.equal((await app.client().submit(`/admin/incidents/${incident}`, { state: "monitoring", body: "Me too" })).status, 401);
 });

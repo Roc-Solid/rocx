@@ -117,7 +117,7 @@ Board := [].{
 			set_over!,
 		}
 		<section class="board" aria-labelledby="list-name">
-			<Title>{sheet!().name} · Acme Tasks</Title>
+			<Title>{sheet!().name} · Tasks</Title>
 			<header>
 				<h1 id="list-name">{sheet!().name}</h1>
 				<p class="status" aria-live="polite">

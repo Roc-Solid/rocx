@@ -21,7 +21,7 @@ import Look
 ##     Job.plugin({ jobs: App.jobs }),
 ##     JobsPage.plugin({ at: "/admin/jobs", guard: Middlewares.admin }),   # `guard` has no default
 ##     # or, with a link back to the app's own pages, first in its sidebar:
-##     JobsPage.plugin({ guard: Middlewares.admin, back: { label: "Acme Status", href: "/admin" } }),
+##     JobsPage.plugin({ guard: Middlewares.admin, back: { label: "Status", href: "/admin" } }),
 ## ]
 ## ```
 ##
@@ -43,7 +43,7 @@ JobsPage := [].{
 	## which runs after the app's own and may refuse, or send a stranger to sign in. What it hands on
 	## isn't used. `guard` has no default: a jobs page is never public because an option was left
 	## out. `back`: a link back to the app's own pages, first in the sidebar
-	## (`{ label: "Acme Status", href: "/admin" }`); none unless the app says (`href` "").
+	## (`{ label: "Status", href: "/admin" }`); none unless the app says (`href` "").
 	Options(ctx, out) := { at : Str ?? "/admin/jobs", guard : Middleware(ctx, out), back : { label : Str, href : Str } ?? { label: "", href: "" } }
 
 	## Where the page an app mounts itself is (`mount`), and its link back to the app (`back`, as
@@ -651,5 +651,5 @@ expect described("0 0 1 * *") == "monthly, on day 1, at 00:00"
 expect described("0 3 * 1 *") == ""
 
 # The link back to the app, first in the sidebar, when the app gives one.
-expect sidebar("/admin/jobs", { label: "Acme Status", href: "/admin" }, [], [], "", "").contains("<nav class=\"side-nav\" aria-label=\"Jobs\"><a class=\"back\" href=\"/admin\">")
+expect sidebar("/admin/jobs", { label: "Status", href: "/admin" }, [], [], "", "").contains("<nav class=\"side-nav\" aria-label=\"Jobs\"><a class=\"back\" href=\"/admin\">")
 expect !sidebar("/admin/jobs", { label: "", href: "" }, [], [], "", "").contains("class=\"back\"")

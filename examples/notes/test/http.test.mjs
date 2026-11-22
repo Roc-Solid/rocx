@@ -1,4 +1,4 @@
-// Acme Notes over HTTP, as a browser without JavaScript, as the page's runtime, and as a script with a
+// Notes over HTTP, as a browser without JavaScript, as the page's runtime, and as a script with a
 // token ask it: signing in by the mailed link (once, and not after it expires), sessions, the seed,
 // notes through the pages' forms and the JSON API, search, tokens (shown once, kept as a hash,
 // read-only, revoked), one person never reaching another's notes, and the limit on sign-in mail.
@@ -11,7 +11,7 @@ import { bearer, dir, mailedLink, makeToken, noDatabase, noteIds, signIn, starte
 
 const sha256 = (text) => createHash("sha256").update(text).digest("hex");
 
-describe("Acme Notes over HTTP", { skip: noDatabase }, () => {
+describe("Notes over HTTP", { skip: noDatabase }, () => {
 	let running, app, db, ada, bo;
 	before(async () => {
 		// A link lasts 3 s here, rather than 15 minutes, so a test can wait for one to expire.
@@ -69,7 +69,7 @@ describe("Acme Notes over HTTP", { skip: noDatabase }, () => {
 
 		// Someone new starts with a note of welcome.
 		const home = await visitor.read("/");
-		assert.deepEqual(home.notes.map((note) => note.title), ["Welcome to Acme Notes"]);
+		assert.deepEqual(home.notes.map((note) => note.title), ["Welcome to Notes"]);
 
 		// Nothing in the server keeps the token itself: Kv has its hash.
 		assert.equal((await db.sql`select count(*)::int as n from people where email = 'cyd@example.com'`)[0].n, 1);

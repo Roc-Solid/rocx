@@ -9,7 +9,7 @@ import ../Ui/NotFound
 view! = |{ status, problem }| {
 	lang = I18n.of_path(Router.location!({}).path)
 	<>
-		<Title>{status.to_str()} · Acme Journal</Title>
+		<Title>{status.to_str()} · Journal</Title>
 		<NotFound lang={lang} status={status} problem={problem} />
 	</>
 }

@@ -1,4 +1,4 @@
-# Acme Notes
+# Notes
 
 Personal notes in Markdown, in Roc Solid, that AI agents can use too. Each person signs in with a
 link mailed to them, writes notes with a live preview, tags them, pins and archives them, and finds
@@ -65,8 +65,8 @@ The toolchain once (`just setup`), and the platforms' hosts (`just test` builds 
 repository's root, with a Postgres (`just db`):
 
 ```sh
-docker exec rocx-postgres createdb -U rocx acme_notes
-export DATABASE_URL=postgres://rocx:rocx@127.0.0.1:55432/acme_notes
+docker exec rocx-postgres createdb -U rocx notes
+export DATABASE_URL=postgres://rocx:rocx@127.0.0.1:55432/notes
 export NOTES_SECRET="$(openssl rand -base64 32)"   # signs the session cookies
 
 bin/rocx build examples/notes --client examples/notes/build/client
@@ -88,7 +88,7 @@ as it starts.
 | `NOTES_LINK_TTL_MS` | how long a sign-in link works (900000: 15 minutes) |
 | `NOTES_MCP_PER_MINUTE` | MCP calls a minute for each token (120) |
 
-Mail is from `Acme Notes <notes@example.com>` (`Email.plugin`'s `from`, in `main.roc`).
+Mail is from `Notes <notes@example.com>` (`Email.plugin`'s `from`, in `main.roc`).
 
 ## Connect an AI client
 
@@ -193,7 +193,7 @@ index and got a prompt; with a wrong token it got 401.
 
 - **No passwords, and no sign-up.** Anyone who can read an address's mail may sign in as it, and an
   address new to the app gets a notebook. The answer to "mail me a link" is the same whether the
-  address has notes or not, so the form tells nobody who uses Acme Notes.
+  address has notes or not, so the form tells nobody who uses the app.
 - **A link is a page with a button**, not a sign-in by itself: mail scanners follow links.
 - **Links live in `Kv`** for 15 minutes, by their hash, and are taken once (`Kv.take!`). A restart
   forgets those on their way, which only means asking again. Sessions are signed cookies (30 days);

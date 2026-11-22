@@ -1,7 +1,7 @@
 import otel.Metric
 import Otel
 
-## What Acme Status measures with packages/otel, sent to any OpenTelemetry collector when
+## What the app measures with packages/otel, sent to any OpenTelemetry collector when
 ## `OTEL_EXPORTER_OTLP_ENDPOINT` is set (and nothing at all when it isn't):
 ##
 ## - `uptime.check.duration`, a histogram of each check's latency in seconds, by monitor and outcome;

@@ -14,7 +14,7 @@ view! = |{ params }|
 	<>
 		<NoHydration>
 			{=match Posts.find(params.lang, params.slug) {
-				Ok(entry) => <><Title>{entry.post.title} · Acme Journal</Title><Article entry={entry} /></>
+				Ok(entry) => <><Title>{entry.post.title} · Journal</Title><Article entry={entry} /></>
 				Err(NotFound) => <NotFound lang={I18n.of_path("/${params.lang}")} status={404} problem="" />
 			}}
 		</NoHydration>

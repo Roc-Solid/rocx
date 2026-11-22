@@ -22,7 +22,7 @@ respond! = |{ request, params, .. }| {
 				{ title: post.title, url: "${origin}${Posts.url(entry)}", date: post.date, author: Authors.name_of(post.author), tags: post.tags, summary: post.summary, html: Posts.html(entry) }
 			},
 		)
-		feed = Xml.atom({ lang, title: "Acme Journal", subtitle: I18n.t(lang, "site.tagline"), self: "${origin}/${lang}/feed.xml", home: "${origin}/${lang}", items })
+		feed = Xml.atom({ lang, title: "Journal", subtitle: I18n.t(lang, "site.tagline"), self: "${origin}/${lang}/feed.xml", home: "${origin}/${lang}", items })
 		Server.response(200, [{ name: "content-type", value: "application/atom+xml; charset=utf-8" }], feed)
 	}
 }

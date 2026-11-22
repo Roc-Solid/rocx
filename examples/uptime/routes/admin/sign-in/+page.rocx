@@ -11,14 +11,14 @@ import ../../../Generated/Api
 ## The admin's sign-in: the password the server was started with (`ADMIN_PASSWORD`). The admin's
 ## pages send a browser here, with where it was going (`?next=/admin/jobs`), and it goes on there.
 ## A refusal is the submission's error, with the runtime or without it (a flash).
-meta = { title: "Sign in · Acme Status" }
+meta = { title: "Sign in · Status" }
 
 view! = |_| {
 	next = Words.query_value(Router.location!({}).query, "next")
 	sign_in = Api.post_admin_sign_in({})
 	submission = use_submission!(sign_in)
 	<section class="sign-in">
-		<Title>Sign in · Acme Status</Title>
+		<Title>Sign in · Status</Title>
 		<h1>Sign in to the admin</h1>
 		<form method="post" action={Endpoint.url_of(sign_in)}>
 			<label for="password">Admin password</label>

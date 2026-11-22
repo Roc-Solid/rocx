@@ -1,4 +1,4 @@
-# tasks: Acme Tasks
+# Tasks
 
 A small team's task lists, in Roc Solid. Each list has tasks; a task has a title, notes, maybe a
 day it is due and someone to do it, and is done or not. You add, edit, tick off, reorder and delete
@@ -63,12 +63,12 @@ From the repository's root, with the toolchain (`just setup`) and a Postgres (`j
 prints its URL):
 
 ```sh
-docker exec rocx-postgres createdb -U rocx acme_tasks   # a database of its own
+docker exec rocx-postgres createdb -U rocx tasks   # a database of its own
 bin/rocx build examples/tasks --client examples/tasks/build/client   # bin/rocx: any repo script builds it
 .tools/roc-active build --target=wasm32 --opt=size --output=examples/tasks/build/client/static/rocx/app.wasm examples/tasks/build/client/main.roc
 node server/build.mjs examples/tasks/main.roc examples/tasks/build/tasks
 examples/tasks/build/tasks --port 18110 --static examples/tasks/build/client/static \
-  --database-url postgres://rocx:rocx@127.0.0.1:55432/acme_tasks
+  --database-url postgres://rocx:rocx@127.0.0.1:55432/tasks
 ```
 
 Then http://localhost:18110. The server runs the migrations as it starts, so the first start makes

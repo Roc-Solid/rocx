@@ -1,4 +1,4 @@
-// Acme Board over HTTP, as a browser without JavaScript and as the page's runtime ask it: joining,
+// Board over HTTP, as a browser without JavaScript and as the page's runtime ask it: joining,
 // the seeded board, moves and their ranks (concurrent ones too), the edit lease, the board's
 // channel, the rate limit on writes, and the forms.
 import { after, before, describe, test } from "node:test";
@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { until } from "../../../packages/testing/index.mjs";
 import { as, dir, ids, noDatabase, started, titles } from "./app.mjs";
 
-describe("Acme Board over HTTP", { skip: noDatabase }, () => {
+describe("Board over HTTP", { skip: noDatabase }, () => {
 	let running, app, db, seeded;
 	before(async () => {
 		// A lease runs out after 3 s here, rather than 30, so a test can wait for it.

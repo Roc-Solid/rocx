@@ -15,7 +15,7 @@ import ../../Ui/Topbar
 ## connect a client to the MCP server, and signing out everywhere. Every button is a plain form.
 middleware = Middlewares.signed_in
 
-meta = { title: "Settings · Acme Notes" }
+meta = { title: "Settings · Notes" }
 
 ## Your tokens and the MCP server's address (`GET /settings`).
 settings! : {} => Pages.Settings
@@ -39,7 +39,7 @@ view! = |_| {
 					{|made!|
 						<div class="made" role="status">
 							<h3>Copy “{made!().listed.name}” now</h3>
-							<p>This is the only time it is shown: Acme Notes keeps only a hash of it.</p>
+							<p>This is the only time it is shown: the app keeps only a hash of it.</p>
 							<label for="new-token" class="visually-hidden">Your new token</label>
 							<input id="new-token" class="token" readonly value={made!().token} />
 							<p>Connect Claude Code with it:</p>

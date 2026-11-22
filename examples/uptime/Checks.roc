@@ -54,7 +54,7 @@ Checks := [].{
 			url,
 			{
 				method: method(monitor.method),
-				headers: [("user-agent", "AcmeStatus/1.0 (uptime check)")],
+				headers: [("user-agent", "Status/1.0 (uptime check)")],
 				timeout_ms: monitor.timeout_ms,
 				max_bytes: Checks.max_bytes,
 			},

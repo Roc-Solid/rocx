@@ -32,7 +32,7 @@ import ../../../Ui/Shared
 ## - Who is here, and which card each has open, is the board's presence room (packages/presence).
 middleware = Middlewares.member
 
-meta = { title: "Board · Acme Board" }
+meta = { title: "Board" }
 
 view! = |{ params }| {
 	board = params.board
@@ -91,9 +91,9 @@ view! = |{ params }| {
 	}
 	<Errored fallback={|why, _| <Missing why={why} />}>
 		<div class="page">
-			<Title>{board!().name} · Acme Board</Title>
+			<Title>{board!().name} · Board</Title>
 			<header class="top">
-				<a class="brand" href="/"><span class="mark" aria-hidden="true">▲</span> Acme Board</a>
+				<a class="brand" href="/"><span class="mark" aria-hidden="true">▲</span> Board</a>
 				<h1>{board!().name}</h1>
 				<div class="people">
 					<span class="live" class:on={live!()} role="status">{if (live!()) "Live" else "Connecting…"}</span>

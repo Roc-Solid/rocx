@@ -1,4 +1,4 @@
--- Acme Tasks' tables. The server applies each file in migrations/ once, in the order of their
+-- The app's tables. The server applies each file in migrations/ once, in the order of their
 -- names, when it starts (rocx build embeds them; the server records each in rocx_migrations).
 
 -- The people on the team. There is no sign-in: you say which of them you are (/me), and a cookie

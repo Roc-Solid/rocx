@@ -1,4 +1,4 @@
-## Acme Tasks: a small team's task lists, on Roc Solid. The README says what it shows, and where.
+## Tasks: a small team's task lists, on Roc Solid. The README says what it shows, and where.
 ##
 ## This is the server's program. rocx build writes nearly all of it from the app's routes
 ## (`routes/`: pages, layouts and endpoints) into `Generated/App`, with the migrations

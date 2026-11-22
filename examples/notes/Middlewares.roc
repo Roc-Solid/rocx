@@ -140,6 +140,6 @@ unauthorized : Server.Response
 unauthorized =
 	Server.response(
 		401,
-		[{ name: "www-authenticate", value: "Bearer realm=\"Acme Notes\"" }, { name: "content-type", value: "text/plain; charset=utf-8" }],
+		[{ name: "www-authenticate", value: "Bearer realm=\"Notes\"" }, { name: "content-type", value: "text/plain; charset=utf-8" }],
 		"Unauthorized: send a personal access token (Authorization: Bearer acme_pat_…). Make one in Settings.",
 	)

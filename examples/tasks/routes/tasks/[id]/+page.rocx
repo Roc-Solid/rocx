@@ -36,7 +36,7 @@ Editor := [].{
 			[("title", task.title), ("notes", task.notes), ("due", task.due), ("assignee", task.assignee)].concat(ticked),
 		)
 		<article class="task">
-			<Title>{task.title} · Acme Tasks</Title>
+			<Title>{task.title} · Tasks</Title>
 			<p class="crumb"><a href={Paths.lists_id({ id: list.id })}>← {list.name}</a></p>
 			<h1>Edit task</h1>
 			<Show when!={live.sent!() and !live.all_issues!().is_empty()}>

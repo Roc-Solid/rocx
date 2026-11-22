@@ -12,7 +12,7 @@ import ../../Ui/Avatar
 ## Who you are: a name and a colour, kept in a cookie (no passwords). Pick someone who has joined
 ## already, or type a new name. A plain form: it works before the page's JavaScript has loaded, and
 ## without it. `?then=` says where to go after.
-meta = { title: "Join · Acme Board" }
+meta = { title: "Join · Board" }
 
 ## Everyone who has joined (`GET /join`). Its type is said here: in the browser's copy of the app,
 ## an endpoint has none.
@@ -23,7 +23,7 @@ view! = |_| {
 	then = Board.after_join(then_in(Router.location!({}).query))
 	joining = use_submission!(Api.post_join({}))
 	<main class="join">
-		<h1><span class="mark" aria-hidden="true">▲</span> Acme Board</h1>
+		<h1><span class="mark" aria-hidden="true">▲</span> Board</h1>
 		<p class="lead">Who are you? Pick a name and a colour: that's you on every board, for everyone else to see.</p>
 		<Show when!={!people!({}).is_empty()}>
 			<section class="quick" aria-labelledby="quick-title">

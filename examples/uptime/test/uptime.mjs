@@ -1,4 +1,4 @@
-// What Acme Status's tests share: the app built one test file at a time (rocx build writes
+// What the app's tests share: the app built one test file at a time (rocx build writes
 // Generated/ in the app's own folder, so two files building at once would race: a lock directory
 // takes turns), its server started on a database of its own with its static files and an admin
 // password, and a fake target: an HTTP server that answers 200 or 500 as a test says, and doubles
@@ -9,13 +9,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildForTests, startServer, testDatabase } from "../../../packages/testing/index.mjs";
 
-/** Acme Status's folder. */
+/** The app's folder. */
 export const dir = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** The admin password the tests start the server with. */
 export const password = "correct horse battery staple";
 
-/** Acme Status, built (`rocx build`, the browser's wasm, the server): `{ server, statics }`. */
+/** The app, built (`rocx build`, the browser's wasm, the server): `{ server, statics }`. */
 export async function build() {
 	const lock = join(dir, "build", "building.lock");
 	mkdirSync(join(dir, "build"), { recursive: true });

@@ -1,4 +1,4 @@
--- Acme Board's tables. Ranks (Rank.roc) sort byte by byte, so they are text in the "C" collation,
+-- Board's tables. Ranks (Rank.roc) sort byte by byte, so they are text in the "C" collation,
 -- whatever the database's own is.
 
 create table people (

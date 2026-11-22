@@ -63,7 +63,7 @@ async function pressAlt(tab, key) {
 	await tab.page.actions([{ type: "key", id: "keyboard", actions: [{ type: "keyDown", value: "\uE00A" }, { type: "keyDown", value }, { type: "keyUp", value }, { type: "keyUp", value: "\uE00A" }] }]);
 }
 
-describe(`Acme Board in two browsers (Ada's: ${engine})`, { skip: noDatabase || noChrome }, () => {
+describe(`Board in two browsers (Ada's: ${engine})`, { skip: noDatabase || noChrome }, () => {
 	let running, seeded, browsers, people, open, ada, bo;
 	before(async () => {
 		running = await started();

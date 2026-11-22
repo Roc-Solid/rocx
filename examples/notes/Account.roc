@@ -37,9 +37,9 @@ Account := [].{
 		minutes = (ttl_ms // 60_000).to_str()
 		Email.send!({
 			to: email,
-			subject: "Your sign-in link for Acme Notes",
-			text: "Open this link to sign in to Acme Notes:\n\n${url}\n\nIt works once, for the next ${minutes} minutes. If you didn't ask for it, ignore this email: nobody can sign in without the link.\n",
-			html: "<p>Open this link to sign in to Acme Notes:</p><p><a href=\"${url}\">Sign in to Acme Notes</a></p><p>It works once, for the next ${minutes} minutes. If you didn't ask for it, ignore this email: nobody can sign in without the link.</p>",
+			subject: "Your sign-in link for Notes",
+			text: "Open this link to sign in to Notes:\n\n${url}\n\nIt works once, for the next ${minutes} minutes. If you didn't ask for it, ignore this email: nobody can sign in without the link.\n",
+			html: "<p>Open this link to sign in to Notes:</p><p><a href=\"${url}\">Sign in to Notes</a></p><p>It works once, for the next ${minutes} minutes. If you didn't ask for it, ignore this email: nobody can sign in without the link.</p>",
 		})
 	}
 

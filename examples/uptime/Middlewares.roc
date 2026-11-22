@@ -3,7 +3,7 @@ import pf.Server
 import Otel
 import Session
 
-## What runs around Acme Status's answers. `default` runs around every request (main.roc names it);
+## What runs around the app's answers. `default` runs around every request (main.roc names it);
 ## a route file names its own (`middleware = Middlewares.admin`), which runs inside it.
 Middlewares := [].{
 

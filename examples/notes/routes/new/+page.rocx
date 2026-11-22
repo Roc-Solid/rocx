@@ -12,7 +12,7 @@ import ../../Ui/Topbar
 ## A new note: the editor, in a form that posts to `/new`, which saves it and goes on to it.
 middleware = Middlewares.signed_in
 
-meta = { title: "New note · Acme Notes" }
+meta = { title: "New note · Notes" }
 
 blank! : {} => Pages.Blank
 blank! = |{}| Endpoint.get!(Api.get_new({}))

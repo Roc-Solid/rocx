@@ -3,7 +3,7 @@ import pf.Endpoint
 import pf.Log
 import Incident
 
-## Acme Status in Postgres: every query the app makes, in one place. The tables are
+## The app in Postgres: every query it makes, in one place. The tables are
 ## migrations/0001_uptime.sql. A row comes back as the record its query is annotated with, by column
 ## name (`Db.all!`); a column that may be null is a `Db.Nullable`. Moments are read as text in UTC
 ## (the migration's `iso()`), days as `2026-11-22` (`utc_day()`).
@@ -46,15 +46,15 @@ Store := [].{
 			NotFound => NotFound
 			DbErr(why) => {
 				Log.error!("uptime: a query failed", { error: why })
-				Status(500, "Acme Status couldn't read or save that just now; try again.")
+				Status(500, "Couldn't read or save that just now; try again.")
 			}
 			BadRow(why) => {
 				Log.error!("uptime: a row didn't read", { error: why })
-				Status(500, "Acme Status couldn't read or save that just now; try again.")
+				Status(500, "Couldn't read or save that just now; try again.")
 			}
 			JobErr(why) => {
 				Log.error!("uptime: a job wasn't queued", { error: why })
-				Status(500, "Acme Status couldn't read or save that just now; try again.")
+				Status(500, "Couldn't read or save that just now; try again.")
 			}
 		}
 

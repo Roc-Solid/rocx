@@ -1,4 +1,4 @@
-## Acme Journal: a small publication in two languages, its posts Markdown files in content/. rocx
+## Journal: a small publication in two languages, its posts Markdown files in content/. rocx
 ## build writes nearly all of the program from routes/ (`Generated/App`: every page and endpoint,
 ## behind the default middleware); this says what only the journal can: that its middleware is
 ## `Middlewares.default` (who the reader is, guard's headers, the feed's and sitemap's names), and

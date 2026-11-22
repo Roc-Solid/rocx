@@ -6,6 +6,6 @@ import ../../../../Ui/Listings
 ## A tag's posts (`/en/tags/bread`), newest first.
 view! = |{ params }|
 	<>
-		<Title>{I18n.intl(params.lang).t("tag.title", [("tag", Text(params.tag))])} · Acme Journal</Title>
+		<Title>{I18n.intl(params.lang).t("tag.title", [("tag", Text(params.tag))])} · Journal</Title>
 		<NoHydration>{=Listings.tag(params.lang, params.tag)}</NoHydration>
 	</>

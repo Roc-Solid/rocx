@@ -1,4 +1,4 @@
--- Acme Notes' tables: the people who sign in (by email: there are no passwords), their notes, and
+-- The app's tables: the people who sign in (by email: there are no passwords), their notes, and
 -- the personal access tokens their AI clients use. Every note is one person's, and every query the
 -- app makes names whose (Store.roc).
 

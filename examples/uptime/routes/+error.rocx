@@ -1,6 +1,6 @@
 import pf.Html
 
-meta = { title: "Not here · Acme Status" }
+meta = { title: "Not here · Status" }
 
 ## Where nothing is: a 404 (or the error that stopped a page), with the way back to the status.
 view! = |{ status, problem }|

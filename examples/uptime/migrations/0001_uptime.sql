@@ -1,4 +1,4 @@
--- Acme Status's tables. The server applies each file in migrations/ once, in the order of their
+-- The app's tables. The server applies each file in migrations/ once, in the order of their
 -- names, when it starts (rocx build embeds them in the program). Checks a type can't say are
 -- Postgres's, so the admin (packages/admin), which edits these rows, shows its reason when a form
 -- breaks one.
@@ -33,7 +33,7 @@ create table monitors (
     created_at timestamptz not null default now()
 );
 
-comment on table monitors is 'What Acme Status watches. A URL that starts with / is this app.';
+comment on table monitors is 'What the app watches. A URL that starts with / is this app.';
 
 -- Every check, as it went: kept for a week, then only in `daily`.
 create table checks (
@@ -85,7 +85,7 @@ create table incident_updates (
     at timestamptz not null default now(),
     state text not null check (state in ('investigating', 'identified', 'monitoring', 'resolved')),
     body text not null check (length(trim(body)) between 1 and 2000),
-    author text not null default 'Acme Status'
+    author text not null default 'Status'
 );
 
 create index incident_updates_by_incident on incident_updates (incident_id, at);

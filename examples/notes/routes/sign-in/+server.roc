@@ -10,8 +10,7 @@ middleware = Middlewares.mail_limit
 
 ## Mails a sign-in link to `email`; signing in with it goes on to `then` (a path of this site, or
 ## `/`). The answer says where it went. Anyone may sign in, and someone new gets an empty notebook,
-## so the answer is the same whether the address has one already: it tells nobody who uses Acme
-## Notes.
+## so the answer is the same whether the address has one already: it tells nobody who uses the app.
 post! : { request : Server.Request, params : {}, context : {}, body : { email : Str, then : Str } } => Try({ sent : Str }, Endpoint.Refusal)
 post! = |{ body, .. }|
 	match Address.of(body.email) {

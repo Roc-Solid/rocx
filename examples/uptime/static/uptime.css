@@ -1,4 +1,4 @@
-/* Acme Status's tokens and base: colours, type, space and radii as custom properties (light, and
+/* The app's tokens and base: colours, type, space and radii as custom properties (light, and
    dark when the system is), and the elements' defaults. Classes are the components' own, in their
    scoped <style>s. */
 :root {

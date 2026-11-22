@@ -1,4 +1,4 @@
-# Acme Board
+# Board
 
 A live kanban board for a small team, in Roc Solid. Boards have columns, columns have cards, and
 several people work on one board at once: each sees the others' changes as they happen.
@@ -71,8 +71,8 @@ The toolchain once (`just setup`), and the platforms' hosts (`just test` builds 
 repository's root, with a Postgres (`just db`):
 
 ```sh
-docker exec rocx-postgres createdb -U rocx acme_board
-export DATABASE_URL=postgres://rocx:rocx@127.0.0.1:55432/acme_board
+docker exec rocx-postgres createdb -U rocx board
+export DATABASE_URL=postgres://rocx:rocx@127.0.0.1:55432/board
 
 bin/rocx build examples/board --client examples/board/build/client
 .tools/roc-active build --target=wasm32 --opt=size --output=examples/board/build/client/static/rocx/app.wasm examples/board/build/client/main.roc

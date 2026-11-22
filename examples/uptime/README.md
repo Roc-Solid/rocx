@@ -1,4 +1,4 @@
-# uptime: Acme Status
+# Status
 
 An uptime monitor and its public status page. An admin adds monitors (a URL, a method, the status
 it should answer, how often to ask, a group); jobs ask each one on time and store how it went;
@@ -32,7 +32,7 @@ packages/charts, and a channel for the live page.
   incidents), the jobs page (`/admin/jobs`) and the dev mailbox (`/__rocx/mail`).
 - **Try it:** open `/` in one window and `/admin` in another, and press "Break it". Within about a
   minute and a half (three checks, 30 seconds apart) the status page turns red by itself, shows
-  "Happening now" with the incident, and the mailbox has "[Acme Status] Payments API is down" for
+  "Happening now" with the incident, and the mailbox has "[Status] Payments API is down" for
   `oncall@example.com`. Post an update from the admin, and it shows on the status page. Press "Mend
   it": the next check closes the incident, the page turns green, and the mailbox has "Resolved:
   Payments API is back".
@@ -96,12 +96,12 @@ From the repository's root, with the toolchain (`just setup`) and a Postgres (`j
 prints its URL):
 
 ```sh
-docker exec rocx-postgres createdb -U rocx acme_status   # a database of its own
+docker exec rocx-postgres createdb -U rocx uptime   # a database of its own
 bin/rocx build examples/uptime --client examples/uptime/build/client
 .tools/roc-active build --target=wasm32 --opt=size --output=examples/uptime/build/client/static/rocx/app.wasm examples/uptime/build/client/main.roc
 node server/build.mjs examples/uptime/main.roc examples/uptime/build/uptime
 ADMIN_PASSWORD=acme-demo examples/uptime/build/uptime --port 18130 --host 127.0.0.1 \
-  --database-url postgres://rocx:rocx@127.0.0.1:55432/acme_status \
+  --database-url postgres://rocx:rocx@127.0.0.1:55432/uptime \
   --static examples/uptime/build/client/static --static examples/uptime/static --dev
 ```
 
@@ -244,7 +244,7 @@ Every gap met, and what the app does about each:
 9. **Fixed: packages/admin's pages had no way back to the app's own admin.** Their sidebar listed
    the tables and nothing else, so the way back to `/admin` was the browser's. Both the tables
    admin (`Admin.Config`) and the jobs page (`JobsPage.plugin`) take `back` now, a link first in
-   the sidebar: here `{ label: "Acme Status admin", href: "/admin" }` (the HTTP test finds it on
+   the sidebar: here `{ label: "Status admin", href: "/admin" }` (the HTTP test finds it on
    both).
 10. **The Roc and rocx gotchas met:**
     - A one-field record written short is a block: `UptimeStrip.view({ days })` passes the list

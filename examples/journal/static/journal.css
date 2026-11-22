@@ -1,4 +1,4 @@
-/* Acme Journal: the tokens every component's scoped <style> reads (colours, type, space), light and
+/* Journal: the tokens every component's scoped <style> reads (colours, type, space), light and
    dark, and the base for elements alone. Everything with a class is in a component's own <style>. */
 
 :root {

@@ -3,7 +3,7 @@ import pf.Endpoint
 import forms.Date
 import Tasks
 
-## Acme Tasks' data in Postgres (the tables are `migrations/0001_tables.sql`). Only the endpoints
+## The app's data in Postgres (the tables are `migrations/0001_tables.sql`). Only the endpoints
 ## (`routes/**/+server.roc`) use it: it imports `pf.Db`, which only the server has, so no page or
 ## component may import it (`rocx build --client` warns if one does).
 Store := [].{

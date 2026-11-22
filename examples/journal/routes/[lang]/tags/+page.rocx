@@ -6,6 +6,6 @@ import ../../../Ui/Listings
 ## Every tag a language's posts have, the most used first (`/en/tags`).
 view! = |{ params }|
 	<>
-		<Title>{I18n.t(params.lang, "tags.title")} · Acme Journal</Title>
+		<Title>{I18n.t(params.lang, "tags.title")} · Journal</Title>
 		<NoHydration>{=Listings.tags(params.lang)}</NoHydration>
 	</>

@@ -98,21 +98,21 @@ runs echo under bombardier too).
 
 - [`hello`](examples/hello): the app Getting started makes, a page with a button that counts and
   `GET /hello`; its `main.roc` is the one `rocx dev` writes.
-- [`tasks`](examples/tasks): Acme Tasks, a small team's task lists. Start here: file routing, a
+- [`tasks`](examples/tasks): Tasks, a small team's task lists. Start here: file routing, a
   middleware, Postgres, pages that read endpoints, forms that work without JavaScript, and
   optimistic actions, in the plainest way, with comments throughout.
 - [`echo`](examples/echo): the smallest app on the server platform, one endpoint, for measuring
   the server (`bench.sh`).
-- [`journal`](examples/journal): Acme Journal, a small publication in English and Polish: Markdown
+- [`journal`](examples/journal): Journal, a small publication in English and Polish: Markdown
   posts with typed frontmatter, intl, feeds, and two islands on pages the server renders.
-- [`board`](examples/board): Acme Board, a live kanban board several people move cards on at once:
+- [`board`](examples/board): Board, a live kanban board several people move cards on at once:
   drag and drop, optimistic moves, channels, presence and an edit lease in Kv.
 - [`quiz`](examples/quiz): Pinwheel, a live quiz for a room full of phones: an actor per room with
   its own timers, a channel to every phone, and charts of how the room answered.
-- [`uptime`](examples/uptime): Acme Status, an uptime monitor and its status page: checks run by
+- [`uptime`](examples/uptime): Status, an uptime monitor and its status page: checks run by
   jobs and cron, incidents that open and close themselves, email alerts, metrics, the admin's
   tables, and a page that follows it all live over a channel.
-- [`notes`](examples/notes): Acme Notes, personal notes in Markdown that AI agents use over MCP:
+- [`notes`](examples/notes): Notes, personal notes in Markdown that AI agents use over MCP:
   sign-in by a mailed link, a signed session cookie, personal access tokens kept as hashes,
   Postgres full-text search, a live preview, and a JSON API with its OpenAPI page.
 - [`plate`](examples/plate): Plate, a food diary for a phone: the USDA's 7,500 foods seeded

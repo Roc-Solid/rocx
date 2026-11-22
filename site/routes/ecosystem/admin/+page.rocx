@@ -196,7 +196,7 @@ view! = |_|
 						<tr><td><code>include : [Listed, All]</code></td><td><code>Listed</code>, unless it says: only those; <code>All</code>: every other table of the schema too, with no options, but the platform's own (<code>rocx_…</code>)</td></tr>
 						<tr><td><code>schema : Str</code></td><td><code>"public"</code>, unless it says</td></tr>
 						<tr><td><code>title : Str</code></td><td>what its pages call it: <code>"Database"</code>, unless it says</td></tr>
-						<tr><td><code>{"back : { label : Str, href : Str }"}</code></td><td>a link back to the app's own pages, first in every page's sidebar (<code>{"{ label: \"Acme Status admin\", href: \"/admin\" }"}</code>); none, unless it says</td></tr>
+						<tr><td><code>{"back : { label : Str, href : Str }"}</code></td><td>a link back to the app's own pages, first in every page's sidebar (<code>{"{ label: \"Status admin\", href: \"/admin\" }"}</code>); none, unless it says</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
@@ -284,7 +284,7 @@ view! = |_|
 				A request at <code>at</code> passes the app's middleware, then <code>guard</code>, then the page;
 				what the guard hands on isn't used. It needs the jobs plugin, and the server says so at start if it
 				isn't listed. <code>back</code> adds a link back to the app's own pages, first in its sidebar, as the
-				tables admin's option does (<code>{"JobsPage.plugin({ guard, back: { label: \"Acme Status admin\", href: \"/admin\" } })"}</code>;
+				tables admin's option does (<code>{"JobsPage.plugin({ guard, back: { label: \"Status admin\", href: \"/admin\" } })"}</code>;
 				none, unless it says). An app that mounts the page itself answers a route with
 				<code>{"JobsPage.respond!(request, { mount, back })"}</code> (<code>back</code> may be left out). Both are drawn in one look with the tables
 				admin: <code>Look</code> has the rules every admin page shares and the helpers, and

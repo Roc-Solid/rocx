@@ -7,6 +7,6 @@ import ../../../../Ui/Listings
 ## A writer's page (`/en/authors/iris-vale`): who they are, and their posts.
 view! = |{ params }|
 	<>
-		<Title>{Authors.name_of(params.author)} · Acme Journal</Title>
+		<Title>{Authors.name_of(params.author)} · Journal</Title>
 		<NoHydration>{=Listings.author(params.lang, params.author)}</NoHydration>
 	</>

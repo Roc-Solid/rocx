@@ -23,7 +23,7 @@ view! = |{ meta, children, .. }|
 	</>
 
 <style>
-	/* Acme Board's look: warm paper, navy ink, and a signal orange for what you are doing. */
+	/* Board's look: warm paper, navy ink, and a signal orange for what you are doing. */
 	:global(:root) {
 		--paper: #f4f1ea;
 		--surface: #fbfaf7;

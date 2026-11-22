@@ -1,4 +1,4 @@
-// Acme Notes in Chromium, as a person uses it: signs in with the link the app mails, writes a note in
+// Notes in Chromium, as a person uses it: signs in with the link the app mails, writes a note in
 // the editor (its preview rendered as they type, by packages/markdown in the page's WebAssembly),
 // saves it, and finds it again by searching, the word it found highlighted. Every page hydrates
 // strictly, with nothing logged.
@@ -9,7 +9,7 @@ import { mailedLink, noDatabase, started } from "./app.mjs";
 
 const noChrome = !(await findChrome()) && "needs Chromium's headless shell ($CHROME, or Playwright's)";
 
-describe("Acme Notes in a browser", { skip: noDatabase || noChrome }, () => {
+describe("Notes in a browser", { skip: noDatabase || noChrome }, () => {
 	let running, browser, tab;
 	before(async () => {
 		running = await started();

@@ -21,7 +21,7 @@ post! = |{ params, body, .. }| {
 			if said.is_empty() or said.to_utf8().len() > 2000 {
 				Err(BadRequest("Say what is happening, in 2000 characters at most."))
 			} else {
-				match Store.post_update!(id, stage, said, "Acme Status team", Jobs.alerts!) {
+				match Store.post_update!(id, stage, said, "Status team", Jobs.alerts!) {
 					Ok({}) => {
 						incident = Store.incident!(id)
 						match incident {

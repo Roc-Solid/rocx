@@ -10,7 +10,7 @@ import Middlewares
 import Note
 import Notebook
 
-## Acme Notes for AI clients: an MCP server (packages/mcp) at `/mcp`, which Claude, an IDE or the
+## Notes for AI clients: an MCP server (packages/mcp) at `/mcp`, which Claude, an IDE or the
 ## MCP Inspector call with a personal access token. Its tools are the JSON API's endpoints, so what
 ## an agent may do is what a script may do, checked by the same code: each is an endpoint
 ## (`McpHttp.endpoint`), and a tool's arguments fill its path's params too (`read_note`'s `id`).
@@ -30,7 +30,7 @@ Agents := [].{
 	server = {
 		name: "acme-notes",
 		version: "1.0.0",
-		title: "Acme Notes",
+		title: "Notes",
 		instructions: "Someone's personal notes, in Markdown, with tags. Find notes with search_notes (words, \"a phrase\", -without, #tag), then read one whole with read_note before changing it. Prefer append_to_note for adding to a note: it never overwrites. Archive a note rather than asking to delete it; archived notes are still found by search. A token may be read-only: then the tools that write are refused.",
 		tools: [
 			McpHttp.endpoint(Handlers.post_api_search, { name: "search_notes", title: "Search notes", description: "Finds notes by their words, best match first, archived ones too. The query takes words, \"an exact phrase\", or, -without, and #tag to look only at notes with that tag (\"#work\" alone lists them). Each result has the note's id, title, tags and the parts that matched." }, McpHttp.openapi({})).read_only(),

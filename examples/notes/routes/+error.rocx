@@ -1,7 +1,7 @@
 import pf.Html
 
 ## What a path nothing answers shows (404), and what a page that failed shows (500).
-meta = { title: "Not here · Acme Notes" }
+meta = { title: "Not here · Notes" }
 
 view! = |{ status, problem }|
 	<main id="main" class="error">
