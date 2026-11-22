@@ -350,6 +350,15 @@ same components natively; this one hydrates them.
   the host turns into one; `.key`'s handlers keep their `Str`. `.prevent` (`["onp",…]`) prevents
   its default first (a link's click taken over); `on:frame.ms` runs it every animation frame while
   its element is on the page.
+- **`<Document>` and `<Window>`**: `<Document on:keydown.Mod+K={open!} />` puts handlers on the
+  whole document (`<Window on:resize={…} />`, on the window), written as an element's are, any
+  but `on:frame.ms`. rocx writes `Html.on_document([…])` (`{"t":"listen","to":"document","a":[…]}`),
+  unless the file has a module of that name, which is then a component. It renders nothing, on the
+  server or in the browser, and hydrating takes no node for it; the runtime adds its listeners
+  where it is built or adopted (`listenOn`), with the element's handler code (`listener`), and
+  takes them off with its owner's cleanups (it runs again, or goes: a `<Show>` hiding it), as
+  solid-primitives' `makeEventListener` does. Svelte's `<svelte:document>` and `<svelte:window>`
+  are the same idea.
 - **Drag and drop** (D-029) are events too (`dragAndDrop`): an element with a drop handler is a drop
   target, its dragenter's and dragover's default prevented, `dropEffect` a move (unless the drag
   allows only a copy or a link), and its drop's (a dropped link or file doesn't open);

@@ -177,7 +177,9 @@ view! = |_|
 				(<code>.keys</code>, the key and the modifier keys held); a key's name (<code>on:keydown.Escape</code>)
 				runs it for that key only, and a combination (<code>on:keydown.Shift+Enter</code>,
 				<code>on:keydown.Mod+K</code>) for that key with exactly those modifier keys held; <code>.prevent</code> prevents the
-				event's default first (<code>on:click.prevent</code>: a link the page takes over). Handlers are
+				event's default first (<code>on:click.prevent</code>: a link the page takes over).
+				<code>{"<Document on:keydown.Mod+K={…} />"}</code> puts handlers on the whole document, written the same
+				way, while what renders it is there; it renders nothing (<code>{"<Window>"}</code>, on the window). Handlers are
 				Roc functions, so the server renders nothing for them, and markup inside a
 				<code>{"<NoHydration>"}</code>, which the browser never hydrates, can't have one: rocx refuses it,
 				at its line. <code>transition={"{…}"}</code>,

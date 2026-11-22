@@ -25,6 +25,7 @@ Cheatsheet := [].{
 		{ write: "on:keydown.key={|key| …}", means: "Gives the handler the key's name (Enter, Escape…)." },
 		{ write: "on:keydown.ArrowUp={|| …}", means: "Runs for that key only, with no modifier key held, and keeps the key from scrolling the page. .Space is the space bar." },
 		{ write: "on:keydown.Mod+K={|| …}", means: "Runs for that key with exactly those modifier keys held: Shift, Ctrl, Alt, Meta, and Mod (⌘ on macOS, Ctrl elsewhere)." },
+		{ write: "<Document on:keydown.Escape={|| …} />", means: "Handlers on the whole document while it is there; it renders nothing. <Window on:resize={…} /> is the window's." },
 		{ write: "on:keydown.keys={|keys| …}", means: "Gives the handler the key and the modifier keys held: keys.key, keys.shift, keys.mod…" },
 		{ write: "on:frame.ms={|ms| …}", means: "Runs every animation frame, given the milliseconds since the last, while the element is on the page." },
 		{ write: "transition={Transition.fade}", means: "Plays as the element's row or part comes and goes; transition:in and transition:out play one way. A row that goes stays until it has." },

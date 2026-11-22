@@ -6,7 +6,8 @@ import pf.Solid exposing [create_signal!, on_settled!]
 ## Key handlers, for the tests (`shortcuts_app.roc`): one key, combinations of modifier keys and a
 ## key, and the key with the modifier keys held (`.keys`). And the focus, moved from Roc
 ## (`Browser.focus!`): by a handler, to a field there and to one that isn't; and by a component as
-## its part shows.
+## its part shows. And handlers on the whole document (`<Document>`), while a `<Show>` shows them,
+## and on the window (`<Window>`).
 Shortcuts := [].{
 	view! : {} => Html
 	view! = |{}| {
@@ -14,6 +15,10 @@ Shortcuts := [].{
 		say! = |what| set_said!(said!().append(what))
 		(last!, set_last!) = create_signal!("")
 		(open!, set_open!) = create_signal!(Bool.False)
+		(listening!, set_listening!) = create_signal!(Bool.True)
+		(heard!, set_heard!) = create_signal!([])
+		hear! = |what| set_heard!(heard!().append(what))
+		(resized!, set_resized!) = create_signal!(0.U64)
 		<div class="shortcuts">
 			<input
 				id="field"
@@ -33,6 +38,13 @@ Shortcuts := [].{
 			<Show when!={open!()}>
 				<Opened />
 			</Show>
+			<button class="listen" on:click={|| set_listening!(!listening!())}>Listen</button>
+			<Show when!={listening!()}>
+				<Document on:keydown.Mod+K={|| hear!("Mod+K")} on:keydown.Escape={|| hear!("Escape")} on:keyup.key={|key| hear!("up ${key}")} />
+			</Show>
+			<p class="heard">{Str.join_with(heard!(), ", ")}</p>
+			<Window on:resize={|| set_resized!(resized!() + 1)} />
+			<p class="resized">{resized!().to_str()}</p>
 		</div>
 	}
 

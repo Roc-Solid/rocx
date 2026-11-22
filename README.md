@@ -231,6 +231,7 @@ In a component only:
 | `<button on:click={\|\| set_count!(1)}>` | a handler: an effect, run when the event reaches the element |
 | `<input on:input.value={set_draft!}>` | the handler is given the value (`Str => {}`); `.checked` whether it is ticked, `.key` the key's name, `.keys` the key and the modifier keys held (`Html.Keys`: `key`, `shift`, `ctrl`, `alt`, `meta`, `mod`) |
 | `<div on:keydown.ArrowUp={up!}>` | for that key only (`.Space`, `.w`), with no modifier key held, keeping it from scrolling the page |
+| `<Document on:keydown.Mod+K={open!} />` | handlers on the whole document, written as an element's, while what renders it is there (`<Show>` it to stop them); renders nothing. `<Window on:resize={…} />`, the window's |
 | `<input on:keydown.Shift+Enter={send!}>` | for that key with exactly those modifier keys held (`Shift`, `Ctrl`, `Alt`, `Meta`, and `Mod`: ⌘ on macOS, Ctrl elsewhere): `Mod+K`, `Ctrl+Alt+Delete`; Shift+Enter isn't Enter |
 | `<a href="/next" on:click.prevent={go!}>` | the event's default prevented before the handler runs (a link's click taken over) |
 | `<li draggable="true" on:dragstart={…}>`, `<ul on:drop={…}>` | drag and drop, the browser's: an element with a drop handler takes drops (`on:drop.value`: the text dropped), and its `on:dragenter` and `on:dragleave` run as the drag comes over it and leaves it, not once per child |

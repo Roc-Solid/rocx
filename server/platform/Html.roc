@@ -23,6 +23,7 @@ Html :: [
 	Component(() => Html),
 	Provided(Str, U64, List(Html)),
 	NoHydration(List(Html)),
+	Listen(Str, List(Html.Attr)),
 ].{
 	Attr := [
 		Value(Str, Str),
@@ -230,6 +231,18 @@ Html :: [
 			},
 		)
 
+	## Handlers on the whole document (`<Document on:keydown.Mod+K={open!} />`), written as an
+	## element's are (any but `on:frame.ms`): attached where it is rendered, and taken off when that
+	## goes (a `<Show>` hiding it, a row going), as Solid's `makeEventListener` is. Nothing on the
+	## page, on the server or in the browser.
+	on_document : List(Attr) -> Html
+	on_document = |handlers| Listen("document", handlers)
+
+	## The same, on the window (`<Window on:resize={…} />`): its resizes, its scrolls, `online` and
+	## `offline`.
+	on_window : List(Attr) -> Html
+	on_window = |handlers| Listen("window", handlers)
+
 	## What is inside, given a context's value (its name, and the id the runtime keeps it by).
 	provided : Str, U64, List(Html) -> Html
 	provided = |name, value, children| Provided(name, value, children)
@@ -291,6 +304,7 @@ Html :: [
 			Component(run!) => "{\"t\":\"c\",\"r\":${keep!(|| serialize!(run!()))}}"
 			Provided(name, value, children) => "{\"t\":\"ctx\",\"n\":${json_str(name)},\"v\":${value.to_str()},\"c\":[${nodes!(children)}]}"
 			NoHydration(children) => "{\"t\":\"nh\",\"c\":[${nodes!(children)}]}"
+			Listen(target, handlers) => "{\"t\":\"listen\",\"to\":${json_str(target)},\"a\":[${attributes!(target, handlers)}]}"
 		}
 }
 
@@ -418,6 +432,8 @@ static_str = |node, quiet|
 		Errored(_, children) => marked("errored", static_nodes(children, quiet), quiet)
 		Provided(_, _, children) => static_nodes(children, quiet)
 		NoHydration(children) => marked("nohydration", static_nodes(children, Bool.True), quiet)
+		# Handlers on the document or the window: nothing on the page.
+		Listen(_, _) => ""
 		_ => crash "Html.to_str renders markup with nothing to run in it: a computation, a <Show>, a <For> or a component needs the runtime"
 	}
 

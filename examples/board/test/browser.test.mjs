@@ -127,7 +127,12 @@ describe(`Acme Board in two browsers (Ada's: ${engine})`, { skip: noDatabase || 
 		await (await bo.getByLabelText("Title")).fill("Book the launch pad for Tuesday");
 		await (await bo.getByRole("button", { name: "Save" })).click();
 		await ada.findByRole("link", { name: "Book the launch pad for Tuesday" }, { ms: 5000 });
-		await (await bo.getByRole("button", { name: "Done" })).click();
+		// Bo closes it with Escape, pressed with the focus anywhere on the page (`<Document>`), once his
+		// save is done (the board read again after it renews his lease, which closing lets go of).
+		await bo.page.wait("!document.querySelector('.panel .saving')?.textContent.includes('Saving')", 5000);
+		await bo.page.eval("document.activeElement?.blur()");
+		for (const type of ["rawKeyDown", "keyUp"]) await bo.page.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape" });
+		await bo.page.wait("!document.querySelector('.panel')", 5000);
 		await ada.page.wait(`!document.querySelector('[data-card="${card}"] .editing')`, 5000);
 	});
 

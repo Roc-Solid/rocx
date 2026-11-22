@@ -159,6 +159,14 @@ test("on: a component's handlers are effects, given what the event says", () => 
 	assert.match(refused(`x = <input on:keydown.Shift+={a} />`), /not .Shift\+/);
 	assert.match(refused(`x = <input on:click.Shift+Enter={a} />`), /a key's name goes with on:keydown or on:keyup/);
 	assert.match(refused(`x = <input data-a+b="c" />`), /unexpected \+ in data-a\+b: a \+ joins the keys of a combination/);
+	// <Document> and <Window>: handlers on the whole document or window, written as an element's.
+	assert.equal(component(`x = <Document on:keydown.Mod+K={open!} on:keydown.Escape={close!} on:click.prevent={away!} />`), `x = Html.on_document([Html.on_named_key("keydown", "Mod+K", open!), Html.on_named_key("keydown", "Escape", close!), Html.on_prevent("click", away!),])`);
+	assert.equal(component(`x = <Window on:resize={fit!} on:keydown.keys={pressed!} />`), `x = Html.on_window([Html.on("resize", fit!), Html.on_keys("keydown", pressed!),])`);
+	assert.match(refused(`x = <Document on:click={a}><p>x</p></Document>`), /<Document> renders nothing, so it has no children/);
+	assert.match(refused(`x = <Document class="a" on:click={a} />`), /<Document> takes handlers only/);
+	assert.match(refused(`x = <Window on:frame.ms={tick!} />`), /<Window> takes handlers only/);
+	assert.match(refused(`x = <Document onclick="go()" />`), /inline event handlers \(onclick\) aren't allowed/);
+	assert.equal(component(`import Document\n\nx = <Document title="t" />`), `import Document\n\nx = Html.component(|| Document.view!({ title: || "t", }))`, "a module of the file's own by that name is a component, its value props getters (D-039)");
 	// Drag and drop are events as any other; `.prevent` takes over what the browser would do.
 	assert.equal(component(`x = <li draggable="true" on:dragstart={start!} on:dragend={stop!}>a</li>`), `x = Html.element("li", [Html.attr("draggable", "true"), Html.on("dragstart", start!), Html.on("dragend", stop!),], [Html.text("a"),])`);
 	assert.equal(component(`x = <ul on:dragenter={over!} on:dragleave={out!} on:drop={|| put!(day)} on:drop.value={dropped!} />`), `x = Html.element("ul", [Html.on("dragenter", over!), Html.on("dragleave", out!), Html.on("drop", || put!(day)), Html.on_value("drop", dropped!),], [])`);

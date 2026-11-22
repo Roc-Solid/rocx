@@ -448,7 +448,7 @@ window.hydrated = true;
 	}
 });
 
-test("keys: a key's handler runs for that key with no modifier key held, a combination's with exactly its keys held (Mod is ⌘ on macOS, Ctrl elsewhere; a letter in its place when the layout types another), each preventing the default; .keys gives the key and the modifier keys held; Browser.focus! moves the focus once the handler is done, or as a part shows", { skip }, async () => {
+test("keys: a key's handler runs for that key with no modifier key held, a combination's with exactly its keys held (Mod is ⌘ on macOS, Ctrl elsewhere; a letter in its place when the layout types another), each preventing the default; .keys gives the key and the modifier keys held; Browser.focus! moves the focus once the handler is done, or as a part shows; <Document> hears keys anywhere while it is there, <Window> the window's events", { skip }, async () => {
 	const wasm = readFileSync(join(out, "shortcuts.wasm"));
 	const server = await Runtime.load(wasm);
 	const { html } = server.renderToString({ path: "/" });
@@ -512,6 +512,35 @@ window.hydrated = true;
 		assert.equal(await tab.eval("document.activeElement?.className"), "nowhere", "no element by that id: the focus stays");
 		await tab.click(".open");
 		await tab.wait("document.activeElement?.id === 'opened'");
+		// <Document>: its handlers hear a key pressed anywhere (the field's too, as they bubble up),
+		// while the <Show> it is in shows it.
+		assert.match(html, /<button class="listen">Listen<\/button> <!--show--><!--\/show--> <p class="heard">/, "<Document> renders nothing");
+		const heard = () => tab.eval("document.querySelector('.heard').textContent");
+		let mark = (await heard()).length;
+		const since = async () => (await heard()).slice(mark);
+		await tab.eval("document.activeElement.blur()");
+		await press("k", ["Mod"]);
+		await press("Escape", ["Shift"]);
+		await press("Escape");
+		await tab.wait(`document.querySelector('.heard').textContent.length > ${mark} && document.querySelector('.heard').textContent.endsWith('Escape, up Escape')`);
+		assert.equal(await since(), ", Mod+K, up k, up Escape, Escape, up Escape", "Mod+K and Escape, each with exactly its keys held, and every key let go");
+		assert.equal(await tab.eval(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", cancelable: true }))`), false, "its combination's default prevented");
+		await tab.click(".listen");
+		mark = (await heard()).length;
+		await tab.eval("document.activeElement.blur()");
+		await press("Escape");
+		await press("k", ["Mod"]);
+		await sleep(50);
+		assert.equal(await since(), "", "gone with its <Show>: nothing heard");
+		assert.equal(await tab.eval(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", cancelable: true }))`), true, "and nothing prevented");
+		await tab.click(".listen");
+		await tab.eval("document.activeElement.blur()");
+		await press("k", ["Mod"]);
+		await tab.wait(`document.querySelector('.heard').textContent.endsWith('up k')`);
+		assert.equal(await since(), ", Mod+K, up k", "back with it, and heard once");
+		// <Window>: the window's events.
+		await tab.eval("window.dispatchEvent(new Event('resize'))");
+		await tab.wait("document.querySelector('.resized').textContent === '1'");
 		assert.deepEqual(tab.errors, []);
 		assert.deepEqual(tab.console, []);
 	} finally {

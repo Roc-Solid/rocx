@@ -1697,6 +1697,9 @@ Transpile := [].{
 		if !component and name != lowered {
 			return Err(Transpile.fail(cfg, "write HTML tags in lower case: <${lowered}>", start))
 		}
+		# `<Document on:keydown.Mod+K={…} />`, `<Window on:resize={…} />`: handlers on the whole document
+		# or window, written as an element's are; unless the file has a module of that name.
+		listener = Transpile.is_listener(cfg, name)
 		# How a component is given its props (D-039). The platform's (`<Show>`) and a context's provider
 		# take what their types say, where they are written; a pure one (`view`), values, its call a hole
 		# of its own when one is read from what changes; any other, getters, unless it is a function of
@@ -1705,12 +1708,15 @@ Transpile := [].{
 		provider = component and Transpile.lookup(cfg.contexts, name) != None
 		pure = component and cfg.pure.contains(name)
 		own_fn = component and !cfg.modules.contains(name)
-		getters = component and !packaged and !provider and !pure and (!own_fn or cfg.fns.contains(name))
-		read = Transpile.read_attributes(cfg, { ..st0, pos: name_end }, name, component, getters, component and !packaged and !provider, start)?
+		getters = component and !listener and !packaged and !provider and !pure and (!own_fn or cfg.fns.contains(name))
+		read = Transpile.read_attributes(cfg, { ..st0, pos: name_end }, name, component and !listener, getters, component and !listener and !packaged and !provider, start)?
 		attrs = read.attrs
 		self_closing = read.self_closing
 		if name == "NoHydration" {
 			return Transpile.read_no_hydration(cfg, read.st, attrs, self_closing, start)
+		}
+		if listener {
+			return Transpile.read_listener(cfg, read.st, name, attrs, self_closing, start)
 		}
 		# A component is an effect (`Picks.view!`), and so is a provider (`Context.provide!`); a pure one
 		# (`Heading.view`) isn't.
@@ -1839,6 +1845,35 @@ Transpile := [].{
 		Ok({ st: after, out: "Html.element(${quoted}, [${Transpile.render_items(attrs)}], [${Transpile.render_items(children)}])" })
 	}
 
+	## Whether `<name>` is the platform's `<Document>` or `<Window>`: handlers on the whole document or
+	## window. A module of the file's own by that name (`import Document`) is a component instead.
+	is_listener : Cfg, Str -> Bool
+	is_listener = |cfg, name| (name == "Document" or name == "Window") and !cfg.modules.contains(name)
+
+	## `<Document on:keydown.Escape={close!} />` (or `<Window …>`): handlers on the whole document (or
+	## window) while what renders it is there (`Html.on_document`, `Html.on_window`), written as an
+	## element's are, and nothing else: it renders nothing.
+	read_listener : Cfg, St, Str, List(Part), Bool, U64 -> Try({ st : St, out : Str }, [Rocx(RocxError), Crash(Str)])
+	read_listener = |cfg, st, name, attrs, self_closing, start| {
+		if !self_closing {
+			return Err(Transpile.fail(cfg, "<${name}> renders nothing, so it has no children: write <${name} on:keydown.Escape={…} />", start))
+		}
+		if attrs.any(|part| !Transpile.is_handler_part(part)) {
+			return Err(Transpile.fail(cfg, "<${name}> takes handlers only (on:keydown.Mod+K={…}, on:click={…}): it renders nothing", start))
+		}
+		made = if (name == "Window") "Html.on_window" else "Html.on_document"
+		Ok({ st, out: "${made}([${Transpile.render_items(attrs)}])" })
+	}
+
+	## Whether an attribute, as rocx writes it, is a handler `<Document>` takes (a line between them is).
+	is_handler_part : Part -> Bool
+	is_handler_part = |part|
+		match part {
+			Item(code) => ["Html.on(", "Html.on_value(", "Html.on_checked(", "Html.on_key(", "Html.on_keys(", "Html.on_named_key(", "Html.on_prevent("].any(|prefix| code.starts_with(prefix))
+			Line(_) => Bool.True
+			Fn(_) => Bool.False
+		}
+
 	## `<NoHydration>…</NoHydration>` (Solid's): what is inside is rendered on the server only, as static
 	## markup (`Html.no_hydration`), and the browser keeps the server's nodes there. The browser's copy
 	## has no children in its place (its lines kept as lines), so none of it, nor an import only it
@@ -1904,7 +1939,7 @@ Transpile := [].{
 		src = cfg.src
 		# Inside a component with a <style> (or a file with one), the element's classes end with its
 		# (`rx-k3j9qa`): joined to its `class`, or a `class` of its own.
-		scopes = if (component or Styles.unscoped_elements.contains(tag)) "" else Str.join_with(Transpile.scopes_at(cfg, at_pos), " ")
+		scopes = if (component or Styles.unscoped_elements.contains(tag) or Transpile.is_listener(cfg, tag)) "" else Str.join_with(Transpile.scopes_at(cfg, at_pos), " ")
 		scoped = scopes != ""
 		var $classed = Bool.False
 		var $reads_props = Bool.False

@@ -239,6 +239,11 @@ view! = |_|
 				macOS and Ctrl elsewhere. It runs with exactly those held (Shift+Enter isn't Enter), and the browser
 				doesn't also do what they would. <code>on:keydown.keys</code> gives the handler the key and the
 				modifier keys held, a record: <code>{"if keys.mod and keys.key == \"s\" { save!() }"}</code>.
+				A handler that listens to the whole document, a ⌘K anywhere or an Escape that closes a panel, goes
+				on <code>{"<Document on:keydown.Mod+K={open!} />"}</code>, written as an element's handlers are. It
+				renders nothing; its handlers are on the document from where it is rendered until that goes, so a
+				<code>{"<Show>"}</code> around it turns them on and off. <code>{"<Window on:resize={…} />"}</code> is
+				the window's.
 				<code>on:click.prevent</code> takes over what the browser would do: a link's click goes where the
 				handler says, not to its <code>href</code>. What a handler writes is applied when it is done, and what
 				reads it runs again then, once.

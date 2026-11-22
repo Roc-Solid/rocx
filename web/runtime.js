@@ -2446,6 +2446,9 @@ export class Runtime {
 			}
 			case "nh":
 				return this.region();
+			case "listen":
+				this.listenOn(node, owner, scope);
+				return document.createDocumentFragment();
 			default:
 				throw new Error(`rocx: unknown node ${node.t}`);
 		}
@@ -2601,6 +2604,10 @@ export class Runtime {
 				// The server's, left as it is: never built, adopted or patched.
 				cursor.comment("nohydration");
 				cursor.node = cursor.closing("nohydration").nextSibling;
+				return;
+			case "listen":
+				// Nothing on the page: its handlers, on the document or the window.
+				this.listenOn(node, owner, scope);
 				return;
 			case "errored": {
 				const failed = cursor.node?.nodeType === 8 && cursor.node.data === "errored:failed";
@@ -2777,33 +2784,14 @@ export class Runtime {
 				const computed = { vo: "attr", fo: "flag", co: "class", oo: "optional", so: "style" }[kind];
 				this.run(new Computation(this, { kind: computed, runner: this.kept.get(value), owner, scope, target: element, name }));
 			} else if (kind === "on" || kind === "onp") {
-				// A handler for one key, or a combination (`on:keydown.ArrowUp`, `on:keydown.Mod+K`): that
-				// key only, with those modifier keys held and no others.
-				const pressed = wanted === undefined ? null : keyCombo(wanted);
-				// By the box's id: when its owner runs again the box is released, and the element replaced.
-				const handler = (event) => {
-					// That key only, and the browser doesn't also do what it would (an arrow key a game
-					// takes doesn't scroll the page).
-					if (pressed && !pressed(event)) return;
-					// `.prevent`: what the browser would do (follow a link) is the handler's to do.
-					if (kind === "onp" || name === "submit" || wanted !== undefined) event.preventDefault();
-					const target = event.target;
-					// A drop's value is the text dropped (from another page, or another program).
-					const input = event.type === "drop" ? (event.dataTransfer?.getData("text/plain") ?? "") : target?.type === "checkbox" ? String(target.checked) : String(target?.value ?? "");
-					if (this.kept.has(value)) this.handle(value, input, scope, { owner });
-				};
+				const handler = this.listener(kind, name, value, wanted, scope, owner);
 				if (drag && name === "dragenter") drag.enter.push(handler);
 				else if (drag && name === "dragleave") drag.leave.push(handler);
 				else element.addEventListener(name, handler);
 			} else if (kind === "k") this.keys.set(element, name);
 			else if (kind === "ko") this.run(new Computation(this, { kind: "key", runner: this.kept.get(name), owner, scope, target: element }));
-			else if (kind === "onk") {
-				// A handler given the key (`on:keydown.key`), or the key and the modifier keys held
-				// (`on:keydown.keys`).
-				element.addEventListener(name, (event) => {
-					if (this.kept.has(value)) this.handle(value, wanted === "keys" ? keysOf(event) : (event.key ?? ""), scope, { owner });
-				});
-			} else if (kind === "tr") this.setTransition(element, name, value);
+			else if (kind === "onk") element.addEventListener(name, this.listener(kind, name, value, wanted, scope, owner));
+			else if (kind === "tr") this.setTransition(element, name, value);
 			else if (kind === "tro") this.run(new Computation(this, { kind: "transition", runner: this.kept.get(value), owner, scope, target: element, name }));
 			else if (kind === "frame") {
 				// Every animation frame while the element is on the page, given the time since the last
@@ -2830,6 +2818,51 @@ export class Runtime {
 			}
 		}
 		if (drag) this.dragAndDrop(element, drag);
+	}
+
+	/**
+	 * What a handler (`["on"|"onp"|"onk", event, id, wanted]`) listens with: an element's, or the
+	 * document's or window's (`listenOn`). By the box's id: when its owner runs again the box is
+	 * released (and an element replaced), so a listener left over runs nothing.
+	 */
+	listener(kind, name, value, wanted, scope, owner) {
+		if (kind === "onk")
+			// Given the key (`on:keydown.key`), or the key and the modifier keys held (`on:keydown.keys`).
+			return (event) => {
+				if (this.kept.has(value)) this.handle(value, wanted === "keys" ? keysOf(event) : (event.key ?? ""), scope, { owner });
+			};
+		// For one key, or a combination (`on:keydown.ArrowUp`, `on:keydown.Mod+K`): that key only, with
+		// those modifier keys held and no others.
+		const pressed = wanted === undefined ? null : keyCombo(wanted);
+		return (event) => {
+			// That key only, and the browser doesn't also do what it would (an arrow key a game takes
+			// doesn't scroll the page).
+			if (pressed && !pressed(event)) return;
+			// `.prevent`: what the browser would do (follow a link) is the handler's to do.
+			if (kind === "onp" || name === "submit" || wanted !== undefined) event.preventDefault();
+			const target = event.target;
+			// A drop's value is the text dropped (from another page, or another program).
+			const input = event.type === "drop" ? (event.dataTransfer?.getData("text/plain") ?? "") : target?.type === "checkbox" ? String(target.checked) : String(target?.value ?? "");
+			if (this.kept.has(value)) this.handle(value, input, scope, { owner });
+		};
+	}
+
+	/**
+	 * `<Document on:keydown.Mod+K={…} />` and `<Window on:resize={…} />` (`{"t":"listen"}`): their
+	 * handlers on the whole document (or window), as an element's are, from where they are rendered
+	 * until their owner runs again or goes (a `<Show>` hiding them, a row going), as Solid's
+	 * `makeEventListener` is: taken off with the owner's cleanups. Nothing on the page.
+	 */
+	listenOn(node, owner, scope) {
+		const target = node.to === "window" ? this.page?.defaultView : this.page;
+		if (!target?.addEventListener) return;
+		const cleanups = (owner?.making ?? owner?.made)?.cleanups;
+		for (const [kind, name, value, wanted] of node.a) {
+			if (kind !== "on" && kind !== "onp" && kind !== "onk") continue;
+			const listener = this.listener(kind, name, value, wanted, scope, owner);
+			target.addEventListener(name, listener);
+			cleanups?.push(() => target.removeEventListener(name, listener));
+		}
 	}
 
 	/**
@@ -2972,6 +3005,10 @@ export class Runtime {
 			}
 			case "ctx":
 				return node.c.map((child) => this.html(child, owner, provided(scope, node))).join("");
+			case "listen":
+				// `<Document>`, `<Window>`: nothing on the page; in a <NoHydration>, handlers that would never run.
+				if (scope.region && node.a.length) throw new Error(inRegion(node.to === "window" ? "Window" : "Document", node.a[0][1]));
+				return "";
 			case "e": {
 				const classes = [];
 				const attributes = [];

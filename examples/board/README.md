@@ -176,7 +176,9 @@ What the app met, and how it works around each:
 - **No way to move focus from Roc.** An open card didn't take the keyboard's focus (there was no
   focus effect, and `Browser.call!` needs a script of the page's own, which this app doesn't serve),
   so keyboard users tabbed to it. (Fixed in the platform since: `Browser.focus!(id)`, so a card that
-  opens focuses its title, from the `on_settled!` that starts renewing its lease. Escape closes it.)
+  opens focuses its title, from the `on_settled!` that starts renewing its lease. And Escape closes
+  it from anywhere on the page, not only from inside it: `<Document on:keydown.Escape={close!} />`
+  in the panel, while it is open.)
 - **Presence wasn't on channels**: its glue was an event stream per tab beside `/rocx/live`, a beat
   posted every 15 s, and a post when a card opened, three routes. (Fixed since: presence runs on a
   channel, its hooks the package's, so the page holds one stream, and what it says, its beat and the

@@ -407,6 +407,15 @@ fn html(node: &Value, scope: &Scope) -> Result<String, Stop> {
             let inner = Scope { region: true, ..scope.clone() };
             Ok(format!("<!--nohydration-->{}<!--/nohydration-->", children(node, &inner)?))
         }
+        // `<Document>`, `<Window>`: handlers on the document or the window, in the browser; nothing on
+        // the page. In a <NoHydration> they would never run.
+        "listen" => {
+            let first = field("a").as_array().and_then(|handlers| handlers.first()).and_then(|handler| handler.get(1)).and_then(Value::as_str);
+            match first {
+                Some(event) if scope.region => Err(Stop::Crashed(in_region(if field("to").as_str() == Some("window") { "Window" } else { "Document" }, event))),
+                _ => Ok(String::new()),
+            }
+        }
         "ctx" => {
             let mut inner = scope.clone();
             let name = field("n").as_str().unwrap_or("").to_string();

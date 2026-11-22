@@ -20,14 +20,15 @@ import ../Generated/Api
 ## Every form here posts to its endpoint without JavaScript too (the page opens a card from its
 ## address, `?card=12`), and the endpoint sends the browser back. A card that opens takes the
 ## keyboard's focus, at its title; Alt+↑ and Alt+↓ move it up and down its column, as its Up and
-## Down buttons do.
+## Down buttons do; Escape, anywhere on the page, closes it (`<Document>`, while it is open).
 CardPanel := [].{
 
 	view! : { card : Str, shared : Shared.State } => Html
 	view! = |{ card, shared }| {
 		{ board!, set_open!, .. } = shared
 		close! = || set_open!("")
-		<aside class="panel" aria-labelledby="panel-title" on:keydown.Escape={close!}>
+		<aside class="panel" aria-labelledby="panel-title">
+			<Document on:keydown.Escape={close!} />
 			<div class="bar">
 				<a class="close" href="?" aria-label="Close the card" on:click.prevent={close!}>✕</a>
 			</div>
