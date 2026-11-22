@@ -102,14 +102,16 @@ POST /__rocx/mail/clear                (under --debug and --test too)           
 In `server/platform/main.roc`, beside the mailbox:
 
 ```roc
-respond_for_host! = |method, target, headers, body, context|
-	if Outbox.serves!(target) {
-		Outbox.respond!(Server.from_http(method, target, headers, body))
-	} else if TestMode.serves!(target) {          # new: Setting.text!("test") is "1"
-		TestMode.respond!(Server.from_http(method, target, headers, body))
+respond_for_host! = |given, context| {
+	request = { ..Server.from_http(given.method, given.target, given.headers, given.body), peer: given.peer }
+	if Outbox.serves!(given.target) {
+		Outbox.respond!(request)
+	} else if TestMode.serves!(given.target) {    # new: Setting.text!("test") is "1"
+		TestMode.respond!(request)
 	} else {
-		program.respond!(method, target, headers, body, context)
+		program.respond!(request, context)
 	}
+}
 ```
 
 In the package, `startServer(executable, { test: true })` passes `--test`, and the server it

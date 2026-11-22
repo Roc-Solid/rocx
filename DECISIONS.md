@@ -1896,3 +1896,46 @@ query in place, `<A>`, `<Navigate>` (needs D-039). 3: prefetch, View Transitions
 the stylesheet as a cached file, a JSON payload, wasm splitting.
 
 **Reversible:** yes, until apps rely on kept layouts and `use_search_params!`.
+
+## D-041 The host hands over a request as one record, with the connection's address
+
+**Context.** The host called Roc with a request's parts as five arguments (`respond!(method,
+target, headers, body, context)`), and dropped the connection's address where it accepted it. So
+Roc never knew who connected: packages/guard's `Guard.ip(Direct)` gave no key and limited no one,
+`Proxies(…)` couldn't check that a request came through the app's own proxies, and three examples
+(journal, uptime, notes) counted by a cookie, a mailbox or everyone at once instead.
+
+**Options.**
+1. A field on `Server.Request`, `peer : Str`, and the host's call one record that carries it.
+2. An effect, `Server.peer!({})`, read from the call's context (packages/guard's PROPOSALS.md had
+   recommended it).
+3. A header the host sets (`x-rocx-peer`), removing any a client sent.
+
+**Choice.** 1: a request says where it came from as it says its headers, so a middleware and a test
+see it without asking the host, and what else the host comes to know of a request (a scheme, a
+request id) goes in the same record without changing the call again.
+
+```roc
+# server/platform/main.roc
+HostRequest : { method : Str, target : Str, headers : Str, body : List(U8), peer : Str }
+respond_for_host! : HostRequest, Str => …                 # the record, and what the server was started with
+program.respond! : Server.Request, Str => Server.Response # was Str, Str, Str, List(U8), Str
+
+# web/platform/Server.roc (both platforms)
+Server.Request : { method, path, query, headers, body, route, peer : Str }
+```
+
+- `peer` is the connection's IP, without its port; an IPv4 client of a dual-stack listener as IPv4
+  (`203.0.113.7`, not `::ffff:203.0.113.7`). Behind a proxy it is the proxy's, and guard's `Hops`
+  or `Proxies` read past it in `X-Forwarded-For`.
+- A GET a page reads as the server renders it, and a channel's checks and hooks, have the page's or
+  the stream's address. `Server.request!` gives it back too (the host writes it after the target:
+  `GET /about 203.0.113.7`).
+- `""` in the browser and for a request made by hand (`Server.from_http`).
+- The program's `respond!` is given the `Server.Request` ready-made: `App.program` no longer calls
+  `Server.from_http`, and an app that writes its own program takes `|request, context|`.
+- packages/guard's `peer` reads it, so `Guard.ip(Direct)` limits by address; the examples' copies
+  of `Guard.roc` follow.
+
+**Why.** The host had the address and threw it away; a record keeps the call stable as the host
+learns more of a request. **Reversible:** yes, at the cost of the field.

@@ -16,9 +16,9 @@ answer_doc : Str, (Str => Str) => Str
 answer_doc = |_, _| "doc"
 
 program = {
-	respond!: |_method, target, _headers, _body, _started| {
+	respond!: |request, _started| {
 		chain = then(then(pass_on!, pass_on!), answer_doc)
-		Server.response(200, [], chain(target, |_| "fell through"))
+		Server.response(200, [], chain(request.path, |_| "fell through"))
 	},
 	migrations: [],
 	actors: [],

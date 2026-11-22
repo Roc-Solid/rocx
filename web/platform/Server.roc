@@ -17,7 +17,13 @@ Server := [].{
 	## where the path would make a group for every post. A request nothing answers (the error page)
 	## has `""`. The server sets it before the app's middleware runs;
 	## a request made by hand (`from_http`), and the browser's, have `""`.
-	Request : { method : Str, path : Str, query : Str, headers : List({ name : Str, value : Str }), body : List(U8), route : Str }
+	##
+	## `peer` is the address of the connection it came on, as the host saw it (`203.0.113.7`, `::1`):
+	## the client's, or a proxy's in front of the server, whose `X-Forwarded-For` says the client's
+	## (packages/guard's `ClientIp` reads that as far as the app trusts its proxies). A GET a page
+	## reads as the server renders it has the page's. `""` in the browser, and in a request made by
+	## hand (`from_http`).
+	Request : { method : Str, path : Str, query : Str, headers : List({ name : Str, value : Str }), body : List(U8), route : Str, peer : Str }
 
 	## The server's answer to a request: its status, its headers and its body.
 	Response : { status : U16, headers : List({ name : Str, value : Str }), body : Body }
@@ -58,7 +64,7 @@ Server := [].{
 				Ok({ before, after }) => (before, after)
 				Err(_) => (target, "")
 			}
-		{ method: method.with_ascii_uppercased(), path: path, query: query, headers: headers, body: body, route: "" }
+		{ method: method.with_ascii_uppercased(), path: path, query: query, headers: headers, body: body, route: "", peer: "" }
 	}
 
 	## The answer as the server platform's host takes it: its headers a `name: value` a line, and its
@@ -363,9 +369,9 @@ Server := [].{
 		}
 
 	## The request being answered: on the server, the one the host is answering (a page's, an
-	## endpoint's, a GET a page reads as it renders); empty, a GET of `/`, anywhere else. The host hands it
-	## over as text, so a body that isn't UTF-8 comes with U+FFFD where it isn't: an endpoint is
-	## given its request's bytes as they came.
+	## endpoint's, a GET a page reads as it renders), its `peer` too; empty, a GET of `/`, anywhere
+	## else. The host hands it over as text, so a body that isn't UTF-8 comes with U+FFFD where it
+	## isn't: an endpoint is given its request's bytes as they came.
 	request! : {} => Request
 	request! = |{}| from_wire(Host.request!({}))
 
@@ -375,8 +381,9 @@ Server := [].{
 	unwritable = "it holds a number JSON can't write (an F64 that is NaN or an infinity)"
 }
 
-## A request as the host passes it (`Host.request!`), as HTTP writes it: `METHOD target`, a header
-## a line, a blank line, then its body (as text).
+## A request as the host passes it (`Host.request!`), as HTTP writes it: `METHOD target`, and the
+## connection's address after another space when the host knows it (`GET /about 203.0.113.7`), a
+## header a line, a blank line, then its body (as text).
 from_wire : Str -> Server.Request
 from_wire = |given| {
 	(head, body) =
@@ -390,7 +397,11 @@ from_wire = |given| {
 			Err(_) => (head, "")
 		}
 	match first.split_first(" ") {
-		Ok({ before, after }) => Server.from_http(before, after, lines, body.to_utf8())
+		Ok({ before, after }) =>
+			match after.split_first(" ") {
+				Ok(target) => { ..Server.from_http(before, target.before, lines, body.to_utf8()), peer: target.after }
+				Err(_) => Server.from_http(before, after, lines, body.to_utf8())
+			}
 		Err(_) => Server.from_http("GET", "/", lines, body.to_utf8())
 	}
 }
@@ -557,7 +568,7 @@ hex_value = |digit|
 		Err(NotHex)
 	}
 
-expect Server.from_host("/p?q=1", "Cookie: a=1; user=Grace%20Hopper\nx-empty: \nbroken") == { method: "GET", path: "/p", query: "q=1", headers: [{ name: "cookie", value: "a=1; user=Grace%20Hopper" }, { name: "x-empty", value: "" }], body: [], route: "" }
+expect Server.from_host("/p?q=1", "Cookie: a=1; user=Grace%20Hopper\nx-empty: \nbroken") == { method: "GET", path: "/p", query: "q=1", headers: [{ name: "cookie", value: "a=1; user=Grace%20Hopper" }, { name: "x-empty", value: "" }], body: [], route: "", peer: "" }
 expect Server.from_http("post", "/rocx/call/x", "", "{}".to_utf8()).method == "POST"
 expect Server.text_of(Server.from_http("POST", "/", "", [0x22, 0xC3, 0xA9, 0xFF, 0x22])) == "\"é\u(FFFD)\""
 expect Server.same_origin(Server.from_http("POST", "/", "origin: http://localhost:8080\nhost: localhost:8080", []))
@@ -612,6 +623,7 @@ expect Server.for_host({ status: 200, headers: [{ name: "Content-Type", value: "
 expect Server.body_text(Server.refused(401, "members only")) == "members only"
 expect Server.body_text(Server.events(Events.none({}))) == ""
 expect Server.body_text(Server.bytes(200, [], "ok".to_utf8())) == "ok"
-expect from_wire("POST /rocx/call/Demos/Echo.echo?x=1\ncookie: member=Ada\ncontent-type: application/json\n\n\"hi\"\n\nmore") == { method: "POST", path: "/rocx/call/Demos/Echo.echo", query: "x=1", headers: [{ name: "cookie", value: "member=Ada" }, { name: "content-type", value: "application/json" }], body: "\"hi\"\n\nmore".to_utf8(), route: "" }
-expect from_wire("GET /about") == { method: "GET", path: "/about", query: "", headers: [], body: [], route: "" }
-expect from_wire("") == { method: "GET", path: "/", query: "", headers: [], body: [], route: "" }
+expect from_wire("POST /rocx/call/Demos/Echo.echo?x=1\ncookie: member=Ada\ncontent-type: application/json\n\n\"hi\"\n\nmore") == { method: "POST", path: "/rocx/call/Demos/Echo.echo", query: "x=1", headers: [{ name: "cookie", value: "member=Ada" }, { name: "content-type", value: "application/json" }], body: "\"hi\"\n\nmore".to_utf8(), route: "", peer: "" }
+expect from_wire("GET /about") == { method: "GET", path: "/about", query: "", headers: [], body: [], route: "", peer: "" }
+expect from_wire("GET /about?x=1 203.0.113.7\nhost: example.com") == { method: "GET", path: "/about", query: "x=1", headers: [{ name: "host", value: "example.com" }], body: [], route: "", peer: "203.0.113.7" }
+expect from_wire("") == { method: "GET", path: "/", query: "", headers: [], body: [], route: "", peer: "" }

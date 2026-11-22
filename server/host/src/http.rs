@@ -148,10 +148,11 @@ pub async fn serve(listener: TcpListener, config: Config, mut stop: watch::Recei
     loop {
         tokio::select! {
             accepted = listener.accept() => {
-                let Ok((stream, _)) = accepted else { continue };
+                let Ok((stream, address)) = accepted else { continue };
                 unacknowledged_deadline(&stream);
                 let config = config.clone();
-                let service = service_fn(move |request| answer(request, config.clone()));
+                let peer = peer_of(address);
+                let service = service_fn(move |request| answer(request, config.clone(), peer.clone()));
                 let connection = http1::Builder::new().serve_connection(TokioIo::new(stream), service);
                 let watched = graceful.watch(connection);
                 tokio::spawn(async move {
@@ -181,7 +182,13 @@ fn full(status: StatusCode, content_type: &str, body: impl Into<Bytes>) -> Respo
     response
 }
 
-async fn answer(request: Request<Incoming>, config: Arc<Config>) -> Result<Response<Body>, Infallible> {
+/// The address a connection came from, as `Server.Request`'s `peer` has it: the IP alone (no port),
+/// an IPv4 client of a dual-stack listener as IPv4 (`203.0.113.7`, not `::ffff:203.0.113.7`).
+fn peer_of(address: SocketAddr) -> String {
+    address.ip().to_canonical().to_string()
+}
+
+async fn answer(request: Request<Incoming>, config: Arc<Config>, peer: String) -> Result<Response<Body>, Infallible> {
     let path = percent_decoded(request.uri().path());
     if config.dev && path == "/__reload" {
         // Never sends: a page notices the server went (a rebuild) when this breaks, and reloads
@@ -193,10 +200,10 @@ async fn answer(request: Request<Incoming>, config: Arc<Config>) -> Result<Respo
     // The tab's stream of its channels, and what its pages say on them: the host's, not Roc's
     // (Roc runs only briefly, for each channel's check and hooks: `channels`).
     if path == "/rocx/live" {
-        return Ok(channels::stream(request, &config));
+        return Ok(channels::stream(request, &config, peer));
     }
     if path == "/rocx/live/send" {
-        return Ok(channels::send(request, config).await);
+        return Ok(channels::send(request, config, peer).await);
     }
     if config.debug && path == "/__rocx/allocations" {
         return Ok(full(StatusCode::OK, "text/plain", roc::live_allocations().to_string()));
@@ -206,7 +213,7 @@ async fn answer(request: Request<Incoming>, config: Arc<Config>) -> Result<Respo
             return Ok(response);
         }
     }
-    Ok(from_roc(request, config).await)
+    Ok(from_roc(request, config, peer).await)
 }
 
 /// A file for `path`: one given by `--file`, or one in a `--static` directory (never outside it).
@@ -253,7 +260,7 @@ fn content_type(path: &Path) -> &'static str {
 }
 
 /// The Roc app's answer: a page or an endpoint.
-async fn from_roc(request: Request<Incoming>, config: Arc<Config>) -> Response<Body> {
+async fn from_roc(request: Request<Incoming>, config: Arc<Config>, peer: String) -> Response<Body> {
     let method = request.method().clone();
     let target = target(request.uri());
     // `x-rocx-channel` and `x-rocx-tab` are the host's own, on its requests about a channel
@@ -274,10 +281,10 @@ async fn from_roc(request: Request<Incoming>, config: Arc<Config>) -> Response<B
 
     let started = Instant::now();
     let asked = target.clone();
-    let answering = hosted::Asked::new(method.as_str(), target, headers.trim_end_matches('\n').to_string(), body, config.context.clone(), config.dev);
+    let answering = hosted::Asked::new(method.as_str(), target, headers.trim_end_matches('\n').to_string(), body, peer, config.context.clone(), config.dev);
     let answered = coroutine::run(move || {
         hosted::call_asking(answering.clone(), || {
-            let mut answer = roc::respond(&answering.method, &answering.target, &answering.headers, &answering.body, &answering.started)?;
+            let mut answer = roc::respond(&answering)?;
             // A page of components: rendered for GET (and any other method), with the status it
             // set (`<HttpStatusCode>`); not for HEAD, which gets the answer's status and headers.
             if let Some(page) = answer.page.take() {

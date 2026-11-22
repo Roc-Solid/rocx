@@ -55,23 +55,25 @@ const MOST_SAID_BYTES: usize = 1 << 20;
 const NOT_PASSED: [&str; 10] = ["accept", "content-type", "content-length", "transfer-encoding", "connection", "range", "if-none-match", "if-modified-since", "x-rocx-channel", "x-rocx-tab"];
 
 /// What every request about a stream's (or a post's) channels is made with: its request's headers
-/// (cookies among them), what the server was started with, and the tab.
+/// (cookies among them), the address its connection came from, what the server was started with,
+/// and the tab.
 struct Asking {
     headers: String,
+    peer: String,
     started: String,
     dev: bool,
     tab: String,
 }
 
 impl Asking {
-    fn new(headers: &HeaderMap, config: &Config, tab: String) -> Asking {
+    fn new(headers: &HeaderMap, config: &Config, tab: String, peer: String) -> Asking {
         let headers = headers
             .iter()
             .filter(|(name, _)| !NOT_PASSED.contains(&name.as_str()))
             .map(|(name, value)| format!("{}: {}", name.as_str(), String::from_utf8_lossy(value.as_bytes())))
             .collect::<Vec<_>>()
             .join("\n");
-        Asking { headers, started: config.context.clone(), dev: config.dev, tab }
+        Asking { headers, peer, started: config.context.clone(), dev: config.dev, tab }
     }
 }
 
@@ -105,8 +107,8 @@ fn ask(asking: &Asking, op: &str, method: &str, url: &str, body: String) -> (Ans
     if !body.is_empty() {
         headers.push_str("\ncontent-type: application/json");
     }
-    let asked = hosted::Asked::new(method, url.to_string(), headers, Bytes::from(body), asking.started.clone(), asking.dev);
-    let answered = hosted::call_asking(asked.clone(), || roc::respond(&asked.method, &asked.target, &asked.headers, &asked.body, &asked.started));
+    let asked = hosted::Asked::new(method, url.to_string(), headers, Bytes::from(body), asking.peer.clone(), asking.started.clone(), asking.dev);
+    let answered = hosted::call_asking(asked.clone(), || roc::respond(&asked));
     match answered {
         Ok(answer) => {
             if let Some(feed) = answer.feed {
@@ -217,7 +219,7 @@ fn not_allowed(path: &str, allowed: &'static str, method: &Method) -> Response<B
 
 /// `GET /rocx/live?tab=<id>&c=<url>&c=<url>…`: the tab's stream of its channels. It answers at once;
 /// each channel's check runs as the stream starts.
-pub fn stream(request: Request<Incoming>, config: &Config) -> Response<Body> {
+pub fn stream(request: Request<Incoming>, config: &Config, peer: String) -> Response<Body> {
     if !matches!(*request.method(), Method::GET | Method::HEAD) {
         return not_allowed("/rocx/live", "GET", request.method());
     }
@@ -241,7 +243,7 @@ pub fn stream(request: Request<Incoming>, config: &Config) -> Response<Body> {
     if *request.method() == Method::HEAD {
         return response.body(Full::new(Bytes::new()).boxed()).unwrap();
     }
-    let asking = Arc::new(Asking::new(request.headers(), config, tab));
+    let asking = Arc::new(Asking::new(request.headers(), config, tab, peer));
     let (out, frames) = mpsc::channel::<Bytes>(16);
     tokio::spawn(run(asking, urls, out, config.live_beat));
     let frames = futures_util::stream::unfold(frames, |mut frames| async move { frames.recv().await.map(|data| (Ok::<_, Infallible>(Frame::data(data)), frames)) });
@@ -618,7 +620,7 @@ fn ended(subscriptions: &mut Vec<Subscription>, at: usize, why: &str, queue: &mu
 /// page says: its channel's check runs, then its route's `receive!`), or
 /// `{"channel":"<url>","resync":true}` (the tab's stream resyncs that channel). 204 when every
 /// item was taken; else 200, `{"refused":[{"index":0,"status":403,"why":"…"}]}`.
-pub async fn send(request: Request<Incoming>, config: Arc<Config>) -> Response<Body> {
+pub async fn send(request: Request<Incoming>, config: Arc<Config>, peer: String) -> Response<Body> {
     if *request.method() != Method::POST {
         return not_allowed("/rocx/live/send", "POST", request.method());
     }
@@ -629,7 +631,7 @@ pub async fn send(request: Request<Incoming>, config: Arc<Config>) -> Response<B
     }
     let fields = query_fields(request.uri().query().unwrap_or(""));
     let tab = fields.iter().find(|(name, _)| name == "tab").and_then(|(_, value)| tab_id(value));
-    let asking = Arc::new(Asking::new(request.headers(), &config, tab.clone().unwrap_or_default()));
+    let asking = Arc::new(Asking::new(request.headers(), &config, tab.clone().unwrap_or_default(), peer));
     let body = match Limited::new(request.into_body(), MOST_SAID_BYTES).collect().await {
         Ok(collected) => collected.to_bytes(),
         Err(error) if error.is::<LengthLimitError>() => return text(StatusCode::PAYLOAD_TOO_LARGE, "what was said is too large"),

@@ -33,7 +33,7 @@ program = {
 	routes: [],
 }
 
-respond! = |_method, _target, _headers, _body, url|
+respond! = |_request, url|
 	match planets!(url) {
 		Ok(listed) => Server.response(200, [{ name: "content-type", value: "text/plain; charset=utf-8" }], listed)
 		Err(_) => Server.response(500, [{ name: "content-type", value: "text/plain; charset=utf-8" }], "roc-pg failed")

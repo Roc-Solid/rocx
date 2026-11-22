@@ -5,9 +5,10 @@
 ## are packages' plugins (packages/jobs, packages/email: D-034, D-035), on the same effects. The browser's
 ## platform is `web/platform`, wasm; an app is two programs, one on each, talking over HTTP.
 ##
-## - `respond!(method, target, headers, body, context)` answers a request: a page or an endpoint.
-##   `target` is the path and the query; `headers` a `name: value` a
-##   line; `body` the bytes as they came; `context` what the server was started with
+## - `respond!(request, context)` answers a request: a page or an endpoint. The host hands over one
+##   record of what it knows of the request (`HostRequest`: its method, its target, its headers, its
+##   body as it came, and the address of the connection it came on), which the platform makes a
+##   `Server.Request` (`peer` is that address); `context` is what the server was started with
 ##   (`--context-file`). Its answer is a `Server.Response`, whose body is text; bytes, sent as they
 ##   are; a body the host fetches from elsewhere and sends on as it comes, never through Roc
 ##   (`Forward`); a page of components (`Page`), which the host renders for the request, every hole run
@@ -45,7 +46,7 @@
 platform ""
 	requires {
 		program : {
-			respond! : Str, Str, Str, List(U8), Str => Server.Response,
+			respond! : Server.Request, Str => Server.Response,
 			migrations : List({ name : Str, sql : Str }),
 			actors : List({ name : Str, run! : Str, Str, Str => Try({ state : Str, reply : Str }, Str) }),
 			logs : { format : [Auto, Pretty, Json] },
@@ -208,6 +209,13 @@ import Time
 import Title
 import Transition
 
+## A request as the host hands it over, everything it knows of it in one record: its method, its
+## target (the path, and a query after a `?`), its headers (a `name: value` a line), its body, the
+## bytes as they came, and the address of the connection it came on (`peer`: `203.0.113.7`, `::1`;
+## for a GET a page reads as the host renders it, the page's). What else the host comes to know of
+## a request goes here too.
+HostRequest : { method : Str, target : Str, headers : Str, body : List(U8), peer : Str }
+
 ## A stream an answer sends (`respond!`'s `feed`): a loop, run with the host's `send!` and
 ## `sleep!`. The host keeps it boxed in a record: a box it doesn't look into. (A boxed function
 ## would be one it calls, and the functions in its argument would have to be boxed too.)
@@ -219,12 +227,13 @@ Feed : { run! : { send! : Str => Bool, sleep! : U64 => {} } => {} }
 ## (`run_for_host!`): run, it renders the page's components, its holes kept by the host, as JSON
 ## (`Html.serialize!`). The boxes an answer doesn't send do nothing, and the host releases them.
 ## A plugin's early path (`Plugin.Early`) is answered before the app, under the flag it names.
-respond_for_host! : Str, Str, Str, List(U8), Str => { status : U16, headers : Str, kind : U8, text : Str, bytes : List(U8), upstream : { method : Str, url : Str, headers : Str }, page : Box(() => Str), feed : Box(Feed) }
-respond_for_host! = |method, target, headers, body, context| {
+respond_for_host! : HostRequest, Str => { status : U16, headers : Str, kind : U8, text : Str, bytes : List(U8), upstream : { method : Str, url : Str, headers : Str }, page : Box(() => Str), feed : Box(Feed) }
+respond_for_host! = |given, context| {
+	request = { ..Server.from_http(given.method, given.target, given.headers, given.body), peer: given.peer }
 	answered =
-		match early!(method, target) {
-			Ok(early) => (early.answer!)({ ..Server.from_http(method, target, headers, body), route: early.path })
-			Err(NotEarly) => (program.respond!)(method, target, headers, body, context)
+		match early!(given.method, given.target) {
+			Ok(early) => (early.answer!)({ ..request, route: early.path })
+			Err(NotEarly) => (program.respond!)(request, context)
 		}
 	answer = Server.for_host(answered)
 	view! = answer.page

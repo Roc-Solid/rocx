@@ -212,6 +212,10 @@ test("Roc answers: the request's method, path, query, body and the server's cont
 	assert.equal(await text("/echo?a=1&b=2"), "GET /echo?a=1&b=2 ");
 	assert.equal(await post("/echo", "zażółć ✓"), "POST /echo zażółć ✓");
 	assert.equal(await text("/context"), "facts=yes");
+	// The connection's address (D-041): handed over with the request, as `Server.request!` reads it
+	// again, and on a GET a page reads as the server renders it, the page's.
+	assert.equal(await text("/peer"), "127.0.0.1 127.0.0.1");
+	assert.match(await text("/peer-page"), /<p class="peer">(<!--x-->)?127\.0\.0\.1(<!--\/x-->)?<\/p>/);
 	assert.equal((await get("/nowhere")).status, 404);
 	assert.ok(Number(await text("/now")) > 1_700_000_000_000, "Time.now_millis!");
 	assert.equal(await text("/log"), "logged");
@@ -1184,7 +1188,7 @@ test("JobsPage.plugin without a guard doesn't compile: the record is missing the
 	mkdirSync(at, { recursive: true });
 	writeFileSync(
 		join(at, "main.roc"),
-		'app [program] { pf: platform "../../../platform/main.roc", admin: "../../../../packages/admin/main.roc" }\n\nimport pf.Plugin\nimport pf.Server\nimport admin.JobsPage\n\nprogram = {\n\trespond!: |_, _, _, _, _| Server.response(200, [], ""),\n\tmigrations: [],\n\tactors: [],\n\tlogs: { format: Auto },\n\tplugins: [Plugin.running(JobsPage.plugin({ at: "/admin/jobs" }))],\n\troutes: [],\n}\n',
+		'app [program] { pf: platform "../../../platform/main.roc", admin: "../../../../packages/admin/main.roc" }\n\nimport pf.Plugin\nimport pf.Server\nimport admin.JobsPage\n\nprogram = {\n\trespond!: |_, _| Server.response(200, [], ""),\n\tmigrations: [],\n\tactors: [],\n\tlogs: { format: Auto },\n\tplugins: [Plugin.running(JobsPage.plugin({ at: "/admin/jobs" }))],\n\troutes: [],\n}\n',
 	);
 	const checked = spawnSync(roc(), ["check", join(at, "main.roc")], { encoding: "utf8" });
 	assert.notEqual(checked.status, 0);

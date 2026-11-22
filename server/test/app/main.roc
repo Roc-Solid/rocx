@@ -122,9 +122,8 @@ arrays! = |{}| {
 	Ok(Json.to_str({ unnested: unnested?, found: found?.map(|row| row.v), contains: contains?, numbers: numbers?, flags: flags?, empty: empty?, uncast: said }))
 }
 
-respond! : Str, Str, Str, List(U8), Str => Server.Response
-respond! = |method, target, headers, body, context| {
-	request = Server.from_http(method, target, headers, body)
+respond! : Server.Request, Str => Server.Response
+respond! = |request, context| {
 	# The host's asks about a channel's subscriptions (`/rocx/live`), as `App.program` and
 	# `Generated/Routes` answer them: a subscription's end outside any middleware, the rest behind it.
 	asked = Endpoint.channel_asked(request)
@@ -182,6 +181,10 @@ route! = |request, context| {
 		("GET", "/") => text(200, "Hello from Roc, natively.")
 		("GET", "/context") => text(200, context)
 		("GET", "/echo") => text(200, "${request.method} ${request.path}?${request.query} ${Server.text_of(request)}")
+		# ---- The connection's address, as the host hands it over, and as `Server.request!` reads it again ----
+		("GET", "/peer") => text(200, "${request.peer} ${Server.request!({}).peer}")
+		("GET", "/peer-json") => Server.response(200, [{ name: "content-type", value: "application/json" }], "\"${request.peer}\"")
+		(_, "/peer-page") => { status: 200, headers: [{ name: "x-page", value: "yes" }], body: Page(peer_page!) }
 		("POST", "/echo") => text(200, "${request.method} ${request.path} ${Server.text_of(request)}")
 		# ---- Bytes: a request's body as it came; an answer of bytes ----
 		("POST", "/bytes/echo") => Server.bytes(200, [{ name: "content-type", value: "application/octet-stream" }], request.body)
@@ -1782,6 +1785,14 @@ reading! = |{}| {
 		],
 	)
 }
+
+## A page that reads the address its GET came from, as the server renders it: the in-process read
+## has the page's.
+peer_page! : {} => Html
+peer_page! = |{}| Html.element("html", [], [Html.element("body", [], [Html.element("p", [Html.attr("class", "peer")], [Html.text_of(|| Endpoint.get!(peer_endpoint))])])])
+
+peer_endpoint : Endpoint({}, {}, Str)
+peer_endpoint = Endpoint.remote("GET", "/peer-json")
 
 ## A page whose layout reads an endpoint behind the gate, with an <Errored> around it: for a
 ## signed-out visitor, the gate's redirect is the page's answer (D-019).

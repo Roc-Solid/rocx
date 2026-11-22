@@ -705,9 +705,9 @@ fn in_process(label: &str, method: &str, target: &str, accept: &str, content_typ
     if let Some(content_type) = content_type {
         headers.push(format!("content-type: {content_type}"));
     }
-    let asked = Asked::new(method, target.to_string(), headers.join("\n"), Bytes::copy_from_slice(body), page.started.clone(), page.dev);
+    let asked = Asked::new(method, target.to_string(), headers.join("\n"), Bytes::copy_from_slice(body), page.peer.clone(), page.started.clone(), page.dev);
     let render = RENDER.with(|slot| slot.borrow_mut().take());
-    let answered = hosted::call_asking(asked.clone(), || roc::respond(&asked.method, &asked.target, &asked.headers, &asked.body, &asked.started));
+    let answered = hosted::call_asking(asked.clone(), || roc::respond(&asked));
     RENDER.with(|slot| *slot.borrow_mut() = render);
     match answered {
         Ok(answer) => {

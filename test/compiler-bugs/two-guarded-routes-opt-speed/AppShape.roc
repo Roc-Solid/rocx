@@ -13,8 +13,7 @@ Config(given, handed) := {
 
 make : Config(_, _) -> _
 make = |config| {
-	respond!: |method, target, headers, body, started| {
-		request = Server.from_http(method, target, headers, body)
+	respond!: |request, started| {
 		Middleware.run!(config.middleware, request, (config.context)(started), |passed, context| Plugin.respond!(config.plugins, passed, context, |_, _| Server.response(404, [], "fell through")))
 	},
 	migrations: [],

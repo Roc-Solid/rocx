@@ -7,8 +7,8 @@ import pf.Log
 import pf.Server
 
 program = {
-	respond!: |_method, target, _headers, _body, _context| {
-		Log.info!("an event from Roc", { target, note: "two words" })
+	respond!: |request, _context| {
+		Log.info!("an event from Roc", { target: request.path, note: "two words" })
 		Server.response(200, [{ name: "content-type", value: "text/plain; charset=utf-8" }], "logged")
 	},
 	migrations: [],

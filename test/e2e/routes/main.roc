@@ -3,12 +3,11 @@
 ## `Generated/Root`, which the host renders. The e2e tests serve it; `roc test` checks its paths.
 app [program] { pf: platform "../../../server/platform/main.roc" }
 
-import pf.Server
 import Generated/Routes
 import Generated/Paths
 
 program = {
-	respond!: |method, target, headers, body, context| Routes.respond!(Server.from_http(method, target, headers, body), context),
+	respond!: |request, context| Routes.respond!(request, context),
 	migrations: [],
 	actors: [],
 	logs: { format: Auto },

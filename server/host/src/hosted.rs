@@ -127,6 +127,9 @@ pub struct Asked {
     pub headers: String,
     /// As it came: bytes, shared by the call's copies of it.
     pub body: Bytes,
+    /// The address of the connection it came on (`203.0.113.7`, `::1`): `Server.Request`'s `peer`.
+    /// A request the host makes in-process for a page has the page's.
+    pub peer: String,
     /// What the server was started with (`--context-file`), which an in-process call is given too.
     pub started: String,
     /// Whether crashes show their message (`--dev`).
@@ -137,8 +140,8 @@ pub struct Asked {
 }
 
 impl Asked {
-    pub fn new(method: &str, target: String, headers: String, body: Bytes, started: String, dev: bool) -> Asked {
-        Asked { method: method.to_string(), target, headers, body, started, dev, ..Asked::default() }
+    pub fn new(method: &str, target: String, headers: String, body: Bytes, peer: String, started: String, dev: bool) -> Asked {
+        Asked { method: method.to_string(), target, headers, body, peer, started, dev, ..Asked::default() }
     }
 }
 
@@ -501,15 +504,17 @@ pub extern "C" fn roc_host_sleep(ms: u64) {
 
 // ---- The request: what it is, where its page is ----
 
-/// The request, as HTTP writes it: `METHOD target`, a header a line, a blank line, its body (as
-/// text: a byte that isn't UTF-8 is U+FFFD; `respond!` was given the bytes). A call that answers
-/// none (a job's, a background loop's) has "".
+/// The request, as HTTP writes it: `METHOD target`, then the connection's address after a space
+/// when there is one (`GET /about 203.0.113.7`), a header a line, a blank line, its body (as text:
+/// a byte that isn't UTF-8 is U+FFFD; `respond!` was given the bytes). A call that answers none (a
+/// job's, a background loop's) has "".
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_request() -> RocStr {
     let written = CALL.with(|context| {
         context.borrow().asked.as_ref().map(|asked| {
             let headers = if asked.headers.is_empty() { String::new() } else { format!("\n{}", asked.headers) };
-            format!("{} {}{headers}\n\n{}", asked.method, asked.target, String::from_utf8_lossy(&asked.body))
+            let peer = if asked.peer.is_empty() { String::new() } else { format!(" {}", asked.peer) };
+            format!("{} {}{peer}{headers}\n\n{}", asked.method, asked.target, String::from_utf8_lossy(&asked.body))
         })
     });
     roc_str(&written.unwrap_or_default())

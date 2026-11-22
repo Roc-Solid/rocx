@@ -35,7 +35,7 @@ import Widget
 AdminPage := [].{
 
 	## A request, as `Server.Request` is.
-	Request : { method : Str, path : Str, query : Str, headers : List({ name : Str, value : Str }), body : List(U8), route : Str }
+	Request : { method : Str, path : Str, query : Str, headers : List({ name : Str, value : Str }), body : List(U8), route : Str, peer : Str }
 
 	## What the admin runs on: `{ all!: Db.all!, run!: Db.run!, random!: Random.bytes! }`.
 	Effects : {

@@ -37,9 +37,11 @@ program = {
 }
 ```
 
-`respond!` takes a request's method, target, headers (`name: value` a line), body (`List(U8)`, the
-bytes as they came) and what the server was started with (`--context-file`), and answers with a
-`Server.Response`: `Server.from_http` makes the request. An app with routes writes none of this
+`respond!` takes the request, a `Server.Request` (its method, path, query, headers, body as the
+bytes came, and `peer`, the address of the connection it came on), and what the server was started
+with (`--context-file`), and answers with a `Server.Response`. The host hands the request over as
+one record of what it knows (`HostRequest` in `platform/main.roc`: method, target, headers, body,
+peer; D-041), which the platform makes the `Server.Request`. An app with routes writes none of this
 record: `rocx build` writes `Generated/App`, whose `App.program({ context, middleware, openapi,
 plugins })` is a program that answers every request with a plugin's route or the app's (pages,
 `+server.roc` endpoints and channels) behind its middleware, and lists the kinds of actor its

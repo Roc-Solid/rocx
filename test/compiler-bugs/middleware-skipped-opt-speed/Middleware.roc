@@ -28,7 +28,7 @@ pass_on = Mw.make(|path, next!| next!(path))
 ## Every request should answer "doc": the third middleware answers it. With `--opt=speed` it is
 ## "fell through". The shape it was found in: a middleware type, as a platform's is.
 program = {
-	respond!: |_method, target, _headers, _body, _started| Server.response(200, [], pass_on.then(pass_on).then(Mw.make(|_, _| "doc")).run!(target, |_| "fell through")),
+	respond!: |request, _started| Server.response(200, [], pass_on.then(pass_on).then(Mw.make(|_, _| "doc")).run!(request.path, |_| "fell through")),
 	migrations: [],
 	actors: [],
 	logs: { format: Auto },

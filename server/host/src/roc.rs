@@ -15,6 +15,7 @@
 //! touch one value's counts at once.
 
 use crate::abi::{self, RocHost, RocStr};
+use crate::hosted;
 use std::alloc::{Layout, alloc, dealloc};
 use std::cell::{Cell, RefCell, UnsafeCell};
 use std::ffi::c_void;
@@ -475,19 +476,24 @@ fn copied(text: RocStr, host: &RocHost) -> String {
     copy
 }
 
-/// The app's answer to a request (`respond!`). A call during another (a GET a component the host
-/// renders reads: `signals::in_process`) has a list and a guard of its own.
-pub fn respond(method: &str, target: &str, headers: &str, body: &[u8], context: &str) -> Result<Answer, Crash> {
+/// The app's answer to a request (`respond!`): the request handed over as one record
+/// (`HostRequest`: its method, target, headers, body and the connection's address), and what the
+/// server was started with. A call during another (a GET a component the host renders reads:
+/// `signals::in_process`) has a list and a guard of its own.
+pub fn respond(asked: &hosted::Asked) -> Result<Answer, Crash> {
     let host = host();
     let host = &host;
     let made = Ring::new();
     let answer = guarded(&made, || unsafe {
         abi::roc_respond(
-            RocStr::from_str(method, host),
-            RocStr::from_str(target, host),
-            RocStr::from_str(headers, host),
-            abi::RocListWith::from_slice(body, host),
-            RocStr::from_str(context, host),
+            abi::RespondForHostArg0 {
+                method: RocStr::from_str(&asked.method, host),
+                target: RocStr::from_str(&asked.target, host),
+                headers: RocStr::from_str(&asked.headers, host),
+                body: abi::RocListWith::from_slice(&asked.body, host),
+                peer: RocStr::from_str(&asked.peer, host),
+            },
+            RocStr::from_str(&asked.started, host),
         )
     })?;
     // The strings and bytes are copied out and freed (leaving `made`); what is left is the

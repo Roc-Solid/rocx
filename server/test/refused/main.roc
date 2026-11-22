@@ -6,7 +6,7 @@ import pf.Plugin
 import pf.Server
 
 program = {
-	respond!: |_, _, _, _, _| Server.response(200, [], "never"),
+	respond!: |_, _| Server.response(200, [], "never"),
 	migrations: [],
 	actors: [],
 	logs: { format: Auto },

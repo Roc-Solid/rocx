@@ -1448,6 +1448,39 @@ const _: () = assert!(core::mem::size_of::<AnonStructC1c0196657ba1ea1>() == 36, 
 #[cfg(target_pointer_width = "32")]
 const _: () = assert!(core::mem::align_of::<AnonStructC1c0196657ba1ea1>() == 4, "AnonStructC1c0196657ba1ea1 alignment mismatch");
 
+/// Element type for __AnonStruct_3136a6b59821456e
+#[cfg(target_pointer_width = "32")]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct AnonStruct3136a6b59821456e {
+    pub body: RocListWith<u8, false>,
+    pub headers: RocStr,
+    pub method: RocStr,
+    pub peer: RocStr,
+    pub target: RocStr,
+}
+
+/// Element type for __AnonStruct_3136a6b59821456e
+#[cfg(not(target_pointer_width = "32"))]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct AnonStruct3136a6b59821456e {
+    pub body: RocListWith<u8, false>,
+    pub headers: RocStr,
+    pub method: RocStr,
+    pub peer: RocStr,
+    pub target: RocStr,
+}
+
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::size_of::<AnonStruct3136a6b59821456e>() == 120, "AnonStruct3136a6b59821456e size mismatch");
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::align_of::<AnonStruct3136a6b59821456e>() == 8, "AnonStruct3136a6b59821456e alignment mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::size_of::<AnonStruct3136a6b59821456e>() == 60, "AnonStruct3136a6b59821456e size mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::align_of::<AnonStruct3136a6b59821456e>() == 4, "AnonStruct3136a6b59821456e alignment mismatch");
+
 /// Tag discriminant for Try.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3266,6 +3299,7 @@ pub type HostTcpWriteResultPayload = HostDbBeginResultPayload;
 pub type HostTcpWriteResultTag = HostDbBeginResultTag;
 pub type ActorForHostOk = AnonStruct47ce055eccfb1f9d;
 pub type DropFeedForHostArg0 = AnonStruct608867a33f852b1e;
+pub type RespondForHostArg0 = AnonStruct3136a6b59821456e;
 pub type RespondForHost = AnonStruct8f4fc9623a0f6755;
 pub type RespondForHostFeed = AnonStruct608867a33f852b1e;
 pub type RespondForHostUpstream = AnonStructC1c0196657ba1ea1;
@@ -3897,6 +3931,43 @@ pub struct AnonStructC1c0196657ba1ea1Release;
 
 unsafe impl RocRelease<AnonStructC1c0196657ba1ea1> for AnonStructC1c0196657ba1ea1Release {
     unsafe fn release(value: AnonStructC1c0196657ba1ea1, roc_host: &RocHost) {
+        unsafe { value.decref(roc_host); }
+    }
+}
+
+impl AnonStruct3136a6b59821456e {
+    /// Recursively decrement Roc-owned fields.
+    ///
+    /// # Safety
+    /// `self` must own one live Roc reference for each refcounted field.
+    pub unsafe fn decref(self, roc_host: &RocHost) {
+        let value = self;
+        unsafe { value.body.decref(roc_host); }
+        unsafe { value.headers.decref(roc_host); }
+        unsafe { value.method.decref(roc_host); }
+        unsafe { value.peer.decref(roc_host); }
+        unsafe { value.target.decref(roc_host); }
+    }
+
+    /// Increment Roc-owned fields.
+    ///
+    /// # Safety
+    /// `self` must point at live Roc allocations. The retained references must
+    /// be balanced by later decrefs.
+    pub unsafe fn incref(self, amount: isize) {
+        let value = self;
+        unsafe { value.body.incref(amount); }
+        unsafe { value.headers.incref(amount); }
+        unsafe { value.method.incref(amount); }
+        unsafe { value.peer.incref(amount); }
+        unsafe { value.target.incref(amount); }
+    }
+}
+
+pub struct AnonStruct3136a6b59821456eRelease;
+
+unsafe impl RocRelease<AnonStruct3136a6b59821456e> for AnonStruct3136a6b59821456eRelease {
+    unsafe fn release(value: AnonStruct3136a6b59821456e, roc_host: &RocHost) {
         unsafe { value.decref(roc_host); }
     }
 }
@@ -4757,7 +4828,7 @@ unsafe extern "C" {
     pub fn roc_isolated(arg0: RocStr, arg1: RocStr) -> IsolatedForHostResult;
 
     /// Entrypoint: respond_for_host!
-    pub fn roc_respond(arg0: RocStr, arg1: RocStr, arg2: RocStr, arg3: RocListWith<u8, false>, arg4: RocStr) -> AnonStruct8f4fc9623a0f6755;
+    pub fn roc_respond(arg0: AnonStruct3136a6b59821456e, arg1: RocStr) -> AnonStruct8f4fc9623a0f6755;
 
     /// Entrypoint: run_for_host!
     pub fn roc_run(arg0: RocErasedCallable) -> RocStr;
@@ -4814,8 +4885,8 @@ const _: () = assert!(core::mem::align_of::<RocOwned<AnonStruct8f4fc9623a0f6755,
 ///
 /// # Safety
 /// The raw entrypoint and its arguments must satisfy the generated host ABI.
-pub unsafe fn roc_respond_owned(arg0: RocStr, arg1: RocStr, arg2: RocStr, arg3: RocListWith<u8, false>, arg4: RocStr) -> RocOwned<AnonStruct8f4fc9623a0f6755, AnonStruct8f4fc9623a0f6755Release> {
-    let value = unsafe { roc_respond(arg0, arg1, arg2, arg3, arg4) };
+pub unsafe fn roc_respond_owned(arg0: AnonStruct3136a6b59821456e, arg1: RocStr) -> RocOwned<AnonStruct8f4fc9623a0f6755, AnonStruct8f4fc9623a0f6755Release> {
+    let value = unsafe { roc_respond(arg0, arg1) };
     unsafe { RocOwned::from_raw(value) }
 }
 

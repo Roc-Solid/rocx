@@ -7,8 +7,7 @@ import pf.Server
 
 make : List(Plugin.Value(Str)) -> _
 make = |plugins| {
-	respond!: |method, target, headers, body, started| {
-		request = Server.from_http(method, target, headers, body)
+	respond!: |request, started| {
 		Plugin.respond!(plugins, request, started, |_, _| Server.response(404, [], "fell through"))
 	},
 	migrations: [],
