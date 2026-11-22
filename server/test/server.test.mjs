@@ -136,16 +136,6 @@ const get = (path, options) => server.get(path, options);
 const text = (path, options) => server.text(path, options);
 const post = (path, body) => text(path, { method: "POST", body });
 const live = async () => Number(await text("/__rocx/allocations"));
-/** What Roc holds once the background loops have settled (a worker's look at the queue allocates
- * for a moment): the same count twice, 200 ms apart. */
-const steady = async () => {
-	for (let previous = -1; ; ) {
-		const now = await live();
-		if (now === previous) return now;
-		previous = now;
-		await new Promise((resolve) => setTimeout(resolve, 200));
-	}
-};
 const until = async (check, ms = 5000) => {
 	const started = performance.now();
 	for (;;) {
@@ -155,6 +145,12 @@ const until = async (check, ms = 5000) => {
 		await new Promise((resolve) => setTimeout(resolve, 20));
 	}
 };
+/** What Roc holds once the background loops are at rest: the baseline, waited for; false if it
+ * never comes back to it (an earlier test left something held). Their calls allocate for as long
+ * as they run (a worker's look at the queue, the tick cron's insert: longer when Postgres is slow,
+ * as when other tests use it at once), so a count read twice, 200 ms apart, could be in the middle
+ * of one, and a loop checked against it found fewer allocations once it had ended. */
+const settled = async () => (await until(async () => (await live()) === baseline)) && baseline;
 
 /** The events on a server's log so far, each line parsed: with `ROCX_LOG` unset and stderr a pipe,
  * the log is JSON, an object a line (a line still arriving isn't one yet). */
@@ -394,8 +390,6 @@ test("a stream is a loop: each event sent as it is made, then `end`; it stops wh
 	assert.ok(performance.now() - started >= 30, "it slept between them");
 	assert.equal(await text("/list"), "data: a\n\ndata: b\n\ndata: c\n\nevent: end\ndata: \n\n", "Events.from_list, a loop too");
 
-	// What Roc holds once the background loops settle (they allocate for a moment now and then).
-	const settled = async () => (await until(async () => (await live()) === baseline)) && baseline;
 	const before = await settled();
 	assert.equal(before, baseline, "nothing held before the stream");
 	const gone = new AbortController();
@@ -1030,7 +1024,6 @@ test("jobs: a kind says how many times its jobs are tried: one tried twice fails
 });
 
 test("jobs: a time limit cuts a run off at its next wait (Postgres, another server, a socket), whatever it does with the error; tried again, then failed; nothing left held", { skip: skipDb }, async () => {
-	const settled = async () => (await until(async () => (await live()) === baseline)) && baseline;
 	const before = await settled();
 	// Another server that answers in 3 s, and one that never says anything.
 	const node = await httpServer();
@@ -2899,7 +2892,8 @@ test("pages of components: an effect, a cleanup and a timer don't run on the ser
 	const page = await get("/page-effects");
 	assert.equal(page.status, 200);
 	assert.equal(await page.text(), `<!doctype html><html><body><p class="said"><!--x-->not run<!--/x--></p>${scripts("[]")}</body></html>`);
-	const before = await steady();
+	const before = await settled();
+	assert.equal(before, baseline, `nothing held before: ${await live()} allocations, ${baseline} once started`);
 	for (let i = 0; i < 20; i++) await text("/page-effects");
 	assert.equal(await until(async () => (await live()) === before), true, `${await live()} allocations, ${before} before`);
 });
@@ -2919,7 +2913,8 @@ test("pages of components: a <NoHydration> is static markup between its markers,
 	const refused = await get("/page-region-handler");
 	assert.equal(refused.status, 500);
 	await logsEvent({ msg: "rocx server: Roc crashed", method: "GET", target: "/page-region-handler", error: "rocx: <button on:click> is inside <NoHydration>, which the browser never hydrates, so its handler would never run: render what has it outside <NoHydration>" });
-	const before = await steady();
+	const before = await settled();
+	assert.equal(before, baseline, `nothing held before: ${await live()} allocations, ${baseline} once started`);
 	for (let i = 0; i < 20; i++) await Promise.all([text("/page-region"), text("/page-region-handler")]);
 	assert.equal(await until(async () => (await live()) === before), true, `${await live()} allocations, ${before} before`);
 });
@@ -2935,7 +2930,8 @@ test("pages of components: a read its middleware redirects (a signed-out visitor
 	const signed = await get("/page-gated", { headers: { cookie: "member=Ada" } });
 	assert.equal(signed.status, 200);
 	assert.match(await signed.text(), /<header><!--x-->signed in as Ada<!--\/x--><\/header>/);
-	const before = await steady();
+	const before = await settled();
+	assert.equal(before, baseline, `nothing held before: ${await live()} allocations, ${baseline} once started`);
 	for (let i = 0; i < 20; i++) await text("/page-gated");
 	assert.equal(await until(async () => (await live()) === before), true, `${await live()} allocations, ${before} before`);
 });
@@ -2981,7 +2977,8 @@ test("endpoint reads: a page reads a GET endpoint as the server renders it, in-p
 	assert.deepEqual(await asked.json(), { weeks: "1", member: "Ada", probe: "7" });
 	// Without the cookie, the page reads as nobody, and still renders.
 	assert.match(await text("/reads", { headers: { accept: "text/html" } }), /<p class="data"><!--x--> nobody <!--\/x--><\/p>/);
-	const before = await steady();
+	const before = await settled();
+	assert.equal(before, baseline, `nothing held before: ${await live()} allocations, ${baseline} once started`);
 	for (let i = 0; i < 20; i++) await text("/reads?weeks=2", { headers: { cookie: "member=Ada", accept: "text/html" } });
 	assert.equal(await until(async () => (await live()) === before), true, `${await live()} allocations, ${before} before`);
 });
@@ -3104,7 +3101,8 @@ test("form actions: a script's post, or the runtime's, gets the endpoint's answe
 	const plain = await plainPost("/flash/away", {});
 	assert.equal(plain.status, 303, "a plain form gets the endpoint's own answer as it is");
 	assert.equal(plain.headers.get("location"), "/members");
-	const before = await steady();
+	const before = await settled();
+	assert.equal(before, baseline, `nothing held before: ${await live()} allocations, ${baseline} once started`);
 	for (let i = 0; i < 20; i++) {
 		const flashed = await plainPost("/flash/join", { name: "Al", secret: "x" }, { referer: `${server.url}/flash/sign-in` });
 		await text(i % 2 ? "/flash/page" : "/flash/sign-in", { headers: { cookie: flashOf(flashed), accept: "text/html" } });
