@@ -297,6 +297,14 @@ examples-check *names:
         {{ rocx }} lint "$dir"
     done
 
+# Measures the example apps for the docs' examples page (/examples) into site/example-apps.json:
+# each one's browser half (its wasm, --opt=size) raw, gzipped and brotli'd, and what it is made of.
+# `just example-apps tasks plate` measures those alone; `just example-apps --bench` also runs echo's
+# server under bombardier (a minute or so; best on a quiet machine). Run it after a change that
+# moves the sizes, and commit the file: the site's build reads it, and doesn't measure.
+example-apps *args:
+    ROC={{ roc }} node site/example-apps.mjs {{ args }}
+
 # Regenerates the platforms' glue after a change to a header: web/host/roc_platform_abi.zig, and
 # server/host/src/roc_platform_abi.rs.
 glue:

@@ -1,8 +1,8 @@
 import ../Generated/Paths
 
-## The docs, in three parts, each with its own pages in the sidebar: rocx, what an app is written
-## in; the platform, what it runs on; and the ecosystem, the packages it can use. The front page
-## (Roc Solid as a whole) is in none of them. The bar at the top goes from one part to another.
+## The docs, in four parts, each with its own pages in the sidebar: rocx, what an app is written
+## in; the platform, what it runs on; the ecosystem, the packages it can use; and the examples,
+## whole apps made of all three. The front page (Roc Solid as a whole) is in none of them. The bar at the top goes from one part to another.
 ## Each page's path is from Paths, which rocx writes from site/routes, so a page that isn't there
 ## doesn't compile.
 Nav := [].{
@@ -69,15 +69,33 @@ Nav := [].{
 		],
 	}
 
-	sections : List(Section)
-	sections = [rocx_docs, platform_docs, ecosystem_docs]
+	## The examples: whole apps in the repository's examples/, what each shows, and what each weighs.
+	examples_docs : Section
+	examples_docs = {
+		name: "Examples",
+		home: Paths.examples,
+		pages: [
+			{ path: Paths.examples, label: "The example apps", blurb: "Whole apps: what each shows, and what it weighs" },
+		],
+	}
 
-	## The part of the docs a path is in: the platform's and the ecosystem's pages are under their
-	## overviews' paths, and everything else (a page no part lists, a path no page has) is rocx's.
+	sections : List(Section)
+	sections = [rocx_docs, platform_docs, ecosystem_docs, examples_docs]
+
+	## The part of the docs a path is in: the platform's, the ecosystem's and the examples' pages are
+	## under their overviews' paths, and everything else (a page no part lists, a path no page has) is rocx's.
 	section_of : Str -> Section
 	section_of = |path| {
 		under = |home| path == home or path.starts_with("${home}/")
-		if (under(Paths.platform_)) platform_docs else if (under(Paths.ecosystem)) ecosystem_docs else rocx_docs
+		if under(Paths.platform_) {
+			platform_docs
+		} else if under(Paths.ecosystem) {
+			ecosystem_docs
+		} else if under(Paths.examples) {
+			examples_docs
+		} else {
+			rocx_docs
+		}
 	}
 }
 
@@ -85,6 +103,9 @@ expect Nav.section_of(Paths.platform_postgres).name == "Platform"
 expect Nav.section_of("/platform/nowhere").name == "Platform"
 expect Nav.section_of(Paths.ecosystem_charts).name == "Ecosystem"
 expect Nav.section_of("/ecosystem/nowhere").name == "Ecosystem"
+expect Nav.section_of(Paths.examples).name == "Examples"
+expect Nav.section_of("/examples/tasks").name == "Examples"
+expect Nav.section_of("/examplesque").name == "rocx"
 expect Nav.section_of(Paths.syntax).name == "rocx"
 expect Nav.section_of(Paths.rocx).name == "rocx"
 expect Nav.section_of("/platformer").name == "rocx"

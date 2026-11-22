@@ -91,7 +91,10 @@ just check   # type-check the site's two programs (reports at .rocx lines) and t
 
 Each is a whole app in `examples/<name>`, with a README that tours it, maps each feature to the
 file that shows it, and says what it asked of the platform. `just examples` builds, checks and
-tests them all (`just examples tasks` one); `just check` type-checks them.
+tests them all (`just examples tasks` one); `just check` type-checks them. The docs' examples page
+(`/examples`) shows each with what its browser half weighs and what it is made of, and the
+server's benchmark: `just example-apps` measures them into `site/example-apps.json` (`--bench`
+runs echo under bombardier too).
 
 - [`hello`](examples/hello): the app Getting started makes, a page with a button that counts and
   `GET /hello`; its `main.roc` is the one `rocx dev` writes.

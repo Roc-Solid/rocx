@@ -1,0 +1,340 @@
+import pf.Html
+import ../../AppNotes
+import ../../Ui/Heading
+import ../../Ui/PageHero
+import ../../Ui/Stats
+import ../../Ui/TableWrap
+import ../../Generated/ExampleApps
+import ../../Generated/Paths
+
+## The example apps, each a whole app in the repository's examples/: what it is and what it shows
+## (`AppNotes`), and what it weighs and is made of, measured by `just example-apps` into
+## site/example-apps.json (`ExampleApps`, which the site's build writes from it); and the server's
+## own numbers, from echo under bombardier.
+meta = {
+	title: "Examples",
+	description: "The example apps in the Roc Solid repository, each whole: what each shows, what its browser half weighs, what it is made of, and how fast the server answers.",
+	toc: AppNotes.toc,
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				eyebrow="Examples"
+				title="Whole apps, each one small enough to read"
+			>
+				Each is an app in the repository's <code>examples/</code>, with a README that tours it, maps each
+				feature to the file that shows it, and says what it asked of the platform. Each is built, checked
+				and tested by <code>just examples</code>. Below, what each one is, and what it weighs: the
+				WebAssembly a browser downloads for it, the pages and endpoints it has, and how much Roc it took.
+			</PageHero>
+
+			<Heading id="glance">At a glance</Heading>
+			<Stats
+				stats={[
+					{ label: "The smallest browser half", value: Look.kb(Look.smallest.brotli), note: "brotli: hello's wasm, a page and a counter" },
+					{ label: "The runtime beside it", value: Look.kb(ExampleApps.runtime.brotli), note: "brotli: the JavaScript every page loads too" },
+					{ label: "The largest here", value: Look.kb(Look.largest.brotli), note: "brotli: ${Look.largest_name}" },
+					{ label: "Echo, answered", value: Look.rps(ExampleApps.bench, 64), note: "requests a second at 64 connections" },
+				]}
+			/>
+			<TableWrap>
+				<table class="glance">
+					<thead>
+						<tr>
+							<th scope="col">App</th>
+							<th scope="col" class="num">Wasm, brotli</th>
+							<th scope="col" class="num">gzip</th>
+							<th scope="col" class="num">Pages</th>
+							<th scope="col" class="num">Endpoints</th>
+							<th scope="col" class="num">Lines of Roc</th>
+							<th scope="col">Postgres</th>
+						</tr>
+					</thead>
+					<tbody>{...AppNotes.shown.map(Look.row)}</tbody>
+				</table>
+			</TableWrap>
+			<p class="small">
+				The wasm is each app's browser half, built with <code>--opt=size</code> as <code>just examples</code>
+				builds it (each app's section below has its raw size too); every page also loads the runtime, {Look.kb(ExampleApps.runtime.brotli)} brotli. Lines of
+				Roc are the app's own <code>.roc</code> and <code>.rocx</code> files, blank lines left out: not what
+				<code>rocx build</code> writes, not its tests.
+			</p>
+
+			{...AppNotes.shown.map(Look.section)}
+
+			<Heading id="server">The server, measured</Heading>
+			{=Look.server(ExampleApps.bench)}
+
+			<Heading id="measured">How they're measured</Heading>
+			<p>
+				{"Measured on ${ExampleApps.measured.date}, at commit "}<code>{ExampleApps.measured.commit}</code>{", with the compiler "}<code>{ExampleApps.measured.roc}</code>{", on an ${ExampleApps.measured.machine}."}
+				<code>just example-apps</code> builds each app's browser half again (<code>rocx build --client</code>,
+				then its wasm with <code>--opt=size</code>), compresses it as this site measures its own (gzip at
+				level 9, brotli at quality 11), and counts what the app is made of, into
+				<code>site/example-apps.json</code>; <code>just example-apps --bench</code> runs echo's benchmark again.
+				The site's build reads the file, and doesn't measure: a dozen wasm builds are minutes.
+			</p>
+			<p>
+				The sizes are what a browser downloads when the files come compressed. The Roc Solid server sends
+				them as they are, so in front of it, a CDN or a proxy that compresses (as GitHub Pages is in front
+				of this site) is what makes them these sizes.
+			</p>
+		</NoHydration>
+	</>
+
+expect Look.kb(198008) == "193.4 KB"
+expect Look.kb(1024) == "1.0 KB"
+expect Look.count(94135) == "94,135"
+expect Look.count(999) == "999"
+expect Look.count(1234567) == "1,234,567"
+expect Look.time(713) == "713 µs"
+expect Look.time(2399) == "2.4 ms"
+expect Look.plural(1, "page") == "1 page"
+expect Look.plural(11, "page") == "11 pages"
+
+## How the page shows the numbers.
+Look := [].{
+
+	## Bytes as kilobytes, to a tenth: "193.4 KB".
+	kb : U64 -> Str
+	kb = |bytes| "${Dec.round_to(bytes.to_dec() / 1024.0, { step: 0.1, ties: AwayFromZero }).to_str()} KB"
+
+	## A count with commas between thousands: "94,135".
+	count : U64 -> Str
+	count = |n| {
+		digits = n.to_str().to_utf8()
+		length = digits.len()
+		Str.from_utf8(digits.fold_with_index([], |out, digit, index| if (index > 0 and (length - index) % 3 == 0) out.append(',').append(digit) else out.append(digit))) ?? n.to_str()
+	}
+
+	## A time: "713 µs", "2.4 ms".
+	time : U64 -> Str
+	time = |us| if (us < 1000) "${us.to_str()} µs" else "${Dec.round_to(us.to_dec() / 1000.0, { step: 0.1, ties: AwayFromZero }).to_str()} ms"
+
+	## An app's wasm, if it has a browser half.
+	wasm : ExampleApps.Example -> Try(ExampleApps.Size, [NoBrowserHalf])
+	wasm = |example| example.wasm.first().map_err(|_| NoBrowserHalf)
+
+	## The apps with a browser half, smallest first.
+	sized : List({ name : Str, size : ExampleApps.Size })
+	sized = ExampleApps.all.keep_oks(|example| Look.wasm(example).map_ok(|size| { name: example.title, size })).sort_with(|a, b| U64.order_relative_to(a.size.brotli, b.size.brotli))
+
+	none : ExampleApps.Size
+	none = { bytes: 0, gzip: 0, brotli: 0 }
+
+	smallest : ExampleApps.Size
+	smallest = Look.sized.first().map_ok(|each| each.size) ?? Look.none
+
+	largest : ExampleApps.Size
+	largest = Look.sized.last().map_ok(|each| each.size) ?? Look.none
+
+	largest_name : Str
+	largest_name = Look.sized.last().map_ok(|each| each.name) ?? ""
+
+	## Requests a second the benchmark measured at `connections`, or "–".
+	rps : List(ExampleApps.Bench), U64 -> Str
+	rps = |benches, connections|
+		match benches.first() {
+			Ok(bench) => bench.levels.find_first(|level| level.connections == connections).map_ok(|level| Look.count(level.rps)) ?? "–"
+			Err(_) => "–"
+		}
+
+	## An app's row in the table at a glance.
+	row : ExampleApps.Example -> Html
+	row = |example|
+		match Look.wasm(example) {
+			Ok(size) =>
+				<tr>
+					<th scope="row"><a href={"#${example.name}"}>{example.title}</a></th>
+					<td class="num">{Look.kb(size.brotli)}</td>
+					<td class="num">{Look.kb(size.gzip)}</td>
+					<td class="num">{example.pages.to_str()}</td>
+					<td class="num">{example.endpoints.to_str()}</td>
+					<td class="num">{Look.count(example.lines)}</td>
+					<td>{if (example.postgres) "yes" else "no"}</td>
+				</tr>
+			Err(NoBrowserHalf) =>
+				<tr>
+					<th scope="row"><a href={"#${example.name}"}>{example.title}</a></th>
+					<td class="num none" colspan="2">no browser half</td>
+					<td class="num">{example.pages.to_str()}</td>
+					<td class="num">{example.endpoints.to_str()}</td>
+					<td class="num">{Look.count(example.lines)}</td>
+					<td>{if (example.postgres) "yes" else "no"}</td>
+				</tr>
+		}
+
+	## An app's section: what it is, what it shows, and what it is made of.
+	section : ExampleApps.Example -> Html
+	section = |example| {
+		source = "https://github.com/Roc-Solid/rocx/tree/master/examples/${example.name}"
+		weighs =
+			match Look.wasm(example) {
+				Ok(size) => "${Look.kb(size.brotli)} of wasm, brotli (${Look.kb(size.gzip)} gzip, ${Look.kb(size.bytes)} raw)"
+				Err(NoBrowserHalf) => "no browser half: endpoints alone"
+			}
+		made = [
+			Look.plural(example.pages, "page"),
+			Look.plural(example.endpoints, "endpoint"),
+			"${Look.count(example.lines)} lines of Roc",
+			Look.plural(example.expects, "expect"),
+			Look.plural(example.tests, "node test"),
+		]
+		<section class="app" aria-labelledby={example.name}>
+			<Heading id={example.name}>{example.title}</Heading>
+			<p class="where"><code>{"examples/${example.name}"}</code> · <a href={source} rel="external">source</a> · <a href={"${source}/README.md"} rel="external">README</a></p>
+			{=
+				match AppNotes.about(example.name) {
+					Ok(about) =>
+						<>
+							<p>{about.summary}</p>
+							<ul class="shows">{...about.shows.map(|item| <li>{item}</li>)}</ul>
+						</>
+					Err(NoNotes) => <p class="missing">No notes yet: site/AppNotes.roc says nothing of this app.</p>
+				}
+			}
+			<dl class="facts">
+				<div><dt>Weighs</dt><dd>{weighs}</dd></div>
+				<div><dt>Made of</dt><dd>{Str.join_with(made, " · ")}</dd></div>
+				<div><dt>Uses</dt><dd>{Look.uses(example)}</dd></div>
+			</dl>
+		</section>
+	}
+
+	## "1 page", "4 pages".
+	plural : U64, Str -> Str
+	plural = |n, word| if (n == 1) "1 ${word}" else "${Look.count(n)} ${word}s"
+
+	## What an app uses besides the platform: Postgres, and its packages.
+	uses : ExampleApps.Example -> Str
+	uses = |example| {
+		all = (if (example.postgres) ["Postgres"] else []).concat(example.pkgs.map(|name| "packages/${name}"))
+		if (all.is_empty()) "the platform alone" else Str.join_with(all, ", ")
+	}
+
+	## The server's benchmark: echo's --opt=speed build under bombardier, each concurrency's
+	## requests a second and latencies.
+	server : List(ExampleApps.Bench) -> Html
+	server = |benches|
+		match benches.first() {
+			Ok(bench) =>
+				<>
+					<p>
+						{"echo's server, built with "}<code>{"--opt=${bench.opt}"}</code>{" as it would ship, answering "}<code>POST /echo</code>{" under "}
+						<a href="https://github.com/codesenberg/bombardier" rel="external">bombardier</a>{" for ${bench.seconds.to_str()} seconds at each number of connections, after a warm-up ("}
+						<code>examples/echo/bench.sh</code>{" runs the same). Each request goes through the host, the generated routes, a middleware, reading the JSON body and writing the JSON answer."}
+					</p>
+					<TableWrap>
+						<table class="bench">
+							<thead>
+								<tr>
+									<th scope="col" class="num">Connections</th>
+									<th scope="col" class="num">Requests a second</th>
+									<th scope="col" class="num">Latency, median</th>
+									<th scope="col" class="num">99th percentile</th>
+									<th scope="col" class="num">Errors</th>
+								</tr>
+							</thead>
+							<tbody>
+								{...bench.levels.map(|level| <tr><td class="num">{level.connections.to_str()}</td><td class="num">{Look.count(level.rps)}</td><td class="num">{Look.time(level.p50_us)}</td><td class="num">{Look.time(level.p99_us)}</td><td class="num">{level.errors.to_str()}</td></tr>)}
+							</tbody>
+						</table>
+					</TableWrap>
+					<p>
+						{"Of a request's time, Roc's own (the median of the "}<code>server-timing</code>{" its answers carry, one request at a time) is ${Look.time(bench.roc_us)}: the rest is HTTP and the host. Measured on ${bench.measured}, at commit "}<code>{bench.commit}</code>{", on an ${bench.machine}, with bombardier on the same machine competing for its cores, and the machine busy with other work besides (its load average was ${bench.load} during the run): read them as a floor, not a ceiling."}
+					</p>
+				</>
+			Err(_) => <p class="missing">Not measured yet: run <code>just example-apps --bench</code>.</p>
+		}
+}
+
+<style>
+	.small {
+		color: var(--text-muted);
+		font-size: var(--size-sm);
+	}
+
+	table {
+		width: 100%;
+		border-collapse: collapse;
+		font-variant-numeric: tabular-nums;
+	}
+
+	th,
+	td {
+		padding: var(--space-2);
+		text-align: left;
+		white-space: nowrap;
+	}
+
+	thead th {
+		color: var(--text-muted);
+		font-size: var(--size-xs);
+		font-weight: 600;
+		white-space: normal;
+		vertical-align: bottom;
+	}
+
+	/* An app's name, the row's heading: as its README writes it. */
+	tbody th {
+		font-weight: 600;
+		text-transform: none;
+		letter-spacing: normal;
+	}
+
+	tbody tr {
+		border-top: 1px solid var(--rule);
+	}
+
+	.num {
+		text-align: right;
+	}
+
+	.none {
+		color: var(--text-muted);
+		font-style: italic;
+	}
+
+	.app {
+		margin-top: var(--space-7);
+	}
+
+	.where {
+		margin-top: calc(-1 * var(--space-2));
+		color: var(--text-muted);
+		font-size: var(--size-sm);
+	}
+
+	.shows {
+		padding-left: var(--space-5);
+	}
+
+	.facts {
+		display: grid;
+		gap: var(--space-2);
+		margin: var(--space-4) 0 0;
+	}
+
+	.facts div {
+		display: grid;
+		grid-template-columns: 6rem minmax(0, 1fr);
+		gap: var(--space-3);
+	}
+
+	.facts dt {
+		color: var(--text-muted);
+		font-size: var(--size-sm);
+		font-weight: 600;
+	}
+
+	.facts dd {
+		margin: 0;
+	}
+
+	.missing {
+		color: var(--magenta);
+		font-weight: 600;
+	}
+</style>

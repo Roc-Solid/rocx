@@ -1,0 +1,230 @@
+{
+	"measured": "2026-11-22",
+	"commit": "4b1169c",
+	"roc": "rocx-fork-3f66e242ea",
+	"machine": "Apple M5, 10 cores",
+	"runtime": {
+		"bytes": 146657,
+		"gzip": 42725,
+		"brotli": 36341
+	},
+	"examples": [
+		{
+			"name": "board",
+			"title": "Acme Board",
+			"pages": 3,
+			"endpoints": 20,
+			"lines": 3477,
+			"expects": 81,
+			"tests": 15,
+			"packages": [
+				"guard",
+				"presence"
+			],
+			"postgres": true,
+			"wasm": {
+				"bytes": 769081,
+				"gzip": 272320,
+				"brotli": 206995
+			}
+		},
+		{
+			"name": "echo",
+			"title": "echo",
+			"pages": 0,
+			"endpoints": 1,
+			"lines": 16,
+			"expects": 0,
+			"tests": 0,
+			"packages": [],
+			"postgres": false,
+			"wasm": null
+		},
+		{
+			"name": "hello",
+			"title": "hello",
+			"pages": 1,
+			"endpoints": 1,
+			"lines": 27,
+			"expects": 0,
+			"tests": 0,
+			"packages": [],
+			"postgres": false,
+			"wasm": {
+				"bytes": 123972,
+				"gzip": 48136,
+				"brotli": 39728
+			}
+		},
+		{
+			"name": "journal",
+			"title": "Acme Journal",
+			"pages": 7,
+			"endpoints": 4,
+			"lines": 2777,
+			"expects": 80,
+			"tests": 21,
+			"packages": [
+				"guard",
+				"intl",
+				"markdown",
+				"testing"
+			],
+			"postgres": false,
+			"wasm": {
+				"bytes": 471638,
+				"gzip": 177978,
+				"brotli": 140673
+			}
+		},
+		{
+			"name": "notes",
+			"title": "Acme Notes",
+			"pages": 7,
+			"endpoints": 24,
+			"lines": 3188,
+			"expects": 75,
+			"tests": 28,
+			"packages": [
+				"crypto",
+				"email",
+				"guard",
+				"markdown",
+				"mcp",
+				"testing"
+			],
+			"postgres": true,
+			"wasm": {
+				"bytes": 582594,
+				"gzip": 215077,
+				"brotli": 168105
+			}
+		},
+		{
+			"name": "plate",
+			"title": "Plate",
+			"pages": 11,
+			"endpoints": 20,
+			"lines": 4063,
+			"expects": 92,
+			"tests": 13,
+			"packages": [
+				"charts",
+				"crypto",
+				"forms",
+				"mcp",
+				"testing"
+			],
+			"postgres": true,
+			"wasm": {
+				"bytes": 977351,
+				"gzip": 341259,
+				"brotli": 253936
+			}
+		},
+		{
+			"name": "quiz",
+			"title": "Pinwheel",
+			"pages": 5,
+			"endpoints": 7,
+			"lines": 3616,
+			"expects": 92,
+			"tests": 8,
+			"packages": [
+				"charts",
+				"forms",
+				"presence"
+			],
+			"postgres": true,
+			"wasm": {
+				"bytes": 811814,
+				"gzip": 288092,
+				"brotli": 219267
+			}
+		},
+		{
+			"name": "tasks",
+			"title": "Acme Tasks",
+			"pages": 4,
+			"endpoints": 10,
+			"lines": 2194,
+			"expects": 49,
+			"tests": 17,
+			"packages": [
+				"forms",
+				"testing"
+			],
+			"postgres": true,
+			"wasm": {
+				"bytes": 709967,
+				"gzip": 258718,
+				"brotli": 198008
+			}
+		},
+		{
+			"name": "uptime",
+			"title": "Acme Status",
+			"pages": 6,
+			"endpoints": 15,
+			"lines": 3456,
+			"expects": 99,
+			"tests": 13,
+			"packages": [
+				"admin",
+				"charts",
+				"crypto",
+				"email",
+				"jobs",
+				"otel",
+				"testing"
+			],
+			"postgres": true,
+			"wasm": {
+				"bytes": 631876,
+				"gzip": 218451,
+				"brotli": 163222
+			}
+		}
+	],
+	"bench": {
+		"app": "echo",
+		"measured": "2026-11-22",
+		"commit": "4b1169c",
+		"machine": "Apple M5, 10 cores",
+		"load": "12.7 → 18.9",
+		"opt": "speed",
+		"seconds": 10,
+		"body": "\"hello\"",
+		"roc_us": 10,
+		"levels": [
+			{
+				"connections": 1,
+				"rps": 14089,
+				"p50_us": 52,
+				"p99_us": 267,
+				"errors": 0
+			},
+			{
+				"connections": 16,
+				"rps": 67861,
+				"p50_us": 199,
+				"p99_us": 833,
+				"errors": 0
+			},
+			{
+				"connections": 64,
+				"rps": 76387,
+				"p50_us": 713,
+				"p99_us": 3135,
+				"errors": 0
+			},
+			{
+				"connections": 256,
+				"rps": 94135,
+				"p50_us": 2399,
+				"p99_us": 7665,
+				"errors": 0
+			}
+		]
+	}
+}

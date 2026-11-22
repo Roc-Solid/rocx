@@ -17,7 +17,9 @@
 //      (site/build/client), in which a route file has no middleware, with its main.roc
 //   2. site/Generated/Sources.roc: the sources, refusals and report the pages show; and, before
 //      step 1 copies the site, site/Generated/PlatformReference.roc: every module the server
-//      platform exposes, read from its source (site/reference.mjs), for the reference page
+//      platform exposes, read from its source (site/reference.mjs), for the reference page, and
+//      site/Generated/ExampleApps.roc: the example apps' sizes and the server's benchmark, from
+//      site/example-apps.json (which site/example-apps.mjs measures), for the examples page
 //   3. the browser's wasm: the same pages, on the web platform (its Zig host), built from the
 //      browser's copy (site/build/client/main.roc) into site/build/client/static/rocx/app.wasm,
 //      beside the start.js and runtime.js rocx build put there: a page loads all three from /rocx/
@@ -33,6 +35,7 @@ import { fileURLToPath } from "node:url";
 import { brotliCompressSync, constants, gzipSync } from "node:zlib";
 import { definitionsOf, findRouteFiles, pathsModule, build as rocxBuild, RocxError, routesTable, routeTable, transpile } from "../rocx-cli/rocx.mjs";
 import { platformReference, referenceModule, rocString } from "./reference.mjs";
+import { examplesModule, factsFile as examplesFacts } from "./example-apps.mjs";
 import { Runtime } from "../web/runtime.js";
 import { buildApp, buildHost, rocxBinary, start, syncShared, zig } from "../server/build.mjs";
 
@@ -846,6 +849,9 @@ export function prepare({ dev = false } = {}) {
 		// The platform's reference, read from its modules (site/reference.mjs): before rocx build, which
 		// copies it into the browser's copy of the site with the rest.
 		writeIfChanged(join(site, "Generated", "PlatformReference.roc"), referenceModule(platformReference()));
+		// The example apps' facts, as site/example-apps.mjs last measured them (site/example-apps.json), for
+		// the examples page; before rocx build too, which copies them into the browser's copy.
+		writeIfChanged(join(site, "Generated", "ExampleApps.roc"), examplesModule(JSON.parse(readFileSync(examplesFacts, "utf8"))));
 		// rocx build, in this process: three more Node processes would cost a rebuild a third of a second.
 		// A dev build has the stories too (the catalog at /__rocx/stories); `just site` and the tests don't.
 		const said = [];

@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { appWasm, build, nativePage, out, pageFile, prerender, roc, root, ROUTES, STATIC_GETS, startServer, underBase } from "../build.mjs";
 import { hasRust } from "../../server/build.mjs";
 import { blocks, platformReference, undocumented } from "../reference.mjs";
+import { exampleNames, factsFile as exampleFacts } from "../example-apps.mjs";
 import { Runtime } from "../../web/runtime.js";
 import { findChrome, launch } from "../../web/test/browser.mjs";
 import { serve } from "../../web/test/serve.mjs";
@@ -87,14 +88,16 @@ test("every page renders, and hydrates strictly as the server left it, asking fo
 			assert.doesNotMatch(html, /<nav class="sidebar[ "]/, "the front page has no sidebar");
 		} else {
 			assert.match(html, new RegExp(`<a class="current[^"]*" href="${route}" aria-current="page">`), `${route} is the current page in the sidebar`);
-			// Each part of the docs has its own sidebar: rocx's pages, the platform's or the ecosystem's, one part only.
+			// Each part of the docs has its own sidebar: rocx's pages, the platform's, the ecosystem's or the examples', one part only.
 			const sidebar = /<nav class="sidebar[ "][\s\S]*?<\/nav>/.exec(html)[0];
 			const under = (home) => route === home || route.startsWith(`${home}/`);
 			const inPlatform = under("/platform");
 			const inEcosystem = under("/ecosystem");
+			const inExamples = under("/examples");
 			assert.equal(sidebar.includes('href="/platform/server"'), inPlatform, `${route}: the platform's pages in its sidebar only on the platform's`);
 			assert.equal(sidebar.includes('href="/ecosystem/charts"'), inEcosystem, `${route}: the ecosystem's pages in its sidebar only on the ecosystem's`);
-			assert.equal(sidebar.includes('href="/syntax"'), !inPlatform && !inEcosystem, `${route}: rocx's pages in its sidebar only on rocx's`);
+			assert.equal(sidebar.includes('href="/examples"'), inExamples, `${route}: the examples' page in its sidebar only on the examples'`);
+			assert.equal(sidebar.includes('href="/syntax"'), !inPlatform && !inEcosystem && !inExamples, `${route}: rocx's pages in its sidebar only on rocx's`);
 		}
 		const page = await open(route);
 		// Strictly: markup that wasn't what the app renders would have thrown.
@@ -1151,6 +1154,30 @@ test("the platform reference: the page has every module the server platform expo
 		}
 	}
 	assert.deepEqual(missing, [], `the reference page misses:\n${missing.join("\n")}`);
+});
+
+test("the examples' facts name every example app the repository has (`just example-apps` after adding one)", () => {
+	const facts = JSON.parse(readFileSync(exampleFacts, "utf8"));
+	assert.deepEqual(facts.examples.map((app) => app.name).sort(), exampleNames());
+	for (const app of facts.examples) {
+		if (app.wasm) assert.ok(app.wasm.brotli > 0 && app.wasm.brotli < app.wasm.gzip && app.wasm.gzip < app.wasm.bytes, `${app.name}'s sizes`);
+	}
+	assert.ok(facts.bench?.levels.length > 0, "echo's benchmark: `just example-apps --bench`");
+});
+
+test("the examples page: every example app, each with its notes, its sizes and what it is made of; and the server's benchmark", { skip }, async () => {
+	const html = await (await fetch(`${site.url}/examples`, { headers: { accept: "text/html" } })).text();
+	const facts = JSON.parse(readFileSync(exampleFacts, "utf8"));
+	const kb = (bytes) => `${(Math.round((bytes / 1024) * 10) / 10).toFixed(1)} KB`;
+	assert.ok(!html.includes("No notes yet"), "an app has no notes in site/AppNotes.roc");
+	for (const app of facts.examples) {
+		assert.ok(html.includes(`id="${app.name}"`), `${app.name}'s section`);
+		assert.match(html, new RegExp(`<th[^>]*scope="row"><a[^>]* href="#${app.name}">${app.title}</a></th>`), `${app.name}'s row at a glance`);
+		if (app.wasm) assert.ok(html.includes(kb(app.wasm.brotli)), `${app.name}'s wasm, ${kb(app.wasm.brotli)}`);
+		assert.ok(html.includes(`examples/${app.name}`), `${app.name}'s directory`);
+	}
+	for (const level of facts.bench.levels) assert.ok(html.includes(level.rps.toLocaleString("en-US")), `echo at ${level.connections} connections`);
+	assert.ok(html.includes(facts.measured), "when they were measured");
 });
 
 test("the static build for GitHub Pages: files alone, under /rocx/, every page hydrates strictly as the browser's build renders it, and its demos work", { skip }, async () => {
