@@ -1859,3 +1859,40 @@ Show.PropsWith(a, e) := { …, children : (() => a) => Html }
 **Why.** The rule was a leftover of the types, not something the runtime needed, and it pushed
 apps into components or defaults that exist only to get around it. **Reversible:** yes, but code
 that nests would break.
+
+## D-040 Client-side navigation
+
+**Status.** Proposed (2026-11-22). Nothing is built; the design, with its phases and the questions
+it waits on, is `spike/client-nav/DESIGN.md`.
+
+**Context.** Every link is a full page load: a document, the wasm compiled again, the whole page
+hydrated again. examples/board opens a card with `?card=12` and a click it takes over, so Back
+doesn't close it; an app couldn't switch `?days=` in place; `Router.location!` never changes, so
+nothing follows it. Solid Router is the model.
+
+**Proposal.**
+
+- A click on a same-app link (this origin, under the base, a path the app's route table has a
+  page for; no modifier key, `target`, `download` or `rel="external"`), a handler's
+  `Router.navigate!`, back and forward, navigate in place. A plain `<a>` does, as Solid Router's
+  do; `<A>` adds the active state. Anything else is the browser's, as today.
+- The browser fetches the page's own HTML document, as the server answers a load (behind its
+  middleware, its endpoint reads answered in-process, a redirect followed), or the file `just site`
+  wrote, and renders the page from the wasm with that document's answers, regions and head. No new
+  server route; on the docs site the document is 2–16% larger with brotli than a JSON of the same
+  answers and regions would be. Not an app document of this build (a text 401, a crash, a new
+  deploy, no network): the browser loads it.
+- The old page stays until the document is in (`Router.is_routing!`). Layouts and the page are kept
+  levels, made anew when their file or own params change, or when something they read once in their
+  body (the location) changed, which the runtime sees. A change of the query alone is in place, no
+  document fetched (`use_search_params!`).
+- The runtime keeps history, scroll (restored on back and forward), focus (the start of `<body>`)
+  and a live region that announces the new title; prefetches on hover; checks a build id on each
+  document. Generated `Root` hands the runtime its route table and the build id
+  (`Router.app!`); the host writes the id on the bootstrap.
+
+**Phases.** 1: links, `navigate!`, the whole page made anew, no app changed. 2: kept layouts, the
+query in place, `<A>`, `<Navigate>` (needs D-039). 3: prefetch, View Transitions. 4, if measured:
+the stylesheet as a cached file, a JSON payload, wasm splitting.
+
+**Reversible:** yes, until apps rely on kept layouts and `use_search_params!`.

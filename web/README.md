@@ -265,9 +265,10 @@ same components natively; this one hydrates them.
     written as they are there. Outside the regions it is byte for byte; inside them the server's
     output is taken as it is. Without `regions`, a placeholder renders empty.
   - **On GitHub Pages**, the static export GETs each page from the native server, regions and all,
-    so they are in every prerendered page. **Client-side navigation** (a follow-up) has no copy of
-    a region in the wasm: it would need it from the server, or, on a static host, from a
-    prerendered copy (the region's HTML, written beside each page at export).
+    so they are in every prerendered page. **Client-side navigation** (D-040, proposed:
+    `spike/client-nav/DESIGN.md`) has no copy of a region in the wasm: a navigation fetches the
+    page's document, as the server answers it or as the export wrote it, and takes its regions
+    from there.
 - **RCDATA**: inside `<title>` and `<textarea>` the HTML parser reads everything as text, comments
   too, so the server writes their holes without comments, and hydrating builds the element's
   text anew from the markup (its holes bound to the text nodes it makes; not a patch), the server's
