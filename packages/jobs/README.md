@@ -168,6 +168,12 @@ A `Job.Row` is a job's id, kind, input (JSON), state (`queued`, `running`, `done
 `locked_at` when its last attempt began, `finished_at`, `created_at`). An action on a job in a state
 it doesn't apply to is a `JobErr` saying so.
 
+Waits on a proposal (PROPOSALS.md):
+
+- **A job's log in the jobs page**: the lines each attempt logged, kept with the attempt and shown
+  in the job's drawer. Parked, with two options: the package alone (`job.log!`), or the host
+  collecting every line logged during an isolated call (recommended).
+
 ## Modules
 
 | Module | What it has |
