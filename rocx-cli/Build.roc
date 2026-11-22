@@ -458,6 +458,11 @@ Build := [].{
 						Some(_) => [Fs.join([target, "main.roc"])]
 						None => ServerOnly.web_apps!(target, web)
 					}
+				# An app of endpoints alone (and no app of its own on the web platform): nothing for the
+				# browser to build, which is no failure, but worth saying.
+				if roots.is_empty() {
+					$said = $said.append("rocx: ${here} has no component pages and no app on the web platform, so its browser's copy (${Fs.relative(cwd, target)}) has no main.roc: the browser has nothing to build")
+				}
 				platform_only = ServerOnly.server_only_modules!(Fs.join([options.rocx, "server", "platform", "main.roc"]), web)
 				server_only = [{ alias: "pf", modules: platform_only }].concat(Build.server_packages!(dir))
 				api_file = Fs.join([target, Build.generated, "Api.roc"])
@@ -825,9 +830,10 @@ Build := [].{
 
 	## The browser's copy of the app under `dir`, in `out`: every .roc file, at the same place, but
 	## a `<NoHydration>` has no children and a route file no middleware (`client` has the browser's
-	## code for each .rocx file, by its path). Build output (`build/`, `dist/`) stays out.
-	## `main`: for an app of component pages, the browser's app (main.roc), with the app's directory as
-	## the build shows it.
+	## code for each .rocx file, by its path). Build output (`build/`, `dist/`) stays out, and so does
+	## an app on the server platform (the app's own main.roc): it is the server's program, which the
+	## browser's copy can't compile. `main`: for an app of component pages, the browser's app
+	## (main.roc), with the app's directory as the build shows it; an app of endpoints alone has none.
 	write_client! : Str, Str, List({ key : Str, value : Str }), [Some(Str), None], Str => Try({}, [Problem(Str)])
 	write_client! = |dir, out, client, main, rocx| {
 		root = Fs.resolve(dir, [])
@@ -847,6 +853,12 @@ Build := [].{
 			last = Fs.basename(path)
 			Fs.resolve(path, []) == target or last == "build" or last == "dist"
 		}
+		server = Fs.resolve(Fs.join([rocx, "server", "platform", "main.roc"]), [])
+		on_server = |path, code|
+			match ServerOnly.platform_of(code) {
+				Some(named) => Fs.resolve(Fs.dirname(path), [named]) == server
+				None => Bool.False
+			}
 		for path in Fs.files!(dir, ".roc", skip) {
 			to = Fs.join([target, Fs.relative(dir, path)])
 			code =
@@ -854,7 +866,9 @@ Build := [].{
 					Some(browser_code) => browser_code
 					None => Fs.read_or_empty!(path)
 				}
-			_ = Build.write!(to, Build.move_header(code, path, to))
+			if !on_server(path, code) {
+				_ = Build.write!(to, Build.move_header(code, path, to))
+			}
 		}
 		# The content collections' files (D-042), which their modules import: the browser's copy has them
 		# too, for a component that reads one.

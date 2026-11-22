@@ -326,7 +326,9 @@ writes more for it:
   serve the directory (`--static <out>/static`): the page's `/rocx/start.js` loads the other two.
   A module the browser's app reaches that imports what only the server has (`pf.Db`, directly or
   through another module) is a warning, at the import a page or component of the app's makes:
-  the browser's build couldn't compile it.
+  the browser's build couldn't compile it. The copy leaves out an app on the server platform (the
+  app's own `main.roc`: the server's program); an app of endpoints alone has no `<out>/main.roc`,
+  and the build says the browser has nothing to build.
 
 Any app with routes, of components or not (endpoints alone too), gets its program:
 
@@ -463,8 +465,9 @@ rocx build <dir>…        # each .rocx under the directories becomes the .roc b
                          # files; with a type beside them, read: packages/markdown's README)
   --client <out>         # and the browser's copy of the app: an endpoint only its method and URL, a
                          # route file without its middleware, the imports only they used gone;
-                         # for component route files, its main.roc and static/rocx/; a warning
-                         # where it reaches a module that imports what only the server has (pf.Db)
+                         # for component route files, its main.roc and static/rocx/ (endpoints
+                         # alone: none, said); a warning where it reaches a module that imports
+                         # what only the server has (pf.Db)
   --dev                  # and the stories (`<story>`): their catalog at /__rocx/stories
 rocx check -- <command>  # run a command, its reports pointed into .rocx files
 rocx lint <dir>…         # refuse Html.source_text in hand-written .roc files

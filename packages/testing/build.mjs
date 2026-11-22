@@ -32,7 +32,7 @@ function rocBuild(rocx, compiler, args) {
 /**
  * The app in `dir` built into `out` (`<dir>/build/test`): `server`, its executable, and `statics`, the
  * directories it serves (`startServer(server, { statics })`). `client: false` skips the browser's
- * half (no wasm: pages aren't hydrated); `dev: true` adds the stories (`rocx build --dev`), each a page
+ * half (no wasm: pages aren't hydrated), as an app of endpoints alone has none; `dev: true` adds the stories (`rocx build --dev`), each a page
  * at `storyPath(…)`; `opt` is the server's optimization (`dev`, quick to build, or `speed`). A
  * markup problem, a type error or a warning throws, said at its line in the .rocx file.
  */
@@ -42,7 +42,9 @@ export async function buildForTests(dir, { out = join(dir, "build", "test"), cli
 	const rocx = rocxBinary();
 	const clientDir = join(out, "client");
 	run(rocx, ["build", dir, ...(client ? ["--client", clientDir] : []), ...(dev ? ["--dev"] : [])], { env: { ...process.env, ROC: compiler } });
-	if (client) {
+	// An app of endpoints alone has no browser's half: rocx build wrote no main.roc for it.
+	const browser = client && existsSync(join(clientDir, "main.roc"));
+	if (browser) {
 		const host = join(repo, "web", "platform", "targets", "wasm32", "host.wasm");
 		if (!existsSync(host)) throw new Error(`the browser's host isn't built (${host}): \`just test\` builds it`);
 		rocBuild(rocx, compiler, ["--target=wasm32", "--opt=size", `--output=${join(clientDir, "static", "rocx", "app.wasm")}`, join(clientDir, "main.roc")]);
@@ -51,5 +53,5 @@ export async function buildForTests(dir, { out = join(dir, "build", "test"), cli
 	if (!existsSync(host)) throw new Error(`the server's host isn't built (${host}): \`node server/build.mjs\` or \`just test\` builds it`);
 	mkdirSync(out, { recursive: true });
 	rocBuild(rocx, compiler, [`--target=${nativeTarget()}`, `--opt=${opt}`, `--output=${join(out, "server")}`, join(dir, "main.roc")]);
-	return { server: join(out, "server"), statics: client ? [join(clientDir, "static")] : [] };
+	return { server: join(out, "server"), statics: browser ? [join(clientDir, "static")] : [] };
 }

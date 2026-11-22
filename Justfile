@@ -245,8 +245,8 @@ examples := `git ls-files 'examples/*/main.roc' | xargs -n1 dirname | tr '\n' ' 
 
 # Builds, checks and tests every example app (or the ones named: `just examples tasks echo`), as
 # each one's README says to: `rocx build` (and the browser's copy), its server program type-checked,
-# and its browser program when it has one (component pages: the build writes static/rocx/start.js
-# beside it; an app of endpoints alone, as echo is, has none), each with reports at .rocx lines;
+# and its browser program when it has one (component pages: the build writes the copy's main.roc;
+# an app of endpoints alone, as echo is, has none, and the build says so), each with reports at .rocx lines;
 # `rocx lint`; its expects (`roc test`); and its node tests, examples/<name>/test/*.test.mjs, when
 # it has them (a glob: `node --test <dir>` doesn't find them on Node 24; helper modules there
 # don't end in .test.mjs). The tests want DATABASE_URL (`just db`) for the apps with a database,
@@ -281,8 +281,8 @@ examples *names:
     fi
 
 # The quick half of `examples` (every one, or those named): rocx build with the browser's copy
-# (examples/<name>/build/client), both programs type-checked with reports at .rocx lines, and
-# rocx lint. No wasm, no server, no tests.
+# (examples/<name>/build/client), both programs type-checked with reports at .rocx lines (the
+# browser's when the build wrote one), and rocx lint. No wasm, no server, no tests.
 examples-check *names:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -291,7 +291,7 @@ examples-check *names:
         client="$dir/build/client"
         ROC={{ roc }} {{ rocx }} build "$dir" --client "$client"
         {{ rocx }} check -- {{ roc }} check "$dir/main.roc"
-        if [ -f "$client/static/rocx/start.js" ]; then
+        if [ -f "$client/main.roc" ]; then
             {{ rocx }} check -- {{ roc }} check "$client/main.roc"
         fi
         {{ rocx }} lint "$dir"

@@ -568,6 +568,38 @@ test("rocx build --client: a module the browser's copy reaches that imports what
 	}
 });
 
+test("rocx build --client, for an app of endpoints alone: the browser's copy has no main.roc (the app's own is the server's program, left out), and the build says so", () => {
+	const dir = mkdtempSync(join(tmpdir(), "rocx-client-endpoints-"));
+	const put = (path, text) => {
+		mkdirSync(dirname(join(dir, path)), { recursive: true });
+		writeFileSync(join(dir, path), text);
+	};
+	try {
+		const server = relative(join(dir, "app"), join(dirname(fileURLToPath(import.meta.url)), "..", "server", "platform", "main.roc"));
+		put("app/main.roc", `app [program] { pf: platform "${server}" }\n\nimport Generated/App\n\nprogram = App.program({ context: |_| {}, middleware: M.none })\n`);
+		put("app/tools/load.roc", `app [program] { pf: platform "../${server}" }\n\nprogram = {}\n`);
+		put("app/routes/echo/+server.roc", "import pf.Server\nimport pf.Endpoint\n\npost! : { request : Server.Request, params : {}, context : c, body : {} } => Try(Str, Endpoint.Refusal)\npost! = |{ request }| Ok(Server.text_of(request))\n");
+		put("app/Words.roc", "Words := [].{\n\tall = [\"echo\"]\n}\n");
+		const said = [];
+		const out = join(dir, "app", "build", "client");
+		assert.equal(build([join(dir, "app")], { client: out, cwd: dir, log: (line) => said.push(line) }), true, said.join("\n"));
+		assert.ok(existsSync(join(dir, "app", "Generated", "App.roc")), "the server's program, as before");
+		assert.ok(!existsSync(join(out, "main.roc")) && !existsSync(join(out, "tools", "load.roc")), "no app on the server platform in the browser's copy");
+		assert.ok(existsSync(join(out, "Words.roc")) && existsSync(join(out, "Generated", "Api.roc")), "the rest of the copy, as before");
+		assert.ok(!existsSync(join(out, "static")), "nothing a page loads");
+		assert.ok(said.includes("rocx: app has no component pages and no app on the web platform, so its browser's copy (app/build/client) has no main.roc: the browser has nothing to build"), said.join("\n"));
+		// Given a page, the browser's main.roc is written (and the server's still isn't copied).
+		put("app/routes/+page.rocx", "import pf.Html\n\nview! = |_| <p>Home</p>\n");
+		said.length = 0;
+		assert.equal(build([join(dir, "app")], { client: out, cwd: dir, log: (line) => said.push(line) }), true, said.join("\n"));
+		assert.match(readFileSync(join(out, "main.roc"), "utf8"), /^app \[main!\] \{ pf: platform "[^"]*web\/platform\/main\.roc" \}$/m);
+		assert.ok(!existsSync(join(out, "tools", "load.roc")) && existsSync(join(out, "static", "rocx", "start.js")));
+		assert.ok(!said.some((line) => line.includes("nothing to build")), said.join("\n"));
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 test("rocx build --client: an app of components with no routes is checked from its own app on the web platform", () => {
 	const dir = mkdtempSync(join(tmpdir(), "rocx-client-components-"));
 	const put = (path, text) => {
@@ -584,6 +616,8 @@ test("rocx build --client: an app of components with no routes is checked from i
 		assert.deepEqual(said.filter((line) => line.startsWith("⚠")), [
 			"⚠ app/Widget.rocx:2: the browser's copy imports Secret, which imports pf.Env, which only the server has, so the browser's build can't compile it. Use it in an endpoint (+server.roc) or middleware, which the browser's copy leaves out.",
 		]);
+		assert.ok(existsSync(join(dir, "out", "widget_app.roc")), "its own app on the web platform, kept: it is the browser's program");
+		assert.ok(!said.some((line) => line.includes("nothing to build")), said.join("\n"));
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

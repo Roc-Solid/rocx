@@ -117,6 +117,7 @@ changes, so the browser's tests wait for the page to stop moving before they cli
 
 What the platform didn't do, or did in a way an app has to know about, and what the app does
 instead. None needed a change to the platform; two needed one to packages/forms, since made.
+Two more were fixed in rocx and the platform since (9, 10).
 
 1. **Fixed: a `LiveForm` couldn't start filled in.** It started empty, or with what a refused
    plain post typed (the flash), and a signal can't be written while a component renders, so the
@@ -152,10 +153,12 @@ instead. None needed a change to the platform; two needed one to packages/forms,
    JSON. `Endpoint.posted_by` is private, so the endpoint asks `Server.wants_html(request)`.
 8. **`node --test <dir>` finds no tests on Node 24**: the glob `'examples/tasks/test/*.test.mjs'`
    does (`just examples` uses it).
-9. **`rocx build --client` of an app with no component pages** (echo) writes a `main.roc` that is
-   the server's, which doesn't type-check there ("Api … has no associated openapi").
-   `just examples-check` checks the browser's program only when the build wrote
-   `static/rocx/start.js` beside it.
+9. **Fixed: `rocx build --client` of an app with no component pages** (echo) wrote a `main.roc`
+   that was the server's, which doesn't type-check there ("Api … has no associated openapi"), and
+   `just examples-check` checked the browser's program only when the build wrote
+   `static/rocx/start.js` beside it. The browser's copy now leaves the server's program out, an app
+   of endpoints alone has no browser's `main.roc` (the build says so), and `examples-check` checks
+   the copy's `main.roc` whenever there is one.
 10. **Fixed: a favicon as a `data:` URL was refused** (`href` took relative and http(s) URLs only),
     and the app has no static files of its own. `Html` now allows a `data:image/…` URL where the
     browser only shows it as an image (`<link href>`, `<img src>`, `<source src>`, `<video
