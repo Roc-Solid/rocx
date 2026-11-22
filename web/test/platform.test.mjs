@@ -371,11 +371,13 @@ window.hydrated = true;
 
 // ---- Timers: the browser's, owned by what started them ----
 
-test("props: a value prop read from a signal is read by the hole it is in, which renders the component anew when it changes; outside a hole, once; an accessor prop patches in place", { skip }, async () => {
+test("props: a value prop read from a signal is read by the hole it is in, which renders the component anew when it changes; outside a hole, once; an accessor prop patches in place; in what a <Show> shows and in a fallback, as it shows", { skip }, async () => {
 	const wasm = readFileSync(join(out, "props.wasm"));
 	const server = await Runtime.load(wasm);
 	const { html } = server.renderToString({ path: "/" });
 	assert.match(html, /<p class="hole"><!--html--><button class="shows">one <!--x-->0<!--\/x--><\/button><!--\/html--><\/p>/);
+	assert.match(html, /<p class="shown"><!--show--><button class="shows">no one <!--x-->0<!--\/x--><\/button><!--\/show--><\/p>/, "a <Show>'s fallback, made as it shows");
+	assert.match(html, /<p class="listed"><!--for--><!--fallback--><button class="shows">none, one <!--x-->0<!--\/x--><\/button><!--\/fallback--><!--\/for--><\/p>/, "a <For>'s fallback, made as it shows");
 	const dir = mkdtempSync(join(tmpdir(), "rocx-props-"));
 	cpSync(join(web, "runtime.js"), join(dir, "runtime.js"));
 	writeFileSync(join(dir, "props.wasm"), wasm);
@@ -404,7 +406,25 @@ window.hydrated = true;
 			["two 0", "one 1", "two 1"],
 			"in a hole, the component made anew with the new label (its clicks made anew too); outside one, read once; an accessor, patched where it is read, the component kept",
 		);
+		// What a <Show> shows, and a fallback, is made when it shows: a value prop in it is read then.
+		const part = (p) => tab.eval(`document.querySelector(${JSON.stringify(p)}).textContent.trim()`);
+		assert.equal(await part("p.shown"), "no one 0", "the fallback, as it was made");
+		await tab.click(".toggle");
+		await tab.wait(`document.querySelector("p.shown").textContent.trim() === "two 0"`);
+		await tab.click(".again");
+		await tab.click(".toggle");
+		await tab.wait(`document.querySelector("p.shown").textContent.trim() === "no three 0"`);
+		await tab.click(".toggle");
+		await tab.wait(`document.querySelector("p.shown").textContent.trim() === "three 0"`);
+		await tab.click("p.shown button");
+		await tab.wait(`document.querySelector("p.shown").textContent.trim() === "three 1"`);
+		assert.equal(await part("p.listed"), "none, one 0");
+		await tab.click(".fill");
+		await tab.wait(`document.querySelector("p.listed .item")?.textContent === "an item"`);
+		await tab.click(".fill");
+		await tab.wait(`document.querySelector("p.listed").textContent.trim() === "none, three 0"`);
 		assert.deepEqual(tab.console, []);
+		assert.deepEqual(tab.errors, []);
 	} finally {
 		await site.close();
 	}

@@ -177,7 +177,8 @@ Html :: [
 	errored : (Str, (() => {}) -> Html), List(Html) -> Html
 	errored = |fallback, children| Errored(fallback, children)
 
-	## What is inside while `holds!` holds, the fallback otherwise (`<Show>`).
+	## What is inside while `holds!` holds, the fallback otherwise (`<Show>`): each made when it shows,
+	## as a component is (once, its reads untracked), and made again each time it shows again.
 	shown : (() => Bool), List(Html), Html -> Html
 	shown = |holds!, children, fallback| Shown(holds!, children, fallback)
 
@@ -259,7 +260,7 @@ Html :: [
 			HtmlOf(compute) => "{\"t\":\"h\",\"r\":${keep!(|| serialize!(compute()))}}"
 			ListOf(compute) => "{\"t\":\"l\",\"r\":${keep!(|| "[${nodes!(compute())}]")}}"
 			Fragment(parts) => "{\"t\":\"f\",\"c\":[${nodes!(parts)}]}"
-			Loading(fallback, children) => "{\"t\":\"loading\",\"fallback\":${serialize!(fallback)},\"c\":[${nodes!(children)}]}"
+			Loading(fallback, children) => "{\"t\":\"loading\",\"fallback\":${made!(fallback)},\"c\":[${nodes!(children)}]}"
 			Errored(fallback, children) => {
 				shown! = || {
 					boundary = Host.boundary!({})
@@ -267,8 +268,8 @@ Html :: [
 				}
 				"{\"t\":\"errored\",\"r\":${keep!(shown!)},\"c\":[${nodes!(children)}]}"
 			}
-			Shown(holds!, children, fallback) => "{\"t\":\"show\",\"r\":${keep!(|| truth!(holds!))},\"c\":[${nodes!(children)}],\"fallback\":${serialize!(fallback)}}"
-			ShownWith(holds!, child, fallback) => "{\"t\":\"show\",\"r\":${keep!(|| truth!(holds!))},\"with\":${keep!(|| serialize!(child()))},\"fallback\":${serialize!(fallback)}}"
+			Shown(holds!, children, fallback) => "{\"t\":\"show\",\"r\":${keep!(|| truth!(holds!))},\"c\":[${made!(Fragment(children))}],\"fallback\":${made!(fallback)}}"
+			ShownWith(holds!, child, fallback) => "{\"t\":\"show\",\"r\":${keep!(|| truth!(holds!))},\"with\":${keep!(|| serialize!(child()))},\"fallback\":${made!(fallback)}}"
 			Each(rows!, fallback) => {
 				id = Host.for_new!({})
 				listed! = || {
@@ -279,7 +280,7 @@ Html :: [
 					}
 					"[${Str.join_with($out, ",")}]"
 				}
-				"{\"t\":\"for\",\"id\":${id.to_str()},\"r\":${keep!(listed!)},\"fallback\":${serialize!(fallback)}}"
+				"{\"t\":\"for\",\"id\":${id.to_str()},\"r\":${keep!(listed!)},\"fallback\":${made!(fallback)}}"
 			}
 			Component(run!) => "{\"t\":\"c\",\"r\":${keep!(|| serialize!(run!()))}}"
 			ComponentWith(make!) => {
@@ -311,6 +312,21 @@ plain! = |parts| {
 		$out = $out.concat(said)
 	}
 	$out
+}
+
+## What a `<Show>` shows, and a fallback (a `<Show>`'s, a `<For>`'s, a `<Loading>`'s), for its JSON:
+## made when it shows, as a component is (`{"t":"c"}`): where it is rendered, once, its reads
+## untracked, owned by its part, and made again each time it shows again. So a value prop in it is
+## read then, not when the page was. Nothing to make for none (`Html.empty`, a fallback's default).
+## A `<For>`'s rows and a `<Show>`'s function child are made when they come too, by computations
+## of their own (`"r"`, `"with"`).
+made! : Html => Str
+made! = |part| {
+	later = "{\"t\":\"c\",\"r\":${keep!(|| Html.serialize!(part))}}"
+	match part {
+		Fragment(parts) => if (parts.is_empty()) "{\"t\":\"f\",\"c\":[]}" else later
+		_ => later
+	}
 }
 
 truth! : (() => Bool) => Str

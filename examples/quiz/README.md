@@ -121,11 +121,12 @@ Each gap this app met, and what it does about it:
   browser, so the page hydrated into the error page. Both room pages say the type (`seat : Game.Seat`).
   The platform does document it (for `use_submissions!`); a reported type at the read, or the same
   types in both copies, would catch it at build.
-- **A value prop inside a `<Show>`'s children is read when the page first renders**, not when the
-  part shows: the podium, written `<Podium players={current!().players} />` inside the finished
-  phase's `<Show>`, showed every score as it was in the lobby. `Podium` takes an accessor
-  (`players!`) and reads it in its own holes; the browser test checks a score made after the page
-  rendered.
+- **A value prop inside a `<Show>`'s children was read when the page first rendered**, not when the
+  part showed: the podium, written `<Podium players={current!().players} />` inside the finished
+  phase's `<Show>`, showed every score as it was in the lobby, so `Podium` took an accessor. (Fixed
+  in the platform since: what a `<Show>` shows is made as it shows, as Solid makes it, so the
+  podium takes the final scores as a plain value again; the browser test checks a score made after
+  the page rendered.)
 - **`<For>` and `<Show>` can't sit inside a pure function child** (a `<For>` row's, a `<Show>`'s
   narrowed child): the platform's components are effectful calls, and those children are pure, so
   the compiler says "This function is effectful, but a pure function is expected" about generated

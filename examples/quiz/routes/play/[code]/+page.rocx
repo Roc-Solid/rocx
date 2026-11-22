@@ -158,7 +158,7 @@ Playing := [].{
 				<Show when!={Feed.finished(current!())}>
 					<section class="phase finished" transition:in={Transition.fade.ms(400)} transition:out={Transition.fade.ms(150)}>
 						<h1>{Playing.finish(current!(), me)}</h1>
-						<Podium players!={|| current!().players} me={me} />
+						<Podium players={current!().players} me={me} />
 						<p class="hint">Thanks for playing. The host may start another round.</p>
 					</section>
 				</Show>

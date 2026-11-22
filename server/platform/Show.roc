@@ -6,6 +6,11 @@ import Html
 ##
 ##     <Show when!={count!() > 0} fallback={<p>None yet</p>}><p>Some</p></Show>
 ##
+## Each is made when it shows, as Solid makes them: as a component is, where it is rendered, once,
+## its reads untracked, and made again each time it shows again. So a value prop inside
+## (`<Podium players={game!().players} />`) is read as the part shows, not as the page first
+## rendered.
+##
 ## With a function child, `when!` is a Try, and the child gets an accessor of the value inside it
 ## (Solid's narrowing, non-keyed): `<Show when!={users!().first()}>{|first!| <p>{first!().name}</p>}</Show>`.
 ## The child runs when the part shows, and may do what a component does there: hold a `<For>` or

@@ -483,6 +483,13 @@ view! = |_|
 						accessor of the value in it.
 					</li>
 					<li>
+						<strong>A part is made when it shows</strong>, as Solid makes it: what a
+						<code>{"<Show>"}</code> shows, its fallback and a <code>{"<For>"}</code>'s, each once, as a
+						component is, and again each time it shows again; a row when it comes. So a value prop inside,
+						<code>{"<Podium players={game!().players} />"}</code>, is read as the part shows, not as the page
+						was first rendered.
+					</li>
+					<li>
 						<strong>A function child</strong>, a <code>{"<For>"}</code>'s row or a <code>{"<Show>"}</code>'s
 						narrowed child, is effectful, as a component is: it runs where its part is made, so it may hold
 						another <code>{"<For>"}</code> or <code>{"<Show>"}</code>, or be plain markup.

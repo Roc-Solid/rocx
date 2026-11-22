@@ -1,17 +1,35 @@
 import pf.Html
 import pf.Solid exposing [create_signal!]
+import pf.Show
+import pf.For
 
 ## Props, for the tests (`props_app.roc`): a value prop read from a signal, in a hole and outside
-## one, given to an effectful component; and the same signal as an accessor prop.
+## one, given to an effectful component; and the same signal as an accessor prop. Then value props
+## in what a `<Show>` shows and in fallbacks, made when they show.
 Props := [].{
 	view! : {} => Html
 	view! = |{}| {
 		(word!, set_word!) = create_signal!("one")
+		(open!, set_open!) = create_signal!(Bool.False)
+		(items!, set_items!) = create_signal!([])
 		<div>
 			<button class="set" on:click={|| set_word!("two")}>Set</button>
+			<button class="again" on:click={|| set_word!("three")}>Again</button>
+			<button class="toggle" on:click={|| set_open!(!open!())}>Toggle</button>
+			<button class="fill" on:click={|| set_items!(if (items!().is_empty()) ["an item"] else [])}>Fill</button>
 			<p class="hole">{=<Shows label={word!()} />}</p>
 			<p class="once"><Shows label={word!()} /></p>
 			<p class="getter"><Getter label!={word!()} /></p>
+			<p class="shown">
+				<Show when!={open!()} fallback={<Shows label={"no ${word!()}"} />}>
+					<Shows label={word!()} />
+				</Show>
+			</p>
+			<p class="listed">
+				<For each!={items!()} keyed={Bool.False} fallback={<Shows label={"none, ${word!()}"} />}>
+					{|item!, _| <span class="item">{item!()}</span>}
+				</For>
+			</p>
 		</div>
 	}
 }

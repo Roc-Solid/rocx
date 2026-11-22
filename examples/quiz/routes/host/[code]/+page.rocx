@@ -100,7 +100,7 @@ view! = |{ params }| {
 			<Show when!={Feed.finished(current!())}>
 				<section class="phase finished" aria-labelledby="finished-title" transition:in={Transition.fade.ms(400)} transition:out={Transition.fade.ms(180)}>
 					<h1 id="finished-title">That's the game!</h1>
-					<Podium players!={|| current!().players} me="" />
+					<Podium players={current!().players} me="" />
 					{=
 						if hosting {
 							<div class="again">

@@ -106,6 +106,16 @@ same components natively; this one hydrates them.
   it, and is let go of with it: a `<Show>` switching, a row going. A `<For>`'s row and a `<Show>`'s
   narrowed child are effectful functions run the same way, as their part is made (D-036), so they
   may hold another `<For>` or `<Show>`, owned by the row or the part.
+- **Parts are made as they show**, as Solid makes them. What a `<Show>` shows, and a fallback (a
+  `<Show>`'s, a `<For>`'s, a `<Loading>`'s), is serialized as a component node
+  (`{"t":"c"}`, `Html.serialize!`'s `made!`): its box is run where the part is rendered, once, its
+  reads untracked, owned by the part, and again each time the part shows again. So a value prop
+  in it is read as it shows, not as the page first rendered, and the holes inside aren't kept until
+  then. A `<For>`'s row (`"r"`) and a `<Show>`'s function child (`"with"`) are made as they come too,
+  but by computations of their own, which track what the row's or child's own code reads: a value
+  prop read there (`<PlannerDay day={day!()} />` in a row) makes the row anew when it changes.
+  D-039 (reactive value props) makes those runs untracked, as Solid's `mapArray` is, once value
+  props are patched in place.
 - **Props.** A prop named as an effect (`label!={word!()}`) is an accessor, `|| word!()`: Solid's
   getter, read in the child's own holes, which track it and are patched, the child kept. A prop that
   is a value read from what changes (`label={word!()}`) has Roc's type, so it can't be a getter:
@@ -113,7 +123,7 @@ same components natively; this one hydrates them.
   what serializes the markup the call is in (`ComponentWith`), before the component runs. In a hole
   that is the hole's run, which tracks them: when they change it runs again and renders the
   component anew (its signals made anew), as a pure component's call in a hole renders anew.
-  Outside a hole they are read once, as before. A context a prop reads is the place's where the
+  Outside a hole they are read once, as the place is made (in a `<Show>`, as its part shows). A context a prop reads is the place's where the
   call is written, not the component's.
 - **Effects** are Solid 2.0's split ones: `create_effect!(compute, apply)`. The runtime makes a
   computation of `compute` (tracked, owned by the component or computation running), and its answer
