@@ -1,4 +1,5 @@
 import ../Generated/Paths
+import ../AppNotes
 
 ## The docs, in four parts, each with its own pages in the sidebar: rocx, what an app is written
 ## in; the platform, what it runs on; the ecosystem, the packages it can use; and the examples,
@@ -69,14 +70,13 @@ Nav := [].{
 		],
 	}
 
-	## The examples: whole apps in the repository's examples/, what each shows, and what each weighs.
+	## The examples: whole apps in the repository's examples/, an overview and a page for each
+	## (`AppNotes`, which lists them).
 	examples_docs : Section
 	examples_docs = {
 		name: "Examples",
 		home: Paths.examples,
-		pages: [
-			{ path: Paths.examples, label: "The example apps", blurb: "Whole apps: what each shows, and what it weighs" },
-		],
+		pages: AppNotes.pages,
 	}
 
 	sections : List(Section)

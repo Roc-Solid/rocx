@@ -173,6 +173,13 @@ NoFood := [].{
 		gap: 0.75rem;
 	}
 
+	/* A field fits its column, however narrow the phone. */
+	.how-much :global(input),
+	.when :global(input) {
+		width: 100%;
+		min-width: 0;
+	}
+
 	.field {
 		display: grid;
 		align-content: start;

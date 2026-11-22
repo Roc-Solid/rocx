@@ -1,0 +1,300 @@
+import pf.Html
+import ../AppNotes
+import ../Generated/ExampleApps
+import ../Generated/Paths
+import Heading
+import PageHero
+import Button
+import Stats
+import TableWrap
+import Code
+
+## An example app's page: what it is (`AppNotes`), what it shows, its screenshots, what it weighs and
+## is made of (`ExampleApps`, measured), the server's benchmark for echo, and how to run it. Pure: a
+## page is the app's name, and the rest is data.
+ExampleApp := [].{
+
+	## `children` go after what it shows: what a page of the app's own adds (hello's source).
+	Props := { name : Str, children : List(Html) ?? [] }
+
+	view : Props -> Html
+	view = |props| {
+		name = props.name
+		match (AppNotes.about(name), AppNotes.facts(name)) {
+			(Ok(about), Ok(facts)) => ExampleApp.page(about, facts, props.children)
+			_ => <p class="missing">{"No notes or numbers yet for ${name}: site/AppNotes.roc and `just example-apps`."}</p>
+		}
+	}
+
+	page : AppNotes.About, ExampleApps.Example, List(Html) -> Html
+	page = |about, facts, extra| {
+		source = "https://github.com/Roc-Solid/rocx/tree/master/examples/${facts.name}"
+		# Every screenshot AppNotes names is shown: the site's test checks each was taken (`just
+		# example-shots`). Filtering them here by those there are miscompiled under --opt=speed.
+		shots = about.shots
+		<>
+			<PageHero
+				eyebrow={"Examples · examples/${facts.name}"}
+				title={facts.title}
+				actions={[
+					<Button href={source} primary>Source</Button>,
+					<Button href={"${source}/README.md"}>README</Button>,
+					<Button href={Paths.examples}>All the examples</Button>,
+				]}
+			>
+				{about.summary}
+			</PageHero>
+
+			<Heading id="shows">What it shows</Heading>
+			<ul class="shows">{...about.shows.map(|item| <li>{item}</li>)}</ul>
+			{...extra}
+
+			{=
+				if shots.is_empty() {
+					Html.empty({})
+				} else {
+					<>
+						<Heading id="screens">Screenshots</Heading>
+						{=ExampleApp.screens(facts.name, shots)}
+					</>
+				}
+			}
+
+			{=if (facts.name == "echo") ExampleApp.bench(ExampleApps.bench) else Html.empty({})}
+
+			<Heading id="numbers">What it's made of</Heading>
+			<Stats stats={ExampleApp.stats(facts)} />
+			<dl class="facts">
+				<div><dt>Weighs</dt><dd>{ExampleApp.weighs(facts)}</dd></div>
+				<div><dt>Made of</dt><dd>{ExampleApp.made(facts)}</dd></div>
+				<div><dt>Uses</dt><dd>{ExampleApp.uses(facts)}</dd></div>
+			</dl>
+			<p class="small">
+				{"Measured on ${ExampleApps.measured.date} at commit "}<code>{ExampleApps.measured.commit}</code>{". The wasm is the app's browser half, built with "}<code>--opt=size</code>{"; every page also loads the runtime, ${ExampleApp.kb(ExampleApps.runtime.brotli)} brotli. "}<a href={Paths.examples}>All the examples</a>{" says how they're measured."}
+			</p>
+
+			<Heading id="run">Run it</Heading>
+			<p>From the repository's root, with the toolchain set up (<code>just setup</code>): build it, check it and run its tests; its README says how to start it and look around.</p>
+			<Code source={"just examples ${facts.name}"} numbers={Bool.False} plain />
+		</>
+	}
+
+	## The screenshots, in AppNotes' order: a wide one across the page, phones side by side
+	## (`.screens` is a grid of two columns, a wide one spanning both).
+	screens : Str, List(AppNotes.Shot) -> Html
+	screens = |name, shots| <div class="screens">{...shots.map(|each| ExampleApp.shot(name, each))}</div>
+
+	shot : Str, AppNotes.Shot -> Html
+	shot = |name, it|
+		<figure class={if (it.phone) "shot phone" else "shot"}>
+			<img src={"/shots/${name}/${it.file}.webp"} alt={it.alt} width={if (it.phone) "390" else "1280"} height={if (it.phone) "844" else "800"} loading="lazy" />
+			<figcaption>{it.caption}</figcaption>
+		</figure>
+
+	## The numbers as tiles.
+	stats : ExampleApps.Example -> List({ label : Str, value : Str, note : Str })
+	stats = |facts| {
+		wasm =
+			match facts.wasm.first() {
+				Ok(size) => { label: "Its browser half", value: ExampleApp.kb(size.brotli), note: "wasm, brotli; ${ExampleApp.kb(size.gzip)} gzip" }
+				Err(_) => { label: "Its browser half", value: "none", note: "endpoints alone: no wasm" }
+			}
+		[
+			wasm,
+			{ label: "Pages and endpoints", value: "${facts.pages.to_str()} + ${facts.endpoints.to_str()}", note: "route files' pages, and handlers" },
+			{ label: "Lines of Roc", value: ExampleApp.count(facts.lines), note: "its own .roc and .rocx, blank lines left out" },
+			{ label: "Tests", value: ExampleApp.count(facts.expects + facts.tests), note: "${ExampleApp.count(facts.expects)} expects, ${ExampleApp.count(facts.tests)} node tests" },
+		]
+	}
+
+	weighs : ExampleApps.Example -> Str
+	weighs = |facts|
+		match facts.wasm.first() {
+			Ok(size) => "${ExampleApp.kb(size.brotli)} of wasm, brotli (${ExampleApp.kb(size.gzip)} gzip, ${ExampleApp.kb(size.bytes)} raw)"
+			Err(_) => "no browser half: endpoints alone"
+		}
+
+	made : ExampleApps.Example -> Str
+	made = |facts| Str.join_with([ExampleApp.plural(facts.pages, "page"), ExampleApp.plural(facts.endpoints, "endpoint"), "${ExampleApp.count(facts.lines)} lines of Roc", ExampleApp.plural(facts.expects, "expect"), ExampleApp.plural(facts.tests, "node test")], " · ")
+
+	## What an app uses besides the platform: its database, and its packages.
+	uses : ExampleApps.Example -> Str
+	uses = |facts| {
+		all = (if (facts.database.is_empty()) [] else [facts.database]).concat(facts.pkgs.map(|each| "packages/${each}"))
+		if (all.is_empty()) "the platform alone" else Str.join_with(all, ", ")
+	}
+
+	## The server's benchmark: echo's build as it would ship, under bombardier.
+	bench : List(ExampleApps.Bench) -> Html
+	bench = |benches|
+		match benches.first() {
+			Ok(it) =>
+				<>
+					<Heading id="bench">The benchmark</Heading>
+					<p>
+						{"Its server, built with "}<code>{"--opt=${it.opt}"}</code>{" as it would ship, answering "}<code>POST /echo</code>{" under "}
+						<a href="https://github.com/codesenberg/bombardier" rel="external">bombardier</a>{" for ${it.seconds.to_str()} seconds at each number of connections, after a warm-up ("}
+						<code>examples/echo/bench.sh</code>{" runs the same). Each request goes through the host, the generated routes, a middleware, reading the JSON body and writing the JSON answer."}
+					</p>
+					<TableWrap>
+						<table class="bench">
+							<thead>
+								<tr>
+									<th scope="col" class="num">Connections</th>
+									<th scope="col" class="num">Requests a second</th>
+									<th scope="col" class="num">Latency, median</th>
+									<th scope="col" class="num">99th percentile</th>
+									<th scope="col" class="num">Errors</th>
+								</tr>
+							</thead>
+							<tbody>
+								{...it.levels.map(|level| <tr><td class="num">{level.connections.to_str()}</td><td class="num">{ExampleApp.count(level.rps)}</td><td class="num">{ExampleApp.time(level.p50_us)}</td><td class="num">{ExampleApp.time(level.p99_us)}</td><td class="num">{level.errors.to_str()}</td></tr>)}
+							</tbody>
+						</table>
+					</TableWrap>
+					<p>
+						{"Of a request's time, Roc's own (the median of the "}<code>server-timing</code>{" its answers carry, one request at a time) is ${ExampleApp.time(it.roc_us)}: the rest is HTTP and the host. Measured on ${it.measured}, at commit "}<code>{it.commit}</code>{", on an ${it.machine}, with bombardier on the same machine competing for its cores, and the machine busy with other work besides (its load average was ${it.load} during the run): read them as a floor, not a ceiling."}
+					</p>
+				</>
+			Err(_) => <p class="missing">Not measured yet: run <code>just example-apps --bench</code>.</p>
+		}
+
+	## Bytes as kilobytes, to a tenth: "193.4 KB".
+	kb : U64 -> Str
+	kb = |bytes| "${Dec.round_to(bytes.to_dec() / 1024.0, { step: 0.1, ties: AwayFromZero }).to_str()} KB"
+
+	## A count with commas between thousands: "94,135".
+	count : U64 -> Str
+	count = |n| {
+		digits = n.to_str().to_utf8()
+		length = digits.len()
+		Str.from_utf8(digits.fold_with_index([], |out, digit, index| if (index > 0 and (length - index) % 3 == 0) out.append(',').append(digit) else out.append(digit))) ?? n.to_str()
+	}
+
+	## A time: "713 µs", "2.4 ms".
+	time : U64 -> Str
+	time = |us| if (us < 1000) "${us.to_str()} µs" else "${Dec.round_to(us.to_dec() / 1000.0, { step: 0.1, ties: AwayFromZero }).to_str()} ms"
+
+	## "1 page", "4 pages".
+	plural : U64, Str -> Str
+	plural = |n, word| if (n == 1) "1 ${word}" else "${ExampleApp.count(n)} ${word}s"
+
+	<story name="Tasks">
+		<ExampleApp name="tasks" />
+	</story>
+
+	<story name="Echo, with the benchmark">
+		<ExampleApp name="echo" />
+	</story>
+
+	<style>
+		.shows {
+			padding-left: var(--space-5);
+		}
+
+		.screens {
+			display: grid;
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			gap: var(--space-5);
+			margin: var(--space-4) 0;
+		}
+
+		/* A wide screenshot takes the whole row; phones share one. */
+		.shot:not(.phone) {
+			grid-column: 1 / -1;
+		}
+
+		.shot {
+			margin: 0;
+		}
+
+		.shot img {
+			display: block;
+			width: 100%;
+			height: auto;
+			border-radius: var(--radius);
+			box-shadow: var(--shadow);
+		}
+
+		.shot.phone img {
+			max-width: 20rem;
+			margin: 0 auto;
+			border-radius: var(--radius-lg);
+		}
+
+		figcaption {
+			margin-top: var(--space-2);
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+			text-align: center;
+		}
+
+		table {
+			width: 100%;
+			border-collapse: collapse;
+			font-variant-numeric: tabular-nums;
+		}
+
+		th,
+		td {
+			padding: var(--space-2);
+			white-space: nowrap;
+		}
+
+		thead th {
+			color: var(--text-muted);
+			font-size: var(--size-xs);
+			font-weight: 600;
+			white-space: normal;
+			vertical-align: bottom;
+		}
+
+		tbody tr {
+			border-top: 1px solid var(--rule);
+		}
+
+		.num {
+			text-align: right;
+		}
+
+		.facts {
+			display: grid;
+			gap: var(--space-2);
+			margin: var(--space-4) 0;
+		}
+
+		.facts div {
+			display: grid;
+			grid-template-columns: 6rem minmax(0, 1fr);
+			gap: var(--space-3);
+		}
+
+		.facts dt {
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+			font-weight: 600;
+		}
+
+		.facts dd {
+			margin: 0;
+		}
+
+		.small {
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+		}
+
+		.missing {
+			color: var(--magenta);
+			font-weight: 600;
+		}
+	</style>
+}
+
+expect ExampleApp.kb(198008) == "193.4 KB"
+expect ExampleApp.count(94135) == "94,135"
+expect ExampleApp.count(999) == "999"
+expect ExampleApp.time(713) == "713 µs"
+expect ExampleApp.time(2399) == "2.4 ms"
+expect ExampleApp.plural(1, "page") == "1 page"
+expect ExampleApp.plural(11, "page") == "11 pages"

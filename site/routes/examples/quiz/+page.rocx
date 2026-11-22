@@ -1,0 +1,9 @@
+import pf.Html
+import ../../../AppNotes
+import ../../../Ui/ExampleApp
+
+## The quiz example app: what it is and shows, its screenshots, and what it is made of
+## (site/AppNotes.roc, and the numbers `just example-apps` measures).
+meta = AppNotes.meta("quiz")
+
+view! = |_| <NoHydration><ExampleApp name="quiz" /></NoHydration>

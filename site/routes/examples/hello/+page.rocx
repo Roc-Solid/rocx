@@ -1,0 +1,20 @@
+import pf.Html
+import ../../../AppNotes
+import ../../../Ui/Code
+import ../../../Ui/ExampleApp
+import ../../../Ui/Heading
+import ../../../Generated/Sources
+
+## The hello example app: what it is and shows, its page's source (it has no look of its own to take
+## a picture of), and what it is made of (site/AppNotes.roc, and the numbers `just example-apps`
+## measures).
+meta = AppNotes.meta("hello")
+
+view! = |_|
+	<NoHydration>
+		<ExampleApp name="hello">
+			<Heading id="source">Its page</Heading>
+			<p>All of it: a signal, a button that sets it, and the text that reads it. The server renders it, and the browser makes the button count.</p>
+			<Code title="examples/hello/routes/+page.rocx" source={Sources.start_page.rocx} numbers={Bool.False} />
+		</ExampleApp>
+	</NoHydration>

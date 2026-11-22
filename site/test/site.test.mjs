@@ -7,7 +7,7 @@
 // web/test/browser.mjs).
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { cpus, loadavg, tmpdir } from "node:os";
 import { join } from "node:path";
 import { appWasm, build, nativePage, out, pageFile, prerender, roc, root, ROUTES, STATIC_GETS, startServer, underBase } from "../build.mjs";
@@ -105,8 +105,8 @@ test("every page renders, and hydrates strictly as the server left it, asking fo
 		assert.deepEqual(page.errors, [], `${route} threw nothing`);
 		const fetched = await asked(page);
 		assert.ok(fetched.includes("/rocx/app.wasm"), `${route}: every page fetches the wasm`);
-		// The flock's birds are an image.
-		assert.deepEqual(fetched.filter((path) => !loads().includes(path) && path !== "/roc-bird.svg"), [], `${route}: and asks for nothing else`);
+		// The flock's birds are an image, and the example apps' pages have screenshots.
+		assert.deepEqual(fetched.filter((path) => !loads().includes(path) && path !== "/roc-bird.svg" && !path.startsWith("/shots/")), [], `${route}: and asks for nothing else`);
 	}
 	const missing = await fetch(`${site.url}/nowhere`, { headers: { accept: "text/html" } });
 	assert.equal(missing.status, 404);
@@ -114,7 +114,7 @@ test("every page renders, and hydrates strictly as the server left it, asking fo
 	assert.equal((notFound.match(/<ul class="page-cards[ "]/g) ?? []).length, 1, "the 404 lists the pages");
 	assert.match(notFound, /<ul class="page-cards[ "][\s\S]*href="\/syntax"[\s\S]*<\/ul>/, "rocx's, for a path outside the platform's docs");
 	const platformMissing = await (await fetch(`${site.url}/platform/nowhere`, { headers: { accept: "text/html" } })).text();
-	assert.match(platformMissing, /<ul class="page-cards[ "](?:(?!<\/ul>)[\s\S])*href="\/platform\/postgres"/, "the platform's, for a path in them");
+	assert.match(platformMissing, /<ul class="page-cards[ "](?:(?!<\/ul>)[\s\S])*href="\/platform\/database"/, "the platform's, for a path in them");
 	assert.doesNotMatch(platformMissing, /<ul class="page-cards[ "](?:(?!<\/ul>)[\s\S])*href="\/syntax"/);
 	const ecosystemMissing = await (await fetch(`${site.url}/ecosystem/nowhere`, { headers: { accept: "text/html" } })).text();
 	assert.match(ecosystemMissing, /<ul class="page-cards[ "](?:(?!<\/ul>)[\s\S])*href="\/ecosystem\/charts"/, "the ecosystem's, for a path in them");
@@ -1165,19 +1165,36 @@ test("the examples' facts name every example app the repository has (`just examp
 	assert.ok(facts.bench?.levels.length > 0, "echo's benchmark: `just example-apps --bench`");
 });
 
-test("the examples page: every example app, each with its notes, its sizes and what it is made of; and the server's benchmark", { skip }, async () => {
-	const html = await (await fetch(`${site.url}/examples`, { headers: { accept: "text/html" } })).text();
+test("the examples: an overview with a row for each app, and each app's page with its notes, numbers, screenshots, and echo's benchmark", { skip }, async () => {
+	const page = async (path) => (await fetch(`${site.url}${path}`, { headers: { accept: "text/html" } })).text();
 	const facts = JSON.parse(readFileSync(exampleFacts, "utf8"));
 	const kb = (bytes) => `${(Math.round((bytes / 1024) * 10) / 10).toFixed(1)} KB`;
-	assert.ok(!html.includes("No notes yet"), "an app has no notes in site/AppNotes.roc");
+	// The screenshots site/AppNotes.roc names for each app (`shots: [{ file: "list", … }]`).
+	const notes = readFileSync(join(root, "site", "AppNotes.roc"), "utf8");
+	const named = (app) => {
+		const block = notes.slice(notes.indexOf(`name: "${app}"`), notes.indexOf("\t\t},\n", notes.indexOf(`name: "${app}"`)));
+		return [...block.matchAll(/file: "([^"]+)"/g)].map((match) => match[1]);
+	};
+	const overview = await page("/examples");
+	assert.ok(!overview.includes("No notes yet"), "an app has no notes in site/AppNotes.roc");
 	for (const app of facts.examples) {
-		assert.ok(html.includes(`id="${app.name}"`), `${app.name}'s section`);
-		assert.match(html, new RegExp(`<th[^>]*scope="row"><a[^>]* href="#${app.name}">${app.title}</a></th>`), `${app.name}'s row at a glance`);
-		if (app.wasm) assert.ok(html.includes(kb(app.wasm.brotli)), `${app.name}'s wasm, ${kb(app.wasm.brotli)}`);
+		assert.match(overview, new RegExp(`<th[^>]*scope="row"><a[^>]* href="/examples/${app.name}">${app.title}</a></th>`), `${app.name}'s row`);
+		const html = await page(`/examples/${app.name}`);
+		assert.match(html, new RegExp(`<h1[^>]*>${app.title}</h1>`), `${app.name}'s page`);
 		assert.ok(html.includes(`examples/${app.name}`), `${app.name}'s directory`);
+		if (app.wasm) assert.ok(html.includes(kb(app.wasm.brotli)), `${app.name}'s wasm, ${kb(app.wasm.brotli)}`);
+		// Every screenshot AppNotes names was taken (`just example-shots`), and is on the page.
+		for (const file of named(app.name)) {
+			assert.ok(existsSync(join(root, "site", "static", "shots", app.name, `${file}.webp`)), `${app.name}/${file}.webp: run \`just example-shots ${app.name}\``);
+			assert.ok(html.includes(`src="/shots/${app.name}/${file}.webp"`), `${app.name}/${file} on its page`);
+		}
 	}
-	for (const level of facts.bench.levels) assert.ok(html.includes(level.rps.toLocaleString("en-US")), `echo at ${level.connections} connections`);
-	assert.ok(html.includes(facts.measured), "when they were measured");
+	const echo = await page("/examples/echo");
+	for (const level of facts.bench.levels) assert.ok(echo.includes(level.rps.toLocaleString("en-US")), `echo at ${level.connections} connections`);
+	assert.ok(overview.includes(facts.measured), "when they were measured");
+	// The sidebar lists them all, each page's own marked.
+	const tasks = await page("/examples/tasks");
+	for (const app of facts.examples) assert.ok(tasks.includes(`href="/examples/${app.name}"`), `the sidebar links ${app.name}`);
 });
 
 test("the static build for GitHub Pages: files alone, under /rocx/, every page hydrates strictly as the browser's build renders it, and its demos work", { skip }, async () => {
@@ -1202,7 +1219,7 @@ test("the static build for GitHub Pages: files alone, under /rocx/, every page h
 			assert.ok(await page.eval("getComputedStyle(document.body).fontFamily !== ''"), `${route}: its stylesheet`);
 			assert.deepEqual(page.console, [], `${route} logged nothing`);
 			assert.deepEqual(page.errors, [], `${route} threw nothing`);
-			assert.deepEqual((await asked(page)).filter((path) => !loads("/rocx/").includes(path) && path !== "/rocx/roc-bird.svg"), [], `${route}: asked for nothing else`);
+			assert.deepEqual((await asked(page)).filter((path) => !loads("/rocx/").includes(path) && path !== "/rocx/roc-bird.svg" && !path.startsWith("/rocx/shots/")), [], `${route}: asked for nothing else`);
 		}
 		// The lobby, asked once where no server answers channels: it says so.
 		const live = await open("/rocx/platform/live", pages.url);

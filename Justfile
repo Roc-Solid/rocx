@@ -305,6 +305,14 @@ examples-check *names:
 example-apps *args:
     ROC={{ roc }} node site/example-apps.mjs {{ args }}
 
+# Takes the example apps' screenshots for their docs pages (/examples/<app>) into
+# site/static/shots/<app>/, as site/AppNotes.roc names them: each app built and started as its tests
+# start it (DATABASE_URL for those on Postgres), given something to show, and each scene taken in
+# Chromium, dark, wide or on a phone, as WebP. `just example-shots tasks` takes one app's. Commit
+# them: the site's test checks every one AppNotes names is there.
+example-shots *names:
+    ROC={{ roc }} node site/example-shots.mjs {{ names }}
+
 # Regenerates the platforms' glue after a change to a header: web/host/roc_platform_abi.zig, and
 # server/host/src/roc_platform_abi.rs.
 glue:

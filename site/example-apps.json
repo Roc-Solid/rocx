@@ -1,6 +1,6 @@
 {
 	"measured": "2026-11-22",
-	"commit": "c22e832",
+	"commit": "3c73321",
 	"roc": "rocx-fork-3f66e242ea",
 	"machine": "Apple M5, 10 cores",
 	"runtime": {
@@ -11,21 +11,21 @@
 	"examples": [
 		{
 			"name": "board",
-			"title": "Acme Board",
+			"title": "Board",
 			"pages": 3,
 			"endpoints": 20,
-			"lines": 3529,
+			"lines": 3552,
 			"expects": 81,
 			"tests": 17,
 			"packages": [
 				"guard",
 				"presence"
 			],
-			"postgres": true,
+			"database": "SQLite",
 			"wasm": {
-				"bytes": 771815,
-				"gzip": 273213,
-				"brotli": 207818
+				"bytes": 771814,
+				"gzip": 273253,
+				"brotli": 207675
 			}
 		},
 		{
@@ -37,7 +37,7 @@
 			"expects": 0,
 			"tests": 0,
 			"packages": [],
-			"postgres": false,
+			"database": "",
 			"wasm": null
 		},
 		{
@@ -49,7 +49,7 @@
 			"expects": 0,
 			"tests": 0,
 			"packages": [],
-			"postgres": false,
+			"database": "",
 			"wasm": {
 				"bytes": 123972,
 				"gzip": 48136,
@@ -58,7 +58,7 @@
 		},
 		{
 			"name": "journal",
-			"title": "Acme Journal",
+			"title": "Journal",
 			"pages": 7,
 			"endpoints": 4,
 			"lines": 2777,
@@ -70,20 +70,20 @@
 				"markdown",
 				"testing"
 			],
-			"postgres": false,
+			"database": "",
 			"wasm": {
-				"bytes": 471638,
-				"gzip": 177978,
-				"brotli": 140673
+				"bytes": 471589,
+				"gzip": 177994,
+				"brotli": 140525
 			}
 		},
 		{
 			"name": "notes",
-			"title": "Acme Notes",
+			"title": "Notes",
 			"pages": 7,
 			"endpoints": 24,
-			"lines": 3188,
-			"expects": 75,
+			"lines": 3493,
+			"expects": 91,
 			"tests": 28,
 			"packages": [
 				"crypto",
@@ -93,11 +93,11 @@
 				"mcp",
 				"testing"
 			],
-			"postgres": true,
+			"database": "SQLite",
 			"wasm": {
-				"bytes": 582594,
-				"gzip": 215077,
-				"brotli": 168105
+				"bytes": 582539,
+				"gzip": 215304,
+				"brotli": 168063
 			}
 		},
 		{
@@ -105,7 +105,7 @@
 			"title": "Plate",
 			"pages": 11,
 			"endpoints": 20,
-			"lines": 4063,
+			"lines": 4091,
 			"expects": 92,
 			"tests": 13,
 			"packages": [
@@ -115,7 +115,7 @@
 				"mcp",
 				"testing"
 			],
-			"postgres": true,
+			"database": "SQLite",
 			"wasm": {
 				"bytes": 977351,
 				"gzip": 341259,
@@ -127,7 +127,7 @@
 			"title": "Pinwheel",
 			"pages": 5,
 			"endpoints": 7,
-			"lines": 3616,
+			"lines": 3619,
 			"expects": 92,
 			"tests": 8,
 			"packages": [
@@ -135,7 +135,7 @@
 				"forms",
 				"presence"
 			],
-			"postgres": true,
+			"database": "SQLite",
 			"wasm": {
 				"bytes": 811814,
 				"gzip": 288092,
@@ -144,26 +144,26 @@
 		},
 		{
 			"name": "tasks",
-			"title": "Acme Tasks",
+			"title": "Tasks",
 			"pages": 4,
 			"endpoints": 10,
-			"lines": 2194,
+			"lines": 2200,
 			"expects": 49,
 			"tests": 17,
 			"packages": [
 				"forms",
 				"testing"
 			],
-			"postgres": true,
+			"database": "SQLite",
 			"wasm": {
-				"bytes": 709967,
-				"gzip": 258718,
-				"brotli": 198008
+				"bytes": 709959,
+				"gzip": 258649,
+				"brotli": 197952
 			}
 		},
 		{
 			"name": "uptime",
-			"title": "Acme Status",
+			"title": "Status",
 			"pages": 6,
 			"endpoints": 15,
 			"lines": 3456,
@@ -178,11 +178,11 @@
 				"otel",
 				"testing"
 			],
-			"postgres": true,
+			"database": "Postgres",
 			"wasm": {
-				"bytes": 631876,
-				"gzip": 218451,
-				"brotli": 163222
+				"bytes": 631843,
+				"gzip": 218265,
+				"brotli": 163167
 			}
 		}
 	],
@@ -191,7 +191,7 @@
 		"measured": "2026-11-22",
 		"commit": "4b1169c",
 		"machine": "Apple M5, 10 cores",
-		"load": "12.7 → 18.9",
+		"load": "12.7 \u2192 18.9",
 		"opt": "speed",
 		"seconds": 10,
 		"body": "\"hello\"",

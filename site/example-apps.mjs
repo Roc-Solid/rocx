@@ -9,6 +9,7 @@
 //   node site/example-apps.mjs               every example; the last benchmark kept
 //   node site/example-apps.mjs tasks plate   only these (the others kept as they were)
 //   node site/example-apps.mjs --bench       and echo's benchmark again (a minute or so)
+//   node site/example-apps.mjs --counts      what each is made of again, the sizes kept (no builds)
 //
 // The site's build (site/build.mjs) writes site/Generated/ExampleApps.roc from the file, and the page
 // (site/routes/examples/+page.rocx) shows it, with when, where and on what it was measured. Building
@@ -69,6 +70,15 @@ function sourceFiles(dir) {
 	return found;
 }
 
+/** The database an app's program names (`database: Sqlite("data/x.db")` in the record main.roc
+ * passes to App.program): SQLite; Postgres, the default, for an app with migrations or `database:
+ * Postgres`; or none. */
+export function database(dir, main) {
+	if (/database:\s*Sqlite\(/.test(main)) return "SQLite";
+	if (/database:\s*Postgres\b/.test(main) || existsSync(join(dir, "migrations"))) return "Postgres";
+	return "";
+}
+
 /** What an example is made of, read from its files. */
 export function anatomy(name) {
 	const dir = join(root, "examples", name);
@@ -89,7 +99,7 @@ export function anatomy(name) {
 		expects: roc.reduce((sum, file) => sum + (text(file).match(/^expect /gm) ?? []).length, 0),
 		tests: files.filter((file) => file.endsWith(".test.mjs")).reduce((sum, file) => sum + (text(file).match(/^\s*test\(/gm) ?? []).length, 0),
 		packages: [...header.matchAll(/(\w+): "[^"]*packages\/(\w+)\/main\.roc"/g)].map((match) => match[1]).sort(),
-		postgres: existsSync(join(dir, "migrations")),
+		database: database(dir, text(join(dir, "main.roc"))),
 	};
 }
 
@@ -110,7 +120,9 @@ function machine() {
 	return `${model}, ${cpus().length} cores`;
 }
 
-const commit = () => run("git", ["rev-parse", "--short", "HEAD"]).trim();
+/** The commit measured: master's, the one this branch is on top of (a branch's own commits are
+ * gone once it is merged and its work squashed), or HEAD's on master itself. */
+const commit = () => run("git", ["rev-parse", "--short", run("git", ["merge-base", "HEAD", "master"]).trim()]).trim();
 const today = () => new Date().toISOString().slice(0, 10);
 
 /** Echo's benchmark: its --opt=speed build, POST /echo under bombardier at 1, 16, 64 and 256
@@ -188,7 +200,7 @@ export function examplesModule(facts) {
 			`\t\t\texpects: ${int(e.expects)},`,
 			`\t\t\ttests: ${int(e.tests)},`,
 			`\t\t\tpkgs: [${e.packages.map(rocString).join(", ")}],`,
-			`\t\t\tpostgres: Bool.${e.postgres ? "True" : "False"},`,
+			`\t\t\tdatabase: ${rocString(e.database ?? (e.postgres ? "Postgres" : ""))},`,
 			`\t\t\twasm: ${size(e.wasm)},`,
 			"\t\t},",
 		].join("\n");
@@ -199,7 +211,7 @@ export function examplesModule(facts) {
 		"## again (`just example-apps`), not this one.",
 		"ExampleApps := [].{",
 		"\tSize : { bytes : U64, gzip : U64, brotli : U64 }",
-		"\tExample : { name : Str, title : Str, pages : U64, endpoints : U64, lines : U64, expects : U64, tests : U64, pkgs : List(Str), postgres : Bool, wasm : List(Size) }",
+		"\tExample : { name : Str, title : Str, pages : U64, endpoints : U64, lines : U64, expects : U64, tests : U64, pkgs : List(Str), database : Str, wasm : List(Size) }",
 		"\tLevel : { connections : U64, rps : U64, p50_us : U64, p99_us : U64, errors : U64 }",
 		"\tBench : { measured : Str, commit : Str, machine : Str, load : Str, opt : Str, seconds : U64, roc_us : U64, levels : List(Level) }",
 		"",
@@ -236,8 +248,9 @@ async function main(args) {
 	const examples = [];
 	for (const name of names) {
 		const kept = before.examples.find((e) => e.name === name);
-		if (wanted.length > 0 && !wanted.includes(name) && kept) {
-			examples.push({ ...kept, ...anatomy(name) });
+		if (((wanted.length > 0 && !wanted.includes(name)) || args.includes("--counts")) && kept) {
+			const { postgres: _old, ...sizes } = kept;
+			examples.push({ ...sizes, ...anatomy(name) });
 			continue;
 		}
 		process.stderr.write(`${name}… `);
@@ -245,9 +258,11 @@ async function main(args) {
 		process.stderr.write(wasm ? `${(wasm.brotli / 1024).toFixed(1)} KB brotli\n` : "no browser half\n");
 		examples.push({ ...anatomy(name), wasm });
 	}
+	// Only counted again: the sizes are still the last measuring's, so its date and commit stay.
+	const counted = args.includes("--counts") && before.measured;
 	const facts = {
-		measured: today(),
-		commit: commit(),
+		measured: counted ? before.measured : today(),
+		commit: counted ? before.commit : commit(),
 		roc: run(roc(), ["version"]).trim().replace(/^Roc compiler version /, ""),
 		machine: machine(),
 		runtime: sizes(readFileSync(join(root, "web", "runtime.js"))),

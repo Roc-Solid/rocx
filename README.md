@@ -94,8 +94,9 @@ Each is a whole app in `examples/<name>`, with a README that tours it, maps each
 file that shows it, and says what it asked of the platform. `just examples` builds, checks and
 tests them all (`just examples tasks` one); `just check` type-checks them. The docs' examples page
 (`/examples`) shows each with what its browser half weighs and what it is made of, and the
-server's benchmark: `just example-apps` measures them into `site/example-apps.json` (`--bench`
-runs echo under bombardier too).
+server's benchmark, and each has a page of its own with screenshots: `just example-apps` measures
+them into `site/example-apps.json` (`--bench` runs echo under bombardier too), and
+`just example-shots` takes the screenshots into `site/static/shots/`.
 
 Every example with a database but uptime is on SQLite (D-045): a file beside its server, so each
 runs with nothing else; uptime is on Postgres (its admin's tables read Postgres's catalog).
