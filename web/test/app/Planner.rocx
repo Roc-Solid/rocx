@@ -1,5 +1,5 @@
 import pf.Html
-import pf.Solid exposing [create_signal!, create_memo!]
+import pf.Solid exposing [create_signal!, create_memo!, is_pending!]
 import pf.Router exposing [use_action!, use_submissions!]
 import pf.Endpoint
 import pf.Server
@@ -11,7 +11,8 @@ import pf.Transition
 ## A move shows at once (the server's board with the moves on their way applied), is sent without
 ## the handler waiting for it, and gives way to the server's board once that is read again; one the
 ## server refuses goes back, its refusal shown until it is dismissed. Cards glide from day to day.
-## The tray has no drop handler, so it takes no drop; the link's click is the page's.
+## The days are marked stale while the board is read again (`is_pending!`). The tray has no drop
+## handler, so it takes no drop; the link's click is the page's.
 Planner := [].{
 	Card : { id : Str, title : Str, day : Str }
 	Move : { card : Str, day : Str }
@@ -60,7 +61,7 @@ Planner := [].{
 		}
 		<main class="planner">
 			<Errored fallback={|problem, _| <p class="problem">{problem}</p>}>
-				<div class="days">
+				<div class="days" class:stale={is_pending!(cards!)}>
 					<ul class="day" data-day="mon" class:over={over!() == "mon"} on:dragenter={|| set_over!("mon")} on:dragleave={|| set_over!("")} on:drop={|| dropped!("mon")}>
 						<For each!={on_day!("mon")} keyed={|card| card.id}>
 							{|card!, _| <li class="card" key={card!().id} draggable="true" class:dragged={dragging!() == card!().id} transition:move={Transition.glide.ms(600)} on:dragstart={|| set_dragging!(card!().id)} on:dragend={|| set_dragging!("")}>{card!().title}</li>}

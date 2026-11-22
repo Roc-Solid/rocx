@@ -1509,7 +1509,7 @@ test("forms: after a plain post, the flash is the submission: what was typed and
 
 // ---- Drag and drop (D-029), actions and optimistic values (D-030), moves (D-031) ----
 
-test("a planner: a card dragged to another day (a real drag, in Chromium) moves at once, before the slow endpoint answers, and stays while it is on its way and while the board is read again, then is the server's, never showing where it was; two on their way at once, each on its own, the refused one back where it was, its refusal readable; cards glide between days (none with less motion asked for); a list with no drop handler takes no drop; a link's click taken over; hydrated strictly, rendered by the browser's build byte for byte, nothing left allocated", { skip }, async () => {
+test("a planner: a card dragged to another day (a real drag, in Chromium) moves at once, before the slow endpoint answers, and stays while it is on its way and while the board is read again (is_pending! then), then is the server's, never showing where it was; two on their way at once, each on its own, the refused one back where it was, its refusal readable; cards glide between days (none with less motion asked for); a list with no drop handler takes no drop; a link's click taken over; hydrated strictly, rendered by the browser's build byte for byte, nothing left allocated", { skip }, async () => {
 	const server = await Runtime.load(readFileSync(join(out, "planner-server.wasm")));
 	/** The server's board: a day holds two cards at most. */
 	let board = [
@@ -1597,6 +1597,7 @@ window.hydrated = true;
 		assert.equal(posted[0].headers.accept, "application/json");
 		assert.equal(posted[0].headers["x-rocx-submission"], "1");
 		assert.equal(await textOf(tab, ".pending"), "1 on their way");
+		assert.equal(await tab.eval("document.querySelector('.days').classList.contains('stale')"), false, "the board isn't being read again yet: a move on its way is no refresh");
 		assert.equal(await tab.eval("document.querySelector('.over')"), null, "the drop left Tuesday: dragleave ran");
 		assert.equal(await tab.eval("document.querySelector('.dragged')"), null);
 		assert.equal(await gliding("Alpha"), 1, "the card glides from Monday to Tuesday");
@@ -1610,10 +1611,12 @@ window.hydrated = true;
 		await sleep(50);
 		assert.deepEqual(await day("tue"), ["Alpha", "Gamma"], "kept while the board is read again");
 		assert.equal(await textOf(tab, ".pending"), "1 on their way", "on its way until the page's reads are in");
+		assert.equal(await tab.eval("document.querySelector('.days').classList.contains('stale')"), true, "is_pending! of the board while it is read again");
 		releaseRead();
 		holding = null;
 		await tab.wait("document.querySelector('.pending').textContent === '0 on their way'", 2000);
 		assert.deepEqual(await day("tue"), ["Alpha", "Gamma"], "the server's board now");
+		assert.equal(await tab.eval("document.querySelector('.days').classList.contains('stale')"), false, "and not pending any more");
 		assert.deepEqual(await day("mon"), ["Beta"]);
 		const seen = await tab.eval("window.seen");
 		const moved = seen.findIndex((shown) => /tue:[^ ]*Alpha/.test(shown));
