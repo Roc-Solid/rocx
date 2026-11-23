@@ -2,19 +2,23 @@ import pf.Html
 import ../Generated/Paths
 import Logo
 
-## The bar at the top of every page: the site's mark, the parts of the docs (the `current` one
-## marked), what it is in a line, and what the browser downloads (`wasm`). It stays at the top as
-## the page scrolls. On the front page (`landing`), whose top shows the mark large, the bar has the
-## name alone, and on a phone, where the bar's name is the mark, nothing there.
+## The bar at the top of every page, in three columns: the site's mark and name, the parts of the
+## docs in the middle (the `current` one marked), and what the browser downloads (`wasm`), with what
+## the site is in a line where there is room. The side columns are as wide as each other, so the
+## parts stay where they are from page to page. On the front page (`landing`), whose top shows the
+## name and the mark large, the bar leaves them out, and the parts still don't move. It stays at
+## the top as the page scrolls.
 Topbar := [].{
 	view = |{ sections, current, wasm, landing }|
 		<header class="topbar" class:landing={landing}>
-			<a class="brand" href={Paths.root} aria-label="Roc Solid, home">{=if (landing) Html.empty({}) else <Logo />}Roc Solid</a>
+			{=if (landing) Html.empty({}) else <a class="brand" href={Paths.root} aria-label="Roc Solid, home"><Logo />Roc Solid</a>}
 			<nav class="sections" aria-label="Parts of the docs">
 				{...sections.map(|section| <a href={section.home} class:current={section.name == current}>{section.name}</a>)}
 			</nav>
-			<span class="tagline">Markup in Roc · pages on a native server · components in WebAssembly</span>
-			<span class="stat" title="What the browser downloads to run the site's components, compressed">wasm: {wasm}</span>
+			<div class="end">
+				<span class="tagline">Markup in Roc · pages on a native server · components in WebAssembly</span>
+				<span class="stat" title="What the browser downloads to run the site's components, compressed">wasm: {wasm}</span>
+			</div>
 		</header>
 
 	<story name="In a part">
@@ -30,7 +34,8 @@ Topbar := [].{
 			position: sticky;
 			top: 0;
 			z-index: 5;
-			display: flex;
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
 			align-items: center;
 			gap: var(--space-5);
 			height: var(--bar);
@@ -40,8 +45,9 @@ Topbar := [].{
 		}
 
 		.brand {
+			grid-column: 1;
 			display: inline-flex;
-			flex: none;
+			justify-self: start;
 			align-items: center;
 			gap: var(--space-2);
 			color: var(--text);
@@ -62,6 +68,7 @@ Topbar := [].{
 		}
 
 		.sections {
+			grid-column: 2;
 			display: flex;
 			gap: var(--space-1);
 			min-width: 0;
@@ -88,6 +95,15 @@ Topbar := [].{
 			color: var(--magenta);
 		}
 
+		.end {
+			grid-column: 3;
+			display: flex;
+			justify-content: end;
+			align-items: center;
+			gap: var(--space-5);
+			min-width: 0;
+		}
+
 		.tagline {
 			overflow: hidden;
 			color: var(--text-faint);
@@ -98,7 +114,6 @@ Topbar := [].{
 
 		.stat {
 			flex: none;
-			margin-left: auto;
 			padding: var(--space-1) var(--space-3);
 			border-radius: var(--pill);
 			background: var(--accent-soft);
@@ -107,25 +122,24 @@ Topbar := [].{
 			white-space: nowrap;
 		}
 
-		@media (max-width: 75rem) {
+		/* The line, beside the parts in the middle, only where it fits whole. */
+		@media (max-width: 105rem) {
 			.tagline {
 				display: none;
 			}
 		}
 
-		/* A phone: the mark alone, and the parts beside it, which scroll if they must. */
-		@media (max-width: 40rem) {
+		/* Narrow: the mark alone, kept a column of its own even where it isn't (the front page), and
+		   the parts beside it, which scroll if they must. */
+		@media (max-width: 56rem) {
 			.topbar {
+				grid-template-columns: 2.1rem minmax(0, 1fr);
 				gap: var(--space-3);
 				padding: 0 var(--space-4);
 			}
 
 			.brand {
 				font-size: 0;
-			}
-
-			.landing .brand {
-				display: none;
 			}
 
 			.sections {
@@ -137,7 +151,7 @@ Topbar := [].{
 				padding: var(--space-1) var(--space-2);
 			}
 
-			.stat {
+			.end {
 				display: none;
 			}
 		}

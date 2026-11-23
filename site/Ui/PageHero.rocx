@@ -3,12 +3,12 @@ import Actions
 import Button
 import Logo
 
-## The top of a page: what part it is in (`eyebrow`, or `kicker` when it has markup in it; on the
-## front page, a `mark`, the site's logo, with the eyebrow above it as a name), its line
+## The top of a page: what part it is in (`eyebrow`, or `kicker` when it has markup in it), its line
 ## in the site's gradient (`title`, or `heading` when it has markup in it), what it is about (what is
 ## inside), and the ways on (`actions`, `<Button>`s). `centered` for the front page, where the line is
-## bigger and everything is in the middle. A string is text wherever it goes, so markup in either
-## line is passed as markup, never inside a string.
+## bigger and everything is in the middle. The front page also has a `mark`, the site's logo: the
+## eyebrow is then a name above it, and the name has the gradient where the line is plain. A string is
+## text wherever it goes, so markup in either line is passed as markup, never inside a string.
 PageHero := [].{
 	Props := {
 		eyebrow : Str ?? "",
@@ -92,13 +92,23 @@ PageHero := [].{
 			gap: var(--space-4);
 		}
 
+		/* With a mark, the name has the gradient, and the line under them is plain (below). */
 		.name {
+			width: fit-content;
 			margin: 0;
+			background: var(--gradient);
+			-webkit-background-clip: text;
+			background-clip: text;
+			color: transparent;
+			font-size: clamp(2.4rem, 5.5vw, 3.8rem);
+			font-weight: 820;
+			letter-spacing: -0.04em;
+			line-height: 1.05;
+		}
+
+		.mark + h1 {
+			background: none;
 			color: var(--text);
-			font-size: var(--size-xl);
-			font-weight: 780;
-			letter-spacing: -0.02em;
-			line-height: 1.1;
 		}
 
 		.mark :global(.logo) {
@@ -164,6 +174,11 @@ PageHero := [].{
 			font-size: var(--size-3xl);
 			letter-spacing: -0.04em;
 			line-height: 1.02;
+		}
+
+		.centered .mark + h1 {
+			margin-top: var(--space-6);
+			font-size: clamp(2.2rem, 5vw, 3.6rem);
 		}
 
 		.centered .lede {
