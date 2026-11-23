@@ -99,8 +99,14 @@ platform ""
 		# with the native host into an Android library (the NDK's clang). Roc has no Android target
 		# yet; its static Linux objects for arm64 (musl: no C library in them) link as Android's.
 		# And the Mac's, for the native host's tests on the Mac (native/mac).
-		arm64musl: { inputs: [app], output: Archive },
-		arm64mac: { inputs: [app], output: Archive },
+		arm64musl: {
+			inputs: [app],
+			output: Archive,
+		},
+		arm64mac: {
+			inputs: [app],
+			output: Archive,
+		},
 	}
 
 import Host

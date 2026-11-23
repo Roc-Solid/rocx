@@ -1,7 +1,7 @@
 //! The native host's Android half (D-063's spike): the app's library (`libapp.so`, the app's Roc
 //! linked with native/core and this) as the Kotlin side (native/android/app) sees it.
 //!
-//! - `Rocx.start(origin, path)` and `Rocx.event(id, name, value)` (Kotlin's `external fun`s) start
+//! - `Rocx.start(origin, path)` and `Rocx.send(id, name, value)` (Kotlin's `external fun`s) start
 //!   the engine and pass it the views' events, on the main thread.
 //! - Each flush's ops go to Kotlin's `Rocx.apply(ByteArray)`: one JNI call a batch, which the
 //!   Kotlin applier walks (React Native's "mount items", for the same reason: a JNI call a view
@@ -37,7 +37,7 @@ type LooperCallback = extern "C" fn(fd: c_int, events: c_int, data: *mut c_void)
 unsafe extern "C" {
     fn ALooper_forThread() -> *mut ALooper;
     fn ALooper_addFd(looper: *mut ALooper, fd: c_int, ident: c_int, events: c_int, callback: Option<LooperCallback>, data: *mut c_void) -> c_int;
-    fn __android_log_write(priority: c_int, tag: *const i8, text: *const i8) -> c_int;
+    fn __android_log_write(priority: c_int, tag: *const std::ffi::c_char, text: *const std::ffi::c_char) -> c_int;
 }
 
 const ALOOPER_POLL_CALLBACK: c_int = -2;
@@ -129,9 +129,9 @@ pub extern "system" fn Java_dev_rocx_phone_Rocx_start(mut env: JNIEnv, class: JC
     core::start(Box::new(Android), &origin, &path);
 }
 
-/// `Rocx.event(id, name, value)`: an event on a view, on the main thread.
+/// `Rocx.send(id, name, value)`: an event on a view, on the main thread.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_rocx_phone_Rocx_event(mut env: JNIEnv, _class: JClass, id: jlong, name: JString, value: JString) {
+pub extern "system" fn Java_dev_rocx_phone_Rocx_send(mut env: JNIEnv, _class: JClass, id: jlong, name: JString, value: JString) {
     let (name, value) = (text(&mut env, &name), text(&mut env, &value));
     core::event(id as u64, &name, &value);
 }

@@ -1,0 +1,3 @@
+--------- beginning of main
+11-23 18:31:51.250 12747 12747 I rocx    : first batch: 2975 bytes, 15 views, applied in 15 ms, 45 ms after the process started
+11-23 18:31:51.284 12747 12747 I rocx    : first frame: 56 ms after onCreate (library loaded and app started in 16 ms)

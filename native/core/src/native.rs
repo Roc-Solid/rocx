@@ -310,12 +310,17 @@ pub fn render() -> Vec<u8> {
                 ops.destroy(*id);
             }
         }
+        // Every view made first, then their properties, then their children: a box's children
+        // may be newer than it.
+        let was = |id: &u64, view: &View| old.get(id).filter(|was| was.kind == view.kind);
+        for &id in &ids {
+            if was(id, &views[id]).is_none() {
+                ops.create(*id, views[id].kind, &views[id].tag);
+            }
+        }
         for &id in &ids {
             let view = &views[id];
-            let was = old.get(id).filter(|was| was.kind == view.kind);
-            if was.is_none() {
-                ops.create(*id, view.kind, &view.tag);
-            }
+            let was = was(id, view);
             for (key, value) in &view.props {
                 if was.and_then(|was| was.props.get(key)) != Some(value) {
                     ops.set(*id, key, value);
@@ -328,6 +333,10 @@ pub fn render() -> Vec<u8> {
                     }
                 }
             }
+        }
+        for &id in &ids {
+            let view = &views[id];
+            let was = was(id, view);
             if was.map(|was| &was.children) != Some(&view.children) && (view.kind == "box" || was.is_some_and(|was| !was.children.is_empty())) {
                 ops.children(*id, &view.children);
             }

@@ -354,8 +354,10 @@ example-shots *names:
     ROC={{ roc }} node site/example-shots.mjs {{ names }}
 
 # Regenerates the platforms' glue after a change to a header: web/host/roc_platform_abi.zig,
-# server/host/src/roc_platform_abi.rs and cli/host/src/roc_platform_abi.rs (rocx's platform).
+# server/host/src/roc_platform_abi.rs, cli/host/src/roc_platform_abi.rs (rocx's platform) and
+# native/core/src/roc_platform_abi.rs (the web platform's native host, D-063's spike).
 glue:
     {{ roc }} glue .tools/glue/src/ZigGlue.roc web/host/ web/platform/main.roc
     {{ roc }} glue .tools/glue/src/RustGlue.roc server/host/src/ server/platform/main.roc
     {{ roc }} glue .tools/glue/src/RustGlue.roc cli/host/src/ cli/platform/main.roc
+    {{ roc }} glue .tools/glue/src/RustGlue.roc native/core/src/ web/platform/main.roc

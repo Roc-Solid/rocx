@@ -223,14 +223,16 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
 
     private fun children(id: Long, ids: LongArray) {
         val parent = views[id] as? ViewGroup ?: return
-        ids.forEachIndexed { at, childId ->
-            val child = views[childId] ?: return@forEachIndexed
+        var at = 0
+        for (childId in ids) {
+            val child = views[childId] ?: continue
             if (parent.getChildAt(at) !== child) {
                 (child.parent as? ViewGroup)?.removeView(child)
                 parent.addView(child, at)
             }
+            at++
         }
-        while (parent.childCount > ids.size) parent.removeViewAt(parent.childCount - 1)
+        while (parent.childCount > at) parent.removeViewAt(parent.childCount - 1)
         if (parent is LinearLayout) layoutChildren(parent, id)
     }
 

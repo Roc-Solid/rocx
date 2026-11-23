@@ -27,17 +27,19 @@ class RocxActivity : Activity() {
             WindowInsets.CONSUMED
         }
         setContentView(screen)
-        Rocx.applier = Applier(this, screen)
         val meta = packageManager.getActivityInfo(componentName, PackageManager.GET_META_DATA).metaData
         val origin = intent.getStringExtra("origin") ?: meta?.getString("rocx.origin") ?: "http://10.0.2.2:8080"
-        val mounted = SystemClock.uptimeMillis()
+        val loading = SystemClock.uptimeMillis()
+        // The first use of Rocx loads libapp.so.
+        Rocx.applier = Applier(this, screen)
+        val loaded = SystemClock.uptimeMillis()
         Rocx.start(origin, "/")
         val started = SystemClock.uptimeMillis()
         screen.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
             override fun onPreDraw(): Boolean {
                 screen.viewTreeObserver.removeOnPreDrawListener(this)
                 val drawn = SystemClock.uptimeMillis()
-                Log.i("rocx", "first frame: ${drawn - created} ms after onCreate (library loaded and app started in ${started - mounted} ms)")
+                Log.i("rocx", "first frame: ${drawn - created} ms after onCreate (libapp.so loaded in ${loaded - loading} ms; the app mounted and its first batch applied in ${started - loaded} ms)")
                 return true
             }
         })
