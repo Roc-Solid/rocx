@@ -2397,8 +2397,9 @@ both, the jobs page. 3: `Time`'s zones; Plate and the other examples on SQLite. 
 
 **Status.** Built (2026-11-22). `Turso(path)` in the program, `turso:<path>` as a URL, the host's
 `db/turso.rs` on `turso_core` 0.8.4, `Db.engine!`, the server's SQLite tests run on both engines,
-the docs (`/platform/database`). Open: Turso's concurrent writes (MVCC), its sync to Turso's cloud,
-its full-text search; a benchmark of the two engines (`examples/sqlite-vs-turso`, to be designed).
+the docs (`/platform/database`). Its writes go on at once since D-049 (MVCC by default). Open: its
+sync to Turso's cloud, its full-text search; a benchmark of the two engines
+(`examples/sqlite-vs-turso`).
 
 **Context.** D-045 made the database pluggable and left libSQL/Turso as "another file in
 `db/`". Turso has two engines: libSQL, a fork of SQLite's C (its local file is SQLite's, its draw
@@ -2436,7 +2437,8 @@ Rust engine is the one with something new, and the one to measure against SQLite
   encryption is unused), so the musl builds compile no more C than before.
 - **What differs is said.** The server holds a Turso file while it runs (an OS lock: no `sqlite3`
   or `node:sqlite` beside it, so `packages/testing`'s `testSqlite()` reads it only once the server
-  stops); no FTS5 (examples/notes needs SQLite); MVCC unused (writes take turns, as on SQLite).
+  stops); no FTS5 (examples/notes needs SQLite); MVCC unused (writes take turns, as on SQLite;
+  D-049 turned it on).
 
 **Not in it.** libSQL; `begin concurrent`; sync to Turso's cloud; Turso's full-text search and
 vectors; `rocx new`'s question offering Turso.
@@ -2547,3 +2549,56 @@ box (TanStack's window virtualizer); horizontal virtualization. A signal that co
 write of the same value runs nothing (the example's README lists it as open).
 
 **Reversible:** yes; `<Repeat>` and `on:viewport` are additions, and the heap keeps the flush's order.
+
+
+## D-049 Turso writes at once: MVCC by default
+
+**Status.** Built (2026-11-23), the user's choice ("concurrent writes by default, cause why not").
+
+**Context.** D-046 ran Turso as SQLite runs: WAL, one writer at a time, a transaction begun
+`immediate`. Turso's MVCC is what it has that SQLite hasn't: transactions begun `concurrent` write
+at once, each on a snapshot of its own, and Turso refuses the later of two that write the same row
+(first committer wins), which must roll back and run again. In MVCC mode `begin immediate` and a
+plain write outside a transaction still take an exclusive lock (single-writer, SQLite's
+semantics), and a schema change needs one (`DDL statements require an exclusive transaction`).
+
+**Decision.**
+
+- **A Turso file is in MVCC mode.** `turso.rs` sets `journal_mode = 'mvcc'` when it opens the file
+  (converting a WAL one). `turso:<path>?mvcc=off` keeps (or puts back) WAL mode, writes taking
+  turns as on SQLite.
+- **`Db.transaction!` begins `concurrent`, and runs its body again after a conflict**, up to 100
+  times, each time after a random pause that grows (up to 1 ms, then 2, 4… 64 ms: `db::backoff`):
+  without one, a writer slower than the others loses to them every time and gives up (eight
+  workers on one row, under load, did), and the losers' runs were six to the transaction where
+  with it they are about one and a twentieth. Turso's conflicts (a write-write conflict, a stale snapshot, a dependency rolled back, a
+  terminated transaction) read `Conflict: …`; the host notes one of the call's transaction (a
+  statement's, or its commit's) and `Host.db_conflicted! : {} => Bool` says so, so the body runs
+  again even when it turned the `DbErr` into an error of its own. Its notices and its jobs go with
+  the rolled-back run (they are the transaction's); what isn't the database's (a fetch, a message)
+  runs again, which `Db.transaction!`'s docs say.
+- **A schema change is tried again exclusive.** A statement refused in a concurrent transaction
+  for changing the schema reads `Exclusive: …`: the host marks the call, and its next transaction
+  begins `immediate`. A migration (`Migrations.apply_one!`: a transaction around `Db.script!`)
+  takes one wasted run; `Db.script!`'s own transaction is `immediate` always.
+- **A write outside a transaction runs in a concurrent one of its own** (an `insert`, `update`,
+  `delete`, `replace`, or a `with` before one, by its first word), committed, and begun again by
+  the host on a conflict (after the same pause), up to 100 times; anything else (a read, a schema change, a pragma) runs
+  as it is.
+- **The file is Turso's while in MVCC mode**: its header's versions are 255, which SQLite calls
+  "not a database". SQLite's backend says instead that it is Turso's MVCC file and how to give it
+  back (`turso:<path>?mvcc=off` once). So `turso:` on a SQLite app's file converts it.
+- **Turso's own tables (`__turso_internal_…`, MVCC's `__turso_internal_mvcc_meta`) aren't the
+  app's**: packages/admin's catalog leaves them out, as it does `sqlite_…`.
+
+**What it costs.** Snapshot isolation, not SQLite's serial writes: two transactions that read rows
+and write different ones both commit (write skew), where on SQLite one would wait and see the
+other's. A body may run more than once. No `WITHOUT ROWID` tables, no virtual tables (no FTS5,
+already so), no `REINDEX`, in MVCC mode. And a cliff in turso_core 0.8.4: once Turso has
+checkpointed rows (its log past 4 MB), deleting many of them slows every later statement 75 to
+250 times until the next checkpoint (examples/sqlite-vs-turso's third run on one file took 663 s,
+where one takes 3); `pragma wal_checkpoint(truncate)` after the deletes avoids it, which the
+example does, and `?mvcc=off` doesn't have it. Not fixed in the platform: to be reported.
+
+**Reversible:** yes: `?mvcc=off`, or the default flipped back in `db/mod.rs`.
+

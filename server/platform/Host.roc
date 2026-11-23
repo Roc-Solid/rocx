@@ -152,6 +152,11 @@ Host := [].{
 
 	db_rollback! : {} => {}
 
+	## Whether the call's last transaction, rolled back, lost to another's write to the same row,
+	## or needed to be exclusive (it changed the schema): on Turso's MVCC (D-049), where
+	## transactions write at once. `Db.transaction!` runs its body again.
+	db_conflicted! : {} => Bool
+
 	## From now until this call ends, it hears what is notified on `channel` (`db_notify!`, or
 	## Postgres's `pg_notify`) as messages on the topic `db:<channel>` (`live_next!`).
 	db_listen! : Str => Try({}, Str)

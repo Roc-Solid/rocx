@@ -53,7 +53,8 @@ pub fn flavor() -> Option<Flavor> {
 
 /// Opens the database at `url`: `postgres://…` (or `postgresql://…`), its pool and the connection
 /// that listens; or `sqlite:<path>` or `turso:<path>`, a file (made, with its directory, when
-/// missing).
+/// missing): Turso's in MVCC mode, its writes going on at once (D-049), unless the URL ends
+/// `?mvcc=off`.
 pub async fn open(url: &str) -> Result<Flavor, String> {
     if OPENED.get().is_some() {
         return Err("the database is open already".into());
@@ -66,7 +67,12 @@ pub async fn open(url: &str) -> Result<Flavor, String> {
         sqlite::open(path.strip_prefix("//").unwrap_or(path)).await?;
         Flavor::Sqlite
     } else if let Some(path) = url.strip_prefix("turso:") {
-        turso::open(path.strip_prefix("//").unwrap_or(path)).await?;
+        let path = path.strip_prefix("//").unwrap_or(path);
+        let (path, mvcc) = match path.strip_suffix("?mvcc=off") {
+            Some(path) => (path, false),
+            None => (path, true),
+        };
+        turso::open(path, mvcc).await?;
         Flavor::Turso
     } else {
         return Err(format!("database url `{}`: neither postgres://…, sqlite:<path> nor turso:<path>", scheme_only(url)));
@@ -168,13 +174,40 @@ pub fn abandon(client: Client, runtime: &tokio::runtime::Handle) {
     }
 }
 
-/// Begins a transaction on `client`, which the call that asked keeps until it ends.
-pub async fn begin(client: &Client) -> Result<(), String> {
+/// Begins a transaction on `client`, which the call that asked keeps until it ends: on Turso a
+/// concurrent one, unless it is to be `exclusive` (it changes the schema: `is_exclusive`).
+pub async fn begin(client: &Client, exclusive: bool) -> Result<(), String> {
     match client {
         Client::Postgres(client) => postgres::begin(client).await,
         Client::Sqlite(client) => sqlite::begin(client).await,
-        Client::Turso(client) => turso::begin(client).await,
+        Client::Turso(client) => turso::begin(client, exclusive).await,
     }
+}
+
+/// Whether a statement's failure is a conflict (Turso's MVCC, D-049): another transaction wrote the
+/// same row first, so this one rolls back, and `Db.transaction!` runs its body again.
+pub fn is_conflict(why: &str) -> bool {
+    why.starts_with(turso::CONFLICT)
+}
+
+/// How long a transaction that lost to another's write `lost` times in a row waits before it runs
+/// again: random (so the losers don't all come back at once), up to 1 ms, then 2, 4… 64 ms.
+pub fn backoff(lost: u32) -> std::time::Duration {
+    let ceiling_us = 1000u64 << lost.saturating_sub(1).min(6);
+    let noise = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|now| now.subsec_nanos() as u64).unwrap_or(0);
+    // A cheap scramble of the clock's nanoseconds (splitmix64's finish): random enough to spread
+    // the losers out.
+    let mut x = noise ^ (u64::from(lost) << 32) ^ 0x9e37_79b9_7f4a_7c15;
+    x = (x ^ (x >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    x ^= x >> 31;
+    std::time::Duration::from_micros(x % (ceiling_us + 1))
+}
+
+/// Whether a statement was refused for needing an exclusive transaction (a schema change in a
+/// concurrent one, on Turso): the call's next transaction begins exclusive.
+pub fn is_exclusive(why: &str) -> bool {
+    why.starts_with(turso::EXCLUSIVE)
 }
 
 pub async fn commit(client: &Client) -> Result<(), String> {

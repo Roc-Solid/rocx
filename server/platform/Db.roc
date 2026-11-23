@@ -8,10 +8,12 @@ import Host
 ##   `--database-url`), made when missing. Reads go on while a write does; writes take turns. So keep
 ##   anything slow (`Http.fetch!`, a wait) out of a transaction: on SQLite it holds every other write
 ##   back until it ends.
-## - Turso is SQLite written again in Rust: the same SQL, a file in SQLite's format, the same
-##   rules, at the program's `Turso(path)` (or a `turso:<path>` `--database-url`, which runs a
-##   SQLite app on Turso too). What is said of SQLite here holds for it, but that the server keeps
-##   its file to itself while it runs (no `sqlite3` beside it) and it has no FTS5.
+## - Turso is SQLite written again in Rust: the same SQL, at the program's `Turso(path)` (or a
+##   `turso:<path>` `--database-url`, which runs a SQLite app on Turso too). Its writes go on at
+##   once (MVCC, D-049): each transaction on a snapshot of its own, one that loses to another's
+##   write to the same row run again (`transaction!`). The server keeps the file to itself while it
+##   runs, and in MVCC mode it is Turso's alone (`turso:<path>?mvcc=off` once gives it back to
+##   SQLite, its writes then taking turns); no FTS5.
 ##
 ## A statement's parameters are `$1`, `$2`, …, given as `Value`s, in both. Postgres reads each as the
 ## type its place wants (`where id = $1` reads `Int(7)` as an integer); SQLite is given each as it
@@ -203,12 +205,25 @@ Db := [].{
 	## Runs `body!` in a transaction: what it writes, and the jobs it queues, stay only if it
 	## returns `Ok`; an `Err` (or a crash) rolls all of it back. Its error is the body's, or the
 	## database's. On SQLite it holds the write lock from its start (`begin immediate`): keep it
-	## short.
+	## short. On Turso (D-049) transactions write at once, each on its own snapshot: one that loses
+	## to another's write to the same row rolls back, and its body runs again after a short random
+	## pause (up to 100 times), so keep what isn't the database's (a fetch, a message) out of it.
 	transaction! : ({} => Try(a, [DbErr(Str), ..others])) => Try(a, [DbErr(Str), ..others])
-	transaction! = |body!|
-		match Host.db_begin!({}) {
-			Err(why) => Err(DbErr(why))
-			Ok({}) =>
+	transaction! = |body!| attempted!(body!, 1)
+}
+
+## How many times `Db.transaction!` runs its body, each run lost to another's write (Turso).
+attempts : U64
+attempts = 100
+
+## `Db.transaction!`'s run `tries` of `body!`, in a transaction of its own: again after one that
+## lost to another's write (`Host.db_conflicted!`), while there are tries left.
+attempted! : ({} => Try(a, [DbErr(Str), ..others])), U64 => Try(a, [DbErr(Str), ..others])
+attempted! = |body!, tries|
+	match Host.db_begin!({}) {
+		Err(why) => Err(DbErr(why))
+		Ok({}) => {
+			ended =
 				match body!({}) {
 					Ok(done) =>
 						match Host.db_commit!({}) {
@@ -220,8 +235,19 @@ Db := [].{
 						Err(problem)
 					}
 				}
+			match ended {
+				Ok(done) => Ok(done)
+				Err(problem) => {
+					again = tries < attempts and Host.db_conflicted!({})
+					if again {
+						attempted!(body!, tries + 1)
+					} else {
+						Err(problem)
+					}
+				}
+			}
 		}
-}
+	}
 
 ## Why the rows (as the host wrote them: compact JSON) didn't decode: `why`, and, when a column was
 ## null in some row, which, since a column read as a plain value can't be.

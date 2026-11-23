@@ -1,10 +1,19 @@
 //! Turso, the database of an app whose program says `Turso(path)` (`db`, D-046): Turso's engine
 //! (`turso_core`), SQLite written again in Rust, in the server's process, a file in SQLite's
 //! format. Its SQL is SQLite's, so the app's, a package's and a plugin's SQL for SQLite runs here,
-//! and the rest is as `sqlite.rs` has it: a pool of connections, each used by one call at a time on
-//! a thread of tokio's for blocking work; WAL mode, reads going on while one connection writes, and
-//! writes taking turns, each waiting up to `BUSY` for the one before to end; a transaction begun
-//! `immediate`, taking the write lock at once, so two transactions never deadlock.
+//! and much is as `sqlite.rs` has it: a pool of connections, each used by one call at a time on a
+//! thread of tokio's for blocking work, reads going on while others write.
+//!
+//! Writes go on at once (D-049): the file is in Turso's MVCC mode, and a transaction begins
+//! `concurrent`, each on its own snapshot, Turso refusing the later of two that write the same row
+//! (a conflict: `Conflict: …`, which `Db.transaction!` answers by running its body again,
+//! `hosted.rs` noting it). A write outside a transaction (an insert, an update, a delete) runs in a
+//! concurrent transaction of its own, begun again here on a conflict (after a random pause, longer
+//! each time), up to `TRIES` times. What changes the schema needs a transaction of its own
+//! (`exclusive`, as SQLite's `immediate`, which the others wait for): a migration is one, and a
+//! statement refused in a concurrent one says so (`Exclusive: …`), so the call's next transaction
+//! begins exclusive. `turso:<path>?mvcc=off` keeps
+//! the file in WAL mode, where writes take turns as on SQLite.
 //!
 //! A statement runs in steps: a row, its end, or what it waits for. Its file's reads and writes are
 //! done as they are asked (the engine's `step` of its IO drives any left); a lock another
@@ -40,8 +49,19 @@ const BUSY: Duration = Duration::from_secs(10);
 /// How many prepared statements a connection keeps.
 const PREPARED: usize = 64;
 
+/// How many times a write outside a transaction is begun again after a conflict.
+const TRIES: usize = 100;
+
+/// What a conflict's message starts with: `Db.transaction!` runs its body again (`super::is_conflict`).
+pub const CONFLICT: &str = "Conflict: ";
+
+/// What a statement that needs an exclusive transaction says, refused in a concurrent one.
+pub const EXCLUSIVE: &str = "Exclusive: ";
+
 struct Pool {
     database: Arc<Database>,
+    /// Whether the file is in MVCC mode, its writes going on at once.
+    mvcc: bool,
     idle: Mutex<Vec<Conn>>,
     permits: Arc<Semaphore>,
 }
@@ -77,9 +97,9 @@ impl Drop for Client {
     }
 }
 
-/// Opens the file at `path` (made, with its directory, when missing), in WAL mode, and keeps it for
-/// the pool's connections.
-pub async fn open(path: &str) -> Result<(), String> {
+/// Opens the file at `path` (made, with its directory, when missing), in MVCC mode (`mvcc`) or WAL
+/// mode, and keeps it for the pool's connections.
+pub async fn open(path: &str, mvcc: bool) -> Result<(), String> {
     if path.is_empty() || path == ":memory:" || path.starts_with("file::memory:") {
         return Err("turso: an in-memory database isn't one the server's connections share: give a file".into());
     }
@@ -96,15 +116,19 @@ pub async fn open(path: &str) -> Result<(), String> {
             let database = Database::open_file_with_flags(io, name, OpenFlags::default(), DatabaseOpts::new(), None, Arc::new(SqliteDialect))
                 .map_err(|error| format!("turso: {shown}: {}", described(error)))?;
             let conn = connect(&database)?;
-            let mode = text_of(&conn, "pragma journal_mode")?;
-            if !mode.eq_ignore_ascii_case("wal") {
-                return Err(format!("turso: {shown}: it is in {mode} mode, not WAL"));
+            let wanted = if mvcc { "mvcc" } else { "wal" };
+            let mut mode = text_of(&conn, "pragma journal_mode")?;
+            if !mode.eq_ignore_ascii_case(wanted) {
+                mode = text_of(&conn, &format!("pragma journal_mode = '{wanted}'"))?;
+            }
+            if !mode.eq_ignore_ascii_case(wanted) {
+                return Err(format!("turso: {shown}: {wanted} mode refused (it is {mode})"));
             }
             Ok((database, conn))
         }
     })
     .await?;
-    let pool = Pool { database, idle: Mutex::new(vec![first]), permits: Arc::new(Semaphore::new(CONNECTIONS)) };
+    let pool = Pool { database, mvcc, idle: Mutex::new(vec![first]), permits: Arc::new(Semaphore::new(CONNECTIONS)) };
     POOL.set(pool).map_err(|_| "the database is open already".to_string())
 }
 
@@ -158,9 +182,18 @@ async fn with<T: Send + 'static>(client: &Client, work: impl FnOnce(&Arc<Connect
 }
 
 /// Turso's message, after the kind of failure as SQLite's (`sqlite.rs`) says it, when it has one
-/// (`ConstraintViolation: UNIQUE constraint failed: items.name`).
+/// (`ConstraintViolation: UNIQUE constraint failed: items.name`); a conflict after `CONFLICT`, and
+/// a statement that needs an exclusive transaction after `EXCLUSIVE`.
 pub fn described(error: LimboError) -> String {
     match error {
+        LimboError::WriteWriteConflict => format!("{CONFLICT}another transaction wrote the same row first"),
+        LimboError::BusySnapshot => format!("{CONFLICT}another transaction committed since this one began"),
+        LimboError::CommitDependencyAborted => format!("{CONFLICT}a transaction this one read from rolled back"),
+        LimboError::TxTerminated => format!("{CONFLICT}the transaction was ended by a conflict"),
+        LimboError::Conflict(message) => format!("{CONFLICT}{message}"),
+        LimboError::TxError(message) if message.starts_with("DDL statements require an exclusive transaction") => {
+            format!("{EXCLUSIVE}a statement that changes the schema needs a transaction of its own")
+        }
         LimboError::Constraint(message) | LimboError::ForeignKeyConstraint(message) => format!("ConstraintViolation: {message}"),
         LimboError::Busy | LimboError::TableLocked => "DatabaseBusy: database is locked".into(),
         LimboError::Interrupt => "OperationInterrupted: interrupted".into(),
@@ -252,32 +285,34 @@ fn bind(statement: &mut Statement, params: &[Param]) -> Result<(), String> {
 
 pub async fn query(client: &Client, sql: &str, params: Vec<Param>) -> Result<String, String> {
     let sql = sql.to_string();
-    with(client, move |connection, cache| {
-        let mut statement = prepared(connection, cache, &sql)?;
-        bind(&mut statement, &params)?;
-        let mut columns = Vec::new();
-        for index in 0..statement.num_columns() {
-            let name = statement.get_column_name(index).into_owned();
-            if let Some(key) = name.strip_suffix('?').or_else(|| name.strip_suffix('!')) {
-                return Err(format!(
-                    "column `{name}`: a name doesn't say whether it may be null any more: call it `{key}`, and read it as `Db.Nullable(a)` if it may be"
-                ));
-            }
-            let declared = statement.get_column_decltype(index).map(|declared| declared.to_ascii_lowercase());
-            columns.push((name, declared));
+    with(client, move |connection, cache| alone(connection, &sql, || rows(connection, cache, &sql, &params))).await
+}
+
+/// The rows `sql` reads (or an `insert … returning` gives), as `query` answers them.
+fn rows(connection: &Arc<Connection>, cache: &mut Prepared, sql: &str, params: &[Param]) -> Result<String, String> {
+    let mut statement = prepared(connection, cache, sql)?;
+    bind(&mut statement, params)?;
+    let mut columns = Vec::new();
+    for index in 0..statement.num_columns() {
+        let name = statement.get_column_name(index).into_owned();
+        if let Some(key) = name.strip_suffix('?').or_else(|| name.strip_suffix('!')) {
+            return Err(format!(
+                "column `{name}`: a name doesn't say whether it may be null any more: call it `{key}`, and read it as `Db.Nullable(a)` if it may be"
+            ));
         }
-        let mut out = Vec::new();
-        while step(&mut statement)? {
-            let row = statement.row().ok_or("turso: a step said it had a row, and had none")?;
-            let mut object = Map::new();
-            for (index, (name, declared)) in columns.iter().enumerate() {
-                object.insert(name.clone(), read(row.get_value(index), declared.as_deref(), name)?);
-            }
-            out.push(Value::Object(object));
+        let declared = statement.get_column_decltype(index).map(|declared| declared.to_ascii_lowercase());
+        columns.push((name, declared));
+    }
+    let mut out = Vec::new();
+    while step(&mut statement)? {
+        let row = statement.row().ok_or("turso: a step said it had a row, and had none")?;
+        let mut object = Map::new();
+        for (index, (name, declared)) in columns.iter().enumerate() {
+            object.insert(name.clone(), read(row.get_value(index), declared.as_deref(), name)?);
         }
-        Ok(Value::Array(out).to_string())
-    })
-    .await
+        out.push(Value::Object(object));
+    }
+    Ok(Value::Array(out).to_string())
 }
 
 /// A column's value as JSON, from what it is, and what its column was declared as.
@@ -304,26 +339,28 @@ fn read(value: &Sql, declared: Option<&str>, name: &str) -> Result<Value, String
 
 pub async fn execute(client: &Client, sql: &str, params: Vec<Param>) -> Result<u64, String> {
     let sql = sql.to_string();
-    with(client, move |connection, cache| {
-        let mut statement = prepared(connection, cache, &sql)?;
-        bind(&mut statement, &params)?;
-        let reads = statement.get_program().is_readonly();
-        let before = connection.total_changes();
-        let mut read = 0u64;
-        while step(&mut statement)? {
-            read += 1;
-        }
-        // What it changed (an `insert … returning` too); a statement that changes nothing (a
-        // `create table`) is 0, not the last one's count.
-        Ok(if reads {
-            read
-        } else if connection.total_changes() == before {
-            0
-        } else {
-            u64::try_from(statement.n_change()).unwrap_or(0)
-        })
+    with(client, move |connection, cache| alone(connection, &sql, || changed(connection, cache, &sql, &params))).await
+}
+
+/// How many rows `sql` changed (or, for a statement that only reads, read), as `execute` answers.
+fn changed(connection: &Arc<Connection>, cache: &mut Prepared, sql: &str, params: &[Param]) -> Result<u64, String> {
+    let mut statement = prepared(connection, cache, sql)?;
+    bind(&mut statement, params)?;
+    let reads = statement.get_program().is_readonly();
+    let before = connection.total_changes();
+    let mut read = 0u64;
+    while step(&mut statement)? {
+        read += 1;
+    }
+    // What it changed (an `insert … returning` too); a statement that changes nothing (a
+    // `create table`) is 0, not the last one's count.
+    Ok(if reads {
+        read
+    } else if connection.total_changes() == before {
+        0
+    } else {
+        u64::try_from(statement.n_change()).unwrap_or(0)
     })
-    .await
 }
 
 pub async fn script(client: &Client, in_transaction: bool, sql: &str) -> Result<(), String> {
@@ -332,6 +369,7 @@ pub async fn script(client: &Client, in_transaction: bool, sql: &str) -> Result<
         if in_transaction {
             return batch(connection, &sql);
         }
+        // A script changes the schema: its transaction is exclusive on MVCC too.
         batch(connection, "begin immediate")?;
         if let Err(error) = batch(connection, &sql) {
             if !connection.get_auto_commit() {
@@ -352,8 +390,49 @@ pub fn abandon(mut client: Client) {
     }
 }
 
-pub async fn begin(client: &Client) -> Result<(), String> {
-    with(client, |connection, _| batch(connection, "begin immediate")).await
+/// Begins a transaction: `concurrent` on MVCC, unless it is to be `exclusive` (it changes the
+/// schema), or `immediate` in WAL mode, taking the write lock at once.
+pub async fn begin(client: &Client, exclusive: bool) -> Result<(), String> {
+    let sql = if mvcc() && !exclusive { "begin concurrent" } else { "begin immediate" };
+    with(client, move |connection, _| batch(connection, sql)).await
+}
+
+/// Whether the file is in MVCC mode.
+fn mvcc() -> bool {
+    POOL.get().is_some_and(|pool| pool.mvcc)
+}
+
+/// Whether `sql` writes rows (an insert, an update, a delete, a replace, or a `with` before one),
+/// so that on MVCC, outside a transaction, it runs in a concurrent one of its own. Anything else (a
+/// read, a schema change, a pragma) runs as it is.
+fn writes_rows(sql: &str) -> bool {
+    let word: String = sql.trim_start().chars().take_while(|c| c.is_ascii_alphabetic()).collect::<String>().to_ascii_lowercase();
+    matches!(word.as_str(), "insert" | "update" | "delete" | "replace" | "with")
+}
+
+/// Runs `run` (a statement, prepared and stepped by it): as it is, or, on MVCC for a write outside
+/// a transaction, in a concurrent transaction of its own, committed, and begun again on a conflict
+/// (the statement run again from its start), up to `TRIES` times.
+fn alone<T>(connection: &Arc<Connection>, sql: &str, mut run: impl FnMut() -> Result<T, String>) -> Result<T, String> {
+    if !(mvcc() && connection.get_auto_commit() && writes_rows(sql)) {
+        return run();
+    }
+    let mut tries = 0;
+    loop {
+        batch(connection, "begin concurrent")?;
+        let result = run().and_then(|value| batch(connection, "commit").map(|()| value));
+        let Err(why) = result else { return result };
+        if !connection.get_auto_commit() {
+            let _ = batch(connection, "rollback");
+        }
+        tries += 1;
+        if !why.starts_with(CONFLICT) || tries >= TRIES {
+            return Err(why);
+        }
+        // A pause first, random, longer each time (`super::backoff`): a slower writer isn't
+        // starved by faster ones.
+        std::thread::sleep(super::backoff(u32::try_from(tries).unwrap_or(u32::MAX)));
+    }
 }
 
 pub async fn commit(client: &Client) -> Result<(), String> {

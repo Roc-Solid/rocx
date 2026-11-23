@@ -15,6 +15,7 @@ export async function adminWorks(url) {
 	assert.match(token, /^[0-9a-f]{32}$/, "a token for its forms, in a cookie");
 	const index = await first.text();
 	assert.match(index, /admin_books/);
+	assert.doesNotMatch(index, /__turso_internal/, "Turso's own tables (its MVCC's) aren't the app's");
 	assert.match(index, /admin_authors/);
 	const get = async (query) => {
 		const answer = await fetch(`${at}?${query}`, { headers: { cookie } });

@@ -126,7 +126,15 @@ Turso, `sqlite:<path>` a Turso app on SQLite). `turso.rs` mirrors `sqlite.rs`: 8
 blocking threads, WAL, a transaction begun `immediate`, a statement interrupted past its time limit,
 its statements prepared once per connection; it drives a statement's steps itself, sleeping the
 delay Turso asks for before trying a lock again. The server holds a Turso file while it runs (an OS
-lock: no `sqlite3` beside it), and Turso has no FTS5; its concurrent writes (MVCC) aren't used.
+lock: no `sqlite3` beside it), and Turso has no FTS5.
+
+Turso writes at once (D-049): its file is in MVCC mode, `Db.transaction!` begins `concurrent` and
+runs its body again when it loses to another's write to the same row (`Conflict: …`, noted by the
+host and read by `Host.db_conflicted!`; `begin` waits a random pause first, longer each time, so a
+slower writer isn't starved), a write outside a transaction is a concurrent one of its
+own (tried again by the host), and a schema change runs exclusive (a migration's first run, refused
+`Exclusive: …`, makes the next begin `immediate`). In MVCC mode the file is Turso's alone; SQLite's
+backend says so, and `turso:<path>?mvcc=off` once gives it back (writes then taking turns).
 
 ```roc
 notes : Try(List({ id : I64, body : Str, note : Db.Nullable(Str) }), [DbErr(Str), BadRow(Str)])

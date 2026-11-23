@@ -131,16 +131,16 @@ Catalog := [].{
 			"\n",
 		)
 
-	## SQLite's tables (`$1`: the schema, `main`), but its own (`sqlite_…`) and a full-text index's
-	## (virtual, and their shadows): its name, no estimate (-1), no comment, and its `create table`,
-	## whose checks `read_sqlite` reads.
+	## SQLite's tables (`$1`: the schema, `main`), but its own (`sqlite_…`, and Turso's
+	## `__turso_internal_…`) and a full-text index's (virtual, and their shadows): its name, no
+	## estimate (-1), no comment, and its `create table`, whose checks `read_sqlite` reads.
 	sqlite_tables_sql : Str
 	sqlite_tables_sql =
 		Str.join_with(
 			[
 				"select json_array(t.name, '-1', '', coalesce(m.sql, '')) as \"cells\", '[]' as \"nulls\"",
 				"from pragma_table_list t join sqlite_schema m on m.name = t.name and m.type = 'table'",
-				"where t.schema = $1 and t.type = 'table' and t.name not like 'sqlite\\_%' escape '\\'",
+				"where t.schema = $1 and t.type = 'table' and t.name not like 'sqlite\\_%' escape '\\' and t.name not like '\\_\\_turso\\_internal\\_%' escape '\\'",
 				"order by t.name",
 			],
 			"\n",
@@ -159,7 +159,7 @@ Catalog := [].{
 				"    iif(c.dflt_value is not null or (c.pk = 1 and lower(c.type) = 'integer' and (select count(*) from pragma_table_info(t.name) k where k.pk > 0) = 1), 'true', 'false'),",
 				"    iif(c.hidden in (2, 3), 'true', 'false'), '', coalesce(c.dflt_value, '')) as \"cells\", '[]' as \"nulls\"",
 				"from pragma_table_list t join pragma_table_xinfo(t.name) c",
-				"where t.schema = $1 and t.type = 'table' and t.name not like 'sqlite\\_%' escape '\\' and c.hidden <> 1",
+				"where t.schema = $1 and t.type = 'table' and t.name not like 'sqlite\\_%' escape '\\' and t.name not like '\\_\\_turso\\_internal\\_%' escape '\\' and c.hidden <> 1",
 				"order by t.name, c.cid",
 			],
 			"\n",
@@ -175,12 +175,12 @@ Catalog := [].{
 				"select cells, '[]' as \"nulls\" from (",
 				"    select json_array(t.name, t.name || '_pkey', 'p', c.name, '', '', '', '1', '') as cells, t.name as named, 0 as kind, c.pk as place",
 				"    from pragma_table_list t join pragma_table_info(t.name) c",
-				"    where t.schema = $1 and t.type = 'table' and t.name not like 'sqlite\\_%' escape '\\' and c.pk > 0",
+				"    where t.schema = $1 and t.type = 'table' and t.name not like 'sqlite\\_%' escape '\\' and t.name not like '\\_\\_turso\\_internal\\_%' escape '\\' and c.pk > 0",
 				"    union all",
 				"    select json_array(t.name, t.name || '_fkey' || f.id, 'f', f.\"from\", f.\"table\", $1, coalesce(f.\"to\", ''),",
 				"        cast((select count(*) from pragma_foreign_key_list(t.name) g where g.id = f.id) as text), '') as cells, t.name as named, 1 as kind, f.id * 1000 + f.seq as place",
 				"    from pragma_table_list t join pragma_foreign_key_list(t.name) f",
-				"    where t.schema = $1 and t.type = 'table' and t.name not like 'sqlite\\_%' escape '\\'",
+				"    where t.schema = $1 and t.type = 'table' and t.name not like 'sqlite\\_%' escape '\\' and t.name not like '\\_\\_turso\\_internal\\_%' escape '\\'",
 				") order by named, kind, place",
 			],
 			"\n",

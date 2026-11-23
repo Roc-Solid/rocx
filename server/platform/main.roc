@@ -110,6 +110,7 @@ platform ""
 		"roc_host_blob_secret": Host.blob_secret!,
 		"roc_host_db_begin": Host.db_begin!,
 		"roc_host_db_commit": Host.db_commit!,
+		"roc_host_db_conflicted": Host.db_conflicted!,
 		"roc_host_db_execute": Host.db_execute!,
 		"roc_host_db_flavor": Host.db_flavor!,
 		"roc_host_db_listen": Host.db_listen!,

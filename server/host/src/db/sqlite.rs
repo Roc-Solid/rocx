@@ -67,6 +67,13 @@ pub async fn open(path: &str) -> Result<(), String> {
     if let Some(dir) = path.parent().filter(|dir| !dir.as_os_str().is_empty()) {
         std::fs::create_dir_all(dir).map_err(|error| format!("sqlite: {}: {error}", dir.display()))?;
     }
+    if turso_mvcc(&path) {
+        return Err(format!(
+            "sqlite: {}: Turso's file, in its MVCC mode (D-049), which SQLite can't read: start the server once with --database-url turso:{}?mvcc=off to give it back to SQLite",
+            path.display(),
+            path.display()
+        ));
+    }
     let first = blocking({
         let path = path.clone();
         move || {
@@ -81,6 +88,14 @@ pub async fn open(path: &str) -> Result<(), String> {
     .await?;
     let pool = Pool { path, idle: Mutex::new(vec![kept(first)]), permits: Arc::new(Semaphore::new(CONNECTIONS)) };
     POOL.set(pool).map_err(|_| "the database is open already".to_string())
+}
+
+/// Whether the file at `path` is Turso's in its MVCC mode: its header's read and write versions
+/// 255 (SQLite's are 1 or 2), which SQLite calls "not a database".
+fn turso_mvcc(path: &Path) -> bool {
+    use std::io::Read;
+    let mut header = [0u8; 20];
+    std::fs::File::open(path).and_then(|mut file| file.read_exact(&mut header)).is_ok() && header.starts_with(b"SQLite format 3\0") && header[18] == 255
 }
 
 /// A new connection to the file, set up as each is: its wait for writes, foreign keys checked.

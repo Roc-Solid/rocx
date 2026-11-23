@@ -155,6 +155,31 @@ function suite({ engine, name, tag, run, server, home }) {
 		}
 	});
 
+	if (engine === "turso") {
+		test("its file is Turso's while in MVCC mode: SQLite refuses it, saying how to give it back; ?mvcc=off gives it back", { skip }, async () => {
+			const cwd = join(home(), "handed");
+			const file = join(cwd, "data", "sqlite-test.db");
+			const first = await run([], { cwd });
+			assert.equal(await first.post("/items?name=on-turso"), "1");
+			await first.stop();
+			const refused = await run(["--database-url", `sqlite:${file}`], { cwd }).then(
+				() => assert.fail("SQLite opened Turso's MVCC file"),
+				(error) => error,
+			);
+			assert.match(refused.logged, /Turso's file, in its MVCC mode \(D-049\), which SQLite can't read: start the server once with --database-url turso:.*\?mvcc=off/);
+			const walled = await run(["--database-url", `turso:${file}?mvcc=off`], { cwd });
+			assert.equal(await walled.text("/engine"), "turso");
+			await walled.stop();
+			const onSqlite = await run(["--database-url", `sqlite:${file}`], { cwd });
+			try {
+				assert.equal(await onSqlite.text("/engine"), "sqlite");
+				assert.match(await onSqlite.text("/items"), /^1 on-turso /);
+			} finally {
+				await onSqlite.stop();
+			}
+		});
+	}
+
 	test(`a Postgres URL stops a ${name} app at start, saying which it wants`, { skip }, async () => {
 		for (const [flags, environment] of [
 			[["--database-url", "postgres://nobody@127.0.0.1:1/none"], {}],
@@ -197,7 +222,7 @@ function suite({ engine, name, tag, run, server, home }) {
 		assert.doesNotMatch(await server().text("/counters"), /half/);
 	});
 
-	test("writes take turns: 40 requests at once, each reading the counter and writing it back one more in a transaction, make it 40 more", { skip }, async () => {
+	test(`40 requests at once, each reading the counter and writing it back one more in a transaction, make it 40 more: ${engine === "turso" ? "each that lost to another's write ran again" : "writes take turns"}`, { skip }, async () => {
 		const at = (counters) => Number(/hits=(\d+)/.exec(counters)[1]);
 		const before = at(await server().text("/counters"));
 		const bumped = await Promise.all(Array.from({ length: 40 }, () => server().post("/bump?ms=2")));
@@ -208,6 +233,29 @@ function suite({ engine, name, tag, run, server, home }) {
 		);
 		assert.equal(at(await server().text("/counters")), before + 40);
 	});
+
+	test(
+		engine === "turso"
+			? "writes go on at once (MVCC): a transaction writing one row doesn't wait for one writing another; two writing the same row both land, the later run again"
+			: "a transaction writing one row waits for one writing another to end: writes take turns",
+		{ skip },
+		async () => {
+			const holding = server().post("/bump?name=slow&ms=800");
+			await new Promise((resolve) => setTimeout(resolve, 150));
+			const started = performance.now();
+			assert.match(await server().post("/bump?name=quick"), /^\d+$/);
+			const took = performance.now() - started;
+			if (engine === "turso") assert.ok(took < 400, `a write beside another took ${Math.round(took)} ms`);
+			else assert.ok(took > 400, `a write beside another took ${Math.round(took)} ms: it should have waited its turn`);
+			await holding;
+			// Two at once on one row: the one that commits second lost (on Turso) and ran again.
+			const at = (counters) => Number(new RegExp("same=(\\d+)").exec(counters)?.[1] ?? 0);
+			const before = at(await server().text("/counters"));
+			const both = await Promise.all([server().post("/bump?name=same&ms=300"), server().post("/bump?name=same&ms=300")]);
+			assert.deepEqual(both.map(Number).sort((a, b) => a - b), [before + 1, before + 2], "each saw the other's");
+			assert.equal(at(await server().text("/counters")), before + 2);
+		},
+	);
 
 	test("reads go on while a transaction holds the write lock", { skip }, async () => {
 		const holding = server().post("/bump?ms=800");

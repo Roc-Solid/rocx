@@ -80,12 +80,26 @@ view! = |_|
 			/>
 			<p>
 				The URL picks the engine: <code>--database-url turso:data/plate.db</code> runs a SQLite app on Turso,
-				and <code>sqlite:</code> a Turso app on SQLite, which is how to try one against the other. Two things
-				differ. The server keeps a Turso file to itself while it runs (an OS lock on it), so
-				<code>sqlite3</code>, or a test's <code>node:sqlite</code>, opens it once the server has stopped; and
-				Turso has no FTS5, so <code>examples/notes</code>' search needs SQLite. Turso is younger than SQLite
-				(0.8, before its 1.0), and its concurrent writes (MVCC) aren't used yet: writes take turns, as they
-				do on SQLite.
+				and <code>sqlite:</code> a Turso app on SQLite, which is how to try one against the other.
+			</p>
+			<p>
+				What Turso adds is writes at once. Its file is in MVCC mode: a transaction (<code>Db.transaction!</code>)
+				begins <code>concurrent</code>, on a snapshot of its own, and writes beside the others; when two write
+				the same row, the one that commits second rolls back and its body runs again (up to a hundred times),
+				so keep what isn't the database's (a fetch, an email) out of a transaction. A write outside one (an
+				insert, an update) is its own concurrent transaction, tried again the same way; a schema change (a
+				migration) takes the file to itself. Two transactions that read rows and write different ones both
+				commit, where on SQLite the second would wait and see the first's.
+			</p>
+			<p>
+				Some things differ. In MVCC mode the file is Turso's alone: SQLite says so, and
+				<code>--database-url turso:data/plate.db?mvcc=off</code>, once, gives it back (that mode also keeps
+				Turso's writes taking turns, as SQLite's do). The server keeps a Turso file to itself while it runs (an
+				OS lock on it), so <code>sqlite3</code>, or a test's <code>node:sqlite</code>, opens it once the server
+				has stopped. Turso has no FTS5, so <code>examples/notes</code>' search needs SQLite. And Turso is younger
+				than SQLite (0.8, before its 1.0): once it has checkpointed rows, deleting many of them slows what
+				follows badly until its next checkpoint (<code>pragma wal_checkpoint(truncate)</code> after such a
+				delete avoids it; <code>?mvcc=off</code> doesn't have it).
 			</p>
 
 			<Heading id="query">A query</Heading>
@@ -245,7 +259,7 @@ view! = |_|
 				<li><strong>Parameters</strong> are four kinds and arrays of them; bytes aren't yet, and a row reads an array column through a cast (<code>array_to_json(tags)</code>).</li>
 				<li><strong>No cursors or streaming:</strong> a query's rows come back whole.</li>
 				<li><strong>SQLite</strong> is a file: no database in memory alone (the server's connections couldn't share it), and a blob is read through <code>hex(…)</code>.</li>
-				<li><strong>Turso</strong> runs as SQLite does: its concurrent writes (<code>begin concurrent</code>, MVCC), its sync to Turso's cloud and its own full-text search aren't used yet.</li>
+				<li><strong>Turso</strong>'s sync to Turso's cloud and its own full-text search aren't used yet; in MVCC mode it has no <code>WITHOUT ROWID</code> tables and no <code>REINDEX</code>.</li>
 			</ul>
 		</NoHydration>
 	</>

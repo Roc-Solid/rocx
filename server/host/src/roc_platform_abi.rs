@@ -5278,6 +5278,10 @@ unsafe extern "C" {
     /// The result is owned by Roc: return exactly one owned reference.
     pub fn roc_host_db_commit() -> HostBlobCheckResult;
 
+    /// Hosted symbol for Host.db_conflicted!
+    /// Roc signature: {} => Bool
+    pub fn roc_host_db_conflicted() -> bool;
+
     /// Hosted symbol for Host.db_execute!
     /// Roc signature: Str, Str => Try(U64, Str)
     /// Owned arguments. Release each exactly once before returning, unless it is

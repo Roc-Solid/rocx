@@ -186,10 +186,13 @@ route! = |request, context| {
 		# write lock from its start, so many at once each see the one before.
 		("POST", "/bump") => {
 			pause = number(query, "ms")
+			# The counter `name` (hits unless it says), made at 0 when missing.
+			named = if param(query, "name").is_empty() "hits" else param(query, "name")
+			_ = Db.run!("insert into counters (name, value) values ($1, 0) on conflict (name) do nothing", [Text(named)])
 			bumped = Db.transaction!(
 				|{}| {
 					now : List({ value : I64 })
-					now = Db.all!("select value from counters where name = 'hits'", [])?
+					now = Db.all!("select value from counters where name = $1", [Text(named)])?
 					was =
 						match now.get(0) {
 							Ok(row) => row.value
@@ -199,7 +202,7 @@ route! = |request, context| {
 						_ = Live.next!(pause)
 						{}
 					}
-					_ = Db.run!("update counters set value = $1 where name = 'hits'", [Int(was + 1)])?
+					_ = Db.run!("update counters set value = $1 where name = $2", [Int(was + 1), Text(named)])?
 					Ok(was + 1)
 				},
 			)
@@ -269,7 +272,7 @@ route! = |request, context| {
 		# ---- The schema: the app's, the platform's, and the plugin's for SQLite ----
 		("GET", "/tables") => {
 			named : Try(List({ name : Str }), [DbErr(Str), BadRow(Str)])
-			named = Db.all!("select name from sqlite_master where type = 'table' and name not like 'sqlite_%' order by name", [])
+			named = Db.all!("select name from sqlite_master where type = 'table' and name not like 'sqlite_%' and name not like '\\_\\_turso\\_internal\\_%' escape '\\' order by name", [])
 			lines(named, |row| row.name)
 		}
 		("GET", "/migrated") => {

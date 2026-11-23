@@ -165,6 +165,17 @@ struct Context {
     cut_off: bool,
     /// The connection of the transaction this call began.
     transaction: Option<db::Client>,
+    /// Whether that transaction, or the last one, lost to another's write (a conflict, on Turso's
+    /// MVCC, D-049), or needs to be exclusive: `Db.transaction!` runs its body again
+    /// (`Host.db_conflicted!`).
+    conflicted: bool,
+    /// Whether the call's next transaction begins exclusive: a statement of its last one changed
+    /// the schema, which a concurrent one can't.
+    exclusive: bool,
+    /// How many times in a row the call's transactions have lost to another's write: each run
+    /// again waits a little longer first (`backoff`), so a slower writer isn't starved by faster
+    /// ones taking the row before it every time.
+    lost: u32,
     /// What its transaction notified, on SQLite: published when it commits (`Db.notify!`).
     notices: Vec<(String, String)>,
     listening: Vec<broadcast::Receiver<live::Message>>,
@@ -422,7 +433,12 @@ fn on_db<T>(work: impl AsyncFnOnce(&db::Client, bool) -> Result<T, String>) -> R
                 CALL.with(|context| context.borrow_mut().notices.clear());
                 (Err(Late), None)
             }
-            done => (done, Some(client)),
+            done => {
+                if let Ok(Err(why)) = &done {
+                    noted(why);
+                }
+                (done, Some(client))
+            }
         },
         None => match within(db::client()) {
             Ok(Ok(client)) => match within(work(&client, false)) {
@@ -440,6 +456,19 @@ fn on_db<T>(work: impl AsyncFnOnce(&db::Client, bool) -> Result<T, String>) -> R
         CALL.with(|context| context.borrow_mut().transaction = kept);
     }
     done
+}
+
+/// Notes, of a statement of the call's transaction (or its commit) that failed, whether it lost to
+/// another's write, or needs an exclusive transaction: `Db.transaction!` runs its body again.
+fn noted(why: &str) {
+    let (conflict, exclusive) = (db::is_conflict(why), db::is_exclusive(why));
+    if conflict || exclusive {
+        CALL.with(|context| {
+            let mut context = context.borrow_mut();
+            context.conflicted = true;
+            context.exclusive |= exclusive;
+        });
+    }
 }
 
 fn abandon(client: db::Client) {
@@ -838,9 +867,27 @@ pub extern "C" fn roc_host_db_begin() -> HostDbScriptResult {
         return done(Err("a transaction is open already: one at a time".into()));
     }
     // The connection, then `begin` on it: one cut off after `begin` was sent is closed, never given
-    // back to the pool with a transaction open.
+    // back to the pool with a transaction open. Exclusive if the last one needed it.
+    let (exclusive, lost) = CALL.with(|context| {
+        let mut context = context.borrow_mut();
+        context.lost = if context.conflicted && !context.exclusive { context.lost + 1 } else { 0 };
+        context.conflicted = false;
+        (std::mem::take(&mut context.exclusive), context.lost)
+    });
+    // Run again after losing to another's write: a pause first, random, longer each time.
+    if lost > 0 {
+        let pause = db::backoff(lost);
+        if within(async move {
+            tokio::time::sleep(pause).await;
+            Ok(())
+        })
+        .is_err()
+        {
+            cut_off();
+        }
+    }
     let waited = match within(db::client()) {
-        Ok(Ok(client)) => match within(db::begin(&client)) {
+        Ok(Ok(client)) => match within(db::begin(&client, exclusive)) {
             Err(Late) => {
                 abandon(client);
                 Err(Late)
@@ -863,7 +910,8 @@ pub extern "C" fn roc_host_db_commit() -> HostDbScriptResult {
             Err(Late)
         }
         Ok(committed) => {
-            if committed.is_err() {
+            if let Err(why) = &committed {
+                noted(why);
                 rolled_back(client);
             }
             Ok(committed)
@@ -886,6 +934,13 @@ pub extern "C" fn roc_host_db_rollback() {
     if let Some(client) = pinned {
         rolled_back(client);
     }
+}
+
+/// Whether the call's last transaction, rolled back, lost to another's write, or needed to be
+/// exclusive (Turso's MVCC, D-049): `Db.transaction!` runs its body again.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_db_conflicted() -> bool {
+    CALL.with(|context| context.borrow().conflicted)
 }
 
 /// Listens to a channel of the database's: this call hears what is notified on it (`Db.notify!`,
