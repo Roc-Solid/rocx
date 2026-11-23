@@ -40,6 +40,8 @@ Topbar := [].{
 			padding: 0 var(--space-6);
 			background: color-mix(in srgb, var(--bg) 85%, transparent);
 			backdrop-filter: blur(12px);
+			/* Held still while a navigation's page changes beneath it (site.css, Page transitions). */
+			view-transition-name: site-bar;
 		}
 
 		.brand {

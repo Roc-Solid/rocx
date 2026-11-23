@@ -746,6 +746,12 @@ test("View Transitions: a navigation is one only when the app asks (<html data-r
 		assert.equal(await go(".to-a", "document.querySelector('.a h1')"), 1, "a browser without them: none, and the page all the same");
 		await tab.eval("document.startViewTransition = window.kept");
 		assert.equal(await go(".to-home", "document.querySelector('.home h1')"), 2);
+		// One navigation after another, the next starting before the last's animation is ready (both
+		// documents kept, so nothing waits for the server): the last is skipped, its `ready` rejected
+		// with an AbortError the runtime hears, and nothing is said.
+		await tab.eval(`(async () => { const runtime = window.ready.runtime; await runtime.navigate("/a"); await runtime.navigate("/"); })()`);
+		await tab.wait("document.querySelector('.home h1') && document.getAnimations().length === 0");
+		assert.equal(await tab.eval("window.transitions"), 4);
 		assert.deepEqual(tab.errors, []);
 		assert.deepEqual(tab.console, []);
 		await tab.close();

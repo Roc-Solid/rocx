@@ -395,7 +395,7 @@ view! = |_|
 						<tr><td><code>{"<form action=\"/search\">"}</code></td><td>a GET form: a navigation to its URL with its fields as the query, in place</td></tr>
 						<tr><td><code>{"<html data-rocx-navigation=\"off\">"}</code></td><td>every link loads its page, as before</td></tr>
 						<tr><td><code>{"data-rocx-preload=\"off\""}</code>, <code>{"\"viewport\""}</code></td><td>on a link or above it (<code>{"<html>"}</code> for the app): never prefetch; prefetch as it comes into sight, as well as on hover, focus and touch</td></tr>
-						<tr><td><code>{"<html data-rocx-transitions>"}</code></td><td>each navigation a View Transition, the browser's cross-fade, where it has them and less motion isn't asked for</td></tr>
+						<tr><td><code>{"<html data-rocx-transitions>"}</code></td><td>each navigation a View Transition, the browser's cross-fade, where it has them and less motion isn't asked for; this site has it, with its bar and sidebar given a <code>view-transition-name</code> so they stay put while the page changes</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>

@@ -2377,6 +2377,18 @@ the stylesheet as a cached file, a JSON payload, wasm splitting.
     a test for it beside the save's. Leave's expects. runtime.js 5523 → 5751 lines, 60.5 → 63.0 KB
     brotli.
 
+- The docs site's page transitions (view-transitions, 2026-11-23): the site's layout has `<html
+  data-rocx-transitions>`; its bar and its sidebar are named (`site-bar`, `site-sidebar`; the
+  sidebar not below 52rem, where it is above the page and scrolls away with it), so they stay put,
+  and site.css fades the rest out in 90 ms and in over 210 ms, rising 6 px. Same keyframes and no
+  errors in Chromium and in Gecko (Firefox 160, Zen's). It found a runtime bug: a navigation
+  starting before the last one's animation is ready (`updateCallbackDone` comes first, so `await
+  runtime.navigate(a); runtime.navigate(b)` did it, as would a quick second click) skips the last,
+  whose `ready` rejected unheard (an uncaught `AbortError` in the console); the runtime now hears
+  `ready` and `finished`. Tests: web/test's View Transitions test does it (an error without the
+  fix); site/test checks the names and that a click's transition animates them with the site's
+  keyframes, and its navigation through every page runs with transitions on.
+
 **Reversible:** yes, until apps rely on kept layouts and `use_search_params!`.
 
 ## D-041 The host hands over a request as one record, with the connection's address

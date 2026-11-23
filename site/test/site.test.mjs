@@ -157,7 +157,7 @@ test("every page renders, and hydrates strictly as the server left it, asking fo
 		const response = await fetch(`${site.url}${route}`, { headers: { accept: "text/html" } });
 		assert.equal(response.status, 200, route);
 		const html = await response.text();
-		assert.match(html, /^<!doctype html> <html lang="en">/, route);
+		assert.match(html, /^<!doctype html> <html lang="en" data-rocx-transitions>/, route);
 		const head = html.slice(0, html.indexOf("</head>"));
 		assert.ok(head.includes(sheetLink()), `${route}: the app's stylesheet, linked in its head`);
 		assert.doesNotMatch(html, /<style>\/\* /, `${route}: and not inline`);
@@ -1236,6 +1236,27 @@ test("testing: the page shows its inbox, and what the package's queries answered
 
 test("navigation in place (D-040): every page reached from the one before, from the front page on, is the page a load renders, byte for byte outside the host's elements, its document fetched once and nothing asked again", { skip }, async () => {
 	await navigatesLikeLoads(site.url);
+});
+
+test("page transitions: a navigation in place is a View Transition (<html data-rocx-transitions>, D-040), the bar and the sidebar held still (named) and the page fading out and in (site.css); on a narrow screen the sidebar, above the page, changes with it", { skip }, async () => {
+	const tab = await open("/components");
+	// A laptop's width: the sidebar beside the page, sticky.
+	await tab.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+	const names = () => tab.eval("[document.querySelector('body > header.topbar'), document.querySelector('.frame > nav.sidebar')].map((element) => getComputedStyle(element).viewTransitionName)");
+	assert.deepEqual(await names(), ["site-bar", "site-sidebar"]);
+	// What each transition animates, once its pseudo-elements are there: each its element and its keyframes.
+	await tab.eval(`window.transitions = []; const original = document.startViewTransition.bind(document); document.startViewTransition = (update) => { const transition = original(update); transition.ready.then(() => window.transitions.push(document.getAnimations().map((animation) => animation.effect.pseudoElement + " " + animation.animationName).sort())); return transition; }`);
+	const next = await tab.eval("document.querySelector('.pager a.next').pathname");
+	await tab.click(".pager a.next");
+	await tab.wait(`location.pathname === ${JSON.stringify(next)} && window.transitions.length === 1`);
+	const animated = await tab.eval("window.transitions[0]");
+	for (const wanted of ["::view-transition-old(root) page-leave", "::view-transition-new(root) page-enter"]) assert.ok(animated.includes(wanted), `${wanted}: ${animated.join(", ")}`);
+	for (const held of ["site-bar", "site-sidebar"]) assert.ok(animated.some((animation) => animation.startsWith(`::view-transition-group(${held})`)), `${held} held: ${animated.join(", ")}`);
+	await tab.send("Emulation.setDeviceMetricsOverride", { width: 600, height: 900, deviceScaleFactor: 1, mobile: false });
+	assert.deepEqual(await names(), ["site-bar", "none"]);
+	assert.deepEqual(tab.errors, []);
+	assert.deepEqual(tab.console, []);
+	await tab.close();
 });
 
 test("the static build is every page as the server answers it, and what the pages load", { skip }, async () => {

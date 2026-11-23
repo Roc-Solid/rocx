@@ -2461,7 +2461,14 @@ export class Runtime {
 			// the flush makes the new one (scrolled where it goes), and it cross-fades.
 			if (this.transitionsWanted()) {
 				this.notify("transition", { url: at.href });
-				await document.startViewTransition(show).updateCallbackDone;
+				const transition = document.startViewTransition(show);
+				// A navigation that comes before this one's animation is ready (a second click, a
+				// navigate! as the page arrives) skips it, rejecting `ready` with an AbortError: the
+				// page is the next one's then, and nothing is wrong. `finished` rejects as the update
+				// does, which the await below hears.
+				transition.ready.catch(() => {});
+				transition.finished.catch(() => {});
+				await transition.updateCallbackDone;
 			} else show();
 			this.focused(at);
 			this.announce(at);

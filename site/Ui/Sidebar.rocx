@@ -42,6 +42,8 @@ Sidebar := [].{
 			overflow-y: auto;
 			padding: var(--space-7) 0;
 			scrollbar-width: thin;
+			/* Held still while a navigation's page changes beside it (site.css, Page transitions). */
+			view-transition-name: site-sidebar;
 		}
 
 		ul {
@@ -102,6 +104,8 @@ Sidebar := [].{
 				position: static;
 				max-height: none;
 				padding: var(--space-4) 0 0;
+				/* Above the page, it scrolls away with it, so it changes with it too. */
+				view-transition-name: none;
 			}
 
 			ul {
