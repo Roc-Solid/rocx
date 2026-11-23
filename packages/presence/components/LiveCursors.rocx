@@ -9,7 +9,8 @@ import presence.Cursors
 ## the places it is sent (sends are throttled: `Throttle`), fades when idle, and fades out when its
 ## member leaves. The cursors take no pointer events: what is under them is clicked as before. This
 ## page's own pointer over the area is `on_move!`'s (`on:pointermove.point`: shares of the area, at
-## most once a frame), and its leaving `on_leave!`'s: a room's `here.moved!` and `here.away!`.
+## most once a frame), and its leaving `on_leave!`'s: a room's `here.moved!` and `here.away!`. It
+## listens to the pointer, so it goes outside a `<NoHydration>`, which runs no handler.
 LiveCursors := [].{
 
 	## A cursor, as drawn: whose, their name and colour, where (shares of the area), and whether it

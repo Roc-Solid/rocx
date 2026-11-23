@@ -165,7 +165,8 @@ under it jumps, and a screen reader hears it change (`aria-live="polite"`).
 Each cursor is an arrow in its member's colour with their name beside it. It glides between the
 places it is sent, fades when idle, and takes no pointer events. Your own goes to the room as you
 move (`on_move!={here.moved!}`): `join!` sends it at once, then at most 20 times a second, the last
-place kept, so it ends where the pointer stopped (`create_pointer!`).
+place kept, so it ends where the pointer stopped (`create_pointer!`). It listens to the pointer, so
+it goes outside a `<NoHydration>` (which runs no handler, and refuses one).
 
 ## The stores
 

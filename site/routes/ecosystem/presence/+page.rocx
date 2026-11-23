@@ -136,11 +136,13 @@ view! = |_|
 			</p>
 
 			<Heading id="cursors">{"<LiveCursors>"}</Heading>
-			<div class="sample">
-				<LiveCursors cursors!={cursors}>
-					<div class="area"><p>What everyone points at</p></div>
-				</LiveCursors>
-			</div>
+		</NoHydration>
+		<div class="sample">
+			<LiveCursors cursors!={cursors}>
+				<div class="area"><p>What everyone points at</p></div>
+			</LiveCursors>
+		</div>
+		<NoHydration>
 			<TableWrap>
 				<table>
 					<thead><tr><th>Prop</th><th>Is</th></tr></thead>
@@ -163,7 +165,8 @@ view! = |_|
 				Each cursor is an arrow in its member's colour, with their name beside it. It glides to each place it
 				is sent, fades when idle, and takes no pointer events, so what is under it is clicked as before. Your
 				own goes to the room with <code>{"<LiveCursors … on_move!={here.moved!} on_leave!={here.away!}>"}</code>:
-				move your pointer over the demo's note, and it shows as the others see it, as You.
+				move your pointer over the demo's note, and it shows as the others see it, as You. It listens to the
+				pointer, so it goes outside a <code>{"<NoHydration>"}</code>, as the sample above does.
 			</p>
 
 			<Heading id="how">How a room works</Heading>
