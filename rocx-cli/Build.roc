@@ -364,6 +364,7 @@ Build := [].{
 								None => []
 							}
 						),
+						{ build: Build.build_id!(dir, options.rocx), dev: options.dev },
 					),
 				},
 			] else []
@@ -1210,6 +1211,63 @@ Build := [].{
 			}
 		}
 		$found
+	}
+
+	## The build's id (D-040): FNV-1a, 32 bits in 8 hex digits, over what the app's two copies are
+	## built from, each file's path and content: the app's `.rocx` files, its `.roc` files rocx
+	## didn't write, its content's Markdown, the packages and the platform its headers name, and the
+	## web platform with the runtime. The server writes it on each page's bootstrap (`data-build`),
+	## and a browser running another build's wasm loads a page it fetched instead of rendering it.
+	build_id! : Str, Str => Str
+	build_id! = |dir, rocx| {
+		skip = |path| {
+			last = Fs.basename(path)
+			last == "build" or last == "dist" or last == Build.generated or last == "targets"
+		}
+		var $own = Fs.files!(dir, ".rocx", skip)
+		for path in Fs.files!(dir, ".roc", skip) {
+			if !Fs.exists!("${path}x") and !Build.is_generated!(path) {
+				$own = $own.append(path)
+			}
+		}
+		own = $own
+		content = Fs.join([dir, "content"])
+		markdown = if (Fs.is_dir!(content)) Fs.files!(content, ".md", skip) else []
+		var $roots = [Fs.join([rocx, "web", "platform"])]
+		for entry in Fs.entries!(dir) {
+			if entry.ends_with(".roc") and !Fs.is_dir!(Fs.join([dir, entry])) {
+				header = Build.app_header(Fs.read_or_empty!(Fs.join([dir, entry])), Bool.False) ?? ""
+				for each in Build.named_paths(header, Bool.True) {
+					if each.path.starts_with("./") or each.path.starts_with("../") {
+						root = Fs.dirname(Fs.resolve(dir, [each.path]))
+						if !$roots.contains(root) and root != Fs.resolve(dir, []) {
+							$roots = $roots.append(root)
+						}
+					}
+				}
+			}
+		}
+		var $named = []
+		for root in $roots {
+			$named = $named.concat(Fs.files!(root, ".rocx", skip)).concat(Fs.files!(root, ".roc", skip))
+		}
+		named = $named
+		runtime = [Fs.join([rocx, "web", "runtime.js"]), Fs.join([rocx, "web", "start.js"])]
+		start : U32
+		start = 0x811c9dc5
+		prime : U32
+		prime = 0x01000193
+		var $hash = start
+		for path in Text.sorted(Text.unique(own.concat(markdown).concat(named).concat(runtime))) {
+			named_at : Str
+			named_at = if (path.starts_with("${dir}/")) Fs.relative(dir, path) else Fs.relative(rocx, path)
+			bytes : List(U8)
+			bytes = named_at.to_utf8().append(0).concat(Fs.read_or_empty!(path).to_utf8()).append(0)
+			for byte in bytes {
+				$hash = $hash.bitwise_xor(byte.to_u32()).times_wrap(prime)
+			}
+		}
+		Text.pad_start(Text.in_base($hash.to_u64(), 16), 8, "0")
 	}
 
 	## `import charts.BarChart`, a package's component, as an import of the app's copy of it

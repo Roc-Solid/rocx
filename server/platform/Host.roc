@@ -317,6 +317,17 @@ Host := [].{
 	## The request's path, and its query after a `?`, a trailing slash dropped: `Router.location!`.
 	location! : {} => Str
 
+	## The app, as its root renders (`Generated/Root.roc`, D-040): the build's id, which the page's
+	## bootstrap carries (`data-build`), whether rocx built it with `--dev`, and its route table (the
+	## browser's; the server keeps only the build).
+	app! : Str, Bool, Str => {}
+
+	## Navigating is the browser's (`Router.navigate!`): on the server no handler runs, and it does nothing.
+	navigate! : Str, Bool, Bool => {}
+
+	## Bool.False: on the server no navigation is on its way.
+	is_routing! : {} => Bool
+
 	## The status the page being rendered is answered with (`<HttpStatusCode>`).
 	status! : U16 => {}
 

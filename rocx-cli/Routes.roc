@@ -2050,9 +2050,31 @@ Routes := [].{
 		Str.join_with(lines, "\n")
 	}
 
-	## `Generated/Root.roc`, for both the server and the browser: the app's page.
-	root_module : Table, List(Source), List(Placed) -> Str
-	root_module = |table, sources, stories| {
+	## The route table the browser navigates by (`Router.app!`'s `routes`, D-040), as JSON: each page
+	## in the order `Root` tries them, its path (`/lists/[id]`) and its levels, from the root layout to
+	## the page, each its code (§18: the module that renders it, an id the build chose) and the path
+	## its file covers (`/lists`: a layout's own params are its path's); a dev build's stories, each a
+	## page in the root layout; and the error page's code (`null` with none).
+	routes_json : Table, List(Placed) -> Str
+	routes_json = |table, stories| {
+		level = |code, path| "{\"code\":${Text.json_string(code)},\"path\":${Text.json_string(path)}}"
+		layout_path = |layout| "/${Str.join_with(layout.parts, "/")}"
+		root = table.layouts.keep_if(|layout| layout.parts.is_empty()).map(|layout| level(layout.module_name, "/"))
+		page_json = |path, levels| "{\"path\":${Text.json_string(path)},\"levels\":[${Str.join_with(levels, ",")}]}"
+		pages = table.pages.map(|page| page_json(page.path, page.layouts.map(|layout| level(layout.module_name, layout_path(layout))).append(level(page.module_name, page.path))))
+		storied = stories.map(|story| page_json("${Routes.stories_path}/${story.id}", root.append(level(story.alias, "${Routes.stories_path}/${story.id}"))))
+		error =
+			match table.error {
+				Some(entry) => Text.json_string(entry.module_name)
+				None => "null"
+			}
+		"{\"pages\":[${Str.join_with(storied.concat(pages), ",")}],\"error\":${error}}"
+	}
+
+	## `Generated/Root.roc`, for both the server and the browser: the app's page. `told`: the build's
+	## id, and whether it is a dev build, for `Router.app!` (D-040).
+	root_module : Table, List(Source), List(Placed), { build : Str, dev : Bool } -> Str
+	root_module = |table, sources, stories, told| {
 		pages = table.pages
 		root = table.layouts.find_first(|layout| layout.parts.is_empty())
 		has_root =
@@ -2152,9 +2174,10 @@ Routes := [].{
 					"\t## The page at where it is (`Router.location!`: the request's path on the server; in the browser,",
 					"\t## the page's, without the base): its route's page, given its params, in its layouts, the error",
 					"\t## page for a failure nothing else catches (a read its endpoint refused with a 4xx, that status;",
-					"\t## else 500); the error page (404) where no page is.",
+					"\t## else 500); the error page (404) where no page is. The app first, for the runtime (D-040).",
 					"\tview! : {} => Html",
 					"\tview! = |{}| {",
+					"\t\tRouter.app!({ build: ${Routes.root_name}.build, dev: ${if (told.dev) "Bool.True" else "Bool.False"}, routes: ${Routes.root_name}.routes })",
 					"\t\tpath = Router.location!({}).path",
 				])
 				.concat(if (pages.is_empty()) [] else ["\t\tsegments = path.split_on(\"/\").keep_if(|segment| !segment.is_empty()).map(Server.decode_segment)"])
@@ -2166,6 +2189,15 @@ Routes := [].{
 					"\t## its status the failure's (`Errored.status_of`: a refused read's 4xx, 404 for data that isn't there).",
 					"\tguarded! : List(Html) => Html",
 					"\tguarded! = |children| Errored.view!({ fallback: |problem, _retry| ${Routes.root_name}.failed(Errored.status_of(problem), problem), children: children })",
+					"",
+					"\t## The build's id: a hash of what the app is built from, on each page's bootstrap (`data-build`).",
+					"\tbuild : Str",
+					"\tbuild = ${Text.json_string(told.build)}",
+					"",
+					"\t## The app's pages, as the browser navigates by them (`Router.app!`): each page's path and its",
+					"\t## levels' code, from the root layout to the page.",
+					"\troutes : Str",
+					"\troutes = ${Text.roc_string(Routes.routes_json(table, stories))}",
 					"",
 					"\t## The error page for `status` (404: no page is here, or its data isn't; 500: the page failed),",
 					"\t## which the server answers with (`<HttpStatusCode>`), and why.",
@@ -2956,7 +2988,7 @@ Routes := [].{
 			}
 			"rootModule" => {
 				table = Routes.table_from(arg(0))?
-				Ok(Text(Routes.root_module(table, Routes.sources_from(option("sources")), Value.items(option("stories")).map(Routes.placed_from))))
+				Ok(Text(Routes.root_module(table, Routes.sources_from(option("sources")), Value.items(option("stories")).map(Routes.placed_from), { build: Value.str_or(option("build"), "0badc0de"), dev: Value.bool_or(option("dev"), Bool.False) })))
 			}
 			"jobsIn" => {
 				table = Routes.table_from(arg(1))?

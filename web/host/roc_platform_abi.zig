@@ -792,6 +792,15 @@ pub const HostActionArgs = extern struct {
     arg0: RocStr,
 };
 
+/// Arguments for Host.app!
+/// Roc signature: Str, Bool, Str => {}
+/// Refcounted fields are owned by the hosted function.
+pub const HostAppArgs = extern struct {
+    arg0: RocStr,
+    arg1: bool,
+    arg2: RocStr,
+};
+
 /// Arguments for Host.browser_call!
 /// Roc signature: Str, Str => {}
 /// Refcounted fields are owned by the hosted function.
@@ -947,6 +956,15 @@ pub const HostMemo_lastArgs = extern struct {
 /// Refcounted fields are owned by the hosted function.
 pub const HostMemo_newArgs = extern struct {
     arg0: RocErasedCallable,
+};
+
+/// Arguments for Host.navigate!
+/// Roc signature: Str, Bool, Bool => {}
+/// Refcounted fields are owned by the hosted function.
+pub const HostNavigateArgs = extern struct {
+    arg0: RocStr,
+    arg1: bool,
+    arg2: bool,
 };
 
 /// Arguments for Host.optimistic_set!
@@ -1185,6 +1203,14 @@ pub extern fn roc_crashed(bytes: [*]const u8, len: usize) callconv(.c) void;
 ///     arg0.decref(roc_host);
 pub extern fn roc_action(arg0: RocStr) callconv(.c) void;
 
+/// Hosted symbol for Host.app!
+/// Roc signature: Str, Bool, Str => {}
+/// Owned arguments. Release each exactly once before returning, unless it is
+/// moved into storage or into the result:
+///     arg0.decref(roc_host);
+///     arg2.decref(roc_host);
+pub extern fn roc_app(arg0: RocStr, arg1: bool, arg2: RocStr) callconv(.c) void;
+
 /// Hosted symbol for Host.boundary!
 /// Roc signature: {} => U64
 pub extern fn roc_boundary() callconv(.c) u64;
@@ -1303,6 +1329,10 @@ pub extern fn roc_interval(arg0: u64, arg1: RocErasedCallable) callconv(.c) u64;
 ///     decrefErasedCallable(arg0, roc_host);
 pub extern fn roc_is_pending(arg0: RocErasedCallable) callconv(.c) bool;
 
+/// Hosted symbol for Host.is_routing!
+/// Roc signature: {} => Bool
+pub extern fn roc_is_routing() callconv(.c) bool;
+
 /// Hosted symbol for Host.keep!
 /// Roc signature: Box({} => Str) => U64
 /// Owned arguments. Release each exactly once before returning, unless it is
@@ -1349,6 +1379,13 @@ pub extern fn roc_memo_last(arg0: RocErasedCallable) callconv(.c) RocErasedCalla
 /// moved into storage or into the result:
 ///     decrefErasedCallable(arg0, roc_host);
 pub extern fn roc_memo_new(arg0: RocErasedCallable) callconv(.c) u64;
+
+/// Hosted symbol for Host.navigate!
+/// Roc signature: Str, Bool, Bool => {}
+/// Owned arguments. Release each exactly once before returning, unless it is
+/// moved into storage or into the result:
+///     arg0.decref(roc_host);
+pub extern fn roc_navigate(arg0: RocStr, arg1: bool, arg2: bool) callconv(.c) void;
 
 /// Hosted symbol for Host.now_millis!
 /// Roc signature: {} => U64

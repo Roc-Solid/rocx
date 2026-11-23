@@ -77,7 +77,7 @@ impl Frame {
 /// `untrack!`), `is_pending!`; a signal or memo made, an effect, a cleanup, a timer, a listen, a
 /// subscription, a title. A hole whose run did none of these is static: written without its
 /// comments, which the browser, hydrating, knows by running it the same way.
-fn touched(read: bool) {
+pub(crate) fn touched(read: bool) {
     with(|render| {
         if let Some(frame) = render.frames.last_mut()
             && !(read && frame.untracked > 0)
@@ -148,6 +148,9 @@ struct Render {
     /// The first redirect a GET the page read was answered with as it rendered (its
     /// middleware sending the visitor elsewhere): the page's answer instead.
     redirect: Option<Redirect>,
+    /// The build's id, if the page's root told it (`Router.app!`, D-040): its bootstrap's
+    /// `data-build`, which the browser checks a page it fetched against before rendering it.
+    build: Option<String>,
 }
 
 impl Render {
@@ -218,8 +221,17 @@ enum Stop {
 
 // ---- Rendering ----
 
-/// The script that starts the browser's side of a page: it hydrates the document.
+/// The script that starts the browser's side of a page: it hydrates the document. With the
+/// build's id (`Router.app!`, D-040), `data-build` before `src` (web/runtime.js's `start`).
 const START: &str = r#"<script type="module" data-rocx src="/rocx/start.js"></script>"#;
+
+/// The bootstrap, with the build's id when the page's root told it.
+fn start(build: Option<&str>) -> String {
+    match build {
+        Some(build) => format!(r#"<script type="module" data-rocx data-build="{}" src="/rocx/start.js"></script>"#, build.replace('&', "&amp;").replace('"', "&quot;").replace('<', "&lt;")),
+        None => START.to_string(),
+    }
+}
 
 /// A page of components, rendered for the request the call answers (`hosted::asked`): the
 /// document, `<!doctype html>` first (unless the page's markup begins with it), the answers its
@@ -242,12 +254,13 @@ pub fn render_page(page: roc::Page) -> Result<Rendered, Crash> {
     let title = render.title.take();
     let heads = std::mem::take(&mut render.heads);
     let redirect = render.redirect.take();
+    let build = render.build.take();
     render.release_all();
     roc::drop_page(page);
     match (walked, redirect) {
         (Err(Stop::Crashed(why)), _) => Err(Crash(why)),
         (_, Some(redirect)) => Ok(Rendered::Redirect(redirect)),
-        (Ok(markup), None) => Ok(Rendered::Page(document(&headed(&titled(&markup, title.as_deref()), &heads), &answers, flash.as_deref()))),
+        (Ok(markup), None) => Ok(Rendered::Page(document(&headed(&titled(&markup, title.as_deref()), &heads), &answers, flash.as_deref(), build.as_deref()))),
         (Err(Stop::Failed(why)), None) => Err(Crash(format!("{why} (with no <Errored> around it)"))),
     }
 }
@@ -283,11 +296,11 @@ fn headed(markup: &str, heads: &[(String, String)]) -> String {
 
 /// The rendered markup as the document the browser gets: the flash the page read (if it did) and
 /// the answers in scripts for the browser to read, the plugins' scripts (`files`), and the
-/// bootstrap, before `</body>`.
-fn document(markup: &str, answers: &[[String; 3]], flash: Option<&str>) -> String {
+/// bootstrap (with the build's id, if the page's root told it), before `</body>`.
+fn document(markup: &str, answers: &[[String; 3]], flash: Option<&str>, build: Option<&str>) -> String {
     let begun = markup.trim_start().get(..9).is_some_and(|start| start.eq_ignore_ascii_case("<!doctype"));
     let doctype = if begun { "" } else { "<!doctype html>" };
-    let scripts = format!("{}{}{}{START}", flash.map(flash_script).unwrap_or_default(), answers_script(answers), crate::files::script_tags());
+    let scripts = format!("{}{}{}{}", flash.map(flash_script).unwrap_or_default(), answers_script(answers), crate::files::script_tags(), start(build));
     match markup.rfind("</body>") {
         Some(at) => format!("{doctype}{}{scripts}{}", &markup[..at], &markup[at..]),
         None => format!("{doctype}{markup}{scripts}"),
@@ -1189,6 +1202,33 @@ pub extern "C" fn roc_title(title: RocStr) {
     touched(false);
     let title = taken(title);
     with(|render| render.title = Some(title));
+}
+
+/// The app, as the page's root renders (`Router.app!`, D-040): the build's id, noted for the page's
+/// bootstrap (`data-build`). Whether rocx built it with `--dev`, and its route table, are the
+/// browser's.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_app(build: RocStr, _dev: bool, routes: RocStr) {
+    let _host = crate::preempt::host();
+    let build = taken(build);
+    unsafe { routes.decref(&roc::host()) };
+    with(|render| render.build = Some(build));
+}
+
+/// `Router.navigate!` is a handler's, and no handler runs on the server: nothing.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_navigate(to: RocStr, _replace: bool, _scroll: bool) {
+    let _host = crate::preempt::host();
+    unsafe { to.decref(&roc::host()) };
+}
+
+/// `Router.is_routing!`: on the server no navigation is on its way. A source in the browser, so a
+/// hole that reads it isn't static.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_is_routing() -> bool {
+    let _host = crate::preempt::host();
+    touched(true);
+    false
 }
 
 /// A `<Meta>`, `<Link>` or `<Style>` while the page renders (D-054): noted for its `<head>`

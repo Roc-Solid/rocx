@@ -598,10 +598,12 @@ pub extern "C" fn roc_request() -> RocStr {
     roc_str(&written.unwrap_or_default())
 }
 
-/// The request's path and query (`Router.location!`): "/" for a call that answers none.
+/// The request's path and query (`Router.location!`): "/" for a call that answers none. A source in
+/// the browser, which a navigation in place changes (D-040): a hole that reads it isn't static.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_location() -> RocStr {
     let _host = preempt::host();
+    crate::signals::touched(true);
     let target = CALL.with(|context| context.borrow().asked.as_ref().map(|asked| asked.target.clone()));
     roc_str(&target.unwrap_or_else(|| "/".into()))
 }

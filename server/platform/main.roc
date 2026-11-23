@@ -81,6 +81,7 @@ platform ""
 	}
 	hosted {
 		"roc_action": Host.action!,
+		"roc_app": Host.app!,
 		"roc_boundary": Host.boundary!,
 		"roc_browser_call": Host.browser_call!,
 		"roc_cleanup": Host.cleanup!,
@@ -166,6 +167,7 @@ platform ""
 		"roc_host_zone_offset": Host.zone_offset!,
 		"roc_interval": Host.interval!,
 		"roc_is_pending": Host.is_pending!,
+		"roc_is_routing": Host.is_routing!,
 		"roc_keep": Host.keep!,
 		"roc_listen": Host.listen!,
 		"roc_location": Host.location!,
@@ -173,6 +175,7 @@ platform ""
 		"roc_memo_get": Host.memo_get!,
 		"roc_memo_last": Host.memo_last!,
 		"roc_memo_new": Host.memo_new!,
+		"roc_navigate": Host.navigate!,
 		"roc_optimistic_set": Host.optimistic_set!,
 		"roc_problem": Host.problem!,
 		"roc_read_at": Host.read_at!,

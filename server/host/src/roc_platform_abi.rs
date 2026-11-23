@@ -3058,6 +3058,17 @@ pub struct HostActionArgs {
     pub arg0: RocStr,
 }
 
+/// Arguments for Host.app!
+/// Roc signature: Str, Bool, Str => {}
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostAppArgs {
+    pub arg0: RocStr,
+    pub arg1: bool,
+    pub arg2: RocStr,
+}
+
 /// Arguments for Host.browser_call!
 /// Roc signature: Str, Str => {}
 /// Refcounted fields are owned by the hosted function.
@@ -3844,6 +3855,17 @@ pub struct HostMemoLastArgs {
 #[derive(Clone, Copy)]
 pub struct HostMemoNewArgs {
     pub arg0: RocErasedCallable,
+}
+
+/// Arguments for Host.navigate!
+/// Roc signature: Str, Bool, Bool => {}
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostNavigateArgs {
+    pub arg0: RocStr,
+    pub arg1: bool,
+    pub arg2: bool,
 }
 
 /// Arguments for Host.optimistic_set!
@@ -5204,6 +5226,14 @@ unsafe extern "C" {
     ///     unsafe { arg0.decref(roc_host); }
     pub fn roc_action(arg0: RocStr);
 
+    /// Hosted symbol for Host.app!
+    /// Roc signature: Str, Bool, Str => {}
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    ///     unsafe { arg2.decref(roc_host); }
+    pub fn roc_app(arg0: RocStr, arg1: bool, arg2: RocStr);
+
     /// Hosted symbol for Host.boundary!
     /// Roc signature: {} => U64
     pub fn roc_boundary() -> u64;
@@ -5811,6 +5841,10 @@ unsafe extern "C" {
     ///     unsafe { decref_erased_callable(arg0, roc_host); }
     pub fn roc_is_pending(arg0: RocErasedCallable) -> bool;
 
+    /// Hosted symbol for Host.is_routing!
+    /// Roc signature: {} => Bool
+    pub fn roc_is_routing() -> bool;
+
     /// Hosted symbol for Host.keep!
     /// Roc signature: Box({} => Str) => U64
     /// Owned arguments. Release each exactly once before returning, unless it is
@@ -5857,6 +5891,13 @@ unsafe extern "C" {
     /// moved into storage or into the result:
     ///     unsafe { decref_erased_callable(arg0, roc_host); }
     pub fn roc_memo_new(arg0: RocErasedCallable) -> u64;
+
+    /// Hosted symbol for Host.navigate!
+    /// Roc signature: Str, Bool, Bool => {}
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    pub fn roc_navigate(arg0: RocStr, arg1: bool, arg2: bool);
 
     /// Hosted symbol for Host.optimistic_set!
     /// Roc signature: U64, Box({} -> rigid) => {}

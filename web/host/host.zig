@@ -49,6 +49,9 @@ const js = struct {
     extern "env" fn js_clear_timer(id: u32) void;
     extern "env" fn js_browser_call(name_ptr: [*]const u8, name_len: usize, arg_ptr: [*]const u8, arg_len: usize) void;
     extern "env" fn js_location() usize;
+    extern "env" fn js_app(build_ptr: [*]const u8, build_len: usize, dev: u32, routes_ptr: [*]const u8, routes_len: usize) void;
+    extern "env" fn js_navigate(to_ptr: [*]const u8, to_len: usize, replace: u32, scroll: u32) void;
+    extern "env" fn js_is_routing() u32;
     extern "env" fn js_status(code: u32) void;
     extern "env" fn js_effect_new(callable: usize) void;
     extern "env" fn js_cleanup(callable: usize) void;
@@ -605,6 +608,29 @@ fn hostedLocation() callconv(.c) RocStr {
     return taken(js.js_location());
 }
 
+// The app, as its root renders (`Router.app!`, D-040): its build's id, whether it is a dev build,
+// and its route table, the runtime's to keep.
+fn hostedApp(build: RocStr, dev: bool, routes: RocStr) callconv(.c) void {
+    defer build.decref(host());
+    defer routes.decref(host());
+    const b = build.asSlice();
+    const r = routes.asSlice();
+    js.js_app(b.ptr, b.len, @intFromBool(dev), r.ptr, r.len);
+}
+
+// `Router.navigate!`: queued on the handler running, as a `Browser.call!` is; anywhere else it
+// throws, and the frames above unwind.
+fn hostedNavigate(to: RocStr, replace: bool, scroll: bool) callconv(.c) void {
+    defer to.decref(host());
+    const text = to.asSlice();
+    js.js_navigate(text.ptr, text.len, @intFromBool(replace), @intFromBool(scroll));
+}
+
+// `Router.is_routing!`: whether a navigation in place is on its way (tracked).
+fn hostedIsRouting() callconv(.c) bool {
+    return js.js_is_routing() != 0;
+}
+
 fn hostedStatus(code: u16) callconv(.c) void {
     js.js_status(code);
 }
@@ -827,6 +853,9 @@ comptime {
     @export(&hostedClearTimer, .{ .name = "roc_clear_timer", .visibility = hidden });
     @export(&hostedBrowserCall, .{ .name = "roc_browser_call", .visibility = hidden });
     @export(&hostedLocation, .{ .name = "roc_location", .visibility = hidden });
+    @export(&hostedApp, .{ .name = "roc_app", .visibility = hidden });
+    @export(&hostedNavigate, .{ .name = "roc_navigate", .visibility = hidden });
+    @export(&hostedIsRouting, .{ .name = "roc_is_routing", .visibility = hidden });
     @export(&hostedStatus, .{ .name = "roc_status", .visibility = hidden });
     @export(&hostedEffectNew, .{ .name = "roc_effect_new", .visibility = hidden });
     @export(&hostedCleanup, .{ .name = "roc_cleanup", .visibility = hidden });

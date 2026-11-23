@@ -61,8 +61,22 @@ Host := [].{
 	request! : {} => Str
 
 	## Where the page is: its path, and a query after a `?`, a trailing slash dropped. On the server,
-	## the request's; in the browser, `location.pathname` and `location.search`.
+	## the request's; in the browser, the location the page on screen was rendered for (committed by
+	## each navigation in place, D-040), a source the reading computation tracks.
 	location! : {} => Str
+
+	## The app, as its root renders (`Generated/Root.roc`, D-040): the build's id, whether rocx built
+	## it with `--dev`, and its route table (JSON rocx build wrote): the runtime keeps them, to know
+	## which links are the app's pages and whether a fetched page is of this build.
+	app! : Str, Bool, Str => {}
+
+	## In a handler: navigates to a path, a path with a query, or a query alone (`replace`: the entry
+	## replaced, not pushed; `scroll`: to the top, or the hash's element), once the handler is done.
+	## Anywhere else, it fails.
+	navigate! : Str, Bool, Bool => {}
+
+	## Whether a navigation is on its way (tracked): from a click until the new page is on screen.
+	is_routing! : {} => Bool
 
 	## On the server: the status the page is answered with (`<HttpStatusCode>`). In the browser, nothing.
 	status! : U16 => {}

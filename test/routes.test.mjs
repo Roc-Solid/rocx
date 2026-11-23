@@ -257,7 +257,7 @@ test("Root: the page at where it is, in its layouts, the root layout's <Errored>
 	const sources = new Map(files.map((file) => [file, file.endsWith("+server.roc") ? { view: null, meta: false, methods: ["get!"], middleware: null, docs: {} } : component({ meta: file === "blog/[slug]/+page.rocx" || file === "+error.rocx" })]));
 	const root = rootModule(table, { sources });
 	assert.match(root, /^import pf\.Html\nimport pf\.Router\nimport pf\.Server\nimport pf\.Errored\nimport pf\.HttpStatusCode\nimport BlogLayout\nimport BlogNewPage\nimport BlogSlugPage\nimport RootError\nimport RootLayout\nimport RootPage\n\nRoot := \[\]\.\{$/m, "the component route files; no endpoint");
-	assert.match(root, /\tview! = \|\{\}\| \{\n\t\tpath = Router\.location!\(\{\}\)\.path\n\t\tsegments = path\.split_on\("\/"\)\.keep_if\(\|segment\| !segment\.is_empty\(\)\)\.map\(Server\.decode_segment\)\n\t\tif \(segments == \["blog", "new"\]\) \{/, "matched as Routes matches, the fixed first");
+	assert.match(root, /\tview! = \|\{\}\| \{\n\t\tRouter\.app!\(\{ build: Root\.build, dev: Bool\.False, routes: Root\.routes \}\)\n\t\tpath = Router\.location!\(\{\}\)\.path\n\t\tsegments = path\.split_on\("\/"\)\.keep_if\(\|segment\| !segment\.is_empty\(\)\)\.map\(Server\.decode_segment\)\n\t\tif \(segments == \["blog", "new"\]\) \{/, "matched as Routes matches, the fixed first");
 	assert.match(
 		root,
 		/\} else if \(segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("blog"\)\) \{\n\t\t\tparams = \{ slug: segments\.get\(1\) \?\? "" \}\n\t\t\tHtml\.component\(\|\| RootLayout\.view!\(\{ params: \|\| params, meta: \|\| BlogSlugPage\.meta, children: \[Root\.guarded!\(\[Html\.component\(\|\| BlogLayout\.view!\(\{ params: \|\| params, meta: \|\| BlogSlugPage\.meta, children: \[Html\.component\(\|\| BlogSlugPage\.view!\(\{ params: \|\| params \}\)\)\] \}\)\)\]\)\] \}\)\)\n/,
@@ -268,6 +268,19 @@ test("Root: the page at where it is, in its layouts, the root layout's <Errored>
 	assert.match(root, /\tguarded! = \|children\| Errored\.view!\(\{ fallback: \|problem, _retry\| Root\.failed\(Errored\.status_of\(problem\), problem\), children: children \}\)/, "its status the failure's: a refused read's 4xx, else 500");
 	assert.match(root, /\tfailed = \|status, problem\| Html\.join\(\[Html\.component\(\|\| HttpStatusCode\.view!\(\{ code: status \}\)\), Html\.component\(\|\| RootError\.view!\(\{ status: \|\| status, problem: \|\| problem \}\)\)\]\)/);
 	assert.doesNotMatch(root, /document|Styles/, "the root layout is the document");
+	// The app, for the runtime (D-040): the build's id, and the route table the browser navigates
+	// by, each page with its levels' code (§18), in the order Root tries them.
+	assert.match(root, /^\tbuild : Str\n\tbuild = "0badc0de"$/m);
+	const routes = JSON.parse(JSON.parse(/^\troutes = (".*")$/m.exec(root)[1].replace(/\\\$/g, "$")));
+	assert.deepEqual(routes, {
+		pages: [
+			{ path: "/blog/new", levels: [{ code: "RootLayout", path: "/" }, { code: "BlogLayout", path: "/blog" }, { code: "BlogNewPage", path: "/blog/new" }] },
+			{ path: "/", levels: [{ code: "RootLayout", path: "/" }, { code: "RootPage", path: "/" }] },
+			{ path: "/blog/[slug]", levels: [{ code: "RootLayout", path: "/" }, { code: "BlogLayout", path: "/blog" }, { code: "BlogSlugPage", path: "/blog/[slug]" }] },
+		],
+		error: "RootError",
+	});
+	assert.match(rootModule(table, { sources, build: "7f3a91c2", dev: true }), /Router\.app!\(\{ build: Root\.build, dev: Bool\.True, routes: Root\.routes \}\)\n[\s\S]*\tbuild = "7f3a91c2"/, "a dev build says so");
 	// No root layout, no error page: a default document, and a default error page.
 	const bare = routeTable(["+page.rocx", "blog/+layout.rocx", "blog/+page.rocx"]);
 	const bareSources = new Map(["+page.rocx", "blog/+layout.rocx", "blog/+page.rocx"].map((file) => [file, component()]));

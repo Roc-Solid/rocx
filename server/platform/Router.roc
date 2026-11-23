@@ -5,19 +5,59 @@ import Submissions
 import Server
 
 ## Solid Router's, on both sides. Where the page is (`useLocation`): on the server, the request's
-## path and query; in the browser, `location.pathname` and `location.search`. A trailing slash is
-## dropped (`/syntax/` is `/syntax`), as the server drops it from what it answers. And submissions to
-## an endpoint: the latest (`useSubmission`), all of them (`useSubmissions`), and a handler's own,
+## path and query; in the browser, the location the page on screen was rendered for, which each
+## navigation in place changes (D-040). A trailing slash is dropped (`/syntax/` is `/syntax`), as the
+## server drops it from what it answers. Navigating (`useNavigate`, `useIsRouting`); and submissions
+## to an endpoint: the latest (`useSubmission`), all of them (`useSubmissions`), and a handler's own,
 ## without a form (`useAction`).
 Router := [].{
 
 	## The page's path (`/blog/rocx`) and its query (`page=2`, with no `?`; "" with none).
 	Location : { path : Str, query : Str }
 
-	## Where the page is: on the server, the request's path and query; in the browser,
-	## `location`'s.
+	## Where the page is: on the server, the request's path and query; in the browser, the location
+	## the page on screen was rendered for (`location.pathname` without the site's base, and
+	## `location.search`). Tracked: a hole or a memo that reads it runs again when a navigation in
+	## place changes it.
 	location! : {} => Location
 	location! = |{}| Router.parse(Host.location!({}))
+
+	## Navigates to `to` (Solid Router's `useNavigate`), from a handler: a path (`Paths` makes them),
+	## a path with a query, or a query alone (`?days=30`, on the page's own path). One of the app's
+	## pages is rendered in place, the old page staying until the new one's document is in
+	## (`is_routing!`); anything else (another site, a path no page has) the browser loads. Queued
+	## with the handler's writes, so a handler that waits for the server and runs again navigates
+	## once. Called while computing, it fails: rendering mustn't navigate. On the server no handler
+	## runs, and it does nothing.
+	##
+	##     <button on:click={|| navigate!(Paths.tasks_id({ id: task!().id }))}>Open</button>
+	navigate! : Str => {}
+	navigate! = |to| Host.navigate!(to, Bool.False, Bool.True)
+
+	## `navigate!` with Solid Router's options: `replace` replaces the history entry instead of
+	## pushing one; `scroll: Bool.False` leaves the scroll where it is (else the new page starts at
+	## the top, or at the element its hash names).
+	##
+	##     navigate_with!(Paths.lists_id({ id: list.id }), { replace: Bool.True, scroll: Bool.True })
+	navigate_with! : Str, { replace : Bool, scroll : Bool } => {}
+	navigate_with! = |to, options| Host.navigate!(to, options.replace, options.scroll)
+
+	## Whether a navigation in place is on its way (Solid Router's `useIsRouting`), tracked: true
+	## from the click until the new page is on screen, or the navigation fails or is overtaken;
+	## false on the server and while hydrating.
+	##
+	##     <div class="progress" class:on={Router.is_routing!({})} aria-hidden="true"></div>
+	is_routing! : {} => Bool
+	is_routing! = |{}| Host.is_routing!({})
+
+	## The app, told to the runtime as its page renders: `Generated/Root.roc` calls it first, and an
+	## app never does. `build` is the build's id (rocx build's hash of the app's sources): the server
+	## writes it on the page's bootstrap (`data-build`), and the browser loads a page of another
+	## build instead of rendering it. `dev`: rocx built it with `--dev`. `routes`: the app's pages,
+	## as JSON rocx build wrote (each page's path, `/lists/[id]`, and its levels' code, from the root
+	## layout to the page), which the browser navigates in place to.
+	app! : { build : Str, dev : Bool, routes : Str } => {}
+	app! = |told| Host.app!(told.build, told.dev, told.routes)
 
 	## A target (`/blog/rocx?page=2`) as a location.
 	parse : Str -> Location

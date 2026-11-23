@@ -2166,6 +2166,25 @@ nothing follows it. Solid Router is the model.
 query in place, `<A>`, `<Navigate>` (needs D-039). 3: prefetch, View Transitions. 4, if measured:
 the stylesheet as a cached file, a JSON payload, wasm splitting.
 
+**As built.**
+
+- Phase 1's foundation (nav-phase1, 2026-11-23): `Router.app!({ build, dev, routes })` on both
+  platforms (`Host.app!`), the first line of `Generated/Root.roc`'s `view!`. `routes` isn't the
+  typed list §3.2 sketches but JSON that rocx build writes as a constant (`Root.routes`), so the
+  server, which keeps only the build's id, encodes nothing per request: each page in the order
+  `Root` tries them, its path (`/lists/[id]`) and its levels from the root layout to the page, each
+  its code (the module, §18's id) and the path its file covers; a dev build's stories; the error
+  page's code. The build's id (`Root.build`) is FNV-1a, 32 bits, of the app's sources (its `.rocx`,
+  the `.roc` rocx didn't write, its content's Markdown), the packages and platform its headers name,
+  and the web platform with runtime.js and start.js (`Build.build_id!`). The host writes it on the
+  bootstrap (`<script type="module" data-rocx data-build="…" src="/rocx/start.js">`), as
+  `renderToString` does. `Router.location!` is a tracked source in the browser, the location the
+  page on screen was rendered for (`committed`), so a hole that reads it is live on both sides (it
+  carries its comments; it was static). `Router.navigate!`, `navigate_with!` (`Host.navigate!`,
+  queued with a handler's writes) and `is_routing!` (`Host.is_routing!`). In runtime.js: `routeOf(path)`
+  matches the table, `pageCode(level)` reaches a level's code (at once today), `codeOf(route)` all of
+  a page's, and `readOnce` (a location read once, in a component's body) is a hook phase 2 fills.
+
 **Reversible:** yes, until apps rely on kept layouts and `use_search_params!`.
 
 ## D-041 The host hands over a request as one record, with the connection's address

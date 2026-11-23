@@ -384,6 +384,12 @@ const escape = (text) => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;
 /** The bootstrap the host puts before a page's `</body>` (server/host/src/signals.rs's `START`). */
 const START = '<script type="module" data-rocx src="/rocx/start.js"></script>';
 
+/** The bootstrap with the build's id (`Router.app!`, D-040), as signals.rs's `start` writes it. */
+const startWith = (build) => (build === null ? START : `<script type="module" data-rocx data-build="${build.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;")}" src="/rocx/start.js"></script>`);
+
+/** A level's code, reached (D-040 §18): every level's is in the one wasm today, so at once. */
+const REACHED = Promise.resolve();
+
 /** Markup that is a whole document: `<html>` at its top, after a doctype and any holes' comments. */
 const DOCUMENT = /^\s*(?:<!--[^>]*-->\s*|<!doctype[^>]*>\s*)*<html[\s>]/i;
 
@@ -990,6 +996,19 @@ export class Runtime {
 		this.warned = new Set();
 		/** The tab's channels (`Endpoint.subscribe!`): one stream for all of them. */
 		this.hub = new Hub(this);
+		/** Where the page is (`Router.location!`, D-040), a source computations read: the location the
+		 * page on screen was rendered for (`committed`; null until hydrating, `location`'s meanwhile),
+		 * which a navigation in place commits. */
+		this.locationSource = { observers: new Set() };
+		this.committed = null;
+		/** Whether a navigation in place is on its way (`Router.is_routing!`), a source. */
+		this.routing = { on: false, observers: new Set() };
+		/** The app, as its root told it (`Router.app!`): `{ build, dev, routes, pages, error }`, the
+		 * route table's pages each `{ path, parts, levels }` (`parts`: its path's segments, a param
+		 * `null`), in the order `Root` tries them; null for an app that has no route table. Rendering as
+		 * a server would, `built` is the build's id, for the page's bootstrap. */
+		this.app = null;
+		this.built = null;
 		this.imports = this.makeImports();
 	}
 
@@ -1245,7 +1264,41 @@ export class Runtime {
 				if (handler?.kind !== "handler") throw new Failed(`Browser.call!("${name}") is a handler's: call it from an event, a frame or a timer, not while computing`);
 				handler.writes.push({ effect: name, arg: text(ap, al) });
 			},
-			js_location: () => this.give(this.location()),
+			// Where the page is: a source the computation reading it tracks, so a navigation in place
+			// runs it again (D-040). A component's body reads it once (`readOnce`: phase 2's levels).
+			js_location: () => {
+				this.touch(true);
+				const reader = this.current;
+				if (reader?.making && reader.making.untracked === 0) reader.making.sources.add(this.locationSource);
+				if (reader && (reader.kind === "component" || reader.making?.untracked > 0 || reader.untracked)) this.readOnce?.(reader);
+				return this.give(this.location());
+			},
+			// `Router.app!` (D-040): the build's id, whether it is a dev build, and the route table.
+			js_app: (bp, bl, dev, rp, rl) => {
+				const build = text(bp, bl);
+				if (this.onServer) {
+					this.built = build;
+					return;
+				}
+				const routes = text(rp, rl);
+				if (this.app?.build === build && this.app.routes === routes && this.app.dev === (dev === 1)) return;
+				this.app = { ...Runtime.routeTable(routes), build, dev: dev === 1, routes };
+			},
+			// `Router.navigate!`, `navigate_with!`: once the handler is done, as its writes are.
+			js_navigate: (tp, tl, replace, scroll) => {
+				if (this.onServer) return;
+				const to = text(tp, tl);
+				const handler = this.current;
+				if (handler?.kind !== "handler") throw new Failed(`Router.navigate!("${to}") is a handler's: call it from an event, a timer or an effect's apply, not while computing (render <Navigate> to send the visitor elsewhere as a page renders)`);
+				handler.writes.push({ navigate: { to, replace: replace === 1, scroll: scroll === 1 } });
+			},
+			// `Router.is_routing!`: tracked; false rendering as a server would.
+			js_is_routing: () => {
+				this.touch(true);
+				if (this.onServer) return 0;
+				this.track(this.routing);
+				return this.routing.on ? 1 : 0;
+			},
 			js_status: (code) => {
 				if (this.onServer) this.status = code;
 			},
@@ -1777,13 +1830,105 @@ export class Runtime {
 	}
 
 	/** Where the page is (`Router.location!`): rendering as a server would, the request's path and
-	 * query; in the browser, `location.pathname` without the site's base, and `location.search`. A
-	 * trailing slash is dropped. So the browser sees what the server does. */
+	 * query; in the browser, the location the page on screen was rendered for (`committed`), else
+	 * `location.pathname` without the site's base, and `location.search`. A trailing slash is
+	 * dropped. So the browser sees what the server does. */
 	location() {
-		const target = this.onServer ? (/^\S+ (\S*)/.exec(this.request)?.[1] ?? "/") : typeof location === "undefined" ? "/" : `${this.unbased(location.pathname)}${location.search}`;
-		const [path, query] = target.split(/\?(.*)/s);
+		if (this.onServer) return Runtime.target(/^\S+ (\S*)/.exec(this.request)?.[1] ?? "/");
+		return this.committed ?? this.here();
+	}
+
+	/** Where the browser is now, as `Router.location!` says it: `location`'s path without the base,
+	 * and its query. */
+	here() {
+		return Runtime.target(typeof location === "undefined" ? "/" : `${this.unbased(location.pathname)}${location.search}`);
+	}
+
+	/** A path and query as `Router.location!` gives it: a trailing slash dropped, no hash. */
+	static target(target) {
+		const [path, query] = target.split("#")[0].split(/\?(.*)/s);
 		const trimmed = path.length > 1 ? path.replace(/\/+$/, "") || "/" : path || "/";
 		return query === undefined ? trimmed : `${trimmed}?${query}`;
+	}
+
+	/** Commits where the page is (a navigation's, D-040): what read the location runs again. */
+	commitLocation(target) {
+		if (this.committed === target) return;
+		this.committed = target;
+		for (const observer of this.locationSource.observers) this.schedule(observer);
+	}
+
+	/** Says whether a navigation in place is on its way (`Router.is_routing!`). */
+	setRouting(on) {
+		if (this.routing.on === on) return;
+		this.routing.on = on;
+		for (const observer of this.routing.observers) this.schedule(observer);
+	}
+
+	// ---- The app's pages (D-040) ----
+
+	/** The route table rocx build wrote (`Router.app!`'s `routes`, JSON): its pages, each with its
+	 * path's segments (a `[param]` one `null`) and its levels' code, root layout first; the error
+	 * page's code. */
+	static routeTable(routes) {
+		const table = JSON.parse(routes);
+		const pages = (table.pages ?? []).map((page) => ({ ...page, parts: page.path.split("/").filter(Boolean).map((part) => (/^\[.+\]$/.test(part) ? null : part)) }));
+		return { pages, error: table.error ?? null };
+	}
+
+	/** The app's page at `path` (without the base, no query), as `Root` matches it, segment by
+	 * segment, in the table's order (a `[param]` any one segment): `{ page, params }`, the params
+	 * by name, decoded; null where the app has no page (or no table). */
+	routeOf(path) {
+		if (!this.app) return null;
+		let segments;
+		try {
+			segments = path.split("/").filter(Boolean).map(decodeURIComponent);
+		} catch {
+			return null;
+		}
+		for (const page of this.app.pages) {
+			if (page.parts.length !== segments.length || !page.parts.every((part, at) => part === null || part === segments[at])) continue;
+			const params = {};
+			page.path
+				.split("/")
+				.filter(Boolean)
+				.forEach((part, at) => {
+					if (page.parts[at] === null) params[part.slice(1, -1)] = segments[at];
+				});
+			return { page, params };
+		}
+		return null;
+	}
+
+	/**
+	 * A level's code (D-040 §18: `{ code, path }`, one of a route table page's `levels`), reached:
+	 * the one step a navigation takes to have what renders a level. Every level's code is in the
+	 * one wasm today, so it is there at once; with wasm splitting it would load the level's chunks
+	 * (named by `code`, under the build's id), the render waiting on them as it waits on the page's
+	 * document.
+	 */
+	pageCode(level) {
+		return REACHED;
+	}
+
+	/** The levels' code a page needs (its route's), reached: what a navigation waits on beside the
+	 * page's document. */
+	codeOf(route) {
+		return Promise.all((route?.page.levels ?? []).map((level) => this.pageCode(level)));
+	}
+
+	/** The URL `to` names (`Router.navigate!`'s, a link's): a path under the site's base, a query
+	 * or a hash alone on this page, or another site's. */
+	urlOf(to) {
+		return new URL(to.startsWith("/") && !to.startsWith("//") ? this.under(to) : to, location.href);
+	}
+
+	/** Navigates to `to` (`Router.navigate!`, `navigate_with!`): the browser loads it. */
+	navigate(to, { replace = false } = {}) {
+		const url = this.urlOf(to);
+		if (replace) location.replace(url.href);
+		else location.assign(url.href);
 	}
 
 	/**
@@ -2533,6 +2678,7 @@ export class Runtime {
 				source.list = source.list.filter((entry) => entry.id !== write.id);
 				this.submissionsChanged(source);
 			} else if (write.submit) this.sendAction(write.submit);
+			else if (write.navigate) this.navigate(write.navigate.to, write.navigate);
 		}
 	}
 
@@ -3522,6 +3668,7 @@ export class Runtime {
 	 */
 	hydrateDocument(doc = document, { strict = false } = {}) {
 		this.page = doc;
+		this.committed = this.here();
 		this.seed(doc);
 		const seeded = new Map(this.answers);
 		const root = () => new Computation(this, { kind: "root", owner: null, scope: {}, target: { document: doc } });
@@ -4336,6 +4483,7 @@ export class Runtime {
 		this.secrets = [];
 		this.titled = null;
 		this.headed = [];
+		this.built = null;
 		this.status = 200;
 		const wasOnServer = this.onServer;
 		this.onServer = true;
@@ -4353,7 +4501,7 @@ export class Runtime {
 		}
 		try {
 			const markup = this.html(JSON.parse(out), root, scope);
-			const html = DOCUMENT.test(markup) ? Runtime.documentOf(markup, this.recorded, Runtime.withoutSecrets(this.flashed, this.secrets), this.titled, this.pageScripts ?? [], this.headed) : `<!--app-->${markup}<!--/app-->`;
+			const html = DOCUMENT.test(markup) ? Runtime.documentOf(markup, this.recorded, Runtime.withoutSecrets(this.flashed, this.secrets), this.titled, this.pageScripts ?? [], this.headed, this.built) : `<!--app-->${markup}<!--/app-->`;
 			return { html, answers: this.recorded };
 		} finally {
 			this.onServer = wasOnServer;
@@ -4416,14 +4564,15 @@ export class Runtime {
 	 * first, unless the markup begins with one; the title the last `<Title>` rendered said, if one
 	 * did, as a `<title data-rocx>` before the `<head>`'s first `<title>` (or at its end); the flash
 	 * the page read (if it did), the answers script, the plugins' scripts (`scripts`, by URL) and
-	 * the bootstrap (start.js) just before the last `</body>`, or at the end with none. The
-	 * `<Meta>`s, `<Link>`s and `<Style>`s it rendered (`heads`) go before `</head>`.
+	 * the bootstrap (start.js, with the build's id if the page's root told it: `data-build`) just
+	 * before the last `</body>`, or at the end with none. The `<Meta>`s, `<Link>`s and `<Style>`s
+	 * it rendered (`heads`) go before `</head>`.
 	 */
-	static documentOf(markup, answers, flash = "", title = null, scripts = [], heads = []) {
+	static documentOf(markup, answers, flash = "", title = null, scripts = [], heads = [], build = null) {
 		if (title !== null) markup = Runtime.titled(markup, title);
 		markup = Runtime.headed(markup, heads);
 		const doctype = /^<!doctype/i.test(markup.trimStart()) ? "" : "<!doctype html>";
-		const before = `${flash ? Runtime.flashScript(flash) : ""}${Runtime.answersScript(answers)}${Runtime.scriptTags(scripts)}${START}`;
+		const before = `${flash ? Runtime.flashScript(flash) : ""}${Runtime.answersScript(answers)}${Runtime.scriptTags(scripts)}${startWith(build)}`;
 		const at = markup.lastIndexOf("</body>");
 		return at < 0 ? `${doctype}${markup}${before}` : `${doctype}${markup.slice(0, at)}${before}${markup.slice(at)}`;
 	}

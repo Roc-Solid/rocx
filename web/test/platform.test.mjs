@@ -1901,7 +1901,7 @@ window.mounted = true;
 
 /** What the document looks like rendered for `/inner/page?x=1`: as the server platform answers it. */
 const DOCUMENT_PAGE =
-	'<!doctype html> <html lang="en"><head><meta charset="utf-8"> <title>A document</title> <style>.count { color: red }</style> <script>window.ran = (window.ran ?? 0) + 1</script></head> <body class="page"><h1>A document</h1> <p class="at">/inner/page ? x=1</p> <button class="count">Clicked <!--x-->0<!--/x--> times</button> <!--loading--><output class="said"><!--x-->Said: hello<!--/x--></output><!--/loading--> <button class="again">Again</button> <svg class="dot" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"></circle></svg> ' +
+	'<!doctype html> <html lang="en"><head><meta charset="utf-8"> <title>A document</title> <style>.count { color: red }</style> <script>window.ran = (window.ran ?? 0) + 1</script></head> <body class="page"><h1>A document</h1> <p class="at"><!--x-->/inner/page<!--/x--> ? <!--x-->x=1<!--/x--></p> <button class="count">Clicked <!--x-->0<!--/x--> times</button> <!--loading--><output class="said"><!--x-->Said: hello<!--/x--></output><!--/loading--> <button class="again">Again</button> <svg class="dot" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"></circle></svg> ' +
 	'<!--nohydration--><section class="prose"><aside class="aside"><h2>Unhydrated</h2> <p>Words the browser never hydrates.</p></aside> <p class="once">Rendered once: 0, Said: quiet</p></section><!--/nohydration-->' +
 	`${Runtime.answersScript([RENDERED[0]])}<script type="module" data-rocx src="/rocx/start.js"></script></body></html>`;
 
@@ -2114,7 +2114,7 @@ test("a document under a base path: start.js fetches nothing outside it, and Rou
 		assert.equal(await tab.eval("window.ready.runtime.stats.patches"), 0, "the browser agrees: nothing patched");
 		const located = await tab.eval(`(() => {
 			const runtime = window.ready.runtime;
-			const at = (path) => (history.replaceState(null, "", path), runtime.location());
+			const at = (path) => (history.replaceState(null, "", path), runtime.here());
 			return [at("/rocx/a/b/?q=1"), at("/rocx/"), at("/rocx"), at("/rocxy/z"), at("/rocx/inner/page?x=1")];
 		})()`);
 		assert.deepEqual(located, ["/a/b?q=1", "/", "/", "/rocxy/z", "/inner/page?x=1"]);
