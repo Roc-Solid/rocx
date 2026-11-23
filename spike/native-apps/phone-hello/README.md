@@ -6,6 +6,6 @@ from `GET /api/greeting` through the app's contract (`Api`, under `<Loading>`), 
 text a button posts to `POST /api/echo`, the typed answer shown.
 
 ```sh
-bin/rocx dev examples/phone-hello    # the browser's, at http://localhost:8080
-native/android/build.sh examples/phone-hello    # the phone's APK (spike/native-apps/README.md)
+bin/rocx dev spike/native-apps/phone-hello    # the browser's, at http://localhost:8080
+native/android/build.sh spike/native-apps/phone-hello    # the phone's APK (spike/native-apps/README.md)
 ```

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds an app's Android APK (D-063's spike): native views, no JavaScript, no WebView.
 #
-#   native/android/build.sh examples/phone-hello [--origin http://10.0.2.2:8095] [--label "Phone hello"]
+#   native/android/build.sh spike/native-apps/phone-hello [--origin http://10.0.2.2:8095] [--label "Phone hello"]
 #
 # 1. The app's browser copy (rocx build --client), whose main.roc is the app on web/platform.
 # 2. Its Roc for the phone: web/platform's arm64musl target, the app alone as an archive (Roc has no

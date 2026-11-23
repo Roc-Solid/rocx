@@ -4154,10 +4154,10 @@ a kind's block, so a local of the same name shadows them.
 `spike/native-apps/DESIGN.md`. The web stays the primary target; this is background work.
 The Android spike is built (2026-11-23, branch `nxy7/native-android`, not merged): `native/core`
 (the engine and the 49 hosted functions), `native/android` (JNI, a Kotlin applier, `build.sh`, no
-Gradle) and `native/mac`; `examples/phone-hello` runs as native views on the emulator with typed
-calls to the server (`spike/native-apps/README.md`). The app's Roc is the fork's `arm64musl`
-archive linked by the NDK, so no fork change was needed. Native code was chosen; OTA is deferred
-(DESIGN.md, Later).
+Gradle) and `native/mac`; `spike/native-apps/phone-hello` runs as native views on the emulator
+with typed calls to the server (`spike/native-apps/README.md`). The app's Roc is the fork's
+`arm64musl` archive linked by the NDK, so no fork change was needed. Native code was chosen; OTA is
+deferred (DESIGN.md, Later).
 
 **Context.** The user wants iOS and Android apps from an app's `.rocx` files, the way React Native
 gives them, with Lynx's approach (a web-like vocabulary and a CSS subset rendered as native views)

@@ -1,10 +1,10 @@
 # Design: iOS and Android apps from the same .rocx files (D-063, Proposed)
 
 > **Status (2026-11-23):** the Android spike is built, on branch `nxy7/native-android`: one screen
-> (`examples/phone-hello`) runs as native Android views on the emulator, with typed calls to the
-> server, and the same `.rocx` in a browser. What was built, how to run it, its measurements and
-> gaps are in [README.md](README.md); §13 says where it sits in the phases, and §16 where the build
-> went otherwise than this design said, and why. Nothing is merged.
+> (`spike/native-apps/phone-hello`) runs as native Android views on the emulator, with typed calls
+> to the server, and the same `.rocx` in a browser. What was built, how to run it, its
+> measurements and gaps are in [README.md](README.md); §13 says where it sits in the phases, and §16
+> where the build went otherwise than this design said, and why. Nothing is merged.
 
 > A design spike, 2026-11-23, on master at 56221d2. The web stays the
 > primary target; this is background work, and nothing in it may slow the web down or change what

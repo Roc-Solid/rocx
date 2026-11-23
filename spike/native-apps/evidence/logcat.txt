@@ -1,8 +1,8 @@
 --------- beginning of main
-11-23 18:42:42.082  5090  5090 I rocx    : first batch: 2975 bytes, 15 views, applied in 10 ms, 77 ms after the process started
-11-23 18:42:42.105  5090  5090 I rocx    : first frame: 51 ms after onCreate (libapp.so loaded in 1 ms; the app mounted and its first batch applied in 10 ms)
-11-23 18:42:51.829  5090  5090 I rocx    : tap on #30: handled and the screen patched in 0.29 ms
-11-23 18:42:54.495  5090  5090 I rocx    : tap on #30: handled and the screen patched in 0.17 ms
-11-23 18:42:57.197  5090  5090 I rocx    : tap on #30: handled and the screen patched in 0.18 ms
-11-23 18:43:07.329  5090  5090 I rocx    : tap on #58: handled and the screen patched in 0.19 ms
-11-23 18:43:23.014  5090  5090 I rocx    : tap on #58: handled and the screen patched in 0.60 ms
+11-23 18:45:05.665  7203  7203 I rocx    : first batch: 2975 bytes, 15 views, applied in 11 ms, 57 ms after the process started
+11-23 18:45:05.824  7203  7203 I rocx    : first frame: 186 ms after onCreate (libapp.so loaded in 11 ms; the app mounted and its first batch applied in 13 ms)
+11-23 18:45:12.178  7203  7203 I rocx    : tap on #30: handled and the screen patched in 0.21 ms
+11-23 18:45:14.828  7203  7203 I rocx    : tap on #30: handled and the screen patched in 0.30 ms
+11-23 18:45:17.494  7203  7203 I rocx    : tap on #30: handled and the screen patched in 0.27 ms
+11-23 18:45:27.097  7203  7203 I rocx    : tap on #58: handled and the screen patched in 2.39 ms
+11-23 18:45:41.880  7203  7203 I rocx    : tap on #58: handled and the screen patched in 0.25 ms

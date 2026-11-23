@@ -1,5 +1,5 @@
-// The same page in a browser (D-063's spike: the phone's .rocx is the web's too): examples/phone-hello
-// served by its server (`bin/rocx dev examples/phone-hello --port 8095`), in Chromium's headless
+// The same page in a browser (D-063's spike: the phone's .rocx is the web's too): spike/native-apps/phone-hello
+// served by its server (`bin/rocx dev spike/native-apps/phone-hello --port 8095`), in Chromium's headless
 // shell (web/test/browser.mjs), hydrated by web/runtime.js. It taps the counter, waits for the GET's
 // answer, types and sends the POST, and saves web.png; it fails if any of that doesn't show.
 //

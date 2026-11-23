@@ -1,12 +1,13 @@
 # The Android spike (D-063): a `.rocx` screen as native Android views
 
 Built 2026-11-23 on branch `nxy7/native-android` (from `native-apps`), following
-[DESIGN.md](DESIGN.md). One screen, `examples/phone-hello`, runs as real Android views on the
-emulator, with no JavaScript and no WebView, and talks to the app's rocx server with the same typed
-endpoint calls the browser makes (`Api`, D-037). The same `.rocx` runs unchanged in a browser.
+[DESIGN.md](DESIGN.md). One screen, [phone-hello](phone-hello/), runs as real Android views on
+the emulator, with no JavaScript and no WebView, and talks to the app's rocx server with the same
+typed endpoint calls the browser makes (`Api`, D-037). The same `.rocx` runs unchanged in a
+browser.
 
 ```
-examples/phone-hello/routes/+page.rocx
+spike/native-apps/phone-hello/routes/+page.rocx
    │ rocx build --client                       (the browser's copy: main.roc on web/platform)
    ├─roc --target=wasm32 ──► app.wasm + web/runtime.js                 the browser, as before
    └─roc --target=arm64musl ──► libapp-roc.a (the app alone, an archive)
@@ -37,7 +38,8 @@ examples/phone-hello/routes/+page.rocx
   how the engine was debugged, and the build uses it to say what a phone ignores.
 - **`web/platform/main.roc`** gains two targets, `arm64musl` and `arm64mac`, each the app alone as
   an archive. Nothing else in `web/` changed; `web/runtime.js` is untouched.
-- **`examples/phone-hello`**: one page with a counter (a signal, a button, a text hole), a value
+- **`spike/native-apps/phone-hello`** (here, not in `examples/`, where every app has a page on the
+  docs site): one page with a counter (a signal, a button, a text hole), a value
   read from `GET /api/greeting` through `Api` with `Endpoint.get!` in a memo, shown under
   `<Loading>` and `<Errored>`, with "Ask again" (`refresh!`), and a field whose text a button sends
   to `POST /api/echo` with `Endpoint.send!(Api.post_api_echo({}), { text }, Call.fetch!)`, from a
@@ -64,10 +66,10 @@ config or dotfiles, and the AVD runs with `-read-only`, so its own files don't c
 
 ```sh
 # The app's server, on the Mac (the emulator reaches it at 10.0.2.2:8095)
-bin/rocx dev examples/phone-hello --port 8095
+bin/rocx dev spike/native-apps/phone-hello --port 8095
 
 # The APK: native/android/build/phone-hello/phone-hello.apk
-native/android/build.sh examples/phone-hello --origin http://10.0.2.2:8095 --label "Phone hello"
+native/android/build.sh spike/native-apps/phone-hello --origin http://10.0.2.2:8095 --label "Phone hello"
 
 # The emulator (headless, its AVD left as it is), the APK installed and opened
 ~/Library/Android/sdk/emulator/emulator -avd Medium_Phone_API_37.0 -no-window -no-audio \
@@ -82,7 +84,7 @@ spike/native-apps/evidence/run.sh
 node spike/native-apps/evidence/web-check.mjs
 
 # The app on the native host, on the Mac (no phone)
-(cd native && ROCX_APP_ARCHIVE=$PWD/../native/android/build/phone-hello/libapp-mac.a cargo build -p rocx-native-mac)
+ROCX_APP_ARCHIVE=$PWD/native/android/build/phone-hello/libapp-mac.a cargo build --manifest-path native/Cargo.toml -p rocx-native-mac
 native/target/debug/rocx-native-mac --origin http://127.0.0.1:8095 show wait:800 tap:Tap type:hello tap:Send wait:800 show
 ```
 
@@ -219,10 +221,10 @@ host's GPU.
 | Build, first | 81 s (the host built from nothing by cargo, under load) |
 | Build, a `.rocx` changed | 4.2–4.5 s (Roc 2.5–3 s; the Mac's check about 1 s) |
 | Build, the Kotlin shell changed | 10–18 s (kotlinc's start, R8) |
-| Launch to first frame (cold, `am start -W`) | 114–209 ms over 8 launches; 353 ms for the first launch after the emulator booted |
+| Launch to first frame (cold, `am start -W`) | 114–220 ms over 9 launches; 353 ms for the first launch after the emulator booted |
 | In it: `libapp.so` loaded | 1–11 ms |
 | In it: the app mounted, first batch applied | 4–40 ms (2,975 bytes of ops, 15 views) |
-| A tap to the screen patched | 0.14–0.60 ms (the handler, the flush, the ops applied; logcat `tap on #…`) |
+| A tap to the screen patched | 0.14–0.60 ms (the handler, the flush, the ops applied; logcat `tap on #…`); a "Send" that starts a request up to 2.4 ms |
 | On the Mac (`native/mac`, a debug build) | mounted in 1.3–2.5 ms |
 
 ## Gaps and next steps

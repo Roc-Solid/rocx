@@ -1,10 +1,11 @@
 Starting: Intent { cmp=dev.rocx.example.phonehello/dev.rocx.phone.RocxActivity }
+Warning: Activity not started, its current task has been brought to the front
 Status: ok
-LaunchState: COLD
+LaunchState: WARM
 Activity: dev.rocx.example.phonehello/dev.rocx.phone.RocxActivity
-TotalTime: 353
-WaitTime: 362
+TotalTime: 220
+WaitTime: 222
 Complete
 --------- beginning of main
-11-23 18:42:38.476  5026  5026 I rocx    : first batch: 2975 bytes, 15 views, applied in 30 ms, 134 ms after the process started
-11-23 18:42:38.567  5026  5026 I rocx    : first frame: 146 ms after onCreate (libapp.so loaded in 1 ms; the app mounted and its first batch applied in 40 ms)
+11-23 18:45:02.195  7051  7051 I rocx    : first batch: 2975 bytes, 15 views, applied in 24 ms, 3171 ms after the process started
+11-23 18:45:02.259  7051  7051 I rocx    : first frame: 91 ms after onCreate (libapp.so loaded in 1 ms; the app mounted and its first batch applied in 24 ms)

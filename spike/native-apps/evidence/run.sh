@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The Android spike's evidence (D-063), on a running emulator, against the app's server on the Mac
-# (`bin/rocx dev examples/phone-hello --port 8095`; the emulator reaches it at 10.0.2.2:8095):
+# (`bin/rocx dev spike/native-apps/phone-hello --port 8095`; the emulator reaches it at 10.0.2.2:8095):
 #
 #   spike/native-apps/evidence/run.sh [path/to/phone-hello.apk]
 #
