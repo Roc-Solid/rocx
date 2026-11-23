@@ -24,8 +24,9 @@
 //! is cancelled and its connection closed), and jumps back to the call's guard, as a crash does
 //! (`cut_off`), so the call can't carry on past its limit whatever it does with errors. Calls it
 //! runs inside it share its deadline; an actor it asks doesn't (its turn is its own, and ends as
-//! it would). Roc that loops without an effect is ended where it runs (`preempt`, D-057), which
-//! is told the deadline of the call running on each thread as calls start, pause, resume and end.
+//! it would). In a dev build, Roc that loops without an effect is ended where it runs (`preempt`,
+//! D-057), which is told the deadline of the call running on each thread as calls start, pause,
+//! resume and end.
 
 use crate::abi::{
     AnonStruct2e6fc7635560c0c3 as Isolated, AnonStruct3ed536693d8b85f3 as Answered, AnonStructFa59a42fc999ca94 as Heard, HostDbExecuteResult,

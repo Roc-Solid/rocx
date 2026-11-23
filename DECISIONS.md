@@ -2870,7 +2870,15 @@ job's time limit ended it only at an effect that waits, so Roc looping without o
   functions of their own) ends it holding nothing. A jump from any instruction of Roc's code is
   what `roc_crashed` already does (a crash may happen anywhere in it), and what the call allocated
   is in its list and freed. Where the segment can't be found, or holds the host's code too, nothing
-  is interrupted, and the log says so at start.
+  is interrupted, and the log says so the first time a call with a deadline runs. **Only dev
+  builds have that segment**: the fork's fast dev link (`src/cli/macho/PatchLink.zig`) makes it;
+  an optimized build (`--opt=speed`: LLVM, and the system's linker) puts Roc's code in `__TEXT`
+  after the host's, so there a loop without an effect still holds its worker (the loop test is
+  skipped in optimized builds). The user chose (2026-11-23) to land this as it is and build next
+  an "in Roc" flag the host keeps (set while a guarded call runs Roc, cleared by every function
+  Roc calls, a test failing on one that doesn't), the interrupt redirecting only when it is set
+  and the PC is in the executable, for every build; Roc's code in a section of its own, from the
+  fork's LLVM backend, is the cleaner answer for later (TODO.md).
 - **guard's overrides in a table** (`FlagStore.plugin({})`, D-033): plugin `guard`, migration
   `guard/0001_flags` (`guard_flags`: a row a flag, its override as JSON, `""` once reset), a start
   that reads the table into `Kv` and keeps `guard:flags-kept` (`Plugin.keep!`), and `needs:

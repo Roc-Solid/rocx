@@ -1100,7 +1100,11 @@ test("jobs: a time limit cuts a run off at its next wait (Postgres, another serv
 	}
 });
 
-test("jobs: a time limit cuts off Roc that never waits (D-057): a loop on numbers alone and one making and dropping text, each ended as a crash is, in the middle of its loop; tried again, then failed; its worker goes on; nothing left held", { skip: skipDb }, async () => {
+/** Why a build can't cut off Roc that never waits: an optimized one links Roc's code into the host's
+ * `__TEXT` (only the fork's fast dev link, `--opt=dev`, gives it a segment of its own: D-057). */
+const noInterrupt = process.env.ROCX_TEST_OPT === "speed" && "an optimized build's Roc code can't be told from the host's: a limit cuts a call off at an effect that waits (D-057)";
+
+test("jobs: a time limit cuts off Roc that never waits (D-057): a loop on numbers alone and one making and dropping text, each ended as a crash is, in the middle of its loop; tried again, then failed; its worker goes on; nothing left held", { skip: skipDb || noInterrupt }, async () => {
 	const before = await settled();
 	const started = performance.now();
 	const loops = ["spin", "grow"];

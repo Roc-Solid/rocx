@@ -20,9 +20,11 @@
 //!   (`roc_alloc`, `roc_realloc`, `roc_dealloc`, called only by Roc's code) ends the call there,
 //!   holding nothing, and the next signal finds it in Roc's code otherwise.
 //!
-//! Where the app's code can't be told from the host's (a build that doesn't put Roc's code in a
-//! segment of its own), nothing is interrupted, the log says so once, and a time limit cuts a call
-//! off only at an effect that waits, as before.
+//! Where the app's code can't be told from the host's, nothing is interrupted, and a time limit cuts
+//! a call off only at an effect that waits, as before: an optimized build (`--opt=speed`: LLVM, and
+//! the system's linker, which puts Roc's code in the host's `__TEXT`); only the fork's fast dev link
+//! (`--opt=dev`, as `rocx dev` and the tests build) gives it a segment of its own. The log says so
+//! once, the first time a call with a deadline runs.
 
 use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -59,6 +61,10 @@ static ROC_LOW: AtomicUsize = AtomicUsize::new(0);
 static ROC_HIGH: AtomicUsize = AtomicUsize::new(0);
 
 static WATCHDOG: OnceLock<Thread> = OnceLock::new();
+/// Whether calls past their deadline are interrupted (`start` found Roc's code).
+static AVAILABLE: AtomicBool = AtomicBool::new(false);
+/// Whether the log has said they aren't, in this build.
+static SAID: AtomicBool = AtomicBool::new(false);
 /// Whether the watchdog sleeps until a deadline is set (none was, the last time it looked).
 static IDLE: AtomicBool = AtomicBool::new(false);
 
@@ -77,10 +83,7 @@ fn nanos(at: Instant) -> u64 {
 /// Without Roc's code found, nothing: deadlines are checked by effects that wait alone.
 pub fn start() {
     let _ = epoch();
-    let Some((low, high)) = roc_code() else {
-        crate::logging::warn("rocx server: Roc's code can't be told from the host's in this build: a time limit cuts a call off only at an effect that waits", &[]);
-        return;
-    };
+    let Some((low, high)) = roc_code() else { return };
     ROC_LOW.store(low, Ordering::Relaxed);
     ROC_HIGH.store(high, Ordering::Relaxed);
     unsafe {
@@ -95,7 +98,13 @@ pub fn start() {
     }
     if let Ok(started) = std::thread::Builder::new().name("rocx-deadlines".into()).spawn(watch) {
         let _ = WATCHDOG.set(started.thread().clone());
+        AVAILABLE.store(true, Ordering::Release);
     }
+}
+
+/// Whether a call past its deadline is interrupted in this build (see above).
+pub fn available() -> bool {
+    AVAILABLE.load(Ordering::Acquire)
 }
 
 /// Gives this thread (one of Roc's, starting) its slot.
@@ -114,6 +123,9 @@ fn slot() -> Option<&'static Slot> {
 /// Whatever was noted for the call before is forgotten.
 pub fn set_deadline(deadline: Option<Instant>) {
     let Some(slot) = slot() else { return };
+    if deadline.is_some() && !available() && !SAID.swap(true, Ordering::Relaxed) {
+        crate::logging::info("rocx server: a time limit cuts a call off at an effect that waits, not in Roc that never waits: this build's Roc code can't be told from the host's (an optimized build)", &[]);
+    }
     let at = deadline.map_or(0, nanos);
     slot.pending.store(false, Ordering::Relaxed);
     slot.deadline.store(at, Ordering::SeqCst);

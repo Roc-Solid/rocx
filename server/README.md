@@ -933,7 +933,7 @@ actor's task starts. An isolated call may be given a time limit
 call as a crash would (`cut_off` in `host/src/hosted.rs`), so the only frame it skips that is the
 host's is that effect's own, which holds nothing by then.
 
-Roc that never waits is cut off too (D-057, `host/src/preempt.rs`). Each of Roc's threads keeps the
+Roc that never waits is cut off too, in a dev build (D-057, `host/src/preempt.rs`). Each of Roc's threads keeps the
 deadline of the call running on it (none while it is paused), and a thread of the host's own
 signals a thread whose call is past its deadline (SIGURG), every few milliseconds until the call has
 ended. The signal's handler looks where the call was: in Roc's compiled code, which Roc's linker
@@ -943,8 +943,10 @@ skipping only Roc's frames; anywhere else (a hosted function, the C library: a l
 only notes it, and the call ends at the next allocation Roc asks for (which only Roc's code calls),
 or at the next signal that finds it in Roc's code. The tests cut off two jobs that loop forever
 without an effect, one on numbers alone and one making and dropping text, in their time limit, with
-nothing left held. A build whose Roc code can't be told from the host's (no such segment) cuts a
-call off only at an effect that waits, and the log says so at start.
+nothing left held. Only the fork's fast dev link (`--opt=dev`: `rocx dev`'s builds and the tests')
+gives Roc's code that segment; an optimized build (`--opt=speed`: LLVM, and the system's linker)
+puts it in the host's `__TEXT`, so there a call is cut off only at an effect that waits, and the
+log says so the first time a call with a time limit runs ("Not yet").
 
 At start the host asks the platform's Roc which background loops to run (`roc_background_count`:
 the plugins' loops and checks: the jobs plugin's workers and its schedules' loop, the email
@@ -1089,6 +1091,10 @@ browser runtime's own render.
   the statement's plan for these).
 - Actors' timers outlive a restart, but are all set again at start, each a task in memory: an app
   with millions of far timers would want them read a window at a time.
+- In an optimized build (`--opt=speed`), a job's time limit cuts it off only at an effect that
+  waits: Roc that loops without one holds its worker, since the interrupt (D-057) can't tell Roc's
+  code from the host's there. Next: a flag the host keeps while Roc runs, cleared by every function
+  Roc calls; later, Roc's code in a section of its own, from the fork's LLVM backend.
 - `Http`: HTTP/1.1 only (no HTTP/2); no SOCKS proxy; a request's own body is sent whole (an
   answer's may come in chunks: `fetch_chunks!`).
 - `Forward`: an upstream's body only, not the other way (a request's body streamed to S3 as it
