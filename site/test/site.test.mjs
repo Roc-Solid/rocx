@@ -133,7 +133,7 @@ test("the counter counts, and resets", { skip }, async () => {
 	await page.click('.counter [aria-label="One less"]');
 	// Its own class, then its <style>'s (scoped to it), then the one a signal turned on.
 	assert.match(await page.eval("document.querySelector('.counter').className"), /^counter rx-[0-9a-z]{6} negative$/);
-	assert.equal(await page.eval("getComputedStyle(document.querySelector('.counter')).display"), "flex", "its <style> applies, from the page's head");
+	assert.equal(await page.eval("getComputedStyle(document.querySelector('.counter')).display"), "grid", "its <style> applies, from the page's head");
 	assert.match(await text(page, '[data-stat="hydrated"]'), /^Awake \d+ ms/);
 });
 
