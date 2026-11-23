@@ -138,12 +138,6 @@ view! = |_|
 					a number into one by itself.
 				</p>
 			</Callout>
-			<p>
-				It adds what the compiler can't know about the platform. A report that the builtin <code>Try</code> has
-				no <code>encoder_for</code> or <code>parser_for</code>, met when an endpoint takes or answers one,
-				gets a hint after it: a <code>Try</code> can't go as JSON on this Roc, and a tag union,
-				<code>{"[Ok(a), Err(e)]"}</code>, can.
-			</p>
 
 			<Heading id="stories">Stories</Heading>
 			<p>

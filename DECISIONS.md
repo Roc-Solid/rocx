@@ -3238,8 +3238,8 @@ on them (the `Dict` of keys is a plain speed-up).
 
 ## D-054 Solid Router's actions, createOptimistic, @solidjs/meta's head elements, form bodies in OpenAPI
 
-**Status.** Built (2026-11-23): items 1 to 4 of the brief; item 5 (`Try` across the wire) can't be
-built on this Roc, and is reduced in `test/compiler-bugs/try-json-codec`.
+**Status.** Built (2026-11-23): items 1 to 4 of the brief. Item 5 (`Try` across the wire) since the
+fork pin 4674b5973d (2026-11-24), which has upstream's fix for it (`test/compiler-bugs/try-json-codec`).
 
 **Context.** D-030 built Solid Router's `useAction` and `useSubmissions`, with an optimistic value
 derived from the submissions on their way, and left the rest: `.with`, a submission's `retry`,
@@ -3334,9 +3334,12 @@ endpoints read a form's fields by the same type (examples/journal's no-JavaScrip
   Err(err)].{ parser_for : _, encoder_for : _ }` and the canonicalizer makes derived methods of
   them, but the checker finds neither on `Try` (a "missing method" error on the fork rocx pins and on
   nightly-2026-11-18), while the same union as an app's own nominal type writes `{"Ok":5}` and reads
-  it back. Reduced in `test/compiler-bugs/try-json-codec`; the tag union stands in, as before, and
-  `rocx check`'s hint stays. Proposal: a fork fix where the checker resolves a builtin's declared
-  derived methods (the user opens the PR), then drop the hint.
+  it back. Reduced in `test/compiler-bugs/try-json-codec`; the tag union stood in, and `rocx check`
+  added a hint naming it. **Since 4674b5973d (2026-11-24)** the fork has upstream's fix (issue 13112:
+  52b8b05fa5, 48043c2f08, cherry-picked after its tests): a `Try` is its tag union to its derived
+  codec, `{"Ok":3}` and `{"Err":"Empty"}`, except the format's own `Try(a, [Null])` and a record
+  field's `Try(a, [Missing])`. The hint is gone, and the server test app's `/probe/length` answers a
+  `Try`.
 
 **What it costs.** Four hosted functions on both platforms (`head!`, `revalidate!`,
 `submission_retry!`, `optimistic_set!`; the last two do nothing on the server), the glue regenerated;

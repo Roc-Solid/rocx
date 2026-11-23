@@ -8,8 +8,9 @@ the type checker finds neither on `Try`: `Json.to_str_try(failed)` and `Json.par
 `Try(U64, Str)` are "missing method" errors (Fails.roc). The same union as a nominal type of the
 app's own (`Outcome(ok, err) := [Ok(ok), Err(err)].{ encoder_for : _, parser_for : _ }`) writes
 `{"Err":"no"}` and reads `{"Ok":5}`, as a structural union does (Workaround.roc). So the derive
-works; the builtin's declared one isn't reached (Builtin.roc's methods are looked up by another
-path).
+works; the checker allowed a builtin `Try` in a derived codec only in the format's two conventions,
+`Try(a, [Null])` (a value that may be `null`) and a record field's `Try(a, [Missing])`, and
+reported every other `Try` as missing the method.
 
     ./repro.sh
 
@@ -21,6 +22,14 @@ path).
     All (3) tests passed
     exit 0
 
-Workaround in rocx: what crosses the wire as a `Try` is written as the structural union
-`[Ok(a), Err(e)]` (read by a `match` as a `Try` is), and `rocx check` names it under the compiler's
-report (web/README.md, JSON).
+**Fixed** in the fork since 4674b5973d (2026-11-24), with upstream's fix for issue 13112 (its tests
+from 2abc4dc15d, then 52b8b05fa5 and 48043c2f08): the checker accepts a builtin `Try` whose error
+isn't the format's `[Null]` or a record field's `[Missing]` as the tag union it is, and Monotype
+and Boxy derive its codec from its backing. Both files pass there:
+
+    == roc test Fails.roc
+    All (2) tests passed
+    exit 0
+
+Until then rocx wrote what crossed the wire as a `Try` as the structural union `[Ok(a), Err(e)]`,
+and `rocx check` named it under the compiler's report; both are gone (D-054).

@@ -3481,7 +3481,7 @@ test("endpoint reads: a read while the server renders is answered by the endpoin
 	);
 });
 
-test("endpoints: what a page reads is answered over HTTP too, behind its middleware; JSON both ways (F64s, a tag union, nominal types); and /rocx/call/ is gone", { skip }, async () => {
+test("endpoints: what a page reads is answered over HTTP too, behind its middleware; JSON both ways (F64s, a Try, nominal types); and /rocx/call/ is gone", { skip }, async () => {
 	const shouted = await get("/probe/shout/psst", { headers: { accept: "application/json" } });
 	assert.equal(shouted.status, 200);
 	assert.equal(shouted.headers.get("content-type"), "application/json");
@@ -3498,7 +3498,7 @@ test("endpoints: what a page reads is answered over HTTP too, behind its middlew
 	const infinite = await posted("/probe/measure", '{"seconds":1.5,"parts":0}');
 	assert.equal(infinite.status, 500, "an answer with a number JSON can't write");
 	assert.equal(await infinite.text(), "POST /probe/measure's answer: it holds a number JSON can't write (an F64 that is NaN or an infinity)");
-	assert.deepEqual([await (await posted("/probe/length", '"Roc"')).text(), await (await posted("/probe/length", '""')).text()], ['{"Ok":3}', '{"Err":"Empty"}'], "a tag union in Try's place, as JSON");
+	assert.deepEqual([await (await posted("/probe/length", '"Roc"')).text(), await (await posted("/probe/length", '""')).text()], ['{"Ok":3}', '{"Err":"Empty"}'], "a Try, as JSON");
 	const awarded = await posted("/probe/award", '{"badge":{"name":"gold"},"points":1.25}');
 	assert.deepEqual(
 		[awarded.status, await awarded.text()],

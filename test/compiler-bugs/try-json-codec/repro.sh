@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Runs both: Fails.roc doesn't compile (the builtin Try has no encoder_for or parser_for),
-# Workaround.roc's expects pass (the same union as a nominal type of the app's own).
+# Runs both: Fails.roc doesn't compile on the nightly (the builtin Try has no encoder_for or
+# parser_for) and passes on the fork since 4674b5973d; Workaround.roc's expects pass on both (the same
+# union as a nominal type of the app's own).
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 roc=${ROC:-$(ls -d "$here"/../../../.tools/roc/roc_nightly-*/roc 2>/dev/null | head -1)}

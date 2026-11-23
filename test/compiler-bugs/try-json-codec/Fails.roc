@@ -1,7 +1,7 @@
-## The builtin `Try` as JSON: `roc test Fails.roc` fails to compile ("does not have a method named
-## encoder_for", and `parser_for`), on the fork rocx pins and on nightly-2026-11-18-a520eed, though
-## Builtin.roc declares both derived (`Try(ok, err) := [Ok(ok), Err(err)].{ parser_for : _,
-## encoder_for : _ }`).
+## The builtin `Try` as JSON: `roc test Fails.roc` fails to compile on nightly-2026-11-18-a520eed
+## ("does not have a method named encoder_for", and `parser_for`), though Builtin.roc declares both
+## derived (`Try(ok, err) := [Ok(ok), Err(err)].{ parser_for : _, encoder_for : _ }`). Its expects
+## pass on the fork since 4674b5973d.
 Fails := [].{
 	failed : Try(U64, Str)
 	failed = Err("no")

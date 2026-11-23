@@ -423,12 +423,10 @@ same components natively; this one hydrates them.
 - **JSON.** What crosses as JSON (an endpoint's body, result and events, `Browser.call!`'s
   argument) is written with `Json.to_str_try`, so
   an `F64` goes as a number; one JSON can't write (NaN, an infinity) fails the call (an endpoint's
-  result is a 500 that says so). Their where clauses read `Json.Encodable(e)`. The builtin `Try`
-  has no `encoder_for` or `parser_for` on this Roc, and nothing outside the builtins can give it
-  one: `rocx check` adds a hint under the compiler's report, naming the tag union to write instead
-  (`[Ok(a), Err(e)]`, read by a `match` as a `Try` is). The compiler declares both for `Try`, but
-  doesn't find them (an app's own `Outcome(ok, err) := [Ok(ok), Err(err)]` with derived codecs
-  writes `{"Ok":5}`): reduced in `test/compiler-bugs/try-json-codec` (D-054).
+  result is a 500 that says so). Their where clauses read `Json.Encodable(e)`. A `Try` goes as
+  its tag: `{"Ok":5}`, `{"Err":"Empty"}` (D-054). Two shapes are JSON's own instead: `Try(a,
+  [Null])` is a value that may be `null`, and a record field's `Try(a, [Missing])` a field that may
+  be left out.
 - **On a server**, nothing waits: every hole runs once, no effect or timer runs and no cleanup is
   kept, an endpoint's read (noted under `GET <url>`) is answered from the answers given
   (`renderToString({ answers })`, a page's answers script; one not there fails with 599), and the HTML
@@ -861,8 +859,6 @@ fetching the document; `<Navigate>` replacing its entry; a GET form navigating i
   over everything inside. Where the browser has no popovers (Chrome before 114, Safari before 17,
   Firefox before 125), one lifted inside a box that makes fixed elements its own stays clipped by
   that box.
-- **`Try` across the wire:** the builtin has no JSON encoder or parser on this Roc, though it declares
-  them (`test/compiler-bugs/try-json-codec`, D-054); a tag union stands in.
 - **The rules a component must keep:** read async values in holes, not in its body, and write
   signals only in handlers (an effect's apply, a cleanup and a timer's tick are handlers); the
   runtime refuses the first.

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { RocxError, rocString, transpile, transpileModule, viewsDefined } from "../rocx-cli/rocx.mjs";
-import { remap, TRY_HINT } from "../rocx-cli/rocx.mjs";
+import { remap } from "../rocx-cli/rocx.mjs";
 import { scopeClass } from "../rocx-cli/rocx.mjs";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -216,13 +216,6 @@ test("server! is gone (D-023): refused at its line, saying what to write instead
 			{ reason: "server!(…) is gone (D-023): define a GET endpoint (get! in a route's +server.roc) and read it with Endpoint.get!(Api.get_…(params))", line: 3, column: 9 },
 		);
 	}
-});
-
-test("the compiler's report that Try has no parser_for (an endpoint's body or answer) gets a hint: the tag union to write", () => {
-	const report = ["── ✗ missing method ──── Finder.roc:7:2", "", "A where clause requires the parser_for method here, but the type being used", "doesn't have that method.", "", "The value's type, which does not have a method named parser_for, is:", "", "    Try(Str, [NotFound])", "", "Hint: For this to work, the type would need a method named parser_for."].join("\n");
-	const hinted = remap(report).split("\n");
-	assert.deepEqual(hinted.slice(7, 10), ["    Try(Str, [NotFound])", "", TRY_HINT]);
-	assert.equal(remap(report.replace("Try(Str, [NotFound])", "Thing")), report.replace("Try(Str, [NotFound])", "Thing"), "another type's report is as it was");
 });
 
 test("components: a record spread on a component passes its fields on as they are (D-052): Solid's merge (the last of a name wins) and, with a pattern's ..rest, its omit", () => {

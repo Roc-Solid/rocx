@@ -72,8 +72,6 @@ export const UNSCOPED_ELEMENTS = new Set(["head", "meta", "title", "link", "base
 // ---- rocx check, rocx fmt (Remap.roc, Format.roc) ----
 
 export const remap = (output) => call("remap", output);
-export const TRY_HINT =
-	"Hint: the builtin Try can't go as JSON on this Roc (it has no encoder_for or parser_for, and nothing outside the builtins can give it one): what an endpoint or Browser.call! takes or answers can't be one, or hold one. Use a tag union instead, [Ok(a), Err(e)], which a match reads as it reads a Try.";
 export const formatRocx = (source, file = "input.rocx", { roc = "roc" } = {}) => call("formatRocx", source, file, { roc });
 export const rocFmt = (code, { roc = "roc", file = "<stdin>" } = {}) => call("rocFmt", code, { roc, file });
 

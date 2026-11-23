@@ -68,31 +68,24 @@ When an item lands, delete its line here in the same commit.
 
 ## The Roc compiler (the fork in `~/roc-fork`)
 
-- **Reduced repros in `test/compiler-bugs/`, each worked around in the repo** (`just compiler-bugs`
-  runs them):
-  - `json-to-str-try-nominal`: `Json.to_str_try` of a record holding a nominal type with a derived
-    encoder crashes `boxy_lowering`;
-  - `two-formats-one-where`: a where clause naming two formats (`Json` and D-038's `FormBody`)
-    crashes `boxy_lowering`;
-  - `list-map-reuse-opt-speed`: `List.map` writes past its items under `--opt=speed` when the
-    closures' captures come from elsewhere;
-  - `middleware-skipped-opt-speed`: a chain of three effectful closures skips its last step under
-    `--opt=speed`;
-  - `two-guarded-routes-opt-speed`: two routes guarded by a capturing middleware crash an
-    `--opt=speed` server at start.
-  - `try-json-codec`: the builtin `Try` has no JSON encoder or parser, though Builtin.roc declares
-    them derived (an app's own `[Ok(ok), Err(err)]` nominal type has both): a tag union stands in for
-    a `Try` across the wire (D-054).
-  - `huge-frame-opt-speed`: `--opt=speed` inlines every closure of a lambda set into one function,
-    whose stack frame grows with the program; the docs site's server, with D-040's route levels,
-    passed the 8 MiB a render has (12.4 MB), so every app's optimized server is built
-    `--specialize=no` (D-064; `ROCX_SPECIALIZE=yes` opts back in). The cure is the compiler's
-    (shared stack slots for a switch's cases, or closure bodies kept out of line past a size); once
-    it lands, measure the site's and plate's frames specialized again and make it the default back.
+- **Reduced repros in `test/compiler-bugs/`** (`just compiler-bugs` runs them, on the nightly and
+  on the fork). At the pin 4674b5973d all pass but these:
+  - `two-formats-one-where`: a where clause asking for one method at two types (`Json` and D-038's
+    `FormBody`) is a type error that `roc check` reports, but the dev backend and `roc test` crash
+    in `boxy_lowering` instead of reporting it; rocx's form reader is made where the arg's type is
+    known (`Endpoint.local`). The user reports it upstream.
+  - `huge-frame-opt-speed`: mostly fixed at 4674b5973d (slots given to builtin calls get lifetime
+    markers): specialized, the docs site's largest frame is 264 KiB (12.4 MB before) and its pages
+    render; plate 164 KiB (848), journal 64 (372). What's left still grows with a lambda set's
+    closures (about 24 bytes each in their dispatcher; the README says where, and that LLVM 23 gives
+    the same dispatcher 608 bytes). Every app's optimized server is still built `--specialize=no`
+    (D-064, `ROCX_SPECIALIZE=yes` opts back in): whether specialization becomes the default again
+    is D-064's to decide, with those numbers.
 - **Not reduced yet:** a rigid `..others` beside an app's own error tag in one body doesn't
   type-check (examples/uptime names `JobErr` instead).
-- **Fixes prepared on the fork wait for the user to open them as PRs** (boxy, `List.map` reuse).
-  Nothing is pushed from here.
+- **Fixes prepared on the fork wait for the user to open them as PRs** (boxy, `List.map` reuse,
+  and the slot lifetimes of branch `rocx-fixes-2`, 0eb36c9c3b and 4674b5973d; its Try commits are
+  upstream's). Nothing is pushed from here.
 
 ## Tooling and distribution
 

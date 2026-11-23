@@ -13,12 +13,6 @@ Remap := [].{
 	marker : Str
 	marker = "# rocx: generated from"
 
-	## What `rocx check` adds to the compiler's report that the builtin `Try` has no JSON encoder or
-	## parser: it can't go as JSON on this Roc (an endpoint's body or answer, a `Browser.call!`'s
-	## argument), and a tag union can.
-	try_hint : Str
-	try_hint = "Hint: the builtin Try can't go as JSON on this Roc (it has no encoder_for or parser_for, and nothing outside the builtins can give it one): what an endpoint or Browser.call! takes or answers can't be one, or hold one. Use a tag union instead, [Ok(a), Err(e)], which a match reads as it reads a Try."
-
 	## What `rocx check` adds to a report about a line where a component is given a record's fields
 	## (`<Base {...rest} />`, D-052), which rocx wrote as Roc's record update, `{ ..rest, size: … }`,
 	## since it doesn't know the record's fields.
@@ -383,7 +377,7 @@ Remap := [].{
 				}
 			}
 		}
-		Str.join_with(Remap.hint_spread(Remap.hint_try($out)), "\n")
+		Str.join_with(Remap.hint_spread($out), "\n")
 	}
 
 	## Where a spread's hint goes (`hint_spread`): lines no report has.
@@ -426,33 +420,6 @@ Remap := [].{
 			}
 		}
 		$out.concat($pending.fold([], |shown, hint| shown.concat(["", hint])))
-	}
-
-	## Adds the hint after each report that `Try(…)` has no `encoder_for` or `parser_for`.
-	hint_try : List(Str) -> List(Str)
-	hint_try = |lines| {
-		var $out = []
-		var $missing = Bool.False
-		for line in lines {
-			$out = $out.append(line)
-			if line.contains("requires the encoder_for method") or line.contains("requires the parser_for method") {
-				$missing = Bool.True
-			} else if line.starts_with("── ") {
-				$missing = Bool.False
-			} else if $missing and Remap.starts_spaced_try(line) {
-				$out = $out.concat(["", Remap.try_hint])
-				$missing = Bool.False
-			}
-		}
-		$out
-	}
-
-	## Whether a line is `/^\s+Try\(/`.
-	starts_spaced_try : Str -> Bool
-	starts_spaced_try = |line| {
-		bytes = line.to_utf8()
-		start = Text.skip_space(bytes, 0)
-		start > 0 and Text.starts_with_at(bytes, "Try(".to_utf8(), start)
 	}
 
 	## `rocx internal`'s calls of this module's functions (rocx-cli/rocx.mjs names them), by name.

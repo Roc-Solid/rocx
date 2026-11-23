@@ -1766,8 +1766,8 @@ gate = Middleware.make(
 measure_endpoint : Endpoint({}, { seconds : F64, parts : F64 }, { seconds : F64, each : F64 })
 measure_endpoint = Endpoint.local("POST", "/probe/measure", |_, {}, { seconds, parts }| Ok({ seconds, each: seconds / parts }))
 
-## POST /probe/length: answers what a `Try` would, as a tag union: the builtin `Try` can't go as JSON.
-length_endpoint : Endpoint({}, Str, [Ok(U64), Err([Empty])])
+## POST /probe/length: answers a `Try`, as JSON `{"Ok":…}` or `{"Err":…}`.
+length_endpoint : Endpoint({}, Str, Try(U64, [Empty]))
 length_endpoint = Endpoint.local("POST", "/probe/length", |_, {}, word| Ok(if (word.is_empty()) Err(Empty) else Ok(word.count_utf8_bytes())))
 
 ## A badge: a nominal type whose JSON encoder and parser are derived, as an app's own types are.
