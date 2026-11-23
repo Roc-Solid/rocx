@@ -1,6 +1,7 @@
-# Design: `Db`'s queries checked at build (D-058, Proposed)
+# Design: `Db`'s queries checked at build (D-058, Accepted)
 
-> A design spike, 2026-11-23, on master at c36dc93. Nothing here is built. The numbers come from
+> A design spike, 2026-11-23, on master at c36dc93. Accepted the same day, with question 8
+> changed (§14): phases 2 to 4 are being built. The numbers come from
 > the spike beside this file (`describe/`, a Rust program, and `run.mjs`, which runs it over every
 > example app). The appendix says how to run them.
 
@@ -237,7 +238,10 @@ opens a scratch database of the app's kind:
   an in-memory database, and SQLite's connections don't share one.
 - **Postgres:** a database named `rocx_check_<random>`, made with `create database` on the
   server `--database-url` (or `DATABASE_URL`) points at, and dropped afterwards. This needs
-  `CREATEDB`; see question 8.
+  `CREATEDB`. Without it, the check fails and says how to fix it: grant `CREATEDB`, or name a
+  scratch database the check may migrate (`--sql-database URL`, or `ROCX_SQL_DATABASE`). The
+  check never migrates or describes a database nobody named for checking: `DATABASE_URL` may
+  point at something real (question 8).
 
 Then it runs the platform's start as it does now (`roc::init`), so the program's migrations are
 applied: the platform's, the plugins' (filtered by `on:`) and the app's, in order. Then it
@@ -540,7 +544,7 @@ one backend alone (question 7).
 
 Each phase lands on its own, with tests and docs.
 
-1. **This design (Proposed).**
+1. **This design (Accepted, 2026-11-23).**
 2. **SQL and parameters.**
    - The host's `--describe-sql` on all three engines, with server tests: a statement that
      prepares, one that doesn't, a parameter gap, a scratch database left behind by nothing, and
@@ -591,11 +595,16 @@ Each phase lands on its own, with tests and docs.
 - **Parsers written for `Json` alone** (rather than `parser_for : _` or any format) would make
   the check app fail to compile. None of the repo's row types has one. The skip message names the
   type.
-- **Postgres without `CREATEDB`** (a managed database): see question 8.
+- **Postgres without `CREATEDB`** (a managed database): the check fails, saying to grant it or
+  to name a scratch database (question 8).
 - **Statements whose validity depends on the run** (a temporary table, a table a script makes).
   These need `Db.unchecked`, or a migration.
 
-## 14. Open questions, each with a recommendation
+## 14. Questions, answered
+
+Answered on 2026-11-23: as recommended, except question 8, where the database the check may
+migrate must be named for it.
+
 
 1. **Who reads the row types?**
    (a) The compiler, through the generated check app, as §5 describes.
@@ -638,6 +647,10 @@ Each phase lands on its own, with tests and docs.
    (b) The `DATABASE_URL` database itself, migrated as the server would at start, then described
    (sqlx's way).
    *Recommended: (a)*, falling back to (b) with a message when `create database` is refused.
+   *Answered: (a), never (b).* `DATABASE_URL` may point at something real. When `create database`
+   is refused, the check fails, saying to grant `CREATEDB` or to pass `--sql-database URL` (or
+   `ROCX_SQL_DATABASE`), a scratch database the check may migrate. Only a database named that way
+   is ever migrated by the check.
 9. **A committed description cache** (sqlx's `.sqlx/`), so a Postgres app's CI needs no
    database? *Recommended: not now.* SQLite and Turso need nothing, and every example runs on
    SQLite. Revisit when a Postgres app's CI has no database.

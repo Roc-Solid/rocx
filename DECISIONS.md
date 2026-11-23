@@ -2605,8 +2605,9 @@ example does, and `?mvcc=off` doesn't have it. Not fixed in the platform: to be 
 
 ## D-058 `Db`'s queries checked at build: the engine describes, the compiler checks rows
 
-**Status.** Proposed (2026-11-23). Nothing is built. The design is in `spike/db-checked/DESIGN.md`,
-with its phases and the questions it waits on, and the spike it measured with is beside it.
+**Status.** Accepted (2026-11-23); building phases 2–4. The design is in
+`spike/db-checked/DESIGN.md`, with its phases and its questions, answered as recommended except the
+eighth (below). The spike it measured with is beside it.
 
 **Context.** `Db.all!` and `Db.run!` take SQL as a string, and `Json.parse` decodes the rows into
 the record the caller annotated (D-022). So a typo in a column, a field the statement doesn't
@@ -2620,7 +2621,10 @@ repo's 270 `Db` calls, 241 take their SQL as a literal at the call.
 - **The engine describes.** The app's own server gets `--describe-sql <file>`. It applies the
   program's migrations (the platform's, the plugins', the app's) to a scratch database of the
   app's kind: a temporary SQLite or Turso file, or a Postgres database made beside `DATABASE_URL`
-  and dropped. It then prepares each statement and prints the engine's error, or the statement's
+  and dropped. Where `create database` is refused, the check fails and says to grant `CREATEDB` or
+  to name a scratch database it may migrate (`--sql-database URL`); it never migrates a database
+  nobody named for checking, since `DATABASE_URL` may point at something real. It then prepares
+  each statement and prints the engine's error, or the statement's
   parameters and its columns. Each column has its declared type, the table column it comes from
   and whether that is `not null`. That is exact for each engine (its grammar, its functions, what
   Turso lacks) and it costs milliseconds.
@@ -2635,6 +2639,12 @@ repo's 270 `Db` calls, 241 take their SQL as a literal at the call.
   a format that reads nothing, as `OpenApi.Schema` and roc-pg's `RowFormat` do. It refuses a field
   the statement lacks, a type the column's values can't decode into, or a plain field over a
   column without `not null`, and names the call. `packages/dbcheck` is pure Roc.
+- **What the spike found.** The examples are clean on SQLite, apart from 8 statements in
+  examples/sqlite-vs-turso that read tables its run makes with `Db.script!` (they become
+  `Db.unchecked`). Turso refuses examples/board's `json_group_array(value order by key)` (no
+  `order by` inside an aggregate) and the FTS5 tables of examples/notes and examples/plate; those
+  apps run on SQLite, so neither matters until one is started on a `turso:` URL. An app is checked
+  on its own engine only.
 - **When:** `rocx check --sql <app>` (and `just examples`) fails on a finding; `rocx dev` prints
   findings after each rebuild. `rocx build`, `roc check` and `roc build` don't change. Apps change
   nothing. Interpolated SQL, SQL in a variable and row types rocx can't name are counted as
