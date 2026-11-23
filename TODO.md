@@ -47,8 +47,16 @@ When an item lands, delete its line here in the same commit.
 ## Framework work, decided but not built
 
 - **The rest of Solid 2.0 and Solid Router's actions:** see `web/README.md`, "Not yet".
+- **D-052's dev warning has blind spots:** a reactive read inside a helper call that takes
+  arguments, and one at the top of a `<For>` row or a function child, aren't marked, so they don't
+  warn. The proposal: wrap any `!` call with arguments too, closing the extra `)` through the
+  transpiler's open-bracket stack, and mark function children's top level as view bodies are.
+- **An effect's `error` handler can't pass the error on** to the nearest `<Errored>` (D-052's
+  `create_effect_with!`). Leaving `error` out keeps the boundary; a rethrow would let a handler
+  log and still show the boundary.
 - **The server's other limits** are in `server/README.md`, "Not yet":
   - actors' timers are all set again at start, a task each in memory;
+  - D-057's job interrupt has x86_64 paths (macOS and Linux) written but never built or run here;
   - D-057's interrupt tells Roc's code by a flag every function Roc calls clears: Roc's code in a
     section of its own from the fork's LLVM backend, with start and end symbols the host reads, would
     tell it by address, the cleaner answer, but a compiler change and a PR the user opens.
@@ -99,6 +107,14 @@ When an item lands, delete its line here in the same commit.
 - **The live docs site** (roc-solid.github.io) was last deployed on 2026-11-21. Everything since,
   the examples pages and D-036 to D-049 among it, isn't live. `just deploy-pages` waits for the
   user's go.
+
+## Tests
+
+- **The site's dev-rebuild timing test flakes under load** (`site/test`, "rebuilds fast"): it
+  fails on most full runs while other builds run (2,015–3,600 ms against a limit of 2 s, scaled
+  ×1.5 by the load average) and passes alone (about 740 ms). The load average lags a burst of
+  builds. A sturdier check: the median of three rebuilds, or a ratio to a no-op rebuild measured in
+  the same run.
 
 ## Housekeeping
 
