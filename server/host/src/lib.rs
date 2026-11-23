@@ -41,6 +41,7 @@ mod kv;
 mod live;
 mod logging;
 mod memory;
+mod preempt;
 mod proxy;
 mod roc;
 mod settings;

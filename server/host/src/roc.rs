@@ -252,20 +252,41 @@ fn reallocate(user: *mut c_void, length: usize, alignment: usize) -> NonNull<c_v
     }
 }
 
+// Roc's code alone calls these three (the host's own helpers go to `allocate`, `deallocate` and
+// `resize`), so each is a place a call past its deadline can end, holding nothing (`preempt`): the
+// block it would have freed or moved is in the call's list, and freed with the rest.
+
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_alloc(length: usize, alignment: usize) -> NonNull<c_void> {
+    if crate::preempt::pending() {
+        hosted::preempted()
+    }
     allocate(length, alignment)
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn roc_dealloc(ptr: *mut c_void, _alignment: usize) {
+pub extern "C" fn roc_dealloc(ptr: *mut c_void, alignment: usize) {
+    if crate::preempt::pending() {
+        hosted::preempted()
+    }
+    deallocate(ptr, alignment)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_realloc(ptr: *mut c_void, length: usize, alignment: usize) -> NonNull<c_void> {
+    if crate::preempt::pending() {
+        hosted::preempted()
+    }
+    resize(ptr, length, alignment)
+}
+
+fn deallocate(ptr: *mut c_void, _alignment: usize) {
     if !ptr.is_null() {
         unsafe { free_block(header_of(ptr)) }
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn roc_realloc(ptr: *mut c_void, length: usize, alignment: usize) -> NonNull<c_void> {
+fn resize(ptr: *mut c_void, length: usize, alignment: usize) -> NonNull<c_void> {
     if ptr.is_null() {
         return allocate(length, alignment);
     }
@@ -306,10 +327,10 @@ extern "C" fn host_alloc(_: *mut RocHost, length: usize, alignment: usize) -> No
     allocate(length, alignment)
 }
 extern "C" fn host_dealloc(_: *mut RocHost, ptr: *mut c_void, alignment: usize) {
-    roc_dealloc(ptr, alignment)
+    deallocate(ptr, alignment)
 }
 extern "C" fn host_realloc(_: *mut RocHost, ptr: *mut c_void, length: usize, alignment: usize) -> NonNull<c_void> {
-    roc_realloc(ptr, length, alignment)
+    resize(ptr, length, alignment)
 }
 extern "C" fn host_dbg(_: *mut RocHost, bytes: *const u8, len: usize) {
     roc_dbg(bytes, len)

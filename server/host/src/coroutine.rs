@@ -17,10 +17,11 @@
 //! them, and wake the Roc thread whose call waits.
 //!
 //! Costs: Roc that computes for long without an effect (a long pure loop) can't pause, so the calls
-//! queued on its thread wait for it. A paused call keeps its stack (8 MiB reserved; only the pages
-//! it touched cost memory). Profilers and debuggers see calls on stacks of their own, not threads'.
-//! A call that overflows its stack hits the guard below it, and the process ends, as a thread's
-//! overflow did: it says so on stderr first (`overflowed`).
+//! queued on its thread wait for it (one with a deadline, a job's, is cut off there: `preempt`). A
+//! paused call keeps its stack (8 MiB reserved; only the pages it touched cost memory). Profilers
+//! and debuggers see calls on stacks of their own, not threads'. A call that overflows its stack
+//! hits the guard below it, and the process ends, as a thread's overflow did: it says so on stderr
+//! first (`overflowed`).
 
 use corosensei::stack::{Stack, StackPointer};
 use corosensei::{Coroutine, CoroutineResult, Yielder};
@@ -102,6 +103,7 @@ pub fn start(count: usize, runtime: tokio::runtime::Handle) -> Result<(), String
         return Err("Roc's threads have started already".into());
     }
     let pool = POOL.get().expect("just set");
+    crate::preempt::start();
     for (index, shared) in pool.threads.iter().enumerate() {
         let runtime = runtime.clone();
         let started = std::thread::Builder::new()
@@ -272,6 +274,7 @@ struct Local {
 fn work(index: usize, runtime: tokio::runtime::Handle) {
     let _entered = runtime.enter();
     let _signals = signal_stack();
+    crate::preempt::register();
     let pool = POOL.get().expect("Roc's threads start after the pool");
     let shared = pool.threads[index].clone();
     let mut local = Local { shared: shared.clone(), slots: Vec::new(), free: Vec::new(), stacks: Vec::new() };

@@ -3,9 +3,10 @@
 // crash (`crash`, an integer overflowing) ends one request, not the server.
 //
 // `rocx_guarded` calls `call(data)` with a jump target set; `rocx_guard_escape`, called by
-// `roc_crashed`, jumps back to it, and `rocx_guarded` returns 1. The frames it skips are Roc's,
-// and the host's trampoline, which holds nothing to drop; hosted functions never call back into
-// Roc, so a crash never skips one of theirs.
+// `roc_crashed` (and by a call cut off at its deadline: preempt.rs), jumps back to it, and
+// `rocx_guarded` returns 1. The frames it skips are Roc's, and the host's trampoline, which holds
+// nothing to drop; a hosted function that calls back into Roc does so through a guard of its own,
+// so a crash never skips one of its frames.
 //
 // `current` is the thread's, but belongs to the call running on it: one that pauses swaps it out
 // (`rocx_guard_swap`), and back in when it resumes.

@@ -107,7 +107,8 @@ view! = |_|
 					the first effect that waits past it (a database statement, a socket, a request to another server)
 					ends the run, as a crash would, whatever the job does with errors. The statement is cancelled and
 					its connection closed (SQLite's interrupted), what the run allocated is freed, and it fails with
-					<code>timed out after …</code>.
+					<code>timed out after …</code>. Roc that never waits (a loop without an effect) is ended where it
+					runs, all the same: the server interrupts its thread.
 				</li>
 				<li>
 					<strong>Across restarts.</strong> A job running when the server stopped runs again at the next
@@ -200,13 +201,16 @@ view! = |_|
 
 			<Heading id="limits">Not yet</Heading>
 			<ul>
-				<li><strong>A time limit</strong> cuts a job off only at an effect that waits: Roc that loops without one holds its worker.</li>
+				<li>
+					<strong>A job's log</strong> isn't shown on the jobs page yet: what a run logged is in the server's
+					log, by its job's id (the options are in <code>packages/jobs/PROPOSALS.md</code>).
+				</li>
 			</ul>
 			<Callout kind="tip" title="Tested">
 				<p>
 					The server's tests queue jobs now, later, in transactions that commit and that roll back; fail
 					them a few times, and for good; crash them; cut them off at their time limit, on Postgres, on SQLite, a socket
-					and another server, leaving nothing held; queue, cancel and move them by key; list them; use the
+					and another server, and in Roc that loops forever without waiting, leaving nothing held; queue, cancel and move them by key; list them; use the
 					jobs page's forms behind a guard; leave alone a job another app queued; run a schedule every
 					second; start on a database the platform migrated before jobs were a package, and find its jobs
 					where they were.

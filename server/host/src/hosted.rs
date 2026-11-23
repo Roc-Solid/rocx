@@ -24,7 +24,8 @@
 //! is cancelled and its connection closed), and jumps back to the call's guard, as a crash does
 //! (`cut_off`), so the call can't carry on past its limit whatever it does with errors. Calls it
 //! runs inside it share its deadline; an actor it asks doesn't (its turn is its own, and ends as
-//! it would). Roc that loops without an effect isn't cut off.
+//! it would). Roc that loops without an effect is ended where it runs (`preempt`, D-057), which
+//! is told the deadline of the call running on each thread as calls start, pause, resume and end.
 
 use crate::abi::{
     AnonStruct2e6fc7635560c0c3 as Isolated, AnonStruct3ed536693d8b85f3 as Answered, AnonStructFa59a42fc999ca94 as Heard, HostDbExecuteResult,
@@ -37,7 +38,7 @@ use crate::abi::{
     HostStoreGetResultPayload as TextPayload, HostStoreGetResultTag as TextTag, HostTcpReadExactlyResult as BytesResult,
     HostTcpReadExactlyResultPayload as BytesPayload, HostTcpReadExactlyResultTag as BytesTag, RocListWith, RocStr,
 };
-use crate::{actors, blobs, client, coroutine, db, kv, live, memory, roc, settings, signals, tcp};
+use crate::{actors, blobs, client, coroutine, db, kv, live, memory, preempt, roc, settings, signals, tcp};
 use bytes::Bytes;
 use futures_util::future::select_all;
 use std::cell::RefCell;
@@ -83,10 +84,13 @@ struct Stashed {
 
 impl Stashed {
     fn take() -> Stashed {
+        // Paused, the call isn't running here: its deadline isn't this thread's to watch.
+        preempt::set_deadline(None);
         Stashed { call: CALL.with(|context| context.take()), roc: roc::stash(), render: signals::stash(), sockets: tcp::stash() }
     }
 
     fn put_back(self) {
+        preempt::set_deadline(self.call.deadline);
         CALL.with(|context| *context.borrow_mut() = self.call);
         roc::unstash(self.roc);
         signals::unstash(self.render);
@@ -252,9 +256,11 @@ fn in_context<T>(mut context: Context, run: impl FnOnce() -> T) -> (T, Option<u6
         if context.turn.is_none() {
             context.turn = turn;
         }
+        preempt::set_deadline(context.deadline);
         current.replace(context)
     });
     let result = run();
+    preempt::set_deadline(outer.deadline);
     let ended = CALL.with(|current| current.replace(outer));
     let cut_off = ended.cut_off.then_some(ended.limit_ms);
     if cut_off.is_some() {
@@ -328,6 +334,12 @@ fn in_time<T>(waited: Result<T, Late>) -> T {
         Ok(done) => done,
         Err(Late) => cut_off(),
     }
+}
+
+/// Ends the running call because its deadline has passed, wherever Roc's code was (`preempt`): as
+/// an effect that waited past it would (`cut_off`). Called from Roc's code, holding nothing.
+pub fn preempted() -> ! {
+    cut_off()
 }
 
 /// Ends the running call because its deadline has passed: marked as cut off, and jumped back to

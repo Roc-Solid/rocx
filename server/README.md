@@ -877,7 +877,7 @@ or a hook, a call at a time.
 
 What it costs: Roc that computes for long without an effect (a long pure loop) can't pause, so the
 calls on its thread wait for it (new calls go to Roc's other threads, which take them from one
-queue). A paused call keeps its stack: only the pages it touched cost memory, a few tens of KiB for
+queue). A call with a time limit (a job's) is cut off all the same (below). A paused call keeps its stack: only the pages it touched cost memory, a few tens of KiB for
 most. Profilers and debuggers see calls on stacks of their own, not threads'. A call that overflows
 its stack hits the guard below it and the process ends, as a thread's overflow did; first it says
 so on stderr (`rocx server: a call into Roc overflowed its stack (8 MiB): the process ends`, in the
@@ -904,6 +904,19 @@ actor's task starts. An isolated call may be given a time limit
 (a job's): the calls it runs share its deadline, and the first effect that waits past it ends the
 call as a crash would (`cut_off` in `host/src/hosted.rs`), so the only frame it skips that is the
 host's is that effect's own, which holds nothing by then.
+
+Roc that never waits is cut off too (D-057, `host/src/preempt.rs`). Each of Roc's threads keeps the
+deadline of the call running on it (none while it is paused), and a thread of the host's own
+signals a thread whose call is past its deadline (SIGURG), every few milliseconds until the call has
+ended. The signal's handler looks where the call was: in Roc's compiled code, which Roc's linker
+puts in a segment of its own (`__ROC_TEXT` on macOS, `.text.roc` on Linux), it makes the thread
+call into the host there, as `roc_crashed` would be called, and the call ends as a crash ends,
+skipping only Roc's frames; anywhere else (a hosted function, the C library: a lock may be held) it
+only notes it, and the call ends at the next allocation Roc asks for (which only Roc's code calls),
+or at the next signal that finds it in Roc's code. The tests cut off two jobs that loop forever
+without an effect, one on numbers alone and one making and dropping text, in their time limit, with
+nothing left held. A build whose Roc code can't be told from the host's (no such segment) cuts a
+call off only at an effect that waits, and the log says so at start.
 
 At start the host asks the platform's Roc which background loops to run (`roc_background_count`:
 the plugins' loops and checks: the jobs plugin's workers and its schedules' loop, the email
@@ -984,7 +997,8 @@ Postgres, migrations, transactions, plugins (a fixture plugin package's route wi
 context, early path, table, call, loop, start, check and need; an app whose plugins break every rule
 refused at start, the whole message), jobs through packages/jobs's plugin (at once, later, retried,
 failing for good, queued in a transaction, another app's left alone; attempts per kind, a time
-limit cutting a run off on Postgres, a socket and another server with nothing left held, keys
+limit cutting a run off on Postgres, a socket and another server with nothing left held, and Roc
+that loops forever without an effect, keys
 unique while pending, cancel and move, listing; a database the platform migrated before jobs were
 a package, its jobs where they were), the jobs page (behind a guard; its forms; its stream), cron,
 email through packages/email's plugin (an outbox, the dev mailbox, forgotten by a restart, and not

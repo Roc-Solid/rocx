@@ -1408,8 +1408,9 @@ twice_job : Job.Kind({ run : Str })
 twice_job = Job.define_with("twice", { attempts: 2, timeout_ms: 0 }, |{ run }| Err("fails every time (${run})"))
 
 ## Waits on Postgres, another server or a socket (`on`) longer than its limit (300 ms), and ignores
-## what it is told: the limit cuts it off anyway, and it never writes to the job log. `on: "none"`
-## is done in time.
+## what it is told: the limit cuts it off anyway, and it never writes to the job log. `spin` and
+## `grow` never wait: Roc that loops forever, the first on numbers alone, the second making and
+## dropping text; the limit cuts them off too (D-057). `on: "none"` is done in time.
 slow_job : Job.Kind({ run : Str, on : Str, url : Str })
 slow_job = Job.define_with(
 	"slow",
@@ -1431,6 +1432,22 @@ slow_job = Job.define_with(
 				}
 				Err(_) => {}
 			}
+		} else if on == "spin" {
+			var $n = 1
+			while $n != 0 {
+				$n = ($n * 31 + 7) % 1_000_003 + 1
+			}
+			_ = $n
+			{}
+		} else if on == "grow" {
+			var $text = ""
+			var $n = 1
+			while $n != 0 {
+				$text = if ($text.count_utf8_bytes() > 4096) "" else Str.concat($text, "grown ${$n.to_str()} ")
+				$n = ($n % 1000) + 1
+			}
+			_ = $text
+			{}
 		} else {
 			{}
 		}

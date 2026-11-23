@@ -1096,6 +1096,25 @@ test("jobs: a time limit cuts a run off at its next wait (Postgres, another serv
 	}
 });
 
+test("jobs: a time limit cuts off Roc that never waits (D-057): a loop on numbers alone and one making and dropping text, each ended as a crash is, in the middle of its loop; tried again, then failed; its worker goes on; nothing left held", { skip: skipDb }, async () => {
+	const before = await settled();
+	const started = performance.now();
+	const loops = ["spin", "grow"];
+	for (const on of loops) assert.equal(await post(`/jobs/slow?run=${run}loop${on}&on=${on}`), "queued");
+	for (const on of loops) {
+		assert.equal(await finished(`${run}loop${on}`), "failed 2 timed out after 300 ms", on);
+		assert.equal(await text(`/jobs/log?run=${run}loop${on}`), "", `${on}: cut off, it never went on to write`);
+	}
+	const took = performance.now() - started;
+	assert.ok(took < 4000, `two jobs, two runs of 300 ms each, at once: ${took.toFixed(0)} ms`);
+	// Their Roc threads are free: requests answer, and a job after them is done.
+	const answers = await Promise.all(Array.from({ length: 20 }, () => text("/sleep")));
+	assert.deepEqual(new Set(answers), new Set(["slept"]));
+	assert.equal(await post(`/jobs/slow?run=${run}afterloops&on=none`), "queued");
+	assert.equal(await finished(`${run}afterloops`), "done 1 ");
+	assert.equal(await settled(), before, "what the runs allocated was freed");
+});
+
 test("jobs: a key is one pending job's: a second is refused while the first waits, and taken again once it is canceled or done", { skip: skipDb }, async () => {
 	const keyed = `${run}keyed`;
 	const key = `${run}:one`;

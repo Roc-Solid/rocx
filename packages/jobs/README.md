@@ -125,8 +125,9 @@ with it), a socket's read
 or write, a request to another server, an actor's answer, a live topic. The effect doesn't return
 an error the job could ignore: it jumps back to the call's guard, as a crash does, so what the call
 allocated is freed and what it held (its transaction, sockets, rooms) is given back. The job fails
-with `timed out after <limit> ms`, and is tried again if it has attempts left. Roc that loops
-without an effect isn't cut off.
+with `timed out after <limit> ms`, and is tried again if it has attempts left. Roc that never
+waits (a loop without an effect) is cut off too, wherever it is (D-057): the host interrupts its
+thread and ends the call there, as a crash would end it (server/README.md, "How a call runs").
 
 **A key** (`enqueue_keyed!`) is one pending job's: while a job with it is queued or running,
 queueing another with it does nothing and answers `Exists`; once that one is done, failed or
