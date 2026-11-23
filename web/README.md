@@ -27,7 +27,7 @@ same components natively; this one hydrates them.
   a kept box). The browser answers no requests: the server platform answers every endpoint, the
   GETs a page reads as it renders among them.
 - `platform/*.roc`, what components are written with: `Html` (markup whose holes are closures,
-  escaping, safe URLs), `Solid` (`create_signal!`, `create_memo!`, `create_store!`, `create_effect!`,
+  escaping, safe URLs), `Solid` (`create_signal!`, `create_memo!`, `create_optimistic!`, `create_store!`, `create_effect!`,
   `create_render_effect!`, `create_effect_with!`, `on_cleanup!`, `on_settled!`, `refresh!`, `is_pending!`, `latest!`, `untrack!`, `use_context!`, and the browser's timers, `set_interval!` and
   `set_timeout!`, each owned by the run that started it), `Browser` (`call!`: the page's own
   JavaScript function, or a plugin's script's, from a handler; sound files are packages/audio's,
@@ -35,17 +35,20 @@ same components natively; this one hydrates them.
   parts),
   `Show` (keyed too), `Switch` and `Match`, `For`, `Loading`, `Errored`, `Context`, `Call` (`fetch!`, `listen!`), `Router` (`location!`: the page's path and query; `use_submission!`: the latest
   submission to an endpoint; `use_submissions!`: all of them; `use_action!`: one a handler sends
-  without a form), `Submission` (its `pending!`, `input!`, `field!`, `result!`, `error!`,
-  `clear!`), `Submissions` (`all!`, as records, `pending!`, `pending_inputs!`, `clear!`),
+  without a form; `revalidate!`: which reads a result reads again), `Submission` (its `pending!`, `input!`, `field!`, `result!`, `error!`,
+  `clear!`, `retry!`), `Submissions` (`all!`, as records, `pending!`, `pending_inputs!`, `clear!`, `retry!`),
   `Transition` (what `transition`, `transition:in`, `transition:out` and `transition:move` play:
   `fade`, `fly`, `scale`, `grow`, `glide`, `style`; `ms`, `delay`, `easing`, `origin`, `plus`),
-  `Title` (`<Title>`: the document's title, from anywhere in the page) and `HttpStatusCode` (the status a
+  `Title` (`<Title>`: the document's title, from anywhere in the page; `<Meta>`, `<Link>` and
+  `<Style>`, the head's other elements, are rocx's tags, D-054) and `HttpStatusCode` (the status a
   page is answered with); and HTTP's: `Server` (a request, its body the bytes as they came, which `text_of` reads as text, and its answer: text, bytes, a
   page, events, or a body the server fetches from elsewhere and sends on, `forward`, with what of
   the request it passes on, `passed_on`; cookies and redirects; the flash a plain form's post comes
-  back with, `flash!`, `flash_back!`, `clear_flash`), `Endpoint` (a
+  back with, `flash!`, `flash_back!`, `clear_flash`; the files a form sent, `file`, `files`,
+  `multipart`, each an `Upload`), `Endpoint` (a
   GET endpoint read as a plain value, `get!` or `read!`, with a query, `with_query`; any endpoint
-  sent from a handler, `send!`, or listened to, `listen!`; a form's `action`, `url_of`; a channel
+  sent from a handler, `send!`, or listened to, `listen!`; a form's `action`, `url_of`, with fields
+  given ahead of time, `with_fields`; a channel
   subscribed to, `subscribe!`, said to, `say!`, or resynced, `resync!`, and, on the server,
   published on, `publish!` and `publish_latest!`, or an endpoint run there and then, `run!`, given
   its handler with `bind`: `Generated/Api` is the app's contract, each endpoint's method, URL and
@@ -311,8 +314,13 @@ same components natively; this one hydrates them.
 - **Forms**: `use_submission!(endpoint)` (or `use_submissions!`) registers the endpoint's URL with
   the runtime, by its path without the site's base, while its component is there. A `submit` on the
   page (the runtime listens once) of a `method="post"` form to that URL, on this site, not
-  multipart, that no handler prevented, is sent with `fetch`: its fields URL-encoded,
-  `accept: application/json`, `x-rocx-submission: 1`. The submissions to each URL are a list, a
+  `text/plain`, that no handler prevented, is sent with `fetch`: its fields URL-encoded,
+  `accept: application/json`, `x-rocx-submission: 1`. A form with files (`enctype="multipart/form-data"`, D-054) is sent as the
+  browser's `FormData`, its files and all; its input is its fields URL-encoded, a file's its name. A
+  form whose URL is a known endpoint's with fields after it (`Endpoint.with_fields(endpoint, { id
+  })`, Solid Router's `action.with`: `/todos/toggle?id=7`) is that endpoint's: the URL's fields come
+  first in its input, as the server reads them, before the body's, with JavaScript or without. The
+  submissions to each URL are a list, a
   source computations read (`Host.submission!`, the latest; `Host.submissions!`, all): each pending,
   then the answer's status and body (status 0 and why with none). `x-rocx-redirect` (an endpoint's
   own redirect, which `Endpoint.respond!` gives the runtime as 200), or a redirect fetch followed,
@@ -332,7 +340,10 @@ same components natively; this one hydrates them.
   their way applied: `create_memo!(|| moves.pending_inputs!().fold(Endpoint.get!(board), moved))`.
   A submission answered 200 isn't done at once: the runtime reads the page's reads again
   (`revalidate`: every computation that read a GET, `Endpoint.get!` or `read!`, has its calls
-  cleared and runs again, its last value shown meanwhile), and marks it done in the run of the last
+  cleared and runs again, its last value shown meanwhile; or, when the answer says which in
+  `x-rocx-revalidate`, which its handler's `Router.revalidate!(keys)` writes, only those whose URL is
+  a key or begins with one and a `/` or a `?`, Solid Router's revalidate keys; `[]`, none, and the
+  submission is done at once), and marks it done in the run of the last
   one to have its answer (or fail, or go), so what reads both sees the server's new data and the
   submission's end in one flush: the optimistic value gives way with no frame of the old data
   (meanwhile `is_pending!` of the memos read again is true). A
@@ -342,7 +353,22 @@ same components natively; this one hydrates them.
   idempotent (a card's day, not one more). On the server, there are no submissions: `all!` is the
   flash or none, and nothing is applied, so the page hydrates as rendered. The endpoint's contract
   (`Generated/Api`, D-037) types its submissions in both copies of the app: `use_submissions!(Api.post_move({}))`
-  is a `Submissions(Move, Str)`, with nothing for a component to say.
+  is a `Submissions(Move, Str)`, with nothing for a component to say. `retry!` (Solid's) sends one
+  again, by its id or the latest, with what it sent: the same submission, pending again. In a
+  handler, `Router.revalidate!(keys)` reads those reads again itself. An action whose arg has a
+  top-level field holding the URL of a file the page has (`fileOf(url)`: one `on:drop.files`,
+  `on:paste.files` or `on:change.files` gave), or a list of them, is sent as a form with files: each
+  file a part of its field's name, the other fields as a form's; its input stays the JSON, so a
+  pending input's file is its URL, which an `<img>` shows while it is on its way.
+- **`create_optimistic!`** (Solid 2.0's `createOptimistic`, D-054): a signal whose value is a
+  memo's (`|| Endpoint.get!(board)`) until a handler writes it. The write is held by a transition
+  the runtime opens as the handler's writes apply, and keeps open for the rest of that task, so the
+  submissions sent meanwhile join it (its actions, the form its `submit` sends); once they are all
+  done (a result after its reads are read again, a refusal at once), the transition's writes are
+  undone in that same flush, so the server's data takes the value's place with no frame of the old;
+  with none sent, undone at once. Several held: the latest still held shows. The D-030 memo over
+  `pending_inputs!` stays the way for many submissions on their way at once, each applied to the
+  server's latest data; `create_optimistic!` for a value a handler knows.
 - **The flash**: on the server, `Server.flash!` takes the flash a plain form's post came back with
   from the server's memory, by the id in the `rocx-flash` cookie, and the host notes what the page
   read (`Host.flash!`), leaving out the fields the page has as `<input type="password">`. The page
@@ -371,13 +397,31 @@ same components natively; this one hydrates them.
   layout's markup exactly as rendered, needs no context or provider, and leaves the layout's
   `<title>` as the fallback, holes and all. The cost: with a `<Title>`, a page's `<head>` has two
   `<title>`s, the first the one browsers and crawlers use.
+- **The head's other elements** (`<Meta>`, `<Link>`, `<Style>`, @solidjs/meta's, D-054): rocx's
+  tags, as `<Document>` is (no import; a module of that name is a component instead), written as a
+  `<meta>`'s, a `<link>`'s and a `<style>`'s are (holes and all; `<Style>`'s CSS static, as written).
+  Each is `Html.document_head(element)`: a hole that renders nothing where it is, whose run computes
+  the element's attributes and tells the runtime its markup, `data-rocx` on it, and its key
+  (`Host.head!`): a `<Meta>`'s `name` (or `property`), `http-equiv`, `charset` or `itemprop`, with its
+  `media`. They are in `<head>` in the order of their first runs (a layout's before its page's), a
+  later one with an earlier's key in its place (a page's description over its layout's), while
+  their holes are there. Rendering as a server would, they go before `</head>` (`Runtime.headed`,
+  signals.rs's `headed`), after the title; in the browser, after a flush in which one changed, the
+  head's `[data-rocx]` elements (but `<title>`) are made to match, one equal to what is there kept
+  (`isEqualNode`: hydrating, the server's; a stylesheet isn't loaded again), one that differs
+  replaced, one more added at the end, one fewer taken out. The plugins' scripts go before
+  `</body>`, so nothing else of the host's is in `<head>`. A `<meta>` written in the layout's own
+  `<head>` isn't one of them: give a default with a `<Meta>` in the layout, and a page's takes its
+  place.
 - **JSON.** What crosses as JSON (an endpoint's body, result and events, `Browser.call!`'s
   argument) is written with `Json.to_str_try`, so
   an `F64` goes as a number; one JSON can't write (NaN, an infinity) fails the call (an endpoint's
   result is a 500 that says so). Their where clauses read `Json.Encodable(e)`. The builtin `Try`
   has no `encoder_for` or `parser_for` on this Roc, and nothing outside the builtins can give it
   one: `rocx check` adds a hint under the compiler's report, naming the tag union to write instead
-  (`[Ok(a), Err(e)]`, read by a `match` as a `Try` is).
+  (`[Ok(a), Err(e)]`, read by a `match` as a `Try` is). The compiler declares both for `Try`, but
+  doesn't find them (an app's own `Outcome(ok, err) := [Ok(ok), Err(err)]` with derived codecs
+  writes `{"Ok":5}`): reduced in `test/compiler-bugs/try-json-codec` (D-054).
 - **On a server**, nothing waits: every hole runs once, no effect or timer runs and no cleanup is
   kept, an endpoint's read (noted under `GET <url>`) is answered from the answers given
   (`renderToString({ answers })`, a page's answers script; one not there fails with 599), and the HTML
@@ -593,7 +637,9 @@ context); the tally with nothing to provide its store (`Alone.rocx`); and a whol
 (`Document.rocx`; inside an `<Errored>`, `Wrapped.rocx`), rendered in Node as the server platform answers a page and hydrated by
 `start.js`; effects, a cleanup, a timer and a listen (`Effects.rocx`); a form's submission
 (`Form.rocx`); value props, getters (D-039), given in a hole, outside one, in a `<Show>` and in a row, read every way a component may, an accessor, and props passed on (`{...rest}`, D-052) (`Props.rocx`); `<Title>`s
-(`Titles.rocx`); channels (`Channels.rocx`: two feeds on one org's news, a third on another's); a
+(`Titles.rocx`); D-054's (`Actions.rocx`: `<Meta>`, `<Link>` and `<Style>`, revalidate keys, a
+form's fields given ahead of time, `retry!`, `create_optimistic!`, a form with a file and an action
+given a file's URL); channels (`Channels.rocx`: two feeds on one org's news, a third on another's); a
 planner (`Planner.rocx`: cards dragged between days, moved optimistically with `use_action!` and
 `use_submissions!`, gliding); the drags (`Drags.rocx`, D-055: a card with `drag:data` and
 `drag:image`, lists that take it, one that reads what a drop carries, one that takes files, an area
@@ -636,8 +682,14 @@ its old size, in the top layer, under its new box's edge; a drag by touch in Chr
 comes to, leaves and drops on a list, carrying `drag:data`; a swipe starts none; a box scrolls under a
 finger at its edge), a tap's click, a mouse's drag carrying `drag:data` and showing `drag:image`, files
 dropped and read by their URLs, `.point` and `.visible`; a link's click taken over; and no allocation left behind,
-after many runs that waited (refreshes, new pages, memos made again: `Upstream.rocx`) too; and an
-`<Errored>`'s retry reading again the failed read a memo it shows reads.
+after many runs that waited (refreshes, new pages, memos made again: `Upstream.rocx`) too; an
+`<Errored>`'s retry reading again the failed read a memo it shows reads; and D-054's: the head
+elements rendered before `</head>`, kept hydrating strictly, following their holes and gone with
+their part; a result reading again only the reads its answer names (or none), a handler's
+`revalidate!` its own; a form's fields given in its URL; a refused submission tried again; an
+optimistic count shown at once, held while its action is on its way, then the server's with no
+frame of the old, back at once when refused or with nothing sent; a form with a file and an action
+given a file's URL sent as multipart.
 
 ## Not yet
 
@@ -650,11 +702,11 @@ after many runs that waited (refreshes, new pages, memos made again: `Upstream.r
   (`Store.of(todo!).get!(|t| t.done)`).
 - **The dev warning sees calls of accessors** in a component's body (`count!()`, a prop's getter):
   one a helper makes (`total!(items)`) isn't said, nor one at a `<For>`'s row's top (made once too).
-- **The rest of Solid Router's actions:** `.with`, a submission's `retry`, saying which reads a
-  result reads again (Solid Router's `revalidate` keys: today every GET the page read), and
-  multipart forms (sent as the browser sends them). Solid 2.0's `createOptimistic` (writes undone
-  when their action's transition ends) isn't there: an optimistic value is the server's with the
-  submissions on their way applied (D-030).
+- **The rest of Solid Router's actions and Solid 2.0's optimistic values:** `createOptimisticStore`
+  (D-053's stores have no optimistic kind yet); `.with` binds a form's fields (`Endpoint.with_fields`), and an action's
+  values are bound by a closure; a revalidate key is a URL or a URL's beginning, not a query's name
+  and arguments; an optimistic write is a value, not a function applied again to the source's new
+  value; a file is read whole with the request's body (`--max-body`), not streamed as it comes.
 - **Drags by touch:** a keyboard's drag (a sensor that moves a thing with the arrow keys) isn't
   the platform's: an app gives keyboard users another way, as the docs' planner's menus do. The
   runtime's drag by touch stays in its page: another window or program can't take it (a drag into
@@ -665,9 +717,8 @@ after many runs that waited (refreshes, new pages, memos made again: `Upstream.r
   over everything inside. Where the browser has no popovers (Chrome before 114, Safari before 17,
   Firefox before 125), one lifted inside a box that makes fixed elements its own stays clipped by
   that box.
-- **The rest of @solidjs/meta:** `<Meta>`, `<Link>`, `<Style>`; only `<Title>` is there.
-- **`Try` across the wire:** the builtin has no JSON encoder or parser on this Roc; a tag union
-  stands in.
+- **`Try` across the wire:** the builtin has no JSON encoder or parser on this Roc, though it declares
+  them (`test/compiler-bugs/try-json-codec`, D-054); a tag union stands in.
 - **The rules a component must keep:** read async values in holes, not in its body, and write
   signals only in handlers (an effect's apply, a cleanup and a timer's tick are handlers); the
   runtime refuses the first.

@@ -146,7 +146,9 @@ build` finds the posts (D-042: `Generated/Content/En` and `Pl`, every file in `c
 `content/pl/` imported); and guard keeps its state in `Kv` and names the server platform itself
 (D-043), so its middleware is imported (`guard.Guard`) rather than copied; and the browser's copy of
 `Api` has the endpoints' types, copied from each handler's annotation (D-037), so the search's
-`posts` and the reactions' `toggles` are no longer annotated. These are still open:
+`posts` and the reactions' `toggles` are no longer annotated; and the OpenAPI document lists the
+reactions' `POST` as a form's body too (D-054), which is what the no-JavaScript buttons send. These
+are still open:
 
 1. **`<HttpStatusCode>` is effectful**, so a component that sets the status is a `view!`
    (`Ui/NotFound.rocx`). Pure callers still write `<NotFound … />`, and rocx wraps it.
@@ -154,10 +156,7 @@ build` finds the posts (D-042: `Generated/Content/En` and `Pl`, every file in `c
    leaves `/openapi.html` out, and every other answer has the headers.
 3. **`node --test examples/journal/test/` fails on Node 24**: a directory is taken as a module
    ("Cannot find module"). Use the glob, `node --test 'examples/journal/test/*.test.mjs'`.
-4. **The OpenAPI document gives the reactions' `POST` a JSON body only**, though the endpoint takes
-   the same fields as a form, which is what the no-JavaScript buttons send (server/README.md, "Not
-   yet").
-5. **The Roc gotchas met:**
+4. **The Roc gotchas met:**
     - `{ lang }` alone is a block, not a record (`Paths.lang({ lang: lang })`).
     - A parameter can't share a name with a member of its type's block (hence `Rules.of_title`, …).
     - `join_with` is `Str.join_with(list, sep)`, not a method of a list.

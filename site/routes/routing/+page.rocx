@@ -162,7 +162,11 @@ view! = |_|
 				answers. A schema is the handler's type, as the compiler has it, so one nobody wrote down is there
 				too: this site's <code>{"GET /api/shout/{word}"}</code> has no annotation, and its document says it
 				answers <code>{"{ word : Str, shouted : Str, bytes : U64 }"}</code>. The endpoints a page reads are in
-				it too, since a page's data is an endpoint as any other.
+				it too, since a page's data is an endpoint as any other. A body a form can send (a record of text,
+				numbers, yes-or-no, choices and lists of them, which the endpoint reads from a form as from JSON) is
+				listed three ways: <code>application/json</code>, <code>application/x-www-form-urlencoded</code> and
+				<code>multipart/form-data</code>, the form's schema the same but for a yes-or-no or a list, which
+				a form may leave out.
 			</p>
 			<h3>Turning it on</h3>
 			<p>It is off unless the app says so, with <code>openapi</code> in its <code>App.program</code>:</p>

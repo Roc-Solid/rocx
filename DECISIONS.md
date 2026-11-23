@@ -3002,6 +3002,120 @@ nothing measurable to an app that doesn't use them.
 **Reversible:** yes; the new views, the store and `compared` are additions, and nothing else depends
 on them (the `Dict` of keys is a plain speed-up).
 
+## D-054 Solid Router's actions, createOptimistic, @solidjs/meta's head elements, form bodies in OpenAPI
+
+**Status.** Built (2026-11-23): items 1 to 4 of the brief; item 5 (`Try` across the wire) can't be
+built on this Roc, and is reduced in `test/compiler-bugs/try-json-codec`.
+
+**Context.** D-030 built Solid Router's `useAction` and `useSubmissions`, with an optimistic value
+derived from the submissions on their way, and left the rest: `.with`, a submission's `retry`,
+revalidate keys (every GET the page read was read again), and multipart forms (skipped by the
+runtime, unread by the server). Solid 2.0's `createOptimistic` wasn't there. `<Title>` was the only
+one of @solidjs/meta's components. The OpenAPI document listed a body as JSON only, though D-038's
+endpoints read a form's fields by the same type (examples/journal's no-JavaScript reactions).
+
+**Decision.**
+
+- **Revalidate keys are the handler's, on the server** (Solid Router's `json(data, { revalidate })`,
+  whose action runs on the server): `Router.revalidate!(keys)`, each key a URL
+  (`Endpoint.url_of(Api.get_board({}))`). The host notes it on the request being answered (one
+  hosted function, `revalidate!`, a field of `Asked`) and puts it in the answer, `x-rocx-revalidate:
+  ["/board"]`; the runtime then reads again only the reads of a GET whose URL is a key, or begins
+  with one and a `/` or a `?` (`"/api/notes"`: every note), as Solid matches a key's prefix; `[]`
+  reads none, and the submission is done at once. Without it, every GET, as before. In a handler in
+  the browser, the same function reads those reads again itself (Solid Router's client
+  `revalidate(keys)`), once the handler is done. Why URLs, not Solid's query names: a read is an
+  endpoint, and its URL is what the runtime keys its calls by already, params and query in it.
+- **`retry!`** (`Submission.retry!()`, `Submissions.retry!(id)`): the runtime keeps each
+  submission's request, and sends it again as the same submission, pending again, from a handler.
+  One on its way isn't sent twice; a plain form's flash, which the runtime never sent, isn't sent.
+- **`.with` is `Endpoint.with_fields(endpoint, { id })`** (`with` is Roc's keyword): a form's fields
+  given ahead of time, in the URL the form posts to (`/todos/toggle?id=7`), so they work without
+  JavaScript too. The record is written as JSON and flattened to fields (text as it is, numbers and
+  yes-or-no as written, a list as its items; a record inside crashes, saying so). The server reads a
+  form's URL's query as fields before its body's (a field both have that isn't a list is the
+  body's: FormBody takes the last). Its submissions are the endpoint's (`base_of`: the URL without
+  those fields), as Solid lists an `action.with`'s under its action; the runtime matches a form's
+  URL to the longest known endpoint it begins with, then `?` or `&`. An action's values are bound
+  by a closure (`|done| toggle!({ id, done })`): Roc's closures already are `.with` there, and a
+  typed arg can't be half a record.
+- **Multipart, both halves.** The runtime sends a form with `enctype="multipart/form-data"` as the
+  browser's `FormData` (its input: its fields URL-encoded, a file's its name, as `URLSearchParams`
+  of the form gives it). The server parses `multipart/form-data` in Roc (`Server.multipart`, pure,
+  in the shared Server module: no host change): its text parts are fields, read by the arg's type
+  as a URL-encoded body's are, and a file's field is its name. The handler reads the file with
+  `Server.file(request, "photo")` (`Server.Upload`: field, name, type, bytes) or `Server.files`;
+  packages/storage keeps one with `Storage.put_upload!(bucket, key, upload)`, the one place a
+  streamed upload would later be copied from (the host keeping a large part aside as it comes)
+  without an app changing. A plain multipart form goes back with a flash as a URL-encoded one does.
+  A file is part of the body, read whole: one over `--max-body` (16 MiB by default) is a 413, `the
+  request's body is too large`, before Roc sees it (D-056), tested with a 17 MiB form.
+- **Files from the page (with D-055):** an action whose arg has a top-level field holding the URL of
+  a file the page has, or a list of them, is sent as multipart: each file a part of its field's
+  name (several under one name for a list), the other fields as a form's. A string is a file only
+  when it is a key of the runtime's files (`fileOf(url)`, which D-055's `on:drop.files`,
+  `on:paste.files` and `on:change.files` fill, and revoke with their owner), never because it starts
+  with `blob:`. The arg's type has the field as a `Str`: on the server the file's name, as a form's;
+  in the browser the URL, so a pending input shows the file (`<img src={input.photo}>`) while it is
+  on its way. A record inside such an arg fails, saying a form has none.
+- **`create_optimistic!(compute)`** (Solid 2.0's `createOptimistic`): a signal holding `Held(value)`
+  or `Unheld`, read as the value or `compute`'s memo. Its write (`Host.optimistic_set!`) is queued
+  with the handler's writes; applying them, the runtime opens a transition, open for the rest of the
+  task, which the submissions sent meanwhile join (the handler's actions, and the form its `submit`
+  event sends after it: the page's listener runs after the element's). When its last submission is
+  done (a result once the reads it names are in, a refusal at once), its writes are undone in that
+  same call, so the flush that shows the server's data shows the value as the server's: no frame of
+  the old. With none sent, undone at once (Solid 2.0 undoes a write outside a transition). Several
+  transitions held on one value: the latest held shows, each undone on its own. On the server no
+  handler runs, so the page hydrates as rendered. Why both ways stay: D-030's memo over
+  `pending_inputs!` applies each submission on its way to the server's latest data, for many at
+  once; `create_optimistic!` is for a value the handler knows, as Solid 2.0 writes it. D-030's worry
+  (a handler that waits runs again, applying its write twice) doesn't arise: a handler's writes,
+  this one's too, are dropped when it waits, and applied once when it is done.
+- **`<Meta>`, `<Link>`, `<Style>`** are rocx's tags, as `<Document>` is (a module of the file's own
+  by that name is a component instead): written as a `<meta>`'s, a `<link>`'s and a `<style>`'s are,
+  holes and all (`<Style>`'s CSS static, as a `<style>`'s). Each is `Html.document_head(element)`: a
+  hole that renders nothing, whose run fills the element's attributes and tells the host its markup
+  (`data-rocx` first) and key (`Host.head!`). A key is @solidjs/meta's cascade: a `<Meta>`'s `name`
+  (`property` the same), `http-equiv`, `charset` or `itemprop`, with its `media`; a later one with an
+  earlier's key takes its place, at its own place in the order. Their place is before `</head>`, in
+  the order of their first runs (layouts' before their page's), after the title (D-050's plugin
+  scripts go before `</body>`, so nothing else of the host's is in `<head>`): the server (signals.rs's
+  `headed`) and `renderToString` (`Runtime.headed`) write the same bytes. The browser keeps them by
+  their holes' computations, as titles, and after a flush in which one changed makes the head's
+  `[data-rocx]` elements (but `<title>`) match: one `isEqualNode` to what is there is kept (the
+  server's, hydrating: a stylesheet isn't loaded again), one that differs replaced, one more added at
+  the end, one fewer taken out. Why rocx's tags and not components with props: their attributes are
+  an element's (`http-equiv` isn't a Roc field name; a hole in `content` is an attribute hole), which
+  the transpiler already reads. A `<meta>` in the layout's own `<head>` isn't one of them (hydration
+  would refuse changing it): a default is a `<Meta>` in the layout.
+- **Form bodies in OpenAPI:** `OpenApi.sent(endpoint, tags)` lists an operation's request body as
+  JSON and, when its type is one a form has (a record of text, numbers, yes-or-no, choices and lists
+  of them: what FormBody reads), as `application/x-www-form-urlencoded` and `multipart/form-data` too,
+  the same schema with a yes-or-no and a list not required (a form leaves them out). The schema
+  format notes, writing the form's, the shapes a form hasn't (a record in a field, a tuple, a dict,
+  null, a tag with a payload, a list of lists) and drops the form's entries then. `OpenApi.body` is
+  the JSON schema still (packages/mcp's tools use it); `operation` takes the contents.
+- **`Try` across the wire, not built.** Builtin.roc declares `Try(ok, err) := [Ok(ok),
+  Err(err)].{ parser_for : _, encoder_for : _ }` and the canonicalizer makes derived methods of
+  them, but the checker finds neither on `Try` (a "missing method" error on the fork rocx pins and on
+  nightly-2026-11-18), while the same union as an app's own nominal type writes `{"Ok":5}` and reads
+  it back. Reduced in `test/compiler-bugs/try-json-codec`; the tag union stands in, as before, and
+  `rocx check`'s hint stays. Proposal: a fork fix where the checker resolves a builtin's declared
+  derived methods (the user opens the PR), then drop the hint.
+
+**What it costs.** Four hosted functions on both platforms (`head!`, `revalidate!`,
+`submission_retry!`, `optimistic_set!`; the last two do nothing on the server), the glue regenerated;
+a field on the server's `Asked`. runtime.js: a head section beside the title's, the optimistic
+transition, the forms section's multipart, `retry` and keys; the shared code touched is one line at
+the flush's end, the handler-writes loop's branches, and a signal's release (`releaseSignal`, for
+held writes). A multipart body is parsed in Roc, a byte at a time for its boundaries. Measured with
+`just site`, master 1c34928 against this branch on it: the site's client wasm 1,350,921 → 1,348,937
+bytes (300,295 → 300,202 brotli'd; the site uses none of the new functions); web/runtime.js 188,612 →
+201,488 bytes (46,559 → 49,506 brotli'd).
+
+**Reversible:** yes, each on its own: no `revalidate!` reads everything again; `create_optimistic!`
+and the head tags are new; a multipart body can go unread again (a 415).
 ## D-055 Drags by touch and a pen, what a drag carries and shows, files dropped, moves that resize, presence's cursor and away
 
 **Status.** Built (2026-11-23), with the coordinator's answers to the API questions (1 to 4 below).

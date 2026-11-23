@@ -47,8 +47,6 @@ When an item lands, delete its line here in the same commit.
 ## Framework work, decided but not built
 
 - **The rest of Solid 2.0 and Solid Router's actions:** see `web/README.md`, "Not yet".
-- **OpenAPI:** an endpoint that a plain form also posts to is listed with a JSON body only, though
-  it reads form fields as well (`server/README.md`, "Not yet").
 - **The server's other limits** are in `server/README.md`, "Not yet":
   - actors' timers are all set again at start, a task each in memory;
   - D-057's interrupt tells Roc's code by a flag every function Roc calls clears: Roc's code in a
@@ -79,6 +77,9 @@ When an item lands, delete its line here in the same commit.
     `--opt=speed`;
   - `two-guarded-routes-opt-speed`: two routes guarded by a capturing middleware crash an
     `--opt=speed` server at start.
+  - `try-json-codec`: the builtin `Try` has no JSON encoder or parser, though Builtin.roc declares
+    them derived (an app's own `[Ok(ok), Err(err)]` nominal type has both): a tag union stands in for
+    a `Try` across the wire (D-054).
 - **Not reduced yet:** a rigid `..others` beside an app's own error tag in one body doesn't
   type-check (examples/uptime names `JobErr` instead).
 - **Fixes prepared on the fork wait for the user to open them as PRs** (boxy, `List.map` reuse).

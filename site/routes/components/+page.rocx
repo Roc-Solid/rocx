@@ -545,6 +545,41 @@ view! = |_|
 					goes in the body, not the path.
 				</li>
 			</ul>
+			<p>
+				Solid 2.0 writes an optimistic value the other way round, and so can a page:
+				<code>{"create_optimistic!(|| Endpoint.get!(board))"}</code> is a signal whose value is the server's
+				until a handler writes it. The write shows at once and is held until the submissions that handler
+				sent are done (the page's reads read again by then), and undone in the same flush, so the server's
+				data takes its place without a flicker; a refusal undoes it at once, and so does a write that sent
+				nothing. Use it for a value the handler knows; the memo above, for many moves on their way, each
+				applied to the server's latest.
+			</p>
+			<Code title="A count shown ahead of the server" source={"(count!, set_count!) = create_optimistic!(|| Endpoint.get!(Api.get_count({})))\nadd! = use_action!(Api.post_add({}))\n\n<button on:click={|| {\n\tset_count!(count!() + 1)\n\tadd!({ by: 1 })\n}}>{count!().to_str()}</button>"} numbers={Bool.False} />
+			<ul>
+				<li>
+					<strong>Which reads a result reads again</strong> is the endpoint's to say, as Solid Router's
+					revalidate keys are: <code>{"Router.revalidate!([Endpoint.url_of(Api.get_board({}))])"}</code> in its
+					handler, and only the reads of that URL (or of URLs beginning with it, and a <code>/</code> or a
+					<code>?</code>) are read again; <code>[]</code>, none. In a handler in the browser, it reads them
+					again there and then.
+				</li>
+				<li>
+					<strong>Trying again:</strong> <code>{"submission.retry!()"}</code>, or
+					<code>{"moves.retry!(id)"}</code>, sends a submission again with what it sent, pending again.
+				</li>
+				<li>
+					<strong>A form's fields given ahead of time</strong> (Solid Router's <code>action.with</code>):
+					<code>{"Endpoint.url_of(Endpoint.with_fields(toggle, { id: todo.id }))"}</code> is the form's
+					<code>action</code>, its fields in the URL (<code>/todos/toggle?id=7</code>), read before the form's
+					own, with JavaScript or without. An action binds its values with a closure.
+				</li>
+				<li>
+					<strong>Files:</strong> a form with an <code>{"<input type=\"file\">"}</code>
+					(<code>enctype="multipart/form-data"</code>) is sent as the browser sends it, and so is an action
+					whose arg holds the URL of a file the page has (one dropped, pasted or picked): the endpoint reads
+					the field as the file's name, and its bytes with <code>{"Server.file(request, \"photo\")"}</code>.
+				</li>
+			</ul>
 
 			<Heading id="title">The document's title</Heading>
 			<p>
@@ -568,6 +603,16 @@ view! = |_|
 					before, or, with none left, to the layout's.
 				</li>
 			</ul>
+			<p>
+				The head's other elements are @solidjs/meta's too: <code>{"<Meta name=\"description\" content={post!().summary} />"}</code>,
+				<code>{"<Link rel=\"canonical\" href={…} />"}</code> and <code>{"<Style>p { … }</Style>"}</code>, written as a
+				<code>{"<meta>"}</code>, a <code>{"<link>"}</code> and a <code>{"<style>"}</code> are, anywhere in the page,
+				with nothing to import. The server puts them before <code>{"</head>"}</code>, in the order they were
+				rendered, and the browser keeps them there while they are rendered, following their holes. A later
+				<code>{"<Meta>"}</code> with the same <code>name</code> (or <code>property</code>, <code>http-equiv</code>,
+				<code>charset</code>) takes an earlier one's place: a layout says a default description, and a page's
+				replaces it. Hydrating keeps the server's elements, so a stylesheet isn't loaded twice.
+			</p>
 
 			<Heading id="control">Show, Switch and For</Heading>
 			<p>
@@ -938,10 +983,14 @@ view! = |_|
 						<tr><td><code>{"new Audio(url).play()"}</code></td><td><code>{"Audio.play!(url)"}</code> (<code>import audio.Audio</code>)</td></tr>
 						<tr><td>any other browser API, called in a handler</td><td><code>{"Browser.call!(\"vibrate\", arg)"}</code>, the page's own function</td></tr>
 						<tr><td><code>{"<Title>{post().title}</Title>"}</code> (@solidjs/meta)</td><td><code>{"<Title>{post!().title}</Title>"}</code> (<code>import pf.Title</code>)</td></tr>
+						<tr><td><code>{"<Meta name=\"description\" content={…} />"}</code>, <code>{"<Link …/>"}</code>, <code>{"<Style>"}</code> (@solidjs/meta)</td><td>the same, with nothing to import</td></tr>
 						<tr><td><code>{"<form action={join} method=\"post\">"}</code>, <code>useSubmission(join)</code> (Solid Router)</td><td><code>{"<form action={Endpoint.url_of(join)} method=\"post\">"}</code>, <code>use_submission!(join)</code></td></tr>
 						<tr><td><code>{"const move = useAction(moveAction); move(card, day)"}</code></td><td><code>{"move! = use_action!(Api.post_move({}))"}</code>, <code>{"move!({ card, day })"}</code>, in a handler</td></tr>
 						<tr><td><code>useSubmissions(moveAction)</code></td><td><code>{"moves = use_submissions!(Api.post_move({}))"}</code>, <code>{"moves.all!()"}</code> as records</td></tr>
-						<tr><td><code>{"createOptimistic(() => board())"}</code>, written in the action</td><td><code>{"create_memo!(|| moves.pending_inputs!().fold(Endpoint.get!(board), moved))"}</code></td></tr>
+						<tr><td><code>{"const [cards, setCards] = createOptimistic(() => board())"}</code>, written in the action</td><td><code>{"(cards!, set_cards!) = create_optimistic!(|| Endpoint.get!(board))"}</code>, written in the handler that sends it; or derived: <code>{"create_memo!(|| moves.pending_inputs!().fold(Endpoint.get!(board), moved))"}</code></td></tr>
+						<tr><td><code>{"<form action={toggle.with(todo.id)} method=\"post\">"}</code></td><td><code>{"<form action={Endpoint.url_of(Endpoint.with_fields(toggle, { id: todo.id }))} method=\"post\">"}</code></td></tr>
+						<tr><td><code>submission.retry()</code></td><td><code>{"submission.retry!()"}</code>, <code>{"moves.retry!(id)"}</code></td></tr>
+						<tr><td><code>{"return json(card, { revalidate: getBoard.key })"}</code></td><td><code>{"Router.revalidate!([Endpoint.url_of(Api.get_board({}))])"}</code>, in the handler</td></tr>
 						<tr><td><code>{"onClick={(e) => { e.preventDefault(); go() }}"}</code></td><td><code>{"on:click.prevent={go!}"}</code></td></tr>
 						<tr><td><code>{"animate:flip"}</code>, <code>crossfade</code> (Svelte)</td><td><code>{"transition:move={Transition.glide}"}</code>, with <code>{"key={…}"}</code> across lists</td></tr>
 						<tr><td><code>{"<Heading text={user().name} />"}</code></td><td><code>{"<Heading text!={user!().name} />"}</code></td></tr>
@@ -1074,10 +1123,10 @@ view! = |_|
 						<li>Sound files, from a handler: <code>Audio.play!</code> (packages/audio); and the page's own functions, or a plugin's: <code>Browser.call!</code></li>
 						<li>Effects, split as Solid 2.0's; render effects; an effect's error handler; <code>on_cleanup!</code>, <code>on_settled!</code></li>
 						<li>Forms sent by the runtime, their submissions, and a flash without it</li>
-						<li>Actions without a form (<code>use_action!</code>), every submission (<code>use_submissions!</code>), optimistic values that give way to the server's</li>
+						<li>Actions without a form (<code>use_action!</code>), every submission (<code>use_submissions!</code>), optimistic values that give way to the server's (<code>create_optimistic!</code>), <code>retry!</code>, revalidate keys, a form's fields given ahead of time, files</li>
 						<li>Drag and drop, by mouse, touch and pen; what a drag carries and shows; files dropped; <code>.prevent</code></li>
 						<li>Moves: <code>transition:move</code>, and a <code>key</code> across lists</li>
-						<li>The document's title: <code>{"<Title>"}</code></li>
+						<li>The document's head: <code>{"<Title>"}</code>, <code>{"<Meta>"}</code>, <code>{"<Link>"}</code>, <code>{"<Style>"}</code></li>
 						<li>Endpoints, read as plain values where a page renders; their events</li>
 						<li>Server rendering, natively; hydration</li>
 					</ul>
@@ -1091,7 +1140,7 @@ view! = |_|
 				<div class="roadmap-later">
 					<h3>Later, or not yet</h3>
 					<ul>
-						<li>The rest of the router's actions: <code>.with</code>, <code>retry</code>, saying which reads a result reads again</li>
+						<li><code>createOptimisticStore</code>: a store's optimistic kind</li>
 						<li>Going to another page without loading it: a link is a page load, for now</li>
 						<li>
 							Two rules the runtime enforces: read async values in holes, not in a component's body, and

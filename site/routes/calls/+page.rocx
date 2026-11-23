@@ -373,8 +373,19 @@ view! = |_|
 					<strong>Where it differs from Solid:</strong> a record has no getters, so the fields are methods;
 					the form's <code>action</code> is the endpoint's URL (<code>Endpoint.url_of</code>), since Roc can't
 					turn an endpoint into a string by itself; <code>input!()</code> is the endpoint's own type, not a
-					<code>FormData</code>. There is no <code>.with</code> or <code>retry</code> yet, and a result
-					reads every GET the page read again, with no keys to narrow it.
+					<code>FormData</code>. Solid's <code>.with</code> is <code>Endpoint.with_fields(endpoint, {"{ id }"})</code>,
+					a form's fields in its URL, since an action's values are bound by a closure; <code>retry</code> is
+					<code>retry!()</code>; a result's revalidate keys are its handler's
+					<code>{"Router.revalidate!([url])"}</code>, each a URL (or its beginning) rather than a query's key.
+				</li>
+				<li>
+					<strong>Files.</strong> A form with an <code>{"<input type=\"file\">"}</code>
+					(<code>enctype="multipart/form-data"</code>) is sent as the browser sends it, with
+					JavaScript or without; the endpoint reads its fields as a form's, a file's field its name, and the
+					file with <code>{"Server.file(request, \"photo\")"}</code>: its name, type and bytes, which
+					<code>{"Storage.put_upload!"}</code> keeps. An action whose arg holds the URL of a file the page has
+					(dropped, pasted or picked) is sent so too. A file is part of the request's body, 16 MiB at most
+					unless the server's <code>--max-body</code> says more; over it, a 413.
 				</li>
 			</ul>
 

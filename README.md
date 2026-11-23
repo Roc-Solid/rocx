@@ -275,6 +275,7 @@ In a component only:
 | `<Heading text!={user!().name} />` | a prop named as an effect is an accessor: the same getter, which the child types (`text! : () => Str`) and calls (`text!()`) itself |
 | `view! = \|{ kind, ..rest }\| <Base {...rest} size={3} />` | props passed on (D-052): `..rest` keeps the props the pattern doesn't name (Solid's `omit`), and `{...rest}` gives them to a component as they are, getters still, the last of a name winning (JSX's spread, Solid's `merge`) |
 | `<Title>{post!().title} · Notes</Title>` | the document's title, from anywhere in the page: the last one rendered that is still there, put first in `<head>` by the server, kept by the browser (`import pf.Title`) |
+| `<Meta name="description" content={post!().summary} />`, `<Link rel="canonical" href={…} />`, `<Style>…</Style>` | the head's other elements (@solidjs/meta's), from anywhere in the page: put before `</head>` by the server, kept by the browser, a later `<Meta>` with the same name in an earlier's place; nothing to import |
 | `<Show when!={…} fallback={…}>` | what is inside while the condition holds; with a function child, `when!` is a `Try` it narrows; `keyed`, made anew each time the value changes, a function child given the value itself |
 | `(todos, set_todos!) = create_store!(init)` | a store (Solid 2.0's `createStore`): `todos.get!(\|s\| s.filter)` reads a part, its reader run again only when that part changes (`==`); `set_todos!(\|s\| { ..s, filter: Done })` writes; `<For … compared>` patches one row per changed item |
 | `<Switch fallback={…}><Match when!={…}>…</Match></Switch>` | the first `<Match>` that holds (each takes what `<Show>` takes, keyed or not), or the fallback |
@@ -283,7 +284,8 @@ In a component only:
 | `picks_context = create_context()`, `<PicksContext value={…}>` | Solid's context, named by rocx after its module and definition |
 | `Endpoint.get!(Api.get_api_shelf({}))` | a GET endpoint's answer, as a plain value: the server answers it as it renders the page, and the page carries it to the browser (`Endpoint.read!`: a refusal as a value; `import pf.Endpoint`) |
 | `submission = use_submission!(Api.post_join({}))` | the latest submission of a form to an endpoint: `pending!()`, `input!()`, `field!(name)`, `result!()`, `error!()` (`import pf.Router exposing [use_submission!]`) |
-| `move! = use_action!(Api.post_move({}))`, `moves = use_submissions!(Api.post_move({}))` | an action: `move!(arg)`, in a handler, sends the endpoint without a form or waiting; `moves` is every submission to it (`all!()`, `pending!()`, `pending_inputs!()`, `clear!(id)`), for an optimistic value: the server's data with `pending_inputs!()` applied |
+| `move! = use_action!(Api.post_move({}))`, `moves = use_submissions!(Api.post_move({}))` | an action: `move!(arg)`, in a handler, sends the endpoint without a form or waiting; `moves` is every submission to it (`all!()`, `pending!()`, `pending_inputs!()`, `clear!(id)`, `retry!(id)`), for an optimistic value: the server's data with `pending_inputs!()` applied |
+| `(cards!, set_cards!) = create_optimistic!(\|\| Endpoint.get!(board))` | Solid 2.0's optimistic value: the server's until a handler writes it, the write held until the submissions that handler sent are done |
 
 Whitespace in text follows HTML, as Svelte has it, not JSX: each run of spaces, tabs and line breaks
 is one space. Whitespace with a line break next to an element's own opening or closing tag goes, and a
@@ -452,7 +454,12 @@ typed at both ends, which anything else that speaks HTTP may ask too.
   `use_submissions!(endpoint)` lists every submission to it (`all!()`, `pending!()`,
   `pending_inputs!()`, `clear!(id)`). An optimistic value is a memo of the server's data with
   `pending_inputs!()` applied: shown at once, it gives way to the server's data, read again, with no
-  frame of the old, and a refusal puts it back.
+  frame of the old, and a refusal puts it back. Or, as Solid 2.0 writes it, `create_optimistic!(||
+  Endpoint.get!(board))`, a value a handler writes ahead of the server, held until what it sent is
+  done. A handler on the server says which reads a result reads again (`Router.revalidate!(keys)`,
+  Solid Router's revalidate keys); `retry!()` sends a submission again; `Endpoint.with_fields`
+  gives a form's fields ahead of time (`action.with`); a form with files, or an action given a
+  dropped or picked file, goes as multipart, read with `Server.file` (D-054).
 - **Events.** An endpoint's `events!` streams server-sent events: a loop that sends and sleeps,
   a call of its own on the server, ended by `?` when the client goes. A component listens with
   `Endpoint.listen!(Api.events_…(params), Call.listen!, |event| …)`: each event runs the handler.
@@ -472,7 +479,9 @@ typed at both ends, which anything else that speaks HTTP may ask too.
   jsDelivr, checked against its hash, told not to call home). Roc has no reflection, but a type's
   parser works with any format: the platform's `OpenApi` is a format that reads nothing and writes
   the schema of each shape it's asked to read. A tag union's tags are whichever names in the app's
-  code the union turns out to have.
+  code the union turns out to have. A body a form can send (a record of text, numbers, yes-or-no,
+  choices and lists of them) is listed as a form's too, URL-encoded and multipart, beside JSON
+  (D-054).
 - **No server functions.** `server!` is gone (DECISIONS.md, D-023), and `rocx build` refuses it at
   its line. What one did is a `get!` in a route's `+server.roc`, its input the path's params or the
   query and its middleware's context the handler's `context`, read with

@@ -442,8 +442,38 @@ makes one too); a function generic in its arg as JSON alone (packages/mcp's tool
 endpoints with `Endpoint.local_json`, which reads a form's fields as strings. The browser's
 submissions read a form the runtime sent with the same reader (`input!`, `pending_inputs!`).
 
+A form with files (`multipart/form-data`, D-054: a form with an `<input type="file">`, or an action
+given a file the page has) is read the same way, its text parts its fields and a file's field its
+name (as the browser's `URLSearchParams` of the form gives it); `Server.file(request, "photo")`
+gives the file (`Server.Upload`: its field, name, type and bytes), `Server.files(request)` all of
+them, and packages/storage keeps one (`Storage.put_upload!(bucket, key, upload)`). A form's URL's
+query is fields too, before the body's (`Endpoint.with_fields`, Solid Router's `action.with`: a
+field given ahead of time, `/todos/toggle?id=7`); a field both have that isn't a list is the body's.
+A file is part of the request's body, read whole: one over the limit (`--max-body`, 16 MiB unless
+it says more) is a 413, `the request's body is too large`, before Roc sees it. The handler of a
+submission says which of the page's reads its result reads again with `Router.revalidate!(keys)`
+(Solid Router's revalidate keys): the host puts them in the answer, `x-rocx-revalidate`, for the
+runtime; without it, every GET the page read is read again.
+
+```roc
+# routes/photos/+server.roc: a title and a photo, from a form with a file
+post! : { request : Server.Request, params : {}, context : c, body : { title : Str, photo : Str } } => Try(Str, Endpoint.Refusal)
+post! = |{ request, body, .. }|
+	match Server.file(request, "photo") {
+		Ok(upload) =>
+			match Storage.put_upload!(bucket, "photos/${upload.name}", upload) {
+				Ok({}) => {
+					Router.revalidate!([Endpoint.url_of(Api.get_photos({}))])
+					Ok(body.title)
+				}
+				Err(_) => Err(Status(503, "the photo wasn't kept"))
+			}
+		Err(NoFile) => Err(BadRequest("no photo"))
+	}
+```
+
 A form a browser posts without the runtime (a plain `<form method="post">`: a form's body,
-`application/x-www-form-urlencoded`, from a page, `accept: text/html`) would get a page of JSON, or
+`application/x-www-form-urlencoded` or `multipart/form-data`, from a page, `accept: text/html`) would get a page of JSON, or
 of text, from its endpoint. `Endpoint.respond!` sends neither: for its result, its refusal, or a
 body it can't read (400), it answers `Server.flash_back!`: a 303 to the page the form was posted
 from (`Referer`, when it is this site's; `/` otherwise), with a flash: the URL it posted to, the
@@ -1101,9 +1131,6 @@ browser runtime's own render.
   answer's may come in chunks: `fetch_chunks!`).
 - `Forward`: an upstream's body only, not the other way (a request's body streamed to S3 as it
   comes: an upload is still read whole, 16 MiB at most unless `--max-body` says more).
-- The OpenAPI document (`Api.openapi`) gives each endpoint's body as JSON only, though an
-  endpoint reads the same fields from a form (`application/x-www-form-urlencoded`), as a plain
-  form posts them without JavaScript (examples/journal's reactions take both).
 - A stack overflow in Roc still ends the process.
 - HTTP/1.1 only, no TLS: put it behind a proxy. `x64musl` and `x64mac` are configured, not yet run.
 - `roc test` on a module with no `expect` (`Migrations.roc`) never ends; nor does it on

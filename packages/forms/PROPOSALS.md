@@ -189,7 +189,9 @@ In `openApiDocument` (`src/routes.mjs`), for a method whose route file defines `
 
 and `OpenApi.operation` listing the body under `application/x-www-form-urlencoded` as well as
 `application/json`. With proposal 2, the operation also lists
-the 422 and its schema.
+the 422 and its schema. (Since D-054, `OpenApi.operation` takes the body's contents rather than a
+schema, and `OpenApi.sent` lists a form's body three ways, JSON, URL-encoded and multipart, from its
+type: this proposal's schema would go under the same three, its rules added.)
 
 **What depends on it.** `Form.json_schema` (built and tested); the README's endpoint would gain
 two lines.
