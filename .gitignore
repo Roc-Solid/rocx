@@ -48,7 +48,7 @@ spike/*/build/
 # rocx, built from rocx-cli/*.roc (server/build.mjs rocxBinary)
 bin/rocx
 bin/rocx.building-*
-bin/.rocx-building/
+bin/.rocx-building
 bin/.rocx-opt
 
 # A SQLite app's database file (D-045), and its WAL beside it.
