@@ -265,5 +265,5 @@ Waits on a proposal (PROPOSALS.md):
 
 - **Overrides that outlive a restart**: they are in the server's memory (`Kv`), so a restart (a
   deploy) brings back the code's rules. A plugin with a table could keep them (PROPOSALS.md).
-- The server reads a body (up to 16 MiB) before any middleware runs, so `body_limit` refuses a large
+- The server reads a body (up to 16 MiB, or its `--max-body`) before any middleware runs, so `body_limit` refuses a large
   body after it has come, not before (DECISIONS.md, D-014).

@@ -69,7 +69,6 @@ When an item lands, delete its line here in the same commit.
   - Postgres parameter types; packages' SQL checked per backend (packages/jobs, packages/push,
     packages/admin: their SQL is in no app's sources); the checks in the app's own compile; a check
     at run time (blocked by `test/compiler-bugs/two-formats-one-where`).
-- **Deferred decisions:** D-014 (a configurable request body limit).
 
 ## The Roc compiler (the fork in `~/roc-fork`)
 

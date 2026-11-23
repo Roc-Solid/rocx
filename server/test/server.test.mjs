@@ -550,6 +550,40 @@ test("a body over 16 MiB is refused before Roc sees it", { skip }, async () => {
 	assert.equal(await text("/"), "Hello from Roc, natively.");
 });
 
+test("--max-body (MAX_BODY) sets the limit: bytes, or KiB, MiB, GiB; the limit itself fits, a byte more is a 413, whether its length is said or not; 0 or a size that isn't one stops the server", { skip }, async () => {
+	const small = await start(["--max-body", "1KiB"]);
+	try {
+		assert.equal(await small.text("/echo", { method: "POST", body: "x".repeat(1024) }), `POST /echo ${"x".repeat(1024)}`);
+		const over = await small.get("/echo", { method: "POST", body: "x".repeat(1025) });
+		assert.equal(over.status, 413, "its content-length says so");
+		assert.equal(await over.text(), "the request's body is too large");
+		// Chunked (no content-length): refused as it passes the limit.
+		const chunks = new ReadableStream({ start: (controller) => (controller.enqueue(new TextEncoder().encode("y".repeat(700))), controller.enqueue(new TextEncoder().encode("y".repeat(700))), controller.close()) });
+		const streamed = await small.get("/echo", { method: "POST", body: chunks, duplex: "half" });
+		assert.equal(streamed.status, 413, "chunked: refused as it passes the limit");
+		assert.equal(await small.text("/"), "Hello from Roc, natively.");
+	} finally {
+		await small.stop();
+	}
+	// The environment's, in plain bytes; a flag would win over it.
+	const env = await start([], app, { MAX_BODY: "2000" });
+	try {
+		assert.equal((await env.get("/echo", { method: "POST", body: "x".repeat(2000) })).status, 200);
+		assert.equal((await env.get("/echo", { method: "POST", body: "x".repeat(2001) })).status, 413);
+	} finally {
+		await env.stop();
+	}
+	for (const [flags, environment, said] of [
+		[["--max-body", "0"], {}, /--max-body needs a size above 0/],
+		[["--max-body", "lots"], {}, /--max-body needs a size in bytes, or in KiB, MiB or GiB \(64MiB\), not \\"lots\\"/],
+		[[], { MAX_BODY: "16 MB" }, /MAX_BODY needs a size in bytes, or in KiB, MiB or GiB/],
+	]) {
+		const refused = spawnSync(app, ["--port", "0", ...flags], { encoding: "utf8", env: { ...process.env, ROCX_LOG: "json", ...environment } });
+		assert.equal(refused.status, 2, refused.stderr);
+		assert.match(refused.stderr, said);
+	}
+});
+
 // ---- Bytes ----
 
 test("bytes: a body is the bytes as they came (16 MiB of them at most), read as text only when asked; an answer of bytes is sent as they are", { skip }, async () => {

@@ -327,7 +327,7 @@ view! = |_|
 				</li>
 			</ul>
 			<Note>
-				The server reads a request's body, up to 16 MiB, before any middleware runs, so
+				The server reads a request's body, up to 16 MiB (or its <code>--max-body</code>), before any middleware runs, so
 				<code>Guard.body_limit</code> refuses a large body after it has come, not before.
 			</Note>
 		</NoHydration>

@@ -124,7 +124,7 @@ view! = |_|
 				the storage plugin answers: list <code>Storage.plugin({"({})"})</code> in the app's plugins. Its route,
 				<code>/__storage</code>, checks the link's method, its expiry, and an HMAC-SHA256 of them and the key,
 				made with the bucket URL's <code>secret</code> (or one the server draws when it starts, so its links end
-				with it), before it serves the file or keeps the one sent (16 MiB at most: a larger one goes in parts).
+				with it), before it serves the file or keeps the one sent (16 MiB at most, unless the server's <code>--max-body</code> says more: a larger one goes in parts).
 			</p>
 			<Code title="main.roc, in part" source={"plugins: [Storage.plugin({})]   # the links of a file: or memory: bucket, STORAGE_URL's"} numbers={Bool.False} />
 

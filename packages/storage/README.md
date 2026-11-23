@@ -127,7 +127,7 @@ program = App.program({ …, plugins: [Storage.plugin({})] })   # the bucket STO
 The plugin's route checks the link's method (a HEAD may use a GET's), that it hasn't expired, and its
 signature, then serves the object (as `serve!` does, ranges and all) or keeps the one the PUT sent,
 with its content type; 403 for a link it didn't make, one changed, or one expired. A PUT is a
-request's body, 16 MiB at most: a larger file goes in parts, from the server. For an S3 bucket the
+request's body, 16 MiB at most (unless the server's `--max-body` says more): a larger file goes in parts, from the server. For an S3 bucket the
 route has nothing to answer (404): S3 answers its own links.
 
 ## Serving an object
@@ -177,5 +177,5 @@ and 304s, and S3's own refusals.
 - Objects come into Roc whole (`serve!` sends one to a client without it).
 - No listing of a bucket's keys; S3's static keys only (no session tokens).
 - A directory is one server's: two servers don't share one (the platform runs one, D-045).
-- An upload from a browser comes through the server whole, 16 MiB at most: for larger files, a signed
+- An upload from a browser comes through the server whole, 16 MiB at most (`--max-body`): for larger files, a signed
   PUT to S3, or a multipart upload in parts.

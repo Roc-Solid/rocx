@@ -235,12 +235,15 @@ view! = |_|
 			<Heading id="running">Running it</Heading>
 			<Code
 				title="The app's executable"
-				source={"<app> --port 8080 --host 127.0.0.1        where to listen (PORT)\n      --static DIR, --file /PATH=FILE     files served as they are\n      --context-file FILE                 what respond! is given besides each request\n      --database-url URL                  the database (DATABASE_URL): postgres://…, or sqlite:<path> for a SQLite app's file elsewhere\n      --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in the database)\n      --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it\n      --public-url https://app.example    where the app is, for links it sends (PUBLIC_URL; else where it listens)\n      --dev                               reload pages on restart, show crashes, plugins' dev pages\n      --debug                             GET /__rocx/allocations and /__rocx/plugin-files, and plugins' debug paths\n      --live-beat-ms 15000                how often a channel stream beats, and its checks run again\n      --roc-threads N                     the threads Roc runs on (ROCX_ROC_THREADS; one a core)"}
+				source={"<app> --port 8080 --host 127.0.0.1        where to listen (PORT)\n      --static DIR, --file /PATH=FILE     files served as they are\n      --context-file FILE                 what respond! is given besides each request\n      --database-url URL                  the database (DATABASE_URL): postgres://…, or sqlite:<path> for a SQLite app's file elsewhere\n      --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in the database)\n      --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it\n      --max-body 16MiB                    the most a request's body may be (MAX_BODY): bytes, or KiB, MiB, GiB\n      --public-url https://app.example    where the app is, for links it sends (PUBLIC_URL; else where it listens)\n      --dev                               reload pages on restart, show crashes, plugins' dev pages\n      --debug                             GET /__rocx/allocations and /__rocx/plugin-files, and plugins' debug paths\n      --live-beat-ms 15000                how often a channel stream beats, and its checks run again\n      --roc-threads N                     the threads Roc runs on (ROCX_ROC_THREADS; one a core)"}
 				numbers={Bool.False}
 				plain={Bool.True}
 			/>
 			<p>
-				A request's body may be 16 MiB at most (413 beyond). Starting, the server takes its port first: one
+				A request's body may be 16 MiB at most (413 beyond), or what <code>--max-body</code>
+				(<code>MAX_BODY</code>) says: a number of bytes, or of KiB, MiB or GiB (<code>64MiB</code>). The
+				host reads a body whole before Roc runs, so it is the most a request holds in memory. Starting, the
+				server takes its port first: one
 				in use stops it there, before the database, the migrations or the background loops start, so
 				nothing is left running. Stopping (SIGTERM, or ^C), the server stops
 				listening and taking jobs, and waits up to ten seconds for the requests, streams and jobs still

@@ -152,7 +152,7 @@ view! = |_|
 			<Trace>
 				<li>
 					<Who kind="server">server</Who> hyper hands the host a request; the host reads its body
-					(16 MiB at most) and gives it to Roc, a call of its own on one of Roc's threads (it pauses
+					(16 MiB at most, unless <code>--max-body</code> says otherwise) and gives it to Roc, a call of its own on one of Roc's threads (it pauses
 					whenever an effect waits), inside a guard that catches a crash.
 				</li>
 				<li>

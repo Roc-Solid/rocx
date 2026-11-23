@@ -212,7 +212,7 @@ Storage := [].{
 	## may send any content type). On `file:` and `memory:` it is the app's, at its public URL
 	## (`/__storage`), which the storage plugin answers (`Storage.plugin`): its key, its expiry and
 	## an HMAC-SHA256 of them with the bucket's secret. A PUT there is a request's body, 16 MiB at
-	## most. `BadExpiry` unless `expires_s` is 1 to 604,800 (a week).
+	## most unless the server's `--max-body` says more. `BadExpiry` unless `expires_s` is 1 to 604,800 (a week).
 	signed_url! : Bucket, Str, { method : Str, expires_s : U64 } => Try(Str, [BadExpiry, StorageErr(Str)])
 	signed_url! = |bucket, key, opts|
 		match bucket {

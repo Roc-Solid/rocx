@@ -901,6 +901,7 @@ built `--target=arm64musl` runs in a container against `just db`'s Postgres, eve
       --database-url URL                  the database (DATABASE_URL): postgres://…, or sqlite:<path> (turso:<path>) for a SQLite (Turso) app's file elsewhere
       --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in the database)
       --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it
+      --max-body 16MiB                    the most a request's body may be (MAX_BODY): bytes, or KiB, MiB, GiB
       --public-url https://app.example    where the app is, for links it sends (PUBLIC_URL; else where it listens)
       --dev                               reload pages on restart, show crashes, plugins' dev pages, Env.dev!
       --debug                             GET /__rocx/allocations and /__rocx/plugin-files, and plugins' debug paths
@@ -911,7 +912,9 @@ built `--target=arm64musl` runs in a container against `just db`'s Postgres, eve
       --sql-database URL                  for --describe-sql, a database it may migrate, in place of a scratch one (ROCX_SQL_DATABASE)
 ```
 
-A request's body may be 16 MiB at most (413 beyond). `ROCX_LOG` (`pretty` or `json`) chooses the
+A request's body may be 16 MiB at most (413 beyond), or what `--max-body` (`MAX_BODY`) says: a
+number of bytes, or of KiB, MiB or GiB (`64MiB`); 0 or anything else stops the server (D-056). The
+host reads it whole before Roc runs, so it is the most any request holds in memory. `ROCX_LOG` (`pretty` or `json`) chooses the
 log's format when the app's `program` says `Auto` (above). `Env.public_url!` is the app's public URL,
 for the links it sends: `--public-url` or `PUBLIC_URL` (an `http://` or `https://` URL; its `/` at the
 end dropped; anything else stops the server), as behind a proxy; without either, where the server
@@ -921,7 +924,8 @@ machine's is its loopback). Never a request's `Host`, which whoever asks writes.
 ## Tests
 
 `server/test/server.test.mjs` builds `server/test/app` and asks it over HTTP: crashes and memory,
-bytes each way (every byte there and back, a 16 MiB body, bytes made in Roc), `Forward` (from a
+bytes each way (every byte there and back, a 16 MiB body, bytes made in Roc), `--max-body` and
+`MAX_BODY` (the limit itself and a byte more, said or chunked; sizes it refuses), `Forward` (from a
 server the test runs: whole, a range, a 304, HEAD, a redirect, 40 MiB with nothing held, errors
 not passed on, a body cut short, no answer, no range or cache question the request record doesn't
 pass on), streams, pages of components (a whole document with its answers and start.js, `<Loading>`,
@@ -999,7 +1003,7 @@ browser runtime's own render.
 - `Http`: HTTP/1.1, a connection a request (none kept alive), no proxy; an answer's body comes into
   Roc whole.
 - `Forward`: an upstream's body only, not the other way (a request's body streamed to S3 as it
-  comes: an upload is still read whole, 16 MiB at most); one connection a request.
+  comes: an upload is still read whole, 16 MiB at most unless `--max-body` says more); one connection a request.
 - The OpenAPI document (`Api.openapi`) gives each endpoint's body as JSON only, though an
   endpoint reads the same fields from a form (`application/x-www-form-urlencoded`), as a plain
   form posts them without JavaScript (examples/journal's reactions take both).

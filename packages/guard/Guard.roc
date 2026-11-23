@@ -141,8 +141,8 @@ Guard := [].{
 			},
 		)
 
-	## A body larger than `max` bytes refused, 413. (The server refuses one past 16 MiB before the
-	## app sees it.)
+	## A body larger than `max` bytes refused, 413. (The server refuses one past 16 MiB, or its
+	## `--max-body`, before the app sees it.)
 	body_limit : U64 -> Middleware(c, c)
 	body_limit = |max| checked(|request, _| Checks.body_size(max, request.headers, request.body.len()))
 

@@ -504,8 +504,9 @@ every method on one route. And `rocx` skipped directories starting with a dot, s
 
 ## D-014 A configurable body limit
 
-**Status.** Deferred. A request's body may be 16 MiB at most (413 beyond), the limit included. An
-app that uploads in parts can keep each part within it; another may want larger parts.
+**Status.** Built, as D-056 (2026-11-23): `--max-body` (`MAX_BODY`), bytes or KiB, MiB, GiB, 16 MiB
+by default. Deferred until then: a request's body was 16 MiB at most (413 beyond), the limit
+included. An app that uploads in parts can keep each part within it; another may want larger parts.
 
 **Sketch.** `--max-body BYTES`, default 16 MiB. Streaming a request's body to storage (D-002's other
 direction) would make the limit matter less.

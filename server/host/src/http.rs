@@ -27,7 +27,8 @@ use tokio::sync::{mpsc, watch};
 
 pub type Body = BoxBody<Bytes, Infallible>;
 
-/// The most a request's body may be: Roc is handed it whole.
+/// The most a request's body may be unless `--max-body` (`MAX_BODY`) says otherwise: Roc is handed
+/// it whole.
 const MAX_BODY: usize = 16 << 20;
 
 /// What a forwarded answer (`Server.forward`) keeps of upstream's headers: what says what its body
@@ -52,6 +53,8 @@ pub struct Config {
     pub actor_idle_ms: u64,
     /// The most the key-value store (`Kv`) keeps, in MiB, before the least recently used goes.
     pub kv_max_mb: u64,
+    /// The most a request's body may be, in bytes (`--max-body`, `MAX_BODY`): 413 beyond.
+    pub max_body: usize,
     /// Where the app is, as the world reaches it (`--public-url`, `PUBLIC_URL`): `Env.public_url!`.
     /// Without it, where the server listens.
     pub public_url: Option<String>,
@@ -83,6 +86,7 @@ pub const USAGE: &str = "usage: <app> [options]
   --database-url URL                   the database (DATABASE_URL): postgres://…, or sqlite:<path> (turso:<path>) for a SQLite (Turso) app's file elsewhere
   --actor-idle-ms 900000               an actor idle this long is let go (0: never; kept in the database)
   --kv-max-mb 64                       the key-value store's limit (KV_MAX_MB): the least recently used goes past it
+  --max-body 16MiB                     the most a request's body may be (MAX_BODY): bytes, or KiB, MiB, GiB; 413 beyond
   --public-url https://app.example     where the app is, for links it sends (PUBLIC_URL; else where it listens)
   --dev                                reload pages on restart, show crashes, plugins' dev pages (/__rocx/mail)
   --debug                              GET /__rocx/allocations and /__rocx/plugin-files, and plugins' debug paths
@@ -103,6 +107,10 @@ impl Config {
         let mut database_url = env("DATABASE_URL");
         let mut actor_idle_ms = 15 * 60 * 1000;
         let mut kv_max_mb = env("KV_MAX_MB").and_then(|text| text.parse().ok()).unwrap_or(64);
+        let mut max_body = match env("MAX_BODY") {
+            Some(given) => size(&given).map_err(|why| format!("MAX_BODY {why}"))?,
+            None => MAX_BODY,
+        };
         let mut public_url = env("PUBLIC_URL");
         let mut dev = false;
         let mut debug = false;
@@ -135,6 +143,7 @@ impl Config {
                 "--actor-idle-ms" => actor_idle_ms = value()?.parse().map_err(|_| "--actor-idle-ms needs a number".to_string())?,
                 "--smtp-url" | "--mail-from" => return Err(format!("{arg} is gone: email is a plugin (packages/email, D-035), which reads SMTP_URL and MAIL_FROM from the environment (or its options say)")),
                 "--kv-max-mb" => kv_max_mb = value()?.parse().map_err(|_| "--kv-max-mb needs a number".to_string())?,
+                "--max-body" => max_body = size(&value()?).map_err(|why| format!("--max-body {why}"))?,
                 "--public-url" => public_url = Some(value()?),
                 "--dev" => dev = true,
                 "--debug" => debug = true,
@@ -150,7 +159,29 @@ impl Config {
         let address = format!("{host}:{port}").parse().map_err(|error| format!("{host}:{port}: {error}"))?;
         let live_beat = Duration::from_millis(live_beat_ms);
         let public_url = public_url.map(|url| public(&url)).transpose()?;
-        Ok(Config { address, statics, files, context, database_url, actor_idle_ms, kv_max_mb, public_url, dev, debug, live_beat, roc_threads, describe_sql, sql_database })
+        Ok(Config { address, statics, files, context, database_url, actor_idle_ms, kv_max_mb, max_body, public_url, dev, debug, live_beat, roc_threads, describe_sql, sql_database })
+    }
+}
+
+/// A size as `--max-body` (`MAX_BODY`) takes it: bytes (`16777216`), or a number of KiB, MiB or GiB
+/// (`64MiB`, `512 KiB`; the unit in any case). 0 is refused: a body is read whole, so there is always
+/// a limit.
+fn size(given: &str) -> Result<usize, String> {
+    let trimmed = given.trim();
+    let split = trimmed.find(|c: char| !c.is_ascii_digit()).unwrap_or(trimmed.len());
+    let (digits, unit) = trimmed.split_at(split);
+    let unit = match unit.trim().to_ascii_lowercase().as_str() {
+        "" | "b" => 1,
+        "kib" => 1 << 10,
+        "mib" => 1 << 20,
+        "gib" => 1 << 30,
+        _ => 0,
+    };
+    let bytes = digits.parse::<usize>().ok().filter(|_| unit > 0).and_then(|count| count.checked_mul(unit));
+    match bytes {
+        Some(0) => Err("needs a size above 0 (a body is read whole: there is always a limit)".into()),
+        Some(bytes) => Ok(bytes),
+        None => Err(format!("needs a size in bytes, or in KiB, MiB or GiB (64MiB), not {given:?}")),
     }
 }
 
@@ -332,7 +363,9 @@ async fn from_roc(request: Request<Incoming>, config: Arc<Config>, peer: String)
         .filter(|(name, _)| !matches!(name.as_str(), "x-rocx-channel" | "x-rocx-tab"))
         .map(|(name, value)| format!("{}: {}\n", name.as_str(), String::from_utf8_lossy(value.as_bytes())))
         .collect();
-    let body = match Limited::new(request.into_body(), MAX_BODY).collect().await {
+    // Read up to the limit, and refused as it passes it: a client still sending what it said it
+    // would hears the 413 rather than a connection reset under it.
+    let body = match Limited::new(request.into_body(), config.max_body).collect().await {
         Ok(collected) => collected.to_bytes(),
         Err(error) if error.is::<LengthLimitError>() => {
             return full(StatusCode::PAYLOAD_TOO_LARGE, "text/plain; charset=utf-8", "the request's body is too large");
