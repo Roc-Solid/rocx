@@ -1,0 +1,15 @@
+[package]
+name = "rocx-describe-spike"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "D-058 spike: each statement described by the engine, on a database built from migrations"
+
+[dependencies]
+rusqlite = { version = "0.43.0", features = ["bundled", "column_decltype", "column_metadata"] }
+serde_json = "1"
+turso_core = { version = "0.8.4", default-features = false, features = ["fs", "json", "time", "series", "uuid", "percentile", "pure-rust-crypto"] }
+tokio = { version = "1", features = ["rt", "macros"] }
+tokio-postgres = "0.7"
+
+[workspace]

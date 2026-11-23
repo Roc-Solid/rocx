@@ -1,0 +1,3 @@
+# The spike's build (CARGO_TARGET_DIR elsewhere is better: it shares nothing with the host)
+target/
+Cargo.lock
