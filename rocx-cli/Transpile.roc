@@ -23,7 +23,7 @@ Transpile := [].{
 	## only those used dropped. `contexts` are the contexts other modules define, by their providers'
 	## tags (`PicksContext` → `Picks.picks_context`), and `views` how other modules' components are
 	## called (`Heading` → `view`: pure, called where written; `view!`, put off in `Html.component`).
-	Options : { module_path : Str, client : Bool, contexts : List({ key : Str, value : Str }), views : List({ key : Str, value : Str }), route : Bool }
+	Options : { module_path : Str, client : Bool, contexts : List({ key : Str, value : Str }), views : List({ key : Str, value : Str }), route : Bool, dev : Bool }
 
 	## What a file is, transpiled: its code; how many `<NoHydration>`s it has; its <style>s, scoped (a
 	## component's, or the file's when `component` is `None`); its stories (`<story>` in a component's
@@ -36,6 +36,9 @@ Transpile := [].{
 		file : Str,
 		module_path : Str,
 		client : Bool,
+		# A dev build's (`rocx build --dev`): accessors a component's body calls say where they are
+		# (`Html.read_at!`, D-052).
+		dev : Bool,
 		scopes : List({ scope : Str, from : U64, to : U64 }),
 		modules : List(Str),
 		packaged : List(Str),
@@ -553,7 +556,7 @@ Transpile := [].{
 		src = source.to_utf8()
 		file_name = Transpile.last_part(file)
 		module_path = if (opts.module_path == "") (if (file_name.ends_with(".rocx")) file_name.drop_suffix(".rocx") else file_name) else opts.module_path
-		base = { src, file, module_path, client: opts.client, scopes, modules: [], packaged: [], contexts: [], pure: [], getters: [], swaps: [], fns: [], plain_fns: [] }
+		base = { src, file, module_path, client: opts.client, dev: opts.dev, scopes, modules: [], packaged: [], contexts: [], pure: [], getters: [], swaps: [], fns: [], plain_fns: [] }
 		starts = Transpile.line_starts(src)
 		# Markup is components, written with the platform's Html (both platforms have it): there is no
 		# other (the html package, which rendered static pages, is gone).
@@ -911,17 +914,33 @@ Transpile := [].{
 	getter_call : Str -> Str
 	getter_call = |key| if (key.contains(".")) "(${key})()" else "${key}!()"
 
+	## A prop's getter: `label!`, or `props.label`.
+	getter_of : Str -> Str
+	getter_of = |key| if (key.contains(".")) key else "${key}!"
+
+	## An accessor called in a component's body, in a dev build (D-052): `Html.read_at!("file:3:9",
+	## count!)`, which calls it, telling the runtime where it is, so a read made once, as the component
+	## runs, is said with its place (`warnRead`). As long as `count!()` was: lines stay lines.
+	read_at : Cfg, U64, Str -> Str
+	read_at = |cfg, pos, accessor| {
+		place = "${cfg.file}:${Text.line_of(cfg.src, pos).to_str()}:${Text.column(cfg.src, pos).to_str()}"
+		"Html.read_at!(${Text.roc_string(place)}, ${accessor})"
+	}
+
 	## A closure closed (D-039): its frame let go of. A pure root whose run read props reads them where
-	## it is made: what was written from `out_at` on (`it`) becomes `(|label| it)(label!())`.
-	closed : St, Str, U64 -> { st : St, out : Str }
-	closed = |st, out, out_at| {
+	## it is made: what was written from `out_at` on (`it`) becomes `(|label| it)(label!())`. Made in a
+	## component's body (the lambda at `at`), those reads are the body's, said where in a dev build
+	## (`read_at`, D-052).
+	closed : Cfg, St, Str, U64, U64 -> { st : St, out : Str }
+	closed = |cfg, st, out, out_at, at| {
 		match st.frames.last() {
 			Ok(frame) => {
 				st1 = { ..st, frames: st.frames.drop_last(1) }
 				if frame.root and !frame.names.is_empty() {
 					bytes = out.to_utf8()
 					bound = Str.join_with(frame.names.map(|key| Transpile.lent_name(key, frame.level)), ", ")
-					reads = Str.join_with(frame.names.map(Transpile.getter_call), ", ")
+					in_body = cfg.dev and st1.frames.is_empty() and cfg.getters.any(|v| v.from <= at and at < v.to)
+					reads = Str.join_with(frame.names.map(|key| if (in_body) Transpile.read_at(cfg, at, Transpile.getter_of(key)) else Transpile.getter_call(key)), ", ")
 					{ st: { ..st1, effects: st1.effects + 1 }, out: "${Text.cut(bytes, 0, out_at)}(|${bound}| ${Text.rest(bytes, out_at)})(${reads})" }
 				} else {
 					{ st: st1, out }
@@ -932,16 +951,16 @@ Transpile := [].{
 	}
 
 	## Every lambda a read opened, closed, the innermost first.
-	close_all : St, Str, List({ out_at : U64, brackets : U64, line_indent : U64 }) -> { st : St, out : Str }
-	close_all = |st, out, lambdas|
+	close_all : Cfg, St, Str, List({ out_at : U64, brackets : U64, line_indent : U64, at : U64 }) -> { st : St, out : Str }
+	close_all = |cfg, st, out, lambdas|
 		lambdas.fold_rev(
 			{ st, out },
-			|lambda, done| Transpile.closed(done.st, done.out, lambda.out_at),
+			|lambda, done| Transpile.closed(cfg, done.st, done.out, lambda.out_at, lambda.at),
 		)
 
 	## Whether the lambda ends at `pos`, `brackets` being open: at a `,` or a closer of the brackets it
 	## is in, at `else`, or at a line break before a line indented no deeper than the line it began on.
-	lambda_ends : List(U8), U64, U64, { out_at : U64, brackets : U64, line_indent : U64 } -> Bool
+	lambda_ends : List(U8), U64, U64, { out_at : U64, brackets : U64, line_indent : U64, at : U64 } -> Bool
 	lambda_ends = |src, pos, brackets, lambda| {
 		if brackets != lambda.brackets {
 			return Bool.False
@@ -1071,7 +1090,7 @@ Transpile := [].{
 			while $closing {
 				match $lambdas.last() {
 					Ok(lambda) if Transpile.lambda_ends(src, pos, $open.len(), lambda) => {
-						done = Transpile.closed($st, $out, lambda.out_at)
+						done = Transpile.closed(cfg, $st, $out, lambda.out_at, lambda.at)
 						$st = done.st
 						$out = done.out
 						$lambdas = $lambdas.drop_last(1)
@@ -1151,7 +1170,7 @@ Transpile := [].{
 				)
 				named = ($last == "=" or $last == ":") and $prev.ends_with("!")
 				effectful = params_end == pos + 2 or $st.effectful_at.contains(pos) or bang_arg or named
-				$lambdas = $lambdas.append({ out_at: $out.to_utf8().len(), brackets: $open.len(), line_indent: Text.run_end(src, Text.line_start(src, pos), Transpile.is_space_or_tab) - Text.line_start(src, pos) })
+				$lambdas = $lambdas.append({ out_at: $out.to_utf8().len(), brackets: $open.len(), line_indent: Text.run_end(src, Text.line_start(src, pos), Transpile.is_space_or_tab) - Text.line_start(src, pos), at: pos })
 				$st = Transpile.opened({ ..$st, pos: params_end }, !effectful)
 				$out = $out.concat(Str.from_utf8_lossy(params))
 				$last = "|"
@@ -1219,16 +1238,21 @@ Transpile := [].{
 					if word == "server!" and Text.at(src, end) == '(' {
 						return Err(Transpile.fail(cfg, "server!(…) is gone (D-023): define a GET endpoint (get! in a route's +server.roc) and read it with Endpoint.get!(Api.get_…(params))", pos))
 					}
+					in_view = cfg.getters.find_first(|v| v.from <= pos and pos < v.to)
 					read =
-						match cfg.getters.find_first(|v| v.from <= pos and pos < v.to) {
+						match in_view {
 							Ok(view) => Transpile.prop_at(cfg, view, pos, end, word, $last, $open)?
 							Err(_) => NotRead
 						}
+					# In a dev build, a read in a component's body (no closure around it) says where it is,
+					# for the browser's warning of a read made once (D-052).
+					in_body = cfg.dev and in_view.is_ok() and $st.frames.is_empty()
 					match read {
 						Read(prop) => {
 							# A prop, read through its getter (D-039).
 							given = Transpile.read_prop($st, prop.key)
-							$out = $out.concat(if (prop.punned) "${word}: ${given.text}" else given.text)
+							text = if (in_body) Transpile.read_at(cfg, pos, Transpile.getter_of(prop.key)) else given.text
+							$out = $out.concat(if (prop.punned) "${word}: ${text}" else text)
 							$st = { ..given.st, pos: prop.end }
 							$last = ")"
 						}
@@ -1239,9 +1263,16 @@ Transpile := [].{
 							if word.ends_with("!") {
 								$st = { ..$st, effects: $st.effects + 1 }
 							}
-							$out = $out.concat(word)
-							$st = { ..$st, pos: end }
-							$last = word
+							if in_body and word.ends_with("!") and Text.at(src, end) == '(' and Text.at(src, end + 1) == ')' and (pos == 0 or Text.at(src, pos - 1) != '.') {
+								# An accessor called (`count!()`), the body's.
+								$out = $out.concat(Transpile.read_at(cfg, pos, word))
+								$st = { ..$st, pos: end + 2 }
+								$last = ")"
+							} else {
+								$out = $out.concat(word)
+								$st = { ..$st, pos: end }
+								$last = word
+							}
 						}
 					}
 				}
@@ -1264,7 +1295,7 @@ Transpile := [].{
 		if inside_braces {
 			return Err(Transpile.fail(cfg, "this { is never closed", start - 1))
 		}
-		done = Transpile.close_all($st, $out, $lambdas)
+		done = Transpile.close_all(cfg, $st, $out, $lambdas)
 		Ok({ st: done.st, out: done.out })
 	}
 
@@ -1790,8 +1821,20 @@ Transpile := [].{
 			# A component may make signals, as in Solid: it is an effect. A pure one (`view`, no `!`) can't.
 			effect = if (pure) "" else "!"
 			callee = if (cfg.modules.contains(name)) "${name}.view${$suffix}${effect}" else "${Transpile.snake_case(name)}${$suffix}${effect}"
-			rendered = Transpile.render_items($fields)
-			call = "${callee}({ ${rendered} })".replace_first("({  })", "({})")
+			fields = Transpile.merged(cfg, $fields, name, start)?
+			rendered = Transpile.render_items(fields)
+			# A record rocx doesn't know the fields of, alone, is passed as it is.
+			items = fields.keep_if(|part| !Transpile.is_line(part))
+			alone =
+				match items.first() {
+					Ok(Item(text)) if items.len() == 1 and text.starts_with("..") => Some(text.drop_prefix(".."))
+					_ => None
+				}
+			call =
+				match alone {
+					Some(record) => "${callee}(${record})"
+					None => "${callee}({ ${rendered} })".replace_first("({  })", "({})")
+				}
 			# A component runs where it is rendered, and once, as in Solid, so it sees the contexts
 			# provided above that place: its call is put off (`Html.component`), and its value props are
 			# getters, read where it reads them (D-039). A platform's (`<Show>`, `<For>`…) is markup, made
@@ -1979,182 +2022,267 @@ Transpile := [].{
 				}
 				None => {}
 			}
-			name_start = pos
-			first = Text.at(src, pos)
-			if !(Text.is_letter(first) or first == '_' or first == '@') {
-				return Err(Transpile.fail(cfg, "unexpected ${Transpile.json_unit(src, pos)} in <${tag}>", pos))
-			}
-			name_end = Text.run_end(src, pos + 1, |b| Transpile.is_alnum_under(b) or b == ':' or b == '.' or b == '-' or b == '+')
-			# A component's prop may be an effect, named as Roc names one: `title!={title!}`.
-			banged = component and Text.at(src, name_end) == '!'
-			name = if (banged) Text.cut(src, pos, name_end + 1) else Text.cut(src, pos, name_end)
-			after_name = if (banged) name_end + 1 else name_end
-			# `name?={bool}` is a boolean attribute, `name??={str}` one left out when the string is empty.
-			optional = Text.starts_with_at(src, "??=".to_utf8(), after_name)
-			flag = !optional and Text.starts_with_at(src, "?=".to_utf8(), after_name)
-			eq = if (optional) after_name + 2 else if (flag) after_name + 1 else after_name
-			oops = |reason| Transpile.fail(cfg, reason, name_start)
-			# `on:click={…}` is a component's Roc handler; `onclick="…"` would be a script in an attribute.
-			handler = !component and name.starts_with("on:")
-			if handler {
-				_ = Transpile.handler_name(cfg, name, name_start)?
-			} else if name.contains("+") {
-				return Err(oops("unexpected + in ${name}: a + joins the keys of a combination, as in on:keydown.Shift+Enter"))
-			}
-			# Inside a <NoHydration>, nothing is ever hydrated: what would only work in the browser is refused.
-			if $st.in_region > 0 and !component {
-				never = "<NoHydration>, which the browser never hydrates"
-				if handler {
-					return Err(oops("${name} is inside ${never}, so this handler would never run: put <${tag}> outside <NoHydration>"))
-				}
-				if name == "key" {
-					return Err(oops("key is inside ${never}: nothing keeps <${tag}> by it there; drop it, or put <${tag}> outside <NoHydration>"))
-				}
-				if name == "transition" or name.starts_with("transition:") {
-					return Err(oops("${name} is inside ${never}, so nothing there comes or goes: put <${tag}> outside <NoHydration>"))
-				}
-			}
-			if handler and (flag or optional) {
-				return Err(oops("${name} takes {a handler}: write ${name}={…}"))
-			}
-			if !component and !handler and Transpile.caseless_at(name.to_utf8(), "on", 0) {
-				return Err(oops("inline event handlers (${name}) aren't allowed: in a component, write on:${Text.lower(Text.cut(name.to_utf8(), 2, name.to_utf8().len()))}={…}"))
-			}
-			# `transition={…}`, `transition:in={…}`, `transition:out={…}`: a Transition the element plays.
-			transition = !component and (name == "transition" or name.starts_with("transition:"))
-			if transition {
-				if !(name == "transition" or name == "transition:in" or name == "transition:out" or name == "transition:move") {
-					return Err(oops("${name}: write transition={…} (both ways), transition:in={…}, transition:out={…} or transition:move={…}"))
-				}
-				if flag or optional or Text.at(src, eq) != '=' or Text.at(src, eq + 1) != '{' {
-					return Err(oops("${name} needs {a Transition}: write ${name}={Transition.fade}"))
-				}
-			}
-			if component and !Transpile.is_prop_name(name) {
-				return Err(oops("a component's props are Roc field names: ${name}"))
-			}
-			if Text.at(src, eq) != '=' or eq >= src.len() {
-				if flag {
-					return Err(oops("${name}?= needs {a Bool}"))
-				}
-				if optional {
-					return Err(oops("${name}??= needs {a Str}"))
-				}
-				if handler {
-					return Err(oops("${name} needs {a handler}: write ${name}={…}"))
-				}
-				if name == "key" and !component {
-					return Err(oops("key needs {a Str}: write key={…}"))
-				}
-				if name.starts_with("class:") {
-					return Err(oops("${name} needs {a Bool}: write ${name}={…}"))
-				}
-				if name.starts_with("style:") {
-					return Err(oops("${name} needs {a value}: write ${name}={…}"))
-				}
-				$attrs = $attrs.append(Item(if (component) "${name}: ${Transpile.static_prop(getters, name, "Bool.True")}" else "Html.flag(${Text.roc_string(name)}, Bool.True)"))
-				$st = { ..$st, pos: eq }
+			# A record spread on a component (`{...rest}`, D-052): its fields passed on as they are.
+			if component and Text.at(src, pos) == '{' and Text.starts_with_at(src, "...".to_utf8(), pos + 1) {
+				spread = Transpile.read_spread(cfg, $st, tag, getters, pos)?
+				$attrs = $attrs.concat(spread.attrs)
+				$st = spread.st
 			} else {
-				vpos = eq + 1
-				quote = Text.at(src, vpos)
-				if (quote == '"' or quote == '\'') and vpos < src.len() {
+				name_start = pos
+				first = Text.at(src, pos)
+				if !(Text.is_letter(first) or first == '_' or first == '@') {
+					return Err(Transpile.fail(cfg, "unexpected ${Transpile.json_unit(src, pos)} in <${tag}>", pos))
+				}
+				name_end = Text.run_end(src, pos + 1, |b| Transpile.is_alnum_under(b) or b == ':' or b == '.' or b == '-' or b == '+')
+				# A component's prop may be an effect, named as Roc names one: `title!={title!}`.
+				banged = component and Text.at(src, name_end) == '!'
+				name = if (banged) Text.cut(src, pos, name_end + 1) else Text.cut(src, pos, name_end)
+				after_name = if (banged) name_end + 1 else name_end
+				# `name?={bool}` is a boolean attribute, `name??={str}` one left out when the string is empty.
+				optional = Text.starts_with_at(src, "??=".to_utf8(), after_name)
+				flag = !optional and Text.starts_with_at(src, "?=".to_utf8(), after_name)
+				eq = if (optional) after_name + 2 else if (flag) after_name + 1 else after_name
+				oops = |reason| Transpile.fail(cfg, reason, name_start)
+				# `on:click={…}` is a component's Roc handler; `onclick="…"` would be a script in an attribute.
+				handler = !component and name.starts_with("on:")
+				if handler {
+					_ = Transpile.handler_name(cfg, name, name_start)?
+				} else if name.contains("+") {
+					return Err(oops("unexpected + in ${name}: a + joins the keys of a combination, as in on:keydown.Shift+Enter"))
+				}
+				# Inside a <NoHydration>, nothing is ever hydrated: what would only work in the browser is refused.
+				if $st.in_region > 0 and !component {
+					never = "<NoHydration>, which the browser never hydrates"
+					if handler {
+						return Err(oops("${name} is inside ${never}, so this handler would never run: put <${tag}> outside <NoHydration>"))
+					}
+					if name == "key" {
+						return Err(oops("key is inside ${never}: nothing keeps <${tag}> by it there; drop it, or put <${tag}> outside <NoHydration>"))
+					}
+					if name == "transition" or name.starts_with("transition:") {
+						return Err(oops("${name} is inside ${never}, so nothing there comes or goes: put <${tag}> outside <NoHydration>"))
+					}
+				}
+				if handler and (flag or optional) {
+					return Err(oops("${name} takes {a handler}: write ${name}={…}"))
+				}
+				if !component and !handler and Transpile.caseless_at(name.to_utf8(), "on", 0) {
+					return Err(oops("inline event handlers (${name}) aren't allowed: in a component, write on:${Text.lower(Text.cut(name.to_utf8(), 2, name.to_utf8().len()))}={…}"))
+				}
+				# `transition={…}`, `transition:in={…}`, `transition:out={…}`: a Transition the element plays.
+				transition = !component and (name == "transition" or name.starts_with("transition:"))
+				if transition {
+					if !(name == "transition" or name == "transition:in" or name == "transition:out" or name == "transition:move") {
+						return Err(oops("${name}: write transition={…} (both ways), transition:in={…}, transition:out={…} or transition:move={…}"))
+					}
+					if flag or optional or Text.at(src, eq) != '=' or Text.at(src, eq + 1) != '{' {
+						return Err(oops("${name} needs {a Transition}: write ${name}={Transition.fade}"))
+					}
+				}
+				if component and !Transpile.is_prop_name(name) {
+					return Err(oops("a component's props are Roc field names: ${name}"))
+				}
+				if Text.at(src, eq) != '=' or eq >= src.len() {
 					if flag {
-						return Err(oops("${name}?= needs {a Bool}, not a string"))
+						return Err(oops("${name}?= needs {a Bool}"))
 					}
 					if optional {
-						return Err(oops("${name}??= needs {a Str}; a static value is always there"))
+						return Err(oops("${name}??= needs {a Str}"))
 					}
 					if handler {
-						return Err(oops("${name} needs {a handler}, not a string: a handler is Roc, never script"))
+						return Err(oops("${name} needs {a handler}: write ${name}={…}"))
+					}
+					if name == "key" and !component {
+						return Err(oops("key needs {a Str}: write key={…}"))
 					}
 					if name.starts_with("class:") {
-						return Err(oops("${name} needs {a Bool}"))
+						return Err(oops("${name} needs {a Bool}: write ${name}={…}"))
 					}
 					if name.starts_with("style:") {
-						return Err(oops("${name} needs {a value}; a static one belongs in style=\"…\""))
+						return Err(oops("${name} needs {a value}: write ${name}={…}"))
 					}
-					end =
-						match Text.index_of_byte(src, quote, vpos + 1) {
-							Ok(e) => e
-							Err(_) => return Err(oops("the value of ${name} is never closed"))
-						}
-					raw = Text.slice(src, vpos + 1, end)
-					if raw.contains('\n') {
-						return Err(oops("the value of ${name} can't span lines"))
-					}
-					decoded0 = Transpile.decode_entities(cfg, Str.from_utf8_lossy(raw), name_start)?
-					decoded =
-						if scoped and name == "class" {
-							$classed = Bool.True
-							trimmed = Text.trim(decoded0)
-							if (trimmed != "") "${trimmed} ${scopes}" else scopes
-						} else {
-							decoded0
-						}
-					value = Text.roc_string(decoded)
-					$attrs = $attrs.append(Item(if (component) "${name}: ${Transpile.static_prop(getters, name, value)}" else if (name == "key") "Html.key(${value})" else "Html.attr(${Text.roc_string(name)}, ${value})"))
-					$st = { ..$st, pos: end + 1 }
-				} else if quote == '{' {
-					effects_before = $st.effects
-					# Where a prop read in it goes (D-039): an element's attribute that computes is a computation,
-					# and so is a component's getter (or a pure one's call, in a hole of its own); a handler, and
-					# a platform's component's value, are what is around them. A lambda given as a handler or
-					# as an effect's prop (`pick!={|id| …}`) is an effect's.
-					code_at = Text.skip_space(src, vpos + 1)
-					effect_value = handler or (component and name.ends_with("!"))
-					framed_here = if (component) (name.ends_with("!") or framed) else !handler
-					marked = if (effect_value and Text.at(src, code_at) == '|') { ..$st, effectful_at: $st.effectful_at.append(code_at) } else $st
-					entered = if (framed_here) Transpile.opened(marked, Bool.False) else marked
-					inner = Transpile.read_code(cfg, { ..entered, pos: vpos + 1 }, Bool.True)?
-					left = if (framed_here) { ..inner.st, frames: inner.st.frames.drop_last(1) } else inner.st
-					$st = { ..left, pos: inner.st.pos + 1 }
-					# An expression that calls nothing named with `!` reads nothing that changes: static.
-					computed = $st.effects > effects_before
-					if Text.trim(inner.out) == "" {
-						return Err(oops("${name}={} is empty"))
-					}
-					# A computed class is the whole attribute, set again when it changes: the file's class goes in it.
-					expr =
-						if scoped and name == "class" and !flag and !optional {
-							$classed = Bool.True
-							"Str.concat(${inner.out}, ${Text.roc_string(" ${scopes}")})"
-						} else {
-							inner.out
-						}
-					if component and computed and !name.ends_with("!") and !Text.trim_start(expr).starts_with("|") and !Transpile.is_accessor_name(Text.trim(expr)) {
-						$reads_props = Bool.True
-					}
-					attr =
-						if component {
-							# An accessor named through a prop (`left!={clock.left!}`, `clock` a getter now: D-039) is
-							# called by an accessor of its own, so it follows the prop.
-							written = Text.trim(Text.cut(src, vpos + 1, inner.st.pos))
-							through_prop = name.ends_with("!") and Transpile.is_accessor_name(written) and Text.trim(expr) != written
-							Ok("${name}: ${if (getters and Getters.is_value(name)) "|| ${expr}" else if (through_prop) "|| (${Text.trim(expr)})()" else Transpile.accessor_prop(name, expr)}")
-						} else if transition {
-							Ok(if (computed) "Html.transition_of(${Transpile.transition_way(name)}, || ${expr})" else "Html.transition(${Transpile.transition_way(name)}, ${expr})")
-						} else if computed or handler or name == "key" {
-							Transpile.reactive_attribute(cfg, name, expr, flag, optional, name_start, computed)
-						} else if flag {
-							Ok("Html.flag(${Text.roc_string(name)}, ${expr})")
-						} else if optional {
-							Ok("Html.optional(${Text.roc_string(name)}, ${expr})")
-						} else if name.starts_with("class:") {
-							Ok("Html.class_if(${Text.roc_string(name.drop_prefix("class:"))}, ${expr})")
-						} else if name.starts_with("style:") {
-							if (Transpile.is_style_property(name)) Ok("Html.style_var(${Text.roc_string(name.drop_prefix("style:"))}, ${expr})") else Err(oops(Transpile.style_name_refused(name)))
-						} else if name == "style" {
-							Err(oops("style takes a static value: change classes, not styles, with data"))
-						} else {
-							Ok("Html.attr(${Text.roc_string(name)}, ${expr})")
-						}
-					$attrs = $attrs.append(Item(attr?))
+					$attrs = $attrs.append(Item(if (component) "${name}: ${Transpile.static_prop(getters, name, "Bool.True")}" else "Html.flag(${Text.roc_string(name)}, Bool.True)"))
+					$st = { ..$st, pos: eq }
 				} else {
-					return Err(oops("${name}= needs \"a value\" or {an expression}: unquoted values aren't allowed"))
+					vpos = eq + 1
+					quote = Text.at(src, vpos)
+					if (quote == '"' or quote == '\'') and vpos < src.len() {
+						if flag {
+							return Err(oops("${name}?= needs {a Bool}, not a string"))
+						}
+						if optional {
+							return Err(oops("${name}??= needs {a Str}; a static value is always there"))
+						}
+						if handler {
+							return Err(oops("${name} needs {a handler}, not a string: a handler is Roc, never script"))
+						}
+						if name.starts_with("class:") {
+							return Err(oops("${name} needs {a Bool}"))
+						}
+						if name.starts_with("style:") {
+							return Err(oops("${name} needs {a value}; a static one belongs in style=\"…\""))
+						}
+						end =
+							match Text.index_of_byte(src, quote, vpos + 1) {
+								Ok(e) => e
+								Err(_) => return Err(oops("the value of ${name} is never closed"))
+							}
+						raw = Text.slice(src, vpos + 1, end)
+						if raw.contains('\n') {
+							return Err(oops("the value of ${name} can't span lines"))
+						}
+						decoded0 = Transpile.decode_entities(cfg, Str.from_utf8_lossy(raw), name_start)?
+						decoded =
+							if scoped and name == "class" {
+								$classed = Bool.True
+								trimmed = Text.trim(decoded0)
+								if (trimmed != "") "${trimmed} ${scopes}" else scopes
+							} else {
+								decoded0
+							}
+						value = Text.roc_string(decoded)
+						$attrs = $attrs.append(Item(if (component) "${name}: ${Transpile.static_prop(getters, name, value)}" else if (name == "key") "Html.key(${value})" else "Html.attr(${Text.roc_string(name)}, ${value})"))
+						$st = { ..$st, pos: end + 1 }
+					} else if quote == '{' {
+						effects_before = $st.effects
+						# Where a prop read in it goes (D-039): an element's attribute that computes is a computation,
+						# and so is a component's getter (or a pure one's call, in a hole of its own); a handler, and
+						# a platform's component's value, are what is around them. A lambda given as a handler or
+						# as an effect's prop (`pick!={|id| …}`) is an effect's.
+						code_at = Text.skip_space(src, vpos + 1)
+						effect_value = handler or (component and name.ends_with("!"))
+						framed_here = if (component) (name.ends_with("!") or framed) else !handler
+						marked = if (effect_value and Text.at(src, code_at) == '|') { ..$st, effectful_at: $st.effectful_at.append(code_at) } else $st
+						entered = if (framed_here) Transpile.opened(marked, Bool.False) else marked
+						inner = Transpile.read_code(cfg, { ..entered, pos: vpos + 1 }, Bool.True)?
+						left = if (framed_here) { ..inner.st, frames: inner.st.frames.drop_last(1) } else inner.st
+						$st = { ..left, pos: inner.st.pos + 1 }
+						# An expression that calls nothing named with `!` reads nothing that changes: static.
+						computed = $st.effects > effects_before
+						if Text.trim(inner.out) == "" {
+							return Err(oops("${name}={} is empty"))
+						}
+						# A computed class is the whole attribute, set again when it changes: the file's class goes in it.
+						expr =
+							if scoped and name == "class" and !flag and !optional {
+								$classed = Bool.True
+								"Str.concat(${inner.out}, ${Text.roc_string(" ${scopes}")})"
+							} else {
+								inner.out
+							}
+						if component and computed and !name.ends_with("!") and !Text.trim_start(expr).starts_with("|") and !Transpile.is_accessor_name(Text.trim(expr)) {
+							$reads_props = Bool.True
+						}
+						attr =
+							if component {
+								# An accessor named through a prop (`left!={clock.left!}`, `clock` a getter now: D-039) is
+								# called by an accessor of its own, so it follows the prop.
+								written = Text.trim(Text.cut(src, vpos + 1, inner.st.pos))
+								through_prop = name.ends_with("!") and Transpile.is_accessor_name(written) and Text.trim(expr) != written
+								Ok("${name}: ${if (getters and Getters.is_value(name)) "|| ${expr}" else if (through_prop) "|| (${Text.trim(expr)})()" else Transpile.accessor_prop(name, expr)}")
+							} else if transition {
+								Ok(if (computed) "Html.transition_of(${Transpile.transition_way(name)}, || ${expr})" else "Html.transition(${Transpile.transition_way(name)}, ${expr})")
+							} else if computed or handler or name == "key" {
+								Transpile.reactive_attribute(cfg, name, expr, flag, optional, name_start, computed)
+							} else if flag {
+								Ok("Html.flag(${Text.roc_string(name)}, ${expr})")
+							} else if optional {
+								Ok("Html.optional(${Text.roc_string(name)}, ${expr})")
+							} else if name.starts_with("class:") {
+								Ok("Html.class_if(${Text.roc_string(name.drop_prefix("class:"))}, ${expr})")
+							} else if name.starts_with("style:") {
+								if (Transpile.is_style_property(name)) Ok("Html.style_var(${Text.roc_string(name.drop_prefix("style:"))}, ${expr})") else Err(oops(Transpile.style_name_refused(name)))
+							} else if name == "style" {
+								Err(oops("style takes a static value: change classes, not styles, with data"))
+							} else {
+								Ok("Html.attr(${Text.roc_string(name)}, ${expr})")
+							}
+						$attrs = $attrs.append(Item(attr?))
+					} else {
+						return Err(oops("${name}= needs \"a value\" or {an expression}: unquoted values aren't allowed"))
+					}
 				}
 			}
 		}
 		Ok({ st: $st, attrs: $attrs, self_closing: Bool.False, reads_props: $reads_props })
+	}
+
+	## A record spread on a component (`<Base {...rest} size={3} />`, D-052): what JSX's spread is, and
+	## Solid's `merge` is to a props object, the fields of a record passed on as they are, so a record
+	## of getters (a view's `|props|`, or the `..rest` of its pattern: Solid's `omit`) stays live in the
+	## component given it. Where rocx knows the record's fields (the view's props are annotated), each
+	## is written out (`label: rest.label`), so attributes may add or replace some (the last of each
+	## wins, as in JSX); else it is Roc's record update, `{ ..rest, size: || 3 }`, and the component's
+	## props must be the record's type. `pos` is at the `{`.
+	read_spread : Cfg, St, Str, Bool, U64 -> Try({ st : St, attrs : List(Part) }, [Rocx(RocxError), Crash(Str)])
+	read_spread = |cfg, st, tag, getters, pos| {
+		src = cfg.src
+		close = Getters.matching(src, pos)
+		if close >= src.len() {
+			return Err(Transpile.fail(cfg, "this { is never closed", pos))
+		}
+		expr = Text.trim(Text.cut(src, pos + 4, close))
+		if !Transpile.is_record_name(expr) {
+			return Err(Transpile.fail(cfg, "spread a record by its name: {...rest} (a view's |{ kind, ..rest }|, or |props|)", pos))
+		}
+		if !getters {
+			return Err(Transpile.fail(cfg, "<${tag}> takes its props as they are written: {...${expr}} passes a component's getters on (D-052), to a component written in rocx (view!)", pos))
+		}
+		fields =
+			match cfg.getters.find_first(|v| v.from <= pos and pos < v.to) {
+				Ok(view) if view.record == Some(expr) => view.all
+				_ => []
+			}
+		attrs = if (fields.is_empty()) [Item("..${expr}")] else fields.map(|field| Item("${field}: ${expr}.${field}"))
+		Ok({ st: { ..st, pos: close + 1 }, attrs })
+	}
+
+	## `/^[a-z_][A-Za-z0-9_]*(\.[a-z_][A-Za-z0-9_]*)*$/`: a record by its name (`rest`, `card.props`).
+	is_record_name : Str -> Bool
+	is_record_name = |name|
+		!name.is_empty() and name.split_on(".").all(
+			|part| {
+				bytes = part.to_utf8()
+				first = Text.at(bytes, 0)
+				!bytes.is_empty() and (Text.is_lower(first) or first == '_') and bytes.all(Transpile.is_alnum_under)
+			},
+		)
+
+	## A component's fields, a spread's among them (D-052): of two of a name, the last, as JSX's spread
+	## and Solid's `merge` have it; a spread rocx doesn't know the fields of (`..rest`) first, as Roc's
+	## record update writes it. Two of those can't be merged: Roc has no record made of two.
+	merged : Cfg, List(Part), Str, U64 -> Try(List(Part), [Rocx(RocxError), Crash(Str)])
+	merged = |cfg, fields, tag, start| {
+		name_of = |part|
+			match part {
+				Item(text) if !text.starts_with("..") =>
+					match text.split_first(":") {
+						Ok(split) => Text.trim(split.before)
+						Err(_) => ""
+					}
+				_ => ""
+			}
+		updates = fields.keep_if(
+			|part|
+				match part {
+					Item(text) => text.starts_with("..")
+					_ => Bool.False
+				},
+		)
+		if updates.len() > 1 {
+			return Err(Transpile.fail(cfg, "<${tag}> is given two records whose fields rocx doesn't know, which Roc can't merge: annotate the props of the view that names them (view! : { … } => Html), so rocx writes their fields out", start))
+		}
+		var $kept = []
+		var $i = 0
+		for part in fields {
+			name = name_of(part)
+			later = name != "" and fields.drop_first($i + 1).any(|other| name_of(other) == name)
+			if !later {
+				$kept = $kept.append(part)
+			}
+			$i = $i + 1
+		}
+		Ok(updates.concat($kept.drop_if(|part| updates.contains(part))))
 	}
 
 	## `on:input.value` → the event (`input`) and what its handler is given (`value`; "" for nothing).
@@ -2832,6 +2960,7 @@ Transpile := [].{
 			contexts: pairs(Value.field(given, "contexts")),
 			views: pairs(Value.field(given, "views")),
 			route: Value.bool_or(Value.field(given, "route"), Bool.False),
+			dev: Value.bool_or(Value.field(given, "dev"), Bool.False),
 		}
 	}
 

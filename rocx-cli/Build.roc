@@ -113,7 +113,7 @@ Build := [].{
 				file = Fs.relative(cwd, path)
 				module_path = "${Build.generated}/${entry.module_name}"
 				place = { name: entry.module_name, source: path, generated: out }
-				server_copy = { module_path, client: Bool.False, contexts, views, route: Bool.False }
+				server_copy = { module_path, client: Bool.False, contexts, views, route: Bool.False, dev: options.dev }
 				attempt =
 					match Transpile.transpile_module(source, file, server_copy) {
 						Err(Rocx(problem)) => Err(Build.rocx_message!(path, problem))
@@ -126,7 +126,7 @@ Build := [].{
 										match options.client {
 											None => Ok(None)
 											Some(_) =>
-												match Transpile.transpile_module(source, file, { module_path, client: Bool.True, contexts, views, route: Bool.True }) {
+												match Transpile.transpile_module(source, file, { module_path, client: Bool.True, contexts, views, route: Bool.True, dev: options.dev }) {
 													Err(Rocx(problem)) => Err(Build.rocx_message!(path, problem))
 													Err(Crash(message)) => Err("✗ ${message}")
 													Ok(browser_made) =>
@@ -180,7 +180,7 @@ Build := [].{
 					source = Build.link_components(Fs.read_or_empty!(path), path, dir, pkgs)
 					file = Fs.relative(cwd, path)
 					module_path = Fs.relative(dir, path).drop_suffix(".rocx")
-					match Transpile.transpile_module(source, file, { module_path, client: Bool.False, contexts, views, route: Bool.False }) {
+					match Transpile.transpile_module(source, file, { module_path, client: Bool.False, contexts, views, route: Bool.False, dev: options.dev }) {
 						Err(Rocx(problem)) => {
 							$said = $said.append(Build.rocx_message!(path, problem))
 							$failed = Bool.True
@@ -198,7 +198,7 @@ Build := [].{
 								None => {}
 								Some(_) =>
 									if made.regions > 0 {
-										match Transpile.transpile_module(source, file, { module_path, client: Bool.True, contexts, views, route: Bool.False }) {
+										match Transpile.transpile_module(source, file, { module_path, client: Bool.True, contexts, views, route: Bool.False, dev: options.dev }) {
 											Ok(browser_made) => {
 												$browser = $browser.append({ key: path, value: browser_made.code })
 											}
@@ -235,7 +235,7 @@ Build := [].{
 					read = Fs.read_or_empty!(path)
 					# Its own package, which it imports by the package's directory's name, as the app names it.
 					source = if (pkg.own != pkg.name) Build.rename_package_imports(read, pkg.own, pkg.name) else read
-					match Transpile.transpile_module(source, Fs.relative(cwd, path), { module_path: "${Build.generated}/${pkg.name}/${name}", client: Bool.False, contexts, views, route: Bool.False }) {
+					match Transpile.transpile_module(source, Fs.relative(cwd, path), { module_path: "${Build.generated}/${pkg.name}/${name}", client: Bool.False, contexts, views, route: Bool.False, dev: options.dev }) {
 						Err(Rocx(problem)) => {
 							$said = $said.append(Build.rocx_message!(path, problem))
 							$failed = Bool.True

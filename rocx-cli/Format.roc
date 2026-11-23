@@ -184,7 +184,7 @@ Format := [].{
 		}
 		prefix = $prefix
 		spans =
-			match Transpile.markup_spans(source, file, { module_path: "", client: Bool.False, contexts: [], views: [], route: Bool.False }) {
+			match Transpile.markup_spans(source, file, { module_path: "", client: Bool.False, contexts: [], views: [], route: Bool.False, dev: Bool.False }) {
 				Ok(found) => found
 				Err(Rocx(e)) => return Err(Rocx(e))
 				Err(Crash(message)) => return Err(Crash(message))

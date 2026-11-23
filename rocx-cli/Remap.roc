@@ -19,6 +19,16 @@ Remap := [].{
 	try_hint : Str
 	try_hint = "Hint: the builtin Try can't go as JSON on this Roc (it has no encoder_for or parser_for, and nothing outside the builtins can give it one): what an endpoint or Browser.call! takes or answers can't be one, or hold one. Use a tag union instead, [Ok(a), Err(e)], which a match reads as it reads a Try."
 
+	## What `rocx check` adds to a report about a line where a component is given a record's fields
+	## (`<Base {...rest} />`, D-052), which rocx wrote as Roc's record update, `{ ..rest, size: … }`,
+	## since it doesn't know the record's fields.
+	spread_hint : Str
+	spread_hint = "Hint: rocx passes {...record} on as Roc's record update ({ ..record, … }) when it doesn't know the record's fields: the component's props must then be the record's type, and each attribute beside it one of its fields. Annotate the props of the view that names the record (view! : { … } => Html, or Props := { … }), so rocx writes its fields out one by one, and attributes may add some."
+
+	## What it adds when it wrote the fields out (`label: rest.label`): the component takes each.
+	fields_hint : Str
+	fields_hint = "Hint: rocx passes {...record} on field by field (label: record.label, …), each as it is (a getter stays one): the component must take each field the record has, or leave it out of the record first (|{ unwanted, ..record }|)."
+
 	## A generated file's lines and its .rocx file's, and the .rocx file's path as reports name it.
 	Entry : { rocx : Str, generated : List(Str), source : List(Str) }
 
@@ -352,6 +362,10 @@ Remap := [].{
 							}
 							source_indent = Remap.indent_units(source_line)
 							quoted_indent = Remap.indent_units(line_at(q))
+							# A record spread on a component (D-052): its hint, at the end of the report.
+							if source_line.contains("{...") and !generated_line.contains("{...") {
+								$out = $out.append(if (generated_line.contains("({ ..") or Remap.passes_record(generated_line)) Remap.spread_mark else Remap.fields_mark)
+							}
 							$out = $out.append(" ".repeat(quoted_indent.to_u64_wrap()).concat(Remap.trim(source_line)))
 							caret_line = line_at(q + 1)
 							if Remap.is_caret_line(caret_line) {
@@ -369,7 +383,49 @@ Remap := [].{
 				}
 			}
 		}
-		Str.join_with(Remap.hint_try($out), "\n")
+		Str.join_with(Remap.hint_spread(Remap.hint_try($out)), "\n")
+	}
+
+	## Where a spread's hint goes (`hint_spread`): lines no report has.
+	spread_mark : Str
+	spread_mark = "<rocx: the spread hint>"
+
+	fields_mark : Str
+	fields_mark = "<rocx: the fields hint>"
+
+	## Whether a generated line passes a record as it is to a view (`Base.view!(rest)`).
+	passes_record : Str -> Bool
+	passes_record = |line|
+		match line.split_first(".view!(") {
+			Ok(split) => {
+				bytes = split.after.to_utf8()
+				name_end = Text.run_end(bytes, 0, |b| Text.is_alnum(b) or b == '_' or b == '.')
+				name_end > 0 and Text.at(bytes, name_end) == ')'
+			}
+			Err(_) => Bool.False
+		}
+
+	## Moves each spread's mark to the end of its report (before the next `── ` line, or the end), as
+	## its hint.
+	hint_spread : List(Str) -> List(Str)
+	hint_spread = |lines| {
+		var $out = []
+		var $pending = []
+		for line in lines {
+			if line == Remap.spread_mark or line == Remap.fields_mark {
+				hint = if (line == Remap.spread_mark) Remap.spread_hint else Remap.fields_hint
+				if !$pending.contains(hint) {
+					$pending = $pending.append(hint)
+				}
+			} else {
+				if line.starts_with("── ") and !$pending.is_empty() {
+					$out = $out.concat($pending.fold([], |shown, hint| shown.concat(["", hint, ""])))
+					$pending = []
+				}
+				$out = $out.append(line)
+			}
+		}
+		$out.concat($pending.fold([], |shown, hint| shown.concat(["", hint])))
 	}
 
 	## Adds the hint after each report that `Try(…)` has no `encoder_for` or `parser_for`.

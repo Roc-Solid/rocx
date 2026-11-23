@@ -11,10 +11,11 @@ Getters := [].{
 
 	## A component whose value props are getters: its definition's body (from the end of its pattern
 	## to where its definition ends), the names its pattern binds them to (`label`, read as
-	## `label!()`), or the name of the whole record (`props`, whose value fields are read as
-	## `(props.label)()`) and those fields (empty when the type isn't known: then every field but a `!`
-	## one and `children`).
-	View : { from : U64, to : U64, props : List(Str), record : [Some(Str), None], fields : List(Str) }
+	## `label!()`), or the name of a record of them: the whole record (`|props|`), or the rest of it
+	## (`|{ kind, ..rest }|`, D-052), whose value fields are read as `(props.label)()`; those value
+	## fields (empty when the type isn't known: then every field but a `!` one and `children`), and
+	## every field it has (`all`: what `{...rest}` passes on, D-052; empty when the type isn't known).
+	View : { from : U64, to : U64, props : List(Str), record : [Some(Str), None], fields : List(Str), all : List(Str) }
 
 	## Code written otherwise: the source from `from` to `to`, `text` instead (as many lines).
 	Swap : { from : U64, to : U64, text : Str }
@@ -204,25 +205,28 @@ Getters := [].{
 
 	## A view's pattern, `bar` and `close` its two `|`s: the names it binds its value props to, as
 	## getters (`|{ label, faces! }|` → `|{ label: label!, faces! }|`, binding `label`), or the name it
-	## binds the whole record to (`|props|`).
-	pattern : List(U8), U64, U64 -> Try({ text : Str, props : List(Str), record : [Some(Str), None] }, [Problem(Problem)])
+	## binds a record of them to: the whole record (`|props|`), or the rest (`|{ kind, ..rest }|`,
+	## D-052: Solid's `omit`), with the fields the pattern names (`named`), which the rest hasn't.
+	pattern : List(U8), U64, U64 -> Try({ text : Str, props : List(Str), record : [Some(Str), None], named : List(Str) }, [Problem(Problem)])
 	pattern = |src, bar, close| {
 		as_written = Text.cut(src, bar, close + 1)
 		p0 = Getters.skip_blank(src, bar + 1, close)
 		p_end = Getters.trim_back(src, p0, close)
 		first = Text.at(src, p0)
 		if p0 >= p_end {
-			return Ok({ text: as_written, props: [], record: None })
+			return Ok({ text: as_written, props: [], record: None, named: [] })
 		}
 		if (Text.is_lower(first) or first == '_') and Text.run_end(src, p0, Getters.is_name_byte) == p_end {
 			name = Text.cut(src, p0, p_end)
-			return Ok({ text: as_written, props: [], record: if (name.starts_with("_")) None else Some(name) })
+			return Ok({ text: as_written, props: [], record: if (name.starts_with("_")) None else Some(name), named: [] })
 		}
 		if first != '{' or Getters.matching(src, p0) + 1 != p_end {
-			return Ok({ text: as_written, props: [], record: None })
+			return Ok({ text: as_written, props: [], record: None, named: [] })
 		}
 		var $text = Text.cut(src, bar, p0 + 1)
 		var $props = []
+		var $named = []
+		var $rest = None
 		var $first = Bool.True
 		for seg in Getters.segments(src, p0 + 1, p_end - 1) {
 			if !$first {
@@ -234,6 +238,16 @@ Getters := [].{
 			name_end = Text.run_end(src, n0, Getters.is_name_byte)
 			field = Text.cut(src, n0, name_end)
 			after = Text.run_end(src, name_end, |b| b == ' ' or b == '\t')
+			if Text.starts_with_at(src, "..".to_utf8(), n0) {
+				# The rest of the record, by its name: its fields are getters, passed on as they are.
+				r_end = Text.run_end(src, n0 + 2, Getters.is_name_byte)
+				rest = Text.cut(src, n0 + 2, r_end)
+				if rest != "" and !rest.starts_with("_") {
+					$rest = Some(rest)
+				}
+			} else if field != "" {
+				$named = $named.append(if (Text.at(src, name_end) == '!') "${field}!" else field)
+			}
 			if !Getters.is_value(field) or Text.at(src, name_end) == '!' or Text.starts_with_at(src, "..".to_utf8(), n0) {
 				$text = $text.concat(Text.cut(src, seg.from, seg.to))
 			} else if name_end == n_end {
@@ -253,7 +267,7 @@ Getters := [].{
 				$text = $text.concat(Text.cut(src, seg.from, seg.to))
 			}
 		}
-		Ok({ text: $text.concat(Text.cut(src, p_end - 1, close + 1)), props: $props, record: None })
+		Ok({ text: $text.concat(Text.cut(src, p_end - 1, close + 1)), props: $props, record: $rest, named: $named })
 	}
 
 	## The indentation's length of the line starting at `ls`, and where its first character is.
@@ -431,14 +445,16 @@ Getters := [].{
 						if Text.at(src, bar) == '|' {
 							close = Getters.top_level(src, bar + 1, src.len(), ['|'])
 							read = Getters.pattern(src, bar, close)?
-							fields =
+							# A record of getters the view names (`props`, or the `..rest`): its fields but those
+							# the pattern names.
+							all =
 								match read.record {
-									Some(_) => Getters.record_fields(src, starts, block_at, ls, indent, name)
+									Some(_) => Getters.record_fields(src, starts, block_at, ls, indent, name).drop_if(|field| read.named.contains(field))
 									None => []
 								}
 							$swaps = $swaps.append({ from: bar, to: close + 1, text: read.text })
 							to = Getters.definition_end(src, close + 1, indent.to_utf8().len())
-							$views = $views.append({ from: close + 1, to, props: read.props, record: read.record, fields })
+							$views = $views.append({ from: close + 1, to, props: read.props, record: read.record, fields: all.keep_if(Getters.is_value), all })
 						}
 					}
 				}
@@ -478,8 +494,8 @@ Getters := [].{
 		Str.from_utf8_lossy($out)
 	}
 
-	## The value fields of a view's annotated props (for a view whose pattern names the whole record):
-	## none when its type isn't written.
+	## The fields of a view's annotated props (for a view whose pattern names a record of them), each
+	## named as written (`label`, `faces!`, `children`): none when its type isn't written.
 	record_fields : List(U8), List(U64), U64, U64, Str, Str -> List(Str)
 	record_fields = |src, starts, block_at, def_at, indent, name| {
 		for ls in starts {
@@ -496,7 +512,7 @@ Getters := [].{
 						}
 					return
 						match rec {
-							Some(r) => Getters.getter_record(src, r.open, r.close).names.keep_if(Getters.is_value)
+							Some(r) => Getters.getter_record(src, r.open, r.close).names
 							None => []
 						}
 				}
@@ -512,7 +528,7 @@ record_text = |text| {
 	Getters.getter_record(bytes, 0, Getters.matching(bytes, 0)).text
 }
 
-pattern_of : Str -> Try({ text : Str, props : List(Str), record : [Some(Str), None] }, [Problem(Getters.Problem)])
+pattern_of : Str -> Try({ text : Str, props : List(Str), record : [Some(Str), None], named : List(Str) }, [Problem(Getters.Problem)])
 pattern_of = |text| {
 	bytes = text.to_utf8()
 	Getters.pattern(bytes, 0, Getters.top_level(bytes, 1, bytes.len(), ['|']))
@@ -521,7 +537,8 @@ pattern_of = |text| {
 expect record_text("{ label : Str, max : U64 ?? 5, faces! : () => List(Face), children : List(Html) }") == "{ label : () => Str, max : (() => U64) ?? (|| 5), faces! : () => List(Face), children : List(Html) }"
 expect record_text("{\n\tformat : Dec -> Str, # how\n\tlabel : Str ?? \"\",\n}") == "{\n\tformat : () => (Dec -> Str), # how\n\tlabel : (() => Str) ?? (|| \"\"),\n}"
 expect record_text("{}") == "{}"
-expect pattern_of("|{ label, faces!, day: today, children, .. }|") == Ok({ text: "|{ label: label!, faces!, day: today!, children, .. }|", props: ["label", "today"], record: None })
-expect pattern_of("|props|") == Ok({ text: "|props|", props: [], record: Some("props") })
-expect pattern_of("|{}|") == Ok({ text: "|{}|", props: [], record: None })
+expect pattern_of("|{ label, faces!, day: today, children, .. }|") == Ok({ text: "|{ label: label!, faces!, day: today!, children, .. }|", props: ["label", "today"], record: None, named: ["label", "faces!", "day", "children"] })
+expect pattern_of("|props|") == Ok({ text: "|props|", props: [], record: Some("props"), named: [] })
+expect pattern_of("|{}|") == Ok({ text: "|{}|", props: [], record: None, named: [] })
+expect pattern_of("|{ kind, on_pick!, ..rest }|") == Ok({ text: "|{ kind: kind!, on_pick!, ..rest }|", props: ["kind"], record: Some("rest"), named: ["kind", "on_pick!"] })
 expect Getters.tag_of("status_pill") == "StatusPill"

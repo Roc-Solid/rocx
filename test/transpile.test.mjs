@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import { RocxError, rocString, transpile, transpileModule, viewsDefined } from "../rocx-cli/rocx.mjs";
 import { remap, TRY_HINT } from "../rocx-cli/rocx.mjs";
 import { scopeClass } from "../rocx-cli/rocx.mjs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 /** The generated code without the closing note, which every output ends with. */
 const roc = (source) => transpile(source, "T.rocx").replace(/\n\n# rocx: generated from[^\n]*\n$/, "");
@@ -201,6 +204,49 @@ test("the compiler's report that Try has no parser_for (an endpoint's body or an
 	assert.equal(remap(report.replace("Try(Str, [NotFound])", "Thing")), report.replace("Try(Str, [NotFound])", "Thing"), "another type's report is as it was");
 });
 
+test("components: a record spread on a component passes its fields on as they are (D-052): Solid's merge (the last of a name wins) and, with a pattern's ..rest, its omit", () => {
+	const code = (lines, opts = {}) => transpileModule(lines.join("\n"), "Ui/Button.rocx", { module: "Ui/Button", ...opts }).code.split("\n");
+	const annotated = code(["import Base", "Button := [].{", "\tview! : { kind : Str, label : Str, size : U64, on_press! : () => {} } => Html", "\tview! = |{ kind, ..rest }| <Base {...rest} size={3} class={kind} />", "}"]);
+	assert.equal(annotated[3], "\tview! = |{ kind: kind!, ..rest }| Html.component(|| Base.view!({ label: rest.label, on_press!: rest.on_press!, size: || 3, class: || kind!(), }))", "the fields rocx knows, written out, getters as they are; an attribute after replaces one");
+	const before = code(["import Base", "Button := [].{", "\tview! : { label : Str } => Html", "\tview! = |props| <Base label=\"x\" {...props} />", "}"]);
+	assert.equal(before[3], "\tview! = |props| Html.component(|| Base.view!({ label: props.label, }))", "a spread after an attribute replaces it, as in JSX");
+	const unknown = code(["import Base", "Button := [].{", "\tview! = |{ kind, ..rest }| <Base {...rest} size={3} />", "}"]);
+	assert.equal(unknown[2], "\tview! = |{ kind: kind!, ..rest }| Html.component(|| Base.view!({ ..rest, size: || 3, }))", "fields rocx doesn't know: Roc's record update");
+	const alone = code(["import Base", "Button := [].{", "\tview! = |{ kind, ..rest }| <Base {...rest} />", "}"]);
+	assert.equal(alone[2], "\tview! = |{ kind: kind!, ..rest }| Html.component(|| Base.view!(rest))", "alone, the record as it is");
+	const read = code(["Button := [].{", "\tview! : { kind : Str, label : Str } => Html", "\tview! = |{ kind, ..rest }| <p>{rest.label} {kind}</p>", "}"]);
+	assert.equal(read[2], `\tview! = |{ kind: kind!, ..rest }| Html.element("p", [], [Html.text_of(|| (rest.label)()), Html.text(" "), Html.text_of(|| kind!()),])`, "a field of the rest read through its getter, as a whole record's is");
+	assert.throws(() => code(["import Base", "Button := [].{", "\tview! = |{ kind, ..rest }| <Base {...rest} {...kind} />", "}"]), /two records whose fields rocx doesn't know/);
+	assert.throws(() => code(["import pf.Show", "Button := [].{", "\tview! = |{ kind, ..rest }| <Show {...rest} />", "}"]), /<Show> takes its props as they are written/);
+	assert.throws(() => code(["import Base", "x = <Base {...make(1)} />"]), /spread a record by its name/);
+	assert.throws(() => code(["x = <div {...attrs} />"]), /unexpected "\{" in <div>/, "an element takes no spread");
+});
+
+test("rocx check: a report at a component given a record's fields gets a hint, what rocx wrote and what to do (D-052)", () => {
+	const dir = mkdtempSync(join(tmpdir(), "rocx-spread-"));
+	try {
+		// The compiler's report at the line (1-based) of the generated Button.roc, which quotes it.
+		const report = (lines, line) => {
+			const source = lines.join("\n");
+			writeFileSync(join(dir, "Button.rocx"), source);
+			const generated = transpileModule(source, "Button.rocx", { module: "Button" }).code;
+			writeFileSync(join(dir, "Button.roc"), generated);
+			const quoted = generated.split("\n")[line - 1].trim();
+			return remap([`── ✗ type mismatch ──── ${join(dir, "Button.roc")}:${line}:30`, "", "This expression is used in an unexpected way.", "", quoted, "^^^^", "", "Hint: This record is missing the field: size", "", "── 1 errors and 0 warnings ──"].join("\n")).split("\n");
+		};
+		const update = report(["import Base", "Button := [].{", "\tview! = |{ kind, ..rest }| <Base {...rest} size={3} />", "}"], 3);
+		const hint = update.findIndex((line) => line.startsWith("Hint: rocx passes {...record} on as Roc's record update"));
+		assert.ok(hint > 0 && hint < update.indexOf("── 1 errors and 0 warnings ──"), update.join("\n"));
+		assert.ok(update.some((line) => line.trim() === "view! = |{ kind, ..rest }| <Base {...rest} size={3} />"), "the .rocx line quoted");
+		const written = report(["import Base", "Button := [].{", "\tview! : { kind : Str, label : Str } => Html", "\tview! = |{ kind, ..rest }| <Base {...rest} />", "}"], 4);
+		assert.ok(written.some((line) => line.startsWith("Hint: rocx passes {...record} on field by field")), written.join("\n"));
+		const plain = report(["import Base", "Button := [].{", "\tview! = |{ kind }| <Base size={3} />", "}"], 3);
+		assert.ok(!plain.some((line) => line.startsWith("Hint: rocx passes")), "no spread, no hint");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 test("components: holes and attributes are computations, handlers effects", () => {
 	const reactive = (source) => transpile(source, "T.rocx").replace(/\n\n# rocx: generated from[^\n]*\n$/, "");
 	assert.equal(reactive(`x = <p title="Hi" class:on={a.get!()}>Hi {name.get!()}</p>`), `x = Html.element("p", [Html.attr("title", "Hi"), Html.class_of("on", || a.get!()),], [Html.text("Hi "), Html.text_of(|| name.get!()),])`);
@@ -353,6 +399,22 @@ test("components: a prop read in a lambda that may be pure is read where that la
 	assert.equal(line("rows = xs.map(|x| (x, me, <b on:click={|| f!(xs.keep_if(|y| y == me))} />))"), `\t\trows = xs.map((|me| |x| (x, me, Html.element("b", [Html.on("click", || f!(xs.keep_if((|me_2| |y| y == me_2)(me!())))),], [])))(me!()))`, "a root inside another's run: its own names, read where it is made");
 	assert.equal(line("x = { id: day.id, me }"), "\t\tx = { id: day!().id, me: me!() }", "a record's label is no read; a punned field is");
 	assert.equal(line("x = card.me"), "\t\tx = card.me", "a field of something else");
+});
+
+test("components: a dev build says where a component's body calls an accessor, for the browser's warning of a read made once (D-052)", () => {
+	const lines = (body, dev = true) => transpileModule(["Chart := [].{", "\tview! : { goal : U64, label : Str } => Html", "\tview! = |{ goal, label }| {", ...body.map((line) => `\t\t${line}`), "\t}", "}"].join("\n"), "Ui/Chart.rocx", { module: "Ui/Chart", dev }).code.split("\n").slice(3, 3 + body.length);
+	const body = ["(drawn!, set_drawn!) = create_signal!(goal)", "first = drawn!()", "x = { id: label, goal }", "fmt = |x| \"${x} ${label}\"", "kept = untrack!(|| goal)", "n = store.count!()", "<p on:click={|| set_drawn!(goal)}>{label} {drawn!().to_str()}</p>"];
+	const [signal, first, record, fmt, kept, field, markup] = lines(body);
+	assert.equal(signal, `\t\t(drawn!, set_drawn!) = create_signal!(Html.read_at!("Ui/Chart.rocx:4:41", goal!))`, "a prop read in the body: its getter, said where");
+	assert.equal(first, `\t\tfirst = Html.read_at!("Ui/Chart.rocx:5:11", drawn!)`, "an accessor called with nothing");
+	assert.equal(record, `\t\tx = { id: Html.read_at!("Ui/Chart.rocx:6:13", label!), goal: Html.read_at!("Ui/Chart.rocx:6:20", goal!) }`, "in a record, punned too");
+	assert.equal(fmt, `\t\tfmt = (|label| |x| "\${x} \${label}")(Html.read_at!("Ui/Chart.rocx:7:9", label!))`, "a pure helper's read, made in the body: where the helper is");
+	assert.equal(kept, "\t\tkept = untrack!(|| goal!())", "inside untrack!'s lambda: not the body's");
+	assert.equal(field, "\t\tn = store.count!()", "a field's accessor, as written");
+	assert.equal(markup, `\t\tHtml.element("p", [Html.on("click", || set_drawn!(goal!())),], [Html.text_of(|| label!()), Html.text(" "), Html.text_of(|| drawn!().to_str()),])`, "markup's holes and handlers: not the body's");
+	assert.deepEqual(lines(body, false).slice(0, 2), ["\t\t(drawn!, set_drawn!) = create_signal!(goal!())", "\t\tfirst = drawn!()"], "any other build: as before");
+	const outside = transpileModule("x! = || count!()\ny = count!()", "Page.rocx", { module: "Page", dev: true }).code.split("\n");
+	assert.deepEqual(outside.slice(0, 2), ["x! = || count!()", "y = count!()"], "outside a component: as written");
 });
 
 test("components: a prop's name can't be bound again in its view (D-039)", () => {
