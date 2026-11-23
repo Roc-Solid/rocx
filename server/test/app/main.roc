@@ -1797,6 +1797,9 @@ probe! = |{}| {
 			}),
 			# Where the page is (`Router.location!`): the request's path and query.
 			Html.element("p", [Html.attr("class", "at")], [Html.text_of(|| where!({}))]),
+			# Holes that read nothing that changes (D-052): static, written without comments.
+			Html.element("p", [Html.attr("class", "untracked")], [Html.text_of(|| Solid.untrack!(|| count!()).to_str())]),
+			Html.html_of(|| Html.element("b", [], [Html.text("static")])),
 			# Raw text, a doctype and the static attributes, as the walker renders them.
 			Html.doctype({}),
 			Html.element("style", [Html.class_if("on", Bool.True), Html.class_if("off", Bool.False), Html.attr("class", "s")], [Html.source_text("p > b { content: \"&\" }")]),

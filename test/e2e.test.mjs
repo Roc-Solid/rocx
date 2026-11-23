@@ -256,21 +256,21 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		const home = await get("/");
 		assert.equal(home.status, 200);
 		assert.equal(home.app, "e2e", "the app's default middleware ran");
-		assert.match(home.html, /^<!doctype html> <html lang="en"><head><meta charset="utf-8"> <title>Home<\/title><\/head> <body><nav>.*<span class="badge">e2e<\/span><\/nav> <main><!--errored--><section class="home"><h1>Home<\/h1> <span class="badge">pure<\/span> <button class="count" type="button">Clicked <!--x-->1<!--\/x--><\/button> <!--nohydration--><aside class="note">Prose the browser never hydrates, with a <span class="badge">badge<\/span> in it\.<\/aside><!--\/nohydration--><\/section><!--\/errored--><\/main> <footer class="at"><!--x-->\/<!--\/x--><\/footer><script type="application\/json" class="rocx-answers">\[\]<\/script><script type="module" data-rocx src="\/rocx\/start\.js"><\/script><\/body><\/html>$/);
+		assert.match(home.html, /^<!doctype html> <html lang="en"><head><meta charset="utf-8"> <title>Home<\/title><\/head> <body><nav>.*<span class="badge">e2e<\/span><\/nav> <main><!--errored--><section class="home"><h1>Home<\/h1> <span class="badge">pure<\/span> <button class="count" type="button">Clicked <!--x-->1<!--\/x--><\/button> <!--nohydration--><aside class="note">Prose the browser never hydrates, with a <span class="badge">badge<\/span> in it\.<\/aside><!--\/nohydration--><\/section><!--\/errored--><\/main> <footer class="at">\/<\/footer><script type="application\/json" class="rocx-answers">\[\]<\/script><script type="module" data-rocx src="\/rocx\/start\.js"><\/script><\/body><\/html>$/);
 		const post = await get("/posts/hello");
-		assert.match(post.html, /<head><meta charset="utf-8"> <title data-rocx>Post hello<\/title><title>A post<\/title><\/head>.*<main><!--errored--><div class="posts" data-slug="hello"><article class="post"><!--x--><!--\/x--> <h1>Post <!--x-->hello<!--\/x--><\/h1> <a href="\/posts\/other">/, "its param, in the page (a getter, D-039: a hole of its own) and its layout; the root layout's <Errored> around both; the page's <Title> first in <head>, before the layout's");
+		assert.match(post.html, /<head><meta charset="utf-8"> <title data-rocx>Post hello<\/title><title>A post<\/title><\/head>.*<main><!--errored--><div class="posts" data-slug="hello"><article class="post"><!--x--><!--\/x--> <h1>Post hello<\/h1> <a href="\/posts\/other">/, "its param, in the page (a getter, D-039, given what doesn't change: static, D-052) and its layout; the root layout's <Errored> around both; the page's <Title> first in <head>, before the layout's");
 		// A route file's own components, defined below its page: one with a signal, a pure one.
 		const local = await get("/local");
 		assert.equal(local.status, 200);
 		assert.match(local.html, /<title data-rocx>Local 0<\/title><title>Local<\/title>.*<section class="local"><!--x--><!--\/x--> <p class="board rx-[a-z0-9]+"><!--x-->0<!--\/x--><\/p> <span class="tag">its own<\/span> <button class="bump" type="button">Bump<\/button><\/section>/, "a route file's own components, its <style> scoping its Board");
 		const missing = await get("/nope");
 		assert.equal(missing.status, 404);
-		assert.match(missing.html, /<title>Not here<\/title>.*<main><section class="error"><h1><!--x-->404<!--\/x--><\/h1> <p class="problem"><!--x-->nothing at \/nope<!--\/x--><\/p><\/section><\/main> <footer class="at"><!--x-->\/nope<!--\/x--><\/footer>/);
+		assert.match(missing.html, /<title>Not here<\/title>.*<main><section class="error"><h1>404<\/h1> <p class="problem">nothing at \/nope<\/p><\/section><\/main> <footer class="at">\/nope<\/footer>/);
 		const text = await fetch(`${server.url}/nope`);
 		assert.deepEqual([text.status, text.headers.get("content-type"), await text.text()], [404, "text/plain; charset=utf-8", "nothing at /nope"]);
 		const broken = await get("/broken");
 		assert.equal(broken.status, 500);
-		assert.match(broken.html, /<title>Broken<\/title>.*<main><!--errored:failed--><section class="error"><h1><!--x-->500<!--\/x--><\/h1> <p class="problem"><!--x-->nothing above provides Generated\/BrokenPage\.missing[^<]*<!--\/x--><\/p><\/section><!--\/errored--><\/main>/, "the error page, inside the layout");
+		assert.match(broken.html, /<title>Broken<\/title>.*<main><!--errored:failed--><section class="error"><h1>500<\/h1> <p class="problem">nothing above provides Generated\/BrokenPage\.missing[^<]*<\/p><\/section><!--\/errored--><\/main>/, "the error page, inside the layout");
 		// A page whose read its endpoint refuses (`Endpoint.get!`): a 404 is the page's 404, the error
 		// page with why; a 5xx is a 500, as any failure is.
 		const thing = await get("/things/1");
@@ -278,10 +278,10 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		assert.match(thing.html, /<p class="thing"><!--x-->Thing 1<!--\/x--><\/p>/);
 		const gone = await get("/things/gone");
 		assert.equal(gone.status, 404, "not a 500: the data isn't there");
-		assert.match(gone.html, /<title>A thing<\/title>.*<main><!--errored:failed--><section class="error"><h1><!--x-->404<!--\/x--><\/h1> <p class="problem"><!--x-->GET \/things\/gone: 404: Not found<!--\/x--><\/p><\/section><!--\/errored--><\/main>/, "the app's error page, with the status and why");
+		assert.match(gone.html, /<title>A thing<\/title>.*<main><!--errored:failed--><section class="error"><h1>404<\/h1> <p class="problem">GET \/things\/gone: 404: Not found<\/p><\/section><!--\/errored--><\/main>/, "the app's error page, with the status and why");
 		const down = await get("/things/down");
 		assert.equal(down.status, 500);
-		assert.match(down.html, /<h1><!--x-->500<!--\/x--><\/h1> <p class="problem"><!--x-->GET \/things\/down: 503: the shelf is down<!--\/x--><\/p>/);
+		assert.match(down.html, /<h1>500<\/h1> <p class="problem">GET \/things\/down: 503: the shelf is down<\/p>/);
 		assert.deepEqual([(await get("/members")).status, (await get("/members")).html], [401, "members only"]);
 		// The jobs page, a plugin's page: behind the app's middleware (its header), then its guard.
 		assert.deepEqual(await get("/admin/jobs"), { status: 401, app: "e2e", html: "members only" }, "the guard refuses a stranger");
@@ -301,7 +301,7 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		assert.deepEqual(JSON.parse(/const STORIES = (\[.*\]);/.exec(catalog.html)[1]).map((story) => story.id), ["Counter/at-ten", "Ui/Badge/label"]);
 		const story = await get("/__rocx/stories/Counter/at-ten");
 		assert.equal(story.status, 200);
-		assert.match(story.html, /<title>Home<\/title>.*<main><!--errored--><button class="count" type="button">Clicked <!--x-->10<!--\/x--><\/button><!--\/errored--><\/main> <footer class="at"><!--x-->\/__rocx\/stories\/Counter\/at-ten<!--\/x--><\/footer>/);
+		assert.match(story.html, /<title>Home<\/title>.*<main><!--errored--><button class="count" type="button">Clicked <!--x-->10<!--\/x--><\/button><!--\/errored--><\/main> <footer class="at">\/__rocx\/stories\/Counter\/at-ten<\/footer>/);
 		assert.match((await get("/__rocx/stories/Ui/Badge/label")).html, /<main><!--errored--><span class="badge">story<\/span><!--\/errored--><\/main>/);
 		assert.equal((await get("/__rocx/stories/Counter/nothing")).status, 404);
 		const answered = await fetch(`${server.url}/members`, { headers: { accept: "application/json", cookie: "member=Grace" } });
@@ -448,8 +448,8 @@ test("routes, served natively: each page in its layouts, a param a page's, a pat
 		const scripts = '<script type="application/json" class="rocx-answers">[]</script><script type="module" data-rocx src="/rocx/start.js"></script>';
 		assert.deepEqual(await page("/"), { status: 200, html: `<!doctype html><main><!--errored--><h1>Home</h1><!--/errored--></main>${scripts}` });
 		assert.deepEqual(await page("/blog"), { status: 200, html: `<!doctype html><main><!--errored--><section class="blog"><h2>The blog</h2></section><!--/errored--></main>${scripts}` });
-		assert.deepEqual(await page("/blog/hello"), { status: 200, html: `<!doctype html><main><!--errored--><section class="blog"><h2>Post <!--x-->hello<!--/x--></h2> <a href="/blog/other">The other one</a></section><!--/errored--></main>${scripts}` }, "its param (a getter, D-039: a hole of its own), its link from Paths");
-		assert.deepEqual(await page("/blog/hello/again"), { status: 404, html: `<!doctype html><main><p><!--x-->404<!--/x-->: <!--x-->nothing at /blog/hello/again<!--/x--></p></main>${scripts}` }, "the error page's props, getters (D-039): holes of their own");
+		assert.deepEqual(await page("/blog/hello"), { status: 200, html: `<!doctype html><main><!--errored--><section class="blog"><h2>Post hello</h2> <a href="/blog/other">The other one</a></section><!--/errored--></main>${scripts}` }, "its param (a getter, D-039, of what doesn't change: static, D-052), its link from Paths");
+		assert.deepEqual(await page("/blog/hello/again"), { status: 404, html: `<!doctype html><main><p>404: nothing at /blog/hello/again</p></main>${scripts}` }, "the error page's props, getters (D-039) of what doesn't change: static (D-052)");
 		const known = await fetch(`${server.url}/.well-known/oauth-authorization-server`, { headers: { accept: "text/html" } });
 		assert.equal(known.status, 200);
 		assert.deepEqual(await known.json(), { issuer: "https://roc-solid.example" });

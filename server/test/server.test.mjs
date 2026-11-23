@@ -500,7 +500,8 @@ test("calls taking turns on two Roc threads keep their own state: waits, then cr
 					return two.get(`/wait/crash?id=${id}&ms=${ms()}`).then(async (response) => [response.status, await response.text(), [500, `Roc crashed: crash ${id} after waiting`]]);
 				case 1:
 					return two.text(`/wait/page?id=${id}&ms=${ms()}`).then((html) => {
-						const holes = [/class="waited"><!--x-->([^<]*)</, /class="refused"><!--x-->[^<]*: 409: ([^<]*)</, /class="after"><!--x-->([^<]*)</].map((hole) => hole.exec(html)?.[1]);
+						// The refusal and `after` read nothing that changes: static, no comments (D-052).
+						const holes = [/class="waited"><!--x-->([^<]*)</, /class="refused">[^<]*: 409: ([^<]*)</, /class="after">([^<]*)</].map((hole) => hole.exec(html)?.[1]);
 						return [200, holes.join(" | "), [200, `waited ${id} | refused ${id} | after ${id}`]];
 					});
 				case 2:
@@ -3399,10 +3400,12 @@ const probe = (member) =>
 	'<div class="probe big" title="count 41"><p><!--x-->42<!--/x--></p><p><!--x-->82<!--/x--></p><p><!--x-->HELLO<!--/x--></p>' +
 	"<ul><!--for--><!--row--><li><!--x-->0 ada<!--/x--></li><!--/row--><!--row--><li><!--x-->1 grace<!--/x--></li><!--/row--><!--/for--></ul>" +
 	'<!--show--><p class="small">small</p><!--/show-->' +
-	'<!--errored:failed--><p class="failed"><!--x-->nothing above provides Probe.missing: render this under its provider<!--/x--></p><!--/errored-->' +
+	'<!--errored:failed--><p class="failed">nothing above provides Probe.missing: render this under its provider</p><!--/errored-->' +
 	'<input disabled value="a &amp; b">' +
 	member +
-	'<p class="at"><!--x-->/probe ? from=probe<!--/x--></p>' +
+	'<p class="at">/probe ? from=probe</p>' +
+	// Holes that read nothing that changes are static (D-052): a signal read inside untrack!, and markup.
+	'<p class="untracked">41</p><b>static</b>' +
 	// The native walker's raw text, doctype, `class_if` and `optional` (an empty one left out, an unsafe URL replaced).
 	'<!doctype html><style class="on s">p > b { content: "&" }</style><a href="about:invalid#rocx-unsafe-url" rel="next">&lt;a &amp; b&gt;</a>' +
 	"</div>";
@@ -3412,7 +3415,7 @@ test("pages of components: signals, memos, a keyed <For>, a <Show>, an <Errored>
 	const refused = carried("/probe/member", 401, "members only");
 	assert.equal(
 		await text("/probe?from=probe"),
-		`<!doctype html><html><body>${probe('<!--errored:failed--><p class="refused"><!--x-->GET /probe/member: 401: members only<!--/x--></p><!--/errored-->')}<p>after</p>` +
+		`<!doctype html><html><body>${probe('<!--errored:failed--><p class="refused">GET /probe/member: 401: members only</p><!--/errored-->')}<p>after</p>` +
 			`<script type="application/json" class="rocx-answers">${JSON.stringify([shouted, refused])}</script>${FIXTURE_SCRIPT}<script type="module" data-rocx src="/rocx/start.js"></script></body></html>`,
 		"its reads' answers before </body>, the refused one too, so the browser fails where the server did",
 	);
@@ -3484,9 +3487,9 @@ const documentPage = (member, answers) =>
 	'<!doctype html><html lang="en"><head><title>A page</title></head><body>' +
 	'<p class="count"><!--x-->1<!--/x--></p>' +
 	'<!--loading--><p class="shouted"><!--x-->PAGE<!--/x--></p><!--/loading-->' +
-	'<!--errored:failed--><p class="failed"><!--x-->nothing above provides Probe.missing: render this under its provider<!--/x--></p><!--/errored-->' +
+	'<!--errored:failed--><p class="failed">nothing above provides Probe.missing: render this under its provider</p><!--/errored-->' +
 	member +
-	'<p class="at"><!--x-->/page ? from=test<!--/x--></p>' +
+	'<p class="at">/page ? from=test</p>' +
 	scripts(answers) +
 	"</body></html>";
 
@@ -3499,7 +3502,7 @@ test("pages of components: rendered whole, every hole once, a doctype first, the
 	assert.equal(answer.headers.get("x-page"), "yes", "the answer's own headers");
 	assert.equal(
 		await answer.text(),
-		documentPage('<!--errored:failed--><p class="refused"><!--x-->GET /probe/member: 401: members only<!--/x--></p><!--/errored-->', JSON.stringify([shoutAnswer, carried("/probe/member", 401, "members only")])),
+		documentPage('<!--errored:failed--><p class="refused">GET /probe/member: 401: members only</p><!--/errored-->', JSON.stringify([shoutAnswer, carried("/probe/member", 401, "members only")])),
 		"<Loading> renders what is inside it, a memo is computed as it is made, an <Errored> catches its failure; the refusal is among the answers",
 	);
 });
@@ -3664,7 +3667,7 @@ test("endpoint reads: a page reads a GET endpoint as the server renders it, in-p
 	assert.match(html, /<p class="data"><!--x-->1 Ada 7<!--\/x--><\/p>/, "the page's query, its cookie and its header, as the in-process GET carried them");
 	assert.match(html, /<p class="pending"><!--x-->settled<!--\/x--><\/p>/, "is_pending!: the server renders final values");
 	assert.match(html, /<p class="missing"><!--x-->Not found<!--\/x--><\/p>/, "a refusal, as a value (read!)");
-	assert.match(html, /<p class="refused"><!--x-->GET \/reads\/missing: 404: Not found<!--\/x--><\/p>/, "and as a failure the <Errored> shows (get!)");
+	assert.match(html, /<p class="refused">GET \/reads\/missing: 404: Not found<\/p>/, "and as a failure the <Errored> shows (get!); its fallback's hole reads nothing that changes: static (D-052)");
 	assert.match(html, /<p class="static">region<\/p>/, "read inside the <NoHydration> too");
 	const answers = answersOf(html);
 	assert.deepEqual(

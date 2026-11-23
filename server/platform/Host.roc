@@ -359,4 +359,12 @@ Host := [].{
 	## The document's title, as a `<Title>` says it while the server renders: noted for the page,
 	## whose `<head>` gets it, the last one rendered's (`<title data-rocx>`).
 	title! : Str => {}
+
+	## `Solid.untrack!`: the running computation's reads aren't tracked from `Bool.True` on, until
+	## `Bool.False`. The server tracks nothing, but a hole whose reads were all untracked is static.
+	untrack! : Bool => {}
+
+	## A dev build's `Html.read_at!`: in the browser, where the read a component's body is making is.
+	## The server warns of none: it answers "".
+	read_at! : Str => Str
 }

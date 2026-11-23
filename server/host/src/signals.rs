@@ -55,10 +55,36 @@ fn marked(scope: &Scope, label: &str, inner: &str) -> String {
 }
 
 /// What is running: a hole (its scope; in an `<Errored>`'s fallback, what failed) or a memo.
+/// `live` once it read or made something that changes (D-052, `touched`): a hole whose run is not
+/// is static. `untracked`: how many `untrack!`s it is inside now.
+#[derive(Default)]
 struct Frame {
     scope: Scope,
     problem: Option<String>,
     memo: Option<u64>,
+    live: bool,
+    untracked: u32,
+}
+
+impl Frame {
+    fn of(scope: Scope, problem: Option<String>, memo: Option<u64>) -> Frame {
+        Frame { scope, problem, memo, ..Frame::default() }
+    }
+}
+
+/// The computation running read or made something that changes (D-052), as web/runtime.js's
+/// `touch` notes it: a signal, a memo, a row, a submission or an endpoint read (`read`: not inside
+/// `untrack!`), `is_pending!`; a signal or memo made, an effect, a cleanup, a timer, a listen, a
+/// subscription, a title. A hole whose run did none of these is static: written without its
+/// comments, which the browser, hydrating, knows by running it the same way.
+fn touched(read: bool) {
+    with(|render| {
+        if let Some(frame) = render.frames.last_mut()
+            && !(read && frame.untracked > 0)
+        {
+            frame.live = true;
+        }
+    });
 }
 
 struct Memo {
@@ -203,7 +229,7 @@ pub fn render_page(page: roc::Page) -> Result<Rendered, Crash> {
     begin(Render::default());
     let root = Scope::default();
     let walked = page.rendering(|| {
-        guarded(Frame { scope: root.clone(), problem: None, memo: None }, || page.mount())
+        guarded(Frame::of(root.clone(), None, None), || page.mount())
             .and_then(|json| parse(&json))
             .and_then(|markup| html(&markup, &root))
     });
@@ -256,6 +282,11 @@ fn end() -> Render {
 
 /// Runs a call into Roc as the computation `frame` describes: its answer, or why it stopped.
 fn guarded(frame: Frame, call: impl FnOnce() -> Result<String, Crash>) -> Result<String, Stop> {
+    guarded_live(frame, call).map(|(json, _)| json)
+}
+
+/// The same, and whether the run was live (`touched`): a hole that wasn't is static.
+fn guarded_live(frame: Frame, call: impl FnOnce() -> Result<String, Crash>) -> Result<(String, bool), Stop> {
     let mark = with(|render| {
         render.frames.push(frame);
         render.made.len()
@@ -263,9 +294,9 @@ fn guarded(frame: Frame, call: impl FnOnce() -> Result<String, Crash>) -> Result
     .unwrap_or(0);
     let result = call();
     let failure = roc::take_failure();
-    with(|render| render.frames.pop());
+    let live = with(|render| render.frames.pop().is_some_and(|frame| frame.live)).unwrap_or(true);
     match result {
-        Ok(json) => Ok(json),
+        Ok(json) => Ok((json, live)),
         Err(Crash(crashed)) => {
             with(|render| render.forget_since(mark));
             Err(match failure {
@@ -278,11 +309,16 @@ fn guarded(frame: Frame, call: impl FnOnce() -> Result<String, Crash>) -> Result
 
 /// Runs a kept computation once.
 fn once(id: &Value, scope: &Scope, problem: Option<String>) -> Result<String, Stop> {
+    once_live(id, scope, problem).map(|(json, _)| json)
+}
+
+/// The same, and whether its run was live: a hole whose run wasn't is static (D-052).
+fn once_live(id: &Value, scope: &Scope, problem: Option<String>) -> Result<(String, bool), Stop> {
     let id = id.as_u64().ok_or_else(|| Stop::Crashed("rocx: a hole without an id".into()))?;
     let Some(Some(callable)) = with(|render| render.kept.get(&id).copied()) else {
         return Err(Stop::Crashed(format!("rocx: no computation {id} is kept")));
     };
-    guarded(Frame { scope: scope.clone(), problem, memo: None }, || roc::run(callable))
+    guarded_live(Frame::of(scope.clone(), problem, None), || roc::run(callable))
 }
 
 fn parse(json: &str) -> Result<Value, Stop> {
@@ -344,13 +380,17 @@ fn html(node: &Value, scope: &Scope) -> Result<String, Stop> {
         // A <script>'s or <style>'s text, as rocx wrote it from the .rocx file: never data.
         "raw" => Ok(field("v").as_str().unwrap_or("").to_string()),
         "doctype" => Ok("<!doctype html>".to_string()),
+        // A hole that read and made nothing that changes is static (D-052): written as a text is,
+        // without its comments; hydrating, the browser runs it, finds it static too, and takes it so.
         "x" => {
-            let text = parse(&once(field("r"), scope, None)?)?;
-            Ok(marked(scope, "x", &escape(&shown(&text))))
+            let (json, live) = once_live(field("r"), scope, None)?;
+            let text = escape(&shown(&parse(&json)?));
+            Ok(if live { marked(scope, "x", &text) } else { text })
         }
         "h" | "l" => {
             let label = if kind == "h" { "html" } else { "list" };
-            let parsed = parse(&once(field("r"), scope, None)?)?;
+            let (json, live) = once_live(field("r"), scope, None)?;
+            let parsed = parse(&json)?;
             let nodes = match parsed {
                 Value::Array(nodes) => nodes,
                 single => vec![single],
@@ -359,7 +399,7 @@ fn html(node: &Value, scope: &Scope) -> Result<String, Stop> {
             for child in &nodes {
                 inner.push_str(&html(child, scope)?);
             }
-            Ok(marked(scope, label, &inner))
+            Ok(if live { marked(scope, label, &inner) } else { inner })
         }
         "f" => children(node, scope),
         // On the server nothing waits: what is inside renders.
@@ -620,12 +660,14 @@ pub extern "C" fn roc_keep(callable: Callable) -> u64 {
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_signal_new(value: Callable) -> u64 {
     let _host = crate::preempt::host();
+    touched(false);
     register(value, Made::Signal)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_signal_get(id: u64) -> Callable {
     let _host = crate::preempt::host();
+    touched(true);
     match with(|render| render.signals.get(&id).copied()).flatten() {
         Some(value) => roc::retain(value),
         None => roc::fail("rocx: a signal was read after the part that made it went away".into()),
@@ -642,6 +684,7 @@ pub extern "C" fn roc_signal_set(_id: u64, value: Callable) {
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_memo_new(runner: Callable) -> u64 {
     let _host = crate::preempt::host();
+    touched(false);
     let made = with(|render| {
         let id = render.id();
         render.memos.insert(id, Memo { runner, value: None, next: None, failed: None });
@@ -653,7 +696,7 @@ pub extern "C" fn roc_memo_new(runner: Callable) -> u64 {
         roc::fail(OUTSIDE.into())
     };
     // Computed now: on the server nothing waits.
-    let computed = guarded(Frame { scope, problem: None, memo: Some(id) }, || roc::run(runner));
+    let computed = guarded(Frame::of(scope, None, Some(id)), || roc::run(runner));
     let crashed = with(|render| {
         let memo = render.memos.get_mut(&id)?;
         match computed {
@@ -710,6 +753,7 @@ pub extern "C" fn roc_memo_get(id: u64) -> Callable {
         Failed(String),
         Missing,
     }
+    touched(true);
     let read = with(|render| match render.memos.get(&id) {
         Some(Memo { failed: Some(why), .. }) => Read::Failed(why.clone()),
         Some(Memo { value: Some(value), .. }) => Read::Value(*value),
@@ -734,6 +778,7 @@ pub extern "C" fn roc_refresh(probe: Callable) {
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_is_pending(probe: Callable) -> bool {
     let _host = crate::preempt::host();
+    touched(true);
     roc::release(probe);
     false
 }
@@ -874,6 +919,7 @@ pub extern "C" fn roc_for_new() -> u64 {
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_row_index(list: u64, key: RocStr) -> u64 {
     let _host = crate::preempt::host();
+    touched(true);
     let key = taken(key);
     match with(|render| render.lists.get(&list).and_then(|list| list.indexes.get(&key).copied())).flatten() {
         Some(index) => index,
@@ -908,6 +954,7 @@ pub extern "C" fn roc_row_set(list: u64, key: RocStr, value: Callable) {
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_row_get(list: u64, key: RocStr) -> Callable {
     let _host = crate::preempt::host();
+    touched(true);
     let key = taken(key);
     match with(|render| render.lists.get(&list).and_then(|list| list.items.get(&key).copied())).flatten() {
         Some(value) => roc::retain(value),
@@ -950,6 +997,7 @@ pub extern "C" fn roc_context_get(id: u64) -> Callable {
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_fetch(method: RocStr, url: RocStr, headers: RocStr, body: RocStr) -> RocStr {
     let _host = crate::preempt::host();
+    touched(true);
     let (method, url) = (taken(method), taken(url));
     drop((taken(headers), taken(body)));
     let rendering = with(|_| ()).is_some();
@@ -992,6 +1040,7 @@ pub extern "C" fn roc_fetch(method: RocStr, url: RocStr, headers: RocStr, body: 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_listen(url: RocStr, handler: Callable) {
     let _host = crate::preempt::host();
+    touched(false);
     drop(taken(url));
     roc::release(handler);
     roc::fail("events are listened to from the browser (a handler's); the server renders without them".into())
@@ -1002,6 +1051,7 @@ pub extern "C" fn roc_listen(url: RocStr, handler: Callable) {
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_subscribe(url: RocStr, handler: Callable) {
     let _host = crate::preempt::host();
+    touched(false);
     drop(taken(url));
     roc::release(handler);
 }
@@ -1024,6 +1074,7 @@ pub extern "C" fn roc_resync(url: RocStr) {
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_timeout(_ms: u64, handler: Callable) -> u64 {
     let _host = crate::preempt::host();
+    touched(false);
     roc::release(handler);
     0
 }
@@ -1031,6 +1082,7 @@ pub extern "C" fn roc_timeout(_ms: u64, handler: Callable) -> u64 {
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_interval(_ms: u64, handler: Callable) -> u64 {
     let _host = crate::preempt::host();
+    touched(false);
     roc::release(handler);
     0
 }
@@ -1055,12 +1107,14 @@ pub extern "C" fn roc_browser_call(name: RocStr, arg: RocStr) {
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_effect_new(effect: Callable) {
     let _host = crate::preempt::host();
+    touched(false);
     roc::release(effect);
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_cleanup(cleanup: Callable) {
     let _host = crate::preempt::host();
+    touched(false);
     roc::release(cleanup);
 }
 
@@ -1084,6 +1138,7 @@ pub extern "C" fn roc_flash(found: RocStr) -> RocStr {
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_title(title: RocStr) {
     let _host = crate::preempt::host();
+    touched(false);
     let title = taken(title);
     with(|render| render.title = Some(title));
 }
@@ -1092,12 +1147,14 @@ pub extern "C" fn roc_title(title: RocStr) {
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_action(url: RocStr) {
     let _host = crate::preempt::host();
+    touched(false);
     drop(taken(url));
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_submission(url: RocStr) -> RocStr {
     let _host = crate::preempt::host();
+    touched(true);
     drop(taken(url));
     given("")
 }
@@ -1111,6 +1168,7 @@ pub extern "C" fn roc_submission_clear(url: RocStr) {
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_submissions(url: RocStr) -> RocStr {
     let _host = crate::preempt::host();
+    touched(true);
     drop(taken(url));
     given("")
 }
@@ -1126,4 +1184,25 @@ pub extern "C" fn roc_submit(method: RocStr, url: RocStr, body: RocStr, input: R
 pub extern "C" fn roc_submission_drop(url: RocStr, _id: u64) {
     let _host = crate::preempt::host();
     drop(taken(url));
+}
+
+/// `Solid.untrack!`: the running computation's reads untracked from on to off. Nothing is tracked
+/// here, but a read inside it doesn't make a hole live (`touched`), as it doesn't in the browser.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_untrack(on: bool) {
+    let _host = crate::preempt::host();
+    with(|render| {
+        if let Some(frame) = render.frames.last_mut() {
+            frame.untracked = if on { frame.untracked + 1 } else { frame.untracked.saturating_sub(1) };
+        }
+    });
+}
+
+/// A dev build's `Html.read_at!` says where a component's body reads, for the browser's warning
+/// (web/runtime.js's `warnRead`): the server warns of nothing, and has no place to give back.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_read_at(place: RocStr) -> RocStr {
+    let _host = crate::preempt::host();
+    drop(taken(place));
+    given("")
 }

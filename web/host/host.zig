@@ -59,6 +59,8 @@ const js = struct {
     extern "env" fn js_submit(method_ptr: [*]const u8, method_len: usize, url_ptr: [*]const u8, url_len: usize, body_ptr: [*]const u8, body_len: usize, input_ptr: [*]const u8, input_len: usize) void;
     extern "env" fn js_submission_drop(ptr: [*]const u8, len: usize, id: u32) void;
     extern "env" fn js_title(ptr: [*]const u8, len: usize) void;
+    extern "env" fn js_untrack(on: u32) void;
+    extern "env" fn js_read_at(ptr: [*]const u8, len: usize) usize;
     /// `Date.now()`, and `performance.timeOrigin + performance.now()`: milliseconds, as JS has them.
     extern "env" fn js_now_millis() f64;
     extern "env" fn js_now_precise() f64;
@@ -646,6 +648,19 @@ fn hostedTitle(title: RocStr) callconv(.c) void {
     js.js_title(text.ptr, text.len);
 }
 
+// `Solid.untrack!`: the running computation's reads untracked from on to off.
+fn hostedUntrack(on: bool) callconv(.c) void {
+    js.js_untrack(@intFromBool(on));
+}
+
+// A dev build's `Html.read_at!`: where a component's body reads, for the runtime's warning; the
+// place before, to put back.
+fn hostedReadAt(place: RocStr) callconv(.c) RocStr {
+    defer place.decref(host());
+    const text = place.asSlice();
+    return taken(js.js_read_at(text.ptr, text.len));
+}
+
 // The browser's clock (`Time`): JS's milliseconds, a float, as Roc's whole numbers.
 fn hostedNowMillis() callconv(.c) u64 {
     return @intFromFloat(@max(js.js_now_millis(), 0));
@@ -736,6 +751,8 @@ comptime {
     @export(&hostedSubmit, .{ .name = "roc_submit", .visibility = hidden });
     @export(&hostedSubmissionDrop, .{ .name = "roc_submission_drop", .visibility = hidden });
     @export(&hostedTitle, .{ .name = "roc_title", .visibility = hidden });
+    @export(&hostedUntrack, .{ .name = "roc_untrack", .visibility = hidden });
+    @export(&hostedReadAt, .{ .name = "roc_read_at", .visibility = hidden });
     @export(&hostedNowMillis, .{ .name = "roc_now_millis", .visibility = hidden });
     @export(&hostedNowNanos, .{ .name = "roc_now_nanos", .visibility = hidden });
 }

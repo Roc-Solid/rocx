@@ -6,6 +6,7 @@ import pf.Solid exposing [create_signal!, create_effect!]
 ## Props, for the tests (`props_app.roc`): a value prop read from a signal (D-039: a getter), given to
 ## an effectful component in a hole, outside one and inside a `<Show>`; the same signal as an accessor
 ## prop; a component that reads its prop in its body, in a pure lambda, in an effect and in a handler;
+## one that passes the rest of its props on (`{...rest}`, D-052);
 ## and a `<For>` whose rows are made once (untracked). Then what a `<Show>` shows, and fallbacks, made
 ## when they show, with value props in them. And a property of an element's style from data,
 ## computed (`style:color`), and one whose value would load something, dropped.
@@ -29,6 +30,7 @@ Props := [].{
 				<p class="shown"><Shows label={word!()} /></p>
 			</Show>
 			<Detail label={word!()} />
+			<p class="passed"><Passes label={word!()} kind="passing" /></p>
 			<ul class="rows">
 				<For each!={items!()} keyed={|item| item.id}>
 					{|item!, _| {
@@ -86,4 +88,11 @@ Detail := [].{
 			<button class="say" on:click={|| set_said!(label)}>{said!()}</button>
 		</div>
 	}
+}
+
+## Keeps `kind`, and passes the rest of its props on, as they are (D-052): `label` is a getter still,
+## so Shows patches it in place.
+Passes := [].{
+	view! : { label : Str, kind : Str } => Html
+	view! = |{ kind, ..rest }| <span class={kind}><Shows {...rest} /></span>
 }

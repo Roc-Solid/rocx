@@ -6,7 +6,7 @@ import Context
 ## changes. The browser's timers are here too (`set_interval!`, `set_timeout!`), each stopped by
 ## the `clear!` it answers, or when what started it goes.
 ##
-##     import pf.Solid exposing [create_signal!, create_memo!, create_effect!, on_cleanup!, on_settled!, refresh!, is_pending!, use_context!, set_interval!]
+##     import pf.Solid exposing [create_signal!, create_memo!, create_effect!, on_cleanup!, on_settled!, refresh!, is_pending!, latest!, untrack!, use_context!, set_interval!]
 ##
 ##     (count!, set_count!) = create_signal!(0.U64)
 ##     doubled! = create_memo!(|| count!() * 2)
@@ -71,6 +71,37 @@ Solid := [].{
 			""
 		}
 		Host.is_pending!(Box.box(probe!))
+	}
+
+	## The last value of what the accessor reads (Solid 2.0's `latest`): a memo being computed again
+	## (a `refresh!`, or a change of what it reads) gives the value it last settled at, and doesn't
+	## make the caller wait. Every read here does that already: a memo shows its last value while it
+	## is read again (`is_pending!` says it is), since nothing holds a write back until a change is
+	## done, as Solid 2.0's transitions do. So `latest!(read!)` is `read!()`, written as Solid code
+	## writes it; it would differ only if writes were held back. A memo with no value yet still makes
+	## the caller wait (`<Loading>`'s), and one that failed still fails (`<Errored>`'s).
+	##
+	##     <input value={latest!(query!)} />
+	latest! : (() => a) => a
+	latest! = |read!| read!()
+
+	## Runs `read!` without tracking what it reads (Solid's `untrack`): its answer, and what it read
+	## doesn't make the hole, memo or effect running it run again. A computation made inside it
+	## (`create_memo!`) tracks its own reads. A read that waits still waits.
+	##
+	##     create_effect!(|| room!(), |room| log!(room, untrack!(|| user!().name)))
+	##
+	## In a component's body, a read is made once, as the component runs, so what shows doesn't
+	## follow it; a dev build (`rocx dev`, `rocx build --dev`) says so in the browser's console, once
+	## for each place (Solid 2.0's dev warning). `untrack!` says the one read is meant, a start value:
+	##
+	##     (drawn!, set_drawn!) = create_signal!(untrack!(|| goal))
+	untrack! : (() => a) => a
+	untrack! = |read!| {
+		Host.untrack!(Bool.True)
+		value = read!()
+		Host.untrack!(Bool.False)
+		value
 	}
 
 	## The value of a context (`useContext`): what the nearest provider above gives, or its default.

@@ -41,6 +41,14 @@ function run(command, args) {
  * backend and optimized, the others as the server's half (dev backend) or the browser's (for size). */
 if (!skip) {
 	run(rocxBinary(), ["build", join(here, "app"), "--client", join(out, "app-client")]);
+	// A dev build of D-052's component (`rocx build --dev`), for the warning of a read in a
+	// component's body: a copy of it, the platform named from where the copy is.
+	const devApp = join(out, "dev-app");
+	rmSync(devApp, { recursive: true, force: true });
+	mkdirSync(devApp, { recursive: true });
+	cpSync(join(here, "app", "Untracked.rocx"), join(devApp, "Untracked.rocx"));
+	writeFileSync(join(devApp, "main.roc"), readFileSync(join(here, "app", "untracked_app.roc"), "utf8").replace('"../../platform/main.roc"', '"../../../platform/main.roc"'));
+	run(rocxBinary(), ["build", devApp, "--dev"]);
 	mkdirSync(join(web, "platform", "targets", "wasm32"), { recursive: true });
 	run(zig(), ["build-obj", join(web, "host", "host.zig"), "-target", "wasm32-freestanding", "-O", "ReleaseSmall", "-fcompiler-rt", `-femit-bin=${join(web, "platform", "targets", "wasm32", "host.wasm")}`]);
 	for (const [name, app, opt] of [
@@ -51,6 +59,8 @@ if (!skip) {
 		["scroller", join(here, "app", "scroller_app.roc"), "dev"],
 		["timers", join(here, "app", "timers_app.roc"), "dev"],
 		["props", join(here, "app", "props_app.roc"), "dev"],
+		["untracked", join(here, "app", "untracked_app.roc"), "dev"],
+		["untracked-dev", join(out, "dev-app", "main.roc"), "dev"],
 		["shortcuts", join(here, "app", "shortcuts_app.roc"), "dev"],
 		["glides", join(here, "app", "glides_app.roc"), "dev"],
 		["fades", join(here, "app", "fades_app.roc"), "dev"],
@@ -440,10 +450,11 @@ test("props: a value prop is a getter (D-039): the component is made once and ke
 	const server = await Runtime.load(wasm);
 	const { html } = server.renderToString({ path: "/" });
 	const label = (text, clicks = 0) => `<button class="shows"><!--x-->${text}<!--/x--> <!--x-->${clicks}<!--/x--></button>`;
-	assert.ok(html.includes(`<p class="hole"><!--html-->${label("one")}<!--/html--></p>`), "the server renders the label in a hole of the component's");
+	assert.ok(html.includes(`<p class="hole">${label("one")}</p>`), "the hole reads nothing (Shows reads label): static, so no comments of its own (D-052)");
 	assert.ok(html.includes(`<p class="once">${label("one")}</p>`));
 	assert.ok(html.includes(`<span class="first">one</span> <span class="joined"><!--x-->a-one,b-one<!--/x--></span>`), "read in the body: static; in a pure lambda: its hole's");
 	assert.ok(html.includes(`<li data-id="a">${label("Ada")} <span class="first">Ada</span></li>`));
+	assert.ok(html.includes(`<p class="passed"><span class="passing">${label("one")}</span></p>`), "props passed on ({...rest}, D-052); a class given a constant, static");
 	assert.match(html, /<p class="painted" style="color: rgb\(200, 0, 0\)">Painted<\/p>/, "a style property from data, its url() dropped");
 	assert.ok(html.includes(`<p class="toggled"><!--show-->${label("no one")}<!--/show--></p>`), "a <Show>'s fallback, made as it shows");
 	assert.ok(html.includes(`<p class="listed"><!--for--><!--fallback-->${label("none, one")}<!--/fallback--><!--/for--></p>`), "a <For>'s fallback, made as it shows");
@@ -463,23 +474,23 @@ window.hydrated = true;
 		await tab.goto(`${site.url}/`);
 		await tab.wait("window.hydrated === true", 3000);
 		assert.deepEqual(tab.console, [], "hydrated strictly, asking for nothing");
-		const shown = () => tab.eval(`["p.hole", "p.once", "p.getter", "p.shown", "li[data-id=a] button", "li[data-id=b] button"].map((p) => document.querySelector(p).textContent)`);
+		const shown = () => tab.eval(`["p.hole", "p.once", "p.getter", "p.shown", "li[data-id=a] button", "li[data-id=b] button", "p.passed"].map((p) => document.querySelector(p).textContent)`);
 		const detail = () => tab.eval(`["span.first", "span.joined", "span.seen", "button.say"].map((p) => document.querySelector(".detail " + p).textContent)`);
 		await tab.wait(`document.querySelector(".detail .seen").textContent === "one"`);
-		assert.deepEqual(await shown(), ["one 0", "one 0", "one 0", "one 0", "Ada 0", "Bo 0"]);
+		assert.deepEqual(await shown(), ["one 0", "one 0", "one 0", "one 0", "Ada 0", "Bo 0", "one 0"]);
 		const painted = () => tab.eval("getComputedStyle(document.querySelector('p.painted')).color");
 		assert.equal(await painted(), "rgb(200, 0, 0)");
-		for (const button of ["p.hole button", "p.once button", "p.getter button", "p.shown button", "li[data-id=a] button"]) await tab.click(button);
-		await tab.wait(`document.querySelector("li[data-id=a] button").textContent === "Ada 1"`);
-		assert.deepEqual(await shown(), ["one 1", "one 1", "one 1", "one 1", "Ada 1", "Bo 0"], "each its own clicks");
+		for (const button of ["p.hole button", "p.once button", "p.getter button", "p.shown button", "li[data-id=a] button", "p.passed button"]) await tab.click(button);
+		await tab.wait(`document.querySelector("p.passed button").textContent === "one 1"`);
+		assert.deepEqual(await shown(), ["one 1", "one 1", "one 1", "one 1", "Ada 1", "Bo 0", "one 1"], "each its own clicks");
 		// The elements, to see they are kept; and what is patched.
 		await tab.eval(`window.kept = ["p.hole button", "p.once button", "p.shown button", "li[data-id=a]", ".detail"].map((p) => document.querySelector(p)); window.patched = []; window.runtime.observer = { patch: ({ node }) => window.patched.push((node.nodeType === 1 ? node : node.parentElement)?.className || node.parentElement?.localName || "detached") }`);
 		await tab.click(".set");
 		await tab.wait(`document.querySelector("p.once").textContent.startsWith("two")`);
-		assert.deepEqual(await shown(), ["two 1", "two 1", "two 1", "two 1", "Ada 1", "Bo 0"], "patched where the label is read, the component kept, its clicks with it (in a hole too)");
+		assert.deepEqual(await shown(), ["two 1", "two 1", "two 1", "two 1", "Ada 1", "Bo 0", "two 1"], "patched where the label is read, the component kept, its clicks with it (in a hole too; passed on with {...rest} too)");
 		await tab.wait(`document.querySelector(".detail .seen").textContent === "two"`);
 		assert.deepEqual(await detail(), ["one", "a-two,b-two", "two", ""], "the body's read is the first; the pure lambda's hole, and the effect, follow");
-		assert.deepEqual(await tab.eval(`window.patched.sort()`), ["getter", "joined", "painted", "seen", "shows", "shows", "shows", "shows", "shows"], "only what reads the label: six labels (one an accessor's, two in fallbacks), the pure lambda's hole, what the effect set, and the style:color");
+		assert.deepEqual(await tab.eval(`window.patched.sort()`), ["getter", "joined", "painted", "seen", "shows", "shows", "shows", "shows", "shows", "shows"], "only what reads the label: seven labels (one an accessor's, two in fallbacks, one passed on), the pure lambda's hole, what the effect set, and the style:color");
 		assert.equal(await painted(), "rgb(0, 0, 200)", "style:color, patched as what it read changed");
 		assert.equal(await tab.eval("document.querySelector('p.painted').style.backgroundImage"), "", "a url() is never set");
 		assert.equal(await tab.eval(`window.kept.every((node, i) => node === document.querySelector(["p.hole button", "p.once button", "p.shown button", "li[data-id=a]", ".detail"][i]))`), true, "the same elements");
@@ -511,6 +522,61 @@ window.hydrated = true;
 		await tab.wait(`document.querySelector("p.listed").textContent.trim() === "none, three 0"`);
 		assert.deepEqual(tab.errors, []);
 		assert.deepEqual(tab.console, []);
+	} finally {
+		await site.close();
+	}
+});
+
+test("untrack!, latest! and static holes (D-052): a hole whose reads are untracked, and a component's holes and attributes given constants, are written without comments and adopted as text, strictly; untrack! in a memo and a body; latest! is the memo's value; a dev build warns of a read in a component's body, once a place, and untrack! silences it", { skip }, async () => {
+	const load = async (name) => {
+		const wasm = readFileSync(join(out, `${name}.wasm`));
+		return { wasm, html: (await Runtime.load(wasm)).renderToString({ path: "/" }).html };
+	};
+	const { wasm, html } = await load("untracked");
+	assert.ok(html.includes(`<p class="tracked"><!--x-->1<!--/x--></p> <p class="untracked">1</p> <p class="sum"><!--x-->11<!--/x--></p> <p class="latest"><!--x-->11<!--/x--></p>`), "a hole that reads only inside untrack! is static: no comments");
+	assert.ok(html.includes(`<span class="badge" data-tone="calm">fixed<b>!</b></span>`), "given constants, a component's text and markup holes are static");
+	assert.ok(html.includes(`<span class="badge" data-tone="loud"><!--x-->n1<!--/x--><!--html--><i>.</i><!--/html--></span>`), "given what changes, they are holes");
+	assert.ok(html.includes(`<p class="start">1 <!--x-->1<!--/x--> <!--x-->1<!--/x--></p>`));
+	const dev = await load("untracked-dev");
+	assert.equal(dev.html, html, "a dev build renders the same");
+	const dir = mkdtempSync(join(tmpdir(), "rocx-untracked-"));
+	cpSync(join(web, "runtime.js"), join(dir, "runtime.js"));
+	writeFileSync(join(dir, "untracked.wasm"), wasm);
+	writeFileSync(join(dir, "untracked-dev.wasm"), dev.wasm);
+	const page = (name) => `<!doctype html><html><body><div id="app">${html}</div>
+<script type="module">
+import { Runtime } from "/runtime.js";
+window.runtime = await Runtime.load(fetch("/${name}.wasm"));
+window.runtime.hydrate(document.getElementById("app"), { strict: true });
+window.hydrated = true;
+</script></body></html>`;
+	const site = await serve(dir, (path) => (path === "/" ? page("untracked") : path === "/dev" ? page("untracked-dev") : null));
+	try {
+		const tab = await browser.page();
+		await tab.goto(`${site.url}/`);
+		await tab.wait("window.hydrated === true", 3000);
+		assert.deepEqual(tab.console, [], "hydrated strictly, the static holes taken as text; no warning in a build that isn't a dev one");
+		assert.equal(await tab.eval("window.runtime.stats.patches"), 0, "nothing patched");
+		const shown = () => tab.eval(`["tracked", "untracked", "sum", "latest"].map((name) => document.querySelector("p." + name).textContent).concat([...document.querySelectorAll(".badge, .start")].map((node) => node.textContent))`);
+		await tab.eval(`window.patched = []; window.runtime.observer = { patch: ({ node }) => window.patched.push((node.nodeType === 1 ? node : node.parentElement)?.className) }`);
+		await tab.click(".add");
+		await tab.wait(`document.querySelector("p.tracked").textContent === "2"`);
+		assert.deepEqual(await shown(), ["2", "1", "12", "12", "fixed!", "n2!", "1 1 2", "1 1 2"], "untracked: once; the memo follows count, not base; the start read once in the body and through untrack!");
+		assert.deepEqual(await tab.eval("window.patched.sort()"), ["badge", "badge", "latest", "start", "start", "sum", "tracked"], "only holes that read what changed; the static ones have nothing to run");
+		await tab.click(".rebase");
+		await tab.click(".add");
+		await tab.wait(`document.querySelector("p.tracked").textContent === "3"`);
+		assert.deepEqual((await shown()).slice(0, 4), ["3", "1", "23", "23"], "the memo read base untracked: it took the new base when count changed");
+		assert.deepEqual(tab.errors, []);
+		const devTab = await browser.page();
+		await devTab.goto(`${site.url}/dev`);
+		await devTab.wait("window.hydrated === true", 3000);
+		await devTab.click(".add");
+		await devTab.wait(`document.querySelector("p.tracked").textContent === "2"`);
+		assert.equal(devTab.console.length, 1, `one warning, for two <Start>s: ${JSON.stringify(devTab.console)}`);
+		assert.equal(devTab.console[0].type, "warning");
+		assert.match(devTab.console[0].text, /web\/test\/build\/dev-app\/Untracked\.rocx:43:11 reads a value that changes \(a signal, a memo or a prop\) in a component's body/, "said where: `first = start`; `untrack!(|| start)` isn't");
+		assert.deepEqual(devTab.errors, []);
 	} finally {
 		await site.close();
 	}
@@ -1429,7 +1495,7 @@ window.mounted = true;
 
 /** What the document looks like rendered for `/inner/page?x=1`: as the server platform answers it. */
 const DOCUMENT_PAGE =
-	'<!doctype html> <html lang="en"><head><meta charset="utf-8"> <title>A document</title> <style>.count { color: red }</style> <script>window.ran = (window.ran ?? 0) + 1</script></head> <body class="page"><h1>A document</h1> <p class="at"><!--x-->/inner/page<!--/x--> ? <!--x-->x=1<!--/x--></p> <button class="count">Clicked <!--x-->0<!--/x--> times</button> <!--loading--><output class="said"><!--x-->Said: hello<!--/x--></output><!--/loading--> <button class="again">Again</button> <svg class="dot" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"></circle></svg> ' +
+	'<!doctype html> <html lang="en"><head><meta charset="utf-8"> <title>A document</title> <style>.count { color: red }</style> <script>window.ran = (window.ran ?? 0) + 1</script></head> <body class="page"><h1>A document</h1> <p class="at">/inner/page ? x=1</p> <button class="count">Clicked <!--x-->0<!--/x--> times</button> <!--loading--><output class="said"><!--x-->Said: hello<!--/x--></output><!--/loading--> <button class="again">Again</button> <svg class="dot" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"></circle></svg> ' +
 	'<!--nohydration--><section class="prose"><aside class="aside"><h2>Unhydrated</h2> <p>Words the browser never hydrates.</p></aside> <p class="once">Rendered once: 0, Said: quiet</p></section><!--/nohydration-->' +
 	`${Runtime.answersScript([RENDERED[0]])}<script type="module" data-rocx src="/rocx/start.js"></script></body></html>`;
 

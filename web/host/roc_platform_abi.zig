@@ -925,6 +925,13 @@ pub const HostMemo_newArgs = extern struct {
     arg0: RocErasedCallable,
 };
 
+/// Arguments for Host.read_at!
+/// Roc signature: Str => Str
+/// Refcounted fields are owned by the hosted function.
+pub const HostRead_atArgs = extern struct {
+    arg0: RocStr,
+};
+
 /// Arguments for Host.refresh!
 /// Roc signature: Box({} => Str) => {}
 /// Refcounted fields are owned by the hosted function.
@@ -1068,6 +1075,13 @@ pub const HostTimeoutArgs = extern struct {
 /// Refcounted fields are owned by the hosted function.
 pub const HostTitleArgs = extern struct {
     arg0: RocStr,
+};
+
+/// Arguments for Host.untrack!
+/// Roc signature: Bool => {}
+/// Refcounted fields are owned by the hosted function.
+pub const HostUntrackArgs = extern struct {
+    arg0: bool,
 };
 
 
@@ -1265,6 +1279,14 @@ pub extern fn roc_now_nanos() callconv(.c) u64;
 /// The result is owned by Roc: return exactly one owned reference.
 pub extern fn roc_problem() callconv(.c) RocStr;
 
+/// Hosted symbol for Host.read_at!
+/// Roc signature: Str => Str
+/// Owned arguments. Release each exactly once before returning, unless it is
+/// moved into storage or into the result:
+///     arg0.decref(roc_host);
+/// The result is owned by Roc: return exactly one owned reference.
+pub extern fn roc_read_at(arg0: RocStr) callconv(.c) RocStr;
+
 /// Hosted symbol for Host.refresh!
 /// Roc signature: Box({} => Str) => {}
 /// Owned arguments. Release each exactly once before returning, unless it is
@@ -1403,6 +1425,10 @@ pub extern fn roc_timeout(arg0: u64, arg1: RocErasedCallable) callconv(.c) u64;
 /// moved into storage or into the result:
 ///     arg0.decref(roc_host);
 pub extern fn roc_title(arg0: RocStr) callconv(.c) void;
+
+/// Hosted symbol for Host.untrack!
+/// Roc signature: Bool => {}
+pub extern fn roc_untrack(arg0: bool) callconv(.c) void;
 
 
 /// Default memory management functions for Roc platforms.

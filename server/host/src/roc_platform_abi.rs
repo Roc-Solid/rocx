@@ -3816,6 +3816,15 @@ pub struct HostMemoNewArgs {
     pub arg0: RocErasedCallable,
 }
 
+/// Arguments for Host.read_at!
+/// Roc signature: Str => Str
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostReadAtArgs {
+    pub arg0: RocStr,
+}
+
 /// Arguments for Host.refresh!
 /// Roc signature: Box({} => Str) => {}
 /// Refcounted fields are owned by the hosted function.
@@ -3997,6 +4006,15 @@ pub struct HostTimeoutArgs {
 #[derive(Clone, Copy)]
 pub struct HostTitleArgs {
     pub arg0: RocStr,
+}
+
+/// Arguments for Host.untrack!
+/// Roc signature: Bool => {}
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostUntrackArgs {
+    pub arg0: bool,
 }
 
 // Platform Type Aliases
@@ -5745,6 +5763,14 @@ unsafe extern "C" {
     /// The result is owned by Roc: return exactly one owned reference.
     pub fn roc_problem() -> RocStr;
 
+    /// Hosted symbol for Host.read_at!
+    /// Roc signature: Str => Str
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_read_at(arg0: RocStr) -> RocStr;
+
     /// Hosted symbol for Host.refresh!
     /// Roc signature: Box({} => Str) => {}
     /// Owned arguments. Release each exactly once before returning, unless it is
@@ -5883,6 +5909,10 @@ unsafe extern "C" {
     /// moved into storage or into the result:
     ///     unsafe { arg0.decref(roc_host); }
     pub fn roc_title(arg0: RocStr);
+
+    /// Hosted symbol for Host.untrack!
+    /// Roc signature: Bool => {}
+    pub fn roc_untrack(arg0: bool);
 
 }
 

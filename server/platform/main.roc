@@ -171,6 +171,7 @@ platform ""
 		"roc_memo_get": Host.memo_get!,
 		"roc_memo_new": Host.memo_new!,
 		"roc_problem": Host.problem!,
+		"roc_read_at": Host.read_at!,
 		"roc_refresh": Host.refresh!,
 		"roc_request": Host.request!,
 		"roc_resync": Host.resync!,
@@ -191,6 +192,7 @@ platform ""
 		"roc_subscribe": Host.subscribe!,
 		"roc_timeout": Host.timeout!,
 		"roc_title": Host.title!,
+		"roc_untrack": Host.untrack!,
 	}
 	targets: {
 		inputs_dir: "targets/",

@@ -1,0 +1,47 @@
+import pf.Html
+import pf.Solid exposing [create_signal!, create_memo!, untrack!, latest!]
+
+## D-052, for the tests (`untracked_app.roc`): `untrack!` in a hole, in a memo and in a component's
+## body; `latest!`; static holes (a component given constants, whose holes and attributes read
+## nothing that changes, beside one given what changes); and, built with --dev, the warning for a
+## read in a component's body, said once a place.
+Untracked := [].{
+	view! : {} => Html
+	view! = |{}| {
+		(count!, set_count!) = create_signal!(1.U64)
+		(base!, set_base!) = create_signal!(10.U64)
+		sum! = create_memo!(|| count!() + untrack!(|| base!()))
+		<div>
+			<button class="add" on:click={|| set_count!(count!() + 1)}>Add</button>
+			<button class="rebase" on:click={|| set_base!(base!() + 10)}>Rebase</button>
+			<p class="tracked">{count!().to_str()}</p>
+			<p class="untracked">{untrack!(|| count!()).to_str()}</p>
+			<p class="sum">{sum!().to_str()}</p>
+			<p class="latest">{latest!(sum!).to_str()}</p>
+			<p class="badges">
+				<Badge label="fixed" tone="calm" strong={Bool.True} />
+				<Badge label={"n${count!().to_str()}"} tone="loud" strong={count!() > 1} />
+			</p>
+			<Start start={count!()} />
+			<Start start={count!()} />
+		</div>
+	}
+}
+
+## Its label, tone and weight: holes and an attribute that read only its props. Given constants,
+## they are static: the server writes them as text, and nothing runs them again.
+Badge := [].{
+	view! : { label : Str, tone : Str, strong : Bool } => Html
+	view! = |{ label, tone, strong }| <span class="badge" data-tone={tone}>{label}{=if (strong) <b>!</b> else <i>.</i>}</span>
+}
+
+## A start value read in its body, once: said so with untrack! in `kept`; not in `first`, which a dev
+## build warns of.
+Start := [].{
+	view! : { start : U64 } => Html
+	view! = |{ start }| {
+		first = start
+		(kept!, _) = create_signal!(untrack!(|| start))
+		<p class="start">{first.to_str()} {kept!().to_str()} {start.to_str()}</p>
+	}
+}

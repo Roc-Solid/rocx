@@ -43,8 +43,20 @@ let ids = 0;
 
 /** What a run makes, as it makes it: child computations, boxes kept for them, what it reads,
  * signals, cleanups (a kept box's id, or the runtime's own function), and what its `is_pending!`
- * calls answered (`queries`). */
-const making_ = () => ({ children: [], kept: [], sources: new Set(), signals: [], cleanups: [], queries: [] });
+ * calls answered (`queries`). `live` once it read or made something that changes, which the rest
+ * don't show (an endpoint's read; rendering as a server would, an effect, a cleanup…): a hole
+ * whose run is none of these is static (`inert`, D-052). `untracked`: how many `untrack!`s it is
+ * inside now, its reads not tracked there. */
+const making_ = () => ({ children: [], kept: [], sources: new Set(), signals: [], cleanups: [], queries: [], live: false, untracked: 0 });
+
+/**
+ * Whether a run read and made nothing that changes (D-052): no tracked read (a signal, a memo, a
+ * row, a submission, an endpoint, `is_pending!`), no signal, memo, effect, cleanup, timer, listen,
+ * subscription or title. A hole whose run is inert is static: it never runs again, so the server
+ * writes it without its comments and hydrating takes its text as the server wrote it. The server
+ * (server/host/src/signals.rs, `touched`) notes the same calls, so both agree.
+ */
+const inert = (making) => !making.live && making.sources.size === 0 && making.children.length === 0 && making.signals.length === 0 && making.cleanups.length === 0 && making.queries.length === 0;
 
 /** A hole, attribute, memo, fallback or the root: a box Roc made, run again when what it read changes. */
 class Computation {
@@ -905,6 +917,10 @@ export class Runtime {
 		 * again), `glide` (an element moving), and the hub's `subscribe`, `unsubscribe`, `connect`, `replaced`
 		 * and `dropped`. */
 		this.observer = null;
+		/** In a dev build, where the read a component's body is making is (`Html.read_at!`), and the
+		 * places already warned of (`warnRead`). */
+		this.place = null;
+		this.warned = new Set();
 		/** The tab's channels (`Endpoint.subscribe!`): one stream for all of them. */
 		this.hub = new Hub(this);
 		this.imports = this.makeImports();
@@ -965,6 +981,7 @@ export class Runtime {
 				return id;
 			},
 			js_signal_new: (ptr) => {
+				this.touch();
 				const id = ++ids;
 				this.signals.set(id, { id, value: ptr, observers: new Set() });
 				// It belongs to the run that made it: when that run's part goes, it goes too.
@@ -986,6 +1003,7 @@ export class Runtime {
 				handler.writes.push({ signal: this.signals.get(id), value: ptr });
 			},
 			js_memo_new: (ptr) => {
+				this.touch();
 				const memo = new Computation(this, { kind: "memo", runner: ptr, owner: this.current, scope: this.current?.scope ?? {} });
 				memo.state = "pending";
 				memo.value = 0;
@@ -1024,6 +1042,7 @@ export class Runtime {
 			// each one's `pending`, not its value, and keeps the probe: when one changes, it is run
 			// again only if the probe, run again, answers otherwise (`answersChanged`).
 			js_is_pending: (ptr) => {
+				this.touch(true);
 				if (this.onServer) {
 					this.ex.release(ptr);
 					return 0;
@@ -1037,7 +1056,8 @@ export class Runtime {
 				}
 				const answer = this.pending(memos);
 				const making = this.current?.making;
-				if (!making) {
+				// Untracked (`untrack!`), or a handler's: answered once, nothing kept.
+				if (!making || making.untracked > 0) {
 					this.ex.release(ptr);
 					return answer ? 1 : 0;
 				}
@@ -1105,14 +1125,23 @@ export class Runtime {
 				this.waiting = null;
 				throw error;
 			},
-			js_listen: (up, ul, ptr) => this.listenTo(text(up, ul), ptr),
-			js_subscribe: (up, ul, ptr) => this.hub.subscribe(text(up, ul), ptr),
+			js_listen: (up, ul, ptr) => {
+				this.touch();
+				return this.listenTo(text(up, ul), ptr);
+			},
+			js_subscribe: (up, ul, ptr) => {
+				this.touch();
+				return this.hub.subscribe(text(up, ul), ptr);
+			},
 			js_say: (up, ul, sp, sl) => this.hub.say(text(up, ul), text(sp, sl)),
 			js_resync: (up, ul) => this.hub.resync(text(up, ul)),
 			js_live_publish: () => {
 				throw new Failed("Endpoint.publish! is the server's: a page says things on a channel with Endpoint.say!");
 			},
-			js_timer: (ms, repeat, ptr) => this.startTimer(ms, repeat === 1, ptr),
+			js_timer: (ms, repeat, ptr) => {
+				this.touch();
+				return this.startTimer(ms, repeat === 1, ptr);
+			},
 			js_clear_timer: (id) => this.clearTimer(id),
 			js_browser_call: (np, nl, ap, al) => {
 				const name = text(np, nl);
@@ -1128,6 +1157,7 @@ export class Runtime {
 			// An effect: owned by the component or computation running, its compute run now. On the
 			// server, nothing (Solid's server doesn't run effects).
 			js_effect_new: (ptr) => {
+				this.touch();
 				if (this.onServer) return this.ex.release(ptr);
 				const owner = this.current;
 				if (!owner?.making) {
@@ -1142,6 +1172,7 @@ export class Runtime {
 				this.run(effect);
 			},
 			js_cleanup: (ptr) => {
+				this.touch();
 				if (this.onServer) return this.ex.release(ptr);
 				const cleanups = this.cleanupsOf(this.current);
 				if (!cleanups) {
@@ -1161,6 +1192,7 @@ export class Runtime {
 				return this.give(found);
 			},
 			js_action: (ptr, len) => {
+				this.touch();
 				if (this.onServer) return;
 				const key = this.actionKey(text(ptr, len));
 				this.actions.set(key, (this.actions.get(key) ?? 0) + 1);
@@ -1173,6 +1205,7 @@ export class Runtime {
 			},
 			// The latest submission to an endpoint: none once it is forgotten (`clear!`), until the next.
 			js_submission: (ptr, len) => {
+				this.touch(true);
 				if (this.onServer) return this.give("");
 				const source = this.submissionOf(this.actionKey(text(ptr, len)));
 				this.track(source);
@@ -1181,6 +1214,7 @@ export class Runtime {
 				return this.give(latest ? submissionJson(latest) : "");
 			},
 			js_submissions: (ptr, len) => {
+				this.touch(true);
 				if (this.onServer) return this.give("");
 				const source = this.submissionOf(this.actionKey(text(ptr, len)));
 				this.track(source);
@@ -1208,6 +1242,7 @@ export class Runtime {
 			// A <Title>'s hole: rendering as a server would, the page's title (the last one rendered);
 			// in the browser, its computation's, until it runs again or goes (`showTitle`).
 			js_title: (ptr, len) => {
+				this.touch();
 				const title = text(ptr, len);
 				if (this.onServer) {
 					this.titled = title;
@@ -1224,6 +1259,19 @@ export class Runtime {
 					this.titleChanged();
 				});
 				this.titleChanged();
+			},
+			// `untrack!` (Solid's `untrack`): the running computation's reads aren't tracked until it is
+			// done (on, then off); a computation made meanwhile tracks its own.
+			js_untrack: (on) => {
+				const making = this.current?.making;
+				if (making) making.untracked = Math.max(0, making.untracked + (on ? 1 : -1));
+			},
+			// A dev build's `Html.read_at!`: where the read a component's body makes is, until it is done;
+			// the place before, given back for it to restore.
+			js_read_at: (ptr, len) => {
+				const outer = this.place ?? "";
+				this.place = text(ptr, len) || null;
+				return this.give(outer);
 			},
 		};
 	}
@@ -1383,11 +1431,34 @@ export class Runtime {
 		for (const one of waiting) one();
 	}
 
-	/** A read in a computation: it runs again when what it read changes. */
+	/** A read in a computation: it runs again when what it read changes; inside `untrack!`, it
+	 * doesn't. A dev build says where a component's body reads one, once a place (`warnRead`). */
 	track(source) {
 		const reader = this.current;
-		if (!reader?.making) return;
+		if (!reader?.making || reader.making.untracked > 0) return;
 		reader.making.sources.add(source);
+		if (this.place && reader.kind === "component" && !this.onServer) this.warnRead(this.place);
+	}
+
+	/** What the running computation did makes it live (`inert`): it read or made something that
+	 * changes. A read inside `untrack!` doesn't (`read`). */
+	touch(read = false) {
+		const making = this.current?.making;
+		if (making && !(read && making.untracked > 0)) making.live = true;
+	}
+
+	/**
+	 * A dev build (`rocx build --dev`, `rocx dev`) wraps each accessor a component's body calls
+	 * (`label!()`, `count!()`) in `Html.read_at!`, which says where it is (`place`, the `.rocx` file's
+	 * line and column) while it runs. A read there that tracks is one the component makes once, as it
+	 * runs: what it shows won't follow it. Said once a place, as Solid 2.0's dev build says
+	 * STRICT_READ_UNTRACKED; `untrack!` says the one read is meant, and silences it.
+	 */
+	warnRead(place) {
+		if (this.warned.has(place)) return;
+		this.warned.add(place);
+		this.notify("warn", { place });
+		console.warn(`rocx: ${place} reads a value that changes (a signal, a memo or a prop) in a component's body, once, as the component runs: what it shows won't follow it. Read it where it is used (in markup, a memo, an effect's compute or a handler), or, if one read is what you want, say so: untrack!(|| …)`);
 	}
 
 	/** In a handler, applied when it is done; elsewhere, now. */
@@ -1415,6 +1486,10 @@ export class Runtime {
 	 * GET by its route, natively, and anything else is a 599.
 	 */
 	fetchFor(method, url, headerLines, body) {
+		// A read of an endpoint is one that changes (a result reads it again: `revalidate`), unless
+		// it is untracked.
+		const tracked = !(this.current?.making?.untracked > 0);
+		if (tracked) this.touch();
 		if (this.onServer) {
 			const found = this.given?.find(([named, asked]) => named === `${method} ${url}` && asked === body);
 			if (!found) throw new Failed(`599: ${method} ${url} wasn't answered as the server rendered the page`);
@@ -1451,7 +1526,7 @@ export class Runtime {
 			asking.calls.set(key, answer);
 		}
 		asking.used?.add(key);
-		if (method === "GET" && READERS.has(asking.kind)) this.readers.add(asking);
+		if (method === "GET" && tracked && READERS.has(asking.kind)) this.readers.add(asking);
 		if (answer.state === "pending") throw new NotReady(answer.promise);
 		if (answer.state === "failed") throw new Failed(answer.error);
 		return this.give(answer.value);
@@ -1622,7 +1697,8 @@ export class Runtime {
 	// ---- Running ----
 
 	/** Runs a computation. A complete run replaces what the last one made; one that aborts or fails
-	 * keeps it. The last complete run's cleanups run first, as Solid runs them before a run again. */
+	 * keeps it. The last complete run's cleanups run first, as Solid runs them before a run again.
+	 * What it came to: "ok", "pending" (it waits) or "failed"; nothing if it didn't run. */
 	run(computation) {
 		if (computation.disposed) return;
 		if (computation.recheck) {
@@ -1703,6 +1779,22 @@ export class Runtime {
 			if (outcome !== "pending") this.recheckReaders(computation);
 		}
 		if (outcome !== "pending") this.revalidated(computation);
+		return outcome;
+	}
+
+	/** A hole's computation, just run, that is static (`inert`): one that answered, and read and made
+	 * nothing that changes. It never runs again. */
+	isStatic(computation, outcome) {
+		return outcome === "ok" && inert(computation.made);
+	}
+
+	/** A static hole's computation, let go of: nothing will run it, and it owns nothing (only boxes it
+	 * kept, if any, which keep it as their owner). */
+	forget(computation, owner) {
+		if (computation.made.kept.length) return;
+		computation.disposed = true;
+		const children = owner ? (owner.making ?? owner.made).children : null;
+		if (children?.at(-1) === computation) children.pop();
 	}
 
 	/**
@@ -1835,6 +1927,12 @@ export class Runtime {
 		if (kind === "html" || kind === "root") {
 			const parsed = JSON.parse(out);
 			const nodes = Array.isArray(parsed) ? parsed : [parsed];
+			if (computation.peek) {
+				// Its first run, before its place is known: built (or adopted) by whoever ran it, once it
+				// knows whether the hole is static.
+				computation.peeked = nodes;
+				return;
+			}
 			if (computation.adopting) {
 				// Hydrating: the server rendered this; bind to its nodes instead of making new ones (no patch).
 				computation.adopting = false;
@@ -2608,13 +2706,36 @@ export class Runtime {
 				const computation = new Computation(this, { kind: "text", runner: this.kept.get(node.r), owner, scope, target: text });
 				// Inside RCDATA, binding to the text the server wrote whole: not a patch.
 				computation.adopting = Boolean(scope.rcdata);
-				this.run(computation);
+				// Static (D-052): the text stays, and nothing will run its computation again.
+				if (this.isStatic(computation, this.run(computation))) this.forget(computation, owner);
 				return text;
 			}
 			case "h":
 			case "l": {
+				// Run before its range is made: a static one (D-052) is its nodes alone, as the server
+				// writes it, its computation only the owner of what they hold.
+				const computation = new Computation(this, { kind: "html", runner: this.kept.get(node.r), owner, scope, target: null });
+				computation.peek = true;
+				const outcome = this.run(computation);
+				computation.peek = false;
+				const nodes = computation.peeked;
+				computation.peeked = null;
+				if (this.isStatic(computation, outcome)) {
+					const fragment = document.createDocumentFragment();
+					for (const child of nodes) fragment.append(this.build(child, computation, scope));
+					return fragment;
+				}
 				const range = makeRange(node.t === "h" ? "html" : "list");
-				this.run(new Computation(this, { kind: "html", runner: this.kept.get(node.r), owner, scope, target: range }));
+				computation.target = range;
+				if (nodes) {
+					// Its first markup, as its run would have patched it in.
+					this.stats.patches++;
+					this.notify("patch", { kind: "html", name: null, node: range.start.parentNode });
+					this.measure();
+					const fragment = document.createDocumentFragment();
+					for (const child of nodes) fragment.append(this.build(child, computation, scope));
+					range.end.before(fragment);
+				}
 				return range.fragment;
 			}
 			case "f": {
@@ -2750,21 +2871,53 @@ export class Runtime {
 				if (cursor.node?.nodeType === 10) cursor.node = cursor.node.nextSibling;
 				return;
 			case "x": {
+				// Run first, on a text of its own: a static hole (D-052) is text the server wrote without
+				// comments, taken as a text node is; any other is the text between its comments.
+				const computation = new Computation(this, { kind: "text", runner: this.kept.get(node.r), owner, scope, target: document.createTextNode("") });
+				computation.adopting = true;
+				const outcome = this.run(computation);
+				const value = computation.target.data;
+				if (this.isStatic(computation, outcome)) {
+					this.forget(computation, owner);
+					return this.adopt({ t: "s", v: value }, owner, scope, cursor);
+				}
 				cursor.comment("x");
 				let text = cursor.node?.nodeType === 3 ? cursor.take(() => true, "text") : null;
 				const end = cursor.comment("/x");
 				if (!text) end.before((text = document.createTextNode("")));
-				this.run(new Computation(this, { kind: "text", runner: this.kept.get(node.r), owner, scope, target: text }));
+				computation.target = text;
+				// Waiting (an answer the page didn't carry): its next run binds it, as hydrating.
+				if (outcome !== "ok") return;
+				computation.adopting = false;
+				if (text.data !== value) {
+					this.stats.patches++;
+					this.notify("patch", { kind: "text", name: null, node: text });
+					text.data = value;
+				}
 				return;
 			}
 			case "h":
 			case "l": {
 				const label = node.t === "h" ? "html" : "list";
+				const computation = new Computation(this, { kind: "html", runner: this.kept.get(node.r), owner, scope, target: null });
+				computation.peek = true;
+				const outcome = this.run(computation);
+				computation.peek = false;
+				const nodes = computation.peeked;
+				computation.peeked = null;
+				if (this.isStatic(computation, outcome)) {
+					// Static (D-052): its nodes, where the server wrote them without comments.
+					for (const child of nodes) this.adopt(child, computation, scope, cursor);
+					return;
+				}
 				const start = cursor.comment(label);
 				const end = cursor.closing(label);
-				const computation = new Computation(this, { kind: "html", runner: this.kept.get(node.r), owner, scope, target: { start, end } });
-				computation.adopting = true;
-				this.run(computation);
+				computation.target = { start, end };
+				if (nodes) {
+					const inside = new Cursor(start.nextSibling);
+					for (const child of nodes) this.adopt(child, computation, scope, inside);
+					inside.end(end);
+				} else computation.adopting = true;
 				cursor.node = end.nextSibling;
 				return;
 			}
@@ -2999,7 +3152,9 @@ export class Runtime {
 		for (const [kind, name, value, wanted] of node.a) {
 			if (kind === "vo" || kind === "fo" || kind === "co" || kind === "oo" || kind === "so") {
 				const computed = { vo: "attr", fo: "flag", co: "class", oo: "optional", so: "style" }[kind];
-				this.run(new Computation(this, { kind: computed, runner: this.kept.get(value), owner, scope, target: element, name }));
+				const computation = new Computation(this, { kind: computed, runner: this.kept.get(value), owner, scope, target: element, name });
+				// One that read nothing that changes (a prop given a constant) is static: nothing keeps it.
+				if (this.isStatic(computation, this.run(computation))) this.forget(computation, owner);
 			} else if (kind === "on" || kind === "onp") {
 				const handler = this.listener(kind, name, value, wanted, scope, owner);
 				if (drag && name === "dragenter") drag.enter.push(handler);
@@ -3178,13 +3333,19 @@ export class Runtime {
 
 	/** Runs a hole once, for its answer (a failure throws). */
 	once(runner, owner, scope, boundary = null) {
+		return this.onceInert(runner, owner, scope, boundary).out;
+	}
+
+	/** The same, and whether the run was static (`inert`): a hole the server writes without comments. */
+	onceInert(runner, owner, scope, boundary = null) {
 		const computation = new Computation(this, { kind: "once", runner: this.kept.get(runner), owner, scope });
 		computation.boundary = boundary;
 		computation.making = making_();
 		const previous = this.current;
 		this.current = computation;
 		try {
-			return this.enter(() => this.ex.run(computation.runner));
+			const out = this.enter(() => this.ex.run(computation.runner));
+			return { out, inert: inert(computation.making) };
 		} finally {
 			this.current = previous;
 			computation.made = computation.making;
@@ -3206,13 +3367,19 @@ export class Runtime {
 				return node.v;
 			case "doctype":
 				return "<!doctype html>";
-			case "x":
-				return mark("x", escape(JSON.parse(this.once(node.r, owner, scope))));
+			case "x": {
+				// A hole that read nothing that changes is static (D-052): no comments, as a text's.
+				const { out, inert } = this.onceInert(node.r, owner, scope);
+				const text = escape(JSON.parse(out));
+				return inert ? text : mark("x", text);
+			}
 			case "h":
 			case "l": {
 				const label = node.t === "h" ? "html" : "list";
-				const parsed = JSON.parse(this.once(node.r, owner, scope));
-				return mark(label, (Array.isArray(parsed) ? parsed : [parsed]).map((child) => this.html(child, owner, scope)).join(""));
+				const { out, inert } = this.onceInert(node.r, owner, scope);
+				const parsed = JSON.parse(out);
+				const inner = (Array.isArray(parsed) ? parsed : [parsed]).map((child) => this.html(child, owner, scope)).join("");
+				return inert ? inner : mark(label, inner);
 			}
 			case "f":
 				return all(node.c);
@@ -3450,7 +3617,9 @@ export class Runtime {
 		const computation = new Computation(this, { kind: "component", runner: this.kept.get(node.r), owner, scope });
 		computation.making = making_();
 		const previous = this.current;
+		const place = this.place;
 		this.current = computation;
+		this.place = null;
 		this.stats.runs++;
 		try {
 			return { computation, nodes: [JSON.parse(this.enter(() => this.ex.run(computation.runner)))] };
@@ -3462,6 +3631,7 @@ export class Runtime {
 			return { computation, nodes: [] };
 		} finally {
 			this.current = previous;
+			this.place = place;
 			computation.made = computation.making;
 			computation.making = null;
 		}

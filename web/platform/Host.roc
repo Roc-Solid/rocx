@@ -151,4 +151,12 @@ Host := [].{
 	## rendered that is still there is `document.title`, until it goes; on the server, noted for the
 	## page's `<head>`.
 	title! : Str => {}
+
+	## `Solid.untrack!`: the running computation's reads aren't tracked from `Bool.True` on, until
+	## `Bool.False` (a computation made meanwhile tracks its own).
+	untrack! : Bool => {}
+
+	## A dev build's `Html.read_at!`: where the read a component's body is making is (a `.rocx`
+	## file's line and column), "" once it is done; answers the place before, to put back.
+	read_at! : Str => Str
 }
