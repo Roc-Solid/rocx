@@ -12,6 +12,10 @@ Store := [].{
 			Store.extra!(1).is_ok(),
 			Store.later!({}).is_ok(),
 			Store.picked!(["body"]).is_ok(),
+			Store.listed!({}).is_ok(),
+			Store.numbers!({}).is_ok(),
+			Store.notes_plain!({}).is_ok(),
+			Store.titled!({}).is_ok(),
 		]
 		Str.join_with(said.map(|ok| if (ok) "ok" else "failed"), " ")
 	}
@@ -31,6 +35,37 @@ Store := [].{
 	## Not checked: a table the app would make as it runs.
 	later! : {} => Try(U64, [DbErr(Str)])
 	later! = |{}| Db.run!(Db.unchecked("delete from made_later"), [])
+
+	## Right: a row of the module's own type, read by the function's result.
+	listed! : {} => Try(List(Row), [DbErr(Str), BadRow(Str)])
+	listed! = |{}| Db.all!("select id, done, count(*) as n from notes group by id", [])
+
+	## A row: its done, and something worked out (an expression, which the check can't type).
+	Row : { id : I64, done : Bool, n : I64 }
+
+	## Wrong: text read as a number.
+	numbers! : {} => Try(List({ body : I64 }), [DbErr(Str), BadRow(Str)])
+	numbers! = |{}| {
+		rows : List({ body : I64 })
+		rows = Db.all!("select body from notes", [])?
+		Ok(rows)
+	}
+
+	## Wrong: a column that may be null read as a plain value.
+	notes_plain! : {} => Try(List({ note : Str }), [DbErr(Str), BadRow(Str)])
+	notes_plain! = |{}| {
+		rows : List({ note : Str })
+		rows = Db.all!("select note from notes", [])?
+		Ok(rows)
+	}
+
+	## Wrong: a field the statement doesn't return.
+	titled! : {} => Try(List({ id : I64, title : Str }), [DbErr(Str), BadRow(Str)])
+	titled! = |{}| {
+		rows : List({ id : I64, title : Str })
+		rows = Db.all!("select id from notes", [])?
+		Ok(rows)
+	}
 
 	## Not checked: its SQL is put together.
 	picked! : List(Str) => Try(List({ body : Str }), [DbErr(Str), BadRow(Str)])

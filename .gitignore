@@ -30,6 +30,9 @@ web/test/build/
 server/host/target/
 server/platform/targets/
 server/test/build/
+# rocx build's and rocx check --sql's (D-058) for the server's Postgres test app (test/check-sql.test.mjs)
+server/test/app/Generated/
+server/test/app/build/
 
 .DS_Store
 

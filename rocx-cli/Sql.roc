@@ -8,13 +8,17 @@ import Value
 import Text
 import Fs
 import Remap
+import Build
+import Routes
 
 Sql := [].{
 
 	## A call as the scan finds it: where it is (its file as given, its line and column from 1), its
 	## function (`all!`, `run!`), its SQL (a literal's text, unescaped; or why there is none to
-	## check), and how many parameters it gives, when they are a list literal.
-	Found : { file : Str, line : U64, column : U64, call : Str, sql : [Literal(Str), Interpolated, Variable, Unchecked], given : [Count(U64), Unknown] }
+	## check), how many parameters it gives, when they are a list literal, and the type of its rows
+	## when its annotation can be read (`row_type`: `""` when not), with whether that names a type
+	## of the call's own module, `Store.Row` for `Row` (`qualified`).
+	Found : { file : Str, line : U64, column : U64, call : Str, sql : [Literal(Str), Interpolated, Variable, Unchecked], given : [Count(U64), Unknown], row : Str, qualified : Bool }
 
 	## The directories under an app that hold no source of its own: rocx's output, the build's, and
 	## its tests'.
@@ -115,7 +119,7 @@ Sql := [].{
 		start = Text.skip_space(bytes, open + 1)
 		line = Text.line_of(bytes, at)
 		column = Text.column(bytes, at)
-		place = |sql, given| { file, line, column, call, sql, given }
+		place = |sql, given| { file, line, column, call, sql, given, row: "", qualified: Bool.False }
 		if Text.starts_with_at(bytes, "Db.unchecked(".to_utf8(), start) {
 			return place(Unchecked, Unknown)
 		}
@@ -133,7 +137,345 @@ Sql := [].{
 			} else {
 				Unknown
 			}
-		place(if (quoted.interpolated) Interpolated else Literal(quoted.text), given)
+		if quoted.interpolated {
+			place(Interpolated, given)
+		} else if call == "all!" {
+			typed = Sql.row_type(file, bytes, at, open)
+			{ ..place(Literal(quoted.text), given), row: typed.row, qualified: typed.qualified }
+		} else {
+			place(Literal(quoted.text), given)
+		}
+	}
+
+	## The type of the rows of the `Db.all!` at `at` (its `(` at `open`) in the file `file`, `bytes`:
+	## `T` in the `List(T)` (or `Try(List(T), …)`) of the binding's annotation, `rows : List(T)`
+	## before `rows = Db.all!(…)`; or of the result of the function whose whole body the call is
+	## (`name! = |…| Db.all!(…)`, or the last expression of its `{ … }`). A name the module declares
+	## (`Row` in `Store := [].{ Row : … }`) is qualified with the module's (`Store.Row`). `""` when
+	## there is none to read, or it names a type the module keeps to itself.
+	row_type : Str, List(U8), U64, U64 -> { row : Str, qualified : Bool }
+	row_type = |file, bytes, at, open| {
+		none = { row: "", qualified: Bool.False }
+		line_start = Text.line_start(bytes, at)
+		prefix = Text.trim(Text.cut(bytes, line_start, at))
+		indent = Sql.indent_of(bytes, line_start)
+		annotated =
+			if prefix.is_empty() {
+				# The last expression of a block: the block is a function's body when the line it
+				# opens on is `name = |…| {`.
+				match Sql.enclosing_def(bytes, line_start, indent) {
+					Ok(def) if Sql.ends_block(bytes, open) => Sql.result_of(Sql.annotation(bytes, def.start, def.indent, def.name))
+					_ => ""
+				}
+			} else if prefix.ends_with("=") and !prefix.contains("|") {
+				name = Text.trim(prefix.drop_suffix("="))
+				if (Text.all_of(name, |c| Text.is_word(c)) and Sql.ends_expression(bytes, open)) Sql.list_item(Sql.annotation(bytes, line_start, indent, name)) else ""
+			} else if prefix.ends_with("|") and prefix.contains("= |") and Sql.ends_expression(bytes, open) {
+				name = Text.trim((prefix.split_first("=") ?? { before: "", after: "" }).before)
+				Sql.result_of(Sql.annotation(bytes, line_start, indent, name))
+			} else {
+				""
+			}
+		if annotated.is_empty() {
+			return none
+		}
+		owner = Fs.basename(file).drop_suffix(".roc").drop_suffix(".rocx")
+		local = Sql.declared(bytes)
+		var $out = []
+		var $qualified = Bool.False
+		for word in Sql.words(annotated) {
+			match word {
+				Name(name) if local.inside.contains(name) => {
+					$out = $out.append("${owner}.${name}")
+					$qualified = Bool.True
+				}
+				Name(name) if local.outside.contains(name) => return none
+				Name(name) => {
+					$out = $out.append(name)
+				}
+				Other(text) => {
+					$out = $out.append(text)
+				}
+			}
+		}
+		row = Str.join_with($out, "")
+		# The module may name its own types qualified already (`Store.Person` in Store.roc).
+		itself = $qualified or Sql.words(row).any(|word| word == Other(owner))
+		if itself and !(file.ends_with(".roc") and Text.all_of(owner, |c| Text.is_word(c))) {
+			return none
+		}
+		{ row, qualified: itself }
+	}
+
+	## How many spaces and tabs start the line at `start`.
+	indent_of : List(U8), U64 -> U64
+	indent_of = |bytes, start| {
+		var $i = start
+		while Text.at(bytes, $i) == ' ' or Text.at(bytes, $i) == '\t' {
+			$i = $i + 1
+		}
+		$i - start
+	}
+
+	## The start of the line before the one at `start` (none before the first).
+	previous_line : List(U8), U64 -> Try(U64, [None])
+	previous_line = |bytes, start| if (start == 0) Err(None) else Ok(Text.line_start(bytes, start - 1))
+
+	## Whether the line at `start` holds no code: blank, or a comment.
+	is_blank_line : List(U8), U64 -> Bool
+	is_blank_line = |bytes, start| {
+		text = Text.trim(Text.cut(bytes, start, Text.line_end(bytes, start)))
+		text.is_empty() or text.starts_with("#")
+	}
+
+	## The annotation of `name` in the block whose lines start at `indent`, looking up from the line
+	## at `start`: what follows `name :`, over as many lines as its brackets take; `""` if the block
+	## begins first.
+	annotation : List(U8), U64, U64, Str -> Str
+	annotation = |bytes, start, indent, name| {
+		var $at = Sql.previous_line(bytes, start)
+		while Bool.True {
+			match $at {
+				Err(None) => return ""
+				Ok(line) => {
+					if !Sql.is_blank_line(bytes, line) {
+						here = Sql.indent_of(bytes, line)
+						if here < indent {
+							return ""
+						}
+						text = Text.trim(Text.cut(bytes, line, Text.line_end(bytes, line)))
+						if here == indent and text.starts_with("${name} :") {
+							return Sql.balanced(bytes, line + here + name.count_utf8_bytes() + 2)
+						}
+					}
+					$at = Sql.previous_line(bytes, line)
+				}
+			}
+		}
+	}
+
+	## The text from `start` to the end of its line, or further while its brackets stay open.
+	balanced : List(U8), U64 -> Str
+	balanced = |bytes, start| {
+		var $depth = 0
+		var $i = start
+		while $i < bytes.len() {
+			c = Text.at(bytes, $i)
+			if c == '(' or c == '[' or c == '{' {
+				$depth = $depth + 1
+			} else if c == ')' or c == ']' or c == '}' {
+				$depth = $depth - 1
+			} else if c == '\n' and $depth <= 0 {
+				return Text.trim(Text.cut(bytes, start, $i))
+			}
+			$i = $i + 1
+		}
+		Text.trim(Text.cut(bytes, start, $i)).replace_each("\n", " ")
+	}
+
+	## The definition a block opens on, looking up from its line at `start` (indented `indent`): the
+	## first line above it indented less, when that is `name = |…| {`.
+	enclosing_def : List(U8), U64, U64 -> Try({ start : U64, indent : U64, name : Str }, [None])
+	enclosing_def = |bytes, start, indent| {
+		var $at = Sql.previous_line(bytes, start)
+		while Bool.True {
+			line = $at?
+			if !Sql.is_blank_line(bytes, line) and Sql.indent_of(bytes, line) < indent {
+				text = Text.trim(Text.cut(bytes, line, Text.line_end(bytes, line)))
+				if text.contains("= |") and text.ends_with("{") {
+					name = Text.trim((text.split_first("=") ?? { before: "", after: "" }).before)
+					if Text.all_of(name, |c| Text.is_word(c) or c == '!') {
+						return Ok({ start: line, indent: Sql.indent_of(bytes, line), name })
+					}
+				}
+				return Err(None)
+			}
+			$at = Sql.previous_line(bytes, line)
+		}
+	}
+
+	## Where the call whose `(` is at `open` ends: after its `)`, strings and brackets inside counted.
+	call_end : List(U8), U64 -> U64
+	call_end = |bytes, open| {
+		var $depth = 0
+		var $i = open
+		while $i < bytes.len() {
+			c = Text.at(bytes, $i)
+			if c == '"' {
+				$i = Sql.literal(bytes, $i + 1).end
+			} else {
+				if c == '(' or c == '[' or c == '{' {
+					$depth = $depth + 1
+				} else if c == ')' or c == ']' or c == '}' {
+					$depth = $depth - 1
+					if $depth == 0 {
+						return $i + 1
+					}
+				}
+				$i = $i + 1
+			}
+		}
+		$i
+	}
+
+	## Whether the expression the call whose `(` is at `open` starts gives its rows as they are: what
+	## follows it, on its line or the lines after, is only `?` and `.map_err(…)`, which leave its
+	## `Ok` alone.
+	ends_expression : List(U8), U64 -> Bool
+	ends_expression = |bytes, open| {
+		var $i = Sql.call_end(bytes, open)
+		while Bool.True {
+			$i = Text.skip_space(bytes, $i)
+			if Text.at(bytes, $i) == '?' {
+				$i = $i + 1
+			} else if Text.starts_with_at(bytes, ".map_err(".to_utf8(), $i) {
+				$i = Sql.call_end(bytes, $i + 8)
+			} else if Text.at(bytes, $i) == '#' {
+				$i = Text.line_end(bytes, $i)
+			} else {
+				return !(Text.at(bytes, $i) == '.' or Text.at(bytes, $i) == '(' or Text.at(bytes, $i) == '[')
+			}
+		}
+	}
+
+	## Whether the call whose `(` is at `open` is its block's last expression: `ends_expression`,
+	## and the next line with code closes the block (`}`).
+	ends_block : List(U8), U64 -> Bool
+	ends_block = |bytes, open| {
+		if !Sql.ends_expression(bytes, open) {
+			return Bool.False
+		}
+		var $i = Sql.call_end(bytes, open)
+		while Bool.True {
+			$i = Text.skip_space(bytes, $i)
+			if Text.at(bytes, $i) == '?' {
+				$i = $i + 1
+			} else if Text.starts_with_at(bytes, ".map_err(".to_utf8(), $i) {
+				$i = Sql.call_end(bytes, $i + 8)
+			} else if Text.at(bytes, $i) == '#' {
+				$i = Text.line_end(bytes, $i)
+			} else {
+				return Text.at(bytes, $i) == '}'
+			}
+		}
+	}
+
+	## `T` in an annotation `List(T)`, or `Try(List(T), …)`; `""` for another.
+	list_item : Str -> Str
+	list_item = |typed| {
+		text = Text.trim(typed)
+		inner = |wrapper|
+			if text.starts_with("${wrapper}(") and text.ends_with(")") {
+				Ok(text.drop_prefix("${wrapper}(").drop_suffix(")"))
+			} else {
+				Err(None)
+			}
+		match inner("Try") {
+			Ok(args) => Sql.list_item(Sql.top_level(args).first() ?? "")
+			Err(_) =>
+				match inner("List") {
+					Ok(item) if Sql.top_level(item).len() == 1 => Text.trim(item)
+					_ => ""
+				}
+		}
+	}
+
+	## `T` from a function's annotation whose result (after its last `=>` or `->`) is
+	## `Try(List(T), …)`.
+	result_of : Str -> Str
+	result_of = |typed| {
+		bytes = typed.to_utf8()
+		var $depth = 0
+		var $after = Err(None)
+		var $i = 0
+		while $i + 1 < bytes.len() {
+			c = Text.at(bytes, $i)
+			if c == '(' or c == '[' or c == '{' {
+				$depth = $depth + 1
+			} else if c == ')' or c == ']' or c == '}' {
+				$depth = $depth - 1
+			} else if $depth == 0 and (c == '=' or c == '-') and Text.at(bytes, $i + 1) == '>' {
+				$after = Ok($i + 2)
+			}
+			$i = $i + 1
+		}
+		match $after {
+			Ok(at) => Sql.list_item(Text.rest(bytes, at))
+			Err(_) => ""
+		}
+	}
+
+	## `text` split at its commas outside brackets, each part trimmed.
+	top_level : Str -> List(Str)
+	top_level = |text| {
+		bytes = text.to_utf8()
+		var $parts = []
+		var $depth = 0
+		var $start = 0
+		var $i = 0
+		while $i < bytes.len() {
+			c = Text.at(bytes, $i)
+			if c == '(' or c == '[' or c == '{' {
+				$depth = $depth + 1
+			} else if c == ')' or c == ']' or c == '}' {
+				$depth = $depth - 1
+			} else if c == ',' and $depth == 0 {
+				$parts = $parts.append(Text.trim(Text.cut(bytes, $start, $i)))
+				$start = $i + 1
+			}
+			$i = $i + 1
+		}
+		$parts.append(Text.trim(Text.rest(bytes, $start))).keep_if(|part| !part.is_empty())
+	}
+
+	## The type names a module declares: inside its nominal type's `.{ … }` (indented once: `Row :`,
+	## `Kind :=`), which others name `Module.Row`; and at its top level, which only it can name.
+	declared : List(U8) -> { inside : List(Str), outside : List(Str) }
+	declared = |bytes| {
+		var $inside = []
+		var $outside = []
+		for line in Str.from_utf8_lossy(bytes).split_on("\n") {
+			once = line.starts_with("\t") and !line.starts_with("\t\t")
+			text = Text.trim(line)
+			name = Str.from_utf8_lossy(text.to_utf8().take_first(Text.run_end(text.to_utf8(), 0, Text.is_word)))
+			after = Text.trim(text.drop_prefix(name))
+			type_like = Text.is_upper(text.to_utf8().first() ?? 0) and (after.starts_with(":") or after.starts_with("("))
+			if type_like and once {
+				$inside = $inside.append(name)
+			} else if type_like and !line.starts_with("\t") and !line.starts_with(" ") {
+				$outside = $outside.append(name)
+			}
+		}
+		{ inside: $inside, outside: $outside }
+	}
+
+	## A type's text as words: each capitalized name not after a `.` (`Row`, `Db`), and what is
+	## between them.
+	words : Str -> List([Name(Str), Other(Str)])
+	words = |text| {
+		bytes = text.to_utf8()
+		var $out = []
+		var $i = 0
+		var $start = 0
+		while $i < bytes.len() {
+			c = Text.at(bytes, $i)
+			starts = Text.is_upper(c) and ($i == 0 or !(Text.is_word(Text.at(bytes, $i - 1)) or Text.at(bytes, $i - 1) == '.'))
+			if starts {
+				end = Text.run_end(bytes, $i, Text.is_word)
+				if $i > $start {
+					$out = $out.append(Other(Text.cut(bytes, $start, $i)))
+				}
+				$out = $out.append(if (Text.at(bytes, end) == '.') Other(Text.cut(bytes, $i, end)) else Name(Text.cut(bytes, $i, end)))
+				$i = end
+				$start = end
+			} else {
+				$i = $i + 1
+			}
+		}
+		if $start < bytes.len() {
+			$out = $out.append(Other(Text.rest(bytes, $start)))
+		}
+		$out
 	}
 
 	## The string literal whose text starts at `start` (just after its `"`): its text, unescaped
@@ -256,8 +598,8 @@ Sql := [].{
 	## the server's answer to `--describe-sql`: `{ engine, statements }`, in the order of
 	## `statements`): a line for each problem, `file:line:column: what`, and a last line that sums
 	## up (with `verbose`, the calls not checked listed before it). `ok` when there is no problem.
-	report : List(Found), Value, Bool -> { lines : List(Str), ok : Bool }
-	report = |found, described, verbose| {
+	report : List(Found), Value, Rows, Bool -> { lines : List(Str), ok : Bool }
+	report = |found, described, checked_rows, verbose| {
 		engine = Sql.engine_name(Value.str(Value.field(described, "engine")))
 		answers = Value.items(Value.field(described, "statements"))
 		var $problems = []
@@ -274,6 +616,12 @@ Sql := [].{
 					for problem in Sql.problems(answer, each.given, engine) {
 						$problems = $problems.append("${at}: ${problem}")
 					}
+					for refused in checked_rows.refused.keep_if(|row| row.at == at) {
+						$problems = $problems.append("${at}: ${refused.said}")
+					}
+					for skipped in checked_rows.skipped.keep_if(|row| row.at == at) {
+						$unchecked = $unchecked.append("${at}: rows not checked: ${skipped.said}")
+					}
 				}
 				Interpolated => {
 					$unchecked = $unchecked.append("${at}: not checked: its SQL is interpolated")
@@ -289,9 +637,265 @@ Sql := [].{
 		wrong = $problems.len()
 		said = if (wrong == 0) "no problems" else Sql.counted(wrong, "problem", "problems")
 		left = if ($unchecked.is_empty()) "" else ", ${Sql.counted($unchecked.len(), "call", "calls")} not checked (--verbose lists them)"
-		summary = if ($checked == 0) "rocx check --sql: no statements to check${left}" else "rocx check --sql: ${Sql.counted($checked, "statement", "statements")} checked on ${engine}: ${said}${left}"
-		listed = if (verbose) $unchecked else []
+		read = checked_rows.checked - checked_rows.skipped.len()
+		against = if (read == 0) "" else " (the rows of ${read.to_str()} against their records)"
+		summary = if ($checked == 0) "rocx check --sql: no statements to check${left}" else "rocx check --sql: ${Sql.counted($checked, "statement", "statements")} checked on ${engine}${against}: ${said}${left}"
+		listed = if (verbose) $unchecked.concat(checked_rows.notes) else []
 		{ lines: $problems.concat(listed).append(summary), ok: wrong == 0 }
+	}
+
+	## What the check app said of the rows (`rows`): how many it checked, those it refused and why,
+	## those it couldn't check and why (each at its call), and what else stopped it.
+	Rows : { checked : U64, refused : List({ at : Str, said : Str }), skipped : List({ at : Str, said : Str }), notes : List(Str) }
+
+	## No rows checked.
+	no_rows : Rows
+	no_rows = { checked: 0, refused: [], skipped: [], notes: [] }
+
+	## The check app (D-058, `build/sql/check/main.roc` beside a copy of the app): the app's header
+	## (`dir`'s main.roc) with dbcheck (`rocx`'s) added, the imports of the modules each call is
+	## in, the names a tag union is tried with (`Tags`), and for each `Db.all!` whose row type the
+	## scan read and whose statement the engine described (`described`), a constant
+	## `DbCheck.Rows(T, Tags)` whose string is the description, which the compiler checks
+	## (`packages/dbcheck`). `entries`: the line of each constant's string, and its call.
+	check_app! : Str, List(Found), Value, Str => { text : Str, entries : List({ line : U64, at : Str }) }
+	check_app! = |dir, found, described, rocx| {
+		main_path = Fs.join([dir, "main.roc"])
+		check_path = Fs.join([dir, "build", "sql", "check", "main.roc"])
+		deps =
+			match Build.app_header(Fs.read_or_empty!(main_path), Bool.True) {
+				Ok(text) => Text.trim(text).drop_suffix(",")
+				Err(NotFound) => return { text: "", entries: [] }
+			}
+		dbcheck = Fs.relative(dir, Fs.join([rocx, "packages", "dbcheck", "main.roc"]))
+		shown = if (dbcheck.starts_with(".")) dbcheck else "./${dbcheck}"
+		header = Build.move_header("app [program] { ${deps}, dbcheck: ${Text.roc_string(shown)} }", main_path, check_path)
+		engine = Value.str(Value.field(described, "engine"))
+		answers = Value.items(Value.field(described, "statements"))
+		var $index = 0
+		var $imports = ["import pf.Server", "import dbcheck.DbCheck"]
+		var $named = ["Server", "DbCheck"]
+		var $lines = []
+		var $entries = []
+		var $read = []
+		for each in found {
+			match each.sql {
+				Literal(_) => {
+					answer = answers.get($index) ?? Null
+					$index = $index + 1
+					if !each.row.is_empty() and Value.is_null(Value.field(answer, "error")) {
+						relative = Fs.relative(dir, each.file)
+						if !$read.contains((relative, each.qualified)) {
+							$read = $read.append((relative, each.qualified))
+							for line in Sql.imports_of(relative, Fs.read_or_empty!(each.file), each.qualified) {
+								named = Sql.import_name(line)
+								if !$imports.contains(line) and !$named.contains(named) {
+									$imports = $imports.append(line)
+									$named = $named.append(named)
+								}
+							}
+						}
+						at = "${each.file}:${each.line.to_str()}:${each.column.to_str()}"
+						n = $entries.len() + 1
+						$lines = $lines.concat(["", "## ${at}", "q${n.to_str()} : DbCheck.Rows(${each.row}, Tags)", "q${n.to_str()} = ${Text.roc_string(Sql.description(at, engine, answer))}"])
+						$entries = $entries.append({ line: $lines.len(), at })
+					}
+				}
+				_ => {}
+			}
+		}
+		if $entries.is_empty() {
+			return { text: "", entries: [] }
+		}
+		var $codes = []
+		for path in Sql.sources!(dir) {
+			$codes = $codes.append(Fs.read_or_empty!(path))
+		}
+		tags = Routes.tag_names($codes)
+		quoted = Str.join_with(tags.map(Text.roc_string), ", ")
+		before = [
+			"## Written by rocx check --sql (D-058): each constant below is a call's rows, its string what",
+			"## the database said of the statement's columns, which DbCheck.Rows checks when this compiles.",
+			header,
+			"",
+		].concat($imports).concat([
+			"",
+			"## The names a tag union in a row is tried with: the capitalized words in the app's code.",
+			"Tags := [].{",
+			"\tnames : {} -> List(Str)",
+			"\tnames = |{}| [${quoted}]",
+			"}",
+		])
+		used = Str.join_with($entries.map_with_index(|_, i| "DbCheck.Rows.at(q${(i + 1).to_str()})"), ", ")
+		after = [
+			"",
+			"program = {",
+			"\trespond!: |_, _| Server.response(200, [], Str.join_with([${used}], \"\\n\")),",
+			"\tdatabase: Sqlite(\"check.db\"),",
+			"\tmigrations: [],",
+			"\tactors: [],",
+			"\tlogs: { format: Auto },",
+			"\tplugins: [],",
+			"\troutes: [],",
+			"}",
+			"",
+		]
+		header_lines = Str.join_with(before, "\n").split_on("\n").len()
+		{
+			text: Str.join_with(before.concat($lines).concat(after), "\n"),
+			entries: $entries.map(|entry| { ..entry, line: entry.line + header_lines }),
+		}
+	}
+
+	## The app's own .roc and .rocx files (not those under `skipped_dirs`).
+	sources! : Str => List(Str)
+	sources! = |dir| {
+		skip = |path| Sql.skipped_dirs.contains(Fs.basename(path))
+		Fs.files!(dir, ".roc", skip).concat(Fs.files!(dir, ".rocx", skip))
+	}
+
+	## A statement's description as `DbCheck.description` reads it: where its call is and the
+	## engine, then a line a column (its name, kind, type, origin, `yes`/`no`/`` not null).
+	description : Str, Str, Value -> Str
+	description = |at, engine, answer| {
+		columns = Value.items(Value.field(answer, "columns")).map(
+			|column| {
+				text = |key| if (Value.is_null(Value.field(column, key))) "" else Value.str(Value.field(column, key))
+				table = text("table")
+				origin = if (table.is_empty()) "" else "${table}.${text("column")}"
+				not_null =
+					match Value.field(column, "not_null") {
+						Boolean(yes) => if (yes) "yes" else "no"
+						_ => ""
+					}
+				Str.join_with([text("name"), text("kind"), text("type"), origin, not_null], "\t")
+			},
+		)
+		Str.join_with(["${at}\t${engine}"].concat(columns), "\n")
+	}
+
+	## The imports the check app takes from the module at `relative` (from the app's directory),
+	## `code`: its package imports as they are, its modules' with their paths from the app's
+	## directory; the module itself too when the row names its types (`qualified`). A file's
+	## (`import "…" as … : Str`) and an import that renames (`as`, `exposing`) are left out.
+	imports_of : Str, Str, Bool -> List(Str)
+	imports_of = |relative, code, qualified| {
+		here = Fs.dirname(relative)
+		path_of = |target| {
+			joined = Fs.normalize(if (here == "." or here.is_empty()) target else "${here}/${target}")
+			if (joined.starts_with("..")) Err(Outside) else Ok("import ${joined}")
+		}
+		var $out = []
+		for line in code.split_on("\n") {
+			if line.starts_with("import ") and !line.starts_with("import \"") and !line.contains(" as ") and !line.contains(" exposing") {
+				target = Text.trim(line.drop_prefix("import "))
+				first = (target.split_on("/").first() ?? "")
+				is_package = !target.contains("/") and target.contains(".") and !target.starts_with(".")
+				if is_package {
+					$out = $out.append("import ${target}")
+				} else if first != "" {
+					match path_of(target) {
+						Ok(imported) => {
+							$out = $out.append(imported)
+						}
+						Err(Outside) => {}
+					}
+				}
+			}
+		}
+		if qualified {
+			match path_of(Fs.basename(relative).drop_suffix(".roc")) {
+				Ok(itself) => $out.append(itself)
+				Err(Outside) => $out
+			}
+		} else {
+			$out
+		}
+	}
+
+	## The name an import line brings in: `Store` for `import ../Store`, `Db` for `import pf.Db`.
+	import_name : Str -> Str
+	import_name = |line| {
+		target = line.drop_prefix("import ")
+		last = target.split_on("/").last() ?? target
+		last.split_on(".").last() ?? last
+	}
+
+	## What `roc check` said of the check app (`output`, its `entries`): each constant whose string
+	## `DbCheck.Rows` refused, with what it said; each the compiler couldn't check (a type the app
+	## can't be named there), and a note when what stopped it was elsewhere (the app's own modules).
+	rows : Str, List({ line : U64, at : Str }) -> Rows
+	rows = |output, entries| {
+		var $refused = []
+		var $skipped = []
+		var $notes = []
+		for said_of in ("\n${output}").split_on("\n── ") {
+			lines = said_of.split_on("\n")
+			title_line = (lines.first() ?? "").drop_prefix("── ")
+			if title_line.starts_with("✗") {
+				parts_of_title = title_line.split_on(" ").keep_if(|word| !word.is_empty())
+				place = parts_of_title.last() ?? ""
+				title = Str.join_with(parts_of_title.drop_first(1).keep_if(|word| !word.starts_with("─") and word != place), " ")
+				parts = place.split_on(":")
+				file = parts.first() ?? ""
+				line = U64.from_str(parts.get(1) ?? "") ?? 0
+				if file == "main.roc" {
+					match entries.find_first(|entry| line == entry.line or line + 1 == entry.line) {
+						Ok(entry) => {
+							said = Sql.returned(lines)
+							if said.is_empty() {
+								$skipped = $skipped.append({ at: entry.at, said: "the check couldn't name their type (${title})" })
+							} else {
+								$refused = $refused.append({ at: entry.at, said: said.drop_prefix("${entry.at}: ") })
+							}
+						}
+						Err(_) => {
+							$notes = $notes.append("rows not checked: the check app: ${title} at ${place}")
+						}
+					}
+				} else {
+					$notes = $notes.append("rows not checked: ${place}: ${title}")
+				}
+			}
+		}
+		# Something elsewhere stopped the check: none of the rows were read.
+		if !$notes.is_empty() and $refused.is_empty() {
+			return { checked: entries.len(), refused: [], skipped: entries.map(|entry| { at: entry.at, said: "the check app didn't compile (--verbose says why)" }), notes: $notes }
+		}
+		{ checked: entries.len(), refused: $refused, skipped: $skipped, notes: $notes }
+	}
+
+	## The message a report quotes after "It returned this error message:", its lines joined.
+	returned : List(Str) -> Str
+	returned = |lines| {
+		var $in = Bool.False
+		var $out = []
+		for line in lines {
+			if $in {
+				text = Text.trim(line)
+				if !text.is_empty() {
+					$out = $out.append(text)
+				} else if !$out.is_empty() {
+					return Str.join_with($out, " ")
+				}
+			} else if Text.trim(line) == "It returned this error message:" {
+				$in = Bool.True
+			}
+		}
+		Str.join_with($out, " ")
+	}
+
+	## `rows` as JSON, and back.
+	rows_value : Rows -> Value
+	rows_value = |checked| {
+		pairs = |list| Array(list.map(|each| Object([{ key: "at", value: Text(each.at) }, { key: "said", value: Text(each.said) }])))
+		Object([{ key: "checked", value: Value.count(checked.checked) }, { key: "refused", value: pairs(checked.refused) }, { key: "skipped", value: pairs(checked.skipped) }, { key: "notes", value: Value.strs(checked.notes) }])
+	}
+
+	rows_of : Value -> Rows
+	rows_of = |value| {
+		pairs = |key| Value.items(Value.field(value, key)).map(|each| { at: Value.str(Value.field(each, "at")), said: Value.str(Value.field(each, "said")) })
+		{ checked: Value.int_or(Value.field(value, "checked"), 0).to_u64_wrap(), refused: pairs("refused"), skipped: pairs("skipped"), notes: Value.items(Value.field(value, "notes")).map(Value.str) }
 	}
 
 	## `n` things: `1 call`, `2 calls`.
@@ -376,6 +980,8 @@ Sql := [].{
 			{ key: "call", value: Text(each.call) },
 			{ key: "sql", value: sql },
 			{ key: "given", value: given },
+			{ key: "row", value: Text(each.row) },
+			{ key: "qualified", value: Boolean(each.qualified) },
 		])
 	}
 
@@ -398,6 +1004,8 @@ Sql := [].{
 			call: Value.str(Value.field(value, "call")),
 			sql,
 			given,
+			row: Value.str(Value.field(value, "row")),
+			qualified: Value.bool_or(Value.field(value, "qualified"), Bool.False),
 		}
 	}
 
@@ -411,9 +1019,17 @@ Sql := [].{
 				found = Sql.scan!(Value.str(arg(0)))
 				Ok(Object([{ key: "found", value: Array(found.map(Sql.found_value)) }, { key: "statements", value: Value.strs(Sql.statements(found)) }]))
 			}
+			"sqlCheckApp" => {
+				made = Sql.check_app!(Value.str(arg(0)), Value.items(arg(1)).map(Sql.found_of), arg(2), Value.str(arg(3)))
+				Ok(Object([{ key: "text", value: Text(made.text) }, { key: "entries", value: Array(made.entries.map(|entry| Object([{ key: "line", value: Value.count(entry.line) }, { key: "at", value: Text(entry.at) }]))) }]))
+			}
+			"sqlRows" => {
+				entries = Value.items(arg(1)).map(|entry| { line: Value.int_or(Value.field(entry, "line"), 0).to_u64_wrap(), at: Value.str(Value.field(entry, "at")) })
+				Ok(Sql.rows_value(Sql.rows(Value.str(arg(0)), entries)))
+			}
 			"sqlScanText" => Ok(Array(Sql.scan_text(Value.str(arg(0)), Value.str(arg(1))).map(Sql.found_value)))
 			"sqlReport" => {
-				reported = Sql.report(Value.items(arg(0)).map(Sql.found_of), arg(1), Value.bool_or(Value.field(arg(2), "verbose"), Bool.False))
+				reported = Sql.report(Value.items(arg(0)).map(Sql.found_of), arg(1), Sql.rows_of(Value.field(arg(2), "rows")), Value.bool_or(Value.field(arg(2), "verbose"), Bool.False))
 				Ok(Object([{ key: "lines", value: Value.strs(reported.lines) }, { key: "ok", value: Boolean(reported.ok) }]))
 			}
 			_ => Err(Unknown(name))
@@ -423,14 +1039,14 @@ Sql := [].{
 
 expect {
 	found = Sql.scan_text("Store.roc", "rows = Db.all!(\"select id from notes where author = $1\", [Int(author)])?")
-	found == [{ file: "Store.roc", line: 1, column: 8, call: "all!", sql: Literal("select id from notes where author = $1"), given: Count(1) }]
+	found == [{ file: "Store.roc", line: 1, column: 8, call: "all!", sql: Literal("select id from notes where author = $1"), given: Count(1), row: "", qualified: Bool.False }]
 }
 
 # A literal's escapes; a list over lines with a trailing comma, a comma inside a string, a call inside.
 expect {
 	text = "\t_ = Db.run!(\n\t\t\"update t set a = $1 where b = \\\"x\\\" and c = $2\",\n\t\t[\n\t\t\tText(\"a, b\"),\n\t\t\tdec(grams),\n\t\t],\n\t)?\n"
 	found = Sql.scan_text("S.roc", text)
-	found == [{ file: "S.roc", line: 1, column: 6, call: "run!", sql: Literal("update t set a = $1 where b = \"x\" and c = $2"), given: Count(2) }]
+	found == [{ file: "S.roc", line: 1, column: 6, call: "run!", sql: Literal("update t set a = $1 where b = \"x\" and c = $2"), given: Count(2), row: "", qualified: Bool.False }]
 }
 
 # Interpolated, in a variable, Db.unchecked, a comment, a string, another module's Db.
@@ -477,7 +1093,7 @@ expect {
 			]),
 		},
 	])
-	Sql.report(found, described, Bool.False)
+	Sql.report(found, described, Sql.no_rows, Bool.False)
 		== {
 			lines: [
 				"S.roc:1:5: SQLite refuses it: no such column: kcals",
@@ -486,4 +1102,60 @@ expect {
 			],
 			ok: Bool.False,
 		}
+}
+
+# Row types: a binding's annotation (a List, a Try of one), a function's result when the call is its
+# body (one line, or a block's last expression), a module's own type qualified; none for a call
+# whose rows something else takes, or a type the module keeps to itself.
+expect {
+	text =
+		\\Store := [].{
+		\\	Row : { id : I64, kind : Kind }
+		\\	Kind : [Small, Large]
+		\\
+		\\	one! = |{}| {
+		\\		rows : List({ id : I64, note : Db.Nullable(Str) })
+		\\		rows = Db.all!("select id, note from notes", [])?
+		\\		tried : Try(List(Plate.Entry), [DbErr(Str), BadRow(Str)])
+		\\		tried = Db.all!("select * from entries", [])
+		\\		mapped : List(I64)
+		\\		mapped = Db.all!("select id from notes", [])?.map(|row| row.id)
+		\\		Ok(rows)
+		\\	}
+		\\
+		\\	listed! : {} => Try(List(Row), [DbErr(Str), BadRow(Str)])
+		\\	listed! = |{}| Db.all!("select id, kind from things", [])
+		\\
+		\\	last! : Str => Try(List({ kind : Kind }), [DbErr(Str), BadRow(Str)])
+		\\	last! = |slug| {
+		\\		_ = Db.run!("update things set seen = 1", [])?
+		\\		Db.all!(
+		\\			"select kind from things where slug = $1",
+		\\			[Text(slug)],
+		\\		)
+		\\			.map_err(|problem| problem)
+		\\	}
+		\\
+		\\	hidden! : {} => Try(List(Secret), [DbErr(Str), BadRow(Str)])
+		\\	hidden! = |{}| Db.all!("select 1 as one", [])
+		\\}
+		\\
+		\\Secret : { one : I64 }
+	found = Sql.scan_text("app/Store.roc", text)
+	found.map(|each| (each.row, each.qualified))
+		== [
+			("{ id : I64, note : Db.Nullable(Str) }", Bool.False),
+			("Plate.Entry", Bool.False),
+			("", Bool.False),
+			("Store.Row", Bool.True),
+			("", Bool.False),
+			("{ kind : Store.Kind }", Bool.True),
+			("", Bool.False),
+		]
+}
+
+# A module that names its own type qualified already needs itself imported all the same.
+expect {
+	text = "Store := [].{\n\tPerson : { id : Str }\n\n\tperson! = |{}| {\n\t\tfound : Try(List(Store.Person), [DbErr(Str)])\n\t\tfound = Db.all!(\"select id from people\", [])\n\t\tfound\n\t}\n}\n"
+	Sql.scan_text("app/Store.roc", text).map(|each| (each.row, each.qualified)) == [("Store.Person", Bool.True)]
 }
