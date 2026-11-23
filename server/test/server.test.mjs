@@ -31,9 +31,9 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createCipheriv, createDecipheriv, createHash, createHmac, hkdfSync, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createServer as createHttpServer } from "node:http";
+import { createServer as createHttpServer, request as httpRequest } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
-import { createServer } from "node:net";
+import { connect as tcpConnect, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildApp, buildHost, hasRust, hostUnitTests, roc, root } from "../build.mjs";
@@ -1886,6 +1886,247 @@ test("http: a timeout, a body too large, TLS that fails: errors, not answers", {
 	}
 });
 
+/** A server that counts the connections made to it: `/hello`, `/close` (answered with
+ * `connection: close`), `/big` (1,000 bytes), `/huge` (4 MiB). Node's server says `keep-alive: timeout=N` with each
+ * answer, N its `keepAliveTimeout` in seconds. With `dropKept`, a connection's second request is
+ * never answered: the connection is closed instead, as a server closes one it kept just as a
+ * request comes. */
+async function countingServer({ keepAliveTimeout = 5000, dropKept = false } = {}) {
+	let connections = 0;
+	const served = new WeakMap();
+	const server = createHttpServer(async (request, response) => {
+		for await (const _ of request);
+		const count = (served.get(request.socket) ?? 0) + 1;
+		served.set(request.socket, count);
+		if (dropKept && count > 1) return request.socket.destroy();
+		const { pathname } = new URL(request.url, "http://x");
+		if (pathname === "/close") response.setHeader("connection", "close");
+		response.end(pathname === "/big" ? "x".repeat(1000) : pathname === "/huge" ? "x".repeat(4 << 20) : `hello ${request.method}`);
+	});
+	server.keepAliveTimeout = keepAliveTimeout;
+	server.on("connection", () => connections++);
+	await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+	return {
+		url: `http://127.0.0.1:${server.address().port}`,
+		port: server.address().port,
+		connections: () => connections,
+		close: () => new Promise((resolve) => (server.closeAllConnections(), server.close(resolve))),
+	};
+}
+
+test("http: connections are kept alive: a request after another reuses its connection; one at a time each, at once several; a body dropped part-read drained if it has come, else its connection closed; none kept after a connection: close, or longer than its server keeps it", { skip }, async () => {
+	const node = await countingServer();
+	try {
+		for (let i = 0; i < 5; i++) assert.equal(await (await ask(`${node.url}/hello`)).text(), "200 - -\nhello GET");
+		assert.equal(node.connections(), 1, "five requests, one after another: one connection");
+		const posted = await ask(`${node.url}/hello`, { method: "POST", send: "json" });
+		assert.equal(await posted.text(), "200 - -\nhello POST");
+		assert.equal(node.connections(), 1, "a POST on it too");
+
+		const together = await Promise.all(Array.from({ length: 4 }, () => ask(`${node.url}/hello`).then((answer) => answer.text())));
+		assert.deepEqual(together, Array(4).fill("200 - -\nhello GET"));
+		const opened = node.connections();
+		assert.ok(opened >= 2 && opened <= 4, `four at once: the kept one and new ones (${opened})`);
+		for (let i = 0; i < 6; i++) await ask(`${node.url}/hello`);
+		assert.equal(node.connections(), opened, "and they are kept, then reused");
+
+		// A body over the limit, dropped: what has come of it already is drained, and its connection
+		// kept; one with more still to come is closed.
+		assert.equal(await (await ask(`${node.url}/big`, { max: 500 })).text(), "too large");
+		assert.equal(await (await ask(`${node.url}/hello`)).text(), "200 - -\nhello GET");
+		assert.equal(node.connections(), opened, "1,000 bytes, there already: drained, the connection kept");
+		await Promise.all(Array.from({ length: opened }, () => ask(`${node.url}/huge`, { max: 500 })));
+		assert.equal(await (await ask(`${node.url}/huge`, { max: 500 })).text(), "too large");
+		assert.equal(await (await ask(`${node.url}/hello`)).text(), "200 - -\nhello GET");
+		assert.ok(node.connections() > opened, "4 MiB, most of it still to come: closed, so a new connection after them");
+
+		const closing = node.connections();
+		await ask(`${node.url}/close`);
+		await ask(`${node.url}/hello`);
+		assert.equal(node.connections(), closing + 1, "connection: close: not kept");
+	} finally {
+		await node.close();
+	}
+
+	// keep-alive: timeout=2: kept a second, so a request a second and a half later makes a new one.
+	const brief = await countingServer({ keepAliveTimeout: 2000 });
+	try {
+		await ask(`${brief.url}/hello`);
+		await ask(`${brief.url}/hello`);
+		assert.equal(brief.connections(), 1);
+		await new Promise((resolve) => setTimeout(resolve, 1500));
+		assert.equal(await (await ask(`${brief.url}/hello`)).text(), "200 - -\nhello GET");
+		assert.equal(brief.connections(), 2, "a second less than the server keeps it: not reused once it may have gone");
+	} finally {
+		await brief.close();
+	}
+});
+
+test("http: a kept connection its server closes as a request comes: a GET is made again on a new one; a POST, which may have reached the server, is not", { skip }, async () => {
+	const node = await countingServer({ dropKept: true });
+	try {
+		assert.equal(await (await ask(`${node.url}/hello`)).text(), "200 - -\nhello GET");
+		assert.equal(await (await ask(`${node.url}/hello`)).text(), "200 - -\nhello GET", "the kept connection dropped it: asked again on a new one");
+		assert.equal(node.connections(), 2);
+		const posted = await ask(`${node.url}/hello`, { method: "POST", send: "json" });
+		assert.equal(posted.status, 502);
+		assert.match(await posted.text(), /^no answer: http:\/\/127\.0\.0\.1:\d+\/hello: /, "a POST isn't made twice");
+	} finally {
+		await node.close();
+	}
+});
+
+/** A proxy (this file runs it): a plain request whole, its absolute URL in its first line, sent on;
+ * a CONNECT a tunnel. Every host it is asked for is this machine (`api.example.test:PORT` is
+ * 127.0.0.1:PORT), so a name nothing resolves is reached only through it. With `auth`, a request
+ * without that `proxy-authorization` is refused, 407. `seen`: each request, its method, URL (or
+ * host:port) and `proxy-authorization`. */
+async function proxyServer({ auth } = {}) {
+	const seen = [];
+	let connections = 0;
+	// A tunnel's sockets are the proxy's own once CONNECT has them: closeAllConnections doesn't
+	// close them, so close() does.
+	const tunnels = new Set();
+	const portOf = (hostPort) => Number(hostPort.split(":").at(-1));
+	const proxy = createHttpServer((request, response) => {
+		seen.push({ method: request.method, url: request.url, authorization: request.headers["proxy-authorization"] ?? null });
+		if (auth && request.headers["proxy-authorization"] !== auth) return (response.statusCode = 407), response.end("who are you?");
+		const url = new URL(request.url);
+		const { "proxy-authorization": _, ...headers } = request.headers;
+		const upstream = httpRequest({ host: "127.0.0.1", port: portOf(url.host), path: url.pathname + url.search, method: request.method, headers }, (answer) => {
+			response.writeHead(answer.statusCode, { ...answer.headers, "x-via": "proxy" });
+			answer.pipe(response);
+		});
+		upstream.on("error", () => ((response.statusCode = 502), response.end()));
+		request.pipe(upstream);
+	});
+	proxy.on("connect", (request, socket, head) => {
+		seen.push({ method: "CONNECT", url: request.url, authorization: request.headers["proxy-authorization"] ?? null });
+		if (auth && request.headers["proxy-authorization"] !== auth) return socket.end("HTTP/1.1 407 Proxy Authentication Required\r\n\r\n");
+		tunnels.add(socket);
+		const upstream = tcpConnect(portOf(request.url), "127.0.0.1", () => {
+			socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+			upstream.write(head);
+			upstream.pipe(socket);
+			socket.pipe(upstream);
+		});
+		tunnels.add(upstream);
+		upstream.on("error", () => socket.destroy());
+		socket.on("error", () => upstream.destroy());
+	});
+	proxy.on("connection", () => connections++);
+	await new Promise((resolve) => proxy.listen(0, "127.0.0.1", resolve));
+	return {
+		url: `http://127.0.0.1:${proxy.address().port}`,
+		seen,
+		connections: () => connections,
+		close: () => new Promise((resolve) => (tunnels.forEach((socket) => socket.destroy()), proxy.closeAllConnections(), proxy.close(resolve))),
+	};
+}
+
+test("http: a proxy a request names (Via): a plain request sent to it whole, with its credentials; an https one through a tunnel (CONNECT) with TLS to the server inside it; a refusal and a proxy that isn't http are errors", { skip }, async () => {
+	const credentials = `Basic ${Buffer.from("ada:se:same").toString("base64")}`;
+	const tls = selfSigned();
+	const [node, other, proxy, secure] = await Promise.all([httpServer(), httpServer(), proxyServer({ auth: credentials }), tls && httpServer(tls)]);
+	const via = proxy.url.replace("http://", "http://ada:se%3Asame@");
+	const port = (url) => new URL(url).port;
+	try {
+		const seen = await echoed(await ask(`http://api.example.test:${port(node.url)}/echo?x=1`, { proxy: via }));
+		assert.equal(seen.url, "/echo?x=1");
+		assert.equal(seen.headers.host, `api.example.test:${port(node.url)}`, "the host as the URL names it, which only the proxy reached");
+		assert.equal(seen.headers["proxy-authorization"], undefined, "the proxy's credentials stay with the proxy");
+		assert.deepEqual(proxy.seen.at(-1), { method: "GET", url: `http://api.example.test:${port(node.url)}/echo?x=1`, authorization: credentials }, "the absolute URL, and the proxy URL's user and password");
+		// Another host through the same proxy: its connection kept and reused.
+		assert.equal(await (await ask(`http://other.example.test:${port(other.url)}/hello`, { proxy: via })).text(), "200 - node\nhello");
+		assert.equal(proxy.connections(), 1, "one connection to the proxy, for both hosts");
+
+		if (secure) {
+			const tunnelled = await ask(`https://api.example.test:${port(secure.url)}/hello`, { proxy: via });
+			assert.equal(tunnelled.status, 502);
+			assert.match(await tunnelled.text(), /^no answer: TLS with api\.example\.test: invalid peer certificate: /, "TLS to the server, by its name, inside the tunnel");
+			assert.deepEqual(proxy.seen.at(-1), { method: "CONNECT", url: `api.example.test:${port(secure.url)}`, authorization: credentials });
+		}
+		const refused = await ask(`https://api.example.test:${port(node.url)}/hello`, { proxy: proxy.url });
+		assert.equal(await refused.text(), `no answer: the proxy ${proxy.url} refused a tunnel to api.example.test:${port(node.url)}: HTTP/1.1 407 Proxy Authentication Required`);
+		const plainRefused = await ask(`http://api.example.test:${port(node.url)}/hello`, { proxy: proxy.url });
+		assert.equal(await plainRefused.text(), "407 - -\nwho are you?", "a plain request's refusal is the proxy's answer");
+		assert.equal(await (await ask(`${node.url}/hello`, { proxy: "socks5://127.0.0.1:1080" })).text(), "no answer: proxy: a proxy is http:// or https://, not socks5://");
+		assert.match(await (await ask(`${node.url}/hello`, { proxy: "http://127.0.0.1:9" })).text(), /^no answer: the proxy http:\/\/127\.0\.0\.1:9: 127\.0\.0\.1:9: /, "a proxy that isn't there");
+	} finally {
+		await Promise.all([node.close(), other.close(), proxy.close(), secure?.close()]);
+	}
+});
+
+test("http: the environment's proxy (HTTP_PROXY, HTTPS_PROXY), but not for localhost and loopback, a host NO_PROXY names, or a request that says Direct", { skip }, async () => {
+	const [node, proxy] = await Promise.all([httpServer(), proxyServer()]);
+	const port = new URL(node.url).port;
+	const proxied = await start([], app, { HTTP_PROXY: proxy.url, HTTPS_PROXY: proxy.url, NO_PROXY: "skip.example.test,.inside.example.test" });
+	const through = (url, options = {}) => proxied.get(`/http?${new URLSearchParams({ url, ...options })}`, { method: "POST" }).then((answer) => answer.text());
+	try {
+		assert.equal(await through(`http://api.example.test:${port}/hello`), "200 - node\nhello");
+		assert.equal(proxy.seen.at(-1).url, `http://api.example.test:${port}/hello`, "through the proxy");
+		const asked = proxy.seen.length;
+		assert.equal(await through(`${node.url}/hello`), "200 - node\nhello", "loopback: direct");
+		assert.equal(await through(`http://localhost:${port}/hello`), "200 - node\nhello", "localhost: direct");
+		assert.match(await through(`http://skip.example.test:${port}/hello`), /^no answer: skip\.example\.test:\d+: /, "NO_PROXY: direct, where nothing resolves the name");
+		assert.match(await through(`http://a.inside.example.test:${port}/hello`), /^no answer: a\.inside\.example\.test:\d+: /, "and a name under one it names");
+		assert.match(await through(`http://api.example.test:${port}/hello`, { proxy: "direct" }), /^no answer: api\.example\.test:\d+: /, "Direct: no proxy");
+		assert.equal(proxy.seen.length, asked, "none of those through the proxy");
+		await through(`https://api.example.test:${port}/hello`);
+		assert.deepEqual(proxy.seen.at(-1), { method: "CONNECT", url: `api.example.test:${port}`, authorization: null }, "HTTPS_PROXY for an https URL");
+		assert.equal(await through(`${node.url}/hello`, { proxy: proxy.url }), "200 - node\nhello");
+		assert.equal(proxy.seen.at(-1).url, `${node.url}/hello`, "a proxy named by the request takes loopback too");
+	} finally {
+		await proxied.stop();
+		await Promise.all([node.close(), proxy.close()]);
+	}
+});
+
+test("http: fetch_chunks! hands the answer over as it comes, its head and then each chunk; a step's Err stops it there and closes its connection; the time and size limits count the whole body; a step that crashes lets the body go", { skip }, async () => {
+	let closed = 0;
+	const drip = createHttpServer((request, response) => {
+		const { pathname } = new URL(request.url, "http://x");
+		response.setHeader("x-from", "drip");
+		if (pathname === "/drip") {
+			const words = ["one ", "two ", "three"];
+			const next = () => (words.length ? (response.write(words.shift()), setTimeout(next, 80)) : response.end());
+			return next();
+		}
+		if (pathname === "/forever") {
+			const timer = setInterval(() => response.write("tick\n"), 30);
+			return response.on("close", () => (clearInterval(timer), closed++));
+		}
+		response.end("all at once");
+	});
+	await new Promise((resolve) => drip.listen(0, "127.0.0.1", resolve));
+	const at = `http://127.0.0.1:${drip.address().port}`;
+	const chunks = (path, options = {}) => get(`/http/chunks?${new URLSearchParams({ url: `${at}${path}`, ...options })}`, { method: "POST" });
+	try {
+		assert.equal(await (await chunks("/drip")).text(), "200 drip 3 chunks\none two three", "three writes, 80 ms apart: three chunks, as they came");
+		assert.equal(await (await chunks("/whole")).text(), "200 drip 1 chunks\nall at once");
+		assert.equal(await (await chunks("/forever", { stop: 3 })).text(), "stopped after 3");
+		assert.equal(await until(() => closed === 1), true, "a step's Err: the connection closed, the server stops writing");
+		const started = performance.now();
+		assert.equal(await (await chunks("/forever", { timeout: 300 })).text(), "timed out");
+		assert.ok(performance.now() - started < 2000, "300 ms from the request to the body's end, not each chunk's");
+		assert.equal(await until(() => closed === 2), true);
+		assert.equal(await (await chunks("/forever", { max: 12 })).text(), "too large", "the size limit counts every chunk");
+		assert.equal(await until(() => closed === 3), true);
+		const crashed = await chunks("/forever", { stop: 2, crash: "yes" });
+		assert.equal(crashed.status, 500);
+		assert.equal(await until(() => closed === 4), true, "a crash in a step: the body let go, its connection closed");
+		assert.match(await (await get(`/http/chunks?${new URLSearchParams({ url: "http://127.0.0.1:9/" })}`, { method: "POST" })).text(), /^no answer: 127\.0\.0\.1:9: /);
+	} finally {
+		await new Promise((resolve) => (drip.closeAllConnections(), drip.close(resolve)));
+	}
+});
+
+test("http: which proxy a request takes, its own unit tests (proxy.rs, compiled alone): a proxy's URL and credentials, each scheme's variable, upper case first, loopback direct, NO_PROXY's domains, addresses, ranges and ports", { skip }, () => {
+	const ran = hostUnitTests("proxy.rs", join(dir, "proxy-unit-tests"));
+	assert.equal(ran.status, 0, ran.stdout + ran.stderr);
+	assert.match(ran.stdout, /test result: ok\. 6 passed/);
+});
+
 test("http: a request over the internet, over TLS checked against the web's authorities", { skip: skipInternet }, async () => {
 	const answer = await (await ask("https://example.com/")).text();
 	assert.match(answer, /^200 /);
@@ -2051,6 +2292,11 @@ test("samples: what the docs show (Samples.roc) runs as they say: settings, cryp
 		if (request.method === "POST" && request.url === "/shop/orders") return response.writeHead(201, { "content-type": "application/json" }).end('{"id":"o-17"}');
 		if (request.method === "DELETE" && request.url === "/shop/orders/o-17") return response.writeHead(204).end();
 		if (request.url === "/moved") return response.writeHead(302, { location: "/elsewhere" }).end();
+		if (request.url === "/export") {
+			response.writeHead(200, { "content-type": "text/csv" });
+			for (let at = 0; at < 1000; at++) response.write(`row ${at},${"x".repeat(50)}\n`);
+			return response.end();
+		}
 		response.writeHead(404).end();
 	});
 	await new Promise((resolve) => other.listen(0, "127.0.0.1", resolve));
@@ -2068,6 +2314,9 @@ test("samples: what the docs show (Samples.roc) runs as they say: settings, cryp
 		], "the order as JSON, then a DELETE with the same token (a record update of one Http.Init)");
 		assert.equal(await post(`/samples/order?shop=${encodeURIComponent(`${api}/closed`)}&token=t0k`), "no order id", "a 404's body isn't an order's JSON");
 		assert.equal(await text(`/samples/preview?url=${encodeURIComponent(`${api}/moved`)}`), "302 /elsewhere", "a redirect, the answer");
+		assert.equal(await text(`/samples/lines?url=${encodeURIComponent(`${api}/export`)}`), "1000 lines", "counted as the chunks came");
+		assert.equal(await text(`/samples/lines?url=${encodeURIComponent(`${api}/nowhere`)}`), "refused: 404", "stopped at its head");
+		assert.equal(await text(`/samples/partner?url=${encodeURIComponent(`${api}/moved`)}`), "404 ", "no PARTNER_PROXY: as the environment says (none here)");
 		const part = await get(`/samples/cdn?url=${encodeURIComponent(`${upstream.url}/file`)}`, { headers: { range: "bytes=10-19", cookie: "session=secret" } });
 		assert.equal(part.status, 206, "the range, passed on");
 		assert.deepEqual(Buffer.from(await part.arrayBuffer()), upstream.file.subarray(10, 20));

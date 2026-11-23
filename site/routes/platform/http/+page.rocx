@@ -11,6 +11,8 @@ meta = {
 	toc: [
 		{ id: "out", label: "Asking another server" },
 		{ id: "limits-out", label: "Limits and errors" },
+		{ id: "connections", label: "Connections and proxies" },
+		{ id: "chunks", label: "An answer as it comes" },
 		{ id: "bytes", label: "Bodies are bytes" },
 		{ id: "forward", label: "A body from elsewhere" },
 		{ id: "cookies", label: "Cookies" },
@@ -61,7 +63,8 @@ view! = |_|
 					<code>{"Http.bytes(list)"}</code>, each with its <code>content-type</code> (none for bytes, as
 					<code>fetch</code> sends a <code>Uint8Array</code>) unless <code>headers</code> has one;
 				</li>
-				<li><code>timeout_ms</code>, <code>max_bytes</code> and <code>redirect</code>: the limits, below.</li>
+				<li><code>timeout_ms</code>, <code>max_bytes</code> and <code>redirect</code>: the limits, below;</li>
+				<li><code>proxy</code>: <code>FromEnv</code>, <code>Direct</code> or <code>{"Via(url)"}</code>, below.</li>
 			</ul>
 			<p>
 				A record literal is an <code>Http.Init</code> where one is wanted. One kept to build on is annotated,
@@ -103,6 +106,53 @@ view! = |_|
 				</li>
 			</ul>
 
+			<Heading id="connections">Connections and proxies</Heading>
+			<Code title={"${Sources.platform_partner.file}, in part"} source={Sources.platform_partner.rocx} numbers={Bool.False} />
+			<p>
+				Connections are kept alive: one a request has finished with is used again by the next to the same
+				place (its scheme, host and port, and the proxy on the way), so an API asked often costs one TCP and
+				TLS handshake, not one each time. Each is kept 30 s with nothing to do, or a second less than its
+				server says it keeps one (<code>keep-alive: timeout=5</code>), 32 idle at most a place; any number
+				are open at once. A request on a kept connection that its server closed meanwhile is made again on a
+				new one, once: when it was never sent, or when it may be sent twice (GET, HEAD, OPTIONS, TRACE, PUT,
+				DELETE, or one with an <code>idempotency-key</code>), as Go's client does.
+			</p>
+			<ul>
+				<li>
+					<strong>The environment's proxy</strong> (<code>FromEnv</code>, the default), as Go reads it:
+					<code>HTTPS_PROXY</code> for an <code>https</code> URL, <code>HTTP_PROXY</code> for an
+					<code>http</code> one, but never for <code>localhost</code> or a loopback address, nor for a host
+					<code>NO_PROXY</code> names (<code>*</code>, an address, a range such as <code>10.0.0.0/8</code>,
+					<code>example.com</code> and every name under it, <code>.example.com</code> for the names under it
+					alone, each with a <code>:port</code> for that port only).
+				</li>
+				<li>
+					<strong>A request's own</strong>: <code>Direct</code> is none; <code>{"Via(url)"}</code> is that proxy,
+					for every host. A proxy's URL is <code>http://</code> or <code>https://</code>, its user and password
+					sent as <code>proxy-authorization</code>; one that can't be read is an <code>HttpErr</code>, never a
+					way around it.
+				</li>
+				<li>
+					<strong>Through it:</strong> an <code>http</code> URL's request goes to the proxy whole; an
+					<code>https</code> one's through a tunnel (<code>CONNECT</code>), with TLS to the server inside it, so
+					the proxy sees none of it.
+				</li>
+			</ul>
+
+			<Heading id="chunks">An answer as it comes</Heading>
+			<Code title={"${Sources.platform_lines.file}, in part"} source={Sources.platform_lines.rocx} numbers={Bool.False} />
+			<p>
+				<code>{"Http.fetch_chunks!(url, init, start, step!)"}</code> makes the same request and hands the
+				answer to <code>step!</code> as it comes, never whole: <code>{"Head(res)"}</code> first (its status and
+				headers, its body empty), then <code>{"Chunk(bytes)"}</code> for each part of the body as it arrives,
+				each with what <code>step!</code> answered last. What it answers after the last chunk is the result;
+				an <code>Err</code> ends the request there and closes its connection
+				(<code>{"Err(Stopped(why))"}</code>). For a body too large to hold, or one to pass on as it comes: a
+				model's answer, word by word, sent on to a <a href={"${Paths.platform_server}#streams"}>stream of
+				events</a>. <code>timeout_ms</code> runs to the body's last byte and <code>max_bytes</code> counts every
+				chunk, so a stream that runs long sets both to 0.
+			</p>
+
 			<Heading id="bytes">Bodies are bytes</Heading>
 			<Code title={"${Sources.platform_digest.file}, in part"} source={Sources.platform_digest.rocx} numbers={Bool.False} />
 			<p>
@@ -112,7 +162,8 @@ view! = |_|
 				JSON (<code>application/json</code>, or a type ending <code>+json</code>) or a form; an upload of any
 				other type gives its handler <code>{"{}"}</code>, and the handler reads <code>request.body</code>.
 				<code>{"Server.bytes(status, headers, bytes)"}</code> answers with bytes as they are; a body may be
-				16 MiB at most coming in.
+				16 MiB at most coming in, unless the server's <code>--max-body</code> (<code>MAX_BODY</code>) says
+				otherwise (<a href={"${Paths.platform_server}#running"}>running it</a>).
 			</p>
 
 			<Heading id="forward">A body from elsewhere</Heading>
@@ -193,8 +244,11 @@ view! = |_|
 
 			<Heading id="limits">Not yet</Heading>
 			<ul>
-				<li><strong>HTTP/1.1</strong> each way, a connection a request: no HTTP/2, no keeping a connection to reuse.</li>
-				<li><strong>Bodies are whole</strong> in Roc, coming or going (a forward aside): no streaming a request's body as it comes.</li>
+				<li><strong>HTTP/1.1</strong> each way: no HTTP/2; no SOCKS proxy.</li>
+				<li>
+					<strong>A request's body is whole</strong> in Roc, coming in or going out: no streaming one as it
+					comes (an answer from another server can come in chunks, and a forward is never in Roc).
+				</li>
 			</ul>
 		</NoHydration>
 	</>

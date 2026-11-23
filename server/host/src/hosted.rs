@@ -181,6 +181,8 @@ struct Context {
     listening: Vec<broadcast::Receiver<live::Message>>,
     rooms: Vec<String>,
     sockets: Vec<u64>,
+    /// The answers from other servers whose bodies it reads in chunks (`Http.fetch_chunks!`).
+    chunked: Vec<u64>,
     /// In an actor's turn, and the calls it runs: the actor, and the ones waiting on it.
     turn: Option<Turn>,
 }
@@ -206,6 +208,9 @@ impl Context {
         }
         for id in self.sockets.drain(..) {
             tcp::close(id);
+        }
+        for id in self.chunked.drain(..) {
+            client::let_go(id);
         }
     }
 
@@ -1116,8 +1121,9 @@ pub extern "C" fn roc_host_tcp_close(id: u64) {
 
 // ---- HTTP: requests to other servers ----
 
-/// Makes a request and reads its answer whole (`client::fetch`): any status is an answer; an `Err`
-/// is "timed out", "too large", or why there was none.
+/// Makes a request and reads its answer whole (`client::fetch`), through the proxy `via` says
+/// (`env`, `direct`, `via <url>`): any status is an answer; an `Err` is "timed out", "too large",
+/// or why there was none.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_http_send(
     method: RocStr,
@@ -1127,24 +1133,14 @@ pub extern "C" fn roc_host_http_send(
     timeout_ms: u64,
     max_bytes: u64,
     follow: bool,
+    via: RocStr,
 ) -> HostHttpSendResult {
     let waited = {
-        let (method, url, headers, body) = (taken(method), taken(url), taken(headers), taken_bytes(body));
+        let (method, url, headers, body, via) = (taken(method), taken(url), taken(headers), taken_bytes(body), taken(via));
         let fetched = guarded(|| {
-            let outbound = client::Outbound::new(&method, &url, &headers, body)?;
-            let timeout = (timeout_ms > 0).then(|| Duration::from_millis(timeout_ms));
-            // No longer than the call's deadline, either.
-            let left = deadline().map(|at| at.saturating_duration_since(Instant::now()));
-            let timeout = match (timeout, left) {
-                (Some(given), Some(left)) => Some(given.min(left)),
-                (given, left) => given.or(left),
-            };
-            let max_bytes = (max_bytes > 0).then_some(max_bytes);
-            wait(async { Ok(client::fetch(outbound, timeout, max_bytes, follow).await) })?.map_err(|failure| match failure {
-                client::Failure::Http(why) => why,
-                client::Failure::TimedOut => "timed out".to_string(),
-                client::Failure::TooLarge => "too large".to_string(),
-            })
+            let outbound = client::Outbound::new(&method, &url, &headers, body)?.through(&via)?;
+            let (timeout, max_bytes) = (request_timeout(timeout_ms), (max_bytes > 0).then_some(max_bytes));
+            wait(async { Ok(client::fetch(outbound, timeout, max_bytes, follow).await) })?.map_err(failure)
         });
         socket_in_time(fetched)
     };
@@ -1154,6 +1150,82 @@ pub extern "C" fn roc_host_http_send(
             HostHttpSendResult { payload: HostHttpSendResultPayload { ok: ManuallyDrop::new(answered) }, tag: HostHttpSendResultTag::Ok }
         }
         Err(why) => HostHttpSendResult { payload: HostHttpSendResultPayload { err: ManuallyDrop::new(roc_str(&why)) }, tag: HostHttpSendResultTag::Err },
+    }
+}
+
+/// The time a request may take: `timeout_ms` (0: no limit), and no longer than the call's deadline.
+fn request_timeout(timeout_ms: u64) -> Option<Duration> {
+    let timeout = (timeout_ms > 0).then(|| Duration::from_millis(timeout_ms));
+    let left = deadline().map(|at| at.saturating_duration_since(Instant::now()));
+    match (timeout, left) {
+        (Some(given), Some(left)) => Some(given.min(left)),
+        (given, left) => given.or(left),
+    }
+}
+
+/// Why a request to another server came to nothing, as Roc reads it.
+fn failure(failure: client::Failure) -> String {
+    match failure {
+        client::Failure::Http(why) => why,
+        client::Failure::TimedOut => "timed out".to_string(),
+        client::Failure::TooLarge => "too large".to_string(),
+    }
+}
+
+/// Makes a request as `roc_host_http_send` does, and keeps its answer's body for the call to read
+/// in chunks (`roc_host_http_read`): `<id> <status>`, then its headers, a `name: value` a line.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_http_open(
+    method: RocStr,
+    url: RocStr,
+    headers: RocStr,
+    body: RocListWith<u8, false>,
+    timeout_ms: u64,
+    max_bytes: u64,
+    follow: bool,
+    via: RocStr,
+) -> TextResult {
+    let waited = {
+        let (method, url, headers, body, via) = (taken(method), taken(url), taken(headers), taken_bytes(body), taken(via));
+        let opened = guarded(|| {
+            let outbound = client::Outbound::new(&method, &url, &headers, body)?.through(&via)?;
+            let (timeout, max_bytes) = (request_timeout(timeout_ms), (max_bytes > 0).then_some(max_bytes));
+            let (id, status, headers) = wait(async { Ok(client::open_chunked(outbound, timeout, max_bytes, follow).await) })?.map_err(failure)?;
+            CALL.with(|context| context.borrow_mut().chunked.push(id));
+            Ok(format!("{id} {status}\n{headers}"))
+        });
+        socket_in_time(opened)
+    };
+    text_or_error(in_time(waited))
+}
+
+/// The next chunk of an answer's body this call keeps (`roc_host_http_open`), as it comes: empty at
+/// its end; "timed out", "too large", or why it broke off. After either, it is let go.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_http_read(id: u64) -> BytesResult {
+    let waited = {
+        let read = guarded(|| {
+            if !CALL.with(|context| context.borrow().chunked.contains(&id)) {
+                return Err("that answer's body isn't this call's to read".to_string());
+            }
+            let read = wait(async { Ok(client::chunk(id).await) })?.map_err(failure);
+            if !matches!(&read, Ok(chunk) if !chunk.is_empty()) {
+                CALL.with(|context| context.borrow_mut().chunked.retain(|each| *each != id));
+            }
+            read
+        });
+        socket_in_time(read)
+    };
+    bytes_or_error(in_time(waited))
+}
+
+/// Lets go of an answer's body this call keeps, read or not: its connection is closed, unless what
+/// is left of the body has come already.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_http_close(id: u64) {
+    if CALL.with(|context| context.borrow().chunked.contains(&id)) {
+        client::let_go(id);
+        CALL.with(|context| context.borrow_mut().chunked.retain(|each| *each != id));
     }
 }
 

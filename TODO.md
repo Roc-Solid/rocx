@@ -57,8 +57,7 @@ When an item lands, delete its line here in the same commit.
 - **The server's other limits** are in `server/README.md`, "Not yet":
   - channels can't tell a dropped subscription from a tab that went;
   - actors' timers live in memory;
-  - a job's time limit cuts it off only at an effect that waits;
-  - `Http` keeps no connections alive and has no proxy.
+  - a job's time limit cuts it off only at an effect that waits.
 - **`rocx check --sql`'s blind spots** (D-058, built; `spike/db-checked/DESIGN.md`, §12, phase 5;
   `server/README.md`, "Not yet"):
   - a column of an outer join's other side read as nullable, from the statement's plan (SQLite's

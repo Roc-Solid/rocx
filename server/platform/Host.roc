@@ -130,9 +130,23 @@ Host := [].{
 
 	## A request to another server (`Http`): its method, URL, headers (`name: value` a line) and
 	## body; given up after `timeout_ms` (0: never), refused past `max_bytes` of body (0: any size),
-	## redirects followed if `follow`. Any status is an answer, its headers a `name: value` a line;
-	## an `Err` means there was none: "timed out", "too large", or why.
-	http_send! : Str, Str, Str, List(U8), U64, U64, Bool => Try({ status : U16, headers : Str, body : List(U8) }, Str)
+	## redirects followed if `follow`, through the proxy `via` says (`env`: the environment's,
+	## `direct`: none, `via <url>`: that one). Any status is an answer, its headers a `name: value` a
+	## line; an `Err` means there was none: "timed out", "too large", or why.
+	http_send! : Str, Str, Str, List(U8), U64, U64, Bool, Str => Try({ status : U16, headers : Str, body : List(U8) }, Str)
+
+	## The same request, its answer's body kept for this call to read in chunks (`http_read!`): `<id>
+	## <status>`, a line break, then its headers, a `name: value` a line. The time limit runs to the
+	## body's last byte, and `max_bytes` counts every chunk.
+	http_open! : Str, Str, Str, List(U8), U64, U64, Bool, Str => Try(Str, Str)
+
+	## The next chunk of an answer's body this call keeps (`http_open!`), as it comes: `[]` at its
+	## end; "timed out", "too large", or why it broke off. After either, the host has let it go.
+	http_read! : U64 => Try(List(U8), Str)
+
+	## Lets go of an answer's body this call keeps before its end: its connection is closed (unless
+	## the rest of it has come already). The host lets go of what a call keeps when the call ends.
+	http_close! : U64 => {}
 
 	## Opens the app's database at a URL (`postgres://…`, `sqlite:<path>` or `turso:<path>`): its
 	## flavor, "postgres", "sqlite" or "turso". The platform's start calls it once, before anything

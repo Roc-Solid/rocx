@@ -249,14 +249,24 @@ if (res.ok) res.text() else …
 
 # a document someone else names: 5 s, 5 KiB, a redirect is the answer
 doc = Http.fetch!(url, { timeout_ms: 5_000, max_bytes: 5_120, redirect: Manual })
+
+# through a proxy this request names (else HTTPS_PROXY / HTTP_PROXY, unless NO_PROXY says)
+res = Http.fetch!(url, { proxy: Via("http://user:secret@proxy.internal:3128") })?
+
+# an answer as it comes, its head and then each chunk: a model's words, passed on as they arrive
+Http.fetch_chunks!(url, { method: Post, body: Http.json(prompt), timeout_ms: 0 }, {}, |{}, received|
+    match received {
+        Head(res) => if (res.ok) Ok({}) else Err(Refused(res.status))
+        Chunk(bytes) => send!(Str.from_utf8_lossy(bytes))
+    })?
 ```
 
 `Http.fetch!(url, init)` is JS's `fetch`, waiting for the whole answer (D-024). `init` (an
 `Http.Init`) has a default for every field, so `{}` is a GET: `method` (`Get`, `Post`, `Put`,
 `Patch`, `Delete`, `Head`, `Options`, `Other(Str)`), `headers` (`(name, value)` pairs), `query`
 (pairs percent-encoded onto the URL, after an `&` if it has a query already), `body` (`Empty`),
-`timeout_ms` (30 s; 0: none), `max_bytes` (64 MiB; 0: any) and `redirect` (`Follow`, or `Manual`:
-the redirect is the answer). A record kept to build on is annotated `Http.Init`, so a record update
+`timeout_ms` (30 s; 0: none), `max_bytes` (64 MiB; 0: any), `redirect` (`Follow`, or `Manual`:
+the redirect is the answer) and `proxy` (below). A record kept to build on is annotated `Http.Init`, so a record update
 can add to it. The body's helpers set its `content-type` unless `headers` has one:
 `Http.json(value)` (`application/json`), `Http.form(pairs)` (`application/x-www-form-urlencoded`),
 `Http.plain_text(text)` (`text/plain; charset=utf-8`) and `Http.bytes(list)` (none, as `fetch`
@@ -270,17 +280,48 @@ itself, a header with a line break), `TimedOut` (no whole answer in time, from c
 body's last byte), `TooLarge` (a body over the limit: refused by its `content-length`, or as it
 passes it).
 
+`Http.fetch_chunks!(url, init, start, step!)` makes the same request and hands the answer to
+`step!` as it comes, never whole: `Head(res)` first (its status and headers, its body empty), then
+`Chunk(bytes)` for each part of the body as it arrives, each with what `step!` answered last (`start`
+first); what it answers after the last chunk is the result. An `Err` from `step!` ends the request
+there, its connection closed (`Err(Stopped(why))`), as does a crash in it. `timeout_ms` runs from the
+request to the body's last byte and `max_bytes` counts every chunk, so a stream that runs long sets
+them to 0. The host keeps the body while it is read, the call's as `Tcp`'s sockets are (D-056).
+
 The API before `fetch!` (`Http.Request`, `Response`, `Opts`, `defaults`, `send!`, `send_request!`,
 which was `fetch!(request)`, `get`, `post_form`, `post_json`, `with_header`, `header`, `text`)
 still works, deprecated: each is `fetch!` underneath, and goes in a later release.
 
-The host makes it (`host/src/client.rs`): hyper's HTTP/1.1 client, a connection a request, over
-rustls checked against `webpki-roots`, the call paused while it waits, as `Db` and `Tcp` do. Redirects
+The host makes it (`host/src/client.rs`): hyper's HTTP/1.1 client over rustls checked against
+`webpki-roots`, the call paused while it waits, as `Db` and `Tcp` do. Redirects
 are followed as `fetch` follows them, twenty at most: a relative `location` against the URL it
 answered; a 303 (or a 301 or 302 to a POST) becomes a GET without its body; `authorization` and
 `cookie` don't go on to another origin. `host` and `content-length` are added unless given; nothing
 is decompressed (send `accept-encoding` and the body is as the server sent it). An answer to a HEAD
 has no body, so its `content-length` is never too large.
+
+Connections are kept alive (D-056): a pool of idle ones a place (a scheme, host and port, and the
+proxy on the way), each kept 30 s with nothing to do, or a second less than its server says it keeps
+one (`keep-alive: timeout=5`, as Node's and Apache's say), 32 idle at most a place; any number are
+open at once. A connection goes back to the pool once its answer's body has been read to its end; a
+body dropped part-read (one over `max_bytes`) is drained if the rest of it has come already, and its
+connection closed if not. A request on a kept connection that its server closed meanwhile is made
+again, once, on a new one: when it was never sent, or when it may be sent twice (GET, HEAD, OPTIONS,
+TRACE, PUT, DELETE, or one with an `idempotency-key`), as Go's client does. `Server.forward` keeps
+its connections the same way.
+
+A proxy (D-056): `proxy: FromEnv` (the default) is the environment's, as Go reads it: `HTTPS_PROXY`
+for an `https` URL, `HTTP_PROXY` for an `http` one (in lower case too, the upper case first), but
+never for `localhost` or a loopback address, nor for a host `NO_PROXY` names (a list by commas: `*`,
+an address, a range such as `10.0.0.0/8`, `example.com` for it and every name under it,
+`.example.com` for the names under it only, each with a `:port` for that port alone). `Direct` is
+none; `Via(url)`, that proxy, for every host, loopback too. A proxy's URL is `http://` or `https://`
+(TLS to the proxy itself), its user and password (percent-encoded) sent as `proxy-authorization`,
+`host:port` alone read as `http://`; any other (`socks5://`), or one that can't be read, is an
+`HttpErr`, never a way around it. An `http` URL's request goes to the proxy whole, its absolute URL
+in its first line, and any host shares the connections kept to it; an `https` URL's goes through a
+tunnel (`CONNECT host:443`) with TLS to the server inside it, so the proxy sees none of it, and a
+refusal is `HttpErr("the proxy … refused a tunnel to host:443: HTTP/1.1 407 …")`.
 
 ### Files: `packages/storage` (D-047), and `Blobs`
 
@@ -914,11 +955,13 @@ built `--target=arm64musl` runs in a container against `just db`'s Postgres, eve
 
 A request's body may be 16 MiB at most (413 beyond), or what `--max-body` (`MAX_BODY`) says: a
 number of bytes, or of KiB, MiB or GiB (`64MiB`); 0 or anything else stops the server (D-056). The
-host reads it whole before Roc runs, so it is the most any request holds in memory. `ROCX_LOG` (`pretty` or `json`) chooses the
-log's format when the app's `program` says `Auto` (above). `Env.public_url!` is the app's public URL,
-for the links it sends: `--public-url` or `PUBLIC_URL` (an `http://` or `https://` URL; its `/` at the
-end dropped; anything else stops the server), as behind a proxy; without either, where the server
-listens (`http://127.0.0.1:8080`, the port the system gave `--port 0`; an address that is all of the
+host reads it whole before Roc runs, so it is the most any request holds in memory. Requests to
+other servers go through `HTTPS_PROXY` and `HTTP_PROXY` when they are set, but not to a host
+`NO_PROXY` names (`Http`, above). `ROCX_LOG` (`pretty` or `json`) chooses the log's format when
+the app's `program` says `Auto` (above). `Env.public_url!` is the app's public URL, for the links it
+sends: `--public-url` or `PUBLIC_URL` (an `http://` or `https://` URL; its `/` at the end dropped;
+anything else stops the server), as behind a proxy; without either, where the server listens
+(`http://127.0.0.1:8080`, the port the system gave `--port 0`; an address that is all of the
 machine's is its loopback). Never a request's `Host`, which whoever asks writes.
 
 ## Tests
@@ -959,7 +1002,11 @@ list; past `--kv-max-mb`; `kv.rs`'s own unit tests, compiled alone), actors
 (one message at a time, a crash, asking another, itself or one waiting on it, tells in order,
 timers and a cancelled one, a message an actor doesn't take and a kind the app has none of, logged,
 a restart, one idle let go and woken as the database has it), `Http` (to servers the test runs: redirects, a timeout, a body too large, TLS
-that fails), `Env` (from a request and a job), AES-GCM and packages/crypto against Node's, random
+that fails; connections kept and counted, one at a time and several at once, a body dropped
+part-read, `connection: close`, a server's `keep-alive: timeout`, a kept connection closed under a
+GET, made again, and under a POST, not; a proxy the request names, plain and tunnelled, with its
+credentials, refusing, and the environment's with loopback and `NO_PROXY` direct; `proxy.rs`'s own
+unit tests; `fetch_chunks!` as chunks come, stopped, past its time and size limits, and crashing), `Env` (from a request and a job), AES-GCM and packages/crypto against Node's, random
 bytes, packages/storage on memory, on a directory and on S3 when there is one (objects whole and in
 part, missing ones, a multipart upload of three parts and an aborted one, signed URLs Node's fetch
 uses, `serve!` with a range (and one the app dropped), a 416, an ETag and HEAD; a directory's files
@@ -1000,10 +1047,10 @@ browser runtime's own render.
 - Actors' timers are in memory: durable ones (Orleans' reminders) would be rows, as jobs are.
 - A job's time limit cuts it off only at an effect that waits: Roc that loops without one holds
   its worker until it ends.
-- `Http`: HTTP/1.1, a connection a request (none kept alive), no proxy; an answer's body comes into
-  Roc whole.
+- `Http`: HTTP/1.1 only (no HTTP/2); no SOCKS proxy; a request's own body is sent whole (an
+  answer's may come in chunks: `fetch_chunks!`).
 - `Forward`: an upstream's body only, not the other way (a request's body streamed to S3 as it
-  comes: an upload is still read whole, 16 MiB at most unless `--max-body` says more); one connection a request.
+  comes: an upload is still read whole, 16 MiB at most unless `--max-body` says more).
 - The OpenAPI document (`Api.openapi`) gives each endpoint's body as JSON only, though an
   endpoint reads the same fields from a form (`application/x-www-form-urlencoded`), as a plain
   form posts them without JavaScript (examples/journal's reactions take both).

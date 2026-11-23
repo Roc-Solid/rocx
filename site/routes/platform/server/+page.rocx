@@ -242,8 +242,10 @@ view! = |_|
 			<p>
 				A request's body may be 16 MiB at most (413 beyond), or what <code>--max-body</code>
 				(<code>MAX_BODY</code>) says: a number of bytes, or of KiB, MiB or GiB (<code>64MiB</code>). The
-				host reads a body whole before Roc runs, so it is the most a request holds in memory. Starting, the
-				server takes its port first: one
+				host reads a body whole before Roc runs, so it is the most a request holds in memory. Requests to
+				other servers go through <code>HTTPS_PROXY</code> and <code>HTTP_PROXY</code> when they are set,
+				but not to a host <code>NO_PROXY</code> names (<a href={"${Paths.platform_http}#connections"}>HTTP</a>).
+				Starting, the server takes its port first: one
 				in use stops it there, before the database, the migrations or the background loops start, so
 				nothing is left running. Stopping (SIGTERM, or ^C), the server stops
 				listening and taking jobs, and waits up to ten seconds for the requests, streams and jobs still

@@ -2,7 +2,8 @@
 //! library into one executable. It answers HTTP with tokio and hyper (`http`), keeps Roc's memory
 //! and catches its crashes (`roc`), and gives Roc general effects (`hosted`): the app's database,
 //! Postgres or SQLite (`db`), live topics and rooms (`live`), actors' mailboxes and timers (`actors`), named values (`memory`), TCP
-//! and TLS (`tcp`, `tls`), HTTP requests to other servers (`client`), the settings it was started
+//! and TLS (`tcp`, `tls`), HTTP requests to other servers on connections kept alive, through a proxy
+//! when there is one (`client`, `proxy`), the settings it was started
 //! with (`settings`), values by key in memory (`kv`, for `Kv`); and it renders a page of components
 //! (`signals`). Jobs, cron, migrations, actors' state and email are the platform's Roc.
 //!
@@ -40,6 +41,7 @@ mod kv;
 mod live;
 mod logging;
 mod memory;
+mod proxy;
 mod roc;
 mod settings;
 mod signals;

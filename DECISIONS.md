@@ -9,8 +9,8 @@ this file and the code disagree, the code is right.
 Every entry was checked against a few principles: SolidJS 2.0 parity on the UI side; one server
 instance; batteries included, as Rails and Phoenix have them; a few lines of our own over a
 dependency; and "would a second app want this?" Nothing goes into the platform that only one app
-needs. D-014 to D-016 are deferred (D-016's list parameters landed since); the rest were decided on
-2026-11-21.
+needs. D-014 to D-016 were deferred: D-014 and D-015 have been built since (D-056, and the
+structured logger of 2026-11-21), and D-016's list parameters; the rest were decided on 2026-11-21.
 
 ---
 
@@ -132,7 +132,8 @@ Http.text : Response -> Str
   or re-encoding (S3's signatures depend on it). Nothing is decompressed.
 - Redirects are followed as `fetch` follows them: at most 20, a relative `location` resolved. A
   303, or a 301 or 302 after a POST, becomes a GET without a body. `authorization`, `cookie` and
-  `proxy-authorization` are dropped when the origin changes. One connection per request, no pool.
+  `proxy-authorization` are dropped when the origin changes. One connection per request, no pool
+  (since D-056, connections are kept alive, and a proxy is used).
 
 **Changed while building.** `with_header` was added: `Request` is a structural record, so it can't
 have methods, and without it a bearer token meant rebuilding `post_json`'s headers by hand. And a
@@ -2691,6 +2692,118 @@ is extra).
 not media. A page loads every plugin's scripts, so a plugin with a heavy one loads the rest itself
 when it is needed. **Why.** A plugin's install is one line, and the web's fixed places (a service
 worker's scope) are a plugin's to take, checked at start like its routes. **Reversible:** yes.
+
+## D-056 The server's limits: a body limit, the platform's log events, Http's connections and proxies
+
+**Context.** TODO.md's "the server's other limits" listed, from `server/README.md`'s "Not yet":
+D-014's body limit, deferred (16 MiB, fixed in the host); the platform's own log lines (migrations,
+plugins, packages/jobs and packages/email) written with `Log.line!`, a message at info with its
+details in the text, though D-015's structured logger had landed; and `Http`, a connection a
+request, none kept alive, no proxy, an answer's body into Roc whole. The user asked (2026-11-23)
+for the "decided but not built" list to be built; the coordinator settled the four choices below.
+
+**Options and choices.**
+
+1. **The body limit** (D-014): a flag and an environment variable, as the server's other settings
+   (`--kv-max-mb`/`KV_MAX_MB`) are, or a field of `program` too. *Chosen:* `--max-body` and
+   `MAX_BODY`, no program field: an app sets none of the others (the store's size, an actor's idle
+   time, the channel beat) in its program, and the limit is the deployment's (what memory the host
+   has) as much as the app's.
+2. **The platform's log lines**: as they were, or a message that doesn't change and fields. *Chosen:*
+   the latter, at the level each is: a job that fails and runs again is a warning, one that failed for
+   good an error.
+3. **Keeping connections**: hyper-util's pooled client (another layer of dependencies and its own
+   connector for rustls), or a pool of our own over hyper's connections (`SendRequest` says when a
+   connection is ready again, or closed). *Chosen:* our own, a few dozen lines in `client.rs`, the
+   limits constants, documented, not flags (the coordinator: no knob until an app needs one).
+4. **The proxy's option**: per request in `Http.Init` (as Bun's `fetch` has `proxy`), a server flag
+   (`--http-proxy`), or both. *Chosen:* per request: `Http` has no client object to hang it on, and
+   the environment covers the server's own.
+5. **Loopback and the environment's proxy**: as Go (never through it) or as curl (only `NO_PROXY`
+   says). *Chosen:* Go's, so a server's sidecar and its tests' servers aren't sent to a corporate
+   proxy; a proxy a request names applies to loopback too.
+6. **An answer's body in chunks** (optional in the brief): built, as a fold, since it fit without
+   changing `fetch!` or the host's ABI types.
+
+**As built.**
+
+```
+--max-body 16MiB        the most a request's body may be (MAX_BODY): bytes, or KiB, MiB, GiB; 0 or
+                        anything else stops the server; 413 beyond, the limit itself fits
+```
+
+```roc
+Http.Init := { …, proxy : [FromEnv, Direct, Via(Str)] ?? FromEnv }
+Http.Received : [Head(HttpResponse), Chunk(List(U8))]
+Http.fetch_chunks! : Str, Init, state, (state, Received => Try(state, err)) => Try(state, [HttpErr(Str), TimedOut, TooLarge, Stopped(err)])
+
+Log.warn!("rocx jobs: a job failed, and runs again", { kind, id, attempt, of, again_in_ms, error })
+```
+
+- **The body limit.** `http::Config.max_body`, read up to the limit and refused as it passes it,
+  said or chunked. Refusing one whose `content-length` is over before reading it was tried and
+  dropped: the client, still sending, saw the connection reset instead of the 413.
+- **Log events.** `rocx server: migrated` (`migration`); `rocx plugins: added` (`plugin`, `adds`:
+  "1 migration, 5 loops"; `Plugins.summary` became `Plugins.added`); a plugin's check, its message
+  with `check` (`email.smtp`), at info, or warn when it fails; `rocx jobs: a job failed, and runs
+  again` (warn: `kind`, `id`, `attempt`, `of`, `again_in_ms`, `error`); `rocx jobs: a job failed for
+  good` (error: `kind`, `id`, `attempts`, `error`); `rocx jobs: jobs cut short by the last stop,
+  queued again` (warn, `count`); `rocx jobs: couldn't take a job`, `… couldn't record how a job went`
+  (error), `… can't hear when a job is queued, so looks every second instead` (warn); `rocx cron: a
+  schedule's job wasn't queued` (error, `cron`, `error`); `email: kept, not sent (no SMTP_URL)`
+  (info, `to`, `subject`). `Log.line!` stays, for apps.
+- **Kept connections** (`client.rs`): idle ones a place (scheme, host, port, and the proxy), kept
+  30 s, or a second less than the server's `keep-alive: timeout=N` (Node and Apache close theirs
+  after 5 s), 32 idle at most a place, the oldest going first; no cap on open ones (Go's and
+  undici's default). A connection goes back when its answer's body is read to its end (a task waits
+  on `SendRequest::ready`); a body dropped part-read is drained by hyper if the rest has come, and
+  its connection closed if not. A task closes the expired ones every second while there are any. A
+  request on a kept connection that fails is made again once on a new one when hyper hands it back
+  unsent, or when it may be sent twice (GET, HEAD, OPTIONS, TRACE, PUT, DELETE, an
+  `idempotency-key`) and the connection went (closed, reset, cut short), as Go's transport does.
+  `Server.forward` shares the pool.
+- **Proxies** (`proxy.rs`, plain Rust, its tests compiled alone): `HTTPS_PROXY` for `https` URLs,
+  `HTTP_PROXY` for `http` ones, upper case first, an empty one unset, read once; `NO_PROXY` by commas:
+  `*`, an address, a CIDR range, a domain and the names under it, `.domain` (or `*.domain`) for
+  those under it only, each with `:port` for that port alone; `localhost` and loopback never. A
+  proxy's URL: `http://` or `https://` (TLS to it), credentials percent-decoded into `Basic`,
+  `host:port` alone read as `http://`; anything else is an `HttpErr` naming the variable, never a way
+  around the proxy. An `http` URL's request goes to the proxy whole (its absolute URL, and
+  `proxy-authorization` unless the caller gave one), the connections kept to the proxy shared by
+  every host; an `https` URL's goes through `CONNECT host:port`, TLS to the server inside it (by the
+  server's name), its connections kept a place each. Errors name the proxy without its credentials.
+- **Chunks.** `Host.http_open!` makes the request and keeps the answer's body in the host, its id the
+  call's (a list in the call's context, as `Tcp`'s sockets are, let go when the call ends, crashed or
+  not); `Host.http_read!(id)` gives the next chunk as it comes (`[]` at the end, after which the host
+  has let it go), within what is left of the time limit and the size limit; `Host.http_close!(id)`
+  lets go early. Their results are `Try(Str, Str)` and `Try(List(U8), Str)`, types the ABI had, so
+  the glue wasn't regenerated. `fetch_chunks!` hides the id: a handle Roc could keep past its call
+  would be a leak, a fold can't be.
+
+**Tests.** `server/test/server.test.mjs`: `--max-body` and `MAX_BODY` (1 KiB: the limit fits, a byte
+more is a 413, said and chunked; 2000 from the environment; 0, `lots` and `16 MB` refused, exit 2);
+the log's events (a job's failures with their fields, migrations, plugins, a check, mail kept;
+`sqlite.test.mjs`'s migrations, pretty); kept connections counted by a server the test runs (five in
+a row on one; four at once, then reused; 1,000 bytes dropped and drained, 4 MiB dropped and closed;
+`connection: close`; `keep-alive: timeout=2` let go after a second); a kept connection closed under a
+GET, made again, and under a POST, not; a proxy the request names (a plain request whole with its
+credentials and the target's host, one connection for two hosts, a tunnel with TLS to the server's
+name, a 407 to a tunnel and to a plain request, `socks5://` refused, a proxy that isn't there); the
+environment's (through it, loopback, `localhost`, `NO_PROXY`'s host and a name under one, `Direct`,
+`HTTPS_PROXY` for an `https` URL, a named proxy taking loopback); `proxy.rs`'s six unit tests;
+`fetch_chunks!` (three writes 80 ms apart as three chunks, stopped after three with the server
+seeing the connection go, a 300 ms limit over the whole, a size limit over every chunk, a crash in
+a step letting the body go); the docs' samples (`lines!`, `partner!`).
+
+**What it costs.** A server that closes an idle connection just as it is reused fails a POST that
+can't be made again (`HttpErr`, as Go's client would); the 30 s idle time keeps up to 32 sockets
+a place open that a connection a request wouldn't. A `CONNECT` answer is read a byte at a time (its
+head only, so nothing of TLS's is read by mistake). No SOCKS proxy, no HTTP/2.
+
+**Reversible:** yes. The pool is `checkout`/`checkin` in `client.rs` (a connection a request again
+is `IDLE` at 0); the proxy is `Init`'s field with a default, so code that never names it is
+unchanged; `fetch_chunks!` is new; the log events are messages and fields an app's log reader may
+match on, which would change back.
 
 ## D-058 `Db`'s queries checked at build: the engine describes, the compiler checks rows
 

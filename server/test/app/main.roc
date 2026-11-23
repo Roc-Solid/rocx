@@ -804,7 +804,8 @@ route! = |request, context| {
 		("POST", "/http") => {
 			# `url`, asked with `Http.fetch!`: `method` (GET unless it says), a header of its own and a
 			# token, a `content-type` if `type` says one, query pairs if `query=yes`, the body `send`
-			# says, and `timeout`, `max` and `follow=no` if given (the defaults if not).
+			# says, and `timeout`, `max`, `follow=no` and `proxy` (`direct`, or a URL) if given (the
+			# defaults if not).
 			asked = request.query
 			given_type = if (param(asked, "type").is_empty()) [] else [("Content-Type", param(asked, "type"))]
 			init : Http.Init
@@ -823,7 +824,39 @@ route! = |request, context| {
 				Err(_) => timed
 			}
 			directed = if (param(asked, "follow") == "no") { ..limited, redirect: Manual } else limited
-			answered_fetch(Http.fetch!(param(asked, "url"), directed))
+			proxied =
+				match param(asked, "proxy") {
+					"" => directed
+					"direct" => { ..directed, proxy: Direct }
+					named => { ..directed, proxy: Via(named) }
+				}
+			answered_fetch(Http.fetch!(param(asked, "url"), proxied))
+		}
+		("POST", "/http/chunks") => {
+			# `url`'s answer a chunk at a time (`Http.fetch_chunks!`): its status, how many chunks came
+			# and what they said; `stop` ends it after that many, `crash` crashes there, `timeout` and
+			# `max` as `/http`'s (no limits if not given).
+			asked = request.query
+			stop = U64.from_str(param(asked, "stop")) ?? 0
+			init : Http.Init
+			init = { timeout_ms: U64.from_str(param(asked, "timeout")) ?? 0, max_bytes: U64.from_str(param(asked, "max")) ?? 0 }
+			step! = |seen, received|
+				match received {
+					Head(res) => Ok({ ..seen, status: res.status, from: res.header("x-from") ?? "-" })
+					Chunk(bytes) =>
+						if stop > 0 and seen.chunks >= stop {
+							if (param(asked, "crash") == "yes") crash "a step that crashes" else Err(Enough(seen.chunks))
+						} else {
+							Ok({ ..seen, chunks: seen.chunks + 1, said: seen.said.concat(bytes) })
+						}
+				}
+			match Http.fetch_chunks!(param(asked, "url"), init, { status: 0, from: "", chunks: 0, said: [] }, step!) {
+				Ok(seen) => text(200, "${seen.status.to_str()} ${seen.from} ${seen.chunks.to_str()} chunks\n${Str.from_utf8_lossy(seen.said)}")
+				Err(Stopped(Enough(count))) => text(200, "stopped after ${count.to_str()}")
+				Err(TimedOut) => text(504, "timed out")
+				Err(TooLarge) => text(502, "too large")
+				Err(HttpErr(why)) => text(502, "no answer: ${why}")
+			}
 		}
 		("POST", "/http/plain") =>
 		# `Http.fetch!(url, {})`: a GET, with every default.
@@ -951,6 +984,18 @@ route! = |request, context| {
 			match Samples.preview!(param(request.query, "url")) {
 				Ok(answer) => text(200, "${answer.status.to_str()} ${answer.header("location") ?? "-"}")
 				Err(TooLarge) => text(502, "too large")
+				Err(_) => text(504, "no answer")
+			}
+		("GET", "/samples/lines") =>
+			match Samples.lines!(param(request.query, "url")) {
+				Ok(count) => text(200, "${count.to_str()} lines")
+				Err(Stopped(Refused(status))) => text(502, "refused: ${status.to_str()}")
+				Err(_) => text(504, "no answer")
+			}
+		("GET", "/samples/partner") =>
+			match Samples.partner!(param(request.query, "url")) {
+				Ok(answer) => text(200, "${answer.status.to_str()} ${answer.text()}")
+				Err(HttpErr(why)) => text(502, why)
 				Err(_) => text(504, "no answer")
 			}
 		("GET", "/samples/origin") => text(200, Samples.origin!({}))

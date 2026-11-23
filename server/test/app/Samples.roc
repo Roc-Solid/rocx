@@ -48,6 +48,30 @@ Samples := [].{
 	preview! : Str => Try(HttpResponse, [HttpErr(Str), TimedOut, TooLarge])
 	preview! = |url| Http.fetch!(url, { timeout_ms: 5_000, max_bytes: 65_536, redirect: Manual })
 
+	## The lines of an answer too large to hold (an export, a log), counted as its chunks come, none
+	## kept after it is counted; an answer that isn't a success stops at its head.
+	lines! : Str => Try(U64, [HttpErr(Str), TimedOut, TooLarge, Stopped([Refused(U16)])])
+	lines! = |url|
+		Http.fetch_chunks!(
+			url,
+			{ timeout_ms: 0, max_bytes: 0 },
+			0,
+			|count, received|
+				match received {
+					Head(res) => if (res.ok) Ok(count) else Err(Refused(res.status))
+					Chunk(bytes) => Ok(count + bytes.count_if(|byte| byte == '\n'))
+				},
+		)
+
+	## A partner's API, through the proxy its network asks for (`PARTNER_PROXY`), when one is set; the
+	## app's other requests go as `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` say.
+	partner! : Str => Try(HttpResponse, [HttpErr(Str), TimedOut, TooLarge])
+	partner! = |url|
+		match Env.var!("PARTNER_PROXY") {
+			Ok(proxy) => Http.fetch!(url, { proxy: Via(proxy) })
+			Err(NotFound) => Http.fetch!(url, {})
+		}
+
 	# ---- Settings: Env ----
 
 	## Where the app is, for a link in an email: `--public-url` or `PUBLIC_URL` when the server has
