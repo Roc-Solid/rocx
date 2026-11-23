@@ -73,8 +73,18 @@ class DevClient(private val activity: Activity, private val screen: ScrollView) 
         return frame
     }
 
-    /** Starts: the intent's server, the last one, or the connect screen. */
+    /**
+     * Starts: the intent's server, the last one, or the connect screen. If the last run ended while
+     * a build was loading or mounting (its code stopped the process: a native crash), that build
+     * is shown on the red screen instead of being loaded again, until the next.
+     */
     fun begin(given: String?) {
+        val crashed = prefs.getString("loading", null)
+        if (crashed != null) {
+            prefs.edit().remove("loading").commit()
+            seen = crashed
+            showError("The build stopped the dev client", "Build $crashed ended the app while it loaded or mounted (a crash in its native code: see `adb logcat`). The next build is loaded as usual.")
+        }
         val server = given?.takeIf { it.isNotBlank() } ?: prefs.getString("origin", null)
         if (server == null) connectScreen() else connect(server)
     }
@@ -107,7 +117,7 @@ class DevClient(private val activity: Activity, private val screen: ScrollView) 
 
     private fun connect(server: String) {
         val given = server.trim().trimEnd('/')
-        if (given != origin) seen = ""
+        if (origin.isNotEmpty() && given != origin) seen = ""
         origin = given
         prefs.edit().putString("origin", origin).apply()
         show("Waiting for $origin…")
@@ -136,12 +146,16 @@ class DevClient(private val activity: Activity, private val screen: ScrollView) 
 
     /** Asks for the latest build until the activity goes; a new one is fetched and loaded. */
     private fun poll() {
-        var reachable = true
+        // False until the server first answers: then the "Waiting for…" line goes.
+        var reachable = false
+        // Since when the server hasn't answered: said once that is 1.5 s (a restart is quicker).
+        var unanswered = 0L
         while (polling) {
             try {
                 val latest = JSONObject(String(get("$origin/rocx/android/latest.json"), Charsets.UTF_8))
                 if (!reachable) show("")
                 reachable = true
+                unanswered = 0L
                 val build = latest.optString("build")
                 if (build.isNotEmpty() && build != seen) {
                     val failed = latest.optString("error")
@@ -172,8 +186,11 @@ class DevClient(private val activity: Activity, private val screen: ScrollView) 
                     }
                 }
             } catch (e: Exception) {
-                if (reachable) show("Can't reach $origin (${e.message}): is rocx dev running?")
-                reachable = false
+                if (unanswered == 0L) unanswered = SystemClock.uptimeMillis()
+                if (SystemClock.uptimeMillis() - unanswered > 1500) {
+                    if (reachable || status.text.startsWith("Waiting")) show("Can't reach $origin (${e.message}): is rocx dev running?")
+                    reachable = false
+                }
             }
             Thread.sleep(150)
         }
@@ -185,7 +202,10 @@ class DevClient(private val activity: Activity, private val screen: ScrollView) 
         val started = SystemClock.uptimeMillis()
         // A new applier: the new build's views replace the last one's (its ROOT op).
         Rocx.applier = Applier(activity, screen)
+        // Noted until it is mounted: if its code ends the process, the next run says so (`begin`).
+        prefs.edit().putString("loading", file.name.removePrefix("app-").removeSuffix(".so")).commit()
         val said = Rocx.reload(file.absolutePath, origin, "/")
+        prefs.edit().remove("loading").commit()
         if (said.isNotEmpty()) {
             showError("The app didn't load", said)
             return
