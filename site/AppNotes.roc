@@ -50,8 +50,8 @@ AppNotes := [].{
 			name: "sqlite-vs-turso",
 			path: Paths.examples_sqlite_vs_turso,
 			blurb: "SQLite against Turso, timed in Roc",
-			summary: "One app timing the same database work on SQLite and on Turso: writes alone and in a transaction, reads by key and by an index, sums, JSON, a recursive query, and eight callers at once on rows of their own, on one row, and reading beside writing. Each is timed in Roc, in the server, around the Db calls it makes. Its results are on this page.",
-			shows: ["The same SQL on two engines: --database-url picks one", "Turso's concurrent writes (MVCC): a transaction that loses to another runs again", "Eight actors as eight callers at once, and timing in Roc (Time.now_nanos!)"],
+			summary: "One app timing the same database work on SQLite and on Turso: writes alone and in a transaction, reads by key and by an index, sums, JSON, a recursive query, eight callers at once on rows of their own, on one row, and reading beside writing; then a million orders fetched one and a hundred at a time, and joined to their customers. Each is timed in Roc, in the server, around the Db calls it makes. Its results are on this page.",
+			shows: ["The same SQL on two engines: --database-url picks one", "Turso's concurrent writes (MVCC): a transaction that loses to another runs again", "Eight actors as eight callers at once, and timing in Roc (Time.now_nanos!)", "A million rows, loaded by SQL from a count, fetched and joined"],
 			shots: [],
 		},
 		{
@@ -170,7 +170,7 @@ AppNotes := [].{
 				.concat(if (shots) [{ id: "screens", label: "Screenshots" }] else [])
 				.concat(if (name == "hello") [{ id: "source", label: "Its page" }] else [])
 				.concat(if (name == "echo") [{ id: "bench", label: "The benchmark" }] else [])
-				.concat(if (name == "sqlite-vs-turso") [{ id: "results", label: "The results" }] else [])
+				.concat(if (name == "sqlite-vs-turso") [{ id: "results", label: "The results" }, { id: "big", label: "A million rows" }] else [])
 				.concat([{ id: "numbers", label: "What it's made of" }, { id: "run", label: "Run it" }]),
 		}
 	}

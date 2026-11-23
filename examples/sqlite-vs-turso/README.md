@@ -21,7 +21,18 @@ it makes (`Time.now_nanos!`), so no HTTP is in the numbers. `Bench.roc` has the 
   once and timed from the first told to the last done): inserts, each writer its own rows;
   transactions reading and writing back a counter of their own; transactions on one counter they
   share (on Turso the losers run again: `runs` counts the bodies' runs); four readers beside four
-  writers.
+  writers;
+- a sum over every row (a scan), and the group by with its index ruled out (a scan and a sort);
+  then a checkpoint, and the reads again: on Turso's MVCC, rows not yet checkpointed live in a
+  store of versions in memory, slower to walk by an index than the database's pages.
+
+`POST /bench/big` with `{"orders": n}` (1,000 to 5,000,000; a million for the docs) makes two
+tables afresh, `customers` (n / 100) and `orders` (n, a hundred a customer, spread over the table,
+with an index on `customer`), loads them by SQL from a count (a recursive query, 100,000 rows to a
+statement), checkpoints, and times: an order fetched by its key, 100 by a range of keys, a
+customer's 100 by the index, an order joined to its customer, a customer joined to their 100
+orders, the ten customers who spent most (a join, a group by and a sort over every order), and a
+sum over every order. Each fetch and join checks it read what it should.
 
 Then it checks what they wrote: every counter at what its transactions made it (no write lost),
 every event and item there. A failure is a 500 saying which.
@@ -32,7 +43,7 @@ From the repository's root, with the toolchain set up (`just setup`):
 
 ```sh
 just examples sqlite-vs-turso    # build, check, lint, expects, and its tests on all three engines
-just db-bench                    # the docs' numbers: site/sqlite-vs-turso.json (a few minutes)
+just db-bench                    # the docs' numbers: site/sqlite-vs-turso.json (ten minutes or so)
 ```
 
 By hand:
@@ -44,9 +55,11 @@ node server/build.mjs examples/sqlite-vs-turso/main.roc /tmp/bench/app --opt=spe
 curl -s -X POST localhost:18090/bench -H 'content-type: application/json' -d '{"size":10}'
 ```
 
-`just db-bench` (`site/sqlite-vs-turso.mjs`) does that on each engine with a file of its own: a
-small run to warm up, then three at size 100 (20,000 items), each workload's time the median of the
-three. The docs show them at `/examples/sqlite-vs-turso`. Measure on a quiet machine, and compare
+`just db-bench` (`site/sqlite-vs-turso.mjs`) does that on each engine, three rounds: on a fresh
+file a small run to warm up and one at size 100 (20,000 items), and on another fresh file the big
+run at a million orders; each workload's time the median of the three. The big run gets a file of
+its own because on Turso's MVCC what an earlier run wrote (versions kept in memory) slows later
+reads two or three times, even of tables it never touched. The docs show them at `/examples/sqlite-vs-turso`. Measure on a quiet machine, and compare
 the engines with each other rather than with another machine's numbers.
 
 A Turso file in MVCC mode is Turso's alone: run the app on a fresh path for each engine (SQLite

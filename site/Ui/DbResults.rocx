@@ -5,16 +5,17 @@ import Heading
 import TableWrap
 
 ## examples/sqlite-vs-turso's results (`DbBench`, from site/sqlite-vs-turso.json, `just db-bench`):
-## each workload's median time on each engine, as operations a second with a bar against the row's
-## fastest, the time one took, and, where transactions lost to each other and ran again, how many
-## runs they took; then how they were measured. Pure: the data is the build's.
+## the everyday run's and the big run's (a million orders, and joins) workloads, each one's median
+## time on each engine as operations a second, with a bar against the row's fastest, the time one
+## took, and, where transactions lost to each other and ran again, how many runs they took; why
+## Turso's MVCC reads slower where it does; and how they were measured. Pure: the data is the build's.
 DbResults := [].{
 	view : {} -> Html
-	view = |_| DbResults.results(DbBench.workloads)
+	view = |_| DbResults.results(DbBench.workloads, DbBench.big)
 
-	## The section, or a line saying it wasn't measured yet.
-	results : List(DbBench.Workload) -> Html
-	results = |workloads|
+	## The sections, or a line saying they weren't measured yet.
+	results : List(DbBench.Workload), List(DbBench.Workload) -> Html
+	results = |workloads, big|
 		if workloads.is_empty() {
 			<>
 				<Heading id="results">The results</Heading>
@@ -26,31 +27,65 @@ DbResults := [].{
 				<Heading id="results">The results</Heading>
 				<p>
 					{"Each workload is timed in Roc, in the server, around the "}<code>Db</code>{" calls it makes ("}<code>Time.now_nanos!</code>
-					{"), so no HTTP is in the numbers: on fresh tables of ${ExampleApp.count(m.rows)} items, the median of ${m.rounds.to_str()} rounds, the app built with "}
-					<code>{"--opt=${m.opt}"}</code>{" as it would ship. The concurrent ones are eight actors told at once, timed from the first told to the last done. Higher is better; a bar is a rate against its row's fastest, in bold."}
+					{"), so no HTTP is in the numbers: the median of ${m.rounds.to_str()} rounds, each on a fresh file, the app built with "}
+					<code>{"--opt=${m.opt}"}</code>{" as it would ship. First everyday work on ${ExampleApp.count(m.rows)} items: what one caller does, then what eight do at once (eight actors told together, timed from the first told to the last done), then a checkpoint and the reads again. Higher is better; a bar is a rate against its row's fastest, in bold."}
 				</p>
-				<TableWrap>
-					<table class="db-results">
-						<thead>
-							<tr>
-								<th scope="col">Workload</th>
-								{...DbBench.engines.map(|engine| <th scope="col" class="num">{engine.label}<span class="note">{engine.note}</span></th>)}
-							</tr>
-						</thead>
-						<tbody>{...workloads.map(|workload| DbResults.row(workload))}</tbody>
-					</table>
-				</TableWrap>
+				{=DbResults.table(workloads)}
+				<p class="small">Where eight write one counter at once, Turso's transactions (MVCC) lose to each other and run again: the runs say how many it took them, where SQLite's take turns and run once each.</p>
+				<p>
+					<strong>Why Turso's MVCC reads slower.</strong>
+					{" A row it has written stays in its store of versions, in memory, apart from the database's pages, until a checkpoint writes it there (Turso checkpoints when its log reaches about 4 MB, which this run doesn't before its checkpoint). Reading such a row is a lookup in that store and a check of which version the reader may see. A scan through the store costs several times a scan of the pages ("}
+					<code>scan</code>
+					{"); walking an index and reading each row it names costs far more, and that is how every engine answers the group by: it walks the category index, to save a sort, and reads each row for its price ("}
+					<code>aggregate</code>
+					{"). With the index ruled out the same group by is a scan and a sort ("}
+					<code>aggregate-no-index</code>
+					{"); after the checkpoint the rows are in the pages, and the gap narrows (the "}
+					<code>-checkpointed</code>
+					{" rows). It doesn't close: MVCC checks every row it reads against its store, even a row in the pages, as the million rows below show. The recursive query is slow on both of Turso's modes: that is Turso's engine, not its MVCC."}
+				</p>
+				<Heading id="big">A million rows</Heading>
+				{=
+					if big.is_empty() {
+						<p class="missing">Not measured yet: run <code>just db-bench</code>.</p>
+					} else {
+						<>
+							<p>
+								{"${ExampleApp.count(m.orders)} orders of ${ExampleApp.count(m.customers)} customers, a hundred each, spread over the table, with an index on whose they are: loaded by SQL itself from a count (a recursive query, 100,000 rows to a statement, each its own transaction), then checkpointed, so the reads find them in the database's pages, as an app's older data is (Turso's MVCC has checkpointed as it loaded: its log fills many times over). Then orders fetched one at a time and a hundred at a time (by a range of keys, and by the index), joined to their customers, and summed: the ten customers who spent most, and a sum over every order. Each round on a fresh file, apart from the everyday run: on Turso's MVCC, what an earlier run wrote (versions it keeps in memory) slows these reads two or three times, even though it never touched these tables."}
+							</p>
+							{=DbResults.table(big)}
+						</>
+					}
+				}
 				<p class="small">
-					{"Where eight write one counter at once, Turso's transactions (MVCC) lose to each other and run again: the runs say how many it took them, where SQLite's take turns and run once each. The engines: ${DbResults.versions}. Measured on ${m.date}, at commit "}
+					{"The engines: ${DbResults.versions}. Measured on ${m.date}, at commit "}
 					<code>{m.commit}</code>{", on an ${m.machine}, its load average ${m.load} during the run, other work going on: compare the engines with each other rather than with another machine's numbers."}
 				</p>
 			</>
 		}
 
-	## A workload's row: its name and what one operation is, then each engine's cell.
+	## A table of workloads: each one's row, under the engines' names.
+	table : List(DbBench.Workload) -> Html
+	table = |workloads|
+		<TableWrap>
+			<table class="db-results">
+				<thead>
+					<tr>
+						<th scope="col">Workload</th>
+						{...DbBench.engines.map(|engine| <th scope="col" class="num">{engine.label}<span class="note">{engine.note}</span></th>)}
+					</tr>
+				</thead>
+				<tbody>{...workloads.map(|workload| DbResults.row(workload))}</tbody>
+			</table>
+		</TableWrap>
+
+	## A workload's row: its name and what one operation is, then each engine's cell, each compared
+	## with the row's fastest by the time one operation took (a rate rounded to whole operations a
+	## second can't tell one second from half of one).
 	row : DbBench.Workload -> Html
 	row = |workload| {
-		fastest = workload.results.map(|result| DbResults.rate(workload.ops, result.ns)).fold(0, |most, each| if (each > most) each else most)
+		times = workload.results.map(|result| DbResults.time(workload.ops, result.ns))
+		fastest = times.fold(times.first() ?? 0.0, |least, each| if (each < least) each else least)
 		<tr>
 			<th scope="row"><code>{workload.name}</code><span class="what">{workload.what}</span></th>
 			{...workload.results.map(|result| DbResults.cell(workload, result, fastest))}
@@ -59,25 +94,36 @@ DbResults := [].{
 
 	## An engine's cell: its rate, a bar against the row's fastest, the time one operation took, and
 	## the runs its transactions took when some ran again.
-	cell : DbBench.Workload, DbBench.Result, U64 -> Html
+	cell : DbBench.Workload, DbBench.Result, Dec -> Html
 	cell = |workload, result, fastest| {
-		speed = DbResults.rate(workload.ops, result.ns)
-		share = if (fastest == 0) 0 else speed * 100 / fastest
-		<td class={if (speed == fastest) "num best" else "num"}>
-			<span class="rate">{"${ExampleApp.count(speed)}/s"}</span>
-			<svg class="bar" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden="true"><rect width="100" height="4" class="track" /><rect width={share.to_str()} height="4" class="fill" /></svg>
+		took = DbResults.time(workload.ops, result.ns)
+		share = if (took == 0.0) 0.0 else fastest / took * 100.0
+		<td class={if (took == fastest) "num best" else "num"}>
+			<span class="rate">{DbResults.rate(workload.ops, result.ns)}</span>
+			<svg class="bar" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden="true"><rect width="100" height="4" class="track" /><rect width={DbResults.tenths(share)} height="4" class="fill" /></svg>
 			<span class="per">{"${DbResults.per(workload.ops, result.ns)}${DbResults.reruns(workload, result)}"}</span>
 		</td>
 	}
 
-	## Operations a second.
-	rate : U64, U64 -> U64
-	rate = |ops, ns| if (ns == 0) 0 else ops * 1000000000 / ns
+	## The nanoseconds one operation took, on average.
+	time : U64, U64 -> Dec
+	time = |ops, ns| if (ops == 0) 0.0 else ns.to_dec() / ops.to_dec()
+
+	## Operations a second: "94,135/s", or to a tenth below a hundred ("1.8/s").
+	rate : U64, U64 -> Str
+	rate = |ops, ns|
+		if ns == 0 {
+			"-"
+		} else if ops * 1000000000 / ns >= 100 {
+			"${ExampleApp.count(ops * 1000000000 / ns)}/s"
+		} else {
+			"${DbResults.tenths(ops.to_dec() * 1000000000.0 / ns.to_dec())}/s"
+		}
 
 	## The time one operation took, on average: "38.2 µs", "1.4 ms".
 	per : U64, U64 -> Str
 	per = |ops, ns| {
-		us = if (ops == 0) 0.0 else ns.to_dec() / ops.to_dec() / 1000.0
+		us = DbResults.time(ops, ns) / 1000.0
 		if (us < 1000.0) "${DbResults.tenths(us)} µs" else "${DbResults.tenths(us / 1000.0)} ms"
 	}
 

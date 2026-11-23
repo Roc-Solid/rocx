@@ -6,13 +6,22 @@ import pf.Time
 import Workers
 
 ## The workloads, each timed in Roc around the `Db` calls it makes (`Time.now_nanos!`, the server's
-## monotonic clock), on whichever engine the server opened (`Db.engine!`). A run does them in order
-## on fresh tables (`run!`): first those one caller does alone, one statement after another, then
-## those eight do at once (`Workers`, eight actors whose turns run beside each other), timed from the
-## first worker told to the last one done. Each is a different shape of work: a write that commits
-## alone, many in one transaction, reads by key, scans of an index, sums over the table, JSON, a
-## recursive query; and, at once, writers on rows of their own, transactions on counters of their
-## own, transactions on one counter, and readers beside writers. What they wrote is checked after.
+## monotonic clock), on whichever engine the server opened (`Db.engine!`). Two runs:
+##
+## - `run!`, everyday work on fresh tables of a few thousand items: first what one caller does
+##   alone, one statement after another, then what eight do at once (`Workers`, eight actors whose
+##   turns run beside each other), timed from the first worker told to the last one done; then a
+##   checkpoint, and the reads again. Each is a different shape of work: a write that commits alone,
+##   many in one transaction, reads by key, scans of an index, a sum over the table, a group by
+##   (and the same with its index ruled out), JSON, a recursive query; and, at once, writers on rows
+##   of their own, transactions on counters of their own, transactions on one counter, and readers
+##   beside writers. The checkpoint shows what Turso's MVCC does with rows it hasn't yet written
+##   into its pages (it keeps them in a store of versions in memory, slower to walk), and with
+##   rows it has.
+## - `big!`, a million orders of ten thousand customers: loaded, checkpointed, then fetched one
+##   and a hundred at a time (by key, and by an index), joined to their customers, and summed.
+##
+## What each wrote is checked after.
 Bench := [].{
 
 	## A workload's result: its name, what one of its operations is, how many it did, how many
@@ -44,6 +53,8 @@ Bench := [].{
 		$done = $done.append(logged!(measured("update-each", "an update committed alone", 20 * size, 1, 0, timed!(|{}| update_each!(20 * size, rows))?)))
 		$done = $done.append(logged!(measured("json", "a row's JSON read apart and put together", 50 * size, 1, 0, timed!(|{}| json_reads!(50 * size, rows))?)))
 		$done = $done.append(logged!(measured("recursive", "a recursive query counting to 10,000", size.max(2) // 2, 1, 0, timed!(|{}| recursive!(size.max(2) // 2))?)))
+		$done = $done.append(logged!(measured("scan", "a sum over every row, no index", size.max(2) // 2, 1, 0, timed!(|{}| scans!(size.max(2) // 2))?)))
+		$done = $done.append(logged!(measured("aggregate-no-index", "the group by, its index ruled out: a scan and a sort", size.max(2) // 2, 1, 0, timed!(|{}| aggregates_unindexed!(size.max(2) // 2))?)))
 
 		# ---- Eight callers at once ----
 		inserts = 5 * size
@@ -62,6 +73,13 @@ Bench := [].{
 		$done = $done.append(logged!(measured("concurrent-mixed", "a read or an insert, four readers and four writers at once", 4 * reads + 4 * writes, 8, 0, together!(mixed)?)))
 
 		checked!({ own, shared, events: 8 * inserts + 4 * writes, rows: rows + 20 * size })?
+
+		# ---- After a checkpoint: what was written, in the database's own pages ----
+		$done = $done.append(logged!(measured("checkpoint", "a checkpoint: what the log holds, written into the database's pages", 1, 1, 0, timed!(|{}| checkpoint!({}))?)))
+		$done = $done.append(logged!(measured("read-point-checkpointed", "a row read by its key, after the checkpoint", 200 * size, 1, 0, timed!(|{}| read_points!(200 * size, rows))?)))
+		$done = $done.append(logged!(measured("read-range-checkpointed", "50 rows of a category by its index, after the checkpoint", 20 * size, 1, 0, timed!(|{}| read_ranges!(20 * size))?)))
+		$done = $done.append(logged!(measured("aggregate-checkpointed", "the group by, after the checkpoint", size.max(2) // 2, 1, 0, timed!(|{}| aggregates!(size.max(2) // 2))?)))
+		$done = $done.append(logged!(measured("scan-checkpointed", "a sum over every row, after the checkpoint", size.max(2) // 2, 1, 0, timed!(|{}| scans!(size.max(2) // 2))?)))
 		version : List({ version : Str })
 		version = said(Db.all!("select sqlite_version() as version", []))?
 		Ok({
@@ -71,6 +89,33 @@ Bench := [].{
 			rows: rows.to_u64_wrap(),
 			workloads: $done,
 		})
+	}
+
+	## The big run's answer: the engine it ran on, how many orders and customers, and each workload's
+	## result.
+	BigReport : { engine : Str, orders : U64, customers : U64, workloads : List(Bench.Measured) }
+
+	## `asked` orders (1,000 to 5,000,000; a million for the docs' numbers) of a hundredth as many
+	## customers, a hundred orders each, in tables made afresh: loaded, checkpointed, then read and
+	## joined. An `Err` says which workload failed, or what a check of what it read found.
+	big! : U64 => Try(Bench.BigReport, Str)
+	big! = |asked| {
+		orders = asked.max(1000).min(5000000).to_i64_wrap()
+		customers = orders // 100
+		fetches = orders.min(10000)
+		ranges = (orders // 100).min(1000)
+		tables!({})?
+		var $done = []
+		$done = $done.append(logged!(measured("load", "a row inserted, the customers then the orders, 100,000 to a statement", customers + orders, 1, 0, timed!(|{}| load!(customers, orders))?)))
+		$done = $done.append(logged!(measured("load-checkpoint", "a checkpoint after the load", 1, 1, 0, timed!(|{}| checkpoint!({}))?)))
+		$done = $done.append(logged!(measured("fetch-1", "an order by its key", fetches, 1, 0, timed!(|{}| fetch_ones!(fetches, orders))?)))
+		$done = $done.append(logged!(measured("fetch-100", "100 orders by a range of keys", ranges, 1, 0, timed!(|{}| fetch_hundreds!(ranges, orders))?)))
+		$done = $done.append(logged!(measured("fetch-100-by-index", "a customer's 100 orders, by an index", ranges, 1, 0, timed!(|{}| fetch_by_customer!(ranges, customers))?)))
+		$done = $done.append(logged!(measured("join-1", "an order with its customer", fetches, 1, 0, timed!(|{}| join_ones!(fetches, orders))?)))
+		$done = $done.append(logged!(measured("join-100", "a customer with their 100 orders", ranges, 1, 0, timed!(|{}| join_hundreds!(ranges, customers))?)))
+		$done = $done.append(logged!(measured("join-top-10", "the ten customers who spent most: a join, a group by, a sort, over every order", 3, 1, 0, timed!(|{}| join_tops!(3))?)))
+		$done = $done.append(logged!(measured("scan-orders", "a sum over every order", 3, 1, 0, timed!(|{}| order_scans!(3, orders))?)))
+		Ok({ engine: engine!({}), orders: orders.to_u64_wrap(), customers: customers.to_u64_wrap(), workloads: $done })
 	}
 }
 
@@ -274,6 +319,218 @@ recursive! = |count| {
 		found : Try(List({ total : I64 }), [DbErr(Str), BadRow(Str)])
 		found = Db.all!("with recursive n(i) as (select 1 union all select i + 1 from n where i < 10000) select sum(i) as total from n", [])
 		_ = said(found).map_err(|why| "recursive: ${why}")?
+	}
+	Ok({})
+}
+
+## `count` sums over every item, no index: a scan of the table.
+scans! : I64 => Try({}, Str)
+scans! = |count| {
+	var $i = 0
+	while $i < count {
+		$i = $i + 1
+		found : Try(List({ n : I64, total : I64 }), [DbErr(Str), BadRow(Str)])
+		found = Db.all!("select count(*) as n, sum(price) as total from items", [])
+		_ = said(found).map_err(|why| "scan: ${why}")?
+	}
+	Ok({})
+}
+
+## `count` of the group by, its index ruled out (`category + 0` isn't the indexed column): a scan of
+## the table and a sort, where with the index each engine walks the index and reads each row.
+aggregates_unindexed! : I64 => Try({}, Str)
+aggregates_unindexed! = |count| {
+	var $i = 0
+	while $i < count {
+		$i = $i + 1
+		found : Try(List({ category : I64, n : I64, total : I64, mean : F64 }), [DbErr(Str), BadRow(Str)])
+		found = Db.all!("select category + 0 as category, count(*) as n, sum(price) as total, avg(price) as mean from items group by 1 order by 1", [])
+		_ = said(found).map_err(|why| "aggregate-no-index: ${why}")?
+	}
+	Ok({})
+}
+
+## A checkpoint (`wal_checkpoint(truncate)`), on SQLite and Turso alike: what the log holds written
+## into the database's own pages. On Turso's MVCC that takes rows out of its store of versions.
+checkpoint! : {} => Try({}, Str)
+checkpoint! = |{}|
+	match Db.run!("pragma wal_checkpoint(truncate)", []) {
+		Ok(_) => Ok({})
+		Err(DbErr(why)) => Err("checkpoint: ${why}")
+	}
+
+# ---- A million rows ----
+
+## The big run's tables, made afresh (dropped first, so no run deletes a million rows): customers,
+## and their orders, with an index on whose they are.
+tables! : {} => Try({}, Str)
+tables! = |{}|
+	match Db.script!(
+		Str.join_with(
+			[
+				"drop table if exists orders;",
+				"drop table if exists customers;",
+				"create table customers (id integer primary key, name text not null, city text not null);",
+				"create table orders (id integer primary key, customer integer not null references customers (id), amount integer not null, created integer not null, note text not null);",
+				"create index orders_customer on orders (customer);",
+			],
+			"\n",
+		),
+	) {
+		Ok({}) => Ok({})
+		Err(DbErr(why)) => Err("tables: ${why}")
+	}
+
+## How many rows one statement of the load inserts.
+load_chunk : I64
+load_chunk = 100000
+
+## The customers (1 to `customers`) and orders (1 to `orders`), made by SQL itself from a count (a
+## recursive query), `load_chunk` rows a statement, each its own transaction: order `i` is customer
+## `(i × 7919) mod customers + 1`'s, so each has a hundred, spread over the table.
+load! : I64, I64 => Try({}, Str)
+load! = |customers, orders| {
+	write!(
+		"insert into customers (id, name, city) select i, 'customer ' || i, 'city ' || (i % 50) from (with recursive n(i) as (select 1 union all select i + 1 from n where i < $1) select i from n)",
+		[Int(customers)],
+	)
+		.map_err(|why| "load customers: ${why}")?
+	var $from = 1
+	while $from <= orders {
+		to = ($from + load_chunk - 1).min(orders)
+		write!(
+			"insert into orders (id, customer, amount, created, note) select i, (i * 7919) % $3 + 1, (i * 37) % 100000, 1700000000000 + i * 1000, 'order ' || i from (with recursive n(i) as (select $1 union all select i + 1 from n where i < $2) select i from n)",
+			[Int($from), Int(to), Int(customers)],
+		)
+			.map_err(|why| "load orders: ${why}")?
+		$from = to + 1
+	}
+	got : List({ n : I64 })
+	got = said(Db.all!("select count(*) as n from orders", []))?
+	if (got.get(0).map_ok(|row| row.n) ?? 0) != orders {
+		return Err("load: ${(got.get(0).map_ok(|row| row.n) ?? 0).to_str()} orders, not ${orders.to_str()}")
+	}
+	Ok({})
+}
+
+## An order's columns, as the fetches read them.
+Order : { id : I64, customer : I64, amount : I64, created : I64, note : Str }
+
+## `count` orders, each by its key, all over the table.
+fetch_ones! : I64, I64 => Try({}, Str)
+fetch_ones! = |count, orders| {
+	var $i = 0
+	while $i < count {
+		i = $i
+		$i = $i + 1
+		found : Try(List(Order), [DbErr(Str), BadRow(Str)])
+		found = Db.all!("select id, customer, amount, created, note from orders where id = $1", [Int(Workers.pick(i, orders))])
+		rows = said(found).map_err(|why| "fetch-1: ${why}")?
+		if rows.len() != 1 {
+			return Err("fetch-1: ${rows.len().to_str()} orders, not 1")
+		}
+	}
+	Ok({})
+}
+
+## `count` runs of 100 orders, each by a range of keys.
+fetch_hundreds! : I64, I64 => Try({}, Str)
+fetch_hundreds! = |count, orders| {
+	var $i = 0
+	while $i < count {
+		i = $i
+		$i = $i + 1
+		from = Workers.pick(i, orders - 99)
+		found : Try(List(Order), [DbErr(Str), BadRow(Str)])
+		found = Db.all!("select id, customer, amount, created, note from orders where id between $1 and $2", [Int(from), Int(from + 99)])
+		rows = said(found).map_err(|why| "fetch-100: ${why}")?
+		if rows.len() != 100 {
+			return Err("fetch-100: ${rows.len().to_str()} orders, not 100")
+		}
+	}
+	Ok({})
+}
+
+## `count` customers' orders, a hundred each, by the index on whose they are.
+fetch_by_customer! : I64, I64 => Try({}, Str)
+fetch_by_customer! = |count, customers| {
+	var $i = 0
+	while $i < count {
+		i = $i
+		$i = $i + 1
+		found : Try(List({ id : I64, amount : I64, created : I64 }), [DbErr(Str), BadRow(Str)])
+		found = Db.all!("select id, amount, created from orders where customer = $1", [Int(Workers.pick(i, customers))])
+		rows = said(found).map_err(|why| "fetch-100-by-index: ${why}")?
+		if rows.len() != 100 {
+			return Err("fetch-100-by-index: ${rows.len().to_str()} orders, not 100")
+		}
+	}
+	Ok({})
+}
+
+## `count` orders, each with its customer's name and city.
+join_ones! : I64, I64 => Try({}, Str)
+join_ones! = |count, orders| {
+	var $i = 0
+	while $i < count {
+		i = $i
+		$i = $i + 1
+		found : Try(List({ id : I64, amount : I64, name : Str, city : Str }), [DbErr(Str), BadRow(Str)])
+		found = Db.all!("select o.id as id, o.amount as amount, c.name as name, c.city as city from orders o join customers c on c.id = o.customer where o.id = $1", [Int(Workers.pick(i + 3, orders))])
+		rows = said(found).map_err(|why| "join-1: ${why}")?
+		if rows.len() != 1 {
+			return Err("join-1: ${rows.len().to_str()} rows, not 1")
+		}
+	}
+	Ok({})
+}
+
+## `count` customers, each with their hundred orders.
+join_hundreds! : I64, I64 => Try({}, Str)
+join_hundreds! = |count, customers| {
+	var $i = 0
+	while $i < count {
+		i = $i
+		$i = $i + 1
+		found : Try(List({ name : Str, id : I64, amount : I64 }), [DbErr(Str), BadRow(Str)])
+		found = Db.all!("select c.name as name, o.id as id, o.amount as amount from customers c join orders o on o.customer = c.id where c.id = $1", [Int(Workers.pick(i + 5, customers))])
+		rows = said(found).map_err(|why| "join-100: ${why}")?
+		if rows.len() != 100 {
+			return Err("join-100: ${rows.len().to_str()} rows, not 100")
+		}
+	}
+	Ok({})
+}
+
+## `count` times, the ten customers who spent most: every order joined to its customer, summed by
+## customer, sorted, the first ten.
+join_tops! : I64 => Try({}, Str)
+join_tops! = |count| {
+	var $i = 0
+	while $i < count {
+		$i = $i + 1
+		found : Try(List({ id : I64, name : Str, total : I64, n : I64 }), [DbErr(Str), BadRow(Str)])
+		found = Db.all!("select c.id as id, c.name as name, sum(o.amount) as total, count(*) as n from orders o join customers c on c.id = o.customer group by c.id order by total desc limit 10", [])
+		rows = said(found).map_err(|why| "join-top-10: ${why}")?
+		if rows.len() != 10 or rows.any(|row| row.n != 100) {
+			return Err("join-top-10: not ten customers of a hundred orders each")
+		}
+	}
+	Ok({})
+}
+
+## `count` sums over every order: a scan of a million rows.
+order_scans! : I64, I64 => Try({}, Str)
+order_scans! = |count, orders| {
+	var $i = 0
+	while $i < count {
+		$i = $i + 1
+		found : Try(List({ n : I64, total : I64 }), [DbErr(Str), BadRow(Str)])
+		found = Db.all!("select count(*) as n, sum(amount) as total from orders", [])
+		rows = said(found).map_err(|why| "scan-orders: ${why}")?
+		if (rows.get(0).map_ok(|row| row.n) ?? 0) != orders {
+			return Err("scan-orders: not every order counted")
+		}
 	}
 	Ok({})
 }
