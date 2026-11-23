@@ -2686,9 +2686,9 @@ worker's scope) are a plugin's to take, checked at start like its routes. **Reve
 
 ## D-058 `Db`'s queries checked at build: the engine describes, the compiler checks rows
 
-**Status.** Accepted (2026-11-23); building phases 2–4. The design is in
-`spike/db-checked/DESIGN.md`, with its phases and its questions, answered as recommended except the
-eighth (below). The spike it measured with is beside it.
+**Status.** Built (2026-11-23), phases 2 to 4 of `spike/db-checked/DESIGN.md`, whose questions
+were answered as recommended except the eighth (below). The spike it measured with is beside it;
+phase 5 is in TODO.md.
 
 **Context.** `Db.all!` and `Db.run!` take SQL as a string, and `Json.parse` decodes the rows into
 the record the caller annotated (D-022). So a typo in a column, a field the statement doesn't
@@ -2697,47 +2697,75 @@ these shows up only when a row is actually null. D-016 deferred checked queries;
 its own at compile time. Since D-045 and D-046 an app runs on Postgres, SQLite or Turso. Of the
 repo's 270 `Db` calls, 241 take their SQL as a literal at the call.
 
-**Proposal.**
+**Options** (the design's §11). The engine describes and the compiler checks rows (chosen); rocx
+reads row types from the text; `Db.all!` takes a `Db.Sql(row)` checked at the literal, as roc-pg's
+are (the platform can't reach the app's schema without every module importing a generated `Db`);
+query files and generated functions, as sqlc and Squirrel do (every app's SQL moves); a SQL grammar
+in Roc (months, and less faithful than the engine); a check at run time (only what tests reach,
+and blocked by a compiler bug).
 
-- **The engine describes.** The app's own server gets `--describe-sql <file>`. It applies the
-  program's migrations (the platform's, the plugins', the app's) to a scratch database of the
-  app's kind: a temporary SQLite or Turso file, or a Postgres database made beside `DATABASE_URL`
-  and dropped. Where `create database` is refused, the check fails and says to grant `CREATEDB` or
-  to name a scratch database it may migrate (`--sql-database URL`); it never migrates a database
-  nobody named for checking, since `DATABASE_URL` may point at something real. It then prepares
-  each statement and prints the engine's error, or the statement's
-  parameters and its columns. Each column has its declared type, the table column it comes from
-  and whether that is `not null`. That is exact for each engine (its grammar, its functions, what
-  Turso lacks) and it costs milliseconds.
-- **rocx finds the statements and checks SQL and parameters.** It reads each `Db.all!` and
-  `Db.run!` whose SQL is a literal at the call, and counts the call's parameter list when that is a
-  literal. It reports the engine's error, or a parameter count other than `$1`…`$k`, at the
-  call's `file:line`.
-- **The compiler checks rows.** rocx copies each call's row annotation (a binding's, or the
-  function's result) into a generated check app, as D-037 copies handlers' types into
-  `Generated/Api`. Each line there is a `DbCheck.Rows(T)` whose string is the engine's
-  description. Its `from_quote` runs at compile time and reads `T`'s shape through its parser with
-  a format that reads nothing, as `OpenApi.Schema` and roc-pg's `RowFormat` do. It refuses a field
-  the statement lacks, a type the column's values can't decode into, or a plain field over a
-  column without `not null`, and names the call. `packages/dbcheck` is pure Roc.
-- **What the spike found.** The examples are clean on SQLite, apart from 8 statements in
-  examples/sqlite-vs-turso that read tables its run makes with `Db.script!` (they become
-  `Db.unchecked`). Turso refuses examples/board's `json_group_array(value order by key)` (no
-  `order by` inside an aggregate) and the FTS5 tables of examples/notes and examples/plate; those
-  apps run on SQLite, so neither matters until one is started on a `turso:` URL. An app is checked
-  on its own engine only.
-- **When:** `rocx check --sql <app>` (and `just examples`) fails on a finding; `rocx dev` prints
-  findings after each rebuild. `rocx build`, `roc check` and `roc build` don't change. Apps change
-  nothing. Interpolated SQL, SQL in a variable and row types rocx can't name are counted as
-  unchecked; `Db.unchecked(sql)` would mark one on purpose.
+**Choice.**
 
-**Phases.**
+```
+$ rocx check --sql examples/plate
+rocx check --sql: 38 statements checked on SQLite (the rows of 22 against their records): no problems
+```
 
-1. This design.
-2. SQL and parameters: the host flag, rocx's scan, `rocx check --sql`.
-3. Rows: `packages/dbcheck`, the check app.
-4. `rocx dev`.
-5. Later: nulls from outer joins, read from the plan as sqlx does; interpolated constants;
-   Postgres parameter types; packages per backend.
+- **The engine describes.** `--describe-sql FILE` on the app's own server answers no HTTP. It runs
+  the platform's start (the platform's, the plugins' and the app's migrations) on a scratch
+  database of the app's kind, prepares each statement in FILE without running it, prints the
+  engine's error or the statement's parameters and columns as JSON, and removes the scratch. Each
+  column has its name, its type, how the host reads it (`kind`), and, when it comes straight from a
+  table's column, that column and its `not null`: SQLite's column metadata, Turso's plan,
+  Postgres's `pg_attribute`. The scratch is a SQLite or Turso file in a directory of its own under
+  the system's temporary directory, or a Postgres database (`rocx_check_…`) made on the server
+  `--database-url` names and dropped after. **Question 8, as the user changed it:** the check never
+  migrates or describes a database nobody named for it. Without `CREATEDB` it fails, saying to
+  grant it or to name one it may migrate (`--sql-database URL`, `ROCX_SQL_DATABASE`), the only kind
+  it ever migrates.
+- **rocx checks SQL and parameters.** `rocx check --sql [dir] [--engine sqlite|turso] [--verbose]
+  [-- server options]` (rocx-cli/Sql.roc, rocx-cli/check-sql.mjs) reads each `Db.all!` and
+  `Db.run!` whose SQL is a string literal at the call, outside comments and strings, with the
+  parameters it gives when they are a list literal. It builds the server as `rocx dev` does
+  (nothing, for an app with no SQL) and reports, at the call's `file:line:column`, what the engine
+  refused and parameters that aren't the statement's `$1` to `$n`, each used. SQL interpolated, in
+  a variable, or `Db.unchecked(sql)` (an identity, for a table the app makes as it runs) is
+  counted, and listed with `--verbose`.
+- **The compiler checks rows.** For each `Db.all!` whose row type rocx reads (a binding's
+  annotation `rows : List(T)` or `Try(List(T), …)`, the call followed only by `?` or `.map_err`; or
+  the result of the function whose body the call is, or whose block it ends), rocx writes a check
+  app: `build/sql/check/main.roc`, beside a copy of the app's sources, since an app file can't
+  import modules above its own directory. The app has the app's header with `dbcheck` added, the
+  imports of each call's module (its own types qualified, `Store.Row`), and a constant a call,
+  `q1 : DbCheck.Rows(T, Tags)`, whose string is the description as text (a line a column, its parts
+  between tabs). `roc check` compiles it. `DbCheck.Rows.from_quote` (packages/dbcheck, plain Roc on
+  no platform) runs at compile time: it reads `T`'s fields through `Probe`, a format that reads
+  nothing, in two passes (`Nulls` answers `parse_null` with null, `Kinds` without), as roc-pg's
+  `RowFormat` and `OpenApi.Schema` do. It refuses a field the statement doesn't return, a type the
+  column's values can't decode into, or a plain field over a column without `not null`; rocx reads
+  the compile errors back and reports them at the calls. `Tags` holds the app's capitalized words,
+  the names a tag union in a row is tried with.
+- **When.** `rocx check --sql` exits 1 on a finding, and `just examples` runs it for every
+  example. `rocx dev` runs it after each build in a process of its own, with the server it built
+  (`--server`, `--quiet`: an app with no SQL says nothing), and says what it finds while the server
+  is served. `rocx build`, `roc check` and `roc build` don't change, and apps change nothing.
+- **What it found.**
+  - The examples' 133 literal statements and 80 rows check clean, in about a second an app; 8
+    statements in examples/sqlite-vs-turso read tables its big run makes with `Db.script!`, and
+    are now `Db.unchecked`.
+  - On Turso (`--engine turso`), Turso refuses examples/board's `json_group_array(value order by
+    key)` (no `order by` inside an aggregate) and the FTS5 tables of examples/notes and
+    examples/plate. Those apps run on SQLite, so neither matters until one is started on a `turso:`
+    URL; the Turso docs say so.
+  - The server's Postgres test app: 40 statements and 19 rows. Its six findings are exactly the
+    statements its tests make fail on purpose.
+- **Not yet** (TODO.md): nulls from an outer join's other side and SQLite's expression types (both
+  read from the plan, as sqlx does); interpolated SQL whose pieces are module constants; a
+  description cache for a Postgres app's CI; Postgres parameter types; packages' own SQL, per
+  backend; the checks in the app's own compile; a check at run time.
 
-**Reversible:** yes. Nothing in `Db` changes, and the check is a command.
+**Why.** The engine is the only exact judge of its own SQL, and describing costs milliseconds; the
+compiler is the only exact judge of a Roc type, aliases and packages included. rocx only connects
+them, as it does for `Generated/Api` (D-037). Nothing in `Db` changes, so no app does.
+
+**Reversible:** yes. Nothing in `Db` changes but `Db.unchecked`, and the check is a command.

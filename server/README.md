@@ -189,9 +189,16 @@ that comes straight from a table's column, that column and whether it is `not nu
 column metadata, Turso's plan, Postgres's `pg_attribute`). rocx reports what the engine refused, and a
 call whose parameters (a list literal) aren't the statement's `$1` to `$n`, at the call's line, and
 counts what it couldn't check: SQL interpolated (`${…}`), in a variable, or `Db.unchecked(sql)`, which
-marks a statement on a table the app makes as it runs. `--engine turso` checks a SQLite app on Turso
-(`sqlite` a Turso app on SQLite); `just examples` checks every example. Describing costs milliseconds;
-the server's start and the migrations are most of a check.
+marks a statement on a table the app makes as it runs. Then the rows, by the compiler: for each
+`Db.all!` whose row type rocx can read (a binding's annotation, `rows : List(T)`, or the result of the
+function whose body the call is), rocx writes a check app beside a copy of the app's sources
+(`build/sql/check`), a `DbCheck.Rows(T, Tags)` for each, its string the statement's columns, and
+`roc check` compiles it: `packages/dbcheck` reads `T`'s shape through its parser and refuses a field
+the statement doesn't return, a type the column's values can't decode into, or a plain field over
+a column that may be null, which rocx reports at the call. `--engine turso` checks a SQLite app on
+Turso (`sqlite` a Turso app on SQLite); `rocx dev` runs the check after each build, and `just
+examples` on every example. The examples' 133 literal statements and 80 rows check clean, in about
+a second an app.
 
 **Migrations** are in the executable: `program.migrations` lists them, each a name and its SQL
 (`import "migrations/0001_tables.sql" as tables : Str` reads a file when the app is compiled). When
@@ -971,9 +978,11 @@ browser runtime's own render.
 
 ## Not yet
 
-- `rocx check --sql` checks statements and their parameters (D-058), not yet rows: a row is decoded
-  by the record each caller annotates, and a mismatch shows when the query runs; roc-pg's are
-  checked.
+- `rocx check --sql` (D-058) checks only SQL written as a string at the call: SQL put together
+  (`${…}`) or passed in a variable isn't checked, nor a row whose type rocx can't read from an
+  annotation. A column from the outer side of a `left join` is taken as its table's `not null`
+  says, and SQLite doesn't type an expression, so neither is checked for nulls there (sqlx reads
+  the statement's plan for these).
 - Channels: a change of what a tab subscribes to opens its stream again, so `on_close!` can't tell
   a subscription the page dropped from a tab that went (both are `Gone`); a connection id with
   subscribe and unsubscribe posts would, if reconnects ever cost too much.

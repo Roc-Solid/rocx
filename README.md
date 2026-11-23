@@ -499,10 +499,12 @@ rocx build <dir>…        # each .rocx under the directories becomes the .roc b
                          # what only the server has (pf.Db)
   --dev                  # and the stories (`<story>`): their catalog at /__rocx/stories
 rocx check -- <command>  # run a command, its reports pointed into .rocx files
-rocx check --sql [dir]   # the app's SQL checked by its own database engine (D-058): each literal
-                         # statement at a Db.all!/Db.run! prepared on a scratch database built from
-                         # the app's migrations; what the engine refuses, and parameters that don't
-                         # match the call's, at their lines; exit 1 if any
+rocx check --sql [dir]   # the app's SQL checked by its own database engine, and its rows by the
+                         # compiler (D-058): each literal statement at a Db.all!/Db.run! prepared on
+                         # a scratch database built from the app's migrations; what the engine
+                         # refuses, parameters that don't match the call's, and a row record that
+                         # doesn't fit the columns (a field missing, a type, a nullable column read
+                         # as a plain value), at their lines; exit 1 if any. rocx dev runs it too
   --engine turso         # on Turso (a SQLite app), or SQLite (a Turso app), instead
   --verbose              # and list the calls it can't check (interpolated SQL, SQL in a variable,
                          # Db.unchecked)

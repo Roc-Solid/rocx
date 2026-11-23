@@ -242,16 +242,18 @@ view! = |_|
 
 			<Heading id="checked">Checked queries</Heading>
 			<p>
-				<code>rocx check --sql</code> checks an app's SQL with the engine it runs on (D-058). Each statement
-				written as a string at a <code>Db.all!</code> or a <code>Db.run!</code> is prepared, never run, on a
-				scratch database the app's own server builds from its migrations: a file it removes after, for SQLite
-				and Turso, or, for Postgres, a database it makes on the server <code>DATABASE_URL</code> names and
-				drops after. It never migrates a database nobody named for it; without <code>CREATEDB</code> it
-				says to grant it, or to name one it may migrate (<code>--sql-database URL</code>). The engine is the
-				judge: its grammar, its functions, what Turso doesn't have yet. Nothing in the app changes.
+				<code>rocx check --sql</code> checks an app's SQL with the engine it runs on, and its rows with the
+				compiler (D-058). Each statement written as a string at a <code>Db.all!</code> or a
+				<code>Db.run!</code> is prepared, never run, on a scratch database the app's own server builds from
+				its migrations: a file it removes after, for SQLite and Turso, or, for Postgres, a database it
+				makes on the server <code>DATABASE_URL</code> names and drops after. It never migrates a database
+				nobody named for it; without <code>CREATEDB</code> it says to grant it, or to name one it may
+				migrate (<code>--sql-database URL</code>). The engine is the judge of the SQL: its grammar, its
+				functions, what Turso doesn't have yet. The compiler is the judge of the rows. Nothing in the app
+				changes, and <code>rocx dev</code> runs the check after each build.
 			</p>
 			<Code
-				source={"$ rocx check --sql app\napp/Store.roc:25:15: SQLite refuses it: no such column: bodyy in select bodyy as body from notes at offset 7\napp/Store.roc:29:16: parameter $2 is given, and the statement doesn't use it\nrocx check --sql: 3 statements checked on SQLite: 2 problems"}
+				source={"$ rocx check --sql app\napp/Store.roc:29:15: SQLite refuses it: no such column: bodyy in select bodyy as body from notes at offset 7\napp/Store.roc:33:16: parameter $2 is given, and the statement doesn't use it\napp/Store.roc:50:10: `body` is read as an integer, and notes.body is a TEXT (text)\napp/Store.roc:58:10: `note` is read as a plain value, and notes.note may be null (it has no `not null`): read it as Db.Nullable(…)\napp/Store.roc:66:10: `title` isn't a column the statement returns (it returns id)\nrocx check --sql: 7 statements checked on SQLite (the rows of 5 against their records): 5 problems"}
 				numbers={Bool.False}
 				plain
 			/>
@@ -260,6 +262,15 @@ view! = |_|
 					<strong>What it checks:</strong> the statement as the engine reads it (its syntax, its tables,
 					columns and functions, Postgres's types), and the parameters a call gives as a list, which must be
 					the statement's <code>$1</code> to <code>$n</code>, each used.
+				</li>
+				<li>
+					<strong>Rows:</strong> for a <code>Db.all!</code> whose rows are annotated (<code>rows : List(T)</code>,
+					or the result of the function the call is), the record against the statement's columns: a field
+					the statement doesn't return, a type its column's values can't decode into, and a plain field
+					over a column that may be null (it has no <code>not null</code>), which <code>Db.Nullable</code>
+					reads. rocx writes the type into a small app of its own, beside a copy of yours, and the compiler
+					reads it through its parser (<code>packages/dbcheck</code>), so an alias, a nominal type or a
+					package's type is read as the compiler has it.
 				</li>
 				<li>
 					<strong>What it can't:</strong> SQL put together (<code>{"\"select \${columns} from notes\""}</code>)
@@ -294,10 +305,10 @@ view! = |_|
 			<Heading id="limits">Not yet</Heading>
 			<ul>
 				<li>
-					<strong>Rows aren't checked yet:</strong> <code>rocx check --sql</code> checks the statements and
-					their parameters, and a row is still decoded by the record each caller annotates, so a field the
-					statement doesn't return, or a nullable column read as a plain value, shows when the query runs.
-					roc-pg's are checked.
+					<strong>The check's blind spots:</strong> SQL put together or passed in a variable, a row whose
+					type isn't annotated where rocx can read it, a column from the outer side of a
+					<code>left join</code> (taken as its table says), and, on SQLite, an expression's type and nulls.
+					Those still show when the query runs (<code>BadRow</code>).
 				</li>
 				<li><strong>Parameters</strong> are four kinds and arrays of them; bytes aren't yet, and a row reads an array column through a cast (<code>array_to_json(tags)</code>).</li>
 				<li><strong>No cursors or streaming:</strong> a query's rows come back whole.</li>

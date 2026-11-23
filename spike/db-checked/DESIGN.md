@@ -1,7 +1,21 @@
-# Design: `Db`'s queries checked at build (D-058, Accepted)
+# Design: `Db`'s queries checked at build (D-058, Built)
 
 > A design spike, 2026-11-23, on master at c36dc93. Accepted the same day, with question 8
-> changed (§14): phases 2 to 4 are being built. The numbers come from
+> changed (§14), and phases 2 to 4 built (DECISIONS.md, D-058). Where the build differs from this
+> design:
+>
+> - **The check app** is `build/sql/check/main.roc`, beside a copy of the app's sources, not
+>   `build/sql/main.roc` (§5.2): an app file can't import modules above its own directory.
+> - **The description** in each constant's string is text, a line a column with its parts between
+>   tabs, not JSON: `from_quote` splits it, with no decoder needed for its nulls.
+> - **`DbCheck.Rows(T, Tags)`** takes a second type: `Tags`, whose `names` are the app's
+>   capitalized words, which a tag union in a row is tried with (a tag union's parser doesn't say
+>   its tags), as `OpenApi.Schema` is given them.
+> - **The row types rocx reads** (§5.1): a binding's annotation when the call is followed only by
+>   `?` or `.map_err`, and a function's result when the call is its body or ends its block. A
+>   module's own type is qualified, whether it is written bare or as `Store.Person`.
+> - **`rocx dev`** runs the check in a process of its own after each build, with the server it
+>   built (`check-sql.mjs --server --quiet`). The numbers come from
 > the spike beside this file (`describe/`, a Rust program, and `run.mjs`, which runs it over every
 > example app). The appendix says how to run them.
 
