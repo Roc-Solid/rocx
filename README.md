@@ -401,6 +401,16 @@ page JavaScript that set itself up on `rocx:ready` does so again on `rocx:naviga
 `<script>` a page renders runs on a load only. `<html data-rocx-navigation="off">` turns it off. Apps
 change nothing to have it.
 
+**Prefetch and View Transitions** (D-040, phase 3). A link to one of the app's pages that the pointer
+rests on (65 ms), that the keyboard focuses, or that a finger touches is prefetched: what its page
+needs (its document, `x-rocx-navigate: preload`, at a low priority; and its code), in the same cache
+a navigation takes it from, so the click asks nothing more. `data-rocx-preload="off"` on a link, or
+above it (`<html>` for the app), turns it off there; `"viewport"` prefetches links as they come into
+sight. A prefetch is a page render on the server: a middleware that counts views leaves
+`x-rocx-navigate: preload` out, and an app whose pages are costly sets `off`. `<html data-rocx-transitions>`
+makes each navigation a View Transition (the browser's cross-fade, `view-transition-name` pairing
+elements across pages), where the browser has them and less motion isn't asked for.
+
 Any app with routes, of components or not (endpoints alone too), gets its program:
 
 - `Generated/App.roc`: `App.program({ context, middleware, plugins })` is the platform's `program`.

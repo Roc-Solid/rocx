@@ -25,6 +25,7 @@ view! = |{ meta, children, .. }|
 					<a class="to-item-hash" href={"${Paths.items_id({ id: "8" })}#deep"}>Item 8, deep</a>
 					<a class="to-a-replace" href={Paths.a} replace>A, replacing</a>
 					<a class="to-a-noscroll" href={Paths.a} noscroll>A, kept scroll</a>
+					<a class="to-a-off" href={Paths.a} data-rocx-preload="off">A, never prefetched</a>
 					<a class="to-guarded" href={Paths.guarded}>Guarded</a>
 					<a class="to-blank" href={Paths.a} target="_blank">A, new tab</a>
 					<a class="to-download" href={Paths.a} download>A, downloaded</a>

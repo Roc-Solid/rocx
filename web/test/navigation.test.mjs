@@ -128,6 +128,7 @@ async function navSite({ base = "/" } = {}) {
 		if (at === null) return null;
 		const word = /^\/api\/say\/(.+)$/.exec(at)?.[1];
 		if (word) return { status: 200, headers: { "content-type": "application/json" }, body: JSON.stringify(`Said: ${decodeURIComponent(word)}`) };
+		if (at === "/api/poke") return { status: 200, headers: { "content-type": "application/json" }, body: JSON.stringify("poked") };
 		if (at === "/api/leave") {
 			await site.held[at];
 			return { status: 200, headers: { "content-type": "application/json", "x-rocx-redirect": "/items/3" }, body: JSON.stringify("left") };
@@ -151,8 +152,9 @@ async function navSite({ base = "/" } = {}) {
 		await served.close();
 		rmSync(dir, { recursive: true, force: true });
 	};
-	/** The documents asked for (not files or reads), as a navigation (`x-rocx-navigate`) or a load. */
-	site.documents = () => site.asked.filter(({ url }) => !/\/rocx\/(start\.js|runtime\.js|app\.wasm|live)|\/api\/|\.css$/.test(url)).map(({ url, navigate }) => `${navigate ? "navigate" : "load"} ${url}`);
+	/** The documents asked for (not files or reads), as a navigation (`x-rocx-navigate: 1`), a
+	 * prefetch (`preload`) or a load. */
+	site.documents = () => site.asked.filter(({ url }) => !/\/rocx\/(start\.js|runtime\.js|app\.wasm|live)|\/api\/|\.css$/.test(url)).map(({ url, navigate }) => `${navigate === "preload" ? "preload" : navigate ? "navigate" : "load"} ${url}`);
 	return site;
 }
 
@@ -323,17 +325,17 @@ test("what isn't a navigation in place stays the browser's: modifier keys, a tar
 		await plain.click(".to-below");
 		await plain.wait("location.hash === '#below' && window.scrollY > 0");
 		assert.equal(await kept(plain), true);
-		assert.deepEqual(site.documents(), [], "nothing fetched");
+		assert.deepEqual(site.documents().filter((each) => !each.startsWith("preload")), [], "nothing fetched (the link it scrolled into sight is prefetched)");
 		assert.deepEqual(await plain.eval("window.heard"), [], "not a navigation of the runtime's");
 		await plain.eval("history.back()");
 		await plain.wait("location.hash === ''");
 		assert.equal(await kept(plain), true, "back from it: the browser's too");
-		assert.deepEqual(site.documents(), []);
+		assert.deepEqual(site.documents().filter((each) => !each.startsWith("preload")), []);
 		// A path no page has: loaded, the app's 404 page.
 		await plain.click(".to-nowhere");
 		await plain.wait("location.pathname === '/nowhere' && window.mark === undefined && window.ready", 5000);
 		assert.equal(await plain.eval("document.querySelector('.error h1').textContent"), "404");
-		assert.deepEqual(site.documents(), ["load /nowhere"]);
+		assert.deepEqual(site.documents().filter((each) => !each.startsWith("preload")), ["load /nowhere"]);
 		assert.deepEqual(plain.errors, []);
 		await plain.close();
 		await tab.close();
@@ -607,6 +609,140 @@ test("under a base (/rocx/, as GitHub Pages serves a project): a link navigates 
 		assert.deepEqual(tab.errors, []);
 		assert.deepEqual(tab.console, []);
 		await loaded.close();
+		await tab.close();
+	} finally {
+		await site.close();
+	}
+});
+
+// ---- Phase 3: prefetch and View Transitions ----
+
+/** The middle of the element `selector` finds, where the pointer goes. */
+const middle = (tab, selector) => tab.eval(`(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+
+/** The pointer moved over the element `selector` finds, and left resting there. */
+async function hover(tab, selector) {
+	const { x, y } = await middle(tab, selector);
+	await tab.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+}
+
+test("prefetch: a link the pointer rests on, one the keyboard focuses and one touched are fetched ahead (x-rocx-navigate: preload), and a click then asks nothing more; one the pointer only passes isn't", { skip }, async () => {
+	const site = await navSite();
+	try {
+		const tab = await open(site, "/");
+		site.asked.length = 0;
+		await hover(tab, ".to-item");
+		await hover(tab, ".skip");
+		await sleep(150);
+		assert.deepEqual(site.documents(), [], "passed over, under 65 ms: nothing");
+		await hover(tab, ".to-a");
+		await sleep(150);
+		assert.deepEqual(site.documents(), ["preload /a"], "rested on: its page, prefetched");
+		await tab.click(".to-a");
+		await tab.wait("document.querySelector('.a h1')");
+		assert.equal(await kept(tab), true);
+		assert.deepEqual(site.documents(), ["preload /a"], "the click: one request, the prefetch's");
+		await tab.eval("document.activeElement?.blur()");
+		site.asked.length = 0;
+		for (let presses = 0; presses < 12 && (await tab.eval("document.activeElement?.className")) !== "to-item"; presses++) await tab.press("Tab");
+		await sleep(50);
+		assert.ok(site.documents().includes("preload /items/7"), `focused by the keyboard: prefetched (${site.documents()})`);
+		const { x, y } = await middle(tab, ".to-item-hash");
+		await tab.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+		await tab.send("Input.dispatchTouchEvent", { type: "touchCancel", touchPoints: [] });
+		await sleep(50);
+		assert.ok(site.documents().includes("preload /items/8"), `touched: prefetched (${site.documents()})`);
+		assert.deepEqual(tab.errors, []);
+		assert.deepEqual(tab.console, []);
+		await tab.close();
+	} finally {
+		await site.close();
+	}
+});
+
+test("prefetch: one older than 10 s (shortened here) is fetched again; a submission's result empties the cache", { skip }, async () => {
+	const site = await navSite();
+	try {
+		const tab = await open(site, "/");
+		await tab.eval("window.ready.runtime.constructor.FRESH = 300");
+		site.asked.length = 0;
+		await hover(tab, ".to-a");
+		await sleep(400);
+		await tab.click(".to-a");
+		await tab.wait("document.querySelector('.a h1')");
+		assert.deepEqual(site.documents(), ["preload /a", "navigate /a"], "too old: asked again");
+		await tab.eval("window.ready.runtime.constructor.FRESH = 10000");
+		await tab.click(".to-home");
+		await tab.wait("document.querySelector('.home h1')");
+		site.asked.length = 0;
+		await hover(tab, ".to-item");
+		await sleep(150);
+		assert.deepEqual(site.documents(), ["preload /items/7"]);
+		await tab.click(".poke");
+		await tab.wait("window.ready.runtime.pages.size === 0");
+		await tab.click(".to-item");
+		await tab.wait("document.querySelector('.item h1')");
+		assert.deepEqual(site.documents(), ["preload /items/7", "navigate /items/7"], "the data changed: its page asked again");
+		assert.deepEqual(tab.errors, []);
+		await tab.close();
+	} finally {
+		await site.close();
+	}
+});
+
+test("prefetch: data-rocx-preload=\"off\" on a link, or on <html> for the app, never; \"viewport\" as the link comes into sight, once", { skip }, async () => {
+	const site = await navSite();
+	try {
+		const tab = await open(site, "/");
+		await sleep(100);
+		assert.deepEqual(site.documents(), ["load /"], "the link below the fold, not in sight: not yet");
+		site.asked.length = 0;
+		await hover(tab, ".to-a-off");
+		await sleep(150);
+		assert.deepEqual(site.documents(), [], "off: not on hover");
+		await tab.eval("document.documentElement.setAttribute('data-rocx-preload', 'off')");
+		await hover(tab, ".to-item");
+		await sleep(150);
+		assert.deepEqual(site.documents(), [], "off for the app");
+		await tab.eval("document.documentElement.removeAttribute('data-rocx-preload')");
+		await tab.eval("document.querySelector('.to-seen').scrollIntoView()");
+		await tab.wait("window.ready.runtime.pages.has(location.origin + '/items/5')");
+		await tab.eval("window.scrollTo(0, 0)");
+		await tab.eval("document.querySelector('.to-seen').scrollIntoView()");
+		await sleep(100);
+		assert.deepEqual(site.documents(), ["preload /items/5"], "seen: prefetched, once");
+		assert.deepEqual(tab.errors, []);
+		await tab.close();
+	} finally {
+		await site.close();
+	}
+});
+
+test("View Transitions: a navigation is one only when the app asks (<html data-rocx-transitions>) and the browser has them, never with less motion asked for", { skip }, async () => {
+	const site = await navSite();
+	try {
+		const tab = await open(site, "/");
+		await tab.eval("window.transitions = 0; const original = document.startViewTransition.bind(document); document.startViewTransition = (update) => (window.transitions++, original(update))");
+		// A transition playing covers the page: the next click once it is over.
+		const go = async (selector, check) => {
+			await tab.wait("document.getAnimations().length === 0");
+			await tab.click(selector);
+			await tab.wait(check);
+			return tab.eval("window.transitions");
+		};
+		assert.equal(await go(".to-a", "document.querySelector('.a h1')"), 0, "not asked for");
+		await tab.eval("document.documentElement.setAttribute('data-rocx-transitions', '')");
+		assert.equal(await go(".to-item", "document.querySelector('.item h1')"), 1, "asked for: one");
+		assert.equal(await tab.eval("document.title + ' ' + (window.mark === 'kept')"), "An item · Nav true");
+		await tab.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+		assert.equal(await go(".to-home", "document.querySelector('.home h1')"), 1, "less motion asked for: none");
+		await tab.send("Emulation.setEmulatedMedia", { features: [] });
+		await tab.eval("window.kept = document.startViewTransition; document.startViewTransition = undefined");
+		assert.equal(await go(".to-a", "document.querySelector('.a h1')"), 1, "a browser without them: none, and the page all the same");
+		await tab.eval("document.startViewTransition = window.kept");
+		assert.equal(await go(".to-home", "document.querySelector('.home h1')"), 2);
+		assert.deepEqual(tab.errors, []);
+		assert.deepEqual(tab.console, []);
 		await tab.close();
 	} finally {
 		await site.close();

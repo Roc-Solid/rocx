@@ -11,6 +11,7 @@ meta = { title: "Home", look: "home" }
 view! = |_| {
 	(count!, set_count!) = create_signal!(0.U64)
 	leave! = use_action!(Api.leave({}))
+	poke! = use_action!(Api.poke({}))
 	go! = || {
 		said = Api.wait!({})
 		navigate!("${Paths.a}?after=${said}")
@@ -21,8 +22,10 @@ view! = |_| {
 		<button class="count" on:click={|| set_count!(count!() + 1)}>Clicked {count!().to_str()}</button>
 		<button class="go" on:click={go!}>To A, once the server says</button>
 		<button class="leave" on:click={|| leave!("now")}>Leave, where the server says</button>
+		<button class="poke" on:click={|| poke!("now")}>Poke the server</button>
 		<NoHydration><p class="prose">Home's prose, the server's alone</p></NoHydration>
 		<div class="tall"></div>
 		<p id="below">Below the fold</p>
+		<a class="to-seen" href={Paths.items_id({ id: "5" })} data-rocx-preload="viewport">Item 5, prefetched once seen</a>
 	</section>
 }

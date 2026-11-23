@@ -17,6 +17,10 @@ Api := [].{
 	leave : {} -> Endpoint({}, Str, Str)
 	leave = |{}| Endpoint.remote("POST", "/api/leave")
 
+	## POST /api/poke: an action whose result (200) has the page's reads read again.
+	poke : {} -> Endpoint({}, Str, Str)
+	poke = |{}| Endpoint.remote("POST", "/api/poke")
+
 	## The channel at /news/nav: what page A hears while it is there.
 	news : {} -> Endpoint({}, {}, Channel(Str, Str, Str))
 	news = |{}| Endpoint.remote("CHANNEL", "/news/nav")

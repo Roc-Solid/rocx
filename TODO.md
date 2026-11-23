@@ -18,7 +18,9 @@ When an item lands, delete its line here in the same commit.
      (question 9).
   3. Phase 2: kept layouts, the query changed in place (`use_search_params!`), `<A>`, `<Navigate>`
      and GET forms.
-  4. Phase 3: prefetch and View Transitions.
+  4. `use_before_leave!` (Solid Router's `useBeforeLeave`, phase 3 left it): a leave handler an
+     unsaved form registers, given an event it can stop and retry later, and `beforeunload` for a
+     load: a hosted call and its event's type.
 
   D-039 gave route views getters, so question 4 (keep a page across a change of its params) no
   longer costs a change to every page, whichever way it is answered.

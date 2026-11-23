@@ -846,9 +846,11 @@ class Hub {
 }
 
 export class Runtime {
-	/** How many documents navigations keep (D-040 §6.2), and for how long one is used again (ms). */
+	/** How many pages navigations and prefetches keep (D-040 §6.2), and for how long one is used
+	 * again (ms); how long the pointer rests on a link before it is prefetched (ms, §11). */
 	static CACHE = 8;
 	static FRESH = 10_000;
+	static REST = 65;
 
 	/**
 	 * `base` is the path the site is served under (`/`, or `/rocx/` for a copy at
@@ -1727,8 +1729,8 @@ export class Runtime {
 	 * one, or begins with one and a `/` or a `?`; none, `[]`.
 	 */
 	revalidate(done, keys = null) {
-		// The server's data changed: a document fetched before isn't the page now (D-040 §6.2).
-		this.documents?.clear();
+		// The server's data changed: a page fetched or prefetched before isn't the page now (D-040 §6.2).
+		this.pages?.clear();
 		const named = (key) => {
 			if (!key.startsWith("GET ")) return false;
 			if (keys === null) return true;
@@ -1954,8 +1956,9 @@ export class Runtime {
 		 * submission's redirect is followed only if none was since it was sent). */
 		this.navigation = null;
 		this.navigations = 0;
-		/** The documents fetched lately (`Runtime.CACHE` of them, by URL, each used for `FRESH` ms). */
-		this.documents = new Map();
+		/** What the pages navigated to or prefetched lately need (`Runtime.CACHE` of them, by URL, each
+		 * used for `FRESH` ms): `{ at, promise }`, the promise their document's (`pageFor`). */
+		this.pages = new Map();
 		const state = history.state;
 		this.entryKey = state?.rocx?.key ?? Runtime.entryKey();
 		if (state?.rocx?.key !== this.entryKey) history.replaceState({ ...(state && typeof state === "object" ? state : {}), rocx: { key: this.entryKey } }, "");
@@ -1963,6 +1966,14 @@ export class Runtime {
 		const kept = this.scrollOf(this.entryKey);
 		if (kept && !location.hash) window.scrollTo(kept.x, kept.y);
 		document.addEventListener("click", (event) => this.clicked(event));
+		// Prefetch (D-040 §11): a link the pointer rests on, one focused, one touched; and, where asked
+		// for, one that comes into sight (`watchSight`).
+		document.addEventListener("pointerover", (event) => this.hovered(event));
+		document.addEventListener("pointerout", (event) => this.unhovered(event));
+		// Focus by the keyboard: a click focuses its link too, on the way to navigating.
+		document.addEventListener("focusin", (event) => event.target?.matches?.(":focus-visible") && this.prefetchLink(this.linkOf(event.target)));
+		document.addEventListener("touchstart", (event) => this.prefetchLink(this.linkOf(event.target)), { passive: true });
+		this.watchSight();
 		// A GET form to one of the app's pages (phase 2's `gotForm`).
 		document.addEventListener("submit", (event) => this.gotForm?.(event));
 		window.addEventListener("popstate", (event) => this.popped(event));
@@ -2001,20 +2012,114 @@ export class Runtime {
 	 */
 	clicked(event) {
 		if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-		const anchor = event.target?.closest?.("a");
-		if (!anchor) return;
-		const href = anchor.getAttribute("href") ?? anchor.getAttribute("xlink:href");
-		if (href === null || anchor.hasAttribute("download")) return;
-		if (/(^|\s)external(\s|$)/i.test(anchor.getAttribute("rel") ?? "")) return;
-		const target = anchor.getAttribute("target");
-		if (target && target !== "_self") return;
-		const mode = document.documentElement.getAttribute("data-rocx-navigation");
-		if (mode === "off" || (mode === "explicit" && !anchor.hasAttribute("data-rocx-link"))) return;
-		const url = new URL(href, document.baseURI);
-		if (!this.ours(url)) return;
-		if (Runtime.samePage(url)) return;
+		const link = this.linkOf(event.target);
+		if (!link) return;
 		event.preventDefault();
-		this.navigate(url, { replace: anchor.hasAttribute("replace"), scroll: !anchor.hasAttribute("noscroll") });
+		this.navigate(link.url, { replace: link.anchor.hasAttribute("replace"), scroll: !link.anchor.hasAttribute("noscroll") });
+	}
+
+	/** The link `node` is in, if it navigates in place (`{ anchor, url }`): an `<a>` (or an SVG `<a>`)
+	 * with an `href`, no `download`, no `rel` with `external`, no `target` but `_self`, to one of the
+	 * app's pages (`ours`) and not to a place on this page, navigation in place not turned off
+	 * (`data-rocx-navigation`: `off`; `explicit`, but for an `<a data-rocx-link>`). */
+	linkOf(node) {
+		const anchor = node?.closest?.("a");
+		if (!anchor) return null;
+		const href = anchor.getAttribute("href") ?? anchor.getAttribute("xlink:href");
+		if (href === null || anchor.hasAttribute("download")) return null;
+		if (/(^|\s)external(\s|$)/i.test(anchor.getAttribute("rel") ?? "")) return null;
+		const target = anchor.getAttribute("target");
+		if (target && target !== "_self") return null;
+		const mode = document.documentElement.getAttribute("data-rocx-navigation");
+		if (mode === "off" || (mode === "explicit" && !anchor.hasAttribute("data-rocx-link"))) return null;
+		const url = new URL(href, document.baseURI);
+		if (!this.ours(url) || Runtime.samePage(url)) return null;
+		return { anchor, url };
+	}
+
+	// ---- Prefetch (D-040 §11) ----
+
+	/** How a link prefetches: the nearest `data-rocx-preload` on it or above it (`<html>`'s, for the
+	 * app), `hover` (on hover, focus and touch) when there is none; `off`, never; `viewport`, as it
+	 * comes into sight too. */
+	static preloadOf(anchor) {
+		return anchor.closest("[data-rocx-preload]")?.getAttribute("data-rocx-preload") || "hover";
+	}
+
+	/** The pointer came over a link: prefetched once it has rested there 65 ms. */
+	hovered(event) {
+		const link = this.linkOf(event.target);
+		if (this.hovering?.anchor === link?.anchor) return;
+		clearTimeout(this.hovering?.timer);
+		this.hovering = link && { anchor: link.anchor, timer: setTimeout(() => this.prefetchLink(link), Runtime.REST) };
+	}
+
+	/** The pointer left the link it rested on, before it was prefetched. */
+	unhovered(event) {
+		const anchor = this.hovering?.anchor;
+		if (!anchor || anchor.contains(event.relatedTarget)) return;
+		clearTimeout(this.hovering.timer);
+		this.hovering = null;
+	}
+
+	/** A link's page, prefetched, unless it says not to be (`data-rocx-preload="off"`). */
+	prefetchLink(link) {
+		if (link && Runtime.preloadOf(link.anchor) !== "off") this.prefetch(link.url);
+	}
+
+	/**
+	 * What the page at `url` needs, fetched ahead of a navigation to it (D-040 §11 and §18): its
+	 * document (`x-rocx-navigate: preload`, at a low priority) and its levels' code, as one entry of
+	 * the cache a navigation takes it from (`pageFor`), with one age. One already there and fresh,
+	 * or on its way, isn't asked again; the page the browser is on isn't. Quietly: one that fails,
+	 * or that isn't of this build, is dropped.
+	 */
+	prefetch(url) {
+		if (!this.navigating || !this.ours(url) || Runtime.documentKey(url) === Runtime.documentKey(new URL(location.href))) return;
+		const key = Runtime.documentKey(url);
+		const promise = this.pageFor(url, { preload: true });
+		const entry = this.pages.get(key);
+		promise.then(
+			(fetched) => {
+				if (!fetched.text.includes(`data-build="${this.app.build}"`) && this.pages.get(key) === entry) this.pages.delete(key);
+			},
+			() => {},
+		);
+	}
+
+	/**
+	 * Links that prefetch as they come into sight (`data-rocx-preload="viewport"` on them or above
+	 * them), watched: as the app starts and after each navigation, and those a page adds later. With
+	 * none on the page, nothing watches.
+	 */
+	watchSight() {
+		this.sight?.disconnect();
+		this.added?.disconnect();
+		if (typeof IntersectionObserver === "undefined" || !document.querySelector('[data-rocx-preload="viewport"]')) return;
+		this.sight ??= new IntersectionObserver((entries) => {
+			for (const entry of entries) {
+				if (!entry.isIntersecting) continue;
+				this.sight.unobserve(entry.target);
+				this.prefetchLink(this.linkOf(entry.target));
+			}
+		});
+		const watch = (root) => {
+			const anchors = root.localName === "a" ? [root] : [...(root.querySelectorAll?.("a[href]") ?? [])];
+			for (const anchor of anchors) if (Runtime.preloadOf(anchor) === "viewport") this.sight.observe(anchor);
+		};
+		watch(document.documentElement);
+		this.added ??= new MutationObserver((records) => {
+			for (const record of records) for (const node of record.addedNodes) if (node.nodeType === 1) watch(node);
+		});
+		this.added.observe(document.body, { childList: true, subtree: true });
+	}
+
+	// ---- View Transitions (D-040 §5.3) ----
+
+	/** Whether a navigation's change of page is a View Transition: the app asked for them
+	 * (`<html data-rocx-transitions>`), the browser has them, and less motion isn't asked for. */
+	transitionsWanted() {
+		return typeof document.startViewTransition === "function" && document.documentElement.hasAttribute("data-rocx-transitions") && !reducedMotion();
 	}
 
 	/** Whether `url` is a place on the page the browser is on: the same path and query, and a hash
@@ -2055,7 +2160,7 @@ export class Runtime {
 
 	/**
 	 * Navigates to `to` (a link's URL, `Router.navigate!`'s, back and forward's): one of the app's
-	 * pages is rendered in place, from its document, fetched (`documentFor`: as the server answers a
+	 * pages is rendered in place, from its document, fetched (`pageFor`: as the server answers a
 	 * load, behind its middleware, a redirect followed), the old page staying until it is in
 	 * (`is_routing!`), and the address pushed (or replaced, or, back and forward, left); anything
 	 * else the browser loads. A newer navigation overtakes one on its way (its fetch aborted).
@@ -2073,15 +2178,21 @@ export class Runtime {
 		// Where the page is scrolled to as the visitor leaves it (before the progress a navigation
 		// shows can move it: scroll anchoring).
 		if (!pop) this.keepScroll();
-		this.navigation?.controller.abort();
+		// The one on its way is overtaken: its fetch aborted (and forgotten) if it was its own and for
+		// another page; one for this page goes on, and this one waits for it.
+		const previous = this.navigation;
+		if (previous && Runtime.documentKey(previous.url) !== Runtime.documentKey(url)) {
+			previous.controller.abort();
+			const key = Runtime.documentKey(previous.url);
+			if (this.pages.get(key)?.signal === previous.controller.signal) this.pages.delete(key);
+		}
 		const navigation = (this.navigation = { id: ++ids, url, controller: new AbortController() });
 		this.setRouting(true);
 		this.notify("navigate", { url: url.href });
 		document.dispatchEvent(new CustomEvent("rocx:navigate", { detail: { url: url.href } }));
-		const route = this.routeOf(this.unbased(url.pathname));
 		let fetched;
 		try {
-			[fetched] = await Promise.all([this.documentFor(url, navigation.controller.signal), this.codeOf(route)]);
+			fetched = await this.pageFor(url, { signal: navigation.controller.signal });
 		} catch (error) {
 			if (this.navigation !== navigation) return;
 			this.navigation = null;
@@ -2100,7 +2211,7 @@ export class Runtime {
 		const doc = this.appDocument(fetched);
 		if (!doc || (at !== url && !this.ours(at))) {
 			this.navigation = null;
-			this.documents.delete(Runtime.documentKey(url));
+			this.pages.delete(Runtime.documentKey(url));
 			return this.load(at, { replace, pop });
 		}
 		if (pop) this.entryKey = pop;
@@ -2112,11 +2223,20 @@ export class Runtime {
 		this.navigation = null;
 		this.navigations++;
 		try {
-			this.commit(doc, Runtime.target(`${this.unbased(at.pathname)}${at.search}`));
-			this.afterNavigate?.(doc);
-			this.scrolled(at, { pop, scroll });
+			const show = () => {
+				this.commit(doc, Runtime.target(`${this.unbased(at.pathname)}${at.search}`));
+				this.afterNavigate?.(doc);
+				this.scrolled(at, { pop, scroll });
+			};
+			// A View Transition, where the app asked for one (§5.3): the browser snapshots the old page,
+			// the flush makes the new one (scrolled where it goes), and it cross-fades.
+			if (this.transitionsWanted()) {
+				this.notify("transition", { url: at.href });
+				await document.startViewTransition(show).updateCallbackDone;
+			} else show();
 			this.focused(at);
 			this.announce(at);
+			this.watchSight();
 			const ms = performance.now() - started;
 			this.notify("navigated", { url: at.href, ms });
 			document.dispatchEvent(new CustomEvent("rocx:navigated", { detail: { url: at.href, ms } }));
@@ -2134,34 +2254,40 @@ export class Runtime {
 	}
 
 	/**
-	 * The document of the page at `url`, as the server answers a load (`accept: text/html`, and
-	 * `x-rocx-navigate: 1` for a middleware that tells a navigation from a load): `{ status, url,
-	 * redirected, type, text }`. One fetched at most `FRESH` ms ago is used again (back and forward
-	 * in a hurry asks nothing), and one on its way is waited for; the last `CACHE` are kept. A
-	 * failure (offline, a redirect to another site) throws.
+	 * What the page at `url` needs (D-040 §18: a page, not a document), one entry of the cache with
+	 * one age: its document, as the server answers a load (`accept: text/html`, and
+	 * `x-rocx-navigate: 1`, or `preload` for a prefetch, so a middleware can tell them from a load),
+	 * and its levels' code (`codeOf`, at once while the wasm holds every page). Its promise is the
+	 * document's: `{ status, url, redirected, type, text }`. One complete at most `FRESH` ms ago is
+	 * used again (back and forward in a hurry, a click on a link prefetched, ask nothing), and one
+	 * on its way is waited for; the last `CACHE` are kept, and a revalidation empties them. A
+	 * failure (offline, a redirect to another site) throws, and isn't kept.
 	 */
-	documentFor(url, signal) {
+	pageFor(url, { signal = undefined, preload = false } = {}) {
 		const key = Runtime.documentKey(url);
-		const cached = this.documents.get(key);
+		const cached = this.pages.get(key);
 		if (cached && (cached.at === null || performance.now() - cached.at <= Runtime.FRESH)) return cached.promise;
-		const entry = { at: null, promise: null };
+		const entry = { at: null, promise: null, signal };
 		const asked = performance.now();
-		this.notify("fetch", { method: "GET", url: key, body: "" });
-		entry.promise = fetch(key, { headers: { accept: "text/html", "x-rocx-navigate": "1" }, signal, credentials: "same-origin" }).then(
-			async (response) => {
-				const text = await response.text();
+		this.notify("fetch", { method: "GET", url: key, body: "", preload });
+		const document = fetch(key, { headers: { accept: "text/html", "x-rocx-navigate": preload ? "preload" : "1" }, signal, credentials: "same-origin", priority: preload ? "low" : "auto" }).then(async (response) => {
+			const text = await response.text();
+			this.notify("fetched", { method: "GET", url: key, status: response.status, body: "", ms: performance.now() - asked, preload });
+			return { status: response.status, url: response.url, redirected: response.redirected, type: response.headers.get("content-type") ?? "", text };
+		});
+		entry.promise = Promise.all([document, this.codeOf(this.routeOf(this.unbased(url.pathname)))]).then(
+			([fetched]) => {
 				entry.at = performance.now();
-				this.notify("fetched", { method: "GET", url: key, status: response.status, body: "", ms: entry.at - asked });
-				return { status: response.status, url: response.url, redirected: response.redirected, type: response.headers.get("content-type") ?? "", text };
+				return fetched;
 			},
 			(error) => {
-				if (this.documents.get(key) === entry) this.documents.delete(key);
+				if (this.pages.get(key) === entry) this.pages.delete(key);
 				throw error;
 			},
 		);
-		this.documents.delete(key);
-		this.documents.set(key, entry);
-		while (this.documents.size > Runtime.CACHE) this.documents.delete(this.documents.keys().next().value);
+		this.pages.delete(key);
+		this.pages.set(key, entry);
+		while (this.pages.size > Runtime.CACHE) this.pages.delete(this.pages.keys().next().value);
 		return entry.promise;
 	}
 

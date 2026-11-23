@@ -2226,6 +2226,25 @@ the stylesheet as a cached file, a JSON payload, wasm splitting.
   Tests: web/test/navigation.test.mjs (web/test/nav, a scripted server: 11 tests, each of §15's), the
   site navigated page by page natively and as files under `/rocx/`, byte for byte against the
   document it was rendered from, and server/test's `data-build`.
+- Phase 3 (nav-phase3, 2026-11-23): prefetch and View Transitions, as §11 and §5.3 have them. What a
+  page needs is one cache entry with one age (`pageFor`: its document and `codeOf`, the levels'
+  `pageCode` steps), which a navigation and a prefetch share (§18). A link (`linkOf`, the click's
+  rules) is prefetched when the pointer rests on it 65 ms, when the keyboard focuses it (only
+  `:focus-visible`: a click focuses its link on the way, and every click would have been a prefetch),
+  on `touchstart`, and with `data-rocx-preload="viewport"` as it comes into sight (an
+  `IntersectionObserver`, and a `MutationObserver` only while the page has such a link);
+  `data-rocx-preload="off"` on it or above it, never. The prefetch asks with `x-rocx-navigate:
+  preload` and a low priority; one that fails, or isn't of this build, is dropped. A navigation
+  overtaking another aborts its fetch only when it was its own and for another page (with the cache
+  shared, a second click on a link in flight waits for it). With `<html data-rocx-transitions>`,
+  `document.startViewTransition` there and less motion not asked for, the commit and the scroll run
+  in the transition's update. `use_before_leave!` isn't built: it needs a hosted call, an event Roc
+  can stop and retry, and `beforeunload` for a load, which isn't cheap (TODO.md). runtime.js grew 126
+  lines, 57.5 → 59.1 KB brotli. Tests: web/test/navigation.test.mjs, 4 more (15): a rest of the
+  pointer (not a pass), keyboard focus and touch prefetching, the click then asking nothing more; one
+  older than 10 s fetched again and a submission's result emptying the cache; `off` on a link and
+  on `<html>`, `viewport` once in sight; a View Transition only when asked for and available, never
+  with less motion asked for.
 
 **Reversible:** yes, until apps rely on kept layouts and `use_search_params!`.
 

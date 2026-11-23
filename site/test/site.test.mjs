@@ -134,7 +134,7 @@ async function navigatesLikeLoads(url, base = "") {
 		const result = await tab.eval(`(async () => {
 			window.navigated = null;
 			await window.runtime.navigate(${JSON.stringify(route)});
-			const { text } = await window.runtime.documents.get(location.href.split("#")[0]).promise;
+			const { text } = await window.runtime.pages.get(location.href.split("#")[0]).promise;
 			return { mark: window.mark, at: location.pathname, navigated: window.navigated, loaded: window.snapshotOf(new DOMParser().parseFromString(text, "text/html")) };
 		})()`);
 		assert.equal(result.mark, "kept", `${route}: in place, no load`);

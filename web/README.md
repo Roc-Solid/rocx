@@ -520,7 +520,20 @@ same components natively; this one hydrates them.
   `tabindex` it gives back), a live region of the host's that says the title, `rocx:navigated`
   (`{ url, ms }`; `rocx:navigate` as it started), then the effects. A newer navigation aborts one
   on its way. Phase 2's hooks: `readOnce` (a location read in a component's body), `inPlace` (a
-  change of the query alone), `remakeRoot`, `afterNavigate`. **Under a base**, the URLs the
+  change of the query alone), `remakeRoot`, `afterNavigate`. **Prefetch** (phase 3): what a page
+  needs is one entry of the cache with one age (`pageFor`, §18: its document and `codeOf`, the levels'
+  `pageCode` steps, which wasm splitting will fill), so a navigation and a prefetch share it;
+  `prefetch(url)` asks for it with `x-rocx-navigate: preload` and a low priority, quietly (one that
+  fails, or isn't of this build, is dropped). A link (`linkOf`, the click's own rules) is prefetched
+  when the pointer rests on it `REST` ms (`hovered`, `unhovered`), when the keyboard focuses it
+  (`:focus-visible`: a click focuses its link too), when it is touched, and, where
+  `data-rocx-preload="viewport"` is on it or above it, as it comes into sight (`watchSight`: an
+  `IntersectionObserver`, and a `MutationObserver` for links a page adds later, only while the page
+  has such a link); `preloadOf` reads the nearest `data-rocx-preload` (`off`: never). A navigation
+  that overtakes another aborts the other's fetch only if it was its own and for another page.
+  **View Transitions**: with `<html data-rocx-transitions>`, where `document.startViewTransition` is
+  and less motion isn't asked for (`transitionsWanted`), the commit, `afterNavigate` and the scroll
+  run in its update, and the focus, the announcement and `rocx:navigated` once it is done. **Under a base**, the URLs the
   runtime writes into the page (an `href`, `src` or `action` it builds or patches, `written`) get
   the base, as the static export gives the server's.
 - **The page's own functions** (`Runtime.load(source, { effects: { vibrate(arg) {…} } })`, or
@@ -738,7 +751,11 @@ nothing else asked, its title, `<Title>`, head, regions and attributes the docum
 stylesheet kept (and one that differs swapped, the new one in before the old one goes), announced,
 the focus at `<body>`'s start, the page a load renders (byte for byte outside the host's elements); every opt-out left to the browser (modifier keys, `target`, `download`,
 `rel="external"`, another origin, a path no page has, a file, a place on this page, `off`,
-`explicit`); `navigate!` from a handler that waits for the server, once; `navigate_with!`'s replace;
+`explicit`); prefetch on a rest of the pointer (not a pass), keyboard focus and touch, a click
+then asking nothing more, one older than 10 s fetched again, a submission's result emptying the
+cache, `off` on a link and on `<html>`, `viewport` once in sight; View Transitions only when asked
+for and the browser has them, never with less motion asked for; `navigate!` from a handler that
+waits for the server, once; `navigate_with!`'s replace;
 back and forward with the scroll restored and the document used again within 10 s and fetched
 after; a hash, `noscroll`, a reload's scroll; `is_routing!` while a slow document is on its way, and
 after one overtaken; a middleware's redirect landing with its address; a text 401, a crash, a refused
@@ -751,8 +768,9 @@ under the base.
 
 - **Navigation in place, phase 1** (D-040): the whole page is made anew on each navigation, its
   layouts too (a sidebar's scroll, an open menu, a layout's signals); a change of the query alone
-  fetches the page's document like any navigation; no `<A>`, `<Navigate>`, prefetch or View
-  Transitions yet (phases 2 and 3).
+  fetches the page's document like any navigation; no `<A>` or `<Navigate>` yet (phase 2).
+  `use_before_leave!` (Solid Router's `useBeforeLeave`, for an unsaved form) isn't there: it needs a
+  hosted call, an event Roc can stop and retry, and `beforeunload` for a load.
 - **The rest of Solid 2.0's stores** (D-053): derived stores (`createStore(fn, seed)`,
   `createProjection`: a memo is the derived read), `createOptimisticStore` (D-030's optimistic memos
   cover actions), `reconcile` and `storePath` (a new list written whole, and Roc's record update, do

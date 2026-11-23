@@ -385,6 +385,8 @@ view! = |_|
 						<tr><td><code>{"Router.is_routing!({})"}</code></td><td>whether one is on its way, tracked: a progress bar's <code>{"class:on={…}"}</code></td></tr>
 						<tr><td><code>{"Router.location!({})"}</code></td><td>where the page is, tracked: a hole that reads it follows each navigation</td></tr>
 						<tr><td><code>{"<html data-rocx-navigation=\"off\">"}</code></td><td>every link loads its page, as before</td></tr>
+						<tr><td><code>{"data-rocx-preload=\"off\""}</code>, <code>{"\"viewport\""}</code></td><td>on a link or above it (<code>{"<html>"}</code> for the app): never prefetch; prefetch as it comes into sight, as well as on hover, focus and touch</td></tr>
+						<tr><td><code>{"<html data-rocx-transitions>"}</code></td><td>each navigation a View Transition, the browser's cross-fade, where it has them and less motion isn't asked for</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
@@ -396,6 +398,13 @@ view! = |_|
 					isn't a page of this app's (a plugin's page, a file, a path no page has), or isn't a document of
 					this build (a text 401, a crash, a new deploy's page: the bootstrap says the build's id), or
 					can't be fetched, the browser loads.
+				</li>
+				<li>
+					<strong>A link is fetched before it is clicked.</strong> One the pointer rests on, the keyboard
+					focuses or a finger touches is prefetched (its document, with <code>x-rocx-navigate: preload</code>),
+					so the click asks nothing more. A prefetch is a page rendered on the server, a view that may not
+					come: a middleware that counts views leaves those out, and an app whose pages are costly to render
+					turns it off.
 				</li>
 				<li>
 					<strong>Page scripts run on a load.</strong> A <code>{"<script>"}</code> a page renders isn't run
@@ -425,8 +434,7 @@ view! = |_|
 					Navigating renders every layout anew with the page, so a sidebar's scroll, an open menu or a
 					layout's signals start over, and a change of the query alone fetches the page's document as any
 					navigation does. Layouts kept across pages, the query changed in place, <code>{"<A>"}</code>
-					with its active state, <code>{"<Navigate>"}</code>, prefetching on hover and View Transitions
-					are next (D-040's phases 2 and 3).
+					with its active state and <code>{"<Navigate>"}</code> are next (D-040's phase 2).
 				</p>
 			</Callout>
 			<ul>
