@@ -449,12 +449,17 @@ const within = (node, scope) => (node.tag === "svg" && !scope.svg ? { ...scope, 
  * so a page's channels take one of the six connections a browser makes to a host. Two subscribers
  * to one channel share it.
  *
- * - What the page subscribes to changes as effects run and components go. Once the render that
- *   changed it is done, the hub opens the stream again with the new set, only if the set did change
- *   (the server keeps nothing per stream, so this works through any proxy).
- * - Each time it opens, the server sends each channel `resync` (then the route's `on_open!`
- *   messages), or `refused`; then the channel's messages as they are published (`message`), and
- *   `ended` for one its check refuses at a beat (`: beat` comments, every 15 s).
+ * - The stream says its id first (`hello`). What the page subscribes to changes as effects run and
+ *   components go: once the render that changed it is done, the hub tells the stream what it now
+ *   subscribes to and what it dropped (`subscribe` and `unsubscribe`, in a post naming the stream's
+ *   id: D-057), and the route's `on_close!` hears `Dropped` for each channel dropped; the stream
+ *   stays open. Changes made before the stream has said hello are told once it has. With nothing
+ *   left to subscribe to, the hub tells the stream, then closes it. A stream that never says hello
+ *   (an older server) is opened again with the new set instead.
+ * - Each time it opens, and for each channel subscribed over it, the server sends the channel
+ *   `resync` (then the route's `on_open!` messages), or `refused`; then the channel's messages as
+ *   they are published (`message`), and `ended` for one its check refuses at a beat (`: beat`
+ *   comments, every 15 s).
  * - When the stream drops, the hub opens it again after a wait that doubles each time (from 0.5 s
  *   to 30 s), and once it has stayed up 10 s, starts over at 0.5 s.
  * - Each subscriber hears its events one at a time, in order: the next once its handler is done
@@ -473,7 +478,8 @@ class Hub {
 		this.runtime = runtime;
 		/** By URL: `{ subscribers, open, refused, ended }`, `open` once this stream sent its resync. */
 		this.channels = new Map();
-		/** The stream: the URLs it carries (sorted, a line each), how to stop it, when it opened. */
+		/** The stream: the URLs it carries (as the hub has told the server), how to stop it, when it
+		 * opened, its id once it said hello (`id`), or `legacy` once it spoke without one. */
 		this.stream = null;
 		this.reconciling = null;
 		this.retrying = null;
@@ -572,17 +578,40 @@ class Hub {
 		// A wait before the next try is under way: it opens the stream with the set as it is then.
 		if (this.unavailable || this.retrying) return;
 		const urls = [...this.channels.keys()].sort();
-		const key = urls.join("\n");
-		if ((this.stream?.key ?? "") === key) return;
-		this.stream?.controller.abort();
-		this.stream = null;
-		if (urls.length) this.connect(urls, key);
+		const stream = this.stream;
+		if (!stream) {
+			if (urls.length) this.connect(urls);
+			return;
+		}
+		const wanted = new Set(urls);
+		const dropped = [...stream.urls].filter((url) => !wanted.has(url));
+		const added = urls.filter((url) => !stream.urls.has(url));
+		if (!dropped.length && !added.length) return;
+		// An older server's stream, with no id: opened again with the new set.
+		if (stream.legacy) {
+			stream.controller.abort();
+			this.stream = null;
+			if (urls.length) this.connect(urls);
+			return;
+		}
+		// Not said hello yet: told once it has.
+		if (!stream.id) return;
+		for (const url of dropped) {
+			stream.urls.delete(url);
+			this.post(`{"channel":${JSON.stringify(url)},"unsubscribe":true}`, { stream });
+		}
+		for (const url of added) {
+			stream.urls.add(url);
+			this.post(`{"channel":${JSON.stringify(url)},"subscribe":true}`, { stream });
+		}
 	}
 
-	async connect(urls, key) {
+	async connect(urls) {
 		const controller = new AbortController();
-		const stream = { key, controller, opened: performance.now() };
+		const stream = { urls: new Set(urls), controller, opened: performance.now(), id: null, legacy: false };
 		this.stream = stream;
+		// What was waiting to be told the old stream: this one carries the set as it is.
+		this.outbox = this.outbox.filter((item) => !item.stream);
 		for (const channel of this.channels.values()) Object.assign(channel, { open: false, refused: null, ended: null });
 		this.stats.connects++;
 		this.runtime.notify("connect", { urls });
@@ -609,7 +638,20 @@ class Hub {
 					buffer = buffer.slice(end + 2);
 					const field = (name) => lines.filter((line) => line.startsWith(`${name}:`)).map((line) => line.slice(name.length + 1).replace(/^ /, ""));
 					const data = field("data");
-					if (data.length && this.stream === stream) this.dispatch(field("event")[0] ?? "message", data[0], data.slice(1).join("\n"));
+					const kind = field("event")[0] ?? "message";
+					if (!data.length || this.stream !== stream) continue;
+					if (kind === "hello") {
+						// Its id: the changes made meanwhile are told now.
+						stream.id = data[0];
+						this.runtime.notify("hello", { stream: stream.id });
+						this.reconcile();
+						continue;
+					}
+					if (!stream.id && !stream.legacy) {
+						stream.legacy = true;
+						this.reconcile();
+					}
+					this.dispatch(kind, data[0], data.slice(1).join("\n"));
 				}
 			}
 		} catch {
@@ -684,10 +726,11 @@ class Hub {
 		}
 	}
 
-	/** An item for the next post (`POST /rocx/live/send`): sent once this frame is done. */
-	post(item) {
+	/** An item for the next post (`POST /rocx/live/send`): sent once this frame is done. A change of
+	 * what the stream carries names it (`stream`), and is dropped if another stream opens first. */
+	post(text, { stream = null } = {}) {
 		if (this.unavailable) return;
-		this.outbox.push(item);
+		this.outbox.push({ text, stream });
 		if (this.flushing) return;
 		this.flushing = true;
 		const go = () => {
@@ -699,18 +742,36 @@ class Hub {
 	}
 
 	async send() {
-		const items = this.outbox.splice(0);
+		const stream = this.stream;
+		// Changes for a stream that has gone are dropped: the next carries the set as it is.
+		const items = this.outbox.splice(0).filter((item) => !item.stream || item.stream === stream);
 		if (!items.length) return;
 		this.stats.posts++;
+		const query = `tab=${encodeURIComponent(this.tab())}${stream?.id ? `&stream=${encodeURIComponent(stream.id)}` : ""}`;
 		try {
-			const response = await fetch(this.runtime.under(`/rocx/live/send?tab=${encodeURIComponent(this.tab())}`), { method: "POST", headers: { "content-type": "application/json" }, body: `[${items.join(",")}]` });
+			const response = await fetch(this.runtime.under(`/rocx/live/send?${query}`), { method: "POST", headers: { "content-type": "application/json" }, body: `[${items.map((item) => item.text).join(",")}]` });
 			if (response.status === 200) {
 				const { refused = [] } = await response.json();
-				for (const { index, status, why } of refused) console.warn(`rocx: ${JSON.parse(items[index]).channel} refused what was said: ${status} ${why}`);
+				for (const { index, status, why } of refused) {
+					// The stream it named has ended (or the server never had it): a new one carries
+					// the set as it is.
+					if (items[index].stream && status === 404) {
+						if (this.stream === stream) {
+							stream.controller.abort();
+							this.stream = null;
+							this.reconcile();
+						}
+					} else console.warn(`rocx: ${JSON.parse(items[index].text).channel} refused what was said: ${status} ${why}`);
+				}
 			} else if (response.status === 404 || response.status === 405) this.unavailable ??= [404, "no server answers channels here (a static copy of the site?)"];
 			else if (!response.ok) console.warn(`rocx: what was said wasn't heard: ${response.status} ${await response.text()}`);
 		} catch {
 			// Offline: what was said is lost, as it would be if the tab closed.
+		}
+		// Nothing left to subscribe to, and the stream told so: it closes.
+		if (this.stream === stream && stream && !this.channels.size && !stream.urls.size) {
+			stream.controller.abort();
+			this.stream = null;
 		}
 	}
 }

@@ -95,6 +95,16 @@ Room(meta) := { members : List(Room.Member(meta)), version : U64, settings : Roo
 			_ => Err(Unknown)
 		}
 
+	## `key`'s tab `tab` has quit the room at `now`: its page dropped the room's subscription (it
+	## went to another room, say), while the tab stays. Gone at once, whatever the `grace`, and its
+	## member with it if it was their last tab (`Left`).
+	quit : Room(meta), Str, Str, U64 -> (Room(meta), List(Room.Change(meta)))
+	quit = |room, key, tab, _now|
+		match room.members.find_first(|member| member.key == key) {
+			Ok(member) if member.tabs.any(|other| other.id == tab) => room.without_tabs(member, |other| other.id == tab)
+			_ => (room, [])
+		}
+
 	## `key`'s tab `tab` has left (its stream ended) at `now`. With no `grace`, it is gone at once,
 	## and its member with it if it was their last tab (`Left`); otherwise it goes at the sweep after
 	## `grace`, unless it is back by then.
@@ -277,6 +287,14 @@ expect {
 	(early, before) = left.sweep(6999)
 	(_, after) = early.sweep(7000)
 	changes == [] and before == [] and after == [Left({ key: "ann", meta: ann, since: 1000 })]
+}
+
+# Quitting, whatever the grace: gone at once; a tab that never joined changes nothing.
+expect {
+	(room, _) = start.join({ key: "ann", tab: "a1", meta: ann, now: 1000 })
+	(gone, changes) = room.quit("ann", "a1", 2000)
+	(_, nothing) = gone.quit("ann", "a1", 3000)
+	changes == [Left({ key: "ann", meta: ann, since: 1000 })] and gone.count() == 0 and nothing == []
 }
 
 # Back within the grace: never left.

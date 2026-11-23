@@ -6,13 +6,14 @@ import Api
 
 ## Channels, for the tests (`channels_app.roc`), a whole document: two feeds on one org's news, a
 ## third on another's, each subscribing from an effect; buttons that switch the org the first two
-## follow, hide the second, say two things in one handler, and ask for a resync.
+## follow, hide the second, hide all three, say two things in one handler, and ask for a resync.
 Channels := [].{
 
 	view! : {} => Html
 	view! = |{}| {
 		(org!, set_org!) = create_signal!("acme")
 		(second!, set_second!) = create_signal!(Bool.True)
+		(any!, set_any!) = create_signal!(Bool.True)
 		say! = || {
 			Endpoint.say!(Api.news({ org: org!() }), Hello("one"))
 			Endpoint.say!(Api.news({ org: org!() }), Hello("two"))
@@ -29,11 +30,14 @@ Channels := [].{
 					<button class="toggle" on:click={|| set_second!(!second!())}>Toggle</button>
 					<button class="say" on:click={say!}>Say</button>
 					<button class="resync" on:click={|| Endpoint.resync!(Api.news({ org: org!() }))}>Resync</button>
-					<Feed name="first" org!={org!} />
-					<Show when!={second!()}>
-						<Feed name="second" org!={org!} />
+					<button class="quiet" on:click={|| set_any!(!any!())}>Quiet</button>
+					<Show when!={any!()}>
+						<Feed name="first" org!={org!} />
+						<Show when!={second!()}>
+							<Feed name="second" org!={org!} />
+						</Show>
+						<Feed name="beta" org!={|| "beta"} />
 					</Show>
-					<Feed name="beta" org!={|| "beta"} />
 				</body>
 			</html>
 		</>

@@ -110,6 +110,10 @@ subscribing, or its check failed at a beat).
 however it ends (a crash too: the host runs it as it leaves `Live` rooms today). Presence calls
 `Room.leave` in it, whose grace (5 s) covers the hub's reconnect after a change of subscriptions.
 
+**Done (D-020, D-057).** `on_close!` is told `[Dropped, Gone, Refused(Str)]`: the hub changes what a
+tab subscribes to over its open stream, so a page that drops the room is `Dropped`, and presence
+leaves at once (`Room.quit`); `Gone` (the stream went) keeps the grace.
+
 **Depends on it.** Leaving at once instead of at the next missed beat.
 **Undo.** Without it, presence leans on heartbeats alone (75 s to notice a closed tab).
 

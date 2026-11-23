@@ -185,11 +185,16 @@ same components natively; this one hydrates them.
   when the server saw it fall behind, and on `Endpoint.resync!`), then `Message(message)`, in order,
   one at a time (the next once its handler is done, waiting or not), or `Refused(status, why)` /
   `Ended(why)`. The runtime's hub (`Hub` in `runtime.js`) keeps every subscription in the tab on one
-  stream, `GET /rocx/live?tab=…&c=<url>…`; two subscribers to one channel share it. When the set of
-  channels changes, it opens the stream again once the render that changed it is done, and only if
-  the set did change; when the stream drops, after 0.5 s, doubled each time up to 30 s, starting
-  over once a stream has stayed up 10 s. A new subscriber to a channel the stream has open asks the
-  server for its resync. `Endpoint.say!(channel, said)` (from a handler) goes, with the frame's other
+  stream, `GET /rocx/live?tab=…&c=<url>…`; two subscribers to one channel share it. The stream says
+  its id first (`event: hello`). When the set of channels changes, once the render that changed it
+  is done, the hub tells the stream what it subscribes to now and what it dropped, in one post
+  naming the stream (`subscribe`, `unsubscribe`: D-057), so the stream stays open and the route's
+  `on_close!` hears `Dropped`; a change made before the stream has said hello is told once it has,
+  and with nothing left to subscribe to, the hub tells the stream, then closes it. A stream that
+  never says hello (an older server), or a change refused because the stream has gone, is opened
+  again with the set as it is. When the stream drops, it opens it again after 0.5 s, doubled each
+  time up to 30 s, starting over once a stream has stayed up 10 s. A new subscriber to a channel
+  the stream has open asks the server for its resync. `Endpoint.say!(channel, said)` (from a handler) goes, with the frame's other
   sayings, in one `POST /rocx/live/send`; a refusal is a warning in the console. The tab's id is
   random, kept in `sessionStorage` (a reload keeps it; a duplicated tab copies it). A tab has one
   stream: the server ends a tab's old stream when a new one comes, telling it `event: replaced`, so

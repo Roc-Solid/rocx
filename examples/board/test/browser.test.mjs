@@ -94,7 +94,7 @@ describe(`Board in two browsers (Ada's: ${engine})`, { skip: noDatabase || noChr
 		await ada.findByRole("group", { name: "Bo is here" });
 		await bo.findByRole("group", { name: "Ada is here" });
 		for (const tab of [ada, bo]) {
-			assert.equal(await tab.page.eval("window.__runtime.hub.stream?.key ?? null"), "/b/launch\n/b/launch/presence", "one stream (/rocx/live) for both channels");
+			assert.equal(await tab.page.eval("[...(window.__runtime.hub.stream?.urls ?? [])].sort().join('\\n') || null"), "/b/launch\n/b/launch/presence", "one stream (/rocx/live) for both channels");
 			assert.equal(await tab.page.eval("window.__runtime.hub.stats.connects"), 1, "opened once");
 			assert.ok(!(await tab.requested()).some((path) => path.startsWith("/b/launch/presence")), "presence asks nothing of its own");
 		}

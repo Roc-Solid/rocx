@@ -210,7 +210,8 @@ test("joining: the forms' issues at their fields, a plain post's flash, a room's
 	(await someone.get("/host/ZZZZ")).dom.getByRole("heading", { name: "There's no room ZZZZ" });
 	assert.equal(stage((await someone.read("/rooms/ZZZZ")).view), "Vacant");
 	const events = await someone.events(`/rocx/live?tab=x&c=${encodeURIComponent("/rooms/ZZZZ")}`);
-	const [refusal] = await events.take(1);
+	const [hello, refusal] = await events.take(2);
+	assert.equal(hello.event, "hello", "the stream's id first (D-057)");
 	assert.equal(refusal.event, "refused");
 	assert.equal(JSON.parse(refusal.data.split("\n")[1]).status, 404);
 	events.close();

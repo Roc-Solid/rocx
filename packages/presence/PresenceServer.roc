@@ -16,7 +16,9 @@ import Wire
 ##     receive! = PresenceServer.receive!
 ##
 ## A tab joins as its subscription opens (and gets its key and tab, then who is here), and leaves
-## when it ends: the host tells a tab's hooks in order, an old stream's end before a new one's start.
+## when it ends: at once when its page dropped the room (`Dropped`: it went to another room), after
+## the room's grace when its stream went (`Gone`: a reload or a reconnect comes back within it). The
+## host tells a tab's hooks in order, an old subscription's end before a new one's start.
 ## A page says it is here every `Room.beat_every`, with its status (`Here`), so a tab whose page
 ## vanished without a word (a laptop shut, a network gone) is swept out 75 s after its last word,
 ## however long its connection lingers. Typing and cursors are said, and passed on, never kept.
@@ -51,11 +53,18 @@ PresenceServer := [].{
 		[Welcome({ key: who.key, tab }), Presence(Mirror.snapshot(room))]
 	}
 
-	## A tab's subscription ended: it leaves, after the room's grace (a page reconnecting doesn't
-	## flicker out and in).
-	on_close! : { who : Wire.Member, tab : Str, channel : PresenceServer.RoomChannel(c), .. } => {}
-	on_close! = |{ who, tab, channel, .. }| {
-		_ = changed!(channel, |before, now| before.leave(who.key, tab, now))
+	## A tab's subscription ended: it leaves at once if its page dropped the room (`Dropped`), else
+	## after the room's grace (a page reloading or reconnecting doesn't flicker out and in).
+	on_close! : { who : Wire.Member, tab : Str, why : Channel.Closed, channel : PresenceServer.RoomChannel(c), .. } => {}
+	on_close! = |{ who, tab, why, channel, .. }| {
+		_ = changed!(
+			channel,
+			|before, now|
+				match why {
+					Dropped => before.quit(who.key, tab, now)
+					_ => before.leave(who.key, tab, now)
+				},
+		)
 		{}
 	}
 

@@ -2,9 +2,10 @@
 
 Who is here, for Roc Solid apps: who is in a room right now, with a name, a colour, a picture and
 a status each; who joined and who left; who is typing; and where everyone's cursor is. A member in
-two tabs is one face, and leaves when the last tab does. A page that closes leaves at once (after a
-few seconds' grace, so a reconnect doesn't flicker); one that vanishes without a word (a laptop
-shut, a network gone) is swept out when its heartbeats stop.
+two tabs is one face, and leaves when the last tab does. A page that goes to another room leaves at
+once; one that closes leaves after a few seconds' grace (so a reload or a reconnect doesn't
+flicker); one that vanishes without a word (a laptop shut, a network gone) is swept out when its
+heartbeats stop.
 
 ```roc
 import presence.AvatarStack
@@ -29,7 +30,7 @@ tested without waiting for one.
 
 | Module | What it does |
 |---|---|
-| `Room` | The room, as the server keeps it: `join`, `update` (new metadata), `heartbeat`, `leave` (gone after `grace`, unless back by then), `sweep` (tabs unheard for `timeout` go). Each answers the changes others should hear, `Joined`, `Left`, `Changed`, and numbers the room's state (`version`). `signal` does what a `Signal` says; `deadline` is when the next sweep could find someone; `save`/`load` for JSON. `Room.defaults`: a 75 s timeout, a 5 s grace, a beat every 15 s (`beat_every`) |
+| `Room` | The room, as the server keeps it: `join`, `update` (new metadata), `heartbeat`, `leave` (gone after `grace`, unless back by then), `quit` (gone at once: the page dropped the room), `sweep` (tabs unheard for `timeout` go). Each answers the changes others should hear, `Joined`, `Left`, `Changed`, and numbers the room's state (`version`). `signal` does what a `Signal` says; `deadline` is when the next sweep could find someone; `save`/`load` for JSON. `Room.defaults`: a 75 s timeout, a 5 s grace, a beat every 15 s (`beat_every`) |
 | `Mirror` | A page's copy: takes a `Snapshot` and the numbered `Delta`s after it; drops what is older than its snapshot, and answers `Err(Gap)` when a number is skipped. A snapshot after a reconnect answers what changed meanwhile |
 | `Diff` | `between(before, after)`: who left, joined and changed; `apply` one change to a list |
 | `Throttle` | At most one send every `every` ms, the first at once, the latest held and sent when due (`push`, `flush`): a cursor at 20 a second ends where the pointer stopped |
@@ -108,9 +109,10 @@ from the middleware's context. The page's tab id is its hub's (the same across r
 reloads), and the room tells the page its own key and tab first (`Welcome`), then who is here.
 
 How it holds together: a tab joins as its subscription opens (`on_open!`: its key and tab, then a
-snapshot) and leaves when it ends (`on_close!`, after a 5 s grace, so a page that reconnects doesn't
-flicker out and in); the host tells a tab's hooks in order, an old stream's end before a new one's
-start. A page says it is here every 15 s (`Here`, with its status), so a tab whose page vanished
+snapshot) and leaves when it ends (`on_close!`): at once when the page dropped the room's
+subscription while the tab stays (`Dropped`: it went to another room, D-057), after a 5 s grace
+when the tab's stream went (`Gone`: a page that reloads or reconnects doesn't flicker out and in);
+the host tells a tab's hooks in order, a subscription's end before a new one's start. A page says it is here every 15 s (`Here`, with its status), so a tab whose page vanished
 without a word (a laptop shut, a network gone) is swept out 75 s after its last word, however long
 its connection lingers (a browser may hold a hidden tab's timers back to once a minute). Each
 change reads the room from `Kv`, sweeps it, changes it and swaps it back (`Kv.swap!`, read again if

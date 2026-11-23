@@ -192,6 +192,7 @@ describe("Board over HTTP", { skip: noDatabase }, () => {
 	test("everyone on a board hears each change on its channel, and only members may listen", async () => {
 		const [ada, bo] = [await as(app, db, "Ada"), await as(app, db, "Bo")];
 		const live = await bo.events("/rocx/live?tab=bo-1&c=/b/launch");
+		assert.equal((await live.next()).event, "hello", "the stream's id first (D-057)");
 		assert.deepEqual(await live.next(), { event: "resync", data: "/b/launch", id: null });
 		await ada.json("/b/launch/move", { card: seeded.cards["Order the fuel"], column: seeded.columns.Done, before: seeded.cards["Paint the rocket"] });
 		const heard = await live.next();
@@ -200,11 +201,13 @@ describe("Board over HTTP", { skip: noDatabase }, () => {
 		live.close();
 
 		const visitor = await app.client().events("/rocx/live?tab=visitor-1&c=/b/launch");
+		assert.equal((await visitor.next()).event, "hello");
 		const turned = await visitor.next();
 		assert.equal(turned.event, "refused");
 		assert.equal(JSON.parse(turned.data.split("\n")[1]).status, 401);
 		visitor.close();
 		const nowhere = await ada.events("/rocx/live?tab=ada-1&c=/b/nowhere");
+		assert.equal((await nowhere.next()).event, "hello");
 		assert.equal(JSON.parse((await nowhere.next()).data.split("\n")[1]).status, 404);
 		nowhere.close();
 	});

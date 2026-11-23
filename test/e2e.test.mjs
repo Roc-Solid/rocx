@@ -527,6 +527,8 @@ test("the contract (D-037): a route, an actor and a job each import Generated/Ap
 					if (block.startsWith(":")) continue;
 					const lines = block.split("\n");
 					const field = (name) => lines.filter((line) => line.startsWith(`${name}: `)).map((line) => line.slice(name.length + 2));
+					// The stream's id (D-057), which the hub posts its changes with: not a channel's.
+					if (field("event")[0] === "hello") continue;
 					const [url, ...rest] = field("data");
 					return { event: field("event")[0], url, said: rest.length ? JSON.parse(rest.join("\n")) : null };
 				}

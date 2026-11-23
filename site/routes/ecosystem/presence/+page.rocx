@@ -42,8 +42,9 @@ view! = |_|
 			>
 				A room's presence: who is in it right now, with a name, a colour and a status each; who is
 				typing; and everyone's cursor over what they share. A member with two tabs open is one face, and
-				leaves when the last tab does. A tab that closes leaves at once; one that vanishes without a word,
-				a laptop shut or a network gone, is swept out when its heartbeats stop.
+				leaves when the last tab does. A page that goes to another room leaves at once, and one that
+				closes a few seconds later; one that vanishes without a word, a laptop shut or a network gone, is
+				swept out when its heartbeats stop.
 			</PageHero>
 
 			<Heading id="room">A room, in your browser</Heading>
@@ -171,8 +172,10 @@ view! = |_|
 			<Code title={"${Sources.presence_grace.file}, in part"} source={Sources.presence_grace.rocx} />
 			<ul>
 				<li>
-					<strong>Leaving has a grace.</strong> A tab whose subscription ends leaves after five seconds, unless it is
-					back by then: a page that reconnects doesn't flicker out and in.
+					<strong>Leaving has a grace.</strong> A tab whose stream ends leaves after five seconds, unless it is
+					back by then: a page that reloads or reconnects doesn't flicker out and in. A page that drops the
+					room while the tab stays (it goes to another room) leaves at once: <code>on_close!</code> is told
+					<code>Dropped</code>.
 				</li>
 				<li>
 					<strong>Vanishing has a timeout.</strong> A page says it is here every 15 seconds. A tab unheard for 75
@@ -235,7 +238,7 @@ view! = |_|
 				<table>
 					<thead><tr><th>Module</th><th>What it does</th></tr></thead>
 					<tbody>
-						<tr><td><code>Room</code></td><td>a room, as the server keeps it: <code>join</code>, <code>update</code>, <code>heartbeat</code>, <code>leave</code>, <code>sweep</code>, <code>signal</code>; <code>members</code>, <code>version</code>, <code>deadline</code> (when the next sweep could find someone); <code>save</code> and <code>load</code> for JSON; <code>Room.defaults</code>, and <code>beat_every</code></td></tr>
+						<tr><td><code>Room</code></td><td>a room, as the server keeps it: <code>join</code>, <code>update</code>, <code>heartbeat</code>, <code>leave</code>, <code>quit</code>, <code>sweep</code>, <code>signal</code>; <code>members</code>, <code>version</code>, <code>deadline</code> (when the next sweep could find someone); <code>save</code> and <code>load</code> for JSON; <code>Room.defaults</code>, and <code>beat_every</code></td></tr>
 						<tr><td><code>Mirror</code></td><td>a page's copy: <code>receive</code> a <code>Snapshot</code> or a numbered <code>Delta</code> (<code>Err(Gap)</code> when one was missed), <code>members</code>, <code>is_synced</code></td></tr>
 						<tr><td><code>Diff</code></td><td><code>between(before, after)</code>: who left, joined and changed; <code>apply</code> one change</td></tr>
 						<tr><td><code>Throttle</code></td><td>at most one send every <code>every</code> milliseconds, the first at once and the latest held until it is due: a cursor sent 20 times a second ends where the pointer stopped</td></tr>

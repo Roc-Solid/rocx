@@ -578,7 +578,7 @@ receive! = |{ who, said, channel, .. }|        # what a page says: Endpoint.say!
         Hello(words) => Ok(Endpoint.publish!(channel, { title: "${who} says ${words}" }))
     }
 on_open! = |{ who, .. }| [{ title: "welcome, ${who}" }]   # sent first, after each Resync
-on_close! = |{ who, tab, why, .. }| Log.info!("left", { who, tab })   # why: Gone, or Refused(why)
+on_close! = |{ who, tab, why, .. }| Log.info!("left", { who, tab })   # why: Dropped, Gone, or Refused(why)
 
 # anywhere on the server: a request, a job, an actor
 Endpoint.publish!(Api.channel_org_org_news({ org: "acme" }), { title: "Launch" })
@@ -594,11 +594,25 @@ publishes must be the channel's `message`. The module that defines that type can
 (Api imports it): `rocx build` says so, and to move the type into a module of its own. Its hooks,
 each optional: `receive!`, what pages say, after the same middleware and check; `on_open!`, what a
 subscriber is sent first, each time it subscribes; `on_close!`, told when a subscription ends,
-outside the middleware. Each is given the path's params, `who`, the tab's id, and the channel.
+outside the middleware, and why: `Dropped` (the page no longer subscribes to it: the component or
+effect that subscribed went, while the tab stays), `Gone` (the tab's stream went: the tab closed or
+reloaded, its network went, the server stopped) or `Refused(why)` (its check, run again at a beat,
+refused it). Each is given the path's params, `who`, the tab's id, and the channel.
 
 The host answers the tab's stream itself, on the async side, holding no thread of Roc's
 (`host/src/channels.rs`): `GET /rocx/live?tab=<id>&c=<url>&c=<url>…`, as server-sent events.
 
+- The stream says its id first, `event: hello`, its data the id: 192 random bits, the stream's
+  alone, bound to its tab. What the page subscribes to changes over the same stream (D-057): the
+  hub posts `{"channel":"<url>","subscribe":true}` and `{"channel":"<url>","unsubscribe":true}` to
+  `POST /rocx/live/send?tab=<id>&stream=<id>`, and the stream opens the channel (its check, as
+  below, then `resync` and `on_open!`) or drops it (`on_close!` told `Dropped`, and nothing more of it
+  sent). A tab's hooks come in order on one stream as across two: a channel dropped and subscribed
+  again in one post hears its end before its start. A subscribe's check, and every check after it
+  (the beats'), is asked with the post's request headers (the tab's cookies as they are now), so a
+  page that signs in without a reload reaches the channels a member may. A change naming no open
+  stream of its tab (none, a wrong id, another tab's, one that has ended) is refused (404), and the
+  hub opens a new stream with what the page subscribes to.
 - Each channel's check runs as the stream opens: a request the host makes of the app for the
   channel's own path, with the stream's headers (its cookies), `accept: application/json` and
   `x-rocx-channel: open`, behind the app's middleware and the route's, as a GET of it would be. A
@@ -609,18 +623,20 @@ The host answers the tab's stream itself, on the async side, holding no thread o
 - Every beat (`--live-beat-ms`, 15 s) the stream sends `: beat` and runs each channel's check again
   (`x-rocx-channel: check`); one that now refuses is `event: ended`, and its `on_close!` is told
   `Refused(why)`. A server error (500) at a beat ends nothing.
-- `POST /rocx/live/send?tab=<id>`, a JSON list of `{"channel":"<url>","message":…}` (the route's
-  `receive!`, after its middleware and check: `x-rocx-channel: receive`) and
-  `{"channel":"<url>","resync":true}` (the tab's stream resyncs that channel): 204, or 200 with
-  `{"refused":[{"index":…,"status":…,"why":…}]}`. JSON only, so a form from another site can't send
-  it without asking first.
-- A subscription's end (the client gone, the server stopping, or refused at a beat) is
-  `x-rocx-channel: close`, its body who the check said it was and why: `App` answers it outside the
-  middleware, with the route's `on_close!`.
-- A tab has one stream: a new stream for a tab ends the tab's old one first (`event: replaced`, for
-  a page still reading it: a duplicated tab, which takes an id of its own), and waits for its
-  `on_close!`s (10 s at the most) before its own checks run, so a tab's hooks come in order, an old
-  subscription's end before a new one's start.
+- `POST /rocx/live/send?tab=<id>&stream=<id>`, a JSON list of `{"channel":"<url>","message":…}`
+  (the route's `receive!`, after its middleware and check: `x-rocx-channel: receive`),
+  `{"channel":"<url>","resync":true}` (the tab's stream resyncs that channel), and the subscribes
+  and unsubscribes above: 204, or 200 with `{"refused":[{"index":…,"status":…,"why":…}]}`. JSON
+  only, so a form from another site can't send it without asking first; and one another site's
+  page sends (its `Origin` isn't the request's host, as `Middleware.same_origin` reads it) is
+  refused, 403, since the app's middleware never sees it.
+- A subscription's end (dropped by the page, the client gone, the server stopping, or refused at a
+  beat) is `x-rocx-channel: close`, its body who the check said it was and why: `App` answers it
+  outside the middleware, with the route's `on_close!`.
+- A tab has one stream: a new stream for a tab (the hub's, after a drop) ends the tab's old one
+  first (`event: replaced`, for a page still reading it: a duplicated tab, which takes an id of its
+  own), and waits for its `on_close!`s (10 s at the most) before its own checks run, so a tab's
+  hooks come in order, an old subscription's end before a new one's start.
 - The host drops `x-rocx-channel` and `x-rocx-tab` from every request it is sent, so only it asks.
 - `/rocx/live` never reaches the app's middleware, so an auth middleware has nothing to let
   through: a channel is guarded by its own path's middleware instead.

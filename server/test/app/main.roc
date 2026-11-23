@@ -1683,6 +1683,7 @@ channel_closed! = |request| {
 			|who, tab, why| {
 				reason =
 					match why {
+						Dropped => "dropped"
 						Gone => "gone"
 						Refused(said) => "refused: ${said}"
 					}

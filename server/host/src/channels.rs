@@ -17,16 +17,27 @@
 //! held until the check has let it in, then sent after its `resync` and its `on_open!` messages.
 //! Its own topic, `tab:<id>`, carries the tab's asks for a resync (`POST /rocx/live/send`).
 //!
-//! A tab has one stream. The hub opens a new one when what the page subscribes to changes, or when
-//! the old one dropped, and the host may hear the old one end after the new one starts (a
-//! connection's close takes a while to reach it). So a new stream for a tab ends the tab's old one
-//! first (`event: replaced`, should anyone still read it), waits for its subscriptions' `on_close!`,
-//! and only then runs its own checks and `on_open!`: a route's hooks hear a tab's subscriptions end
-//! before they start again, in order. A page that hears `replaced` is another tab with the same id
-//! (a duplicated browser tab copies its sessionStorage): it takes a new id, and connects again.
+//! A tab has one stream, which says its id first (`event: hello`: random, 192 bits, the stream's
+//! and its tab's alone). What the page subscribes to changes over it (D-057): the hub posts
+//! `subscribe` and `unsubscribe` with that id (`POST /rocx/live/send?tab=…&stream=…`), and the
+//! stream opens the channel (its check, then its `on_open!`) or ends it, telling its route's
+//! `on_close!` `Dropped`; a stream that ends (its client gone, the server stopping) tells each
+//! subscription still on it `Gone`. A post's request (its cookies: the tab's as they are now) is
+//! what the stream asks the app with from then on, at its beats too. A post naming a stream that
+//! has ended, or another tab's, is refused (404), as is one another site's page sent (403, by its
+//! `Origin`).
 //!
-//! The stream, as server-sent events: `event: resync | message | refused | ended`, the channel's URL
-//! as the first `data:` line, then what it says (a message's JSON; `{"status":403,"why":"…"}`; the
+//! The hub opens a new stream when the old one dropped, and the host may hear the old one end after
+//! the new one starts (a connection's close takes a while to reach it). So a new stream for a tab
+//! ends the tab's old one first (`event: replaced`, should anyone still read it), waits for its
+//! subscriptions' `on_close!`, and only then runs its own checks and `on_open!`: a route's hooks hear
+//! a tab's subscriptions end before they start again, in order, as they do on one stream (an
+//! unsubscribe's `on_close!` before a later subscribe's `on_open!`). A page that hears `replaced` is
+//! another tab with the same id (a duplicated browser tab copies its sessionStorage): it takes a new
+//! id, and connects again.
+//!
+//! The stream, as server-sent events: `event: hello`, its id, first; then `event: resync | message
+//! | refused | ended`, the channel's URL as the first `data:` line, then what it says (a message's JSON; `{"status":403,"why":"…"}`; the
 //! JSON string why it ended); and `: beat` every beat (15 s), on which each channel's check runs
 //! again: one that now refuses is `ended`, and its `on_close!` is told. A server error at a beat
 //! (500) ends nothing. A subscriber that falls behind its channel's backlog (`Live`'s 256) gets a
@@ -62,6 +73,9 @@ const MOST_SAID_BYTES: usize = 1 << 20;
 /// How long a new stream waits for its tab's old one to have ended (its `on_close!`s told) before
 /// it opens its own subscriptions anyway.
 const MOST_WAIT_FOR_OLD: Duration = Duration::from_secs(10);
+
+/// The random bytes of a stream's id (192 bits), as hex.
+const STREAM_ID_BYTES: usize = 24;
 
 /// The request headers a channel's requests don't pass on: their own, and the stream's conditions.
 const NOT_PASSED: [&str; 10] = ["accept", "content-type", "content-length", "transfer-encoding", "connection", "range", "if-none-match", "if-modified-since", "x-rocx-channel", "x-rocx-tab"];
@@ -188,10 +202,28 @@ fn decoded(text: &str) -> String {
 
 /// A random tab id, for a stream whose query names none.
 fn fresh_tab() -> String {
+    random_hex(12)
+}
+
+/// `count` random bytes, as hex.
+fn random_hex(count: usize) -> String {
     use ring::rand::SecureRandom;
-    let mut bytes = [0u8; 12];
+    let mut bytes = vec![0u8; count];
     let _ = ring::rand::SystemRandom::new().fill(&mut bytes);
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// Whether a request comes from a page of this site, or from no page (curl), as the app's
+/// `Server.same_origin` reads it: a browser says which site's page sent it (`Origin`), and its
+/// host must be the request's.
+fn same_origin(headers: &HeaderMap) -> bool {
+    let Some(origin) = headers.get("origin") else { return true };
+    let origin = String::from_utf8_lossy(origin.as_bytes());
+    let host = headers.get("host").map(|host| String::from_utf8_lossy(host.as_bytes()).into_owned());
+    match origin.split_once("://") {
+        Some((_, after)) => host.as_deref() == Some(after),
+        None => false,
+    }
 }
 
 /// An event of the stream: its kind, the channel's URL, and what it says (a `data:` line each).
@@ -280,6 +312,43 @@ impl Drop for Place {
     }
 }
 
+// ---- A stream's id: what a page's posts change it by ----
+
+/// What a page's post tells its tab's stream (D-057): subscribe to a channel, or drop one. Each
+/// carries the post's request, which the stream asks the app with from then on.
+enum Control {
+    Subscribe { url: String, asking: Arc<Asking> },
+    Unsubscribe { url: String, asking: Arc<Asking> },
+}
+
+/// An open stream, by its id: its tab, and how to tell it a page's changes.
+struct Reachable {
+    tab: String,
+    control: mpsc::UnboundedSender<Control>,
+}
+
+fn reachable() -> &'static Mutex<HashMap<String, Reachable>> {
+    static REACHABLE: OnceLock<Mutex<HashMap<String, Reachable>>> = OnceLock::new();
+    REACHABLE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// A stream's id, reachable while it is held: the stream has ended once it is dropped.
+struct StreamId(String);
+
+impl StreamId {
+    fn new(tab: &str, control: mpsc::UnboundedSender<Control>) -> StreamId {
+        let id = random_hex(STREAM_ID_BYTES);
+        reachable().lock().unwrap_or_else(|poisoned| poisoned.into_inner()).insert(id.clone(), Reachable { tab: tab.to_string(), control });
+        StreamId(id)
+    }
+}
+
+impl Drop for StreamId {
+    fn drop(&mut self) {
+        reachable().lock().unwrap_or_else(|poisoned| poisoned.into_inner()).remove(&self.0);
+    }
+}
+
 // ---- The stream ----
 
 /// `GET /rocx/live?tab=<id>&c=<url>&c=<url>…`: the tab's stream of its channels. It answers at once;
@@ -310,7 +379,10 @@ pub fn stream(request: Request<Incoming>, config: &Config, peer: String) -> Resp
     }
     let asking = Arc::new(Asking::new(request.headers(), config, tab, peer));
     let (out, frames) = mpsc::channel::<Bytes>(16);
-    tokio::spawn(run(asking, urls, out, config.live_beat));
+    // Its id, reachable from now: a post made as soon as the page hears it finds it.
+    let (control_to, control) = mpsc::unbounded_channel();
+    let id = StreamId::new(&asking.tab, control_to);
+    tokio::spawn(run(asking, urls, out, config.live_beat, id, control));
     let frames = futures_util::stream::unfold(frames, |mut frames| async move { frames.recv().await.map(|data| (Ok::<_, Infallible>(Frame::data(data)), frames)) });
     response = response.header("x-rocx-live", "1");
     response.body(StreamBody::new(frames).boxed()).unwrap()
@@ -337,6 +409,9 @@ struct Subscription {
     held: Vec<Bytes>,
     /// It fell behind while its check ran: resynced again once it is in.
     behind: bool,
+    /// The page dropped it while its check ran (D-057): once that is answered, its route's
+    /// `on_close!` is told `Dropped` if it was let in, and it is gone.
+    dropped: bool,
     forwarders: Vec<JoinHandle<()>>,
 }
 
@@ -449,21 +524,27 @@ fn opened_of(answered: &Answered) -> Result<Opened, String> {
     Ok(Opened { url, who, opened, closes })
 }
 
+/// Listens to a channel's topics, and adds its subscription, its check still to run (`Opening`).
+/// Listening before the check runs: nothing published meanwhile is missed.
+fn subscribed(subscriptions: &mut Vec<Subscription>, id: u64, url: String, heard_to: &mpsc::Sender<(u64, Heard)>, latest_to: &mpsc::UnboundedSender<(u64, String, Bytes)>) {
+    let ordered = forward(id, url.clone(), live::listen(&format!("channel:{url}")), heard_to.clone());
+    let newest = forward_latest(id, url.clone(), live::listen(&format!("latest:{url}")), latest_to.clone());
+    subscriptions.push(Subscription { id, url, state: State::Opening, who: None, closes: false, held: Vec::new(), behind: false, dropped: false, forwarders: vec![ordered, newest] });
+}
+
 /// The stream, from its start to its client's going (or the server's stopping): each channel's
-/// check, then what is published, a beat at a time; then each subscription's end, told.
-async fn run(asking: Arc<Asking>, urls: Vec<String>, out: mpsc::Sender<Bytes>, beat: Duration) {
+/// check, then what is published, a beat at a time, and the channels the page subscribes to and
+/// drops (`control`); then each subscription's end, told.
+async fn run(mut asking: Arc<Asking>, urls: Vec<String>, out: mpsc::Sender<Bytes>, beat: Duration, id: StreamId, mut control: mpsc::UnboundedReceiver<Control>) {
     let (heard_to, mut heard) = mpsc::channel::<(u64, Heard)>(256);
     let (latest_to, mut latest_heard) = mpsc::unbounded_channel::<(u64, String, Bytes)>();
-    let mut queue: VecDeque<Bytes> = VecDeque::from([Bytes::from_static(b": rocx live\n\n")]);
+    let mut queue: VecDeque<Bytes> = VecDeque::from([Bytes::from_static(b": rocx live\n\n"), Bytes::from(format!("event: hello\ndata: {}\n\n", id.0))]);
     let mut latest: Vec<(u64, String, Bytes)> = Vec::new();
     let mut subscriptions: Vec<Subscription> = Vec::new();
-    // Listening before the checks run: nothing published meanwhile is missed.
     let mut ids = 0;
     for url in urls {
         ids += 1;
-        let ordered = forward(ids, url.clone(), live::listen(&format!("channel:{url}")), heard_to.clone());
-        let newest = forward_latest(ids, url.clone(), live::listen(&format!("latest:{url}")), latest_to.clone());
-        subscriptions.push(Subscription { id: ids, url, state: State::Opening, who: None, closes: false, held: Vec::new(), behind: false, forwarders: vec![ordered, newest] });
+        subscribed(&mut subscriptions, ids, url, &heard_to, &latest_to);
     }
     // The tab's own topic: its asks for a resync.
     let tab_topic = live::listen(&format!("tab:{}", asking.tab));
@@ -486,7 +567,6 @@ async fn run(asking: Arc<Asking>, urls: Vec<String>, out: mpsc::Sender<Bytes>, b
             }
         })
     };
-    drop((heard_to, latest_to));
 
     // The tab's one stream from now on: its old one, if it is still held, ends first, and its
     // subscriptions' ends are told before these start (listening already, so nothing is missed).
@@ -517,9 +597,12 @@ async fn run(asking: Arc<Asking>, urls: Vec<String>, out: mpsc::Sender<Bytes>, b
             }
             done = running(&mut job) => {
                 job = None;
+                // The ends of subscriptions the page dropped while their checks ran: told before
+                // anything asked since (a subscribe to the same channel again, say).
+                let mut first = Vec::new();
                 for (op, answered) in done {
                     match op {
-                        Op::Open { id, url } => opened(&mut subscriptions, id, &url, answered, &mut queue, &mut ops),
+                        Op::Open { id, url } => opened(&mut subscriptions, id, &url, answered, &mut queue, &mut ops, &mut first),
                         Op::Check { id, url } => {
                             checking = false;
                             checked(&mut subscriptions, id, &url, answered, &mut queue, &mut ops);
@@ -529,6 +612,31 @@ async fn run(asking: Arc<Asking>, urls: Vec<String>, out: mpsc::Sender<Bytes>, b
                                 logging::warn("rocx server: a channel's on_close! failed", &[("channel", url.as_str().into()), ("status", answered.status.into()), ("error", answered.text.as_str().into())]);
                             }
                         }
+                    }
+                }
+                for op in first.into_iter().rev() {
+                    ops.push_front(op);
+                }
+            }
+            Some(said) = control.recv() => {
+                match said {
+                    Control::Subscribe { url, asking: now } => {
+                        asking = now;
+                        if let Some(each) = subscriptions.iter_mut().find(|each| each.url == url && !each.dropped) {
+                            // Subscribed already (a post that crossed a reconnect): it is sent its
+                            // resync again, as a new subscriber to an open channel is.
+                            resync(each, &mut ops);
+                        } else if subscriptions.iter().filter(|each| !each.dropped).count() >= MOST_CHANNELS {
+                            queue.push_back(refused_event(&url, 400, &format!("a stream carries {MOST_CHANNELS} channels at the most")));
+                        } else {
+                            ids += 1;
+                            subscribed(&mut subscriptions, ids, url.clone(), &heard_to, &latest_to);
+                            ops.push_back(Op::Open { id: ids, url });
+                        }
+                    }
+                    Control::Unsubscribe { url, asking: now } => {
+                        asking = now;
+                        unsubscribed(&mut subscriptions, &url, &mut queue, &mut latest, &mut ops);
                     }
                 }
             }
@@ -586,8 +694,11 @@ async fn run(asking: Arc<Asking>, urls: Vec<String>, out: mpsc::Sender<Bytes>, b
         }
     }
 
-    // The client has gone (or the server stops): what was asked finishes, then each subscription
-    // its check let in is told it ended.
+    // The client has gone (or the server stops): posts reach it no more; what was asked finishes,
+    // then the ends already due are told (those the page dropped, or a beat's check refused), then
+    // each subscription still on it that its check let in is told `Gone` (one the page dropped
+    // while its check ran, `Dropped`).
+    drop(id);
     drop(out);
     tab_forwarder.abort();
     if let Some(handle) = job.take() {
@@ -602,13 +713,11 @@ async fn run(asking: Arc<Asking>, urls: Vec<String>, out: mpsc::Sender<Bytes>, b
             }
         }
     }
-    let closes: Vec<Op> = subscriptions
-        .drain(..)
-        .filter_map(|each| match (&each.who, each.closes) {
-            (Some(who), true) => Some(Op::Close { url: each.url.clone(), who: who.clone(), why: Value::String("Gone".into()) }),
-            _ => None,
-        })
-        .collect();
+    let mut closes: Vec<Op> = ops.drain(..).filter(|op| matches!(op, Op::Close { .. })).collect();
+    closes.extend(subscriptions.drain(..).filter_map(|each| match (&each.who, each.closes) {
+        (Some(who), true) => Some(Op::Close { url: each.url.clone(), who: who.clone(), why: Value::String(if each.dropped { "Dropped" } else { "Gone" }.into()) }),
+        _ => None,
+    }));
     if !closes.is_empty() {
         for (op, answered) in asked(&asking, closes).await.unwrap_or_default() {
             if let (Op::Close { url, .. }, true) = (op, answered.status >= 300) {
@@ -633,8 +742,9 @@ fn resync(each: &mut Subscription, ops: &mut VecDeque<Op>) {
     }
 }
 
-/// What a channel's check answered as it was opened (or opened again).
-fn opened(subscriptions: &mut Vec<Subscription>, id: u64, url: &str, answered: Answered, queue: &mut VecDeque<Bytes>, ops: &mut VecDeque<Op>) {
+/// What a channel's check answered as it was opened (or opened again). One the page dropped
+/// meanwhile is gone now, its route's `on_close!` told `Dropped` (in `first`) if it was in.
+fn opened(subscriptions: &mut Vec<Subscription>, id: u64, url: &str, answered: Answered, queue: &mut VecDeque<Bytes>, ops: &mut VecDeque<Op>, first: &mut Vec<Op>) {
     let Some(at) = subscriptions.iter().position(|each| each.id == id) else { return };
     let let_in = if answered.status == 200 {
         match opened_of(&answered) {
@@ -645,6 +755,18 @@ fn opened(subscriptions: &mut Vec<Subscription>, id: u64, url: &str, answered: A
     } else {
         Err((answered.status, answered.text))
     };
+    if subscriptions[at].dropped {
+        let each = subscriptions.remove(at);
+        let (who, closes) = match let_in {
+            Ok(opened) => (Some(opened.who), opened.closes),
+            // Refused as it opened again: it was in until then.
+            Err(_) => (each.who.clone(), each.closes),
+        };
+        if let (Some(who), true) = (who, closes) {
+            first.push(Op::Close { url: each.url.clone(), who, why: Value::String("Dropped".into()) });
+        }
+        return;
+    }
     let each = &mut subscriptions[at];
     match let_in {
         Ok(opened) => {
@@ -685,6 +807,42 @@ fn checked(subscriptions: &mut Vec<Subscription>, id: u64, url: &str, answered: 
     }
 }
 
+/// The page dropped the channel at `url` (D-057): it is gone, what it had waiting to be sent goes
+/// with it, and its route's `on_close!` is told `Dropped`, if its check let it in. One whose check
+/// hasn't been asked is gone at once (it never was in, unless it was being opened again); one whose
+/// check is being answered goes once it has been (`opened`).
+fn unsubscribed(subscriptions: &mut Vec<Subscription>, url: &str, queue: &mut VecDeque<Bytes>, latest: &mut Vec<(u64, String, Bytes)>, ops: &mut VecDeque<Op>) {
+    let Some(at) = subscriptions.iter().position(|each| each.url == url && !each.dropped) else { return };
+    let id = subscriptions[at].id;
+    let asked = |op: &Op| matches!(op, Op::Open { id: of, .. } | Op::Check { id: of, .. } if *of == id);
+    let waiting = ops.iter().any(|op| matches!(op, Op::Open { id: of, .. } if *of == id));
+    ops.retain(|op| !asked(op));
+    queue.retain(|frame| !for_channel(frame, url));
+    latest.retain(|(of, _, _)| *of != id);
+    let each = &mut subscriptions[at];
+    let in_flight = matches!(each.state, State::Opening | State::Reopening) && !waiting;
+    if in_flight {
+        each.dropped = true;
+        each.held.clear();
+        for forwarder in each.forwarders.drain(..) {
+            forwarder.abort();
+        }
+        return;
+    }
+    let each = subscriptions.remove(at);
+    let was_in = each.state != State::Opening;
+    if let (Some(who), true, true) = (&each.who, each.closes, was_in) {
+        ops.push_back(Op::Close { url: each.url.clone(), who: who.clone(), why: Value::String("Dropped".into()) });
+    }
+}
+
+/// Whether a frame of the stream is about the channel at `url` (its first `data:` line).
+fn for_channel(frame: &Bytes, url: &str) -> bool {
+    let text = String::from_utf8_lossy(frame);
+    let mut lines = text.split('\n');
+    lines.next().is_some_and(|line| line.starts_with("event: ")) && lines.next().and_then(|line| line.strip_prefix("data: ")) == Some(url)
+}
+
 /// A subscription its check now refuses: `ended`, its route's `on_close!` told, and it is gone.
 fn ended(subscriptions: &mut Vec<Subscription>, at: usize, why: &str, queue: &mut VecDeque<Bytes>, ops: &mut VecDeque<Op>) {
     let each = subscriptions.remove(at);
@@ -696,13 +854,19 @@ fn ended(subscriptions: &mut Vec<Subscription>, at: usize, why: &str, queue: &mu
 
 // ---- What pages say ----
 
-/// `POST /rocx/live/send?tab=<id>`, a JSON list, each `{"channel":"<url>","message":…}` (what a
-/// page says: its channel's check runs, then its route's `receive!`), or
-/// `{"channel":"<url>","resync":true}` (the tab's stream resyncs that channel). 204 when every
-/// item was taken; else 200, `{"refused":[{"index":0,"status":403,"why":"…"}]}`.
+/// `POST /rocx/live/send?tab=<id>&stream=<id>`, a JSON list, each `{"channel":"<url>","message":…}`
+/// (what a page says: its channel's check runs, then its route's `receive!`),
+/// `{"channel":"<url>","resync":true}` (the tab's stream resyncs that channel), or
+/// `{"channel":"<url>","subscribe":true}` and `{"channel":"<url>","unsubscribe":true}` (the stream
+/// `stream` names, the tab's, opens the channel or drops it: D-057). 204 when every item was taken;
+/// else 200, `{"refused":[{"index":0,"status":403,"why":"…"}]}`. Sent by another site's page (its
+/// `Origin`), 403.
 pub async fn send(request: Request<Incoming>, config: Arc<Config>, peer: String) -> Response<Body> {
     if *request.method() != Method::POST {
         return not_allowed("/rocx/live/send", "POST", request.method());
+    }
+    if !same_origin(request.headers()) {
+        return text(StatusCode::FORBIDDEN, "POST /rocx/live/send is sent from a page of this site");
     }
     // JSON only: a form from another site can't send it without asking first (CORS).
     let json = request.headers().get(CONTENT_TYPE).and_then(|value| value.to_str().ok()).is_some_and(|value| value.split(';').next().unwrap_or("").trim().eq_ignore_ascii_case("application/json"));
@@ -711,6 +875,7 @@ pub async fn send(request: Request<Incoming>, config: Arc<Config>, peer: String)
     }
     let fields = query_fields(request.uri().query().unwrap_or(""));
     let tab = fields.iter().find(|(name, _)| name == "tab").and_then(|(_, value)| tab_id(value));
+    let stream = fields.iter().find(|(name, _)| name == "stream").map(|(_, value)| value.clone()).unwrap_or_default();
     let asking = Arc::new(Asking::new(request.headers(), &config, tab.clone().unwrap_or_default(), peer));
     let body = match Limited::new(request.into_body(), MOST_SAID_BYTES).collect().await {
         Ok(collected) => collected.to_bytes(),
@@ -724,12 +889,29 @@ pub async fn send(request: Request<Incoming>, config: Arc<Config>, peer: String)
     };
     let mut refused = Vec::new();
     let mut said = Vec::new();
+    // The stream `stream` names, if it is open and the tab's: its changes go there, in order.
+    let control = tab.as_ref().and_then(|tab| {
+        let reachable = reachable().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        reachable.get(&stream).filter(|open| open.tab == *tab).map(|open| open.control.clone())
+    });
     for (index, item) in items.into_iter().enumerate() {
         let Some(url) = item.get("channel").and_then(Value::as_str).and_then(channel_url) else {
             refused.push(serde_json::json!({ "index": index, "status": 400, "why": "which channel? (\"channel\": its URL)" }));
             continue;
         };
-        if item.get("resync").and_then(Value::as_bool) == Some(true) {
+        let subscribe = item.get("subscribe").and_then(Value::as_bool) == Some(true);
+        if subscribe || item.get("unsubscribe").and_then(Value::as_bool) == Some(true) {
+            let changed = match &control {
+                Some(control) => {
+                    let asking = asking.clone();
+                    control.send(if subscribe { Control::Subscribe { url, asking } } else { Control::Unsubscribe { url, asking } }).is_ok()
+                }
+                None => false,
+            };
+            if !changed {
+                refused.push(serde_json::json!({ "index": index, "status": 404, "why": "no open stream of this tab has that id (?stream=): open one (GET /rocx/live)" }));
+            }
+        } else if item.get("resync").and_then(Value::as_bool) == Some(true) {
             match &tab {
                 Some(tab) => live::publish(&format!("tab:{tab}"), &format!("resync {url}")),
                 None => refused.push(serde_json::json!({ "index": index, "status": 400, "why": "a resync is the tab's: ?tab=<id>" })),
@@ -737,7 +919,7 @@ pub async fn send(request: Request<Incoming>, config: Arc<Config>, peer: String)
         } else if let Some(message) = item.get("message") {
             said.push((index, url, message.to_string()));
         } else {
-            refused.push(serde_json::json!({ "index": index, "status": 400, "why": "say a message, or ask for a resync" }));
+            refused.push(serde_json::json!({ "index": index, "status": 400, "why": "say a message, subscribe, unsubscribe, or ask for a resync" }));
         }
     }
     if !said.is_empty() {

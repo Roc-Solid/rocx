@@ -29,10 +29,11 @@ Channel(who, message, said) :: { who : who }.{
 	##   come on this stream.
 	Event(message) : [Message(message), Resync, Refused(U16, Str), Ended(Str)]
 
-	## Why a subscription ended, as `on_close!` is told: its stream went (the tab closed or went
-	## elsewhere, its network went, it changed what it subscribes to, the server stopped), or its
-	## check, run again, refused it.
-	Closed : [Gone, Refused(Str)]
+	## Why a subscription ended, as `on_close!` is told: the page dropped it (`Dropped`: the
+	## component or the effect that subscribed went, or subscribes to another channel now, while the
+	## tab stays), its tab's stream went (`Gone`: the tab closed, reloaded or went to another site,
+	## its network went, the server stopped), or its check, run again, refused it.
+	Closed : [Dropped, Gone, Refused(Str)]
 
 	## A subscriber let in, as `who`: what the route's hooks are given (who it is, its name and
 	## colour, say). It stays on the server, kept as JSON between the check and `on_close!`.

@@ -135,9 +135,10 @@ view! = |_|
 				</li>
 				<li>
 					<strong><code>on_close!</code></strong>: told when a subscription ends, and why:
-					<code>Gone</code> (the tab closed, its network went, it changed what it subscribes to, the server
-					stopped) or <code>Refused(why)</code> (the check, at a beat). It runs outside the middleware: the
-					subscriber's access may be what ended it.
+					<code>Dropped</code> (the page no longer subscribes to it, while the tab stays: the component
+					went, or follows another channel now), <code>Gone</code> (the tab closed or reloaded, its network
+					went, the server stopped) or <code>Refused(why)</code> (the check, at a beat). It runs outside the
+					middleware: the subscriber's access may be what ended it.
 				</li>
 			</ul>
 			<p>
@@ -145,26 +146,32 @@ view! = |_|
 				tab's id is random, kept for the tab (a reload keeps it), and names the tab, not a person.
 			</p>
 			<p>
-				A tab's hooks come in order. A tab has one stream, and when a new one comes for it (a reload, a
-				reconnect, a change of what it subscribes to) before the server has heard the old one end, the old
-				one ends first: its subscriptions' <code>on_close!</code> are told before the new one's checks and
-				<code>on_open!</code> run. So a route can keep who is here by tab, joining on <code>on_open!</code>
-				and leaving on <code>on_close!</code>, with nothing to count.
+				A tab's hooks come in order. A channel the page drops and subscribes to again hears its end before
+				its start. A tab has one stream, and when a new one comes for it (a reload, a reconnect) before the
+				server has heard the old one end, the old one ends first: its subscriptions' <code>on_close!</code>
+				are told before the new one's checks and <code>on_open!</code> run. So a route can keep who is here
+				by tab, joining on <code>on_open!</code> and leaving on <code>on_close!</code> (at once when
+				<code>Dropped</code>, after a moment when <code>Gone</code>, in case it comes back), with nothing to
+				count.
 			</p>
 
 			<Heading id="channel-stream">One stream a tab</Heading>
 			<p>
 				A tab's subscriptions share one stream, <code>GET /rocx/live?tab=…&amp;c=/org/acme/news&amp;c=…</code>,
 				whatever their number, and two components on one channel share its subscription. The runtime opens
-				it once the page has rendered, opens it again when what the page subscribes to changes (once the
-				render that changed it is done, and only if it did), and opens it again when it drops, after a
-				wait that doubles each time, from half a second to 30 s. A copy of the site that is only files
-				answers no channels: a subscriber hears <code>Refused(404, …)</code>, asked for once.
+				it once the page has rendered, and opens it again when it drops, after a wait that doubles each
+				time, from half a second to 30 s. The stream says its id first; when what the page subscribes to
+				changes (once the render that changed it is done), the runtime tells the stream, in one post
+				naming that id, which channels it subscribes to now and which it dropped, and the stream stays
+				open. With nothing left to subscribe to, it tells the stream, then closes it. A copy of the site
+				that is only files answers no channels: a subscriber hears <code>Refused(404, …)</code>, asked for
+				once.
 			</p>
 			<TableWrap>
 				<table>
 					<thead><tr><th>On the stream</th><th>Means</th></tr></thead>
 					<tbody>
+						<tr><td><code>event: hello</code>, <code>data: </code> the stream's id</td><td>first: what the runtime names the stream with when it changes what the tab subscribes to (192 random bits, the tab's alone)</td></tr>
 						<tr><td><code>event: resync</code>, <code>data: /org/acme/news</code></td><td>in: read your data again; <code>on_open!</code>'s messages follow</td></tr>
 						<tr><td><code>event: message</code>, the URL, then <code>data: {"{\"title\":…}"}</code></td><td>what was published, as JSON</td></tr>
 						<tr><td><code>event: refused</code>, the URL, then <code>data: {"{\"status\":403,\"why\":\"Forbidden\"}"}</code></td><td>its check refused it; the stream goes on for the others</td></tr>
@@ -183,9 +190,11 @@ view! = |_|
 				</li>
 				<li>
 					<strong>Middleware.</strong> Each check is a request the host makes of the app for the channel's
-					own path, with the stream's cookies, behind the app's middleware and the route's, as a
-					<code>GET</code> of it would be. An app's sign-in guard guards a channel by its path, and
-					<code>/rocx/live</code> itself never reaches the app's middleware: there is nothing to let through.
+					own path, with the tab's cookies (the stream's, or the last post's that changed what it
+					subscribes to: a page that signs in without a reload reaches members' channels), behind the
+					app's middleware and the route's, as a <code>GET</code> of it would be. An app's sign-in guard
+					guards a channel by its path, and <code>/rocx/live</code> itself never reaches the app's
+					middleware: there is nothing to let through.
 				</li>
 				<li>
 					<strong>Gone in about 35 s.</strong> A tab whose network went never closes its stream; the next
@@ -193,9 +202,11 @@ view! = |_|
 					<code>on_close!</code>.
 				</li>
 				<li>
-					<strong>What pages say</strong> goes in <code>POST /rocx/live/send?tab=…</code>, a JSON list of
-					<code>{"{\"channel\":\"/org/acme/news\",\"message\":…}"}</code>, answered 204, or 200 with
-					each refusal (<code>{"{\"refused\":[{\"index\":0,\"status\":403,\"why\":…}]}"}</code>).
+					<strong>What pages say</strong> goes in <code>POST /rocx/live/send?tab=…&amp;stream=…</code>, a JSON list of
+					<code>{"{\"channel\":\"/org/acme/news\",\"message\":…}"}</code>, with the stream's changes
+					(<code>{"{\"channel\":…,\"subscribe\":true}"}</code>, <code>{"{\"channel\":…,\"unsubscribe\":true}"}</code>),
+					answered 204, or 200 with each refusal (<code>{"{\"refused\":[{\"index\":0,\"status\":403,\"why\":…}]}"}</code>).
+					One another site's page sends is refused (403), and a change naming no open stream of the tab (404).
 				</li>
 			</ul>
 

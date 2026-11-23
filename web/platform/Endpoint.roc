@@ -179,8 +179,9 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	## `Resync` when it should read its data again, then each `Message`; or why it hears nothing.
 	##
 	## Every subscription in a tab shares one stream (`/rocx/live`), which the runtime opens once the
-	## page has rendered, opens again when what the page subscribes to changes, and opens again, a
-	## little later each time, when it drops. Two components on one channel share its subscription. A
+	## page has rendered, and opens again, a little later each time, when it drops. When what the
+	## page subscribes to changes, the runtime tells the stream so (a post), and the route's
+	## `on_close!` hears `Dropped` for a channel the page no longer subscribes to. Two components on one channel share its subscription. A
 	## message it can't read as `message` is a `Resync`. On a host with no server (a static copy), it
 	## is `Refused(404, …)`, asked for once. On the server, it does nothing.
 	subscribe! : Endpoint(context, {}, Channel(who, message, said)), (Channel.Event(message) => {}) => {}

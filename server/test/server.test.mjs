@@ -2819,7 +2819,8 @@ test("live: what is published on a topic reaches every stream listening to it", 
 
 /** A tab's stream of its channels (`GET /rocx/live?tab=…&c=…`), as `of` answers it: `next()`
  * resolves to its next event, `{ event, url, said }` (`said` parsed), or `": beat"` for a beat (with
- * `beats`), or null once it ends. */
+ * `beats`), or null once it ends. Its id, which it says first (`event: hello`, D-057), is `id` once
+ * `next()` has read past it. */
 async function channelStream(urls, { tab = "", cookie = "", signal, of = server, beats = false } = {}) {
 	const query = [...(tab ? [`tab=${tab}`] : []), ...urls.map((url) => `c=${encodeURIComponent(url)}`)].join("&");
 	const response = await of.get(`/rocx/live?${query}`, { headers: { accept: "text/event-stream", cookie }, signal });
@@ -2827,6 +2828,7 @@ async function channelStream(urls, { tab = "", cookie = "", signal, of = server,
 	let buffered = "";
 	return {
 		response,
+		id: null,
 		async next() {
 			for (;;) {
 				const end = buffered.indexOf("\n\n");
@@ -2840,6 +2842,10 @@ async function channelStream(urls, { tab = "", cookie = "", signal, of = server,
 					const lines = block.split("\n");
 					const field = (name) => lines.filter((line) => line.startsWith(`${name}: `)).map((line) => line.slice(name.length + 2));
 					const [url, ...rest] = field("data");
+					if (field("event")[0] === "hello") {
+						this.id = url;
+						continue;
+					}
 					return { event: field("event")[0], url, said: rest.length ? JSON.parse(rest.join("\n")) : null };
 				}
 				const read = await reader.read();
@@ -2853,9 +2859,19 @@ async function channelStream(urls, { tab = "", cookie = "", signal, of = server,
 /** A member of `org`, as the test app's middleware reads them, until `until` (ms) if given. */
 const memberOf = (name, org, until) => `member=${name}; org=${org}${until ? `; until=${until}` : ""}`;
 
-/** Says things on channels, as a tab's hub posts them (`POST /rocx/live/send`): the answer. */
-const say = (items, { tab = "", cookie = "", of = server } = {}) =>
-	of.get(`/rocx/live/send${tab ? `?tab=${tab}` : ""}`, { method: "POST", headers: { "content-type": "application/json", cookie }, body: JSON.stringify(items) });
+/** Says things on channels, as a tab's hub posts them (`POST /rocx/live/send`), changes of what a
+ * stream carries naming it (`stream`, D-057), from a page of `origin` if given: the answer. */
+const say = (items, { tab = "", stream = "", cookie = "", origin, of = server } = {}) => {
+	const query = [...(tab ? [`tab=${tab}`] : []), ...(stream ? [`stream=${stream}`] : [])].join("&");
+	return of.get(`/rocx/live/send${query ? `?${query}` : ""}`, { method: "POST", headers: { "content-type": "application/json", cookie, ...(origin ? { origin } : {}) }, body: JSON.stringify(items) });
+};
+
+/** What a tab's channel hooks were told, in order (the test app logs each `on_open!` and
+ * `on_close!`): `opened <channel>`, `closed <channel> <why>`. */
+const told = (tab) =>
+	events()
+		.filter((event) => event.tab === tab && /^channel (opened|closed)$/.test(event.msg))
+		.map((event) => (event.msg === "channel opened" ? `opened ${event.channel}` : `closed ${event.channel} ${event.why}`));
 
 test("channels: one stream carries a tab's channels, each checked as it opens: one refused is told so and the rest go on; one let in hears resync, then its on_open! messages, then what is published with its own params, in order; beats", { skip }, async () => {
 	const gone = new AbortController();
@@ -2916,7 +2932,7 @@ test("channels: what a page says goes to its channel's receive!, through the sam
 	]);
 	assert.equal(refused[4].index, 5);
 	assert.match(refused[4].why, /^\/news\/acme can't read what was said/, "what isn't the channel's `said`");
-	assert.deepEqual(refused[5], { index: 6, status: 400, why: "say a message, or ask for a resync" });
+	assert.deepEqual(refused[5], { index: 6, status: 400, why: "say a message, subscribe, unsubscribe, or ask for a resync" });
 	assert.equal(refused.length, 6, "the hello was taken");
 	assert.deepEqual(await stream.next(), { event: "message", url: "/news/acme", said: { n: 0, title: "grace says hi" } }, "receive! published it");
 	const all = await say([{ channel: "/news/acme", message: { Hello: "again" } }], { tab, cookie });
@@ -2932,6 +2948,108 @@ test("channels: what a page says goes to its channel's receive!, through the sam
 	assert.equal((await stream.next()).said.title, "welcome, grace (a tab)");
 	gone.abort();
 	await logsEvent({ msg: "channel closed", who: "grace", tab, why: "gone" });
+});
+
+test("channels: what a tab subscribes to changes over its one stream (D-057): the stream says its id; a subscribe opens a channel on it (resync, then on_open!'s), an unsubscribe drops it (on_close! told Dropped) and nothing more of it is sent; dropped and subscribed again in one post, its end is told before its start; subscribed and dropped in one post, on_open! then Dropped, nothing sent; the stream's end tells the rest Gone", { skip }, async () => {
+	const gone = new AbortController();
+	const tab = `${run}t9`;
+	const cookie = memberOf("ivy", "acme");
+	const stream = await channelStream(["/clock"], { tab, cookie, signal: gone.signal });
+	assert.deepEqual(await stream.next(), { event: "resync", url: "/clock", said: null });
+	assert.match(stream.id, /^[0-9a-f]{48}$/, "its id: 192 random bits");
+	const change = (items) => say(items, { tab, stream: stream.id, cookie });
+	assert.equal((await change([{ channel: "/news/acme", subscribe: true }])).status, 204);
+	assert.deepEqual(await stream.next(), { event: "resync", url: "/news/acme", said: null });
+	assert.equal((await stream.next()).said.title, "welcome, ivy (a tab)");
+	assert.equal(await text("/news/publish?org=acme&title=on&n=1", { method: "POST" }), "published");
+	assert.deepEqual(await stream.next(), { event: "message", url: "/news/acme", said: { n: 1, title: "on" } });
+	// Dropped and subscribed again, in one post: its end, then its start.
+	assert.equal((await change([{ channel: "/news/acme", unsubscribe: true }, { channel: "/news/acme", subscribe: true }])).status, 204);
+	assert.deepEqual(await stream.next(), { event: "resync", url: "/news/acme", said: null });
+	assert.equal((await stream.next()).said.title, "welcome, ivy (a tab)");
+	await logsEvent({ msg: "channel closed", channel: "/news/acme", who: "ivy", tab, why: "dropped" });
+	// Dropped: nothing more of it comes.
+	assert.equal((await change([{ channel: "/news/acme", unsubscribe: true }])).status, 204);
+	await until(() => told(tab).length === 4);
+	assert.equal(await text("/news/publish?org=acme&title=off&n=2", { method: "POST" }), "published");
+	assert.equal(await text("/clock/publish", { method: "POST" }), "published");
+	assert.equal((await stream.next()).url, "/clock", "the clock's tick, and nothing of the news");
+	// Subscribed and dropped in one post: its check ran (on_open!), then it was dropped.
+	assert.equal((await change([{ channel: "/news/acme", subscribe: true }, { channel: "/news/acme", unsubscribe: true }])).status, 204);
+	await until(() => told(tab).length === 6);
+	assert.equal(await text("/clock/publish", { method: "POST" }), "published");
+	assert.equal((await stream.next()).url, "/clock", "nothing of the news was sent");
+	// Subscribed again, then the stream ends: Gone.
+	assert.equal((await change([{ channel: "/news/acme", subscribe: true }])).status, 204);
+	assert.equal((await stream.next()).event, "resync");
+	gone.abort();
+	await until(() => told(tab).length === 8);
+	assert.deepEqual(told(tab), [
+		"opened /news/acme",
+		"closed /news/acme dropped",
+		"opened /news/acme",
+		"closed /news/acme dropped",
+		"opened /news/acme",
+		"closed /news/acme dropped",
+		"opened /news/acme",
+		"closed /news/acme gone",
+	]);
+});
+
+test("channels: a change of what a stream carries is refused unless its page is this site's (403, by its Origin), and unless it names an open stream of its tab (404: none, a wrong id, another tab's, one that has ended)", { skip }, async () => {
+	const gone = new AbortController();
+	const tab = `${run}t10`;
+	const cookie = memberOf("jo", "acme");
+	const stream = await channelStream(["/clock"], { tab, cookie, signal: gone.signal });
+	assert.equal((await stream.next()).url, "/clock");
+	const other = await channelStream(["/clock"], { tab: `${run}t11`, cookie, signal: gone.signal });
+	assert.equal((await other.next()).url, "/clock");
+	const subscribe = [{ channel: "/news/acme", subscribe: true }];
+	const crossSite = await say(subscribe, { tab, stream: stream.id, cookie, origin: "https://evil.example" });
+	assert.equal(crossSite.status, 403);
+	assert.equal(await crossSite.text(), "POST /rocx/live/send is sent from a page of this site");
+	assert.equal((await say([{ channel: "/news/acme", message: { Hello: "hi" } }], { tab, cookie, origin: "https://evil.example" })).status, 403, "what a page says too");
+	const refusedFor = async (options) => {
+		const answer = await say(subscribe, { tab, cookie, ...options });
+		assert.equal(answer.status, 200);
+		const { refused } = await answer.json();
+		return refused.map(({ index, status }) => `${index} ${status}`);
+	};
+	assert.deepEqual(await refusedFor({}), ["0 404"], "no id");
+	assert.deepEqual(await refusedFor({ stream: "0".repeat(48) }), ["0 404"], "a wrong id");
+	assert.deepEqual(await refusedFor({ stream: other.id }), ["0 404"], "another tab's");
+	assert.deepEqual(told(tab), [], "none of them opened anything");
+	// From this site's page (its Origin, its host), and the stream's own id: taken.
+	assert.equal((await say(subscribe, { tab, stream: stream.id, cookie, origin: server.url })).status, 204);
+	assert.equal((await stream.next()).url, "/news/acme");
+	gone.abort();
+	await until(() => told(tab).length === 2);
+	assert.deepEqual(await refusedFor({ stream: stream.id }), ["0 404"], "one that has ended");
+});
+
+test("channels: a channel subscribed over a stream is checked with the post's cookies, the tab's now, which the stream keeps for its beats (D-057)", { skip }, async () => {
+	const gone = new AbortController();
+	const tab = `${run}t12`;
+	const stream = await channelStream(["/news/acme"], { tab, cookie: memberOf("kai", "acme"), signal: gone.signal });
+	assert.equal((await stream.next()).event, "resync");
+	assert.equal((await stream.next()).said.title, "welcome, kai (a tab)");
+	// Kai moves to beta (their cookies change), and the page subscribes to beta's news.
+	assert.equal((await say([{ channel: "/news/beta", subscribe: true }], { tab, stream: stream.id, cookie: memberOf("kai", "beta") })).status, 204);
+	// Beta is let in, by the post's cookies; and at a beat (perhaps one already due), acme's check
+	// runs with the cookies the stream has now: it ends.
+	const heard = [];
+	for (let i = 0; i < 3; i++) {
+		const { event, url, said } = await stream.next();
+		heard.push(`${event} ${url}${event === "message" ? ` ${said.title}` : said ? ` ${said}` : ""}`);
+	}
+	assert.deepEqual(heard.filter((each) => each.includes("/news/beta")), ["resync /news/beta", "message /news/beta welcome, kai (a tab)"]);
+	assert.deepEqual(heard.filter((each) => each.includes("/news/acme")), ["ended /news/acme Forbidden"]);
+	gone.abort();
+	await until(() => told(tab).length === 4);
+	const hooks = told(tab);
+	assert.equal(hooks[0], "opened /news/acme");
+	assert.deepEqual(hooks.slice(1, 3).sort(), ["closed /news/acme refused: Forbidden", "opened /news/beta"]);
+	assert.equal(hooks[3], "closed /news/beta gone");
 });
 
 test("channels: a tab has one stream: a new one ends the old (replaced), whose on_close! is told before the new one's on_open!, so a route's hooks hear a tab's subscriptions in order", { skip }, async () => {
