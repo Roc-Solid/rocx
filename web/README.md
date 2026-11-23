@@ -121,6 +121,12 @@ same components natively; this one hydrates them.
   untracked (Solid's `mapArray` and `untrack`, D-039): a change of what one read at its top doesn't
   make it anew (a read that waits runs it again once its value is in). Its holes, and the getters it
   gives its components, follow the item.
+- **`<Repeat>`** (Solid 2.0's) is a `<For>` with no list behind it: `count!` rows from `from!`
+  (0 unless it says), each keyed by its index (`Html.each`, the same node a `<For>` is, so the server
+  renders it and hydrating adopts it as one). When the range moves, only the rows that come into it
+  are made and only those that leave it go; the child is given its index, which doesn't change, so a
+  kept row has nothing to re-run. It is what a virtual list renders the rows that show with
+  (packages/virtual).
 - **Parts are made as they show**, as Solid makes them. What a `<Show>` shows, and a fallback (a
   `<Show>`'s, a `<For>`'s, a `<Loading>`'s), is serialized as a component node
   (`{"t":"c"}`, `Html.serialize!`'s `made!`): its box is run where the part is rendered, once, its
@@ -152,6 +158,11 @@ same components natively; this one hydrates them.
   (and, read in the child's body, is refused, as the component's own would be), and each read
   computes it again, as a Solid getter does (a memo shares it). A `.roc` component written by hand
   types its value props as getters (`label : () => Str`).
+- **A flush runs what is dirty oldest first** (a memo before what reads it, an owner before what it
+  made), then the effects whose apply is due, oldest first. Both wait in a set with a heap beside
+  it (`Pending`), so taking the next of D waiting is log D: a grid whose thousand boxes read one
+  signal puts a thousand in the flush at once (sorting them all for each, as it did, made a scroll
+  step of 2,560 boxes 170 ms; it is 8 ms).
 - **Effects** are Solid 2.0's split ones: `create_effect!(compute, apply)`. The runtime makes a
   computation of `compute` (tracked, owned by the component or computation running), and its answer
   is the id of a box `apply` is in, its value inside. `apply` runs after the flush, once nothing is
@@ -360,7 +371,13 @@ same components natively; this one hydrates them.
   a record (`Html.Keys`: `key`, `shift`, `ctrl`, `alt`, `meta`, `mod`), as five flags and the key
   the host turns into one; `.key`'s handlers keep their `Str`. `.prevent` (`["onp",…]`) prevents
   its default first (a link's click taken over); `on:frame.ms` runs it every animation frame while
-  its element is on the page.
+  its element is on the page. `on:viewport` (`Html.on_viewport`, `["view","viewport",id]`) gives it
+  what of the element's content shows, `Html.Viewport` (`top`, `left`: how far it is scrolled;
+  `width`, `height`: what shows inside its borders; whole pixels), once the element is on the page,
+  then each time it scrolls or changes size (a scroll listener and a ResizeObserver, taken off with
+  the owner's cleanups), at most once an animation frame and only when one of the four changed. The
+  server measures nothing, so a component renders a first view both agree on, and the measure
+  replaces it.
 - **`<Document>` and `<Window>`**: `<Document on:keydown.Mod+K={open!} />` puts handlers on the
   whole document (`<Window on:resize={…} />`, on the window), written as an element's are, any
   but `on:frame.ms`. rocx writes `Html.on_document([…])` (`{"t":"listen","to":"document","a":[…]}`),
@@ -418,7 +435,9 @@ same components natively; this one hydrates them.
 The test app (`test/app`, in rocx) is built several ways: the profile (`Profile.rocx`: five
 answers, one spinner, regions that fail on their own, a rename that waits for the server) from the
 dev backend and optimized; the picks (`<For>` by key and by position, `<Show>`); the nested
-(`Nested.rocx`: a `<For>` in a `<For>`'s row and in a `<Show>`'s child); the fades (`Fades.rocx`:
+(`Nested.rocx`: a `<For>` in a `<For>`'s row and in a `<Show>`'s child); the scroller
+(`Scroller.rocx`: ten thousand rows in a box, `<Repeat>` rendering those `on:viewport` says show,
+rendered on the server, hydrated, then scrolled and made taller, the rows still in range kept); the fades (`Fades.rocx`:
 rows and a part with transitions, a computed one, a list inside the part); the echo (`Echo.rocx`: a
 GET endpoint read with what is typed, rendered in Node from the answer the server gave, hydrated
 without asking again, and asked again as one types); the reads (`Reads.rocx`: a GET endpoint read

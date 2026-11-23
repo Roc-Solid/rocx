@@ -442,7 +442,7 @@ fn html(node: &Value, scope: &Scope) -> Result<String, Stop> {
                     }
                 }
                 match part(0).as_str().unwrap_or("") {
-                    "on" | "onp" | "onk" | "frame" if scope.region => return Err(Stop::Crashed(in_region(tag, name))),
+                    "on" | "onp" | "onk" | "frame" | "view" if scope.region => return Err(Stop::Crashed(in_region(tag, name))),
                     "v" if name == "class" => classes.push(shown(part(2))),
                     "v" if name == "style" => styles.push(shown(part(2))),
                     "v" => attributes.push(format!("{name}=\"{}\"", escape(&shown(part(2))))),

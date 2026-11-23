@@ -1,0 +1,47 @@
+import pf.Html
+import pf.Solid exposing [create_memo!, create_signal!]
+import pf.Repeat
+
+## Ten thousand rows in a box 200 pixels high, for the tests: `on:viewport` says what of the box
+## shows, and `<Repeat>` renders only the rows there, and two more each side, each kept while it is
+## in the range. Before the first measure (and on the server) the box shows its first 200 pixels.
+Scroller := [].{
+	view! : {} => Html
+	view! = |{}| {
+		(seen!, set_seen!) = create_signal!({ top: 0, left: 0, width: 0, height: 200 })
+		(views!, set_views!) = create_signal!(0.U64)
+		first! = create_memo!(|| Scroller.first(seen!().top))
+		shown! = create_memo!(|| Scroller.last(seen!().top, seen!().height) - first!())
+		saw! = |view| {
+			set_seen!(view)
+			set_views!(views!() + 1)
+		}
+		<section class="scroller">
+			<p class="seen">{seen!().top.to_str()} {seen!().width.to_str()}x{seen!().height.to_str()}</p>
+			<p class="views">{views!().to_str()}</p>
+			<div class="box" style="height: 200px; overflow-y: auto; position: relative" on:viewport={saw!}>
+				<div class="space" style:height={"${(Scroller.rows * Scroller.row_height).to_str()}px"}>
+					<ol class="rows" style:transform={"translateY(${(first!() * Scroller.row_height).to_str()}px)"}>
+						<Repeat count!={shown!()} from!={first!()} fallback={<li class="none">None</li>}>
+							{|index| <li style="height: 20px">Row {index.to_str()}</li>}
+						</Repeat>
+					</ol>
+				</div>
+			</div>
+		</section>
+	}
+
+	rows : U64
+	rows = 10_000
+
+	row_height : U64
+	row_height = 20
+
+	## The first row rendered: two above the first that shows.
+	first : U64 -> U64
+	first = |top| (top // Scroller.row_height).minus_saturated(2)
+
+	## The row after the last rendered: two below the last that shows.
+	last : U64, U64 -> U64
+	last = |top, height| U64.min((top + height + Scroller.row_height - 1) // Scroller.row_height + 2, Scroller.rows)
+}

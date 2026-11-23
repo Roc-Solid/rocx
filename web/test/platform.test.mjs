@@ -48,6 +48,7 @@ if (!skip) {
 		["app-size", join(here, "app", "main.roc"), "size"],
 		["picks", join(here, "app", "picks_app.roc"), "size"],
 		["nested", join(here, "app", "nested_app.roc"), "dev"],
+		["scroller", join(here, "app", "scroller_app.roc"), "dev"],
 		["timers", join(here, "app", "timers_app.roc"), "dev"],
 		["props", join(here, "app", "props_app.roc"), "dev"],
 		["shortcuts", join(here, "app", "shortcuts_app.roc"), "dev"],
@@ -327,6 +328,67 @@ window.hydrated = true;
 		await tab.wait("document.querySelector('.keyed .none') !== null");
 		await tab.click(".add");
 		await tab.wait("document.querySelector('.keyed .none') === null && document.querySelectorAll('.keyed li').length === 1");
+		assert.deepEqual(tab.errors, []);
+	} finally {
+		await site.close();
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("scroller: <Repeat> renders a range of rows on the server and hydrates them; on:viewport says what of the box shows once it is on the page, then as it scrolls and changes size; the rows still in the range are kept as it moves", { skip }, async () => {
+	const wasm = readFileSync(join(out, "scroller.wasm"));
+	const server = await Runtime.load(wasm);
+	const { html } = server.renderToString({ path: "/" });
+	assert.match(html, /<ol class="rows" style="transform: translateY\(0px\)"><!--for--><!--row--><li style="height: 20px">Row 0<\/li><!--\/row-->/, "the first rows, from the server's first view");
+	assert.equal((html.match(/<li /g) ?? []).length, 12, "what 200 pixels show, and two more below");
+	assert.doesNotMatch(html, /viewport/, "nothing of the handler on the page");
+	const dir = mkdtempSync(join(tmpdir(), "rocx-scroller-"));
+	cpSync(join(web, "runtime.js"), join(dir, "runtime.js"));
+	writeFileSync(join(dir, "scroller.wasm"), wasm);
+	const page = `<!doctype html><html><body><div id="app">${html}</div>
+<script>window.rows = [...document.querySelectorAll(".rows li")];</script>
+<script type="module">
+import { Runtime } from "/runtime.js";
+window.runtime = await Runtime.load(fetch("/scroller.wasm"));
+window.runtime.hydrate(document.getElementById("app"));
+window.hydrated = true;
+</script></body></html>`;
+	const site = await serve(dir, (path) => (path === "/" ? page : null));
+	const rows = "[...document.querySelectorAll('.rows li')].map((li) => li.textContent)";
+	const range = (from, to) => Array.from({ length: to - from }, (_, i) => `Row ${from + i}`);
+	try {
+		const tab = await browser.page();
+		await tab.goto(`${site.url}/`);
+		await tab.wait("window.hydrated === true", 3000);
+		assert.deepEqual(tab.console, [], "hydrated without a mismatch");
+		await tab.wait("document.querySelector('.views').textContent === '1'");
+		const width = await tab.eval("document.querySelector('.box').clientWidth");
+		assert.equal(await textOf(tab, ".seen"), `0 ${width}x200`, "measured once it is on the page");
+		assert.equal(await tab.eval("window.rows.every((row, i) => row === document.querySelectorAll('.rows li')[i])"), true, "the server's rows, kept");
+
+		await tab.eval("document.querySelector('.box').scrollTop = 1000");
+		await tab.wait("document.querySelector('.seen').textContent.startsWith('1000 ')");
+		assert.deepEqual(await tab.eval(rows), range(48, 62), "the rows 1000 pixels down show, two more each side");
+		assert.equal(await tab.eval("document.querySelector('.rows').style.transform"), "translateY(960px)");
+		await tab.eval("window.kept = [...document.querySelectorAll('.rows li')]");
+
+		await tab.eval("document.querySelector('.box').scrollTop = 1040");
+		await tab.wait("document.querySelector('.seen').textContent.startsWith('1040 ')");
+		assert.deepEqual(await tab.eval(rows), range(50, 64));
+		assert.equal(await tab.eval("window.kept.slice(2).every((row, i) => row === document.querySelectorAll('.rows li')[i])"), true, "the rows still in the range, kept; only those that came in made");
+
+		await tab.eval("document.querySelector('.box').style.height = '400px'");
+		await tab.wait("document.querySelector('.seen').textContent.endsWith('x400')");
+		assert.deepEqual(await tab.eval(rows), range(50, 74), "taller: more rows show");
+
+		const views = Number(await textOf(tab, ".views"));
+		await tab.eval("document.querySelector('.box').scrollTop = 1041; document.querySelector('.box').scrollTop = 1042; document.querySelector('.box').scrollTop = 1040");
+		await sleep(100);
+		assert.ok(Number(await textOf(tab, ".views")) <= views + 1, "several scrolls in a frame: one view at most, none when it ends where it was");
+
+		await tab.eval("document.querySelector('.box').scrollTop = 0");
+		await tab.wait("document.querySelector('.seen').textContent.startsWith('0 ')");
+		assert.deepEqual(await tab.eval(rows), range(0, 22));
 		assert.deepEqual(tab.errors, []);
 	} finally {
 		await site.close();

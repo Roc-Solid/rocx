@@ -2158,7 +2158,8 @@ Transpile := [].{
 	}
 
 	## `on:input.value` → the event (`input`) and what its handler is given (`value`; "" for nothing).
-	## `on:frame.ms` is the runtime's own event, each animation frame; `on:keydown.ArrowUp` (a key's
+	## `on:frame.ms` is the runtime's own event, each animation frame, and `on:viewport` another, once
+	## the element shows and each time it scrolls or changes size; `on:keydown.ArrowUp` (a key's
 	## name: capitalised, or one letter or digit; `.Space` for the space bar) runs its handler for that
 	## key only, with no modifier key held; `on:keydown.Shift+Enter`, with exactly those held (`Shift`,
 	## `Ctrl`, `Alt`, `Meta`, and `Mod`: ⌘ on macOS, Ctrl elsewhere), each once, before the key.
@@ -2181,6 +2182,8 @@ Transpile := [].{
 			Some({ event, takes }) =>
 				if event == "frame" or takes == "ms" {
 					if (event != "frame" or takes != "ms") Err(Transpile.fail(cfg, "${attr}: frames are on:frame.ms={…}, which gets the milliseconds since the last one", name_start)) else Ok({ event, takes, key: None })
+				} else if event == "viewport" {
+					if (takes != "") Err(Transpile.fail(cfg, "${attr}: write on:viewport={|view| …}, which gets what of the element shows (an Html.Viewport)", name_start)) else Ok({ event, takes, key: None })
 				} else if Transpile.handler_fn(takes) != None {
 					Ok({ event, takes, key: None })
 				} else {
@@ -2356,6 +2359,9 @@ Transpile := [].{
 			h = Transpile.handler_name(cfg, attr, name_start)?
 			if h.takes == "ms" {
 				return Ok("Html.on_frame(${expr})")
+			}
+			if h.event == "viewport" {
+				return Ok("Html.on_viewport(${expr})")
 			}
 			return match h.key {
 				Some(k) => Ok("Html.on_named_key(${Text.roc_string(h.event)}, ${Text.roc_string(k)}, ${expr})")

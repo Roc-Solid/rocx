@@ -44,6 +44,7 @@ Html :: [
 		OnNamedKey(Str, Str, () => {}),
 		OnPrevent(Str, () => {}),
 		OnFrame(F64 => {}),
+		OnViewport(Html.Viewport => {}),
 		Key(Str),
 		KeyOf(() => Str),
 		Animate([In, Out, Both, Move], Transition),
@@ -55,6 +56,12 @@ Html :: [
 	## whether each modifier key was held. `mod` is ⌘ on macOS and Ctrl elsewhere: `meta` there,
 	## `ctrl` here.
 	Keys : { key : Str, shift : Bool, ctrl : Bool, alt : Bool, meta : Bool, mod : Bool }
+
+	## What of an element's content shows (`on:viewport={|view| …}`), in whole pixels: how far it is
+	## scrolled (`top`, `left`: `scrollTop`, `scrollLeft`), and the width and height it shows inside
+	## its borders (`width`, `height`: `clientWidth`, `clientHeight`). A virtual list reads it to
+	## render only the rows that show.
+	Viewport : { top : U64, left : U64, width : U64, height : U64 }
 
 	text : Str -> Html
 	text = |content| Text(content)
@@ -169,6 +176,13 @@ Html :: [
 	## than jumps).
 	on_frame : (F64 => {}) -> Attr
 	on_frame = |handler| OnFrame(handler)
+
+	## A handler given what of the element's content shows (`on:viewport={|view| …}`, a
+	## `Html.Viewport`): once the element is on the page, then each time it scrolls or changes size, at
+	## most once an animation frame. Nothing runs on the server, which can't measure: render a first
+	## view the server and the browser agree on, and let the handler's measure replace it.
+	on_viewport : (Html.Viewport => {}) -> Attr
+	on_viewport = |handler| OnViewport(handler)
 
 	## The element's name on the page (`key={card.id}`): where one with a key goes and another with the
 	## same key comes, in one change of the page, it is the same element, moved, and with
@@ -400,6 +414,7 @@ attributes! = |tag, attrs| {
 				OnNamedKey(event, wanted, handler) => "[\"on\",${json_str(event)},${keep!(|| handled!(handler))},${json_str(wanted)}]"
 				OnPrevent(event, handler) => "[\"onp\",${json_str(event)},${keep!(|| handled!(handler))}]"
 				OnFrame(handler) => "[\"frame\",\"frame\",${keep!(|| handled!(|| handler(frame_ms(Host.event_value!({})))))}]"
+				OnViewport(handler) => "[\"view\",\"viewport\",${keep!(|| handled!(|| handler(viewport_of(Host.event_value!({})))))}]"
 				Key(id) => "[\"k\",${json_str(id)}]"
 				KeyOf(compute) => "[\"ko\",${keep!(|| json_str(compute()))}]"
 				Animate(way, animation) => "[\"tr\",${way_name(way)},${animation.json()}]"
@@ -531,6 +546,18 @@ keys_of = |said| {
 		}
 	{ key: Str.from_utf8_lossy(bytes.drop_first(5)), shift: held(0), ctrl: held(1), alt: held(2), meta: held(3), mod: held(4) }
 }
+
+## What shows of an element, from the runtime's `top,left,width,height` (whole pixels); what isn't a
+## number is 0.
+viewport_of : Str -> Html.Viewport
+viewport_of = |said| {
+	parts = said.split_on(",").map(|part| U64.from_str(part) ?? 0)
+	at = |index| parts.get(index) ?? 0
+	{ top: at(0), left: at(1), width: at(2), height: at(3) }
+}
+
+expect viewport_of("120,0,800,600") == { top: 120, left: 0, width: 800, height: 600 }
+expect viewport_of("") == { top: 0, left: 0, width: 0, height: 0 }
 
 ## A frame's milliseconds, from the whole microseconds the runtime sends (Roc reads an integer with
 ## far less code than a float), at most 100.

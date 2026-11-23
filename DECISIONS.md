@@ -2493,3 +2493,57 @@ providers' APIs (GCS, Azure), a bucket shared by two servers on `file:` (one ins
 `serve!`). 3: the plugin and signed URLs. 4: the server's tests on each backend; callers, docs.
 
 **Reversible:** yes; an app changes `s3.S3` for `storage.Storage` and drops the effects it handed in.
+
+## D-048 Rows by index, what an element shows, and a flush that scales: virtual lists as a package
+
+**Status.** Built (2026-11-23) for examples/checkboxes, a million checkboxes shared live (the
+user's ask: "we will need virtual lists on framework side"). The platform: `<Repeat>`,
+`on:viewport` (`Html.Viewport`), and the flush's heap; `packages/virtual`'s `<VirtualList>` and
+`Rows`; the docs (/components, /ecosystem/virtual, /examples/checkboxes).
+
+**Context.** A list of a million rows can't be a `<For>`: it walks its whole list on every change,
+and the page would hold every row. A virtual list renders the rows that show and moves them as the
+box scrolls, which needs two things rocx didn't have: rendering a range of rows without a list
+behind it, and knowing what of a box shows (a handler was given one string, the target's value: no
+scroll position, no size). And at that scale a third thing broke: a grid whose 2,560 boxes read one
+signal put 2,560 computations in the flush, which sorted them all to take each one (O(D² log D)): a
+scroll step took 173 ms, a change from the server 30 ms.
+
+**Proposal.**
+
+- **`<Repeat count!={n!()} from!={first!()}>{|index| …}</Repeat>`**, Solid 2.0's: a row per index
+  from `from!` (0 unless it says), with a fallback while the count is 0. It is the platform's (a shared
+  module, `Repeat.roc`), built on `Html.each` with each row keyed by its index, so the server renders
+  it and hydrating adopts it as it does a `<For>`, and nothing in the host or the runtime changed for
+  it. As the range moves, only the rows that come into it are made; a kept row's index doesn't change,
+  so it has nothing to re-run. The child is effectful (D-036).
+- **`on:viewport={|view| …}`**, a synthetic event as `on:frame.ms` is: the handler is given an
+  `Html.Viewport` (`top`, `left`: how far the element is scrolled; `width`, `height`: what shows inside
+  its borders; whole pixels) once the element is on the page, then each time it scrolls or changes size
+  (a scroll listener and a ResizeObserver, taken off with the owner's cleanups), at most once an
+  animation frame and only when one of the four changed. The server measures nothing: a component
+  renders a first view both agree on. rocx writes `Html.on_viewport(…)` (`["view","viewport",id]`); it
+  takes no modifier, isn't `<Window>`'s or `<Document>`'s, and is refused in a `<NoHydration>`.
+- **The flush takes the oldest of what waits from a heap** (`Pending`: a set beside a binary heap by
+  id, a deleted one passed over when it comes up), for what is dirty and the effects due alike: log D
+  to take one. The order is the same (oldest first).
+- **`<VirtualList>` is a package** (`packages/virtual`, D-025's rule: nothing in it needs the host):
+  `count` rows `row_height` high, in a box of its own that scrolls, rendering those its view shows and
+  `overscan` (4) more each side, `first_height` (800) pixels' worth before it is measured, and
+  `on_view!` for the app (a grid's width). It writes its view only when the range of rows changes.
+  `Rows.shown` is its arithmetic, plain Roc. A list higher than browsers let an element be (Firefox
+  caps it at about 17.8 million pixels) is drawn scaled in 10 million: the box's scroll maps onto the
+  rows' whole height, and the rows that show are placed so the one at the box's top is where it should
+  be.
+
+**Measured** (examples/checkboxes in Chromium at 1920 by 1080, 2,560 boxes on the page, each flush
+timed): a change from the server 30 ms → 2.5 ms, a scroll of five rows 173 ms → 8.5 ms, a click
+39.5 ms → 3.6 ms. The heap is most of it; the rest is the page's: a count that skips chunks never
+changed, and a column count written only when it changes (a write runs every reader, a change or not:
+written on each scroll, it re-ran every box's holes).
+
+**Not in it.** Rows of their own heights, measured as they show; a window that scrolls rather than a
+box (TanStack's window virtualizer); horizontal virtualization. A signal that compares what can be compared, so a
+write of the same value runs nothing (the example's README lists it as open).
+
+**Reversible:** yes; `<Repeat>` and `on:viewport` are additions, and the heap keeps the flush's order.

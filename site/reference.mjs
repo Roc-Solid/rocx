@@ -118,7 +118,7 @@ export const GROUPS = [
 	{ id: "background", name: "Background", modules: ["Actor", "Live"] },
 	{ id: "crypto", name: "Crypto", modules: ["AesGcm", "Random"] },
 	{ id: "system", name: "System", modules: ["Env", "Time", "Log", "Tcp"] },
-	{ id: "components", name: "Components and reactivity", modules: ["Solid", "Html", "Show", "For", "Loading", "Errored", "Context", "Transition", "Title", "HttpStatusCode", "Browser", "Audio"] },
+	{ id: "components", name: "Components and reactivity", modules: ["Solid", "Html", "Show", "For", "Repeat", "Loading", "Errored", "Context", "Transition", "Title", "HttpStatusCode", "Browser", "Audio"] },
 ];
 
 /** The modules, in their groups (`GROUPS`), in the order each lists them. */

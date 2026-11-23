@@ -174,6 +174,8 @@ test("on: a component's handlers are effects, given what the event says", () => 
 	assert.match(refused(`x = <b on:input.constructor={a} />`), /not .constructor/);
 	assert.match(refused(`x = <div on:frame={tick!} />`), /frames are on:frame.ms=\{…\}/);
 	assert.match(refused(`x = <div on:click.ms={tick!} />`), /frames are on:frame.ms/);
+	assert.match(refused(`x = <div on:viewport.value={seen!} />`), /write on:viewport=\{\|view\| …\}/);
+	assert.match(refused(`x = <Window on:viewport={seen!} />`), /<Window> takes handlers only/);
 	assert.match(refused(`x = <div on:click.Enter={go!} />`), /a key's name goes with on:keydown or on:keyup/);
 	assert.match(refused(`x = <div on:keydown.enter={go!} />`), /not .enter/, "key names are as the browser has them: Enter");
 	assert.match(refused(`x = <a onclick="go()">x</a>`), /inline event handlers \(onclick\) aren't allowed: in a component, write on:click=\{…\}/);
@@ -213,6 +215,7 @@ test("components: holes and attributes are computations, handlers effects", () =
 	assert.equal(more(`x = <p on:keydown.Space={go!}></p>`), `x = Html.element("p", [Html.on_named_key("keydown", " ", go!),], [])`);
 	assert.equal(more(`x = <p on:keydown.key={pressed!}></p>`), `x = Html.element("p", [Html.on_key("keydown", pressed!),], [])`);
 	assert.equal(more(`x = <i on:frame.ms={tick!}></i>`), `x = Html.element("i", [Html.on_frame(tick!),], [])`);
+	assert.equal(more(`x = <div on:viewport={seen!}></div>`), `x = Html.element("div", [Html.on_viewport(seen!),], [])`);
 	assert.equal(more(`x = <p style:color={b!()} style:-webkit-line-clamp={n}></p>`), `x = Html.element("p", [Html.style_of("color", || b!()), Html.style_var("-webkit-line-clamp", n),], [])`, "a property of the style, computed or not");
 	assert.throws(() => more(`x = <p style:col0r={b}></p>`), /a style property's name is letters and dashes \(style:color=\{…\}\), or a custom property's/);
 	// Solid's control flow: a function child calls `view_with!`; `keyed={Bool.False}` the unkeyed one.

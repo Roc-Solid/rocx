@@ -228,6 +228,64 @@ const inRegion = (tag, event) => `rocx: <${tag} on:${event}> is inside <NoHydrat
 /** What hydration found that the server's DOM doesn't match. */
 class Mismatch extends Error {}
 
+/**
+ * Computations waiting to run (or effects whose apply is due), taken oldest first (by id): a set,
+ * for `has` and `delete`, and a heap beside it, so taking the oldest of D waiting is log D, not a
+ * sort of all D (a grid whose thousand cells read one signal has a thousand waiting at once). One
+ * deleted from the set stays in the heap until it comes up, and is passed over then.
+ */
+class Pending {
+	constructor() {
+		this.set = new Set();
+		this.heap = [];
+	}
+	get size() {
+		return this.set.size;
+	}
+	has(computation) {
+		return this.set.has(computation);
+	}
+	add(computation) {
+		if (this.set.has(computation)) return;
+		this.set.add(computation);
+		const heap = this.heap;
+		let at = heap.push(computation) - 1;
+		while (at > 0) {
+			const parent = (at - 1) >> 1;
+			if (heap[parent].id <= computation.id) break;
+			heap[at] = heap[parent];
+			at = parent;
+		}
+		heap[at] = computation;
+	}
+	delete(computation) {
+		return this.set.delete(computation);
+	}
+	/** The oldest waiting, no longer waiting; undefined with none. */
+	take() {
+		const heap = this.heap;
+		while (heap.length) {
+			const top = heap[0];
+			const last = heap.pop();
+			if (heap.length) {
+				let at = 0;
+				for (;;) {
+					const left = 2 * at + 1;
+					if (left >= heap.length) break;
+					const right = left + 1;
+					const child = right < heap.length && heap[right].id < heap[left].id ? right : left;
+					if (heap[child].id >= last.id) break;
+					heap[at] = heap[child];
+					at = child;
+				}
+				heap[at] = last;
+			}
+			if (this.set.delete(top)) return top;
+		}
+		return undefined;
+	}
+}
+
 /** An element the host put in the page, not the app (the bootstrap, the dev reload script). */
 const hosts = (node) => node.nodeType === 1 && node.hasAttribute("data-rocx");
 
@@ -735,9 +793,9 @@ export class Runtime {
 		this.keeping = false;
 		/** The computation or handler running now. */
 		this.current = null;
-		this.dirty = new Set();
+		this.dirty = new Pending();
 		/** Effects whose apply is due, after the flush. */
-		this.due = new Set();
+		this.due = new Pending();
 		this.flushing = false;
 		/** The endpoints whose forms the runtime sends (`use_submission!`, `use_submissions!`), by URL,
 		 * and how many ask; the submissions to each (forms', actions'), a source computations read;
@@ -1810,18 +1868,11 @@ export class Runtime {
 	 * Then, with nothing dirty, the effects whose apply is due, oldest first (what they write is
 	 * dirty again, and runs before the next). */
 	flush() {
-		const oldest = (set) => [...set].sort((a, b) => a.id - b.id)[0];
 		this.inFlush = true;
 		for (;;) {
-			if (this.dirty.size) {
-				const next = oldest(this.dirty);
-				this.dirty.delete(next);
-				this.run(next);
-			} else if (this.due.size) {
-				const next = oldest(this.due);
-				this.due.delete(next);
-				this.applyReaction(next);
-			} else break;
+			if (this.dirty.size) this.run(this.dirty.take());
+			else if (this.due.size) this.applyReaction(this.due.take());
+			else break;
 		}
 		this.inFlush = false;
 		this.flushing = false;
@@ -2912,9 +2963,44 @@ export class Runtime {
 					requestAnimationFrame(tick);
 				};
 				requestAnimationFrame(tick);
-			}
+			} else if (kind === "view") this.viewport(element, value, scope, owner);
 		}
 		if (drag) this.dragAndDrop(element, drag);
+	}
+
+	/**
+	 * `on:viewport={|view| …}` (`["view", "viewport", id]`): the handler given what of the element's
+	 * content shows, `top,left,width,height` in whole pixels (`scrollTop`, `scrollLeft`,
+	 * `clientWidth`, `clientHeight`), once the element is on the page, then each time it scrolls or
+	 * changes size (a ResizeObserver), at most once an animation frame, and only when one of the four
+	 * changed. The scroll listener and the observer go with the owner's cleanups (a row that goes, a
+	 * <Show> that hides it); a box released (its owner ran again) runs nothing.
+	 */
+	viewport(element, value, scope, owner) {
+		if (typeof requestAnimationFrame === "undefined") return;
+		let said = "";
+		let asked = 0;
+		const measure = () => {
+			asked = 0;
+			if (!this.kept.has(value) || !element.isConnected) return;
+			const now = `${Math.round(element.scrollTop)},${Math.round(element.scrollLeft)},${element.clientWidth},${element.clientHeight}`;
+			if (now === said) return;
+			said = now;
+			this.handle(value, now, scope, { owner });
+		};
+		const ask = () => {
+			asked ||= requestAnimationFrame(measure);
+		};
+		element.addEventListener("scroll", ask, { passive: true });
+		const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(ask);
+		observer?.observe(element);
+		ask();
+		const cleanups = (owner?.making ?? owner?.made)?.cleanups;
+		cleanups?.push(() => {
+			element.removeEventListener("scroll", ask);
+			observer?.disconnect();
+			if (asked) cancelAnimationFrame(asked);
+		});
 	}
 
 	/**
@@ -3111,7 +3197,7 @@ export class Runtime {
 				const attributes = [];
 				const styles = [];
 				for (const [kind, name, value] of node.a) {
-					if (scope.region && (kind === "on" || kind === "onp" || kind === "onk" || kind === "frame")) throw new Error(inRegion(node.tag, name));
+					if (scope.region && (kind === "on" || kind === "onp" || kind === "onk" || kind === "frame" || kind === "view")) throw new Error(inRegion(node.tag, name));
 					if (kind === "v" && name === "class") classes.push(value);
 					else if (kind === "v" && name === "style") styles.push(value);
 					else if (kind === "v") attributes.push(`${name}="${escape(value)}"`);
