@@ -45,8 +45,7 @@ When an item lands, delete its line here in the same commit.
   - `untrack`, and with it Solid 2.0's dev warning for a reactive read in a component's body;
   - a hole that reads nothing becomes static markup, on the server and while hydrating alike;
   - `merge` and `omit` for passing a props record on.
-- **The rest of Solid 2.0 and Solid Router's actions:** see `web/README.md`, "Not yet". Its first
-  bullet still lists `<Repeat>`, which D-048 built, so drop it there.
+- **The rest of Solid 2.0 and Solid Router's actions:** see `web/README.md`, "Not yet".
 - **packages/guard: flag overrides no longer outlive a restart.** Since D-043 they live in `Kv`; an
   actor used to keep them in Postgres. A plugin (D-033) with a `guard/0001_flags` table could load
   them at start and write them as they change. Details: its `PROPOSALS.md`, "What is left".

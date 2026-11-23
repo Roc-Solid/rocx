@@ -476,8 +476,8 @@ after many runs that waited (refreshes, new pages, memos made again: `Upstream.r
 
 ## Not yet
 
-- **The rest of Solid 2.0:** keyed `<Show>`, `<Switch>`/`<Match>`, `<Repeat>`,
-  `untrack`, `createRenderEffect`, an effect's `error` handler, stores as `createStore` makes them.
+- **The rest of Solid 2.0:** keyed `<Show>`, `<Switch>`/`<Match>`, `createRenderEffect`, an
+  effect's `error` handler, stores as `createStore` makes them (`untrack` is below).
 - **The rest of Solid Router's actions:** `.with`, a submission's `retry`, saying which reads a
   result reads again (Solid Router's `revalidate` keys: today every GET the page read), and
   multipart forms (sent as the browser sends them). Solid 2.0's `createOptimistic` (writes undone
