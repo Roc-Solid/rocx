@@ -2126,8 +2126,15 @@ guess. **Reversible:** yes: `remote` and `local` without the reader read strings
 
 ## D-040 Client-side navigation
 
-**Status.** Proposed (2026-11-22). Nothing is built; the design, with its phases and the questions
-it waits on, is `spike/client-nav/DESIGN.md`.
+**Status.** Accepted (2026-11-23), with every recommendation of the design's §17 as the user's
+answer: the page's own document (1a), plain `<a>` (2a), the old page kept until the document is in
+(3a), a page made anew when its params change (4a), layouts kept where it is safe (5a), the query in
+place (6a), back and forward reusing a document under 10 s (7a), focus at `<body>`'s start (8a), the
+stylesheet as a hashed file (9a), View Transitions as an app-wide opt-in (10a), prefetch on hover,
+focus and touch (11a), and the phases in order (12). The design, with its phases, is
+`spike/client-nav/DESIGN.md`. **Wasm splitting** (parked, `spike/wasm-split`) isn't built with it,
+but the user expects to want it, so the design keeps a place for it (the design's §18): a page's
+code is reached through one step that splitting will fill.
 
 **Context.** Every link is a full page load: a document, the wasm compiled again, the whole page
 hydrated again. examples/board opens a card with `?card=12` and a click it takes over, so Back

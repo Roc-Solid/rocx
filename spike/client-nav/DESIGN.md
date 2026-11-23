@@ -873,7 +873,8 @@ Depends on D-039 (value props patched in place, for a layout's `meta`).
 
 ## 17. Open questions for the user
 
-Each has a recommendation; the design above assumes it.
+**Answered (2026-11-23): every recommendation below, as written** (2 is plain `<a>`, 10 is the app-wide
+opt-in). Each has a recommendation; the design above assumes it.
 
 1. **What a navigation fetches.** (a) The page's own HTML document, as the server answers a load
    (no server change; static sites work; 2–16% larger than (b), measured); (b) a JSON data endpoint
@@ -918,3 +919,26 @@ Each has a recommendation; the design above assumes it.
 12. **Order of work.** Phase 1 doesn't need D-039 and changes no app; phase 2 does. **Recommend**
     phase 1 now (with question 9's stylesheet file if you agree), phase 2 once D-039 has landed,
     phase 3 after.
+
+## 18. Ready for wasm splitting (not built now)
+
+The user wants wasm splitting later (`spike/wasm-split`, parked on a compiler fix: Roc's wasm linker
+keeps no relocations). Navigation is where it pays: the first load would download the main module
+and the page's own chunk, and later pages their chunks. So the phases above keep to four rules,
+which cost nothing while the wasm holds every page:
+
+1. **One step reaches a page's code.** Rendering a matched level goes through one runtime function
+   (`pageCode(level)`, say), which answers at once today. With splitting it loads the level's chunks
+   (in parallel with the document) and the render waits on it, as it waits on the document.
+2. **The route table names each level's code.** `Router.app!`'s table gives every page and layout an
+   id the build chose (its module), not only a path. Splitting maps an id to its chunks; nothing
+   in the runtime assumes every id's code is already there.
+3. **Prefetch is about a page, not a document.** Phase 3's prefetch asks for "what page X needs",
+   which is its document today and its document plus chunks later, under one cache entry with one
+   age (§6.2).
+4. **The build id guards code too.** §10.3's check (a document of another build is loaded by the
+   browser) is also what keeps an old tab from asking for chunks a new deploy replaced: chunk names
+   carry the build's hash.
+
+What stays as it is: hydration and `<NoHydration>` regions (their code is never in the wasm), and
+the server, which renders every page whole either way.
