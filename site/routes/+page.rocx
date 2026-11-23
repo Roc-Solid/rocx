@@ -49,7 +49,7 @@ view! = |_| {
 			<Heading id="start">Getting started</Heading>
 			<ol class="start">
 				<li>
-					<span class="start-num">01</span>
+					<span class="start-num">1</span>
 					<div>
 						<h3>Install</h3>
 						<p>
@@ -62,7 +62,7 @@ view! = |_| {
 					</div>
 				</li>
 				<li>
-					<span class="start-num">02</span>
+					<span class="start-num">2</span>
 					<div>
 						<h3>Make a page, or an endpoint</h3>
 						<p>
@@ -75,7 +75,7 @@ view! = |_| {
 					</div>
 				</li>
 				<li>
-					<span class="start-num">03</span>
+					<span class="start-num">3</span>
 					<div>
 						<h3>Run it</h3>
 						<p>
