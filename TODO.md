@@ -55,12 +55,21 @@ When an item lands, delete its line here in the same commit.
 - **OpenAPI:** an endpoint that a plain form also posts to is listed with a JSON body only, though
   it reads form fields as well (`server/README.md`, "Not yet").
 - **The server's other limits** are in `server/README.md`, "Not yet":
-  - `Db` queries aren't checked at build;
+  - `Db` queries aren't checked at build: D-058 is accepted, its phases 2 to 4 being built
+    (`spike/db-checked/DESIGN.md`);
   - channels can't tell a dropped subscription from a tab that went;
   - actors' timers live in memory;
   - a job's time limit cuts it off only at an effect that waits;
   - the platform's own logs have no levels or fields yet;
   - `Http` keeps no connections alive and has no proxy.
+- **`Db`'s checked queries, after D-058's phases 2 to 4** (`spike/db-checked/DESIGN.md`, §12, phase 5):
+  - a column of an outer join's other side read as nullable, from the statement's plan (SQLite's
+    `EXPLAIN`, Postgres's `EXPLAIN (VERBOSE)`), as sqlx does;
+  - SQLite's expressions typed (Turso's `get_column_inferred_type`), where SQLite gives none;
+  - interpolated SQL checked when each piece is a string constant of its module;
+  - a description cache (sqlx's `.sqlx/`), for a Postgres app's CI without a database;
+  - Postgres parameter types; packages' SQL checked per backend; the checks in the app's own
+    compile; a check at run time (blocked by `test/compiler-bugs/two-formats-one-where`).
 - **Deferred decisions:** D-014 (a configurable request body limit).
 
 ## The Roc compiler (the fork in `~/roc-fork`)
