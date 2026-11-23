@@ -2778,11 +2778,11 @@ platforms keep only what needs the host or the transpiler. **Reversible:** yes.
 
 ## D-052 Solid 2.0's primitives: untrack, its dev warning, latest, merge and omit, static holes
 
-**Status.** Built (2026-11-23) for items 1, 2, 3 and 6 of the brief: `untrack!` and the dev build's
-warning of a read made once, a props record passed on (`..rest`, `{...rest}`), `latest!`, and holes
-that read nothing written as static by the server and adopted as text. Render effects and an
-effect's `error` handler wait for plugin-files' second stage (D-051, which takes the audio player
-out of runtime.js and changes the code beside its effects) to land.
+**Status.** Built (2026-11-23), in two landings: first `untrack!` and the dev build's warning of a
+read made once, a props record passed on (`..rest`, `{...rest}`), `latest!`, and holes that read
+nothing written as static by the server and adopted as text (4e3ece8); then, once plugin-files'
+second stage (D-051) had changed the code beside the effects, render effects and an effect's
+`error` handler.
 
 **Context.** D-039 made value props getters, and left three follow-ups
 (`spike/reactive-props/DESIGN.md`, "Follow-ups"): Solid's `untrack` and Solid 2.0's dev warning for
@@ -2850,8 +2850,28 @@ build's STRICT_READ_UNTRACKED).
 - Why not decide at build: the transpiler already makes a hole that calls nothing with `!` static,
   but a getter's caller is in another file (a component is written once for all its callers), so
   only a run can tell.
+- **`Solid.create_render_effect!(compute, apply)`**, Solid 2.0's `createRenderEffect`: its `apply`
+  runs as soon as `compute` has answered, in the run (made in a component, before the component's
+  markup is built; in a flush, before the effects' applies, which wait for nothing to be dirty).
+  Solid runs it in its render queue for DOM bindings; Roc has no DOM of its own, so here it is what
+  keeps a value in step with the render, with no flush between. On the server neither half runs,
+  as no effect does here (Solid's server runs both: a write there would fail, since the server never
+  writes a signal), so what a first `apply` writes is patched in as the page hydrates.
+- **`Solid.create_effect_with!(compute, { apply, error })`**, Solid 2.0's
+  `createEffect(compute, { effect, error })`: a record, as Roc has no overloading, the bundle's
+  `effect` named `apply` as rocx's other effect names it. A `compute` that fails calls `error` with
+  why (the failure's message) instead of showing the nearest `<Errored>`: after the flush, in the
+  apply's place, as a handler, the last apply's cleanups first; if `compute` answers again before
+  then, `apply` runs instead, as Solid's sees only settled failures. A failure in `apply` or `error`
+  is a handler's, logged (Solid sends an effect-phase throw to the boundary; rocx's handlers never
+  did, and a rethrow from `error` isn't there: leave `error` out for the boundary).
+- **One hosted function for both, `Host.effect_options!(render, error_box)`**, which such an
+  effect's `compute` calls first each run (the error handler a box kept as its maker runs, given
+  why through `Host.event_value!`). The runtime notes them on the effect: a failure can come before
+  the compute answers, so they must be known before it runs. A plain `create_effect!` doesn't call
+  it, so costs nothing more; the server's is a no-op.
 
-**What it costs.** Two hosted functions (`untrack!`, `read_at!`) on both platforms. A hole is run
+**What it costs.** Three hosted functions (`untrack!`, `read_at!`, `effect_options!`) on both platforms. A hole is run
 before its place is taken while hydrating (no extra run). Measured with `just site` on master
 5689240 and on this branch rebased onto it:
 

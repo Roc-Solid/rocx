@@ -28,7 +28,7 @@ same components natively; this one hydrates them.
   GETs a page reads as it renders among them.
 - `platform/*.roc`, what components are written with: `Html` (markup whose holes are closures,
   escaping, safe URLs), `Solid` (`create_signal!`, `create_memo!`, `create_effect!`,
-  `on_cleanup!`, `on_settled!`, `refresh!`, `is_pending!`, `latest!`, `untrack!`, `use_context!`, and the browser's timers, `set_interval!` and
+  `create_render_effect!`, `create_effect_with!`, `on_cleanup!`, `on_settled!`, `refresh!`, `is_pending!`, `latest!`, `untrack!`, `use_context!`, and the browser's timers, `set_interval!` and
   `set_timeout!`, each owned by the run that started it), `Browser` (`call!`: the page's own
   JavaScript function, or a plugin's script's, from a handler; sound files are packages/audio's,
   D-051),
@@ -205,6 +205,16 @@ same components natively; this one hydrates them.
   "nothing" a function may return. Neither half is given the previous value. `on_settled!(f)` is
   `create_effect!(|| {}, |_| f())`: a `compute` that reads nothing never runs again, so `f` runs
   once, after the flush that put the component on the page, and never on the server.
+  Two more of Solid 2.0's (D-052), each an effect whose `compute` first tells the runtime its options
+  (`Host.effect_options!`): `create_render_effect!(compute, apply)` (`createRenderEffect`) runs
+  `apply` as soon as `compute` has answered, as the render does (made in a component, before its
+  markup is built; in a flush, in the run, before the effects' applies), not after the flush; and
+  `create_effect_with!(compute, { apply, error })` (`createEffect(compute, { effect, error })`)
+  keeps a box for `error`: a `compute` that fails calls it with why (`Host.event_value!`), in the
+  apply's place (after the flush, a handler, the last apply's cleanups first), and no `<Errored>`
+  shows; if `compute` answers again before then, `apply` runs instead. On the server neither half of
+  either runs (Solid's server runs a render effect's both): what a render effect's first apply
+  writes is patched in as the page hydrates.
 - **Ownership** is Solid's (RFC 02): what a run makes (child computations, effects, cleanups,
   timers, listens, the endpoints whose forms it sends) is its, and goes with it, in unwind order:
   the last child first, then its cleanups, the last first. A computation's cleanups run before it
@@ -492,7 +502,8 @@ context); the tally with nothing to provide its store (`Alone.rocx`); and a whol
 planner (`Planner.rocx`: cards dragged between days, moved optimistically with `use_action!` and
 `use_submissions!`, gliding); and D-052's (`Untracked.rocx`: `untrack!` in a hole, a memo and a
 body, `latest!`, a component given constants beside one given what changes, and, built with `--dev`
-from a copy, the warning of a read in a body, once for two runs of its place).
+from a copy, the warning of a read in a body, once for two runs of its place; `RenderEffects.rocx`:
+an effect, a render effect and an effect with an error handler noting their applies, mounted).
 In Chromium, against a scripted server (a scripted `/rocx/live` too): what shows while answers come, what a click
 patches, failures and retries, rows kept and moved, rows and parts that stay until their
 transitions are over (and none with less motion asked for), hydration without a request, a tampered document's `<body>` rendered again (and strictly, a throw), the
@@ -519,8 +530,8 @@ after many runs that waited (refreshes, new pages, memos made again: `Upstream.r
 
 ## Not yet
 
-- **The rest of Solid 2.0:** keyed `<Show>`, `<Switch>`/`<Match>`, `createRenderEffect`, an
-  effect's `error` handler, stores as `createStore` makes them.
+- **The rest of Solid 2.0:** keyed `<Show>`, `<Switch>`/`<Match>`, stores as `createStore` makes
+  them.
 - **The dev warning sees calls of accessors** in a component's body (`count!()`, a prop's getter):
   one a helper makes (`total!(items)`) isn't said, nor one at a `<For>`'s row's top (made once too).
 - **The rest of Solid Router's actions:** `.with`, a submission's `retry`, saying which reads a

@@ -400,8 +400,25 @@ view! = |_|
 					kept, focusing a field, measuring.
 				</li>
 				<li>
+					<strong>A render effect runs its <code>apply</code> at once.</strong>
+					<code>{"create_render_effect!(|| query!(), |_| set_page!(1))"}</code> is Solid 2.0's
+					<code>createRenderEffect</code>: its <code>apply</code> runs as soon as <code>compute</code> has, in
+					the render, before the page is settled (made in a component, before its markup is built; in an
+					update, before the effects' applies). It is for keeping a value in step with the render, with no
+					frame between; what reads the page wants <code>create_effect!</code>.
+				</li>
+				<li>
+					<strong>An effect may handle its own failure.</strong>
+					<code>{"create_effect_with!(compute, { apply, error })"}</code> is Solid 2.0's
+					<code>{"createEffect(compute, { effect, error })"}</code>: a <code>compute</code> that fails (a read
+					that failed, a context nothing provides) calls <code>error</code> with why, after the update, as
+					<code>apply</code> would run, and the nearest <code>{"<Errored>"}</code> doesn't show. When it answers
+					again, <code>apply</code> runs as before.
+				</li>
+				<li>
 					<strong>On the server none of them runs.</strong> The page is rendered as it is before any effect,
-					and the browser hydrates that, then runs them.
+					and the browser hydrates that, then runs them. (Solid's server runs a render effect's halves; here
+					what its first <code>apply</code> writes is patched in as the page hydrates.)
 				</li>
 			</ul>
 
@@ -837,6 +854,8 @@ view! = |_|
 						<tr><td><code>{"omit(props, \"kind\")"}</code>, <code>{"<Base {...rest} />"}</code></td><td><code>{"|{ kind, ..rest }|"}</code>, <code>{"<Base {...rest} />"}</code></td></tr>
 						<tr><td><code>{"merge(rest, { size: 3 })"}</code></td><td><code>{"<Base {...rest} size={3} />"}</code>: the last of a name wins</td></tr>
 						<tr><td><code>{"createEffect(() => room(), (room) => { …; return () => … })"}</code></td><td><code>{"create_effect!(|| room!(), |room| { …; on_cleanup!(|| …) })"}</code></td></tr>
+						<tr><td><code>{"createRenderEffect(() => q(), () => setPage(1))"}</code></td><td><code>{"create_render_effect!(|| q!(), |_| set_page!(1))"}</code></td></tr>
+						<tr><td><code>{"createEffect(() => room(), { effect, error })"}</code></td><td><code>{"create_effect_with!(|| room!(), { apply, error })"}</code></td></tr>
 						<tr><td><code>{"onCleanup(() => …)"}</code></td><td><code>{"on_cleanup!(|| …)"}</code></td></tr>
 						<tr><td><code>{"onSettled(() => …)"}</code> (<code>onMount</code>, before 2.0)</td><td><code>{"on_settled!(|| …)"}</code></td></tr>
 						<tr><td><code>{"const id = setInterval(tick, 1000)"}</code>, <code>{"onCleanup(() => clearInterval(id))"}</code></td><td><code>{"clear! = set_interval!(1000, tick!)"}</code>, cleared with what started it</td></tr>
@@ -972,7 +991,7 @@ view! = |_|
 						<li>Transitions in and out, on a <code>{"<For>"}</code>'s rows and a <code>{"<Show>"}</code>'s parts</li>
 						<li>Timers: <code>set_interval!</code>, <code>set_timeout!</code>, cleared by their <code>clear!</code> or with their part</li>
 						<li>Sound files, from a handler: <code>Audio.play!</code> (packages/audio); and the page's own functions, or a plugin's: <code>Browser.call!</code></li>
-						<li>Effects, split as Solid 2.0's; <code>on_cleanup!</code>, <code>on_settled!</code></li>
+						<li>Effects, split as Solid 2.0's; render effects; an effect's error handler; <code>on_cleanup!</code>, <code>on_settled!</code></li>
 						<li>Forms sent by the runtime, their submissions, and a flash without it</li>
 						<li>Actions without a form (<code>use_action!</code>), every submission (<code>use_submissions!</code>), optimistic values that give way to the server's</li>
 						<li>Drag and drop; <code>.prevent</code></li>
@@ -986,7 +1005,6 @@ view! = |_|
 					<h3>Next, from Solid 2.0</h3>
 					<ul>
 						<li><code>{"<Switch>"}</code>, <code>{"<Match>"}</code>, keyed <code>{"<Show>"}</code></li>
-						<li>An effect's <code>error</code> handler; render effects (<code>createRenderEffect</code>)</li>
 						<li>Stores, as <code>createStore</code> makes them: nested, each field its own signal</li>
 					</ul>
 				</div>
