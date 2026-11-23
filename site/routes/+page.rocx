@@ -28,7 +28,8 @@ view! = |_| {
 	<>
 		<NoHydration>
 			<PageHero
-				mark={[<Logo label="Roc Solid" />]}
+				eyebrow="Roc Solid"
+				mark={[<Logo />]}
 				title="Roc, from the database to the browser."
 				centered
 				actions={[

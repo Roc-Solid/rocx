@@ -4,11 +4,12 @@ import Logo
 
 ## The bar at the top of every page: the site's mark, the parts of the docs (the `current` one
 ## marked), what it is in a line, and what the browser downloads (`wasm`). It stays at the top as
-## the page scrolls.
+## the page scrolls. On the front page (`landing`), whose top shows the mark large, the bar has the
+## name alone, and on a phone, where the bar's name is the mark, nothing there.
 Topbar := [].{
-	view = |{ sections, current, wasm }|
-		<header class="topbar">
-			<a class="brand" href={Paths.root} aria-label="Roc Solid, home"><Logo />Roc Solid</a>
+	view = |{ sections, current, wasm, landing }|
+		<header class="topbar" class:landing={landing}>
+			<a class="brand" href={Paths.root} aria-label="Roc Solid, home">{=if (landing) Html.empty({}) else <Logo />}Roc Solid</a>
 			<nav class="sections" aria-label="Parts of the docs">
 				{...sections.map(|section| <a href={section.home} class:current={section.name == current}>{section.name}</a>)}
 			</nav>
@@ -17,11 +18,11 @@ Topbar := [].{
 		</header>
 
 	<story name="In a part">
-		<Topbar sections={[{ name: "rocx", home: "#" }, { name: "Platform", home: "#" }, { name: "Ecosystem", home: "#" }]} current="Platform" wasm="143.0 KB" />
+		<Topbar sections={[{ name: "rocx", home: "#" }, { name: "Platform", home: "#" }, { name: "Ecosystem", home: "#" }]} current="Platform" wasm="143.0 KB" landing={Bool.False} />
 	</story>
 
 	<story name="On the front page">
-		<Topbar sections={[{ name: "rocx", home: "#" }, { name: "Platform", home: "#" }, { name: "Ecosystem", home: "#" }]} current="" wasm="143.0 KB" />
+		<Topbar sections={[{ name: "rocx", home: "#" }, { name: "Platform", home: "#" }, { name: "Ecosystem", home: "#" }]} current="" wasm="143.0 KB" landing />
 	</story>
 
 	<style>
@@ -121,6 +122,10 @@ Topbar := [].{
 
 			.brand {
 				font-size: 0;
+			}
+
+			.landing .brand {
+				display: none;
 			}
 
 			.sections {

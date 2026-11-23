@@ -3,8 +3,8 @@ import Actions
 import Button
 import Logo
 
-## The top of a page: what part it is in (`eyebrow`, or `kicker` when it has markup in it; or, on
-## the front page, `mark`, the site's logo, in the eyebrow's place), its line
+## The top of a page: what part it is in (`eyebrow`, or `kicker` when it has markup in it; on the
+## front page, a `mark`, the site's logo, with the eyebrow above it as a name), its line
 ## in the site's gradient (`title`, or `heading` when it has markup in it), what it is about (what is
 ## inside), and the ways on (`actions`, `<Button>`s). `centered` for the front page, where the line is
 ## bigger and everything is in the middle. A string is text wherever it goes, so markup in either
@@ -24,7 +24,7 @@ PageHero := [].{
 	view : Props -> Html
 	view = |props|
 		<section class="hero" class:centered={props.centered}>
-			{=if (props.mark.is_empty()) <p class="eyebrow">{...if (props.kicker.is_empty()) [Html.text(props.eyebrow)] else props.kicker}</p> else <div class="mark">{...props.mark}</div>}
+			{=if (props.mark.is_empty()) <p class="eyebrow">{...if (props.kicker.is_empty()) [Html.text(props.eyebrow)] else props.kicker}</p> else <div class="mark">{=if (props.eyebrow == "") Html.empty({}) else <p class="name">{props.eyebrow}</p>}{...props.mark}</div>}
 			<h1>{...if (props.heading.is_empty()) [Html.text(props.title)] else props.heading}</h1>
 			<p class="lede">{...props.children}</p>
 			{=if (props.actions.is_empty()) Html.empty({}) else <Actions centered={props.centered}>{...props.actions}</Actions>}
@@ -43,7 +43,8 @@ PageHero := [].{
 
 	<story name="The front page">
 		<PageHero
-			mark={[<Logo label="Roc Solid" />]}
+			eyebrow="Roc Solid"
+			mark={[<Logo />]}
 			title="Roc, from the database to the browser."
 			centered
 			actions={[<Button href="#" primary>Read the guide</Button>, <Button href="#">See it run</Button>]}
@@ -83,9 +84,21 @@ PageHero := [].{
 			font-weight: 600;
 		}
 
-		/* The logo (a <Logo>, passed in), large, a little lit. */
+		/* The logo (a <Logo>, passed in), large, a little lit, under its name. */
 		.mark {
 			display: flex;
+			flex-direction: column;
+			align-items: start;
+			gap: var(--space-4);
+		}
+
+		.name {
+			margin: 0;
+			color: var(--text);
+			font-size: var(--size-xl);
+			font-weight: 780;
+			letter-spacing: -0.02em;
+			line-height: 1.1;
 		}
 
 		.mark :global(.logo) {
@@ -138,7 +151,7 @@ PageHero := [].{
 		}
 
 		.centered .mark {
-			justify-content: center;
+			align-items: center;
 		}
 
 		.centered .mark :global(.logo) {
