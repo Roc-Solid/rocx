@@ -32,7 +32,7 @@ JobWorker := [].{
 		kinds = listed_kinds.map(|kind| kind.name)
 		match Db.listen!("rocx_jobs") {
 			Ok({}) => {}
-			Err(DbErr(why)) => Log.line!("rocx jobs: can't hear when a job is queued (looking every second instead): ${why}")
+			Err(DbErr(why)) => Log.warn!("rocx jobs: can't hear when a job is queued, so looks every second instead", { error: why })
 		}
 		var $going = Bool.True
 		while $going {
@@ -48,7 +48,7 @@ JobWorker := [].{
 						}
 						Ok(None) => Live.next!(due_in!(kinds)) != Gone
 						Err(why) => {
-							Log.line!("rocx jobs: ${why}")
+							Log.error!("rocx jobs: couldn't take a job", { error: why })
 							Live.next!(1000) != Gone
 						}
 					}
@@ -70,7 +70,7 @@ JobWorker := [].{
 		match requeued {
 			Err(DbErr(why)) => Err("jobs: ${why}")
 			Ok(count) => {
-				if (count > 0) Log.line!("rocx jobs: ${count.to_str()} cut short by the last stop, queued again") else {}
+				if (count > 0) Log.warn!("rocx jobs: jobs cut short by the last stop, queued again", { count: count }) else {}
 				swept =
 					if lite {
 						Db.run!("delete from rocx_jobs where state = 'done' and finished_at < $1", [Int(Queue.now!({}) - 7 * 24 * 3_600_000)])
@@ -132,13 +132,12 @@ attempt! = |job, limit_ms|
 
 finish! : Taken, Try({}, Str), U64, ({ kind : Str, id : I64, attempts : U64, error : Str } => {}) => {}
 finish! = |job, outcome, retry_ms, on_failed!| {
-	name = "${job.kind} #${job.id.to_str()}"
 	lite = Queue.lite!({})
 	now = Queue.now!({})
 	match outcome {
 		Ok({}) => {
 			recorded!(
-				name,
+				job,
 				if lite {
 					Db.run!("update rocx_jobs set state = 'done', finished_at = $2, last_error = null where id = $1", [Int(job.id), Int(now)])
 				} else {
@@ -150,7 +149,7 @@ finish! = |job, outcome, retry_ms, on_failed!| {
 		Err(why) if job.attempts < job.max_attempts => {
 			wait = backoff(retry_ms, job.attempts)
 			recorded!(
-				name,
+				job,
 				if lite {
 					Db.run!("update rocx_jobs set state = 'queued', last_error = $2, run_at = $3 where id = $1", [Int(job.id), Text(why), Int(now + wait.to_i64_wrap())])
 				} else {
@@ -160,11 +159,11 @@ finish! = |job, outcome, retry_ms, on_failed!| {
 					)
 				},
 			)
-			Log.line!("rocx jobs: ${name} failed (attempt ${job.attempts.to_str()} of ${job.max_attempts.to_str()}), again in ${wait.to_str()} ms: ${why}")
+			Log.warn!("rocx jobs: a job failed, and runs again", { kind: job.kind, id: job.id, attempt: job.attempts, of: job.max_attempts, again_in_ms: wait, error: why })
 			Live.publish!("rocx:jobs", "${job.id.to_str()} queued")
 			# The other workers, asleep until what was due when they looked, look again.
 			recorded!(
-				name,
+				job,
 				match Db.notify!("rocx_jobs", "") {
 					Ok({}) => Ok(0)
 					Err(DbErr(unheard)) => Err(DbErr(unheard))
@@ -173,25 +172,25 @@ finish! = |job, outcome, retry_ms, on_failed!| {
 		}
 		Err(why) => {
 			recorded!(
-				name,
+				job,
 				if lite {
 					Db.run!("update rocx_jobs set state = 'failed', finished_at = $3, last_error = $2 where id = $1", [Int(job.id), Text(why), Int(now)])
 				} else {
 					Db.run!("update rocx_jobs set state = 'failed', finished_at = now(), last_error = $2 where id = $1", [Int(job.id), Text(why)])
 				},
 			)
-			Log.line!("rocx jobs: ${name} failed for good after ${job.attempts.to_str()} attempts: ${why}")
+			Log.error!("rocx jobs: a job failed for good", { kind: job.kind, id: job.id, attempts: job.attempts, error: why })
 			Live.publish!("rocx:jobs", "${job.id.to_str()} failed")
 			on_failed!({ kind: job.kind, id: job.id, attempts: job.attempts, error: why })
 		}
 	}
 }
 
-recorded! : Str, Try(U64, [DbErr(Str)]) => {}
-recorded! = |name, done|
+recorded! : Taken, Try(U64, [DbErr(Str)]) => {}
+recorded! = |job, done|
 	match done {
 		Ok(_) => {}
-		Err(DbErr(why)) => Log.line!("rocx jobs: couldn't record how ${name} went: ${why}")
+		Err(DbErr(why)) => Log.error!("rocx jobs: couldn't record how a job went", { kind: job.kind, id: job.id, error: why })
 	}
 
 ## The kinds, one per line, for `kind = any(string_to_array($1, E'\n'))`.

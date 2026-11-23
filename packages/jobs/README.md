@@ -85,8 +85,10 @@ A job is a row in `rocx_jobs`. Each worker is a background loop (`JobWorker.roc`
 next job due of a kind the plugin runs with `for update skip locked`, so none is taken twice, and
 runs it in a call of its own, so a crash is that job's failure, not the worker's. A job that fails
 (an `Err`, a crash, or its time limit passing) runs again after `retry_ms` (1000), then twice that,
-and so on, as many attempts in all as its kind says (`attempts`; five with `Job.define`); then it is
-`failed`, with its last error, said on the log, and given to the plugin's `on_failed!` (nothing more
+and so on, as many attempts in all as its kind says (`attempts`; five with `Job.define`), each
+failure a warning on the log (`rocx jobs: a job failed, and runs again`, with its `kind`, `id`,
+`attempt`, `of`, `again_in_ms` and `error`); then it is `failed`, with its last error, an error on
+the log (`rocx jobs: a job failed for good`, with its `kind`, `id`, `attempts` and `error`), and given to the plugin's `on_failed!` (nothing more
 unless the app says: an error tracker's report, as packages/posthog's `PostHog.job_failed!`). Queueing one notifies `rocx_jobs` (Postgres's `NOTIFY`, or
 `Db.notify!` on SQLite), delivered when the transaction commits (`Db.listen!` hears it as the live
 topic `db:rocx_jobs`); a worker sleeps

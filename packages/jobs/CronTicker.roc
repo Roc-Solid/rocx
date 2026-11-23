@@ -89,6 +89,6 @@ queue! = |cron, due| {
 		}
 	match queued {
 		Ok(_) => {}
-		Err(DbErr(why)) => Log.line!("rocx cron: ${cron.name}: ${why}")
+		Err(DbErr(why)) => Log.error!("rocx cron: a schedule's job wasn't queued", { cron: cron.name, error: why })
 	}
 }

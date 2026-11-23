@@ -475,8 +475,8 @@ background_for_host! = |index|
 					match plugin.checks.get(c) {
 						Ok(check) =>
 							match (check.run!)({}) {
-								Ok(said) => if (said.is_empty()) {} else Log.line!("${check.name}: ${said}")
-								Err(why) => Log.warn!("${check.name}: ${why}", {})
+								Ok(said) => if (said.is_empty()) {} else Log.info!(said, { check: check.name })
+								Err(why) => Log.warn!(why, { check: check.name })
 							}
 						Err(_) => {}
 					}

@@ -58,7 +58,6 @@ When an item lands, delete its line here in the same commit.
   - channels can't tell a dropped subscription from a tab that went;
   - actors' timers live in memory;
   - a job's time limit cuts it off only at an effect that waits;
-  - the platform's own logs have no levels or fields yet;
   - `Http` keeps no connections alive and has no proxy.
 - **`rocx check --sql`'s blind spots** (D-058, built; `spike/db-checked/DESIGN.md`, §12, phase 5;
   `server/README.md`, "Not yet"):

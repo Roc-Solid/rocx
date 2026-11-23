@@ -62,7 +62,7 @@ Email := [].{
 				now = Time.now_millis!({}).to_i64_wrap()
 				data = compose(from, to, message, now, Random.seed_u64!() ?? 0)
 				if settings.smtp_url.is_empty() {
-					Log.line!("email (kept, not sent: no SMTP_URL): to ${message.to}: ${message.subject}")
+					Log.info!("email: kept, not sent (no SMTP_URL)", { to: message.to, subject: message.subject })
 					Mailbox.keep!({ at: now, from: from_text, to: message.to, subject: message.subject, text: message.text, html: message.html, raw: data })
 					Ok({})
 				} else {

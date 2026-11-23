@@ -125,9 +125,9 @@ Plugins := [].{
 		$placed.concat($left)
 	}
 
-	## What the log says `plugin` added: "jobs: 1 table, 5 loops, 1 start".
-	summary : Plugin.Running -> Str
-	summary = |plugin| {
+	## What the log says `plugin` adds, counted: "1 migration, 5 loops, 1 start", or "nothing".
+	added : Plugin.Running -> Str
+	added = |plugin| {
 		counted = |count, one, many| if (count == 0) [] else ["${count.to_str()} ${if (count == 1) one else many}"]
 		parts =
 			counted(plugin.claims.len(), "route", "routes")
@@ -139,14 +139,15 @@ Plugins := [].{
 				.concat(counted(plugin.loops.len(), "loop", "loops"))
 				.concat(counted(plugin.starts.len(), "start", "starts"))
 				.concat(counted(plugin.checks.len(), "check", "checks"))
-		"${plugin.name}: ${if (parts.is_empty()) "nothing" else Str.join_with(parts, ", ")}"
+		if (parts.is_empty()) "nothing" else Str.join_with(parts, ", ")
 	}
 
-	## Logs what each plugin added, a line a plugin, in their order.
+	## Logs what each plugin added, an event a plugin, in their order: `rocx plugins: added`, with
+	## the plugin's name and what it adds (`plugin=jobs adds="1 migration, 5 loops"`).
 	log! : List(Plugin.Running) => {}
 	log! = |plugins|
 		for plugin in plugins {
-			Log.line!("rocx plugins: ${Plugins.summary(plugin)}")
+			Log.info!("rocx plugins: added", { plugin: plugin.name, adds: Plugins.added(plugin) })
 		}
 }
 
@@ -313,7 +314,8 @@ expect
 		== ["/sw.js: the a plugin's file, and the b plugin's file"]
 expect Plugins.problems([{ ..none, name: "a", scripts: ["a.js"] }], []) == ["a: the script a.js is none of its files"]
 expect Plugins.ordered([{ ..none, name: "auth", needs: [Plugin("email")] }, { ..none, name: "email" }]).map(|plugin| plugin.name) == ["email", "auth"]
-expect Plugins.summary({ ..none, name: "jobs", migrations: [{ name: "0001", sql: "" }], loops: [{ name: "jobs.a", run!: |{}| {} }, { name: "jobs.b", run!: |{}| {} }] }) == "jobs: 1 migration, 2 loops"
+expect Plugins.added({ ..none, name: "jobs", migrations: [{ name: "0001", sql: "" }], loops: [{ name: "jobs.a", run!: |{}| {} }, { name: "jobs.b", run!: |{}| {} }] }) == "1 migration, 2 loops"
+expect Plugins.added({ ..none, name: "quiet" }) == "nothing"
 
 ## The database the server opened (`Host.db_flavor!`), for a message.
 described : Str -> Str

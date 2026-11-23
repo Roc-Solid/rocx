@@ -60,7 +60,7 @@ may be empty, for text alone. The client is Roc (`Smtp.roc`, over the platform's
 or TLS from the start, `AUTH PLAIN` when the URL has a user; a subject that isn't ASCII is encoded
 (RFC 2047), a body that isn't is sent as base64 (packages/crypto's `Base64`), text and HTML as
 `multipart/alternative`. With no SMTP server, the message is kept for the mailbox and logged
-(`email (kept, not sent: no SMTP_URL): to …`).
+(`email: kept, not sent (no SMTP_URL)`, at info, with `to` and `subject`).
 
 ## The dev mailbox
 
@@ -98,8 +98,8 @@ From the platform's `pf.Email` (before D-035):
 - `--smtp-url URL` and `--mail-from ADDRESS` are gone: set `SMTP_URL` and `MAIL_FROM` in the server's
   environment (as the server already read them), or pass `from` and `smtp_url!`. The server refuses
   the flags, saying so.
-- The log line for mail kept is `email (kept, not sent: no SMTP_URL): to …`, and the check's
-  `email.smtp: …` (it was `rocx mail …`).
+- The log's event for mail kept is `email: kept, not sent (no SMTP_URL)`, with `to` and `subject` as
+  fields (D-056), and the check's is what it says, with `check=email.smtp` (it was `rocx mail …`).
 - The mailbox's paths and its JSON are as they were, so packages/testing and tests reading
   `/__rocx/mail.json` change nothing.
 

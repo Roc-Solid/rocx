@@ -231,8 +231,8 @@ const PRETTY = /^\d\d:\d\d:\d\d (DEBUG|INFO |WARN |ERROR) \S/;
 
 /** What the platform may say as a server starts, whatever a test does: a migration applied, jobs a
  * stop cut short queued again, a look at S3 (`STORAGE_URL`). */
-// A plugin's own lines (what each added; the fixture's check, logged in the background) too.
-const STARTING = /^\S+\s+(rocx server: migrated:|rocx jobs:|rocx storage:|rocx plugins:|fixture\.look:|email\.smtp:)/;
+// A plugin's own lines (what each added; a check, logged in the background with its name) too.
+const STARTING = /^\S+\s+(rocx server: migrated |rocx jobs:|rocx storage:|rocx plugins:)|\scheck=(fixture\.look|email\.smtp)/;
 
 /** Waits for a stopped server's stderr to end: everything it wrote, read. */
 const ended = (of) => new Promise((resolve) => (of.child.stderr.readableEnded ? resolve() : of.child.stderr.once("end", resolve)));
@@ -794,7 +794,7 @@ test("migrations: the platform's tables, then the app's (embedded in it), in ord
 	// The server this file started applied whatever this database hadn't seen; a second start
 	// applies nothing.
 	const again = await start(dbFlags(), app, mailEnv());
-	assert.doesNotMatch(again.logged(), /migrated:/);
+	assert.doesNotMatch(again.logged(), /rocx server: migrated/);
 	assert.equal(await again.text("/tx/notes?run=nothing"), "", "the app's tables are there");
 	assert.equal(await again.stop(), 0);
 });
@@ -907,10 +907,10 @@ test("jobs: a database the platform migrated before jobs were a package (D-034) 
 		);
 		moved = await start(["--database-url", db.url]);
 		const migrated = events(moved)
-			.map((event) => event.msg)
-			.filter((msg) => msg.startsWith("rocx server: migrated:"));
-		assert.ok(migrated.includes("rocx server: migrated: jobs/0001_jobs"), migrated.join("\n"));
-		assert.ok(!migrated.some((msg) => msg.includes("rocx/")), "the platform's own, not again");
+			.filter((event) => event.msg === "rocx server: migrated")
+			.map((event) => event.migration);
+		assert.ok(migrated.includes("jobs/0001_jobs"), migrated.join("\n"));
+		assert.ok(!migrated.some((name) => name.startsWith("rocx/")), "the platform's own, not again");
 		// The job that was due runs; the rest are as they were.
 		assert.equal(await until(() => moved.text(`/jobs/log?run=${marker}`)), `note: ${marker} from before`);
 		// The worker marks it done just after it ran.
@@ -958,8 +958,10 @@ test("jobs: one that fails runs again, a little later each time, and one that al
 	assert.equal(await post(`/jobs/flaky?run=${flaky}&fails=2`), "queued");
 	assert.equal(await until(() => text(`/jobs/log?run=${flaky}`)), `flaky: ${flaky} done`);
 	assert.equal(await finished(flaky), "done 3 ", "the third attempt");
-	await logs(/flaky #\d+ failed \(attempt 1 of 5\), again in 20 ms: not yet \(try 1\)/);
-	await logs(/again in 40 ms: not yet \(try 2\)/);
+	// A level and fields: the kind, the attempt and of how many, when it runs again, and why.
+	await logsEvent({ level: "warn", msg: "rocx jobs: a job failed, and runs again", kind: "flaky", attempt: 1, of: 5, again_in_ms: 20, error: "not yet (try 1)" });
+	await logsEvent({ level: "warn", msg: "rocx jobs: a job failed, and runs again", kind: "flaky", attempt: 2, again_in_ms: 40, error: "not yet (try 2)" });
+	assert.ok(events().some((event) => event.kind === "flaky" && Number.isInteger(event.id)), "and its id, a number");
 
 	const crashing = `${run}crash`;
 	assert.equal(await post(`/jobs/crash?run=${crashing}`), "queued");
@@ -968,7 +970,7 @@ test("jobs: one that fails runs again, a little later each time, and one that al
 		return state.startsWith("failed") && state;
 	});
 	assert.equal(failed, "failed 5 crashed: a job that always crashes");
-	await logs(/crash #\d+ failed for good after 5 attempts/);
+	await logsEvent({ level: "error", msg: "rocx jobs: a job failed for good", kind: "crash", attempts: 5, error: "crashed: a job that always crashes" });
 	assert.equal(await text("/"), "Hello from Roc, natively.", "crashing jobs didn't stop the server");
 });
 
@@ -1020,8 +1022,8 @@ test("jobs: a kind says how many times its jobs are tried: one tried twice fails
 	const twice = `${run}twice`;
 	assert.equal(await post(`/jobs/twice?run=${twice}`), "queued");
 	assert.equal(await finished(twice), `failed 2 fails every time (${twice})`);
-	await logs(/twice #\d+ failed \(attempt 1 of 2\), again in 20 ms/);
-	await logs(/twice #\d+ failed for good after 2 attempts/);
+	await logsEvent({ msg: "rocx jobs: a job failed, and runs again", kind: "twice", attempt: 1, of: 2, again_in_ms: 20 });
+	await logsEvent({ msg: "rocx jobs: a job failed for good", kind: "twice", attempts: 2 });
 });
 
 test("jobs: a time limit cuts a run off at its next wait (Postgres, another server, a socket), whatever it does with the error; tried again, then failed; nothing left held", { skip: skipDb }, async () => {
@@ -1043,8 +1045,8 @@ test("jobs: a time limit cuts a run off at its next wait (Postgres, another serv
 		}
 		const took = performance.now() - started;
 		assert.ok(took < 3000, `three jobs, two runs of 300 ms each, at once: ${took.toFixed(0)} ms`);
-		await logs(/slow #\d+ failed \(attempt 1 of 2\), again in 20 ms: timed out after 300 ms/);
-		await logs(/slow #\d+ failed for good after 2 attempts: timed out after 300 ms/);
+		await logsEvent({ msg: "rocx jobs: a job failed, and runs again", kind: "slow", attempt: 1, of: 2, again_in_ms: 20, error: "timed out after 300 ms" });
+		await logsEvent({ msg: "rocx jobs: a job failed for good", kind: "slow", attempts: 2, error: "timed out after 300 ms" });
 		// In time, it is done.
 		assert.equal(await post(`/jobs/slow?run=${run}quick&on=none`), "queued");
 		assert.equal(await finished(`${run}quick`), "done 1 ");
@@ -1148,7 +1150,7 @@ test("the jobs page, as a plugin (JobsPage.plugin, packages/admin): behind the a
 	const retried = await form({ action: "retry", id, back: "state=failed&kind=twice" });
 	assert.equal(retried.status, 303);
 	assert.equal(retried.headers.get("location"), "/admin/jobs?state=failed&kind=twice");
-	const forGood = () => server.logged().split(`twice #${id} failed for good after 2 attempts`).length - 1;
+	const forGood = () => events().filter((event) => event.msg === "rocx jobs: a job failed for good" && event.kind === "twice" && String(event.id) === String(id) && event.attempts === 2).length;
 	assert.equal(await until(() => forGood() === 2), true, "tried twice more, then failed for good again");
 	assert.equal(await text(`/jobs/get?id=${id}`), `${id} twice failed 2/2 - fails every time (${run}twice)`);
 	const again = await form({ action: "retry", id: "999999999" });
@@ -1245,7 +1247,7 @@ test("email: without an SMTP server, kept in the outbox and logged", { skip }, a
 		assert.ok(id >= 1 && Math.abs(at - Date.now()) < 60_000, "an id, and when");
 		assert.match(raw, new RegExp(`^Subject: Hello ${run}\r$`, "m"), "the message as SMTP would carry it");
 		assert.deepEqual(JSON.parse(await plain.text("/__rocx/mail.json")), outbox);
-		await logs(new RegExp(`email \\(kept, not sent: no SMTP_URL\\): to ada@example.com: Hello ${run}`), plain);
+		await logsEvent({ level: "info", msg: "email: kept, not sent (no SMTP_URL)", to: "ada@example.com", subject: `Hello ${run}` }, plain);
 		const refused = await plain.get("/mail?to=not-an-address", { method: "POST", body: "x" });
 		assert.equal(refused.status, 500);
 		assert.match(await refused.text(), /^to not-an-address: /);
@@ -1439,21 +1441,22 @@ test("plugins: a plugin's route answers in the app, with the app's context and i
 	assert.equal(await text("/second"), "second");
 	assert.equal(await text("/third", { method: "POST" }), "third POST", "a route for every method");
 	assert.equal(await text("/"), "Hello from Roc, natively.", "the app's own routes, after the plugins'");
-	const said = events().map((event) => event.msg);
 	assert.deepEqual(
-		said.filter((msg) => msg.startsWith("rocx plugins:")),
+		events()
+			.filter((event) => event.msg === "rocx plugins: added")
+			.map(({ level, plugin, adds }) => `${level} ${plugin}: ${adds}`),
 		[
-			"rocx plugins: jobs: 1 early route, 1 migration, 1 call, 5 loops, 1 start",
-			"rocx plugins: email: 4 early routes, 1 start, 1 check",
-			"rocx plugins: jobs-page: 2 routes",
-			"rocx plugins: fixture: 5 routes, 1 early route, 2 files, 1 script, 1 migration, 1 call, 1 loop, 1 start, 1 check",
-			"rocx plugins: second: 1 route",
-			"rocx plugins: third: 1 route",
-			"rocx plugins: storage: 1 route",
+			"info jobs: 1 early route, 1 migration, 1 call, 5 loops, 1 start",
+			"info email: 4 early routes, 1 start, 1 check",
+			"info jobs-page: 2 routes",
+			"info fixture: 5 routes, 1 early route, 2 files, 1 script, 1 migration, 1 call, 1 loop, 1 start, 1 check",
+			"info second: 1 route",
+			"info third: 1 route",
+			"info storage: 1 route",
 		],
 		"listed jobs, email, the jobs page, fixture, third, second, storage: third needs second, so it comes after it",
 	);
-	assert.ok(said.includes("fixture.look: the fixture looked"), "the check, run once after the start");
+	await logsEvent({ level: "info", msg: "the fixture looked", check: "fixture.look" });
 });
 
 test("plugins: a plugin's files, served as they are: GET with its type and an ETag of its bytes, 304 when the browser has them, HEAD, 405 for any other method; one at the root", { skip }, async () => {
@@ -1514,7 +1517,7 @@ test("plugins: a plugin's files come before the app and its middleware: an app t
 		assert.equal(worker.status, 200, "and its file at the root, a service worker");
 		assert.equal(worker.headers.get("content-type"), "text/javascript");
 		assert.equal((await refusing.get("/files-sw.js", { method: "PUT", body: "x" })).status, 405, "the file's, not the app's");
-		assert.match(refusing.logged(), /rocx plugins: files: 2 files, 1 script/);
+		assert.ok(events(refusing).some((event) => has(event, { level: "info", msg: "rocx plugins: added", plugin: "files", adds: "2 files, 1 script" })), refusing.logged());
 	} finally {
 		await refusing.stop();
 	}
@@ -1547,8 +1550,8 @@ test("a sqlite: or turso: URL stops a Postgres app at start, saying which it wan
 test("plugins: a plugin's table, applied after the platform's and before the app's, recorded under the plugin's name", { skip: skipDb }, async () => {
 	assert.equal(await text("/fixture/migrated"), "fixture/0001_notes");
 	const order = events()
-		.map((event) => event.msg)
-		.filter((msg) => msg.startsWith("rocx server: migrated:"));
+		.filter((event) => event.msg === "rocx server: migrated")
+		.map((event) => event.migration);
 	// A fresh database: the first start applied them all, in order. (A database that had some of
 	// them has only what is new since, a later migration of the app's, say: nothing to compare.)
 	const at = (name) => order.findIndex((msg) => msg.endsWith(name));
@@ -3361,7 +3364,7 @@ test("--describe-sql (D-058): Postgres describes each statement on a scratch dat
 		assert.match(wrong.error, /42703: column "missing" does not exist/);
 		assert.deepEqual(inserted.params, ["$1"]);
 		assert.deepEqual(inserted.columns.map(({ name, not_null }) => [name, not_null]), [["id", true]]);
-		assert.match(log, /migrated: 0003_admin.sql/, "the migrations ran, on the scratch database");
+		assert.match(log, /"msg":"rocx server: migrated","migration":"0003_admin\.sql"/, "the migrations ran, on the scratch database");
 		assert.deepEqual(await named.query("select tablename from pg_tables where schemaname = 'public'"), [], "the database the app's URL names is untouched");
 		assert.deepEqual(await scratchDatabases(named), left, "the scratch database is gone");
 	} finally {

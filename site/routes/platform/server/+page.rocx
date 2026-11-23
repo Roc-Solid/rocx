@@ -251,7 +251,11 @@ view! = |_|
 			<p>
 				Every line the server writes is an event: a level, a message and fields. The host's own lines
 				(starting, stopping, a crash with its method, target and error, forwarding) and the app's go through
-				one formatter, in the host. An app logs with <code>Log.info!</code>, and <code>debug!</code>,
+				one formatter, in the host, and so do the platform's and its plugins' (a migration applied, what a
+				plugin added, a job that failed, mail kept): a message that doesn't change, the rest in fields
+				(<code>rocx jobs: a job failed, and runs again</code>, a warning with the job's <code>kind</code>,
+				<code>id</code>, <code>attempt</code>, <code>again_in_ms</code> and <code>error</code>), so a
+				collected log filters on them. An app logs with <code>Log.info!</code>, and <code>debug!</code>,
 				<code>warn!</code> and <code>error!</code>, its fields a record written as JSON;
 				<code>Log.line!</code> is a message alone. The format is the app's to choose, in its program:
 			</p>

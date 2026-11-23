@@ -289,13 +289,13 @@ function suite({ engine, name, tag, run, server, home }) {
 			["admin_authors", "admin_books", "any_flavor", "counters", "flaky", "items", "job_log", "lite_only", "rocx_actors", "rocx_jobs", "rocx_migrations", "scratch"].join("\n"),
 		);
 		assert.equal(await server().text("/migrated"), ["0001_tables.sql", "0002_admin.sql", "jobs/0001_jobs", "lite/0001_lite", "lite/0002_any", "rocx/0001 jobs and actors"].join("\n"));
-		assert.match(server().logged(), /migrated: rocx\/0001 jobs and actors[\s\S]*migrated: jobs\/0001_jobs[\s\S]*migrated: lite\/0001_lite[\s\S]*migrated: 0001_tables.sql/);
+		assert.match(server().logged(), /migrated migration="rocx\/0001 jobs and actors"[\s\S]*migrated migration=jobs\/0001_jobs[\s\S]*migrated migration=lite\/0001_lite[\s\S]*migrated migration=0001_tables.sql/);
 		const cwd = join(home(), "restarted");
 		const first = await run([], { cwd });
 		await first.stop();
 		const again = await run([], { cwd });
 		try {
-			assert.doesNotMatch(again.logged(), /migrated:/);
+			assert.doesNotMatch(again.logged(), /rocx server: migrated/);
 		} finally {
 			await again.stop();
 		}

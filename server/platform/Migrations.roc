@@ -133,7 +133,7 @@ apply_one! = |migration| {
 	)
 	match done {
 		Ok(applied) => {
-			if (applied) Log.line!("rocx server: migrated: ${migration.name}") else {}
+			if (applied) Log.info!("rocx server: migrated", { migration: migration.name }) else {}
 			Ok({})
 		}
 		Err(DbErr(why)) => Err("migration ${migration.name}: ${why}")

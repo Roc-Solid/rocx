@@ -512,8 +512,15 @@ direction) would make the limit matter less.
 
 ## D-015 Structured log lines
 
-**Status.** Deferred. An app may log one JSON object per event so each field can be filtered.
-`Log.line!` takes text; JSON written by hand works today.
+**Status.** Built on 2026-11-21 (2bc114f), in another shape than the sketch: `Log.debug!`,
+`Log.info!`, `Log.warn!` and `Log.error!` take a message and a record of fields (any
+`Json.Encodable`, not a list of strings), every line on stderr (the host's, the platform's, the
+app's) is an event with a level, a message and fields, and the format is the program's
+(`logs: { format: Auto }`, `Pretty` or `Json`; `Auto` follows `ROCX_LOG`, or the terminal), written
+off the request path by a thread of the host's. `Log.line!` stayed, a message alone at info. The
+platform's own lines (migrations, plugins, packages/jobs's and packages/email's) kept writing their
+details into the message until D-056 gave them levels and fields. Deferred until then: an app may
+log one JSON object per event so each field can be filtered; `Log.line!` took text.
 
 **Sketch.** `Log.event! : [Info, Warn, Error], Str, List((Str, Str)) => {}`, writing one JSON line.
 

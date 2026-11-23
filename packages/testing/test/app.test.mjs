@@ -104,7 +104,7 @@ test("the dev mailbox: what was sent, waited for, and its links", { skip }, asyn
 	const mail = await app.waitForMail({ to: "ada@example.com", subject: "Hello" }, { after: before });
 	assert.equal(mail.from, "Notes <notes@example.com>");
 	assert.deepEqual(links(mail), ["https://notes.example/hello"]);
-	assert.ok(app.logs().some((line) => line.msg === "email (kept, not sent: no SMTP_URL): to ada@example.com: Hello"), "and the server's log said so");
+	assert.ok(app.logs().some((line) => line.msg === "email: kept, not sent (no SMTP_URL)" && line.to === "ada@example.com" && line.subject === "Hello"), "and the server's log said so");
 });
 
 test("jobs: queued by an endpoint, or as a cron would, run to their end, with the email they sent", { skip: skipDb }, async () => {

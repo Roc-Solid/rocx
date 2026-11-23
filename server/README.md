@@ -720,9 +720,14 @@ Log.line!("migrated")                                          # a message alone
 
 Every line the server writes to stderr is an event: a level, a message and fields. The host's own
 lines (`rocx server: http://… (Roc, native)`, stopping, a crash with its `method`, `target` and
-`error`, forwarding, a background loop that crashed), the platform's Roc's and its plugins'
-(migrations, jobs and cron, mail: `Log.line!` for now) and the app's all go through one formatter in
-the host.
+`error`, forwarding, a background loop that crashed), the platform's Roc's and its plugins', and the
+app's all go through one formatter in the host. The platform's and the plugins' say what happened in
+a message that doesn't change, and the rest in fields (D-056): `rocx server: migrated`
+(`migration`), `rocx plugins: added` (`plugin`, `adds`), a plugin's check (its message, `check`:
+`email.smtp`), and packages/jobs's and packages/email's (`rocx jobs: a job failed, and runs again`,
+a warning with `kind`, `id`, `attempt`, `of`, `again_in_ms` and `error`; `rocx jobs: a job failed for
+good`, an error; `rocx cron: a schedule's job wasn't queued`; `email: kept, not sent (no SMTP_URL)`,
+with `to` and `subject`).
 The fields are any record (`Json.Encodable`), written as JSON; `{}` is none; one record with a
 single field has to say its name twice (`{ id: id }`: `{ id }` alone is a block, which is `id`).
 
@@ -782,7 +787,7 @@ first; an early path outside `/__rocx/`; two routes at one method and path (the 
 database, a plugin not in the list, or needs in a circle; a file whose path isn't relative, a file at
 the root under `rocx/` or `__rocx/`, two files at one place, a file at the root where a route is,
 or a script that is none of the plugin's files. Then the plugins are ordered by their needs, and the
-log says what each added (`rocx plugins: acme: 2 routes, 2 files, 1 script, 1 migration`).
+log says what each added (`rocx plugins: added plugin=acme adds="2 routes, 2 files, 1 script, 1 migration"`).
 
 **Files and scripts** (D-050). A file is a `Plugin.File`, `{ path, at : [Plugin, Root],
 content_type, body : List(U8) }`, its bytes embedded when the app is built (`import
@@ -940,7 +945,9 @@ without `--dev`, and SMTP to a server the test runs; the old flags refused),
 `Tcp`, roc-pg, the log (JSON with `ROCX_LOG=json` or unset on a pipe, pretty lines with
 `ROCX_LOG=pretty`, an app's fields beside `time`, `level` and `msg` and never in their place, a
 program's `Pretty` winning over `Auto` and `ROCX_LOG`, 200 requests logging at once with every line
-whole and each request's in order, and the queue flushed at a stop), live rooms and topics,
+whole and each request's in order, the queue flushed at a stop, and the platform's and plugins'
+own events with their levels and fields: a job's failures, migrations, plugins, a check, mail
+kept), live rooms and topics,
 channels (each checked as its stream opens and at every beat, one refused while the rest go on,
 what pages say, a subscriber behind its backlog, 40 streams open on two Roc threads), `Kv` (kept,
 read, taken once, deleted; a time to live and a counter's window; 200 increments at once; a capped
@@ -989,8 +996,6 @@ browser runtime's own render.
 - Actors' timers are in memory: durable ones (Orleans' reminders) would be rows, as jobs are.
 - A job's time limit cuts it off only at an effect that waits: Roc that loops without one holds
   its worker until it ends.
-- The platform's Roc (migrations, plugins) and packages/jobs and packages/email log with
-  `Log.line!`: a message at info, its details in the text, not yet a level and fields of their own.
 - `Http`: HTTP/1.1, a connection a request (none kept alive), no proxy; an answer's body comes into
   Roc whole.
 - `Forward`: an upstream's body only, not the other way (a request's body streamed to S3 as it
