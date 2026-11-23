@@ -197,7 +197,8 @@ function host() {
 
 /** How the browser's wasm is built: optimized for size, with lambda sets specialized. For this
  * site it is the smallest of the three, compressed, and about as fast as the others; `just site`
- * measures all three, and the browser platform's page shows them. */
+ * measures all three, and the browser platform's page shows them. Unlike the server's (D-064):
+ * boxy, this site's wasm is 3.5% bigger with brotli and renders its charts page half as fast. */
 export const CLIENT_OPT = ["--opt=size", "--specialize=yes"];
 
 /** Builds `app` into `output`: beside it first, then moved into its place in one step, so a server
@@ -375,12 +376,8 @@ async function buildUnlocked({ log, compare, dev }) {
 	mkdirSync(out, { recursive: true });
 	wasm(join(client, "main.roc"), appWasm, dev ? ["--opt=dev"] : CLIENT_OPT);
 	buildHost();
-	// Boxy lowering (`--specialize=no`) for the optimized server: specialized, every page's code is
-	// inlined into one function of Html.serialize!'s whose frame, with D-040's route levels, outgrows
-	// the 8 MiB stack a render runs on (test/compiler-bugs/huge-frame-opt-speed). Boxy renders the
-	// site's pages as fast (2.8 ms a page either way, measured), its largest frame 28 KB, and builds
-	// in a fraction of the time.
-	buildApp(join(site, "main.roc"), server, { opt: dev ? "dev" : (process.env.ROC_OPT ?? "speed"), specialize: dev });
+	// Optimized, with boxy lowering, as every app's server (D-064).
+	buildApp(join(site, "main.roc"), server, { opt: dev ? "dev" : (process.env.ROC_OPT ?? "speed") });
 	const facts = dev ? lastFacts() : await measure({ compare });
 	writeIfChanged(context, facts);
 	log(`rocx site: built in ${((performance.now() - started) / 1000).toFixed(2)} s${dev ? " (dev backend; numbers from the last `just site`)" : ""}`);

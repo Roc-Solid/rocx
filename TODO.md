@@ -30,6 +30,14 @@ When an item lands, delete its line here in the same commit.
 - **The other packages' `PROPOSALS.md`** (admin, forms, intl, mcp, otel, push, testing) have more
   ideas and questions waiting.
 - **`rocx new`** asks which database (Postgres, SQLite, Turso); the question is open in D-045.
+- **The examples' and tests' wasm, specialized?** It is built `--opt=size` alone (packages/testing's
+  `buildForTests`, `just example-apps`, test/e2e, web/test, README's build line), which is boxy by
+  the compiler's default, while the site's is `--specialize=yes` (D-064). Specialized, journal's is
+  24% smaller with brotli (144.0 to 109.4 KB) and board's 8%, and both render faster; their builds
+  take twice as long (board 5 to 11 s). Switching means measuring `just example-apps` again.
+- **echo's benchmark again:** the examples page's numbers (8f7abc5) are of its server built
+  specialized; since D-064 it ships boxy, so `just example-apps --bench` (a run on the user's go, on
+  a quiet machine) would measure what ships.
 
 ## Framework work, decided but not built
 
@@ -80,9 +88,10 @@ When an item lands, delete its line here in the same commit.
     a `Try` across the wire (D-054).
   - `huge-frame-opt-speed`: `--opt=speed` inlines every closure of a lambda set into one function,
     whose stack frame grows with the program; the docs site's server, with D-040's route levels,
-    passed the 8 MiB a render has (12.4 MB), so it is built `--specialize=no`. Any large app built
-    `--opt=speed` can meet it; the cure is the compiler's (shared stack slots for a switch's cases,
-    or closure bodies kept out of line past a size).
+    passed the 8 MiB a render has (12.4 MB), so every app's optimized server is built
+    `--specialize=no` (D-064; `ROCX_SPECIALIZE=yes` opts back in). The cure is the compiler's
+    (shared stack slots for a switch's cases, or closure bodies kept out of line past a size); once
+    it lands, measure the site's and plate's frames specialized again and make it the default back.
 - **Not reduced yet:** a rigid `..others` beside an app's own error tag in one body doesn't
   type-check (examples/uptime names `JobErr` instead).
 - **Fixes prepared on the fork wait for the user to open them as PRs** (boxy, `List.map` reuse).

@@ -2314,7 +2314,7 @@ the stylesheet as a cached file, a JSON payload, wasm splitting.
     since one dispatcher holds every page; the cure is the compiler's (test/compiler-bugs/huge-frame-
     opt-speed, its repro and the numbers). The wasm-split spike needs `--specialize=no` in the
     browser's build for the same reason (spike/wasm-split/REPORT.md), so the flag may become the
-    default later; not on this branch.
+    default later; not on this branch. (D-064 made it every app's server's default.)
     The other apps, built `--opt=speed` with levels (largest frame; a render has 8 MiB): plate
     848 KiB, journal 372, notes 192, quiz 132, board 120, uptime 104, tasks 80, test/e2e's app 36,
     and checkboxes, echo, hello and sqlite-vs-turso 8; plate is the nearest, a tenth of the way.
@@ -3764,3 +3764,117 @@ stopping and starting.
 
 **Reversible:** yes. The ported scripts are in history, and basic-cli's API was a drop-in shape for
 most of rocx-cli.
+
+## D-064 Every app's optimized server is built with boxy lowering (`--specialize=no`)
+
+**Status.** Built (2026-11-23). The user's decision: make D-040's workaround for the docs site the
+default for every app, and measure whether the browser's wasm should follow.
+
+**Context.** Roc's `--opt=speed` specializes lambda sets by default: a call through a closure field
+becomes a switch over every closure the program stores there, each case the closure's body inlined.
+An app's pages all sit behind such calls (`Html`'s holes and components hold closures, and D-040's
+route levels put every page behind one dispatcher), so one function ends up holding the whole app,
+and its cases' stack slots aren't shared. D-040 phase 2 found the docs site's server with a 12.4 MB
+frame in `Html.serialize!`'s specializations, past the 8 MiB stack a render runs on (D-027): every
+page overflowed it. The repro and the numbers are in `test/compiler-bugs/huge-frame-opt-speed`.
+D-040 built the site's server alone with `--specialize=no`. The other apps were below the limit but
+grew with their size (largest frame, specialized, at d782488: plate 848 KiB, journal 372, notes
+192, quiz 132, board 120, uptime 104, tasks 80, test/e2e's app 36). The wasm-split spike
+(spike/wasm-split/REPORT.md) also needs `--specialize=no`, in the browser's build.
+
+**Options.**
+1. Keep specialization, and build an app boxy only once it overflows (D-040's site-only case).
+   An app finds out in production, on its first render past the limit.
+2. Bigger render stacks. The frame grows with the program, so no size is safe. Each coroutine
+   (D-027) would reserve it too.
+3. Boxy lowering for every optimized server, with a way back in.
+4. Wait for the compiler fix.
+
+**Choice.** 3, with 4 still to come.
+- **`server/build.mjs`'s `specializeFlags(opt, specialize)`** gives `roc build` its flag:
+  - nothing for the dev backend;
+  - `--specialize=no` for `--opt=speed` (and `--opt=size`, whose default it already is);
+  - `--specialize=yes` when asked for.
+- `buildApp` uses it, so every build of an app does: `node server/build.mjs … --opt=speed`, `just
+  site`, the measuring scripts, echo's `bench.sh`, and the tests' builds (test/e2e's,
+  `ROCX_TEST_OPT=speed`). So does packages/testing's `buildForTests`, so `just examples` and the
+  examples' tests do too.
+- The site's special case is gone.
+- **Opting back in:** `--specialize=yes` to `server/build.mjs`, `specialize: true` to `buildApp` or
+  `buildForTests`, or `ROCX_SPECIALIZE=yes` in the environment for every build.
+- **rocx build and rocx dev:** nothing changes. `rocx build` writes the program and compiles nothing,
+  and `rocx dev` builds with the dev backend.
+- **rocx itself** (`bin/rocx`, on the CLI platform) stays specialized. It isn't an app of pages,
+  and its largest frame is 28 KiB.
+- **The browser's wasm stays specialized** (`--opt=size --specialize=yes`, the site's
+  `CLIENT_OPT`, and the tooling page's Justfile). Measured below, boxy is worse there.
+
+**The numbers.** Measured on an M5 (10 cores) shared with other sessions' builds (load 10 to 27),
+the two builds taking turns.
+
+*Largest stack frame of each app's `--opt=speed` server* (the stack probe in a function's prologue,
+in 4 KiB pages; 8 KiB is the host's own Rust, turso's and ring's; with boxy only two of the
+site's Roc functions are big enough to need a probe):
+
+| App | specialized (D-040) | boxy | boxy build |
+|---|---|---|---|
+| the docs site | 12.4 MB (overflows) | 28 KiB | 77 s |
+| plate | 848 KiB | 8 KiB | 19 s |
+| journal | 372 KiB | 8 KiB | 12 s |
+| notes | 192 KiB | 8 KiB | 16 s |
+| quiz | 132 KiB | 8 KiB | 18 s |
+| board | 120 KiB | 8 KiB | 17 s |
+| uptime | 104 KiB | 8 KiB | 32 s |
+| tasks | 80 KiB | 8 KiB | 17 s |
+| test/e2e's app | 36 KiB | 8 KiB | 18 s |
+| checkboxes, echo, hello, sqlite-vs-turso | 8 KiB | 8 KiB | 4 to 7 s |
+
+(Build times include `rocx build`. Specialized builds took 2 to 6 minutes for the site, 74 s for
+board and 26 s for journal.)
+
+*Rendering on the server*: Roc's own time per page (the `server-timing` header), one request at a
+time, 8 rounds, medians. No HTTP benchmark.
+
+| App | specialized | boxy |
+|---|---|---|
+| journal (9 pages) | 0.85 ms a page | 0.96 ms |
+| board (2 pages) | 1.30 ms a page | 1.46 ms |
+| the docs site (48 pages) | overflows | 363 to 386 ms a round at best, as D-040 measured (376 and 369 ms for 50) |
+
+Boxy costs the examples about 12% (0.1 ms a page). The site's round drifts with the machine's
+load, not with the server's age: a fresh server is no faster, and its RSS stays at 42 to 64 MB.
+
+*The browser's wasm*, `--opt=size` specialized against boxy:
+- sizes in KB;
+- rendering a page in Node as `site/build.mjs` measures it (warm, median of 5 interleaved rounds);
+- hydrating it in Chromium (`rocx:ready`'s ms, the time the site's pages show; median of 12 loads
+  each, alternating).
+
+| | site, specialized | site, boxy | journal, specialized | journal, boxy | board, specialized | board, boxy |
+|---|---|---|---|---|---|---|
+| raw | 1372.6 | 1173.3 | 402.8 | 490.3 | 895.8 | 805.9 |
+| gzip | 417.1 | 411.2 | 138.7 | 183.0 | 273.9 | 284.3 |
+| brotli | 300.6 | 311.2 (+3.5%) | 109.4 | 144.0 (+32%) | 199.5 | 216.3 (+8%) |
+| rendering | `/` 430 µs, `/components` 4.5 ms, `/routing` 1.1 ms, `/ecosystem/charts` 43 ms | 507 µs, 4.7 ms, 1.1 ms, 85 ms | `/en` 106 µs, a post 555 µs | 132 µs, 599 µs | `/` 250 µs, a board 4.2 ms | 344 µs, 4.6 ms |
+| hydrating | 14, 23, 15, 39 ms | 7, 16, 8, 35 ms | 6, 9 ms | 6, 10 ms | 9, 18 ms | 8, 15 ms |
+| build | 12 s | 5 s | 3 s | 2 s | 11 s | 5 s |
+
+In the browser, boxy is bigger to download on all three apps, and renders slower once warm (the
+charts page half as fast). Hydrating is the same or a few ms quicker, probably because there is
+less code to compile before the first run. Boxy is worse on two of the three measures, so by the
+rule set for this decision (boxy only if it is no worse) the wasm stays specialized. One thing
+doesn't follow that rule today: the examples' and the tests' wasm is built `--opt=size` alone
+(packages/testing, `just example-apps`, README's build line), which is boxy by the compiler's
+default. Specialized, journal's would be 24% smaller with brotli (TODO.md).
+
+**Costs.**
+- Server renders are about 12% slower on the examples measured: 0.1 ms a page.
+- echo's published benchmark (8f7abc5) is of a specialized build. It ships boxy now, and runs again
+  only on the user's go (TODO.md).
+- The site's server already built boxy, so its pages are unchanged.
+
+**Reversible:** yes, by an app (`ROCX_SPECIALIZE=yes`) or for all (`specializeFlags`'s default).
+Once the compiler keeps a frame from growing with the program, specialization can be the default
+again. The fix would keep closure bodies out of line past a size, or let a switch's cases share
+their stack slots (lifetime markers on the allocas). Then measure the site's and plate's frames
+specialized again.

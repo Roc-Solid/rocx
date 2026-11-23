@@ -2,6 +2,11 @@
 // app on it, as one native executable.
 //
 //   node server/build.mjs <app.roc> <output> [--opt=dev|speed] [--target=arm64mac|x64mac|arm64musl|x64musl]
+//                                             [--specialize=yes]
+//
+// `--opt=speed` builds with boxy lowering (`--specialize=no`) unless `--specialize=yes` or
+// `ROCX_SPECIALIZE=yes` asks for lambda-set specialization (D-064: specialized, a large app's
+// render can outgrow its stack).
 //
 // The host is built with the cargo on PATH (the system's, e.g. from Nix), or else the one `just
 // setup` put in .tools/rust; Roc links the app against it (server/platform/targets/<target>/
@@ -244,12 +249,24 @@ export async function start(executable, flags = []) {
 	};
 }
 
-/** `app` on the server platform, built into the executable `output`. `specialize: false` builds it
- * with `--specialize=no` (boxy lowering: closures called through a pointer, not specialized and
- * inlined per lambda set), which the docs site's server needs at --opt=speed (D-040). */
-export function buildApp(app, output, { target = nativeTarget(), opt = "dev", specialize = true } = {}) {
+/** Whether an optimized build asks for lambda-set specialization (D-064): not unless asked for, with
+ * `specialize` true or `ROCX_SPECIALIZE=yes`. The flags `roc build` is given for it at `opt`: none
+ * for the dev backend, `--specialize=no` (boxy lowering: a closure called through a pointer) or
+ * `--specialize=yes` (each closure of a lambda set inlined where it is called) for `speed` and
+ * `size`. Specialized, `--opt=speed` puts every page of an app into one function whose stack frame
+ * grows with the app, past the 8 MiB a render has on the docs site
+ * (test/compiler-bugs/huge-frame-opt-speed); boxy renders as fast and builds in a fraction of the
+ * time. */
+export function specializeFlags(opt, specialize = process.env.ROCX_SPECIALIZE === "yes") {
+	if (opt !== "speed" && opt !== "size") return [];
+	return [`--specialize=${specialize ? "yes" : "no"}`];
+}
+
+/** `app` on the server platform, built into the executable `output`, with boxy lowering when
+ * optimized unless `specialize` (or `ROCX_SPECIALIZE=yes`) asks otherwise (`specializeFlags`). */
+export function buildApp(app, output, { target = nativeTarget(), opt = "dev", specialize } = {}) {
 	mkdirSync(dirname(output), { recursive: true });
-	run(roc(), ["build", `--target=${target}`, `--opt=${opt}`, ...(specialize ? [] : ["--specialize=no"]), `--output=${output}`, app]);
+	run(roc(), ["build", `--target=${target}`, `--opt=${opt}`, ...specializeFlags(opt, specialize), `--output=${output}`, app]);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -262,6 +279,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 	}
 	const target = option("target", nativeTarget());
 	buildHost({ target });
-	buildApp(app, output, { target, opt: option("opt", "dev") });
+	const specialize = option("specialize");
+	buildApp(app, output, { target, opt: option("opt", "dev"), specialize: specialize === undefined ? undefined : specialize === "yes" });
 	console.error(`built ${output} (${target})`);
 }

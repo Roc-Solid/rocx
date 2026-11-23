@@ -20,7 +20,7 @@ hex: `packages/crypto`, on no platform, D-025) are packages an app names.
 ```sh
 just dev        # the docs site on it: http://localhost:8080, rebuilt on save
 just db         # a Postgres in Docker; prints its DATABASE_URL (a SQLite app needs none)
-node server/build.mjs app.roc out/app [--opt=speed] [--target=arm64musl]
+node server/build.mjs app.roc out/app [--opt=speed] [--target=arm64musl] [--specialize=yes]
 ```
 
 ## An app
@@ -1007,6 +1007,18 @@ static Linux executables, cross-compiled from macOS: Rust's own musl target supp
 `libc.a` and `libunwind.a`, and Zig compiles the host's C (and `ring`'s, for TLS). The test app
 built `--target=arm64musl` runs in a container against `just db`'s Postgres, every part of it.
 
+An optimized build (`--opt=speed`) is built with boxy lowering, `--specialize=no` (D-064).
+Specialized, Roc inlines every closure of a lambda set into the function that calls through it;
+an app's pages all sit behind one such call, so that function's stack frame grows with the app.
+The docs site's reached 12.4 MB, past the 8 MiB a render runs on
+(`test/compiler-bugs/huge-frame-opt-speed`), and plate's was 848 KiB. Boxy calls a closure through
+a pointer: the site's largest frame is 28 KiB, every example's 8 KiB, pages render as fast, and
+builds take a fraction of the time. `--specialize=yes` (here; `specialize: true` to `buildApp` or
+packages/testing's `buildForTests`), or `ROCX_SPECIALIZE=yes` for every build, asks for
+specialization again. Once the compiler keeps a large frame from growing (closure bodies out of
+line past a size, or a switch's cases sharing their stack slots), specialization can be the
+default again.
+
 `just glue` regenerates `host/src/roc_platform_abi.rs` after a change to the header.
 
 ## Running
@@ -1111,7 +1123,7 @@ a stop in the middle of a request. With
 `DATABASE_URL` unset, what needs Postgres is skipped; with `STORAGE_URL` unset (an S3 bucket the
 tests may write to: rustfs or MinIO in Docker, say, with a bucket made), storage's S3 runs; a
 request over the internet runs only with `ROCX_TEST_INTERNET=1`; `ROCX_TEST_OPT=speed` builds the
-app optimized.
+app optimized (boxy, as an app ships; with `ROCX_SPECIALIZE=yes`, specialized).
 `server/test/host-entries.test.mjs` reads the host's sources, building nothing: every function Roc
 can call in the host (the glue's runtime and hosted symbols, every function the host exports, the
 `RocHost` callbacks) must begin with `let _host = preempt::host();` (D-057).

@@ -45,8 +45,9 @@ The case that overflows is the site at nav-phase2 before the workaround: `rocx s
 
 ## Workaround
 
-rocx builds the site's server with `--specialize=no` (server/build.mjs's `buildApp`, `specialize:
-false`, from site/build.mjs). Any large app built with `--opt=speed` can meet the same growth; the
-cure is in the compiler: share the stack slots of a switch's cases (lifetime markers on the
+rocx builds every app's `--opt=speed` server with `--specialize=no` (D-064: server/build.mjs's
+`specializeFlags`, which `buildApp` and packages/testing's `buildForTests` use; `ROCX_SPECIALIZE=yes`
+or `--specialize=yes` asks for specialization back). Any large app built specialized can meet the
+same growth; the cure is in the compiler: share the stack slots of a switch's cases (lifetime markers on the
 allocas), or keep closure bodies out of line past a size. The wasm-split spike
 (spike/wasm-split/REPORT.md) needs `--specialize=no` in the browser's build for the same reason.

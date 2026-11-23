@@ -226,7 +226,7 @@ labels skip what a reader can't see: `hidden`, `aria-hidden="true"`, `display: n
 | `postgres.mjs` | `testDatabase(url, { template })`: a database of the test's own, with `url`, `query`, `` sql`…${value}` `` (values as literals), `jobs`, `enqueue`, `settleJobs`, `drop`. `connect(url)`. A client of its own, over Node's sockets: SCRAM-SHA-256, the simple query protocol, rows as objects of numbers, booleans, JSON and text. |
 | `sqlite.mjs` | `testSqlite()`: a SQLite file of the test's own, with `url`, `path`, `query(sql, params)`, `` sql`…${value}` `` (values as parameters: a boolean as 1 or 0, an object as JSON), `jobs`, `enqueue`, `settleJobs` (the workers woken through the server: `POST /__rocx/jobs/wake`), `close`, `drop`, over `node:sqlite`. |
 | `browser.mjs` | `launchBrowser({ engine })` (`"chromium"`, or `"gecko"`), `browser.open(url, { strict, cookies, script })`: a `Tab` with the queries (async), `findBy…`, `waitFor(check)`, `dom()`, `text()`, `requested()`, `errors`, `console`, `screenshot()`, `drag(source, target)`, `finish()`, `touchDrag(source, target)`, `lift()`. Each `Element` has `click()`, `fill(text)`, `type(text)`, `press(key)`, `value()`, `checked()`, `selector()`. |
-| `build.mjs` | `buildForTests(dir, { client, dev, opt })`: `rocx build`, the browser's wasm, the server; `{ server, statics }` |
+| `build.mjs` | `buildForTests(dir, { client, dev, opt, specialize })`: `rocx build`, the browser's wasm, the server (`opt: "speed"` boxy unless `specialize`, D-064); `{ server, statics }` |
 | `index.mjs` | all of the above |
 
 ## Status

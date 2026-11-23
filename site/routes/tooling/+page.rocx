@@ -196,6 +196,16 @@ view! = |_|
 				plain
 			/>
 			<p>
+				The two halves are optimized differently. The server's, <code>--opt=speed</code>, is built
+				with boxy lowering (<code>--specialize=no</code>): specialized, Roc inlines every closure of
+				a lambda set where it is called, and an app's pages all sit behind one such call, so that
+				function's stack frame grows with the app. This site's reached 12.4 MB, past the 8 MiB a
+				render runs on. Boxy keeps every app's largest frame under 32 KB, renders as fast and builds
+				in a fraction of the time. <code>--specialize=yes</code> (or <code>ROCX_SPECIALIZE=yes</code>)
+				asks for specialization back. The browser's wasm stays specialized: it is smaller with
+				brotli and renders faster (DECISIONS.md, D-064, has the numbers).
+			</p>
+			<p>
 				Requests, routes, endpoints, events and middleware are both platforms' (<code>pf.Server</code>,
 				<code>pf.Endpoint</code>, <code>pf.Middleware</code>, <code>pf.Events</code>, <code>pf.OpenApi</code>),
 				and so are the modules components are written with, so the same component compiles on both.
