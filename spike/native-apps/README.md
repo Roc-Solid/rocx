@@ -156,7 +156,11 @@ mistake, then its fix), on the Mac's clock from the file's write to the client's
 
 `dev-01-before.png`, `dev-02-reloaded.png` (the new heading, the field's text kept, the counter back
 at 0), `dev-03-error.png`, `dev-04-fixed.png`, `dev-05-crash-guard.png` (a library whose
-`roc_mount` writes to address 0, served as a build, and the client after it) and `dev-loop.txt`.
+`roc_mount` writes to address 0, served as a build, and the client after it), `dev-06-fingerprint.png`
+(the dev client uninstalled and a comment added to `Host.roc`: `rocx dev --android` installed and
+opened the client, which refused the build for another platform), `dev-07-connect.png` (a client
+with nothing saved: its connect screen, which loaded the build once given the address) and
+`dev-loop.txt`.
 On the Mac, loading the app as a `.dylib` to test reloads there doesn't work yet: the Mach-O library
 writes to Roc's constant data (in `__DATA_CONST`, read-only once loaded), where the Android library
 doesn't; the loop is tested on the emulator instead.
