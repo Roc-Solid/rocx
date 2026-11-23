@@ -286,9 +286,9 @@ function suite({ engine, name, tag, run, server, home }) {
 	test("the platform's tables and a plugin's for SQLite are made, a plugin's for Postgres isn't; each recorded once, and a restart applies none again", { skip }, async () => {
 		assert.equal(
 			await server().text("/tables"),
-			["admin_authors", "admin_books", "any_flavor", "counters", "flaky", "items", "job_log", "lite_only", "rocx_actors", "rocx_jobs", "rocx_migrations", "scratch"].join("\n"),
+			["admin_authors", "admin_books", "any_flavor", "counters", "flaky", "items", "job_log", "lite_only", "rocx_actor_timers", "rocx_actors", "rocx_jobs", "rocx_migrations", "scratch"].join("\n"),
 		);
-		assert.equal(await server().text("/migrated"), ["0001_tables.sql", "0002_admin.sql", "jobs/0001_jobs", "lite/0001_lite", "lite/0002_any", "rocx/0001 jobs and actors"].join("\n"));
+		assert.equal(await server().text("/migrated"), ["0001_tables.sql", "0002_admin.sql", "jobs/0001_jobs", "lite/0001_lite", "lite/0002_any", "rocx/0001 jobs and actors", "rocx/0002 actor timers"].join("\n"));
 		assert.match(server().logged(), /migrated migration="rocx\/0001 jobs and actors"[\s\S]*migrated migration=jobs\/0001_jobs[\s\S]*migrated migration=lite\/0001_lite[\s\S]*migrated migration=0001_tables.sql/);
 		const cwd = join(home(), "restarted");
 		const first = await run([], { cwd });
@@ -312,6 +312,34 @@ function suite({ engine, name, tag, run, server, home }) {
 			assert.equal(await again.post("/actors/add?key=k"), "3");
 		} finally {
 			await again.stop();
+		}
+	});
+
+	test("an actor's timer outlives a restart (D-057): set before a stop, told after the start, once; a cancelled one never", { skip }, async () => {
+		const cwd = join(home(), "timers");
+		const first = await run([], { cwd });
+		let again;
+		try {
+			assert.match(await first.post("/actors/later?key=t&by=5&ms=1500"), /^\d+$/);
+			const cancelled = await first.post("/actors/later?key=t&by=7&ms=1500");
+			assert.equal(await first.post(`/actors/cancel?timer=${cancelled}`), "cancelled");
+			assert.equal(await first.text("/actors/timers?key=t"), "1");
+			await first.stop();
+			again = await run([], { cwd });
+			assert.equal(await again.text("/actors/count?key=t"), "0", "not yet");
+			const told = async () => {
+				for (const started = Date.now(); Date.now() - started < 5000; await new Promise((resolve) => setTimeout(resolve, 50))) {
+					if ((await again.text("/actors/count?key=t")) === "5") return true;
+				}
+				return false;
+			};
+			assert.equal(await told(), true, "told after the start");
+			await new Promise((resolve) => setTimeout(resolve, 300));
+			assert.equal(await again.text("/actors/count?key=t"), "5", "once");
+			assert.equal(await again.text("/actors/timers?key=t"), "0", "its row went");
+		} finally {
+			await first.stop();
+			await again?.stop();
 		}
 	});
 

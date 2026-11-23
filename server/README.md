@@ -680,8 +680,20 @@ to it meanwhile, and the next message wakes it as the database has it. Without a
 in its task alone, and it stays awake. An actor may ask another: one that asks itself, or any actor
 whose turn waits on its answer up the chain of asks, is refused at once; an ask not answered in
 30 s (a cycle through two mailboxes) is given up on, and a message whose asker gave up before its
-turn came is dropped, with a warning. Tells and timers are in memory: a restart loses those not yet
-handled (a job is for work that must survive one).
+turn came is dropped, with a warning. Tells are in memory: a restart loses those not yet handled (a
+job is for work that must survive one).
+
+Timers outlive a restart, with a database (D-057, as Orleans' reminders do): each is a row of
+`rocx_actor_timers` (its number, whom it tells what, and when), written at once by `tell_after!` and
+`after!` in a call of its own, outside any transaction the caller has open (as a tell is sent at
+once), and deleted once the turn that handled it has ended, however it ended (so a message that
+crashes its actor isn't told again after every restart). The platform's start sets again every row
+it finds, for the time it has left (now, if that has passed); the host keeps the timers that are
+waiting. So a timer's message is told at least once: a server killed in the middle of its turn, or
+before its row was deleted, tells it again after its restart. A timer's number is random (63
+bits), so one kept in an actor's state still names its own timer after a restart. `cancel!` stops a
+timer that is waiting, or one that has fired whose turn hasn't come (its message is dropped), and
+deletes its row. Without a database, timers are in memory, and a restart loses them.
 
 ### Pages of components
 
@@ -1043,8 +1055,9 @@ no database server: its file where the program says or `--database-url` does, a 
 typed parameters and rows, transactions and a failing script, 40 read-then-write transactions at
 once that each see the one before, a read beside a held write, notifications heard on commit only,
 the platform's and a plugin's SQLite tables made once, an actor's state across a restart, a plugin
-that needs Postgres refused; jobs (in a transaction, retried, keyed, cut off at their time limit with
-the statement interrupted and the transaction rolled back), cron, and the jobs page.
+that needs Postgres refused; an actor's timer across a restart; jobs (in a transaction, retried,
+keyed, cut off at their time limit with the statement interrupted and the transaction rolled back),
+cron, and the jobs page.
 `site/test/site.test.mjs` runs the docs site on it, in Chromium, and compares its pages with the
 browser runtime's own render.
 

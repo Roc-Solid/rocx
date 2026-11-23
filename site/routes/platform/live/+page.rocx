@@ -11,7 +11,7 @@ import ../../../Demos/Lobby
 
 meta = {
 	title: "Live, channels and actors",
-	description: "State that outlives a request on the Roc Solid server platform: live topics and rooms that streams share; channels, typed and checked, that pages subscribe to over one stream a tab; actors that handle one message at a time, in order, with typed asks, tells and timers, their state kept in the database; and values kept in memory by key (Kv).",
+	description: "State that outlives a request on the Roc Solid server platform: live topics and rooms that streams share; channels, typed and checked, that pages subscribe to over one stream a tab; actors that handle one message at a time, in order, with typed asks, tells and timers, their state and timers kept in the database; and values kept in memory by key (Kv).",
 	toc: [
 		{ id: "rooms", label: "Rooms: who is here" },
 		{ id: "topics", label: "Topics: what was said" },
@@ -259,6 +259,14 @@ view! = |_|
 			<p>
 				<code>Actor.tell_after!(kind, key, ms, message)</code> does the same from anywhere: a request, a
 				job, another actor.
+			</p>
+			<p>
+				With a database, a timer outlives a restart: it is a row (<code>rocx_actor_timers</code>), written
+				at once (outside any transaction the caller has open, as a tell is sent at once) and deleted when
+				the turn that handled it has ended, and the server sets every row again as it starts. Its message
+				is told at least once: a server killed in the middle of that turn tells it again after its restart.
+				<code>Actor.cancel!</code> stops a timer that is waiting, or one that has fired whose turn hasn't
+				come. Without a database, timers are in memory, and a restart loses them.
 			</p>
 
 			<Heading id="kv">Values in memory: Kv</Heading>

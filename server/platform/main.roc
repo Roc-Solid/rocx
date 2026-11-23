@@ -201,6 +201,7 @@ platform ""
 	}
 
 import Actor
+import ActorTimers
 import ActorTurn
 import AesGcm
 import Audio
@@ -300,9 +301,10 @@ drop_feed_for_host = |_| {}
 ## The server is starting: the log takes the app's format (before anything is logged: a migration,
 ## a plugin's problem); the app's database is opened, where its program and `--database-url` say;
 ## the plugins are checked (any problem stops it here, with every one) and put in order; the host
-## is told the kinds of actor, and handed the plugins' files and their scripts' URLs; then the platform's tables, the plugins' and the app's migrations
-## are applied (the platform's and the plugins' for its database), and the plugins' starts run (a
-## jobs plugin's queues again the jobs a stop cut short).
+## is told the kinds of actor, and handed the plugins' files and their scripts' URLs; then the
+## platform's tables, the plugins' and the app's migrations are applied (the platform's and the
+## plugins' for its database), the actors' timers the database keeps are set again, and the
+## plugins' starts run (a jobs plugin's queues again the jobs a stop cut short).
 init_for_host! : {} => Try({}, Str)
 init_for_host! = |{}| {
 	Host.log_format!(
@@ -341,7 +343,11 @@ init_for_host! = |{}| {
 		theirs = plugins.join_map(|plugin| plugin.migrations.map(|migration| { name: "${plugin.name}/${migration.name}", sql: migration.sql }))
 		match Migrations.apply!(Migrations.own(flavor).concat(theirs).concat(program.migrations)) {
 			Err(why) => Err(why)
-			Ok({}) => started!(plugins)
+			Ok({}) => {
+				# The actors' timers a stop left waiting, set again (D-057).
+				ActorTimers.load!({})?
+				started!(plugins)
+			}
 		}
 	} else {
 		started!(plugins)
@@ -493,9 +499,14 @@ background_for_host! = |index|
 ## failed; a crash in it ends this call only.
 isolated_for_host! : Str, Str => Try(Str, Str)
 isolated_for_host! = |what, input|
-	match program.plugins.join_map(|plugin| plugin.calls).find_first(|call| call.name == what) {
-		Ok(call) => (call.run!)(input)
-		Err(_) => Err("nothing in the app is called ${what}")
+	# The platform's own (`rocx:…`, a name no plugin's call can have): its actors' timers' rows.
+	if what.starts_with("rocx:") {
+		ActorTimers.isolated!(what, input)
+	} else {
+		match program.plugins.join_map(|plugin| plugin.calls).find_first(|call| call.name == what) {
+			Ok(call) => (call.run!)(input)
+			Err(_) => Err("nothing in the app is called ${what}")
+		}
 	}
 
 ## An actor's turn, which its mailbox in the host runs (`actors.rs`): the actor of kind `kind`

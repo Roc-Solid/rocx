@@ -3153,7 +3153,7 @@ pub struct HostFlashArgs {
 }
 
 /// Arguments for Host.actor_after!
-/// Roc signature: Str, Str, U64, Str => U64
+/// Roc signature: Str, Str, U64, Str, U64 => {}
 /// Refcounted fields are owned by the hosted function.
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -3162,6 +3162,7 @@ pub struct HostActorAfterArgs {
     pub arg1: RocStr,
     pub arg2: u64,
     pub arg3: RocStr,
+    pub arg4: u64,
 }
 
 /// Arguments for Host.actor_ask!
@@ -5149,13 +5150,13 @@ unsafe extern "C" {
     pub fn roc_for_new() -> u64;
 
     /// Hosted symbol for Host.actor_after!
-    /// Roc signature: Str, Str, U64, Str => U64
+    /// Roc signature: Str, Str, U64, Str, U64 => {}
     /// Owned arguments. Release each exactly once before returning, unless it is
     /// moved into storage or into the result:
     ///     unsafe { arg0.decref(roc_host); }
     ///     unsafe { arg1.decref(roc_host); }
     ///     unsafe { arg3.decref(roc_host); }
-    pub fn roc_host_actor_after(arg0: RocStr, arg1: RocStr, arg2: u64, arg3: RocStr) -> u64;
+    pub fn roc_host_actor_after(arg0: RocStr, arg1: RocStr, arg2: u64, arg3: RocStr, arg4: u64);
 
     /// Hosted symbol for Host.actor_ask!
     /// Roc signature: Str, Str, Str => Try(Str, Str)

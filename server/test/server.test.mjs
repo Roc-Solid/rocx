@@ -944,7 +944,11 @@ test("jobs: a database the platform migrated before jobs were a package (D-034) 
 			.filter((event) => event.msg === "rocx server: migrated")
 			.map((event) => event.migration);
 		assert.ok(migrated.includes("jobs/0001_jobs"), migrated.join("\n"));
-		assert.ok(!migrated.some((name) => name.startsWith("rocx/")), "the platform's own, not again");
+		assert.deepEqual(
+			migrated.filter((name) => name.startsWith("rocx/")),
+			["rocx/0004 actor timers"],
+			"the platform's own, not again: only the one it gained since (D-057)",
+		);
 		// The job that was due runs; the rest are as they were.
 		assert.equal(await until(() => moved.text(`/jobs/log?run=${marker}`)), `note: ${marker} from before`);
 		// The worker marks it done just after it ran.
@@ -3151,6 +3155,46 @@ test("actors: their state is in Postgres, there after a restart", { skip: skipDb
 	} finally {
 		assert.equal(await restarted.stop(), 0);
 	}
+});
+
+test("actors: timers outlive a restart (D-057): one set before a stop is told after the start, once; one cancelled, and one handled, aren't; each row goes once its turn has ended", { skip: skipDb }, async () => {
+	const key = `${run}reminded`;
+	const first = await start(dbFlags(), app, mailEnv());
+	let again;
+	try {
+		const ask = (of, path) => of.text(path, { method: "POST" });
+		assert.match(await ask(first, `/actors/later?run=${key}&by=5&ms=1500`), /^\d+$/, "told after the restart");
+		const cancelled = await ask(first, `/actors/later?run=${key}&by=7&ms=1500`);
+		assert.equal(await ask(first, `/actors/cancel?timer=${cancelled}`), "cancelled");
+		assert.match(await ask(first, `/actors/later?run=${key}&by=100&ms=10`), /^\d+$/, "handled before the stop");
+		assert.equal(await until(async () => (await first.text(`/actors/count/${key}`)) === "100"), true, "the short one fired");
+		assert.equal(await until(async () => (await text(`/actors/timers?run=${key}`)) === "1"), true, "kept: the one waiting alone");
+		assert.equal(await first.stop(), 0);
+		again = await start(dbFlags(), app, mailEnv());
+		assert.match(again.logged(), /timers kept from before the start, set again/);
+		assert.equal(await again.text(`/actors/count/${key}`), "100", "not yet");
+		assert.equal(await until(async () => (await again.text(`/actors/count/${key}`)) === "105"), true, "told after the start");
+		await new Promise((resolve) => setTimeout(resolve, 300));
+		assert.equal(await again.text(`/actors/count/${key}`), "105", "once, and never the cancelled one");
+		assert.equal(await until(async () => (await text(`/actors/timers?run=${key}`)) === "0"), true, "its row went once its turn had ended");
+	} finally {
+		await first.stop();
+		if (again) assert.equal(await again.stop(), 0);
+	}
+});
+
+test("actors: a timer cancelled after it fired, while its actor was busy, is dropped before its turn (D-057)", { skip: skipDb }, async () => {
+	const key = `${run}busy`;
+	// The counter's turn takes 600 ms; the timer fires 50 ms in, its message behind that turn.
+	const napping = text(`/actors/nap?run=${key}&ms=600`, { method: "POST" });
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	const timer = await post(`/actors/later?run=${key}&by=7&ms=50`);
+	await new Promise((resolve) => setTimeout(resolve, 250));
+	assert.equal(await post(`/actors/cancel?timer=${timer}`), "cancelled");
+	assert.equal(await napping, "0");
+	await new Promise((resolve) => setTimeout(resolve, 200));
+	assert.equal(await text(`/actors/count/${key}`), "0", "its message was dropped");
+	assert.equal(await text(`/actors/timers?run=${key}`), "0", "and its row went with the cancel");
 });
 
 test("actors: one idle for --actor-idle-ms is let go, and the next message wakes it as Postgres has it; one awake keeps the state it has", { skip: skipDb }, async () => {

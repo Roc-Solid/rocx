@@ -1,10 +1,11 @@
+import ActorTimers
 import Host
 
 ## State that outlives a request, changed one message at a time: an actor is a kind and a key (the
 ## cart of member 7, the counter called `visits`). Nobody makes one or ends one: a message to any
 ## key finds it as its last message left it, or new (`initial(key)`), and it handles its messages
-## one at a time, in the order they came. With a database, its state is kept in Postgres
-## (`rocx_actors`), so it is there after a restart.
+## one at a time, in the order they came. With a database, its state is kept in it
+## (`rocx_actors`), and so are its timers (`rocx_actor_timers`), so both are there after a restart.
 ##
 ## ```roc
 ## cart : Actor.Kind({ items : List(Str) }, [Add(Str), Clear], U64)
@@ -43,8 +44,12 @@ Actor := [].{
 	Me(message) := { kind : Str, key : Str }
 
 	## A timer's number (`after!`, `tell_after!`), to stop it with (`cancel!`); an actor may keep it
-	## in its state. Timers are in the server's memory: a restart loses them (a job is for what must
-	## happen even so).
+	## in its state. With a database a timer is a row (`rocx_actor_timers`) until the turn that
+	## handled it has ended, so a restart doesn't lose it: the server sets it again as it starts.
+	## Its message is told at least once: a server killed in the middle of that turn tells it again
+	## after its restart. Without a database, timers are in the server's memory, and a restart
+	## loses them. A timer's number is random, so one kept in an actor's state from before a
+	## restart still names its own timer.
 	Timer : U64
 
 	## A kind of actor as the platform runs it, its types erased (`handler`): its name, and its turn
@@ -87,23 +92,28 @@ Actor := [].{
 	tell! = |kind, key, message| Host.actor_tell!(kind.name, key, Json.to_str(message))
 
 	## Sends the actor of `kind` called `key` a message in `ms` milliseconds, as `tell!` would then:
-	## the timer, to stop it with (`cancel!`).
+	## the timer, to stop it with (`cancel!`). With a database it outlives a restart (`Timer`). It is
+	## set at once, as a tell is sent at once: a transaction the caller has open, rolled back,
+	## doesn't stop it.
 	tell_after! : Kind(state, message, reply), Str, U64, message => Timer
 		where [message.Json.Encodable([])]
-	tell_after! = |kind, key, ms, message| Host.actor_after!(kind.name, key, ms, Json.to_str(message))
+	tell_after! = |kind, key, ms, message| ActorTimers.set!(kind.name, key, ms, Json.to_str(message))
 
 	## Sends the actor whose turn it is a message in `ms` milliseconds (a sweep, a reminder, a tick):
-	## the timer, to stop it with (`cancel!`). A timer every so often is one that sets the next.
+	## the timer, to stop it with (`cancel!`). A timer every so often is one that sets the next. With
+	## a database it outlives a restart (`Timer`).
 	after! : Me(message), U64, message => Timer
 		where [message.Json.Encodable([])]
 	after! = |me, ms, message| {
 		{ kind, key } = me
-		Host.actor_after!(kind, key, ms, Json.to_str(message))
+		ActorTimers.set!(kind, key, ms, Json.to_str(message))
 	}
 
-	## Stops a timer that hasn't fired. One that has, or never was, is nothing to stop.
+	## Stops a timer whose message hasn't been handled: one that is waiting, or one that has fired
+	## but whose turn hasn't come (its message is dropped). One that has been handled, or never was,
+	## is nothing to stop.
 	cancel! : Timer => {}
-	cancel! = |timer| Host.actor_cancel!(timer)
+	cancel! = |timer| ActorTimers.cancel!(timer)
 
 	## `kind`, as the platform runs it: what `rocx build` lists in `program.actors`.
 	handler : Kind(state, message, reply) -> Handler

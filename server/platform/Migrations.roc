@@ -95,6 +95,25 @@ all_own = [
 		sql: "drop table if exists rocx_outbox",
 	},
 	{
+		# Actors' timers, kept until the turn that handled each has ended (D-057): its number (random,
+		# the app's), whom it tells what, and when (milliseconds since the Unix epoch).
+		name: "rocx/0004 actor timers",
+		on: Postgres,
+		sql: Str.join_with(
+			[
+				"create table rocx_actor_timers (",
+				"    id bigint primary key,",
+				"    kind text not null,",
+				"    key text not null,",
+				"    message text not null,",
+				"    at_ms bigint not null,",
+				"    created_at timestamptz not null default now()",
+				");",
+			],
+			"\n",
+		),
+	},
+	{
 		# The actors' state, on SQLite: Postgres's 0001, without the jobs that were there once.
 		name: "rocx/0001 jobs and actors",
 		on: Sqlite,
@@ -106,6 +125,24 @@ all_own = [
 				"    state text not null,",
 				"    updated_at text not null default current_timestamp,",
 				"    primary key (kind, key)",
+				");",
+			],
+			"\n",
+		),
+	},
+	{
+		# Postgres's 0004, on SQLite (and Turso).
+		name: "rocx/0002 actor timers",
+		on: Sqlite,
+		sql: Str.join_with(
+			[
+				"create table rocx_actor_timers (",
+				"    id integer primary key,",
+				"    kind text not null,",
+				"    key text not null,",
+				"    message text not null,",
+				"    at_ms integer not null,",
+				"    created_at text not null default current_timestamp",
 				");",
 			],
 			"\n",

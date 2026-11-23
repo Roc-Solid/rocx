@@ -23,13 +23,17 @@
 //!   chain of asks) is refused at once, and an ask not answered in 30 s is given up on (a cycle
 //!   through two queues: each waits on a message behind the other's turn). A message whose asker
 //!   gave up before its turn came is dropped, with a warning: its asker was told it failed.
-//! - Timers: a tell, later (`after`), until cancelled (`cancel`). They are in memory: a restart
-//!   loses the timers and the tells not yet handled (a job is for work that must survive one).
+//! - Timers: a tell, later (`after`), until cancelled (`cancel`): one that has fired, its message in
+//!   its actor's mailbox, can still be cancelled until its turn comes, and its message is dropped.
+//!   The platform numbers them, and with a database keeps each as a row (`ActorTimers.roc`, D-057),
+//!   which is deleted here once the timer's turn has ended, however it ended (`hosted::forget_timer`),
+//!   and set again by the platform's start after a restart. Tells not yet handled are in memory:
+//!   a restart loses them (a job is for work that must survive one).
 
 use crate::{coroutine, hosted, logging};
 use std::collections::{HashMap, HashSet};
-use std::sync::OnceLock;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 
@@ -51,12 +55,19 @@ impl Id {
 pub type Reply = Result<String, String>;
 
 /// A message on its way to an actor: its JSON, where its answer goes (an ask's; none for a tell),
-/// and the actors whose turns wait on that answer (an ask made in a turn: that actor, and the ones
-/// waiting on it).
+/// the actors whose turns wait on that answer (an ask made in a turn: that actor, and the ones
+/// waiting on it), and the timer it comes from, if it does.
 struct Letter {
     message: String,
     answer: Option<oneshot::Sender<Reply>>,
     waiting: Vec<Id>,
+    timer: Option<Fired>,
+}
+
+/// A timer that has fired: its number, and whether it was cancelled before its turn came.
+struct Fired {
+    timer: u64,
+    cancelled: Arc<AtomicBool>,
 }
 
 /// What the router is told.
@@ -68,6 +79,8 @@ enum Order {
     /// A timer's time has come.
     Fire(u64),
     Cancel(u64),
+    /// A timer that fired has had its turn (or was dropped): it can't be cancelled now.
+    Handled(u64),
     /// An actor has had nothing to do for `idle`, having been sent `handled` messages in its
     /// `life` (the router's count of the tasks it started, which tells an old one from a new).
     Idle { id: Id, handled: u64, life: u64 },
@@ -75,20 +88,12 @@ enum Order {
 
 static ROUTER: OnceLock<mpsc::UnboundedSender<Order>> = OnceLock::new();
 
-/// The next timer's number. Each start begins at a random one, so a timer an actor kept in its
-/// state from before a restart can't cancel another.
-static NEXT_TIMER: AtomicU64 = AtomicU64::new(0);
-
 /// Starts the router, on the runtime this runs in. `idle`: how long an actor waits with nothing to
 /// do before it is let go (none: never).
 pub fn start(idle: Option<Duration>) {
-    use ring::rand::SecureRandom;
-    let mut bytes = [0u8; 8];
-    let _ = ring::rand::SystemRandom::new().fill(&mut bytes);
-    NEXT_TIMER.store(u64::from_le_bytes(bytes) >> 1, Ordering::Relaxed);
     let (orders, inbox) = mpsc::unbounded_channel();
     if ROUTER.set(orders.clone()).is_ok() {
-        tokio::spawn(Router { kinds: HashSet::new(), awake: HashMap::new(), timers: HashMap::new(), lives: 0, orders, idle }.route(inbox));
+        tokio::spawn(Router { kinds: HashSet::new(), awake: HashMap::new(), timers: HashMap::new(), fired: HashMap::new(), lives: 0, orders, idle }.route(inbox));
     }
 }
 
@@ -108,25 +113,25 @@ pub fn kinds(names: impl IntoIterator<Item = String>) {
 /// `waiting`: the actors whose turns wait on this ask.
 pub fn ask(to: Id, message: String, waiting: Vec<Id>) -> Result<oneshot::Receiver<Reply>, String> {
     let (answer, answered) = oneshot::channel();
-    order(Order::Send(to, Letter { message, answer: Some(answer), waiting }))?;
+    order(Order::Send(to, Letter { message, answer: Some(answer), waiting, timer: None }))?;
     Ok(answered)
 }
 
 /// Sends `to` its message, answered by no one.
 pub fn tell(to: Id, message: String) {
-    if let Err(why) = order(Order::Send(to.clone(), Letter { message, answer: None, waiting: Vec::new() })) {
+    if let Err(why) = order(Order::Send(to.clone(), Letter { message, answer: None, waiting: Vec::new(), timer: None })) {
         logging::warn("rocx actor: a message not sent", &[("actor", to.kind.into()), ("key", to.key.into()), ("error", why.into())]);
     }
 }
 
-/// Tells `to` its message in `ms` milliseconds: the timer's number, for `cancel`.
-pub fn after(to: Id, ms: u64, message: String) -> u64 {
-    let timer = NEXT_TIMER.fetch_add(1, Ordering::Relaxed);
+/// Tells `to` its message in `ms` milliseconds, as the timer numbered `timer` (the platform's), for
+/// `cancel`.
+pub fn after(to: Id, ms: u64, message: String, timer: u64) {
     let _ = order(Order::After { timer, to, ms, message });
-    timer
 }
 
-/// Stops a timer that hasn't fired. (One that has, or never was, is nothing to stop.)
+/// Stops a timer whose message hasn't been handled: waiting, or fired with its turn still to come.
+/// (One that has been handled, or never was, is nothing to stop.)
 pub fn cancel(timer: u64) {
     let _ = order(Order::Cancel(timer));
 }
@@ -151,6 +156,8 @@ struct Router {
     kinds: HashSet<String>,
     awake: HashMap<Id, Awake>,
     timers: HashMap<u64, Timer>,
+    /// The timers that have fired and whose turns haven't come yet: a cancel still stops them.
+    fired: HashMap<u64, Arc<AtomicBool>>,
     lives: u64,
     /// Its own inbox's sender, for the tasks it starts (timers, actors) to tell it things.
     orders: mpsc::UnboundedSender<Order>,
@@ -169,17 +176,26 @@ impl Router {
                         tokio::time::sleep(Duration::from_millis(ms)).await;
                         let _ = orders.send(Order::Fire(timer));
                     });
-                    self.timers.insert(timer, Timer { to, message, sleeping: sleeping.abort_handle() });
+                    if let Some(replaced) = self.timers.insert(timer, Timer { to, message, sleeping: sleeping.abort_handle() }) {
+                        replaced.sleeping.abort();
+                    }
                 }
                 Order::Fire(timer) => {
                     if let Some(Timer { to, message, .. }) = self.timers.remove(&timer) {
-                        self.deliver(to, Letter { message, answer: None, waiting: Vec::new() });
+                        let cancelled = Arc::new(AtomicBool::new(false));
+                        self.fired.insert(timer, cancelled.clone());
+                        self.deliver(to, Letter { message, answer: None, waiting: Vec::new(), timer: Some(Fired { timer, cancelled }) });
                     }
                 }
                 Order::Cancel(timer) => {
-                    if let Some(timer) = self.timers.remove(&timer) {
-                        timer.sleeping.abort();
+                    if let Some(waiting) = self.timers.remove(&timer) {
+                        waiting.sleeping.abort();
+                    } else if let Some(cancelled) = self.fired.remove(&timer) {
+                        cancelled.store(true, Ordering::Release);
                     }
+                }
+                Order::Handled(timer) => {
+                    self.fired.remove(&timer);
                 }
                 Order::Idle { id, handled, life } => {
                     // Nothing sent since it last looked: it goes, and its mailbox with it (its
@@ -199,6 +215,11 @@ impl Router {
             failed(&to, &why);
             if let Some(answer) = letter.answer {
                 let _ = answer.send(Err(why));
+            }
+            // A timer for a kind the app no longer has: its row goes too, or every start would set it.
+            if let Some(fired) = letter.timer {
+                self.fired.remove(&fired.timer);
+                tokio::spawn(forget(fired.timer));
             }
             return;
         }
@@ -246,11 +267,19 @@ async fn live(id: Id, life: u64, mut letters: mpsc::UnboundedReceiver<Letter>, r
             },
             None => letters.recv().await,
         };
-        let Some(Letter { message, answer, waiting }) = next else { return };
+        let Some(Letter { message, answer, waiting, timer }) = next else { return };
         handled += 1;
         if answer.as_ref().is_some_and(|answer| answer.is_closed()) {
             logging::warn("rocx actor: a message dropped: its asker had given up", &[("actor", id.kind.clone().into()), ("key", id.key.clone().into())]);
             continue;
+        }
+        // A timer cancelled after it fired, before its turn: its message is dropped (its row went
+        // with the cancel).
+        if let Some(fired) = &timer {
+            let _ = router.send(Order::Handled(fired.timer));
+            if fired.cancelled.load(Ordering::Acquire) {
+                continue;
+            }
         }
         let turn = (id.clone(), kept.clone());
         let ran = coroutine::run(move || {
@@ -272,6 +301,24 @@ async fn live(id: Id, life: u64, mut letters: mpsc::UnboundedReceiver<Letter>, r
         if let Some(answer) = answer {
             let _ = answer.send(reply);
         }
+        // Its turn has ended, however it ended: its row goes (a message that crashes its actor
+        // isn't told again after every restart).
+        if let Some(fired) = timer {
+            forget(fired.timer).await;
+        }
+    }
+}
+
+/// Deletes the row of a timer whose turn has ended (or whose kind is gone), with a database: in a
+/// call of the platform's own (`rocx:actor-timer-done`). If it can't be, the timer is told again
+/// after a restart.
+async fn forget(timer: u64) {
+    if crate::db::flavor().is_none() {
+        return;
+    }
+    let forgotten = coroutine::run(move || hosted::forget_timer(timer)).await.unwrap_or_else(|_| Err("the host panicked".to_string()));
+    if let Err(why) = forgotten {
+        logging::error("rocx actor: a timer's row couldn't be deleted: it is told again after a restart", &[("timer", timer.to_string().into()), ("error", why.into())]);
     }
 }
 

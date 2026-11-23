@@ -710,17 +710,27 @@ pub extern "C" fn roc_host_actor_tell(kind: RocStr, key: RocStr, message: RocStr
     actors::tell(actors::Id { kind: taken(kind), key: taken(key) }, taken(message));
 }
 
-/// Sends the actor of kind `kind` called `key` a message (JSON) in `ms` milliseconds: the timer's
-/// number, for `roc_host_actor_cancel`.
+/// Sends the actor of kind `kind` called `key` a message (JSON) in `ms` milliseconds, as the timer
+/// numbered `timer` (the platform's: with a database, its row's), for `roc_host_actor_cancel`.
 #[unsafe(no_mangle)]
-pub extern "C" fn roc_host_actor_after(kind: RocStr, key: RocStr, ms: u64, message: RocStr) -> u64 {
-    actors::after(actors::Id { kind: taken(kind), key: taken(key) }, ms, taken(message))
+pub extern "C" fn roc_host_actor_after(kind: RocStr, key: RocStr, ms: u64, message: RocStr, timer: u64) {
+    actors::after(actors::Id { kind: taken(kind), key: taken(key) }, ms, taken(message), timer);
 }
 
-/// Stops a timer that hasn't fired.
+/// Stops a timer whose message hasn't been handled.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_actor_cancel(timer: u64) {
     actors::cancel(timer);
+}
+
+/// Deletes the row of a timer whose turn has ended (`ActorTimers.roc`'s `rocx:actor-timer-done`), in
+/// a call of its own: Ok, or why not.
+pub fn forget_timer(timer: u64) -> Result<(), String> {
+    match call_within(0, || roc::isolated("rocx:actor-timer-done", &timer.to_string())).0 {
+        Ok(Ok(_)) => Ok(()),
+        Ok(Err(why)) => Err(why),
+        Err(crash) => Err(format!("crashed: {}", crash.0)),
+    }
 }
 
 // ---- Values, randomness ----

@@ -287,6 +287,25 @@ route! = |request, context| {
 				Ok(count) => text(200, count.to_str())
 				Err(ActorErr(why)) => text(500, why)
 			}
+		# A timer (D-057): the counter told to add `by` in `ms` milliseconds; kept in the file.
+		("POST", "/actors/later") => {
+			timer = Actor.tell_after!(counter, param(query, "key"), number(query, "ms"), Add(U64.to_i64_wrap(number(query, "by"))))
+			text(200, timer.to_str())
+		}
+		("POST", "/actors/cancel") => {
+			Actor.cancel!(number(query, "timer"))
+			text(200, "cancelled")
+		}
+		("GET", "/actors/count") =>
+			match Actor.ask!(counter, param(query, "key"), Add(0)) {
+				Ok(count) => text(200, count.to_str())
+				Err(ActorErr(why)) => text(500, why)
+			}
+		("GET", "/actors/timers") => {
+			kept : Try(List({ timers : I64 }), [DbErr(Str), BadRow(Str)])
+			kept = Db.all!("select count(*) as timers from rocx_actor_timers where key = $1", [Text(param(query, "key"))])
+			lines(kept, |row| row.timers.to_str())
+		}
 
 		# ---- Jobs ----
 		("POST", "/jobs/note") => enqueued(Job.enqueue!(note_job, { said: param(query, "said") }, { when: Now }))

@@ -731,6 +731,18 @@ route! = |request, context| {
 			Actor.cancel!(U64.from_str(param(request.query, "timer")) ?? 0)
 			text(200, "cancelled")
 		}
+		# The counter's turn taking `ms` milliseconds (Postgres sleeps): what is sent meanwhile waits.
+		("POST", "/actors/nap") => answered_actor(Actor.ask!(counter, run, Nap(I64.from_str(param(request.query, "ms")) ?? 100)))
+		# The timers kept for the counter called `run` (D-057).
+		("GET", "/actors/timers") => {
+			kept : Try(List({ timers : I64 }), [DbErr(Str), BadRow(Str)])
+			kept = Db.all!("select count(*) as timers from rocx_actor_timers where key = $1", [Text(run)])
+			match kept {
+				Ok(rows) => text(200, Str.join_with(rows.map(|row| row.timers.to_str()), ""))
+				Err(DbErr(why)) => text(500, why)
+				Err(BadRow(why)) => text(500, why)
+			}
+		}
 		("POST", "/actors/wrong") => answered_actor(Actor.ask!(stale_counter, run, Reset("to what?")))
 		("POST", "/actors/wrong-tell") => {
 			Actor.tell!(stale_counter, run, Reset("to what?"))
@@ -1461,7 +1473,7 @@ slow_job = Job.define_with(
 # ---- Actors ----
 
 ## A count, one per key, that outlives requests and restarts.
-counter : Actor.Kind({ count : I64 }, [Add(I64), Get, Boom], I64)
+counter : Actor.Kind({ count : I64 }, [Add(I64), Get, Boom, Nap(I64)], I64)
 counter = Actor.define({
 	name: "counter",
 	initial: |_key| { count: 0 },
@@ -1470,6 +1482,12 @@ counter = Actor.define({
 			Add(by) => { state: { count: state.count + by }, reply: state.count + by }
 			Get => { state, reply: state.count }
 			Boom => if (state.count >= 0) crash "an actor that crashed" else { state, reply: 0 }
+			Nap(ms) => {
+				napped : Try(List({ one : I64 }), [DbErr(Str), BadRow(Str)])
+				napped = Db.all!("select 1::int8 as one from pg_sleep($1::float8 / 1000)", [Int(ms)])
+				_ = napped
+				{ state, reply: state.count }
+			}
 		},
 })
 

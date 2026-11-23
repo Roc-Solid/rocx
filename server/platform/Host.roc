@@ -71,11 +71,12 @@ Host := [].{
 	## doesn't take is logged as an error.
 	actor_tell! : Str, Str, Str => {}
 
-	## Sends the actor of kind `kind` called `key` a message (JSON) in `ms` milliseconds: the timer's
-	## number (`actor_cancel!`). Timers are in the server's memory: a restart loses them.
-	actor_after! : Str, Str, U64, Str => U64
+	## Sends the actor of kind `kind` called `key` a message (JSON) in `ms` milliseconds, as the timer
+	## numbered `timer` (`actor_cancel!`). The host keeps it in memory; with a database, the platform
+	## keeps its row (`ActorTimers`), which the host deletes once its turn has ended.
+	actor_after! : Str, Str, U64, Str, U64 => {}
 
-	## Stops a timer that hasn't fired.
+	## Stops a timer whose message hasn't been handled: waiting, or fired with its turn still to come.
 	actor_cancel! : U64 => {}
 
 	## A value the server keeps in its memory, by name (an `Err` when it has none): what the
