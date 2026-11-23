@@ -63,7 +63,7 @@ test("rocx check --sql on Postgres: the server's test app, on a scratch database
 		'server/test/app/main.roc:452:10: Postgres refuses it: 42P01: relation "nowhere" does not exist',
 		'server/test/app/main.roc:520:11: Postgres refuses it: 42P01: relation "nowhere" does not exist',
 		'server/test/app/main.roc:524:17: Postgres refuses it: 42P01: relation "nowhere" does not exist',
-		"rocx check --sql: 40 statements checked on Postgres (the rows of 19 against their records): 6 problems",
+		"rocx check --sql: 42 statements checked on Postgres (the rows of 21 against their records): 6 problems",
 	]);
 });
 
