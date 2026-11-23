@@ -1,0 +1,181 @@
+/* Million: a warm sheet of paper, ink, and one vermilion for what is checked. */
+:root {
+	--paper: #f4f1ea;
+	--sheet: #fbfaf6;
+	--ink: #1f1c17;
+	--muted: #6f6a60;
+	--rule: #e2ddd1;
+	--accent: #d9481f;
+	--accent-soft: #fbe3d9;
+	--live: #2f8f5b;
+	--cell: 28px;
+	--gutter: 76px;
+	color-scheme: light dark;
+	font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	color: var(--ink);
+	background: var(--paper);
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--paper: #14120f;
+		--sheet: #1c1915;
+		--ink: #f1ece2;
+		--muted: #9d968a;
+		--rule: #2f2a23;
+		--accent: #ff6b3d;
+		--accent-soft: #4a2316;
+		--live: #4cc184;
+	}
+}
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+}
+
+.million {
+	display: flex;
+	flex-direction: column;
+	height: 100vh;
+	height: 100dvh;
+	max-width: 1960px;
+	margin: 0 auto;
+	padding: 20px 24px 0;
+	gap: 16px;
+}
+
+.top {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: end;
+	justify-content: space-between;
+	gap: 12px 32px;
+}
+
+.brand h1 {
+	margin: 0;
+	font-size: 34px;
+	letter-spacing: -0.03em;
+	line-height: 1;
+}
+
+.brand h1::after {
+	content: "";
+	display: inline-block;
+	width: 10px;
+	height: 10px;
+	margin-left: 4px;
+	border-radius: 3px;
+	background: var(--accent);
+}
+
+.brand p {
+	margin: 8px 0 0;
+	color: var(--muted);
+}
+
+.stats {
+	display: flex;
+	gap: 28px;
+	margin: 0;
+}
+
+.stats dt {
+	font-size: 12px;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: var(--muted);
+}
+
+.stats dd {
+	margin: 2px 0 0;
+	font-size: 26px;
+	font-weight: 650;
+	font-variant-numeric: tabular-nums;
+}
+
+.stats .checked {
+	color: var(--accent);
+}
+
+.live dd {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 18px;
+	line-height: 31px;
+	color: var(--muted);
+}
+
+.live .dot {
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	background: var(--rule);
+}
+
+.live.on dd {
+	color: var(--live);
+}
+
+.live.on .dot {
+	background: var(--live);
+	box-shadow: 0 0 0 4px color-mix(in srgb, var(--live) 18%, transparent);
+}
+
+.grid {
+	flex: 1;
+	min-height: 0;
+	background: var(--sheet);
+	border: 1px solid var(--rule);
+	border-bottom: 0;
+	border-radius: 14px 14px 0 0;
+}
+
+.row {
+	display: flex;
+	align-items: center;
+	height: var(--cell);
+}
+
+.row .at {
+	flex: none;
+	width: var(--gutter);
+	padding-right: 12px;
+	text-align: right;
+	font: 11px/1 ui-monospace, "SF Mono", Menlo, monospace;
+	color: var(--muted);
+	font-variant-numeric: tabular-nums;
+}
+
+.row input {
+	flex: none;
+	width: 18px;
+	height: 18px;
+	margin: 0 5px;
+	accent-color: var(--accent);
+	cursor: pointer;
+}
+
+.row input:checked {
+	box-shadow: 0 0 0 3px var(--accent-soft);
+	border-radius: 3px;
+}
+
+@media (max-width: 640px) {
+	.million {
+		padding: 14px 10px 0;
+	}
+
+	.stats {
+		gap: 18px;
+	}
+
+	.stats dd {
+		font-size: 20px;
+	}
+}

@@ -1047,6 +1047,40 @@ test("presence: the room in the browser joins, types and leaves at a press, Auto
 	assert.deepEqual(page.errors, []);
 });
 
+test("virtual lists: the demo renders only the rows that show, of a hundred thousand or a million, measured once it hydrates and again as it scrolls; the count's buttons change the list", { skip }, async () => {
+	const page = await open("/ecosystem/virtual");
+	const demo = "[data-demo=virtual]";
+	const shown = () => text(page, `${demo} .rows-demo-shown`);
+	const rows = () => page.eval(`[...document.querySelectorAll("${demo} .rows-demo-row span:first-child")].map((span) => span.textContent)`);
+	const scroll = (top) => page.eval(`document.querySelector("${demo} .rows-demo-list").scrollTop = ${top}`);
+
+	// Measured: 358 pixels of 36-pixel rows show 10, and 4 more are rendered below.
+	await page.wait(`document.querySelector("${demo} .rows-demo-shown").textContent.trim() === "Rows 1 to 14 of 100,000 are on the page"`);
+	assert.deepEqual(await rows(), Array.from({ length: 14 }, (_, i) => String(i + 1)));
+
+	// Half way down: those rows, and four more each side; none of the first.
+	await scroll(36 * 50_000);
+	await page.wait(`document.querySelector("${demo} .rows-demo-shown").textContent.trim().startsWith("Rows 49,997 to 50,014 ")`);
+	const middle = await rows();
+	assert.equal(middle[0], "49,997");
+	assert.equal(middle.length, 18);
+	assert.equal(await page.eval(`document.querySelector("${demo} .rows-demo-row span:last-child").textContent`), "2,499,700,009", "its square");
+
+	// A million, scrolled to the end: the last row is a million, its square a trillion.
+	await page.click(`${demo} .rows-demo-counts button:nth-child(3)`);
+	assert.equal(await page.eval(`document.querySelector("${demo} .rows-demo-counts button:nth-child(3)").getAttribute("aria-pressed")`), "true");
+	await scroll(36 * 1_000_000);
+	await page.wait(`document.querySelector("${demo} .rows-demo-shown").textContent.trim().endsWith("to 1,000,000 of 1,000,000 are on the page")`);
+	assert.deepEqual(await page.eval(`[...document.querySelectorAll("${demo} .rows-demo-row")].at(-1).textContent`), "1,000,0001,000,000,000,000");
+
+	// A thousand: the list is shorter, and the box scrolls back within it.
+	await page.click(`${demo} .rows-demo-counts button:nth-child(1)`);
+	await page.wait(`document.querySelector("${demo} .rows-demo-shown").textContent.trim().endsWith("to 1,000 of 1,000 are on the page")`);
+	assert.equal((await rows()).at(-1), "1,000");
+	assert.ok((await rows()).length <= 18);
+	assert.deepEqual(page.errors, []);
+});
+
 test("push: the button's states come from the package, and the notification demo shows what a server would send", { skip }, async () => {
 	const page = await open("/ecosystem/push");
 	// The states table, rendered on the server by the package's PushState.

@@ -234,6 +234,10 @@ view! = |_|
 				the event says, if it asks: <code>on:input.value</code> the field's value, <code>on:change.checked</code>
 				whether it is ticked, <code>on:keydown.key</code> the key; <code>on:keydown.Escape</code> runs for that
 				key only, and <code>on:frame.ms</code> every animation frame, with the time since the last.
+				<code>{"on:viewport={|view| …}"}</code> is told what of the element shows, an
+				<code>Html.Viewport</code> (how far it is scrolled, <code>top</code> and <code>left</code>, and the
+				<code>width</code> and <code>height</code> it shows), once it is on the page, then each time it scrolls
+				or changes size, at most once a frame: what a virtual list renders the rows that show by.
 				A key's name may follow the modifier keys held with it: <code>on:keydown.Shift+Enter</code>,
 				<code>on:keydown.Ctrl+Alt+Delete</code>, and <code>on:keydown.Mod+K</code>, where <code>Mod</code> is ⌘ on
 				macOS and Ctrl elsewhere. It runs with exactly those held (Shift+Enter isn't Enter), and the browser
@@ -506,6 +510,13 @@ view! = |_|
 						component is, and again each time it shows again; a row when it comes. So its holes are made
 						then, and a value prop inside, <code>{"<Podium players={game!().players} />"}</code>, a getter, is
 						read where the component reads it, as the part shows and while it does.
+					</li>
+					<li>
+						<strong><code>{"<Repeat count!={n!()} from!={first!()}>{|index| …}</Repeat>"}</code></strong>, Solid
+						2.0's: a row per index from <code>from!</code> (0 unless it says), with no list behind them. A row is
+						kept while its index is in the range, so as the range moves only the rows that come into it are
+						made. With <code>on:viewport</code>, it is a virtual list: <a href={Paths.ecosystem_virtual}>packages/virtual</a>
+						renders a million rows as the twenty that show.
 					</li>
 					<li>
 						<strong>A function child</strong>, a <code>{"<For>"}</code>'s row or a <code>{"<Show>"}</code>'s
@@ -916,7 +927,8 @@ view! = |_|
 						<li>A page as one tree, hydrated whole; <code>{"<NoHydration>"}</code> for what stays the server's</li>
 						<li>A signal goes with the part that made it</li>
 						<li><code>{"<Show>"}</code>, with a <code>Try</code> to narrow</li>
-						<li><code>{"<For>"}</code>, by key and by position</li>
+						<li><code>{"<For>"}</code>, by key and by position; <code>{"<Repeat>"}</code>, by index</li>
+						<li>What of an element shows, as it scrolls and changes size: <code>on:viewport</code>; virtual lists, as a package</li>
 						<li><code>{"<Loading>"}</code>, <code>{"<Errored>"}</code>, trying again</li>
 						<li>Handlers that wait for the server; keys; frames</li>
 						<li>Transitions in and out, on a <code>{"<For>"}</code>'s rows and a <code>{"<Show>"}</code>'s parts</li>
@@ -935,7 +947,7 @@ view! = |_|
 				<div class="roadmap-next">
 					<h3>Next, from Solid 2.0</h3>
 					<ul>
-						<li><code>{"<Switch>"}</code>, <code>{"<Match>"}</code>, <code>{"<Repeat>"}</code>, keyed <code>{"<Show>"}</code></li>
+						<li><code>{"<Switch>"}</code>, <code>{"<Match>"}</code>, keyed <code>{"<Show>"}</code></li>
 						<li><code>untrack</code>, an effect's <code>error</code> handler</li>
 						<li><code>latest</code>, which Solid 2.0 has beside <code>isPending</code></li>
 						<li>Stores, as <code>createStore</code> makes them: nested, each field its own signal</li>

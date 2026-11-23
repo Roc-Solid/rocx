@@ -1,0 +1,24 @@
+import pf.Html
+import ../Generated/Styles
+
+## The document around the page: the stylesheet (`static/million.css`), every component's scoped
+## styles (`Generated/Styles`), and the page, with its title (`meta`).
+view! = |{ meta, children, .. }|
+	<>
+		<!doctype html>
+		<html lang="en">
+			<head>
+				<meta charset="utf-8" />
+				<meta name="viewport" content="width=device-width, initial-scale=1" />
+				<title>{meta.title} · Million</title>
+				<meta name="description" content="Million: a million checkboxes, shared live by everyone who has the page open." />
+				<meta name="theme-color" content="#f4f1ea" />
+				<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+				<link rel="stylesheet" href="/million.css" />
+				<NoHydration>{=Styles.style}</NoHydration>
+			</head>
+			<body>
+				{...children}
+			</body>
+		</html>
+	</>

@@ -1,0 +1,101 @@
+import pf.Html
+import pf.Solid exposing [create_memo!, create_signal!]
+import virtual.Rows
+import virtual.VirtualList
+
+## A virtual list, for the docs (/ecosystem/virtual): a thousand rows, a hundred thousand or a
+## million, each its number and its square, in a box 360 pixels high. Only the rows that show are on
+## the page, and the line above says which: `on_view!` hears each measure, and the demo works out
+## the rows with the package's own `Rows.shown`, as the list does: from the last view it heard and
+## the count now (fewer rows scroll the box back, which it doesn't hear).
+RowsDemo := [].{
+	view! : {} => Html
+	view! = |{}| {
+		(count!, set_count!) = create_signal!(100_000.U64)
+		(seen!, set_seen!) = create_signal!({ top: 0, left: 0, width: 0, height: 800 })
+		shown! = create_memo!(|| Rows.shown({ count: count!(), row_height: 36, top: seen!().top, height: seen!().height, overscan: 4 }))
+		saw! = |view| {
+			now = Rows.shown({ count: count!(), row_height: 36, top: view.top, height: view.height, overscan: 4 })
+			if (now != shown!()) set_seen!(view) else {}
+		}
+		<div class="rows-demo">
+			<div class="rows-demo-bar">
+				<div class="rows-demo-counts" role="group" aria-label="How many rows">
+					<button type="button" aria-pressed={RowsDemo.pressed(count!() == 1_000)} on:click={|| set_count!(1_000)}>1,000</button>
+					<button type="button" aria-pressed={RowsDemo.pressed(count!() == 100_000)} on:click={|| set_count!(100_000)}>100,000</button>
+					<button type="button" aria-pressed={RowsDemo.pressed(count!() == 1_000_000)} on:click={|| set_count!(1_000_000)}>1,000,000</button>
+				</div>
+				<output class="rows-demo-shown">Rows {RowsDemo.thousands(shown!().first + 1)} to {RowsDemo.thousands(shown!().end)} of {RowsDemo.thousands(count!())} are on the page</output>
+			</div>
+			<VirtualList count={count!()} row_height={36} class="rows-demo-list" label="Numbers and their squares" on_view!={saw!}>
+				{|row| <div class="rows-demo-row"><span>{RowsDemo.thousands(row + 1)}</span><span>{RowsDemo.thousands((row + 1) * (row + 1))}</span></div>}
+			</VirtualList>
+		</div>
+	}
+
+	<style>
+		.rows-demo-bar {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			justify-content: space-between;
+			gap: 0.5rem 1rem;
+			margin-bottom: 0.75rem;
+		}
+
+		.rows-demo-counts {
+			display: flex;
+			gap: 0.375rem;
+		}
+
+		.rows-demo-counts button[aria-pressed="true"] {
+			background: var(--accent);
+			color: var(--accent-text);
+		}
+
+		.rows-demo-shown {
+			color: var(--text-muted);
+			font-variant-numeric: tabular-nums;
+		}
+
+		:global(.rows-demo-list) {
+			height: 360px;
+			border: 1px solid var(--rule);
+			border-radius: 10px;
+		}
+
+		.rows-demo-row {
+			display: grid;
+			grid-template-columns: 8rem 1fr;
+			align-items: center;
+			height: 36px;
+			padding: 0 1rem;
+			border-bottom: 1px solid var(--rule);
+			font-variant-numeric: tabular-nums;
+		}
+
+		.rows-demo-row span:first-child {
+			font-weight: 600;
+		}
+	</style>
+
+	## "true" or "false", for `aria-pressed`.
+	pressed : Bool -> Str
+	pressed = |on| if (on) "true" else "false"
+
+	## A number with its thousands apart: 1,000,000.
+	thousands : U64 -> Str
+	thousands = |n| {
+		digits = n.to_str().to_utf8()
+		var $out = []
+		var $at = 0
+		for d in digits {
+			$out = if ($at > 0 and (digits.len() - $at) % 3 == 0) $out.append(',').append(d) else $out.append(d)
+			$at = $at + 1
+		}
+		Str.from_utf8_lossy($out)
+	}
+}
+
+expect RowsDemo.thousands(1_000_000_000_000) == "1,000,000,000,000"
+expect RowsDemo.thousands(36) == "36"

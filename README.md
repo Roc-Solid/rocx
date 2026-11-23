@@ -14,7 +14,7 @@ browser, in three parts.
   in the browser, the components, compiled to WebAssembly (`web/`).
 - **The ecosystem**: packages of plain Roc, components and plugins that any app can use, in
   `packages/`: charts, forms, Markdown, intl, an admin, guards, jobs and cron, email, MCP, presence,
-  Web Push, OpenTelemetry, storage (S3, files, memory), crypto and testing.
+  Web Push, OpenTelemetry, storage (S3, files, memory), crypto, testing and virtual lists.
 
 Pages are components, after Solid 2.0: a component runs once and makes signals; each hole in its
 markup that calls something named with `!` (a signal, a memo) is a computation that runs again when
@@ -81,7 +81,7 @@ just check   # type-check the site's two programs (reports at .rocx lines) and t
 | `packages/storage` | files in a bucket whose URL says where (D-047): any S3, a directory beside the server, or memory for tests; objects, multipart uploads, signed URLs (a plugin answers a directory's), and objects served without passing through Roc; see its README |
 | `packages/jobs` | jobs and cron as a plugin (D-034): work queued in the app's database (Postgres or SQLite) and run by workers, again if it fails, and schedules; `Job.plugin({ jobs: App.jobs, crons })`; see its README |
 | `packages/email` | email as a plugin (D-035): over SMTP (`SMTP_URL`, `MAIL_FROM`), or kept for the dev mailbox at `/__rocx/mail` under `--dev`; `Email.plugin({})`, `Email.send!`; see its README |
-| `packages/*` | the other packages: `admin` (a Django-style admin for Postgres tables, and the jobs page), `forms`, `guard` (rate limits, feature flags, request guards), `intl`, `markdown`, `mcp`, `otel` (OpenTelemetry metrics and logs), `presence`, `push` (Web Push) and `testing`; each has a README, a PROPOSALS.md of what it waits on, and a page on the docs site. A package's modules for the server alone are a package of their own, `server/main.roc`, which names the server platform |
+| `packages/*` | the other packages: `admin` (a Django-style admin for Postgres tables, and the jobs page), `forms`, `guard` (rate limits, feature flags, request guards), `intl`, `markdown`, `mcp`, `otel` (OpenTelemetry metrics and logs), `presence`, `push` (Web Push), `testing` and `virtual` (lists of any length that render only the rows that show); each has a README, a PROPOSALS.md of what it waits on, and a page on the docs site. A package's modules for the server alone are a package of their own, `server/main.roc`, which names the server platform |
 | `web/` | the browser's platform: the modules components are written with (`Html`, `Solid`, `Show`, `For`, …) and HTTP's (`Server`, requests and answers; `Endpoint`, `Channel`, `Events`, `Middleware`, `OpenApi`), which the server's platform has too; its Zig host, `runtime.js`; see `web/README.md` |
 | `server/` | the server's platform: native Roc in a Rust host (tokio, hyper, Postgres or SQLite, plugins, channels, actors, `Kv`), rendering pages of components; see `server/README.md` |
 | `site/` | the docs site: pages in `routes/`, the demos on them in `Demos/`, its program in `main.roc`, real examples in `examples/` |
@@ -124,6 +124,9 @@ nothing else.
 - [`plate`](examples/plate): Plate, a food diary for a phone: the USDA's 7,500 foods seeded
   into its SQLite file, packets looked up by barcode in Open Food Facts, recipes that log like foods,
   targets worked out from a profile, trends charted, and a search that follows the typing.
+- [`checkboxes`](examples/checkboxes): Million, a million checkboxes that everyone with the page
+  open shares, live: a virtual list (packages/virtual) that renders only the rows that show, the
+  boxes in the server's memory (`Kv`), and a channel that sends each chunk that changes.
 
 ## Pages and components
 

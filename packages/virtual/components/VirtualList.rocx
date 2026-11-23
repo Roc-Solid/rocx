@@ -1,0 +1,63 @@
+import pf.Html
+import pf.Repeat
+import pf.Solid exposing [create_memo!, create_signal!]
+import virtual.Rows
+
+## A list of `count` rows, each `row_height` pixels high, in a box that scrolls: only the rows that
+## show are rendered, and `overscan` more each side (4 unless it says), however many there are. As
+## the box scrolls, rows that come into view are made and rows that leave go; the others stay as
+## they are (the platform's `<Repeat>`, by index).
+##
+## ```rocx
+## <VirtualList count={rows!()} row_height={28} class="grid" label="Boxes">
+##     {|row| <Row index={row} />}
+## </VirtualList>
+## ```
+##
+## The box is the component's own `<div>`: give it a height (a class, `class`). One with none grows as
+## high as its rows and doesn't scroll; the list renders its first 4,096 pixels of rows then
+## (`Rows.most_shown`), not every row.
+## What shows is measured in the browser (`on:viewport`), once the box is on the page and each time
+## it scrolls or changes size; until then, and on the server, it renders the rows the first
+## `first_height` pixels (800 unless it says) would show, so the server's page has its first rows.
+## A list higher than browsers let an element be is drawn scaled (`Rows.most_space`, 10 million
+## pixels): its box scrolls through that many, and each pixel moves through more of the rows.
+##
+## `on_view!` hears each measure too: the box's width, say, to lay rows out by. It hears every
+## scroll, so write a signal from it only when what you take from the view changes: every write runs
+## what reads the signal, a change or not.
+VirtualList := [].{
+	Props := {
+		count : U64,
+		row_height : U64,
+		overscan : U64 ?? 4,
+		first_height : U64 ?? 800,
+		class : Str ?? "",
+		label : Str ?? "",
+		on_view! : (Html.Viewport => {}) ?? (|_| {}),
+		children : U64 => Html,
+	}
+
+	view_with! : Props => Html
+	view_with! = |{ count, row_height, overscan, first_height, class, label, on_view!, children }| {
+		(seen!, set_seen!) = create_signal!({ top: 0, left: 0, width: 0, height: first_height })
+		shown! = create_memo!(|| Rows.shown({ count: count, row_height: row_height, top: seen!().top, height: seen!().height, overscan: overscan }))
+		# Every write runs what reads it, so the view is written only when the rows it shows change, or
+		# where they go (a scroll within a row, or a measure that is the same, writes nothing; a scaled
+		# list's rows move with every scroll).
+		saw! = |view| {
+			now = Rows.shown({ count: count, row_height: row_height, top: view.top, height: view.height, overscan: overscan })
+			if (now != shown!()) set_seen!(view) else {}
+			on_view!(view)
+		}
+		<div class={"virtual-list ${class}"} style="overflow-y: auto; position: relative" role="group" aria-label??={label} on:viewport={saw!}>
+			<div class="virtual-list-space" style:height={"${Rows.space(count, row_height).to_str()}px"}>
+				<div class="virtual-list-rows" style:transform={"translateY(${shown!().offset.to_str()}px)"}>
+					<Repeat count!={shown!().end - shown!().first} from!={shown!().first}>
+						{|index| children(index)}
+					</Repeat>
+				</div>
+			</div>
+		</div>
+	}
+}

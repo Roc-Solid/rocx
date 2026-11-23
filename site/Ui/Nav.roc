@@ -67,6 +67,7 @@ Nav := [].{
 			{ path: Paths.ecosystem_presence, label: "Presence", blurb: "Who is here, who is typing, and live cursors" },
 			{ path: Paths.ecosystem_push, label: "Push", blurb: "Web Push notifications: a button that subscribes, and jobs that send" },
 			{ path: Paths.ecosystem_testing, label: "Testing", blurb: "Find things in a page by role, name and label, from Roc and Node" },
+			{ path: Paths.ecosystem_virtual, label: "Virtual lists", blurb: "Lists of any length that render only the rows that show" },
 		],
 	}
 

@@ -195,6 +195,55 @@ const scenes = {
 		}
 	},
 
+	async checkboxes(browser) {
+		// Its own helpers start it with its stylesheet (static/), which gives the grid its height.
+		const { box, build, say, start } = await helpers("checkboxes", "million.mjs");
+		const app = await start(await build());
+		const run = { app, stop: () => app.stop() };
+		const client = run.app.client();
+		// A heart, and a few boxes about it, drawn for the width the page lays its rows out by.
+		const heart = ["..XX...XX..", ".XXXX.XXXX.", "XXXXXXXXXXX", "XXXXXXXXXXX", ".XXXXXXXXX.", "..XXXXXXX..", "...XXXXX...", "....XXX....", ".....X....."];
+		// The columns once the page has laid its rows out for the window's width (8 to 64 boxes beside
+		// each row's number, Grid.columns), as it does once it has measured the grid.
+		const laidOut = async (tab) => {
+			const check = "(() => { const grid = document.querySelector('.grid'); const want = Math.min(Math.max(Math.floor((grid.clientWidth - 76) / 28), 8), 64); const has = grid.querySelector('.row').querySelectorAll('input').length; return has === want ? has : 0; })()";
+			return until(() => tab.page.eval(check), { what: "the grid laid out for the window", ms: 5000 });
+		};
+		const draw = async (tab, from) => {
+			const columns = await laidOut(tab);
+			const at = (row, column) => from + row * columns + column;
+			const boxes = [];
+			heart.forEach((line, row) => [...line].forEach((cell, column) => cell === "X" && boxes.push(at(row + 3, column + Math.floor((columns - 11) / 2)))));
+			let seed = 7 + (from % 997);
+			for (let row = 0; row < 26; row++) {
+				for (let column = 0; column < columns; column++) {
+					seed = (seed * 1103515245 + 12345) % 2147483648;
+					if (seed / 2147483648 < 0.06 && (row < 2 || row > 12)) boxes.push(at(row, column));
+				}
+			}
+			const checked = async () => Number((await tab.page.eval("document.querySelector('.checked').textContent")).replaceAll(",", ""));
+			const before = await checked();
+			for (let i = 0; i < boxes.length; i += 200) await say(client, "shots", ...boxes.slice(i, i + 200).map((index) => box(index)));
+			await until(async () => (await checked()) >= before + boxes.length, { what: "the boxes to show", ms: 5000 });
+			return columns;
+		};
+		try {
+			await shoot(browser, run.app.url, "checkboxes", "grid", "/", { act: (tab) => draw(tab, 0), settle: 600 });
+			await shoot(browser, run.app.url, "checkboxes", "far", "/", {
+				settle: 600,
+				act: async (tab) => {
+					const columns = await laidOut(tab);
+					const row = Math.floor(500_000 / columns);
+					await tab.page.eval(`document.querySelector('.grid').scrollTop = ${row * 28}`);
+					await until(async () => (await tab.page.eval(`Boolean(document.querySelector('[aria-label="Box ${(row * columns + 1).toLocaleString("en-US")}"]'))`)), { what: "the rows half a million down", ms: 5000 });
+					await draw(tab, row * columns);
+				},
+			});
+		} finally {
+			await run.stop();
+		}
+	},
+
 	async plate(browser) {
 		const run = await plain("plate");
 		try {

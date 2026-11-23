@@ -1,12 +1,12 @@
 {
-	"measured": "2026-11-22",
-	"commit": "30ad05f",
-	"roc": "rocx-fork-3f66e242ea",
+	"measured": "2026-11-23",
+	"commit": "c884f76",
+	"roc": "rocx-fork-9fcf362c0c",
 	"machine": "Apple M5, 10 cores",
 	"runtime": {
-		"bytes": 146657,
-		"gzip": 42725,
-		"brotli": 36341
+		"bytes": 149660,
+		"gzip": 43598,
+		"brotli": 37114
 	},
 	"examples": [
 		{
@@ -26,6 +26,24 @@
 				"bytes": 771814,
 				"gzip": 273253,
 				"brotli": 207675
+			}
+		},
+		{
+			"name": "checkboxes",
+			"title": "Million",
+			"pages": 1,
+			"endpoints": 2,
+			"lines": 534,
+			"expects": 19,
+			"tests": 5,
+			"packages": [
+				"virtual"
+			],
+			"database": "",
+			"wasm": {
+				"bytes": 269760,
+				"gzip": 97166,
+				"brotli": 78295
 			}
 		},
 		{

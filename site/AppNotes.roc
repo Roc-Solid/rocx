@@ -114,6 +114,17 @@ AppNotes := [].{
 				{ file: "trends", alt: "The trends page: energy each day as bars, an average day, and weight", caption: "Trends", phone: Bool.False },
 			],
 		},
+		{
+			name: "checkboxes",
+			path: Paths.examples_checkboxes,
+			blurb: "A million checkboxes, shared live",
+			summary: "A million checkboxes that everyone with the page open shares: a box checked in one tab shows in every other within a moment, and the page holds only the rows that show.",
+			shows: ["A virtual list (packages/virtual): <Repeat> and on:viewport", "State in the server's memory (Kv), with a compare-and-swap", "A channel: chunks that changed, latest first, and who is online", "A grid laid out by the list's width"],
+			shots: [
+				{ file: "grid", alt: "The grid: rows of checkboxes, some checked, each row's first box numbered, and the count of checked boxes and pages online above", caption: "The boxes", phone: Bool.False },
+				{ file: "far", alt: "Half a million boxes down: the rows there, rendered as the grid scrolled to them", caption: "Half a million boxes down", phone: Bool.False },
+			],
+		},
 	]
 
 	## The notes for the app `name`, if it has any.

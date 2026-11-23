@@ -1,0 +1,98 @@
+import pf.Html
+import pf.Channel
+import pf.Endpoint
+import pf.Repeat
+import pf.Solid exposing [create_effect!, create_memo!, create_signal!, refresh!]
+import virtual.VirtualList
+import ../Grid
+import ../Generated/Api
+
+## The page: a million checkboxes, how many are checked, and how many pages are open.
+##
+## The boxes are `GET /boxes` (`routes/boxes/+server.roc`), read as the server renders the page
+## and carried in it, then kept live by the boxes' channel: every chunk that changes comes to every
+## open page, and the page keeps the newer of each chunk, what it read or what it heard. A box
+## checked here shows at once, and goes to the server (`Endpoint.say!`); the server's next version
+## of its chunk replaces it.
+##
+## Only the rows that show are rendered (`<VirtualList>`, from packages/virtual): a row's boxes are
+## a `<Repeat>`, as many as fit the list's width, which the list measures (`on_view!`).
+meta = { title: "A million checkboxes" }
+
+view! = |_| {
+	read = Api.get_boxes({})
+	snapshot! : () => Grid.Snapshot
+	snapshot! = create_memo!(|| Endpoint.get!(read))
+	read_boxes! = create_memo!(|| Grid.boxes_of(snapshot!()))
+	(heard!, set_heard!) = create_signal!(Grid.empty)
+	boxes! = create_memo!(|| Grid.merged(heard!(), read_boxes!()))
+	checked! = create_memo!(|| Grid.count(boxes!()))
+	(online!, set_online!) = create_signal!(None)
+	(live!, set_live!) = create_signal!(Bool.False)
+	(columns!, set_columns!) = create_signal!(Grid.first_columns)
+	channel = Api.channel_boxes({})
+	news! : Channel.Event(Grid.News) => {}
+	news! = |event|
+		match event {
+			Resync => {
+				set_live!(Bool.True)
+				refresh!(snapshot!)
+			}
+			Message(Changed(chunk)) => set_heard!(Grid.heard(heard!(), chunk))
+			Message(Online(n)) => set_online!(Some(n))
+			Refused(_, _) | Ended(_) => set_live!(Bool.False)
+		}
+	create_effect!(|| {}, |{}| Endpoint.subscribe!(channel, news!))
+	toggle! = |index, on| {
+		set_heard!(Grid.toggled(boxes!(), index, on))
+		Endpoint.say!(channel, Set({ index: index, on: on }))
+	}
+	online_now! = ||
+		match online!() {
+			Some(n) => n
+			None => snapshot!().online
+		}
+	<div class="million">
+		<header class="top">
+			<div class="brand">
+				<h1>Million</h1>
+				<p>A million checkboxes. Everyone with this page open shares them.</p>
+			</div>
+			<dl class="stats">
+				<div>
+					<dt>Checked</dt>
+					<dd class="checked">{Grid.thousands(checked!())}</dd>
+				</div>
+				<div>
+					<dt>Online</dt>
+					<dd class="online">{Grid.thousands(online_now!())}</dd>
+				</div>
+				<div class="live" class:on={live!()}>
+					<dt>Status</dt>
+					<dd><span class="dot" aria-hidden="true"></span>{if (live!()) "Live" else "Connecting…"}</dd>
+				</div>
+			</dl>
+		</header>
+		<VirtualList
+			count={Grid.rows(columns!())}
+			row_height={Grid.cell}
+			class="grid"
+			label="A million checkboxes"
+			on_view!={|view| if (Grid.columns(view.width) != columns!()) set_columns!(Grid.columns(view.width)) else {}}
+		>
+			{|row|
+				<div class="row">
+					<span class="at" aria-hidden="true">{Grid.thousands(row * columns!() + 1)}</span>
+					<Repeat count!={Grid.in_row(row, columns!())}>
+						{|column|
+							<input
+								type="checkbox"
+								checked?={Grid.checked(boxes!(), row * columns!() + column)}
+								aria-label={Grid.label(row * columns!() + column)}
+								on:change.checked={|on| toggle!(row * columns!() + column, on)}
+							/>}
+					</Repeat>
+				</div>}
+		</VirtualList>
+	</div>
+}

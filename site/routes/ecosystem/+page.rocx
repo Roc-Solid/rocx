@@ -14,7 +14,7 @@ import ../../Ui/PageHero
 ## there are, as cards.
 meta = {
 	title: "The ecosystem",
-	description: "Packages for Roc Solid apps: plain Roc that the server, the browser and a test use alike, components that rocx build copies into the app, and plugins that add to the server. Sixteen so far: charts, crypto, files in S3, email, forms, Markdown, intl, an admin, guards, jobs and cron, MCP, OpenTelemetry, PostHog, presence, Web Push and testing.",
+	description: "Packages for Roc Solid apps: plain Roc that the server, the browser and a test use alike, components that rocx build copies into the app, and plugins that add to the server. Seventeen so far: charts, crypto, files in S3, email, forms, Markdown, intl, an admin, guards, jobs and cron, MCP, OpenTelemetry, PostHog, presence, Web Push, testing and virtual lists.",
 	toc: [
 		{ id: "packages", label: "The packages" },
 		{ id: "halves", label: "A package's two halves" },
@@ -37,9 +37,9 @@ view! = |_|
 				server, the browser and a test all call alike. The other is components, <code>.rocx</code> files,
 				which <code>rocx build</code> copies into the app that names the package, so that each half of
 				the app compiles them on its own platform. A package may also be a plugin, which adds to the server
-				what only the server runs. There are sixteen so far, each with a page: charts, crypto, files in S3,
+				what only the server runs. There are seventeen so far, each with a page: charts, crypto, files in S3,
 				email, forms, Markdown, intl, an admin, guards, jobs and cron, MCP, OpenTelemetry, PostHog, presence,
-				Web Push and testing.
+				Web Push, testing and virtual lists.
 			</PageHero>
 
 			<Heading id="packages">The packages</Heading>
