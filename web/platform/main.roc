@@ -10,7 +10,7 @@
 ##   the browser's copy of an app answers none.
 ##
 ## The modules both platforms have are written here, and the server platform's build copies them:
-## the components' (`Html`, `Solid`, `Show`, `Switch`, `Match`, `For`, `Repeat`, `Transition`, `Loading`, `Errored`, `Context`,
+## the components' (`Html`, `Solid`, `Store`, `Show`, `Switch`, `Match`, `For`, `Repeat`, `Transition`, `Loading`, `Errored`, `Context`,
 ## `Call`, `Router`, `Submission`, `Submissions`, `Title`, `HttpStatusCode`) and HTTP's (`Server`, `Endpoint`,
 ## `Channel`, `Middleware`, `Events`, `OpenApi`). Roc compiles only what a program reaches, so what
 ## only the server uses (`Middleware`, `OpenApi`) costs the browser's wasm nothing. `Time` is the
@@ -19,7 +19,7 @@ platform ""
 	requires {
 		main! : {} => Html
 	}
-	exposes [Browser, Call, Channel, Context, Endpoint, Errored, Events, For, Html, HttpStatusCode, Loading, Match, Middleware, OpenApi, Repeat, Router, Server, Show, Solid, Submission, Submissions, Switch, Time, Title, Transition]
+	exposes [Browser, Call, Channel, Context, Endpoint, Errored, Events, For, Html, HttpStatusCode, Loading, Match, Middleware, OpenApi, Repeat, Router, Server, Show, Solid, Store, Submission, Submissions, Switch, Time, Title, Transition]
 	packages {}
 	provides { "roc_mount": mount_for_host!, "roc_run": run_for_host! }
 	hosted {
@@ -46,6 +46,7 @@ platform ""
 		"roc_location": Host.location!,
 		"roc_memo_done": Host.memo_done!,
 		"roc_memo_get": Host.memo_get!,
+		"roc_memo_last": Host.memo_last!,
 		"roc_memo_new": Host.memo_new!,
 		"roc_now_millis": Host.now_millis!,
 		"roc_now_nanos": Host.now_nanos!,
@@ -57,9 +58,11 @@ platform ""
 		"roc_retry": Host.retry!,
 		"roc_row_get": Host.row_get!,
 		"roc_row_index": Host.row_index!,
+		"roc_row_last": Host.row_last!,
 		"roc_row_set": Host.row_set!,
 		"roc_say": Host.say!,
 		"roc_signal_get": Host.signal_get!,
+		"roc_signal_latest": Host.signal_latest!,
 		"roc_signal_new": Host.signal_new!,
 		"roc_signal_set": Host.signal_set!,
 		"roc_status": Host.status!,
@@ -71,6 +74,7 @@ platform ""
 		"roc_subscribe": Host.subscribe!,
 		"roc_timeout": Host.timeout!,
 		"roc_title": Host.title!,
+		"roc_tracking": Host.tracking!,
 		"roc_untrack": Host.untrack!,
 	}
 	targets: {
@@ -78,7 +82,7 @@ platform ""
 		wasm32: {
 			inputs: ["host.wasm", app],
 			output: Shared,
-			exports: ["mount", "run", "release", "result_ptr", "result_len", "live_allocations", "frame_begin", "frame_end", "frame_unwound", "reclaim"],
+			exports: ["mount", "run", "release", "result_ptr", "result_len", "live_allocations", "allocations", "frame_begin", "frame_end", "frame_unwound", "reclaim"],
 			initial_stack_size: 1048576,
 		},
 	}
@@ -87,6 +91,7 @@ import Host
 import Html
 import Browser
 import Solid
+import Store
 import Show
 import Switch
 import Match

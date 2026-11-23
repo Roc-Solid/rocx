@@ -1795,6 +1795,11 @@ probe! = |{}| {
 				],
 			}),
 			Show.view_with_keyed!({ when!: || if (count!() > 10) Ok(count!()) else Err(None), children: |n| Html.element("p", [Html.attr("class", "keyed")], [Html.text(n.to_str())]) }),
+			# A store's parts (D-053): read once here, where nothing runs again, and holes all the same.
+			{
+				(store, _) = Solid.create_store!({ name: "ada", n: 41.U64 })
+				Html.element("p", [Html.attr("class", "store")], [Html.text_of(|| store.get!(|s| s.name)), Html.text_of(|| store.get!(|s| s.n).to_str())])
+			},
 			Errored.view!({
 				fallback: |problem, _| Html.element("p", [Html.attr("class", "failed")], [Html.text_of(|| problem)]),
 				children: [Html.element("p", [], [Html.text_of(|| Solid.use_context!(missing).name)])],

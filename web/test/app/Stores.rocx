@@ -1,0 +1,51 @@
+import pf.For
+import pf.Html
+import pf.Repeat
+import pf.Solid exposing [create_signal!, create_memo!, create_store!]
+import pf.Store
+
+## D-053's stores, for the tests (`stores_app.roc`): one store of a filter, a count and a list of
+## todos, each part read by its own hole (a selection), a `<For>` of the items, writes from
+## handlers (two in one, composing), a handler reading the store, `Store.of` over a memo, and a
+## grid of many selections of one store, one cell written at a time.
+Stores := [].{
+	Todo : { id : U64, title : Str, done : Bool }
+
+	view! : {} => Html
+	view! = |{}| {
+		(todos, set_todos!) = create_store!({ filter: "all", count: 0.U64, items: Stores.start })
+		(seen!, set_seen!) = create_signal!(0.U64)
+		total! = create_memo!(|| todos.get!(|s| s.count) * 10)
+		tens = Store.of(total!)
+		(grid, set_grid!) = create_store!({ cells: List.repeat(0.U64, 400), turn: 0.U64 })
+		<div>
+			<button class="filter" on:click={|| set_todos!(|s| { ..s, filter: if (s.filter == "all") "open" else "all" })}>Filter</button>
+			<button class="count" on:click={|| set_todos!(|s| { ..s, count: s.count + 1 })}>Count</button>
+			<button class="both" on:click={|| {
+				set_todos!(|s| { ..s, count: s.count + 1 })
+				set_todos!(|s| { ..s, count: s.count + 1, filter: "both" })
+			}}>Both</button>
+			<button class="toggle" on:click={|| set_todos!(|s| { ..s, items: s.items.map(|t| if (t.id == 2) { ..t, done: !t.done } else t) })}>Toggle</button>
+			<button class="add" on:click={|| set_todos!(|s| { ..s, items: s.items.append({ id: s.items.len() + 1, title: "Todo ${(s.items.len() + 1).to_str()}", done: Bool.False }) })}>Add</button>
+			<button class="same" on:click={|| set_todos!(|s| { ..s, items: s.items.map(|t| { ..t, title: t.title }) })}>Same</button>
+			<button class="seen" on:click={|| set_seen!(todos.get!(|s| s.count))}>Seen</button>
+			<button class="cell" on:click={|| set_grid!(|g| { ..g, cells: g.cells.update(g.turn % 400, |n| n + 1) ?? g.cells, turn: g.turn + 7 })}>Cell</button>
+			<p class="filter">{todos.get!(|s| s.filter)}</p>
+			<p class="count">{todos.get!(|s| s.count).to_str()}</p>
+			<p class="open">{todos.get!(|s| s.items.keep_if(|t| !t.done).len()).to_str()}</p>
+			<p class="seen">{seen!().to_str()}</p>
+			<p class="tens">{tens.get!(|n| n // 10).to_str()}</p>
+			<ul>
+				<For each!={todos.get!(|s| s.items)} keyed={|todo| todo.id} compared>
+					{|todo!, _| <li class:done={todo!().done}>{todo!().title}</li>}
+				</For>
+			</ul>
+			<div class="grid">
+				<Repeat count!={400}>{|at| <i>{grid.get!(|g| g.cells.get(at) ?? 0).to_str()}</i>}</Repeat>
+			</div>
+		</div>
+	}
+
+	start : List(Stores.Todo)
+	start = [{ id: 1, title: "Todo 1", done: Bool.False }, { id: 2, title: "Todo 2", done: Bool.False }, { id: 3, title: "Todo 3", done: Bool.True }]
+}

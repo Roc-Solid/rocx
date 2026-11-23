@@ -44,7 +44,7 @@
 ## - A page's components are Solid-style (web/runtime.js hydrates the document in the browser). A
 ##   GET endpoint a component reads while the host renders the page (`Endpoint.get!`) is answered by
 ##   its route, in-process (`Host.fetch!`). The modules components are written with (`Html`, `Solid`,
-##   `Show`, `Switch`, `Match`, `For`, `Loading`, `Errored`, `Context`, `Call`, `Router`, `HttpStatusCode`, `Transition`,
+##   `Store`, `Show`, `Switch`, `Match`, `For`, `Loading`, `Errored`, `Context`, `Call`, `Router`, `HttpStatusCode`, `Transition`,
 ##   `Title`, `Browser`, `Submission`, `Submissions`), and HTTP's (`Server`, `Endpoint`,
 ##   `Channel`, `Middleware`, `Events`, `OpenApi`), are the browser's platform's (web/platform),
 ##   copied here by the build, so the same code compiles on both.
@@ -66,7 +66,7 @@ platform ""
 			routes : List({ method : Str, path : Str, file : Str }),
 		}
 	}
-	exposes [Actor, AesGcm, Blobs, Browser, Call, Channel, Context, Db, Endpoint, Env, Errored, Events, For, Html, Http, HttpResponse, HttpStatusCode, Kv, Live, Loading, Log, Match, Middleware, OpenApi, Plugin, Random, Repeat, Router, Server, Show, Solid, Submission, Submissions, Switch, Tcp, Time, Title, Transition]
+	exposes [Actor, AesGcm, Blobs, Browser, Call, Channel, Context, Db, Endpoint, Env, Errored, Events, For, Html, Http, HttpResponse, HttpStatusCode, Kv, Live, Loading, Log, Match, Middleware, OpenApi, Plugin, Random, Repeat, Router, Server, Show, Solid, Store, Submission, Submissions, Switch, Tcp, Time, Title, Transition]
 	packages {}
 	provides {
 		"roc_actor": actor_for_host!,
@@ -170,6 +170,7 @@ platform ""
 		"roc_location": Host.location!,
 		"roc_memo_done": Host.memo_done!,
 		"roc_memo_get": Host.memo_get!,
+		"roc_memo_last": Host.memo_last!,
 		"roc_memo_new": Host.memo_new!,
 		"roc_problem": Host.problem!,
 		"roc_read_at": Host.read_at!,
@@ -179,9 +180,11 @@ platform ""
 		"roc_retry": Host.retry!,
 		"roc_row_get": Host.row_get!,
 		"roc_row_index": Host.row_index!,
+		"roc_row_last": Host.row_last!,
 		"roc_row_set": Host.row_set!,
 		"roc_say": Host.say!,
 		"roc_signal_get": Host.signal_get!,
+		"roc_signal_latest": Host.signal_latest!,
 		"roc_signal_new": Host.signal_new!,
 		"roc_signal_set": Host.signal_set!,
 		"roc_status": Host.status!,
@@ -193,6 +196,7 @@ platform ""
 		"roc_subscribe": Host.subscribe!,
 		"roc_timeout": Host.timeout!,
 		"roc_title": Host.title!,
+		"roc_tracking": Host.tracking!,
 		"roc_untrack": Host.untrack!,
 	}
 	targets: {
@@ -239,6 +243,7 @@ import Server
 import Setting
 import Show
 import Solid
+import Store
 import Switch
 import Match
 import Submission

@@ -913,10 +913,11 @@ pub const HostListenArgs = extern struct {
 };
 
 /// Arguments for Host.memo_done!
-/// Roc signature: Box({} -> rigid) => {}
+/// Roc signature: Box({} -> rigid), Bool => {}
 /// Refcounted fields are owned by the hosted function.
 pub const HostMemo_doneArgs = extern struct {
     arg0: RocErasedCallable,
+    arg1: bool,
 };
 
 /// Arguments for Host.memo_get!
@@ -924,6 +925,13 @@ pub const HostMemo_doneArgs = extern struct {
 /// Refcounted fields are owned by the hosted function.
 pub const HostMemo_getArgs = extern struct {
     arg0: u64,
+};
+
+/// Arguments for Host.memo_last!
+/// Roc signature: Box({} -> rigid) => Box({} -> rigid)
+/// Refcounted fields are owned by the hosted function.
+pub const HostMemo_lastArgs = extern struct {
+    arg0: RocErasedCallable,
 };
 
 /// Arguments for Host.memo_new!
@@ -977,13 +985,23 @@ pub const HostRow_indexArgs = extern struct {
     arg1: RocStr,
 };
 
+/// Arguments for Host.row_last!
+/// Roc signature: U64, Str, Box({} -> rigid) => Box({} -> rigid)
+/// Refcounted fields are owned by the hosted function.
+pub const HostRow_lastArgs = extern struct {
+    arg0: u64,
+    arg1: RocStr,
+    arg2: RocErasedCallable,
+};
+
 /// Arguments for Host.row_set!
-/// Roc signature: U64, Str, Box({} -> rigid) => {}
+/// Roc signature: U64, Str, Box({} -> rigid), Bool => {}
 /// Refcounted fields are owned by the hosted function.
 pub const HostRow_setArgs = extern struct {
     arg0: u64,
     arg1: RocStr,
     arg2: RocErasedCallable,
+    arg3: bool,
 };
 
 /// Arguments for Host.say!
@@ -998,6 +1016,13 @@ pub const HostSayArgs = extern struct {
 /// Roc signature: U64 => Box({} -> rigid)
 /// Refcounted fields are owned by the hosted function.
 pub const HostSignal_getArgs = extern struct {
+    arg0: u64,
+};
+
+/// Arguments for Host.signal_latest!
+/// Roc signature: U64 => Box({} -> rigid)
+/// Refcounted fields are owned by the hosted function.
+pub const HostSignal_latestArgs = extern struct {
     arg0: u64,
 };
 
@@ -1260,16 +1285,24 @@ pub extern fn roc_listen(arg0: RocStr, arg1: RocErasedCallable) callconv(.c) voi
 pub extern fn roc_location() callconv(.c) RocStr;
 
 /// Hosted symbol for Host.memo_done!
-/// Roc signature: Box({} -> rigid) => {}
+/// Roc signature: Box({} -> rigid), Bool => {}
 /// Owned arguments. Release each exactly once before returning, unless it is
 /// moved into storage or into the result:
 ///     decrefErasedCallable(arg0, roc_host);
-pub extern fn roc_memo_done(arg0: RocErasedCallable) callconv(.c) void;
+pub extern fn roc_memo_done(arg0: RocErasedCallable, arg1: bool) callconv(.c) void;
 
 /// Hosted symbol for Host.memo_get!
 /// Roc signature: U64 => Box({} -> rigid)
 /// The result is owned by Roc: return exactly one owned reference.
 pub extern fn roc_memo_get(arg0: u64) callconv(.c) RocErasedCallable;
+
+/// Hosted symbol for Host.memo_last!
+/// Roc signature: Box({} -> rigid) => Box({} -> rigid)
+/// Owned arguments. Release each exactly once before returning, unless it is
+/// moved into storage or into the result:
+///     decrefErasedCallable(arg0, roc_host);
+/// The result is owned by Roc: return exactly one owned reference.
+pub extern fn roc_memo_last(arg0: RocErasedCallable) callconv(.c) RocErasedCallable;
 
 /// Hosted symbol for Host.memo_new!
 /// Roc signature: Box({} => Str) => U64
@@ -1337,13 +1370,22 @@ pub extern fn roc_row_get(arg0: u64, arg1: RocStr) callconv(.c) RocErasedCallabl
 ///     arg1.decref(roc_host);
 pub extern fn roc_row_index(arg0: u64, arg1: RocStr) callconv(.c) u64;
 
-/// Hosted symbol for Host.row_set!
-/// Roc signature: U64, Str, Box({} -> rigid) => {}
+/// Hosted symbol for Host.row_last!
+/// Roc signature: U64, Str, Box({} -> rigid) => Box({} -> rigid)
 /// Owned arguments. Release each exactly once before returning, unless it is
 /// moved into storage or into the result:
 ///     arg1.decref(roc_host);
 ///     decrefErasedCallable(arg2, roc_host);
-pub extern fn roc_row_set(arg0: u64, arg1: RocStr, arg2: RocErasedCallable) callconv(.c) void;
+/// The result is owned by Roc: return exactly one owned reference.
+pub extern fn roc_row_last(arg0: u64, arg1: RocStr, arg2: RocErasedCallable) callconv(.c) RocErasedCallable;
+
+/// Hosted symbol for Host.row_set!
+/// Roc signature: U64, Str, Box({} -> rigid), Bool => {}
+/// Owned arguments. Release each exactly once before returning, unless it is
+/// moved into storage or into the result:
+///     arg1.decref(roc_host);
+///     decrefErasedCallable(arg2, roc_host);
+pub extern fn roc_row_set(arg0: u64, arg1: RocStr, arg2: RocErasedCallable, arg3: bool) callconv(.c) void;
 
 /// Hosted symbol for Host.say!
 /// Roc signature: Str, Str => {}
@@ -1357,6 +1399,11 @@ pub extern fn roc_say(arg0: RocStr, arg1: RocStr) callconv(.c) void;
 /// Roc signature: U64 => Box({} -> rigid)
 /// The result is owned by Roc: return exactly one owned reference.
 pub extern fn roc_signal_get(arg0: u64) callconv(.c) RocErasedCallable;
+
+/// Hosted symbol for Host.signal_latest!
+/// Roc signature: U64 => Box({} -> rigid)
+/// The result is owned by Roc: return exactly one owned reference.
+pub extern fn roc_signal_latest(arg0: u64) callconv(.c) RocErasedCallable;
 
 /// Hosted symbol for Host.signal_new!
 /// Roc signature: Box({} -> rigid) => U64
@@ -1437,6 +1484,10 @@ pub extern fn roc_timeout(arg0: u64, arg1: RocErasedCallable) callconv(.c) u64;
 /// moved into storage or into the result:
 ///     arg0.decref(roc_host);
 pub extern fn roc_title(arg0: RocStr) callconv(.c) void;
+
+/// Hosted symbol for Host.tracking!
+/// Roc signature: {} => Bool
+pub extern fn roc_tracking() callconv(.c) bool;
 
 /// Hosted symbol for Host.untrack!
 /// Roc signature: Bool => {}

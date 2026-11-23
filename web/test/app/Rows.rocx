@@ -1,0 +1,39 @@
+import pf.For
+import pf.Html
+import pf.Solid exposing [create_signal!]
+
+## A long `<For>`, twice (D-053): a thousand rows, each two holes that read its item, in a list that
+## tells every row when the list is read again, and in one that compares (`compared`), telling only
+## the rows whose item isn't `==` the one they had. One item changed, or every item.
+Rows := [].{
+	Row : { id : U64, title : Str, done : Bool }
+
+	view! : {} => Html
+	view! = |{}| {
+		(plain!, set_plain!) = create_signal!(Rows.start)
+		(compared!, set_compared!) = create_signal!(Rows.start)
+		<div>
+			<button class="plain-one" on:click={|| set_plain!(Rows.toggle(plain!(), 500))}>One</button>
+			<button class="plain-all" on:click={|| set_plain!(Rows.toggle(plain!(), 0))}>All</button>
+			<button class="compared-one" on:click={|| set_compared!(Rows.toggle(compared!(), 500))}>One</button>
+			<button class="compared-all" on:click={|| set_compared!(Rows.toggle(compared!(), 0))}>All</button>
+			<ul class="plain">
+				<For each!={plain!()} keyed={|row| row.id}>
+					{|row!, _| <li class:done={row!().done}>{row!().title}</li>}
+				</For>
+			</ul>
+			<ul class="compared">
+				<For each!={compared!()} keyed={|row| row.id} compared>
+					{|row!, _| <li class:done={row!().done}>{row!().title}</li>}
+				</For>
+			</ul>
+		</div>
+	}
+
+	start : List(Rows.Row)
+	start = List.repeat(0, 1000).map_with_index(|_, index| { id: index + 1, title: "Row ${(index + 1).to_str()}", done: Bool.False })
+
+	## The row `id` done or not done again; every row with 0.
+	toggle : List(Rows.Row), U64 -> List(Rows.Row)
+	toggle = |rows, id| rows.map(|row| if (id == 0 or row.id == id) { ..row, done: !row.done } else row)
+}

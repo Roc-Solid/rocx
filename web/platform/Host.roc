@@ -13,8 +13,9 @@ Host := [].{
 	## Makes a memo from its computation, and runs it.
 	memo_new! : Box(() => Str) => U64
 
-	## The running memo's value.
-	memo_done! : Box(() -> a) => {}
+	## The running memo's value. `same`: it equals the value the memo has (a store's selection says
+	## so, by Roc's `==`), so the memo's readers aren't told; `create_memo!`'s always say `Bool.False`.
+	memo_done! : Box(() -> a), Bool => {}
 
 	## Aborts the caller while the memo waits, or fails it when the memo failed.
 	memo_get! : U64 => Box(() -> a)
@@ -39,11 +40,14 @@ Host := [].{
 	retry! : U64 => {}
 
 	## A `<For>`'s rows: its id; a row's index (tracked: it changes as the row moves); and a row's
-	## item, by its key (tracked: it changes as the list does).
+	## item, by its key (tracked: it changes as the list does). `row_set!`'s `same`: the item is `==`
+	## the one the row had (`<For compared>`, D-053), so the row isn't told; else always
+	## `Bool.False`. `row_last!`: the row's item, untracked, or `fallback` for a new row.
 	for_new! : {} => U64
 	row_index! : U64, Str => U64
-	row_set! : U64, Str, Box(() -> a) => {}
+	row_set! : U64, Str, Box(() -> a), Bool => {}
 	row_get! : U64, Str => Box(() -> a)
+	row_last! : U64, Str, Box(() -> a) => Box(() -> a)
 
 	## A context's value, given by a provider: kept by the runtime, by its id, while what made it is.
 	context_value! : Box(() -> a) => U64
@@ -165,4 +169,18 @@ Host := [].{
 	## error handler (`create_effect_with!`'s `error`, `keep!`'s id; 0 for none), which a failed
 	## `compute` calls instead of the nearest <Errored>.
 	effect_options! : Bool, U64 => {}
+
+	## Whether the running computation tracks what it reads, and runs again when it changes (a hole,
+	## an attribute, a memo, an effect's compute): not a handler, a component's body, a part's first
+	## run, nor inside `untrack!`. Whether a store's selection is worth making (D-053).
+	tracking! : {} => Bool
+
+	## The running memo's value, or `fallback` when it has none yet: what a store's selection
+	## compares its new value with (D-053).
+	memo_last! : Box(() -> a) => Box(() -> a)
+
+	## A signal's value as the running handler leaves it: its own write, not yet applied, if it made
+	## one, else the signal's. So two writes to a store in one handler compose, as two of Solid's
+	## draft setters do (D-053).
+	signal_latest! : U64 => Box(() -> a)
 }

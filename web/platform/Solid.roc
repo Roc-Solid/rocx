@@ -1,12 +1,13 @@
 import Host
 import Context
+import Store
 
 ## Solid 2.0's primitives, as Roc names them: `createSignal` is `create_signal!`, and so on. A read
 ## is an accessor (`count!()`), and it is tracked: a computation that reads it runs again when it
 ## changes. The browser's timers are here too (`set_interval!`, `set_timeout!`), each stopped by
 ## the `clear!` it answers, or when what started it goes.
 ##
-##     import pf.Solid exposing [create_signal!, create_memo!, create_effect!, create_render_effect!, create_effect_with!, on_cleanup!, on_settled!, refresh!, is_pending!, latest!, untrack!, use_context!, set_interval!]
+##     import pf.Solid exposing [create_signal!, create_memo!, create_store!, create_effect!, create_render_effect!, create_effect_with!, on_cleanup!, on_settled!, refresh!, is_pending!, latest!, untrack!, use_context!, set_interval!]
 ##
 ##     (count!, set_count!) = create_signal!(0.U64)
 ##     doubled! = create_memo!(|| count!() * 2)
@@ -26,6 +27,26 @@ Solid := [].{
 		(read!, write!)
 	}
 
+	## A store (Solid 2.0's `createStore`): state of many parts in one value, read by parts
+	## (`store.get!(|s| s.filter)`, tracked by the part it selects), and its setter, which takes a
+	## function of the state, Solid's draft setter: `set_todos!(|s| { ..s, filter: Done })`. Writes
+	## apply when the handler making them is done, as a signal's do, and two in one handler compose:
+	## the second is given what the first made. See `Store`.
+	create_store! : s => (Store(s), ((s -> s) => {}))
+	create_store! = |value| {
+		id = Host.signal_new!(Box.box(|| value))
+		read! = || {
+			current = Box.unbox(Host.signal_get!(id))
+			current()
+		}
+		write! = |update| {
+			latest = Box.unbox(Host.signal_latest!(id))
+			next = update(latest())
+			Host.signal_set!(id, Box.box(|| next))
+		}
+		(Store.of(read!), write!)
+	}
+
 	## A value computed from others, computed again when they change: its accessor. It is async when
 	## it calls the server: until the answer is in, reading it makes the reader wait (it runs again
 	## once the answer is in); a failure shows the nearest <Errored>.
@@ -33,7 +54,7 @@ Solid := [].{
 	create_memo! = |compute| {
 		run! = || {
 			value = compute()
-			Host.memo_done!(Box.box(|| value))
+			Host.memo_done!(Box.box(|| value), Bool.False)
 			""
 		}
 		id = Host.memo_new!(Box.box(run!))

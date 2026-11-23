@@ -19,7 +19,7 @@ const js = struct {
     extern "env" fn js_signal_get(id: u32) usize;
     extern "env" fn js_signal_set(id: u32, value: usize) void;
     extern "env" fn js_memo_new(run: usize) u32;
-    extern "env" fn js_memo_done(value: usize) void;
+    extern "env" fn js_memo_done(value: usize, same: u32) void;
     extern "env" fn js_memo_get(id: u32) usize;
     extern "env" fn js_refresh(probe: usize) void;
     extern "env" fn js_is_pending(probe: usize) u32;
@@ -31,7 +31,8 @@ const js = struct {
     extern "env" fn js_request() usize;
     extern "env" fn js_for_new() u32;
     extern "env" fn js_row_index(id: u32, key_ptr: [*]const u8, key_len: usize) u32;
-    extern "env" fn js_row_set(id: u32, key_ptr: [*]const u8, key_len: usize, value: usize) void;
+    extern "env" fn js_row_set(id: u32, key_ptr: [*]const u8, key_len: usize, value: usize, same: u32) void;
+    extern "env" fn js_row_last(id: u32, key_ptr: [*]const u8, key_len: usize) usize;
     extern "env" fn js_row_get(id: u32, key_ptr: [*]const u8, key_len: usize) usize;
     extern "env" fn js_context_value(value: usize) u32;
     extern "env" fn js_context_find(name_ptr: [*]const u8, name_len: usize) u32;
@@ -62,6 +63,9 @@ const js = struct {
     extern "env" fn js_untrack(on: u32) void;
     extern "env" fn js_effect_options(render: u32, error_box: u32) void;
     extern "env" fn js_read_at(ptr: [*]const u8, len: usize) usize;
+    extern "env" fn js_tracking() u32;
+    extern "env" fn js_memo_last() usize;
+    extern "env" fn js_signal_latest(id: u32) usize;
     /// `Date.now()`, and `performance.timeOrigin + performance.now()`: milliseconds, as JS has them.
     extern "env" fn js_now_millis() f64;
     extern "env" fn js_now_precise() f64;
@@ -71,6 +75,8 @@ var roc_env: abi.RocEnv = .{ .allocator = memory, .roc_io = abi.RocIo.freestandi
 var roc_host: abi.RocHost = undefined;
 var host_made = false;
 var live: i64 = 0;
+/// Every allocation Roc has made, for the tests: what a change costs.
+var allocated: i64 = 0;
 
 fn host() *abi.RocHost {
     if (!host_made) {
@@ -85,6 +91,7 @@ fn host() *abi.RocHost {
 
 fn countedAlloc(roc_host_ptr: *abi.RocHost, length: usize, alignment: usize) callconv(.c) *anyopaque {
     live += 1;
+    allocated += 1;
     const ptr = abi.DefaultAllocators.rocAlloc(roc_host_ptr, length, alignment);
     track(@intFromPtr(ptr), alignment);
     return ptr;
@@ -371,6 +378,12 @@ export fn live_allocations() i64 {
     return live;
 }
 
+/// How many allocations Roc has made since the module started: the tests' measure of what a change
+/// allocates.
+export fn allocations() i64 {
+    return allocated;
+}
+
 // ---- Hosted: each passes to the runtime. A box given to the runtime is the runtime's reference;
 // a box given back to Roc is a new one. ----
 
@@ -396,8 +409,8 @@ fn hostedMemoNew(run_it: Callable) callconv(.c) u64 {
     return js.js_memo_new(address(run_it));
 }
 
-fn hostedMemoDone(value: Callable) callconv(.c) void {
-    js.js_memo_done(address(value));
+fn hostedMemoDone(value: Callable, same: bool) callconv(.c) void {
+    js.js_memo_done(address(value), @intFromBool(same));
 }
 
 fn hostedMemoGet(id: u64) callconv(.c) Callable {
@@ -449,10 +462,22 @@ fn hostedRowIndex(id: u64, key: RocStr) callconv(.c) u64 {
     return js.js_row_index(@intCast(id), text.ptr, text.len);
 }
 
-fn hostedRowSet(id: u64, key: RocStr, value: Callable) callconv(.c) void {
+fn hostedRowSet(id: u64, key: RocStr, value: Callable, same: bool) callconv(.c) void {
     defer key.decref(host());
     const text = key.asSlice();
-    js.js_row_set(@intCast(id), text.ptr, text.len, address(value));
+    js.js_row_set(@intCast(id), text.ptr, text.len, address(value), @intFromBool(same));
+}
+
+// A row's item, a new reference, or `fallback` (given back) for a row not there yet (D-053).
+fn hostedRowLast(id: u64, key: RocStr, fallback: Callable) callconv(.c) Callable {
+    defer key.decref(host());
+    const text = key.asSlice();
+    const at = js.js_row_last(@intCast(id), text.ptr, text.len);
+    if (at == 0) return fallback;
+    abi.decrefErasedCallable(fallback, host());
+    const value = callable(at);
+    abi.increfErasedCallable(value, 1);
+    return value;
 }
 
 fn hostedRowGet(id: u64, key: RocStr) callconv(.c) Callable {
@@ -659,6 +684,28 @@ fn hostedEffectOptions(render: bool, error_box: u64) callconv(.c) void {
     js.js_effect_options(@intFromBool(render), @intCast(error_box));
 }
 
+// Whether the running computation tracks its reads: a store's selection is made only then (D-053).
+fn hostedTracking() callconv(.c) bool {
+    return js.js_tracking() != 0;
+}
+
+// The running memo's value, a new reference, or `fallback` (given back) when it has none yet.
+fn hostedMemoLast(fallback: Callable) callconv(.c) Callable {
+    const at = js.js_memo_last();
+    if (at == 0) return fallback;
+    abi.decrefErasedCallable(fallback, host());
+    const value = callable(at);
+    abi.increfErasedCallable(value, 1);
+    return value;
+}
+
+// A signal's value with the running handler's own write, not yet applied, if it made one.
+fn hostedSignalLatest(id: u64) callconv(.c) Callable {
+    const value = callable(js.js_signal_latest(@intCast(id)));
+    abi.increfErasedCallable(value, 1);
+    return value;
+}
+
 // A dev build's `Html.read_at!`: where a component's body reads, for the runtime's warning; the
 // place before, to put back.
 fn hostedReadAt(place: RocStr) callconv(.c) RocStr {
@@ -732,6 +779,7 @@ comptime {
     @export(&hostedRowIndex, .{ .name = "roc_row_index", .visibility = hidden });
     @export(&hostedRowSet, .{ .name = "roc_row_set", .visibility = hidden });
     @export(&hostedRowGet, .{ .name = "roc_row_get", .visibility = hidden });
+    @export(&hostedRowLast, .{ .name = "roc_row_last", .visibility = hidden });
     @export(&hostedContextValue, .{ .name = "roc_context_value", .visibility = hidden });
     @export(&hostedContextFind, .{ .name = "roc_context_find", .visibility = hidden });
     @export(&hostedContextGet, .{ .name = "roc_context_get", .visibility = hidden });
@@ -760,6 +808,9 @@ comptime {
     @export(&hostedUntrack, .{ .name = "roc_untrack", .visibility = hidden });
     @export(&hostedEffectOptions, .{ .name = "roc_effect_options", .visibility = hidden });
     @export(&hostedReadAt, .{ .name = "roc_read_at", .visibility = hidden });
+    @export(&hostedTracking, .{ .name = "roc_tracking", .visibility = hidden });
+    @export(&hostedMemoLast, .{ .name = "roc_memo_last", .visibility = hidden });
+    @export(&hostedSignalLatest, .{ .name = "roc_signal_latest", .visibility = hidden });
     @export(&hostedNowMillis, .{ .name = "roc_now_millis", .visibility = hidden });
     @export(&hostedNowNanos, .{ .name = "roc_now_nanos", .visibility = hidden });
 }

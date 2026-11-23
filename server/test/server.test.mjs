@@ -3401,6 +3401,7 @@ const probe = (member) =>
 	"<ul><!--for--><!--row--><li><!--x-->0 ada<!--/x--></li><!--/row--><!--row--><li><!--x-->1 grace<!--/x--></li><!--/row--><!--/for--></ul>" +
 	'<!--show--><p class="small">small</p><!--/show-->' +
 	'<!--show--><p class="matched"><!--x-->41<!--/x--></p><!--/show--><!--show--><p class="keyed">41</p><!--/show-->' +
+	'<p class="store"><!--x-->ada<!--/x--><!--x-->41<!--/x--></p>' +
 	'<!--errored:failed--><p class="failed">nothing above provides Probe.missing: render this under its provider</p><!--/errored-->' +
 	'<input disabled value="a &amp; b">' +
 	member +

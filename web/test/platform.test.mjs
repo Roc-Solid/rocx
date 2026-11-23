@@ -63,6 +63,8 @@ if (!skip) {
 		["untracked-dev", join(out, "dev-app", "main.roc"), "dev"],
 		["render-effects", join(here, "app", "render_effects_app.roc"), "dev"],
 		["control", join(here, "app", "control_app.roc"), "dev"],
+		["stores", join(here, "app", "stores_app.roc"), "dev"],
+		["rows", join(here, "app", "rows_app.roc"), "dev"],
 		["shortcuts", join(here, "app", "shortcuts_app.roc"), "dev"],
 		["glides", join(here, "app", "glides_app.roc"), "dev"],
 		["drags", join(here, "app", "drags_app.roc"), "dev"],
@@ -700,6 +702,112 @@ window.hydrated = true;
 		assert.equal(await shown().then((now) => now.plain), "plain 0", "made again as it shows again");
 		assert.deepEqual(tab.errors, []);
 		assert.deepEqual(tab.console, []);
+	} finally {
+		await site.close();
+	}
+});
+
+/** A page of `name.wasm` rendered as the server would, served with the runtime, hydrated strictly
+ * in a new tab: the tab, and the site to close. */
+async function hydrated(name) {
+	const wasm = readFileSync(join(out, `${name}.wasm`));
+	const html = (await Runtime.load(wasm)).renderToString({ path: "/" }).html;
+	const dir = mkdtempSync(join(tmpdir(), `rocx-${name}-`));
+	cpSync(join(web, "runtime.js"), join(dir, "runtime.js"));
+	writeFileSync(join(dir, `${name}.wasm`), wasm);
+	const page = `<!doctype html><html><body><div id="app">${html}</div>
+<script type="module">
+import { Runtime } from "/runtime.js";
+window.runtime = await Runtime.load(fetch("/${name}.wasm"));
+window.runtime.hydrate(document.getElementById("app"), { strict: true });
+window.hydrated = true;
+</script></body></html>`;
+	const site = await serve(dir, (path) => (path === "/" ? page : null));
+	const tab = await browser.page();
+	await tab.goto(`${site.url}/`);
+	await tab.wait("window.hydrated === true", 5000);
+	// What a click does: the runtime's counts before and after, the holes it patched, and how long
+	// until the flush it started was done.
+	await tab.eval(`window.step = async (selector) => {
+		const r = window.runtime;
+		const before = { ...r.stats, allocations: r.allocations(), live: r.live() };
+		const patched = [];
+		r.observer = { patch: ({ node }) => patched.push((node.nodeType === 1 ? node : node.parentElement)?.className || (node.nodeType === 1 ? node : node.parentElement)?.tagName.toLowerCase()) };
+		const started = performance.now();
+		document.querySelector(selector).click();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		const ms = performance.now() - started;
+		r.observer = null;
+		return { ms, patched: patched.sort(), runs: r.stats.runs - before.runs, selections: r.stats.selections - before.selections, allocations: r.allocations() - before.allocations, live: r.live() - before.live };
+	}`);
+	return { tab, site, html };
+}
+
+test("stores (D-053): a store's parts, each read by its own hole, run again only when that part changes, compared with ==; a write runs the store's live selections once each, and no more as writes go on; two writes in one handler compose; a handler reads the newest; Store.of over a memo; a <For compared> of a store's list patches one row; four hundred selections of one store stay cheap; rendered as the server would and hydrated strictly", { skip }, async () => {
+	const { tab, site, html } = await hydrated("stores");
+	try {
+		assert.ok(html.includes(`<p class="filter"><!--x-->all<!--/x--></p> <p class="count"><!--x-->0<!--/x--></p> <p class="open"><!--x-->2<!--/x--></p>`), "the server reads each part once");
+		assert.deepEqual(tab.console, [], "hydrated strictly");
+		const shown = () => tab.eval(`["filter", "count", "open", "seen", "tens"].map((name) => document.querySelector("p." + name).textContent).concat([...document.querySelectorAll("li")].map((li) => li.className + ":" + li.textContent))`);
+		// A list written equal to itself: the store's live selections run, each once, and nothing else.
+		const same = await tab.eval(`window.step("button.same")`);
+		const live = same.selections;
+		assert.deepEqual([same.patched, same.runs, live], [[], 5, 5], "five parts are read where they are tracked (the filter, the count, the open ones, the <For>'s list, the memo's count): five selections run, and nothing else");
+		const filter = await tab.eval(`window.step("button.filter")`);
+		assert.deepEqual(filter.patched, ["filter"], "only the filter's hole: every other part is what it was");
+		assert.deepEqual([filter.selections, filter.runs], [live + 1, live + 2], "the selections, the one hole whose part changed, and the selection it made anew as it ran again (a selection is its reader run's)");
+		const count = await tab.eval(`window.step("button.count")`);
+		assert.deepEqual(count.patched, ["count", "tens"], "the count's hole, and through the memo that reads it, Store.of's part");
+		assert.ok(count.selections > live, "the store's selections, then those its readers that ran again made anew (a selection is its reader run's)");
+		const both = await tab.eval(`window.step("button.both")`);
+		assert.deepEqual(both.patched, ["count", "filter", "tens"]);
+		assert.deepEqual((await shown()).slice(0, 5), ["both", "3", "2", "0", "3"], "two writes in one handler: the second given what the first made");
+		const toggle = await tab.eval(`window.step("button.toggle")`);
+		assert.deepEqual(toggle.patched, ["li", "open"], "a <For compared>: the one row whose item changed, and the part that counts open ones");
+		await tab.eval(`window.step("button.seen")`);
+		assert.deepEqual((await shown()).slice(3, 4), ["3"], "a handler reads the store's newest");
+		const again = await tab.eval(`window.step("button.filter")`);
+		assert.equal(again.selections, live + 1, "as many selections as before: none left behind by the runs that made them");
+		assert.equal(again.live, 0, "and nothing left allocated");
+		const cells = [];
+		for (let i = 0; i < 5; i++) cells.push(await tab.eval(`window.step("button.cell")`));
+		for (const cell of cells) {
+			assert.deepEqual([cell.selections, cell.runs, cell.patched], [401, 402, ["i"]], "a write to the grid's store: its four hundred selections run, one hole runs again (making its selection anew), one patch");
+			assert.ok(cell.allocations < 4 * 400, `a selection's run allocates little: ${cell.allocations} for 400`);
+		}
+		assert.deepEqual(cells.slice(1).map((cell) => cell.live), [0, 0, 0, 0], "nothing left allocated, write after write");
+		const ms = cells.map((cell) => cell.ms).sort((a, b) => a - b)[2];
+		assert.ok(ms < 250, `four hundred selections of one store, a dev build: ${ms.toFixed(1)} ms a write`);
+		assert.deepEqual(tab.errors, []);
+		assert.deepEqual(tab.console, []);
+	} finally {
+		await site.close();
+	}
+});
+
+test("<For compared> (D-053): a list read again tells only the rows whose item isn't == the one they had, so one changed item of a thousand runs one row's holes, with fewer allocations; with every item changed it runs what a plain <For> runs, and allocates no more", { skip }, async () => {
+	const { tab, site } = await hydrated("rows");
+	try {
+		assert.deepEqual(tab.console, [], "hydrated strictly");
+		const median = async (selector) => {
+			const steps = [];
+			for (let i = 0; i < 5; i++) steps.push(await tab.eval(`window.step(${JSON.stringify(selector)})`));
+			return { ...steps[4], ms: steps.map((step) => step.ms).sort((a, b) => a - b)[2] };
+		};
+		const plainOne = await median("button.plain-one");
+		const comparedOne = await median("button.compared-one");
+		const plainAll = await median("button.plain-all");
+		const comparedAll = await median("button.compared-all");
+		assert.deepEqual([plainOne.runs, plainOne.patched.length], [2001, 1], "a plain <For>: every row's two holes run again, one patch");
+		assert.equal(comparedOne.runs, 3, "compared: the list, and the changed row's two holes");
+		assert.equal(comparedOne.patched.length, 1);
+		assert.ok(comparedOne.allocations < plainOne.allocations, `fewer allocations: ${comparedOne.allocations} against ${plainOne.allocations}`);
+		assert.equal(comparedAll.runs, plainAll.runs, "every item changed: every row runs, as in a plain one");
+		assert.equal(comparedAll.patched.length, 1000);
+		assert.ok(comparedAll.allocations <= plainAll.allocations, `and allocates no more: ${comparedAll.allocations} against ${plainAll.allocations}`);
+		for (const step of [plainOne, comparedOne, plainAll, comparedAll]) assert.equal(step.live, 0);
+		console.log(`<For> of 1,000, a dev build (median of 5): one changed ${plainOne.ms.toFixed(1)} ms plain, ${comparedOne.ms.toFixed(1)} ms compared; all changed ${plainAll.ms.toFixed(1)} ms plain, ${comparedAll.ms.toFixed(1)} ms compared`);
+		assert.deepEqual(tab.errors, []);
 	} finally {
 		await site.close();
 	}

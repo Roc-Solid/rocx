@@ -723,8 +723,10 @@ pub extern "C" fn roc_memo_new(runner: Callable) -> u64 {
     id
 }
 
+/// The running memo's value. `_same` (a store's selection, equal to what it had) means nothing
+/// here: the server computes a memo once, and nothing reads it again.
 #[unsafe(no_mangle)]
-pub extern "C" fn roc_memo_done(value: Callable) {
+pub extern "C" fn roc_memo_done(value: Callable, _same: bool) {
     let _host = crate::preempt::host();
     let replaced = with(|render| {
         let id = render.frames.last()?.memo?;
@@ -931,8 +933,10 @@ pub extern "C" fn roc_row_index(list: u64, key: RocStr) -> u64 {
     }
 }
 
+/// A row's item. `_same` (a `<For compared>`'s item equal to what it was) means nothing here: a
+/// list is read once.
 #[unsafe(no_mangle)]
-pub extern "C" fn roc_row_set(list: u64, key: RocStr, value: Callable) {
+pub extern "C" fn roc_row_set(list: u64, key: RocStr, value: Callable, _same: bool) {
     let _host = crate::preempt::host();
     let key = taken(key);
     let replaced = with(|render| {
@@ -948,6 +952,21 @@ pub extern "C" fn roc_row_set(list: u64, key: RocStr, value: Callable) {
             roc::release(value);
             roc::fail("rocx: a row of a list that isn't there".into())
         }
+    }
+}
+
+/// A row's item, untracked, for a `<For compared>` to compare its new one with (D-053), or the
+/// fallback, given back, for a row not there yet: on the server, every row is new.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_row_last(list: u64, key: RocStr, fallback: Callable) -> Callable {
+    let _host = crate::preempt::host();
+    let key = taken(key);
+    match with(|render| render.lists.get(&list).and_then(|list| list.items.get(&key).copied())).flatten() {
+        Some(value) => {
+            roc::release(fallback);
+            roc::retain(value)
+        }
+        None => fallback,
     }
 }
 
@@ -1203,6 +1222,33 @@ pub extern "C" fn roc_untrack(on: bool) {
             frame.untracked = if on { frame.untracked + 1 } else { frame.untracked.saturating_sub(1) };
         }
     });
+}
+
+/// Whether the running computation tracks its reads (D-053): never here, where nothing runs again,
+/// so a store's part is read once, and no selection is made for it.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_tracking() -> bool {
+    let _host = crate::preempt::host();
+    false
+}
+
+/// The running memo's value, for a store's selection: never asked here (none is made), so the
+/// fallback, given back.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_memo_last(fallback: Callable) -> Callable {
+    let _host = crate::preempt::host();
+    fallback
+}
+
+/// A signal's value with the running handler's own write: no handler runs on the server, so the
+/// signal's, untracked.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_signal_latest(id: u64) -> Callable {
+    let _host = crate::preempt::host();
+    match with(|render| render.signals.get(&id).copied()).flatten() {
+        Some(value) => roc::retain(value),
+        None => roc::fail("rocx: a signal was read after the part that made it went away".into()),
+    }
 }
 
 /// A dev build's `Html.read_at!` says where a component's body reads, for the browser's warning

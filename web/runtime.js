@@ -945,7 +945,7 @@ export class Runtime {
 		/** On the server: the names of the `<input type="password">`s the page being rendered has. */
 		this.secrets = [];
 		this.taken = null;
-		this.stats = { runs: 0, aborts: 0, patches: 0 };
+		this.stats = { runs: 0, aborts: 0, patches: 0, selections: 0 };
 		/** In the browser: answers the server gave while rendering the page, by name and input. */
 		this.answers = new Map();
 		/** On the server: the request being answered, as HTTP writes it (`METHOD target`, a header a
@@ -1070,9 +1070,33 @@ export class Runtime {
 				this.run(memo);
 				return memo.id;
 			},
-			js_memo_done: (ptr) => {
+			js_memo_done: (ptr, same) => {
 				if (this.current?.next) this.ex.release(this.current.next);
 				this.current.next = ptr;
+				// A store's selection whose part is what it was (D-053): its readers aren't told.
+				this.current.same = same !== 0;
+			},
+			// Whether the running computation tracks its reads, and so runs again when they change: a
+			// store's selection is made only then (D-053). Rendering as a server would, nothing runs again.
+			js_tracking: () => {
+				const running = this.current;
+				return !this.onServer && running?.making && running.making.untracked === 0 && !running.untracked && running.kind !== "component" && running.kind !== "once" ? 1 : 0;
+			},
+			// The running memo's value, for a store's selection to compare its new one with: 0 when it
+			// has none yet (or failed), so it compares with itself. Each call is a selection's run.
+			js_memo_last: () => {
+				this.stats.selections++;
+				const memo = this.current;
+				return memo?.kind === "memo" && memo.state === "ok" && memo.value ? memo.value : 0;
+			},
+			// A signal's value with the running handler's own write, not yet applied, if it made one: a
+			// store's setter starts from it, so two in one handler compose (D-053). Untracked.
+			js_signal_latest: (id) => {
+				const signal = this.signals.get(id);
+				if (!signal) throw new Error("rocx: a signal was read after the part that made it went away");
+				const writes = this.current?.kind === "handler" ? this.current.writes : [];
+				for (let at = writes.length - 1; at >= 0; at--) if (writes[at].signal === signal) return writes[at].value;
+				return signal.value;
 			},
 			js_memo_get: (id) => {
 				const memo = this.memos.get(id);
@@ -1141,15 +1165,19 @@ export class Runtime {
 				this.track(index);
 				return index.value;
 			},
-			js_row_set: (id, keyPtr, keyLen, ptr) => {
+			js_row_set: (id, keyPtr, keyLen, ptr, same) => {
 				const items = this.lists.get(id).items;
 				const at = text(keyPtr, keyLen);
 				const item = items.get(at);
 				if (!item) return items.set(at, { value: ptr, observers: new Set() });
 				this.ex.release(item.value);
 				item.value = ptr;
+				// A <For compared>'s item `==` the one the row had (D-053): the row isn't told; it keeps the newest.
+				if (same) return;
 				for (const observer of item.observers) this.schedule(observer);
 			},
+			// A row's item, untracked, for a <For compared> to compare its new one with: 0 for a new row.
+			js_row_last: (id, keyPtr, keyLen) => this.lists.get(id).items.get(text(keyPtr, keyLen))?.value ?? 0,
 			js_row_get: (id, keyPtr, keyLen) => {
 				const item = this.lists.get(id).items.get(text(keyPtr, keyLen));
 				this.track(item);
@@ -1913,13 +1941,17 @@ export class Runtime {
 	settle(computation, out) {
 		const { kind, target, name } = computation;
 		if (kind === "memo") {
+			// A store's selection whose part is the one it had, an answer it had (D-053), keeps quiet: its
+			// readers aren't told. It keeps the newest value all the same.
+			const quiet = computation.same && computation.state === "ok" && computation.value !== 0;
+			computation.same = false;
 			if (computation.value) this.ex.release(computation.value);
 			computation.value = computation.next;
 			computation.next = 0;
 			computation.state = "ok";
 			computation.settle?.();
 			computation.settled = computation.settle = null;
-			for (const observer of computation.observers) this.schedule(observer);
+			if (!quiet) for (const observer of computation.observers) this.schedule(observer);
 			return;
 		}
 		if (kind === "reaction") {
@@ -4169,5 +4201,10 @@ export class Runtime {
 
 	live() {
 		return Number(this.ex.live_allocations());
+	}
+
+	/** How many allocations Roc has made so far: the tests' measure of what a change costs. */
+	allocations() {
+		return Number(this.ex.allocations());
 	}
 }

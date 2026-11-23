@@ -274,8 +274,9 @@ Host := [].{
 	## Makes a memo from its computation, and runs it.
 	memo_new! : Box(() => Str) => U64
 
-	## The running memo's value.
-	memo_done! : Box(() -> a) => {}
+	## The running memo's value; `same` (a store's selection, equal to the value it had) means
+	## nothing here: the server computes a memo once.
+	memo_done! : Box(() -> a), Bool => {}
 
 	## The memo's value, or the failure it failed with.
 	memo_get! : U64 => Box(() -> a)
@@ -293,11 +294,14 @@ Host := [].{
 	problem! : {} => Str
 	retry! : U64 => {}
 
-	## A `<For>`'s rows: its id; a row's index; and a row's item, by its key.
+	## A `<For>`'s rows: its id; a row's index; and a row's item, by its key (`same`, a `<For
+	## compared>`'s item equal to what it was, means nothing here: a list is read once); the row's item,
+	## or `fallback` for a new row.
 	for_new! : {} => U64
 	row_index! : U64, Str => U64
-	row_set! : U64, Str, Box(() -> a) => {}
+	row_set! : U64, Str, Box(() -> a), Bool => {}
 	row_get! : U64, Str => Box(() -> a)
+	row_last! : U64, Str, Box(() -> a) => Box(() -> a)
 
 	## A context's value, given by a provider, by its id.
 	context_value! : Box(() -> a) => U64
@@ -371,4 +375,15 @@ Host := [].{
 	## An effect's options (`create_render_effect!`, `create_effect_with!`): the browser's; no effect
 	## runs on the server.
 	effect_options! : Bool, U64 => {}
+
+	## False: on the server nothing runs again, so a store's selection is read once, and nothing is
+	## made for it (D-053).
+	tracking! : {} => Bool
+
+	## The running memo's value, or `fallback` when it has none yet. Unused on the server, where
+	## nothing makes a selection.
+	memo_last! : Box(() -> a) => Box(() -> a)
+
+	## A signal's value: on the server no handler writes one.
+	signal_latest! : U64 => Box(() -> a)
 }

@@ -16,6 +16,14 @@ import Html
 ##
 ## The child is effectful (`=>`): it runs when its row is made, and may do what a component does
 ## there, hold another `<For>` or a `<Show>`; a child that is plain markup is fine too.
+##
+## Each time the list is read again, every row is told its item may have changed, and the holes that
+## read it run again (a value a node has already is no patch). `compared` (D-053) tells a row only
+## when its item isn't `==` the one it had, so a list of ten thousand in which one changed runs one
+## row's holes: a store's list, say. Its items must compare (records, tags, lists, text, numbers; a
+## type of one's own needs its `is_eq`; not functions or markup):
+##
+##     <For each!={todos.get!(|s| s.items)} keyed={|todo| todo.id} compared>{|todo!, _| …}</For>
 For := [].{
 	PropsKeyed(a, k) := { each! : () => List(a), keyed : a -> k, fallback : Html ?? Html.empty({}), children : (() => a), (() => U64) => Html }
 
@@ -23,52 +31,86 @@ For := [].{
 	## dropped with its key; the child gets accessors of its item and its index. The fallback while
 	## the list is empty.
 	view_with_keyed! : PropsKeyed(a, k) => Html
-	view_with_keyed! = |props| {
-		each! = props.each!
-		keyed = props.keyed
-		children = props.children
-		rows! = |id| {
-			items = each!()
-			keys = keys_of(items.map(|item| Str.inspect(keyed(item))))
-			var $rows = []
-			var $index = 0.U64
-			for item in items {
-				key = keys.get($index) ?? $index.to_str()
-				$rows = $rows.append(row!(id, key, item, |item!| children(item!, || Host.row_index!(id, key))))
-				$index = $index + 1
-			}
-			$rows
-		}
-		Html.each(rows!, props.fallback)
-	}
+	view_with_keyed! = |props| keyed_rows!(props, row!)
+
+	## `<For keyed={|item| …} compared>`: the same, a row told its item changed only when it isn't
+	## `==` the one it had.
+	view_with_keyed_compared! : PropsKeyed(a, k) => Html where [a.is_eq : a, a -> Bool]
+	view_with_keyed_compared! = |props| keyed_rows!(props, compared_row!)
 
 	PropsUnkeyed(a) := { each! : () => List(a), fallback : Html ?? Html.empty({}), children : (() => a), U64 => Html }
 
 	## What `<For keyed={Bool.False}>` is: a row per position; the child gets an accessor of the
 	## item there and its index. The fallback while the list is empty.
 	view_with_unkeyed! : PropsUnkeyed(a) => Html
-	view_with_unkeyed! = |props| {
-		each! = props.each!
-		children = props.children
-		rows! = |id| {
-			var $rows = []
-			var $index = 0.U64
-			for item in each!() {
-				at = $index
-				$rows = $rows.append(row!(id, at.to_str(), item, |item!| children(item!, at)))
-				$index = $index + 1
-			}
-			$rows
+	view_with_unkeyed! = |props| unkeyed_rows!(props, row!)
+
+	## `<For keyed={Bool.False} compared>`: the same, a row told its item changed only when it isn't
+	## `==` the one it had.
+	view_with_unkeyed_compared! : PropsUnkeyed(a) => Html where [a.is_eq : a, a -> Bool]
+	view_with_unkeyed_compared! = |props| unkeyed_rows!(props, compared_row!)
+}
+
+## A row per key, each made by `row`.
+keyed_rows! : For.PropsKeyed(a, k), (U64, Str, a, ((() => a) => Html) => { key : Str, row : () => Html }) => Html
+keyed_rows! = |props, row| {
+	each! = props.each!
+	keyed = props.keyed
+	children = props.children
+	rows! = |id| {
+		items = each!()
+		keys = keys_of(items.map(|item| Str.inspect(keyed(item))))
+		var $rows = []
+		var $index = 0.U64
+		for item in items {
+			key = keys.get($index) ?? $index.to_str()
+			$rows = $rows.append(row(id, key, item, |item!| children(item!, || Host.row_index!(id, key))))
+			$index = $index + 1
 		}
-		Html.each(rows!, props.fallback)
+		$rows
 	}
+	Html.each(rows!, props.fallback)
+}
+
+## A row per position, each made by `row`.
+unkeyed_rows! : For.PropsUnkeyed(a), (U64, Str, a, ((() => a) => Html) => { key : Str, row : () => Html }) => Html
+unkeyed_rows! = |props, row| {
+	each! = props.each!
+	children = props.children
+	rows! = |id| {
+		var $rows = []
+		var $index = 0.U64
+		for item in each!() {
+			at = $index
+			$rows = $rows.append(row(id, at.to_str(), item, |item!| children(item!, at)))
+			$index = $index + 1
+		}
+		$rows
+	}
+	Html.each(rows!, props.fallback)
 }
 
 ## A row: its item kept by the host under its key (so the row's accessor reads the item there now),
 ## and how to make the row.
 row! : U64, Str, a, ((() => a) => Html) => { key : Str, row : () => Html }
 row! = |id, key, item, make| {
-	Host.row_set!(id, key, Box.box(|| item))
+	Host.row_set!(id, key, Box.box(|| item), Bool.False)
+	made_row(id, key, make)
+}
+
+## A row whose item is compared with the one it had (`compared`, D-053): told it changed only when
+## it isn't `==` that one. A new row's item is compared with itself.
+compared_row! : U64, Str, a, ((() => a) => Html) => { key : Str, row : () => Html } where [a.is_eq : a, a -> Bool]
+compared_row! = |id, key, item, make| {
+	boxed = Box.box(|| item)
+	last = Box.unbox(Host.row_last!(id, key, boxed))
+	Host.row_set!(id, key, boxed, last() == item)
+	made_row(id, key, make)
+}
+
+## How to make a row whose item the host keeps under its key: its accessor reads the item there now.
+made_row : U64, Str, ((() => a) => Html) -> { key : Str, row : () => Html }
+made_row = |id, key, make| {
 	item! = || {
 		current = Box.unbox(Host.row_get!(id, key))
 		current()
