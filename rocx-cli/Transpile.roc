@@ -105,8 +105,10 @@ Transpile := [].{
 	keywords_before_expression = ["else", "return", "crash", "expect", "dbg", "in"]
 
 	## A component's handlers: `on:event={handler!}` runs an effect; `on:event.value={…}` and the others
-	## give it what the event says (`.keys`: the key and the modifier keys held); `on:event.prevent={…}`
-	## takes over what the browser would do.
+	## give it what the event says (`.keys`: the key and the modifier keys held; `.point`: where the
+	## pointer is over the element; `.visible`: whether the page shows; `.data` and `.files`: what a
+	## drop or a paste carries, and a file input's files); `on:event.prevent={…}` takes over what the
+	## browser would do.
 	handler_fn : Str -> [Some(Str), None]
 	handler_fn = |takes|
 		if takes == "" {
@@ -121,6 +123,14 @@ Transpile := [].{
 			Some("on_keys")
 		} else if takes == "prevent" {
 			Some("on_prevent")
+		} else if takes == "point" {
+			Some("on_point")
+		} else if takes == "visible" {
+			Some("on_visible")
+		} else if takes == "data" {
+			Some("on_data")
+		} else if takes == "files" {
+			Some("on_files")
 		} else {
 			None
 		}
@@ -1912,7 +1922,7 @@ Transpile := [].{
 	is_handler_part : Part -> Bool
 	is_handler_part = |part|
 		match part {
-			Item(code) => ["Html.on(", "Html.on_value(", "Html.on_checked(", "Html.on_key(", "Html.on_keys(", "Html.on_named_key(", "Html.on_prevent("].any(|prefix| code.starts_with(prefix))
+			Item(code) => ["Html.on(", "Html.on_value(", "Html.on_checked(", "Html.on_key(", "Html.on_keys(", "Html.on_named_key(", "Html.on_prevent(", "Html.on_point(", "Html.on_visible(", "Html.on_data(", "Html.on_files("].any(|prefix| code.starts_with(prefix))
 			Line(_) => Bool.True
 			Fn(_) => Bool.False
 		}
@@ -2062,12 +2072,25 @@ Transpile := [].{
 					if name == "transition" or name.starts_with("transition:") {
 						return Err(oops("${name} is inside ${never}, so nothing there comes or goes: put <${tag}> outside <NoHydration>"))
 					}
+					if name.starts_with("drag:") {
+						return Err(oops("${name} is inside ${never}, so no drag of it starts: put <${tag}> outside <NoHydration>"))
+					}
 				}
 				if handler and (flag or optional) {
 					return Err(oops("${name} takes {a handler}: write ${name}={…}"))
 				}
 				if !component and !handler and Transpile.caseless_at(name.to_utf8(), "on", 0) {
 					return Err(oops("inline event handlers (${name}) aren't allowed: in a component, write on:${Text.lower(Text.cut(name.to_utf8(), 2, name.to_utf8().len()))}={…}"))
+				}
+				# `drag:data={…}` (what a drag carries for other pages) and `drag:image={…}` (what it shows): D-055.
+				drag = !component and name.starts_with("drag:")
+				if drag {
+					if !(name == "drag:data" or name == "drag:image") {
+						return Err(oops("${name}: write drag:data={[(type, value), …]} (what a drag of it carries) or drag:image={id} (the element it shows)"))
+					}
+					if flag or optional or Text.at(src, eq) != '=' or (Text.at(src, eq + 1) != '{' and !(name == "drag:image" and (Text.at(src, eq + 1) == '"' or Text.at(src, eq + 1) == '\''))) {
+						return Err(oops(if (name == "drag:data") "drag:data needs {a list of (type, value)}: write drag:data={[(\"text/plain\", title)]}" else "drag:image needs an element's id: write drag:image=\"ghost\" or drag:image={id}"))
+					}
 				}
 				# `transition={…}`, `transition:in={…}`, `transition:out={…}`: a Transition the element plays.
 				transition = !component and (name == "transition" or name.starts_with("transition:"))
@@ -2141,7 +2164,7 @@ Transpile := [].{
 								decoded0
 							}
 						value = Text.roc_string(decoded)
-						$attrs = $attrs.append(Item(if (component) "${name}: ${Transpile.static_prop(getters, name, value)}" else if (name == "key") "Html.key(${value})" else "Html.attr(${Text.roc_string(name)}, ${value})"))
+						$attrs = $attrs.append(Item(if (component) "${name}: ${Transpile.static_prop(getters, name, value)}" else if (name == "key") "Html.key(${value})" else if (drag) "Html.drag_image(${value})" else "Html.attr(${Text.roc_string(name)}, ${value})"))
 						$st = { ..$st, pos: end + 1 }
 					} else if quote == '{' {
 						effects_before = $st.effects
@@ -2182,6 +2205,9 @@ Transpile := [].{
 								Ok("${name}: ${if (getters and Getters.is_value(name)) "|| ${expr}" else if (through_prop) "|| (${Text.trim(expr)})()" else Transpile.accessor_prop(name, expr)}")
 							} else if transition {
 								Ok(if (computed) "Html.transition_of(${Transpile.transition_way(name)}, || ${expr})" else "Html.transition(${Transpile.transition_way(name)}, ${expr})")
+							} else if drag {
+								fn_name = if (name == "drag:data") "drag_data" else "drag_image"
+								Ok(if (computed) "Html.${fn_name}_of(|| ${expr})" else "Html.${fn_name}(${expr})")
 							} else if computed or handler or name == "key" {
 								Transpile.reactive_attribute(cfg, name, expr, flag, optional, name_start, computed)
 							} else if flag {
@@ -2312,6 +2338,10 @@ Transpile := [].{
 					if (event != "frame" or takes != "ms") Err(Transpile.fail(cfg, "${attr}: frames are on:frame.ms={…}, which gets the milliseconds since the last one", name_start)) else Ok({ event, takes, key: None })
 				} else if event == "viewport" {
 					if (takes != "") Err(Transpile.fail(cfg, "${attr}: write on:viewport={|view| …}, which gets what of the element shows (an Html.Viewport)", name_start)) else Ok({ event, takes, key: None })
+				} else if takes == "visible" and event != "visibilitychange" {
+					Err(Transpile.fail(cfg, "${attr}: .visible goes with on:visibilitychange (on <Document>), which says whether the page shows", name_start))
+				} else if (takes == "data" or takes == "files") and event != "drop" and event != "paste" and !(takes == "files" and (event == "change" or event == "input")) {
+					Err(Transpile.fail(cfg, "${attr}: .${takes} goes with on:drop or on:paste${if (takes == "files") ", or a file input's on:change" else ""}, which carry it", name_start))
 				} else if Transpile.handler_fn(takes) != None {
 					Ok({ event, takes, key: None })
 				} else {
@@ -2324,7 +2354,7 @@ Transpile := [].{
 					modifiers = ["Shift", "Ctrl", "Alt", "Meta", "Mod"]
 					unknown = held.keep_if(|name| !modifiers.contains(name))
 					if !named_key {
-						Err(Transpile.fail(cfg, "${attr}: a handler takes .value, .checked, .key or .keys, a key's name (.Enter, .ArrowUp, .w) after any modifier keys (.Shift+Enter, .Mod+K), or .prevent, not .${takes}", name_start))
+						Err(Transpile.fail(cfg, "${attr}: a handler takes .value, .checked, .key, .keys, .point, .visible, .data or .files, a key's name (.Enter, .ArrowUp, .w) after any modifier keys (.Shift+Enter, .Mod+K), or .prevent, not .${takes}", name_start))
 					} else if event != "keydown" and event != "keyup" {
 						Err(Transpile.fail(cfg, "${attr}: a key's name goes with on:keydown or on:keyup", name_start))
 					} else if !unknown.is_empty() {

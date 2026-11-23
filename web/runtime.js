@@ -401,7 +401,7 @@ const WAITS = 0xffffffff;
 
 /** The computations that run again when what they read changes: the ones a submission's result
  * reads again (`revalidate`). A component, the root and a handler run once. */
-const READERS = new Set(["memo", "text", "attr", "flag", "class", "optional", "style", "html", "show", "for", "reaction", "transition"]);
+const READERS = new Set(["memo", "text", "attr", "flag", "class", "optional", "style", "html", "show", "for", "reaction", "transition", "drag"]);
 
 /** A submission as Roc reads it (`Host.submission!`), its id too in a list (`Host.submissions!`). */
 const submissionJson = ({ id, state, input, json, status, body }, listed = false) => JSON.stringify(listed ? { id, state, input, json, status, body } : { state, input, json, status, body });
@@ -416,9 +416,53 @@ const DRAG_EVENTS = new Set(["dragstart", "dragenter", "dragleave", "drop"]);
  * only a copy or a link is allowed. */
 const dropEffect = (allowed) => (/move|all|uninitialized/i.test(allowed ?? "all") ? "move" : /copy/i.test(allowed) ? "copy" : /link/i.test(allowed) ? "link" : "none");
 
+/** A drag by touch or a pen (`pointerDrag`): held this long, moving less than `slop` pixels, it
+ * starts (a swipe scrolls, a tap clicks); `edge` pixels from a box's edge that scrolls, the box
+ * scrolls, at most `speed` pixels a frame. */
+const POINTER_DRAG = { hold: 250, slop: 8, edge: 48, speed: 16 };
+
+/** The events whose `.point` runs at most once an animation frame, with the latest place. */
+const MOVES = new Set(["pointermove", "mousemove", "touchmove", "pointerrawupdate"]);
+
 /** What a popover's own styles (`[popover]`) change of an element's look: kept as they were while a
  * glide lifts it into the top layer (`lift`). */
 const POPOVER_LOOK = ["color", "background-color", "overflow-x", "overflow-y", "padding-top", "padding-right", "padding-bottom", "padding-left", ...["top", "right", "bottom", "left"].flatMap((side) => [`border-${side}-width`, `border-${side}-style`, `border-${side}-color`])];
+
+/** What a drag (or a paste) carries but its files, as JSON for `Html.DragItem`s: each type and its
+ * value, in order, without the runtime's own (`application/x-rocx`). */
+const itemsOf = (transfer) => JSON.stringify([...(transfer?.types ?? [])].filter((type) => type !== "Files" && type !== "application/x-rocx").map((type) => ({ type, value: transfer.getData(type) })));
+
+/** What a drag by touch or a pen carries (`pointerDrag`): a `DataTransfer` where the browser makes
+ * one, otherwise one of the runtime's with the same reads and writes. */
+function makeTransfer() {
+	try {
+		const transfer = new DataTransfer();
+		// What it allows and what a drop target says it does, as the browser's own drag keeps them
+		// (Chromium's made one ignores both writes): allowing anything until dragstart says otherwise.
+		let allowed = "uninitialized";
+		let effect = "none";
+		Object.defineProperties(transfer, {
+			effectAllowed: { get: () => allowed, set: (value) => void (allowed = String(value)), configurable: true },
+			dropEffect: { get: () => effect, set: (value) => void (/^(none|copy|link|move)$/.test(value) && (effect = value)), configurable: true },
+		});
+		return transfer;
+	} catch {
+		const data = new Map();
+		return {
+			dropEffect: "none",
+			effectAllowed: "uninitialized",
+			files: [],
+			items: [],
+			get types() {
+				return [...data.keys()];
+			},
+			setData: (type, value) => void data.set(String(type).toLowerCase(), String(value)),
+			getData: (type) => data.get(String(type).toLowerCase()) ?? "",
+			clearData: (type) => (type === undefined ? data.clear() : data.delete(String(type).toLowerCase())),
+			setDragImage: () => {},
+		};
+	}
+}
 
 /** Whether Mod is ⌘ (macOS, iOS) or Ctrl (elsewhere), in key combinations (`on:keydown.Mod+K`). */
 const MAC = typeof navigator !== "undefined" && /mac|iphone|ipad|ipod/i.test(navigator.userAgentData?.platform ?? navigator.platform ?? "");
@@ -869,6 +913,12 @@ export class Runtime {
 		/** The drop targets a drag is over now (`depth` above 0), told it left when the drag ends. */
 		this.overs = new Set();
 		this.dragEnds = null;
+		/** What an element's drag carries (`drag:data`) and shows (`drag:image`), by element; the drag
+		 * by touch or a pen there is now (`pointerDrag`); the files dropped, pasted or chosen, by the
+		 * `blob:` URL a handler was given (`fileOf`). */
+		this.dragged = new WeakMap();
+		this.pointerDrag = null;
+		this.files = new Map();
 		/** Letting go of what is inside a part that is leaving: its <For>s' rows stay with it. */
 		this.keeping = false;
 		/** The computation or handler running now. */
@@ -1891,6 +1941,7 @@ export class Runtime {
 		if (kind === "for") return this.settleFor(computation, JSON.parse(out));
 		if (kind === "transition") return this.setTransition(target, name, JSON.parse(out));
 		if (kind === "key") return this.keys.set(target, JSON.parse(out));
+		if (kind === "drag") return this.setDrag(target, name, JSON.parse(out));
 		if (kind === "text" || kind === "attr" || kind === "flag" || kind === "class" || kind === "optional" || kind === "style") {
 			// A value the node has already isn't a patch (a hole runs again whenever what it read
 			// was written, which may be with the same value).
@@ -3251,10 +3302,10 @@ export class Runtime {
 		// are the element's own, as mouseenter and mouseleave are.
 		let drag = null;
 		for (const [kind, name] of node.a) {
-			if ((kind === "on" || kind === "onp") && DRAG_EVENTS.has(name)) {
+			if (((kind === "on" || kind === "onp") && DRAG_EVENTS.has(name)) || kind === "dd" || kind === "ddo") {
 				drag ??= { drop: false, start: false, enter: [], leave: [], depth: 0 };
 				if (name === "drop") drag.drop = true;
-				if (name === "dragstart") drag.start = true;
+				if (name === "dragstart" || kind === "dd" || kind === "ddo") drag.start = true;
 			}
 		}
 		for (const [kind, name, value, wanted] of node.a) {
@@ -3296,6 +3347,12 @@ export class Runtime {
 				};
 				requestAnimationFrame(tick);
 			} else if (kind === "view") this.viewport(element, value, scope, owner);
+			else if (kind === "pt") this.pointAt(element, name, value, scope, owner, () => element.getBoundingClientRect());
+			else if (kind === "dd") this.setDrag(element, name, value);
+			else if (kind === "ddo") {
+				const computation = new Computation(this, { kind: "drag", runner: this.kept.get(value), owner, scope, target: element, name });
+				if (this.isStatic(computation, this.run(computation))) this.forget(computation, owner);
+			}
 		}
 		if (drag) this.dragAndDrop(element, drag);
 	}
@@ -3348,16 +3405,31 @@ export class Runtime {
 			};
 		// For one key, or a combination (`on:keydown.ArrowUp`, `on:keydown.Mod+K`): that key only, with
 		// those modifier keys held and no others.
-		const pressed = wanted === undefined ? null : keyCombo(wanted);
+		// `.data` and `.files` (`["on", event, id, ".files"]`) say what the handler is given, not a key.
+		const given = wanted?.startsWith(".") ? wanted : undefined;
+		const pressed = wanted === undefined || given ? null : keyCombo(wanted);
 		return (event) => {
 			// That key only, and the browser doesn't also do what it would (an arrow key a game takes
 			// doesn't scroll the page).
 			if (pressed && !pressed(event)) return;
 			// `.prevent`: what the browser would do (follow a link) is the handler's to do.
-			if (kind === "onp" || name === "submit" || wanted !== undefined) event.preventDefault();
+			if (kind === "onp" || name === "submit" || pressed) event.preventDefault();
 			const target = event.target;
-			// A drop's value is the text dropped (from another page, or another program).
-			const input = event.type === "drop" ? (event.dataTransfer?.getData("text/plain") ?? "") : target?.type === "checkbox" ? String(target.checked) : String(target?.value ?? "");
+			// A drop's value is the text dropped (from another page, or another program); `.data`, all it
+			// carries but its files; `.files`, its files (a paste's, a file input's); `.visible`, whether
+			// the page shows.
+			const input =
+				given === ".files"
+					? this.filesOf(event, owner)
+					: given === ".data"
+						? itemsOf(event.dataTransfer ?? event.clipboardData)
+						: event.type === "drop"
+							? (event.dataTransfer?.getData("text/plain") ?? "")
+							: event.type === "visibilitychange"
+								? String(this.page?.visibilityState !== "hidden")
+								: target?.type === "checkbox"
+									? String(target.checked)
+									: String(target?.value ?? "");
 			if (this.kept.has(value)) this.handle(value, input, scope, { owner });
 		};
 	}
@@ -3373,6 +3445,11 @@ export class Runtime {
 		if (!target?.addEventListener) return;
 		const cleanups = (owner?.making ?? owner?.made)?.cleanups;
 		for (const [kind, name, value, wanted] of node.a) {
+			if (kind === "pt") {
+				const view = this.page.defaultView;
+				this.pointAt(target, name, value, scope, owner, () => ({ left: 0, top: 0, width: view?.innerWidth ?? 0, height: view?.innerHeight ?? 0 }));
+				continue;
+			}
 			if (kind !== "on" && kind !== "onp" && kind !== "onk") continue;
 			const listener = this.listener(kind, name, value, wanted, scope, owner);
 			target.addEventListener(name, listener);
@@ -3420,10 +3497,347 @@ export class Runtime {
 				event.preventDefault();
 				if (event.dataTransfer) event.dataTransfer.dropEffect = dropEffect(event.dataTransfer.effectAllowed);
 			});
-		if (drag.start)
+		if (drag.start) {
 			element.addEventListener("dragstart", (event) => {
-				if (event.dataTransfer && !event.dataTransfer.types.length) event.dataTransfer.setData("application/x-rocx", "rocx");
+				const transfer = event.dataTransfer;
+				if (!transfer) return;
+				const own = this.dragged.get(element);
+				for (const [type, data] of own?.data ?? []) transfer.setData(type, data);
+				if (!transfer.types.length) transfer.setData("application/x-rocx", "rocx");
+				// The app's drag image (`drag:image`): the browser's own drag draws a copy of it, held as the
+				// element was taken. (A drag by touch or a pen draws its own: `pointerDrag`.)
+				if (own?.image && !this.pointerDrag && typeof transfer.setDragImage === "function") {
+					const image = this.dragImage(element, own.image, event);
+					if (image) {
+						transfer.setDragImage(image.node, image.x, image.y);
+						setTimeout(() => image.node.remove(), 0);
+					}
+				}
 			});
+			// By touch or a pen, a drag of the runtime's own (`pointerDrag`): the browser's own drag (a long
+			// press, in some) is called off, as one is already under way.
+			element.addEventListener("pointerdown", (event) => this.pointerDown(element, event));
+			element.addEventListener(
+				"dragstart",
+				(event) => {
+					if (this.pointerDrag && !this.pointerDrag.firing) {
+						event.preventDefault();
+						event.stopImmediatePropagation();
+					}
+				},
+				true,
+			);
+			// A touch that drags doesn't scroll the page: a listener that may say so must be there before
+			// the touch starts (a passive one can't), on the element the touch starts on.
+			element.addEventListener(
+				"touchmove",
+				(event) => {
+					if (this.pointerDrag?.state === "dragging" && event.cancelable) event.preventDefault();
+				},
+				{ passive: false },
+			);
+		}
+	}
+
+	/** What an element's drag carries (`drag:data`: `name` "data", `[[type, value], …]` as JSON) or
+	 * shows (`drag:image`: `name` "image", an element's id). */
+	setDrag(element, name, value) {
+		let own = this.dragged.get(element);
+		if (!own) this.dragged.set(element, (own = { data: [], image: "" }));
+		if (name === "data") {
+			try {
+				own.data = JSON.parse(value);
+			} catch {
+				own.data = [];
+			}
+		} else own.image = String(value);
+	}
+
+	/**
+	 * A copy of the element whose id is `id` (`drag:image`), as a drag of `element` shows it: put just
+	 * after it (so what styles it there styles the copy too), fixed, out of sight unless `at` says
+	 * where, shown even if it is `hidden`, without ids, taking no pointer events, marked
+	 * `data-rocx-drag-image` for the app's CSS. Held where the drag took the element (`event`): at the
+	 * same share of the copy's width and height. None when no element has the id.
+	 */
+	dragImage(element, id, event) {
+		const source = id ? this.page.getElementById(id) : element;
+		if (!source) return null;
+		const node = source.cloneNode(true);
+		node.removeAttribute("id");
+		node.removeAttribute("hidden");
+		for (const inside of node.querySelectorAll("[id]")) inside.removeAttribute("id");
+		node.setAttribute("aria-hidden", "true");
+		node.setAttribute("data-rocx-drag-image", "");
+		const own = source.getBoundingClientRect();
+		const fixed = { position: "fixed", left: "-100000px", top: "0px", right: "auto", bottom: "auto", margin: "0px", "pointer-events": "none", "z-index": "2147483647", "box-sizing": "border-box" };
+		// A copy of the element itself keeps its size, wherever it is drawn.
+		if (!id) Object.assign(fixed, { width: `${own.width}px`, height: `${own.height}px` });
+		for (const [name, value] of Object.entries(fixed)) node.style.setProperty(name, value, "important");
+		source.after(node);
+		const box = node.getBoundingClientRect();
+		const from = element.getBoundingClientRect();
+		const share = (at, start, size) => (size > 0 ? Math.min(Math.max((at - start) / size, 0), 1) : 0.5);
+		return { node, x: Math.round(share(event.clientX, from.left, from.width) * box.width), y: Math.round(share(event.clientY, from.top, from.height) * box.height), width: box.width, height: box.height };
+	}
+
+	/** The files a drop, a paste or a file input carries, as JSON for `Html.File`s: each read by a
+	 * `blob:` URL, kept (`fileOf`) until the element's owner goes, then let go. */
+	filesOf(event, owner) {
+		const list = event.dataTransfer?.files ?? event.clipboardData?.files ?? event.target?.files ?? [];
+		const cleanups = (owner?.making ?? owner?.made)?.cleanups;
+		const files = [];
+		for (const file of list) {
+			const url = typeof URL.createObjectURL === "function" ? URL.createObjectURL(file) : "";
+			if (url) {
+				this.files.set(url, file);
+				cleanups?.push(() => {
+					this.files.delete(url);
+					URL.revokeObjectURL(url);
+				});
+			}
+			files.push({ name: file.name ?? "", type: file.type ?? "", size: file.size ?? 0, url });
+		}
+		return JSON.stringify(files);
+	}
+
+	/** The file a handler was given by its `blob:` URL (`Html.File`'s `url`), while it is kept: what
+	 * an action posting a form field with that URL as its value sends in its place. */
+	fileOf(url) {
+		return this.files.get(url) ?? null;
+	}
+
+	/**
+	 * `on:pointermove.point={|point| …}` (`["pt", event, id]`): the handler given where the pointer is
+	 * over the element (`box`: the element's, or the viewport's for `<Document>` and `<Window>`), as
+	 * thousandths of its width and height, `x,y` (whole numbers, 0 to 1000). A move (`MOVES`) runs it
+	 * at most once an animation frame, with the latest place. Taken off with the owner's cleanups.
+	 */
+	pointAt(target, name, value, scope, owner, box) {
+		let last = null;
+		let asked = 0;
+		const say = () => {
+			asked = 0;
+			if (!last || !this.kept.has(value)) return;
+			const rect = box();
+			const share = (at, start, size) => (size > 0 ? Math.round(Math.min(Math.max((at - start) / size, 0), 1) * 1000) : 0);
+			const point = `${share(last.x, rect.left, rect.width)},${share(last.y, rect.top, rect.height)}`;
+			last = null;
+			this.handle(value, point, scope, { owner });
+		};
+		const listener = (event) => {
+			const touch = event.touches?.[0] ?? event.changedTouches?.[0];
+			last = { x: touch?.clientX ?? event.clientX ?? 0, y: touch?.clientY ?? event.clientY ?? 0 };
+			if (!MOVES.has(name) || typeof requestAnimationFrame === "undefined") say();
+			else asked ||= requestAnimationFrame(say);
+		};
+		target.addEventListener(name, listener, { passive: true });
+		const cleanups = (owner?.making ?? owner?.made)?.cleanups;
+		cleanups?.push(() => {
+			target.removeEventListener(name, listener);
+			if (asked) cancelAnimationFrame(asked);
+		});
+	}
+
+	// ---- Dragging by touch and pen ----
+
+	/**
+	 * A drag by touch or a pen (D-055), which many browsers start none of, in the same events as the
+	 * browser's own (so D-029's drop targets and the app's handlers take it as they take one): a
+	 * pointer that isn't a mouse (a mouse has the browser's own drag, which carries data and files to
+	 * other windows), pressed on an element that starts drags, held a moment (`POINTER_DRAG.hold`)
+	 * while it moves less than `slop` (a swipe scrolls the page as before; a tap clicks), starts one.
+	 * Meanwhile, and while it drags, the element has no long-press callout and selects no text.
+	 */
+	pointerDown(element, event) {
+		if (event.pointerType === "mouse" || !event.isPrimary || event.button > 0 || this.pointerDrag || !element.draggable) return;
+		if (event.target?.closest?.("input, textarea, select, [contenteditable]:not([contenteditable=false])") && element.contains(event.target)) return;
+		const page = this.page;
+		const drag = { element, id: event.pointerId, state: "held", from: { x: event.clientX, y: event.clientY }, at: { x: event.clientX, y: event.clientY }, firing: false, target: null, operation: "none", transfer: null, ghost: null, frame: 0, styles: [] };
+		this.pointerDrag = drag;
+		// Each as it was first (one may be another's alias), then set.
+		const quiet = ["-webkit-touch-callout", "-webkit-user-select", "user-select"];
+		for (const name of quiet) drag.styles.push([name, element.style.getPropertyValue(name), element.style.getPropertyPriority(name)]);
+		for (const name of quiet) element.style.setProperty(name, "none");
+		const ours = (event) => event.pointerId === drag.id;
+		const moved = (event) => {
+			if (!ours(event)) return;
+			drag.at = { x: event.clientX, y: event.clientY };
+			if (drag.state === "held") {
+				if (Math.hypot(drag.at.x - drag.from.x, drag.at.y - drag.from.y) > POINTER_DRAG.slop) this.pointerDragEnd(drag, { cancel: true });
+			} else if (drag.state === "dragging") {
+				this.placeGhost(drag);
+				drag.frame ||= requestAnimationFrame(() => this.pointerDragFrame(drag));
+			}
+		};
+		const up = (event) => ours(event) && this.pointerDragEnd(drag, { cancel: drag.state !== "dragging" });
+		const cancelled = (event) => ours(event) && this.pointerDragEnd(drag, { cancel: true });
+		// A long press's own menu and selection don't come while it is held or drags.
+		const hush = (event) => event.preventDefault();
+		const timer = setTimeout(() => this.pointerDragStart(drag), POINTER_DRAG.hold);
+		drag.off = () => {
+			clearTimeout(timer);
+			page.removeEventListener("pointermove", moved, true);
+			page.removeEventListener("pointerup", up, true);
+			page.removeEventListener("pointercancel", cancelled, true);
+			page.removeEventListener("contextmenu", hush, true);
+			page.removeEventListener("selectstart", hush, true);
+		};
+		page.addEventListener("pointermove", moved, true);
+		page.addEventListener("pointerup", up, true);
+		page.addEventListener("pointercancel", cancelled, true);
+		page.addEventListener("contextmenu", hush, true);
+		page.addEventListener("selectstart", hush, true);
+	}
+
+	/** The events of a drag by touch or a pen, as the browser fires its own: each a `DragEvent` with
+	 * its place, all carrying one `DataTransfer` (what dragstart puts on it, a drop reads), bubbling.
+	 * Answers whether its default was prevented. */
+	fireDrag(drag, type, target, { related = null, effect = "none" } = {}) {
+		const transfer = drag.transfer;
+		try {
+			transfer.dropEffect = type === "dragenter" || type === "dragover" ? dropEffect(transfer.effectAllowed) : effect;
+		} catch {}
+		const init = { bubbles: true, composed: true, cancelable: type !== "dragleave" && type !== "dragend", clientX: drag.at.x, clientY: drag.at.y, screenX: drag.at.x, screenY: drag.at.y, buttons: type === "drop" || type === "dragend" ? 0 : 1, relatedTarget: related, dataTransfer: transfer };
+		let event;
+		try {
+			event = new DragEvent(type, init);
+		} catch {
+			event = new MouseEvent(type, init);
+		}
+		if (event.dataTransfer !== transfer) Object.defineProperty(event, "dataTransfer", { value: transfer });
+		drag.firing = true;
+		try {
+			return !target.dispatchEvent(event);
+		} finally {
+			drag.firing = false;
+		}
+	}
+
+	/** Held long enough: the drag starts, as the browser's would (dragstart on the element, which may
+	 * call it off), its image under the finger (`drag:image`'s, or a copy of the element as it was
+	 * before dragstart's handlers changed it), and goes over what is under it. */
+	pointerDragStart(drag) {
+		if (this.pointerDrag !== drag || drag.state !== "held" || !drag.element.isConnected) return this.pointerDragEnd(drag, { cancel: true });
+		drag.transfer = makeTransfer();
+		const image = this.dragImage(drag.element, this.dragged.get(drag.element)?.image ?? "", { clientX: drag.from.x, clientY: drag.from.y });
+		if (this.fireDrag(drag, "dragstart", drag.element)) {
+			image?.node.remove();
+			return this.pointerDragEnd(drag, { cancel: true });
+		}
+		drag.state = "dragging";
+		if (image) {
+			drag.ghost = image;
+			// Above everything (the top layer, where the browser has it), its own look kept.
+			if (typeof image.node.showPopover === "function") {
+				const look = getComputedStyle(image.node);
+				for (const name of POPOVER_LOOK) image.node.style.setProperty(name, look.getPropertyValue(name), "important");
+				image.node.setAttribute("popover", "manual");
+				image.node.showPopover();
+			}
+			image.node.style.setProperty("left", "0px", "important");
+			image.node.style.setProperty("top", "0px", "important");
+			this.placeGhost(drag);
+		}
+		this.pointerDragFrame(drag);
+	}
+
+	/** The image where the finger is, held as the element was taken. */
+	placeGhost(drag) {
+		const ghost = drag.ghost;
+		if (ghost) ghost.node.style.setProperty("translate", `${drag.at.x - ghost.x}px ${drag.at.y - ghost.y}px`, "important");
+	}
+
+	/**
+	 * Once an animation frame while it drags: drag on the element; what is under the finger now gets
+	 * dragenter when the drag comes to it (and the one it left, dragleave, after: the browser's
+	 * order), then dragover, which accepts the drag when its default is prevented (D-029's drop
+	 * targets do). Near the edge of a box that scrolls (or the page's), that box scrolls, and the next
+	 * frame comes even if the finger is still.
+	 */
+	pointerDragFrame(drag) {
+		drag.frame = 0;
+		if (this.pointerDrag !== drag || drag.state !== "dragging") return;
+		this.fireDrag(drag, "drag", drag.element);
+		const target = this.page.elementFromPoint(drag.at.x, drag.at.y) ?? this.page.body;
+		if (target !== drag.target) {
+			this.fireDrag(drag, "dragenter", target, { related: drag.target });
+			if (drag.target) this.fireDrag(drag, "dragleave", drag.target, { related: target });
+			drag.target = target;
+		}
+		drag.operation = this.fireDrag(drag, "dragover", target) ? drag.transfer.dropEffect || "move" : "none";
+		if (this.scrollNear(target, drag.at)) drag.frame = requestAnimationFrame(() => this.pointerDragFrame(drag));
+	}
+
+	/** Scrolls the innermost box around `node` (or the page) that `at` is near the edge of and can
+	 * scroll that way, faster nearer the edge. Answers whether something scrolled. */
+	scrollNear(node, at) {
+		const { edge, speed } = POINTER_DRAG;
+		const step = (near) => (near < edge ? Math.ceil(speed * (1 - Math.max(near, 0) / edge)) : 0);
+		const page = this.page.scrollingElement ?? this.page.documentElement;
+		for (let box = node?.nodeType === 1 ? node : node?.parentElement; box; box = box.parentElement) {
+			const whole = box === page || box === this.page.body;
+			const style = whole ? null : getComputedStyle(box);
+			const scrolls = (overflow) => whole || overflow === "auto" || overflow === "scroll";
+			const rect = whole ? { left: 0, top: 0, right: innerWidth, bottom: innerHeight } : box.getBoundingClientRect();
+			const target = whole ? page : box;
+			let dx = 0;
+			let dy = 0;
+			if (scrolls(style?.overflowX) && target.scrollWidth > target.clientWidth) {
+				if (target.scrollLeft > 0) dx -= step(at.x - rect.left);
+				if (target.scrollLeft + target.clientWidth < target.scrollWidth - 1) dx += step(rect.right - at.x);
+			}
+			if (scrolls(style?.overflowY) && target.scrollHeight > target.clientHeight) {
+				if (target.scrollTop > 0) dy -= step(at.y - rect.top);
+				if (target.scrollTop + target.clientHeight < target.scrollHeight - 1) dy += step(rect.bottom - at.y);
+			}
+			if (dx || dy) {
+				target.scrollBy(dx, dy);
+				return true;
+			}
+			if (whole) break;
+		}
+		return false;
+	}
+
+	/**
+	 * The drag ends: lifted where something accepted it, a drop there; otherwise (or `cancel`: the
+	 * browser took the touch to scroll, or it was let go before it started) a dragleave on what it was
+	 * over. Then dragend on the element, its `dropEffect` the drop's ("none" if nothing took it), as
+	 * the browser's own drag ends; a drag that never started ends with nothing. A click the lift
+	 * would make after a drag doesn't come.
+	 */
+	pointerDragEnd(drag, { cancel = false } = {}) {
+		if (this.pointerDrag !== drag) return;
+		this.pointerDrag = null;
+		drag.off();
+		if (drag.frame) cancelAnimationFrame(drag.frame);
+		const started = drag.state === "dragging";
+		drag.state = "done";
+		drag.ghost?.node.remove();
+		for (const [name, value, priority] of drag.styles.toReversed()) {
+			if (value) drag.element.style.setProperty(name, value, priority);
+			else drag.element.style.removeProperty(name);
+		}
+		if (!started) return;
+		const dropped = !cancel && drag.operation !== "none" && drag.target;
+		if (dropped) this.fireDrag(drag, "drop", drag.target, { effect: drag.operation });
+		else if (drag.target) this.fireDrag(drag, "dragleave", drag.target);
+		this.fireDrag(drag, "dragend", drag.element, { effect: dropped ? drag.operation : "none" });
+		// The lift's own click, if the browser makes one, comes before the next press.
+		const page = this.page;
+		const click = (event) => {
+			event.preventDefault();
+			event.stopPropagation();
+			done();
+		};
+		const done = () => {
+			page.removeEventListener("click", click, true);
+			page.removeEventListener("pointerdown", done, true);
+		};
+		page.addEventListener("click", click, true);
+		page.addEventListener("pointerdown", done, true);
+		setTimeout(done, 400);
 	}
 
 	/** Once: a drag that ends (dropped anywhere, or called off) leaves every drop target it was over,
@@ -3541,7 +3955,7 @@ export class Runtime {
 				const attributes = [];
 				const styles = [];
 				for (const [kind, name, value] of node.a) {
-					if (scope.region && (kind === "on" || kind === "onp" || kind === "onk" || kind === "frame" || kind === "view")) throw new Error(inRegion(node.tag, name));
+					if (scope.region && (kind === "on" || kind === "onp" || kind === "onk" || kind === "frame" || kind === "view" || kind === "pt" || kind === "dd" || kind === "ddo")) throw new Error(inRegion(node.tag, name));
 					if (kind === "v" && name === "class") classes.push(value);
 					else if (kind === "v" && name === "style") styles.push(value);
 					else if (kind === "v") attributes.push(`${name}="${escape(value)}"`);

@@ -1,0 +1,64 @@
+import pf.Html
+import pf.For
+import pf.Solid exposing [create_signal!]
+
+## Drags by touch, a pen and a mouse (D-055), for the tests (`drags_app.roc`): a card that starts
+## drags, saying what it carries for other pages (`drag:data`) and what it shows (`drag:image`, a
+## hidden element); two lists it is dropped on, each saying when a drag comes and goes; one that
+## reads what a drop carries (`.data`); one that takes files and lists them (`.files`); an area that
+## says where the pointer is (`.point`); a box that scrolls, a list at its end; and whether the page
+## shows (`.visible`, on the document).
+Drags := [].{
+	view! : {} => Html
+	view! = |{}| {
+		(log!, set_log!) = create_signal!([])
+		say! = |what| set_log!(log!().append(what))
+		(items!, set_items!) = create_signal!([])
+		(files!, set_files!) = create_signal!([])
+		(point!, set_point!) = create_signal!({ x: 0.0, y: 0.0 })
+		(visible!, set_visible!) = create_signal!(Bool.True)
+		<div class="drags" style="display: grid; gap: 16px; padding: 16px; width: 640px">
+			<div
+				id="card"
+				class="card"
+				draggable="true"
+				style="width: 160px; height: 40px; background: #eee"
+				drag:data={[("text/uri-list", "https://example.com/cards/1"), ("text/plain", "Card one")]}
+				drag:image="ghost"
+				on:dragstart={|| say!("start")}
+				on:dragend={|| say!("end")}
+				on:click={|| say!("click")}
+			>
+				Card one
+			</div>
+			<div id="ghost" class="ghost" hidden style="width: 100px; height: 20px">Ghost of card one</div>
+			<div style="display: flex; gap: 16px">
+				<ul class="zone a" style="width: 140px; height: 80px; margin: 0; background: #def" on:dragenter={|| say!("enter a")} on:dragleave={|| say!("leave a")} on:drop.value={|text| say!("drop a ${text}")}>
+					<li>A</li>
+					<li>A, again</li>
+				</ul>
+				<ul class="zone b" style="width: 140px; height: 80px; margin: 0; background: #fed" on:dragenter={|| say!("enter b")} on:dragleave={|| say!("leave b")} on:drop.value={|text| say!("drop b ${text}")}>
+					<li>B</li>
+				</ul>
+				<div class="zone data" style="width: 140px; height: 80px; background: #efe" on:drop.data={|dropped| set_items!(dropped)}>
+					{Str.join_with(items!().map(|item| "${item.type}=${item.value}"), " | ")}
+				</div>
+				<ul class="zone files" style="width: 140px; height: 80px; margin: 0; background: #eef" on:drop.files={|dropped| set_files!(dropped)}>
+					<For each!={files!()} keyed={|file| file.url}>
+						{|file!, _| <li class="file" data-url={file!().url}>{"${file!().name} ${file!().type} ${file!().size.to_str()}"}</li>}
+					</For>
+				</ul>
+			</div>
+			<div class="area" style="width: 200px; height: 100px; background: #ffe" on:pointermove.point={set_point!}>
+				{"${point!().x.to_str()},${point!().y.to_str()}"}
+			</div>
+			<div class="scroller" style="overflow: auto; height: 120px; width: 200px; background: #eee">
+				<div style="height: 600px">Far</div>
+				<div class="zone deep" style="height: 40px; background: #fdd" on:drop={|| say!("drop deep")}>Deep</div>
+			</div>
+			<Document on:visibilitychange.visible={set_visible!} />
+			<p class="visible">{if (visible!()) "shown" else "hidden"}</p>
+			<p class="log">{Str.join_with(log!(), ", ")}</p>
+		</div>
+	}
+}

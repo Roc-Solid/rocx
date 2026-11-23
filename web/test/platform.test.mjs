@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { roc as findRoc, rocxBinary, zig } from "../../server/build.mjs";
-import { findChrome, launch } from "./browser.mjs";
+import { findChrome, findGecko, launch, launchGecko } from "./browser.mjs";
 import { serve } from "./serve.mjs";
 import { Runtime } from "../runtime.js";
 
@@ -64,6 +64,7 @@ if (!skip) {
 		["render-effects", join(here, "app", "render_effects_app.roc"), "dev"],
 		["shortcuts", join(here, "app", "shortcuts_app.roc"), "dev"],
 		["glides", join(here, "app", "glides_app.roc"), "dev"],
+		["drags", join(here, "app", "drags_app.roc"), "dev"],
 		["fades", join(here, "app", "fades_app.roc"), "dev"],
 		["echo-server", join(here, "app", "echo_app.roc"), "dev"],
 		["echo", join(out, "app-client", "echo_app.roc"), "size"],
@@ -839,6 +840,145 @@ window.hydrated = true;
 	} finally {
 		await site.close();
 		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+/** Drags.rocx (D-055), rendered as the server would and hydrated, in a page of `browser`'s. */
+async function openDrags(browser) {
+	const wasm = readFileSync(join(out, "drags.wasm"));
+	const server = await Runtime.load(wasm);
+	const { html } = server.renderToString({ path: "/" });
+	const dir = mkdtempSync(join(tmpdir(), "rocx-drags-"));
+	cpSync(join(web, "runtime.js"), join(dir, "runtime.js"));
+	writeFileSync(join(dir, "drags.wasm"), wasm);
+	const page = `<!doctype html><html><head><meta name="viewport" content="width=device-width"></head><body style="margin: 0"><div id="app">${html}</div>
+<script type="module">
+import { Runtime } from "/runtime.js";
+window.runtime = await Runtime.load(fetch("/drags.wasm"));
+window.runtime.hydrate(document.getElementById("app"));
+window.hydrated = true;
+</script></body></html>`;
+	const site = await serve(dir, (path) => (path === "/" ? page : null));
+	const tab = await browser.page();
+	await tab.goto(`${site.url}/`);
+	await tab.wait("window.hydrated === true", 3000);
+	return {
+		tab,
+		log: () => tab.eval("document.querySelector('.log').textContent"),
+		clear: () => tab.eval("window.runtime.flush(); document.querySelector('.log').textContent"),
+		async close() {
+			await site.close();
+			rmSync(dir, { recursive: true, force: true });
+		},
+	};
+}
+
+/** What both engines check of a drag by touch (D-055): held, it starts, carries its drag:data, shows
+ * its drag:image under the finger in the top layer, comes to and leaves what it crosses, drops on the
+ * list under the finger, and ends; the card selects no text and calls no callout while it drags, and
+ * is as it was after; a swipe starts none; a list near the end of a box that scrolls is reached, the
+ * box scrolling under a finger held at its edge. */
+async function touchDrags(tab, log, engine) {
+	const style = await tab.eval("document.getElementById('card').style.cssText");
+	await tab.touchDrag("#card", ".zone.b", { lift: false });
+	await tab.wait("document.querySelector('[data-rocx-drag-image]')");
+	const during = await tab.eval(`(() => {
+		const ghost = document.querySelector('[data-rocx-drag-image]');
+		const box = ghost.getBoundingClientRect();
+		const b = document.querySelector('.zone.b').getBoundingClientRect();
+		const card = document.getElementById('card');
+		return {
+			text: ghost.textContent,
+			layered: ghost.matches(':popover-open'),
+			under: box.left <= b.left + b.width / 2 && box.right >= b.left + b.width / 2 && box.top <= b.top + b.height / 2 && box.bottom >= b.top + b.height / 2,
+			ids: ghost.hasAttribute('id') || ghost.hasAttribute('hidden'),
+			selects: getComputedStyle(card).userSelect,
+			scrolled: scrollY,
+		};
+	})()`);
+	assert.deepEqual(during, { text: "Ghost of card one", layered: true, under: true, ids: false, selects: "none", scrolled: 0 }, `${engine}: the app's image under the finger, above the page; the card selects nothing; the page doesn't scroll`);
+	await tab.lift();
+	await tab.wait("document.querySelector('.log').textContent.endsWith('end')");
+	const said = (await log()).split(", ");
+	assert.equal(said[0], "start", `${engine}: ${said}`);
+	assert.deepEqual(said.slice(-4), ["enter b", "drop b Card one", "leave b", "end"], `${engine}: ${said}`);
+	assert.ok(!said.includes("click"), `${engine}: no click after a drag`);
+	assert.deepEqual(await tab.eval("({ ghost: document.querySelectorAll('[data-rocx-drag-image]').length, style: document.getElementById('card').style.cssText })"), { ghost: 0, style }, `${engine}: the image gone, the card's style as it was`);
+	// Into the list that reads what a drop carries: drag:data's.
+	await tab.touchDrag("#card", ".zone.data");
+	await tab.wait("document.querySelector('.zone.data').textContent.includes('text/plain')");
+	assert.equal((await tab.eval("document.querySelector('.zone.data').textContent")).trim(), "text/uri-list=https://example.com/cards/1 | text/plain=Card one", engine);
+	// A swipe (no hold) starts no drag.
+	const before = await log();
+	await tab.touchDrag("#card", ".zone.a", { hold: 0 });
+	await new Promise((resolve) => setTimeout(resolve, 400));
+	assert.equal(await log(), before, `${engine}: a swipe starts no drag`);
+	// Held at the bottom of the box that scrolls, it scrolls; dropped on the list at its end.
+	const edge = await tab.eval("(() => { const box = document.querySelector('.scroller').getBoundingClientRect(); return { x: box.left + box.width / 2, y: box.bottom - 6 }; })()");
+	await tab.touchDrag("#card", edge, { lift: false });
+	await tab.wait("(() => { const box = document.querySelector('.scroller'); return box.scrollTop + box.clientHeight >= box.scrollHeight - 1; })()", 8000);
+	await tab.lift();
+	await tab.wait("document.querySelector('.log').textContent.endsWith('end')");
+	assert.ok((await log()).includes("drop deep"), `${engine}: the list at the end of the box that scrolled`);
+}
+
+test("drags by touch (D-055): held, a drag of the runtime's own in the events D-029 handles, its drag:data on it and its drag:image under the finger; a swipe scrolls and a tap clicks; a box that scrolls scrolls under a finger at its edge; drag:data and drag:image on a mouse's drag too; files dropped (.files), read by their blob: URLs while the list is there; .point and .visible", { skip }, async () => {
+	const { tab, log, close } = await openDrags(browser);
+	try {
+		assert.deepEqual(tab.console, [], "hydrated without a mismatch");
+		await touchDrags(tab, log, "chromium");
+		// A tap clicks.
+		await tab.eval("document.querySelector('.scroller').scrollTop = 0");
+		const at = await tab.center("#card");
+		await tab.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: at.x, y: at.y, id: 1 }] });
+		await tab.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+		await tab.wait("document.querySelector('.log').textContent.endsWith('click')");
+		// A mouse drags as the browser does: drag:data is what it carries (for other pages), drag:image
+		// what it shows, held where the card was taken (its middle: the image's middle).
+		await tab.eval("window.imaged = []; DataTransfer.prototype.setDragImage = function (node, x, y) { window.imaged.push([node.textContent, x, y, node.isConnected, getComputedStyle(node).display]); }");
+		const { items } = await tab.drag("#card", ".zone.data");
+		assert.deepEqual(
+			items.filter((item) => item.mimeType !== "application/x-rocx").map(({ mimeType, data }) => [mimeType, data]),
+			[["text/uri-list", "https://example.com/cards/1"], ["text/plain", "Card one"]],
+		);
+		assert.deepEqual(await tab.eval("window.imaged"), [["Ghost of card one", 50, 10, true, "block"]], "the ghost, shown, held at its middle");
+		assert.equal(await tab.eval("document.querySelectorAll('[data-rocx-drag-image]').length"), 0, "and gone after");
+		// Files dropped: each listed, read by its blob: URL, which the runtime keeps for an action.
+		const dropped = await tab.eval(`(async () => {
+			const transfer = new DataTransfer();
+			transfer.items.add(new File(["hello"], "a.txt", { type: "text/plain" }));
+			transfer.items.add(new File([new Uint8Array([1, 2, 3])], "b.bin"));
+			const zone = document.querySelector('.zone.files');
+			for (const type of ["dragenter", "dragover", "drop"]) zone.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: transfer }));
+			window.runtime.flush();
+			await new Promise((resolve) => setTimeout(resolve, 50));
+			const files = [...document.querySelectorAll('.file')];
+			const url = files[0]?.dataset.url ?? "";
+			return { files: files.map((each) => each.textContent), blob: url.startsWith("blob:"), text: await (await fetch(url)).text(), kept: window.runtime.fileOf(url)?.name, other: window.runtime.fileOf("blob:nothing") };
+		})()`);
+		assert.deepEqual(dropped, { files: ["a.txt text/plain 5", "b.bin  3"], blob: true, text: "hello", kept: "a.txt", other: null });
+		// Where the pointer is over the area, as shares of it: once a frame, the latest.
+		const area = await tab.eval("(() => { const box = document.querySelector('.area').getBoundingClientRect(); return { x: box.left, y: box.top }; })()");
+		for (const [x, y] of [[10, 10], [30, 70], [50, 50]]) await tab.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: area.x + x, y: area.y + y });
+		await tab.wait("document.querySelector('.area').textContent.trim() === '0.25,0.5'");
+		// Whether the page shows.
+		const visibility = (state) => tab.eval(`Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => '${state}' }); document.dispatchEvent(new Event('visibilitychange')); window.runtime.flush(); document.querySelector('.visible').textContent`);
+		assert.equal(await visibility("hidden"), "hidden");
+		assert.equal(await visibility("visible"), "shown");
+		assert.deepEqual(tab.errors, []);
+	} finally {
+		await close();
+	}
+});
+
+test("drags by touch in Gecko (D-055): WebDriver's touch actions, the same drag as in Chromium", { skip: skip || (!findGecko() && "no Gecko (Zen or Firefox)") }, async () => {
+	const gecko = await launchGecko();
+	const { tab, log, close } = await openDrags(gecko);
+	try {
+		await touchDrags(tab, log, "gecko");
+	} finally {
+		await close();
+		await gecko.close();
 	}
 });
 

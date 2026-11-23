@@ -45,6 +45,13 @@ Html :: [
 		OnPrevent(Str, () => {}),
 		OnFrame(F64 => {}),
 		OnViewport(Html.Viewport => {}),
+		OnPoint(Str, Html.Point => {}),
+		OnData(Str, List(Html.DragItem) => {}),
+		OnFiles(Str, List(Html.File) => {}),
+		DragData(List((Str, Str))),
+		DragDataOf(() => List((Str, Str))),
+		DragImage(Str),
+		DragImageOf(() => Str),
 		Key(Str),
 		KeyOf(() => Str),
 		Animate([In, Out, Both, Move], Transition),
@@ -62,6 +69,22 @@ Html :: [
 	## its borders (`width`, `height`: `clientWidth`, `clientHeight`). A virtual list reads it to
 	## render only the rows that show.
 	Viewport : { top : U64, left : U64, width : U64, height : U64 }
+
+	## Where the pointer is over an element (`on:pointermove.point={|point| …}`): shares of its box's
+	## width and height, from 0 (its left, its top) to 1 (its right, its bottom), to thousandths, so the
+	## same place on a narrow screen and a wide one is the same point. Live cursors send it.
+	Point : { x : Dec, y : Dec }
+
+	## A piece of what a drag carries, by its type (`on:drop.data={|items| …}`): `text/plain`,
+	## `text/uri-list`, `text/html`, or an app's own (`application/x-acme-card+json`), as another page
+	## or program put it there, or a `drag:data={…}` here.
+	DragItem : { type : Str, value : Str }
+
+	## A file dropped, pasted or chosen (`on:drop.files={|files| …}`, `on:change.files` on an
+	## `<input type="file">`): its name, its type (`image/png`; `""` when the browser can't tell), its
+	## size in bytes, and a `blob:` URL the page reads it by while the element that took it is there
+	## (`<img src={file.url}>` shows a picture). An action sends it (its URL is a form field's value).
+	File : { name : Str, type : Str, size : U64, url : Str }
 
 	text : Str -> Html
 	text = |content| Text(content)
@@ -183,6 +206,52 @@ Html :: [
 	## view the server and the browser agree on, and let the handler's measure replace it.
 	on_viewport : (Html.Viewport => {}) -> Attr
 	on_viewport = |handler| OnViewport(handler)
+
+	## A handler given where the pointer is over the element (`on:pointermove.point={|point| …}`, a
+	## `Html.Point`: shares of its box). For `pointermove` (and `mousemove`, `touchmove`), at most once an
+	## animation frame, with the latest place: a pointer that moves 240 times a second runs it 60 times.
+	on_point : Str, (Html.Point => {}) -> Attr
+	on_point = |event, handler| OnPoint(event, handler)
+
+	## A handler given whether the page shows (`<Document on:visibilitychange.visible={|shown| …} />`):
+	## false when its tab is hidden (another tab, the window minimised, the screen locked), true when it
+	## shows again.
+	on_visible : Str, (Bool => {}) -> Attr
+	on_visible = |event, handler| OnChecked(event, handler)
+
+	## A handler given every piece a drag carries but its files (`on:drop.data={|items| …}`), each by
+	## its type, in the order they were put on it; a paste's too (`on:paste.data`). `on:drop.value` is
+	## its `text/plain` alone.
+	on_data : Str, (List(Html.DragItem) => {}) -> Attr
+	on_data = |event, handler| OnData(event, handler)
+
+	## A handler given the files dropped (`on:drop.files={|files| …}`), pasted (`on:paste.files`), or
+	## chosen in an `<input type="file">` (`on:change.files`): `Html.File`s, each read by its `blob:`
+	## URL, which goes when the element that took it does.
+	on_files : Str, (List(Html.File) => {}) -> Attr
+	on_files = |event, handler| OnFiles(event, handler)
+
+	## What the element's drag carries for other pages and programs (`drag:data={[("text/uri-list",
+	## url), ("text/plain", title)]}`), each by its type, put on it as the drag starts: a link dropped in
+	## another tab opens, a title in an editor is typed. A drop on this page reads it with
+	## `on:drop.data`.
+	drag_data : List((Str, Str)) -> Attr
+	drag_data = |items| DragData(items)
+
+	## The same, computed: what it says as the drag starts.
+	drag_data_of : (() => List((Str, Str))) -> Attr
+	drag_data_of = |compute| DragDataOf(compute)
+
+	## What a drag of the element shows under the pointer (`drag:image={"ghost-${card.id}"}`): the
+	## element with that `id` (hidden or not), drawn as the drag starts, held where the element was
+	## taken (a card grabbed a third of the way across is held a third of the way across its image).
+	## The same image follows a finger (a drag by touch or a pen).
+	drag_image : Str -> Attr
+	drag_image = |id| DragImage(id)
+
+	## The same, computed.
+	drag_image_of : (() => Str) -> Attr
+	drag_image_of = |compute| DragImageOf(compute)
 
 	## The element's name on the page (`key={card.id}`): where one with a key goes and another with the
 	## same key comes, in one change of the page, it is the same element, moved, and with
@@ -427,6 +496,13 @@ attributes! = |tag, attrs| {
 				OnPrevent(event, handler) => "[\"onp\",${json_str(event)},${keep!(|| handled!(handler))}]"
 				OnFrame(handler) => "[\"frame\",\"frame\",${keep!(|| handled!(|| handler(frame_ms(Host.event_value!({})))))}]"
 				OnViewport(handler) => "[\"view\",\"viewport\",${keep!(|| handled!(|| handler(viewport_of(Host.event_value!({})))))}]"
+				OnPoint(event, handler) => "[\"pt\",${json_str(event)},${keep!(|| handled!(|| handler(point_of(Host.event_value!({})))))}]"
+				OnData(event, handler) => "[\"on\",${json_str(event)},${keep!(|| handled!(|| handler(drag_items_of(Host.event_value!({})))))},\".data\"]"
+				OnFiles(event, handler) => "[\"on\",${json_str(event)},${keep!(|| handled!(|| handler(files_of(Host.event_value!({})))))},\".files\"]"
+				DragData(items) => "[\"dd\",\"data\",${json_str(pairs_json(items))}]"
+				DragDataOf(compute) => "[\"ddo\",\"data\",${keep!(|| json_str(pairs_json(compute())))}]"
+				DragImage(id) => "[\"dd\",\"image\",${json_str(id)}]"
+				DragImageOf(compute) => "[\"ddo\",\"image\",${keep!(|| json_str(compute()))}]"
 				Key(id) => "[\"k\",${json_str(id)}]"
 				KeyOf(compute) => "[\"ko\",${keep!(|| json_str(compute()))}]"
 				Animate(way, animation) => "[\"tr\",${way_name(way)},${animation.json()}]"
@@ -570,6 +646,43 @@ viewport_of = |said| {
 
 expect viewport_of("120,0,800,600") == { top: 120, left: 0, width: 800, height: 600 }
 expect viewport_of("") == { top: 0, left: 0, width: 0, height: 0 }
+
+## Where the pointer is, from the runtime's `x,y`: thousandths of the element's width and height,
+## whole numbers from 0 to 1000 (Roc reads an integer with far less code than a float).
+point_of : Str -> Html.Point
+point_of = |said| {
+	parts = said.split_on(",").map(|part| U64.min(U64.from_str(part) ?? 0, 1000))
+	share = |index| (parts.get(index) ?? 0).to_dec() / 1000.0
+	{ x: share(0), y: share(1) }
+}
+
+expect point_of("250,1000") == { x: 0.25, y: 1.0 } and point_of("") == { x: 0.0, y: 0.0 } and point_of("5000,7") == { x: 1.0, y: 0.007 }
+
+## What a drag carries, from the runtime's JSON (`[{"type":…,"value":…}]`); none if it isn't that.
+drag_items_of : Str -> List(Html.DragItem)
+drag_items_of = |said|
+	match Json.parse(said) {
+		Ok(items) => items
+		Err(_) => []
+	}
+
+expect drag_items_of("[{\"type\":\"text/uri-list\",\"value\":\"https://example.com/\"}]") == [{ type: "text/uri-list", value: "https://example.com/" }] and drag_items_of("") == []
+
+## The files dropped, pasted or chosen, from the runtime's JSON (`[{"name":…,"type":…,"size":…,"url":…}]`).
+files_of : Str -> List(Html.File)
+files_of = |said|
+	match Json.parse(said) {
+		Ok(files) => files
+		Err(_) => []
+	}
+
+expect files_of("[{\"name\":\"a.png\",\"type\":\"image/png\",\"size\":3,\"url\":\"blob:x\"}]") == [{ name: "a.png", type: "image/png", size: 3, url: "blob:x" }]
+
+## Types and values as the runtime reads a drag's data: `[["text/plain","…"],…]`.
+pairs_json : List((Str, Str)) -> Str
+pairs_json = |items| "[${Str.join_with(items.map(|(kind, value)| "[${json_str(kind)},${json_str(value)}]"), ",")}]"
+
+expect pairs_json([("text/plain", "a \"b\"")]) == "[[\"text/plain\",\"a \\\"b\\\"\"]]" and pairs_json([]) == "[]"
 
 ## A frame's milliseconds, from the whole microseconds the runtime sends (Roc reads an integer with
 ## far less code than a float), at most 100.

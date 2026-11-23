@@ -3,7 +3,7 @@
 // Playwright keeps in its cache is used, and the tests that need it are skipped without one.
 //
 // Gecko too (Zen, or Firefox: `launchGecko`), headless, over WebDriver BiDi, for what only it
-// shows: its page has the same methods (`goto`, `eval`, `wait`, `click`, `type`, `press`, `drag`,
+// shows: its page has the same methods (`goto`, `eval`, `wait`, `click`, `type`, `press`, `drag`, `touchDrag`,
 // `screenshot`, and those packages/testing uses), but no `send` of the DevTools protocol.
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
@@ -182,6 +182,37 @@ class Page {
 		await this.send("Input.dispatchDragEvent", { type: cancel ? "dragCancel" : "drop", x: at.x, y: at.y, data });
 		await this.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: at.x, y: at.y, button: "left", buttons: 0, clickCount: 1 });
 		await this.send("Input.setInterceptDrags", { enabled: false });
+	}
+
+	/**
+	 * A finger, through the browser's input pipeline (`Input.dispatchTouchEvent`: touch events, and
+	 * the pointer events the browser makes of them, `pointerType` "touch", each trusted): put down on
+	 * `from` (an element's middle, or `{ x, y }`), held `hold` milliseconds, then moved to each of
+	 * `over` in `steps` moves a frame apart, and lifted there, unless `lift` is false (it stays down
+	 * on the last, for `lift`). `hold: 0` is a swipe.
+	 */
+	async touchDrag(from, over, { hold = 400, steps = 6, lift = true } = {}) {
+		let at = typeof from === "string" ? await this.center(from) : from;
+		await this.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: at.x, y: at.y, id: 1 }] });
+		if (hold) await new Promise((resolve) => setTimeout(resolve, hold));
+		for (const target of [].concat(over)) {
+			const to = typeof target === "string" ? await this.center(target) : target;
+			for (let step = 1; step <= steps; step++) {
+				const point = { x: at.x + ((to.x - at.x) * step) / steps, y: at.y + ((to.y - at.y) * step) / steps, id: 1 };
+				await this.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [point] });
+				await new Promise((resolve) => setTimeout(resolve, 20));
+			}
+			at = to;
+		}
+		this.touching = at;
+		if (lift) await this.lift();
+	}
+
+	/** The finger `touchDrag` left down, lifted (or, `cancel`, its touch called off, as the system
+	 * does when it takes a touch over). */
+	async lift({ cancel = false } = {}) {
+		this.touching = null;
+		await this.send("Input.dispatchTouchEvent", { type: cancel ? "touchCancel" : "touchEnd", touchPoints: [] });
 	}
 
 	async goto(url) {
@@ -528,6 +559,28 @@ class GeckoPage {
 
 	async finish({ cancel = false } = {}) {
 		await this.eval(`${DOM_DRAG}.finish(${cancel})`);
+	}
+
+	/** `Page.touchDrag`, with WebDriver's touch actions (a pointer whose `pointerType` is "touch":
+	 * touch events, and the pointer events Gecko makes of them). Gecko's actions can't call a touch
+	 * off: `lift({ cancel })` lifts it. */
+	async touchDrag(from, over, { hold = 400, steps = 6, lift = true } = {}) {
+		const start = typeof from === "string" ? await this.center(from) : from;
+		const moves = [];
+		let at = start;
+		for (const target of [].concat(over)) {
+			const to = typeof target === "string" ? await this.center(target) : target;
+			for (let step = 1; step <= steps; step++) moves.push({ type: "pointerMove", x: Math.round(at.x + ((to.x - at.x) * step) / steps), y: Math.round(at.y + ((to.y - at.y) * step) / steps), duration: 20 });
+			at = to;
+		}
+		const pressed = [{ type: "pointerMove", x: Math.round(start.x), y: Math.round(start.y) }, { type: "pointerDown", button: 0 }, ...(hold ? [{ type: "pause", duration: hold }] : []), ...moves];
+		await this.actions([{ type: "pointer", id: "finger", parameters: { pointerType: "touch" }, actions: lift ? [...pressed, { type: "pointerUp", button: 0 }] : pressed }]);
+		this.touching = lift ? null : at;
+	}
+
+	async lift() {
+		this.touching = null;
+		await this.actions([{ type: "pointer", id: "finger", parameters: { pointerType: "touch" }, actions: [{ type: "pointerUp", button: 0 }] }]);
 	}
 
 	/** A PNG of the page at `width` (the whole page when `full`). Gecko's BiDi can't emulate dark. */

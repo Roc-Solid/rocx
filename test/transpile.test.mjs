@@ -152,7 +152,7 @@ test("on: a component's handlers are effects, given what the event says", () => 
 	assert.match(refused(`x = <b on:click />`), /on:click needs \{a handler\}/);
 	assert.match(refused(`x = <b on:click?={a} />`), /takes \{a handler\}/);
 	assert.match(refused(`x = <b on:Click={a} />`), /write on:event=\{a handler\}/);
-	assert.match(refused(`x = <b on:input.files={a} />`), /takes .value, .checked, .key or .keys, a key's name \(.Enter, .ArrowUp, .w\) after any modifier keys \(.Shift\+Enter, .Mod\+K\), or .prevent, not .files/);
+	assert.match(refused(`x = <b on:input.blob={a} />`), /takes .value, .checked, .key, .keys, .point, .visible, .data or .files, a key's name \(.Enter, .ArrowUp, .w\) after any modifier keys \(.Shift\+Enter, .Mod\+K\), or .prevent, not .blob/);
 	// Key combinations: the modifier keys held, each once, then the key; `.keys` gives them all.
 	assert.equal(component(`x = <input on:keydown.Shift+Enter={send!} on:keydown.Mod+K={open!} on:keydown.Ctrl+Alt+Delete={reset!} on:keyup.Mod+Space={go!} />`), `x = Html.void("input", [Html.on_named_key("keydown", "Shift+Enter", send!), Html.on_named_key("keydown", "Mod+K", open!), Html.on_named_key("keydown", "Ctrl+Alt+Delete", reset!), Html.on_named_key("keyup", "Mod+ ", go!),])`);
 	assert.equal(component(`x = <input on:keydown.keys={pressed!} />`), `x = Html.void("input", [Html.on_keys("keydown", pressed!),])`);
@@ -179,6 +179,18 @@ test("on: a component's handlers are effects, given what the event says", () => 
 	assert.match(refused(`x = <div on:click.ms={tick!} />`), /frames are on:frame.ms/);
 	assert.match(refused(`x = <div on:viewport.value={seen!} />`), /write on:viewport=\{\|view\| …\}/);
 	assert.match(refused(`x = <Window on:viewport={seen!} />`), /<Window> takes handlers only/);
+	// D-055: where the pointer is, whether the page shows, what a drop carries and its files; what a
+	// drag of an element carries and shows.
+	assert.equal(component(`x = <div on:pointermove.point={moved!} on:drop.data={took!} on:drop.files={kept!} />`), `x = Html.element("div", [Html.on_point("pointermove", moved!), Html.on_data("drop", took!), Html.on_files("drop", kept!),], [])`);
+	assert.equal(component(`x = <input type="file" on:change.files={chose!} />`), `x = Html.void("input", [Html.attr("type", "file"), Html.on_files("change", chose!),])`);
+	assert.equal(component(`x = <Document on:visibilitychange.visible={shown!} on:paste.files={pasted!} />`), `x = Html.on_document([Html.on_visible("visibilitychange", shown!), Html.on_files("paste", pasted!),])`);
+	assert.equal(component(`x = <li draggable="true" drag:data={[("text/plain", title)]} drag:image="ghost" />`), `x = Html.element("li", [Html.attr("draggable", "true"), Html.drag_data([("text/plain", title)]), Html.drag_image("ghost"),], [])`);
+	assert.equal(component(`x = <li drag:data={[("text/plain", card!().title)]} drag:image={"ghost-\${card!().id}"} />`), `x = Html.element("li", [Html.drag_data_of(|| [("text/plain", card!().title)]), Html.drag_image_of(|| "ghost-\${card!().id}"),], [])`);
+	assert.match(refused(`x = <div on:click.visible={a!} />`), /.visible goes with on:visibilitychange/);
+	assert.match(refused(`x = <div on:click.files={a!} />`), /.files goes with on:drop or on:paste, or a file input's on:change/);
+	assert.match(refused(`x = <div on:change.data={a!} />`), /.data goes with on:drop or on:paste, which carry it/);
+	assert.match(refused(`x = <li drag:ghost={a} />`), /write drag:data=\{\[\(type, value\), …\]\} \(what a drag of it carries\) or drag:image=\{id\}/);
+	assert.match(refused(`x = <li drag:data="text" />`), /drag:data needs \{a list of \(type, value\)\}/);
 	assert.match(refused(`x = <div on:click.Enter={go!} />`), /a key's name goes with on:keydown or on:keyup/);
 	assert.match(refused(`x = <div on:keydown.enter={go!} />`), /not .enter/, "key names are as the browser has them: Enter");
 	assert.match(refused(`x = <a onclick="go()">x</a>`), /inline event handlers \(onclick\) aren't allowed: in a component, write on:click=\{…\}/);
