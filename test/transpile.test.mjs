@@ -170,6 +170,15 @@ test("on: a component's handlers are effects, given what the event says", () => 
 	assert.match(refused(`x = <Window on:frame.ms={tick!} />`), /<Window> takes handlers only/);
 	assert.match(refused(`x = <Document onclick="go()" />`), /inline event handlers \(onclick\) aren't allowed/);
 	assert.equal(component(`import Document\n\nx = <Document title="t" />`), `import Document\n\nx = Html.component(|| Document.view!({ title: || "t", }))`, "a module of the file's own by that name is a component, its value props getters (D-039)");
+	// <Meta>, <Link> and <Style> (D-054): elements in the document's <head>, written as a <meta>'s, a
+	// <link>'s and a <style>'s are; <Style>'s CSS static, as written.
+	assert.equal(component(`x = <Meta name="description" content={summary!()} />`), `x = Html.document_head(Html.void("meta", [Html.attr("name", "description"), Html.attr_of("content", || summary!()),]))`);
+	assert.equal(component(`x = <Link rel="canonical" href="/posts" />`), `x = Html.document_head(Html.void("link", [Html.attr("rel", "canonical"), Html.attr("href", "/posts"),]))`);
+	assert.equal(component(`x = <Style>p { color: red }</Style>`), `x = Html.document_head(Html.element("style", [], [Html.source_text("p { color: red }")]))`);
+	assert.match(refused(`x = <Style />`), /<Style> holds its CSS/);
+	assert.match(refused(`x = <Meta name="a">b</Meta>`), /<Meta> has no children/);
+	assert.match(refused(`x = <Link rel="x" on:load={a} />`), /<Link> is an element in the document's <head>: it takes no handlers/);
+	assert.equal(component(`import Meta\n\nx = <Meta title="t" />`), `import Meta\n\nx = Html.component(|| Meta.view!({ title: || "t", }))`, "a module of the file's own by that name is a component");
 	// Drag and drop are events as any other; `.prevent` takes over what the browser would do.
 	assert.equal(component(`x = <li draggable="true" on:dragstart={start!} on:dragend={stop!}>a</li>`), `x = Html.element("li", [Html.attr("draggable", "true"), Html.on("dragstart", start!), Html.on("dragend", stop!),], [Html.text("a"),])`);
 	assert.equal(component(`x = <ul on:dragenter={over!} on:dragleave={out!} on:drop={|| put!(day)} on:drop.value={dropped!} />`), `x = Html.element("ul", [Html.on("dragenter", over!), Html.on("dragleave", out!), Html.on("drop", || put!(day)), Html.on_value("drop", dropped!),], [])`);

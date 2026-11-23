@@ -93,6 +93,8 @@ if (!skip) {
 		["pending", join(out, "app-client", "pending_app.roc"), "size"],
 		["planner-server", join(here, "app", "planner_app.roc"), "dev"],
 		["planner", join(out, "app-client", "planner_app.roc"), "size"],
+		["actions-server", join(here, "app", "actions_app.roc"), "dev"],
+		["actions", join(out, "app-client", "actions_app.roc"), "size"],
 	]) {
 		run(roc, ["build", "--target=wasm32", `--opt=${opt}`, `--output=${join(out, `${name}.wasm`)}`, app]);
 	}
@@ -101,13 +103,13 @@ if (!skip) {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** The server: what it answers, how slowly, and which calls fail how many times. */
-const server = { delay: 60, fail: {}, name: "Ada", calls: [] };
+const server = { delay: 60, fail: {}, name: "Ada", calls: [], tallies: { count: 0, other: 0 } };
 const json = (value) => ({ status: 200, body: JSON.stringify(value) });
 
 /** The test app's endpoints that its pages read (`Endpoint.get!`): `GET /api/<name>/<arg>`, the
  * arg a path segment. The native server answers them as it renders a page, recording the answers
  * for the browser, and answers the browser's GETs. Here, scripted, as JS. */
-const READS = { say: (word) => `Said: ${word}`, echo: (message) => `Echo: ${message}` };
+const READS = { say: (word) => `Said: ${word}`, echo: (message) => `Echo: ${message}`, tally: (name) => server.tallies[name] ?? 0 };
 
 /** A read's answer, as the server gives it: 200 and the answer as JSON, or 404. */
 const readAnswer = (name, arg) => (READS[name] ? json(READS[name](arg)) : { status: 404, body: `nothing at /api/${name}` });
@@ -128,6 +130,8 @@ const RENDERED = [
 	["say", "hello"],
 	["say", "quiet"],
 	["echo", "the page, rendered on the server"],
+	["tally", "count"],
+	["tally", "other"],
 ].map(([name, arg]) => {
 	const answered = readAnswer(name, arg);
 	return [readKey(name, arg), "", JSON.stringify({ status: answered.status, body: answered.body })];
@@ -2414,6 +2418,136 @@ test("forms: after a plain post, the flash is the submission: what was typed and
 		await sleep(100);
 		assert.equal(posted.length, count, "a submit a handler prevented is left alone");
 		assert.deepEqual(fresh.errors, []);
+	});
+});
+
+// ---- Solid Router's actions, createOptimistic and @solidjs/meta's head elements (D-054) ----
+
+test("actions (D-054): <Meta>, <Link> and <Style> in <head>, rendered by the server, kept by hydration strictly, following their holes, a later <Meta> in an earlier's place, gone with their part; a result reads again only the reads its answer names, or none, a handler's revalidate! its own; a form's fields given ahead of time; retry!; an optimistic value shown at once, held until its action is done, then the server's with no frame of the old, back at once when refused or with nothing sent; a form with a file and an action given a file's URL go as multipart", { skip }, async () => {
+	server.tallies = { count: 0, other: 0 };
+	const posted = [];
+	const uploads = [];
+	let release = null;
+	let flaky = 0;
+	const api = async (method, path, body, url, request) => {
+		if (path === "/api/add") {
+			const type = request.headers["content-type"] ?? "";
+			const query = new URL(url, "http://here").searchParams;
+			const fields = type.includes("json") ? JSON.parse(body) : Object.fromEntries([...query, ...new URLSearchParams(body)]);
+			posted.push({ fields, type, url });
+			if (fields.note === "slow") await new Promise((resolve) => (release = resolve));
+			if (fields.note === "refuse") return { status: 409, body: "too many" };
+			if (fields.note === "flaky" && flaky++ === 0) return { status: 503, body: "try again" };
+			server.tallies.count += Number(fields.by);
+			server.tallies.other += 1;
+			const headers = { "content-type": "application/json" };
+			if (fields.note === "count-only") headers["x-rocx-revalidate"] = JSON.stringify(["/api/tally/count"]);
+			if (fields.note === "nothing") headers["x-rocx-revalidate"] = "[]";
+			return { status: 200, headers, body: JSON.stringify(server.tallies.count) };
+		}
+		if (path === "/api/upload") {
+			uploads.push({ type: request.headers["content-type"] ?? "", body });
+			const name = /filename="([^"]*)"/.exec(body)?.[1] ?? "";
+			return { status: 200, headers: { "content-type": "application/json" }, body: JSON.stringify(`${name} (${body.includes("PNG!") ? "its bytes" : "no bytes"})`) };
+		}
+		return null;
+	};
+	await withDocument({ app: "actions", api, pages: { "/": (render) => documentPage(render, "/") } }, async ({ site, server: rendering, asked }) => {
+		const { html } = rendering.renderToString({ path: "/", answers: RENDERED });
+		const heads = '<meta data-rocx property="og:type" content="website"><meta data-rocx name="description" content="First"><link data-rocx rel="canonical" href="/actions"><style data-rocx>.count { color: rgb(1, 2, 3) }</style></head>';
+		assert.ok(html.includes(heads), `before </head>, in the order they ran, the page's description in the place of the layout's: ${html.slice(0, 600)}`);
+		assert.match(html, /<p class="count"><!--x-->0<!--\/x--><\/p>/);
+		const before = rendering.live();
+		for (let i = 0; i < 10; i++) rendering.renderToString({ path: "/", answers: RENDERED });
+		assert.equal(rendering.live(), before, "rendering it again leaves nothing allocated");
+		const tab = await strictTab();
+		await tab.goto(`${site.url}/`);
+		await tab.wait("window.ready", 3000);
+		assert.deepEqual(tab.console, [], "hydrated strictly, the head elements as the server rendered them");
+		assert.deepEqual(tab.errors, []);
+		const head = () => tab.eval("[...document.head.querySelectorAll('[data-rocx]:not(title)')].map((node) => node.outerHTML).join('')");
+		assert.equal(await head(), '<meta data-rocx="" property="og:type" content="website"><meta data-rocx="" name="description" content="First"><link data-rocx="" rel="canonical" href="/actions"><style data-rocx="">.count { color: rgb(1, 2, 3) }</style>');
+		assert.equal(await tab.eval("getComputedStyle(document.querySelector('.count')).color"), "rgb(1, 2, 3)");
+		assert.equal(await tab.eval("window.ready.runtime.stats.patches"), 0, "hydrating patched nothing");
+		await tab.click(".describe");
+		await tab.wait("document.querySelector('meta[name=description]').content === 'Second'");
+		assert.equal(await tab.eval("document.head.querySelectorAll('meta[name=description]').length"), 1);
+		await tab.click(".less");
+		await tab.wait("document.head.querySelector('link[rel=canonical]') === null");
+		assert.equal(await tab.eval("document.head.querySelector('style[data-rocx]')"), null, "gone with their <Show>");
+		await tab.click(".less");
+		await tab.wait("document.head.querySelector('style[data-rocx]') !== null");
+		assert.equal(await head(), '<meta data-rocx="" property="og:type" content="website"><meta data-rocx="" name="description" content="Second"><link data-rocx="" rel="canonical" href="/actions"><style data-rocx="">.count { color: rgb(1, 2, 3) }</style>');
+
+		// Revalidation: the reads a result's answer names (`x-rocx-revalidate`), none, or all.
+		const reads = (from) => asked.slice(from).filter((url) => url.startsWith("/api/tally/"));
+		let mark = asked.length;
+		await tab.click(".count-only");
+		await tab.wait("document.querySelector('.adds').textContent.includes('1/count-only:done')", 3000);
+		assert.deepEqual(reads(mark), ["/api/tally/count"], "only the count read again");
+		assert.equal(await textOf(tab, ".count"), "1");
+		mark = asked.length;
+		await tab.click(".nothing");
+		await tab.wait("document.querySelector('.adds').textContent.includes('1/nothing:done')", 3000);
+		await sleep(100);
+		assert.deepEqual(reads(mark), [], "[]: nothing read again");
+		assert.equal(await textOf(tab, ".count"), "1", "the count, not read again, as it was");
+		mark = asked.length;
+		await tab.click(".read-other");
+		await tab.wait(`document.querySelector('.other').textContent === '${server.tallies.other}'`, 3000);
+		assert.deepEqual(reads(mark), ["/api/tally/other"], "a handler's revalidate!: its own");
+		// A form whose `by` was given ahead of time: in its URL, its submissions the endpoint's.
+		mark = asked.length;
+		await tab.click(".with button");
+		await tab.wait("document.querySelector('.adds').textContent.includes('5/formed:done')", 3000);
+		assert.deepEqual(posted.at(-1), { fields: { by: "5", note: "formed" }, type: "application/x-www-form-urlencoded", url: "/api/add?by=5" });
+		assert.deepEqual(reads(mark).sort(), ["/api/tally/count", "/api/tally/other"], "no header: every read");
+		assert.equal(await textOf(tab, ".count"), "7");
+		// Tried again: the same submission, pending again, then done.
+		await tab.click(".flaky");
+		await tab.wait("document.querySelector('.adds').textContent.includes('2/flaky:refused')", 3000);
+		await tab.click(".retry");
+		await tab.wait("document.querySelector('.adds').textContent.includes('2/flaky:done')", 3000);
+		assert.equal((await textOf(tab, ".adds")).match(/2\/flaky/g).length, 1, "the same submission, sent again");
+		assert.equal(await textOf(tab, ".count"), "9");
+
+		// An optimistic value: at once, held while its action is on its way, then the server's.
+		await tab.eval("window.counts = []; new MutationObserver(() => window.counts.push(document.querySelector('.count').textContent)).observe(document.querySelector('.count'), { subtree: true, characterData: true, childList: true })");
+		await tab.click(".optimistic");
+		await tab.wait("document.querySelector('.count').textContent === '19'", 1000);
+		await until(() => release !== null);
+		await sleep(150);
+		assert.equal(await textOf(tab, ".count"), "19", "held while the action is on its way");
+		assert.ok((await textOf(tab, ".adds")).includes("10/slow:pending"));
+		release();
+		await tab.wait("document.querySelector('.adds').textContent.includes('10/slow:done')", 3000);
+		assert.equal(await textOf(tab, ".count"), "19", "the server's, which has it");
+		assert.ok(!(await tab.eval("window.counts")).includes("9"), "never the old value in between");
+		// Refused: back to the server's at once, the refusal its submission's.
+		await tab.click(".refused");
+		await tab.wait("document.querySelector('.adds').textContent.includes('100/refuse:refused')", 3000);
+		assert.equal(await textOf(tab, ".count"), "19");
+		assert.ok((await tab.eval("window.counts")).includes("119"), "shown while it was on its way");
+		// A write with nothing sent: undone at once.
+		await tab.eval("window.counts = []");
+		await tab.click(".write-only");
+		await sleep(100);
+		assert.equal(await textOf(tab, ".count"), "19");
+
+		// A form with a file goes as the browser sends one; so does an action given a file's URL.
+		await tab.eval("const files = new DataTransfer(); files.items.add(new File(['PNG!'], 'sea.png', { type: 'image/png' })); document.querySelector('.files input[type=file]').files = files.files");
+		await tab.click(".files button");
+		await tab.wait("document.querySelector('.uploaded').textContent === 'sea.png (its bytes)'", 3000);
+		assert.match(uploads.at(-1).type, /^multipart\/form-data; boundary=/);
+		assert.match(uploads.at(-1).body, /name="title"\r\n\r\nSea\r\n/);
+		await tab.eval("const file = new File(['PNG!'], 'drop.png', { type: 'image/png' }); window.dropped = URL.createObjectURL(file); window.ready.runtime.files.set(window.dropped, file)");
+		await tab.type(".file-url", await tab.eval("window.dropped"));
+		await tab.click(".send-file");
+		await tab.wait("document.querySelector('.uploaded').textContent === 'drop.png (its bytes)'", 3000);
+		assert.match(uploads.at(-1).type, /^multipart\/form-data; boundary=/);
+		assert.match(uploads.at(-1).body, /name="title"\r\n\r\nDropped\r\n/);
+		assert.deepEqual(tab.errors, []);
+		assert.deepEqual(tab.console, []);
 	});
 });
 

@@ -76,6 +76,18 @@ Storage := [].{
 			}
 		}
 
+	## Keeps a file a form sent (`Server.file`, D-054) as the object `key`, its type the browser's
+	## (`application/octet-stream` when it gave none). The platform reads a request's body whole
+	## (`--max-body`), so the file is in memory; should the host one day keep a large one aside as it
+	## comes, this is where it would be copied from there, and an app's call stays as it is.
+	##
+	##     match Server.file(request, "photo") {
+	##         Ok(upload) => Storage.put_upload!(bucket, "photos/${id}", upload)?
+	##         Err(NoFile) => return Err(BadRequest("no photo"))
+	##     }
+	put_upload! : Bucket, Str, Server.Upload => Try({}, [S3Err(Refusal), StorageErr(Str)])
+	put_upload! = |bucket, key, upload| Storage.put!(bucket, key, upload.bytes, { content_type: if (upload.type.is_empty()) "application/octet-stream" else upload.type })
+
 	## The object `key`, whole; `NotFound` if there is none.
 	get! : Bucket, Str => Try(List(U8), [NotFound, S3Err(Refusal), StorageErr(Str)])
 	get! = |bucket, key|

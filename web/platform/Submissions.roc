@@ -69,6 +69,11 @@ Submissions(arg, result) :: { url : Str, form : List({ name : Str, value : Str }
 		if (id == 0) Host.submission_clear!(url) else Host.submission_drop!(url, id)
 	}
 
+	## Sends one again, by its id (Solid's `submission.retry()`), from a handler, with what it sent
+	## before: pending again, its answer to come. One still on its way, or forgotten, isn't sent.
+	retry! : Submissions(arg, result), U64 => {}
+	retry! = |submissions, id| Host.submission_retry!(Submissions.url_of(submissions), id)
+
 	## The URL of the endpoint they are to.
 	url_of : Submissions(arg, result) -> Str
 	url_of = |submissions| submissions.url

@@ -87,6 +87,14 @@ Submission(arg, result) :: { url : Str, form : List({ name : Str, value : Str })
 	clear! : Submission(arg, result) => {}
 	clear! = |submission| Host.submission_clear!(submission.url)
 
+	## Sends it again (Solid's `retry`), from a handler, with what it sent before: pending again, its
+	## answer to come. One still on its way isn't sent twice; with none (or the flash: a plain form's,
+	## which the runtime never had), nothing.
+	##
+	##     <Show when!={|| submission.error!().is_ok()}><button on:click={|| submission.retry!()}>Try again</button></Show>
+	retry! : Submission(arg, result) => {}
+	retry! = |submission| Host.submission_retry!(submission.url, 0)
+
 	## A form's fields as its body again (`name=Ada%20L`), as the runtime keeps one.
 	form_body : List({ name : Str, value : Str }) -> Str
 	form_body = |fields| Str.join_with(fields.map(|field| "${Server.encode_segment(field.name)}=${Server.encode_segment(field.value)}"), "&")

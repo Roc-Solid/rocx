@@ -152,6 +152,9 @@ pub struct Asked {
     /// The status a page rendered for it is answered with, if the page set one
     /// (`<HttpStatusCode>`).
     status: Option<u16>,
+    /// The reads its submission has read again in the browser, as JSON (`Router.revalidate!`,
+    /// D-054): said in its answer, `x-rocx-revalidate`.
+    revalidate: Option<String>,
 }
 
 impl Asked {
@@ -369,6 +372,12 @@ pub fn asked() -> Option<Asked> {
 /// The status the running call's page set for its answer (`Host.status!`), if it set one.
 pub fn status() -> Option<u16> {
     CALL.with(|context| context.borrow().asked.as_ref().and_then(|asked| asked.status))
+}
+
+/// The reads the running call's handler said its submission reads again (`Host.revalidate!`), as
+/// JSON, if it said: the last it said.
+pub fn revalidated() -> Option<String> {
+    CALL.with(|context| context.borrow().asked.as_ref().and_then(|asked| asked.revalidate.clone()))
 }
 
 /// Runs a background loop (`roc::background`) with a context of its own, whose waits end when
@@ -595,6 +604,20 @@ pub extern "C" fn roc_location() -> RocStr {
     let _host = preempt::host();
     let target = CALL.with(|context| context.borrow().asked.as_ref().map(|asked| asked.target.clone()));
     roc_str(&target.unwrap_or_else(|| "/".into()))
+}
+
+/// The reads a handler's submission reads again in the browser (`Router.revalidate!`, D-054), as
+/// JSON: noted for the request being answered, whose answer says it (`x-rocx-revalidate`); the last
+/// one said wins. A call answering no request notes nothing.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_revalidate(keys: RocStr) {
+    let _host = preempt::host();
+    let keys = taken(keys);
+    CALL.with(|context| {
+        if let Some(asked) = context.borrow_mut().asked.as_mut() {
+            asked.revalidate = Some(keys);
+        }
+    });
 }
 
 /// The status the page being rendered is to be answered with (`<HttpStatusCode code>`): the last

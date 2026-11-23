@@ -363,6 +363,25 @@ Html :: [
 			},
 		)
 
+	## `<Meta>`, `<Link>` and `<Style>` (@solidjs/meta's): `tag`, an element (rocx writes it, its
+	## attributes an element's: `<Meta name="description" content={post!().summary} />`) in the
+	## document's `<head>`, from anywhere in the page, while it is rendered. A text hole of its own
+	## that renders nothing where it is (`<!--x--><!--/x-->`), whose run computes the element's
+	## attributes and text (so it tracks what they read) and tells the runtime its markup
+	## (`Host.head!`). They are in the order they first ran (a layout's before its page's), before
+	## `</head>`; a `<Meta>` with the same `name` (or `property`), `http-equiv`, `charset` or
+	## `itemprop`, and `media`, as one before it takes that one's place, as @solidjs/meta's do. A
+	## `<Link>` or a `<Style>` is never taken out for another.
+	document_head : Html -> Html
+	document_head = |tag|
+		TextOf(
+			|| {
+				now = head_filled!(tag)
+				Host.head!(head_key(now), head_markup(now))
+				""
+			},
+		)
+
 	## Handlers on the whole document (`<Document on:keydown.Mod+K={open!} />`), written as an
 	## element's are (any but `on:frame.ms`): attached where it is rendered, and taken off when that
 	## goes (a `<Show>` hiding it, a row going), as Solid's `makeEventListener` is. Nothing on the
@@ -464,6 +483,102 @@ plain! = |parts| {
 	}
 	$out
 }
+
+## A `<Meta>`, `<Link>` or `<Style>`'s element as it is now: its computed attributes run (so its
+## hole tracks what they read), and its text (a `<Style>`'s CSS) read.
+head_filled! : Html => Html
+head_filled! = |element|
+	match element {
+		Void(tag, attrs) => Void(tag, filled_attributes!(attrs))
+		Element(tag, attrs, children) => Element(tag, filled_attributes!(attrs), [Raw(raw_text!(children))])
+		_ => element
+	}
+
+## Attributes with each computed one run: static ones.
+filled_attributes! : List(Html.Attr) => List(Html.Attr)
+filled_attributes! = |attrs| {
+	var $out = []
+	for attribute in attrs {
+		now =
+			match attribute {
+				ValueOf(name, compute) => Value(name, compute())
+				OptionalOf(name, compute) => Optional(name, compute())
+				FlagOf(name, compute) => Flag(name, compute())
+				ClassOf(name, compute) => ClassIf(name, compute())
+				StyleOf(name, compute) => StyleVar(name, compute())
+				other => other
+			}
+		$out = $out.append(now)
+	}
+	$out
+}
+
+## The text of an element whose content isn't markup (`<style>`): as written (`Html.source_text`)
+## and as its holes say, never escaped, with nothing that could close it (`</` becomes `<\/`, which
+## CSS reads as the same).
+raw_text! : List(Html) => Str
+raw_text! = |parts| {
+	var $out = ""
+	for part in parts {
+		said =
+			match part {
+				Raw(content) => content
+				Text(content) => content
+				TextOf(compute) => compute()
+				Fragment(children) => raw_text!(children)
+				HtmlOf(compute) => raw_text!([compute()])
+				ListOf(compute) => raw_text!(compute())
+				_ => ""
+			}
+		$out = $out.concat(said)
+	}
+	$out.replace_each("</", "<\\/")
+}
+
+## A head element's markup: `data-rocx` first, so hydrating passes over it.
+head_markup : Html -> Str
+head_markup = |element|
+	match element {
+		Void(tag, attrs) => static_str(Void(tag, [Flag("data-rocx", Bool.True)].concat(attrs)), Bool.True)
+		Element(tag, attrs, children) => static_str(Element(tag, [Flag("data-rocx", Bool.True)].concat(attrs), children), Bool.True)
+		_ => ""
+	}
+
+## What a later `<Meta>` takes the place of an earlier one by (@solidjs/meta's): its `name` (or
+## `property`, the same), `http-equiv`, `charset` or `itemprop`, with its `media`. "" for any
+## other element, and a `<meta>` with none of them: kept beside the others.
+head_key : Html -> Str
+head_key = |element|
+	match element {
+		Void("meta", attrs) => {
+			valued = |wanted|
+				attrs.keep_oks(
+					|attribute|
+						match attribute {
+							Value(name, value) if name.caseless_ascii_equals(wanted) => Ok(value)
+							Optional(name, value) if name.caseless_ascii_equals(wanted) and !value.is_empty() => Ok(value)
+							Flag(name, on) if name.caseless_ascii_equals(wanted) and on => Ok("")
+							_ => Err(NotIt)
+						},
+				).first()
+			media =
+				match valued("media") {
+					Ok(value) => " media=${value}"
+					Err(_) => ""
+				}
+			named =
+				match (valued("name"), valued("property"), valued("http-equiv"), valued("charset"), valued("itemprop")) {
+					(Ok(name), _, _, _, _) => "name=${name}"
+					(_, Ok(name), _, _, _) => "name=${name}"
+					(_, _, Ok(equiv), _, _) => "http-equiv=${equiv.with_ascii_lowercased()}"
+					(_, _, _, Ok(_), _) => "charset"
+					(_, _, _, _, Ok(prop)) => "itemprop=${prop}"
+					_ => ""
+				}
+			if (named.is_empty()) "" else "meta ${named}${media}"
+		}
+		_ => ""
+	}
 
 ## What a `<Show>` shows, and a fallback (a `<Show>`'s, a `<For>`'s, a `<Loading>`'s), for its JSON:
 ## made when it shows, as a component is (`{"t":"c"}`): where it is rendered, once, its reads
@@ -930,3 +1045,10 @@ expect Html.to_str(Html.no_hydration([Html.loading(Html.empty({}), [Html.text("i
 expect Html.to_str(Html.void("input", [Html.attr("type", "password"), Html.attr("name", "password"), Html.attr("value", "hunter2")])) == "<input type=\"password\" name=\"password\">"
 expect Html.to_str(Html.void("input", [Html.attr("name", "q"), Html.optional("value", "roc"), Html.attr("type", "PASSWORD")])) == "<input name=\"q\" type=\"PASSWORD\">"
 expect Html.to_str(Html.void("input", [Html.attr("type", "text"), Html.attr("value", "Ada")])) == "<input type=\"text\" value=\"Ada\">"
+
+expect head_markup(Void("meta", [Value("name", "description"), Value("content", "A \"quiet\" place")])) == "<meta data-rocx name=\"description\" content=\"A &quot;quiet&quot; place\">"
+expect head_markup(Element("style", [], [Raw("p { color: red }")])) == "<style data-rocx>p { color: red }</style>"
+expect head_key(Void("meta", [Value("property", "og:title"), Value("content", "x")])) == "meta name=og:title"
+expect head_key(Void("meta", [Value("name", "theme-color"), Value("media", "(prefers-color-scheme: dark)")])) == "meta name=theme-color media=(prefers-color-scheme: dark)"
+expect head_key(Void("meta", [Flag("charset", Bool.True)])) == "meta charset"
+expect head_key(Void("link", [Value("rel", "canonical")])) == ""

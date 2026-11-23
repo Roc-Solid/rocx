@@ -1752,6 +1752,10 @@ Transpile := [].{
 		# `<Document on:keydown.Mod+K={…} />`, `<Window on:resize={…} />`: handlers on the whole document
 		# or window, written as an element's are; unless the file has a module of that name.
 		listener = Transpile.is_listener(cfg, name)
+		# `<Meta name="description" content={…} />`, `<Link rel="canonical" href={…} />`,
+		# `<Style>…</Style>` (@solidjs/meta's, D-054): an element in the document's <head>, written as
+		# one; unless the file has a module of that name.
+		head = Transpile.is_head(cfg, name)
 		# How a component is given its props (D-039). The platform's (`<Show>`) and a context's provider
 		# take what their types say, where they are written; a pure one (`view`), values, its call a hole
 		# of its own when one is read from what changes; any other, getters, unless it is a function of
@@ -1760,8 +1764,8 @@ Transpile := [].{
 		provider = component and Transpile.lookup(cfg.contexts, name) != None
 		pure = component and cfg.pure.contains(name)
 		own_fn = component and !cfg.modules.contains(name)
-		getters = component and !listener and !packaged and !provider and !pure and (!own_fn or cfg.fns.contains(name))
-		read = Transpile.read_attributes(cfg, { ..st0, pos: name_end }, name, component and !listener, getters, component and !listener and !packaged and !provider, start)?
+		getters = component and !listener and !head and !packaged and !provider and !pure and (!own_fn or cfg.fns.contains(name))
+		read = Transpile.read_attributes(cfg, { ..st0, pos: name_end }, if (head) lowered else name, component and !listener and !head, getters, component and !listener and !head and !packaged and !provider, start)?
 		attrs = read.attrs
 		self_closing = read.self_closing
 		if name == "NoHydration" {
@@ -1769,6 +1773,9 @@ Transpile := [].{
 		}
 		if listener {
 			return Transpile.read_listener(cfg, read.st, name, attrs, self_closing, start)
+		}
+		if head {
+			return Transpile.read_head(cfg, read.st, name, attrs, self_closing, start)
 		}
 		# A component is an effect (`Picks.view!`), and so is a provider (`Context.provide!`); a pure one
 		# (`Heading.view`) isn't.
@@ -1975,6 +1982,33 @@ Transpile := [].{
 		}
 		made = if (name == "Window") "Html.on_window" else "Html.on_document"
 		Ok({ st, out: "${made}([${Transpile.render_items(attrs)}])" })
+	}
+
+	## Whether `<name>` is the platform's `<Meta>`, `<Link>` or `<Style>` (@solidjs/meta's, D-054): an
+	## element in the document's `<head>`. A module of the file's own by that name is a component
+	## instead.
+	is_head : Cfg, Str -> Bool
+	is_head = |cfg, name| (name == "Meta" or name == "Link" or name == "Style") and !cfg.modules.contains(name)
+
+	## `<Meta … />`, `<Link … />` (attributes as a `<meta>`'s and a `<link>`'s, holes and all) or
+	## `<Style>…</Style>` (its CSS static, as a `<style>`'s): the element in the document's `<head>`
+	## while what renders it is there (`Html.document_head`), rendering nothing where it is.
+	read_head : Cfg, St, Str, List(Part), Bool, U64 -> Try({ st : St, out : Str }, [Rocx(RocxError), Crash(Str)])
+	read_head = |cfg, st, name, attrs, self_closing, start| {
+		if attrs.any(|part| Transpile.is_handler_part(part) and !Transpile.is_line(part)) {
+			return Err(Transpile.fail(cfg, "<${name}> is an element in the document's <head>: it takes no handlers", start))
+		}
+		if name == "Style" {
+			if self_closing {
+				return Err(Transpile.fail(cfg, "<Style> holds its CSS: write <Style>p { … }</Style>", start))
+			}
+			raw = Transpile.read_raw_text(cfg, st, "style", start)?
+			return Ok({ st: raw.st, out: "Html.document_head(Html.element(\"style\", [${Transpile.render_items(attrs)}], [${raw.out}]))" })
+		}
+		if !self_closing {
+			return Err(Transpile.fail(cfg, "<${name}> has no children: write <${name} … />", start))
+		}
+		Ok({ st, out: "Html.document_head(Html.void(\"${Text.lower(name)}\", [${Transpile.render_items(attrs)}]))" })
 	}
 
 	## Whether an attribute, as rocx writes it, is a handler `<Document>` takes (a line between them is).

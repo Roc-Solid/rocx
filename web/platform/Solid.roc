@@ -7,7 +7,7 @@ import Store
 ## changes. The browser's timers are here too (`set_interval!`, `set_timeout!`), each stopped by
 ## the `clear!` it answers, or when what started it goes.
 ##
-##     import pf.Solid exposing [create_signal!, create_memo!, create_store!, create_effect!, create_render_effect!, create_effect_with!, on_cleanup!, on_settled!, refresh!, is_pending!, latest!, untrack!, use_context!, set_interval!]
+##     import pf.Solid exposing [create_signal!, create_memo!, create_optimistic!, create_store!, create_effect!, create_render_effect!, create_effect_with!, on_cleanup!, on_settled!, refresh!, is_pending!, latest!, untrack!, use_context!, set_interval!]
 ##
 ##     (count!, set_count!) = create_signal!(0.U64)
 ##     doubled! = create_memo!(|| count!() * 2)
@@ -62,6 +62,46 @@ Solid := [].{
 			value = Box.unbox(Host.memo_get!(id))
 			value()
 		}
+	}
+
+	## A value the page shows ahead of the server (Solid 2.0's `createOptimistic`): its accessor and
+	## its setter. It is `compute`'s, a memo (the server's data, say: `|| Endpoint.get!(board)`),
+	## until a handler writes it: the write shows once the handler is done, and is held until the
+	## submissions that handler sent are done (an action's, `Router.use_action!`; or the form its
+	## `submit` sends), the page's reads read again by then, so the server's data takes its place
+	## with no frame of the old. A refusal ends it too: the value is the server's again, the refusal
+	## the submission's `error`. With nothing sent, the write is undone at once, as Solid 2.0
+	## undoes one outside a transition. Several held at once: the latest still held shows.
+	##
+	##     (cards!, set_cards!) = create_optimistic!(|| Endpoint.get!(board))
+	##     move! = use_action!(Api.post_move({}))
+	##     on_drop! = |day| {
+	##         set_cards!(moved(cards!(), dragged!(), day))
+	##         move!({ card: dragged!(), day })
+	##     }
+	##
+	## On the server there are no handlers: it is `compute`'s. Where several submissions may be on
+	## their way and each should apply to the server's latest data, derive it instead from what they
+	## sent (`Submissions.pending_inputs!`, D-030).
+	create_optimistic! : (() => a) => ((() => a), (a => {}))
+	create_optimistic! = |compute| {
+		source! = Solid.create_memo!(compute)
+		held : [Held(a), Unheld]
+		held = Unheld
+		id = Host.signal_new!(Box.box(|| held))
+		read! = || {
+			current = Box.unbox(Host.signal_get!(id))
+			match current() {
+				Held(value) => value
+				Unheld => source!()
+			}
+		}
+		write! = |next| {
+			written : [Held(a), Unheld]
+			written = Held(next)
+			Host.optimistic_set!(id, Box.box(|| written))
+		}
+		(read!, write!)
 	}
 
 	## Computes again, asking the server again, every memo the accessor reads: `refresh!(user!)`.

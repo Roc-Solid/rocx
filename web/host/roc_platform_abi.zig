@@ -874,6 +874,14 @@ pub const HostFlashArgs = extern struct {
     arg0: RocStr,
 };
 
+/// Arguments for Host.head!
+/// Roc signature: Str, Str => {}
+/// Refcounted fields are owned by the hosted function.
+pub const HostHeadArgs = extern struct {
+    arg0: RocStr,
+    arg1: RocStr,
+};
+
 /// Arguments for Host.live_publish!
 /// Roc signature: Str, Str => {}
 /// Refcounted fields are owned by the hosted function.
@@ -941,6 +949,14 @@ pub const HostMemo_newArgs = extern struct {
     arg0: RocErasedCallable,
 };
 
+/// Arguments for Host.optimistic_set!
+/// Roc signature: U64, Box({} -> rigid) => {}
+/// Refcounted fields are owned by the hosted function.
+pub const HostOptimistic_setArgs = extern struct {
+    arg0: u64,
+    arg1: RocErasedCallable,
+};
+
 /// Arguments for Host.read_at!
 /// Roc signature: Str => Str
 /// Refcounted fields are owned by the hosted function.
@@ -967,6 +983,13 @@ pub const HostResyncArgs = extern struct {
 /// Refcounted fields are owned by the hosted function.
 pub const HostRetryArgs = extern struct {
     arg0: u64,
+};
+
+/// Arguments for Host.revalidate!
+/// Roc signature: Str => {}
+/// Refcounted fields are owned by the hosted function.
+pub const HostRevalidateArgs = extern struct {
+    arg0: RocStr,
 };
 
 /// Arguments for Host.row_get!
@@ -1066,6 +1089,14 @@ pub const HostSubmission_clearArgs = extern struct {
 /// Roc signature: Str, U64 => {}
 /// Refcounted fields are owned by the hosted function.
 pub const HostSubmission_dropArgs = extern struct {
+    arg0: RocStr,
+    arg1: u64,
+};
+
+/// Arguments for Host.submission_retry!
+/// Roc signature: Str, U64 => {}
+/// Refcounted fields are owned by the hosted function.
+pub const HostSubmission_retryArgs = extern struct {
     arg0: RocStr,
     arg1: u64,
 };
@@ -1242,6 +1273,14 @@ pub extern fn roc_flash(arg0: RocStr) callconv(.c) RocStr;
 /// Roc signature: {} => U64
 pub extern fn roc_for_new() callconv(.c) u64;
 
+/// Hosted symbol for Host.head!
+/// Roc signature: Str, Str => {}
+/// Owned arguments. Release each exactly once before returning, unless it is
+/// moved into storage or into the result:
+///     arg0.decref(roc_host);
+///     arg1.decref(roc_host);
+pub extern fn roc_head(arg0: RocStr, arg1: RocStr) callconv(.c) void;
+
 /// Hosted symbol for Host.live_publish!
 /// Roc signature: Str, Str => {}
 /// Owned arguments. Release each exactly once before returning, unless it is
@@ -1319,6 +1358,13 @@ pub extern fn roc_now_millis() callconv(.c) u64;
 /// Roc signature: {} => U64
 pub extern fn roc_now_nanos() callconv(.c) u64;
 
+/// Hosted symbol for Host.optimistic_set!
+/// Roc signature: U64, Box({} -> rigid) => {}
+/// Owned arguments. Release each exactly once before returning, unless it is
+/// moved into storage or into the result:
+///     decrefErasedCallable(arg1, roc_host);
+pub extern fn roc_optimistic_set(arg0: u64, arg1: RocErasedCallable) callconv(.c) void;
+
 /// Hosted symbol for Host.problem!
 /// Roc signature: {} => Str
 /// The result is owned by Roc: return exactly one owned reference.
@@ -1354,6 +1400,13 @@ pub extern fn roc_resync(arg0: RocStr) callconv(.c) void;
 /// Hosted symbol for Host.retry!
 /// Roc signature: U64 => {}
 pub extern fn roc_retry(arg0: u64) callconv(.c) void;
+
+/// Hosted symbol for Host.revalidate!
+/// Roc signature: Str => {}
+/// Owned arguments. Release each exactly once before returning, unless it is
+/// moved into storage or into the result:
+///     arg0.decref(roc_host);
+pub extern fn roc_revalidate(arg0: RocStr) callconv(.c) void;
 
 /// Hosted symbol for Host.row_get!
 /// Roc signature: U64, Str => Box({} -> rigid)
@@ -1444,6 +1497,13 @@ pub extern fn roc_submission_clear(arg0: RocStr) callconv(.c) void;
 /// moved into storage or into the result:
 ///     arg0.decref(roc_host);
 pub extern fn roc_submission_drop(arg0: RocStr, arg1: u64) callconv(.c) void;
+
+/// Hosted symbol for Host.submission_retry!
+/// Roc signature: Str, U64 => {}
+/// Owned arguments. Release each exactly once before returning, unless it is
+/// moved into storage or into the result:
+///     arg0.decref(roc_host);
+pub extern fn roc_submission_retry(arg0: RocStr, arg1: u64) callconv(.c) void;
 
 /// Hosted symbol for Host.submissions!
 /// Roc signature: Str => Str

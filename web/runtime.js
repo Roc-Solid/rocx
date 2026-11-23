@@ -893,6 +893,18 @@ export class Runtime {
 		this.titleSeqs = 0;
 		this.titlesDirty = false;
 		this.titled = null;
+		/** The `<Meta>`s, `<Link>`s and `<Style>`s there are (D-054), by the computation of each one's
+		 * hole: `{ seq, key, markup }`, in `<head>` in the order of their first runs, a later one in
+		 * the place of an earlier with its key (`showHead`); `headed`, rendering as a server would,
+		 * the page's, in the order told. */
+		this.heads = new Map();
+		this.headSeqs = 0;
+		this.headsDirty = false;
+		this.headed = [];
+		/** The transition a handler's optimistic writes are held by (`create_optimistic!`, D-054),
+		 * open while its writes apply and its event goes on: the submissions sent meanwhile (its
+		 * actions, the form its submit sends) join it. */
+		this.transition = null;
 		/** Rows and parts on their way out, by their first comment: each stays, inert, until its
 		 * transitions are over. A <For> putting its rows in order passes over them. `leavingNodes`:
 		 * the range each one's top nodes are in. */
@@ -1333,6 +1345,27 @@ export class Runtime {
 				if (handler?.kind !== "handler") throw new Failed(`use_action!(${url})'s function sends from a handler (an event, a timer, an effect's apply), not while computing`);
 				handler.writes.push({ submit: { method: text(mp, ml), url, body: text(bp, bl), input: text(ip, il) } });
 			},
+			// `Router.revalidate!` in a handler (D-054): those reads read again once it is done.
+			js_revalidate: (ptr, len) => {
+				if (this.onServer) return;
+				const keys = JSON.parse(text(ptr, len));
+				const handler = this.current;
+				if (handler?.kind !== "handler") throw new Failed("Router.revalidate! reads again from a handler (an event, a timer, an effect's apply), not while computing");
+				handler.writes.push({ revalidate: keys });
+			},
+			// `retry!` (D-054): a submission sent again, once the handler is done.
+			js_submission_retry: (ptr, len, id) => {
+				if (!this.onServer) this.later({ retried: this.actionKey(text(ptr, len)), id });
+			},
+			// `create_optimistic!`'s write (D-054): applied with the handler's writes, held by their transition.
+			js_optimistic_set: (id, ptr) => {
+				const handler = this.current;
+				if (handler?.kind !== "handler") {
+					this.ex.release(ptr);
+					throw new Failed("an optimistic value is written in a handler, not while computing");
+				}
+				handler.writes.push({ optimistic: { signal: this.signals.get(id), value: ptr } });
+			},
 			// The clock (`Time`): for handlers, effects and timers; markup made from it wouldn't hydrate.
 			js_now_millis: () => Date.now(),
 			js_now_precise: () => performance.timeOrigin + performance.now(),
@@ -1356,6 +1389,28 @@ export class Runtime {
 					this.titleChanged();
 				});
 				this.titleChanged();
+			},
+			// A <Meta>, <Link> or <Style>'s hole (D-054): rendering as a server would, noted for the page's
+			// <head>; in the browser, its computation's, until it runs again or goes (`showHead`).
+			js_head: (kp, kl, mp, ml) => {
+				this.touch();
+				const key = text(kp, kl);
+				const markup = text(mp, ml);
+				if (this.onServer) {
+					this.headed.push({ key, markup });
+					return;
+				}
+				const owner = this.current;
+				const cleanups = this.cleanupsOf(owner);
+				if (!cleanups) throw new Failed("a <Meta>, <Link> or <Style> says its element in its own hole: Html.document_head is rocx's to write");
+				// Its place is the first run's, so running again doesn't move it.
+				owner.headSeq ??= ++this.headSeqs;
+				this.heads.set(owner, { seq: owner.headSeq, key, markup });
+				cleanups.push(() => {
+					this.heads.delete(owner);
+					this.headChanged();
+				});
+				this.headChanged();
 			},
 			// `untrack!` (Solid's `untrack`): the running computation's reads aren't tracked until it is
 			// done (on, then off); a computation made meanwhile tracks its own.
@@ -1427,11 +1482,13 @@ export class Runtime {
 	}
 
 	/**
-	 * A form submitted: sent with fetch if it posts (not multipart) to an endpoint a component reads
-	 * the submission of, on this site, and no handler prevented its submit. Its fields go as a form
-	 * does, URL-encoded, with `accept: application/json` and `x-rocx-submission: 1`, so the endpoint
-	 * answers its result, or its refusal, rather than sending the browser back with a flash. Any
-	 * other form is the browser's.
+	 * A form submitted: sent with fetch if it posts to an endpoint a component reads the submission
+	 * of, on this site, and no handler prevented its submit. Its fields go as a form sends them:
+	 * URL-encoded, or, a form with files (`enctype="multipart/form-data"`), as the browser's
+	 * `FormData` (D-054); with `accept: application/json` and `x-rocx-submission: 1`, so the endpoint
+	 * answers its result, or its refusal, rather than sending the browser back with a flash. A form
+	 * whose URL is an endpoint's with fields in its query (`Endpoint.with_fields`) is that endpoint's,
+	 * those fields first in its input. Any other form is the browser's.
 	 */
 	submitted(event) {
 		if (event.defaultPrevented) return;
@@ -1440,21 +1497,75 @@ export class Runtime {
 		const submitter = event.submitter ?? null;
 		const of = (name, attribute) => (submitter?.hasAttribute(attribute) ? submitter.getAttribute(attribute) : form.getAttribute(name)) ?? "";
 		if (of("method", "formmethod").toLowerCase() !== "post") return;
-		if (["multipart/form-data", "text/plain"].includes(of("enctype", "formenctype").toLowerCase())) return;
+		const enctype = of("enctype", "formenctype").toLowerCase();
+		if (enctype === "text/plain") return;
 		const url = new URL(of("action", "formaction"), location.href);
 		if (url.origin !== location.origin) return;
-		const key = `${this.unbased(url.pathname)}${url.search}`;
-		if (!this.actions.has(key)) return;
+		const key = this.submittedKey(`${this.unbased(url.pathname)}${url.search}`);
+		if (key === null) return;
 		event.preventDefault();
-		const fields = new URLSearchParams(new FormData(form, submitter ?? undefined)).toString();
-		this.submit(key, url.href, { headers: { "content-type": "application/x-www-form-urlencoded" }, body: fields, input: fields, json: false });
+		const data = new FormData(form, submitter ?? undefined);
+		// What it sent, as the endpoint reads it: the URL's fields (`with_fields`'), then the form's, a
+		// file's its name.
+		const own = new URLSearchParams([...data].map(([name, value]) => [name, typeof value === "string" ? value : value.name])).toString();
+		const input = [url.search.slice(1), own].filter(Boolean).join("&");
+		if (enctype === "multipart/form-data") this.submit(key, url.href, { body: data, input, json: false });
+		else this.submit(key, url.href, { headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(data).toString(), input, json: false });
 	}
 
-	/** An action (`use_action!`), sent: its arg as JSON in its body, as `Endpoint.send!` sends it. */
+	/** The endpoint a form's URL (its path without the site's base, and its query) is: one the
+	 * runtime sends forms to, or one whose URL with fields after it this is (`Endpoint.with_fields`),
+	 * the longest; null for none. */
+	submittedKey(key) {
+		if (this.actions.has(key)) return key;
+		let found = null;
+		for (const known of this.actions.keys()) {
+			if ((key.startsWith(`${known}?`) || key.startsWith(`${known}&`)) && known.length > (found?.length ?? -1)) found = known;
+		}
+		return found;
+	}
+
+	/**
+	 * An action (`use_action!`), sent: its arg as JSON in its body, as `Endpoint.send!` sends it. One
+	 * whose arg has a top-level field holding the URL of a file the page has (`fileOf`: a picked,
+	 * dropped or pasted file's, `Html.File`'s `url`), or a list of them, goes as a form with files
+	 * (D-054): each such file a part of that field's name, the other fields as a form's (text as it
+	 * is; a number, `true` or `false` as written; a list as its items). The input is the JSON, so a
+	 * pending input's file field is still its URL (an `<img src>` of what is on its way).
+	 */
 	sendAction({ method, url, body, input }) {
 		const href = typeof location === "undefined" ? this.under(url) : new URL(this.under(url), location.href).href;
+		const data = this.filesForm(body);
+		if (data) return this.submit(this.actionKey(url), href, { method, body: data, input, json: true });
 		const headers = method === "GET" || method === "HEAD" ? {} : { "content-type": "application/json" };
 		this.submit(this.actionKey(url), href, { method, headers, body, input, json: true });
+	}
+
+	/** An action's JSON as a form with files (`FormData`), if a top-level field of it holds a file's
+	 * URL the page has (or a list of them); else null. A record inside a field can't go in a form:
+	 * it fails, saying so. */
+	filesForm(json) {
+		let arg;
+		try {
+			arg = JSON.parse(json);
+		} catch {
+			return null;
+		}
+		if (!arg || typeof arg !== "object" || Array.isArray(arg)) return null;
+		const file = (value) => (typeof value === "string" ? this.fileOf(value) : null);
+		const holdsFiles = Object.values(arg).some((value) => file(value) || (Array.isArray(value) && value.length && value.every((item) => file(item))));
+		if (!holdsFiles) return null;
+		const data = new FormData();
+		for (const [name, value] of Object.entries(arg)) {
+			for (const item of Array.isArray(value) ? value : [value]) {
+				const found = file(item);
+				if (found) data.append(name, found, found.name);
+				else if (item === null) continue;
+				else if (typeof item === "object") throw new Failed(`an action with a file goes as a form, and its field ${name} is a record, which a form doesn't have`);
+				else data.append(name, String(item));
+			}
+		}
+		return data;
 	}
 
 	/**
@@ -1468,8 +1579,25 @@ export class Runtime {
 	submit(key, href, { method = "POST", headers = {}, body, input, json }) {
 		const source = this.submissionOf(key);
 		const entry = { id: ++ids, state: "pending", input, json, status: 0, body: "" };
+		// What it sent, to send again (`retry!`).
+		entry.request = { href, method, headers, body };
 		source.list.push(entry);
 		source.cleared = false;
+		this.send(key, source, entry);
+	}
+
+	/** A submission sent (again, for `retry!`): pending until it is answered; in the transition open
+	 * now, if any (`create_optimistic!`'s writes, D-054), which ends once its submissions are done. A
+	 * result reads again the reads its answer names (`x-rocx-revalidate`: `Router.revalidate!` in
+	 * its handler), or every one the page read. */
+	send(key, source, entry) {
+		const { href, method, headers, body } = entry.request;
+		const input = entry.input;
+		const transition = this.transition;
+		if (transition) {
+			transition.sent = true;
+			transition.pending++;
+		}
 		this.submissionsChanged(source);
 		const asked = performance.now();
 		this.notify("submit", { method, url: key, input, id: entry.id });
@@ -1477,6 +1605,8 @@ export class Runtime {
 			Object.assign(entry, { state: "done", status, body: said });
 			// Forgotten meanwhile: nothing reads it.
 			if (source.list.includes(entry)) this.submissionsChanged(source);
+			// The transition's last: its optimistic writes go in this same flush.
+			if (transition && --transition.pending === 0) this.endTransition(transition);
 		};
 		fetch(href, { method, headers: { ...headers, accept: "application/json", "x-rocx-submission": "1" }, body: method === "GET" || method === "HEAD" ? undefined : body }).then(
 			async (response) => {
@@ -1488,7 +1618,7 @@ export class Runtime {
 				}
 				const said = await response.text();
 				this.notify("submitted", { url: key, input, id: entry.id, status: response.status, body: said, ms: performance.now() - asked });
-				if (response.status === 200) this.revalidate(() => done(200, said));
+				if (response.status === 200) this.revalidate(() => done(200, said), Runtime.revalidating(response.headers.get("x-rocx-revalidate")));
 				else done(response.status, said);
 			},
 			(error) => {
@@ -1499,15 +1629,45 @@ export class Runtime {
 		);
 	}
 
+	/** The reads an answer names to read again (`x-rocx-revalidate`: a JSON list of URLs), or null
+	 * for every one (no header, or one that isn't such a list). */
+	static revalidating(header) {
+		if (header === null) return null;
+		try {
+			const keys = JSON.parse(header);
+			return Array.isArray(keys) && keys.every((key) => typeof key === "string") ? keys : null;
+		} catch {
+			return null;
+		}
+	}
+
+	/** Sends a submission again (`retry!`, D-054), by its id (0: the latest), with what it sent:
+	 * pending again, its answer to come. One on its way, forgotten, or never sent by the runtime (a
+	 * plain form's flash), isn't. */
+	retrySubmission(key, id) {
+		const source = this.submissionOf(key);
+		const entry = id === 0 ? (source.cleared ? undefined : source.list.at(-1)) : source.list.find((each) => each.id === id);
+		if (!entry?.request || entry.state === "pending") return;
+		Object.assign(entry, { state: "pending", status: 0, body: "" });
+		this.send(key, source, entry);
+	}
+
 	/**
 	 * Reads the page's reads again (Solid Router revalidating after an action), then `done`: every
 	 * computation that read a GET from the server (`Endpoint.get!`, `read!`) asks it again, its last
 	 * value shown meanwhile, and `done` runs once each has its answer (or failed, or went), in the
 	 * run of the last one, so whatever reads both sees the new data and the submission's end
-	 * together.
+	 * together. With `keys` (`Router.revalidate!`'s, D-054), only the reads of a GET whose URL is
+	 * one, or begins with one and a `/` or a `?`; none, `[]`.
 	 */
-	revalidate(done) {
-		const targets = [...this.readers].filter((computation) => !computation.disposed && [...computation.calls.keys()].some((key) => key.startsWith("GET ")));
+	revalidate(done, keys = null) {
+		const named = (key) => {
+			if (!key.startsWith("GET ")) return false;
+			if (keys === null) return true;
+			const url = key.slice(4, key.includes("\n") ? key.indexOf("\n") : undefined);
+			return keys.some((wanted) => url === wanted || url.startsWith(`${wanted}/`) || url.startsWith(`${wanted}?`));
+		};
+		const targets = [...this.readers].filter((computation) => !computation.disposed && [...computation.calls.keys()].some(named));
 		this.notify("revalidate", { reads: targets.length });
 		if (!targets.length) return done();
 		let left = targets.length;
@@ -1518,6 +1678,58 @@ export class Runtime {
 			(target.revalidating ??= []).push(one);
 			this.refresh(target);
 		}
+	}
+
+	// ---- Optimistic values (`create_optimistic!`, D-054) ----
+
+	/** A transition for a handler's optimistic writes, open until this task is over, so the form its
+	 * submit event sends joins it too: it ends once its submissions are done, or, with none sent, at
+	 * once (Solid 2.0 undoes an optimistic write outside a transition). */
+	openTransition() {
+		const transition = { pending: 0, sent: false, signals: new Set() };
+		this.transition = transition;
+		queueMicrotask(() => {
+			if (this.transition === transition) this.transition = null;
+			if (!transition.sent) this.endTransition(transition);
+		});
+		return transition;
+	}
+
+	/** An optimistic write: the signal shows it, held (with its value before any, `base`) until its
+	 * transition ends; the latest held shows. */
+	hold({ signal, value }, transition) {
+		if (!signal || !this.signals.has(signal.id)) return this.ex.release(value);
+		signal.held ??= { base: signal.value, writes: [] };
+		signal.held.writes.push({ value, transition });
+		transition.signals.add(signal);
+		signal.value = value;
+		for (const observer of signal.observers) this.schedule(observer);
+	}
+
+	/** A transition is over: its writes are undone, each signal showing the latest still held, or
+	 * its value before them. */
+	endTransition(transition) {
+		for (const signal of transition.signals) {
+			const held = signal.held;
+			if (!held || !this.signals.has(signal.id)) continue;
+			const kept = [];
+			for (const write of held.writes) {
+				if (write.transition === transition) this.ex.release(write.value);
+				else kept.push(write);
+			}
+			held.writes = kept;
+			signal.value = kept.at(-1)?.value ?? held.base;
+			if (!kept.length) signal.held = null;
+			for (const observer of signal.observers) this.schedule(observer);
+		}
+	}
+
+	/** A signal's boxes let go of: its value, or, while optimistic writes are held, each and its
+	 * value before them. */
+	releaseSignal(signal) {
+		if (!signal.held) return this.ex.release(signal.value);
+		this.ex.release(signal.held.base);
+		for (const write of signal.held.writes) this.ex.release(write.value);
 	}
 
 	/** A computation read again for a submission (`revalidate`) has its answer, failed, or went. */
@@ -2082,7 +2294,7 @@ export class Runtime {
 			const signal = this.signals.get(id);
 			if (!signal) continue;
 			this.signals.delete(id);
-			this.ex.release(signal.value);
+			this.releaseSignal(signal);
 		}
 	}
 
@@ -2145,6 +2357,7 @@ export class Runtime {
 		if (this.entering.length) this.playEntering();
 		// The title before the page's functions, so one sees the page as the flush left it.
 		if (this.titlesDirty) this.showTitle();
+		if (this.headsDirty) this.showHead();
 		if (this.calling.length) this.callEffects();
 	}
 
@@ -2178,6 +2391,55 @@ export class Runtime {
 			head.insertBefore(element, head.querySelector("title"));
 		}
 		if (element.textContent !== top.title) element.textContent = top.title;
+	}
+
+	// ---- The head's other elements (D-054) ----
+
+	/** A `<Meta>`, `<Link>` or `<Style>` came, changed or went: shown once the flush is over. */
+	headChanged() {
+		this.headsDirty = true;
+		this.wake();
+	}
+
+	/** Head elements in their order (`seq`), each with a key (a `<Meta>`'s name…) only where it is
+	 * the last with it: @solidjs/meta's cascade. */
+	static headsOf(entries) {
+		const last = new Map();
+		for (const entry of entries) if (entry.key) last.set(entry.key, entry);
+		return entries.filter((entry) => !entry.key || last.get(entry.key) === entry);
+	}
+
+	/**
+	 * The `<head>`'s host elements (`[data-rocx]`, but its `<title>`) as the `<Meta>`s, `<Link>`s and
+	 * `<Style>`s there are say, in their order: one equal to what is there (the server's, hydrating)
+	 * is kept, so a stylesheet isn't loaded again; one that differs is replaced; one more is added
+	 * at the head's end; one fewer goes.
+	 */
+	showHead() {
+		this.headsDirty = false;
+		if (typeof document === "undefined" || !document.head) return;
+		const wanted = Runtime.headsOf([...this.heads.values()].sort((a, b) => a.seq - b.seq));
+		const have = [...document.head.children].filter((node) => node.hasAttribute("data-rocx") && node.localName !== "title" && node.localName !== "script");
+		const template = document.createElement("template");
+		wanted.forEach((entry, at) => {
+			template.innerHTML = entry.markup;
+			const made = template.content.firstElementChild;
+			if (!made) return;
+			const old = have[at];
+			if (old?.isEqualNode(made)) return;
+			if (old) old.replaceWith(made);
+			else document.head.append(made);
+		});
+		for (const extra of have.slice(wanted.length)) extra.remove();
+	}
+
+	/** The markup with the head elements the page rendered before its `</head>` (signals.rs's
+	 * `headed`), in their order, a later one in an earlier's place with its key. */
+	static headed(markup, heads) {
+		const shown = Runtime.headsOf(heads);
+		const end = markup.indexOf("</head>");
+		if (!shown.length || end < 0) return markup;
+		return `${markup.slice(0, end)}${shown.map((entry) => entry.markup).join("")}${markup.slice(end)}`;
 	}
 
 	/**
@@ -2235,8 +2497,13 @@ export class Runtime {
 
 	/** Writes a handler made, applied together once it is done. */
 	apply(writes) {
+		// Optimistic writes (D-054) open a transition the submissions sent with them join.
+		const transition = writes.some((write) => write.optimistic) ? this.openTransition() : null;
 		for (const write of writes) {
-			if (write.signal) {
+			if (write.optimistic) this.hold(write.optimistic, transition);
+			else if (write.revalidate) this.revalidate(() => {}, write.revalidate);
+			else if (write.retried !== undefined) this.retrySubmission(write.retried, write.id);
+			else if (write.signal) {
 				const { signal, value } = write;
 				// Its part went away while the handler ran: nothing reads it.
 				if (!this.signals.has(signal.id)) {
@@ -2284,7 +2551,10 @@ export class Runtime {
 			try {
 				this.enter(() => this.ex.run(this.kept.get(handler.runner)));
 			} catch (error) {
-				for (const write of handler.writes) if (write.signal) this.ex.release(write.value);
+				for (const write of handler.writes) {
+					if (write.signal) this.ex.release(write.value);
+					else if (write.optimistic) this.ex.release(write.optimistic.value);
+				}
 				if (cleanups) {
 					this.current = previous;
 					this.cleanUp(cleanups.splice(mark));
@@ -4065,6 +4335,7 @@ export class Runtime {
 		this.flashed = "";
 		this.secrets = [];
 		this.titled = null;
+		this.headed = [];
 		this.status = 200;
 		const wasOnServer = this.onServer;
 		this.onServer = true;
@@ -4082,13 +4353,13 @@ export class Runtime {
 		}
 		try {
 			const markup = this.html(JSON.parse(out), root, scope);
-			const html = DOCUMENT.test(markup) ? Runtime.documentOf(markup, this.recorded, Runtime.withoutSecrets(this.flashed, this.secrets), this.titled, this.pageScripts ?? []) : `<!--app-->${markup}<!--/app-->`;
+			const html = DOCUMENT.test(markup) ? Runtime.documentOf(markup, this.recorded, Runtime.withoutSecrets(this.flashed, this.secrets), this.titled, this.pageScripts ?? [], this.headed) : `<!--app-->${markup}<!--/app-->`;
 			return { html, answers: this.recorded };
 		} finally {
 			this.onServer = wasOnServer;
 			root.made = root.making;
 			this.dispose(root);
-			for (const signal of this.signals.values()) this.ex.release(signal.value);
+			for (const signal of this.signals.values()) this.releaseSignal(signal);
 			this.signals.clear();
 			for (const list of this.lists.values()) this.dropList(list);
 			this.lists.clear();
@@ -4145,10 +4416,12 @@ export class Runtime {
 	 * first, unless the markup begins with one; the title the last `<Title>` rendered said, if one
 	 * did, as a `<title data-rocx>` before the `<head>`'s first `<title>` (or at its end); the flash
 	 * the page read (if it did), the answers script, the plugins' scripts (`scripts`, by URL) and
-	 * the bootstrap (start.js) just before the last `</body>`, or at the end with none.
+	 * the bootstrap (start.js) just before the last `</body>`, or at the end with none. The
+	 * `<Meta>`s, `<Link>`s and `<Style>`s it rendered (`heads`) go before `</head>`.
 	 */
-	static documentOf(markup, answers, flash = "", title = null, scripts = []) {
+	static documentOf(markup, answers, flash = "", title = null, scripts = [], heads = []) {
 		if (title !== null) markup = Runtime.titled(markup, title);
+		markup = Runtime.headed(markup, heads);
 		const doctype = /^<!doctype/i.test(markup.trimStart()) ? "" : "<!doctype html>";
 		const before = `${flash ? Runtime.flashScript(flash) : ""}${Runtime.answersScript(answers)}${Runtime.scriptTags(scripts)}${START}`;
 		const at = markup.lastIndexOf("</body>");

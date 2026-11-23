@@ -206,6 +206,7 @@ route! = |request, context| {
 		(_, "/endpoint/upload") => Endpoint.respond!(upload_endpoint, request, {})
 		(_, "/endpoint/shout") => Endpoint.respond!(shout_endpoint, request, {})
 		(_, "/endpoint/order") => Endpoint.respond!(order_endpoint, request, {})
+		(_, "/endpoint/photo") => Endpoint.respond!(photo_endpoint, request, {})
 		(_, "/endpoint/order-json") => Endpoint.respond!(order_json_endpoint, request, {})
 
 		# ---- Forward: a body the host fetches from `url` and sends on, never through Roc ----
@@ -1283,6 +1284,30 @@ Order : { item : Str, count : U64, price : Dec, gift : Bool, toppings : List(Str
 ## POST /endpoint/order: the order, as the handler was given it.
 order_endpoint : Endpoint({}, Order, Str)
 order_endpoint = Endpoint.local("POST", "/endpoint/order", |_, {}, order| Ok(said_of(order)))
+
+## POST /endpoint/photo: a form with a file (multipart, D-054): its title, the file's name as its
+## field reads it, and the file as `Server.file` gives it, kept in a bucket in memory
+## (`Storage.put_upload!`) and read back; it says its submission reads `/photos` again.
+photo_endpoint : Endpoint({}, { title : Str, photo : Str }, { title : Str, photo : Str, type : Str, size : U64, sha : Str, files : U64 })
+photo_endpoint = Endpoint.local(
+	"POST",
+	"/endpoint/photo",
+	|request, {}, given| {
+		Router.revalidate!(["/photos"])
+		match Server.file(request, "photo") {
+			Ok(upload) => {
+				bucket = Storage.from_url("memory:photos") ?? crash "memory: is a bucket"
+				kept =
+					match Storage.put_upload!(bucket, "photos/${upload.name}", upload) {
+						Ok({}) => Storage.get!(bucket, "photos/${upload.name}") ?? []
+						Err(_) => []
+					}
+				Ok({ title: given.title, photo: given.photo, type: upload.type, size: kept.len(), sha: Sha256.hex(kept), files: Server.files(request).len() })
+			}
+			Err(NoFile) => Err(BadRequest("no photo"))
+		}
+	},
+)
 
 ## POST /endpoint/order-json: the same, made as a function generic in its arg makes one
 ## (`local_json`): a form's fields are read as strings.

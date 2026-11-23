@@ -379,6 +379,10 @@ async fn from_roc(request: Request<Incoming>, config: Arc<Config>, peer: String)
     let answered = coroutine::run(move || {
         hosted::call_asking(answering.clone(), || {
             let mut answer = roc::respond(&answering)?;
+            // The reads its submission reads again in the browser (`Router.revalidate!`, D-054).
+            if let Some(keys) = hosted::revalidated().filter(|keys| keys.is_ascii()) {
+                answer.headers = if answer.headers.is_empty() { format!("x-rocx-revalidate: {keys}") } else { format!("{}\nx-rocx-revalidate: {keys}", answer.headers) };
+            }
             // A page of components: rendered for GET (and any other method), with the status it
             // set (`<HttpStatusCode>`); not for HEAD, which gets the answer's status and headers.
             if let Some(page) = answer.page.take() {

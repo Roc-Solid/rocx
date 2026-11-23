@@ -142,6 +142,9 @@ struct Render {
     secrets: Vec<String>,
     /// The title the last `<Title>` rendered said, if one did (`Host.title!`): the page's `<head>`'s.
     title: Option<String>,
+    /// The `<Meta>`s, `<Link>`s and `<Style>`s rendered (`Host.head!`, D-054), in order: each its key
+    /// and its markup, for the page's `<head>` (`headed`).
+    heads: Vec<(String, String)>,
     /// The first redirect a GET the page read was answered with as it rendered (its
     /// middleware sending the visitor elsewhere): the page's answer instead.
     redirect: Option<Redirect>,
@@ -237,13 +240,14 @@ pub fn render_page(page: roc::Page) -> Result<Rendered, Crash> {
     let answers = std::mem::take(&mut render.recorded);
     let flash = render.flash.take().map(|flash| without_secrets(&flash, &render.secrets));
     let title = render.title.take();
+    let heads = std::mem::take(&mut render.heads);
     let redirect = render.redirect.take();
     render.release_all();
     roc::drop_page(page);
     match (walked, redirect) {
         (Err(Stop::Crashed(why)), _) => Err(Crash(why)),
         (_, Some(redirect)) => Ok(Rendered::Redirect(redirect)),
-        (Ok(markup), None) => Ok(Rendered::Page(document(&titled(&markup, title.as_deref()), &answers, flash.as_deref()))),
+        (Ok(markup), None) => Ok(Rendered::Page(document(&headed(&titled(&markup, title.as_deref()), &heads), &answers, flash.as_deref()))),
         (Err(Stop::Failed(why)), None) => Err(Crash(format!("{why} (with no <Errored> around it)"))),
     }
 }
@@ -257,6 +261,24 @@ fn titled(markup: &str, title: Option<&str>) -> String {
     let own = markup[..end].match_indices("<title").find(|(at, _)| matches!(markup.as_bytes().get(at + 6), Some(b'>' | b' ' | b'\t' | b'\n' | b'\r' | b'\x0c')));
     let at = own.map(|(at, _)| at).unwrap_or(end);
     format!("{}<title data-rocx>{}</title>{}", &markup[..at], title.replace('&', "&amp;").replace('<', "&lt;"), &markup[at..])
+}
+
+/// The markup with the `<Meta>`s, `<Link>`s and `<Style>`s the page rendered before its `</head>`
+/// (web/runtime.js's `headed`), in the order they ran, one with a key only where it is the last with
+/// it (@solidjs/meta's cascade: a page's `<Meta name="description">` over its layout's); as it was
+/// with none, or no `<head>`. The host's own elements (`data-rocx`), which hydration passes over.
+fn headed(markup: &str, heads: &[(String, String)]) -> String {
+    let Some(end) = markup.find("</head>") else { return markup.to_string() };
+    let shown: String = heads
+        .iter()
+        .enumerate()
+        .filter(|(at, (key, _))| key.is_empty() || !heads[at + 1..].iter().any(|(later, _)| later == key))
+        .map(|(_, (_, markup))| markup.as_str())
+        .collect();
+    if shown.is_empty() {
+        return markup.to_string();
+    }
+    format!("{}{shown}{}", &markup[..end], &markup[end..])
 }
 
 /// The rendered markup as the document the browser gets: the flash the page read (if it did) and
@@ -1167,6 +1189,31 @@ pub extern "C" fn roc_title(title: RocStr) {
     touched(false);
     let title = taken(title);
     with(|render| render.title = Some(title));
+}
+
+/// A `<Meta>`, `<Link>` or `<Style>` while the page renders (D-054): noted for its `<head>`
+/// (`headed`), its key and markup.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_head(key: RocStr, markup: RocStr) {
+    let _host = crate::preempt::host();
+    touched(false);
+    let head = (taken(key), taken(markup));
+    with(|render| render.heads.push(head));
+}
+
+/// A submission sent again is the browser's: nothing on the server.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_submission_retry(url: RocStr, _id: u64) {
+    let _host = crate::preempt::host();
+    drop(taken(url));
+}
+
+/// An optimistic write is a handler's, and no handler runs on the server.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_optimistic_set(_id: u64, value: Callable) {
+    let _host = crate::preempt::host();
+    roc::release(value);
+    roc::fail("an optimistic value is written in a handler, not while computing".into())
 }
 
 /// The runtime's form submissions are the browser's: none on the server.

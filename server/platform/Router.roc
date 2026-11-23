@@ -41,7 +41,7 @@ Router := [].{
 	##     <form method="post" action={Endpoint.url_of(join)}>…</form>
 	use_submission! : Endpoint(context, arg, result) => Submission(arg, result)
 	use_submission! = |endpoint| {
-		url = Endpoint.url_of(endpoint)
+		url = Endpoint.base_of(endpoint)
 		Host.action!(url)
 		Submission.of(url, Endpoint.form_of(endpoint))
 	}
@@ -54,7 +54,7 @@ Router := [].{
 	##     <p class:saving={moves.pending!()}>…</p>
 	use_submissions! : Endpoint(context, arg, result) => Submissions(arg, result)
 	use_submissions! = |endpoint| {
-		url = Endpoint.url_of(endpoint)
+		url = Endpoint.base_of(endpoint)
 		Host.action!(url)
 		Submissions.of(url, Endpoint.form_of(endpoint))
 	}
@@ -70,6 +70,11 @@ Router := [].{
 	##     <li on:drop={|| move!({ card: dragged!(), day })}>…</li>
 	##
 	## Called from anywhere but a handler, its function fails; on the server, no handler runs.
+	##
+	## A top-level field of its arg holding the URL of a file the page has (one `on:drop.files`,
+	## `on:paste.files` or `on:change.files` gave, `Html.File`'s `url`), or a list of them, sends the
+	## file: the action goes as a form with files (`multipart/form-data`), its other fields as a
+	## form's, and the endpoint reads the field as the file's name, its bytes with `Server.file`.
 	use_action! : Endpoint(context, arg, result) => (arg => {}) where [arg.Json.Encodable(e)]
 	use_action! = |endpoint| |arg| {
 		request = Endpoint.to_request(endpoint, arg)
@@ -80,6 +85,25 @@ Router := [].{
 			}
 		Host.submit!(request.method, request.url, request.body, input)
 	}
+
+	## Which of the page's reads a submission's result reads again (Solid Router's `revalidate`
+	## keys), each a URL (`Endpoint.url_of(Api.get_board({}))`): a GET the page read is read again
+	## when its URL is one of them, or begins with one and a `/` or a `?` (`"/api/notes"`: every
+	## note). Without it, a result reads every GET the page read again, as before; with `[]`, none, and
+	## the submission is done at once.
+	##
+	## - In an endpoint's handler, on the server: said in its answer (`x-rocx-revalidate`), for the
+	##   runtime that sent the submission (a form's, or an action's).
+	##
+	##       post! = |{ body, .. }| {
+	##           Router.revalidate!([Endpoint.url_of(Api.get_board({}))])
+	##           Ok(Board.moved!(body))
+	##       }
+	##
+	## - In a handler, in the browser: those reads, read again now (Solid Router's `revalidate(keys)`),
+	##   once the handler is done. Anywhere else in the browser it fails.
+	revalidate! : List(Str) => {}
+	revalidate! = |keys| Host.revalidate!(Json.to_str(keys))
 }
 
 expect Router.parse("/blog/rocx?page=2") == { path: "/blog/rocx", query: "page=2" }

@@ -60,6 +60,10 @@ const js = struct {
     extern "env" fn js_submit(method_ptr: [*]const u8, method_len: usize, url_ptr: [*]const u8, url_len: usize, body_ptr: [*]const u8, body_len: usize, input_ptr: [*]const u8, input_len: usize) void;
     extern "env" fn js_submission_drop(ptr: [*]const u8, len: usize, id: u32) void;
     extern "env" fn js_title(ptr: [*]const u8, len: usize) void;
+    extern "env" fn js_head(key_ptr: [*]const u8, key_len: usize, markup_ptr: [*]const u8, markup_len: usize) void;
+    extern "env" fn js_revalidate(ptr: [*]const u8, len: usize) void;
+    extern "env" fn js_submission_retry(ptr: [*]const u8, len: usize, id: u32) void;
+    extern "env" fn js_optimistic_set(id: u32, value: usize) void;
     extern "env" fn js_untrack(on: u32) void;
     extern "env" fn js_effect_options(render: u32, error_box: u32) void;
     extern "env" fn js_read_at(ptr: [*]const u8, len: usize) usize;
@@ -674,6 +678,35 @@ fn hostedTitle(title: RocStr) callconv(.c) void {
     js.js_title(text.ptr, text.len);
 }
 
+// A `<Meta>`, `<Link>` or `<Style>`'s hole: its key and markup, the runtime's to keep in `<head>`
+// while the hole is there (or, rendering as a server would, the page's).
+fn hostedHead(key: RocStr, markup: RocStr) callconv(.c) void {
+    defer key.decref(host());
+    defer markup.decref(host());
+    const k = key.asSlice();
+    const m = markup.asSlice();
+    js.js_head(k.ptr, k.len, m.ptr, m.len);
+}
+
+// `Router.revalidate!`: the reads to read again (JSON), once the handler is done.
+fn hostedRevalidate(keys: RocStr) callconv(.c) void {
+    defer keys.decref(host());
+    const text = keys.asSlice();
+    js.js_revalidate(text.ptr, text.len);
+}
+
+// `Submission.retry!`, `Submissions.retry!`: a submission sent again, by its id (0, the latest).
+fn hostedSubmissionRetry(url: RocStr, id: u64) callconv(.c) void {
+    defer url.decref(host());
+    const text = url.asSlice();
+    js.js_submission_retry(text.ptr, text.len, @intCast(id));
+}
+
+// `create_optimistic!`'s write: a signal's, held until its handler's submissions are done.
+fn hostedOptimisticSet(id: u64, value: Callable) callconv(.c) void {
+    js.js_optimistic_set(@intCast(id), address(value));
+}
+
 // `Solid.untrack!`: the running computation's reads untracked from on to off.
 fn hostedUntrack(on: bool) callconv(.c) void {
     js.js_untrack(@intFromBool(on));
@@ -805,6 +838,10 @@ comptime {
     @export(&hostedSubmit, .{ .name = "roc_submit", .visibility = hidden });
     @export(&hostedSubmissionDrop, .{ .name = "roc_submission_drop", .visibility = hidden });
     @export(&hostedTitle, .{ .name = "roc_title", .visibility = hidden });
+    @export(&hostedHead, .{ .name = "roc_head", .visibility = hidden });
+    @export(&hostedRevalidate, .{ .name = "roc_revalidate", .visibility = hidden });
+    @export(&hostedSubmissionRetry, .{ .name = "roc_submission_retry", .visibility = hidden });
+    @export(&hostedOptimisticSet, .{ .name = "roc_optimistic_set", .visibility = hidden });
     @export(&hostedUntrack, .{ .name = "roc_untrack", .visibility = hidden });
     @export(&hostedEffectOptions, .{ .name = "roc_effect_options", .visibility = hidden });
     @export(&hostedReadAt, .{ .name = "roc_read_at", .visibility = hidden });

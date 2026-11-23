@@ -364,6 +364,19 @@ Host := [].{
 	## whose `<head>` gets it, the last one rendered's (`<title data-rocx>`).
 	title! : Str => {}
 
+	## A `<Meta>`, `<Link>` or `<Style>` while the server renders: its key (a later one with the same
+	## key takes its place; "" for none) and its markup, noted for the page's `<head>`, before
+	## `</head>`, in the order they ran.
+	head! : Str, Str => {}
+
+	## While a request is answered: the reads its submission has read again in the browser, as JSON
+	## (`["/board"]`), said in the answer (`x-rocx-revalidate`). Elsewhere, nothing.
+	revalidate! : Str => {}
+
+	## Submissions and optimistic writes are the browser's: nothing on the server.
+	submission_retry! : Str, U64 => {}
+	optimistic_set! : U64, Box(() -> a) => {}
+
 	## `Solid.untrack!`: the running computation's reads aren't tracked from `Bool.True` on, until
 	## `Bool.False`. The server tracks nothing, but a hole whose reads were all untracked is static.
 	untrack! : Bool => {}

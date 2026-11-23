@@ -263,6 +263,87 @@ Server := [].{
 				},
 		)
 
+	## A file a form sent (`multipart/form-data`: a form with an `<input type="file">`, or an action
+	## given a file the page picked, dropped or pasted, D-054): the field it came as, its name as the
+	## browser gave it, its type, and its bytes. In the endpoint's arg, its field is its name (a
+	## `Str`); `Server.file` reads the rest, and packages/storage keeps it (`Storage.put_upload!`). A
+	## request's body is read whole (16 MiB at most unless `--max-body` says more), files and all.
+	Upload : { field : Str, name : Str, type : Str, bytes : List(U8) }
+
+	## The files a form sent with its fields (`multipart/form-data`), in the order they came; none
+	## for any other body.
+	files : Request -> List(Upload)
+	files = |request|
+		match Server.multipart(request) {
+			Ok(parts) => parts.files
+			Err(NotMultipart) => []
+		}
+
+	## The file sent as `field` (the first, if several), or `Err(NoFile)`: none was, or the field's
+	## file input was left empty (a browser sends a part with no name and no bytes).
+	file : Request, Str -> Try(Upload, [NoFile])
+	file = |request, field|
+		match Server.files(request).find_first(|upload| upload.field == field and !(upload.name.is_empty() and upload.bytes.is_empty())) {
+			Ok(found) => Ok(found)
+			Err(_) => Err(NoFile)
+		}
+
+	## A `multipart/form-data` body as its parts: each text part a field, as `form_fields` reads a
+	## URL-encoded body; each part with a `filename` an upload, its field's value its name (as the
+	## browser's `URLSearchParams` of the form's data gives it). `Err(NotMultipart)` for any other
+	## body, or one without its boundary.
+	multipart : Request -> Try({ fields : List({ name : Str, value : Str }), files : List(Upload) }, [NotMultipart])
+	multipart = |request| {
+		boundary =
+			match boundary_of(Server.header(request, "content-type") ?? "") {
+				Ok(found) => found
+				Err(NotMultipart) => return Err(NotMultipart)
+			}
+		delimiter = "--${boundary}".to_utf8()
+		closing = ['\r', '\n'].concat(delimiter)
+		body = request.body
+		var $at =
+			match found_at(body, delimiter, 0) {
+				Ok(first) => first + delimiter.len()
+				Err(NotFound) => return Err(NotMultipart)
+			}
+		var $fields = []
+		var $files = []
+		var $going = Bool.True
+		while $going {
+			# After a delimiter: `--`, the end; else its line's end, then a part to the next one.
+			if body.sublist({ start: $at, len: 2 }) == ['-', '-'] {
+				$going = Bool.False
+			} else {
+				start =
+					match found_at(body, ['\r', '\n'], $at) {
+						Ok(line_end) => line_end + 2
+						Err(NotFound) => body.len()
+					}
+				match found_at(body, closing, start) {
+					Ok(end) => {
+						part = body.sublist({ start, len: end - start })
+						match part_of(part) {
+							Field(field) => {
+								$fields = $fields.append(field)
+							}
+							File(upload) => {
+								$fields = $fields.append({ name: upload.field, value: upload.name })
+								$files = $files.append(upload)
+							}
+							Unnamed => {}
+						}
+						$at = end + closing.len()
+					}
+					Err(NotFound) => {
+						$going = Bool.False
+					}
+				}
+			}
+		}
+		Ok({ fields: $fields, files: $files })
+	}
+
 	## What a form posted without the runtime (a plain `<form method="post">`) comes back to its page
 	## with: the URL it posted to, its fields as typed, and the endpoint's answer, its status and
 	## body (200 and the result as JSON, or a refusal's status and why). `Endpoint.respond!` sends
@@ -597,6 +678,97 @@ expect Server.clear_cookie(Server.redirect("/"), "__Host-session", { ..Server.co
 expect http_date(0) == "Thu, 01 Jan 1970 00:00:00 GMT"
 expect http_date(951782400000) == "Tue, 29 Feb 2000 00:00:00 GMT"
 expect http_date(4102444799999) == "Thu, 31 Dec 2099 23:59:59 GMT"
+
+## A `content-type`'s boundary, when it is `multipart/form-data`'s.
+boundary_of : Str -> Try(Str, [NotMultipart])
+boundary_of = |type| {
+	pieces = type.split_on(";")
+	kind = (pieces.first() ?? "").trim().with_ascii_lowercased()
+	if kind != "multipart/form-data" {
+		return Err(NotMultipart)
+	}
+	found = pieces.drop_first(1).keep_oks(
+		|piece|
+			match piece.trim().split_first("=") {
+				Ok({ before, after }) if before.trim().with_ascii_lowercased() == "boundary" => Ok(unquoted(after.trim()))
+				_ => Err(NotIt)
+			},
+	)
+	match found.first() {
+		Ok(boundary) if !boundary.is_empty() => Ok(boundary)
+		_ => Err(NotMultipart)
+	}
+}
+
+## A parameter's value without the quotes around it, if it has them.
+unquoted : Str -> Str
+unquoted = |value|
+	if value.starts_with("\"") and value.ends_with("\"") and value.count_utf8_bytes() >= 2 {
+		Str.from_utf8_lossy(value.to_utf8().drop_first(1).drop_last(1))
+	} else {
+		value
+	}
+
+## Where `needle` first is in `bytes`, from `from` on.
+found_at : List(U8), List(U8), U64 -> Try(U64, [NotFound])
+found_at = |bytes, needle, from| {
+	first =
+		match needle.first() {
+			Ok(byte) => byte
+			Err(_) => return Err(NotFound)
+		}
+	if bytes.len() < needle.len() {
+		return Err(NotFound)
+	}
+	last = bytes.len() - needle.len()
+	var $at = from
+	while $at <= last {
+		if (bytes.get($at) ?? 0) == first and bytes.sublist({ start: $at, len: needle.len() }) == needle {
+			return Ok($at)
+		}
+		$at = $at + 1
+	}
+	Err(NotFound)
+}
+
+## One part of a multipart body: its headers, a blank line, its content. A text field, or a file
+## (a part with a `filename`); one with no name is passed over.
+part_of : List(U8) -> [Field({ name : Str, value : Str }), File(Server.Upload), Unnamed]
+part_of = |part| {
+	(head, content) =
+		match found_at(part, ['\r', '\n', '\r', '\n'], 0) {
+			Ok(end) => (Str.from_utf8_lossy(part.sublist({ start: 0, len: end })), part.drop_first(end + 4))
+			Err(NotFound) => ("", [])
+		}
+	lines = head.split_on("\r\n")
+	header_of = |wanted|
+		lines.keep_oks(
+			|line|
+				match line.split_first(":") {
+					Ok({ before, after }) if before.trim().with_ascii_lowercased() == wanted => Ok(after.trim())
+					_ => Err(NotIt)
+				},
+		).first() ?? ""
+	params = header_of("content-disposition").split_on(";").drop_first(1).keep_oks(
+		|param|
+			match param.trim().split_first("=") {
+				Ok({ before, after }) => Ok({ key: before.trim().with_ascii_lowercased(), value: escaped_back(unquoted(after.trim())) })
+				Err(_) => Err(NotIt)
+			},
+	)
+	param = |wanted| params.find_first(|each| each.key == wanted).map_ok(|each| each.value)
+	match (param("name"), param("filename")) {
+		(Ok(name), Ok(filename)) => File({ field: name, name: filename, type: header_of("content-type"), bytes: content })
+		(Ok(name), Err(_)) => Field({ name, value: Str.from_utf8_lossy(content) })
+		_ => Unnamed
+	}
+}
+
+## A name or file name as a browser writes it in a part's header, its quote and line breaks as
+## `%22`, `%0D` and `%0A`, read back.
+escaped_back : Str -> Str
+escaped_back = |name| name.replace_each("%22", "\"").replace_each("%0D", "\r").replace_each("%0A", "\n")
+
 expect Server.decode_segment(Server.encode_segment("zażółć & co")) == "zażółć & co"
 expect Server.cookie(Server.from_host("/", "cookie: a=1; user=Grace%20Hopper%zz"), "user") == Ok("Grace Hopper%zz")
 expect Server.cookie(Server.from_host("/", "cookie: a=1"), "user") == Err(Missing)
@@ -637,3 +809,16 @@ expect from_wire("POST /rocx/call/Demos/Echo.echo?x=1\ncookie: member=Ada\nconte
 expect from_wire("GET /about") == { method: "GET", path: "/about", query: "", headers: [], body: [], route: "", peer: "" }
 expect from_wire("GET /about?x=1 203.0.113.7\nhost: example.com") == { method: "GET", path: "/about", query: "x=1", headers: [{ name: "host", value: "example.com" }], body: [], route: "", peer: "203.0.113.7" }
 expect from_wire("") == { method: "GET", path: "/", query: "", headers: [], body: [], route: "", peer: "" }
+
+## A form with a file, as a browser sends it: its text fields, and the file, its name the field's value.
+expect {
+	body = "--XyZ\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nSea, at dusk\r\n--XyZ\r\nContent-Disposition: form-data; name=\"photo\"; filename=\"sea %22blue%22.png\"\r\nContent-Type: image/png\r\n\r\n".to_utf8().concat([0x89, 0x0D, 0x0A, 0x00]).concat("\r\n--XyZ\r\nContent-Disposition: form-data; name=\"empty\"; filename=\"\"\r\nContent-Type: application/octet-stream\r\n\r\n\r\n--XyZ--\r\n".to_utf8())
+	request = Server.from_http("POST", "/photos", "content-type: multipart/form-data; boundary=XyZ", body)
+	parts = Server.multipart(request) ?? { fields: [], files: [] }
+	parts.fields == [{ name: "title", value: "Sea, at dusk" }, { name: "photo", value: "sea \"blue\".png" }, { name: "empty", value: "" }]
+		and Server.file(request, "photo") == Ok({ field: "photo", name: "sea \"blue\".png", type: "image/png", bytes: [0x89, 0x0D, 0x0A, 0x00] })
+		and Server.file(request, "empty") == Err(NoFile)
+		and Server.files(request).len() == 2
+}
+expect Server.multipart(Server.from_http("POST", "/photos", "content-type: application/x-www-form-urlencoded", "a=1".to_utf8())) == Err(NotMultipart)
+expect boundary_of("Multipart/Form-Data; boundary=\"a b\"") == Ok("a b")

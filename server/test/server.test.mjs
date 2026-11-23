@@ -665,6 +665,42 @@ test("endpoints: a typed body (D-038): a plain form, the runtime's form, an acti
 	assert.deepEqual(await (await get("/endpoint/order-json", { method: "POST", body: "item=tea&count=2", headers: { "content-type": form } })).json(), "2 tea");
 });
 
+test("endpoints: a form with files (multipart, D-054) is read as a form, a file's field its name, Server.file its bytes, kept by Storage.put_upload!; a form's URL's fields come before its body's (Endpoint.with_fields); a handler's Router.revalidate! is in its answer; a plain one goes back with a flash; an upload over the body's limit is a 413", { skip }, async () => {
+	const photo = randomBytes(3 * MiB);
+	const form = () => {
+		const data = new FormData();
+		data.append("title", "Sea, at dusk");
+		data.append("photo", new Blob([photo], { type: "image/png" }), "sea.png");
+		return data;
+	};
+	const sent = await get("/endpoint/photo", { method: "POST", body: form(), headers: { accept: "application/json", "x-rocx-submission": "1" } });
+	assert.equal(sent.status, 200, await sent.clone().text());
+	assert.match(sent.headers.get("content-type"), /^application\/json/);
+	assert.equal(sent.headers.get("x-rocx-revalidate"), '["/photos"]', "what its submission reads again");
+	assert.deepEqual(await sent.json(), { title: "Sea, at dusk", photo: "sea.png", type: "image/png", size: 3 * MiB, sha: sha256(photo), files: 1 });
+	// A file input left empty: a part with no name and no bytes, which isn't a file.
+	const empty = new FormData();
+	empty.append("title", "Nothing");
+	empty.append("photo", new Blob([], { type: "application/octet-stream" }), "");
+	const none = await get("/endpoint/photo", { method: "POST", body: empty });
+	assert.deepEqual([none.status, await none.text()], [400, "no photo"]);
+	// A plain form with a file: back to its page, its result in the flash.
+	const plain = await get("/endpoint/photo", { method: "POST", body: form(), redirect: "manual", headers: { accept: "text/html", referer: `${server.url}/flash/page` } });
+	assert.equal(plain.status, 303);
+	assert.equal(JSON.parse(decodeURIComponent(plain.headers.get("x-rocx-flash"))).status, 200);
+	// Fields given ahead of time, in the URL: read first, the body's after.
+	const order = await get("/endpoint/order?item=tea&count=2", { method: "POST", body: "price=3.5&size=Large", headers: { "content-type": "application/x-www-form-urlencoded" } });
+	assert.deepEqual(await order.json(), "2 large tea at 3.5, with ");
+	const over = await get("/endpoint/order?item=tea&count=2", { method: "POST", body: "count=3&price=3.5&size=Large", headers: { "content-type": "application/x-www-form-urlencoded" } });
+	assert.deepEqual(await over.json(), "3 large tea at 3.5, with ", "a field the body has too: the body's");
+	// An upload over the body's limit (16 MiB here): refused before Roc sees it.
+	const big = new FormData();
+	big.append("photo", new Blob([randomBytes(17 * MiB)], { type: "image/png" }), "big.png");
+	const refused = await get("/endpoint/photo", { method: "POST", body: big, headers: { accept: "application/json", "x-rocx-submission": "1" } });
+	assert.deepEqual([refused.status, await refused.text()], [413, "the request's body is too large"]);
+	assert.equal(await until(async () => (await live()) === baseline), true, `the uploads were let go of: ${await live()} allocations, ${baseline} once started`);
+});
+
 // ---- Forward ----
 
 /** A server for `Server.forward` to fetch from (this file runs it): `/file`, 3 MiB with ranges, an

@@ -156,6 +156,27 @@ Host := [].{
 	## page's `<head>`.
 	title! : Str => {}
 
+	## A `<Meta>`, `<Link>` or `<Style>` (its hole's run): its key (`meta name=description`: a later
+	## one with the same key takes its place; "" for none) and its markup, `data-rocx` on it. In the
+	## browser, the runtime keeps each in `<head>` while its hole's computation is there, in the order
+	## they first ran; rendering as a server would, noted for the page's `<head>`.
+	head! : Str, Str => {}
+
+	## The reads to read again, as JSON (`["/board"]`: a GET whose URL is one, or begins with one
+	## and a `/` or a `?`): in a handler, in the browser, read again once it is done
+	## (`Router.revalidate!`); anywhere else there, it fails. On the server, said in the answer of the
+	## request being answered (`x-rocx-revalidate`), for the submission that sent it.
+	revalidate! : Str => {}
+
+	## Sends a submission to this URL again, by its id (0: the latest), with what it sent before
+	## (in a handler, once it is done).
+	submission_retry! : Str, U64 => {}
+
+	## `create_optimistic!`'s write, in a handler: shown once the handler is done, and held until
+	## the submissions the handler sent (or the form its submit event sends) are done; with none,
+	## undone at once.
+	optimistic_set! : U64, Box(() -> a) => {}
+
 	## `Solid.untrack!`: the running computation's reads aren't tracked from `Bool.True` on, until
 	## `Bool.False` (a computation made meanwhile tracks its own).
 	untrack! : Bool => {}

@@ -25,7 +25,10 @@ import Host
 ## (a plain form, or one the runtime sent) are read by the arg's type too (`FormBody`, D-038), a
 ## number from its text, a box left unticked `Bool.False`, the values a name has as a `List`. The
 ## endpoint keeps that reader (`form`), made where its arg's type is known (`remote`, `local`).
-Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Request, context, arg => Try(result, Endpoint.Refusal), form : [Typed(List({ name : Str, value : Str }) -> Try(arg, Str)), Untyped] }.{
+##
+## A form's fields may be given ahead of time (`with_fields`, Solid Router's `action.with`): they go in the
+## URL the form posts to, and its own fields after them.
+Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Request, context, arg => Try(result, Endpoint.Refusal), form : [Typed(List({ name : Str, value : Str }) -> Try(arg, Str)), Untyped], bound : Str }.{
 
 	## What a handler may answer instead of its result: a status, and why; or exactly this answer.
 	Refusal : [BadRequest(Str), Unauthorized, Forbidden, NotFound, Conflict(Str), Status(U16, Str), Answer(Server.Response)]
@@ -34,14 +37,14 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	## what it does (a test's, or one made for `run!` alone). Its reader of a form (`FormBody`) is
 	## made here, where its arg's type is known.
 	local : Str, Str, (Server.Request, context, arg => Try(result, Refusal)) -> Endpoint(context, arg, result) where [arg.FormBody.Readable]
-	local = |method, url, handler| { method: method, url: url, run: handler, form: Typed(|fields| FormBody.parse(fields)) }
+	local = |method, url, handler| { method: method, url: url, run: handler, form: Typed(|fields| FormBody.parse(fields)), bound: "" }
 
 	## As `local`, for a function generic in its arg that knows it as JSON alone
 	## (`where [arg.Json.Parseable(…)]`, which can't be asked for with `FormBody`'s: see
 	## test/compiler-bugs/two-formats-one-where): an endpoint only code sends (`run!`). A form posted
 	## to it is read as a record of strings.
 	local_json : Str, Str, (Server.Request, context, arg => Try(result, Refusal)) -> Endpoint(context, arg, result)
-	local_json = |method, url, handler| { method: method, url: url, run: handler, form: Untyped }
+	local_json = |method, url, handler| { method: method, url: url, run: handler, form: Untyped, bound: "" }
 
 	## A contract: its method and URL, and nothing it does; its types are the annotation's of what
 	## names it (`Generated/Api.roc`'s, copied from its handler's). Its `run` captures nothing, so
@@ -51,7 +54,7 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	## server's router reads a form posted to it with it (`bind` keeps it), and the browser what a
 	## form sent (`Router.use_submission!`).
 	remote : Str, Str -> Endpoint(context, arg, result) where [arg.FormBody.Readable]
-	remote = |method, url| { method: method, url: url, run: |_, _, _| crash "Endpoint.run! was given a contract (Generated/Api), which has no handler: give it Generated/Handlers' endpoint of the same name. In the browser, send it (Endpoint.send!)", form: Typed(|fields| FormBody.parse(fields)) }
+	remote = |method, url| { method: method, url: url, run: |_, _, _| crash "Endpoint.run! was given a contract (Generated/Api), which has no handler: give it Generated/Handlers' endpoint of the same name. In the browser, send it (Endpoint.send!)", form: Typed(|fields| FormBody.parse(fields)), bound: "" }
 
 	## On the server: the contract `endpoint` (Api's: its method, its URL, its types) with the
 	## handler that answers it, as `Generated/Handlers.roc` pairs each route's
@@ -59,7 +62,7 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	## context }))`), so the compiler checks that they agree. The router answers with it (`respond!`,
 	## `stream!`, `channel!`), and `run!` runs it. It keeps the contract's reader of a form.
 	bind : Endpoint(context, arg, result), (Server.Request, context, arg => Try(result, Refusal)) -> Endpoint(context, arg, result)
-	bind = |endpoint, handler| { method: endpoint.method, url: endpoint.url, run: handler, form: endpoint.form }
+	bind = |endpoint, handler| { method: endpoint.method, url: endpoint.url, run: handler, form: endpoint.form, bound: endpoint.bound }
 
 	## Its reader of a form's fields as its arg (`FormBody`), or why it can't: what a submission of a
 	## form to it reads what was typed with (`Router.use_submission!`, `Submission.input!`).
@@ -323,9 +326,49 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	channel_asked : Server.Request -> Str
 	channel_asked = |request| Server.header(request, "x-rocx-channel") ?? ""
 
-	## Its URL: where a form posts to it, say.
+	## Its URL: where a form posts to it, say, with the fields `with_fields` gave it in its query.
 	url_of : Endpoint(context, arg, result) -> Str
-	url_of = |endpoint| endpoint.url
+	url_of = |endpoint|
+		if endpoint.bound.is_empty() {
+			endpoint.url
+		} else if endpoint.url.contains("?") {
+			"${endpoint.url}&${endpoint.bound}"
+		} else {
+			"${endpoint.url}?${endpoint.bound}"
+		}
+
+	## Its URL without the fields `with_fields` gave it: what its submissions are kept by
+	## (`Router.use_submissions!`), so a form's with bound fields are the endpoint's too, as Solid
+	## Router keeps an `action.with`'s.
+	base_of : Endpoint(context, arg, result) -> Str
+	base_of = |endpoint| endpoint.url
+
+	## The endpoint with some of a form's fields given ahead of time (Solid Router's `action.with`):
+	## `bound`, a record of them (as JSON writes it: text, numbers, yes-or-no, choices, lists of them),
+	## goes in the URL the form posts to (`url_of`: `/todos/toggle?id=7`), read before the form's own
+	## fields, with JavaScript or without. Its submissions are the endpoint's (`base_of`).
+	##
+	##     <form method="post" action={Endpoint.url_of(Endpoint.with_fields(toggle, { id: todo.id }))}>
+	##         <button name="done" value="true">Done</button>
+	##     </form>
+	##
+	## The endpoint reads them as it reads any form's: an action (`Router.use_action!`) sends its whole
+	## arg as JSON, so a handler binds its values in a closure instead (`|done| toggle!({ id, done })`).
+	## A record inside a field has no form: it crashes, saying so.
+	with_fields : Endpoint(context, arg, result), bound -> Endpoint(context, arg, result) where [bound.Json.Encodable(e)]
+	with_fields = |endpoint, bound| {
+		fields =
+			match Json.to_str_try(bound) {
+				Ok(json) =>
+					match json_fields(json) {
+						Ok(found) => found
+						Err(why) => crash "Endpoint.with_fields(${endpoint.url}, …): ${why}"
+					}
+				Err(_) => crash "Endpoint.with_fields(${endpoint.url}, …): its fields ${Server.unwritable}"
+			}
+		encoded = Str.join_with(fields.map(|field| "${Server.encode_segment(field.name)}=${Server.encode_segment(field.value)}"), "&")
+		{ ..endpoint, bound: if (endpoint.bound.is_empty()) encoded else if (encoded.is_empty()) endpoint.bound else "${endpoint.bound}&${encoded}" }
+	}
 
 	## On the server: runs it there and then, with the request being answered and the context its
 	## handler is given (its middleware doesn't run: the caller ran its own); a refusal as the
@@ -410,7 +453,7 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 		posted = Endpoint.posted_by(request)
 		reply! = |status, body|
 			match posted {
-				PlainForm => Server.flash_back!(request, { url: endpoint.url, input: Server.text_of(request), status, body })
+				PlainForm => Server.flash_back!(request, { url: endpoint.url, input: form_input(read), status, body })
 				_ => if (status == 200) Server.response(200, [{ name: "content-type", value: "application/json" }], body) else text(status, body)
 			}
 		match parsed {
@@ -478,7 +521,7 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	posted_by = |request|
 		if Server.header(request, "x-rocx-submission").is_ok() {
 			Runtime
-		} else if media_type(Server.header(request, "content-type") ?? "") == "application/x-www-form-urlencoded" and Server.wants_html(request) {
+		} else if is_form(media_type(Server.header(request, "content-type") ?? "")) and Server.wants_html(request) {
 			PlainForm
 		} else {
 			Other
@@ -562,14 +605,21 @@ json_answer = |json| Server.response(200, [{ name: "content-type", value: "appli
 closing : Str -> Try({ who : who, why : Channel.Closed }, [InvalidJson(Str)]) where [who.Json.Parseable([InvalidJson(Str)])]
 closing = |body| Json.parse(body)
 
-## What an endpoint's arg is read from: a form's fields (`Fields`, read by the arg's type); the
-## body as JSON, when it says it is JSON, or `{}` for no body (`Read`). A body of any other type
-## isn't read (`Unread`, with its type): an upload, which the handler reads itself.
+## What an endpoint's arg is read from: a form's fields (`Fields`, read by the arg's type: the
+## URL's query first, its fields given ahead of time, `with_fields`; then the body's, URL-encoded or
+## multipart, a file's its name); the body as JSON, when it says it is JSON, or `{}` for no body
+## (`Read`). A body of any other type isn't read (`Unread`, with its type): an upload, which the
+## handler reads itself.
 input_of : Server.Request -> [Fields(List({ name : Str, value : Str })), Read(Str), Unread(Str)]
 input_of = |request| {
 	type = media_type(Server.header(request, "content-type") ?? "")
 	if type == "application/x-www-form-urlencoded" {
-		Fields(Server.form_fields(Server.text_of(request)))
+		Fields(Server.form_fields(request.query).concat(Server.form_fields(Server.text_of(request))))
+	} else if type == "multipart/form-data" {
+		match Server.multipart(request) {
+			Ok(parts) => Fields(Server.form_fields(request.query).concat(parts.fields))
+			Err(NotMultipart) => Unread("multipart/form-data with no boundary")
+		}
 	} else if type == "application/json" or type.ends_with("+json") {
 		body = Server.text_of(request)
 		Read(if (body.trim().is_empty()) "{}" else body)
@@ -579,6 +629,108 @@ input_of = |request| {
 		Unread(type)
 	}
 }
+
+## Whether a body of this type is a form's: URL-encoded, or multipart (a form with files).
+is_form : Str -> Bool
+is_form = |type| type == "application/x-www-form-urlencoded" or type == "multipart/form-data"
+
+## What a form sent, as a flash keeps it (`Server.flash_back!`): its fields, the URL's and the
+## body's (a file's its name), URL-encoded.
+form_input : [Fields(List({ name : Str, value : Str })), Read(Str), Unread(Str)] -> Str
+form_input = |read|
+	match read {
+		Fields(fields) => Str.join_with(fields.map(|field| "${Server.encode_segment(field.name)}=${Server.encode_segment(field.value)}"), "&")
+		Read(json) => json
+		Unread(_) => ""
+	}
+
+## A record's JSON (`{"id":7,"tags":["a","b"],"done":true}`) as a form's fields: text as it is,
+## a number, `true` or `false` as written, `null` as nothing, a list as its items, each a field of
+## the same name. A record or a list inside one has no form: why not.
+json_fields : Str -> Try(List({ name : Str, value : Str }), Str)
+json_fields = |json| {
+	bytes = json.to_utf8()
+	var $at = spaces(bytes, 0)
+	if (bytes.get($at) ?? ' ') != '{' {
+		return Err("its fields are a record's")
+	}
+	$at = spaces(bytes, $at + 1)
+	var $fields = []
+	while (bytes.get($at) ?? '}') != '}' {
+		name = json_string(bytes, $at)?
+		$at = spaces(bytes, name.next)
+		if (bytes.get($at) ?? ' ') != ':' {
+			return Err("its JSON isn't a record's")
+		}
+		$at = spaces(bytes, $at + 1)
+		if (bytes.get($at) ?? ' ') == '[' {
+			$at = spaces(bytes, $at + 1)
+			while (bytes.get($at) ?? ']') != ']' {
+				item = json_scalar(bytes, $at, name.text)?
+				$fields = $fields.concat(item.values.map(|value| { name: name.text, value }))
+				$at = spaces(bytes, item.next)
+				if (bytes.get($at) ?? ' ') == ',' {
+					$at = spaces(bytes, $at + 1)
+				}
+			}
+			$at = spaces(bytes, $at + 1)
+		} else {
+			value = json_scalar(bytes, $at, name.text)?
+			$fields = $fields.concat(value.values.map(|each| { name: name.text, value: each }))
+			$at = spaces(bytes, value.next)
+		}
+		if (bytes.get($at) ?? ' ') == ',' {
+			$at = spaces(bytes, $at + 1)
+		}
+	}
+	Ok($fields)
+}
+
+## Past the spaces at `at`.
+spaces : List(U8), U64 -> U64
+spaces = |bytes, at| {
+	var $at = at
+	while [' ', '\n', '\r', '\t'].contains(bytes.get($at) ?? 'x') {
+		$at = $at + 1
+	}
+	$at
+}
+
+## A JSON string at `at` (its opening quote), read, and where it ends.
+json_string : List(U8), U64 -> Try({ text : Str, next : U64 }, Str)
+json_string = |bytes, at| {
+	if (bytes.get(at) ?? ' ') != '"' {
+		return Err("its JSON isn't a record's")
+	}
+	var $at = at + 1
+	var $escaped = Bool.False
+	while $escaped or (bytes.get($at) ?? '"') != '"' {
+		$escaped = !$escaped and bytes.get($at) == Ok('\\')
+		$at = $at + 1
+	}
+	quoted = Str.from_utf8_lossy(bytes.sublist({ start: at, len: $at + 1 - at }))
+	match Json.parse(quoted) {
+		Ok(read) => Ok({ text: read, next: $at + 1 })
+		Err(InvalidJson(why)) => Err(why)
+	}
+}
+
+## A field's value at `at`: text, a number, `true` or `false` (one value), or `null` (none).
+json_scalar : List(U8), U64, Str -> Try({ values : List(Str), next : U64 }, Str)
+json_scalar = |bytes, at, name|
+	match bytes.get(at) ?? ' ' {
+		'"' => json_string(bytes, at).map_ok(|found| { values: [found.text], next: found.next })
+		'{' => Err("the field ${name} is a record, which a form doesn't have")
+		'[' => Err("the field ${name} is a list of lists, which a form doesn't have")
+		_ => {
+			var $end = at
+			while !([',', '}', ']', ' ', '\n', '\r', '\t'].contains(bytes.get($end) ?? ',')) {
+				$end = $end + 1
+			}
+			word = Str.from_utf8_lossy(bytes.sublist({ start: at, len: $end - at }))
+			Ok({ values: if (word == "null") [] else [word], next: $end })
+		}
+	}
 
 ## A redirect of a handler's own, for the runtime: 200, its `location` as `x-rocx-redirect`, the rest
 ## (a cookie it sets) kept. Any other answer as it is.
@@ -636,3 +788,11 @@ expect redirected(Server.with_cookie(Server.redirect("/members"), "member", "Ada
 expect redirected(Server.redirect("/members")).status == 200
 expect redirected(Server.refused(409, "taken")).status == 409
 expect Endpoint.not_allowed(Server.from_host("/shout", ""), ["POST"]).headers.first() == Ok({ name: "allow", value: "POST" })
+expect json_fields("{\"done\":true,\"id\":7,\"note\":\"a, \\\"b\\\"\",\"tags\":[\"x\",\"y\"],\"gone\":null}") == Ok([{ name: "done", value: "true" }, { name: "id", value: "7" }, { name: "note", value: "a, \"b\"" }, { name: "tags", value: "x" }, { name: "tags", value: "y" }])
+expect json_fields("{\"at\":{\"x\":1}}") == Err("the field at is a record, which a form doesn't have")
+expect Endpoint.url_of(Endpoint.with_fields(shout, { id: 7.U64, tag: "a b" })) == "/shout?id=7&tag=a%20b"
+expect Endpoint.base_of(Endpoint.with_fields(shout, { id: 7.U64 })) == "/shout"
+expect Endpoint.url_of(Endpoint.with_fields(Endpoint.with_query(shout, "weeks=1"), { id: 7.U64 })) == "/shout?weeks=1&id=7"
+expect input_of(Server.from_http("POST", "/todos/toggle?id=7", "content-type: application/x-www-form-urlencoded", "done=on".to_utf8())) == Fields([{ name: "id", value: "7" }, { name: "done", value: "on" }])
+expect input_of(Server.from_http("POST", "/photos", "content-type: multipart/form-data; boundary=b", "--b\r\nContent-Disposition: form-data; name=\"photo\"; filename=\"a.png\"\r\n\r\nPNG\r\n--b--".to_utf8())) == Fields([{ name: "photo", value: "a.png" }])
+expect Endpoint.posted_by(Server.from_http("POST", "/photos", "content-type: multipart/form-data; boundary=b\naccept: text/html", [])) == PlainForm
