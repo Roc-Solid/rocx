@@ -159,7 +159,7 @@ view! = |_|
 			</details>
 
 			<Heading id="primitives">Signals, memos and holes</Heading>
-			<Code source={"import pf.Solid exposing [create_signal!, create_memo!, refresh!, is_pending!, use_context!]"} numbers={Bool.False} />
+			<Code source={"import pf.Solid exposing [create_signal!, create_memo!, refresh!, is_pending!, latest!, untrack!, use_context!]"} numbers={Bool.False} />
 			<FeatureGrid>
 				<Feature title="A signal">
 					<Code source={"(title!, set_title!) =\n\tcreate_signal!(\"Hi\")"} numbers={Bool.False} />
@@ -180,7 +180,9 @@ view! = |_|
 					<p>
 						A computation: the runtime runs it, notes what it read, and runs it again when that
 						changes, patching its own node. Attributes and <code>class:</code> too. One that calls
-						nothing named with <code>!</code> can't change: it is written once, with no closure.
+						nothing named with <code>!</code> can't change: it is written once, with no closure. One
+						whose run read nothing that changes (a prop given a constant) is static too: the server
+						writes it as text, and the browser keeps no computation for it.
 					</p>
 				</Feature>
 				<Feature title="A component">
@@ -197,6 +199,13 @@ view! = |_|
 				compared in Roc, so it finds the memos by running the accessor once and noting what it reads.
 				While the answer is on its way, the old value stays on screen, and
 				<a href="#pending"><code>is_pending!(user!)</code></a> says so.
+			</p>
+			<p>
+				<code>{"untrack!(|| base!())"}</code> reads without tracking, as Solid's <code>untrack</code> does: a
+				memo or a hole that reads <code>base!</code> through it doesn't run again when it changes.
+				<code>{"create_memo!(|| count!() + untrack!(|| base!()))"}</code> follows <code>count!</code> alone,
+				and takes whatever <code>base!</code> is when it does. A hole whose reads are all untracked reads
+				nothing that changes, so it is static.
 			</p>
 
 			<Heading id="passing">Passing them on</Heading>
@@ -218,6 +227,26 @@ view! = |_|
 				function the component makes (<code>{"items.keep_if(|item| item.owner == me)"}</code>) can't call a
 				getter: it is given the value, read where the function is made, by the hole or memo around it.
 			</p>
+			<p>
+				A read in the component's body is made once, so what it shows won't follow the prop. That is
+				what a start value wants (<code>{"create_signal!(untrack!(|| start))"}</code>), and
+				<code>untrack!</code> says it is meant. A dev build (<code>rocx dev</code>, <code>rocx build --dev</code>)
+				says so in the browser's console where it isn't, once a place, as Solid 2.0's dev build does:
+				<code>{"Ui/Chart.rocx:44:39 reads a value that changes (a signal, a memo or a prop) in a component's body, once, …"}</code>.
+				Only a read of something that changes is told: a prop its caller gave a constant reads nothing.
+			</p>
+			<p>
+				A component passes its props on as Solid's do. <code>{"|{ kind, ..rest }|"}</code> takes
+				<code>kind</code> out and keeps the rest in a record, as Solid's <code>omit</code> does, and
+				<code>{"<Base {...rest} size={3} />"}</code> gives them to another component, as JSX's spread and
+				Solid's <code>merge</code> do: the last of a name wins. They stay getters, so <code>Base</code> reads
+				the caller's expressions where it reads them, live. Where the view's props are annotated, rocx
+				writes the fields out one by one (<code>label: rest.label</code>), and attributes may add some;
+				without an annotation it writes Roc's record update (<code>{"{ ..rest, size: || 3 }"}</code>), and
+				<code>Base</code>'s props must then be the record's type (<code>rocx check</code> says what to do if
+				they aren't).
+			</p>
+			<Code source={"Button := [].{\n\tview! : { kind : Str, label : Str, on_press! : () => {} } => Html\n\tview! = |{ kind, ..rest }| <span class={kind}><Base {...rest} size={3} /></span>\n}\n# Base.view!({ label: rest.label, on_press!: rest.on_press!, size: || 3 })"} numbers={Bool.False} />
 			<p>
 				A prop named as an effect, <code>{"text!={user!().name}"}</code>, is the same getter written by hand:
 				the child types it (<code>{"text! : () => Str"}</code>) and calls it (<code>text!()</code>). To let a
@@ -749,7 +778,10 @@ view! = |_|
 				is right, but the reader can't tell that what they see is on its way out. Solid 2.0's
 				<code>isPending</code> is how a component says so, and here it is <code>is_pending!</code>. The rule
 				is Solid's: the first load is <code>{"<Loading>"}</code>'s; loading again is
-				<code>is_pending!</code>'s.
+				<code>is_pending!</code>'s. <code>latest!(posts!)</code> is Solid 2.0's <code>latest</code>, the last
+				value a memo settled at: here every read is that already (nothing holds a write back until a change
+				is done, as Solid's transitions do), so it reads as <code>posts!()</code> does, and is there for code
+				written as Solid's is.
 			</p>
 			<Code source={"import pf.Solid exposing [create_signal!, create_memo!, refresh!, is_pending!]\n\n(page!, set_page!) = create_signal!(1.U64)\nposts! = create_memo!(|| Endpoint.get!(Endpoint.with_query(Api.get_posts({}), \"page=\${page!().to_str()}\")))\n\n<Loading fallback={<p>Loading…</p>}>\n\t<ul class:stale={is_pending!(posts!)}>\n\t\t<For each!={posts!()} keyed={|post| post.id}>\n\t\t\t{|post!, _| <li>{post!().title}</li>}\n\t\t</For>\n\t</ul>\n</Loading>\n<button on:click={|| refresh!(posts!)}>Refresh</button>\n<button on:click={|| set_page!(page!() + 1)}>Next page</button>\n<Show when!={is_pending!(posts!)}><p>Updating…</p></Show>"} numbers={Bool.False} />
 			<ul>
@@ -799,6 +831,10 @@ view! = |_|
 						<tr><td><code>{"const user = createMemo(() => …)"}</code></td><td><code>{"user! = create_memo!(|| …)"}</code></td></tr>
 						<tr><td><code>refresh(user)</code></td><td><code>refresh!(user!)</code></td></tr>
 						<tr><td><code>{"isPending(() => user())"}</code></td><td><code>is_pending!(user!)</code></td></tr>
+						<tr><td><code>{"latest(() => user())"}</code></td><td><code>latest!(user!)</code>, which every read already is</td></tr>
+						<tr><td><code>{"untrack(() => base())"}</code></td><td><code>{"untrack!(|| base!())"}</code></td></tr>
+						<tr><td><code>{"omit(props, \"kind\")"}</code>, <code>{"<Base {...rest} />"}</code></td><td><code>{"|{ kind, ..rest }|"}</code>, <code>{"<Base {...rest} />"}</code></td></tr>
+						<tr><td><code>{"merge(rest, { size: 3 })"}</code></td><td><code>{"<Base {...rest} size={3} />"}</code>: the last of a name wins</td></tr>
 						<tr><td><code>{"createEffect(() => room(), (room) => { …; return () => … })"}</code></td><td><code>{"create_effect!(|| room!(), |room| { …; on_cleanup!(|| …) })"}</code></td></tr>
 						<tr><td><code>{"onCleanup(() => …)"}</code></td><td><code>{"on_cleanup!(|| …)"}</code></td></tr>
 						<tr><td><code>{"onSettled(() => …)"}</code> (<code>onMount</code>, before 2.0)</td><td><code>{"on_settled!(|| …)"}</code></td></tr>
@@ -920,9 +956,10 @@ view! = |_|
 				<div class="roadmap-done">
 					<h3>Works now</h3>
 					<ul>
-						<li>Signals, memos, <code>refresh!</code>, <code>is_pending!</code></li>
-						<li>Holes: text, attributes, classes, custom properties</li>
-						<li>Props as Solid's getters, patched where they are read; accessor props</li>
+						<li>Signals, memos, <code>refresh!</code>, <code>is_pending!</code>, <code>latest!</code>, <code>untrack!</code></li>
+						<li>Holes: text, attributes, classes, custom properties; static when they read nothing that changes</li>
+						<li>Props as Solid's getters, patched where they are read; accessor props; passed on with <code>{"{...rest}"}</code></li>
+						<li>A dev build's warning of a read made once, in a component's body</li>
 						<li>Contexts, and components that run where they are rendered</li>
 						<li>A page as one tree, hydrated whole; <code>{"<NoHydration>"}</code> for what stays the server's</li>
 						<li>A signal goes with the part that made it</li>
@@ -948,8 +985,7 @@ view! = |_|
 					<h3>Next, from Solid 2.0</h3>
 					<ul>
 						<li><code>{"<Switch>"}</code>, <code>{"<Match>"}</code>, keyed <code>{"<Show>"}</code></li>
-						<li><code>untrack</code>, an effect's <code>error</code> handler</li>
-						<li><code>latest</code>, which Solid 2.0 has beside <code>isPending</code></li>
+						<li>An effect's <code>error</code> handler; render effects (<code>createRenderEffect</code>)</li>
 						<li>Stores, as <code>createStore</code> makes them: nested, each field its own signal</li>
 					</ul>
 				</div>

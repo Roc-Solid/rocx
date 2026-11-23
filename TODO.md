@@ -40,10 +40,6 @@ When an item lands, delete its line here in the same commit.
 
 ## Framework work, decided but not built
 
-- **After D-039 (value props are getters)**, from `spike/reactive-props/DESIGN.md`, "Follow-ups":
-  - `untrack`, and with it Solid 2.0's dev warning for a reactive read in a component's body;
-  - a hole that reads nothing becomes static markup, on the server and while hydrating alike;
-  - `merge` and `omit` for passing a props record on.
 - **The rest of Solid 2.0 and Solid Router's actions:** see `web/README.md`, "Not yet".
 - **packages/presence:** W1 (where the pointer is: `on:pointermove.point`), W3 (whether the page is
   visible: `<Document on:visibilitychange>` now exists) and R1 (a type variable's JSON through a

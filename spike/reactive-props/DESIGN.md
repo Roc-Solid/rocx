@@ -535,6 +535,10 @@ Spike (`specialize/*_6.roc`): one component with two props, read in three holes 
 
 ## Follow-ups (not in D-039)
 
+All three built in D-052 (2026-11-23): `untrack!` and the dev build's warning, holes that read
+nothing written as static by the server and adopted as text, and `..rest` with `{...rest}` for
+Solid's `omit` and `merge`. What follows is what was asked.
+
 - **`untrack`** (Solid's), and with it **Solid 2.0's dev warning** for a reactive read at a
   component's top level (a prop's getter or a signal read in the body), whose fix is `untrack`.
 - **A hole that read nothing is static**: written without comments by the server, adopted as text

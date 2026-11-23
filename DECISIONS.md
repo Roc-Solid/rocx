@@ -2695,6 +2695,94 @@ not media. A page loads every plugin's scripts, so a plugin with a heavy one loa
 when it is needed. **Why.** A plugin's install is one line, and the web's fixed places (a service
 worker's scope) are a plugin's to take, checked at start like its routes. **Reversible:** yes.
 
+## D-052 Solid 2.0's primitives: untrack, its dev warning, latest, merge and omit, static holes
+
+**Status.** Built (2026-11-23) for items 1, 2, 3 and 6 of the brief: `untrack!` and the dev build's
+warning of a read made once, a props record passed on (`..rest`, `{...rest}`), `latest!`, and holes
+that read nothing written as static by the server and adopted as text. Render effects and an
+effect's `error` handler wait for plugin-files' second stage (D-051, which takes the audio player
+out of runtime.js and changes the code beside its effects) to land.
+
+**Context.** D-039 made value props getters, and left three follow-ups
+(`spike/reactive-props/DESIGN.md`, "Follow-ups"): Solid's `untrack` and Solid 2.0's dev warning for
+a reactive read at a component's top (which needs `untrack` first: the charts read their goal once,
+on purpose, `create_signal!(goal!())`); a hole that reads nothing made static on both sides (a prop
+given a constant became a computation, with comments, on every page); and `merge`/`omit` to pass a
+props record on. `latest` was the last of Solid 2.0's reads not here. Solid 2.0 is the north star
+(`@solidjs/signals` 2.0.3 read for each: `untrack(fn)`, `latest(fn)`, `merge`, `omit`, and the dev
+build's STRICT_READ_UNTRACKED).
+
+**Decision.**
+
+- **`Solid.untrack!(read!)`**, Solid's `untrack`: `read!` runs with the running computation's
+  reads not noted (`Host.untrack!(Bool.True)`, then `Bool.False`: a depth on the run's record, so an
+  abort that skips the second leaves nothing behind). A computation made inside tracks its own reads,
+  and a read that waits still waits, as Solid's does. `is_pending!` inside it keeps no query, and an
+  endpoint read inside it doesn't make the computation one a result reads again.
+- **Solid 2.0's dev warning, in a dev build** (`rocx build --dev`, `rocx dev`). The transpiler wraps
+  each accessor a component's body calls (`count!()`, a prop's getter `label!()` or `(props.label)()`,
+  and a pure helper's read made in the body) as `Html.read_at!("Ui/Chart.rocx:44:39", goal!)`, which
+  tells the runtime the place while the read runs (`Host.read_at!`, answering the place before, to
+  put back); lines stay lines. A tracked read while a component runs, with a place, is warned of in
+  the console, once a place. Why both halves: the runtime alone knows what is a reactive read (a
+  getter given a constant reads nothing, so is never warned of; Solid's compiler doesn't make a
+  getter for a constant either), and the transpiler alone knows where it is (a wasm stack has no
+  source lines; Solid's compiler writes `loc` for the same reason). Any other build writes no
+  `read_at!` (nothing costs), and the server warns of nothing, as Solid's server doesn't. Not seen:
+  a read a helper makes (`total!(items)`), and one at a `<For>` row's top; said in web/README's
+  "Not yet". The charts' start values are `create_signal!(untrack!(goal!))` now.
+- **`Solid.latest!(read!)` is `read!()`**, documented. Solid 2.0's `latest` reads the newest value
+  while a transition holds writes back; here nothing holds them back (a memo read again already
+  shows the value it last settled at, `is_pending!` saying so), so every read is already the latest.
+  It becomes meaningful if transitions ever hold writes back. A failed refresh still goes to
+  `<Errored>`, as Solid sends failures there (the coordinator's answer: not the last good value).
+- **`merge` and `omit` are Roc's record syntax and JSX's spread** (the coordinator's choice, option
+  A). Roc can't have them as functions: it can't make a record of two, and a field's name isn't a
+  value. Roc's fork can take a record apart, `|{ kind, ..rest }|`, so:
+  - **omit** is a view's pattern with a rest: `kind` is a getter as before (`kind: kind!`), and
+    `rest` a record of the others, getters still; `rest.label` is read as `(rest.label)()`, as a
+    whole record's field is (D-039).
+  - **merge** is a spread on a component's tag, `<Base {...rest} size={3} />`, JSX's: its fields as
+    they are, so `Base` reads the outer caller's expressions, live. Of two of a name, the last wins
+    (an attribute after replaces a field; a spread after, an attribute). Where the view's props are
+    annotated, rocx writes the fields out one by one (`label: rest.label`), so attributes may add
+    fields and `Base`'s `??` defaults still fill. Where not, it writes Roc's record update,
+    `Base.view!({ ..rest, size: || 3 })` (or `Base.view!(rest)` alone), which needs `Base`'s props to
+    be the record's type; `rocx check` puts a hint at the end of the compiler's report at that line
+    saying so, and to annotate the view's props (another for written-out fields: `Base` must take each
+    one). Two records rocx doesn't know the fields of can't be merged (refused, at the tag); a spread
+    on an element, or on the platform's or a pure component (whose props aren't getters), is refused.
+- **Static holes.** A text hole (`{"t":"x"}`) or a markup one (`"h"`, `"l"`) whose run read and made
+  nothing that changes is static: no tracked read (a signal, a memo, a row, a submission, an
+  endpoint, `is_pending!`, all but inside `untrack!`), and no signal, memo, effect, cleanup, timer,
+  listen, subscription or title made. The runtime knows it from the run's record (`inert`, with a
+  `live` flag for what the record doesn't show: an endpoint read, and, rendering as a server would,
+  the calls that do nothing there); the native server notes the same host calls on the running frame
+  (signals.rs's `touched`). Then the server writes the hole without its comments, and hydrating runs
+  it first, finds it static too, and takes its text as a static text's (splitting off what the
+  parser joined), or its markup in place, under strict hydration as well; nothing keeps its
+  computation (a markup hole's stays as the owner of what is inside, never run again). Built in the
+  browser, the same. A computed attribute whose run was inert isn't kept either (the server writes
+  attributes the same way already). Both sides decide by running the hole, so they agree by
+  construction; a hole that reads `Router.location!` or the flash is static, as neither is tracked
+  (D-040 would make the location tracked, and so not static).
+- Why not decide at build: the transpiler already makes a hole that calls nothing with `!` static,
+  but a getter's caller is in another file (a component is written once for all its callers), so
+  only a run can tell.
+
+**What it costs.** Two hosted functions (`untrack!`, `read_at!`) on both platforms. A hole is run
+before its place is taken while hydrating (no extra run). Measured with `just site` on master
+5689240 and on this branch rebased onto it:
+
+- The site's client wasm: 1,332,734 → 1,332,872 bytes (+138), 295,165 → 295,211 br (+46).
+- Every page's layout has two markup holes that read nothing: −46 bytes a page. The front page,
+  −23 bytes (19,774 → 19,747 br); /ecosystem/charts, 126 text holes → 109 and 6 markup holes → 0,
+  −337 bytes (44,732 → 44,769 br: brotli's own noise); /ecosystem/forms, 12 text holes → 1, −233
+  bytes (31,152 → 31,132 br). The browser keeps that many fewer computations hydrating them.
+
+**Reversible:** yes, each part on its own: `inert` answering false makes every hole live again; the
+transpiler's `dev` flag off writes no `read_at!`; a spread is new syntax nothing else depends on.
+
 ## D-056 The server's limits: a body limit, the platform's log events, Http's connections and proxies
 
 **Context.** TODO.md's "the server's other limits" listed, from `server/README.md`'s "Not yet":

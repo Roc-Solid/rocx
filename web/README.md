@@ -28,7 +28,7 @@ same components natively; this one hydrates them.
   GETs a page reads as it renders among them.
 - `platform/*.roc`, what components are written with: `Html` (markup whose holes are closures,
   escaping, safe URLs), `Solid` (`create_signal!`, `create_memo!`, `create_effect!`,
-  `on_cleanup!`, `on_settled!`, `refresh!`, `is_pending!`, `use_context!`, and the browser's timers, `set_interval!` and
+  `on_cleanup!`, `on_settled!`, `refresh!`, `is_pending!`, `latest!`, `untrack!`, `use_context!`, and the browser's timers, `set_interval!` and
   `set_timeout!`, each owned by the run that started it), `Audio` (`play!`, `play_with!`: a sound
   file, from a handler), `Browser` (`call!`: the page's own JavaScript function, from a handler),
   `Show`, `For`, `Loading`, `Errored`, `Context`, `Call` (`fetch!`, `listen!`), `Router` (`location!`: the page's path and query; `use_submission!`: the latest
@@ -77,7 +77,15 @@ same components natively; this one hydrates them.
   `Html.optional` (`["o",…]`), `Html.style_var` (`["sv",…]`: `style:color` or `style:--size`, the
   name plain, the value passed through `safe_css`, which drops what could end the declaration and
   any function but those that compute a value)…, with no closure, and the server puts no comments
-  around it. A
+  around it. A hole the transpiler can't tell (one that calls a getter, D-039) is static too when its
+  run reads and makes nothing that changes (D-052): no tracked read (a signal, a memo, a row, a
+  submission, an endpoint, `is_pending!`; one inside `untrack!` isn't tracked) and no signal, memo,
+  effect, cleanup, timer, listen, subscription or title made (`inert`). The server notes the same
+  calls (signals.rs's `touched`) and writes such a text hole (`<Shows label="Go" />`'s `{label}`), or
+  markup hole, without its comments; hydrating runs it, finds it static too, and takes its text as a
+  static text's (split off the text the parser joined), or its markup in place, under strict
+  hydration as well. Its computation isn't kept (a markup hole's stays, as the owner of what is
+  inside, never run again), and neither is a computed attribute's that read nothing. A
   `<script>`'s or `<style>`'s text, as the `.rocx` file has it, is `{"t":"raw"}` (`Html.source_text`),
   and `<!doctype html>` is `{"t":"doctype"}`. Hydrating takes raw text without comparing it; a
   `<script>` the runtime builds doesn't run, as in Solid (the server's ran as the page was read).
@@ -86,6 +94,22 @@ same components natively; this one hydrates them.
   `memo_get`); a write (`signal_set`, in a handler) schedules what read it, run in a microtask, an
   owner before what it made. A value a node already has isn't a patch. A setter can't compare Roc
   values, so every write runs its readers; state nothing shows goes in a signal nothing reads.
+  `untrack!(read!)` (Solid's `untrack`, `Host.untrack!` on and off around it) runs `read!` with the
+  running computation's reads not noted: a memo made inside tracks its own, and a read that waits
+  still waits. `latest!(read!)` (Solid 2.0's `latest`) is `read!()`: a memo read again already shows
+  the value it last settled at, since nothing holds a write back until a change is done, as Solid
+  2.0's transitions do; it would differ only if they did.
+- **A read made once, said in a dev build** (D-052, Solid 2.0's dev warning, STRICT_READ_UNTRACKED).
+  A component's body runs once, so a read there doesn't follow what it read. A dev build (`rocx
+  build --dev`, `rocx dev`) writes each accessor a component's body calls (`goal!()`, a prop's
+  getter `label!()`, a pure helper's read) as `Html.read_at!("Ui/Chart.rocx:44:39", goal!)`, which
+  tells the runtime the place while it runs (`Host.read_at!`). A tracked read there, while a component
+  runs, is warned of in the console, once a place: `rocx: Ui/Chart.rocx:44:39 reads a value that
+  changes (a signal, a memo or a prop) in a component's body, once, as the component runs: what it
+  shows won't follow it…`. `untrack!` says the one read is meant (`create_signal!(untrack!(goal!))`,
+  the charts' start), and silences it. A prop given a constant reads nothing, so it is never warned
+  of; neither is a read the transpiler doesn't see as a call of an accessor (`helper!(x)`). Any other
+  build writes no `read_at!`, and warns of nothing; the server warns of nothing.
 - **Waiting.** A read whose value isn't in throws, in JavaScript, through Roc's frames; the runtime
   restores Roc's stack pointer and runs the computation again when the value comes. A handler that
   waits drops its writes and runs again; its calls' answers are kept, so a command is sent once.
@@ -148,7 +172,14 @@ same components natively; this one hydrates them.
   reads the prop where that lambda is made, `(|label| |x| … label …)(label!())`, so in a hole the hole
   tracks it. One known to run as an effect reads it when it runs: `|| …`, a handler, a function
   child, one given to a `!` function (`create_effect!(…, |r| …)`) or bound to a `!` name. A
-  component that names its whole record (`|props|`) reads `(props.label)()`. Not getters: a prop
+  component that names its whole record (`|props|`) reads `(props.label)()`, and so does one that
+  names the rest of it (`|{ kind, ..rest }|`: Solid 2.0's `omit`, D-052). A record of them is passed
+  on with a spread, `<Base {...rest} size={3} />` (JSX's, and Solid 2.0's `merge`: the last of a
+  name wins): its fields as they are, getters still, written out one by one where the view's props
+  are annotated (`label: rest.label, size: || 3`), so attributes may add some, or else Roc's record
+  update (`{ ..rest, size: || 3 }`), which needs the component's props to be the record's type
+  (`rocx check` adds a hint under the compiler's report there). A spread goes to a component written
+  in rocx alone (a `view!`): the platform's take their own types, and a pure one values. Not getters: a prop
   named as an effect (`label!={word!()}`, an accessor, `|| word!()`, which the child types and calls
   itself), `children` (markup, whose holes are already live), and the props of the platform's own
   components (`<Show>`, `<For>`…). A pure component's (`view`) props are values, its call made where
@@ -456,10 +487,12 @@ false on the first load, true while a refresh is on its way, false on the server
 context); the tally with nothing to provide its store (`Alone.rocx`); and a whole document
 (`Document.rocx`; inside an `<Errored>`, `Wrapped.rocx`), rendered in Node as the server platform answers a page and hydrated by
 `start.js`; effects, a cleanup, a timer and a listen (`Effects.rocx`); a form's submission
-(`Form.rocx`); value props, getters (D-039), given in a hole, outside one, in a `<Show>` and in a row, read every way a component may, and an accessor (`Props.rocx`); `<Title>`s
-(`Titles.rocx`); channels (`Channels.rocx`: two feeds on one org's news, a third on another's); and a
+(`Form.rocx`); value props, getters (D-039), given in a hole, outside one, in a `<Show>` and in a row, read every way a component may, an accessor, and props passed on (`{...rest}`, D-052) (`Props.rocx`); `<Title>`s
+(`Titles.rocx`); channels (`Channels.rocx`: two feeds on one org's news, a third on another's); a
 planner (`Planner.rocx`: cards dragged between days, moved optimistically with `use_action!` and
-`use_submissions!`, gliding).
+`use_submissions!`, gliding); and D-052's (`Untracked.rocx`: `untrack!` in a hole, a memo and a
+body, `latest!`, a component given constants beside one given what changes, and, built with `--dev`
+from a copy, the warning of a read in a body, once for two runs of its place).
 In Chromium, against a scripted server (a scripted `/rocx/live` too): what shows while answers come, what a click
 patches, failures and retries, rows kept and moved, rows and parts that stay until their
 transitions are over (and none with less motion asked for), hydration without a request, a tampered document's `<body>` rendered again (and strictly, a throw), the
@@ -469,7 +502,9 @@ listen stopping with their component, a flash hydrated as the server rendered it
 `fetch` (pending, refused, answered, redirected), a component given a value prop (in a
 hole, outside one, in a `<Show>`, in a row) kept, its signals with it, and only what reads the
 prop patched (in its body, once; in a pure lambda, by its hole; in an effect and a handler, as they
-run), rows made once, the document's title kept to the last `<Title>` there (hydrated strictly, the
+run), props passed on with `{...rest}` kept live, static holes (a hole whose reads are untracked, a
+component's holes and attribute given constants) written without comments and taken as text,
+strictly, and never patched, a dev build's one warning, said where, rows made once, the document's title kept to the last `<Title>` there (hydrated strictly, the
 server's `<title data-rocx>` first in `<head>`), a `<NoHydration>` the browser's wasm hasn't (its
 nodes kept, strictly and after `<body>` is rendered again; the browser's build rendered against
 the page's answers and regions, byte for byte), one channel stream for three subscriptions (one
@@ -485,14 +520,14 @@ after many runs that waited (refreshes, new pages, memos made again: `Upstream.r
 ## Not yet
 
 - **The rest of Solid 2.0:** keyed `<Show>`, `<Switch>`/`<Match>`, `createRenderEffect`, an
-  effect's `error` handler, stores as `createStore` makes them (`untrack` is below).
+  effect's `error` handler, stores as `createStore` makes them.
+- **The dev warning sees calls of accessors** in a component's body (`count!()`, a prop's getter):
+  one a helper makes (`total!(items)`) isn't said, nor one at a `<For>`'s row's top (made once too).
 - **The rest of Solid Router's actions:** `.with`, a submission's `retry`, saying which reads a
   result reads again (Solid Router's `revalidate` keys: today every GET the page read), and
   multipart forms (sent as the browser sends them). Solid 2.0's `createOptimistic` (writes undone
   when their action's transition ends) isn't there: an optimistic value is the server's with the
   submissions on their way applied (D-030).
-- **`latest`** (Solid 2.0's): a memo already shows its last value while it is read again, and
-  `is_pending!` says it is.
 - **Dragging by touch or pointer:** only the browser's drag and drop (a long press on Safari for
   iPad and iPhone; many other mobile browsers start none from a touch); files dropped (`dataTransfer.files`), a drag image of the app's, and data other
   than text for other pages to read.
@@ -501,8 +536,6 @@ after many runs that waited (refreshes, new pages, memos made again: `Upstream.r
   scrolled out of sight, then is clipped as it is put back; one inside a box that makes fixed
   elements its own (a `transform`, a `filter`, `contain: paint`) stays clipped by that box.
 - **The rest of @solidjs/meta:** `<Meta>`, `<Link>`, `<Style>`; only `<Title>` is there.
-- **`untrack`** (Solid's), and Solid 2.0's dev warning for a reactive read at a component's top
-  (a prop's getter, a signal) that it would silence; and `merge`/`omit` for passing props on.
 - **A pure component patched in place:** given a value read from what changes, its call is a hole
   made anew (it keeps no state); a `view!` is kept.
 - **`Try` across the wire:** the builtin has no JSON encoder or parser on this Roc; a tag union
