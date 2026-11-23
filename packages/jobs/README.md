@@ -65,8 +65,8 @@ Job.plugin : Job.Options -> Plugin.Value(ctx)
 
 - **The table**, `rocx_jobs`, recorded as `jobs/0001_jobs` (after the platform's migrations, before
   the app's).
-- **The workers** (`jobs.worker`, `workers` of them; none without a database or a kind to run) and
-  **the schedules' loop** (`jobs.schedules`, with a database and a schedule).
+- **The workers** (`jobs.worker`, `workers` of them; each ends at once without a database or a kind
+  to run) and **the schedules' loop** (`jobs.schedules`, with a database and a schedule).
 - **A call**, `jobs.run`: each job runs in a call of its own (`Plugin.isolated!`).
 - **Under `--dev` or `--debug`**, `POST /__rocx/jobs/wake`: the workers told to look for a due job
   now, as queuing one tells them. For a job another process wrote into `rocx_jobs` itself, which on
@@ -78,6 +78,20 @@ Job.plugin : Job.Options -> Plugin.Value(ctx)
 
 Without the plugin in the app's list, `Job.enqueue!` says so (`JobErr`) rather than queue a job no
 worker will run.
+
+**A plugin's own kinds** (D-051). A kind another package defines (push's `push.deliver`) isn't in
+`App.jobs`, which lists the app's modules'. Its plugin brings it: `Job.call(kind)` in its `calls`
+(the call each of its jobs runs in, named as the kind is) and `Job.adopt!(kind)` in its `starts`
+(the jobs plugin's registry lists it, so the workers take its jobs and the jobs page shows it, and
+its jobs a stop cut short are queued again), with `Plugin("jobs")` in its `needs`, so the jobs
+plugin starts first:
+
+```roc
+deliver : Job.Kind(Input)
+deliver = Job.define_with("push.deliver", { attempts: 5, timeout_ms: 60_000 }, deliver!)
+
+plugin = |setup| { name: "push", calls: [Job.call(deliver)], starts: [|{}| Job.adopt!(deliver)], needs: [Plugin("jobs")], … }
+```
 
 ## Running jobs
 
@@ -181,7 +195,7 @@ Waits on a proposal (PROPOSALS.md):
 
 | Module | What it has |
 |---|---|
-| `Job` | kinds (`define`, `define_with`, `handler`), queueing (`enqueue!`, `enqueue_keyed!`, `cancel!`, `move!`), reading and acting on the queue, `kinds!`, `changes`, and the plugin (`Options`, `plugin`) |
+| `Job` | kinds (`define`, `define_with`, `handler`; a plugin's, `call` and `adopt!`), queueing (`enqueue!`, `enqueue_keyed!`, `cancel!`, `move!`), reading and acting on the queue, `kinds!`, `changes`, and the plugin (`Options`, `plugin`) |
 | `Cron` | `every`, the parser (`parse`, `after`), `check`, `schedules!`, `run_now!` |
 | `Calendar` | days since the epoch as a date (`civil`) and a weekday, in UTC |
 | `JobWorker`, `CronTicker`, `Registry` | the workers, the schedules' loop, and what the plugin keeps at start: the package's own |

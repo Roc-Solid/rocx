@@ -73,7 +73,8 @@ Job := [].{
 	Failure : { kind : Str, id : I64, attempts : U64, error : Str }
 
 	## The jobs plugin: the queue's table (`jobs/0001_jobs`), the workers (`jobs.worker`, with a
-	## database and a kind to run) and the schedules' loop (`jobs.schedules`, with one), the call
+	## database and a kind to run: the app's, and those other plugins bring, `Job.adopt!`) and the
+	## schedules' loop (`jobs.schedules`, with one), the call
 	## a job runs in (`jobs.run`), and at start the kinds and schedules kept (`kinds!`,
 	## `Cron.schedules!`), every schedule checked (a bad one, or one naming a job the plugin doesn't
 	## run, stops the server), and the jobs a stop cut short queued again. Under `--dev` or
@@ -87,7 +88,10 @@ Job := [].{
 		retry_ms = options.retry_ms
 		on_failed! = options.on_failed!
 		kinds = handlers.map(|job| { name: job.name, attempts: job.attempts, timeout_ms: job.timeout_ms })
-		workers = if (handlers.is_empty()) [] else List.repeat({ name: "jobs.worker", run!: |{}| JobWorker.run!(kinds, retry_ms, on_failed!) }, options.workers)
+		own = kinds.map(|kind| kind.name)
+		# The workers run the app's kinds and other plugins' (`Job.adopt!`, known once every start
+		# has run): one with none to run ends at once.
+		workers = List.repeat({ name: "jobs.worker", run!: |{}| JobWorker.run!(own, retry_ms, on_failed!) }, options.workers)
 		ticker = if (crons.is_empty()) [] else [{ name: "jobs.schedules", run!: |{}| CronTicker.run!(crons) }]
 		{
 			name: "jobs",
@@ -96,6 +100,40 @@ Job := [].{
 			calls: [{ name: "jobs.run", run!: |input| ran!(handlers, input) }],
 			loops: workers.concat(ticker),
 			starts: [|{}| started!(kinds, crons)],
+		}
+	}
+
+	## A kind of job another plugin brings (push's `push.deliver`), for that plugin's `calls`: the call
+	## the workers run each of its jobs in, named as the kind is (`<plugin>.<name>`), its input
+	## decoded from JSON. With `Job.adopt!` in its `starts`, and `Plugin("jobs")` in its `needs`:
+	##
+	## ```roc
+	## calls: [Job.call(deliver)],
+	## starts: [|{}| Job.adopt!(deliver)],
+	## needs: [Plugin("jobs")],
+	## ```
+	call : Kind(input) -> Plugin.Call
+		where [input.Json.Parseable([InvalidJson(Str)])]
+	call = |kind| {
+		handled = Job.handler(kind)
+		run_job! = handled.run!
+		{ name: kind.name, run!: |payload| run_job!(payload).map_ok(|{}| "") }
+	}
+
+	## Tells the jobs plugin of a kind another plugin brings (`call`), from that plugin's start: its
+	## workers run its jobs too, the jobs page lists it, and its jobs a stop cut short are queued
+	## again. Without the jobs plugin started first (`Plugin("jobs")` in the plugin's needs), why
+	## not.
+	adopt! : Kind(input) => Try({}, Str)
+	adopt! = |kind| {
+		if !Registry.installed!({}) {
+			return Err("${kind.name} is a job: list Job.plugin({ jobs: App.jobs }) in the app's plugins, and Plugin(\"jobs\") in this plugin's needs")
+		}
+		Registry.adopt!({ name: kind.name, attempts: kind.attempts, timeout_ms: kind.timeout_ms })
+		if Db.connected!({}) {
+			JobWorker.recover!([kind.name])
+		} else {
+			Ok({})
 		}
 	}
 

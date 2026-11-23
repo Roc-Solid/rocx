@@ -18,6 +18,15 @@ Registry := [].{
 		Plugin.keep!("jobs:schedules", Json.to_str(schedules))
 	}
 
+	## Keeps a kind another plugin brought (`Job.adopt!`) beside the plugin's own, once.
+	adopt! : Kind => {}
+	adopt! = |kind| {
+		kinds = Registry.kinds!({})
+		if !kinds.any(|each| each.name == kind.name) {
+			Plugin.keep!("jobs:kinds", Json.to_str(kinds.append(kind)))
+		}
+	}
+
 	## Whether the jobs plugin started: what it keeps is there.
 	installed! : {} => Bool
 	installed! = |{}| Plugin.kept!("jobs:kinds").is_ok()

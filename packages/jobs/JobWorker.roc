@@ -6,7 +6,7 @@ import Queue
 import Registry
 
 ## A job worker: a background loop the jobs plugin runs `workers` (4) of, each a call of its own,
-## until the server stops; none without a database.
+## until the server stops; it ends at once without a database, or with no kind of job to run.
 ##
 ## A worker takes the next job that is due of a kind the app lists (another app may share the
 ## database) with `for update skip locked` on Postgres, so no two take the same (on SQLite writes
@@ -21,12 +21,15 @@ import Registry
 ## stops. What it starts and finishes it says on the live topic `rocx:jobs` (the jobs page listens).
 JobWorker := [].{
 
-	## Runs jobs of `kinds` until the server stops, a failed one again `retry_ms` later (doubled for
+	## Runs jobs of the kinds the plugin runs until the server stops: the app's (`own`, each in the
+	## plugin's call `jobs.run`) and those other plugins brought (`Job.adopt!`, each in the call of
+	## its name), as kept when every start had run. A failed one again `retry_ms` later (doubled for
 	## each attempt after), and `on_failed!` with one that failed for good. The job it is running when
-	## it is told to stop, it finishes.
-	run! : List(Registry.Kind), U64, ({ kind : Str, id : I64, attempts : U64, error : Str } => {}) => {}
-	run! = |listed_kinds, retry_ms, on_failed!| {
-		if !Db.connected!({}) {
+	## it is told to stop, it finishes. With no database, or no kind to run, it ends at once.
+	run! : List(Str), U64, ({ kind : Str, id : I64, attempts : U64, error : Str } => {}) => {}
+	run! = |own, retry_ms, on_failed!| {
+		listed_kinds = Registry.kinds!({})
+		if !Db.connected!({}) or listed_kinds.is_empty() {
 			return {}
 		}
 		kinds = listed_kinds.map(|kind| kind.name)
@@ -43,7 +46,7 @@ JobWorker := [].{
 					match take!(kinds) {
 						Ok(Some(job)) => {
 							Live.publish!("rocx:jobs", "${job.id.to_str()} running")
-							finish!(job, attempt!(job, limit(listed_kinds, job.kind)), retry_ms, on_failed!)
+							finish!(job, attempt!(job, own.contains(job.kind), limit(listed_kinds, job.kind)), retry_ms, on_failed!)
 							Bool.True
 						}
 						Ok(None) => Live.next!(due_in!(kinds)) != Gone
@@ -120,15 +123,18 @@ limit = |kinds, name|
 		Err(_) => 0
 	}
 
-## Runs the job, isolated (the plugin's call `jobs.run`: its kind, a newline, its input), within
-## `limit_ms` (0: no limit): Ok, or why it failed (a crash says so; a run its limit cut off says
-## "timed out after …").
-attempt! : Taken, U64 => Try({}, Str)
-attempt! = |job, limit_ms|
-	match Plugin.isolated!("jobs.run", "${job.kind}\n${job.input}", limit_ms) {
+## Runs the job, isolated, within `limit_ms` (0: no limit): one of the app's kinds (`own`) in the
+## plugin's call `jobs.run` (its kind, a newline, its input), another plugin's in the call of its
+## kind's name (`Job.call`), given its input. Ok, or why it failed (a crash says so; a run its limit
+## cut off says "timed out after …").
+attempt! : Taken, Bool, U64 => Try({}, Str)
+attempt! = |job, own, limit_ms| {
+	ran = if (own) Plugin.isolated!("jobs.run", "${job.kind}\n${job.input}", limit_ms) else Plugin.isolated!(job.kind, job.input, limit_ms)
+	match ran {
 		Ok(_) => Ok({})
 		Err(why) => Err(why)
 	}
+}
 
 finish! : Taken, Try({}, Str), U64, ({ kind : Str, id : I64, attempts : U64, error : Str } => {}) => {}
 finish! = |job, outcome, retry_ms, on_failed!| {

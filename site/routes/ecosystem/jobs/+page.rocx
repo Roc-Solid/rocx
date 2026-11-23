@@ -84,11 +84,13 @@ view! = |_|
 			<Heading id="workers">Workers, and trying again</Heading>
 			<ul>
 				<li>
-					<strong>Taken once.</strong> Workers (the plugin's <code>workers</code>, 4; none if it runs no kinds
-					or the server has no database) are background loops, each a call that pauses while it waits, so an
+					<strong>Taken once.</strong> Workers (the plugin's <code>workers</code>, 4; each ends at once if it
+					runs no kinds or the server has no database) are background loops, each a call that pauses while it waits, so an
 					idle one holds no thread. Each takes the next job due with <code>for update skip locked</code>, so no
 					job is taken twice, and runs it in a call of its own (the plugin's call <code>jobs.run</code>): a crash
-					in a job is that job's failure, not the worker's. They take only the kinds the plugin runs.
+					in a job is that job's failure, not the worker's. They take only the kinds the plugin runs: the
+					app's, and those another plugin brings (push's <code>push.deliver</code>: <code>Job.call(kind)</code>
+					in its calls, run in a call of that name, and <code>Job.adopt!(kind)</code> in its starts).
 				</li>
 				<li>
 					<strong>Woken, not polling.</strong> Queueing a job notifies <code>rocx_jobs</code> (Postgres's
