@@ -1647,6 +1647,13 @@ test("plugins: every page the server renders loads each plugin's script, a modul
 	assert.ok(!(await server.text("/")).includes(tag), "an answer that isn't a page of components: as it is");
 });
 
+test("navigation (D-040): a page whose root tells the app (Router.app!) has the build's id on its bootstrap; one whose root doesn't, none; is_routing! is false on the server, and a hole that reads it is live", { skip }, async () => {
+	const html = await server.text("/page-app");
+	assert.ok(html.endsWith('<script type="module" data-rocx data-build="7f3a91c2" src="/rocx/start.js"></script></body></html>'), html.slice(-200));
+	assert.match(html, /<p><!--x-->here<!--\/x--><\/p>/);
+	assert.ok((await server.text("/page")).includes('<script type="module" data-rocx src="/rocx/start.js"></script></body>'), "no build told: no data-build");
+});
+
 test("plugins: a plugin's files come before the app and its middleware: an app that refuses everything still serves them", { skip }, async () => {
 	const executable = join(dir, "refusing");
 	buildApp(join(root, "server", "test", "refusing", "main.roc"), executable, { opt: process.env.ROCX_TEST_OPT ?? "dev" });

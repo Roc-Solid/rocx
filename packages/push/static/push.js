@@ -130,8 +130,13 @@ async function look(under) {
 }
 
 window.rocxEffects = { ...window.rocxEffects, "push.subscribe": subscribe, "push.unsubscribe": unsubscribe };
+/** URLs under the site's base, once the runtime says it. */
+let under = (url) => url;
+const wake = () => look(under).catch((error) => tell(`failed:${error?.message ?? error}`));
 document.addEventListener("rocx:ready", (event) => {
 	const runtime = event.detail?.runtime;
-	const under = runtime ? (url) => runtime.under(url) : (url) => url;
-	look(under).catch((error) => tell(`failed:${error?.message ?? error}`));
+	if (runtime) under = (url) => runtime.under(url);
+	wake();
 });
+// Another page, rendered in place (D-040): its push buttons are told too.
+document.addEventListener("rocx:navigated", wake);

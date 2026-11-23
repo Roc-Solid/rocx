@@ -2203,6 +2203,29 @@ the stylesheet as a cached file, a JSON payload, wasm splitting.
   49 documents): the stylesheet is 107.5 KB, 15.8 KB brotli, fetched once; a page's document went
   from 17.5–49.7 KB brotli (median 21.9) to 1.8–33.7 KB (median 6.1), about 15.8 KB less each, and
   so does every navigation's document.
+- Phase 1's navigation (nav-phase1, 2026-11-23), in runtime.js, as §3–§12 have it: the click
+  listener with §3.1's opt-outs (`clicked`, `ours`; `data-rocx-navigation` `off`, and `explicit`
+  taking only an `<a data-rocx-link>`), `popstate`, `navigate(url, { replace, scroll, pop })`
+  (Router.navigate! queues it; a submission's redirect calls it unless the visitor navigated since),
+  the document's fetch (`documentFor`: `x-rocx-navigate: 1`, eight kept, one under 10 s used again, a
+  revalidation emptying them) beside `codeOf` (§18's step), its fallbacks (`appDocument`: not HTML, no
+  bootstrap, another build; a failed fetch, a redirect to another site: `location.assign`, or
+  `reload` for back and forward), a redirect's address (one adding only a trailing slash is the
+  link's), and `commit`: answers and flash seeded, the address pushed, the location committed, the
+  root run again in one flush with `arriving` (`reconcileHead`, `<body>` with the document's regions,
+  `attributesFrom` for `<html>` and `<body>`, only the attributes the app writes). Then scroll (kept
+  per entry in `sessionStorage`, as the click happens: the progress bar's height would move it by
+  scroll anchoring), focus, the announcer, `rocx:navigated`, and only then the effects' applies,
+  held through the render (`holdingEffects`), as a load's run after `rocx:ready`. Deviations: §8's
+  stylesheet swap waits for the new sheets' `load`; the hub keeps a channel whose last subscriber went
+  until its reconcile, so the next page's subscriber in the same flush is sent its resync (it never
+  was); the base goes on the URLs the runtime writes (`written`), as §12.3 asked. Phase 2's hooks:
+  `inPlace`, `remakeRoot`, `afterNavigate`. site.js re-wires its demos' inspectors on
+  `rocx:navigated`. runtime.js grew 498 lines over the foundation's, 51.7 → 57.5 KB brotli; the wasm
+  carries the route table (the site's, about 6 KB of JSON).
+  Tests: web/test/navigation.test.mjs (web/test/nav, a scripted server: 11 tests, each of §15's), the
+  site navigated page by page natively and as files under `/rocx/`, byte for byte against the
+  document it was rendered from, and server/test's `data-build`.
 
 **Reversible:** yes, until apps rely on kept layouts and `use_search_params!`.
 

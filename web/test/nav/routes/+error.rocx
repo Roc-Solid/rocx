@@ -1,0 +1,10 @@
+import pf.Html
+
+meta = { title: "Not here", look: "error" }
+
+## Where no page is, or a page failed.
+view! = |{ status, problem }|
+	<section class="error">
+		<h1>{status.to_str()}</h1>
+		<p class="problem">{problem}</p>
+	</section>

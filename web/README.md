@@ -33,7 +33,9 @@ same components natively; this one hydrates them.
   JavaScript function, or a plugin's script's, from a handler; sound files are packages/audio's,
   D-051), `Store` (a store's `get!`, a part of it tracked by its value; `of`, any accessor read by
   parts),
-  `Show` (keyed too), `Switch` and `Match`, `For`, `Loading`, `Errored`, `Context`, `Call` (`fetch!`, `listen!`), `Router` (`location!`: the page's path and query; `use_submission!`: the latest
+  `Show` (keyed too), `Switch` and `Match`, `For`, `Loading`, `Errored`, `Context`, `Call` (`fetch!`, `listen!`), `Router` (`location!`: the page's path and query, tracked; `navigate!` and `navigate_with!`: to
+  another page, in place, from a handler; `is_routing!`: whether a navigation is on its way;
+  `app!`: what `Generated/Root` tells the runtime of the app, D-040; `use_submission!`: the latest
   submission to an endpoint; `use_submissions!`: all of them; `use_action!`: one a handler sends
   without a form; `revalidate!`: which reads a result reads again), `Submission` (its `pending!`, `input!`, `field!`, `result!`, `error!`,
   `clear!`, `retry!`), `Submissions` (`all!`, as records, `pending!`, `pending_inputs!`, `clear!`, `retry!`),
@@ -473,10 +475,10 @@ same components natively; this one hydrates them.
     written as they are there. Outside the regions it is byte for byte; inside them the server's
     output is taken as it is. Without `regions`, a placeholder renders empty.
   - **On GitHub Pages**, the static export GETs each page from the native server, regions and all,
-    so they are in every prerendered page. **Client-side navigation** (D-040, proposed:
-    `spike/client-nav/DESIGN.md`) has no copy of a region in the wasm: a navigation fetches the
-    page's document, as the server answers it or as the export wrote it, and takes its regions
-    from there.
+    so they are in every prerendered page. **Navigation in place** (D-040) has no copy of a region
+    in the wasm either: a navigation fetches the page's document, as the server answers it or as
+    the export wrote it, and takes its regions from there (`keepingRegions` over the fetched
+    `<body>`).
 - **RCDATA**: inside `<title>` and `<textarea>` the HTML parser reads everything as text, comments
   too, so the server writes their holes without comments, and hydrating builds the element's
   text anew from the markup (its holes bound to the text nodes it makes; not a patch), the server's
@@ -485,6 +487,42 @@ same components natively; this one hydrates them.
   `example.github.io/rocx/`), a URL Roc gives that begins with `/` (an endpoint's read, a fetch's,
   a stream's) is asked for under it, and `Router.location!` takes it off the page's path, so the
   browser sees `/rocx/syntax` as the server sees `/syntax`.
+- **Navigation in place** (D-040, phase 1; `spike/client-nav/DESIGN.md` has the design and its
+  phases). `Generated/Root` calls `Router.app!` first: the build's id (on every page's bootstrap,
+  `data-build`, which the host writes) and the route table, JSON (each page's path and its levels'
+  code, root layout first: §18's ids, for wasm splitting later). As it hydrates the document, the
+  runtime notes where the page is (`committed`: `Router.location!` reads it, a source, so what read
+  it runs again when a navigation commits another), gives the history entry a key, takes the scroll
+  over (`scrollRestoration` manual, each entry's kept in `sessionStorage`, a reload's put back), and
+  listens on the document for clicks (`clicked`) and on the window for `popstate`. A click navigates
+  in place when it is the main button with no modifier key, nothing prevented it, on an `<a>` (an
+  SVG one too) with an `href` and no `download`, no `rel` with `external`, no `target` but `_self`,
+  to this origin, under the base, at a path the table has a page for (`routeOf`), and not only to
+  another hash on this page; `<html data-rocx-navigation="off">` turns it off (`"explicit"`: only a
+  link with `data-rocx-link`). `navigate(url, { replace, scroll, pop })`, which a handler's
+  `navigate!` queues with its writes and a submission's redirect calls (unless the visitor navigated
+  since it was sent): `is_routing!` true; the levels' code reached (`pageCode(level)`: at once, while
+  one wasm holds every page) as the document is fetched (`documentFor`: `accept: text/html`,
+  `x-rocx-navigate: 1`; the last 8 kept, one under 10 s old used again, a submission's result
+  emptying them); a redirect's address is where it ended (one that adds only a trailing slash is the
+  link's); a document that isn't HTML, has no bootstrap or another build's (`appDocument`), or a
+  fetch that failed (offline, a redirect to another site), is loaded instead (`location.assign`, or
+  `reload` for back and forward). Then `commit`: its answers and flash seeded, the address pushed
+  (or replaced, or, for back and forward, left), the location committed and the root run again in
+  one flush, the document rendered anew (`settleDocument` with `arriving`): `<head>` reconciled
+  with the document's (`reconcileHead`: a node equal to one there kept in place, others imported, a
+  script inert, a stylesheet that goes removed once the ones that come have loaded, the host's
+  elements left), `<body>` made anew with the document's regions, `<html>`'s and `<body>`'s
+  attributes the app writes set to the document's (`attributesFrom`; one a page script set, as
+  site.js's `data-hydrated`, stays). Nothing is asked of the server meanwhile (strictly, asking
+  throws), and effects' applies wait: the scroll (the top, the hash's element, or the entry's
+  kept), the focus (an `autofocus` element, the hash's target, or `<body>`'s start, taken with a
+  `tabindex` it gives back), a live region of the host's that says the title, `rocx:navigated`
+  (`{ url, ms }`; `rocx:navigate` as it started), then the effects. A newer navigation aborts one
+  on its way. Phase 2's hooks: `readOnce` (a location read in a component's body), `inPlace` (a
+  change of the query alone), `remakeRoot`, `afterNavigate`. **Under a base**, the URLs the
+  runtime writes into the page (an `href`, `src` or `action` it builds or patches, `written`) get
+  the base, as the static export gives the server's.
 - **The page's own functions** (`Runtime.load(source, { effects: { vibrate(arg) {…} } })`, or
   `window.rocxEffects` for a page start.js wakes up) are what a handler's `Browser.call!(name, arg)`
   calls: queued with the handler's writes, so a handler that waits for the server and runs again
@@ -691,8 +729,30 @@ optimistic count shown at once, held while its action is on its way, then the se
 frame of the old, back at once when refused or with nothing sent; a form with a file and an action
 given a file's URL sent as multipart.
 
+`test/navigation.test.mjs` (D-040): `test/nav`, an app of routes (a layout with links of every
+kind; home, A with a `<Title>`, a timer, an effect and a channel; an item; a guarded page), its
+server half rendering each document by `renderToString` and a scripted server serving them, slowly,
+redirected, refused or crashed when told to. In Chromium, strictly: a click renders the next page
+without a load (a value on `window` survives), its document fetched once as a navigation and
+nothing else asked, its title, `<Title>`, head, regions and attributes the document's, the
+stylesheet kept (and one that differs swapped, the new one in before the old one goes), announced,
+the focus at `<body>`'s start, the page a load renders (byte for byte outside the host's elements); every opt-out left to the browser (modifier keys, `target`, `download`,
+`rel="external"`, another origin, a path no page has, a file, a place on this page, `off`,
+`explicit`); `navigate!` from a handler that waits for the server, once; `navigate_with!`'s replace;
+back and forward with the scroll restored and the document used again within 10 s and fetched
+after; a hash, `noscroll`, a reload's scroll; `is_routing!` while a slow document is on its way, and
+after one overtaken; a middleware's redirect landing with its address; a text 401, a crash, a refused
+fetch, another build and a redirect to another site each loaded; the old page's effects, timer and
+channel stopping, the new page's starting, no stream opened again for the same channels; 200
+navigations leaving no allocation behind; and all of it under `/rocx/`, the URLs the runtime writes
+under the base.
+
 ## Not yet
 
+- **Navigation in place, phase 1** (D-040): the whole page is made anew on each navigation, its
+  layouts too (a sidebar's scroll, an open menu, a layout's signals); a change of the query alone
+  fetches the page's document like any navigation; no `<A>`, `<Navigate>`, prefetch or View
+  Transitions yet (phases 2 and 3).
 - **The rest of Solid 2.0's stores** (D-053): derived stores (`createStore(fn, seed)`,
   `createProjection`: a memo is the derived read), `createOptimisticStore` (D-030's optimistic memos
   cover actions), `reconcile` and `storePath` (a new list written whole, and Roc's record update, do

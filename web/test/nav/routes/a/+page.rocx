@@ -1,0 +1,42 @@
+import pf.Html
+import pf.Title
+import pf.Browser
+import pf.Endpoint
+import pf.Router exposing [navigate_with!]
+import pf.Solid exposing [create_effect!, create_signal!, set_interval!]
+import ../../Api
+import ../../Generated/Paths
+
+meta = { title: "A", look: "a" }
+
+## Page A: its own title, a timer, an effect that tells the page each tick, a channel it listens to,
+## and a button that goes home in place of this entry.
+view! = |_| {
+	(ticks!, set_ticks!) = create_signal!(0.U64)
+	(heard!, set_heard!) = create_signal!([])
+	_ticking = set_interval!(30, || set_ticks!(ticks!() + 1))
+	create_effect!(|| ticks!(), |n| Browser.call!("nav.tick", { n: n }))
+	create_effect!(
+		|| {},
+		|_|
+			Endpoint.subscribe!(
+				Api.news({}),
+				|event|
+					match event {
+						Resync => set_heard!(heard!().append("resync"))
+						Message(said) => set_heard!(heard!().append(said))
+						Refused(status, _) => set_heard!(heard!().append("refused ${status.to_str()}"))
+						Ended(why) => set_heard!(heard!().append("ended ${why}"))
+					},
+			),
+	)
+	<section class="a">
+		<Title>Page A</Title>
+		<h1>A</h1>
+		<p class="said">{Api.say!("a")}</p>
+		<p class="ticks">{ticks!().to_str()}</p>
+		<p class="heard">{Str.join_with(heard!(), ", ")}</p>
+		<button class="home-replacing" on:click={|| navigate_with!(Paths.root, { replace: Bool.True, scroll: Bool.True })}>Home, in this entry</button>
+		<div class="tall"></div>
+	</section>
+}

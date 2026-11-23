@@ -1,35 +1,40 @@
 // The site's own script: says how long the page took to wake up, shows what the runtime does in a
 // demo's inspector, and measures the demos that run every frame. The pages themselves are Roc: one
 // app, which the server rendered and the browser hydrates (web/start.js loads the runtime and the
-// wasm, hydrates the document and tells the page, `rocx:ready`). Each demo sits in an element that
-// says which it is (`<div data-demo="echo">`); its inspector is `[data-inspect-signals="echo"]`.
+// wasm, hydrates the document and tells the page, `rocx:ready`); a link to another of its pages is
+// rendered in place (D-040), and the runtime tells the page that too (`rocx:navigated`). Each demo
+// sits in an element that says which it is (`<div data-demo="echo">`); its inspector is
+// `[data-inspect-signals="echo"]`.
 
 // What the server answered as it rendered the page (`[[name, input, answer]]`: an endpoint's GET is
 // `["GET /api/shelf", "", …]`), read before the runtime takes it out of the page: an inspector says
 // which of its reads were answered from there.
 const answered = JSON.parse(document.querySelector("script.rocx-answers")?.textContent || "[]");
 
-document.addEventListener("rocx:ready", ({ detail: { runtime, ms } }) => {
-	const demos = [...document.querySelectorAll("[data-demo]")];
-	const watchers = new Map(demos.map((element) => [element.dataset.demo, watchDemo(element)]));
-	const demoOf = (node) => (node instanceof Element ? node : node?.parentElement)?.closest?.("[data-demo]")?.dataset.demo;
-	// A key, a click, a submit or a drop in a demo begins a turn: what it does, in every demo.
-	for (const type of ["input", "click", "submit", "keydown", "drop"]) {
-		document.addEventListener(
-			type,
-			({ target }) => {
-				const demo = demoOf(target);
-				if (!demo) return;
-				last = demo;
-				const button = target.closest?.("button");
-				if (type === "keydown" || (type === "click" && !button)) return;
-				begin(type === "click" ? `click “${button.textContent.trim()}”` : type === "drop" ? `drop on ${tagOf(target.closest?.("section, ul") ?? target)}` : `${type} on ${tagOf(target)}`, demo);
-			},
-			{ capture: true },
-		);
-	}
-	// What the runtime does, told to the demo it happened in: where the node it touched is; for a
-	// fetch or a stream, the demo that asked, which its answer is told to as well.
+/** The demo a node is in, by its name. */
+const demoOf = (node) => (node instanceof Element ? node : node?.parentElement)?.closest?.("[data-demo]")?.dataset.demo;
+
+// A key, a click, a submit or a drop in a demo begins a turn: what it does, in every demo.
+for (const type of ["input", "click", "submit", "keydown", "drop"]) {
+	document.addEventListener(
+		type,
+		({ target }) => {
+			const demo = demoOf(target);
+			if (!demo) return;
+			last = demo;
+			const button = target.closest?.("button");
+			if (type === "keydown" || (type === "click" && !button)) return;
+			begin(type === "click" ? `click “${button.textContent.trim()}”` : type === "drop" ? `drop on ${tagOf(target.closest?.("section, ul") ?? target)}` : `${type} on ${tagOf(target)}`, demo);
+		},
+		{ capture: true },
+	);
+}
+
+/** The page's demos, each watched by its inspector: what the runtime does, told to the demo it
+ * happened in (where the node it touched is; for a fetch or a stream, the demo that asked, which its
+ * answer is told to as well). Made again for each page a navigation renders. */
+function watch(runtime) {
+	const watchers = new Map([...document.querySelectorAll("[data-demo]")].map((element) => [element.dataset.demo, watchDemo(element)]));
 	const asking = new Map();
 	const keyOf = (detail) => detail.url;
 	const demoFor = (kind, detail) => {
@@ -46,9 +51,25 @@ document.addEventListener("rocx:ready", ({ detail: { runtime, ms } }) => {
 		return last;
 	};
 	runtime.observer = new Proxy({}, { get: (_, kind) => (detail) => watchers.get(demoFor(kind, detail))?.[kind]?.(detail) });
-	for (const [name, watcher] of watchers) watcher.hydrated(ms, answered.filter(([called]) => demoNamed(called) === name));
+	return watchers;
+}
+
+/** The runtime, once it hydrated the page: its demos watched. */
+let started = null;
+
+document.addEventListener("rocx:ready", ({ detail: { runtime, ms } }) => {
+	started = runtime;
+	for (const [name, watcher] of watch(runtime)) watcher.hydrated(ms, answered.filter(([called]) => demoNamed(called) === name));
 	document.documentElement.setAttribute("data-hydrated", "");
 	awake(performance.now());
+});
+
+// Another page, rendered in place: its demos watched, and how long it took said where the page says.
+document.addEventListener("rocx:navigated", ({ detail: { ms } }) => {
+	if (!started) return;
+	last = null;
+	for (const watcher of watch(started).values()) watcher.navigated(ms);
+	awake(ms, { navigated: true });
 });
 
 /** Which demo reads which endpoint as the page renders: the start of its URL, and the demo. */
@@ -66,13 +87,16 @@ const demoNamed = (called) => READS.find(([start]) => called.startsWith(`GET ${s
  * when nothing else says. */
 let last = null;
 
-/** How long the page took to wake up, where it says (`data-stat`): `total`, since it was asked for. */
-function awake(total) {
+/** How long the page took to wake up, where it says (`data-stat`): `total`, since it was asked for;
+ * or, `navigated`, how long a navigation in place took, from the click. */
+function awake(total, { navigated = false } = {}) {
 	for (const element of document.querySelectorAll('[data-stat="ready"]')) {
-		element.textContent = `Here, your browser fetched and compiled it and hydrated this page in ${total.toFixed(0)} ms.`;
+		element.textContent = navigated ? `Here, the wasm already running rendered this page in place, from its document, in ${total.toFixed(0)} ms.` : `Here, your browser fetched and compiled it and hydrated this page in ${total.toFixed(0)} ms.`;
 	}
 	for (const element of document.querySelectorAll('[data-stat="hydrated"]')) {
-		element.textContent = `Awake ${total.toFixed(0)} ms after the page asked: fetching and compiling the wasm, then hydrating this page, the server's nodes kept.`;
+		element.textContent = navigated
+			? `Rendered in place ${total.toFixed(0)} ms after the click: its document fetched, the wasm already running made the page from it.`
+			: `Awake ${total.toFixed(0)} ms after the page asked: fetching and compiling the wasm, then hydrating this page, the server's nodes kept.`;
 		element.classList.add("awake");
 	}
 }
@@ -198,6 +222,13 @@ function watchDemo(element) {
 			if (!awake) return;
 			line(`<Show> switched to ${holds ? "what is inside" : "its fallback"}`);
 			if (flashing) for (const node of nodes) flash(node, "show");
+		},
+		/** Rendered in place by a navigation (D-040), `ms` after the click, from the page's document. */
+		navigated(ms) {
+			awake = true;
+			if (!list) return;
+			begin(`rendered in place, ${ms.toFixed(1)} ms after the click`, name);
+			line("made from the page's document: its reads not asked", "patch");
 		},
 		/** Hydrated, with the page, in `ms`; `seeded`, the answers the page came with that are its own. */
 		hydrated(ms, seeded) {

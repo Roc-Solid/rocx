@@ -1,0 +1,7 @@
+import pf.Html
+
+meta = { title: "Guarded", look: "guarded" }
+
+## A page the tests' server guards: it answers its document with a redirect, or a refusal.
+view! = |_|
+	<section class="guarded"><h1>Guarded</h1></section>

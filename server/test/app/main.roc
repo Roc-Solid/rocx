@@ -790,6 +790,7 @@ route! = |request, context| {
 		(_, "/page-region") => page(region!)
 		(_, "/page-region-handler") => page(region_handler!)
 		(_, "/page-gated") => { status: 200, headers: [{ name: "x-page", value: "yes" }], body: Page(gated!) }
+		(_, "/page-app") => page(app_page!)
 		# packages/guard's headers, its CSP enforced: every script on the page is the site's own.
 		(_, "/page-guarded") => { status: 200, headers: Security.headers(Security.defaults, { dev: Bool.False }), body: Page(document!) }
 
@@ -2250,6 +2251,14 @@ page = |view!| { status: 200, headers: [], body: Page(view!) }
 ## A document with no doctype (the host writes one): a signal, a memo that reads an endpoint, a
 ## <Loading> (on the server what is inside renders), an <Errored> that catches a failure, one around
 ## an endpoint behind its middleware (refused without a cookie), and where it is.
+## A page whose root tells the app, as `Generated/Root.roc` does (`Router.app!`, D-040): its
+## bootstrap carries the build's id (`data-build`), for the browser to check a page it fetches against.
+app_page! : {} => Html
+app_page! = |{}| {
+	Router.app!({ build: "7f3a91c2", dev: Bool.False, routes: "{\"pages\":[{\"path\":\"/page-app\",\"levels\":[]}],\"error\":null}" })
+	Html.element("html", [], [Html.element("body", [], [Html.element("p", [], [Html.text_of(|| if (Router.is_routing!({})) "routing" else "here")])])])
+}
+
 document! : {} => Html
 document! = |{}| {
 	(count!, _set_count!) = Solid.create_signal!(1.U64)

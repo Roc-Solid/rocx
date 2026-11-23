@@ -14,9 +14,6 @@ When an item lands, delete its line here in the same commit.
 
 - **Client-side navigation (D-040, Proposed).** Twelve questions, each with a recommendation, are in
   `spike/client-nav/DESIGN.md` §17. The plan (§15) after the answers:
-  1. Phase 1: same-app links and `Router.navigate!`, with the page's body made anew. This phase also
-     fixes URLs the runtime builds without `--base` (a computed `href` patched to `/x` while
-     hydrating).
   2. The app's stylesheet as a file with its hash in its name, rather than inline in every page
      (question 9).
   3. Phase 2: kept layouts, the query changed in place (`use_search_params!`), `<A>`, `<Navigate>`

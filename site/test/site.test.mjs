@@ -91,6 +91,62 @@ const asked = (page) => page.eval("performance.getEntriesByType('resource').map(
 
 const text = (page, selector) => page.eval(`document.querySelector(${JSON.stringify(selector)}).textContent.trim()`);
 
+/**
+ * In every document a tab loads, before the page's own scripts: strict, the runtime noted as it
+ * wakes, and a snapshot of the page as each navigation in place (D-040) leaves it, taken as
+ * `rocx:navigated` is dispatched (before site.js hears it): `<html>`, without the host's elements
+ * (`[data-rocx]`: the bootstrap, the plugins' scripts, the runtime's title and announcer), the
+ * answers and the flash a document carries, the comments of a text hole's server markup (`<!--x-->`,
+ * which the browser doesn't make) and site.js's `data-hydrated`; and its title. `snapshotOf` takes
+ * the same of a document the server sent, parsed.
+ */
+const NAVIGATED = `
+	window.rocxStrict = true;
+	document.addEventListener("rocx:ready", (event) => { window.runtime = event.detail.runtime; });
+	window.snapshotOf = (doc) => {
+		const copy = doc.documentElement.cloneNode(true);
+		for (const gone of copy.querySelectorAll("[data-rocx], script.rocx-answers, script.rocx-flash")) gone.remove();
+		copy.removeAttribute("data-hydrated");
+		const walker = doc.createTreeWalker(copy, NodeFilter.SHOW_COMMENT);
+		const comments = [];
+		for (let node = walker.nextNode(); node; node = walker.nextNode()) if (node.data === "x" || node.data === "/x") comments.push(node);
+		for (const node of comments) node.remove();
+		copy.normalize();
+		return { title: doc.title, html: copy.outerHTML };
+	};
+	document.addEventListener("rocx:navigated", () => { window.navigated = window.snapshotOf(document); });
+`;
+
+/**
+ * Every page of the site, reached by navigating in place (from the one before it, starting at the
+ * front page, at `url` + `base`), is the page a load renders: the page as the navigation left it is
+ * the document it was rendered from, byte for byte outside the host's elements, its title the
+ * document's; no load (the window is the same), nothing asked again (strictly), nothing said.
+ */
+async function navigatesLikeLoads(url, base = "") {
+	const tab = await browser.page();
+	await tab.send("Page.enable");
+	await tab.send("Page.addScriptToEvaluateOnNewDocument", { source: NAVIGATED });
+	await tab.goto(`${url}${base}/`);
+	await tab.wait(AWAKE);
+	await tab.eval("window.mark = 'kept'");
+	for (const route of ROUTES) {
+		const result = await tab.eval(`(async () => {
+			window.navigated = null;
+			await window.runtime.navigate(${JSON.stringify(route)});
+			const { text } = await window.runtime.documents.get(location.href.split("#")[0]).promise;
+			return { mark: window.mark, at: location.pathname, navigated: window.navigated, loaded: window.snapshotOf(new DOMParser().parseFromString(text, "text/html")) };
+		})()`);
+		assert.equal(result.mark, "kept", `${route}: in place, no load`);
+		assert.equal(result.at, `${base}${route}`, `${route}: its address`);
+		assert.equal(result.navigated?.title, result.loaded.title, `${route}: its title`);
+		assert.equal(result.navigated.html, result.loaded.html, `${route}: navigated to, the page a load renders`);
+	}
+	assert.deepEqual(tab.errors, []);
+	assert.deepEqual(tab.console, []);
+	await tab.close();
+}
+
 test("every page renders, and hydrates strictly as the server left it, asking for nothing but app.wasm and what it loads", { skip }, async () => {
 	for (const route of ROUTES) {
 		// As a browser asks (accepting HTML): a path with a page and a get! (/calls, /members) answers
@@ -1175,6 +1231,10 @@ test("testing: the page shows its inbox, and what the package's queries answered
 	assert.equal(page.getAllByText("site/Demos/TestingInbox.rocx").length, 2, "the component and its expects, each picked from the demo's file");
 });
 
+test("navigation in place (D-040): every page reached from the one before, from the front page on, is the page a load renders, byte for byte outside the host's elements, its document fetched once and nothing asked again", { skip }, async () => {
+	await navigatesLikeLoads(site.url);
+});
+
 test("the static build is every page as the server answers it, and what the pages load", { skip }, async () => {
 	for (const [route, file] of [...ROUTES.map((route) => [route, route === "/" ? "index.html" : `${route.slice(1)}/index.html`]), ["/404", "404.html"]]) {
 		const answered = await (await fetch(`${site.url}${route}`, { headers: { accept: "text/html" } })).text();
@@ -1339,6 +1399,9 @@ test("the static build for GitHub Pages: files alone, under /rocx/, every page h
 		assert.ok(!fetched.some((path) => !path.startsWith("/rocx/")), "nothing outside /rocx/");
 		assert.deepEqual(page.errors, []);
 		assert.equal(JSON.parse(readFileSync(join(files, "openapi.json"), "utf8")).openapi.slice(0, 2), "3.");
+		// Navigating in place (D-040), as files under /rocx/: each page the file a load gets, the
+		// URLs the runtime writes under the base as the file has them.
+		await navigatesLikeLoads(pages.url, "/rocx");
 	} finally {
 		await pages.close();
 		rmSync(host, { recursive: true, force: true });

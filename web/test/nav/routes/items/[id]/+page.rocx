@@ -1,0 +1,19 @@
+import pf.Html
+import pf.Browser
+import pf.Solid exposing [create_effect!]
+import ../../../Api
+
+meta = { title: "An item", look: "item" }
+
+## An item: what the server says of it, an effect that tells the page it came, a field that takes
+## the focus, and a deep place its hash may name.
+view! = |{ params }| {
+	create_effect!(|| params.id, |id| Browser.call!("nav.item", { id: id }))
+	<article class="item">
+		<h1>Item {params.id}</h1>
+		<p class="said">{Api.say!(params.id)}</p>
+		<NoHydration><p class="prose">Item {params.id}'s prose</p></NoHydration>
+		<div class="tall"></div>
+		<p id="deep">Deep in item {params.id}</p>
+	</article>
+}

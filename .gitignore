@@ -55,3 +55,4 @@ bin/.rocx-opt
 *.db
 *.db-shm
 *.db-wal
+web/test/nav/Generated/

@@ -323,6 +323,15 @@ view! = |_|
 				reads it runs again then, once.
 			</p>
 			<p>
+				A handler goes to another of the app's pages with <code>{"navigate!(Paths.blog_slug({ slug }))"}</code>
+				(Solid Router's <code>useNavigate</code>; <code>{"navigate_with!(to, { replace, scroll })"}</code> with
+				its options): once the handler is done, the page is rendered in place, as a link's click renders it
+				(<a href={"${Paths.routing}#navigating"}>navigating</a>), and a handler that waits for the server and
+				runs again navigates once. Rendering mustn't navigate: called while computing, it fails.
+				<code>{"Router.is_routing!({})"}</code> says one is on its way, and <code>{"Router.location!({})"}</code>,
+				read in a hole or a memo, follows it.
+			</p>
+			<p>
 				A handler can run later, too, on the browser's timers: <code>set_interval!(ms, tick!)</code> runs one
 				every <code>ms</code> milliseconds, and <code>set_timeout!(ms, done!)</code> once, <code>ms</code> from
 				now. Each answers its <code>clear!</code>, which stops it. And each belongs to what started it, so it
@@ -992,6 +1001,8 @@ view! = |_|
 						<tr><td><code>submission.retry()</code></td><td><code>{"submission.retry!()"}</code>, <code>{"moves.retry!(id)"}</code></td></tr>
 						<tr><td><code>{"return json(card, { revalidate: getBoard.key })"}</code></td><td><code>{"Router.revalidate!([Endpoint.url_of(Api.get_board({}))])"}</code>, in the handler</td></tr>
 						<tr><td><code>{"onClick={(e) => { e.preventDefault(); go() }}"}</code></td><td><code>{"on:click.prevent={go!}"}</code></td></tr>
+						<tr><td><code>{"const navigate = useNavigate(); navigate(\"/blog/hello\", { replace: true })"}</code></td><td><code>{"navigate_with!(Paths.blog_slug({ slug: \"hello\" }), { replace: Bool.True, scroll: Bool.True })"}</code>, in a handler; <code>{"<a href>"}</code> navigates in place as Solid Router's does</td></tr>
+						<tr><td><code>useIsRouting()</code>, <code>useLocation()</code></td><td><code>{"Router.is_routing!({})"}</code>, <code>{"Router.location!({})"}</code>, tracked</td></tr>
 						<tr><td><code>{"animate:flip"}</code>, <code>crossfade</code> (Svelte)</td><td><code>{"transition:move={Transition.glide}"}</code>, with <code>{"key={…}"}</code> across lists</td></tr>
 						<tr><td><code>{"<Heading text={user().name} />"}</code></td><td><code>{"<Heading text!={user!().name} />"}</code></td></tr>
 						<tr><td>a component that only renders its props</td><td>a pure one: <code>view</code>, no <code>!</code>, called where it is written</td></tr>
@@ -1129,6 +1140,7 @@ view! = |_|
 						<li>The document's head: <code>{"<Title>"}</code>, <code>{"<Meta>"}</code>, <code>{"<Link>"}</code>, <code>{"<Style>"}</code></li>
 						<li>Endpoints, read as plain values where a page renders; their events</li>
 						<li>Server rendering, natively; hydration</li>
+						<li>Navigating without a load (Solid Router's): links, <code>navigate!</code>, back and forward, <code>is_routing!</code>, the page made from its document</li>
 					</ul>
 				</div>
 				<div class="roadmap-next">

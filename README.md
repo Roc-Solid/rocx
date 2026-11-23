@@ -235,6 +235,7 @@ import charts.Format
 | `<li class="row" class:active={bool}>` | `class:name` adds a class when true; all of them end up in one `class` |
 | `<span style:--size={str}>` | sets a CSS custom property; joins any static `style`; a value with characters that could end the declaration, or a function that loads something (`url(…)`), is left out |
 | `<h1 style:color={str}>` | sets one property of the style the same way, its name letters and dashes, computed if it reads a signal; in `Html.to_str` too (an email's colours) |
+| `<a href={Paths.lists_id({ id })}>`, `<a href={…} replace noscroll>` | a link to one of the app's pages is rendered in place, without a load (D-040); `replace` replaces the history entry instead of pushing one, `noscroll` keeps the scroll where it is; `rel="external"`, a `target`, `download` or a modifier key leave the link to the browser |
 | `{expr}` among children | text: `expr` is a `Str`, escaped |
 | `{=expr}` | one `Html` value, as it is |
 | `{...expr}` | a `List(Html)`, joined |
@@ -266,6 +267,8 @@ In a component only:
 | `<Document on:keydown.Mod+K={open!} />` | handlers on the whole document, written as an element's, while what renders it is there (`<Show>` it to stop them); renders nothing. `<Window on:resize={…} />`, the window's |
 | `<input on:keydown.Shift+Enter={send!}>` | for that key with exactly those modifier keys held (`Shift`, `Ctrl`, `Alt`, `Meta`, and `Mod`: ⌘ on macOS, Ctrl elsewhere): `Mod+K`, `Ctrl+Alt+Delete`; Shift+Enter isn't Enter |
 | `<a href="/next" on:click.prevent={go!}>` | the event's default prevented before the handler runs (a link's click taken over) |
+| `navigate!(Paths.tasks_id({ id: task!().id }))` | in a handler: to one of the app's pages, rendered in place, once the handler is done (Solid Router's `useNavigate`); `navigate_with!(to, { replace: Bool.True, scroll: Bool.True })`; another site, or a path no page has, the browser loads (`import pf.Router exposing [navigate!, navigate_with!]`) |
+| `<div class="progress" class:on={Router.is_routing!({})}>` | whether a navigation in place is on its way: true from the click until the new page is on screen, the old page staying meanwhile (Solid Router's `useIsRouting`); false on the server |
 | `<li draggable="true" on:dragstart={…}>`, `<ul on:drop={…}>` | drag and drop: an element with a drop handler takes drops (`on:drop.value`: the text dropped), and its `on:dragenter` and `on:dragleave` run as the drag comes over it and leaves it, not once per child. By mouse, the browser's own; by touch or a pen, the runtime's (held a quarter second, then dragged), in the same events (D-055) |
 | `<li drag:data={[("text/uri-list", url)]} drag:image="ghost">` | what a drag of it carries for other pages and programs, by type, and what it shows (a copy of the element with that id); `on:drop.data` gives a drop every piece by type (`Html.DragItem`), `on:drop.files` its files (`Html.File`: name, type, size and a `blob:` URL; `on:paste.files`, a file field's `on:change.files`) |
 | `<div on:pointermove.point={moved!}>` | where the pointer is over the element, shares of its box (`Html.Point`, 0 to 1), at most once a frame; `<Document on:visibilitychange.visible={shown!} />`, whether the page shows |
@@ -356,8 +359,10 @@ A route file that imports the platform's `Html` (`import pf.Html`) is a componen
 doesn't read). Its page is a document the server renders and the browser hydrates, and rocx build
 writes more for it:
 
-- `Generated/Root.roc`, in both copies: `Root.view!` reads `Router.location!`, matches it as
-  `Routes` does, and renders the page in its layouts. The root layout is the document (with none, a
+- `Generated/Root.roc`, in both copies: `Root.view!` tells the runtime the app (`Router.app!`: the
+  build's id, `Root.build`, a hash of what the app is built from, which the server writes on each
+  page's bootstrap as `data-build`; and the route table, `Root.routes`), reads `Router.location!`,
+  matches it as `Routes` does, and renders the page in its layouts. The root layout is the document (with none, a
   default one). Inside it, around the rest, an `<Errored>`: a failure nothing else catches is the
   error page with `<HttpStatusCode code={500}/>`, or the status a read was refused with, when it is
   a 4xx (`Endpoint.get!` of a note that isn't there is the page's 404: `Errored.status_of`). A path
@@ -375,6 +380,26 @@ writes more for it:
   the browser's build couldn't compile it. The copy leaves out an app on the server platform (the
   app's own `main.roc`: the server's program); an app of endpoints alone has no `<out>/main.roc`,
   and the build says the browser has nothing to build.
+
+**Navigating in place** (D-040, Solid Router's model): in the browser, a click on a link to one of
+the app's own pages (this origin, under the site's base, a path the route table has a page for), a
+handler's `navigate!`, and back and forward don't load a document. The runtime fetches the page's
+document as the server answers a load (behind its middleware, its reads answered in-process, a
+redirect followed; or the file `just site` wrote), with `x-rocx-navigate: 1` for a middleware that
+tells the two apart, and renders the page from the wasm with that document's answers and
+`<NoHydration>` regions: nothing else is asked. The old page stays until it is in
+(`Router.is_routing!`); then the address is pushed, `Router.location!` (a tracked source now) is the
+new page's, the page is made anew (phase 1: the layouts too), `<head>` is reconciled with the
+document's (an element equal to one there, a stylesheet, is kept), `<html>`'s and `<body>`'s
+attributes are the document's, the scroll is at the top (or the hash's element; back and forward
+restore it), the focus at `<body>`'s start, and a live region says the new title for a screen reader.
+The documents fetched in the last 10 s are used again. Whatever isn't an app document of this build
+(a text 401, a crash, a page of a new deploy: `data-build`, no network) the browser loads, as it does
+a link with `rel="external"`, a `target`, `download` or a modifier key, a path no page has, and a
+place on the same page. The document dispatches `rocx:navigate` and `rocx:navigated` (`{ url, ms }`):
+page JavaScript that set itself up on `rocx:ready` does so again on `rocx:navigated`, since a
+`<script>` a page renders runs on a load only. `<html data-rocx-navigation="off">` turns it off. Apps
+change nothing to have it.
 
 Any app with routes, of components or not (endpoints alone too), gets its program:
 

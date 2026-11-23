@@ -616,7 +616,9 @@ class Hub {
 		this.runtime.notify("unsubscribe", { url: subscriber.url });
 		const channel = this.channels.get(subscriber.url);
 		if (!channel?.subscribers.delete(subscriber.id) || channel.subscribers.size) return;
-		this.channels.delete(subscriber.url);
+		// Its last subscriber gone, the channel stays until the stream follows the set (`reconcile`):
+		// one subscribing meanwhile (the next page's, as a navigation renders it, D-040) finds it open,
+		// and is sent its resync.
 		this.changed();
 	}
 
@@ -641,6 +643,7 @@ class Hub {
 	}
 
 	reconcile() {
+		for (const [url, channel] of this.channels) if (!channel.subscribers.size) this.channels.delete(url);
 		// A wait before the next try is under way: it opens the stream with the set as it is then.
 		if (this.unavailable || this.retrying) return;
 		const urls = [...this.channels.keys()].sort();
@@ -843,6 +846,10 @@ class Hub {
 }
 
 export class Runtime {
+	/** How many documents navigations keep (D-040 §6.2), and for how long one is used again (ms). */
+	static CACHE = 8;
+	static FRESH = 10_000;
+
 	/**
 	 * `base` is the path the site is served under (`/`, or `/rocx/` for a copy at
 	 * `example.github.io/rocx/`): a URL Roc gives that begins with `/` (an endpoint's) is asked for
@@ -890,6 +897,9 @@ export class Runtime {
 		 * them; `animates` once there is one, so an app without any walks nothing for them. */
 		this.transitions = new WeakMap();
 		this.animates = false;
+		/** Each element's style holes' values, as Roc gave them (`style:--x={…}`): an element the
+		 * runtime makes writes its `style` as the server does (`inOrder`), not as the CSSOM would. */
+		this.rawStyles = new WeakMap();
 		/** Elements whose in-transition plays once what this flush changes is on the page. */
 		this.entering = [];
 		/** The `<Title>`s there are, by the computation of each one's hole: `{ seq, title }`, the
@@ -1653,6 +1663,7 @@ export class Runtime {
 		}
 		this.submissionsChanged(source);
 		const asked = performance.now();
+		const navigations = this.navigations;
 		this.notify("submit", { method, url: key, input, id: entry.id });
 		const done = (status, said) => {
 			Object.assign(entry, { state: "done", status, body: said });
@@ -1666,7 +1677,9 @@ export class Runtime {
 				const to = response.headers.get("x-rocx-redirect");
 				if (to !== null || response.redirected) {
 					this.notify("submitted", { url: key, input, id: entry.id, status: response.status, redirect: to ?? response.url, ms: performance.now() - asked });
-					location.assign(to !== null ? new URL(this.under(to), location.href).href : response.url);
+					// In place when it is one of the app's pages (D-040), but not if the visitor went to
+					// another page meanwhile: a form sent from one mustn't move them off the next.
+					if (this.navigations === navigations) this.navigate(to !== null ? this.urlOf(to) : new URL(response.url));
 					return;
 				}
 				const said = await response.text();
@@ -1714,6 +1727,8 @@ export class Runtime {
 	 * one, or begins with one and a `/` or a `?`; none, `[]`.
 	 */
 	revalidate(done, keys = null) {
+		// The server's data changed: a document fetched before isn't the page now (D-040 §6.2).
+		this.documents?.clear();
 		const named = (key) => {
 			if (!key.startsWith("GET ")) return false;
 			if (keys === null) return true;
@@ -1924,11 +1939,415 @@ export class Runtime {
 		return new URL(to.startsWith("/") && !to.startsWith("//") ? this.under(to) : to, location.href);
 	}
 
-	/** Navigates to `to` (`Router.navigate!`, `navigate_with!`): the browser loads it. */
-	navigate(to, { replace = false } = {}) {
-		const url = this.urlOf(to);
-		if (replace) location.replace(url.href);
-		else location.assign(url.href);
+	// ---- Navigating in place (D-040) ----
+
+	/**
+	 * Listens for what navigates (once, as the app starts): clicks on the document (a link to one
+	 * of the app's pages, `clicked`), back and forward (`popstate`), and the page going (its scroll
+	 * kept, for a reload). The history entry the page is on gets a key, the scroll is the runtime's
+	 * (`scrollRestoration` manual), and a reload's is put back.
+	 */
+	listenForNavigation() {
+		if (this.navigating || !this.app || typeof window === "undefined" || this.page !== document) return;
+		this.navigating = true;
+		/** The navigation on its way: `{ id, url, controller }`; how many were committed (a
+		 * submission's redirect is followed only if none was since it was sent). */
+		this.navigation = null;
+		this.navigations = 0;
+		/** The documents fetched lately (`Runtime.CACHE` of them, by URL, each used for `FRESH` ms). */
+		this.documents = new Map();
+		const state = history.state;
+		this.entryKey = state?.rocx?.key ?? Runtime.entryKey();
+		if (state?.rocx?.key !== this.entryKey) history.replaceState({ ...(state && typeof state === "object" ? state : {}), rocx: { key: this.entryKey } }, "");
+		if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+		const kept = this.scrollOf(this.entryKey);
+		if (kept && !location.hash) window.scrollTo(kept.x, kept.y);
+		document.addEventListener("click", (event) => this.clicked(event));
+		// A GET form to one of the app's pages (phase 2's `gotForm`).
+		document.addEventListener("submit", (event) => this.gotForm?.(event));
+		window.addEventListener("popstate", (event) => this.popped(event));
+		window.addEventListener("pagehide", () => this.keepScroll());
+	}
+
+	/** A fresh key for a history entry. */
+	static entryKey() {
+		return Math.random().toString(36).slice(2, 10);
+	}
+
+	/** Where an entry was scrolled to, kept by its key (`keepScroll`), if it was. */
+	scrollOf(key) {
+		try {
+			const kept = sessionStorage.getItem(`rocx:scroll:${key}`);
+			return kept ? JSON.parse(kept) : null;
+		} catch {
+			return null;
+		}
+	}
+
+	/** Keeps where the page is scrolled to, by the key of the entry it is on. */
+	keepScroll() {
+		try {
+			sessionStorage.setItem(`rocx:scroll:${this.entryKey}`, JSON.stringify({ x: window.scrollX, y: window.scrollY }));
+		} catch {}
+	}
+
+	/**
+	 * A click on the document: navigates in place when it is the main button with no modifier key,
+	 * no handler prevented it, on an `<a>` (an SVG one too) with an `href`, no `download`, no `rel`
+	 * with `external`, no `target` but `_self`, to this origin under the site's base, at a path the
+	 * app has a page for, and not to a place on this page (only the hash differing: the browser
+	 * scrolls there). `<html data-rocx-navigation="off">` turns it off; `"explicit"`, for a link
+	 * without `data-rocx-link`. A link's `replace` replaces the entry; `noscroll` keeps the scroll.
+	 */
+	clicked(event) {
+		if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+		const anchor = event.target?.closest?.("a");
+		if (!anchor) return;
+		const href = anchor.getAttribute("href") ?? anchor.getAttribute("xlink:href");
+		if (href === null || anchor.hasAttribute("download")) return;
+		if (/(^|\s)external(\s|$)/i.test(anchor.getAttribute("rel") ?? "")) return;
+		const target = anchor.getAttribute("target");
+		if (target && target !== "_self") return;
+		const mode = document.documentElement.getAttribute("data-rocx-navigation");
+		if (mode === "off" || (mode === "explicit" && !anchor.hasAttribute("data-rocx-link"))) return;
+		const url = new URL(href, document.baseURI);
+		if (!this.ours(url)) return;
+		if (Runtime.samePage(url)) return;
+		event.preventDefault();
+		this.navigate(url, { replace: anchor.hasAttribute("replace"), scroll: !anchor.hasAttribute("noscroll") });
+	}
+
+	/** Whether `url` is a place on the page the browser is on: the same path and query, and a hash
+	 * (`#below`, or `#` alone), which the browser scrolls to itself. */
+	static samePage(url) {
+		return url.href.includes("#") && url.origin === location.origin && url.pathname === location.pathname && url.search === location.search;
+	}
+
+	/** Whether `url` is one of the app's pages: this origin's, under the site's base, at a path the
+	 * route table has a page for. */
+	ours(url) {
+		if (url.origin !== location.origin) return false;
+		const base = this.base.slice(0, -1);
+		if (base && url.pathname !== base && !url.pathname.startsWith(this.base)) return false;
+		return this.routeOf(this.unbased(url.pathname)) !== null;
+	}
+
+	/** Back or forward: the entry's page, rendered as a click's is, without pushing an entry. A
+	 * change of the hash alone is the browser's. */
+	popped(event) {
+		const key = event.state?.rocx?.key ?? null;
+		if (this.here() === this.committed && !this.navigation) {
+			if (key) this.entryKey = key;
+			else history.replaceState({ ...(event.state ?? {}), rocx: { key: this.entryKey } }, "");
+			return;
+		}
+		this.keepScroll();
+		this.navigate(new URL(location.href), { pop: key ?? Runtime.entryKey() });
+	}
+
+	/** The browser loads `url`: another site's, a page that isn't the app's, a document the runtime
+	 * can't render. Back or forward (`pop`), the address is already there: loaded again. */
+	load(url, { replace = false, pop = null } = {}) {
+		if (pop) location.reload();
+		else if (replace) location.replace(url.href ?? url);
+		else location.assign(url.href ?? url);
+	}
+
+	/**
+	 * Navigates to `to` (a link's URL, `Router.navigate!`'s, back and forward's): one of the app's
+	 * pages is rendered in place, from its document, fetched (`documentFor`: as the server answers a
+	 * load, behind its middleware, a redirect followed), the old page staying until it is in
+	 * (`is_routing!`), and the address pushed (or replaced, or, back and forward, left); anything
+	 * else the browser loads. A newer navigation overtakes one on its way (its fetch aborted).
+	 * `rocx:navigate` is dispatched on the document as it starts, `rocx:navigated` once the page is
+	 * on screen, each with `{ url }` (and `ms`, the time it took).
+	 */
+	async navigate(to, { replace = false, scroll = true, pop = null } = {}) {
+		const url = to instanceof URL ? to : this.urlOf(to);
+		if (!this.navigating || !this.ours(url)) return this.load(url, { replace, pop });
+		if (!pop && Runtime.samePage(url)) return this.load(url, { replace });
+		// The page it is on, again: its entry replaced, as a browser loading the same URL does.
+		if (!pop && url.href === location.href) replace = true;
+		if (this.inPlace?.(url, { replace, scroll, pop })) return;
+		const started = performance.now();
+		// Where the page is scrolled to as the visitor leaves it (before the progress a navigation
+		// shows can move it: scroll anchoring).
+		if (!pop) this.keepScroll();
+		this.navigation?.controller.abort();
+		const navigation = (this.navigation = { id: ++ids, url, controller: new AbortController() });
+		this.setRouting(true);
+		this.notify("navigate", { url: url.href });
+		document.dispatchEvent(new CustomEvent("rocx:navigate", { detail: { url: url.href } }));
+		const route = this.routeOf(this.unbased(url.pathname));
+		let fetched;
+		try {
+			[fetched] = await Promise.all([this.documentFor(url, navigation.controller.signal), this.codeOf(route)]);
+		} catch (error) {
+			if (this.navigation !== navigation) return;
+			this.navigation = null;
+			// Offline, the server down, or a redirect to another site (refused by CORS): the browser's.
+			return this.load(url, { replace, pop });
+		}
+		if (this.navigation !== navigation) return;
+		// Where it ended: a redirect's address, but one that only adds the trailing slash (a static
+		// host's) is the link's page.
+		let at = url;
+		if (fetched.redirected) {
+			const ended = new URL(fetched.url);
+			ended.hash = url.hash;
+			if (!(ended.origin === url.origin && ended.pathname === `${url.pathname}/` && ended.search === url.search)) at = ended;
+		}
+		const doc = this.appDocument(fetched);
+		if (!doc || (at !== url && !this.ours(at))) {
+			this.navigation = null;
+			this.documents.delete(Runtime.documentKey(url));
+			return this.load(at, { replace, pop });
+		}
+		if (pop) this.entryKey = pop;
+		else {
+			this.entryKey = Runtime.entryKey();
+			history[replace ? "replaceState" : "pushState"]({ rocx: { key: this.entryKey } }, "", at.href);
+		}
+		if (pop && history.state?.rocx?.key !== pop) history.replaceState({ ...(history.state ?? {}), rocx: { key: pop } }, "");
+		this.navigation = null;
+		this.navigations++;
+		try {
+			this.commit(doc, Runtime.target(`${this.unbased(at.pathname)}${at.search}`));
+			this.afterNavigate?.(doc);
+			this.scrolled(at, { pop, scroll });
+			this.focused(at);
+			this.announce(at);
+			const ms = performance.now() - started;
+			this.notify("navigated", { url: at.href, ms });
+			document.dispatchEvent(new CustomEvent("rocx:navigated", { detail: { url: at.href, ms } }));
+		} finally {
+			// The effects' applies, held while the page was made, run once the page is as it will stay,
+			// as a load's run after it hydrated (and after `rocx:ready`).
+			this.holdingEffects = false;
+			this.wake();
+		}
+	}
+
+	/** A document's key in the cache: its URL without the hash. */
+	static documentKey(url) {
+		return url.href.split("#")[0];
+	}
+
+	/**
+	 * The document of the page at `url`, as the server answers a load (`accept: text/html`, and
+	 * `x-rocx-navigate: 1` for a middleware that tells a navigation from a load): `{ status, url,
+	 * redirected, type, text }`. One fetched at most `FRESH` ms ago is used again (back and forward
+	 * in a hurry asks nothing), and one on its way is waited for; the last `CACHE` are kept. A
+	 * failure (offline, a redirect to another site) throws.
+	 */
+	documentFor(url, signal) {
+		const key = Runtime.documentKey(url);
+		const cached = this.documents.get(key);
+		if (cached && (cached.at === null || performance.now() - cached.at <= Runtime.FRESH)) return cached.promise;
+		const entry = { at: null, promise: null };
+		const asked = performance.now();
+		this.notify("fetch", { method: "GET", url: key, body: "" });
+		entry.promise = fetch(key, { headers: { accept: "text/html", "x-rocx-navigate": "1" }, signal, credentials: "same-origin" }).then(
+			async (response) => {
+				const text = await response.text();
+				entry.at = performance.now();
+				this.notify("fetched", { method: "GET", url: key, status: response.status, body: "", ms: entry.at - asked });
+				return { status: response.status, url: response.url, redirected: response.redirected, type: response.headers.get("content-type") ?? "", text };
+			},
+			(error) => {
+				if (this.documents.get(key) === entry) this.documents.delete(key);
+				throw error;
+			},
+		);
+		this.documents.delete(key);
+		this.documents.set(key, entry);
+		while (this.documents.size > Runtime.CACHE) this.documents.delete(this.documents.keys().next().value);
+		return entry.promise;
+	}
+
+	/** The fetched page as a document the runtime renders: an app document (HTML, with the app's
+	 * bootstrap) of this build (`data-build`, D-040 §10.3); else null, and the browser loads it.
+	 * Read with `DOMParser`: no script in it runs. */
+	appDocument(fetched) {
+		if (!/^text\/html\b/i.test(fetched.type)) return null;
+		const doc = new DOMParser().parseFromString(fetched.text, "text/html");
+		const start = [...doc.querySelectorAll("script[data-rocx][src]")].find((script) => /(^|\/)rocx\/start\.js$/.test(script.getAttribute("src")));
+		if (!start || start.getAttribute("data-build") !== this.app.build) return null;
+		return doc;
+	}
+
+	/**
+	 * A fetched document made the page: its answers and flash seeded, the location committed, and
+	 * the root run again in one flush, the document rendered anew from them (`settleDocument`):
+	 * `<head>` reconciled with the document's, `<body>` made anew with the document's
+	 * `<NoHydration>` regions, `<html>`'s and `<body>`'s attributes the document's. Nothing is asked
+	 * of the server; strictly (the tests'), asking throws. The effects' applies wait (`navigate`).
+	 */
+	commit(doc, target) {
+		this.flash = "";
+		this.seed(doc);
+		const hydrating = (this.hydrating = { asked: [] });
+		this.arriving = doc;
+		this.holdingEffects = true;
+		this.setRouting(false);
+		try {
+			if (this.committed === target) for (const observer of this.locationSource.observers) this.schedule(observer);
+			this.commitLocation(target);
+			// Phase 1 makes the whole document anew; phase 2's levels may keep the root (`remakeRoot`).
+			if (this.root && (this.remakeRoot?.(target) ?? true)) this.schedule(this.root);
+			this.flush();
+		} finally {
+			this.arriving = null;
+			this.hydrating = null;
+			this.answers.clear();
+		}
+		if (this.strict && hydrating.asked.length) throw new Error(`rocx: navigating to ${target}, the page asked the server again for ${hydrating.asked.join(", ")}: its document didn't carry it`);
+	}
+
+	/** After a navigation: back and forward, the scroll the entry had; else, unless told not to, the
+	 * top, or the element the hash names. */
+	scrolled(url, { pop, scroll }) {
+		if (pop) {
+			const kept = this.scrollOf(pop);
+			window.scrollTo(kept?.x ?? 0, kept?.y ?? 0);
+			return;
+		}
+		if (!scroll) return;
+		const hash = url.hash ? decodeURIComponent(url.hash.slice(1)) : "";
+		const target = hash ? (document.getElementById(hash) ?? document.getElementsByName(hash)[0]) : null;
+		if (target) target.scrollIntoView();
+		else window.scrollTo(0, 0);
+	}
+
+	/** After a navigation, the focus where a load puts it: an `autofocus` element of the new page's,
+	 * the hash's target if it can be focused, or the start of `<body>`, so the next Tab reaches the
+	 * page's skip link. */
+	focused(url) {
+		const auto = document.body?.querySelector("[autofocus]");
+		if (auto) return auto.focus();
+		const hash = url.hash ? decodeURIComponent(url.hash.slice(1)) : "";
+		const target = hash ? document.getElementById(hash) : null;
+		if (target && target.tabIndex >= 0) return target.focus({ preventScroll: true });
+		const body = document.body;
+		if (!body) return;
+		const tabindex = body.getAttribute("tabindex");
+		body.tabIndex = -1;
+		body.focus({ preventScroll: true });
+		if (tabindex === null) body.removeAttribute("tabindex");
+		else body.setAttribute("tabindex", tabindex);
+		// The next Tab starts from the top of the page, not from where the link was.
+		const selection = getSelection();
+		if (selection && selection.type !== "Range") selection.removeAllRanges();
+	}
+
+	/** Says the new page to a screen reader, which can't see a navigation in place: its title (or
+	 * its path), in a live region of the host's at the end of `<body>`, hidden by its style. */
+	announce(url) {
+		let announcer = this.announcer;
+		if (!announcer?.isConnected) {
+			announcer = this.announcer = document.createElement("div");
+			announcer.setAttribute("data-rocx", "");
+			announcer.setAttribute("aria-live", "assertive");
+			announcer.setAttribute("aria-atomic", "true");
+			Object.assign(announcer.style, { position: "absolute", width: "1px", height: "1px", margin: "-1px", padding: "0", border: "0", overflow: "hidden", clip: "rect(0 0 0 0)", clipPath: "inset(50%)", whiteSpace: "nowrap" });
+			document.body.append(announcer);
+		}
+		announcer.textContent = document.title || this.unbased(url.pathname);
+	}
+
+	/**
+	 * Rendering anew for a navigation: the live `<head>`'s nodes made the fetched document's, in its
+	 * order, a node equal to one there kept where it is (so a stylesheet isn't loaded again or a
+	 * script run again), the others the document's (a script inert), and the host's elements
+	 * (`[data-rocx]`: the runtime's title and head elements) left alone. A stylesheet that goes
+	 * stays until the ones that come have loaded, so nothing shows unstyled.
+	 */
+	reconcileHead(head, from) {
+		const live = [...head.childNodes].filter((node) => !hosts(node));
+		const wanted = [...from.childNodes].filter((node) => !hosts(node));
+		const kept = new Set();
+		const plan = [];
+		let at = 0;
+		for (const node of wanted) {
+			let found = null;
+			for (let i = at; i < live.length; i++) {
+				if (live[i].isEqualNode(node)) {
+					found = live[i];
+					at = i + 1;
+					break;
+				}
+			}
+			if (found) kept.add(found);
+			plan.push(found ?? node);
+		}
+		const sheet = (node) => node.nodeType === 1 && node.localName === "link" && /(^|\s)stylesheet(\s|$)/i.test(node.getAttribute("rel") ?? "");
+		const going = live.filter((node) => !kept.has(node));
+		const coming = [];
+		let next = null;
+		for (let i = plan.length - 1; i >= 0; i--) {
+			const node = plan[i];
+			if (kept.has(node)) {
+				next = node;
+				continue;
+			}
+			const made = node.nodeType === 1 && node.localName === "script" ? Runtime.inertCopy(node) : document.importNode(node, true);
+			if (sheet(made)) coming.push(made);
+			head.insertBefore(made, next ?? Runtime.headEnd(head));
+			next = made;
+		}
+		const sheets = going.filter(sheet);
+		for (const node of going) if (!sheets.includes(node)) node.remove();
+		if (sheets.length) {
+			if (!coming.length) for (const node of sheets) node.remove();
+			else {
+				let left = coming.length;
+				const done = () => {
+					if (--left === 0) for (const node of sheets) node.remove();
+				};
+				for (const made of coming) {
+					made.addEventListener("load", done, { once: true });
+					made.addEventListener("error", done, { once: true });
+				}
+			}
+		}
+		// The runtime's title stays the document's: before the layout's own.
+		const own = head.querySelector("title[data-rocx]");
+		const first = [...head.querySelectorAll("title")].find((title) => !hosts(title));
+		if (own && first && own.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_PRECEDING) head.insertBefore(own, first);
+	}
+
+	/** Where a node the head gets goes when nothing kept follows it: before the host's own elements
+	 * at the head's end (the `<Meta>`s, `<Link>`s and `<Style>`s), else at the end. */
+	static headEnd(head) {
+		let end = null;
+		for (let node = head.lastChild; node && hosts(node) && node.localName !== "title"; node = node.previousSibling) end = node;
+		return end;
+	}
+
+	/** A copy of a fetched `<script>` that won't run (`inertScript`): a script a page renders runs on
+	 * a load, not after a navigation in place. */
+	static inertCopy(script) {
+		const made = inertScript();
+		for (const { name, value } of script.attributes) made.setAttribute(name, value);
+		made.textContent = script.textContent;
+		return made;
+	}
+
+	/** Rendering anew for a navigation: `<html>`'s or `<body>`'s attributes that the app writes
+	 * (`node`'s: its values, flags, classes and styles) made the fetched document's; any other (one a
+	 * page script set, `data-hydrated`) is left as it is. */
+	static attributesFrom(element, node, from) {
+		const names = new Set();
+		for (const [kind, name] of node.a) {
+			if (kind === "v" || kind === "vo" || kind === "o" || kind === "oo" || kind === "f" || kind === "fo") names.add(name);
+			else if (kind === "ci" || kind === "co") names.add("class");
+			else if (kind === "sv" || kind === "so") names.add("style");
+		}
+		for (const name of names) {
+			const value = from?.getAttribute(name) ?? null;
+			if (value === null) element.removeAttribute(name);
+			else if (element.getAttribute(name) !== value) element.setAttribute(name, value);
+		}
 	}
 
 	/**
@@ -1989,6 +2408,13 @@ export class Runtime {
 	/** `url` under the site's base, if it begins with `/` (and isn't `//host/…`). */
 	under(url) {
 		return url.startsWith("/") && !url.startsWith("//") ? `${this.base}${url.slice(1)}` : url;
+	}
+
+	/** A URL the runtime writes into the page (an `href`, `src` or `action` it builds or patches),
+	 * under the site's base, as the static copy has the server's (site/build.mjs's `underBase`):
+	 * under `/rocx/`, `/syntax` is `/rocx/syntax`. Anything else as it is. */
+	written(name, value) {
+		return this.base !== "/" && (name === "href" || name === "src" || name === "action") && typeof value === "string" ? this.under(value) : value;
 	}
 
 	/** A path the browser shows, the site's base taken off: under `/rocx/`, `/rocx/syntax` is
@@ -2333,11 +2759,18 @@ export class Runtime {
 		if (kind === "drag") return this.setDrag(target, name, JSON.parse(out));
 		if (kind === "text" || kind === "attr" || kind === "flag" || kind === "class" || kind === "optional" || kind === "style") {
 			// A value the node has already isn't a patch (a hole runs again whenever what it read
-			// was written, which may be with the same value).
-			const value = JSON.parse(out);
+			// was written, which may be with the same value). A URL under the site's base.
+			const value = kind === "attr" || kind === "optional" ? this.written(name, JSON.parse(out)) : JSON.parse(out);
 			if (computation.adopting && kind === "text") {
 				computation.adopting = false;
 				target.data = value;
+				return;
+			}
+			// A field being made has no `value` attribute yet: written, as the server writes it, which
+			// is no patch.
+			if (kind === "attr" && name === "value" && "value" in target && !target.hasAttribute("value")) {
+				target.setAttribute(name, value);
+				target.value = value;
 				return;
 			}
 			const now =
@@ -2366,7 +2799,12 @@ export class Runtime {
 				if (name === "value" && "value" in target) target.value = value;
 			}
 			else if (kind === "optional") value === "" ? target.removeAttribute(name) : target.setAttribute(name, value);
-			else if (kind === "style") value === "" ? target.style.removeProperty(name) : target.style.setProperty(name, value);
+			else if (kind === "style") {
+				let raw = this.rawStyles.get(target);
+				if (!raw) this.rawStyles.set(target, (raw = new Map()));
+				raw.set(name, value);
+				value === "" ? target.style.removeProperty(name) : target.style.setProperty(name, value);
+			}
 			else if (kind === "class") target.classList.toggle(name, value);
 			else {
 				target.toggleAttribute(name, value);
@@ -2491,7 +2929,8 @@ export class Runtime {
 		this.inFlush = true;
 		for (;;) {
 			if (this.dirty.size) this.run(this.dirty.take());
-			else if (this.due.size) this.applyReaction(this.due.take());
+			// A navigation's render holds them until the page is as it will stay (`navigate`).
+			else if (this.due.size && !this.holdingEffects) this.applyReaction(this.due.take());
 			else break;
 		}
 		this.inFlush = false;
@@ -3432,15 +3871,66 @@ export class Runtime {
 		}
 		if (classes.length) element.setAttribute("class", classes.join(" "));
 		for (const [kind, name, value] of node.a) {
-			if (kind === "v" && name !== "class") element.setAttribute(name, value);
-			else if (kind === "o" && value !== "") element.setAttribute(name, value);
+			if (kind === "v" && name !== "class") element.setAttribute(name, this.written(name, value));
+			else if (kind === "o" && value !== "") element.setAttribute(name, this.written(name, value));
 			else if (kind === "f") element.toggleAttribute(name, value);
 			else if (kind === "sv" && value) element.style.setProperty(name, value);
 		}
 		this.bind(element, node, owner, scope);
+		this.styled(element, node);
+		Runtime.inOrder(element, node);
 		const inside = within(node, scope);
 		for (const child of node.c) element.append(this.build(child, owner, inside));
 		return element;
+	}
+
+	/** An element the runtime made, its `class` and `style` written as the server writes them
+	 * (signals.rs's): its classes in the markup's order, a `class:name` that holds among the static
+	 * ones where it is written; its static style, then each `style:name`'s `name: value`, in the
+	 * markup's order, joined by `; `, not reserialized by the CSSOM (`--x: 1;`, `3.6e+06px`). */
+	styled(element, node) {
+		if (node.a.some(([kind]) => kind === "co")) {
+			const classes = [];
+			for (const [kind, name, value] of node.a) {
+				if (kind === "v" && name === "class") classes.push(value);
+				else if ((kind === "ci" && value) || (kind === "co" && element.classList.contains(name))) classes.push(name);
+			}
+			if (classes.length) element.setAttribute("class", classes.join(" "));
+			else element.removeAttribute("class");
+		}
+		if (!node.a.some(([kind]) => kind === "sv" || kind === "so")) return;
+		const raw = this.rawStyles.get(element);
+		const parts = [];
+		for (const [kind, name, value] of node.a) {
+			if (kind === "v" && name === "style") parts.push(value);
+			else if (kind === "sv" && value) parts.push(`${name}: ${value}`);
+			else if (kind === "so" && raw?.get(name)) parts.push(`${name}: ${raw.get(name)}`);
+		}
+		if (parts.length) element.setAttribute("style", parts.join("; "));
+		else element.removeAttribute("style");
+	}
+
+	/**
+	 * An element the runtime made, its attributes in the order the server writes them
+	 * (signals.rs's): `class` first, then the others in the markup's order, the holes' among them,
+	 * `style` last. Its holes set theirs after its static ones, so one with a hole between two static
+	 * attributes is put in order; an element that is already (most) isn't touched.
+	 */
+	static inOrder(element, node) {
+		if (!node.a.some(([kind]) => kind === "vo" || kind === "oo" || kind === "fo" || kind === "so" || kind === "sv" || (kind === "v" && node.a.length > 1))) return;
+		const order = ["class"];
+		for (const [kind, name] of node.a) {
+			if ((kind === "v" || kind === "o" || kind === "oo" || kind === "f" || kind === "vo" || kind === "fo") && name !== "class" && name !== "style" && !order.includes(name)) order.push(name);
+		}
+		order.push("style");
+		const have = element.getAttributeNames().filter((name) => order.includes(name));
+		const wanted = order.filter((name) => have.includes(name));
+		if (have.every((name, at) => name === wanted[at])) return;
+		for (const name of wanted) {
+			const value = element.getAttribute(name);
+			element.removeAttribute(name);
+			element.setAttribute(name, value);
+		}
 	}
 
 	/**
@@ -3538,7 +4028,11 @@ export class Runtime {
 				this.bind(element, node, owner, scope);
 				const inner = within(node, scope);
 				if (RCDATA.has(node.tag) && node.c.some((child) => child.t !== "s" && child.t !== "raw")) return this.adoptText(element, node, owner, inner);
-				if (cursor.rebuild && node.tag === "head") return this.keepHead(element, node, owner, inner);
+				if (cursor.rebuild && this.arriving && (node.tag === "html" || node.tag === "body")) Runtime.attributesFrom(element, node, node.tag === "html" ? this.arriving.documentElement : this.arriving.body);
+				if (cursor.rebuild && node.tag === "head") {
+					if (this.arriving?.head) this.reconcileHead(element, this.arriving.head);
+					return this.keepHead(element, node, owner, inner);
+				}
 				if (cursor.rebuild && node.tag === "body") return this.renderBody(element, node, owner, inner);
 				const inside = new Cursor(element.firstChild, element, cursor.rebuild && element === element.ownerDocument.documentElement);
 				for (const child of node.c) this.adopt(child, owner, inner, inside);
@@ -3668,6 +4162,7 @@ export class Runtime {
 	 */
 	hydrateDocument(doc = document, { strict = false } = {}) {
 		this.page = doc;
+		this.strict = strict;
 		this.committed = this.here();
 		this.seed(doc);
 		const seeded = new Map(this.answers);
@@ -3698,6 +4193,8 @@ export class Runtime {
 			this.answers.clear();
 			this.hydrating = null;
 		}
+		// The app's pages, from here on, navigated to in place (D-040).
+		this.listenForNavigation();
 	}
 
 	/**
@@ -3736,7 +4233,8 @@ export class Runtime {
 	/** Rendering a page again: `<body>`'s children made anew; the host's elements (`[data-rocx]`) and
 	 * the server's `<NoHydration>` regions stay. */
 	renderBody(body, node, owner, scope) {
-		const fragment = this.keepingRegions(body, () => {
+		// A navigation's: the fetched document's regions.
+		const fragment = this.keepingRegions(this.arriving?.body ?? body, () => {
 			const made = document.createDocumentFragment();
 			for (const child of node.c) made.append(this.build(child, owner, scope));
 			return made;

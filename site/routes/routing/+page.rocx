@@ -22,6 +22,7 @@ meta = {
 		{ id: "openapi", label: "Their OpenAPI document" },
 		{ id: "middleware", label: "Middleware: what runs, in what order" },
 		{ id: "router", label: "The router, and the app" },
+		{ id: "navigating", label: "Navigating, without a load" },
 		{ id: "error", label: "Where no page is" },
 		{ id: "limits", label: "Not yet" },
 	],
@@ -359,6 +360,56 @@ view! = |_|
 			</p>
 			<Code title={"${Sources.route_members.file}, in part"} source={Sources.route_members.rocx} numbers={Bool.False} />
 
+			<Heading id="navigating">Navigating, without a load</Heading>
+			<p>
+				A click on a link to another of the app's pages doesn't load it, as Solid Router's links don't: the
+				runtime already running in the page fetches the page's document, as the server answers a load
+				(behind its middleware, its reads answered as it renders, a redirect followed), or the file a static
+				build wrote, and the wasm, which holds every page, renders it from that document's answers and
+				<code>{"<NoHydration>"}</code> regions, asking for nothing else. The old page stays until the
+				document is in; then the address is pushed, the page is made, its <code>{"<head>"}</code>
+				reconciled with the document's (a stylesheet already there stays), the scroll put at the top (or
+				at the element the link's hash names), the focus at the start of the page, and the new title said
+				to a screen reader. Back and forward render their entry's page the same way, its scroll restored,
+				and a document fetched in the last ten seconds is used again. Every link on this site is one:
+				follow one and the page you leave isn't loaded again. An app changes nothing to have it.
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Write</th><th>Does</th></tr></thead>
+					<tbody>
+						<tr><td><code>{"<a href={Paths.blog_slug({ slug })}>"}</code></td><td>renders the page in place: a plain link, here, in Markdown, inside a <code>{"<NoHydration>"}</code></td></tr>
+						<tr><td><code>{"<a href={…} replace noscroll>"}</code></td><td>replaces the history entry instead of pushing one; keeps the scroll where it is</td></tr>
+						<tr><td><code>{"rel=\"external\""}</code>, <code>target</code>, <code>download</code>, a modifier key</td><td>the browser's, as on any page: a load, a new tab, a download</td></tr>
+						<tr><td><code>{"navigate!(Paths.blog_slug({ slug }))"}</code></td><td>in a handler: to that page, once the handler is done; <code>{"navigate_with!(to, { replace, scroll })"}</code> with Solid Router's options (<code>{"import pf.Router exposing [navigate!, navigate_with!]"}</code>)</td></tr>
+						<tr><td><code>{"Router.is_routing!({})"}</code></td><td>whether one is on its way, tracked: a progress bar's <code>{"class:on={…}"}</code></td></tr>
+						<tr><td><code>{"Router.location!({})"}</code></td><td>where the page is, tracked: a hole that reads it follows each navigation</td></tr>
+						<tr><td><code>{"<html data-rocx-navigation=\"off\">"}</code></td><td>every link loads its page, as before</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<ul>
+				<li>
+					<strong>The server decides, as on a load.</strong> The document's request is a page's GET (with
+					<code>x-rocx-navigate: 1</code>, for a middleware that counts views to tell the two apart), so a
+					guard that refuses or redirects does so here too, and a redirect lands with its address. What
+					isn't a page of this app's (a plugin's page, a file, a path no page has), or isn't a document of
+					this build (a text 401, a crash, a new deploy's page: the bootstrap says the build's id), or
+					can't be fetched, the browser loads.
+				</li>
+				<li>
+					<strong>Page scripts run on a load.</strong> A <code>{"<script>"}</code> a page renders isn't run
+					again by a navigation: script that set itself up on <code>rocx:ready</code> does so again on
+					<code>rocx:navigated</code>, which the document says with the URL and how long it took (this
+					site's inspectors do).
+				</li>
+				<li>
+					<strong>What the old page started stops with it</strong>: its effects' cleanups run, its timers
+					and listens stop, its channels are left (a channel the next page subscribes to as well keeps its
+					stream).
+				</li>
+			</ul>
+
 			<Heading id="error">Where no page is</Heading>
 			<p>
 				<code>routes/+error.rocx</code> renders what a path nothing answers shows, in the layouts at the root,
@@ -369,10 +420,13 @@ view! = |_|
 			<Code title={Sources.route_error.file} source={Sources.route_error.rocx} />
 
 			<Heading id="limits">Not yet</Heading>
-			<Callout kind="note" title="Navigation is a page load">
+			<Callout kind="note" title="A navigation makes the whole page anew">
 				<p>
-					A link loads the next page from the server, as on any page of plain HTML, and the browser
-					hydrates it from the start. Navigating in the browser, without a page load, is next.
+					Navigating renders every layout anew with the page, so a sidebar's scroll, an open menu or a
+					layout's signals start over, and a change of the query alone fetches the page's document as any
+					navigation does. Layouts kept across pages, the query changed in place, <code>{"<A>"}</code>
+					with its active state, <code>{"<Navigate>"}</code>, prefetching on hover and View Transitions
+					are next (D-040's phases 2 and 3).
 				</p>
 			</Callout>
 			<ul>
