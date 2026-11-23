@@ -2602,3 +2602,51 @@ example does, and `?mvcc=off` doesn't have it. Not fixed in the platform: to be 
 
 **Reversible:** yes: `?mvcc=off`, or the default flipped back in `db/mod.rs`.
 
+
+## D-058 `Db`'s queries checked at build: the engine describes, the compiler checks rows
+
+**Status.** Proposed (2026-11-23). Nothing is built. The design is in `spike/db-checked/DESIGN.md`,
+with its phases and the questions it waits on, and the spike it measured with is beside it.
+
+**Context.** `Db.all!` and `Db.run!` take SQL as a string, and `Json.parse` decodes the rows into
+the record the caller annotated (D-022). So a typo in a column, a field the statement doesn't
+return, or a nullable column read as a plain value shows up only when the call runs. The last of
+these shows up only when a row is actually null. D-016 deferred checked queries; roc-pg checks
+its own at compile time. Since D-045 and D-046 an app runs on Postgres, SQLite or Turso. Of the
+repo's 270 `Db` calls, 241 take their SQL as a literal at the call.
+
+**Proposal.**
+
+- **The engine describes.** The app's own server gets `--describe-sql <file>`. It applies the
+  program's migrations (the platform's, the plugins', the app's) to a scratch database of the
+  app's kind: a temporary SQLite or Turso file, or a Postgres database made beside `DATABASE_URL`
+  and dropped. It then prepares each statement and prints the engine's error, or the statement's
+  parameters and its columns. Each column has its declared type, the table column it comes from
+  and whether that is `not null`. That is exact for each engine (its grammar, its functions, what
+  Turso lacks) and it costs milliseconds.
+- **rocx finds the statements and checks SQL and parameters.** It reads each `Db.all!` and
+  `Db.run!` whose SQL is a literal at the call, and counts the call's parameter list when that is a
+  literal. It reports the engine's error, or a parameter count other than `$1`…`$k`, at the
+  call's `file:line`.
+- **The compiler checks rows.** rocx copies each call's row annotation (a binding's, or the
+  function's result) into a generated check app, as D-037 copies handlers' types into
+  `Generated/Api`. Each line there is a `DbCheck.Rows(T)` whose string is the engine's
+  description. Its `from_quote` runs at compile time and reads `T`'s shape through its parser with
+  a format that reads nothing, as `OpenApi.Schema` and roc-pg's `RowFormat` do. It refuses a field
+  the statement lacks, a type the column's values can't decode into, or a plain field over a
+  column without `not null`, and names the call. `packages/dbcheck` is pure Roc.
+- **When:** `rocx check --sql <app>` (and `just examples`) fails on a finding; `rocx dev` prints
+  findings after each rebuild. `rocx build`, `roc check` and `roc build` don't change. Apps change
+  nothing. Interpolated SQL, SQL in a variable and row types rocx can't name are counted as
+  unchecked; `Db.unchecked(sql)` would mark one on purpose.
+
+**Phases.**
+
+1. This design.
+2. SQL and parameters: the host flag, rocx's scan, `rocx check --sql`.
+3. Rows: `packages/dbcheck`, the check app.
+4. `rocx dev`.
+5. Later: nulls from outer joins, read from the plan as sqlx does; interpolated constants;
+   Postgres parameter types; packages per backend.
+
+**Reversible:** yes. Nothing in `Db` changes, and the check is a command.
