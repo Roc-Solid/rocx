@@ -27,11 +27,12 @@ same components natively; this one hydrates them.
   a kept box). The browser answers no requests: the server platform answers every endpoint, the
   GETs a page reads as it renders among them.
 - `platform/*.roc`, what components are written with: `Html` (markup whose holes are closures,
-  escaping, safe URLs), `Solid` (`create_signal!`, `create_memo!`, `create_effect!`,
+  escaping, safe URLs), `Solid` (`create_signal!`, `create_memo!`, `create_store!`, `create_effect!`,
   `create_render_effect!`, `create_effect_with!`, `on_cleanup!`, `on_settled!`, `refresh!`, `is_pending!`, `latest!`, `untrack!`, `use_context!`, and the browser's timers, `set_interval!` and
   `set_timeout!`, each owned by the run that started it), `Browser` (`call!`: the page's own
   JavaScript function, or a plugin's script's, from a handler; sound files are packages/audio's,
-  D-051),
+  D-051), `Store` (a store's `get!`, a part of it tracked by its value; `of`, any accessor read by
+  parts),
   `Show` (keyed too), `Switch` and `Match`, `For`, `Loading`, `Errored`, `Context`, `Call` (`fetch!`, `listen!`), `Router` (`location!`: the page's path and query; `use_submission!`: the latest
   submission to an endpoint; `use_submissions!`: all of them; `use_action!`: one a handler sends
   without a form), `Submission` (its `pending!`, `input!`, `field!`, `result!`, `error!`,
@@ -100,6 +101,25 @@ same components natively; this one hydrates them.
   still waits. `latest!(read!)` (Solid 2.0's `latest`) is `read!()`: a memo read again already shows
   the value it last settled at, since nothing holds a write back until a change is done, as Solid
   2.0's transitions do; it would differ only if they did.
+- **Stores** (D-053, Solid 2.0's `createStore`; the design, and what was weighed, in
+  `spike/stores/DESIGN.md`). `(todos, set_todos!) = create_store!({ items: [], filter: All })` is a
+  signal of the whole value and a `Store(s)` over it. Roc has no proxies, so a read can't see which
+  field it touched: a read selects, `todos.get!(|s| s.filter)`, and is tracked by what it selected.
+  In a computation that tracks (`Host.tracking!`: a hole, an attribute, a memo, an effect's compute;
+  not a handler, a component's body, a part's first run, `untrack!`, nor the server), it makes a
+  *selection*: a memo of the part, owned by the reader's run, that compares its new value with the
+  one it had (`Host.memo_last!`) by Roc's `==` and says so (`Host.memo_done!`'s `same`); the
+  runtime then doesn't tell its readers. So a write runs every live selection of the store once
+  (a pure function and a comparison each), and only the readers whose part changed run again;
+  anywhere else, `get!` is `select` of the value, once, and nothing is made. A part must compare
+  (`where [a.is_eq : …]`): records, tags, lists, text and numbers do, a type of one's own needs its
+  `is_eq`, a function or markup can't be selected, which keeps selections to data. The setter takes
+  a function of the state, Solid 2.0's draft setter: `set_todos!(|s| { ..s, filter: Done })`; it
+  starts from the running handler's own write if it made one (`Host.signal_latest!`), so two in one
+  handler compose. `Store.of(accessor)` reads any accessor by parts (an endpoint's answer, a memo,
+  a prop's getter), with no setter. A store's list given to a `<For compared>` patches only the
+  rows whose item changed. A selection is its reader run's, made anew when the reader runs again;
+  `runtime.stats.selections` counts the runs of selections (the tests read it).
 - **A read made once, said in a dev build** (D-052, Solid 2.0's dev warning, STRICT_READ_UNTRACKED).
   A component's body runs once, so a read there doesn't follow what it read. A dev build (`rocx
   build --dev`, `rocx dev`) writes each accessor a component's body calls (`goal!()`, a prop's
@@ -146,6 +166,16 @@ same components natively; this one hydrates them.
   untracked (Solid's `mapArray` and `untrack`, D-039): a change of what one read at its top doesn't
   make it anew (a read that waits runs it again once its value is in). Its holes, and the getters it
   gives its components, follow the item.
+- **A `<For>`'s items.** Each time its list is read again, every row's item is set again
+  (`Host.row_set!`), and, since the host can't compare Roc values, every row is told: the holes that
+  read the item run again (a value a node has already is no patch). `compared` (D-053) compares in
+  Roc instead: `<For each!={…} keyed={…} compared>` hands each item with whether it is `==` the one
+  the row had (`Host.row_last!`), and only a row whose item changed is told, so one changed item in
+  a thousand runs one row's holes (3 runs where 2,001 ran; measured in D-053). Its items must
+  compare, as a store's parts do; a list of records holding functions or markup can't be compared,
+  so it is a flag, not the default. Keys are made unique (`#1`, `#2` for a key seen before) with a
+  `Dict` of how many of each came before: a count over every key seen made ten thousand rows take
+  fifty million comparisons (1.9 s a change; 66 ms since).
 - **`<Repeat>`** (Solid 2.0's) is a `<For>` with no list behind it: `count!` rows from `from!`
   (0 unless it says), each keyed by its index (`Html.each`, the same node a `<For>` is, so the server
   renders it and hydrating adopts it as one). When the range moves, only the rows that come into it
@@ -574,7 +604,12 @@ an effect, a render effect and an effect with an error handler noting their appl
 D-053's (`Control.rocx`: a `<Show>` each way, keyed and not, and a `<Switch>` of a Bool's, a
 narrowed and a keyed `<Match>`, each part with a counter of its own, rendered as the server would
 from four queries and hydrated strictly: an equal value keeps every part, a new one makes the keyed
-parts anew, a `<Switch>` changes part when another `<Match>` holds first).
+parts anew, a `<Switch>` changes part when another `<Match>` holds first); stores (`Stores.rocx`: a filter, a count and a list
+of todos in one store, each part a hole of its own, a `<For compared>` of the list, two writes in one
+handler, a handler reading it, `Store.of` over a memo, and a grid of four hundred selections of one
+store: which holes each write patches, how many selections it runs, and nothing left allocated); and
+a thousand rows twice (`Rows.rocx`: a plain `<For>` and a compared one, one item changed and every
+item: runs, patches and allocations).
 In Chromium, against a scripted server (a scripted `/rocx/live` too): what shows while answers come, what a click
 patches, failures and retries, rows kept and moved, rows and parts that stay until their
 transitions are over (and none with less motion asked for), hydration without a request, a tampered document's `<body>` rendered again (and strictly, a throw), the
@@ -606,7 +641,13 @@ after many runs that waited (refreshes, new pages, memos made again: `Upstream.r
 
 ## Not yet
 
-- **The rest of Solid 2.0:** stores as `createStore` makes them.
+- **The rest of Solid 2.0's stores** (D-053): derived stores (`createStore(fn, seed)`,
+  `createProjection`: a memo is the derived read), `createOptimisticStore` (D-030's optimistic memos
+  cover actions), `reconcile` and `storePath` (a new list written whole, and Roc's record update, do
+  their work). A write runs every live selection of its store, where Solid's touches only the paths
+  written: four hundred take about half a millisecond a write (measured in D-053). Within a
+  row, a changed item runs all of the row's holes; a row that wants finer reads its item by parts
+  (`Store.of(todo!).get!(|t| t.done)`).
 - **The dev warning sees calls of accessors** in a component's body (`count!()`, a prop's getter):
   one a helper makes (`total!(items)`) isn't said, nor one at a `<For>`'s row's top (made once too).
 - **The rest of Solid Router's actions:** `.with`, a submission's `retry`, saying which reads a

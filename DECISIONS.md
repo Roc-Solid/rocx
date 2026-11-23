@@ -2889,9 +2889,9 @@ transpiler's `dev` flag off writes no `read_at!`; a spread is new syntax nothing
 
 ## D-053 Solid 2.0's control flow and stores: keyed `<Show>`, `<Switch>`/`<Match>`, `createStore`; pure components stay values
 
-**Status.** Built (2026-11-23) for items 1, 2 and 4 of the brief: keyed `<Show>`, `<Switch>` and
-`<Match>`, and the decision that a pure component stays a function of values. Stores (item 3) are
-designed in `spike/stores/DESIGN.md`, the coordinator's go given, and are being built.
+**Status.** Built (2026-11-23): keyed `<Show>`, `<Switch>` and `<Match>`; stores (designed in
+`spike/stores/DESIGN.md`, the coordinator's go given with two conditions, both met below); `<For
+compared>`; and the decision that a pure component stays a function of values.
 
 **Context.** web/README's "Not yet" had the rest of Solid 2.0's control flow: keyed `<Show>` and
 `<Switch>`/`<Match>`; stores as `createStore` makes them; and "a pure component patched in place"
@@ -2934,12 +2934,73 @@ D-039). Solid 2.0 is the north star (`solid-js` 2.0.3's `Show`, `Switch`, `Match
   `Countdown`), which keeps it. Made anew, a pure component loses no state (it has none), only what
   the browser keeps in its elements (the focus, a field's text, a scroll).
 
-**What it costs.** No host or runtime.js change. `Html.serialize!`'s two new cases are in every
-app's wasm: the site's client grew 1,336,620 to 1,338,583 bytes (+1,963), 296,342 to 296,691
-brotli'd (+349), though the site uses neither. `Str.inspect` of a keyed value on each run of its
-condition.
+- **Stores** (Solid 2.0's `createStore`). Roc has no proxies, no identity and no reflection, so a
+  store can't see which field a read touches. A read selects, and is tracked by the value it
+  selected: `(todos, set_todos!) = create_store!(init)`, then `todos.get!(|s| s.filter)`. Where the
+  reader tracks (a hole, an attribute, a memo, an effect's compute), `get!` makes a *selection*: a
+  memo of the part, owned by the reader's run, which compares its new value with the one it had and
+  tells its readers only when they differ; anywhere else (a handler, a component's body,
+  `untrack!`, the server) it is `select` of the value, once. A write is a function of the state, the
+  draft setter of Solid 2.0, Roc's record update being the draft; two in one handler compose.
+  `Store.of(accessor)` reads any accessor (an endpoint's answer, a memo, a prop) by parts. Not
+  built, and why: derived stores and projections (a memo is the derived read),
+  `createOptimisticStore` (D-030's optimistic memos), `reconcile` and `storePath` (writing a new list
+  whole, and Roc's record update, do their work). Alternatives weighed (lenses per field, JSON
+  paths, transpiler sugar, every memo compared): `spike/stores/DESIGN.md`.
+- **Compared with `==`, not text.** The coordinator's condition: Roc's structural equality where the
+  type allows. A part's type must have `is_eq` (`get! : Store(s), (s -> a) => a where [a.is_eq : a,
+  a -> Bool]`): records, tags, lists, text and numbers do, a nominal type needs its own, and a
+  function or markup can't be selected, which keeps selections to data. No text is made, so a
+  selection's run allocates nothing to compare (a write to four hundred selections: 407
+  allocations, about one each, for the closure and box of the part). The design's `Str.inspect`
+  would have allocated a text per selection per write, and treated two functions as one.
+- **`<For compared>`, opt-in.** The coordinator's other condition: rows compared by value for every
+  list only if it costs nothing that matters, measured first. Measured (Chromium, `--opt=size`,
+  a `<For>` of 10,000 rows of `{ id, title, done }`, each row two holes; medians of seven, on a busy
+  machine):
 
-**Reversible:** yes; the new views are additions, and nothing else depends on them.
+  | | one item changed | every item changed |
+  |---|---|---|
+  | before (as on master) | 1,865 ms, 20,001 runs, 100,017 allocations | 1,868 ms, 20,001 runs |
+  | keys made unique with a `Dict` (below) | 66 ms, 20,001 runs, 90,048 | 66 ms, 90,048 |
+  | and every row compared by `Str.inspect` | 41 ms, 3 runs, 90,050 | 73 ms (+11%), 110,048 (+22%) |
+  | and `compared` (`==`) | 37 ms, 3 runs, 70,050 | 70 ms (+5%), 90,048 (no more) |
+
+  At 300 rows (a board's size): 3.5 ms before, 2.0 ms with the `Dict`, 1.4 ms compared. Comparing
+  every list by text slows a list whose items all change and allocates a fifth more, so it isn't
+  the default. Comparing every list with `==` would make `<For>` require `is_eq` of its items,
+  refusing a list of records that hold functions or markup (packages/intl's language picker is one,
+  of every `<For>` in the site and the examples; lists of actions with handlers, of items with an
+  icon, are common), so it isn't the default either. So `compared` is a flag: `<For each!={…}
+  keyed={…} compared>` (`For.view_with_keyed_compared!`, `view_with_unkeyed_compared!`) hands each
+  item with whether it is `==` the one the row had (`Host.row_last!`), and only a changed row is
+  told. examples/checkboxes renders `<Repeat>`, whose rows have no item: unchanged. The board and
+  the site's planner use plain `<For>`s, unchanged but for the faster keys; either may add
+  `compared` (their items compare).
+- **A `<For>`'s keys made unique in linear time.** Measuring found the cost: a key seen before gets
+  `#1`, `#2`, counted by scanning every key seen so far, so ten thousand rows took fifty million
+  comparisons a change. A `Dict` of counts makes it ten thousand lookups: 1,865 ms to 66 ms a change
+  for 10,000 rows, for every `<For>`.
+
+**What it costs.** Keyed `<Show>`, `<Switch>` and `<Match>`: no host or runtime.js change;
+`Html.serialize!`'s two new cases are in every app's wasm (the site's client, which uses neither,
+1,336,620 to 1,338,583 bytes, +1,963; 296,342 to 296,691 brotli'd, +349); `Str.inspect` of a keyed
+value on each run of its condition. Stores and `compared`: four hosted
+functions on both hosts (`tracking!`, `memo_last!`, `signal_latest!`, `row_last!`), two given a flag
+(`memo_done!`'s and `row_set!`'s `same`, `Bool.False` from `create_memo!` and a plain `<For>`), the
+glue regenerated; the runtime's memo keeps quiet when told `same`, and counts selections
+(`stats.selections`); the wasm host counts allocations (`allocations()`, for the tests). A write runs
+every live selection of its store, where Solid's touches only the paths written: four hundred take
+about half a millisecond (0.8 ms in a dev build). A selection is its reader run's, made anew when the
+reader runs again. The site's client wasm, which uses no store, with all of D-053: 1,349,117 bytes
+on master (1c34928) to 1,365,897 (+16,780), 299,868 to 304,786 brotli'd (+4,918). Of that, the
+`Dict` of keys is about 15,400 bytes (3,807 brotli'd, measured before the rebase onto 1c34928): every app with a `<For>` carries it, for a `<For>` many times faster at
+length (a sort of each key's hash instead was larger still, 70 KB, from the iterator and sort it
+needs; the hosts could count keys instead, a hosted function more). The stores and `compared` add
+nothing measurable to an app that doesn't use them.
+
+**Reversible:** yes; the new views, the store and `compared` are additions, and nothing else depends
+on them (the `Dict` of keys is a plain speed-up).
 
 ## D-055 Drags by touch and a pen, what a drag carries and shows, files dropped, moves that resize, presence's cursor and away
 

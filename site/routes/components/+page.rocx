@@ -28,6 +28,7 @@ meta = {
 		{ id: "kinds", label: "Pure and effectful components" },
 		{ id: "todos", label: "Try it: a to-do list" },
 		{ id: "primitives", label: "Signals, memos and holes" },
+		{ id: "stores", label: "Stores" },
 		{ id: "passing", label: "Passing them on" },
 		{ id: "handlers", label: "Handlers" },
 		{ id: "drag", label: "Drag and drop" },
@@ -206,6 +207,38 @@ view! = |_|
 				<code>{"create_memo!(|| count!() + untrack!(|| base!()))"}</code> follows <code>count!</code> alone,
 				and takes whatever <code>base!</code> is when it does. A hole whose reads are all untracked reads
 				nothing that changes, so it is static.
+			</p>
+
+			<Heading id="stores">Stores</Heading>
+			<p>
+				A store is Solid 2.0's <code>createStore</code>: state of many parts in one value, each part read
+				on its own. Solid's is a proxy that sees which field a read touches. Roc has no proxies, so a read
+				here <em>selects</em> a part, and is tracked by what it selected:
+			</p>
+			<Code title="rocx" source={"import pf.Solid exposing [create_store!]\n\n(todos, set_todos!) = create_store!({ items: [], filter: All })\n\n<p>{Filter.name(todos.get!(|s| s.filter))}</p>\n<For each!={todos.get!(|s| s.items)} keyed={|todo| todo.id} compared>\n\t{|todo!, _| <li class:done={todo!().done}>{todo!().title}</li>}\n</For>\n<button on:click={|| set_todos!(|s| { ..s, filter: Done })}>Done</button>"} numbers={Bool.False} />
+			<ul>
+				<li>
+					<strong>A part runs again only when it changes.</strong> A write computes each part that is read
+					again, and compares it with what it was, by Roc's <code>==</code>: clicking Done runs the filter's
+					hole, and nothing else. A part is data (records, tags, lists, text, numbers); a function or
+					markup can't be selected.
+				</li>
+				<li>
+					<strong>A write is a function of the state</strong>, Solid 2.0's draft setter: Roc's record
+					update is the draft. Two in one handler compose, the second given what the first made.
+				</li>
+				<li>
+					<strong>Per item:</strong> a <code>{"<For compared>"}</code> tells a row its item changed only when it
+					isn't <code>==</code> the one it had, so toggling one todo of a thousand runs that row's holes alone.
+				</li>
+				<li>
+					<strong><code>Store.of(board!)</code></strong> reads any accessor by parts: an endpoint's answer, a
+					memo, a prop.
+				</li>
+			</ul>
+			<p>
+				What it costs: a write runs each part of the store that is read, a pure function and a comparison
+				each (four hundred take about half a millisecond), where Solid's touches only the paths written.
 			</p>
 
 			<Heading id="passing">Passing them on</Heading>
@@ -913,6 +946,9 @@ view! = |_|
 						<tr><td><code>{"animate:flip"}</code>, <code>crossfade</code> (Svelte)</td><td><code>{"transition:move={Transition.glide}"}</code>, with <code>{"key={…}"}</code> across lists</td></tr>
 						<tr><td><code>{"<Heading text={user().name} />"}</code></td><td><code>{"<Heading text!={user!().name} />"}</code></td></tr>
 						<tr><td>a component that only renders its props</td><td>a pure one: <code>view</code>, no <code>!</code>, called where it is written</td></tr>
+						<tr><td><code>{"const [state, setState] = createStore(init)"}</code></td><td><code>{"(state, set_state!) = create_store!(init)"}</code></td></tr>
+						<tr><td><code>{"state.user.name"}</code></td><td><code>{"state.get!(|s| s.user.name)"}</code></td></tr>
+						<tr><td><code>{"setState((s) => { s.filter = \"done\" })"}</code></td><td><code>{"set_state!(|s| { ..s, filter: Done })"}</code></td></tr>
 						<tr><td><code>{"<Show when={…} fallback={…}>"}</code></td><td><code>{"<Show when!={…} fallback={…}>"}</code></td></tr>
 						<tr><td><code>{"<Show when={…} keyed>{(v) => …}</Show>"}</code></td><td><code>{"<Show when!={…} keyed>{|v| …}</Show>"}</code></td></tr>
 						<tr><td><code>{"<Switch fallback={…}><Match when={…}>…</Match></Switch>"}</code></td><td><code>{"<Switch fallback={…}><Match when!={…}>…</Match></Switch>"}</code></td></tr>
@@ -1028,6 +1064,7 @@ view! = |_|
 						<li>A page as one tree, hydrated whole; <code>{"<NoHydration>"}</code> for what stays the server's</li>
 						<li>A signal goes with the part that made it</li>
 						<li><code>{"<Show>"}</code>, with a <code>Try</code> to narrow, keyed or not; <code>{"<Switch>"}</code> and <code>{"<Match>"}</code></li>
+						<li>Stores: <code>create_store!</code>, each part tracked by its value; <code>{"<For compared>"}</code></li>
 						<li><code>{"<For>"}</code>, by key and by position; <code>{"<Repeat>"}</code>, by index</li>
 						<li>What of an element shows, as it scrolls and changes size: <code>on:viewport</code>; virtual lists, as a package</li>
 						<li><code>{"<Loading>"}</code>, <code>{"<Errored>"}</code>, trying again</li>
@@ -1048,7 +1085,7 @@ view! = |_|
 				<div class="roadmap-next">
 					<h3>Next, from Solid 2.0</h3>
 					<ul>
-						<li>Stores, as <code>createStore</code> makes them: nested, each field its own signal</li>
+						<li>Derived stores: <code>createStore(fn, seed)</code>, projections</li>
 					</ul>
 				</div>
 				<div class="roadmap-later">
