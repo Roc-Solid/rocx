@@ -39,7 +39,7 @@ Rooms := [].{
 	## What the actor keeps: the game, who is here (presence's room, saved as JSON), and the timer
 	## its phase's deadline is set on. A tab has one stream, and its hooks come in order (a stream
 	## that reconnects is told gone before it opens again), so a tab joins and leaves as it is told.
-	State : { game : Game.State, presence : Room.Saved(Wire.Meta), timer : U64 }
+	State : { game : Game.State, presence : Room.Saved(Wire.Meta({})), timer : U64 }
 
 	## What a room is told or asked. Everything a visitor does names them by their visitor id, and
 	## the room decides who that is (`Game.who`): the host, a player, or anyone.
@@ -233,12 +233,12 @@ Rooms := [].{
 	tab_joined : Rooms.State, Str, Str, U64 -> Rooms.State
 	tab_joined = |state, visitor, tab, now|
 		match state.game.players.find_first(|player| player.visitor == visitor) {
-			Ok(player) => Rooms.present(state, Room.load(state.presence).join({ key: player.id, tab, meta: { name: player.name, image: "", color: "", status: "" }, now }))
+			Ok(player) => Rooms.present(state, Room.load(state.presence).join({ key: player.id, tab, meta: { name: player.name, image: "", color: "", status: "", data: {} }, now }))
 			Err(_) => state
 		}
 
 	## Presence's room, after a change, kept; and each player it says came or went, here or not.
-	present : Rooms.State, (Room(Wire.Meta), List(Room.Change(Wire.Meta))) -> Rooms.State
+	present : Rooms.State, (Room(Wire.Meta({})), List(Room.Change(Wire.Meta({})))) -> Rooms.State
 	present = |state, (room, changes)| {
 		game = changes.fold(
 			state.game,

@@ -13,12 +13,14 @@ import Random
 ## a room, so the demo plays the server's part: it keeps who is here as a page's copy of the room has
 ## them (`Room.Here`, what `members!` gives), and tells the package's stores and components what a
 ## room's stream would: someone joins, leaves or types at a press, or every 1.5 s with Auto, on from
-## the start; and the others' cursors wander over the note they share.
+## the start; and the others' cursors wander over the note they share. Your own pointer over the
+## note is sent as a room's `here.moved!` sends it (`create_pointer!`: at most 20 times a second,
+## the last place kept), and shown as the others see it, as "You" (D-055).
 PresenceDemo := [].{
 
 	## What a press or a tick did: who is here after it, the seed for the next pick, who started
 	## typing and who left (`""`: no one), and where the others' cursors go.
-	Step : { members : List(Room.Here(Wire.Meta)), seed : U64, typed : Str, left : Str, moves : List(Cursors.Move) }
+	Step : { members : List(Room.Here(Wire.Meta({}))), seed : U64, typed : Str, left : Str, moves : List(Cursors.Move) }
 
 	Auto : [Off, On(() => {})]
 
@@ -28,6 +30,15 @@ PresenceDemo := [].{
 		(seed!, set_seed!) = create_signal!(2026)
 		typing = Presence.create_typing!(4000)
 		cursors = Presence.create_cursors!({ idle: 3000, forget: 20000 })
+		# Your pointer, sent as a room sends it, and heard back as the others would hear it.
+		pointer = Presence.create_pointer!(
+			50,
+			|said|
+				match said {
+					Moved(point) => (cursors.moved!)({ key: "you", x: point.x, y: point.y })
+					Away => (cursors.gone!)("you")
+				},
+		)
 		# A write applies when its handler is done, so a step is worked out first, then told to each
 		# store once; and each cursor's move goes as a stream would send it, an event a handler, a
 		# little after the one before.
@@ -60,7 +71,7 @@ PresenceDemo := [].{
 				<AvatarStack faces!={members!().map(Wire.face)} max={5} />
 				<p class="here">{"${members!().len().to_str()} here"}</p>
 			</div>
-			<LiveCursors cursors!={Wire.pointers(members!(), (cursors.shown!)())}>
+			<LiveCursors cursors!={Wire.pointers(members!(), (cursors.shown!)())} on_move!={pointer.moved!} on_leave!={pointer.away!}>
 				<div class="note" aria-hidden="true">
 					<p class="note-title">Notes for Friday</p>
 					<p class="line"></p>
@@ -83,7 +94,7 @@ PresenceDemo := [].{
 	## (you are first, and never go), picked at random, leaves or types; or, for Auto, one of these
 	## (typing three times in ten, joining two, leaving two, or nothing), then the others' cursors
 	## wander.
-	act : List(Room.Here(Wire.Meta)), U64, [Join, Leave, Type, Tick] -> PresenceDemo.Step
+	act : List(Room.Here(Wire.Meta({}))), U64, [Join, Leave, Type, Tick] -> PresenceDemo.Step
 	act = |members, seed, action| {
 		others = members.drop_first(1)
 		roll = Random.below(seed, U64.max(others.len(), 1))
@@ -222,7 +233,7 @@ off = Off
 
 ## Who may be here, in the order they come: you, here from the start and never leaving, then Ada and
 ## Alan, also here from the start, then the others.
-cast : List(Room.Here(Wire.Meta))
+cast : List(Room.Here(Wire.Meta({})))
 cast = [
 	member("you", "You", "#2e8fa3", ""),
 	member("ada", "Ada Lovelace", "", ""),
@@ -233,8 +244,8 @@ cast = [
 	member("donald", "Donald Knuth", "", ""),
 ]
 
-member : Str, Str, Str, Str -> Room.Here(Wire.Meta)
-member = |key, name, color, status| { key, meta: { name, image: "", color, status }, since: 0 }
+member : Str, Str, Str, Str -> Room.Here(Wire.Meta({}))
+member = |key, name, color, status| { key, meta: { name, image: "", color, status, data: {} }, since: 0 }
 
 keys : PresenceDemo.Step -> List(Str)
 keys = |step| step.members.map(|here| here.key)

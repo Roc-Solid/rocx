@@ -7,16 +7,25 @@ import presence.Cursors
 ## member's pointer is, an arrow in their colour with their name beside it. A place is a share of
 ## the area (`Cursors.place`), so the area may be any size on each screen. A cursor glides between
 ## the places it is sent (sends are throttled: `Throttle`), fades when idle, and fades out when its
-## member leaves. The cursors take no pointer events: what is under them is clicked as before.
+## member leaves. The cursors take no pointer events: what is under them is clicked as before. This
+## page's own pointer over the area is `on_move!`'s (`on:pointermove.point`: shares of the area, at
+## most once a frame), and its leaving `on_leave!`'s: a room's `here.moved!` and `here.away!`.
 LiveCursors := [].{
 
 	## A cursor, as drawn: whose, their name and colour, where (shares of the area), and whether it
 	## has been still a while.
 	Pointer : { key : Str, name : Str, color : Str, x : Dec, y : Dec, idle : Bool }
 
-	view! : { cursors! : () => List(LiveCursors.Pointer), children : List(Html) } => Html
-	view! = |{ cursors!, children }|
-		<div class="live-cursors">
+	Props := {
+		cursors! : () => List(LiveCursors.Pointer),
+		children : List(Html),
+		on_move! : (Html.Point => {}) ?? |_| {},
+		on_leave! : (() => {}) ?? || {},
+	}
+
+	view! : Props => Html
+	view! = |{ cursors!, children, on_move!, on_leave! }|
+		<div class="live-cursors" on:pointermove.point={on_move!} on:pointerleave={on_leave!}>
 			{...children}
 			<div class="cursor-layer" aria-hidden="true">
 				<For each!={cursors!()} keyed={|cursor| cursor.key}>

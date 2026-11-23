@@ -28,16 +28,18 @@ import Wire
 ## joining at once both count, and nothing is written to Postgres. What changed is published on the
 ## channel, numbered; a page that misses a number asks for a snapshot again (`Endpoint.resync!`).
 ## A room nobody beats in for a quarter of an hour is forgotten; one made again numbers on from the
-## time, so a page's copy sees the gap and asks again.
+## time, so a page's copy sees the gap and asks again. The members' metadata is `Wire.Meta(d)`, the
+## app's own `data` in it of any type JSON carries both ways and that compares (`{}` for none).
 PresenceServer := [].{
 
 	## A room's channel: who its members are, what they hear, and what they say.
-	RoomChannel(c) : Endpoint(c, {}, Channel(Wire.Member, Wire.Event(Wire.Meta), Wire.Said))
+	RoomChannel(c, d) : Endpoint(c, {}, Channel(Wire.Member(d), Wire.Event(Wire.Meta(d)), Wire.Said))
 
 	## A tab subscribed (or asked for a resync): it is in the room, with the member's metadata (the
 	## status the member had, if they were here already), and it is sent its key and tab, then who is
 	## here.
-	on_open! : { who : Wire.Member, tab : Str, channel : PresenceServer.RoomChannel(c), .. } => List(Wire.Event(Wire.Meta))
+	on_open! : { who : Wire.Member(d), tab : Str, channel : PresenceServer.RoomChannel(c, d), .. } => List(Wire.Event(Wire.Meta(d)))
+		where [d.is_eq : d, d -> Bool, d.Json.Encodable([]), d.Json.Parseable([InvalidJson(Str)])]
 	on_open! = |{ who, tab, channel, .. }| {
 		room = changed!(
 			channel,
@@ -55,7 +57,8 @@ PresenceServer := [].{
 
 	## A tab's subscription ended: it leaves at once if its page dropped the room (`Dropped`), else
 	## after the room's grace (a page reloading or reconnecting doesn't flicker out and in).
-	on_close! : { who : Wire.Member, tab : Str, why : Channel.Closed, channel : PresenceServer.RoomChannel(c), .. } => {}
+	on_close! : { who : Wire.Member(d), tab : Str, why : Channel.Closed, channel : PresenceServer.RoomChannel(c, d), .. } => {}
+		where [d.is_eq : d, d -> Bool, d.Json.Encodable([]), d.Json.Parseable([InvalidJson(Str)])]
 	on_close! = |{ who, tab, why, channel, .. }| {
 		_ = changed!(
 			channel,
@@ -70,7 +73,8 @@ PresenceServer := [].{
 
 	## What a page said: its tab is here, with its status (and back, if the room had swept it out);
 	## its member is typing, or stopped; its cursor moved (latest wins); its pointer left.
-	receive! : { who : Wire.Member, tab : Str, said : Wire.Said, channel : PresenceServer.RoomChannel(c), .. } => Try({}, Endpoint.Refusal)
+	receive! : { who : Wire.Member(d), tab : Str, said : Wire.Said, channel : PresenceServer.RoomChannel(c, d), .. } => Try({}, Endpoint.Refusal)
+		where [d.is_eq : d, d -> Bool, d.Json.Encodable([]), d.Json.Parseable([InvalidJson(Str)])]
 	receive! = |{ who, tab, said, channel, .. }| {
 		match said {
 			Here({ status }) => {
@@ -94,14 +98,15 @@ keep_ms : U64
 keep_ms = 900_000
 
 ## Where the room on `channel` is kept.
-key_of : PresenceServer.RoomChannel(c) -> Str
+key_of : PresenceServer.RoomChannel(c, d) -> Str
 key_of = |channel| "presence:${Endpoint.url_of(channel)}"
 
 ## The room kept, or a new one, numbering on from `now`.
-stored! : Try(Str, [NotFound, BadValue(Str)]), U64 => Room(Wire.Meta)
+stored! : Try(Str, [NotFound, BadValue(Str)]), U64 => Room(Wire.Meta(d))
+	where [d.is_eq : d, d -> Bool, d.Json.Encodable([]), d.Json.Parseable([InvalidJson(Str)])]
 stored! = |kept, now| {
 	text = kept ?? ""
-	parsed : Try(Room.Saved(Wire.Meta), [InvalidJson(Str)])
+	parsed : Try(Room.Saved(Wire.Meta(d)), [InvalidJson(Str)])
 	parsed = Json.parse(text)
 	match parsed {
 		Ok(saved) => Room.load(saved)
@@ -111,7 +116,8 @@ stored! = |kept, now| {
 
 ## The room on `channel`, swept, then changed by `step`, kept, and what changed published on the
 ## channel: the room as it is now.
-changed! : PresenceServer.RoomChannel(c), (Room(Wire.Meta), U64 -> (Room(Wire.Meta), List(Room.Change(Wire.Meta)))) => Room(Wire.Meta)
+changed! : PresenceServer.RoomChannel(c, d), (Room(Wire.Meta(d)), U64 -> (Room(Wire.Meta(d)), List(Room.Change(Wire.Meta(d))))) => Room(Wire.Meta(d))
+	where [d.is_eq : d, d -> Bool, d.Json.Encodable([]), d.Json.Parseable([InvalidJson(Str)])]
 changed! = |channel, step| {
 	at = key_of(channel)
 	var $left = tries
@@ -130,7 +136,7 @@ changed! = |channel, step| {
 			}
 		if kept.is_ok() {
 			for message in Mirror.deltas(after, gone.concat(said)) {
-				event : Wire.Event(Wire.Meta)
+				event : Wire.Event(Wire.Meta(d))
 				event = Presence(message)
 				Endpoint.publish!(channel, event)
 			}

@@ -71,7 +71,8 @@ view! = |{ params }| {
 	create_effect!(|| {}, |{}| Endpoint.subscribe!(Api.channel_b_board({ board: board }), heard!))
 
 	# Who is here (packages/presence): the board's room, on its channel (one stream with the board's
-	# own), and the card this tab has open as its status, said whenever that changes.
+	# own), and the card this tab has open as its status, said whenever that changes; `away` while
+	# the tab is hidden (`<Document on:visibilitychange.visible>`, below: D-055).
 	here = Presence.join!(Api.channel_b_board_presence({ board: board }))
 	create_effect!(|| open!(), |card| (here.status!)(Board.status_of(card)))
 
@@ -92,6 +93,7 @@ view! = |{ params }| {
 	<Errored fallback={|why, _| <Missing why={why} />}>
 		<div class="page">
 			<Title>{board!().name} · Board</Title>
+			<Document on:visibilitychange.visible={here.visible!} />
 			<header class="top">
 				<a class="brand" href="/"><span class="mark" aria-hidden="true">▲</span> Board</a>
 				<h1>{board!().name}</h1>

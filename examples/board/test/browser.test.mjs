@@ -273,6 +273,15 @@ describe(`Board in two browsers (Ada's: ${engine})`, { skip: noDatabase || noChr
 		for (const tab of [ada, bo]) await tab.page.wait(still, 5000);
 	});
 
+	test("Bo's tab hidden (D-055: <Document on:visibilitychange.visible>), Ada sees him away; shown again, he is back", async () => {
+		const visibility = (state) => `Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "${state}" }); document.dispatchEvent(new Event("visibilitychange"))`;
+		await ada.findByRole("group", { name: "Bo is here" });
+		await bo.page.eval(visibility("hidden"));
+		await ada.page.wait(`document.querySelector('.people .avatar[aria-label="Bo (away)"].status-away')`, 5000);
+		await bo.page.eval(visibility("visible"));
+		await ada.page.wait(`document.querySelector('.people .avatar[aria-label="Bo"]')`, 5000);
+	});
+
 	test("neither page threw or warned", () => {
 		for (const tab of [ada, bo]) {
 			assert.deepEqual(tab.errors, []);

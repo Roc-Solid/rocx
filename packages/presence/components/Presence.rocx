@@ -1,9 +1,12 @@
-import pf.Solid exposing [create_effect!, create_signal!, on_settled!, set_interval!]
+import pf.Solid exposing [create_effect!, create_signal!, on_settled!, set_interval!, set_timeout!]
 import pf.Endpoint
 import pf.Channel
+import pf.Html
+import pf.Time
 import presence.Cursors
 import presence.Mirror
 import presence.Room
+import presence.Throttle
 import presence.Typing
 import presence.Typist
 import presence.Wire
@@ -29,22 +32,29 @@ Presence := [].{
 	## keys) and others' cursors (`cursors!`), as `create_room!` has them. `status!(word)` says this
 	## tab's status (a word the app picks: `away`, a card it has open; `""` for none) from a handler or
 	## an effect's apply; `typed!()` and `done!()` say it is typing (`create_typist!`); `moved!` and
-	## `away!` say where its cursor is.
+	## `away!` say where its cursor is, at most 20 times a second (`create_pointer!`: `<LiveCursors
+	## on_move!={here.moved!} on_leave!={here.away!}>`). `visible!(shown)` says whether its page shows:
+	## while it is hidden the tab is `away` (and its cursor gone), and the status the app said comes
+	## back when it shows again: `<Document on:visibilitychange.visible={here.visible!} />`.
 	##
 	##     here = Presence.join!(Api.channel_rooms_room({ room: room }))
 	##     <AvatarStack faces!={(here.members!)().map(Wire.face)} />
-	join! : Endpoint(c, {}, Channel(Wire.Member, Wire.Event(Wire.Meta), Wire.Said)) => { members! : () => List(Room.Here(Wire.Meta)), synced! : () => Bool, me! : () => { key : Str, tab : Str }, typing! : () => List(Str), cursors! : () => List(Cursors.Shown), status! : Str => {}, typed! : () => {}, done! : () => {}, moved! : { x : Dec, y : Dec } => {}, away! : () => {} }
+	join! : Endpoint(c, {}, Channel(Wire.Member(d), Wire.Event(Wire.Meta(d)), Wire.Said)) => { members! : () => List(Room.Here(Wire.Meta(d))), synced! : () => Bool, me! : () => { key : Str, tab : Str }, typing! : () => List(Str), cursors! : () => List(Cursors.Shown), status! : Str => {}, typed! : () => {}, done! : () => {}, moved! : Html.Point => {}, away! : () => {}, visible! : Bool => {} }
+		where [d.is_eq : d, d -> Bool, d.Json.Parseable([InvalidJson(Str)])]
 	join! = |channel| {
 		# A missed number: the server sends who is here again (its on_open!'s, after a resync).
 		room = Presence.create_room!(|| Endpoint.resync!(channel))
 		heard! = room.heard!
 		lost! = room.lost!
 		(status!, set_status!) = create_signal!("")
+		(hidden!, set_hidden!) = create_signal!(Bool.False)
 		said! = |said| {
 			out : Wire.Said
 			out = said
 			Endpoint.say!(channel, out)
 		}
+		# What the room hears of this tab's status: `away` while its page is hidden.
+		shown! = |word| if (hidden!()) "away" else word
 		create_effect!(
 			|| {},
 			|{}|
@@ -62,11 +72,19 @@ Presence := [].{
 		)
 		on_settled!(
 			|| {
-				_ = set_interval!(Room.beat_every(Room.defaults), || said!(Here({ status: status!() })))
+				_ = set_interval!(Room.beat_every(Room.defaults), || said!(Here({ status: shown!(status!()) })))
 				{}
 			},
 		)
 		typist = Presence.create_typist!(3000, |typing| said!(Typing(typing == Started)))
+		pointer = Presence.create_pointer!(
+			cursor_every,
+			|said|
+				match said {
+					Moved(point) => said!(Moved(point))
+					Away => said!(Away)
+				},
+		)
 		{
 			members!: room.members!,
 			synced!: room.synced!,
@@ -75,12 +93,59 @@ Presence := [].{
 			cursors!: room.cursors!,
 			status!: |word| {
 				set_status!(word)
-				said!(Here({ status: word }))
+				said!(Here({ status: shown!(word) }))
 			},
 			typed!: typist.typed!,
 			done!: typist.done!,
-			moved!: |point| said!(Moved(point)),
-			away!: || said!(Away),
+			moved!: pointer.moved!,
+			away!: pointer.away!,
+			visible!: |visible| {
+				set_hidden!(!visible)
+				said!(Here({ status: if (visible) status!() else "away" }))
+				if (visible) {} else (pointer.away!)()
+			},
+		}
+	}
+
+	## This page's pointer, told to others with `send!`: `moved!(point)` for each place
+	## (`on:pointermove.point`), sent at once, then at most once every `every` milliseconds, the
+	## latest kept and sent when its time comes (`Throttle`), so a cursor ends where the pointer
+	## stopped; `away!()` when it leaves the area (what is held is dropped, and `Away` sent).
+	create_pointer! : U64, ([Moved(Html.Point), Away] => {}) => { moved! : Html.Point => {}, away! : () => {} }
+	create_pointer! = |every, send!| {
+		(throttle!, set_throttle!) = create_signal!(Throttle.new(every))
+		(waiting!, set_waiting!) = create_signal!(Bool.False)
+		# The held place, sent when it is due (the timer was set for then).
+		due! = |at| {
+			(next, out) = throttle!().flush(at)
+			set_throttle!(next)
+			set_waiting!(Bool.False)
+			match out {
+				Send(point) => send!(Moved(point))
+				_ => {}
+			}
+		}
+		{
+			moved!: |point| {
+				now = Time.now_millis!({})
+				(next, out) = throttle!().push(point, now)
+				set_throttle!(next)
+				match out {
+					Send(sent) => send!(Moved(sent))
+					Hold(at) =>
+						if waiting!() {
+							{}
+						} else {
+							set_waiting!(Bool.True)
+							_ = set_timeout!(at - U64.min(at, now), || due!(at))
+							{}
+						}
+				}
+			},
+			away!: || {
+				set_throttle!(throttle!().drop())
+				send!(Away)
+			},
 		}
 	}
 
@@ -259,6 +324,10 @@ Presence := [].{
 ## more for the way there.
 typing_ttl : U64
 typing_ttl = 7000
+
+## A page's cursor is sent at most every 50 ms: 20 times a second.
+cursor_every : U64
+cursor_every = 50
 
 ## A cursor still for 5 s is idle (faded); one still for 30 s is forgotten.
 cursor_idle : U64

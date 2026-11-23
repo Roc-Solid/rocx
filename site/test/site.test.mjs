@@ -1055,6 +1055,16 @@ test("presence: the room in the browser joins, types and leaves at a press, Auto
 	await page.click(`${demo} .auto`);
 	await page.wait(`document.querySelectorAll("${demo} .cursor").length > 0`, 5000);
 	await page.click(`${demo} .auto`);
+
+	// Your own pointer over the note (D-055: on:pointermove.point, sent at most 20 times a second):
+	// shown as the others see it, "You", where it stopped; gone when it leaves.
+	const note = await page.eval(`(() => { const box = document.querySelector("${demo} .live-cursors").getBoundingClientRect(); return { x: box.left, y: box.top, width: box.width, height: box.height }; })()`);
+	for (let step = 1; step <= 10; step++) await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: note.x + (note.width * step) / 40, y: note.y + (note.height * step) / 40 });
+	const you = `[...document.querySelectorAll("${demo} .cursor")].find((cursor) => cursor.textContent.trim() === "You")`;
+	await page.wait(`${you}?.style.getPropertyValue("--x") === "25%"`, 3000);
+	assert.equal(await page.eval(`${you}.style.getPropertyValue("--y")`), "25%");
+	await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: note.x + note.width + 40, y: note.y - 40 });
+	await page.wait(`!${you}`, 3000);
 	assert.deepEqual(page.errors, []);
 });
 
