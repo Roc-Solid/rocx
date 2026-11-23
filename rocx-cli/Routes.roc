@@ -1667,7 +1667,7 @@ Routes := [].{
 					|method| {
 						verb = Routes.verb_of(method)
 						takes = verb == "POST" or verb == "PUT" or verb == "PATCH"
-						operation(Text.lower(verb), doc_of(method), if (takes) "OpenApi.body(${call(method)}, tags)" else "\"\"", ["OpenApi.answer(${call(method)}, tags)"])
+						operation(Text.lower(verb), doc_of(method), if (takes) "OpenApi.sent(${call(method)}, tags)" else "\"\"", ["OpenApi.answer(${call(method)}, tags)"])
 					},
 				)
 				["\t\t\tOpenApi.path(${Text.roc_string(Routes.open_api_path(at.parts))}, [${Str.join_with(at.params.map(|param| Text.roc_string(param.name)), ", ")}], ["]

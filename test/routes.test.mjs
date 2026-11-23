@@ -225,7 +225,7 @@ test("routes: Api.openapi, the endpoints' OpenAPI document, which App.program se
 	assert.match(api, /^import pf\.OpenApi$/m);
 	assert.match(api, /\topenapi : Str\n\topenapi = \{\n\t\ttags = \[\n\t\t\t"Gone", "Red",\n\t\t\]\n\t\tOpenApi\.document\("blog", \[/);
 	assert.match(api, /\t\t\tOpenApi\.path\("\/live", \[\], \[\n\t\t\t\tOpenApi\.operation\("get", "The count\.\\n\\nEach tick, as it comes\.", "", \[OpenApi\.answer\(Api\.get_live\(\{\}\), tags\), OpenApi\.events\(Api\.events_live\(\{\}\), tags\)\]\),\n\t\t\t\]\),/, "get! and events! are one GET");
-	assert.match(api, /\t\t\tOpenApi\.path\("\/blog\/\{slug\}", \["slug"\], \[\n\t\t\t\tOpenApi\.operation\("put", "The post, \\"edited\\": \\\$\{not code\}\.", OpenApi\.body\(Api\.put_blog_slug\(\{ slug: "" \}\), tags\), \[OpenApi\.answer\(Api\.put_blog_slug\(\{ slug: "" \}\), tags\)\]\),\n\t\t\t\tOpenApi\.operation\("delete", "", "", \[OpenApi\.answer\(Api\.delete_blog_slug\(\{ slug: "" \}\), tags\)\]\),/);
+	assert.match(api, /\t\t\tOpenApi\.path\("\/blog\/\{slug\}", \["slug"\], \[\n\t\t\t\tOpenApi\.operation\("put", "The post, \\"edited\\": \\\$\{not code\}\.", OpenApi\.sent\(Api\.put_blog_slug\(\{ slug: "" \}\), tags\), \[OpenApi\.answer\(Api\.put_blog_slug\(\{ slug: "" \}\), tags\)\]\),\n\t\t\t\tOpenApi\.operation\("delete", "", "", \[OpenApi\.answer\(Api\.delete_blog_slug\(\{ slug: "" \}\), tags\)\]\),/);
 	assert.doesNotMatch(apiModule(table, { sources, client: true }), /OpenApi|openapi/, "the browser's copy has no document");
 	const routes = routesModule(table, { sources });
 	assert.doesNotMatch(routes, /openapi/, "the router doesn't serve it: App.program does, if the app says")

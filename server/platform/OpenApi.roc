@@ -22,6 +22,23 @@ OpenApi := [].{
 		described(Sent.parser_for(Schema.Default)(start(tags)))
 	}
 
+	## What an endpoint is sent, as an operation's request body has it: JSON, and, when its type is
+	## one a form has (a record of strings, numbers, yes-or-no, choices and lists of them: what
+	## `FormBody` reads), a form's fields too, URL-encoded (`application/x-www-form-urlencoded`) or
+	## as a browser sends a form with files (`multipart/form-data`), the same schema, but a yes-or-no
+	## and a list not required (a box left unticked isn't sent).
+	sent : Endpoint(context, arg, result), List(Str) -> Str
+		where [arg.parser_for : Schema -> (State -> Try({ value : arg, rest : State }, Problem))]
+	sent = |_, tags| {
+		Sent : arg
+		json = "\"application/json\":{\"schema\":${described(Sent.parser_for(Schema.Default)(start(tags)))}}"
+		match Sent.parser_for(Schema.Default)({ ..start(tags), form: Bool.True }) {
+			Ok(done) if !done.rest.formless and done.rest.out.starts_with("{\"type\":\"object\",\"properties\":") =>
+				"${json},\"application/x-www-form-urlencoded\":{\"schema\":${done.rest.out}},\"multipart/form-data\":{\"schema\":${done.rest.out}}"
+			_ => json
+		}
+	}
+
 	## An endpoint's answer, as an operation's content has it: JSON, and its schema.
 	answer : Endpoint(context, arg, result), List(Str) -> Str
 		where [result.parser_for : Schema -> (State -> Try({ value : result, rest : State }, Problem))]
@@ -42,12 +59,12 @@ OpenApi := [].{
 		"\"text/event-stream\":{\"itemSchema\":{\"oneOf\":[${each},${end}]}}"
 	}
 
-	## A method at a path (`"get"`): what its handler's comment says, the schema of its body (`""`
-	## for none: a GET's, a DELETE's) and its answer's contents (`answer`, `events`).
+	## A method at a path (`"get"`): what its handler's comment says, its body's contents (`sent`;
+	## `""` for none: a GET's, a DELETE's) and its answer's contents (`answer`, `events`).
 	operation : Str, Str, Str, List(Str) -> Str
-	operation = |verb, doc, sent, contents| {
+	operation = |verb, doc, taken, contents| {
 		described_as = if (doc.is_empty()) "" else "\"description\":${Json.to_str(doc)},"
-		request = if (sent.is_empty()) "" else "\"requestBody\":{\"required\":true,\"content\":{\"application/json\":{\"schema\":${sent}}}},"
+		request = if (taken.is_empty()) "" else "\"requestBody\":{\"required\":true,\"content\":{${taken}}},"
 		refused = "\"default\":{\"description\":\"Refused: its status, and why, as text (400 for a body it can't read); or the handler's own answer (a redirect)\",\"content\":{\"text/plain\":{\"schema\":{\"type\":\"string\"}}}}"
 		"${Json.to_str(verb)}:{${described_as}${request}\"responses\":{\"200\":{\"description\":\"OK\",\"content\":{${Str.join_with(contents, ",")}}},${refused}}}"
 	}
@@ -156,15 +173,27 @@ max_depth = 5
 ## reads its one item (`Item`, `Entry`) or none (`NoItem`, deeper than `max_depth`).
 Frame : [Fields(U64), Item, NoItem, Entry]
 
-## What the format has written, where it is, and the names it tries as a tag union's tags.
-State : { out : Str, at : List(Frame), tags : List(Str), depth : U64 }
+## What the format has written, where it is, and the names it tries as a tag union's tags. Writing
+## a form's schema (`form`, for `sent`): the record's field it is in (`field`), the fields a form
+## may leave out (`loose`: a yes-or-no, a list), and whether it found a shape a form doesn't have
+## (`formless`: a record in a field, a tuple, a dict, null, a tag with a payload, a list of lists).
+State : { out : Str, at : List(Frame), tags : List(Str), depth : U64, form : Bool, field : Str, loose : List(Str), formless : Bool }
 
 ## Why a schema couldn't be written: a tag union none of the names are tags of, or one too deep.
 ## (`NotThisTag` is a name that isn't one of a union's: the format tries the next.)
 Problem : [NotThisTag, TooDeep, NoTags, MissingField(Str), Invalid]
 
 start : List(Str) -> State
-start = |tags| { out: "", at: [], tags: tags, depth: 0 }
+start = |tags| { out: "", at: [], tags: tags, depth: 0, form: Bool.False, field: "", loose: [], formless: Bool.False }
+
+## Writing a form's schema, at a shape a form doesn't have: so noted.
+formless : State -> State
+formless = |state| if (state.form) { ..state, formless: Bool.True } else state
+
+## Writing a form's schema, a value right in the record's field (`at` one deep) a form may leave
+## out: the field noted as not required.
+loose : State -> State
+loose = |state| if (state.form and state.at.len() == 1) { ..state, loose: state.loose.append(state.field) } else state
 
 ## A schema, or, where the format couldn't write one, a schema any value meets, saying why.
 described : Try({ value : a, rest : State }, Problem) -> Str
@@ -220,7 +249,7 @@ Schema := [Default].{
 	parse_str = |_, state| scalar(state, "{\"type\":\"string\"}", "")
 
 	parse_bool : Schema, State -> Try({ value : Bool, rest : State }, Problem)
-	parse_bool = |_, state| scalar(state, "{\"type\":\"boolean\"}", False)
+	parse_bool = |_, state| scalar(loose(state), "{\"type\":\"boolean\"}", False)
 
 	parse_u8 : Schema, State -> Try({ value : U8, rest : State }, Problem)
 	parse_u8 = |_, state| scalar(state, "{\"type\":\"integer\",\"minimum\":0,\"maximum\":255}", 0)
@@ -262,16 +291,18 @@ Schema := [Default].{
 	parse_f64 = |_, state| scalar(state, "{\"type\":\"number\",\"format\":\"double\"}", 0)
 
 	parse_null : Schema, State -> Try(State, Problem)
-	parse_null = |_, state| Ok(emit(state, "{\"type\":\"null\"}"))
+	parse_null = |_, state| Ok(emit(formless(state), "{\"type\":\"null\"}"))
 
 	## A list: the schema of its one item, unless it is too deep (a type that holds itself).
 	parse_list_start : Schema, State -> Try([Counted({ len : U64, rest : State }), Uncounted(State)], Problem)
-	parse_list_start = |_, state|
+	parse_list_start = |_, given| {
+		state = if (given.form and given.at.len() != 1) formless(given) else loose(given)
 		if state.depth >= max_depth {
 			Ok(Uncounted(enter(state, "{\"type\":\"array\"}", NoItem)))
 		} else {
 			Ok(Uncounted(enter(state, "{\"type\":\"array\",\"items\":", Item)))
 		}
+	}
 
 	parse_list_next : Schema, State -> Try([Item(State), Done(State)], Problem)
 	parse_list_next = |_, state|
@@ -285,7 +316,7 @@ Schema := [Default].{
 
 	## A tuple (and a tag's payloads, past one): an array of so many, each its own schema.
 	parse_tuple_start : Schema, State, U64 -> Try(State, Problem)
-	parse_tuple_start = |_, state, _| Ok(emit(state, "{\"type\":\"array\",\"prefixItems\":["))
+	parse_tuple_start = |_, state, _| Ok(emit(formless(state), "{\"type\":\"array\",\"prefixItems\":["))
 
 	parse_tuple_next : Schema, State, U64, U64 -> Try(State, Problem)
 	parse_tuple_next = |_, state, _, _| Ok(emit(state, ","))
@@ -295,7 +326,10 @@ Schema := [Default].{
 
 	## A record: each field, by name, in turn; every one required.
 	parse_record_start : Schema, State -> Try([Counted({ len : U64, rest : State }), Uncounted(State)], Problem)
-	parse_record_start = |_, state| Ok(Uncounted({ ..state, out: state.out.concat("{\"type\":\"object\",\"properties\":{"), at: state.at.append(Fields(0)) }))
+	parse_record_start = |_, given| {
+		state = if (given.at.is_empty()) given else formless(given)
+		Ok(Uncounted({ ..state, out: state.out.concat("{\"type\":\"object\",\"properties\":{"), at: state.at.append(Fields(0)) }))
+	}
 
 	parse_record_field : Schema, Encoding.FieldName.FieldNames(_shape), State -> Try([Field({ field : Encoding.FieldName(_shape), rest : State }), TryField({ name : Str, rest : State }), TryFieldCaseless({ name : Str, rest : State }), Continue(State), Done(State)], Problem)
 	parse_record_field = |_, names, state| {
@@ -308,9 +342,12 @@ Schema := [Default].{
 		for field in Encoding.FieldName.FieldNames.iter(names) {
 			if $index == next {
 				comma = if (next == 0) "" else ","
-				return Ok(Field({ field: field, rest: { ..state, out: state.out.concat("${comma}${Json.to_str(field.name())}:"), at: state.at.drop_last(1).append(Fields(next + 1)) } }))
+				return Ok(Field({ field: field, rest: { ..state, out: state.out.concat("${comma}${Json.to_str(field.name())}:"), at: state.at.drop_last(1).append(Fields(next + 1)), field: if (state.at.len() == 1) field.name() else state.field } }))
 			}
-			$required = $required.append(Json.to_str(field.name()))
+			# A form's yes-or-no and lists, right in its record, may be left out.
+			if !(state.form and state.at.len() == 1 and state.loose.contains(field.name())) {
+				$required = $required.append(Json.to_str(field.name()))
+			}
 			$index = $index + 1
 		}
 		Ok(Done({ ..state, out: state.out.concat("},\"required\":[${Str.join_with($required, ",")}]}"), at: state.at.drop_last(1) }))
@@ -324,12 +361,14 @@ Schema := [Default].{
 
 	## A dict: an object, the schema of its one value for each of its keys.
 	parse_dict_start : Schema, State -> Try([Counted({ len : U64, rest : State }), Uncounted(State)], Problem)
-	parse_dict_start = |_, state|
+	parse_dict_start = |_, given| {
+		state = formless(given)
 		if state.depth >= max_depth {
 			Ok(Uncounted(enter(state, "{\"type\":\"object\"}", NoItem)))
 		} else {
 			Ok(Uncounted(enter(state, "{\"type\":\"object\",\"additionalProperties\":", Entry)))
 		}
+	}
 
 	parse_dict_next : Schema, State -> Try([Entry(State), Done(State)], Problem)
 	parse_dict_next = |_, state|
@@ -441,7 +480,7 @@ Schema := [Default].{
 			}
 		}
 		match $found {
-			Ok(value) => Ok({ value: value, rest: emit(state, union_schema($bare, $shaped)) })
+			Ok(value) => Ok({ value: value, rest: emit(if ($shaped.is_empty()) state else formless(state), union_schema($bare, $shaped)) })
 			Err(problem) => if (state.depth >= max_depth) Err(TooDeep) else Err(problem)
 		}
 	}
@@ -501,9 +540,24 @@ ticks = Endpoint.local("GET", "/ticks", |_, _, _| Ok(Events.none({})))
 
 expect OpenApi.events(ticks, []) == "\"text/event-stream\":{\"itemSchema\":{\"oneOf\":[{\"type\":\"object\",\"required\":[\"data\"],\"properties\":{\"data\":{\"type\":\"string\",\"contentMediaType\":\"application/json\",\"contentSchema\":{\"type\":\"object\",\"properties\":{\"at\":{\"type\":\"integer\",\"minimum\":0}},\"required\":[\"at\"]}}}},{\"type\":\"object\",\"required\":[\"event\"],\"properties\":{\"event\":{\"const\":\"end\"}}}]}}"
 
+## What a form may send, beside JSON: the same record, a yes-or-no and a list not required.
+signup : Endpoint({}, { name : Str, age : U8, plan : [Free, Paid], news : Bool, tags : List(Str) }, {})
+signup = Endpoint.local("POST", "/signup", |_, _, _| Ok({}))
+
+expect {
+	form = "{\"type\":\"object\",\"properties\":{\"age\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":255},\"name\":{\"type\":\"string\"},\"news\":{\"type\":\"boolean\"},\"plan\":{\"type\":\"string\",\"enum\":[\"Free\",\"Paid\"]},\"tags\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}},\"required\":[\"age\",\"name\",\"plan\"]}"
+	json = "{\"type\":\"object\",\"properties\":{\"age\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":255},\"name\":{\"type\":\"string\"},\"news\":{\"type\":\"boolean\"},\"plan\":{\"type\":\"string\",\"enum\":[\"Free\",\"Paid\"]},\"tags\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}},\"required\":[\"age\",\"name\",\"news\",\"plan\",\"tags\"]}"
+	OpenApi.sent(signup, ["Free", "Paid"]) == "\"application/json\":{\"schema\":${json}},\"application/x-www-form-urlencoded\":{\"schema\":${form}},\"multipart/form-data\":{\"schema\":${form}}"
+}
+
+## A shape a form doesn't have (a record in a field, a tuple, a dict, a tag with a payload): JSON alone.
+expect OpenApi.sent(shelf, []).starts_with("\"application/json\":") and !OpenApi.sent(shelf, []).contains("x-www-form-urlencoded")
+expect !OpenApi.sent(paint, ["Red", "Rgb"]).contains("x-www-form-urlencoded")
+expect OpenApi.sent(shout, []).contains("\"application/x-www-form-urlencoded\":{\"schema\":{\"type\":\"object\",\"properties\":{\"word\":{\"type\":\"string\"}},\"required\":[\"word\"]}}")
+
 ## A document: its paths, their params, their methods.
 expect {
-	shouting = OpenApi.operation("post", "What it is sent, \"shouted\".", OpenApi.body(shout, []), [OpenApi.answer(shout, [])])
+	shouting = OpenApi.operation("post", "What it is sent, \"shouted\".", OpenApi.sent(shout, []), [OpenApi.answer(shout, [])])
 	got = OpenApi.document("app", [OpenApi.path("/shout/{word}", ["word"], [shouting])])
 	got.starts_with("{\"openapi\":\"3.2.0\",\"info\":{\"title\":\"app\",\"version\":\"0\"},\"paths\":{\"/shout/{word}\":{\"parameters\":[{\"name\":\"word\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}}],\"post\":{\"description\":\"What it is sent, \\\"shouted\\\".\",\"requestBody\":{\"required\":true,")
 }

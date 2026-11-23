@@ -211,6 +211,9 @@ test("OpenAPI: the document and Scalar's page, opted in through App.program", as
 	const react = document.paths["/api/posts/{lang}/{slug}/reactions"].post;
 	assert.match(react.description, /A reader's reaction/);
 	assert.deepEqual(react.requestBody.content["application/json"].schema.required, ["kind", "on"]);
+	// What the no-JavaScript buttons send: the same fields as a form (D-054).
+	assert.deepEqual(react.requestBody.content["application/x-www-form-urlencoded"].schema, react.requestBody.content["application/json"].schema);
+	assert.ok(react.requestBody.content["multipart/form-data"]);
 	const page = await client.request("/openapi.html");
 	assert.equal(page.status, 200);
 	assert.match(page.text, /@scalar\/api-reference/);

@@ -322,6 +322,11 @@ test("endpoints: GET /openapi.json is their OpenAPI document, each schema its ty
 	assert.deepEqual(answer(doc.paths["/api/shout/{word}"].get), word, "a handler with no annotation: its inferred type");
 	assert.deepEqual(doc.paths["/api/shout"].post.requestBody.content["application/json"].schema, { type: "string" });
 	assert.deepEqual(doc.paths["/members/join"].post.requestBody.content["application/json"].schema, { type: "object", properties: { name: { type: "string" } }, required: ["name"] });
+	// A body a form has is listed as a form's too (D-054): URL-encoded and multipart, the same schema.
+	const joined = doc.paths["/members/join"].post.requestBody.content;
+	assert.deepEqual(Object.keys(joined), ["application/json", "application/x-www-form-urlencoded", "multipart/form-data"]);
+	assert.deepEqual(joined["application/x-www-form-urlencoded"].schema, joined["application/json"].schema);
+	assert.deepEqual(Object.keys(doc.paths["/api/shout"].post.requestBody.content), ["application/json"], "a string isn't a form's body");
 	assert.deepEqual(doc.paths["/api/count/{to}"].parameters, [{ name: "to", in: "path", required: true, schema: { type: "string" } }]);
 	const events = doc.paths["/api/count/{to}"].get.responses["200"].content["text/event-stream"].itemSchema.oneOf;
 	assert.deepEqual(events[0].properties.data.contentSchema.required, ["count", "of", "square"], "each event's data");
