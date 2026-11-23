@@ -1,11 +1,13 @@
 {
 	"measured": "2026-11-23",
-	"commit": "69910e8",
+	"commit": "0739cd1",
 	"machine": "Apple M5, 10 cores",
-	"load": "7.7 → 6.3",
+	"load": "6.9 → 5.2",
 	"opt": "speed",
 	"size": 100,
 	"rows": 20000,
+	"orders": 1000000,
+	"customers": 10000,
 	"rounds": 3,
 	"engines": [
 		{
@@ -35,15 +37,15 @@
 			"ops": 2000,
 			"results": {
 				"sqlite": {
-					"ns": 43186208,
+					"ns": 45972541,
 					"runs": 0
 				},
 				"turso": {
-					"ns": 41615042,
+					"ns": 42584291,
 					"runs": 0
 				},
 				"turso-wal": {
-					"ns": 40046584,
+					"ns": 38221542,
 					"runs": 0
 				}
 			}
@@ -55,15 +57,15 @@
 			"ops": 20000,
 			"results": {
 				"sqlite": {
-					"ns": 150847416,
+					"ns": 145608958,
 					"runs": 1
 				},
 				"turso": {
-					"ns": 288400458,
+					"ns": 308278708,
 					"runs": 1
 				},
 				"turso-wal": {
-					"ns": 209268250,
+					"ns": 206244333,
 					"runs": 1
 				}
 			}
@@ -75,15 +77,15 @@
 			"ops": 20000,
 			"results": {
 				"sqlite": {
-					"ns": 170226833,
+					"ns": 173759166,
 					"runs": 0
 				},
 				"turso": {
-					"ns": 199052833,
+					"ns": 217570625,
 					"runs": 0
 				},
 				"turso-wal": {
-					"ns": 172969708,
+					"ns": 170976750,
 					"runs": 0
 				}
 			}
@@ -95,15 +97,15 @@
 			"ops": 2000,
 			"results": {
 				"sqlite": {
-					"ns": 110490417,
+					"ns": 113537584,
 					"runs": 0
 				},
 				"turso": {
-					"ns": 200878458,
+					"ns": 206213125,
 					"runs": 0
 				},
 				"turso-wal": {
-					"ns": 98585583,
+					"ns": 98421083,
 					"runs": 0
 				}
 			}
@@ -115,15 +117,15 @@
 			"ops": 50,
 			"results": {
 				"sqlite": {
-					"ns": 141811125,
+					"ns": 144176416,
 					"runs": 0
 				},
 				"turso": {
-					"ns": 1322058334,
+					"ns": 1357841792,
 					"runs": 0
 				},
 				"turso-wal": {
-					"ns": 204506750,
+					"ns": 216782208,
 					"runs": 0
 				}
 			}
@@ -135,15 +137,15 @@
 			"ops": 2000,
 			"results": {
 				"sqlite": {
-					"ns": 29324583,
+					"ns": 30373042,
 					"runs": 0
 				},
 				"turso": {
-					"ns": 39282833,
+					"ns": 39282166,
 					"runs": 0
 				},
 				"turso-wal": {
-					"ns": 34718875,
+					"ns": 38842417,
 					"runs": 0
 				}
 			}
@@ -155,15 +157,15 @@
 			"ops": 5000,
 			"results": {
 				"sqlite": {
-					"ns": 49034916,
+					"ns": 49497084,
 					"runs": 0
 				},
 				"turso": {
-					"ns": 72887416,
+					"ns": 74569542,
 					"runs": 0
 				},
 				"turso-wal": {
-					"ns": 59455000,
+					"ns": 63854292,
 					"runs": 0
 				}
 			}
@@ -175,15 +177,55 @@
 			"ops": 50,
 			"results": {
 				"sqlite": {
-					"ns": 33860333,
+					"ns": 33943834,
 					"runs": 0
 				},
 				"turso": {
-					"ns": 218130291,
+					"ns": 221365625,
 					"runs": 0
 				},
 				"turso-wal": {
-					"ns": 216527042,
+					"ns": 228381584,
+					"runs": 0
+				}
+			}
+		},
+		{
+			"name": "scan",
+			"what": "a sum over every row, no index",
+			"callers": 1,
+			"ops": 50,
+			"results": {
+				"sqlite": {
+					"ns": 20397166,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 124310750,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 21412250,
+					"runs": 0
+				}
+			}
+		},
+		{
+			"name": "aggregate-no-index",
+			"what": "the group by, its index ruled out: a scan and a sort",
+			"callers": 1,
+			"ops": 50,
+			"results": {
+				"sqlite": {
+					"ns": 105793083,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 274979250,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 129667500,
 					"runs": 0
 				}
 			}
@@ -195,15 +237,15 @@
 			"ops": 4000,
 			"results": {
 				"sqlite": {
-					"ns": 85913709,
+					"ns": 83921625,
 					"runs": 0
 				},
 				"turso": {
-					"ns": 44172542,
+					"ns": 48129750,
 					"runs": 0
 				},
 				"turso-wal": {
-					"ns": 77097875,
+					"ns": 74657958,
 					"runs": 0
 				}
 			}
@@ -215,15 +257,15 @@
 			"ops": 1600,
 			"results": {
 				"sqlite": {
-					"ns": 107470500,
+					"ns": 107667666,
 					"runs": 1600
 				},
 				"turso": {
-					"ns": 45501958,
+					"ns": 45614500,
 					"runs": 1600
 				},
 				"turso-wal": {
-					"ns": 106485416,
+					"ns": 101300792,
 					"runs": 1600
 				}
 			}
@@ -235,15 +277,15 @@
 			"ops": 800,
 			"results": {
 				"sqlite": {
-					"ns": 75238417,
+					"ns": 72936083,
 					"runs": 800
 				},
 				"turso": {
-					"ns": 73047333,
-					"runs": 837
+					"ns": 100035417,
+					"runs": 835
 				},
 				"turso-wal": {
-					"ns": 78594084,
+					"ns": 52382166,
 					"runs": 800
 				}
 			}
@@ -255,15 +297,297 @@
 			"ops": 8800,
 			"results": {
 				"sqlite": {
-					"ns": 65602084,
+					"ns": 67098417,
 					"runs": 0
 				},
 				"turso": {
-					"ns": 65062542,
+					"ns": 67485875,
 					"runs": 0
 				},
 				"turso-wal": {
-					"ns": 66035334,
+					"ns": 67147458,
+					"runs": 0
+				}
+			}
+		},
+		{
+			"name": "checkpoint",
+			"what": "a checkpoint: what the log holds, written into the database's pages",
+			"callers": 1,
+			"ops": 1,
+			"results": {
+				"sqlite": {
+					"ns": 692166,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 71472083,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 434583,
+					"runs": 0
+				}
+			}
+		},
+		{
+			"name": "read-point-checkpointed",
+			"what": "a row read by its key, after the checkpoint",
+			"callers": 1,
+			"ops": 20000,
+			"results": {
+				"sqlite": {
+					"ns": 173219500,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 184535042,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 170011667,
+					"runs": 0
+				}
+			}
+		},
+		{
+			"name": "read-range-checkpointed",
+			"what": "50 rows of a category by its index, after the checkpoint",
+			"callers": 1,
+			"ops": 2000,
+			"results": {
+				"sqlite": {
+					"ns": 106757833,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 137713667,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 105812458,
+					"runs": 0
+				}
+			}
+		},
+		{
+			"name": "aggregate-checkpointed",
+			"what": "the group by, after the checkpoint",
+			"callers": 1,
+			"ops": 50,
+			"results": {
+				"sqlite": {
+					"ns": 140252125,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 482281875,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 227567875,
+					"runs": 0
+				}
+			}
+		},
+		{
+			"name": "scan-checkpointed",
+			"what": "a sum over every row, after the checkpoint",
+			"callers": 1,
+			"ops": 50,
+			"results": {
+				"sqlite": {
+					"ns": 18278167,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 103416416,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 22096041,
+					"runs": 0
+				}
+			}
+		}
+	],
+	"big": [
+		{
+			"name": "load",
+			"what": "a row inserted, the customers then the orders, 100,000 to a statement",
+			"callers": 1,
+			"ops": 1010000,
+			"results": {
+				"sqlite": {
+					"ns": 3335335792,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 13434852000,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 3139562708,
+					"runs": 0
+				}
+			}
+		},
+		{
+			"name": "load-checkpoint",
+			"what": "a checkpoint after the load",
+			"callers": 1,
+			"ops": 1,
+			"results": {
+				"sqlite": {
+					"ns": 266708,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 97000,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 2585708,
+					"runs": 0
+				}
+			}
+		},
+		{
+			"name": "fetch-1",
+			"what": "an order by its key",
+			"callers": 1,
+			"ops": 10000,
+			"results": {
+				"sqlite": {
+					"ns": 111498458,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 218394250,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 122983875,
+					"runs": 0
+				}
+			}
+		},
+		{
+			"name": "fetch-100",
+			"what": "100 orders by a range of keys",
+			"callers": 1,
+			"ops": 1000,
+			"results": {
+				"sqlite": {
+					"ns": 106843083,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 118013500,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 103753625,
+					"runs": 0
+				}
+			}
+		},
+		{
+			"name": "fetch-100-by-index",
+			"what": "a customer's 100 orders, by an index",
+			"callers": 1,
+			"ops": 1000,
+			"results": {
+				"sqlite": {
+					"ns": 84242167,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 203634458,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 147172083,
+					"runs": 0
+				}
+			}
+		},
+		{
+			"name": "join-1",
+			"what": "an order with its customer",
+			"callers": 1,
+			"ops": 10000,
+			"results": {
+				"sqlite": {
+					"ns": 206907792,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 163448125,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 134120333,
+					"runs": 0
+				}
+			}
+		},
+		{
+			"name": "join-100",
+			"what": "a customer with their 100 orders",
+			"callers": 1,
+			"ops": 1000,
+			"results": {
+				"sqlite": {
+					"ns": 100887875,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 228733417,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 178090000,
+					"runs": 0
+				}
+			}
+		},
+		{
+			"name": "join-top-10",
+			"what": "the ten customers who spent most: a join, a group by, a sort, over every order",
+			"callers": 1,
+			"ops": 3,
+			"results": {
+				"sqlite": {
+					"ns": 2672740500,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 1812679000,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 1218130125,
+					"runs": 0
+				}
+			}
+		},
+		{
+			"name": "scan-orders",
+			"what": "a sum over every order",
+			"callers": 1,
+			"ops": 3,
+			"results": {
+				"sqlite": {
+					"ns": 64791667,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 280928208,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 71502666,
 					"runs": 0
 				}
 			}
