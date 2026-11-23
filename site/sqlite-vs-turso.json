@@ -1,0 +1,272 @@
+{
+	"measured": "2026-11-23",
+	"commit": "69910e8",
+	"machine": "Apple M5, 10 cores",
+	"load": "7.7 → 6.3",
+	"opt": "speed",
+	"size": 100,
+	"rows": 20000,
+	"rounds": 3,
+	"engines": [
+		{
+			"key": "sqlite",
+			"label": "SQLite",
+			"note": "rusqlite, WAL",
+			"version": "SQLite 3.54.1"
+		},
+		{
+			"key": "turso",
+			"label": "Turso",
+			"note": "MVCC, writes at once",
+			"version": "turso_core 0.8.4"
+		},
+		{
+			"key": "turso-wal",
+			"label": "Turso, WAL",
+			"note": "?mvcc=off, writes take turns",
+			"version": "turso_core 0.8.4"
+		}
+	],
+	"workloads": [
+		{
+			"name": "insert-each",
+			"what": "an insert committed alone",
+			"callers": 1,
+			"ops": 2000,
+			"results": {
+				"sqlite": {
+					"ns": 43186208,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 41615042,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 40046584,
+					"runs": 0
+				}
+			}
+		},
+		{
+			"name": "insert-batch",
+			"what": "an insert, all in one transaction",
+			"callers": 1,
+			"ops": 20000,
+			"results": {
+				"sqlite": {
+					"ns": 150847416,
+					"runs": 1
+				},
+				"turso": {
+					"ns": 288400458,
+					"runs": 1
+				},
+				"turso-wal": {
+					"ns": 209268250,
+					"runs": 1
+				}
+			}
+		},
+		{
+			"name": "read-point",
+			"what": "a row read by its key",
+			"callers": 1,
+			"ops": 20000,
+			"results": {
+				"sqlite": {
+					"ns": 170226833,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 199052833,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 172969708,
+					"runs": 0
+				}
+			}
+		},
+		{
+			"name": "read-range",
+			"what": "50 rows of a category, by its index",
+			"callers": 1,
+			"ops": 2000,
+			"results": {
+				"sqlite": {
+					"ns": 110490417,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 200878458,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 98585583,
+					"runs": 0
+				}
+			}
+		},
+		{
+			"name": "aggregate",
+			"what": "a group by over the whole table",
+			"callers": 1,
+			"ops": 50,
+			"results": {
+				"sqlite": {
+					"ns": 141811125,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 1322058334,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 204506750,
+					"runs": 0
+				}
+			}
+		},
+		{
+			"name": "update-each",
+			"what": "an update committed alone",
+			"callers": 1,
+			"ops": 2000,
+			"results": {
+				"sqlite": {
+					"ns": 29324583,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 39282833,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 34718875,
+					"runs": 0
+				}
+			}
+		},
+		{
+			"name": "json",
+			"what": "a row's JSON read apart and put together",
+			"callers": 1,
+			"ops": 5000,
+			"results": {
+				"sqlite": {
+					"ns": 49034916,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 72887416,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 59455000,
+					"runs": 0
+				}
+			}
+		},
+		{
+			"name": "recursive",
+			"what": "a recursive query counting to 10,000",
+			"callers": 1,
+			"ops": 50,
+			"results": {
+				"sqlite": {
+					"ns": 33860333,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 218130291,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 216527042,
+					"runs": 0
+				}
+			}
+		},
+		{
+			"name": "concurrent-insert",
+			"what": "an insert committed alone, eight writers at once",
+			"callers": 8,
+			"ops": 4000,
+			"results": {
+				"sqlite": {
+					"ns": 85913709,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 44172542,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 77097875,
+					"runs": 0
+				}
+			}
+		},
+		{
+			"name": "concurrent-own-rows",
+			"what": "a transaction on a counter of its own, eight at once",
+			"callers": 8,
+			"ops": 1600,
+			"results": {
+				"sqlite": {
+					"ns": 107470500,
+					"runs": 1600
+				},
+				"turso": {
+					"ns": 45501958,
+					"runs": 1600
+				},
+				"turso-wal": {
+					"ns": 106485416,
+					"runs": 1600
+				}
+			}
+		},
+		{
+			"name": "concurrent-one-row",
+			"what": "a transaction on one counter, eight at once",
+			"callers": 8,
+			"ops": 800,
+			"results": {
+				"sqlite": {
+					"ns": 75238417,
+					"runs": 800
+				},
+				"turso": {
+					"ns": 73047333,
+					"runs": 837
+				},
+				"turso-wal": {
+					"ns": 78594084,
+					"runs": 800
+				}
+			}
+		},
+		{
+			"name": "concurrent-mixed",
+			"what": "a read or an insert, four readers and four writers at once",
+			"callers": 8,
+			"ops": 8800,
+			"results": {
+				"sqlite": {
+					"ns": 65602084,
+					"runs": 0
+				},
+				"turso": {
+					"ns": 65062542,
+					"runs": 0
+				},
+				"turso-wal": {
+					"ns": 66035334,
+					"runs": 0
+				}
+			}
+		}
+	]
+}
