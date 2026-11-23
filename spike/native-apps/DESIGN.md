@@ -1,6 +1,12 @@
 # Design: iOS and Android apps from the same .rocx files (D-063, Proposed)
 
-> A design spike, 2026-11-23, on master at 56221d2. Nothing here is built. The web stays the
+> **Status (2026-11-23):** the Android spike is built, on branch `nxy7/native-android`: one screen
+> (`examples/phone-hello`) runs as native Android views on the emulator, with typed calls to the
+> server, and the same `.rocx` in a browser. What was built, how to run it, its measurements and
+> gaps are in [README.md](README.md); §13 says where it sits in the phases, and §16 where the build
+> went otherwise than this design said, and why. Nothing is merged.
+
+> A design spike, 2026-11-23, on master at 56221d2. The web stays the
 > primary target; this is background work, and nothing in it may slow the web down or change what
 > a web app writes. The user's direction: "keep Web as primary target and in the background work on
 > getting Android and iOS into a place where they can be usable", the Lynx approach (HTML and CSS
@@ -102,7 +108,8 @@ What carries over unchanged:
 What doesn't exist yet:
 
 - Roc for phones: the fork has `arm64mac` and `arm64linux`, no iOS or Android targets (the
-  `android` in `src/target/mod.zig` is Zig's ABI tag list). Zig builds for `aarch64-ios`,
+  `android` in `src/target/mod.zig` is Zig's ABI tag list). (For Android it needs none: the spike
+  links the app's `arm64musl` objects as Android's, §16.) Zig builds for `aarch64-ios`,
   `aarch64-ios-simulator` and `aarch64-linux-android`. The fork links executables and shared
   libraries (`linker.zig`'s `OutputKind`); iOS most likely needs an object or static library for
   Xcode to link (unverified).
@@ -331,6 +338,14 @@ name fails as the web's does, saying which plugin's native half it needs.
 
 ## 13. Phases
 
+**Built (2026-11-23): the Android spike**, ahead of phase 0, at the user's request (Android first,
+one simple screen, typed calls to the server). It took from phase 0 the engine (`native/core`, all
+49 hosted functions, 40 of them as runtime.js does them, the rest stubs that say why), the recording
+renderer (`native/mac`) and a first CSS subset; and from phase 3 the Kotlin applier, the APK and the
+emulator. Not yet: the conformance suite against Chromium, Taffy, the CSS table at build time,
+navigation, HTTPS and cookies. The phases below stand, with Android's moved before iOS's: phase 0
+next (the engine trusted on `web/test/app`), then Plate's day screen on Android.
+
 Background work, one phase at a time, each merged when it passes, none touching the web's code
 paths except to add tests.
 
@@ -362,7 +377,9 @@ About two and a half to three months of background work to Plate on both phones.
 
 ## 15. Questions for the user
 
-Each has a recommendation.
+Each has a recommendation. The user answered 1, 2, 4 and 6 (the top of this file). The Android
+spike took the recommendations for 5 (one Rust client), 7 (a small Kotlin applier) and 8
+(`Browser.call!` kept, its native registry empty so far).
 
 1. **CSS and tags a phone can't do:** report them and build anyway (recommended: the web is
    primary), or fail the phone build?
@@ -382,3 +399,42 @@ Each has a recommendation.
    registry), or add `Native.call!`?
 9. **Phase 0's conformance suite in `just check`** (recommended: it needs only the Mac), or a
    separate `just native-check`?
+
+## 16. What the spike changed
+
+Where the Android spike (README.md) went otherwise than this design, and why:
+
+- **No fork target.** The fork's `Archive` output and its static Linux target are enough: the app
+  built for `arm64musl` with `inputs: [app]` is AArch64 ELF objects that need no C library, and the
+  NDK's clang links them with the host into `libapp.so`. `web/platform` has `arm64musl` and
+  `arm64mac` targets (the second for `native/mac`), not `arm64android`. An `arm64android` target
+  with `output: Shared` is a nicety now (Roc linking the library itself), not a requirement. iOS
+  will still need one (Mach-O for iOS isn't the Mac's).
+- **Ops: a projection and a diff, not DOM-style calls.** The engine keeps a document of its own as
+  the browser keeps the DOM (elements, text, a hole's range between two comments), so its code
+  follows runtime.js line for line. After each flush, that document is projected onto native views
+  (inline content into one text view, anonymous text beside blocks) and compared with the last
+  batch sent, which says `CREATE`, `SET`, `CHILDREN` (a box's children, in order), `DESTROY`,
+  `ROOT`, `TITLE`. The projection is where "a `<p>` is one text view" lives, in one function, and
+  the applier stays small. Every view is made before any `CHILDREN` names it.
+- **No Taffy yet.** One screen needs only a column of blocks: `LinearLayout`s, with CSS's margin
+  collapsing between siblings done by the applier. Taffy is still the plan for flex, grid and
+  inline blocks sharing a line.
+- **CSS read on the phone.** The page carries its stylesheet (`Generated/Styles`, in a `<style>`),
+  so the spike resolves it there, after a phone user-agent sheet, and warns once of what it ignores;
+  `build.sh` mounts the app on the Mac to print those warnings at build time. The build-time table
+  (file and line for each warning, nothing parsed on the phone) is still the plan.
+- **No Gradle.** `native/android/build.sh` uses the SDK's tools (aapt2, kotlinc, R8, zipalign,
+  apksigner): a changed `.rocx` rebuilds the APK in about 4.5 s. A Gradle shell is for when an app
+  needs Android libraries.
+- **HTTP over plain sockets.** The engine's client is std's TCP and HTTP/1.1, plain `http://`, on a
+  thread a request (question 5's one Rust client, without rustls and cookies yet).
+
+## Later
+
+- **Native code, no OTA (the user, 2026-11-23).** The app's Roc is native code on phones. Production
+  over-the-air updates are ruled out: iOS can't run downloaded machine code, and Google Play bans
+  downloaded `.so` files. A dev mode can still load a new `.so` in debug builds. OTA is deferred:
+  revisit once the native path and an Expo-like dev mode exist; the preferred idea then is running
+  the browser's `.wasm` in a WebAssembly interpreter on the same native host, not Roc's interpreter
+  mode (which measured 40–250× slower than `--opt=speed` on the Mac).

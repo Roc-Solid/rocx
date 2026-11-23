@@ -6,13 +6,13 @@ files:
   ---------  ---------- -----   ----
        2620  01-01-1980 00:00   AndroidManifest.xml
          40  01-01-1980 00:00   resources.arsc
-      32888  11-23-2026 18:05   classes.dex
-     940664  11-23-2026 18:05   lib/arm64-v8a/libapp.so
-        507  11-23-2026 18:05   META-INF/SPIKE.SF
-       1121  11-23-2026 18:05   META-INF/SPIKE.RSA
-        380  11-23-2026 18:05   META-INF/MANIFEST.MF
+      35080  11-23-2026 18:39   classes.dex
+     940664  11-23-2026 18:39   lib/arm64-v8a/libapp.so
+        507  11-23-2026 18:39   META-INF/SPIKE.SF
+       1121  11-23-2026 18:39   META-INF/SPIKE.RSA
+        380  11-23-2026 18:39   META-INF/MANIFEST.MF
   ---------                     -------
-     978220                     7 files
+     980412                     7 files
 
 native libraries' dependencies (readelf -d):
   libapp.so: 940664 bytes
@@ -21,42 +21,42 @@ native libraries' dependencies (readelf -d):
       0x0000000000000001 (NEEDED)          Shared library: [libdl.so]
       0x0000000000000001 (NEEDED)          Shared library: [libm.so]
       0x0000000000000001 (NEEDED)          Shared library: [libc.so]
-    exported: JNI_OnLoad Java_dev_rocx_phone_Rocx_event Java_dev_rocx_phone_Rocx_start 
+    exported: JNI_OnLoad Java_dev_rocx_phone_Rocx_send Java_dev_rocx_phone_Rocx_start 
     JavaScript engines' symbols (v8, Hermes, JSC, QuickJS): 0
 
 classes (dexdump):
-  La/a;
-  Lb/a;
-  Lb/b;
-  Lb/c;
-  Lb/d;
-  Lc/a;
-  Ld/a;
-  Ld/b;
-  Ld/c;
-  Ld/d;
+  Ldev/rocx/phone/Applier$$ExternalSyntheticLambda0;
+  Ldev/rocx/phone/Applier$$ExternalSyntheticLambda1;
+  Ldev/rocx/phone/Applier$$ExternalSyntheticLambda2;
+  Ldev/rocx/phone/Applier$$ExternalSyntheticLambda3;
   Ldev/rocx/phone/Applier$create$view$4$1;
   Ldev/rocx/phone/Applier;
   Ldev/rocx/phone/Rocx;
+  Ldev/rocx/phone/RocxActivity$$ExternalSyntheticApiModelOutline0;
+  Ldev/rocx/phone/RocxActivity$$ExternalSyntheticLambda4;
   Ldev/rocx/phone/RocxActivity$onCreate$2;
   Ldev/rocx/phone/RocxActivity;
-  Ldev/rocx/phone/a;
-  Ldev/rocx/phone/b;
-  Ldev/rocx/phone/c;
-  Ldev/rocx/phone/d;
-  Ldev/rocx/phone/e;
-  Ldev/rocx/phone/f;
-  Le/a;
-  Lf/a;
-  Lf/b;
-  Lf/c;
-  Lf/d;
-  Lf/e;
-  Lf/f;
-  Lf/g;
-  Lf/h;
-  Lf/i;
-  Lf/j;
-  Lf/k;
+  Lkotlin/Pair;
+  Lkotlin/collections/EmptyIterator;
+  Lkotlin/collections/EmptyList;
+  Lkotlin/collections/EmptyMap;
+  Lkotlin/collections/EmptySet;
+  Lkotlin/jvm/internal/Intrinsics;
+  Lkotlin/ranges/IntProgression;
+  Lkotlin/ranges/IntProgressionIterator;
+  Lkotlin/ranges/IntRange;
+  Lkotlin/ranges/RangesKt;
+  Lkotlin/sequences/SequencesKt___SequencesKt$asIterable$$inlined$Iterable$1;
+  Lkotlin/text/Charsets;
+  Lkotlin/text/DelimitedRangesSequence$iterator$1;
+  Lkotlin/text/DelimitedRangesSequence;
+  Lkotlin/text/StringsKt__IndentKt;
+  Lkotlin/text/StringsKt__RegexExtensionsJVMKt;
+  Lkotlin/text/StringsKt__RegexExtensionsKt;
+  Lkotlin/text/StringsKt__StringBuilderJVMKt;
+  Lkotlin/text/StringsKt__StringBuilderKt;
+  Lkotlin/text/StringsKt__StringNumberConversionsJVMKt;
+  Lkotlin/text/StringsKt__StringsKt$$ExternalSyntheticLambda0;
+  Lkotlin/text/StringsKt__StringsKt;
 
 WebView or JavaScript in the classes: 0

@@ -25,11 +25,12 @@ When an item lands, delete its line here in the same commit.
 
   D-039 gave route views getters, so question 4 (keep a page across a change of its params) no
   longer costs a change to every page, whichever way it is answered.
-- **iOS and Android apps (D-063, Proposed).** Nine questions, each with a recommendation, are in
-  `spike/native-apps/DESIGN.md` §15. Background work; the web stays primary. The plan (§13):
-  phase 0 is the Rust engine on the Mac, passing `web/test/app` against Chromium; then Plate on the
-  iOS simulator, Plate usable on iOS, Android, and the reach (animations, plugins' native halves,
-  signing). The fork needs `arm64ios`, `arm64iossim` and `arm64android` targets (the user's PRs).
+- **iOS and Android apps (D-063, Proposed).** Background work; the web stays primary. The Android
+  spike is built (branch `nxy7/native-android`): one screen as native views, typed calls to the
+  server (`spike/native-apps/README.md`). Next (§13): phase 0's conformance suite (the engine on
+  `web/test/app` against Chromium), freeing what a waiting run leaves behind, Taffy, CSS at build
+  time, HTTPS and cookies, navigation, `rocx build --android`/`rocx dev --android`; then Plate on
+  Android, then iOS (a fork target for Xcode's link). Open questions: 3 and 9 in DESIGN.md §15.
 - **packages/markdown:** open questions 1, 2, 4 and 5 in its `PROPOSALS.md`:
   - trusted HTML;
   - `<Markdown>` server-only by default;

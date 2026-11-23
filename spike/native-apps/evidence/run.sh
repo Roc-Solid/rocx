@@ -137,7 +137,7 @@ print("WebView in the hierarchy:", "yes" if "WebView" in xml else "no")
     echo "APK: $(basename "$apk"), $(stat -f %z "$apk") bytes"
     echo
     echo "files:"
-    unzip -l "$apk" | sed 's/^/  /'
+    (cd "$(dirname "$apk")" && unzip -l "$(basename "$apk")") | sed 's/^/  /'
     echo
     echo "native libraries' dependencies (readelf -d):"
     tmp="$(mktemp -d)"
