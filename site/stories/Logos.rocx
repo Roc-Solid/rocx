@@ -1,0 +1,1023 @@
+import pf.Html
+
+## Ten marks Roc Solid could wear, for the dev build's catalog (`just dev`, then /__rocx/stories).
+## "All ten" puts them side by side; each of the others is one mark's sheet: large on the site's
+## ground, then on paper, in one ink, knocked out of violet, at the sizes of a tab's icon, and in
+## the bar at the top of a page.
+##
+## Every mark paints with four inks and a ground (`--i1` to `--i4`, and `--cut`, the colour of what
+## is behind it), which the sheet sets for each place it shows the mark: the site's neon on dark,
+## deeper inks on paper, a single ink, white on violet. Where two parts of a mark meet, a line of the
+## ground keeps them apart, so a mark still reads in one ink.
+Logos := [].{
+	<story name="All ten">
+		<Overview />
+	</story>
+
+	<story name="Facet">
+		<Sheet concept={Concepts.facet({})} />
+	</story>
+
+	<story name="Perch">
+		<Sheet concept={Concepts.perch({})} />
+	</story>
+
+	<story name="Feather tag">
+		<Sheet concept={Concepts.feather({})} />
+	</story>
+
+	<story name="Tiers">
+		<Sheet concept={Concepts.tiers({})} />
+	</story>
+
+	<story name="Corner">
+		<Sheet concept={Concepts.corner({})} />
+	</story>
+
+	<story name="Keystone">
+		<Sheet concept={Concepts.keystone({})} />
+	</story>
+
+	<story name="Ripple">
+		<Sheet concept={Concepts.ripple({})} />
+	</story>
+
+	<story name="Monogram">
+		<Sheet concept={Concepts.monogram({})} />
+	</story>
+
+	<story name="Hatch">
+		<Sheet concept={Concepts.hatch({})} />
+	</story>
+
+	<story name="Hollow to solid">
+		<Sheet concept={Concepts.hollow({})} />
+	</story>
+}
+
+## What each mark is called, what it says in a line and in a few, the mark, and the name beside it.
+Concepts := [].{
+	all = |{}| [
+		Concepts.facet({}),
+		Concepts.perch({}),
+		Concepts.feather({}),
+		Concepts.tiers({}),
+		Concepts.corner({}),
+		Concepts.keystone({}),
+		Concepts.ripple({}),
+		Concepts.monogram({}),
+		Concepts.hatch({}),
+		Concepts.hollow({}),
+	]
+
+	facet = |{}| {
+		number: "01",
+		name: "Facet",
+		line: "A rock, cut like a gem.",
+		idea: "Rock solid, taken at its word: a boulder cut into facets. The facets nod to the folded-paper bird of Roc's own mark, and the light runs across them in the site's three inks, cyan to violet to magenta.",
+		mark: <Facet />,
+		word: <Word kind="sans" />,
+	}
+
+	perch = |{}| {
+		number: "02",
+		name: "Perch",
+		line: "The bird, on the rock.",
+		idea: "Roc, the language, standing on Solid, what it runs on: a folded bird on a slab. The slab is the server, the database and the platform; the bird is everything you write.",
+		mark: <Perch />,
+		word: <Word kind="sans" />,
+	}
+
+	feather = |{}| {
+		number: "03",
+		name: "Feather tag",
+		line: "</>, with a feather for the slash.",
+		idea: "The mark the site wears today is </>. This one keeps it and swaps the slash for a feather: still markup at a glance, and now a bird's.",
+		mark: <FeatherTag />,
+		word: <Word kind="mono" />,
+	}
+
+	tiers = |{}| {
+		number: "04",
+		name: "Tiers",
+		line: "Three layers, one line through them.",
+		idea: "The database, the server and the browser, stacked, and one line running through all three, the way one language does: from the database to the browser.",
+		mark: <Tiers />,
+		word: <Word kind="sans" />,
+	}
+
+	corner = |{}| {
+		number: "05",
+		name: "Corner",
+		line: "A solid with a corner taken out.",
+		idea: "A cube in the site's three inks, one to a face, with a block missing from its corner: the solid part is Roc Solid's, the gap is where your app goes.",
+		mark: <Corner />,
+		word: <Word kind="caps" />,
+	}
+
+	keystone = |{}| {
+		number: "06",
+		name: "Keystone",
+		line: "The stone that holds the arch.",
+		idea: "Every stone of an arch leans on the one at its top. Roc Solid is that stone for an app: the piece the pages, the server and the components all rest on.",
+		mark: <Keystone />,
+		word: <Word kind="caps" />,
+	}
+
+	ripple = |{}| {
+		number: "07",
+		name: "Ripple",
+		line: "A stone drops; only what it touches moves.",
+		idea: "Signals, drawn: a change lands and the rings carry it to whatever reads it, and nothing else stirs. A solid stone, half in the water it moves.",
+		mark: <Ripple />,
+		word: <Word kind="sans" />,
+	}
+
+	monogram = |{}| {
+		number: "08",
+		name: "Monogram",
+		line: "R and S in one stroke.",
+		idea: "One unbroken line draws the R, and its leg runs on into the S: one line from the first letter to the last, as one language runs from the database to the browser.",
+		mark: <Monogram />,
+		word: <Word kind="caps" />,
+	}
+
+	hatch = |{}| {
+		number: "09",
+		name: "Hatch",
+		line: "A roc's egg, opening.",
+		idea: "In the old tales a roc's egg is as big as a dome. Here it is a solid shell with its lid lifting and a beak coming through: something new, about to hatch. The one mark here with a character in it.",
+		mark: <Hatch />,
+		word: <Word kind="round" />,
+	}
+
+	hollow = |{}| {
+		number: "10",
+		name: "Hollow to solid",
+		line: "roc in outline, solid filled in.",
+		idea: "A wordmark that acts out its name: roc drawn hollow, solid filled in. Where there is room for two letters only (a tab, an app's icon), the r and the s do the same.",
+		mark: <HollowMark />,
+		word: <HollowWord />,
+	}
+}
+
+## One mark's sheet: the mark large on the site's ground beside what it means, then a row of the
+## places it has to work, then the bar at the top of a page, dark and light.
+Sheet := [].{
+	view = |{ concept }|
+		<div class="page">
+			<div class="head">
+				<div class="hero"><span class="slot">{=concept.mark}</span></div>
+				<div class="about">
+					<p class="num">{concept.number} of 10</p>
+					<p class="name">{concept.name}</p>
+					<p class="line">{concept.line}</p>
+					<p class="idea">{concept.idea}</p>
+					<div class="lockup"><span class="slot">{=concept.mark}</span>{=concept.word}</div>
+				</div>
+			</div>
+			<div class="tiles">
+				<div class="tile paper"><span class="slot">{=concept.mark}</span><span class="cap">On paper</span></div>
+				<div class="tile ink"><span class="slot">{=concept.mark}</span><span class="cap">One ink</span></div>
+				<div class="tile knock"><span class="slot">{=concept.mark}</span><span class="cap">Out of violet</span></div>
+				<div class="tile sizes">
+					<div class="row">
+						<span class="slot s48">{=concept.mark}</span>
+						<span class="slot s32">{=concept.mark}</span>
+						<span class="slot s16">{=concept.mark}</span>
+					</div>
+					<div class="tab"><span class="slot s16">{=concept.mark}</span>Roc Solid<span class="x">&times;</span></div>
+					<span class="cap">48, 32, 16 px</span>
+				</div>
+			</div>
+			<div class="bars">
+				<div class="bar dark"><span class="slot">{=concept.mark}</span>{=concept.word}<span class="links">rocx &middot; Platform &middot; Ecosystem</span></div>
+				<div class="bar light"><span class="slot">{=concept.mark}</span>{=concept.word}<span class="links">rocx &middot; Platform &middot; Ecosystem</span></div>
+			</div>
+		</div>
+
+	<style>
+		.page {
+			--i1: #2ee8ff;
+			--i2: #a99bff;
+			--i3: #ff4fd0;
+			--i4: #7c38f5;
+			--cut: #0c0b12;
+			margin: -2.5rem 0 -4rem;
+			padding: 3.5rem 1.5rem 5rem;
+			min-height: 100vh;
+			color: #f1eefc;
+			border-image: linear-gradient(#0c0b12, #0c0b12) fill 0 / / 0 100vmax;
+		}
+
+		.slot {
+			display: block;
+			flex: none;
+		}
+
+		.slot > :global(svg) {
+			display: block;
+			width: 100%;
+			height: 100%;
+			overflow: visible;
+		}
+
+		.head {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+			gap: 3rem;
+			align-items: center;
+			max-width: 66rem;
+			margin: 0 auto;
+		}
+
+		.hero {
+			display: grid;
+			place-items: center;
+			aspect-ratio: 1;
+			border-radius: 32px;
+			background: radial-gradient(circle at 50% 42%, #1b1730, #110f1a 62%, #0e0c16);
+			--cut: #15121f;
+		}
+
+		.hero .slot {
+			width: 62%;
+			height: 62%;
+		}
+
+		.num {
+			margin: 0;
+			color: #8a84ab;
+			font: 600 0.8rem var(--mono);
+			letter-spacing: 0.1em;
+			text-transform: uppercase;
+		}
+
+		.name {
+			margin: 0.4rem 0 0.25rem;
+			font-size: clamp(2.2rem, 4.5vw, 3.4rem);
+			font-weight: 850;
+			letter-spacing: -0.035em;
+			line-height: 1.05;
+		}
+
+		.line {
+			margin: 0 0 1.25rem;
+			color: var(--i1);
+			font-size: 1.15rem;
+			font-weight: 600;
+		}
+
+		.idea {
+			max-width: 32rem;
+			margin: 0 0 2.25rem;
+			color: #aca6c8;
+			font-size: 1.02rem;
+			line-height: 1.6;
+		}
+
+		.lockup {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.9rem;
+			font-size: 2.1rem;
+		}
+
+		.lockup .slot {
+			width: 3.4rem;
+			height: 3.4rem;
+		}
+
+		.tiles {
+			display: grid;
+			grid-template-columns: repeat(4, minmax(0, 1fr));
+			gap: 1rem;
+			max-width: 66rem;
+			margin: 3rem auto 0;
+		}
+
+		.tile {
+			position: relative;
+			display: grid;
+			place-items: center;
+			aspect-ratio: 1;
+			border-radius: 20px;
+		}
+
+		.tile > .slot {
+			width: 48%;
+			height: 48%;
+		}
+
+		.cap {
+			position: absolute;
+			left: 1rem;
+			bottom: 0.8rem;
+			font: 600 0.72rem var(--mono);
+			opacity: 0.65;
+		}
+
+		.paper {
+			--i1: #0794b3;
+			--i2: #7c38f5;
+			--i3: #e0168c;
+			--i4: #3d1a8f;
+			--cut: #f5f1e8;
+			background: #f5f1e8;
+			color: #3d3854;
+		}
+
+		.ink {
+			--i1: #16131f;
+			--i2: #16131f;
+			--i3: #16131f;
+			--i4: #16131f;
+			--cut: #ffffff;
+			background: #ffffff;
+			color: #3d3854;
+		}
+
+		.knock {
+			--i1: #ffffff;
+			--i2: #ffffff;
+			--i3: #ffffff;
+			--i4: #ffffff;
+			--cut: #7c38f5;
+			background: #7c38f5;
+			color: #ffffff;
+		}
+
+		.sizes {
+			--cut: #15131f;
+			align-content: center;
+			gap: 1.4rem;
+			background: #15131f;
+		}
+
+		.row {
+			display: flex;
+			align-items: end;
+			gap: 1.1rem;
+		}
+
+		.s48 {
+			width: 48px;
+			height: 48px;
+		}
+
+		.s32 {
+			width: 32px;
+			height: 32px;
+		}
+
+		.s16 {
+			width: 16px;
+			height: 16px;
+		}
+
+		.tab {
+			display: flex;
+			align-items: center;
+			gap: 0.45rem;
+			width: 10.5rem;
+			padding: 0.45rem 0.7rem;
+			border-radius: 9px 9px 0 0;
+			background: #24203a;
+			color: #d9d4f0;
+			font: 500 0.75rem var(--font);
+		}
+
+		.tab .x {
+			margin-left: auto;
+			color: #8a84ab;
+		}
+
+		.bars {
+			display: grid;
+			gap: 1rem;
+			max-width: 66rem;
+			margin: 1rem auto 0;
+		}
+
+		.bar {
+			display: flex;
+			align-items: center;
+			gap: 0.55rem;
+			height: 3.6rem;
+			padding: 0 1.5rem;
+			border-radius: 16px;
+			font-size: 1.15rem;
+		}
+
+		.bar .slot {
+			width: 2rem;
+			height: 2rem;
+		}
+
+		.links {
+			margin-left: 2rem;
+			font-size: 0.875rem;
+			font-weight: 600;
+			opacity: 0.6;
+		}
+
+		.dark {
+			--cut: #15131f;
+			background: #15131f;
+		}
+
+		.light {
+			--i1: #0794b3;
+			--i2: #7c38f5;
+			--i3: #e0168c;
+			--i4: #3d1a8f;
+			--cut: #f5f1e8;
+			background: #f5f1e8;
+			color: #16131f;
+		}
+
+		@media (max-width: 56rem) {
+			.head {
+				grid-template-columns: minmax(0, 1fr);
+			}
+
+			.tiles {
+				grid-template-columns: repeat(2, minmax(0, 1fr));
+			}
+
+			.links {
+				display: none;
+			}
+		}
+	</style>
+}
+
+## The ten on one page, each on a card: the mark, its number and name, what it says in a line, and
+## the bar it would make.
+Overview := [].{
+	view = |{}|
+		<div class="page">
+			<p class="title">Ten marks for Roc Solid</p>
+			<p class="sub">Each on the site's ground; open one for its sheet: on paper, in one ink, at 16 px, in the bar.</p>
+			<div class="grid">
+				{...Concepts.all({}).map(|concept|
+					<div class="card">
+						<div class="art"><span class="slot">{=concept.mark}</span></div>
+						<p class="num">{concept.number}</p>
+						<p class="name">{concept.name}</p>
+						<p class="line">{concept.line}</p>
+						<div class="mini"><span class="slot">{=concept.mark}</span>{=concept.word}</div>
+					</div>)}
+			</div>
+		</div>
+
+	<style>
+		.page {
+			--i1: #2ee8ff;
+			--i2: #a99bff;
+			--i3: #ff4fd0;
+			--i4: #7c38f5;
+			--cut: #15131f;
+			margin: -2.5rem 0 -4rem;
+			padding: 3.5rem 1.5rem 5rem;
+			min-height: 100vh;
+			color: #f1eefc;
+			border-image: linear-gradient(#0c0b12, #0c0b12) fill 0 / / 0 100vmax;
+		}
+
+		.title {
+			margin: 0;
+			text-align: center;
+			font-size: clamp(2rem, 4vw, 3rem);
+			font-weight: 850;
+			letter-spacing: -0.035em;
+		}
+
+		.sub {
+			margin: 0.5rem auto 2.5rem;
+			color: #aca6c8;
+			text-align: center;
+		}
+
+		.grid {
+			display: grid;
+			grid-template-columns: repeat(5, minmax(0, 1fr));
+			gap: 0.9rem;
+			max-width: 78rem;
+			margin: 0 auto;
+		}
+
+		.card {
+			display: grid;
+			align-content: start;
+			padding: 1rem 1rem 1.1rem;
+			border-radius: 20px;
+			background: #15131f;
+		}
+
+		.art {
+			display: grid;
+			place-items: center;
+			aspect-ratio: 1;
+			margin-bottom: 0.9rem;
+			border-radius: 14px;
+			background: radial-gradient(circle at 50% 42%, #1d1932, #15131f 70%);
+		}
+
+		.art .slot {
+			width: 58%;
+			height: 58%;
+		}
+
+		.slot {
+			display: block;
+			flex: none;
+		}
+
+		.slot > :global(svg) {
+			display: block;
+			width: 100%;
+			height: 100%;
+			overflow: visible;
+		}
+
+		.num {
+			margin: 0;
+			color: #8a84ab;
+			font: 600 0.72rem var(--mono);
+		}
+
+		.name {
+			margin: 0.1rem 0 0.2rem;
+			font-size: 1.2rem;
+			font-weight: 800;
+			letter-spacing: -0.02em;
+		}
+
+		.line {
+			min-height: 2.6em;
+			margin: 0 0 0.9rem;
+			color: #aca6c8;
+			font-size: 0.88rem;
+			line-height: 1.35;
+		}
+
+		.mini {
+			display: flex;
+			align-items: center;
+			gap: 0.45rem;
+			padding-top: 0.8rem;
+			border-top: 1px solid #24203a;
+			font-size: 1rem;
+		}
+
+		.mini .slot {
+			width: 1.6rem;
+			height: 1.6rem;
+		}
+
+		@media (max-width: 60rem) {
+			.grid {
+				grid-template-columns: repeat(2, minmax(0, 1fr));
+			}
+		}
+	</style>
+}
+
+## The name beside a mark, in one of a few cuts: `sans` (as the bar has it now), `caps`, `mono` or
+## `round`.
+Word := [].{
+	view = |{ kind }| <span class={"word ${kind}"}>Roc Solid</span>
+
+	<style>
+		.word {
+			font-weight: 780;
+			letter-spacing: -0.02em;
+			white-space: nowrap;
+		}
+
+		.caps {
+			font-size: 0.82em;
+			font-weight: 800;
+			letter-spacing: 0.14em;
+			text-transform: uppercase;
+		}
+
+		.mono {
+			font-family: var(--mono);
+			font-weight: 700;
+			letter-spacing: -0.03em;
+			text-transform: lowercase;
+		}
+
+		.round {
+			font-family: ui-rounded, "SF Pro Rounded", var(--font);
+			font-weight: 800;
+			letter-spacing: -0.01em;
+		}
+	</style>
+}
+
+## 01: a boulder in eight facets, lit from the top left, around two points inside it.
+Facet := [].{
+	view = |{}|
+		<svg viewBox="0 0 64 64" aria-hidden="true">
+			<polygon class="c1" points="15,19 31,7 29,27" />
+			<polygon class="c2" points="8,38 15,19 29,27" />
+			<polygon class="c2" points="31,7 50,13 41,38 29,27" />
+			<polygon class="c3" points="50,13 57,34 41,38" />
+			<polygon class="c4" points="8,38 29,27 41,38 20,56" />
+			<polygon class="c3" points="57,34 45,55 41,38" />
+			<polygon class="c4" points="45,55 20,56 41,38" />
+		</svg>
+
+	<style>
+		polygon {
+			stroke: var(--cut);
+			stroke-width: 1.6;
+			stroke-linejoin: round;
+		}
+
+		.c1 {
+			fill: var(--i1);
+		}
+
+		.c2 {
+			fill: var(--i2);
+		}
+
+		.c3 {
+			fill: var(--i3);
+		}
+
+		.c4 {
+			fill: var(--i4);
+		}
+	</style>
+}
+
+## 02: a bird of folded paper, facing right (tail, body, wing, breast, head, beak), on its legs,
+## on a slab.
+Perch := [].{
+	view = |{}|
+		<svg viewBox="0 0 64 64" aria-hidden="true">
+			<rect class="leg" x="29" y="40" width="2.6" height="9" />
+			<rect class="leg" x="35" y="39" width="2.6" height="10" />
+			<polygon class="c2" points="5,35 22,30 28,42 8,45" />
+			<polygon class="c4" points="22,30 38,18 44,24 38,41 28,42" />
+			<polygon class="c2" points="44,24 51,21 47,31 38,41" />
+			<polygon class="c2" points="38,18 45,10 51,12 51,21 44,24" />
+			<polygon class="c3" points="51,12 60,16.5 51,21" />
+			<polygon class="c1" points="19,32 43,25 31,37" />
+			<polygon class="c4" points="10,49 54,49 58,58 6,58" />
+		</svg>
+
+	<style>
+		polygon {
+			stroke: var(--cut);
+			stroke-width: 1.5;
+			stroke-linejoin: round;
+		}
+
+		.leg {
+			fill: var(--i2);
+		}
+
+		.c1 {
+			fill: var(--i1);
+		}
+
+		.c2 {
+			fill: var(--i2);
+		}
+
+		.c3 {
+			fill: var(--i3);
+		}
+
+		.c4 {
+			fill: var(--i4);
+		}
+	</style>
+}
+
+## 03: the angle brackets of a tag, and between them a feather for its slash.
+FeatherTag := [].{
+	view = |{}|
+		<svg viewBox="0 0 64 64" aria-hidden="true">
+			<polyline class="bracket" points="18,17 5,32 18,47" />
+			<polyline class="bracket" points="46,17 59,32 46,47" />
+			<path class="vane" d="M25 52 C26 39 31 25 41 12 C41 27 36 41 25 52 Z" />
+			<path class="spine" d="M25 52 L39.5 15" />
+			<path class="barb" d="M33.6 30 L38.6 26.4 M30.6 38 L35.8 35" />
+			<path class="quill" d="M25 52 L22.5 58" />
+		</svg>
+
+	<style>
+		.bracket {
+			fill: none;
+			stroke: var(--i2);
+			stroke-width: 5.5;
+			stroke-linecap: round;
+			stroke-linejoin: round;
+		}
+
+		.vane {
+			fill: var(--i3);
+		}
+
+		.spine,
+		.barb {
+			fill: none;
+			stroke: var(--cut);
+			stroke-width: 1.4;
+			stroke-linecap: round;
+		}
+
+		.quill {
+			fill: none;
+			stroke: var(--i3);
+			stroke-width: 2.2;
+			stroke-linecap: round;
+		}
+	</style>
+}
+
+## 04: three slabs, wide to narrow (the database, the server, the browser), and a line through all.
+Tiers := [].{
+	view = |{}|
+		<svg viewBox="0 0 64 64" aria-hidden="true">
+			<rect class="c4" x="5" y="44" width="54" height="13" rx="3" />
+			<rect class="c2" x="12" y="28" width="40" height="13" rx="3" />
+			<rect class="c1" x="19" y="12" width="26" height="13" rx="3" />
+			<rect class="thread" x="29.25" y="4" width="5.5" height="53" rx="2.75" />
+		</svg>
+
+	<style>
+		.thread {
+			fill: var(--i3);
+			stroke: var(--cut);
+			stroke-width: 3;
+			paint-order: stroke;
+		}
+
+		.c1 {
+			fill: var(--i1);
+		}
+
+		.c2 {
+			fill: var(--i2);
+		}
+
+		.c4 {
+			fill: var(--i4);
+		}
+	</style>
+}
+
+## 05: a cube seen from above, a face to each ink, with the block at its near top corner taken out;
+## the walls and floor of the gap take the colours of the faces they face like.
+Corner := [].{
+	view = |{}|
+		<svg viewBox="0 0 64 64" aria-hidden="true">
+			<polygon class="top" points="32,6 54,19 43,25.5 32,19 21,25.5 10,19" />
+			<polygon class="top" points="32,32 43,38.5 32,45 21,38.5" />
+			<polygon class="right" points="54,19 54,45 32,58 32,45 43,38.5 43,25.5" />
+			<polygon class="right" points="32,19 32,32 21,38.5 21,25.5" />
+			<polygon class="left" points="10,19 21,25.5 21,38.5 32,45 32,58 10,45" />
+			<polygon class="left" points="32,19 43,25.5 43,38.5 32,32" />
+		</svg>
+
+	<style>
+		polygon {
+			stroke: var(--cut);
+			stroke-width: 1.4;
+			stroke-linejoin: round;
+		}
+
+		.top {
+			fill: var(--i1);
+		}
+
+		.right {
+			fill: var(--i3);
+		}
+
+		.left {
+			fill: var(--i2);
+		}
+	</style>
+}
+
+## 06: an arch of five stones on two piers, its keystone standing proud of the others.
+Keystone := [].{
+	view = |{}|
+		<svg viewBox="0 0 64 64" aria-hidden="true">
+			<polygon class="c4" points="6,46 10.97,30.71 21.48,38.36 19,46" />
+			<polygon class="c2" points="10.97,30.71 23.97,21.27 27.98,33.64 21.48,38.36" />
+			<polygon class="key" points="22.42,15.52 41.58,15.52 36.02,33.64 27.98,33.64" />
+			<polygon class="c2" points="40.03,21.27 53.03,30.71 42.52,38.36 36.02,33.64" />
+			<polygon class="c4" points="53.03,30.71 58,46 45,46 42.52,38.36" />
+			<rect class="c1" x="6" y="46" width="13" height="12" />
+			<rect class="c1" x="45" y="46" width="13" height="12" />
+		</svg>
+
+	<style>
+		polygon,
+		rect {
+			stroke: var(--cut);
+			stroke-width: 1.6;
+			stroke-linejoin: round;
+		}
+
+		.key {
+			fill: var(--i3);
+		}
+
+		.c1 {
+			fill: var(--i1);
+		}
+
+		.c2 {
+			fill: var(--i2);
+		}
+
+		.c4 {
+			fill: var(--i4);
+		}
+	</style>
+}
+
+## 07: a stone of a few facets half in the water, two drops thrown up, and three rings going out from it; each ring
+## is drawn in two halves, the far one behind the stone and the near one in front.
+Ripple := [].{
+	view = |{}|
+		<svg viewBox="0 0 64 64" aria-hidden="true">
+			<path class="ring r3" d="M5 46 A27 7.6 0 0 1 59 46" />
+			<path class="ring r2" d="M13 46 A19 5.4 0 0 1 51 46" />
+			<path class="ring r1" d="M21 46 A11 3.2 0 0 1 43 46" />
+			<path class="stone" d="M21 46 L22.5 37 L28 30.5 L36 29.5 L41.5 35 L43 46 A11 3.2 0 0 1 21 46 Z" />
+			<path class="facet" d="M22.5 37 L31 36.5 L36 29.5 M31 36.5 L32.5 45" />
+			<path class="near" d="M21 46 A11 3.2 0 0 0 43 46" />
+			<path class="ring r1" d="M21 46 A11 3.2 0 0 0 43 46" />
+			<path class="ring r2" d="M13 46 A19 5.4 0 0 0 51 46" />
+			<path class="ring r3" d="M5 46 A27 7.6 0 0 0 59 46" />
+			<circle class="drop" cx="48" cy="24" r="2.4" />
+			<circle class="drop" cx="16.5" cy="31" r="1.7" />
+		</svg>
+
+	<style>
+		.ring {
+			fill: none;
+			stroke-width: 2.6;
+			stroke-linecap: round;
+		}
+
+		.near {
+			fill: none;
+			stroke: var(--cut);
+			stroke-width: 5.5;
+		}
+
+		.r1 {
+			stroke: var(--i1);
+		}
+
+		.r2 {
+			stroke: var(--i2);
+		}
+
+		.r3 {
+			stroke: var(--i4);
+		}
+
+		.stone {
+			fill: var(--i3);
+			stroke: var(--cut);
+			stroke-width: 2;
+			paint-order: stroke;
+		}
+
+		.drop {
+			fill: var(--i1);
+		}
+
+		.facet {
+			fill: none;
+			stroke: var(--cut);
+			stroke-width: 1.5;
+			stroke-linejoin: round;
+		}
+	</style>
+}
+
+## 08: an R whose leg runs on, in one stroke, into the S beside it.
+Monogram := [].{
+	view = |{}|
+		<svg viewBox="0 0 64 64" aria-hidden="true">
+			<path class="s" d="M25 50 H47 A9 9 0 0 0 47 32 A9 9 0 0 1 47 14 H56" />
+			<path class="r" d="M9 50 V14 H18 A9 9 0 0 1 18 32 H11 L25 50" />
+		</svg>
+
+	<style>
+		path {
+			fill: none;
+			stroke-width: 6.5;
+			stroke-linecap: round;
+			stroke-linejoin: round;
+		}
+
+		.r {
+			stroke: var(--i3);
+		}
+
+		.s {
+			stroke: var(--i1);
+		}
+	</style>
+}
+
+## 09: an egg cracked around its middle, its top lifted on a hinge at the left, a beak in the gap.
+Hatch := [].{
+	view = |{}|
+		<svg viewBox="0 0 64 64" aria-hidden="true">
+			<polygon class="beak" points="39,36.5 54,29 45.5,39" />
+			<path class="shell" d="M11 37 L18 41 L25 34 L32 41 L39 34 L46 41 L53 37 A21 21 0 0 1 11 37 Z" />
+			<g transform="rotate(-20 11 37)">
+				<path class="shell" d="M11 37 A21 27 0 0 1 53 37 L46 41 L39 34 L32 41 L25 34 L18 41 Z" />
+				<path class="glint" d="M18.5 29 C19 22 22.5 16.5 27.5 13.5" />
+			</g>
+		</svg>
+
+	<style>
+		.shell {
+			fill: var(--i2);
+			stroke: var(--cut);
+			stroke-width: 1.5;
+			stroke-linejoin: round;
+		}
+
+		.beak {
+			fill: var(--i3);
+		}
+
+		.glint {
+			fill: none;
+			stroke: var(--i1);
+			stroke-width: 3;
+			stroke-linecap: round;
+		}
+	</style>
+}
+
+## 10, the square mark: an r drawn in outline beside a filled s.
+HollowMark := [].{
+	view = |{}|
+		<svg viewBox="0 0 64 64" aria-hidden="true">
+			<text x="32" y="47" text-anchor="middle"><tspan class="hollow">r</tspan><tspan class="solid">s</tspan></text>
+		</svg>
+
+	<style>
+		text {
+			font-family: var(--font);
+			font-size: 46px;
+			font-weight: 900;
+			letter-spacing: -1px;
+		}
+
+		.hollow {
+			fill: none;
+			stroke: var(--i1);
+			stroke-width: 2.6;
+			stroke-linejoin: round;
+		}
+
+		.solid {
+			fill: var(--i3);
+		}
+	</style>
+}
+
+## 10, the name: roc in outline, solid filled in.
+HollowWord := [].{
+	view = |{}| <span class="word"><span class="hollow">roc</span><span class="solid">solid</span></span>
+
+	<style>
+		.word {
+			font-weight: 900;
+			letter-spacing: -0.03em;
+			white-space: nowrap;
+		}
+
+		.hollow {
+			color: transparent;
+			-webkit-text-stroke: 0.06em var(--i1);
+			paint-order: stroke fill;
+		}
+
+		.solid {
+			margin-left: 0.14em;
+			color: var(--i3);
+		}
+	</style>
+}
