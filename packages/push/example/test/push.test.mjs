@@ -1,28 +1,30 @@
-// packages/push's server half on both databases (D-045): its example app, with the glue copied in
-// as the README says (server/Push.roc, server/PushStore.roc, and the migration for the app's
-// database), and one route more, /test/store, that runs PushStore's statements one at a time.
+// packages/push as a plugin (D-051), on both databases (D-045): its example app, `Push.plugin({})` in
+// its plugins, and one route more, /test/store, that runs PushStore's statements one at a time.
 // Built for SQLite (always: a file of the test's own) and for Postgres (when DATABASE_URL is set: a
 // database of the test's own), each in build/<database>/app, and asked over HTTP: the key, a
 // subscription saved and saved again (one row, its new keys), one refused, each statement, a
 // broadcast queued as a job a subscription whose attempt reads its row and then fails for want of
-// the host's P-256 (PROPOSALS.md), and unsubscribing.
+// the host's P-256 (PROPOSALS.md), and unsubscribing. And in Chromium, on SQLite, behind a guard
+// that refuses every script (`.js`) the app would answer: the plugin's script and service worker
+// come all the same, the worker registers at the root with the whole site as its scope, and the
+// button subscribes (the browser's push service stood in for, as headless Chromium has none).
 //
 //   node --test 'packages/push/example/test/*.test.mjs'
+//   ROCX_TEST_OPT=speed builds the apps optimized (`--opt=speed`).
 import { describe, test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createECDH, randomBytes } from "node:crypto";
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildForTests, startServer, testDatabase, testSqlite, until } from "../../../testing/index.mjs";
+import { buildForTests, launchBrowser, startServer, testDatabase, testSqlite, until } from "../../../testing/index.mjs";
 
 const example = join(dirname(fileURLToPath(import.meta.url)), "..");
-const push = join(example, "..");
 
 /** The route the tests add: each of PushStore's statements, as the body's `op` says. */
 const storeRoute = `import pf.Server
 import pf.Endpoint
-import ../../../PushStore
+import push.PushStore
 
 ## POST /test/store: one of PushStore's statements, as the body says (\`op\`), and what it read or
 ## changed, as text. Written by packages/push's tests into the app they build; the example has none.
@@ -59,23 +61,26 @@ changed = |done|
 `;
 
 /**
- * The example as an app copies push in, for `database` ("sqlite" or "postgres"), in
- * build/<database>/app: its routes and main.roc (the packages' paths from there, and the program's
- * `database`), the glue, the migration for that database, and the store's route. Its folder.
+ * The example for `database` ("sqlite" or "postgres"), in build/<database>/app: its routes and
+ * main.roc (the packages' paths from there, and the program's `database`), and the store's route.
+ * With `guarded`, its middleware is a guard that refuses every request for a script (a path ending
+ * in `.js`) the app would answer. Its folder.
  */
-function app(database) {
-	const dir = join(example, "build", database, "app");
+function app(database, { guarded = false } = {}) {
+	const dir = join(example, "build", `${database}${guarded ? "-guarded" : ""}`, "app");
 	rmSync(dir, { recursive: true, force: true });
-	mkdirSync(join(dir, "migrations"), { recursive: true });
+	mkdirSync(dir, { recursive: true });
 	cpSync(join(example, "routes"), join(dir, "routes"), { recursive: true });
-	const main = readFileSync(join(example, "main.roc"), "utf8")
+	let main = readFileSync(join(example, "main.roc"), "utf8")
 		.replaceAll('"../', '"../../../../')
 		.replace("\tplugins: [", `\tdatabase: ${database === "sqlite" ? 'Sqlite("data/push.db")' : "Postgres"},\n\tplugins: [`);
 	assert.match(main, /database: /, "the program's database written");
+	if (guarded) {
+		main = main.replace("middleware: Middleware.same_origin({}),", 'middleware: Middleware.make(|request, context, next!| if (request.path.ends_with(".js")) Server.response(403, [], "the guard refuses scripts") else next!(request, context)),');
+		main = main.replace("import pf.Middleware\n", "import pf.Middleware\nimport pf.Server\n");
+		assert.match(main, /the guard refuses scripts/, "the guard written");
+	}
 	writeFileSync(join(dir, "main.roc"), main);
-	for (const module of ["Push.roc", "PushStore.roc"]) cpSync(join(push, "server", module), join(dir, module));
-	const migration = database === "sqlite" ? "0001_push_subscriptions_sqlite.sql" : "0001_push_subscriptions.sql";
-	cpSync(join(push, "migrations", migration), join(dir, "migrations", "0001_push_subscriptions.sql"));
 	mkdirSync(join(dir, "routes", "test", "store"), { recursive: true });
 	writeFileSync(join(dir, "routes", "test", "store", "+server.roc"), storeRoute);
 	return dir;
@@ -85,7 +90,9 @@ function app(database) {
 function p256() {
 	const ecdh = createECDH("prime256v1");
 	ecdh.generateKeys();
-	return { public: ecdh.getPublicKey().toString("base64url"), private: ecdh.getPrivateKey().toString("base64url") };
+	// The private key as its 32 bytes: Node drops a leading zero (one time in 256), which VAPID's
+	// keys may not, and the push plugin's start refuses.
+	return { public: ecdh.getPublicKey().toString("base64url"), private: Buffer.from(ecdh.getPrivateKey("hex").padStart(64, "0"), "hex").toString("base64url") };
 }
 
 /** A browser's subscription at Chrome's push service, as the page posts it. */
@@ -103,7 +110,7 @@ for (const database of databases) {
 		let client;
 
 		before(async () => {
-			const built = await buildForTests(app(database), { client: false });
+			const built = await buildForTests(app(database), { client: false, opt: process.env.ROCX_TEST_OPT ?? "dev" });
 			db = database === "sqlite" ? testSqlite() : await testDatabase();
 			server = await startServer(built.server, {
 				database: db.url,
@@ -200,3 +207,74 @@ for (const database of databases) {
 		});
 	});
 }
+
+/**
+ * What the page runs before its own scripts: the browser's push service stood in for (headless
+ * Chromium has none: `pushManager.subscribe` would fail), and permission granted, as a click on the
+ * browser's prompt would. The service worker is the real one, registered for real.
+ */
+const standIn = (made) => `
+Notification.requestPermission = async () => "granted";
+Object.defineProperty(Notification, "permission", { get: () => "granted", configurable: true });
+let held = null;
+PushManager.prototype.getSubscription = async function () { return held; };
+PushManager.prototype.subscribe = async function (options) {
+	held = { endpoint: ${JSON.stringify(made.endpoint)}, options, toJSON: () => (${JSON.stringify(made)}), unsubscribe: async () => ((held = null), true) };
+	return held;
+};`;
+
+describe("in Chromium, behind a guard that refuses every script the app would answer", () => {
+	const vapid = p256();
+	const made = subscription("chromium");
+	let browser;
+	let db;
+	let server;
+
+	before(async () => {
+		browser = await launchBrowser();
+		if (!browser) return;
+		const built = await buildForTests(app("sqlite", { guarded: true }), { opt: process.env.ROCX_TEST_OPT ?? "dev" });
+		db = testSqlite();
+		server = await startServer(built.server, {
+			database: db,
+			statics: built.statics,
+			env: { VAPID_PUBLIC_KEY: vapid.public, VAPID_PRIVATE_KEY: vapid.private, VAPID_SUBJECT: "mailto:push@example.com" },
+		});
+	});
+
+	after(async () => {
+		await browser?.close();
+		await server?.stop();
+		await db?.drop();
+	});
+
+	test("the plugin's script and its service worker come past the guard; the worker registers at the site's root, its scope the whole site; the button subscribes, and the server keeps the subscription", async (t) => {
+		if (!browser) return t.skip("no Chromium (set CHROME)");
+		const refused = await fetch(`${server.url}/elsewhere.js`);
+		assert.equal(refused.status, 403, "the guard refuses a script the app would answer");
+		assert.equal(await refused.text(), "the guard refuses scripts");
+		for (const path of ["/push-sw.js", "/rocx/plugins/push/push.js"]) {
+			const got = await fetch(`${server.url}${path}`);
+			assert.equal(got.status, 200, `${path}: the plugin's, served before the guard`);
+			assert.equal(got.headers.get("content-type"), "text/javascript");
+		}
+		const tab = await browser.open(`${server.url}/`, { script: standIn(made) });
+		assert.equal(await tab.page.eval(`document.querySelector('script[src="/rocx/plugins/push/push.js"]')?.nextElementSibling?.getAttribute("src")`), "/rocx/start.js", "the page loads the plugin's script, just before start.js");
+		const button = await tab.findByRole("button", { name: "Turn notifications on" });
+		await tab.page.wait("document.querySelector('[data-push-state]').value === 'off'", 5000);
+		await button.click();
+		await tab.page.wait("document.querySelector('[data-push-state]').value === 'on'", 10_000);
+		assert.ok(await tab.findByRole("button", { name: "Turn notifications off" }));
+		const registration = await tab.page.eval("navigator.serviceWorker.getRegistration('/').then((r) => r && { scope: new URL(r.scope).pathname, script: new URL(r.active.scriptURL).pathname + new URL(r.active.scriptURL).search })");
+		assert.deepEqual(registration, { scope: "/", script: "/push-sw.js?api=%2Fpush" }, "the plugin's root file, the whole site its scope");
+		assert.deepEqual(
+			(await db.sql`select endpoint, p256dh, auth, owner from push_subscriptions`).map((row) => ({ ...row })),
+			[{ endpoint: made.endpoint, p256dh: made.keys.p256dh, auth: made.keys.auth, owner: "" }],
+			"posted to the plugin's endpoint, through the app's middleware, and kept",
+		);
+		await (await tab.findByRole("button", { name: "Turn notifications off" })).click();
+		await tab.page.wait("document.querySelector('[data-push-state]').value === 'off'", 10_000);
+		assert.deepEqual(await db.sql`select endpoint from push_subscriptions`, [], "unsubscribed: forgotten");
+		assert.deepEqual(tab.errors, []);
+	});
+});

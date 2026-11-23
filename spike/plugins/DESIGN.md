@@ -11,6 +11,13 @@
 > page is packages/admin's `JobsPage.plugin({ at, guard })` with one look (D-034), and email with its
 > mailbox and SMTP check is packages/email's `Email.plugin({})` (D-035).
 >
+> **`files` and `scripts` built (2026-11-23) as D-050, push and audio as plugins as D-051**, with
+> changes recorded there: the host serves a plugin's files, handed the bytes once at start; `Audio`
+> is a module both of packages/audio's headers list (`main.roc`, `browser.roc`), not a copied
+> component, and its plugin is a module beside it (`AudioPlayer.plugin({})`), since a module both
+> halves compile can't name `Plugin`; a plugin brings its own kind of job to the jobs plugin
+> (`Job.call`, `Job.adopt!`).
+>
 > **Decided (the user, 2026-11-21):** plugins are listed in `App.program({ plugins: [...] })`; each
 > plugin declares what it needs as its own options type; two claims on one path stop the server at
 > start, naming both; a plugin reads its documented environment variables unless the app passes a

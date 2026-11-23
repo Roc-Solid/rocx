@@ -825,12 +825,13 @@ export class Runtime {
 		 * handler's box: `{ repeat, handle }`. */
 		this.timers = new Map();
 		/** The page's functions handlers call (`Browser.call!`), and the calls waiting for the patch.
-		 * Those named `rocx:…` are the runtime's own: `Audio.play!` is `rocx:audio`. */
+		 * Those named `rocx:…` are the runtime's own: `Browser.focus!` is `rocx:focus`. (A plugin's
+		 * script registers its own on `window.rocxEffects`: packages/audio's player, `audio.play`.) */
 		this.effects = {};
 		this.calling = [];
 		/** What every effect is given after its argument (`callEffects`). */
 		this.toEffects = Object.freeze({ under: (url) => this.under(url) });
-		this.builtins = { "rocx:audio": (arg) => this.playAudio(arg), "rocx:focus": (id) => this.page?.getElementById?.(id)?.focus() };
+		this.builtins = { "rocx:focus": (id) => this.page?.getElementById?.(id)?.focus() };
 		/** Each element's transitions (`transition={…}`), `{ in, out }`, as `Transition.json` writes
 		 * them; `animates` once there is one, so an app without any walks nothing for them. */
 		this.transitions = new WeakMap();
@@ -1676,22 +1677,6 @@ export class Runtime {
 	 * its element (or started its timer, or its listening). */
 	owner() {
 		return this.current?.making ? this.current : (this.current?.owner ?? null);
-	}
-
-	/**
-	 * A sound file, played (`Audio.play!`): any the browser can, fetched the first time and kept by it,
-	 * at a volume and a rate, its pitch moving with its speed. Until the reader has done something on
-	 * the page the browser refuses to play it, and that is no failure.
-	 */
-	playAudio({ url, volume = 1, rate = 1 }) {
-		if (typeof Audio === "undefined") return;
-		const sound = new Audio(this.under(url));
-		sound.volume = Math.min(Math.max(volume, 0), 1);
-		sound.preservesPitch = false;
-		sound.playbackRate = Math.min(Math.max(rate, 0.0625), 16);
-		sound.play()?.catch((error) => {
-			if (error?.name !== "NotAllowedError") console.error(`rocx: the sound ${url} can't be played: ${error?.message ?? error}`);
-		});
 	}
 
 	// ---- Running ----

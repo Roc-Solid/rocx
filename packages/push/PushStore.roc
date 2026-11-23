@@ -1,6 +1,6 @@
 import pf.Db
 import pf.Time
-import push.Subscription
+import Subscription
 
 ## The subscriptions table (`migrations/0001_push_subscriptions.sql` on Postgres,
 ## `0001_push_subscriptions_sqlite.sql` on SQLite): a row for each browser that subscribed, by its

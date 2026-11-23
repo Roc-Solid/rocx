@@ -297,8 +297,9 @@ view! = |_|
 			<Code source={"import pf.Solid exposing [create_signal!, set_interval!]\n\n(seconds!, set_seconds!) = create_signal!(0)\nstop! = set_interval!(1000, || set_seconds!(seconds!() + 1))"} numbers={Bool.False} />
 			<p>
 				A handler plays a sound file with <code>{"Audio.play!(\"/sounds/eat.wav\")"}</code>: any file the
-				browser can, nothing prepared in advance (<code>Audio.play_with!</code> sets a volume and a rate).
-				The <a href={"${Paths.showcase}#sound"}>showcase's games</a> play theirs this way. And for what the
+				browser can, nothing prepared in advance (<code>Audio.play_with!</code> sets a volume and a rate;
+				<a href={Paths.ecosystem_audio}>packages/audio</a>, a plugin). The
+				<a href={"${Paths.showcase}#sound"}>showcase's games</a> play theirs this way. And for what the
 				platform has no module for (a vibration, the clipboard), it calls the page's own JavaScript:
 				<code>{"Browser.call!(\"vibrate\", { ms: 50 })"}</code> calls the function the page gave the runtime
 				as <code>vibrate</code> (<code>{"Runtime.load(wasm, { effects })"}</code>), with the argument as JSON,
@@ -840,7 +841,7 @@ view! = |_|
 						<tr><td><code>{"onSettled(() => …)"}</code> (<code>onMount</code>, before 2.0)</td><td><code>{"on_settled!(|| …)"}</code></td></tr>
 						<tr><td><code>{"const id = setInterval(tick, 1000)"}</code>, <code>{"onCleanup(() => clearInterval(id))"}</code></td><td><code>{"clear! = set_interval!(1000, tick!)"}</code>, cleared with what started it</td></tr>
 						<tr><td><code>{"setTimeout(done, 400)"}</code>, <code>clearTimeout(id)</code></td><td><code>{"clear! = set_timeout!(400, done!)"}</code>, <code>clear!()</code></td></tr>
-						<tr><td><code>{"new Audio(url).play()"}</code></td><td><code>{"Audio.play!(url)"}</code></td></tr>
+						<tr><td><code>{"new Audio(url).play()"}</code></td><td><code>{"Audio.play!(url)"}</code> (<code>import audio.Audio</code>)</td></tr>
 						<tr><td>any other browser API, called in a handler</td><td><code>{"Browser.call!(\"vibrate\", arg)"}</code>, the page's own function</td></tr>
 						<tr><td><code>{"<Title>{post().title}</Title>"}</code> (@solidjs/meta)</td><td><code>{"<Title>{post!().title}</Title>"}</code> (<code>import pf.Title</code>)</td></tr>
 						<tr><td><code>{"<form action={join} method=\"post\">"}</code>, <code>useSubmission(join)</code> (Solid Router)</td><td><code>{"<form action={Endpoint.url_of(join)} method=\"post\">"}</code>, <code>use_submission!(join)</code></td></tr>
@@ -970,7 +971,7 @@ view! = |_|
 						<li>Handlers that wait for the server; keys; frames</li>
 						<li>Transitions in and out, on a <code>{"<For>"}</code>'s rows and a <code>{"<Show>"}</code>'s parts</li>
 						<li>Timers: <code>set_interval!</code>, <code>set_timeout!</code>, cleared by their <code>clear!</code> or with their part</li>
-						<li>Sound files, from a handler: <code>Audio.play!</code>; and the page's own functions: <code>Browser.call!</code></li>
+						<li>Sound files, from a handler: <code>Audio.play!</code> (packages/audio); and the page's own functions, or a plugin's: <code>Browser.call!</code></li>
 						<li>Effects, split as Solid 2.0's; <code>on_cleanup!</code>, <code>on_settled!</code></li>
 						<li>Forms sent by the runtime, their submissions, and a flash without it</li>
 						<li>Actions without a form (<code>use_action!</code>), every submission (<code>use_submissions!</code>), optimistic values that give way to the server's</li>

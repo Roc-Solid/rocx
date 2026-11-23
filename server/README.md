@@ -60,7 +60,7 @@ turn when nobody waits on it (a tell, a timer). The platform exposes `Db`, `Kv`,
 `Actor`, `Log`, `Time`, `Tcp`, `Http` (and `HttpResponse`, its answer), `Env`, `Random`, `AesGcm`
 and `Plugin`; the modules components are written with
 (`Html`, `Solid`, `Show`, `For`, `Loading`, `Errored`, `Context`, `Call`, `Router`, `Title`,
-`HttpStatusCode`, `Transition`, `Submission`, `Submissions`, `Browser`, `Audio`); and HTTP's
+`HttpStatusCode`, `Transition`, `Submission`, `Submissions`, `Browser`); and HTTP's
 (`Server`, `Endpoint`, `Channel`, `Middleware`, `Events`, `OpenApi`). Those last two kinds are the
 web platform's too: their source is in `web/platform`, and the build copies them here
 (`SHARED_MODULES` in `build.mjs`).

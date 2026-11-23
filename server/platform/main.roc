@@ -45,7 +45,7 @@
 ##   GET endpoint a component reads while the host renders the page (`Endpoint.get!`) is answered by
 ##   its route, in-process (`Host.fetch!`). The modules components are written with (`Html`, `Solid`,
 ##   `Show`, `For`, `Loading`, `Errored`, `Context`, `Call`, `Router`, `HttpStatusCode`, `Transition`,
-##   `Title`, `Browser`, `Audio`, `Submission`, `Submissions`), and HTTP's (`Server`, `Endpoint`,
+##   `Title`, `Browser`, `Submission`, `Submissions`), and HTTP's (`Server`, `Endpoint`,
 ##   `Channel`, `Middleware`, `Events`, `OpenApi`), are the browser's platform's (web/platform),
 ##   copied here by the build, so the same code compiles on both.
 ##
@@ -66,7 +66,7 @@ platform ""
 			routes : List({ method : Str, path : Str, file : Str }),
 		}
 	}
-	exposes [Actor, AesGcm, Audio, Blobs, Browser, Call, Channel, Context, Db, Endpoint, Env, Errored, Events, For, Html, Http, HttpResponse, HttpStatusCode, Kv, Live, Loading, Log, Middleware, OpenApi, Plugin, Random, Repeat, Router, Server, Show, Solid, Submission, Submissions, Tcp, Time, Title, Transition]
+	exposes [Actor, AesGcm, Blobs, Browser, Call, Channel, Context, Db, Endpoint, Env, Errored, Events, For, Html, Http, HttpResponse, HttpStatusCode, Kv, Live, Loading, Log, Middleware, OpenApi, Plugin, Random, Repeat, Router, Server, Show, Solid, Submission, Submissions, Tcp, Time, Title, Transition]
 	packages {}
 	provides {
 		"roc_actor": actor_for_host!,
@@ -206,7 +206,6 @@ import Actor
 import ActorTimers
 import ActorTurn
 import AesGcm
-import Audio
 import Blobs
 import Browser
 import Call

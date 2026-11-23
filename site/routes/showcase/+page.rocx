@@ -121,7 +121,7 @@ view! = |_|
 				The game's rules are pure: <code>update</code> can't make a sound, only the next game. So the next
 				game says what its step sounded like (<code>"eat"</code>, <code>"die"</code>, or nothing), which a
 				test can check, and the handler that keeps the game's signal plays it, with
-				<code>Audio.play!</code>:
+				<code>Audio.play!</code> (<a href={Paths.ecosystem_audio}>packages/audio</a>, a plugin, whose script plays it):
 			</p>
 			<Code title={Sources.demo_snake.file} source={"go! = |next| {\n\tset_game!(next)\n\tif (!next.muted and !next.sound.is_empty()) Audio.play!(\"/sounds/\${next.sound}.wav\") else {}\n}"} numbers={Bool.False} />
 			<p>

@@ -231,14 +231,17 @@ const MEASURED = "/";
 
 /**
  * The page at `path` as the site's server answers it, and what the browser's build needs to render
- * it the same way (decision D): the answers its reads got, and what it has inside
- * each `<NoHydration>`.
+ * it the same way (decision D): the answers its reads got, what it has inside each
+ * `<NoHydration>`, and the plugins' scripts it loads (D-050), by URL.
  */
 export async function nativePage(url, path, headers = {}) {
 	const answered = await fetch(`${url}${path}`, { headers: { accept: "text/html", ...headers } });
 	const html = await answered.text();
 	const script = /<script type="application\/json" class="rocx-answers">(.*?)<\/script>/.exec(html);
-	return { path, status: answered.status, html, answers: script ? JSON.parse(script[1]) : [], regions: Runtime.regionsOf(html) };
+	const scripts = [...html.matchAll(/<script type="module" data-rocx src="([^"]*)"><\/script>/g)]
+		.map((tag) => tag[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&"))
+		.filter((src) => src !== "/rocx/start.js");
+	return { path, status: answered.status, html, answers: script ? JSON.parse(script[1]) : [], regions: Runtime.regionsOf(html), scripts };
 }
 
 /** Sizes and timings of the browser's wasm, under `prefix`: rendering a page (`page`, as the
@@ -248,7 +251,7 @@ async function measureClient(wasm, prefix, page) {
 	const loading = performance.now();
 	const runtime = await Runtime.load(wasm);
 	const compiled = performance.now() - loading;
-	const render = () => runtime.renderToString({ path: page.path, answers: page.answers, regions: page.regions });
+	const render = () => runtime.renderToString({ path: page.path, answers: page.answers, regions: page.regions, scripts: page.scripts });
 	if (render().html !== page.html) throw new Error(`the browser's build renders ${page.path} other than the server does`);
 	return {
 		[`${prefix}bytes`]: kb(wasm.length),

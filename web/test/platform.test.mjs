@@ -977,7 +977,7 @@ window.hydrated = true;
 	}
 });
 
-test("effects: a handler calls the page's own function once it is done, the page patched, given `{ under }` too; one the page hasn't is told; Audio.play! plays a file", { skip }, async () => {
+test("effects: a handler calls the page's own function once it is done, the page patched, given `{ under }` too; one the page hasn't is told, and one named as a plugin's says which plugin's script would have it", { skip }, async () => {
 	const wasm = readFileSync(join(out, "timers.wasm"));
 	const dir = mkdtempSync(join(tmpdir(), "rocx-effects-"));
 	cpSync(join(web, "runtime.js"), join(dir, "runtime.js"));
@@ -987,12 +987,6 @@ test("effects: a handler calls the page's own function once it is done, the page
 <script type="module">
 import { Runtime } from "/runtime.js";
 window.noted = [];
-// What the browser is asked to play, instead of playing it.
-window.played = [];
-HTMLMediaElement.prototype.play = function () {
-	window.played.push([new URL(this.src).pathname, this.volume, this.playbackRate, this.preservesPitch]);
-	return Promise.resolve();
-};
 const effects = { noted: (arg) => window.noted.push([arg, document.querySelector(".notes").textContent]), resolve: (arg, { under }) => (window.resolved = under(arg.url)) };
 window.runtime = await Runtime.load(fetch("/timers.wasm"), { effects, base: "/site/" });
 window.runtime.mount(document.getElementById("app"));
@@ -1018,10 +1012,10 @@ window.mounted = true;
 		await tab.click(".resolve");
 		await tab.wait("window.resolved !== undefined");
 		assert.equal(await tab.eval("window.resolved"), "/site/beep.wav", "under the base the runtime was given");
-		// A sound file: the runtime's own, with nothing given to it.
-		await tab.click(".play");
-		await tab.wait("window.played.length === 1");
-		assert.deepEqual(await tab.eval("window.played"), [["/site/beep.wav", 0.5, 2, false]], "the file, under the base, at its volume and rate, its pitch moving with it");
+		// One named as a plugin's (`<plugin>.<effect>`) that no script registered: which plugin's would.
+		await tab.click(".unplugged");
+		await sleep(50);
+		assert.ok(tab.console.some((entry) => entry.type === "error" && entry.text.includes("no effect is called audio.play: the audio plugin's script registers it: is the audio plugin in the app's plugins?")), JSON.stringify(tab.console));
 		assert.deepEqual(tab.errors, []);
 	} finally {
 		await site.close();

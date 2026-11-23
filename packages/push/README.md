@@ -1,23 +1,33 @@
 # push
 
-Web Push notifications for Roc Solid apps. A page asks the user's permission and subscribes; the
-server keeps the subscription; later the server sends a notification, and the browser shows it even
-with every tab of the site closed. The server's half keeps subscriptions in the app's database,
-Postgres or SQLite (D-045): its table has a migration for each, and its statements run on both.
+Web Push notifications for Roc Solid apps, as a plugin. A page asks the user's permission and
+subscribes; the server keeps the subscription; later the server sends a notification, and the
+browser shows it even with every tab of the site closed. The server keeps subscriptions in the
+app's database, Postgres or SQLite (D-045): its table has a migration for each, and its statements
+run on both.
 
 ```roc
-import push.Notification
-import push.Options
-import Push
+app [program] { jobs: "…/packages/jobs/main.roc", push: "…/packages/push/main.roc", pf: platform "…" }
 
-# Somewhere on the server: a job, an endpoint.
-Push.notify!(user_id, { ..Notification.new("New reply", "Ada answered your question"), url: "/questions/42" }, Options.defaults)
+import jobs.Job
+import push.Push
+
+program = App.program({ …, plugins: [Job.plugin({ jobs: App.jobs }), Push.plugin({})] })
 ```
 
 ```roc
 import push.PushButton
 
 <PushButton api="/push" />
+```
+
+```roc
+import push.Notification
+import push.Options
+import push.Push
+
+# Somewhere on the server: a job, an endpoint.
+Push.notify!(user_id, { ..Notification.new("New reply", "Ada answered your question"), url: "/questions/42" }, Options.defaults)
 ```
 
 ## Status
@@ -29,13 +39,17 @@ What works today:
   header, records, padding, keys and nonces (RFC 8188), the message's key derivation (RFC 8291,
   appendix A, reproduced up to the AES), the request's headers (RFC 8030), reading a
   `PushSubscription`'s JSON, and what each answer from a push service means.
-- The server's glue (`server/`): the subscriptions table and its migration (one for Postgres, one
-  for SQLite), saving and forgetting subscriptions, and a job that delivers a message to each, with
-  retries. Built into an app and run against Postgres and a stand-in push service, it sends the
-  request RFC 8030 and RFC 8291 describe and handles every answer. `example/test/push.test.mjs`
-  builds the example with the glue copied in, on SQLite (a file of its own) and, when
-  `DATABASE_URL` is set, on Postgres, and asks it over HTTP: subscribing, each of `PushStore`'s
-  statements, a broadcast's jobs, unsubscribing (`node --test 'packages/push/example/test/*.test.mjs'`).
+- The plugin (`Push.plugin`, D-051): its three endpoints, the subscriptions table and its
+  migration (one for Postgres, one for SQLite), saving and forgetting subscriptions, a job that
+  delivers a message to each, with retries (run by the jobs plugin's workers), the service worker
+  at the site's root and the page's script, served before the app's middleware. Built into an app
+  and run against Postgres and a stand-in push service, it sends the request RFC 8030 and RFC 8291
+  describe and handles every answer. `example/test/push.test.mjs` builds the example, on SQLite (a
+  file of its own) and, when `DATABASE_URL` is set, on Postgres, and asks it over HTTP:
+  subscribing, each of `PushStore`'s statements, a broadcast's jobs, unsubscribing; and in
+  Chromium (when there is one), the button subscribing through the plugin's script, the service
+  worker registered at the root behind a guard that refuses every script
+  (`node --test 'packages/push/example/test/*.test.mjs'`).
 - The browser's part: the service worker, the script that subscribes from a click, and
   `<PushButton>`.
 
@@ -45,14 +59,12 @@ What waits on a proposal (PROPOSALS.md):
   signs the VAPID token) and only AES-256-GCM with random nonces, and Web Push needs AES-128-GCM
   with a derived nonce. Until the host has them, every delivery fails, saying so. The host functions
   are sketched on `ring`, which the host links already, and pass the RFC vectors.
-- **Installing.** A package can't yet give an app server-only modules, migrations or static files,
-  so today the glue is copied by hand (see Setting up).
 
 ## Three parts
 
-**The pure package** (`main.roc`): plain Roc on no platform. `roc test packages/push/main.roc`
-runs its `expect`s. HKDF, HMAC and base64url are `packages/crypto`'s, which this package names
-itself: an app names `push` alone.
+**The pure part**: plain Roc, checked by `expect`s (`roc test packages/push/main.roc`), which the
+browser's half sees too (`browser.roc`). HKDF, HMAC and base64url are `packages/crypto`'s, which
+this package names itself: an app names `push` alone.
 
 | Module | What it does |
 |---|---|
@@ -65,99 +77,67 @@ itself: an app names `push` alone.
 | `Ece` | RFC 8188's `aes128gcm` coding: `header`, `parse_header`, `pad`, `unpad`, `keys`, `nonce` (record `n`'s) |
 | `PushState` | Where a browser stands (`On`, `Off`, `Blocked`, `Unsupported`, `Working`, `Failed(why)`), as the page's script says it; what `<PushButton>` shows |
 
-**The server's glue** (`server/`): modules that import the server platform (`Db`, `Http`, `Job`,
-`Env`), so they can't be in the package; and the table's migration, for the app's database:
-`migrations/0001_push_subscriptions.sql` on Postgres, `migrations/0001_push_subscriptions_sqlite.sql`
-on SQLite (its moments milliseconds).
+**The server's part**: modules that use the server platform (`Db`, `Http`, `Plugin`, `Env`) and
+packages/jobs (`Job`), which the package names in its header (`main.roc`), as a plugin package
+does (D-033); the browser's half doesn't see them. And the table's migration, for the app's
+database: `migrations/0001_push_subscriptions.sql` on Postgres,
+`migrations/0001_push_subscriptions_sqlite.sql` on SQLite (its moments milliseconds), each made
+only if it isn't there, so a table an app made before by hand is kept.
 
 | Module | What it does |
 |---|---|
-| `Push` | `subscribe!(body, owner)`, `unsubscribe!(endpoint, owner)`: for the app's endpoints. `notify!(owner, notification, options)`, `broadcast!(notification, options)`: queue a `deliver` job per subscription, how many. `public_key!`, `keys!` (from the environment). `deliver`: the job. `send!`: one attempt, given the host's primitives (`Primitives`) |
+| `Push` | `plugin(setup)`: the plugin (below). `subscribe!(body, owner)`, `unsubscribe!(endpoint, owner)`: what its endpoints do. `notify!(owner, notification, options)`, `broadcast!(notification, options)`: queue a `deliver` job per subscription, how many. `public_key!`, `keys!` (from the environment). `deliver`: the job. `send!`: one attempt, given the host's primitives (`Primitives`) |
 | `PushStore` | The `push_subscriptions` table: `save!` (one row per endpoint), `remove!`, `remove_id!`, `find!`, `of_owner!`, `everyone!`, `delivered!`, `refused!`. Each statement runs on Postgres and SQLite; `delivered!`, which notes when, asks `Db.backend!` which to run |
 
 `owner` is the app's id for a user, as text, or `""` for a visitor.
 
 **The browser's part** (`static/`, `components/`):
 
-- `static/push-sw.js`, the service worker: shows the notification a message carries; a click
-  focuses a tab at its URL, or opens one (this site's pages only); when the push service replaces a
-  subscription (`pushsubscriptionchange`), it tells the server.
-- `static/push.js`, the page's script: the `push:subscribe` and `push:unsubscribe` effects a
-  handler calls with `Browser.call!`. Subscribing asks permission first, while the click still
-  counts as the user's (browsers prompt only then), then registers the service worker at `/`,
-  subscribes with the server's key, and posts the subscription. Once the page is awake it says where
-  the browser stands, and sends the server its subscription again once a visit.
+- `static/push-sw.js`, the service worker, which the plugin serves at the site's root
+  (`/push-sw.js`, a file `at: Root`), so its scope is the whole site: it shows the notification a
+  message carries; a click focuses a tab at its URL, or opens one (this site's pages only); when
+  the push service replaces a subscription (`pushsubscriptionchange`), it tells the server.
+- `static/push.js`, the page's script, which every page loads (the plugin's script,
+  `/rocx/plugins/push/push.js`): the `push.subscribe` and `push.unsubscribe` effects a handler
+  calls with `Browser.call!`. Subscribing asks permission first, while the click still counts as
+  the user's (browsers prompt only then), then registers the service worker at the site's root,
+  subscribes with the server's key, and posts the subscription. Once the page is awake it says
+  where the browser stands, and sends the server its subscription again once a visit. Under a base
+  (`/rocx/`), every URL is under it (`{ under }`, D-050).
 - `<PushButton api="/push" />`: turns notifications on and off, and says why it can't (blocked, or a
   browser with no Web Push: on an iPhone or iPad, a site not added to the Home Screen).
 
 ## Setting up
 
 `example/` is a small app with every step below: a page with `<PushButton>` and a button that
-notifies everyone, and the three endpoints. Copy the glue into it (step 3) to build it. The docs
-site's page for this package shows its files.
+notifies everyone. The docs site's page for this package shows its files.
 
 1. **Keys.** `node packages/push/vapid-keys.mjs` prints a pair. Give the server
    `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (secret) and `VAPID_SUBJECT` (`mailto:` and an address,
    or an `https:` URL) in its environment. Browsers subscribed with one public key can only be sent
-   to with that pair.
+   to with that pair. The plugin needs all three: without one, or with a pair that isn't one, the
+   server doesn't start, and says why.
 
-2. **The package**, in the app's header, as for any package, and packages/jobs, whose plugin runs
-   the `deliver` job:
+2. **The plugin**, in the app's header and its plugins, with packages/jobs, whose plugin runs the
+   `deliver` job:
 
    ```roc
    app [program] { jobs: "../packages/jobs/main.roc", push: "../packages/push/main.roc", pf: platform "…" }
 
-   program = App.program({ …, plugins: [Job.plugin({ jobs: App.jobs })] })
+   import jobs.Job
+   import push.Push
+
+   program = App.program({ …, plugins: [Job.plugin({ jobs: App.jobs }), Push.plugin({})] })
    ```
 
-3. **The glue, by hand for now**: copy `server/Push.roc` and `server/PushStore.roc` into the app's
-   directory, and the migration for the app's database into its `migrations/`:
-   `migrations/0001_push_subscriptions.sql` for Postgres (the default),
-   `migrations/0001_push_subscriptions_sqlite.sql` for an app whose program says
-   `database: Sqlite(…)`. `rocx build` finds the `deliver` job and the migration there, as it finds
-   the app's own, and lists the job in `App.jobs`.
+   That is all the server needs: the endpoints (`GET /push/key`, `POST /push/subscribe`, `POST
+   /push/unsubscribe`), the table, the job, the service worker and the script.
+   `Push.plugin({ at: "/notifications" })` puts the endpoints elsewhere (`<PushButton
+   api="/notifications">` then), and `owner` says whose a subscription is: an app with accounts
+   gives the id its middleware handed on (`Push.plugin({ owner: |context| context.member })`), and
+   `notify!` sends to that user's browsers. Without it every subscription is a visitor's (`""`).
 
-4. **Three endpoints**, where `<PushButton api="/push">` looks for them:
-
-   ```roc
-   # routes/push/key/+server.roc
-   get! : { request : Server.Request, params : {}, context : c } => Try(Str, Endpoint.Refusal)
-   get! = |_| {
-       key = Push.public_key!({})
-       if key.is_empty() Err(Status(503, "the server has no VAPID_PUBLIC_KEY")) else Ok(key)
-   }
-
-   # routes/push/subscribe/+server.roc
-   post! : { request : Server.Request, params : {}, context : c, body : Subscription.Body } => Try({}, Endpoint.Refusal)
-   post! = |{ body, .. }|
-       match Push.subscribe!(body, "") {     # an app with accounts gives its user's id
-           Ok({}) => Ok({})
-           Err(Invalid(why)) => Err(BadRequest(why))
-           Err(DbErr(why)) => Err(Status(500, why))
-       }
-
-   # routes/push/unsubscribe/+server.roc
-   post! : { request : Server.Request, params : {}, context : c, body : { endpoint : Str } } => Try({}, Endpoint.Refusal)
-   post! = |{ body, .. }|
-       match Push.unsubscribe!(body.endpoint, "") {
-           Ok({}) => Ok({})
-           Err(DbErr(why)) => Err(Status(500, why))
-       }
-   ```
-
-5. **The browser's files.** The layout loads the script in its `<head>`, and the server serves
-   `static/` beside the app's own files, so that the service worker is `/push-sw.js` and its scope
-   the whole site:
-
-   ```roc
-   <script type="module" src="/push.js"></script>
-   ```
-
-   ```sh
-   ./server --static build/client/static --static ../packages/push/static   # and --database-url … on Postgres
-   ```
-
-6. **A button**, anywhere: `<PushButton api="/push" />`.
+3. **A button**, anywhere: `<PushButton api="/push" />`.
 
 ## Sending
 

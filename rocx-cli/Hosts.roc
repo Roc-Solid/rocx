@@ -15,7 +15,7 @@ Hosts := [].{
 	## server platform, so the same code compiles on both (server/build.mjs's SHARED_MODULES, which
 	## this list follows).
 	shared_modules : List(Str)
-	shared_modules = ["Html", "Solid", "Show", "For", "Repeat", "Loading", "Errored", "Call", "Server", "Context", "Endpoint", "FormBody", "Middleware", "Events", "OpenApi", "Router", "HttpStatusCode", "Transition", "Browser", "Audio", "Submission", "Submissions", "Title", "Channel"]
+	shared_modules = ["Html", "Solid", "Show", "For", "Repeat", "Loading", "Errored", "Call", "Server", "Context", "Endpoint", "FormBody", "Middleware", "Events", "OpenApi", "Router", "HttpStatusCode", "Transition", "Browser", "Submission", "Submissions", "Title", "Channel"]
 
 	## The Roc compiler: the one `just setup` links in .tools (the fork rocx builds with), as the file
 	## it links to; else $ROC; never the `roc` on PATH, which may lack the fork's fixes.

@@ -1,6 +1,6 @@
 import pf.Html
 import pf.Solid exposing [create_signal!]
-import pf.Audio
+import audio.Audio
 import pf.For
 import pf.Show
 import Random

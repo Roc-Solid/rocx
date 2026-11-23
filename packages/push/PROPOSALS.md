@@ -1,14 +1,15 @@
 # push: proposals
 
-What packages/push needs from outside its folder. Nothing here is implemented. Each section says
-what the package does meanwhile.
+What packages/push needs from outside its folder. Sections 2 and 3 are done (push is a plugin,
+D-051, on plugins' files and scripts, D-050); the rest isn't implemented. Each section says what the
+package does meanwhile.
 
 1. [P-256 and AES-128-GCM in the host](#1-p-256-and-aes-128-gcm-in-the-host): the crypto Web Push
    can't send without.
-2. [Server-only modules in packages](#2-server-only-modules-in-packages): the glue (`server/`) and
-   its migration, installed by `rocx build`.
+2. [Server-only modules in packages](#2-server-only-modules-in-packages): the glue and its
+   migration. Done: `Push.plugin` (D-033, D-051).
 3. [Static files in packages](#3-static-files-in-packages): the service worker, served at the
-   site's root.
+   site's root. Done: the plugin's files (D-050).
 4. [Jobs: give up, or come back at a time](#4-jobs-give-up-or-come-back-at-a-time): a refusal that
    isn't retried, and `Retry-After`.
 5. [`Browser.call!` with an answer](#5-browsercall-with-an-answer): how `<PushButton>` hears how a
@@ -192,7 +193,7 @@ The package checks the rest of RFC 8291 already: from the ECDH secret on, `WebPu
 reproduces the appendix's `PRK_key`, `key_info`, IKM, PRK, CEK, nonce, header and record, and
 `WebPush.body` with the sealed bytes above gives the appendix's message exactly.
 
-**What in the package depends on it.** `Push.host` (server/Push.roc) is the only place. Today each
+**What in the package depends on it.** `Push.host` (Push.roc) is the only place. Today each
 of its three functions answers "the server's host has no P-256 or AES-128-GCM yet…", and the
 delivery job fails with that. With the proposal it becomes:
 
@@ -215,11 +216,11 @@ failing every delivery with a reason.
 
 ## 2. Server-only modules in packages
 
-**Status (2026-11-22).** Done another way (D-033): a package whose modules use the server platform
-names it in its header (`browser.roc` lists what the browser can compile), and gives a plugin. Jobs
-are packages/jobs's now (D-034): `server/Push.roc` imports `jobs.Job`, and its `deliver` job reaches
-the workers through `App.jobs` and `Job.plugin`. Push could become a plugin (its table, its job, its
-endpoints as routes); its static files (section 3) wait for plugins' `files`, which aren't built.
+**Status (2026-11-23).** Done another way: push is a plugin (D-051). The package names the server
+platform in its header (D-033: `browser.roc` lists what the browser can compile), with `Push` and
+`PushStore` beside the pure modules; `Push.plugin({})` brings the endpoints, the table, the job
+(`Job.call` and `Job.adopt!`: the jobs plugin runs a plugin's kind of job) and the browser's files
+(section 3). What follows is the problem as it was.
 
 **Problem.** `server/Push.roc` and `server/PushStore.roc` import the server platform (`pf.Db`,
 `pf.Http`, `pf.Job`, `pf.Env`, `pf.Log`, `pf.Random`, `pf.Time`) and the pure package
@@ -293,6 +294,11 @@ package's files don't change.
 
 ## 3. Static files in packages
 
+**Status (2026-11-23).** Done another way: a plugin's files (D-050), served by the host before the
+app and its middleware, `push-sw.js` at the root (`at: Root`) and `push.js` loaded by every page (a
+plugin's script). A copy of a site as files gets them too (site/build.mjs). What follows is the
+problem as it was.
+
 **Problem.** A service worker controls only pages under its script's directory, so `push-sw.js`
 must be served from the site's root (`/push-sw.js`), with a JavaScript content type. The page
 script `push.js` has to be served too.
@@ -356,7 +362,7 @@ Job.define_outcomes : Str, { attempts : U64, timeout_ms : U64 }, (input => Try({
 ```
 
 **What in the package depends on it.** The `Refused` and `RetryAfter` branches of `deliver!`
-(server/Push.roc). With option 1 they become `Err(GiveUp(why))` and `Err(RetryAt(now + ms, why))`,
+(Push.roc). With option 1 they become `Err(GiveUp(why))` and `Err(RetryAt(now + ms, why))`,
 and the `later` field of `Push.Input` goes.
 
 **How it could be undone.** The plain `Err(Str)` stays as it is; removing the new kind
@@ -380,7 +386,7 @@ arrives only because `push.js` listens for `rocx:ready` itself: an effect can't 
 1. **`Browser.ask!(name, arg, answered!)`**: the page's function may return a value or a promise;
    when it settles, the runtime runs `answered!` as a handler with `Ok(json)` or `Err(why)`.
    `<PushButton>` would be
-   `on:click={|| Browser.ask!("push:subscribe", { api: api }, |answer| set_state!(PushState.parse(answer ?? "failed:")))}`,
+   `on:click={|| Browser.ask!("push.subscribe", { api: api }, |answer| set_state!(PushState.parse(answer ?? "failed:")))}`,
    and an `on_settled!` effect could ask once on load.
 2. Let effects' `apply` call `Browser.call!` (it is "a handler's" now), and keep the event for the
    answer.

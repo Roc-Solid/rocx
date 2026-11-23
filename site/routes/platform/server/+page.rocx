@@ -215,7 +215,9 @@ view! = |_|
 				an ETag of its bytes (304 when the browser has them). Its scripts, every page the server renders
 				loads, a module each before start.js; a script registers the browser effects
 				<code>Browser.call!</code> finds, named <code>{"<plugin>.<effect>"}</code>, and each is given
-				<code>{"{ under }"}</code>, which puts a URL under the site's base (D-050).
+				<code>{"{ under }"}</code>, which puts a URL under the site's base (D-050). The
+				<a href={Paths.ecosystem_push}>push</a> plugin serves its service worker at the root and its script
+				this way, and the <a href={Paths.ecosystem_audio}>audio</a> plugin its player (D-051).
 			</p>
 			<Code
 				title="A plugin's files"

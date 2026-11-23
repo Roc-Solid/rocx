@@ -1,4 +1,4 @@
-import pf.Audio
+import audio.Audio
 
 ## Pinwheel's sounds (`static/sounds/`, which `sounds.mjs` makes), played from a handler, an
 ## effect's apply or a timer, when the page's sound is on.

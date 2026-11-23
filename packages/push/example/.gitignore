@@ -1,6 +1,3 @@
-# Copied in by hand from ../server and ../migrations (until rocx build copies them), and written by rocx build
-Push.roc
-PushStore.roc
-migrations/
+# Written by rocx build, and by the tests
 Generated/
 build/

@@ -1,7 +1,6 @@
 import pf.Html
 import ../../../Demos/PushCompose
 import ../../../Demos/PushStates
-import ../../../Ui/Callout
 import ../../../Ui/Code
 import ../../../Ui/Demo
 import ../../../Ui/Heading
@@ -11,13 +10,13 @@ import ../../../Ui/TableWrap
 import ../../../Generated/Sources
 import ../../../Generated/Paths
 
-## The push package: how Web Push goes, the package's example app file by file, `<PushButton>` and
+## The push package, a plugin: how Web Push goes, the package's example app file by file, `<PushButton>` and
 ## its states, a notification and its options (live: the package's functions in the browser),
 ## sending, the modules, and what works today and what waits on a proposal. Static but for the
 ## notification demo: this site is files, and a push needs a server.
 meta = {
 	title: "Push",
-	description: "Web Push notifications for Roc Solid apps: a button that subscribes, a table that keeps each browser's subscription, and jobs that send. Sending waits on the server's host.",
+	description: "Web Push notifications for Roc Solid apps, as a plugin: a button that subscribes, a table that keeps each browser's subscription, and jobs that send. Sending waits on the server's host.",
 	toc: [
 		{ id: "how", label: "How it works" },
 		{ id: "example", label: "A first app" },
@@ -38,9 +37,9 @@ view! = |_|
 				title="Notifications that arrive with every tab closed"
 			>
 				Web Push lets a server send a notification to a browser that said yes, even when none of the
-				site's tabs is open. This package has each part: a button that asks and subscribes, a table that
-				keeps each browser's subscription, and a job that sends to it. One piece is missing: the server's
-				host can't yet do the encryption Web Push needs, so today every send fails and says why (see
+				site's tabs is open. This package has each part, a plugin an app lists in one line: a button that
+				asks and subscribes, a table that keeps each browser's subscription, and a job that sends to it. One
+				piece is missing: the server's host can't yet do the encryption Web Push needs, so today every send fails and says why (see
 				<a href="#status">Status</a>).
 			</PageHero>
 
@@ -69,77 +68,61 @@ view! = |_|
 			<p>The package comes in three parts:</p>
 			<ul>
 				<li>
-					<strong>A pure Roc package</strong>, <code>main.roc</code>, on no platform: the formats, the key
-					derivation, the token, and what each answer means. <code>roc test packages/push/main.roc</code>
-					checks it against the RFCs' own examples.
+					<strong>Plain Roc</strong>, on no platform: the formats, the key derivation, the token, and what
+					each answer means. <code>roc test packages/push/main.roc</code> checks it against the RFCs' own
+					examples. The browser's half sees these too (<code>browser.roc</code>).
 				</li>
 				<li>
-					<strong>The server's glue</strong>, <code>server/</code>: it keeps subscriptions in the app's database (Postgres or SQLite) and
-					sends with <a href={Paths.ecosystem_jobs}>jobs</a> (packages/jobs, which the app names too). It imports
-					the server platform, and isn't a plugin yet, so an app copies it in by hand.
+					<strong>The plugin</strong>, <code>{"Push.plugin({})"}</code>: its endpoints, a table that keeps
+					subscriptions in the app's database (Postgres or SQLite), and a job that sends, which the
+					<a href={Paths.ecosystem_jobs}>jobs</a> plugin runs (packages/jobs, which the app lists too). It
+					uses the server platform, which the package names in its header
+					(<a href={"${Paths.platform_server}#plugins"}>plugins</a>).
 				</li>
 				<li>
 					<strong>The browser's part</strong>: <code>{"<PushButton>"}</code> (in <code>components/</code>,
 					which <code>rocx build</code> copies into the app), the page's script and the service worker (in
-					<code>static/</code>).
+					<code>static/</code>), which the plugin serves: the worker at the site's root, so its scope is the
+					whole site, and the script on every page.
 				</li>
 			</ul>
 
 			<Heading id="example">A first app</Heading>
 			<p>
 				The package has a small app, <code>packages/push/example</code>: a page with the button and a button
-				that notifies everyone, and the three endpoints the button calls. Each file below is that app's. With
-				the glue copied in (step 3), it compiles. This site can't run it: the site is static files, and Web
-				Push needs a server.
+				that notifies everyone. Each file below is that app's. This site can't run it: the site is static
+				files, and Web Push needs a server.
 			</p>
 			<p>
 				<strong>1. Keys.</strong> <code>node packages/push/vapid-keys.mjs</code> prints a key pair. Give the
 				server <code>VAPID_PUBLIC_KEY</code>, <code>VAPID_PRIVATE_KEY</code> and <code>VAPID_SUBJECT</code>
 				(<code>mailto:</code> and an address, or an <code>https:</code> URL) in its environment. The private
 				key never leaves the server. A browser that subscribed with one public key can only be sent to with
-				that pair.
+				that pair. The plugin needs all three: without one, or with a pair that isn't one, the server doesn't
+				start, and says why.
 			</p>
-			<p><strong>2. The package</strong>, named in the app's header like any package:</p>
+			<p>
+				<strong>2. The plugin</strong>, in the app's header and its plugins, with the jobs plugin, which runs
+				its job:
+			</p>
 			<Code title={Sources.push_example_main.file} source={Sources.push_example_main.rocx} />
 			<p>
-				<strong>3. The glue, by hand for now.</strong> Copy <code>server/Push.roc</code> and
-				<code>server/PushStore.roc</code> beside the app's <code>main.roc</code>, and
-				<code>migrations/0001_push_subscriptions.sql</code> into its <code>migrations/</code>. Then
-				<code>rocx build</code> finds the <code>push.deliver</code> job and the table, as it finds the app's
-				own.
+				That is all the server needs. The plugin answers <code>GET /push/key</code>, <code>POST
+				/push/subscribe</code> and <code>POST /push/unsubscribe</code> behind the app's middleware; makes its
+				table; runs <code>push.deliver</code> on the jobs plugin's workers; and serves the service worker at
+				<code>/push-sw.js</code> and the page's script, which every page loads, before the app's middleware,
+				so a guard never blocks them. <code>{"Push.plugin({ at: \"/notifications\" })"}</code> puts the
+				endpoints elsewhere; <code>{"Push.plugin({ owner: |context| context.member })"}</code> makes each
+				subscription the signed-in user's, as the app's middleware hands it on, where without it each is a
+				visitor's (<code>""</code>).
 			</p>
-			<Callout kind="note" title="Why by hand">
-				<p>
-					A package can name a platform only if it is the app's own, and a Roc Solid app is two programs on
-					two platforms. So a package can't give an app modules that import the server platform yet. The
-					package proposes that <code>rocx build</code> copy a package's <code>server/</code> into the server's
-					half, as it copies <code>components/</code> into both (see <a href="#status">Status</a>).
-				</p>
-			</Callout>
-			<p>
-				<strong>4. The browser's files.</strong> The layout loads the page's script in its
-				<code>{"<head>"}</code>:
-			</p>
-			<Code title={Sources.push_example_layout.file} source={Sources.push_example_layout.rocx} />
-			<p>
-				The server serves the package's <code>static/</code> beside the app's own files, with one more
-				<code>--static packages/push/static</code>. Then the service worker is <code>/push-sw.js</code>, and
-				it covers the whole site.
-			</p>
-			<p><strong>5. The page</strong>: the button, and a handler that asks an endpoint to notify everyone.</p>
+			<p><strong>3. The page</strong>: the button, and a handler that asks an endpoint to notify everyone.</p>
 			<Code title={Sources.push_example_page.file} source={Sources.push_example_page.rocx} />
-			<p>
-				<strong>6. Three endpoints</strong>, where <code>{"<PushButton api=\"/push\">"}</code> looks for them.
-				This app has no accounts, so each subscription's owner is <code>""</code>. An app with accounts
-				gives its user's id.
-			</p>
-			<Code title={Sources.push_example_key.file} source={Sources.push_example_key.rocx} />
-			<Code title={Sources.push_example_subscribe.file} source={Sources.push_example_subscribe.rocx} />
-			<Code title={Sources.push_example_unsubscribe.file} source={Sources.push_example_unsubscribe.rocx} />
+			<Code title={Sources.push_example_announce.file} source={Sources.push_example_announce.rocx} />
 
 			<Heading id="button">{"<PushButton>"}</Heading>
 			<p>
-				A button that turns this browser's notifications on, and off again. A click calls the page's script
+				A button that turns this browser's notifications on, and off again. A click calls the plugin's script
 				(<code>static/push.js</code>) with <a href={"${Paths.components}#effects"}><code>Browser.call!</code></a>.
 				The script asks permission, registers the service worker, subscribes with the server's key, and
 				posts the subscription. Turning notifications off unsubscribes, and tells the server.
@@ -272,7 +255,7 @@ view! = |_|
 
 			<Heading id="modules">The modules</Heading>
 			<p>
-				<strong>The pure package</strong>, <code>main.roc</code>: plain Roc, on no platform.
+				<strong>Plain Roc</strong>, on no platform, which both halves of an app see.
 			</p>
 			<TableWrap>
 				<table>
@@ -291,26 +274,26 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				<strong>The server's glue</strong>, <code>server/</code>, with
-				<code>migrations/0001_push_subscriptions.sql</code>. Each function's <code>owner</code> is the app's id
+				<strong>The server's part</strong>, on the server platform, with the table's migrations
+				(<code>migrations/</code>, Postgres's and SQLite's). Each function's <code>owner</code> is the app's id
 				for a user, as text, or <code>""</code> for a visitor.
 			</p>
 			<TableWrap>
 				<table>
 					<thead><tr><th>Module</th><th>What it does</th></tr></thead>
 					<tbody>
-						<tr><td><code>Push</code></td><td><code>subscribe!(body, owner)</code> and <code>unsubscribe!(endpoint, owner)</code>, for the endpoints; <code>notify!</code> and <code>broadcast!</code>; <code>public_key!</code> and <code>keys!</code> (from the environment); <code>deliver</code>, the job; <code>send!</code>, one attempt</td></tr>
+						<tr><td><code>Push</code></td><td><code>plugin(setup)</code>, the plugin (<code>at</code>, <code>owner</code>); <code>subscribe!(body, owner)</code> and <code>unsubscribe!(endpoint, owner)</code>, for the endpoints; <code>notify!</code> and <code>broadcast!</code>; <code>public_key!</code> and <code>keys!</code> (from the environment); <code>deliver</code>, the job; <code>send!</code>, one attempt</td></tr>
 						<tr><td><code>PushStore</code></td><td>the <code>push_subscriptions</code> table: <code>save!</code> (a row for each endpoint), <code>remove!</code>, <code>find!</code>, <code>of_owner!</code>, <code>everyone!</code>, and what the job notes</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
-			<p><strong>The browser's files</strong>, <code>static/</code>:</p>
+			<p><strong>The browser's files</strong>, <code>static/</code>, which the plugin serves:</p>
 			<TableWrap>
 				<table>
 					<thead><tr><th>File</th><th>What it does</th></tr></thead>
 					<tbody>
-						<tr><td><code>push.js</code></td><td>the page's script: the <code>push:subscribe</code> and <code>push:unsubscribe</code> functions the button calls; once a visit, it sends the server the browser's subscription again</td></tr>
-						<tr><td><code>push-sw.js</code></td><td>the service worker: shows a message's notification; a click focuses a tab at its URL, or opens one; when the push service replaces a subscription, it tells the server</td></tr>
+						<tr><td><code>push.js</code></td><td>the page's script, at <code>/rocx/plugins/push/push.js</code>, on every page: the <code>push.subscribe</code> and <code>push.unsubscribe</code> effects the button calls; once a visit, it sends the server the browser's subscription again. Under a base (<code>/rocx/</code>), every URL is under it.</td></tr>
+						<tr><td><code>push-sw.js</code></td><td>the service worker, at the site's root (<code>/push-sw.js</code>): shows a message's notification; a click focuses a tab at its URL, or opens one; when the push service replaces a subscription, it tells the server</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
@@ -336,10 +319,14 @@ view! = |_|
 					(up to the AES), the request's headers, and what each answer means.
 				</li>
 				<li>
-					The glue, built into an app and run against SQLite, and Postgres when there is one, and a stand-in push service: it saves and
+					The plugin, built into an app and run against SQLite, and Postgres when there is one, and a stand-in push service: it saves and
 					forgets subscriptions, queues a job for each, and handles every answer.
 				</li>
-				<li>The button, the page's script and the service worker, tried in a browser.</li>
+				<li>
+					The button, the page's script and the service worker, tried in Chromium behind a guard that refuses
+					every script the app would answer: the plugin's come all the same, the worker's scope is the whole
+					site, and the button subscribes.
+				</li>
 			</ul>
 			<p>What waits on a proposal, in <code>packages/push/PROPOSALS.md</code>:</p>
 			<ul>
@@ -348,14 +335,6 @@ view! = |_|
 					message, and the signature on the VAPID token), and Web Push needs AES-128-GCM with a nonce it
 					derives. Until the host has them, every delivery fails and says so. The proposal sketches them on
 					<code>ring</code>, which the host already links, and the sketch passes the RFCs' examples.
-				</li>
-				<li>
-					<strong>Server-only modules in packages.</strong> Until <code>rocx build</code> copies a package's
-					<code>server/</code> and <code>migrations/</code> into an app, the app copies them by hand.
-				</li>
-				<li>
-					<strong>Static files in packages.</strong> Until <code>rocx build</code> copies a package's
-					<code>static/</code>, the server is started with one more <code>--static</code>.
 				</li>
 				<li>
 					<strong>Jobs that give up, or come back at a time.</strong> Today a refused message ends its job

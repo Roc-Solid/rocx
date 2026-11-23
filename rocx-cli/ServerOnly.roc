@@ -24,7 +24,7 @@ ServerOnly := [].{
 	## `jobs.Job`).
 	Reached : { module_file : Str, server_module : Str, line : U64, chain : List(Step) }
 
-	## The modules a platform's main.roc exposes (`exposes [Audio, Browser, …]`).
+	## The modules a platform's main.roc exposes (`exposes [Browser, Call, …]`).
 	exposed_by! : Str => List(Str)
 	exposed_by! = |platform_main| {
 		bytes = Fs.read_or_empty!(platform_main).to_utf8()

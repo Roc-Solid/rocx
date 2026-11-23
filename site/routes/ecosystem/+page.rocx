@@ -14,7 +14,7 @@ import ../../Ui/PageHero
 ## there are, as cards.
 meta = {
 	title: "The ecosystem",
-	description: "Packages for Roc Solid apps: plain Roc that the server, the browser and a test use alike, components that rocx build copies into the app, and plugins that add to the server. Seventeen so far: charts, crypto, files in S3, email, forms, Markdown, intl, an admin, guards, jobs and cron, MCP, OpenTelemetry, PostHog, presence, Web Push, testing and virtual lists.",
+	description: "Packages for Roc Solid apps: plain Roc that the server, the browser and a test use alike, components that rocx build copies into the app, and plugins that add to the server. Eighteen so far: charts, crypto, files in S3, email, forms, Markdown, intl, an admin, audio, guards, jobs and cron, MCP, OpenTelemetry, PostHog, presence, Web Push, testing and virtual lists.",
 	toc: [
 		{ id: "packages", label: "The packages" },
 		{ id: "halves", label: "A package's two halves" },
@@ -37,9 +37,9 @@ view! = |_|
 				server, the browser and a test all call alike. The other is components, <code>.rocx</code> files,
 				which <code>rocx build</code> copies into the app that names the package, so that each half of
 				the app compiles them on its own platform. A package may also be a plugin, which adds to the server
-				what only the server runs. There are seventeen so far, each with a page: charts, crypto, files in S3,
-				email, forms, Markdown, intl, an admin, guards, jobs and cron, MCP, OpenTelemetry, PostHog, presence,
-				Web Push, testing and virtual lists.
+				what only the server runs. There are eighteen so far, each with a page: charts, crypto, files in S3,
+				email, forms, Markdown, intl, an admin, audio, guards, jobs and cron, MCP, OpenTelemetry, PostHog,
+				presence, Web Push, testing and virtual lists.
 			</PageHero>
 
 			<Heading id="packages">The packages</Heading>
@@ -79,8 +79,8 @@ view! = |_|
 			<p>
 				A package whose modules use the server platform names it in its header, as an app does, and gives a
 				plugin: one value, made from options of its own, that the app lists in its program. The plugin
-				brings its routes, tables, background loops and paths for development; the server checks them all
-				when it starts (<a href={"${Paths.platform_server}#plugins"}>plugins</a>). Modules the browser can
+				brings its routes, tables, background loops, paths for development, and files it serves (a script
+				every page loads, a service worker at the site's root); the server checks them all when it starts (<a href={"${Paths.platform_server}#plugins"}>plugins</a>). Modules the browser can
 				compile too are listed in a second header, <code>browser.roc</code>, which the browser's half sees
 				instead.
 			</p>
@@ -88,6 +88,8 @@ view! = |_|
 				<li><a href={Paths.ecosystem_jobs}>Jobs and cron</a>: <code>{"Job.plugin({ jobs: App.jobs, crons })"}</code>, the queue's table, its workers and schedules.</li>
 				<li><a href={Paths.ecosystem_admin}>Admin</a>: the jobs page (<code>JobsPage</code>), on the jobs package, beside the tables admin.</li>
 				<li><a href={Paths.ecosystem_email}>Email</a>: <code>{"Email.plugin({})"}</code>, the dev mailbox under <code>--dev</code> and a look at the SMTP server.</li>
+				<li><a href={Paths.ecosystem_push}>Push</a>: <code>{"Push.plugin({})"}</code>, its endpoints, the subscriptions' table, the job that sends (on the jobs plugin), the service worker at the root and the page's script.</li>
+				<li><a href={Paths.ecosystem_audio}>Audio</a>: <code>{"AudioPlayer.plugin({})"}</code>, the player for <code>Audio.play!</code>, a script every page loads.</li>
 				<li><a href={Paths.ecosystem_posthog}>PostHog</a>: <code>{"PostHog.plugin({})"}</code>, errors sent to PostHog's error tracking, a page's script and where it sends them.</li>
 			</ul>
 		</NoHydration>

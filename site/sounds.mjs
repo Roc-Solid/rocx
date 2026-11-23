@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // The showcase's sound files: short chiptune notes, synthesized here and written as WAV to
-// site/static/sounds/, which the islands play with `Audio.play!`. Any file the browser can play
+// site/static/sounds/, which the demos play with `Audio.play!` (packages/audio). Any file the browser can play
 // would do as well; these are made, not recorded, so they are this script, and small.
 //
 //   node site/sounds.mjs

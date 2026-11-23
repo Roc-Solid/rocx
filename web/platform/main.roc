@@ -19,7 +19,7 @@ platform ""
 	requires {
 		main! : {} => Html
 	}
-	exposes [Audio, Browser, Call, Channel, Context, Endpoint, Errored, Events, For, Html, HttpStatusCode, Loading, Middleware, OpenApi, Repeat, Router, Server, Show, Solid, Submission, Submissions, Time, Title, Transition]
+	exposes [Browser, Call, Channel, Context, Endpoint, Errored, Events, For, Html, HttpStatusCode, Loading, Middleware, OpenApi, Repeat, Router, Server, Show, Solid, Submission, Submissions, Time, Title, Transition]
 	packages {}
 	provides { "roc_mount": mount_for_host!, "roc_run": run_for_host! }
 	hosted {
@@ -84,7 +84,6 @@ platform ""
 
 import Host
 import Html
-import Audio
 import Browser
 import Solid
 import Show

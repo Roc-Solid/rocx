@@ -48,7 +48,7 @@ buttons only the host's.
 | packages/presence: who is in the room as presence's `Room` (join, leave with a grace, sweep), kept in the actor's state; `<AvatarStack>` with a status of the app's own (`dropped`) | `Rooms.roc` (`tab_joined`, `present`), `Ui/Lobby.rocx` |
 | Client timers kept honest: `set_interval!` counts down from the server's `left_ms`, `set_timeout!` marks the end, the interval stops itself with its `clear!`; both start again from each view | `Ui/Countdown.rocx` |
 | `set_timeout!` for timing a reveal: the board's points landing, the bars rising | `Ui/Board.rocx`, `Ui/Tally.rocx` |
-| `Audio.play!` with sounds made by a script (a mallet and a reed, synthesized) | `sounds.mjs` → `static/sounds/`, `Sound.roc`; played from effects and timers in the two room pages |
+| `Audio.play!` (packages/audio, a plugin: `AudioPlayer.plugin({})` in `main.roc`) with sounds made by a script (a mallet and a reed, synthesized) | `sounds.mjs` → `static/sounds/`, `Sound.roc`; played from effects and timers in the two room pages |
 | Transitions: each phase a `<Show>` that flies, scales or fades in and out (`transition:in`, `transition:out`); names that grow into the lobby (`transition`); podium steps that grow up in turn (`Transition.grow(Bottom).delay(…)`) | `routes/host/[code]/+page.rocx`, `routes/play/[code]/+page.rocx`, `Ui/Lobby.rocx`, `Ui/Podium.rocx` |
 | `transition:move`: the leaderboard's rows gliding to their new places | `Ui/Board.rocx` |
 | packages/charts: how the room answered, as a `<BarChart>` | `Ui/Tally.rocx` |

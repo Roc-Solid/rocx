@@ -2,7 +2,7 @@ import pf.Server
 import pf.Endpoint
 import push.Notification
 import push.Options
-import ../../../Push
+import push.Push
 
 ## POST /push/announce: queues a notification for every browser that subscribed. How many, or why
 ## not.

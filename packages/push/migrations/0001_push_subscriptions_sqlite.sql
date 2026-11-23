@@ -2,8 +2,9 @@
 -- moments milliseconds since the epoch in integer columns. A row for each browser that subscribed,
 -- by its endpoint (the push service's URL for it), with its keys as the page sent them (base64url)
 -- and whose it is (`owner`: the app's id for a user, or '' for a visitor). A push service's 404 or
--- 410 deletes it.
-create table push_subscriptions (
+-- 410 deletes it. The push plugin applies it (`push/0001_push_subscriptions`); a table an app made
+-- before, by hand, is kept as it is.
+create table if not exists push_subscriptions (
     id integer primary key,
     endpoint text not null unique,
     p256dh text not null,
@@ -13,4 +14,4 @@ create table push_subscriptions (
     last_sent_at integer,
     last_error text
 );
-create index push_subscriptions_owner on push_subscriptions (owner);
+create index if not exists push_subscriptions_owner on push_subscriptions (owner);

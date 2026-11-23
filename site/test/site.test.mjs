@@ -68,9 +68,17 @@ async function open(path, url = site.url) {
 	return page;
 }
 
-/** What a page loads besides itself: its stylesheet, its icon and site.js, and start.js, the runtime
- * and the wasm (under `base`); anything else would be the page asking the server. */
-const loads = (base = "/") => ["site.css", "favicon.svg", "site.js", "rocx/start.js", "rocx/runtime.js", "rocx/app.wasm"].map((file) => `${base}${file}`);
+/** What a page loads besides itself: its stylesheet, its icon and site.js, the audio plugin's script
+ * (the player, D-051), and start.js, the runtime and the wasm (under `base`); anything else would be
+ * the page asking the server. */
+const loads = (base = "/") => ["site.css", "favicon.svg", "site.js", "rocx/plugins/audio/audio.js", "rocx/start.js", "rocx/runtime.js", "rocx/app.wasm"].map((file) => `${base}${file}`);
+
+/** The plugins' scripts every page the site's server renders loads (`renderToString({ scripts })`). */
+const SCRIPTS = ["/rocx/plugins/audio/audio.js"];
+
+/** What the page's player was asked to play (the audio plugin's script makes an `Audio` and plays
+ * it), noted instead of played: each file's path, volume and rate. */
+const LISTEN = `window.played = []; HTMLMediaElement.prototype.play = function () { window.played.push([new URL(this.src).pathname, this.volume, this.playbackRate]); return Promise.resolve(); }`;
 const asked = (page) => page.eval("performance.getEntriesByType('resource').map((entry) => new URL(entry.name).pathname)");
 
 const text = (page, selector) => page.eval(`document.querySelector(${JSON.stringify(selector)}).textContent.trim()`);
@@ -534,10 +542,13 @@ test("snake: a click starts it, arrows steer without scrolling, Tab leaves, Spac
 	assert.equal(await frames(page, "snake", 300), 0, "no frames while the game waits");
 	await page.eval("window.head = document.querySelector('.part.head'); window.headX = window.head.style.getPropertyValue('--x')");
 	await page.eval(`window.effects = []; document.addEventListener("rocx:effect", (e) => window.effects.push(e.detail))`);
+	await page.eval(LISTEN);
 	await page.click(".board");
 	assert.equal(await page.eval("document.querySelector('.board-message')"), null, "playing: the message is gone");
 	assert.equal(await page.eval("document.querySelector('.board').classList.contains('playing')"), true);
-	assert.deepEqual(await page.eval("window.effects"), [{ demo: "snake", name: "rocx:audio", arg: { url: "/sounds/start.wav", volume: 1, rate: 1 } }], "starting plays its sound, once");
+	assert.deepEqual(await page.eval("window.effects"), [{ demo: "snake", name: "audio.play", arg: { url: "/sounds/start.wav", volume: 1, rate: 1 } }], "starting plays its sound, once");
+	await page.wait("window.played.length === 1");
+	assert.deepEqual(await page.eval("window.played"), [["/sounds/start.wav", 1, 1]], "by the audio plugin's player");
 	assert.equal(await page.eval("document.querySelector('sound-effect')"), null, "a sound is a call, not an element");
 	const sound = await fetch(`${site.url}/sounds/start.wav`);
 	assert.equal(sound.status, 200);
@@ -1245,7 +1256,7 @@ test("the static build for GitHub Pages: files alone, under /rocx/, every page h
 			// The file is what the browser's build renders (decision D), its URLs under the base too,
 			// byte for byte outside its <NoHydration>s, from the answers and regions it has.
 			const answers = JSON.parse(/<script type="application\/json" class="rocx-answers">(.*?)<\/script>/.exec(html)[1]);
-			const rendered = runtime.renderToString({ path: route, answers, regions: Runtime.regionsOf(html) }).html;
+			const rendered = runtime.renderToString({ path: route, answers, regions: Runtime.regionsOf(html), scripts: SCRIPTS }).html;
 			assert.equal(outsideRegions(rendered, (part) => underBase(part, "/rocx/")), html, `${route}, as files`);
 		}
 		for (const route of ROUTES) {
@@ -1255,6 +1266,16 @@ test("the static build for GitHub Pages: files alone, under /rocx/, every page h
 			assert.deepEqual(page.errors, [], `${route} threw nothing`);
 			assert.deepEqual((await asked(page)).filter((path) => !loads("/rocx/").includes(path) && path !== "/rocx/roc-bird.svg" && !path.startsWith("/rocx/shots/")), [], `${route}: asked for nothing else`);
 		}
+		// A sound, played from the copy under /rocx/: the player puts its URL under the base, and the
+		// file is there.
+		const snake = await open("/rocx/showcase", pages.url);
+		await snake.eval(LISTEN);
+		await snake.click(".board");
+		await snake.wait("window.played.length === 1");
+		assert.deepEqual(await snake.eval("window.played"), [["/rocx/sounds/start.wav", 1, 1]], "the sound under the base");
+		assert.equal((await fetch(`${pages.url}/rocx/sounds/start.wav`)).status, 200, "and there, as a file");
+		assert.equal((await fetch(`${pages.url}/rocx/rocx/plugins/audio/audio.js`)).status, 200, "the player, copied at its URL under the base");
+		assert.deepEqual(snake.errors, []);
 		// The lobby, asked once where no server answers channels: it says so.
 		const live = await open("/rocx/platform/live", pages.url);
 		await live.click("[data-demo=lobby] .join");
@@ -1301,7 +1322,8 @@ test("pages: the server renders each as the browser's build renders it, byte for
 	const member = { cookie: "member=Ada%20L" };
 	for (const [path, headers] of [...ROUTES.map((route) => [route, {}]), ["/nowhere", {}], ["/members", member]]) {
 		const page = await nativePage(site.url, path, headers);
-		const rendered = runtime.renderToString({ path, headers: Object.entries(headers), answers: page.answers, regions: page.regions });
+		assert.deepEqual(page.scripts, SCRIPTS, `${path}: the audio plugin's script, before start.js`);
+		const rendered = runtime.renderToString({ path, headers: Object.entries(headers), answers: page.answers, regions: page.regions, scripts: SCRIPTS });
 		assert.equal(rendered.html, page.html, path);
 		assert.equal(runtime.status, page.status, `${path}: its status`);
 	}

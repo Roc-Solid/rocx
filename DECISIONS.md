@@ -2695,6 +2695,87 @@ not media. A page loads every plugin's scripts, so a plugin with a heavy one loa
 when it is needed. **Why.** A plugin's install is one line, and the web's fixed places (a service
 worker's scope) are a plugin's to take, checked at start like its routes. **Reversible:** yes.
 
+## D-051 Push and audio are plugins
+
+**Status.** Built (2026-11-23), the user's go with D-050 ("let's do this"): the plugin design's
+phase 2, for the two packages that waited on files and scripts.
+
+**Context.** Push's README had six steps: copy `server/Push.roc` and `server/PushStore.roc` into
+the app, and a migration into its `migrations/`, write three endpoints, put `<script
+src="/push.js">` in the layout, and start the server with `--static ../packages/push/static`, so
+that the service worker was at the root. `Audio.play!` was in both platforms, and its player in
+web/runtime.js (the effect `rocx:audio`), so every app shipped the player, sounds or not: the one
+module D-025's rule (a platform module stays only if it needs the host or the transpiler) still
+kept for no reason but where the player was.
+
+**Choice.** Each is a package and a plugin, on D-050's files and scripts.
+
+```roc
+# Push: one line in plugins, with the jobs plugin that runs its job
+plugins: [Job.plugin({ jobs: App.jobs }), Push.plugin({})]
+Push.Setup(ctx) := { at : Str ?? "/push", owner : (ctx -> Str) ?? (|_| "") }
+Push.plugin : Push.Setup(ctx) -> Plugin.Value(ctx)
+
+# Audio: Audio.play! as before (import audio.Audio), and the player listed once
+plugins: [AudioPlayer.plugin({})]
+Audio.play! : Str => {}                                  # Browser.call!("audio.play", { url, volume, rate })
+Audio.play_with! : Str, { volume : F64, rate : F64 } => {}
+```
+
+- **Push** (`packages/push`) names the server platform and packages/jobs in its header, with
+  `Push` and `PushStore` beside the pure modules (they were `server/`, a package of their own); the
+  browser's half sees the pure modules (`browser.roc`). Its plugin brings its three endpoints at
+  `at` (`GET <at>/key`, `POST <at>/subscribe`, `POST <at>/unsubscribe`, behind the app's middleware,
+  the owner of a subscription `owner(ctx)`); its table (`push/0001_push_subscriptions`, Postgres's
+  or SQLite's, made only if it isn't there); its service worker at the root (`/push-sw.js`, a file
+  `at: Root`, so its scope is the whole site) and the page's script (`push.js`, which every page
+  loads); and its job, `push.deliver`. It needs the jobs plugin, a database and `VAPID_PUBLIC_KEY`,
+  `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT`; its start checks the pair is one (a bad key stops the
+  server, saying which). The effects are `push.subscribe` and `push.unsubscribe` (they were
+  `push:subscribe`, `push:unsubscribe`), and the script puts every URL under the site's base
+  (`{ under }`). `<PushButton api="/push">` is as it was.
+- **A plugin's job.** The jobs plugin ran only the kinds in its options (`App.jobs`, which rocx
+  build finds in the app's modules), so a kind a package defines had to be copied into the app.
+  packages/jobs gains `Job.call(kind)` (the call a job of the kind runs in, named as the kind is, for
+  the bringing plugin's `calls`) and `Job.adopt!(kind)` (from its `starts`: the jobs plugin's
+  registry lists it, its jobs a stop cut short are queued again). The workers read the registry once
+  every start has run, and run a plugin's kind in its own call (`Plugin.isolated!("push.deliver",
+  input, limit)`); the app's still run in `jobs.run`. The jobs plugin's workers always run now, and
+  one with no kind to run (or no database) ends at once.
+- **Audio** is `packages/audio`: `Audio` (`play!`, `play_with!`), which both halves compile (the
+  package's `browser.roc` names the browser's platform, its `main.roc` the server's), a
+  `Browser.call!("audio.play", { url, volume, rate })`; and `AudioPlayer.plugin({})`, whose script
+  (`/rocx/plugins/audio/audio.js`) is the player that left web/runtime.js: it registers
+  `audio.play` and resolves a sound's URL with `{ under }`. `rocx:audio` is gone from the runtime,
+  which keeps `rocx:focus` (`Browser.focus!`). The plugin is a module of its own, beside `Audio`:
+  `Plugin` is the server platform's, and a module both halves compile can't name it.
+- **Sounds the app bundles** are as they were: files the app serves (`--static`; the docs site's
+  `site/static/sounds/`, quiz's `static/sounds/`, which their `sounds.mjs` make), at the same paths.
+
+**Moving to it.** For an app outside the repo, in this order:
+- **Audio.** Its header names the package (`audio: "…/packages/audio/main.roc"`); its modules (and
+  components) import `audio.Audio` instead of `pf.Audio`; its plugins list
+  `AudioPlayer.plugin({})` (`import audio.AudioPlayer` in `main.roc`). No sound path changes: the
+  files it bundles stay where they are, and `/sounds/eat.wav` is still under the site's base. Page
+  JavaScript that called the effect itself calls `audio.play` (it was `rocx:audio`).
+- **Push.** Its header names push from the package's root, as before (`push:
+  "…/packages/push/main.roc"`, now a package on the server platform), and packages/jobs; its plugins
+  list `Push.plugin({})` after `Job.plugin(…)` (with `at` if its endpoints weren't at `/push`, and
+  `owner` if its endpoints gave a user's id). Delete: the copies of `Push.roc` and `PushStore.roc`
+  (modules import `push.Push` and `push.PushStore`), the three endpoint files
+  (`routes/push/key/`, `subscribe/`, `unsubscribe/`), the `<script type="module" src="/push.js">` in
+  the layout, `--static …/packages/push/static` from how the server starts, and any copy of
+  `push.js` or `push-sw.js` among its own static files. Its copy of the migration may stay or go:
+  the plugin's (`create table if not exists`) keeps the table it made, and records itself as
+  `push/0001_push_subscriptions`. The server now needs the VAPID variables to start. Page
+  JavaScript that called the effects itself calls `push.subscribe` and `push.unsubscribe`.
+
+**Costs.** Push's and audio's scripts load on every page of an app that lists them (push.js 6.1 KB,
+2.0 KB brotli'd; audio.js 1.2 KB, 0.5 KB), one request each. A package's job is two lines of its
+plugin (`Job.call`, `Job.adopt!`). Every app's runtime.js is 0.7 KB smaller (0.2 KB brotli'd)
+without the player. **Why.** Installing either is a line in the header and one in `plugins`, nothing copied, and the
+platforms keep only what needs the host or the transpiler. **Reversible:** yes.
+
 ## D-052 Solid 2.0's primitives: untrack, its dev warning, latest, merge and omit, static holes
 
 **Status.** Built (2026-11-23) for items 1, 2, 3 and 6 of the brief: `untrack!` and the dev build's

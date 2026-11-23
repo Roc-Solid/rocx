@@ -1,30 +1,78 @@
 import pf.Env
 import pf.Http
-import jobs.Job
 import pf.Log
+import pf.Plugin
 import pf.Random
+import pf.Server
 import pf.Time
-import push.Delivery
-import push.Notification
-import push.Options
-import push.Subscription
-import push.Vapid
-import push.WebPush
+import jobs.Job
+import Delivery
+import Notification
+import Options
 import PushStore
+import Subscription
+import Vapid
+import WebPush
+import "migrations/0001_push_subscriptions.sql" as table : Str
+import "migrations/0001_push_subscriptions_sqlite.sql" as lite_table : Str
+import "static/push-sw.js" as worker : List(U8)
+import "static/push.js" as script : List(U8)
 
-## Web Push from the server: subscriptions saved as pages post them (`subscribe!`), notifications
-## queued as jobs (`notify!`, `broadcast!`), one per subscription, and sent by the job workers
-## (`deliver`): encrypted for the browser (RFC 8291), signed for its push service (VAPID, RFC 8292),
-## posted (RFC 8030), and sent again later if the push service is busy or down, until the
-## message's TTL runs out. A subscription the push service says is gone is deleted. Server-only:
-## it imports the server platform's `Http`, `Job` and `Env`.
+## Web Push from the server, as a plugin (`Push.plugin`): subscriptions saved as pages post them
+## (the plugin's endpoints, `subscribe!`), notifications queued as jobs (`notify!`, `broadcast!`),
+## one per subscription, and sent by the jobs plugin's workers (`deliver`): encrypted for the
+## browser (RFC 8291), signed for its push service (VAPID, RFC 8292), posted (RFC 8030), and sent
+## again later if the push service is busy or down, until the message's TTL runs out. A subscription
+## the push service says is gone is deleted. Server-only: it imports the server platform's `Http`,
+## `Plugin` and `Env`, and packages/jobs's `Job`.
+##
+## ```roc
+## plugins: [Job.plugin({ jobs: App.jobs }), Push.plugin({})]                             # /push, visitors
+## plugins: [Job.plugin({ jobs: App.jobs }), Push.plugin({ owner: |context| context.member })]   # each user's own
+## ```
 ##
 ## The keys come from the environment: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (base64url, as
-## `node packages/push/vapid-keys.mjs` prints them) and `VAPID_SUBJECT` (`mailto:` or `https:`).
+## `node packages/push/vapid-keys.mjs` prints them) and `VAPID_SUBJECT` (`mailto:` or `https:`):
+## the plugin needs all three, and a pair that isn't one stops the server at start, saying why.
 ##
 ## The P-256 and AES-128-GCM it needs are the host's to do, and the host has none yet
 ## (PROPOSALS.md): until it does, `host` says so, and every delivery fails with that reason.
 Push := [].{
+
+	## Where the plugin's endpoints are (`at`: `GET <at>/key`, `POST <at>/subscribe`, `POST
+	## <at>/unsubscribe`, where `<PushButton api="/push">` looks), and whose a subscription is: the
+	## app's id for the user its middleware handed on (`owner`; by default "", a visitor).
+	Setup(ctx) := { at : Str ?? "/push", owner : (ctx -> Str) ?? anyone }
+
+	## The push plugin: its endpoints, behind the app's middleware; the service worker at the
+	## site's root (`/push-sw.js`, so its scope is the whole site) and the page's script
+	## (`/rocx/plugins/push/push.js`, which every page loads: the `push.subscribe` and
+	## `push.unsubscribe` effects `<PushButton>` calls), both served before the app and its
+	## middleware; its table (`push/0001_push_subscriptions`, on Postgres or SQLite); and its job,
+	## `push.deliver`, which the jobs plugin's workers run. It needs the jobs plugin, a database and
+	## the VAPID keys; its start checks the keys.
+	plugin : Setup(ctx) -> Plugin.Value(ctx)
+	plugin = |setup| {
+		at = setup.at
+		owner = setup.owner
+		{
+			name: "push",
+			routes: [
+				{ method: "GET", path: "${at}/key", kind: Endpoint, answer!: |_, _| key!({}) },
+				{ method: "POST", path: "${at}/subscribe", kind: Endpoint, answer!: |request, context| subscribed!(request, owner(context)) },
+				{ method: "POST", path: "${at}/unsubscribe", kind: Endpoint, answer!: |request, context| unsubscribed!(request, owner(context)) },
+			],
+			files: [
+				{ path: "push-sw.js", at: Root, content_type: "text/javascript", body: worker },
+				{ path: "push.js", at: Plugin, content_type: "text/javascript", body: script },
+			],
+			scripts: ["push.js"],
+			migrations: [{ name: "0001_push_subscriptions", sql: table, on: Postgres }, { name: "0001_push_subscriptions", sql: lite_table, on: Sqlite }],
+			calls: [Job.call(Push.deliver)],
+			starts: [started!],
+			needs: [Plugin("jobs"), Database, Env("VAPID_PUBLIC_KEY"), Env("VAPID_PRIVATE_KEY"), Env("VAPID_SUBJECT")],
+		}
+	}
 
 	## What the host does for Web Push: an ECDH with a new key pair each time (its public key and
 	## the shared secret), AES-128-GCM with a given key and nonce (the ciphertext and the tag), and
@@ -146,6 +194,62 @@ Push := [].{
 		}
 	}
 }
+
+## Whose a subscription is, by default: a visitor's ("").
+anyone : ctx -> Str
+anyone = |_| ""
+
+## The plugin's start: the keys checked (a pair that isn't one stops the server, saying why), and
+## the jobs plugin told of `push.deliver`.
+started! : {} => Try({}, Str)
+started! = |{}| {
+	_ = Push.keys!({})?
+	Job.adopt!(Push.deliver)
+}
+
+## `GET <at>/key`: the public key, as JSON, for the page to subscribe with.
+key! : {} => Server.Response
+key! = |{}| {
+	key = Push.public_key!({})
+	if (key.is_empty()) refused(503, "the server has no VAPID_PUBLIC_KEY") else json(Json.to_str(key))
+}
+
+## `POST <at>/subscribe`: the subscription the page posted (`toJSON()`'s), kept for `owner`.
+subscribed! : Server.Request, Str => Server.Response
+subscribed! = |request, owner| {
+	body : Try(Subscription.Body, [InvalidJson(Str)])
+	body = Json.parse(Server.text_of(request))
+	match body {
+		Err(InvalidJson(why)) => refused(400, "POST ${request.path} can't read its body: ${why}")
+		Ok(given) =>
+			match Push.subscribe!(given, owner) {
+				Ok({}) => json("{}")
+				Err(Invalid(why)) => refused(400, why)
+				Err(DbErr(why)) => refused(500, why)
+			}
+	}
+}
+
+## `POST <at>/unsubscribe`: `owner`'s subscription at the endpoint the page posted, forgotten.
+unsubscribed! : Server.Request, Str => Server.Response
+unsubscribed! = |request, owner| {
+	body : Try({ endpoint : Str }, [InvalidJson(Str)])
+	body = Json.parse(Server.text_of(request))
+	match body {
+		Err(InvalidJson(why)) => refused(400, "POST ${request.path} can't read its body: ${why}")
+		Ok(given) =>
+			match Push.unsubscribe!(given.endpoint, owner) {
+				Ok({}) => json("{}")
+				Err(DbErr(why)) => refused(500, why)
+			}
+	}
+}
+
+json : Str -> Server.Response
+json = |text| Server.response(200, [{ name: "content-type", value: "application/json" }], text)
+
+refused : U16, Str -> Server.Response
+refused = |status, why| Server.response(status, [{ name: "content-type", value: "text/plain; charset=utf-8" }], why)
 
 missing! : {} => Try(a, Str)
 missing! = |{}| Err("the server's host has no P-256 or AES-128-GCM yet, which Web Push needs (packages/push/PROPOSALS.md)")

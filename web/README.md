@@ -29,8 +29,9 @@ same components natively; this one hydrates them.
 - `platform/*.roc`, what components are written with: `Html` (markup whose holes are closures,
   escaping, safe URLs), `Solid` (`create_signal!`, `create_memo!`, `create_effect!`,
   `on_cleanup!`, `on_settled!`, `refresh!`, `is_pending!`, `latest!`, `untrack!`, `use_context!`, and the browser's timers, `set_interval!` and
-  `set_timeout!`, each owned by the run that started it), `Audio` (`play!`, `play_with!`: a sound
-  file, from a handler), `Browser` (`call!`: the page's own JavaScript function, from a handler),
+  `set_timeout!`, each owned by the run that started it), `Browser` (`call!`: the page's own
+  JavaScript function, or a plugin's script's, from a handler; sound files are packages/audio's,
+  D-051),
   `Show`, `For`, `Loading`, `Errored`, `Context`, `Call` (`fetch!`, `listen!`), `Router` (`location!`: the page's path and query; `use_submission!`: the latest
   submission to an endpoint; `use_submissions!`: all of them; `use_action!`: one a handler sends
   without a form), `Submission` (its `pending!`, `input!`, `field!`, `result!`, `error!`,
@@ -389,8 +390,7 @@ same components natively; this one hydrates them.
   effects on `window.rocxEffects`, named `<plugin>.<effect>`. An effect's apply is a handler too: what it calls runs at the end of the flush it is
   part of, once the page shows what it wrote. One that isn't there, or throws, is told on the
   console; a call while computing (an effect's compute among it) fails. Names beginning with
-  `rocx:` are the runtime's own: `rocx:audio` plays a sound file (`Audio.play!`) with an `<audio>`
-  the runtime makes, at a volume and a rate (its pitch moving with it), and `rocx:focus` moves the
+  `rocx:` are the runtime's own: `rocx:focus` moves the
   keyboard's focus to the element with that id (`Browser.focus!(id)`, nothing if there is none),
   once the page shows what the handler wrote: from an effect's apply, `on_settled!(|| Browser.focus!(…))`
   focuses a field as its part shows.
