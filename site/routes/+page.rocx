@@ -39,8 +39,6 @@ view! = |_| {
 					<Button href={Paths.showcase}>Play Snake, watch the birds</Button>,
 				]}
 			>
-				One language for the whole app: the pages, the server, its jobs, and the components that run in
-				your browser.
 			</PageHero>
 		</NoHydration>
 		<Specimen file="Counter.rocx" code={[<NoHydration><Code source={Sources.home_update.rocx} numbers={Bool.False} /></NoHydration>]}>

@@ -48,7 +48,7 @@ view! = |{ meta, children, .. }| {
 			</head>
 			<body>
 				<SkipLink />
-				{=if (story) Html.empty({}) else <Topbar sections={Nav.sections} current={if (landing) "" else here.name} wasm={Facts.get(facts, "client_brotli")} landing={landing} />}
+				{=if (story) Html.empty({}) else <Topbar sections={Nav.sections} current={if (landing) "" else here.name} landing={landing} />}
 				<Frame landing={landing}>
 					{=if (landing) Html.empty({}) else <Sidebar title={here.name} pages={here.pages} path={path} />}
 					<main id="content">

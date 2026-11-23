@@ -3,13 +3,12 @@ import ../Generated/Paths
 import Logo
 
 ## The bar at the top of every page, in three columns: the site's mark and name, the parts of the
-## docs in the middle (the `current` one marked), and what the browser downloads (`wasm`), with what
-## the site is in a line where there is room. The side columns are as wide as each other, so the
-## parts stay where they are from page to page. On the front page (`landing`), whose top shows the
-## name and the mark large, the bar leaves them out, and the parts still don't move. It stays at
-## the top as the page scrolls.
+## docs in the middle (the `current` one marked), and what the site is, in a line where there is
+## room. The side columns are as wide as each other, so the parts stay where they are from page to
+## page. On the front page (`landing`), whose top shows the name and the mark large, the bar leaves
+## them out, and the parts still don't move. It stays at the top as the page scrolls.
 Topbar := [].{
-	view = |{ sections, current, wasm, landing }|
+	view = |{ sections, current, landing }|
 		<header class="topbar" class:landing={landing}>
 			{=if (landing) Html.empty({}) else <a class="brand" href={Paths.root} aria-label="Roc Solid, home"><Logo />Roc Solid</a>}
 			<nav class="sections" aria-label="Parts of the docs">
@@ -17,16 +16,15 @@ Topbar := [].{
 			</nav>
 			<div class="end">
 				<span class="tagline">Markup in Roc · pages on a native server · components in WebAssembly</span>
-				<span class="stat" title="What the browser downloads to run the site's components, compressed">wasm: {wasm}</span>
 			</div>
 		</header>
 
 	<story name="In a part">
-		<Topbar sections={[{ name: "rocx", home: "#" }, { name: "Platform", home: "#" }, { name: "Ecosystem", home: "#" }]} current="Platform" wasm="143.0 KB" landing={Bool.False} />
+		<Topbar sections={[{ name: "rocx", home: "#" }, { name: "Platform", home: "#" }, { name: "Ecosystem", home: "#" }]} current="Platform" landing={Bool.False} />
 	</story>
 
 	<story name="On the front page">
-		<Topbar sections={[{ name: "rocx", home: "#" }, { name: "Platform", home: "#" }, { name: "Ecosystem", home: "#" }]} current="" wasm="143.0 KB" landing />
+		<Topbar sections={[{ name: "rocx", home: "#" }, { name: "Platform", home: "#" }, { name: "Ecosystem", home: "#" }]} current="" landing />
 	</story>
 
 	<style>
@@ -110,16 +108,6 @@ Topbar := [].{
 			font-size: var(--size-sm);
 			white-space: nowrap;
 			text-overflow: ellipsis;
-		}
-
-		.stat {
-			flex: none;
-			padding: var(--space-1) var(--space-3);
-			border-radius: var(--pill);
-			background: var(--accent-soft);
-			color: var(--accent);
-			font: 600 var(--size-2xs) / 1.6 var(--mono);
-			white-space: nowrap;
 		}
 
 		/* The line, beside the parts in the middle, only where it fits whole. */
