@@ -176,7 +176,16 @@ rollout reaches them at 100.
 What the code says is the default. The environment picks among a flag's rules (`in_env`): `APP_ENV`
 if it is set, or else `dev` under `--dev`, or else `production`. A rule set while the server runs
 replaces the code's until it is reset, kept in the server's memory (`Kv`, under `guard:flags`): a
-restart forgets it, and the code's rules stand again.
+restart forgets it, and the code's rules stand again, unless the app lists the package's plugin
+(D-057). With it, each override is kept in the app's database too, a row a flag (table
+`guard_flags`, migration `guard/0001_flags`, for Postgres, SQLite and Turso), read back as the
+server starts; `set!` and `reset!` write the row and memory in one transaction. It needs a
+database: an app without one doesn't list it, and keeps its overrides in memory alone.
+
+```roc
+# main.roc: an app with a database keeps its flags' overrides across a restart
+program = App.program({ …, database: Sqlite("data/app.db"), plugins: [FlagStore.plugin({})] })
+```
 
 ```roc
 FlagStore.set!("new_checkout", Flags.rollout(50))?      # from an admin page
@@ -258,12 +267,11 @@ Works today, tested: every module of the package (211 `expect`s), and `example/`
 plain form's refusal back to its page, with a flash), a flag set and reset by an admin, maintenance mode and the feature route. Its admin endpoint answered 403 to anyone but an admin. Its login
 limit answered 429 on the sixth try, with the headers above; its `/api` limit counted users and
 addresses apart; flags and their overrides, the feature route and maintenance mode worked, set at
-runtime; and a page with `<Flagged>` rendered the right part for each user and hydrated strictly in
-Chromium, under the default CSP.
+runtime; overrides outlived a restart in the example's SQLite file (the plugin), a reset one
+staying reset; and a page with `<Flagged>` rendered the right part for each user and hydrated
+strictly in Chromium, under the default CSP.
 
-Waits on a proposal (PROPOSALS.md):
+Not yet:
 
-- **Overrides that outlive a restart**: they are in the server's memory (`Kv`), so a restart (a
-  deploy) brings back the code's rules. A plugin with a table could keep them (PROPOSALS.md).
 - The server reads a body (up to 16 MiB, or its `--max-body`) before any middleware runs, so `body_limit` refuses a large
   body after it has come, not before (DECISIONS.md, D-014).

@@ -201,7 +201,10 @@ view! = |_|
 			<h3>Changed while the server runs</h3>
 			<p>
 				What the code says is the default. An admin page can set a rule in its place, until it is reset.
-				The server keeps it in its memory (<code>Kv</code>), so a restart brings back the code's rules.
+				The server keeps it in its memory (<code>Kv</code>), so a restart brings back the code's rules,
+				unless the app has a database and lists the package's plugin, <code>{"FlagStore.plugin({})"}</code>:
+				then each override is a row of its table too (<code>guard_flags</code>, for Postgres, SQLite and
+				Turso), read back as the server starts, and a deploy keeps it.
 				The endpoint that sets it is for admins only: in the example, <code>Middlewares.admins</code>
 				answers anyone else <code>403</code>.
 			</p>
@@ -316,16 +319,10 @@ view! = |_|
 				the middleware, in <code>packages/guard/example/</code>, which builds, runs and is tested over HTTP. Its login
 				limit answered <code>429</code> on the sixth try, with the headers above; its admin endpoint
 				answered <code>403</code> to anyone but an admin; and its page showed each user their checkout. Its
-				flags' overrides, its feature route and its maintenance mode worked while it ran, and a page with
-				<code>{"<Flagged>"}</code> hydrated in a browser under the default CSP.
+				flags' overrides, its feature route and its maintenance mode worked while it ran, and outlived a
+				restart in its SQLite file; and a page with <code>{"<Flagged>"}</code> hydrated in a browser under
+				the default CSP.
 			</p>
-			<p>What waits on a proposal (<code>packages/guard/PROPOSALS.md</code>):</p>
-			<ul>
-				<li>
-					<strong>Overrides that outlive a restart.</strong> The flags' overrides are in the server's
-					memory, so a deploy brings back the code's rules. A plugin with a table could keep them.
-				</li>
-			</ul>
 			<Note>
 				The server reads a request's body, up to 16 MiB (or its <code>--max-body</code>), before any middleware runs, so
 				<code>Guard.body_limit</code> refuses a large body after it has come, not before.

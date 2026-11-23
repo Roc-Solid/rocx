@@ -29,9 +29,10 @@ another request changed it first, read again then), so the package's token bucke
 window are as they were, with no message, no call of its own and no write to Postgres per limited
 request. `FlagStore` keeps the overrides in `Kv` the same way.
 
-**What is left.** The overrides no longer outlive a restart (an actor kept them in Postgres when the
-app had a database). A plugin (D-033) with a table, `guard/0001_flags`, could load them into `Kv` at
-its start and write them as they change, for an app that lists it.
+**Overrides that outlive a restart: done (D-057).** An app with a database lists the package's
+plugin (`FlagStore.plugin({})`, D-033): its table, `guard_flags` (migration `guard/0001_flags`, for
+Postgres and for SQLite and Turso), a row a flag, read into `Kv` at its start; `set!` and `reset!`
+write the flag's row and change `Kv` in one transaction. Without it, `Kv` alone.
 
 ## Open questions
 
@@ -39,10 +40,9 @@ its start and write them as they change, for an app that lists it.
    today: `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, `RateLimit-Policy: 5;w=60`.
    The draft's latest version folds them into `RateLimit: "default";r=4;t=12` and a structured
    `RateLimit-Policy`. Keep the separate headers, or send the new pair (or offer both)?
-2. **Where the flags' overrides live.** Today they are an actor's state, so with a database they
-   are kept in `rocx_actors` and outlive a restart, without the package shipping a migration (a
-   package can't ship one yet). Is that the right home, or should flags get a table of their own
-   (and packages a way to add migrations)?
+2. **Where the flags' overrides live.** Answered (D-057): in memory (`Kv`), and, for an app that
+   lists the package's plugin, in a table of their own too (packages ship migrations as plugins,
+   D-033).
 3. **Which environment variable names the environment.** The package reads `APP_ENV`, or else `dev`
    under `--dev`, or else `production`. Should the platform name it (`Env.name!`), so every
    package reads the same one?
