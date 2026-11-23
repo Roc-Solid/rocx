@@ -392,6 +392,55 @@ pub fn with<R>(f: impl FnOnce(&mut Engine) -> R) -> R {
     })
 }
 
+/// Lets go of the engine (a dev client's new build replaces it): its timers stopped, and nothing
+/// of Roc's released, since what releases it is the last build's code.
+pub fn reset() {
+    let engine = ENGINE.with(|engine| engine.borrow_mut().take());
+    if let Some(engine) = engine {
+        for timer in engine.timers.values() {
+            timer.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+}
+
+/// The fields someone typed in (`<input>`s and `<textarea>`s, but passwords), each by a key a
+/// remount of the same page finds it by again (its tag, its place among the fields, its name and
+/// placeholder), and what it holds.
+pub fn fields() -> Vec<(String, String)> {
+    with(|engine| {
+        field_nodes(&engine.dom).into_iter().filter_map(|(key, node)| engine.values.get(&node).map(|value| (key, value.clone()))).collect()
+    })
+}
+
+/// A field `fields` noted, typed in again: an `input` event on the field with the same key, if
+/// the page has one.
+pub fn restore_field(key: &str, value: &str) {
+    let node = with(|engine| field_nodes(&engine.dom).into_iter().find(|(each, _)| each == key).map(|(_, node)| node));
+    if let Some(node) = node {
+        dispatch(node, "input", value);
+    }
+}
+
+fn field_nodes(dom: &Dom) -> Vec<(String, NodeId)> {
+    let mut out = Vec::new();
+    let mut stack = vec![dom.root];
+    while let Some(node) = stack.pop() {
+        if let Some(tag) = dom.tag(node)
+            && matches!(tag, "input" | "textarea")
+        {
+            let kind = dom.attr(node, "type").unwrap_or("").to_ascii_lowercase();
+            if !matches!(kind.as_str(), "password" | "hidden" | "checkbox" | "radio" | "file") {
+                let key = format!("{tag}:{}:{}:{}", out.len(), dom.attr(node, "name").unwrap_or(""), dom.attr(node, "placeholder").unwrap_or(""));
+                out.push((key, node));
+            }
+        }
+        for &child in dom.nodes[node].children.iter().rev() {
+            stack.push(child);
+        }
+    }
+    out
+}
+
 pub fn started() -> bool {
     ENGINE.with(|engine| engine.borrow().is_some())
 }

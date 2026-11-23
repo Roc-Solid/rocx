@@ -19,7 +19,7 @@ mod http;
 pub mod native;
 pub mod roc;
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,10 +41,23 @@ pub trait Platform: Send + Sync {
 
 static PLATFORM: OnceLock<Box<dyn Platform>> = OnceLock::new();
 
-/// What happened on another thread, for the main thread.
+/// What happened on another thread, for the main thread, with the generation of the app it is
+/// for (`generation`): one for a build a dev client replaced is dropped.
 pub enum Message {
-    Answer(u64, Result<(u16, Vec<(String, String)>, String), String>),
-    Fired(u64),
+    Answer(u64, u64, Result<(u16, Vec<(String, String)>, String), String>),
+    Fired(u64, u64),
+}
+
+/// The platform an app's library must be built for (core/build.rs): a dev client refuses another.
+pub const FINGERPRINT: &str = env!("ROCX_FINGERPRINT");
+/// The Roc compiler the fingerprint names (`roc version`).
+pub const ROC_VERSION: &str = env!("ROCX_ROC_VERSION");
+
+/// Which run of the app this is: one more each time a dev client loads a new build (`restart`).
+static GENERATION: AtomicU64 = AtomicU64::new(0);
+
+pub fn generation() -> u64 {
+    GENERATION.load(Ordering::Relaxed)
 }
 
 static INBOX: Mutex<Vec<Message>> = Mutex::new(Vec::new());
@@ -79,6 +92,27 @@ pub fn start(platform: Box<dyn Platform>, origin: &str, path: &str) {
     pump();
 }
 
+/// A new build of the app (a dev client's, whose library `roc::set_entries` just named): the last
+/// build's engine let go of (its Roc values never released: their code may be gone, and this is
+/// dev's), what was typed in its fields kept, the new one started at `path`, mounted, the fields
+/// typed in again (`input` events, so the app's signals have them), and the whole screen sent.
+#[cfg(feature = "dynamic")]
+pub fn restart(platform: Box<dyn Platform>, origin: &str, path: &str) {
+    let _ = PLATFORM.set(platform);
+    let fields = if engine::started() { engine::fields() } else { Vec::new() };
+    engine::reset();
+    native::forget_shown();
+    GENERATION.fetch_add(1, Ordering::Relaxed);
+    INBOX.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clear();
+    engine::init(origin.to_string(), path.to_string());
+    engine::mount();
+    engine::flush();
+    for (key, value) in fields {
+        engine::restore_field(&key, &value);
+    }
+    pump();
+}
+
 /// An event on a native view (its id, the event's name, its value), as the DOM's.
 pub fn event(id: u64, name: &str, value: &str) {
     if let Some(node) = native::node_of(id) {
@@ -91,10 +125,12 @@ pub fn event(id: u64, name: &str, value: &str) {
 /// screen's changes, sent as one batch.
 pub fn pump() {
     let messages = std::mem::take(&mut *INBOX.lock().unwrap_or_else(|poisoned| poisoned.into_inner()));
+    let now = generation();
     for message in messages {
         match message {
-            Message::Answer(id, result) => engine::answered(id, result),
-            Message::Fired(id) => engine::fired(id),
+            Message::Answer(made, id, result) if made == now => engine::answered(id, result),
+            Message::Fired(made, id) if made == now => engine::fired(id),
+            _ => {}
         }
     }
     engine::flush();
@@ -109,13 +145,14 @@ pub fn pump() {
 
 /// A timer's thread: posts `Fired(id)` after `ms`, or every `ms`, until `stop`.
 pub(crate) fn timer(id: u64, ms: u64, repeat: bool, stop: Arc<AtomicBool>) {
+    let made = generation();
     std::thread::spawn(move || {
         loop {
             std::thread::sleep(std::time::Duration::from_millis(ms.max(1)));
             if stop.load(Ordering::Relaxed) {
                 return;
             }
-            post(Message::Fired(id));
+            post(Message::Fired(made, id));
             if !repeat {
                 return;
             }

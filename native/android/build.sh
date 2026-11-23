@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # Builds an app's Android APK (D-063's spike): native views, no JavaScript, no WebView.
 #
-#   native/android/build.sh spike/native-apps/phone-hello [--origin http://10.0.2.2:8095] [--label "Phone hello"]
+#   native/android/build.sh spike/native-apps/phone-hello [--origin http://10.0.2.2:8095] [--label "Phone hello"] [--opt dev]
+#   native/android/build.sh --dev-client
+#
+# The dev client (`--dev-client`, for `rocx dev --android`): no app in it, but the host as
+# libhost.so (native/android-dev), which loads each build of an app rocx dev serves; steps 3, 5 and
+# 6 alone, into native/android/build/dev-client/rocx-dev.apk (dev.rocx.devclient, "rocx dev").
 #
 # 1. The app's browser copy (rocx build --client), whose main.roc is the app on web/platform.
 # 2. Its Roc for the phone: web/platform's arm64musl target, the app alone as an archive (Roc has no
@@ -24,19 +29,30 @@ repo="$(cd "$here/../.." && pwd)"
 app=""
 origin="http://10.0.2.2:8080"
 label=""
+opt="speed"
+dev_client=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --origin) origin="$2"; shift 2 ;;
         --label) label="$2"; shift 2 ;;
+        --opt) opt="$2"; shift 2 ;;
+        --dev-client) dev_client=1; shift ;;
         -*) echo "build.sh: unknown option $1" >&2; exit 2 ;;
         *) app="$1"; shift ;;
     esac
 done
-[ -n "$app" ] || { echo "usage: native/android/build.sh <app dir> [--origin http://10.0.2.2:8080] [--label name]" >&2; exit 2; }
-app="$(cd "$app" && pwd)"
-name="$(basename "$app")"
-[ -n "$label" ] || label="$name"
-package="dev.rocx.example.$(echo "$name" | tr -cd 'a-zA-Z0-9' | tr 'A-Z' 'a-z')"
+if [ -n "$dev_client" ]; then
+    name="dev-client"
+    label="rocx dev"
+    package="dev.rocx.devclient"
+    origin=""
+else
+    [ -n "$app" ] || { echo "usage: native/android/build.sh <app dir> [--origin http://10.0.2.2:8080] [--label name] [--opt dev], or --dev-client" >&2; exit 2; }
+    app="$(cd "$app" && pwd)"
+    name="$(basename "$app")"
+    [ -n "$label" ] || label="$name"
+    package="dev.rocx.example.$(echo "$name" | tr -cd 'a-zA-Z0-9' | tr 'A-Z' 'a-z')"
+fi
 out="$here/build/$name"
 started=$(date +%s)
 step() { echo "build.sh: $*" >&2; }
@@ -67,31 +83,40 @@ if ! [ -d "$(rustc --print sysroot 2>/dev/null)/lib/rustlib/aarch64-linux-androi
 fi
 mkdir -p "$out"
 
-# ---- 1. The app's browser copy ----
-step "rocx build --client ($name)"
-"$repo/bin/rocx" build --client "$out/client" "$app" >&2
+if [ -z "$dev_client" ]; then
+    # ---- 1. The app's browser copy ----
+    step "rocx build --client ($name)"
+    "$repo/bin/rocx" build --client "$out/client" "$app" >&2
 
-# ---- 2. Its Roc, for the phone ----
-step "roc build --target=arm64musl (an archive: the app alone)"
-"$roc" build --target=arm64musl --opt=speed --output="$out/libapp-roc.a" "$out/client/main.roc" >&2 || [ $? -eq 2 ]
+    # ---- 2. Its Roc, for the phone ----
+    step "roc build --target=arm64musl --opt=$opt (an archive: the app alone)"
+    "$roc" build --target=arm64musl --opt="$opt" --output="$out/libapp-roc.a" "$out/client/main.roc" >&2 || [ $? -eq 2 ]
+fi
 
 # ---- 3. The native host for Android ----
-step "cargo build (native/android, aarch64-linux-android)"
+crate="rocx-android"
+[ -z "$dev_client" ] || crate="rocx-android-dev"
+step "cargo build ($crate, aarch64-linux-android)"
 (
     cd "$repo/native"
     env "${rust_env[@]}" \
         CC_aarch64_linux_android="$clang" \
         AR_aarch64_linux_android="$llvm/llvm-ar" \
         CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$clang" \
-        cargo build --release --target aarch64-linux-android -p rocx-android >&2
+        cargo build --release --target aarch64-linux-android -p "$crate" >&2
 )
 host="$repo/native/target/aarch64-linux-android/release/librocx_android.a"
 
 # ---- 4. libapp.so ----
-step "link lib/arm64-v8a/libapp.so (the NDK's clang)"
 stage="$out/apk"
 rm -rf "$stage"
 mkdir -p "$stage/lib/arm64-v8a"
+if [ -n "$dev_client" ]; then
+    step "lib/arm64-v8a/libhost.so (native/android-dev)"
+    cp "$repo/native/target/aarch64-linux-android/release/libhost.so" "$stage/lib/arm64-v8a/libhost.so"
+    cp "$stage/lib/arm64-v8a/libhost.so" "$out/libhost.so"
+else
+step "link lib/arm64-v8a/libapp.so (the NDK's clang)"
 cat > "$out/exports.map" <<'EOF'
 { global: JNI_OnLoad; Java_dev_rocx_phone_*; local: *; };
 EOF
@@ -100,6 +125,7 @@ EOF
     "$host" "$out/libapp-roc.a" \
     -llog -landroid -ldl -lm \
     -Wl,--gc-sections -Wl,--version-script="$out/exports.map" -Wl,-z,max-page-size=16384 -Wl,--no-undefined -Wl,--build-id=none -s
+fi
 
 # ---- 5. The Kotlin shell ----
 # Built again only when its sources or R8's rules changed (kotlinc's start is most of a rebuild).
@@ -120,7 +146,7 @@ cp "$out/dex/classes.dex" "$stage/classes.dex"
 step "aapt2 + zipalign + apksigner"
 sed -e "s|@PACKAGE@|$package|" -e "s|@LABEL@|$label|" -e "s|@ORIGIN@|$origin|" "$here/app/AndroidManifest.xml" > "$out/AndroidManifest.xml"
 "$build_tools/aapt2" link -o "$out/base.apk" -I "$android_jar" --manifest "$out/AndroidManifest.xml" >&2
-(cd "$stage" && zip -q -D "$out/base.apk" classes.dex && zip -q -D -0 "$out/base.apk" lib/arm64-v8a/libapp.so)
+(cd "$stage" && zip -q -D "$out/base.apk" classes.dex && zip -q -D -0 "$out/base.apk" lib/arm64-v8a/*.so)
 "$build_tools/zipalign" -f -P 16 4 "$out/base.apk" "$out/aligned.apk"
 key="$here/build/spike.keystore"
 if [ ! -f "$key" ]; then
@@ -130,6 +156,14 @@ fi
 "$java_home/bin/java" --enable-native-access=ALL-UNNAMED -jar "$build_tools/lib/apksigner.jar" sign --ks "$key" --ks-pass pass:rocx-spike --key-pass pass:rocx-spike --ks-key-alias spike \
     --out "$out/$name.apk" "$out/aligned.apk"
 rm -f "$out/base.apk" "$out/aligned.apk" "$out/$name.apk.idsig"
+
+if [ -n "$dev_client" ]; then
+    mv "$out/$name.apk" "$out/rocx-dev.apk"
+    size=$(stat -f %z "$out/rocx-dev.apk" 2>/dev/null || stat -c %s "$out/rocx-dev.apk")
+    echo "build.sh: $out/rocx-dev.apk ($((size / 1024)) KB, the dev client $package) in $(( $(date +%s) - started )) s" >&2
+    echo "$out/rocx-dev.apk"
+    exit 0
+fi
 
 # ---- 7. What a phone ignores ----
 step "the app on the native host, on the Mac (what a phone ignores)"

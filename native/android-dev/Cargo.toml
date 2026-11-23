@@ -1,0 +1,16 @@
+[package]
+name = "rocx-android-dev"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "The dev client's native library, libhost.so: native/android and native/core with the app's Roc loaded at run time"
+
+[lib]
+# libhost.so: the hosted functions, Roc's memory, and JNI, exported for the app's library (which
+# needs libhost.so) and for Kotlin.
+name = "host"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+rocx-android = { path = "../android", features = ["dev"] }

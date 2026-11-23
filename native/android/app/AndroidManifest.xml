@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- The app's Android shell (D-063's spike), filled in by native/android/build.sh: @PACKAGE@ (the
      app id), @LABEL@ (its name on the launcher) and @ORIGIN@ (its server). No JavaScript, no
-     WebView: one activity, whose views the Kotlin applier makes from the native host's ops. -->
+     WebView: one activity, whose views the Kotlin applier makes from the native host's ops. The
+     dev client (build.sh's dev-client option) is the same shell with libhost.so for libapp.so. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="@PACKAGE@"
     android:versionCode="1"
@@ -17,6 +18,7 @@
         <activity
             android:name="dev.rocx.phone.RocxActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize|uiMode"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>

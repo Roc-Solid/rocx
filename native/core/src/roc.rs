@@ -248,9 +248,52 @@ fn guarded<F: FnOnce() -> R, R>(call: F) -> Result<R, Abort> {
     Ok(slot.out.take().expect("a call that returned has its result"))
 }
 
+// The app's two entry points: linked in, or, with the `dynamic` feature, found in the app's library
+// when it is loaded (`set_entries`, the dev client's).
+#[cfg(feature = "dynamic")]
+static ENTRIES: std::sync::Mutex<Option<(usize, usize)>> = std::sync::Mutex::new(None);
+
+/// The app's `roc_mount` and `roc_run`, from the library just loaded.
+#[cfg(feature = "dynamic")]
+pub fn set_entries(mount: usize, run: usize) {
+    *ENTRIES.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some((mount, run));
+}
+
+#[cfg(feature = "dynamic")]
+fn entries() -> (usize, usize) {
+    match *ENTRIES.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) {
+        Some(entries) => entries,
+        None => abort(Abort::Crash("rocx native: no app is loaded".into())),
+    }
+}
+
+fn call_mount() -> RocStr {
+    #[cfg(feature = "dynamic")]
+    {
+        let mount: extern "C" fn() -> RocStr = unsafe { std::mem::transmute(entries().0) };
+        mount()
+    }
+    #[cfg(not(feature = "dynamic"))]
+    unsafe {
+        abi::roc_mount()
+    }
+}
+
+fn call_run(callable: Callable) -> RocStr {
+    #[cfg(feature = "dynamic")]
+    {
+        let run: extern "C" fn(Callable) -> RocStr = unsafe { std::mem::transmute(entries().1) };
+        run(callable)
+    }
+    #[cfg(not(feature = "dynamic"))]
+    unsafe {
+        abi::roc_run(callable)
+    }
+}
+
 /// The app's markup (`main!`'s), as JSON, its holes kept by the host.
 pub fn mount() -> Result<String, Abort> {
-    let json = guarded(|| unsafe { abi::roc_mount() })?;
+    let json = guarded(call_mount)?;
     Ok(taken(json))
 }
 
@@ -258,6 +301,6 @@ pub fn mount() -> Result<String, Abort> {
 pub fn run(callable: Callable) -> Result<String, Abort> {
     // `run_for_host!` takes a reference: the host keeps its own.
     retain(callable);
-    let json = guarded(|| unsafe { abi::roc_run(callable) })?;
+    let json = guarded(|| call_run(callable))?;
     Ok(taken(json))
 }

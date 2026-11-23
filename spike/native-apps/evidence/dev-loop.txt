@@ -1,0 +1,16 @@
+rocx dev --android, 2026-11-23 23:47, load average  10.08 10.59 11.72 
+
+edit 1: on the phone 1305 ms after the save (rocx dev: built spike/native-apps/phone-hello in 0.67 s; dev: build app-1795474082405.so shown: 259 ms after rocx dev built it; fetched (1051 KB) in 7 ms, loaded and mounted in 4 ms)
+edit 2: on the phone 961 ms after the save (rocx dev: built spike/native-apps/phone-hello in 0.21 s; dev: build app-1795474084954.so shown: 401 ms after rocx dev built it; fetched (1051 KB) in 11 ms, loaded and mounted in 3 ms)
+edit 3: on the phone 894 ms after the save (rocx dev: built spike/native-apps/phone-hello in 0.20 s; dev: build app-1795474087435.so shown: 357 ms after rocx dev built it; fetched (1051 KB) in 9 ms, loaded and mounted in 3 ms)
+a mistake: on the phone's red screen 458 ms after the save
+the fix: on the phone 987 ms after the save
+text="Edited on the Mac, round 3"
+text="Tapped 0 times"
+text="Tap"
+text="Hello from the rocx server"
+text="Server clock: 1795474092260"
+text="Ask again"
+text="kept across builds"
+text="Send"
+text="Nothing sent yet"

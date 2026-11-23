@@ -142,6 +142,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rocx-android-dev"
+version = "0.1.0"
+dependencies = [
+ "rocx-android",
+]
+
+[[package]]
 name = "rocx-native-core"
 version = "0.1.0"
 dependencies = [

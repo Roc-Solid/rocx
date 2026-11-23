@@ -12,9 +12,10 @@ use std::time::Duration;
 /// Sends a request on a thread of its own; its answer (status, headers, body) or why there is
 /// none comes back as `Message::Answer(id, …)`.
 pub fn send(id: u64, method: String, url: String, headers: Vec<(String, String)>, body: String) {
+    let made = crate::generation();
     std::thread::spawn(move || {
         let result = request(&method, &url, &headers, &body).map_err(|why| format!("{method} {url}: {why}"));
-        crate::post(crate::Message::Answer(id, result));
+        crate::post(crate::Message::Answer(made, id, result));
     });
 }
 
@@ -27,7 +28,7 @@ fn request(method: &str, url: &str, headers: &[(String, String)], body: &str) ->
         None => (rest, "/"),
     };
     let address = if authority.contains(':') { authority.to_string() } else { format!("{authority}:80") };
-    let mut stream = TcpStream::connect(&address).map_err(|why| why.to_string())?;
+    let mut stream = connect(&address)?;
     stream.set_read_timeout(Some(Duration::from_secs(30))).ok();
     let mut text = format!("{method} {path} HTTP/1.1\r\nhost: {authority}\r\nconnection: close\r\nuser-agent: rocx-native\r\n");
     for (name, value) in headers {
@@ -42,6 +43,22 @@ fn request(method: &str, url: &str, headers: &[(String, String)], body: &str) ->
     let mut bytes = Vec::new();
     stream.read_to_end(&mut bytes).map_err(|why| why.to_string())?;
     parse(&bytes)
+}
+
+/// A connection to the server; refused, tried again for up to 3 s (nothing was sent yet), as a
+/// server being restarted (`rocx dev`, a deploy) is back within that.
+fn connect(address: &str) -> Result<TcpStream, String> {
+    let mut tries = 0;
+    loop {
+        match TcpStream::connect(address) {
+            Ok(stream) => return Ok(stream),
+            Err(why) if why.kind() == std::io::ErrorKind::ConnectionRefused && tries < 20 => {
+                tries += 1;
+                std::thread::sleep(Duration::from_millis(150));
+            }
+            Err(why) => return Err(why.to_string()),
+        }
+    }
 }
 
 fn parse(bytes: &[u8]) -> Result<Answered, String> {

@@ -15,6 +15,9 @@ import android.widget.ScrollView
  * `origin` extra (`adb shell am start … --es origin http://…`).
  */
 class RocxActivity : Activity() {
+    /** The dev client's loop, when this is the dev client. */
+    private var dev: DevClient? = null
+
     override fun onCreate(saved: Bundle?) {
         super.onCreate(saved)
         val created = SystemClock.uptimeMillis()
@@ -26,13 +29,27 @@ class RocxActivity : Activity() {
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
             WindowInsets.CONSUMED
         }
-        setContentView(screen)
         val meta = packageManager.getActivityInfo(componentName, PackageManager.GET_META_DATA).metaData
-        val origin = intent.getStringExtra("origin") ?: meta?.getString("rocx.origin") ?: "http://10.0.2.2:8080"
         val loading = SystemClock.uptimeMillis()
-        // The first use of Rocx loads libapp.so.
+        // The first use of Rocx loads libapp.so (an app's) or libhost.so (the dev client's).
         Rocx.applier = Applier(this, screen)
         val loaded = SystemClock.uptimeMillis()
+        if (Rocx.dev) {
+            val client = DevClient(this, screen)
+            dev = client
+            val content = client.layout()
+            content.setOnApplyWindowInsetsListener { view, insets ->
+                val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.ime())
+                view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+                WindowInsets.CONSUMED
+            }
+            screen.setOnApplyWindowInsetsListener(null)
+            setContentView(content)
+            client.begin(intent.getStringExtra("origin"))
+            return
+        }
+        setContentView(screen)
+        val origin = intent.getStringExtra("origin") ?: meta?.getString("rocx.origin") ?: "http://10.0.2.2:8080"
         Rocx.start(origin, "/")
         val started = SystemClock.uptimeMillis()
         screen.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
@@ -45,7 +62,14 @@ class RocxActivity : Activity() {
         })
     }
 
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        // rocx dev launching the client again, with its server.
+        intent.getStringExtra("origin")?.let { dev?.begin(it) }
+    }
+
     override fun onDestroy() {
+        dev?.stop()
         if (Rocx.applier?.activity === this) Rocx.applier = null
         super.onDestroy()
     }

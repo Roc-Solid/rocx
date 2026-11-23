@@ -8,11 +8,26 @@ import android.util.Log
  * flush's ops, which the activity's applier walks.
  */
 object Rocx {
-    init {
+    /**
+     * Whether this is the dev client (`rocx dev --android`): its library is libhost.so, and the app's
+     * Roc comes later, a library loaded at run time (`reload`). An app's APK has libapp.so.
+     */
+    val dev: Boolean = try {
         System.loadLibrary("app")
+        false
+    } catch (_: UnsatisfiedLinkError) {
+        System.loadLibrary("host")
+        true
     }
 
+    /** An app's: starts the app linked into libapp.so. */
     @JvmStatic external fun start(origin: String, path: String)
+
+    /** The dev client's: loads a build's library in place of the last; "" once it runs, else why not. */
+    @JvmStatic external fun reload(library: String, origin: String, path: String): String
+
+    /** The dev client's: the platform it runs apps for, and its Roc compiler. */
+    @JvmStatic external fun fingerprint(): String
 
     @JvmStatic external fun send(id: Long, name: String, value: String)
 

@@ -73,6 +73,7 @@ SiteDev := [].{
 			edited!: |path| SiteDev.edited!(rocx, path),
 			build!: |{}| SiteDev.build!(tools, args),
 			serve: Cmd.new(Fs.join([out, "server"])).args(["--port", $port, "--static", Fs.join([site, "static"]), "--static", client_static, "--context-file", Fs.join([out, "context.txt"])].concat(database).append("--dev")),
+			started!: |{}| {},
 			check: Nothing,
 		})
 	}

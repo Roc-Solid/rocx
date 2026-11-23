@@ -34,6 +34,8 @@ struct ALooper {
 
 type LooperCallback = extern "C" fn(fd: c_int, events: c_int, data: *mut c_void) -> c_int;
 
+#[link(name = "android")]
+#[link(name = "log")]
 unsafe extern "C" {
     fn ALooper_forThread() -> *mut ALooper;
     fn ALooper_addFd(looper: *mut ALooper, fd: c_int, ident: c_int, events: c_int, callback: Option<LooperCallback>, data: *mut c_void) -> c_int;
@@ -105,9 +107,9 @@ fn text(env: &mut JNIEnv, value: &JString) -> String {
     env.get_string(value).map(String::from).unwrap_or_default()
 }
 
-/// `Rocx.start(origin, path)`, on the main thread: the wake pipe on its looper, then the app.
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_rocx_phone_Rocx_start(mut env: JNIEnv, class: JClass, origin: JString, path: JString) {
+/// What the main thread needs before the app runs: Kotlin's `Rocx` held, and the wake pipe on its
+/// looper.
+fn prepare(env: &mut JNIEnv, class: &JClass) {
     if ROCX.get().is_none()
         && let Ok(global) = env.new_global_ref(&class)
     {
@@ -125,8 +127,60 @@ pub extern "system" fn Java_dev_rocx_phone_Rocx_start(mut env: JNIEnv, class: JC
             unsafe { ALooper_addFd(ALooper_forThread(), fds[0], ALOOPER_POLL_CALLBACK, ALOOPER_EVENT_INPUT, Some(woken), std::ptr::null_mut()) };
         }
     }
+}
+
+/// `Rocx.start(origin, path)`, on the main thread: the app linked into this library, started.
+#[cfg(not(feature = "dev"))]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_rocx_phone_Rocx_start(mut env: JNIEnv, class: JClass, origin: JString, path: JString) {
+    prepare(&mut env, &class);
     let (origin, path) = (text(&mut env, &origin), text(&mut env, &path));
     core::start(Box::new(Android), &origin, &path);
+}
+
+/// `Rocx.reload(library, origin, path)`, on the main thread (the dev client's): the app's Roc in a
+/// library rocx dev built (`libapp-<build>.so`, in the app's files), loaded, and started in place
+/// of the last build. "" once it runs, else why not (the library doesn't load, or isn't an app).
+/// The last build's library stays loaded: its code may still be referred to.
+#[cfg(feature = "dev")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_rocx_phone_Rocx_reload<'local>(mut env: JNIEnv<'local>, class: JClass, library: JString, origin: JString, path: JString) -> JString<'local> {
+    prepare(&mut env, &class);
+    let (library, origin, path) = (text(&mut env, &library), text(&mut env, &origin), text(&mut env, &path));
+    let said = match load(&library) {
+        Ok((mount, run)) => {
+            core::roc::set_entries(mount, run);
+            core::restart(Box::new(Android), &origin, &path);
+            String::new()
+        }
+        Err(why) => why,
+    };
+    env.new_string(said).unwrap_or_default()
+}
+
+/// A library's `roc_mount` and `roc_run`. Its hosted functions are this library's (it needs
+/// libhost.so, whose symbols the loader finds already loaded).
+#[cfg(feature = "dev")]
+fn load(library: &str) -> Result<(usize, usize), String> {
+    let path = CString::new(library).map_err(|_| "a library path with a NUL in it".to_string())?;
+    let handle = unsafe { libc::dlopen(path.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
+    if handle.is_null() {
+        let why = unsafe { std::ffi::CStr::from_ptr(libc::dlerror()) }.to_string_lossy().into_owned();
+        return Err(format!("the app's library didn't load: {why}"));
+    }
+    let find = |name: &std::ffi::CStr| {
+        let found = unsafe { libc::dlsym(handle, name.as_ptr()) };
+        if found.is_null() { Err(format!("the app's library has no {}: is it an app on web/platform?", name.to_string_lossy())) } else { Ok(found as usize) }
+    };
+    Ok((find(c"roc_mount")?, find(c"roc_run")?))
+}
+
+/// `Rocx.fingerprint()`: the platform this dev client runs apps for (core/build.rs), and the Roc
+/// compiler, which a build's must match.
+#[cfg(feature = "dev")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_rocx_phone_Rocx_fingerprint<'local>(env: JNIEnv<'local>, _class: JClass) -> JString<'local> {
+    env.new_string(format!("{} {}", core::FINGERPRINT, core::ROC_VERSION)).unwrap_or_default()
 }
 
 /// `Rocx.send(id, name, value)`: an event on a view, on the main thread.

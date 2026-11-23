@@ -8,6 +8,11 @@ description = "The native host's engine: web/platform's hosted functions, the re
 [lib]
 path = "src/lib.rs"
 
+[features]
+# The app's Roc in a library of its own, loaded at run time (`roc::set_entries`): the dev client's
+# (`rocx dev --android`). Without it, the app is linked in (`roc_mount`, `roc_run`).
+dynamic = []
+
 [dependencies]
 serde_json = "1"
 

@@ -7,8 +7,13 @@ description = "The native host's Android half: JNI for the Kotlin applier, the m
 
 [lib]
 # native/android/build.sh links it with the app's Roc (an archive) into the app's libapp.so.
-crate-type = ["staticlib"]
+# As an rlib, it is native/android-dev's too: the dev client's libhost.so.
+crate-type = ["staticlib", "rlib"]
 path = "src/lib.rs"
+
+[features]
+# The dev client's: the app's Roc loaded at run time from a library rocx dev serves (`Rocx.reload`).
+dev = ["rocx-native-core/dynamic"]
 
 [dependencies]
 rocx-native-core = { path = "../core" }
