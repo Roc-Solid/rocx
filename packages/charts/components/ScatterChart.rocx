@@ -1,5 +1,5 @@
 import pf.Html
-import pf.Solid exposing [create_memo!, create_signal!]
+import pf.Solid exposing [create_memo!, create_signal!, untrack!]
 import pf.For
 import pf.Show
 import pf.Transition
@@ -33,7 +33,7 @@ ScatterChart := [].{
 	view! = |{ data!, label, format_x, format_y }| {
 		rows! = create_memo!(|| ScatterChart.keyed(data!()))
 		goal! = create_memo!(|| ScatterChart.place(rows!()))
-		(drawn!, set_drawn!) = create_signal!(goal!())
+		(drawn!, set_drawn!) = create_signal!(untrack!(goal!))
 		(hover!, set_hover!) = create_signal!(Err(None))
 		x! = create_memo!(|| Scale.linear(drawn!().across, (left, right)))
 		y! = create_memo!(|| Scale.linear(drawn!().up, (bottom, top)))

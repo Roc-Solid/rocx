@@ -1,5 +1,5 @@
 import pf.Html
-import pf.Solid exposing [create_memo!, create_signal!]
+import pf.Solid exposing [create_memo!, create_signal!, untrack!]
 import pf.For
 import pf.Show
 import pf.Transition
@@ -41,7 +41,7 @@ BarChart := [].{
 		format = props.format
 		rows! = create_memo!(|| BarChart.keyed(data!()))
 		goal! = create_memo!(|| BarChart.place(rows!()))
-		(drawn!, set_drawn!) = create_signal!(goal!())
+		(drawn!, set_drawn!) = create_signal!(untrack!(goal!))
 		(hover!, set_hover!) = create_signal!(Err(None))
 		y! = create_memo!(|| Scale.linear(drawn!().domain, (bottom, top)))
 		x! = create_memo!(|| Band.band(drawn!().count, (left, right), props.padding))

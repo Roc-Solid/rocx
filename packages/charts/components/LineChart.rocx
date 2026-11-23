@@ -1,5 +1,5 @@
 import pf.Html
-import pf.Solid exposing [create_memo!, create_signal!]
+import pf.Solid exposing [create_memo!, create_signal!, untrack!]
 import pf.For
 import pf.Show
 import charts.Ease
@@ -23,7 +23,7 @@ LineChart := [].{
 	view! : { data! : () => List(Dec), label : Str, format : Dec -> Str, smooth : Bool } => Html
 	view! = |{ data!, label, format, smooth }| {
 		goal! = create_memo!(|| { values: data!(), domain: LineChart.domain(data!()) })
-		(drawn!, set_drawn!) = create_signal!(goal!())
+		(drawn!, set_drawn!) = create_signal!(untrack!(goal!))
 		(hover!, set_hover!) = create_signal!(Err(None))
 		y! = create_memo!(|| Scale.linear(drawn!().domain, (bottom, top)))
 		x! = create_memo!(|| Scale.linear((0.0, Dec.max(drawn!().values.len().to_dec() - 1.0, 1.0)), (left, right)))

@@ -1,5 +1,5 @@
 import pf.Html
-import pf.Solid exposing [create_memo!, create_signal!]
+import pf.Solid exposing [create_memo!, create_signal!, untrack!]
 import pf.For
 import pf.Show
 import pf.Transition
@@ -44,7 +44,7 @@ DonutChart := [].{
 		format = props.format
 		rows! = create_memo!(|| DonutChart.keyed(data!()))
 		goal! = create_memo!(|| rows!().map(|row| { key: row.key, value: Dec.max(row.slice.value, 0.0) }))
-		(drawn!, set_drawn!) = create_signal!({ slices: goal!(), slots: Keys.slots([], goal!().map(|slice| slice.key)) })
+		(drawn!, set_drawn!) = create_signal!(untrack!(|| { slices: goal!(), slots: Keys.slots([], goal!().map(|slice| slice.key)) }))
 		(hover!, set_hover!) = create_signal!(Err(None))
 		# The slices drawn: the data's, and each that is going until it has shrunk to nothing.
 		keys! = create_memo!(|| Keys.merge(drawn!().slices.map(|slice| slice.key), goal!().map(|slice| slice.key)))
