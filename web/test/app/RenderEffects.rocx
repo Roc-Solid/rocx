@@ -1,0 +1,31 @@
+import pf.Html
+import pf.Context
+import pf.Solid exposing [create_signal!, create_effect!, create_render_effect!, create_effect_with!, use_context!]
+
+## Render effects and an effect's error handler (D-052), for the tests (`render_effects_app.roc`): an
+## effect, a render effect and an effect with an error handler, each noting its apply in the log; the
+## last one's compute reads a context nothing provides while `broken!` says so.
+RenderEffects := [].{
+
+	missing : Context(U64)
+	missing = create_context()
+
+	view! : {} => Html
+	view! = |{}| {
+		(count!, set_count!) = create_signal!(0.U64)
+		(broken!, set_broken!) = create_signal!(Bool.False)
+		(log!, set_log!) = create_signal!([])
+		note! = |line| set_log!(log!().append(line))
+		create_effect!(|| count!(), |n| note!("effect ${n.to_str()}"))
+		create_render_effect!(|| count!(), |n| note!("render ${n.to_str()}"))
+		create_effect_with!(
+			|| if (broken!()) use_context!(missing) else count!(),
+			{ apply: |n| note!("applied ${n.to_str()}"), error: |why| note!("failed: ${why}") },
+		)
+		<div>
+			<button class="more" on:click={|| set_count!(count!() + 1)}>More</button>
+			<button class="break" on:click={|| set_broken!(!broken!())}>Break</button>
+			<p class="log">{Str.join_with(log!(), " | ")}</p>
+		</div>
+	}
+}

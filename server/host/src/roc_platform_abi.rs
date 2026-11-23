@@ -3122,6 +3122,16 @@ pub struct HostEffectNewArgs {
     pub arg0: RocErasedCallable,
 }
 
+/// Arguments for Host.effect_options!
+/// Roc signature: Bool, U64 => {}
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostEffectOptionsArgs {
+    pub arg0: bool,
+    pub arg1: u64,
+}
+
 /// Arguments for Host.fail!
 /// Roc signature: Str => {}
 /// Refcounted fields are owned by the hosted function.
@@ -5172,6 +5182,10 @@ unsafe extern "C" {
     /// moved into storage or into the result:
     ///     unsafe { decref_erased_callable(arg0, roc_host); }
     pub fn roc_effect_new(arg0: RocErasedCallable);
+
+    /// Hosted symbol for Host.effect_options!
+    /// Roc signature: Bool, U64 => {}
+    pub fn roc_effect_options(arg0: bool, arg1: u64);
 
     /// Hosted symbol for Host.event_value!
     /// Roc signature: {} => Str

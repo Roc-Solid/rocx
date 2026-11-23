@@ -367,4 +367,8 @@ Host := [].{
 	## A dev build's `Html.read_at!`: in the browser, where the read a component's body is making is.
 	## The server warns of none: it answers "".
 	read_at! : Str => Str
+
+	## An effect's options (`create_render_effect!`, `create_effect_with!`): the browser's; no effect
+	## runs on the server.
+	effect_options! : Bool, U64 => {}
 }

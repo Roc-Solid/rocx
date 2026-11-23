@@ -842,6 +842,14 @@ pub const HostEffect_newArgs = extern struct {
     arg0: RocErasedCallable,
 };
 
+/// Arguments for Host.effect_options!
+/// Roc signature: Bool, U64 => {}
+/// Refcounted fields are owned by the hosted function.
+pub const HostEffect_optionsArgs = extern struct {
+    arg0: bool,
+    arg1: u64,
+};
+
 /// Arguments for Host.fail!
 /// Roc signature: Str => {}
 /// Refcounted fields are owned by the hosted function.
@@ -1169,6 +1177,10 @@ pub extern fn roc_context_value(arg0: RocErasedCallable) callconv(.c) u64;
 /// moved into storage or into the result:
 ///     decrefErasedCallable(arg0, roc_host);
 pub extern fn roc_effect_new(arg0: RocErasedCallable) callconv(.c) void;
+
+/// Hosted symbol for Host.effect_options!
+/// Roc signature: Bool, U64 => {}
+pub extern fn roc_effect_options(arg0: bool, arg1: u64) callconv(.c) void;
 
 /// Hosted symbol for Host.event_value!
 /// Roc signature: {} => Str

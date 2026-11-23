@@ -60,6 +60,7 @@ const js = struct {
     extern "env" fn js_submission_drop(ptr: [*]const u8, len: usize, id: u32) void;
     extern "env" fn js_title(ptr: [*]const u8, len: usize) void;
     extern "env" fn js_untrack(on: u32) void;
+    extern "env" fn js_effect_options(render: u32, error_box: u32) void;
     extern "env" fn js_read_at(ptr: [*]const u8, len: usize) usize;
     /// `Date.now()`, and `performance.timeOrigin + performance.now()`: milliseconds, as JS has them.
     extern "env" fn js_now_millis() f64;
@@ -653,6 +654,11 @@ fn hostedUntrack(on: bool) callconv(.c) void {
     js.js_untrack(@intFromBool(on));
 }
 
+// An effect's options (`create_render_effect!`, `create_effect_with!`), told by its compute.
+fn hostedEffectOptions(render: bool, error_box: u64) callconv(.c) void {
+    js.js_effect_options(@intFromBool(render), @intCast(error_box));
+}
+
 // A dev build's `Html.read_at!`: where a component's body reads, for the runtime's warning; the
 // place before, to put back.
 fn hostedReadAt(place: RocStr) callconv(.c) RocStr {
@@ -752,6 +758,7 @@ comptime {
     @export(&hostedSubmissionDrop, .{ .name = "roc_submission_drop", .visibility = hidden });
     @export(&hostedTitle, .{ .name = "roc_title", .visibility = hidden });
     @export(&hostedUntrack, .{ .name = "roc_untrack", .visibility = hidden });
+    @export(&hostedEffectOptions, .{ .name = "roc_effect_options", .visibility = hidden });
     @export(&hostedReadAt, .{ .name = "roc_read_at", .visibility = hidden });
     @export(&hostedNowMillis, .{ .name = "roc_now_millis", .visibility = hidden });
     @export(&hostedNowNanos, .{ .name = "roc_now_nanos", .visibility = hidden });

@@ -1170,7 +1170,21 @@ export class Runtime {
 				const effect = new Computation(this, { kind: "reaction", runner: ptr, owner, scope: owner.scope ?? {} });
 				effect.cleanups = [];
 				effect.apply = 0;
+				// A render effect's apply runs at once (`render`); an error handler's box (`onError`)
+				// takes a failed compute instead of the nearest <Errored>, and what failed waits for it
+				// in `failure` (D-052). Its compute says so, first (`js_effect_options`).
+				effect.render = false;
+				effect.onError = 0;
+				effect.failure = null;
 				this.run(effect);
+			},
+			// The running effect's options, which its compute tells before it computes
+			// (`create_render_effect!`, `create_effect_with!`).
+			js_effect_options: (render, error) => {
+				const effect = this.current;
+				if (effect?.kind !== "reaction") return;
+				effect.render = render === 1;
+				effect.onError = error;
 			},
 			js_cleanup: (ptr) => {
 				this.touch();
@@ -1855,8 +1869,16 @@ export class Runtime {
 			return;
 		}
 		if (kind === "reaction") {
-			// Its apply (the box its compute kept, by id), run after the flush.
+			// Its apply (the box its compute kept, by id), run after the flush; a render effect's, now,
+			// as Solid 2.0's `createRenderEffect` runs it in the render (D-052). An answer after a
+			// failure: the failure is over.
 			computation.apply = Number(out);
+			computation.failure = null;
+			if (computation.render) {
+				this.due.delete(computation);
+				this.applyReaction(computation);
+				return;
+			}
 			this.due.add(computation);
 			this.wake();
 			return;
@@ -1944,6 +1966,14 @@ export class Runtime {
 			computation.settle?.();
 			computation.settled = computation.settle = null;
 			for (const observer of computation.observers) this.schedule(observer);
+			return;
+		}
+		// An effect with an error handler (`create_effect_with!`, D-052): the handler is told, after the
+		// flush, as its apply would be, unless it answers again meanwhile; no <Errored> shows.
+		if (computation.kind === "reaction" && computation.onError) {
+			computation.failure = failure.message;
+			this.due.add(computation);
+			this.wake();
 			return;
 		}
 		if (computation.scope.errored) computation.scope.errored.fail(failure.message, memo);
@@ -2092,12 +2122,17 @@ export class Runtime {
 	}
 
 	/** An effect's apply: its last apply's cleanups first, then the box its compute kept, as a
-	 * handler (untracked; its writes applied when it is done), owning what it starts. */
+	 * handler (untracked; its writes applied when it is done), owning what it starts. A failed
+	 * compute's error handler instead, given why (`create_effect_with!`), the same way. */
 	applyReaction(effect) {
-		if (effect.disposed || !this.kept.has(effect.apply)) return;
+		if (effect.disposed) return;
+		const failure = effect.failure;
+		const box = failure !== null ? effect.onError : effect.apply;
+		if (!this.kept.has(box)) return;
+		effect.failure = null;
 		this.cleanUp(effect.cleanups);
-		this.notify("apply", { id: effect.id });
-		this.handle(effect.apply, "", effect.scope, { owner: effect, cleanups: effect.cleanups });
+		this.notify("apply", { id: effect.id, failure });
+		this.handle(box, failure ?? "", effect.scope, { owner: effect, cleanups: effect.cleanups });
 	}
 
 	/** Computes a memo again, asking the server again. A failed one waits from now on, so what reads

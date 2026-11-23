@@ -61,6 +61,7 @@ if (!skip) {
 		["props", join(here, "app", "props_app.roc"), "dev"],
 		["untracked", join(here, "app", "untracked_app.roc"), "dev"],
 		["untracked-dev", join(out, "dev-app", "main.roc"), "dev"],
+		["render-effects", join(here, "app", "render_effects_app.roc"), "dev"],
 		["shortcuts", join(here, "app", "shortcuts_app.roc"), "dev"],
 		["glides", join(here, "app", "glides_app.roc"), "dev"],
 		["fades", join(here, "app", "fades_app.roc"), "dev"],
@@ -577,6 +578,43 @@ window.hydrated = true;
 		assert.equal(devTab.console[0].type, "warning");
 		assert.match(devTab.console[0].text, /web\/test\/build\/dev-app\/Untracked\.rocx:43:11 reads a value that changes \(a signal, a memo or a prop\) in a component's body/, "said where: `first = start`; `untrack!(|| start)` isn't");
 		assert.deepEqual(devTab.errors, []);
+	} finally {
+		await site.close();
+	}
+});
+
+test("render effects and an effect's error handler (D-052): a render effect's apply runs as soon as its compute has, before the effects' (made in a component, before its markup); an effect with an error handler is told why its compute failed, after the flush, and no <Errored> shows; when it answers again, its apply runs; on the server none runs", { skip }, async () => {
+	const wasm = readFileSync(join(out, "render-effects.wasm"));
+	const server = await Runtime.load(wasm);
+	assert.ok(server.renderToString({ path: "/" }).html.includes(`<p class="log"><!--x--><!--/x--></p>`), "on the server, no effect runs: the log is empty");
+	const dir = mkdtempSync(join(tmpdir(), "rocx-render-effects-"));
+	cpSync(join(web, "runtime.js"), join(dir, "runtime.js"));
+	writeFileSync(join(dir, "render-effects.wasm"), wasm);
+	const page = `<!doctype html><html><body><div id="app"></div>
+<script type="module">
+import { Runtime } from "/runtime.js";
+window.runtime = await Runtime.load(fetch("/render-effects.wasm"));
+window.runtime.mount(document.getElementById("app"));
+window.mounted = true;
+</script></body></html>`;
+	const site = await serve(dir, (path) => (path === "/" ? page : null));
+	try {
+		const tab = await browser.page();
+		await tab.goto(`${site.url}/`);
+		await tab.wait("window.mounted === true", 3000);
+		const log = () => tab.eval(`document.querySelector("p.log").textContent`);
+		await tab.wait(`document.querySelector("p.log").textContent.includes("applied 0")`);
+		assert.equal(await log(), "render 0 | effect 0 | applied 0", "the render effect's apply ran as it was made, before the component's markup; the effects', after the flush, oldest first");
+		await tab.click(".more");
+		await tab.wait(`document.querySelector("p.log").textContent.includes("applied 1")`);
+		assert.equal(await log(), "render 0 | effect 0 | applied 0 | render 1 | effect 1 | applied 1", "in a flush, the render effect's apply comes before the effects', though it was made after one of them");
+		await tab.click(".break");
+		await tab.wait(`document.querySelector("p.log").textContent.includes("failed")`);
+		assert.match(await log(), /\| failed: nothing above provides RenderEffects\.missing[^|]*$/, "the error handler is told why, once");
+		await tab.click(".break");
+		await tab.wait(`document.querySelector("p.log").textContent.endsWith("applied 1")`);
+		assert.deepEqual(tab.console, [], "no <Errored> needed, nothing said on the console");
+		assert.deepEqual(tab.errors, []);
 	} finally {
 		await site.close();
 	}

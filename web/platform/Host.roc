@@ -159,4 +159,10 @@ Host := [].{
 	## A dev build's `Html.read_at!`: where the read a component's body is making is (a `.rocx`
 	## file's line and column), "" once it is done; answers the place before, to put back.
 	read_at! : Str => Str
+
+	## Called by the running effect's `compute`, first (D-052): whether it is a render effect
+	## (`create_render_effect!`: its apply runs at once, as the render does), and the box of its
+	## error handler (`create_effect_with!`'s `error`, `keep!`'s id; 0 for none), which a failed
+	## `compute` calls instead of the nearest <Errored>.
+	effect_options! : Bool, U64 => {}
 }

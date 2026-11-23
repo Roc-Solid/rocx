@@ -1111,6 +1111,13 @@ pub extern "C" fn roc_effect_new(effect: Callable) {
     roc::release(effect);
 }
 
+/// An effect's options (`create_render_effect!`, `create_effect_with!`), which its compute tells: no
+/// effect runs on the server, so there is none to tell.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_effect_options(_render: bool, _error_box: u64) {
+    let _host = crate::preempt::host();
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_cleanup(cleanup: Callable) {
     let _host = crate::preempt::host();

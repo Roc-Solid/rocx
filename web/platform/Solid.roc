@@ -6,7 +6,7 @@ import Context
 ## changes. The browser's timers are here too (`set_interval!`, `set_timeout!`), each stopped by
 ## the `clear!` it answers, or when what started it goes.
 ##
-##     import pf.Solid exposing [create_signal!, create_memo!, create_effect!, on_cleanup!, on_settled!, refresh!, is_pending!, latest!, untrack!, use_context!, set_interval!]
+##     import pf.Solid exposing [create_signal!, create_memo!, create_effect!, create_render_effect!, create_effect_with!, on_cleanup!, on_settled!, refresh!, is_pending!, latest!, untrack!, use_context!, set_interval!]
 ##
 ##     (count!, set_count!) = create_signal!(0.U64)
 ##     doubled! = create_memo!(|| count!() * 2)
@@ -134,6 +134,36 @@ Solid := [].{
 		Host.effect_new!(Box.box(run!))
 	}
 
+	## A render effect (Solid 2.0's `createRenderEffect`): as `create_effect!`, but its `apply` runs
+	## at once, as soon as `compute` has: during the render, before the page is settled, where an
+	## effect's waits until the flush is done and the markup is on the page. Made in a component, it
+	## runs before the component's markup is built (nothing of it is on the page yet); run again in
+	## a flush, its `apply` comes before the effects' and before what the flush moves glides. As
+	## Solid's, it is for what must be in step with the render (a value derived into a signal the
+	## same flush reads, with no frame between); what reads the page wants `create_effect!`. On the
+	## server neither half runs (Solid's server runs both), so what its first `apply` writes is
+	## patched in as the page hydrates: keep what a page shows from the server's render.
+	##
+	##     create_render_effect!(|| query!(), |_| set_page!(1))
+	create_render_effect! : (() => a), (a => {}) => {}
+	create_render_effect! = |compute, apply| effect_with!(compute, apply, Bool.True, 0)
+
+	## An effect whose `compute` may fail (Solid 2.0's `createEffect(compute, { effect, error })`):
+	## as `create_effect!`, with `apply` and `error` in a record. A `compute` that fails (a read that
+	## failed, a context nothing provides) calls `error` with why, instead of showing the nearest
+	## <Errored>: after the flush, as `apply` runs (a handler: it may write signals; its
+	## `on_cleanup!`s run before the next `apply` or `error`), and only if it is still failed then.
+	## When `compute` answers again, `apply` runs as before. What fails in `apply` or `error`
+	## themselves is theirs, as a handler's is.
+	##
+	##     create_effect_with!(|| Endpoint.get!(Api.get_room({ room: room!() })), { apply: |room| set_topic!(room.topic), error: |why| set_problem!(why) })
+	create_effect_with! : (() => a), { apply : a => {}, error : Str => {} } => {}
+	create_effect_with! = |compute, handlers| {
+		error = handlers.error
+		failed! = || handled!(|| error(Host.event_value!({})))
+		effect_with!(compute, handlers.apply, Bool.False, Host.keep!(Box.box(failed!)))
+	}
+
 	## Runs `cleanup` when what is running now is done with (Solid's `onCleanup`): a component, when
 	## it goes; a computation (a hole, a memo, an effect's `compute`), before it runs again and when
 	## it goes; an effect's `apply`, before the next and when the effect goes. What it owns goes
@@ -205,4 +235,20 @@ handled! : (() => {}) => Str
 handled! = |handler| {
 	handler()
 	""
+}
+
+## An effect with options (`create_render_effect!`, `create_effect_with!`): its `compute` tells the
+## runtime them first, each time it runs.
+effect_with! : (() => a), (a => {}), Bool, U64 => {}
+effect_with! = |compute, apply, render, error| {
+	run! = || {
+		Host.effect_options!(render, error)
+		value = compute()
+		applied! = || {
+			apply(value)
+			""
+		}
+		Host.keep!(Box.box(applied!)).to_str()
+	}
+	Host.effect_new!(Box.box(run!))
 }

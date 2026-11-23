@@ -89,6 +89,7 @@ platform ""
 		"roc_context_get": Host.context_get!,
 		"roc_context_value": Host.context_value!,
 		"roc_effect_new": Host.effect_new!,
+		"roc_effect_options": Host.effect_options!,
 		"roc_event_value": Host.event_value!,
 		"roc_fail": Host.fail!,
 		"roc_fetch": Host.fetch!,
