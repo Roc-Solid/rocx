@@ -637,6 +637,20 @@ pub extern "C" fn roc_host_actor_kinds(names: RocStr) {
     actors::kinds(names.lines().filter(|name| !name.is_empty()).map(str::to_string));
 }
 
+/// A plugin's file (`Plugin.File`), as the platform starts: served at `url` before anything else
+/// answers (`files`).
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_plugin_file(url: RocStr, content_type: RocStr, body: RocListWith<u8, false>) {
+    let (url, content_type) = (taken(url), taken(content_type));
+    crate::files::add(url, content_type, taken_bytes(body));
+}
+
+/// The plugins' scripts, a URL a line, as the platform starts: every page loads them.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_page_scripts(urls: RocStr) {
+    crate::files::set_scripts(taken(urls).lines().filter(|url| !url.is_empty()).map(str::to_string).collect());
+}
+
 /// Asks the actor of kind `kind` called `key` (its message as JSON): its reply (JSON), once it has
 /// handled the messages before it; or why there is none. An actor asking one whose turn waits on it
 /// is refused at once; an ask not answered in 30 s (or by the call's deadline) is given up on.

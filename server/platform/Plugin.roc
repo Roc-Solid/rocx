@@ -3,11 +3,13 @@ import Server
 
 ## What a package adds to an app, as one value the app lists (`App.program({ plugins: [...] })`):
 ## its routes, which answer inside the app's middleware; paths answered before the app, under
-## `--dev` or `--debug` (`early`); its tables (`migrations`); named functions run in a call of their
-## own (`calls`); background loops; work run once the server has started (`starts`) and checks run
-## after (`checks`); and what it needs that the compiler can't see (`needs`). Every field but `name`
-## has a default, so a plugin says only what it adds. A package makes one from options of its own,
-## whose fields without a default are required (`JobsPage.plugin({ guard })`).
+## `--dev` or `--debug` (`early`); files served as they are, before the app and its middleware
+## (`files`), and those of them every page loads (`scripts`); its tables (`migrations`); named
+## functions run in a call of their own (`calls`); background loops; work run once the server has
+## started (`starts`) and checks run after (`checks`); and what it needs that the compiler can't see
+## (`needs`). Every field but `name` has a default, so a plugin says only what it adds. A package
+## makes one from options of its own, whose fields without a default are required
+## (`JobsPage.plugin({ guard })`).
 ##
 ## ```roc
 ## plugin : Options -> Plugin.Value(ctx)
@@ -22,9 +24,10 @@ import Server
 ## When the server starts it checks every plugin at once, and any problem stops it, with the whole
 ## list: a name used twice; a call, loop or check not named `<plugin>.<name>`; an early path not
 ## under `/__rocx/`; two routes at one method and path (the app's and a plugin's, or two plugins');
-## a need not met (an environment variable unset, no database or one of the other flavor, a plugin
-## not in the list);
-## needs that go round in a circle. It orders the plugins by what they need (the list's order
+## a file's path that isn't one (`/sw.js`, `../x`), two files at one path, a file at the root where
+## the app has a route (or another plugin one), a script that is none of the plugin's files; a need
+## not met (an environment variable unset, no database or one of the other flavor, a plugin not in
+## the list); needs that go round in a circle. It orders the plugins by what they need (the list's order
 ## breaking ties), applies their migrations after the platform's and before the app's, each
 ## recorded as `<plugin>/<name>`, runs their `starts` (an `Err` stops the server), and logs a line a
 ## plugin saying what it added.
@@ -36,6 +39,8 @@ Plugin := [].{
 		name : Str,
 		routes : List(Route(ctx)) ?? [],
 		early : List(Early) ?? [],
+		files : List(File) ?? [],
+		scripts : List(Str) ?? [],
 		migrations : List(Migration) ?? [],
 		calls : List(Call) ?? [],
 		loops : List(Loop) ?? [],
@@ -54,6 +59,15 @@ Plugin := [].{
 	## the flags in `under` (`--dev`, `--debug`): under `/__rocx/`, so the app's paths and its
 	## middleware never meet it. Without the flag the path is the app's, as any other.
 	Early : { method : Str, path : Str, under : List([Dev, Debug]), answer! : Server.Request => Server.Response }
+
+	## A file the plugin serves as it is (a script, a service worker, an icon), its bytes embedded
+	## when the app is built (`import "static/sw.js" as sw : List(U8)`): at
+	## `/rocx/plugins/<plugin>/<path>`, or at `/<path>` when it is `at: Root`, for a file the web
+	## fixes the place of (a service worker, whose scope is where it is; `.well-known/…`). The host
+	## answers it before the app and its middleware, so an app's guard never blocks it: `GET` and
+	## `HEAD`, with `content_type` and an ETag of its bytes (304 when the browser has them); any
+	## other method, 405. `path` is relative (`push-sw.js`, `icons/bell.svg`).
+	File : { path : Str, at : [Plugin, Root], content_type : Str, body : List(U8) }
 
 	## A table: its SQL, applied once, recorded as `<plugin>/<name>`. `on` says which database it is
 	## for (D-045): `Any` (the default), `Postgres` or `Sqlite` (Turso's too: its SQL is SQLite's,
@@ -91,6 +105,8 @@ Plugin := [].{
 		name : Str,
 		claims : List({ method : Str, path : Str }),
 		early : List(Early),
+		files : List(File),
+		scripts : List(Str),
 		migrations : List(Migration),
 		calls : List(Call),
 		loops : List(Loop),
@@ -105,6 +121,8 @@ Plugin := [].{
 		name: plugin.name,
 		claims: plugin.routes.map(|route| { method: route.method, path: route.path }),
 		early: plugin.early,
+		files: plugin.files,
+		scripts: plugin.scripts,
 		migrations: plugin.migrations,
 		calls: plugin.calls,
 		loops: plugin.loops,
@@ -112,6 +130,15 @@ Plugin := [].{
 		checks: plugin.checks,
 		needs: plugin.needs,
 	}
+
+	## Where `file` of the plugin called `plugin` is served: `/rocx/plugins/<plugin>/<path>`, or
+	## `/<path>` at the root.
+	url : Str, File -> Str
+	url = |plugin, file|
+		match file.at {
+			Plugin => "/rocx/plugins/${plugin}/${file.path}"
+			Root => "/${file.path}"
+		}
 
 	## Answers `request` with the first plugin route that matches its method and path, given the
 	## app's context; with `otherwise!` (the app's routes) when none does.
@@ -190,4 +217,6 @@ expect !Plugin.matches("/admin/jobs", "/admin/jobs/1")
 expect Plugin.matches("/push/[id]", "/push/7")
 expect !Plugin.matches("/push/[id]", "/push")
 expect method_matches("GET", "HEAD")
+expect Plugin.url("push", { path: "push.js", at: Plugin, content_type: "text/javascript", body: [] }) == "/rocx/plugins/push/push.js"
+expect Plugin.url("push", { path: "push-sw.js", at: Root, content_type: "text/javascript", body: [] }) == "/push-sw.js"
 expect !method_matches("POST", "GET")

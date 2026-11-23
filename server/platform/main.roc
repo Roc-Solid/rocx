@@ -37,8 +37,10 @@
 ##   when it isn't), `Pretty` or `Json`. `App.program` says `Auto`; an app says otherwise with
 ##   `{ ..App.program(…), logs: { format: Json } }`.
 ## - `plugins`: what packages add to the app (`Plugin`), all but their routes, which `respond!`
-##   answers: early paths, tables, calls, loops, starts, checks and needs, checked when the server
-##   starts (`Plugins`); `routes`, the app's own (`Routes.claims`), which no plugin's may meet.
+##   answers: early paths, files (which the host serves before the app, and its middleware, ever
+##   sees the request), scripts (which every page loads), tables, calls, loops, starts, checks and
+##   needs, checked when the server starts (`Plugins`); `routes`, the app's own (`Routes.claims`),
+##   which no plugin's route or file at the root may meet.
 ## - A page's components are Solid-style (web/runtime.js hydrates the document in the browser). A
 ##   GET endpoint a component reads while the host renders the page (`Endpoint.get!`) is answered by
 ##   its route, in-process (`Host.fetch!`). The modules components are written with (`Html`, `Solid`,
@@ -139,6 +141,8 @@ platform ""
 		"roc_host_log_format": Host.log_format!,
 		"roc_host_now_millis": Host.now_millis!,
 		"roc_host_now_nanos": Host.now_nanos!,
+		"roc_host_page_scripts": Host.page_scripts!,
+		"roc_host_plugin_file": Host.plugin_file!,
 		"roc_host_random_bytes": Host.random_bytes!,
 		"roc_host_random_u64": Host.random_u64!,
 		"roc_host_send": Host.send!,
@@ -293,7 +297,7 @@ drop_feed_for_host = |_| {}
 ## The server is starting: the log takes the app's format (before anything is logged: a migration,
 ## a plugin's problem); the app's database is opened, where its program and `--database-url` say;
 ## the plugins are checked (any problem stops it here, with every one) and put in order; the host
-## is told the kinds of actor; then the platform's tables, the plugins' and the app's migrations
+## is told the kinds of actor, and handed the plugins' files and their scripts' URLs; then the platform's tables, the plugins' and the app's migrations
 ## are applied (the platform's and the plugins' for its database), and the plugins' starts run (a
 ## jobs plugin's queues again the jobs a stop cut short).
 init_for_host! : {} => Try({}, Str)
@@ -321,6 +325,14 @@ init_for_host! = |{}| {
 		}
 	plugins = Plugins.ordered(program.plugins).map(|plugin| { ..plugin, migrations: plugin.migrations.keep_if(|migration| applies(migration.on, flavor)) })
 	Host.actor_kinds!(Str.join_with(program.actors.map(|actor| actor.name), "\n"))
+	# The plugins' files, which the host serves before the app, and their scripts, which every page
+	# loads.
+	for plugin in plugins {
+		for file in plugin.files {
+			Host.plugin_file!(Plugin.url(plugin.name, file), file.content_type, file.body)
+		}
+	}
+	Host.page_scripts!(Str.join_with(plugins.join_map(|plugin| plugin.scripts.join_map(|script| plugin.files.keep_if(|file| file.path == script).map(|file| Plugin.url(plugin.name, file)))), "\n"))
 	if Setting.database!({}) {
 		# The platform's tables, then each plugin's (recorded as `<plugin>/<name>`), then the app's.
 		theirs = plugins.join_map(|plugin| plugin.migrations.map(|migration| { name: "${plugin.name}/${migration.name}", sql: migration.sql }))

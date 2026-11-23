@@ -7,12 +7,16 @@ import Host
 ##
 ##     Runtime.load(wasm, { effects: { vibrate: ({ ms }) => navigator.vibrate(ms) } })
 ##
-## (or `window.rocxEffects = { vibrate… }`, for a page start.js wakes up). A call runs once the
-## handler is done, after the page is patched with what it wrote, so the function sees the page as
-## the handler left it; a handler that waits for the server, and runs again, calls it once. It answers
-## nothing. Only a handler calls: while computing (a hole, a memo, a component's body), and on the
-## server, it fails. Names beginning with `rocx:` are the runtime's own (`rocx:audio` is `Audio.play!`,
-## `rocx:focus` is `Browser.focus!`).
+## (or `window.rocxEffects = { vibrate… }`, for a page start.js wakes up). A plugin's script
+## (`Plugin.scripts`, which every page loads before start.js) registers its effects on
+## `window.rocxEffects` too, named with the plugin's name first (`audio.play`). Every effect is given
+## a second argument, `{ under }`: `under(url)` is a URL that begins with `/` under the site's base,
+## as the runtime asks for an endpoint's. A call runs once the handler is done, after the page is
+## patched with what it wrote, so the function sees the page as the handler left it; a handler that
+## waits for the server, and runs again, calls it once. It answers nothing. Only a handler calls:
+## while computing (a hole, a memo, a component's body), and on the server, it fails. Names beginning
+## with `rocx:` are the runtime's own (`rocx:audio` is `Audio.play!`, `rocx:focus` is
+## `Browser.focus!`).
 Browser := [].{
 
 	## Calls the page's function `name` with `arg`, as JSON, once the handler is done. It fails

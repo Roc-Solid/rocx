@@ -234,11 +234,12 @@ fn titled(markup: &str, title: Option<&str>) -> String {
 }
 
 /// The rendered markup as the document the browser gets: the flash the page read (if it did) and
-/// the answers in scripts for the browser to read, and the bootstrap, before `</body>`.
+/// the answers in scripts for the browser to read, the plugins' scripts (`files`), and the
+/// bootstrap, before `</body>`.
 fn document(markup: &str, answers: &[[String; 3]], flash: Option<&str>) -> String {
     let begun = markup.trim_start().get(..9).is_some_and(|start| start.eq_ignore_ascii_case("<!doctype"));
     let doctype = if begun { "" } else { "<!doctype html>" };
-    let scripts = format!("{}{}{START}", flash.map(flash_script).unwrap_or_default(), answers_script(answers));
+    let scripts = format!("{}{}{}{START}", flash.map(flash_script).unwrap_or_default(), answers_script(answers), crate::files::script_tags());
     match markup.rfind("</body>") {
         Some(at) => format!("{doctype}{}{scripts}{}", &markup[..at], &markup[at..]),
         None => format!("{doctype}{markup}{scripts}"),

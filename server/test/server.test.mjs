@@ -1446,7 +1446,7 @@ test("plugins: a plugin's route answers in the app, with the app's context and i
 			"rocx plugins: jobs: 1 early route, 1 migration, 1 call, 5 loops, 1 start",
 			"rocx plugins: email: 4 early routes, 1 start, 1 check",
 			"rocx plugins: jobs-page: 2 routes",
-			"rocx plugins: fixture: 5 routes, 1 early route, 1 migration, 1 call, 1 loop, 1 start, 1 check",
+			"rocx plugins: fixture: 5 routes, 1 early route, 2 files, 1 script, 1 migration, 1 call, 1 loop, 1 start, 1 check",
 			"rocx plugins: second: 1 route",
 			"rocx plugins: third: 1 route",
 			"rocx plugins: storage: 1 route",
@@ -1454,6 +1454,70 @@ test("plugins: a plugin's route answers in the app, with the app's context and i
 		"listed jobs, email, the jobs page, fixture, third, second, storage: third needs second, so it comes after it",
 	);
 	assert.ok(said.includes("fixture.look: the fixture looked"), "the check, run once after the start");
+});
+
+test("plugins: a plugin's files, served as they are: GET with its type and an ETag of its bytes, 304 when the browser has them, HEAD, 405 for any other method; one at the root", { skip }, async () => {
+	const script = readFileSync(join(root, "server", "test", "fixture", "static", "fixture.js"), "utf8");
+	const got = await server.get("/rocx/plugins/fixture/fixture.js");
+	assert.equal(got.status, 200);
+	assert.equal(got.headers.get("content-type"), "text/javascript");
+	assert.equal(got.headers.get("cache-control"), "no-cache", "the browser asks again, with its ETag");
+	const etag = got.headers.get("etag");
+	assert.equal(etag, `"${createHash("sha256").update(script).digest("hex").slice(0, 32)}"`, "an ETag of its bytes");
+	assert.equal(await got.text(), script);
+	const again = await server.get("/rocx/plugins/fixture/fixture.js", { headers: { "if-none-match": etag } });
+	assert.equal(again.status, 304, "the browser has it");
+	assert.equal(again.headers.get("etag"), etag);
+	assert.equal(await again.text(), "");
+	assert.equal((await server.get("/rocx/plugins/fixture/fixture.js", { headers: { "if-none-match": '"other"' } })).status, 200, "another ETag: the file");
+	const head = await server.get("/rocx/plugins/fixture/fixture.js", { method: "HEAD" });
+	assert.equal(head.status, 200);
+	assert.equal(head.headers.get("content-length"), String(Buffer.byteLength(script)), "HEAD: its length, no body");
+	assert.equal(await head.text(), "");
+	const posted = await server.get("/rocx/plugins/fixture/fixture.js", { method: "POST", body: "x" });
+	assert.equal(posted.status, 405);
+	assert.equal(posted.headers.get("allow"), "GET, HEAD");
+	const atRoot = await server.get("/fixture-sw.js?api=/push");
+	assert.equal(atRoot.status, 200, "a file at the root, its query aside");
+	assert.match(await atRoot.text(), /skipWaiting/);
+	assert.equal((await server.get("/rocx/plugins/fixture/fixture-sw.js")).status, 404, "a file at the root is there alone");
+	assert.equal((await server.get("/rocx/plugins/fixture/other.js")).status, 404, "no other file of the plugin's");
+	// What a static copy of a site copies: every file, and which are scripts (under --debug).
+	assert.deepEqual(JSON.parse(await server.text("/__rocx/plugin-files")), [
+		{ url: "/rocx/plugins/fixture/fixture.js", content_type: "text/javascript", script: true },
+		{ url: "/fixture-sw.js", content_type: "text/javascript", script: false },
+	]);
+});
+
+test("plugins: every page the server renders loads each plugin's script, a module before start.js, the host's own (data-rocx)", { skip }, async () => {
+	const tag = '<script type="module" data-rocx src="/rocx/plugins/fixture/fixture.js"></script>';
+	for (const path of ["/page", "/peer-page"]) {
+		const html = await server.text(path);
+		assert.ok(html.includes(`${tag}<script type="module" data-rocx src="/rocx/start.js"></script></body>`), `${path}: ${html.slice(-400)}`);
+		assert.equal(html.split(tag).length, 2, `${path}: once`);
+	}
+	assert.ok(!(await server.text("/")).includes(tag), "an answer that isn't a page of components: as it is");
+});
+
+test("plugins: a plugin's files come before the app and its middleware: an app that refuses everything still serves them", { skip }, async () => {
+	const executable = join(dir, "refusing");
+	buildApp(join(root, "server", "test", "refusing", "main.roc"), executable, { opt: process.env.ROCX_TEST_OPT ?? "dev" });
+	const refusing = await start([], executable);
+	try {
+		const page = await refusing.get("/");
+		assert.equal(page.status, 403, "the app refuses");
+		assert.equal(await page.text(), "refused");
+		const script = await refusing.get("/rocx/plugins/files/fixture.js");
+		assert.equal(script.status, 200, "the plugin's script comes");
+		assert.match(await script.text(), /fixtureLoaded/);
+		const worker = await refusing.get("/files-sw.js");
+		assert.equal(worker.status, 200, "and its file at the root, a service worker");
+		assert.equal(worker.headers.get("content-type"), "text/javascript");
+		assert.equal((await refusing.get("/files-sw.js", { method: "PUT", body: "x" })).status, 405, "the file's, not the app's");
+		assert.match(refusing.logged(), /rocx plugins: files: 2 files, 1 script/);
+	} finally {
+		await refusing.stop();
+	}
 });
 
 test("plugins: an early path is answered before the app, only under the flag it names (--dev)", { skip }, async () => {
@@ -1493,7 +1557,7 @@ test("plugins: a plugin's table, applied after the platform's and before the app
 	}
 });
 
-test("plugins: what stops the server at start, every problem a line: a route the app has, two plugins at one path, a loop without the plugin's name first, an early path outside /__rocx/, a variable unset, a plugin not in the list, needs in a circle, a name twice, a name that isn't one", { skip }, async () => {
+test("plugins: what stops the server at start, every problem a line: a route the app has, two plugins at one path, a loop without the plugin's name first, an early path outside /__rocx/, a file's path that isn't relative, a script that is no file, a file at the root in the platform's place, two files at one place, a file where a route is, a variable unset, a plugin not in the list, needs in a circle, a name twice, a name that isn't one", { skip }, async () => {
 	const executable = join(dir, "refused");
 	buildApp(join(root, "server", "test", "refused", "main.roc"), executable, { opt: process.env.ROCX_TEST_OPT ?? "dev" });
 	const refused = await start([], executable, { REFUSED_UNSET: "" }).then(
@@ -1507,11 +1571,17 @@ test("plugins: what stops the server at start, every problem a line: a route the
 		[
 			"clash: the loop beat is named clash.beat, with the plugin's name first",
 			"clash: the early path /mail is under /__rocx/, where the app's paths never are",
+			"clash: the file /abs.js needs a relative path (sw.js, icons/bell.svg)",
+			"one: the script missing.js is none of its files",
+			"two: the file rocx/start.js is at the root, under /rocx/, which is the platform's",
 			"auth needs the email plugin, which isn't in plugins",
 			"two plugins are called two",
 			"plugin \"Bad Name\": a plugin's name is lowercase letters, digits and -",
 			"GET /x: routes/x/+page.rocx, and the clash plugin",
 			"POST /y/[id]: the one plugin, and the two plugin",
+			"/sw.js: the one plugin's file, and the two plugin's file",
+			"/x: routes/x/+page.rocx, and the clash plugin's file",
+			"/x: the clash plugin, and the clash plugin's file",
 			"left needs right, which needs left",
 			"one: REFUSED_UNSET isn't set",
 		].join("\n"),
@@ -2799,6 +2869,9 @@ test("actors: one idle for --actor-idle-ms is let go, and the next message wakes
 
 // ---- Components the server renders, and the endpoints they read ----
 
+/** The fixture plugin's script, which every page the server renders loads before start.js (D-050). */
+const FIXTURE_SCRIPT = '<script type="module" data-rocx src="/rocx/plugins/fixture/fixture.js"></script>';
+
 /** A GET a page read as the server rendered it, as the page's answers script has it. */
 const carried = (url, status, body) => [`GET ${url}`, "", JSON.stringify({ status, body })];
 
@@ -2822,7 +2895,7 @@ test("pages of components: signals, memos, a keyed <For>, a <Show>, an <Errored>
 	assert.equal(
 		await text("/probe?from=probe"),
 		`<!doctype html><html><body>${probe('<!--errored:failed--><p class="refused"><!--x-->GET /probe/member: 401: members only<!--/x--></p><!--/errored-->')}<p>after</p>` +
-			`<script type="application/json" class="rocx-answers">${JSON.stringify([shouted, refused])}</script><script type="module" data-rocx src="/rocx/start.js"></script></body></html>`,
+			`<script type="application/json" class="rocx-answers">${JSON.stringify([shouted, refused])}</script>${FIXTURE_SCRIPT}<script type="module" data-rocx src="/rocx/start.js"></script></body></html>`,
 		"its reads' answers before </body>, the refused one too, so the browser fails where the server did",
 	);
 });
@@ -2832,7 +2905,7 @@ test("endpoint reads: a read while the server renders is answered by the endpoin
 	assert.ok(page.includes(probe('<!--errored--><p class="member"><!--x-->member Ada, GET /probe/member<!--/x--></p><!--/errored-->')), page);
 	const answers = [carried("/probe/shout/hello", 200, '"HELLO"'), carried("/probe/member", 200, '"member Ada, GET /probe/member"')];
 	assert.ok(
-		page.endsWith(`<script type="application/json" class="rocx-answers">${JSON.stringify(answers)}</script><script type="module" data-rocx src="/rocx/start.js"></script></body></html>`),
+		page.endsWith(`<script type="application/json" class="rocx-answers">${JSON.stringify(answers)}</script>${FIXTURE_SCRIPT}<script type="module" data-rocx src="/rocx/start.js"></script></body></html>`),
 		"its answer, byte for byte what the browser would get, beside the page",
 	);
 });
@@ -2882,9 +2955,9 @@ test("components and endpoint reads: rendering, reading, failing and crashing ag
 
 // ---- Pages of components ----
 
-/** The answers script and the script that starts the browser's side, as the host puts them just
- * before `</body>`. */
-const scripts = (answers) => `<script type="application/json" class="rocx-answers">${answers}</script><script type="module" data-rocx src="/rocx/start.js"></script>`;
+/** The answers script, the fixture plugin's script (every page loads it: D-050) and the script that
+ * starts the browser's side, as the host puts them just before `</body>`. */
+const scripts = (answers) => `<script type="application/json" class="rocx-answers">${answers}</script>${FIXTURE_SCRIPT}<script type="module" data-rocx src="/rocx/start.js"></script>`;
 
 /** The test app's `document!` as the host renders it: `member` is what its read of `GET
  * /probe/member` (behind `members_only`) renders, inside its <Errored>; `answers`, the GETs the
@@ -2973,10 +3046,11 @@ test("pages of components: under --dev the reload script is a file of the site's
 		assert.deepEqual(
 			scripts.filter((script) => script.type !== "application/json").map(({ src, text }) => ({ src, text })),
 			[
+				{ src: "/rocx/plugins/fixture/fixture.js", text: "" },
 				{ src: "/rocx/start.js", text: "" },
 				{ src: "/__reload.js", text: "" },
 			],
-			"no inline script runs: start.js and the reload script come from the site (the answers are JSON, which a CSP doesn't block)",
+			"no inline script runs: a plugin's script, start.js and the reload script come from the site (the answers are JSON, which a CSP doesn't block)",
 		);
 		const reload = await dev.get("/__reload.js");
 		assert.equal(reload.status, 200);

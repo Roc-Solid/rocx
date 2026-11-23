@@ -348,7 +348,9 @@ same components natively; this one hydrates them.
   `window.rocxEffects` for a page start.js wakes up) are what a handler's `Browser.call!(name, arg)`
   calls: queued with the handler's writes, so a handler that waits for the server and runs again
   calls once, and called once the flush after it has patched the page, given the argument parsed
-  from JSON. An effect's apply is a handler too: what it calls runs at the end of the flush it is
+  from JSON and `{ under }` (`under(url)`: a URL that begins with `/` under the site's base). A
+  plugin's script (D-050: every page the server renders loads it before start.js) registers its
+  effects on `window.rocxEffects`, named `<plugin>.<effect>`. An effect's apply is a handler too: what it calls runs at the end of the flush it is
   part of, once the page shows what it wrote. One that isn't there, or throws, is told on the
   console; a call while computing (an effect's compute among it) fails. Names beginning with
   `rocx:` are the runtime's own: `rocx:audio` plays a sound file (`Audio.play!`) with an `<audio>`
@@ -358,7 +360,8 @@ same components natively; this one hydrates them.
   focuses a field as its part shows.
 - **`renderToString`** renders markup with `<html>` at its top as the server platform answers a page:
   `<!doctype html>` first unless the markup has one, then the flash the page read, if it did, the
-  answers script and the bootstrap just before `</body>` (`Runtime.documentOf`). Any other markup is an app's range,
+  answers script, the plugins' scripts (`renderToString({ scripts })`, by URL) and the bootstrap
+  just before `</body>` (`Runtime.documentOf`). Any other markup is an app's range,
   `<!--app-->…<!--/app-->`, for `hydrate(container)`.
 - **Events**: `on:click` runs a handler; `.value`, `.checked`, `.key` give it what the event says; a
   key's name (`on:keydown.ArrowUp`) runs it for that key only, with no modifier key held, and

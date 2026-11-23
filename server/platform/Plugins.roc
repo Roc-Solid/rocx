@@ -35,6 +35,18 @@ Plugins := [].{
 					$found = $found.append("${plugin.name}: the early path ${early.path} is under /__rocx/, where the app's paths never are")
 				}
 			}
+			for file in plugin.files {
+				if !is_file_path(file.path) {
+					$found = $found.append("${plugin.name}: the file ${file.path} needs a relative path (sw.js, icons/bell.svg)")
+				} else if file.at == Root and (file.path.starts_with("rocx/") or file.path.starts_with("__rocx/")) {
+					$found = $found.append("${plugin.name}: the file ${file.path} is at the root, under /${file.path.split_on("/").first() ?? ""}/, which is the platform's")
+				}
+			}
+			for script in plugin.scripts {
+				if !plugin.files.any(|file| file.path == script) {
+					$found = $found.append("${plugin.name}: the script ${script} is none of its files")
+				}
+			}
 			for need in plugin.needs {
 				match need {
 					Plugin(other) =>
@@ -45,7 +57,7 @@ Plugins := [].{
 				}
 			}
 		}
-		$found.concat(clashes(plugins, routes)).concat(circles(plugins))
+		$found.concat(clashes(plugins, routes)).concat(file_clashes(plugins, routes)).concat(circles(plugins))
 	}
 
 	## The needs of `plugins` the server doesn't meet: an environment variable unset (or empty), a
@@ -120,6 +132,8 @@ Plugins := [].{
 		parts =
 			counted(plugin.claims.len(), "route", "routes")
 				.concat(counted(plugin.early.len(), "early route", "early routes"))
+				.concat(counted(plugin.files.len(), "file", "files"))
+				.concat(counted(plugin.scripts.len(), "script", "scripts"))
 				.concat(counted(plugin.migrations.len(), "migration", "migrations"))
 				.concat(counted(plugin.calls.len(), "call", "calls"))
 				.concat(counted(plugin.loops.len(), "loop", "loops"))
@@ -192,6 +206,47 @@ clashes = |plugins, routes| {
 	$found
 }
 
+## Two files at one URL (two plugins' at the root, or one plugin's twice), and a file at the root
+## where a route is (the app's, or a plugin's): a line each. A route with a `[param]` that a file's
+## path would fit isn't one: the file is answered first, and the route answers the rest.
+file_clashes : List(Plugin.Running), List({ method : Str, path : Str, file : Str }) -> List(Str)
+file_clashes = |plugins, routes| {
+	files = plugins.join_map(|plugin| plugin.files.map(|file| { url: Plugin.url(plugin.name, file), plugin: plugin.name }))
+	others =
+		routes.map(|route| { path: route.path, owner: route.file })
+			.concat(plugins.join_map(|plugin| plugin.claims.map(|claim| { path: claim.path, owner: "the ${plugin.name} plugin" })))
+	var $found = []
+	var $i = 0
+	while $i < files.len() {
+		var $j = $i + 1
+		while $j < files.len() {
+			match (files.get($i), files.get($j)) {
+				(Ok(a), Ok(b)) =>
+					if a.url == b.url {
+						$found = $found.append(if (a.plugin == b.plugin) "${a.plugin}: two of its files are at ${a.url}" else "${a.url}: the ${a.plugin} plugin's file, and the ${b.plugin} plugin's file")
+					}
+				_ => {}
+			}
+			$j = $j + 1
+		}
+		$i = $i + 1
+	}
+	for file in files {
+		for other in others {
+			if other.path == file.url {
+				$found = $found.append("${file.url}: ${other.owner}, and the ${file.plugin} plugin's file")
+			}
+		}
+	}
+	$found
+}
+
+## Whether `path` is a file's relative path: segments of something, none `.` or `..`, no `?` or
+## `#`.
+is_file_path : Str -> Bool
+is_file_path = |path|
+	!path.is_empty() and !path.contains("?") and !path.contains("#") and !path.contains("\\") and path.split_on("/").all(|segment| !segment.is_empty() and segment != "." and segment != "..")
+
 ## Needs that go round in a circle: "auth needs email, which needs auth", once each.
 circles : List(Plugin.Running) -> List(Str)
 circles = |plugins| {
@@ -231,7 +286,7 @@ circles = |plugins| {
 }
 
 none : Plugin.Running
-none = { name: "", claims: [], early: [], migrations: [], calls: [], loops: [], starts: [], checks: [], needs: [] }
+none = { name: "", claims: [], early: [], files: [], scripts: [], migrations: [], calls: [], loops: [], starts: [], checks: [], needs: [] }
 
 expect is_name("push") and is_name("open-api2") and !is_name("Push") and !is_name("")
 expect shape("/push/[id]/x") == "/push/[]/x"
@@ -249,6 +304,14 @@ expect
 		== ["auth needs email, which needs auth"]
 expect Plugins.problems([{ ..none, name: "push", loops: [{ name: "deliver", run!: |{}| {} }] }], []) == ["push: the loop deliver is named push.deliver, with the plugin's name first"]
 expect Plugins.problems([{ ..none, name: "a" }, { ..none, name: "a" }], []) == ["two plugins are called a"]
+expect is_file_path("push-sw.js") and is_file_path("icons/bell.svg") and !is_file_path("/sw.js") and !is_file_path("../x") and !is_file_path("a//b") and !is_file_path("")
+expect
+	Plugins.problems([{ ..none, name: "push", files: [{ path: "x", at: Root, content_type: "text/plain", body: [] }] }], [{ method: "POST", path: "/x", file: "routes/x/+server.roc" }])
+		== ["/x: routes/x/+server.roc, and the push plugin's file"]
+expect
+	Plugins.problems([{ ..none, name: "a", files: [{ path: "sw.js", at: Root, content_type: "text/javascript", body: [] }] }, { ..none, name: "b", files: [{ path: "sw.js", at: Root, content_type: "text/javascript", body: [] }, { path: "sw.js", at: Plugin, content_type: "text/javascript", body: [] }] }], [])
+		== ["/sw.js: the a plugin's file, and the b plugin's file"]
+expect Plugins.problems([{ ..none, name: "a", scripts: ["a.js"] }], []) == ["a: the script a.js is none of its files"]
 expect Plugins.ordered([{ ..none, name: "auth", needs: [Plugin("email")] }, { ..none, name: "email" }]).map(|plugin| plugin.name) == ["email", "auth"]
 expect Plugins.summary({ ..none, name: "jobs", migrations: [{ name: "0001", sql: "" }], loops: [{ name: "jobs.a", run!: |{}| {} }, { name: "jobs.b", run!: |{}| {} }] }) == "jobs: 1 migration, 2 loops"
 

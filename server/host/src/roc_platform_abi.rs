@@ -3560,6 +3560,26 @@ pub struct HostLogFormatArgs {
     pub arg0: u8,
 }
 
+/// Arguments for Host.page_scripts!
+/// Roc signature: Str => {}
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostPageScriptsArgs {
+    pub arg0: RocStr,
+}
+
+/// Arguments for Host.plugin_file!
+/// Roc signature: Str, Str, List(U8) => {}
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostPluginFileArgs {
+    pub arg0: RocStr,
+    pub arg1: RocStr,
+    pub arg2: RocListWith<u8, false>,
+}
+
 /// Arguments for Host.random_bytes!
 /// Roc signature: U64 => List(U8)
 /// Refcounted fields are owned by the hosted function.
@@ -5487,6 +5507,22 @@ unsafe extern "C" {
     /// Hosted symbol for Host.now_nanos!
     /// Roc signature: {} => U64
     pub fn roc_host_now_nanos() -> u64;
+
+    /// Hosted symbol for Host.page_scripts!
+    /// Roc signature: Str => {}
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    pub fn roc_host_page_scripts(arg0: RocStr);
+
+    /// Hosted symbol for Host.plugin_file!
+    /// Roc signature: Str, Str, List(U8) => {}
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    ///     unsafe { arg1.decref(roc_host); }
+    ///     unsafe { arg2.decref(roc_host); }
+    pub fn roc_host_plugin_file(arg0: RocStr, arg1: RocStr, arg2: RocListWith<u8, false>);
 
     /// Hosted symbol for Host.random_bytes!
     /// Roc signature: U64 => List(U8)

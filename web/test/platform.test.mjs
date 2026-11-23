@@ -911,7 +911,7 @@ window.hydrated = true;
 	}
 });
 
-test("effects: a handler calls the page's own function once it is done, the page patched; one the page hasn't is told; Audio.play! plays a file", { skip }, async () => {
+test("effects: a handler calls the page's own function once it is done, the page patched, given `{ under }` too; one the page hasn't is told; Audio.play! plays a file", { skip }, async () => {
 	const wasm = readFileSync(join(out, "timers.wasm"));
 	const dir = mkdtempSync(join(tmpdir(), "rocx-effects-"));
 	cpSync(join(web, "runtime.js"), join(dir, "runtime.js"));
@@ -927,8 +927,8 @@ HTMLMediaElement.prototype.play = function () {
 	window.played.push([new URL(this.src).pathname, this.volume, this.playbackRate, this.preservesPitch]);
 	return Promise.resolve();
 };
-const effects = { noted: (arg) => window.noted.push([arg, document.querySelector(".notes").textContent]) };
-window.runtime = await Runtime.load(fetch("/timers.wasm"), { effects });
+const effects = { noted: (arg) => window.noted.push([arg, document.querySelector(".notes").textContent]), resolve: (arg, { under }) => (window.resolved = under(arg.url)) };
+window.runtime = await Runtime.load(fetch("/timers.wasm"), { effects, base: "/site/" });
 window.runtime.mount(document.getElementById("app"));
 window.mounted = true;
 </script></body></html>`;
@@ -948,10 +948,14 @@ window.mounted = true;
 		await tab.eval("window.rocxEffects = { nowhere: (arg) => (window.found = arg.why) }");
 		await tab.click(".nowhere");
 		await tab.wait("window.found === 'nothing has it'");
+		// Every effect is given `{ under }` after its argument: a URL under the site's base.
+		await tab.click(".resolve");
+		await tab.wait("window.resolved !== undefined");
+		assert.equal(await tab.eval("window.resolved"), "/site/beep.wav", "under the base the runtime was given");
 		// A sound file: the runtime's own, with nothing given to it.
 		await tab.click(".play");
 		await tab.wait("window.played.length === 1");
-		assert.deepEqual(await tab.eval("window.played"), [["/beep.wav", 0.5, 2, false]], "the file, at its volume and rate, its pitch moving with it");
+		assert.deepEqual(await tab.eval("window.played"), [["/site/beep.wav", 0.5, 2, false]], "the file, under the base, at its volume and rate, its pitch moving with it");
 		assert.deepEqual(tab.errors, []);
 	} finally {
 		await site.close();
@@ -1437,6 +1441,10 @@ test("a document: renderToString renders it whole, as the server platform answer
 	const start = '<script type="module" data-rocx src="/rocx/start.js"></script>';
 	assert.equal(Runtime.documentOf("<html><body><p>hi</p></body></html>", []), `<!doctype html><html><body><p>hi</p><script type="application/json" class="rocx-answers">[]</script>${start}</body></html>`, "a doctype when the markup has none");
 	assert.equal(Runtime.documentOf("<!DOCTYPE html><html>", []), `<!DOCTYPE html><html><script type="application/json" class="rocx-answers">[]</script>${start}`, "no </body>: at the end");
+	// The plugins' scripts (D-050), a module each before start.js, the host's own (`data-rocx`).
+	const scripts = ["/rocx/plugins/audio/audio.js", "/x.js?a=1&b=\"2\""];
+	const tags = '<script type="module" data-rocx src="/rocx/plugins/audio/audio.js"></script><script type="module" data-rocx src="/x.js?a=1&amp;b=&quot;2&quot;"></script>';
+	assert.equal(server.renderToString({ path: "/inner/page?x=1", answers: RENDERED, scripts }).html, DOCUMENT_PAGE.replace(start, `${tags}${start}`), "the plugins' scripts before start.js");
 	const before = server.live();
 	for (let i = 0; i < 20; i++) server.renderToString({ path: "/inner/page?x=1", answers: RENDERED });
 	assert.equal(server.live(), before, "nothing left allocated");

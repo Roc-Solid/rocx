@@ -3,10 +3,14 @@ import pf.Kv
 import pf.Plugin
 import pf.Server
 import "migrations/0001_notes.sql" as notes : Str
+import "static/fixture.js" as fixture_js : List(U8)
+import "static/fixture-sw.js" as fixture_sw : List(U8)
 
 ## Plugins for the tests: `plugin` adds what a plugin can (a route that shows the app's context, an
-## early path under `--dev`, a table, a call, a loop, a start, a check, and a need); `second` and
-## `third` a route each, `third` needing `second`, so the order they start in isn't the list's.
+## early path under `--dev`, files, one at the root and one a script every page loads, a table, a
+## call, a loop, a start, a check, and a need); `second` and `third` a route each, `third` needing
+## `second`, so the order they start in isn't the list's; `files` files alone, for an app whose
+## every answer is a refusal.
 Fixture := [].{
 
 	## Where the fixture's routes are, and how it shows the app's context.
@@ -26,6 +30,8 @@ Fixture := [].{
 				{ method: "GET", path: "${at}/migrated", kind: Endpoint, answer!: |_, _| migrated!({}) },
 			],
 			early: [{ method: "GET", path: "/__rocx/fixture", under: [Dev], answer!: |request| text("early ${request.route}") }],
+			files: Fixture.files_of("fixture"),
+			scripts: ["fixture.js"],
 			migrations: [{ name: "0001_notes", sql: notes }],
 			calls: [{ name: "fixture.shout", run!: |input| if (input == "crash") crash "the fixture's call crashed" else Ok(input.with_ascii_uppercased()) }],
 			loops: [{ name: "fixture.beat", run!: beat! }],
@@ -34,6 +40,19 @@ Fixture := [].{
 			needs: [Env("FIXTURE_KEY")],
 		}
 	}
+
+	## The fixture's files: a script, at `/rocx/plugins/<name>/fixture.js`, and a service worker at
+	## the root, `/<name>-sw.js`.
+	files_of : Str -> List(Plugin.File)
+	files_of = |name| [
+		{ path: "fixture.js", at: Plugin, content_type: "text/javascript", body: fixture_js },
+		{ path: "${name}-sw.js", at: Root, content_type: "text/javascript", body: fixture_sw },
+	]
+
+	## A plugin of files alone, called `name`: its script (which every page loads) and its file at
+	## the root.
+	files : Str -> Plugin.Value(ctx)
+	files = |name| { name, files: Fixture.files_of(name), scripts: ["fixture.js"] }
 
 	## A plugin with one route. (A plugin that is generic in the app's context is a function, even
 	## with no options: a value can only have one type.)

@@ -755,6 +755,8 @@ export class Runtime {
 		 * Those named `rocx:…` are the runtime's own: `Audio.play!` is `rocx:audio`. */
 		this.effects = {};
 		this.calling = [];
+		/** What every effect is given after its argument (`callEffects`). */
+		this.toEffects = Object.freeze({ under: (url) => this.under(url) });
 		this.builtins = { "rocx:audio": (arg) => this.playAudio(arg), "rocx:focus": (id) => this.page?.getElementById?.(id)?.focus() };
 		/** Each element's transitions (`transition={…}`), `{ in, out }`, as `Transition.json` writes
 		 * them; `animates` once there is one, so an app without any walks nothing for them. */
@@ -1919,7 +1921,11 @@ export class Runtime {
 
 	/**
 	 * The page's functions the handlers that are done called (`Browser.call!`), in order, now that the
-	 * page is patched with what they wrote. One that isn't there, or throws, is told on the console.
+	 * page is patched with what they wrote: each given the argument, parsed, and what an effect
+	 * can't reach otherwise, `{ under }` (`under(url)`: a URL that begins with `/` under the site's
+	 * base, `/rocx/sounds/eat.wav` for `/sounds/eat.wav` on a copy served at `/rocx/`). A plugin's
+	 * script registers its effects on `window.rocxEffects`, named `<plugin>.<effect>`
+	 * (`audio.play`). One that isn't there, or throws, is told on the console.
 	 */
 	callEffects() {
 		const calls = this.calling;
@@ -1928,11 +1934,13 @@ export class Runtime {
 			this.notify("effect", { name, arg });
 			const effect = name.startsWith("rocx:") ? this.builtins[name] : (this.effects[name] ?? globalThis.rocxEffects?.[name]);
 			if (typeof effect !== "function") {
-				console.error(`rocx: no effect is called ${name}: give the runtime one (Runtime.load(wasm, { effects: { ${name}(arg) {…} } }))`);
+				const plugin = /^([a-z0-9-]+)\.[^.]/.exec(name)?.[1];
+				const said = plugin ? `the ${plugin} plugin's script registers it: is the ${plugin} plugin in the app's plugins?` : `give the runtime one (Runtime.load(wasm, { effects: { ${name}(arg) {…} } }))`;
+				console.error(`rocx: no effect is called ${name}: ${said}`);
 				continue;
 			}
 			try {
-				effect(JSON.parse(arg));
+				effect(JSON.parse(arg), this.toEffects);
 			} catch (error) {
 				console.error(`rocx: the effect ${name} failed:`, error);
 			}
@@ -3244,11 +3252,14 @@ export class Runtime {
 	 * answered from them and recorded as the page has it, and one the server didn't make fails
 	 * (599). `regions` are what the page has inside each `<NoHydration>`, in order
 	 * (`Runtime.regionsOf`): each is written as it is there, since the browser's build has a
-	 * placeholder in its place; without them, a placeholder renders empty.
+	 * placeholder in its place; without them, a placeholder renders empty. `scripts` are the
+	 * plugins' scripts the server's pages load (`Plugin.scripts`, by URL: `/rocx/plugins/…`), a tag
+	 * each before start.js, as the server writes them.
 	 */
-	renderToString({ path = "/", headers = [], answers = null, regions = null } = {}, scope = {}) {
+	renderToString({ path = "/", headers = [], answers = null, regions = null, scripts = [] } = {}, scope = {}) {
 		this.given = answers;
 		this.regions = regions && [...regions];
+		this.pageScripts = scripts;
 		try {
 			const rendered = this.renderPage(path, headers, scope);
 			if (this.regions?.length) throw new Error(`rocx: the page has ${this.regions.length} <NoHydration> more than the app renders`);
@@ -3289,7 +3300,7 @@ export class Runtime {
 		}
 		try {
 			const markup = this.html(JSON.parse(out), root, scope);
-			const html = DOCUMENT.test(markup) ? Runtime.documentOf(markup, this.recorded, Runtime.withoutSecrets(this.flashed, this.secrets), this.titled) : `<!--app-->${markup}<!--/app-->`;
+			const html = DOCUMENT.test(markup) ? Runtime.documentOf(markup, this.recorded, Runtime.withoutSecrets(this.flashed, this.secrets), this.titled, this.pageScripts ?? []) : `<!--app-->${markup}<!--/app-->`;
 			return { html, answers: this.recorded };
 		} finally {
 			this.onServer = wasOnServer;
@@ -3351,15 +3362,21 @@ export class Runtime {
 	 * A page's markup as the server platform answers it (signals.rs's `document`): `<!doctype html>`
 	 * first, unless the markup begins with one; the title the last `<Title>` rendered said, if one
 	 * did, as a `<title data-rocx>` before the `<head>`'s first `<title>` (or at its end); the flash
-	 * the page read (if it did), the answers script and the bootstrap (start.js) just before the
-	 * last `</body>`, or at the end with none.
+	 * the page read (if it did), the answers script, the plugins' scripts (`scripts`, by URL) and
+	 * the bootstrap (start.js) just before the last `</body>`, or at the end with none.
 	 */
-	static documentOf(markup, answers, flash = "", title = null) {
+	static documentOf(markup, answers, flash = "", title = null, scripts = []) {
 		if (title !== null) markup = Runtime.titled(markup, title);
 		const doctype = /^<!doctype/i.test(markup.trimStart()) ? "" : "<!doctype html>";
-		const scripts = `${flash ? Runtime.flashScript(flash) : ""}${Runtime.answersScript(answers)}${START}`;
+		const before = `${flash ? Runtime.flashScript(flash) : ""}${Runtime.answersScript(answers)}${Runtime.scriptTags(scripts)}${START}`;
 		const at = markup.lastIndexOf("</body>");
-		return at < 0 ? `${doctype}${markup}${scripts}` : `${doctype}${markup.slice(0, at)}${scripts}${markup.slice(at)}`;
+		return at < 0 ? `${doctype}${markup}${before}` : `${doctype}${markup.slice(0, at)}${before}${markup.slice(at)}`;
+	}
+
+	/** The tags that load the plugins' scripts (files.rs's `script_tags`): a module each, the host's
+	 * own (`data-rocx`), so hydrating passes over it. */
+	static scriptTags(urls) {
+		return urls.map((url) => `<script type="module" data-rocx src="${url.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}"></script>`).join("");
 	}
 
 	/**

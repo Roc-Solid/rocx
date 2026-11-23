@@ -33,6 +33,7 @@ mod channels;
 mod client;
 mod coroutine;
 mod db;
+mod files;
 mod hosted;
 mod http;
 mod kv;

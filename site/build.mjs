@@ -958,7 +958,9 @@ export function underBase(html, base) {
 }
 
 /**
- * Every page, as the site's server answers it, what the demos ask for (`STATIC_GETS`), and what
+ * Every page, as the site's server answers it, what the demos ask for (`STATIC_GETS`), the plugins'
+ * files (D-050: each at its URL, `rocx/plugins/<plugin>/…` or at the root, as the server answers
+ * them; pages load the scripts among them, their URLs under the base as start.js's are), and what
  * they load, into `dir`: a static site. With `base` (`/rocx/`), for a host that serves it under that
  * path (a GitHub Pages project site: `example.github.io/rocx/`).
  */
@@ -969,9 +971,17 @@ export async function prerender(dir, { base = "/" } = {}) {
 	if (resolve(dir) === resolve(dist) && !/^dev=no$/m.test(existsSync(context) ? readFileSync(context, "utf8") : "")) {
 		throw new Error(`rocx site: site/build is a dev build (${relative(root, context)} doesn't say dev=no), and site/dist is published: only \`just site\` writes it`);
 	}
-	const running = await startServer();
+	// --debug: the server lists the plugins' files (`/__rocx/plugin-files`), for the copy.
+	const running = await startServer({}, ["--debug"]);
 	try {
 		rmSync(dir, { recursive: true, force: true });
+		for (const { url } of await (await fetch(`${running.url}/__rocx/plugin-files`)).json()) {
+			const answered = await fetch(`${running.url}${url}`);
+			if (!answered.ok) throw new Error(`GET ${url}: ${answered.status} ${await answered.text()}`);
+			const path = join(dir, url.slice(1));
+			mkdirSync(dirname(path), { recursive: true });
+			writeFileSync(path, Buffer.from(await answered.arrayBuffer()));
+		}
 		for (const route of [...ROUTES, "/404"]) {
 			const path = join(dir, route === "/404" ? "404.html" : pageFile(route));
 			mkdirSync(dirname(path), { recursive: true });

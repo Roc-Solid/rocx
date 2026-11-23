@@ -51,6 +51,16 @@ Host := [].{
 	## message to any other kind is refused.
 	actor_kinds! : Str => {}
 
+	## A plugin's file (`Plugin.File`), given as the platform starts: the host answers `GET` and
+	## `HEAD` at `url` (`/rocx/plugins/push/push.js`, `/push-sw.js`) with `body`, as it is, its
+	## `content_type` and an ETag of its bytes, before the app (and its middleware) sees the request;
+	## any other method, 405.
+	plugin_file! : Str, Str, List(U8) => {}
+
+	## The plugins' scripts, a URL a line (`/rocx/plugins/audio/audio.js`), given as the platform
+	## starts: every page the host renders loads each, a `<script type="module">` before start.js.
+	page_scripts! : Str => {}
+
 	## Asks the actor of kind `kind` called `key`, its message as JSON: its reply (JSON), once it has
 	## handled the messages before it (`actor_for_host!` runs its turn); or why there is none: the
 	## message isn't one it takes, it crashed, it is waiting on this call's actor (refused at once),

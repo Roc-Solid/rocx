@@ -735,7 +735,9 @@ program = App.program({ context, middleware, plugins: [Acme.plugin({ at: "/acme"
 A plugin is a `Plugin.Value(ctx)`: a name, and what a package adds to the app, every field but the
 name defaulting to `[]`. `routes` answer behind the app's middleware, before its own routes (`ctx`
 is what that middleware hands on: a plugin's routes get it without knowing its type); `early` paths
-are answered before the app, under `/__rocx/`, only with `--dev` or `--debug`; `migrations` are
+are answered before the app, under `/__rocx/`, only with `--dev` or `--debug`; `files` are served
+as they are, before anything else (the app's middleware among it), and `scripts` (some of them)
+load on every page (D-050, below); `migrations` are
 applied after the platform's and before the app's, recorded as `<plugin>/<name>`; `calls` run in a
 call of their own (`Plugin.isolated!("acme.render", input, limit_ms)`), so a crash ends only that;
 `loops` run in the background until the server stops (`Plugin.stopping!`); `starts` run after the
@@ -749,8 +751,23 @@ At start, every problem with the plugins stops the server, all of them, a line e
 twice or not lowercase letters, digits and `-`; a call, loop or check without the plugin's name
 first; an early path outside `/__rocx/`; two routes at one method and path (the app's, which
 `rocx build` lists in `Routes.claims`, and a plugin's, or two plugins'); a variable unset, no
-database, a plugin not in the list, or needs in a circle. Then the plugins are ordered by their
-needs, and the log says what each added (`rocx plugins: acme: 2 routes, 1 migration`).
+database, a plugin not in the list, or needs in a circle; a file whose path isn't relative, a file at
+the root under `rocx/` or `__rocx/`, two files at one place, a file at the root where a route is,
+or a script that is none of the plugin's files. Then the plugins are ordered by their needs, and the
+log says what each added (`rocx plugins: acme: 2 routes, 2 files, 1 script, 1 migration`).
+
+**Files and scripts** (D-050). A file is a `Plugin.File`, `{ path, at : [Plugin, Root],
+content_type, body : List(U8) }`, its bytes embedded when the app is built (`import
+"static/acme-sw.js" as worker : List(U8)`). It is at `/rocx/plugins/<plugin>/<path>`, or at
+`/<path>` with `at: Root` (a service worker, whose scope is where it is; `/.well-known/…`). The
+start hands each to the host once (`Host.plugin_file!`), which serves it before anything else, no
+call into Roc: `GET` and `HEAD`, with its type, an ETag of its bytes (304 when `If-None-Match` has
+it) and `cache-control: no-cache` (`no-store` under `--dev`); any other method, 405. So an app's
+guard never meets it. `scripts` are paths of the plugin's own files: every page the host renders
+has a `<script type="module" data-rocx src="…">` for each, after the answers and before start.js,
+so a script has registered its effects (`window.rocxEffects["acme.ping"]`, which `Browser.call!`
+finds) before the page wakes. Under `--debug`, `GET /__rocx/plugin-files` lists the files (each
+URL, type, and whether it is a script): what a static copy of a site copies (site/build.mjs).
 
 A package whose modules use the platform names it in its header, as an app does
 (`package [Acme] { pf: platform "../../server/platform/main.roc" }`): it must be the same file the
@@ -853,7 +870,7 @@ built `--target=arm64musl` runs in a container against `just db`'s Postgres, eve
       --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it
       --public-url https://app.example    where the app is, for links it sends (PUBLIC_URL; else where it listens)
       --dev                               reload pages on restart, show crashes, plugins' dev pages, Env.dev!
-      --debug                             GET /__rocx/allocations, and plugins' debug paths
+      --debug                             GET /__rocx/allocations and /__rocx/plugin-files, and plugins' debug paths
       --live-beat-ms 15000                how often a channel stream beats, and its checks run again
       --roc-threads N                     the threads Roc runs on (ROCX_ROC_THREADS; one a core)
 ```

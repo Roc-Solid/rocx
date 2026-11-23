@@ -2602,6 +2602,87 @@ example does, and `?mvcc=off` doesn't have it. Not fixed in the platform: to be 
 
 **Reversible:** yes: `?mvcc=off`, or the default flipped back in `db/mod.rs`.
 
+## D-050 A plugin's files and scripts
+
+**Status.** Built (2026-11-23), the user's go ("let's do this", the same day): the rest of the
+plugin design's phase 2 (`spike/plugins/DESIGN.md`, §4, §7 and §8), for push and audio as plugins
+(D-051).
+
+**Context.** D-033's plugins carried routes, early paths, tables, calls, loops, starts and checks,
+and no files: a plugin that needs a script on every page, or a service worker at the site's root,
+had the app copy its `static/` into a directory the server serves (`--static`) and put a
+`<script>` in its layout by hand (push's README had both). Behind the app's middleware those files
+would meet the app's guard, which may refuse a request that carries no session (a service worker's
+fetch of itself carries none worth trusting).
+
+**Options.**
+1. The plugin's routes answer its files, as any route does: through Roc, behind the app's
+   middleware, a call per request.
+2. Files are values the platform hands the host once, at start, and the host serves them before
+   anything else, as it serves `--static` and `--file`; scripts are URLs the host's renderer adds to
+   every page.
+
+**Choice.** 2.
+
+```roc
+Plugin.Value(ctx) := {
+    …,
+    files : List(Plugin.File) ?? [],     # served as they are, before the app and its middleware
+    scripts : List(Str) ?? [],           # paths of its files every page loads, before start.js
+}
+Plugin.File : { path : Str, at : [Plugin, Root], content_type : Str, body : List(U8) }
+Plugin.url : Str, Plugin.File -> Str     # /rocx/plugins/<plugin>/<path>, or /<path> at the root
+
+import "static/push-sw.js" as worker : List(U8)      # embedded when the app is built
+files: [{ path: "push-sw.js", at: Root, content_type: "text/javascript", body: worker }]
+```
+
+- **Where.** A file is at `/rocx/plugins/<plugin>/<path>`, or at `/<path>` when `at: Root`: a
+  service worker, whose scope is where it is; `/.well-known/…`. The query doesn't count
+  (`/push-sw.js?api=/push` is the file).
+- **How.** The platform's start hands each file to the host (`Host.plugin_file!(url, type,
+  bytes)`), once; the host keeps the bytes and their SHA-256 and answers before anything else (the
+  channels' stream, `--static`, the early paths, the app): `GET` and `HEAD` with the file's
+  `content-type`, `etag` (the hash's first 16 bytes, hex), `cache-control: no-cache` (`no-store`
+  under `--dev`), and 304 when `If-None-Match` has the ETag; any other method, 405 with `allow:
+  GET, HEAD`. No call into Roc, so a file costs what a `--file` does, and the app's middleware never
+  meets it: a guard that refuses everything still lets the service worker and the scripts through.
+- **Scripts** are paths of the plugin's own files. The start tells the host their URLs
+  (`Host.page_scripts!`), and every page the host renders has a `<script type="module" data-rocx
+  src="…">` for each, in the plugins' order, after the answers and before start.js: module scripts
+  run in order, so a plugin's script has registered its effects before the page wakes. `data-rocx`
+  makes the tag the host's own, which hydrating passes over, so strict hydration holds;
+  `renderToString({ scripts })` (web/runtime.js) writes the same tags, for the byte-for-byte checks.
+- **Effects get `{ under }`.** A script registers browser effects on `window.rocxEffects`, named
+  `<plugin>.<effect>` (`audio.play`), and `Browser.call!` finds them there, as it found a page's.
+  The runtime gives every effect a second argument, `{ under }`: `under(url)` is a URL that begins
+  with `/` under the site's base (`/rocx/sounds/eat.wav` for `/sounds/eat.wav` on the docs' copy at
+  `example.github.io/rocx/`), which a script can't know otherwise. An effect nobody registered,
+  named `<plugin>.<effect>`, says on the console which plugin's script would have.
+- **Start checks** (D-033's list, all at once): a file's path that isn't relative (`/sw.js`,
+  `../x`, empty segments, `?` or `#`); a file at the root under `rocx/` or `__rocx/` (the
+  platform's); two files at one URL (two plugins' at the root, or one plugin's twice); a file at the
+  root where a route is, the app's or a plugin's (`/x: routes/x/+page.rocx, and the clash plugin's
+  file`); a script that is none of the plugin's files. A route with a `[param]` a file's path would
+  fit isn't a clash: the file answers first, the route the rest. The log counts them (`push: 3
+  routes, 2 files, 1 script, …`).
+- **A static copy of the site** (site/build.mjs's `prerender`, the docs on GitHub Pages) asks the
+  server for its files (`GET /__rocx/plugin-files` under `--debug`: each URL, type, and whether
+  pages load it) and writes each at its URL; the pages' tags are rewritten under the base with the
+  rest of their URLs (`/rocx/rocx/plugins/audio/audio.js` under `/rocx/`).
+
+Different from the design: the listing for a static copy is new; the scripts' tags have
+`data-rocx`, as start.js's has, so hydrating passes over them.
+
+**Moving to it.** Nothing changes for an app: `files` and `scripts` default to `[]`. A program
+written by hand keeps `plugins.map(Plugin.running)`; one that builds `Plugin.Running` records itself
+adds `files: []` and `scripts: []`. A browser effect that took one argument still works (the second
+is extra).
+
+**Costs.** Every file is in the executable, and in memory, whole; meant for scripts and workers,
+not media. A page loads every plugin's scripts, so a plugin with a heavy one loads the rest itself
+when it is needed. **Why.** A plugin's install is one line, and the web's fixed places (a service
+worker's scope) are a plugin's to take, checked at start like its routes. **Reversible:** yes.
 
 ## D-058 `Db`'s queries checked at build: the engine describes, the compiler checks rows
 

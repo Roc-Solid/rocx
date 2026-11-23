@@ -1,6 +1,6 @@
-//! The HTTP server: files from disk as they are, everything else answered by the Roc app. A call
-//! into Roc runs on one of Roc's threads, as a coroutine that pauses while its effects wait
-//! (`coroutine`); a page of components is rendered there, in the same call; a stream of events
+//! The HTTP server: plugins' files (`files`) and files from disk as they are, everything else
+//! answered by the Roc app. A call into Roc runs on one of Roc's threads, as a coroutine that
+//! pauses while its effects wait (`coroutine`); a page of components is rendered there, in the same call; a stream of events
 //! (`text/event-stream`) is a loop Roc runs in a call of its own, writing to the response as it
 //! goes; a forwarded answer's body is fetched from elsewhere (`client::open`) and sent on as it
 //! comes, never through Roc.
@@ -58,8 +58,9 @@ pub struct Config {
     /// Pages reload when the server restarts (after a rebuild); crashes show their message; plugins'
     /// early paths under it answer (the dev mailbox at `GET /__rocx/mail`: packages/email).
     pub dev: bool,
-    /// `GET /__rocx/allocations` (how many allocations Roc holds now), and plugins' early paths
-    /// under it (the mailbox as JSON, `/__rocx/mail.json`), for tests.
+    /// `GET /__rocx/allocations` (how many allocations Roc holds now), `GET /__rocx/plugin-files`
+    /// (the plugins' files: what a static copy of a site copies), and plugins' early paths under it
+    /// (the mailbox as JSON, `/__rocx/mail.json`), for tests.
     pub debug: bool,
     /// How often a channel stream (`/rocx/live`) beats: a comment, and its channels' checks again.
     pub live_beat: Duration,
@@ -77,7 +78,7 @@ pub const USAGE: &str = "usage: <app> [options]
   --kv-max-mb 64                       the key-value store's limit (KV_MAX_MB): the least recently used goes past it
   --public-url https://app.example     where the app is, for links it sends (PUBLIC_URL; else where it listens)
   --dev                                reload pages on restart, show crashes, plugins' dev pages (/__rocx/mail)
-  --debug                              GET /__rocx/allocations, and plugins' debug paths
+  --debug                              GET /__rocx/allocations and /__rocx/plugin-files, and plugins' debug paths
   --live-beat-ms 15000                 how often a channel stream beats, and its checks run again
   --roc-threads N                      the threads Roc runs on (ROCX_ROC_THREADS; one a core)";
 
@@ -233,6 +234,14 @@ async fn answer(request: Request<Incoming>, config: Arc<Config>, peer: String) -
         let mut response = full(StatusCode::OK, "text/javascript", RELOAD_JS);
         response.headers_mut().insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
         return Ok(response);
+    }
+    // A plugin's file (D-050): before the app and its middleware, so a guard never blocks a
+    // service worker or a page's script.
+    if let Some(response) = crate::files::answer(&request, &path, config.dev) {
+        return Ok(response);
+    }
+    if config.debug && path == "/__rocx/plugin-files" {
+        return Ok(full(StatusCode::OK, "application/json", crate::files::listed()));
     }
     // The tab's stream of its channels, and what its pages say on them: the host's, not Roc's
     // (Roc runs only briefly, for each channel's check and hooks: `channels`).
