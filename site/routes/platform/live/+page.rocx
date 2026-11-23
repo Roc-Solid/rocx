@@ -328,20 +328,23 @@ view! = |_|
 			<ul>
 				<li><strong>An actor's state is JSON</strong> in one row, written after each message that changes it: fine for a cart, not for a ledger.</li>
 				<li>
-					<strong>Timers and tells are in memory.</strong> A restart loses those not yet handled: a job is
-					for work that must survive one.
+					<strong>Tells are in memory.</strong> A restart loses those not yet handled: a job is for work
+					that must survive one. Timers outlive it, with a database.
 				</li>
 			</ul>
 			<Callout kind="tip" title="Tested">
 				<p>
 					The platform's tests open streams that join a room and count each other, publish to listeners,
 					open one stream for many channels (one refused), say things on one, end one whose check fails at a
-					beat, fall behind on one, and keep 40 streams open on two Roc threads while requests still answer; in a
-					browser, two components share one stream, a change reconnects once, and a drop reconnects a
-					little later each time;
+					beat, fall behind on one, change what one carries by its id (a channel dropped is told
+					<code>Dropped</code>, the stream's end <code>Gone</code>, in order; a post from another site or with
+					another tab's id refused), and keep 40 streams open on two Roc threads while requests still answer; in a
+					browser, two components share one stream, a change is told the stream without a reconnect, and a
+					drop reconnects a little later each time;
 					ask an actor a hundred times at once, crash one, have one ask another, itself and one waiting on
 					it, tell one in order, set and cancel timers, send one a message it doesn't take, let one go
-					when idle and wake it, and restart the server to find an actor's state where it was; and in
+					when idle and wake it, and restart the server to find an actor's state where it was and its timer
+					told once after the start; and in
 					<code>Kv</code>, let a value expire, count 200 increments at once, cap a list, and go past the limit
 					to see the least recently used values go.
 				</p>

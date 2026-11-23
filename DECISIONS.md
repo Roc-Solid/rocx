@@ -346,7 +346,7 @@ Postgres statement cut off is cancelled, and its connection closed rather than r
 
 **Why.** Oban's `max_attempts` and `timeout`, Sidekiq's `retry`. Per kind, because it belongs to what
 the job does, not to who queues it. **Reversible:** yes. Roc that loops without an effect isn't cut
-off; the docs say so.
+off; the docs say so. (Since D-057 it is: a signal ends it where it runs.)
 
 ## D-009 Jobs: keys unique while pending; cancel and move
 
@@ -752,7 +752,8 @@ Channel.Event(message) : [Message(message), Resync, Refused(U16, Str), Ended(Str
   does, through `POST /rocx/live/send`, without a reconnect.
 - **The hub** (`runtime.js`) keeps the tab's subscriptions, two subscribers to a channel sharing
   it. When the set changes it opens the stream again once the render that changed it is done, and
-  only if the set changed; when the stream drops, after 0.5 s, doubled each time to 30 s. Each
+  only if the set changed (since D-057 it posts the change to the open stream instead, and
+  `on_close!` hears `Dropped`); when the stream drops, after 0.5 s, doubled each time to 30 s. Each
   subscriber hears its events one at a time, in order. A tab's id, random, kept in sessionStorage,
   names it to the hooks. Where no server answers (a static copy), every subscriber hears
   `Refused(404, …)`, asked once.
@@ -852,7 +853,7 @@ Actor.key_of : Me(m) -> Str
   an actor idle for `--actor-idle-ms` (15 minutes) is let go when nothing was sent to it meanwhile,
   and woken as Postgres has it. Without one, its state is its task's, and it stays awake.
 - Timers and tells are in memory: a restart loses those not yet handled (jobs are for work that must
-  survive one).
+  survive one). (Since D-057, with a database, timers are rows, and outlive a restart.)
 
 **Why.** Tells and timers need the server to run a kind with no asker, which needs the kinds
 registered; once they are, a mailbox per actor is the natural shape, and it orders tells and asks
@@ -2804,6 +2805,101 @@ head only, so nothing of TLS's is read by mistake). No SOCKS proxy, no HTTP/2.
 is `IDLE` at 0); the proxy is `Init`'s field with a default, so code that never names it is
 unchanged; `fetch_chunks!` is new; the log events are messages and fields an app's log reader may
 match on, which would change back.
+
+
+## D-057 The server's live gaps: dropped or gone, timers that outlive a restart, a deadline for Roc that never waits, flags kept
+
+**Status.** Built (2026-11-23). The user chose, on the worker's recommendations: the post's
+cookies for a channel subscribed over an open stream (with an unguessable id bound to the tab and
+the stream, the same-origin check, and refusals for a wrong or another tab's id); presence leaving
+at once on `Dropped`; timers written outside the caller's transaction, told at least once.
+
+**Context.** Four limits listed in server/README.md's "Not yet" and TODO.md: a change of what a tab
+subscribes to opened its stream again, so `on_close!` heard `Gone` for a channel the page dropped
+as for a tab that closed; actors' timers lived in the host's memory, and a restart lost them; a
+job's time limit ended it only at an effect that waits, so Roc looping without one held its worker
+(and its Roc thread) for good; and packages/guard's flag overrides lived in `Kv` alone since D-043.
+
+**Decision.**
+
+- **Channels: changes over the one stream** (`channels.rs`, the hub in `runtime.js`). A stream says
+  its id first (`event: hello`: 24 random bytes, hex), registered with its tab while it is open.
+  The hub posts `{"channel":…,"subscribe":true}` and `{"channel":…,"unsubscribe":true}` to
+  `POST /rocx/live/send?tab=…&stream=…`; the stream opens a subscribed channel as it opens those in
+  its query (its check, `resync`, `on_open!`) and drops an unsubscribed one, purging what it had
+  waiting to send of it and telling `on_close!` **`Dropped`**; a stream's end tells the rest
+  **`Gone`** (`Channel.Closed : [Dropped, Gone, Refused(Str)]`). Ordering stays D-020's and the
+  live gaps': one stream per tab, a tab's hooks in order (an unsubscribe's `on_close!` before a later
+  subscribe's `on_open!`, even in one post; a channel dropped while its check ran is told
+  `Dropped` once that check is answered, before anything asked after it). A subscribe's check is
+  asked with the post's request headers, the tab's cookies as they are now, which the stream keeps
+  for its beats from then on, so a page that signs in without a reload reaches members' channels
+  (and one whose cookies no longer let it into a channel loses it at the next beat). The whole of
+  `/rocx/live/send` now refuses a post another site's page sent (403, its `Origin` against the
+  request's host, as `Server.same_origin` reads it: the app's middleware never sees `/rocx/live`),
+  and a change naming no open stream of its tab (none, a wrong id, another tab's, one ended) is
+  refused, 404, on which the hub opens a new stream. The hub posts a change only once the stream
+  has said hello (changes made before are told then), opens a stream that never says hello again
+  with the new set (an older server), and with nothing left to subscribe to tells the stream, then
+  closes it. packages/presence leaves a room at once on `Dropped` (`Room.quit`) and after its grace
+  on `Gone`.
+- **Actors' timers are rows** (`server/platform/ActorTimers.roc`, `actors.rs`), with a database, on
+  each backend (`rocx_actor_timers`: Postgres's migration `rocx/0004 actor timers`, SQLite's and
+  Turso's `rocx/0002 actor timers`): a timer's number (random, 63 bits: the platform's now, not the
+  host's counter, so a number kept in an actor's state names its own timer after a restart), its
+  actor, message and time. `tell_after!` and `after!` write the row in a call of their own
+  (`Host.isolated!("rocx:actor-timer-set", …)`, a name no plugin's call can have), outside any
+  transaction the caller has open, then hand the host the timer (`Host.actor_after!` now takes its
+  number). Once the turn that handled it has ended, however it ended, the host deletes the row
+  (`rocx:actor-timer-done`); the platform's start, after the migrations, sets every row again for
+  the time it has left. Delivery is at least once: a server killed in the middle of the turn tells
+  it again after its restart. `cancel!` deletes the row and stops the timer, also one that has
+  fired whose turn hasn't come (the router keeps a flag for each fired timer until its turn,
+  which drops the message). Without a database, timers are in memory, as before.
+- **A deadline for Roc that never waits** (`host/src/preempt.rs`). Each Roc thread has a slot with
+  the deadline of the call running on it, kept by `hosted` as calls start, pause, resume and end
+  (none while paused). A watchdog thread signals (`SIGURG`) a thread whose call is past its
+  deadline, every 2 ms until it ends. The handler reads where the thread was interrupted: in Roc's
+  compiled code, which Roc's linker puts in a segment of its own (`__ROC_TEXT`, found through the
+  executable's load commands on macOS; on Linux the one executable `PT_LOAD` that isn't the host's),
+  it rewrites the context so the thread calls `preempted` there (the return address the
+  interrupted instruction), which ends the call as an effect past its deadline does (`cut_off`,
+  then `roc_crashed`'s jump to the call's guard); elsewhere (host code, a hosted function, the C
+  library, where a lock may be held) it only marks the call, and the next `roc_alloc`,
+  `roc_realloc` or `roc_dealloc` (which only Roc's code calls now: the host's own helpers use
+  functions of their own) ends it holding nothing. A jump from any instruction of Roc's code is
+  what `roc_crashed` already does (a crash may happen anywhere in it), and what the call allocated
+  is in its list and freed. Where the segment can't be found, or holds the host's code too, nothing
+  is interrupted, and the log says so at start.
+- **guard's overrides in a table** (`FlagStore.plugin({})`, D-033): plugin `guard`, migration
+  `guard/0001_flags` (`guard_flags`: a row a flag, its override as JSON, `""` once reset), a start
+  that reads the table into `Kv` and keeps `guard:flags-kept` (`Plugin.keep!`), and `needs:
+  [Database]`. With it listed, `FlagStore.set!` and `reset!` upsert the flag's row (a reset too, so
+  every change to a flag writes the same row: Postgres's row lock, SQLite's write lock, or Turso's
+  conflict and rerun order them) and change `Kv` in the same transaction, before its commit, so
+  changes reach memory in the order they reach the table. Without it, `Kv` alone, as before; an
+  app without a database doesn't list it.
+
+**Why.** Each closes a gap a real app meets: presence flickered a member who switched rooms, a
+reminder set for tomorrow vanished with a deploy, one bad loop in a job took a Roc thread for good,
+and a maintenance switch flipped back on a restart. Each stays as small as it could in the host:
+the timers' rows, the flags' table and presence's leaving are Roc, in the platform and the
+packages; the host adds a stream id and two posts, a router flag, and the interrupt.
+
+**What it costs.** A subscribe is a post and a check rather than a reconnect: cheaper for a page
+that switches channels, but the hub now keeps what it told the stream. A stream's id is a
+credential for its tab's subscriptions, sent only in the stream, and guarded by the post's
+same-origin check. Timers cost a row and two small calls each (set and done); every timer is set
+again at start, a task each in memory, which an app with millions of far timers would want read a
+window at a time. The interrupt is a signal handler that rewrites a thread's registers, per
+architecture (aarch64 and x86_64, macOS and Linux; the x86_64 paths are written, but neither
+built nor run here: this machine has no x86_64 toolchain, as `x64mac` and `x64musl` aren't run yet);
+it relies on Roc's linker keeping the app's code apart, which a future linker could change (then it
+says so, and falls back). Overrides cost a row write per change.
+
+**Reversible:** yes: the hub's old reconnect is its fallback for a server without `hello`;
+timers without a database are as before; the interrupt is off where Roc's code isn't found; the
+guard plugin is opt-in.
 
 ## D-058 `Db`'s queries checked at build: the engine describes, the compiler checks rows
 

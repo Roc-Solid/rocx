@@ -544,13 +544,14 @@ paths for development, checked when the server starts: D-033), requests to
 other servers (`Http.fetch!(url, init)`, as JavaScript's `fetch`), bodies as bytes and from elsewhere
 (`Server.forward`), cookies, settings (`Env`), encryption (`AesGcm`) and random bytes, values in
 memory by key (`Kv`: TTLs, atomic counters, an LRU limit), live topics and rooms, channels (typed
-live updates, one stream per tab), and actors (typed asks, tells and timers, one message at a time,
-their state kept in the database when there is one). Files (in S3, a directory or memory) and the
+live updates, one stream per tab, told whether a subscription was dropped or its tab went), and
+actors (typed asks, tells and timers, one message at a time, their state and timers kept in the
+database when there is one). Files (in S3, a directory or memory) and the
 crypto written in Roc are packages (`packages/storage`, `packages/crypto`), and so are jobs and cron (`packages/jobs`, a plugin:
 options, keys, listing, and a jobs page in `packages/admin`, a plugin behind the app's guard) and
 email (`packages/email`, a plugin: SMTP, or a dev mailbox at `/__rocx/mail`). The Rust host gives general things (HTTP, database connections, TCP and TLS,
 background loops, isolated calls, the key-value store, channels' streams, actors' mailboxes and
-timers); migrations, plugins and actors' state are the platform's Roc, written on them, and so are
+timers); migrations, plugins and actors' state and timers are the platform's Roc, written on them, and so are
 the jobs and email packages, and
 [roc-pg](https://github.com/niclas-ahden/roc-pg), whose queries are checked at build, which runs on
 the platform's `Tcp`. `--target=arm64musl` cross-compiles one static Linux executable.

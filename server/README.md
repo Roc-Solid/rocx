@@ -1038,12 +1038,15 @@ whole and each request's in order, the queue flushed at a stop, and the platform
 own events with their levels and fields: a job's failures, migrations, plugins, a check, mail
 kept), live rooms and topics,
 channels (each checked as its stream opens and at every beat, one refused while the rest go on,
-what pages say, a subscriber behind its backlog, 40 streams open on two Roc threads), `Kv` (kept,
+what pages say, a subscriber behind its backlog, 40 streams open on two Roc threads; subscribes and
+unsubscribes over a stream by its id, `Dropped` and `Gone` in order, the post's cookies kept for
+the beats, a post from another site's page and one naming a wrong or another tab's stream refused), `Kv` (kept,
 read, taken once, deleted; a time to live and a counter's window; 200 increments at once; a capped
 list; past `--kv-max-mb`; `kv.rs`'s own unit tests, compiled alone), actors
 (one message at a time, a crash, asking another, itself or one waiting on it, tells in order,
 timers and a cancelled one, a message an actor doesn't take and a kind the app has none of, logged,
-a restart, one idle let go and woken as the database has it), `Http` (to servers the test runs: redirects, a timeout, a body too large, TLS
+a restart, one idle let go and woken as the database has it; timers across a restart, told once,
+and one cancelled after it fired while its actor was busy), `Http` (to servers the test runs: redirects, a timeout, a body too large, TLS
 that fails; connections kept and counted, one at a time and several at once, a body dropped
 part-read, `connection: close`, a server's `keep-alive: timeout`, a kept connection closed under a
 GET, made again, and under a POST, not; a proxy the request names, plain and tunnelled, with its
@@ -1084,12 +1087,8 @@ browser runtime's own render.
   annotation. A column from the outer side of a `left join` is taken as its table's `not null`
   says, and SQLite doesn't type an expression, so neither is checked for nulls there (sqlx reads
   the statement's plan for these).
-- Channels: a change of what a tab subscribes to opens its stream again, so `on_close!` can't tell
-  a subscription the page dropped from a tab that went (both are `Gone`); a connection id with
-  subscribe and unsubscribe posts would, if reconnects ever cost too much.
-- Actors' timers are in memory: durable ones (Orleans' reminders) would be rows, as jobs are.
-- A job's time limit cuts it off only at an effect that waits: Roc that loops without one holds
-  its worker until it ends.
+- Actors' timers outlive a restart, but are all set again at start, each a task in memory: an app
+  with millions of far timers would want them read a window at a time.
 - `Http`: HTTP/1.1 only (no HTTP/2); no SOCKS proxy; a request's own body is sent whole (an
   answer's may come in chunks: `fetch_chunks!`).
 - `Forward`: an upstream's body only, not the other way (a request's body streamed to S3 as it

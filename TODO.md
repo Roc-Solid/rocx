@@ -30,8 +30,7 @@ When an item lands, delete its line here in the same commit.
   - `<Markdown>` server-only by default;
   - heading ids;
   - whether the CommonMark/GFM spec examples (CC BY-SA 4.0) stay in a public repo.
-- **packages/guard:** two questions in its `PROPOSALS.md`: the rate-limit headers, and where flag
-  overrides live (see below).
+- **packages/guard:** a question in its `PROPOSALS.md`: the rate-limit headers.
 - **packages/presence:** the questions at the end of its `PROPOSALS.md` (hidden tabs shown as away,
   the metadata shape).
 - **packages/jobs:** a job's log in the jobs page, parked with its options in its `PROPOSALS.md`.
@@ -46,18 +45,13 @@ When an item lands, delete its line here in the same commit.
   - a hole that reads nothing becomes static markup, on the server and while hydrating alike;
   - `merge` and `omit` for passing a props record on.
 - **The rest of Solid 2.0 and Solid Router's actions:** see `web/README.md`, "Not yet".
-- **packages/guard: flag overrides no longer outlive a restart.** Since D-043 they live in `Kv`; an
-  actor used to keep them in Postgres. A plugin (D-033) with a `guard/0001_flags` table could load
-  them at start and write them as they change. Details: its `PROPOSALS.md`, "What is left".
 - **packages/presence:** W1 (where the pointer is: `on:pointermove.point`), W3 (whether the page is
   visible: `<Document on:visibilitychange>` now exists) and R1 (a type variable's JSON through a
   structural type). W2, a browser clock, is done: `Time.now_millis!`. Details: its `PROPOSALS.md`.
 - **OpenAPI:** an endpoint that a plain form also posts to is listed with a JSON body only, though
   it reads form fields as well (`server/README.md`, "Not yet").
 - **The server's other limits** are in `server/README.md`, "Not yet":
-  - channels can't tell a dropped subscription from a tab that went;
-  - actors' timers live in memory;
-  - a job's time limit cuts it off only at an effect that waits.
+  - actors' timers are all set again at start, a task each in memory.
 - **`rocx check --sql`'s blind spots** (D-058, built; `spike/db-checked/DESIGN.md`, §12, phase 5;
   `server/README.md`, "Not yet"):
   - a column of an outer join's other side read as nullable, from the statement's plan (SQLite's
