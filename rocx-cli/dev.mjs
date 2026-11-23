@@ -3,8 +3,10 @@
 // open pages reloaded when it is back. bin/rocx runs this (`rocx dev`); it builds with the clone it
 // is in: rocx build, the server, and the browser's wasm (when the app has pages), all from Roc's dev
 // backend, in well under a second for a small app. An app without a main.roc gets one, the smallest
-// program, which is the author's to change after. What follows `--` goes to the server as it is
-// (`--database-url URL`, `--context-file FILE`); so does the environment (DATABASE_URL, PORT).
+// program, which is the author's to change after. After each build the app's SQL is checked, as
+// `rocx check --sql` checks it (D-058), and what that finds is said. What follows `--` goes to the
+// server as it is (`--database-url URL`, `--context-file FILE`); so does the environment
+// (DATABASE_URL, PORT).
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, watch, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
@@ -163,9 +165,27 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, stop);
 const parent = process.ppid;
 setInterval(() => process.ppid !== parent && stop(), 1000).unref();
 
+// ---- Its SQL (D-058) ----
+
+// After each build, the app's SQL checked as `rocx check --sql` checks it, with the server just
+// built, in a process of its own: what it finds is said, and the server is served meanwhile. A
+// build before it ends stops it. An app with no SQL says nothing.
+let checking = null;
+function checkSql() {
+	checking?.kill("SIGTERM");
+	const script = join(root, "rocx-cli", "check-sql.mjs");
+	const ran = spawn(process.execPath, [script, app, "--server", server, "--quiet", "--", ...passed], { stdio: ["ignore", "inherit", "inherit"] });
+	checking = ran;
+	ran.on("exit", () => {
+		if (checking === ran) checking = null;
+	});
+}
+process.on("exit", () => checking?.kill("SIGTERM"));
+
 try {
 	build();
 	start();
+	checkSql();
 } catch (error) {
 	console.error(error.message);
 }
@@ -221,6 +241,7 @@ async function rebuild(path) {
 	try {
 		build();
 		await restart();
+		checkSql();
 	} catch (error) {
 		console.error(error.message);
 	}

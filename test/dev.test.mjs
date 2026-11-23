@@ -1,7 +1,8 @@
 // `rocx dev`, as the front page's Getting started uses it: on a copy of examples/hello without its
 // main.roc, it writes one, builds the app, serves the page and the endpoint (the page hydrated in
 // Chromium), builds again and restarts on a save, says where a mistake is in the .rocx file and
-// keeps serving the build before, serves a build with warnings alone (saying them), and stops its
+// keeps serving the build before, serves a build with warnings alone (saying them), says nothing of
+// its SQL (it has none: test/check-sql.test.mjs tests the check rocx dev runs), and stops its
 // server when it is stopped. Needs the toolchain (`just setup`) and Chromium (web/test/browser.mjs).
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -79,6 +80,7 @@ test("rocx dev: writes main.roc, serves the page and the endpoint, rebuilds on a
 		assert.match(await page(), /<script src="\/__reload\.js" data-rocx><\/script><\/body>/, "under --dev: the page reloads when the server is back");
 		assert.match(await (await fetch(`${url}/__reload.js`)).text(), /new EventSource\("\/__reload"\)/);
 		assert.equal(await (await fetch(`${url}/hello`)).json(), "Hello from the server");
+		assert.doesNotMatch(said, /rocx check --sql/, "an app with no SQL: its check (D-058) says nothing");
 
 		// The browser's half: the button counts.
 		browser = await launch();
