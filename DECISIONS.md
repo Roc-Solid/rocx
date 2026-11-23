@@ -2887,6 +2887,60 @@ before its place is taken while hydrating (no extra run). Measured with `just si
 **Reversible:** yes, each part on its own: `inert` answering false makes every hole live again; the
 transpiler's `dev` flag off writes no `read_at!`; a spread is new syntax nothing else depends on.
 
+## D-053 Solid 2.0's control flow and stores: keyed `<Show>`, `<Switch>`/`<Match>`, `createStore`; pure components stay values
+
+**Status.** Built (2026-11-23) for items 1, 2 and 4 of the brief: keyed `<Show>`, `<Switch>` and
+`<Match>`, and the decision that a pure component stays a function of values. Stores (item 3) are
+designed in `spike/stores/DESIGN.md`, the coordinator's go given, and are being built.
+
+**Context.** web/README's "Not yet" had the rest of Solid 2.0's control flow: keyed `<Show>` and
+`<Switch>`/`<Match>`; stores as `createStore` makes them; and "a pure component patched in place"
+(a pure `view` given a value read from what changes is a hole made anew, where a `view!` is kept,
+D-039). Solid 2.0 is the north star (`solid-js` 2.0.3's `Show`, `Switch`, `Match` read for each).
+
+**Decision.**
+
+- **Keyed `<Show>`** (Solid 2.0's `keyed`). Solid's keyed condition is a memo compared by identity,
+  so the part is made anew when the value changes, not only when it turns truthy, and a function
+  child gets the value itself. Roc's values have no identity, so the value is its own key: two values
+  are the same one when `Str.inspect` says the same of them. `<Show when!={…} keyed>` is
+  `Show.view_keyed!` (children, made anew per value) or `Show.view_with_keyed!` (a function child
+  given the value). `keyed` is a flag, as Solid's is: rocx refuses a key function there
+  (`<For>`'s `keyed={|t| t.id}` stays `<For>`'s). A function inside the value prints as
+  `<function>`, so a change of one alone isn't a change: said in the docs.
+- **`<Switch>` and `<Match>`.** Solid's `Switch` reads its `Match`es' conditions in order up to the
+  first that holds, and makes the part anew when another one holds first, or a keyed one's value
+  changes; a non-keyed one's narrowed accessor follows its value, the part kept. The same here:
+  `Match` has `<Show>`'s four forms (`view!` a Bool; `view_with!` a Try narrowed to an accessor;
+  `view_keyed!`, `view_with_keyed!`), each `Html.matched(case!, made!)`, and `Switch.view!` takes the
+  first that holds (`Html.switch`). rocx refuses a `<Match>` that isn't a `<Switch>`'s child, and
+  anything but `<Match>`es (and the spaces between them) in a `<Switch>`: Solid passes over such
+  children silently; here it is a mistake said at its line.
+- **One node for all of them.** Both are `Html.switched(case!, made!, fallback)`, serialized as a
+  `<Show>`'s node: `"r"` answers the case's name (`"#…"`, never empty, so truthy) or `false`, and
+  `"with"` makes the part. The runtime already makes a `<Show>`'s part anew when what `"r"` answers
+  changes, and the native server and hydration take a `"show"` node as they always have, so neither
+  host changed: two modules of Roc, `Html`'s two variants, and the transpiler's `keyed` and
+  `<Switch>` rules.
+- **A pure component stays a function of values** (item 4, the coordinator agreed). Patched in
+  place as Solid patches a component, it would take getters (`() => Str`) read in its holes. A pure
+  function can't call one, and `Html.to_str` can't run one, so every call of it from Roc would break:
+  the `expect`s that test components with `Html.to_str(Avatar.view({ name }))` (examples/journal,
+  tasks, plate), and an email's HTML. Writing every pure component twice (as written, and a getter
+  copy for tags) would double its code in the wasm and the transpiler's work, and a pure component
+  that reads a prop in its body (most of examples/journal's: `intl = I18n.intl(lang)`) would be made
+  anew anyway. Solid's way is already there, one `!` away: a `view!` is kept and patched (D-039), and
+  a pure component may take an accessor that its holes read (`left! : () => U64`, examples/quiz's
+  `Countdown`), which keeps it. Made anew, a pure component loses no state (it has none), only what
+  the browser keeps in its elements (the focus, a field's text, a scroll).
+
+**What it costs.** No host or runtime.js change. `Html.serialize!`'s two new cases are in every
+app's wasm: the site's client grew 1,336,620 to 1,338,583 bytes (+1,963), 296,342 to 296,691
+brotli'd (+349), though the site uses neither. `Str.inspect` of a keyed value on each run of its
+condition.
+
+**Reversible:** yes; the new views are additions, and nothing else depends on them.
+
 ## D-055 Drags by touch and a pen, what a drag carries and shows, files dropped, moves that resize, presence's cursor and away
 
 **Status.** Built (2026-11-23), with the coordinator's answers to the API questions (1 to 4 below).

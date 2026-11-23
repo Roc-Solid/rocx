@@ -35,7 +35,7 @@ meta = {
 		{ id: "forms", label: "Forms and submissions" },
 		{ id: "actions", label: "Actions and optimistic values" },
 		{ id: "title", label: "The document's title" },
-		{ id: "control", label: "Show and For" },
+		{ id: "control", label: "Show, Switch and For" },
 		{ id: "transitions", label: "Transitions" },
 		{ id: "contexts", label: "Contexts" },
 		{ id: "tree", label: "One page, one tree" },
@@ -253,8 +253,12 @@ view! = |_|
 				child write, give it the setter too; a setter is already a handler, so
 				<code>{"on:input.value={set_draft!}"}</code> needs nothing around it. <code>children</code> is markup,
 				whose holes are already live. A pure component (<code>view</code>) is a function of values: given one
-				read from what changes, its call is a hole of its own, made anew when the value changes (it has no
-				state to lose; make it a <code>view!</code> to keep its elements).
+				read from what changes, its call is a hole of its own, made anew when the value changes. It has no
+				state to lose, only what the browser keeps in its elements (the focus, a field's text). That stays
+				so on purpose: kept and patched, as Solid keeps a component, it would need getters read in its
+				holes, which a pure function can't call and <code>Html.to_str</code> can't run, so its tests and an
+				email's HTML could no longer call it with values. To keep its elements, make it a
+				<code>view!</code>, or give it an accessor (<code>{"left! : () => U64"}</code>) that its holes read.
 			</p>
 
 			<Heading id="handlers">Handlers</Heading>
@@ -532,7 +536,7 @@ view! = |_|
 				</li>
 			</ul>
 
-			<Heading id="control">Show and For</Heading>
+			<Heading id="control">Show, Switch and For</Heading>
 			<p>
 				Solid 2.0's control flow: a part made once, then switched, moved or dropped, never compared.
 				Below, the same picks twice, a row per id on the left and a row per position on the right. Click,
@@ -572,6 +576,21 @@ view! = |_|
 						accessor of the value in it.
 					</li>
 					<li>
+						<strong><code>keyed</code></strong>, Solid 2.0's: <code>{"<Show when!={card!()} keyed>"}</code> makes its
+						part anew each time the value inside changes, not only when it turns <code>Ok</code>, and gives a
+						function child that value itself, <code>{"{|card| <Editor card={card} />}"}</code>: a new editor, its
+						signals new, for each card. Two values are the same one when they read the same: Roc's values
+						have no identity.
+					</li>
+					<li>
+						<strong><code>{"<Switch>"}</code> and <code>{"<Match>"}</code></strong>, Solid 2.0's: the first
+						<code>{"<Match>"}</code> whose <code>when!</code> holds shows, the <code>{"<Switch>"}</code>'s fallback
+						while none does. A <code>{"<Match>"}</code> takes what a <code>{"<Show>"}</code> takes: a
+						<code>Bool</code>, or a <code>Try</code> to narrow (an accessor: the part stays while the value
+						changes), keyed or not. rocx refuses anything else in a <code>{"<Switch>"}</code>, and a
+						<code>{"<Match>"}</code> outside one.
+					</li>
+					<li>
 						<strong>A part is made when it shows</strong>, as Solid makes it: what a
 						<code>{"<Show>"}</code> shows, its fallback and a <code>{"<For>"}</code>'s, each once, as a
 						component is, and again each time it shows again; a row when it comes. So its holes are made
@@ -593,6 +612,7 @@ view! = |_|
 						holes, and the props it gives its components, follow the item.
 					</li>
 				</ul>
+				<Code title="rocx" source={"import pf.Switch\nimport pf.Match\n\n<Switch fallback={<p>Nothing to show</p>}>\n\t<Match when!={tab!() == Inbox}><Inbox /></Match>\n\t<Match when!={open_card!()}>{|card!| <CardView title={card!().title} />}</Match>\n\t<Match when!={draft!()} keyed>{|draft| <Editor start={draft} />}</Match>\n</Switch>"} numbers={Bool.False} />
 				<details>
 					<summary>The whole component: <code>{Sources.signals_picks.file}</code></summary>
 					<Code title={Sources.signals_picks.file} source={Sources.signals_picks.rocx} />
@@ -894,6 +914,8 @@ view! = |_|
 						<tr><td><code>{"<Heading text={user().name} />"}</code></td><td><code>{"<Heading text!={user!().name} />"}</code></td></tr>
 						<tr><td>a component that only renders its props</td><td>a pure one: <code>view</code>, no <code>!</code>, called where it is written</td></tr>
 						<tr><td><code>{"<Show when={…} fallback={…}>"}</code></td><td><code>{"<Show when!={…} fallback={…}>"}</code></td></tr>
+						<tr><td><code>{"<Show when={…} keyed>{(v) => …}</Show>"}</code></td><td><code>{"<Show when!={…} keyed>{|v| …}</Show>"}</code></td></tr>
+						<tr><td><code>{"<Switch fallback={…}><Match when={…}>…</Match></Switch>"}</code></td><td><code>{"<Switch fallback={…}><Match when!={…}>…</Match></Switch>"}</code></td></tr>
 						<tr><td><code>{"<For each={…} keyed={(t) => t.id}>"}</code></td><td><code>{"<For each!={…} keyed={|t| t.id}>"}</code></td></tr>
 						<tr><td><code>{"<For each={…} keyed={false}>"}</code></td><td><code>{"<For each!={…} keyed={Bool.False}>"}</code></td></tr>
 						<tr><td><code>{"<TransitionGroup>"}</code>, from <code>solid-transition-group</code></td><td><code>{"transition={Transition.fade}"}</code> on the element, as Svelte writes it</td></tr>
@@ -1005,7 +1027,7 @@ view! = |_|
 						<li>Contexts, and components that run where they are rendered</li>
 						<li>A page as one tree, hydrated whole; <code>{"<NoHydration>"}</code> for what stays the server's</li>
 						<li>A signal goes with the part that made it</li>
-						<li><code>{"<Show>"}</code>, with a <code>Try</code> to narrow</li>
+						<li><code>{"<Show>"}</code>, with a <code>Try</code> to narrow, keyed or not; <code>{"<Switch>"}</code> and <code>{"<Match>"}</code></li>
 						<li><code>{"<For>"}</code>, by key and by position; <code>{"<Repeat>"}</code>, by index</li>
 						<li>What of an element shows, as it scrolls and changes size: <code>on:viewport</code>; virtual lists, as a package</li>
 						<li><code>{"<Loading>"}</code>, <code>{"<Errored>"}</code>, trying again</li>
@@ -1026,7 +1048,6 @@ view! = |_|
 				<div class="roadmap-next">
 					<h3>Next, from Solid 2.0</h3>
 					<ul>
-						<li><code>{"<Switch>"}</code>, <code>{"<Match>"}</code>, keyed <code>{"<Show>"}</code></li>
 						<li>Stores, as <code>createStore</code> makes them: nested, each field its own signal</li>
 					</ul>
 				</div>

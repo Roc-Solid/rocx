@@ -275,7 +275,8 @@ In a component only:
 | `<Heading text!={user!().name} />` | a prop named as an effect is an accessor: the same getter, which the child types (`text! : () => Str`) and calls (`text!()`) itself |
 | `view! = \|{ kind, ..rest }\| <Base {...rest} size={3} />` | props passed on (D-052): `..rest` keeps the props the pattern doesn't name (Solid's `omit`), and `{...rest}` gives them to a component as they are, getters still, the last of a name winning (JSX's spread, Solid's `merge`) |
 | `<Title>{post!().title} · Notes</Title>` | the document's title, from anywhere in the page: the last one rendered that is still there, put first in `<head>` by the server, kept by the browser (`import pf.Title`) |
-| `<Show when!={…} fallback={…}>` | what is inside while the condition holds; with a function child, `when!` is a `Try` it narrows |
+| `<Show when!={…} fallback={…}>` | what is inside while the condition holds; with a function child, `when!` is a `Try` it narrows; `keyed`, made anew each time the value changes, a function child given the value itself |
+| `<Switch fallback={…}><Match when!={…}>…</Match></Switch>` | the first `<Match>` that holds (each takes what `<Show>` takes, keyed or not), or the fallback |
 | `<For each!={…} keyed={\|row\| row.id}>{\|row!, index!\| …}</For>` | a row per key, kept and moved; `keyed={Bool.False}` a row per position. A function child (a row, a `<Show>`'s narrowed child) runs where its part is made, once and untracked (Solid's `mapArray`), so it may hold another `<For>` or `<Show>`, and its holes follow the item |
 | `<Loading fallback={…}>`, `<Errored fallback={\|problem, retry\| …}>` | while answers are on their way; when something inside failed |
 | `picks_context = create_context()`, `<PicksContext value={…}>` | Solid's context, named by rocx after its module and definition |

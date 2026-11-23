@@ -32,7 +32,7 @@ same components natively; this one hydrates them.
   `set_timeout!`, each owned by the run that started it), `Browser` (`call!`: the page's own
   JavaScript function, or a plugin's script's, from a handler; sound files are packages/audio's,
   D-051),
-  `Show`, `For`, `Loading`, `Errored`, `Context`, `Call` (`fetch!`, `listen!`), `Router` (`location!`: the page's path and query; `use_submission!`: the latest
+  `Show` (keyed too), `Switch` and `Match`, `For`, `Loading`, `Errored`, `Context`, `Call` (`fetch!`, `listen!`), `Router` (`location!`: the page's path and query; `use_submission!`: the latest
   submission to an endpoint; `use_submissions!`: all of them; `use_action!`: one a handler sends
   without a form), `Submission` (its `pending!`, `input!`, `field!`, `result!`, `error!`,
   `clear!`), `Submissions` (`all!`, as records, `pending!`, `pending_inputs!`, `clear!`),
@@ -159,6 +159,19 @@ same components natively; this one hydrates them.
   aren't kept until then. A `<For>`'s row (`"r"`) and a `<Show>`'s function child (`"with"`) are made
   as they come too, by computations of their own, run untracked as above (D-039): a value prop read
   there (`<PlannerDay day={day!()} />` in a row) is a getter the component reads, so the row is kept.
+- **Keyed `<Show>`, `<Switch>` and `<Match>`** (D-053, Solid 2.0's). A `<Show>` switches when whether
+  `when!` holds changes; keyed (`<Show when!={card!()} keyed>`), also when the value inside changes,
+  and a function child is given that value itself, not an accessor (`{|card| <Editor card={card} />}`,
+  a new `<Editor>`, its signals new, per card). Roc's values have no identity: two are the same value
+  when `Str.inspect` says the same of them (a function inside prints as `<function>`). A `<Switch>`
+  shows the first of its `<Match>`es whose `when!` holds, reading them in order up to that one, and its
+  fallback while none does; a `<Match>` has `<Show>`'s four forms (a Bool; a Try narrowed to an
+  accessor, the part staying while the value changes; keyed, made anew per value, with plain children
+  or a function given the value). All of them are a `<Show>`'s node (`Html.switched`: `"r"` answers
+  the case's name, `"#…"`, or `false`, and a new name makes the part anew; `"with"` makes it), so the
+  server renders, and hydrating adopts, them as it does a `<Show>`, strictly too. rocx refuses a
+  `<Match>` that isn't a `<Switch>`'s child, anything else in a `<Switch>`, and a key function on
+  either (`keyed` is a flag: the value itself is the key).
 - **Props are getters** (D-039), as Solid's are. rocx writes `<Shows label={word!()} />` as
   `Html.component(|| Shows.view!({ label: || word!() }))`, every value prop a function that computes
   it (a static one too: `size: || 2`), and writes the component, as its author wrote it with
@@ -185,7 +198,14 @@ same components natively; this one hydrates them.
   itself), `children` (markup, whose holes are already live), and the props of the platform's own
   components (`<Show>`, `<For>`…). A pure component's (`view`) props are values, its call made where
   it is written; given one read from what changes, the call is a hole of its own
-  (`Html.html_of(|| Heading.view({…}))`), made anew when it changes. A prop's expression runs where the
+  (`Html.html_of(|| Heading.view({…}))`), made anew when it changes. That is a choice (D-053): patched
+  in place, as Solid patches a component, it would take getters read in its holes, which a pure
+  function can't call and `Html.to_str` can't run, so every call of it from Roc (an `expect`'s
+  `Html.to_str(Avatar.view({ name }))`, an email's HTML) would break; and one that reads a prop in its
+  body (examples/journal's do) would be made anew anyway. Solid's way is there: a `view!` is kept and
+  patched (D-039), and a pure one may take an accessor (`left! : () => U64`) that its holes read,
+  which keeps it (examples/quiz's `Countdown`). Made anew, it loses no state (it has none), only what
+  the browser keeps in its elements: the focus, a field's text, where it is scrolled. A prop's expression runs where the
   child reads it: a context it reads is that place's, an async read in it waits in the child's hole
   (and, read in the child's body, is refused, as the component's own would be), and each read
   computes it again, as a Solid getter does (a memo shares it). A `.roc` component written by hand
@@ -550,7 +570,11 @@ planner (`Planner.rocx`: cards dragged between days, moved optimistically with `
 that says where the pointer is, a box that scrolls, and whether the page shows); and D-052's (`Untracked.rocx`: `untrack!` in a hole, a memo and a
 body, `latest!`, a component given constants beside one given what changes, and, built with `--dev`
 from a copy, the warning of a read in a body, once for two runs of its place; `RenderEffects.rocx`:
-an effect, a render effect and an effect with an error handler noting their applies, mounted).
+an effect, a render effect and an effect with an error handler noting their applies, mounted); and
+D-053's (`Control.rocx`: a `<Show>` each way, keyed and not, and a `<Switch>` of a Bool's, a
+narrowed and a keyed `<Match>`, each part with a counter of its own, rendered as the server would
+from four queries and hydrated strictly: an equal value keeps every part, a new one makes the keyed
+parts anew, a `<Switch>` changes part when another `<Match>` holds first).
 In Chromium, against a scripted server (a scripted `/rocx/live` too): what shows while answers come, what a click
 patches, failures and retries, rows kept and moved, rows and parts that stay until their
 transitions are over (and none with less motion asked for), hydration without a request, a tampered document's `<body>` rendered again (and strictly, a throw), the
@@ -582,8 +606,7 @@ after many runs that waited (refreshes, new pages, memos made again: `Upstream.r
 
 ## Not yet
 
-- **The rest of Solid 2.0:** keyed `<Show>`, `<Switch>`/`<Match>`, stores as `createStore` makes
-  them.
+- **The rest of Solid 2.0:** stores as `createStore` makes them.
 - **The dev warning sees calls of accessors** in a component's body (`count!()`, a prop's getter):
   one a helper makes (`total!(items)`) isn't said, nor one at a `<For>`'s row's top (made once too).
 - **The rest of Solid Router's actions:** `.with`, a submission's `retry`, saying which reads a
@@ -602,8 +625,6 @@ after many runs that waited (refreshes, new pages, memos made again: `Upstream.r
   Firefox before 125), one lifted inside a box that makes fixed elements its own stays clipped by
   that box.
 - **The rest of @solidjs/meta:** `<Meta>`, `<Link>`, `<Style>`; only `<Title>` is there.
-- **A pure component patched in place:** given a value read from what changes, its call is a hole
-  made anew (it keeps no state); a `view!` is kept.
 - **`Try` across the wire:** the builtin has no JSON encoder or parser on this Roc; a tag union
   stands in.
 - **The rules a component must keep:** read async values in holes, not in its body, and write
