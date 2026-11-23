@@ -263,7 +263,7 @@ Storage := [].{
 	## `/__storage?method=…&key=…&expires=…&signature=…`, the object served or kept, if the URL is
 	## one `signed_url!` made for that method, and hasn't expired; 403 if not. For an S3 bucket it has
 	## nothing to answer (404): S3 answers its own.
-	plugin : Options -> Plugin.Value(ctx)
+	plugin : Options -> Plugin.Value(context, ctx)
 	plugin = |options| {
 		named = options.env
 		{

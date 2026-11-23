@@ -5,6 +5,6 @@ import jobs.Job
 Jobs := [].{
 
 	## Says hello to a new member.
-	welcome : Job.Kind({ member : Str })
-	welcome = Job.define("welcome", |{ member }| if (member.is_empty()) Err("no one to welcome") else Ok({}))
+	welcome : Job.Kind(_, { member : Str })
+	welcome = Job.define("welcome", |_context, { member }| if (member.is_empty()) Err("no one to welcome") else Ok({}))
 }

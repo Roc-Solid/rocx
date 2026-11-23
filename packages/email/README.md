@@ -15,7 +15,7 @@ import Generated/App
 import Middlewares
 
 program = App.program({
-    context: |started| { facts: started },
+    init!: |started| Ok({ facts: started }),
     middleware: Middlewares.default,
     plugins: [Job.plugin({ jobs: App.jobs }), Email.plugin({})],
 })
@@ -23,7 +23,7 @@ program = App.program({
 
 ```roc
 # Jobs.roc: send from a job, so a server that doesn't answer is tried again
-welcome = Job.define("welcome", |{ to }|
+welcome = Job.define("welcome", |_context, { to }|
     match Email.send!({ to, subject: "Welcome", text: "…", html: "<p>…</p>" }) {
         Ok({}) => Ok({})
         Err(EmailErr(why)) => Err(why)
@@ -37,7 +37,7 @@ Email.Options := {
     from : Str ?? "",                              # "": MAIL_FROM, or else "rocx <rocx@localhost>"
     smtp_url! : ({} => Str) ?? (reads SMTP_URL),   # "" for none: mail is kept for the mailbox
 }
-Email.plugin : Email.Options -> Plugin.Value(ctx)
+Email.plugin : Email.Options -> Plugin.Value(context, ctx)
 ```
 
 - **Where mail goes** is read when the server starts: `SMTP_URL` from the environment

@@ -10,55 +10,157 @@ import Game
 import Generated/Api
 
 ## One actor per room (D-021), keyed by the room's join code. It holds the room's state (a
-## `Game.State`, kept in the database after each turn that changes it) and takes one message at a
-## time, so two players answering at once, the clock running out and the host pressing Next never
-## trip over each other. There is no lock anywhere.
+## `Game.State`, kept in the database after each turn that changes it) and takes one turn at a time,
+## whichever of its methods each is (D-066), so two players answering at once, the clock running
+## out and the host pressing Next never trip over each other. There is no lock anywhere.
 ##
-## The rules are `Game`'s, pure; this module only says when. After every turn it looks at the
-## phase it left the room in: if that changed, it cancels the timer the old phase had and sets one
-## for the new phase's deadline (`Actor.after!`), whose message (`Close`, `Advance`) comes back to
-## it like any other. If the room changed, it publishes the room's view on the room's channel,
-## which every host's screen and player's phone follows (`Api.channel_rooms_code`: an actor may
-## import the app's contract, which imports no route file, D-037).
+## The rules are `Game`'s, pure; this module only says when. Every method's turn goes through
+## `turned!`: presence swept first, then what the method does, then the phase it left the room in
+## looked at: if that changed, it cancels the timer the old phase had and sets one for the new
+## phase's deadline (`Actor.after!`), which calls `close` or `advance` like any other caller. If the
+## room changed, it publishes the room's view on the room's channel, which every host's screen and
+## player's phone follows (`Api.channel_rooms_code`: an actor may import the app's contract, which
+## imports no route file, D-037).
 ##
 ## Who is in the room is packages/presence's `Room`: each tab that subscribes to the channel joins
-## (`Opened`), each one that goes leaves (`Closed`), the channel's beats keep tabs fresh (`Beat`),
+## (`opened`), each one that goes leaves (`closed`), the channel's beats keep tabs fresh (`beat`),
 ## and a player whose last tab has been gone for the grace is `Left`: shown as dropped, and not
 ## waited for. A crash in a turn is logged by the platform and the room carries on as it was.
 ##
 ## Server-only: it imports `Actor`, which only the server's platform has; only route files'
 ## `+server.roc` import it.
 Rooms := [].{
-	kind : Actor.Kind(Rooms.State, Rooms.Message, Rooms.Reply)
-	kind = Actor.define({
-		name: "room",
-		initial: |_code| { game: Game.vacant, presence: Room.empty(Rooms.presence).save(), timer: 0 },
-		receive!: |me, state, message| Rooms.turn!(me, state, message),
-	})
+	room : Actor.Kind(Rooms.State)
+	room = Actor.define({ name: "room", initial: |_code| { game: Game.vacant, presence: Room.empty(Rooms.presence).save(), timer: 0 } })
 
 	## What the actor keeps: the game, who is here (presence's room, saved as JSON), and the timer
 	## its phase's deadline is set on. A tab has one stream, and its hooks come in order (a stream
 	## that reconnects is told gone before it opens again), so a tab joins and leaves as it is told.
 	State : { game : Game.State, presence : Room.Saved(Wire.Meta({})), timer : U64 }
 
-	## What a room is told or asked. Everything a visitor does names them by their visitor id, and
-	## the room decides who that is (`Game.who`): the host, a player, or anyone.
-	Message : [
-		Open({ title : Str, questions : List(Game.Question), timing : Game.Timing, host : Str }),
-		Join({ visitor : Str, name : Str }),
-		Look(Str),
-		Said({ visitor : Str, said : Game.Said }),
-		Opened({ visitor : Str, tab : Str }),
-		Beat({ visitor : Str, tab : Str }),
-		Closed({ visitor : Str, tab : Str }),
-		Sweep,
-		Close(U64),
-		Advance(U64),
-	]
+	## A game, for a vacant room: what `open` is given.
+	Opening : { title : Str, questions : List(Game.Question), timing : Game.Timing, host : Str }
 
-	## What the room answers: done; a visitor's seat (what `Look` and `Opened` get); a player's id
-	## (`Join`), or why they couldn't join; or why not.
-	Reply : [Done, Seat(Game.Seat), Joined(Str), Unjoined(Game.Unjoined), Refused(Str)]
+	## Opens the room for a game, if it is vacant; `Taken` if it isn't (`Entry` tries another code).
+	open : Actor.Method(_, Rooms.State, Rooms.Opening, [Opened, Taken])
+	open = Actor.method(
+		Rooms.room,
+		"open",
+		|turn|
+			Rooms.turned!(
+				turn,
+				|state, _now|
+					if state.game.phase == Vacant {
+						{ title, questions, timing, host } = turn.input
+						game = Game.open({ code: Actor.key_of(turn.me), title, questions, timing, host })
+						Log.info!("room opened", { code: game.code, title: game.title, questions: game.questions.len() })
+						({ ..state, game }, Opened)
+					} else {
+						(state, Taken)
+					},
+			),
+	)
+
+	## A visitor joins as a player: their player id, or why they couldn't.
+	join : Actor.Method(_, Rooms.State, { visitor : Str, name : Str }, [Joined(Str), Unjoined(Game.Unjoined)])
+	join = Actor.method(
+		Rooms.room,
+		"join",
+		|turn|
+			Rooms.turned!(
+				turn,
+				|state, _now|
+					match Game.join(state.game, turn.input) {
+						Ok((joined, id)) => ({ ..state, game: joined }, Joined(id))
+						Err(why) => (state, Unjoined(why))
+					},
+			),
+	)
+
+	## How a visitor sees the room (`look!`).
+	seat : Actor.Method(_, Rooms.State, Str, Game.Seat)
+	seat = Actor.method(Rooms.room, "seat", |turn| Rooms.turned!(turn, |state, now| (state, Game.seat(state.game, turn.input, now))))
+
+	## What a page said (`heard`): `Refused` with why, if its visitor may not say it.
+	said : Actor.Method(_, Rooms.State, { visitor : Str, said : Game.Said }, [Heard, Refused(Str)])
+	said = Actor.method(Rooms.room, "said", |turn| Rooms.turned!(turn, |state, now| Rooms.heard(state, turn.input.visitor, turn.input.said, now)))
+
+	## A tab subscribed to the room's channel: in presence's room, a player's; and how its visitor
+	## sees the room.
+	opened : Actor.Method(_, Rooms.State, { visitor : Str, tab : Str }, Game.Seat)
+	opened = Actor.method(
+		Rooms.room,
+		"opened",
+		|turn|
+			Rooms.turned!(
+				turn,
+				|state, now| {
+					{ visitor, tab } = turn.input
+					joined = Rooms.tab_joined(state, visitor, tab, now)
+					(joined, Game.seat(joined.game, visitor, now))
+				},
+			),
+	)
+
+	## A tab's channel beat: it is still here.
+	beat : Actor.Method(_, Rooms.State, { visitor : Str, tab : Str }, {})
+	beat = Actor.method(
+		Rooms.room,
+		"beat",
+		|turn|
+			Rooms.turned!(
+				turn,
+				|state, now| {
+					{ visitor, tab } = turn.input
+					match Game.who(state.game, visitor) {
+						Player(id) =>
+							match Room.load(state.presence).heartbeat(id, tab, now) {
+								Ok(beaten) => ({ ..state, presence: beaten.save() }, {})
+								# Swept out while its laptop slept, and back: it joins again.
+								Err(Unknown) => (Rooms.tab_joined(state, visitor, tab, now), {})
+							}
+						_ => (state, {})
+					}
+				},
+			),
+	)
+
+	## A tab's subscription ended: a player whose last tab it was drops, once the grace is up.
+	closed : Actor.Method(_, Rooms.State, { visitor : Str, tab : Str }, {})
+	closed = Actor.method(
+		Rooms.room,
+		"closed",
+		|turn|
+			Rooms.turned!(
+				turn,
+				|state, now| {
+					{ visitor, tab } = turn.input
+					match Game.who(state.game, visitor) {
+						Player(id) => {
+							(left, changes) = Room.load(state.presence).leave(id, tab, now)
+							# The grace, then a sweep: if the tab isn't back by then, its player is gone.
+							_sweep = Actor.after!(turn.me, Rooms.presence.grace + 50, Rooms.sweep, {})
+							(Rooms.present({ ..state, presence: left.save() }, (left, changes)), {})
+						}
+						_ => (state, {})
+					}
+				},
+			),
+	)
+
+	## The sweep a tab's leaving sets for when its grace is up: every turn sweeps first (`turned!`),
+	## so this one has nothing more to do.
+	sweep : Actor.Method(_, Rooms.State, {}, {})
+	sweep = Actor.method(Rooms.room, "sweep", |turn| Rooms.turned!(turn, |state, _now| (state, {})))
+
+	## The question `input`'s time is up (its phase's timer, `timed!`). A function of `{}`: the
+	## timer it sets names it.
+	close : {} -> Actor.Method(_, Rooms.State, U64, {})
+	close = |{}| Actor.method(Rooms.room, "close", |turn| Rooms.turned!(turn, |state, now| ({ ..state, game: Game.close(state.game, turn.input, now) }, {})))
+
+	## The answer to question `input` has been shown long enough (its phase's timer, `timed!`).
+	advance : {} -> Actor.Method(_, Rooms.State, U64, {})
+	advance = |{}| Actor.method(Rooms.room, "advance", |turn| Rooms.turned!(turn, |state, now| ({ ..state, game: Game.advance(state.game, turn.input, now) }, {})))
 
 	## Presence's settings: a tab unheard for two minutes is gone (the channel beats every 15 s),
 	## and one that left is kept four seconds, in case it is only reconnecting.
@@ -77,125 +179,61 @@ Rooms := [].{
 		{ question_ms: read!("QUIZ_QUESTION_MS", 20_000), reveal_ms: read!("QUIZ_REVEAL_MS", 7_000) }
 	}
 
-	## Tells the room `code` something, waiting for nothing.
-	tell! : Str, Rooms.Message => {}
-	tell! = |code, message| Actor.tell!(Rooms.kind, code, message)
-
-	## Asks the room `code` something, and gives what it answered; a room that couldn't answer
-	## (it crashed, and the platform logged why) is `Refused`.
-	ask! : Str, Rooms.Message => Rooms.Reply
-	ask! = |code, message|
-		match Actor.ask!(Rooms.kind, code, message) {
-			Ok(reply) => reply
-			Err(ActorErr(why)) => Refused(why)
-		}
-
-	## How `visitor` sees the room `code`; a room that isn't there is `Vacant`. Only the code as it
-	## is written (`BKRT`, not `bkrt`) names a room.
+	## How `visitor` sees the room `code`; a room that isn't there, or doesn't answer, is `Vacant`.
+	## Only the code as it is written (`BKRT`, not `bkrt`) names a room.
 	look! : Str, Str => Game.Seat
 	look! = |code, visitor|
 		match Codes.parse(code) {
 			Ok(parsed) if parsed == code =>
-				match Rooms.ask!(code, Look(visitor)) {
-					Seat(seat) => seat
-					_ => Game.seat(Game.vacant, visitor, 0)
+				match Actor.ask!(Rooms.seat, code, visitor) {
+					Ok(found) => found
+					Err(ActorErr(_)) => Game.seat(Game.vacant, visitor, 0)
 				}
 			# Not a code as written: no room to ask, and no actor woken for it.
 			_ => Game.seat(Game.vacant, visitor, 0)
 		}
 
-	## One turn: the message handled, then the timer and the channel brought up to date.
-	turn! : Actor.Me(Rooms.Message), Rooms.State, Rooms.Message => { state : Rooms.State, reply : Rooms.Reply }
-	turn! = |me, state, message| {
+	## Every method's turn: presence swept first (a tab whose grace ran out is gone before anything
+	## else is decided), then what the method does (`handle!`: the room after, and the reply), then
+	## the timer and the channel brought up to date.
+	turned! : Actor.Turn(context, Rooms.State, input), (Rooms.State, U64 => (Rooms.State, reply)) => { state : Rooms.State, reply : reply }
+	turned! = |{ me, state, .. }, handle!| {
 		now = Time.now_millis!({})
-		code = Actor.key_of(me)
-		# Presence first: a tab whose grace ran out is gone before anything else is decided.
 		swept = Rooms.present(state, Room.load(state.presence).sweep(now))
-		(handled, reply) = Rooms.handle!(me, swept, message, now)
+		(handled, reply) = handle!(swept, now)
 		timed = Rooms.timed!(me, state.game, handled, now)
 		if timed.game.version != state.game.version {
-			Endpoint.publish!(Api.channel_rooms_code({ code: code }), Game.view(timed.game, now))
+			Endpoint.publish!(Api.channel_rooms_code({ code: Actor.key_of(me) }), Game.view(timed.game, now))
 		}
 		{ state: timed, reply }
 	}
 
-	## What a message does to the room.
-	handle! : Actor.Me(Rooms.Message), Rooms.State, Rooms.Message, U64 => (Rooms.State, Rooms.Reply)
-	handle! = |me, state, message, now| {
-		game = state.game
-		match message {
-			Open(opening) =>
-				if game.phase == Vacant {
-					opened = Game.open({ code: Actor.key_of(me), title: opening.title, questions: opening.questions, timing: opening.timing, host: opening.host })
-					Log.info!("room opened", { code: opened.code, title: opened.title, questions: opened.questions.len() })
-					({ ..state, game: opened }, Done)
-				} else {
-					(state, Refused("taken"))
-				}
-			Join(joining) =>
-				match Game.join(game, joining) {
-					Ok((joined, id)) => ({ ..state, game: joined }, Joined(id))
-					Err(why) => (state, Unjoined(why))
-				}
-			Look(visitor) => (state, Seat(Game.seat(game, visitor, now)))
-			Said({ visitor, said }) => Rooms.heard(state, visitor, said, now)
-			Opened({ visitor, tab }) => {
-				opened = Rooms.tab_joined(state, visitor, tab, now)
-				(opened, Seat(Game.seat(opened.game, visitor, now)))
-			}
-			Beat({ visitor, tab }) =>
-				match Game.who(game, visitor) {
-					Player(id) =>
-						match Room.load(state.presence).heartbeat(id, tab, now) {
-							Ok(beaten) => ({ ..state, presence: beaten.save() }, Done)
-							# Swept out while its laptop slept, and back: it joins again.
-							Err(Unknown) => (Rooms.tab_joined(state, visitor, tab, now), Done)
-						}
-					_ => (state, Done)
-				}
-			Closed({ visitor, tab }) =>
-				match Game.who(game, visitor) {
-					Player(id) => {
-						(left, changes) = Room.load(state.presence).leave(id, tab, now)
-						# The grace, then a sweep: if the tab isn't back by then, its player is gone.
-						_sweep = Actor.after!(me, Rooms.presence.grace + 50, Sweep)
-						(Rooms.present({ ..state, presence: left.save() }, (left, changes)), Done)
-					}
-					_ => (state, Done)
-				}
-			# The sweep has run already, at the start of the turn.
-			Sweep => (state, Done)
-			Close(index) => ({ ..state, game: Game.close(game, index, now) }, Done)
-			Advance(index) => ({ ..state, game: Game.advance(game, index, now) }, Done)
-		}
-	}
-
 	## What a page said, if the one who said it may say it: the host runs the game, and players
 	## answer. An answer that makes everyone's in closes the question at once.
-	heard : Rooms.State, Str, Game.Said, U64 -> (Rooms.State, Rooms.Reply)
+	heard : Rooms.State, Str, Game.Said, U64 -> (Rooms.State, [Heard, Refused(Str)])
 	heard = |state, visitor, words, now| {
 		game = state.game
 		host = Game.who(game, visitor) == Host
 		match words {
 			Start if host =>
 				match Game.start(game, now) {
-					Ok(started) => ({ ..state, game: started }, Done)
+					Ok(started) => ({ ..state, game: started }, Heard)
 					Err(NoPlayers) => (state, Refused("Wait for someone to join first."))
 					Err(_) => (state, Refused("The game has started already."))
 				}
-			Next if host => ({ ..state, game: Game.skip(game, now) }, Done)
+			Next if host => ({ ..state, game: Game.skip(game, now) }, Heard)
 			Again if host =>
 				match Game.again(game) {
-					Ok(again) => ({ ..state, game: again }, Done)
+					Ok(again) => ({ ..state, game: again }, Heard)
 					Err(NotFinished) => (state, Refused("The game isn't over yet."))
 				}
 			Pick({ index, choice }) =>
 				match Game.pick(game, { visitor, index, choice, now }) {
 					Ok(picked) =>
 						if Game.all_in(picked) {
-							({ ..state, game: Game.close(picked, index, now) }, Done)
+							({ ..state, game: Game.close(picked, index, now) }, Heard)
 						} else {
-							({ ..state, game: picked }, Done)
+							({ ..state, game: picked }, Heard)
 						}
 					Err(TooLate) => (state, Refused("Time was up."))
 					Err(Picked) => (state, Refused("You've answered this one."))
@@ -207,7 +245,7 @@ Rooms := [].{
 
 	## The room's timer, kept with its phase: a new phase cancels the old one's timer, and sets
 	## its own for its deadline (`Game.deadline`), if it has one.
-	timed! : Actor.Me(Rooms.Message), Game.State, Rooms.State, U64 => Rooms.State
+	timed! : Actor.Me(Rooms.State), Game.State, Rooms.State, U64 => Rooms.State
 	timed! = |me, before, state, now|
 		if state.game.phase == before.phase {
 			state
@@ -220,8 +258,8 @@ Rooms := [].{
 					wait = at - U64.min(at, now)
 					timer =
 						match then {
-							Close(index) => Actor.after!(me, wait, Close(index))
-							Advance(index) => Actor.after!(me, wait, Advance(index))
+							Close(index) => Actor.after!(me, wait, Rooms.close({}), index)
+							Advance(index) => Actor.after!(me, wait, Rooms.advance({}), index)
 						}
 					{ ..state, timer }
 				}
@@ -239,7 +277,7 @@ Rooms := [].{
 
 	## Presence's room, after a change, kept; and each player it says came or went, here or not.
 	present : Rooms.State, (Room(Wire.Meta({})), List(Room.Change(Wire.Meta({})))) -> Rooms.State
-	present = |state, (room, changes)| {
+	present = |state, (kept, changes)| {
 		game = changes.fold(
 			state.game,
 			|so_far, change|
@@ -249,7 +287,7 @@ Rooms := [].{
 					Changed(_) => so_far
 				},
 		)
-		{ ..state, game, presence: room.save() }
+		{ ..state, game, presence: kept.save() }
 	}
 
 }

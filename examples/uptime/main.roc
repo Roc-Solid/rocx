@@ -19,7 +19,7 @@ import Jobs
 import Middlewares
 
 program = App.program({
-	context: |_started| {},
+	init!: |_started| Ok({}),
 	middleware: Middlewares.default,
 	# A file beside where the server starts (`--database-url sqlite:<path>` puts it elsewhere).
 	database: Sqlite("data/uptime.db"),

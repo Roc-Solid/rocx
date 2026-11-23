@@ -82,12 +82,10 @@ const STREAM_ID_BYTES: usize = 24;
 const NOT_PASSED: [&str; 10] = ["accept", "content-type", "content-length", "transfer-encoding", "connection", "range", "if-none-match", "if-modified-since", "x-rocx-channel", "x-rocx-tab"];
 
 /// What every request about a stream's (or a post's) channels is made with: its request's headers
-/// (cookies among them), the address its connection came from, what the server was started with,
-/// and the tab.
+/// (cookies among them), the address its connection came from, and the tab.
 struct Asking {
     headers: String,
     peer: String,
-    started: String,
     dev: bool,
     tab: String,
 }
@@ -100,7 +98,7 @@ impl Asking {
             .map(|(name, value)| format!("{}: {}", name.as_str(), String::from_utf8_lossy(value.as_bytes())))
             .collect::<Vec<_>>()
             .join("\n");
-        Asking { headers, peer, started: config.context.clone(), dev: config.dev, tab }
+        Asking { headers, peer, dev: config.dev, tab }
     }
 }
 
@@ -134,7 +132,7 @@ fn ask(asking: &Asking, op: &str, method: &str, url: &str, body: String) -> (Ans
     if !body.is_empty() {
         headers.push_str("\ncontent-type: application/json");
     }
-    let asked = hosted::Asked::new(method, url.to_string(), headers, Bytes::from(body), asking.peer.clone(), asking.started.clone(), asking.dev);
+    let asked = hosted::Asked::new(method, url.to_string(), headers, Bytes::from(body), asking.peer.clone(), asking.dev);
     let answered = hosted::call_asking(asked.clone(), || roc::respond(&asked));
     match answered {
         Ok(answer) => {

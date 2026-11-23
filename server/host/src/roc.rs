@@ -20,7 +20,7 @@ use std::alloc::{Layout, alloc, dealloc};
 use std::cell::{Cell, RefCell, UnsafeCell};
 use std::ffi::c_void;
 use std::ptr::{self, NonNull};
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicPtr, Ordering};
 
 // ---- Memory ----
 
@@ -520,6 +520,33 @@ fn copied(text: RocStr, host: &RocHost) -> String {
     copy
 }
 
+/// The app's context (`init!`'s, boxed: `context_for_host!`), kept from the start for as long as
+/// the server runs. The host owns one reference to it and never lets it go; each call it is handed
+/// to (a request, a plugin's call, a background loop, an actor's turn, the plugins' starts) gets one
+/// more (`context_for_call`), which Roc lets go of as that call ends. Roc's reference counts are
+/// atomic, so calls on every thread share it; nothing changes it (no Roc value is changed while
+/// another holds it, and the host's reference means another always does). A call that crashes never
+/// lets go of its reference: the count only grows, and the context, never freed anyway, stays. Null
+/// for a context with nothing in it (`{}`, which Roc doesn't allocate), so whether it is made yet is
+/// `CONTEXT_MADE`.
+static CONTEXT: AtomicPtr<c_void> = AtomicPtr::new(ptr::null_mut());
+static CONTEXT_MADE: AtomicBool = AtomicBool::new(false);
+
+/// Why a call that runs the app's code can't, before its context is made: one the app's `init!`
+/// started (an actor it asked; the platform's own calls need none, and run).
+const NOT_MADE: &str = "the app's context isn't made yet: its init! is still running, and only the platform's own calls run before it returns (an actor's turn, a plugin's call, a loop wait for it)";
+
+/// The app's context, with one more reference for the call it is handed to; none before the start
+/// has made it.
+fn context_for_call() -> Option<abi::RocBox> {
+    if !CONTEXT_MADE.load(Ordering::Acquire) {
+        return None;
+    }
+    let context = CONTEXT.load(Ordering::Acquire);
+    unsafe { abi::incref_box(context, 1) };
+    Some(context)
+}
+
 /// The app's answer to a request (`respond!`): the request handed over as one record
 /// (`HostRequest`: its method, target, headers, body and the connection's address), and what the
 /// server was started with. A call during another (a GET a component the host renders reads:
@@ -527,6 +554,9 @@ fn copied(text: RocStr, host: &RocHost) -> String {
 pub fn respond(asked: &hosted::Asked) -> Result<Answer, Crash> {
     let host = host();
     let host = &host;
+    let Some(context) = context_for_call() else {
+        return Err(Crash(NOT_MADE.to_string()));
+    };
     let made = Ring::new();
     let answer = guarded(&made, || unsafe {
         abi::roc_respond(
@@ -537,7 +567,7 @@ pub fn respond(asked: &hosted::Asked) -> Result<Answer, Crash> {
                 body: abi::RocListWith::from_slice(&asked.body, host),
                 peer: RocStr::from_str(&asked.peer, host),
             },
-            RocStr::from_str(&asked.started, host),
+            context,
         )
     })?;
     // The strings and bytes are copied out and freed (leaving `made`); what is left is the
@@ -588,16 +618,53 @@ pub fn drop_feed(feed: Feed) {
     unsafe { abi::roc_drop_feed(feed.boxed) }
 }
 
-/// The platform's start (`init_for_host!`): its schedules checked, its migrations applied, the jobs
-/// a stop cut short queued again. Ok, or why the server can't start.
+/// The platform's part of the start (`init_for_host!`): the plugins checked, the migrations
+/// applied. Ok, or why the server can't start. Alone, for a check of the app's SQL
+/// (`--describe-sql`); a server then makes the app's context (`make_context`) and runs the rest
+/// (`started`).
 pub fn init() -> Result<Result<(), String>, Crash> {
     let host = host();
     let made = Ring::new();
     let done = guarded(&made, || unsafe { abi::roc_init() })?;
+    Ok(tried(done, &host))
+}
+
+/// The app's context (`context_for_host!`: its `init!`), kept (`CONTEXT`) for every call after.
+/// What it made and still holds lives on, untracked, when `made` goes: the context is never freed.
+/// Ok, or why the server can't start (its `Err`).
+pub fn make_context() -> Result<Result<(), String>, Crash> {
+    let host = host();
+    let made = Ring::new();
+    let mut done = guarded(&made, || unsafe { abi::roc_context() })?;
     Ok(match done.tag {
-        abi::InitForHostResultTag::Ok => Ok(()),
-        abi::InitForHostResultTag::Err => Err(copied(unsafe { core::mem::ManuallyDrop::into_inner(done.payload.err) }, &host)),
+        abi::ContextForHostResultTag::Ok => {
+            let context = unsafe { done.take_payload_ok_unchecked() };
+            CONTEXT.store(context, Ordering::Release);
+            CONTEXT_MADE.store(true, Ordering::Release);
+            Ok(())
+        }
+        abi::ContextForHostResultTag::Err => Err(copied(unsafe { core::mem::ManuallyDrop::into_inner(done.payload.err) }, &host)),
     })
+}
+
+/// The last of the start (`started_for_host!`), given the app's context: the actors' timers set
+/// again, the plugins' starts run. Ok, or why the server can't start.
+pub fn started() -> Result<Result<(), String>, Crash> {
+    let host = host();
+    let Some(context) = context_for_call() else {
+        return Ok(Err(NOT_MADE.to_string()));
+    };
+    let made = Ring::new();
+    let done = guarded(&made, || unsafe { abi::roc_started(context) })?;
+    Ok(tried(done, &host))
+}
+
+/// A start's `Try({}, Str)`, copied out.
+fn tried(done: abi::InitForHostResult, host: &RocHost) -> Result<(), String> {
+    match done.tag {
+        abi::InitForHostResultTag::Ok => Ok(()),
+        abi::InitForHostResultTag::Err => Err(copied(unsafe { core::mem::ManuallyDrop::into_inner(done.payload.err) }, host)),
+    }
 }
 
 /// How many background loops the platform runs (the job workers, the schedules, the mail check).
@@ -606,28 +673,44 @@ pub fn background_count() -> Result<u64, Crash> {
     guarded(&made, || unsafe { abi::roc_background_count() })
 }
 
-/// Runs background loop `index` to its end, on this thread.
+/// Runs background loop `index` to its end, on this thread, given the app's context.
 pub fn background(index: u64) -> Result<(), Crash> {
+    let Some(context) = context_for_call() else {
+        return Err(Crash(NOT_MADE.to_string()));
+    };
     let made = Ring::new();
-    guarded(&made, || unsafe { abi::roc_background(index) })
+    guarded(&made, || unsafe { abi::roc_background(index, context) })
 }
 
-/// Runs a part of the app in a call of its own (`isolated_for_host!`: a job): its answer, or why it
-/// failed; a crash in it ends this call only, and frees what it allocated.
+/// Runs a part of the app in a call of its own: a plugin's call (`isolated_for_host!`: a job), given
+/// the app's context, or one of the platform's own (`rocx:…`, `platform_isolated_for_host!`), which
+/// needs none and runs before the context is made too. Its answer, or why it failed; a crash in it
+/// ends this call only, and frees what it allocated.
 pub fn isolated(what: &str, input: &str) -> Result<Result<String, String>, Crash> {
     let host = host();
     let host = &host;
     let made = Ring::new();
-    let done = guarded(&made, || unsafe { abi::roc_isolated(RocStr::from_str(what, host), RocStr::from_str(input, host)) })?;
+    let done = if what.starts_with("rocx:") {
+        guarded(&made, || unsafe { abi::roc_platform_isolated(RocStr::from_str(what, host), RocStr::from_str(input, host)) })?
+    } else {
+        let Some(context) = context_for_call() else {
+            return Ok(Err(NOT_MADE.to_string()));
+        };
+        guarded(&made, || unsafe { abi::roc_isolated(RocStr::from_str(what, host), RocStr::from_str(input, host), context) })?
+    };
     Ok(answered(done, host))
 }
 
 /// Runs an actor's turn (`actor_for_host!`): its kind and key, its state as its last turn left it
 /// (none: the turn reads it), and the message (JSON). Its next state and its reply (JSON), or why it
-/// has none; a crash in it ends this call only, and frees what it allocated.
+/// has none; a crash in it ends this call only, and frees what it allocated. Its `receive!` is
+/// given the app's context.
 pub fn actor(kind: &str, key: &str, kept: Option<&str>, message: &str) -> Result<Result<(String, String), String>, Crash> {
     let host = host();
     let host = &host;
+    let Some(context) = context_for_call() else {
+        return Ok(Err(NOT_MADE.to_string()));
+    };
     let made = Ring::new();
     let done = guarded(&made, || unsafe {
         abi::roc_actor(
@@ -636,6 +719,7 @@ pub fn actor(kind: &str, key: &str, kept: Option<&str>, message: &str) -> Result
             kept.is_some(),
             RocStr::from_str(kept.unwrap_or(""), host),
             RocStr::from_str(message, host),
+            context,
         )
     })?;
     Ok(match done.tag {

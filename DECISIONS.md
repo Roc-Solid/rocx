@@ -863,6 +863,10 @@ supervision and remote actors one server doesn't need.
 **Reversible:** the API, with an edit at every call site (`define`'s record, `receive!`'s `me`); the
 runtime, freely.
 
+**Since D-066:** a kind is its name and starting state, and what its actors do is its methods
+(`Actor.method`), each with its own input and reply; `ask!`, `tell!`, `tell_after!` and `after!`
+take a method, and `program.actors` lists methods.
+
 ## D-022 Nulls are the reader's to say; sockets are their call's
 
 **Context.** Postgres doesn't say in a statement's result whether a column may be null, and a
@@ -3940,3 +3944,109 @@ Once the compiler keeps a frame from growing with the program, specialization ca
 again. The fix would keep closure bodies out of line past a size, or let a switch's cases share
 their stack slots (lifetime markers on the allocas). Then measure the site's and plate's frames
 specialized again.
+
+## D-065 The app's context: made once by `init!`, kept by the host, given to everything that runs the app's code
+
+**Status.** Built (2026-11-24). Open: whether a route's handler is given the app's context beside
+what its middleware hands on, and under what name; the jobs plugin's `on_failed!` and plugins'
+early paths aren't given it.
+
+**Context.** An app's `respond!` was given `--context-file`'s text with each request
+(`context(started)`, a pure function), and nothing else was given anything: a setting read from the
+environment was read again on every request, a value worked out once had nowhere to live, and jobs,
+actors and plugins' loops reached for effects of their own (`Env.var!`, D-006). The host kept no
+Roc value from one call to the next: what it kept was text (`memory.rs`, actors' state).
+
+Roc's own webserver platform (roc-lang/basic-webserver, on the new compiler) has the shape apps
+want: `requires { [Context : context] for program : { init!, respond!, … } }`, `init!` making the
+context once, every `respond!` given it, the host holding it as one boxed pointer and adding a
+reference a request.
+
+**Options.**
+1. Keep `context(started)`, and settings read on every request.
+2. `init!` returns data alone, kept as text (as `memory.rs` keeps the job registry) and decoded for
+   each call: no host change, but nothing that isn't JSON (no functions, no handles).
+3. `init!` returns any value, boxed; the host keeps it for as long as the server runs and hands it
+   to each call, which shares it.
+
+**Choice.** 3.
+- The platform requires `[AppContext : app_context] for program`, with
+  `init! : Str => Try(app_context, Str)` (`AppContext`, as the platform already exposes a module
+  called `Context`). An app needn't name the type: the compiler takes it from `init!`.
+- The start is three calls: the platform's (the plugins checked, the migrations applied); the app's
+  `init!`, given `--context-file`'s text, after the migrations so it may read the database, its
+  `Err` stopping the server; then the actors' timers set again and the plugins' starts, given it. A
+  check of the app's SQL (`--describe-sql`) makes only the first.
+- The host keeps the box (`roc.rs`'s `CONTEXT`) and never lets it go. Each call that runs the app's
+  code gets one reference more, which Roc lets go of as the call ends: a request, a plugin's call (a
+  job's run), a background loop or check, an actor's turn, the plugins' starts. Roc's reference
+  counts are atomic, so every thread reads it at once; no Roc value is changed while another holds
+  it, and the host always holds it. A call that crashes never lets go of its reference: the count
+  only grows, and the context, never freed, stays.
+- A call made while `init!` runs that needs the context (an actor `init!` asks) is refused, saying
+  so. The platform's own calls (`rocx:…`, its actors' timers' rows) have an entry of their own,
+  given no context, and run then too.
+- `App.program({ init!, middleware, … })`: the context is what the middleware is given for each
+  request. `Job.define(name, |context, input| …)`, `Job.Kind(context, input)`; an actor's method
+  is given it in its turn (`{ me, context, state, input }`, D-066); a
+  plugin is `Plugin.Value(context, ctx)`, its calls, loops, starts and checks given `context`, its
+  routes `ctx`. A kind's annotation names the context as the app has it with `_`
+  (`Job.Kind(_, { member : I64 })`, `Actor.Method(_, state, input, reply)`): a value can't be generic
+  in it.
+- The per-request `started` the host passed along is gone; `--context-file` is `init!`'s.
+
+**Why.** Settings, handles and work done once at the start, typed, in one place, failing the start
+when they are wrong; the same shape as Roc's own webserver platform. Tests (`server/test/context`):
+made once; 400 requests at once, some pausing, all seeing it whole; 50 crashes after reading it,
+nothing left allocated; a stream reading it after its request ended; a job, an actor's turn and a
+plugin's call, loop, start and check each given it; an actor asked from `init!` refused; an `Err`
+from `init!` stopping the server. The box's reference count is 1 before every call.
+
+**Reversible:** yes, at the cost of every app's `init!` becoming `context` again and every job's,
+actor's and plugin's context parameter going.
+
+## D-066 Actors' methods: each call its own input and reply
+
+**Status.** Built (2026-11-24), with D-065.
+
+**Context.** A kind of actor (D-021) had one `receive!` and one message type, a tag union, and one
+reply type for all of them. An actor with many messages had a reply union of every answer, and
+every caller matched all of it, including answers its message never gets: asking a quiz room how a
+visitor sees it could only answer `Seat(…)`, but its caller handled `Done`, `Joined`, `Unjoined`
+and `Refused` too, through helpers the app wrote to hide that. Adding a message meant editing the
+union, the reply union and the one `match`; and with the app's context (D-065) `receive!` had four
+positional parameters.
+
+**Options.**
+1. Keep `receive!`, its parameters a record. Fixes their order, not the replies.
+2. A record of handlers, one field a message. Needs a first-class field name to ask with.
+3. Methods, as Cloudflare's Durable Objects moved to (RPC methods in place of `fetch` and routing)
+   and Orleans grains have: a kind is its name and starting state; each method its own input and
+   reply.
+
+**Choice.** 3.
+- `Actor.Kind(state) : { name, initial }`, `Actor.define`.
+- `Actor.method(kind, name, |{ me, context, state, input }| { state, reply })` is an
+  `Actor.Method(context, state, input, reply)`; a turn is given one record, so a method takes only
+  what it uses.
+- `Actor.ask!(method, key, input)` is `Try(reply, [ActorErr(Str)])`, the reply its method's;
+  `tell!`, `tell_after!(method, key, ms, input)` and `after!(me, ms, method, input)` likewise.
+  `Me(state)` ties `after!` to methods of the actor's state's type, and the turn crashes if the
+  method is another kind's.
+- One mailbox per kind and key, as before: an actor takes one turn at a time whichever method
+  each is, so its state is never touched by two at once. The host is unchanged: a call is the
+  method's name, a newline and its input as JSON, and `actor_for_host!` finds the method.
+- `rocx build` lists the methods an app's modules define (`x = Actor.method(…)` at the top of a
+  module's block, or `x = |{}| Actor.method(…)`, a method that names itself through a timer), and
+  still checks its kinds: placed there, `name` first, each name its own. Two methods of one kind
+  with one name stop the server as it starts.
+- A call the method can't take (an input of another shape: a caller built against an older kind)
+  and a method the kind doesn't have are errors logged and told to the asker, as a message an actor
+  didn't take was.
+
+**Why.** Every reply typed for its call, nothing impossible to match, a method added by adding a
+definition; the quiz's room lost its message and reply unions and the helpers that hid them. A
+timer row or a stored state written before keeps its kind's name: state reads as before, and a
+timer's old message, with no method name, is refused once and logged.
+
+**Reversible:** yes, every actor rewritten again.

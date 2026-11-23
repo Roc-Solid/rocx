@@ -441,7 +441,7 @@ test("routes, served natively: each page in its layouts, a param a page's, a pat
 	// itself does: `OpenApi.respond` first, then the routes.
 	put(
 		"main.roc",
-		'app [program] { pf: platform "../../../server/platform/main.roc", crypto: "../../../packages/crypto/main.roc" }\n\nimport pf.Server\nimport pf.OpenApi\nimport Generated/Api\nimport Generated/Routes\n\nprogram = {\n\trespond!: |request, context| {\n\t\tmatch OpenApi.respond(request, Document, Api.openapi) {\n\t\t\tOk(served) => served\n\t\t\tErr(NotHere) => Routes.respond!(request, context)\n\t\t}\n\t},\n\tdatabase: Postgres,\n\tmigrations: [],\n\tactors: [],\n\tlogs: { format: Auto },\n\tplugins: [],\n\troutes: [],\n}\n',
+		'app [program] { pf: platform "../../../server/platform/main.roc", crypto: "../../../packages/crypto/main.roc" }\n\nimport pf.Server\nimport pf.OpenApi\nimport Generated/Api\nimport Generated/Routes\n\nprogram = {\n\tinit!: |started| Ok(started),\n\trespond!: |request, context| {\n\t\tmatch OpenApi.respond(request, Document, Api.openapi) {\n\t\t\tOk(served) => served\n\t\t\tErr(NotHere) => Routes.respond!(request, context)\n\t\t}\n\t},\n\tdatabase: Postgres,\n\tmigrations: [],\n\tactors: [],\n\tlogs: { format: Auto },\n\tplugins: [],\n\troutes: [],\n}\n',
 	);
 	// A page that sends the visitor elsewhere as it renders (`<Navigate>`, D-040): a 303 from the server.
 	put("routes/gone/+page.rocx", 'import pf.Html\nimport pf.Navigate\n\n## Moved: to the blog.\nview! = |_| <main><Navigate href="/blog" /><p>Moved</p></main>\n');
@@ -501,15 +501,15 @@ function contractApp() {
 		mkdirSync(dirname(join(dir, path)), { recursive: true });
 		writeFileSync(join(dir, path), text);
 	};
-	put("main.roc", 'app [program] { jobs: "../../../packages/jobs/main.roc", pf: platform "../../../server/platform/main.roc" }\n\nimport pf.Middleware\nimport jobs.Job\nimport Generated/App\n\nprogram = App.program({\n\tcontext: |_started| {},\n\tmiddleware: Middleware.headers([]),\n\tplugins: [Job.plugin({ jobs: App.jobs })],\n})\n');
+	put("main.roc", 'app [program] { jobs: "../../../packages/jobs/main.roc", pf: platform "../../../server/platform/main.roc" }\n\nimport pf.Middleware\nimport jobs.Job\nimport Generated/App\n\nprogram = App.program({\n\tinit!: |_started| Ok({}),\n\tmiddleware: Middleware.headers([]),\n\tplugins: [Job.plugin({ jobs: App.jobs })],\n})\n');
 	// The channel's message, in a module of its own: Api imports it, and the modules below import Api.
 	put("News.roc", "## What the news channel says: who said it, and a number.\nNews := [].{\n\tSaid : { from : Str, n : U64 }\n}\n");
 	put("routes/news/+server.roc", 'import pf.Server\nimport pf.Endpoint\nimport pf.Channel\nimport ../../News\n\n## The news: anyone may listen.\nchannel! : { request : Server.Request, params : {}, context : {} } => Try(Channel(Str, News.Said, []), Endpoint.Refusal)\nchannel! = |_| Ok(Channel.allow("anyone"))\n');
 	// An actor and a job, each publishing on it through Api.
-	put("Room.roc", 'import pf.Actor\nimport pf.Endpoint\nimport Generated/Api\n\nRoom := [].{\n\troom : Actor.Kind(U64, [Bump], U64)\n\troom = Actor.define({\n\t\tname: "room",\n\t\tinitial: |_| 0,\n\t\treceive!: |_, n, Bump| {\n\t\t\tEndpoint.publish!(Api.channel_news({}), { from: "actor", n: n + 1 })\n\t\t\t{ state: n + 1, reply: n + 1 }\n\t\t},\n\t})\n}\n');
-	put("Jobs.roc", 'import jobs.Job\nimport pf.Endpoint\nimport Generated/Api\n\nJobs := [].{\n\tshout : Job.Kind({ n : U64 })\n\tshout = Job.define("shout", |{ n }| {\n\t\tEndpoint.publish!(Api.channel_news({}), { from: "job", n })\n\t\tOk({})\n\t})\n}\n');
+	put("Room.roc", 'import pf.Actor\nimport pf.Endpoint\nimport Generated/Api\n\nRoom := [].{\n\troom : Actor.Kind(U64)\n\troom = Actor.define({ name: "room", initial: |_| 0 })\n\n\tbump : Actor.Method(_, U64, {}, U64)\n\tbump = Actor.method(Room.room, "bump", |{ state, .. }| {\n\t\tEndpoint.publish!(Api.channel_news({}), { from: "actor", n: state + 1 })\n\t\t{ state: state + 1, reply: state + 1 }\n\t})\n}\n');
+	put("Jobs.roc", 'import jobs.Job\nimport pf.Endpoint\nimport Generated/Api\n\nJobs := [].{\n\tshout : Job.Kind(_, { n : U64 })\n\tshout = Job.define("shout", |_context, { n }| {\n\t\tEndpoint.publish!(Api.channel_news({}), { from: "job", n })\n\t\tOk({})\n\t})\n}\n');
 	// A route that publishes itself, asks the actor, and queues the job (`?job=yes`: with a database).
-	put("routes/publish/+server.roc", 'import pf.Server\nimport pf.Endpoint\nimport pf.Actor\nimport jobs.Job\nimport ../../Generated/Api\nimport ../../Room\nimport ../../Jobs\n\n## Publishes on the news, from here, from the actor, and from a job.\npost! : { request : Server.Request, params : {}, context : {}, body : { n : U64 } } => Try(Str, Endpoint.Refusal)\npost! = |{ request, body, .. }| {\n\tEndpoint.publish!(Api.channel_news({}), { from: "route", n: body.n })\n\t_ = Actor.ask!(Room.room, "lobby", Bump)\n\tqueued = if (request.query.contains("job=yes")) Job.enqueue!(Jobs.shout, { n: body.n }, { when: Now }) else Ok({})\n\tmatch queued {\n\t\tOk({}) => Ok("published")\n\t\tErr(JobErr(why)) => Err(Status(503, why))\n\t}\n}\n');
+	put("routes/publish/+server.roc", 'import pf.Server\nimport pf.Endpoint\nimport pf.Actor\nimport jobs.Job\nimport ../../Generated/Api\nimport ../../Room\nimport ../../Jobs\n\n## Publishes on the news, from here, from the actor, and from a job.\npost! : { request : Server.Request, params : {}, context : {}, body : { n : U64 } } => Try(Str, Endpoint.Refusal)\npost! = |{ request, body, .. }| {\n\tEndpoint.publish!(Api.channel_news({}), { from: "route", n: body.n })\n\t_ = Actor.ask!(Room.bump, "lobby", {})\n\tqueued = if (request.query.contains("job=yes")) Job.enqueue!(Jobs.shout, { n: body.n }, { when: Now }) else Ok({})\n\tmatch queued {\n\t\tOk({}) => Ok("published")\n\t\tErr(JobErr(why)) => Err(Status(503, why))\n\t}\n}\n');
 	// A page that reads an endpoint, and sends one: typed by the contract in both copies.
 	put("routes/hello/+server.roc", 'import pf.Server\nimport pf.Endpoint\nimport ../../News\n\n## The latest news.\nget! : { request : Server.Request, params : {}, context : {} } => Try(News.Said, Endpoint.Refusal)\nget! = |_| Ok({ from: "hello", n: 7 })\n');
 	// A route of respond! alone, which Handlers doesn't import, so it may import Handlers (an MCP route
@@ -600,7 +600,7 @@ test("the contract (D-037): a wrong body or answer against it doesn't compile, i
 		}
 		// An actor publishes what the channel doesn't carry: at its line in Room.roc.
 		writeFileSync(join(dir, "routes", "+page.rocx"), readFileSync(join(dir, "routes", "+page.rocx"), "utf8").replace('{ n: "one" }', "{ n: latest.n }").replace("{latest.title}", "{latest.from}"));
-		writeFileSync(join(dir, "Room.roc"), readFileSync(join(dir, "Room.roc"), "utf8").replace('{ from: "actor", n: n + 1 }', '{ from: "actor", n: "many" }'));
+		writeFileSync(join(dir, "Room.roc"), readFileSync(join(dir, "Room.roc"), "utf8").replace('{ from: "actor", n: state + 1 }', '{ from: "actor", n: "many" }'));
 		const [server] = both();
 		assert.notEqual(server.status, 0);
 		assert.match(server.stdout, /Room\.roc:11:\d+/, server.stdout);

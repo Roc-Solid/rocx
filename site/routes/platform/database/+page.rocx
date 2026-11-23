@@ -49,7 +49,7 @@ view! = |_|
 			</p>
 			<Code
 				title="main.roc"
-				source={"program = App.program({\n\tcontext: |_started| {},\n\tmiddleware: Middlewares.default,\n\tdatabase: Sqlite(\"data/plate.db\"),\n})"}
+				source={"program = App.program({\n\tinit!: |_started| Ok({}),\n\tmiddleware: Middlewares.default,\n\tdatabase: Sqlite(\"data/plate.db\"),\n})"}
 				numbers={Bool.False}
 			/>
 			<p>
@@ -76,7 +76,7 @@ view! = |_|
 			</p>
 			<Code
 				title="main.roc"
-				source={"program = App.program({\n\tcontext: |_started| {},\n\tmiddleware: Middlewares.default,\n\tdatabase: Turso(\"data/plate.db\"),\n})"}
+				source={"program = App.program({\n\tinit!: |_started| Ok({}),\n\tmiddleware: Middlewares.default,\n\tdatabase: Turso(\"data/plate.db\"),\n})"}
 				numbers={Bool.False}
 			/>
 			<p>

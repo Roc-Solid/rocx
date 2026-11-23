@@ -14,12 +14,12 @@ import Middlewares
 # The calls page shows its code, so the server's program imports it, and the compiler checks it.
 import Demos/Count
 
-## Every request: the site's default middleware, given the facts the build measured (what the
+## Every request: the site's default middleware, given the context its init! keeps (the facts the
 ## server was started with, `--context-file`); then the routes. The site has no database tables,
 ## jobs or schedules; its one plugin is the audio player (packages/audio), whose script plays the
 ## showcase's sounds.
 program = App.program({
-	context: |started| { facts: started },
+	init!: |started| Ok({ facts: started }),
 	middleware: Middlewares.default,
 	openapi: Page(Swagger),
 	plugins: [AudioPlayer.plugin({})],

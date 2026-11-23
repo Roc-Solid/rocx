@@ -12,7 +12,7 @@ import Middlewares
 import Jobs
 
 program = App.program({
-	context: |started| { started: started },
+	init!: |started| Ok({ started: started }),
 	middleware: Middlewares.default,
 	# The jobs plugin (packages/jobs): the kinds of job the app's modules define, and a schedule; and
 	# the jobs page (packages/admin), for members only.

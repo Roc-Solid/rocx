@@ -18,16 +18,16 @@ import Store
 Jobs := [].{
 
 	## Queues a check of every monitor that is due one.
-	due : Job.Kind({})
-	due = Job.define_with("due", { attempts: 1, timeout_ms: 30_000 }, |{}| sweep!({}))
+	due : Job.Kind(_, {})
+	due = Job.define_with("due", { attempts: 1, timeout_ms: 30_000 }, |_context, {}| sweep!({}))
 
 	## Checks one monitor.
-	check : Job.Kind({ monitor : I64 })
-	check = Job.define_with("check", { attempts: 3, timeout_ms: 45_000 }, |{ monitor }| Checks.run!(monitor, alert!))
+	check : Job.Kind(_, { monitor : I64 })
+	check = Job.define_with("check", { attempts: 3, timeout_ms: 45_000 }, |_context, { monitor }| Checks.run!(monitor, alert!))
 
 	## Mails one subscriber that an incident opened or closed.
-	alert : Job.Kind({ incident : I64, kind : Str, subscriber : I64 })
-	alert = Job.define("alert", |input| Alerts.send!(input))
+	alert : Job.Kind(_, { incident : I64, kind : Str, subscriber : I64 })
+	alert = Job.define("alert", |_context, input| Alerts.send!(input))
 
 	## Queues an incident's alerts (what a check does when it opens or closes one, and the admin's
 	## "Resolved" update): for a transaction that changes an incident.
@@ -35,10 +35,10 @@ Jobs := [].{
 	alerts! = |incident, what| alert!(incident, what)
 
 	## Rolls up the days before today, and deletes checks older than a week.
-	nightly : Job.Kind({})
+	nightly : Job.Kind(_, {})
 	nightly = Job.define(
 		"nightly",
-		|{}|
+		|_context, {}|
 			match Store.roll_up!({}) {
 				Ok({ days, deleted }) => {
 					Log.info!("uptime: rolled up the checks", { days: days, deleted: deleted })

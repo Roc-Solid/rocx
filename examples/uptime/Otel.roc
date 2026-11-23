@@ -21,43 +21,21 @@ import otel.Points
 ## platform's to add.
 Otel := [].{
 
-	## The sums of the instrument its key names, and when they are next sent (`rocx build` lists it
-	## in the app's `program.actors`). Its name says which shape of state it keeps: one kept before
-	## gauges (`rocx_otel_meter`) wouldn't read as this, so it is let be, and the sums start again.
-	meter : Actor.Kind(Points.State, Message, Bool)
-	meter = Actor.define({
-		name: "rocx_otel_meter_2",
-		initial: |_name| Points.empty,
-		receive!: |me, state, message| {
-			now_ms = Time.now_millis!({})
-			started = if (state.start_nanos == 0) { ..state, start_nanos: Time.now_nanos!({}) } else state
-			added = message.measurements.fold(started, Points.add)
-			next =
-				match settings!({}) {
-					Err(Off) => { ..added, due_ms: 0 }
-					Ok(settings) =>
-						if message.export {
-							# A timer that isn't the one due (one set again after a restart, while the old one
-							# was still on its way) is let go, so one timer goes on.
-							if now_ms + 1_000 < added.due_ms {
-								added
-							} else {
-								send!(Actor.key_of(me), settings, added)
-								scheduled!(me, settings, added, now_ms)
-							}
-						} else if added.due_ms == 0 or now_ms > added.due_ms + late_ms {
-							# Nothing is scheduled, or what was went with a restart (a timer is in memory).
-							scheduled!(me, settings, added, now_ms)
-						} else {
-							added
-						}
-				}
-			{ state: next, reply: Bool.True }
-		},
-	})
+	## The sums of the instrument its key names, and when they are next sent. Its name says which
+	## shape of state it keeps: one kept before gauges (`rocx_otel_meter`) wouldn't read as this, so
+	## it is let be, and the sums start again. Its methods (`measured`, `exported`) are what `rocx
+	## build` lists in the app's `program.actors`.
+	meter : Actor.Kind(Points.State)
+	meter = Actor.define({ name: "rocx_otel_meter_2", initial: |_name| Points.empty })
 
-	## What the meter is told: measurements to add, or that its time to send has come.
-	Message : { measurements : List(Metric.Measurement), export : Bool }
+	## Measurements to add to the sums.
+	measured : Actor.Method(_, Points.State, List(Metric.Measurement), {})
+	measured = Actor.method(Otel.meter, "measured", |{ me, state, input, .. }| { state: metered!(me, state, input, Bool.False), reply: {} })
+
+	## The time to send the sums has come (the meter's own timer, `scheduled!`). A function of `{}`:
+	## the timer it sets names it.
+	exported : {} -> Actor.Method(_, Points.State, {}, {})
+	exported = |{}| Actor.method(Otel.meter, "exported", |{ me, state, .. }| { state: metered!(me, state, [], Bool.True), reply: {} })
 
 	## A measurement of `instrument`, labelled with `attributes`: added to its sums (a gauge's: its
 	## value now), which go out with the next export. Nothing, with metrics off.
@@ -67,7 +45,7 @@ Otel := [].{
 	record! : Metric.Instrument, Dec, List((Str, Str)) => {}
 	record! = |instrument, value, attributes|
 		match settings!({}) {
-			Ok(_) => Actor.tell!(Otel.meter, instrument.name, { measurements: [Metric.measure(instrument, value, attributes)], export: Bool.False })
+			Ok(_) => Actor.tell!(Otel.measured, instrument.name, [Metric.measure(instrument, value, attributes)])
 			Err(Off) => {}
 		}
 
@@ -110,14 +88,42 @@ settings! = |{}| {
 }
 
 ## How late an export may be before a measurement takes it as lost (its timer went with a restart)
-## and sets another; if it was only late, it is let go when it comes (`receive!`).
+## and sets another; if it was only late, it is let go when it comes (`exported`).
 late_ms : U64
 late_ms = 5_000
 
+## A turn of the meter: `measurements` added; then, if it is time to (`export`), the sums sent and
+## the next export scheduled, or one scheduled if none is (or the one that was went with a restart).
+metered! : Actor.Me(Points.State), Points.State, List(Metric.Measurement), Bool => Points.State
+metered! = |me, state, measurements, export| {
+	now_ms = Time.now_millis!({})
+	started = if (state.start_nanos == 0) { ..state, start_nanos: Time.now_nanos!({}) } else state
+	added = measurements.fold(started, Points.add)
+	match settings!({}) {
+		Err(Off) => { ..added, due_ms: 0 }
+		Ok(settings) =>
+			if export {
+				# A timer that isn't the one due (one set again after a restart, while the old one was
+				# still on its way) is let go, so one timer goes on.
+				if now_ms + 1_000 < added.due_ms {
+					added
+				} else {
+					send!(Actor.key_of(me), settings, added)
+					scheduled!(me, settings, added, now_ms)
+				}
+			} else if added.due_ms == 0 or now_ms > added.due_ms + late_ms {
+				# Nothing is scheduled, or what was went with a restart (a timer is in memory).
+				scheduled!(me, settings, added, now_ms)
+			} else {
+				added
+			}
+	}
+}
+
 ## The next export in an interval: a timer to the meter itself.
-scheduled! : Actor.Me(Otel.Message), Config.Settings, Points.State, U64 => Points.State
+scheduled! : Actor.Me(Points.State), Config.Settings, Points.State, U64 => Points.State
 scheduled! = |me, settings, state, now_ms| {
-	_ = Actor.after!(me, settings.interval_ms, { measurements: [], export: Bool.True })
+	_ = Actor.after!(me, settings.interval_ms, Otel.exported({}), {})
 	{ ..state, due_ms: now_ms + settings.interval_ms }
 }
 

@@ -11,7 +11,7 @@ import guard.FlagStore
 
 ## Every request: the default middleware, then the routes.
 program = App.program({
-	context: |started| { facts: started },
+	init!: |started| Ok({ facts: started }),
 	middleware: Middlewares.default,
 	# A file beside where the server starts (`--database-url sqlite:<path>` puts it elsewhere).
 	database: Sqlite("data/guard.db"),

@@ -34,7 +34,7 @@ imports) can. A route of `respond!` alone may too (`routes/mcp/+server.roc`, wit
 
 ```roc
 program = App.program({
-    context: |started| { secret: started },
+    init!: |started| Ok({ secret: started }),
     middleware: Middlewares.signed_in.then(McpHttp.middleware("/mcp", Agents.server)),
 })
 ```

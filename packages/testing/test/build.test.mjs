@@ -47,7 +47,7 @@ import pf.Middleware
 import Generated/App
 
 program = App.program({
-	context: |_started| {},
+	init!: |_started| Ok({}),
 	middleware: Middleware.make(|request, context, next!| next!(request, context)),
 })
 `,

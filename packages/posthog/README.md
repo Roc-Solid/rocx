@@ -33,7 +33,7 @@ import posthog.PostHog
 import Generated/App
 
 program = App.program({
-	context: |started| { facts: started },
+	init!: |started| Ok({ facts: started }),
 	# After the middleware that knows who is signed in, so an error says who it reached.
 	middleware: Middlewares.member.then(PostHog.middleware(|context| context.member.id)),
 	plugins: [

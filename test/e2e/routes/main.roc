@@ -7,6 +7,8 @@ import Generated/Routes
 import Generated/Paths
 
 program = {
+	# The context is what the server was started with (`--context-file`), as it was before `init!`.
+	init!: |started| Ok(started),
 	respond!: |request, context| Routes.respond!(request, context),
 	database: Postgres,
 	migrations: [],

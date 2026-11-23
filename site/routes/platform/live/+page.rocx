@@ -213,69 +213,74 @@ view! = |_|
 			<Heading id="actors">Actors</Heading>
 			<p>
 				An actor is a kind and a key: the cart of member 7, the counter called <code>visits</code>. A kind
-				says its name, its state when it is new (<code>initial</code>, from its key), and what it does with
-				a message (<code>receive!</code>): its next state, and its reply.
+				says its name and its state when it is new (<code>initial</code>, from its key). What its actors do
+				is its methods (<code>Actor.method</code>), each with its own input and its own reply, typed: a turn
+				of one is given the actor (<code>me</code>), the app's context (what its <code>init!</code> made),
+				the actor's state and the input, and answers the next state and the reply.
 			</p>
 			<Code title={"${Sources.platform_counter.file}, in part"} source={Sources.platform_counter.rocx} numbers={Bool.False} />
 			<ul>
 				<li>
-					<strong>Nobody makes one, or ends one.</strong> A message to any key finds its actor as its last
-					message left it, or new: <code>initial(key)</code> is where its state starts, not a message.
+					<strong>Nobody makes one, or ends one.</strong> A call to any key finds its actor as its last
+					turn left it, or new: <code>initial(key)</code> is where its state starts, not a call.
 				</li>
 				<li>
-					<strong>One message at a time, in the order they came.</strong> Each actor has a mailbox in the
-					server, and handles what is in it one message after another: a hundred asks at once each see
-					the state the one before left, with no lost updates and no locks to write.
+					<strong>One turn at a time, in the order they came.</strong> Each actor has a mailbox in the
+					server, and takes what is in it one turn after another, whichever method each is: a hundred asks
+					at once each see the state the one before left, with no lost updates and no locks to write.
 				</li>
 				<li>
-					<strong>A message it doesn't take is an error, not a crash.</strong> Messages are typed, so this
-					is rare (a caller built against an older kind); it, a crash in <code>receive!</code>, and a kind
-					the app has none of are logged as errors and told to the asker. The actor's state stays as it
-					was, and it goes on with its next message.
+					<strong>A call it doesn't take is an error, not a crash.</strong> Methods are typed, so this is
+					rare (a caller built against an older or newer kind: an input the method doesn't take, or a
+					method it doesn't have); it, a crash in a method, and a kind the app has none of are logged as
+					errors and told to the asker. The actor's state stays as it was, and it goes on with its next
+					turn.
 				</li>
 				<li>
 					<strong>Kept in the database</strong> (<code>rocx_actors</code>), read by its first turn and written
 					after each turn that changes it. One idle for 15 minutes (<code>--actor-idle-ms</code>) is let
-					go, and the next message wakes it as the database has it.
+					go, and the next call wakes it as the database has it.
 				</li>
 			</ul>
 			<p>
-				<code>rocx build</code> lists the kinds an app's modules define (<code>Actor.define</code>, at the
-				top of a module's block, its <code>name</code> first), so the server can run an actor when nobody
-				is waiting on it: a tell, a timer.
+				<code>rocx build</code> lists the methods an app's modules define (<code>Actor.method</code>, at the
+				top of a module's block; and checks its kinds, <code>Actor.define</code>, there too, each
+				<code>name</code> first and its own), so the server can run an actor when nobody is waiting on it:
+				a tell, a timer. Two methods of one kind with one name stop the server as it starts.
 			</p>
 
 			<Heading id="asking">Asking and telling</Heading>
 			<Code title={"${Sources.platform_ask.file}, in part"} source={Sources.platform_ask.rocx} numbers={Bool.False} />
 			<p>
-				<code>Actor.ask!(kind, key, message)</code> waits for the reply, typed as the kind says, or
-				<code>ActorErr</code> with why there is none. <code>Actor.tell!(kind, key, message)</code> doesn't
-				wait: the message is handled after the ones before it, and its reply goes nowhere.
+				<code>Actor.ask!(method, key, input)</code> waits for the reply, typed as the method says, or
+				<code>ActorErr</code> with why there is none. <code>Actor.tell!(method, key, input)</code> doesn't
+				wait: its turn comes after the ones before it, and its reply goes nowhere.
 			</p>
 			<Code title={"${Sources.platform_tell.file}, in part"} source={Sources.platform_tell.rocx} numbers={Bool.False} />
 			<p>
 				An actor may ask another. One that asks itself, or any actor whose turn is waiting on its answer,
 				is refused at once: it would wait forever. An ask not answered in 30 s is given up on, and its
-				message is dropped if its turn hasn't come.
+				call is dropped if its turn hasn't come.
 			</p>
 
 			<Heading id="timers">Timers</Heading>
 			<p>
-				<code>receive!</code> is given the actor itself (<code>me</code>): its key
-				(<code>Actor.key_of(me)</code>), and its own timers. <code>Actor.after!(me, ms, message)</code>
-				sends it a message later, typed as its kind's messages are, and answers the timer, which
-				<code>Actor.cancel!</code> stops. A timer every so often is one that sets the next:
+				A method is given the actor itself (<code>me</code>): its key (<code>Actor.key_of(me)</code>), and
+				its own timers. <code>Actor.after!(me, ms, method, input)</code> calls one of its kind's methods
+				later, and answers the timer, which <code>Actor.cancel!</code> stops. A timer every so often is one
+				that sets the next (a method that names itself is a function of <code>{"{}"}</code>: a value can't
+				be defined in terms of itself):
 			</p>
 			<Code title={"${Sources.platform_ticker.file}, in part"} source={Sources.platform_ticker.rocx} numbers={Bool.False} />
 			<p>
-				<code>Actor.tell_after!(kind, key, ms, message)</code> does the same from anywhere: a request, a
+				<code>Actor.tell_after!(method, key, ms, input)</code> does the same from anywhere: a request, a
 				job, another actor.
 			</p>
 			<p>
 				With a database, a timer outlives a restart: it is a row (<code>rocx_actor_timers</code>), written
 				at once (outside any transaction the caller has open, as a tell is sent at once) and deleted when
-				the turn that handled it has ended, and the server sets every row again as it starts. Its message
-				is told at least once: a server killed in the middle of that turn tells it again after its restart.
+				the turn that handled it has ended, and the server sets every row again as it starts. Its call is
+				made at least once: a server killed in the middle of that turn makes it again after its restart.
 				<code>Actor.cancel!</code> stops a timer that is waiting, or one that has fired whose turn hasn't
 				come. Without a database, timers are in memory, and a restart loses them.
 			</p>

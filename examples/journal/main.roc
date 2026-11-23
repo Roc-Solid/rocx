@@ -11,7 +11,7 @@ import Generated/App
 import Middlewares
 
 program = App.program({
-	context: |_started| {},
+	init!: |_started| Ok({}),
 	middleware: Middlewares.default,
 	openapi: Page(Scalar),
 })

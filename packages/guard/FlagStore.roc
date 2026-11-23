@@ -24,11 +24,11 @@ FlagStore := [].{
 	## overrides are in memory alone.
 	##
 	##     program = App.program({ …, plugins: [FlagStore.plugin({})] })
-	plugin : {} -> Plugin.Value(ctx)
+	plugin : {} -> Plugin.Value(context, ctx)
 	plugin = |{}| {
 		name: "guard",
 		migrations: [{ name: "0001_flags", sql: flags_table("timestamptz not null default now()"), on: Postgres }, { name: "0001_flags", sql: flags_table("text not null default current_timestamp"), on: Sqlite }],
-		starts: [loaded!],
+		starts: [|_context| loaded!({})],
 		needs: [Database],
 	}
 

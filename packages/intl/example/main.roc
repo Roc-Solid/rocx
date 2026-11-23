@@ -8,6 +8,6 @@ import Generated/App
 import pf.Middleware
 
 program = App.program({
-	context: |_started| {},
+	init!: |_started| Ok({}),
 	middleware: Middleware.same_origin({}),
 })

@@ -36,15 +36,15 @@ Email := [].{
 	## under `--debug` too: `/__rocx/mail`, `/__rocx/mail.json`, `/__rocx/mail/<id>`), a look at the
 	## SMTP server once the server has started (`email.smtp`: whether it answers, on the log), and
 	## its options kept for `send!`.
-	plugin : Options -> Plugin.Value(ctx)
+	plugin : Options -> Plugin.Value(context, ctx)
 	plugin = |options| {
 		from = options.from
 		smtp_url! = options.smtp_url!
 		{
 			name: "email",
 			early: Mailbox.early,
-			starts: [|{}| keep!(from, smtp_url!)],
-			checks: [{ name: "email.smtp", run!: |{}| check!({}) }],
+			starts: [|_context| keep!(from, smtp_url!)],
+			checks: [{ name: "email.smtp", run!: |_context| check!({}) }],
 		}
 	}
 

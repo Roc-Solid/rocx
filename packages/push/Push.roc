@@ -51,7 +51,7 @@ Push := [].{
 	## middleware; its table (`push/0001_push_subscriptions`, on Postgres or SQLite); and its job,
 	## `push.deliver`, which the jobs plugin's workers run. It needs the jobs plugin, a database and
 	## the VAPID keys; its start checks the keys.
-	plugin : Setup(ctx) -> Plugin.Value(ctx)
+	plugin : Setup(ctx) -> Plugin.Value(context, ctx)
 	plugin = |setup| {
 		at = setup.at
 		owner = setup.owner
@@ -69,7 +69,7 @@ Push := [].{
 			scripts: ["push.js"],
 			migrations: [{ name: "0001_push_subscriptions", sql: table, on: Postgres }, { name: "0001_push_subscriptions", sql: lite_table, on: Sqlite }],
 			calls: [Job.call(Push.deliver)],
-			starts: [started!],
+			starts: [|_context| started!({})],
 			needs: [Plugin("jobs"), Database, Env("VAPID_PUBLIC_KEY"), Env("VAPID_PRIVATE_KEY"), Env("VAPID_SUBJECT")],
 		}
 	}
@@ -164,8 +164,8 @@ Push := [].{
 	## then, five times at most. A message whose TTL has run out is dropped; a subscription that is
 	## gone is deleted; a refusal (a bad VAPID key, a message too large) is logged and noted on the
 	## subscription, not tried again.
-	deliver : Job.Kind(Input)
-	deliver = Job.define_with("push.deliver", { attempts: 5, timeout_ms: 60_000 }, |input| deliver!(Push.host, input))
+	deliver : Job.Kind(_, Input)
+	deliver = Job.define_with("push.deliver", { attempts: 5, timeout_ms: 60_000 }, |_context, input| deliver!(Push.host, input))
 
 	## One attempt at sending `data` (empty: a push with no data, which the service worker shows as
 	## a notification with no text) to `subscription`, with `options`: what the push service's

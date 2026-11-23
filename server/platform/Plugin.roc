@@ -12,14 +12,19 @@ import Server
 ## (`JobsPage.plugin({ guard })`).
 ##
 ## ```roc
-## plugin : Options -> Plugin.Value(ctx)
+## plugin : Options -> Plugin.Value(context, ctx)
 ## plugin = |options| {
 ##     name: "acme",
-##     routes: [{ method: "GET", path: options.at, kind: Page, answer!: |request, _context| page!(request) }],
+##     routes: [{ method: "GET", path: options.at, kind: Page, answer!: |request, _ctx| page!(request) }],
 ##     migrations: [{ name: "0001_notes", sql: notes }],
+##     loops: [{ name: "acme.sync", run!: |_context| sync!({}) }],
 ##     needs: [Database, Env("ACME_KEY")],
 ## }
 ## ```
+##
+## A plugin's calls, loops, starts and checks are given the app's context (what its `init!` made,
+## `context`), as its jobs and actors are; its routes are given what the app's middleware hands
+## them (`ctx`). A plugin knows the type of neither.
 ##
 ## When the server starts it checks every plugin at once, and any problem stops it, with the whole
 ## list: a name used twice; a call, loop or check not named `<plugin>.<name>`; an early path not
@@ -29,23 +34,24 @@ import Server
 ## not met (an environment variable unset, no database or one of the other flavor, a plugin not in
 ## the list); needs that go round in a circle. It orders the plugins by what they need (the list's order
 ## breaking ties), applies their migrations after the platform's and before the app's, each
-## recorded as `<plugin>/<name>`, runs their `starts` (an `Err` stops the server), and logs a line a
-## plugin saying what it added.
+## recorded as `<plugin>/<name>`, makes the app's context (its `init!`), runs their `starts` with
+## it (an `Err` stops the server), and logs a line a plugin saying what it added.
 Plugin := [].{
 
-	## A plugin. `ctx` is what the app's middleware hands a route (the signed-in user): a plugin's
-	## routes get it without knowing its type.
-	Value(ctx) := {
+	## A plugin. `context` is the app's context (its `init!`'s), which its calls, loops, starts and
+	## checks are given; `ctx` is what the app's middleware hands a route (the signed-in user). It
+	## knows the type of neither.
+	Value(context, ctx) := {
 		name : Str,
 		routes : List(Route(ctx)) ?? [],
 		early : List(Early) ?? [],
 		files : List(File) ?? [],
 		scripts : List(Str) ?? [],
 		migrations : List(Migration) ?? [],
-		calls : List(Call) ?? [],
-		loops : List(Loop) ?? [],
-		starts : List(Start) ?? [],
-		checks : List(Check) ?? [],
+		calls : List(Call(context)) ?? [],
+		loops : List(Loop(context)) ?? [],
+		starts : List(Start(context)) ?? [],
+		checks : List(Check(context)) ?? [],
 		needs : List(Need) ?? [],
 	}
 
@@ -76,22 +82,24 @@ Plugin := [].{
 	Migration := { name : Str, sql : Str, on : [Any, Postgres, Sqlite] ?? Any }
 
 	## A function the plugin runs in a call of its own (`Plugin.isolated!`), named
-	## `<plugin>.<name>`: its answer, or why it failed. A crash in it ends that call only.
-	Call : { name : Str, run! : Str => Try(Str, Str) }
+	## `<plugin>.<name>`, given the app's context and its input: its answer, or why it failed. A
+	## crash in it ends that call only.
+	Call(context) : { name : Str, run! : context, Str => Try(Str, Str) }
 
 	## A background loop, named `<plugin>.<name>`, run on a call of its own when the server has
 	## started, until it returns or the server stops (`Plugin.stopping!`); one that crashes starts
-	## again a second later.
-	Loop : { name : Str, run! : {} => {} }
+	## again a second later. It is given the app's context.
+	Loop(context) : { name : Str, run! : context => {} }
 
-	## Work done once the server has started, after every migration, in the plugins' order: an
-	## `Err` stops the server, with why.
-	Start : {} => Try({}, Str)
+	## Work done once the server has started, after every migration and the app's `init!`, in the
+	## plugins' order, given the app's context: an `Err` stops the server, with why.
+	Start(context) : context => Try({}, Str)
 
 	## A look at something the plugin depends on (an SMTP server), named `<plugin>.<name>`, run once
 	## in the background after the server has started: what it says is logged, an `Err` as a
-	## warning. "" says nothing. A failing check doesn't stop the server.
-	Check : { name : Str, run! : {} => Try(Str, Str) }
+	## warning. "" says nothing. A failing check doesn't stop the server. It is given the app's
+	## context.
+	Check(context) : { name : Str, run! : context => Try(Str, Str) }
 
 	## What a plugin needs that the compiler can't see: an environment variable that is set; a
 	## database, any (`Database`), or one flavor (`Postgres`, `Sqlite`: a package may work with one
@@ -101,22 +109,22 @@ Plugin := [].{
 
 	## What the platform keeps of a plugin (`program.plugins`): all but its routes, which the app's
 	## `respond!` answers (`Plugin.respond!`); their methods and paths, for the checks.
-	Running : {
+	Running(context) : {
 		name : Str,
 		claims : List({ method : Str, path : Str }),
 		early : List(Early),
 		files : List(File),
 		scripts : List(Str),
 		migrations : List(Migration),
-		calls : List(Call),
-		loops : List(Loop),
-		starts : List(Start),
-		checks : List(Check),
+		calls : List(Call(context)),
+		loops : List(Loop(context)),
+		starts : List(Start(context)),
+		checks : List(Check(context)),
 		needs : List(Need),
 	}
 
 	## What the platform keeps of `plugin`.
-	running : Value(ctx) -> Running
+	running : Value(context, ctx) -> Running(context)
 	running = |plugin| {
 		name: plugin.name,
 		claims: plugin.routes.map(|route| { method: route.method, path: route.path }),
@@ -142,7 +150,7 @@ Plugin := [].{
 
 	## Answers `request` with the first plugin route that matches its method and path, given the
 	## app's context; with `otherwise!` (the app's routes) when none does.
-	respond! : List(Value(ctx)), Server.Request, ctx, (Server.Request, ctx => Server.Response) => Server.Response
+	respond! : List(Value(context, ctx)), Server.Request, ctx, (Server.Request, ctx => Server.Response) => Server.Response
 	respond! = |plugins, request, context, otherwise!|
 		match plugins.join_map(|plugin| plugin.routes).find_first(|route| method_matches(route.method, request.method) and Plugin.matches(route.path, request.path)) {
 			Ok(route) => (route.answer!)(request, context)
@@ -151,7 +159,7 @@ Plugin := [].{
 
 	## The path of the plugin route that answers `method` and `path` (`/admin/jobs`), for
 	## `request.route`.
-	pattern : List(Value(ctx)), Str, Str -> Try(Str, [NotFound])
+	pattern : List(Value(context, ctx)), Str, Str -> Try(Str, [NotFound])
 	pattern = |plugins, method, path|
 		match plugins.join_map(|plugin| plugin.routes).find_first(|route| method_matches(route.method, method) and Plugin.matches(route.path, path)) {
 			Ok(route) => Ok(route.path)

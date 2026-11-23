@@ -1,3 +1,4 @@
+import pf.Actor
 import pf.Server
 import pf.Endpoint
 import pf.Channel
@@ -11,7 +12,7 @@ import ../../../Visitor
 get! : { request : Server.Request, params : { code : Str }, context : Visitor.Context } => Try(Game.Seat, Endpoint.Refusal)
 get! = |{ params, context, .. }| Ok(Rooms.look!(params.code, context.visitor))
 
-## The room's channel (D-020): every view the room's actor publishes (`Rooms.turn!`), to the host's
+## The room's channel (D-020): every view the room's actor publishes (`Rooms.turned!`), to the host's
 ## screen and every player's phone. Anyone may follow a room that is there; who they are is their
 ## visitor id, which the hooks hand to the actor. The host asks again every beat (15 s), which
 ## tells the room the tab is still there.
@@ -21,7 +22,7 @@ channel! = |{ request, params, context }|
 		Vacant => Err(NotFound)
 		_ => {
 			if Endpoint.channel_asked(request) == "check" {
-				Rooms.tell!(params.code, Beat({ visitor: context.visitor, tab: Server.header(request, "x-rocx-tab") ?? "" }))
+				Actor.tell!(Rooms.beat, params.code, { visitor: context.visitor, tab: Server.header(request, "x-rocx-tab") ?? "" })
 			}
 			Ok(Channel.allow(context.visitor))
 		}
@@ -30,18 +31,19 @@ channel! = |{ request, params, context }|
 ## A tab subscribed (and each time it reconnects): it is in the room (a player's, for presence),
 ## and its first message is the room as it is now.
 on_open! = |{ params, who, tab, .. }|
-	match Rooms.ask!(params.code, Opened({ visitor: who, tab })) {
-		Seat(seat) => [seat.view]
-		_ => []
+	match Actor.ask!(Rooms.opened, params.code, { visitor: who, tab }) {
+		Ok(seat) => [seat.view]
+		Err(ActorErr(_)) => []
 	}
 
 ## A tab's subscription ended: a player whose last tab it was drops, once the grace is up.
-on_close! = |{ params, who, tab, .. }| Rooms.tell!(params.code, Closed({ visitor: who, tab }))
+on_close! = |{ params, who, tab, .. }| Actor.tell!(Rooms.closed, params.code, { visitor: who, tab })
 
 ## What a page says: the host's Start, Next and Again, a player's answer. The room decides if they
 ## may; a refusal is a 409 with why.
 receive! = |{ params, who, said, .. }|
-	match Rooms.ask!(params.code, Said({ visitor: who, said })) {
-		Refused(why) => Err(Conflict(why))
-		_ => Ok({})
+	match Actor.ask!(Rooms.said, params.code, { visitor: who, said }) {
+		Ok(Heard) => Ok({})
+		Ok(Refused(why)) => Err(Conflict(why))
+		Err(ActorErr(why)) => Err(Conflict(why))
 	}

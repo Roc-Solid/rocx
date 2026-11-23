@@ -8,7 +8,7 @@ likes. Everything goes to any OpenTelemetry Collector, or to a backend that take
 ```roc
 # main.roc
 program = App.program({
-	context: |started| { facts: started },
+	init!: |started| Ok({ facts: started }),
 	middleware: Otel.middleware({}).then(Middlewares.default),
 })
 ```
@@ -75,8 +75,9 @@ would make a series for each, so past 2000 series an instrument drops new ones (
 development.
 
 **How it works.** Each instrument's sums are an actor's state (`Otel.meter`, keyed by the
-instrument's name). A measurement is a `tell!`, so the request doesn't wait for it. The actor sets
-itself a timer (`Actor.after!`) and sends its sums when it fires, as OTLP/HTTP JSON (`Otlp`). The
+instrument's name). A measurement is a `tell!` of its `measured` method, so the request doesn't wait
+for it. The actor sets itself a timer (`Actor.after!`, calling its `exported`) and sends its sums
+when it fires, as OTLP/HTTP JSON (`Otlp`). The
 sums are cumulative since the actor started, so a send that fails loses nothing: the next one has it
 all, and the failure is logged (`otel: the metrics couldn't be sent`). With a database, the
 sums outlive a restart, and keep their start time. (The meter's state took a gauge's kind on
@@ -133,8 +134,8 @@ In Docker or Kubernetes, point `include` at the container's log files instead.
 1. Name the package in the app's header: `otel: "…/packages/otel/main.roc"`.
 2. Copy `server/Otel.roc` into the app, beside its main.roc, and `import Otel`. A route file
    imports it by its path (`import ../../Otel`). `rocx build` doesn't copy a package's
-   server-only modules yet (PROPOSALS.md), and it lists `Otel.meter` in the app's
-   `program.actors` itself.
+   server-only modules yet (PROPOSALS.md), and it lists the meter's methods (`Otel.measured`,
+   `Otel.exported({})`) in the app's `program.actors` itself.
 3. `Otel.middleware({})` first in the app's middleware.
 
 `example/` does all three (`cp ../server/Otel.roc . && rocx build .`): `GET /hello/<name>` counts

@@ -25,11 +25,13 @@ import "migrations/0001_tables.sql" as tables : Str
 import "migrations/0002_admin.sql" as admin_tables : Str
 
 program = {
+	# The context is what the server was started with (`--context-file`), as it was before `init!`.
+	init!: |started| Ok(started),
 	respond!,
 	# A file beside where the server starts, unless --database-url says `sqlite:<path>`.
 	database: Sqlite("data/sqlite-test.db"),
 	migrations: [{ name: "0001_tables.sql", sql: tables }, { name: "0002_admin.sql", sql: admin_tables }],
-	actors: [Actor.handler(counter)],
+	actors: [Actor.handler(counter_add)],
 	logs: { format: Auto },
 	plugins: plugins.map(Plugin.running),
 	routes: [],
@@ -38,7 +40,7 @@ program = {
 ## The jobs (packages/jobs), with a schedule each second and a short first retry; the jobs page
 ## (packages/admin), open to all; and a plugin that works with SQLite alone (`needs`), with a
 ## migration for each database (the server applies SQLite's) and one for any.
-plugins : List(Plugin.Value(Str))
+plugins : List(Plugin.Value(Str, Str))
 plugins = [
 	Job.plugin(
 		{
@@ -59,15 +61,12 @@ plugins = [
 	},
 ]
 
-counter : Actor.Kind({ count : I64 }, [Add(I64)], I64)
-counter = Actor.define({
-	name: "counter",
-	initial: |_key| { count: 0 },
-	receive!: |_me, state, message|
-		match message {
-			Add(by) => { state: { count: state.count + by }, reply: state.count + by },
-		},
-})
+counter : Actor.Kind({ count : I64 })
+counter = Actor.define({ name: "counter", initial: |_key| { count: 0 } })
+
+## Adds `input` to the count: the count after.
+counter_add : Actor.Method(_, { count : I64 }, I64, I64)
+counter_add = Actor.method(counter, "add", |{ state, input, .. }| { state: { count: state.count + input }, reply: state.count + input })
 
 ## A plugin's route, or the app's.
 respond! : Server.Request, Str => Server.Response
@@ -283,13 +282,13 @@ route! = |request, context| {
 
 		# ---- An actor's state, kept in the database ----
 		("POST", "/actors/add") =>
-			match Actor.ask!(counter, param(query, "key"), Add(1)) {
+			match Actor.ask!(counter_add, param(query, "key"), 1) {
 				Ok(count) => text(200, count.to_str())
 				Err(ActorErr(why)) => text(500, why)
 			}
 		# A timer (D-057): the counter told to add `by` in `ms` milliseconds; kept in the file.
 		("POST", "/actors/later") => {
-			timer = Actor.tell_after!(counter, param(query, "key"), number(query, "ms"), Add(U64.to_i64_wrap(number(query, "by"))))
+			timer = Actor.tell_after!(counter_add, param(query, "key"), number(query, "ms"), U64.to_i64_wrap(number(query, "by")))
 			text(200, timer.to_str())
 		}
 		("POST", "/actors/cancel") => {
@@ -297,7 +296,7 @@ route! = |request, context| {
 			text(200, "cancelled")
 		}
 		("GET", "/actors/count") =>
-			match Actor.ask!(counter, param(query, "key"), Add(0)) {
+			match Actor.ask!(counter_add, param(query, "key"), 0) {
 				Ok(count) => text(200, count.to_str())
 				Err(ActorErr(why)) => text(500, why)
 			}
@@ -410,10 +409,10 @@ counted = |result|
 	}
 
 ## Writes what it was given to the job log.
-note_job : Job.Kind({ said : Str })
+note_job : Job.Kind(_, { said : Str })
 note_job = Job.define(
 	"note",
-	|{ said }|
+	|_context, { said }|
 		match Db.run!("insert into job_log (kind, said) values ('note', $1)", [Text(said)]) {
 			Ok(_) => Ok({})
 			Err(DbErr(why)) => Err(why)
@@ -421,10 +420,10 @@ note_job = Job.define(
 )
 
 ## Fails `fails` times, then writes to the job log.
-flaky_job : Job.Kind({ name : Str, fails : I64 })
+flaky_job : Job.Kind(_, { name : Str, fails : I64 })
 flaky_job = Job.define(
 	"flaky",
-	|{ name, fails }| {
+	|_context, { name, fails }| {
 		tried : Try(List({ tries : I64 }), [DbErr(Str), BadRow(Str)])
 		tried = Db.all!("insert into flaky (name, tries) values ($1, 1) on conflict (name) do update set tries = tries + 1 returning tries", [Text(name)])
 		match tried {
@@ -442,11 +441,11 @@ flaky_job = Job.define(
 
 ## Writes to the job log in a transaction, then counts for far longer than its 300 ms: cut off, its
 ## statement interrupted, its transaction rolled back with its connection. Tried once.
-slow_job : Job.Kind({ said : Str })
+slow_job : Job.Kind(_, { said : Str })
 slow_job = Job.define_with(
 	"slow",
 	{ attempts: 1, timeout_ms: 300 },
-	|{ said }| {
+	|_context, { said }| {
 		counted_up = Db.transaction!(
 			|{}| {
 				_ = Db.run!("insert into job_log (kind, said) values ('slow', $1)", [Text(said)])?
@@ -464,10 +463,10 @@ slow_job = Job.define_with(
 )
 
 ## The schedule's job: a tick in the job log.
-tick_job : Job.Kind({})
+tick_job : Job.Kind(_, {})
 tick_job = Job.define(
 	"tick",
-	|{}|
+	|_context, {}|
 		match Db.run!("insert into job_log (kind, said) values ('tick', 'tick')", []) {
 			Ok(_) => Ok({})
 			Err(DbErr(why)) => Err(why)

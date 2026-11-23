@@ -16,7 +16,7 @@ import Registry
 Cron := [].{
 
 	## A job of `kind` (`Job.define`), with `input`, on `schedule`.
-	every : Str, { name : Str, attempts : U64, timeout_ms : U64, run! : input => Try({}, Str) }, input -> { name : Str, schedule : Str, job : Str, input : Str }
+	every : Str, { name : Str, attempts : U64, timeout_ms : U64, run! : context, input => Try({}, Str) }, input -> { name : Str, schedule : Str, job : Str, input : Str }
 		where [input.Json.Encodable([])]
 	every = |schedule, kind, input| { name: "${kind.name} ${schedule}", schedule, job: kind.name, input: Json.to_str(input) }
 

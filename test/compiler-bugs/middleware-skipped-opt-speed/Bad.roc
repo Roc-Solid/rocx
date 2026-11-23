@@ -16,6 +16,8 @@ answer_doc : Str, (Str => Str) => Str
 answer_doc = |_, _| "doc"
 
 program = {
+	# The context is what the server was started with (`--context-file`), as it was before `init!`.
+	init!: |started| Ok(started),
 	respond!: |request, _started| {
 		chain = then(then(pass_on!, pass_on!), answer_doc)
 		Server.response(200, [], chain(request.path, |_| "fell through"))

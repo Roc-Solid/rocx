@@ -1,3 +1,4 @@
+import pf.Actor
 import pf.Endpoint
 import pf.Random
 import pf.Server
@@ -20,10 +21,10 @@ Entry := [].{
 	join! : Visitor.Context, Str, Str => Try({}, Endpoint.Refusal)
 	join! = |context, code, name| {
 		me = Visitor.id!(context)
-		match Rooms.ask!(code, Join({ visitor: me.visitor, name })) {
-			Joined(_) => Err(Answer(Visitor.remembered(Server.redirect(Paths.play_code({ code: code })), me)))
-			Unjoined(why) => Err(Issues.refusal([Entry.issue(why)]))
-			_ => Err(Status(503, "The room didn't answer. Try again."))
+		match Actor.ask!(Rooms.join, code, { visitor: me.visitor, name }) {
+			Ok(Joined(_)) => Err(Answer(Visitor.remembered(Server.redirect(Paths.play_code({ code: code })), me)))
+			Ok(Unjoined(why)) => Err(Issues.refusal([Entry.issue(why)]))
+			Err(ActorErr(_)) => Err(Status(503, "The room didn't answer. Try again."))
 		}
 	}
 
@@ -49,15 +50,15 @@ Entry := [].{
 		match Sets.load!(id) {
 			Ok(loaded) => {
 				me = Visitor.id!(context)
-				opening = Open({ title: loaded.title, questions: loaded.questions, timing: Rooms.timing!({}), host: me.visitor })
+				opening = { title: loaded.title, questions: loaded.questions, timing: Rooms.timing!({}), host: me.visitor }
 				var $code = ""
 				var $tries = 0
 				while $code.is_empty() and $tries < 10 {
 					$tries = $tries + 1
 					candidate = Codes.from_bytes(Random.bytes!(8))
 					if Codes.parse(candidate).is_ok() {
-						match Rooms.ask!(candidate, opening) {
-							Done => {
+						match Actor.ask!(Rooms.open, candidate, opening) {
+							Ok(Opened) => {
 								$code = candidate
 							}
 							_ => {}

@@ -250,7 +250,7 @@ Dev := [].{
 			"import Generated/App",
 			"",
 			"program = App.program({",
-			"\tcontext: |_started| {},",
+			"\tinit!: |_started| Ok({}),",
 			"\tmiddleware: Middleware.make(|request, context, next!| next!(request, context)),",
 			"})",
 			"",

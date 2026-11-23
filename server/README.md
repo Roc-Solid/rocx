@@ -29,7 +29,8 @@ node server/build.mjs app.roc out/app [--opt=speed] [--target=arm64musl] [--spec
 app [program] { pf: platform "…/server/platform/main.roc" }
 
 program = {
-    respond!,                                   # every request, answered with a Server.Response
+    init!: |started| Ok({ started }),           # the app's context, made once at the start (below)
+    respond!,                                   # every request, given the context, answered with a Server.Response
     migrations: [{ name: "0001_tables.sql", sql: tables }],   # import "0001_tables.sql" as tables : Str
     actors: [Actor.handler(cart)],              # the kinds of actor (below)
     logs: { format: Auto },                     # the log's format: Auto, Pretty or Json (below)
@@ -38,12 +39,22 @@ program = {
 }
 ```
 
+`init!` makes the app's context once, when the server starts: after the migrations (so it may read
+the database), given what the server was started with (`--context-file`'s text); its `Err` stops
+the server. The context is anything the app wants read once and shared: settings, handles, even
+functions. The host keeps it (boxed, D-065) for as long as the server runs, and hands it to every
+call that runs the app's code, which shares it: a request (`respond!`), a job's run, an actor's
+methods, and a plugin's calls, loops, starts and checks. Nothing changes it, and its reference
+counts are atomic, so calls on every thread read it at once; it is never copied or freed. A call
+made while `init!` runs that needs it (an actor `init!` asks) is refused, saying so: only the
+platform's own calls run before it is made.
+
 `respond!` takes the request, a `Server.Request` (its method, path, query, headers, body as the
-bytes came, and `peer`, the address of the connection it came on), and what the server was started
-with (`--context-file`), and answers with a `Server.Response`. The host hands the request over as
+bytes came, and `peer`, the address of the connection it came on), and the app's context, and
+answers with a `Server.Response`. The host hands the request over as
 one record of what it knows (`HostRequest` in `platform/main.roc`: method, target, headers, body,
 peer; D-041), which the platform makes the `Server.Request`. An app with routes writes none of this
-record: `rocx build` writes `Generated/App`, whose `App.program({ context, middleware, openapi,
+record: `rocx build` writes `Generated/App`, whose `App.program({ init!, middleware, openapi,
 plugins })` is a program that answers every request with a plugin's route or the app's (pages,
 `+server.roc` endpoints and channels) behind its middleware, and lists the kinds of actor its
 modules define and its `migrations/*.sql`; `App.jobs` is the kinds of job they define, for the jobs
@@ -55,7 +66,7 @@ a stream of `Events`, which the host runs in a call of its own with `{ send!, sl
 feed }`, `kind` 0 for `text`, 1 for the `page` (a box the host runs: `Html.serialize!` of the page's
 markup, made once per answer), 2 for the `feed`, 3 for the `bytes`, 4 for the `upstream` (its
 method, URL and headers); the boxes an answer doesn't send do nothing, and the host releases them.
-`program.actors` lists the app's kinds of actor (`Actor.handler`), so the host can run an actor's
+`program.actors` lists the app's actors' methods (`Actor.handler(method)`), so the host can run an actor's
 turn when nobody waits on it (a tell, a timer). The platform exposes `Db`, `Kv`, `Live`,
 `Actor`, `Log`, `Time`, `Tcp`, `Http` (and `HttpResponse`, its answer), `Env`, `Random`, `AesGcm`
 and `Plugin`; the modules components are written with
@@ -683,41 +694,44 @@ The host answers the tab's stream itself, on the async side, holding no thread o
 ### Actors: `Actor`
 
 ```roc
-cart : Actor.Kind({ items : List(Str) }, [Add(Str), Clear], U64)
-cart = Actor.define({
-    name: "cart",
-    initial: |_key| { items: [] },
-    receive!: |_me, state, message|
-        match message {
-            Add(item) => { state: { items: state.items.append(item) }, reply: state.items.len() + 1 }
-            Clear => { state: { items: [] }, reply: 0 }
-        },
-})
+cart : Actor.Kind({ items : List(Str) })
+cart = Actor.define({ name: "cart", initial: |_key| { items: [] } })
 
-count = Actor.ask!(cart, member, Add("a book"))?   # waits for the reply
-Actor.tell!(cart, member, Clear)                    # doesn't
-timer = Actor.tell_after!(cart, member, 60_000, Clear)
+add : Actor.Method(_, { items : List(Str) }, Str, U64)
+add = Actor.method(cart, "add", |{ state, input, .. }| { state: { items: state.items.append(input) }, reply: state.items.len() + 1 })
+
+clear = Actor.method(cart, "clear", |{ .. }| { state: { items: [] }, reply: {} })
+
+count = Actor.ask!(add, member, "a book")?        # waits for the reply: a U64
+Actor.tell!(clear, member, {})                    # doesn't
+timer = Actor.tell_after!(clear, member, 60_000, {})
 Actor.cancel!(timer)
 ```
 
-An actor is a kind and a key, and nobody makes or ends one: a message to any key finds it as its
-last message left it, or new (`initial(key)`, the kind's starting state: no message of its own). It
-handles one message at a time, in the order they came: each actor that is awake has a mailbox in
-the host (`host/src/actors.rs`). One task, the router, owns the table of actors that are awake and
-the timers, and passes every ask, tell and timer to its actor's mailbox; each actor is a task of its
-own that runs its turns one after another, each a call into Roc of its own (`actor_for_host!`).
-Nothing in it is locked: the router's table is its alone, and the tasks talk over channels
-(`tokio::sync::mpsc`, unbounded, and `oneshot`). So what one sender sends an actor is handled in
-the order it was sent, and a hundred asks at once each see the state the one before left.
+An actor is a kind and a key, and nobody makes or ends one: a call to any key finds it as its last
+turn left it, or new (`initial(key)`, the kind's starting state: no call of its own). What it does
+is its kind's methods (D-066), each with its own input and reply, typed: a turn of one is given
+`{ me, context, state, input }` (the actor, the app's context, `init!`'s, its state and the input)
+and answers `{ state, reply }`. It takes one turn at a time, whichever method each is, in the order
+they came: each actor that is awake has a mailbox in the host (`host/src/actors.rs`). One task, the
+router, owns the table of actors that are awake and the timers, and passes every ask, tell and
+timer to its actor's mailbox; each actor is a task of its own that runs its turns one after
+another, each a call into Roc of its own (`actor_for_host!`). Nothing in it is locked: the router's
+table is its alone, and the tasks talk over channels (`tokio::sync::mpsc`, unbounded, and
+`oneshot`). So what one sender sends an actor is taken in the order it was sent, and a hundred asks
+at once each see the state the one before left.
 
-`receive!` is given the actor itself (`Me`): its key (`Actor.key_of`), and its own timers
-(`Actor.after!(me, ms, message)`, typed as the kind's messages are; a timer every so often is one
-that sets the next). `rocx build` lists the kinds an app's modules define (`Actor.define`, at the top
-of a module's block, `name` first) in `program.actors`; the host refuses a message to a kind not
-there. Messages, replies and state cross to the host as JSON: a message an actor doesn't take (it
-doesn't parse as its kind's: a caller built against an older kind, say), a kind the app has none
-of, and a crash in `receive!` are logged as errors (`rocx actor: a message failed`, with `actor`,
-`key` and `error`) and told to the asker, and the actor goes on with its state as it was.
+A method is given the actor itself (`me`): its key (`Actor.key_of`), and its own timers
+(`Actor.after!(me, ms, method, input)`, a method of its own kind; a timer every so often is one
+that sets the next, a method that names itself being a function of `{}`). `rocx build` lists the
+methods an app's modules define (`Actor.method`, at the top of a module's block) in
+`program.actors`, and checks its kinds (`Actor.define`, there too, `name` first, each its own); two
+methods of one kind with one name stop the server as it starts, and the host refuses a call to a
+kind not there. A call crosses to the host as the method's name and its input as JSON, and replies
+and state as JSON too: an input a method doesn't take (a caller built against an older kind, say),
+a method its kind doesn't have, a kind the app has none of, and a crash in a method are logged as
+errors (`rocx actor: a message failed`, with `actor`, `key` and `error`) and told to the asker, and
+the actor goes on with its state as it was.
 
 With a database, an actor's state is read from it (`rocx_actors`) by its first turn and
 written after each turn that changes it, so it is there after a restart. An actor idle for
@@ -861,19 +875,21 @@ app [program] { pf: platform "../server/platform/main.roc", acme: "../packages/a
 
 import acme.Acme
 
-program = App.program({ context, middleware, plugins: [Acme.plugin({ at: "/acme" })] })
+program = App.program({ init!, middleware, plugins: [Acme.plugin({ at: "/acme" })] })
 ```
 
-A plugin is a `Plugin.Value(ctx)`: a name, and what a package adds to the app, every field but the
+A plugin is a `Plugin.Value(context, ctx)`: a name, and what a package adds to the app, every field but the
 name defaulting to `[]`. `routes` answer behind the app's middleware, before its own routes (`ctx`
-is what that middleware hands on: a plugin's routes get it without knowing its type); `early` paths
+is what that middleware hands on: a plugin's routes get it without knowing its type); its `calls`,
+`loops`, `starts` and `checks` are given the app's context (`context`, its `init!`'s), which it
+doesn't know the type of either; `early` paths
 are answered before the app, under `/__rocx/`, only with `--dev` or `--debug`; `files` are served
 as they are, before anything else (the app's middleware among it), and `scripts` (some of them)
 load on every page (D-050, below); `migrations` are
 applied after the platform's and before the app's, recorded as `<plugin>/<name>`; `calls` run in a
 call of their own (`Plugin.isolated!("acme.render", input, limit_ms)`), so a crash ends only that;
 `loops` run in the background until the server stops (`Plugin.stopping!`); `starts` run after the
-migrations (an `Err` stops the server); `checks` run once in the background, what they say logged;
+migrations and the app's `init!` (an `Err` stops the server); `checks` run once in the background, what they say logged;
 and `needs` (`Env("ACME_KEY")`, `Database`, `Plugin("other")`) are checked at start. Calls, loops
 and checks are named `<plugin>.<name>`. A package makes its plugin from options of its own (a
 nominal record whose fields without a default are required), and a plugin generic in the app's
@@ -1026,7 +1042,7 @@ default again.
 ```
 <app> --port 8080 --host 127.0.0.1        where to listen (PORT)
       --static DIR, --file /PATH=FILE     files served as they are
-      --context-file FILE                 what respond! is given besides each request
+      --context-file FILE                 what the app's init! is given, once, as it starts
       --database-url URL                  the database (DATABASE_URL): postgres://…, or sqlite:<path> (turso:<path>) for a SQLite (Turso) app's file elsewhere
       --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in the database)
       --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it
@@ -1099,7 +1115,8 @@ the beats, a post from another site's page and one naming a wrong or another tab
 read, taken once, deleted; a time to live and a counter's window; 200 increments at once; a capped
 list; past `--kv-max-mb`; `kv.rs`'s own unit tests, compiled alone), actors
 (one message at a time, a crash, asking another, itself or one waiting on it, tells in order,
-timers and a cancelled one, a message an actor doesn't take and a kind the app has none of, logged,
+timers and a cancelled one, an input a method doesn't take, a method its kind doesn't have and a kind
+the app has none of, logged,
 a restart, one idle let go and woken as the database has it; timers across a restart, told once,
 and one cancelled after it fired while its actor was busy), `Http` (to servers the test runs: redirects, a timeout, a body too large, TLS
 that fails; connections kept and counted, one at a time and several at once, a body dropped

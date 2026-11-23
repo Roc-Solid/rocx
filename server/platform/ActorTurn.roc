@@ -11,21 +11,21 @@ ActorTurn := [].{
 	## The turn of `actor` called `key`: `loaded` when `kept` is its state as its last turn left it
 	## (else it is read here); `message`, as JSON. Its next state and its reply, or why there are
 	## none (and nothing is written).
-	run! : Actor.Handler, Str, Bool, Str, Str => Try({ state : Str, reply : Str }, Str)
-	run! = |actor, key, loaded, kept, message| {
-		state = if (loaded) Ok(kept) else load!(actor.name, key)
+	run! : Actor.Handler(context), context, Str, Bool, Str, Str => Try({ state : Str, reply : Str }, Str)
+	run! = |actor, context, key, loaded, kept, message| {
+		state = if (loaded) Ok(kept) else load!(actor.kind, key)
 		match state {
-			Err(why) => Err("${actor.name} ${key}: its state couldn't be read: ${why}")
+			Err(why) => Err("${actor.kind} ${key}: its state couldn't be read: ${why}")
 			Ok(now) =>
-				match (actor.run!)(key, now, message) {
+				match (actor.run!)(context, key, now, message) {
 					Err(why) => Err(why)
 					Ok(answer) =>
 						if answer.state == now {
 							Ok(answer)
 						} else {
-							match save!(actor.name, key, answer.state) {
+							match save!(actor.kind, key, answer.state) {
 								Ok({}) => Ok(answer)
-								Err(why) => Err("${actor.name} ${key}: its state couldn't be written: ${why}")
+								Err(why) => Err("${actor.kind} ${key}: its state couldn't be written: ${why}")
 							}
 						}
 				}

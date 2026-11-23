@@ -6,15 +6,16 @@ import pf.Server
 
 ## As rocx build's Generated/App has it: what the app says, and the program made from it.
 Config(given, handed) := {
-	context : Str -> given,
+	init! : Str => Try(given, Str),
 	middleware : Middleware(given, handed),
-	plugins : List(Plugin.Value(handed)) ?? [],
+	plugins : List(Plugin.Value(given, handed)) ?? [],
 }
 
 make : Config(_, _) -> _
 make = |config| {
-	respond!: |request, started| {
-		Middleware.run!(config.middleware, request, (config.context)(started), |passed, context| Plugin.respond!(config.plugins, passed, context, |_, _| Server.response(404, [], "fell through")))
+	init!: config.init!,
+	respond!: |request, given| {
+		Middleware.run!(config.middleware, request, given, |passed, context| Plugin.respond!(config.plugins, passed, context, |_, _| Server.response(404, [], "fell through")))
 	},
 	database: Postgres,
 	migrations: [],
@@ -25,7 +26,7 @@ make = |config| {
 }
 
 ## A plugin whose two routes each run a guard (a middleware) before answering.
-guarded : Middleware(ctx, out) -> Plugin.Value(ctx)
+guarded : Middleware(ctx, out) -> Plugin.Value(context, ctx)
 guarded = |guard| {
 	name: "guarded",
 	routes: [
@@ -39,7 +40,7 @@ headed = Middleware.headers([{ name: "x-app", value: "repro" }])
 
 ## With `--opt=speed`, the server crashes (SIGSEGV) as it starts, before it logs a line.
 program = make({
-	context: |started| { started: started },
+	init!: |started| Ok({ started: started }),
 	middleware: headed,
 	plugins: [guarded(headed)],
 })

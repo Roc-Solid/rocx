@@ -25,6 +25,8 @@ said = |each|
 	}
 
 program = {
+	# The context is what the server was started with (`--context-file`), as it was before `init!`.
+	init!: |started| Ok(started),
 	respond!: |request, _started| {
 		# A unique list (keep_if made it), mapped with a known transform: --opt=speed may reuse its
 		# allocation for the cells.

@@ -25,6 +25,8 @@ Schema := [].{
 }
 
 program = {
+	# The context is what the server was started with (`--context-file`), as it was before `init!`.
+	init!: |started| Ok(started),
 	respond!,
 	database: Postgres,
 	migrations: [{ name: "roc-pg example: planets", sql: schema_sql }],

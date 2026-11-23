@@ -9,6 +9,6 @@ import Generated/App
 
 ## Every request: a middleware that passes it straight on, then the routes.
 program = App.program({
-	context: |_started| {},
+	init!: |_started| Ok({}),
 	middleware: Middleware.make(|request, context, next!| next!(request, context)),
 })

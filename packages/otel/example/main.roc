@@ -11,6 +11,6 @@ import Otel
 
 ## Every request timed, then the routes.
 program = App.program({
-	context: |started| { facts: started },
+	init!: |started| Ok({ facts: started }),
 	middleware: Otel.middleware({}),
 })

@@ -189,12 +189,14 @@ view! = |_|
 				scripts every page loads, tables, background loops, calls run on their own, work at start, checks.
 				It gives one value, a <code>Plugin.Value</code>, made from options of its own; the app names the
 				package in its header and lists the plugin in its program. A plugin's routes answer behind the app's
-				middleware, with what it hands on, before the app's own routes; its tables are applied after the
-				platform's and before the app's, recorded under the plugin's name.
+				middleware, with what it hands on, before the app's own routes; its calls, loops, starts and checks
+				are given the app's context, which its <code>init!</code> made (<code>Plugin.Value(context, ctx)</code>:
+				the plugin knows the type of neither); its tables are applied after the platform's and before the
+				app's, recorded under the plugin's name.
 			</p>
 			<Code
 				title="main.roc"
-				source={"app [program] { pf: platform \"../server/platform/main.roc\", acme: \"../packages/acme/main.roc\" }\n\nimport acme.Acme\n\nprogram = App.program({\n\tcontext,\n\tmiddleware: Middlewares.default,\n\tplugins: [Acme.plugin({ at: \"/acme\" })],\n})"}
+				source={"app [program] { pf: platform \"../server/platform/main.roc\", acme: \"../packages/acme/main.roc\" }\n\nimport acme.Acme\n\nprogram = App.program({\n\tinit!,\n\tmiddleware: Middlewares.default,\n\tplugins: [Acme.plugin({ at: \"/acme\" })],\n})"}
 				numbers={Bool.False}
 			/>
 			<p>
@@ -239,7 +241,7 @@ view! = |_|
 			<Heading id="running">Running it</Heading>
 			<Code
 				title="The app's executable"
-				source={"<app> --port 8080 --host 127.0.0.1        where to listen (PORT)\n      --static DIR, --file /PATH=FILE     files served as they are\n      --context-file FILE                 what respond! is given besides each request\n      --database-url URL                  the database (DATABASE_URL): postgres://…, or sqlite:<path> for a SQLite app's file elsewhere\n      --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in the database)\n      --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it\n      --max-body 16MiB                    the most a request's body may be (MAX_BODY): bytes, or KiB, MiB, GiB\n      --public-url https://app.example    where the app is, for links it sends (PUBLIC_URL; else where it listens)\n      --dev                               reload pages on restart, show crashes, plugins' dev pages\n      --debug                             GET /__rocx/allocations and /__rocx/plugin-files, and plugins' debug paths\n      --live-beat-ms 15000                how often a channel stream beats, and its checks run again\n      --roc-threads N                     the threads Roc runs on (ROCX_ROC_THREADS; one a core)"}
+				source={"<app> --port 8080 --host 127.0.0.1        where to listen (PORT)\n      --static DIR, --file /PATH=FILE     files served as they are\n      --context-file FILE                 what the app's init! is given, once, as it starts\n      --database-url URL                  the database (DATABASE_URL): postgres://…, or sqlite:<path> for a SQLite app's file elsewhere\n      --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in the database)\n      --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it\n      --max-body 16MiB                    the most a request's body may be (MAX_BODY): bytes, or KiB, MiB, GiB\n      --public-url https://app.example    where the app is, for links it sends (PUBLIC_URL; else where it listens)\n      --dev                               reload pages on restart, show crashes, plugins' dev pages\n      --debug                             GET /__rocx/allocations and /__rocx/plugin-files, and plugins' debug paths\n      --live-beat-ms 15000                how often a channel stream beats, and its checks run again\n      --roc-threads N                     the threads Roc runs on (ROCX_ROC_THREADS; one a core)"}
 				numbers={Bool.False}
 				plain={Bool.True}
 			/>

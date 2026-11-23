@@ -8,6 +8,8 @@ import pf.Plugin
 import pf.Server
 
 program = {
+	# The context is what the server was started with (`--context-file`), as it was before `init!`.
+	init!: |started| Ok(started),
 	respond!: |_, _| Server.response(403, [{ name: "content-type", value: "text/plain; charset=utf-8" }], "refused"),
 	database: Postgres,
 	migrations: [],
@@ -17,5 +19,5 @@ program = {
 	routes: [],
 }
 
-plugins : List(Plugin.Value({}))
+plugins : List(Plugin.Value(Str, {}))
 plugins = [Fixture.files("files")]

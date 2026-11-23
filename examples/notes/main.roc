@@ -14,7 +14,7 @@ import Agents
 import Middlewares
 
 program = App.program({
-	context: |_started| {},
+	init!: |_started| Ok({}),
 	middleware: Middlewares.default.then(Agents.mount),
 	openapi: Page(Scalar),
 	plugins: [Email.plugin({ from: "Notes <notes@example.com>" })],

@@ -6,6 +6,8 @@ import pf.Plugin
 import pf.Server
 
 program = {
+	# The context is what the server was started with (`--context-file`), as it was before `init!`.
+	init!: |started| Ok(started),
 	respond!: |_, _| Server.response(200, [], "never"),
 	database: Postgres,
 	migrations: [],
@@ -17,14 +19,14 @@ program = {
 }
 
 ## Each breaks a rule, or two.
-plugins : List(Plugin.Value({}))
+plugins : List(Plugin.Value(Str, {}))
 plugins = [
 	# A route the app has; a loop not named with the plugin's name first; an early path outside
 	# /__rocx/; a file at the root where the app has a route; a file whose path isn't relative.
 	{
 		name: "clash",
 		routes: [route("GET", "/x")],
-		loops: [{ name: "beat", run!: |{}| {} }],
+		loops: [{ name: "beat", run!: |_context| {} }],
 		early: [{ method: "GET", path: "/mail", under: [Dev], answer!: |_| answer }],
 		files: [file("x", Root), file("/abs.js", Plugin)],
 	},

@@ -17,24 +17,26 @@ import Middlewares
 import Jobs
 
 program = App.program({
-    context: |started| { facts: started },
+    init!: |started| Ok({ facts: started }),
     middleware: Middlewares.default,
     plugins: [Job.plugin({ jobs: App.jobs, crons: [Cron.every("0 3 * * *", Jobs.nightly, {})] })],
 })
 ```
 
 ```roc
-# Jobs.roc: rocx build finds each kind at the top of a module's block, and lists it in App.jobs
+# Jobs.roc: rocx build finds each kind at the top of a module's block, and lists it in App.jobs.
+# Each is given the app's context (what its init! made) and its input; one that reads the context
+# (`|{ db, .. }, input|`) takes it as the app has it, annotated `Job.Kind(_, input)` or not at all.
 import jobs.Job
 
 Jobs := [].{
-    welcome : Job.Kind({ member : I64 })
-    welcome = Job.define("welcome", |{ member }| { … Email.send!(…) … })    # Ok({}), or Err(why)
+    welcome : Job.Kind(_, { member : I64 })
+    welcome = Job.define("welcome", |_context, { member }| { … Email.send!(…) … })    # Ok({}), or Err(why)
 
     # Tried once, within 20 minutes (Job.define: five times, no limit).
-    reminder = Job.define_with("reminder", { attempts: 1, timeout_ms: 20 * 60_000 }, |{ member }| …)
+    reminder = Job.define_with("reminder", { attempts: 1, timeout_ms: 20 * 60_000 }, |_context, { member }| …)
 
-    nightly = Job.define("nightly", |{}| …)
+    nightly = Job.define("nightly", |_context, {}| …)
 }
 ```
 
@@ -49,15 +51,15 @@ Job.move!("reminder:ada", At(due))                        # the queued one with 
 ## The plugin
 
 ```roc
-Job.Options := {
-    jobs : List(Job.Handler),                                      # the kinds the workers run: App.jobs
+Job.Options(context) := {
+    jobs : List(Job.Handler(context)),                                      # the kinds the workers run: App.jobs
     crons : List({ name : Str, schedule : Str, job : Str, input : Str }) ?? [],   # Cron.every(…)
     workers : U64 ?? 4,                                            # jobs run at once
     retry_ms : U64 ?? 1000,                                        # a failed job's wait, doubled after
     on_failed! : (Job.Failure => {}) ?? ignored!,                  # a job that failed for good
 }
 Job.Failure : { kind : Str, id : I64, attempts : U64, error : Str }
-Job.plugin : Job.Options -> Plugin.Value(ctx)
+Job.plugin : Job.Options(context) -> Plugin.Value(context, ctx)
 ```
 
 `App.jobs` is every kind the app's modules define (`rocx build` finds each `Job.define` and
@@ -87,10 +89,10 @@ its jobs a stop cut short are queued again), with `Plugin("jobs")` in its `needs
 plugin starts first:
 
 ```roc
-deliver : Job.Kind(Input)
-deliver = Job.define_with("push.deliver", { attempts: 5, timeout_ms: 60_000 }, deliver!)
+deliver : Job.Kind(_, Input)
+deliver = Job.define_with("push.deliver", { attempts: 5, timeout_ms: 60_000 }, |_context, input| deliver!(input))
 
-plugin = |setup| { name: "push", calls: [Job.call(deliver)], starts: [|{}| Job.adopt!(deliver)], needs: [Plugin("jobs")], … }
+plugin = |setup| { name: "push", calls: [Job.call(deliver)], starts: [|_context| Job.adopt!(deliver)], needs: [Plugin("jobs")], … }
 ```
 
 ## Running jobs

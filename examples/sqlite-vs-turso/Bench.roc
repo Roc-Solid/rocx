@@ -119,8 +119,8 @@ Bench := [].{
 	}
 }
 
-## A message for each of the eight workers, from its number (1 to 8).
-eight : (I64 -> Workers.Message) -> List(Workers.Message)
+## A task for each of the eight workers, from its number (1 to 8).
+eight : (I64 -> Workers.Task) -> List(Workers.Task)
 eight = |message| {
 	var $all = []
 	var $w = 1
@@ -542,23 +542,23 @@ runs! : {} => U64
 runs! = |{}| (Kv.increment!("bench:runs", 0, { ttl_ms: 0 }) ?? 0).to_u64_wrap()
 
 ## `messages`, one to each worker (`w1`, `w2`…), done at once: each worker asked first, so its state
-## is read before the clock starts; then all told, and asked again, each answer waiting for what it
-## was told. The time from the first tell to the last answer, or why a worker failed.
-together! : List(Workers.Message) => Try(U64, Str)
+## is read before the clock starts; then all given their work, and asked again, each answer waiting
+## for that work. The time from the first tell to the last answer, or why a worker failed.
+together! : List(Workers.Task) => Try(U64, Str)
 together! = |messages| {
 	keys = messages.map_with_index(|_, n| "w${(n + 1).to_str()}")
 	for key in keys {
-		_ = Actor.ask!(Workers.kind, key, Ready).map_err(|ActorErr(why)| "${key}: ${why}")?
+		_ = Actor.ask!(Workers.ready, key, {}).map_err(|ActorErr(why)| "${key}: ${why}")?
 		Kv.set!("bench:${key}", "", { ttl_ms: 0 })
 	}
 	started = Time.now_nanos!({})
 	var $n = 0
 	for message in messages {
-		Actor.tell!(Workers.kind, keys.get($n) ?? "w1", message)
+		Actor.tell!(Workers.work, keys.get($n) ?? "w1", message)
 		$n = $n + 1
 	}
 	for key in keys {
-		_ = Actor.ask!(Workers.kind, key, Ready).map_err(|ActorErr(why)| "${key}: ${why}")?
+		_ = Actor.ask!(Workers.ready, key, {}).map_err(|ActorErr(why)| "${key}: ${why}")?
 	}
 	took = Time.now_nanos!({}) - started
 	for key in keys {

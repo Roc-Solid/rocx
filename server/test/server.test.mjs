@@ -1368,7 +1368,7 @@ test("JobsPage.plugin without a guard doesn't compile: the record is missing the
 	mkdirSync(at, { recursive: true });
 	writeFileSync(
 		join(at, "main.roc"),
-		'app [program] { pf: platform "../../../platform/main.roc", admin: "../../../../packages/admin/main.roc" }\n\nimport pf.Plugin\nimport pf.Server\nimport admin.JobsPage\n\nprogram = {\n\trespond!: |_, _| Server.response(200, [], ""),\n\tdatabase: Postgres,\n\tmigrations: [],\n\tactors: [],\n\tlogs: { format: Auto },\n\tplugins: [Plugin.running(JobsPage.plugin({ at: "/admin/jobs" }))],\n\troutes: [],\n}\n',
+		'app [program] { pf: platform "../../../platform/main.roc", admin: "../../../../packages/admin/main.roc" }\n\nimport pf.Plugin\nimport pf.Server\nimport admin.JobsPage\n\nprogram = {\n\tinit!: |started| Ok(started),\n\trespond!: |_, _| Server.response(200, [], ""),\n\tdatabase: Postgres,\n\tmigrations: [],\n\tactors: [],\n\tlogs: { format: Auto },\n\tplugins: [Plugin.running(JobsPage.plugin({ at: "/admin/jobs" }))],\n\troutes: [],\n}\n',
 	);
 	const checked = spawnSync(roc(), ["check", join(at, "main.roc")], { encoding: "utf8" });
 	assert.notEqual(checked.status, 0);
@@ -3322,18 +3322,22 @@ test("actors: one that asks an actor whose turn waits on it is refused at once, 
 	assert.ok(performance.now() - started < 5000, "at once");
 });
 
-test("actors: a message an actor doesn't take, or a kind the app has none of, is an error on the log and to its asker, not a crash: the actor goes on as it was", { skip }, async () => {
+test("actors: an input a method doesn't take, a method its kind doesn't have, or a kind the app has none of, is an error on the log and to its asker, not a crash: the actor goes on as it was", { skip }, async () => {
 	const key = `${run}stale`;
 	assert.equal(await post(`/actors/count/${key}?by=3`), "3");
 	const wrong = await get(`/actors/wrong?run=${key}`, { method: "POST" });
 	assert.equal(wrong.status, 500);
-	assert.match(await wrong.text(), new RegExp(`^counter ${key}: a message it doesn't take: `));
+	assert.match(await wrong.text(), new RegExp(`^counter ${key}: an input its add doesn't take: `));
 	assert.equal(await post(`/actors/wrong-tell?run=${key}`), "told");
-	await logsEvent({ level: "error", msg: "rocx actor: a message failed", actor: "counter", key, error: /a message it doesn't take/ });
+	await logsEvent({ level: "error", msg: "rocx actor: a message failed", actor: "counter", key, error: /an input its add doesn't take/ });
 	const failures = () => events().filter((event) => event.msg === "rocx actor: a message failed" && event.key === key).length;
 	assert.equal(await until(async () => failures() === 2), true, `the ask's, and the tell's: ${failures()}`);
 	assert.equal(await text(`/actors/count/${key}`), "3", "as it was");
 	assert.equal(await post(`/actors/count/${key}?by=1`), "4", "and goes on");
+	const missing = await get(`/actors/missing?run=${key}`, { method: "POST" });
+	assert.equal(missing.status, 500);
+	assert.match(await missing.text(), /^counter has no method called reset/);
+	assert.equal(await text(`/actors/count/${key}`), "4", "still as it was");
 	const ghost = await get(`/actors/ghost?run=${key}`, { method: "POST" });
 	assert.equal(ghost.status, 500);
 	assert.match(await ghost.text(), /^no kind of actor is called ghost/);

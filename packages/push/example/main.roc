@@ -10,7 +10,7 @@ import push.Push
 import Generated/App
 
 program = App.program({
-	context: |_started| {},
+	init!: |_started| Ok({}),
 	middleware: Middleware.same_origin({}),
 	plugins: [Job.plugin({ jobs: App.jobs }), Push.plugin({})],
 })

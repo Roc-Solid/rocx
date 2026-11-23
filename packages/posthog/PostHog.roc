@@ -50,7 +50,7 @@ PostHog := [].{
 	## (`POST <at>`), the loop that sends what was kept (`posthog.send`), its options kept when the
 	## server starts, and a look once started (`posthog.reporting`: where errors go, or that
 	## reporting is off).
-	plugin : Options -> Plugin.Value(ctx)
+	plugin : Options -> Plugin.Value(context, ctx)
 	plugin = |options| {
 		given : Settings
 		given = { key: options.key, host: options.host, release: options.release, interval_ms: options.interval_ms }
@@ -60,9 +60,9 @@ PostHog := [].{
 				{ method: "POST", path: options.at, kind: Endpoint, answer!: |request, _context| browser!(request) },
 				{ method: "GET", path: "${options.at}.js", kind: Endpoint, answer!: |_request, _context| script({}) },
 			],
-			starts: [|{}| keep!(given)],
-			loops: [{ name: "posthog.send", run!: |{}| sender!({}) }],
-			checks: [{ name: "posthog.reporting", run!: |{}| check!({}) }],
+			starts: [|_context| keep!(given)],
+			loops: [{ name: "posthog.send", run!: |_context| sender!({}) }],
+			checks: [{ name: "posthog.reporting", run!: |_context| check!({}) }],
 		}
 	}
 

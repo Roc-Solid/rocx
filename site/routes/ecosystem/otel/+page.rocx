@@ -36,7 +36,7 @@ view! = |_|
 			<Heading id="requests">Every request, timed</Heading>
 			<Code
 				title="main.roc, in part"
-				source={"program = App.program({\n\tcontext: |started| { facts: started },\n\tmiddleware: Otel.middleware({}).then(Middlewares.default),\n})"}
+				source={"program = App.program({\n\tinit!: |started| Ok({ facts: started }),\n\tmiddleware: Otel.middleware({}).then(Middlewares.default),\n})"}
 				numbers={Bool.False}
 			/>
 			<p>

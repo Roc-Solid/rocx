@@ -16,7 +16,7 @@ Fixture := [].{
 	## Where the fixture's routes are, and how it shows the app's context.
 	Options(ctx) := { at : Str ?? "/fixture", shown : ctx -> Str }
 
-	plugin : Options(ctx) -> Plugin.Value(ctx)
+	plugin : Options(ctx) -> Plugin.Value(context, ctx)
 	plugin = |options| {
 		at = options.at
 		shown = options.shown
@@ -33,10 +33,10 @@ Fixture := [].{
 			files: Fixture.files_of("fixture"),
 			scripts: ["fixture.js"],
 			migrations: [{ name: "0001_notes", sql: notes }],
-			calls: [{ name: "fixture.shout", run!: |input| if (input == "crash") crash "the fixture's call crashed" else Ok(input.with_ascii_uppercased()) }],
-			loops: [{ name: "fixture.beat", run!: beat! }],
-			starts: [start!],
-			checks: [{ name: "fixture.look", run!: |{}| Ok("the fixture looked") }],
+			calls: [{ name: "fixture.shout", run!: |_context, input| if (input == "crash") crash "the fixture's call crashed" else Ok(input.with_ascii_uppercased()) }],
+			loops: [{ name: "fixture.beat", run!: |_context| beat!({}) }],
+			starts: [|_context| start!({})],
+			checks: [{ name: "fixture.look", run!: |_context| Ok("the fixture looked") }],
 			needs: [Env("FIXTURE_KEY")],
 		}
 	}
@@ -51,16 +51,16 @@ Fixture := [].{
 
 	## A plugin of files alone, called `name`: its script (which every page loads) and its file at
 	## the root.
-	files : Str -> Plugin.Value(ctx)
+	files : Str -> Plugin.Value(context, ctx)
 	files = |name| { name, files: Fixture.files_of(name), scripts: ["fixture.js"] }
 
 	## A plugin with one route. (A plugin that is generic in the app's context is a function, even
 	## with no options: a value can only have one type.)
-	second : {} -> Plugin.Value(ctx)
+	second : {} -> Plugin.Value(context, ctx)
 	second = |{}| { name: "second", routes: [{ method: "GET", path: "/second", kind: Page, answer!: |_, _| text("second") }] }
 
 	## A plugin with one route, which needs `second`.
-	third : {} -> Plugin.Value(ctx)
+	third : {} -> Plugin.Value(context, ctx)
 	third = |{}| { name: "third", routes: [{ method: "*", path: "/third", kind: Endpoint, answer!: |request, _| text("third ${request.method}") }], needs: [Plugin("second")] }
 }
 

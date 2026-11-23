@@ -145,8 +145,6 @@ pub struct Asked {
     /// The address of the connection it came on (`203.0.113.7`, `::1`): `Server.Request`'s `peer`.
     /// A request the host makes in-process for a page has the page's.
     pub peer: String,
-    /// What the server was started with (`--context-file`), which an in-process call is given too.
-    pub started: String,
     /// Whether crashes show their message (`--dev`).
     pub dev: bool,
     /// The status a page rendered for it is answered with, if the page set one
@@ -158,8 +156,8 @@ pub struct Asked {
 }
 
 impl Asked {
-    pub fn new(method: &str, target: String, headers: String, body: Bytes, peer: String, started: String, dev: bool) -> Asked {
-        Asked { method: method.to_string(), target, headers, body, peer, started, dev, ..Asked::default() }
+    pub fn new(method: &str, target: String, headers: String, body: Bytes, peer: String, dev: bool) -> Asked {
+        Asked { method: method.to_string(), target, headers, body, peer, dev, ..Asked::default() }
     }
 }
 

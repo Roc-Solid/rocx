@@ -6,13 +6,19 @@
 ## are packages' plugins (packages/jobs, packages/email: D-034, D-035), on the same effects. The browser's
 ## platform is `web/platform`, wasm; an app is two programs, one on each, talking over HTTP.
 ##
+## - `init!(started)` makes the app's context once, when the server starts, after the migrations
+##   (so it may read the database) and before the plugins' starts: `started` is what the server was
+##   started with (`--context-file`). Its `Err` stops the server. The host keeps what it made
+##   (`AppContext`, boxed) for as long as the server runs, and hands it to every call that runs the
+##   app's code: a request (`respond!`), an actor's turn, and a plugin's calls (a job's run), loops,
+##   starts and checks. It is never copied again, and never changed (Roc's values aren't), so every
+##   call on every thread shares it, its reference counts atomic (D-065).
 ## - `respond!(request, context)` answers a request: a page or an endpoint. The host hands over one
 ##   record of what it knows of the request (`HostRequest`: its method, its target, its headers, its
 ##   body as it came, and the address of the connection it came on), which the platform makes a
-##   `Server.Request` (`peer` is that address); `context` is what the server was started with
-##   (`--context-file`). Its answer is a `Server.Response`, whose body is text; bytes, sent as they
-##   are; a body the host fetches from elsewhere and sends on as it comes, never through Roc
-##   (`Forward`); a page of components (`Page`), which the host renders for the request, every hole run
+##   `Server.Request` (`peer` is that address); `context` is what `init!` made. Its answer is a
+##   `Server.Response`, whose body is text; bytes, sent as they are; a body the host fetches from
+##   elsewhere and sends on as it comes, never through Roc (`Forward`); a page of components (`Page`), which the host renders for the request, every hole run
 ##   once, into a document for the browser to hydrate, with the answers its endpoint reads got
 ##   and `/rocx/start.js` before `</body>` (a HEAD isn't rendered; `Host.status!`,
 ##   `<HttpStatusCode>`, sets the status); or a stream of events
@@ -29,9 +35,10 @@
 ## - `migrations`: the app's schema, applied once each, in order, when the server starts (each a
 ##   name and its SQL, in its database's flavor: `import "migrations/0001_notes.sql" as notes : Str`
 ##   embeds a file).
-## - `actors`: the kinds of actor the app defines (`Actor.handler(kind)`), which `rocx build` lists:
-##   the host runs their turns (`actor_for_host!`), one message at a time each, and refuses a
-##   message to a kind that isn't here.
+## - `actors`: the methods of the kinds of actor the app defines (`Actor.handler(method)`), which
+##   `rocx build` lists: the host runs their turns (`actor_for_host!`), one at a time an actor, and
+##   refuses a call to a kind that isn't here; two methods of one kind with one name stop the server
+##   as it starts.
 ## - `logs`: the format of the server's log (`Log`), the host's lines and the app's: `{ format: Auto }`
 ##   (`ROCX_LOG`, `pretty` or `json`, if it is set; or else pretty when stderr is a terminal, and JSON
 ##   when it isn't), `Pretty` or `Json`. `App.program` says `Auto`; an app says otherwise with
@@ -56,13 +63,14 @@
 ## the actor's turn), frees what the call had allocated, rolls back its transaction, and goes on.
 platform ""
 	requires {
-		program : {
-			respond! : Server.Request, Str => Server.Response,
+		[AppContext : app_context] for program : {
+			init! : Str => Try(app_context, Str),
+			respond! : Server.Request, app_context => Server.Response,
 			database : [Postgres, Sqlite(Str), Turso(Str)],
 			migrations : List({ name : Str, sql : Str }),
-			actors : List({ name : Str, run! : Str, Str, Str => Try({ state : Str, reply : Str }, Str) }),
+			actors : List({ kind : Str, method : Str, run! : app_context, Str, Str, Str => Try({ state : Str, reply : Str }, Str) }),
 			logs : { format : [Auto, Pretty, Json] },
-			plugins : List(Plugin.Running),
+			plugins : List(Plugin.Running(app_context)),
 			routes : List({ method : Str, path : Str, file : Str }),
 		}
 	}
@@ -72,11 +80,14 @@ platform ""
 		"roc_actor": actor_for_host!,
 		"roc_background": background_for_host!,
 		"roc_background_count": background_count_for_host!,
+		"roc_context": context_for_host!,
 		"roc_drop_feed": drop_feed_for_host,
 		"roc_init": init_for_host!,
 		"roc_isolated": isolated_for_host!,
+		"roc_platform_isolated": platform_isolated_for_host!,
 		"roc_respond": respond_for_host!,
 		"roc_run": run_for_host!,
+		"roc_started": started_for_host!,
 		"roc_stream": stream_for_host!,
 	}
 	hosted {
@@ -286,8 +297,12 @@ Feed : { run! : { send! : Str => Bool, sleep! : U64 => {} } => {} }
 ## (`run_for_host!`): run, it renders the page's components, its holes kept by the host, as JSON
 ## (`Html.serialize!`). The boxes an answer doesn't send do nothing, and the host releases them.
 ## A plugin's early path (`Plugin.Early`) is answered before the app, under the flag it names.
-respond_for_host! : HostRequest, Str => { status : U16, headers : Str, kind : U8, text : Str, bytes : List(U8), upstream : { method : Str, url : Str, headers : Str }, page : Box(() => Str), feed : Box(Feed) }
-respond_for_host! = |given, context| {
+##
+## `boxed` is the app's context (`init_for_host!`'s): the host keeps one reference for as long as
+## the server runs, and gives each call one more, which this call lets go of when it ends.
+respond_for_host! : HostRequest, Box(AppContext) => { status : U16, headers : Str, kind : U8, text : Str, bytes : List(U8), upstream : { method : Str, url : Str, headers : Str }, page : Box(() => Str), feed : Box(Feed) }
+respond_for_host! = |given, boxed| {
+	context = Box.unbox(boxed)
 	request = { ..Server.from_http(given.method, given.target, given.headers, given.body), peer: given.peer }
 	answered =
 		match early!(given.method, given.target) {
@@ -322,13 +337,16 @@ stream_for_host! = |boxed| {
 drop_feed_for_host : Box(Feed) -> {}
 drop_feed_for_host = |_| {}
 
-## The server is starting: the log takes the app's format (before anything is logged: a migration,
-## a plugin's problem); the app's database is opened, where its program and `--database-url` say;
-## the plugins are checked (any problem stops it here, with every one) and put in order; the host
-## is told the kinds of actor, and handed the plugins' files and their scripts' URLs; then the
+## The server is starting, in three calls the host makes one after another (`server/host`'s
+## `roc::start`). First this one, the platform's: the log takes the app's format (before anything is
+## logged: a migration, a plugin's problem); the app's database is opened, where its program and
+## `--database-url` say; the plugins are checked (any problem stops it here, with every one); the
+## host is told the kinds of actor, and handed the plugins' files and their scripts' URLs; then the
 ## platform's tables, the plugins' and the app's migrations are applied (the platform's and the
-## plugins' for its database), the actors' timers the database keeps are set again, and the
-## plugins' starts run (a jobs plugin's queues again the jobs a stop cut short).
+## plugins' for its database). Then the app's `init!` makes its context (`context_for_host!`), and
+## last the actors' timers are set again and the plugins' starts run, given it
+## (`started_for_host!`). A check of the app's SQL (`--describe-sql`) makes only this first call:
+## it needs the tables, not the app's context.
 init_for_host! : {} => Try({}, Str)
 init_for_host! = |{}| {
 	Host.log_format!(
@@ -340,20 +358,12 @@ init_for_host! = |{}| {
 	)
 	database_opened!(program.database)?
 	# The plugins, checked all at once: any problem stops the server, with every one.
-	problems = Plugins.problems(program.plugins, program.routes).concat(Plugins.unmet!(program.plugins))
+	problems = Plugins.problems(program.plugins, program.routes).concat(Plugins.unmet!(program.plugins)).concat(methods_twice(program.actors))
 	if !problems.is_empty() {
 		return Err(Str.join_with(problems, "\n"))
 	}
-	# The app's flavor: each plugin's migrations for it alone, for the log and the database. Turso's
-	# SQL is SQLite's.
-	flavor =
-		match program.database {
-			Postgres => Postgres
-			Sqlite(_) => Sqlite
-			Turso(_) => Sqlite
-		}
-	plugins = Plugins.ordered(program.plugins).map(|plugin| { ..plugin, migrations: plugin.migrations.keep_if(|migration| applies(migration.on, flavor)) })
-	Host.actor_kinds!(Str.join_with(program.actors.map(|actor| actor.name), "\n"))
+	plugins = plugins_in_order({})
+	Host.actor_kinds!(Str.join_with(kinds_of(program.actors), "\n"))
 	# The plugins' files, which the host serves before the app, and their scripts, which every page
 	# loads.
 	for plugin in plugins {
@@ -365,18 +375,62 @@ init_for_host! = |{}| {
 	if Setting.database!({}) {
 		# The platform's tables, then each plugin's (recorded as `<plugin>/<name>`), then the app's.
 		theirs = plugins.join_map(|plugin| plugin.migrations.map(|migration| { name: "${plugin.name}/${migration.name}", sql: migration.sql }))
-		match Migrations.apply!(Migrations.own(flavor).concat(theirs).concat(program.migrations)) {
-			Err(why) => Err(why)
-			Ok({}) => {
-				# The actors' timers a stop left waiting, set again (D-057).
-				ActorTimers.load!({})?
-				started!(plugins)
-			}
-		}
+		Migrations.apply!(Migrations.own(flavor_of(program.database)).concat(theirs).concat(program.migrations))
 	} else {
-		started!(plugins)
+		Ok({})
 	}
 }
+
+## The app's context: its `init!`, given the text of `--context-file` (the host's `context`
+## setting), after the migrations, so it may read the database. Boxed, for the host to keep for as
+## long as the server runs and hand to every call that runs the app's code: a request
+## (`respond_for_host!`), a plugin's call (a job: `isolated_for_host!`), a background loop and an
+## actor's turn. Its `Err` stops the server.
+context_for_host! : {} => Try(Box(AppContext), Str)
+context_for_host! = |{}| {
+	made = (program.init!)(Host.setting!("context"))?
+	Ok(Box.box(made))
+}
+
+## The last of the start, given the app's context: the actors' timers a stop left waiting, set
+## again (D-057: a timer may fire at once, and an actor's turn needs the context), then the plugins'
+## starts, in their order (the first `Err` stops the server; a jobs plugin's queues again the jobs
+## a stop cut short), and a line a plugin on the log.
+started_for_host! : Box(AppContext) => Try({}, Str)
+started_for_host! = |boxed| {
+	context = Box.unbox(boxed)
+	if Setting.database!({}) {
+		ActorTimers.load!({})?
+	}
+	plugins = plugins_in_order({})
+	for plugin in plugins {
+		for start! in plugin.starts {
+			match start!(context) {
+				Ok({}) => {}
+				Err(why) => return Err("${plugin.name}: ${why}")
+			}
+		}
+	}
+	Plugins.log!(plugins)
+	Ok({})
+}
+
+## The plugins in the order their needs put them, each with only its migrations for the app's
+## database (for the log and the database).
+plugins_in_order : {} -> List(Plugin.Running(AppContext))
+plugins_in_order = |{}| {
+	flavor = flavor_of(program.database)
+	Plugins.ordered(program.plugins).map(|plugin| { ..plugin, migrations: plugin.migrations.keep_if(|migration| applies(migration.on, flavor)) })
+}
+
+## The app's flavor of SQL: Turso's is SQLite's.
+flavor_of : [Postgres, Sqlite(Str), Turso(Str)] -> [Postgres, Sqlite]
+flavor_of = |database|
+	match database {
+		Postgres => Postgres
+		Sqlite(_) => Sqlite
+		Turso(_) => Sqlite
+	}
 
 ## Whether a plugin's migration for `on` (`Plugin.Migration`) is one for the app's database.
 applies : [Any, Postgres, Sqlite], [Postgres, Sqlite] -> Bool
@@ -438,22 +492,6 @@ opened! = |url|
 		Err(why) => Err("the database: ${why}")
 	}
 
-## The plugins' starts, in their order: the first `Err` stops the server. Then a line a plugin on
-## the log.
-started! : List(Plugin.Running) => Try({}, Str)
-started! = |plugins| {
-	for plugin in plugins {
-		for start! in plugin.starts {
-			match start!({}) {
-				Ok({}) => {}
-				Err(why) => return Err("${plugin.name}: ${why}")
-			}
-		}
-	}
-	Plugins.log!(plugins)
-	Ok({})
-}
-
 ## The early path `target` is (a path and its query), when the server has a flag it is under.
 early! : Str, Str => Try(Plugin.Early, [NotEarly])
 early! = |method, target| {
@@ -488,16 +526,17 @@ loops! = |{}| {
 background_count_for_host! : {} => U64
 background_count_for_host! = |{}| loops!({}).len()
 
-## Runs the background loop at `index` to its end: a plugin's loop (until it returns, or the
-## server stops); a plugin's check, once.
-background_for_host! : U64 => {}
-background_for_host! = |index|
+## Runs the background loop at `index` to its end, given the app's context: a plugin's loop (until
+## it returns, or the server stops); a plugin's check, once.
+background_for_host! : U64, Box(AppContext) => {}
+background_for_host! = |index, boxed| {
+	context = Box.unbox(boxed)
 	match loops!({}).get(index) {
 		Ok(Plugged(p, l)) =>
 			match Plugins.ordered(program.plugins).get(p) {
 				Ok(plugin) =>
 					match plugin.loops.get(l) {
-						Ok(each) => (each.run!)({})
+						Ok(each) => (each.run!)(context)
 						Err(_) => {}
 					}
 				Err(_) => {}
@@ -507,7 +546,7 @@ background_for_host! = |index|
 				Ok(plugin) =>
 					match plugin.checks.get(c) {
 						Ok(check) =>
-							match (check.run!)({}) {
+							match (check.run!)(context) {
 								Ok(said) => if (said.is_empty()) {} else Log.info!(said, { check: check.name })
 								Err(why) => Log.warn!(why, { check: check.name })
 							}
@@ -517,32 +556,60 @@ background_for_host! = |index|
 			}
 		Err(_) => {}
 	}
+}
 
-## Runs a part of the app in a call of its own (`Host.isolated!`): a plugin's call
-## (`<plugin>.<name>`, `Plugin.isolated!`: a job, for the jobs plugin). What it answers, or why it
-## failed; a crash in it ends this call only.
-isolated_for_host! : Str, Str => Try(Str, Str)
-isolated_for_host! = |what, input|
-	# The platform's own (`rocx:…`, a name no plugin's call can have): its actors' timers' rows.
-	if what.starts_with("rocx:") {
-		ActorTimers.isolated!(what, input)
-	} else {
-		match program.plugins.join_map(|plugin| plugin.calls).find_first(|call| call.name == what) {
-			Ok(call) => (call.run!)(input)
-			Err(_) => Err("nothing in the app is called ${what}")
-		}
+## Runs a plugin's call in a call of its own (`Host.isolated!`, `Plugin.isolated!`: a job, for
+## the jobs plugin), named `<plugin>.<name>`, given the app's context and its input. What it
+## answers, or why it failed; a crash in it ends this call only.
+isolated_for_host! : Str, Str, Box(AppContext) => Try(Str, Str)
+isolated_for_host! = |what, input, boxed| {
+	context = Box.unbox(boxed)
+	match program.plugins.join_map(|plugin| plugin.calls).find_first(|call| call.name == what) {
+		Ok(call) => (call.run!)(context, input)
+		Err(_) => Err("nothing in the app is called ${what}")
 	}
+}
+
+## Runs one of the platform's own calls (`rocx:…`, a name no plugin's call can have: its actors'
+## timers' rows) in a call of its own. They need no app context: the host runs them before the
+## app's `init!` has made it too (the timers set again at the start).
+platform_isolated_for_host! : Str, Str => Try(Str, Str)
+platform_isolated_for_host! = |what, input| ActorTimers.isolated!(what, input)
 
 ## An actor's turn, which its mailbox in the host runs (`actors.rs`): the actor of kind `kind`
-## called `key`, its state as its last turn left it (`kept`, when `loaded`; else it is read), and
-## the message, as JSON. Its next state and its reply, or why it has none: its kind isn't the app's,
-## or it doesn't take the message. A crash in it ends the turn only.
-actor_for_host! : Str, Str, Bool, Str, Str => Try({ state : Str, reply : Str }, Str)
-actor_for_host! = |kind, key, loaded, kept, message|
-	match program.actors.find_first(|actor| actor.name == kind) {
-		Ok(actor) => ActorTurn.run!(actor, key, loaded, kept, message)
-		Err(_) => Err("no kind of actor is called ${kind}: the app defines none (`Actor.define`)")
+## called `key`, its state as its last turn left it (`kept`, when `loaded`; else it is read), the
+## call (`Actor.call_of`: the method's name, a newline, its input as JSON), and the app's context,
+## which the method is given. Its next state and its reply, or why it has none: its kind or the
+## method isn't the app's, or the method doesn't take the input. A crash in it ends the turn only.
+actor_for_host! : Str, Str, Bool, Str, Str, Box(AppContext) => Try({ state : Str, reply : Str }, Str)
+actor_for_host! = |kind, key, loaded, kept, call, boxed| {
+	(name, input) =
+		match call.split_first("\n") {
+			Ok({ before, after }) => (before, after)
+			Err(_) => (call, "")
+		}
+	match program.actors.find_first(|actor| actor.kind == kind and actor.method == name) {
+		Ok(actor) => ActorTurn.run!(actor, Box.unbox(boxed), key, loaded, kept, input)
+		Err(_) =>
+			if program.actors.any(|actor| actor.kind == kind) {
+				Err("${kind} has no method called ${name}")
+			} else {
+				Err("no kind of actor is called ${kind}: the app defines none (`Actor.define`, and its methods: `Actor.method`)")
+			}
 	}
+}
+
+## The kinds of actor the app's methods are of, each once.
+kinds_of : List({ kind : Str, method : Str, run! : app_context, Str, Str, Str => Try({ state : Str, reply : Str }, Str) }) -> List(Str)
+kinds_of = |actors| actors.fold([], |kinds, actor| if (kinds.contains(actor.kind)) kinds else kinds.append(actor.kind))
+
+## Two methods of one kind with one name: the host would only ever run the first.
+methods_twice : List({ kind : Str, method : Str, run! : app_context, Str, Str, Str => Try({ state : Str, reply : Str }, Str) }) -> List(Str)
+methods_twice = |actors|
+	actors
+		.map_with_index(|actor, index| { actor, index })
+		.keep_if(|each| actors.take_first(each.index).any(|other| other.kind == each.actor.kind and other.method == each.actor.method))
+		.map(|each| "the kind of actor ${each.actor.kind} has two methods called ${each.actor.method}: give each its own name")
 
 ## Runs a box the host keeps: a page's (its markup), a hole, a memo, a fallback; its answer as JSON.
 run_for_host! : Box(() => Str) => Str

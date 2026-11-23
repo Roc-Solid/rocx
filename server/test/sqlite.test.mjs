@@ -348,7 +348,7 @@ function suite({ engine, name, tag, run, server, home }) {
 		mkdirSync(at, { recursive: true });
 		writeFileSync(
 			join(at, "main.roc"),
-			`app [program] { pf: platform "../../../platform/main.roc" }\n\nimport pf.Plugin\nimport pf.Server\n\nprogram = {\n\trespond!: |_, _| Server.response(200, [], ""),\n\tdatabase: ${tag}("data/needs.db"),\n\tmigrations: [],\n\tactors: [],\n\tlogs: { format: Auto },\n\tplugins: [Plugin.running({ name: "pg-only", needs: [Postgres] })],\n\troutes: [],\n}\n`,
+			`app [program] { pf: platform "../../../platform/main.roc" }\n\nimport pf.Plugin\nimport pf.Server\n\nprogram = {\n\tinit!: |started| Ok(started),\n\trespond!: |_, _| Server.response(200, [], ""),\n\tdatabase: ${tag}("data/needs.db"),\n\tmigrations: [],\n\tactors: [],\n\tlogs: { format: Auto },\n\tplugins: [Plugin.running({ name: "pg-only", needs: [Postgres] })],\n\troutes: [],\n}\n`,
 		);
 		const executable = join(home(), "needs-postgres");
 		buildApp(join(at, "main.roc"), executable, { opt: "dev" });

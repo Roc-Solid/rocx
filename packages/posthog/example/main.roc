@@ -15,7 +15,7 @@ who : Middleware({ started : Str }, { started : Str, user : Str })
 who = Middleware.make(|request, context, next!| next!(request, { started: context.started, user: Server.header(request, "x-user") ?? "" }))
 
 program = App.program({
-	context: |started| { started: started },
+	init!: |started| Ok({ started: started }),
 	middleware: Middleware.same_origin({}).then(who).then(PostHog.middleware(|context| context.user)),
 	plugins: [Job.plugin({ jobs: App.jobs, on_failed!: PostHog.job_failed! }), PostHog.plugin({ interval_ms: 200 })],
 })

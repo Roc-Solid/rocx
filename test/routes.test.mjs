@@ -231,7 +231,7 @@ test("routes: Api.openapi, the endpoints' OpenAPI document, which App.program se
 	assert.doesNotMatch(routes, /openapi/, "the router doesn't serve it: App.program does, if the app says")
 	const app = appModule({ endpoints: true });
 	assert.match(app, /^import Api$/m);
-	assert.match(app, /\t\t\t\tchain = config\.middleware\.then\(OpenApi\.middleware\(config\.openapi, Api\.openapi\)\)\n\t\t\t\t# A plugin's route, or the app's\.\n\t\t\t\tServer\.clear_flash\(request, Middleware\.run!\(chain, request, \(config\.context\)\(started\), \|passed, context\| Plugin\.respond!\(config\.plugins, passed, context, \|routed, handed\| Routes\.respond!\(routed, handed\)\)\)\)/, "with endpoints: the app's middleware, then the document and its page, as the app says, then the routes");
+	assert.match(app, /\t\t\t\tchain = config\.middleware\.then\(OpenApi\.middleware\(config\.openapi, Api\.openapi\)\)\n\t\t\t\t# A plugin's route, or the app's\.\n\t\t\t\tServer\.clear_flash\(request, Middleware\.run!\(chain, request, given, \|passed, context\| Plugin\.respond!\(config\.plugins, passed, context, \|routed, handed\| Routes\.respond!\(routed, handed\)\)\)\)/, "with endpoints: the app's middleware, then the document and its page, as the app says, then the routes");
 	assert.doesNotMatch(appModule({}), /import Api|OpenApi\.middleware/, "no endpoints, no document");
 	assert.match(appModule({}), /\t\t\t\tchain = config\.middleware\n/, "no endpoints: the app's middleware alone");
 });
@@ -426,8 +426,8 @@ test("App: the program, with the jobs the app's modules define (found by rocx bu
 		assert.deepEqual(migrationsIn(dir), ["0002-first.sql", "0010_later.sql"]);
 		const app = appModule({ jobs, migrations: migrationsIn(dir), jobsPackage: "jobs" });
 		assert.match(app, /^import pf\.Server\nimport pf\.Endpoint\nimport pf\.Middleware\nimport pf\.OpenApi\nimport pf\.Plugin\nimport jobs\.Job\nimport Routes\nimport \.\.\/Jobs as Jobs\nimport MembersServer\nimport \.\.\/Server\/Mail as ServerMail\nimport "\.\.\/migrations\/0002-first\.sql" as m0002_first : Str\nimport "\.\.\/migrations\/0010_later\.sql" as m0010_later : Str\n\nApp := \[\]\.\{$/m);
-		assert.match(app, /\tConfig\(given, handed\) := \{\n\t\tcontext : Str -> given,\n\t\tmiddleware : Middleware\(given, handed\),\n\t\tdatabase : \[Postgres, Sqlite\(Str\), Turso\(Str\)\] \?\? Postgres,\n\t\topenapi : OpenApi\.Serving \?\? Off,\n\t\tplugins : List\(Plugin\.Value\(handed\)\) \?\? \[\],\n\t\}/, "the app's config: its database Postgres unless it says (D-045; Turso too, D-046); openapi is Off unless it says; no plugins unless it lists them");
-		assert.match(app, /\tprogram : Config\(_, _\) -> _\n\tprogram = \|config\| \{\n\t\t# [^\n]*\n\t\trespond!: \|parsed, started\| \{\n\t\t\t# [^\n]*\n\t\t\trequest = \{ \.\.parsed, route: Plugin\.pattern\(config\.plugins, parsed\.method, parsed\.path\) \?\? Routes\.pattern\(parsed\.path\) \}\n\t\t\t# [^\n]*\n\t\t\t# [^\n]*\n\t\t\tif \(Endpoint\.channel_asked\(request\) == "close"\) \{\n\t\t\t\tRoutes\.closed!\(request\)\n\t\t\t\} else \{\n\t\t\t\t# [^\n]*\n\t\t\t\tchain = config\.middleware\n\t\t\t\t# A plugin's route, or the app's\.\n\t\t\t\tServer\.clear_flash\(request, Middleware\.run!\(chain, request, \(config\.context\)\(started\), \|passed, context\| Plugin\.respond!\(config\.plugins, passed, context, \|routed, handed\| Routes\.respond!\(routed, handed\)\)\)\)\n\t\t\t\}\n\t\t\},\n/, "the request as the host gives it (one record, its peer in it), with the route that answers it; a page view lets the flash go; a channel subscription's end, outside the middleware");
+		assert.match(app, /\tConfig\(given, handed\) := \{\n\t\tinit! : Str => Try\(given, Str\),\n\t\tmiddleware : Middleware\(given, handed\),\n\t\tdatabase : \[Postgres, Sqlite\(Str\), Turso\(Str\)\] \?\? Postgres,\n\t\topenapi : OpenApi\.Serving \?\? Off,\n\t\tplugins : List\(Plugin\.Value\(given, handed\)\) \?\? \[\],\n\t\}/, "the app's config: its database Postgres unless it says (D-045; Turso too, D-046); openapi is Off unless it says; no plugins unless it lists them");
+		assert.match(app, /\tprogram : Config\(_, _\) -> _\n\tprogram = \|config\| \{\n\t\t# [^\n]*\n\t\tinit!: config\.init!,\n\t\t# [^\n]*\n\t\trespond!: \|parsed, given\| \{\n\t\t\t# [^\n]*\n\t\t\trequest = \{ \.\.parsed, route: Plugin\.pattern\(config\.plugins, parsed\.method, parsed\.path\) \?\? Routes\.pattern\(parsed\.path\) \}\n\t\t\t# [^\n]*\n\t\t\t# [^\n]*\n\t\t\tif \(Endpoint\.channel_asked\(request\) == "close"\) \{\n\t\t\t\tRoutes\.closed!\(request\)\n\t\t\t\} else \{\n\t\t\t\t# [^\n]*\n\t\t\t\tchain = config\.middleware\n\t\t\t\t# A plugin's route, or the app's\.\n\t\t\t\tServer\.clear_flash\(request, Middleware\.run!\(chain, request, given, \|passed, context\| Plugin\.respond!\(config\.plugins, passed, context, \|routed, handed\| Routes\.respond!\(routed, handed\)\)\)\)\n\t\t\t\}\n\t\t\},\n/, "the request as the host gives it (one record, its peer in it), with the route that answers it; a page view lets the flash go; a channel subscription's end, outside the middleware");
 		assert.match(app, /\t\tdatabase: config\.database,\n\t\tmigrations: \[\{ name: "0002-first\.sql", sql: m0002_first \}, \{ name: "0010_later\.sql", sql: m0010_later \}\],\n\t\tactors: \[\],\n\t\tlogs: \{ format: Auto \},\n\t\tplugins: config\.plugins\.map\(Plugin\.running\),\n\t\troutes: Routes\.claims,\n\t\}/, "the platform's program: the migrations, no actors (the jobs are App.jobs', for the plugin); the log's format Auto (ROCX_LOG, or the terminal's guess), which the app may change with a record update");
 		const none = appModule({});
 		assert.match(app, /^\tjobs = \[Job\.handler\(Jobs\.welcome\), Job\.handler\(Jobs\.nightly\), Job\.handler\(Jobs\.once\), Job\.handler\(ServerMail\.send\), Job\.handler\(MembersServer\.reminder\)\]$/m, "App.jobs: the five, for the jobs plugin");
@@ -447,39 +447,41 @@ test("App: the program, with the jobs the app's modules define (found by rocx bu
 	}
 });
 
-test("App: the kinds of actor the app's modules define (found by rocx build), each Actor.handler, a function of {} called", () => {
+test("App: the actors' methods the app's modules define (found by rocx build), each Actor.handler, a function of {} called; their kinds checked", () => {
 	const dir = mkdtempSync(join(tmpdir(), "rocx-actors-"));
 	const put = (path, text) => {
 		mkdirSync(dirname(join(dir, path)), { recursive: true });
 		writeFileSync(join(dir, path), text);
 	};
 	try {
-		put("Carts.roc", 'import pf.Actor\n\nCarts := [].{\n\tcart : Actor.Kind({ items : List(Str) }, [Add(Str)], U64)\n\tcart = Actor.define({\n\t\tname: "cart",\n\t\tinitial: |_| { items: [] },\n\t\treceive!: |_, state, Add(item)| { state: { items: state.items.append(item) }, reply: 1 },\n\t})\n\n\tmirror = |{}|\n\t\tActor.define({ name: "mirror", initial: |_| {}, receive!: |_, state, _| { state, reply: 0 } })\n}\n');
-		put("routes/rooms/+server.roc", 'import pf.Actor\n\nroom = Actor.define({ name: "room", initial: |_| 0, receive!: |_, n, _| { state: n, reply: n } })\n\nget! = |_| Ok(1)\n');
-		put("Generated/Copy.roc", 'Copy := [].{\n\tx = Actor.define({ name: "cart", initial: |_| 0, receive!: |_, n, _| { state: n, reply: n } })\n}\n');
-		put("Jobs.roc", 'import jobs.Job\n\nJobs := [].{\n\tdaily = Job.define("daily", |{}| Ok({}))\n}\n');
+		put("Carts.roc", 'import pf.Actor\n\nCarts := [].{\n\tcart : Actor.Kind({ items : List(Str) })\n\tcart = Actor.define({\n\t\tname: "cart",\n\t\tinitial: |_| { items: [] },\n\t})\n\n\tadd = Actor.method(cart, "add", |{ state, input, .. }| { state: { items: state.items.append(input) }, reply: state.items.len() })\n\n\tmirror = |{}| Actor.method(cart, "mirror", |{ state, .. }| { state, reply: state.items })\n}\n');
+		put("routes/rooms/+server.roc", 'import pf.Actor\n\nroom = Actor.define({ name: "room", initial: |_| 0 })\n\ncount = Actor.method(room, "count", |{ state, .. }| { state, reply: state })\n\nget! = |_| Ok(1)\n');
+		put("Generated/Copy.roc", 'Copy := [].{\n\tx = Actor.method(cart, "add", |{ state, .. }| { state, reply: 0 })\n}\n');
+		put("Jobs.roc", 'import jobs.Job\n\nJobs := [].{\n\tdaily = Job.define("daily", |_context, {}| Ok({}))\n}\n');
 		const table = routeTable(["rooms/+server.roc"]);
 		const { actors, problems } = actorsIn(dir, table);
 		assert.deepEqual(problems, []);
 		assert.deepEqual(
-			actors.map(({ name, define, thunk, module, file, line }) => [name, define, thunk, module, file, line]),
+			actors.map(({ define, thunk, module, file, line }) => [define, thunk, module, file, line]),
 			[
-				["cart", "cart", false, "Carts", "Carts.roc", 5],
-				["mirror", "mirror", true, "Carts", "Carts.roc", 11],
-				["room", "room", false, "Generated/RoomsServer", "routes/rooms/+server.roc", 3],
+				["add", false, "Carts", "Carts.roc", 10],
+				["mirror", true, "Carts", "Carts.roc", 12],
+				["count", false, "Generated/RoomsServer", "routes/rooms/+server.roc", 5],
 			],
+			"the methods, not the kinds",
 		);
 		const { jobs } = jobsIn(dir, table);
 		const app = appModule({ jobs, actors, jobsPackage: "jobs" });
 		assert.match(app, /^import jobs\.Job\nimport pf\.Actor\nimport Routes\nimport \.\.\/Carts as Carts\nimport \.\.\/Jobs as Jobs\nimport RoomsServer\n/m, "each module once, jobs' and actors' alike");
 		assert.match(app, /^\tjobs = \[Job\.handler\(Jobs\.daily\)\]$/m);
-		assert.match(app, /\t\tmigrations: \[\],\n\t\tactors: \[Actor\.handler\(Carts\.cart\), Actor\.handler\(Carts\.mirror\(\{\}\)\), Actor\.handler\(RoomsServer\.room\)\],\n/);
-		// Outside its module's block, its name not first, or two with one name: refused.
-		put("Loose.roc", 'import pf.Actor\n\nloose = Actor.define({ name: "loose", initial: |_| 0, receive!: |_, n, _| { state: n, reply: n } })\n\nLoose := [].{\n\tunnamed = Actor.define({ initial: |_| 0, name: "unnamed", receive!: |_, n, _| { state: n, reply: n } })\n}\n');
-		put("Again.roc", 'Again := [].{\n\tagain = Actor.define({ name: "cart", initial: |_| 0, receive!: |_, n, _| { state: n, reply: n } })\n}\n');
+		assert.match(app, /\t\tmigrations: \[\],\n\t\tactors: \[Actor\.handler\(Carts\.add\), Actor\.handler\(Carts\.mirror\(\{\}\)\), Actor\.handler\(RoomsServer\.count\)\],\n/);
+		// A kind or a method outside its module's block, a kind whose name isn't first, or two kinds with one name: refused.
+		put("Loose.roc", 'import pf.Actor\n\nloose = Actor.define({ name: "loose", initial: |_| 0 })\n\nLoose := [].{\n\tunnamed = Actor.define({ initial: |_| 0, name: "unnamed" })\n\tpoke = Actor.method(unnamed, "poke", |{ state, .. }| { state, reply: {} })\n}\n\nstray = Actor.method(loose, "stray", |{ state, .. }| { state, reply: {} })\n');
+		put("Again.roc", 'Again := [].{\n\tagain = Actor.define({ name: "cart", initial: |_| 0 })\n}\n');
 		assert.deepEqual(actorsIn(dir, table).problems, [
 			'Loose.roc:3: the kind of actor "loose" is defined outside its module\'s block: define it at the top of `Loose := [].{ … }`, as `\tloose = Actor.define({ … })`, so Generated/App can name it (`Loose.loose`)',
-			'Loose.roc:6: the kind of actor `unnamed` doesn\'t start with its name: define it as `unnamed = Actor.define({ name: "…", initial, receive! })`, so rocx build can list it',
+			'Loose.roc:6: the kind of actor `unnamed` doesn\'t start with its name: define it as `unnamed = Actor.define({ name: "…", initial })`, so rocx build can check it',
+			'Loose.roc:10: the method "stray" is defined outside its module\'s block: define it at the top of `Loose := [].{ … }`, as `\tstray = Actor.method(kind, "…", |{ me, context, state, input }| …)`, so Generated/App can name it (`Loose.stray`)',
 			'Carts.roc:5: there is a kind of actor called "cart" already (Again.roc:2): the host finds an actor\'s kind by its name, and keeps its state under it, so give each its own',
 		]);
 	} finally {

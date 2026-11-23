@@ -147,8 +147,8 @@ Samples := [].{
 	# ---- Jobs: options, keys, listing ----
 
 	## A reminder: tried once, within a minute (`Job.define`'s are tried five times, with no limit).
-	reminder : Job.Kind({ member : Str })
-	reminder = Job.define_with("reminder", { attempts: 1, timeout_ms: 60_000 }, |{ member }| if (member.is_empty()) Err("no one to remind") else Ok({}))
+	reminder : Job.Kind(_, { member : Str })
+	reminder = Job.define_with("reminder", { attempts: 1, timeout_ms: 60_000 }, |_context, { member }| if (member.is_empty()) Err("no one to remind") else Ok({}))
 
 	## A member's reminder, a day from now: one at a time, keyed by the member, so a second is
 	## `Exists`, and nothing is queued.

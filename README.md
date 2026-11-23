@@ -462,12 +462,16 @@ discard! = || match leaving!() {
 
 Any app with routes, of components or not (endpoints alone too), gets its program:
 
-- `Generated/App.roc`: `App.program({ context, middleware, plugins })` is the platform's `program`.
-  Every request is answered by a plugin's route or `Routes.respond!` behind `middleware`, which is
-  given `context(started)` (`--context-file`), and a page a browser asks for lets a plain form's
-  flash go (`Server.clear_flash`). `App.jobs` is the jobs the app's modules define, for the jobs
+- `Generated/App.roc`: `App.program({ init!, middleware, plugins })` is the platform's `program`.
+  `init!` makes the app's context once, when the server starts (after the migrations, so it may
+  read the database; given `--context-file`'s text; its `Err` stops the server): settings read
+  once, handles, anything. The host keeps it for as long as the server runs, shared by every call
+  that runs the app's code: `middleware` is given it for each request, a job's run and an actor's
+  methods are given it, and so are a plugin's calls, loops, starts and checks. Every request is
+  answered by a plugin's route or `Routes.respond!` behind `middleware`, and a page a browser asks
+  for lets a plain form's flash go (`Server.clear_flash`). `App.jobs` is the jobs the app's modules define, for the jobs
   plugin (packages/jobs), each at the top of its module's block (`\twelcome = Job.define("welcome",
-  …)`, or `Job.define_with`; one outside it, or two with one name, fail the build, and so do jobs
+  |context, input| …)`, or `Job.define_with`; one outside it, or two with one name, fail the build, and so do jobs
   with no jobs package in the header). The migrations are `migrations/*.sql`, embedded, in the order of
   their names. The log's format is `Auto` (`ROCX_LOG`, `pretty` or `json`, if it is set; or else
   pretty on a terminal and JSON elsewhere); `program = { ..App.program({ … }), logs: { format: Json } }`
@@ -489,7 +493,7 @@ import Middlewares
 import Jobs
 
 program = App.program({
-	context: |started| { facts: started },
+	init!: |started| Ok({ facts: started }),
 	middleware: Middlewares.default,
 	plugins: [Job.plugin({ jobs: App.jobs, crons: [Cron.every("0 3 * * *", Jobs.nightly, {})] })],
 })

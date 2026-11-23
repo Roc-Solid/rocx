@@ -138,8 +138,8 @@ view! = |_|
 			<p>
 				<code>respond!</code> takes the request, a <code>Server.Request</code> (its method, path, query,
 				headers, body, and <code>peer</code>, the address of the connection it came on, which the host hands
-				over in one record with the rest), and what the server was started with
-				(<code>--context-file</code>), and answers with a <code>Server.Response</code>: the routes rocx
+				over in one record with the rest), and the app's context, and answers with a
+				<code>Server.Response</code>: the routes rocx
 				writes answer it (<a href={Paths.routing}>routing</a>). An answer that is a stream carries it: a function the host
 				runs as a call of its own, with its <code>send!</code> and <code>sleep!</code>. <code>actors</code>
 				lists the app's kinds of actor, which <code>rocx build</code> finds, so the host can run one when

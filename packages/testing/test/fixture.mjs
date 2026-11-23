@@ -23,7 +23,7 @@ import jobs.Job
 import Generated/App
 
 program = App.program({
-	context: |started| { started: started },
+	init!: |started| Ok({ started: started }),
 	middleware: Middleware.same_origin({}),
 	# A failed job waits 5 s for its next attempt: longer than a test settles the queue for.
 	plugins: [Job.plugin({ jobs: App.jobs, retry_ms: 5000 }), Email.plugin({})],
@@ -36,10 +36,10 @@ import email.Email
 Jobs := [].{
 
 	## Welcomes an address, by email.
-	welcome : Job.Kind({ to : Str })
+	welcome : Job.Kind(_, { to : Str })
 	welcome = Job.define(
 		"welcome",
-		|{ to }|
+		|_context, { to }|
 			match Email.send!({ to, subject: "Welcome", text: "Your notes are at https://notes.example/notes", html: "<p>Your notes are at <a href=\\"https://notes.example/notes\\">your notes</a>.</p>" }) {
 				Ok({}) => Ok({})
 				Err(EmailErr(why)) => Err(why)

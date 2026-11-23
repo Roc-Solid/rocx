@@ -13,7 +13,7 @@ import Generated/App
 import Visitor
 
 program = App.program({
-	context: |_started| {},
+	init!: |_started| Ok({}),
 	middleware: Visitor.middleware,
 	# A file beside where the server starts (`--database-url sqlite:<path>` puts it elsewhere).
 	database: Sqlite("data/quiz.db"),

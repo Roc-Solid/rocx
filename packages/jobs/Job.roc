@@ -17,11 +17,11 @@ import "migrations/0001_jobs_sqlite.sql" as lite_jobs_table : Str
 ## commits, and the workers hear of it then.
 ##
 ## ```roc
-## welcome : Job.Kind({ member : I64 })
-## welcome = Job.define("welcome", |{ member }| { … Email.send!(…) … })
+## welcome : Job.Kind(_, { member : I64 })
+## welcome = Job.define("welcome", |_context, { member }| { … Email.send!(…) … })
 ##
 ## # Once, within 20 minutes: a reminder sent twice is worse than one missed.
-## reminder = Job.define_with("reminder", { attempts: 1, timeout_ms: 20 * 60_000 }, |{ member }| …)
+## reminder = Job.define_with("reminder", { attempts: 1, timeout_ms: 20 * 60_000 }, |_context, { member }| …)
 ##
 ## Job.enqueue!(welcome, { member: 7 }, { when: Now })
 ## Job.enqueue!(welcome, { member: 7 }, { when: At(Time.now_millis!({}) + 60_000) })    # a minute from now
@@ -47,11 +47,13 @@ import "migrations/0001_jobs_sqlite.sql" as lite_jobs_table : Str
 Job := [].{
 
 	## A kind of job: its name, how many times one is tried, its time limit (milliseconds, 0 for
-	## none) and what running one does with its input.
-	Kind(input) : { name : Str, attempts : U64, timeout_ms : U64, run! : input => Try({}, Str) }
+	## none) and what running one does, given the app's context (what its `init!` made) and its
+	## input. A kind defined without an annotation, or annotated `Job.Kind(_, input)`, takes the
+	## context as the app has it.
+	Kind(context, input) : { name : Str, attempts : U64, timeout_ms : U64, run! : context, input => Try({}, Str) }
 
 	## A kind as the workers run it (`Job.handler`): its input as JSON.
-	Handler : { name : Str, attempts : U64, timeout_ms : U64, run! : Str => Try({}, Str) }
+	Handler(context) : { name : Str, attempts : U64, timeout_ms : U64, run! : context, Str => Try({}, Str) }
 
 	## What the jobs plugin runs: the app's kinds of job (`App.jobs`, which rocx build lists, or
 	## `Job.handler(kind)` for each), its schedules (`Cron.every`), how many workers take jobs at
@@ -59,8 +61,8 @@ Job := [].{
 	## (milliseconds; doubled for each after), and what is done when a job has failed for good,
 	## after it is logged (`on_failed!`: nothing more, unless the app says; an error tracker's
 	## report, `PostHog.job_failed!`).
-	Options := {
-		jobs : List(Handler),
+	Options(context) := {
+		jobs : List(Handler(context)),
 		crons : List({ name : Str, schedule : Str, job : Str, input : Str }) ?? [],
 		workers : U64 ?? 4,
 		retry_ms : U64 ?? 1000,
@@ -81,7 +83,7 @@ Job := [].{
 	## `--debug`, `POST /__rocx/jobs/wake` tells the workers to look for a due job now, as queuing
 	## one does: for a job another process wrote into the queue itself, which on SQLite can't tell
 	## them (a test's: packages/testing's `enqueue` and `settleJobs`).
-	plugin : Options -> Plugin.Value(ctx)
+	plugin : Options(context) -> Plugin.Value(context, ctx)
 	plugin = |options| {
 		handlers = options.jobs
 		crons = options.crons
@@ -91,15 +93,15 @@ Job := [].{
 		own = kinds.map(|kind| kind.name)
 		# The workers run the app's kinds and other plugins' (`Job.adopt!`, known once every start
 		# has run): one with none to run ends at once.
-		workers = List.repeat({ name: "jobs.worker", run!: |{}| JobWorker.run!(own, retry_ms, on_failed!) }, options.workers)
-		ticker = if (crons.is_empty()) [] else [{ name: "jobs.schedules", run!: |{}| CronTicker.run!(crons) }]
+		workers = List.repeat({ name: "jobs.worker", run!: |_context| JobWorker.run!(own, retry_ms, on_failed!) }, options.workers)
+		ticker = if (crons.is_empty()) [] else [{ name: "jobs.schedules", run!: |_context| CronTicker.run!(crons) }]
 		{
 			name: "jobs",
 			migrations: [{ name: "0001_jobs", sql: jobs_table, on: Postgres }, { name: "0001_jobs", sql: lite_jobs_table, on: Sqlite }],
 			early: [{ method: "POST", path: "/__rocx/jobs/wake", under: [Dev, Debug], answer!: woken! }],
-			calls: [{ name: "jobs.run", run!: |input| ran!(handlers, input) }],
+			calls: [{ name: "jobs.run", run!: |context, input| ran!(handlers, context, input) }],
 			loops: workers.concat(ticker),
-			starts: [|{}| started!(kinds, crons)],
+			starts: [|_context| started!(kinds, crons)],
 		}
 	}
 
@@ -109,22 +111,22 @@ Job := [].{
 	##
 	## ```roc
 	## calls: [Job.call(deliver)],
-	## starts: [|{}| Job.adopt!(deliver)],
+	## starts: [|_context| Job.adopt!(deliver)],
 	## needs: [Plugin("jobs")],
 	## ```
-	call : Kind(input) -> Plugin.Call
+	call : Kind(context, input) -> Plugin.Call(context)
 		where [input.Json.Parseable([InvalidJson(Str)])]
 	call = |kind| {
 		handled = Job.handler(kind)
 		run_job! = handled.run!
-		{ name: kind.name, run!: |payload| run_job!(payload).map_ok(|{}| "") }
+		{ name: kind.name, run!: |context, payload| run_job!(context, payload).map_ok(|{}| "") }
 	}
 
 	## Tells the jobs plugin of a kind another plugin brings (`call`), from that plugin's start: its
 	## workers run its jobs too, the jobs page lists it, and its jobs a stop cut short are queued
 	## again. Without the jobs plugin started first (`Plugin("jobs")` in the plugin's needs), why
 	## not.
-	adopt! : Kind(input) => Try({}, Str)
+	adopt! : Kind(context, input) => Try({}, Str)
 	adopt! = |kind| {
 		if !Registry.installed!({}) {
 			return Err("${kind.name} is a job: list Job.plugin({ jobs: App.jobs }) in the app's plugins, and Plugin(\"jobs\") in this plugin's needs")
@@ -151,14 +153,14 @@ Job := [].{
 	changes = "rocx:jobs"
 
 	## A kind tried five times, with no time limit.
-	define : Str, (input => Try({}, Str)) -> Kind(input)
+	define : Str, (context, input => Try({}, Str)) -> Kind(context, input)
 	define = |name, run!| Job.define_with(name, { attempts: 5, timeout_ms: 0 }, run!)
 
 	## A kind tried `attempts` times (one at least), each within `timeout_ms` milliseconds (0: no
 	## limit). The first effect that waits past the limit (Postgres, a socket, `Http`) ends the
 	## run, which fails with "timed out after …", and is tried again if it has attempts left; Roc
 	## that never waits is ended where it runs (D-057), as a crash would end it.
-	define_with : Str, { attempts : U64, timeout_ms : U64 }, (input => Try({}, Str)) -> Kind(input)
+	define_with : Str, { attempts : U64, timeout_ms : U64 }, (context, input => Try({}, Str)) -> Kind(context, input)
 	define_with = |name, { attempts, timeout_ms }, run!| { name, attempts: U64.max(attempts, 1), timeout_ms, run! }
 
 	## When a job runs: `Now`, as soon as a worker is free; or `At(ms)`, not before that moment, in
@@ -175,7 +177,7 @@ Job := [].{
 	## Queues a job of `kind` with `input`, to run when `opts` says. The workers hear of it
 	## (`rocx_jobs` is notified) once it is there for them: now, or when its transaction commits. A `JobErr`
 	## when the app has no jobs plugin (`Job.plugin`), or the database refuses.
-	enqueue! : Kind(input), input, Opts => Try({}, [JobErr(Str), ..others])
+	enqueue! : Kind(context, input), input, Opts => Try({}, [JobErr(Str), ..others])
 		where [input.Json.Encodable([])]
 	enqueue! = |kind, input, opts|
 		match queue!(kind.name, Json.to_str(input), kind.attempts, opts.when, Null) {
@@ -187,7 +189,7 @@ Job := [].{
 	## `Queued`; or nothing, if one has it (`Exists`). Once that one is done, failed or canceled,
 	## the key is free again. A key names what the job is for (`reminder:ada`), so that it can be
 	## cancelled or moved by it.
-	enqueue_keyed! : Kind(input), input, KeyedOpts => Try([Queued, Exists], [JobErr(Str), ..others])
+	enqueue_keyed! : Kind(context, input), input, KeyedOpts => Try([Queued, Exists], [JobErr(Str), ..others])
 		where [input.Json.Encodable([])]
 	enqueue_keyed! = |kind, input, opts|
 		match queue!(kind.name, Json.to_str(input), kind.attempts, opts.when, if (opts.key.is_empty()) Null else Text(opts.key)) {
@@ -215,15 +217,15 @@ Job := [].{
 		)
 
 	## How the workers run jobs of `kind`, for the plugin's `jobs`: their input decoded from JSON.
-	handler : Kind(input) -> Handler
+	handler : Kind(context, input) -> Handler(context)
 		where [input.Json.Parseable([InvalidJson(Str)])]
 	handler = |kind| {
 		name: kind.name,
 		attempts: kind.attempts,
 		timeout_ms: kind.timeout_ms,
-		run!: |payload|
+		run!: |context, payload|
 			match Json.parse(payload) {
-				Ok(input) => (kind.run!)(input)
+				Ok(input) => (kind.run!)(context, input)
 				Err(InvalidJson(why)) => Err("${kind.name}: its input isn't what it takes: ${why}")
 			},
 	}
@@ -420,8 +422,8 @@ woken! = |_request|
 	}
 
 ## Runs a job (the plugin's call `jobs.run`): `input` is its kind, a newline, and its input as JSON.
-ran! : List(Job.Handler), Str => Try(Str, Str)
-ran! = |handlers, input| {
+ran! : List(Job.Handler(context)), context, Str => Try(Str, Str)
+ran! = |handlers, context, input| {
 	(kind, payload) =
 		match input.split_first("\n") {
 			Ok({ before, after }) => (before, after)
@@ -429,7 +431,7 @@ ran! = |handlers, input| {
 		}
 	match handlers.find_first(|job| job.name == kind) {
 		Ok(job) =>
-			match (job.run!)(payload) {
+			match (job.run!)(context, payload) {
 				Ok({}) => Ok("")
 				Err(why) => Err(why)
 			}

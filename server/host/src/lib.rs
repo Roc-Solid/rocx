@@ -68,10 +68,14 @@ async fn described(config: http::Config, mut given: std::collections::HashMap<St
     // check makes a file, and needs none): DATABASE_URL may be a Postgres one in a shell.
     given.insert("describe_sql".to_string(), "yes".to_string());
     given.insert("public_url".to_string(), config.public_url.clone().unwrap_or_else(|| "http://127.0.0.1".to_string()));
+    // What the app's `init!` is given: the text of `--context-file`.
+    given.insert("context".to_string(), config.context.clone());
     settings::set(given);
     let (_stop, stopping) = tokio::sync::watch::channel(false);
     hosted::set_stop(stopping);
     actors::start(None);
+    // The platform's part of the start alone (`roc::init`: the migrations), not the app's `init!`:
+    // a check of its SQL needs the tables, not its context.
     let started = coroutine::run(|| hosted::call(None, roc::init)).await.map_err(|_| "starting failed".to_string());
     let answer = match started {
         Ok(Ok(Ok(()))) => match db::flavor() {
@@ -182,6 +186,8 @@ async fn run(config: http::Config) -> Result<(), String> {
     // (`--port 0`: the system's).
     let listening = listener.local_addr().map_err(|error| error.to_string())?;
     given.insert("public_url".to_string(), config.public_url.clone().unwrap_or_else(|| http::listening_url(listening)));
+    // What the app's `init!` is given: the text of `--context-file`.
+    given.insert("context".to_string(), config.context.clone());
     settings::set(given);
     let (stop, stopping) = tokio::sync::watch::channel(false);
     hosted::set_stop(stopping.clone());
@@ -189,12 +195,16 @@ async fn run(config: http::Config) -> Result<(), String> {
     // database, an actor idle for long enough is let go; without one, its task is all it has.
     let idle = (config.actor_idle_ms > 0).then(|| Duration::from_millis(config.actor_idle_ms));
     actors::start(idle);
-    // The platform's start, in Roc: a bad schedule or a migration that fails stops the server here.
-    let started = coroutine::run(|| hosted::call(None, roc::init)).await.map_err(|_| "starting failed".to_string())?;
-    match started {
-        Ok(Ok(())) => {}
-        Ok(Err(why)) => return Err(why),
-        Err(crash) => return Err(format!("starting crashed: {}", crash.0)),
+    // The start, in Roc, three calls one after another: the platform's (a migration that fails
+    // stops the server here), the app's context (its `init!`), and the rest, given it (the actors'
+    // timers, the plugins' starts: a bad schedule stops it here).
+    for step in [roc::init, roc::make_context, roc::started] {
+        let started = coroutine::run(move || hosted::call(None, step)).await.map_err(|_| "starting failed".to_string())?;
+        match started {
+            Ok(Ok(())) => {}
+            Ok(Err(why)) => return Err(why),
+            Err(crash) => return Err(format!("starting crashed: {}", crash.0)),
+        }
     }
     let count = coroutine::run(|| hosted::call(None, roc::background_count))
         .await

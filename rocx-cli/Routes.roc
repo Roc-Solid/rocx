@@ -2597,9 +2597,24 @@ Routes := [].{
 		}
 	}
 
+	## A method of a kind of actor at `start`: `^([ \t]*)([a-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*(\|\{\}\|\s*)?
+	## Actor\.method\(` (its name, the kind's own, is checked by the server as it starts).
+	method_at : List(U8), U64 -> Try({ indent : Str, define : Str, name : [Some(Str), None], thunk : Bool, end : U64 }, [NoMatch])
+	method_at = |bytes, start| {
+		head = Routes.definition_head(bytes, start)?
+		call = "Actor.method(".to_utf8()
+		thunked = Text.starts_with_at(bytes, "|{}|".to_utf8(), head.after)
+		at = if (thunked) Text.skip_space(bytes, head.after + 4) else head.after
+		if !Text.starts_with_at(bytes, call, at) {
+			return Err(NoMatch)
+		}
+		Ok({ indent: head.indent, define: head.define, name: None, thunk: thunked, end: at + call.len() })
+	}
+
 	## Every definition `at` finds in `source`, as JavaScript's `matchAll` finds them: each at a
-	## line's start, the next after the last one's end; with its line.
-	matches_in : Str, Bool -> List({ indent : Str, define : Str, name : [Some(Str), None], thunk : Bool, line : U64 })
+	## line's start, the next after the last one's end; with its line. With `actors`, a kind
+	## (`Actor.define`) or a method (`Actor.method`, `method`); without, a job.
+	matches_in : Str, Bool -> List({ indent : Str, define : Str, name : [Some(Str), None], thunk : Bool, line : U64, method : Bool })
 	matches_in = |source, actors| {
 		bytes = source.to_utf8()
 		var $found = []
@@ -2611,16 +2626,24 @@ Routes := [].{
 			hit = candidates.fold_until(
 				Err(NoMatch),
 				|_, start| {
-					tried = if (actors) Routes.actor_at(bytes, start) else Routes.job_at(bytes, start)
+					tried =
+						if actors {
+							match Routes.actor_at(bytes, start) {
+								Ok(found) => Ok({ found, method: Bool.False })
+								Err(_) => Routes.method_at(bytes, start).map_ok(|found| { found, method: Bool.True })
+							}
+						} else {
+							Routes.job_at(bytes, start).map_ok(|found| { found, method: Bool.False })
+						}
 					match tried {
-						Ok(found) => Break(Ok({ found, start }))
+						Ok(found) => Break(Ok({ found: found.found, method: found.method, start }))
 						Err(_) => Continue(Err(NoMatch))
 					}
 				},
 			)
 			match hit {
 				Ok(each) => {
-					$found = $found.append({ indent: each.found.indent, define: each.found.define, name: each.found.name, thunk: each.found.thunk, line: Text.newlines(bytes, 0, each.start) + 1 })
+					$found = $found.append({ indent: each.found.indent, define: each.found.define, name: each.found.name, thunk: each.found.thunk, line: Text.newlines(bytes, 0, each.start) + 1, method: each.method })
 					$from = each.found.end
 				}
 				Err(_) => {
@@ -2638,7 +2661,8 @@ Routes := [].{
 		{ jobs: found.found, problems: found.problems }
 	}
 
-	## The kinds of actor the app under `dir` defines (`Actor.define`), and what is wrong.
+	## The methods of the kinds of actor the app under `dir` defines (`Actor.method`: what
+	## `program.actors` lists), and what is wrong with them and with its kinds (`Actor.define`).
 	actors_in! : Str, Table => { actors : List(Found), problems : List(Str) }
 	actors_in! = |dir, table| {
 		found = Routes.defined_in!(dir, table, Bool.True)
@@ -2649,7 +2673,7 @@ Routes := [].{
 	defined_in! : Str, Table, Bool => { found : List(Found), problems : List(Str) }
 	defined_in! = |dir, table, actors| {
 		routes = Routes.routed_modules(table).map(|each| { key: "routes/${each.file}", module_name: each.module_name })
-		walked = if (Fs.exists!(dir)) Routes.walk_definitions!(dir, "", routes, actors, { found: [], problems: [] }) else { found: [], problems: [] }
+		walked = if (Fs.exists!(dir)) Routes.walk_definitions!(dir, "", routes, actors, { found: [], kinds: [], problems: [] }) else { found: [], kinds: [], problems: [] }
 		twice = |each|
 			if actors {
 				"there is a kind of actor called \"${each.name}\" already"
@@ -2657,7 +2681,8 @@ Routes := [].{
 				"there is a job called \"${each.name}\" already"
 			}
 		why = if (actors) "the host finds an actor's kind by its name, and keeps its state under it, so give each its own" else "the workers find a job by its name, so give each its own"
-		named = walked.found.fold(
+		# Jobs by their names; kinds of actor by theirs (a method's, its kind's own, the server checks).
+		named = (if (actors) walked.kinds else walked.found).fold(
 			{ seen: [], problems: [] },
 			|so_far, each|
 				match so_far.seen.find_first(|other| other.name == each.name) {
@@ -2668,7 +2693,7 @@ Routes := [].{
 		{ found: walked.found, problems: walked.problems.concat(named.problems) }
 	}
 
-	walk_definitions! : Str, Str, List({ key : Str, module_name : Str }), Bool, { found : List(Found), problems : List(Str) } => { found : List(Found), problems : List(Str) }
+	walk_definitions! : Str, Str, List({ key : Str, module_name : Str }), Bool, { found : List(Found), kinds : List(Found), problems : List(Str) } => { found : List(Found), kinds : List(Found), problems : List(Str) }
 	walk_definitions! = |at, prefix, routes, actors, so_far| {
 		var $state = so_far
 		for entry in Fs.entries!(at) {
@@ -2696,14 +2721,16 @@ Routes := [].{
 									Err(_) => Bool.False
 								}
 							wanted = if (is_route) "" else "\t"
-							misnamed = actors and each.name == None
+							misnamed = actors and !each.method and each.name == None
 							if each.indent != wanted or misnamed {
 								where_it_is = if (each.indent.is_empty()) "outside its module's block" else "inside a definition"
 								tab = if (is_route) "" else "\t"
 								name = Routes.or_empty(each.name)
 								said =
 									if actors and misnamed {
-										"the kind of actor `${each.define}` doesn't start with its name: define it as `${each.define} = Actor.define({ name: \"…\", initial, receive! })`, so rocx build can list it"
+										"the kind of actor `${each.define}` doesn't start with its name: define it as `${each.define} = Actor.define({ name: \"…\", initial })`, so rocx build can check it"
+									} else if actors and each.method {
+										"the method \"${each.define}\" is defined ${where_it_is}: define it at the top of `${type_name} := [].{ … }`, as `${tab}${each.define} = Actor.method(kind, \"…\", |{ me, context, state, input }| …)`, so Generated/App can name it (`${type_name}.${each.define}`)"
 									} else if actors {
 										"the kind of actor \"${name}\" is defined ${where_it_is}: define it at the top of `${type_name} := [].{ … }`, as `${tab}${each.define} = Actor.define({ … })`, so Generated/App can name it (`${type_name}.${each.define}`)"
 									} else {
@@ -2716,7 +2743,8 @@ Routes := [].{
 										Ok(found) => Some(found.module_name)
 										Err(_) => None
 									}
-								$state = { ..$state, found: $state.found.append({ define: each.define, name: Routes.or_empty(each.name), module_path: mod_path, file, line: each.line, route: route_mod, thunk: each.thunk }) }
+								defined = { define: each.define, name: Routes.or_empty(each.name), module_path: mod_path, file, line: each.line, route: route_mod, thunk: each.thunk }
+								$state = if (actors and !each.method) { ..$state, kinds: $state.kinds.append(defined) } else { ..$state, found: $state.found.append(defined) }
 							}
 						}
 					}
@@ -2826,10 +2854,10 @@ Routes := [].{
 		lines =
 			[
 				"## Written by rocx build: the app's `program`, for its main.roc, which says what only it can",
-				"## (`program = App.program({ context, middleware })`, `database` if it isn't Postgres, `openapi` if it serves its endpoints' OpenAPI",
+				"## (`program = App.program({ init!, middleware })`, `database` if it isn't Postgres, `openapi` if it serves its endpoints' OpenAPI",
 				"## document, and `plugins`). Every request is answered by a plugin's route or the app's",
-				"## (`Routes.respond!`), behind the app's middleware; the kinds of actor are the ones its modules",
-				"## define (`Actor.define`), and so are the kinds of job in `App.jobs` (`Job.define`), for the jobs",
+				"## (`Routes.respond!`), behind the app's middleware; the actors' methods are the ones its modules",
+				"## define (`Actor.method`), and the kinds of job in `App.jobs` are theirs too (`Job.define`), for the jobs",
 				"## plugin; the migrations, migrations/*.sql, in the order of their names; the log's format is",
 				"## `Auto` (`ROCX_LOG`, or pretty on a terminal and JSON elsewhere), which the app may change:",
 				"## `program = { ..App.program({ … }), logs: { format: Json } }`.",
@@ -2856,15 +2884,16 @@ Routes := [].{
 						[
 							"\t## The kinds of job the app's modules define (`Job.define`, which rocx build finds), for the jobs",
 							"\t## plugin: `Job.plugin({ jobs: App.jobs, crons: [Cron.every(…)] })`.",
-							"\tjobs : List(Job.Handler)",
+							"\tjobs : List(Job.Handler(_))",
 							"\tjobs = [${Str.join_with(input.jobs.map(|job| "Job.handler(${alias(job)}.${job.define})"), ", ")}]",
 							"",
 						]
 					},
 				)
 				.concat([
-					"\t## What only the app can say: `context`, what its middleware is given from what the server was",
-					"\t## started with (`--context-file`: `|started| …`); `middleware`, which runs around every",
+					"\t## What only the app can say: `init!`, which makes the app's context once, when the server starts",
+					"\t## (after the migrations), from what it was started with (`--context-file`: `|started| Ok(…)`):",
+					"\t## the host keeps it, and every request's middleware is given it; `middleware`, which runs around every",
 					"\t## request; `database`, its database (D-045): `Postgres` unless it says, at `--database-url`, or",
 					"\t## `Sqlite(path)`, a file in the server's process (`--database-url sqlite:<path>` puts it elsewhere),",
 					"\t## or `Turso(path)`, the same SQL on Turso's engine (D-046; `turso:<path>` runs a SQLite app on it);",
@@ -2873,18 +2902,20 @@ Routes := [].{
 					"\t## (`Plugin`): their routes answer behind the middleware, before the app's own, and the",
 					"\t## platform runs the rest (the jobs plugin: `App.jobs`, and its schedules).",
 					"\tConfig(given, handed) := {",
-					"\t\tcontext : Str -> given,",
+					"\t\tinit! : Str => Try(given, Str),",
 					"\t\tmiddleware : Middleware(given, handed),",
 					"\t\tdatabase : [Postgres, Sqlite(Str), Turso(Str)] ?? Postgres,",
 					"\t\topenapi : OpenApi.Serving ?? Off,",
-					"\t\tplugins : List(Plugin.Value(handed)) ?? [],",
+					"\t\tplugins : List(Plugin.Value(given, handed)) ?? [],",
 					"\t}",
 					"",
 					"\t## The platform's program, from what the app says (`Config`).",
 					"\tprogram : Config(_, _) -> _",
 					"\tprogram = |config| {",
-					"\t\t# The request as the host gives it (its address too: `peer`), and what the server was started with.",
-					"\t\trespond!: |parsed, started| {",
+					"\t\t# The app's context, made once at the start and kept by the host.",
+					"\t\tinit!: config.init!,",
+					"\t\t# The request as the host gives it (its address too: `peer`), and the app's context.",
+					"\t\trespond!: |parsed, given| {",
 					"\t\t\t# The route that answers it (`/blog/[slug]`), for the middleware: what a metric groups requests by.",
 					"\t\t\trequest = { ..parsed, route: Plugin.pattern(config.plugins, parsed.method, parsed.path) ?? Routes.pattern(parsed.path) }",
 					"\t\t\t# The end of a channel's subscription, as the host tells it: its route's `on_close!`, outside",
@@ -2907,7 +2938,7 @@ Routes := [].{
 				)
 				.concat([
 					"\t\t\t\t# A plugin's route, or the app's.",
-					"\t\t\t\tServer.clear_flash(request, Middleware.run!(chain, request, (config.context)(started), |passed, context| Plugin.respond!(config.plugins, passed, context, |routed, handed| Routes.respond!(routed, handed))))",
+					"\t\t\t\tServer.clear_flash(request, Middleware.run!(chain, request, given, |passed, context| Plugin.respond!(config.plugins, passed, context, |routed, handed| Routes.respond!(routed, handed))))",
 					"\t\t\t}",
 					"\t\t},",
 					"\t\tdatabase: config.database,",

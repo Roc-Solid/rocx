@@ -182,7 +182,7 @@ view! = |_|
 			</p>
 			<Code
 				title="main.roc"
-				source={"app [program] { pf: platform \"../rocx/server/platform/main.roc\" }\n\nimport pf.Middleware\nimport Generated/App\n\nprogram = App.program({\n\tcontext: |_started| {},\n\tmiddleware: Middleware.same_origin({}),\n})"}
+				source={"app [program] { pf: platform \"../rocx/server/platform/main.roc\" }\n\nimport pf.Middleware\nimport Generated/App\n\nprogram = App.program({\n\tinit!: |_started| Ok({}),\n\tmiddleware: Middleware.same_origin({}),\n})"}
 			/>
 			<p>
 				The browser's app is rocx's to write (<code>rocx build --client</code>): its root is the page,

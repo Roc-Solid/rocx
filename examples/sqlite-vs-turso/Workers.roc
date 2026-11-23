@@ -3,49 +3,51 @@ import pf.Db
 import pf.Kv
 
 ## Eight actors, `w1` to `w8`, whose turns run at once: the concurrent workloads' writers and
-## readers. An actor takes one message at a time, but different actors run beside each other, each
-## turn a call of its own, so eight of them told at once make eight callers of the database at once.
-## Each keeps no state worth writing (`{}`, never changed, so no turn writes `rocx_actors`), does what
-## it is told, and leaves how that went in `Kv` (`bench:w1`…: "" when it went well, else why) for
-## `Bench` to read, since a told actor's reply goes nowhere; being asked `Ready` leaves that be.
+## readers. An actor takes one turn at a time, but different actors run beside each other, each turn
+## a call of its own, so eight of them told at once make eight callers of the database at once. Each
+## keeps no state worth writing (`{}`, never changed, so no turn writes `rocx_actors`), does the work
+## it is given (`work`), and leaves how that went in `Kv` (`bench:w1`…: "" when it went well, else
+## why) for `Bench` to read, since a told actor's reply goes nowhere; being asked if it is `ready`
+## leaves that be.
 Workers := [].{
 
-	kind : Actor.Kind({}, Workers.Message, Workers.Reply)
-	kind = Actor.define({
-		name: "bench-worker",
-		initial: |_key| {},
-		receive!: |me, state, message| {
+	kind : Actor.Kind({})
+	kind = Actor.define({ name: "bench-worker", initial: |_key| {} })
+
+	## Whether it is ready: its first turn reads its state, so it is asked this before the clock
+	## starts, and again after, to wait for the work it was given.
+	ready : Actor.Method(_, {}, {}, {})
+	ready = Actor.method(Workers.kind, "ready", |{ state, .. }| { state, reply: {} })
+
+	## Does `input`, and leaves how that went in `Kv`.
+	work : Actor.Method(_, {}, Workers.Task, {})
+	work = Actor.method(
+		Workers.kind,
+		"work",
+		|{ me, state, input, .. }| {
 			outcome =
-				match Workers.work!(message) {
+				match Workers.work!(input) {
 					Ok({}) => ""
 					Err(why) => why
 				}
-			# What it was told to do says how it went; being asked if it is ready leaves that be.
-			if message != Ready {
-				Kv.set!("bench:${Actor.key_of(me)}", outcome, { ttl_ms: 0 })
-			}
-			{ state, reply: if (outcome.is_empty()) Done else Failed(outcome) }
+			Kv.set!("bench:${Actor.key_of(me)}", outcome, { ttl_ms: 0 })
+			{ state, reply: {} }
 		},
-	})
+	)
 
-	## What a worker is told: be ready (its first turn reads its state, so it is asked this before
-	## the clock starts, and again after, to wait for what it was told); insert `count` events of its
-	## own, numbered from `from`; run `count` transactions that each read counter `counter` and write
-	## it back one more (each run of a transaction's body counted in `Kv`'s `bench:runs`); or read
-	## `count` items by their id, of the first `rows`, starting from `seed`.
-	Message : [
-		Ready,
+	## The work a worker is given: insert `count` events of its own, numbered from `from`; run
+	## `count` transactions that each read counter `counter` and write it back one more (each run of
+	## a transaction's body counted in `Kv`'s `bench:runs`); or read `count` items by their id, of the
+	## first `rows`, starting from `seed`.
+	Task : [
 		Insert({ worker : I64, from : I64, count : I64 }),
 		Bump({ counter : I64, count : I64 }),
 		Read({ count : I64, rows : I64, seed : I64 }),
 	]
 
-	Reply : [Done, Failed(Str)]
-
-	work! : Workers.Message => Try({}, Str)
+	work! : Workers.Task => Try({}, Str)
 	work! = |message|
 		match message {
-			Ready => Ok({})
 			Insert({ worker, from, count }) => {
 				var $i = 0
 				while $i < count {

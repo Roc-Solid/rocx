@@ -53,7 +53,7 @@ JobsPage := [].{
 	## The jobs page as a plugin (`jobs-page`): its page at `at`, a GET route (HEAD too) and a POST
 	## route, behind `guard`. It needs the jobs plugin (`Job.plugin`), whose queue it shows. Pages,
 	## not endpoints: not in the app's `/openapi.json`.
-	plugin : Options(ctx, out) -> Plugin.Value(ctx)
+	plugin : Options(ctx, out) -> Plugin.Value(context, ctx)
 	plugin = |options| {
 		at = options.at
 		guard = options.guard

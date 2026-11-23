@@ -832,7 +832,7 @@ struct InProcess {
 
 /// The answer the app's `respond!` gives `method target` with `body`, as the browser's request: the
 /// request the running call answers made into it (its headers, cookies among them, but not its
-/// conditions or range; the context the server started with; `origin` this host; `accept` as
+/// conditions or range; `origin` this host; `accept` as
 /// given, and `content_type` if it sends one). The page's render is set aside meanwhile: the request is one of its own, and records
 /// nothing in it. A redirect (its middleware sending the visitor elsewhere) is noted as the page's
 /// answer, the first such. A crash is a 500 (why, under --dev), logged. `label` names the request in
@@ -863,7 +863,7 @@ fn in_process(label: &str, method: &str, target: &str, accept: &str, content_typ
     if let Some(content_type) = content_type {
         headers.push(format!("content-type: {content_type}"));
     }
-    let asked = Asked::new(method, target.to_string(), headers.join("\n"), Bytes::copy_from_slice(body), page.peer.clone(), page.started.clone(), page.dev);
+    let asked = Asked::new(method, target.to_string(), headers.join("\n"), Bytes::copy_from_slice(body), page.peer.clone(), page.dev);
     let render = RENDER.with(|slot| slot.borrow_mut().take());
     let answered = hosted::call_asking(asked.clone(), || roc::respond(&asked));
     RENDER.with(|slot| *slot.borrow_mut() = render);

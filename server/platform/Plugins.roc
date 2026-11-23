@@ -10,7 +10,7 @@ Plugins := [].{
 
 	## Every problem with `plugins` and the app's own routes (`routes`), a line each: what stops the
 	## server at start. Whether the environment and the database meet their needs is `unmet!`'s.
-	problems : List(Plugin.Running), List({ method : Str, path : Str, file : Str }) -> List(Str)
+	problems : List(Plugin.Running(context)), List({ method : Str, path : Str, file : Str }) -> List(Str)
 	problems = |plugins, routes| {
 		names = plugins.map(|plugin| plugin.name)
 		var $found = []
@@ -62,7 +62,7 @@ Plugins := [].{
 
 	## The needs of `plugins` the server doesn't meet: an environment variable unset (or empty), a
 	## database it wasn't started with.
-	unmet! : List(Plugin.Running) => List(Str)
+	unmet! : List(Plugin.Running(context)) => List(Str)
 	unmet! = |plugins| {
 		var $found = []
 		for plugin in plugins {
@@ -97,7 +97,7 @@ Plugins := [].{
 	## `plugins` in the order they start and migrate in: each after the plugins it needs, the
 	## list's order breaking ties. (Needs that go round in a circle were refused already; what is
 	## left of one goes last, as listed.)
-	ordered : List(Plugin.Running) -> List(Plugin.Running)
+	ordered : List(Plugin.Running(context)) -> List(Plugin.Running(context))
 	ordered = |plugins| {
 		names = plugins.map(|plugin| plugin.name)
 		var $placed = []
@@ -126,7 +126,7 @@ Plugins := [].{
 	}
 
 	## What the log says `plugin` adds, counted: "1 migration, 5 loops, 1 start", or "nothing".
-	added : Plugin.Running -> Str
+	added : Plugin.Running(context) -> Str
 	added = |plugin| {
 		counted = |count, one, many| if (count == 0) [] else ["${count.to_str()} ${if (count == 1) one else many}"]
 		parts =
@@ -144,7 +144,7 @@ Plugins := [].{
 
 	## Logs what each plugin added, an event a plugin, in their order: `rocx plugins: added`, with
 	## the plugin's name and what it adds (`plugin=jobs adds="1 migration, 5 loops"`).
-	log! : List(Plugin.Running) => {}
+	log! : List(Plugin.Running(context)) => {}
 	log! = |plugins|
 		for plugin in plugins {
 			Log.info!("rocx plugins: added", { plugin: plugin.name, adds: Plugins.added(plugin) })
@@ -155,7 +155,7 @@ is_name : Str -> Bool
 is_name = |name| !name.is_empty() and name.to_utf8().all(|byte| (byte >= 'a' and byte <= 'z') or (byte >= '0' and byte <= '9') or byte == '-')
 
 ## The plugins `plugin` needs.
-needed : Plugin.Running -> List(Str)
+needed : Plugin.Running(context) -> List(Str)
 needed = |plugin|
 	plugin.needs.keep_oks(
 		|need|
@@ -181,7 +181,7 @@ same_method = |a, b| {
 ## Two claims on one method and path: the app's route and a plugin's, two plugins', or two early
 ## paths; a line each. (The app's own routes are rocx build's to check: a page and its `+server.roc`
 ## share a path.)
-clashes : List(Plugin.Running), List({ method : Str, path : Str, file : Str }) -> List(Str)
+clashes : List(Plugin.Running(context)), List({ method : Str, path : Str, file : Str }) -> List(Str)
 clashes = |plugins, routes| {
 	claimed =
 		routes.map(|route| { method: route.method, path: route.path, owner: route.file, early: Bool.False, by_app: Bool.True })
@@ -210,7 +210,7 @@ clashes = |plugins, routes| {
 ## Two files at one URL (two plugins' at the root, or one plugin's twice), and a file at the root
 ## where a route is (the app's, or a plugin's): a line each. A route with a `[param]` that a file's
 ## path would fit isn't one: the file is answered first, and the route answers the rest.
-file_clashes : List(Plugin.Running), List({ method : Str, path : Str, file : Str }) -> List(Str)
+file_clashes : List(Plugin.Running(context)), List({ method : Str, path : Str, file : Str }) -> List(Str)
 file_clashes = |plugins, routes| {
 	files = plugins.join_map(|plugin| plugin.files.map(|file| { url: Plugin.url(plugin.name, file), plugin: plugin.name }))
 	others =
@@ -249,7 +249,7 @@ is_file_path = |path|
 	!path.is_empty() and !path.contains("?") and !path.contains("#") and !path.contains("\\") and path.split_on("/").all(|segment| !segment.is_empty() and segment != "." and segment != "..")
 
 ## Needs that go round in a circle: "auth needs email, which needs auth", once each.
-circles : List(Plugin.Running) -> List(Str)
+circles : List(Plugin.Running(context)) -> List(Str)
 circles = |plugins| {
 	needs_of = |name| plugins.find_first(|plugin| plugin.name == name).map_ok(needed) ?? []
 	var $found = []
@@ -286,7 +286,7 @@ circles = |plugins| {
 	$found
 }
 
-none : Plugin.Running
+none : Plugin.Running({})
 none = { name: "", claims: [], early: [], files: [], scripts: [], migrations: [], calls: [], loops: [], starts: [], checks: [], needs: [] }
 
 expect is_name("push") and is_name("open-api2") and !is_name("Push") and !is_name("")

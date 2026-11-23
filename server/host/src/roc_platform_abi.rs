@@ -2774,6 +2774,133 @@ const _: () = assert!(core::mem::offset_of!(ActorForHostResult, tag) == 24, "Act
 /// Tag discriminant for Try.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContextForHostResultTag {
+    Err = 0,
+    Ok = 1,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub union ContextForHostResultPayload {
+    pub err: core::mem::ManuallyDrop<RocStr>,
+    pub ok: core::mem::ManuallyDrop<RocBox>,
+}
+
+#[cfg(target_pointer_width = "32")]
+#[repr(align(4))]
+#[derive(Clone, Copy)]
+pub struct ContextForHostResultPayloadAlignment;
+
+/// Tag union: Try
+#[cfg(target_pointer_width = "32")]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ContextForHostResult {
+    pub _payload_alignment: [ContextForHostResultPayloadAlignment; 0],
+    pub payload: [u8; 12],
+    pub tag: ContextForHostResultTag,
+}
+
+/// Tag union: Try
+#[cfg(not(target_pointer_width = "32"))]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ContextForHostResult {
+    pub payload: ContextForHostResultPayload,
+    pub tag: ContextForHostResultTag,
+}
+
+impl ContextForHostResult {
+    /// Borrow the `Err` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `ContextForHostResultTag::Err` and the payload must still be initialized.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn borrow_payload_err_unchecked(&self) -> &RocStr {
+        unsafe { &*(self.payload.as_ptr() as *const RocStr) }
+    }
+
+    /// Borrow the `Err` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `ContextForHostResultTag::Err` and the payload must still be initialized.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn borrow_payload_err_unchecked(&self) -> &RocStr {
+        unsafe { &*(&self.payload.err as *const core::mem::ManuallyDrop<RocStr> as *const RocStr) }
+    }
+
+    /// Move the `Err` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `ContextForHostResultTag::Err`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn take_payload_err_unchecked(&mut self) -> RocStr {
+        unsafe { core::ptr::read(self.payload.as_ptr() as *const RocStr) }
+    }
+
+    /// Move the `Err` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `ContextForHostResultTag::Err`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn take_payload_err_unchecked(&mut self) -> RocStr {
+        unsafe { core::mem::ManuallyDrop::take(&mut self.payload.err) }
+    }
+
+    /// Borrow the `Ok` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `ContextForHostResultTag::Ok` and the payload must still be initialized.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn borrow_payload_ok_unchecked(&self) -> &RocBox {
+        unsafe { &*(self.payload.as_ptr() as *const RocBox) }
+    }
+
+    /// Borrow the `Ok` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `ContextForHostResultTag::Ok` and the payload must still be initialized.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn borrow_payload_ok_unchecked(&self) -> &RocBox {
+        unsafe { &*(&self.payload.ok as *const core::mem::ManuallyDrop<RocBox> as *const RocBox) }
+    }
+
+    /// Move the `Ok` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `ContextForHostResultTag::Ok`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn take_payload_ok_unchecked(&mut self) -> RocBox {
+        unsafe { core::ptr::read(self.payload.as_ptr() as *const RocBox) }
+    }
+
+    /// Move the `Ok` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `ContextForHostResultTag::Ok`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn take_payload_ok_unchecked(&mut self) -> RocBox {
+        unsafe { core::mem::ManuallyDrop::take(&mut self.payload.ok) }
+    }
+
+}
+
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::size_of::<ContextForHostResult>() == 32, "ContextForHostResult size mismatch");
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::align_of::<ContextForHostResult>() == 8, "ContextForHostResult alignment mismatch");
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::offset_of!(ContextForHostResult, tag) == 24, "ContextForHostResult tag offset mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::size_of::<ContextForHostResult>() == 16, "ContextForHostResult size mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::align_of::<ContextForHostResult>() == 4, "ContextForHostResult alignment mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::offset_of!(ContextForHostResult, tag) == 12, "ContextForHostResult tag offset mismatch");
+
+/// Tag discriminant for Try.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InitForHostResultTag {
     Err = 0,
     Ok = 1,
@@ -4240,10 +4367,16 @@ pub type HostTcpWriteResultPayload = HostBlobCheckResultPayload;
 pub type HostTcpWriteResultTag = HostBlobCheckResultTag;
 pub type ActorForHostOk = AnonStruct47ce055eccfb1f9d;
 pub type DropFeedForHostArg0 = AnonStruct608867a33f852b1e;
+pub type PlatformIsolatedForHostResult = IsolatedForHostResult;
+pub type PlatformIsolatedForHostResultPayload = IsolatedForHostResultPayload;
+pub type PlatformIsolatedForHostResultTag = IsolatedForHostResultTag;
 pub type RespondForHostArg0 = AnonStruct3136a6b59821456e;
 pub type RespondForHost = AnonStruct8f4fc9623a0f6755;
 pub type RespondForHostFeed = AnonStruct608867a33f852b1e;
 pub type RespondForHostUpstream = AnonStructC1c0196657ba1ea1;
+pub type StartedForHostResult = InitForHostResult;
+pub type StartedForHostResultPayload = InitForHostResultPayload;
+pub type StartedForHostResultTag = InitForHostResultTag;
 pub type StreamForHostArg0 = AnonStruct608867a33f852b1e;
 
 // Generated Refcount Helpers
@@ -4902,6 +5035,32 @@ unsafe impl RocRelease<AnonStruct47ce055eccfb1f9d> for AnonStruct47ce055eccfb1f9
     }
 }
 
+impl ContextForHostResult {
+    // No `decref`: this value holds an opaque Roc value, which only Roc can
+    // release. Release its other parts one at a time and pass the opaque value
+    // to a Roc function that takes ownership of it.
+
+    /// Increment Roc-owned payloads.
+    ///
+    /// # Safety
+    /// `self` must point at live Roc allocations. The retained references must
+    /// be balanced by later decrefs.
+    pub unsafe fn incref(self, amount: isize) {
+        let value = self;
+        let _ = amount;
+        match value.tag {
+            ContextForHostResultTag::Err => {
+                let payload = unsafe { core::ptr::read(value.borrow_payload_err_unchecked()) };
+                unsafe { payload.incref(amount); }
+            },
+            ContextForHostResultTag::Ok => {
+                let payload = unsafe { core::ptr::read(value.borrow_payload_ok_unchecked()) };
+                unsafe { incref_box(payload as RocBox, amount); }
+            },
+        }
+    }
+}
+
 impl AnonStruct608867a33f852b1e {
     /// Recursively decrement Roc-owned fields.
     ///
@@ -5062,7 +5221,7 @@ impl AnonStruct8f4fc9623a0f6755 {
     pub unsafe fn decref(self, roc_host: &RocHost) {
         let value = self;
         unsafe { value.bytes.decref(roc_host); }
-        unsafe { decref_box_with(value.feed as RocBox, core::mem::align_of::<AnonStruct608867a33f852b1e>(), true, Some(decref_box_payload_type99), roc_host); }
+        unsafe { decref_box_with(value.feed as RocBox, core::mem::align_of::<AnonStruct608867a33f852b1e>(), true, Some(decref_box_payload_type107), roc_host); }
         unsafe { value.headers.decref(roc_host); }
         unsafe { decref_erased_callable(value.page, roc_host); }
         unsafe { value.text.decref(roc_host); }
@@ -5174,7 +5333,7 @@ pub unsafe fn decref_list_of_str(value: RocList<RocStr>, roc_host: &RocHost) {
     unsafe { value.release_with::<RocStrRelease>(roc_host); }
 }
 
-extern "C" fn decref_box_payload_type85(data_ptr: *mut c_void, roc_host: *mut RocHost) {
+extern "C" fn decref_box_payload_type92(data_ptr: *mut c_void, roc_host: *mut RocHost) {
     if data_ptr.is_null() || roc_host.is_null() {
         return;
     }
@@ -5183,7 +5342,7 @@ extern "C" fn decref_box_payload_type85(data_ptr: *mut c_void, roc_host: *mut Ro
     unsafe { payload.decref(roc_host); }
 }
 
-extern "C" fn decref_box_payload_type99(data_ptr: *mut c_void, roc_host: *mut RocHost) {
+extern "C" fn decref_box_payload_type107(data_ptr: *mut c_void, roc_host: *mut RocHost) {
     if data_ptr.is_null() || roc_host.is_null() {
         return;
     }
@@ -6288,13 +6447,16 @@ pub fn make_roc_host(env: *mut c_void) -> RocHost {
 #[allow(improper_ctypes)]
 unsafe extern "C" {
     /// Entrypoint: actor_for_host!
-    pub fn roc_actor(arg0: RocStr, arg1: RocStr, arg2: bool, arg3: RocStr, arg4: RocStr) -> ActorForHostResult;
+    pub fn roc_actor(arg0: RocStr, arg1: RocStr, arg2: bool, arg3: RocStr, arg4: RocStr, arg5: RocBox) -> ActorForHostResult;
 
     /// Entrypoint: background_for_host!
-    pub fn roc_background(arg0: u64);
+    pub fn roc_background(arg0: u64, arg1: RocBox);
 
     /// Entrypoint: background_count_for_host!
     pub fn roc_background_count() -> u64;
+
+    /// Entrypoint: context_for_host!
+    pub fn roc_context() -> ContextForHostResult;
 
     /// Entrypoint: drop_feed_for_host
     pub fn roc_drop_feed(arg0: *mut AnonStruct608867a33f852b1e);
@@ -6303,13 +6465,19 @@ unsafe extern "C" {
     pub fn roc_init() -> InitForHostResult;
 
     /// Entrypoint: isolated_for_host!
-    pub fn roc_isolated(arg0: RocStr, arg1: RocStr) -> IsolatedForHostResult;
+    pub fn roc_isolated(arg0: RocStr, arg1: RocStr, arg2: RocBox) -> IsolatedForHostResult;
+
+    /// Entrypoint: platform_isolated_for_host!
+    pub fn roc_platform_isolated(arg0: RocStr, arg1: RocStr) -> IsolatedForHostResult;
 
     /// Entrypoint: respond_for_host!
-    pub fn roc_respond(arg0: AnonStruct3136a6b59821456e, arg1: RocStr) -> AnonStruct8f4fc9623a0f6755;
+    pub fn roc_respond(arg0: AnonStruct3136a6b59821456e, arg1: RocBox) -> AnonStruct8f4fc9623a0f6755;
 
     /// Entrypoint: run_for_host!
     pub fn roc_run(arg0: RocErasedCallable) -> RocStr;
+
+    /// Entrypoint: started_for_host!
+    pub fn roc_started(arg0: RocBox) -> InitForHostResult;
 
     /// Entrypoint: stream_for_host!
     pub fn roc_stream(arg0: *mut AnonStruct608867a33f852b1e);
@@ -6324,8 +6492,8 @@ const _: () = assert!(core::mem::align_of::<RocOwned<ActorForHostResult, ActorFo
 ///
 /// # Safety
 /// The raw entrypoint and its arguments must satisfy the generated host ABI.
-pub unsafe fn roc_actor_owned(arg0: RocStr, arg1: RocStr, arg2: bool, arg3: RocStr, arg4: RocStr) -> RocOwned<ActorForHostResult, ActorForHostResultRelease> {
-    let value = unsafe { roc_actor(arg0, arg1, arg2, arg3, arg4) };
+pub unsafe fn roc_actor_owned(arg0: RocStr, arg1: RocStr, arg2: bool, arg3: RocStr, arg4: RocStr, arg5: RocBox) -> RocOwned<ActorForHostResult, ActorForHostResultRelease> {
+    let value = unsafe { roc_actor(arg0, arg1, arg2, arg3, arg4, arg5) };
     unsafe { RocOwned::from_raw(value) }
 }
 
@@ -6350,8 +6518,21 @@ const _: () = assert!(core::mem::align_of::<RocOwned<IsolatedForHostResult, Isol
 ///
 /// # Safety
 /// The raw entrypoint and its arguments must satisfy the generated host ABI.
-pub unsafe fn roc_isolated_owned(arg0: RocStr, arg1: RocStr) -> RocOwned<IsolatedForHostResult, IsolatedForHostResultRelease> {
-    let value = unsafe { roc_isolated(arg0, arg1) };
+pub unsafe fn roc_isolated_owned(arg0: RocStr, arg1: RocStr, arg2: RocBox) -> RocOwned<IsolatedForHostResult, IsolatedForHostResultRelease> {
+    let value = unsafe { roc_isolated(arg0, arg1, arg2) };
+    unsafe { RocOwned::from_raw(value) }
+}
+
+const _: () = assert!(core::mem::size_of::<RocOwned<IsolatedForHostResult, IsolatedForHostResultRelease>>() == core::mem::size_of::<IsolatedForHostResult>(), "roc_platform_isolated owned result size mismatch");
+const _: () = assert!(core::mem::align_of::<RocOwned<IsolatedForHostResult, IsolatedForHostResultRelease>>() == core::mem::align_of::<IsolatedForHostResult>(), "roc_platform_isolated owned result alignment mismatch");
+
+/// Owning wrapper for `roc_platform_isolated`. The returned value is recursively
+/// released on Drop with no runtime descriptor or extra storage.
+///
+/// # Safety
+/// The raw entrypoint and its arguments must satisfy the generated host ABI.
+pub unsafe fn roc_platform_isolated_owned(arg0: RocStr, arg1: RocStr) -> RocOwned<IsolatedForHostResult, IsolatedForHostResultRelease> {
+    let value = unsafe { roc_platform_isolated(arg0, arg1) };
     unsafe { RocOwned::from_raw(value) }
 }
 
@@ -6363,7 +6544,7 @@ const _: () = assert!(core::mem::align_of::<RocOwned<AnonStruct8f4fc9623a0f6755,
 ///
 /// # Safety
 /// The raw entrypoint and its arguments must satisfy the generated host ABI.
-pub unsafe fn roc_respond_owned(arg0: AnonStruct3136a6b59821456e, arg1: RocStr) -> RocOwned<AnonStruct8f4fc9623a0f6755, AnonStruct8f4fc9623a0f6755Release> {
+pub unsafe fn roc_respond_owned(arg0: AnonStruct3136a6b59821456e, arg1: RocBox) -> RocOwned<AnonStruct8f4fc9623a0f6755, AnonStruct8f4fc9623a0f6755Release> {
     let value = unsafe { roc_respond(arg0, arg1) };
     unsafe { RocOwned::from_raw(value) }
 }
@@ -6378,6 +6559,19 @@ const _: () = assert!(core::mem::align_of::<RocOwned<RocStr, RocStrRelease>>() =
 /// The raw entrypoint and its arguments must satisfy the generated host ABI.
 pub unsafe fn roc_run_owned(arg0: RocErasedCallable) -> RocOwned<RocStr, RocStrRelease> {
     let value = unsafe { roc_run(arg0) };
+    unsafe { RocOwned::from_raw(value) }
+}
+
+const _: () = assert!(core::mem::size_of::<RocOwned<InitForHostResult, InitForHostResultRelease>>() == core::mem::size_of::<InitForHostResult>(), "roc_started owned result size mismatch");
+const _: () = assert!(core::mem::align_of::<RocOwned<InitForHostResult, InitForHostResultRelease>>() == core::mem::align_of::<InitForHostResult>(), "roc_started owned result alignment mismatch");
+
+/// Owning wrapper for `roc_started`. The returned value is recursively
+/// released on Drop with no runtime descriptor or extra storage.
+///
+/// # Safety
+/// The raw entrypoint and its arguments must satisfy the generated host ABI.
+pub unsafe fn roc_started_owned(arg0: RocBox) -> RocOwned<InitForHostResult, InitForHostResultRelease> {
+    let value = unsafe { roc_started(arg0) };
     unsafe { RocOwned::from_raw(value) }
 }
 
