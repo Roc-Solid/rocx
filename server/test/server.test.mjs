@@ -3400,6 +3400,7 @@ const probe = (member) =>
 	'<div class="probe big" title="count 41"><p><!--x-->42<!--/x--></p><p><!--x-->82<!--/x--></p><p><!--x-->HELLO<!--/x--></p>' +
 	"<ul><!--for--><!--row--><li><!--x-->0 ada<!--/x--></li><!--/row--><!--row--><li><!--x-->1 grace<!--/x--></li><!--/row--><!--/for--></ul>" +
 	'<!--show--><p class="small">small</p><!--/show-->' +
+	'<!--show--><p class="matched"><!--x-->41<!--/x--></p><!--/show--><!--show--><p class="keyed">41</p><!--/show-->' +
 	'<!--errored:failed--><p class="failed">nothing above provides Probe.missing: render this under its provider</p><!--/errored-->' +
 	'<input disabled value="a &amp; b">' +
 	member +

@@ -57,12 +57,12 @@ test("rocx check --sql on Postgres: the server's test app, on a scratch database
 	const { status, out, err } = check([join("server", "test", "app")], { DATABASE_URL: process.env.DATABASE_URL, FIXTURE_KEY: "set" });
 	assert.equal(status, 1, out + err);
 	assert.deepEqual(out.trimEnd().split("\n"), [
-		"server/test/app/main.roc:123:11: Postgres refuses it: 42725: function unnest(unknown) is not unique",
-		"server/test/app/main.roc:371:12: `maybe` isn't a column the statement returns (it returns maybe?)",
-		'server/test/app/main.roc:404:10: Postgres refuses it: 42P01: relation "nowhere" does not exist',
-		'server/test/app/main.roc:452:10: Postgres refuses it: 42P01: relation "nowhere" does not exist',
-		'server/test/app/main.roc:520:11: Postgres refuses it: 42P01: relation "nowhere" does not exist',
-		'server/test/app/main.roc:524:17: Postgres refuses it: 42P01: relation "nowhere" does not exist',
+		"server/test/app/main.roc:125:11: Postgres refuses it: 42725: function unnest(unknown) is not unique",
+		"server/test/app/main.roc:373:12: `maybe` isn't a column the statement returns (it returns maybe?)",
+		'server/test/app/main.roc:406:10: Postgres refuses it: 42P01: relation "nowhere" does not exist',
+		'server/test/app/main.roc:454:10: Postgres refuses it: 42P01: relation "nowhere" does not exist',
+		'server/test/app/main.roc:522:11: Postgres refuses it: 42P01: relation "nowhere" does not exist',
+		'server/test/app/main.roc:526:17: Postgres refuses it: 42P01: relation "nowhere" does not exist',
 		"rocx check --sql: 42 statements checked on Postgres (the rows of 21 against their records): 6 problems",
 	]);
 });

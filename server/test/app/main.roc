@@ -36,6 +36,8 @@ import pf.Time
 import pf.Html
 import pf.Solid
 import pf.Show
+import pf.Switch
+import pf.Match
 import pf.For
 import pf.Errored
 import pf.Loading
@@ -1784,6 +1786,15 @@ probe! = |{}| {
 				],
 			),
 			Show.view!({ when!: || count!() > 100, fallback: Html.element("p", [Html.attr("class", "small")], [Html.text("small")]), children: [Html.text("big")] }),
+			# A <Switch>'s first <Match> that holds, and a keyed <Show> (D-053): a <Show>'s part each.
+			Switch.view!({
+				fallback: Html.text("none"),
+				children: [
+					Match.view!({ when!: || count!() > 100, children: [Html.text("big")] }),
+					Match.view_with!({ when!: || if (count!() > 10) Ok(count!()) else Err(None), children: |n!| Html.element("p", [Html.attr("class", "matched")], [Html.text_of(|| n!().to_str())]) }),
+				],
+			}),
+			Show.view_with_keyed!({ when!: || if (count!() > 10) Ok(count!()) else Err(None), children: |n| Html.element("p", [Html.attr("class", "keyed")], [Html.text(n.to_str())]) }),
 			Errored.view!({
 				fallback: |problem, _| Html.element("p", [Html.attr("class", "failed")], [Html.text_of(|| problem)]),
 				children: [Html.element("p", [], [Html.text_of(|| Solid.use_context!(missing).name)])],

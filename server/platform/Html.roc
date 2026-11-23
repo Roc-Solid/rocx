@@ -19,6 +19,8 @@ Html :: [
 	Errored((Str, (() => {}) -> Html), List(Html)),
 	Shown(() => Bool, List(Html), Html),
 	ShownWith(() => Bool, () => Html, Html),
+	Switched(() => Try(Str, [None]), () => Html, Html),
+	Matched(() => Try(Str, [None]), () => Html),
 	Each(U64 => List({ key : Str, row : () => Html }), Html),
 	Component(() => Html),
 	Provided(Str, U64, List(Html)),
@@ -290,6 +292,37 @@ Html :: [
 	shown_with : (() => Bool), (() => Html), Html -> Html
 	shown_with = |holds!, child, fallback| ShownWith(holds!, child, fallback)
 
+	## What shows of a `<Switch>`, or of a keyed `<Show>`: `case!` names the part that shows
+	## (`Ok(name)`), or answers that none does (`Err(None)`), and a change of the name makes the part
+	## anew, as a change of whether a `<Show>` holds does; `made!` makes the part that shows, as a
+	## component is made (where it is rendered, once, its reads untracked); the fallback while none
+	## shows.
+	switched : (() => Try(Str, [None])), (() => Html), Html -> Html
+	switched = |case!, made!, fallback| Switched(case!, made!, fallback)
+
+	## A `<Match>`: `case!` names it while it holds (`Ok(name)`: a change of the name makes it anew),
+	## `made!` makes what it shows. `Html.switch` shows the first of them that holds; one on its own
+	## is a `<Show>` with no fallback.
+	matched : (() => Try(Str, [None])), (() => Html) -> Html
+	matched = |case!, made!| Matched(case!, made!)
+
+	## A `<Switch>`: of its children, the `<Match>`es (`Html.matched`; the rest, a line's spaces, are
+	## passed over), the first that holds shows, made anew when another one does (or, keyed, when its
+	## value changes); the fallback while none holds. Each `<Match>`'s condition is read in order, up
+	## to the first that holds, as Solid reads them.
+	switch : List(Html), Html -> Html
+	switch = |children, fallback| {
+		cases = children.fold(
+			[],
+			|found, child|
+				match child {
+					Matched(case!, made!) => found.append({ case!, made! })
+					_ => found
+				},
+		)
+		Switched(|| first_case!(cases, 0), || first_made!(cases), fallback)
+	}
+
 	## Rows, by key (`<For>`): `rows!`, given the list's id, says which rows there are now, and
 	## how to make each; the runtime keeps a row while its key is there, and moves it.
 	each : (U64 => List({ key : Str, row : () => Html })), Html -> Html
@@ -388,6 +421,10 @@ Html :: [
 			}
 			Shown(holds!, children, fallback) => "{\"t\":\"show\",\"r\":${keep!(|| truth!(holds!))},\"c\":[${made!(Fragment(children))}],\"fallback\":${made!(fallback)}}"
 			ShownWith(holds!, child, fallback) => "{\"t\":\"show\",\"r\":${keep!(|| truth!(holds!))},\"with\":${keep!(|| serialize!(child()))},\"fallback\":${made!(fallback)}}"
+			# A <Switch>'s or a keyed <Show>'s: what `r` answers is the case's name (`"#…"`: never empty,
+			# so truthy), and the runtime makes the part anew when it changes, as when a <Show> switches.
+			Switched(case!, made, fallback) => "{\"t\":\"show\",\"r\":${keep!(|| case_json!(case!))},\"with\":${keep!(|| serialize!(made()))},\"fallback\":${made!(fallback)}}"
+			Matched(case!, made) => "{\"t\":\"show\",\"r\":${keep!(|| case_json!(case!))},\"with\":${keep!(|| serialize!(made()))},\"fallback\":{\"t\":\"f\",\"c\":[]}}"
 			Each(rows!, fallback) => {
 				id = Host.for_new!({})
 				listed! = || {
@@ -445,6 +482,46 @@ made! = |part| {
 
 truth! : (() => Bool) => Str
 truth! = |holds!| if (holds!()) "true" else "false"
+
+## A case's name as the runtime compares it (`"#name"`), or `false` when none holds.
+case_json! : (() => Try(Str, [None])) => Str
+case_json! = |case!|
+	match case!() {
+		Ok(name) => json_str("#${name}")
+		Err(_) => "false"
+	}
+
+## Of a `<Switch>`'s `<Match>`es, from `index` on, the first that holds: its index and its name.
+first_case! : List({ case! : () => Try(Str, [None]), made! : () => Html }), U64 => Try(Str, [None])
+first_case! = |cases, index|
+	match cases.get(index) {
+		Ok(next) =>
+			match (next.case!)() {
+				Ok(name) => Ok("${index.to_str()}:${name}")
+				Err(_) => first_case!(cases, index + 1)
+			}
+		Err(_) => Err(None)
+	}
+
+## What the first `<Match>` that holds shows, made; nothing if none does (it held when the case was
+## read, in this same flush).
+first_made! : List({ case! : () => Try(Str, [None]), made! : () => Html }) => Html
+first_made! = |cases| {
+	var $shown = Html.empty({})
+	var $found = Bool.False
+	for next in cases {
+		if !$found {
+			match (next.case!)() {
+				Ok(_) => {
+					$shown = (next.made!)()
+					$found = Bool.True
+				}
+				Err(_) => {}
+			}
+		}
+	}
+	$shown
+}
 
 ## Runs a handler; a handler answers nothing.
 handled! : (() => {}) => Str

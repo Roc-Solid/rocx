@@ -10,7 +10,7 @@
 ##   the browser's copy of an app answers none.
 ##
 ## The modules both platforms have are written here, and the server platform's build copies them:
-## the components' (`Html`, `Solid`, `Show`, `For`, `Repeat`, `Transition`, `Loading`, `Errored`, `Context`,
+## the components' (`Html`, `Solid`, `Show`, `Switch`, `Match`, `For`, `Repeat`, `Transition`, `Loading`, `Errored`, `Context`,
 ## `Call`, `Router`, `Submission`, `Submissions`, `Title`, `HttpStatusCode`) and HTTP's (`Server`, `Endpoint`,
 ## `Channel`, `Middleware`, `Events`, `OpenApi`). Roc compiles only what a program reaches, so what
 ## only the server uses (`Middleware`, `OpenApi`) costs the browser's wasm nothing. `Time` is the
@@ -19,7 +19,7 @@ platform ""
 	requires {
 		main! : {} => Html
 	}
-	exposes [Browser, Call, Channel, Context, Endpoint, Errored, Events, For, Html, HttpStatusCode, Loading, Middleware, OpenApi, Repeat, Router, Server, Show, Solid, Submission, Submissions, Time, Title, Transition]
+	exposes [Browser, Call, Channel, Context, Endpoint, Errored, Events, For, Html, HttpStatusCode, Loading, Match, Middleware, OpenApi, Repeat, Router, Server, Show, Solid, Submission, Submissions, Switch, Time, Title, Transition]
 	packages {}
 	provides { "roc_mount": mount_for_host!, "roc_run": run_for_host! }
 	hosted {
@@ -88,6 +88,8 @@ import Html
 import Browser
 import Solid
 import Show
+import Switch
+import Match
 import For
 import Repeat
 import Loading

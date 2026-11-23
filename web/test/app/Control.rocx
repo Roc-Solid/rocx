@@ -1,0 +1,96 @@
+import pf.Html
+import pf.Match
+import pf.Router
+import pf.Show
+import pf.Solid exposing [create_signal!]
+import pf.Switch
+
+## D-053's control flow, for the tests (`control_app.roc`): `<Show>`, keyed and not, and a `<Switch>`
+## of `<Match>`es (a Bool's, a narrowed one's, a keyed one's, and a fallback). Each part holds a
+## counter of its own, so a part that is kept keeps its count, and one made anew starts at 0 again.
+## The page's query sets where it starts (`?card=2&mode=11`), so the server renders, and the browser
+## hydrates, each case.
+Control := [].{
+	Card : { id : U64, name : Str }
+
+	view! : {} => Html
+	view! = |{}| {
+		query = Router.location!({}).query
+		(card!, set_card!) = create_signal!(Control.start_card(query))
+		(mode!, set_mode!) = create_signal!(Control.start_mode(query))
+		<div>
+			<button class="next" on:click={|| set_card!(Ok({ id: Control.id_of(card!()) + 1, name: "Card ${(Control.id_of(card!()) + 1).to_str()}" }))}>Next</button>
+			<button class="rename" on:click={|| set_card!(Control.renamed(card!()))}>Rename</button>
+			<button class="same" on:click={|| set_card!(card!())}>Same</button>
+			<button class="clear" on:click={|| set_card!(Err(None))}>Clear</button>
+			<button class="mode" on:click={|| set_mode!(mode!() + 1)}>Mode</button>
+			<button class="jump" on:click={|| set_mode!(Control.jump(mode!()))}>Jump</button>
+			<Show when!={card!().is_ok()} fallback={<p class="none">No card</p>}><Counter part="plain" label="plain" /></Show>
+			<Show when!={card!()}>{|shown!| <Counter part="narrowed" label={shown!().name} />}</Show>
+			<Show when!={card!()} keyed><Counter part="keyed-plain" label="keyed" /></Show>
+			<Show when!={card!()} keyed>{|shown| <Counter part="keyed" label={shown.name} />}</Show>
+			<Switch fallback={<p class="nothing">Nothing</p>}>
+				<Match when!={mode!() == 0}><Counter part="zero" label="zero" /></Match>
+				<Match when!={Control.small(mode!())}>{|small!| <Counter part="small" label={small!()} />}</Match>
+				<Match when!={Control.big(mode!())} keyed>{|n| <Counter part="big" label={n.to_str()} />}</Match>
+			</Switch>
+		</div>
+	}
+
+	## The card the page starts with: `?card=0` none, else that one.
+	start_card : Str -> Try(Control.Card, [None])
+	start_card = |query| {
+		id = Control.number(query, "card") ?? 1
+		if (id == 0) Err(None) else Ok({ id, name: "Card ${id.to_str()}" })
+	}
+
+	## The mode the page starts with (`?mode=…`), 0 unless it says.
+	start_mode : Str -> U64
+	start_mode = |query| Control.number(query, "mode") ?? 0
+
+	## A number the query names (`card=2`).
+	number : Str, Str -> Try(U64, [Missing])
+	number = |query, name| {
+		found = query.split_on("&").keep_if(|pair| pair.starts_with("${name}=")).first() ?? ""
+		match U64.from_str(found.drop_prefix("${name}=")) {
+			Ok(n) => Ok(n)
+			Err(_) => Err(Missing)
+		}
+	}
+
+	id_of : Try(Control.Card, [None]) -> U64
+	id_of = |card|
+		match card {
+			Ok(it) => it.id
+			Err(_) => 0
+		}
+
+	## The same card, named anew: its id kept, so the value differs.
+	renamed : Try(Control.Card, [None]) -> Try(Control.Card, [None])
+	renamed = |card|
+		match card {
+			Ok(it) => Ok({ ..it, name: "${it.name}'" })
+			Err(_) => Err(None)
+		}
+
+	## 1 to 9: a small mode, named (narrowed, not keyed: the part stays while it changes).
+	small : U64 -> Try(Str, [None])
+	small = |mode| if (mode >= 1 and mode < 10) Ok("small ${mode.to_str()}") else Err(None)
+
+	## 10 to 99: a big one (keyed: each one its own part).
+	big : U64 -> Try(U64, [None])
+	big = |mode| if (mode >= 10 and mode < 100) Ok(mode) else Err(None)
+
+	## From a small mode to a big one, from a big one to none, from none to 0.
+	jump : U64 -> U64
+	jump = |mode| if (mode < 10) 10 else if (mode < 100) 100 else 0
+}
+
+## A part's own count: kept while the part is, 0 again when it is made anew.
+Counter := [].{
+	view! : { part : Str, label : Str } => Html
+	view! = |{ part, label }| {
+		(count!, set_count!) = create_signal!(0.U64)
+		<p class={part}><button on:click={|| set_count!(count!() + 1)}>{label}</button> <span>{count!().to_str()}</span></p>
+	}
+}
