@@ -2869,16 +2869,27 @@ job's time limit ended it only at an effect that waits, so Roc looping without o
   `roc_realloc` or `roc_dealloc` (which only Roc's code calls now: the host's own helpers use
   functions of their own) ends it holding nothing. A jump from any instruction of Roc's code is
   what `roc_crashed` already does (a crash may happen anywhere in it), and what the call allocated
-  is in its list and freed. Where the segment can't be found, or holds the host's code too, nothing
-  is interrupted, and the log says so the first time a call with a deadline runs. **Only dev
-  builds have that segment**: the fork's fast dev link (`src/cli/macho/PatchLink.zig`) makes it;
-  an optimized build (`--opt=speed`: LLVM, and the system's linker) puts Roc's code in `__TEXT`
-  after the host's, so there a loop without an effect still holds its worker (the loop test is
-  skipped in optimized builds). The user chose (2026-11-23) to land this as it is and build next
-  an "in Roc" flag the host keeps (set while a guarded call runs Roc, cleared by every function
-  Roc calls, a test failing on one that doesn't), the interrupt redirecting only when it is set
-  and the PC is in the executable, for every build; Roc's code in a section of its own, from the
-  fork's LLVM backend, is the cleaner answer for later (TODO.md).
+  is in its list and freed. That segment was only a dev build's (the fork's fast dev link,
+  `src/cli/macho/PatchLink.zig`); an optimized build (`--opt=speed`: LLVM, and the system's
+  linker) puts Roc's code in `__TEXT` after the host's, so it landed first for dev builds alone.
+- **Then, for every build: an "in Roc" flag** (the user's choice, 2026-11-23). Each Roc thread
+  keeps a flag that it runs Roc: the trampoline of a call's guard (`roc::guarded`'s `run`) sets it
+  once the jump target is set (never before: a jump into a target half made would be lost), and
+  the guard puts it back however the call ended; every function Roc calls clears it first thing
+  and puts it back as it returns (`let _host = preempt::host();`, a guard dropped last: the 6
+  runtime symbols, the 111 hosted functions of `hosted.rs` and `signals.rs`, the 6 `RocHost`
+  callbacks, and the interrupt's own landing); a paused call stashes it with the rest of its state.
+  The handler redirects only when the flag is set and the PC is in one of the executable's own
+  code segments (macOS: those its load commands mark executable; Linux: its executable `PT_LOAD`s),
+  never a library's (dyld's binder or the system allocator could hold a lock). With the flag set
+  the thread is in Roc's code, or in code that holds nothing a crash there wouldn't: the guard's
+  trampoline building its arguments (whose allocations go through `host_alloc`, which clears the
+  flag), the glue's own callbacks between Roc and an allocation, `memcpy` called by Roc. Forgetting
+  the line is made impossible by a test that reads the sources (`server/test/host-entries.test.mjs`):
+  every runtime and hosted symbol the glue declares must be defined with it first, and so must every
+  function the host exports and the callbacks it hands Roc. Roc's code in a section of its own, from
+  the fork's LLVM backend, would let the handler tell it by address instead: cleaner, but a compiler
+  change and a PR the user opens (TODO.md).
 - **guard's overrides in a table** (`FlagStore.plugin({})`, D-033): plugin `guard`, migration
   `guard/0001_flags` (`guard_flags`: a row a flag, its override as JSON, `""` once reset), a start
   that reads the table into `Kv` and keeps `guard:flags-kept` (`Plugin.keep!`), and `needs:
@@ -2901,7 +2912,9 @@ same-origin check. Timers cost a row and two small calls each (set and done); ev
 again at start, a task each in memory, which an app with millions of far timers would want read a
 window at a time. The interrupt is a signal handler that rewrites a thread's registers, per
 architecture (aarch64 and x86_64, macOS and Linux: run on arm64 macOS, by the tests, and on arm64
-Linux, the test app built `--target=arm64musl` in a container; the x86_64 paths are written, but
+Linux, the test app built `--target=arm64musl` in a container, dev and optimized builds both; the
+flag costs two writes of a thread-local and a compiler fence around each call into the host,
+allocations included; the x86_64 paths are written, but
 neither built nor run here: this machine has no x86_64 toolchain, as `x64mac` and `x64musl` aren't
 run yet);
 it relies on Roc's linker keeping the app's code apart, which a future linker could change (then it

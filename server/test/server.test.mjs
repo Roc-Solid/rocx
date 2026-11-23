@@ -1100,11 +1100,7 @@ test("jobs: a time limit cuts a run off at its next wait (Postgres, another serv
 	}
 });
 
-/** Why a build can't cut off Roc that never waits: an optimized one links Roc's code into the host's
- * `__TEXT` (only the fork's fast dev link, `--opt=dev`, gives it a segment of its own: D-057). */
-const noInterrupt = process.env.ROCX_TEST_OPT === "speed" && "an optimized build's Roc code can't be told from the host's: a limit cuts a call off at an effect that waits (D-057)";
-
-test("jobs: a time limit cuts off Roc that never waits (D-057): a loop on numbers alone and one making and dropping text, each ended as a crash is, in the middle of its loop; tried again, then failed; its worker goes on; nothing left held", { skip: skipDb || noInterrupt }, async () => {
+test("jobs: a time limit cuts off Roc that never waits (D-057): a loop on numbers alone and one making and dropping text, each ended as a crash is, in the middle of its loop; tried again, then failed; its worker goes on; nothing left held", { skip: skipDb }, async () => {
 	const before = await settled();
 	const started = performance.now();
 	const loops = ["spin", "grow"];
@@ -1123,7 +1119,7 @@ test("jobs: a time limit cuts off Roc that never waits (D-057): a loop on number
 	assert.equal(await settled(), before, "what the runs allocated was freed");
 });
 
-test("jobs: the interrupt signals the server's own Roc thread alone (D-057): a shell that runs the server, trapping SIGURG, and this test's process hear none while a job that loops forever is cut off", { skip: skipDb || noInterrupt }, async () => {
+test("jobs: the interrupt signals the server's own Roc thread alone (D-057): a shell that runs the server, trapping SIGURG, and this test's process hear none while a job that loops forever is cut off", { skip: skipDb }, async () => {
 	// A database of its own: no other server here takes the job.
 	const db = await testDatabase();
 	const heard = join(dir, `sigurg-${run}.txt`);

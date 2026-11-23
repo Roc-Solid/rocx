@@ -24,9 +24,10 @@
 //! is cancelled and its connection closed), and jumps back to the call's guard, as a crash does
 //! (`cut_off`), so the call can't carry on past its limit whatever it does with errors. Calls it
 //! runs inside it share its deadline; an actor it asks doesn't (its turn is its own, and ends as
-//! it would). In a dev build, Roc that loops without an effect is ended where it runs (`preempt`,
-//! D-057), which is told the deadline of the call running on each thread as calls start, pause,
-//! resume and end.
+//! it would). Roc that loops without an effect is ended where it runs (`preempt`, D-057), which is
+//! told the deadline of the call running on each thread as calls start, pause, resume and end. Every
+//! function here Roc calls begins `let _host = preempt::host();`: the host's code runs, and the
+//! interrupt waits for Roc's (`server/test/host-entries.test.mjs` fails on one that doesn't).
 
 use crate::abi::{
     AnonStruct2e6fc7635560c0c3 as Isolated, AnonStruct3ed536693d8b85f3 as Answered, AnonStructFa59a42fc999ca94 as Heard, HostDbExecuteResult,
@@ -77,6 +78,8 @@ pub fn wait<T>(future: impl Future<Output = Result<T, String>>) -> Result<T, Str
 /// crashed or failed, its guard's jump target), the render it is doing, and its connections. A
 /// future must not touch any of them (it is polled while other calls run on the thread).
 struct Stashed {
+    /// Whether it was running Roc (`preempt`): never, inside a hosted function, but kept all the same.
+    in_roc: bool,
     call: Context,
     roc: roc::Stash,
     render: signals::Stash,
@@ -87,10 +90,13 @@ impl Stashed {
     fn take() -> Stashed {
         // Paused, the call isn't running here: its deadline isn't this thread's to watch.
         preempt::set_deadline(None);
-        Stashed { call: CALL.with(|context| context.take()), roc: roc::stash(), render: signals::stash(), sockets: tcp::stash() }
+        let in_roc = preempt::in_roc();
+        preempt::restore(false);
+        Stashed { in_roc, call: CALL.with(|context| context.take()), roc: roc::stash(), render: signals::stash(), sockets: tcp::stash() }
     }
 
     fn put_back(self) {
+        preempt::restore(self.in_roc);
         preempt::set_deadline(self.call.deadline);
         CALL.with(|context| *context.borrow_mut() = self.call);
         roc::unstash(self.roc);
@@ -510,17 +516,20 @@ fn rolled_back(client: db::Client) {
 /// the log's own thread.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_log(level: u8, message: RocStr, fields: RocStr) {
+    let _host = preempt::host();
     crate::logging::from_roc(level, taken(message), taken(fields));
 }
 
 /// The log's format, as the app's `program` says (`logs.format`): 0 `Auto`, 1 `Pretty`, 2 `Json`.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_log_format(format: u8) {
+    let _host = preempt::host();
     crate::logging::choose(format);
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_now_millis() -> u64 {
+    let _host = preempt::host();
     SystemTime::now().duration_since(UNIX_EPOCH).map(|since| since.as_millis() as u64).unwrap_or(0)
 }
 
@@ -529,6 +538,7 @@ pub extern "C" fn roc_host_now_millis() -> u64 {
 /// is set back.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_now_nanos() -> u64 {
+    let _host = preempt::host();
     static START: OnceLock<(u64, Instant)> = OnceLock::new();
     let (at, steady) = START.get_or_init(|| (SystemTime::now().duration_since(UNIX_EPOCH).map(|since| since.as_nanos() as u64).unwrap_or(0), Instant::now()));
     at.saturating_add(steady.elapsed().as_nanos() as u64)
@@ -538,6 +548,7 @@ pub extern "C" fn roc_host_now_nanos() -> u64 {
 /// stream writes); false once its client has gone (or no stream is being sent).
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_send(data: RocStr) -> bool {
+    let _host = preempt::host();
     let data = taken(data);
     let Some(out) = CALL.with(|context| context.borrow().out.clone()) else { return false };
     wait(async move { Ok(out.send(Bytes::from(data)).await.is_ok()) }).unwrap_or(false)
@@ -547,6 +558,7 @@ pub extern "C" fn roc_host_send(data: RocStr) -> bool {
 /// says so), a background loop's when the server stops.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_sleep(ms: u64) {
+    let _host = preempt::host();
     let gone = CALL.with(|context| context.borrow().gone());
     let slept = within(async {
         tokio::select! {
@@ -566,6 +578,7 @@ pub extern "C" fn roc_host_sleep(ms: u64) {
 /// job's, a background loop's) has "".
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_request() -> RocStr {
+    let _host = preempt::host();
     let written = CALL.with(|context| {
         context.borrow().asked.as_ref().map(|asked| {
             let headers = if asked.headers.is_empty() { String::new() } else { format!("\n{}", asked.headers) };
@@ -579,6 +592,7 @@ pub extern "C" fn roc_request() -> RocStr {
 /// The request's path and query (`Router.location!`): "/" for a call that answers none.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_location() -> RocStr {
+    let _host = preempt::host();
     let target = CALL.with(|context| context.borrow().asked.as_ref().map(|asked| asked.target.clone()));
     roc_str(&target.unwrap_or_else(|| "/".into()))
 }
@@ -587,6 +601,7 @@ pub extern "C" fn roc_location() -> RocStr {
 /// one set wins. A GET a page reads as it renders, answered in-process, has a request of its own.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_status(code: u16) {
+    let _host = preempt::host();
     CALL.with(|context| {
         if let Some(asked) = context.borrow_mut().asked.as_mut() {
             asked.status = Some(code);
@@ -598,11 +613,13 @@ pub extern "C" fn roc_status(code: u16) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_setting(name: RocStr) -> RocStr {
+    let _host = preempt::host();
     roc_str(&settings::get(&taken(name)))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_stopping() -> bool {
+    let _host = preempt::host();
     stopping()
 }
 
@@ -610,6 +627,7 @@ pub extern "C" fn roc_host_stopping() -> bool {
 /// it failed (1), the crash that ended it (2), or that its time ran out (3).
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_isolated(what: RocStr, input: RocStr, limit_ms: u64) -> Isolated {
+    let _host = preempt::host();
     let (what, input) = (taken(what), taken(input));
     let ran = catch_unwind(AssertUnwindSafe(|| call_within(limit_ms, || roc::isolated(&what, &input))));
     isolated_answer(ran)
@@ -651,6 +669,7 @@ pub fn actor_turn(id: &actors::Id, waiting: Vec<actors::Id>, kept: Option<&str>,
 /// The kinds of actor the app has (`program.actors`), a name a line, as the platform starts.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_actor_kinds(names: RocStr) {
+    let _host = preempt::host();
     let names = taken(names);
     actors::kinds(names.lines().filter(|name| !name.is_empty()).map(str::to_string));
 }
@@ -659,6 +678,7 @@ pub extern "C" fn roc_host_actor_kinds(names: RocStr) {
 /// answers (`files`).
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_plugin_file(url: RocStr, content_type: RocStr, body: RocListWith<u8, false>) {
+    let _host = preempt::host();
     let (url, content_type) = (taken(url), taken(content_type));
     crate::files::add(url, content_type, taken_bytes(body));
 }
@@ -666,6 +686,7 @@ pub extern "C" fn roc_host_plugin_file(url: RocStr, content_type: RocStr, body: 
 /// The plugins' scripts, a URL a line, as the platform starts: every page loads them.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_page_scripts(urls: RocStr) {
+    let _host = preempt::host();
     crate::files::set_scripts(taken(urls).lines().filter(|url| !url.is_empty()).map(str::to_string).collect());
 }
 
@@ -674,6 +695,7 @@ pub extern "C" fn roc_host_page_scripts(urls: RocStr) {
 /// is refused at once; an ask not answered in 30 s (or by the call's deadline) is given up on.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_actor_ask(kind: RocStr, key: RocStr, message: RocStr) -> TextResult {
+    let _host = preempt::host();
     let answered = {
         let to = actors::Id { kind: taken(kind), key: taken(key) };
         let message = taken(message);
@@ -708,6 +730,7 @@ pub extern "C" fn roc_host_actor_ask(kind: RocStr, key: RocStr, message: RocStr)
 /// Sends the actor of kind `kind` called `key` a message (JSON), answered by no one.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_actor_tell(kind: RocStr, key: RocStr, message: RocStr) {
+    let _host = preempt::host();
     actors::tell(actors::Id { kind: taken(kind), key: taken(key) }, taken(message));
 }
 
@@ -715,12 +738,14 @@ pub extern "C" fn roc_host_actor_tell(kind: RocStr, key: RocStr, message: RocStr
 /// numbered `timer` (the platform's: with a database, its row's), for `roc_host_actor_cancel`.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_actor_after(kind: RocStr, key: RocStr, ms: u64, message: RocStr, timer: u64) {
+    let _host = preempt::host();
     actors::after(actors::Id { kind: taken(kind), key: taken(key) }, ms, taken(message), timer);
 }
 
 /// Stops a timer whose message hasn't been handled.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_actor_cancel(timer: u64) {
+    let _host = preempt::host();
     actors::cancel(timer);
 }
 
@@ -738,11 +763,13 @@ pub fn forget_timer(timer: u64) -> Result<(), String> {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_store_get(name: RocStr) -> TextResult {
+    let _host = preempt::host();
     text_or_error(memory::get(&taken(name)).ok_or_else(String::new))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_store_set(name: RocStr, value: RocStr) {
+    let _host = preempt::host();
     memory::set(&taken(name), &taken(value));
 }
 
@@ -750,46 +777,55 @@ pub extern "C" fn roc_host_store_set(name: RocStr, value: RocStr) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_kv_get(key: RocStr) -> TextResult {
+    let _host = preempt::host();
     text_or_error(kv::get(&taken(key)).ok_or_else(String::new))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_kv_set(key: RocStr, text: RocStr, ttl_ms: u64) {
+    let _host = preempt::host();
     kv::set(&taken(key), &taken(text), ttl_ms);
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_kv_delete(key: RocStr) {
+    let _host = preempt::host();
     kv::delete(&taken(key));
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_kv_take(key: RocStr) -> TextResult {
+    let _host = preempt::host();
     text_or_error(kv::take(&taken(key)).ok_or_else(String::new))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_kv_add(key: RocStr, text: RocStr, ttl_ms: u64) -> bool {
+    let _host = preempt::host();
     kv::add(&taken(key), &taken(text), ttl_ms)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_kv_swap(key: RocStr, was: RocStr, text: RocStr, ttl_ms: u64) -> bool {
+    let _host = preempt::host();
     kv::swap(&taken(key), &taken(was), &taken(text), ttl_ms)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_kv_increment(key: RocStr, by: i64, ttl_ms: u64) -> TextResult {
+    let _host = preempt::host();
     text_or_error(kv::increment(&taken(key), by, ttl_ms).map(|now| now.to_string()))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_kv_push(key: RocStr, text: RocStr, keep: u64, ttl_ms: u64) {
+    let _host = preempt::host();
     kv::push(&taken(key), &taken(text), keep, ttl_ms);
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_random_u64() -> u64 {
+    let _host = preempt::host();
     use ring::rand::SecureRandom;
     let mut bytes = [0u8; 8];
     let _ = ring::rand::SystemRandom::new().fill(&mut bytes);
@@ -800,6 +836,7 @@ pub extern "C" fn roc_host_random_u64() -> u64 {
 /// token is ever made of anything less.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_random_bytes(count: u64) -> RocListWith<u8, false> {
+    let _host = preempt::host();
     match random(count as usize) {
         Ok(bytes) => roc_bytes(&bytes),
         Err(why) => roc::crash_outward(why),
@@ -816,6 +853,7 @@ fn random(count: usize) -> Result<Vec<u8>, String> {
 /// The process's environment variable `name`; an `Err` when it has none.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_env_var(name: RocStr) -> TextResult {
+    let _host = preempt::host();
     let name = taken(name);
     text_or_error(guarded(|| std::env::var_os(&name).map(|value| value.to_string_lossy().into_owned()).ok_or_else(String::new)))
 }
@@ -827,6 +865,7 @@ pub extern "C" fn roc_host_env_var(name: RocStr) -> TextResult {
 /// "sqlite", "turso").
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_db_open(url: RocStr) -> TextResult {
+    let _host = preempt::host();
     let url = taken(url);
     text_or_error(wait(async { db::open(&url).await.map(|flavor| flavor.name().to_string()) }))
 }
@@ -834,6 +873,7 @@ pub extern "C" fn roc_host_db_open(url: RocStr) -> TextResult {
 /// The database the server opened: "postgres", "sqlite", "turso", or "" for none.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_db_flavor() -> RocStr {
+    let _host = preempt::host();
     roc_str(db::flavor().map(db::Flavor::name).unwrap_or(""))
 }
 
@@ -842,6 +882,7 @@ pub extern "C" fn roc_host_db_flavor() -> RocStr {
 /// other processes hear too; on SQLite and Turso in the process, the host keeping the call's notices.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_db_notify(channel: RocStr, payload: RocStr) -> HostDbScriptResult {
+    let _host = preempt::host();
     if db::flavor().is_some_and(db::Flavor::in_process) {
         let (channel, payload) = (taken(channel), taken(payload));
         let kept = CALL.with(|context| {
@@ -878,6 +919,7 @@ fn publish_notices() {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_db_query(sql: RocStr, params: RocStr) -> TextResult {
+    let _host = preempt::host();
     let waited = {
         let (sql, params) = (taken(sql), taken(params));
         on_db(async |client, _| db::query(client, &sql, &params).await)
@@ -887,6 +929,7 @@ pub extern "C" fn roc_host_db_query(sql: RocStr, params: RocStr) -> TextResult {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_db_execute(sql: RocStr, params: RocStr) -> HostDbExecuteResult {
+    let _host = preempt::host();
     let waited = {
         let (sql, params) = (taken(sql), taken(params));
         on_db(async |client, _| db::execute(client, &sql, &params).await)
@@ -896,6 +939,7 @@ pub extern "C" fn roc_host_db_execute(sql: RocStr, params: RocStr) -> HostDbExec
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_db_script(sql: RocStr) -> HostDbScriptResult {
+    let _host = preempt::host();
     let waited = {
         let sql = taken(sql);
         on_db(async |client, in_transaction| db::script(client, in_transaction, &sql).await)
@@ -905,6 +949,7 @@ pub extern "C" fn roc_host_db_script(sql: RocStr) -> HostDbScriptResult {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_db_begin() -> HostDbScriptResult {
+    let _host = preempt::host();
     if CALL.with(|context| context.borrow().transaction.is_some()) {
         return done(Err("a transaction is open already: one at a time".into()));
     }
@@ -944,6 +989,7 @@ pub extern "C" fn roc_host_db_begin() -> HostDbScriptResult {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_db_commit() -> HostDbScriptResult {
+    let _host = preempt::host();
     let pinned = CALL.with(|context| context.borrow_mut().transaction.take());
     let Some(client) = pinned else { return done(Err("no transaction is open".into())) };
     let waited = match within(db::commit(&client)) {
@@ -968,6 +1014,7 @@ pub extern "C" fn roc_host_db_commit() -> HostDbScriptResult {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_db_rollback() {
+    let _host = preempt::host();
     let pinned = CALL.with(|context| {
         let mut context = context.borrow_mut();
         context.notices.clear();
@@ -982,6 +1029,7 @@ pub extern "C" fn roc_host_db_rollback() {
 /// exclusive (Turso's MVCC, D-049): `Db.transaction!` runs its body again.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_db_conflicted() -> bool {
+    let _host = preempt::host();
     CALL.with(|context| context.borrow().conflicted)
 }
 
@@ -989,6 +1037,7 @@ pub extern "C" fn roc_host_db_conflicted() -> bool {
 /// or Postgres's `pg_notify`) on the topic `db:<channel>`.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_db_listen(channel: RocStr) -> HostDbScriptResult {
+    let _host = preempt::host();
     let channel = taken(channel);
     // Listening on the topic first, so a notification while Postgres is told isn't missed.
     let receiver = live::listen(&format!("db:{channel}"));
@@ -1000,17 +1049,20 @@ pub extern "C" fn roc_host_db_listen(channel: RocStr) -> HostDbScriptResult {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_live_publish(topic: RocStr, message: RocStr) {
+    let _host = preempt::host();
     live::publish(&taken(topic), &taken(message));
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_live_listen(topic: RocStr) {
+    let _host = preempt::host();
     let receiver = live::listen(&taken(topic));
     CALL.with(|context| context.borrow_mut().listening.push(receiver));
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_live_join(room: RocStr) {
+    let _host = preempt::host();
     let room = taken(room);
     // Joining is published before this call listens, so it doesn't hear its own.
     live::join(&room);
@@ -1024,6 +1076,7 @@ pub extern "C" fn roc_host_live_join(room: RocStr) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_live_count(room: RocStr) -> u64 {
+    let _host = preempt::host();
     live::count(&taken(room))
 }
 
@@ -1031,6 +1084,7 @@ pub extern "C" fn roc_host_live_count(room: RocStr) -> u64 {
 /// waits on has gone: its stream's client, or the server, for a background loop (2).
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_live_next(ms: u64) -> Heard {
+    let _host = preempt::host();
     let (mut listening, gone) = CALL.with(|context| {
         let mut context = context.borrow_mut();
         (std::mem::take(&mut context.listening), context.gone())
@@ -1089,6 +1143,7 @@ fn socket_in_time<T>(done: Result<T, String>) -> Result<Result<T, String>, Late>
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_tcp_connect(host: RocStr, port: u16, tls: bool) -> HostDbExecuteResult {
+    let _host = preempt::host();
     let waited = {
         let host = taken(host);
         let made = guarded(|| tcp::connect(&host, port, tls, deadline()));
@@ -1102,6 +1157,7 @@ pub extern "C" fn roc_host_tcp_connect(host: RocStr, port: u16, tls: bool) -> Ho
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_tcp_start_tls(id: u64, host: RocStr) -> HostDbScriptResult {
+    let _host = preempt::host();
     let waited = {
         let host = taken(host);
         socket_in_time(guarded(|| tcp::start_tls(id, &host, deadline())))
@@ -1111,6 +1167,7 @@ pub extern "C" fn roc_host_tcp_start_tls(id: u64, host: RocStr) -> HostDbScriptR
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_tcp_write(id: u64, bytes: RocListWith<u8, false>) -> HostDbScriptResult {
+    let _host = preempt::host();
     let waited = {
         let copy = taken_bytes(bytes);
         socket_in_time(guarded(|| tcp::write(id, &copy, deadline())))
@@ -1120,24 +1177,28 @@ pub extern "C" fn roc_host_tcp_write(id: u64, bytes: RocListWith<u8, false>) -> 
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_tcp_read_exactly(id: u64, count: u64) -> BytesResult {
+    let _host = preempt::host();
     let waited = socket_in_time(guarded(|| tcp::read_exactly(id, count as usize, deadline())));
     bytes_or_error(in_time(waited))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_tcp_read_up_to(id: u64, count: u64) -> BytesResult {
+    let _host = preempt::host();
     let waited = socket_in_time(guarded(|| tcp::read_up_to(id, count as usize, deadline())));
     bytes_or_error(in_time(waited))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_tcp_read_until(id: u64, byte: u8) -> BytesResult {
+    let _host = preempt::host();
     let waited = socket_in_time(guarded(|| tcp::read_until(id, byte, deadline())));
     bytes_or_error(in_time(waited))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_tcp_close(id: u64) {
+    let _host = preempt::host();
     tcp::close(id);
     CALL.with(|context| context.borrow_mut().sockets.retain(|each| *each != id));
 }
@@ -1158,6 +1219,7 @@ pub extern "C" fn roc_host_http_send(
     follow: bool,
     via: RocStr,
 ) -> HostHttpSendResult {
+    let _host = preempt::host();
     let waited = {
         let (method, url, headers, body, via) = (taken(method), taken(url), taken(headers), taken_bytes(body), taken(via));
         let fetched = guarded(|| {
@@ -1208,6 +1270,7 @@ pub extern "C" fn roc_host_http_open(
     follow: bool,
     via: RocStr,
 ) -> TextResult {
+    let _host = preempt::host();
     let waited = {
         let (method, url, headers, body, via) = (taken(method), taken(url), taken(headers), taken_bytes(body), taken(via));
         let opened = guarded(|| {
@@ -1226,6 +1289,7 @@ pub extern "C" fn roc_host_http_open(
 /// its end; "timed out", "too large", or why it broke off. After either, it is let go.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_http_read(id: u64) -> BytesResult {
+    let _host = preempt::host();
     let waited = {
         let read = guarded(|| {
             if !CALL.with(|context| context.borrow().chunked.contains(&id)) {
@@ -1246,6 +1310,7 @@ pub extern "C" fn roc_host_http_read(id: u64) -> BytesResult {
 /// is left of the body has come already.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_http_close(id: u64) {
+    let _host = preempt::host();
     if CALL.with(|context| context.borrow().chunked.contains(&id)) {
         client::let_go(id);
         CALL.with(|context| context.borrow_mut().chunked.retain(|each| *each != id));
@@ -1257,6 +1322,7 @@ pub extern "C" fn roc_host_http_close(id: u64) {
 /// `plaintext` sealed under `key` (32 bytes): a fresh random nonce, the ciphertext, the tag.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_aes_gcm_seal(key: RocListWith<u8, false>, plaintext: RocListWith<u8, false>) -> BytesResult {
+    let _host = preempt::host();
     let (key, plaintext) = (taken_bytes(key), taken_bytes(plaintext));
     bytes_or_error(guarded(|| seal(&key, &plaintext)))
 }
@@ -1264,6 +1330,7 @@ pub extern "C" fn roc_host_aes_gcm_seal(key: RocListWith<u8, false>, plaintext: 
 /// What `roc_host_aes_gcm_seal` sealed under `key`; "bad key", or "forged".
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_aes_gcm_open(key: RocListWith<u8, false>, sealed: RocListWith<u8, false>) -> BytesResult {
+    let _host = preempt::host();
     let (key, sealed) = (taken_bytes(key), taken_bytes(sealed));
     bytes_or_error(guarded(|| open(&key, &sealed)))
 }
@@ -1308,6 +1375,7 @@ fn open(key: &[u8], sealed: &[u8]) -> Result<Vec<u8>, String> {
 /// it doesn't have.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_zone_offset(zone: RocStr, at_ms: i64) -> HostZoneOffsetResult {
+    let _host = preempt::host();
     use chrono::{Offset, TimeZone};
     let zone = taken(zone);
     let offset = zone.parse::<chrono_tz::Tz>().map_err(|_| format!("no time zone is called {zone}")).and_then(|tz| {
@@ -1329,6 +1397,7 @@ fn blocking<T: Send + 'static>(work: impl FnOnce() -> Result<T, String> + Send +
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_blob_put(root: RocStr, key: RocStr, bytes: RocListWith<u8, false>, content_type: RocStr) -> HostDbScriptResult {
+    let _host = preempt::host();
     let (root, key, content_type) = (taken(root), taken(key), taken(content_type));
     let owned = bytes.as_slice().to_vec();
     unsafe { bytes.decref(&roc::host()) };
@@ -1337,12 +1406,14 @@ pub extern "C" fn roc_host_blob_put(root: RocStr, key: RocStr, bytes: RocListWit
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_blob_get(root: RocStr, key: RocStr) -> BytesResult {
+    let _host = preempt::host();
     let (root, key) = (taken(root), taken(key));
     bytes_or_error(blocking(move || blobs::get(&blobs::root(&root)?, &key)))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_blob_range(root: RocStr, key: RocStr, offset: u64, length: u64) -> HostBlobRangeResult {
+    let _host = preempt::host();
     let (root, key) = (taken(root), taken(key));
     match blocking(move || blobs::range(&blobs::root(&root)?, &key, offset, length)) {
         Ok((bytes, size)) => HostBlobRangeResult {
@@ -1355,6 +1426,7 @@ pub extern "C" fn roc_host_blob_range(root: RocStr, key: RocStr, offset: u64, le
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_blob_head(root: RocStr, key: RocStr) -> HostBlobHeadResult {
+    let _host = preempt::host();
     let (root, key) = (taken(root), taken(key));
     match blocking(move || blobs::head(&blobs::root(&root)?, &key)) {
         Ok(info) => HostBlobHeadResult {
@@ -1367,12 +1439,14 @@ pub extern "C" fn roc_host_blob_head(root: RocStr, key: RocStr) -> HostBlobHeadR
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_blob_delete(root: RocStr, key: RocStr) -> HostDbScriptResult {
+    let _host = preempt::host();
     let (root, key) = (taken(root), taken(key));
     done(blocking(move || blobs::delete(&blobs::root(&root)?, &key)))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_blob_compose(root: RocStr, parts: RocList<RocStr>, key: RocStr, content_type: RocStr) -> HostDbScriptResult {
+    let _host = preempt::host();
     let (root, key, content_type) = (taken(root), taken(key), taken(content_type));
     let named: Vec<String> = parts.as_slice().iter().map(|part| part.as_str().to_owned()).collect();
     unsafe { crate::abi::decref_list_of_str(parts, &roc::host()) };
@@ -1381,17 +1455,20 @@ pub extern "C" fn roc_host_blob_compose(root: RocStr, parts: RocList<RocStr>, ke
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_blob_check(root: RocStr) -> HostDbScriptResult {
+    let _host = preempt::host();
     let root = taken(root);
     done(blocking(move || blobs::check(&blobs::root(&root)?)))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_blob_secret(root: RocStr) -> RocStr {
+    let _host = preempt::host();
     roc_str(&blobs::secret(&taken(root)))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_blob_keys(root: RocStr, prefix: RocStr) -> HostBlobKeysResult {
+    let _host = preempt::host();
     let (root, prefix) = (taken(root), taken(prefix));
     match blocking(move || blobs::keys(&blobs::root(&root)?, &prefix)) {
         Ok(keys) => {

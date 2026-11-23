@@ -118,9 +118,8 @@ Job := [].{
 
 	## A kind tried `attempts` times (one at least), each within `timeout_ms` milliseconds (0: no
 	## limit). The first effect that waits past the limit (Postgres, a socket, `Http`) ends the
-	## run, which fails with "timed out after …", and is tried again if it has attempts left. In a
-	## dev build, Roc that never waits is ended where it runs (D-057), as a crash would end it; an
-	## optimized build can't yet.
+	## run, which fails with "timed out after …", and is tried again if it has attempts left; Roc
+	## that never waits is ended where it runs (D-057), as a crash would end it.
 	define_with : Str, { attempts : U64, timeout_ms : U64 }, (input => Try({}, Str)) -> Kind(input)
 	define_with = |name, { attempts, timeout_ms }, run!| { name, attempts: U64.max(attempts, 1), timeout_ms, run! }
 

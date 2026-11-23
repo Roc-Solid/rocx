@@ -15,7 +15,7 @@
 //! touch one value's counts at once.
 
 use crate::abi::{self, RocHost, RocStr};
-use crate::hosted;
+use crate::{hosted, preempt};
 use std::alloc::{Layout, alloc, dealloc};
 use std::cell::{Cell, RefCell, UnsafeCell};
 use std::ffi::c_void;
@@ -254,10 +254,12 @@ fn reallocate(user: *mut c_void, length: usize, alignment: usize) -> NonNull<c_v
 
 // Roc's code alone calls these three (the host's own helpers go to `allocate`, `deallocate` and
 // `resize`), so each is a place a call past its deadline can end, holding nothing (`preempt`): the
-// block it would have freed or moved is in the call's list, and freed with the rest.
+// block it would have freed or moved is in the call's list, and freed with the rest. Like every
+// function Roc calls, each says first that the host's code runs (`preempt::host`).
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_alloc(length: usize, alignment: usize) -> NonNull<c_void> {
+    let _host = preempt::host();
     if crate::preempt::pending() {
         hosted::preempted()
     }
@@ -266,6 +268,7 @@ pub extern "C" fn roc_alloc(length: usize, alignment: usize) -> NonNull<c_void> 
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_dealloc(ptr: *mut c_void, alignment: usize) {
+    let _host = preempt::host();
     if crate::preempt::pending() {
         hosted::preempted()
     }
@@ -274,6 +277,7 @@ pub extern "C" fn roc_dealloc(ptr: *mut c_void, alignment: usize) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_realloc(ptr: *mut c_void, length: usize, alignment: usize) -> NonNull<c_void> {
+    let _host = preempt::host();
     if crate::preempt::pending() {
         hosted::preempted()
     }
@@ -295,11 +299,13 @@ fn resize(ptr: *mut c_void, length: usize, alignment: usize) -> NonNull<c_void> 
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_dbg(bytes: *const u8, len: usize) {
+    let _host = preempt::host();
     crate::logging::debug("dbg", &[("value", text(bytes, len).into())]);
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_expect_failed(bytes: *const u8, len: usize) {
+    let _host = preempt::host();
     crate::logging::error("expect failed", &[("expect", text(bytes, len).into())]);
 }
 
@@ -307,6 +313,7 @@ pub extern "C" fn roc_expect_failed(bytes: *const u8, len: usize) {
 /// to. It never returns, as Roc's ABI asks.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_crashed(bytes: *const u8, len: usize) {
+    let _host = preempt::host();
     let message = text(bytes, len);
     if unsafe { rocx_guard_active() } == 0 {
         crate::logging::error("rocx server: Roc crashed outside a call the host guards", &[("error", message.into())]);
@@ -324,21 +331,27 @@ fn text(bytes: *const u8, len: usize) -> String {
 // The glue's helpers (`RocStr::from_str`, `decref`) allocate and free through a `RocHost`; these
 // send them to the same allocator Roc uses, so what they make is tracked like the rest.
 extern "C" fn host_alloc(_: *mut RocHost, length: usize, alignment: usize) -> NonNull<c_void> {
+    let _host = preempt::host();
     allocate(length, alignment)
 }
 extern "C" fn host_dealloc(_: *mut RocHost, ptr: *mut c_void, alignment: usize) {
+    let _host = preempt::host();
     deallocate(ptr, alignment)
 }
 extern "C" fn host_realloc(_: *mut RocHost, ptr: *mut c_void, length: usize, alignment: usize) -> NonNull<c_void> {
+    let _host = preempt::host();
     resize(ptr, length, alignment)
 }
 extern "C" fn host_dbg(_: *mut RocHost, bytes: *const u8, len: usize) {
+    let _host = preempt::host();
     roc_dbg(bytes, len)
 }
 extern "C" fn host_expect_failed(_: *mut RocHost, bytes: *const u8, len: usize) {
+    let _host = preempt::host();
     roc_expect_failed(bytes, len)
 }
 extern "C" fn host_crashed(_: *mut RocHost, bytes: *const u8, len: usize) {
+    let _host = preempt::host();
     roc_crashed(bytes, len)
 }
 
@@ -378,10 +391,14 @@ fn guarded<F: FnOnce() -> R, R>(ring: &Ring, call: F) -> Result<R, Crash> {
         call: Option<F>,
         out: Option<R>,
     }
+    // The trampoline, called with the jump target set: Roc runs from here (`preempt`), and
+    // `rocx_guarded`'s own setting of the target, before it, is the host's.
     extern "C" fn run<F: FnOnce() -> R, R>(data: *mut c_void) {
         let slot = unsafe { &mut *(data as *mut Slot<F, R>) };
         if let Some(call) = slot.call.take() {
+            let was = preempt::enter_roc();
             slot.out = Some(call());
+            preempt::restore(was);
         }
     }
 
@@ -389,8 +406,11 @@ fn guarded<F: FnOnce() -> R, R>(ring: &Ring, call: F) -> Result<R, Crash> {
     // and a jump target of its own, and the outer call's come back when it ends. A crash in it
     // jumps back to its own guard, inside the hosted function, which goes on.
     let outer = TRACKING.with(|tracking| tracking.replace(ring.sentinel()));
+    let in_roc = preempt::in_roc();
     let mut slot = Slot { call: Some(call), out: None };
     let crashed = unsafe { rocx_guarded(run::<F, R>, &mut slot as *mut Slot<F, R> as *mut c_void) } != 0;
+    // A crash's jump skipped the trampoline's and the host functions' putting the flag back.
+    preempt::restore(in_roc);
     TRACKING.with(|tracking| tracking.set(outer));
 
     if crashed {

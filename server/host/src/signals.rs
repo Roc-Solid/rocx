@@ -613,16 +613,19 @@ fn register(callable: Callable, made: fn(u64) -> Made) -> u64 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_keep(callable: Callable) -> u64 {
+    let _host = crate::preempt::host();
     register(callable, Made::Kept)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_signal_new(value: Callable) -> u64 {
+    let _host = crate::preempt::host();
     register(value, Made::Signal)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_signal_get(id: u64) -> Callable {
+    let _host = crate::preempt::host();
     match with(|render| render.signals.get(&id).copied()).flatten() {
         Some(value) => roc::retain(value),
         None => roc::fail("rocx: a signal was read after the part that made it went away".into()),
@@ -631,12 +634,14 @@ pub extern "C" fn roc_signal_get(id: u64) -> Callable {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_signal_set(_id: u64, value: Callable) {
+    let _host = crate::preempt::host();
     roc::release(value);
     roc::fail("a signal is written in a handler, not while computing".into())
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_memo_new(runner: Callable) -> u64 {
+    let _host = crate::preempt::host();
     let made = with(|render| {
         let id = render.id();
         render.memos.insert(id, Memo { runner, value: None, next: None, failed: None });
@@ -677,6 +682,7 @@ pub extern "C" fn roc_memo_new(runner: Callable) -> u64 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_memo_done(value: Callable) {
+    let _host = crate::preempt::host();
     let replaced = with(|render| {
         let id = render.frames.last()?.memo?;
         let memo = render.memos.get_mut(&id)?;
@@ -698,6 +704,7 @@ pub extern "C" fn roc_memo_done(value: Callable) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_memo_get(id: u64) -> Callable {
+    let _host = crate::preempt::host();
     enum Read {
         Value(Callable),
         Failed(String),
@@ -718,6 +725,7 @@ pub extern "C" fn roc_memo_get(id: u64) -> Callable {
 /// On the server nothing is computed again: a refresh is for the browser.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_refresh(probe: Callable) {
+    let _host = crate::preempt::host();
     roc::release(probe);
 }
 
@@ -725,6 +733,7 @@ pub extern "C" fn roc_refresh(probe: Callable) {
 /// false too.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_is_pending(probe: Callable) -> bool {
+    let _host = crate::preempt::host();
     roc::release(probe);
     false
 }
@@ -819,31 +828,37 @@ fn in_process(label: &str, method: &str, target: &str, accept: &str, content_typ
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_fail(why: RocStr) {
+    let _host = crate::preempt::host();
     roc::fail(taken(why))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_event_value() -> RocStr {
+    let _host = crate::preempt::host();
     given("")
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_boundary() -> u64 {
+    let _host = crate::preempt::host();
     0
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_problem() -> RocStr {
+    let _host = crate::preempt::host();
     let problem = with(|render| render.frames.last().and_then(|frame| frame.problem.clone())).flatten();
     given(&problem.unwrap_or_default())
 }
 
 /// A retry is a handler's: never on the server.
 #[unsafe(no_mangle)]
-pub extern "C" fn roc_retry(_id: u64) {}
+pub extern "C" fn roc_retry(_id: u64) {
+    let _host = crate::preempt::host();}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_for_new() -> u64 {
+    let _host = crate::preempt::host();
     let made = with(|render| {
         let id = render.id();
         render.lists.insert(id, List::default());
@@ -858,6 +873,7 @@ pub extern "C" fn roc_for_new() -> u64 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_row_index(list: u64, key: RocStr) -> u64 {
+    let _host = crate::preempt::host();
     let key = taken(key);
     match with(|render| render.lists.get(&list).and_then(|list| list.indexes.get(&key).copied())).flatten() {
         Some(index) => index,
@@ -871,6 +887,7 @@ pub extern "C" fn roc_row_index(list: u64, key: RocStr) -> u64 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_row_set(list: u64, key: RocStr, value: Callable) {
+    let _host = crate::preempt::host();
     let key = taken(key);
     let replaced = with(|render| {
         let previous = render.lists.get_mut(&list)?.items.insert(key.clone(), value);
@@ -890,6 +907,7 @@ pub extern "C" fn roc_row_set(list: u64, key: RocStr, value: Callable) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_row_get(list: u64, key: RocStr) -> Callable {
+    let _host = crate::preempt::host();
     let key = taken(key);
     match with(|render| render.lists.get(&list).and_then(|list| list.items.get(&key).copied())).flatten() {
         Some(value) => roc::retain(value),
@@ -903,17 +921,20 @@ pub extern "C" fn roc_row_get(list: u64, key: RocStr) -> Callable {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_context_value(value: Callable) -> u64 {
+    let _host = crate::preempt::host();
     register(value, Made::Kept)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_context_find(name: RocStr) -> u64 {
+    let _host = crate::preempt::host();
     let name = taken(name);
     with(|render| render.frames.last().and_then(|frame| frame.scope.contexts.get(&name).copied())).flatten().unwrap_or(0)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_context_get(id: u64) -> Callable {
+    let _host = crate::preempt::host();
     match with(|render| render.kept.get(&id).copied()).flatten() {
         Some(value) => roc::retain(value),
         None => roc::fail("rocx: a context's value that isn't kept".into()),
@@ -928,6 +949,7 @@ pub extern "C" fn roc_context_get(id: u64) -> Callable {
 /// request is a handler's, sent from the browser: the server renders without it.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_fetch(method: RocStr, url: RocStr, headers: RocStr, body: RocStr) -> RocStr {
+    let _host = crate::preempt::host();
     let (method, url) = (taken(method), taken(url));
     drop((taken(headers), taken(body)));
     let rendering = with(|_| ()).is_some();
@@ -969,6 +991,7 @@ pub extern "C" fn roc_fetch(method: RocStr, url: RocStr, headers: RocStr, body: 
 /// Listening is a handler's, in the browser: never while the server renders.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_listen(url: RocStr, handler: Callable) {
+    let _host = crate::preempt::host();
     drop(taken(url));
     roc::release(handler);
     roc::fail("events are listened to from the browser (a handler's); the server renders without them".into())
@@ -978,6 +1001,7 @@ pub extern "C" fn roc_listen(url: RocStr, handler: Callable) {
 /// server never runs): rendering, the server subscribes to nothing, and lets its handler go.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_subscribe(url: RocStr, handler: Callable) {
+    let _host = crate::preempt::host();
     drop(taken(url));
     roc::release(handler);
 }
@@ -985,11 +1009,13 @@ pub extern "C" fn roc_subscribe(url: RocStr, handler: Callable) {
 /// What a page says on a channel, and asking for a resync, are the browser's: on the server, nothing.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_say(url: RocStr, said: RocStr) {
+    let _host = crate::preempt::host();
     drop((taken(url), taken(said)));
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_resync(url: RocStr) {
+    let _host = crate::preempt::host();
     drop(taken(url));
 }
 
@@ -997,23 +1023,27 @@ pub extern "C" fn roc_resync(url: RocStr) {
 /// id is 0, and clearing it does nothing, so a component that starts one renders as it would.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_timeout(_ms: u64, handler: Callable) -> u64 {
+    let _host = crate::preempt::host();
     roc::release(handler);
     0
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_interval(_ms: u64, handler: Callable) -> u64 {
+    let _host = crate::preempt::host();
     roc::release(handler);
     0
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn roc_clear_timer(_id: u64) {}
+pub extern "C" fn roc_clear_timer(_id: u64) {
+    let _host = crate::preempt::host();}
 
 /// A call of the page's own function (`Browser.call!`) is a handler's, in the browser: never while
 /// the server renders.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_browser_call(name: RocStr, arg: RocStr) {
+    let _host = crate::preempt::host();
     let name = taken(name);
     drop(taken(arg));
     roc::fail(format!("Browser.call!(\"{name}\") is a handler's, in the browser; the server renders without it"))
@@ -1024,11 +1054,13 @@ pub extern "C" fn roc_browser_call(name: RocStr, arg: RocStr) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_effect_new(effect: Callable) {
+    let _host = crate::preempt::host();
     roc::release(effect);
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_cleanup(cleanup: Callable) {
+    let _host = crate::preempt::host();
     roc::release(cleanup);
 }
 
@@ -1038,6 +1070,7 @@ pub extern "C" fn roc_cleanup(cleanup: Callable) {
 /// several places, so the render keeps it, as nothing in Roc lasts from one read to the next.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_flash(found: RocStr) -> RocStr {
+    let _host = crate::preempt::host();
     let found = taken(found);
     if found.is_empty() {
         return given(&with(|render| render.flash.clone()).flatten().unwrap_or_default());
@@ -1050,6 +1083,7 @@ pub extern "C" fn roc_flash(found: RocStr) -> RocStr {
 /// the page's (`titled`).
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_title(title: RocStr) {
+    let _host = crate::preempt::host();
     let title = taken(title);
     with(|render| render.title = Some(title));
 }
@@ -1057,22 +1091,26 @@ pub extern "C" fn roc_title(title: RocStr) {
 /// The runtime's form submissions are the browser's: none on the server.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_action(url: RocStr) {
+    let _host = crate::preempt::host();
     drop(taken(url));
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_submission(url: RocStr) -> RocStr {
+    let _host = crate::preempt::host();
     drop(taken(url));
     given("")
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_submission_clear(url: RocStr) {
+    let _host = crate::preempt::host();
     drop(taken(url));
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_submissions(url: RocStr) -> RocStr {
+    let _host = crate::preempt::host();
     drop(taken(url));
     given("")
 }
@@ -1080,10 +1118,12 @@ pub extern "C" fn roc_submissions(url: RocStr) -> RocStr {
 /// An action (`Router.use_action!`) is sent from a handler, and no handler runs on the server.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_submit(method: RocStr, url: RocStr, body: RocStr, input: RocStr) {
+    let _host = crate::preempt::host();
     drop((taken(method), taken(url), taken(body), taken(input)));
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_submission_drop(url: RocStr, _id: u64) {
+    let _host = crate::preempt::host();
     drop(taken(url));
 }

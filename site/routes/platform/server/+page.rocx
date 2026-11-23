@@ -75,9 +75,9 @@ view! = |_|
 			</p>
 			<p>
 				It has costs. Roc that computes for long without an effect (a long pure loop) can't pause, so the
-				calls on its thread wait for it; new calls go to Roc's other threads. In a dev build, a call with a
-				time limit (a job's) is ended there all the same, once its time is up: the server interrupts its
-				thread, and, when the thread is in the app's own code, ends the call as a crash would. A paused call keeps its stack,
+				calls on its thread wait for it; new calls go to Roc's other threads. A call with a time limit (a
+				job's) is ended there all the same, once its time is up: the server interrupts its thread, and,
+				when the thread is in the app's own code, ends the call as a crash would. A paused call keeps its stack,
 				though only the pages it touched cost memory. Profilers and debuggers see calls on stacks of their
 				own rather than threads. And a call that overflows its stack ends the process, as a thread's
 				overflow did, saying so on stderr first.

@@ -52,11 +52,9 @@ When an item lands, delete its line here in the same commit.
   it reads form fields as well (`server/README.md`, "Not yet").
 - **The server's other limits** are in `server/README.md`, "Not yet":
   - actors' timers are all set again at start, a task each in memory;
-  - in an optimized build a job's time limit cuts it off only at an effect that waits (D-057's
-    interrupt finds Roc's code in dev builds alone): next, an "in Roc" flag the host keeps, cleared
-    by every function Roc calls, a test making sure of each (being built);
-  - later, Roc's code in a section of its own from the fork's LLVM backend, with start and end
-    symbols the host reads: the cleaner answer, but a compiler change and a PR the user opens.
+  - D-057's interrupt tells Roc's code by a flag every function Roc calls clears: Roc's code in a
+    section of its own from the fork's LLVM backend, with start and end symbols the host reads, would
+    tell it by address, the cleaner answer, but a compiler change and a PR the user opens.
 - **`rocx check --sql`'s blind spots** (D-058, built; `spike/db-checked/DESIGN.md`, §12, phase 5;
   `server/README.md`, "Not yet"):
   - a column of an outer join's other side read as nullable, from the statement's plan (SQLite's

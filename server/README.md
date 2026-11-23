@@ -933,20 +933,23 @@ actor's task starts. An isolated call may be given a time limit
 call as a crash would (`cut_off` in `host/src/hosted.rs`), so the only frame it skips that is the
 host's is that effect's own, which holds nothing by then.
 
-Roc that never waits is cut off too, in a dev build (D-057, `host/src/preempt.rs`). Each of Roc's threads keeps the
-deadline of the call running on it (none while it is paused), and a thread of the host's own
-signals a thread whose call is past its deadline (SIGURG), every few milliseconds until the call has
-ended. The signal's handler looks where the call was: in Roc's compiled code, which Roc's linker
-puts in a segment of its own (`__ROC_TEXT` on macOS, `.text.roc` on Linux), it makes the thread
-call into the host there, as `roc_crashed` would be called, and the call ends as a crash ends,
-skipping only Roc's frames; anywhere else (a hosted function, the C library: a lock may be held) it
-only notes it, and the call ends at the next allocation Roc asks for (which only Roc's code calls),
-or at the next signal that finds it in Roc's code. The tests cut off two jobs that loop forever
-without an effect, one on numbers alone and one making and dropping text, in their time limit, with
-nothing left held. Only the fork's fast dev link (`--opt=dev`: `rocx dev`'s builds and the tests')
-gives Roc's code that segment; an optimized build (`--opt=speed`: LLVM, and the system's linker)
-puts it in the host's `__TEXT`, so there a call is cut off only at an effect that waits, and the
-log says so the first time a call with a time limit runs ("Not yet").
+Roc that never waits is cut off too, in every build (D-057, `host/src/preempt.rs`). Each of Roc's
+threads keeps the deadline of the call running on it (none while it is paused), and a thread of the
+host's own signals a thread whose call is past its deadline (SIGURG, with `pthread_kill`, to that
+thread alone), every few milliseconds until the call has ended. Each thread also keeps a flag that
+says it runs Roc: the trampoline of a call's guard sets it once the guard's jump target is set, and
+every function Roc calls in the host clears it first thing and puts it back as it returns (its
+first line, `let _host = preempt::host();`: `roc_alloc` and its kin, every hosted function, the
+`RocHost` callbacks; `server/test/host-entries.test.mjs` fails on one that lacks it). The signal's
+handler looks where the call was: with the flag set and the thread in the executable's own code
+(not a library's), it is in Roc's code, or in code that holds nothing a crash there wouldn't, so it
+makes the thread call into the host there, as `roc_crashed` would be called, and the call ends as a
+crash ends, skipping only Roc's frames; anywhere else (a hosted function, the allocator, a library:
+a lock may be held) it only notes it, and the call ends at the next allocation Roc asks for (which
+only Roc's code calls), or at the next signal that finds it in Roc's code. The tests cut off two
+jobs that loop forever without an effect, one on numbers alone and one making and dropping text, in
+their time limit, with nothing left held, in a dev build and an optimized one, and check that a
+parent process trapping SIGURG hears none.
 
 At start the host asks the platform's Roc which background loops to run (`roc_background_count`:
 the plugins' loops and checks: the jobs plugin's workers and its schedules' loop, the email
@@ -1071,6 +1074,9 @@ a stop in the middle of a request. With
 tests may write to: rustfs or MinIO in Docker, say, with a bucket made), storage's S3 runs; a
 request over the internet runs only with `ROCX_TEST_INTERNET=1`; `ROCX_TEST_OPT=speed` builds the
 app optimized.
+`server/test/host-entries.test.mjs` reads the host's sources, building nothing: every function Roc
+can call in the host (the glue's runtime and hosted symbols, every function the host exports, the
+`RocHost` callbacks) must begin with `let _host = preempt::host();` (D-057).
 `server/test/sqlite.test.mjs` builds `server/test/sqlite`, an app whose database is SQLite, and needs
 no database server: its file where the program says or `--database-url` does, a Postgres URL refused,
 typed parameters and rows, transactions and a failing script, 40 read-then-write transactions at
@@ -1091,10 +1097,6 @@ browser runtime's own render.
   the statement's plan for these).
 - Actors' timers outlive a restart, but are all set again at start, each a task in memory: an app
   with millions of far timers would want them read a window at a time.
-- In an optimized build (`--opt=speed`), a job's time limit cuts it off only at an effect that
-  waits: Roc that loops without one holds its worker, since the interrupt (D-057) can't tell Roc's
-  code from the host's there. Next: a flag the host keeps while Roc runs, cleared by every function
-  Roc calls; later, Roc's code in a section of its own, from the fork's LLVM backend.
 - `Http`: HTTP/1.1 only (no HTTP/2); no SOCKS proxy; a request's own body is sent whole (an
   answer's may come in chunks: `fetch_chunks!`).
 - `Forward`: an upstream's body only, not the other way (a request's body streamed to S3 as it
