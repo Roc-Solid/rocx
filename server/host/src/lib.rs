@@ -61,6 +61,9 @@ async fn described(config: http::Config, mut given: std::collections::HashMap<St
     let text = std::fs::read_to_string(file).map_err(|error| format!("--describe-sql {}: {error}", file.display()))?;
     let statements: Vec<String> = serde_json::from_str(&text).map_err(|error| format!("--describe-sql {}: a JSON array of SQL, each a string: {error}", file.display()))?;
     db::check::start(config.sql_database.clone());
+    // The platform's start opens the app's kind of database whatever URL is about (a SQLite app's
+    // check makes a file, and needs none): DATABASE_URL may be a Postgres one in a shell.
+    given.insert("describe_sql".to_string(), "yes".to_string());
     given.insert("public_url".to_string(), config.public_url.clone().unwrap_or_else(|| "http://127.0.0.1".to_string()));
     settings::set(given);
     let (_stop, stopping) = tokio::sync::watch::channel(false);

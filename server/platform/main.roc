@@ -358,11 +358,19 @@ applies = |on, flavor|
 ## The app's database, opened where its program and `--database-url` say (D-045, D-046):
 ## `Postgres` at the URL, and none without one; `Sqlite(path)` or `Turso(path)` at the URL when it
 ## is a `sqlite:` or a `turso:` one (either engine: the SQL is SQLite's), or else at `path`. A URL
-## of the other flavor stops the server, saying which the app wants.
+## of the other flavor stops the server, saying which the app wants; but a check of the app's SQL
+## (`--describe-sql`, D-058), which opens a scratch database of the app's kind, leaves a Postgres
+## URL alone for a SQLite or Turso app (DATABASE_URL may be set in a shell).
 database_opened! : [Postgres, Sqlite(Str), Turso(Str)] => Try({}, Str)
 database_opened! = |wanted| {
-	given = Host.setting!("database_url")
-	file_url = given.starts_with("sqlite:") or given.starts_with("turso:")
+	url = Host.setting!("database_url")
+	checking = !Host.setting!("describe_sql").is_empty()
+	file_url = url.starts_with("sqlite:") or url.starts_with("turso:")
+	given =
+		match wanted {
+			Sqlite(_) | Turso(_) if checking and !file_url => ""
+			_ => url
+		}
 	match wanted {
 		Postgres =>
 			if given.is_empty() {

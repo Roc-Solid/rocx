@@ -390,7 +390,7 @@ function suite({ engine, name, tag, run, server, home }) {
 		await adminWorks(server().url);
 	});
 
-	test(`--describe-sql (D-058): ${name} describes each statement on a scratch file made from the program's migrations and removed after, never the program's: parameters, each column's declared type, how the host reads it, the table column it comes from and whether that is not null (none for an expression); or ${name}'s error`, { skip }, async () => {
+	test(`--describe-sql (D-058): ${name} describes each statement on a scratch file made from the program's migrations and removed after, never the program's, nor a Postgres URL in the environment: parameters, each column's declared type, how the host reads it, the table column it comes from and whether that is not null (none for an expression); or ${name}'s error`, { skip }, async () => {
 		const cwd = join(home(), "described");
 		mkdirSync(cwd, { recursive: true });
 		const list = join(cwd, "statements.json");
@@ -404,8 +404,8 @@ function suite({ engine, name, tag, run, server, home }) {
 		);
 		const scratches = () => readdirSync(tmpdir()).filter((name) => name.startsWith("rocx-check-"));
 		const before = scratches();
-		const env = { ...process.env, ROCX_LOG: "json" };
-		delete env.DATABASE_URL;
+		// A Postgres URL in the environment (as a shell after `just db` has) is no SQLite app's: left alone.
+		const env = { ...process.env, ROCX_LOG: "json", DATABASE_URL: "postgres://nobody@127.0.0.1:9/nowhere" };
 		const ran = spawnSync(apps[engine], ["--describe-sql", list], { cwd, env, encoding: "utf8" });
 		assert.equal(ran.status, 0, ran.stderr);
 		const said = JSON.parse(ran.stdout);
