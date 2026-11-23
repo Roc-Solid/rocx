@@ -118,9 +118,11 @@ export class Tab {
 		}
 	}
 
-	/** The document as it is now, parsed, with dom.mjs's queries bound to it. */
+	/** The document as it is now, parsed, with dom.mjs's queries bound to it. Between two documents
+	 * (a click that goes to another page) there is none for a moment: an empty one then, which
+	 * finds nothing, so `waitFor` looks again. */
 	async dom() {
-		return within(parse(await this.page.eval("document.documentElement.outerHTML")));
+		return within(parse(await this.page.eval(`document.documentElement?.outerHTML ?? "<html></html>"`)));
 	}
 
 	/** What a reader reads on the page now. */
