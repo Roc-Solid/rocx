@@ -1659,6 +1659,7 @@ dependencies = [
  "tokio-postgres-rustls",
  "tokio-rustls",
  "turso_core",
+ "turso_parser",
  "uuid",
  "webpki-roots",
 ]

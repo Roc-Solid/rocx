@@ -297,3 +297,30 @@ pub async fn rollback(client: &Client) {
     })
     .await;
 }
+
+/// What SQLite says of `sql`, prepared and not run (D-058's check, `db::check`): its parameters,
+/// and each column's name, declared type and where it comes from (`sqlite3_column_table_name`,
+/// `…_origin_name`), that column `not null` (or a primary key) by `sqlite3_table_column_metadata`.
+/// An expression has no declared type and no origin: SQLite doesn't type it.
+pub async fn describe(client: &Client, sql: &str) -> Result<Value, String> {
+    let sql = sql.to_string();
+    with(client, move |conn| {
+        let statement = conn.prepare(&sql).map_err(described)?;
+        let params: Vec<Value> = (1..=statement.parameter_count()).map(|index| Value::from(statement.parameter_name(index).unwrap_or("?"))).collect();
+        let declared: Vec<Option<String>> = statement.columns().map(|column| column.decl_type().map(str::to_string)).collect();
+        let mut columns = Vec::new();
+        for (index, declared) in declared.into_iter().enumerate() {
+            let name = statement.column_name(index).map_err(described)?.to_string();
+            let origin = match statement.column_metadata(index) {
+                Ok(Some((_, table, column, _, _, not_null, primary_key, _))) => {
+                    Some((table.to_string_lossy().into_owned(), column.to_string_lossy().into_owned(), not_null || primary_key))
+                }
+                _ => None,
+            };
+            let kind = super::check::sqlite_kind(declared.as_deref());
+            columns.push(super::check::Column { name, declared, kind, origin }.json());
+        }
+        Ok(serde_json::json!({ "params": params, "columns": columns }))
+    })
+    .await
+}

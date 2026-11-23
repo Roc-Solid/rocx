@@ -9,6 +9,7 @@
 //! A backend is a module here with the same functions (`connect` or `open`, `client`, `query`,
 //! `execute`, `script`, `begin`, `commit`, `rollback`, `abandon`, `listen`), and a scheme in `open`.
 
+pub mod check;
 mod postgres;
 mod sqlite;
 mod turso;
@@ -59,6 +60,9 @@ pub async fn open(url: &str) -> Result<Flavor, String> {
     if OPENED.get().is_some() {
         return Err("the database is open already".into());
     }
+    // Checking (D-058): a scratch database of the same kind, or the one named for the check.
+    let scratch = if check::active() { Some(check::scratch_for(url).await?) } else { None };
+    let url = scratch.as_deref().unwrap_or(url);
     let flavor = if url.starts_with("postgres://") || url.starts_with("postgresql://") {
         postgres::connect(url)?;
         postgres::start_listening(url).await?;

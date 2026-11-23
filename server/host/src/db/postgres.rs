@@ -50,7 +50,10 @@ pub async fn start_listening(url: &str) -> Result<(), String> {
                 Ok(AsyncMessage::Notification(notice)) => crate::live::publish(&format!("db:{}", notice.channel()), notice.payload()),
                 Ok(_) => {}
                 Err(error) => {
-                    crate::logging::error("rocx server: the connection that listens to Postgres failed", &[("error", described(error).into())]);
+                    // A check's scratch database (D-058) is dropped with this connection open.
+                    if !super::check::active() {
+                        crate::logging::error("rocx server: the connection that listens to Postgres failed", &[("error", described(error).into())]);
+                    }
                     break;
                 }
             }
@@ -255,3 +258,75 @@ fn read(row: &Row, index: usize) -> Result<Option<Value>, String> {
         }
     })
 }
+
+/// What Postgres says of `sql`, prepared and not run (D-058's check, `db::check`): its parameters,
+/// each the type Postgres gives its place (they are sent untyped, as `query` sends them), and each
+/// column's name and type, and, for one that comes straight from a table's column, whether that
+/// is `not null` (`pg_attribute.attnotnull`).
+pub async fn describe(client: &Client, sql: &str) -> Result<Value, String> {
+    let statement = client.prepare(sql).await.map_err(described)?;
+    let params: Vec<Value> = (1..=statement.params().len()).map(|n| Value::from(format!("${n}"))).collect();
+    let types: Vec<Value> = statement.params().iter().map(|ty| Value::from(ty.name())).collect();
+    let mut columns = Vec::new();
+    for column in statement.columns() {
+        let origin = match (column.table_oid(), column.column_id()) {
+            (Some(table), Some(at)) if table != 0 && at > 0 => {
+                let row = client
+                    .query_one("select attrelid::regclass::text, attname::text, attnotnull from pg_attribute where attrelid = $1 and attnum = $2", &[&table, &at])
+                    .await
+                    .map_err(described)?;
+                Some((row.get::<_, String>(0), row.get::<_, String>(1), row.get::<_, bool>(2)))
+            }
+            _ => None,
+        };
+        let ty = column.type_();
+        columns.push(super::check::Column { name: column.name().to_string(), declared: Some(ty.name().to_string()), kind: Some(kind(ty)), origin }.json());
+    }
+    Ok(serde_json::json!({ "params": params, "param_types": types, "columns": columns }))
+}
+
+/// How `read` reads a column of type `ty`: its kind, for D-058's check (`db::check`).
+fn kind(ty: &Type) -> &'static str {
+    match *ty {
+        Type::BOOL => "boolean",
+        Type::INT2 | Type::INT4 | Type::INT8 | Type::OID => "integer",
+        Type::FLOAT4 | Type::FLOAT8 => "real",
+        Type::TEXT | Type::VARCHAR | Type::BPCHAR | Type::NAME | Type::UNKNOWN | Type::UUID | Type::TIMESTAMPTZ | Type::TIMESTAMP | Type::DATE => "text",
+        Type::JSON | Type::JSONB => "json",
+        _ => "unreadable",
+    }
+}
+
+/// Makes the database `name` on the server `url` names (D-058's scratch database).
+pub async fn create_database(url: &str, name: &str) -> Result<(), String> {
+    let config: tokio_postgres::Config = url.parse().map_err(|error| format!("database url: {error}"))?;
+    let (client, connection) = config.connect(tls()).await.map_err(described)?;
+    let task = tokio::spawn(connection);
+    let made = client.batch_execute(&format!("create database \"{name}\"")).await.map_err(described);
+    drop(client);
+    let _ = task.await;
+    made
+}
+
+/// Drops the database `name` on the server `url` names, ending what is connected to it.
+pub async fn drop_database(url: &str, name: &str) -> Result<(), String> {
+    let config: tokio_postgres::Config = url.parse().map_err(|error| format!("database url: {error}"))?;
+    let (client, connection) = config.connect(tls()).await.map_err(described)?;
+    let task = tokio::spawn(connection);
+    let dropped = client.batch_execute(&format!("drop database if exists \"{name}\" with (force)")).await.map_err(described);
+    drop(client);
+    let _ = task.await;
+    dropped
+}
+
+/// `url` with its database `name` in place of the one it names: `postgres://user@host/name?…`.
+pub fn with_database(url: &str, name: &str) -> Result<String, String> {
+    let (scheme, rest) = url.split_once("://").ok_or("database url: not a postgres:// one")?;
+    let (address, query) = match rest.split_once('?') {
+        Some((address, query)) => (address, format!("?{query}")),
+        None => (rest, String::new()),
+    };
+    let server = address.split_once('/').map_or(address, |(server, _)| server);
+    Ok(format!("{scheme}://{server}/{name}{query}"))
+}
+

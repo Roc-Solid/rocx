@@ -121,6 +121,16 @@ Db := [].{
 		Text("{${Str.join_with(each, ",")}}")
 	}
 
+	## `sql` as it is, which the check of an app's statements (`rocx check --sql`, D-058) leaves alone:
+	## one on a table the app makes as it runs (`Db.script!`), not in a migration, which the check's
+	## database, built from the migrations, doesn't have.
+	##
+	## ```roc
+	## total = Db.all!(Db.unchecked("select count(*) as n from orders"), [])
+	## ```
+	unchecked : Str -> Str
+	unchecked = |sql| sql
+
 	## Every row a statement reads, each a record of its columns, by name. `BadRow` when a row
 	## doesn't fit the record: a column it lacks, a value of another type, or a null in a column the
 	## record doesn't read as `Nullable(a)` (the error names it).

@@ -448,3 +448,37 @@ pub async fn rollback(client: &Client) {
     })
     .await;
 }
+
+/// What Turso says of `sql`, prepared and not run (D-058's check, `db::check`): its parameters, and
+/// each column's name, declared type and where it comes from, read from the statement's plan (its
+/// result columns, each a table's column or an expression) as `get_column_decltype` reads it, that
+/// column's `not null` (or its being the rowid) with it. Turso refuses what it doesn't support yet,
+/// which is the point of asking it.
+pub async fn describe(client: &Client, sql: &str) -> Result<Value, String> {
+    let sql = sql.to_string();
+    with(client, move |connection, _| {
+        let statement = connection.prepare(&sql).map_err(described)?;
+        let params: Vec<Value> = (1..=statement.parameters_count())
+            .map(|index| Value::from(NonZero::new(index).and_then(|slot| statement.parameters().name(slot)).unwrap_or_else(|| "?".into())))
+            .collect();
+        let program = statement.get_program().prepared().clone();
+        let mut columns = Vec::new();
+        for index in 0..statement.num_columns() {
+            let name = statement.get_column_name(index).into_owned();
+            let declared = statement.get_column_decltype(index);
+            let origin = program.result_columns.get(index).and_then(|column| match &column.expr {
+                turso_parser::ast::Expr::Column { table, column, is_rowid_alias, .. } => {
+                    let (_, found) = program.table_references.find_table_by_internal_id(*table)?;
+                    let turso_core::schema::Table::BTree(_) = found else { return None };
+                    let at = found.get_column_at(*column)?;
+                    Some((found.get_name().to_string(), at.name.clone()?, *is_rowid_alias || at.notnull() || at.primary_key()))
+                }
+                _ => None,
+            });
+            let kind = super::check::sqlite_kind(declared.as_deref());
+            columns.push(super::check::Column { name, declared, kind, origin }.json());
+        }
+        Ok(serde_json::json!({ "params": params, "columns": columns }))
+    })
+    .await
+}

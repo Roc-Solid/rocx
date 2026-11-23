@@ -52,6 +52,43 @@ use std::time::Duration;
 /// How long a stop waits for requests, streams and jobs still running.
 const GRACE: Duration = Duration::from_secs(10);
 
+/// `--describe-sql FILE` (D-058): no HTTP, no background loops. The platform's start, on a
+/// scratch database (`db::check`), applies the program's migrations; then each statement in `FILE`
+/// (a JSON array of SQL) is prepared and described, and the answers, in the same order, go to
+/// stdout: `{ "engine": "sqlite", "statements": [{ "params": […], "columns": […] } or { "error": … }] }`.
+/// The scratch database goes, whatever happened.
+async fn described(config: http::Config, mut given: std::collections::HashMap<String, String>, file: &std::path::Path) -> Result<(), String> {
+    let text = std::fs::read_to_string(file).map_err(|error| format!("--describe-sql {}: {error}", file.display()))?;
+    let statements: Vec<String> = serde_json::from_str(&text).map_err(|error| format!("--describe-sql {}: a JSON array of SQL, each a string: {error}", file.display()))?;
+    db::check::start(config.sql_database.clone());
+    given.insert("public_url".to_string(), config.public_url.clone().unwrap_or_else(|| "http://127.0.0.1".to_string()));
+    settings::set(given);
+    let (_stop, stopping) = tokio::sync::watch::channel(false);
+    hosted::set_stop(stopping);
+    actors::start(None);
+    let started = coroutine::run(|| hosted::call(None, roc::init)).await.map_err(|_| "starting failed".to_string());
+    let answer = match started {
+        Ok(Ok(Ok(()))) => match db::flavor() {
+            Some(flavor) => {
+                let mut answers = Vec::with_capacity(statements.len());
+                for sql in &statements {
+                    answers.push(db::check::describe(sql).await);
+                }
+                Ok(serde_json::json!({ "engine": flavor.name(), "statements": answers }))
+            }
+            None if statements.is_empty() => Ok(serde_json::json!({ "engine": null, "statements": [] })),
+            None => Err("the app has no database to check against: its program says `database: Postgres`, and the check has no server to make a scratch database on: give --database-url (DATABASE_URL), or name a database the check may migrate with --sql-database URL (ROCX_SQL_DATABASE)".to_string()),
+        },
+        Ok(Ok(Err(why))) => Err(why),
+        Ok(Err(crash)) => Err(format!("starting crashed: {}", crash.0)),
+        Err(why) => Err(why),
+    };
+    db::check::finish().await;
+    let answer = answer?;
+    println!("{answer}");
+    Ok(())
+}
+
 /// The executable's entry: Roc links the app against this library, and the app has no `main` of
 /// its own.
 #[unsafe(no_mangle)]
@@ -116,7 +153,9 @@ fn served(args: Vec<String>) -> c_int {
 async fn run(config: http::Config) -> Result<(), String> {
     let mut given = std::collections::HashMap::new();
     // The platform's start opens the database (`Host.db_open!`): at this URL, or the program's file.
-    if let Some(url) = &config.database_url {
+    // A check (D-058) opens a scratch one instead (`db::check`), or the one named for it.
+    let url = if config.describe_sql.is_some() { config.sql_database.as_ref().or(config.database_url.as_ref()) } else { config.database_url.as_ref() };
+    if let Some(url) = url {
         given.insert("database_url".to_string(), url.clone());
     }
     if config.dev {
@@ -126,6 +165,9 @@ async fn run(config: http::Config) -> Result<(), String> {
         given.insert("debug".to_string(), "yes".to_string());
     }
     kv::set_limit(usize::try_from(config.kv_max_mb).unwrap_or(usize::MAX).saturating_mul(1024 * 1024));
+    if let Some(file) = config.describe_sql.clone() {
+        return described(config, given, &file).await;
+    }
 
     // The address first: a server that can't listen starts nothing (no loops to leave running into
     // a runtime that is shutting down).

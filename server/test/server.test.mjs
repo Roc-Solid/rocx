@@ -3307,6 +3307,96 @@ test("form actions: a flash nobody read is gone after a minute, though its cooki
 	assert.match(await text("/flash/page", { headers: { cookie: unread.cookie, accept: "text/html" } }), /<p class="flash">no flash<\/p>/);
 });
 
+// ---- The check of an app's SQL (D-058): --describe-sql ----
+
+/** The app's server run with `--describe-sql` over `statements` and `flags`: its exit code, what
+ * it printed (JSON, when it worked) and its log. */
+function describeSql(statements, flags) {
+	const list = join(dir, `describe-${randomBytes(4).toString("hex")}.json`);
+	writeFileSync(list, JSON.stringify(statements));
+	const env = { ...process.env, ROCX_LOG: "json", FIXTURE_KEY: "set", ...mailEnv() };
+	delete env.DATABASE_URL;
+	const ran = spawnSync(app, ["--describe-sql", list, ...flags], { env, encoding: "utf8" });
+	return { status: ran.status, said: ran.status === 0 ? JSON.parse(ran.stdout) : null, log: ran.stderr };
+}
+
+/** The databases a check made and left on the server (none, when it cleans up after itself). */
+async function scratchDatabases(db) {
+	return (await db.query("select datname from pg_database where datname like 'rocx_check_%'")).map((row) => row.datname);
+}
+
+test("--describe-sql (D-058): Postgres describes each statement on a scratch database made from the program's migrations and dropped after, never the one the app's URL names: parameters with their types, each column's type, how the host reads it, the table column it comes from and whether that is not null; or Postgres's error", { skip: skipDb }, async () => {
+	const named = await testDatabase();
+	try {
+		const left = await scratchDatabases(named);
+		const { status, said, log } = describeSql(
+			[
+				"select id, body, note from notes where id = $1",
+				"select count(*) as n, max(price) as top, meta from admin_books group by meta",
+				"select missing from notes",
+				"insert into notes (body) values ($1) returning id",
+			],
+			["--database-url", named.url],
+		);
+		assert.equal(status, 0, log);
+		assert.equal(said.engine, "postgres");
+		const [byId, books, wrong, inserted] = said.statements;
+		assert.deepEqual(byId, {
+			params: ["$1"],
+			param_types: ["int8"],
+			columns: [
+				{ name: "id", type: "int8", kind: "integer", table: "notes", column: "id", not_null: true },
+				{ name: "body", type: "text", kind: "text", table: "notes", column: "body", not_null: true },
+				{ name: "note", type: "text", kind: "text", table: "notes", column: "note", not_null: false },
+			],
+		});
+		assert.deepEqual(
+			books.columns.map(({ name, kind, not_null }) => [name, kind, not_null]),
+			[
+				["n", "integer", null],
+				["top", "unreadable", null],
+				["meta", "json", false],
+			],
+		);
+		assert.match(wrong.error, /42703: column "missing" does not exist/);
+		assert.deepEqual(inserted.params, ["$1"]);
+		assert.deepEqual(inserted.columns.map(({ name, not_null }) => [name, not_null]), [["id", true]]);
+		assert.match(log, /migrated: 0003_admin.sql/, "the migrations ran, on the scratch database");
+		assert.deepEqual(await named.query("select tablename from pg_tables where schemaname = 'public'"), [], "the database the app's URL names is untouched");
+		assert.deepEqual(await scratchDatabases(named), left, "the scratch database is gone");
+	} finally {
+		await named.drop();
+	}
+});
+
+test("--describe-sql (D-058): --sql-database names a database the check may migrate, which it migrates and keeps; without CREATEDB, and without one named, the check fails, saying what to do", { skip: skipDb }, async () => {
+	const named = await testDatabase();
+	const admin = await testDatabase();
+	const role = `rocx_nocreate_${run}`;
+	try {
+		const { status, said, log } = describeSql(["select body from notes"], ["--sql-database", named.url]);
+		assert.equal(status, 0, log);
+		assert.equal(said.statements[0].columns[0].not_null, true);
+		assert.deepEqual((await named.query("select tablename from pg_tables where tablename = 'notes'")).length, 1, "migrated");
+
+		await admin.query(`create role ${role} login password 'pw' nocreatedb`);
+		const url = new URL(admin.url);
+		url.username = role;
+		url.password = "pw";
+		const refused = describeSql(["select body from notes"], ["--database-url", url.toString()]);
+		assert.equal(refused.status, 1);
+		assert.match(refused.log, /the check can't make a scratch database on the Postgres server .*permission denied to create database.*: grant its user CREATEDB, or name a database the check may migrate with --sql-database URL \(ROCX_SQL_DATABASE\)/);
+
+		const none = describeSql(["select 1 as one"], []);
+		assert.equal(none.status, 1);
+		assert.match(none.log, /the app has no database to check against/);
+	} finally {
+		await named.drop();
+		await admin.query(`drop role if exists ${role}`);
+		await admin.drop();
+	}
+});
+
 // ---- Stopping, memory ----
 
 test("a stop lets the request being answered finish, then the server exits", { skip: skipDb }, async () => {

@@ -14,8 +14,8 @@
 // Needs the toolchain (`just setup`: Roc, and Rust for the host); no database server.
 import { describe, test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildApp, buildHost, hasRust, roc, root } from "../build.mjs";
@@ -388,6 +388,46 @@ function suite({ engine, name, tag, run, server, home }) {
 
 	test(`packages/admin on ${name}: its catalog read from SQLite's pragmas, a check's values and a foreign key as choices, a row created, found, changed and deleted, a boolean written as 1 or 0 and read back`, { skip }, async () => {
 		await adminWorks(server().url);
+	});
+
+	test(`--describe-sql (D-058): ${name} describes each statement on a scratch file made from the program's migrations and removed after, never the program's: parameters, each column's declared type, how the host reads it, the table column it comes from and whether that is not null (none for an expression); or ${name}'s error`, { skip }, async () => {
+		const cwd = join(home(), "described");
+		mkdirSync(cwd, { recursive: true });
+		const list = join(cwd, "statements.json");
+		writeFileSync(
+			list,
+			JSON.stringify([
+				"select id, name, done, note, meta, weight, count + 1 as more from items where id = $1 and name = $2",
+				"select missing from items",
+				"insert into items (name) values ($1) returning id",
+			]),
+		);
+		const scratches = () => readdirSync(tmpdir()).filter((name) => name.startsWith("rocx-check-"));
+		const before = scratches();
+		const env = { ...process.env, ROCX_LOG: "json" };
+		delete env.DATABASE_URL;
+		const ran = spawnSync(apps[engine], ["--describe-sql", list], { cwd, env, encoding: "utf8" });
+		assert.equal(ran.status, 0, ran.stderr);
+		const said = JSON.parse(ran.stdout);
+		assert.equal(said.engine, engine);
+		const [read, wrong, inserted] = said.statements;
+		assert.deepEqual(read.params, ["$1", "$2"]);
+		assert.deepEqual(
+			read.columns.map(({ name, type, kind, table, column, not_null }) => [name, type?.toLowerCase() ?? null, kind, table, column, not_null]),
+			[
+				["id", "integer", "integer", "items", "id", true],
+				["name", "text", "text", "items", "name", true],
+				["done", "boolean", "boolean", "items", "done", true],
+				["note", "text", "text", "items", "note", false],
+				["meta", "json", "json", "items", "meta", false],
+				["weight", "real", "real", "items", "weight", false],
+				["more", null, null, null, null, null],
+			],
+		);
+		assert.match(wrong.error, /no such column: missing/);
+		assert.deepEqual(inserted.columns.map(({ name, not_null }) => [name, not_null]), [["id", true]]);
+		assert.ok(!existsSync(join(cwd, "data")), "the program's file isn't made");
+		assert.deepEqual(scratches(), before, "the scratch file's directory is gone");
 	});
 }
 

@@ -67,6 +67,13 @@ pub struct Config {
     /// How many threads Roc runs on (`--roc-threads`, `ROCX_ROC_THREADS`; one a core unless they
     /// say): a call that waits holds none (`coroutine`).
     pub roc_threads: usize,
+    /// `--describe-sql FILE` (D-058): the server doesn't answer HTTP. It applies the program's
+    /// migrations to a scratch database of the app's kind, prepares each statement the file lists,
+    /// prints what the database says of each, and exits (`check`).
+    pub describe_sql: Option<PathBuf>,
+    /// `--sql-database URL` (`ROCX_SQL_DATABASE`): a database the check may migrate, named for it,
+    /// in place of the scratch one it makes.
+    pub sql_database: Option<String>,
 }
 
 pub const USAGE: &str = "usage: <app> [options]
@@ -80,7 +87,10 @@ pub const USAGE: &str = "usage: <app> [options]
   --dev                                reload pages on restart, show crashes, plugins' dev pages (/__rocx/mail)
   --debug                              GET /__rocx/allocations and /__rocx/plugin-files, and plugins' debug paths
   --live-beat-ms 15000                 how often a channel stream beats, and its checks run again
-  --roc-threads N                      the threads Roc runs on (ROCX_ROC_THREADS; one a core)";
+  --roc-threads N                      the threads Roc runs on (ROCX_ROC_THREADS; one a core)
+  --describe-sql FILE                  answer no HTTP: describe each statement FILE lists (a JSON array of SQL) on a scratch
+                                       database the program's migrations are applied to, print what the database says, exit
+  --sql-database URL                   for --describe-sql, a database it may migrate, in place of a scratch one (ROCX_SQL_DATABASE)";
 
 impl Config {
     pub fn parse(args: Vec<String>) -> Result<Config, String> {
@@ -101,6 +111,8 @@ impl Config {
             Some(given) => given.trim().parse().ok().filter(|count| *count > 0).ok_or_else(|| format!("ROCX_ROC_THREADS needs a number above 0, not {given:?}"))?,
             None => crate::coroutine::default_threads(),
         };
+        let mut describe_sql = None;
+        let mut sql_database = env("ROCX_SQL_DATABASE");
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
             let mut value = || args.next().ok_or_else(|| format!("{arg} needs a value"));
@@ -129,6 +141,8 @@ impl Config {
                 "--live-beat-ms" => live_beat_ms = value()?.parse().ok().filter(|ms| *ms > 0).ok_or("--live-beat-ms needs a number above 0")?,
                 "--roc-threads" => roc_threads = value()?.parse().ok().filter(|count| *count > 0).ok_or("--roc-threads needs a number above 0")?,
                 "--blocking-threads" => return Err("--blocking-threads is gone: a call into Roc holds no thread while it waits (D-027); --roc-threads (ROCX_ROC_THREADS) says how many threads Roc runs on".into()),
+                "--describe-sql" => describe_sql = Some(PathBuf::from(value()?)),
+                "--sql-database" => sql_database = Some(value()?),
                 "--help" | "-h" => return Err(USAGE.into()),
                 other => return Err(format!("unknown argument {other} (--help lists them)")),
             }
@@ -136,7 +150,7 @@ impl Config {
         let address = format!("{host}:{port}").parse().map_err(|error| format!("{host}:{port}: {error}"))?;
         let live_beat = Duration::from_millis(live_beat_ms);
         let public_url = public_url.map(|url| public(&url)).transpose()?;
-        Ok(Config { address, statics, files, context, database_url, actor_idle_ms, kv_max_mb, public_url, dev, debug, live_beat, roc_threads })
+        Ok(Config { address, statics, files, context, database_url, actor_idle_ms, kv_max_mb, public_url, dev, debug, live_beat, roc_threads, describe_sql, sql_database })
     }
 }
 
