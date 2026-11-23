@@ -235,7 +235,8 @@ host's GPU.
 2. **What a run that waits leaves behind.** The jump past Roc's frames leaks what they held (a few
    allocations a wait; `live allocations` is 21 after the Mac run above). The browser's host frees
    it (frames, `reclaim`) and the server's frees a failed run's list; the same is needed here.
-   Nodes taken off the engine's document stay in its arena too.
+   Nodes taken off the engine's document stay in its arena too, and every request's answer stays
+   in its table.
 3. **Layout.** `LinearLayout`s, not Taffy: blocks stack, a flex box is a row, margins collapse
    between siblings only. Inline blocks don't share a line (the field and "Send" do in a browser,
    not here), and grid, `%` lengths, positioning and wrapping aren't there. Taffy (the design's)
