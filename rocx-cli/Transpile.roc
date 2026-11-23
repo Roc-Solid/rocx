@@ -1863,6 +1863,30 @@ Transpile := [].{
 					}
 				}
 			}
+			# `<For … compared>` (D-053): a row told its item changed only when it isn't `==` the one it had.
+			compared_at = $fields.find_first_index(
+				|field|
+					match field {
+						Item(text) => text.starts_with("compared: ")
+						_ => Bool.False
+					},
+			)
+			match compared_at {
+				Ok(at) if name == "For" and packaged => {
+					value =
+						match $fields.get(at) {
+							Ok(Item(text)) => Text.trim(text.drop_prefix("compared: "))
+							_ => ""
+						}
+					if value == "Bool.True" or value == "true" {
+						$suffix = $suffix.concat("_compared")
+					} else if !(value == "Bool.False" or value == "false") {
+						return Err(Transpile.fail(cfg, "<For>'s compared is a flag: write compared (a row told its item changed only when it isn't == the one it had) or leave it out", start))
+					}
+					$fields = $fields.take_first(at).concat($fields.drop_first(at + 1))
+				}
+				_ => {}
+			}
 			# A component may make signals, as in Solid: it is an effect. A pure one (`view`, no `!`) can't.
 			effect = if (pure) "" else "!"
 			callee = if (cfg.modules.contains(name)) "${name}.view${$suffix}${effect}" else "${Transpile.snake_case(name)}${$suffix}${effect}"

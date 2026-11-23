@@ -500,6 +500,14 @@ test("<Show keyed>, <Switch> and <Match> (D-053): keyed is a flag that picks the
 	assert.match(refused(`x = <Switch>{|x| <p />}</Switch>`), /<Switch> holds <Match>es only: a function child goes in a <Match>/);
 });
 
+test("<For compared> (D-053): a flag that picks the view comparing each row's item with ==", () => {
+	const line = (source) => transpileModule(`import pf.For\n${source}`, "Page.rocx", { module: "Page" }).code.split("\n")[1];
+	assert.equal(line(`x = <For each!={xs!()} keyed={|x| x.id} compared>{|x!, _| <p>{x!().name}</p>}</For>`), `x = For.view_with_keyed_compared!({ each!: || xs!(), keyed: |x| x.id, children: |x!, _| Html.element("p", [], [Html.text_of(|| x!().name),]), })`);
+	assert.equal(line(`x = <For each!={xs!()} keyed={Bool.False} compared>{|x!, i| <p>{x!()}</p>}</For>`), `x = For.view_with_unkeyed_compared!({ each!: || xs!(), children: |x!, i| Html.element("p", [], [Html.text_of(|| x!()),]), })`);
+	assert.equal(line(`x = <For each!={xs!()} keyed={|x| x.id} compared={Bool.False}>{|x!, _| <p />}</For>`), `x = For.view_with_keyed!({ each!: || xs!(), keyed: |x| x.id, children: |x!, _| Html.element("p", [], []), })`);
+	assert.throws(() => line(`x = <For each!={xs!()} keyed={|x| x.id} compared={|x| x.id}>{|x!, _| <p />}</For>`), /<For>'s compared is a flag/);
+});
+
 test("<NoHydration>: what is inside renders on the server only; the browser's copy has none of it, nor an import only it used", () => {
 	const source = [
 		"import pf.Html",
