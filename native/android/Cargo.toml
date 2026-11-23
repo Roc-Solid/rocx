@@ -1,0 +1,16 @@
+[package]
+name = "rocx-android"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "The native host's Android half: JNI for the Kotlin applier, the main looper's wakeups, logcat"
+
+[lib]
+# native/android/build.sh links it with the app's Roc (an archive) into the app's libapp.so.
+crate-type = ["staticlib"]
+path = "src/lib.rs"
+
+[dependencies]
+rocx-native-core = { path = "../core" }
+jni = { version = "0.21", default-features = false }
+libc = "0.2"

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app's Android shell (D-063's spike), filled in by native/android/build.sh: @PACKAGE@ (the
+     app id), @LABEL@ (its name on the launcher) and @ORIGIN@ (its server). No JavaScript, no
+     WebView: one activity, whose views the Kotlin applier makes from the native host's ops. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="@PACKAGE@"
+    android:versionCode="1"
+    android:versionName="0.1">
+    <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="36" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <application
+        android:label="@LABEL@"
+        android:hasCode="true"
+        android:extractNativeLibs="false"
+        android:usesCleartextTraffic="true"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <activity
+            android:name="dev.rocx.phone.RocxActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize|uiMode"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <meta-data android:name="rocx.origin" android:value="@ORIGIN@" />
+        </activity>
+    </application>
+</manifest>

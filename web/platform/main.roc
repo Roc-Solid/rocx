@@ -95,6 +95,12 @@ platform ""
 			exports: ["mount", "run", "release", "result_ptr", "result_len", "live_allocations", "allocations", "frame_begin", "frame_end", "frame_unwound", "reclaim"],
 			initial_stack_size: 1048576,
 		},
+		# The phone (D-063's spike): the app alone, as an archive that native/android/build.sh links
+		# with the native host into an Android library (the NDK's clang). Roc has no Android target
+		# yet; its static Linux objects for arm64 (musl: no C library in them) link as Android's.
+		# And the Mac's, for the native host's tests on the Mac (native/mac).
+		arm64musl: { inputs: [app], output: Archive },
+		arm64mac: { inputs: [app], output: Archive },
 	}
 
 import Host

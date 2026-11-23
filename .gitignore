@@ -56,3 +56,7 @@ bin/.rocx-opt
 *.db-shm
 *.db-wal
 web/test/nav/Generated/
+
+# The native host's builds (D-063's spike): cargo's, and an app's APK and what it is made from
+native/target/
+native/android/build/

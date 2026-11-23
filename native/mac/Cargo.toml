@@ -1,0 +1,13 @@
+[package]
+name = "rocx-native-mac"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Runs an app on the native host on the Mac, as a phone would, for tests: its screen as text, taps and typing as steps"
+
+[[bin]]
+name = "rocx-native-mac"
+path = "src/main.rs"
+
+[dependencies]
+rocx-native-core = { path = "../core" }

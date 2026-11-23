@@ -1,0 +1,64 @@
+import pf.Html
+import pf.Solid exposing [create_signal!, create_memo!, refresh!]
+import pf.Endpoint
+import pf.Call
+import pf.Loading
+import pf.Errored
+import pf.Server
+import ../Generated/Api
+
+## The one screen, the same `.rocx` in a browser and on a phone (D-063's spike): a counter, a value
+## read from the server through the app's contract (`Api`) with `<Loading>` while it comes, and a
+## field whose text a button posts to the server, the typed answer shown.
+meta = { title: "Phone hello" }
+
+view! = |_| {
+	(count!, set_count!) = create_signal!(0.I64)
+	greeting! = create_memo!(|| Endpoint.get!(Api.get_api_greeting({})))
+	(draft!, set_draft!) = create_signal!("")
+	(said!, set_said!) = create_signal!("Nothing sent yet")
+	# A handler that waits for the server: it stops while the answer is on its way, and runs again
+	# once it is in, as in the browser.
+	send! = || {
+		match Endpoint.send!(Api.post_api_echo({}), { text: draft!() }, Call.fetch!) {
+			Ok(answer) => set_said!("${answer.shout} (${answer.length.to_str()} characters)")
+			Err(problem) => set_said!("Not sent: ${Server.explain(problem)}")
+		}
+	}
+	<main>
+		<h1>Roc Solid on a phone</h1>
+		<section class="counter">
+			<p>Tapped {count!().to_str()} times</p>
+			<button on:click={|| set_count!(count!() + 1)}>Tap</button>
+		</section>
+		<section class="greeting">
+			<Errored fallback={|problem, retry|
+				<div>
+					<p>{problem}</p>
+					<button on:click={retry}>Again</button>
+				</div>
+			}>
+				<Loading fallback={<p>Asking the server…</p>}>
+					<p>{greeting!().message}</p>
+					<p>Server clock: {greeting!().at.to_str()}</p>
+				</Loading>
+			</Errored>
+			<button on:click={|| refresh!(greeting!)}>Ask again</button>
+		</section>
+		<section class="echo">
+			<input value={draft!()} on:input.value={set_draft!} placeholder="Say something" />
+			<button on:click={send!}>Send</button>
+			<p>{said!()}</p>
+		</section>
+	</main>
+}
+
+<style>
+	main {
+		padding: 1rem;
+		font-family: system-ui, sans-serif;
+	}
+	section {
+		margin-top: 1rem;
+	}
+</style>

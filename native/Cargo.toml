@@ -1,0 +1,17 @@
+# The native host for phones (D-063's spike): native/core is the engine (web/runtime.js's, in
+# Rust, without the DOM), native/android the Android half (JNI, the main looper), native/mac a
+# runner on the Mac that drives an app the way the phone does, for tests.
+[workspace]
+resolver = "3"
+members = ["core", "android", "mac"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+debug = false
+strip = "symbols"
+
+[profile.dev]
+panic = "abort"
