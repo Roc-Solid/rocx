@@ -213,7 +213,7 @@ Site := [].{
 		b = field(facts, "bench")
 		bench_line =
 			match b {
-				Object(_) => "\tbench = [{ measured: ${q(Value.str(field(b, "measured")))}, commit: ${q(Value.str(field(b, "commit")))}, machine: ${q(Value.str(field(b, "machine")))}, load: ${q(Value.str(field(b, "load")))}, opt: ${q(Value.str(field(b, "opt")))}, seconds: ${Site.int(field(b, "seconds"))}, roc_us: ${Site.int(field(b, "roc_us"))}, levels: [${Str.join_with(Value.items(field(b, "levels")).map(level), ", ")}] }]"
+				Object(_) => "\tbench = [{ measured: ${q(Value.str(field(b, "measured")))}, commit: ${q(Value.str(field(b, "commit")))}, machine: ${q(Value.str(field(b, "machine")))}, load: ${q(Value.str(field(b, "load")))}, opt: ${q(Value.str(field(b, "opt")))}, seconds: ${Site.int(field(b, "seconds"))}, roc_us: ${Site.int(field(b, "roc_us"))}, levels: [${Str.join_with(Value.items(field(b, "levels")).map(level), ", ")}], hardware: ${Site.machine_record(field(b, "hardware"))} }]"
 				_ => "\tbench = []"
 			}
 		runtime = size(field(facts, "runtime"))
@@ -226,7 +226,8 @@ Site := [].{
 				"\tSize : { bytes : U64, gzip : U64, brotli : U64 }",
 				"\tExample : { name : Str, title : Str, pages : U64, endpoints : U64, lines : U64, expects : U64, tests : U64, pkgs : List(Str), database : Str, wasm : List(Size) }",
 				"\tLevel : { connections : U64, rps : U64, p50_us : U64, p99_us : U64, errors : U64 }",
-				"\tBench : { measured : Str, commit : Str, machine : Str, load : Str, opt : Str, seconds : U64, roc_us : U64, levels : List(Level) }",
+				"\tHardware : { model : Str, cpu : Str, cores : Str, memory : Str, storage : Str, os : Str, arch : Str, power : Str }",
+				"\tBench : { measured : Str, commit : Str, machine : Str, load : Str, opt : Str, seconds : U64, roc_us : U64, levels : List(Level), hardware : Hardware }",
 				"",
 				"\t## When, at which commit, with which compiler, and on what the sizes were measured.",
 				"\tmeasured : { date : Str, commit : Str, roc : Str, machine : Str }",
@@ -257,8 +258,17 @@ Site := [].{
 		Str.join_with(lines, "\n")
 	}
 
+	## A machine's facts as a Roc record (site/machine.mjs's; "" where there are none: a benchmark
+	## from before they were kept).
+	machine_record : Value -> Str
+	machine_record = |facts| {
+		keys = ["model", "cpu", "cores", "memory", "storage", "os", "arch", "power"]
+		"{ ${Str.join_with(keys.map(|key| "${key}: ${Text.roc_string(Value.str(Value.field(facts, key)))}"), ", ")} }"
+	}
+
 	## site/Generated/DbBench.roc: `results` (site/sqlite-vs-turso.json, or `Null` before it was run)
-	## as values examples/sqlite-vs-turso's page reads.
+	## as values examples/sqlite-vs-turso's page reads. A file from before runs in a row (one median a
+	## workload, `machine` a line) has no workloads here, and no machine.
 	db_bench_module : Value -> Str
 	db_bench_module = |results| {
 		q = Text.roc_string
@@ -267,11 +277,27 @@ Site := [].{
 		number = |key| Site.int(field(results, key))
 		engines = Value.items(field(results, "engines"))
 		keys = engines.map(|e| Value.str(field(e, "key")))
+		first_workload =
+			match Value.items(field(results, "workloads")).first() {
+				Ok(w) => w
+				Err(_) => Null
+			}
+		first_key =
+			match keys.first() {
+				Ok(key) => key
+				Err(_) => ""
+			}
+		fresh =
+			match field(field(field(first_workload, "results"), first_key), "ns") {
+				Array(_) => Bool.True
+				_ => Bool.False
+			}
+		list = |values| "[${Str.join_with(Value.items(values).map(Site.int), ", ")}]"
 		engine = |e| "{ key: ${q(Value.str(field(e, "key")))}, label: ${q(Value.str(field(e, "label")))}, note: ${q(Value.str(field(e, "note")))}, version: ${q(Value.str(field(e, "version")))} }"
 		workload = |w| {
 			result = |key| {
 				r = field(field(w, "results"), key)
-				"{ engine: ${q(key)}, ns: ${Site.int(field(r, "ns"))}, runs: ${Site.int(field(r, "runs"))} }"
+				"{ engine: ${q(key)}, ns: ${list(field(r, "ns"))}, runs: ${list(field(r, "runs"))} }"
 			}
 			[
 				"\t\t{",
@@ -283,30 +309,37 @@ Site := [].{
 				"\t\t},",
 			]
 		}
-		workloads = |key| Value.items(field(results, key)).fold([], |all, w| all.concat(workload(w)))
+		workloads = |key| if (fresh) Value.items(field(results, key)).fold([], |all, w| all.concat(workload(w))) else []
+		machine = if (fresh) field(results, "machine") else Null
 		lines =
 			[
 				"## Written by `rocx site prepare` from site/sqlite-vs-turso.json, which site/sqlite-vs-turso.mjs",
 				"## measures. Run that again (`just db-bench`), not this one.",
 				"DbBench := [].{",
 				"\tEngine : { key : Str, label : Str, note : Str, version : Str }",
-				"\tResult : { engine : Str, ns : U64, runs : U64 }",
+				"",
+				"\t## An engine's time for a workload in each run, in order (nanoseconds), and its transactions' runs.",
+				"\tResult : { engine : Str, ns : List(U64), runs : List(U64) }",
 				"\tWorkload : { name : Str, what : Str, callers : U64, ops : U64, results : List(Result) }",
 				"",
-				"\t## When, at which commit, on what, how big (the everyday run's items; the big run's orders and customers) and how many times it was run.",
-				"\tmeasured : { date : Str, commit : Str, machine : Str, load : Str, opt : Str, size : U64, rows : U64, orders : U64, customers : U64, rounds : U64 }",
-				"\tmeasured = { date: ${q(text("measured"))}, commit: ${q(text("commit"))}, machine: ${q(text("machine"))}, load: ${q(text("load"))}, opt: ${q(text("opt"))}, size: ${number("size")}, rows: ${number("rows")}, orders: ${number("orders")}, customers: ${number("customers")}, rounds: ${number("rounds")} }",
+				"\t## When, at which commit, how big (the everyday run's items; the big run's orders and customers), and how many runs in a row of each.",
+				"\tmeasured : { date : Str, commit : Str, load : Str, opt : Str, size : U64, rows : U64, orders : U64, customers : U64, runs : U64, big_runs : U64 }",
+				"\tmeasured = { date: ${q(text("measured"))}, commit: ${q(text("commit"))}, load: ${q(text("load"))}, opt: ${q(text("opt"))}, size: ${number("size")}, rows: ${number("rows")}, orders: ${number("orders")}, customers: ${number("customers")}, runs: ${number("runs")}, big_runs: ${number("bigRuns")} }",
+				"",
+				"\t## What it ran on (site/machine.mjs).",
+				"\tmachine : { model : Str, cpu : Str, cores : Str, memory : Str, storage : Str, os : Str, arch : Str, power : Str }",
+				"\tmachine = ${Site.machine_record(machine)}",
 				"",
 				"\t## The engines, in the page's order.",
 				"\tengines : List(Engine)",
 				"\tengines = [${Str.join_with(engines.map(engine), ", ")}]",
 				"",
-				"\t## Each everyday workload, its median time on each engine.",
+				"\t## Each everyday workload, its time on each engine in each run.",
 				"\tworkloads : List(Workload)",
 				"\tworkloads = [",
 			]
 				.concat(workloads("workloads"))
-				.concat(["\t]", "", "\t## Each workload of the big run (a million orders), its median time on each engine.", "\tbig : List(Workload)", "\tbig = ["])
+				.concat(["\t]", "", "\t## Each workload of the big run (a million orders), its time on each engine in each run.", "\tbig : List(Workload)", "\tbig = ["])
 				.concat(workloads("big"))
 				.concat(["\t]", "}", ""])
 		Str.join_with(lines, "\n")

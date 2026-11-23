@@ -337,9 +337,10 @@ example-apps *args:
 
 # Runs examples/sqlite-vs-turso's benchmark for its docs page (/examples/sqlite-vs-turso) into
 # site/sqlite-vs-turso.json: the app built with --opt=speed, then on SQLite, on Turso (MVCC) and on
-# Turso in WAL mode, three rounds each, POST /bench at size 100 after a warm-up on a fresh file and
-# POST /bench/big at a million orders on another, each workload's median (five to ten minutes; best
-# on a quiet machine). `just db-bench --size 10 --orders 100000 --rounds 1` for a quick look. Commit the
+# Turso in WAL mode, each on files kept for the whole of it, POST /bench at size 100 ten times in a
+# row (after a warm-up) and POST /bench/big at a million orders ten times in a row on another, every
+# run's times kept, with the machine they ran on (eight minutes or so; best on a quiet machine,
+# plugged in). `just db-bench --size 10 --orders 100000 --series 3` for a quick look. Commit the
 # file: the site's build reads it, and doesn't measure.
 db-bench *args:
     ROC={{ roc }} node site/sqlite-vs-turso.mjs {{ args }}

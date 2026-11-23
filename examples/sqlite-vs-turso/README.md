@@ -43,7 +43,7 @@ From the repository's root, with the toolchain set up (`just setup`):
 
 ```sh
 just examples sqlite-vs-turso    # build, check, lint, expects, and its tests on all three engines
-just db-bench                    # the docs' numbers: site/sqlite-vs-turso.json (ten minutes or so)
+just db-bench                    # the docs' numbers: site/sqlite-vs-turso.json (eight minutes or so)
 ```
 
 By hand:
@@ -55,11 +55,13 @@ node server/build.mjs examples/sqlite-vs-turso/main.roc /tmp/bench/app --opt=spe
 curl -s -X POST localhost:18090/bench -H 'content-type: application/json' -d '{"size":10}'
 ```
 
-`just db-bench` (`site/sqlite-vs-turso.mjs`) does that on each engine, three rounds: on a fresh
-file a small run to warm up and one at size 100 (20,000 items), and on another fresh file the big
-run at a million orders; each workload's time the median of the three. The big run gets a file of
-its own because on Turso's MVCC what an earlier run wrote (versions kept in memory) slows later
-reads two or three times, even of tables it never touched. The docs show them at `/examples/sqlite-vs-turso`. Measure on a quiet machine, and compare
+`just db-bench` (`site/sqlite-vs-turso.mjs`) does that on each engine as an app's database lives,
+written and read for a long time: on one file, a small run to warm up, then ten at size 100 (20,000
+items) in a row; on another file, the big run at a million orders ten times in a row. Every run's
+times are kept, and the page shows the first run, the first three or all ten (their average, the
+fastest and the slowest), with the machine they ran on (`site/machine.mjs`). The big run gets a
+file of its own because on Turso's MVCC what an earlier run wrote (versions kept in memory) slows
+later reads two or three times, even of tables it never touched. The docs show them at `/examples/sqlite-vs-turso`. Measure on a quiet machine, and compare
 the engines with each other rather than with another machine's numbers.
 
 A Turso file in MVCC mode is Turso's alone: run the app on a fresh path for each engine (SQLite
@@ -67,5 +69,5 @@ can't open it, and says how to give it back: `turso:<path>?mvcc=off`, once).
 
 On Turso a run checkpoints after deleting the last run's rows (`Bench.fresh!`): without it, once
 Turso has checkpointed rows, deleting them slows every later statement 75 to 250 times until its
-next checkpoint, a third run on one file taking minutes (turso_core 0.8.4; D-049). `just db-bench`
-starts each round on a fresh file anyway.
+next checkpoint, a third run on one file taking minutes (turso_core 0.8.4; D-049). With it, ten runs
+in a row on one file stay as quick as the first.

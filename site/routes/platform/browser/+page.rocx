@@ -1,5 +1,6 @@
 import pf.Html
 import ../../../Ui/Heading
+import ../../../Ui/Machine
 import ../../../Ui/Callout
 import ../../../Ui/Code
 import ../../../Generated/Sources
@@ -25,6 +26,17 @@ meta = {
 		{ id: "numbers", label: "The numbers" },
 		{ id: "memory", label: "Memory" },
 	],
+}
+
+## What the build measured on (site/machine.mjs, among its facts), for the table of builds: "" for
+## what it didn't record (a build from before it did).
+machine! : {} => Machine.Facts
+machine! = |{}| {
+	known! = |key| {
+		value = Facts.fact!("machine_${key}")
+		if (value == "?") "" else value
+	}
+	{ model: known!("model"), cpu: known!("cpu"), cores: known!("cores"), memory: known!("memory"), storage: known!("storage"), os: known!("os"), arch: known!("arch"), power: known!("power") }
 }
 
 view! = |_| {
@@ -217,6 +229,7 @@ view! = |_| {
 				{Facts.fact!("runtime_gzip")} of JavaScript, gzipped. The <a href={Paths.showcase}>showcase</a> measures
 				itself as it runs: frames a second, and what each costs, Roc and the patches together.
 			</p>
+			<Machine machine={machine!({})} />
 			<p>
 				What weighs most is Roc's float code. Parsing a float from a string costs about 18 KB
 				compressed, printing one about 12 KB, and sine and cosine about 5 KB, measured by building

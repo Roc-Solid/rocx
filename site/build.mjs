@@ -38,6 +38,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { brotliCompressSync, constants, gzipSync } from "node:zlib";
 import { definitionsOf, findRouteFiles, routeTable } from "../rocx-cli/rocx.mjs";
+import { machine } from "./machine.mjs";
 import { Runtime } from "../web/runtime.js";
 import { buildApp, buildHost, rocxBinary, start, zig } from "../server/build.mjs";
 
@@ -285,6 +286,8 @@ async function measure({ compare }) {
 		built: new Date().toISOString().slice(0, 10),
 		// Not a dev build's: `just deploy-pages` publishes only a build that says so.
 		dev: "no",
+		// What it was measured on (site/machine.mjs), for the pages that show the timings.
+		...Object.fromEntries(Object.entries(machine()).map(([key, value]) => [`machine_${key}`, value])),
 	};
 	// The comparison takes two more builds, so only `node site/build.mjs` makes it; a build that
 	// doesn't keeps the last one it finds (marked as such on the page by its own date).

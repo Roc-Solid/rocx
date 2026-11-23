@@ -3,6 +3,7 @@ import ../AppNotes
 import ../Generated/ExampleApps
 import ../Generated/Paths
 import Heading
+import Machine
 import PageHero
 import Button
 import Stats
@@ -157,8 +158,9 @@ ExampleApp := [].{
 						</table>
 					</TableWrap>
 					<p>
-						{"Of a request's time, Roc's own (the median of the "}<code>server-timing</code>{" its answers carry, one request at a time) is ${ExampleApp.time(it.roc_us)}: the rest is HTTP and the host. Measured on ${it.measured}, at commit "}<code>{it.commit}</code>{", on an ${it.machine}, with bombardier on the same machine competing for its cores, and the machine busy with other work besides (its load average was ${it.load} during the run): read them as a floor, not a ceiling."}
+						{"Of a request's time, Roc's own (the median of the "}<code>server-timing</code>{" its answers carry, one request at a time) is ${ExampleApp.time(it.roc_us)}: the rest is HTTP and the host. Measured on ${it.measured}, at commit "}<code>{it.commit}</code>{", with bombardier on the same machine competing for its cores, and the machine busy with other work besides (its load average was ${it.load} during the run): read them as a floor, not a ceiling."}
 					</p>
+					<Machine machine={it.hardware} />
 				</>
 			Err(_) => <p class="missing">Not measured yet: run <code>just example-apps --bench</code>.</p>
 		}

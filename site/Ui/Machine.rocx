@@ -1,0 +1,87 @@
+import pf.Html
+
+## What a benchmark ran on, under its numbers: the machine, its processor and cores, its memory,
+## storage and system, and whether it ran on mains power or a battery. site/machine.mjs reads them as
+## a benchmark measures, and each benchmark's file keeps them; what it couldn't read is left out.
+## Pure.
+Machine := [].{
+
+	## The machine, as site/machine.mjs records it ("" where it couldn't tell).
+	Facts : { model : Str, cpu : Str, cores : Str, memory : Str, storage : Str, os : Str, arch : Str, power : Str }
+
+	view : { machine : Machine.Facts } -> Html
+	view = |{ machine }| {
+		shown = Machine.rows(machine)
+		if shown.is_empty() {
+			<p class="machine-unknown">What it ran on wasn't recorded.</p>
+		} else {
+			<div class="machine">
+				<p class="ran-on">Ran on</p>
+				<dl>{...shown.map(|row| <div><dt>{row.label}</dt><dd>{row.value}</dd></div>)}</dl>
+			</div>
+		}
+	}
+
+	## The machine's facts that were recorded, each with its label.
+	rows : Machine.Facts -> List({ label : Str, value : Str })
+	rows = |m| {
+		processor = if (m.arch.is_empty() or m.cpu.is_empty()) m.cpu else "${m.cpu} (${m.arch})"
+		[
+			{ label: "Machine", value: m.model },
+			{ label: "Processor", value: processor },
+			{ label: "Cores", value: m.cores },
+			{ label: "Memory", value: m.memory },
+			{ label: "Storage", value: m.storage },
+			{ label: "System", value: m.os },
+			{ label: "Power", value: m.power },
+		].keep_if(|row| !row.value.is_empty())
+	}
+
+	<story name="A laptop">
+		<Machine machine={{ model: "MacBook Pro (Mac17,2)", cpu: "Apple M5", cores: "10 (4 performance, 6 efficiency)", memory: "32 GB", storage: "SSD, APFS", os: "macOS 27.0.1", arch: "arm64", power: "mains" }} />
+	</story>
+
+	<story name="Not recorded">
+		<Machine machine={{ model: "", cpu: "", cores: "", memory: "", storage: "", os: "", arch: "", power: "" }} />
+	</story>
+
+	<style>
+		.machine {
+			margin: var(--space-5) 0;
+			padding: var(--space-4) var(--space-5);
+			border: 1px solid var(--rule);
+			border-radius: var(--radius);
+			background: var(--bg-raised);
+		}
+
+		.ran-on {
+			margin: 0 0 var(--space-3);
+			font-size: var(--size-sm);
+			font-weight: 700;
+			letter-spacing: 0.06em;
+			text-transform: uppercase;
+			color: var(--text-muted);
+		}
+
+		.machine dl {
+			display: grid;
+			grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+			gap: var(--space-3) var(--space-5);
+			margin: 0;
+		}
+
+		.machine dt {
+			font-size: var(--size-sm);
+			color: var(--text-muted);
+		}
+
+		.machine dd {
+			margin: 0;
+		}
+
+		.machine-unknown {
+			font-size: var(--size-sm);
+			color: var(--text-muted);
+		}
+	</style>
+}

@@ -22,6 +22,7 @@ import { basename, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { brotliCompressSync, constants, gzipSync } from "node:zlib";
 import { buildApp, roc, rocxBinary } from "../server/build.mjs";
+import { machine } from "./machine.mjs";
 
 export const root = join(import.meta.dirname, "..");
 export const factsFile = join(root, "site", "example-apps.json");
@@ -114,7 +115,7 @@ function browserHalf(name, rocx) {
 }
 
 /** The machine, as the page says it: "Apple M5, 10 cores". */
-function machine() {
+function machineName() {
 	const model = spawnSync("sysctl", ["-n", "machdep.cpu.brand_string"], { encoding: "utf8" }).stdout?.trim() || cpus()[0]?.model || "an unknown CPU";
 	return `${model}, ${cpus().length} cores`;
 }
@@ -171,7 +172,8 @@ async function bench(rocx, seconds = 10) {
 			app: "echo",
 			measured: today(),
 			commit: commit(),
-			machine: machine(),
+			machine: machineName(),
+			hardware: machine(),
 			load: `${load.toFixed(1)} → ${loadavg()[0].toFixed(1)}`,
 			opt: "speed",
 			seconds,
@@ -209,7 +211,7 @@ async function main(args) {
 		measured: counted ? before.measured : today(),
 		commit: counted ? before.commit : commit(),
 		roc: run(roc(), ["version"]).trim().replace(/^Roc compiler version /, ""),
-		machine: machine(),
+		machine: machineName(),
 		runtime: sizes(readFileSync(join(root, "web", "runtime.js"))),
 		examples,
 		bench: args.includes("--bench") ? await bench(rocx) : before.bench,

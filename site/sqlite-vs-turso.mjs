@@ -1,27 +1,29 @@
 #!/usr/bin/env node
 // Runs examples/sqlite-vs-turso's benchmark for the docs, into site/sqlite-vs-turso.json (committed):
 // the app built as it would ship (--opt=speed), then, for each engine it compares (SQLite; Turso,
-// its writes at once, MVCC; Turso in WAL mode, its writes taking turns), `rounds` rounds of two
-// servers, each started on a fresh file of its own: one asked POST /bench once small to warm up,
-// then once at `size`; the other POST /bench/big once at `orders`. The big run gets a file of its
-// own because on Turso's MVCC what an earlier run wrote (versions kept in memory) slows later reads
-// two or three times, even of tables it never touched. A fresh file each round: on Turso's MVCC, rounds on one file (each deleting every row and
-// writing them again) slow down past what one round measures. Each workload's time is the median
-// of the rounds, as Roc timed it in the server (Time.now_nanos! around its Db calls), so no HTTP is
-// in it. With the machine, its load, the commit, and the engines' versions.
+// its writes at once, MVCC; Turso in WAL mode, its writes taking turns), two servers, each started
+// on a fresh file of its own and kept: one asked POST /bench once small to warm up, then `series`
+// times in a row at `size`; the other POST /bench/big `bigSeries` times in a row at `orders`. Runs
+// in a row on one file are how an app's database lives, written and read for a long time: on
+// Turso's MVCC what an earlier run wrote (versions kept in memory) slows later reads, even of
+// tables it never touched, so the big run gets a file of its own, and the page shows the first
+// run, the first three and all ten (min, average, max). Each run's time for each workload is kept,
+// as Roc timed it in the server (Time.now_nanos! around its Db calls), so no HTTP is in it. With
+// the machine (site/machine.mjs), its load, the commit, and the engines' versions.
 //
-//   node site/sqlite-vs-turso.mjs                  size 100 (20,000 items), a million orders, 3 rounds
-//   node site/sqlite-vs-turso.mjs --size 10 --orders 100000 --rounds 1
+//   node site/sqlite-vs-turso.mjs                  size 100 (20,000 items), a million orders, 10 runs of each
+//   node site/sqlite-vs-turso.mjs --size 10 --orders 100000 --series 3 --big-series 2
 //
 // The site's build (`rocx site prepare`, rocx-cli/Site.roc) writes site/Generated/DbBench.roc from
-// the file, and the app's page (/examples/sqlite-vs-turso) shows it. It takes ten minutes or so, so
-// the site's build doesn't run it: `just db-bench` does.
+// the file, and the app's page (/examples/sqlite-vs-turso) shows it. It takes a while, so the site's
+// build doesn't run it: `just db-bench` does.
 import { spawn, spawnSync } from "node:child_process";
 import { request } from "node:http";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { cpus, loadavg, tmpdir } from "node:os";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { loadavg, tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildApp, roc, rocxBinary } from "../server/build.mjs";
+import { machine, machineLine } from "./machine.mjs";
 
 export const root = join(import.meta.dirname, "..");
 export const resultsFile = join(root, "site", "sqlite-vs-turso.json");
@@ -37,11 +39,6 @@ function run(command, args, options = {}) {
 	const done = spawnSync(command, args, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...options });
 	if (done.status !== 0) throw new Error(`${command} ${args.join(" ")} failed:\n${done.stdout}\n${done.stderr}`);
 	return done.stdout;
-}
-
-function machine() {
-	const model = spawnSync("sysctl", ["-n", "machdep.cpu.brand_string"], { encoding: "utf8" }).stdout?.trim() || cpus()[0]?.model || "an unknown CPU";
-	return `${model}, ${cpus().length} cores`;
 }
 
 /** turso_core's version, as the host's Cargo.lock pins it. */
@@ -86,13 +83,8 @@ function posted(origin, path, asked) {
 	});
 }
 
-const median = (values) => {
-	const sorted = [...values].sort((a, b) => a - b);
-	return sorted[Math.floor(sorted.length / 2)];
-};
-
-/** Each workload of the first report, with each engine's median time and runs over its reports' (`of` picks the list). */
-function medians(reports, of) {
+/** Each workload of the first report, with each engine's time and runs in every report, in order (`of` picks the list). */
+function series(reports, of) {
 	return of(reports.sqlite[0]).map((workload, index) => ({
 		name: workload.name,
 		what: workload.what,
@@ -101,13 +93,24 @@ function medians(reports, of) {
 		results: Object.fromEntries(
 			engines.map((engine) => {
 				const each = reports[engine.key].map((report) => of(report)[index]);
-				return [engine.key, { ns: median(each.map((w) => w.ns)), runs: median(each.map((w) => w.runs)) }];
+				return [engine.key, { ns: each.map((w) => w.ns), runs: each.map((w) => w.runs) }];
 			}),
 		),
 	}));
 }
 
-export async function measure({ size = 100, orders = 1000000, rounds = 3 } = {}) {
+/** `count` runs in a row of `ask` (its index given), each logged with how long it took: the reports. */
+async function inARow(label, count, ask) {
+	const reports = [];
+	for (let i = 0; i < count; i++) {
+		const started = performance.now();
+		reports.push(await ask(i));
+		process.stderr.write(`${label}: run ${i + 1} of ${count}, ${((performance.now() - started) / 1000).toFixed(1)} s\n`);
+	}
+	return reports;
+}
+
+export async function measure({ size = 100, orders = 1000000, runs = 10, bigRuns = runs } = {}) {
 	const rocx = rocxBinary();
 	run(rocx, ["build", "examples/sqlite-vs-turso"], { env: { ...process.env, ROC: roc() } });
 	const work = mkdtempSync(join(tmpdir(), "rocx-sqlite-vs-turso-"));
@@ -118,35 +121,27 @@ export async function measure({ size = 100, orders = 1000000, rounds = 3 } = {})
 	const bigs = {};
 	try {
 		for (const engine of engines) {
-			reports[engine.key] = [];
-			bigs[engine.key] = [];
-			for (let round = 0; round < rounds; round++) {
-				const server = await start(executable, engine.url(join(work, `${engine.key}-${round + 1}`)), work);
-				try {
-					await bench(server.origin, Math.max(1, Math.floor(size / 10)));
-					reports[engine.key].push(await bench(server.origin, size));
-				} finally {
-					await server.stop();
-				}
-				const big = await start(executable, engine.url(join(work, `${engine.key}-${round + 1}-big`)), work);
-				try {
-					bigs[engine.key].push(await posted(big.origin, "/bench/big", { orders }));
-				} finally {
-					await big.stop();
-				}
-				process.stderr.write(`${engine.label}: round ${round + 1} of ${rounds}\n`);
+			const server = await start(executable, engine.url(join(work, engine.key)), work);
+			try {
+				await bench(server.origin, Math.max(1, Math.floor(size / 10)));
+				reports[engine.key] = await inARow(`${engine.label}, everyday`, runs, () => bench(server.origin, size));
+			} finally {
+				await server.stop();
+			}
+			const big = await start(executable, engine.url(join(work, `${engine.key}-big`)), work);
+			try {
+				bigs[engine.key] = await inARow(`${engine.label}, a million rows`, bigRuns, () => posted(big.origin, "/bench/big", { orders }));
+			} finally {
+				await big.stop();
 			}
 		}
 	} finally {
 		rmSync(work, { recursive: true, force: true });
 	}
 	const first = reports.sqlite[0];
-	const workloads = medians(reports, (report) => report.workloads);
-	const big = medians(bigs, (report) => report.workloads);
-	const commit = run("git", ["rev-parse", "--short", "HEAD"]).trim();
 	return {
 		measured: new Date().toISOString().slice(0, 10),
-		commit,
+		commit: run("git", ["rev-parse", "--short", "HEAD"]).trim(),
 		machine: machine(),
 		load: `${loadBefore.toFixed(1)} → ${loadavg()[0].toFixed(1)}`,
 		opt: "speed",
@@ -154,15 +149,16 @@ export async function measure({ size = 100, orders = 1000000, rounds = 3 } = {})
 		rows: first.rows,
 		orders: bigs.sqlite[0].orders,
 		customers: bigs.sqlite[0].customers,
-		rounds,
+		runs,
+		bigRuns,
 		engines: engines.map((engine) => ({
 			key: engine.key,
 			label: engine.label,
 			note: engine.note,
 			version: engine.key === "sqlite" ? `SQLite ${reports.sqlite[0].version}` : `turso_core ${tursoVersion()}`,
 		})),
-		workloads,
-		big,
+		workloads: series(reports, (report) => report.workloads),
+		big: series(bigs, (report) => report.workloads),
 	};
 }
 
@@ -171,11 +167,17 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 		const at = process.argv.indexOf(name);
 		return at >= 0 ? Number(process.argv[at + 1]) : fallback;
 	};
-	const results = await measure({ size: argument("--size", 100), orders: argument("--orders", 1000000), rounds: argument("--rounds", 3) });
+	process.stderr.write(`on ${machineLine()}\n`);
+	const runs = argument("--series", 10);
+	const results = await measure({ size: argument("--size", 100), orders: argument("--orders", 1000000), runs, bigRuns: argument("--big-series", runs) });
 	writeFileSync(resultsFile, `${JSON.stringify(results, null, "\t")}\n`);
 	console.log(`wrote ${resultsFile}`);
+	const average = (values) => values.reduce((sum, v) => sum + v, 0) / values.length;
 	for (const workload of [...results.workloads, ...results.big]) {
-		const cells = results.engines.map((engine) => `${engine.label} ${(workload.results[engine.key].ns / 1e6).toFixed(1)} ms`);
-		console.log(`${workload.name.padEnd(20)} ${cells.join("   ")}`);
+		const cells = results.engines.map((engine) => {
+			const ns = workload.results[engine.key].ns;
+			return `${engine.label} ${(ns[0] / 1e6).toFixed(1)} → ${(average(ns) / 1e6).toFixed(1)} ms`;
+		});
+		console.log(`${workload.name.padEnd(24)} ${cells.join("   ")}`);
 	}
 }
