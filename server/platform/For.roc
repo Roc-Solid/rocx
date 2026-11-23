@@ -76,15 +76,19 @@ row! = |id, key, item, make| {
 	{ key, row: || make(item!) }
 }
 
-## The keys, each once: the second of two equal keys is another row (`#1`), and so on.
+## The keys, each once: the second of two equal keys is another row (`#1`), and so on. How many of
+## each came before is a `Dict`'s, so a list of ten thousand rows takes ten thousand lookups (a
+## count over the keys seen, each time, took fifty million comparisons).
 keys_of : List(Str) -> List(Str)
 keys_of = |keys| {
-	var $seen = []
-	var $out = []
+	var $seen = Dict.empty()
+	var $out = List.with_capacity(keys.len())
 	for key in keys {
-		count = $seen.count_if(|other| other == key)
-		$seen = $seen.append(key)
+		count = $seen.get(key) ?? 0.U64
+		$seen = $seen.insert(key, count + 1)
 		$out = $out.append(if (count == 0) key else "${key}#${count.to_str()}")
 	}
 	$out
 }
+
+expect keys_of(["a", "b", "a", "a"]) == ["a", "b", "a#1", "a#2"]
