@@ -76,6 +76,17 @@ view! = |_|
 					</p>
 				</div>
 				<div class="command">
+					<p class="command-usage">rocx check --sql {"[dir]"}<span>--engine turso</span><span>--verbose</span></p>
+					<p>
+						Checks the app's SQL with its own database engine: each statement written as a string at a
+						<code>Db.all!</code> or <code>Db.run!</code>, prepared on a scratch database built from the app's
+						migrations. What the engine refuses, and a call whose parameters don't match its statement, are
+						reported at their lines (<a href={"${Paths.platform_database}#checked"}>how</a>).
+						<code>--engine turso</code> asks Turso instead of SQLite; <code>--verbose</code> lists what it
+						couldn't check.
+					</p>
+				</div>
+				<div class="command">
 					<p class="command-usage">rocx lint {"<dir>…"}</p>
 					<p>
 						Refuses <code>Html.source_text</code> in hand-written <code>.roc</code> files, where it would

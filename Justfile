@@ -247,7 +247,8 @@ examples := `git ls-files 'examples/*/main.roc' | xargs -n1 dirname | tr '\n' ' 
 # each one's README says to: `rocx build` (and the browser's copy), its server program type-checked,
 # and its browser program when it has one (component pages: the build writes the copy's main.roc;
 # an app of endpoints alone, as echo is, has none, and the build says so), each with reports at .rocx lines;
-# `rocx lint`; its expects (`roc test`); and its node tests, examples/<name>/test/*.test.mjs, when
+# `rocx lint`; its SQL, checked by its database engine (`rocx check --sql`, D-058); its expects
+# (`roc test`); and its node tests, examples/<name>/test/*.test.mjs, when
 # it has them (a glob: `node --test <dir>` doesn't find them on Node 24; helper modules there
 # don't end in .test.mjs). They need nothing for their database, all on SQLite (each test makes a
 # file of its own), and Chromium for their browser tests, which skip without it. Every example is
@@ -268,6 +269,7 @@ examples *names:
         name=$(basename "$dir")
         echo "== $name"
         if just examples-check "$name" \
+            && ROC={{ roc }} {{ rocx }} check --sql "$dir" \
             && {{ rocx }} check -- {{ roc }} test "$dir/main.roc" \
             && { ! compgen -G "$dir/test/*.test.mjs" >/dev/null || ROC={{ roc }} node --test "$dir/test/*.test.mjs"; }; then
             echo "== $name: ok"

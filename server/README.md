@@ -173,6 +173,26 @@ parameters. `Db.notify!(channel, payload)` tells `Db.listen!`'s listeners (the t
 `db:<channel>`, `Live.next!`) when the call's transaction commits, never if it rolls back, or at once
 outside one: Postgres's `pg_notify`, or the server's own on SQLite.
 
+**Checked queries** (D-058). `rocx check --sql <app>` checks an app's SQL with its own database
+engine. rocx finds each `Db.all!` and `Db.run!` whose SQL is a string literal at the call, and the
+app's server (built as `rocx dev` builds it) describes them: `--describe-sql FILE` answers no HTTP,
+runs the platform's start on a scratch database of the app's kind (the platform's, the plugins' and
+the app's migrations applied to it), prepares each statement without running it, prints what the
+engine says of each as JSON, and removes the scratch. For SQLite and Turso that is a file in a
+directory of its own under the system's temporary directory; for Postgres a database
+(`rocx_check_…`) made on the server `--database-url` (DATABASE_URL) names and dropped after, which
+needs `CREATEDB`. The check never migrates a database nobody named for it, since the app's URL may be
+something real: without `CREATEDB` it fails, saying to grant it or to name one it may migrate
+(`--sql-database URL`, or `ROCX_SQL_DATABASE`). What the engine says of a statement is its error, or
+its parameters and its columns: each one's name, type, how the host reads it (`kind`), and, for one
+that comes straight from a table's column, that column and whether it is `not null` (SQLite's
+column metadata, Turso's plan, Postgres's `pg_attribute`). rocx reports what the engine refused, and a
+call whose parameters (a list literal) aren't the statement's `$1` to `$n`, at the call's line, and
+counts what it couldn't check: SQL interpolated (`${…}`), in a variable, or `Db.unchecked(sql)`, which
+marks a statement on a table the app makes as it runs. `--engine turso` checks a SQLite app on Turso
+(`sqlite` a Turso app on SQLite); `just examples` checks every example. Describing costs milliseconds;
+the server's start and the migrations are most of a check.
+
 **Migrations** are in the executable: `program.migrations` lists them, each a name and its SQL
 (`import "migrations/0001_tables.sql" as tables : Str` reads a file when the app is compiled). When
 the server starts they are applied in the order listed, each once, each in a transaction (recorded
@@ -874,6 +894,9 @@ built `--target=arm64musl` runs in a container against `just db`'s Postgres, eve
       --debug                             GET /__rocx/allocations and /__rocx/plugin-files, and plugins' debug paths
       --live-beat-ms 15000                how often a channel stream beats, and its checks run again
       --roc-threads N                     the threads Roc runs on (ROCX_ROC_THREADS; one a core)
+      --describe-sql FILE                 no HTTP: describe each statement FILE lists (a JSON array of SQL) on a scratch
+                                          database the program's migrations are applied to, print what the database says, exit
+      --sql-database URL                  for --describe-sql, a database it may migrate, in place of a scratch one (ROCX_SQL_DATABASE)
 ```
 
 A request's body may be 16 MiB at most (413 beyond). `ROCX_LOG` (`pretty` or `json`) chooses the
@@ -948,8 +971,9 @@ browser runtime's own render.
 
 ## Not yet
 
-- `Db`'s queries aren't checked at build (rows are decoded by the record each caller annotates);
-  roc-pg's are.
+- `rocx check --sql` checks statements and their parameters (D-058), not yet rows: a row is decoded
+  by the record each caller annotates, and a mismatch shows when the query runs; roc-pg's are
+  checked.
 - Channels: a change of what a tab subscribes to opens its stream again, so `on_close!` can't tell
   a subscription the page dropped from a tab that went (both are `Gone`); a connection id with
   subscribe and unsubscribe posts would, if reconnects ever cost too much.

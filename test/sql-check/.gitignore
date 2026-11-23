@@ -1,0 +1,4 @@
+# Written by rocx build and by the check (build/sql), and the server's file if it is started.
+Generated/
+build/
+data/

@@ -362,7 +362,9 @@ checkpoint! = |{}|
 # ---- A million rows ----
 
 ## The big run's tables, made afresh (dropped first, so no run deletes a million rows): customers,
-## and their orders, with an index on whose they are.
+## and their orders, with an index on whose they are. No migration makes them, so the statements
+## that read them are `Db.unchecked`: `rocx check --sql` checks the app's SQL on a database built
+## from its migrations, which hasn't these tables (D-058).
 tables! : {} => Try({}, Str)
 tables! = |{}|
 	match Db.script!(
@@ -406,7 +408,7 @@ load! = |customers, orders| {
 		$from = to + 1
 	}
 	got : List({ n : I64 })
-	got = said(Db.all!("select count(*) as n from orders", []))?
+	got = said(Db.all!(Db.unchecked("select count(*) as n from orders"), []))?
 	if (got.get(0).map_ok(|row| row.n) ?? 0) != orders {
 		return Err("load: ${(got.get(0).map_ok(|row| row.n) ?? 0).to_str()} orders, not ${orders.to_str()}")
 	}
@@ -424,7 +426,7 @@ fetch_ones! = |count, orders| {
 		i = $i
 		$i = $i + 1
 		found : Try(List(Order), [DbErr(Str), BadRow(Str)])
-		found = Db.all!("select id, customer, amount, created, note from orders where id = $1", [Int(Workers.pick(i, orders))])
+		found = Db.all!(Db.unchecked("select id, customer, amount, created, note from orders where id = $1"), [Int(Workers.pick(i, orders))])
 		rows = said(found).map_err(|why| "fetch-1: ${why}")?
 		if rows.len() != 1 {
 			return Err("fetch-1: ${rows.len().to_str()} orders, not 1")
@@ -442,7 +444,7 @@ fetch_hundreds! = |count, orders| {
 		$i = $i + 1
 		from = Workers.pick(i, orders - 99)
 		found : Try(List(Order), [DbErr(Str), BadRow(Str)])
-		found = Db.all!("select id, customer, amount, created, note from orders where id between $1 and $2", [Int(from), Int(from + 99)])
+		found = Db.all!(Db.unchecked("select id, customer, amount, created, note from orders where id between $1 and $2"), [Int(from), Int(from + 99)])
 		rows = said(found).map_err(|why| "fetch-100: ${why}")?
 		if rows.len() != 100 {
 			return Err("fetch-100: ${rows.len().to_str()} orders, not 100")
@@ -459,7 +461,7 @@ fetch_by_customer! = |count, customers| {
 		i = $i
 		$i = $i + 1
 		found : Try(List({ id : I64, amount : I64, created : I64 }), [DbErr(Str), BadRow(Str)])
-		found = Db.all!("select id, amount, created from orders where customer = $1", [Int(Workers.pick(i, customers))])
+		found = Db.all!(Db.unchecked("select id, amount, created from orders where customer = $1"), [Int(Workers.pick(i, customers))])
 		rows = said(found).map_err(|why| "fetch-100-by-index: ${why}")?
 		if rows.len() != 100 {
 			return Err("fetch-100-by-index: ${rows.len().to_str()} orders, not 100")
@@ -476,7 +478,7 @@ join_ones! = |count, orders| {
 		i = $i
 		$i = $i + 1
 		found : Try(List({ id : I64, amount : I64, name : Str, city : Str }), [DbErr(Str), BadRow(Str)])
-		found = Db.all!("select o.id as id, o.amount as amount, c.name as name, c.city as city from orders o join customers c on c.id = o.customer where o.id = $1", [Int(Workers.pick(i + 3, orders))])
+		found = Db.all!(Db.unchecked("select o.id as id, o.amount as amount, c.name as name, c.city as city from orders o join customers c on c.id = o.customer where o.id = $1"), [Int(Workers.pick(i + 3, orders))])
 		rows = said(found).map_err(|why| "join-1: ${why}")?
 		if rows.len() != 1 {
 			return Err("join-1: ${rows.len().to_str()} rows, not 1")
@@ -493,7 +495,7 @@ join_hundreds! = |count, customers| {
 		i = $i
 		$i = $i + 1
 		found : Try(List({ name : Str, id : I64, amount : I64 }), [DbErr(Str), BadRow(Str)])
-		found = Db.all!("select c.name as name, o.id as id, o.amount as amount from customers c join orders o on o.customer = c.id where c.id = $1", [Int(Workers.pick(i + 5, customers))])
+		found = Db.all!(Db.unchecked("select c.name as name, o.id as id, o.amount as amount from customers c join orders o on o.customer = c.id where c.id = $1"), [Int(Workers.pick(i + 5, customers))])
 		rows = said(found).map_err(|why| "join-100: ${why}")?
 		if rows.len() != 100 {
 			return Err("join-100: ${rows.len().to_str()} rows, not 100")
@@ -510,7 +512,7 @@ join_tops! = |count| {
 	while $i < count {
 		$i = $i + 1
 		found : Try(List({ id : I64, name : Str, total : I64, n : I64 }), [DbErr(Str), BadRow(Str)])
-		found = Db.all!("select c.id as id, c.name as name, sum(o.amount) as total, count(*) as n from orders o join customers c on c.id = o.customer group by c.id order by total desc limit 10", [])
+		found = Db.all!(Db.unchecked("select c.id as id, c.name as name, sum(o.amount) as total, count(*) as n from orders o join customers c on c.id = o.customer group by c.id order by total desc limit 10"), [])
 		rows = said(found).map_err(|why| "join-top-10: ${why}")?
 		if rows.len() != 10 or rows.any(|row| row.n != 100) {
 			return Err("join-top-10: not ten customers of a hundred orders each")
@@ -526,7 +528,7 @@ order_scans! = |count, orders| {
 	while $i < count {
 		$i = $i + 1
 		found : Try(List({ n : I64, total : I64 }), [DbErr(Str), BadRow(Str)])
-		found = Db.all!("select count(*) as n, sum(amount) as total from orders", [])
+		found = Db.all!(Db.unchecked("select count(*) as n, sum(amount) as total from orders"), [])
 		rows = said(found).map_err(|why| "scan-orders: ${why}")?
 		if (rows.get(0).map_ok(|row| row.n) ?? 0) != orders {
 			return Err("scan-orders: not every order counted")

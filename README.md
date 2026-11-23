@@ -499,6 +499,14 @@ rocx build <dir>…        # each .rocx under the directories becomes the .roc b
                          # what only the server has (pf.Db)
   --dev                  # and the stories (`<story>`): their catalog at /__rocx/stories
 rocx check -- <command>  # run a command, its reports pointed into .rocx files
+rocx check --sql [dir]   # the app's SQL checked by its own database engine (D-058): each literal
+                         # statement at a Db.all!/Db.run! prepared on a scratch database built from
+                         # the app's migrations; what the engine refuses, and parameters that don't
+                         # match the call's, at their lines; exit 1 if any
+  --engine turso         # on Turso (a SQLite app), or SQLite (a Turso app), instead
+  --verbose              # and list the calls it can't check (interpolated SQL, SQL in a variable,
+                         # Db.unchecked)
+  -- <server options>    # given to the app's server (--database-url, --sql-database for Postgres)
 rocx lint <dir>…         # refuse Html.source_text in hand-written .roc files
 rocx routes <dir>        # list an app's routes: method, path, file, middleware
 rocx fmt <path>…         # format the Roc in .rocx files and hand-written .roc files with roc fmt

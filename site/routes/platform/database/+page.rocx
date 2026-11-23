@@ -8,7 +8,7 @@ import ../../../Ui/PageHero
 
 meta = {
 	title: "The database",
-	description: "The Roc Solid server platform's database, Postgres, or SQLite or Turso in the server's process, as the app's program says: queries whose rows decode into the record you annotate, transactions that take jobs with them, migrations built into the app, notifications, and roc-pg, a client in Roc whose queries are checked when the app is built.",
+	description: "The Roc Solid server platform's database, Postgres, or SQLite or Turso in the server's process, as the app's program says: queries whose rows decode into the record you annotate, transactions that take jobs with them, migrations built into the app, notifications, queries checked by the database's own engine (rocx check --sql), and roc-pg, a client in Roc whose queries are checked when the app is built.",
 	toc: [
 		{ id: "choose", label: "Postgres or SQLite" },
 		{ id: "turso", label: "Turso" },
@@ -19,6 +19,7 @@ meta = {
 		{ id: "migrations", label: "Migrations" },
 		{ id: "notify", label: "Notifications" },
 		{ id: "where", label: "Where it can be used" },
+		{ id: "checked", label: "Checked queries" },
 		{ id: "roc-pg", label: "roc-pg: queries checked at build" },
 		{ id: "limits", label: "Not yet" },
 	],
@@ -239,6 +240,39 @@ view! = |_|
 				only so: the server holds it while it runs).
 			</p>
 
+			<Heading id="checked">Checked queries</Heading>
+			<p>
+				<code>rocx check --sql</code> checks an app's SQL with the engine it runs on (D-058). Each statement
+				written as a string at a <code>Db.all!</code> or a <code>Db.run!</code> is prepared, never run, on a
+				scratch database the app's own server builds from its migrations: a file it removes after, for SQLite
+				and Turso, or, for Postgres, a database it makes on the server <code>DATABASE_URL</code> names and
+				drops after. It never migrates a database nobody named for it; without <code>CREATEDB</code> it
+				says to grant it, or to name one it may migrate (<code>--sql-database URL</code>). The engine is the
+				judge: its grammar, its functions, what Turso doesn't have yet. Nothing in the app changes.
+			</p>
+			<Code
+				source={"$ rocx check --sql app\napp/Store.roc:25:15: SQLite refuses it: no such column: bodyy in select bodyy as body from notes at offset 7\napp/Store.roc:29:16: parameter $2 is given, and the statement doesn't use it\nrocx check --sql: 3 statements checked on SQLite: 2 problems"}
+				numbers={Bool.False}
+				plain
+			/>
+			<ul>
+				<li>
+					<strong>What it checks:</strong> the statement as the engine reads it (its syntax, its tables,
+					columns and functions, Postgres's types), and the parameters a call gives as a list, which must be
+					the statement's <code>$1</code> to <code>$n</code>, each used.
+				</li>
+				<li>
+					<strong>What it can't:</strong> SQL put together (<code>{"\"select \${columns} from notes\""}</code>)
+					or passed in a variable, which it counts, and lists with <code>--verbose</code>; and a statement
+					on a table the app makes as it runs, not in a migration, which <code>Db.unchecked(sql)</code> marks.
+				</li>
+				<li>
+					<strong>Where it runs:</strong> by hand or in CI, and in <code>just examples</code> for each example.
+					<code>--engine turso</code> asks Turso about a SQLite app (or SQLite about a Turso app). Describing
+					takes milliseconds; the server's start and the migrations are most of a check.
+				</li>
+			</ul>
+
 			<Heading id="roc-pg">roc-pg: queries checked at build</Heading>
 			<p>
 				For Postgres, <a href="https://github.com/niclas-ahden/roc-pg">roc-pg</a> is a client written in Roc. It
@@ -260,8 +294,10 @@ view! = |_|
 			<Heading id="limits">Not yet</Heading>
 			<ul>
 				<li>
-					<strong><code>Db</code>'s queries aren't checked at build:</strong> a row is decoded by the record
-					each caller annotates, and a mistake shows when the query runs. roc-pg's are checked.
+					<strong>Rows aren't checked yet:</strong> <code>rocx check --sql</code> checks the statements and
+					their parameters, and a row is still decoded by the record each caller annotates, so a field the
+					statement doesn't return, or a nullable column read as a plain value, shows when the query runs.
+					roc-pg's are checked.
 				</li>
 				<li><strong>Parameters</strong> are four kinds and arrays of them; bytes aren't yet, and a row reads an array column through a cast (<code>array_to_json(tags)</code>).</li>
 				<li><strong>No cursors or streaming:</strong> a query's rows come back whole.</li>

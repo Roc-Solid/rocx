@@ -17,11 +17,13 @@ import Stories
 import Remap
 import Commands
 import Build
+import Sql
 
 main! = |args| {
 	words = args.map(|arg| OsStr.to_str_try(arg) ?? "")
 	match words.first() {
 		Ok("internal") => internal!({})
+		Ok("check") if words.get(1) == Ok("--sql") => node!("check-sql.mjs", words.drop_first(2), "rocx check --sql")
 		Ok("check") => {
 			given = words.drop_first(1)
 			exit_with(Commands.check!(if (given.first() == Ok("--")) given.drop_first(1) else given))
@@ -29,14 +31,14 @@ main! = |args| {
 		Ok("lint") if words.len() > 1 => exit_with(Commands.lint!(words.drop_first(1)))
 		Ok("routes") if words.len() == 2 => routes!(words.get(1) ?? ".")
 		Ok("build") => build!(words.drop_first(1))
-		Ok("dev") => dev!(words.drop_first(1))
+		Ok("dev") => node!("dev.mjs", words.drop_first(1), "rocx dev")
 		Ok("fmt") if words.drop_first(1).any(|arg| arg != "--check") => fmt!(words.drop_first(1))
 		_ => usage!({})
 	}
 }
 
 usage! = |{}| {
-	Stderr.line!("usage: rocx dev [dir] [--port 8080] | rocx build <dir>… [--client <out>] [--dev] | rocx check -- <command>… | rocx lint <dir>… | rocx routes <dir> | rocx fmt [--check] <path>…")?
+	Stderr.line!("usage: rocx dev [dir] [--port 8080] | rocx build <dir>… [--client <out>] [--dev] | rocx check -- <command>… | rocx check --sql [dir] [--engine sqlite|turso] [--verbose] [-- server options…] | rocx lint <dir>… | rocx routes <dir> | rocx fmt [--check] <path>…")?
 	Err(Exit(2))
 }
 
@@ -100,12 +102,17 @@ build! = |rest| {
 	}
 }
 
-## `rocx dev [dir] [--port 8080] [-- server options…]`: the app in `dir` (or here), built and served
-## under --dev, built again and restarted on each save. rocx-cli/dev.mjs does it, in Node, with the
-## builds of the clone rocx is in (`rocx_home!`); its status is rocx's.
-dev! = |rest| {
-	script = Fs.join([rocx_home!({}), "rocx-cli", "dev.mjs"])
-	match Cmd.new(OsStr.from_str("node")).args([script].concat(rest).map(OsStr.from_str)).call!() {
+## What rocx does in Node, with the builds of the clone rocx is in (`rocx_home!`), `script` in
+## rocx-cli given `rest`; its status is rocx's:
+##
+## - `rocx dev [dir] [--port 8080] [-- server options…]` (dev.mjs): the app in `dir` (or here),
+##   built and served under --dev, built again and restarted on each save.
+## - `rocx check --sql [dir] [--engine sqlite|turso] [--verbose] [-- server options…]`
+##   (check-sql.mjs, D-058): the app's SQL checked by its own database engine, on a scratch
+##   database built from its migrations.
+node! = |script, rest, command| {
+	path = Fs.join([rocx_home!({}), "rocx-cli", script])
+	match Cmd.new(OsStr.from_str("node")).args([path].concat(rest).map(OsStr.from_str)).call!() {
 		Ok({}) => Ok({})
 		Err(BadExitStatus(output)) =>
 			match output.status {
@@ -114,7 +121,7 @@ dev! = |rest| {
 			}
 		Err(Interrupted) => Ok({})
 		Err(CmdErr(_)) => {
-			Stderr.line!("rocx dev: couldn't run node, which builds and serves the app: is Node on PATH?")?
+			Stderr.line!("${command}: couldn't run node, which builds the app: is Node on PATH?")?
 			Err(Exit(1))
 		}
 	}
@@ -242,6 +249,10 @@ call! = |name, args| {
 	formatted = Format.rpc!(name, args)
 	if known(formatted) {
 		return formatted
+	}
+	checked = Sql.rpc!(name, args)
+	if known(checked) {
+		return checked
 	}
 	# Many calls in one process (rocx-cli/rocx.mjs callMany): each `{ fn, args }`, their answers in order.
 	if name == "batch" {
