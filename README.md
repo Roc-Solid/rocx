@@ -164,8 +164,13 @@ renders. A page or a layout has no block: its `<style>` goes at the file's top l
 file. `:global(…)`, `.a :global .b` and `:global { … }` are left as written; a component's
 `@keyframes` are its own (`-global-name` for everyone's). `rocx build` puts every `<style>` in one
 stylesheet, `Generated/Styles.roc`, which the root layout puts in its `<head>` with
-`{=Styles.style}`. A file may define several components (`Stepper := [].{ … }`), and `<Stepper />`
-calls the file's own.
+`{=Styles.style}`: a `<link rel="stylesheet" href="/rocx/styles-<hash>.css">` to a file the build
+writes beside `start.js` (`--client <out>`: `<out>/static/rocx/`), named by its content's hash, so
+the browser keeps it once for every page and every navigation, and the server says it may keep it
+for good (`cache-control: public, max-age=31536000, immutable`); a change to any `<style>` is a new
+name (D-040). A build without a browser's copy has nowhere to put the file and keeps the stylesheet
+inline, in a `<style>`. A file may define several components (`Stepper := [].{ … }`), and
+`<Stepper />` calls the file's own.
 
 ```roc
 Counter := [].{
@@ -360,9 +365,11 @@ writes more for it:
 - In `Routes`, a component page's GET runs its route file's middleware, then answers `Root`'s page
   (`Routes.page(200)`); a path nothing has is `Routes.page(404)` for a browser, text otherwise.
 - With `--client <out>`, `<out>/main.roc`, the browser's app (`Root.view!`), and
-  `<out>/static/rocx/start.js` and `runtime.js`. Build the wasm beside them
+  `<out>/static/rocx/start.js`, `runtime.js` and the app's stylesheet (`styles-<hash>.css`, when it
+  has a `<style>`). Build the wasm beside them
   (`roc build --target=wasm32 --opt=size --output=<out>/static/rocx/app.wasm <out>/main.roc`) and
-  serve the directory (`--static <out>/static`): the page's `/rocx/start.js` loads the other two.
+  serve the directory (`--static <out>/static`): the page's `/rocx/start.js` loads the other two,
+  and its `<head>` links the stylesheet.
   A module the browser's app reaches that imports what only the server has (`pf.Db`, directly or
   through another module) is a warning, at the import a page or component of the app's makes:
   the browser's build couldn't compile it. The copy leaves out an app on the server platform (the

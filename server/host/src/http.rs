@@ -323,14 +323,34 @@ async fn file(config: &Config, path: &str) -> Option<Response<Body>> {
     let mut response = full(StatusCode::OK, content_type(&found), bytes);
     if config.dev {
         response.headers_mut().insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    } else if named_by_content(path) {
+        response.headers_mut().insert(CACHE_CONTROL, HeaderValue::from_static(IMMUTABLE));
     }
     Some(response)
+}
+
+/// What a file named by its content is answered with: the browser keeps it a year and never asks
+/// again, since another content has another name.
+pub const IMMUTABLE: &str = "public, max-age=31536000, immutable";
+
+/// Whether rocx build named the file at `path` by its content, beside start.js
+/// (`/rocx/styles-0123456789abcdef.css`, the app's stylesheet): directly under `/rocx/` (the
+/// platform's), a name, `-`, 16 lowercase hex digits (its hash), and an extension.
+pub fn named_by_content(path: &str) -> bool {
+    let Some(name) = path.strip_prefix("/rocx/") else { return false };
+    let Some((stem, extension)) = name.rsplit_once('.') else { return false };
+    let Some((lead, hash)) = stem.rsplit_once('-') else { return false };
+    !name.contains('/')
+        && !lead.is_empty()
+        && !extension.is_empty()
+        && hash.len() == 16
+        && hash.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 /// A file's content type, from its name's extension.
 pub fn content_type(path: &Path) -> &'static str {
     match path.extension().and_then(|ext| ext.to_str()) {
-        Some("css") => "text/css",
+        Some("css") => "text/css; charset=utf-8",
         Some("js" | "mjs") => "text/javascript",
         Some("svg") => "image/svg+xml",
         Some("wasm") => "application/wasm",

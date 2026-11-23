@@ -60,7 +60,8 @@ view! = |_|
 							<code>Api</code> is only its method and URL, a route file has no <code>middleware</code>, a
 							<code>{"<NoHydration>"}</code> has no children, and the imports only those used are gone; for
 							an app with pages, its <code>main.roc</code> and <code>static/rocx/</code>, where start.js
-							loads the runtime and wasm. The app's own <code>main.roc</code>, the server's program, stays out
+							loads the runtime and wasm, beside the app's stylesheet, named by its content
+							(<code>styles-<var>hash</var>.css</code>). The app's own <code>main.roc</code>, the server's program, stays out
 							of the copy, so an app of endpoints alone has no browser's program, and the build says so.
 							If the browser's app reaches a module that imports what only the server has
 							(<code>pf.Db</code>, itself or through another module), the build warns at the import a page or

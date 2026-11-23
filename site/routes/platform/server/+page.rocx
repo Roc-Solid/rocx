@@ -244,6 +244,14 @@ view! = |_|
 				plain={Bool.True}
 			/>
 			<p>
+				<code>--static</code> and <code>--file</code> serve files as they are, typed by their extension, and
+				under <code>--dev</code> with <code>cache-control: no-store</code>. A file directly under
+				<code>/rocx/</code> named <code><var>name</var>-<var>16 hex digits</var>.<var>ext</var></code> is one
+				rocx build named by its content (the app's stylesheet, beside start.js): another content is another
+				name, so the browser may keep it for good (<code>cache-control: public, max-age=31536000,
+				immutable</code>).
+			</p>
+			<p>
 				A request's body may be 16 MiB at most (413 beyond), or what <code>--max-body</code>
 				(<code>MAX_BODY</code>) says: a number of bytes, or of KiB, MiB or GiB (<code>64MiB</code>). The
 				host reads a body whole before Roc runs, so it is the most a request holds in memory. Requests to

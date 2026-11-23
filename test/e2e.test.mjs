@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildApp, buildHost, hasRust, roc as findRoc, rocxBinary, start, syncShared, zig } from "../server/build.mjs";
@@ -256,13 +256,25 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		const home = await get("/");
 		assert.equal(home.status, 200);
 		assert.equal(home.app, "e2e", "the app's default middleware ran");
-		assert.match(home.html, /^<!doctype html> <html lang="en"><head><meta charset="utf-8"> <title>Home<\/title><\/head> <body><nav>.*<span class="badge">e2e<\/span><\/nav> <main><!--errored--><section class="home"><h1>Home<\/h1> <span class="badge">pure<\/span> <button class="count" type="button">Clicked <!--x-->1<!--\/x--><\/button> <!--nohydration--><aside class="note">Prose the browser never hydrates, with a <span class="badge">badge<\/span> in it\.<\/aside><!--\/nohydration--><\/section><!--\/errored--><\/main> <footer class="at"><!--x-->\/<!--\/x--><\/footer><script type="application\/json" class="rocx-answers">\[\]<\/script><script type="module" data-rocx data-build="([0-9a-f]{8})" src="\/rocx\/start\.js"><\/script><\/body><\/html>$/, "where it is, a hole that follows navigations (D-040); the bootstrap with the build's id");
+		assert.match(home.html, /^<!doctype html> <html lang="en"><head><meta charset="utf-8"> <title>Home<\/title> <link rel="stylesheet" href="\/rocx\/styles-[0-9a-f]{16}\.css"><\/head> <body><nav>.*<span class="badge">e2e<\/span><\/nav> <main><!--errored--><section class="home"><h1>Home<\/h1> <span class="badge">pure<\/span> <button class="count" type="button">Clicked <!--x-->1<!--\/x--><\/button> <!--nohydration--><aside class="note">Prose the browser never hydrates, with a <span class="badge">badge<\/span> in it\.<\/aside><!--\/nohydration--><\/section><!--\/errored--><\/main> <footer class="at"><!--x-->\/<!--\/x--><\/footer><script type="application\/json" class="rocx-answers">\[\]<\/script><script type="module" data-rocx data-build="([0-9a-f]{8})" src="\/rocx\/start\.js"><\/script><\/body><\/html>$/, "where it is, a hole that follows navigations (D-040); the bootstrap with the build's id");
 		assert.equal(/^<!doctype html>.*data-build="([0-9a-f]{8})"/.exec(home.html)[1], /^\tbuild = "([0-9a-f]{8})"$/m.exec(readFileSync(join(dir, "Generated", "Root.roc"), "utf8"))[1], "the build's id, as rocx build wrote it in Root");
 		const post = await get("/posts/hello");
-		assert.match(post.html, /<head><meta charset="utf-8"> <title data-rocx>Post hello<\/title><title>A post<\/title><meta data-rocx name="description" content="hello"><\/head>.*<main><!--errored--><div class="posts" data-slug="hello"><article class="post"><!--x--><!--\/x--> <!--x--><!--\/x--> <h1>Post hello<\/h1> <a href="\/posts\/other">/, "its param, in the page (a getter, D-039, given what doesn't change: static, D-052) and its layout; the root layout's <Errored> around both; the page's <Title> first in <head>, before the layout's; its <Meta> before </head> (D-054)");
+		assert.match(post.html, /<head><meta charset="utf-8"> <title data-rocx>Post hello<\/title><title>A post<\/title> <link rel="stylesheet" href="\/rocx\/styles-[0-9a-f]{16}\.css"><meta data-rocx name="description" content="hello"><\/head>.*<main><!--errored--><div class="posts" data-slug="hello"><article class="post"><!--x--><!--\/x--> <!--x--><!--\/x--> <h1>Post hello<\/h1> <a href="\/posts\/other">/, "its param, in the page (a getter, D-039, given what doesn't change: static, D-052) and its layout; the root layout's <Errored> around both; the page's <Title> first in <head>, before the layout's; its <Meta> before </head> (D-054)");
 		// A route file's own components, defined below its page: one with a signal, a pure one.
 		const local = await get("/local");
 		assert.equal(local.status, 200);
+		// The app's stylesheet: a file beside start.js named by its content, the same link on every
+		// page, which the browser keeps (D-040, question 9); start.js, named by nothing, it asks again for.
+		const [sheet, ...others] = readdirSync(join(client, "static", "rocx")).filter((name) => name.endsWith(".css"));
+		assert.deepEqual(others, []);
+		const link = `<link rel="stylesheet" href="/rocx/${sheet}">`;
+		for (const page of [home, post, local]) assert.ok(page.html.split("</head>")[0].includes(link), page.html);
+		const styles = await fetch(`${server.url}/rocx/${sheet}`);
+		assert.deepEqual([styles.status, styles.headers.get("content-type"), styles.headers.get("cache-control")], [200, "text/css; charset=utf-8", "public, max-age=31536000, immutable"]);
+		const css = await styles.text();
+		assert.equal(css, readFileSync(join(client, "static", "rocx", sheet), "utf8"));
+		assert.match(css, /\.board\.rx-[a-z0-9]+ \{/, "the route file's <style>, scoped");
+		assert.equal((await fetch(`${server.url}/rocx/start.js`)).headers.get("cache-control"), null);
 		assert.match(local.html, /<title data-rocx>Local 0<\/title><title>Local<\/title>.*<section class="local"><!--x--><!--\/x--> <p class="board rx-[a-z0-9]+"><!--x-->0<!--\/x--><\/p> <span class="tag">its own<\/span> <button class="bump" type="button">Bump<\/button><\/section>/, "a route file's own components, its <style> scoping its Board");
 		const missing = await get("/nope");
 		assert.equal(missing.status, 404);
@@ -328,7 +340,7 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		// In Chromium, strictly: each page hydrates from what came with it, asking for nothing but
 		// start.js, the runtime and the wasm, all under /rocx/; a click is the app's.
 		browser = await launch();
-		const loads = ["/rocx/start.js", "/rocx/app.wasm", "/rocx/runtime.js"];
+		const loads = ["/rocx/start.js", "/rocx/app.wasm", "/rocx/runtime.js", `/rocx/${sheet}`];
 		for (const [path, check] of [
 			["/", "document.querySelector('.home .badge').textContent === 'pure' && document.title === 'Home' && document.querySelector('.home .note').textContent === 'Prose the browser never hydrates, with a badge in it.'"],
 			["/posts/hello", "document.querySelector('.post h1').textContent === 'Post hello' && document.querySelector('.posts').dataset.slug === 'hello' && document.title === 'Post hello'"],
@@ -374,6 +386,7 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		await reloaded.wait("window.ready", 5000);
 		assert.deepEqual(reloaded.errors, []);
 		assert.deepEqual(await reloaded.eval("[...document.querySelectorAll('body > script[data-rocx]')].map((script) => new URL(script.src).pathname)"), ["/rocx/start.js", "/__reload.js"], "start.js, and the reload script after it, a file (the answers are read, and gone)");
+		assert.equal((await fetch(`${dev.url}/rocx/${sheet}`)).headers.get("cache-control"), "no-store", "a dev server's files, the stylesheet's too, are asked for again");
 	} finally {
 		await browser?.close();
 		for (const server of servers) await server.stop();

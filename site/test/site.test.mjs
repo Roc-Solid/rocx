@@ -7,10 +7,10 @@
 // web/test/browser.mjs).
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { cpus, loadavg, tmpdir } from "node:os";
 import { join } from "node:path";
-import { appWasm, build, nativePage, out, pageFile, prerender, roc, root, ROUTES, STATIC_GETS, startServer, underBase } from "../build.mjs";
+import { appWasm, build, clientStatic, nativePage, out, pageFile, prerender, roc, root, ROUTES, STATIC_GETS, startServer, underBase } from "../build.mjs";
 import { hasRust } from "../../server/build.mjs";
 import { platformReference, referenceBlocks as blocks, undocumented } from "../../rocx-cli/rocx.mjs";
 import { exampleNames, factsFile as exampleFacts } from "../example-apps.mjs";
@@ -37,6 +37,7 @@ before(async () => {
 	dir = mkdtempSync(join(tmpdir(), "rocx-site-"));
 	await build({ log: () => {} });
 	wasm = readFileSync(appWasm);
+	[sheet] = readdirSync(join(clientStatic, "rocx")).filter((name) => /^styles-[0-9a-f]{16}\.css$/.test(name));
 	await prerender(dir);
 	site = await startServer();
 	browser = await launch();
@@ -47,6 +48,10 @@ after(async () => {
 	await site?.stop();
 	if (dir) rmSync(dir, { recursive: true, force: true });
 });
+
+/** The app's stylesheet, as this build wrote it beside start.js: its file's name (`styles-<hash>.css`,
+ * named by its content), which every page links. */
+let sheet;
 
 /** A tab that hydrates strictly: a page that isn't what the app renders throws, instead of being
  * rendered again with a warning. */
@@ -68,10 +73,13 @@ async function open(path, url = site.url) {
 	return page;
 }
 
-/** What a page loads besides itself: its stylesheet, its icon and site.js, the audio plugin's script
- * (the player, D-051), and start.js, the runtime and the wasm (under `base`); anything else would be
- * the page asking the server. */
-const loads = (base = "/") => ["site.css", "favicon.svg", "site.js", "rocx/plugins/audio/audio.js", "rocx/start.js", "rocx/runtime.js", "rocx/app.wasm"].map((file) => `${base}${file}`);
+/** What a page loads besides itself: its stylesheets (the site's, and the app's: every <style>),
+ * its icon and site.js, the audio plugin's script (the player, D-051), and start.js, the runtime
+ * and the wasm (under `base`); anything else would be the page asking the server. */
+const loads = (base = "/") => ["site.css", `rocx/${sheet}`, "favicon.svg", "site.js", "rocx/plugins/audio/audio.js", "rocx/start.js", "rocx/runtime.js", "rocx/app.wasm"].map((file) => `${base}${file}`);
+
+/** The app's stylesheet in a page's head (under `base`): a file the browser keeps, not inline (D-040). */
+const sheetLink = (base = "/") => `<link rel="stylesheet" href="${base}rocx/${sheet}">`;
 
 /** The plugins' scripts every page the site's server renders loads (`renderToString({ scripts })`). */
 const SCRIPTS = ["/rocx/plugins/audio/audio.js"];
@@ -91,6 +99,9 @@ test("every page renders, and hydrates strictly as the server left it, asking fo
 		assert.equal(response.status, 200, route);
 		const html = await response.text();
 		assert.match(html, /^<!doctype html> <html lang="en">/, route);
+		const head = html.slice(0, html.indexOf("</head>"));
+		assert.ok(head.includes(sheetLink()), `${route}: the app's stylesheet, linked in its head`);
+		assert.doesNotMatch(html, /<style>\/\* /, `${route}: and not inline`);
 		if (route === "/") {
 			// Roc Solid's front page is in no part of the docs: it has no sidebar.
 			assert.doesNotMatch(html, /<nav class="sidebar[ "]/, "the front page has no sidebar");
@@ -1175,6 +1186,15 @@ test("the static build is every page as the server answers it, and what the page
 	for (const asset of ["rocx/start.js", "rocx/runtime.js", "rocx/app.wasm", "site.js"]) {
 		assert.ok(readFileSync(join(dir, asset)).length > 0, asset);
 	}
+	// The app's stylesheet, at the URL every page links: as the server answers it, which says the
+	// browser may keep it for good (its name changes with it); start.js, named by nothing, it doesn't.
+	const styles = await fetch(`${site.url}/rocx/${sheet}`);
+	assert.deepEqual([styles.status, styles.headers.get("content-type"), styles.headers.get("cache-control")], [200, "text/css; charset=utf-8", "public, max-age=31536000, immutable"]);
+	const css = await styles.text();
+	assert.ok(css.length > 10_000, "every component's <style>");
+	assert.equal(readFileSync(join(dir, "rocx", sheet), "utf8"), css, "copied into the static build");
+	assert.deepEqual(readdirSync(join(dir, "rocx")).filter((name) => name.endsWith(".css")), [sheet], "and no other build's");
+	assert.equal((await fetch(`${site.url}/rocx/start.js`)).headers.get("cache-control"), null);
 });
 
 // The platform's reference (/platform/reference) is read from the platform's modules
@@ -1268,15 +1288,19 @@ test("the static build for GitHub Pages: files alone, under /rocx/, every page h
 		for (const route of [...ROUTES, "/404"]) {
 			const html = readFileSync(join(files, route === "/404" ? "404.html" : pageFile(route)), "utf8");
 			assert.deepEqual(html.match(/\s(?:href|src|action)="\/(?!rocx\/|\/)[^"]*"/g), null, `${route}: every URL under /rocx/`);
+			assert.ok(html.slice(0, html.indexOf("</head>")).includes(sheetLink("/rocx/")), `${route}: the app's stylesheet under /rocx/ too`);
 			// The file is what the browser's build renders (decision D), its URLs under the base too,
 			// byte for byte outside its <NoHydration>s, from the answers and regions it has.
 			const answers = JSON.parse(/<script type="application\/json" class="rocx-answers">(.*?)<\/script>/.exec(html)[1]);
 			const rendered = runtime.renderToString({ path: route, answers, regions: Runtime.regionsOf(html), scripts: SCRIPTS }).html;
 			assert.equal(outsideRegions(rendered, (part) => underBase(part, "/rocx/")), html, `${route}, as files`);
 		}
+		const styles = await fetch(`${pages.url}/rocx/rocx/${sheet}`);
+		assert.deepEqual([styles.status, styles.headers.get("content-type")], [200, "text/css"], "the app's stylesheet, at the URL the pages link");
 		for (const route of ROUTES) {
 			const page = await open(`/rocx${route}`, pages.url);
 			assert.ok(await page.eval("getComputedStyle(document.body).fontFamily !== ''"), `${route}: its stylesheet`);
+			if (route === "/") assert.equal(await page.eval("getComputedStyle(document.querySelector('.counter')).display"), "grid", "and the app's: the counter's <style>");
 			assert.deepEqual(page.console, [], `${route} logged nothing`);
 			assert.deepEqual(page.errors, [], `${route} threw nothing`);
 			assert.deepEqual((await asked(page)).filter((path) => !loads("/rocx/").includes(path) && path !== "/rocx/roc-bird.svg" && !path.startsWith("/rocx/shots/")), [], `${route}: asked for nothing else`);

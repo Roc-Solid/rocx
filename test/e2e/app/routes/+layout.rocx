@@ -1,8 +1,11 @@
 import pf.Html
 import pf.Router
 import ../Ui/Badge
+import ../Generated/Styles
 
-## The document around every page: its title is the page's, and its footer says where it is.
+## The document around every page: its title is the page's, the app's stylesheet is linked (outside a
+## <NoHydration>, as the default document has it: the browser renders the same <link>), and its
+## footer says where it is.
 view! = |{ meta, children, .. }|
 	<>
 		<!doctype html>
@@ -10,6 +13,7 @@ view! = |{ meta, children, .. }|
 			<head>
 				<meta charset="utf-8" />
 				<title>{meta.title}</title>
+				{=Styles.style}
 			</head>
 			<body>
 				<nav><a href="/">Home</a> <a href="/posts/hello">A post</a> <Badge text="e2e" /></nav>

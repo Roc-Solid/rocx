@@ -160,7 +160,10 @@ view! = |_|
 			<Example source={Sources.scoped} output={Scoped.demo({})} live />
 			<p>
 				<code>rocx build</code> puts every <code>{"<style>"}</code> in one stylesheet, <code>Generated/Styles.roc</code>,
-				and the root layout puts it in its <code>{"<head>"}</code> with <code>{"{=Styles.style}"}</code>.
+				and the root layout puts it in its <code>{"<head>"}</code> with <code>{"{=Styles.style}"}</code>: a
+				<code>{"<link>"}</code> to a file beside start.js, <code>/rocx/styles-<var>hash</var>.css</code>, named by
+				its content, which the browser keeps for every page it opens; a change to any <code>{"<style>"}</code> is a
+				new name.
 				What isn't this file's is written as Svelte writes it: <code>:global(body)</code> as it is,
 				<code>div :global(strong)</code> for any <code>strong</code> in this component's divs, and a
 				<code>{":global { … }"}</code> block for rules that are all global. A component's

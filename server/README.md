@@ -1029,6 +1029,14 @@ built `--target=arm64musl` runs in a container against `just db`'s Postgres, eve
       --sql-database URL                  for --describe-sql, a database it may migrate, in place of a scratch one (ROCX_SQL_DATABASE)
 ```
 
+`--static` and `--file` serve files as they are, for `GET` and `HEAD`, typed by their extension
+(`text/css; charset=utf-8`, `text/javascript`, `application/wasm`, …), with `cache-control:
+no-store` under `--dev`. A file directly under `/rocx/` whose name ends in `-` and 16 hex digits
+before its extension is one rocx build named by its content (the app's stylesheet,
+`/rocx/styles-0123456789abcdef.css`, beside `start.js`): another content is another name, so it
+is answered with `cache-control: public, max-age=31536000, immutable` and the browser never asks
+for it again (D-040). The rest say nothing of caching.
+
 A request's body may be 16 MiB at most (413 beyond), or what `--max-body` (`MAX_BODY`) says: a
 number of bytes, or of KiB, MiB or GiB (`64MiB`); 0 or anything else stops the server (D-056). The
 host reads it whole before Roc runs, so it is the most any request holds in memory. Requests to

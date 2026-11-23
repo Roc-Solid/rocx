@@ -2184,6 +2184,25 @@ the stylesheet as a cached file, a JSON payload, wasm splitting.
   queued with a handler's writes) and `is_routing!` (`Host.is_routing!`). In runtime.js: `routeOf(path)`
   matches the table, `pageCode(level)` reaches a level's code (at once today), `codeOf(route)` all of
   a page's, and `readOnce` (a location read once, in a component's body) is a hook phase 2 fills.
+- **The stylesheet as a file (question 9, moved up from phase 4; branch nav-styles).** With a
+  browser's copy (`rocx build --client <out>`, every app of pages), `rocx build` writes the
+  stylesheet beside `start.js`, `<out>/static/rocx/styles-<hash>.css`, the hash its bytes' FNV-1a
+  (64 bits, 16 hex digits), and `Generated/Styles.roc` gets `href` and a `style` that is
+  `<link rel="stylesheet" href="/rocx/styles-<hash>.css">`, the same in both copies and on every
+  page of a build (navigation keeps it: an equal node in `<head>`). No new path: the host serves it
+  from `--static <out>/static` as it serves `start.js`, and answers a file directly under `/rocx/`
+  named `<name>-<16 hex>.<ext>` with `cache-control: public, max-age=31536000, immutable` (`.css`
+  is now `text/css; charset=utf-8`); a static copy gets it with `start.js` (site/build.mjs's
+  `assets`), and the page's link goes under the base with every other URL (`/rocx/rocx/…` on
+  GitHub Pages). A build without a browser's copy keeps it inline. Dev builds use the file too:
+  `rocx dev` rebuilds, restarts the server and reloads the page, which links the new name (and
+  `--dev` answers `no-store`), so inline would make nothing simpler. Different from the design:
+  the file is the browser's copy's, not a plugin's (D-050's files are in the executable and answered
+  `no-cache` with an ETag), because the stylesheet is built with the copy, as `start.js` and the wasm
+  are, and every server of a page app already serves that directory. On the docs site (`just site`,
+  49 documents): the stylesheet is 107.5 KB, 15.8 KB brotli, fetched once; a page's document went
+  from 17.5–49.7 KB brotli (median 21.9) to 1.8–33.7 KB (median 6.1), about 15.8 KB less each, and
+  so does every navigation's document.
 
 **Reversible:** yes, until apps rely on kept layouts and `use_search_params!`.
 

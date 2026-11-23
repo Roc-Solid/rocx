@@ -514,6 +514,8 @@ open! = || Board.card_in_query(Router.location!({}).query)      # tracked, not a
   every page, sent inline with each load and so with each navigation's document. Writing it as a
   file with its hash in its name (`/rocx/styles-<hash>.css`), which `{=Styles.style}` would link,
   would have the browser keep it once. That is a change of its own, good for loads too (question 9).
+  **Built** (2026-11-23, D-040's "As built"): `/rocx/styles-<hash>.css` in the browser's copy beside
+  `start.js`, cached `immutable`; inline only in a build with no browser's copy.
 - **Per-page assets** in the build: none. The wasm and the stylesheet are the app's, and a page's
   images load as its markup is built.
 

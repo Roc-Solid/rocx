@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { build } from "../rocx-cli/rocx.mjs";
@@ -236,6 +236,52 @@ test("styles: rocx build writes every <style>, scoped, into Generated/Styles.roc
 		const none = readFileSync(join(dir, "Generated", "Styles.roc"), "utf8");
 		assert.match(none, /\tcss = ""\n/);
 		assert.match(none, /\tstyle = Html\.empty\(\{\}\)\n/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("styles: with the browser's copy (--client), the stylesheet is a file named by its content beside start.js, which Styles.style links; another <style> is another name, and the old file goes", () => {
+	const dir = mkdtempSync(join(tmpdir(), "rocx-styles-"));
+	try {
+		const file = (path, content) => {
+			mkdirSync(dirname(join(dir, path)), { recursive: true });
+			writeFileSync(join(dir, path), content);
+		};
+		const card = (weight) => `import pf.Html\n\nCard := [].{\n\tview = |{ title }| <h2 class="card">{title}</h2>\n\n\t<style>\n\t\t.card { font-weight: ${weight} }\n\t</style>\n}\n`;
+		file("routes/+layout.rocx", 'import pf.Html\n\nview! = |{ children, .. }|\n\t<main>{...children}</main>\n\n<style>\n\tmain { margin: 0 auto }\n</style>\n');
+		file("routes/+page.rocx", "import pf.Html\n\nview! = |_|\n\t<p>Hi</p>\n");
+		file("Ui/Card.rocx", card(700));
+		const client = join(dir, "build", "client");
+		const said = [];
+		const log = (line) => said.push(line);
+		const sheets = () => readdirSync(join(client, "static", "rocx")).filter((name) => name.endsWith(".css"));
+		assert.ok(build([dir], { client, log }), said.join("\n"));
+		const [first] = sheets();
+		assert.match(first ?? "", /^styles-[0-9a-f]{16}\.css$/, "one stylesheet, named by its content");
+		assert.deepEqual(sheets(), [first]);
+		const css = readFileSync(join(client, "static", "rocx", first), "utf8");
+		assert.ok(css.includes(`.card.${scopeClass("Ui/Card.Card")} { font-weight: 700 }`), css);
+		assert.match(css, /^\/\* Ui\/Card\.rocx, Card \*\/\n/, "each file's, after a comment that says whose");
+		const styles = readFileSync(join(dir, "Generated", "Styles.roc"), "utf8");
+		assert.ok(styles.includes(`\thref = "/rocx/${first}"\n`), styles);
+		assert.match(styles, /\tstyle = Html\.void\("link", \[Html\.attr\("rel", "stylesheet"\), Html\.attr\("href", href\)\]\)\n/, "a <link>, rel then href");
+		assert.equal(readFileSync(join(client, "Generated", "Styles.roc"), "utf8"), styles, "the same in the browser's copy");
+		// The same sources, the same name; another <style>, another name, and the old file goes.
+		assert.ok(build([dir], { client, log }), said.join("\n"));
+		assert.deepEqual(sheets(), [first], "built again unchanged: the same name");
+		file("Ui/Card.rocx", card(600));
+		assert.ok(build([dir], { client, log }), said.join("\n"));
+		const [second, ...more] = sheets();
+		assert.deepEqual(more, []);
+		assert.match(second, /^styles-[0-9a-f]{16}\.css$/);
+		assert.notEqual(second, first, "a change to a component's <style> is a new name");
+		assert.ok(readFileSync(join(dir, "Generated", "Styles.roc"), "utf8").includes(`\thref = "/rocx/${second}"\n`));
+		// Without the browser's copy there is nowhere to put the file: inline, as a <style>.
+		assert.ok(build([dir], { log }), said.join("\n"));
+		const inline = readFileSync(join(dir, "Generated", "Styles.roc"), "utf8");
+		assert.match(inline, /\thref = ""\n/);
+		assert.match(inline, /\tstyle = Html\.element\("style", \[\], \[Html\.source_text\(css\)\]\)\n/);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

@@ -259,6 +259,8 @@ Build := [].{
 		}
 		# The browser's app, for an app of component pages (`--client`): written with its copy.
 		var $main = None
+		# The app's stylesheet as a file in that copy (`static/rocx/styles-<hash>.css`), when it has one.
+		var $sheet = None
 		# What each of Api's imports is for (the routes' types that name the module), for the browser's
 		# copy, which reaches them through it.
 		var $contract = []
@@ -368,10 +370,19 @@ Build := [].{
 					),
 				},
 			] else []
+			# The stylesheet is a file the browser keeps (its name its content's hash) when there is a
+			# browser's copy to put it in, beside start.js; a build without one has it inline.
+			css = Build.stylesheet($styles)
+			sheet =
+				match options.client {
+					Some(_) if pages and !css.is_empty() => Some({ name: Build.stylesheet_name(css), css })
+					_ => None
+				}
+			$sheet = sheet
 			modules_written =
 				[{ name: "Routes", content: Routes.routes_module(table, sources, placed) }]
 					.concat(stories_page)
-					.concat([{ name: "Paths", content: Routes.paths_module(table) }, { name: "Styles", content: Build.styles_module($styles) }])
+					.concat([{ name: "Paths", content: Routes.paths_module(table) }, { name: "Styles", content: Build.styles_module(css, sheet) }])
 					.concat(api)
 					.concat(root_page)
 					.concat([{ name: Build.app_module_name, content: Routes.app_module({ jobs: jobs.jobs, actors: actors.actors, migrations: Routes.migrations_in!(dir), endpoints, jobs_package }) }])
@@ -448,7 +459,7 @@ Build := [].{
 		match options.client {
 			Some(client) => {
 				target = Fs.resolve(cwd, [client])
-				Build.write_client!(dir, target, $browser, $main, options.rocx)?
+				Build.write_client!(dir, target, $browser, { main: $main, sheet: $sheet }, options.rocx)?
 				# What the browser's copy reaches but can't compile (a module that imports pf.Db): said
 				# where the import that reaches it is, before the browser's build fails far from it.
 				# From what the browser builds: the main.roc rocx wrote, or the copy's apps on the web
@@ -688,10 +699,10 @@ Build := [].{
 			"\n",
 		)
 
-	## Generated/Styles.roc: every <style>, scoped to the markup it styles (a component's, or a
-	## file's), as one stylesheet, which the root layout puts in its <head>.
-	styles_module : List({ file : Str, line : U64, component : [Some(Str), None], css : Str }) -> Str
-	styles_module = |styles| {
+	## The app's stylesheet: every <style>, scoped to the markup it styles (a component's, or a
+	## file's), in the order of their files and lines, each after a comment that says whose it is.
+	stylesheet : List({ file : Str, line : U64, component : [Some(Str), None], css : Str }) -> Str
+	stylesheet = |styles| {
 		ordered = styles.sort_with(
 			|a, b|
 				match Text.order(a.file, b.file) {
@@ -699,7 +710,7 @@ Build := [].{
 					other => other
 				},
 		)
-		css = Str.join_with(
+		Str.join_with(
 			ordered.map(
 				|style| {
 					owner =
@@ -712,6 +723,26 @@ Build := [].{
 			),
 			"\n\n",
 		)
+	}
+
+	## The stylesheet's file name in the browser's copy (`static/rocx/`, served at /rocx/):
+	## `styles-`, then its bytes' FNV-1a hash, 64 bits in 16 hex digits, so a change to any <style>
+	## is a new name, and the browser may keep a name's file for good (the host says so: `immutable`).
+	stylesheet_name : Str -> Str
+	stylesheet_name = |css| {
+		start : U64
+		start = 0xcbf29ce484222325
+		prime : U64
+		prime = 0x100000001b3
+		hash = css.to_utf8().fold(start, |h, b| h.bitwise_xor(b.to_u64()).times_wrap(prime))
+		"styles-${Text.pad_start(Text.in_base(hash, 16), 16, "0")}.css"
+	}
+
+	## Generated/Styles.roc: the stylesheet (`stylesheet`), which the root layout puts in its <head>
+	## (`{=Styles.style}`): a <link> to its file when the build writes one (`sheet`: a browser's
+	## copy, for an app of component pages), or else the stylesheet inline, in a <style>.
+	styles_module : Str, [Some({ name : Str, css : Str }), None] -> Str
+	styles_module = |css, sheet| {
 		literal =
 			if css.is_empty() {
 				"\tcss = \"\""
@@ -719,7 +750,19 @@ Build := [].{
 				lines = Str.join_with(Text.lines(css).map(|line| "\t\t${Text.roc_string(line)},"), "\n")
 				"\tcss = Str.join_with([\n${lines}\n\t], \"\\n\")"
 			}
-		style_value = if (css.is_empty()) "Html.empty({})" else "Html.element(\"style\", [], [Html.source_text(css)])"
+		href =
+			match sheet {
+				Some(file) => "/rocx/${file.name}"
+				None => ""
+			}
+		style_value =
+			if css.is_empty() {
+				"Html.empty({})"
+			} else if href.is_empty() {
+				"Html.element(\"style\", [], [Html.source_text(css)])"
+			} else {
+				"Html.void(\"link\", [Html.attr(\"rel\", \"stylesheet\"), Html.attr(\"href\", href)])"
+			}
 		Str.join_with(
 			[
 				"## Every <style> in the app's .rocx files, scoped to the markup it styles (a component's, or at a",
@@ -732,7 +775,13 @@ Build := [].{
 				"\tcss : Str",
 				literal,
 				"",
-				"\t## The stylesheet, as a <style> element; nothing when no file has a <style>.",
+				"\t## Where the browser gets it: a file whose name is its content's hash, beside start.js (`/rocx/styles-<hash>.css`),",
+				"\t## which it keeps; empty when the build has no browser's copy to put it in (then `style` is inline).",
+				"\thref : Str",
+				"\thref = ${Text.roc_string(href)}",
+				"",
+				"\t## The stylesheet in a page's <head>: a <link> to `href`, or the stylesheet in a <style> when",
+				"\t## there is no file; nothing when no file has a <style>.",
 				"\tstyle : Html",
 				"\tstyle = ${style_value}",
 				"}",
@@ -835,8 +884,11 @@ Build := [].{
 	## an app on the server platform (the app's own main.roc): it is the server's program, which the
 	## browser's copy can't compile. `main`: for an app of component pages, the browser's app
 	## (main.roc), with the app's directory as the build shows it; an app of endpoints alone has none.
-	write_client! : Str, Str, List({ key : Str, value : Str }), [Some(Str), None], Str => Try({}, [Problem(Str)])
-	write_client! = |dir, out, client, main, rocx| {
+	## `sheet`: the app's stylesheet, written as a file beside start.js (`static/rocx/<name>`).
+	write_client! : Str, Str, List({ key : Str, value : Str }), { main : [Some(Str), None], sheet : [Some({ name : Str, css : Str }), None] }, Str => Try({}, [Problem(Str)])
+	write_client! = |dir, out, client, wrote, rocx| {
+		main = wrote.main
+		sheet = wrote.sheet
 		root = Fs.resolve(dir, [])
 		target = Fs.resolve(out, [])
 		if target == root or (Fs.relative(target, root).split_on("/").first() ?? "") != ".." {
@@ -880,13 +932,20 @@ Build := [].{
 			}
 		}
 		# An app of component pages: the browser's app (main.roc, its root the app's page), and what
-		# a page loads beside the wasm built from it (`static/rocx/`, served at /rocx/).
+		# a page loads beside the wasm built from it (`static/rocx/`, served at /rocx/): start.js,
+		# runtime.js and the stylesheet.
 		match main {
 			Some(shown_dir) => {
 				main_module = Routes.client_main_module({ web: Build.web_platform!(target, rocx), package_lines: Build.header_packages!(dir, target), dir: shown_dir })
 				_ = Build.write!(Fs.join([target, "main.roc"]), main_module)
 				for name in ["start.js", "runtime.js"] {
 					_ = Build.write!(Fs.join([target, "static", "rocx", name]), Fs.read_or_empty!(Fs.join([rocx, "web", name])))
+				}
+				match sheet {
+					Some(file) => {
+						_ = Build.write!(Fs.join([target, "static", "rocx", file.name]), file.css)
+					}
+					None => {}
 				}
 			}
 			None => {}
