@@ -104,15 +104,16 @@ An Expo-like loop: save a `.rocx` file, and the phone shows the change in about 
 reinstall. Built 2026-11-23, after the spike, at the user's request.
 
 ```sh
-native/android/build.sh --dev-client            # once (and when native/ or web/platform's header changes)
 bin/rocx dev spike/native-apps/phone-hello --port 8095 --android
 ```
 
 `rocx dev --android` does what `rocx dev` does (builds the app, serves it, builds again on each
 save) and, with each build, builds the app's Roc for the phone too. At start, if `adb` sees the
-emulator or a phone on USB, it reverses the server's port to it, installs the dev client if it
-isn't there, opens it at `http://127.0.0.1:<port>`, and shows the phone's log (`adb logcat`, the
-`rocx` tag) in the terminal. A phone on Wi-Fi: open the dev client, give it the computer's address,
+emulator or a phone on USB, it reverses the server's port to it; builds the dev client
+(`native/android/build.sh --dev-client`, about a minute) if it is missing or older than what it is
+made from (native/'s sources, web/platform's header) and installs it if it was built or isn't on
+the phone; opens it at `http://127.0.0.1:<port>`; and shows the phone's log in the terminal (`adb
+logcat`, the `rocx` tag, from Debug up: Roc's `dbg` prints there as `D/rocx: dbg: …`). A phone on Wi-Fi: open the dev client, give it the computer's address,
 and run the server reachable (`-- --host 0.0.0.0`).
 
 - **The dev client** (`build.sh --dev-client`: `rocx-dev.apk`, `dev.rocx.devclient`, 808 KB) is the

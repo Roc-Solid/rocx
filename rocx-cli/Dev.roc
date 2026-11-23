@@ -498,9 +498,9 @@ Dev := [].{
 	}
 
 	## The emulator, or a phone on USB, if adb sees one: the server's port reversed to it (so the dev
-	## client asks http://127.0.0.1:<port>), the dev client installed if it isn't
-	## (native/android/build/dev-client/rocx-dev.apk, `native/android/build.sh --dev-client`) and
-	## opened at the server; and the phone's log (logcat's `rocx` tag) shown here.
+	## client asks http://127.0.0.1:<port>), the dev client built if it is missing or older than
+	## what it is made from (`phone_client!`) and installed if it was, or isn't on the phone, then
+	## opened at the server; and the phone's log (logcat's `rocx` tag, `dbg` and up) shown here.
 	phone_connect! : Phone, Str => {}
 	phone_connect! = |phone, port| {
 		say! = |line| {
@@ -523,20 +523,53 @@ Dev := [].{
 				Err(_) => Bool.False
 			}
 		apk = Fs.join([phone.rocx, "native", "android", "build", "dev-client", "rocx-dev.apk"])
-		if !installed {
-			if File.exists!(apk) {
-				say!("installing the dev client")
-				_ = Cmd.new(phone.adb).args(["install", "-r", apk]).output!()
-				{}
-			} else {
-				say!("no dev client on the phone: build it once (native/android/build.sh --dev-client), then run rocx dev --android again")
+		built = match Dev.phone_client!(phone, apk) {
+			Ok(fresh) => fresh
+			Err(Failed(why)) => {
+				say!(why)
 				return {}
 			}
 		}
+		if built or !installed {
+			say!("installing the dev client")
+			_ = Cmd.new(phone.adb).args(["install", "-r", apk]).output!()
+			{}
+		}
 		_ = Cmd.new(phone.adb).args(["shell", "am", "start", "-n", "dev.rocx.devclient/dev.rocx.phone.RocxActivity", "--es", "origin", "http://127.0.0.1:${port}"]).output!()
 		say!("the dev client is open at http://127.0.0.1:${port}; each build reloads it")
-		_ = Cmd.new(phone.adb).args(["logcat", "-T", "1", "-v", "tag", "rocx:I", "*:S"]).spawn!()
+		_ = Cmd.new(phone.adb).args(["logcat", "-T", "1", "-v", "tag", "rocx:D", "*:S"]).spawn!()
 		{}
+	}
+
+	## The dev client's APK, built (`native/android/build.sh --dev-client`, about a minute) when it
+	## is missing or older than what it is made from: native/'s sources and web/platform's header,
+	## whose fingerprint it carries. Whether it was built now.
+	phone_client! : Phone, Str => Try(Bool, [Failed(Str)])
+	phone_client! = |phone, apk| {
+		made = File.modified!(apk)
+		native = Fs.join([phone.rocx, "native"])
+		sources = ["core/src", "android/src", "android/app", "android-dev/src"].map(|dir| Fs.join([native, dir]))
+		files = ["Cargo.toml", "Cargo.lock", "core/build.rs", "core/Cargo.toml", "android/Cargo.toml", "android/build.sh", "android-dev/Cargo.toml", "android-dev/build.rs"].map(|file| Fs.join([native, file])).concat([Fs.join([phone.rocx, "web", "platform", "main.roc"]), Fs.join([phone.rocx, "web", "platform", "Host.roc"])])
+		var $fresh = made > 0
+		for dir in sources {
+			if !Hosts.not_newer!(dir, made) {
+				$fresh = Bool.False
+			}
+		}
+		for file in files {
+			if File.modified!(file) > made {
+				$fresh = Bool.False
+			}
+		}
+		if $fresh {
+			return Ok(Bool.False)
+		}
+		_ = Stderr.line!("rocx dev --android: building the dev client (native/android/build.sh --dev-client, about a minute)")
+		match Cmd.new(Fs.join([native, "android", "build.sh"])).arg("--dev-client").merged!() {
+			Ok(ran) if ran.code == 0 => Ok(Bool.True)
+			Ok(ran) => Err(Failed("the dev client didn't build:\n${Text.trim_end(ran.output)}"))
+			Err(CantStart(why)) => Err(Failed("the dev client didn't build: ${why}"))
+		}
 	}
 
 	# ---- Building ----
