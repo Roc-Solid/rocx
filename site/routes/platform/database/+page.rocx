@@ -96,7 +96,9 @@ view! = |_|
 				<code>--database-url turso:data/plate.db?mvcc=off</code>, once, gives it back (that mode also keeps
 				Turso's writes taking turns, as SQLite's do). The server keeps a Turso file to itself while it runs (an
 				OS lock on it), so <code>sqlite3</code>, or a test's <code>node:sqlite</code>, opens it once the server
-				has stopped. Turso has no FTS5, so <code>examples/notes</code>' search needs SQLite. And Turso is younger
+				has stopped. Turso has no FTS5, so <code>examples/notes</code>' search and <code>examples/plate</code>'s need
+				SQLite, and no <code>order by</code> inside an aggregate (<code>json_group_array(value order by key)</code>,
+				which <code>examples/board</code> uses). And Turso is younger
 				than SQLite (0.8, before its 1.0): once it has checkpointed rows, deleting many of them slows what
 				follows badly until its next checkpoint (<code>pragma wal_checkpoint(truncate)</code> after such a
 				delete avoids it; <code>?mvcc=off</code> doesn't have it).

@@ -126,7 +126,8 @@ Turso, `sqlite:<path>` a Turso app on SQLite). `turso.rs` mirrors `sqlite.rs`: 8
 blocking threads, WAL, a transaction begun `immediate`, a statement interrupted past its time limit,
 its statements prepared once per connection; it drives a statement's steps itself, sleeping the
 delay Turso asks for before trying a lock again. The server holds a Turso file while it runs (an OS
-lock: no `sqlite3` beside it), and Turso has no FTS5.
+lock: no `sqlite3` beside it). Turso has no FTS5, nor an `order by` inside an aggregate
+(`json_group_array(value order by key)`, which examples/board uses).
 
 Turso writes at once (D-049): its file is in MVCC mode, `Db.transaction!` begins `concurrent` and
 runs its body again when it loses to another's write to the same row (`Conflict: …`, noted by the
