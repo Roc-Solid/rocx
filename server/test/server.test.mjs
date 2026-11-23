@@ -1123,6 +1123,57 @@ test("jobs: a time limit cuts off Roc that never waits (D-057): a loop on number
 	assert.equal(await settled(), before, "what the runs allocated was freed");
 });
 
+test("jobs: the interrupt signals the server's own Roc thread alone (D-057): a shell that runs the server, trapping SIGURG, and this test's process hear none while a job that loops forever is cut off", { skip: skipDb || noInterrupt }, async () => {
+	// A database of its own: no other server here takes the job.
+	const db = await testDatabase();
+	const heard = join(dir, `sigurg-${run}.txt`);
+	let nodeHeard = 0;
+	const onUrg = () => nodeHeard++;
+	process.on("SIGURG", onUrg);
+	// bash, the server's parent and in its process group, notes each SIGURG it hears; `wait` returns
+	// when one interrupts it, so it waits again until the server has ended.
+	const script = [
+		`trap 'echo urg >> "$HEARD"' URG`,
+		`"$APP" --port 0 --debug --context-file "$CONTEXT" --database-url "$DB" &`,
+		"child=$!",
+		'echo "child=$child" >&2',
+		'while kill -0 "$child" 2>/dev/null; do wait "$child"; done',
+	].join("\n");
+	const shell = spawn("bash", ["-c", script], {
+		stdio: ["ignore", "ignore", "pipe"],
+		env: { ...process.env, ROCX_LOG: "", ROCX_TEST_SETTING: SETTING, FIXTURE_KEY: "set", HEARD: heard, APP: app, CONTEXT: join(dir, "context.txt"), DB: db.url },
+	});
+	let logged = "";
+	let child = 0;
+	try {
+		const url = await new Promise((resolve, reject) => {
+			shell.stderr.on("data", (chunk) => {
+				logged += chunk;
+				child ||= Number(/child=(\d+)/.exec(logged)?.[1] ?? 0);
+				const listening = /rocx server: (http:\/\/\S+) /.exec(logged);
+				if (listening) resolve(listening[1]);
+			});
+			shell.on("exit", (code) => reject(new Error(`the shell exited (${code}):\n${logged}`)));
+		});
+		const ask = async (path, options) => (await fetch(`${url}${path}`, options)).text();
+		const loop = `${run}parent`;
+		assert.equal(await ask(`/jobs/slow?run=${loop}&on=spin`, { method: "POST" }), "queued");
+		assert.equal(await until(async () => (await ask(`/jobs/state?run=${loop}`)) === "failed 2 timed out after 300 ms", 10000), true, "cut off, twice");
+		assert.equal(existsSync(heard), false, `the shell heard SIGURG: ${existsSync(heard) ? readFileSync(heard, "utf8") : ""}`);
+		assert.equal(nodeHeard, 0, "this test's process heard SIGURG");
+		process.kill(child, "SIGTERM");
+		assert.equal(await new Promise((resolve) => shell.once("exit", (code, signal) => resolve(signal ?? code))), 0, "the shell ended as its server did, not by a signal");
+		assert.equal(existsSync(heard), false, "nor as the server stopped");
+	} finally {
+		process.off("SIGURG", onUrg);
+		if (shell.exitCode === null) {
+			if (child) process.kill(child, "SIGKILL");
+			shell.kill("SIGKILL");
+		}
+		await db.drop();
+	}
+});
+
 test("jobs: a key is one pending job's: a second is refused while the first waits, and taken again once it is canceled or done", { skip: skipDb }, async () => {
 	const keyed = `${run}keyed`;
 	const key = `${run}:one`;
