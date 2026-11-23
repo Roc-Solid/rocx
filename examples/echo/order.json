@@ -1,0 +1,19 @@
+{
+	"id": "order-1042",
+	"placed_at": "2026-11-23T19:30:00Z",
+	"paid": true,
+	"customer": {
+		"id": 381,
+		"name": "Jordan Rivers",
+		"email": "jordan@example.com",
+		"address": { "street": "12 Harbour Lane", "city": "Bristol", "postcode": "BS1 4QA", "country": "GB" }
+	},
+	"items": [
+		{ "sku": "MUG-BLUE", "name": "Mug, blue", "quantity": 2, "price_cents": 1250, "tags": ["kitchen", "gift"] },
+		{ "sku": "TEA-EARL-250", "name": "Earl Grey, 250 g", "quantity": 1, "price_cents": 899, "tags": ["tea", "loose leaf"] },
+		{ "sku": "CARD-BDAY", "name": "Birthday card", "quantity": 3, "price_cents": 350, "tags": [] },
+		{ "sku": "SPOON-WOOD", "name": "Wooden spoon", "quantity": 1, "price_cents": 475, "tags": ["kitchen"] }
+	],
+	"shipping": { "method": "standard", "price_cents": 495 },
+	"notes": "Leave it with the neighbour at number 14"
+}

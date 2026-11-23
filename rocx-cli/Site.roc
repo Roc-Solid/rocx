@@ -210,10 +210,34 @@ Site := [].{
 			"\t\t},",
 		]
 		level = |l| "{ connections: ${Site.int(field(l, "connections"))}, rps: ${Site.int(field(l, "rps"))}, p50_us: ${Site.int(field(l, "p50_us"))}, p99_us: ${Site.int(field(l, "p99_us"))}, errors: ${Site.int(field(l, "errors"))} }"
+		variant = |v| {
+			body = Value.str(field(v, "body"))
+			shown = Value.str_or(field(v, "shown"), body)
+			"{ name: ${q(Value.str(field(v, "name")))}, path: ${q(Value.str(field(v, "path")))}, body: ${q(body)}, shown: ${q(shown)}, bytes: ${Site.int(field(v, "bytes"))}, roc_us: ${Site.int(field(v, "roc_us"))}, load: ${q(Value.str(field(v, "load")))}, levels: [${Str.join_with(Value.items(field(v, "levels")).map(level), ", ")}] }"
+		}
 		b = field(facts, "bench")
+		# A benchmark from before echo had two endpoints measured its one: POST /echo, a string.
+		variants =
+			match field(b, "variants") {
+				Array(list) => list
+				_ => {
+					body = Value.str_or(field(b, "body"), "\"hello\"")
+					[
+						Object([
+							{ key: "name", value: Text("simple") },
+							{ key: "path", value: Text("/echo") },
+							{ key: "body", value: Text(body) },
+							{ key: "bytes", value: Value.count(body.to_utf8().len()) },
+							{ key: "roc_us", value: field(b, "roc_us") },
+							{ key: "load", value: field(b, "load") },
+							{ key: "levels", value: field(b, "levels") },
+						]),
+					]
+				}
+			}
 		bench_line =
 			match b {
-				Object(_) => "\tbench = [{ measured: ${q(Value.str(field(b, "measured")))}, commit: ${q(Value.str(field(b, "commit")))}, machine: ${q(Value.str(field(b, "machine")))}, load: ${q(Value.str(field(b, "load")))}, opt: ${q(Value.str(field(b, "opt")))}, seconds: ${Site.int(field(b, "seconds"))}, roc_us: ${Site.int(field(b, "roc_us"))}, levels: [${Str.join_with(Value.items(field(b, "levels")).map(level), ", ")}], hardware: ${Site.machine_record(field(b, "hardware"))} }]"
+				Object(_) => "\tbench = [{ measured: ${q(Value.str(field(b, "measured")))}, commit: ${q(Value.str(field(b, "commit")))}, machine: ${q(Value.str(field(b, "machine")))}, load: ${q(Value.str(field(b, "load")))}, opt: ${q(Value.str(field(b, "opt")))}, seconds: ${Site.int(field(b, "seconds"))}, hardware: ${Site.machine_record(field(b, "hardware"))}, variants: [${Str.join_with(variants.map(variant), ", ")}] }]"
 				_ => "\tbench = []"
 			}
 		runtime = size(field(facts, "runtime"))
@@ -227,7 +251,10 @@ Site := [].{
 				"\tExample : { name : Str, title : Str, pages : U64, endpoints : U64, lines : U64, expects : U64, tests : U64, pkgs : List(Str), database : Str, wasm : List(Size) }",
 				"\tLevel : { connections : U64, rps : U64, p50_us : U64, p99_us : U64, errors : U64 }",
 				"\tHardware : { model : Str, cpu : Str, cores : Str, memory : Str, storage : Str, os : Str, arch : Str, power : Str }",
-				"\tBench : { measured : Str, commit : Str, machine : Str, load : Str, opt : Str, seconds : U64, roc_us : U64, levels : List(Level), hardware : Hardware }",
+				"",
+				"\t## One endpoint's run: what was sent (`body`, exactly; `shown`, as the page shows it), Roc's own time on a request, and each level.",
+				"\tVariant : { name : Str, path : Str, body : Str, shown : Str, bytes : U64, roc_us : U64, load : Str, levels : List(Level) }",
+				"\tBench : { measured : Str, commit : Str, machine : Str, load : Str, opt : Str, seconds : U64, hardware : Hardware, variants : List(Variant) }",
 				"",
 				"\t## When, at which commit, with which compiler, and on what the sizes were measured.",
 				"\tmeasured : { date : Str, commit : Str, roc : Str, machine : Str }",

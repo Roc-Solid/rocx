@@ -3,12 +3,14 @@
 // app's browser half (rocx build --client, then its wasm with --opt=size, as `just examples` builds
 // it) raw, gzipped and brotli'd, the runtime every page loads beside it, and what the app is made of
 // (its pages, endpoints, lines of Roc, expects, node tests, packages, whether it has Postgres). With
-// --bench, echo's server too: the build it ships (--opt=speed) under bombardier, as
+// --bench, echo's server too: the build it ships (--opt=speed) under bombardier, each of its two
+// endpoints (POST /echo with a JSON string, POST /echo/json with an order that nests), as
 // examples/echo/bench.sh runs it, with the machine and its load at the time.
 //
 //   node site/example-apps.mjs               every example; the last benchmark kept
 //   node site/example-apps.mjs tasks plate   only these (the others kept as they were)
-//   node site/example-apps.mjs --bench       and echo's benchmark again (a minute or so)
+//   node site/example-apps.mjs --bench       and echo's benchmark again (two minutes or so)
+//   node site/example-apps.mjs --bench --seconds=1   each level for a second (a try, not a measuring)
 //   node site/example-apps.mjs --counts      what each is made of again, the sizes kept (no builds)
 //
 // The site's build (`rocx site prepare`, rocx-cli/Site.roc) writes site/Generated/ExampleApps.roc from
@@ -125,9 +127,19 @@ function machineName() {
 const commit = () => run("git", ["rev-parse", "--short", run("git", ["merge-base", "HEAD", "master"]).trim()]).trim();
 const today = () => new Date().toISOString().slice(0, 10);
 
-/** Echo's benchmark: its --opt=speed build, POST /echo under bombardier at 1, 16, 64 and 256
- * connections for `seconds` each, after a warm-up, as examples/echo/bench.sh runs it; and Roc's own
- * time on a request, from the answers' server-timing. */
+/** What echo's benchmark sends, endpoint by endpoint: a JSON string (simple), then an order that
+ * nests (json; examples/echo/order.json, sent compact as a client sends it). */
+export function echoVariants() {
+	const order = JSON.parse(readFileSync(join(root, "examples", "echo", "order.json"), "utf8"));
+	return [
+		{ name: "simple", path: "/echo", body: '"hello"' },
+		{ name: "json", path: "/echo/json", body: JSON.stringify(order) },
+	];
+}
+
+/** Echo's benchmark: its --opt=speed build, each endpoint (`echoVariants`) under bombardier at 1,
+ * 16, 64 and 256 connections for `seconds` each, after a warm-up, as examples/echo/bench.sh runs
+ * it; and Roc's own time on a request, from the answers' server-timing. */
 async function bench(rocx, seconds = 10) {
 	const out = join(tmpdir(), "rocx-example-apps", "echo-server");
 	run(rocx, ["build", "examples/echo"]);
@@ -135,11 +147,11 @@ async function bench(rocx, seconds = 10) {
 	const port = 18000 + Math.floor(Math.random() * 900);
 	const server = spawn(out, ["--port", String(port), "--host", "127.0.0.1"], { stdio: "ignore" });
 	try {
-		const url = `http://127.0.0.1:${port}/echo`;
-		const post = () => fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: '"hello"' });
+		const base = `http://127.0.0.1:${port}`;
+		const post = (path, body) => fetch(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body });
 		for (let tries = 0; ; tries++) {
 			try {
-				await post();
+				await post("/echo", '"hello"');
 				break;
 			} catch (error) {
 				if (tries > 100) throw error;
@@ -147,27 +159,48 @@ async function bench(rocx, seconds = 10) {
 			}
 		}
 		const load = loadavg()[0];
-		const bombard = (connections, duration) => JSON.parse(run("bombardier", ["-m", "POST", "-H", "content-type: application/json", "-b", '"hello"', "-c", String(connections), "-d", duration, "-l", "-p", "r", "-o", "json", url]));
-		bombard(64, "3s");
-		const levels = [];
-		for (const connections of [1, 16, 64, 256]) {
-			const { result } = bombard(connections, `${seconds}s`);
-			levels.push({
-				connections,
-				rps: Math.round(result.rps.mean),
-				p50_us: Math.round(result.latency.percentiles["50"]),
-				p99_us: Math.round(result.latency.percentiles["99"]),
-				errors: result.req1xx + result.req3xx + result.req4xx + result.req5xx + result.others,
+		const variants = [];
+		for (const { name, path, body } of echoVariants()) {
+			// Each endpoint must answer what the benchmark sends before it is timed.
+			const tried = await post(path, body);
+			if (tried.status !== 200) throw new Error(`POST ${path} answered ${tried.status}: ${await tried.text()}`);
+			const bombard = (connections, duration) =>
+				JSON.parse(run("bombardier", ["-m", "POST", "-H", "content-type: application/json", "-b", body, "-c", String(connections), "-d", duration, "-l", "-p", "r", "-o", "json", `${base}${path}`]));
+			const before = loadavg()[0];
+			process.stderr.write(`echo (${name})… `);
+			bombard(64, "3s");
+			const levels = [];
+			for (const connections of [1, 16, 64, 256]) {
+				const { result } = bombard(connections, `${seconds}s`);
+				levels.push({
+					connections,
+					rps: Math.round(result.rps.mean),
+					p50_us: Math.round(result.latency.percentiles["50"]),
+					p99_us: Math.round(result.latency.percentiles["99"]),
+					errors: result.req1xx + result.req3xx + result.req4xx + result.req5xx + result.others,
+				});
+			}
+			// Roc's own part of a request: the median of the server-timing durations of 200 more, one at a time.
+			const roc_us = [];
+			for (let i = 0; i < 200; i++) {
+				const timing = (await post(path, body)).headers.get("server-timing") ?? "";
+				const dur = /dur=([\d.]+)/.exec(timing)?.[1];
+				if (dur) roc_us.push(Number(dur) * 1000);
+			}
+			roc_us.sort((a, b) => a - b);
+			process.stderr.write(`${levels.find((level) => level.connections === 64)?.rps} a second at 64\n`);
+			variants.push({
+				name,
+				path,
+				body,
+				// As the page shows it: the order laid out, the string as it is.
+				shown: JSON.stringify(JSON.parse(body), null, 2),
+				bytes: Buffer.byteLength(body),
+				roc_us: Math.round(roc_us[Math.floor(roc_us.length / 2)] ?? 0),
+				load: `${before.toFixed(1)} → ${loadavg()[0].toFixed(1)}`,
+				levels,
 			});
 		}
-		// Roc's own part of a request: the median of the server-timing durations of 200 more, one at a time.
-		const roc_us = [];
-		for (let i = 0; i < 200; i++) {
-			const timing = (await post()).headers.get("server-timing") ?? "";
-			const dur = /dur=([\d.]+)/.exec(timing)?.[1];
-			if (dur) roc_us.push(Number(dur) * 1000);
-		}
-		roc_us.sort((a, b) => a - b);
 		return {
 			app: "echo",
 			measured: today(),
@@ -177,9 +210,7 @@ async function bench(rocx, seconds = 10) {
 			load: `${load.toFixed(1)} → ${loadavg()[0].toFixed(1)}`,
 			opt: "speed",
 			seconds,
-			body: '"hello"',
-			roc_us: Math.round(roc_us[Math.floor(roc_us.length / 2)] ?? 0),
-			levels,
+			variants,
 		};
 	} finally {
 		server.kill();
@@ -214,7 +245,7 @@ async function main(args) {
 		machine: machineName(),
 		runtime: sizes(readFileSync(join(root, "web", "runtime.js"))),
 		examples,
-		bench: args.includes("--bench") ? await bench(rocx) : before.bench,
+		bench: args.includes("--bench") ? await bench(rocx, Number(args.find((arg) => arg.startsWith("--seconds="))?.slice(10)) || 10) : before.bench,
 	};
 	writeFileSync(factsFile, `${JSON.stringify(facts, null, "\t")}\n`);
 	console.log(`wrote ${relative(root, factsFile)}`);

@@ -112,8 +112,9 @@ nothing else.
 - [`tasks`](examples/tasks): Tasks, a small team's task lists. Start here: file routing, a
   middleware, a database (SQLite), pages that read endpoints, forms that work without JavaScript, and
   optimistic actions, in the plainest way, with comments throughout.
-- [`echo`](examples/echo): the smallest app on the server platform, one endpoint, for measuring
-  the server (`bench.sh`).
+- [`echo`](examples/echo): the smallest app on the server platform, two endpoints (a JSON string,
+  and an order that nests), for measuring the server and what reading and writing JSON adds
+  (`bench.sh`).
 - [`sqlite-vs-turso`](examples/sqlite-vs-turso): the same database work timed in Roc on SQLite and
   on Turso (MVCC, and WAL): writes, reads, scans, JSON, a recursive query, and eight actors writing
   at once; `just db-bench` puts its numbers on its docs page.

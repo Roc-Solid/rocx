@@ -1,6 +1,7 @@
-## The smallest app on the server platform: one endpoint, POST /echo, which answers with what it was
-## sent. It's for measuring the server itself (README.md says how): every request goes through the
-## generated routes and a middleware that only passes it on, and nothing else.
+## The smallest app on the server platform: POST /echo answers with the JSON string it was sent, and
+## POST /echo/json reads an order (Shop.Order) and writes it back. It's for measuring the server
+## itself, and what reading and writing JSON adds (README.md says how): every request goes through
+## the generated routes and a middleware that only passes it on, and nothing else.
 app [program] { pf: platform "../../server/platform/main.roc" }
 
 import pf.Middleware

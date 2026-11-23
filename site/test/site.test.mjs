@@ -1302,7 +1302,9 @@ test("the examples' facts name every example app the repository has (`just examp
 	for (const app of facts.examples) {
 		if (app.wasm) assert.ok(app.wasm.brotli > 0 && app.wasm.brotli < app.wasm.gzip && app.wasm.gzip < app.wasm.bytes, `${app.name}'s sizes`);
 	}
-	assert.ok(facts.bench?.levels.length > 0, "echo's benchmark: `just example-apps --bench`");
+	// Echo's benchmark, on each of its endpoints: `just example-apps --bench`.
+	assert.deepEqual(facts.bench?.variants?.map((variant) => variant.name), ["simple", "json"], "echo's benchmark, on both endpoints: `just example-apps --bench`");
+	for (const variant of facts.bench.variants) assert.ok(variant.levels.length > 0 && variant.roc_us > 0, `echo (${variant.name})'s levels and Roc's time`);
 });
 
 test("the examples: an overview with a row for each app, and each app's page with its notes, numbers, screenshots, and echo's benchmark", { skip }, async () => {
@@ -1330,7 +1332,13 @@ test("the examples: an overview with a row for each app, and each app's page wit
 		}
 	}
 	const echo = await page("/examples/echo");
-	for (const level of facts.bench.levels) assert.ok(echo.includes(level.rps.toLocaleString("en-US")), `echo at ${level.connections} connections`);
+	for (const variant of facts.bench.variants) {
+		assert.ok(echo.includes(`echo (${variant.name})`), `echo (${variant.name})'s part`);
+		for (const level of variant.levels) assert.ok(echo.includes(level.rps.toLocaleString("en-US")), `echo (${variant.name}) at ${level.connections} connections`);
+	}
+	// What the benchmark sends: the string, and the order, laid out.
+	assert.match(echo, /the body <code[^>]*>&quot;hello&quot;<\/code>/, "the string echo (simple) sends");
+	assert.ok(echo.includes(JSON.parse(facts.bench.variants[1].body).id), "the order echo (json) sends");
 	assert.ok(overview.includes(facts.measured), "when they were measured");
 	// The sidebar lists them all, each page's own marked.
 	const tasks = await page("/examples/tasks");

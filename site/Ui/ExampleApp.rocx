@@ -129,7 +129,8 @@ ExampleApp := [].{
 		if (all.is_empty()) "the platform alone" else Str.join_with(all, ", ")
 	}
 
-	## The server's benchmark: echo's build as it would ship, under bombardier.
+	## The server's benchmark: echo's build as it would ship, under bombardier, on each of its
+	## endpoints in turn (`ExampleApps.Variant`): what each was sent, its table, and Roc's own time.
 	bench : List(ExampleApps.Bench) -> Html
 	bench = |benches|
 		match benches.first() {
@@ -137,32 +138,76 @@ ExampleApp := [].{
 				<>
 					<Heading id="bench">The benchmark</Heading>
 					<p>
-						{"Its server, built with "}<code>{"--opt=${it.opt}"}</code>{" as it would ship, answering "}<code>POST /echo</code>{" under "}
-						<a href="https://github.com/codesenberg/bombardier" rel="external">bombardier</a>{" for ${it.seconds.to_str()} seconds at each number of connections, after a warm-up ("}
-						<code>examples/echo/bench.sh</code>{" runs the same). Each request goes through the host, the generated routes, a middleware, reading the JSON body and writing the JSON answer."}
+						{"Its server, built with "}<code>{"--opt=${it.opt}"}</code>{" as it would ship, under "}
+						<a href="https://github.com/codesenberg/bombardier" rel="external">bombardier</a>{", which sends a request on each of its connections, the next as soon as the answer is in, for ${ExampleApp.plural(it.seconds, "second")} at each number of connections, after a warm-up: first to "}<code>POST /echo</code>{", then to "}<code>POST /echo/json</code>{" ("}<code>examples/echo/bench.sh</code>{" runs the same). Every request goes through the host, the generated routes, a middleware that only passes it on, reading the JSON body and writing the JSON answer. What differs is the body: a string, then an order that nests."}
 					</p>
-					<TableWrap>
-						<table class="bench">
-							<thead>
-								<tr>
-									<th scope="col" class="num">Connections</th>
-									<th scope="col" class="num">Requests a second</th>
-									<th scope="col" class="num">Latency, median</th>
-									<th scope="col" class="num">99th percentile</th>
-									<th scope="col" class="num">Errors</th>
-								</tr>
-							</thead>
-							<tbody>
-								{...it.levels.map(|level| <tr><td class="num">{level.connections.to_str()}</td><td class="num">{ExampleApp.count(level.rps)}</td><td class="num">{ExampleApp.time(level.p50_us)}</td><td class="num">{ExampleApp.time(level.p99_us)}</td><td class="num">{level.errors.to_str()}</td></tr>)}
-							</tbody>
-						</table>
-					</TableWrap>
+					{...it.variants.map(|variant| ExampleApp.part(variant, it.variants))}
+					{=if (it.variants.any(|variant| variant.name == "json")) Html.empty({}) else <><h3 id="bench-json">echo (json)</h3><p class="missing">Not measured yet: run <code>just example-apps --bench</code>.</p></>}
 					<p>
-						{"Of a request's time, Roc's own (the median of the "}<code>server-timing</code>{" its answers carry, one request at a time) is ${ExampleApp.time(it.roc_us)}: the rest is HTTP and the host. Measured on ${it.measured}, at commit "}<code>{it.commit}</code>{", with bombardier on the same machine competing for its cores, and the machine busy with other work besides (its load average was ${it.load} during the run): read them as a floor, not a ceiling."}
+						{"Measured on ${it.measured}, at commit "}<code>{it.commit}</code>{", with bombardier on the same machine, competing with the server for its cores: read the numbers as a floor, not a ceiling. The machine's load average went from ${it.load} over the run, the benchmark's own load included."}
 					</p>
 					<Machine machine={it.hardware} />
 				</>
 			Err(_) => <p class="missing">Not measured yet: run <code>just example-apps --bench</code>.</p>
+		}
+
+	## One endpoint's part of the benchmark: what each request sends, the table, and Roc's own time
+	## (beside the string's, for the order).
+	part : ExampleApps.Variant, List(ExampleApps.Variant) -> Html
+	part = |it, all|
+		<>
+			<h3 id={"bench-${it.name}"}>{"echo (${it.name})"}</h3>
+			{=ExampleApp.sends(it)}
+			<TableWrap>
+				<table class="bench">
+					<thead>
+						<tr>
+							<th scope="col" class="num">Connections</th>
+							<th scope="col" class="num">Requests a second</th>
+							<th scope="col" class="num">Latency, median</th>
+							<th scope="col" class="num">99th percentile</th>
+							<th scope="col" class="num">Errors</th>
+						</tr>
+					</thead>
+					<tbody>
+						{...it.levels.map(|level| <tr><td class="num">{level.connections.to_str()}</td><td class="num">{ExampleApp.count(level.rps)}</td><td class="num">{ExampleApp.time(level.p50_us)}</td><td class="num">{ExampleApp.time(level.p99_us)}</td><td class="num">{level.errors.to_str()}</td></tr>)}
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>{"Of a request's time, Roc's own (the median of the "}<code>server-timing</code>{" its answers carry, one request at a time) is ${ExampleApp.time(it.roc_us)}${ExampleApp.beside(it, all)}: the rest is HTTP and the host."}</p>
+		</>
+
+	## What each request of an endpoint's run sends, and what the endpoint does with it.
+	sends : ExampleApps.Variant -> Html
+	sends = |it|
+		match it.name {
+			"simple" =>
+				<p>
+					{"Each request is "}<code>{"POST ${it.path}"}</code>{" with "}<code>content-type: application/json</code>{" and the body "}<code>{it.body}</code>{" (${ExampleApp.plural(it.bytes, "byte")}): a JSON string, which the endpoint reads into a "}<code>Str</code>{" and answers as it is. It's the least an endpoint can be asked, so what's left is the server's own cost."}
+				</p>
+			"json" =>
+				<>
+					<p>
+						{"Each request is "}<code>{"POST ${it.path}"}</code>{" with an order: a customer with an address, items each with its tags, shipping and a note, ${ExampleApp.plural(it.bytes, "byte")} as sent (compact, as a client sends JSON). The endpoint reads it into a record of its type, "}<code>Shop.Order</code>{" (records in records, a list of records, lists of strings, numbers and a Bool), and answers with it, written as JSON again: what most endpoints do with a body. One the type doesn't fit is refused with a 400 before the endpoint runs."}
+					</p>
+					<details>
+						<summary>The order it sends</summary>
+						<Code title="examples/echo/order.json, laid out (it is sent compact)" source={it.shown} plain numbers={Bool.False} />
+					</details>
+				</>
+			_ =>
+				<p>
+					{"Each request is "}<code>{"POST ${it.path}"}</code>{" with a JSON body of ${ExampleApp.plural(it.bytes, "byte")}."}
+				</p>
+		}
+
+	## For the order: the string's time beside its own, and what reading and writing it adds.
+	beside : ExampleApps.Variant, List(ExampleApps.Variant) -> Str
+	beside = |it, all|
+		match all.find_first(|other| other.name == "simple") {
+			Ok(simple) if it.name != "simple" and it.roc_us > simple.roc_us =>
+				" (the string's is ${ExampleApp.time(simple.roc_us)}, so reading and writing the order adds ${ExampleApp.time(it.roc_us - simple.roc_us)})"
+			_ => ""
 		}
 
 	## Bytes as kilobytes, to a tenth: "193.4 KB".

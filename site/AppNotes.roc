@@ -41,9 +41,9 @@ AppNotes := [].{
 		{
 			name: "echo",
 			path: Paths.examples_echo,
-			blurb: "One endpoint, to measure the server",
-			summary: "The smallest app on the server platform: one endpoint, POST /echo, which answers with the JSON it was sent, through a middleware that only passes it on. It has no browser half. It is there to measure the server itself.",
-			shows: ["Everything a request goes through, and nothing more", "The server's benchmark"],
+			blurb: "Two endpoints, to measure the server",
+			summary: "The smallest app on the server platform: two endpoints, through a middleware that only passes a request on. POST /echo answers with the JSON string it was sent; POST /echo/json reads an order that nests into a record of its type and writes it back. It has no browser half. It is there to measure the server itself, and what reading and writing JSON adds.",
+			shows: ["Everything a request goes through, and nothing more", "A body read into a typed record that nests, and written back", "The server's benchmark, on each endpoint"],
 			shots: [],
 		},
 		{

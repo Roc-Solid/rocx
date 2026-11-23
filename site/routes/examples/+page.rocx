@@ -36,7 +36,7 @@ view! = |_|
 					{ label: "The smallest browser half", value: ExampleApp.kb(Overview.smallest.brotli), note: "wasm, brotli: a page and a counter" },
 					{ label: "The runtime beside it", value: ExampleApp.kb(ExampleApps.runtime.brotli), note: "brotli: the JavaScript every page loads too" },
 					{ label: "The largest here", value: ExampleApp.kb(Overview.largest.brotli), note: "wasm, brotli: ${Overview.largest_name}" },
-					{ label: "Echo, answered", value: Overview.rps(ExampleApps.bench, 64), note: "requests a second at 64 connections" },
+					{ label: "Echo, answered", value: Overview.rps(ExampleApps.bench, "simple", 64), note: Overview.echo_note },
 				]}
 			/>
 			<TableWrap>
@@ -94,13 +94,25 @@ Overview := [].{
 	largest_name : Str
 	largest_name = Overview.sized.last().map_ok(|each| each.name) ?? ""
 
-	## Requests a second the benchmark measured at `connections`, or "–".
-	rps : List(ExampleApps.Bench), U64 -> Str
-	rps = |benches, connections|
+	## Requests a second the benchmark measured on echo's `endpoint` ("simple", "json") at
+	## `connections`, or "–".
+	rps : List(ExampleApps.Bench), Str, U64 -> Str
+	rps = |benches, endpoint, connections|
 		match benches.first() {
-			Ok(it) => it.levels.find_first(|level| level.connections == connections).map_ok(|level| ExampleApp.count(level.rps)) ?? "–"
+			Ok(it) =>
+				match it.variants.find_first(|variant| variant.name == endpoint) {
+					Ok(variant) => variant.levels.find_first(|level| level.connections == connections).map_ok(|level| ExampleApp.count(level.rps)) ?? "–"
+					Err(_) => "–"
+				}
 			Err(_) => "–"
 		}
+
+	## Under echo's number: what it was sent, and the order's number once it is measured.
+	echo_note : Str
+	echo_note = {
+		json = Overview.rps(ExampleApps.bench, "json", 64)
+		if (json == "–") "requests a second at 64 connections, a JSON string each" else "requests a second at 64 connections, a JSON string each; ${json} with an order that nests"
+	}
 
 	## An app's row: its name (a link to its page), a line on what it is, and its numbers.
 	row : ExampleApps.Example -> Html
