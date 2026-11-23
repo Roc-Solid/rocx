@@ -290,7 +290,7 @@ SiteSources := [].{
 		"<DIV>Hi</DIV>",
 		"<input checked?=\"yes\" />",
 		"<p style:font_size={c}>Hi</p>",
-		"<input on:input.files={f} />",
+		"<p on:click.files={f}>Hi</p>",
 	]
 
 	## Whether `line` is one a pattern keeps.
