@@ -4148,3 +4148,39 @@ name, and option 3 would make every actor module `.rocx`. `name` and `initial` t
 a kind's block, so a local of the same name shadows them.
 
 **Reversible:** yes: every kind becomes a value again and every call goes back through `Actor`.
+## D-063 iOS and Android apps: the same .rocx files, native views, no JS
+
+**Status.** Proposed (2026-11-23). Nothing is built; the design, with its phases and the questions
+it waits on, is `spike/native-apps/DESIGN.md`. The web stays the primary target; this is
+background work.
+
+**Context.** The user wants iOS and Android apps from an app's `.rocx` files, the way React Native
+gives them, with Lynx's approach (a web-like vocabulary and a CSS subset rendered as native views)
+and no JavaScript. Lynx itself can only be driven from JS (its Element PAPI is main-thread JS
+globals; no public native API; wasm only on Android, interpreted), so it was ruled out. A
+component's markup already reaches its host as JSON whose holes are boxes the host runs, with no
+DOM operation in `Host.roc`, so the Roc side carries over.
+
+**Proposal.**
+
+- The app compiled for a phone is the browser's app compiled for another target: `web/platform`
+  gains `arm64ios`, `arm64iossim` and `arm64android` targets, with the same 49 hosted functions.
+- `native/core` (Rust, no platform code): a port of `runtime.js`'s engine, minus the DOM; a CSS
+  subset compiled and checked at build time; Taffy for block, flex and grid layout; batches of view
+  ops per flush. `native/ios` (objc2) and `native/android` (JNI and a small Kotlin applier) turn the
+  ops into native views and measure text.
+- HTML tags keep their meaning (a `<div>` is a view, a `<p>` a text view, an `<input>` a native
+  field, a same-app `<a>` pushes a screen). What a phone can't do is reported by the build, never
+  refused for the web.
+- One thread, as in a browser; the same server over HTTP with a cookie jar; every page in the
+  binary, a stack of screens, layouts kept.
+- Phase 0 needs no phone: the engine, linked with `web/test/app` compiled for the Mac, must match
+  Chromium's DOM after the same steps.
+
+**Costs.** Two reactive engines (JS and Rust) held together by a conformance suite; a CSS subset
+that can make a web page look off on a phone; three more fork targets; about two and a half to
+three months of background work to Plate on both phones.
+
+**Reversible:** yes. Everything is in `native/` and new platform targets; the web's code paths
+don't change.
+

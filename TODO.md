@@ -12,6 +12,24 @@ When an item lands, delete its line here in the same commit.
 
 ## Waiting on a decision by the user
 
+- **Client-side navigation (D-040, Proposed).** Twelve questions, each with a recommendation, are in
+  `spike/client-nav/DESIGN.md` §17. The plan (§15) after the answers:
+  1. Phase 1: same-app links and `Router.navigate!`, with the page's body made anew. This phase also
+     fixes URLs the runtime builds without `--base` (a computed `href` patched to `/x` while
+     hydrating).
+  2. The app's stylesheet as a file with its hash in its name, rather than inline in every page
+     (question 9).
+  3. Phase 2: kept layouts, the query changed in place (`use_search_params!`), `<A>`, `<Navigate>`
+     and GET forms.
+  4. Phase 3: prefetch and View Transitions.
+
+  D-039 gave route views getters, so question 4 (keep a page across a change of its params) no
+  longer costs a change to every page, whichever way it is answered.
+- **iOS and Android apps (D-063, Proposed).** Nine questions, each with a recommendation, are in
+  `spike/native-apps/DESIGN.md` §15. Background work; the web stays primary. The plan (§13):
+  phase 0 is the Rust engine on the Mac, passing `web/test/app` against Chromium; then Plate on the
+  iOS simulator, Plate usable on iOS, Android, and the reach (animations, plugins' native halves,
+  signing). The fork needs `arm64ios`, `arm64iossim` and `arm64android` targets (the user's PRs).
 - **packages/markdown:** open questions 1, 2, 4 and 5 in its `PROPOSALS.md`:
   - trusted HTML;
   - `<Markdown>` server-only by default;
