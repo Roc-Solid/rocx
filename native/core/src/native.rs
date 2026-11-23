@@ -176,7 +176,7 @@ impl Projection<'_> {
                 props.insert("alt".into(), attr("alt").unwrap_or_default());
                 ("image", Vec::new())
             }
-            _ if self.inline_only(node) => {
+            _ if self.inline_only(node) && self.has_inline(node) => {
                 props.insert("text".into(), collapse(&self.inline_text(node)));
                 ("text", Vec::new())
             }
@@ -244,6 +244,12 @@ impl Projection<'_> {
             Kind::Text(_) | Kind::Comment | Kind::Fragment => true,
             Kind::Element { tag, .. } => HIDDEN.contains(&tag.as_str()) || (INLINE.contains(&tag.as_str()) && self.inline_only(child)),
         })
+    }
+
+    /// Whether an element holds any text or inline element (one with nothing in it but a hole's
+    /// markers, an emptied list, stays a box).
+    fn has_inline(&self, node: NodeId) -> bool {
+        self.dom().nodes[node].children.iter().any(|&child| matches!(self.dom().nodes[child].kind, Kind::Text(_) | Kind::Element { .. }))
     }
 
     /// The text inline content says (`textContent`, a `<br>` a line break).

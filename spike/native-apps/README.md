@@ -161,7 +161,13 @@ All of it in [evidence/](evidence/), made by `evidence/run.sh` and `evidence/web
   typing, the POST and its refusal, "Ask again" (`refresh!` reads the server's clock again), and,
   with the server down, `<Errored>`'s fallback with the request's failure and "Again".
 - `web/runtime.js` is unchanged: `git diff $(git merge-base HEAD master) -- web/` shows only
-  `web/platform/main.roc`'s two new targets.
+  `web/platform/main.roc`'s two new targets. The web platform's tests pass, 46 of 46
+  (`evidence/web-tests.txt`, through `/tmp/rocx-gate.sh`).
+- Beyond the screen, two of `web/test/app`'s pages built for the Mac and driven by `native/mac`
+  behave as they do in the browser: `effects_app.roc` (an effect's runs and cleanups in order, an
+  interval counting until its `<Show>` hides it, `Browser.call!` and the `listen!` stub failing
+  with why) and `picks_app.roc` (a keyed `<For>` keeping and moving its rows on reverse, adding,
+  its fallback when empty, an unkeyed one by position, `<Show>`, a context).
 
 ## The hosted functions
 
@@ -213,10 +219,10 @@ host's GPU.
 | Build, first | 81 s (the host built from nothing by cargo, under load) |
 | Build, a `.rocx` changed | 4.2–4.5 s (Roc 2.5–3 s; the Mac's check about 1 s) |
 | Build, the Kotlin shell changed | 10–18 s (kotlinc's start, R8) |
-| Launch to first frame (cold, `am start -W`) | 114–209 ms over 8 launches |
+| Launch to first frame (cold, `am start -W`) | 114–209 ms over 8 launches; 353 ms for the first launch after the emulator booted |
 | In it: `libapp.so` loaded | 1–11 ms |
-| In it: the app mounted, first batch applied | 4–32 ms (2,975 bytes of ops, 15 views) |
-| A tap to the screen patched | 0.20–0.26 ms (the handler, the flush, the ops applied; logcat `tap on #…`) |
+| In it: the app mounted, first batch applied | 4–40 ms (2,975 bytes of ops, 15 views) |
+| A tap to the screen patched | 0.14–0.60 ms (the handler, the flush, the ops applied; logcat `tap on #…`) |
 | On the Mac (`native/mac`, a debug build) | mounted in 1.3–2.5 ms |
 
 ## Gaps and next steps

@@ -1,10 +1,10 @@
 Starting: Intent { cmp=dev.rocx.example.phonehello/dev.rocx.phone.RocxActivity }
 Status: ok
-LaunchState: WARM
+LaunchState: COLD
 Activity: dev.rocx.example.phonehello/dev.rocx.phone.RocxActivity
-TotalTime: 118
-WaitTime: 126
+TotalTime: 353
+WaitTime: 362
 Complete
 --------- beginning of main
-11-23 18:39:19.470 13890 13890 I rocx    : first batch: 2975 bytes, 15 views, applied in 10 ms, 3210 ms after the process started
-11-23 18:39:19.508 13890 13890 I rocx    : first frame: 61 ms after onCreate (libapp.so loaded in 4 ms; the app mounted and its first batch applied in 14 ms)
+11-23 18:42:38.476  5026  5026 I rocx    : first batch: 2975 bytes, 15 views, applied in 30 ms, 134 ms after the process started
+11-23 18:42:38.567  5026  5026 I rocx    : first frame: 146 ms after onCreate (libapp.so loaded in 1 ms; the app mounted and its first batch applied in 40 ms)

@@ -1,0 +1,57 @@
+ROC=.tools/roc-active /tmp/rocx-gate.sh node --test --test-concurrency=1 'web/test/*.test.mjs' (2026-11-23, branch nxy7/native-android at ae8e472)
+
+✔ app-dev.wasm: one spinner until all five answers are in, then all of it (368.265541ms)
+✔ app-dev.wasm: a click patches the one text that reads the count (268.403333ms)
+✔ app-dev.wasm: a region fails on its own, and tries again (278.611542ms)
+✔ app-dev.wasm: a failure outside the regions fails the page, which tries again (222.477458ms)
+✔ app-dev.wasm: a handler calls the server and waits for it; the page shows what the server says (303.125209ms)
+✔ app-dev.wasm: <For> keeps a row per key and moves it; keyed={Bool.False} keeps rows by position; <Show> switches (252.458958ms)
+✔ app-size.wasm: one spinner until all five answers are in, then all of it (200.123084ms)
+✔ app-size.wasm: a click patches the one text that reads the count (238.509708ms)
+✔ app-size.wasm: a region fails on its own, and tries again (274.223208ms)
+✔ app-size.wasm: a failure outside the regions fails the page, which tries again (227.591375ms)
+✔ app-size.wasm: a handler calls the server and waits for it; the page shows what the server says (295.504ms)
+✔ app-size.wasm: <For> keeps a row per key and moves it; keyed={Bool.False} keeps rows by position; <Show> switches (233.136625ms)
+✔ picks: <For> and <Show> render on the server and hydrate: the server's rows, kept (93.253583ms)
+✔ scroller: <Repeat> renders a range of rows on the server and hydrates them; on:viewport says what of the box shows once it is on the page, then as it scrolls and changes size; the rows still in the range are kept as it moves (274.53025ms)
+✔ nested: a <For> in a <For>'s row, and a <For> in a <Show>'s function child, render on the server, hydrate, and follow their signals (99.754083ms)
+✔ props: a value prop is a getter (D-039): the component is made once and keeps its signals, and only what reads the prop is patched, in a hole, outside one, in a <Show>; read in the body, once; in a pure lambda, by its hole; in an effect and a handler, as they run; rows made once; what a <Show> shows and a fallback made as they show; a style property from data, patched (119.707083ms)
+✔ untrack!, latest! and static holes (D-052): a hole whose reads are untracked, and a component's holes and attributes given constants, are written without comments and adopted as text, strictly; untrack! in a memo and a body; latest! is the memo's value; a dev build warns of a read in a component's body, once a place, and untrack! silences it (200.800666ms)
+✔ render effects and an effect's error handler (D-052): a render effect's apply runs as soon as its compute has, before the effects' (made in a component, before its markup); an effect with an error handler is told why its compute failed, after the flush, and no <Errored> shows; when it answers again, its apply runs; on the server none runs (95.953416ms)
+✔ keys: a key's handler runs for that key with no modifier key held, a combination's with exactly its keys held (Mod is ⌘ on macOS, Ctrl elsewhere; a letter in its place when the layout types another), each preventing the default; .keys gives the key and the modifier keys held; Browser.focus! moves the focus once the handler is done, or as a part shows; <Document> hears keys anywhere while it is there, <Window> the window's events (222.777333ms)
+✔ glides: one from a box that scrolls into another glides above the page, lifted out of both, a stand-in keeping its place, and is put back when it lands; one within a box glides in it, lifted out of nothing (1363.222125ms)
+✔ timers: the server starts none; in the browser they run as handlers, stop with their clear!, and go with what started them; a handler reads the clock (1067.370667ms)
+✔ transitions: rows and parts play theirs as they come and go, stay until they have, and nothing plays on load (4927.519291ms)
+✔ effects: a handler calls the page's own function once it is done, the page patched, given `{ under }` too; one the page hasn't is told, and one named as a plugin's says which plugin's script would have it (215.688625ms)
+✔ echo: rendered as the server would, from the GET it answered, and hydrated without asking again; typing asks the server (256.569458ms)
+✔ endpoint reads: rendered as the server would, from the GET it answered; hydrated strictly without asking again; its events make it read the endpoint's URL again (209.306959ms)
+✔ is_pending!: false on the first load (<Loading> shows); a refresh or a new page keeps the old answer, pending from that flush until the new one; a memo that reads it is pending too; a failed read is not, and <Errored> shows; its reader runs only when the answer changes (2694.152792ms)
+✔ a run that waits lets go of what it made: refreshes, new pages and memos made again and again, each run aborted until its read is in, leave no allocation behind (1273.801625ms)
+✔ Errored's retry reads again what failed upstream: a memo shown only through another fails with the read it reads, and trying again reads that too, then shows the memo (751.229708ms)
+✔ is_pending!: rendered as the server would, false; hydrated strictly, no mismatch and nothing asked; then a refresh is pending (437.489ms)
+✔ contexts: a context with no default, provided by nothing, fails, and <Errored> says why (91.99075ms)
+✔ raw text and a doctype: the server writes them as written; hydrating takes them without comparing; the browser builds them (160.605292ms)
+✔ a document: renderToString renders it whole, as the server platform answers a page (24.956ms)
+✔ a document: <NoHydration> is the server's alone: the browser's copy and wasm haven't what is inside, and render the same page from the server's answers and regions (15.23925ms)
+✔ a document: start.js hydrates it without asking, the server's nodes kept, the host's [data-rocx] elements passed over (334.981417ms)
+✔ a document: one that isn't what the app renders is rendered again, <body> only, with a warning; strictly, it throws (345.885875ms)
+✔ a document under a base path: start.js fetches nothing outside it, and Router.location! takes the base off (131.66625ms)
+✔ a document inside an <Errored>, as a generated root renders it: the host's doctype before the boundary's comment is passed over (156.299458ms)
+✔ the docs' demos: one document, its parts far apart, hydrated strictly at once without asking; the picks and the tally share a store through a context; rendering it again and again leaves nothing allocated (233.90375ms)
+✔ titles: the last <Title> rendered that is still there is the title, put first in <head> by the server, kept by the browser from hydration on, strictly; with none, the layout's own (156.942291ms)
+✔ effects: one runs once the page is hydrated, and again on a change, after its cleanup; none runs on the server; a page's function its apply calls runs after the patch. A timer counts until its component goes; one an effect's apply starts stops on the effect's cleanup, and when its component goes; a listen started in an effect stops with it (691.793417ms)
+✔ forms: after a plain post, the flash is the submission: what was typed and the refusal, rendered on the server and hydrated as they are; with the runtime, the form is sent with fetch, pending until its refusal or its result, the page kept; a redirect of the endpoint's own is followed (429.84125ms)
+✔ a planner: a card dragged to another day (a real drag, in Chromium) moves at once, before the slow endpoint answers, and stays while it is on its way and while the board is read again (is_pending! then), then is the server's, never showing where it was; two on their way at once, each on its own, the refused one back where it was, its refusal readable; cards glide between days (none with less motion asked for); a list with no drop handler takes no drop; a link's click taken over; hydrated strictly, rendered by the browser's build byte for byte, nothing left allocated (1713.115292ms)
+✔ channels: two components on one channel share one stream with a third's; each hears resync, then what is published, in order; a refused channel is told so and the others go on; what a handler says goes in one post; a new subscriber to an open channel gets a resync without a reconnect; a change of channels is told the stream it is on, in one post naming it, without a reconnect (D-057); a drop, again, a little later each time, with a resync; replaced, a new tab id (6517.28725ms)
+✔ channels: with nothing left to subscribe to, the hub tells the stream what it dropped, then closes it; subscribing again opens one (D-057) (313.722833ms)
+✔ channels: an older server's stream, which says no hello, is opened again with the new set when it changes; a change named for a stream that has gone (404) opens a new one (767.941917ms)
+✔ channels: where no server answers them (a static copy), every subscriber hears Refused(404) and the hub asks once (474.123458ms)
+ℹ tests 46
+ℹ suites 0
+ℹ pass 46
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 53165.456708
+exit 0
