@@ -8,11 +8,11 @@ import TableWrap
 ## examples/sqlite-vs-turso's results (`DbBench`, from site/sqlite-vs-turso.json, `just db-bench`):
 ## the everyday run's and the big run's (a million orders, and joins) workloads, each run several
 ## times in a row on one file per engine. Above each table, buttons pick how many of those runs it
-## shows (the first, the first three, all ten: radio buttons, so no script), and each cell gives
-## their average as operations a second, a bar against the row's fastest, the time one took, the
-## fastest and slowest run, and, where transactions lost to each other and ran again, how many runs
-## they took; then why Turso's MVCC reads slower, how it was measured, and on what. Pure: the data
-## is the build's.
+## shows (the first, the first three, all ten: radio buttons, so no script; their bar stays in sight
+## while its table is), and each cell gives their average as operations a second, a bar against the
+## row's fastest, the time one took, the fastest and slowest run, and, where transactions lost to
+## each other and ran again, how many runs they took; then why Turso's MVCC reads slower, how it was
+## measured, and on what. Pure: the data is the build's.
 DbResults := [].{
 	view : {} -> Html
 	view = |_| DbResults.results(DbBench.workloads, DbBench.big)
@@ -32,7 +32,7 @@ DbResults := [].{
 				<p>
 					{"Each workload is timed in Roc, in the server, around the "}<code>Db</code>{" calls it makes ("}<code>Time.now_nanos!</code>
 					{"), so no HTTP is in the numbers; the app built with "}<code>{"--opt=${m.opt}"}</code>
-					{" as it would ship. Each engine keeps one file for the whole of it, as an app's database lives, written and read for a long time: after a small warm-up, the benchmark ${m.runs.to_str()} times in a row. The buttons pick the first run, the first three or all of them; a cell gives their average, and under it the fastest and the slowest. Higher is better; a bar is a rate against its row's fastest, in bold."}
+					{" as it would ship. Each engine keeps one file for the whole of it, as an app's database lives, written and read for a long time: after a small warm-up, the benchmark ${m.runs.to_str()} times in a row. The buttons pick the first run, the first three or all of them, and the switch beside them leaves the first out of three or ten (runs 2–3, or 2–10), a cold start that may weigh on the rest; a cell gives their average, and under it the fastest and the slowest. Higher is better; a bar is a rate against its row's fastest, in bold."}
 				</p>
 				<p>
 					{"First everyday work on ${ExampleApp.count(m.rows)} items, each run deleting the last run's and writing them again: what one caller does, then what eight do at once (eight actors told together, timed from the first told to the last done), then a checkpoint and the reads again."}
@@ -76,23 +76,34 @@ DbResults := [].{
 	counts : U64 -> List(U64)
 	counts = |most| [1, 3, 10].keep_if(|n| n <= most)
 
-	## A table of workloads under buttons picking how many runs in a row it shows (radio buttons
-	## named `id`, each before its label, and the tables after them: a checked one shows its table,
-	## by CSS alone). The most runs is picked first.
+	## A table of workloads under buttons picking how many runs in a row it shows, and a switch
+	## leaving out the first run (a cold start: files, caches and prepared statements not yet warm)
+	## from three or ten: radio buttons named `id` and the checkbox first (hidden, still reached by
+	## the keyboard), then their labels, in a bar that stays in sight below the site's top bar while
+	## the table is, then a table for each count, with the first run and, past one, without it. A
+	## checked one's label is lit and its table shown, by CSS alone (the inputs are the labels' and
+	## the tables' earlier siblings). The most runs is picked first, the first run counted.
 	series : Str, U64, List(DbBench.Workload) -> Html
 	series = |id, most, workloads| {
 		shown = DbResults.counts(most)
 		last = shown.last() ?? 1
 		<div class="series">
-			<span class="picks-label">Runs in a row</span>
-			{...shown.map(|n| <><input type="radio" class={"pick p${n.to_str()}"} name={"${id}-runs"} id={"${id}-runs-${n.to_str()}"} checked?={n == last} /><label for={"${id}-runs-${n.to_str()}"}>{n.to_str()}</label></>)}
-			{...shown.map(|n| <div class={"view n${n.to_str()}"}>{=DbResults.table(workloads, n)}</div>)}
+			{...shown.map(|n| <input type="radio" class={"pick p${n.to_str()}"} name={"${id}-runs"} id={"${id}-runs-${n.to_str()}"} checked?={n == last} />)}
+			<input type="checkbox" class="skip" id={"${id}-skip"} />
+			<div class="picks">
+				<span class="picks-label">Runs in a row</span>
+				<div class="buttons">{...shown.map(|n| <label class={"l${n.to_str()}"} for={"${id}-runs-${n.to_str()}"}>{n.to_str()}</label>)}</div>
+				<label class="skip-label" for={"${id}-skip"}><span class="box" aria-hidden="true"></span>Leave out the first run</label>
+			</div>
+			{...shown.map(|n| <div class={"view n${n.to_str()}"}>{=DbResults.table(workloads, n, Bool.False)}</div>)}
+			{...shown.drop_if(|n| n == 1).map(|n| <div class={"view n${n.to_str()}s"}>{=DbResults.table(workloads, n, Bool.True)}</div>)}
 		</div>
 	}
 
-	## A table of workloads over their first `n` runs: each one's row, under the engines' names.
-	table : List(DbBench.Workload), U64 -> Html
-	table = |workloads, n|
+	## A table of workloads over their first `n` runs (the first left out if `skip`): each one's
+	## row, under the engines' names.
+	table : List(DbBench.Workload), U64, Bool -> Html
+	table = |workloads, n, skip|
 		<TableWrap>
 			<table class="db-results">
 				<thead>
@@ -101,17 +112,19 @@ DbResults := [].{
 						{...DbBench.engines.map(|engine| <th scope="col" class="num">{engine.label}<span class="note">{engine.note}</span></th>)}
 					</tr>
 				</thead>
-				<tbody>{...workloads.map(|workload| DbResults.row(workload, n))}</tbody>
+				<tbody>{...workloads.map(|workload| DbResults.row(workload, n, skip))}</tbody>
 			</table>
 		</TableWrap>
 
-	## What an engine did in a workload's first `n` runs: the average time one operation took, the
-	## fastest and slowest run's (nanoseconds), its rate, and its transactions' runs, on average.
+	## What an engine did in a workload's first `n` runs (the first left out if `skip`): the
+	## average time one operation took, the fastest and slowest run's (nanoseconds), its rate, and
+	## its transactions' runs, on average.
 	Stats : { avg : Dec, min : Dec, max : Dec, rate : Str, runs : U64, count : U64 }
 
-	stats : DbBench.Workload, DbBench.Result, U64 -> DbResults.Stats
-	stats = |workload, result, n| {
-		ns = result.ns.take_first(n)
+	stats : DbBench.Workload, DbBench.Result, U64, Bool -> DbResults.Stats
+	stats = |workload, result, n, skip| {
+		left_out = if (skip) 1 else 0
+		ns = result.ns.take_first(n).drop_first(left_out)
 		count = ns.len()
 		total = ns.fold(0, |sum, each| sum + each)
 		times = ns.map(|each| DbResults.time(workload.ops, each))
@@ -120,7 +133,7 @@ DbResults := [].{
 			min: times.fold(times.first() ?? 0.0, |least, each| if (each < least) each else least),
 			max: times.fold(0.0, |most, each| if (each > most) each else most),
 			rate: DbResults.rate(workload.ops * count, total),
-			runs: if (count == 0) 0 else result.runs.take_first(n).fold(0, |sum, each| sum + each) // count,
+			runs: if (count == 0) 0 else result.runs.take_first(n).drop_first(left_out).fold(0, |sum, each| sum + each) // count,
 			count,
 		}
 	}
@@ -128,9 +141,9 @@ DbResults := [].{
 	## A workload's row: its name and what one operation is, then each engine's cell, each compared
 	## with the row's fastest by the average time one operation took (a rate rounded to whole
 	## operations a second can't tell one second from half of one).
-	row : DbBench.Workload, U64 -> Html
-	row = |workload, n| {
-		all = workload.results.map(|result| DbResults.stats(workload, result, n))
+	row : DbBench.Workload, U64, Bool -> Html
+	row = |workload, n, skip| {
+		all = workload.results.map(|result| DbResults.stats(workload, result, n, skip))
 		fastest = all.fold(all.first().map_ok(|each| each.avg) ?? 0.0, |least, each| if (each.avg < least) each.avg else least)
 		<tr>
 			<th scope="row"><code>{workload.name}</code><span class="what">{workload.what}</span></th>
@@ -281,61 +294,131 @@ DbResults := [].{
 			opacity: 0.75;
 		}
 
-		/* The runs-in-a-row buttons: radio buttons, hidden but focusable, each before its label;
-		   the checked one's table shows, the others' don't. */
+		/* The runs-in-a-row buttons: radio buttons, hidden but focusable, before everything else in
+		   the series; the checked one's label is lit and its table shows, the others' don't. */
 		.series .view {
 			display: none;
 		}
 
 		.series .p1:checked ~ .n1,
-		.series .p3:checked ~ .n3,
-		.series .p10:checked ~ .n10 {
+		.series .p3:checked ~ .skip:not(:checked) ~ .n3,
+		.series .p10:checked ~ .skip:not(:checked) ~ .n10,
+		.series .p3:checked ~ .skip:checked ~ .n3s,
+		.series .p10:checked ~ .skip:checked ~ .n10s {
 			display: block;
 		}
 
-		.series .pick {
+		.series .pick,
+		.series .skip {
 			position: absolute;
 			opacity: 0;
 			width: 1px;
 			height: 1px;
+			pointer-events: none;
+		}
+
+		/* The bar of buttons stays below the site's top bar while its table is on the screen. */
+		.picks {
+			position: sticky;
+			top: var(--bar);
+			z-index: 4;
+			display: flex;
+			align-items: center;
+			gap: var(--space-4);
+			margin: var(--space-4) 0 0;
+			padding: var(--space-3) 0;
+			background: color-mix(in srgb, var(--bg) 92%, transparent);
+			backdrop-filter: blur(8px);
 		}
 
 		.picks-label {
-			margin-right: var(--space-2);
 			font-size: var(--size-sm);
 			color: var(--text-muted);
 		}
 
-		.series label {
-			display: inline-block;
-			min-width: 2.75rem;
-			padding: var(--space-1) var(--space-3);
+		.buttons {
+			display: inline-flex;
+			padding-left: 1px;
+		}
+
+		/* Joined buttons overlap by their border, so a lit one's outline shows whole on top. */
+		.buttons label {
+			position: relative;
+			min-width: 5rem;
+			margin-left: -1px;
+			padding: var(--space-2) var(--space-5);
 			border: 1px solid var(--rule-strong);
 			text-align: center;
 			font-variant-numeric: tabular-nums;
 			cursor: pointer;
 		}
 
-		.series label + input + label {
-			border-left: 0;
-		}
-
-		.series .pick:first-of-type + label {
+		.buttons label:first-child {
 			border-radius: var(--radius-sm) 0 0 var(--radius-sm);
 		}
 
-		.series label:last-of-type {
+		.buttons label:last-child {
 			border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 		}
 
-		.series .pick:checked + label {
+		.buttons label:hover {
+			z-index: 1;
+			border-color: var(--text-muted);
+		}
+
+		.series .p1:checked ~ .picks .l1,
+		.series .p3:checked ~ .picks .l3,
+		.series .p10:checked ~ .picks .l10 {
+			z-index: 2;
 			background: var(--accent-soft);
 			color: var(--text);
 			font-weight: 700;
 			border-color: var(--accent);
 		}
 
-		.series .pick:focus-visible + label {
+		/* The switch: a box that fills when it is on; dimmed for one run, which has no first to leave out. */
+		.skip-label {
+			display: inline-flex;
+			align-items: center;
+			gap: var(--space-2);
+			padding: var(--space-2) var(--space-3);
+			border: 1px solid var(--rule-strong);
+			border-radius: var(--radius-sm);
+			font-size: var(--size-sm);
+			cursor: pointer;
+		}
+
+		.skip-label .box {
+			width: 0.9rem;
+			height: 0.9rem;
+			border: 1px solid var(--text-muted);
+			border-radius: 3px;
+		}
+
+		.series .skip:checked ~ .picks .skip-label {
+			background: var(--accent-soft);
+			border-color: var(--accent);
+		}
+
+		.series .skip:checked ~ .picks .skip-label .box {
+			background: var(--accent);
+			border-color: var(--accent);
+			box-shadow: inset 0 0 0 2px var(--bg);
+		}
+
+		.series .p1:checked ~ .picks .skip-label {
+			opacity: 0.45;
+		}
+
+		.series .skip:focus-visible ~ .picks .skip-label {
+			outline: 2px solid var(--accent);
+			outline-offset: 2px;
+		}
+
+		.series .p1:focus-visible ~ .picks .l1,
+		.series .p3:focus-visible ~ .picks .l3,
+		.series .p10:focus-visible ~ .picks .l10 {
+			z-index: 3;
 			outline: 2px solid var(--accent);
 			outline-offset: 2px;
 		}
