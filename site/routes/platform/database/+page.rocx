@@ -101,6 +101,11 @@ view! = |_|
 				follows badly until its next checkpoint (<code>pragma wal_checkpoint(truncate)</code> after such a
 				delete avoids it; <code>?mvcc=off</code> doesn't have it).
 			</p>
+			<p>
+				How they compare: <a href={Paths.examples_sqlite_vs_turso}>examples/sqlite-vs-turso</a> times the same
+				work on both, in Roc, in the server (writes, reads, scans, JSON, and eight callers at once), and its
+				page has the numbers.
+			</p>
 
 			<Heading id="query">A query</Heading>
 			<p>

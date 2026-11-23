@@ -1,0 +1,6 @@
+# Written by rocx build: the generated modules, and the builds (`just examples` asks for the
+# browser's copy, which an app of endpoints alone hasn't got)
+Generated/
+build/
+# The database file and what Turso's MVCC keeps beside it (data/bench.db-log)
+data/

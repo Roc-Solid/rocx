@@ -1,0 +1,163 @@
+import pf.Html
+import ../Generated/DbBench
+import ExampleApp
+import Heading
+import TableWrap
+
+## examples/sqlite-vs-turso's results (`DbBench`, from site/sqlite-vs-turso.json, `just db-bench`):
+## each workload's median time on each engine, as operations a second with a bar against the row's
+## fastest, the time one took, and, where transactions lost to each other and ran again, how many
+## runs they took; then how they were measured. Pure: the data is the build's.
+DbResults := [].{
+	view : {} -> Html
+	view = |_| DbResults.results(DbBench.workloads)
+
+	## The section, or a line saying it wasn't measured yet.
+	results : List(DbBench.Workload) -> Html
+	results = |workloads|
+		if workloads.is_empty() {
+			<>
+				<Heading id="results">The results</Heading>
+				<p class="missing">Not measured yet: run <code>just db-bench</code>.</p>
+			</>
+		} else {
+			m = DbBench.measured
+			<>
+				<Heading id="results">The results</Heading>
+				<p>
+					{"Each workload is timed in Roc, in the server, around the "}<code>Db</code>{" calls it makes ("}<code>Time.now_nanos!</code>
+					{"), so no HTTP is in the numbers: on fresh tables of ${ExampleApp.count(m.rows)} items, the median of ${m.rounds.to_str()} rounds, the app built with "}
+					<code>{"--opt=${m.opt}"}</code>{" as it would ship. The concurrent ones are eight actors told at once, timed from the first told to the last done. Higher is better; a bar is a rate against its row's fastest, in bold."}
+				</p>
+				<TableWrap>
+					<table class="db-results">
+						<thead>
+							<tr>
+								<th scope="col">Workload</th>
+								{...DbBench.engines.map(|engine| <th scope="col" class="num">{engine.label}<span class="note">{engine.note}</span></th>)}
+							</tr>
+						</thead>
+						<tbody>{...workloads.map(|workload| DbResults.row(workload))}</tbody>
+					</table>
+				</TableWrap>
+				<p class="small">
+					{"Where eight write one counter at once, Turso's transactions (MVCC) lose to each other and run again: the runs say how many it took them, where SQLite's take turns and run once each. The engines: ${DbResults.versions}. Measured on ${m.date}, at commit "}
+					<code>{m.commit}</code>{", on an ${m.machine}, its load average ${m.load} during the run, other work going on: compare the engines with each other rather than with another machine's numbers."}
+				</p>
+			</>
+		}
+
+	## A workload's row: its name and what one operation is, then each engine's cell.
+	row : DbBench.Workload -> Html
+	row = |workload| {
+		fastest = workload.results.map(|result| DbResults.rate(workload.ops, result.ns)).fold(0, |most, each| if (each > most) each else most)
+		<tr>
+			<th scope="row"><code>{workload.name}</code><span class="what">{workload.what}</span></th>
+			{...workload.results.map(|result| DbResults.cell(workload, result, fastest))}
+		</tr>
+	}
+
+	## An engine's cell: its rate, a bar against the row's fastest, the time one operation took, and
+	## the runs its transactions took when some ran again.
+	cell : DbBench.Workload, DbBench.Result, U64 -> Html
+	cell = |workload, result, fastest| {
+		speed = DbResults.rate(workload.ops, result.ns)
+		share = if (fastest == 0) 0 else speed * 100 / fastest
+		<td class={if (speed == fastest) "num best" else "num"}>
+			<span class="rate">{"${ExampleApp.count(speed)}/s"}</span>
+			<svg class="bar" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden="true"><rect width="100" height="4" class="track" /><rect width={share.to_str()} height="4" class="fill" /></svg>
+			<span class="per">{"${DbResults.per(workload.ops, result.ns)}${DbResults.reruns(workload, result)}"}</span>
+		</td>
+	}
+
+	## Operations a second.
+	rate : U64, U64 -> U64
+	rate = |ops, ns| if (ns == 0) 0 else ops * 1000000000 / ns
+
+	## The time one operation took, on average: "38.2 µs", "1.4 ms".
+	per : U64, U64 -> Str
+	per = |ops, ns| {
+		us = if (ops == 0) 0.0 else ns.to_dec() / ops.to_dec() / 1000.0
+		if (us < 1000.0) "${DbResults.tenths(us)} µs" else "${DbResults.tenths(us / 1000.0)} ms"
+	}
+
+	tenths : Dec -> Str
+	tenths = |n| Dec.round_to(n, { step: 0.1, ties: AwayFromZero }).to_str()
+
+	## " · 312 runs" where transactions ran more times than there were transactions.
+	reruns : DbBench.Workload, DbBench.Result -> Str
+	reruns = |workload, result| if (result.runs > workload.ops) " · ${ExampleApp.count(result.runs)} runs" else ""
+
+	## Each engine and what it is: "SQLite: SQLite 3.54.1, rusqlite, WAL; …".
+	versions : Str
+	versions = Str.join_with(DbBench.engines.map(|engine| "${engine.label}, ${engine.version} (${engine.note})"), "; ")
+
+	<story name="The results, as last measured">
+		<DbResults />
+	</story>
+
+	<style>
+		.db-results th[scope="row"] {
+			text-transform: none;
+			letter-spacing: normal;
+			font-weight: normal;
+			vertical-align: top;
+		}
+
+		.db-results th[scope="row"] code {
+			display: inline-block;
+			margin-bottom: var(--space-1);
+		}
+
+		.db-results .note {
+			text-transform: none;
+			letter-spacing: normal;
+		}
+
+		.db-results .what,
+		.db-results .note {
+			display: block;
+			font-size: var(--size-sm);
+			font-weight: normal;
+			color: var(--text-muted);
+		}
+
+		.db-results td {
+			min-width: 9rem;
+			vertical-align: top;
+		}
+
+		.db-results .rate {
+			display: block;
+			font-variant-numeric: tabular-nums;
+		}
+
+		.db-results .best .rate {
+			font-weight: 700;
+		}
+
+		.db-results .bar {
+			display: block;
+			width: 100%;
+			height: 0.35rem;
+			margin: var(--space-1) 0;
+			border-radius: var(--pill);
+			overflow: hidden;
+		}
+
+		.db-results .bar .track {
+			fill: var(--fill);
+		}
+
+		.db-results .bar .fill {
+			fill: var(--accent);
+		}
+
+		.db-results .per {
+			display: block;
+			font-size: var(--size-sm);
+			color: var(--text-muted);
+			font-variant-numeric: tabular-nums;
+		}
+	</style>
+}

@@ -1,0 +1,10 @@
+import pf.Html
+import ../../../AppNotes
+import ../../../Ui/ExampleApp
+import ../../../Ui/DbResults
+
+## The sqlite-vs-turso example app: what it is and shows, its results (site/sqlite-vs-turso.json,
+## which `just db-bench` measures), and what it is made of (site/AppNotes.roc, `just example-apps`).
+meta = AppNotes.meta("sqlite-vs-turso")
+
+view! = |_| <NoHydration><ExampleApp name="sqlite-vs-turso"><DbResults /></ExampleApp></NoHydration>

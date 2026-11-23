@@ -109,6 +109,9 @@ nothing else.
   optimistic actions, in the plainest way, with comments throughout.
 - [`echo`](examples/echo): the smallest app on the server platform, one endpoint, for measuring
   the server (`bench.sh`).
+- [`sqlite-vs-turso`](examples/sqlite-vs-turso): the same database work timed in Roc on SQLite and
+  on Turso (MVCC, and WAL): writes, reads, scans, JSON, a recursive query, and eight actors writing
+  at once; `just db-bench` puts its numbers on its docs page.
 - [`journal`](examples/journal): Journal, a small publication in English and Polish: Markdown
   posts with typed frontmatter, intl, feeds, and two islands on pages the server renders.
 - [`board`](examples/board): Board, a live kanban board several people move cards on at once:

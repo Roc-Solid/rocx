@@ -161,6 +161,18 @@
 			}
 		},
 		{
+			"name": "sqlite-vs-turso",
+			"title": "sqlite-vs-turso",
+			"pages": 0,
+			"endpoints": 1,
+			"lines": 445,
+			"expects": 4,
+			"tests": 1,
+			"packages": [],
+			"database": "SQLite",
+			"wasm": null
+		},
+		{
 			"name": "tasks",
 			"title": "Tasks",
 			"pages": 4,
