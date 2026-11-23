@@ -4,9 +4,9 @@
 	"roc": "rocx-fork-9fcf362c0c",
 	"machine": "Apple M5, 10 cores",
 	"runtime": {
-		"bytes": 149660,
-		"gzip": 43598,
-		"brotli": 37114
+		"bytes": 203790,
+		"gzip": 59794,
+		"brotli": 50068
 	},
 	"examples": [
 		{
@@ -14,9 +14,9 @@
 			"title": "Board",
 			"pages": 3,
 			"endpoints": 20,
-			"lines": 3552,
+			"lines": 3555,
 			"expects": 81,
-			"tests": 17,
+			"tests": 19,
 			"packages": [
 				"guard",
 				"presence"
@@ -145,10 +145,11 @@
 			"title": "Pinwheel",
 			"pages": 5,
 			"endpoints": 7,
-			"lines": 3619,
+			"lines": 3622,
 			"expects": 92,
 			"tests": 8,
 			"packages": [
+				"audio",
 				"charts",
 				"forms",
 				"presence"
@@ -164,8 +165,8 @@
 			"name": "sqlite-vs-turso",
 			"title": "sqlite-vs-turso",
 			"pages": 0,
-			"endpoints": 1,
-			"lines": 445,
+			"endpoints": 2,
+			"lines": 694,
 			"expects": 4,
 			"tests": 1,
 			"packages": [],
@@ -218,10 +219,20 @@
 	],
 	"bench": {
 		"app": "echo",
-		"measured": "2026-11-22",
-		"commit": "4b1169c",
+		"measured": "2026-11-23",
+		"commit": "1eb5d7c",
 		"machine": "Apple M5, 10 cores",
-		"load": "12.7 → 18.9",
+		"hardware": {
+			"model": "MacBook Pro (Mac17,2)",
+			"cpu": "Apple M5",
+			"cores": "10 (4 performance, 6 efficiency)",
+			"memory": "32 GB",
+			"storage": "SSD, APFS",
+			"os": "macOS 27.0.1",
+			"arch": "arm64",
+			"power": "mains"
+		},
+		"load": "3.7 → 9.5",
 		"opt": "speed",
 		"seconds": 10,
 		"body": "\"hello\"",
@@ -229,30 +240,30 @@
 		"levels": [
 			{
 				"connections": 1,
-				"rps": 14089,
-				"p50_us": 52,
-				"p99_us": 267,
+				"rps": 28318,
+				"p50_us": 33,
+				"p99_us": 55,
 				"errors": 0
 			},
 			{
 				"connections": 16,
-				"rps": 67861,
-				"p50_us": 199,
-				"p99_us": 833,
+				"rps": 106646,
+				"p50_us": 144,
+				"p99_us": 255,
 				"errors": 0
 			},
 			{
 				"connections": 64,
-				"rps": 76387,
-				"p50_us": 713,
-				"p99_us": 3135,
+				"rps": 124456,
+				"p50_us": 498,
+				"p99_us": 866,
 				"errors": 0
 			},
 			{
 				"connections": 256,
-				"rps": 94135,
-				"p50_us": 2399,
-				"p99_us": 7665,
+				"rps": 128915,
+				"p50_us": 1962,
+				"p99_us": 2924,
 				"errors": 0
 			}
 		]
