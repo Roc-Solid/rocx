@@ -721,7 +721,7 @@ window.hydrated = true;
 	}
 });
 
-test("glides: one from a box that scrolls into another glides above the page, lifted out of both, a stand-in keeping its place, and is put back when it lands; one within a box glides in it, lifted out of nothing", { skip }, async () => {
+test("glides: one from a box that scrolls into another glides above the page, lifted out of both, a stand-in keeping its place, and is put back when it lands; one within a box glides in it, lifted out of nothing; one into a narrower box glides from its old size, in the top layer when a transform would hold it, and slides under its new box's edge", { skip }, async () => {
 	const wasm = readFileSync(join(out, "glides.wasm"));
 	const server = await Runtime.load(wasm);
 	const { html } = server.renderToString({ path: "/" });
@@ -797,6 +797,44 @@ window.hydrated = true;
 		);
 		await tab.wait(`${item("a1")}.getAnimations().length === 0 && !document.querySelector('[data-rocx-lifted]')`, 3000);
 		assert.deepEqual(await tab.eval(`(() => { const li = ${item("a1")}; return { position: getComputedStyle(li).position, style: li.getAttribute("style") }; })()`), { position: "static", style: "height: 30px;" }, "put back, its own style as it was");
+		// Into a narrower list (D-055), inside a box that makes fixed elements its own (a transform),
+		// scrolled so the top of its place there is out of sight: it glides from its old size to its
+		// new one, in the top layer (no box holds it or clips it), and slides under the list's edge.
+		await tab.eval("window.glides = []; document.querySelector('.list.c').scrollTop = 15");
+		await tab.click(".narrow");
+		await tab.wait("window.glides.includes('a2 lifted')");
+		const narrowed = await tab.eval(`(() => {
+			const li = ${item("a2")};
+			const [glide] = li.getAnimations();
+			glide.pause();
+			glide.currentTime = 0;
+			const start = li.getBoundingClientRect();
+			const a = document.querySelector('.list.a').getBoundingClientRect();
+			const frames = glide.effect.getKeyframes();
+			glide.currentTime = glide.effect.getTiming().duration;
+			const end = li.getBoundingClientRect();
+			const c = document.querySelector('.list.c').getBoundingClientRect();
+			glide.play();
+			return {
+				layered: li.matches(':popover-open'),
+				position: getComputedStyle(li).position,
+				start: { width: Math.round(start.width), left: Math.round(start.left - a.left) },
+				end: { width: Math.round(end.width), left: Math.round(end.left - c.left), top: Math.round(end.top - c.top) },
+				scale: frames[0].scale,
+				clips: [frames[0].clipPath, frames[1].clipPath],
+			};
+		})()`);
+		assert.deepEqual(
+			narrowed,
+			{ layered: true, position: "fixed", start: { width: 120, left: 0 }, end: { width: 80, left: 0, top: -15 }, scale: "1.5 1", clips: ["inset(0px)", "inset(15px 0px 0px)"] },
+			"from its width in list a to its width in list c, in the top layer, its top 15 px under list c's edge as it lands",
+		);
+		await tab.wait(`${item("a2")}.getAnimations().length === 0 && !document.querySelector('[data-rocx-lifted]')`, 3000);
+		assert.deepEqual(
+			await tab.eval(`(() => { const li = ${item("a2")}; return { popover: li.hasAttribute('popover'), position: getComputedStyle(li).position, style: li.getAttribute("style"), list: li.closest('ul').className }; })()`),
+			{ popover: false, position: "static", style: "height: 30px;", list: "list c" },
+			"put back in list c, no longer a popover, its own style as it was",
+		);
 		assert.deepEqual(tab.errors, []);
 	} finally {
 		await site.close();

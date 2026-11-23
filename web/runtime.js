@@ -416,6 +416,10 @@ const DRAG_EVENTS = new Set(["dragstart", "dragenter", "dragleave", "drop"]);
  * only a copy or a link is allowed. */
 const dropEffect = (allowed) => (/move|all|uninitialized/i.test(allowed ?? "all") ? "move" : /copy/i.test(allowed) ? "copy" : /link/i.test(allowed) ? "link" : "none");
 
+/** What a popover's own styles (`[popover]`) change of an element's look: kept as they were while a
+ * glide lifts it into the top layer (`lift`). */
+const POPOVER_LOOK = ["color", "background-color", "overflow-x", "overflow-y", "padding-top", "padding-right", "padding-bottom", "padding-left", ...["top", "right", "bottom", "left"].flatMap((side) => [`border-${side}-width`, `border-${side}-style`, `border-${side}-color`])];
+
 /** Whether Mod is ⌘ (macOS, iOS) or Ctrl (elsewhere), in key combinations (`on:keydown.Mod+K`). */
 const MAC = typeof navigator !== "undefined" && /mac|iphone|ipad|ipod/i.test(navigator.userAgentData?.platform ?? navigator.platform ?? "");
 
@@ -2605,19 +2609,22 @@ export class Runtime {
 		const boxes = moves.map(([element]) => element.getBoundingClientRect());
 		const moving = new Map();
 		moves.forEach(([element, box], index) => {
-			const dx = box.left - boxes[index].left;
-			const dy = box.top - boxes[index].top;
-			if (Math.abs(dx) >= 0.5 || Math.abs(dy) >= 0.5) moving.set(element, { dx, dy, from: box, to: boxes[index] });
+			const to = boxes[index];
+			const dx = box.left - to.left;
+			const dy = box.top - to.top;
+			const resized = Math.abs(box.width - to.width) >= 0.5 || Math.abs(box.height - to.height) >= 0.5;
+			if (Math.abs(dx) >= 0.5 || Math.abs(dy) >= 0.5 || resized) moving.set(element, { dx, dy, resized, from: box, to });
 		});
 		const clips = new Map();
-		for (const [element, { dx, dy, from, to }] of moving) {
+		for (const [element, { dx, dy, resized, from, to }] of moving) {
 			let carried = false;
 			for (let parent = element.parentElement; parent && !carried; parent = parent.parentElement) carried = moving.has(parent);
 			if (carried || typeof element.animate !== "function") continue;
 			const spec = this.transitions.get(element)?.move ?? {};
-			const lifted = this.crosses(element, from, parents.get(origins.get(element) ?? element), clips) ? this.lift(element, to) : null;
+			const was = parents.get(origins.get(element) ?? element);
+			const lifted = this.crosses(element, from, was, clips) ? this.lift(element, to) : null;
 			try {
-				const animation = element.animate([{ translate: `${dx}px ${dy}px` }, { translate: "0px 0px" }], {
+				const animation = element.animate(this.glideFrames(element, from, to, resized, lifted ? { was, clips } : null), {
 					duration: spec.ms ?? 250,
 					delay: spec.delay ?? 0,
 					easing: spec.easing || "ease-out",
@@ -2631,12 +2638,57 @@ export class Runtime {
 					},
 					() => lifted?.(),
 				);
-				this.notify("glide", { node: element, dx, dy, key: this.keys.get(element), lifted: Boolean(lifted) });
+				this.notify("glide", { node: element, dx, dy, width: from.width / (to.width || 1), height: from.height / (to.height || 1), key: this.keys.get(element), lifted: Boolean(lifted) });
 			} catch {
 				// An easing the browser doesn't know: no glide, rather than an error.
 				lifted?.();
 			}
 		}
+	}
+
+	/**
+	 * A glide's two frames (FLIP): from where the element was (`from`) to where it is (`to`), with
+	 * `translate`, and, when its size changed (`resized`), `scale` too, from its old size to its new
+	 * one, about its own `transform-origin`, so its old box is exactly where it starts; its own
+	 * `transform` stays its own. What is inside is scaled with it as it glides (FLIP's way: a card
+	 * put in a narrower column is drawn narrower from the start, its text squeezed for the glide,
+	 * rather than laid out again each frame). One lifted above the page (`lifted`: what it was in, and
+	 * the glide's clips) is clipped as the boxes it leaves and lands in clip it (`clip-path`): from
+	 * what showed of it where it was to what will show of it where it lands, so one whose place is
+	 * scrolled out of sight slides under its new box's edge, rather than over it.
+	 */
+	glideFrames(element, from, to, resized, lifted) {
+		let sx = 1;
+		let sy = 1;
+		let ox = 0;
+		let oy = 0;
+		if (resized && to.width > 0 && to.height > 0) {
+			sx = from.width / to.width;
+			sy = from.height / to.height;
+			[ox, oy] = getComputedStyle(element).transformOrigin.split(" ").map((each) => parseFloat(each) || 0);
+		}
+		// A point of the element, `p` from its box's corner, is drawn at `origin + s·(p − origin) + t`:
+		// its corner at `from`'s when `t` is this.
+		const tx = from.left - to.left - ox * (1 - sx);
+		const ty = from.top - to.top - oy * (1 - sy);
+		const first = { translate: `${tx}px ${ty}px` };
+		const last = { translate: "0px 0px" };
+		if (sx !== 1 || sy !== 1) {
+			first.scale = `${sx} ${sy}`;
+			last.scale = "1 1";
+		}
+		if (lifted) {
+			// What of a box shows inside a clip, as insets in the element's own pixels (scaled by `s`).
+			const shown = (box, clip, sx, sy) =>
+				clip ? [Math.max(0, clip.top - box.top) / sy, Math.max(0, box.right - clip.right) / sx, Math.max(0, box.bottom - clip.bottom) / sy, Math.max(0, clip.left - box.left) / sx] : [0, 0, 0, 0];
+			const before = shown(from, lifted.was?.isConnected ? this.clipping(lifted.was, lifted.clips)?.rect : null, sx, sy);
+			const after = shown(to, this.clipping(element.parentElement, lifted.clips)?.rect, 1, 1);
+			if ([...before, ...after].some((inset) => inset > 0)) {
+				first.clipPath = `inset(${before.map((inset) => `${inset}px`).join(" ")})`;
+				last.clipPath = `inset(${after.map((inset) => `${inset}px`).join(" ")})`;
+			}
+		}
+		return [first, last];
 	}
 
 	/**
@@ -2679,7 +2731,11 @@ export class Runtime {
 	/**
 	 * Lifts an element out of what clips it, for its glide: fixed where it now is (`to`), above the
 	 * page, with a stand-in of its size where it is in the page, so nothing around it moves. It stays
-	 * where it is in the document, so its styles and handlers are its own. Answers how to put it back
+	 * where it is in the document, so its styles and handlers are its own. Inside a box that makes
+	 * fixed elements its own (a `transform`, a `filter`, `contain: paint`: `holdsFixed`), fixed isn't
+	 * above the page, so it goes to the top layer instead (a manual popover, `showPopover`), which no
+	 * box clips or holds, its own look kept over the popover's (`POPOVER_LOOK`); and where the browser
+	 * has no popovers, it is put where it is seen to be, inside that box. Answers how to put it back
 	 * (once its glide ends, or another one starts), its own styles as they were.
 	 */
 	lift(element, to) {
@@ -2693,14 +2749,32 @@ export class Runtime {
 		holder.style.cssText = `display: ${display}; box-sizing: border-box; width: ${width}px; height: ${height}px; margin: ${style.marginTop} ${style.marginRight} ${style.marginBottom} ${style.marginLeft}; padding: 0; border: 0; flex: none; grid-area: ${style.gridArea}; visibility: hidden; list-style: none`;
 		element.before(holder);
 		const fixed = { position: "fixed", left: `${to.left}px`, top: `${to.top}px`, right: "auto", bottom: "auto", width: `${width}px`, height: `${height}px`, margin: "0px", "max-width": "none", "max-height": "none", "box-sizing": "border-box", "z-index": "2147483647" };
+		const layered = this.holdsFixed(element) && typeof element.showPopover === "function" && !element.hasAttribute("popover");
+		// The look the popover's own styles would change, as it is now.
+		if (layered) for (const name of POPOVER_LOOK) fixed[name] = style.getPropertyValue(name);
 		const own = Object.keys(fixed).map((name) => [name, element.style.getPropertyValue(name), element.style.getPropertyPriority(name)]);
 		for (const [name, value] of Object.entries(fixed)) element.style.setProperty(name, value, "important");
+		if (layered) {
+			element.setAttribute("popover", "manual");
+			element.showPopover();
+		} else {
+			// Fixed inside a box that holds it is placed from that box: put where it is seen to be.
+			const seen = element.getBoundingClientRect();
+			if (Math.abs(seen.left - to.left) >= 0.5 || Math.abs(seen.top - to.top) >= 0.5) {
+				element.style.setProperty("left", `${2 * to.left - seen.left}px`, "important");
+				element.style.setProperty("top", `${2 * to.top - seen.top}px`, "important");
+			}
+		}
 		let back = false;
 		const putBack = () => {
 			if (back) return;
 			back = true;
 			if (this.lifted.get(element) === putBack) this.lifted.delete(element);
 			holder.remove();
+			if (layered) {
+				if (element.matches(":popover-open")) element.hidePopover();
+				element.removeAttribute("popover");
+			}
 			for (const [name, value, priority] of own) {
 				if (value) element.style.setProperty(name, value, priority);
 				else element.style.removeProperty(name);
@@ -2708,6 +2782,20 @@ export class Runtime {
 		};
 		this.lifted.set(element, putBack);
 		return putBack;
+	}
+
+	/** Whether a box around `element` makes fixed elements its own (their place and their clip):
+	 * a `transform`, `translate`, `scale`, `rotate`, `perspective`, `filter` or `backdrop-filter`,
+	 * `contain` with layout or paint, a container query's box, or `will-change` saying one is coming. */
+	holdsFixed(element) {
+		for (let node = element.parentElement; node && node !== this.page.documentElement; node = node.parentElement) {
+			const style = getComputedStyle(node);
+			if (style.transform !== "none" || (style.translate && style.translate !== "none") || (style.scale && style.scale !== "none") || (style.rotate && style.rotate !== "none") || style.perspective !== "none") return true;
+			if (style.filter !== "none" || (style.backdropFilter && style.backdropFilter !== "none")) return true;
+			if (/layout|paint|strict|content/.test(style.contain) || (style.containerType && style.containerType !== "normal")) return true;
+			if (/transform|perspective|filter|translate|scale|rotate/.test(style.willChange)) return true;
+		}
+		return false;
 	}
 
 	// ---- The DOM ----

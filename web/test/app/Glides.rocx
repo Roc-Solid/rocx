@@ -5,7 +5,10 @@ import pf.Transition
 
 ## Glides across boxes that scroll, for the tests (`glides_app.roc`): two lists side by side, each
 ## scrolling on its own. An item moved from one to the other glides above the page, lifted out of
-## both (each would cut it off); items moved within a list glide in it.
+## both (each would cut it off); items moved within a list glide in it. A third, narrower list, in
+## a box that makes fixed elements its own (a `transform`), takes `a2` at its top (D-055): it glides
+## from its old size to its new one, in the top layer, and slides under the edge where the list is
+## scrolled.
 Glides := [].{
 	Item : { id : Str, list : Str }
 
@@ -14,9 +17,15 @@ Glides := [].{
 		(items!, set_items!) = create_signal!([{ id: "a1", list: "a" }, { id: "a2", list: "a" }, { id: "a3", list: "a" }, { id: "b1", list: "b" }])
 		across! = || set_items!(items!().map(|item| if (item.id == "a1") { ..item, list: "b" } else item))
 		within! = || set_items!(items!().rev())
+		(narrow!, set_narrow!) = create_signal!(["c1", "c2", "c3", "c4"].map(|id| { id, list: "c" }))
+		into_narrow! = || {
+			set_items!(items!().drop_if(|item| item.id == "a2"))
+			set_narrow!([{ id: "a2", list: "c" }].concat(narrow!()))
+		}
 		<div class="glides">
 			<button class="across" on:click={across!}>Across</button>
 			<button class="within" on:click={within!}>Within</button>
+			<button class="narrow" on:click={into_narrow!}>Into the narrow list</button>
 			<div style="display: flex; gap: 40px; align-items: flex-start">
 				<ul class="list a" style="overflow: auto; height: 100px; width: 120px; margin: 0; padding: 0; list-style: none">
 					<For each!={items!().keep_if(|item| item.list == "a")} keyed={|item| item.id}>
@@ -28,6 +37,13 @@ Glides := [].{
 						{|item!, _| <li class="item" key={item!().id} transition:move={Transition.glide.ms(600)} style="height: 30px">{item!().id}</li>}
 					</For>
 				</ul>
+				<div style="transform: translateZ(0)">
+					<ul class="list c" style="overflow: auto; overflow-anchor: none; height: 100px; width: 80px; margin: 0; padding: 0; list-style: none">
+						<For each!={narrow!()} keyed={|item| item.id}>
+							{|item!, _| <li class="item" key={item!().id} transition:move={Transition.glide.ms(600)} style="height: 30px">{item!().id}</li>}
+						</For>
+					</ul>
+				</div>
 			</div>
 		</div>
 	}
