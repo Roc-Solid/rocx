@@ -2892,8 +2892,10 @@ credential for its tab's subscriptions, sent only in the stream, and guarded by 
 same-origin check. Timers cost a row and two small calls each (set and done); every timer is set
 again at start, a task each in memory, which an app with millions of far timers would want read a
 window at a time. The interrupt is a signal handler that rewrites a thread's registers, per
-architecture (aarch64 and x86_64, macOS and Linux; the x86_64 paths are written, but neither
-built nor run here: this machine has no x86_64 toolchain, as `x64mac` and `x64musl` aren't run yet);
+architecture (aarch64 and x86_64, macOS and Linux: run on arm64 macOS, by the tests, and on arm64
+Linux, the test app built `--target=arm64musl` in a container; the x86_64 paths are written, but
+neither built nor run here: this machine has no x86_64 toolchain, as `x64mac` and `x64musl` aren't
+run yet);
 it relies on Roc's linker keeping the app's code apart, which a future linker could change (then it
 says so, and falls back). Overrides cost a row write per change.
 

@@ -38,11 +38,12 @@ const AGAIN: Duration = Duration::from_millis(2);
 const MOST_ASLEEP: Duration = Duration::from_millis(20);
 
 /// A Roc thread's slot: the deadline of the call running on it (nanoseconds after `epoch`; 0 for
-/// none), whether that call is to be cut off at its next allocation, and the thread, to signal it.
+/// none), whether that call is to be cut off at its next allocation, and the thread, to signal it
+/// (its `pthread_t`, as a number: musl's is a pointer).
 struct Slot {
     deadline: AtomicU64,
     pending: AtomicBool,
-    thread: libc::pthread_t,
+    thread: usize,
 }
 
 thread_local! {
@@ -99,7 +100,7 @@ pub fn start() {
 
 /// Gives this thread (one of Roc's, starting) its slot.
 pub fn register() {
-    let slot: &'static Slot = Box::leak(Box::new(Slot { deadline: AtomicU64::new(0), pending: AtomicBool::new(false), thread: unsafe { libc::pthread_self() } }));
+    let slot: &'static Slot = Box::leak(Box::new(Slot { deadline: AtomicU64::new(0), pending: AtomicBool::new(false), thread: unsafe { libc::pthread_self() } as usize }));
     SLOT.with(|this| this.set(slot));
     SLOTS.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push(slot);
 }
@@ -141,7 +142,7 @@ fn watch() {
                 continue;
             }
             let wake = if deadline <= now {
-                unsafe { libc::pthread_kill(slot.thread, libc::SIGURG) };
+                unsafe { libc::pthread_kill(slot.thread as libc::pthread_t, libc::SIGURG) };
                 now + AGAIN.as_nanos() as u64
             } else {
                 deadline
