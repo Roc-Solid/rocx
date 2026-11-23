@@ -3385,8 +3385,42 @@ pub struct HostEnvVarArgs {
     pub arg0: RocStr,
 }
 
+/// Arguments for Host.http_close!
+/// Roc signature: U64 => {}
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostHttpCloseArgs {
+    pub arg0: u64,
+}
+
+/// Arguments for Host.http_open!
+/// Roc signature: Str, Str, Str, List(U8), U64, U64, Bool, Str => Try(Str, Str)
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostHttpOpenArgs {
+    pub arg0: RocStr,
+    pub arg1: RocStr,
+    pub arg2: RocStr,
+    pub arg3: RocListWith<u8, false>,
+    pub arg4: u64,
+    pub arg5: u64,
+    pub arg6: bool,
+    pub arg7: RocStr,
+}
+
+/// Arguments for Host.http_read!
+/// Roc signature: U64 => Try(List(U8), Str)
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostHttpReadArgs {
+    pub arg0: u64,
+}
+
 /// Arguments for Host.http_send!
-/// Roc signature: Str, Str, Str, List(U8), U64, U64, Bool => Try({ body : List(U8), headers : Str, status : U16 }, Str)
+/// Roc signature: Str, Str, Str, List(U8), U64, U64, Bool, Str => Try({ body : List(U8), headers : Str, status : U16 }, Str)
 /// Refcounted fields are owned by the hosted function.
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -3398,6 +3432,7 @@ pub struct HostHttpSendArgs {
     pub arg4: u64,
     pub arg5: u64,
     pub arg6: bool,
+    pub arg7: RocStr,
 }
 
 /// Arguments for Host.isolated!
@@ -4007,6 +4042,12 @@ pub type HostDbScriptResultTag = HostBlobCheckResultTag;
 pub type HostEnvVarResult = HostActorAskResult;
 pub type HostEnvVarResultPayload = HostActorAskResultPayload;
 pub type HostEnvVarResultTag = HostActorAskResultTag;
+pub type HostHttpOpenResult = HostActorAskResult;
+pub type HostHttpOpenResultPayload = HostActorAskResultPayload;
+pub type HostHttpOpenResultTag = HostActorAskResultTag;
+pub type HostHttpReadResult = HostAesGcmOpenResult;
+pub type HostHttpReadResultPayload = HostAesGcmOpenResultPayload;
+pub type HostHttpReadResultTag = HostAesGcmOpenResultTag;
 pub type HostHttpSendOk = AnonStruct3ed536693d8b85f3;
 pub type HostIsolated = AnonStruct2e6fc7635560c0c3;
 pub type HostKvGetResult = HostActorAskResult;
@@ -5371,16 +5412,38 @@ unsafe extern "C" {
     /// The result is owned by Roc: return exactly one owned reference.
     pub fn roc_host_env_var(arg0: RocStr) -> HostActorAskResult;
 
-    /// Hosted symbol for Host.http_send!
-    /// Roc signature: Str, Str, Str, List(U8), U64, U64, Bool => Try({ body : List(U8), headers : Str, status : U16 }, Str)
+    /// Hosted symbol for Host.http_close!
+    /// Roc signature: U64 => {}
+    pub fn roc_host_http_close(arg0: u64);
+
+    /// Hosted symbol for Host.http_open!
+    /// Roc signature: Str, Str, Str, List(U8), U64, U64, Bool, Str => Try(Str, Str)
     /// Owned arguments. Release each exactly once before returning, unless it is
     /// moved into storage or into the result:
     ///     unsafe { arg0.decref(roc_host); }
     ///     unsafe { arg1.decref(roc_host); }
     ///     unsafe { arg2.decref(roc_host); }
     ///     unsafe { arg3.decref(roc_host); }
+    ///     unsafe { arg7.decref(roc_host); }
     /// The result is owned by Roc: return exactly one owned reference.
-    pub fn roc_host_http_send(arg0: RocStr, arg1: RocStr, arg2: RocStr, arg3: RocListWith<u8, false>, arg4: u64, arg5: u64, arg6: bool) -> HostHttpSendResult;
+    pub fn roc_host_http_open(arg0: RocStr, arg1: RocStr, arg2: RocStr, arg3: RocListWith<u8, false>, arg4: u64, arg5: u64, arg6: bool, arg7: RocStr) -> HostActorAskResult;
+
+    /// Hosted symbol for Host.http_read!
+    /// Roc signature: U64 => Try(List(U8), Str)
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_http_read(arg0: u64) -> HostAesGcmOpenResult;
+
+    /// Hosted symbol for Host.http_send!
+    /// Roc signature: Str, Str, Str, List(U8), U64, U64, Bool, Str => Try({ body : List(U8), headers : Str, status : U16 }, Str)
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    ///     unsafe { arg1.decref(roc_host); }
+    ///     unsafe { arg2.decref(roc_host); }
+    ///     unsafe { arg3.decref(roc_host); }
+    ///     unsafe { arg7.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_http_send(arg0: RocStr, arg1: RocStr, arg2: RocStr, arg3: RocListWith<u8, false>, arg4: u64, arg5: u64, arg6: bool, arg7: RocStr) -> HostHttpSendResult;
 
     /// Hosted symbol for Host.isolated!
     /// Roc signature: Str, Str, U64 => { out : Str, status : U8 }
