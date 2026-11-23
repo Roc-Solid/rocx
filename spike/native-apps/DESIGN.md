@@ -4,7 +4,9 @@
 > (`spike/native-apps/phone-hello`) runs as native Android views on the emulator, with typed calls
 > to the server, and the same `.rocx` in a browser. What was built, how to run it, its
 > measurements and gaps are in [README.md](README.md); §13 says where it sits in the phases, and §16
-> where the build went otherwise than this design said, and why. Nothing is merged.
+> where the build went otherwise than this design said, and why. An Expo-like dev mode followed
+> (`rocx dev --android`: a dev client that loads each build's library, about a second from a save
+> to the phone; README.md, Dev mode). Nothing is merged.
 
 > A design spike, 2026-11-23, on master at 56221d2. The web stays the
 > primary target; this is background work, and nothing in it may slow the web down or change what
@@ -316,9 +318,13 @@ name fails as the web's does, saying which plugin's native half it needs.
   `native/ios`'s library into the Xcode shell (generated per app: name, bundle id, icon), and runs
   `xcodebuild`. **`rocx build --android`:** the same with a `.so`, the Gradle shell and
   `./gradlew`.
-- **`rocx dev --ios`:** rebuild, reinstall and relaunch on the simulator on save (`xcrun simctl`),
-  pointed at the dev server; a few seconds a change. Keeping state across a reload (swapping the
-  app's code in the simulator, which allows it) is later.
+- **`rocx dev --android` (built, README.md's Dev mode):** a dev client (the shell with the host as
+  `libhost.so`, no app) loads each build's library from the dev server (`dlopen`) in place of the
+  last: about a second from a save to the phone, the fields' text kept, a failed build's error on
+  a red screen. Debug builds only: Play bans downloaded native code in a release.
+- **`rocx dev --ios`:** the same on the simulator, which runs Mac code and loads a new library as
+  the Android client does; a physical iPhone loads no downloaded code, so it reinstalls on save
+  (`xcrun devicectl`, around 10 s). Keeping signals across a reload is later on both.
 - **Toolchains:** Xcode from Apple; the Android SDK and NDK and the Rust targets through Nix where
   they can be, as with the rest of the repo.
 - Signing, TestFlight and Play's internal track are phase 4.
@@ -427,6 +433,10 @@ Where the Android spike (README.md) went otherwise than this design, and why:
 - **No Gradle.** `native/android/build.sh` uses the SDK's tools (aapt2, kotlinc, R8, zipalign,
   apksigner): a changed `.rocx` rebuilds the APK in about 4.5 s. A Gradle shell is for when an app
   needs Android libraries.
+- **A dev mode early.** The design had `rocx dev --ios` reinstall on save (a few seconds); the
+  user asked for an Expo-like loop first. Roc's dev backend builds the phone's library in 0.2–0.4 s
+  and its arm64 code ran the spike's screen correctly, so the dev client loads each build's
+  library instead of reinstalling (README.md, Dev mode).
 - **HTTP over plain sockets.** The engine's client is std's TCP and HTTP/1.1, plain `http://`, on a
   thread a request (question 5's one Rust client, without rustls and cookies yet).
 
@@ -438,3 +448,5 @@ Where the Android spike (README.md) went otherwise than this design, and why:
   revisit once the native path and an Expo-like dev mode exist; the preferred idea then is running
   the browser's `.wasm` in a WebAssembly interpreter on the same native host, not Roc's interpreter
   mode (which measured 40–250× slower than `--opt=speed` on the Mac).
+- **The dev mode exists (2026-11-23, `rocx dev --android`)**, so OTA's precondition is half met: an
+  iOS dev mode is the other half.

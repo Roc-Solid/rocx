@@ -4157,7 +4157,9 @@ The Android spike is built (2026-11-23, branch `nxy7/native-android`, not merged
 Gradle) and `native/mac`; `spike/native-apps/phone-hello` runs as native views on the emulator
 with typed calls to the server (`spike/native-apps/README.md`). The app's Roc is the fork's
 `arm64musl` archive linked by the NDK, so no fork change was needed. Native code was chosen; OTA is
-deferred (DESIGN.md, Later).
+deferred (DESIGN.md, Later). An Expo-like dev mode followed: `rocx dev --android` and a dev client
+that loads each build's library (built by Roc's dev backend) in place of the last, about a second
+from a save to the phone, with a failed build's error on a red screen (README.md, Dev mode).
 
 **Context.** The user wants iOS and Android apps from an app's `.rocx` files, the way React Native
 gives them, with Lynx's approach (a web-like vocabulary and a CSS subset rendered as native views)

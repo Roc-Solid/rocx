@@ -32,7 +32,9 @@ spike/native-apps/phone-hello/routes/+page.rocx
   `Rocx.send`, the main looper's wake pipe, logcat), and the Kotlin shell (`app/`): one activity, and
   an applier that walks a batch of ops into Android views (a box is a `LinearLayout`, text a
   `TextView`, `<button>`, `<input>` and checkboxes the platform's own). `build.sh` builds an app's
-  APK.
+  APK, or the dev client.
+- **`native/android-dev`** and **`rocx dev --android`**: the dev mode (below). The dev client is the
+  same shell with the host as `libhost.so` and no app in it; it loads each build `rocx dev` makes.
 - **`native/mac`**: the same engine and ops on the Mac, with a recording renderer: it mounts an app
   built for `arm64mac`, prints the screen as an outline, and takes taps and typing as steps. It is
   how the engine was debugged, and the build uses it to say what a phone ignores.
@@ -95,6 +97,69 @@ functions, 16 KB pages); kotlinc and R8 for the shell (again only when it change
 the dex and the library zipped in (the library stored, `extractNativeLibs="false"`), `zipalign -P
 16`, `apksigner` with a key of the spike's own (`native/android/build/spike.keystore`); then the app
 built for the Mac and mounted once by `native/mac`, whose warnings are printed as `phone: …`.
+
+## Dev mode: `rocx dev --android`
+
+An Expo-like loop: save a `.rocx` file, and the phone shows the change in about a second, with no
+reinstall. Built 2026-11-23, after the spike, at the user's request.
+
+```sh
+native/android/build.sh --dev-client            # once (and when native/ or web/platform's header changes)
+bin/rocx dev spike/native-apps/phone-hello --port 8095 --android
+```
+
+`rocx dev --android` does what `rocx dev` does (builds the app, serves it, builds again on each
+save) and, with each build, builds the app's Roc for the phone too. At start, if `adb` sees the
+emulator or a phone on USB, it reverses the server's port to it, installs the dev client if it
+isn't there, opens it at `http://127.0.0.1:<port>`, and shows the phone's log (`adb logcat`, the
+`rocx` tag) in the terminal. A phone on Wi-Fi: open the dev client, give it the computer's address,
+and run the server reachable (`-- --host 0.0.0.0`).
+
+- **The dev client** (`build.sh --dev-client`: `rocx-dev.apk`, `dev.rocx.devclient`, 808 KB) is the
+  Kotlin shell with the host as `libhost.so` (`native/android-dev`: native/android's `dev` feature
+  and native/core's `dynamic` one), which exports the 49 hosted functions and Roc's memory
+  functions, and no app. Every 150 ms it asks the server for `/rocx/android/latest.json`; a new
+  build's library is downloaded into the app's files and loaded in place of the last
+  (`Rocx.reload`: `dlopen`, `roc_mount` and `roc_run` from `dlsym`).
+- **A build for the phone** (`rocx-cli/Dev.roc`, `phone_build!`): the browser's copy compiled by
+  Roc's dev backend for `arm64musl` (0.2–0.4 s for this app, against 2.6 s for `--opt=speed`),
+  linked by the NDK's clang into `app-<build>.so` against a stub `libhost.so` (so it needs the dev
+  client's by name), served from `build/android/static` (one more `--static` directory). It is
+  announced (`latest.json`) once the server built with it has started, so the phone's first reads
+  find it up; the host's HTTP client also tries a refused connection again for up to 3 s.
+- **A reload** restarts the engine (the last build's Roc values are dropped, never released: their
+  code may be gone; answers and timers from it carry its generation and are ignored), mounts the new
+  build, types again what was typed in the fields (`input` events, so the app's signals have it),
+  and keeps the scroll. Load and mount take 3–13 ms. Signals reset otherwise: Roc values are laid out
+  by the code that made them, which the new build may have changed (Expo's Fast Refresh keeps
+  component state; this doesn't, yet).
+- **Errors.** A build that fails shows the compiler's report, pointed into the `.rocx` file, on a red
+  screen until the next build. A build for another platform (the fingerprint of web/platform's
+  `main.roc` and `Host.roc` and the Roc compiler, made by `native/core/build.rs` and by `rocx dev`,
+  differs) says to rebuild the dev client. A build that crashes the dev client natively (its
+  library's code ends the process while it loads or mounts) is shown on the red screen at the next
+  start instead of being loaded again.
+- **Store rules.** Loading downloaded native code is fine in a debug build; Google Play bans it in a
+  release, so this is the dev client's alone: an app's APK links its Roc in (`libapp.so`).
+
+Measured with `evidence/dev-loop.sh` (an edit of the page's heading, typed text in the field, then a
+mistake, then its fix), on the Mac's clock from the file's write to the client's "shown" line in
+`rocx dev`'s output:
+
+| | |
+|---|---|
+| A `.rocx` edit, on the phone | 0.77–1.3 s after the save (100 ms debounce, the build 0.2–0.7 s, the server's restart, the 150 ms poll, the download 7–14 ms, load and mount 3–13 ms) |
+| A mistake, on the red screen | 0.39–0.46 s after the save |
+| What was typed | kept across builds, and in the app's signal (`Send` posts it) |
+
+![](evidence/dev-02-reloaded.png) ![](evidence/dev-03-error.png)
+
+`dev-01-before.png`, `dev-02-reloaded.png` (the new heading, the field's text kept, the counter back
+at 0), `dev-03-error.png`, `dev-04-fixed.png`, `dev-05-crash-guard.png` (a library whose
+`roc_mount` writes to address 0, served as a build, and the client after it) and `dev-loop.txt`.
+On the Mac, loading the app as a `.dylib` to test reloads there doesn't work yet: the Mach-O library
+writes to Roc's constant data (in `__DATA_CONST`, read-only once loaded), where the Android library
+doesn't; the loop is tested on the emulator instead.
 
 ## How Roc gets onto Android
 
@@ -248,8 +313,10 @@ host's GPU.
    a cookie jar in the app's files, server-sent events.
 6. **Pages.** One page at its start path; no navigation, links or back gestures (D-040's shape, §8);
    page guards are ignored (the user's answer to question 4).
-7. **`rocx build --android` and `rocx dev --android`.** `build.sh` is the spike's; at 4.5 s a change,
-   a dev loop (rebuild, `adb install`, relaunch on save) is cheap to add.
+7. **`rocx build --android`, and the dev mode's next steps.** `build.sh` is the spike's. The dev mode
+   (above) reloads in about a second; next: keeping signals across a reload where their types
+   didn't change, a QR code for a phone on Wi-Fi, the server's restart off the reload's path, and
+   the dev client's log forwarded over HTTP (no `adb` needed).
 8. **Controls.** Images, `select`, SVG, `textarea` sizes, dark mode, accessibility roles, the
    keyboard's other keys (only Enter), `on:submit` from the keyboard.
 9. **Typing.** Once, `adb shell input text` typed while the keyboard was still starting gave a
