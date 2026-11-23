@@ -66,9 +66,9 @@ view! = |_| {
 					<div>
 						<h3>Make a page, or an endpoint</h3>
 						<p>
-							A folder with <code>routes/</code> in it is an app. A <code>+page.rocx</code> is the page at
-							its folder's path, rendered by the server and live in the browser; a <code>+server.roc</code>
-							answers HTTP there.
+							An app is a folder of its own, anywhere (its own repository, say), with <code>routes/</code>
+							in it. A <code>+page.rocx</code> is the page at its folder's path, rendered by the server and
+							live in the browser; a <code>+server.roc</code> answers HTTP there.
 						</p>
 						<Code title="my-app/routes/+page.rocx" source={Sources.start_page.rocx} numbers={Bool.False} />
 						<Code title="my-app/routes/hello/+server.roc" source={Sources.start_server.rocx} numbers={Bool.False} />
@@ -79,12 +79,13 @@ view! = |_| {
 					<div>
 						<h3>Run it</h3>
 						<p>
-							<code>rocx dev</code> builds the app and serves it at <code>http://localhost:8080</code>. The
-							first run writes <code>my-app/main.roc</code>, the app's program, and builds the server's
-							host, once, in a few minutes. After that, a save is built and the page reloads in under a
-							second, and a mistake is shown at its line in your file.
+							In the app's folder, <code>rocx dev</code> builds it and serves it at
+							<code>http://localhost:8080</code>. The first run writes <code>main.roc</code> beside
+							<code>routes/</code>, the app's program, and builds the server's host, once, in a few minutes.
+							After that, a save is built and the page reloads in under a second, and a mistake is shown at
+							its line in your file.
 						</p>
-						<Code source={"rocx dev my-app"} numbers={Bool.False} plain />
+						<Code source={"cd my-app\nrocx dev"} numbers={Bool.False} plain />
 					</div>
 				</li>
 			</ol>

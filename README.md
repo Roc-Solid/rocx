@@ -48,12 +48,14 @@ ecosystem. `just dev`, then http://localhost:8080.
 git clone https://github.com/Roc-Solid/rocx && cd rocx
 just setup                     # the toolchain into .tools/, then bin/rocx
 export PATH="$PWD/bin:$PATH"
-# an app is a folder with routes/: a page in my-app/routes/+page.rocx, or an endpoint in
-# my-app/routes/hello/+server.roc
-rocx dev my-app                # http://localhost:8080, built again on each save
+# an app is a folder of its own, anywhere, with routes/ in it: a page in
+# my-app/routes/+page.rocx, or an endpoint in my-app/routes/hello/+server.roc
+cd ../my-app
+rocx dev                       # http://localhost:8080, built again on each save
 ```
 
-The first run writes `my-app/main.roc` and builds the server's host (a few minutes, once).
+The first run writes `main.roc` at the app's root, beside `routes/`, and builds the server's host
+(a few minutes, once). `rocx dev <dir>` serves the app in another folder.
 [`examples/hello`](examples/hello) is that app: a page with a button that counts, and `GET /hello`.
 
 ## Quick start
