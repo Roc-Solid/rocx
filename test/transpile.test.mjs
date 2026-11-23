@@ -468,6 +468,38 @@ test("components: a pure one (`view`, no `!`) is called where it is written, as 
 	assert.deepEqual(viewsDefined("Card := [].{\n\tPart := [Head].{\n\t\tview = |_| y\n\t}\n\n\tview = |_| x\n}\n"), { Card: "view", Part: "view" }, "each its own");
 });
 
+test("<Show keyed>, <Switch> and <Match> (D-053): keyed is a flag that picks the keyed view; a <Switch> holds <Match>es, and a <Match> is only a <Switch>'s", () => {
+	const line = (source) => transpileModule(`import pf.Show\nimport pf.Switch\nimport pf.Match\n${source}`, "Page.rocx", { module: "Page" }).code.split("\n").slice(3, -3).join("\n");
+	const refused = (source) => {
+		try {
+			line(source);
+		} catch (error) {
+			assert.ok(error instanceof RocxError, `expected a RocxError, got ${error}`);
+			return error.reason;
+		}
+		assert.fail("expected the source to be refused");
+	};
+	assert.equal(line(`x = <Show when!={a!()} keyed><p /></Show>`), `x = Show.view_keyed!({ when!: || a!(), children: [Html.element("p", [], []),], })`, "made anew per value");
+	assert.equal(line(`x = <Show when!={a!()} keyed>{|v| <p>{v}</p>}</Show>`), `x = Show.view_with_keyed!({ when!: || a!(), children: |v| Html.element("p", [], [Html.text(v),]), })`, "the value itself, not an accessor: static where it is read");
+	assert.equal(line(`x = <Show when!={a!()} keyed={Bool.False}>{|v!| <p>{v!()}</p>}</Show>`), `x = Show.view_with!({ when!: || a!(), children: |v!| Html.element("p", [], [Html.text_of(|| v!()),]), })`, "keyed={Bool.False}: as without it");
+	assert.match(refused(`x = <Show when!={a!()} keyed={|v| v.id}><p /></Show>`), /<Show>'s keyed is a flag/);
+	assert.equal(
+		line(`x = <Switch fallback={<p>none</p>}>\n\t<Match when!={a!() > 1}><b /></Match> <Match when!={b!()}>{|b!| <i>{b!()}</i>}</Match>\n\t<Match when!={c!()} keyed>{|c| <u>{c}</u>}</Match>\n</Switch>`),
+		[
+			`x = Switch.view!({ fallback: Html.element("p", [], [Html.text("none"),]), children: [`,
+			`\tMatch.view!({ when!: || a!() > 1, children: [Html.element("b", [], []),], }), Html.text(" "), Match.view_with!({ when!: || b!(), children: |b!| Html.element("i", [], [Html.text_of(|| b!()),]), }), Html.text(" "),`,
+			`\tMatch.view_with_keyed!({ when!: || c!(), children: |c| Html.element("u", [], [Html.text(c),]), }),`,
+			`], })`,
+		].join("\n"),
+		"each <Match> its view, as <Show>'s; lines stay lines",
+	);
+	assert.match(refused(`x = <Match when!={a!()}><b /></Match>`), /<Match> is a case of a <Switch>/);
+	assert.match(refused(`x = <Switch><Match when!={a!()}><Match when!={b!()}><i /></Match></Match></Switch>`), /<Match> is a case of a <Switch>/, "one inside a <Match> isn't the <Switch>'s");
+	assert.match(refused(`x = <Switch><p /></Switch>`), /<Switch> holds <Match>es only/);
+	assert.match(refused(`x = <Switch>text</Switch>`), /<Switch> holds <Match>es only/);
+	assert.match(refused(`x = <Switch>{|x| <p />}</Switch>`), /<Switch> holds <Match>es only: a function child goes in a <Match>/);
+});
+
 test("<NoHydration>: what is inside renders on the server only; the browser's copy has none of it, nor an import only it used", () => {
 	const source = [
 		"import pf.Html",

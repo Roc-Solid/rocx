@@ -69,6 +69,8 @@ Transpile := [].{
 		# Where a lambda starts that is known to be an effect's (a handler's, a function child's).
 		effectful_at : List(U64),
 		warnings : List({ reason : Str, at : U64 }),
+		# Whether the markup being read is a `<Switch>`'s child, where a `<Match>` may be (D-053).
+		in_switch : Bool,
 	}
 
 	## A closure being read, for a prop's reads (D-039). An effectful one (a hole's, an attribute's, a
@@ -678,7 +680,7 @@ Transpile := [].{
 
 	## A transpiler at the start of the file.
 	fresh : St
-	fresh = { pos: 0, styles: [], stories: [], preformatted: 0, spans: [], effects: 0, regions: 0, in_region: 0, closed: [], next_block: 0, frames: [], effectful_at: [], warnings: [] }
+	fresh = { pos: 0, styles: [], stories: [], preformatted: 0, spans: [], effects: 0, regions: 0, in_region: 0, closed: [], next_block: 0, frames: [], effectful_at: [], warnings: [], in_switch: Bool.False }
 
 	## Items of a Roc list or record, separated by commas, with newlines where the source had them.
 	render_items : List(Part) -> Str
@@ -718,6 +720,15 @@ Transpile := [].{
 		match part {
 			Fn(_) => Bool.True
 			_ => Bool.False
+		}
+
+	## A `<Switch>`'s child that may be there (D-053): a `<Match>`, a line, or the spaces between two.
+	is_case : Part -> Bool
+	is_case = |part|
+		match part {
+			Item(text) => text.starts_with("Match.view") or text == "Html.text(\" \")"
+			Line(_) => Bool.True
+			Fn(_) => Bool.False
 		}
 
 	is_line : Part -> Bool
@@ -1769,6 +1780,12 @@ Transpile := [].{
 			return Transpile.read_provider(cfg, st1, name, attrs, start)
 		}
 		if component {
+			# `<Switch>` and `<Match>` (D-053): a `<Match>` is a case of a `<Switch>`, and a `<Switch>` holds
+			# nothing else.
+			controls = packaged and (name == "Show" or name == "Match")
+			if name == "Match" and packaged and !st0.in_switch {
+				return Err(Transpile.fail(cfg, "<Match> is a case of a <Switch>: put it inside one (or write <Show when!={…}>)", start))
+			}
 			# A function child (Solid's `<For>`, `<Show>`): `view_with`, given the function as `children`.
 			var $fields = attrs
 			var $suffix = ""
@@ -1777,6 +1794,9 @@ Transpile := [].{
 				inside = Transpile.read_children(cfg, $st, name, start)?
 				$st = inside.st
 				if inside.parts.any(Transpile.is_fn) {
+					if name == "Switch" and packaged {
+						return Err(Transpile.fail(cfg, "<Switch> holds <Match>es only: a function child goes in a <Match>", start))
+					}
 					if inside.parts.drop_if(Transpile.is_line).len() > 1 {
 						return Err(Transpile.fail(cfg, "<${name}>'s function child must be its only child", start))
 					}
@@ -1791,6 +1811,9 @@ Transpile := [].{
 						),
 					)
 				} else if inside.parts.any(|part| !Transpile.is_line(part)) {
+					if name == "Switch" and packaged and !inside.parts.all(Transpile.is_case) {
+						return Err(Transpile.fail(cfg, "<Switch> holds <Match>es only: put what else is here inside a <Match>, or in its fallback={…}", start))
+					}
 					$fields = $fields.append(Item("children: [${Transpile.render_items(inside.parts)}]"))
 				} else {
 					$fields = $fields.concat(inside.parts)
@@ -1813,9 +1836,21 @@ Transpile := [].{
 							Ok(Item(text)) => Text.trim(text.drop_prefix("keyed: "))
 							_ => ""
 						}
-					if value == "Bool.False" or value == "false" {
+					without = $fields.take_first(at).concat($fields.drop_first(at + 1))
+					if controls {
+						# `<Show keyed>`, `<Match keyed>` (Solid 2.0's): made anew when the value changes. Roc's
+						# values have no identity: the value itself is the key.
+						if value == "Bool.True" or value == "true" {
+							$suffix = $suffix.concat("_keyed")
+							$fields = without
+						} else if value == "Bool.False" or value == "false" {
+							$fields = without
+						} else {
+							return Err(Transpile.fail(cfg, "<${name}>'s keyed is a flag: write keyed (made anew each time the value changes) or leave it out; the value itself is the key, as Roc's values have no identity", start))
+						}
+					} else if value == "Bool.False" or value == "false" {
 						$suffix = $suffix.concat("_unkeyed")
-						$fields = $fields.take_first(at).concat($fields.drop_first(at + 1))
+						$fields = without
 					} else if value == "Bool.True" or value == "true" {
 						return Err(Transpile.fail(cfg, keys, start))
 					} else {
@@ -2476,9 +2511,9 @@ Transpile := [].{
 						$parts = flushed(Bool.False)?
 						$has_text = Bool.False
 						$said = []
-						markup = Transpile.read_markup(cfg, $st)?
+						markup = Transpile.read_markup(cfg, { ..$st, in_switch: tag == "Switch" and cfg.packaged.contains("Switch") })?
 						$parts = $parts.append(Item(markup.out))
-						$st = markup.st
+						$st = { ..markup.st, in_switch: $st.in_switch }
 						$text_start = $st.pos
 					} else if c == '{' {
 						$parts = flushed(Bool.False)?
