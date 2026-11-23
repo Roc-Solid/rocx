@@ -6,7 +6,7 @@ browser, in three parts.
 - **rocx**, the markup. A `.rocx` file is Roc in which markup may stand wherever an expression can;
   `rocx build` turns it into the plain `.roc` file beside it, line for line, so the compiler checks
   every value put in a page, and reports at your lines. `rocx` is the command-line tool, too: Roc
-  itself, on [basic-cli](https://github.com/roc-lang/basic-cli), one native executable.
+  itself, on a small command-line platform of the repo's own (`cli/`), one native executable.
 - **The platform**, what an app runs on: on the server, Roc compiled to native code in a Rust host
   (`server/`), with a database (Postgres, or SQLite in the server's process, on SQLite's engine or
   Turso's), channels and live
@@ -77,7 +77,8 @@ just check   # type-check the site's two programs (reports at .rocx lines) and t
 
 | Where | What |
 |---|---|
-| `rocx-cli/` | rocx, in Roc on basic-cli: the transpiler (`Transpile.roc`), scoped styles (`Styles.roc`), routing (`Routes.roc`), stories, error remapping, `rocx fmt`, the build (`Build.roc`) and its warning where the browser's copy reaches what only the server has (`ServerOnly.roc`), the command (`main.roc`); built into `bin/rocx` whenever its Roc changed (`server/build.mjs`'s `rocxBinary`, which every script uses). `rocx-cli/rocx.mjs` calls its functions from the repo's JavaScript tests by name (`rocx internal`) |
+| `cli/` | the command-line platform rocx is built on (D-062): its Roc modules (`cli/platform`: output, files, commands run to their end or beside it, a directory tree watched, signals, and `Events.next!`, the one wait for whichever comes first) and its Rust host on the C library alone (`cli/host`; on macOS, FSEvents loaded at run time); see its README |
+| `rocx-cli/` | rocx, in Roc on the CLI platform (`cli/`): `rocx dev` (`Dev.roc`; `rocx site dev`, `SiteDev.roc`, is `just dev`), `rocx check --sql` (`CheckSql.roc`), the docs site's generated modules (`rocx site prepare`: `Site.roc`, `SiteSources.roc`, `SiteReference.roc`), the transpiler (`Transpile.roc`), scoped styles (`Styles.roc`), routing (`Routes.roc`), stories, error remapping, `rocx fmt`, the build (`Build.roc`) and its warning where the browser's copy reaches what only the server has (`ServerOnly.roc`), the command (`main.roc`); built into `bin/rocx` whenever its Roc changed (`server/build.mjs`'s `rocxBinary` for the JavaScript, `rocx self-build` for the Justfile; `just rocx-bootstrap` makes the first one, without Node). `rocx-cli/rocx.mjs` calls its functions from the repo's JavaScript tests by name (`rocx internal`) |
 | `packages/charts` | bar, stacked bar, line, sparkline, donut, scatter and heatmap charts, styled by custom properties: their arithmetic a Roc package (scales, round ticks, SVG paths, in `Dec`), their components copied into each app by `rocx build`; see its README |
 | `packages/crypto` | SHA-256, HMAC, HKDF, Base64 and hex in plain Roc, on no platform, each checked against its RFC's vectors; see its README |
 | `packages/storage` | files in a bucket whose URL says where (D-047): any S3, a directory beside the server, or memory for tests; objects, multipart uploads, signed URLs (a plugin answers a directory's), and objects served without passing through Roc; see its README |
@@ -579,7 +580,7 @@ a `<style>` at the top of its file. Its demos are `site/Demos`, each in the page
 counter, a to-do list, a shelf and a bag sharing a store, a planner whose plans are dragged between
 days, Snake and a flock of birds, frame by frame, with sounds: their handlers play the files in
 `site/static/sounds`, which `site/sounds.mjs` makes, with `Audio.play!`); the docs' prose and listings are `<NoHydration>`. `site/build.mjs` builds it: `.rocx`
-to `.roc`; `site/Generated/Sources.roc`, the sources the pages show; the browser's wasm, `app.wasm`
+to `.roc` and `site/Generated/Sources.roc`, the sources the pages show (both rocx's: `rocx site prepare`); the browser's wasm, `app.wasm`
 (from the copy in `site/build/client`, beside the `start.js` and `runtime.js` a page loads); the
 server, native; then measures the wasm (sizes, rendering a page, and with `just site` the same
 wasm built other ways). `just site` starts the server and writes every page it answers into
@@ -591,9 +592,9 @@ planner's moves, the lobby's channel) says that no server answers.
 `node site/build.mjs --base=/rocx/` builds it for a host that serves it under a path (`/rocx/`, as
 a GitHub project site would): every URL in a page begins with it, and the runtime asks under it. `just deploy-pages` publishes `just site`'s copy to
 https://roc-solid.github.io/, from this machine only: site/dist alone, no source, as the one commit
-of the `main` branch of Roc-Solid/roc-solid.github.io, force-pushed. `just dev` (`site/serve.mjs`)
-builds with Roc's dev backend, in a process of its own each save, and restarts the server; open
-pages reload.
+of the `main` branch of Roc-Solid/roc-solid.github.io, force-pushed. `just dev` (`rocx site dev`)
+builds with Roc's dev backend on each save and restarts the server; open pages reload. An edit to
+rocx itself builds rocx again, and the loop goes on in the new one.
 
 ## Tests
 

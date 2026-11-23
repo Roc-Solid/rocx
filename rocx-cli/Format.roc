@@ -4,7 +4,6 @@
 ## its later lines moved as far as its first line's line moved. The markup, and the Roc in its holes,
 ## stay as they are.
 import pf.Cmd
-import pf.OsStr
 import Text
 import Value
 import Transpile
@@ -25,16 +24,14 @@ Format := [].{
 	## `roc_fmt!`, with `line` giving the file's line for a line of `code` (both from 1).
 	roc_fmt_at! : Str, Str, Str, (U64 -> U64) => Try(Str, [FormatError(Str), NoRoc(Str), CantRun(Str)])
 	roc_fmt_at! = |code, roc, file, line| {
-		command = Cmd.new(OsStr.from_str(roc)).args([OsStr.from_str("fmt"), OsStr.from_str("--stdin")]).stdin(Bytes(code.to_utf8())).stdout(Capture).stderr(Capture)
-		match command.run!() {
-			Err(CmdErr(StartFailed(NotFound, _))) => Err(NoRoc(roc))
-			Err(CmdErr(problem)) => Err(CantRun("${roc}: ${problem.to_str()}"))
-			Err(Interrupted) => Err(CantRun("${roc}: interrupted"))
+		match Cmd.new(roc).args(["fmt", "--stdin"]).stdin(code).output!() {
+			Err(CantStart(why)) if why.contains("os error 2") => Err(NoRoc(roc))
+			Err(CantStart(why)) => Err(CantRun(why))
 			Ok(output) =>
-				match output.status {
-					Exited(0) => Ok(Str.from_utf8_lossy(output.stdout_bytes))
+				match output.code {
+					0 => Ok(output.stdout)
 					_ => {
-						said = "${Str.from_utf8_lossy(output.stdout_bytes)}\n${Str.from_utf8_lossy(output.stderr_bytes)}"
+						said = "${output.stdout}\n${output.stderr}"
 						reasons = said.split_on("\n").map(Text.trim).keep_if(|one| one != "" and one != "Errors:").map(
 							|one|
 								match Format.located(one) {

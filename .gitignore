@@ -26,7 +26,10 @@ site/dist/
 web/platform/targets/
 web/test/build/
 
-# The server platform's builds: the Rust host, and the libraries Roc links apps against
+# The CLI platform's (which rocx is built on) and the server platform's builds: the Rust hosts, and
+# the libraries Roc links apps against
+cli/host/target/
+cli/platform/targets/
 server/host/target/
 server/platform/targets/
 server/test/build/
@@ -39,6 +42,8 @@ server/test/app/build/
 # The spike's builds
 spike/*/platform/targets/
 spike/*/*.wasm
+spike/*/host/target/
+spike/*/build/
 
 # rocx, built from rocx-cli/*.roc (server/build.mjs rocxBinary)
 bin/rocx

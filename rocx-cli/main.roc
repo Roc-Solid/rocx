@@ -1,10 +1,8 @@
-app [main!] { pf: platform "https://github.com/roc-lang/basic-cli/releases/download/0.28.1/7brgwR8YUqfeGrkdfF1V4GPPN7DnP7ftqub9KcrTEZtr.tar.zst" }
+app [main!] { pf: platform "../cli/platform/main.roc" }
 
-import pf.Cmd
 import pf.Stdin
 import pf.Stdout
 import pf.Stderr
-import pf.OsStr
 import pf.Env
 import Text
 import Value
@@ -17,13 +15,18 @@ import Stories
 import Remap
 import Commands
 import Build
+import CheckSql
 import Sql
+import Dev
+import Site
+import Hosts
+import SiteDev
 
 main! = |args| {
-	words = args.map(|arg| OsStr.to_str_try(arg) ?? "")
+	words = args
 	match words.first() {
 		Ok("internal") => internal!({})
-		Ok("check") if words.get(1) == Ok("--sql") => node!("check-sql.mjs", words.drop_first(2), "rocx check --sql")
+		Ok("check") if words.get(1) == Ok("--sql") => CheckSql.run!(words.drop_first(2), rocx_home!({}))
 		Ok("check") => {
 			given = words.drop_first(1)
 			exit_with(Commands.check!(if (given.first() == Ok("--")) given.drop_first(1) else given))
@@ -31,7 +34,10 @@ main! = |args| {
 		Ok("lint") if words.len() > 1 => exit_with(Commands.lint!(words.drop_first(1)))
 		Ok("routes") if words.len() == 2 => routes!(words.get(1) ?? ".")
 		Ok("build") => build!(words.drop_first(1))
-		Ok("dev") => node!("dev.mjs", words.drop_first(1), "rocx dev")
+		Ok("dev") => Dev.app!(words.drop_first(1), rocx_home!({}))
+		Ok("site") if words.get(1) == Ok("prepare") => site_prepare!(words.drop_first(2))
+		Ok("site") if words.get(1) == Ok("dev") => SiteDev.run!(words.drop_first(2), rocx_home!({}))
+		Ok("self-build") => self_build!({})
 		Ok("fmt") if words.drop_first(1).any(|arg| arg != "--check") => fmt!(words.drop_first(1))
 		_ => usage!({})
 	}
@@ -45,9 +51,25 @@ usage! = |{}| {
 ## Where rocx is: the repo bin/rocx was built in (web/platform, web/start.js and web/runtime.js are there).
 rocx_home! : {} => Str
 rocx_home! = |{}| {
-	match Env.exe_path!() {
-		Ok(path) => Fs.dirname(Fs.dirname(Fs.real!(path.display())))
-		Err(_) => Fs.cwd!()
+	path = Env.exe_path!({})
+	if (path.is_empty()) Fs.cwd!() else Fs.dirname(Fs.dirname(Fs.real!(path)))
+}
+
+## `rocx self-build`, for the repo's Justfile: rocx itself (bin/rocx) built again when its Roc, the
+## CLI platform's modules or its host changed, or it was built with another optimization
+## (`ROCX_OPT`), as server/build.mjs's rocxBinary does; then its path. The rocx running this is the
+## one before.
+self_build! = |{}| {
+	home = rocx_home!({})
+	match Hosts.rocx_binary!(home, Hosts.native_target!({})) {
+		Ok(_) => {
+			Stdout.line!(Fs.join([home, "bin", "rocx"]))?
+			Ok({})
+		}
+		Err(Failed(message)) => {
+			Stderr.line!(message)?
+			Err(Exit(1))
+		}
 	}
 }
 
@@ -102,26 +124,15 @@ build! = |rest| {
 	}
 }
 
-## What rocx does in Node, with the builds of the clone rocx is in (`rocx_home!`), `script` in
-## rocx-cli given `rest`; its status is rocx's:
-##
-## - `rocx dev [dir] [--port 8080] [-- server options…]` (dev.mjs): the app in `dir` (or here),
-##   built and served under --dev, built again and restarted on each save.
-## - `rocx check --sql [dir] [--engine sqlite|turso] [--verbose] [-- server options…]`
-##   (check-sql.mjs, D-058): the app's SQL checked by its own database engine, on a scratch
-##   database built from its migrations.
-node! = |script, rest, command| {
-	path = Fs.join([rocx_home!({}), "rocx-cli", script])
-	match Cmd.new(OsStr.from_str("node")).args([path].concat(rest).map(OsStr.from_str)).call!() {
+## `rocx site prepare [--dev] [--no-lock]`: the docs site's generated modules and its rocx build, in
+## the clone rocx is in (Site.roc), before its wasm and server are built; for `just dev`, and
+## site/build.mjs (which holds site/build's lock already: `--no-lock`).
+site_prepare! = |flags| {
+	exe = Env.exe_path!({})
+	match Site.prepare!(rocx_home!({}), if (exe.is_empty()) "rocx" else exe, flags) {
 		Ok({}) => Ok({})
-		Err(BadExitStatus(output)) =>
-			match output.status {
-				Exited(code) => exit_with(code)
-				Signaled(_) => Ok({})
-			}
-		Err(Interrupted) => Ok({})
-		Err(CmdErr(_)) => {
-			Stderr.line!("${command}: couldn't run node, which builds the app: is Node on PATH?")?
+		Err(Problem(message)) => {
+			Stderr.line!("rocx site: ${message}")?
 			Err(Exit(1))
 		}
 	}
@@ -132,7 +143,7 @@ node! = |script, rest, command| {
 ## file's markup as written. Its `roc` is $ROC, else the `roc` on PATH.
 fmt! = |args| {
 	check = args.contains("--check")
-	roc = Env.var_str!(OsStr.from_str("ROC")) ?? "roc"
+	roc = Env.var!("ROC") ?? "roc"
 	skip = |path| {
 		last = Fs.basename(path)
 		last == "build" or last == "dist" or last == "Generated"
@@ -210,7 +221,7 @@ exit_with = |code| if (code == 0) Ok({}) else Err(Exit(code))
 ## `rocx internal`: a call from the repo's JavaScript (rocx-cli/rocx.mjs), `{ "fn": …, "args": […] }` on
 ## stdin, answered on stdout with `{ "ok": … }` or `{ "error": { "kind", "message", … } }`.
 internal! = |{}| {
-	input = Str.from_utf8_lossy(Stdin.read_to_end!()?)
+	input = Stdin.read_to_end!({})
 	answer =
 		match Value.parse(input) {
 			Ok(request) =>
@@ -253,6 +264,10 @@ call! = |name, args| {
 	checked = Sql.rpc!(name, args)
 	if known(checked) {
 		return checked
+	}
+	site = Site.rpc!(rocx_home!({}), name, args)
+	if known(site) {
+		return site
 	}
 	# Many calls in one process (rocx-cli/rocx.mjs callMany): each `{ fn, args }`, their answers in order.
 	if name == "batch" {

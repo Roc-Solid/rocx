@@ -28,9 +28,10 @@ set lazy
 roc := if path_exists(".tools/roc-active") == "true" { ".tools/roc-active" } else if env("ROC", "") != "" { env("ROC") } else { error("no Roc compiler: run `just setup` (or set ROC)") }
 # Zig: the system's, on PATH (e.g. from Nix), when it is zig_version; else the one in .tools.
 zig := if `zig version 2>/dev/null || true` == zig_version { "zig" } else { justfile_directory() / ".tools/zig/zig" }
-# rocx itself: bin/rocx, built from its Roc (rocx-cli/*.roc, on basic-cli) when that changed
-# (server/build.mjs rocxBinary).
-rocx := `node --input-type=module -e "import { rocxBinary } from './server/build.mjs'; console.log(rocxBinary())"`
+# rocx itself: bin/rocx, built from its Roc (rocx-cli/*.roc, on the CLI platform in cli/) when that
+# changed, by rocx (`rocx self-build`, as server/build.mjs's rocxBinary does for the JavaScript);
+# by the shell when there is none yet, or it is one from before `self-build` (`just rocx-bootstrap`).
+rocx := `bin/rocx self-build 2>/dev/null || { just rocx-bootstrap >&2 && bin/rocx self-build; }`
 
 default:
     @just --list
@@ -111,8 +112,9 @@ setup:
     fi
     ln -sfn "roc-fork/$commit/bin/roc" .tools/roc-active
     .tools/roc-active version
-    # rocx itself, bin/rocx, from its Roc (rocx-cli/): `rocx dev` for an app, and every script here.
-    node --input-type=module -e "import { rocxBinary } from './server/build.mjs'; console.log(rocxBinary())"
+    # rocx itself, bin/rocx, from its Roc (rocx-cli/) on the CLI platform (cli/): `rocx dev` for an
+    # app, and every script here.
+    bin/rocx self-build 2>/dev/null || { just rocx-bootstrap && bin/rocx self-build; }
 
 # Each Roc compiler bug rocx has met (test/compiler-bugs/*/repro.sh), with the pinned nightly and
 # with the fork rocx builds with: what the fork fixes, and, with a newer nightly, what it still needs.
@@ -132,7 +134,32 @@ compiler-bugs:
 # platform) answering every page as it is asked for, rebuilt, restarted and reloaded on save. With
 # DATABASE_URL set (`just db`), its Postgres.
 dev port="8080":
-    node site/serve.mjs --watch --port {{ port }}
+    {{ rocx }} site dev --port {{ port }}
+
+# bin/rocx from nothing, without Node: the CLI platform's host (cli/host, Rust) where Roc links it,
+# then rocx (rocx-cli/main.roc) on it, optimized. Once there, rocx builds itself again when it
+# changed (`rocx self-build`; `just dev` does it as it starts, and runs the new one).
+rocx-bootstrap:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "$(uname -sm)" in
+        "Darwin arm64") target=arm64mac triple=aarch64-apple-darwin ;;
+        "Darwin x86_64") target=x64mac triple=x86_64-apple-darwin ;;
+        *aarch64) target=arm64musl triple=aarch64-unknown-linux-musl ;;
+        *) target=x64musl triple=x86_64-unknown-linux-musl ;;
+    esac
+    dir="cli/platform/targets/$target"
+    mkdir -p "$dir" bin
+    if [[ "$target" == *musl ]]; then
+        rustup target add "$triple"
+        crt="$(rustc --print sysroot)/lib/rustlib/$triple/lib/self-contained"
+        cp "$crt/rcrt1.o" "$crt/libunwind.a" "$crt/libc.a" "$dir/"
+    fi
+    (cd cli/host && cargo build --release --target "$triple")
+    cp "cli/host/target/$triple/release/librocx_cli_host.a" "$dir/libhost.a"
+    # 2: warnings alone.
+    {{ roc }} build --opt=speed --output=bin/rocx rocx-cli/main.roc || [ $? -eq 2 ]
+    printf speed > bin/.rocx-opt
 
 # A Postgres for the server platform, in Docker; prints its URL (for DATABASE_URL).
 db:
@@ -210,7 +237,7 @@ deploy-pages: site
 test:
     ROC={{ roc }} node --test 'test/*.test.mjs'
     {{ roc }} test rocx-cli/main.roc
-    node site/build.mjs --prepare
+    {{ rocx }} site prepare
     {{ roc }} test site/main.roc
     for package in packages/*/main.roc; do echo "$package"; {{ roc }} test "$package" || exit 1; done
     ROC={{ roc }} node --test --test-concurrency=1 'web/test/*.test.mjs' 'site/test/*.test.mjs'
@@ -225,7 +252,7 @@ test:
 # (`examples-check`; `just examples` builds and tests them too). First, that everything is
 # formatted (`just fmt` formats it).
 check: (fmt "--check")
-    node site/build.mjs --prepare
+    {{ rocx }} site prepare
     {{ rocx }} lint site web/test/app
     {{ rocx }} check -- {{ roc }} check site/main.roc
     {{ rocx }} check -- {{ roc }} check site/build/client/main.roc
@@ -236,7 +263,7 @@ check: (fmt "--check")
 # (`examples`, below) with roc fmt: each .rocx file's (its markup kept as written) and each
 # hand-written .roc file. `just fmt --check` only says which aren't formatted.
 fmt *args:
-    ROC={{ roc }} {{ rocx }} fmt {{ args }} rocx-cli site packages web/platform server/platform {{ examples }}
+    ROC={{ roc }} {{ rocx }} fmt {{ args }} rocx-cli cli/platform site packages web/platform server/platform {{ examples }}
 
 # The example apps: each examples/<name>/main.roc that git tracks, by its directory. Only tracked
 # ones: an untracked directory under examples/ (a private repo of one's own, say) is never built,
@@ -325,8 +352,9 @@ db-bench *args:
 example-shots *names:
     ROC={{ roc }} node site/example-shots.mjs {{ names }}
 
-# Regenerates the platforms' glue after a change to a header: web/host/roc_platform_abi.zig, and
-# server/host/src/roc_platform_abi.rs.
+# Regenerates the platforms' glue after a change to a header: web/host/roc_platform_abi.zig,
+# server/host/src/roc_platform_abi.rs and cli/host/src/roc_platform_abi.rs (rocx's platform).
 glue:
     {{ roc }} glue .tools/glue/src/ZigGlue.roc web/host/ web/platform/main.roc
     {{ roc }} glue .tools/glue/src/RustGlue.roc server/host/src/ server/platform/main.roc
+    {{ roc }} glue .tools/glue/src/RustGlue.roc cli/host/src/ cli/platform/main.roc

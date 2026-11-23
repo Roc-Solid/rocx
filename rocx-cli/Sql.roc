@@ -1,7 +1,7 @@
 ## `rocx check --sql` (D-058): an app's SQL checked by its own database engine. rocx finds each
 ## `Db.all!` and `Db.run!` whose SQL is a string literal at the call (`scan`), the app's server
 ## describes those statements on a scratch database built from its migrations (`--describe-sql`,
-## which rocx-cli/check-sql.mjs runs), and rocx reports what the engine refused and parameters that
+## which rocx-cli/CheckSql.roc runs), and rocx reports what the engine refused and parameters that
 ## don't match what the call gives (`report`). What it can't check (SQL interpolated, in a
 ## variable, or marked `Db.unchecked`) is counted, and listed with `--verbose`.
 import Value
@@ -958,7 +958,7 @@ Sql := [].{
 		}
 	}
 
-	## `found` as JSON, for rocx-cli/check-sql.mjs.
+	## `found` as JSON, for `rocx internal`.
 	found_value : Found -> Value
 	found_value = |each| {
 		sql =

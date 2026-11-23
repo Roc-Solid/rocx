@@ -116,6 +116,17 @@ export const routeList = (table, sources) => call("routeList", table, plain(sour
 export const routesTable = (dir) => call("routesTable", dir);
 export const matches = (route, path) => call("matches", route, path);
 
+// ---- the docs site's reference (SiteReference.roc), for its test ----
+
+/** Every module the server platform exposes (server/platform/main.roc's `exposes`), read from its
+ * source: `{ name, file, shared, doc, effects, functions }`, each item `{ name, type, doc, line }`. */
+export const platformReference = () => call("platformReference");
+/** The effects of `modules` with no doc comment, as `Module.name! (file:line)`. */
+export const undocumented = (modules) => call("undocumented", modules);
+/** A doc comment as the reference page shows it: `Para` (`inlines`), `Bullets` (`items`, each
+ * inlines) and `Sample` (`code`) blocks, an inline `{ kind: "Text" | "Mono", text }`. */
+export const referenceBlocks = (doc) => call("referenceBlocks", doc);
+
 // ---- rocx build (main.roc) ----
 
 /**

@@ -13,16 +13,15 @@
 //   node site/sqlite-vs-turso.mjs                  size 100 (20,000 items), a million orders, 3 rounds
 //   node site/sqlite-vs-turso.mjs --size 10 --orders 100000 --rounds 1
 //
-// The site's build (site/build.mjs) writes site/Generated/DbBench.roc from the file, and the app's
-// page (/examples/sqlite-vs-turso) shows it. It takes ten minutes or so, so the site's build doesn't
-// run it: `just db-bench` does.
+// The site's build (`rocx site prepare`, rocx-cli/Site.roc) writes site/Generated/DbBench.roc from
+// the file, and the app's page (/examples/sqlite-vs-turso) shows it. It takes ten minutes or so, so
+// the site's build doesn't run it: `just db-bench` does.
 import { spawn, spawnSync } from "node:child_process";
 import { request } from "node:http";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { cpus, loadavg, tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildApp, roc, rocxBinary } from "../server/build.mjs";
-import { rocString } from "./reference.mjs";
 
 export const root = join(import.meta.dirname, "..");
 export const resultsFile = join(root, "site", "sqlite-vs-turso.json");
@@ -165,59 +164,6 @@ export async function measure({ size = 100, orders = 1000000, rounds = 3 } = {})
 		workloads,
 		big,
 	};
-}
-
-/** site/Generated/DbBench.roc, from the results (or from none: lists empty, the page says so). */
-export function dbBenchModule(results) {
-	const int = (n) => String(Math.round(n));
-	const engine = (e) => `{ key: ${rocString(e.key)}, label: ${rocString(e.label)}, note: ${rocString(e.note)}, version: ${rocString(e.version)} }`;
-	const workload = (w, keys) =>
-		[
-			"\t\t{",
-			`\t\t\tname: ${rocString(w.name)},`,
-			`\t\t\twhat: ${rocString(w.what)},`,
-			`\t\t\tcallers: ${int(w.callers)},`,
-			`\t\t\tops: ${int(w.ops)},`,
-			`\t\t\tresults: [${keys.map((key) => `{ engine: ${rocString(key)}, ns: ${int(w.results[key].ns)}, runs: ${int(w.results[key].runs)} }`).join(", ")}],`,
-			"\t\t},",
-		].join("\n");
-	const r = { measured: "", commit: "", machine: "", load: "", opt: "", size: 0, rows: 0, orders: 0, customers: 0, rounds: 0, engines: [], workloads: [], big: [], ...results };
-	const keys = r.engines.map((e) => e.key);
-	return [
-		"## Written by site/build.mjs from site/sqlite-vs-turso.json, which site/sqlite-vs-turso.mjs measures. Run",
-		"## that again (`just db-bench`), not this one.",
-		"DbBench := [].{",
-		"\tEngine : { key : Str, label : Str, note : Str, version : Str }",
-		"\tResult : { engine : Str, ns : U64, runs : U64 }",
-		"\tWorkload : { name : Str, what : Str, callers : U64, ops : U64, results : List(Result) }",
-		"",
-		"\t## When, at which commit, on what, how big (the everyday run's items; the big run's orders and customers) and how many times it was run.",
-		"\tmeasured : { date : Str, commit : Str, machine : Str, load : Str, opt : Str, size : U64, rows : U64, orders : U64, customers : U64, rounds : U64 }",
-		`\tmeasured = { date: ${rocString(r.measured)}, commit: ${rocString(r.commit)}, machine: ${rocString(r.machine)}, load: ${rocString(r.load)}, opt: ${rocString(r.opt)}, size: ${int(r.size)}, rows: ${int(r.rows)}, orders: ${int(r.orders)}, customers: ${int(r.customers)}, rounds: ${int(r.rounds)} }`,
-		"",
-		"\t## The engines, in the page's order.",
-		"\tengines : List(Engine)",
-		`\tengines = [${r.engines.map(engine).join(", ")}]`,
-		"",
-		"\t## Each everyday workload, its median time on each engine.",
-		"\tworkloads : List(Workload)",
-		"\tworkloads = [",
-		...r.workloads.map((w) => workload(w, keys)),
-		"\t]",
-		"",
-		"\t## Each workload of the big run (a million orders), its median time on each engine.",
-		"\tbig : List(Workload)",
-		"\tbig = [",
-		...r.big.map((w) => workload(w, keys)),
-		"\t]",
-		"}",
-		"",
-	].join("\n");
-}
-
-/** The results the site has, or none yet. */
-export function readResults() {
-	return existsSync(resultsFile) ? JSON.parse(readFileSync(resultsFile, "utf8")) : null;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

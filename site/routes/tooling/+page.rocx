@@ -208,10 +208,11 @@ view! = |_|
 				<table>
 					<thead><tr><th>Where</th><th>What</th></tr></thead>
 					<tbody>
-						<tr><td><code>rocx-cli/</code></td><td>rocx: the transpiler and the command, in Roc on basic-cli, built into <code>bin/rocx</code></td></tr>
+						<tr><td><code>rocx-cli/</code></td><td>rocx: the transpiler and the command, <code>rocx dev</code> and <code>just dev</code>'s loop included, in Roc, built into <code>bin/rocx</code></td></tr>
+						<tr><td><code>cli/</code></td><td>the command-line platform rocx is built on: files, commands, a directory tree watched, signals, and one wait for whichever comes first; a Rust host</td></tr>
 						<tr><td><code>web/</code></td><td>the browser's platform: its Roc header, the modules both platforms have (components'; and requests, endpoints, events, middleware), the Zig host, the runtime</td></tr>
 						<tr><td><code>server/</code></td><td>the server's platform: its Roc header and modules, the Rust host, the build</td></tr>
-						<tr><td><code>site/</code></td><td>this site: its pages in <code>routes/</code>, in rocx; <code>build.mjs</code> builds them, <code>serve.mjs</code> serves them</td></tr>
+						<tr><td><code>site/</code></td><td>this site: its pages in <code>routes/</code>, in rocx; <code>rocx site dev</code> (<code>just dev</code>) builds and serves them as you edit, <code>build.mjs</code> builds the static site</td></tr>
 						<tr><td><code>spike/</code></td><td>experiments: <code>spike/suspense</code>, how a read that has to wait can stop a computation in wasm</td></tr>
 						<tr><td><code>test/</code>, <code>web/test/</code>, <code>site/test/</code>, <code>server/test/</code></td><td>the transpiler, the browser's platform, the site in a real browser, the server's platform</td></tr>
 					</tbody>

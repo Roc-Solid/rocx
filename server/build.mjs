@@ -9,13 +9,15 @@
 // and libunwind.a, which Rust's std needs) comes from Rust's own musl target, which rustup adds,
 // and Zig compiles the host's C for it.
 import { spawn, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const hostDir = join(root, "server", "host");
 const targetsDir = join(root, "server", "platform", "targets");
+const cliHostDir = join(root, "cli", "host");
+const cliTargetsDir = join(root, "cli", "platform", "targets");
 
 /** Rust's name for each of Roc's targets. */
 const RUST_TARGETS = {
@@ -43,15 +45,25 @@ export function roc() {
 }
 
 /**
- * rocx itself (bin/rocx), built from its Roc (rocx-cli/*.roc, on basic-cli) when it is missing or older
- * than one of them or a file they embed (anything in rocx-cli/ but the JavaScript): what the repo's scripts and tests run. `ROCX_OPT` picks the optimization
+ * rocx itself (bin/rocx), built from its Roc (rocx-cli/*.roc, on the CLI platform, cli/) when it is
+ * missing or older than one of them, a file they embed (anything in rocx-cli/ but the JavaScript),
+ * the platform's modules or its host (built first, when its Rust changed): what the repo's scripts
+ * and tests run. `ROCX_OPT` picks the optimization
  * (`speed` unless it says `dev`). Builds wait for one another (bin/.rocx-building), since the
  * tests run in several processes at once.
  */
 export function rocxBinary() {
 	const out = join(root, "bin", "rocx");
 	const sources = join(root, "rocx-cli");
-	const newest = () => Math.max(...readdirSync(sources).filter((name) => !name.endsWith(".mjs")).map((name) => statSync(join(sources, name)).mtimeMs));
+	const platform = join(root, "cli", "platform");
+	const library = join(cliTargetsDir, nativeTarget(), "libhost.a");
+	buildCliHost();
+	const newest = () =>
+		Math.max(
+			...readdirSync(sources).filter((name) => !name.endsWith(".mjs")).map((name) => statSync(join(sources, name)).mtimeMs),
+			...readdirSync(platform).filter((name) => name.endsWith(".roc")).map((name) => statSync(join(platform, name)).mtimeMs),
+			statSync(library).mtimeMs,
+		);
 	// What it was built with (`dev` or `speed`), beside it: a dev build doesn't stand in for an optimized one.
 	const opt = process.env.ROCX_OPT === "dev" ? "dev" : "speed";
 	const stamp = join(root, "bin", ".rocx-opt");
@@ -156,6 +168,25 @@ export function syncShared() {
 /** The host for `target`, built (cargo does nothing when nothing changed) and put where Roc looks. */
 export function buildHost({ target = nativeTarget() } = {}) {
 	syncShared();
+	buildRustHost(hostDir, targetsDir, "librocx_server_host.a", target);
+}
+
+/** The CLI platform's host (cli/host), which rocx itself is built on, for `target`: built when its
+ * Rust is newer than the library Roc links (cargo would do nothing, but takes a moment to say so,
+ * and rocxBinary() is asked for often). */
+export function buildCliHost({ target = nativeTarget() } = {}) {
+	const library = join(cliTargetsDir, target, "libhost.a");
+	const sources = [join(cliHostDir, "Cargo.toml"), join(cliHostDir, "Cargo.lock"), ...readdirSync(join(cliHostDir, "src")).map((name) => join(cliHostDir, "src", name))];
+	if (existsSync(library) && sources.every((source) => statSync(source).mtimeMs <= statSync(library).mtimeMs)) return;
+	buildRustHost(cliHostDir, cliTargetsDir, "librocx_cli_host.a", target);
+	// The library's time says when its sources were last built, even when cargo had nothing to do.
+	const now = new Date();
+	utimesSync(library, now, now);
+}
+
+/** A Rust host (`hostDir`, a staticlib named `library`) for `target`, built and copied into
+ * `targetsDir`/<target>/libhost.a, with a musl target's C runtime beside it. */
+function buildRustHost(hostDir, targetsDir, library, target) {
 	const triple = RUST_TARGETS[target];
 	if (!triple) throw new Error(`no host for the target ${target}: one of ${Object.keys(RUST_TARGETS).join(", ")}`);
 	const env = rustEnv({ musl: target.endsWith("musl") });
@@ -172,7 +203,7 @@ export function buildHost({ target = nativeTarget() } = {}) {
 		run("rustup", ["target", "add", triple], { env });
 	}
 	run("cargo", ["build", "--release", "--target", triple], { cwd: hostDir, env });
-	const built = join(hostDir, "target", triple, "release", "librocx_server_host.a");
+	const built = join(hostDir, "target", triple, "release", library);
 	const dir = join(targetsDir, target);
 	copyIfChanged(built, join(dir, "libhost.a"));
 	if (target.endsWith("musl")) {

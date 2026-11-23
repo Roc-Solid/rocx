@@ -1,6 +1,5 @@
 ## `rocx check` and `rocx lint`.
 import pf.Cmd
-import pf.OsStr
 import pf.Stdout
 import pf.Stderr
 import Fs
@@ -19,25 +18,30 @@ Commands := [].{
 				2
 			}
 			[program, .. as rest] => {
-				ran = Cmd.new(OsStr.from_str(program)).args(rest.map(OsStr.from_str)).env(OsStr.from_str("NO_COLOR"), OsStr.from_str("1")).output_limit(NoLimit).run!()
-				match ran {
-					Ok(output) => {
-						said = Remap.remap!(Str.from_utf8_lossy(output.stdout_bytes.concat(output.stderr_bytes)))
+				match Commands.checked!(program, rest) {
+					Ok(ran) => {
+						said = ran.said
 						_ = Stdout.write!(if (said.is_empty() or said.ends_with("\n")) said else said.concat("\n"))
-						match output.status {
-							Exited(code) => code
-							Signaled(_) => 1
-						}
+						ran.code
 					}
-					Err(CmdErr(err)) => {
-						_ = Stderr.line!("✗ rocx check: ${err.to_str()}")
+					Err(CantStart(why)) => {
+						_ = Stderr.line!("✗ rocx check: ${why}")
 						1
 					}
-					Err(Interrupted) => 1
 				}
 			}
 		}
 	}
+
+	## `check!`'s run, saying nothing: the command's exit code, and what it printed (its output, then
+	## its errors) with its reports pointed into .rocx files. For a step that is silent unless it
+	## fails (`rocx check --sql` building the app's server).
+	checked! : Str, List(Str) => Try({ code : I32, said : Str }, [CantStart(Str)])
+	checked! = |program, rest|
+		match Cmd.new(program).args(rest).env("NO_COLOR", "1").output!() {
+			Ok(output) => Ok({ code: output.code, said: Remap.remap!(output.stdout.concat(output.stderr)) })
+			Err(CantStart(why)) => Err(CantStart(why))
+		}
 
 	## Whether rocx wrote the file: its last line is the marker (a file that only mentions it, in a
 	## string, isn't).

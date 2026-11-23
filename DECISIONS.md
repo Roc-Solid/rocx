@@ -1603,7 +1603,8 @@ that imported `src/transpile.mjs`, `src/routes.mjs` and the others imports the s
 **Costs.** An optimized rocx takes about a minute and a half to build (a dev build, seconds); the
 binary rebuilds when `rocx-cli/` changes. Roc keeps more words than JavaScript (`module`, `packages`,
 `where`, `platform` can't be names), and the compiler's bugs are rocx's now too. basic-cli has no
-file watcher (rocx needs none: `site/serve.mjs` watches). The repo's own scripts, its tests and the
+file watcher (rocx needed none then: `site/serve.mjs` watched; since D-062 rocx is on a platform
+of the repo's own, which has one, and `rocx dev` and `just dev` are rocx's). The repo's own scripts, its tests and the
 testing package's helpers are still JavaScript on Node; an app no longer needs Node to build. Each call
 the repo's JavaScript makes starts the binary (a few milliseconds), so a script that asks many
 times asks once (`callMany`, as the site's build does for its route files).
@@ -2964,7 +2965,7 @@ rocx check --sql: 38 statements checked on SQLite (the rows of 22 against their 
   grant it or to name one it may migrate (`--sql-database URL`, `ROCX_SQL_DATABASE`), the only kind
   it ever migrates.
 - **rocx checks SQL and parameters.** `rocx check --sql [dir] [--engine sqlite|turso] [--verbose]
-  [-- server options]` (rocx-cli/Sql.roc, rocx-cli/check-sql.mjs) reads each `Db.all!` and
+  [-- server options]` (rocx-cli/Sql.roc, rocx-cli/CheckSql.roc) reads each `Db.all!` and
   `Db.run!` whose SQL is a string literal at the call, outside comments and strings, with the
   parameters it gives when they are a list literal. It builds the server as `rocx dev` does
   (nothing, for an app with no SQL) and reports, at the call's `file:line:column`, what the engine
@@ -3009,3 +3010,87 @@ compiler is the only exact judge of a Roc type, aliases and packages included. r
 them, as it does for `Generated/Api` (D-037). Nothing in `Db` changes, so no app does.
 
 **Reversible:** yes. Nothing in `Db` changes but `Db.unchecked`, and the check is a command.
+
+## D-062 rocx on a platform of its own: `rocx dev`, `rocx check --sql` and `just dev` in Roc
+
+**Status.** Built (2026-11-23). The spike it started from is `spike/cli-platform/DESIGN.md`. The
+user's answer to its questions was "move as much as possible into the Roc rocx, without Node, and
+see if it's faster", so its recommendations were taken, but one: the site's extra steps are rocx's
+own (`rocx site prepare`), not a program of the site's.
+
+**Context.** D-032 made rocx Roc on basic-cli. Three things stayed Node:
+- `rocx dev`, which handed off to `rocx-cli/dev.mjs`;
+- `rocx check --sql`, which handed off to `check-sql.mjs`;
+- `just dev`, which was `site/serve.mjs` with `site/build.mjs --dev`, whose prepare step ran
+  `site/reference.mjs` and the generators in the measuring scripts.
+
+A dev loop needs a tree watched, children stopped with SIGTERM (the server finishes what it is
+running), the signals it is sent, and one wait for whichever of those comes first. basic-cli 0.28.1
+has children and signals, but no watcher, no choice of signal, and no way to wait on several things
+at once. The page reload needs no HTTP in the loop: under `--dev` the server serves `/__reload`.
+
+**Options.**
+1. basic-cli, with a loop that polls: sleep, poll the signals and each child, walk the trees.
+2. A platform of the repo's own. This is D-032's option 4, which now has something basic-cli lacks.
+3. Keep the loops in Node.
+
+**Choice.** 2.
+- **`cli/`**, the platform: `cli/platform` in Roc, and `cli/host` in Rust on the C library alone.
+  - It has output, stdin, the environment, files (`create_new!` for locks, `copy!` and `delete!` of
+    trees), and `Cmd`, a command run to its end, beside the program (`Child`), or in its place
+    (`exec!`).
+  - It has `Watch.dir!` and `Events.next!`, the one wait. A program that watches is one plain loop.
+  - The host reports a file only when its size or time changed, or it appeared or went.
+  - On macOS it watches with FSEvents, loaded with `dlopen`, since Roc links an app against libc
+    alone. Elsewhere it polls.
+  - See `cli/README.md`.
+- **rocx-cli** moved onto it; its file effects were already in `Fs.roc`.
+  - `Dev.roc` is the loop, for a plan of what to build, serve, watch and check.
+  - `rocx dev` is an app's plan, with rocx build in-process.
+  - `CheckSql.roc` is `rocx check --sql`.
+  - `Hosts.roc` finds Roc, Zig and the target, and builds the server's host (skipping cargo when
+    nothing under `server/host` is newer than the library), the CLI host, and rocx itself.
+  - `Site.roc`, `SiteSources.roc` and `SiteReference.roc` are `rocx site prepare`. The generated
+    files are byte for byte what the JavaScript wrote; site/build.mjs calls it.
+  - `SiteDev.roc` is `rocx site dev`, which is `just dev`. When rocx's own Roc changed, a build
+    builds rocx again, and the loop runs the new rocx in its place (`Cmd.exec!`), so an edit to
+    rocx, its loop included, is used at once.
+  - `rocx self-build` rebuilds rocx when stale, as `rocxBinary()` does, under the same lock.
+  - `dev.mjs`, `check-sql.mjs`, `site/serve.mjs` and `site/reference.mjs` are gone, and rocx runs
+    no Node.
+- **The Justfile** gets rocx from `bin/rocx self-build`, or `just rocx-bootstrap` (cargo, then roc)
+  when there is none. `just dev` is `rocx site dev`, and `just check`/`just test` prepare the site
+  with `rocx site prepare`.
+
+**Still Node:**
+- the tests;
+- `just site`'s full build: it measures the wasm in Node with `web/runtime.js`, and prerenders
+  through the server;
+- the measuring scripts (example-apps, sqlite-vs-turso, example-shots);
+- `server/build.mjs`, for the JavaScript.
+
+Measured against master's Node, Node and Roc runs taking turns, three rounds, the machine loaded
+by other work (load 9 to 12 on 10 cores; medians; a save is the time from writing the file to the
+new server listening):
+
+| | Node | Roc | |
+|---|---|---|---|
+| `just dev`: started, serving | 1.92 s | 1.26 s | 1.5× |
+| `just dev`: a save, served | 1.37 s | 1.07 s | 1.3× |
+| `rocx dev examples/tasks`: a save, served | 0.73 s | 0.60 s | 1.2× |
+| `rocx check --sql examples/tasks` | 641 ms | 471 ms | 1.4× |
+| the site's prepare (`rocx site prepare`) | 443 ms | 295 ms | 1.5× |
+
+The gain is Node's start (a process each save, for `just dev`), the build in-process, and cargo
+skipped when the server's host hasn't changed. What is left of a save is mostly the server
+stopping and starting.
+
+**Costs.**
+- A second Rust host to keep, and one per target. Linux is named but untried.
+- Adding a hosted function renames the glue's result types; `cli/host/src/lib.rs` aliases them in
+  one place.
+- Making rocx from nothing needs cargo, which the server already needs.
+- Output is text: a command's bytes that aren't UTF-8 are replaced.
+
+**Reversible:** yes. The ported scripts are in history, and basic-cli's API was a drop-in shape for
+most of rocx-cli.

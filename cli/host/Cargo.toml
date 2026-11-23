@@ -1,0 +1,17 @@
+[package]
+name = "rocx-cli-host"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Spike: the CLI platform's host (spike/cli-platform/platform), what rocx's own commands need"
+
+[lib]
+# Roc links the app against this (platform/targets/<target>/libhost.a).
+crate-type = ["staticlib"]
+path = "src/lib.rs"
+
+[dependencies]
+libc = "0.2"
+
+[profile.release]
+debug = 1

@@ -11,10 +11,10 @@
 //   node site/example-apps.mjs --bench       and echo's benchmark again (a minute or so)
 //   node site/example-apps.mjs --counts      what each is made of again, the sizes kept (no builds)
 //
-// The site's build (site/build.mjs) writes site/Generated/ExampleApps.roc from the file, and the page
-// (site/routes/examples/+page.rocx) shows it, with when, where and on what it was measured. Building
-// a dozen wasm files is minutes, so the site's build doesn't measure; its test checks the file
-// names every example the repository has.
+// The site's build (`rocx site prepare`, rocx-cli/Site.roc) writes site/Generated/ExampleApps.roc from
+// the file, and the page (site/routes/examples/+page.rocx) shows it, with when, where and on what it
+// was measured. Building a dozen wasm files is minutes, so the site's build doesn't measure; its test
+// checks the file names every example the repository has.
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { cpus, loadavg, tmpdir } from "node:os";
@@ -22,7 +22,6 @@ import { basename, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { brotliCompressSync, constants, gzipSync } from "node:zlib";
 import { buildApp, roc, rocxBinary } from "../server/build.mjs";
-import { rocString } from "./reference.mjs";
 
 export const root = join(import.meta.dirname, "..");
 export const factsFile = join(root, "site", "example-apps.json");
@@ -77,16 +76,6 @@ export function database(dir, main) {
 	if (/database:\s*Sqlite\(/.test(main)) return "SQLite";
 	if (/database:\s*Postgres\b/.test(main) || existsSync(join(dir, "migrations"))) return "Postgres";
 	return "";
-}
-
-/** The screenshots under site/static/shots, as `<app>/<scene>` (`tasks/list`), for the pages to show
- * only those there are. */
-export function shotFiles(dir = join(root, "site", "static", "shots")) {
-	if (!existsSync(dir)) return [];
-	return readdirSync(dir, { withFileTypes: true })
-		.filter((entry) => entry.isDirectory())
-		.flatMap((app) => readdirSync(join(dir, app.name)).filter((file) => file.endsWith(".webp")).map((file) => `${app.name}/${file.replace(/\.webp$/, "")}`))
-		.sort();
 }
 
 /** What an example is made of, read from its files. */
@@ -193,64 +182,6 @@ async function bench(rocx, seconds = 10) {
 	} finally {
 		server.kill();
 	}
-}
-
-/** Roc for the site: `Examples`, the facts as values the page reads. */
-export function examplesModule(facts, shots = shotFiles()) {
-	const int = (n) => String(Math.round(n));
-	const size = (s) => (s ? `[{ bytes: ${int(s.bytes)}, gzip: ${int(s.gzip)}, brotli: ${int(s.brotli)} }]` : "[]");
-	const example = (e) =>
-		[
-			"\t\t{",
-			`\t\t\tname: ${rocString(e.name)},`,
-			`\t\t\ttitle: ${rocString(e.title)},`,
-			`\t\t\tpages: ${int(e.pages)},`,
-			`\t\t\tendpoints: ${int(e.endpoints)},`,
-			`\t\t\tlines: ${int(e.lines)},`,
-			`\t\t\texpects: ${int(e.expects)},`,
-			`\t\t\ttests: ${int(e.tests)},`,
-			`\t\t\tpkgs: [${e.packages.map(rocString).join(", ")}],`,
-			`\t\t\tdatabase: ${rocString(e.database ?? (e.postgres ? "Postgres" : ""))},`,
-			`\t\t\twasm: ${size(e.wasm)},`,
-			"\t\t},",
-		].join("\n");
-	const level = (l) => `{ connections: ${int(l.connections)}, rps: ${int(l.rps)}, p50_us: ${int(l.p50_us)}, p99_us: ${int(l.p99_us)}, errors: ${int(l.errors)} }`;
-	const b = facts.bench;
-	return [
-		"## Written by site/build.mjs from site/example-apps.json, which site/example-apps.mjs measures. Run that",
-		"## again (`just example-apps`), not this one.",
-		"ExampleApps := [].{",
-		"\tSize : { bytes : U64, gzip : U64, brotli : U64 }",
-		"\tExample : { name : Str, title : Str, pages : U64, endpoints : U64, lines : U64, expects : U64, tests : U64, pkgs : List(Str), database : Str, wasm : List(Size) }",
-		"\tLevel : { connections : U64, rps : U64, p50_us : U64, p99_us : U64, errors : U64 }",
-		"\tBench : { measured : Str, commit : Str, machine : Str, load : Str, opt : Str, seconds : U64, roc_us : U64, levels : List(Level) }",
-		"",
-		"\t## When, at which commit, with which compiler, and on what the sizes were measured.",
-		"\tmeasured : { date : Str, commit : Str, roc : Str, machine : Str }",
-		`\tmeasured = { date: ${rocString(facts.measured)}, commit: ${rocString(facts.commit)}, roc: ${rocString(facts.roc)}, machine: ${rocString(facts.machine)} }`,
-		"",
-		"\t## The runtime every page loads beside its app's wasm (web/runtime.js).",
-		"\truntime : Size",
-		`\truntime = ${size(facts.runtime).slice(1, -1)}`,
-		"",
-		"\t## The example apps, by name.",
-		"\tall : List(Example)",
-		"\tall = [",
-		...facts.examples.map(example),
-		"\t]",
-		"",
-		"\t## The screenshots there are under site/static/shots, as `<app>/<scene>` (`just example-shots`).",
-		"\tshots : List(Str)",
-		`\tshots = [${shots.map(rocString).join(", ")}]`,
-		"",
-		"\t## The server's benchmark (echo's), if one was run.",
-		"\tbench : List(Bench)",
-		b
-			? `\tbench = [{ measured: ${rocString(b.measured)}, commit: ${rocString(b.commit)}, machine: ${rocString(b.machine)}, load: ${rocString(b.load)}, opt: ${rocString(b.opt)}, seconds: ${int(b.seconds)}, roc_us: ${int(b.roc_us)}, levels: [${b.levels.map(level).join(", ")}] }]`
-			: "\tbench = []",
-		"}",
-		"",
-	].join("\n");
 }
 
 async function main(args) {

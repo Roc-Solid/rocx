@@ -89,6 +89,11 @@ When an item lands, delete its line here in the same commit.
 
 - **`rocx new`:** not built (`rocx --help` has `dev`, `build`, `check`, `lint`, `routes`, `fmt`).
   examples/tasks was written to be its template, and D-045 adds the database question above.
+- **rocx on Linux** (D-062): the CLI platform's musl targets are named and `just rocx-bootstrap`
+  builds for them, but neither has run; its watching polls there (inotify is the next step).
+- **What is still Node** (D-062): the tests, `just site`'s full build (it measures the wasm with
+  `web/runtime.js` and prerenders through the server), and the measuring scripts. A static site
+  in Roc would need a way to run the wasm, or to drop the measured rendering times.
 - **Prebuilt, stripped platform bundles for every target** (`roc bundle`), so a newcomer needs only
   `roc` and `rocx`: no Node, Rust or Zig.
 - **The live docs site** (roc-solid.github.io) was last deployed on 2026-11-21. Everything since,

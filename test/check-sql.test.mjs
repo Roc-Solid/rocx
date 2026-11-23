@@ -67,8 +67,8 @@ test("rocx check --sql on Postgres: the server's test app, on a scratch database
 	]);
 });
 
-test("rocx dev's check (check-sql.mjs --server --quiet): the server it built, none built again; what is wrong said the same; an app with no SQL says nothing", { skip }, () => {
-	const run = (args) => spawnSync(process.execPath, [join(root, "rocx-cli", "check-sql.mjs"), ...args], { cwd: root, env: { ...process.env, ROC: roc(), DATABASE_URL: "" }, encoding: "utf8" });
+test("rocx dev's check (rocx check --sql --server --quiet): the server it built, none built again; what is wrong said the same; an app with no SQL says nothing", { skip }, () => {
+	const run = (args) => spawnSync(rocxBinary(), ["check", "--sql", ...args], { cwd: root, env: { ...process.env, ROC: roc(), DATABASE_URL: "" }, encoding: "utf8" });
 	// The first test built test/sql-check's server.
 	const built = join(root, "test", "sql-check", "build", "sql", "server");
 	const checked = run([join("test", "sql-check"), "--server", built, "--quiet"]);

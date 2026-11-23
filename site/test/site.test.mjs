@@ -12,7 +12,7 @@ import { cpus, loadavg, tmpdir } from "node:os";
 import { join } from "node:path";
 import { appWasm, build, nativePage, out, pageFile, prerender, roc, root, ROUTES, STATIC_GETS, startServer, underBase } from "../build.mjs";
 import { hasRust } from "../../server/build.mjs";
-import { blocks, platformReference, undocumented } from "../reference.mjs";
+import { platformReference, referenceBlocks as blocks, undocumented } from "../../rocx-cli/rocx.mjs";
 import { exampleNames, factsFile as exampleFacts } from "../example-apps.mjs";
 import { Runtime } from "../../web/runtime.js";
 import { findChrome, launch } from "../../web/test/browser.mjs";
@@ -1152,7 +1152,7 @@ test("the static build is every page as the server answers it, and what the page
 });
 
 // The platform's reference (/platform/reference) is read from the platform's modules
-// (site/reference.mjs): every effect they expose is on it, and each has a doc comment to say there.
+// (rocx-cli/SiteReference.roc): every effect they expose is on it, and each has a doc comment to say there.
 
 test("the platform reference: every effect the server platform exposes has a doc comment", () => {
 	const missing = undocumented(platformReference());

@@ -1,8 +1,8 @@
 ## Paths and files for rocx: posix paths as text (`join`,
 ## `resolve`, `relative`, `dirname`, `basename`, with Node's rules), and the effects rocx needs on
 ## files and directories. A directory's entries come sorted by their bytes.
-import pf.Path
 import pf.Env
+import pf.File
 import Text
 
 Fs := [].{
@@ -143,38 +143,28 @@ Fs := [].{
 
 	## The working directory.
 	cwd! : () => Str
-	cwd! = || {
-		match Env.cwd!() {
-			Ok(path) => path.display()
-			Err(_) => "."
-		}
-	}
+	cwd! = || Env.cwd!({})
 
 	## Whether something is at `path` (a symbolic link counts as what it links to).
 	exists! : Str => Bool
-	exists! = |path| Path.utf8(path).exists!() ?? Bool.False
+	exists! = |path| File.exists!(path)
 
 	## Whether `path` is a directory (through symbolic links).
 	is_dir! : Str => Bool
-	is_dir! = |path| Path.utf8(path).is_dir!() ?? Bool.False
+	is_dir! = |path| File.is_dir!(path)
 
 	## Whether `path` is a file (through symbolic links).
 	is_file! : Str => Bool
-	is_file! = |path| Path.utf8(path).is_file!() ?? Bool.False
+	is_file! = |path| File.exists!(path) and !File.is_dir!(path)
 
 	## The names in a directory, sorted by their bytes (Node's `readdirSync`); none if it can't be read.
 	entries! : Str => List(Str)
-	entries! = |dir| {
-		match Path.utf8(dir).list!() {
-			Ok(paths) => Text.sorted(paths.map(|entry| Fs.basename(entry.display())))
-			Err(_) => []
-		}
-	}
+	entries! = |dir| Text.sorted(File.list!(dir) ?? [])
 
 	## A file's text; `Err` if it can't be read.
 	read! : Str => Try(Str, [CantRead(Str)])
 	read! = |path| {
-		match Path.utf8(path).read_utf8!() {
+		match File.read!(path) {
 			Ok(text) => Ok(text)
 			Err(_) => Err(CantRead(path))
 		}
@@ -187,8 +177,7 @@ Fs := [].{
 	## Writes `content` to `path`, making the directories it is in.
 	write! : Str, Str => Try({}, [CantWrite(Str)])
 	write! = |path, content| {
-		_ = Path.utf8(Fs.dirname(path)).create_all!()
-		match Path.utf8(path).write_utf8!(content) {
+		match File.write!(path, content) {
 			Ok({}) => Ok({})
 			Err(_) => Err(CantWrite(path))
 		}
@@ -197,32 +186,27 @@ Fs := [].{
 	## Makes a directory and those it is in.
 	make_dirs! : Str => {}
 	make_dirs! = |path| {
-		_ = Path.utf8(path).create_all!()
+		_ = File.make_dirs!(path)
 		{}
 	}
 
 	## Deletes a file.
 	delete! : Str => {}
 	delete! = |path| {
-		_ = Path.utf8(path).delete!()
+		_ = File.delete!(path)
 		{}
 	}
 
 	## Deletes a directory and everything in it.
 	delete_all! : Str => {}
 	delete_all! = |path| {
-		_ = Path.utf8(path).delete_all!()
+		_ = File.delete!(path)
 		{}
 	}
 
 	## The path with its symbolic links resolved (Node's `realpathSync`); as it is if that fails.
 	real! : Str => Str
-	real! = |path| {
-		match Path.utf8(path).canonicalize!() {
-			Ok(resolved) => resolved.display()
-			Err(_) => path
-		}
-	}
+	real! = |path| File.real_path!(path) ?? path
 
 	## Every file under `dir` whose name ends with `extension`, depth first, each directory's
 	## entries sorted: names starting with `.` and `node_modules` aren't
