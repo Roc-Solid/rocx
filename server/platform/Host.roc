@@ -332,6 +332,13 @@ Host := [].{
 	## Bool.False: on the server no navigation is on its way.
 	is_routing! : {} => Bool
 
+	## A `Router.use_before_leave!` listener: on the server no navigation happens, so it is let go of.
+	before_leave! : Box(() => Str) => {}
+
+	## Leaving is the browser's (`Leave.prevent!`, `Leave.retry!`): on the server, nothing.
+	leave_prevent! : U64 => {}
+	leave_retry! : U64, Bool => {}
+
 	## The status the page being rendered is answered with (`<HttpStatusCode>`).
 	status! : U16 => {}
 

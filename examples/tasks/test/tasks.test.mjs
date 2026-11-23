@@ -406,3 +406,37 @@ test("in a browser: a task's page starts filled in with the task, checks it as i
 	assert.deepEqual(tab.console.filter((line) => line.type === "error"), []);
 	await tab.close();
 });
+
+test("in a browser: leaving a task's page with changes not saved asks first (use_before_leave!): Cancel is stopped and the question shows, Keep editing stays, Leave without saving goes; a reload would be the browser's to ask", { skip }, async (t) => {
+	if (!browser) return t.skip(noBrowser);
+	const person = app.client();
+	const id = await newList(person, "Browser drafts");
+	const task = await addTask(person, id, { title: "Bake the bread" });
+	const tab = await browser.open(`${app.url}/tasks/${task}`);
+	/** Whether a load now would ask (the browser's beforeunload prompt). */
+	const loadAsks = () => tab.page.eval("!window.dispatchEvent(new Event('beforeunload', { cancelable: true }))");
+	const here = async () => new URL(await tab.page.eval("location.href")).pathname;
+	assert.equal(await loadAsks(), false, "nothing typed: a load wouldn't ask");
+	await (await tab.getByLabelText("Title")).fill("Bake the sourdough");
+	await until(loadAsks, { what: "a load asking, once the title differs" });
+	await (await tab.getByRole("link", { name: "Cancel" })).click();
+	const question = await tab.findByRole("alertdialog");
+	assert.match(question.text, /changes that aren't saved/);
+	assert.equal(await here(), `/tasks/${task}`, "still on the task");
+	await (await tab.getByRole("button", { name: "Keep editing" })).click();
+	await until(async () => !(await tab.dom()).queryByRole("alertdialog"), { what: "the question gone" });
+	assert.equal(await (await tab.getByLabelText("Title")).value(), "Bake the sourdough", "what was typed, still there");
+	// Typed back as it was: nothing to ask about.
+	await (await tab.getByLabelText("Title")).fill("Bake the bread");
+	await until(async () => !(await loadAsks()), { what: "a load not asking again" });
+	await (await tab.getByLabelText("Title")).fill("Bake rolls");
+	await (await tab.getByRole("link", { name: "Cancel" })).click();
+	await (await tab.findByRole("button", { name: "Leave without saving" })).click();
+	await until(async () => (await here()) === `/lists/${id}`, { what: "on the list" });
+	assert.equal(await loadAsks(), false, "the task's page gone, and its question with it");
+	const [row] = await db.sql`select title from tasks where id = ${Number(task)}`;
+	assert.equal(row.title, "Bake the bread", "nothing saved");
+	assert.deepEqual(tab.errors, []);
+	assert.deepEqual(tab.console.filter((line) => line.type === "error"), []);
+	await tab.close();
+});

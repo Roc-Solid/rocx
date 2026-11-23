@@ -868,6 +868,10 @@ export class Runtime {
 	static CACHE = 8;
 	static FRESH = 10_000;
 	static REST = 65;
+	/** How many leaves (`Router.use_before_leave!`'s) are kept for a `retry!` later; how long a load
+	 * the runtime starts once the listeners let a navigation go isn't asked again (ms). */
+	static LEAVES = 64;
+	static ASKED = 1000;
 
 	/**
 	 * `base` is the path the site is served under (`/`, or `/rocx/` for a copy at
@@ -1032,6 +1036,15 @@ export class Runtime {
 		this.committed = null;
 		/** Whether a navigation in place is on its way (`Router.is_routing!`), a source. */
 		this.routing = { on: false, observers: new Set() };
+		/** `Router.use_before_leave!`'s listeners, in the order they came (each a computation of kind
+		 * `leave`, owned by what made it); the leaves they were asked about lately, by id, for a
+		 * `retry!` (`LEAVES` of them); the one being asked; the browser's prompt before a load, while
+		 * one would stop it (`guardUnload`), and when the runtime last started a load they had let go. */
+		this.leaveListeners = new Set();
+		this.leaves = new Map();
+		this.leaveAsked = null;
+		this.unloadGuard = null;
+		this.loadAsked = -Infinity;
 		/** The app, as its root told it (`Router.app!`): `{ build, dev, routes, pages, error }`, the
 		 * route table's pages each `{ path, parts, levels }` (`parts`: its path's segments, a param
 		 * `null`), in the order `Root` tries them; null for an app that has no route table. Rendering as
@@ -1327,6 +1340,40 @@ export class Runtime {
 				if (this.onServer) return 0;
 				this.track(this.routing);
 				return this.routing.on ? 1 : 0;
+			},
+			// `Router.use_before_leave!` (D-040): a listener, a computation of its own owned by what is
+			// running (it goes when that goes), asked ahead of a load in the next flush (`probeLeave`),
+			// and before each navigation in place (`mayLeave`). Rendering as a server would, nothing.
+			js_before_leave: (ptr) => {
+				this.touch();
+				if (this.onServer) return this.ex.release(ptr);
+				const owner = this.current;
+				if (!owner?.making) {
+					this.ex.release(ptr);
+					throw new Failed("Router.use_before_leave! is called in a component or a computation, which its listener goes with: in a handler or an effect's apply, nothing would own it");
+				}
+				const id = ++ids;
+				this.kept.set(id, ptr);
+				const listener = new Computation(this, { kind: "leave", runner: id, owner, scope: owner.scope ?? {} });
+				listener.owner = owner;
+				listener.prevents = false;
+				this.leaveListeners.add(listener);
+				this.schedule(listener);
+			},
+			// `Leave.prevent!`: the leave its listeners are being asked about, stopped; asked ahead of a
+			// load (id 0), the probe's answer.
+			js_leave_prevent: (id) => {
+				const asking = this.current;
+				if (asking?.leaveProbe) {
+					if (id === 0) asking.prevented = true;
+				} else if (this.leaveAsked?.id === id) this.leaveAsked.prevented = true;
+			},
+			// `Leave.retry!`: once the handler is done, as `navigate!` is.
+			js_leave_retry: (id, force) => {
+				if (this.onServer) return;
+				const handler = this.current;
+				if (handler?.kind !== "handler") throw new Failed("Leave.retry! is a handler's: call it from an event, a timer or an effect's apply, not while computing");
+				handler.writes.push({ leaveRetry: { id, force: force === 1 } });
 			},
 			js_status: (code) => {
 				if (this.onServer) this.status = code;
@@ -1976,9 +2023,12 @@ export class Runtime {
 		/** What the pages navigated to or prefetched lately need (`Runtime.CACHE` of them, by URL, each
 		 * used for `FRESH` ms): `{ at, promise }`, the promise their document's (`pageFor`). */
 		this.pages = new Map();
+		// Each entry's key, and its index (how far it is from the first the runtime saw: back and
+		// forward's `delta`, so a leave stopped can be undone, `popped`).
 		const state = history.state;
 		this.entryKey = state?.rocx?.key ?? Runtime.entryKey();
-		if (state?.rocx?.key !== this.entryKey) history.replaceState({ ...(state && typeof state === "object" ? state : {}), rocx: { key: this.entryKey } }, "");
+		this.entryIndex = state?.rocx?.index ?? 0;
+		if (state?.rocx?.key !== this.entryKey || state?.rocx?.index !== this.entryIndex) history.replaceState({ ...(state && typeof state === "object" ? state : {}), rocx: { key: this.entryKey, index: this.entryIndex } }, "");
 		if ("scrollRestoration" in history) history.scrollRestoration = "manual";
 		const kept = this.scrollOf(this.entryKey);
 		if (kept && !location.hash) window.scrollTo(kept.x, kept.y);
@@ -2154,25 +2204,182 @@ export class Runtime {
 		return this.routeOf(this.unbased(url.pathname)) !== null;
 	}
 
-	/** Back or forward: the entry's page, rendered as a click's is, without pushing an entry. A
-	 * change of the hash alone is the browser's. */
+	/**
+	 * Back or forward: the entry's page, rendered as a click's is, without pushing an entry. A
+	 * change of the hash alone is the browser's. The address has changed already, so the page's
+	 * leave listeners (`mayLeave`) are asked now, with how far it went (`delta`, from the entries'
+	 * indexes); one that stops it has the browser go back the other way (`restoring`), as Solid
+	 * Router does, the page never having changed. Not asked: one a retry forces (`forcing`), and one
+	 * to an entry the runtime didn't make, whose distance it doesn't know.
+	 */
 	popped(event) {
-		const key = event.state?.rocx?.key ?? null;
-		if (this.here() === this.committed && !this.navigation) {
-			if (key) this.entryKey = key;
-			else history.replaceState({ ...(event.state ?? {}), rocx: { key: this.entryKey } }, "");
+		if (this.restoring) {
+			this.restoring = false;
 			return;
 		}
+		const forced = this.forcing;
+		this.forcing = false;
+		const key = event.state?.rocx?.key ?? null;
+		const index = event.state?.rocx?.index;
+		if (this.here() === this.committed && !this.navigation) {
+			if (key) {
+				this.entryKey = key;
+				if (typeof index === "number") this.entryIndex = index;
+			} else {
+				// The browser's own entry for a place on the page, after the one it was on.
+				this.entryIndex++;
+				history.replaceState({ ...(event.state ?? {}), rocx: { key: this.entryKey, index: this.entryIndex } }, "");
+			}
+			return;
+		}
+		const url = new URL(location.href);
+		const delta = typeof index === "number" ? index - this.entryIndex : 0;
+		if (delta && !forced && !this.mayLeave(url, { delta })) {
+			this.restoring = true;
+			history.go(-delta);
+			return;
+		}
+		if (typeof index === "number") this.entryIndex = index;
 		this.keepScroll();
-		this.navigate(new URL(location.href), { pop: key ?? Runtime.entryKey() });
+		this.navigate(url, { pop: key ?? Runtime.entryKey(), asked: true });
 	}
 
 	/** The browser loads `url`: another site's, a page that isn't the app's, a document the runtime
-	 * can't render. Back or forward (`pop`), the address is already there: loaded again. */
-	load(url, { replace = false, pop = null } = {}) {
+	 * can't render. Back or forward (`pop`), the address is already there: loaded again. `asked`:
+	 * the page's leave listeners let it go, so the browser's prompt doesn't ask again. */
+	load(url, { replace = false, pop = null, asked = false } = {}) {
+		if (asked) this.loadAsked = performance.now();
 		if (pop) location.reload();
 		else if (replace) location.replace(url.href ?? url);
 		else location.assign(url.href ?? url);
+	}
+
+	// ---- Leaving the page (D-040: Solid Router's `useBeforeLeave`) ----
+
+	/**
+	 * Whether the page may be left for `url`, a navigation in place: each listener a component
+	 * registered (`Router.use_before_leave!`) is run as a handler, in the order they came, given the
+	 * leave (`leaveEvent`), and may stop it (`Leave.prevent!`). They are all asked, each told whether
+	 * one before stopped it. The leave is kept a while (`LEAVES`), so a handler can let it go later
+	 * (`Leave.retry!`, `retryLeave`). A listener that waits for the server isn't run again: the
+	 * navigation is decided now. With no listener, it may.
+	 */
+	mayLeave(url, { replace = false, scroll = true, delta = 0 } = {}) {
+		if (!this.leaveListeners.size) return true;
+		const leave = { id: ++ids, to: Runtime.target(`${this.unbased(url.pathname)}${url.search}`), url, replace, scroll, delta, key: this.entryKey, index: this.entryIndex, prevented: false };
+		this.leaves.set(leave.id, leave);
+		while (this.leaves.size > Runtime.LEAVES) this.leaves.delete(this.leaves.keys().next().value);
+		const outer = this.leaveAsked;
+		this.leaveAsked = leave;
+		try {
+			for (const listener of [...this.leaveListeners]) {
+				if (listener.disposed) continue;
+				this.handle(listener.runner, this.leaveEvent(leave), listener.scope, { owner: listener.owner, again: false });
+			}
+		} finally {
+			this.leaveAsked = outer;
+		}
+		this.notify("leave", { to: leave.to, delta, prevented: leave.prevented });
+		return !leave.prevented;
+	}
+
+	/** A leave as Roc reads it (`Leave.of`), a line each: its id, where it goes, the path and the query
+	 * it leaves (`Router.location!`'s), replace and scroll, back and forward's delta, and whether a
+	 * listener before stopped it. */
+	leaveEvent(leave) {
+		const [path, query = ""] = this.location().split(/\?(.*)/s);
+		return [leave.id, leave.to, path, query, leave.replace ? 1 : 0, leave.scroll ? 1 : 0, leave.delta, leave.prevented ? 1 : 0].join("\n");
+	}
+
+	/**
+	 * A listener asked ahead of a load (leaving the site, reloading, closing the tab: the page can't
+	 * hold one, the browser asks): run as a handler is, given a leave with id 0 and `to` "", what it
+	 * writes dropped (a dialog it would open, a retry), what it reads tracked, so it is asked again
+	 * when that changes (a draft typed into, saved). While one would stop a load, the browser's
+	 * prompt is armed (`guardUnload`). One that waits for the server, or fails, wouldn't.
+	 */
+	probeLeave(listener) {
+		const making = making_();
+		const probe = {
+			kind: "handler",
+			leaveProbe: true,
+			prevented: false,
+			runner: listener.runner,
+			calls: new Map(),
+			writes: [],
+			event: this.leaveEvent({ id: 0, to: "", replace: false, scroll: true, delta: 0, prevented: false }),
+			scope: listener.scope,
+			owner: listener.owner,
+			making,
+			adopt: (child) => making.children.push(child),
+		};
+		const previous = this.current;
+		this.current = probe;
+		let ok = true;
+		try {
+			this.enter(() => this.ex.run(this.kept.get(listener.runner)));
+		} catch (error) {
+			if (!(error instanceof NotReady || error instanceof Failed)) throw error;
+			ok = false;
+			this.reclaim(error);
+		} finally {
+			this.current = previous;
+		}
+		for (const write of probe.writes) {
+			if (write.signal) this.ex.release(write.value);
+			else if (write.optimistic) this.ex.release(write.optimistic.value);
+		}
+		for (const source of listener.sources) source.observers.delete(listener);
+		listener.sources = making.sources;
+		for (const source of listener.sources) source.observers.add(listener);
+		// A cleanup it registered would run as a handler, its writes applied: let go of instead.
+		making.cleanups = making.cleanups.filter((cleanup) => typeof cleanup === "function" || (this.releaseKept(cleanup), false));
+		this.drop(making);
+		listener.prevents = ok && probe.prevented;
+		this.guardUnload();
+		return "ok";
+	}
+
+	/**
+	 * A leave let go after all (`Leave.retry!`), once the handler that said so is done and the
+	 * navigation it stopped has been decided: navigated to again, its listeners asked again unless
+	 * `force` (Solid Router's `retry(force)`). Back and forward go there again in history (`history.go`
+	 * of its delta) while the page is on the entry it was left from; else, and for the others, a
+	 * navigation to its URL, with its options.
+	 */
+	retryLeave(id, force) {
+		const leave = this.leaves.get(id);
+		if (!leave) return;
+		queueMicrotask(() => {
+			if (leave.delta && this.entryKey === leave.key && this.entryIndex === leave.index) {
+				this.forcing = force;
+				history.go(leave.delta);
+			} else this.navigate(leave.url, { replace: leave.replace, scroll: leave.scroll, force });
+		});
+	}
+
+	/**
+	 * The browser's prompt before a load (`beforeunload`, its own words): listened for while a leave
+	 * listener would stop one (`probeLeave`), and only then, since a page that listens for it may be
+	 * kept out of the browser's back-forward cache. A load the runtime starts once the listeners let
+	 * a navigation go (`load`'s `asked`) isn't asked again.
+	 */
+	guardUnload() {
+		if (typeof window === "undefined") return;
+		let wanted = false;
+		for (const listener of this.leaveListeners) if (listener.prevents) wanted = true;
+		if (wanted === (this.unloadGuard !== null)) return;
+		if (wanted) {
+			this.unloadGuard = (event) => {
+				if (performance.now() - this.loadAsked < Runtime.ASKED) return;
+				event.preventDefault();
+				event.returnValue = "";
+			};
+			window.addEventListener("beforeunload", this.unloadGuard);
+		} else {
+			window.removeEventListener("beforeunload", this.unloadGuard);
+			this.unloadGuard = null;
+		}
 	}
 
 	/**
@@ -2182,12 +2389,16 @@ export class Runtime {
 	 * (`is_routing!`), and the address pushed (or replaced, or, back and forward, left); anything
 	 * else the browser loads. A newer navigation overtakes one on its way (its fetch aborted).
 	 * `rocx:navigate` is dispatched on the document as it starts, `rocx:navigated` once the page is
-	 * on screen, each with `{ url }` (and `ms`, the time it took).
+	 * on screen, each with `{ url }` (and `ms`, the time it took). The page's leave listeners are
+	 * asked first (`mayLeave`), and may stop it, unless `force` (a retry's) or `asked` (back and
+	 * forward's, in `popped`); a load is the browser's, which asks with its own prompt while one
+	 * would stop it (`guardUnload`).
 	 */
-	async navigate(to, { replace = false, scroll = true, pop = null } = {}) {
+	async navigate(to, { replace = false, scroll = true, pop = null, force = false, asked = false } = {}) {
 		const url = to instanceof URL ? to : this.urlOf(to);
-		if (!this.navigating || !this.ours(url)) return this.load(url, { replace, pop });
+		if (!this.navigating || !this.ours(url)) return this.load(url, { replace, pop, asked });
 		if (!pop && Runtime.samePage(url)) return this.load(url, { replace });
+		if (!force && !asked && !this.mayLeave(url, { replace, scroll })) return;
 		// The page it is on, again: its entry replaced, as a browser loading the same URL does.
 		if (!pop && url.href === location.href) replace = true;
 		if (this.inPlace?.(url, { replace, scroll, pop })) return;
@@ -2214,7 +2425,7 @@ export class Runtime {
 			if (this.navigation !== navigation) return;
 			this.navigation = null;
 			// Offline, the server down, or a redirect to another site (refused by CORS): the browser's.
-			return this.load(url, { replace, pop });
+			return this.load(url, { replace, pop, asked: true });
 		}
 		if (this.navigation !== navigation) return;
 		// Where it ended: a redirect's address, but one that only adds the trailing slash (a static
@@ -2229,14 +2440,15 @@ export class Runtime {
 		if (!doc || (at !== url && !this.ours(at))) {
 			this.navigation = null;
 			this.pages.delete(Runtime.documentKey(url));
-			return this.load(at, { replace, pop });
+			return this.load(at, { replace, pop, asked: true });
 		}
 		if (pop) this.entryKey = pop;
 		else {
 			this.entryKey = Runtime.entryKey();
-			history[replace ? "replaceState" : "pushState"]({ rocx: { key: this.entryKey } }, "", at.href);
+			if (!replace) this.entryIndex++;
+			history[replace ? "replaceState" : "pushState"]({ rocx: { key: this.entryKey, index: this.entryIndex } }, "", at.href);
 		}
-		if (pop && history.state?.rocx?.key !== pop) history.replaceState({ ...(history.state ?? {}), rocx: { key: pop } }, "");
+		if (pop && history.state?.rocx?.key !== pop) history.replaceState({ ...(history.state ?? {}), rocx: { key: pop, index: this.entryIndex } }, "");
 		this.navigation = null;
 		this.navigations++;
 		try {
@@ -2763,11 +2975,12 @@ export class Runtime {
 		document.dispatchEvent(new CustomEvent("rocx:navigate", { detail: { url: url.href } }));
 		if (pop) {
 			this.entryKey = pop;
-			if (history.state?.rocx?.key !== pop) history.replaceState({ ...(history.state ?? {}), rocx: { key: pop } }, "");
+			if (history.state?.rocx?.key !== pop) history.replaceState({ ...(history.state ?? {}), rocx: { key: pop, index: this.entryIndex } }, "");
 		} else {
 			this.keepScroll();
 			this.entryKey = Runtime.entryKey();
-			history[replace ? "replaceState" : "pushState"]({ rocx: { key: this.entryKey } }, "", url.href);
+			if (!replace) this.entryIndex++;
+			history[replace ? "replaceState" : "pushState"]({ rocx: { key: this.entryKey, index: this.entryIndex } }, "", url.href);
 		}
 		this.commitLocation(target);
 		this.flush();
@@ -2931,6 +3144,7 @@ export class Runtime {
 	 * What it came to: "ok", "pending" (it waits) or "failed"; nothing if it didn't run. */
 	run(computation) {
 		if (computation.disposed) return;
+		if (computation.kind === "leave") return this.probeLeave(computation);
 		if (computation.recheck) {
 			// Here only because a memo an `is_pending!` it called reads changed: run only if that
 			// would answer otherwise now.
@@ -3257,6 +3471,12 @@ export class Runtime {
 		this.revalidated(computation);
 		for (const source of computation.sources) source.observers.delete(computation);
 		computation.scope.loading?.done(computation);
+		if (computation.kind === "leave") {
+			// A `use_before_leave!` listener, gone with its owner: asked no more.
+			this.leaveListeners.delete(computation);
+			this.releaseKept(computation.runner);
+			this.guardUnload();
+		}
 		if (computation.kind === "reaction") {
 			// Its last apply's cleanups; its compute is its own box, as a memo's is.
 			this.due.delete(computation);
@@ -3487,14 +3707,16 @@ export class Runtime {
 				this.submissionsChanged(source);
 			} else if (write.submit) this.sendAction(write.submit);
 			else if (write.navigate) this.navigate(write.navigate.to, write.navigate);
+			else if (write.leaveRetry) this.retryLeave(write.leaveRetry.id, write.leaveRetry.force);
 		}
 	}
 
 	/** Runs a handler (the id of its box). If it waits for an answer from the server, its writes are
 	 * dropped, and it runs again once the answer is in. Its `owner` is the computation a timer it
 	 * starts belongs to; an effect's apply passes its `cleanups`, where what it starts goes (dropped
-	 * too, run, if it waits); `done`, if any, is called once it has run (or failed). */
-	handle(runner, event, scope = null, { owner = null, cleanups = null, done = null } = {}) {
+	 * too, run, if it waits); `done`, if any, is called once it has run (or failed). `again: false`
+	 * (a leave's listener): one that waits isn't run again, and is done. */
+	handle(runner, event, scope = null, { owner = null, cleanups = null, done = null, again = true } = {}) {
 		// Its scope: the contexts and region where it was bound.
 		const handler = { kind: "handler", runner, calls: new Map(), writes: [], event, scope, owner, cleanups };
 		const go = () => {
@@ -3516,7 +3738,13 @@ export class Runtime {
 				if (error instanceof NotReady || error instanceof Failed) this.reclaim(error);
 				if (error instanceof NotReady) {
 					this.stats.aborts++;
-					error.wait.then(() => this.kept.has(handler.runner) && go());
+					if (again) {
+						error.wait.then(() => this.kept.has(handler.runner) && go());
+						return;
+					}
+					// A leave's listener: what it waits for can't hold the navigation (`mayLeave`).
+					if (this.app?.dev) console.warn("rocx: a Router.use_before_leave! listener waited for the server: the navigation couldn't wait for it, and went on unless it was stopped before. Decide from what the page has (a signal, a memo already in)");
+					done?.();
 					return;
 				}
 				if (error instanceof Failed) {

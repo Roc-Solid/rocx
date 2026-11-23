@@ -167,11 +167,16 @@ after(async () => {
 });
 
 /** What the page heard: `rocx:navigate` and `rocx:navigated`, and its effects' calls (`nav.tick`,
- * `nav.item`); set before anything runs, in every document, with the page strict. */
+ * `nav.item`, and the editor's leave listeners', `nav.leave`); set before anything runs, in every
+ * document, with the page strict. */
 const HEARD = `
 	window.rocxStrict = true;
 	window.heard = [];
-	window.rocxEffects = { "nav.tick": ({ n }) => (window.ticks = n), "nav.item": ({ id }) => window.heard.push("item " + id) };
+	window.rocxEffects = {
+		"nav.tick": ({ n }) => (window.ticks = n),
+		"nav.item": ({ id }) => window.heard.push("item " + id),
+		"nav.leave": ({ who, to, from, delta, before }) => window.heard.push("leave " + who + " " + to + " from " + from + (delta ? " " + delta : "") + (before ? " after one stopped it" : "")),
+	};
 	document.addEventListener("rocx:ready", (event) => { window.ready = event.detail; });
 	document.addEventListener("rocx:navigate", (event) => { window.left = window.scrollY; window.heard.push("navigate " + new URL(event.detail.url).pathname + new URL(event.detail.url).search); });
 	document.addEventListener("rocx:navigated", (event) => window.heard.push("navigated " + new URL(event.detail.url).pathname + new URL(event.detail.url).search));
@@ -889,6 +894,198 @@ test("<Navigate> sends the visitor elsewhere as the page renders: in the browser
 		assert.deepEqual(site.documents(), ["navigate /shop/books/2?color=blue"]);
 		assert.deepEqual(form.errors, []);
 		await form.close();
+		await tab.close();
+	} finally {
+		await site.close();
+	}
+});
+
+/** How many `beforeunload` listeners the page has (the runtime's guard, `guardUnload`): every
+ * document's `addEventListener` and `removeEventListener` counted. */
+const UNLOAD_GUARDS = `
+	window.unloadGuards = 0;
+	const added = window.addEventListener, removed = window.removeEventListener;
+	window.addEventListener = function (type, ...rest) { if (type === "beforeunload") window.unloadGuards++; return added.call(this, type, ...rest); };
+	window.removeEventListener = function (type, ...rest) { if (type === "beforeunload") window.unloadGuards--; return removed.call(this, type, ...rest); };
+`;
+
+/** The editor's leaves heard (`nav.leave`), and its navigations. */
+const leaves = (tab) => tab.eval("window.heard.filter((each) => each.startsWith('leave ') || each.startsWith('navigate '))");
+
+test("use_before_leave!: a link and navigate! stopped while the draft is unsaved (the page and its address stay, nothing fetched), each listener told where it goes and whether one before stopped it; retry! later from the dialog, forced past a second listener, or asking again", { skip }, async () => {
+	const site = await navSite();
+	try {
+		const tab = await open(site, "/editor");
+		await tab.click(".draft");
+		await tab.type(".draft", "Hello");
+		await tab.wait("document.querySelector('.state').textContent === 'unsaved'");
+		await tab.eval("window.entries = history.length");
+		site.asked.length = 0;
+		// A link: stopped, and the dialog has the leave.
+		await tab.click(".to-a");
+		await tab.wait("document.querySelector('.leaving')?.textContent === 'Leave for /a?'");
+		assert.deepEqual(await leaves(tab), ["leave editor /a from /editor"], "the listener asked, before anything else");
+		assert.deepEqual(await tab.eval("[location.pathname, history.length - window.entries, document.querySelector('.draft').value, document.querySelector('.progress').classList.contains('on')]"), ["/editor", 0, "Hello", false], "the page, its address and its history as they were, no navigation on its way");
+		assert.deepEqual(site.documents().filter((each) => each.startsWith("navigate")), [], "no document fetched");
+		// Discard: forced, the listener isn't asked again.
+		await tab.click(".discard");
+		await tab.wait("location.pathname === '/a' && document.querySelector('.a h1')");
+		assert.equal(await kept(tab), true, "in place");
+		assert.deepEqual(await leaves(tab), ["leave editor /a from /editor", "navigate /a"]);
+		assert.equal(await tab.eval("history.length - window.entries"), 1, "its entry pushed, as the link's would have been");
+		// The editor again (made anew: its draft empty), navigate! stopped.
+		await tab.click(".to-editor");
+		await tab.wait("document.querySelector('.editor h1') && document.querySelector('.state').textContent === 'saved'");
+		await tab.eval("window.heard.length = 0");
+		await tab.type(".draft", "Again");
+		await tab.click(".go");
+		await tab.wait("document.querySelector('.leaving')?.textContent === 'Leave for /a?'");
+		assert.deepEqual(await leaves(tab), ["leave editor /a from /editor"]);
+		// A second listener (the strict guard): asked after the editor's, told the editor stopped it.
+		await tab.click(".strict");
+		await tab.wait("document.querySelector('.strict-on')");
+		await tab.click(".to-item");
+		await tab.wait("document.querySelector('.leaving')?.textContent === 'Leave for /items/7?'");
+		assert.deepEqual(await leaves(tab), ["leave editor /a from /editor", "leave editor /items/7 from /editor", "leave strict /items/7 from /editor after one stopped it"]);
+		// Saved, then asked again: the editor lets it go, the strict guard doesn't.
+		await tab.click(".save");
+		await tab.wait("document.querySelector('.state').textContent === 'saved'");
+		await tab.click(".again");
+		await tab.wait("window.heard.length === 5");
+		assert.deepEqual((await leaves(tab)).slice(3), ["leave editor /items/7 from /editor", "leave strict /items/7 from /editor"]);
+		assert.equal(await tab.eval("location.pathname"), "/editor", "still stopped, by the strict guard");
+		// Forced: past the strict guard, neither asked.
+		await tab.click(".discard");
+		await tab.wait("location.pathname === '/items/7' && document.querySelector('.item h1')");
+		assert.deepEqual((await leaves(tab)).slice(5), ["navigate /items/7"]);
+		assert.deepEqual(tab.errors, []);
+		assert.deepEqual(tab.console, []);
+		await tab.close();
+	} finally {
+		await site.close();
+	}
+});
+
+test("use_before_leave!: back stopped has the address go back where it was (the page never changed); retry! goes back again, forced; forward from a page with no listener isn't asked; forward stopped, and staying", { skip }, async () => {
+	const site = await navSite();
+	try {
+		const tab = await open(site, "/a");
+		await tab.click(".to-editor");
+		await tab.wait("document.querySelector('.editor h1')");
+		await tab.eval("window.entries = history.length; window.index = history.state.rocx.index; window.heard.length = 0");
+		await tab.type(".draft", "Unsaved");
+		await tab.wait("document.querySelector('.state').textContent === 'unsaved'");
+		site.asked.length = 0;
+		await tab.eval("history.back()");
+		await tab.wait("document.querySelector('.leaving')?.textContent === 'Leave for /a?'");
+		await tab.wait("location.pathname === '/editor'");
+		await sleep(100);
+		assert.deepEqual(await leaves(tab), ["leave editor /a from /editor -1"], "asked with how far it went");
+		assert.deepEqual(await tab.eval("[location.pathname, history.length - window.entries, history.state.rocx.index - window.index, document.querySelector('.draft').value]"), ["/editor", 0, 0, "Unsaved"], "the address back on the editor's entry, the page as it was");
+		assert.deepEqual(site.documents().filter((each) => each.startsWith("navigate")), [], "no document fetched");
+		// Discard: back again, the listener not asked.
+		await tab.click(".discard");
+		await tab.wait("location.pathname === '/a' && document.querySelector('.a h1')");
+		assert.equal(await kept(tab), true);
+		assert.equal(await tab.eval("history.state.rocx.index - window.index"), -1, "on the entry before");
+		assert.deepEqual(await leaves(tab), ["leave editor /a from /editor -1", "navigate /a"]);
+		// Forward, to the editor: A has no listener.
+		await tab.eval("history.forward()");
+		await tab.wait("location.pathname === '/editor' && document.querySelector('.editor h1')");
+		assert.deepEqual((await leaves(tab)).slice(2), ["navigate /editor"]);
+		// Forward stopped too: from the editor (left saved, to an item), back to it, unsaved.
+		await tab.click(".to-item");
+		await tab.wait("location.pathname === '/items/7' && document.querySelector('.item h1')");
+		await tab.eval("history.back()");
+		await tab.wait("location.pathname === '/editor' && document.querySelector('.editor h1')");
+		await tab.type(".draft", "More");
+		await tab.wait("document.querySelector('.state').textContent === 'unsaved'");
+		await tab.eval("window.heard.length = 0");
+		await tab.eval("history.forward()");
+		await tab.wait("document.querySelector('.leaving')?.textContent === 'Leave for /items/7?'");
+		await tab.click(".stay");
+		await tab.wait("!document.querySelector('.leaving')");
+		await sleep(100);
+		assert.deepEqual([await tab.eval("location.pathname"), await tab.eval("document.querySelector('.draft').value"), await leaves(tab)], ["/editor", "More", ["leave editor /items/7 from /editor 1"]], "stayed: the dialog closed, the address back where it was");
+		assert.deepEqual(tab.errors, []);
+		assert.deepEqual(tab.console, []);
+		await tab.close();
+	} finally {
+		await site.close();
+	}
+});
+
+test("use_before_leave!: a listener goes with its owner (a component shown, then not; the page navigated from)", { skip }, async () => {
+	const site = await navSite();
+	try {
+		const tab = await open(site, "/editor");
+		await tab.click(".strict");
+		await tab.wait("document.querySelector('.strict-on')");
+		await tab.click(".to-a");
+		await tab.wait("window.heard.length === 2");
+		await sleep(100);
+		assert.deepEqual(await leaves(tab), ["leave editor /a from /editor", "leave strict /a from /editor"], "the draft saved: only the strict guard stops it");
+		assert.equal(await tab.eval("location.pathname"), "/editor");
+		// The strict guard gone: its listener with it.
+		await tab.click(".strict");
+		await tab.wait("!document.querySelector('.strict-on')");
+		await tab.click(".to-a");
+		await tab.wait("location.pathname === '/a' && document.querySelector('.a h1')");
+		// (The listener's Browser.call! runs after the flush, so after the navigation's start.)
+		assert.deepEqual((await leaves(tab)).slice(2).sort(), ["leave editor /a from /editor", "navigate /a"], "the editor's asked, the strict guard's not");
+		// The editor's page gone: its listener with it.
+		await tab.click(".to-item");
+		await tab.wait("location.pathname === '/items/7' && document.querySelector('.item h1')");
+		assert.deepEqual((await leaves(tab)).slice(4), ["navigate /items/7"]);
+		assert.equal(await tab.eval("window.ready.runtime.leaveListeners.size"), 0, "none left");
+		assert.deepEqual(tab.errors, []);
+		await tab.close();
+	} finally {
+		await site.close();
+	}
+});
+
+test("use_before_leave!: the browser's beforeunload prompt is listened for only while a listener would stop a load (asked ahead, its writes dropped, again as what it read changes); a reload then asks the visitor", { skip }, async () => {
+	const site = await navSite();
+	try {
+		const tab = await browser.page();
+		await tab.beforeEachDocument(UNLOAD_GUARDS);
+		await tab.beforeEachDocument(HEARD);
+		await tab.goto(`${site.url}/editor`);
+		await tab.wait("window.ready", 5000);
+		await tab.eval("window.mark = 'kept'");
+		/** Whether a beforeunload event now is stopped (the browser would ask). */
+		const stops = () => tab.eval("!window.dispatchEvent(new Event('beforeunload', { cancelable: true }))");
+		await sleep(50);
+		assert.deepEqual([await tab.eval("window.unloadGuards"), await stops()], [0, false], "saved: no listener");
+		await tab.click(".draft");
+		await tab.type(".draft", "Hello");
+		await tab.wait("window.unloadGuards === 1");
+		assert.equal(await stops(), true, "unsaved: the prompt armed");
+		assert.deepEqual(await leaves(tab), [], "asked ahead with its writes dropped: nothing told, no dialog");
+		assert.equal(await tab.eval("document.querySelector('.leaving')"), null);
+		// A reload: the browser asks (its own dialog), and staying keeps the page.
+		const asked = tab.once("Page.javascriptDialogOpening", 5000);
+		tab.send("Page.reload").catch(() => {});
+		const dialog = await asked;
+		assert.equal(dialog.type, "beforeunload");
+		await tab.send("Page.handleJavaScriptDialog", { accept: false });
+		await sleep(100);
+		assert.deepEqual([await kept(tab), await tab.eval("document.querySelector('.draft').value")], [true, "Hello"], "stayed");
+		// Saved: no listener again; typing arms it again.
+		await tab.click(".save");
+		await tab.wait("window.unloadGuards === 0");
+		assert.equal(await stops(), false);
+		await tab.type(".draft", "!");
+		await tab.wait("window.unloadGuards === 1");
+		// Left in place (discarded): the listener goes, and the prompt with it.
+		await tab.click(".to-a");
+		await tab.wait("document.querySelector('.leaving')");
+		await tab.click(".discard");
+		await tab.wait("location.pathname === '/a' && document.querySelector('.a h1')");
+		await tab.wait("window.unloadGuards === 0");
+		assert.equal(await stops(), false);
+		assert.deepEqual(tab.errors, []);
 		await tab.close();
 	} finally {
 		await site.close();

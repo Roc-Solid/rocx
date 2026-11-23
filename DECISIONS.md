@@ -2238,8 +2238,8 @@ the stylesheet as a cached file, a JSON payload, wasm splitting.
   overtaking another aborts its fetch only when it was its own and for another page (with the cache
   shared, a second click on a link in flight waits for it). With `<html data-rocx-transitions>`,
   `document.startViewTransition` there and less motion not asked for, the commit and the scroll run
-  in the transition's update. `use_before_leave!` isn't built: it needs a hosted call, an event Roc
-  can stop and retry, and `beforeunload` for a load, which isn't cheap (TODO.md). runtime.js grew 126
+  in the transition's update. `use_before_leave!` wasn't built then: it needs a hosted call, an event
+  Roc can stop and retry, and `beforeunload` for a load (built after phase 2, below). runtime.js grew 126
   lines, 57.5 → 59.1 KB brotli. Tests: web/test/navigation.test.mjs, 4 more (15): a rest of the
   pointer (not a pass), keyboard focus and touch prefetching, the click then asking nothing more; one
   older than 10 s fetched again and a submission's result emptying the cache; `off` on a link and
@@ -2326,6 +2326,56 @@ the stylesheet as a cached file, a JSON payload, wasm splitting.
     gate: rocx 121, web and site 115, server 199, packages 50, every example (board 19, journal
     21, tasks 17, …). Sizes: runtime.js +13.5 KB (+2.8 KB brotli); tasks' wasm 8 KB smaller raw,
     0.5 KB larger with brotli.
+
+- `use_before_leave!` (before-leave, 2026-11-23, the user's "let's add use_before_leave too"):
+  Solid Router's `useBeforeLeave`, its shape kept.
+  - **The API.** `Router.use_before_leave!(|leave| …)`, called in a component (or a computation),
+    gives its listener a `Leave` (a module both platforms have, nominal so its methods read as
+    Solid's): `to` (a path and query as `Router.location!` writes them, `""` for a load), `from`,
+    `options` (`replace`, `scroll`), `delta` (back and forward's distance: Solid's numeric `to`, kept
+    beside the path, which Roc can give and an app wants), `default_prevented` (as each listener is
+    called, as Solid's spread gives it); `leave.prevent!()` and `leave.retry!(force)`. Three hosted
+    calls on both platforms (`before_leave!`, `leave_prevent!`, `leave_retry!`); the server's let go
+    of the listener and do nothing else.
+  - **Asked as handlers, in order.** The listener is a computation of kind `leave` owned by what made
+    it, so it goes with its component (D-017's owner); `navigate` asks each (`mayLeave`) before
+    anything else: a link, `navigate!`, `<Navigate>`, a GET form, a submission's redirect, a change of
+    the query alone (Solid Router asks for all of them too), back and forward. A hash on the same page
+    isn't a leave; another site, or a path no page has, is a load (below). `prevent!` acts at once
+    (Solid's `preventDefault`), on the leave being asked only. A listener that waits for the server
+    isn't run again when the answer is in (`handle`'s `again: false`): the navigation is decided
+    when every listener has run, so a listener decides from what the page has (a dev build warns).
+    The tasks example's save is a submission whose redirect is asked too: its listener lets it go
+    while the save is pending (`!live.pending!()`), as a Solid app's would.
+  - **Retry.** The leaves asked lately are kept by id (64), so a dialog's handler can `retry!` one
+    long after: a write, applied when its handler is done and, in a microtask, after the navigation
+    it stopped has been decided; with `force`, no listener asked (Solid's `ignore`), else all again.
+  - **Back and forward**: the address has changed when `popstate` comes, so each history entry now
+    carries an index beside its key (`{ rocx: { key, index } }`, one more for each entry pushed, and
+    for the browser's own entry for a hash), `popped` computes the distance, and a leave stopped there
+    has the browser go back the other way (`history.go(-delta)`; the `popstate` that makes passed
+    over, `restoring`), as Solid Router's `notifyIfNotBlocked` does with its depth. The page never
+    changed. A retry goes `history.go(delta)` with the listeners passed over (`forcing`) while the
+    page is on the entry it was left from, and navigates to the URL otherwise. An entry the runtime
+    didn't index (none it makes) isn't asked about, as Solid's isn't without a depth.
+  - **A load** (leaving the site, reloading, closing the tab) can't be held or asked in Roc, so each
+    listener is asked ahead of time: its computation runs it as a handler that tracks its reads
+    (`probeLeave`: a leave with id 0 and `to` "", its writes dropped, a memo or timer it made let go
+    of), again whenever what it read changes (a draft typed into, saved), and `guardUnload` listens
+    for `beforeunload` only while one would stop a load: web.dev's advice, since a page listening for
+    it may be kept out of the back-forward cache (Firefox's, which the user browses with). The
+    browser asks in its own words. A load the runtime starts once the listeners let a navigation go
+    (a document of another build, a failed fetch) isn't asked again (`load`'s `asked`, for a second).
+  - **Tests.** web/test/navigation.test.mjs, 4 more (23), on an editor page of web/test/nav (a
+    draft's listener, a strict guard in a component shown on demand, each telling the page what it
+    was asked): a link and `navigate!` stopped (the page, address and history as they were, nothing
+    fetched), retried from the dialog, forced past the second listener and asked again; back stopped
+    with the address put back, retried back, forward from a page with none, forward stopped; a
+    listener gone with its component and its page; `beforeunload` listened for only while the draft
+    is unsaved (counted), a reload asking through Chromium's dialog. examples/tasks: the task page's
+    `Editor` asks before leaving changes not saved (its own question, "Leave without saving"), and
+    a test for it beside the save's. Leave's expects. runtime.js 5523 → 5751 lines, 60.5 → 63.0 KB
+    brotli.
 
 **Reversible:** yes, until apps rely on kept layouts and `use_search_params!`.
 

@@ -36,6 +36,8 @@ same components natively; this one hydrates them.
   `Show` (keyed too), `Switch` and `Match`, `For`, `Loading`, `Errored`, `Context`, `Call` (`fetch!`, `listen!`), `Router` (`location!`: the page's path and query, tracked; `navigate!` and `navigate_with!`: to
   another page, in place, from a handler; `is_routing!`: whether a navigation is on its way;
   `use_search_params!`: the query, `Search`'s `get!`, `all!`, `set!` and `set_with!`, D-040;
+  `use_before_leave!`: a listener asked before each navigation away, D-040, given a `Leave`: its
+  `to`, `from`, `options`, `delta` and `default_prevented`, `prevent!` and `retry!`;
   `app!`: what `Generated/Root` tells the runtime of the app, D-040; `use_submission!`: the latest
   submission to an endpoint; `use_submissions!`: all of them; `use_action!`: one a handler sends
   without a form; `revalidate!`: which reads a result reads again), `Submission` (its `pending!`, `input!`, `field!`, `result!`, `error!`,
@@ -555,7 +557,33 @@ same components natively; this one hydrates them.
   that overtakes another aborts the other's fetch only if it was its own and for another page.
   **View Transitions**: with `<html data-rocx-transitions>`, where `document.startViewTransition` is
   and less motion isn't asked for (`transitionsWanted`), the commit, `afterNavigate` and the scroll
-  run in its update, and the focus, the announcement and `rocx:navigated` once it is done. **Under a base**, the URLs the
+  run in its update, and the focus, the announcement and `rocx:navigated` once it is done.
+  **Leaving** (`use_before_leave!`, Solid Router's `useBeforeLeave`): `js_before_leave` makes the
+  listener a computation of kind `leave`, owned by what is running (a component's run: it is
+  disposed with it, `leaveListeners` forgetting it), its box kept by id. `navigate` asks first
+  (`mayLeave`), unless `force` (a retry's) or `asked` (back and forward's): each listener, in the
+  order they came, runs as a handler (`handle(…, { again: false })`: one that waits for the server
+  isn't run again, the navigation decided at once; a dev build warns), its event the leave as lines
+  (`leaveEvent`: id, `to` as `Router.location!` writes it, the path and query it leaves, replace,
+  scroll, delta, whether one before stopped it); `js_leave_prevent(id)` stops the one being asked
+  (`leaveAsked`). The leaves asked lately are kept (`LEAVES`, by id) for `js_leave_retry(id, force)`,
+  a write applied when its handler is done (`retryLeave`, in a microtask: after the navigation it
+  stopped has been decided): a navigation to its URL with its options and `force`. **Back and
+  forward**: each history entry's state is `{ rocx: { key, index } }`, the index one more for each
+  entry pushed (and for the browser's own entry for a hash), so `popped` knows how far it went
+  (`delta`); the address has changed already, so a leave stopped there has the browser go back the
+  other way (`history.go(-delta)`, `restoring`: the `popstate` it makes passed over), as Solid
+  Router does, the page never having changed; its retry goes `history.go(delta)` again with the
+  listeners passed over (`forcing`) while the page is on the entry it was left from, else to its URL.
+  An entry the runtime didn't index isn't asked about. **A load** (leaving the site, a reload,
+  closing the tab) can't be held: each listener is asked ahead of time (`probeLeave`: the `leave`
+  computation's run, a handler with a `making` of its own, so what it reads is tracked and it runs
+  again when that changes; its event's id 0 and `to` ""; its writes dropped, a memo or a timer it
+  made let go of), and `guardUnload` listens for `beforeunload` only while one would stop a load
+  (`prevents`): a page with such a listener may be kept out of the back-forward cache. The listener
+  cancels the event, and the browser asks in its own words; a load the runtime starts once the
+  listeners let a navigation go (a fallback, `load`'s `asked`) isn't asked again for `ASKED` ms.
+  **Under a base**, the URLs the
   runtime writes into the page (an `href`, `src` or `action` it builds or patches, `written`) get
   the base, as the static export gives the server's.
 - **The page's own functions** (`Runtime.load(source, { effects: { vibrate(arg) {…} } })`, or
@@ -781,7 +809,15 @@ waits for the server, once; `navigate_with!`'s replace;
 back and forward with the scroll restored and the document used again within 10 s and fetched
 after; a hash, `noscroll`, a reload's scroll; `is_routing!` while a slow document is on its way, and
 after one overtaken; a middleware's redirect landing with its address; a text 401, a crash, a refused
-fetch, another build and a redirect to another site each loaded; the old page's effects, timer and
+fetch, another build and a redirect to another site each loaded; `use_before_leave!` on an editor
+page (a draft's listener and a strict guard of its own component): a link and `navigate!` stopped,
+the page, its address and its history as they were and nothing fetched, each listener told where
+it goes and whether one before stopped it, a retry later from the dialog forced past the second
+listener or asking again; back stopped with the address put back on the editor's entry (its index
+unchanged), retried back with force, forward from a page with none not asked, forward stopped and
+staying; a listener gone with its component and with its page; `beforeunload` listened for only
+while the draft is unsaved (counted on `window`), a synthetic one cancelled then, a reload asking
+with the browser's dialog and staying, nothing told and no dialog from the asking ahead; the old page's effects, timer and
 channel stopping, the new page's starting, no stream opened again for the same channels; 200
 navigations leaving no allocation behind; and all of it under `/rocx/`, the URLs the runtime writes
 under the base. Phase 2's, on a shop (a layout below the root keyed by its own `cat`, a page per
@@ -799,8 +835,8 @@ fetching the document; `<Navigate>` replacing its entry; a GET form navigating i
 - **Navigation in place** (D-040): a query that only server-rendered markup reads (a
   `<NoHydration>` listing results) doesn't follow a change of the query in place: the browser has no
   code for it (a page-wide "fetch my document on every query change" can come if an app needs one).
-  `use_before_leave!` (Solid Router's `useBeforeLeave`, for an unsaved form) isn't there: it needs a
-  hosted call, an event Roc can stop and retry, and `beforeunload` for a load.
+  `use_before_leave!` can't hold a navigation while it waits for the server (a listener decides from
+  what the page has), and Solid Router's `state` option isn't kept with an entry (§6.1).
 - **The rest of Solid 2.0's stores** (D-053): derived stores (`createStore(fn, seed)`,
   `createProjection`: a memo is the derived read), `createOptimisticStore` (D-030's optimistic memos
   cover actions), `reconcile` and `storePath` (a new list written whole, and Roc's record update, do

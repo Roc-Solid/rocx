@@ -78,6 +78,21 @@ Host := [].{
 	## Whether a navigation is on its way (tracked): from a click until the new page is on screen.
 	is_routing! : {} => Bool
 
+	## A `Router.use_before_leave!` listener, owned by the component or computation running (it stops
+	## when that goes): run as a handler before each navigation in place, `event_value!` the leave
+	## (`Leave.of`); and asked ahead of a load, its writes dropped, again when what it read changes,
+	## the browser's `beforeunload` prompt armed while one would stop it. Anywhere else, it fails; on
+	## the server, let go of.
+	before_leave! : Box(() => Str) => {}
+
+	## In a `use_before_leave!` listener: stops the leave with this id (0: the load it is asked
+	## about ahead of time). Once its listeners have all run, nothing.
+	leave_prevent! : U64 => {}
+
+	## In a handler: the leave with this id navigated to after all, once the handler is done
+	## (`force`: its listeners not asked again). Anywhere else, it fails.
+	leave_retry! : U64, Bool => {}
+
 	## On the server: the status the page is answered with (`<HttpStatusCode>`). In the browser, nothing.
 	status! : U16 => {}
 

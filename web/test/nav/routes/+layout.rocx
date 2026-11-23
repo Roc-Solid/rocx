@@ -27,6 +27,7 @@ view! = |{ meta, children, .. }|
 					<a class="to-a-noscroll" href={Paths.a} noscroll>A, kept scroll</a>
 					<a class="to-a-off" href={Paths.a} data-rocx-preload="off">A, never prefetched</a>
 					<a class="to-guarded" href={Paths.guarded}>Guarded</a>
+					<a class="to-editor" href={Paths.editor}>Editor</a>
 					<a class="to-blank" href={Paths.a} target="_blank">A, new tab</a>
 					<a class="to-download" href={Paths.a} download>A, downloaded</a>
 					<a class="to-external" href={Paths.a} rel="external">A, external</a>

@@ -52,6 +52,9 @@ const js = struct {
     extern "env" fn js_app(build_ptr: [*]const u8, build_len: usize, dev: u32, routes_ptr: [*]const u8, routes_len: usize) void;
     extern "env" fn js_navigate(to_ptr: [*]const u8, to_len: usize, replace: u32, scroll: u32) void;
     extern "env" fn js_is_routing() u32;
+    extern "env" fn js_before_leave(callable: usize) void;
+    extern "env" fn js_leave_prevent(id: u32) void;
+    extern "env" fn js_leave_retry(id: u32, force: u32) void;
     extern "env" fn js_status(code: u32) void;
     extern "env" fn js_effect_new(callable: usize) void;
     extern "env" fn js_cleanup(callable: usize) void;
@@ -631,6 +634,20 @@ fn hostedIsRouting() callconv(.c) bool {
     return js.js_is_routing() != 0;
 }
 
+// `Router.use_before_leave!`: the runtime keeps the listener, owned by what is running; a leave
+// stopped while its listeners are asked, or navigated to after all, by its id.
+fn hostedBeforeLeave(listener: Callable) callconv(.c) void {
+    js.js_before_leave(address(listener));
+}
+
+fn hostedLeavePrevent(id: u64) callconv(.c) void {
+    js.js_leave_prevent(@intCast(id));
+}
+
+fn hostedLeaveRetry(id: u64, force: bool) callconv(.c) void {
+    js.js_leave_retry(@intCast(id), @intFromBool(force));
+}
+
 fn hostedStatus(code: u16) callconv(.c) void {
     js.js_status(code);
 }
@@ -856,6 +873,9 @@ comptime {
     @export(&hostedApp, .{ .name = "roc_app", .visibility = hidden });
     @export(&hostedNavigate, .{ .name = "roc_navigate", .visibility = hidden });
     @export(&hostedIsRouting, .{ .name = "roc_is_routing", .visibility = hidden });
+    @export(&hostedBeforeLeave, .{ .name = "roc_before_leave", .visibility = hidden });
+    @export(&hostedLeavePrevent, .{ .name = "roc_leave_prevent", .visibility = hidden });
+    @export(&hostedLeaveRetry, .{ .name = "roc_leave_retry", .visibility = hidden });
     @export(&hostedStatus, .{ .name = "roc_status", .visibility = hidden });
     @export(&hostedEffectNew, .{ .name = "roc_effect_new", .visibility = hidden });
     @export(&hostedCleanup, .{ .name = "roc_cleanup", .visibility = hidden });

@@ -18,7 +18,7 @@ SiteReference := [].{
 	## The modules both platforms have: the browser's platform's, copied into the server platform
 	## (server/build.mjs's `SHARED_MODULES`, which the JavaScript tests still use).
 	shared_modules : List(Str)
-	shared_modules = ["Html", "Solid", "Store", "Show", "Switch", "Match", "For", "Repeat", "Loading", "Errored", "Call", "Server", "Context", "Endpoint", "FormBody", "Middleware", "Events", "OpenApi", "Router", "HttpStatusCode", "Transition", "Browser", "Submission", "Submissions", "Title", "Channel", "A", "Search"]
+	shared_modules = ["Html", "Solid", "Store", "Show", "Switch", "Match", "For", "Repeat", "Loading", "Errored", "Call", "Server", "Context", "Endpoint", "FormBody", "Middleware", "Events", "OpenApi", "Router", "HttpStatusCode", "Transition", "Browser", "Submission", "Submissions", "Title", "Channel", "A", "Search", "Leave"]
 
 	## The modules server/platform/main.roc exposes, in its order (`/^\s*exposes\s*\[([^\]]*)\]/m`).
 	exposed : Str -> Try(List(Str), [Problem(Str)])

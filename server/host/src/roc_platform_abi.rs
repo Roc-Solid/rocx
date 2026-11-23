@@ -3069,6 +3069,15 @@ pub struct HostAppArgs {
     pub arg2: RocStr,
 }
 
+/// Arguments for Host.before_leave!
+/// Roc signature: Box({} => Str) => {}
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostBeforeLeaveArgs {
+    pub arg0: RocErasedCallable,
+}
+
 /// Arguments for Host.browser_call!
 /// Roc signature: Str, Str => {}
 /// Refcounted fields are owned by the hosted function.
@@ -3808,6 +3817,25 @@ pub struct HostIsPendingArgs {
 #[derive(Clone, Copy)]
 pub struct HostKeepArgs {
     pub arg0: RocErasedCallable,
+}
+
+/// Arguments for Host.leave_prevent!
+/// Roc signature: U64 => {}
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostLeavePreventArgs {
+    pub arg0: u64,
+}
+
+/// Arguments for Host.leave_retry!
+/// Roc signature: U64, Bool => {}
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostLeaveRetryArgs {
+    pub arg0: u64,
+    pub arg1: bool,
 }
 
 /// Arguments for Host.listen!
@@ -5243,6 +5271,13 @@ unsafe extern "C" {
     ///     unsafe { arg2.decref(roc_host); }
     pub fn roc_app(arg0: RocStr, arg1: bool, arg2: RocStr);
 
+    /// Hosted symbol for Host.before_leave!
+    /// Roc signature: Box({} => Str) => {}
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { decref_erased_callable(arg0, roc_host); }
+    pub fn roc_before_leave(arg0: RocErasedCallable);
+
     /// Hosted symbol for Host.boundary!
     /// Roc signature: {} => U64
     pub fn roc_boundary() -> u64;
@@ -5860,6 +5895,14 @@ unsafe extern "C" {
     /// moved into storage or into the result:
     ///     unsafe { decref_erased_callable(arg0, roc_host); }
     pub fn roc_keep(arg0: RocErasedCallable) -> u64;
+
+    /// Hosted symbol for Host.leave_prevent!
+    /// Roc signature: U64 => {}
+    pub fn roc_leave_prevent(arg0: u64);
+
+    /// Hosted symbol for Host.leave_retry!
+    /// Roc signature: U64, Bool => {}
+    pub fn roc_leave_retry(arg0: u64, arg1: bool);
 
     /// Hosted symbol for Host.listen!
     /// Roc signature: Str, Box({} => Str) => {}

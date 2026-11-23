@@ -1,6 +1,8 @@
 import pf.Html
 import pf.Endpoint
 import pf.Show
+import pf.Router exposing [use_before_leave!]
+import pf.Solid exposing [create_signal!]
 import pf.For
 import pf.Title
 import forms.LiveForm
@@ -18,27 +20,54 @@ import ../../../Generated/Paths
 ## their fields, with what was typed: without JavaScript the browser posts and comes back (a 303,
 ## and a flash); with it, the runtime sends the form with fetch and the page stays. A task that
 ## isn't there is the app's error page, a 404 (its endpoint refuses it, and `get!` fails the page).
+## Leaving it with changes not saved asks first (`Router.use_before_leave!`).
 meta = { title: "A task" }
 
 view! = |{ params, .. }| <Editor detail={Endpoint.get!(Api.get_tasks_id({ id: params.id }))} />
 
 ## The form, filled in with the task as it is (`LiveForm.filled!`), checked as it is typed with the
 ## same `TaskForm.editing` the endpoint reads it with; after a refusal, what was typed and the
-## endpoint's issues show instead.
+## endpoint's issues show instead. While what is typed isn't the task as it is, and isn't on its
+## way to be saved (whose answer sends you back to the list), leaving asks first: a link, Back or
+## Cancel is stopped (`use_before_leave!`) and the question shows, whose "Leave without saving"
+## goes after all (`retry!`); a reload, or another site, the browser asks about, in its own words.
 Editor := [].{
 	view! : { detail : Tasks.Detail } => Html
 	view! = |{ detail }| {
 		{ task, list, people } = detail
 		ticked = if (task.done) [("done", "on")] else []
-		live = LiveForm.filled!(
-			TaskForm.editing,
-			Api.post_tasks_id({ id: task.id }),
-			[("title", task.title), ("notes", task.notes), ("due", task.due), ("assignee", task.assignee)].concat(ticked),
+		values = [("title", task.title), ("notes", task.notes), ("due", task.due), ("assignee", task.assignee)].concat(ticked)
+		live = LiveForm.filled!(TaskForm.editing, Api.post_tasks_id({ id: task.id }), values)
+		(leaving!, set_leaving!) = create_signal!(Err(Staying))
+		unsaved! = || Editor.changed(live.fields!(), values) and !live.pending!()
+		use_before_leave!(
+			|leave|
+				if unsaved!() {
+					leave.prevent!()
+					set_leaving!(Ok(leave))
+				},
 		)
+		discard! = || {
+			match leaving!() {
+				Ok(leave) => {
+					set_leaving!(Err(Staying))
+					leave.retry!(Bool.True)
+				}
+				Err(_) => {}
+			}
+		}
 		<article class="task">
 			<Title>{task.title} · Tasks</Title>
 			<p class="crumb"><a href={Paths.lists_id({ id: list.id })}>← {list.name}</a></p>
 			<h1>Edit task</h1>
+			<Show when!={leaving!()}>
+				{|_leave!|
+					<div class="leaving" role="alertdialog" aria-labelledby="leaving-says">
+						<p id="leaving-says">This task has changes that aren't saved.</p>
+						<button type="button" class="stay" on:click={|| set_leaving!(Err(Staying))}>Keep editing</button>
+						<button type="button" class="discard" on:click={discard!}>Leave without saving</button>
+					</div>}
+			</Show>
 			<Show when!={live.sent!() and !live.all_issues!().is_empty()}>
 				<p class="problem" role="alert">That didn't save: fix what's marked below, then save again.</p>
 			</Show>
@@ -83,6 +112,10 @@ Editor := [].{
 			</form>
 		</article>
 	}
+
+	## Whether what is typed isn't what the form started with, field by field (in any order).
+	changed : List({ name : Str, value : Str }), List((Str, Str)) -> Bool
+	changed = |typed, values| typed.len() != values.len() or !values.all(|(name, value)| typed.any(|field| field.name == name and field.value == value))
 }
 
 ## A field with a control of its own (`children`, whose `id` is `field-<name>`): its label, the
@@ -165,6 +198,37 @@ Field := [].{
 		margin: 0;
 		padding: 0;
 		list-style: none;
+		color: var(--overdue);
+	}
+
+	.leaving {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem 1rem;
+		padding: 0.75rem 1rem;
+		border: 1px solid var(--line-strong);
+		border-radius: 0.75rem;
+		background: var(--surface);
+	}
+
+	.leaving p {
+		flex: 1 1 100%;
+		margin: 0;
+		font-weight: 600;
+	}
+
+	.leaving button {
+		padding: 0.45rem 0.9rem;
+		border: 1px solid var(--line-strong);
+		border-radius: 0.6rem;
+		background: transparent;
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.leaving .discard {
 		color: var(--overdue);
 	}
 

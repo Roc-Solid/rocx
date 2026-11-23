@@ -686,7 +686,7 @@ on those it fetches (`under`).
 | `useSearchParams()` → `[params, set]` | `use_search_params!({})` → `get!`, `all!`, `set!`, `set_with!` | in place |
 | `useIsRouting()` | `Router.is_routing!({})` | |
 | `useMatch(path)` | `<A>`'s active state | a `matches!` later, if an app wants it |
-| `useBeforeLeave()` | not yet | a later phase, for unsaved forms |
+| `useBeforeLeave()` | `use_before_leave!(|leave| …)` (built after phase 2: D-040's As built) | `leave.prevent!()`, `leave.retry!(force)`; back and forward put the address back; a load, `beforeunload` while one would stop it |
 | route `preload` + `query` cache | the page's document (its reads, in-process) and the prefetch cache | no wrapper to write |
 | preload on hover | the same, `data-rocx-preload` | |
 | navigation in a transition | the old page stays until the document is in | |

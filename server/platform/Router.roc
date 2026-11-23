@@ -4,6 +4,7 @@ import Submission
 import Submissions
 import Server
 import Search
+import Leave
 
 ## Solid Router's, on both sides. Where the page is (`useLocation`): on the server, the request's
 ## path and query; in the browser, the location the page on screen was rendered for, which each
@@ -50,6 +51,37 @@ Router := [].{
 	##     <div class="progress" class:on={Router.is_routing!({})} aria-hidden="true"></div>
 	is_routing! : {} => Bool
 	is_routing! = |{}| Host.is_routing!({})
+
+	## Runs `listener!` before each navigation away from the page (Solid Router's `useBeforeLeave`,
+	## D-040), as a handler: a link, `navigate!`, `<Navigate>`, a GET form, a submission's redirect,
+	## a change of the query alone, back and forward. It is given the navigation (`Leave`: `to`,
+	## `from`, `options`, `delta`), which it may stop (`leave.prevent!()`), and let go later
+	## (`leave.retry!(force)`, from another handler: an app's own dialog). Called in a component (or
+	## a computation), it listens while that is there, and stops when it goes. Listeners are asked in
+	## the order they came.
+	##
+	##     use_before_leave!(|leave|
+	##         if dirty!() {
+	##             leave.prevent!()
+	##             set_leaving!(Ok(leave))
+	##         }
+	##     )
+	##
+	## A listener decides from what the page has (a signal, a memo already in): the navigation is
+	## decided once each has run, and one that waits for the server can't hold it (it isn't run again
+	## when the answer is in; a dev build says so). A load (leaving the site, reloading, closing the
+	## tab) the page can't hold: the runtime asks each listener ahead of time, with `to` "" (and its
+	## writes dropped), again whenever what it read changes, and while one would stop it, the browser
+	## asks the visitor first, with its own words (`beforeunload`). On the server no navigation
+	## happens, and it does nothing.
+	use_before_leave! : (Leave => {}) => {}
+	use_before_leave! = |listener!| {
+		run! = || {
+			listener!(Leave.of(Host.event_value!({})))
+			""
+		}
+		Host.before_leave!(Box.box(run!))
+	}
 
 	## The page's query (Solid Router's `useSearchParams`, D-040): `get!` and `all!` read it, tracked;
 	## `set!` and `set_with!` change it in place, from a handler. See `Search`.

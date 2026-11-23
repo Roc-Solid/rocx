@@ -41,9 +41,6 @@ When an item lands, delete its line here in the same commit.
 
 ## Framework work, decided but not built
 
-- **`use_before_leave!`** (D-040; Solid Router's `useBeforeLeave`, which phases 1 to 3 left): a
-  leave handler an unsaved form registers, given an event it can stop and retry later, and
-  `beforeunload` for a load: a hosted call and its event's type.
 - **The rest of Solid 2.0 and Solid Router's actions:** see `web/README.md`, "Not yet".
 - **D-052's dev warning has blind spots:** a reactive read inside a helper call that takes
   arguments, and one at the top of a `<For>` row or a function child, aren't marked, so they don't

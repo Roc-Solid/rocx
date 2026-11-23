@@ -11,7 +11,7 @@
 ##
 ## The modules both platforms have are written here, and the server platform's build copies them:
 ## the components' (`Html`, `Solid`, `Store`, `Show`, `Switch`, `Match`, `For`, `Repeat`, `Transition`, `Loading`, `Errored`, `Context`,
-## `Call`, `Router`, `Search`, `A`, `Submission`, `Submissions`, `Title`, `HttpStatusCode`) and HTTP's (`Server`, `Endpoint`,
+## `Call`, `Router`, `Search`, `Leave`, `A`, `Submission`, `Submissions`, `Title`, `HttpStatusCode`) and HTTP's (`Server`, `Endpoint`,
 ## `Channel`, `Middleware`, `Events`, `OpenApi`). Roc compiles only what a program reaches, so what
 ## only the server uses (`Middleware`, `OpenApi`) costs the browser's wasm nothing. `Time` is the
 ## browser's own, under the server's names: the clock, for handlers, effects and timers.
@@ -19,12 +19,13 @@ platform ""
 	requires {
 		main! : {} => Html
 	}
-	exposes [A, Browser, Call, Channel, Context, Endpoint, Errored, Events, For, Html, HttpStatusCode, Loading, Match, Middleware, Navigate, OpenApi, Repeat, Router, Search, Server, Show, Solid, Store, Submission, Submissions, Switch, Time, Title, Transition]
+	exposes [A, Browser, Call, Channel, Context, Endpoint, Errored, Events, For, Html, HttpStatusCode, Leave, Loading, Match, Middleware, Navigate, OpenApi, Repeat, Router, Search, Server, Show, Solid, Store, Submission, Submissions, Switch, Time, Title, Transition]
 	packages {}
 	provides { "roc_mount": mount_for_host!, "roc_run": run_for_host! }
 	hosted {
 		"roc_action": Host.action!,
 		"roc_app": Host.app!,
+		"roc_before_leave": Host.before_leave!,
 		"roc_boundary": Host.boundary!,
 		"roc_browser_call": Host.browser_call!,
 		"roc_cleanup": Host.cleanup!,
@@ -45,6 +46,8 @@ platform ""
 		"roc_is_pending": Host.is_pending!,
 		"roc_is_routing": Host.is_routing!,
 		"roc_keep": Host.keep!,
+		"roc_leave_prevent": Host.leave_prevent!,
+		"roc_leave_retry": Host.leave_retry!,
 		"roc_listen": Host.listen!,
 		"roc_location": Host.location!,
 		"roc_memo_done": Host.memo_done!,
@@ -123,6 +126,7 @@ import Time
 import Title
 import A
 import Search
+import Leave
 import Navigate
 
 ## The app's markup, its holes registered with the runtime, as JSON (`Html.serialize!`).

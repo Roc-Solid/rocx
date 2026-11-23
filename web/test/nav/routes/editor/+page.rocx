@@ -1,0 +1,75 @@
+import pf.Html
+import pf.Browser
+import pf.Show
+import pf.Router exposing [navigate!, use_before_leave!]
+import pf.Solid exposing [create_signal!]
+import ../../Generated/Paths
+
+meta = { title: "Editor", look: "editor" }
+
+## A draft that asks before it is left unsaved (`use_before_leave!`, D-040): its listener stops a
+## navigation while the draft isn't what was saved, and keeps the leave for its dialog, whose
+## buttons let it go (`retry!`: forced, or the listeners asked again) or stay. A strict guard, a component of its own shown
+## on demand, stops every navigation while it is there. Each listener tells the page what it was
+## asked (`nav.leave`), which a load's probe, its writes dropped, never does.
+view! = |_| {
+	(draft!, set_draft!) = create_signal!("")
+	(saved!, set_saved!) = create_signal!("")
+	(leaving!, set_leaving!) = create_signal!(Err(Staying))
+	(strict!, set_strict!) = create_signal!(Bool.False)
+	dirty! = || draft!() != saved!()
+	use_before_leave!(
+		|leave| {
+			Browser.call!("nav.leave", { who: "editor", to: leave.to, from: leave.from.path, delta: leave.delta, before: leave.default_prevented })
+			if dirty!() {
+				leave.prevent!()
+				set_leaving!(Ok(leave))
+			}
+		},
+	)
+	# Discard lets it go past every listener, and closes the dialog; asking again keeps it open, for
+	# a listener may stop it again.
+	retry! = |force| {
+		match leaving!() {
+			Ok(leave) => {
+				if force {
+					set_leaving!(Err(Staying))
+				}
+				leave.retry!(force)
+			}
+			Err(_) => {}
+		}
+	}
+	<section class="editor">
+		<h1>Editor</h1>
+		<input class="draft" value={draft!()} on:input.value={set_draft!} />
+		<p class="state">{if (dirty!()) "unsaved" else "saved"}</p>
+		<button class="save" on:click={|| set_saved!(draft!())}>Save</button>
+		<button class="go" on:click={|| navigate!(Paths.a)}>To A</button>
+		<button class="strict" on:click={|| set_strict!(!strict!())}>Strict</button>
+		<Show when!={strict!()}><Strict /></Show>
+		<Show when!={leaving!()}>
+			{|leave!|
+				<div class="dialog" role="dialog">
+					<p class="leaving">Leave for {leave!().to}?</p>
+					<button class="discard" on:click={|| retry!(Bool.True)}>Discard</button>
+					<button class="again" on:click={|| retry!(Bool.False)}>Ask again</button>
+					<button class="stay" on:click={|| set_leaving!(Err(Staying))}>Stay</button>
+				</div>}
+		</Show>
+	</section>
+}
+
+## A guard that stops every navigation while it is shown.
+Strict := [].{
+	view! : {} => Html
+	view! = |{}| {
+		use_before_leave!(
+			|leave| {
+				Browser.call!("nav.leave", { who: "strict", to: leave.to, from: leave.from.path, delta: leave.delta, before: leave.default_prevented })
+				leave.prevent!()
+			},
+		)
+		<p class="strict-on">Strict</p>
+	}
+}

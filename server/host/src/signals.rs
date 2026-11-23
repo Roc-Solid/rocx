@@ -1242,6 +1242,27 @@ pub extern "C" fn roc_is_routing() -> bool {
     false
 }
 
+/// `Router.use_before_leave!`: on the server no navigation happens, so the listener is let go of.
+/// The browser's makes what made it live, so the server notes it too (`touched`).
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_before_leave(listener: Callable) {
+    let _host = crate::preempt::host();
+    touched(false);
+    roc::release(listener);
+}
+
+/// `Leave.prevent!`: no listener runs on the server.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_leave_prevent(_id: u64) {
+    let _host = crate::preempt::host();
+}
+
+/// `Leave.retry!` is a handler's, and no handler runs on the server.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_leave_retry(_id: u64, _force: bool) {
+    let _host = crate::preempt::host();
+}
+
 /// A `<Meta>`, `<Link>` or `<Style>` while the page renders (D-054): noted for its `<head>`
 /// (`headed`), its key and markup.
 #[unsafe(no_mangle)]

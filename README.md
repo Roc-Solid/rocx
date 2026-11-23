@@ -270,6 +270,7 @@ In a component only:
 | `<a href="/next" on:click.prevent={go!}>` | the event's default prevented before the handler runs (a link's click taken over) |
 | `navigate!(Paths.tasks_id({ id: task!().id }))` | in a handler: to one of the app's pages, rendered in place, once the handler is done (Solid Router's `useNavigate`); `navigate_with!(to, { replace: Bool.True, scroll: Bool.True })`; another site, or a path no page has, the browser loads (`import pf.Router exposing [navigate!, navigate_with!]`) |
 | `<div class="progress" class:on={Router.is_routing!({})}>` | whether a navigation in place is on its way: true from the click until the new page is on screen, the old page staying meanwhile (Solid Router's `useIsRouting`); false on the server |
+| `use_before_leave!(\|leave\| if (dirty!()) leave.prevent!() else {})` | in a component: asked before each navigation away from the page (a link, `navigate!`, back and forward), which it may stop, and let go later from another handler (`leave.retry!(Bool.True)`, a dialog's "Discard"); a load (leaving the site, a reload) the browser asks about while one would stop it (Solid Router's `useBeforeLeave`; `import pf.Router exposing [use_before_leave!]`) |
 | `<li draggable="true" on:dragstart={…}>`, `<ul on:drop={…}>` | drag and drop: an element with a drop handler takes drops (`on:drop.value`: the text dropped), and its `on:dragenter` and `on:dragleave` run as the drag comes over it and leaves it, not once per child. By mouse, the browser's own; by touch or a pen, the runtime's (held a quarter second, then dragged), in the same events (D-055) |
 | `<li drag:data={[("text/uri-list", url)]} drag:image="ghost">` | what a drag of it carries for other pages and programs, by type, and what it shows (a copy of the element with that id); `on:drop.data` gives a drop every piece by type (`Html.DragItem`), `on:drop.files` its files (`Html.File`: name, type, size and a `blob:` URL; `on:paste.files`, a file field's `on:change.files`) |
 | `<div on:pointermove.point={moved!}>` | where the pointer is over the element, shares of its box (`Html.Point`, 0 to 1), at most once a frame; `<Document on:visibilitychange.visible={shown!} />`, whether the page shows |
@@ -429,6 +430,35 @@ sight. A prefetch is a page render on the server: a middleware that counts views
 `x-rocx-navigate: preload` out, and an app whose pages are costly sets `off`. `<html data-rocx-transitions>`
 makes each navigation a View Transition (the browser's cross-fade, `view-transition-name` pairing
 elements across pages), where the browser has them and less motion isn't asked for.
+
+**Leaving the page** (D-040, Solid Router's `useBeforeLeave`). A component that holds unsaved work
+registers a listener, `Router.use_before_leave!(|leave| …)`, which the runtime runs as a handler
+before each navigation in place (a link, `navigate!`, `<Navigate>`, a GET form, a submission's
+redirect, a change of the query alone, back and forward), in the order they came. It is given the
+leave (`Leave`: `to`, `from`, `options`, `delta` for back and forward, `default_prevented`), may
+stop it (`leave.prevent!()`: the page and its address stay; back and forward, whose address had
+changed, go back where they were, as Solid Router does), and may keep it to let it go later from
+another handler, an app's own "Discard your changes?" dialog: `leave.retry!(Bool.True)` goes without
+asking the listeners again, `retry!(Bool.False)` asks them again. It goes with the component. A
+listener decides from what the page has: one that waits for the server can't hold the navigation.
+A load (leaving the site, reloading, closing the tab) the page can't hold, so the runtime asks each
+listener ahead of time (`to` is "", its writes dropped), again whenever what it read changes, and
+listens for `beforeunload` only while one would stop a load: the browser then asks, in its own
+words. On the server, `use_before_leave!` does nothing.
+
+```roc
+(leaving!, set_leaving!) = create_signal!(Err(Staying))
+use_before_leave!(|leave|
+	if unsaved!() {
+		leave.prevent!()
+		set_leaving!(Ok(leave))
+	})
+# The dialog's button: <button on:click={discard!}>Leave without saving</button>
+discard! = || match leaving!() {
+	Ok(leave) => leave.retry!(Bool.True)
+	Err(_) => {}
+}
+```
 
 Any app with routes, of components or not (endpoints alone too), gets its program:
 
