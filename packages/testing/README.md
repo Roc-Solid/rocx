@@ -178,6 +178,14 @@ the DOM's own drag events, untrusted, with one `DataTransfer` carried through th
 mouse events. With `{ drop: false }` the drag stays over the target until `tab.finish()` (or
 `tab.finish({ cancel: true })`: dragleave and dragend in Gecko, dragend alone in Chromium).
 
+`tab.touchDrag(source, target)` drags by touch, as on a phone (D-055): a finger put down on
+`source`'s middle, held 400 ms (`{ hold }`; the runtime starts a drag of its own after a quarter
+second held still, and `hold: 0` is a swipe, which scrolls instead), moved to `target`'s middle a
+frame at a time, and lifted. It is real touch input in both engines (touch events, and the pointer
+events the browser makes of them): the DevTools protocol's `Input.dispatchTouchEvent` in Chromium,
+WebDriver's touch actions in Gecko. With `{ lift: false }` the finger stays down on the target until
+`tab.lift()`, so a test can look at the page mid-drag (the drag's image under the finger).
+
 A component with signals can't be rendered by `Html.to_str` (its holes run in the runtime), but its
 `<story>` can: `buildForTests(dir, { dev: true })` serves each story as a page, at
 `storyPath("Counter", "At ten")`, to fetch or to open.
@@ -217,7 +225,7 @@ labels skip what a reader can't see: `hidden`, `aria-hidden="true"`, `display: n
 | `server.mjs` | `startServer(executable, { statics, database, dev, flags, env })`: the server on a free port, with `--debug`; `database` a URL, or a test's own database (its `url`, and it then knows the server). Its `client()` is a cookie jar: `get`, `post` (a plain form, from the last page), `submit` (as the runtime sends a form), `json`, `put`, `read(path)` (a GET endpoint, as a page reads it), `events(path)`, and `flash` (what a plain post's flash holds, which the server keeps and says with `--debug`: its URL, status and body). Each `Answer` has `status`, `location`, `text`, `json()`, `dom`, `follow()`. Also `mail()`, `waitForMail(match, { after })`, `logs()` (the JSON log), `stop()`; `links(message)`, `until(check)`, `storyPath(module, name)`. |
 | `postgres.mjs` | `testDatabase(url, { template })`: a database of the test's own, with `url`, `query`, `` sql`…${value}` `` (values as literals), `jobs`, `enqueue`, `settleJobs`, `drop`. `connect(url)`. A client of its own, over Node's sockets: SCRAM-SHA-256, the simple query protocol, rows as objects of numbers, booleans, JSON and text. |
 | `sqlite.mjs` | `testSqlite()`: a SQLite file of the test's own, with `url`, `path`, `query(sql, params)`, `` sql`…${value}` `` (values as parameters: a boolean as 1 or 0, an object as JSON), `jobs`, `enqueue`, `settleJobs` (the workers woken through the server: `POST /__rocx/jobs/wake`), `close`, `drop`, over `node:sqlite`. |
-| `browser.mjs` | `launchBrowser({ engine })` (`"chromium"`, or `"gecko"`), `browser.open(url, { strict, cookies, script })`: a `Tab` with the queries (async), `findBy…`, `waitFor(check)`, `dom()`, `text()`, `requested()`, `errors`, `console`, `screenshot()`, `drag(source, target)`, `finish()`. Each `Element` has `click()`, `fill(text)`, `type(text)`, `press(key)`, `value()`, `checked()`, `selector()`. |
+| `browser.mjs` | `launchBrowser({ engine })` (`"chromium"`, or `"gecko"`), `browser.open(url, { strict, cookies, script })`: a `Tab` with the queries (async), `findBy…`, `waitFor(check)`, `dom()`, `text()`, `requested()`, `errors`, `console`, `screenshot()`, `drag(source, target)`, `finish()`, `touchDrag(source, target)`, `lift()`. Each `Element` has `click()`, `fill(text)`, `type(text)`, `press(key)`, `value()`, `checked()`, `selector()`. |
 | `build.mjs` | `buildForTests(dir, { client, dev, opt })`: `rocx build`, the browser's wasm, the server; `{ server, statics }` |
 | `index.mjs` | all of the above |
 

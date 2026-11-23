@@ -1,7 +1,8 @@
 // Two people on one board, each in a browser of their own (the tabs of one launch share their
 // cookies, so they would be one person): Ada in Gecko (Zen or Firefox) when there is one, as many
 // people browse, and in Chromium when there isn't; Bo in Chromium. Ada drags a card to another
-// column; it shows there at once on her page, and moves on Bo's, gliding, without a reload. Each
+// column; it shows there at once on her page, and moves on Bo's, gliding, without a reload; each
+// drags one by touch too, as on a phone (D-055). Each
 // sees the other here; Bo sees which card Ada has open, and that she is editing it, and it opens
 // for him to edit once she closes it.
 import { after, before, describe, test } from "node:test";
@@ -242,6 +243,34 @@ describe(`Board in two browsers (Ada's: ${engine})`, { skip: noDatabase || noChr
 		await (await ada.getByRole("link", { name: title })).click();
 		await bo.findByRole("group", { name: "Ada is here" }, { ms: 5000 });
 		await (await ada.getByRole("button", { name: "Done" })).click();
+	});
+
+	test("by touch, as on a phone (D-055): Bo drags a card to another column with his finger, and Ada with hers; each moves at once, and on the other's page", async () => {
+		const confetti = seeded.cards["Confetti cannon at lift-off"];
+		const countdown = seeded.cards["Live countdown on the website"];
+		// Bo's finger (Chromium), held on the tile until the drag starts, then down over To do's first
+		// card: the tile he holds is faded (the board's dragstart handler ran), a copy of it under his
+		// finger, above the page; the page doesn't scroll.
+		await bo.touchDrag(`[data-card="${confetti}"]`, `[data-card="${seeded.cards["Weather go/no-go checklist"]}"]`, { lift: false });
+		await bo.page.wait(`document.querySelector('[data-card="${confetti}"]')?.classList.contains("dragged") && document.querySelector('[data-rocx-drag-image]')`, 5000);
+		assert.deepEqual(
+			await bo.page.eval(`(() => { const image = document.querySelector('[data-rocx-drag-image]'); const tile = document.querySelector('[data-card="${confetti}"]'); return { copy: image.querySelector('.open').textContent === tile.querySelector('.open').textContent, layered: image.matches(':popover-open'), scrolled: scrollY }; })()`),
+			{ copy: true, layered: true, scrolled: 0 },
+		);
+		await bo.lift();
+		await bo.page.wait(`!document.querySelector('[data-rocx-drag-image]')`, 5000);
+		await bo.page.wait(`document.querySelector('[data-card="${confetti}"]')?.closest('[data-column]')?.dataset.column === "${seeded.columns["To do"]}"`, 5000);
+		await ada.page.wait(`document.querySelector('[data-card="${confetti}"]')?.closest('[data-column]')?.dataset.column === "${seeded.columns["To do"]}"`, 5000);
+		// Ada's finger (Gecko, when there is one), once her board is still (Bo's card glided out of
+		// Ideas): another card from Ideas to To do.
+		const still = "!document.querySelector('.board.stale') && ![...document.querySelectorAll('.tile')].some((tile) => tile.getAnimations().length) && !document.querySelector('[data-rocx-lifted]')";
+		await ada.page.wait(still, 5000);
+		await ada.touchDrag(`[data-card="${countdown}"]`, `[data-card="${seeded.cards["Fix the fuel gauge rounding"]}"]`);
+		await ada.page.wait(`document.querySelector('[data-card="${countdown}"]')?.closest('[data-column]')?.dataset.column === "${seeded.columns["To do"]}"`, 5000);
+		await bo.page.wait(`document.querySelector('[data-card="${countdown}"]')?.closest('[data-column]')?.dataset.column === "${seeded.columns["To do"]}"`, 5000);
+		const rows = await running.db.sql`select c.name from cards join columns c on c.id = cards.column_id where cards.id in (${confetti}, ${countdown})`;
+		assert.deepEqual(rows.map((row) => row.name), ["To do", "To do"]);
+		for (const tab of [ada, bo]) await tab.page.wait(still, 5000);
 	});
 
 	test("neither page threw or warned", () => {

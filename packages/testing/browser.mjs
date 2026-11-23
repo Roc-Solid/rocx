@@ -2,13 +2,15 @@
 // driven by the repository's own driver (web/test/browser.mjs, no dependencies: the DevTools
 // protocol, and WebDriver BiDi for Gecko). A tab hydrates strictly (a page that isn't what the
 // browser's half renders throws, instead of being rendered again), is found in by role and name as
-// dom.mjs finds (it reads the live document), and is used with real clicks and keys, and drags.
+// dom.mjs finds (it reads the live document), and is used with real clicks and keys, and drags (a
+// mouse's, and a finger's).
 //
 //   const browser = await launchBrowser();          // null without Chromium: skip
 //   const tab = await browser.open(`${app.url}/`);   // hydrated
 //   await (await tab.getByRole("button", { name: "Add one" })).click();
 //   assert.equal((await tab.findByText("2")).tag, "output");
 //   await tab.drag(await tab.getByText("Card"), await tab.getByRole("list", { name: "Done" }));
+//   await tab.touchDrag(await tab.getByText("Card"), await tab.getByRole("list", { name: "Done" }));   // by touch
 //   assert.deepEqual(tab.errors, []);
 //
 //   const gecko = await launchBrowser({ engine: "gecko" });   // null without Zen or Firefox
@@ -185,6 +187,24 @@ export class Tab {
 	 */
 	finish({ cancel = false } = {}) {
 		return this.page.finish({ cancel });
+	}
+
+	/**
+	 * A drag of `source` onto `target` by touch, as a person does it on a phone (D-055): a finger put
+	 * down on the middle of one, held `hold` milliseconds (the runtime starts a drag of its own after
+	 * a quarter second held still), moved to the middle of the other a frame at a time, and lifted,
+	 * unless `lift` is false (it stays down there, for `lift`). `hold: 0` is a swipe, which scrolls
+	 * instead. Real touch input in both engines (touch events, and the pointer events the browser
+	 * makes of them): the DevTools protocol's in Chromium, WebDriver's touch actions in Gecko.
+	 */
+	async touchDrag(source, target, { hold = 400, lift = true } = {}) {
+		const at = async (each) => (typeof each === "string" || (typeof each === "object" && "x" in each) ? each : await each.selector());
+		return this.page.touchDrag(await at(source), [await at(target)], { hold, lift });
+	}
+
+	/** The finger `touchDrag(…, { lift: false })` left down, lifted. */
+	lift() {
+		return this.page.lift();
 	}
 
 	close() {
