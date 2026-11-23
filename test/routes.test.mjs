@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { build } from "../rocx-cli/rocx.mjs";
-import { actorsIn, apiModule, appModule, clientMainModule, contractProblems, definitions, findRouteFiles, handlersModule, jobsIn, matches, migrationsIn, pathsModule, rootModule, routeList, routeModule, routesModule, routesTable, routeTable, tagNames, viewProblems } from "../rocx-cli/rocx.mjs";
+import { actorsIn, apiModule, appModule, clientMainModule, contractProblems, definitions, findRouteFiles, handlersModule, jobsIn, matches, metaProblems, migrationsIn, pathsModule, rootModule, routeList, routeModule, routesModule, routesTable, routeTable, tagNames, viewProblems } from "../rocx-cli/rocx.mjs";
 
 const files = ["+layout.rocx", "+page.rocx", "+error.rocx", "blog/+layout.rocx", "blog/+page.rocx", "blog/[slug]/+page.rocx", "blog/[slug]/+server.rocx", "blog/new/+page.rocx", "getting-started/+page.rocx", "feed/+server.roc"];
 
@@ -251,20 +251,37 @@ test("no server functions (D-023): Routes answers nothing at /rocx/call/, and im
 /** A page's, layout's or error page's definitions, as rocx build reads them. */
 const component = (extra = {}) => ({ view: "view!", meta: false, methods: [], middleware: null, docs: {}, ...extra });
 
-test("Root: the page at where it is, in its layouts, the root layout's <Errored> around the rest, the error page for 404 and 500", () => {
+test("Root: the page at where it is, as levels (D-040): the root layout, its <Errored>, then a keyed part for each layout below it and the page", () => {
 	const files = ["+layout.rocx", "+page.rocx", "+error.rocx", "blog/+layout.rocx", "blog/[slug]/+page.rocx", "blog/new/+page.rocx", "feed/+server.roc"];
 	const table = routeTable(files);
-	const sources = new Map(files.map((file) => [file, file.endsWith("+server.roc") ? { view: null, meta: false, methods: ["get!"], middleware: null, docs: {} } : component({ meta: file === "blog/[slug]/+page.rocx" || file === "+error.rocx" })]));
+	const takes = new Set(["+layout.rocx"]);
+	const metas = new Set(["+page.rocx", "blog/[slug]/+page.rocx", "blog/new/+page.rocx", "+error.rocx"]);
+	const sources = new Map(files.map((file) => [file, file.endsWith("+server.roc") ? { view: null, meta: false, methods: ["get!"], middleware: null, docs: {} } : component({ meta: metas.has(file), takesMeta: takes.has(file) })]));
 	const root = rootModule(table, { sources });
-	assert.match(root, /^import pf\.Html\nimport pf\.Router\nimport pf\.Server\nimport pf\.Errored\nimport pf\.HttpStatusCode\nimport BlogLayout\nimport BlogNewPage\nimport BlogSlugPage\nimport RootError\nimport RootLayout\nimport RootPage\n\nRoot := \[\]\.\{$/m, "the component route files; no endpoint");
-	assert.match(root, /\tview! = \|\{\}\| \{\n\t\tRouter\.app!\(\{ build: Root\.build, dev: Bool\.False, routes: Root\.routes \}\)\n\t\tpath = Router\.location!\(\{\}\)\.path\n\t\tsegments = path\.split_on\("\/"\)\.keep_if\(\|segment\| !segment\.is_empty\(\)\)\.map\(Server\.decode_segment\)\n\t\tif \(segments == \["blog", "new"\]\) \{/, "matched as Routes matches, the fixed first");
+	assert.match(root, /^import pf\.Html\nimport pf\.Router\nimport pf\.Solid\nimport pf\.Server\nimport pf\.Errored\nimport pf\.HttpStatusCode\nimport BlogLayout\nimport BlogNewPage\nimport BlogSlugPage\nimport RootError\nimport RootLayout\nimport RootPage\n\nRoot := \[\]\.\{$/m, "the component route files; no endpoint");
 	assert.match(
 		root,
-		/\} else if \(segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("blog"\)\) \{\n\t\t\tparams = \{ slug: segments\.get\(1\) \?\? "" \}\n\t\t\tHtml\.component\(\|\| RootLayout\.view!\(\{ params: \|\| params, meta: \|\| BlogSlugPage\.meta, children: \[Root\.guarded!\(\[Html\.component\(\|\| BlogLayout\.view!\(\{ params: \|\| params, meta: \|\| BlogSlugPage\.meta, children: \[Html\.component\(\|\| BlogSlugPage\.view!\(\{ params: \|\| params \}\)\)\] \}\)\)\]\)\] \}\)\)\n/,
-		"the root layout, then the <Errored>, then the layouts inside it and the page, each given the params and the page's meta",
+		/\tview! = \|\{\}\| \{\n\t\tRouter\.app!\(\{ build: Root\.build, dev: Bool\.False, routes: Root\.routes \}\)\n\t\troute! = Solid\.create_memo!\(\|\| Root\.route\(Router\.location!\(\{\}\)\.path\)\)\n\t\tmeta! = Solid\.create_memo!\(\|\| Root\.meta\(route!\(\)\)\)\n\t\tHtml\.component\(\|\| RootLayout\.view!\(\{ params: \|\| \{\}, meta: meta!, children: \[Root\.guarded!\(\[Root\.level!\(route!, meta!, 1\)\]\)\] \}\)\)\n\t\}/,
+		"the app first, for the runtime; the route a memo of the location, the page's meta one of the route (computed once a navigation, in one place); the root layout given no params and the meta, the levels below it inside its <Errored>",
 	);
-	assert.match(root, /\} else if \(segments == \[\]\) \{\n\t\t\tparams = \{\}\n\t\t\tHtml\.component\(\|\| RootLayout\.view!\(\{ params: \|\| params, meta: \|\| \{\}, children: \[Root\.guarded!\(\[Html\.component\(\|\| RootPage\.view!\(\{ params: \|\| params \}\)\)\]\)\] \}\)\)/, "a page with no meta: {}");
-	assert.match(root, /\t\t\} else \{\n\t\t\tparams = \{\}\n\t\t\tHtml\.component\(\|\| RootLayout\.view!\(\{ params: \|\| params, meta: \|\| RootError\.meta, children: \[Root\.failed\(404, "nothing at \$\{path\}"\)\] \}\)\)\n\t\t\}/, "no page: the error page, in the root layout");
+	assert.match(root, /\tRoute : \[PageBlogNew, PageRoot, PageBlogSlug\(\{ slug : Str \}\), Missing\(Str\)\]/, "a tag for each page, its params with it");
+	assert.match(root, /\troute = \|path\| \{\n\t\tsegments = path\.split_on\("\/"\)\.keep_if\(\|segment\| !segment\.is_empty\(\)\)\.map\(Server\.decode_segment\)\n\t\tif \(segments == \["blog", "new"\]\) \{\n\t\t\tPageBlogNew\n/, "matched as Routes matches, the fixed first");
+	assert.match(root, /\} else if \(segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("blog"\)\) \{\n\t\t\tPageBlogSlug\(\{ slug: segments\.get\(1\) \?\? "" \}\)\n\t\t\} else \{\n\t\t\tMissing\(path\)\n\t\t\}/);
+	assert.match(root, /\tmeta = \|at\|\n\t\tmatch at \{\n\t\t\tPageBlogNew => BlogNewPage\.meta\n\t\t\tPageRoot => RootPage\.meta\n\t\t\tPageBlogSlug\(_\) => BlogSlugPage\.meta\n\t\t\tMissing\(_\) => RootError\.meta\n\t\t\}/, "each page's meta, and the error page's for no page");
+	assert.match(
+		root,
+		/\t\t\tPageBlogSlug\(params\) => if \(depth == 1\) "routes\/blog\/\+layout\.rocx" else "routes\/blog\/\[slug\]\/\+page\.rocx slug=\$\{Server\.encode_segment\(params\.slug\)\}"\n/,
+		"a level's key: its file and its own params, so the blog's layout is kept from one post to another",
+	);
+	assert.match(root, /\t\t\tMissing\(path\) => "404 \$\{path\}"\n/);
+	assert.match(root, /\tlevel! = \|route!, meta!, depth\| Html\.switched\(\|\| Ok\(Root\.key\(route!\(\), depth\)\), \|\| Root\.made!\(route!, meta!, depth\), Html\.empty\(\{\}\)\)/, "a keyed part, as a keyed <Show> is");
+	assert.match(
+		root,
+		/\t\t\tPageBlogSlug\(params\) => if \(depth == 1\) Html\.component\(\|\| BlogLayout\.view!\(\{ params: \|\| \{\}, meta: \|\| \{\}, children: \[Root\.level!\(route!, meta!, 2\)\] \}\)\) else Html\.component\(\|\| BlogSlugPage\.view!\(\{ params: \|\| params \}\)\)\n/,
+		"the blog's layout given its own params (none), no meta (it takes none), and the next level (the meta memo passed on, for a layout below that takes it); the page its params",
+	);
+	assert.match(root, /\t\t\tPageRoot => Html\.component\(\|\| RootPage\.view!\(\{ params: \|\| \{\} \}\)\)\n/);
+	assert.match(root, /\t\t\tMissing\(path\) => Root\.failed\(404, "nothing at \$\{path\}"\)\n/, "no page: the error page");
 	assert.match(root, /\tguarded! = \|children\| Errored\.view!\(\{ fallback: \|problem, _retry\| Root\.failed\(Errored\.status_of\(problem\), problem\), children: children \}\)/, "its status the failure's: a refused read's 4xx, else 500");
 	assert.match(root, /\tfailed = \|status, problem\| Html\.join\(\[Html\.component\(\|\| HttpStatusCode\.view!\(\{ code: status \}\)\), Html\.component\(\|\| RootError\.view!\(\{ status: \|\| status, problem: \|\| problem \}\)\)\]\)/);
 	assert.doesNotMatch(root, /document|Styles/, "the root layout is the document");
@@ -281,15 +298,54 @@ test("Root: the page at where it is, in its layouts, the root layout's <Errored>
 		error: "RootError",
 	});
 	assert.match(rootModule(table, { sources, build: "7f3a91c2", dev: true }), /Router\.app!\(\{ build: Root\.build, dev: Bool\.True, routes: Root\.routes \}\)\n[\s\S]*\tbuild = "7f3a91c2"/, "a dev build says so");
+	// A layout under a param is given that param alone; one level deep, no depth.
+	const lang = routeTable(["+layout.rocx", "[lang]/+layout.rocx", "[lang]/blog/[slug]/+page.rocx"]);
+	const langRoot = rootModule(lang, { sources: new Map(["+layout.rocx", "[lang]/+layout.rocx", "[lang]/blog/[slug]/+page.rocx"].map((file) => [file, component()])) });
+	assert.match(langRoot, /PageLangBlogSlug\(params\) => if \(depth == 1\) Html\.component\(\|\| LangLayout\.view!\(\{ params: \|\| \{ lang: params\.lang \}, meta: \|\| \{\}, children: \[Root\.level!\(route!, 2\)\] \}\)\)/);
+	assert.match(langRoot, /PageLangBlogSlug\(params\) => if \(depth == 1\) "routes\/\[lang\]\/\+layout\.rocx lang=\$\{Server\.encode_segment\(params\.lang\)\}" else /);
 	// No root layout, no error page: a default document, and a default error page.
 	const bare = routeTable(["+page.rocx", "blog/+layout.rocx", "blog/+page.rocx"]);
 	const bareSources = new Map(["+page.rocx", "blog/+layout.rocx", "blog/+page.rocx"].map((file) => [file, component()]));
 	const plain = rootModule(bare, { sources: bareSources });
-	assert.match(plain, /\t\t\tRoot\.document\(\[Root\.guarded!\(\[Html\.component\(\|\| BlogLayout\.view!\(\{ params: \|\| params, meta: \|\| \{\}, children: \[Html\.component\(\|\| BlogPage\.view!\(\{ params: \|\| params \}\)\)\] \}\)\)\]\)\]\)/);
-	assert.match(plain, /\t\t\} else \{\n\t\t\tRoot\.document\(\[Root\.failed\(404, "nothing at \$\{path\}"\)\]\)\n\t\t\}/);
+	assert.match(plain, /\t\tRoot\.document\(\[Root\.guarded!\(\[Root\.level!\(route!, 1\)\]\)\]\)\n/);
+	assert.match(plain, /\t\t\tPageBlog => if \(depth == 1\) Html\.component\(\|\| BlogLayout\.view!\(\{ params: \|\| \{\}, meta: \|\| \{\}, children: \[Root\.level!\(route!, 2\)\] \}\)\) else Html\.component\(\|\| BlogPage\.view!\(\{ params: \|\| \{\} \}\)\)/);
+	assert.doesNotMatch(plain, /\tmeta = /, "no layout takes meta: none is computed");
 	assert.match(plain, /Html\.element\("main", \[\], \[Html\.element\("h1", \[\], \[Html\.text\(status\.to_str\(\)\)\]\), Html\.element\("p", \[\], \[Html\.text\(problem\)\]\)\]\)/);
 	assert.match(plain, /\tdocument : List\(Html\) -> Html\n\tdocument = \|children\|\n\t\tHtml\.join\(\n\t\t\t\[\n\t\t\t\tHtml\.doctype\(\{\}\),\n\t\t\t\tHtml\.element\("html", \[Html\.attr\("lang", "en"\)\], \[\n\t\t\t\t\tHtml\.element\("head", \[\], \[Html\.void\("meta", \[Html\.attr\("charset", "utf-8"\)\]\), Html\.void\("meta", \[Html\.attr\("name", "viewport"\), Html\.attr\("content", "width=device-width, initial-scale=1"\)\]\), Styles\.style\]\),\n\t\t\t\t\tHtml\.element\("body", \[\], children\),/);
 	assert.match(plain, /^import Styles$/m, "the app's stylesheet, in the default document's <head>");
+	assert.match(plain, /\tkey : Route, U64 -> Str\n/);
+	// One level below the root layout: no depth to say.
+	const flat = routeTable(["+layout.rocx", "+page.rocx", "lists/[id]/+page.rocx"]);
+	const flatRoot = rootModule(flat, { sources: new Map(["+layout.rocx", "+page.rocx", "lists/[id]/+page.rocx"].map((file) => [file, component()])) });
+	assert.match(flatRoot, /\tlevel! = \|route!\| Html\.switched\(\|\| Ok\(Root\.key\(route!\(\)\)\), \|\| Root\.made!\(route!\), Html\.empty\(\{\}\)\)/);
+	assert.match(flatRoot, /\t\t\tPageListsId\(params\) => "routes\/lists\/\[id\]\/\+page\.rocx id=\$\{Server\.encode_segment\(params\.id\)\}"\n/);
+});
+
+test("Root's meta (D-040): a layout that takes it is given one type for every page under it, which rocx build checks", () => {
+	const files = ["+layout.rocx", "+page.rocx", "+error.rocx", "blog/+layout.rocx", "blog/+page.rocx", "about/+page.rocx"];
+	const table = routeTable(files);
+	const defs = {
+		"+layout.rocx": component({ takesMeta: true }),
+		"+page.rocx": component({ meta: true, metaFields: ["description", "title"] }),
+		"+error.rocx": component({ meta: true, metaFields: ["description", "title"] }),
+		"blog/+layout.rocx": component(),
+		"blog/+page.rocx": component({ meta: true }),
+		"about/+page.rocx": component({ meta: true, metaFields: ["title"] }),
+	};
+	assert.deepEqual(metaProblems(table, new Map(Object.entries(defs))), [
+		"routes/about/+page.rocx: its meta's fields ({ title }) aren't those of routes/+page.rocx's ({ description, title }): routes/+layout.rocx takes its page's meta, and is given one type of it for every page under it (D-040)",
+	], "a meta written otherwise (blog's, a call) is Roc's to check");
+	const missing = { ...defs, "about/+page.rocx": component() };
+	assert.match(metaProblems(table, new Map(Object.entries(missing)))[0], /^routes\/about\/\+page\.rocx: defines no meta: routes\/\+layout\.rocx takes its page's meta/);
+	assert.deepEqual(metaProblems(table, new Map(Object.entries({ ...missing, "+layout.rocx": component() }))), [], "a layout that takes no meta is given none");
+	const noError = routeTable(["+layout.rocx", "+page.rocx"]);
+	assert.match(metaProblems(noError, new Map(Object.entries(defs)))[0], /^routes\/\+layout\.rocx: a path no page has is given no meta: .*add routes\/\+error\.rocx with a meta/);
+	assert.deepEqual(definitions("meta = {\n\ttitle: \"A, b } c\", # a comment, d: 1\n\tdescription: Text.join([\"x\", \"y\"]),\n}\n\nview! = |{ meta, children, .. }| x").metaFields, ["description", "title"], "a record's fields: strings and comments passed over");
+	assert.equal(definitions("meta = AppNotes.meta(\"tasks\")\n\nview! = |_| x").metaFields, undefined, "a call: no fields to compare");
+	assert.equal(definitions("meta = { ..base, title: \"x\" }").metaFields, undefined, "a spread: none either");
+	assert.equal(definitions("view! = |{ meta, children, .. }| x").takesMeta, true);
+	assert.equal(definitions("view! = |props| x").takesMeta, true, "the whole record named: meta among it");
+	assert.equal(definitions("view! = |{ children, .. }| x").takesMeta, undefined);
 });
 
 test("Routes: a component page's GET is Root's page, after its route file's middleware; a path nothing has, Root's 404 for a browser", () => {

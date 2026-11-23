@@ -3,6 +3,7 @@ import Endpoint
 import Submission
 import Submissions
 import Server
+import Search
 
 ## Solid Router's, on both sides. Where the page is (`useLocation`): on the server, the request's
 ## path and query; in the browser, the location the page on screen was rendered for, which each
@@ -49,6 +50,15 @@ Router := [].{
 	##     <div class="progress" class:on={Router.is_routing!({})} aria-hidden="true"></div>
 	is_routing! : {} => Bool
 	is_routing! = |{}| Host.is_routing!({})
+
+	## The page's query (Solid Router's `useSearchParams`, D-040): `get!` and `all!` read it, tracked;
+	## `set!` and `set_with!` change it in place, from a handler. See `Search`.
+	##
+	##     search = use_search_params!({})
+	##     days! = || search.get!("days") ?? "7"
+	##     <button on:click={|| search.set!([("days", "30")])}>30 days</button>
+	use_search_params! : {} => Search
+	use_search_params! = |{}| Search.here
 
 	## The app, told to the runtime as its page renders: `Generated/Root.roc` calls it first, and an
 	## app never does. `build` is the build's id (rocx build's hash of the app's sources): the server

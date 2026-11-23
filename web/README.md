@@ -35,13 +35,16 @@ same components natively; this one hydrates them.
   parts),
   `Show` (keyed too), `Switch` and `Match`, `For`, `Loading`, `Errored`, `Context`, `Call` (`fetch!`, `listen!`), `Router` (`location!`: the page's path and query, tracked; `navigate!` and `navigate_with!`: to
   another page, in place, from a handler; `is_routing!`: whether a navigation is on its way;
+  `use_search_params!`: the query, `Search`'s `get!`, `all!`, `set!` and `set_with!`, D-040;
   `app!`: what `Generated/Root` tells the runtime of the app, D-040; `use_submission!`: the latest
   submission to an endpoint; `use_submissions!`: all of them; `use_action!`: one a handler sends
   without a form; `revalidate!`: which reads a result reads again), `Submission` (its `pending!`, `input!`, `field!`, `result!`, `error!`,
   `clear!`, `retry!`), `Submissions` (`all!`, as records, `pending!`, `pending_inputs!`, `clear!`, `retry!`),
   `Transition` (what `transition`, `transition:in`, `transition:out` and `transition:move` play:
   `fade`, `fly`, `scale`, `grow`, `glide`, `style`; `ms`, `delay`, `easing`, `origin`, `plus`),
-  `Title` (`<Title>`: the document's title, from anywhere in the page; `<Meta>`, `<Link>` and
+  `A` (`<A>`: a link with Solid Router's active state, D-040), `Navigate` (`<Navigate href>`: elsewhere
+  as the page renders: a navigation replacing the entry in the browser, a 303 on the server, whose
+  platform has its own), `Title` (`<Title>`: the document's title, from anywhere in the page; `<Meta>`, `<Link>` and
   `<Style>`, the head's other elements, are rocx's tags, D-054) and `HttpStatusCode` (the status a
   page is answered with); and HTTP's: `Server` (a request, its body the bytes as they came, which `text_of` reads as text, and its answer: text, bytes, a
   page, events, or a body the server fetches from elsewhere and sends on, `forward`, with what of
@@ -519,8 +522,27 @@ same components natively; this one hydrates them.
   kept), the focus (an `autofocus` element, the hash's target, or `<body>`'s start, taken with a
   `tabindex` it gives back), a live region of the host's that says the title, `rocx:navigated`
   (`{ url, ms }`; `rocx:navigate` as it started), then the effects. A newer navigation aborts one
-  on its way. Phase 2's hooks: `readOnce` (a location read in a component's body), `inPlace` (a
-  change of the query alone), `remakeRoot`, `afterNavigate`. **Prefetch** (phase 3): what a page
+  on its way. **Kept levels** (phase 2): `Generated/Root` renders the root layout (the root
+  computation, the document) around the levels below it, each layout and the page a keyed part
+  (`Html.switched`, the node a keyed `<Show>` is: `{"t":"show"}`), keyed by its file and its own
+  params, on a memo of the location: a navigation makes anew the levels whose key changed and keeps
+  the rest, and the root runs again only when the root layout read the location once, or the same
+  page is navigated to again (`remakeRoot`). A part a `<Show>` makes is made with `scope.level`, the
+  `<Show>`'s computation: a read of the location that won't follow it (`readOnce`: in a component's
+  body, or a part made once; not inside `untrack!`) notes that level, or the root, and a navigation
+  makes a noted level anew as if its key had changed (`remakeLevels`, its part made again; a dev
+  build says which in the console, and `notify("remade")`). A boundary showing its fallback before
+  the navigation is tried again once the levels are there, with the document's answers. After the
+  flush (`afterNavigate`), the page's `<NoHydration>` regions are matched one for one with the
+  document's (`regionRanges`): one that differs gets the document's content (a script inert), so a
+  kept level's region follows the page and a new level's (made empty, `region` while `arriving`)
+  is filled; and the finished submissions of endpoints no component on the page asks for are
+  forgotten (`forgetSubmissions`). **The query in place** (`inPlace`): a navigation to the page's
+  own path with another query, when no level read the location once and nothing shows a fallback,
+  fetches no document: the address pushed (or replaced; back and forward, left), the location
+  committed, what read it run again in one flush (a read whose URL changed asks its endpoint, its
+  last value shown meanwhile), the scroll as told, the focus left. A GET form (`gotForm`) is a
+  navigation to its URL with its fields as the query, by a link's rules. **Prefetch** (phase 3): what a page
   needs is one entry of the cache with one age (`pageFor`, §18: its document and `codeOf`, the levels'
   `pageCode` steps, which wasm splitting will fill), so a navigation and a prefetch share it;
   `prefetch(url)` asks for it with `x-rocx-navigate: preload` and a low priority, quietly (one that
@@ -762,13 +784,21 @@ after one overtaken; a middleware's redirect landing with its address; a text 40
 fetch, another build and a redirect to another site each loaded; the old page's effects, timer and
 channel stopping, the new page's starting, no stream opened again for the same channels; 200
 navigations leaving no allocation behind; and all of it under `/rocx/`, the URLs the runtime writes
-under the base.
+under the base. Phase 2's, on a shop (a layout below the root keyed by its own `cat`, a page per
+item reading the query), a layout that reads the location in its body, and a page that renders
+`<Navigate>`: a kept layout's signal, a field's text and its region survive a navigation within it,
+and a new `cat` makes it anew; a page with new params is made anew; `<A>`'s active state (and
+`end`) follows; the page with its layouts kept is the page a load renders, byte for byte; `set!`
+merges, `""` takes a name out, `set_with!`'s replace, back between queries, and a plain link to a
+query, all in place, no document fetched and only the read whose URL changed asked again; the
+layout that read the location once made anew and named (`remade`), and a query change under it
+fetching the document; `<Navigate>` replacing its entry; a GET form navigating in place.
 
 ## Not yet
 
-- **Navigation in place, phase 1** (D-040): the whole page is made anew on each navigation, its
-  layouts too (a sidebar's scroll, an open menu, a layout's signals); a change of the query alone
-  fetches the page's document like any navigation; no `<A>` or `<Navigate>` yet (phase 2).
+- **Navigation in place** (D-040): a query that only server-rendered markup reads (a
+  `<NoHydration>` listing results) doesn't follow a change of the query in place: the browser has no
+  code for it (a page-wide "fetch my document on every query change" can come if an app needs one).
   `use_before_leave!` (Solid Router's `useBeforeLeave`, for an unsaved form) isn't there: it needs a
   hosted call, an event Roc can stop and retry, and `beforeunload` for a load.
 - **The rest of Solid 2.0's stores** (D-053): derived stores (`createStore(fn, seed)`,

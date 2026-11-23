@@ -50,8 +50,10 @@ Routes := [].{
 	## What a route file defines (`definitions`). `channel`: its channel's hooks, if it defines
 	## `channel!`; `hooks`: the hooks it defines when it defines no channel (for rocx build to refuse);
 	## `handlers`: the types of each method and of its channel, from their annotations (for Api, the
-	## contract); `imported`: its import lines, for the modules those types name.
-	Defs : { view : [Some(Str), None], meta : Bool, methods : List(Str), middleware : [Some(Str), None], docs : List({ key : Str, value : Str }), respond : Bool, channel : [Some(List(Str)), None], hooks : List(Str), handlers : List(Handler), imported : List(Str) }
+	## contract); `imported`: its import lines, for the modules those types name. `meta_fields`: the
+	## fields of the record its `meta` is written as, sorted (none when it is something else: a call, a
+	## spread); `takes_meta`: whether its view takes `meta` (a layout's: D-040 gives it one type).
+	Defs : { view : [Some(Str), None], meta : Bool, methods : List(Str), middleware : [Some(Str), None], docs : List({ key : Str, value : Str }), respond : Bool, channel : [Some(List(Str)), None], hooks : List(Str), handlers : List(Handler), imported : List(Str), meta_fields : [Some(List(Str)), None], takes_meta : Bool }
 
 	## A method's or a channel's types, from its annotation (`get! : { request : Server.Request,
 	## params : {}, context : c } => Try(Str, Endpoint.Refusal)`): what it is sent (`body`'s type; `""`
@@ -157,7 +159,7 @@ Routes := [].{
 	defs_of = |sources, file|
 		match sources.find_first(|source| source.file == file) {
 			Ok(source) => source.defs
-			Err(_) => { view: None, meta: Bool.False, methods: [], middleware: None, docs: [], respond: Bool.False, channel: None, hooks: [], handlers: [], imported: [] }
+			Err(_) => { view: None, meta: Bool.False, methods: [], middleware: None, docs: [], respond: Bool.False, channel: None, hooks: [], handlers: [], imported: [], meta_fields: None, takes_meta: Bool.False }
 		}
 
 	## Whether the file names a middleware.
@@ -575,8 +577,112 @@ Routes := [].{
 			hooks: if (channel) [] else hooks,
 			handlers: typed.map(|method| Routes.handler_of(lines, method)),
 			imported: lines.map(Text.trim).keep_if(|line| line.starts_with("import ")),
+			meta_fields: Routes.meta_fields(bytes),
+			takes_meta: Routes.takes_meta(lines),
 		}
 	}
+
+	## The fields of the record a route file's `meta` is written as (`meta = { title: "…", toc: [] }`),
+	## sorted; none when it is written otherwise (a call, `AppNotes.meta("tasks")`; a spread, `{ ..base }`).
+	## Strings and comments are passed over, so a `,` or a `}` in one is no field's end.
+	meta_fields : List(U8) -> [Some(List(Str)), None]
+	meta_fields = |bytes| {
+		var $start = 0
+		var $more = Bool.True
+		while $more {
+			if Text.starts_with_at(bytes, "meta".to_utf8(), $start) {
+				after = Text.skip_space(bytes, $start + 4)
+				if Text.at(bytes, after) == '=' and Text.at(bytes, after + 1) != '=' and after < bytes.len() {
+					opened = Text.skip_space(bytes, after + 1)
+					return if (Text.at(bytes, opened) == '{' and opened < bytes.len()) Routes.record_fields(bytes, opened + 1) else None
+				}
+			}
+			match Routes.next_line_start(bytes, $start) {
+				Ok(next) => {
+					$start = next
+				}
+				Err(_) => {
+					$more = Bool.False
+				}
+			}
+		}
+		None
+	}
+
+	## The top-level fields of a record whose `{` is just before `from`, sorted, to its `}`; none for a
+	## spread (`..`), or one never closed.
+	record_fields : List(U8), U64 -> [Some(List(Str)), None]
+	record_fields = |bytes, from| {
+		var $fields = []
+		var $depth = 0
+		# Whether the next word at the top is a field's name: after the `{`, or a `,`.
+		var $expecting = Bool.True
+		var $i = from
+		while $i < bytes.len() {
+			c = Text.at(bytes, $i)
+			if c == '"' {
+				# A string, to its closing quote (an escaped one passed over).
+				$i = $i + 1
+				while $i < bytes.len() and Text.at(bytes, $i) != '"' {
+					$i = if (Text.at(bytes, $i) == '\\') $i + 2 else $i + 1
+				}
+				$i = $i + 1
+				$expecting = Bool.False
+			} else if c == '#' {
+				while $i < bytes.len() and Text.at(bytes, $i) != '\n' {
+					$i = $i + 1
+				}
+			} else if c == '{' or c == '(' or c == '[' {
+				$depth = $depth + 1
+				$i = $i + 1
+				$expecting = Bool.False
+			} else if c == '}' or c == ')' or c == ']' {
+				if $depth == 0 {
+					return Some(Text.sorted($fields))
+				}
+				$depth = $depth - 1
+				$i = $i + 1
+			} else if c == ',' and $depth == 0 {
+				$expecting = Bool.True
+				$i = $i + 1
+			} else if $expecting and $depth == 0 and c == '.' {
+				return None
+			} else if $expecting and $depth == 0 and (Text.is_lower(c) or c == '_') {
+				end = Text.run_end(bytes, $i, Text.is_word)
+				$fields = $fields.append(Text.cut(bytes, $i, end))
+				$i = end
+				$expecting = Bool.False
+			} else {
+				$i = $i + 1
+			}
+		}
+		None
+	}
+
+	## Whether a route file's view takes `meta`: its pattern names it (`|{ meta, children, .. }|`), or
+	## names the whole record (`|props|`).
+	takes_meta : List(Str) -> Bool
+	takes_meta = |lines|
+		match lines.find_first(|line| Routes.line_defines(line, "view!") or Routes.line_defines(line, "view")) {
+			Ok(line) =>
+				match line.split_first("|") {
+					Ok({ after, .. }) => {
+						args = Text.trim(
+							match after.split_first("|") {
+								Ok(halves) => halves.before
+								Err(_) => after
+							},
+						)
+						if args.starts_with("{") {
+							Routes.has_word(args, "meta")
+						} else {
+							!(args.starts_with("_") or args.is_empty())
+						}
+					}
+					Err(_) => Bool.False
+				}
+			Err(_) => Bool.False
+		}
 
 	## A method's types, from its annotation in a route file's `lines`: `method : …`, at the start of
 	## a line, and the lines after it that are indented.
@@ -2071,8 +2177,70 @@ Routes := [].{
 		"{\"pages\":[${Str.join_with(storied.concat(pages), ",")}],\"error\":${error}}"
 	}
 
-	## `Generated/Root.roc`, for both the server and the browser: the app's page. `told`: the build's
-	## id, and whether it is a dev build, for `Router.app!` (D-040).
+	## What is wrong with the `meta`s an app's layouts are given (D-040): a layout is kept across
+	## navigations, given the page's `meta` as it changes, so a layout that takes `meta` is given one
+	## type for every page under it. Each of those pages (and, under the root layout, the error page,
+	## for a path no page has) defines a `meta`, and those written as records have the same fields.
+	meta_problems : Table, List(Source) -> List(Str)
+	meta_problems = |table, sources| {
+		takers = table.layouts.keep_if(|layout| Routes.defs_of(sources, layout.file).takes_meta)
+		takers.join_map(
+			|layout| {
+				rooted = layout.parts.is_empty()
+				error =
+					match table.error {
+						Some(entry) if rooted => [entry]
+						_ => []
+					}
+				under = table.pages.keep_if(|page| page.layouts.any(|each| each.file == layout.file)).concat(error)
+				one_type = "routes/${layout.file} takes its page's meta, and is given one type of it for every page under it (D-040)"
+				missing =
+					under
+						.keep_if(|entry| !Routes.defs_of(sources, entry.file).meta)
+						.map(|entry| "routes/${entry.file}: defines no meta: ${one_type}, so define one as the others do")
+				no_error =
+					match table.error {
+						None if rooted => ["routes/${layout.file}: a path no page has is given no meta: ${one_type}, so add routes/+error.rocx with a meta"]
+						_ => []
+					}
+				shaped = under.join_map(
+					|entry| {
+						defs = Routes.defs_of(sources, entry.file)
+						match defs.meta_fields {
+							Some(fields) if defs.meta => [{ file: entry.file, fields }]
+							_ => []
+						}
+					},
+				)
+				# The shape most of them have (the first such, on a tie) is the one the others are told of.
+				count = |fields| shaped.keep_if(|each| each.fields == fields).len()
+				common = shaped.fold(
+					Err(NoShape),
+					|best, each| match best {
+						Ok(found) if count(found.fields) >= count(each.fields) => best
+						_ => Ok(each)
+					},
+				)
+				differing =
+					match common {
+						Ok(first) =>
+							shaped
+								.keep_if(|each| each.fields != first.fields)
+								.map(|each| "routes/${each.file}: its meta's fields ({ ${Str.join_with(each.fields, ", ")} }) aren't those of routes/${first.file}'s ({ ${Str.join_with(first.fields, ", ")} }): ${one_type}")
+						Err(_) => []
+					}
+				missing.concat(no_error).concat(differing)
+			},
+		)
+	}
+
+	## `Generated/Root.roc`, for both the server and the browser: the app's page, at the location, as
+	## its route's levels (D-040). The root layout is the document; below it, each other layout above
+	## the page, then the page, is a level: a keyed part (`Html.switched`, as a keyed `<Show>` is,
+	## D-053), made anew when its key changes (its file, or its own params) and kept while it doesn't.
+	## So a navigation keeps the layouts it can, and the query alone changing keeps the page. A layout
+	## is given its own params (its directory's) and the page's `meta`, as a getter that follows it.
+	## `told`: the build's id, and whether it is a dev build, for `Router.app!`.
 	root_module : Table, List(Source), List(Placed), { build : Str, dev : Bool } -> Str
 	root_module = |table, sources, stories, told| {
 		pages = table.pages
@@ -2082,51 +2250,98 @@ Routes := [].{
 				Ok(_) => Bool.True
 				Err(_) => Bool.False
 			}
-		meta = |maybe|
-			match maybe {
-				Some(entry) => if (Routes.defs_of(sources, entry.file).meta) "${entry.module_name}.meta" else "{}"
-				None => "{}"
-			}
-		# A route's view is a component, given getters for its value props (D-039).
-		layout = |mod_name, meta_of, children| "Html.component(|| ${mod_name}.view!({ params: || params, meta: || ${meta_of}, children: [${children}] }))"
-		documented = |meta_of, inside|
-			match root {
-				Ok(found) => layout(found.module_name, meta_of, inside)
-				Err(_) => "${Routes.root_name}.document([${inside}])"
-			}
 		root_file =
 			match root {
 				Ok(found) => found.file
 				Err(_) => ""
 			}
-		branch = |page| {
-			inner = page.layouts.keep_if(|each| each.file != root_file).fold_rev("Html.component(|| ${page.module_name}.view!({ params: || params }))", |each, html| layout(each.module_name, meta(Some(page)), html))
-			Str.join_with(["if (${Routes.matched_by(page.parts, page.params)}) {", "\t\t\tparams = ${Routes.params_of(page.params)}", "\t\t\t${documented(meta(Some(page)), "${Routes.root_name}.guarded!([${inner}])")}", "\t\t}"], "\n")
-		}
-		missing = Str.join_with((if (has_root) ["\t\t\tparams = {}"] else []).append("\t\t\t${documented(meta(table.error), "${Routes.root_name}.failed(404, \"nothing at \${path}\")")}"), "\n")
+		# Below the root layout, a page's levels: the layouts above it but the root's, outermost first,
+		# then the page itself.
+		below = |page| page.layouts.keep_if(|each| each.file != root_file)
+		deepest = pages.fold(1, |most, page| if (below(page).len() + 1 > most) below(page).len() + 1 else most)
+		deep = deepest > 1
+		depth_arg = |depth| if (deep) ", ${depth}" else ""
+		depth_param = if (deep) ", depth" else ""
+		tag_of = |page| "Page${page.module_name.drop_suffix("Page")}"
+		pattern_of = |page| if (page.params.is_empty()) tag_of(page) else "${tag_of(page)}(params)"
+		metas = table.layouts.any(|layout| Routes.defs_of(sources, layout.file).takes_meta)
+		# The page's meta, computed once a navigation, in a memo (`meta!`), which each layout that takes
+		# it is given: one place calls `Root.meta`, so --opt=speed inlines every page's meta once.
+		meta_of = |file| if (Routes.defs_of(sources, file).takes_meta) "meta!" else "|| {}"
+		# Nested layouts that take meta are given the memo through the levels.
+		threads = deep and metas
+		meta_param = if (threads) ", meta!" else ""
+		page_meta = |maybe|
+			match maybe {
+				Some(entry) => if (Routes.defs_of(sources, entry.file).meta) "${entry.module_name}.meta" else "{}"
+				None => "{}"
+			}
+		# A layout's own params: those its directory names.
+		own = |page, layout| page.params.keep_if(|param| param.at < layout.parts.len())
+		record_of = |owned| if (owned.is_empty()) "{}" else "{ ${Str.join_with(owned.map(|param| "${param.name}: params.${param.name}"), ", ")} }"
+		# A level's key, as Roc: its file, and each of its params as a path's part.
+		key_of = |file, owned| "\"routes/${file}${Str.join_with(owned.map(|param| " ${param.name}=\${Server.encode_segment(params.${param.name})}"), "")}\""
 		front =
 			match pages.find_first(|page| page.path == "/") {
 				Ok(page) => Some(page)
 				Err(_) => table.error
 			}
-		storied =
-			if stories.is_empty() {
-				[]
+		stories_prefix = Text.json_string("${Routes.stories_path}/")
+		tags =
+			pages
+				.map(|page| if (page.params.is_empty()) tag_of(page) else "${tag_of(page)}({ ${Str.join_with(page.params.map(|param| "${param.name} : Str"), ", ")} })")
+				.concat(if (stories.is_empty()) [] else ["Story(Str)"])
+				.append("Missing(Str)")
+		route_arms =
+			(if (stories.is_empty()) [] else [{ condition: "path.starts_with(${stories_prefix})", made: "Story(path.drop_prefix(${stories_prefix}))" }])
+				.concat(pages.map(|page| { condition: Routes.matched_by(page.parts, page.params), made: if (page.params.is_empty()) tag_of(page) else "${tag_of(page)}(${Routes.params_of(page.params)})" }))
+		route_lines =
+			if route_arms.is_empty() {
+				["\troute = |path| Missing(path)"]
 			} else {
-				[
-					Str.join_with(
-						[
-							"if (path.starts_with(${Text.json_string("${Routes.stories_path}/")})) {",
-							"\t\t\tid = path.drop_prefix(${Text.json_string("${Routes.stories_path}/")})",
-						]
-							.concat(if (has_root) ["\t\t\tparams = {}"] else [])
-							.concat(stories.map_with_index(|story, i| "\t\t\t${if (i > 0) "} else " else ""}if (id == ${Text.json_string(story.id)}) {\n\t\t\t\t${documented(meta(front), "${Routes.root_name}.guarded!([Html.component(|| ${story.alias}.${story.def}({}))])")}"))
-							.concat(["\t\t\t} else {\n\t\t\t\t${documented(meta(front), "${Routes.root_name}.failed(404, \"no story at \${path}\")")}\n\t\t\t}", "\t\t}"]),
-						"\n",
-					),
-				]
+				chain = Str.join_with(route_arms.map_with_index(|arm, i| "${if (i > 0) " else " else ""}if (${arm.condition}) {\n\t\t\t${arm.made}\n\t\t}"), "")
+				["\troute = |path| {"]
+					.concat(if (pages.is_empty()) [] else ["\t\tsegments = path.split_on(\"/\").keep_if(|segment| !segment.is_empty()).map(Server.decode_segment)"])
+					.concat(["\t\t${chain} else {\n\t\t\tMissing(path)\n\t\t}", "\t}"])
 			}
-		branches = storied.concat(pages.map(branch))
+		story_made =
+			Str.join_with(stories.map(|story| "if (id == ${Text.json_string(story.id)}) Html.component(|| ${story.alias}.${story.def}({})) else "), "")
+				.concat("Root.failed(404, \"no story at ${Routes.stories_path}/\${id}\")")
+		key_arms =
+			pages
+				.map(
+					|page| {
+						levels = below(page)
+						chain = Str.join_with(levels.map_with_index(|layout, i| "if (depth == ${(i + 1).to_str()}) ${key_of(layout.file, own(page, layout))} else "), "")
+						"${pattern_of(page)} => ${chain}${key_of(page.file, page.params)}"
+					},
+				)
+				.concat(if (stories.is_empty()) [] else ["Story(id) => \"story \${id}\""])
+				.append("Missing(path) => \"404 \${path}\"")
+		made_arms =
+			pages
+				.map(
+					|page| {
+						levels = below(page)
+						made_page = "Html.component(|| ${page.module_name}.view!({ params: || ${if (page.params.is_empty()) "{}" else "params"} }))"
+						made_layout = |layout, i| "Html.component(|| ${layout.module_name}.view!({ params: || ${record_of(own(page, layout))}, meta: ${meta_of(layout.file)}, children: [Root.level!(route!${meta_param}${depth_arg((i + 2).to_str())})] }))"
+						chain = Str.join_with(levels.map_with_index(|layout, i| "if (depth == ${(i + 1).to_str()}) ${made_layout(layout, i)} else "), "")
+						"${pattern_of(page)} => ${chain}${made_page}"
+					},
+				)
+				.concat(if (stories.is_empty()) [] else ["Story(id) => ${story_made}"])
+				.append("Missing(path) => Root.failed(404, \"nothing at \${path}\")")
+		meta_arms =
+			pages
+				.map(|page| "${if (page.params.is_empty()) tag_of(page) else "${tag_of(page)}(_)"} => ${page_meta(Some(page))}")
+				.concat(if (stories.is_empty()) [] else ["Story(_) => ${page_meta(front)}"])
+				.append("Missing(_) => ${page_meta(table.error)}")
+		inside = "Root.guarded!([Root.level!(route!${meta_param}${depth_arg("1")})])"
+		top =
+			match root {
+				Ok(found) => "Html.component(|| ${found.module_name}.view!({ params: || {}, meta: ${meta_of(found.file)}, children: [${inside}] }))"
+				Err(_) => "Root.document([${inside}])"
+			}
 		story_modules =
 			stories
 				.fold(
@@ -2154,14 +2369,16 @@ Routes := [].{
 				Err(_) => []
 			}
 		modules = Text.sorted(Text.unique(pages.join_map(|page| page.layouts.map(|each| each.module_name).append(page.module_name)).concat(error_modules).concat(root_modules)))
-		view_body = if (branches.is_empty()) Routes.without_first_tabs(missing) else "\t\t${Str.join_with(branches, " else ")} else {\n${missing}\n\t\t}"
+		arms = |list| list.map(|arm| "\t\t\t${arm}")
 		lines =
 			[
 				"## Written by rocx build from the app's routes/: the app's page, for the server, which renders it for",
-				"## a request, and for the browser, which hydrates it: the page at where it is, in the +layout.rocx",
-				"## files above it, or +error.rocx where no page is, or where a page failed. Edit those files, not this one.",
+				"## a request, and for the browser, which hydrates it and navigates: the page at where it is, in the",
+				"## +layout.rocx files above it, or +error.rocx where no page is, or where a page failed. Edit those",
+				"## files, not this one.",
 				"import pf.Html",
 				"import pf.Router",
+				"import pf.Solid",
 			]
 				.concat(if (pages.is_empty()) [] else ["import pf.Server"])
 				.concat(["import pf.Errored", "import pf.HttpStatusCode"])
@@ -2172,18 +2389,70 @@ Routes := [].{
 					"",
 					"${Routes.root_name} := [].{",
 					"\t## The page at where it is (`Router.location!`: the request's path on the server; in the browser,",
-					"\t## the page's, without the base): its route's page, given its params, in its layouts, the error",
-					"\t## page for a failure nothing else catches (a read its endpoint refused with a 4xx, that status;",
-					"\t## else 500); the error page (404) where no page is. The app first, for the runtime (D-040).",
+					"\t## the page's, without the base), in its layouts: the root layout around the levels below it",
+					"\t## (`level!`), the error page for a failure nothing else catches (a read its endpoint refused with",
+					"\t## a 4xx, that status; else 500), and the error page (404) where no page is. The route is a memo",
+					"\t## of the location, so what reads it follows a navigation, and the root layout is kept. The app first, for the runtime.",
 					"\tview! : {} => Html",
 					"\tview! = |{}| {",
 					"\t\tRouter.app!({ build: ${Routes.root_name}.build, dev: ${if (told.dev) "Bool.True" else "Bool.False"}, routes: ${Routes.root_name}.routes })",
-					"\t\tpath = Router.location!({}).path",
+					"\t\troute! = Solid.create_memo!(|| Root.route(Router.location!({}).path))",
 				])
-				.concat(if (pages.is_empty()) [] else ["\t\tsegments = path.split_on(\"/\").keep_if(|segment| !segment.is_empty()).map(Server.decode_segment)"])
+				.concat(if (metas) ["\t\tmeta! = Solid.create_memo!(|| Root.meta(route!()))"] else [])
 				.concat([
-					view_body,
+					"\t\t${top}",
 					"\t}",
+					"",
+					"\t## Where a path is: a page, with its params${if (stories.is_empty()) "" else "; a dev build's story"}; or no page (`Missing`).",
+					"\tRoute : [${Str.join_with(tags, ", ")}]",
+					"",
+					"\t## The route a path is at, matched as `Routes` matches it, the fixed parts first.",
+					"\troute : Str -> Route",
+				])
+				.concat(route_lines)
+				.concat(
+					if metas {
+						[
+							"",
+							"\t## The page's `meta`, which each layout that takes it is given: one type for all of them.",
+							"\tmeta = |at|",
+							"\t\tmatch at {",
+						]
+							.concat(arms(meta_arms))
+							.concat(["\t\t}"])
+					} else {
+						[]
+					},
+				)
+				.concat([
+					"",
+					"\t## The key of the route's level ${if (deep) "at `depth` below the root layout (1: the one just below it)" else "below the root layout"}:",
+					"\t## the file of its layout or page, and its own params. The level is made anew when it changes.",
+					"\tkey : Route${if (deep) ", U64" else ""} -> Str",
+					"\tkey = |at${depth_param}|",
+					"\t\tmatch at {",
+				])
+				.concat(arms(key_arms))
+				.concat([
+					"\t\t}",
+					"",
+					"\t## The level ${if (deep) "at `depth` below the root layout" else "below the root layout"}: a keyed part, made anew when its key changes, kept while it doesn't.",
+				])
+				.concat(if (threads) [] else ["\tlevel! : (() => Route)${if (deep) ", U64" else ""} => Html"])
+				.concat([
+					"\tlevel! = |route!${meta_param}${depth_param}| Html.switched(|| Ok(Root.key(route!()${depth_param})), || Root.made!(route!${meta_param}${depth_param}), Html.empty({}))",
+					"",
+					"\t## What the level is, made: a layout, given its own params, the page's meta and the next level; or",
+					"\t## the page, given its params.",
+				])
+				.concat(if (threads) [] else ["\tmade! : (() => Route)${if (deep) ", U64" else ""} => Html"])
+				.concat([
+					"\tmade! = |route!${meta_param}${depth_param}|",
+					"\t\tmatch route!() {",
+				])
+				.concat(arms(made_arms))
+				.concat([
+					"\t\t}",
 					"",
 					"\t## What is inside the root layout: when it fails and nothing in it catches that, the error page,",
 					"\t## its status the failure's (`Errored.status_of`: a refused read's 4xx, 404 for data that isn't there).",
@@ -2228,10 +2497,6 @@ Routes := [].{
 				.concat(["}", "", "${Routes.marker} the routes: rocx build writes it.", ""])
 		Str.join_with(lines, "\n")
 	}
-
-	## Each line without one tab at its start (`.replace(/^\t/gm, "")`).
-	without_first_tabs : Str -> Str
-	without_first_tabs = |text| Str.join_with(text.split_on("\n").map(|line| if (line.starts_with("\t")) line.drop_prefix("\t") else line), "\n")
 
 	# ---- jobs, actors, migrations ----
 
@@ -2799,6 +3064,8 @@ Routes := [].{
 				},
 			),
 			imported: Value.items(Value.field(value, "imports")).map(Value.str),
+			meta_fields: if (Routes.truthy(Value.field(value, "metaFields"))) Some(Value.items(Value.field(value, "metaFields")).map(Value.str)) else None,
+			takes_meta: Routes.truthy(Value.field(value, "takesMeta")),
 		}
 	}
 
@@ -2912,7 +3179,14 @@ Routes := [].{
 				.concat(respond)
 				.concat(channel)
 				.concat(if (defs.handlers.is_empty()) [] else [{ key: "handlers", value: Object(defs.handlers.map(handler_value)) }])
-				.concat(if (defs.handlers.is_empty()) [] else [{ key: "imports", value: Value.strs(defs.imported) }]),
+				.concat(if (defs.handlers.is_empty()) [] else [{ key: "imports", value: Value.strs(defs.imported) }])
+				.concat(
+					match defs.meta_fields {
+						Some(fields) if !fields.is_empty() => [{ key: "metaFields", value: Value.strs(fields) }]
+						_ => []
+					},
+				)
+				.concat(if (defs.takes_meta) [{ key: "takesMeta", value: Boolean(Bool.True) }] else []),
 		)
 	}
 
@@ -2960,6 +3234,10 @@ Routes := [].{
 			"viewProblems" => {
 				table = Routes.table_from(arg(0))?
 				Ok(Value.strs(Routes.view_problems(table, Routes.sources_from(arg(1)))))
+			}
+			"metaProblems" => {
+				table = Routes.table_from(arg(0))?
+				Ok(Value.strs(Routes.meta_problems(table, Routes.sources_from(arg(1)))))
 			}
 			"routesModule" => {
 				table = Routes.table_from(arg(0))?

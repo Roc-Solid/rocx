@@ -3,8 +3,8 @@ import pf.Html
 ## A page's columns under the bar: its part's pages, the page, what is on it. `landing` for the
 ## front page (and a story), which is in no part: one column, narrower, nothing beside it.
 Frame := [].{
-	view : { landing : Bool, children : List(Html) } -> Html
-	view = |{ landing, children }| <div class="frame" class:landing={landing}>{...children}</div>
+	view! : { landing : Bool, children : List(Html) } => Html
+	view! = |{ landing, children }| <div class="frame" class:landing={landing}>{...children}</div>
 
 	<story name="Three columns">
 		<Frame landing={Bool.False}>

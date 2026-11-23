@@ -1,0 +1,16 @@
+import pf.Html
+import pf.Router
+import pf.Solid exposing [create_signal!]
+
+## A layout that reads where it is once, in its body (D-040 §4.3): what it shows of it won't
+## follow a navigation, so the runtime makes it anew on each one, its counter with it.
+view! = |{ children, .. }| {
+	path = Router.location!({}).path
+	(count!, set_count!) = create_signal!(0.U64)
+	<section class="once">
+		<p class="once-path">{path}</p>
+		<button class="once-count" on:click={|| set_count!(count!() + 1)}>Once clicks {count!().to_str()}</button>
+		<a class="once-next" href="/once/2">Two</a>
+		{...children}
+	</section>
+}

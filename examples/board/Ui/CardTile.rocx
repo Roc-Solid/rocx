@@ -8,7 +8,7 @@ import Avatar
 import Shared
 import ../Board
 
-## A card on the board, as its column shows it: its title (a link that opens it), its labels, when
+## A card on the board, as its column shows it: its title (a link that opens it, in place: D-040), its labels, when
 ## it is due, how far its checklist is, who it is assigned to, who else has it open, and who is
 ## editing it. It is dragged to another place (D-029), and glides there when the board changes
 ## around it (`transition:move`, D-031): when it moves to another column, the tile that leaves one
@@ -17,7 +17,7 @@ CardTile := [].{
 
 	view! : { card! : () => Board.Card, shared : Shared.State } => Html
 	view! = |{ card!, shared }| {
-		{ board!, dragging!, set_dragging!, over!, set_over!, set_open!, here!, .. } = shared
+		{ board!, dragging!, set_dragging!, over!, set_over!, here!, .. } = shared
 		# The drag's end, whether dropped or called off (Escape). A drop that moves this tile to
 		# another column removes it before its dragend: the column's drop handler clears these too.
 		ended! = || {
@@ -43,7 +43,7 @@ CardTile := [].{
 			<ul class="labels" aria-label="Labels">
 				{...card!().labels.map(|key| <li class="chip" data-label={key}>{Board.label_name(key)}</li>)}
 			</ul>
-			<a class="open" href={"?card=${card!().id}"} draggable="false" on:click.prevent={|| set_open!(card!().id)}>{card!().title}</a>
+			<a class="open" href={"?card=${card!().id}"} draggable="false" noscroll>{card!().title}</a>
 			<div class="meta">
 				{=CardTile.due(card!().due, Board.is_overdue(board!(), card!()))}
 				{=CardTile.progress(Board.progress(card!().checklist))}

@@ -1,0 +1,11 @@
+import pf.Html
+import ../../../Api
+
+meta = { title: "A shop", look: "store" }
+
+## A shop's front: what the server says of it.
+view! = |{ params }|
+	<article class="front">
+		<h1>All of {params.cat}</h1>
+		<p class="said">{Api.say!(params.cat)}</p>
+	</article>

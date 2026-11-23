@@ -6,7 +6,7 @@ import pf.For
 import pf.HttpStatusCode
 import pf.Title
 import pf.Solid exposing [create_effect!, create_memo!, create_signal!, is_pending!, refresh!]
-import pf.Router exposing [use_action!, use_submissions!]
+import pf.Router exposing [use_action!, use_search_params!, use_submissions!]
 import pf.Router
 import presence.AvatarStack
 import presence.Presence
@@ -30,6 +30,9 @@ import ../../../Ui/Shared
 ##   board again when it hears that something changed. A card that moves glides to its new place
 ##   (`transition:move`, D-031) on every page, since each tile has its card's id as its `key`.
 ## - Who is here, and which card each has open, is the board's presence room (packages/presence).
+## - The card open is the address's (`?card=12`), read in a memo: a card's link opens it in place
+##   (D-040), an entry pushed, so Back closes it; closing it takes `card` out of the query
+##   (`use_search_params!`). A shared link, or a page loaded without JavaScript, opens it as well.
 middleware = Middlewares.member
 
 meta = { title: "Board" }
@@ -50,7 +53,9 @@ view! = |{ params }| {
 	)
 	(dragging!, set_dragging!) = create_signal!("")
 	(over!, set_over!) = create_signal!(Shared.nowhere)
-	(open!, set_open!) = create_signal!(Board.card_in_query(Router.location!({}).query))
+	search = use_search_params!({})
+	open! = create_memo!(|| Board.card_in_query(Router.location!({}).query))
+	set_open! = |card| search.set!([("card", card)])
 
 	# The board's channel: read the board again whenever it changes, and say who changed what.
 	(live!, set_live!) = create_signal!(Bool.False)

@@ -325,6 +325,10 @@ Host := [].{
 	## Navigating is the browser's (`Router.navigate!`): on the server no handler runs, and it does nothing.
 	navigate! : Str, Bool, Bool => {}
 
+	## A `<Navigate href>` rendered (D-040): the page answers with a 303 to `href` instead of itself,
+	## as a redirect a read met while it rendered does (the first one).
+	redirect_page! : Str => {}
+
 	## Bool.False: on the server no navigation is on its way.
 	is_routing! : {} => Bool
 

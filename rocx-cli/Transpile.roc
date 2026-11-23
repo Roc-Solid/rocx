@@ -2094,8 +2094,10 @@ Transpile := [].{
 	read_attributes = |cfg, st0, tag, component, getters, framed, at_pos| {
 		src = cfg.src
 		# Inside a component with a <style> (or a file with one), the element's classes end with its
-		# (`rx-k3j9qa`): joined to its `class`, or a `class` of its own.
-		scopes = if (component or Styles.unscoped_elements.contains(tag) or Transpile.is_listener(cfg, tag)) "" else Str.join_with(Transpile.scopes_at(cfg, at_pos), " ")
+		# (`rx-k3j9qa`): joined to its `class`, or a `class` of its own. The platform's `<A>` (D-040) is
+		# an `<a>`, styled as one: its `class` prop gets them.
+		as_element = component and tag == "A" and cfg.packaged.contains(tag)
+		scopes = if ((component and !as_element) or Styles.unscoped_elements.contains(tag) or Transpile.is_listener(cfg, tag)) "" else Str.join_with(Transpile.scopes_at(cfg, at_pos), " ")
 		scoped = scopes != ""
 		var $classed = Bool.False
 		var $reads_props = Bool.False
@@ -2120,7 +2122,7 @@ Transpile := [].{
 				}
 			match closing {
 				Some(done) => {
-					class_attr = if (scoped and !$classed) [Item("Html.attr(\"class\", ${Text.roc_string(scopes)})")] else []
+					class_attr = if (scoped and !$classed) [Item(if (component) "class: ${Text.roc_string(scopes)}" else "Html.attr(\"class\", ${Text.roc_string(scopes)})")] else []
 					return Ok({ st: { ..$st, pos: done.end }, attrs: $attrs.concat(class_attr), self_closing: done.self_closing, reads_props: $reads_props })
 				}
 				None => {}

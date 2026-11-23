@@ -1,0 +1,9 @@
+import pf.Html
+import pf.Navigate
+import ../../Generated/Paths
+
+meta = { title: "Away", look: "away" }
+
+## A page that sends the visitor elsewhere as it renders (`<Navigate>`, D-040): a 303 from the
+## server; in the browser, a navigation to A that replaces this entry.
+view! = |_| <section class="away"><Navigate href={Paths.a} /><p>Going to A</p></section>

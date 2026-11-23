@@ -175,6 +175,15 @@ test("styles: an element in a styled component of a styled file gets both classe
 	assert.ok(code.includes(`Html.attr("class", "a ${scopeClass("Card.Card")} ${scopeClass("Card")}")`), code);
 });
 
+test("styles: the platform's <A> (D-040) is an <a>, styled as one: its class prop gets the file's class", () => {
+	const source = 'import pf.Html\nimport pf.A\nimport ./Card\n\nview! = |{ id }| <nav><A href={"/lists/${id}"} class="list" end>Open</A><A href="/">Home</A><Card class="x" /></nav>\n\n<style>a { color: red }</style>\n';
+	const scope = scopeClass("Nav");
+	const { code } = transpileModule(source, "Nav.rocx", { module: "Nav" });
+	assert.ok(code.includes(`A.view!({ href: "/lists/\${id!()}", class: "list ${scope}", end: Bool.True, children: [Html.text("Open"),], })`), code);
+	assert.ok(code.includes(`A.view!({ href: "/", class: "${scope}", children: [Html.text("Home"),], })`), "a class of its own when it has none");
+	assert.ok(!code.includes(`class: || "x ${scope}"`) && code.includes('class: || "x"'), "another component's class is its own");
+});
+
 test("styles: a <style> in a definition's body, or in markup, is an element, as written", () => {
 	const source = "import pf.Html\n\nview = |_|\n\t<style>.a {}</style>\n\nT := [].{\n\tview = |_|\n\t\t<style>.b {}</style>\n}\n";
 	const { code, styles } = transpileModule(source, "T.rocx");

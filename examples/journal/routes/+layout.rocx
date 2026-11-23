@@ -1,5 +1,6 @@
 import pf.Html
 import pf.Router
+import pf.Solid exposing [create_memo!]
 import ../I18n
 import ../Links
 import ../Ui/Footer
@@ -10,13 +11,15 @@ import ../Generated/Styles
 ## lang>` is computed here, on both sides. Everything else around the page is the server's alone,
 ## inside `<NoHydration>`: the head's description, feed and `hreflang` alternates, the masthead
 ## (with the switcher, which needs to know which posts are translated) and the footer. Only the
-## page's islands hydrate.
+## page's islands hydrate. It reads where it is where that is used, not once in its body, so a
+## navigation keeps it (D-040): `<html lang>` follows the address, and the server's parts are
+## refreshed from the next page's document.
 view! = |{ children, .. }| {
-	path = Router.location!({}).path
-	lang = I18n.of_path(path)
+	path! = || Router.location!({}).path
+	lang! = create_memo!(|| I18n.of_path(path!()))
 	<>
 		<!doctype html>
-		<html lang={lang}>
+		<html lang={lang!()}>
 			<head>
 				<meta charset="utf-8" />
 				<meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -26,19 +29,19 @@ view! = |{ children, .. }| {
 				<link rel="stylesheet" href="/journal.css" />
 				<link rel="stylesheet" href="/print.css" media="print" />
 				<NoHydration>
-					<meta name="description" content={Links.description(path)} />
+					<meta name="description" content={Links.description(path!())} />
 					{...I18n.langs.map(|each| <link rel="alternate" type="application/atom+xml" href={"/${each}/feed.xml"} title={"Journal (${I18n.name(each)})"} />)}
-					{...Links.alternates(path).keep_if(|other| other.same).map(|other| <link rel="alternate" hreflang={other.lang} href={other.url} />)}
+					{...Links.alternates(path!()).keep_if(|other| other.same).map(|other| <link rel="alternate" hreflang={other.lang} href={other.url} />)}
 					{=Styles.style}
 				</NoHydration>
 			</head>
 			<body>
 				<NoHydration>
-					<Masthead lang={lang} path={path} alternates={Links.alternates(path)} />
+					<Masthead lang={lang!()} path={path!()} alternates={Links.alternates(path!())} />
 				</NoHydration>
 				<main id="content" tabindex="-1">{...children}</main>
 				<NoHydration>
-					<Footer lang={lang} />
+					<Footer lang={lang!()} />
 				</NoHydration>
 			</body>
 		</html>

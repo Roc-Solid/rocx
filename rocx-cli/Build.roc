@@ -294,7 +294,7 @@ Build := [].{
 					$failed = Bool.True
 				}
 			}
-			for problem in Routes.view_problems(table, sources).concat(Routes.contract_problems(table, sources)) {
+			for problem in Routes.view_problems(table, sources).concat(Routes.meta_problems(table, sources)).concat(Routes.contract_problems(table, sources)) {
 				$said = $said.append("✗ ${here}/${problem}")
 				$failed = Bool.True
 			}

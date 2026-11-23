@@ -387,6 +387,23 @@ const START = '<script type="module" data-rocx src="/rocx/start.js"></script>';
 /** The bootstrap with the build's id (`Router.app!`, D-040), as signals.rs's `start` writes it. */
 const startWith = (build) => (build === null ? START : `<script type="module" data-rocx data-build="${build.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;")}" src="/rocx/start.js"></script>`);
 
+/** A level made anew (D-040: it read the location once): a case no `<Show>`'s is, so its part is. */
+const REMADE = Symbol("remade");
+
+/** The `<NoHydration>` regions in a document, in order, each its comments (`{ start, end }`): inside
+ * one there are no comments of the runtime's, so it ends at the first `<!--/nohydration-->` after it. */
+function regionRanges(doc) {
+	const ranges = [];
+	const walker = doc.createTreeWalker(doc.documentElement ?? doc, 128 /* NodeFilter.SHOW_COMMENT */);
+	for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+		if (node.data !== "nohydration") continue;
+		let end = node.nextSibling;
+		while (end && !(end.nodeType === 8 && end.data === "/nohydration")) end = end.nextSibling;
+		if (end) ranges.push({ start: node, end });
+	}
+	return ranges;
+}
+
 /** A level's code, reached (D-040 §18): every level's is in the one wasm today, so at once. */
 const REACHED = Promise.resolve();
 
@@ -2684,6 +2701,229 @@ export class Runtime {
 		return this.current?.making ? this.current : (this.current?.owner ?? null);
 	}
 
+	// ---- Kept levels, and the query in place (D-040, phase 2) ----
+
+	/**
+	 * A read of the location that won't follow it (`js_location`'s): in a component's body, or in a
+	 * part made once (a `<Show>`'s function child, a `<For>`'s row), it runs once. It is noted on the
+	 * level it is in, the keyed part around it (`scope.level`, which a `<Show>`'s part is made with:
+	 * `Root`'s levels are keyed parts, D-053's `Html.switched`), or on the root (the root layout, the
+	 * document) when there is none. A level that read it so is made anew when the location changes,
+	 * as if the location were part of its key (§4.3), so it never shows what the last page knew. A
+	 * read inside `untrack!` is one meant once, and isn't noted.
+	 */
+	readOnce(reader) {
+		if (this.onServer || reader.making?.untracked > 0) return;
+		const level = reader.scope?.level;
+		if (level) (this.onceLevels ??= new Set()).add(level);
+		else this.rootOnce = true;
+	}
+
+	/** Whether a level that read the location once is still there, or the root read it so: a
+	 * navigation keeping them would show what they read, so it is one with a document. */
+	readsOnce() {
+		if (this.rootOnce) return true;
+		for (const level of this.onceLevels ?? []) if (!level.disposed) return true;
+		return false;
+	}
+
+	/** The `<Errored>` boundaries on the page that show their fallback now. */
+	failedBoundaries() {
+		return [...this.boundaries.values()].filter((boundary) => boundary.failed !== null && boundary.fallback && !boundary.fallback.disposed && boundary.range.start.isConnected);
+	}
+
+	/**
+	 * A navigation, before its document is fetched (`navigate`): made in place, and true, when only
+	 * the query changes (§7), no level read the location once, and nothing on the page failed (each
+	 * would be made anew from the page's document, so that is fetched instead). The address is pushed
+	 * (or replaced; back and forward, left as it is), the location committed, and what read it runs
+	 * again, in one flush: a read whose URL changed asks its endpoint (behind that endpoint's
+	 * middleware; the page's own isn't asked again), its last value shown meanwhile (`is_pending!`).
+	 * It scrolls as told (a link unless `noscroll`, `Search.set!` not), back and forward to where
+	 * the entry was; the focus stays where it is, and nothing is announced.
+	 */
+	inPlace(url, { replace = false, scroll = true, pop = null } = {}) {
+		const target = Runtime.target(`${this.unbased(url.pathname)}${url.search}`);
+		const now = this.location();
+		// Where a navigation leaves from, for `remakeRoot`: the same page again is made anew.
+		this.leftFrom = now;
+		if (target === now || target.split("?")[0] !== now.split("?")[0]) return false;
+		if (this.readsOnce() || this.failedBoundaries().length) return false;
+		// One on its way is overtaken: its fetch aborted, and forgotten if it was its own (`navigate`'s).
+		const previous = this.navigation;
+		if (previous) {
+			previous.controller.abort();
+			const key = Runtime.documentKey(previous.url);
+			if (this.pages.get(key)?.signal === previous.controller.signal) this.pages.delete(key);
+		}
+		this.navigation = null;
+		this.setRouting(false);
+		const started = performance.now();
+		this.notify("navigate", { url: url.href, inPlace: true });
+		document.dispatchEvent(new CustomEvent("rocx:navigate", { detail: { url: url.href } }));
+		if (pop) {
+			this.entryKey = pop;
+			if (history.state?.rocx?.key !== pop) history.replaceState({ ...(history.state ?? {}), rocx: { key: pop } }, "");
+		} else {
+			this.keepScroll();
+			this.entryKey = Runtime.entryKey();
+			history[replace ? "replaceState" : "pushState"]({ rocx: { key: this.entryKey } }, "", url.href);
+		}
+		this.commitLocation(target);
+		this.flush();
+		this.navigations++;
+		this.scrolled(url, { pop, scroll });
+		this.watchSight();
+		const ms = performance.now() - started;
+		this.notify("navigated", { url: url.href, ms, inPlace: true });
+		document.dispatchEvent(new CustomEvent("rocx:navigated", { detail: { url: url.href, ms } }));
+		return true;
+	}
+
+	/**
+	 * A navigation's location committed and its document's answers seeded, before its flush
+	 * (`commit`): whether the root runs again, the whole document made anew (phase 1's way). It does
+	 * when the root layout read the location once, or the page on screen is navigated to again (a
+	 * link to it: made anew from its document, as a load would). Otherwise the root layout is kept,
+	 * and the levels below it follow by themselves (each a keyed part of `Root`'s route: kept while
+	 * its key is the same, made anew when it changes); those that read the location once are made
+	 * anew too (`remakeLevels`). A boundary that showed its fallback before the navigation is tried
+	 * again once the levels are there, with the document's answers: the error page a failed page
+	 * left gives way to the next page.
+	 */
+	remakeRoot(target) {
+		const previous = this.leftFrom;
+		this.leftFrom = null;
+		this.rootKept = !(this.rootOnce || target === previous);
+		if (!this.rootKept) {
+			if (this.rootOnce) this.madeAnew("the root layout");
+			this.rootOnce = false;
+			this.onceLevels = new Set();
+			this.remade = [];
+			return true;
+		}
+		const failed = this.failedBoundaries();
+		this.remakeLevels();
+		if (failed.length) {
+			this.flush();
+			for (const boundary of failed) if (boundary.failed !== null && boundary.range.start.isConnected) boundary.retry();
+		}
+		return false;
+	}
+
+	/** The levels that read the location once, made anew: each run again, its part made as if its key
+	 * had changed (`settleShow`). Which they were, for `afterNavigate` to say. */
+	remakeLevels() {
+		const levels = this.onceLevels ?? [];
+		this.onceLevels = new Set();
+		this.remade = [];
+		for (const level of levels) {
+			if (level.disposed) continue;
+			this.remade.push({ level, key: level.holds });
+			level.holds = REMADE;
+			this.schedule(level);
+		}
+	}
+
+	/** A level made anew for a read of the location once: said in a dev build's console (§4.3), as
+	 * Solid 2.0's dev build says a read that won't follow. */
+	madeAnew(what) {
+		this.notify("remade", { level: what });
+		if (this.app?.dev) console.info(`rocx: ${what} was made anew: it read Router.location! once, in its body, and the location changed. Read it where it is used (in markup, or a memo) for it to be kept across navigations (D-040)`);
+	}
+
+	/**
+	 * A navigation's page made, from its document (`navigate`, after the commit's flush): the levels
+	 * made anew for a read of the location are said (`madeAnew`), the server's `<NoHydration>`
+	 * regions are the document's (`refreshRegions`), and, the root layout kept, so is the rest of
+	 * `<head>` (`reconcileHead`: what is the same stays, a stylesheet that differs is swapped; a page
+	 * of the same build rarely differs there, its holes patched already); and the finished
+	 * submissions of endpoints no component on the page asks for are forgotten (`forgetSubmissions`).
+	 */
+	afterNavigate(doc) {
+		for (const { level, key } of this.remade ?? []) {
+			// A level whose key changed anyway was made anew for that, not for its read.
+			if (!level.disposed && level.holds === key) this.madeAnew(typeof key === "string" ? key.slice(1) : "a <Show>'s part");
+		}
+		this.remade = [];
+		this.refreshRegions(doc);
+		if (this.rootKept && doc.head && document.head) this.reconcileHead(document.head, doc.head);
+		this.rootKept = false;
+		this.forgetSubmissions();
+	}
+
+	/**
+	 * The page's `<NoHydration>` regions, the document's (§4.3): a kept level's were the server's for
+	 * the page that was loaded, and a level made in this navigation has an empty one (`region`).
+	 * The page and the document render the same markup, so their regions match one for one, in
+	 * order: each that differs from the document's (`isEqualNode`) gets its content (a script in it
+	 * inert), the others are left as they are. journal's masthead, a region in its kept layout,
+	 * follows the page so.
+	 */
+	refreshRegions(doc) {
+		const live = regionRanges(document);
+		const fetched = regionRanges(doc);
+		if (live.length !== fetched.length) {
+			console.warn(`rocx: the page has ${live.length} <NoHydration> regions and its document ${fetched.length}: they are left as they are`);
+			return;
+		}
+		live.forEach((range, at) => {
+			const now = inside(range);
+			const then = inside(fetched[at]);
+			if (now.length === then.length && now.every((node, i) => node.isEqualNode(then[i]))) return;
+			const fragment = document.createDocumentFragment();
+			for (const node of then) {
+				const script = node.nodeType === 1 && node.localName === "script";
+				const made = script ? Runtime.inertCopy(node) : document.importNode(node, true);
+				if (!script && made.nodeType === 1) for (const inner of made.querySelectorAll("script")) inner.replaceWith(Runtime.inertCopy(inner));
+				fragment.append(made);
+			}
+			replaceRange(range, fragment);
+		});
+	}
+
+	/** After a navigation (§9.2): the finished submissions to endpoints no component on the new page
+	 * asks for are forgotten, so an old one's error doesn't show on a later page that reads that
+	 * endpoint; those on their way stay until answered. */
+	forgetSubmissions() {
+		for (const [key, source] of this.submissions) {
+			if (this.actions.has(key)) continue;
+			const pending = source.list.filter((entry) => entry.state === "pending");
+			if (pending.length === source.list.length) continue;
+			source.list = pending;
+			this.submissionsChanged(source);
+			if (!pending.length && !source.observers.size) this.submissions.delete(key);
+		}
+	}
+
+	/**
+	 * A form submitted with GET (`<form action="/search">`, the browser's query from its fields): a
+	 * navigation to its URL (§9.1), in place when it is one of the app's pages, as a link's is, so a
+	 * search box needs nothing of the app's. Its fields are the query (a file's, its name), as the
+	 * browser sends them; a `target` but `_self`, another site, or `data-rocx-navigation="off"` (and
+	 * `"explicit"` for a form without `data-rocx-link`) leave it to the browser. `replace` and
+	 * `noscroll` on the form, as on a link.
+	 */
+	gotForm(event) {
+		if (event.defaultPrevented) return;
+		const form = event.target;
+		if (form?.localName !== "form") return;
+		const submitter = event.submitter ?? null;
+		const of = (name, attribute) => (submitter?.hasAttribute(attribute) ? submitter.getAttribute(attribute) : form.getAttribute(name)) ?? "";
+		if ((of("method", "formmethod").toLowerCase() || "get") !== "get") return;
+		const target = of("target", "formtarget");
+		if (target && target !== "_self") return;
+		const mode = document.documentElement.getAttribute("data-rocx-navigation");
+		if (mode === "off" || (mode === "explicit" && !form.hasAttribute("data-rocx-link"))) return;
+		const url = new URL(of("action", "formaction") || location.href, document.baseURI);
+		const data = new FormData(form, submitter ?? undefined);
+		url.search = new URLSearchParams([...data].map(([name, value]) => [name, typeof value === "string" ? value : value.name])).toString();
+		url.hash = "";
+		if (!this.ours(url)) return;
+		event.preventDefault();
+		this.navigate(url, { replace: form.hasAttribute("replace"), scroll: !form.hasAttribute("noscroll") });
+	}
+
 	// ---- Running ----
 
 	/** Runs a computation. A complete run replaces what the last one made; one that aborts or fails
@@ -2931,7 +3171,10 @@ export class Runtime {
 				raw.set(name, value);
 				value === "" ? target.style.removeProperty(name) : target.style.setProperty(name, value);
 			}
-			else if (kind === "class") target.classList.toggle(name, value);
+			else if (kind === "class") {
+				target.classList.toggle(name, value);
+				if (value && computation.attrs) Runtime.classInOrder(target, computation.attrs);
+			}
 			else {
 				target.toggleAttribute(name, value);
 				if (name in target) target[name] = value;
@@ -3330,15 +3573,17 @@ export class Runtime {
 			this.keep(() => this.dispose(computation.part));
 			this.leave(going, outs);
 		} else this.dispose(computation.part);
+		// What it makes is a level (D-040): a read of the location once, in it, makes it anew (`readOnce`).
+		const level = { ...scope, level: computation };
 		if (holds && node.with) {
 			// A function child: made when it shows, by its own computation (it reads the narrowed value).
-			const made = new Computation(this, { kind: "html", runner: this.kept.get(node.with), owner: null, scope, target });
+			const made = new Computation(this, { kind: "html", runner: this.kept.get(node.with), owner: null, scope: level, target });
 			made.adopting = adopting;
 			// Made once, as a component is: its holes, and the getters it gives its components, follow.
 			made.untracked = true;
 			computation.part = made;
 			this.run(made);
-		} else computation.part = this.part(holds ? node.c : [node.fallback], scope, target, adopting);
+		} else computation.part = this.part(holds ? node.c : [node.fallback], level, target, adopting);
 		if (!first && !adopting) this.entered(target);
 		if (!adopting) this.notify("show", { holds, nodes: inside(target) });
 	}
@@ -3972,6 +4217,9 @@ export class Runtime {
 	region() {
 		const kept = this.keptRegions?.shift();
 		if (kept) return kept;
+		// A level made by a navigation inside a kept one: its regions come from the document after the
+		// flush (`refreshRegions`, D-040).
+		if (this.arriving) return makeRange("nohydration").fragment;
 		console.warn("rocx: a <NoHydration> the server didn't render here is empty: what is inside is the server's, and the browser has no copy of it");
 		return makeRange("nohydration").fragment;
 	}
@@ -4014,6 +4262,21 @@ export class Runtime {
 	 * (signals.rs's): its classes in the markup's order, a `class:name` that holds among the static
 	 * ones where it is written; its static style, then each `style:name`'s `name: value`, in the
 	 * markup's order, joined by `; `, not reserialized by the CSSOM (`--x: 1;`, `3.6e+06px`). */
+	/** An element's classes in the order the server writes them (its markup's: a static `class`, and
+	 * each `class:name` that is on, where it is written), any others (a page script's) after them:
+	 * so an element a navigation kept, whose class a hole turned on, is the element a load renders
+	 * (D-040), not the class added at the end. */
+	static classInOrder(element, attrs) {
+		const ordered = [];
+		for (const [kind, name, value] of attrs) {
+			if (kind === "v" && name === "class") ordered.push(...value.split(/\s+/).filter(Boolean));
+			else if ((kind === "ci" && value) || (kind === "co" && element.classList.contains(name))) ordered.push(name);
+		}
+		const others = [...element.classList].filter((name) => !ordered.includes(name));
+		const written = [...ordered, ...others].join(" ");
+		if (element.getAttribute("class") !== written) element.setAttribute("class", written);
+	}
+
 	styled(element, node) {
 		if (node.a.some(([kind]) => kind === "co")) {
 			const classes = [];
@@ -4385,6 +4648,9 @@ export class Runtime {
 			if (kind === "vo" || kind === "fo" || kind === "co" || kind === "oo" || kind === "so") {
 				const computed = { vo: "attr", fo: "flag", co: "class", oo: "optional", so: "style" }[kind];
 				const computation = new Computation(this, { kind: computed, runner: this.kept.get(value), owner, scope, target: element, name });
+				// A class's: the element's attributes, so a class it turns on later goes where the server
+				// writes it (`classInOrder`).
+				if (kind === "co") computation.attrs = node.a;
 				// One that read nothing that changes (a prop given a constant) is static: nothing keeps it.
 				if (this.isStatic(computation, this.run(computation))) this.forget(computation, owner);
 			} else if (kind === "on" || kind === "onp") {

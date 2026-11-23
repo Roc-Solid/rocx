@@ -2246,6 +2246,87 @@ the stylesheet as a cached file, a JSON payload, wasm splitting.
   on `<html>`, `viewport` once in sight; a View Transition only when asked for and available, never
   with less motion asked for.
 
+- Phase 2 (nav-phase2, 2026-11-23): kept layouts, the query in place, `<A>`, `<Navigate>`.
+  - **Levels reuse D-053's keyed part**, as the task asked: no `Html.keyed!` of its own. `Root`
+    matches the location in a memo (`Root.route`, a tag a page, its params in it); the root layout is
+    the root computation, the document, given `{}` for params and the page's `meta`; below it each
+    other layout above the page, then the page, is an `Html.switched` part (the node a keyed
+    `<Show>` is) whose case is its key (`Root.key`: its file and its own params, as path parts) and
+    whose part `Root.made!` makes. So the runtime has nothing new to key: a `{"t":"show"}` whose
+    case changed is made anew, one whose case is the same is kept. The server renders each level
+    once, with its comments (`<!--show-->`), so every page's markup has them now.
+  - **A layout is given its own params** (its directory's), not the page's. One test fixture's
+    layout read its page's param (test/e2e's `posts/+layout.rocx`); it moved under `[slug]`. A
+    layout that takes `meta` is given one type of it for every page under it, which rocx build
+    checks (`Routes.meta_problems`: a page with none, a record with other fields, a root layout
+    taking it with no `+error.rocx`); one that takes none is given `{}`.
+  - **Untracked reads, per level.** A part a `<Show>` makes gets `scope.level`, its `<Show>`'s
+    computation. Phase 1's `readOnce` hook notes a location read in a component's body or a part made
+    once (not inside `untrack!`) on that level, or on the root; a navigation makes a noted level anew
+    (`remakeLevels`: its case set to a value none has), and the root only when the root layout read
+    it so, or the page on screen is navigated to again (`remakeRoot`). The level is the nearest
+    `<Show>` part, an app's too, which is finer than the design's "the layout or the page" and as
+    safe. A dev build says which level was made anew (`console.info`, and `notify("remade")`).
+  - **Errored, regions, submissions.** `Root`'s `<Errored>` stays around the levels; a boundary
+    that showed its fallback before a navigation is tried again once the levels are made, with the
+    document's answers, so a failed page's error page gives way to the next. After the flush
+    (`afterNavigate`) the page's `<NoHydration>` regions are matched one for one with the
+    document's: one that differs takes the document's content (a script inert), which also fills a
+    new level's (made empty while the document is `arriving`); with the root kept, the rest of
+    `<head>` is reconciled with the document's too (phase 1's `reconcileHead`). Finished submissions
+    of endpoints no component on the new page asks for are forgotten. For the byte-for-byte test with
+    layouts kept, a class a hole turns on goes where the server writes it, not at the end
+    (`Runtime.classInOrder`), and the site's site.js empties its footer's stat as a navigation
+    starts (a kept layout's page-script text would outlive its page).
+  - **The query in place** (`inPlace`): same path, another query, no level that read the location
+    once, no fallback showing: no document, the address pushed (or replaced, or left for back and
+    forward), the location committed, one flush. It scrolls as told: a link does unless `noscroll`
+    (as §7's board example writes), `Search.set!` doesn't, `set_with!` and `navigate_with!` say.
+    A navigation to the page on screen (a link to it) remakes the root from its document.
+  - **API.** `Router.use_search_params!({}) : Search` (shared module `Search`: `get!`, `all!`,
+    `set!`, `set_with!`; `set!` over phase 1's `Host.navigate!`). `<A>` (shared module `A`):
+    `href`, `end`, `active_class`, `class`, `replace`, `noscroll`, `preload`; it renders
+    `data-rocx-link`, so `explicit` mode takes it, and rocx gives it the component's scope class as
+    it gives an `<a>`. `<Navigate href>`: a module of each platform, the browser's an effect
+    calling `navigate_with!(href, { replace: Bool.True, scroll: Bool.True })`, the server's a new
+    hosted call, `Host.redirect_page!`, that makes the page a 303 (the render's first redirect, as
+    D-019's). GET forms: phase 1's document listener calls `gotForm`.
+  - **Apps.** tasks' layout reads the location in a memo and its lists are `<A>`s; journal's
+    `lang` is a memo of the location, its server-only regions read it where they render; the site's
+    layout reads the path through a `Store`'s selections (D-053), so each part re-renders only when
+    what it shows changes and its `Sidebar` (now effectful, getters) keeps its rows within a part;
+    board's open card is a memo of `?card=` (its tile a plain link, `noscroll`; closing it
+    `Search.set!`), so Back closes it.
+  - **`meta` in a memo.** `Root` computes the page's `meta` once a navigation
+    (`meta! = Solid.create_memo!(|| Root.meta(route!()))`) and gives the layouts that take it the
+    memo's accessor (threaded through the levels when a nested one does), so one place calls
+    `Root.meta`.
+  - **The docs site's server is built with `--specialize=no`** (site/build.mjs; server/build.mjs's
+    `buildApp` takes `specialize`). With levels, its `--opt=speed` build overflowed the 8 MiB stack a
+    render runs on, on every page: not recursion, but specializations of `Html.serialize!` into which
+    every closure of `Html`'s lambda sets is inlined, the site's every page with them, in frames of
+    12.4 MB (six of them; master's build already has one of 1.4 MB there). The memo above leaves one,
+    and no shape of `Root` tried (the level as `Html.html_of`) does better, since one dispatcher holds
+    every page. Boxy lowering's largest frame is 28 KB, and it renders as fast: the site's 50 pages a
+    round, 8 rounds, twice, 386 and 393 ms specialized against 386 and 367 ms boxy on master, 376 and
+    369 ms boxy with levels (2.8 ms a page every way); and it builds in about 40 s, not 2 to 6
+    minutes. No stack size changed. **Any large app built `--opt=speed` can meet the same growth**,
+    since one dispatcher holds every page; the cure is the compiler's (test/compiler-bugs/huge-frame-
+    opt-speed, its repro and the numbers). The wasm-split spike needs `--specialize=no` in the
+    browser's build for the same reason (spike/wasm-split/REPORT.md), so the flag may become the
+    default later; not on this branch.
+    The other apps, built `--opt=speed` with levels (largest frame; a render has 8 MiB): plate
+    848 KiB, journal 372, notes 192, quiz 132, board 120, uptime 104, tasks 80, test/e2e's app 36,
+    and checkboxes, echo, hello and sqlite-vs-turso 8; plate is the nearest, a tenth of the way.
+  - **Tests.** test/routes (levels, own params, the meta check), test/e2e (levels' comments,
+    `<Navigate>`'s 303), test/stories; web/test/navigation.test.mjs's phase-2 tests on phase 1's
+    harness (kept levels and the page a load renders, byte for byte; the query in place; a layout
+    read once; `<Navigate>`; a GET form), 19 of 19 with phase 1's and 3's; site/test's navigation
+    through every page now checks the layout kept all along, natively and under `/rocx/`. The full
+    gate: rocx 121, web and site 115, server 199, packages 50, every example (board 19, journal
+    21, tasks 17, …). Sizes: runtime.js +13.5 KB (+2.8 KB brotli); tasks' wasm 8 KB smaller raw,
+    0.5 KB larger with brotli.
+
 **Reversible:** yes, until apps rely on kept layouts and `use_search_params!`.
 
 ## D-041 The host hands over a request as one record, with the connection's address

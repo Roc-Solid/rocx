@@ -3887,6 +3887,15 @@ pub struct HostReadAtArgs {
     pub arg0: RocStr,
 }
 
+/// Arguments for Host.redirect_page!
+/// Roc signature: Str => {}
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostRedirectPageArgs {
+    pub arg0: RocStr,
+}
+
 /// Arguments for Host.refresh!
 /// Roc signature: Box({} => Str) => {}
 /// Refcounted fields are owned by the hosted function.
@@ -5918,6 +5927,13 @@ unsafe extern "C" {
     ///     unsafe { arg0.decref(roc_host); }
     /// The result is owned by Roc: return exactly one owned reference.
     pub fn roc_read_at(arg0: RocStr) -> RocStr;
+
+    /// Hosted symbol for Host.redirect_page!
+    /// Roc signature: Str => {}
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    pub fn roc_redirect_page(arg0: RocStr);
 
     /// Hosted symbol for Host.refresh!
     /// Roc signature: Box({} => Str) => {}

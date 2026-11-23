@@ -5,6 +5,7 @@ import pf.Router
 import pf.For
 import pf.Errored
 import pf.Show
+import pf.A
 import ../Tasks
 import ../Generated/Api
 import ../Generated/Paths
@@ -16,11 +17,12 @@ import ../components/Avatar
 ## from `GET /api/team`, read in a memo: after a change on a page (a task done), the runtime reads
 ## the page's reads again, this one too, so the counts down the side follow. A story (a dev build's
 ## catalog, `/__rocx/stories/…`) is the component alone, in the page's frame, without the rest.
+## Where it is, it reads where that is used (`story!`, and each list's `<A>`), not once in its
+## body, so a navigation keeps it, the lists down the side with their scroll (D-040).
 view! = |{ meta, children, .. }| {
 	team = Api.get_api_team({})
 	team! = create_memo!(|| Endpoint.get!(team))
-	path = Router.location!({}).path
-	story = path.starts_with("/__rocx/stories/")
+	story! = create_memo!(|| Router.location!({}).path.starts_with("/__rocx/stories/"))
 	<>
 		<!doctype html>
 		<html lang="en">
@@ -33,7 +35,7 @@ view! = |{ meta, children, .. }| {
 				<NoHydration>{=Styles.style}</NoHydration>
 			</head>
 			<body>
-				<Show when!={!story}>
+				<Show when!={!story!()}>
 					<a class="skip" href="#main">Skip to the page</a>
 					<header class="bar">
 						<a class="brand" href={Paths.root}>
@@ -50,8 +52,8 @@ view! = |{ meta, children, .. }| {
 						</Errored>
 					</header>
 				</Show>
-				<div class="frame" class:story={story}>
-					<Show when!={!story}>
+				<div class="frame" class:story={story!()}>
+					<Show when!={!story!()}>
 						<nav class="lists" aria-label="Lists">
 							<h2>Lists</h2>
 							<Errored fallback={|_, _| <p class="quiet">The lists can't be read just now.</p>}>
@@ -59,10 +61,10 @@ view! = |{ meta, children, .. }| {
 									<For each!={team!().lists} keyed={|list| list.id}>
 										{|list!, _|
 											<li>
-												<a href={Paths.lists_id({ id: list!().id })} aria-current??={if (path == Paths.lists_id({ id: list!().id })) "page" else ""}>
+												<A href={Paths.lists_id({ id: list!().id })}>
 													<span class="name">{list!().name}</span>
 													<span class="open" aria-label={"${list!().open.to_str()} open"}>{list!().open.to_str()}</span>
-												</a>
+												</A>
 											</li>
 										}
 									</For>

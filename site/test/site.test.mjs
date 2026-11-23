@@ -121,7 +121,9 @@ const NAVIGATED = `
  * Every page of the site, reached by navigating in place (from the one before it, starting at the
  * front page, at `url` + `base`), is the page a load renders: the page as the navigation left it is
  * the document it was rendered from, byte for byte outside the host's elements, its title the
- * document's; no load (the window is the same), nothing asked again (strictly), nothing said.
+ * document's; no load (the window is the same), nothing asked again (strictly), nothing said. The
+ * layout is kept all along (D-040's levels: it reads where it is where that is used), so what is
+ * compared is a kept layout, patched, beside the page made anew.
  */
 async function navigatesLikeLoads(url, base = "") {
 	const tab = await browser.page();
@@ -129,15 +131,16 @@ async function navigatesLikeLoads(url, base = "") {
 	await tab.send("Page.addScriptToEvaluateOnNewDocument", { source: NAVIGATED });
 	await tab.goto(`${url}${base}/`);
 	await tab.wait(AWAKE);
-	await tab.eval("window.mark = 'kept'");
+	await tab.eval("window.mark = 'kept'; window.footer = document.querySelector('body > footer.footer')");
 	for (const route of ROUTES) {
 		const result = await tab.eval(`(async () => {
 			window.navigated = null;
 			await window.runtime.navigate(${JSON.stringify(route)});
 			const { text } = await window.runtime.pages.get(location.href.split("#")[0]).promise;
-			return { mark: window.mark, at: location.pathname, navigated: window.navigated, loaded: window.snapshotOf(new DOMParser().parseFromString(text, "text/html")) };
+			return { mark: window.mark, kept: window.footer === document.querySelector('body > footer.footer'), at: location.pathname, navigated: window.navigated, loaded: window.snapshotOf(new DOMParser().parseFromString(text, "text/html")) };
 		})()`);
 		assert.equal(result.mark, "kept", `${route}: in place, no load`);
+		assert.equal(result.kept, true, `${route}: the layout kept (D-040's levels): its footer the same element`);
 		assert.equal(result.at, `${base}${route}`, `${route}: its address`);
 		assert.equal(result.navigated?.title, result.loaded.title, `${route}: its title`);
 		assert.equal(result.navigated.html, result.loaded.html, `${route}: navigated to, the page a load renders`);

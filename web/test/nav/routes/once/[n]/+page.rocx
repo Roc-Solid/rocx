@@ -1,0 +1,6 @@
+import pf.Html
+
+meta = { title: "Once", look: "once" }
+
+## A page under the layout that reads where it is once.
+view! = |{ params }| <h1 class="once-n">Once {params.n}</h1>

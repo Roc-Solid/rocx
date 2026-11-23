@@ -1,6 +1,5 @@
 import pf.Html
 import ../../Ui/Heading
-import ../../Ui/Callout
 import ../../Ui/Code
 import ../../Generated/Sources
 import ../../Generated/Paths
@@ -107,8 +106,13 @@ view! = |_|
 			<Heading id="layouts">Layouts</Heading>
 			<p>
 				A <code>+layout.rocx</code> is around every page in its directory and below, the outermost first. Its
-				<code>view</code> is given the request, the context, the page's <code>meta</code>, and the page (or the
-				next layout) as <code>children</code>. This site has one, the document around every page:
+				<code>view</code> is given its own <code>params</code> (those its directory names:
+				<code>routes/[lang]/+layout.rocx</code>'s <code>lang</code>; the root layout's are <code>{"{}"}</code>), the
+				page's <code>meta</code>, and the page (or the next layout) as <code>children</code>. Every page under a
+				layout that takes <code>meta</code> gives it one type, and rocx build says so at one whose
+				<code>meta</code> has other fields, or none. A navigation keeps a layout, its state with it, while
+				its file and its own params are the same (below). This site has one, the document around every
+				page, which reads where it is where that is used, so it is kept:
 			</p>
 			<Code title={"${Sources.route_layout.file}, in part"} source={Sources.route_layout.rocx} numbers={Bool.False} />
 
@@ -384,6 +388,10 @@ view! = |_|
 						<tr><td><code>{"navigate!(Paths.blog_slug({ slug }))"}</code></td><td>in a handler: to that page, once the handler is done; <code>{"navigate_with!(to, { replace, scroll })"}</code> with Solid Router's options (<code>{"import pf.Router exposing [navigate!, navigate_with!]"}</code>)</td></tr>
 						<tr><td><code>{"Router.is_routing!({})"}</code></td><td>whether one is on its way, tracked: a progress bar's <code>{"class:on={…}"}</code></td></tr>
 						<tr><td><code>{"Router.location!({})"}</code></td><td>where the page is, tracked: a hole that reads it follows each navigation</td></tr>
+						<tr><td><code>{"<A href={Paths.lists_id({ id })} end active_class=\"current\">"}</code></td><td>a link with Solid Router's active state: <code>aria-current="page"</code> and its class (<code>active</code> unless it says) while the page is at its path (<code>end</code>) or under it (<code>{"import pf.A"}</code>)</td></tr>
+						<tr><td><code>{"search = use_search_params!({})"}</code></td><td>the query: <code>{"search.get!(\"days\")"}</code> and <code>{"all!()"}</code> read it, tracked; <code>{"search.set!([(\"days\", \"30\")])"}</code>, in a handler, merges into it (<code>{"\"\""}</code> takes a name out) and changes it in place (<code>{"import pf.Router exposing [use_search_params!]"}</code>)</td></tr>
+						<tr><td><code>{"<Navigate href={Paths.sign_in} />"}</code></td><td>sends the visitor elsewhere as the page renders: a 303 from the server, a navigation that replaces the entry in the browser (<code>{"import pf.Navigate"}</code>)</td></tr>
+						<tr><td><code>{"<form action=\"/search\">"}</code></td><td>a GET form: a navigation to its URL with its fields as the query, in place</td></tr>
 						<tr><td><code>{"<html data-rocx-navigation=\"off\">"}</code></td><td>every link loads its page, as before</td></tr>
 						<tr><td><code>{"data-rocx-preload=\"off\""}</code>, <code>{"\"viewport\""}</code></td><td>on a link or above it (<code>{"<html>"}</code> for the app): never prefetch; prefetch as it comes into sight, as well as on hover, focus and touch</td></tr>
 						<tr><td><code>{"<html data-rocx-transitions>"}</code></td><td>each navigation a View Transition, the browser's cross-fade, where it has them and less motion isn't asked for</td></tr>
@@ -391,6 +399,23 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<ul>
+				<li>
+					<strong>Layouts are kept.</strong> Below the root layout, each layout above the page, and the page,
+					is a level, made anew only when its file or its own params change: from one post to the next, the
+					blog's layout stays, its sidebar's scroll, an open menu and its signals with it, and only the page
+					is made. A level that read where it is once, in its body (<code>{"path = Router.location!({}).path"}</code>
+					at its top), would show where it was, so the runtime makes it anew on every navigation (a dev build
+					says so in the console): read it where it is used, in markup or a memo, and the level is kept. A
+					kept level's <code>{"<NoHydration>"}</code> parts are the next page's document's.
+				</li>
+				<li>
+					<strong>A change of the query alone is made in place.</strong> A link to <code>?days=30</code>,
+					<code>{"set!"}</code> or <code>{"navigate!(\"?days=30\")"}</code> fetches no document: the page and
+					its layouts stay, what read the query reads again (a read whose URL changed asks its endpoint, behind
+					that endpoint's middleware, its last value shown meanwhile), and Back goes to the last query. What
+					only the server renders (a <code>{"<NoHydration>"}</code>) doesn't follow it: the browser has no
+					code for it.
+				</li>
 				<li>
 					<strong>The server decides, as on a load.</strong> The document's request is a page's GET (with
 					<code>x-rocx-navigate: 1</code>, for a middleware that counts views to tell the two apart), so a
@@ -429,14 +454,6 @@ view! = |_|
 			<Code title={Sources.route_error.file} source={Sources.route_error.rocx} />
 
 			<Heading id="limits">Not yet</Heading>
-			<Callout kind="note" title="A navigation makes the whole page anew">
-				<p>
-					Navigating renders every layout anew with the page, so a sidebar's scroll, an open menu or a
-					layout's signals start over, and a change of the query alone fetches the page's document as any
-					navigation does. Layouts kept across pages, the query changed in place, <code>{"<A>"}</code>
-					with its active state and <code>{"<Navigate>"}</code> are next (D-040's phase 2).
-				</p>
-			</Callout>
 			<ul>
 				<li>
 					<strong>A static build writes the pages without params</strong> (<code>Paths.all</code>); one with

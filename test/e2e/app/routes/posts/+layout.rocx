@@ -1,4 +1,0 @@
-import pf.Html
-
-## The posts' part of the app, inside the document.
-view! = |{ children, params, .. }| <div class="posts" data-slug={params.slug}>{...children}</div>

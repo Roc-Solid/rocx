@@ -12,18 +12,6 @@ When an item lands, delete its line here in the same commit.
 
 ## Waiting on a decision by the user
 
-- **Client-side navigation (D-040, Proposed).** Twelve questions, each with a recommendation, are in
-  `spike/client-nav/DESIGN.md` §17. The plan (§15) after the answers:
-  2. The app's stylesheet as a file with its hash in its name, rather than inline in every page
-     (question 9).
-  3. Phase 2: kept layouts, the query changed in place (`use_search_params!`), `<A>`, `<Navigate>`
-     and GET forms.
-  4. `use_before_leave!` (Solid Router's `useBeforeLeave`, phase 3 left it): a leave handler an
-     unsaved form registers, given an event it can stop and retry later, and `beforeunload` for a
-     load: a hosted call and its event's type.
-
-  D-039 gave route views getters, so question 4 (keep a page across a change of its params) no
-  longer costs a change to every page, whichever way it is answered.
 - **packages/markdown:** open questions 1, 2, 4 and 5 in its `PROPOSALS.md`:
   - trusted HTML;
   - `<Markdown>` server-only by default;
@@ -45,6 +33,9 @@ When an item lands, delete its line here in the same commit.
 
 ## Framework work, decided but not built
 
+- **`use_before_leave!`** (D-040; Solid Router's `useBeforeLeave`, which phases 1 to 3 left): a
+  leave handler an unsaved form registers, given an event it can stop and retry later, and
+  `beforeunload` for a load: a hosted call and its event's type.
 - **The rest of Solid 2.0 and Solid Router's actions:** see `web/README.md`, "Not yet".
 - **D-052's dev warning has blind spots:** a reactive read inside a helper call that takes
   arguments, and one at the top of a `<For>` row or a function child, aren't marked, so they don't
@@ -87,6 +78,11 @@ When an item lands, delete its line here in the same commit.
   - `try-json-codec`: the builtin `Try` has no JSON encoder or parser, though Builtin.roc declares
     them derived (an app's own `[Ok(ok), Err(err)]` nominal type has both): a tag union stands in for
     a `Try` across the wire (D-054).
+  - `huge-frame-opt-speed`: `--opt=speed` inlines every closure of a lambda set into one function,
+    whose stack frame grows with the program; the docs site's server, with D-040's route levels,
+    passed the 8 MiB a render has (12.4 MB), so it is built `--specialize=no`. Any large app built
+    `--opt=speed` can meet it; the cure is the compiler's (shared stack slots for a switch's cases,
+    or closure bodies kept out of line past a size).
 - **Not reduced yet:** a rigid `..others` beside an app's own error tag in one body doesn't
   type-check (examples/uptime names `JobErr` instead).
 - **Fixes prepared on the fork wait for the user to open them as PRs** (boxy, `List.map` reuse).

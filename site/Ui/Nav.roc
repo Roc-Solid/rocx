@@ -99,6 +99,28 @@ Nav := [].{
 			rocx_docs
 		}
 	}
+
+	## Whether a path is a dev build's story (`/__rocx/stories/…`): the component, and nothing around it.
+	is_story : Str -> Bool
+	is_story = |path| path.starts_with("/__rocx/stories/")
+
+	## Whether a path is in the front page's frame: the front page (Roc Solid's, in no part), or a story.
+	is_landing : Str -> Bool
+	is_landing = |path| path == Paths.root or Nav.is_story(path)
+
+	## The part a path is in, as the bar at the top marks it: none on the front page.
+	current_of : Str -> Str
+	current_of = |path| if (Nav.is_landing(path)) "" else Nav.section_of(path).name
+
+	## The pages before and after a path's, in its part. A page it doesn't list (the 404) has neither.
+	neighbours : Str -> { previous : Try(Page, [OutOfBounds]), next : Try(Page, [OutOfBounds]) }
+	neighbours = |path| {
+		pages = Nav.section_of(path).pages
+		match pages.find_first_index(|page| page.path == path) {
+			Ok(index) => { previous: if (index == 0) Err(OutOfBounds) else pages.get(index - 1), next: pages.get(index + 1) }
+			Err(_) => { previous: Err(OutOfBounds), next: Err(OutOfBounds) }
+		}
+	}
 }
 
 expect Nav.section_of(Paths.platform_database).name == "Platform"
@@ -112,3 +134,7 @@ expect Nav.section_of(Paths.syntax).name == "rocx"
 expect Nav.section_of(Paths.rocx).name == "rocx"
 expect Nav.section_of("/platformer").name == "rocx"
 expect Nav.section_of("/ecosystems").name == "rocx"
+expect Nav.is_landing(Paths.root) and Nav.is_landing("/__rocx/stories/x") and !Nav.is_landing(Paths.syntax)
+expect Nav.current_of(Paths.platform_database) == "Platform" and Nav.current_of(Paths.root) == ""
+expect Nav.neighbours(Paths.rocx).previous == Err(OutOfBounds)
+expect Nav.neighbours("/nowhere").next == Err(OutOfBounds)

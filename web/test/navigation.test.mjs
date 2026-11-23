@@ -56,7 +56,7 @@ const said = (word) => ({ status: 200, body: JSON.stringify(`Said: ${word}`) });
 
 /** The answers the server's reads got as it rendered the pages: `renderToString` answers each GET
  * from them, and records those a page asked for in its document. */
-const ANSWERS = ["home", "a", ...Array.from({ length: 10 }, (_, n) => String(n))].map((word) => [`GET /api/say/${word}`, "", JSON.stringify(said(word))]);
+const ANSWERS = ["home", "a", ...Array.from({ length: 10 }, (_, n) => String(n)), "books", "games", "color-none", "color-red", "color-blue"].map((word) => [`GET /api/say/${word}`, "", JSON.stringify(said(word))]);
 
 /** A page's markup with its URLs under `base`, as the static build writes it (site/build.mjs's `underBase`). */
 const underBase = (html, base) => (base === "/" ? html : html.replace(/(\s(?:href|src|action)=")\/(?!\/)/g, `$1${base}`));
@@ -743,6 +743,152 @@ test("View Transitions: a navigation is one only when the app asks (<html data-r
 		assert.equal(await go(".to-home", "document.querySelector('.home h1')"), 2);
 		assert.deepEqual(tab.errors, []);
 		assert.deepEqual(tab.console, []);
+		await tab.close();
+	} finally {
+		await site.close();
+	}
+});
+
+// ---- Phase 2: kept levels, the query in place, <A>, <Navigate>, GET forms ----
+
+/** What the page is made of, by identity: the shop's layout and the item page's article, as they
+ * are now (a level kept is the same element; one made anew is another). */
+const MARK = "window.levels = { shop: document.querySelector('.shop'), item: document.querySelector('.item-page') }";
+
+test("kept levels (D-040, phase 2): a layout below the root is kept while its key (its file, its own params) is the same, its signal, a field's text and its region with it, and made anew when it changes; a page is made anew when its params change; <A>'s active state follows; the page as a load renders it", { skip }, async () => {
+	const site = await navSite();
+	try {
+		const tab = await open(site, "/shop/books/1");
+		await tab.click(".shop-count");
+		await tab.click(".item-count");
+		await tab.wait("document.querySelector('.shop-count').textContent === 'Shop clicks 1' && document.querySelector('.item-count').textContent === 'Item clicks 1'");
+		await tab.eval(`document.querySelector('.shop-input').value = 'kept text'; ${MARK}`);
+		const active = "[...document.querySelectorAll('.shop-nav a')].map((a) => [a.className.replace(/rx-\\w+/, '').trim(), a.getAttribute('aria-current')])";
+		assert.deepEqual(await tab.eval(active), [["shop-all", null], ["shop-one active", "page"], ["shop-two", null], ["shop-games", null]], "<A>: aria-current and its class at its path; `end` only there");
+		site.asked.length = 0;
+		await tab.click(".shop-two");
+		await tab.wait("location.pathname === '/shop/books/2' && document.querySelector('.item-page h1')?.textContent === 'Item 2 of books'");
+		assert.equal(await kept(tab), true);
+		assert.deepEqual(site.documents(), ["navigate /shop/books/2"]);
+		assert.deepEqual(
+			await tab.eval("[window.levels.shop === document.querySelector('.shop'), window.levels.item === document.querySelector('.item-page'), document.querySelector('.shop-count').textContent, document.querySelector('.shop-input').value, document.querySelector('.item-count').textContent]"),
+			[true, false, "Shop clicks 1", "kept text", "Item clicks 0"],
+			"the shop's layout kept, its signal and the field's text with it; the page, with new params, made anew",
+		);
+		assert.deepEqual(await tab.eval(active), [["shop-all", null], ["shop-one", null], ["shop-two lit", "page"], ["shop-games", null]], "<A>'s active state follows the navigation, `active_class` its own");
+		assert.deepEqual(await tab.eval("[document.querySelector('.shop-note').textContent, document.querySelector('.note').textContent, document.title]"), ["The shop's note, for books", "The layout's note, for An item in a shop", "An item in a shop · Nav"], "a kept level's regions are the document's; the root layout's title follows the page's meta");
+		const navigated = await tab.eval(SNAPSHOT);
+		const loaded = await browser.page();
+		await loaded.beforeEachDocument(HEARD);
+		await loaded.goto(`${site.url}/shop/books/2`);
+		await loaded.wait("window.ready", 5000);
+		// The layout's counter is its own, kept (1), where a load starts it at 0.
+		const fresh = (html) => html.replace("Shop clicks 1", "Shop clicks 0");
+		assert.equal(fresh(navigated), await loaded.eval(SNAPSHOT), "with its layouts kept, the page a load renders, byte for byte outside the host's elements (but for the kept layout's own state)");
+		await loaded.close();
+		// Another shop: the layout's own param changes, so it is made anew, its region the new one's.
+		await tab.eval(MARK);
+		await tab.click(".shop-games");
+		await tab.wait("location.pathname === '/shop/games/1' && document.querySelector('.shop').dataset.cat === 'games'");
+		assert.deepEqual(
+			await tab.eval("[window.levels.shop === document.querySelector('.shop'), document.querySelector('.shop-count').textContent, document.querySelector('.shop-input').value, document.querySelector('.shop-note').textContent]"),
+			[false, "Shop clicks 0", "", "The shop's note, for games"],
+		);
+		await tab.click(".shop-all");
+		await tab.wait("location.pathname === '/shop/games' && document.querySelector('.front h1')?.textContent === 'All of games'");
+		assert.deepEqual(await tab.eval(active), [["shop-all active", "page"], ["shop-one", null], ["shop-two", null], ["shop-games", null]], "`end`: at its path itself");
+		assert.deepEqual(tab.errors, []);
+		assert.deepEqual(tab.console.filter((entry) => entry.type === "warning" || entry.type === "error"), []);
+		await tab.close();
+	} finally {
+		await site.close();
+	}
+});
+
+test("the query in place (§7): set! merges into it and \"\" takes a name out, an entry pushed (set_with!'s replace replaces it); no document fetched, the page and its layouts kept, only what read the query reads again; back and forward between such entries in place too", { skip }, async () => {
+	const site = await navSite();
+	try {
+		const tab = await open(site, "/shop/books/1?size=s");
+		await tab.click(".item-count");
+		await tab.wait("document.querySelector('.item-count').textContent === 'Item clicks 1'");
+		await tab.eval(`window.entries = history.length; ${MARK}`);
+		const page = "[location.search, document.querySelector('.color').textContent, document.querySelector('.query').textContent, document.querySelector('.color-said').textContent, document.querySelector('.item-count').textContent, window.levels.item === document.querySelector('.item-page'), window.levels.shop === document.querySelector('.shop')]";
+		const reads = () => site.asked.map(({ url }) => url).filter((url) => !url.includes("/rocx/live"));
+		site.asked.length = 0;
+		await tab.click(".to-red");
+		await tab.wait("document.querySelector('.color-said').textContent === 'Said: color-red'");
+		assert.deepEqual(await tab.eval(page), ["?size=s&color=red", "red", "size=s&color=red", "Said: color-red", "Item clicks 1", true, true], "merged, the page kept");
+		assert.deepEqual(reads(), ["/api/say/color-red"], "no document: only the read whose URL changed");
+		assert.equal(await tab.eval("history.length - window.entries"), 1, "an entry pushed");
+		await tab.click(".to-size");
+		await tab.wait("location.search === '?size=m&color=red'");
+		assert.equal(await tab.eval("history.length - window.entries"), 1, "set_with!'s replace: the entry replaced");
+		await tab.click(".to-plain");
+		await tab.wait("document.querySelector('.color').textContent === 'none' && document.querySelector('.color-said').textContent === 'Said: color-none'");
+		assert.deepEqual(await tab.eval(page), ["?size=m", "none", "size=m", "Said: color-none", "Item clicks 1", true, true], "\"\" takes the name out");
+		await tab.eval("history.back()");
+		await tab.wait("location.search === '?size=m&color=red' && document.querySelector('.color').textContent === 'red'");
+		assert.deepEqual((await tab.eval(page)).slice(4), ["Item clicks 1", true, true], "back: in place too");
+		assert.deepEqual(site.documents(), [], "no document asked all along");
+		assert.equal(await kept(tab), true);
+		// A link to another query of the page, likewise (a plain <a href="?…">).
+		await tab.eval("const link = document.createElement('a'); link.className = 'to-green'; link.textContent = 'Green'; link.href = '?color=green'; document.querySelector('.item-page').append(link)");
+		await tab.click(".to-green");
+		await tab.wait("location.search === '?color=green' && document.querySelector('.color').textContent === 'green'");
+		assert.deepEqual(site.documents(), []);
+		assert.deepEqual(tab.errors, []);
+		await tab.close();
+	} finally {
+		await site.close();
+	}
+});
+
+test("a layout that read where it is once, in its body, is made anew by each navigation (§4.3), and the runtime says which; a query change under it fetches the document", { skip }, async () => {
+	const site = await navSite();
+	try {
+		const tab = await open(site, "/once/1");
+		await tab.click(".once-count");
+		await tab.wait("document.querySelector('.once-count').textContent === 'Once clicks 1'");
+		await tab.eval("window.remade = []; window.ready.runtime.observer = { remade: ({ level }) => window.remade.push(level) }");
+		site.asked.length = 0;
+		await tab.click(".once-next");
+		await tab.wait("location.pathname === '/once/2' && document.querySelector('.once-n').textContent === 'Once 2'");
+		assert.equal(await kept(tab), true);
+		assert.deepEqual(await tab.eval("[document.querySelector('.once-path').textContent, document.querySelector('.once-count').textContent, window.remade]"), ["/once/2", "Once clicks 0", ["routes/once/+layout.rocx"]], "made anew, so what it shows is where it is now");
+		assert.deepEqual(site.documents(), ["navigate /once/2"]);
+		site.asked.length = 0;
+		await tab.eval("window.ready.runtime.navigate('?x=1')");
+		await tab.wait("location.search === '?x=1' && window.remade.length === 2");
+		assert.deepEqual(site.documents(), ["navigate /once/2?x=1"], "a level to make anew: the page's document fetched for it");
+		assert.deepEqual(tab.errors, []);
+		await tab.close();
+	} finally {
+		await site.close();
+	}
+});
+
+test("<Navigate> sends the visitor elsewhere as the page renders: in the browser, a navigation that replaces its entry; a GET form navigates in place to its URL with its fields as the query", { skip }, async () => {
+	const site = await navSite();
+	try {
+		const tab = await open(site, "/a");
+		await tab.eval("window.entries = history.length");
+		site.asked.length = 0;
+		await tab.eval("window.ready.runtime.navigate('/away')");
+		await tab.wait("location.pathname === '/a' && window.heard.includes('navigated /away') && window.heard.filter((each) => each === 'navigated /a').length === 1", 5000);
+		assert.equal(await kept(tab), true);
+		assert.deepEqual(site.documents(), ["navigate /away", "navigate /a"]);
+		assert.equal(await tab.eval("history.length - window.entries"), 1, "/away's entry replaced by A's");
+		await tab.eval("history.back()");
+		await tab.wait("location.pathname === '/' || location.pathname === '/a'");
+		// A GET form.
+		const form = await open(site, "/shop/books/1");
+		site.asked.length = 0;
+		await form.click(".find-go");
+		await form.wait("location.pathname === '/shop/books/2' && location.search === '?color=blue' && document.querySelector('.color').textContent === 'blue'");
+		assert.equal(await kept(form), true, "in place");
+		assert.deepEqual(site.documents(), ["navigate /shop/books/2?color=blue"]);
+		assert.deepEqual(form.errors, []);
+		await form.close();
 		await tab.close();
 	} finally {
 		await site.close();

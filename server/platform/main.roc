@@ -44,7 +44,7 @@
 ## - A page's components are Solid-style (web/runtime.js hydrates the document in the browser). A
 ##   GET endpoint a component reads while the host renders the page (`Endpoint.get!`) is answered by
 ##   its route, in-process (`Host.fetch!`). The modules components are written with (`Html`, `Solid`,
-##   `Store`, `Show`, `Switch`, `Match`, `For`, `Loading`, `Errored`, `Context`, `Call`, `Router`, `HttpStatusCode`, `Transition`,
+##   `Store`, `Show`, `Switch`, `Match`, `For`, `Loading`, `Errored`, `Context`, `Call`, `Router`, `Search`, `A`, `HttpStatusCode`, `Transition`,
 ##   `Title`, `Browser`, `Submission`, `Submissions`), and HTTP's (`Server`, `Endpoint`,
 ##   `Channel`, `Middleware`, `Events`, `OpenApi`), are the browser's platform's (web/platform),
 ##   copied here by the build, so the same code compiles on both.
@@ -66,7 +66,7 @@ platform ""
 			routes : List({ method : Str, path : Str, file : Str }),
 		}
 	}
-	exposes [Actor, AesGcm, Blobs, Browser, Call, Channel, Context, Db, Endpoint, Env, Errored, Events, For, Html, Http, HttpResponse, HttpStatusCode, Kv, Live, Loading, Log, Match, Middleware, OpenApi, Plugin, Random, Repeat, Router, Server, Show, Solid, Store, Submission, Submissions, Switch, Tcp, Time, Title, Transition]
+	exposes [A, Actor, AesGcm, Blobs, Browser, Call, Channel, Context, Db, Endpoint, Env, Errored, Events, For, Html, Http, HttpResponse, HttpStatusCode, Kv, Live, Loading, Log, Match, Middleware, Navigate, OpenApi, Plugin, Random, Repeat, Router, Search, Server, Show, Solid, Store, Submission, Submissions, Switch, Tcp, Time, Title, Transition]
 	packages {}
 	provides {
 		"roc_actor": actor_for_host!,
@@ -179,6 +179,7 @@ platform ""
 		"roc_optimistic_set": Host.optimistic_set!,
 		"roc_problem": Host.problem!,
 		"roc_read_at": Host.read_at!,
+		"roc_redirect_page": Host.redirect_page!,
 		"roc_refresh": Host.refresh!,
 		"roc_request": Host.request!,
 		"roc_resync": Host.resync!,
@@ -258,6 +259,9 @@ import Submissions
 import Tcp
 import Time
 import Title
+import A
+import Search
+import Navigate
 import Transition
 
 ## A request as the host hands it over, everything it knows of it in one record: its method, its

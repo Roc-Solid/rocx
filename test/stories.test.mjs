@@ -115,8 +115,9 @@ test("stories: a dev build's Routes answers them: the catalog, and each story, t
 	assert.doesNotMatch(routesModule(table, { sources }), /__rocx\/stories|Stories|story/);
 	const root = rootModule(table, { sources, stories: [story] });
 	assert.match(root, /^import \.\.\/Counter as StoryCounter$/m);
-	assert.match(root, /if \(path\.starts_with\("\/__rocx\/stories\/"\)\) \{\n\t\t\tid = path\.drop_prefix\("\/__rocx\/stories\/"\)\n\t\t\tparams = \{\}\n\t\t\tif \(id == "Counter\/at-three"\) \{\n\t\t\t\tHtml\.component\(\|\| RootLayout\.view!\(\{ params: \|\| params, meta: \|\| RootPage\.meta, children: \[Root\.guarded!\(\[Html\.component\(\|\| StoryCounter\.story_at_three!\(\{\}\)\)\]\)\] \}\)\)/);
-	assert.match(root, /\} else \{\n\t\t\t\tHtml\.component\(\|\| RootLayout\.view!\(\{ params: \|\| params, meta: \|\| RootPage\.meta, children: \[Root\.failed\(404, "no story at \$\{path\}"\)\] \}\)\)/);
+	assert.match(root, /\troute = \|path\| \{\n\t\tsegments = [^\n]*\n\t\tif \(path\.starts_with\("\/__rocx\/stories\/"\)\) \{\n\t\t\tStory\(path\.drop_prefix\("\/__rocx\/stories\/"\)\)\n/, "a story's route, matched before the pages'");
+	assert.match(root, /\t\t\tStory\(id\) => "story \$\{id\}"\n/, "a level of its own, in the root layout");
+	assert.match(root, /\t\t\tStory\(id\) => if \(id == "Counter\/at-three"\) Html\.component\(\|\| StoryCounter\.story_at_three!\(\{\}\)\) else Root\.failed\(404, "no story at \/__rocx\/stories\/\$\{id\}"\)\n/);
 	assert.doesNotMatch(rootModule(table, { sources }), /__rocx/, "without stories, nothing");
 });
 

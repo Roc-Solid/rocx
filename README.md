@@ -295,6 +295,9 @@ In a component only:
 | `submission = use_submission!(Api.post_join({}))` | the latest submission of a form to an endpoint: `pending!()`, `input!()`, `field!(name)`, `result!()`, `error!()` (`import pf.Router exposing [use_submission!]`) |
 | `move! = use_action!(Api.post_move({}))`, `moves = use_submissions!(Api.post_move({}))` | an action: `move!(arg)`, in a handler, sends the endpoint without a form or waiting; `moves` is every submission to it (`all!()`, `pending!()`, `pending_inputs!()`, `clear!(id)`, `retry!(id)`), for an optimistic value: the server's data with `pending_inputs!()` applied |
 | `(cards!, set_cards!) = create_optimistic!(\|\| Endpoint.get!(board))` | Solid 2.0's optimistic value: the server's until a handler writes it, the write held until the submissions that handler sent are done |
+| `search = use_search_params!({})`, `search.get!("days") ?? "7"`, `search.set!([("days", "30")])` | the page's query (Solid Router's `useSearchParams`, D-040): `get!` and `all!` read it, tracked; `set!` merges into it from a handler (a value of `""` takes a name out) and navigates in place, the page kept, only what read the query reading again (`import pf.Router exposing [use_search_params!]`) |
+| `<A href={Paths.lists_id({ id })} active_class="current">…</A>`, `<A href={Paths.root} end>` | a link with Solid Router's active state: `aria-current="page"` and the class (`active` by default) while the location is at its path (`end`) or under it, following navigations; `replace`, `noscroll`, `preload={Bool.False}` (`import pf.A`). A plain `<a>` navigates in place too |
+| `<Show when!={signed_in!()} fallback={<Navigate href={Paths.sign_in} />}>` | sends the visitor elsewhere as the page renders: the server answers a 303 to `href`, the browser navigates there replacing the entry (`import pf.Navigate`). A handler calls `Router.navigate!` |
 
 Whitespace in text follows HTML, as Svelte has it, not JSX: each run of spaces, tabs and line breaks
 is one space. Whitespace with a line break next to an element's own opening or closing tag goes, and a
@@ -362,12 +365,27 @@ writes more for it:
 
 - `Generated/Root.roc`, in both copies: `Root.view!` tells the runtime the app (`Router.app!`: the
   build's id, `Root.build`, a hash of what the app is built from, which the server writes on each
-  page's bootstrap as `data-build`; and the route table, `Root.routes`), reads `Router.location!`,
-  matches it as `Routes` does, and renders the page in its layouts. The root layout is the document (with none, a
-  default one). Inside it, around the rest, an `<Errored>`: a failure nothing else catches is the
-  error page with `<HttpStatusCode code={500}/>`, or the status a read was refused with, when it is
-  a 4xx (`Endpoint.get!` of a note that isn't there is the page's 404: `Errored.status_of`). A path
-  no page has is the error page with `<HttpStatusCode code={404}/>`.
+  page's bootstrap as `data-build`; and the route table, `Root.routes`), matches `Router.location!`
+  as `Routes` does, in a memo (`Root.route`: a tag for each page, with its params), and renders the
+  page in its layouts. The root layout is the document (with none, a default one), given the page's `meta`.
+  Below it, each other layout above the page, then the page, is a level: a keyed part (`Html.switched`,
+  as a keyed `<Show>` is), keyed by its file and its own params (`routes/lists/[id]/+page.rocx id=7`),
+  so a navigation in place keeps every level whose key is the same, its state with it, and makes the
+  others anew (D-040). Inside the root layout, around the levels, an `<Errored>`: a failure nothing
+  else catches is the error page with `<HttpStatusCode code={500}/>`, or the status a read was
+  refused with, when it is a 4xx (`Endpoint.get!` of a note that isn't there is the page's 404:
+  `Errored.status_of`). A path no page has is the error page with `<HttpStatusCode code={404}/>`.
+- A layout is given its own params, the ones its directory names (`routes/[lang]/+layout.rocx`'s
+  `lang`; the root layout's are `{}`), not the page's, and the page's `meta`, a getter that follows
+  the page while the layout is kept. Every page under a layout that takes `meta` gives it one type:
+  rocx build says so at a page whose `meta` has other fields, or none (and at an app whose root
+  layout takes it with no `+error.rocx` to give one for a path no page has).
+- A layout is kept unless something it read once, in its body, changed: the runtime sees a read of
+  `Router.location!` in a component's body (once, untracked) and notes it on the level it is in,
+  which a navigation then makes anew, so it never shows what the last page knew (a dev build says so
+  in the console). Read where you are is (in markup, a memo, `<A>`) and the layout is kept, a
+  sidebar's scroll, an open menu and its signals with it. A change of the query alone keeps the
+  page too (`use_search_params!`).
 - In `Routes`, a component page's GET runs its route file's middleware, then answers `Root`'s page
   (`Routes.page(200)`); a path nothing has is `Routes.page(404)` for a browser, text otherwise.
 - With `--client <out>`, `<out>/main.roc`, the browser's app (`Root.view!`), and

@@ -1,0 +1,5 @@
+import pf.Html
+
+## A post's part of the app, inside the document: its own param, the post's slug (a layout is
+## given the params its directory names, D-040).
+view! = |{ children, params, .. }| <div class="posts" data-slug={params.slug}>{...children}</div>

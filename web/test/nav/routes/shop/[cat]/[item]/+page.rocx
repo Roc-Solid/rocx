@@ -1,0 +1,30 @@
+import pf.Html
+import pf.Router exposing [use_search_params!]
+import pf.Solid exposing [create_signal!]
+import ../../../../Api
+
+meta = { title: "An item in a shop", look: "store" }
+
+## An item: a counter of its own (made anew with the page, kept while only the query changes), the
+## query's `color` read where it is used (`use_search_params!`, D-040), what the server says of
+## that color (read again, alone, when it changes), buttons that change the query in place, and a
+## GET form that navigates.
+view! = |{ params }| {
+	(count!, set_count!) = create_signal!(0.U64)
+	search = use_search_params!({})
+	color! = || search.get!("color") ?? "none"
+	<article class="item-page">
+		<h1>Item {params.item} of {params.cat}</h1>
+		<button class="item-count" on:click={|| set_count!(count!() + 1)}>Item clicks {count!().to_str()}</button>
+		<p class="color">{color!()}</p>
+		<p class="query">{Str.join_with(search.all!().map(|pair| "${pair.0}=${pair.1}"), "&")}</p>
+		<p class="color-said">{Api.say!("color-${color!()}")}</p>
+		<button class="to-red" on:click={|| search.set!([("color", "red")])}>Red</button>
+		<button class="to-plain" on:click={|| search.set!([("color", "")])}>No color</button>
+		<button class="to-size" on:click={|| search.set_with!([("size", "m")], { replace: Bool.True, scroll: Bool.False })}>Size m, replacing</button>
+		<form class="find" action={"/shop/${params.cat}/2"}>
+			<input name="color" value="blue" />
+			<button class="find-go">Find</button>
+		</form>
+	</article>
+}

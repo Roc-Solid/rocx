@@ -375,7 +375,12 @@ async function buildUnlocked({ log, compare, dev }) {
 	mkdirSync(out, { recursive: true });
 	wasm(join(client, "main.roc"), appWasm, dev ? ["--opt=dev"] : CLIENT_OPT);
 	buildHost();
-	buildApp(join(site, "main.roc"), server, { opt: dev ? "dev" : (process.env.ROC_OPT ?? "speed") });
+	// Boxy lowering (`--specialize=no`) for the optimized server: specialized, every page's code is
+	// inlined into one function of Html.serialize!'s whose frame, with D-040's route levels, outgrows
+	// the 8 MiB stack a render runs on (test/compiler-bugs/huge-frame-opt-speed). Boxy renders the
+	// site's pages as fast (2.8 ms a page either way, measured), its largest frame 28 KB, and builds
+	// in a fraction of the time.
+	buildApp(join(site, "main.roc"), server, { opt: dev ? "dev" : (process.env.ROC_OPT ?? "speed"), specialize: dev });
 	const facts = dev ? lastFacts() : await measure({ compare });
 	writeIfChanged(context, facts);
 	log(`rocx site: built in ${((performance.now() - started) / 1000).toFixed(2)} s${dev ? " (dev backend; numbers from the last `just site`)" : ""}`);

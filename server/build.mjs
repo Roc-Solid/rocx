@@ -153,7 +153,7 @@ function copyIfChanged(from, to) {
  * platform, so the same code compiles on both. The ones components are written with (`Router`,
  * `Submission`, `Title` and `HttpStatusCode` among them), and HTTP's (`Server`, `Endpoint`, `FormBody`,
  * `Channel`, `Middleware`, `Events`, `OpenApi`). */
-export const SHARED_MODULES = ["Html", "Solid", "Store", "Show", "Switch", "Match", "For", "Repeat", "Loading", "Errored", "Call", "Server", "Context", "Endpoint", "FormBody", "Middleware", "Events", "OpenApi", "Router", "HttpStatusCode", "Transition", "Browser", "Submission", "Submissions", "Title", "Channel"];
+export const SHARED_MODULES = ["Html", "Solid", "Store", "Show", "Switch", "Match", "For", "Repeat", "Loading", "Errored", "Call", "Server", "Context", "Endpoint", "FormBody", "Middleware", "Events", "OpenApi", "Router", "HttpStatusCode", "Transition", "Browser", "Submission", "Submissions", "Title", "Channel", "A", "Search"];
 
 /** Copies the shared modules into the server platform where they differ. */
 export function syncShared() {
@@ -244,10 +244,12 @@ export async function start(executable, flags = []) {
 	};
 }
 
-/** `app` on the server platform, built into the executable `output`. */
-export function buildApp(app, output, { target = nativeTarget(), opt = "dev" } = {}) {
+/** `app` on the server platform, built into the executable `output`. `specialize: false` builds it
+ * with `--specialize=no` (boxy lowering: closures called through a pointer, not specialized and
+ * inlined per lambda set), which the docs site's server needs at --opt=speed (D-040). */
+export function buildApp(app, output, { target = nativeTarget(), opt = "dev", specialize = true } = {}) {
 	mkdirSync(dirname(output), { recursive: true });
-	run(roc(), ["build", `--target=${target}`, `--opt=${opt}`, `--output=${output}`, app]);
+	run(roc(), ["build", `--target=${target}`, `--opt=${opt}`, ...(specialize ? [] : ["--specialize=no"]), `--output=${output}`, app]);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

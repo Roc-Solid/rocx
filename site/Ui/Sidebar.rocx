@@ -1,9 +1,11 @@
 import pf.Html
 
 ## A part of the docs and its pages, down the side: each page's name and what it is about, the one at
-## `path` marked. It stays in view as the page scrolls; on a phone, it is a row above the page.
+## `path` marked. It stays in view as the page scrolls; on a phone, it is a row above the page. Its
+## props are getters (D-039), read where they are used, so a navigation within a part keeps it, its
+## scroll with it, and only moves the mark (D-040).
 Sidebar := [].{
-	view = |{ title, pages, path }|
+	view! = |{ title, pages, path }|
 		<nav class="sidebar" aria-label={"${title}: its pages"}>
 			<p class="title">{title}</p>
 			<ul>

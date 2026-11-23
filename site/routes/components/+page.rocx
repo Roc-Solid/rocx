@@ -329,7 +329,13 @@ view! = |_|
 				(<a href={"${Paths.routing}#navigating"}>navigating</a>), and a handler that waits for the server and
 				runs again navigates once. Rendering mustn't navigate: called while computing, it fails.
 				<code>{"Router.is_routing!({})"}</code> says one is on its way, and <code>{"Router.location!({})"}</code>,
-				read in a hole or a memo, follows it.
+				read in a hole or a memo, follows it. Read once, in a component's body, it doesn't: the runtime
+				then makes the component's level (its layout, or its page) anew on each navigation, so it never
+				shows where it was. <code>{"search = use_search_params!({})"}</code> is the query, read with
+				<code>{"search.get!(\"days\")"}</code> and changed in place by a handler's
+				<code>{"search.set!([(\"days\", \"30\")])"}</code>; <code>{"<A href={…}>"}</code> is a link that
+				says whether the page is at its path (<code>aria-current</code>); and a component that has to send the
+				visitor elsewhere as it renders renders <code>{"<Navigate href={…} />"}</code>.
 			</p>
 			<p>
 				A handler can run later, too, on the browser's timers: <code>set_interval!(ms, tick!)</code> runs one
@@ -1003,6 +1009,8 @@ view! = |_|
 						<tr><td><code>{"onClick={(e) => { e.preventDefault(); go() }}"}</code></td><td><code>{"on:click.prevent={go!}"}</code></td></tr>
 						<tr><td><code>{"const navigate = useNavigate(); navigate(\"/blog/hello\", { replace: true })"}</code></td><td><code>{"navigate_with!(Paths.blog_slug({ slug: \"hello\" }), { replace: Bool.True, scroll: Bool.True })"}</code>, in a handler; <code>{"<a href>"}</code> navigates in place as Solid Router's does</td></tr>
 						<tr><td><code>useIsRouting()</code>, <code>useLocation()</code></td><td><code>{"Router.is_routing!({})"}</code>, <code>{"Router.location!({})"}</code>, tracked</td></tr>
+						<tr><td><code>{"const [params, set] = useSearchParams(); set({ days: 30 })"}</code></td><td><code>{"search = use_search_params!({})"}</code>, <code>{"search.set!([(\"days\", \"30\")])"}</code>, in a handler</td></tr>
+						<tr><td><code>{"<A href=\"/lists/7\" activeClass=\"current\" end>"}</code>, <code>{"<Navigate href=\"/login\" />"}</code></td><td><code>{"<A href={Paths.lists_id({ id })} active_class=\"current\" end>"}</code>, <code>{"<Navigate href={Paths.login} />"}</code></td></tr>
 						<tr><td><code>{"animate:flip"}</code>, <code>crossfade</code> (Svelte)</td><td><code>{"transition:move={Transition.glide}"}</code>, with <code>{"key={…}"}</code> across lists</td></tr>
 						<tr><td><code>{"<Heading text={user().name} />"}</code></td><td><code>{"<Heading text!={user!().name} />"}</code></td></tr>
 						<tr><td>a component that only renders its props</td><td>a pure one: <code>view</code>, no <code>!</code>, called where it is written</td></tr>

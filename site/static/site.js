@@ -64,6 +64,12 @@ document.addEventListener("rocx:ready", ({ detail: { runtime, ms } }) => {
 	awake(performance.now());
 });
 
+// A navigation in place keeps the layout (D-040), its footer with it: what it said of the last
+// page goes as the next comes, empty as the next page's document has it, until that page is said.
+document.addEventListener("rocx:navigate", () => {
+	for (const element of document.querySelectorAll('[data-stat="ready"]')) element.textContent = "";
+});
+
 // Another page, rendered in place: its demos watched, and how long it took said where the page says.
 document.addEventListener("rocx:navigated", ({ detail: { ms } }) => {
 	if (!started) return;

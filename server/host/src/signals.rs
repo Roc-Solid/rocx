@@ -1222,6 +1222,17 @@ pub extern "C" fn roc_navigate(to: RocStr, _replace: bool, _scroll: bool) {
     unsafe { to.decref(&roc::host()) };
 }
 
+/// A `<Navigate href>` rendered (D-040): the page answers with a 303 to `href` instead, as a
+/// redirect a read met while it rendered does (`Rendered::Redirect`, the first one the render met).
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_redirect_page(href: RocStr) {
+    let _host = crate::preempt::host();
+    let href = taken(href);
+    with(|render| {
+        render.redirect.get_or_insert(Redirect { status: 303, headers: format!("location: {href}") });
+    });
+}
+
 /// `Router.is_routing!`: on the server no navigation is on its way. A source in the browser, so a
 /// hole that reads it isn't static.
 #[unsafe(no_mangle)]

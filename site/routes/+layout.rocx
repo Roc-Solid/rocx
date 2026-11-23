@@ -1,5 +1,6 @@
 import pf.Html
 import pf.Router
+import pf.Store
 import ../Facts
 import ../Ui/Nav
 import ../Ui/Topbar
@@ -16,29 +17,25 @@ import ../Generated/Styles
 ## this part's pages, what is on this one, and the footer with what the build measured. `meta` is the
 ## page's (its title, description and contents); where it is, the location's (`Router.location!`);
 ## the facts the build measured, the server's (`Facts.facts!`). Each part is a component of the
-## site's design system (site/Ui), with its stories.
+## site's design system (site/Ui), with its stories. Where it is is read where it is used, each
+## part of it a selection of a store of the path (D-053), which tells its readers only when that
+## part changes: so a navigation keeps the layout (D-040), the sidebar is kept within a part, and
+## the bar, the pager and what is on the page are made again only when what they show changes.
 view! = |{ meta, children, .. }| {
-	path = Router.location!({}).path
 	facts = Facts.facts!({})
-	here = Nav.section_of(path)
+	at = Store.of(|| Router.location!({}).path)
 	# A story (a dev build's, at /__rocx/stories/…) is the component and nothing around it: no bar,
 	# no pager and no footer, in the front page's frame.
-	story = path.starts_with("/__rocx/stories/")
+	story! = || at.get!(Nav.is_story)
 	# The front page is Roc Solid's, in no part: no sidebar, and no part current in the bar.
-	landing = path == Paths.root or story
-	# Previous and next, in this part. A page it doesn't list (the 404) has neither.
-	(previous, next) =
-		match here.pages.find_first_index(|page| page.path == path) {
-			Ok(index) => (if (index == 0) Err(OutOfBounds) else here.pages.get(index - 1), here.pages.get(index + 1))
-			Err(_) => (Err(OutOfBounds), Err(OutOfBounds))
-		}
+	landing! = || at.get!(Nav.is_landing)
 	<>
 		<!doctype html>
 		<html lang="en">
 			<head>
 				<meta charset="utf-8" />
 				<meta name="viewport" content="width=device-width, initial-scale=1" />
-				<title>{if (landing) meta.title else "${meta.title} · Roc Solid"}</title>
+				<title>{if (landing!()) meta.title else "${meta.title} · Roc Solid"}</title>
 				<meta name="description" content={meta.description} />
 				<meta name="color-scheme" content="dark" />
 				<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -48,16 +45,16 @@ view! = |{ meta, children, .. }| {
 			</head>
 			<body>
 				<SkipLink />
-				{=if (story) Html.empty({}) else <Topbar sections={Nav.sections} current={if (landing) "" else here.name} landing={landing} />}
-				<Frame landing={landing}>
-					{=if (landing) Html.empty({}) else <Sidebar title={here.name} pages={here.pages} path={path} />}
+				{=if (story!()) Html.empty({}) else <Topbar sections={Nav.sections} current={at.get!(Nav.current_of)} landing={landing!()} />}
+				<Frame landing={landing!()}>
+					{=if (landing!()) Html.empty({}) else <Sidebar title={at.get!(|path| Nav.section_of(path).name)} pages={at.get!(|path| Nav.section_of(path).pages)} path={at.get!(|path| path)} />}
 					<main id="content">
 						{...children}
-						{=if (story) Html.empty({}) else <Pager previous={previous} next={next} />}
+						{=if (story!()) Html.empty({}) else <Pager previous={at.get!(Nav.neighbours).previous} next={at.get!(Nav.neighbours).next} />}
 					</main>
-					{=if (landing or meta.toc.is_empty()) Html.empty({}) else <Toc links={meta.toc} />}
+					{=if (landing!() or meta.toc.is_empty()) Html.empty({}) else <Toc links={meta.toc} />}
 				</Frame>
-				{=if (story) Html.empty({}) else <Footer facts={facts} />}
+				{=if (story!()) Html.empty({}) else <Footer facts={facts} />}
 			</body>
 		</html>
 	</>
