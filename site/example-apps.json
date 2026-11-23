@@ -4,9 +4,9 @@
 	"roc": "rocx-fork-9fcf362c0c",
 	"machine": "Apple M5, 10 cores",
 	"runtime": {
-		"bytes": 203790,
-		"gzip": 59794,
-		"brotli": 50068
+		"bytes": 241117,
+		"gzip": 71016,
+		"brotli": 59131
 	},
 	"examples": [
 		{
@@ -50,10 +50,10 @@
 			"name": "echo",
 			"title": "echo",
 			"pages": 0,
-			"endpoints": 1,
-			"lines": 16,
+			"endpoints": 2,
+			"lines": 44,
 			"expects": 0,
-			"tests": 0,
+			"tests": 3,
 			"packages": [],
 			"database": "",
 			"wasm": null
@@ -220,7 +220,7 @@
 	"bench": {
 		"app": "echo",
 		"measured": "2026-11-23",
-		"commit": "1eb5d7c",
+		"commit": "fe4651f",
 		"machine": "Apple M5, 10 cores",
 		"hardware": {
 			"model": "MacBook Pro (Mac17,2)",
@@ -232,39 +232,87 @@
 			"arch": "arm64",
 			"power": "mains"
 		},
-		"load": "3.7 → 9.5",
+		"load": "2.6 → 12.7",
 		"opt": "speed",
 		"seconds": 10,
-		"body": "\"hello\"",
-		"roc_us": 10,
-		"levels": [
+		"variants": [
 			{
-				"connections": 1,
-				"rps": 28318,
-				"p50_us": 33,
-				"p99_us": 55,
-				"errors": 0
+				"name": "simple",
+				"path": "/echo",
+				"body": "\"hello\"",
+				"shown": "\"hello\"",
+				"bytes": 7,
+				"roc_us": 10,
+				"load": "2.6 → 10.2",
+				"levels": [
+					{
+						"connections": 1,
+						"rps": 28160,
+						"p50_us": 34,
+						"p99_us": 54,
+						"errors": 0
+					},
+					{
+						"connections": 16,
+						"rps": 105430,
+						"p50_us": 145,
+						"p99_us": 269,
+						"errors": 0
+					},
+					{
+						"connections": 64,
+						"rps": 123732,
+						"p50_us": 492,
+						"p99_us": 976,
+						"errors": 0
+					},
+					{
+						"connections": 256,
+						"rps": 129134,
+						"p50_us": 1923,
+						"p99_us": 3809,
+						"errors": 73
+					}
+				]
 			},
 			{
-				"connections": 16,
-				"rps": 106646,
-				"p50_us": 144,
-				"p99_us": 255,
-				"errors": 0
-			},
-			{
-				"connections": 64,
-				"rps": 124456,
-				"p50_us": 498,
-				"p99_us": 866,
-				"errors": 0
-			},
-			{
-				"connections": 256,
-				"rps": 128915,
-				"p50_us": 1962,
-				"p99_us": 2924,
-				"errors": 0
+				"name": "json",
+				"path": "/echo/json",
+				"body": "{\"id\":\"order-1042\",\"placed_at\":\"2026-11-23T19:30:00Z\",\"paid\":true,\"customer\":{\"id\":381,\"name\":\"Jordan Rivers\",\"email\":\"jordan@example.com\",\"address\":{\"street\":\"12 Harbour Lane\",\"city\":\"Bristol\",\"postcode\":\"BS1 4QA\",\"country\":\"GB\"}},\"items\":[{\"sku\":\"MUG-BLUE\",\"name\":\"Mug, blue\",\"quantity\":2,\"price_cents\":1250,\"tags\":[\"kitchen\",\"gift\"]},{\"sku\":\"TEA-EARL-250\",\"name\":\"Earl Grey, 250 g\",\"quantity\":1,\"price_cents\":899,\"tags\":[\"tea\",\"loose leaf\"]},{\"sku\":\"CARD-BDAY\",\"name\":\"Birthday card\",\"quantity\":3,\"price_cents\":350,\"tags\":[]},{\"sku\":\"SPOON-WOOD\",\"name\":\"Wooden spoon\",\"quantity\":1,\"price_cents\":475,\"tags\":[\"kitchen\"]}],\"shipping\":{\"method\":\"standard\",\"price_cents\":495},\"notes\":\"Leave it with the neighbour at number 14\"}",
+				"shown": "{\n  \"id\": \"order-1042\",\n  \"placed_at\": \"2026-11-23T19:30:00Z\",\n  \"paid\": true,\n  \"customer\": {\n    \"id\": 381,\n    \"name\": \"Jordan Rivers\",\n    \"email\": \"jordan@example.com\",\n    \"address\": {\n      \"street\": \"12 Harbour Lane\",\n      \"city\": \"Bristol\",\n      \"postcode\": \"BS1 4QA\",\n      \"country\": \"GB\"\n    }\n  },\n  \"items\": [\n    {\n      \"sku\": \"MUG-BLUE\",\n      \"name\": \"Mug, blue\",\n      \"quantity\": 2,\n      \"price_cents\": 1250,\n      \"tags\": [\n        \"kitchen\",\n        \"gift\"\n      ]\n    },\n    {\n      \"sku\": \"TEA-EARL-250\",\n      \"name\": \"Earl Grey, 250 g\",\n      \"quantity\": 1,\n      \"price_cents\": 899,\n      \"tags\": [\n        \"tea\",\n        \"loose leaf\"\n      ]\n    },\n    {\n      \"sku\": \"CARD-BDAY\",\n      \"name\": \"Birthday card\",\n      \"quantity\": 3,\n      \"price_cents\": 350,\n      \"tags\": []\n    },\n    {\n      \"sku\": \"SPOON-WOOD\",\n      \"name\": \"Wooden spoon\",\n      \"quantity\": 1,\n      \"price_cents\": 475,\n      \"tags\": [\n        \"kitchen\"\n      ]\n    }\n  ],\n  \"shipping\": {\n    \"method\": \"standard\",\n    \"price_cents\": 495\n  },\n  \"notes\": \"Leave it with the neighbour at number 14\"\n}",
+				"bytes": 725,
+				"roc_us": 20,
+				"load": "10.2 → 13.7",
+				"levels": [
+					{
+						"connections": 1,
+						"rps": 23223,
+						"p50_us": 41,
+						"p99_us": 72,
+						"errors": 0
+					},
+					{
+						"connections": 16,
+						"rps": 94949,
+						"p50_us": 162,
+						"p99_us": 295,
+						"errors": 0
+					},
+					{
+						"connections": 64,
+						"rps": 115086,
+						"p50_us": 532,
+						"p99_us": 1035,
+						"errors": 0
+					},
+					{
+						"connections": 256,
+						"rps": 125211,
+						"p50_us": 1927,
+						"p99_us": 4424,
+						"errors": 0
+					}
+				]
 			}
 		]
 	}
