@@ -3441,7 +3441,8 @@ const probe = (member) =>
 	'<!--errored:failed--><p class="failed">nothing above provides Probe.missing: render this under its provider</p><!--/errored-->' +
 	'<input disabled value="a &amp; b">' +
 	member +
-	'<p class="at">/probe ? from=probe</p>' +
+	// Where the page is: a source in the browser, which a navigation in place changes (D-040), so a live hole.
+	'<p class="at"><!--x-->/probe ? from=probe<!--/x--></p>' +
 	// Holes that read nothing that changes are static (D-052): a signal read inside untrack!, and markup.
 	'<p class="untracked">41</p><b>static</b>' +
 	// The native walker's raw text, doctype, `class_if` and `optional` (an empty one left out, an unsafe URL replaced).
@@ -3527,7 +3528,7 @@ const documentPage = (member, answers) =>
 	'<!--loading--><p class="shouted"><!--x-->PAGE<!--/x--></p><!--/loading-->' +
 	'<!--errored:failed--><p class="failed">nothing above provides Probe.missing: render this under its provider</p><!--/errored-->' +
 	member +
-	'<p class="at">/page ? from=test</p>' +
+	'<p class="at"><!--x-->/page ? from=test<!--/x--></p>' +
 	scripts(answers) +
 	"</body></html>";
 
