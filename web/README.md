@@ -12,7 +12,7 @@ when what it read changes, after its cleanup; a timer ticks until its component 
 to an endpoint a component reads the submission of is sent with `fetch`, and the page stays; a
 handler sends one without a form or waiting (an action), and the page shows it before the server
 answers (an optimistic value), then the server's data, read again. Elements are dragged and dropped
-with the browser's events, and glide when a change moves them. An app
+with the browser's events, by mouse, touch or a pen, and glide when a change moves them. An app
 whose root renders a whole document hydrates the page
 the server sent, from `<html>` down (`start.js`). The server's platform (`server/`) renders the
 same components natively; this one hydrates them.
@@ -446,6 +446,41 @@ same components natively; this one hydrates them.
   data on its drag (`application/x-rocx`), which Firefox needs to start one. What is dragged is the
   app's: a signal its handlers set. A source removed by the drop (its row moved elsewhere) gets no
   dragend handler run (its box went with its row): clear what dragstart set in the drop handler too.
+- **Drags by touch and a pen** (D-055, `pointerDrag`): many browsers start no drag from a touch,
+  so the runtime makes one: a pointer that isn't a mouse, pressed on an element that starts drags
+  (a dragstart handler, `drag:data` or `drag:image`; and `draggable`, as the browser asks), held
+  still a quarter second (it may move 8 px: a swipe scrolls, a tap clicks; `POINTER_DRAG`), starts a
+  drag in the browser's own events, so D-029's drop targets and the app's handlers take it as one:
+  dragstart on the element (which may call it off), then each animation frame drag, dragenter on what
+  `elementFromPoint` finds under the finger (and dragleave on the one it left, after), dragover; on
+  the lift, drop where a dragover's default was prevented (else dragleave), and dragend. They are
+  `DragEvent`s carrying one `DataTransfer` (its `effectAllowed` and `dropEffect` the runtime's, as
+  Chromium's made one ignores both; one of its own where the browser can't make one), bubbling and
+  untrusted. A copy of the element (or of `drag:image`'s) follows the finger in the top layer, held
+  where the element was taken; near the edge of a box that scrolls, or the page's, it scrolls,
+  faster nearer. While it is held and drags, the element has no long-press callout and selects no
+  text; while it drags, the touch scrolls nothing (a non-passive `touchmove` on the element, there
+  before the touch starts); the browser's own drag, should a long press start one, is called off; and
+  the lift's click doesn't come. A mouse keeps the browser's drag, which carries data and files to
+  other windows.
+- **What a drag carries and shows** (D-055): `drag:data={[(type, value), …]}` (`Html.drag_data`,
+  `["dd","data",json]`; computed, `drag_data_of`, `["ddo",…]`) is put on the drag as dragstart
+  ends, each by its type (a drag with none still carries `application/x-rocx`); `drag:image={id}`
+  (`Html.drag_image`, `["dd","image",id]`) is what it shows: a copy of the element with that id
+  (hidden or not, its ids taken off, `data-rocx-drag-image` for the app's CSS), put just after it so
+  what styles it there styles the copy, held at the share of it the element was taken at:
+  `setDragImage` for the browser's drag, and under the finger for the runtime's. `on:drop.data`
+  (`Html.on_data`, `["on","drop",id,".data"]`) gives every piece a drop or a paste carries but its
+  files (`Html.DragItem`: `type`, `value`); `on:drop.files`, `on:paste.files` and a file input's
+  `on:change.files` (`Html.on_files`) give its files (`Html.File`: `name`, `type`, `size`, `url`),
+  each read by a `blob:` URL the runtime keeps (`runtime.fileOf(url)`, which an action posting a form
+  field with that URL sends as the file: D-054) until the element's owner goes, when it is revoked.
+- **Where the pointer is, whether the page shows** (D-055): `on:pointermove.point` (`Html.on_point`,
+  `["pt",event,id]`) gives `Html.Point`, shares of the element's box (`x`, `y`, 0 to 1, to
+  thousandths, sent as whole thousandths); a move (`pointermove`, `mousemove`, `touchmove`) runs it
+  at most once an animation frame, with the latest place; on `<Document>` and `<Window>`, shares of
+  the viewport. `on:visibilitychange.visible` (`Html.on_visible`, an `.checked`'s handler) gives
+  whether the page shows (`document.visibilityState` isn't `hidden`).
 - **Transitions** (`transition`, `transition:in`, `transition:out`, a `Transition` from
   `Transition.roc`): a `<For>`'s new row, or a `<Show>`'s new part, plays its own elements'
   transitions in once the flush that made it is on the page (none the first time a `<For>` or a
@@ -458,7 +493,11 @@ same components natively; this one hydrates them.
 - **Moves** (D-031; `transition:move`, `key`): an element with a move transition is measured
   (`getBoundingClientRect`) before a flush first changes the page's structure (a row comes, goes or
   moves, a part switches, a hole's markup is made anew: `measure`), and after it (`glide`): one that
-  moved plays the difference back with `translate`, at the transition's pace (FLIP). An element with
+  moved plays the difference back with `translate`, at the transition's pace (FLIP), and one whose
+  size changed with it `scale` too (`glideFrames`), from its old size, about its own
+  `transform-origin`, so its old box is exactly where it starts (what is inside is scaled with it as
+  it glides: a card into a narrower column has its text squeezed for the glide, rather than laid out
+  again each frame). An element with
   a key (`["k",…]`, or `["ko",…]` computed) that appears in the flush as one with the same key went
   (taken away, or on its way out) is that one moved: it glides from the other's box, its transition
   in doesn't play, and the other, if leaving, goes at once. An element inside another that glides
@@ -468,7 +507,13 @@ same components natively; this one hydrates them.
   hide where it was, is lifted for its glide (`lift`): fixed where it lands, above the page, a
   hidden stand-in of its size keeping its place, so nothing cuts it off on its way; it stays where
   it is in the document, so its styles and handlers are its own, and is put back, its own style as
-  it was, when the glide ends or another starts. A glide within one box, or one whose old place the
+  it was, when the glide ends or another starts. A lifted one is clipped as the boxes it leaves and
+  lands in clip it (`clip-path`, from what showed of it where it was to what will show where it
+  lands), so one whose new place is scrolled out of sight slides under its box's edge. Inside a box
+  that makes fixed elements its own (a `transform`, a `filter`, `contain`, a container's box:
+  `holdsFixed`), it is lifted into the top layer (a manual popover, its own look kept over the
+  popover's), which no box holds or clips; where the browser has no popovers, it is placed where it
+  is seen to be, inside that box. A glide within one box, or one whose old place the
   box shows, isn't lifted: what it costs is a walk up from the element, each box's style read once
   a flush. Hydrating and mounting measure nothing; with `prefers-reduced-motion: reduce`, nothing
   glides. The server writes nothing for them.
@@ -500,7 +545,9 @@ context); the tally with nothing to provide its store (`Alone.rocx`); and a whol
 (`Form.rocx`); value props, getters (D-039), given in a hole, outside one, in a `<Show>` and in a row, read every way a component may, an accessor, and props passed on (`{...rest}`, D-052) (`Props.rocx`); `<Title>`s
 (`Titles.rocx`); channels (`Channels.rocx`: two feeds on one org's news, a third on another's); a
 planner (`Planner.rocx`: cards dragged between days, moved optimistically with `use_action!` and
-`use_submissions!`, gliding); and D-052's (`Untracked.rocx`: `untrack!` in a hole, a memo and a
+`use_submissions!`, gliding); the drags (`Drags.rocx`, D-055: a card with `drag:data` and
+`drag:image`, lists that take it, one that reads what a drop carries, one that takes files, an area
+that says where the pointer is, a box that scrolls, and whether the page shows); and D-052's (`Untracked.rocx`: `untrack!` in a hole, a memo and a
 body, `latest!`, a component given constants beside one given what changes, and, built with `--dev`
 from a copy, the warning of a read in a body, once for two runs of its place; `RenderEffects.rocx`:
 an effect, a render effect and an effect with an error handler noting their applies, mounted).
@@ -524,7 +571,12 @@ reconnect, one reconnect for a change, waits that double after drops, a host wit
 once, a card dragged to another day (a real drag, CDP's `Input.dispatchDragEvent`) shown there before
 the slow endpoint answers and kept while the board is read again, never shown where it was; two on
 their way at once, the refused one back with its refusal; a list with no drop handler taking no drop;
-glides (none with less motion asked for); a link's click taken over; and no allocation left behind,
+glides (none with less motion asked for), one into a narrower box in a transformed one scaling from
+its old size, in the top layer, under its new box's edge; a drag by touch in Chromium and in Gecko
+(real touch input: held, it starts, its image under the finger above the page, the page still; it
+comes to, leaves and drops on a list, carrying `drag:data`; a swipe starts none; a box scrolls under a
+finger at its edge), a tap's click, a mouse's drag carrying `drag:data` and showing `drag:image`, files
+dropped and read by their URLs, `.point` and `.visible`; a link's click taken over; and no allocation left behind,
 after many runs that waited (refreshes, new pages, memos made again: `Upstream.rocx`) too; and an
 `<Errored>`'s retry reading again the failed read a memo it shows reads.
 
@@ -539,13 +591,16 @@ after many runs that waited (refreshes, new pages, memos made again: `Upstream.r
   multipart forms (sent as the browser sends them). Solid 2.0's `createOptimistic` (writes undone
   when their action's transition ends) isn't there: an optimistic value is the server's with the
   submissions on their way applied (D-030).
-- **Dragging by touch or pointer:** only the browser's drag and drop (a long press on Safari for
-  iPad and iPhone; many other mobile browsers start none from a touch); files dropped (`dataTransfer.files`), a drag image of the app's, and data other
-  than text for other pages to read.
-- **Moves that resize:** a glide moves an element (`translate`), it doesn't scale it from its old
-  size. One lifted out of a box that clips lands over its new box's edge when its place there is
-  scrolled out of sight, then is clipped as it is put back; one inside a box that makes fixed
-  elements its own (a `transform`, a `filter`, `contain: paint`) stays clipped by that box.
+- **Drags by touch:** a keyboard's drag (a sensor that moves a thing with the arrow keys) isn't
+  the platform's: an app gives keyboard users another way, as the docs' planner's menus do. The
+  runtime's drag by touch stays in its page: another window or program can't take it (a drag into
+  the page from elsewhere is the browser's own, and comes as one).
+- **Moves that resize:** what is inside an element that glides to another size is scaled with it
+  for the glide (its text squeezed or stretched, FLIP's way), not laid out again each frame;
+  counter-scaling its children (as Framer Motion's layout animations do) would cost a pass a frame
+  over everything inside. Where the browser has no popovers (Chrome before 114, Safari before 17,
+  Firefox before 125), one lifted inside a box that makes fixed elements its own stays clipped by
+  that box.
 - **The rest of @solidjs/meta:** `<Meta>`, `<Link>`, `<Style>`; only `<Title>` is there.
 - **A pure component patched in place:** given a value read from what changes, its call is a hole
   made anew (it keeps no state); a `view!` is kept.

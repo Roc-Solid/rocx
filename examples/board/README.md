@@ -9,9 +9,11 @@ several people work on one board at once: each sees the others' changes as they 
    new name and pick a colour. That's a cookie; there are no passwords.
 2. The front page lists the boards. "Acme Rocket Launch" is seeded with four columns and ten cards;
    make another with the form below it.
-3. On a board, drag a card to another column, or up and down its own. It lands at once, and glides
-   there. Open the board in a second browser as someone else: the card moves there too, without a
-   reload, and a line at the bottom says who moved what.
+3. On a board, drag a card to another column, or up and down its own, with a mouse, or on a phone
+   with a finger (hold it a moment, then drag: D-055). It lands at once, and glides there. Open the
+   board in a second browser as someone else: the card moves there too, without a reload, and a line
+   at the bottom says who moved what; switch away from one browser's tab, and the other shows you
+   away.
 4. The header shows who else is on the board. A card someone has open shows their face; a card
    someone is editing says "Ada is editing".
 5. Click a card's title to open it beside the board: its title, description, assignee, due date,
@@ -27,11 +29,11 @@ several people work on one board at once: each sees the others' changes as they 
 |---|---|
 | Fractional ranks: a move writes one row, and two cards dropped in one gap at once each get a rank of their own (below) | `Rank.roc` (with its `expect`s), `Board.rank_for`, `Store.move!` |
 | The rules both halves share: the order cards show in, where a move puts a card, a move applied to the page's copy, validation | `Board.roc` |
-| Drag and drop (D-029): tiles are dragged, a column is a drop target, the drop lands where the drag last was | `Ui/CardTile.rocx`, `Ui/ColumnView.rocx` |
+| Drag and drop (D-029): tiles are dragged, a column is a drop target, the drop lands where the drag last was; by touch too (D-055), with no change to the markup | `Ui/CardTile.rocx`, `Ui/ColumnView.rocx` |
 | A move shown before the server has it, kept while it is on its way (`use_action!`, `use_submissions!`, D-030), and the board read again after | `routes/b/[board]/+page.rocx` (`board!`), `routes/b/[board]/move/+server.roc` |
 | Cards glide to their new place, between columns too (`transition:move` and `key`, D-031) | `Ui/CardTile.rocx` |
 | Everyone sees each change live: the board's channel (D-020), published after every change | `routes/b/[board]/+server.roc` (`channel!`), `News.roc`, the page's `heard!` |
-| Presence: who is on the board, and who has which card open (packages/presence, on a channel) | `routes/b/[board]/presence/+server.roc` (the package's hooks), the page's `here` (`Presence.join!`), `Ui/Shared.roc` |
+| Presence: who is on the board, who has which card open, and who is away (their tab hidden: `<Document on:visibilitychange.visible>`) (packages/presence, on a channel) | `routes/b/[board]/presence/+server.roc` (the package's hooks), the page's `here` (`Presence.join!`), `Ui/Shared.roc` |
 | An edit lease on a card, in `Kv` with a time to live (D-028), taken and let go with a token of each opening of the card, so a late take can't outlive a close | `Lease.roc`, `routes/b/[board]/cards/[card]/lease/` (`+server.roc`, `release/`), `Ui/CardPanel.rocx` (`take!`) |
 | Changes shown before the server has them in the open card (labels, ticks, its fields), as moves are | `Ui/CardPanel.rocx` (`card!`), `Board.saved`, `Board.labelled`, `Board.ticked` |
 | Rate limits on writes (packages/guard) and security headers | `Middlewares.roc` (`writer`, `default`) |
@@ -110,7 +112,9 @@ node --test 'examples/board/test/*.test.mjs'       # a SQLite file each; the bro
   has it open and is editing it, Bo opens it read-only, it opens for him when she closes it, and his
   edit shows on her board; Bo, then Ada, saves a card and closes it at once while the renewal the
   save made is held back on its way, and the other sees the card free, and it stays free; a third
-  person comes, and once their browser closes and the grace is up, leaves everyone's stack.
+  person comes, and once their browser closes and the grace is up, leaves everyone's stack; Bo
+  drags a card to another column by touch (Chromium) and Ada another (Gecko when there is one), real
+  touch input through packages/testing's `touchDrag`; Bo's tab hidden shows him away on Ada's page.
 
 The test files build the app once between them, each with a SQLite file and a server of its own.
 
@@ -171,7 +175,8 @@ What the app met, and how it works around each:
   says doesn't keep an import in the browser's copy.)
 - **Key handlers saw only `event.key`, no modifier keys,** so there was no Alt+↑ to move a card from
   the keyboard. An open card has Up, Down and "To the end of" buttons, which are forms, so they work
-  without JavaScript, by keyboard and on touch screens (which start no drag in many mobile browsers).
+  without JavaScript, by keyboard and on touch screens (which started no drag in many mobile
+  browsers; since D-055 a held finger drags, in every browser).
   (Fixed in the platform since: `on:keydown.Alt+ArrowUp` runs with exactly Alt held, so the open
   card takes Alt+↑ and Alt+↓ too.)
 - **No client-side navigation.** Opening a card in place doesn't change the address, and Back

@@ -9,7 +9,10 @@ section says how.
 stream's end before its new one's start), on which the package now runs (`PresenceServer`'s hooks
 and `Presence.join!`); "Server-only modules in packages" (D-033: the package names the server
 platform, and `browser.roc` lists what the browser compiles); and S1 (the room is kept in `Kv`, in
-memory, never in Postgres). "Today's glue", at the end, is how it ran before. Open: W1 to W3, R1.
+memory, never in Postgres). "Today's glue", at the end, is how it ran before. **Done since
+(2026-11-23, D-055):** W1 (`on:pointermove.point`, `create_pointer!`, `<LiveCursors on_move!>`), W2
+(`Time.now_millis!`, earlier), W3 (`<Document on:visibilitychange.visible={here.visible!} />`) and R1
+(`Wire.Meta(d)`'s `data`), and open questions 2 and 3, answered at the end. Open: C8, question 1.
 
 The channels asks are first, collected under one heading so they can be forwarded as a group.
 
@@ -259,6 +262,11 @@ it where the browser's copy keeps it fails the build with the message.
 
 ### W1. Where the pointer is: `on:pointermove.point`
 
+**Done (D-055).** Option 1: `on:pointermove.point={|point| …}` gives `Html.Point`, shares of the
+element's box to thousandths, at most once an animation frame (the latest place); `<LiveCursors>`
+takes `on_move!` and `on_leave!`, and `join!`'s `moved!` goes through `create_pointer!` (`Throttle`
+at 50 ms, the held place sent when due).
+
 **Problem.** A handler is given nothing (`on:click`), a field's value (`.value`), a box's `.checked`,
 or a key (`.key`). Live cursors need the pointer's place over an area. There is no way to read it
 from Roc today, so `<LiveCursors>` can draw others' cursors but a page can't send its own.
@@ -300,6 +308,11 @@ next deadline: `Typing.deadline`, `Cursors.next_idle`, already built).
 **Undo.** The stores tick again.
 
 ### W3. Whether the page is visible
+
+**Done (D-055).** Neither `Browser.visible!` nor a store-level listener: a handler form,
+`<Document on:visibilitychange.visible={shown!} />` (the runtime gives `document.visibilityState`
+as a Bool), and `join!`'s `visible!(shown)`, which says `away` while hidden (its cursor gone) and the
+app's status again when it shows. The app writes the line (question 3, below).
 
 **Problem.** "Away" is the natural status of a hidden tab. There is no way to know from Roc.
 
@@ -356,6 +369,13 @@ never noticed (C8). Until `/rocx/live` exists, the same keep-alive and write dea
 
 ### R1. A type variable's JSON through a structural type
 
+**Done (D-055).** The fork carries it now (checked on the pin, 2026-11-23): a function with
+`where [d.is_eq : d, d -> Bool, d.Json.Encodable([]), d.Json.Parseable([InvalidJson(Str)])]` encodes
+and parses a `List(Room.Here(Wire.Meta(d)))` both ways, and `Room.Saved(meta)` the same
+(`Json.to_str` asks `Encodable([])`, not an open error: that was the "missing encoder_for"). So the
+metadata is `Wire.Meta(d)`, with the app's own `data : d`, and `PresenceServer`'s hooks and
+`Presence.join!` are generic in `d`.
+
 `Room(meta)` and `Mirror(meta)` take any metadata, and their JSON round trips work for a concrete
 `meta`. Generic glue can't say so: with `where [meta.Json.Encodable([]), …]`, a record holding
 `List(Room.Member(meta))` is still "missing encoder_for", so `Actor.ask!` refuses it. The glue fixes
@@ -369,9 +389,16 @@ why `Room` has `save`/`load` to a plain record; that part is fine.)
 
 1. **"Who's viewing this page"**: should a page's room be its path by default (a store that reads
    `Router.location!`), or should the app always name the room? The package names it today.
-2. **Metadata**: is `Wire.Meta` (name, picture, colour, status) the right fixed shape until R1, or
-   should it carry one more free field (`data : Str`, JSON the app owns)?
-3. **Hidden tabs**: shown as `away` automatically (W3), or left to the app?
+2. **Metadata** (answered, D-055): both. The fixed fields the components read (name, picture,
+   colour, status) stay, and a free one, `data : d`, is the app's own type, carried typed through the
+   room and its channel now that R1 works (`Wire.Meta(d)`; `{}` for none), rather than JSON in a `Str`.
+3. **Hidden tabs** (answered, D-055): the app's choice, made one line:
+   `<Document on:visibilitychange.visible={here.visible!} />`. Solid's way is primitives that each do
+   one thing, composed by the app (solid-primitives' `createPageVisibility` is its own primitive, used
+   beside a store, not inside one); a store that listened to the document by itself would be a
+   listener the app didn't write and can't see in its markup, and Roc Solid has no store-level
+   listener (`<Document>` is markup) without a host change for it. And what a hidden tab means is the
+   app's word: `away`, `idle`, or nothing for a page shown on a wall screen.
 4. **Timeout**: 75 s by default (a vanished laptop lingers that long, but a hidden tab whose timers are
    held back to once a minute stays). C8 would make it about 35 s with no page beats.
 

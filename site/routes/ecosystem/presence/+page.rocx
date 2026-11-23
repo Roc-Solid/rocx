@@ -82,7 +82,11 @@ view! = |_|
 				The page joins the room with <code>Presence.join!</code>, given the channel: it subscribes, says every
 				15 seconds that this tab is still here, and gives what the components read. What the page says (its
 				status, that it is typing) goes over the tab's one stream, with its other channels; nothing has an
-				endpoint of its own.
+				endpoint of its own. A tab that is hidden is away once the page says so, in one line:
+				<code>{"<Document on:visibilitychange.visible={here.visible!} />"}</code>; the status it had comes back
+				as it shows again. Who a member is, <code>Wire.Meta(d)</code>, is what the components show (a name, a
+				picture, a colour, a status) and <code>data</code>, the app's own, of any type JSON carries
+				(<code>{"{}"}</code> for none).
 			</p>
 			<Code title={"${Sources.presence_join.file}, in part"} source={Sources.presence_join.rocx} />
 
@@ -150,14 +154,16 @@ view! = |_|
 							</td>
 						</tr>
 						<tr><td><code>{"children : List(Html)"}</code></td><td>the area they point at</td></tr>
+						<tr><td><code>{"on_move! : (Html.Point => {}) ?? |_| {}"}</code></td><td>your own pointer over the area, shares of it, at most once a frame (<code>on:pointermove.point</code>): a room's <code>here.moved!</code>, which sends it at most 20 times a second</td></tr>
+						<tr><td><code>{"on_leave! : (() => {}) ?? || {}"}</code></td><td>your pointer left the area: a room's <code>here.away!</code></td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 			<p>
 				Each cursor is an arrow in its member's colour, with their name beside it. It glides to each place it
-				is sent, fades when idle, and takes no pointer events, so what is under it is clicked as before.
-				Drawing others' cursors works today; sending your own doesn't yet, since a handler isn't given where
-				the pointer is (see <a href="#status">Status</a>).
+				is sent, fades when idle, and takes no pointer events, so what is under it is clicked as before. Your
+				own goes to the room with <code>{"<LiveCursors … on_move!={here.moved!} on_leave!={here.away!}>"}</code>:
+				move your pointer over the demo's note, and it shows as the others see it, as You.
 			</p>
 
 			<Heading id="how">How a room works</Heading>
@@ -271,15 +277,12 @@ view! = |_|
 				<li>
 					the server's side on a route's channel, which an app imports (<code>presence.PresenceServer</code>):
 					in examples/board, two people in browsers of their own each see the other, see which card each has
-					open, and see a third who closes their browser leave.
+					open, see one away while their tab is hidden, and see a third who closes their browser leave;
 				</li>
+				<li>your own cursor, sent as you move (<code>on_move!</code>), and a hidden tab shown as away (<code>here.visible!</code>);</li>
+				<li>the app's own metadata, typed: <code>Wire.Meta(d)</code>'s <code>data</code>, through the room and its channel as it is.</li>
 			</ul>
-			<p>Waits on a proposal (the package's PROPOSALS.md has each of these, and a few more):</p>
-			<ul>
-				<li>sending your own cursor: a handler given where the pointer is (<code>on:pointermove.point</code>);</li>
-				<li>a clock in the browser, and knowing when a tab is hidden, to show it as away;</li>
-				<li>the app's own metadata on the wire, instead of <code>Wire.Meta</code>, once the compiler can carry it.</li>
-			</ul>
+			<p>The package's PROPOSALS.md has what is still open (heartbeats from the stream itself, a room by the page's path).</p>
 			<details>
 				<summary>The demo: <code>{Sources.presence_demo.file}</code></summary>
 				<Code title={Sources.presence_demo.file} source={Sources.presence_demo.rocx} />

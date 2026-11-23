@@ -267,6 +267,10 @@ view! = |_|
 				<code>Html.Viewport</code> (how far it is scrolled, <code>top</code> and <code>left</code>, and the
 				<code>width</code> and <code>height</code> it shows), once it is on the page, then each time it scrolls
 				or changes size, at most once a frame: what a virtual list renders the rows that show by.
+				<code>on:pointermove.point</code> is given where the pointer is over the element, shares of its width
+				and height (<code>Html.Point</code>, 0 to 1, at most once a frame): what live cursors send.
+				<code>{"<Document on:visibilitychange.visible={…} />"}</code> is told whether the page shows (false
+				while its tab is hidden).
 				A key's name may follow the modifier keys held with it: <code>on:keydown.Shift+Enter</code>,
 				<code>on:keydown.Ctrl+Alt+Delete</code>, and <code>on:keydown.Mod+K</code>, where <code>Mod</code> is ⌘ on
 				macOS and Ctrl elsewhere. It runs with exactly those held (Shift+Enter isn't Enter), and the browser
@@ -347,9 +351,25 @@ view! = |_|
 					dropped from elsewhere: another page's link, a word from another program.
 				</li>
 				<li>
-					<strong>On a touch screen</strong> it works where the browser turns a long press into a drag (Safari
-					on iPad and iPhone does; many other mobile browsers don't). A pointer's drag of the app's own isn't
-					the platform's: give touch and keyboard users another way to move a thing, as the planner's menus do.
+					<strong>By touch and with a pen</strong> too, in every browser: a finger held still on what drags
+					for a quarter second starts a drag of the runtime's own, in the same events, so the same handlers
+					take it (a swipe still scrolls the page, and a tap clicks). A copy of what is dragged follows the
+					finger, above the page; near the edge of a list that scrolls, the list scrolls. A mouse keeps the
+					browser's own drag, which can carry things to other windows. Give keyboard users another way to
+					move a thing too, as the planner's menus do.
+				</li>
+				<li>
+					<strong>What it carries for other pages</strong> is <code>{"drag:data={[(\"text/uri-list\", url), (\"text/plain\", title)]}"}</code>,
+					each piece by its type, put on the drag as it starts: dropped in another tab, the link opens.
+					<code>on:drop.data</code> gives a drop target every piece by its type. <code>{"drag:image={id}"}</code> is
+					what a drag shows, a copy of the element with that id (hidden or not), held where the dragged one
+					was taken.
+				</li>
+				<li>
+					<strong>Files dropped</strong> are <code>on:drop.files</code>'s (a paste's, <code>on:paste.files</code>; a
+					file field's, <code>on:change.files</code>): each with its name, type and size, and a
+					<code>blob:</code> URL to show it by (<code>{"<img src={file.url}>"}</code>) while the element is
+					there. An action sends one to the server as a field of its form.
 				</li>
 			</ul>
 
@@ -617,7 +637,9 @@ view! = |_|
 						difference back (FLIP). With a <code>{"key={…}"}</code>, it is the same element wherever it is on the
 						page: one with that key taken out of one list as another comes into a second glides from the first's
 						place, and neither plays its transition in or out. One that leaves a box that scrolls for another
-						(a card into another column's list) glides above the page, so neither box cuts it off on its way.
+						(a card into another column's list) glides above the page, so neither box cuts it off on its way,
+						and slides under its new box's edge where its place there is scrolled away. One whose size changes
+						with the move (a card into a narrower column) grows or shrinks to it as it glides.
 						The <a href="#actions">planner's plans</a> glide from day to day.
 					</li>
 					<li>
@@ -994,7 +1016,7 @@ view! = |_|
 						<li>Effects, split as Solid 2.0's; render effects; an effect's error handler; <code>on_cleanup!</code>, <code>on_settled!</code></li>
 						<li>Forms sent by the runtime, their submissions, and a flash without it</li>
 						<li>Actions without a form (<code>use_action!</code>), every submission (<code>use_submissions!</code>), optimistic values that give way to the server's</li>
-						<li>Drag and drop; <code>.prevent</code></li>
+						<li>Drag and drop, by mouse, touch and pen; what a drag carries and shows; files dropped; <code>.prevent</code></li>
 						<li>Moves: <code>transition:move</code>, and a <code>key</code> across lists</li>
 						<li>The document's title: <code>{"<Title>"}</code></li>
 						<li>Endpoints, read as plain values where a page renders; their events</li>

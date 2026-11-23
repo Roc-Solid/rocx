@@ -31,8 +31,14 @@ When an item lands, delete its line here in the same commit.
   - heading ids;
   - whether the CommonMark/GFM spec examples (CC BY-SA 4.0) stay in a public repo.
 - **packages/guard:** a question in its `PROPOSALS.md`: the rate-limit headers.
-- **packages/presence:** the questions at the end of its `PROPOSALS.md` (hidden tabs shown as away,
-  the metadata shape).
+- **packages/presence:** the questions at the end of its `PROPOSALS.md` (a room by the page's path,
+  the timeout).
+- **Uploads straight to storage.** A file dropped or chosen (D-055) is kept through the app's
+  server, as a field of an action's multipart form (D-054). A browser `PUT` to a signed URL
+  (`Storage.signed_url!`, D-047's plugin route) would spare the server a large file's bytes, but it
+  is a second way to keep a file, and needs packages/storage to have a browser half (a plugin
+  script) and a way to tell the app the file landed. Left out of D-055 for one way per job; worth it
+  once an app keeps files too big for a request's body.
 - **packages/jobs:** a job's log in the jobs page, parked with its options in its `PROPOSALS.md`.
 - **The other packages' `PROPOSALS.md`** (admin, forms, intl, mcp, otel, push, testing) have more
   ideas and questions waiting.
@@ -41,9 +47,6 @@ When an item lands, delete its line here in the same commit.
 ## Framework work, decided but not built
 
 - **The rest of Solid 2.0 and Solid Router's actions:** see `web/README.md`, "Not yet".
-- **packages/presence:** W1 (where the pointer is: `on:pointermove.point`), W3 (whether the page is
-  visible: `<Document on:visibilitychange>` now exists) and R1 (a type variable's JSON through a
-  structural type). W2, a browser clock, is done: `Time.now_millis!`. Details: its `PROPOSALS.md`.
 - **OpenAPI:** an endpoint that a plain form also posts to is listed with a JSON body only, though
   it reads form fields as well (`server/README.md`, "Not yet").
 - **The server's other limits** are in `server/README.md`, "Not yet":

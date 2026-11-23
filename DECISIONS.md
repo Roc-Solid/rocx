@@ -1381,7 +1381,9 @@ crosses a child, so "a drag is over this column" took a counter of the app's own
 into a drag and drop, which works here; many other mobile browsers start no drag from a touch. An
 app gives touch and
 keyboard users another way to move a thing (the docs' planner has a menu on each plan), which it
-needs for keyboards anyway. A pointer drag of the platform's own is option 4, not done.
+needs for keyboards anyway. A pointer drag of the platform's own is option 4, not done. **Since
+D-055** a touch or a pen held a quarter second starts a drag of the runtime's own, in these same
+events (not option 4's library: no sensors of its own, and the drop targets are D-029's).
 
 **Changed from Solid, where the browser forces it.** Solid binds `onDragEnter` as the browser fires
 it; here dragenter and dragleave are the element's own, since that is what a drop target's
@@ -1541,7 +1543,8 @@ too.
 inside a box that clips (`overflow: auto`) was clipped as it crossed into another; since then (the
 browser gaps, 2026-11-22) it is lifted for its glide, fixed above the page with a hidden stand-in
 in its place, and put back when it lands, unless a box that makes fixed elements its own (a
-`transform`) holds it. Each flush that
+`transform`) holds it (**since D-055** it scales from its old size too, is clipped as it lands, and
+goes to the top layer inside a box that holds fixed elements). Each flush that
 changes structure while something glides costs two layout reads. A text change alone (a card's
 title growing) moves nothing. **Reversible:** yes.
 
@@ -2883,6 +2886,87 @@ before its place is taken while hydrating (no extra run). Measured with `just si
 
 **Reversible:** yes, each part on its own: `inert` answering false makes every hole live again; the
 transpiler's `dev` flag off writes no `read_at!`; a spread is new syntax nothing else depends on.
+
+## D-055 Drags by touch and a pen, what a drag carries and shows, files dropped, moves that resize, presence's cursor and away
+
+**Status.** Built (2026-11-23), with the coordinator's answers to the API questions (1 to 4 below).
+
+**Context.** D-029 made drag and drop the browser's events, and said what it didn't do: a touch
+starts no drag in many mobile browsers (Safari's long press does), nothing a drag carries but text
+can be read, files dropped can't be, and an app can't say what a drag shows or carries for other
+pages. D-031's glide translates and doesn't scale, and two clipping cases were left. And
+packages/presence waited on three asks: where the pointer is (W1), whether the page shows (W3), and
+the app's own metadata on the wire (R1).
+
+**Choices.**
+
+1. **A drag by touch or a pen is the runtime's own, in the browser's events.** A pointer that
+   isn't a mouse, pressed on an element that starts drags (a dragstart handler, `drag:data` or
+   `drag:image`; `draggable`), held still a quarter second (moving under 8 px), starts one: synthetic
+   `DragEvent`s carrying one `DataTransfer`, hit-tested with `elementFromPoint` each animation frame,
+   so D-029's drop targets and every app's handlers take it unchanged (examples/board works by touch
+   with no change to its markup). A swipe scrolls (no `touch-action: none`), a tap clicks; while it is
+   held and drags, the element has no long-press callout and selects no text; while it drags, a
+   non-passive `touchmove` on the element (there before the touch starts, as a passive one can't
+   cancel) keeps the page still; a copy of the element follows the finger in the top layer; a box that
+   scrolls, or the page, scrolls under a finger near its edge; the browser's own drag, should a long
+   press start one, is called off, and the lift's click doesn't come. **A mouse keeps the browser's
+   drag**: it carries data and files to other windows, which a drag of the runtime's can't.
+   Rejected: a library's sensors (dnd-kit's), a second set of events (`on:pointerdrop`), and a drag
+   that starts at a distance (a column of cards would never scroll by touch).
+2. **What a drag carries: `drag:data={[(type, value), …]}`** on the source (`Html.drag_data`, or
+   `drag_data_of` computed), put on the drag as dragstart ends, each by type (`text/uri-list` opens as
+   a link in another tab); `on:drop.data` gives a drop every piece by type
+   (`List(Html.DragItem)`: `{ type, value }`); `on:drop.value` stays the `text/plain` alone.
+3. **What it shows: `drag:image={id}`**, a copy of the element with that id (hidden or not), held at
+   the share of it the source was taken at: `setDragImage` for the browser's drag, the same copy under
+   a finger.
+4. **Files: `on:drop.files`** (and `on:paste.files`, a file input's `on:change.files`) gives
+   `List(Html.File)`: `{ name, type, size, url }`, `url` a `blob:` URL the runtime keeps
+   (`runtime.files`, `runtime.fileOf(url)`) and revokes with the target's owner. **Keeping one has one
+   way: D-054's multipart actions** (an action whose input has a field holding a kept URL sends that
+   file as a part; `Server.file`, `Storage.put_upload!` on the server). Uploads straight to storage (a
+   `PUT` to a signed URL) are a follow-up in TODO.md, not a second way now.
+5. **Moves that resize** scale as they glide, FLIP's way (`scale` about the element's
+   `transform-origin`, beside `translate`), so the old box is exactly where the glide starts; what is
+   inside is scaled with it (counter-scaling children costs a pass a frame). A lifted glide is clipped
+   as the boxes it leaves and lands in clip it (`clip-path`), so one whose place is scrolled away
+   slides under its new box's edge; inside a box that makes fixed elements its own (a `transform`, a
+   `filter`, `contain`) it is lifted into the top layer (a manual popover, its own look kept), which no
+   box holds or clips. Without popovers, that last one stays clipped (web/README's "Not yet").
+6. **Where the pointer is: `on:pointermove.point`** (`Html.on_point`), `Html.Point` as shares of the
+   element's box to thousandths, at most once an animation frame with the latest place; on
+   `<Document>` and `<Window>`, of the viewport. Presence's `create_pointer!` throttles a page's cursor
+   to 20 sends a second (the last place kept), `<LiveCursors>` takes `on_move!` and `on_leave!`, and
+   `join!`'s `moved!` and `away!` go through it (W1).
+7. **Whether the page shows: `on:visibilitychange.visible`** (`Html.on_visible`, a Bool), and
+   presence's `join!` gains `visible!(shown)`: `away` while hidden, the app's status back when shown
+   (W3). Open question 3 (automatic or the app's choice) is answered **the app's choice, in one
+   line** (`<Document on:visibilitychange.visible={here.visible!} />`), Solid's way: a primitive does
+   one thing and the app composes them (solid-primitives' `createPageVisibility` beside a store, not
+   inside it); a store that listened to the document itself would be a listener the app can't see in
+   its markup, and would need a store-level listener the platform doesn't have (a host change); and
+   what a hidden tab means is the app's word (away, idle, or nothing on a wall screen).
+8. **R1 works on the fork**: a function with `where [d.is_eq : d, d -> Bool, d.Json.Encodable([]),
+   d.Json.Parseable([InvalidJson(Str)])]` carries `List(Room.Here(Wire.Meta(d)))` both ways
+   (`Json.to_str` wants `Encodable([])`; an open error type was the "missing encoder_for"). So the
+   metadata is `Wire.Meta(d)`: the fields the components read (name, picture, colour, status) and
+   `data : d`, the app's own (`{}` for none), with `PresenceServer` and `join!` generic in `d`; open
+   question 2 is answered both: the fixed fields stay, and the free one is typed.
+
+```rocx
+<li draggable="true" drag:data={[("text/uri-list", url), ("text/plain", card.title)]} drag:image="ghost" on:dragstart={…}>…</li>
+<ul on:drop.files={|files| set_files!(files)}>…</ul>          # each { name, type, size, url }, url a blob: URL
+<LiveCursors cursors!={…} on_move!={here.moved!} on_leave!={here.away!}>…</LiveCursors>
+<Document on:visibilitychange.visible={here.visible!} />
+```
+
+**Costs.** web/runtime.js grows by the drag section (pointerDrag, its frames, the scroll near an
+edge, the copy under a finger), the drag's data, image and files, `.point`, and the glide's scale
+and clip. Html gains seven attributes (`OnPoint`, `OnData`, `OnFiles`, `DragData`, `DragDataOf`,
+`DragImage`, `DragImageOf`) and four types (`Point`, `DragItem`, `File`); no host changes. A drag
+source listens to `pointerdown` and a non-passive `touchmove` (the browser waits for the page on each
+touchmove that starts there). **Reversible:** yes; mouse drags are as D-029 made them either way.
 
 ## D-056 The server's limits: a body limit, the platform's log events, Http's connections and proxies
 

@@ -38,7 +38,7 @@ tested without waiting for one.
 | `Typing` | Who is typing: `started` (a ping, which lasts `ttl`), `stopped`, `who`, `deadline`; `sentence`: `"Ann and Bo are typing…"` |
 | `Typist` | A page's own side: `typed(now)` says when to ping (at once, then at most every `every`), `done` when to say it stopped, `rest` after a quiet spell |
 | `Stack` | An avatar stack's arithmetic: `split` (who fits, and `+N`), `initials` (`"Ada Lovelace"` is `"AL"`), `color` (the same key, the same colour, from a palette white text reads on), `names`, `label` |
-| `Wire` | What a room's channel carries: to a page, `Event`: `Welcome` (the page's key and tab), `Presence(Snapshot \| Delta)`, `Typing`, `Moved`, `Away`; from one, `Said`: `Here({ status })` (its beat, and its status), `Typing(Bool)`, `Moved({ x, y })`, `Away`; who is in it, `Member` (a key, and `Meta`: name, image, color, status); `face`, `names`, `pointers` to feed the components |
+| `Wire` | What a room's channel carries: to a page, `Event`: `Welcome` (the page's key and tab), `Presence(Snapshot \| Delta)`, `Typing`, `Moved`, `Away`; from one, `Said`: `Here({ status })` (its beat, and its status), `Typing(Bool)`, `Moved({ x, y })`, `Away`; who is in it, `Member(d)` (a key, and `Meta(d)`: name, image, color, status, and `data`, the app's own, of any type JSON carries both ways and that compares; `{}` for none); `face`, `names`, `pointers` to feed the components |
 
 `roc test packages/presence/main.roc` runs their `expect`s.
 
@@ -68,8 +68,8 @@ import pf.Channel
 import presence.PresenceServer
 import presence.Wire
 
-channel! : { request : Server.Request, params : { room : Str }, context : { member : Str } } => Try(Channel(Wire.Member, Wire.Event(Wire.Meta), Wire.Said), Endpoint.Refusal)
-channel! = |{ context, .. }| Ok(Channel.allow({ key: context.member, meta: { name: context.member, image: "", color: "", status: "" } }))
+channel! : { request : Server.Request, params : { room : Str }, context : { member : Str } } => Try(Channel(Wire.Member({}), Wire.Event(Wire.Meta({})), Wire.Said), Endpoint.Refusal)
+channel! = |{ context, .. }| Ok(Channel.allow({ key: context.member, meta: { name: context.member, image: "", color: "", status: "", data: {} } }))
 
 on_open! = PresenceServer.on_open!
 
@@ -91,8 +91,9 @@ import ../../../Generated/Api
 view! = |{ params }| {
     here = Presence.join!(Api.channel_rooms_room({ room: params.room }))
     <section>
+        <Document on:visibilitychange.visible={here.visible!} />
         <AvatarStack faces!={(here.members!)().map(Wire.face)} />
-        <LiveCursors cursors!={Wire.pointers((here.members!)(), (here.cursors!)())}>
+        <LiveCursors cursors!={Wire.pointers((here.members!)(), (here.cursors!)())} on_move!={here.moved!} on_leave!={here.away!}>
             <textarea aria-label="Say something" on:input={here.typed!} on:blur={here.done!}></textarea>
         </LiveCursors>
         <TypingIndicator names!={Wire.names((here.members!)(), (here.typing!)())} />
@@ -102,7 +103,16 @@ view! = |{ params }| {
 
 A status (`away`, the card a page has open) is a word the page says, from a handler or an effect's
 apply: `create_effect!(|| open!(), |card| (here.status!)(Board.status_of(card)))`
-(examples/board).
+(examples/board). A hidden tab is `away` when the page says whether it shows, in one line:
+`<Document on:visibilitychange.visible={here.visible!} />`; while it is hidden its beats say
+`away` and its cursor goes, and the status it had comes back as it shows again. That is the app's
+line to write, not the store's doing: a store does one thing and the app composes them (Solid's way:
+solid-primitives' `createPageVisibility` beside the store, not inside it), and what a hidden tab
+means is the app's word (`away`, `idle`, or nothing, for a page on a wall screen).
+
+The app's own metadata goes in `data` (`Wire.Meta(d)`): a team, a role, a seat, typed, carried
+through the room and its channel as it is (the hooks and the stores are generic in it). The
+components read the rest.
 
 Who a member is (their key, their name) is always the server's say: the channel's check gives it,
 from the middleware's context. The page's tab id is its hub's (the same across reconnects and
@@ -149,11 +159,13 @@ under it jumps, and a screen reader hears it change (`aria-live="polite"`).
 |---|---|
 | `cursors! : () => List(LiveCursors.Pointer)` | others' cursors, `{ key, name, color, x, y, idle }`, `x` and `y` shares of the area (`Wire.pointers(members, cursors)`) |
 | `children : List(Html)` | the area they point at |
+| `on_move! : (Html.Point => {}) ?? \|_\| {}` | this page's pointer over the area, shares of it, at most once a frame (`on:pointermove.point`): `here.moved!` |
+| `on_leave! : (() => {}) ?? \|\| {}` | the pointer left the area: `here.away!` |
 
 Each cursor is an arrow in its member's colour with their name beside it. It glides between the
-places it is sent, fades when idle, and takes no pointer events. Drawing works today, and a room
-passes on what `here.moved!` says; sending your own needs the pointer's place in a handler, which
-the platform doesn't give yet (PROPOSALS.md, W1).
+places it is sent, fades when idle, and takes no pointer events. Your own goes to the room as you
+move (`on_move!={here.moved!}`): `join!` sends it at once, then at most 20 times a second, the last
+place kept, so it ends where the pointer stopped (`create_pointer!`).
 
 ## The stores
 
@@ -161,20 +173,22 @@ Called in a component, as `create_signal!` is (`components/Presence.rocx`):
 
 | Store | Gives |
 |---|---|
-| `join!(channel)` | the room on a route's channel, joined while the component is there: what `create_room!` gives, fed by the channel, and what this tab says: `status!(word)`, `typed!()` and `done!()` (a typist, every 3 s at most), `moved!({ x, y })`, `away!()`; it says it is here every 15 s |
+| `join!(channel)` | the room on a route's channel, joined while the component is there: what `create_room!` gives, fed by the channel, and what this tab says: `status!(word)`, `typed!()` and `done!()` (a typist, every 3 s at most), `moved!({ x, y })` and `away!()` (a pointer, 20 times a second at most), `visible!(shown)` (`away` while hidden); it says it is here every 15 s |
 | `create_room!(on_gap!)` | all of these at once, fed by `heard!(event)`: `members!`, `synced!`, `me!` (`{ key, tab }`), `typing!` (keys, your own left out), `cursors!` (others'), `lost!`; one who leaves stops typing and loses their cursor |
 | `create_presence!(on_gap!)` | `members!`, `synced!`, `receive!(message)`, `lost!` |
 | `create_typing!(ttl)` | `who!`, `started!(key)`, `stopped!(key)` |
 | `create_typist!(every, send!)` | `typed!()`, `done!()`; `send!` is given `Started` or `Stopped` |
 | `create_cursors!({ idle, forget })` | `shown!`, `moved!(move)`, `gone!(key)` |
+| `create_pointer!(every, send!)` | `moved!(point)` (sent at once, then at most every `every` ms, the latest held and sent when due), `away!()` (what is held dropped); `send!` is given `Moved(point)` or `Away` |
 
 Call a store once a handler. A write applies when its handler is done (Solid 2.0's batching), so a
 second call in the same handler sees the store as it was before the first, and the first is lost. A
 channel hands each event to a handler of its own, so a page fed by one never does; a page that makes
 several events at once sends each from a handler of its own (`set_timeout!(0, …)`).
 
-The browser has no clock yet, so a store keeps its own: a timer that ticks every quarter second, and
-only while something can expire.
+A store whose things expire (typing, idle cursors) keeps a clock of its own: a timer that ticks
+every quarter second, and only while something can expire. `create_pointer!` reads the browser's
+clock (`Time.now_millis!`).
 
 ## Styling
 
@@ -191,13 +205,12 @@ Works today:
 - the three components and the stores, built by `rocx build` into an app, both halves type-checked;
 - the room on a channel (`PresenceServer`, imported from the package): in examples/board, two people
   in browsers of their own each see the other, on the tab's one stream with the board's own channel,
-  see which card each has open (the status), and see a third who closes their browser leave once
-  the grace is up.
+  see which card each has open (the status), see one away while their tab is hidden, and see a
+  third who closes their browser leave once the grace is up;
+- your own cursor (`on_move!`, W1), `away` while a tab is hidden (`visible!`, W3), and the app's own
+  metadata (`Wire.Meta(d)`'s `data`, R1): the docs' demo sends your pointer as a room does.
 
-Waits on a proposal (PROPOSALS.md):
-
-- sending your own cursor (W1), a clock in the browser (W2), `away` when a tab is hidden (W3);
-- the app's own metadata type on the wire, instead of `Wire.Meta` (R1).
+Open (PROPOSALS.md): the stream as the heartbeat (C8), a room by the page's path (question 1).
 
 Done since it was proposed: the glue on channels (C1 to C9, D-020), a package's server modules
 (D-033: the package names the server platform), and presence without a database write per beat
