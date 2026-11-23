@@ -37,13 +37,14 @@
 //! id, and connects again.
 //!
 //! The stream, as server-sent events: `event: hello`, its id, first; then `event: resync | message
-//! | refused | ended`, the channel's URL as the first `data:` line, then what it says (a message's JSON; `{"status":403,"why":"…"}`; the
-//! JSON string why it ended); and `: beat` every beat (15 s), on which each channel's check runs
-//! again: one that now refuses is `ended`, and its `on_close!` is told. A server error at a beat
-//! (500) ends nothing. A subscriber that falls behind its channel's backlog (`Live`'s 256) gets a
-//! `resync` (and `on_open!`'s messages) instead of what it missed; one behind on latest-wins
-//! messages only misses the older ones. A slow client's frames wait in a short queue; past it, its
-//! ordered messages wait in their topics' backlogs, and its latest-wins ones replace each other.
+//! | refused | ended`, the channel's URL as the first `data:` line, then what it says (a message's
+//! JSON; `{"status":403,"why":"…"}`; the JSON string why it ended); and `: beat` every beat
+//! (15 s), on which each channel's check runs again: one that now refuses is `ended`, and its
+//! `on_close!` is told. A server error at a beat (500) ends nothing. A subscriber that falls behind
+//! its channel's backlog (`Live`'s 256) gets a `resync` (and `on_open!`'s messages) instead of what
+//! it missed; one behind on latest-wins messages only misses the older ones. A slow client's frames
+//! wait in a short queue; past it, its ordered messages wait in their topics' backlogs, and its
+//! latest-wins ones replace each other.
 
 use crate::http::{Body, Config};
 use crate::{coroutine, hosted, live, logging, roc};
@@ -660,7 +661,7 @@ async fn run(mut asking: Arc<Asking>, urls: Vec<String>, out: mpsc::Sender<Bytes
             Some((id, said)) = heard.recv(), if queue.len() < MOST_QUEUED => {
                 match said {
                     Heard::Resync(url) => {
-                        if let Some(each) = subscriptions.iter_mut().find(|each| each.url == url) {
+                        if let Some(each) = subscriptions.iter_mut().find(|each| each.url == url && !each.dropped) {
                             resync(each, &mut ops);
                         }
                     }
