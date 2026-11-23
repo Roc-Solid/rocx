@@ -1,6 +1,8 @@
 import pf.Html
+import ../Ui/Logo
 
 ## Ten marks Roc Solid could wear, for the dev build's catalog (`just dev`, then /__rocx/stories).
+## Perch was picked: it is the site's mark now, site/Ui/Logo.rocx, which its sheet here shows.
 ## "All ten" puts them side by side; each of the others is one mark's sheet: large on the site's
 ## ground, then on paper, in one ink, knocked out of violet, at the sizes of a tab's icon, and in
 ## the bar at the top of a page.
@@ -8,7 +10,8 @@ import pf.Html
 ## Every mark paints with four inks and a ground (`--i1` to `--i4`, and `--cut`, the colour of what
 ## is behind it), which the sheet sets for each place it shows the mark: the site's neon on dark,
 ## deeper inks on paper, a single ink, white on violet. Where two parts of a mark meet, a line of the
-## ground keeps them apart, so a mark still reads in one ink.
+## ground keeps them apart, so a mark still reads in one ink. The site's <Logo> reads `--logo-1` to
+## `--logo-4` and `--logo-cut` instead, which each place sets from its own.
 Logos := [].{
 	<story name="All ten">
 		<Overview />
@@ -84,7 +87,7 @@ Concepts := [].{
 		name: "Perch",
 		line: "The bird, on the rock.",
 		idea: "Roc, the language, standing on Solid, what it runs on: a folded bird on a slab. The slab is the server, the database and the platform; the bird is everything you write.",
-		mark: <Perch />,
+		mark: <Logo />,
 		word: <Word kind="sans" />,
 	}
 
@@ -92,7 +95,7 @@ Concepts := [].{
 		number: "03",
 		name: "Feather tag",
 		line: "</>, with a feather for the slash.",
-		idea: "The mark the site wears today is </>. This one keeps it and swaps the slash for a feather: still markup at a glance, and now a bird's.",
+		idea: "The site's first mark was </>. This one keeps it and swaps the slash for a feather: still markup at a glance, and now a bird's.",
 		mark: <FeatherTag />,
 		word: <Word kind="mono" />,
 	}
@@ -211,6 +214,11 @@ Sheet := [].{
 		}
 
 		.slot {
+			--logo-1: var(--i1);
+			--logo-2: var(--i2);
+			--logo-3: var(--i3);
+			--logo-4: var(--i4);
+			--logo-cut: var(--cut);
 			display: block;
 			flex: none;
 		}
@@ -530,6 +538,11 @@ Overview := [].{
 		}
 
 		.slot {
+			--logo-1: var(--i1);
+			--logo-2: var(--i2);
+			--logo-3: var(--i3);
+			--logo-4: var(--i4);
+			--logo-cut: var(--cut);
 			display: block;
 			flex: none;
 		}
@@ -636,51 +649,6 @@ Facet := [].{
 			stroke: var(--cut);
 			stroke-width: 1.6;
 			stroke-linejoin: round;
-		}
-
-		.c1 {
-			fill: var(--i1);
-		}
-
-		.c2 {
-			fill: var(--i2);
-		}
-
-		.c3 {
-			fill: var(--i3);
-		}
-
-		.c4 {
-			fill: var(--i4);
-		}
-	</style>
-}
-
-## 02: a bird of folded paper, facing right (tail, body, wing, breast, head, beak), on its legs,
-## on a slab.
-Perch := [].{
-	view = |{}|
-		<svg viewBox="0 0 64 64" aria-hidden="true">
-			<rect class="leg" x="29" y="40" width="2.6" height="9" />
-			<rect class="leg" x="35" y="39" width="2.6" height="10" />
-			<polygon class="c2" points="5,35 22,30 28,42 8,45" />
-			<polygon class="c4" points="22,30 38,18 44,24 38,41 28,42" />
-			<polygon class="c2" points="44,24 51,21 47,31 38,41" />
-			<polygon class="c2" points="38,18 45,10 51,12 51,21 44,24" />
-			<polygon class="c3" points="51,12 60,16.5 51,21" />
-			<polygon class="c1" points="19,32 43,25 31,37" />
-			<polygon class="c4" points="10,49 54,49 58,58 6,58" />
-		</svg>
-
-	<style>
-		polygon {
-			stroke: var(--cut);
-			stroke-width: 1.5;
-			stroke-linejoin: round;
-		}
-
-		.leg {
-			fill: var(--i2);
 		}
 
 		.c1 {

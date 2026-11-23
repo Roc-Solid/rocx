@@ -1,8 +1,10 @@
 import pf.Html
 import Actions
 import Button
+import Logo
 
-## The top of a page: what part it is in (`eyebrow`, or `kicker` when it has markup in it), its line
+## The top of a page: what part it is in (`eyebrow`, or `kicker` when it has markup in it; or, on
+## the front page, `mark`, the site's logo, in the eyebrow's place), its line
 ## in the site's gradient (`title`, or `heading` when it has markup in it), what it is about (what is
 ## inside), and the ways on (`actions`, `<Button>`s). `centered` for the front page, where the line is
 ## bigger and everything is in the middle. A string is text wherever it goes, so markup in either
@@ -11,6 +13,7 @@ PageHero := [].{
 	Props := {
 		eyebrow : Str ?? "",
 		kicker : List(Html) ?? [],
+		mark : List(Html) ?? [],
 		title : Str ?? "",
 		heading : List(Html) ?? [],
 		actions : List(Html) ?? [],
@@ -21,7 +24,7 @@ PageHero := [].{
 	view : Props -> Html
 	view = |props|
 		<section class="hero" class:centered={props.centered}>
-			<p class="eyebrow">{...if (props.kicker.is_empty()) [Html.text(props.eyebrow)] else props.kicker}</p>
+			{=if (props.mark.is_empty()) <p class="eyebrow">{...if (props.kicker.is_empty()) [Html.text(props.eyebrow)] else props.kicker}</p> else <div class="mark">{...props.mark}</div>}
 			<h1>{...if (props.heading.is_empty()) [Html.text(props.title)] else props.heading}</h1>
 			<p class="lede">{...props.children}</p>
 			{=if (props.actions.is_empty()) Html.empty({}) else <Actions centered={props.centered}>{...props.actions}</Actions>}
@@ -40,7 +43,7 @@ PageHero := [].{
 
 	<story name="The front page">
 		<PageHero
-			eyebrow="Roc Solid"
+			mark={[<Logo label="Roc Solid" />]}
 			title="Roc, from the database to the browser."
 			centered
 			actions={[<Button href="#" primary>Read the guide</Button>, <Button href="#">See it run</Button>]}
@@ -78,6 +81,16 @@ PageHero := [].{
 			color: var(--magenta);
 			font-size: var(--size-sm);
 			font-weight: 600;
+		}
+
+		/* The logo (a <Logo>, passed in), large, a little lit. */
+		.mark {
+			display: flex;
+		}
+
+		.mark :global(.logo) {
+			--logo-size: 4.5rem;
+			filter: var(--glow-mark);
 		}
 
 		/* As wide as its text, so the whole gradient shows on a short line too. */
@@ -122,6 +135,14 @@ PageHero := [].{
 			border-radius: var(--pill);
 			background: var(--accent-soft);
 			color: var(--accent);
+		}
+
+		.centered .mark {
+			justify-content: center;
+		}
+
+		.centered .mark :global(.logo) {
+			--logo-size: 6.5rem;
 		}
 
 		.centered h1 {

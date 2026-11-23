@@ -1,5 +1,6 @@
 import pf.Html
 import Code
+import Logo
 
 ## The design tokens the site and its components are drawn with (site/static/site.css, `:root`),
 ## shown. A component never writes a colour: it writes the token's role (`var(--accent)`), so the
@@ -10,7 +11,7 @@ Tokens := [].{
 			groups={[
 				{ name: "Surfaces", tokens: [("bg", "the page"), ("bg-sunken", "what sits under a card"), ("bg-code", "a block of code"), ("bg-raised", "cards, frames"), ("bg-hover", "a card pointed at"), ("fill", "a quiet button, inline code"), ("fill-strong", "the same, pointed at")] },
 				{ name: "Text", tokens: [("text", "what is read"), ("text-muted", "what supports it"), ("text-faint", "labels, numbers"), ("rule", "a line that means something"), ("rule-strong", "a thread, a frame")] },
-				{ name: "Neon", tokens: [("accent", "links, the main button, what is current"), ("accent-strong", "the same, pointed at"), ("accent-soft", "under what is current"), ("magenta", "where you are, labels"), ("magenta-soft", "under it"), ("violet", "between the two")] },
+				{ name: "Neon", tokens: [("accent", "links, the main button, what is current"), ("accent-strong", "the same, pointed at"), ("accent-soft", "under what is current"), ("magenta", "where you are, labels"), ("magenta-soft", "under it"), ("violet", "between the two"), ("violet-deep", "Roc's violet: the mark's body")] },
 				{ name: "Signals", tokens: [("good", "a tip, a pass"), ("warn", "a warning"), ("bad", "a failure, below zero")] },
 			]}
 		/>
@@ -23,7 +24,7 @@ Tokens := [].{
 	<story name="Glow">
 		<div class="glows">
 			<div class="surface glow"><code>--glow</code><span>what is lit: the main button, a card pointed at</span></div>
-			<div class="surface glow-magenta"><code>--glow-magenta</code><span>the mark</span></div>
+			<div class="surface glow-mark"><Logo /><code>--glow-mark</code><span>the mark, a filter</span></div>
 			<div class="surface shadow"><code>--shadow</code><span>what floats: a demo, the specimen</span></div>
 		</div>
 	</story>
@@ -144,8 +145,13 @@ Tokens := [].{
 			box-shadow: var(--glow);
 		}
 
-		.glow-magenta {
-			box-shadow: var(--glow-magenta);
+		.glow-mark {
+			--logo-size: 2.5rem;
+			--logo-cut: var(--bg-raised);
+		}
+
+		.glow-mark :global(.logo) {
+			filter: var(--glow-mark);
 		}
 
 		.shadow {

@@ -1,0 +1,123 @@
+import pf.Html
+
+## Roc Solid's mark: a bird of folded paper (Roc) standing on a slab (what it runs on), in the site's
+## neon. It was "Perch" among the drafts in stories/Logos.rocx. A thin line of the ground keeps its
+## parts apart, so it reads in one ink too; set `--logo-cut` to what is behind it when that isn't
+## the page's `--bg`, and `--logo-1` to `--logo-4` for other inks (wing, bird, beak, body and slab).
+## Its size is `--logo-size` (2rem). Its parts' classes start with `logo-`, so a page's own query
+## (`.bird`, say, the flock's) never finds them. With a `label` it is an image of that name; without, the name
+## is beside it and the mark is hidden from screen readers.
+Logo := [].{
+	Props := {
+		label : Str ?? "",
+	}
+
+	view : Props -> Html
+	view = |props|
+		<svg class="logo" viewBox="0 0 64 64" role="img" aria-label={props.label} aria-hidden={if (props.label == "") "true" else "false"}>
+			<rect class="logo-leg" x="29" y="40" width="2.6" height="9" />
+			<rect class="logo-leg" x="35" y="39" width="2.6" height="10" />
+			<polygon class="logo-bird" points="5,35 22,30 28,42 8,45" />
+			<polygon class="logo-shade" points="22,30 38,18 44,24 38,41 28,42" />
+			<polygon class="logo-bird" points="44,24 51,21 47,31 38,41" />
+			<polygon class="logo-bird" points="38,18 45,10 51,12 51,21 44,24" />
+			<polygon class="logo-beak" points="51,12 60,16.5 51,21" />
+			<polygon class="logo-wing" points="19,32 43,25 31,37" />
+			<polygon class="logo-shade" points="10,49 54,49 58,58 6,58" />
+		</svg>
+
+	<story name="On the page">
+		<div class="row">
+			<Logo label="Roc Solid" />
+			<span class="name">Roc Solid</span>
+		</div>
+	</story>
+
+	<story name="Sizes">
+		<div class="row">
+			<span class="size" style="--logo-size: 6rem"><Logo /></span>
+			<span class="size" style="--logo-size: 3rem"><Logo /></span>
+			<span class="size" style="--logo-size: 2rem"><Logo /></span>
+			<span class="size" style="--logo-size: 1rem"><Logo /></span>
+		</div>
+	</story>
+
+	<story name="In one ink">
+		<div class="row">
+			<span class="paper"><Logo /></span>
+			<span class="violet"><Logo /></span>
+		</div>
+	</story>
+
+	<style>
+		.logo {
+			display: block;
+			flex: none;
+			width: var(--logo-size, 2rem);
+			height: var(--logo-size, 2rem);
+			overflow: visible;
+		}
+
+		polygon {
+			stroke: var(--logo-cut, var(--bg));
+			stroke-width: 1.5;
+			stroke-linejoin: round;
+		}
+
+		.logo-wing {
+			fill: var(--logo-1, var(--accent));
+		}
+
+		.logo-bird,
+		.logo-leg {
+			fill: var(--logo-2, var(--violet));
+		}
+
+		.logo-beak {
+			fill: var(--logo-3, var(--magenta));
+		}
+
+		.logo-shade {
+			fill: var(--logo-4, var(--violet-deep));
+		}
+
+		/* The stories'. */
+		.row {
+			display: flex;
+			align-items: end;
+			gap: var(--space-6);
+			padding: var(--space-6);
+			--logo-size: 4rem;
+		}
+
+		.name {
+			font-size: var(--size-2xl);
+			font-weight: 780;
+			letter-spacing: -0.02em;
+		}
+
+		.paper,
+		.violet {
+			padding: var(--space-6);
+			border-radius: var(--radius-lg);
+		}
+
+		.paper {
+			--logo-1: var(--bg);
+			--logo-2: var(--bg);
+			--logo-3: var(--bg);
+			--logo-4: var(--bg);
+			--logo-cut: var(--text);
+			background: var(--text);
+		}
+
+		.violet {
+			--logo-1: var(--text);
+			--logo-2: var(--text);
+			--logo-3: var(--text);
+			--logo-4: var(--text);
+			--logo-cut: var(--violet-deep);
+			background: var(--violet-deep);
+		}
+	</style>
+}

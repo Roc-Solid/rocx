@@ -1,5 +1,6 @@
 import pf.Html
 import ../Generated/Paths
+import Logo
 
 ## The bar at the top of every page: the site's mark, the parts of the docs (the `current` one
 ## marked), what it is in a line, and what the browser downloads (`wasm`). It stays at the top as
@@ -7,7 +8,7 @@ import ../Generated/Paths
 Topbar := [].{
 	view = |{ sections, current, wasm }|
 		<header class="topbar">
-			<a class="brand" href={Paths.root} aria-label="Roc Solid, home"><span class="mark" aria-hidden="true">{"</>"}</span>Roc Solid</a>
+			<a class="brand" href={Paths.root} aria-label="Roc Solid, home"><Logo />Roc Solid</a>
 			<nav class="sections" aria-label="Parts of the docs">
 				{...sections.map(|section| <a href={section.home} class:current={section.name == current}>{section.name}</a>)}
 			</nav>
@@ -49,21 +50,14 @@ Topbar := [].{
 			text-decoration: none;
 		}
 
-		.mark {
-			display: inline-grid;
-			place-items: center;
-			width: 2rem;
-			height: 2rem;
-			border-radius: var(--radius-sm);
-			background: var(--gradient);
-			box-shadow: var(--glow-magenta);
-			color: var(--accent-text);
-			font: 700 var(--size-xs) / 1 var(--mono);
-			transition: box-shadow 0.2s;
+		/* The mark (a <Logo>, passed in: global under the brand), lit when the brand is pointed at. */
+		.brand :global(.logo) {
+			--logo-size: 2.1rem;
+			transition: filter 0.2s;
 		}
 
-		.brand:hover .mark {
-			box-shadow: var(--glow-magenta), var(--glow);
+		.brand:hover :global(.logo) {
+			filter: var(--glow-mark);
 		}
 
 		.sections {

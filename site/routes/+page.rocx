@@ -3,6 +3,7 @@ import ../Demos/Counter
 import ../Ui/Code
 import ../Ui/Heading
 import ../Ui/PageHero
+import ../Ui/Logo
 import ../Ui/Button
 import ../Ui/Specimen
 import ../Ui/Stats
@@ -27,7 +28,7 @@ view! = |_| {
 	<>
 		<NoHydration>
 			<PageHero
-				eyebrow="Roc Solid"
+				mark={[<Logo label="Roc Solid" />]}
 				title="Roc, from the database to the browser."
 				centered
 				actions={[

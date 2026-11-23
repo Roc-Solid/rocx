@@ -25,7 +25,8 @@
 	--rule: #1f1c2e;
 	--rule-strong: #2c2842;
 
-	/* Neon: cyan for what you can follow or press, magenta for where you are, violet between. */
+	/* Neon: cyan for what you can follow or press, magenta for where you are, violet between, and
+	   Roc's own deeper violet under them (the mark's body and slab). */
 	--accent: #2ee8ff;
 	--accent-strong: #8ff4ff;
 	--accent-soft: rgb(46 232 255 / 0.1);
@@ -33,6 +34,7 @@
 	--magenta: #ff4fd0;
 	--magenta-soft: rgb(255 79 208 / 0.12);
 	--violet: #a99bff;
+	--violet-deep: #7c38f5;
 	--gradient: linear-gradient(90deg, #ff4fd0, #a99bff 50%, #2ee8ff);
 
 	/* What a thing says: a tip or a pass, a warning, a failure. */
@@ -55,10 +57,11 @@
 	--t-call: #a99bff;
 	--t-op: #aca6c8;
 
-	/* Depth, and the glow: a halo for what is lit (the main button, the mark, what you point at). */
+	/* Depth, and the glow: a halo for what is lit (the main button, what you point at); the mark's
+	   is a filter, so it follows the bird's shape. */
 	--shadow: 0 24px 60px rgb(0 0 0 / 0.3);
 	--glow: 0 0 24px -6px rgb(46 232 255 / 0.55);
-	--glow-magenta: 0 0 24px -6px rgb(255 79 208 / 0.55);
+	--glow-mark: drop-shadow(0 0 18px rgb(169 155 255 / 0.35));
 	--glow-text: 0 0 12px rgb(46 232 255 / 0.45);
 
 	/* Type: the system's sans and monospace, on one scale. */
