@@ -15,13 +15,15 @@ import ../../../Ui/ArchBox
 
 meta = {
 	title: "The browser",
-	description: "The rocx browser platform: an app's pages compiled to WebAssembly, a Zig host, and a JavaScript runtime that hydrates the page the server sent and runs its holes again when signals change. With the numbers this build measured.",
+	description: "The Roc Solid browser platform: an app's pages compiled to WebAssembly, a Zig host inside it, and a JavaScript runtime that hydrates the page the server sent, runs holes again when signals change, and navigates without reloading. With the sizes and timings this build measured.",
 	toc: [
 		{ id: "parts", label: "The parts" },
+		{ id: "modules", label: "What components can use" },
 		{ id: "header", label: "The header" },
-		{ id: "click", label: "One click, all the way" },
+		{ id: "click", label: "One click, step by step" },
 		{ id: "hydration", label: "Hydration" },
 		{ id: "nohydration", label: "What it never hydrates" },
+		{ id: "navigation", label: "Moving between pages" },
 		{ id: "waiting", label: "Waiting, in wasm" },
 		{ id: "numbers", label: "The numbers" },
 		{ id: "memory", label: "Memory" },
@@ -46,10 +48,11 @@ view! = |_| {
 				eyebrow="The platform · the browser"
 				title="The components in WebAssembly, a Zig host, and a page of JavaScript"
 			>
-				The browser's half of an app is the components the server renders: every page, in its layouts,
-				compiled to one wasm module. Roc decides what each hole shows and what each handler does; a
-				runtime in JavaScript keeps the graph of what reads what, runs holes again when what they read
-				changes, and touches the DOM.
+				The browser's half of an app is the same components the server renders: every page, with its
+				layouts, compiled to one WebAssembly module. Your Roc decides what each hole shows and what each
+				handler does. A runtime in JavaScript keeps track of what reads what, runs a hole again when what it
+				read changes, and touches the DOM. You don't write any JavaScript; this page explains what happens
+				underneath.
 			</PageHero>
 
 			<Heading id="parts">The parts</Heading>
@@ -57,10 +60,10 @@ view! = |_| {
 				left={[
 					<ArchBox kind="js" name={[<code>web/runtime.js</code>]}>
 						<p>
-							JavaScript. Hydrates the document the server sent, keeps the signals, memos, effects and
-							computations, and who owns what, runs a hole's Roc again when what it read changes, patches its
-							node, runs effects once the page shows their markup, starts timers, sends requests and forms,
-							and listens to streams and channels.
+							JavaScript. Hydrates the document the server sent. Keeps the signals, memos, effects and
+							computations, and which component owns what. Runs a hole's Roc again when what it read
+							changes, and patches its node. Runs effects once their markup is on the page, starts
+							timers, sends requests and forms, navigates, and listens to streams and channels.
 						</p>
 					</ArchBox>,
 				]}
@@ -72,11 +75,8 @@ view! = |_| {
 						</ArchBox>
 						<ArchBox kind="roc" name={[<>{"The app, on "}</>, <code>web/platform</code>]}>
 							<p>
-								Roc: the components, their markup with holes as closures, escaping and safe URLs, endpoints
-								as requests (<code>Html</code>, <code>Solid</code>, <code>Show</code>,
-								<code>For</code>, <code>Loading</code>, <code>Errored</code>, <code>Context</code>,
-								<code>Router</code>, <code>Server</code>, <code>Endpoint</code>, <code>Call</code>,
-								<code>Channel</code>).
+								Roc: your components, their markup with holes as closures, escaping and safe URLs, and
+								endpoints as requests.
 							</p>
 						</ArchBox>
 					</ArchBox>,
@@ -84,132 +84,182 @@ view! = |_| {
 			/>
 			<p>
 				A component's markup reaches the runtime as JSON: elements, text, and the holes that read signals,
-				each a Roc closure the runtime keeps as a boxed value by id. Running a hole is calling the app's
-				<code>run</code> with that box; its answer is JSON again, a text, an attribute's value, or markup.
-				The server platform renders the same JSON natively (<a href={"${Paths.platform_server}#pages"}>pages, rendered there</a>).
-				One more file, <code>web/start.js</code>, is the bootstrap the server puts at the end of every
-				page: it loads the runtime and the wasm from beside itself, and hydrates the document.
+				each a Roc closure the runtime keeps as a boxed value under an id. Running a hole means calling the
+				app's <code>run</code> with that box; the answer is JSON again: a text, an attribute's value, or
+				markup. The server platform renders the same JSON natively
+				(<a href={"${Paths.platform_server}#pages"}>pages, rendered on the server</a>). One more file,
+				<code>web/start.js</code>, is the bootstrap the server puts at the end of every page: it loads the
+				runtime and the wasm from beside itself, and hydrates the document.
+			</p>
+
+			<Heading id="modules">What components can use</Heading>
+			<p>
+				The browser platform's modules are what components are written with, and the server platform has
+				the same ones (the build copies them over). Each is covered where you would use it:
+			</p>
+			<ul>
+				<li>
+					<code>Html</code> (markup), <code>Solid</code> (signals, memos, effects, timers, contexts),
+					<code>Store</code>, <code>Context</code>, <code>Repeat</code> (a row per index in a range, what
+					<a href={Paths.ecosystem_virtual}>virtual lists</a> are made of), <code>Transition</code>, <code>Loading</code> and <code>Errored</code>:
+					<a href={Paths.components}>components</a>.
+				</li>
+				<li>
+					<code>Endpoint</code>, <code>Call</code>, <code>Events</code>, <code>Channel</code>,
+					<code>Submission</code> and <code>Submissions</code>: <a href={Paths.calls}>talking to the
+					server</a>.
+				</li>
+				<li>
+					<code>Router</code>, <code>Search</code>, <code>Leave</code>, <code>A</code>,
+					<code>Navigate</code>, <code>Title</code> and <code>HttpStatusCode</code>:
+					<a href={"${Paths.routing}#navigating"}>routing and navigation</a>.
+				</li>
+				<li>
+					<code>Browser</code> (<code>Browser.call!</code>: the page's own JavaScript, or a plugin's script,
+					from a handler) and <code>Time</code> (the clock).
+				</li>
+			</ul>
+			<p>
+				<code>Server</code>, <code>Middleware</code> and <code>OpenApi</code> are there too, so route files
+				compile on both sides; Roc compiles only what a program reaches, so what only the server uses costs
+				the wasm nothing.
 			</p>
 
 			<Heading id="header">The header</Heading>
 			<p>What an app gives the platform, and what the platform gives the host:</p>
 			<Code title={"${Sources.platform_requires.file}, in part"} source={Sources.platform_requires.rocx} numbers={Bool.False} />
 			<p>
-				<code>main!</code> is the app's root: a whole document, the page at the browser's path in its
-				layouts (<code>rocx build --client</code> writes it, <code>Generated/Root</code>). The host provides
-				two functions: mount the root, and run a kept box. The browser answers nothing itself: an endpoint a
-				component reads is the server's to answer, and a runtime that renders as a server would (Node, in
-				the tests) answers each read from the answers the page recorded. The rest of the header is what Roc
-				may ask of the runtime: keep a box, make, read or write a signal, make or read a memo, fetch (an
-				endpoint's read is a GET), listen to a stream, subscribe to a channel, provide or find a context,
-				where the page is (<code>Router.location!</code>), and the like. Each is a call into JavaScript.
+				<code>main!</code> is the app's root: a whole document, the page at the browser's path inside its
+				layouts. <code>rocx build --client</code> writes it (<code>Generated/Root</code>). The platform gives
+				the host two functions: mount the root, and run a kept box. The browser answers no requests itself:
+				every endpoint a component reads is the server's to answer. (A runtime that renders as a server
+				would, such as Node in the tests, answers each read from the answers the page recorded.) The rest
+				of the header lists what Roc may ask of the runtime: keep a box; make, read or write a signal; make
+				or read a memo; fetch (an endpoint's read is a GET); listen to a stream; subscribe to a channel;
+				provide or find a context; read where the page is (<code>Router.location!</code>); and so on. Each
+				is a call into JavaScript.
 			</p>
 			<details>
 				<summary>The whole header: <code>{Sources.platform_header.file}</code></summary>
 				<Code title={Sources.platform_header.file} source={Sources.platform_header.rocx} />
 			</details>
 
-			<Heading id="click">One click, all the way</Heading>
+			<Heading id="click">One click, step by step</Heading>
 			<p>You press <b>+</b> on the counter on the <a href={Paths.root}>front page</a>. Then:</p>
 			<Trace>
 				<li>
-					<Who kind="js">JavaScript</Who> The button's listener, bound when the page hydrated,
-					has the id of the handler's box. The runtime opens a turn and asks the host to run it.
+					<Who kind="js">JavaScript</Who> The button's listener, attached when the page hydrated, holds the
+					id of the handler's box. The runtime opens a turn and asks the host to run it.
 				</li>
 				<li>
 					<Who kind="roc">Roc</Who> <code>{"|| set_count!(count!() + 1)"}</code> runs:
 					<code>count!()</code> asks the runtime for the signal's value (3), and <code>set_count!</code>
-					hands it the next (4), boxed.
+					hands it the next one (4), boxed.
 				</li>
 				<li>
-					<Who kind="js">JavaScript</Who> The handler done, its writes apply: the signal holds 4,
+					<Who kind="js">JavaScript</Who> Once the handler is done, its writes apply: the signal holds 4,
 					and the three computations that read it are due: the <code>{"<output>"}</code>'s text, the
-					<code>negative</code> class, the Reset button's <code>disabled</code>.
+					<code>negative</code> class, and the Reset button's <code>disabled</code>.
 				</li>
 				<li>
-					<Who kind="roc">Roc</Who> Each runs again: the text is <code>"4"</code>, the class still
-					off, <code>disabled</code> still false.
+					<Who kind="roc">Roc</Who> Each runs again: the text is <code>"4"</code>, the class still off,
+					<code>disabled</code> still false.
 				</li>
 				<li>
-					<Who kind="js">JavaScript</Who> Only the text changed, so only its node is set; a value a
-					node already has isn't a patch. Nothing else ran. (Reset to 0 would patch the button too.)
+					<Who kind="js">JavaScript</Who> Only the text changed, so only its node is set; a value a node
+					already has isn't patched. Nothing else ran. (Reset to 0 would patch the button too.)
 				</li>
 			</Trace>
 
 			<Heading id="hydration">Hydration</Heading>
+			<p>
+				Hydration is how the browser takes over the page the server rendered, without building it again:
+			</p>
 			<Trace>
 				<li>
-					<Who kind="js">JavaScript</Who> The page the server sent ends with the answers its reads got,
-					in a script, and the bootstrap, <code>/rocx/start.js</code>. The bootstrap fetches the app's
-					wasm ({Facts.fact!("client_brotli")} with brotli, for this site: the same module on every page)
-					and the runtime from beside itself, has the runtime compile the wasm, and asks it to hydrate the
-					document.
+					<Who kind="js">JavaScript</Who> The page ends with a script holding the answers its endpoint
+					reads got, then the bootstrap, <code>/rocx/start.js</code>. The bootstrap fetches the app's wasm
+					({Facts.fact!("client_brotli")} with brotli, for this site: the same module on every page) and the
+					runtime from beside itself, has the runtime compile the wasm, and asks it to hydrate the document.
 				</li>
 				<li>
-					<Who kind="js">JavaScript</Who> The runtime reads the answers, and takes their script out of
-					the page.
+					<Who kind="js">JavaScript</Who> The runtime reads the answers, and takes their script out of the
+					page.
 				</li>
 				<li>
 					<Who kind="roc">Roc</Who> The root runs, once: it reads where the page is
 					(<code>Router.location!</code>) and renders that page in its layouts, a whole document. Each
-					component runs where it is rendered, once.
+					component runs once, where it is rendered.
 				</li>
 				<li>
-					<Who kind="js">JavaScript</Who> The runtime walks the server's nodes beside the markup
-					Roc made, from the doctype and <code>{"<html>"}</code> down, and binds each computation to its
-					own node: comments mark where each computed hole, row and <code>if</code>'s part is
-					(<code>{"<!--x-->…<!--/x-->"}</code>). Nothing is asked again or made again. A read of an
-					endpoint whose answer the page has (under <code>GET</code> and its URL) gets it from there, not
-					over the network.
+					<Who kind="js">JavaScript</Who> The runtime walks the server's nodes beside the markup Roc made,
+					from the doctype and <code>{"<html>"}</code> down, and attaches each computation to its own node.
+					HTML comments the server wrote mark where each hole, each row of a list and each branch of an
+					<code>if</code> is (<code>{"<!--x-->…<!--/x-->"}</code>). Nothing is fetched or built again. A read
+					of an endpoint whose answer the page has (under <code>GET</code> and its URL) gets it from there,
+					not over the network.
 				</li>
 				<li>
-					<Who kind="js">JavaScript</Who> A page whose markup isn't what its components make (a
-					browser extension added a node, or the HTML parser moved a <code>{"<div>"}</code> out of a
-					<code>{"<p>"}</code>) gets a warning, and <code>{"<body>"}</code>'s children are rendered again
-					from the same answers. <code>{"<head>"}</code> is left alone: rendering it again would run its
+					<Who kind="js">JavaScript</Who> If the page's markup isn't what its components make (a browser
+					extension added a node, or the HTML parser moved a <code>{"<div>"}</code> out of a
+					<code>{"<p>"}</code>), the runtime warns, and renders <code>{"<body>"}</code>'s children again from
+					the same answers. It leaves <code>{"<head>"}</code> alone: rendering it again would run its
 					scripts again and flash its styles.
 				</li>
 				<li>
-					<Who kind="js">JavaScript</Who> The bootstrap tells the page it is done
-					(<code>rocx:ready</code>, with how long hydrating took). After that, a read the page has no
+					<Who kind="js">JavaScript</Who> The bootstrap tells the page it is done (a
+					<code>rocx:ready</code> event, with how long hydrating took). From then on, a read the page has no
 					answer for is a GET of the endpoint's URL.
 				</li>
 			</Trace>
 
 			<Heading id="nohydration">What it never hydrates</Heading>
 			<p>
-				<code>{"<NoHydration>"}</code> (Solid's name; <code>Html.no_hydration</code>) is markup the server
-				alone renders: prose, listings, anything that never changes in the browser. The server runs what
-				is inside once, as anywhere else, and writes it between <code>{"<!--nohydration-->"}</code> and
-				<code>{"<!--/nohydration-->"}</code>, with no comments of its own inside. A read made inside isn't
-				put in the answers, since the browser never makes it. In the browser's copy of a <code>.rocx</code>
-				file (<code>rocx build --client</code>) it has no children, and an import only they used is gone,
-				so none of it is in the wasm. Hydrating passes over the server's nodes between the markers, and
-				never builds, adopts or patches them; a <code>{"<body>"}</code> rendered again keeps them.
+				<code>{"<NoHydration>"}</code> (Solid's name; <code>Html.no_hydration</code> in Roc) marks markup the
+				server alone renders: prose, listings, anything that never changes in the browser. The server runs
+				what is inside once, as anywhere else, and writes it between <code>{"<!--nohydration-->"}</code> and
+				<code>{"<!--/nohydration-->"}</code>, with no markers of its own inside. A read made inside isn't put
+				in the page's answers, since the browser never makes it. In the browser's copy of a
+				<code>.rocx</code> file (<code>rocx build --client</code>) the region has no children, and an import
+				only they used is gone, so none of it is in the wasm. Hydration skips the server's nodes between
+				the markers, never building, adopting or patching them; a <code>{"<body>"}</code> rendered again
+				keeps them.
 			</p>
 			<p>
 				Nothing inside runs in the browser. So rocx refuses a handler, a <code>key</code> or a transition
-				written there, at its line, and the server refuses to render a handler a component put there: a
-				500 that says which element, rather than a dead button. This page's own markup is all in one
-				<code>{"<NoHydration>"}</code>, so its prose costs the wasm nothing.
+				written there, at its line, and the server refuses to render a handler a component put there: a 500
+				that names the element, rather than a button that silently does nothing. This page's markup is all
+				inside one <code>{"<NoHydration>"}</code>, so its prose costs the wasm nothing.
+			</p>
+
+			<Heading id="navigation">Moving between pages</Heading>
+			<p>
+				After hydration, a click on a link to another of the app's pages doesn't reload the browser's page.
+				The runtime fetches the new page's HTML document from the server, as a reload would, and renders
+				that page from the document's answers with the code the wasm already has: every page is in the
+				one module. Layouts the two pages share stay as they are, the address goes into the history, and
+				the scroll, focus and title change as on a reload. <a href={"${Paths.routing}#navigating"}>Navigating
+				without a reload</a> lists what an app can control.
 			</p>
 
 			<Heading id="waiting">Waiting, in wasm</Heading>
 			<p>
-				A memo waiting for the server is read as a plain value. Until it is in, the read throws, in
-				JavaScript, through the Roc frames that asked: the runtime catches it where it ran the computation,
-				puts Roc's stack pointer back where it was, and runs the computation again when the answer comes.
-				No JSPI, no async in Roc. A <code>{"<Loading>"}</code> above shows its fallback meanwhile, the first
-				time; after that, what was shown stays until the new value is in.
+				A component reads a memo that waits for the server (an endpoint's answer, say) as a plain value,
+				with no async code in Roc. Until the answer is in, the read throws, in JavaScript, through the Roc
+				frames that asked. The runtime catches it where it ran the computation, puts Roc's stack pointer back
+				where it was, and runs the computation again when the answer comes. There is no JSPI and no async in
+				Roc. The first time, a <code>{"<Loading>"}</code> above shows its fallback meanwhile; after that,
+				what was shown stays until the new value is in (<a href={"${Paths.components}#waiting"}>waiting and
+				failing</a>).
 			</p>
 
 			<Heading id="numbers">The numbers</Heading>
 			<p>
 				Measured by <code>site/build.mjs</code> in Node {Facts.fact!("node")}: this site's wasm, built three
-				ways (the other two on {Facts.fact!("compared")}, when <code>node site/build.mjs</code> last compared them).
-				Rendering is the <a href={Paths.root}>front page</a>, rendered by the wasm as the server would, from
-				the answers the server gave it, after warming up: every component and every hole outside its
-				<code>{"<NoHydration>"}</code>s run once. Each build's markup is checked against the server's, byte
+				ways (the other two on {Facts.fact!("compared")}, when <code>node site/build.mjs</code> last compared
+				them). "Rendering" is the <a href={Paths.root}>front page</a> rendered by the wasm as the server
+				would, from the answers the server gave, after warming up: every component and every hole outside its
+				<code>{"<NoHydration>"}</code>s run once. Each build's output is checked against the server's, byte
 				for byte, before it is timed.
 			</p>
 			<TableWrap>
@@ -224,17 +274,17 @@ view! = |_| {
 			</TableWrap>
 			<p>
 				Specializing Roc's lambda sets makes this site's wasm the smallest download of the three;
-				<code>--opt=speed</code> renders a little faster, and is the biggest raw. Compiling this site's
+				<code>--opt=speed</code> renders a little faster and is the biggest raw. Compiling this site's
 				wasm took {Facts.fact!("client_compile_ms")} ms in Node. The runtime is
 				{Facts.fact!("runtime_gzip")} of JavaScript, gzipped. The <a href={Paths.showcase}>showcase</a> measures
 				itself as it runs: frames a second, and what each costs, Roc and the patches together.
 			</p>
 			<Machine machine={machine!({})} />
 			<p>
-				What weighs most is Roc's float code. Parsing a float from a string costs about 18 KB
-				compressed, printing one about 12 KB, and sine and cosine about 5 KB, measured by building
-				the wasm with and without them. So the runtime sends frame times as whole microseconds,
-				the flock prints its positions with whole numbers, and a bird's heading is a random vector
+				What weighs most in the wasm is Roc's floating-point code. Measured by building the wasm with and
+				without them, parsing a float from a string costs about 18 KB compressed, printing one about 12 KB,
+				and sine and cosine about 5 KB. So the runtime sends frame times as whole microseconds, the
+				showcase's flock prints its positions as whole numbers, and a bird's heading is a random vector
 				scaled by a square root, which is a single wasm instruction.
 			</p>
 			<Callout kind="note" title="For scale">
@@ -243,11 +293,11 @@ view! = |_| {
 
 			<Heading id="memory">Memory</Heading>
 			<p>
-				A page keeps its wasm instance, so memory has to come back. The host allocates through Roc's
-				allocator and counts what is live. A box the runtime keeps (a hole's closure, a signal's value) is
-				released when what made it goes: a row dropped, an <code>if</code> switched, a value
-				replaced. The tests click, type, add and drop rows, and render pages again and again, and check
-				that the count of live allocations doesn't move.
+				A page keeps its wasm instance for as long as it is open, so memory has to come back. The host
+				allocates through Roc's allocator and counts what is live. A box the runtime keeps (a hole's
+				closure, a signal's value) is released when what made it goes: a row dropped, an <code>if</code>
+				switching branch, a value replaced. The tests click, type, add and drop rows, and render pages
+				again and again, and check that the count of live allocations doesn't grow.
 			</p>
 		</NoHydration>
 	</>

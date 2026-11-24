@@ -16,21 +16,22 @@ import ../../Ui/Trace
 import ../../Ui/Who
 import ../../Ui/Versus
 
-## Talking to the server: endpoints, read where a page renders, sent from handlers, and the events
-## one streams.
+## Talking to the server: endpoints, read where a page renders, sent from event handlers, posted to by
+## forms, and followed live through their events and channels.
 meta = {
 	title: "Talking to the server",
-	description: "rocx endpoints, a route's +server.roc: read as plain values where a page renders, answered by the server as it renders and carried in the page; sent from handlers; and the events one streams.",
+	description: "How a Roc Solid page talks to its server: endpoints in a route's +server.roc, typed by Generated/Api; Endpoint.get! reads a page's data as the server renders it; handlers send endpoints, forms post to them, and pages follow events and channels live.",
 	toc: [
 		{ id: "reads", label: "A page's data: Endpoint.get!" },
 		{ id: "how", label: "From the server's render to a click" },
-		{ id: "problems", label: "When it goes wrong" },
+		{ id: "problems", label: "When a read fails" },
 		{ id: "user", label: "Who is asking" },
 		{ id: "endpoints", label: "Endpoints: +server.roc" },
-		{ id: "events", label: "Events, as they happen" },
 		{ id: "forms", label: "Forms: actions and submissions" },
+		{ id: "events", label: "Events, as they happen" },
+		{ id: "channels", label: "Channels: live data for a page" },
 		{ id: "build", label: "What rocx build does" },
-		{ id: "server-functions", label: "No server functions" },
+		{ id: "server-functions", label: "Coming from SolidStart" },
 		{ id: "limits", label: "Limits, for now" },
 	],
 }
@@ -47,19 +48,23 @@ view! = |_|
 				eyebrow="Talking to the server"
 				title="One definition, the endpoint's"
 			>
-				A route's <code>+server.roc</code> is an endpoint: a method at a URL, typed at both ends. A
-				component reads a GET endpoint as a plain value. The server answers it as it renders the page,
-				and the page carries the answer, so the browser asks nothing to wake up. Handlers send endpoints
-				the rest, and listen to the events one streams. Anything else that asks over HTTP (another app,
-				<code>curl</code>) gets the same answer, behind the same middleware.
+				Everything a page asks of its server goes through an endpoint: a handler for one HTTP method at one
+				path, defined in a route's <code>+server.roc</code> and typed at both ends. A component reads a GET
+				endpoint's answer as a plain value. The server answers that read while it renders the page, and
+				sends the answer inside the page, so the browser asks for nothing as it starts. Event handlers in the
+				browser send endpoints, forms post to them, and pages follow events and channels live. Anything
+				else that speaks HTTP (another app, <code>curl</code>) gets the same answers, behind the same
+				middleware.
 			</PageHero>
 
 			<Heading id="reads">A page's data: Endpoint.get!</Heading>
 			<p>
-				An endpoint's <code>get!</code> answers with its data, and <code>Endpoint.get!</code> reads it where a
-				component renders, as a plain value: in a memo, or straight in the markup. Here, an endpoint that says
-				a message back; a signal a click writes; a memo that reads the endpoint for each message there is; and
-				another that finds the answer to the one picked.
+				Write the endpoint once, as a <code>get!</code> in a route's <code>+server.roc</code>. Then read it in
+				a component with <code>{"Endpoint.get!(Api.…)"}</code>, where <code>Api</code> is the module rocx
+				writes with a function for each endpoint. The value is the handler's result, typed, and you use it in
+				a memo or straight in markup. Here: an endpoint that says a message back; a signal that a click
+				writes; a memo that reads the endpoint for each message; and another memo that picks the answer to
+				the message chosen.
 			</p>
 			<Code title={Sources.endpoint_echo.file} source={Sources.endpoint_echo.rocx} />
 			<Code title={"${Sources.calls_component.file}, in part"} source={Sources.calls_component.rocx} numbers={Bool.False} />
@@ -69,8 +74,8 @@ view! = |_|
 			<NoHydration>
 				<Note>
 					This component, live. Every answer came with the page: the server read the endpoint for each
-					message as it rendered, so a click asks nothing, and works on a copy of this site that is only
-					files.
+					message as it rendered the page, so a click asks nothing, and the demo works on a copy of this site
+					that is only files.
 				</Note>
 			</NoHydration>
 		</Demo>
@@ -79,114 +84,138 @@ view! = |_|
 			<Heading id="how">From the server's render to a click</Heading>
 			<Trace>
 				<li>
-					<Who kind="server">server</Who> The component runs, as the server renders the page. The memo
-					reads <code>{"GET /api/echo/{message}"}</code> for each message, and the server answers it
+					<Who kind="server">server</Who> The component runs as the server renders the page. The memo
+					reads <code>{"GET /api/echo/{message}"}</code> for each message, and the server answers each read
 					in-process: through the endpoint's route, as it would answer the browser, with
-					<code>accept: application/json</code> and the page's cookies and headers. The same middleware,
-					the same answer, and nothing to wait for. A URL read twice is asked once.
+					<code>accept: application/json</code> and the page's cookies and headers. The same middleware runs,
+					the same answer comes back, and no network is involved. A URL read twice is asked once.
 				</li>
 				<li>
-					<Who kind="server">server</Who> The page goes out with the picked message's answer in
-					the <code>{"<output>"}</code>, and every answer in a script at its end, each under its URL
+					<Who kind="server">server</Who> The page goes out with the chosen message's answer in the
+					<code>{"<output>"}</code>, and every answer in a script at the end of the page, each under its URL
 					(<code>GET /api/echo/hello</code>).
 				</li>
 				<li>
-					<Who kind="browser">browser</Who> Hydrating, the same component runs. The memo reads the same
-					URLs, finds their answers in the page, and asks nothing; the server's nodes are kept. This site's
-					tests hydrate every page strictly: a page that asks the server for anything it didn't carry fails
-					them.
+					<Who kind="browser">browser</Who> Hydrating, the browser runs the same component. The memo reads
+					the same URLs, finds their answers in the page, and asks nothing; the server's nodes are kept. This
+					site's tests hydrate every page strictly: a page that asks the server for anything it didn't carry
+					fails them.
 				</li>
 				<li>
-					<Who kind="browser">browser</Who> A click: <code>{"on:click={|| set_draft!(message!())}"}</code>
-					writes the signal, the memo that reads it runs again and finds that message's answer among the
-					others, and the one text that reads it is patched. Nothing is asked: every answer is a value
-					already.
+					<Who kind="browser">browser</Who> A click, <code>{"on:click={|| set_draft!(message)}"}</code>,
+					writes the signal. The memo that reads it runs again and finds that message's answer among the
+					others, and the one text node that shows it is patched. Nothing is asked: every answer is already a
+					value.
 				</li>
 				<li>
-					<Who kind="browser">browser</Who> A read whose answer isn't in the page (its URL built from a
-					signal an <code>{"<input>"}</code> writes, say), or one read again (<code>refresh!(memo!)</code>,
-					or every read on the page once a submission is answered with a result), is a GET of the endpoint's
-					own URL, for JSON. Until the answer is
-					in, the memo keeps its last value, so what is shown stays; <code>{"<Loading>"}</code> only waits for
-					first values, and <a href={"${Paths.components}#pending"}><code>is_pending!(memo!)</code></a> is
-					true meanwhile. Answers may come back in any order: the memo only takes the one for what it asked
-					last.
+					<Who kind="browser">browser</Who> A read whose answer isn't in the page is a GET of the endpoint's
+					own URL, for JSON. That happens for a URL built from a signal (one an <code>{"<input>"}</code>
+					writes, say), for a read done again with <code>refresh!(memo!)</code>, and for every read on the
+					page after a submission is answered with a result. Until the answer is in, the memo keeps its last
+					value, so what is shown stays. <code>{"<Loading>"}</code> waits only for first values, and
+					<a href={"${Paths.components}#pending"}><code>is_pending!(memo!)</code></a> is true meanwhile.
+					Answers may come back in any order: the memo only takes the one for what it asked last.
 				</li>
 			</Trace>
 			<p>
-				What an endpoint answers is JSON, derived by Roc from the handler's types, and
-				<code>Generated/Api.roc</code> carries those types to the component: reading it as anything else
-				doesn't compile. A page's own data is best at the page's own URL. <code>routes/members/+server.roc</code>
-				answers <code>GET /members</code> for JSON, and the page at <code>/members</code> reads it, behind
-				the same middleware. The page's query goes with it when it matters:
-				<code>{"Endpoint.with_query(Api.get_board({}), Router.location!({}).query)"}</code> reads
-				<code>/?weeks=1</code> for the page at <code>/?weeks=1</code>, and the handler reads
-				<code>request.query</code>. A layout, which many pages share, reads an endpoint at a path of its own:
-				this site's footer reads <code>GET /api/facts</code>.
+				An endpoint answers with JSON, written and read by Roc from the handler's types, and
+				<code>Generated/Api.roc</code> carries those types to the component: reading the answer as anything
+				else doesn't compile.
 			</p>
+			<Callout kind="tip" title="Put a page's data at the page's own URL">
+				<p>
+					<code>routes/members/+server.roc</code> answers <code>GET /members</code> for JSON, and the page at
+					<code>/members</code> reads it, behind the same middleware (both files below). When the page's
+					query matters, pass it on: <code>{"Endpoint.with_query(Api.get_board({}), Router.location!({}).query)"}</code> reads
+					<code>/?weeks=1</code> for the page at <code>/?weeks=1</code>, and the handler reads
+					<code>request.query</code>. A layout, which many pages share, reads an endpoint at a path of its
+					own: this site's footer reads <code>GET /api/facts</code>.
+				</p>
+			</Callout>
 			<Versus>
 				<Code title={"${Sources.members_read.file}, in part"} source={Sources.members_read.rocx} numbers={Bool.False} />
 				<Code title={Sources.endpoint_members.file} source={Sources.endpoint_members.rocx} />
 			</Versus>
 
-			<Heading id="problems">When it goes wrong</Heading>
+			<Heading id="problems">When a read fails</Heading>
 			<p>
-				An answer that isn't 200 fails what read it: the memo, the hole. The nearest
-				<code>{"<Errored>"}</code> shows its fallback, given why, and a handler that reads again. Why is one of
-				<code>Server.Problem</code>: no answer (<code>HttpErr</code>), a refusal with its status
-				(<code>Refused</code>: 404 for a path the server doesn't have, or what the endpoint or its middleware
-				refused with), or an answer of another type (<code>BadAnswer</code>, from a server of another build).
-				<code>Endpoint.read!</code> reads the same answer with its refusal as a value
-				(<code>Err(Refused(404, why))</code>), for a component that shows it itself. A refusal the server met
-				as it rendered goes in the page too, so the browser fails where the server did, without asking.
+				An answer other than 200 fails whatever read it: the memo, or the hole. The nearest
+				<a href={"${Paths.components}#waiting"}><code>{"<Errored>"}</code></a> shows its fallback, which is
+				given why, as text (<code>GET /api/notes/9: 404: Not found</code>), and a function that tries again.
+				When a component should handle a refusal itself, it reads with <code>Endpoint.read!</code> instead,
+				which returns <code>Ok(result)</code> or <code>Err(problem)</code>. A problem is a
+				<code>Server.Problem</code>, one of:
 			</p>
+			<ul>
+				<li><code>HttpErr(why)</code>: no answer came (the network, say);</li>
+				<li>
+					<code>Refused(status, why)</code>: a refusal, with its status: what the endpoint or its middleware
+					refused with, or 404 for a path the server doesn't have;
+				</li>
+				<li><code>BadAnswer(why)</code>: an answer of another type, from a server of another build.</li>
+			</ul>
 			<p>
-				A read its middleware answers with a redirect (a signed-out visitor sent to sign in) makes the whole
-				page that redirect, as SolidStart answers one thrown while it renders. A layout's reads answer every
-				page's visitors: nothing is above the root layout to catch a failure there, so it puts an
-				<code>{"<Errored>"}</code> around the holes that read, or the page is a 500.
+				A refusal the server met as it rendered goes in the page too, so the browser fails in the same place
+				without asking again.
 			</p>
-			<p>
-				A failure no <code>{"<Errored>"}</code> of the page's catches is the app's error page
-				(<code>routes/+error.rocx</code>), and its status is the refusal's when that is a 4xx: a page whose
-				endpoint answers <code>NotFound</code> (a note that isn't there) is a 404, as a path no page has is,
-				with the status and why. A 5xx, or no answer, is a 500. An <code>{"<Errored>"}</code> of the page's
-				own that catches it shows its fallback instead, and the page is answered as it is, unless the
-				fallback says otherwise with <code>{"<HttpStatusCode>"}</code>.
-			</p>
+			<ul>
+				<li>
+					<strong>A redirect makes the whole page that redirect.</strong> When a read's middleware answers
+					with a redirect while the page renders (a signed-out visitor sent to sign in), the page's answer is
+					that redirect, as SolidStart answers one thrown while it renders.
+				</li>
+				<li>
+					<strong>A failure nothing catches shows the error page.</strong> It is the app's
+					<a href={"${Paths.routing}#error"}>error page</a> (<code>routes/+error.rocx</code>), and the status
+					is the refusal's when that is a 4xx. A page whose endpoint answers <code>NotFound</code> (a note that
+					isn't there) is a 404, as a path no page has is. A 5xx, or no answer at all, is a 500. If an
+					<code>{"<Errored>"}</code> in the page catches the failure, its fallback shows instead, and the page
+					is answered with 200, unless the fallback sets another status with
+					<code>{"<HttpStatusCode>"}</code>.
+				</li>
+				<li>
+					<strong>Guard the root layout's reads.</strong> The root layout's reads run for every page, and
+					nothing is above it to catch a failure there. Put an <code>{"<Errored>"}</code> around the holes
+					that read, or such a failure makes every page a 500.
+				</li>
+			</ul>
 
 			<Heading id="user">Who is asking</Heading>
 			<p>
-				The GET the server makes as it renders carries the page's cookies and headers. So a handler reads who
-				is asking from the request, whether the browser sent it or the server made it, and never takes the
-				browser's word for it. The bag on the <a href={"${Paths.components}#tree"}>components page</a> says
-				whose bag it is this way:
+				The GET the server makes as it renders carries the page's cookies and headers. So a handler works
+				out who is asking from the request, the same way whether the browser sent it or the server made it
+				during the render, and never takes the browser's word for it. The bag on the
+				<a href={"${Paths.components}#tree"}>components page</a> finds out whose bag it is this way:
 			</p>
 			<Versus>
 				<Code title={"${Sources.bag_reader.file}, in part"} source={Sources.bag_reader.rocx} numbers={Bool.False} />
 				<Code title={Sources.endpoint_reader.file} source={Sources.endpoint_reader.rocx} />
 			</Versus>
 			<p>
-				Its route runs behind middleware: the app's default, around every request, and the route file's own
-				<code>middleware</code>, as its page has. What the middleware handed on (who is signed in, say) is the
-				handler's <code>context</code>: <code>{"get! = |{ context, .. }| Ok({ member: context.member })"}</code>.
-				Its body may use what only the server has: <code>Db</code>, <code>Job</code>, <code>Email</code>
-				(<a href={Paths.platform_database}>the database</a>). The browser's copy of <code>Api</code> holds the
-				endpoint's method and URL, and nothing it does.
+				A handler runs behind the app's default middleware and its route file's own
+				<code>middleware</code>. What the middleware handed on, such as who is signed in, is the handler's
+				<code>context</code>: <code>{"get! = |{ context, .. }| Ok({ member: context.member })"}</code>
+				(<a href={"${Paths.routing}#middleware"}>middleware</a>). Its body can use what only the server has:
+				<a href={Paths.platform_database}>the database</a>, <a href={Paths.platform_kv}>Kv</a>, jobs, email.
+				The browser's copy of <code>Api</code> holds only the endpoint's method, URL and types: nothing the
+				handler does reaches the browser.
 			</p>
 
 			<Heading id="endpoints">Endpoints: +server.roc</Heading>
 			<p>
-				A route's <code>+server.roc</code> (plain Roc; <code>+server.rocx</code> too, if it has markup)
-				answers HTTP methods at its path: <code>get!</code>, <code>post!</code>, <code>put!</code>,
-				<code>patch!</code> and <code>delete!</code>. Each is given the request, the path's params, what its
-				middleware handed on and, with a body, the body, read as JSON. It answers <code>Ok(result)</code>,
-				sent as JSON, or a refusal, sent as its status (<code>Endpoint.Refusal</code>:
-				<code>BadRequest(why)</code> is a 400).
+				A route's <code>+server.roc</code> (plain Roc; <code>+server.rocx</code> if it has markup) answers
+				HTTP methods at its path: <code>get!</code>, <code>post!</code>, <code>put!</code>,
+				<code>patch!</code> and <code>delete!</code>. Each handler is given a record: the request, the path's
+				params, what its middleware handed on (<code>context</code>) and, for a method with a body, the body,
+				read as its annotated type. It answers <code>Ok(result)</code>, sent as JSON, or
+				<code>Err(refusal)</code>, sent as a status and why. An <code>Endpoint.Refusal</code> is
+				<code>BadRequest(why)</code> (400), <code>Unauthorized</code> (401), <code>Forbidden</code> (403),
+				<code>NotFound</code> (404), <code>Conflict(why)</code> (409), <code>Status(code, why)</code>, or
+				<code>Answer(response)</code>, an answer of its own (a redirect that sets a cookie).
 			</p>
 			<Code title={Sources.endpoint_shout.file} source={Sources.endpoint_shout.rocx} />
 			<Code title={Sources.endpoint_shout_word.file} source={Sources.endpoint_shout_word.rocx} />
-			<p>Over HTTP, anything may ask them. What they answered, asked by this page's own endpoint as the page rendered:</p>
+			<p>Over HTTP, anything may ask them. Here is what they answered when this page's own endpoint asked them as the page rendered:</p>
 			<TableWrap>
 				<table class="http">
 					<thead><tr><th>Request</th><th>Body</th><th>Status</th><th>Answer</th></tr></thead>
@@ -203,12 +232,13 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				The app asks them as functions. rocx writes <code>Generated/Api.roc</code> from the routes, the app's
-				contract: a function for each endpoint, of its params (<code>{"{}"}</code> with none), typed with what
-				its handler's annotation says it is sent and answers. It is the method, the URL and those types, and
-				nothing the handler does, the same in the browser's copy, so any module may import it: a component, a
-				route, a job, an actor. <code>Generated/Handlers.roc</code>, the server's alone, binds each to its
-				handler (<code>Endpoint.bind</code>, which checks that they agree), for the router and for
+				The app calls them as functions. rocx writes <code>Generated/Api.roc</code> from the routes: the
+				app's contract, with a function for each endpoint that takes the path's params
+				(<code>{"{}"}</code> with none) and is typed with what the handler's annotation says it is sent and
+				answers. It is the method, the URL and those types, and nothing the handler does. The browser gets the
+				same contract, so any module may import it: a component, a route, a job, an actor.
+				<code>Generated/Handlers.roc</code>, which only the server has, binds each endpoint to its handler
+				(<code>Endpoint.bind</code>, which checks that the two agree), for the router and for
 				<code>Endpoint.run!</code>:
 			</p>
 			<Versus>
@@ -216,10 +246,13 @@ view! = |_|
 				<Code title="Generated/Handlers.roc, the server's" source={Sources.endpoint_handlers.rocx} numbers={Bool.False} />
 			</Versus>
 			<p>
-				This component asks the other one from a handler, for the word clicked,
-				<code>{"Endpoint.send!(Api.get_api_shout_word({ word: word }), {}, Call.fetch!)"}</code>, and shows the
-				answer, or why there is none. On a copy of this site that is only files, these three words' answers
-				are files, which the server wrote as the site was built:
+				In the browser, an event handler (an <code>on:click</code>, say) sends any endpoint with
+				<code>{"Endpoint.send!(endpoint, arg, Call.fetch!)"}</code> and gets <code>Ok(result)</code> or
+				<code>Err(problem)</code>. The event handler pauses while the answer is on its way: it runs again once
+				the answer is in, and only that run's writes are kept. This component asks the shout endpoint for the
+				word clicked, <code>{"Endpoint.send!(Api.get_api_shout_word({ word: word }), {}, Call.fetch!)"}</code>,
+				and shows the answer, or why there is none. On the static copy of this site, these three words'
+				answers are files, which the server wrote as the site was built:
 			</p>
 		</NoHydration>
 		<Demo inspect="shout" waiting="Nothing yet: shout a word.">
@@ -227,31 +260,38 @@ view! = |_|
 		</Demo>
 		<NoHydration>
 			<p>
-				And this page's endpoint asked it as a function run there and then,
-				<code>{"Endpoint.run!(endpoint, request, context, {})"}</code>, with no HTTP and without its middleware
-				(the caller has run its own): <strong>{asked!({}).shouted}</strong>. <code>run!</code> needs the
-				endpoint with its handler: <code>Generated/Handlers</code>' (from <code>main.roc</code>, a plugin, or
-				a module only they import, such as an MCP server's tools), or, in a route file, which Handlers imports,
-				the contract bound to the handler as Handlers binds it.
+				On the server, <code>{"Endpoint.run!(endpoint, request, context, arg)"}</code> runs an endpoint's
+				handler there and then: no HTTP, and no middleware, since the caller has run its own. This page's
+				endpoint asked the shout endpoint that way as the page rendered: <strong>{asked!({}).shouted}</strong>.
+				<code>run!</code> needs the endpoint bound to its handler. Take it from <code>Generated/Handlers</code>
+				(in <code>main.roc</code>, a plugin, or a module only they import, such as an MCP server's tools). A
+				route file can't import Handlers, which imports it, so it binds the contract to the handler itself,
+				as Handlers does.
 			</p>
 			<ul>
 				<li>
-					<strong>A page and endpoints at one path.</strong> A GET a browser sends (one that accepts HTML)
-					is the page's; every other request is the endpoints'. A method nothing there answers is a 405,
-					saying which are (<code>Allow</code>).
+					<strong>A page and endpoints at one path.</strong> A browser's GET (one that accepts HTML) gets the
+					page. Any other GET goes to <code>get!</code>, if the file has one, and every other method to its
+					handler. A method nothing answers is a 405 that lists the ones that are (<code>Allow</code>).
 				</li>
 				<li>
-					<strong>Behind middleware.</strong> This site's default middleware refuses a POST, PUT, PATCH or
-					DELETE that a page of another site sends (its <code>Origin</code> isn't this server) with a 403;
-					a client that isn't a page (<code>curl</code>) sends no
-					<code>Origin</code>. A route file may name more (<code>middleware = Middlewares.member</code>):
-					see <a href={"${Paths.routing}#middleware"}>middleware</a>.
+					<strong>Behind middleware.</strong> This site's default middleware refuses, with a 403, a POST, PUT,
+					PATCH or DELETE that a page of another site sends (its <code>Origin</code> isn't this server). A
+					client that isn't a page, such as <code>curl</code>, sends no <code>Origin</code>, and is let
+					through. A route file can name more (<code>middleware = Middlewares.member</code>).
 				</li>
 				<li>
 					<strong>Typed at both ends.</strong> Api's types are the handler's annotation's, in the server's
-					copy and the browser's: a component that sends the wrong body, or reads the answer as anything else,
-					compiles in neither, and <code>rocx check</code> points at its line. A handler without an annotation
-					is refused by <code>rocx build</code>, which copies its types.
+					copy and the browser's. A component that sends the wrong body, or reads the answer as anything else,
+					compiles in neither, and <code>rocx check</code> points at its line. <code>rocx build</code> refuses
+					a handler without an annotation, since it copies the types from there.
+				</li>
+				<li>
+					<strong>JSON both ways.</strong> An <code>F64</code> goes as a number; one JSON can't write (NaN, an
+					infinity) is a 500 that says so. A <code>Try</code> goes as its tag, <code>{"{\"Ok\":5}"}</code> or
+					<code>{"{\"Err\":\"Empty\"}"}</code>. Two shapes are JSON's own instead: <code>{"Try(a, [Null])"}</code>
+					is a value that may be <code>null</code>, and a record field's <code>{"Try(a, [Missing])"}</code> is a
+					field that may be left out.
 				</li>
 			</ul>
 			<details>
@@ -259,226 +299,258 @@ view! = |_|
 				<Code title={Sources.demo_shout.file} source={Sources.demo_shout.rocx} />
 			</details>
 
+			<Heading id="forms">Forms: actions and submissions</Heading>
+			<p>
+				A form posts to an endpoint as any HTML form posts. The endpoint reads the fields by its body's type.
+				For <code>{"{ name : Str, count : U64, gift : Bool, toppings : List(Str) }"}</code>, a number is read
+				from its text, a box left unticked is <code>Bool.False</code>, and a name the form sends several times
+				is a list. A field that is missing or wrong is a 400 that names it. JSON and a form are read into the
+				same typed record, so one endpoint takes both.
+			</p>
+			<p>
+				Solid Router calls a function a form posts to an action. Here the endpoint is the action: it
+				already has a URL, a method and types. <code>use_submission!(endpoint)</code>, in a component, is the
+				latest submission to it: whether it is on its way, what was sent, and the endpoint's result or
+				refusal.
+			</p>
+			<Code
+				title="A form that shows its refusal"
+				source={"import pf.Router exposing [use_submission!]\n\njoin = Api.post_members_join({})\nsubmission = use_submission!(join)\n<form method=\"post\" action={Endpoint.url_of(join)}>\n\t<input name=\"name\" value={submission.field!(\"name\")} />\n\t<button disabled?={submission.pending!()}>Join</button>\n\t{match submission.error!() {\n\t\tOk(problem) => <p class=\"problem\">{Server.explain(problem)}</p>\n\t\tErr(_) => <></>\n\t}}\n</form>"}
+				numbers={Bool.False}
+			/>
+			<ul>
+				<li>
+					<strong>With JavaScript</strong>, the runtime sends a form with <code>fetch</code> when it posts to
+					an endpoint whose submission a component on the page reads, and the page stays. While the answer is
+					on its way, <code>pending!()</code> is true. After a result it stays true until the page's reads have
+					been read again (as Solid Router revalidates after an action), so the server's new data and the
+					result show at once. Then <code>result!()</code> is the endpoint's result, or <code>error!()</code>
+					its refusal (<code>{"Refused(409, \"…\")"}</code>) or why no answer came. <code>input!()</code> is
+					what was sent, as the endpoint reads it, and <code>field!(name)</code> one field as it was typed.
+					Only the latest submission counts; <code>clear!()</code>, in an event handler, forgets it. A
+					redirect from the endpoint (<code>{"Err(Answer(Server.redirect(…)))"}</code>, setting a cookie,
+					say) sends the browser there.
+				</li>
+				<li>
+					<strong>Without JavaScript</strong> (before the runtime loads, or with JavaScript off), the form
+					posts as forms always have. The endpoint doesn't answer with JSON or text, which the browser would
+					show as a bare page. Instead it sends the browser back to the page the form was on, with a flash:
+					where the form posted, what was typed, and the result or the refusal. The server keeps the flash for
+					a minute (a cookie holds only its id), and the next page view reads it once and lets it go. A
+					password typed is never sent back. On that page the submission is the flash, so it shows the
+					refusal, with what was typed in its field, just as it would have with JavaScript, and the browser
+					hydrates it as the server rendered it. <code>{"Server.flash!({})"}</code> reads the flash as it came.
+				</li>
+				<li>
+					<strong>Where to go next is the endpoint's to say, either way.</strong> An endpoint whose form should
+					go somewhere when it succeeds answers <code>{"Err(Answer(Server.redirect(…)))"}</code>, as the endpoint
+					behind this site's <a href={Paths.members_join}>joining page</a> does (it sets a cookie too).
+				</li>
+				<li>
+					<strong>Without a form.</strong> <code>use_action!(endpoint)</code> (Solid Router's
+					<code>useAction</code>) is a function an event handler calls with the endpoint's arg. Each call is a
+					submission of its own, sent as JSON once the event handler is done, which doesn't wait for the
+					answer.
+				</li>
+				<li>
+					<strong>Every submission, and optimistic values.</strong> <code>use_submissions!(endpoint)</code>
+					(<code>useSubmissions</code>) lists every submission to an endpoint, a form's or an action's:
+					<code>all!()</code>, <code>pending!()</code>, <code>pending_inputs!()</code>, <code>clear!(id)</code>
+					and <code>retry!(id)</code>. An optimistic value is a memo of the endpoint's data with
+					<code>pending_inputs!()</code> applied to it: see
+					<a href={"${Paths.components}#actions"}>actions and optimistic values</a>, with a live demo, on the
+					components page.
+				</li>
+				<li>
+					<strong>Files.</strong> A form with an <code>{"<input type=\"file\">"}</code>
+					(<code>enctype="multipart/form-data"</code>) is sent as the browser sends it, with JavaScript or
+					without. The endpoint reads its fields as a form's, a file's field as the file's name, and the file
+					itself with <code>{"Server.file(request, \"photo\")"}</code>: its name, type and bytes, which
+					<a href={Paths.ecosystem_storage}><code>{"Storage.put_upload!"}</code></a> can keep. An action whose
+					arg holds the URL of a file the page has (dropped, pasted or picked) is sent the same way. A file is
+					part of the request's body, which is 16 MiB at most unless the server's <code>--max-body</code> says
+					more; over that, the answer is a 413.
+				</li>
+			</ul>
+			<p>Where Roc Solid differs from Solid Router here:</p>
+			<ul>
+				<li>
+					A record has no getters, so a submission's fields are methods: <code>submission.pending!()</code>.
+				</li>
+				<li>
+					The form's <code>action</code> is the endpoint's URL, <code>Endpoint.url_of(endpoint)</code>, since
+					Roc can't turn an endpoint into a string by itself.
+				</li>
+				<li><code>input!()</code> is the endpoint's own type, not a <code>FormData</code>.</li>
+				<li>
+					Solid's <code>action.with</code> is <code>{"Endpoint.with_fields(endpoint, { id })"}</code>, which
+					puts fields in the form's URL; an action binds its values with a closure instead.
+				</li>
+				<li>
+					Revalidate keys are URLs: the endpoint's handler says which of the page's reads a result reads again
+					with <code>{"Router.revalidate!([url])"}</code>, each a URL or its beginning, rather than a query's
+					key.
+				</li>
+			</ul>
+
 			<Heading id="events">Events, as they happen</Heading>
 			<p>
-				An answer is sent once it is whole. For what the server learns a piece at a time (a job's
-				progress, a feed, what others did), an endpoint can stream events instead, as it makes them
+				An answer is sent once it is whole. For what the server learns a piece at a time (a job's progress,
+				a feed, what others did), an endpoint can stream events instead, sending each as it is made
 				(server-sent events). <code>events!</code> in a <code>+server.roc</code> answers a GET that asks for
-				them (<code>accept: text/event-stream</code>) with <code>Events</code>: here, the counts from 1 to
-				<code>params.to</code>, each with its square, 300 ms apart:
+				events (<code>accept: text/event-stream</code>) with <code>Events</code>. This one counts from 1 to
+				<code>params.to</code>, sending each count with its square, 300 ms apart:
 			</p>
 			<Code title={Sources.endpoint_count.file} source={Sources.endpoint_count.rocx} />
 			<ul>
 				<li>
 					<strong>A stream is a loop.</strong> <code>Events.stream</code> is given <code>send!</code>, which
-					sends an event, and <code>sleep!</code>, which waits so many milliseconds; it sends, sleeps and goes
-					round again, and the stream ends when it returns. The server runs it as a call of its own, which
-					pauses while it sleeps, so its sleeps hold up no other request. When the page goes, <code>send!</code> says so
-					(<code>Err(Gone)</code>), a sleep ends early, and <code>?</code> ends the loop.
-					<code>Events.from_list(items, ms)</code> and <code>Events.map</code> make the simple ones.
+					sends an event, and <code>sleep!</code>, which waits so many milliseconds. The loop sends, sleeps and
+					goes round again, and the stream ends when it returns. The server runs it as a call of its own,
+					which pauses while it sleeps, so its sleeps hold up no other request. When the page goes,
+					<code>send!</code> says so (<code>Err(Gone)</code>), a sleep ends early, and <code>?</code> ends the
+					loop. <code>Events.from_list(items, ms)</code> and <code>Events.map</code> make the simple ones.
 				</li>
 				<li>
-					<strong>Each event is JSON</strong>, of the type <code>events!</code> says, on the wire as a
-					<code>data:</code> line; an <code>end</code> event says it is over, so a page doesn't ask again.
-					Anything may listen: <code>curl -N -H 'accept: text/event-stream' localhost:8080/api/count/3</code>.
+					<strong>Each event is JSON</strong>, of the type <code>events!</code>'s annotation says, sent as a
+					<code>data:</code> line; an <code>end</code> event says the stream is over, so the browser doesn't
+					ask again. Anything may listen:
+					<code>curl -N -H 'accept: text/event-stream' localhost:8080/api/count/3</code>.
 				</li>
 				<li>
-					<strong>A component listens</strong> from a handler, with <code>Endpoint.listen!</code>: each event
-					runs the handler it is given, as a click would, with the event, of the endpoint's type
-					(<code>Event(counted)</code>), then <code>Ended</code>, or <code>Failed</code> with why (a refusal
-					is a <code>Refused</code>, with its status). Started in an
-					<a href={"${Paths.components}#effects"}>effect</a>, it listens while the component is there (again
-					when what the effect read changes) and stops when it goes. An event that says an endpoint's data
-					changed can read it again: <code>refresh!(memo!)</code>, and the memo GETs its URL.
+					<strong>A component listens</strong> with <code>Endpoint.listen!(endpoint, Call.listen!, heard!)</code>.
+					<code>heard!</code> runs for each event, as a click's handler would: with <code>Event(counted)</code>,
+					typed as the endpoint's events; then <code>Ended</code>; or <code>Failed(problem)</code>, where a
+					refusal is <code>Refused(status, why)</code>. Started from an
+					<a href={"${Paths.components}#effects"}>effect</a> or an event handler, it listens while its component is
+					there and stops when the component goes. When an event says an endpoint's data changed, read it
+					again with <code>refresh!(memo!)</code>, and the memo GETs its URL.
 				</li>
 				<li>
-					<strong>Behind middleware, as any endpoint.</strong> A guard refuses a stream as it refuses
-					anything else, before the loop runs.
-				</li>
-				<li>
-					<strong>For live data a page follows, a channel.</strong> Each <code>listen!</code> is a stream of
-					its own, checked once as it starts. Channels (a route's <code>channel!</code>) share one stream a
-					tab, whatever it subscribes to; each is checked again every 15 s, and a subscriber is told to read
-					its data again (<code>Resync</code>) when it may have missed something: <code>Endpoint.subscribe!</code>
-					from an effect, <code>Endpoint.publish!</code> from a request, a job or an actor. See
-					<a href={"${Paths.platform_live}#channels"}>channels</a>.
+					<strong>Behind middleware, as any endpoint.</strong> A guard refuses a stream as it refuses anything
+					else, before the loop runs.
 				</li>
 			</ul>
 			<Code title={"${Sources.demo_count.file}, in part"} source={Sources.demo_count_update.rocx} numbers={Bool.False} />
 			<p>
-				Its Start asks for a stream: each count is a row as the server sends it, and the component says
-				when the server stopped sending (it ended the stream, and <code>Ended</code> came); Start again asks
-				for a new one. It isn't live on this page, because a copy of this site as files can't stream: a host
-				of files answers nothing with <code>text/event-stream</code>. With <code>just dev</code>, the
-				<code>curl</code> above shows one.
+				Its Start button asks for a stream. Each count becomes a row as the server sends it, and when the
+				server ends the stream (<code>Ended</code>), the component says so; Start again asks for a new one. It
+				isn't live on this page, because the static copy of this site can't stream: a host of files has no
+				<code>text/event-stream</code> to answer with. With <code>just dev</code>, the <code>curl</code> above
+				shows one.
 			</p>
 			<details>
 				<summary>The component: <code>{Sources.demo_count.file}</code></summary>
 				<Code title={Sources.demo_count.file} source={Sources.demo_count.rocx} />
 			</details>
 
-			<Heading id="forms">Forms: actions and submissions</Heading>
+			<Heading id="channels">Channels: live data for a page</Heading>
 			<p>
-				A form posts to an endpoint as any form posts: the endpoint reads its fields by its body's types
-				(<code>{"{ name : Str, count : U64, gift : Bool, toppings : List(Str) }"}</code>: a number from its
-				text, a box left unticked <code>Bool.False</code>, the values a name has as a list; one missing or
-				wrong is a 400 naming the field), and answers. So an action's JSON and a plain form post one typed
-				record. Solid Router calls that an action, and
-				<code>useSubmission</code> says how the latest one went. Here the endpoint is the action: it has a
-				URL, a method and types already. <code>use_submission!(endpoint)</code>, in a component, is its
-				latest submission: whether it is on its way, what was typed, and the endpoint's result or its
-				refusal.
+				Each <code>listen!</code> is a stream of its own, checked once as it starts. For data a page follows
+				live (a board others edit, who is online), use a channel instead. A route's <code>+server.roc</code>
+				defines one with <code>channel!</code>, a check that lets a subscriber in
+				(<code>Channel.allow(who)</code>) or refuses it. Its annotation says what the server publishes on it
+				and what pages may say on it. Here, a lobby that lets everyone in, and the component that subscribes
+				to it:
 			</p>
-			<Code
-				title="rocx"
-				source={"import pf.Router exposing [use_submission!]\n\njoin = Api.post_members_join({})\nsubmission = use_submission!(join)\n<form method=\"post\" action={Endpoint.url_of(join)}>\n\t<input name=\"name\" value={submission.field!(\"name\")} />\n\t<button disabled?={submission.pending!()}>Join</button>\n\t{match submission.error!() { Ok(problem) => <p class=\"problem\">{Server.explain(problem)}</p>, Err(_) => <></> }}\n</form>"}
-				numbers={Bool.False}
-			/>
+			<Code title={Sources.channel_lobby.file} source={Sources.channel_lobby.rocx} />
+			<Code title={"${Sources.demo_lobby.file}, in part"} source={Sources.demo_lobby.rocx} numbers={Bool.False} />
 			<ul>
 				<li>
-					<strong>With the runtime</strong>, a form posting to the endpoint of a submission a component reads
-					is sent with <code>fetch</code>, and the page stays. <code>pending!()</code> holds until the answer
-					is in, and after a result until the page's reads have been read again (as Solid Router revalidates
-					after an action), so the server's new data and the result show at once. Then
-					<code>result!()</code> is the endpoint's result, or <code>error!()</code> its refusal
-					(<code>Refused(409, "…")</code>), or why there was no answer. <code>input!()</code> is what was sent,
-					as the endpoint reads it, and <code>field!(name)</code> one field. The latest submission is the one
-					that counts; <code>clear!()</code>, in a handler, forgets it. A redirect of the endpoint's own
-					(<code>Err(Answer(Server.redirect(…)))</code>, setting a cookie, say) sends the browser there.
+					<strong>Subscribe from an effect.</strong> <code>Endpoint.subscribe!</code> hears the channel until the
+					effect runs again or its component goes. <code>Endpoint.say!</code> sends something to the server,
+					where the route's <code>receive!</code> hears it.
 				</li>
 				<li>
-					<strong>Without it</strong> (before it loads, or with JavaScript off), the form posts, and a page of
-					JSON or of text would come back. Instead the endpoint sends the browser back to the page the form
-					was on, with a flash: where it posted, what was typed, and the result or the refusal, kept on the
-					server for a minute (a cookie holds only its id) and read once. A password typed is never sent
-					back. That page's submission is the flash, so it shows the refusal, with what was typed
-					in its field, as it would have with the runtime, and the browser hydrates it as the server
-					rendered it. The next page view lets it go. <code>{"Server.flash!({})"}</code> reads it as it came.
+					<strong>Publish from anywhere on the server</strong>: <code>Endpoint.publish!</code>, from a request,
+					a job or an actor, reaches every page subscribed with the same params, in the order published.
 				</li>
 				<li>
-					<strong>A redirect is the endpoint's to answer, either way.</strong> An endpoint whose forms should
-					go somewhere when they succeed answers <code>Err(Answer(Server.redirect(…)))</code>, as the endpoint
-					behind this site's <a href={Paths.members_join}>joining page</a> does (it sets a cookie too).
-				</li>
-				<li>
-					<strong>Without a form, and every submission.</strong> <code>use_action!(endpoint)</code>
-					(<code>useAction</code>) is a function a handler calls with the endpoint's arg: a submission of its
-					own, sent without waiting. <code>use_submissions!(endpoint)</code> (<code>useSubmissions</code>)
-					lists every submission to it, a form's or an action's: <code>all!()</code>,
-					<code>pending!()</code>, <code>pending_inputs!()</code> and <code>clear!(id)</code>. An optimistic
-					value is a memo of the endpoint's data with <code>pending_inputs!()</code> applied: see
-					<a href={"${Paths.components}#actions"}>actions</a> on the components page.
-				</li>
-				<li>
-					<strong>Where it differs from Solid:</strong> a record has no getters, so the fields are methods;
-					the form's <code>action</code> is the endpoint's URL (<code>Endpoint.url_of</code>), since Roc can't
-					turn an endpoint into a string by itself; <code>input!()</code> is the endpoint's own type, not a
-					<code>FormData</code>. Solid's <code>.with</code> is <code>Endpoint.with_fields(endpoint, {"{ id }"})</code>,
-					a form's fields in its URL, since an action's values are bound by a closure; <code>retry</code> is
-					<code>retry!()</code>; a result's revalidate keys are its handler's
-					<code>{"Router.revalidate!([url])"}</code>, each a URL (or its beginning) rather than a query's key.
-				</li>
-				<li>
-					<strong>Files.</strong> A form with an <code>{"<input type=\"file\">"}</code>
-					(<code>enctype="multipart/form-data"</code>) is sent as the browser sends it, with
-					JavaScript or without; the endpoint reads its fields as a form's, a file's field its name, and the
-					file with <code>{"Server.file(request, \"photo\")"}</code>: its name, type and bytes, which
-					<code>{"Storage.put_upload!"}</code> keeps. An action whose arg holds the URL of a file the page has
-					(dropped, pasted or picked) is sent so too. A file is part of the request's body, 16 MiB at most
-					unless the server's <code>--max-body</code> says more; over it, a 413.
+					<strong>One stream a tab.</strong> All of a tab's subscriptions share one connection, whatever they
+					subscribe to. Each channel's check runs again every 15 seconds, so someone who loses access stops
+					hearing, and a subscriber that may have missed something hears <code>Resync</code>, its cue to read
+					its data again.
 				</li>
 			</ul>
+			<p>
+				The lobby is live, with the rest of what channels do (hooks, reconnecting, the latest value with each
+				key), on the <a href={"${Paths.platform_live}#channels"}>live and channels</a> page.
+			</p>
 
 			<Heading id="build">What rocx build does</Heading>
 			<Trace>
 				<li>
 					<p>
-						<strong>Names each endpoint</strong> after its method and its path, in
+						<strong>It names each endpoint</strong> after its method and its path, in
 						<code>Generated/Api.roc</code>: <code>get_api_echo_message</code> for <code>get!</code> in
-						<code>routes/api/echo/[message]/+server.roc</code>, a function of the path's params, so no URL is
-						written twice and a link with the wrong params doesn't compile. Its type is copied from the
-						handler's annotation (its body and its answer; a channel's <code>Channel(who, message, said)</code>),
-						with the imports those types need, and no route file: so a module a route imports (a store, a
-						job, an actor) may import Api, and publish on a channel by its name. A module that defines a
-						type a route's annotation names can't import Api too (Api imports it): <code>rocx build</code>
-						says so, and to move the type into a module of its own.
+						<code>routes/api/echo/[message]/+server.roc</code>. It is a function of the path's params, so no
+						URL is written twice, and a call with the wrong params doesn't compile. Its type is copied from the
+						handler's annotation (its body and its answer; a channel's
+						<code>Channel(who, message, said)</code>), with the imports those types need, and no route file.
+						So a module a route imports (a store, a job, an actor) may import Api too, and publish on a channel
+						by its name. A module that defines a type a route's annotation names can't import Api, because Api
+						imports it: <code>rocx build</code> says so, and suggests moving the type into a module of its own.
 					</p>
 				</li>
 				<li>
 					<p>
-						<strong>Routes it.</strong> <code>Generated/Routes.roc</code> gives each path's requests to its
-						page (a GET that accepts HTML) or to its endpoints, past the app's default middleware and the route
-						file's own, each endpoint with its handler (<code>Generated/Handlers.roc</code>). The GETs the
-						server makes as it renders go the same way.
+						<strong>It routes them.</strong> <code>Generated/Routes.roc</code> gives each path's requests to
+						its page (a GET that accepts HTML) or to its endpoints, after the app's default middleware and the
+						route file's own, each endpoint with its handler from <code>Generated/Handlers.roc</code>. The GETs
+						the server makes as it renders go the same way.
 					</p>
 				</li>
 				<li>
 					<p>
-						<strong>Leaves what it does out of the browser's copy.</strong> The browser's app is built from a
-						copy of the site rocx writes (<code>--client site/build/client</code>), with the same
-						<code>Api</code>, and no <code>Handlers</code>, and in which a route file has no
-						<code>middleware</code> (only the server runs it, and it may read the environment or the
-						database), as the <a href="#endpoints">endpoints</a> above show. So the types a route's
-						annotation names must compile in the browser: a type from a module that imports <code>pf.Db</code>
-						is refused by <code>rocx build</code>, at the route's line, naming the type and the module.
+						<strong>It leaves the handlers out of the browser's copy.</strong> The browser's app is built
+						from a copy of the app that rocx writes (<code>--client site/build/client</code>), with the same
+						<code>Api</code>, no <code>Handlers</code>, and no route file's <code>middleware</code> (only the
+						server runs that, and it may read the environment or the database). So the types a route's
+						annotation names must compile in the browser too: a type from a module that imports
+						<code>pf.Db</code> is refused by <code>rocx build</code>, at the route's line, naming the type and
+						the module.
 					</p>
 				</li>
 			</Trace>
 
-			<Heading id="server-functions">No server functions</Heading>
+			<Heading id="server-functions">Coming from SolidStart</Heading>
 			<p>
-				Before a page could read an endpoint as it rendered, its data came from a server function,
-				<code>{"name! = server!(|request, input| …)"}</code>, called at <code>POST /rocx/call/…</code>. A page
-				with an endpoint too defined its data twice, and the server function's URL was one nobody chose. So
-				server functions are gone, and <code>rocx build</code> refuses <code>server!</code> at its line.
-			</p>
-			<p>
-				What one did is a <code>get!</code> in a route's <code>+server.roc</code>: the page's own, or a path
-				of its own for a layout or a component that many pages show. Its input is the path's params or the
-				query, and what its middleware handed on is the handler's <code>context</code>. A component reads it
-				with <code>{"Endpoint.get!(Api.get_…(params))"}</code>. DECISIONS.md has the why (D-023).
+				SolidStart has server functions (<code>"use server"</code>): code the browser calls at a URL the
+				framework picks. Roc Solid has none. A page's data is a <code>get!</code> in a route's
+				<code>+server.roc</code>, at a URL you chose: the page's own, or a path of its own for a layout or a
+				component many pages show. Its input is the path's params or the query, and what its middleware handed
+				on is its <code>context</code>. A component reads it with <code>{"Endpoint.get!(Api.get_…(params))"}</code>.
+				So the server's render, hydration, later reads in the browser, other clients and the OpenAPI document
+				all meet one handler, behind one middleware. <code>rocx build</code> refuses <code>{"server!(…)"}</code>,
+				and says what to write instead.
 			</p>
 
 			<Heading id="limits">Limits, for now</Heading>
-			<Callout kind="note" title="A working prototype">
-				<p>The pieces are tested together, on the server and in a browser. Some are plainly missing.</p>
-			</Callout>
 			<ul>
 				<li>
-					<strong>A page reads with GET.</strong> While it renders, the server answers GETs of the app's own
-					endpoints (a path, <code>/…</code>); anything else, a POST or another site's URL, is a handler's,
-					sent from the browser. Another server's data a page needs as it renders comes through an endpoint
-					of the app's own, whose handler asks for it with <code>Http.fetch!(url, init)</code>.
+					<strong>A page reads with GET.</strong> While a page renders, the server answers GETs of the app's
+					own endpoints (a path, <code>/…</code>). Anything else, a POST or another site's URL, is for an
+					event handler to send from the browser. When a page needs another server's data as it renders,
+					give the app an endpoint whose handler fetches it with
+					<a href={"${Paths.platform_http}#out"}><code>Http.fetch!(url, init)</code></a>.
 				</li>
 				<li>
-					<strong>A form the runtime sends is URL-encoded.</strong> A form with files
-					(<code>multipart/form-data</code>) posts as the browser posts it, and an endpoint reads its body
-					itself.
-				</li>
-				<li>
-					<strong>Its types are the browser's too.</strong> A handler may use what only the server has, but
-					what it takes and answers must be types the browser's copy knows.
-				</li>
-				<li>
-					<strong>What goes and comes is JSON.</strong> An <code>F64</code> goes as a number, and one JSON
-					can't write (NaN, an infinity) is a 500 that says so. The builtin <code>Try</code> has no JSON encoder
-					or parser on this Roc, so a result can't hold one: write the tag union instead,
-					<code>{"[Ok(Str), Err([NotFound])]"}</code>, which a <code>match</code> reads as it reads a
-					<code>Try</code>.
+					<strong>Types must compile in the browser.</strong> An endpoint's handler may use what only the
+					server has, but the types it takes and answers must be ones the browser's copy knows.
 				</li>
 				<li>
 					<strong>A static copy of the site has no server.</strong> Its pages are files, and so are the answers
-					the server gave as it was built: each page's GETs, in the page, and the GETs its components make
-					from handlers (<code>just site</code> writes those). A read it didn't make then, a POST, a stream: those
-					need the server, <code>just dev</code> or wherever the server's app runs. This page's echo and shout
-					need none: <a href="https://roc-solid.github.io/">roc-solid.github.io</a> is such a copy, files on
-					GitHub Pages, and they work there. A demo that sends or follows something (the planner's moves, the
-					lobby's channel) says there that no server answers.
+					the server gave as it built them: each page's GETs, in the page, and the GETs its components send
+					from event handlers (<code>just site</code> writes those). A read it didn't make then, a POST, a
+					stream: those need the server, <code>just dev</code> or wherever the app runs.
+					<a href="https://roc-solid.github.io/">roc-solid.github.io</a> is such a copy, files on GitHub Pages,
+					and this page's echo and shout work there. A demo that sends or follows something (the planner's
+					moves, the lobby's channel) says there that no server answers.
 				</li>
 				<li>
-					<strong>Only what a handler does leaves the browser's copy.</strong> Anything else a component
-					imports ships, as a component's code always does; and the server must check what a request asks
-					for itself.
+					<strong>Only the endpoints' handlers stay on the server.</strong> Anything else a component
+					imports ships to the browser, as a component's code always does. The server must check what each
+					request asks for itself.
 				</li>
 			</ul>
 		</NoHydration>

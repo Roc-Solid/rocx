@@ -1,5 +1,6 @@
 import pf.Html
 import ../../Demos/Cheatsheet
+import ../../Demos/SyntaxTour
 import ../../Ui/Heading
 import ../../Ui/Callout
 import ../../Ui/Code
@@ -19,17 +20,21 @@ import ../../Ui/Demo
 
 meta = {
 	title: "Syntax",
-	description: "rocx syntax: elements, attributes, holes, lists, components, whitespace, handlers, and where < starts markup, in pages and in components.",
+	description: "Everything rocx accepts in markup: elements and fragments, holes and list holes, attributes and their forms, if, match and keyed .map rows, components and props, handlers, built-in tags, whitespace, comments and entities, scoped styles, stories, and where < starts markup.",
 	toc: [
+		{ id: "tour", label: "Everything in one component" },
 		{ id: "at-a-glance", label: "At a glance" },
-		{ id: "elements", label: "Elements and text" },
+		{ id: "elements", label: "Elements, text and fragments" },
+		{ id: "holes", label: "Holes" },
 		{ id: "attributes", label: "Attributes" },
-		{ id: "lists", label: "Lists and branches" },
+		{ id: "lists", label: "if, match and lists" },
 		{ id: "components", label: "Components" },
+		{ id: "events", label: "Handlers, keys and transitions" },
+		{ id: "tags", label: "Built-in tags" },
 		{ id: "whitespace", label: "Whitespace" },
-		{ id: "raw", label: "Comments, entities, raw text" },
+		{ id: "raw", label: "Comments, entities, script and style" },
 		{ id: "styles", label: "Scoped styles" },
-		{ id: "events", label: "In a component" },
+		{ id: "stories", label: "Stories" },
 		{ id: "where", label: "Where < starts markup" },
 		{ id: "types", label: "Types" },
 	],
@@ -42,110 +47,303 @@ view! = |_|
 				eyebrow="Syntax"
 				title="Markup wherever an expression can stand"
 			>
-				A <code>.rocx</code> file is a Roc file. Where Roc expects an expression, you may write an
-				element instead, and inside its braces you are back in Roc. Pages, layouts and components are all
-				written with the platform's <code>Html</code> (<code>import pf.Html</code>): the server renders
-				their markup, and the browser hydrates it, binding its handlers and the holes that run again. Everything
-				below is a real file in <code>site/examples</code>: what you see is what rocx wrote for it and
-				what it rendered when this page was built.
+				A <code>.rocx</code> file is a Roc file in which you may write markup (HTML elements and
+				components) wherever Roc expects an expression. Inside markup, braces take you back to Roc.
+				Every <code>.rocx</code> file imports the platform's <code>Html</code> module
+				(<code>import pf.Html</code>), because <code>rocx build</code> turns the markup into calls to it.
+				This page covers everything rocx accepts. The examples are real files in
+				<code>site/examples</code>, each shown with the Roc rocx wrote for it and what it rendered when
+				this page was built.
 			</PageHero>
 
+			<Heading id="tour">Everything in one component</Heading>
+			<p>
+				This reading list uses nearly everything this page covers: signals and memos, handlers, holes
+				and attributes of most kinds, rows kept by key, an <code>if</code> and a <code>match</code> in
+				holes, a scoped style and a story. Each comment in its source names the construct under it, and
+				each section below explains one of them. Add a book, tick one off, or filter the list.
+			</p>
+		</NoHydration>
+		<Demo>
+			<div data-demo="tour"><SyntaxTour heading="My reading list"><p>Books for the winter.</p></SyntaxTour></div>
+		</Demo>
+		<NoHydration>
+			<Code title={Sources.syntax_tour.file} source={Sources.syntax_tour.rocx} />
+
 			<Heading id="at-a-glance">At a glance</Heading>
-			<p>This table is a component: type to filter it, and Roc, running in your browser, drops the rows that no longer match.</p>
+			<p>
+				This table is a component too: type to filter it, and Roc, running in your browser, drops the
+				rows that no longer match.
+			</p>
 		</NoHydration>
 		<Demo><div data-demo="cheatsheet"><Cheatsheet /></div></Demo>
 
 		<NoHydration>
-			<Heading id="elements">Elements, attributes and text</Heading>
+			<Heading id="elements">Elements, text and fragments</Heading>
 			<p>
-				An element is written as in HTML. An attribute's value is a quoted string or a Roc expression in
-				braces, and so is text among an element's children. Values are <code>Str</code>s, and they are
-				escaped: a name with a <code>{"<"}</code> in it is text, never a tag. Elements side by side are a
-				fragment, <code>{"<>…</>"}</code>, so a page, layout or component needs no single root. The two files have the same
-				line numbers, which is why the compiler's reports point to the right place.
+				An element is written as in HTML, with its tag name in lower case. An element that has no
+				content, such as <code>{"<br />"}</code>, <code>{"<img />"}</code> or <code>{"<input />"}</code>,
+				is closed in its own tag: <code>{"<br>"}</code> alone is refused. Text between tags is text, and
+				rocx escapes it, so a name with a <code>{"<"}</code> in it shows as that character, never as a
+				tag.
+			</p>
+			<p>
+				Markup is an ordinary Roc expression: you can assign it to a name, return it from a function or
+				put it in a list. Elements side by side make a fragment, <code>{"<>…</>"}</code>, so a page,
+				layout or component needs no single root element. An empty fragment, <code>{"<></>"}</code>, is
+				nothing at all. The Roc that rocx writes has the same line numbers as your file, which is why the
+				compiler's reports point to the right place.
 			</p>
 			<Example source={Sources.hello} output={Hello.demo({})} live />
 
-			<Heading id="attributes">Booleans, optional attributes, classes and styles</Heading>
+			<Heading id="holes">Holes: Roc values in markup</Heading>
 			<p>
-				<code>name?={"{bool}"}</code> writes a boolean attribute when the value is true, and a bare name is
-				always on. <code>name??={"{str}"}</code> leaves the attribute out when the string is empty, as
-				Svelte leaves out an undefined one. <code>class:name={"{bool}"}</code> adds a class, and every class
-				on the element ends up in one <code>class</code> attribute. <code>style:--name={"{str}"}</code> sets a
-				custom property, and <code>style:color={"{str}"}</code> one property of the style, its name letters
-				and dashes; both join the element's static <code>style</code>. A value that could end the declaration
-				(a <code>;</code>), or that calls a function that loads something (a <code>url(</code>), is left
-				out.
+				A hole is a pair of braces in markup, <code>{"{x}"}</code>, with any Roc expression inside. It
+				shows the value according to its type: a <code>Str</code> as text (escaped), a number as its
+				digits, and <code>Html</code> as that markup. A value it can't show, such as a <code>Bool</code>
+				or a record, is a compile error at your line. A list hole, <code>{"{...xs}"}</code>, takes a
+				<code>List(Html)</code> and shows its items one after another; that is how you show what a
+				<code>.map</code> makes.
 			</p>
-			<Example source={Sources.attributes} output={Attributes.demo({})} live />
-			<Callout kind="note" title="Why style takes no values">
+			<Code source={"<p>{name} has {count} messages, {\"\${unread.to_str()} unread\"}.</p>\n<ul>{...tags.map(|tag| <li>{tag}</li>)}</ul>"} numbers={Bool.False} />
+			<p>
+				In a component, a hole that reads something that changes runs again whenever that changes,
+				and patches its own node on the page. It reads something that changes when it calls a name
+				ending in <code>!</code> (a signal such as <code>count!()</code>, a memo, an accessor prop), or
+				reads a prop of an effectful component. A hole that reads nothing that changes is worked out
+				once.
+			</p>
+			<Callout kind="tip" title="One kind of hole">
 				<p>
-					<code>style={"{…}"}</code> is refused: a whole style from data is how data ends up deciding
-					layout and loading URLs. Change classes with data, pass a number through a custom property the
-					stylesheet uses, or set one property, <code>style:color={"{…}"}</code>, whose name is the file's
-					and whose value is checked. That last one is for where a stylesheet can't reach: an email's
-					colours, inline, since email clients read neither stylesheets nor custom properties.
+					rocx runs before the compiler, so it can't know whether <code>x</code> is a <code>Str</code>,
+					a number or <code>Html</code>. It writes <code>Html.hole(x)</code>, and the compiler picks how
+					to show the value from its type, through Roc's encoding. You may see <code>{"{=x}"}</code> in
+					older code: it is the same hole.
 				</p>
 			</Callout>
 
-			<Heading id="lists">Lists and branches</Heading>
+			<Heading id="attributes">Attributes</Heading>
 			<p>
-				A hole takes any Roc expression, so <code>if</code>, <code>match</code> and <code>.map</code>
-				need no special syntax. <code>{"{x}"}</code> shows what <code>x</code> is: text (escaped), a number,
-				or markup; <code>{"{...x}"}</code> a <code>List(Html)</code>, joined. An <code>if</code> in a hole
-				needs no <code>else</code>: <code>{"{if (late) <p>Late</p>}"}</code> shows nothing otherwise (rocx
-				gives it the empty fragment, <code>{"<></>"}</code>, which is how to write nothing elsewhere). In a component, an
-				<code>if</code> or <code>match</code> whose condition changes keeps the part its branch made until
-				another branch holds, and a <code>.map</code> whose list changes is a row per key, its root's
-				<code>{"key={…}"}</code>: <code>{"{...todos!().map(|todo| <li key={todo.id}>{todo.title}</li>)}"}</code>,
-				whose rows move with their keys (see <a href={"${Paths.components}#control"}>if, match and .map</a>).
+				An attribute's value is a quoted string or a Roc expression in braces. Besides plain values,
+				rocx has forms for the cases HTML makes awkward:
 			</p>
-			<Example source={Sources.lists} output={Lists.demo({})} live />
-			<Callout kind="tip" title="One kind of hole">
+			<TableWrap>
+				<table>
+					<thead><tr><th>Written</th><th>Means</th></tr></thead>
+					<tbody>
+						<tr><td><code>{"name=\"text\""}</code>, <code>{"name='text'"}</code></td><td>A static value, as written, its entities decoded. It stays on one line.</td></tr>
+						<tr><td><code>{"name={expr}"}</code></td><td>A value from Roc, a <code>Str</code>, escaped. In a component it is set again when what it reads changes.</td></tr>
+						<tr><td><code>name</code></td><td>A boolean attribute that is always on, such as <code>required</code>.</td></tr>
+						<tr><td><code>{"name?={bool}"}</code></td><td>A boolean attribute, there while the <code>Bool</code> is true: <code>{"disabled?={busy}"}</code>.</td></tr>
+						<tr><td><code>{"name??={str}"}</code></td><td>Left out while the string is empty, as Svelte leaves out an undefined one.</td></tr>
+						<tr><td><code>{"class:name={bool}"}</code></td><td>Adds the class while the <code>Bool</code> is true. Every class on the element ends up in one <code>class</code> attribute.</td></tr>
+						<tr><td><code>{"style:--name={str}"}</code></td><td>Sets a CSS custom property, for the stylesheet to use.</td></tr>
+						<tr><td><code>{"style:color={str}"}</code></td><td>Sets one CSS property. Its name is letters and dashes.</td></tr>
+						<tr><td><code>{"style=\"…\""}</code></td><td>A static style, which the <code>style:</code> attributes join.</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<Example source={Sources.attributes} output={Attributes.demo({})} live />
+			<p>
+				rocx refuses an unquoted value (<code>{"class=big"}</code>), a style computed whole
+				(<code>{"style={…}"}</code>) and an inline handler (<code>{"onclick=\"…\""}</code>: in a component,
+				write <code>{"on:click={…}"}</code>). A value for <code>style:</code> is left out if it has
+				anything but letters, digits, spaces and <code>.,%#()-+</code> in it, or calls a CSS function that
+				could load something: <code>rgb()</code>, <code>calc()</code>, <code>var()</code> and the other
+				functions that compute a value are fine, <code>url()</code> is not. URL attributes
+				(<code>href</code>, <code>src</code>, <code>action</code> and a few more) take only
+				<a href={"${Paths.safety}#urls"}>safe URLs</a>.
+			</p>
+			<Callout kind="note" title="Why style takes no values">
 				<p>
-					rocx runs before the compiler, so it can't know whether <code>x</code> is a <code>Str</code>, a
-					number or <code>Html</code>; it writes <code>Html.hole(x)</code>, and the compiler picks what to
-					show from the type, through Roc's encoding. A value it can't show, a record or a
-					<code>Bool</code>, is an error at your line. (<code>{"{=x}"}</code>, the old way of saying
-					markup, is the same hole.)
+					A whole style from data is how data ends up deciding layout and loading URLs. Change classes
+					with data instead, pass a number through a custom property the stylesheet uses, or set one
+					property, <code>{"style:color={…}"}</code>, whose name is written in the file and whose value
+					is checked. That last one is for where a stylesheet can't reach, such as an email's colours:
+					email clients read neither stylesheets nor custom properties.
 				</p>
 			</Callout>
+
+			<Heading id="lists">if, match and lists</Heading>
+			<p>
+				A hole takes any Roc expression, so branches and lists need no special syntax: <code>if</code>,
+				<code>match</code> and <code>.map</code> work as they do anywhere in Roc. An <code>if</code> in a
+				hole needs no <code>else</code>: <code>{"{if (late) <p>Late</p>}"}</code> shows nothing while
+				<code>late</code> is false (rocx gives it the empty fragment, <code>{"<></>"}</code>). This
+				example's list is a plain value, so it is rendered once:
+			</p>
+			<Example source={Sources.lists} output={Lists.demo({})} live />
+			<p>In a component, where values change, these keep the markup they made:</p>
+			<ul>
+				<li>
+					An <code>if</code> or a <code>match</code> whose condition reads what changes keeps the markup
+					its branch made for as long as that branch holds, and makes another branch's markup only when
+					another branch holds. A component inside keeps its signals while its branch holds, and a
+					<code>match</code> arm's names always read the newest value.
+				</li>
+				<li>
+					A <code>.map</code> whose list changes makes rows, kept by key. Each row's outermost element or
+					component says its key with <code>{"key={…}"}</code>:
+					<code>{"{...todos!().map(|todo| <li key={todo.id}>{todo.title}</li>)}"}</code>. A row is made once
+					for its key, moved when the list is reordered, and dropped when its key goes, so focus and
+					typing inside it survive. It is updated only when its item is no longer <code>==</code> the
+					one it had. A row that is an <code>if</code> keys each branch.
+				</li>
+				<li>
+					<code>{".map_with_index(|item, i| <li key={i}>…</li>)"}</code> makes a row per position
+					instead: the rows stay where they are, and each shows whatever item is at its position now.
+				</li>
+				<li>
+					A list that changes without a key is refused, at its line, with what to write. So is a key
+					made from the index with something else (write <code>{"key={i}"}</code> alone).
+				</li>
+			</ul>
+			<p>
+				<a href={"${Paths.components}#control"}>if, match and .map</a>, on the components page, shows
+				each of these live.
+			</p>
 
 			<Heading id="components">Components</Heading>
 			<p>
-				A capitalised tag is a component: a function from a record of props to <code>Html</code>. When the
-				file imports a module of that name, <code>{"<StatusPill status={s} />"}</code> calls
-				<code>StatusPill.view({"{ status: s }"})</code>; otherwise it calls the local function
-				<code>status_pill</code>. Children become a <code>children</code> prop, a bare prop is
-				<code>Bool.True</code>, and a missing prop is a type error, unless the component's props are a
-				nominal record with defaults (<code>title : Str ?? ""</code>). A pure component, a
-				<code>view</code> with no <code>!</code>, is that and no more: a function, called where it is
-				written. One that may make signals, a <code>view!</code>, is called as
-				<code>StatusPill.view!</code>, where it is rendered, once, and each of its props is passed as a
-				function, Solid's getter, which it reads where its code reads the prop; one named as an effect
-				(<code>{"text!={…}"}</code>) is one it calls itself
-				(<a href={"${Paths.components}#passing"}>passing them on</a>).
+				A tag that starts with a capital letter is a component: a function from a record of props to
+				<code>Html</code>. <code>{"<StatusPill status={s} />"}</code> calls <code>StatusPill.view</code>
+				(or <code>view!</code>) when the file imports or defines a module named
+				<code>StatusPill</code>; otherwise it calls a function of this file named
+				<code>status_pill</code>. Each attribute is a prop: a string, a Roc value in braces, or a bare
+				name, which is <code>Bool.True</code>. What is between the tags becomes the
+				<code>children</code> prop, a <code>List(Html)</code>. A missing prop is a type error, unless the
+				component's props are a nominal record with defaults (<code>{"title : Str ?? \"\""}</code>).
 			</p>
 			<Example source={Sources.components} output={Components.demo({})} live />
+			<p>There are two kinds of component (<a href={"${Paths.components}#kinds"}>pure and effectful</a>):</p>
+			<ul>
+				<li>
+					A <strong>pure component</strong>, <code>view</code> with no <code>!</code>, is a plain
+					function. Its props are values and it makes no signals. It is called right where it is
+					written.
+				</li>
+				<li>
+					An <strong>effectful component</strong>, <code>view!</code>, may make signals. It runs once,
+					where it is rendered. Its value props are <em>getters</em>: rocx passes each one as a
+					function, and the component gets the current value wherever its code reads the prop, so a
+					parent can pass something that changes.
+				</li>
+			</ul>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Written</th><th>Means</th></tr></thead>
+					<tbody>
+						<tr><td><code>{"<Field value!={draft!} />"}</code></td><td>A prop named with <code>!</code> is an accessor: the component calls it itself (<code>value!()</code>), as it would a signal (<a href={"${Paths.components}#passing"}>props that change</a>).</td></tr>
+						<tr><td><code>{"<Card {...rest} />"}</code></td><td>Passes on a record of props as it is, such as the rest of a view's props (<code>{"|{ title, ..rest }|"}</code>).</td></tr>
+						<tr><td><code>{"<Repeat count!={n!()}>{|index| …}</Repeat>"}</code></td><td>A function as the only child is passed as <code>children</code> to the component's <code>view_with!</code>, which calls it.</td></tr>
+						<tr><td><code>{"<ThemeContext value={dark}>…</ThemeContext>"}</code></td><td>Provides a context, defined with <code>create_context</code>, to the markup inside (<a href={"${Paths.components}#contexts"}>contexts</a>).</td></tr>
+						<tr><td><code>{"<Card key={card.id} … />"}</code></td><td>On a component that is a list row's outermost tag, <code>key</code> is the row's key, never a prop.</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+
+			<Heading id="events">Handlers, keys and transitions</Heading>
+			<p>
+				A handler, <code>{"on:event={…}"}</code>, is a Roc function that runs in the browser when the
+				event reaches the element. It may read and set signals, call the server, and so on. The server
+				renders nothing for it. What follows the event's name says what the handler is given, or when it
+				runs:
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Written</th><th>Means</th></tr></thead>
+					<tbody>
+						<tr><td><code>{"on:click={|| …}"}</code></td><td>Runs on the event. <code>on:submit</code> also stops the browser's own submit.</td></tr>
+						<tr><td><code>{"on:input.value={set_draft!}"}</code></td><td>Given the element's value, a <code>Str</code>.</td></tr>
+						<tr><td><code>{"on:change.checked={|on| …}"}</code></td><td>Given whether it is checked, a <code>Bool</code>.</td></tr>
+						<tr><td><code>{"on:keydown.key={|key| …}"}</code></td><td>Given the key's name (<code>Enter</code>, <code>k</code>). <code>.keys</code> gives the key and the modifier keys held (<code>keys.shift</code>, <code>keys.mod</code>…).</td></tr>
+						<tr><td><code>{"on:keydown.Escape={|| …}"}</code></td><td>Runs for that key only, with no modifier key held, and stops what the browser would do with it (an arrow key scrolling the page). <code>.Space</code> is the space bar; a letter or digit works too (<code>.w</code>).</td></tr>
+						<tr><td><code>{"on:keydown.Mod+K={|| …}"}</code></td><td>Runs for that key with exactly those modifier keys held: <code>Shift</code>, <code>Ctrl</code>, <code>Alt</code>, <code>Meta</code>, and <code>Mod</code>, which is ⌘ on macOS and Ctrl elsewhere.</td></tr>
+						<tr><td><code>{"on:click.prevent={|| …}"}</code></td><td>Stops what the browser would do first, such as following a link the page takes over.</td></tr>
+						<tr><td><code>{"on:pointermove.point={|p| …}"}</code></td><td>Given where the pointer is over the element, as shares of its width and height.</td></tr>
+						<tr><td><code>{"on:drop.data={|items| …}"}</code>, <code>.files</code></td><td>Given what a drop or a paste carries, or its files; <code>on:change.files</code> on a file input gives the files chosen.</td></tr>
+						<tr><td><code>{"on:frame.ms={|ms| …}"}</code></td><td>Runs every animation frame while the element is on the page, given the milliseconds since the last.</td></tr>
+						<tr><td><code>{"on:viewport={|view| …}"}</code></td><td>Runs when the element shows, and each time it scrolls or changes size, given what of it shows.</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<Example source={Sources.events} renders={Bool.False} />
+			<p>Some other attributes only mean something in the browser too:</p>
+			<ul>
+				<li>
+					<code>{"key={…}"}</code> names an element. On a list row it is the row's key; anywhere, it
+					makes an element taken out of one list and put into another the same element, so it can glide
+					between them.
+				</li>
+				<li>
+					<code>{"transition={…}"}</code>, <code>{"transition:in={…}"}</code> and
+					<code>{"transition:out={…}"}</code> play an animation (a <code>Transition</code>, such as
+					<code>Transition.fade</code>) as the element's row or branch comes and goes;
+					<code>{"transition:move={…}"}</code> glides it when it moves
+					(<a href={"${Paths.components}#transitions"}>transitions</a>).
+				</li>
+				<li>
+					<code>{"drag:data={[(type, value)]}"}</code> is what a drag of the element carries, and
+					<code>{"drag:image={id}"}</code> the element shown while it is dragged
+					(<a href={"${Paths.components}#drag"}>drag and drop</a>).
+				</li>
+			</ul>
+			<p>
+				Markup inside a <code>{"<NoHydration>"}</code> never runs in the browser, so rocx refuses a
+				handler, a <code>key</code>, a transition or a <code>drag:</code> attribute there, at its line.
+				The <a href={Paths.components}>components</a> page covers signals, handlers and the rest in
+				depth.
+			</p>
+
+			<Heading id="tags">Built-in tags</Heading>
+			<p>A few capitalised tags are rocx's own, unless your file has a module of the same name:</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Written</th><th>Means</th></tr></thead>
+					<tbody>
+						<tr><td><code>{"<NoHydration>…</NoHydration>"}</code></td><td>Markup the server alone renders. The browser keeps the server's HTML as it is, and none of the code inside is in the wasm.</td></tr>
+						<tr><td><code>{"<Document on:keydown.Mod+K={…} />"}</code>, <code>{"<Window on:resize={…} />"}</code></td><td>Handlers on the whole document or window, while the markup around the tag is rendered. They render nothing, and take handlers only.</td></tr>
+						<tr><td><code>{"<Meta name=\"description\" content={…} />"}</code>, <code>{"<Link … />"}</code>, <code>{"<Style>…</Style>"}</code></td><td>A <code>{"<meta>"}</code>, <code>{"<link>"}</code> or <code>{"<style>"}</code> in the document's <code>{"<head>"}</code>, while the markup around the tag is rendered.</td></tr>
+						<tr><td><code>{"<!doctype html>"}</code></td><td>The doctype, at the top of a root layout.</td></tr>
+						<tr><td><code>{"<story name=\"…\">…</story>"}</code></td><td>One way a component looks, for the dev build's catalog (<a href="#stories">stories</a>).</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				The platform also has components you import like any other: <code>{"<Loading fallback={…}>"}</code>
+				and <code>{"<Errored fallback={…}>"}</code> for <a href={"${Paths.components}#waiting"}>waiting
+				and failing</a>, <code>{"<Repeat>"}</code> for rows without a list, <code>{"<Title>"}</code> for
+				the document's title, and <code>{"<A>"}</code> and <code>{"<Navigate>"}</code> for
+				<a href={"${Paths.routing}#navigating"}>navigating</a>
+				(<code>import pf.Loading</code>, and so on).
+			</p>
 
 			<Heading id="whitespace">Whitespace, as HTML has it</Heading>
 			<p>
-				Text follows HTML's rule as Svelte applies it, not JSX's: each run of spaces, tabs and line breaks
-				is one space. Whitespace with a line break next to an element's own opening or closing tag goes,
-				and a space on the tag's line stays (<code>{"<b>On the tag's line: </b>"}</code>). Prose can break
-				lines anywhere, next to a link or a value too, and elements on lines of their own have a space
-				between them. Inside <code>{"<pre>"}</code> and <code>{"<textarea>"}</code>, text stays as written.
+				Text follows HTML's rule as Svelte applies it, not JSX's: each run of spaces, tabs and line
+				breaks is one space. Whitespace with a line break next to an element's own opening or closing tag
+				is dropped, and a space on the tag's line stays (<code>{"<b>On the tag's line: </b>"}</code>).
+				So prose can break lines anywhere, next to a link or a value too, and elements on lines of their
+				own have a space between them. Inside <code>{"<pre>"}</code> and <code>{"<textarea>"}</code>,
+				text stays as written.
 			</p>
 			<Example source={Sources.whitespace} output={Whitespace.demo({})} live />
 
 			<Heading id="raw">Comments, entities, script and style</Heading>
 			<p>
-				<code>{"{# … }"}</code> and <code>{"<!-- … -->"}</code> are comments that never reach the page.
-				Entities are the characters they name. A literal <code>{"<"}</code>, <code>{">"}</code>,
-				<code>{"{"}</code> or <code>{"}"}</code> in text is written as an entity or a string hole, so a
-				stray brace is never silently text. <code>{"<script>"}</code> and a <code>{"<style>"}</code> in
-				markup keep their text as written, braces too, and never take values: the page's script is in the
-				page, data never is. (A <code>{"<style>"}</code> beside a component's definitions is that
+				<code>{"{# … }"}</code> and <code>{"<!-- … -->"}</code> are comments, which never reach the
+				page. A <code>{"{# … }"}</code> comment ends at the first <code>{"}"}</code>, so it can't
+				contain one. Entities are the characters they name: the common named ones
+				(<code>&amp;amp;</code>, <code>&amp;middot;</code>, <code>&amp;nbsp;</code>…) and numeric ones
+				(<code>&amp;#x2192;</code>). An entity rocx doesn't know is refused. A literal
+				<code>{"<"}</code>, <code>{">"}</code>, <code>{"{"}</code> or <code>{"}"}</code> in text is written
+				as an entity or a string in a hole (<code>{"{\"{\"}"}</code>), so a stray brace is never silently
+				text.
+			</p>
+			<p>
+				A <code>{"<script>"}</code> or <code>{"<style>"}</code> in markup keeps its text as written,
+				braces included, and takes no holes: a page's script is part of the page, never data. (A
+				<code>{"<style>"}</code> beside a component's definitions, outside its markup, is that
 				component's own: <a href="#styles">scoped</a>.)
 			</p>
 			<Example source={Sources.raw} output={Raw.demo({})} live />
@@ -155,59 +353,46 @@ view! = |_|
 				A <code>{"<style>"}</code> in a component's block, beside its definitions, styles that
 				component's markup and nothing else, as Svelte's does. rocx gives each element written in the
 				block a class named after the component, and adds it to each selector: <code>.card .title</code>
-				becomes <code>.card.rx-… .title:where(.rx-…)</code>, one class more specific than written however
-				long the selector is. So two components' <code>.card</code> never meet, even in one file; a bare
-				<code>p</code> is only this component's paragraphs; and a component's styles don't reach into
-				the components it renders, whose elements are written in their own blocks. A page or a layout,
-				which has no block, puts its <code>{"<style>"}</code> at the file's top level, for the whole file.
-				The lines a <code>{"<style>"}</code> took are blank in the Roc, so the compiler's lines are
-				still yours.
+				becomes <code>.card.rx-… .title:where(.rx-…)</code>, one class more specific than written,
+				however long the selector is. So two components' <code>.card</code> rules never meet, even in
+				one file; a bare <code>p</code> is only this component's paragraphs; and a component's styles
+				don't reach into the components it renders, whose elements are written in their own blocks. A
+				page or layout, which has no block, puts its <code>{"<style>"}</code> at the file's top level,
+				for the whole file. A component, or a file's top level, has at most one
+				<code>{"<style>"}</code>, with no attributes. The lines it takes are blank in the Roc, so the
+				compiler's line numbers are still yours.
 			</p>
 			<Example source={Sources.scoped} output={Scoped.demo({})} live />
 			<p>
-				<code>rocx build</code> puts every <code>{"<style>"}</code> in one stylesheet, <code>Generated/Styles.roc</code>,
-				and the root layout puts it in its <code>{"<head>"}</code> with <code>{"{Styles.style}"}</code>: a
-				<code>{"<link>"}</code> to a file beside start.js, <code>/rocx/styles-<var>hash</var>.css</code>, named by
-				its content, which the browser keeps for every page it opens; a change to any <code>{"<style>"}</code> is a
-				new name.
-				What isn't this file's is written as Svelte writes it: <code>:global(body)</code> as it is,
-				<code>div :global(strong)</code> for any <code>strong</code> in this component's divs, and a
+				What isn't this component's is written as Svelte writes it: <code>:global(body)</code> as it is,
+				<code>div :global(strong)</code> for any <code>strong</code> inside this component's divs, and a
 				<code>{":global { … }"}</code> block for rules that are all global. A component's
 				<code>@keyframes spin</code> is its own, and so is <code>spin</code> in its
 				<code>animation</code>; <code>@keyframes -global-spin</code> is everyone's <code>spin</code>.
 				Nested rules work, <code>&amp;</code> too.
 			</p>
-
-			<Heading id="events">In a component</Heading>
 			<p>
-				In a component, markup means more than HTML does: a hole or attribute that calls something named
-				with <code>!</code> (a signal, a memo, a prop that is an accessor), or reads a prop of a
-				<code>view!</code>, is a computation, which runs again when a signal it read changes; one that does
-				neither can't change, and is written once. And
-				<code>on:click={"{…}"}</code> is a handler, an effect, run when the event
-				reaches the element (<code>on:drop</code> and the rest of <a href={"${Paths.components}#drag"}>drag and drop</a> among them).
-				<code>.value</code>, <code>.checked</code> and <code>.key</code> give it what the event says
-				(<code>.keys</code>, the key and the modifier keys held); a key's name (<code>on:keydown.Escape</code>)
-				runs it for that key only, and a combination (<code>on:keydown.Shift+Enter</code>,
-				<code>on:keydown.Mod+K</code>) for that key with exactly those modifier keys held; <code>.prevent</code> prevents the
-				event's default first (<code>on:click.prevent</code>: a link the page takes over).
-				<code>{"<Document on:keydown.Mod+K={…} />"}</code> puts handlers on the whole document, written the same
-				way, while what renders it is there; it renders nothing (<code>{"<Window>"}</code>, on the window). Handlers are
-				Roc functions, so the server renders nothing for them, and markup inside a
-				<code>{"<NoHydration>"}</code>, which the browser never hydrates, can't have one: rocx refuses it,
-				at its line. <code>transition={"{…}"}</code>,
-				<code>transition:in={"{…}"}</code> and <code>transition:out={"{…}"}</code> are a component's too: an
-				animation the element plays as its row or part comes and goes; <code>transition:move={"{…}"}</code>,
-				how it glides when it moves, and <code>key={"{…}"}</code>, its name on the page, by which one taken out
-				of one list and put in another is the same element (<a href={"${Paths.components}#transitions"}>transitions</a>).
-				<a href={Paths.components}>Components</a> has the rest.
+				<code>rocx build</code> puts every <code>{"<style>"}</code> of the app into one stylesheet,
+				<code>Generated/Styles.roc</code>. The root layout puts it in its <code>{"<head>"}</code> with
+				<code>{"{Styles.style}"}</code>: a <code>{"<link>"}</code> to a file named by its content,
+				<code>/rocx/styles-<var>hash</var>.css</code>, which the browser keeps for every page. A change
+				to any <code>{"<style>"}</code> gives it a new name.
 			</p>
-			<Example source={Sources.events} renders={Bool.False} />
+
+			<Heading id="stories">Stories</Heading>
+			<p>
+				A <code>{"<story name=\"…\">"}</code>, written in a component's block among its definitions,
+				holds the markup of one way the component looks. Its name starts with a letter, and the tag
+				takes nothing else. rocx makes each story a definition in its place
+				(<code>{"<story name=\"Tip\">"}</code> is <code>story_tip!</code>), so every build checks it
+				against the component, but only a dev build (<code>rocx dev</code>) shows it, in a catalog at
+				<code>/__rocx/stories</code> (<a href={"${Paths.tooling}#stories"}>stories</a>).
+			</p>
 
 			<Heading id="where">Where {"<"} starts markup</Heading>
 			<p>
 				<code>{"<"}</code> starts markup only where an expression can begin, and only when a letter,
-				<code>{">"}</code> or <code>!</code> follows. After a value on the same line it is the comparison.
+				<code>{">"}</code> or <code>!</code> follows. After a value on the same line it is a comparison.
 			</p>
 			<TableWrap>
 				<table>
@@ -217,7 +402,7 @@ view! = |_|
 						<tr><td><code>{"|post| <li>…</li>"}</code>, <code>{"A => <b/>"}</code></td><td>markup: a lambda's body, a branch</td></tr>
 						<tr><td><code>{"if (a < b) <b/> else <i/>"}</code></td><td>a comparison in the condition, then markup after it and after <code>else</code></td></tr>
 						<tr><td>first on its line</td><td>markup: a block's last expression</td></tr>
-						<tr><td><code>{"a < b"}</code>, <code>{"f(x)<y"}</code>, <code>{"n<b"}</code></td><td>the comparison: a value comes before it</td></tr>
+						<tr><td><code>{"a < b"}</code>, <code>{"f(x)<y"}</code>, <code>{"n<b"}</code></td><td>a comparison: a value comes before it</td></tr>
 						<tr><td><code>{"\"<b>\""}</code>, <code>{"'<'"}</code>, <code>{"# <i>"}</code></td><td>left alone: strings, characters and comments</td></tr>
 					</tbody>
 				</table>
@@ -225,23 +410,28 @@ view! = |_|
 
 			<Heading id="types">Types</Heading>
 			<p>
-				Markup is the platform's <code>Html</code>, in pages, layouts and components alike. A pure
-				component, <code>view</code>, is written <code>{"{ … } -> Html"}</code>; one that may make
-				signals is an effect, <code>view!</code>, written <code>{"{ … } => Html"}</code>. The empty markup is
-				<code>{"<></>"}</code> (<code>Html.empty({"{}"})</code> in plain Roc) and the doctype
-				<code>Html.doctype({"{}"})</code>. A prop's default may be markup too: <code>{"fallback : Html ?? <></>"}</code>.
+				Markup is the platform's <code>Html</code> type, in pages, layouts and components alike. A pure
+				component, <code>view</code>, has a type such as <code>{"{ … } -> Html"}</code>; an effectful
+				one, <code>view!</code>, is an effect: <code>{"{ … } => Html"}</code>. A prop's default may be
+				markup too: <code>{"fallback : Html ?? <></>"}</code>. In plain Roc code, these build markup
+				without rocx:
 			</p>
 			<TableWrap>
 				<table class="api">
-					<thead><tr><th>What Roc code uses besides what rocx writes</th><th>For</th></tr></thead>
+					<thead><tr><th>Function</th><th>For</th></tr></thead>
 					<tbody>
 						<tr><td><code>Html.to_str</code><code>{"Html -> Str"}</code></td><td>markup with nothing to run in it, as a string: an email's HTML, an <code>expect</code></td></tr>
-						<tr><td><code>Html.text</code><code>{"Str -> Html"}</code></td><td>escaped text, from Roc code</td></tr>
+						<tr><td><code>Html.text</code><code>{"Str -> Html"}</code></td><td>escaped text</td></tr>
 						<tr><td><code>Html.join</code><code>{"List(Html) -> Html"}</code></td><td>several, as one</td></tr>
-						<tr><td><code>Html.empty</code><code>{"{} -> Html"}</code></td><td>nothing at all</td></tr>
+						<tr><td><code>Html.empty</code><code>{"{} -> Html"}</code></td><td>nothing at all (<code>{"<></>"}</code> in markup)</td></tr>
+						<tr><td><code>Html.doctype</code><code>{"{} -> Html"}</code></td><td>the doctype (<code>{"<!doctype html>"}</code> in markup)</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
+			<p>
+				The <a href={Paths.platform_reference}>platform reference</a> lists every function of
+				<code>Html</code> and the other modules.
+			</p>
 		</NoHydration>
 	</>
 

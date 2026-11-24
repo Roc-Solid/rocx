@@ -648,7 +648,7 @@ Build := [].{
 			|h| {
 				tag = h.tag.split_on(".").last() ?? h.tag
 				read = once.find_first(|o| o.component == tag and o.prop == h.prop)?
-				reason = "${h.name} changes while the part showing it stays (a match arm's value, D-070, or a .map row's item, D-071), and ${tag} reads ${h.prop} once, as it runs (${read.file}:${read.line.to_str()}:${read.column.to_str()}), so it won't show the new one: read ${h.prop} where ${tag} uses it (untrack!(|| …) if one read is meant), or, for a part made anew for each value, a row keyed by it: {...[${h.name}].map(|one| <${tag} key={one} …/>)}"
+				reason = "${h.name} changes while the part showing it stays (a match arm's value, or a .map row's item), and ${tag} reads ${h.prop} once, as it runs (${read.file}:${read.line.to_str()}:${read.column.to_str()}), so it won't show the new one: read ${h.prop} where ${tag} uses it (untrack!(|| …) if one read is meant), or, for a part made anew for each value, a row keyed by it: {...[${h.name}].map(|one| <${tag} key={one} …/>)}"
 				Ok({ path: h.path, said: { reason, file: h.file, line: h.line, column: h.column } })
 			},
 		)

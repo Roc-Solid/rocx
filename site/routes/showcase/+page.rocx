@@ -15,7 +15,7 @@ import ../../Ui/Demo
 
 meta = {
 	title: "Showcase",
-	description: "A game of Snake and a flock of bouncing Roc birds: components that Roc, compiled to WebAssembly, runs frame by frame in your browser.",
+	description: "A game of Snake, a flock of bouncing Roc birds and the browser's timers: components that Roc, compiled to WebAssembly, runs frame by frame in your browser, with sound from a handler.",
 	toc: [
 		{ id: "snake", label: "Snake" },
 		{ id: "flock", label: "A flock of Roc birds" },
@@ -32,16 +32,18 @@ view! = |_|
 				eyebrow="Showcase"
 				title="A game and a flock, run by Roc"
 			>
-				They are components like the rest: the server rendered them, and your browser hydrated them. But
-				these run on time, not only on clicks. Every animation frame goes to Roc, which moves things;
-				only the holes that read what moved run again, and patch the few attributes that changed.
+				These are components like any other: the server rendered them with this page, and your browser
+				hydrated them. What is different is that they run on time, not only on clicks. Each animation
+				frame calls a handler in Roc, which moves things. Then only the holes that read what moved run
+				again, and they patch the few attributes that changed. Below the demos: how they work, how a
+				handler plays a sound, and the browser's timers.
 			</PageHero>
 
 			<Heading id="snake">Snake</Heading>
 			<p>
-				Click the board, then steer with the arrow keys or WASD; Space pauses, M mutes. The arrows don't
-				scroll the page while you play, and Tab still takes you out of the game. Pick a level: Easy, Medium
-				and Hard each keep one speed, and on Impossible every fruit makes the snake faster.
+				Click the board, then steer with the arrow keys or WASD. Space pauses and M mutes. The arrows
+				don't scroll the page while you play, and Tab still takes you out of the game. Pick a level:
+				Easy, Medium and Hard each keep one speed, and on Impossible every fruit makes the snake faster.
 			</p>
 		</NoHydration>
 		<Demo game meter="snake" idle="Roc is idle until you start: no frames run while the game waits.">
@@ -51,10 +53,10 @@ view! = |_|
 		<NoHydration>
 			<Heading id="flock">A flock of Roc birds</Heading>
 			<p>
-				Say how many birds, by typing a number or with −5, −1, +1 and +5: new ones come in, or the newest
-				fly away. Each one flies in its own direction,
-				bounces off the walls and off the others, and squeaks when it bumps into one (once you've
-				clicked something: browsers keep pages quiet until then).
+				Say how many birds you want, by typing a number or with −5, −1, +1 and +5: new ones come in, or
+				the newest fly away. Each flies in its own direction, bounces off the walls and off the others,
+				and squeaks when it bumps into one (once you've clicked something on the page: browsers keep
+				pages quiet until then).
 			</p>
 		</NoHydration>
 		<Demo game meter="birds" idle="Measuring…">
@@ -62,9 +64,9 @@ view! = |_|
 		</Demo>
 		<NoHydration>
 			<Note>
-				The line under each is measured as it runs, here: each frame is a handler that moves every bird and
-				settles every pair that meets, then the holes that read the flock, each bird's place among them,
-				and the patches they make.
+				The line under each demo is measured here, as it runs. A frame's time covers the handler that
+				moves every bird and settles every pair that meets, then the holes that read the flock (each
+				bird's position among them), and the patches they make.
 			</Note>
 
 			<Heading id="how">How they work</Heading>
@@ -72,38 +74,40 @@ view! = |_|
 				<Feature title="Time is a handler">
 					<p>
 						<code>on:frame.ms={"{|ms| send!(Frame(ms))}"}</code> runs its handler every animation frame,
-						given the time since the last, while its element is on the page. The snake keeps it on an
-						element inside an <code>if</code> that holds only while you play, so a paused game
-						costs nothing; an empty sky has none either.
+						given the milliseconds since the last, for as long as its element is on the page. The snake
+						puts it on an element inside an <code>if</code> that holds only while you play, so a paused
+						game runs no frames at all. An empty sky has no such element either.
 					</p>
 				</Feature>
 				<Feature title="Keys that do one thing">
 					<p>
-						<code>on:keydown.ArrowUp={"{|| send!(Turn(Up))}"}</code> runs for that key only, and keeps it
-						from scrolling the page. Keys nobody named, Tab among them, do what they always do.
+						<code>on:keydown.ArrowUp={"{|| send!(Turn(Up))}"}</code> runs for that key only, and stops it
+						from scrolling the page. Keys no handler names, Tab among them, do what they always do.
 					</p>
 				</Feature>
 				<Feature title="Rows that stay, so little changes">
 					<p>
-						Birds are a <code>.map</code>'s rows keyed by id: a bird keeps its element, and its move is
-						two custom properties, which the stylesheet turns into a translation. The snake's segments are
-						rows by position (<code>{".map_with_index(|cell, i| … key={i})"}</code>): when it moves, each takes the cell of
-						the one ahead, and a transition as long as a step slides it there.
+						The birds are a <code>.map</code>'s rows, keyed by id, so each bird keeps its element, and a
+						move only sets two custom properties, which the stylesheet turns into a translation. The
+						snake's segments are rows by position (<code>{".map_with_index(|part, i| … key={i})"}</code>):
+						when it moves, each takes the cell of the one ahead, and a CSS transition as long as a step
+						slides it there.
 					</p>
 				</Feature>
 				<Feature title="Pure, so it replays">
 					<p>
-						The rules are a plain <code>update</code>, which the component keeps the game's signal with.
-						Roc has no hidden randomness: the food's next place and a new bird's heading come from a seed
-						in the game (<code>Demos/Random.roc</code>). The same moves give the same game, and every rule is
-						an <code>expect</code> away from a test.
+						The rules are a plain function, <code>update</code>, which makes the next game from the last
+						one and what you did; the component keeps the game in a signal. Roc has no hidden
+						randomness: the food's next place and a new bird's heading come from a seed kept in the game
+						(<code>Demos/Random.roc</code>). The same moves give the same game, and every rule is an
+						<code>expect</code> away from a test.
 					</p>
 				</Feature>
 				<Feature title="What isn't shown isn't read">
 					<p>
-						The snake moves one cell every step's worth of frames. The time since its last move is a signal
-						of its own, which nothing on the page reads: a frame that only adds to it runs no hole, and
-						patches nothing.
+						The snake moves one cell every step's worth of frames. The time since its last move is a
+						signal of its own, which nothing on the page reads, so a frame that only adds to it runs no
+						hole and patches nothing.
 					</p>
 				</Feature>
 			</FeatureGrid>
@@ -118,25 +122,26 @@ view! = |_|
 
 			<Heading id="sound">Sound, from a handler</Heading>
 			<p>
-				The game's rules are pure: <code>update</code> can't make a sound, only the next game. So the next
-				game says what its step sounded like (<code>"eat"</code>, <code>"die"</code>, or nothing), which a
-				test can check, and the handler that keeps the game's signal plays it, with
-				<code>Audio.play!</code> (<a href={Paths.ecosystem_audio}>packages/audio</a>, a plugin, whose script plays it):
+				The game's rules are pure: <code>update</code> can't make a sound, only the next game. So the
+				next game says what its step sounded like (<code>"eat"</code>, <code>"die"</code>, or nothing),
+				which a test can check, and the handler that sets the game's signal plays it with
+				<code>Audio.play!</code>, from the <a href={Paths.ecosystem_audio}>audio</a> package (a plugin,
+				whose script in the page does the playing):
 			</p>
 			<Code title={Sources.demo_snake.file} source={"go! = |next| {\n\tset_game!(next)\n\tif (!next.muted and !next.sound.is_empty()) Audio.play!(\"/sounds/\${next.sound}.wav\") else {}\n}"} numbers={Bool.False} />
 			<p>
-				It plays any file the browser can, WAV, MP3 or Ogg, from the site or anywhere else, with nothing
+				It plays any file the browser can (WAV, MP3 or Ogg, from the site or anywhere else) with nothing
 				prepared in advance: the browser fetches a file the first time, and keeps it. These are a few KB
 				each, chiptune notes made by a script (<code>site/sounds.mjs</code>). The flock plays one pop at
-				every pitch, with <code>{"Audio.play_with!(url, { volume, rate })"}</code>: a bird more is a higher note,
-				the same file a little faster.
+				every pitch, with <code>{"Audio.play_with!(url, { volume, rate })"}</code>: each bird more is a
+				higher note, the same file played a little faster.
 			</p>
 			<p>
-				A sound plays once the handler is done and the page is patched with what it wrote, and a handler
-				that waits for the server and runs again plays it once. Only a handler plays: while computing, and on
-				the server, it fails. For what the platform has no module for (a vibration, the clipboard), a handler
-				calls the page's own JavaScript with <code>{"Browser.call!(name, arg)"}</code>, as Elm's ports do;
-				an effect that answers back is a request (see <a href={Paths.calls}>talking to the server</a>).
+				A sound plays once the handler is done and the page is patched with what it wrote. Only a
+				handler can play one: called while a hole is computed, or on the server, it fails. For anything
+				else the browser can do that the platform has no module for (the clipboard, say), a handler calls
+				the page's own JavaScript with <code>{"Browser.call!(name, arg)"}</code>, as Elm's ports do. It
+				gets no answer back: for that, ask the server (<a href={Paths.calls}>talking to the server</a>).
 			</p>
 			<Callout kind="tip" title="Watch it happen">
 				<p>
@@ -148,9 +153,9 @@ view! = |_|
 			<Heading id="timers">Timers</Heading>
 			<p>
 				A frame is the clock for motion. For “every tenth of a second” and “once the typing stops”, a
-				component has the browser's timers, from <code>pf.Solid</code>: <code>set_interval!(ms, tick!)</code>
-				and <code>set_timeout!(ms, done!)</code> run a handler later, as a click runs one, and answer its
-				<code>clear!</code>, which stops it.
+				component has the browser's timers, from <code>pf.Solid</code>.
+				<code>set_interval!(ms, tick!)</code> and <code>set_timeout!(ms, done!)</code> run a handler
+				later, as a click runs one, and return a <code>clear!</code> function that stops it.
 			</p>
 		</NoHydration>
 		<Demo game>
@@ -158,22 +163,22 @@ view! = |_|
 		</Demo>
 		<NoHydration>
 			<p>
-				The stopwatch keeps its interval's <code>clear!</code> in a signal, as JavaScript keeps an interval's id,
-				and Stop calls it:
+				The stopwatch keeps its interval's <code>clear!</code> in a signal, as JavaScript keeps an
+				interval's id, and Stop calls it:
 			</p>
 			<Code title={Sources.demo_timers.file} source={"(watch!, set_watch!) = create_signal!(stopped)\ntoggle! = ||\n\tmatch watch!() {\n\t\tRunning(clear!) => {\n\t\t\tclear!()\n\t\t\tset_watch!(Stopped)\n\t\t}\n\t\tStopped => set_watch!(Running(set_interval!(100, || set_tenths!(tenths!() + 1))))\n\t}"} numbers={Bool.False} />
 			<p>
-				The search clears the last key's timeout at each key, and starts its own, so it runs once, 400 ms
-				after the last. And the clock clears nothing. In Solid, a component stops its own timer with
-				<code>{"onCleanup(() => clearInterval(id))"}</code>; here that is built in. A timer belongs to what
-				started it: a component's, to the component; a handler's, to the part its element is in. When that
-				goes, as the clock does when the <code>if</code> around it hides it, its timers stop, and the
-				ticks heard stop with them.
+				The search clears the last key's timeout at each key and starts its own, so it searches once,
+				400 ms after the last key. The clock clears nothing. In Solid, a component stops its own timer
+				with <code>{"onCleanup(() => clearInterval(id))"}</code>; here that is built in. A timer belongs
+				to what started it: a component's timer to the component, a handler's to the part of the page its
+				element is in. When that goes (as the clock does when the <code>if</code> around it hides it),
+				its timers stop, and the ticks you hear stop with them.
 			</p>
 			<Callout kind="note" title="The server starts none">
 				<p>
-					While the server renders the page, no timer runs: the clock is rendered at 0, and the browser,
-					hydrating the page, starts its interval.
+					While the server renders the page, no timer runs: the clock is rendered at 0, and the
+					browser starts its interval when it hydrates the page.
 				</p>
 			</Callout>
 			<details>

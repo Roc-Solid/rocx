@@ -15,12 +15,12 @@ import ../../Ui/ArchBox
 
 meta = {
 	title: "The platform",
-	description: "What a rocx app runs on: a server platform, Roc compiled to native code in a Rust host with Postgres or SQLite, values in memory, actors and plugins (jobs, email); and a browser platform, the same pages hydrated from WebAssembly.",
+	description: "What a Roc Solid app runs on: a server platform (Roc compiled to native code in a Rust host, with Postgres or SQLite, actors, values in memory, live channels and plugins) and a browser platform (the same pages compiled to WebAssembly, hydrated by a small JavaScript runtime).",
 	toc: [
 		{ id: "two", label: "Two platforms, one app" },
-		{ id: "server", label: "What the server gives" },
-		{ id: "app", label: "An app" },
-		{ id: "request", label: "A request, all the way" },
+		{ id: "server", label: "What the server gives you" },
+		{ id: "app", label: "What an app gives the server" },
+		{ id: "request", label: "A request, from start to end" },
 		{ id: "build", label: "Building and running" },
 		{ id: "why", label: "Why this shape" },
 	],
@@ -37,12 +37,12 @@ view! = |_|
 					<Button href={Paths.platform_browser}>The browser</Button>,
 				]}
 			>
-				A Roc program runs on a platform: the host that gives it the effects it may have. A rocx app is
-				two programs. The server's is Roc compiled to native code, linked with a Rust host into one
-				executable, which answers HTTP and does what a single server does: a database (Postgres or SQLite),
-				state that outlives a
-				request, and what packages plug in (jobs, cron, email). The browser's is the same pages, compiled to WebAssembly with a small
-				Zig host and a page of JavaScript, which take over what the server rendered. The two talk over HTTP.
+				In Roc, a program runs on a platform: a host, written in another language, that gives the program
+				the effects it may use (HTTP, a database, the DOM). A Roc Solid app is two programs on two
+				platforms. On the server, your Roc is compiled to native code and linked with a Rust host into one
+				executable. In the browser, the same pages are compiled to WebAssembly and run by a small
+				JavaScript runtime. This part of the docs explains what each platform gives your app, and how it
+				works.
 			</PageHero>
 
 			<Heading id="two">Two platforms, one app</Heading>
@@ -50,9 +50,9 @@ view! = |_|
 				left={[
 					<ArchBox kind="roc" name={[<code>server/</code>, <>: native</>]}>
 						<p>
-							Roc compiled to machine code, in a Rust host (tokio, hyper). Pages rendered whole, endpoints;
-							Postgres or SQLite, values in memory, live rooms and channels, actors, plugins (jobs and cron, email). One executable,
-							one server.
+							Your Roc, compiled to machine code and linked with a Rust host (tokio, hyper) into one
+							executable. It renders pages, answers endpoints, and keeps the app's state: Postgres or
+							SQLite, values in memory, live channels, actors, and what plugins add (jobs, email).
 						</p>
 					</ArchBox>,
 				]}
@@ -60,183 +60,232 @@ view! = |_|
 				right={[
 					<ArchBox kind="wasm" name={[<code>web/</code>, <>: wasm</>]}>
 						<p>
-							The app's components, compiled to WebAssembly with a Zig host, and <code>web/runtime.js</code>,
-							which hydrates the page the server sent, runs its holes again when signals change, and sends its
-							requests.
+							The app's components, compiled to WebAssembly with a small Zig host, and
+							<code>web/runtime.js</code>, which takes over the page the server sent, updates it when
+							signals change, and sends requests to the server.
 						</p>
 					</ArchBox>,
 				]}
 			/>
 			<p>
-				The same components compile on both: the modules they are written with (<code>Html</code>,
-				<code>Solid</code>, <code>Show</code>, <code>For</code>, <code>Loading</code>, <code>Errored</code>,
-				<code>Context</code>, <code>Transition</code>, <code>Router</code>) and HTTP's (<code>Server</code>,
-				<code>Endpoint</code>, <code>Call</code>, <code>Middleware</code>, <code>Channel</code>) are the
-				browser platform's, and the build copies them into the server platform, whose host renders them as
-				the browser's runtime would, byte for byte.
+				The server renders each page to HTML. The browser then <strong>hydrates</strong> it: it runs the same
+				components again, attaches them to the HTML that is already there, and from then on updates only
+				the parts that change (<a href={Paths.components}>components</a> explains signals and holes). The two
+				talk over plain HTTP: the browser reads and sends <a href={"${Paths.routing}#endpoints"}>endpoints</a>,
+				and listens to <a href={"${Paths.platform_live}#channels"}>channels</a>.
+			</p>
+			<p>
+				Both platforms compile the same component code. The modules components and endpoints are written
+				with live in the browser platform (<code>web/platform</code>), and the build copies them into the
+				server platform: <code>Html</code>, <code>Solid</code>, <code>Store</code>, <code>Repeat</code>,
+				<code>Loading</code>, <code>Errored</code>, <code>Context</code>, <code>Transition</code>,
+				<code>Router</code>, <code>Search</code>, <code>Leave</code>, <code>A</code>, <code>Title</code>,
+				<code>Submission</code>, <code>Submissions</code>, <code>Browser</code> and
+				<code>HttpStatusCode</code> for components; <code>Server</code>, <code>Endpoint</code>,
+				<code>Call</code>, <code>Channel</code>, <code>Events</code>, <code>Middleware</code> and
+				<code>OpenApi</code> for HTTP. The server's host renders a page exactly as
+				the browser's runtime would, byte for byte, so hydration finds what it expects.
 			</p>
 
-			<Heading id="server">What the server gives</Heading>
+			<Heading id="server">What the server gives you</Heading>
 			<FeatureGrid>
-				<Feature title="Requests and streams" href={Paths.platform_server}>
+				<Feature title="Requests that wait cheaply" href={Paths.platform_server}>
 					<p>
-						Every request a call of its own, which pauses while it waits; streams of events as loops that
-						sleep; a crash that ends one call, not the server, and frees what it held.
+						Each request runs as its own call, which pauses while it waits on the database or another
+						server. A crash ends that call only, not the server, and frees its memory.
 					</p>
 				</Feature>
 				<Feature title="HTTP, both ways" href={Paths.platform_http}>
 					<p>
-						Requests to other servers, with limits; bodies as the bytes they were; answers fetched from elsewhere
-						and passed on as they come; cookies with every attribute.
+						Requests to other servers (<code>Http.fetch!</code>), with time and size limits; bodies as
+						raw bytes; answers passed through from elsewhere; cookies with every attribute.
 					</p>
 				</Feature>
-				<Feature title="Live and channels" href={Paths.platform_live}>
+				<Feature title="Live updates" href={Paths.platform_live}>
 					<p>
-						Rooms, topics and channels: who is here, what was said, and live data for pages, checked, over one
-						stream a tab.
+						Channels push typed, access-checked messages to pages, over one stream per browser tab.
+						Rooms count who is here; topics carry messages between calls.
 					</p>
 				</Feature>
 				<Feature title="The database" href={Paths.platform_database}>
 					<p>
-						Postgres, or SQLite in the server's process (or Turso's engine), as the program says: queries whose rows decode into
-						the record you annotate, transactions, migrations built into the app; or roc-pg, whose queries are
-						checked at build.
+						Postgres, or SQLite inside the server's process (on SQLite's engine or Turso's). Rows decode
+						into the record type you annotate; transactions; migrations built into the executable.
 					</p>
 				</Feature>
 				<Feature title="Actors" href={Paths.platform_actors}>
 					<p>
-						State that handles one message at a time, in order, with typed asks, tells and timers, kept in the
-						database so it outlives a restart.
+						State that handles one message at a time, in order, with typed asks, tells and timers. Kept
+						in the database, so it outlives a restart.
 					</p>
 				</Feature>
 				<Feature title="Values in memory" href={Paths.platform_kv}>
 					<p>
-						<code>Kv</code>: typed values by key, with a time to live and atomic counts, claims and takes, for
-						rate limits, caches and one-time tokens.
+						<code>Kv</code> keeps typed values by key, with a time to live and atomic operations: rate
+						limits, caches, one-time tokens.
 					</p>
 				</Feature>
 				<Feature title="Settings" href={Paths.platform_settings}>
 					<p>
-						The environment, read alike in a request, a job or a schedule, the app's context made from it
-						once, and what only a dev server does.
+						Environment variables, the app's public URL, and whether the server runs in development
+						mode.
 					</p>
 				</Feature>
 				<Feature title="Crypto" href={Paths.platform_crypto}>
 					<p>
-						Random bytes and AES-GCM from the host, and the crypto package an app signs with: SHA-256, HMAC,
-						HKDF.
+						Secure random bytes and AES-GCM from the host; SHA-256, HMAC and HKDF from the crypto
+						package.
 					</p>
 				</Feature>
 				<Feature title="Plugins" href={"${Paths.platform_server}#plugins"}>
 					<p>
-						What a package adds to an app in one line: routes, tables, background loops, pages for
-						development. Jobs and cron are one (<a href={Paths.ecosystem_jobs}>packages/jobs</a>).
+						A package can add routes, tables, background loops and files to an app in one line. Jobs and
+						cron are a plugin (<a href={Paths.ecosystem_jobs}>packages/jobs</a>), and so is email.
 					</p>
 				</Feature>
 			</FeatureGrid>
 			<p>
-				It is opinionated on purpose: one server, Roc, and one database, Postgres or SQLite. The host, in
-				Rust, gives Roc general things: HTTP, database connections, sockets with TLS, background loops that sleep until woken, calls
-				isolated from their caller, actors' mailboxes and timers, values in memory. Migrations, plugins and
-				actors' state are the platform's Roc, written on those
-				(<a href={"${Paths.platform_server}#layers"}>what is Rust, what is Roc</a>). What needs neither the
-				host nor the compiler is a package, not the platform: files in S3, the crypto written in Roc, and
-				jobs and cron and email (plugins) are <a href={Paths.ecosystem}>the ecosystem's</a>.
+				The platform is opinionated on purpose: one server process, written in Roc, with one database,
+				Postgres or SQLite. An app runs as a single instance; it isn't designed to run behind a load
+				balancer as several copies. In return, live channels, actors' mailboxes and <code>Kv</code> can
+				simply live in the server's memory.
+			</p>
+			<p>
+				The Rust host gives Roc only general building blocks: HTTP, database connections, TCP and TLS
+				sockets, background loops, isolated calls, actors' mailboxes and timers, values in memory.
+				Migrations, plugins and actors' state are written in Roc on top of those
+				(<a href={"${Paths.platform_server}#layers"}>what is Rust, what is Roc</a>). Anything that needs
+				neither the host nor the compiler is a package rather than part of the platform: file storage (S3,
+				a directory, memory), the crypto written in Roc, jobs and cron, and email are all in
+				<a href={Paths.ecosystem}>the ecosystem</a>.
 			</p>
 
-			<Heading id="app">An app</Heading>
+			<Heading id="app">What an app gives the server</Heading>
 			<p>
-				On the server platform an app is a record: how it answers a request, its migrations, its kinds of
-				actor, and its plugins (the jobs plugin: the kinds of job its workers run, and its schedules). The
-				platform's tests' app has all of them:
+				You rarely write the server's program by hand. You write pages, layouts and endpoints in
+				<code>routes/</code>, and <code>rocx build</code> writes the program from them
+				(<code>Generated/App</code>). Your <code>main.roc</code> adds only what the routes can't say: how to
+				make the app's context when the server starts (<code>init!</code>), the middleware around every
+				request, and, when you need them, the database, the OpenAPI document and plugins. This is the docs
+				site's:
 			</p>
-			<Code title={"${Sources.platform_program.file}, in part"} source={Sources.platform_program.rocx} numbers={Bool.False} />
-			<p>This site has pages and endpoints, and none of the rest; <code>rocx build</code> writes its program:</p>
 			<Code title={"${Sources.platform_site_program.file}, in part"} source={Sources.platform_site_program.rocx} numbers={Bool.False} />
 			<p>
-				<code>respond!</code> takes the request, a <code>Server.Request</code> (its method, path, query,
-				headers, body, and <code>peer</code>, the address of the connection it came on, which the host hands
-				over in one record with the rest), and the app's context, and answers with a
-				<code>Server.Response</code>: the routes rocx
-				writes answer it (<a href={Paths.routing}>routing</a>). An answer that is a stream carries it: a function the host
-				runs as a call of its own, with its <code>send!</code> and <code>sleep!</code>. <code>actors</code>
-				lists the app's kinds of actor, which <code>rocx build</code> finds, so the host can run one when
-				nobody waits on it (a tell, a timer). The browser's app is the page's components, the same root the
-				server rendered:
+				A SQLite app adds <code>{"database: Sqlite(\"data/app.db\")"}</code>; SQL files in the app's
+				<code>migrations/</code> directory are built into the executable
+				(<a href={"${Paths.platform_database}#migrations"}>migrations</a>); actors are found in the app's
+				modules. What <code>App.program</code> returns is the record the server platform takes:
+			</p>
+			<ul>
+				<li><code>init!</code>: makes the app's context once, at start, from what the server was started with (<code>--context-file</code>). Every request, actor turn and plugin call is given it.</li>
+				<li><code>respond!</code>: answers a request (a <code>Server.Request</code>: its method, path, query, headers, body as bytes, the route that matched, and <code>peer</code>, the address it came from) with a <code>Server.Response</code>. The routes rocx writes do this (<a href={Paths.routing}>routing</a>).</li>
+				<li><code>database</code>: <code>Postgres</code>, <code>Sqlite(path)</code> or <code>Turso(path)</code>.</li>
+				<li><code>migrations</code>: the app's schema, each a name and its SQL.</li>
+				<li><code>actors</code>: the methods of the app's kinds of actor, so the server can run one when nobody is waiting on it (a tell, a timer).</li>
+				<li><code>logs</code>: the log's format (<code>Auto</code>, <code>Pretty</code> or <code>Json</code>).</li>
+				<li><code>plugins</code> and <code>routes</code>: what packages add, and the app's own paths, which the server checks for clashes as it starts.</li>
+			</ul>
+			<p>A program can also be written by hand, as the platform's own test app does:</p>
+			<Code title={"${Sources.platform_program.file}, in part"} source={Sources.platform_program.rocx} numbers={Bool.False} />
+			<p>
+				A response may be text, bytes, a page of components (which the host renders), a stream of
+				<a href={"${Paths.calls}#events"}>server-sent events</a> (a loop the host runs as a call of its own),
+				or a body the host fetches from another server and passes on. The browser's program is the
+				page's components: the same root the server rendered, which <code>rocx build --client</code> writes:
 			</p>
 			<Code title={Sources.client_app.file} source={Sources.client_app.rocx} />
 
-			<Heading id="request">A request, all the way</Heading>
+			<Heading id="request">A request, from start to end</Heading>
 			<Trace>
 				<li>
-					<Who kind="server">server</Who> hyper hands the host a request; the host reads its body
-					(16 MiB at most, unless <code>--max-body</code> says otherwise) and gives it to Roc, a call of its own on one of Roc's threads (it pauses
-					whenever an effect waits), inside a guard that catches a crash.
+					<Who kind="server">server</Who> The host (hyper) receives the request and reads its body (16 MiB
+					at most, unless <code>--max-body</code> allows more). It starts a call into Roc on one of Roc's
+					threads, inside a guard that catches a crash. The call pauses whenever an effect waits, and
+					its thread runs other calls meanwhile.
 				</li>
 				<li>
-					<Who kind="server">server</Who> The app's <code>respond!</code> runs its middleware and
-					routes, and answers with the page: its layouts, the page, and the components in it, one tree. Its
-					effects (a query, a job queued) pause that call, and no other.
+					<Who kind="server">server</Who> The app's <code>respond!</code> runs its middleware, then the route.
+					For a page, the answer is one tree: the layouts, the page, and the components inside them.
+					An effect along the way (a query, a job queued) pauses this call and no other.
 				</li>
 				<li>
-					<Who kind="server">server</Who> The host renders the tree, every hole once: each endpoint a
-					component reads is answered there and then, in-process, through its route, and the answers go in
-					a script at the end of the page, with <code>/rocx/start.js</code>. A
-					<code>{"<NoHydration>"}</code> is rendered as plain HTML, for the server alone.
+					<Who kind="server">server</Who> The host renders the tree to HTML, running each hole once. When a
+					component reads an endpoint, the host answers it on the spot, in-process, through the
+					endpoint's route. The answers go into a script at the end of the page, followed by
+					<code>/rocx/start.js</code>. Markup inside <code>{"<NoHydration>"}</code> is rendered as plain
+					HTML, for the server alone.
 				</li>
 				<li>
-					<Who kind="browser">browser</Who> The page shows at once. Its script fetches the wasm and
-					hydrates the document: the same components run again, bound to the server's nodes, reading the
-					answers from the page instead of asking. What is inside a <code>{"<NoHydration>"}</code> is left as
-					it came.
+					<Who kind="browser">browser</Who> The page shows at once. The script loads the wasm and hydrates
+					the document: the same components run again and attach to the server's HTML, reading the
+					endpoint answers from the page instead of asking the server. What is inside a
+					<code>{"<NoHydration>"}</code> is left as it came.
 				</li>
 				<li>
-					<Who kind="browser">browser</Who> A click writes a signal; what reads it runs again and
-					patches its own node. A read whose answer isn't in the page (its URL built from a signal, or
-					read again with <code>refresh!</code>) is a GET of the endpoint's own URL, which the server's app
-					answers through the same route.
+					<Who kind="browser">browser</Who> A click writes a signal. Only the holes that read it run again,
+					and each patches its own node. A read the page has no answer for (its URL built from a signal,
+					or read again with <code>refresh!</code>) becomes a GET of the endpoint's URL, and the server
+					answers it through the same route.
 				</li>
 			</Trace>
 
 			<Heading id="build">Building and running</Heading>
+			<p>
+				While you work on an app, <code>rocx dev</code> builds both programs, serves the app on port 8080
+				in development mode, and rebuilds and restarts it on each save
+				(<a href={Paths.tooling}>tooling</a>). A SQLite app needs nothing else. A Postgres app needs a
+				database URL: in this repository, <code>just db</code> starts one in Docker and prints it.
+			</p>
 			<Code
-				title="In this repository"
-				source={"just db        # a Postgres in Docker; prints its DATABASE_URL\njust dev       # this site on it: http://localhost:8080, rebuilt on save\nnode server/build.mjs app.roc out/app [--opt=speed] [--target=arm64musl]"}
+				title="Developing"
+				source={"rocx dev my-app                                   # http://localhost:8080, rebuilt on save\nrocx dev my-app -- --database-url postgres://…    # a Postgres app: the server's options after --\nrocx check my-app                                 # both programs type-checked, problems at .rocx lines"}
 				numbers={Bool.False}
+				plain={Bool.True}
 			/>
 			<p>
-				<code>server/build.mjs</code> builds the host with cargo into
-				<code>server/platform/targets/</code>, then the app with <code>roc build</code>, which links the two
-				into one executable. On macOS it links against the system; <code>--target=arm64musl</code> (or
-				<code>x64musl</code>) makes a static Linux executable, cross-compiled, to copy into a container. The
-				executable takes its port, its database and the rest as flags or environment
-				(<a href={"${Paths.platform_server}#running"}>running</a>).
+				A release build takes a few commands, as each example's README shows. From the repository's root:
+			</p>
+			<Code
+				title="A release build"
+				source={"just web-host    # the browser platform's host, once (rocx dev builds it too)\nbin/rocx build my-app --client my-app/build/client\n.tools/roc-active build --target=wasm32 --opt=size --output=my-app/build/client/static/rocx/app.wasm my-app/build/client/main.roc\nnode server/build.mjs my-app/main.roc my-app/build/server [--opt=speed] [--target=arm64musl]\n\ncd my-app && build/server --port 8080 --static build/client/static"}
+				numbers={Bool.False}
+				plain={Bool.True}
+			/>
+			<p>
+				<code>rocx build</code> turns the <code>.rocx</code> files into Roc and writes the browser's copy of
+				the app; the next line compiles that copy to wasm. <code>server/build.mjs</code> builds the
+				Rust host with cargo, then the app with <code>roc build</code>, which links the two into one
+				executable. With <code>--target=arm64musl</code> (or <code>x64musl</code>) it cross-compiles a
+				static Linux executable to copy into a container. The executable takes its port, its database and
+				the rest as flags or environment variables (<a href={"${Paths.platform_server}#running"}>running it</a>).
 			</p>
 
 			<Heading id="why">Why this shape</Heading>
 			<ul>
 				<li>
-					<strong>Native on the server.</strong> Roc compiles to machine code, so the server runs it as such:
-					each request a call of its own on a few threads of Roc's, pausing while an effect waits, and Rust
-					where Roc can't reach (sockets, TLS, threads). No wasm runtime between them.
+					<strong>Native on the server.</strong> Roc compiles to machine code, so the server runs it
+					directly, with no wasm runtime in between. Each request is a call on one of a few threads that
+					pauses while it waits. Rust covers what Roc can't do itself: sockets, TLS, threads.
 				</li>
 				<li>
-					<strong>Wasm in the browser.</strong> The browser runs WebAssembly: the components that hydrate, and
-					nothing an endpoint's handler does. A <code>{"<NoHydration>"}</code> stays the server's.
+					<strong>Wasm in the browser.</strong> Only the components that hydrate go to the browser. An
+					endpoint's handler never does, and neither does markup inside <code>{"<NoHydration>"}</code>.
 				</li>
 				<li>
-					<strong>One component model.</strong> Pages are Solid-style components on both, so the server
-					renders what the browser will hydrate, with the answers it will need.
+					<strong>One component model.</strong> Pages are Solid-style components on both sides, so the
+					server renders exactly what the browser will hydrate, along with the data it needs.
 				</li>
 				<li>
-					<strong>One server.</strong> An app runs as one instance, by design: live rooms, topics, channels,
-					values in memory and actors' mailboxes are in its memory; jobs and actors' state are in its database.
+					<strong>One server.</strong> An app runs as one instance, by design. Live rooms, topics and
+					channels, <code>Kv</code>'s values and actors' mailboxes are in its memory; actors' state and
+					jobs are in its database.
 				</li>
 			</ul>
 			<Callout kind="note" title="A working prototype">
 				<p>
-					Both platforms are tested, together and apart: the server's against Postgres, SQLite and Turso, crashes and all; the
-					browser's in Chromium; this site on both. Each page here says what isn't there yet.
+					Both platforms are tested, together and apart: the server against Postgres, SQLite and Turso,
+					crashes included; the browser in Chromium; this site on both. Where something isn't there yet,
+					its page says so.
 				</p>
 			</Callout>
 		</NoHydration>

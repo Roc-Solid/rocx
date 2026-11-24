@@ -1499,7 +1499,7 @@ slow_job = Job.define_with(
 
 # ---- Actors ----
 
-## A count, one per key, that outlives requests and restarts: a kind (D-068, a type with `name` and
+## A count, one per key, that outlives requests and restarts: a kind (a type with `name` and
 ## `initial`) and its methods.
 Counter := [].{
 	name = |{}| "counter"

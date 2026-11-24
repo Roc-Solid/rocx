@@ -40,18 +40,29 @@ view! = |_|
 				kicker={[<>{"The ecosystem · "}</>, <code>packages/presence</code>]}
 				title="Who is here, who is typing, and where they point"
 			>
-				A room's presence: who is in it right now, with a name, a colour and a status each; who is
-				typing; and everyone's cursor over what they share. A member with two tabs open is one face, and
-				leaves when the last tab does. A page that goes to another room leaves at once, and one that
-				closes a few seconds later; one that vanishes without a word, a laptop shut or a network gone, is
-				swept out when its heartbeats stop.
+				An avatar stack, a typing line and live cursors for a shared page, fed by a room the server keeps.
+				Tabs come and go cleanly: a reload doesn't flicker, and a laptop that shuts is swept out.
 			</PageHero>
+			<p>
+				Use this package when people look at the same page together, such as a board, a document or a quiz,
+				and each should see who else is there. A <em>room</em> is the set of people on that page right now,
+				each with a name, a colour and a status. The package gives you three components that show a room
+				(<code>{"<AvatarStack>"}</code>, <code>{"<TypingIndicator>"}</code> and <code>{"<LiveCursors>"}</code>),
+				the browser's side that joins one (<code>Presence.join!</code>), and the server's side that keeps it
+				(<code>PresenceServer</code>), all on a route's <a href={"${Paths.platform_live}#channels"}>channel</a>.
+			</p>
+			<p>
+				A member with two tabs open is one face, and leaves when their last tab does. A page that moves to
+				another room leaves at once. A tab that closes leaves a few seconds later, so a reload doesn't make it
+				flicker out and in. A tab that vanishes without a word (a laptop shut, a network gone) is swept out once
+				its heartbeats stop.
+			</p>
 
 			<Heading id="room">A room, in your browser</Heading>
 			<p>
-				This site is static files, with no server to keep a room. So the demo plays the server's part: it
-				keeps a list of who is here, and tells the package's stores and components what a room's channel
-				would. Press a button, or let Auto, on from the start, do something every 1.5 seconds.
+				This site is static files, with no server to keep a room, so the demo plays the server's part. It keeps
+				a list of who is here and tells the package's stores and components what a room's channel would. Press a
+				button, or let Auto (on from the start) do something every 1.5 seconds.
 			</p>
 		</NoHydration>
 		<Demo>
@@ -59,36 +70,55 @@ view! = |_|
 		</Demo>
 		<NoHydration>
 			<p>
-				A face that comes grows in, and one that goes fades out. A typing line runs out on its own after
-				four seconds, with no message to say it stopped. A cursor glides to each place it is sent, fades once
-				it has been still for three seconds (press Auto to stop them), and is forgotten after twenty.
+				A face that arrives grows in, and one that leaves fades out. A typing line runs out on its own, with no
+				message to say the person stopped. A cursor glides to each place it is sent, fades once it has been still
+				for a while (press Auto to stop them), and is forgotten after longer. The demo uses short times so you
+				see each of these: four seconds for typing, three to fade and twenty to forget. A room joined with
+				<code>Presence.join!</code> uses seven, five and thirty.
 			</p>
 
 			<Heading id="use">Using it</Heading>
 			<p>
-				Name the package in the app's header, as any package (<a href={Paths.ecosystem}>the ecosystem</a>), and
-				import its components. Each takes its data as an accessor, so it shows whatever feeds it: a room's
-				channel in an app, or, here, the demo.
+				Name the package in the app's header, as for any <a href={Paths.ecosystem}>package</a>. It is not a
+				plugin, so there is nothing to add to the program:
+			</p>
+			<Code source={"app [program] { pf: platform \"…/server/platform/main.roc\", presence: \"…/packages/presence/main.roc\" }"} numbers={Bool.False} />
+			<p>
+				<code>rocx build</code> copies the components and the browser's stores into the app, so both halves
+				compile them. Import the components where you need them. Each takes its data as an accessor (a function
+				ending in <code>!</code> that reads a value), so it shows whatever feeds it: a room's channel in an app,
+				or, on this page, the demo.
 			</p>
 			<Code title={"${Sources.presence_use.file}, in part"} source={Sources.presence_use.rocx} />
 			<p>
-				In an app, a room is a route's <a href={"${Paths.platform_live}#channels"}>channel</a>, and the server
-				keeps it. Its check lets a member in, as who the middleware says they are (their key and metadata,
-				never the page's say), and its hooks are the package's <code>PresenceServer</code>'s: a tab joins as it
-				subscribes, and leaves when its subscription ends.
+				In an app, a room is a route's <a href={"${Paths.platform_live}#channels"}>channel</a>, and its URL
+				names the room. The channel's check lets a member in as the person the middleware says they are: their
+				key and metadata come from the server, never from the page. Its hooks are
+				<code>PresenceServer</code>'s, so a tab joins as it subscribes and leaves when its subscription ends.
+				Here is the whole route from examples/board:
 			</p>
 			<Code title={Sources.presence_route.file} source={Sources.presence_route.rocx} />
 			<p>
-				The page joins the room with <code>Presence.join!</code>, given the channel: it subscribes, says every
-				15 seconds that this tab is still here, and gives what the components read. What the page says (its
-				status, that it is typing) goes over the tab's one stream, with its other channels; nothing has an
-				endpoint of its own. A tab that is hidden is away once the page says so, in one line:
-				<code>{"<Document on:visibilitychange.visible={here.visible!} />"}</code>; the status it had comes back
-				as it shows again. Who a member is, <code>Wire.Meta(d)</code>, is what the components show (a name, a
-				picture, a colour, a status) and <code>data</code>, the app's own, of any type JSON carries
-				(<code>{"{}"}</code> for none).
+				The page joins the room with <code>Presence.join!</code>, given the channel. It subscribes, tells the
+				room every 15 seconds that this tab is still here, and returns the accessors the components read
+				(<code>members!</code>, <code>typing!</code>, <code>cursors!</code>) and the functions that tell the room
+				about this tab (<code>status!</code>, <code>typed!</code>, <code>moved!</code>…). Everything the page
+				says goes over the tab's one live stream, alongside its other channels; presence needs no endpoint of
+				its own.
 			</p>
 			<Code title={"${Sources.presence_join.file}, in part"} source={Sources.presence_join.rocx} />
+			<p>
+				A status is any word the app picks: <code>away</code>, <code>busy</code>, or, on the board, the card
+				a person has open. Set it from a handler or an effect with <code>{"(here.status!)(word)"}</code>. To
+				show a hidden tab as away, add one line:
+				<code>{"<Document on:visibilitychange.visible={here.visible!} />"}</code>. While the tab is hidden it is
+				<code>away</code> and its cursor is gone; when it shows again, its status comes back.
+			</p>
+			<p>
+				Who a member is, <code>Wire.Meta(d)</code>, is what the components show (a name, a picture, a colour, a
+				status) plus <code>data</code>, the app's own: a team, a role, a seat, of any type JSON can carry and
+				that can be compared with <code>==</code>. Use <code>{"{}"}</code> for none.
+			</p>
 
 			<Heading id="stack">{"<AvatarStack>"}</Heading>
 			<div class="sample">
@@ -101,20 +131,21 @@ view! = |_|
 						<tr>
 							<td><code>{"faces! : () => List(Stack.Face)"}</code></td>
 							<td>
-								who is here, in order: <code>{"{ key, name, image, color, status }"}</code>
-								(<code>Wire.face</code> makes one from a member). A face whose <code>image</code> is empty shows
-								its initials on its <code>color</code>, or, when that is empty too, a colour its key always gets
+								who is here, in order: <code>{"{ key, name, image, color, status }"}</code>.
+								<code>Wire.face</code> makes one from a member. A face with an empty <code>image</code> shows
+								its initials on its <code>color</code>; with an empty <code>color</code> too, it gets a colour
+								picked from its key, the same one every time
 							</td>
 						</tr>
-						<tr><td><code>{"max : U64 ?? 5"}</code></td><td>how many places, the <code>+N</code> among them</td></tr>
-						<tr><td><code>{"label : Str ?? \"\""}</code></td><td>what a screen reader hears for the stack; empty, it says who is here: <code>"Ann, Bo and 2 others are here"</code></td></tr>
+						<tr><td><code>{"max : U64 ?? 5"}</code></td><td>how many places the stack takes, counting the <code>+N</code></td></tr>
+						<tr><td><code>{"label : Str ?? \"\""}</code></td><td>what a screen reader hears for the stack; when empty, it says who is here: <code>"Ann, Bo and 2 others are here"</code></td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 			<p>
-				A status (<code>away</code>, <code>busy</code>, any word) is a class, <code>status-away</code>, and a dot:
-				green, orange for <code>away</code>, red for <code>busy</code>. The <code>+N</code>'s tooltip names the
-				ones it stands for.
+				A face with a status gets a class, such as <code>status-away</code>, and a dot: orange for
+				<code>away</code> (its face dimmed too), red for <code>busy</code>, green for any other word. A face
+				with no status has no dot. The <code>+N</code>'s tooltip names the people it stands for.
 			</p>
 
 			<Heading id="typing">{"<TypingIndicator>"}</Heading>
@@ -125,14 +156,14 @@ view! = |_|
 				<table>
 					<thead><tr><th>Prop</th><th>Is</th></tr></thead>
 					<tbody>
-						<tr><td><code>{"names! : () => List(Str)"}</code></td><td>who is typing (<code>Wire.names(members, keys)</code> turns keys into names)</td></tr>
-						<tr><td><code>{"say : (List(Str) -> Str) ?? Typing.sentence"}</code></td><td>the sentence: <code>"Ann is typing…"</code>, <code>"Ann and Bo are typing…"</code>, <code>"Ann, Bo and 2 others are typing…"</code>; give your own for another language</td></tr>
+						<tr><td><code>{"names! : () => List(Str)"}</code></td><td>who is typing; <code>Wire.names(members, keys)</code> turns the room's keys into names</td></tr>
+						<tr><td><code>{"say : (List(Str) -> Str) ?? Typing.sentence"}</code></td><td>writes the sentence: <code>"Ann is typing…"</code>, <code>"Ann and Bo are typing…"</code>, <code>"Ann, Bo and 2 others are typing…"</code>. Give your own for another language</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 			<p>
-				Three dots that bob, and the sentence. With no one typing, its line keeps its height, so nothing under
-				it jumps; a screen reader hears it change (<code>aria-live="polite"</code>).
+				It shows three bobbing dots and the sentence. When no one is typing, the line keeps its height, so
+				nothing under it jumps. A screen reader hears it change (<code>aria-live="polite"</code>).
 			</p>
 
 			<Heading id="cursors">{"<LiveCursors>"}</Heading>
@@ -150,126 +181,139 @@ view! = |_|
 						<tr>
 							<td><code>{"cursors! : () => List(LiveCursors.Pointer)"}</code></td>
 							<td>
-								others' cursors, <code>{"{ key, name, color, x, y, idle }"}</code>: <code>x</code> and <code>y</code>
-								are shares of the area, from 0 to 1, so a place is the same on a narrow screen and a wide one
-								(<code>Wire.pointers(members, cursors)</code> makes them)
+								others' cursors, <code>{"{ key, name, color, x, y, idle }"}</code>. <code>x</code> and
+								<code>y</code> are fractions of the area, from 0 to 1, so a place is the same on a narrow
+								screen and a wide one. <code>Wire.pointers(members, cursors)</code> makes them
 							</td>
 						</tr>
 						<tr><td><code>{"children : List(Html)"}</code></td><td>the area they point at</td></tr>
-						<tr><td><code>{"on_move! : (Html.Point => {}) ?? |_| {}"}</code></td><td>your own pointer over the area, shares of it, at most once a frame (<code>on:pointermove.point</code>): a room's <code>here.moved!</code>, which sends it at most 20 times a second</td></tr>
-						<tr><td><code>{"on_leave! : (() => {}) ?? || {}"}</code></td><td>your pointer left the area: a room's <code>here.away!</code></td></tr>
+						<tr><td><code>{"on_move! : (Html.Point => {}) ?? |_| {}"}</code></td><td>called with your own pointer's place over the area (fractions of it), at most once a frame. Pass a room's <code>here.moved!</code>, which sends it at most 20 times a second</td></tr>
+						<tr><td><code>{"on_leave! : (() => {}) ?? || {}"}</code></td><td>called when your pointer leaves the area. Pass a room's <code>here.away!</code></td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 			<p>
 				Each cursor is an arrow in its member's colour, with their name beside it. It glides to each place it
-				is sent, fades when idle, and takes no pointer events, so what is under it is clicked as before. Your
-				own goes to the room with <code>{"<LiveCursors … on_move!={here.moved!} on_leave!={here.away!}>"}</code>:
-				move your pointer over the demo's note, and it shows as the others see it, as You. It listens to the
-				pointer, so it goes outside a <code>{"<NoHydration>"}</code>, as the sample above does.
+				is sent and fades when idle. Cursors take no pointer events, so clicks reach what is under them. To
+				send your own, write <code>{"<LiveCursors … on_move!={here.moved!} on_leave!={here.away!}>"}</code>.
+				Move your pointer over the demo's note: it shows as the others would see it, labelled You. Because it
+				listens to the pointer, <code>{"<LiveCursors>"}</code> must be outside a
+				<code>{"<NoHydration>"}</code>, as the sample above is.
 			</p>
 
 			<Heading id="how">How a room works</Heading>
 			<p>
-				<strong>The room is the server's.</strong> One server instance, so there is no broker: the server
-				keeps each room itself. <code>Room</code> is its state: who is here, each with their metadata, since when, and from
-				which tabs. <code>join</code>, <code>leave</code>, <code>update</code> (new metadata) and
-				<code>sweep</code> answer the changes others should hear, <code>Joined</code>, <code>Left</code> and
-				<code>Changed</code>, and number the room's state with each one. Time is the caller's: its tests run on
-				a clock they are given, so a timeout is tested without waiting for one.
+				<strong>The server keeps the room.</strong> It keeps each room in its own memory, so there is no broker
+				to run. <code>Room</code> is the room's state: who is here, with their metadata, since when, and from
+				which tabs. Its functions <code>join</code>, <code>leave</code>, <code>update</code> (new metadata) and
+				<code>sweep</code> return the changes others should hear (<code>Joined</code>, <code>Left</code> or
+				<code>Changed</code>) and give the room's state a new number with each one. <code>Room</code> never reads
+				a clock: the caller passes the time in, so its tests run on a clock they are given and test a timeout
+				without waiting for one:
 			</p>
 			<Code title={"${Sources.presence_grace.file}, in part"} source={Sources.presence_grace.rocx} />
 			<ul>
 				<li>
-					<strong>Leaving has a grace.</strong> A tab whose stream ends leaves after five seconds, unless it is
-					back by then: a page that reloads or reconnects doesn't flicker out and in. A page that drops the
-					room while the tab stays (it goes to another room) leaves at once: <code>on_close!</code> is told
-					<code>Dropped</code>.
+					<strong>Leaving has a grace period.</strong> A tab whose stream ends leaves after five seconds, unless
+					it is back by then, so a page that reloads or reconnects doesn't flicker out and in. A page that drops
+					the room while the tab stays open (it went to another room) leaves at once: its
+					<code>on_close!</code> hook is told <code>Dropped</code>.
 				</li>
 				<li>
 					<strong>Vanishing has a timeout.</strong> A page says it is here every 15 seconds. A tab unheard for 75
-					seconds is swept out, however long its connection lingers: a browser may hold a hidden tab's timers
-					back to once a minute, and 75 seconds is that minute and a beat to spare.
+					seconds is swept out, however long its connection lingers. Browsers may slow a hidden tab's timers to
+					once a minute, so 75 seconds is that minute plus one beat to spare.
 				</li>
 				<li>
-					<strong>Changes are numbered.</strong> A page's copy of the room (<code>Mirror</code>) takes a snapshot,
-					then each change in order. One older than its snapshot is no news; one that skips a number is a gap,
-					and the page asks for a snapshot again.
+					<strong>Changes are numbered.</strong> A page's copy of the room (<code>Mirror</code>) takes a
+					snapshot, then each change in order. A change older than its snapshot is ignored. A change that skips
+					a number means one was missed, and the page asks for a fresh snapshot.
 				</li>
 				<li>
-					<strong>Kept in memory, swapped in.</strong> In an app, a room is kept in the server's
-					<code>Kv</code>. Each change reads it, sweeps it, changes it and swaps it back only if no one else
-					changed it meanwhile (<code>Kv.swap!</code>), else reads it again, so two tabs that join at once
-					both count, and nothing is written to Postgres. What changed is published on the room's channel,
-					numbered.
+					<strong>Kept in memory, swapped in.</strong> The server keeps each room in its
+					<a href={Paths.platform_kv}>Kv</a> store. Each change reads the room, sweeps it, changes it, and
+					writes it back only if no one else changed it in the meantime (<code>Kv.swap!</code>); otherwise it
+					reads it again. So two tabs that join at once both count, and nothing is written to the database.
+					What changed is then published on the room's channel, numbered. A room nobody speaks in for a quarter
+					of an hour is forgotten.
+				</li>
+				<li>
+					<strong>Typing and cursors are passed on, never kept.</strong> The server forwards them to the other
+					tabs. For a cursor only its latest place counts, so a tab that falls behind gets the newest place and skips
+					the ones in between.
 				</li>
 			</ul>
 
 			<Heading id="stores">The stores</Heading>
 			<p>
-				The browser's side, as Solid primitives: each is called in a component, as
-				<code>create_signal!</code> is, and keeps its state in signals. <code>join!</code> is a room on its
-				channel; the others take what a room says however it comes.
+				The browser's side is a set of stores in the Solid style: functions you call in a component, as you
+				call <code>create_signal!</code>, that keep their state in signals. <code>join!</code> is a whole room
+				on its channel. The others are its parts, and take what a room says however it arrives, so you can feed
+				them from something else, as the demo does.
 			</p>
 			<TableWrap>
 				<table>
 					<thead><tr><th>Store</th><th>Gives</th></tr></thead>
 					<tbody>
-						<tr><td><code>{"Presence.join!(channel)"}</code></td><td>the room on a route's channel, joined while the component is there: what <code>create_room!</code> gives, fed by the channel, and what this tab says, <code>status!(word)</code>, <code>typed!()</code> and <code>done!()</code>, <code>moved!(point)</code> and <code>away!()</code>; it says it is here every 15 seconds</td></tr>
-						<tr><td><code>{"Presence.create_room!(on_gap!)"}</code></td><td>all of them at once, fed a room's events with <code>heard!(event)</code>: <code>members!</code>, <code>synced!</code>, <code>me!</code>, <code>typing!</code> (your own left out), <code>cursors!</code> (others'), <code>lost!</code>; one who leaves stops typing, and their cursor goes</td></tr>
-						<tr><td><code>{"Presence.create_presence!(on_gap!)"}</code></td><td><code>members!</code>, <code>synced!</code>, <code>receive!(message)</code>, <code>lost!</code></td></tr>
-						<tr><td><code>{"Presence.create_typing!(ttl)"}</code></td><td><code>who!</code>, <code>started!(key)</code>, <code>stopped!(key)</code>; a ping lasts <code>ttl</code> milliseconds</td></tr>
-						<tr><td><code>{"Presence.create_typist!(every, send!)"}</code></td><td>your own typing: <code>typed!()</code> on each key, <code>done!()</code> when the text is sent or left; <code>send!</code> is given <code>Started</code> (at once, then at most every <code>every</code>) or <code>Stopped</code></td></tr>
-						<tr><td><code>{"Presence.create_cursors!({ idle, forget })"}</code></td><td><code>shown!</code>, <code>moved!(move)</code>, <code>gone!(key)</code></td></tr>
+						<tr><td><code>{"Presence.join!(channel)"}</code></td><td>the room on a route's channel, joined for as long as the component is on the page: everything <code>create_room!</code> gives, fed by the channel, plus what this tab says: <code>status!(word)</code>, <code>typed!()</code> and <code>done!()</code>, <code>moved!(point)</code> and <code>away!()</code>, and <code>visible!(shown)</code>. It tells the room this tab is here every 15 seconds</td></tr>
+						<tr><td><code>{"Presence.create_room!(on_gap!)"}</code></td><td>all the parts at once, fed a room's events with <code>heard!(event)</code>: <code>members!</code>, <code>synced!</code>, <code>me!</code> (this tab's key and id), <code>typing!</code> (others' keys), <code>cursors!</code> (others'), and <code>lost!</code> for when the stream drops. Someone who leaves stops typing, and their cursor goes</td></tr>
+						<tr><td><code>{"Presence.create_presence!(on_gap!)"}</code></td><td>who is here: <code>members!</code>, <code>synced!</code>, <code>receive!(message)</code>, <code>lost!</code>. <code>on_gap!</code> runs when a change was missed</td></tr>
+						<tr><td><code>{"Presence.create_typing!(ttl)"}</code></td><td>who is typing: <code>who!</code>, <code>started!(key)</code>, <code>stopped!(key)</code>. A ping lasts <code>ttl</code> milliseconds</td></tr>
+						<tr><td><code>{"Presence.create_typist!(every, send!)"}</code></td><td>your own typing: call <code>typed!()</code> on each key and <code>done!()</code> when the text is sent or left. <code>send!</code> is given <code>Started</code> (at once, then at most every <code>every</code> milliseconds) or <code>Stopped</code></td></tr>
+						<tr><td><code>{"Presence.create_cursors!({ idle, forget })"}</code></td><td>others' cursors: <code>shown!</code>, <code>moved!(move)</code>, <code>gone!(key)</code></td></tr>
+						<tr><td><code>{"Presence.create_pointer!(every, send!)"}</code></td><td>your own pointer: <code>moved!(point)</code> and <code>away!()</code>. <code>send!</code> is given <code>Moved(point)</code> at once, then at most every <code>every</code> milliseconds (the latest place held and sent when due, so a cursor ends where the pointer stopped), or <code>Away</code></td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 			<p>
-				A write applies when its handler is done, as in Solid 2.0, so call a store once a handler: a second
-				call in the same handler sees the store as it was before the first. A channel hands each event to a
-				handler of its own, so this is how a page uses them anyway. The browser has no clock yet, so a store
-				keeps its own, a timer that ticks every quarter second, and only while something can expire.
+				Call each store at most once per handler. As in Solid 2.0, a handler's writes apply when the handler
+				is done, so a second call in the same handler sees the store as it was before the first, and the first
+				call's change is lost. A channel gives each event a handler of its own, so a page fed by one is safe. A
+				store whose entries expire (typing, idle cursors) runs its own timer, every quarter second, only while
+				something can expire.
 			</p>
 			<p>
-				The demo above has no channel, so it does what one would: a press tells the stores what happened, once
-				each, and each cursor's move goes from a timeout of its own.
+				The demo above has no channel, so it does what one would: a press tells the stores what happened, one
+				call each, and each cursor's move is sent from a timeout of its own.
 			</p>
 			<Code title={"${Sources.presence_stores.file}, in part"} source={Sources.presence_stores.rocx} />
 
 			<Heading id="modules">The modules</Heading>
 			<p>
-				Plain Roc, on no platform, so the server's hooks and the browser's stores run the same code (the
-				browser's half sees them through the package's <code>browser.roc</code>), and
-				<code>PresenceServer</code>, the server's side. <code>roc test packages/presence/main.roc</code> runs
-				their <code>expect</code>s.
+				Under the components and the stores is plain Roc, on no platform, so the server's hooks and the
+				browser's stores run the same code. The browser's half sees these modules through the package's
+				<code>browser.roc</code>; the server's half also sees <code>PresenceServer</code>.
+				<code>roc test packages/presence/main.roc</code> runs their <code>expect</code>s. The
+				<a href="https://github.com/Roc-Solid/rocx/tree/master/packages/presence">package's README</a> lists
+				every function.
 			</p>
 			<TableWrap>
 				<table>
 					<thead><tr><th>Module</th><th>What it does</th></tr></thead>
 					<tbody>
-						<tr><td><code>Room</code></td><td>a room, as the server keeps it: <code>join</code>, <code>update</code>, <code>heartbeat</code>, <code>leave</code>, <code>quit</code>, <code>sweep</code>, <code>signal</code>; <code>members</code>, <code>version</code>, <code>deadline</code> (when the next sweep could find someone); <code>save</code> and <code>load</code> for JSON; <code>Room.defaults</code>, and <code>beat_every</code></td></tr>
-						<tr><td><code>Mirror</code></td><td>a page's copy: <code>receive</code> a <code>Snapshot</code> or a numbered <code>Delta</code> (<code>Err(Gap)</code> when one was missed), <code>members</code>, <code>is_synced</code></td></tr>
+						<tr><td><code>Room</code></td><td>a room, as the server keeps it: <code>join</code>, <code>update</code>, <code>heartbeat</code>, <code>leave</code>, <code>quit</code>, <code>sweep</code>, <code>signal</code>; <code>members</code>, <code>version</code>, and <code>deadline</code> (when the next sweep could find someone); <code>save</code> and <code>load</code> for JSON; <code>Room.defaults</code> and <code>beat_every</code></td></tr>
+						<tr><td><code>Mirror</code></td><td>a page's copy of a room: <code>receive</code> a <code>Snapshot</code> or a numbered <code>Delta</code> (<code>Err(Gap)</code> when one was missed), <code>members</code>, <code>is_synced</code></td></tr>
 						<tr><td><code>Diff</code></td><td><code>between(before, after)</code>: who left, joined and changed; <code>apply</code> one change</td></tr>
-						<tr><td><code>Throttle</code></td><td>at most one send every <code>every</code> milliseconds, the first at once and the latest held until it is due: a cursor sent 20 times a second ends where the pointer stopped</td></tr>
-						<tr><td><code>Cursors</code></td><td><code>place</code> (a pointer's pixels as shares of the area), <code>moved</code>, <code>gone</code>, <code>shown</code>, <code>sweep</code>, <code>coalesce</code> (a burst, one move per member), <code>percent</code></td></tr>
+						<tr><td><code>Throttle</code></td><td>at most one send every <code>every</code> milliseconds: the first at once, the latest held until it is due. A cursor sent 20 times a second ends where the pointer stopped</td></tr>
+						<tr><td><code>Cursors</code></td><td><code>place</code> (a pointer's pixels as fractions of the area), <code>moved</code>, <code>gone</code>, <code>shown</code>, <code>sweep</code>, <code>coalesce</code> (a burst, one move per member), <code>percent</code></td></tr>
 						<tr><td><code>Typing</code></td><td>who is typing: <code>started</code>, <code>stopped</code>, <code>who</code>, <code>deadline</code>, <code>sentence</code></td></tr>
 						<tr><td><code>Typist</code></td><td>your own typing: <code>typed(now)</code> says when to ping, <code>done</code> when to say it stopped</td></tr>
-						<tr><td><code>Stack</code></td><td><code>split</code> (who fits, and <code>+N</code>), <code>initials</code> (<code>"Ada Lovelace"</code> is <code>"AL"</code>), <code>color</code> (the same key, the same colour), <code>names</code>, <code>label</code></td></tr>
-						<tr><td><code>Wire</code></td><td>what a room's channel carries: to a page (<code>Event</code>: <code>Welcome</code>, <code>Presence</code>, <code>Typing</code>, <code>Moved</code>, <code>Away</code>), from one (<code>Said</code>: <code>Here</code>, with its status, <code>Typing</code>, <code>Moved</code>, <code>Away</code>), who is in it (<code>Member</code>: a key and <code>Meta</code>: name, image, color, status), and <code>face</code>, <code>names</code>, <code>pointers</code> to feed the components</td></tr>
-						<tr><td><code>PresenceServer</code></td><td>the server's side: a room channel's hooks, <code>on_open!</code>, <code>on_close!</code> and <code>receive!</code>, the room kept in <code>Kv</code></td></tr>
+						<tr><td><code>Stack</code></td><td><code>split</code> (who fits, and the <code>+N</code>), <code>initials</code> (<code>"Ada Lovelace"</code> is <code>"AL"</code>), <code>color</code> (the same key always gets the same colour), <code>names</code>, <code>label</code></td></tr>
+						<tr><td><code>Wire</code></td><td>what a room's channel carries: to a page, an <code>Event</code> (<code>Welcome</code>, <code>Presence</code>, <code>Typing</code>, <code>Moved</code>, <code>Away</code>); from one, a <code>Said</code> (<code>Here</code> with its status, <code>Typing</code>, <code>Moved</code>, <code>Away</code>); who is in it, a <code>Member</code> (a key and a <code>Meta</code>: name, image, color, status, data); and <code>face</code>, <code>names</code> and <code>pointers</code> to feed the components</td></tr>
+						<tr><td><code>PresenceServer</code></td><td>the server's side: a room channel's hooks, <code>on_open!</code>, <code>on_close!</code> and <code>receive!</code>, with the room kept in <code>Kv</code></td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 
 			<Heading id="styling">Styling</Heading>
 			<p>
-				The components take their sizes and colours from custom properties: <code>--avatar-size</code> (2rem),
-				<code>--avatar-overlap</code>, <code>--avatar-ring</code> (between faces: the page's background),
-				<code>--avatar-font</code>, <code>--avatar-more</code>, <code>--avatar-status</code>,
-				<code>--avatar-away</code>, <code>--avatar-busy</code>; <code>--typing-color</code>,
-				<code>--typing-size</code>; <code>--cursor-glide</code> (0.12s; the demo's is 1.4s) and
-				<code>--cursor-font</code>. Under <code>prefers-reduced-motion</code>, the dots stop bobbing and the
-				cursors jump instead of gliding.
+				The components take their sizes and colours from CSS custom properties. For the avatar stack:
+				<code>--avatar-size</code> (2rem), <code>--avatar-overlap</code>, <code>--avatar-ring</code> (the ring
+				between faces; set it to the page's background), <code>--avatar-font</code>, <code>--avatar-more</code>,
+				<code>--avatar-status</code>, <code>--avatar-away</code> and <code>--avatar-busy</code>. For the typing
+				line: <code>--typing-color</code> and <code>--typing-size</code>. For cursors:
+				<code>--cursor-glide</code> (0.12s; the demo's is 1.4s) and <code>--cursor-font</code>. Under
+				<code>prefers-reduced-motion</code>, the dots stop bobbing and the cursors jump instead of gliding.
 			</p>
 
 			<Heading id="status">Status</Heading>
@@ -278,14 +322,18 @@ view! = |_|
 				<li>the modules, with their tests (<code>roc test packages/presence/main.roc</code>);</li>
 				<li>the three components and the stores, which <code>rocx build</code> copies into an app;</li>
 				<li>
-					the server's side on a route's channel, which an app imports (<code>presence.PresenceServer</code>):
-					in examples/board, two people in browsers of their own each see the other, see which card each has
-					open, see one away while their tab is hidden, and see a third who closes their browser leave;
+					the server's side on a route's channel (<code>presence.PresenceServer</code>). In examples/board, two
+					people in their own browsers each see the other, see which card each has open, see one go away while
+					their tab is hidden, and see a third who closes their browser leave;
 				</li>
 				<li>your own cursor, sent as you move (<code>on_move!</code>), and a hidden tab shown as away (<code>here.visible!</code>);</li>
-				<li>the app's own metadata, typed: <code>Wire.Meta(d)</code>'s <code>data</code>, through the room and its channel as it is.</li>
+				<li>the app's own metadata, typed: <code>Wire.Meta(d)</code>'s <code>data</code> goes through the room and its channel as it is.</li>
 			</ul>
-			<p>The package's PROPOSALS.md has what is still open (heartbeats from the stream itself, a room by the page's path).</p>
+			<p>
+				Not yet: the live stream itself as the heartbeat (today the page sends one every 15 seconds), and a room
+				named by the page's path without a route of its own (for a "who's viewing this page" stack). The
+				package's PROPOSALS.md has the details.
+			</p>
 			<details>
 				<summary>The demo: <code>{Sources.presence_demo.file}</code></summary>
 				<Code title={Sources.presence_demo.file} source={Sources.presence_demo.rocx} />

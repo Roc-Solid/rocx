@@ -11,13 +11,13 @@ import ../../../Demos/Lobby
 
 meta = {
 	title: "Live and channels",
-	description: "Live state on the Roc Solid server platform, in the server's memory: rooms that count who is here, topics that carry what was said to everyone listening, and channels, typed and checked, that pages subscribe to over one stream a tab.",
+	description: "Live features on the Roc Solid server platform: channels that push typed, access-checked messages to pages over one stream per browser tab, with hooks for what pages say and who comes and goes; and the lower-level rooms (who is here) and topics (messages between calls) they are built on.",
 	toc: [
-		{ id: "rooms", label: "Rooms: who is here" },
-		{ id: "topics", label: "Topics: what was said" },
 		{ id: "channels", label: "Channels: live data for pages" },
 		{ id: "channel-hooks", label: "What pages say, and hooks" },
-		{ id: "channel-stream", label: "One stream a tab" },
+		{ id: "channel-stream", label: "One stream per tab" },
+		{ id: "rooms", label: "Rooms: who is here" },
+		{ id: "topics", label: "Topics: messages between calls" },
 		{ id: "which", label: "Which to use" },
 	],
 }
@@ -27,51 +27,24 @@ view! = |_|
 		<NoHydration>
 			<PageHero
 				eyebrow="The platform · live and channels"
-				title="State that outlives a request"
+				title="Live updates, from the server to the page"
 			>
-				A request comes and goes; some state has to stay. How many people are on a page right now, what
-				someone just said to all of them: that is live state, in the server's memory, which streams share
-				and channels carry to pages. What must still be there after a restart is
-				an <a href={Paths.platform_actors}>actor</a>'s, and a value kept for a while, a count or a cache,
-				is <a href={Paths.platform_kv}>Kv</a>'s.
+				Some pages must change while someone looks at them: a chat, a board others edit, a count of who
+				is online. For those, the server pushes messages to the page. A <strong>channel</strong> is the
+				usual way: a typed stream of messages, checked against who may read it, that pages subscribe to.
+				Channels are built on two simpler parts, <strong>rooms</strong> and <strong>topics</strong>, which
+				a stream of events can use directly. All of it lives in the server's memory: what must survive a
+				restart belongs to an <a href={Paths.platform_actors}>actor</a> or a
+				<a href={Paths.platform_database}>table</a>.
 			</PageHero>
-
-			<Heading id="rooms">Rooms: who is here</Heading>
-			<p>
-				A room counts who is in it. A call joins one with <code>Live.join!</code>, and is in it until the call
-				ends: a stream's, until its client goes, or it crashes. <code>Live.count!</code> says how many are in
-				one, from anywhere. This stream sends the count when it starts, and again whenever someone comes or
-				goes:
-			</p>
-			<Code title={"${Sources.platform_online.file}, in part"} source={Sources.platform_online.rocx} numbers={Bool.False} />
-			<p>
-				<code>Live.next!(ms)</code> waits for what the call hears: <code>Heard</code> (a message, or that
-				someone joined or left a room it is in), <code>Quiet</code> once <code>ms</code> have passed with
-				nothing, or <code>Gone</code> when the client has gone. So a loop like this one sleeps until there is
-				something to say, and ends with its client.
-			</p>
-
-			<Heading id="topics">Topics: what was said</Heading>
-			<p>
-				A topic carries messages to every call listening to it. <code>Live.listen!</code> starts listening (for
-				as long as the call lasts), and <code>Live.publish!</code>, from any request, a job or an actor, sends
-				a message to everyone listening:
-			</p>
-			<Code title={"${Sources.platform_shouts.file}, in part"} source={Sources.platform_shouts.rocx} numbers={Bool.False} />
-			<p>
-				A component listens to such a stream as to any endpoint's events
-				(<a href={"${Paths.calls}#events"}>events</a>). That is a call on the server, paused while it waits
-				(it holds no thread), and one of the six connections a browser makes to a host, for as long as it is
-				open. For what pages follow live, a channel is better.
-			</p>
 
 			<Heading id="channels">Channels: live data for pages</Heading>
 			<p>
-				A channel is defined in a route's <code>+server.roc</code>, beside its endpoints, at a path the
-				app chose: <code>channel!</code>, its check. The check is given the request, the path's params,
-				and what the route's middleware handed on, and answers who the subscriber is
-				(<code>Channel.allow(who)</code>), or a refusal. Its type says what is published on it, and what
-				pages may say on it. This page's lobby lets everyone in:
+				A channel is defined in a route's <code>+server.roc</code>, beside its endpoints, so it has a path
+				like any route. Its definition is <code>channel!</code>, a check: given the request, the path's
+				params and what the route's <a href={"${Paths.routing}#middleware"}>middleware</a> handed on, it
+				answers who the subscriber is (<code>Channel.allow(who)</code>), or a refusal. Its type says what the
+				server publishes on it, and what pages may say on it. This page's lobby lets everyone in:
 			</p>
 			<Code title={Sources.channel_lobby.file} source={Sources.channel_lobby.rocx} />
 		</NoHydration>
@@ -80,142 +53,195 @@ view! = |_|
 		</Demo>
 		<NoHydration>
 			<p>
-				<code>rocx build</code> puts it in <code>Generated/Api</code> as a function of its params
-				(<code>Api.channel_platform_live_lobby({"{}"})</code>; with params,
-				<code>Api.channel_org_org_news({"{ org }"})</code>), as it puts endpoints, typed with the
-				<code>Channel(who, message, said)</code> its <code>channel!</code>'s annotation gives. Api imports no
-				route file, so a job, an actor or a store imports it and publishes by name, typed (D-037). A component subscribes
-				from an effect, and the subscription ends when the effect runs again or the component goes:
+				<code>rocx build</code> puts each channel in <code>Generated/Api</code> as a function of its params,
+				as it does for endpoints: <code>Api.channel_platform_live_lobby({"{}"})</code> here, or
+				<code>Api.channel_org_org_news({"{ org }"})</code> for a channel at <code>/org/[org]/news</code>. It
+				is typed with the <code>Channel(who, message, said)</code> that <code>channel!</code>'s annotation
+				gives. <code>Generated/Api</code> imports no route file, so a job, an actor or any other server module
+				can import it and publish on a channel by name, type-checked.
+			</p>
+			<p>
+				A component subscribes from an <a href={"${Paths.components}#effects"}>effect</a>. The subscription
+				ends when the effect runs again or the component goes away:
 			</p>
 			<Code title={"${Sources.demo_lobby.file}, in part"} source={Sources.demo_lobby.rocx} numbers={Bool.False} />
-			<p>A subscriber hears, in order, one at a time:</p>
+			<p>A subscriber hears these events, in order, one at a time:</p>
 			<ul>
 				<li>
-					<strong><code>Resync</code></strong> each time its tab's stream (re)connects, when the server saw
-					it fall behind, and when a page asks (<code>Endpoint.resync!</code>): it may have missed
-					something, so it reads its data again (<code>refresh!</code>). The route's
-					<code>on_open!</code> messages come right after it.
+					<strong><code>Resync</code></strong>: the page may have missed something, so it should read its
+					data again (<code>refresh!</code>). It comes each time the tab's stream connects or reconnects,
+					when the server sees the subscriber fell behind, and when a page asks for one
+					(<code>Endpoint.resync!</code>). The route's <code>on_open!</code> messages come right after it.
 				</li>
-				<li><strong><code>Message(message)</code></strong>: what was published, as the channel's type.</li>
-				<li><strong><code>Refused(status, why)</code></strong>: the check refused it as the stream opened.</li>
+				<li><strong><code>Message(message)</code></strong>: something published, as the channel's type.</li>
+				<li><strong><code>Refused(status, why)</code></strong>: the check refused the subscriber as the stream opened.</li>
 				<li>
-					<strong><code>Ended(why)</code></strong>: the check, run again on a beat of the stream (every 15
-					s), refused it: someone who lost access stops hearing within a beat.
+					<strong><code>Ended(why)</code></strong>: the check ran again, on one of the stream's regular
+					beats (every 15 s), and refused it. So someone who loses access stops hearing within a beat.
 				</li>
 			</ul>
 			<p>
-				The server publishes with <code>Endpoint.publish!(Api.channel_org_org_news({"{ org: \"acme\" }"}), news)</code>,
-				from a request, a job or an actor; only those subscribed with the same params hear it, in the
-				order it was published. <code>Endpoint.publish_latest!(channel, key, message)</code> is for what
-				only its latest value matters (a cursor): a subscriber behind gets only the newest with each key,
-				and these aren't ordered with the channel's other messages. A subscriber that falls more than 256
-				messages behind hears <code>Resync</code> instead of what it missed, never a silent gap. The page's
-				own data, as the server renders it, is a <code>get!</code> on the same path, read with
-				<code>Endpoint.get!</code>.
+				The server publishes with
+				<code>Endpoint.publish!(Api.channel_org_org_news({"{ org: \"acme\" }"}), news)</code>, from a request,
+				a job or an actor. Only the subscribers with the same params hear it, in the order it was published.
+				A page's first data, as the server renders it, comes from a <code>get!</code> endpoint on the same
+				path, read with <code>Endpoint.get!</code>; the channel carries what changes after that.
 			</p>
+			<ul>
+				<li>
+					<strong>Only the latest matters?</strong> <code>Endpoint.publish_latest!(channel, key, message)</code>
+					is for values where only the newest counts (a cursor's position). A subscriber that is behind
+					gets only the newest message for each key, and these aren't ordered with the channel's other
+					messages.
+				</li>
+				<li>
+					<strong>Falling behind.</strong> A subscriber that falls more than 256 messages behind hears
+					<code>Resync</code> instead of what it missed, never a silent gap.
+				</li>
+			</ul>
 
 			<Heading id="channel-hooks">What pages say, and hooks</Heading>
 			<p>
-				A route may define three hooks beside <code>channel!</code>, each given the path's params, who the
-				check said the subscriber is, its tab's id, and the channel itself (to publish on):
+				Beside <code>channel!</code>, a route may define three hooks. Each is given the path's params, who
+				the check said the subscriber is, the subscriber's tab id, and the channel itself (to publish on):
 			</p>
 			<ul>
 				<li>
-					<strong><code>receive!</code></strong>: what a page says (<code>Endpoint.say!(channel, said)</code>),
-					after the same middleware and check, or a refusal. What a page says in one frame goes in one
-					request.
+					<strong><code>receive!</code></strong> handles what a page says
+					(<code>Endpoint.say!(channel, said)</code>), after the same middleware and check, or refuses it.
+					What a page says within one frame goes in one request.
 				</li>
 				<li>
-					<strong><code>on_open!</code></strong>: what a subscriber is sent first, each time it subscribes
-					(who is here, say), right after its <code>Resync</code>.
+					<strong><code>on_open!</code></strong> returns the messages a subscriber is sent first, each time
+					it subscribes (who is here, say), right after its <code>Resync</code>.
 				</li>
 				<li>
-					<strong><code>on_close!</code></strong>: told when a subscription ends, and why:
-					<code>Dropped</code> (the page no longer subscribes to it, while the tab stays: the component
-					went, or follows another channel now), <code>Gone</code> (the tab closed or reloaded, its network
-					went, the server stopped) or <code>Refused(why)</code> (the check, at a beat). It runs outside the
-					middleware: the subscriber's access may be what ended it.
+					<strong><code>on_close!</code></strong> is told when a subscription ends, and why:
+					<code>Dropped</code> (the tab stays, but the page no longer subscribes: the component went, or
+					follows another channel now), <code>Gone</code> (the tab closed or reloaded, its network went, or
+					the server stopped), or <code>Refused(why)</code> (the check, at a beat). It runs outside the
+					middleware, since losing access may be what ended it.
 				</li>
 			</ul>
 			<p>
-				<code>who</code> stays on the server, kept as JSON between the check and <code>on_close!</code>. A
-				tab's id is random, kept for the tab (a reload keeps it), and names the tab, not a person.
+				<code>who</code> stays on the server, kept as JSON from the check until <code>on_close!</code>. A
+				tab's id is random and kept for the tab's life (a reload keeps it); it names a browser tab, not a
+				person.
 			</p>
 			<p>
-				A tab's hooks come in order. A channel the page drops and subscribes to again hears its end before
-				its start. A tab has one stream, and when a new one comes for it (a reload, a reconnect) before the
-				server has heard the old one end, the old one ends first: its subscriptions' <code>on_close!</code>
-				are told before the new one's checks and <code>on_open!</code> run. So a route can keep who is here
-				by tab, joining on <code>on_open!</code> and leaving on <code>on_close!</code> (at once when
-				<code>Dropped</code>, after a moment when <code>Gone</code>, in case it comes back), with nothing to
-				count.
+				A tab's hooks run in order. If a page drops a channel and subscribes again, the route hears the end
+				before the new start. When a new stream comes for a tab (after a reload or a reconnect) before the
+				server has noticed the old one end, the old one ends first: its <code>on_close!</code> calls run
+				before the new stream's checks and <code>on_open!</code>. So a route can keep "who is here" per
+				tab: join on <code>on_open!</code>, leave on <code>on_close!</code> (at once when
+				<code>Dropped</code>; after a moment when <code>Gone</code>, in case the tab comes back), with
+				nothing to count by hand. The <a href={Paths.ecosystem_presence}>presence package</a> does this for you, with names, colours and cursors.
 			</p>
 
-			<Heading id="channel-stream">One stream a tab</Heading>
+			<Heading id="channel-stream">One stream per tab</Heading>
 			<p>
-				A tab's subscriptions share one stream, <code>GET /rocx/live?tab=…&amp;c=/org/acme/news&amp;c=…</code>,
-				whatever their number, and two components on one channel share its subscription. The runtime opens
-				it once the page has rendered, and opens it again when it drops, after a wait that doubles each
-				time, from half a second to 30 s. The stream says its id first; when what the page subscribes to
-				changes (once the render that changed it is done), the runtime tells the stream, in one post
-				naming that id, which channels it subscribes to now and which it dropped, and the stream stays
-				open. With nothing left to subscribe to, it tells the stream, then closes it. A copy of the site
-				that is only files answers no channels: a subscriber hears <code>Refused(404, …)</code>, asked for
-				once.
+				All of a tab's subscriptions share one server-sent events stream,
+				<code>GET /rocx/live?tab=…&amp;c=/org/acme/news&amp;c=…</code>, however many there are, and two
+				components on one channel share one subscription. The browser's runtime opens the stream once the
+				page has rendered. If it drops, the runtime opens it again after a wait that doubles each time,
+				from half a second up to 30 s.
+			</p>
+			<p>
+				The stream sends its id first. When what the page subscribes to changes (once the render that
+				changed it is done), the runtime posts the change, naming that id, and the stream stays open. With
+				nothing left to subscribe to, it says so, then closes the stream. A static copy of a site (only
+				files, no server) has no channels: a subscriber hears <code>Refused(404, …)</code>, once.
 			</p>
 			<TableWrap>
 				<table>
 					<thead><tr><th>On the stream</th><th>Means</th></tr></thead>
 					<tbody>
-						<tr><td><code>event: hello</code>, <code>data: </code> the stream's id</td><td>first: what the runtime names the stream with when it changes what the tab subscribes to (192 random bits, the tab's alone)</td></tr>
-						<tr><td><code>event: resync</code>, <code>data: /org/acme/news</code></td><td>in: read your data again; <code>on_open!</code>'s messages follow</td></tr>
+						<tr><td><code>event: hello</code>, <code>data: </code> the stream's id</td><td>first: the id the runtime names the stream by when it changes the tab's subscriptions (192 random bits, this stream's alone)</td></tr>
+						<tr><td><code>event: resync</code>, <code>data: /org/acme/news</code></td><td>read your data again; <code>on_open!</code>'s messages follow</td></tr>
 						<tr><td><code>event: message</code>, the URL, then <code>data: {"{\"title\":…}"}</code></td><td>what was published, as JSON</td></tr>
-						<tr><td><code>event: refused</code>, the URL, then <code>data: {"{\"status\":403,\"why\":\"Forbidden\"}"}</code></td><td>its check refused it; the stream goes on for the others</td></tr>
-						<tr><td><code>event: ended</code>, the URL, then why, as a JSON string</td><td>its check refused it at a beat</td></tr>
-						<tr><td><code>: beat</code></td><td>every 15 s (<code>--live-beat-ms</code>): the server is there, and checks each channel again</td></tr>
-						<tr><td><code>event: replaced</code></td><td>a newer stream for this tab took its place, and this one ends: a page still reading it is another tab with the same id (a duplicated tab copies it), and takes an id of its own</td></tr>
+						<tr><td><code>event: refused</code>, the URL, then <code>data: {"{\"status\":403,\"why\":\"Forbidden\"}"}</code></td><td>the check refused this channel; the stream goes on for the others</td></tr>
+						<tr><td><code>event: ended</code>, the URL, then why, as a JSON string</td><td>the check refused it at a beat</td></tr>
+						<tr><td><code>: beat</code></td><td>every 15 s (<code>--live-beat-ms</code>): the server is there, and has checked each channel again</td></tr>
+						<tr><td><code>event: replaced</code></td><td>a newer stream for this tab took its place, and this one ends. A page still reading it is another tab with the same id (a duplicated tab copies it), and takes an id of its own</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 			<ul>
 				<li>
-					<strong>No call held.</strong> The host keeps the open streams and passes each channel's
-					messages on; Roc runs only briefly, a call at a time: a check, a hook, a beat's checks. An
-					endpoint's <code>events!</code> stream is a call for as long as it is open (paused while it
-					waits, so it holds no thread, but it keeps its stack), and one per page rather than one per tab.
+					<strong>No call is held open.</strong> The host keeps the open streams and passes each channel's
+					messages on. Roc runs only briefly, one call at a time: a check, a hook, a beat's checks. Compare
+					an endpoint's <code>events!</code> stream, which is a call for as long as it is open (paused while
+					it waits, so it holds no thread, but it keeps its stack), and one per page rather than one per
+					tab.
 				</li>
 				<li>
-					<strong>Middleware.</strong> Each check is a request the host makes of the app for the channel's
-					own path, with the tab's cookies (the stream's, or the last post's that changed what it
-					subscribes to: a page that signs in without a reload reaches members' channels), behind the
-					app's middleware and the route's, as a <code>GET</code> of it would be. An app's sign-in guard
-					guards a channel by its path, and <code>/rocx/live</code> itself never reaches the app's
-					middleware: there is nothing to let through.
+					<strong>Middleware applies.</strong> Each check is a request the host makes of the app, for the
+					channel's own path, with the tab's cookies, behind the app's middleware and the route's, just as a
+					<code>GET</code> of that path would be. The cookies are the stream's, or those of the last post
+					that changed its subscriptions, so a page that signs in without a reload reaches members'
+					channels. An app's sign-in guard guards a channel by its path; <code>/rocx/live</code> itself never
+					reaches the app's middleware.
 				</li>
 				<li>
-					<strong>Gone in about 35 s.</strong> A tab whose network went never closes its stream; the next
-					beat's write goes unacknowledged, and after 20 s the server drops it and tells
-					<code>on_close!</code>.
+					<strong>A lost tab is gone in about 35 s.</strong> A tab whose network went never closes its
+					stream. The next beat's write goes unacknowledged, and 20 s later the server drops the connection
+					and tells <code>on_close!</code>.
 				</li>
 				<li>
-					<strong>What pages say</strong> goes in <code>POST /rocx/live/send?tab=…&amp;stream=…</code>, a JSON list of
-					<code>{"{\"channel\":\"/org/acme/news\",\"message\":…}"}</code>, with the stream's changes
-					(<code>{"{\"channel\":…,\"subscribe\":true}"}</code>, <code>{"{\"channel\":…,\"unsubscribe\":true}"}</code>),
-					answered 204, or 200 with each refusal (<code>{"{\"refused\":[{\"index\":0,\"status\":403,\"why\":…}]}"}</code>).
-					One another site's page sends is refused (403), and a change naming no open stream of the tab (404).
+					<strong>What pages say</strong> goes in <code>POST /rocx/live/send?tab=…&amp;stream=…</code>: a JSON
+					list of <code>{"{\"channel\":\"/org/acme/news\",\"message\":…}"}</code>, with the stream's changes
+					(<code>{"{\"channel\":…,\"subscribe\":true}"}</code>, <code>{"{\"channel\":…,\"unsubscribe\":true}"}</code>).
+					It is answered 204, or 200 with each refusal
+					(<code>{"{\"refused\":[{\"index\":0,\"status\":403,\"why\":…}]}"}</code>). A post from another
+					site's page is refused (403), and so is a change naming no open stream of the tab (404).
+				</li>
+				<li>
+					<strong>Limits:</strong> a stream carries at most 64 channels; a post carries at most 256 items
+					and 1 MiB.
 				</li>
 			</ul>
+
+			<Heading id="rooms">Rooms: who is here</Heading>
+			<p>
+				Rooms and topics are the building blocks under channels, for a stream of events you write yourself
+				(<a href={"${Paths.platform_server}#streams"}>streams</a>). A room counts who is in it. A call joins one
+				with <code>Live.join!</code> and stays in it until the call ends: for a stream, until its client goes
+				or it crashes. <code>Live.count!</code> says how many are in a room, from anywhere. This stream sends
+				the count when it starts, and again whenever someone comes or goes:
+			</p>
+			<Code title={"${Sources.platform_online.file}, in part"} source={Sources.platform_online.rocx} numbers={Bool.False} />
+			<p>
+				<code>Live.next!(ms)</code> waits for what the call hears: <code>Heard</code> (a message on a topic
+				it listens to, or someone joining or leaving a room it is in), <code>Quiet</code> once
+				<code>ms</code> milliseconds pass with nothing, or <code>Gone</code> when the client has gone. So a
+				loop like this one sleeps until there is something to say, and ends with its client.
+			</p>
+
+			<Heading id="topics">Topics: messages between calls</Heading>
+			<p>
+				A topic carries messages to every call listening to it. <code>Live.listen!</code> starts listening,
+				for as long as the call lasts. <code>Live.publish!</code>, from any request, job or actor, sends a
+				message to everyone listening:
+			</p>
+			<Code title={"${Sources.platform_shouts.file}, in part"} source={Sources.platform_shouts.rocx} numbers={Bool.False} />
+			<p>
+				A component listens to such a stream as to any endpoint's events
+				(<a href={"${Paths.calls}#events"}>events</a>). On the server, that is a call that stays open (paused
+				while it waits, so it holds no thread), and in the browser it uses one of the six connections a
+				browser opens to a host over HTTP/1.1, for as long as it is open. For what pages follow live, a
+				channel is better.
+			</p>
 
 			<Heading id="which">Which to use</Heading>
 			<TableWrap>
 				<table>
 					<thead><tr><th>For</th><th>Use</th><th>Lasts</th></tr></thead>
 					<tbody>
-						<tr><td>who is here, now</td><td>a room (<code>Live.join!</code>, <code>Live.count!</code>)</td><td>while the calls in it last</td></tr>
-						<tr><td>telling everyone listening</td><td>a topic (<code>Live.publish!</code>, <code>Live.listen!</code>)</td><td>while the listeners last</td></tr>
 						<tr><td>live data for pages, checked</td><td>a channel (<code>channel!</code>, <code>Endpoint.subscribe!</code>, <code>Endpoint.publish!</code>)</td><td>while the subscribers last</td></tr>
+						<tr><td>who is here, now</td><td>a room (<code>Live.join!</code>, <code>Live.count!</code>), or a channel's hooks</td><td>while the calls in it last</td></tr>
+						<tr><td>telling every listening call</td><td>a topic (<code>Live.publish!</code>, <code>Live.listen!</code>)</td><td>while the listeners last</td></tr>
 						<tr><td>a count, a cache, a token used once</td><td>a value in memory (<a href={Paths.platform_kv}><code>Kv</code></a>: <code>Kv.increment!</code>, <code>Kv.set!</code>, <code>Kv.take!</code>)</td><td>its time to live, or until a restart</td></tr>
-						<tr><td>state many requests change, one at a time</td><td>an actor (<a href={Paths.platform_actors}><code>Actor</code></a>: <code>Actor.ask!</code>, <code>Actor.tell!</code>)</td><td>in the database: restarts too</td></tr>
+						<tr><td>state many requests change, one at a time</td><td>an actor (<a href={Paths.platform_actors}><code>Actor</code></a>: <code>ask!</code>, <code>tell!</code>)</td><td>in the database: survives restarts</td></tr>
 						<tr><td>data, queried every way</td><td>a table (<a href={Paths.platform_database}><code>Db</code></a>)</td><td>in the database</td></tr>
 						<tr><td>work that may fail and should run again</td><td>a job (<a href={Paths.ecosystem_jobs}><code>Job.enqueue!</code></a>)</td><td>in the database, until done</td></tr>
 					</tbody>
@@ -225,12 +251,12 @@ view! = |_|
 			<Callout kind="tip" title="Tested">
 				<p>
 					The platform's tests open streams that join a room and count each other, publish to listeners,
-					open one stream for many channels (one refused), say things on one, end one whose check fails at a
-					beat, fall behind on one, change what one carries by its id (a channel dropped is told
-					<code>Dropped</code>, the stream's end <code>Gone</code>, in order; a post from another site or with
-					another tab's id refused), and keep 40 streams open on two Roc threads while requests still answer; in a
-					browser, two components share one stream, a change is told the stream without a reconnect, and a
-					drop reconnects a little later each time.
+					open one stream for many channels (one refused), say things on one, end one whose check fails at
+					a beat, fall behind on one, and change what a stream carries by its id (a dropped channel is told
+					<code>Dropped</code>, the stream's end <code>Gone</code>, in order; a post from another site, or
+					with another tab's id, refused). They keep 40 streams open on two Roc threads while requests still
+					answer. In a browser, two components share one stream, a change reaches the stream without a
+					reconnect, and a dropped stream reconnects a little later each time.
 				</p>
 			</Callout>
 		</NoHydration>

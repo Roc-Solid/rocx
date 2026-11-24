@@ -14,15 +14,17 @@ import ../../../Ui/PageHero
 import ../../../Ui/TableWrap
 import ../../../Ui/Demo
 
-## The intl package: a live demo first (a language picker over numbers, money and dates), then the
-## same calls in each starter locale, how an app picks the reader's locale and hands it to its
+## The intl package: how to add it, a live demo (a language picker over numbers, money and dates),
+## the same calls in each starter locale, how an app picks the reader's locale and hands it to its
 ## components, the formatting functions, messages and catalogs (the demo's message among them,
-## written at build time), a form's errors, the modules, the data, and what works today. Every output on the page is written by the package as the site is
-## built; every listing is picked from a file that compiles.
+## written at build time), a form's errors, the modules, the data, and what works today. Every
+## output on the page is written by the package as the site is built; every listing is picked from
+## a file that compiles.
 meta = {
 	title: "Intl",
 	description: "Numbers, money, dates, relative times and translated messages with plurals, as each locale writes them, for Roc Solid apps: the same text from the server and in the browser.",
 	toc: [
+		{ id: "install", label: "Installing it" },
 		{ id: "demo", label: "A first look" },
 		{ id: "locales", label: "Ten locales" },
 		{ id: "locale", label: "The reader's locale" },
@@ -32,7 +34,7 @@ meta = {
 		{ id: "forms", label: "A form's errors" },
 		{ id: "modules", label: "The modules" },
 		{ id: "data", label: "Locale data and size" },
-		{ id: "status", label: "Status" },
+		{ id: "status", label: "What works, and what doesn't yet" },
 	],
 }
 
@@ -43,11 +45,27 @@ view! = |_|
 				kicker={[<>{"The ecosystem · "}</>, <code>packages/intl</code>]}
 				title="Every reader's language, written the same on the server and in the browser"
 			>
-				Numbers, money, dates, relative times and translated messages with plurals, as each locale writes
-				them. It is plain Roc, on no platform, so the server renders a page in the reader's language and the
-				browser hydrates the same text. The demo below runs in your browser: pick a language, or change
-				<code>n</code>, and watch every line follow.
+				Numbers, money, dates, relative times and translated messages with plurals, written the way each
+				reader's locale writes them. Use it when your app has readers in more than one language or country.
+				It is plain Roc, on no platform, so the server renders a page in the reader's language and the
+				browser <a href={"${Paths.components}#tree"}>hydrates</a> the same text. The demo below runs in your
+				browser: pick a language, or change <code>n</code>, and watch every line follow.
 			</PageHero>
+
+			<Heading id="install">Installing it</Heading>
+			<p>Name the package in your app's header (<code>main.roc</code>), by its directory's name:</p>
+			<Code source={"app [program] { intl: \"../packages/intl/main.roc\", pf: platform \"…/server/platform/main.roc\" }"} numbers={Bool.False} />
+			<p>
+				Its modules are plain Roc, so any file of either half of the app, or a test, imports them as they
+				are. One locale's formatting is an <code>Intl</code> value:
+			</p>
+			<Code source={"import intl.Intl\nimport intl.Locales\n\nintl = Intl.new(Locales.pl)\n\nintl.number(12345.5)            # \"12 345,5\"\nintl.currency(1234.5, \"PLN\")    # \"1234,50 zł\"\nintl.date(moment, Long)         # \"21 listopada 2026\"\nintl.relative(-2, Hour)         # \"2 godziny temu\""} numbers={Bool.False} />
+			<p>
+				The package has one component, <code>{"<Language>"}</code>: the reader's locale as a context, and a
+				picker. <code>rocx build</code> copies it into your app, as it copies every package's components
+				(<a href={"${Paths.ecosystem}#use"}>using a package</a>), and <code>import intl.Language</code>
+				imports the copy.
+			</p>
 
 			<Heading id="demo">A first look</Heading>
 		</NoHydration>
@@ -56,17 +74,18 @@ view! = |_|
 		</Demo>
 		<NoHydration>
 			<p>
-				The demo makes a store with <code>Language.store!</code>: the reader's <code>Intl</code> in a signal,
-				for the locales it supports, with its catalog of messages. <code>{"<LanguageContext value={store}>"}</code>
-				gives it to everything inside, as a <a href={"${Paths.components}#contexts"}>context</a>, and
-				<code>{"<Language />"}</code> is the picker. Each hole that calls <code>intl!()</code> is written again
-				when the reader picks a language; nothing else runs. The site has no server, so here the choice isn't
-				kept: in an app, <code>remember!</code> sends it to an endpoint that sets a cookie.
+				The demo makes a store with <code>Language.store!</code>: the reader's <code>Intl</code> in a
+				<a href={"${Paths.components}#primitives"}>signal</a>, the locales it supports, and its catalog of
+				messages. <code>{"<LanguageContext value={store}>"}</code> gives the store to everything inside, as a
+				<a href={"${Paths.components}#contexts"}>context</a>, and <code>{"<Language />"}</code> is the picker.
+				When you pick a language, each hole that calls <code>intl!()</code> is written again; nothing else
+				runs. The demo's <code>remember!</code> does nothing, so your choice isn't kept. In an app,
+				<code>remember!</code> sends it to an endpoint that sets a cookie (<a href="#language">below</a>).
 			</p>
 			<p>
-				The demo's catalog is empty. Translated messages run in the browser just the same, but they would
+				The demo's catalog is empty. Translated messages work in the browser just the same, but they would
 				add about 13 KB to this site's wasm, which every page of the site loads. So the demo's message is
-				under <a href="#messages">Messages</a>, written by the package as this page was built.
+				shown under <a href="#messages">Messages</a>, written by the package as this page was built.
 			</p>
 			<Code title={Sources.intl_demo_use.file} source={Sources.intl_demo_use.rocx} />
 			<details>
@@ -132,12 +151,12 @@ view! = |_|
 
 			<Heading id="locale">The reader's locale</Heading>
 			<p>
-				An app lists the locales it supports, its default first. A request is read in the locale of its
-				<code>locale</code> cookie (the reader's own choice, kept), else the one its
-				<code>Accept-Language</code> header asks for, else the default. <code>Locale.wanted(request,
-				"locale")</code> reads both, most wanted first, and <code>Intl.choose</code> takes the closest
-				supported locale: <code>pl-PL</code> takes <code>pl</code>, and in an app without plain
-				<code>en</code>, <code>en-US</code> takes <code>en-GB</code> rather than another language.
+				An app lists the locales it supports, its default first. A request is read in the locale its
+				<code>locale</code> cookie names (the reader's own choice, kept), else the one its
+				<code>Accept-Language</code> header asks for, else the default. <code>{"Locale.wanted(request, \"locale\")"}</code>
+				reads both, most wanted first, and <code>Intl.choose</code> takes the closest supported locale.
+				<code>pl-PL</code> gets <code>pl</code>, and in an app without plain <code>en</code>,
+				<code>en-US</code> gets <code>en-GB</code> rather than another language.
 			</p>
 			<TableWrap>
 				<table>
@@ -150,10 +169,10 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				The app's locales and its words go in a module of its own. The locale of a request is a GET
-				endpoint's answer, which the layout <a href={"${Paths.calls}"}>reads</a> as the page renders, so the
-				server renders the page in it and the browser, which reads the answer from the page, hydrates in
-				the same one.
+				Put the app's locales and its words in a module of their own. The request's locale is the answer
+				of a GET <a href={Paths.calls}>endpoint</a>, which the root layout reads as the page renders. The
+				server renders the page in that locale and carries the answer in the page, so the browser hydrates
+				in the same one.
 			</p>
 			<Code title={Sources.intl_i18n.file} source={Sources.intl_i18n.rocx} />
 			<details>
@@ -163,17 +182,18 @@ view! = |_|
 
 			<Heading id="language">{"<Language>"}</Heading>
 			<p>
-				<code>components/Language.rocx</code> is the package's component. <code>rocx build</code> copies it
-				into each app that names the package, as it copies the <a href={Paths.ecosystem_charts}>charts</a>.
-				It holds the reader's <code>Intl</code> as a Solid context, and its view is a picker. The root layout
-				makes the store and provides it; <code>{"<html lang dir>"}</code> follow it:
+				<code>components/Language.rocx</code> is the package's component. It holds the reader's
+				<code>Intl</code> as a context, and its view is a picker. The root layout makes the store and
+				provides it, and <code>{"<html lang dir>"}</code> follow it, so the whole page switches direction
+				for Arabic:
 			</p>
 			<Code title={Sources.intl_layout.file} source={Sources.intl_layout.rocx} />
-			<p>A component reads the context, and calls <code>intl!()</code> in its holes:</p>
+			<p>A component reads the context with <code>use_context!</code>, and calls <code>intl!()</code> in its holes:</p>
 			<Code title={Sources.intl_basket.file} source={Sources.intl_basket.rocx} />
 			<p>
-				Picking a language calls <code>remember!</code>, which here sends the tag to an endpoint of the
-				app's, which keeps it in the <code>locale</code> cookie for the next page:
+				Picking a language switches the page at once, then calls <code>remember!</code>. Here it sends the
+				tag to an endpoint of the app's, which keeps it in the <code>locale</code> cookie, so the next page
+				is in it too:
 			</p>
 			<Code title={Sources.intl_endpoint.file} source={Sources.intl_endpoint.rocx} />
 			<TableWrap>
@@ -182,15 +202,15 @@ view! = |_|
 					<tbody>
 						<tr><td><code>Store</code></td><td>what the context holds: <code>{"intl! : () => Intl"}</code>, the reader's; <code>{"choose! : Str => {}"}</code>, to choose another; and <code>supported : List(Locales.Data)</code>, the choices</td></tr>
 						<tr><td><code>language_context</code></td><td>the context: <code>{"<LanguageContext value={store}>"}</code> provides it, <code>use_context!(Language.language_context)</code> reads it</td></tr>
-						<tr><td><code>{"store!({ supported, catalog, tag, remember! })"}</code></td><td>a store in <code>tag</code>'s locale (the closest supported one); its <code>choose!(tag)</code> switches it and calls <code>remember!(tag)</code></td></tr>
+						<tr><td><code>{"store!({ supported, catalog, tag, remember! })"}</code></td><td>a store in <code>tag</code>'s locale (the closest supported one; a string that isn't a tag gets the default); its <code>choose!(tag)</code> switches it and calls <code>remember!(tag)</code></td></tr>
 						<tr><td><code>{"<Language label={…} />"}</code></td><td>a <code>{"<select>"}</code> of the supported locales, each named in its own language ("English", "polski", "العربية"), the reader's chosen; <code>label</code> names it for screen readers; its class is <code>language</code></td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 			<Note>
 				These four files are a small app in the package, <code>packages/intl/example</code>, which builds on
-				both platforms. Run on the server, it rendered its page in Polish for
-				<code>Accept-Language: pl</code> and in Arabic, right to left, for a <code>locale=ar</code> cookie.
+				both platforms. It renders its page in Polish for
+				<code>Accept-Language: pl</code>, and in Arabic, right to left, for a <code>locale=ar</code> cookie.
 			</Note>
 			<details>
 				<summary>The component: <code>{Sources.intl_language.file}</code></summary>
@@ -200,9 +220,10 @@ view! = |_|
 			<Heading id="formatting">Formatting</Heading>
 			<p>
 				<code>Intl</code> is one locale's way of writing things. <code>Intl.new(Locales.pl)</code> makes one
-				for a locale, and <code>Intl.choose(supported, wanted)</code> for the closest of several. Numbers are
-				<code>Dec</code>, Roc's decimal, rounded half away from zero; a moment is milliseconds since the
-				epoch, written in UTC or at a fixed offset (<code>intl.in_offset(60)</code>).
+				for a locale, <code>Intl.choose(supported, wanted)</code> for the closest of several, and
+				<code>Intl.for_tag(supported, tag)</code> for a tag (a cookie's). Numbers are <code>Dec</code>, Roc's
+				decimal, rounded half away from zero. A moment is milliseconds since the epoch, written in UTC or
+				at a fixed offset (<code>intl.in_offset(60)</code> for Central European winter time).
 			</p>
 			<TableWrap>
 				<table>
@@ -239,8 +260,9 @@ view! = |_|
 				<code>number_with(x, options)</code> takes the fraction digits and grouping
 				(<code>{"{ ..NumberFormat.defaults, min_fraction: 2 }"}</code>). <code>ago</code> says a difference
 				in the unit that suits it: seconds under a minute, then minutes, hours, days (under a week), weeks
-				(under 30 days), months and years. Arabic is written as CLDR 48 writes it: Latin digits, its marks
-				for right-to-left text, and its dual without a digit ("خلال ساعتين", "in two hours").
+				(under 30 days), months (under a year) and years. Arabic is written as CLDR 48 writes it: Latin
+				digits, invisible marks that keep right-to-left text in order, and its dual without a digit
+				("خلال ساعتين", "in two hours").
 			</p>
 
 			<Heading id="messages">Messages</Heading>
@@ -250,7 +272,8 @@ view! = |_|
 				<code>I18n.rocx</code> above. <code>{"intl.t(key, args)"}</code> looks a key up in the reader's
 				locale, then in what it falls back to (<code>pl-PL</code>, then <code>pl</code>), then in the default.
 				So a regional set (<code>en-GB</code>) holds only what it says differently, and a missing
-				translation shows the default's words. A key no set has is shown as itself, so it is seen.
+				translation shows the default's words. A key that no set has is shown as itself, so you see it
+				and fix it.
 			</p>
 			<p>
 				Here is the demo's message, <code>files</code>, in its five languages, and what
@@ -318,8 +341,8 @@ view! = |_|
 			<p>
 				<code>Catalog.problems(catalog)</code> lists what a translator still has to do: a key missing from a
 				locale, a key the default doesn't have, a message that can't be read (it is shown as written), and
-				one whose arguments aren't the default's. An app can <code>expect Catalog.problems(I18n.catalog) == []</code>
-				in a test. For this catalog:
+				one whose arguments differ from the default's. Put <code>expect Catalog.problems(I18n.catalog) == []</code>
+				in your app's tests to catch them. For this catalog:
 			</p>
 			<Code title={Sources.intl_typos.file} source={Sources.intl_typos.rocx} />
 			<ul class="problems">
@@ -331,10 +354,11 @@ view! = |_|
 				<a href={Paths.ecosystem_forms}><code>packages/forms</code></a> gives each issue a key and its parameters:
 				<code>Issues.key(code)</code> is <code>"too_short"</code>, and <code>Issues.params(code)</code> is
 				<code>{"[{ name: \"min\", value: \"3\" }]"}</code>. <code>intl.issue(key, params)</code> says them in
-				the reader's language, from <code>Validation.catalog</code>, which has words for all nineteen of
-				forms' keys in every starter locale, in forms' voice. Merge it under the app's own catalog
-				(<code>Catalog.merge(Validation.catalog, words)</code>), as <code>I18n.rocx</code> does; a key of the
-				app's own (<code>validation.not_postcode</code>) goes in its catalog.
+				the reader's language, from <code>Validation.catalog</code>. It has words for all nineteen of forms'
+				keys in every starter locale, in forms' voice ("Use at least 3 characters"). Merge it under the
+				app's own catalog (<code>Catalog.merge(Validation.catalog, words)</code>), as <code>I18n.rocx</code>
+				does. To change a sentence, or to word a key of the app's own (a <code>Custom</code> issue's), put
+				<code>{"validation.<key>"}</code> in the app's catalog (<code>validation.not_postcode</code>).
 			</p>
 			<TableWrap>
 				<table>
@@ -362,13 +386,14 @@ view! = |_|
 			<Heading id="modules">The modules</Heading>
 			<p>
 				Plain Roc, on no platform. <code>roc test packages/intl/main.roc</code> runs their
-				<code>expect</code>s.
+				<code>expect</code>s. The <a href={"https://github.com/Roc-Solid/rocx/tree/master/packages/intl"}>README</a>
+				has every function.
 			</p>
 			<TableWrap>
 				<table>
 					<thead><tr><th>Module</th><th>What it does</th></tr></thead>
 					<tbody>
-						<tr><td><code>Intl</code></td><td>one locale's way of writing things, and its messages: the functions above, <code>t</code>, <code>issue</code>, <code>with_catalog</code>, <code>in_offset</code></td></tr>
+						<tr><td><code>Intl</code></td><td>one locale's way of writing things, and its messages: <code>new</code>, <code>choose</code>, <code>for_tag</code>, <code>with_catalog</code>, <code>in_offset</code>, the functions above, <code>t</code>, <code>format</code> (a message given inline), <code>translated</code>, <code>issue</code>, <code>error</code></td></tr>
 						<tr><td><code>Locale</code></td><td>a BCP 47 tag: <code>Locale.parse("EN_us")</code> is <code>en-US</code>; <code>fallbacks</code>; <code>accept_language(header)</code>; <code>best(wanted, supported, default)</code>; <code>wanted(request, cookie)</code></td></tr>
 						<tr><td><code>Locales</code></td><td>each starter locale's data: <code>en</code>, <code>en_gb</code>, <code>de</code>, <code>fr</code>, <code>es</code>, <code>pl</code>, <code>cs</code>, <code>ru</code>, <code>ar</code>, <code>ja</code>, and <code>all</code></td></tr>
 						<tr><td><code>Plural</code></td><td>CLDR's categories, each language's cardinal and ordinal rules, and <code>Forms</code>, a word for each category</td></tr>
@@ -377,7 +402,7 @@ view! = |_|
 						<tr><td><code>DateFormat</code></td><td>dates and times by CLDR's patterns (<code>d MMMM y</code>), in four styles</td></tr>
 						<tr><td><code>RelativeTime</code></td><td>"in 3 days", "3 dni temu"; <code>between(ms)</code>, the unit a difference is said in</td></tr>
 						<tr><td><code>Message</code></td><td>the ICU subset above: <code>parse</code>, <code>format</code>, <code>names</code>, <code>Arg</code></td></tr>
-						<tr><td><code>Catalog</code></td><td>messages for each locale: <code>new</code>, <code>add</code>, <code>merge</code>, <code>find</code>, <code>missing</code>, <code>problems</code>, <code>explain</code></td></tr>
+						<tr><td><code>Catalog</code></td><td>messages for each locale: <code>new</code>, <code>empty</code>, <code>add</code>, <code>merge</code>, <code>find</code>, <code>keys</code>, <code>missing</code>, <code>problems</code>, <code>explain</code></td></tr>
 						<tr><td><code>Validation</code></td><td>the words for packages/forms' issues, in every starter locale</td></tr>
 					</tbody>
 				</table>
@@ -388,8 +413,8 @@ view! = |_|
 				<code>packages/intl/Locales.roc</code> is written by <code>tools/locales.mjs</code> from the CLDR in
 				Node's ICU: marks and patterns for numbers and money, currency symbols, compact patterns, month and
 				weekday names, date and time patterns, and relative-time words for each plural category. Plural rules
-				are code, in <code>Plural.roc</code>. To add a locale, add it to the script's list, run it, and format
-				the package.
+				are code, in <code>Plural.roc</code>. To add a locale, add it to the script's list (and its plural
+				rules, if its language is new), run the script, and format the package with <code>rocx fmt</code>.
 			</p>
 			<p>
 				An app's wasm holds only the locales it names, under 1 KB (brotli) each. The package's code is the
@@ -402,25 +427,21 @@ view! = |_|
 
 			<Heading id="status">Status</Heading>
 			<p>
-				<strong>Works today</strong>, tested: locales and how one is chosen, plural rules, numbers, money,
-				compact numbers, dates and times, relative times, messages and catalogs, and a form's errors, for the
-				ten starter locales; the <code>{"<Language>"}</code> context and picker. The example app renders on the
-				server, hydrates, switches language in place, and keeps the choice in a cookie.
+				<strong>Works today</strong>, and tested: locales and how one is chosen, plural rules, numbers,
+				money, compact numbers, dates and times, relative times, messages and catalogs, and a form's errors,
+				for the ten starter locales; the <code>{"<Language>"}</code> context and picker. The example app
+				renders on the server, hydrates, switches language in place, and keeps the choice in a cookie.
 			</p>
-			<p><strong>Waiting on a proposal</strong> (<code>packages/intl/PROPOSALS.md</code>):</p>
+			<p><strong>Not yet</strong> (each has a proposal in <code>packages/intl/PROPOSALS.md</code>):</p>
 			<ul>
 				<li>
-					The server's side (a middleware that picks the locale and sends <code>Content-Language</code>, and
-					the endpoint that keeps a choice) is written by the app, as above, until "server-only modules in
-					packages" lets the package ship it.
+					The server's side is the app's to write: the endpoint that answers the locale and keeps a choice,
+					as above, and, if you want it, a middleware that sends <code>Content-Language</code>. The package
+					doesn't ship them yet.
 				</li>
-				<li>
-					The picker can't be a component of its own until <code>rocx build</code> lets a package's component
-					import another of the same package, so it is <code>{"<Language />"}</code>.
-				</li>
-				<li>Keys are strings: the compiler doesn't check them until a build step writes a function for each from message files.</li>
-				<li>Time is UTC or a fixed offset: named time zones, with summer time, need a host primitive.</li>
-				<li>More locales and fuller data (parent locales, other digits, long compact forms) wait on a generator that reads cldr-json.</li>
+				<li>Message keys are strings, so the compiler doesn't check them. A build step that writes a function for each key from message files would.</li>
+				<li>Time is UTC or a fixed offset. Named time zones, which follow summer time, need a host primitive.</li>
+				<li>More locales and fuller data (CLDR's parent locales such as <code>en-001</code>, other digits, long compact forms) wait on a generator that reads cldr-json.</li>
 			</ul>
 		</NoHydration>
 	</>

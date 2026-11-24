@@ -9,7 +9,7 @@ import ../../../Ui/PageHero
 import ../../../Ui/TableWrap
 
 ## The MCP package: a first server, what it answers (real requests, sent to it while the site is
-## built), serving it over HTTP, what it speaks, its modules, who may ask, testing, and its status.
+## built), serving it over HTTP, who may ask, testing, what it speaks, its modules, and its status.
 ## Nothing here hydrates: the page is text and code, and its server's answers are the build's.
 meta = {
 	title: "MCP",
@@ -17,13 +17,13 @@ meta = {
 	toc: [
 		{ id: "first", label: "A first server" },
 		{ id: "answers", label: "What it answers" },
-		{ id: "http", label: "Over HTTP" },
-		{ id: "speaks", label: "What it speaks" },
-		{ id: "modules", label: "The modules" },
+		{ id: "http", label: "Serving it over HTTP" },
 		{ id: "access", label: "Who may ask" },
 		{ id: "testing", label: "Testing a server" },
-		{ id: "status", label: "Status" },
-		{ id: "limits", label: "Limits, for now" },
+		{ id: "speaks", label: "What it speaks" },
+		{ id: "modules", label: "The modules" },
+		{ id: "status", label: "What is tested" },
+		{ id: "limits", label: "Limits" },
 	],
 }
 
@@ -33,34 +33,65 @@ view! = |_|
 			kicker={[<>{"The ecosystem · "}</>, <code>packages/mcp</code>]}
 			title="Your app's tools, for AI agents"
 		>
-			MCP, the Model Context Protocol, is how AI agents, and the apps they run in (Claude, an editor,
-			the MCP Inspector), find out what an app can do, and do it. This package makes a Roc Solid app an MCP
-			server: its tools, the data it lets agents read (resources), and messages they can start from
-			(prompts). An endpoint the app already has becomes a tool in a line, and the JSON Schema of the
-			tool's arguments is the one the platform writes for <code>/openapi.json</code>, from the same type.
+			MCP, the Model Context Protocol, is how AI agents (and the apps they run in: Claude, an editor, the
+			MCP Inspector) find out what an app can do, and do it. This package makes a Roc Solid app an MCP
+			server. An endpoint the app already has becomes a tool in one line, and the tool's JSON Schema is
+			the one the platform writes for <code>/openapi.json</code>, from the same Roc types.
 		</PageHero>
+		<p>
+			Use it when you want an agent to work with your app's data: search it, read it, add to it. An MCP
+			server offers three kinds of things:
+		</p>
+		<ul>
+			<li><strong>Tools</strong>: actions the agent can call, with arguments, such as "create a note".</li>
+			<li>
+				<strong>Resources</strong>: data the agent can read by a URI, such as <code>notes://index</code>.
+				A <strong>template</strong> is a family of resources whose URIs follow a pattern, such as
+				<code>{"notes://note/{id}"}</code>.
+			</li>
+			<li>
+				<strong>Prompts</strong>: ready-made messages a person picks from a menu in their agent (a slash
+				command, say), filled in with the arguments they give.
+			</li>
+		</ul>
+		<p>
+			The package has two parts. The protocol is plain Roc, on no platform, so you can test it with
+			<code>expect</code>s. A small module on the server platform, <code>McpHttp</code>, serves it over
+			HTTP and makes tools from your endpoints. The <a href={Paths.examples_notes}>notes example</a> is a
+			full app that agents use this way.
+		</p>
 
 		<Heading id="first">A first server</Heading>
 		<p>
 			A server is a record: a name, a version, and what it offers. This one converts temperatures. Its
-			tool's handler is a Roc function from a record to a record: the arguments an agent sends are read
-			into its type, and its answer goes back as JSON. A handler that says <code>Err</code> refuses, and
-			the model reads why.
+			tool's handler is a Roc function from a record to a record. The package reads the arguments an
+			agent sends into the handler's argument type, and sends its answer back as JSON. When the handler
+			returns <code>Err</code>, the tool refuses, and the model reads why.
 		</p>
 		<Code title={Sources.mcp_server.file} source={Sources.mcp_server.rocx} />
 		<p>
-			The schemas here are written by hand, because this page's server has no HTTP side. Over HTTP,
-			<code>McpHttp.tool</code> writes them from the handler's types (<a href="#http">below</a>). A
-			resource is something an agent reads by its URI; a template is a family of them, whose URIs it
-			matches (<code>{"{substance}"}</code> takes what the URI has there); a prompt makes messages from
-			the arguments a person gives.
+			The JSON Schemas here are written by hand, because this page's server has no HTTP side. Over HTTP,
+			<code>McpHttp.tool</code> writes them from the handler's types (<a href="#http">below</a>). The other
+			fields:
 		</p>
+		<ul>
+			<li>
+				<code>resources</code>: each is something an agent reads by its URI. <code>Resource.text</code>
+				gives a URI, a name, a MIME type and a function that makes the text.
+			</li>
+			<li>
+				<code>templates</code>: each matches a family of URIs. In
+				<code>{"temperatures://boiling/{substance}"}</code>, <code>{"{substance}"}</code> takes whatever the
+				URI has in that place, and the read function is given it by name.
+			</li>
+			<li><code>prompts</code>: each makes messages from the arguments a person gives.</li>
+		</ul>
 
 		<Heading id="answers">What it answers</Heading>
 		<p>
-			This site is static files, so nothing here serves MCP. While the site was built, this page sent the
-			server above these requests, as a client sends them, and shows what the package answered, as it
-			answered it (indented to be read).
+			This site is static files, so nothing here serves MCP. Instead, while the site was built, this page
+			sent the server above the requests below, as a client would send them, and shows the package's
+			answers as they came back (indented so they are easier to read).
 		</p>
 		{...McpTemperatures.exchanges!({}).map_with_index(
 			|exchange, index|
@@ -73,74 +104,121 @@ view! = |_|
 				</details>,
 		)}
 
-		<Heading id="http">Over HTTP</Heading>
+		<Heading id="http">Serving it over HTTP</Heading>
 		<p>
-			The protocol is plain Roc, on no platform. Its HTTP side, <code>McpHttp</code>, is a module on the
-			server platform, in the package's <code>server/</code> folder. It serves the MCP server at a path,
-			behind the middleware that decides who may ask, and makes tools from what the app already has: an
-			endpoint, a function of its own, a handler of its own.
+			<code>McpHttp</code> serves the MCP server at one path, such as <code>/mcp</code>. It sits behind the
+			<a href={"${Paths.routing}#middleware"}>middleware</a> that decides who may ask, and it makes tools
+			from what the app already has: an <a href={"${Paths.routing}#endpoints"}>endpoint</a>, a function of
+			the app's own, or a handler written for the tool. This sketch mounts it from <code>main.roc</code>
+			and makes one tool of each kind:
 		</p>
 		<Code title="A sketch (this site serves no MCP): main.roc, and the server" source={Sources.mcp_http_sketch.rocx} />
 		<TableWrap>
 			<table>
-				<thead><tr><th>McpHttp.</th><th>Is</th></tr></thead>
+				<thead><tr><th>McpHttp.</th><th>What it is</th></tr></thead>
 				<tbody>
-					<tr><td><code>middleware(path, server)</code></td><td>the MCP server as a middleware: it answers <code>path</code>, and hands every other request on</td></tr>
-					<tr><td><code>respond!(server, request, context)</code></td><td>the answer to a request to the MCP route, for a route file's <code>respond!</code></td></tr>
-					<tr><td><code>endpoint(Handlers.x, about, McpHttp.openapi({"{}"}))</code></td><td>an endpoint as a tool, from the function of its params (<code>Generated/Handlers</code>', which has its handler, D-037): the arguments are one object, read as its path's params and as its body (<code>{"{ \"id\": \"7\", \"tags\": [\"work\"] }"}</code>), its answer is the tool's, a refusal goes back to the model; a body field named as a param is a problem <code>Mcp.problems</code> reports</td></tr>
-					<tr><td><code>function(Module.name!, about, McpHttp.openapi({"{}"}))</code></td><td>a function of the app's own as a tool, run in the MCP request, behind the MCP route's middleware</td></tr>
-					<tr><td><code>tool(about, handler!, McpHttp.openapi({"{}"}))</code></td><td>a handler of the app's own, its schemas from its types</td></tr>
-					<tr><td><code>Caller(c)</code></td><td>what a handler is given: <code>{"{ request, context, progress! }"}</code>; <code>context</code> is what the middleware handed on, who is asking</td></tr>
-					<tr><td><code>About</code></td><td><code>{"{ name, description }"}</code>, and <code>title</code> and <code>tags</code> if wanted</td></tr>
+					<tr><td><code>middleware(path, server)</code></td><td>The MCP server as a middleware. It answers requests to <code>path</code> and passes every other request on.</td></tr>
+					<tr><td><code>respond!(server, request, context)</code></td><td>The answer to one request to the MCP route, for a route file's <code>respond!</code> if you'd rather serve it from <code>routes/mcp/+server.roc</code>.</td></tr>
+					<tr><td><code>endpoint(Handlers.x, about, McpHttp.openapi({"{}"}))</code></td><td>An endpoint as a tool. <code>Handlers.x</code> is the function from the endpoint's path params to the endpoint, in <code>Generated/Handlers</code>, which has each endpoint with its handler. The tool's arguments are one object holding both the path's params and the body (<code>{"{ \"id\": \"7\", \"tags\": [\"work\"] }"}</code>). The endpoint's answer is the tool's, and a refusal goes back to the model.</td></tr>
+					<tr><td><code>function(Module.name!, about, McpHttp.openapi({"{}"}))</code></td><td>A function of the app's own as a tool, run inside the MCP request, behind the MCP route's middleware.</td></tr>
+					<tr><td><code>tool(about, handler!, McpHttp.openapi({"{}"}))</code></td><td>A handler written for the tool, <code>{"arg, Caller(c) => Try(result, Str)"}</code>, its schemas written from its types.</td></tr>
+					<tr><td><code>Caller(c)</code></td><td>What a handler is given: <code>{"{ request, context, progress! }"}</code>. <code>context</code> is what the middleware passed on, such as who is asking.</td></tr>
+					<tr><td><code>About</code></td><td>A tool's <code>{"{ name, description }"}</code>, and optionally <code>title</code> and <code>tags</code>.</td></tr>
 				</tbody>
 			</table>
 		</TableWrap>
 		<p>
-			<code>{"McpHttp.openapi({})"}</code> is the platform's schema writers (<code>OpenApi</code>'s), given as
-			a value, so that they meet the types where the call has them: one generic function can't both read a
-			type with <code>Json</code> and describe it with <code>OpenApi</code>. A tool marked
-			<code>.reporting()</code> may call <code>progress!</code>, and a client that asks to hear it gets the
-			answer as a stream of server-sent events: each step as it is taken, then the answer.
+			<code>{"McpHttp.openapi({})"}</code> is always the same argument: the platform's schema writers,
+			passed as a value. It is there because of a compiler limit: one generic function can't both read a
+			type with <code>Json</code> and describe it with <code>OpenApi</code>, so the writers are passed in
+			where the types are known.
+		</p>
+		<p>
+			A tool marked <code>.reporting()</code> may call <code>progress!</code> to say how far it has got.
+			When the client asks to hear progress, it gets the answer as a stream of
+			<a href={"${Paths.calls}#events"}>server-sent events</a>: each step as it is taken, then the answer.
 		</p>
 		<Callout kind="note" title="Copied in, for now">
 			<p>
-				A Roc package can name a platform only if it is the app's own, and an app is two programs, on two
-				platforms. So until <code>rocx build</code> copies a package's server modules into the server's
-				half (the proposal "Server-only modules in packages"), an app copies
-				<code>server/McpHttp.roc</code> in by hand, and names the protocol's package <code>mcp</code> in
-				its header.
+				<code>McpHttp</code> needs the server platform, and the protocol's package names no platform, so
+				<code>McpHttp</code> lives apart, in the package's <code>server/</code> folder. Today an app copies
+				<code>server/McpHttp.roc</code> into its own folder, as examples/notes does, and names the protocol's
+				package <code>mcp</code> in its header.
 			</p>
 		</Callout>
 
+		<Heading id="access">Who may ask</Heading>
+		<p>
+			The middleware in front of the MCP route decides, as it does for any route. It can check a session
+			cookie, an API key or an OAuth access token. The notes example checks a personal access token,
+			which its users make on a settings page.
+		</p>
+		<p>
+			MCP's own way is OAuth: a client without a good token gets a 401 that says where to learn how to
+			get one. The <code>Auth</code> module builds those answers:
+		</p>
+		<ul>
+			<li><code>Auth.bearer(headers)</code>: the token a request carries (<code>Authorization: Bearer …</code>).</li>
+			<li><code>Auth.challenge</code>: the 401, with a <code>WWW-Authenticate</code> header.</li>
+			<li><code>Auth.insufficient</code>: the 403 for a good token that lacks a scope.</li>
+			<li>
+				<code>Auth.metadata</code>: the document a server serves at
+				<code>/.well-known/oauth-protected-resource</code>.
+			</li>
+		</ul>
+		<p>
+			Not yet: issuing tokens. The platform has no authorization server of its own; that is a proposal.
+		</p>
+		<p>
+			Separately, the package refuses a request that a browser sends from a page of another site (by its
+			<code>Origin</code> header). Without that, a web page could reach an MCP server running on the
+			reader's own computer.
+		</p>
+
+		<Heading id="testing">Testing a server</Heading>
+		<p>
+			<code>Mcp.receive</code> is pure, so an app's <code>expect</code>s can send its server requests and
+			read the answers, with no network. <code>Mcp.problems(server)</code> lists what MCP won't accept:
+		</p>
+		<ul>
+			<li>a tool name that isn't 1 to 128 letters, digits, <code>_</code>, <code>-</code> and <code>.</code>;</li>
+			<li>a name or a URI given twice;</li>
+			<li>a schema that isn't JSON;</li>
+			<li>an endpoint's tool whose path params and body have a field with the same name.</li>
+		</ul>
+		<p>The server on this page is tested this way:</p>
+		<Code title={Sources.mcp_test.file} source={Sources.mcp_test.rocx} />
+
 		<Heading id="speaks">What it speaks</Heading>
 		<p>
-			MCP over Streamable HTTP: one endpoint, a JSON-RPC message a POST, answered with JSON (or with a
-			stream of events, for a tool that reports its progress). Both eras of the protocol, on the same
-			endpoint:
+			MCP over Streamable HTTP: one endpoint, where each POST carries one JSON-RPC message and is answered
+			with JSON, or with a stream of events for a tool that reports progress. The same endpoint speaks
+			both eras of the protocol:
 		</p>
 		<ul>
 			<li>
-				<strong>2026-07-28</strong>, the current one, has no handshake. Each request says its version and the
-				client's capabilities in its <code>_meta</code>, and its headers repeat them
+				<strong>2026-07-28</strong>, the current version, has no handshake. Each request states its
+				version and the client's capabilities in its <code>_meta</code>, and its headers repeat them
 				(<code>MCP-Protocol-Version</code>, <code>Mcp-Method</code>, <code>Mcp-Name</code>).
-				<code>server/discover</code> says what the server offers. Lists say how long a client may keep
-				them.
+				<code>server/discover</code> says what the server offers, and each list says how long a client may
+				keep it.
 			</li>
 			<li>
 				<strong>2025-11-25, 2025-06-18 and 2025-03-26</strong> start with <code>initialize</code>, then
 				<code>notifications/initialized</code>. The server keeps no session between requests, which these
-				allow: it sends no <code>Mcp-Session-Id</code>.
+				versions allow, so it sends no <code>Mcp-Session-Id</code>.
 			</li>
 		</ul>
 		<TableWrap>
 			<table>
 				<thead><tr><th>A request</th><th>Is answered</th></tr></thead>
 				<tbody>
-					<tr><td>a notification (no id)</td><td>202, with nothing</td></tr>
-					<tr><td>not one JSON-RPC message (not JSON, a batch, no method)</td><td>400, a JSON-RPC error</td></tr>
-					<tr><td>a version the server doesn't speak; a header that doesn't match the body; <code>_meta</code> without what it needs</td><td>400, a JSON-RPC error</td></tr>
-					<tr><td>no such method (current MCP)</td><td>404, a JSON-RPC error</td></tr>
-					<tr><td>an unknown tool, a bad cursor, no such resource</td><td>200, a JSON-RPC error</td></tr>
+					<tr><td>a notification (no id)</td><td>202, with an empty body</td></tr>
+					<tr><td>a body that isn't JSON (by its <code>Content-Type</code>)</td><td>415</td></tr>
+					<tr><td>not one JSON-RPC message (invalid JSON, a batch, no method)</td><td>400, a JSON-RPC error</td></tr>
+					<tr><td>a version the server doesn't speak, a header that doesn't match the body, or <code>_meta</code> missing what it needs</td><td>400, a JSON-RPC error</td></tr>
+					<tr><td>a method that doesn't exist (current MCP)</td><td>404, a JSON-RPC error</td></tr>
+					<tr><td>an unknown tool, a bad cursor, a resource that doesn't exist</td><td>200, a JSON-RPC error</td></tr>
 					<tr><td>arguments that don't fit a tool, or a tool's refusal</td><td>200, a result the model reads (<code>isError</code>)</td></tr>
 					<tr><td>from a page of another site (its <code>Origin</code>)</td><td>403</td></tr>
 					<tr><td><code>GET</code>, <code>DELETE</code></td><td>405: the server pushes nothing, and has no session to end</td></tr>
@@ -150,92 +228,84 @@ view! = |_|
 
 		<Heading id="modules">The modules</Heading>
 		<p>
-			Plain Roc, on no platform: it reads a request, checks it, and answers it or says what to run. It has
-			no effects of its own: tools, resources and prompts are functions the app gives it.
-			<code>roc test packages/mcp/main.roc</code> runs their <code>expect</code>s, the spec's example
-			messages among them.
+			The protocol reads a request, checks it, and either answers it or says what to run. It has no
+			effects of its own: tools, resources and prompts are functions the app gives it.
+			<code>roc test packages/mcp/main.roc</code> runs its <code>expect</code>s, including the spec's
+			example messages. The package's README lists every function.
 		</p>
 		<TableWrap>
 			<table>
 				<thead><tr><th>Module</th><th>What it does</th></tr></thead>
 				<tbody>
-					<tr><td><code>Mcp</code></td><td><code>Mcp.Server(ctx)</code>, what a server offers; <code>handle!(server, incoming, ctx)</code>, a request's answer; <code>receive</code>, the same, pure: an answer, or what to run; <code>problems(server)</code>, for a test</td></tr>
-					<tr><td><code>Tool</code></td><td><code>Tool.typed(name, description, schema, run!)</code>: arguments read into a Roc type, the answer written as JSON; <code>Tool.new</code>: any JSON in, content out; hints (<code>read_only</code>, <code>additive</code>, <code>idempotent</code>, <code>closed_world</code>), <code>titled</code>, <code>answers(schema)</code>, <code>reporting</code></td></tr>
-					<tr><td><code>Resource</code></td><td><code>Resource.text(uri, name, mime, read!)</code>, <code>Resource.new(uri, name, read!)</code>: what reading a URI gives; <code>Resource.contents</code>, text or bytes</td></tr>
-					<tr><td><code>Template</code></td><td><code>Template.new(pattern, name, read!)</code>: a family of resources, read with the values its URI gave the template's names</td></tr>
-					<tr><td><code>Prompt</code></td><td><code>Prompt.new(name, description, arguments, get!)</code>: messages from string arguments (<code>Prompt.argument</code>, <code>Prompt.optional</code>, <code>Prompt.user</code>, <code>Prompt.assistant</code>)</td></tr>
-					<tr><td><code>Content</code></td><td>what a tool answers with: text, an image or a sound (bytes, sent as Base64), a link to a resource, a resource's contents</td></tr>
-					<tr><td><code>Auth</code></td><td>the pieces of OAuth's answers, for the app's middleware (<a href="#access">below</a>)</td></tr>
-					<tr><td><code>JsonValue</code></td><td>any JSON, read a field at a time; <code>decode</code> into a Roc type and <code>encode</code> from one; a number keeps the text it came as</td></tr>
-					<tr><td><code>Rpc</code></td><td>JSON-RPC 2.0: <code>read</code> one message; write a <code>result</code>, an <code>error</code> or a <code>notification</code></td></tr>
+					<tr><td><code>Mcp</code></td><td><code>Mcp.Server(ctx)</code>, what a server offers. <code>handle!(server, incoming, ctx)</code> answers a request. <code>receive</code> does the same purely: it returns an answer, or what to run. <code>problems(server)</code> is for a test.</td></tr>
+					<tr><td><code>Tool</code></td><td><code>Tool.typed(name, description, schema, run!)</code> reads the arguments into a Roc type and writes the answer as JSON. <code>Tool.new</code> takes any JSON and answers with content. Hints for the client: <code>read_only</code>, <code>additive</code>, <code>idempotent</code>, <code>closed_world</code>. Also <code>titled</code>, <code>answers(schema)</code> and <code>reporting</code>.</td></tr>
+					<tr><td><code>Resource</code></td><td><code>Resource.text(uri, name, mime, read!)</code> and <code>Resource.new(uri, name, read!)</code>: what reading a URI gives. <code>Resource.contents</code> is text or bytes.</td></tr>
+					<tr><td><code>Template</code></td><td><code>Template.new(pattern, name, read!)</code>: a family of resources. <code>read!</code> gets the values the URI gave the pattern's names.</td></tr>
+					<tr><td><code>Prompt</code></td><td><code>Prompt.new(name, description, arguments, get!)</code>: messages made from string arguments (<code>Prompt.argument</code>, <code>Prompt.optional</code>, <code>Prompt.user</code>, <code>Prompt.assistant</code>).</td></tr>
+					<tr><td><code>Content</code></td><td>What a tool answers with: text, an image or a sound (bytes, sent as Base64), a link to a resource, or a resource's contents.</td></tr>
+					<tr><td><code>Auth</code></td><td>The pieces of OAuth's answers, for the app's middleware (<a href="#access">above</a>).</td></tr>
+					<tr><td><code>JsonValue</code></td><td>Any JSON, read a field at a time. <code>decode</code> turns it into a Roc type and <code>encode</code> makes one from a Roc value. A number keeps the text it came as, so an id goes back exactly.</td></tr>
+					<tr><td><code>Rpc</code></td><td>JSON-RPC 2.0: <code>read</code> one message; write a <code>result</code>, an <code>error</code> or a <code>notification</code>.</td></tr>
 				</tbody>
 			</table>
 		</TableWrap>
 		<p>
-			<code>Mcp.Server(ctx)</code> needs only <code>name</code> and <code>version</code>; the rest have
-			defaults: <code>title</code>, <code>instructions</code> (for the model: how the tools go together),
-			<code>tools</code>, <code>resources</code>, <code>templates</code>, <code>prompts</code>,
-			<code>page_size</code> (100 to a list's page), <code>ttl_ms</code> (how long a client may keep a list)
-			and <code>origins</code> (pages of other sites whose requests are answered). There are no components:
-			an agent is the package's reader, not a person.
+			<code>Mcp.Server(ctx)</code> needs only <code>name</code> and <code>version</code>. The other fields
+			have defaults:
 		</p>
-
-		<Heading id="access">Who may ask</Heading>
-		<p>
-			The middleware in front of the MCP route decides, as for any route: a session cookie, an API key, an
-			OAuth access token. MCP's own way is OAuth: a client without a good token is answered 401, with where
-			to learn how to get one. <code>Auth</code> has those answers: <code>bearer</code> (the token a request
-			carries), <code>challenge</code> (401, and <code>WWW-Authenticate</code>), <code>insufficient</code>
-			(403) and <code>metadata</code> (the document a server serves at
-			<code>/.well-known/oauth-protected-resource</code>). Issuing tokens, an authorization server of the
-			platform's own, is a proposal. A request a browser sends from a page of another site is refused, so a
-			page can't reach a server on the reader's own computer.
-		</p>
-
-		<Heading id="testing">Testing a server</Heading>
-		<p>
-			<code>Mcp.receive</code> is pure, so an app's <code>expect</code>s can send its server requests and read
-			the answers, with no network. <code>Mcp.problems</code> names what MCP won't take: a tool name that
-			isn't 1 to 128 letters, digits, <code>_</code>, <code>-</code> and <code>.</code>; a name or a URI given
-			twice; a schema that isn't JSON. The server on this page is tested so:
-		</p>
-		<Code title={Sources.mcp_test.file} source={Sources.mcp_test.rocx} />
-
-		<Heading id="status">Status</Heading>
-		<p>Works today:</p>
 		<ul>
+			<li><code>title</code>: the server's name for people;</li>
+			<li><code>instructions</code>: for the model, how the tools fit together;</li>
+			<li><code>tools</code>, <code>resources</code>, <code>templates</code>, <code>prompts</code>: none by default;</li>
+			<li><code>page_size</code>: how many items go in one page of a list (100);</li>
+			<li><code>ttl_ms</code>: how long a client may keep a list, in current MCP (5 minutes);</li>
 			<li>
-				The protocol, both eras: 137 <code>expect</code>s. And over HTTP, in an app built with
-				<code>rocx build</code> on the server platform, with the official clients: the MCP Inspector's
-				command line (2.16.0, which speaks 2025-11-25), and the TypeScript SDK's client (2.4.0) on 2026-07-28.
-				Tools from an endpoint (its path's params among the arguments), a function and handlers,
-				refusals, resources, a template, a prompt, and a tool's progress, streamed as events. A route of
-				<code>respond!</code> alone may serve it, as <code>Generated/Handlers</code> doesn't import it (D-037);
-				examples/notes mounts it from <code>main.roc</code>.
+				<code>origins</code>: pages of other sites whose requests are answered. Pages of the server's own
+				site, and requests from no page at all (an agent, <code>curl</code>), always are.
 			</li>
 		</ul>
-		<p>Waits on a proposal (in <code>packages/mcp/PROPOSALS.md</code>):</p>
+		<p>The package has no components: its readers are agents, not people.</p>
+
+		<Heading id="status">What is tested</Heading>
 		<ul>
-			<li>the HTTP side reaches an app by hand, until "Server-only modules in packages";</li>
 			<li>
-				a tag union in a tool's arguments is "any value" until <code>Api</code> lists the tags it found
-				(<code>Api.tags</code>); and an endpoint's doc comment isn't its tool's description yet;
+				The protocol, in both eras, by 146 <code>expect</code>s.
 			</li>
-			<li>an authorization server (OAuth) of the platform's own.</li>
+			<li>
+				Over HTTP, in an app built with <code>rocx build</code> on the server platform, with the official
+				clients: the MCP Inspector's command line (2.16.0, which speaks 2025-11-25), and the TypeScript
+				SDK's client (2.4.0) on 2026-07-28. That covers tools from an endpoint (with its path's params among
+				the arguments), from a function and from a handler; refusals; resources; a template; a prompt; and a
+				tool's progress, streamed as events.
+			</li>
+			<li>
+				examples/notes, whose server is mounted from <code>main.roc</code> and whose tests call its tools
+				over JSON-RPC. A route file with <code>respond!</code> alone can serve it too.
+			</li>
+		</ul>
+		<p>Waiting on a proposal (in <code>packages/mcp/PROPOSALS.md</code>):</p>
+		<ul>
+			<li>reaching an app without copying <code>McpHttp.roc</code> in by hand;</li>
+			<li>
+				a tag union in a tool's arguments, which the schema calls "any value" until the generated
+				<code>Api</code> lists the tags it found;
+			</li>
+			<li>an endpoint's doc comment as its tool's description (today you repeat it);</li>
+			<li>an OAuth authorization server of the platform's own.</li>
 		</ul>
 
-		<Heading id="limits">Limits, for now</Heading>
+		<Heading id="limits">Limits</Heading>
 		<ul>
 			<li>
-				No list-change notifications or resource subscriptions, no completions, no logging to the client,
-				and no requests from the server to the client (sampling, asking the user).
+				Not yet: list-change notifications, resource subscriptions, completions, logging to the client,
+				and requests from the server to the client (sampling, asking the user).
 			</li>
 			<li>No sessions: nothing is kept between requests.</li>
 			<li>
-				Every field of a tool's arguments is required, as the platform's schemas say; an optional argument
-				is a <code>Tool.new</code> tool's, which reads any JSON.
+				Every field of a typed tool's arguments is required, as the platform's schemas say. For an optional
+				argument, use a <code>Tool.new</code> tool, which takes any JSON.
 			</li>
-			<li>A batch, a JSON array of messages, is refused: MCP has had none since 2025-06-18.</li>
+			<li>A batch (a JSON array of messages) is refused: MCP has had no batches since 2025-06-18.</li>
 		</ul>
 		<details>
 			<summary>This page's server, and the requests it was sent: <code>{Sources.mcp_demo.file}</code></summary>

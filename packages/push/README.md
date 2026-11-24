@@ -2,142 +2,74 @@
 
 Web Push notifications for Roc Solid apps, as a plugin. A page asks the user's permission and
 subscribes; the server keeps the subscription; later the server sends a notification, and the
-browser shows it even with every tab of the site closed. The server keeps subscriptions in the
-app's database, Postgres or SQLite (D-045): its table has a migration for each, and its statements
-run on both.
+browser shows it even with every tab of the site closed. Subscriptions are kept in the app's
+database, Postgres or SQLite.
 
-```roc
-app [program] { jobs: "…/packages/jobs/main.roc", push: "…/packages/push/main.roc", pf: platform "…" }
+**Sending doesn't work yet**: the server's host has no P-256 or AES-128-GCM, which Web Push needs,
+so every delivery fails and says so ([Status](#status)). Everything else works and is tested.
 
-import jobs.Job
-import push.Push
+The user guide is the docs site's [Push page](https://roc-solid.github.io/ecosystem/push); this file
+is the reference.
 
-program = App.program({ …, plugins: [Job.plugin({ jobs: App.jobs }), Push.plugin({})] })
-```
+## Installing it
 
-```roc
-import push.PushButton
-
-<PushButton api="/push" />
-```
-
-```roc
-import push.Notification
-import push.Options
-import push.Push
-
-# Somewhere on the server: a job, an endpoint.
-Push.notify!(user_id, { ..Notification.new("New reply", "Ada answered your question"), url: "/questions/42" }, Options.defaults)
-```
-
-## Status
-
-What works today:
-
-- Everything that is plain Roc, checked by `expect`s against the RFCs' own examples:
-  base64url keys, the VAPID token's header, claims and signing input (RFC 8292), the content coding's
-  header, records, padding, keys and nonces (RFC 8188), the message's key derivation (RFC 8291,
-  appendix A, reproduced up to the AES), the request's headers (RFC 8030), reading a
-  `PushSubscription`'s JSON, and what each answer from a push service means.
-- The plugin (`Push.plugin`, D-051): its three endpoints, the subscriptions table and its
-  migration (one for Postgres, one for SQLite), saving and forgetting subscriptions, a job that
-  delivers a message to each, with retries (run by the jobs plugin's workers), the service worker
-  at the site's root and the page's script, served before the app's middleware. Built into an app
-  and run against Postgres and a stand-in push service, it sends the request RFC 8030 and RFC 8291
-  describe and handles every answer. `example/test/push.test.mjs` builds the example, on SQLite (a
-  file of its own) and, when `DATABASE_URL` is set, on Postgres, and asks it over HTTP:
-  subscribing, each of `PushStore`'s statements, a broadcast's jobs, unsubscribing; and in
-  Chromium (when there is one), the button subscribing through the plugin's script, the service
-  worker registered at the root behind a guard that refuses every script
-  (`node --test 'packages/push/example/test/*.test.mjs'`).
-- The browser's part: the service worker, the script that subscribes from a click, and
-  `<PushButton>`.
-
-What waits on a proposal (PROPOSALS.md):
-
-- **Sending.** The server's host has no P-256 (the ECDH that encrypts a message, the ECDSA that
-  signs the VAPID token) and only AES-256-GCM with random nonces, and Web Push needs AES-128-GCM
-  with a derived nonce. Until the host has them, every delivery fails, saying so. The host functions
-  are sketched on `ring`, which the host links already, and pass the RFC vectors.
-
-## Three parts
-
-**The pure part**: plain Roc, checked by `expect`s (`roc test packages/push/main.roc`), which the
-browser's half sees too (`browser.roc`). HKDF, HMAC and base64url are `packages/crypto`'s, which
-this package names itself: an app names `push` alone.
-
-| Module | What it does |
-|---|---|
-| `Subscription` | A browser's subscription: `parse` (the page's JSON), `from_body` (an endpoint's body, `Subscription.Body`), `from_text` (a table row), `to_text`, `to_json`; `known_service` (is the endpoint at Chrome's, Firefox's, Safari's or Edge's push service?) |
-| `Notification` | What the service worker shows: `title`, `body`, `url` (opened on a click), `tag` (a newer one replaces an older), `icon`; `Notification.new(title, body)`, `to_json`, `data` |
-| `Options` | `ttl` (seconds a push service keeps it for an offline browser), `urgency` (`VeryLow`, `Low`, `Normal`, `High`), `topic` (a newer message replaces a waiting one); `defaults` (a day, `Normal`, none), `check`, `headers`, `remaining` (the TTL left for a retry) |
-| `Delivery` | `request` (the POST to a subscription's endpoint); `outcome` (an answer: `Delivered`, `Gone`, `RetryAfter(ms)`, `Retry(why)`, `Refused(why)`), `retry_after`, `http_date` |
-| `Vapid` | RFC 8292: `Keys` and `from_text` (from `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`), `audience` (the endpoint's origin), `claims` (12 hours), `signing_input`, `token`, `authorization` (`vapid t=…, k=…`) |
-| `WebPush` | RFC 8291: `key_info`, `input_keys`, `prepare` (everything before the AES: the header, the key, the nonce, the record), `body` (the header and the sealed record), `max_data` (3993 bytes) |
-| `Ece` | RFC 8188's `aes128gcm` coding: `header`, `parse_header`, `pad`, `unpad`, `keys`, `nonce` (record `n`'s) |
-| `PushState` | Where a browser stands (`On`, `Off`, `Blocked`, `Unsupported`, `Working`, `Failed(why)`), as the page's script says it; what `<PushButton>` shows |
-
-**The server's part**: modules that use the server platform (`Db`, `Http`, `Plugin`, `Env`) and
-packages/jobs (`Job`), which the package names in its header (`main.roc`), as a plugin package
-does (D-033); the browser's half doesn't see them. And the table's migration, for the app's
-database: `migrations/0001_push_subscriptions.sql` on Postgres,
-`migrations/0001_push_subscriptions_sqlite.sql` on SQLite (its moments milliseconds), each made
-only if it isn't there, so a table an app made before by hand is kept.
-
-| Module | What it does |
-|---|---|
-| `Push` | `plugin(setup)`: the plugin (below). `subscribe!(body, owner)`, `unsubscribe!(endpoint, owner)`: what its endpoints do. `notify!(owner, notification, options)`, `broadcast!(notification, options)`: queue a `deliver` job per subscription, how many. `public_key!`, `keys!` (from the environment). `deliver`: the job. `send!`: one attempt, given the host's primitives (`Primitives`) |
-| `PushStore` | The `push_subscriptions` table: `save!` (one row per endpoint), `remove!`, `remove_id!`, `find!`, `of_owner!`, `everyone!`, `delivered!`, `refused!`. Each statement runs on Postgres and SQLite; `delivered!`, which notes when, asks `Db.backend!` which to run |
-
-`owner` is the app's id for a user, as text, or `""` for a visitor.
-
-**The browser's part** (`static/`, `components/`):
-
-- `static/push-sw.js`, the service worker, which the plugin serves at the site's root
-  (`/push-sw.js`, a file `at: Root`), so its scope is the whole site: it shows the notification a
-  message carries; a click focuses a tab at its URL, or opens one (this site's pages only); when
-  the push service replaces a subscription (`pushsubscriptionchange`), it tells the server.
-- `static/push.js`, the page's script, which every page loads (the plugin's script,
-  `/rocx/plugins/push/push.js`): the `push.subscribe` and `push.unsubscribe` effects a handler
-  calls with `Browser.call!`. Subscribing asks permission first, while the click still counts as
-  the user's (browsers prompt only then), then registers the service worker at the site's root,
-  subscribes with the server's key, and posts the subscription. Once the page is awake it says
-  where the browser stands, and sends the server its subscription again once a visit. Under a base
-  (`/rocx/`), every URL is under it (`{ under }`, D-050).
-- `<PushButton api="/push" />`: turns notifications on and off, and says why it can't (blocked, or a
-  browser with no Web Push: on an iPhone or iPad, a site not added to the Home Screen).
-
-## Setting up
-
-`example/` is a small app with every step below: a page with `<PushButton>` and a button that
-notifies everyone. The docs site's page for this package shows its files.
-
-1. **Keys.** `node packages/push/vapid-keys.mjs` prints a pair. Give the server
+1. **Keys.** `node packages/push/vapid-keys.mjs` prints a VAPID key pair. Give the server
    `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (secret) and `VAPID_SUBJECT` (`mailto:` and an address,
-   or an `https:` URL) in its environment. Browsers subscribed with one public key can only be sent
-   to with that pair. The plugin needs all three: without one, or with a pair that isn't one, the
-   server doesn't start, and says why.
+   or an `https:` URL) in its environment. A browser that subscribed with one public key can only be
+   sent to with that pair. The plugin needs all three: if one is missing, or the keys don't belong
+   together, the server doesn't start, and says why.
 
-2. **The plugin**, in the app's header and its plugins, with packages/jobs, whose plugin runs the
-   `deliver` job:
+2. **The plugin.** Name the package in the app's header and list its plugin, with the jobs plugin
+   (`packages/jobs`), whose workers run the `push.deliver` job:
 
    ```roc
-   app [program] { jobs: "../packages/jobs/main.roc", push: "../packages/push/main.roc", pf: platform "…" }
+   app [program] { jobs: "…/packages/jobs/main.roc", pf: platform "…/server/platform/main.roc", push: "…/packages/push/main.roc" }
 
    import jobs.Job
    import push.Push
+   import Generated/App
 
-   program = App.program({ …, plugins: [Job.plugin({ jobs: App.jobs }), Push.plugin({})] })
+   program = App.program({
+   	# …
+   	plugins: [Job.plugin({ jobs: App.jobs }), Push.plugin({})],
+   })
    ```
 
-   That is all the server needs: the endpoints (`GET /push/key`, `POST /push/subscribe`, `POST
-   /push/unsubscribe`), the table, the job, the service worker and the script.
-   `Push.plugin({ at: "/notifications" })` puts the endpoints elsewhere (`<PushButton
-   api="/notifications">` then), and `owner` says whose a subscription is: an app with accounts
-   gives the id its middleware handed on (`Push.plugin({ owner: |context| context.member })`), and
-   `notify!` sends to that user's browsers. Without it every subscription is a visitor's (`""`).
+   That is all the server needs: the endpoints (`GET /push/key`, `POST /push/subscribe`,
+   `POST /push/unsubscribe`), the table, the job, the service worker and the page's script. The
+   plugin needs a database.
 
-3. **A button**, anywhere: `<PushButton api="/push" />`.
+3. **A button**, on any page:
+
+   ```roc
+   import push.PushButton
+
+   <PushButton api="/push" />
+   ```
+
+4. **Sending**, from a job or an endpoint on the server:
+
+   ```roc
+   import push.Notification
+   import push.Options
+   import push.Push
+
+   Push.notify!(user_id, { ..Notification.new("New reply", "Ada answered your question"), url: "/questions/42" }, Options.defaults)
+   ```
+
+`example/` is a small app with every step: a page with `<PushButton>` and a button that notifies
+everyone.
+
+### Plugin options
+
+`Push.plugin(setup)` takes `{ at ?? "/push", owner ?? (|_| "") }`:
+
+- `at` is where the endpoints are: `Push.plugin({ at: "/notifications" })` answers
+  `GET /notifications/key` and so on (then `<PushButton api="/notifications" />`).
+- `owner` says whose a subscription is: a function from the context the app's middleware handed on
+  to the app's id for the user, as text. An app with accounts gives
+  `Push.plugin({ owner: |context| context.member })`, and `notify!(member, …)` sends to that user's
+  browsers. Without it, every subscription is a visitor's (`""`).
 
 ## Sending
 
@@ -150,35 +82,139 @@ Push.broadcast!({ ..Notification.new("Back online", "The maintenance is over"), 
 Push.notify!(user_id, Notification.new("Order 17", "Shipped"), { ttl: 86_400, urgency: Normal, topic: "order-17" })
 ```
 
-Each subscription gets a job (`push.deliver`), queued in the caller's transaction when there is one.
-A worker sends it:
+`notify!` and `broadcast!` check the options' topic and the notification's size, then queue a
+`push.deliver` job for each subscription, and answer how many (`Try(U64, Str)`). Inside a
+transaction (`Db.transaction!`), the jobs are queued only if it commits. A jobs worker sends each:
 
 | The push service answers | The job |
 |---|---|
 | 201 (any 2xx) | is done; the subscription's `last_sent_at` is set |
 | 404 or 410 | deletes the subscription: the browser unsubscribed, or it expired |
-| 429 or 5xx with `Retry-After` | queues itself again then (five times at most), if the message's TTL lasts |
-| 408, 429 or 5xx, or no answer | fails the attempt: the worker tries again, waiting longer each time (five attempts) |
-| 400, 401, 403, 413, anything else | logs it, and notes it on the subscription (`last_error`); sending again wouldn't help |
+| 408, 429 or 5xx with `Retry-After` | queues itself again for then (five times at most), if the message's TTL lasts |
+| 408, 429 or 5xx without it, or no answer | fails the attempt; the worker tries again, waiting longer each time (five attempts) |
+| 400, 401, 403, 413, anything else | logs it and notes it on the subscription (`last_error`); sending again wouldn't help |
 
-A retry sends the TTL that is left, so a message never outlives its TTL. A 403 doesn't delete the
-subscription: push services say it when the VAPID keys are wrong, and a mistake in the server's
-settings shouldn't delete every subscription.
+A retry sends the TTL that is left, so a message never outlives its TTL; a message whose TTL ran
+out before it was sent is dropped, with a log line. A 403 doesn't delete the subscription: push
+services answer 403 when the VAPID keys are wrong, and a mistake in the server's settings shouldn't
+delete every subscription.
+
+### A notification and its options
+
+| `Notification` field | Is |
+|---|---|
+| `title : Str` | the notification's first line (empty: the site's host name) |
+| `body : Str` | the text under it |
+| `url : Str` | the page a click opens, on this site only (empty: the front page) |
+| `tag : Str` | a newer notification with the same tag replaces this one |
+| `icon : Str` | an image's URL |
+
+`Notification.new(title, body)` leaves the rest empty; empty fields are left out of the JSON.
+
+| `Options` field | Is |
+|---|---|
+| `ttl : U64` | seconds a push service keeps the message for an offline browser; 0 is now or never; more than four weeks (`Options.max_ttl`) is sent as four weeks |
+| `urgency : [VeryLow, Low, Normal, High]` | how soon it must arrive; a phone on battery may hold the low ones back |
+| `topic : Str` | a newer message with the same topic replaces one still waiting; 32 characters at most, of letters, digits, `-` and `_` |
+
+`Options.defaults` is a day, `Normal`, and no topic.
+
+## API
+
+### Plain Roc
+
+On no platform, checked by `expect`s (`roc test packages/push/main.roc`). The browser's half of an
+app sees these too (`browser.roc` exposes them). HMAC, HKDF and base64url are `packages/crypto`'s,
+which this package names itself: an app names `push` alone.
+
+| Module | What it has |
+|---|---|
+| `Subscription` | A browser's subscription (`{ endpoint, p256dh, auth }`, the keys as bytes): `parse` (the page's JSON), `from_body` (an endpoint's body, `Subscription.Body`), `from_text` (a table row), `to_text`, `to_json`; `services` and `known_service` (is the endpoint at Chrome's, Firefox's, Safari's or Edge's push service, over `https:`?) |
+| `Notification` | What the service worker shows: `{ title, body, url, tag, icon }`; `new(title, body)`, `to_json`, `data` (the JSON's bytes) |
+| `Options` | `{ ttl, urgency, topic }`; `defaults`, `max_ttl`, `check` (the topic: `BadTopic`), `headers` (`TTL`, `Urgency`, `Topic`), `remaining` (the TTL left for a retry, or `Expired`) |
+| `Delivery` | `request` (the POST to a subscription's endpoint: `Authorization`, the options' headers, and the encrypted body); `outcome` (an answer as `Delivered`, `Gone`, `RetryAfter(ms)`, `Retry(why)` or `Refused(why)`), `retry_after` (seconds or an HTTP date), `http_date` |
+| `Vapid` | RFC 8292: `Keys` and `from_text` (from `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`), `contact`, `audience` (the endpoint's origin), `claims` (valid 12 hours), `header_json`, `claims_json`, `signing_input`, `token`, `authorization` (`vapid t=…, k=…`) |
+| `WebPush` | RFC 8291: `key_info`, `input_keys`, `prepare` (everything before the AES: the header, the key, the nonce, the record), `body` (the header and the sealed record), `max_data` (3993 bytes), `record_size` |
+| `Ece` | RFC 8188's `aes128gcm` coding: `header`, `parse_header`, `pad`, `unpad`, `keys`, `nonce` (record `n`'s), `key_info`, `nonce_info`, `tag_size` |
+| `PushState` | Where a browser stands, as the page's script reports it: `Unknown`, `Unsupported`, `Blocked`, `Off`, `Working`, `On`, `Failed(why)`; `parse`, `to_str`, `is_on`, `is_stuck`, `label` and `note` (what `<PushButton>` shows) |
+
+### The server's part
+
+On the server platform (`Db`, `Http`, `Plugin`, `Env`) and `packages/jobs` (`Job`), which the
+package names in its header (`main.roc`); the browser's half doesn't see these. `owner` is the app's
+id for a user, as text, or `""` for a visitor.
+
+| Module | What it has |
+|---|---|
+| `Push` | `plugin(setup)`, the plugin ([options](#plugin-options)). `subscribe!(body, owner)`: saves a subscription the page posted, if its endpoint is at a browser's push service (`Invalid(why)` if not). `unsubscribe!(endpoint, owner)`. `notify!(owner, notification, options)` and `broadcast!(notification, options)`: queue a `deliver` job per subscription, and answer how many. `public_key!` and `keys!` (from the environment). `deliver`: the job (`push.deliver`, 5 attempts, a minute each). `send!`: one attempt, given the host's primitives (`Primitives`; `host` is the host's, which for now say they are missing) |
+| `PushStore` | The `push_subscriptions` table: `save!` (one row per endpoint; subscribing again updates it), `remove!`, `remove_id!`, `find!`, `of_owner!`, `everyone!`, `delivered!`, `refused!`. Each statement runs on Postgres and SQLite; `delivered!` asks `Db.backend!` which to run |
+
+The table's migration is `migrations/0001_push_subscriptions.sql` on Postgres and
+`migrations/0001_push_subscriptions_sqlite.sql` on SQLite (whose times are milliseconds). Each makes
+the table only if it isn't there, so a table an app made by hand is kept.
+
+### The browser's part
+
+- `components/PushButton.rocx`, `<PushButton api="/push" />` (`rocx build` copies `components/`
+  into the app): turns notifications on and off, and says why it can't (blocked, or a browser
+  without Web Push: on an iPhone or iPad, a site not added to the Home Screen). `aria-pressed` says
+  whether they are on; the note beside it is `aria-live`.
+- `static/push.js`, the page's script, which every page loads (`/rocx/plugins/push/push.js`): the
+  `push.subscribe` and `push.unsubscribe` effects the button calls with `Browser.call!`.
+  Subscribing asks permission first, while the click still counts as the user's (browsers prompt
+  only then), then registers the service worker at the site's root, subscribes with the server's
+  key (making a new subscription if the server's key changed), and posts the subscription. Since
+  `Browser.call!` answers nothing, it reports each step with a `pushstate` event on every
+  `[data-push-state]` element. Once the page is awake it reports where the browser stands, and
+  sends the server its subscription again once a visit. On a site served under a base path
+  (`/rocx/`), every URL is under it.
+- `static/push-sw.js`, the service worker, which the plugin serves at the site's root
+  (`/push-sw.js`, a file `at: Root`), so its scope is the whole site. It shows the notification a
+  message carries; a click focuses a tab at its URL, or opens one (this site's pages only); when the
+  push service replaces a subscription (`pushsubscriptionchange`), it tells the server.
 
 ## Safety
 
 - The server sends a request to whatever URL a subscription names, so `Push.subscribe!` takes only
-  endpoints at browsers' push services (`Subscription.services`), `https:` only. Under `--dev` it
-  also takes one on this machine (`http://localhost`, `http://127.0.0.1`), for a stand-in push
-  service.
+  endpoints at the browsers' push services (`Subscription.services`), over `https:`. When the server
+  runs with `--dev`, it also takes an `http:` one on this machine (`localhost`, `127.0.0.1`), for a
+  stand-in push service.
 - The private key never leaves the server; the page gets only the public key.
-- A notification's click opens only this site's pages.
-- Messages are encrypted for the browser: the push service sees bytes.
+- A click on a notification opens only this site's pages.
+- Messages are encrypted for the browser: the push service sees only bytes.
 
-## Limits, for now
+## Status
 
-- No sending until the host has P-256 and AES-128-GCM (PROPOSALS.md).
-- A message holds 3993 bytes of data, the notification's JSON (`WebPush.max_data`).
-- One record per message, as RFC 8291 asks; padding is supported by `WebPush.prepare` but not used.
-- `<PushButton>` hears how a click went through a DOM event (`pushstate`) rather than an answer
-  from `Browser.call!`, which answers nothing yet (PROPOSALS.md).
+What works today:
+
+- Everything that is plain Roc, checked by `expect`s against the RFCs' own examples: base64url
+  keys, the VAPID token's header, claims and signing input (RFC 8292), the content coding's header,
+  records, padding, keys and nonces (RFC 8188), the message's key derivation (RFC 8291, appendix A,
+  reproduced up to the AES), the request's headers (RFC 8030), reading a `PushSubscription`'s
+  JSON, and what each answer from a push service means.
+- The plugin, in `example/test/push.test.mjs`, which builds the example on SQLite (always) and on
+  Postgres (when `DATABASE_URL` is set) and asks it over HTTP: the key, subscribing (and a
+  subscription at an unknown service refused), each of `PushStore`'s statements, a broadcast's
+  jobs (each reads its row, then fails for want of the host's P-256), and unsubscribing. In
+  Chromium (when there is one), behind a guard that refuses every script the app would serve, the
+  plugin's script and service worker come through, the worker registers at the root with the whole
+  site as its scope, and the button subscribes (the browser's push service stood in for, as headless
+  Chromium has none). Run it with `node --test 'packages/push/example/test/*.test.mjs'`.
+
+What waits on a proposal (`PROPOSALS.md`):
+
+- **Sending.** The server's host has no P-256 (the ECDH that encrypts a message, the ECDSA that
+  signs the VAPID token), and only AES-256-GCM with random nonces, where Web Push needs AES-128-GCM
+  with a derived nonce. Until the host has them, every delivery fails, saying so. The host functions
+  are sketched on `ring`, which the host links already, and pass the RFC vectors.
+- **Jobs that give up, or come back at a set time.** Today a refused message ends its job as done,
+  and a `Retry-After` queues a copy of the job for then.
+- **`Browser.call!` with an answer**, so `<PushButton>` could hear how a click went without the
+  `pushstate` event.
+
+Limits:
+
+- A message holds 3993 bytes of data, the notification's JSON (`WebPush.max_data`); `notify!` and
+  `broadcast!` refuse a longer one.
+- One record per message, as RFC 8291 asks; `WebPush.prepare` supports padding, but the plugin
+  doesn't use it.

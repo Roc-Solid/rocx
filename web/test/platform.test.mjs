@@ -261,7 +261,7 @@ window.runtime.mount(document.getElementById("app"));
 		assert.deepEqual(page.errors, []);
 	});
 
-	test(`${build}: <For> keeps a row per key and moves it; keyed={Bool.False} keeps rows by position; <Show> switches`, { skip }, async () => {
+	test(`${build}: a .map keeps a row per key and moves it; .map_with_index keeps rows by position; an if switches`, { skip }, async () => {
 		reset();
 		const page = await open();
 		// The profile's answers first: what they render would count as allocations below.
@@ -280,7 +280,7 @@ window.runtime.mount(document.getElementById("app"));
 		assert.equal(await page.eval("window.roc === [...document.querySelectorAll('.picks .keyed li')][2]"), true, "Roc's row is the same element, moved");
 		assert.deepEqual(await unkeyed(), ["0: Elm", "1: Solid", "2: Roc"]);
 		assert.equal(await page.eval("window.top0 === document.querySelector('.picks .unkeyed li')"), true, "the first position's row stays, its pick changed");
-		assert.equal(await page.eval("window.few === document.querySelector('.picks .few')"), true, "<Show> didn't switch: still three");
+		assert.equal(await page.eval("window.few === document.querySelector('.picks .few')"), true, "the if didn't switch: still three");
 		// An edit keeps the ids: every keyed row stays, the same element, its name changed.
 		await page.eval("window.keyedRows = [...document.querySelectorAll('.picks .keyed li')]");
 		await page.click(".picks .shout");
@@ -315,7 +315,7 @@ window.runtime.mount(document.getElementById("app"));
 	});
 }
 
-test("picks: <For> and <Show> render on the server and hydrate: the server's rows, kept", { skip }, async () => {
+test("picks: .map rows and an if render on the server and hydrate: the server's rows, kept", { skip }, async () => {
 	const wasm = readFileSync(join(out, "picks.wasm"));
 	const server = await Runtime.load(wasm);
 	const { html, answers } = server.renderToString({ path: "/" });
@@ -415,7 +415,7 @@ window.hydrated = true;
 	}
 });
 
-test("nested: a <For> in a <For>'s row, and a <For> in a <Show>'s function child, render on the server, hydrate, and follow their signals", { skip }, async () => {
+test("nested: a .map in a .map's row, and a .map in a match arm, render on the server, hydrate, and follow their signals", { skip }, async () => {
 	const wasm = readFileSync(join(out, "nested.wasm"));
 	const server = await Runtime.load(wasm);
 	const { html, answers } = server.renderToString({ path: "/" });
@@ -440,10 +440,10 @@ window.hydrated = true;
 		assert.deepEqual(tab.console, [], "hydrated without a mismatch");
 		await tab.click(".add");
 		await tab.wait("document.querySelectorAll('.shelves > li:nth-child(2) li').length === 2");
-		assert.deepEqual(await items(".shelves > li:nth-child(2) li"), ["0: rye", "1: spelt"], "the inner <For> of a row follows its row's item");
+		assert.deepEqual(await items(".shelves > li:nth-child(2) li"), ["0: rye", "1: spelt"], "the inner .map of a row follows its row's item");
 		await tab.click(".swap");
 		await tab.wait("document.querySelector('.first').textContent.startsWith('First: Bread')");
-		assert.deepEqual(await items(".first .item"), ["rye", "spelt"], "the <For> in the <Show>'s child follows its accessor");
+		assert.deepEqual(await items(".first .item"), ["rye", "spelt"], "the .map in the match arm follows its value");
 		assert.deepEqual(await items(".shelves h3"), ["Bread", "Fruit"]);
 		assert.deepEqual(tab.errors, []);
 	} finally {
@@ -454,7 +454,7 @@ window.hydrated = true;
 
 // ---- Timers: the browser's, owned by what started them ----
 
-test("props: a value prop is a getter (D-039): the component is made once and keeps its signals, and only what reads the prop is patched, in a hole, outside one, in a <Show>; read in the body, once; in a pure lambda, by its hole; in an effect and a handler, as they run; rows made once; what a <Show> shows and a fallback made as they show; a style property from data, patched", { skip }, async () => {
+test("props: a value prop is a getter (D-039): the component is made once and keeps its signals, and only what reads the prop is patched, in a hole, outside one, in an if's part; read in the body, once; in a pure lambda, by its hole; in an effect and a handler, as they run; rows made once; what an if shows made as it shows; a style property from data, patched", { skip }, async () => {
 	const wasm = readFileSync(join(out, "props.wasm"));
 	const server = await Runtime.load(wasm);
 	const { html } = server.renderToString({ path: "/" });
@@ -465,7 +465,7 @@ test("props: a value prop is a getter (D-039): the component is made once and ke
 	assert.ok(html.includes(`<li data-id="a">${label("Ada")} <span class="first">Ada</span></li>`));
 	assert.ok(html.includes(`<p class="passed"><span class="passing">${label("one")}</span></p>`), "props passed on ({...rest}, D-052); a class given a constant, static");
 	assert.match(html, /<p class="painted" style="color: rgb\(200, 0, 0\)">Painted<\/p>/, "a style property from data, its url() dropped");
-	assert.ok(html.includes(`<p class="toggled"><!--show-->${label("no one")}<!--/show--></p>`), "a <Show>'s fallback, made as it shows");
+	assert.ok(html.includes(`<p class="toggled"><!--show-->${label("no one")}<!--/show--></p>`), "an if's other branch, made as it shows");
 	assert.ok(html.includes(`<p class="listed"><!--for--><!--fallback--><!--/fallback--><!--/for--> <!--show-->${label("none, one")}<!--/show--></p>`), "a .map's empty state, an if beside its rows, made as it shows");
 	const dir = mkdtempSync(join(tmpdir(), "rocx-props-"));
 	cpSync(join(web, "runtime.js"), join(dir, "runtime.js"));
@@ -510,7 +510,7 @@ window.hydrated = true;
 		await tab.wait(`document.querySelector("li[data-id=a] button").textContent === "Ana 1"`);
 		assert.equal(await tab.eval(`document.querySelector("li[data-id=a] .first").textContent`), "Ada", "a row's own read, at its top, is once: the row is made once");
 		assert.equal(await tab.eval(`window.kept[3] === document.querySelector("li[data-id=a]")`), true, "the row kept; its component patched, its clicks kept");
-		// What a <Show> shows, and a fallback, is made when it shows; a value prop in it, a getter, is
+		// What an if shows is made when it shows; a value prop in it, a getter, is
 		// patched while it shows.
 		const part = (p) => tab.eval(`document.querySelector(${JSON.stringify(p)}).textContent.trim()`);
 		assert.equal(await part("p.toggled"), "no two 0", "the fallback, its label patched where it is read");
@@ -628,11 +628,11 @@ window.mounted = true;
 	}
 });
 
-test("a hole's if and match (D-070): the part its branch makes, made again only when another branch holds, not each time what the condition reads changes; a match arm stays while its value changes, its names following (getters); a part made anew for each value is a <For> of one row keyed by it; each case rendered as the server would and hydrated strictly", { skip }, async () => {
+test("a hole's if and match (D-070): the part its branch makes, made again only when another branch holds, not each time what the condition reads changes; a match arm stays while its value changes, its names following (getters); a part made anew for each value is a .map of one row keyed by it; each case rendered as the server would and hydrated strictly", { skip }, async () => {
 	const wasm = readFileSync(join(out, "control.wasm"));
 	const render = async (target) => (await Runtime.load(wasm)).renderToString({ path: target }).html;
 	const first = await render("/");
-	assert.ok(first.includes(`<!--show--><p class="plain"><button>plain</button> <span><!--x-->0<!--/x--></span></p><!--/show-->`), "an if's part between its comments, as a <Show>'s was");
+	assert.ok(first.includes(`<!--show--><p class="plain"><button>plain</button> <span><!--x-->0<!--/x--></span></p><!--/show-->`), "an if's part between its comments");
 	assert.ok(first.includes(`<!--show--><p class="narrowed"><button><!--x-->Card 1<!--/x--></button> <span><!--x-->0<!--/x--></span></p><!--/show-->`), "a match arm's: its name read through its getter, a hole");
 	assert.ok(first.includes(`<p class="keyed"><button><!--x-->Card 1<!--/x--></button> <span><!--x-->0<!--/x--></span></p>`), "the keyed row's");
 	assert.ok(first.includes(`<!--show--><p class="zero"><button>zero</button> <span><!--x-->0<!--/x--></span></p><!--/show-->`), "a match is one part: the arm that holds");
@@ -757,7 +757,7 @@ test("stores (D-053): a store's parts, each read by its own hole, run again only
 		// A list written equal to itself: the store's live selections run, each once, and nothing else.
 		const same = await tab.eval(`window.step("button.same")`);
 		const live = same.selections;
-		assert.deepEqual([same.patched, same.runs, live], [[], 5, 5], "five parts are read where they are tracked (the filter, the count, the open ones, the <For>'s list, the memo's count): five selections run, and nothing else");
+		assert.deepEqual([same.patched, same.runs, live], [[], 5, 5], "five parts are read where they are tracked (the filter, the count, the open ones, the .map's list, the memo's count): five selections run, and nothing else");
 		const filter = await tab.eval(`window.step("button.filter")`);
 		assert.deepEqual(filter.patched, ["filter"], "only the filter's hole: every other part is what it was");
 		assert.deepEqual([filter.selections, filter.runs], [live + 1, live + 2], "the selections, the one hole whose part changed, and the selection it made anew as it ran again (a selection is its reader run's)");
@@ -879,7 +879,7 @@ window.hydrated = true;
 		await tab.click(".open");
 		await tab.wait("document.activeElement?.id === 'opened'");
 		// <Document>: its handlers hear a key pressed anywhere (the field's too, as they bubble up),
-		// while the <Show> it is in shows it.
+		// while the if's part it is in shows.
 		assert.match(html, /<button class="listen">Listen<\/button> <!--show--><!--\/show--> <p class="heard">/, "<Document> renders nothing");
 		const heard = () => tab.eval("document.querySelector('.heard').textContent");
 		let mark = (await heard()).length;
@@ -897,7 +897,7 @@ window.hydrated = true;
 		await press("Escape");
 		await press("k", ["Mod"]);
 		await sleep(50);
-		assert.equal(await since(), "", "gone with its <Show>: nothing heard");
+		assert.equal(await since(), "", "gone with its if's part: nothing heard");
 		assert.equal(await tab.eval(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", cancelable: true }))`), true, "and nothing prevented");
 		await tab.click(".listen");
 		await tab.eval("document.activeElement.blur()");
@@ -1207,7 +1207,7 @@ window.hydrated = true;
 		const timers = () => tab.eval("window.runtime.timers.size");
 		const kept = () => tab.eval("window.runtime.kept.size");
 
-		// A component's interval runs once it is hydrated, and stops when the <Show> hides it.
+		// A component's interval runs once it is hydrated, and stops when the if hides it.
 		await tab.wait("Number(document.querySelector('.ticks').textContent) >= 3");
 		assert.equal(await timers(), 1);
 		await tab.click(".toggle");
@@ -2471,7 +2471,7 @@ test("actions (D-054): <Meta>, <Link> and <Style> in <head>, rendered by the ser
 		assert.equal(await tab.eval("document.head.querySelectorAll('meta[name=description]').length"), 1);
 		await tab.click(".less");
 		await tab.wait("document.head.querySelector('link[rel=canonical]') === null");
-		assert.equal(await tab.eval("document.head.querySelector('style[data-rocx]')"), null, "gone with their <Show>");
+		assert.equal(await tab.eval("document.head.querySelector('style[data-rocx]')"), null, "gone with their if's part");
 		await tab.click(".less");
 		await tab.wait("document.head.querySelector('style[data-rocx]') !== null");
 		assert.equal(await head(), '<meta data-rocx="" property="og:type" content="website"><meta data-rocx="" name="description" content="Second"><link data-rocx="" rel="canonical" href="/actions"><style data-rocx="">.count { color: rgb(1, 2, 3) }</style>');

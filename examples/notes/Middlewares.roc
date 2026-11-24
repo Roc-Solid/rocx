@@ -105,8 +105,8 @@ Middlewares := [].{
 	)
 
 	## Sign-in links: 5 an hour to each address, and then one each 12 minutes, so nobody can fill
-	## someone's inbox with links. Counted by the address the link is for: the server doesn't pass
-	## on the client's own address (packages/guard's README), and the inbox is what needs keeping.
+	## someone's inbox with links. Counted by the address the link is for, not the client's: the
+	## inbox is what needs keeping.
 	mail_limit : Middleware({}, {})
 	mail_limit = Middlewares.posts_only(Guard.rate_limit("sign-in mail", RateLimit.per_hour(5), |request, _| Middlewares.address_in(request)))
 

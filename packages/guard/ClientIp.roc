@@ -146,7 +146,7 @@ expect seen(ClientIp.of(Hops(2), "10.0.0.2", xff("6.6.6.6, 198.51.100.4, 10.0.0.
 expect seen(ClientIp.of(Hops(1), "10.0.0.2", [{ name: "x-forwarded-for", value: "6.6.6.6" }, { name: "x-forwarded-for", value: "198.51.100.4" }])) == "198.51.100.4"
 # No header: the request didn't come through the proxy; the connection's address.
 expect seen(ClientIp.of(Hops(1), "203.0.113.7", [])) == "203.0.113.7"
-# The peer not known (today's server platform): the proxy's entry is still the right one.
+# The peer not known (a request made in a test, say): the proxy's entry is still the right one.
 expect seen(ClientIp.of(Hops(1), "", xff("6.6.6.6, 198.51.100.4"))) == "198.51.100.4"
 expect seen(ClientIp.of(Hops(1), "", [])) == "unknown"
 

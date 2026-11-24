@@ -1,73 +1,148 @@
 # sqlite-vs-turso
 
-One app timing the same database work on SQLite and on Turso (D-046, D-049), in Roc. Its database
-is SQLite unless `--database-url` says otherwise, so the same build runs on each engine:
+sqlite-vs-turso is a benchmark app: it times the same database work on SQLite and on Turso, from
+Roc, on the server platform. One build runs on either engine; the server's `--database-url` option
+picks which. The docs site shows its numbers at `/examples/sqlite-vs-turso`.
 
-| `--database-url` | engine |
+Read it to see an app made only of endpoints (no pages), a database chosen when the server starts,
+transactions, actors used as concurrent callers, and timing in Roc with `Time.now_nanos!`.
+
+| `--database-url` | Engine |
 |---|---|
-| `sqlite:<path>` (or nothing: `data/bench.db`) | SQLite (rusqlite), WAL: writes take turns |
-| `turso:<path>` | Turso (`turso_core`), MVCC: writes at once, a transaction that loses to another runs again |
-| `turso:<path>?mvcc=off` | Turso in WAL mode: writes take turns, as SQLite's |
-
-`POST /bench` with `{"size": n}` (1 to 1000) runs every workload on fresh tables of `200 × n` items
-and answers what each did and how long it took, in nanoseconds, timed in Roc around the `Db` calls
-it makes (`Time.now_nanos!`), so no HTTP is in the numbers. `Bench.roc` has the workloads:
-
-- one caller, one statement after another: an insert committed alone; inserts all in one
-  transaction (the table's items); reads by key; scans of 50 rows by an index; a group by over the
-  table; an update committed alone; a row's JSON read apart and put together; a recursive query
-  counting to 10,000;
-- eight callers at once (`Workers.roc`: eight actors, whose turns run beside each other, told at
-  once and timed from the first told to the last done): inserts, each writer its own rows;
-  transactions reading and writing back a counter of their own; transactions on one counter they
-  share (on Turso the losers run again: `runs` counts the bodies' runs); four readers beside four
-  writers;
-- a sum over every row (a scan), and the group by with its index ruled out (a scan and a sort);
-  then a checkpoint, and the reads again: on Turso's MVCC, rows not yet checkpointed live in a
-  store of versions in memory, slower to walk by an index than the database's pages.
-
-`POST /bench/big` with `{"orders": n}` (1,000 to 5,000,000; a million for the docs) makes two
-tables afresh, `customers` (n / 100) and `orders` (n, a hundred a customer, spread over the table,
-with an index on `customer`), loads them by SQL from a count (a recursive query, 100,000 rows to a
-statement), checkpoints, and times: an order fetched by its key, 100 by a range of keys, a
-customer's 100 by the index, an order joined to its customer, a customer joined to their 100
-orders, the ten customers who spent most (a join, a group by and a sort over every order), and a
-sum over every order. Each fetch and join checks it read what it should.
-
-Then it checks what they wrote: every counter at what its transactions made it (no write lost),
-every event and item there. A failure is a 500 saying which.
+| `sqlite:<path>` (or nothing: `data/bench.db`) | SQLite (rusqlite) in WAL mode: writes take turns. |
+| `turso:<path>` | Turso (`turso_core`) in MVCC mode: transactions write at once, and one that loses to another's write runs again. |
+| `turso:<path>?mvcc=off` | Turso in WAL mode: writes take turns, as on SQLite. |
 
 ## Run it
 
-From the repository's root, with the toolchain set up (`just setup`):
+From the repository's root, once the toolchain is set up (`just setup`):
 
 ```sh
-just examples sqlite-vs-turso    # build, check, lint, expects, and its tests on all three engines
-just db-bench                    # the docs' numbers: site/sqlite-vs-turso.json (eight minutes or so)
+cd examples/sqlite-vs-turso
+../../bin/rocx dev                                          # SQLite, on data/bench.db
 ```
 
-By hand:
+Then, in another terminal, run every workload at a small size:
+
+```sh
+curl -s -X POST http://127.0.0.1:8080/bench -H 'content-type: application/json' -d '{"size":10}'
+```
+
+`rocx dev` builds the app, serves it with the server's `--dev` flag, and builds and restarts it each
+time you save a file. Run it from the example's directory: the default database is the file
+`data/bench.db`, relative to where the server starts (`database: Sqlite("data/bench.db")` in
+`main.roc`; `data/` is git-ignored).
+
+Options after `--` go to the server, so this runs it on Turso instead:
+
+```sh
+../../bin/rocx dev -- --database-url turso:data/turso.db                 # Turso, MVCC
+../../bin/rocx dev -- --database-url 'turso:data/turso-wal.db?mvcc=off'  # Turso, WAL
+```
+
+Quote a URL with `?` in it: shells like zsh read `?` as a pattern. Give each engine a file of its
+own. A Turso file in MVCC mode is Turso's alone: SQLite can't open it, and its error says how to give
+it back (start once with `turso:<path>?mvcc=off`).
+
+`rocx dev` builds without optimizations, so its times are only for trying the app. For numbers worth
+comparing, build it as `just db-bench` does (below).
+
+### Build it as it would ship
+
+From the repository's root:
 
 ```sh
 bin/rocx build examples/sqlite-vs-turso
 node server/build.mjs examples/sqlite-vs-turso/main.roc /tmp/bench/app --opt=speed
-/tmp/bench/app --port 18090 --database-url turso:/tmp/bench/turso.db &
-curl -s -X POST localhost:18090/bench -H 'content-type: application/json' -d '{"size":10}'
+/tmp/bench/app --port 8080 --database-url turso:/tmp/bench/turso.db &
+curl -s -X POST http://127.0.0.1:8080/bench -H 'content-type: application/json' -d '{"size":10}'
 ```
 
-`just db-bench` (`site/sqlite-vs-turso.mjs`) does that on each engine as an app's database lives,
-written and read for a long time: on one file, a small run to warm up, then ten at size 100 (20,000
-items) in a row; on another file, the big run at a million orders ten times in a row. Every run's
-times are kept, and the page shows the first run, the first three or all ten (their average, the
-fastest and the slowest), with the machine they ran on (`site/machine.mjs`). The big run gets a
-file of its own because on Turso's MVCC what an earlier run wrote (versions kept in memory) slows
-later reads two or three times, even of tables it never touched. The docs show them at `/examples/sqlite-vs-turso`. Measure on a quiet machine, and compare
-the engines with each other rather than with another machine's numbers.
+## What it measures
 
-A Turso file in MVCC mode is Turso's alone: run the app on a fresh path for each engine (SQLite
-can't open it, and says how to give it back: `turso:<path>?mvcc=off`, once).
+Every time is measured in Roc around the `Db` calls a workload makes (`Time.now_nanos!`), in
+nanoseconds, so no HTTP is in the numbers. `Bench.roc` has the workloads.
 
-On Turso a run checkpoints after deleting the last run's rows (`Bench.fresh!`): without it, once
-Turso has checkpointed rows, deleting them slows every later statement 75 to 250 times until its
-next checkpoint, a third run on one file taking minutes (turso_core 0.8.4; D-049). With it, ten runs
-in a row on one file stay as quick as the first.
+**`POST /bench`** with `{"size": n}` (1 to 1000) makes the tables fresh, fills them with `200 × n`
+items, and answers what each workload did and how long it took. The workloads:
+
+- **One caller**, one statement after another: an insert committed alone; inserts all in one
+  transaction (filling the table); reads by key; scans of 50 rows through an index; a group by over
+  the table; an update committed alone; a row's JSON taken apart and put back together; a recursive
+  query counting to 10,000; a sum over every row (a scan); and the group by with its index ruled out
+  (a scan and a sort).
+- **Eight callers at once** (`Workers.roc`, eight actors that run side by side, all told at once and
+  timed from the first told to the last done): inserts, each writer on its own rows; transactions
+  that read and write back a counter of their own; transactions on one counter they all share (on
+  Turso in MVCC mode the losers run again, and the result's `runs` counts how many times the bodies
+  ran); and four readers beside four writers.
+- **After a checkpoint**, the reads again. On Turso's MVCC, rows not yet checkpointed live in an
+  in-memory store of versions, which is slower to walk through an index than the database's pages.
+
+Then the app checks what the workloads wrote: every counter at the value its transactions made it
+(no write lost), and every event and item there. A failure is a 500 that says which check failed.
+
+**`POST /bench/big`** with `{"orders": n}` (1,000 to 5,000,000; the docs use a million) makes two
+tables afresh: `customers` (n / 100 rows) and `orders` (n rows, a hundred per customer, spread over
+the table, with an index on `customer`). It loads them with SQL (a recursive query, 100,000 rows per
+statement), checkpoints, and times:
+
+- an order fetched by its key, and 100 by a range of keys;
+- a customer's 100 orders, through the index;
+- an order joined to its customer, and a customer joined to their 100 orders;
+- the ten customers who spent most (a join, a group by and a sort over every order);
+- a sum over every order.
+
+Each fetch and join checks that it read what it should.
+
+## What it shows
+
+| Feature | Where |
+|---|---|
+| An app of endpoints alone: two `POST` endpoints and no pages, so `rocx build` writes no browser half. | `routes/bench/+server.roc`, `routes/bench/big/+server.roc` |
+| A typed JSON body (`body : { size : U64 }`) and a typed answer (`Bench.Report`), turned into JSON by the platform. A failure is `Err(Status(500, why))`. | `routes/bench/+server.roc`, `Bench.roc` |
+| The database named in the program (`database: Sqlite("data/bench.db")`) and overridden at start with `--database-url`. `Db.engine!` says which engine the server opened. | `main.roc`, `engine!` in `Bench.roc` |
+| Timing in Roc with the server's monotonic clock (`Time.now_nanos!`). | `timed!` in `Bench.roc` |
+| Transactions (`Db.transaction!`). On Turso in MVCC mode, a transaction that loses to another's write runs its body again; the app counts the runs. | `insert_batch!` in `Bench.roc`, `Workers.work!` |
+| Actors as concurrent callers: eight actors (`Actor.method`), each turn a call of its own. They are told their work at once (`tell!`), then asked whether they are `ready` (`ask!`) to wait for them. A told actor's reply goes nowhere, so each leaves its outcome in `Kv`. | `Workers.roc`, `together!` in `Bench.roc` |
+| Several statements in one call (`Db.script!`). | `fresh!` in `Bench.roc` |
+| SQL on tables no migration makes, marked `Db.unchecked`, so `rocx check --sql` (which checks the app's SQL against a database built from its migrations) leaves it out. | the big run in `Bench.roc` |
+| The tables the workloads use, made by a migration, the same on every engine. | `migrations/0001_bench.sql` |
+
+## The docs' numbers: `just db-bench`
+
+```sh
+just db-bench    # about eight minutes; writes site/sqlite-vs-turso.json
+```
+
+`just db-bench` (`site/sqlite-vs-turso.mjs`) builds the app with `--opt=speed` and runs it on each
+engine the way an app's database lives: written and read for a long time. On one file, it makes a
+small run to warm up, then ten runs in a row at size 100 (20,000 items). On another file, it makes
+the big run at a million orders, ten times in a row. Every run's times are kept. The docs page shows
+the first run, the first three, or all ten (their average, fastest and slowest), with the machine
+they ran on (`site/machine.mjs`). The site's build reads the committed JSON file and doesn't measure.
+
+The big run gets a file of its own because, on Turso's MVCC, what an earlier run wrote (versions
+kept in memory) slows later reads two or three times, even of tables it never touched.
+
+`just db-bench --size 10 --orders 100000 --series 3` takes a quick look. Measure on a quiet machine,
+and compare the engines with each other rather than with another machine's numbers.
+
+## Test it
+
+```sh
+just examples sqlite-vs-turso
+```
+
+This builds the app, type-checks it, lints it, checks its SQL (`rocx check --sql`), and runs the
+`expect`s and `test/bench.test.mjs`. The test runs the benchmark small (size 1, and the big run at
+2,000 orders) on all three engines, each on a file of its own: SQLite, Turso in MVCC mode, and Turso
+in WAL mode. It checks that every workload answers with what it did, and that the transactions'
+bodies ran at least once each (exactly once where writes take turns). No database server is needed.
+
+## A Turso gotcha: deletes after a checkpoint
+
+On Turso, `fresh!` in `Bench.roc` checkpoints after deleting the last run's rows. Without that, once
+Turso has checkpointed rows, deleting them slows every later statement 75 to 250 times until the
+next checkpoint, and a third run on one file takes minutes (turso_core 0.8.4; DECISIONS.md, D-049).
+With the checkpoint, ten runs in a row on one file stay as quick as the first.

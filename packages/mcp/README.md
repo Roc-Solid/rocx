@@ -1,16 +1,42 @@
 # mcp
 
-A Roc Solid app as an MCP server: AI agents and the apps they run in (Claude, an IDE, the MCP
-Inspector) call its tools, read its resources and use its prompts, over the
+Make a Roc Solid app an MCP server. AI agents, and the apps they run in (Claude, an editor, the
+MCP Inspector), call its **tools**, read its **resources** and use its **prompts** over the
 [Model Context Protocol](https://modelcontextprotocol.io/specification). An endpoint the app already
-has becomes a tool in a line, and the JSON Schema of its arguments is the one the platform writes
-for `/openapi.json`, from the same types.
+has becomes a tool in one line, and the JSON Schema of the tool's arguments is the one the platform
+writes for `/openapi.json`, from the same Roc types.
+
+The user guide, with real requests and the package's answers, is the docs site's
+[MCP page](https://roc-solid.github.io/ecosystem/mcp). This file is the reference.
+`examples/notes` is a complete app whose notes agents search, read and write over MCP.
+
+## Installing it
+
+The package has two parts:
+
+- **The protocol** (`main.roc`): plain Roc on no platform. Name it in the app's header as `mcp`.
+- **The HTTP side** (`server/McpHttp.roc`): a module on the server platform that serves the protocol
+  at a path and makes tools from the app's endpoints. Copy it into the app (examples/notes has it as
+  `examples/notes/McpHttp.roc`); see [The HTTP side](#the-http-side) for why.
 
 ```roc
+# main.roc
+app [program] { mcp: "…/packages/mcp/main.roc", pf: platform "…/server/platform/main.roc" }
+```
+
+The package is not a plugin, and it has no components: its readers are agents, not people. It
+depends on `packages/crypto` (for Base64), which it names itself, so the app names `mcp` alone.
+
+## A first server
+
+A server is a record. This one makes three of the app's endpoints and one of its functions into
+tools:
+
+```roc
+# Agents.roc
 import mcp.Mcp
-import mcp.Tool
-import McpHttp
-import Generated/Handlers   # each endpoint with its handler, which a tool runs (D-037)
+import McpHttp              # the copy of server/McpHttp.roc
+import Generated/Handlers   # each endpoint with its handler, which a tool runs
 
 ## What the app offers agents.
 server : Mcp.Server(McpHttp.Caller(Context))
@@ -26,11 +52,7 @@ server = {
 }
 ```
 
-and, in `main.roc`, behind the middleware that decides who may ask. `main.roc` is the place for what
-sits in front of the routes and runs their handlers: `Generated/Handlers` imports the route files
-with endpoints, so a module they import can't import it, and `main.roc` (or a module only it
-imports) can. A route of `respond!` alone may too (`routes/mcp/+server.roc`, with its own
-`middleware`), since Handlers doesn't import it:
+Mount it in `main.roc`, after the middleware that decides who may ask:
 
 ```roc
 program = App.program({
@@ -39,76 +61,83 @@ program = App.program({
 })
 ```
 
-## Two halves
-
-**The protocol is a Roc package** (`main.roc`): plain Roc on no platform. It reads a request,
-checks it, answers it or says what to run, and writes the answer. It has no effects of its own:
-tools, resources and prompts are functions the app gives it. Its expects run the spec's example
-messages through it.
-
-| Module | What it does |
-|---|---|
-| `Mcp` | `Mcp.Server(ctx)`: what the server offers; `handle!(server, incoming, ctx)`, a request's answer; `receive(server, incoming)`, the same, pure: `Reply(answer)` or `Run(running)`; `progress`, a progress notification; `problems(server)`, for the app's own test; `versions` |
-| `Tool` | `Tool.typed(name, description, schema, run!)`: arguments read into a Roc type, the answer written as JSON; `Tool.typed_with_params(name, description, params_schema, body_schema, run!)`: arguments read into two (an endpoint's path params and its body), their schemas merged; `Tool.new`: any JSON in, content out; hints (`read_only`, `additive`, `idempotent`, `closed_world`), `titled`, `answers(schema)`, `reporting`; `Tool.text`, `Tool.structured` |
-| `Resource` | `Resource.text(uri, name, mime, read!)`, `Resource.new(uri, name, read!)`: what reading a URI gives; `Resource.contents(uri, mime, Text(…) or Blob(bytes))` |
-| `Template` | `Template.new("notes://note/{id}", name, read!)`: a family of resources, read with the values the URI gave the template's names; `Template.matching` |
-| `Prompt` | `Prompt.new(name, description, arguments, get!)`: messages made from string arguments (`Prompt.argument`, `Prompt.optional`; `Prompt.user`, `Prompt.assistant`) |
-| `Content` | what a tool answers with: `Text`, `Image`, `Audio` (bytes, sent as Base64), `Link` (to a resource), `Embedded` (a resource's contents) |
-| `Auth` | the pieces of OAuth's answers, for the app's middleware: `bearer` (the token a request carries), `challenge` (401 and `WWW-Authenticate`), `insufficient` (403), `metadata` (RFC 9728, `/.well-known/oauth-protected-resource`) |
-| `JsonValue` | any JSON, read a field at a time; `decode` into a Roc type and `encode` from one, through `Json`. A number keeps the text it came as, so an id or an `I64` goes back exactly |
-| `Rpc` | JSON-RPC 2.0: `read` one message, write a `result`, an `error` or a `notification`; the error codes |
-
-`roc test packages/mcp/main.roc` runs their `expect`s. Base64 is `packages/crypto`'s, which this
-package names itself: an app names `mcp` alone.
-
-**The HTTP side is a module on the server platform** (`server/McpHttp.roc`). It imports the
-platform's `Server`, `Endpoint`, `OpenApi`, `Events`, `Middleware` and `Log`, and a package can't
-import a platform for an app's two halves at once (see packages/charts). `server/main.roc` makes it
-a package of its own that names the server platform, so `roc check packages/mcp/server/main.roc`
-checks it. An app can't name that package yet: `rocx build` puts every package in the server's
-header into the browser's, where that platform is the wrong one (PROPOSALS.md, "Server-only modules
-in packages"). Until it can, copy `server/McpHttp.roc` into the app (`Agents/McpHttp.roc`), and
-name the protocol's package `mcp` in the app's header:
+Why `main.roc`: the tools run the endpoints' handlers through `Generated/Handlers`, and
+`Generated/Handlers` imports every route file that has endpoints. So a module those route files
+import can't import it (that would be an import cycle), but `main.roc`, or a module only `main.roc`
+imports, can. A route file that has `respond!` and no endpoints may serve it too
+(`routes/mcp/+server.roc`, with its own `middleware`), because `Generated/Handlers` doesn't import
+such a file:
 
 ```roc
-app [program] { mcp: "../packages/mcp/main.roc", pf: platform "../server/platform/main.roc" }
+respond! = |{ request, context, .. }| McpHttp.respond!(Agents.server, request, context)
 ```
 
-| `McpHttp.` | |
+## The protocol's modules
+
+The protocol reads a request, checks it, and either answers it or says what to run. It has no
+effects of its own: tools, resources and prompts are functions the app gives it.
+`roc test packages/mcp/main.roc` runs the expects, including the spec's example messages.
+
+| Module | What it has |
 |---|---|
-| `middleware(path, server)` | the MCP server as a middleware: it answers `path`, and hands every other request on. Put it after the middleware that decides who may ask |
-| `respond!(server, request, context)` | the answer to a request to the MCP route; a route file's `respond!` can call it (`routes/mcp/+server.roc`): a route of `respond!` alone may import `Generated/Handlers` (D-037), which imports only the route files with endpoints |
-| `endpoint(Handlers.x, about, McpHttp.openapi({}))` | an endpoint as a tool, from the function of its params that names it: the arguments are one object, read as the path's params and as the body (`{ "id": "7", "tags": ["work"] }` for `Handlers.put_api_notes_id_tags`; an endpoint of no params, its body alone), and its answer is the tool's; run as `Endpoint.run!` runs it, so it is `Generated/Handlers`' endpoint (with its handler), not `Generated/Api`'s contract; a refusal goes back to the model. A body field named as a param is a problem `Mcp.problems` reports |
-| `function(Module.name!, about, McpHttp.openapi({}))` | a function of the app's own (`arg => result`) as a tool, run in the MCP request, behind the MCP route's middleware |
-| `tool(about, handler!, McpHttp.openapi({}))` | a handler of the app's own, `arg, Caller(c) => Try(result, Str)`, its schemas from its types |
-| `Caller(c)` | what a tool is given: `{ request, context, progress! }`. `context` is what the middleware handed on: who is asking |
-| `About` | `{ name, description }`, and `title`, `tags` if wanted |
-| `response(answer)` | an answer of the protocol's (`Auth.challenge(…)`) as a `Server.Response` |
+| `Mcp` | `Mcp.Server(ctx)`: what the server offers ([below](#the-server-record)). `handle!(server, incoming, ctx)`: a request's answer. `receive(server, incoming)`: the same, pure: `Reply(answer)` or `Run(running)`. `progress(running, done, total, message)`: a progress notification. `problems(server)`: for the app's own test. `versions`: the versions it speaks, current first. Types: `Incoming`, `Answer`, `Era`, `Step`, `Running`, `Ran`. |
+| `Tool` | `Tool.typed(name, description, schema, run!)`: arguments read into a Roc type, the answer written as JSON. `Tool.typed_with_params(name, description, params_schema, body_schema, run!)`: arguments read into two types from one object (an endpoint's path params and its body), their schemas merged. `Tool.new(name, description, schema, run!)`: any JSON in, an `Outcome` out. Hints: `read_only`, `additive`, `idempotent`, `closed_world`. Also `titled`, `answers(schema)`, `reporting`. Outcomes: `Tool.text`, `Tool.structured`, `Tool.answer`. |
+| `Resource` | `Resource.text(uri, name, mime, read!)` and `Resource.new(uri, name, read!)`: what reading a URI gives. `titled`, `described`, `typed(mime)`. `Resource.contents(uri, mime, Text(…) or Blob(bytes))`. |
+| `Template` | `Template.new("notes://note/{id}", name, read!)`: a family of resources; `read!` gets the values the URI gave the template's names, and the URI. `titled`, `described`, `typed(mime)`. `Template.matching(pattern, uri)`. |
+| `Prompt` | `Prompt.new(name, description, arguments, get!)`: messages made from string arguments. `Prompt.argument` (required), `Prompt.optional`; `Prompt.user`, `Prompt.assistant`; `titled`. |
+| `Content` | What a tool answers with: `Text`, `Image` and `Audio` (bytes, sent as Base64), `Link` (to a resource), `Embedded` (a resource's contents). Helpers: `Content.text`, `Content.image`, `Content.link`. |
+| `Auth` | The pieces of OAuth's answers, for the app's middleware: `bearer`, `challenge`, `insufficient`, `metadata` ([below](#who-may-ask)). |
+| `JsonValue` | Any JSON, read a field at a time (`parse`, `get`, `to_text`, `is_object`, `to_str`). `decode` into a Roc type and `encode` from one, through `Json`. A number keeps the text it came as, so an id or an `I64` goes back exactly. |
+| `Rpc` | JSON-RPC 2.0: `read` one message; write a `result`, an `error` or a `notification`; the error codes, MCP's own among them (`header_mismatch`, `missing_capability`, `unsupported_version`). |
 
-`McpHttp.openapi({})` is the platform's schema writers, given as a value: a generic function can't
-read a type with `Json` and describe it with `OpenApi` both (each wants its own `parser_for`), so
-they are instantiated where the call has the types.
+## The HTTP side
 
-## A server
+`server/McpHttp.roc` imports the server platform (`Server`, `Endpoint`, `OpenApi`, `Events`,
+`Middleware`, `Log`), and the protocol's package names no platform, so the HTTP side can't live in
+it. `server/main.roc` makes it a package of its own that names the server platform, so
+`roc check packages/mcp/server/main.roc` checks it alone. Apps copy the module in today; making
+copying unnecessary is proposal 1 in PROPOSALS.md, "Server-only modules in packages".
 
-`Mcp.Server(ctx)` is a record; only `name` and `version` are needed.
-
-| Field | |
+| `McpHttp.` | What it is |
 |---|---|
-| `name`, `version` | the server's, as clients show them |
-| `title` | its name for people |
-| `instructions` | for the model: how the tools go together, what to do first |
-| `tools`, `resources`, `templates`, `prompts` | what it offers (none of any by default; the capabilities it declares follow) |
-| `page_size` | how many of a list go in one answer, with a cursor for the next (100; 0 for all) |
-| `ttl_ms` | how long a client may keep a list (current MCP: 300000) |
-| `origins` | pages of other sites whose requests are answered (`"https://app.example.com"`); a page of this site always is, a request from no page (an agent, curl) too |
+| `middleware(path, server)` | The MCP server as a middleware: it answers requests to `path` and passes every other request on. Put it after the middleware that decides who may ask. |
+| `respond!(server, request, context)` | The answer to one request to the MCP route, for a route file's `respond!`. |
+| `endpoint(Handlers.x, about, McpHttp.openapi({}))` | An endpoint as a tool. `Handlers.x` is the function from the endpoint's path params to the endpoint, from `Generated/Handlers` (which has the handler), not `Generated/Api` (the contract alone). The tool's arguments are one object, read both as the path's params and as the body: `{ "id": "7", "tags": ["work"] }` for `Handlers.put_api_notes_id_tags`. An endpoint with no params takes its body alone. It runs as `Endpoint.run!` runs it, with the MCP route's request and context; its own middleware doesn't run (the MCP route's has). Its answer is the tool's, and a refusal (`NotFound`, `BadRequest`) goes back to the model as a tool error. A body field with the same name as a path param is a problem `Mcp.problems` reports. |
+| `function(Module.name!, about, McpHttp.openapi({}))` | A function of the app's own, `arg => result`, as a tool, run inside the MCP request, behind the MCP route's middleware. An argument that isn't a record is the arguments' `input` field. |
+| `tool(about, handler!, McpHttp.openapi({}))` | A handler written for the tool, `arg, Caller(c) => Try(result, Str)`, its schemas written from its types. |
+| `Caller(c)` | What a tool is given: `{ request, context, progress! }`. `context` is what the middleware passed on, such as who is asking. |
+| `About` | `{ name, description }`, and optionally `title` and `tags` (the names of the tags in its types' unions, for their schemas). |
+| `response(answer)` | One of the protocol's answers (`Auth.challenge(…)`) as a `Server.Response`. |
+| `openapi({})` | The platform's schema writers (`OpenApi`'s), as a record. |
+
+`McpHttp.openapi({})` is always the same argument. It exists because of a compiler limit: a generic
+function can't both read a type with `Json` and describe it with `OpenApi` (each needs its own
+`parser_for` on the type), so the writers are passed in as a value and instantiated where the call
+knows the types. PROPOSALS.md 4 has the upstream fix that would drop it.
+
+A tool that fails inside (`Failed`) is logged as an error with the reason; the client is only told
+that it failed.
+
+## The server record
+
+`Mcp.Server(ctx)` needs only `name` and `version`.
+
+| Field | What it is |
+|---|---|
+| `name`, `version` | The server's, as clients show them. |
+| `title` | Its name for people. |
+| `instructions` | For the model: how the tools fit together, what to do first. |
+| `tools`, `resources`, `templates`, `prompts` | What it offers. None by default; the capabilities the server declares follow from which are given. |
+| `page_size` | How many items of a list go in one answer, with a cursor for the next page (default 100; 0 for all). |
+| `ttl_ms` | How long a client may keep a list, in current MCP (default 300000, 5 minutes). |
+| `origins` | Pages of other sites whose requests are answered (`"https://app.example.com"`). A page of the server's own site always is, and so is a request from no page (an agent, curl). |
 
 `ctx` is what a tool, a resource or a prompt is given when it runs: `McpHttp.Caller(c)` over HTTP.
 
 ## Tools
 
 ```roc
-## Its arguments and answer are Roc types; its schemas the platform's, from them.
+## Its arguments and its answer are Roc types; its schemas are the platform's, from them.
 convert! : { celsius : Dec }, McpHttp.Caller(Context) => Try({ fahrenheit : Dec }, Str)
 convert! = |{ celsius }, _|
     if (celsius < -273.15) Err("Below absolute zero") else Ok({ fahrenheit: celsius * 9.0 / 5.0 + 32.0 })
@@ -116,19 +145,23 @@ convert! = |{ celsius }, _|
 McpHttp.tool({ name: "convert", description: "Celsius to Fahrenheit" }, convert!, McpHttp.openapi({})).read_only()
 ```
 
-- The answer is the result's JSON, as text (for the model) and as `structuredContent`, with its
-  `outputSchema`. An answer that isn't an object is its `result` field; arguments that aren't one
-  (a `Str`) are its `input` field.
-- `Err("…")`, or arguments that don't fit the type, go back to the model as a tool error
+- The answer is the result's JSON, sent twice: as text, for the model, and as `structuredContent`,
+  with its `outputSchema`. An answer that isn't an object goes in a `result` field. Arguments that
+  aren't an object (a tool that takes a `Str`) come in an `input` field.
+- `Err("…")`, and arguments that don't fit the type, go back to the model as a tool error
   (`isError`), which it can read and act on. An unknown tool is a JSON-RPC error.
-- `Tool.new(name, description, schema, |args, ctx| …)` takes the arguments as a `JsonValue` and
-  answers `Tool.text(…)`, `Tool.structured(…)`, `Answered({ content, structured })` (images,
-  links), `Refused(why)`, or `Failed(why)`: a JSON-RPC error that only says the tool failed, its
-  reason in the server's log.
-- `.reporting()`: the tool calls `progress!(done, total, message)` (`|args, { progress!, .. }| …`), and a client that asks to
-  hear (a `progressToken`, `Accept: text/event-stream`) gets the answer as a stream of server-sent
-  events, each step as it is taken, then the answer. A client that doesn't ask gets JSON, and
-  `progress!` does nothing.
+- `Tool.new(name, description, schema, |args, ctx| …)` takes the arguments as a `JsonValue` (a
+  schema of `""` takes any object) and answers an `Outcome`: `Tool.text(…)`, `Tool.structured(…)`,
+  `Answered({ content, structured })` (for images and links), `Refused(why)`, or `Failed(why)`. A
+  failure is a JSON-RPC error that only says the tool failed; its reason goes to the server's log.
+- Hints tell the client what the tool does, so it can ask the user before running one that changes
+  things: `read_only` (changes nothing), `additive` (changes things but never deletes or
+  overwrites), `idempotent` (running it twice does no more than once), `closed_world` (reaches
+  nothing outside the app).
+- `.reporting()`: the tool may call `progress!(done, total, message)` (`|args, { progress!, .. }| …`;
+  `total` 0 for unknown). A client that asks to hear progress (a `progressToken`, and
+  `Accept: text/event-stream`) gets the answer as a stream of server-sent events: each step as it is
+  taken, then the answer. A client that doesn't ask gets JSON, and `progress!` does nothing.
 
 ## Resources, templates, prompts
 
@@ -139,15 +172,25 @@ prompts: [Prompt.new("summarize", "Summarizes a note", [Prompt.argument("id", "T
     Ok({ description: "", messages: [Prompt.user("Summarize note ${args.get("id") ?? ""}.")] }))],
 ```
 
-A URI no resource and no template has is "Resource not found", with the URI. A template's name
-takes one character or more, up to its next literal text, and never a `/` unless it is the last
-thing in the template; its value is percent-decoded. A prompt's missing required argument is an
-invalid-params error, before `get!` runs.
+- A URI that no resource and no template has is answered "Resource not found", with the URI.
+- A template's `{name}` takes at least one character, up to the template's next literal text. It
+  never takes a `/`, unless it is the last thing in the template, so `files://{path}` matches
+  `files://docs/a.md`. Its value is percent-decoded. `read!` answers `Err(NotFound)` when nothing is
+  there.
+- A prompt's missing required argument is an invalid-params error, sent before `get!` runs.
 
 ## Who may ask
 
-The middleware in front of the MCP route decides, as for any route: a session cookie, an API key,
-an OAuth access token. `Auth` has the answers OAuth wants for the last:
+The middleware in front of the MCP route decides, as it does for any route: a session cookie, an API
+key, an OAuth access token. examples/notes takes a personal access token (`Middlewares.agent`) and
+limits how often each token may ask. For OAuth, `Auth` has the answers the spec wants:
+
+- `Auth.bearer(headers)`: the token a request carries (`Authorization: Bearer …`), or `NoToken`.
+- `Auth.challenge({ resource_metadata, scope })`: a 401 with `WWW-Authenticate`, which says where
+  the client learns how to get a token.
+- `Auth.insufficient({ resource_metadata, scope })`: a 403 for a good token without the scope.
+- `Auth.metadata({ resource, authorization_servers, scopes })`: the protected resource metadata
+  document (RFC 9728), to serve at `routes/.well-known/oauth-protected-resource/+server.roc`.
 
 ```roc
 bearer = Middleware.make(|request, context, next!|
@@ -157,37 +200,46 @@ bearer = Middleware.make(|request, context, next!|
     })
 ```
 
-and `Auth.metadata({ resource, authorization_servers, scopes })` is the document to serve at
-`routes/.well-known/oauth-protected-resource/+server.roc`. Issuing the tokens (an authorization
-server) is a proposal (PROPOSALS.md).
+Not yet: issuing tokens. An authorization server of the platform's own is proposal 5 in
+PROPOSALS.md.
 
-A request a browser sends from a page of another site (its `Origin`) is refused with 403, so a page
-can't reach a server on the reader's own computer (DNS rebinding).
+Separately, a request a browser sends from a page of another site (its `Origin`) is refused with
+403, so a web page can't reach an MCP server on the reader's own computer (DNS rebinding).
 
 ## What it speaks
 
-MCP over Streamable HTTP: one endpoint, a JSON-RPC message a POST, answered with JSON (or a stream
-of events, for a reporting tool). Both eras of the protocol, on the same endpoint:
+MCP over Streamable HTTP: one endpoint, where each POST carries one JSON-RPC message and is answered
+with JSON, or with a stream of events for a reporting tool. The same endpoint speaks both eras of
+the protocol:
 
-- **2026-07-28**, the current one: no handshake. Each request says its version and the client's
-  capabilities in its `_meta`, and its headers repeat them (`MCP-Protocol-Version`, `Mcp-Method`,
-  `Mcp-Name`). `server/discover` says what the server offers. Results say `resultType`; lists and
-  reads say how long a client may keep them (`ttlMs`, `cacheScope`).
-- **2025-11-25, 2025-06-18, 2025-03-26**: `initialize`, answered with the version asked for if the
-  server speaks it (or its latest earlier one), then `notifications/initialized`, `ping`, and the
-  rest. The server keeps no session: it sends no `Mcp-Session-Id`, which these allow.
+- **2026-07-28**, the current version, has no handshake. Each request states its version and the
+  client's capabilities in its `_meta`, and its headers repeat them (`MCP-Protocol-Version`,
+  `Mcp-Method`, `Mcp-Name`; a name that isn't plain ASCII is sent as `=?base64?…?=`).
+  `server/discover` says what the server offers. Results carry `resultType`, and lists and reads say
+  how long a client may keep them (`ttlMs`, `cacheScope`).
+- **2025-11-25, 2025-06-18, 2025-03-26** start with `initialize`, answered with the version asked
+  for if the server speaks it, or else its latest earlier one. Then come
+  `notifications/initialized`, `ping` and the rest. The server keeps no session, which these
+  versions allow, so it sends no `Mcp-Session-Id`.
 
-`GET` and `DELETE` are 405: the server pushes nothing, and has no session to end. Statuses: 202 for a
-notification; 400 for a body that isn't one JSON-RPC message, a version the server doesn't speak, a
-header that doesn't match, `_meta` without what it needs; 404 for no such method (current MCP); 403
-for a page of another site; 415 for a body that isn't JSON. A method's own errors (an unknown tool,
-a bad cursor, no such resource) are JSON-RPC errors in a 200.
+| A request | Is answered |
+|---|---|
+| a notification, or a response | 202, with an empty body |
+| a body that isn't JSON (by its `Content-Type`) | 415 |
+| not one JSON-RPC message (invalid JSON, a batch, no method) | 400, a JSON-RPC error |
+| a version the server doesn't speak, a header that doesn't match the body, `_meta` missing what it needs | 400, a JSON-RPC error |
+| a method that doesn't exist | 404 in current MCP; a JSON-RPC error in a 200 in earlier MCP |
+| an unknown tool, a bad cursor, a resource that doesn't exist | 200, a JSON-RPC error |
+| arguments that don't fit a tool, or a tool's refusal | 200, a tool result with `isError` |
+| from a page of another site | 403 |
+| `GET`, `DELETE` | 405: the server pushes nothing, and has no session to end |
 
 ## Testing an app's server
 
-`Mcp.receive` is pure, so an app's expects can send its server requests and read the answers
-without a network, as `Mcp.roc`'s do. `Mcp.problems(server)` names what MCP won't take: tool names
-outside 1 to 128 of `A-Z a-z 0-9 _ - .`, a name or URI given twice, a schema that isn't JSON.
+`Mcp.receive` is pure, so an app's expects can send its server requests and read the answers with
+no network, as `Mcp.roc`'s own expects do. `Mcp.problems(server)` lists what MCP won't accept: a
+tool name outside 1 to 128 of `A-Z a-z 0-9 _ - .`, a name or a URI given twice, a schema that isn't
+JSON, and an endpoint's tool whose path params and body share a field name.
 
 ```roc
 expect Mcp.problems(Agents.server) == []
@@ -195,30 +247,31 @@ expect Mcp.problems(Agents.server) == []
 
 ## Status
 
-Works today, tested end to end in a scratch app (`/tmp`, built with `rocx build` and the server
-platform; the HTTP glue copied in, and also named as a package once rocx leaves it out of the
-browser's half):
+Tested:
 
-- The official clients: the MCP Inspector's CLI (2.16.0, which speaks 2025-11-25) and the
-  TypeScript SDK's v2 client (`@modelcontextprotocol/client` 2.4.0) pinned to 2026-07-28 and in
-  `auto` mode (it asks `server/discover`, and stays current). Tools from an endpoint, a function of
-  the app's and handlers, a refusal, an unknown tool, resources, a template, a prompt, and a
-  reporting tool's progress, streamed as events, all as the spec says.
-- The protocol package: 137 expects.
+- The protocol: 146 expects.
+- End to end, in scratch apps built with `rocx build` on the server platform, with the official
+  clients: the MCP Inspector's CLI (2.16.0, which speaks 2025-11-25) and the TypeScript SDK's v2
+  client (`@modelcontextprotocol/client` 2.4.0), pinned to 2026-07-28 and in `auto` mode (it asks
+  `server/discover` and stays current). Tools from an endpoint, a function and a handler; a refusal;
+  an unknown tool; resources; a template; a prompt; and a reporting tool's progress, streamed as
+  events.
+- examples/notes, whose tests call its tools over JSON-RPC.
 
-Waits on a proposal (PROPOSALS.md):
+Waiting on a proposal (PROPOSALS.md):
 
-- naming `server/` as a package (or rocx copying it): today it is copied by hand;
-- a union's tags in a tool's schema (`Api.tags`): today a tag union none of whose tags are given is "any value";
-- the description of an endpoint's tool from its doc comment;
-- an authorization server (OAuth) of the platform's own.
+1. reaching an app without copying `server/McpHttp.roc` in by hand;
+2. a union's tags in a tool's schema (`Api.tags`): today a tag union none of whose tags are given in
+   `About.tags` is "any value";
+3. an endpoint's doc comment as its tool's description (today the app repeats it);
+4. an OAuth authorization server of the platform's own.
 
-## Limits, for now
+## Limits
 
-- No list-change notifications or resource subscriptions (`subscriptions/listen`), no
-  `completion/complete`, no logging to the client, no requests from the server (sampling,
-  elicitation, or 2026-07-28's `input_required`).
+- Not yet: list-change notifications, resource subscriptions (`subscriptions/listen`),
+  `completion/complete`, logging to the client, and requests from the server to the client
+  (sampling, elicitation, 2026-07-28's `input_required`).
 - No sessions: nothing is kept between requests.
-- Every record field of a tool's arguments is required (as the platform's schemas say); an optional
-  argument is a `Tool.new` tool's.
+- Every record field of a typed tool's arguments is required, as the platform's schemas say. For an
+  optional argument, use a `Tool.new` tool.
 - Batches (a JSON array of messages) are refused: no revision since 2025-06-18 has them.

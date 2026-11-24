@@ -118,7 +118,7 @@ McpHttp := [].{
 	}
 
 	## A function of the app's own as a tool (`McpHttp.function(Notes.add!, { name: "add_note",
-	## description: "Adds a note" }, McpHttp.openapi)`): its argument is the tool's (an object's
+	## description: "Adds a note" }, McpHttp.openapi({}))`): its argument is the tool's (an object's
 	## `input` field, when it isn't a record), its answer the tool's. It runs in the MCP request,
 	## behind the MCP route's middleware.
 	function : (arg => result), About, Schemas(c, {}, arg, result) -> Tool(Caller(c))
@@ -128,7 +128,7 @@ McpHttp := [].{
 	## A handler of the app's own as a tool: its arguments are a Roc type, its answer another, each
 	## with the schema the platform writes for it.
 	##
-	##     McpHttp.tool({ name: "convert", description: "Celsius to Fahrenheit" }, convert!, McpHttp.openapi)
+	##     McpHttp.tool({ name: "convert", description: "Celsius to Fahrenheit" }, convert!, McpHttp.openapi({}))
 	tool : About, (arg, Caller(c) => Try(result, Str)), Schemas(c, {}, arg, result) -> Tool(Caller(c))
 		where [arg.Json.Parseable([InvalidJson(Str)]), result.Json.Encodable(e)]
 	tool = |about, handler!, schemas| {

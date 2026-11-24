@@ -1,11 +1,10 @@
 # main.roc: the MCP server at /mcp, behind the middleware that decides who may ask
 program = App.program({
-	context: |started| { greeting: started },
+	init!: |_started| Ok({}),
 	middleware: Middlewares.signed_in.then(McpHttp.middleware("/mcp", Agents.server)),
-	crons: [],
 })
 
-# Agents.roc: endpoints (Generated/Handlers', D-037), a function and a handler of the app's own,
+# Agents.roc: two endpoints (from Generated/Handlers), a function and a handler of the app's own,
 # a tool each; a tool's arguments fill an endpoint's path too (read_note's id)
 server : Mcp.Server(McpHttp.Caller(Context))
 server = {

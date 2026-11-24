@@ -10,19 +10,19 @@ import ../../Ui/Versus
 ## File-based routing, as SvelteKit has it: this site's own pages are routed this way.
 meta = {
 	title: "Routing",
-	description: "File-based routing in rocx: +page.rocx, +layout.rocx, +server.roc and +error.rocx under routes/, params typed by their directories, middleware named by the file it guards, a typed path for every page, a typed function for every endpoint, and their OpenAPI document.",
+	description: "File routing in Roc Solid: pages, layouts, the error page and endpoints are files under routes/, params come from directory names, middleware guards a route, links navigate without a reload, and rocx writes a typed path for every page and a typed function for every endpoint.",
 	toc: [
 		{ id: "files", label: "The files" },
 		{ id: "page", label: "A page" },
-		{ id: "written", label: "What rocx writes for it" },
 		{ id: "layouts", label: "Layouts" },
 		{ id: "params", label: "Params, and typed links" },
-		{ id: "endpoints", label: "Endpoints: +server.roc" },
-		{ id: "openapi", label: "Their OpenAPI document" },
-		{ id: "middleware", label: "Middleware: what runs, in what order" },
-		{ id: "router", label: "The router, and the app" },
-		{ id: "navigating", label: "Navigating, without a load" },
 		{ id: "error", label: "Where no page is" },
+		{ id: "endpoints", label: "Endpoints: +server.roc" },
+		{ id: "middleware", label: "Middleware: what runs, in what order" },
+		{ id: "navigating", label: "Navigating without a reload" },
+		{ id: "written", label: "What rocx writes" },
+		{ id: "router", label: "The router" },
+		{ id: "openapi", label: "The OpenAPI document" },
 		{ id: "limits", label: "Not yet" },
 	],
 }
@@ -34,174 +34,435 @@ view! = |_|
 				eyebrow="Routing"
 				title="A page is a file"
 			>
-				Under an app's <code>routes/</code>, a <code>+page.rocx</code> is a page at the path its
-				directory names, each <code>+layout.rocx</code> above it wraps it, a <code>+server.roc</code>
-				answers HTTP methods there, and <code>+error.rocx</code> shows where nothing is, as in SvelteKit.
-				A file names the middleware it runs behind. rocx writes the router, a path for every page and a
-				function for every endpoint, so a link to a page that isn't there, or a call to an endpoint that
-				isn't, doesn't compile.
+				An app's URLs come from the files under its <code>routes/</code> directory, as in SvelteKit. A
+				<code>+page.rocx</code> is a page at the path its directory names. The <code>+layout.rocx</code>
+				files above it wrap it, a <code>+server.roc</code> beside it answers HTTP requests at that path, and
+				<code>+error.rocx</code> is shown where nothing answers. rocx writes a typed path for every page and a
+				typed function for every endpoint, so a link to a page that doesn't exist, or a call to an endpoint
+				that doesn't, fails to compile.
 			</PageHero>
 
 			<Heading id="files">The files</Heading>
-			<p>These are this site's: every page you can open here is one of them.</p>
+			<p>These are this site's route files. Every page you can open here is one of them:</p>
 			<Code title={Sources.route_tree.file} source={Sources.route_tree.rocx} numbers={Bool.False} plain />
 			<TableWrap>
 				<table>
-					<thead><tr><th>File</th><th>Is</th></tr></thead>
+					<thead><tr><th>File</th><th>What it is</th></tr></thead>
 					<tbody>
 						<tr><td><code>routes/+page.rocx</code></td><td>the page at <code>/</code></td></tr>
 						<tr><td><code>routes/blog/+page.rocx</code></td><td>the page at <code>/blog</code></td></tr>
 						<tr><td><code>routes/blog/[slug]/+page.rocx</code></td><td>the page at <code>/blog/anything</code>, given <code>{"params.slug"}</code></td></tr>
-						<tr><td><code>+layout.rocx</code></td><td>around every page in its directory and below</td></tr>
-						<tr><td><code>routes/blog/+server.roc</code></td><td>the endpoints at <code>/blog</code>: <code>get!</code>, <code>post!</code>, <code>put!</code>, <code>patch!</code>, <code>delete!</code>, and <code>events!</code>, a stream; <code>respond!</code>, any other method, answered as it likes</td></tr>
-						<tr><td><code>routes/.well-known/…</code></td><td>routed, as RFC 8615 has it; another directory starting with a dot isn't</td></tr>
-						<tr><td><code>routes/+error.rocx</code></td><td>what a path nothing answers shows, with the status 404, and a page that failed (404 when its data isn't there, else 500)</td></tr>
-						<tr><td><code>middleware = …</code></td><td>in a page or a <code>+server</code>: what it runs behind</td></tr>
+						<tr><td><code>+layout.rocx</code></td><td>wraps every page in its directory and below it</td></tr>
+						<tr><td><code>routes/+error.rocx</code></td><td>what a browser sees at a path nothing answers (404), and when a page fails</td></tr>
+						<tr><td><code>routes/blog/+server.roc</code></td><td>the endpoints at <code>/blog</code>: <code>get!</code>, <code>post!</code>, <code>put!</code>, <code>patch!</code> and <code>delete!</code>; <code>events!</code>, a stream of events; <code>channel!</code>, a channel pages subscribe to; <code>respond!</code>, every other method</td></tr>
+						<tr><td><code>middleware = …</code></td><td>a definition in a page or a <code>+server.roc</code>: the middleware that runs before that file's page or endpoints</td></tr>
+						<tr><td><code>routes/.well-known/…</code></td><td>routed, as RFC 8615 asks; any other directory whose name starts with a dot is skipped</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
+			<p>
+				Each directory's name is one part of the path, in lower case (<code>blog</code>,
+				<code>getting-started</code>, <code>feed.xml</code>), or a param in brackets (<code>[slug]</code>).
+				<code>rocx build</code> refuses any other name, and says why.
+			</p>
 
 			<Heading id="page">A page</Heading>
 			<p>
-				A route file is bare: its imports, then its definitions. <code>view</code> renders the
-				page; <code>meta</code>, if it has one, is given to its layouts (here, the title, the description and
-				what the sidebar on the right lists).
+				A route file has no module header: it starts with its imports, then its definitions. A page
+				defines <code>view!</code>, the component that renders it. It may also define <code>meta</code>, a
+				record its layouts are given. On this site, <code>meta</code> holds the title, the description and
+				the table of contents on the right:
 			</p>
 			<Code title={Sources.route_page.file} source={Sources.route_page.rocx} />
 			<ul>
 				<li>
-					<strong><code>view</code> is given a record:</strong> <code>request</code> (its path and headers,
-					cookies among them), <code>params</code> (<code>{"{}"}</code> on a page without), and
-					<code>context</code>, what <a href="#middleware">middleware</a> handed on (this site's default
-					hands on the facts its build measured). Take what you need, and <code>..</code> for the rest.
+					<strong><code>view!</code> is given the page's params:</strong> <code>{"view! = |{ params }| …"}</code>,
+					a record of strings (<code>{"{}"}</code> on a page without params). Write <code>|_|</code> when the
+					page needs none. A page is an <a href={"${Paths.components}#kinds"}>effectful component</a>: its body
+					runs once, and it may make signals.
 				</li>
 				<li>
-					<strong><code>view!</code></strong>, a page that does something as it renders (a query, an endpoint
-					asked there and then): the <a href={Paths.calls}>talking to the server</a> page is one.
+					<strong>Its data comes from endpoints.</strong> A page isn't given the request. It reads where it
+					is with <code>{"Router.location!({})"}</code>, and reads its data from an endpoint with
+					<code>Endpoint.get!</code>, which the server answers while it renders the page
+					(<a href={Paths.calls}>talking to the server</a>). What middleware knows, such as who is signed in,
+					reaches a page the same way: through an endpoint behind that middleware
+					(<a href="#middleware">below</a>).
 				</li>
 				<li>
-					<strong>Imports are relative to the file</strong>, as everywhere in rocx: this one is two directories
-					down, so the site's parts are <code>../../Ui</code>.
+					<strong>Imports are relative to the file</strong>, as everywhere in rocx. This one is two directories
+					down, so the site's own components are under <code>../../Ui</code>.
 				</li>
 				<li>
-					<strong>Components of its own</strong>, as any <code>.rocx</code> file may have
-					(<code>{"Board := [].{ view! = … }"}</code>), go before its definitions or after them, not between:
-					rocx writes them as types beside the page's module, where their <code>view</code> isn't the page's
-					(<a href={"${Paths.components}#title"}>an example</a>). <code>{"<Board />"}</code> calls the file's own.
-					They see the file's definitions as the page does: a helper defined beside <code>view!</code> is
-					theirs to call too, unless one names something of its own the same.
+					<strong>A route file can define components of its own</strong>
+					(<code>{"Board := [].{ view! = … }"}</code>), as any <code>.rocx</code> file can, and use them as
+					<code>{"<Board />"}</code>. Put them before the file's definitions or after them, not between:
+					rocx writes them as types beside the page's module, so their <code>view!</code> isn't taken for the
+					page's (<a href={"${Paths.components}#title"}>an example</a>). They can use the file's other
+					definitions, as the page can; a name a component defines itself is its own.
 				</li>
 			</ul>
 
-			<Heading id="written">What rocx writes for it</Heading>
-			<p>
-				Roc names a module after its file, and <code>+page</code> isn't a name, so rocx writes each route file
-				as a module of its own under <code>Generated/</code>, named after its path
-				(<code>ShowcasePage</code>). Its imports are moved to where it is, and the module's line goes on the
-				blank line after them (or, with none, at the start of the first definition's line), so line
-				<var>N</var> is still line <var>N</var> of the route file, and the compiler's reports point into it:
-			</p>
-			<Code title={Sources.route_page_generated.file} source={Sources.route_page_generated.rocx} />
-
 			<Heading id="layouts">Layouts</Heading>
 			<p>
-				A <code>+layout.rocx</code> is around every page in its directory and below, the outermost first. Its
-				<code>view</code> is given its own <code>params</code> (those its directory names:
-				<code>routes/[lang]/+layout.rocx</code>'s <code>lang</code>; the root layout's are <code>{"{}"}</code>), the
-				page's <code>meta</code>, and the page (or the next layout) as <code>children</code>. Every page under a
-				layout that takes <code>meta</code> gives it one type, and rocx build says so at one whose
-				<code>meta</code> has other fields, or none. A navigation keeps a layout, its state with it, while
-				its file and its own params are the same (below). This site has one, the document around every
-				page, which reads where it is where that is used, so it is kept:
+				A <code>+layout.rocx</code> wraps every page in its directory and below it. Layouts nest, the
+				outermost first. The root one, <code>routes/+layout.rocx</code>, renders the whole document:
+				<code>{"<html>"}</code>, <code>{"<head>"}</code> and <code>{"<body>"}</code>. An app without one gets
+				a plain document. A layout's <code>view!</code> is given:
+			</p>
+			<ul>
+				<li><strong><code>children</code></strong>: the page, or the next layout in;</li>
+				<li>
+					<strong><code>params</code></strong>: its own params, the ones its directory names
+					(<code>routes/[lang]/+layout.rocx</code> gets <code>lang</code>; the root layout gets
+					<code>{"{}"}</code>);
+				</li>
+				<li>
+					<strong><code>meta</code></strong>: the page's <code>meta</code>. Every page under a layout that
+					takes it must give it the same type, and <code>rocx build</code> reports a page whose
+					<code>meta</code> has other fields, or none. Where no page is, the error page's <code>meta</code>
+					stands in.
+				</li>
+			</ul>
+			<p>
+				When the visitor moves to another page, a layout stays, with its state, as long as its file and its
+				own params are the same (<a href="#navigating">navigating</a>). This site has one layout, the
+				document around every page. It reads the location where it uses it, not once at its top, so it is
+				kept:
 			</p>
 			<Code title={"${Sources.route_layout.file}, in part"} source={Sources.route_layout.rocx} numbers={Bool.False} />
 
 			<Heading id="params">Params, and typed links</Heading>
 			<p>
 				A directory in brackets is a param: <code>routes/blog/[slug]/+page.rocx</code> is the page at any
-				<code>/blog/…</code>, given <code>{"params : { slug : Str }"}</code>. A path with a fixed part is
-				tried before one with a param there, so <code>/blog/new</code> can be a page of its own. A
-				directory may name a file, with dots between letters or digits: <code>routes/sitemap.xml/+server.roc</code>
-				answers <code>/sitemap.xml</code>, and its names drop the dot (<code>Api.get_sitemap_xml</code>). This page,
-				from the app the tests build:
+				<code>/blog/…</code>, and its <code>view!</code> is given <code>{"params : { slug : Str }"}</code>. A
+				param is always a string, decoded from the URL; parse it yourself if it is a number. A fixed part is
+				tried before a param in the same place, so <code>/blog/new</code> can be a page of its own beside
+				<code>/blog/[slug]</code>. A directory may also name a file, with dots between its letters or digits:
+				<code>routes/sitemap.xml/+server.roc</code> answers <code>/sitemap.xml</code>, and its names leave the
+				dot out (<code>Api.get_sitemap_xml</code>). This page is from the app the tests build:
 			</p>
 			<Code title="test/e2e/routes/routes/blog/[slug]/+page.rocx" source={Sources.route_fixture_page.rocx} />
 			<p>
-				rocx also writes <code>Paths</code>: a path for every page, a function of its params if it has any.
-				Link to a page through it, and a link to one that isn't there, or with the wrong params, doesn't
-				compile, and the compiler says so at your line (<code>{"Paths.blog_slug({ slg: \"x\" })"}</code>:
-				<em>Maybe slg should be slug?</em>).
+				rocx also writes <code>Paths</code>: a string for every page without params, and a function of its
+				params for every page with them, which encodes each param for the URL. Link to pages through it.
+				Then a link to a page that doesn't exist, or one with the wrong params, fails to compile, and the
+				compiler says so at your line (<code>{"Paths.blog_slug({ slg: \"x\" })"}</code>: <em>Maybe slg should
+				be slug?</em>). <code>Paths.all</code> lists the pages without params.
 			</p>
 			<Code title={"What rocx writes for that app: ${Sources.route_fixture_paths.file}"} source={Sources.route_fixture_paths.rocx} numbers={Bool.False} />
 			<p>This site's sidebar is made of them, each part's pages in groups under a heading:</p>
 			<Code title={"${Sources.route_nav.file}, in part"} source={Sources.route_nav.rocx} numbers={Bool.False} />
 
+			<Heading id="error">Where no page is</Heading>
+			<p>
+				<code>routes/+error.rocx</code> is the app's error page. A browser that asks for a path nothing
+				answers gets it, inside the root layout, with the status 404; any other client gets a 404 as plain
+				text. A page that fails, where nothing inside it catches the failure with an
+				<a href={"${Paths.components}#waiting"}><code>{"<Errored>"}</code></a>, shows the error page too. When
+				the failure is a read its endpoint refused with a 4xx status, the page keeps that status (an endpoint
+				answering <code>NotFound</code> makes the page a 404); anything else is a 500. The error page's
+				<code>view!</code> is given <code>status</code> and <code>problem</code>, why it failed as text. An app
+				without one gets a plain one. This site's lists the pages of the part of the docs the path is in (try
+				<a href="/nowhere">/nowhere</a>, or <a href="/platform/nowhere">/platform/nowhere</a>):
+			</p>
+			<Code title={Sources.route_error.file} source={Sources.route_error.rocx} />
+
 			<Heading id="endpoints">Endpoints: +server.roc</Heading>
 			<p>
-				A <code>+server.roc</code>, plain Roc (<code>+server.rocx</code> if it has markup), answers HTTP
-				methods at its path: <code>get!</code>, <code>post!</code>, <code>put!</code>, <code>patch!</code> and
-				<code>delete!</code>, each given the request, the params, the context and (with a body) the body, read
-				when it says it is JSON (<code>application/json</code>) or a form. A body of any other type, an
-				upload, isn't read: the handler takes <code>{"{}"}</code> and reads <code>request.body</code>, the bytes as
-				they came. A handler answers a result, sent as JSON, or a refusal, sent as its status (or an answer
-				of its own: <code>Err(Answer(Server.redirect(…)))</code>). A form a browser posts without the
-				runtime gets neither: it goes back to the page it came from, with a flash that page reads
-				(<a href={"${Paths.calls}#forms"}>forms</a>). A <code>respond!</code>, given the
-				request, the params and the context, answers every method the file doesn't name with a
-				<code>Server.Response</code> of its own: a page mounted from elsewhere, a JSON-RPC endpoint. <code>events!</code> answers a GET
-				that asks for events with a stream of them, sent as they are made. Beside a page, a GET a browser
-				sends is the page's, and every other request the endpoints'. Each handler is annotated, and rocx
-				writes <code>Generated/Api.roc</code> from those annotations, the app's contract: a function for
-				each, its method, URL and types, which the app calls and any module may import (a job, an actor);
-				<code>Generated/Handlers.roc</code> binds each to its handler, for the server.
-				<a href={"${Paths.calls}#endpoints"}>Talking to the server</a> has this site's,
-				live, and <a href={"${Paths.calls}#events"}>a stream</a> too. This one answers a form, and sets a
-				cookie:
+				A <code>+server.roc</code> (plain Roc; <code>+server.rocx</code> if it has markup) answers HTTP
+				requests at its directory's path. Each method it answers is a handler named after it:
+				<code>get!</code>, <code>post!</code>, <code>put!</code>, <code>patch!</code> or <code>delete!</code>.
+				A handler is given a record of the request, the path's params, the context its middleware handed on
+				and, for a method with a body, the body, read as the type its annotation says. It answers
+				<code>Ok(result)</code>, sent as JSON with the status 200, or <code>Err(refusal)</code>:
+				<code>BadRequest(why)</code> is a 400, <code>NotFound</code> a 404, and
+				<code>{"Answer(Server.redirect(…))"}</code> an answer of its own. This one answers the form on this
+				site's <a href={Paths.members_join}>joining page</a>, and sets a cookie:
 			</p>
 			<Code title={Sources.members_join_server.file} source={Sources.members_join_server.rocx} />
-
-			<Heading id="openapi">Their OpenAPI document</Heading>
+			<ul>
+				<li>
+					<strong>Bodies.</strong> A body is read when it is JSON (<code>application/json</code>) or a form
+					(URL-encoded, or <code>multipart/form-data</code> with files). A field that is missing, or can't be
+					read as its type, is a 400 that names it. Any other body, such as an upload of raw bytes, isn't
+					read: the handler takes <code>{"{}"}</code> as its body and reads <code>request.body</code>, the
+					bytes as they came.
+				</li>
+				<li>
+					<strong>Three more names.</strong> <code>events!</code> answers a GET that asks for events
+					(<code>accept: text/event-stream</code>) with a stream (<a href={"${Paths.calls}#events"}>events</a>).
+					<code>channel!</code> defines a channel that pages subscribe to
+					(<a href={"${Paths.calls}#channels"}>channels</a>). <code>respond!</code>, given the request, the
+					params and the context, answers every method the file doesn't name with a
+					<code>Server.Response</code> of its own: a page mounted from elsewhere, a JSON-RPC endpoint.
+				</li>
+				<li>
+					<strong>A page and endpoints at one path.</strong> A browser's GET (one that accepts HTML) gets the
+					page. Any other GET goes to <code>get!</code>, if the file has one, and every other method to its
+					handler. A method nothing answers is a 405 that lists the ones that are (<code>Allow</code>).
+				</li>
+				<li>
+					<strong>Typed at both ends.</strong> Each handler must be annotated, and rocx copies the annotations
+					into <code>Generated/Api.roc</code>, the app's contract: a function for each endpoint, with its
+					method, URL and types, which any module may import (a component, a job, an actor).
+					<code>Generated/Handlers.roc</code> binds each one to its handler, on the server only.
+				</li>
+				<li>
+					<strong>A form posted without JavaScript</strong> doesn't get the result or the refusal as JSON,
+					which the browser would show as a bare page. It goes back to the page it came from, with a flash
+					that page reads (<a href={"${Paths.calls}#forms"}>forms</a>).
+				</li>
+			</ul>
 			<p>
-				An app can serve its endpoints' OpenAPI document (3.2): each path and its params, each method and
-				what the comment above its handler says, and the JSON Schemas of what it is sent and what it
-				answers. A schema is the handler's type, as the compiler has it, so one nobody wrote down is there
-				too: this site's <code>{"GET /api/shout/{word}"}</code> has no annotation, and its document says it
-				answers <code>{"{ word : Str, shouted : Str, bytes : U64 }"}</code>. The endpoints a page reads are in
-				it too, since a page's data is an endpoint as any other. A body a form can send (a record of text,
-				numbers, yes-or-no, choices and lists of them, which the endpoint reads from a form as from JSON) is
-				listed three ways: <code>application/json</code>, <code>application/x-www-form-urlencoded</code> and
-				<code>multipart/form-data</code>, the form's schema the same but for a yes-or-no or a list, which
-				a form may leave out.
+				<a href={"${Paths.calls}#endpoints"}>Talking to the server</a> shows the rest: pages reading
+				endpoints as they render, handlers sending them, forms posting to them, and pages following their
+				events, with this site's endpoints live.
+			</p>
+
+			<Heading id="middleware">Middleware: what runs, in what order</Heading>
+			<p>
+				Middleware is code that runs around the answer to a request. It is given the request, the context
+				so far, and <code>next!</code>, what comes after it. It can answer the request itself (a guard
+				answers with a redirect or a 401), pass it on with more context (who is signed in), or change the
+				answer that comes back (add a header). Guards, sessions, security headers and logs are all
+				middleware, and <code>a.then(b)</code> runs <code>a</code>, then <code>b</code>.
+			</p>
+			<Code title={"${Sources.middleware_type.file}, in part"} source={Sources.middleware_type.rocx} numbers={Bool.False} />
+			<p>
+				Two places name middleware, and nothing else runs any. The first is the app's default middleware,
+				named in <code>main.roc</code>'s <code>App.program</code>, which runs around every request:
+			</p>
+			<Code title={Sources.route_main.file} source={Sources.route_main.rocx} numbers={Bool.False} />
+			<p>
+				The second is a route file's own, <code>middleware = …</code>. It runs after the default, around
+				that file's page or its endpoints. What it hands on is the <code>context</code> the file's handlers
+				are given (<code>{"get! = |{ context, .. }| …"}</code>). This site's middleware:
+			</p>
+			<Code title={Sources.site_middlewares.file} source={Sources.site_middlewares.rocx} />
+			<Versus>
+				<Code title={"${Sources.members_page.file}, in part"} source={Sources.members_page.rocx} numbers={Bool.False} />
+				<Code title={Sources.members_server.file} source={Sources.members_server.rocx} numbers={Bool.False} />
+			</Versus>
+			<p>
+				So a request to <code>/members</code> goes through the app's default middleware, then
+				<code>Middlewares.member</code>, then the page (for a browser) or <code>get!</code> (for anything
+				else). The answer goes back out through them, and picks up the default's headers on its way. The
+				page itself isn't given the context. It reads its own endpoint, <code>GET /members</code>, as it
+				renders, and the server answers that read behind the same middleware, so the handler gets the
+				member's name. <code>rocx routes</code> lists every route, the file that answers it, and the
+				middleware it runs behind:
+			</p>
+			<Code title="A terminal" source={Sources.route_list.rocx} numbers={Bool.False} plain />
+			<ul>
+				<li>
+					<strong>The context is typed.</strong> <code>member</code> is a
+					<code>{"Middleware({ facts : Str }, { facts : Str, member : Str })"}</code>: it is given the
+					default's context, and hands on one with <code>member</code> added. So the members' endpoint can
+					read <code>context.member</code>, and an endpoint that read it without that middleware in front
+					wouldn't compile.
+				</li>
+				<li>
+					<strong>Each file names its own.</strong> A page's middleware doesn't guard the endpoints beside it,
+					or the pages below it, so <code>members/+server.roc</code> names <code>Middlewares.member</code> too.
+					What guards a route is written in its file, and <code>rocx routes</code> shows them all together.
+				</li>
+				<li>
+					<strong>Try it with <code>just dev</code>.</strong> <a href={Paths.members}>/members</a> sends you to
+					join; join, and it greets you by the name you gave. The static copy of this site has no server to
+					ask, so these pages aren't in it.
+				</li>
+			</ul>
+
+			<Heading id="navigating">Navigating without a reload</Heading>
+			<p>
+				A click on a link to another of the app's pages doesn't reload the browser's page, as with Solid
+				Router's links. The runtime already running in the page fetches the new page's HTML document, as a
+				reload would get it: from the server, through its middleware, with the page's reads answered as it
+				rendered and any redirect followed (or, on a static copy, the file the build wrote). The app's wasm
+				already holds every page's code, so it renders the new page from that document's answers and
+				<code>{"<NoHydration>"}</code> parts, and asks for nothing else. An app needs no changes to get this,
+				and every link on this site works this way.
+			</p>
+			<p>
+				The old page stays on screen until the document is in. Then the address is pushed to the history,
+				the new page is made, and its <code>{"<head>"}</code> is brought in line with the document's (a
+				stylesheet already loaded stays). The page scrolls to the top, or to the element the link's
+				<code>#hash</code> names; the focus goes where a reload would put it (an <code>autofocus</code>
+				element, or the start of the page); and a screen reader hears the new title. Back and forward
+				render their entry's page the same way and restore its scroll. A document fetched in the last ten
+				seconds is used again.
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Write</th><th>What it does</th></tr></thead>
+					<tbody>
+						<tr><td><code>{"<a href={Paths.blog_slug({ slug })}>"}</code></td><td>renders the page in place. Any plain link does: in markup, in Markdown, inside a <code>{"<NoHydration>"}</code></td></tr>
+						<tr><td><code>{"<a href={…} replace noscroll>"}</code></td><td>replaces the history entry instead of pushing one; keeps the scroll where it is</td></tr>
+						<tr><td><code>{"rel=\"external\""}</code>, <code>target</code>, <code>download</code>, a modifier key</td><td>left to the browser, as on any page: a reload, a new tab, a download</td></tr>
+						<tr><td><code>{"navigate!(Paths.blog_slug({ slug }))"}</code></td><td>in a handler: goes to that page once the handler is done. <code>{"navigate_with!(to, { replace, scroll })"}</code> takes Solid Router's options (<code>{"import pf.Router exposing [navigate!, navigate_with!]"}</code>)</td></tr>
+						<tr><td><code>{"Router.is_routing!({})"}</code></td><td>whether a navigation is on its way, tracked: a progress bar's <code>{"class:on={…}"}</code></td></tr>
+						<tr><td><code>{"Router.location!({})"}</code></td><td>where the page is, <code>{"{ path, query }"}</code>, tracked: a hole that reads it follows each navigation</td></tr>
+						<tr><td><code>{"<A href={Paths.lists_id({ id })} end active_class=\"current\">"}</code></td><td>a link with Solid Router's active state: <code>aria-current="page"</code> and a class (<code>active</code> unless it names another) while the location is at its path (<code>end</code>) or under it (<code>{"import pf.A"}</code>)</td></tr>
+						<tr><td><code>{"search = use_search_params!({})"}</code></td><td>the query: <code>{"search.get!(\"days\")"}</code> and <code>{"search.all!()"}</code> read it, tracked; <code>{"search.set!([(\"days\", \"30\")])"}</code>, in a handler, merges into it (<code>{"\"\""}</code> takes a name out) and changes it in place (<code>{"import pf.Router exposing [use_search_params!]"}</code>)</td></tr>
+						<tr><td><code>{"<Navigate href={Paths.sign_in} />"}</code></td><td>sends the visitor elsewhere as the page renders: a 303 from the server, or, in the browser, a navigation that replaces the history entry (<code>{"import pf.Navigate"}</code>)</td></tr>
+						<tr><td><code>{"use_before_leave!(|leave| …)"}</code></td><td>in a component: asked before each navigation away; it may stop it (<code>{"leave.prevent!()"}</code>) and let it go later (<code>{"leave.retry!(Bool.True)"}</code>). Solid Router's <code>useBeforeLeave</code> (<code>{"import pf.Router exposing [use_before_leave!]"}</code>)</td></tr>
+						<tr><td><code>{"<form action=\"/search\">"}</code></td><td>a GET form: navigates in place to its URL, with its fields as the query</td></tr>
+						<tr><td><code>{"<html data-rocx-navigation=\"off\">"}</code></td><td>every link reloads the page instead; <code>"explicit"</code> navigates in place only for an <code>{"<A>"}</code>, or a link marked <code>data-rocx-link</code></td></tr>
+						<tr><td><code>{"data-rocx-preload=\"off\""}</code>, <code>{"\"viewport\""}</code></td><td>on a link or an element around it (<code>{"<html>"}</code> for the whole app): never prefetch; or prefetch as the link comes into sight, as well as on hover, focus and touch</td></tr>
+						<tr><td><code>{"<html data-rocx-transitions>"}</code></td><td>makes each navigation a View Transition, the browser's cross-fade, where the browser has them and the visitor hasn't asked for less motion. This site has it, with its bar and sidebar given a <code>view-transition-name</code> so they stay put while the page changes</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<ul>
+				<li>
+					<strong>Layouts are kept.</strong> Below the root layout, each layout above the page, and the page
+					itself, is a level. A level is made anew only when its file or its own params change. From one
+					blog post to the next, the blog's layout stays, and so do its sidebar's scroll, an open menu and its
+					signals; only the page is made again. One case breaks this: a level that reads where it is once, at
+					the top of its body (<code>{"path = Router.location!({}).path"}</code>), would keep showing the old
+					location, so the runtime makes it anew on every navigation, and a dev build says so in the console.
+					Read the location where you use it, in markup or a memo, and the level is kept. A kept level's
+					<code>{"<NoHydration>"}</code> parts are taken from the new page's document.
+				</li>
+				<li>
+					<strong>A change of the query alone happens in place.</strong> A link to <code>?days=30</code>,
+					<code>{"search.set!"}</code> or <code>{"navigate!(\"?days=30\")"}</code> fetches no document. The page
+					and its layouts stay, and whatever read the query reads it again. A read whose URL changed asks its
+					endpoint, behind that endpoint's middleware, and shows its last value meanwhile. Back goes to the
+					previous query. What only the server renders (a <code>{"<NoHydration>"}</code>) doesn't follow the
+					query, since the browser has no code for it.
+				</li>
+				<li>
+					<strong>The server decides, as on a reload.</strong> The document is fetched as a page's GET, with
+					<code>x-rocx-navigate: 1</code> so that a middleware that counts views can tell it from a reload. A
+					guard that refuses or redirects does so here too, and a redirect lands at its address. The browser
+					reloads instead when the target isn't one of this app's pages (a plugin's page, a file, a path no
+					page has), when the answer isn't a document of this build (a text 401, a crash, a new deploy's
+					page: the page says which build it is from), or when it can't be fetched.
+				</li>
+				<li>
+					<strong>A link is fetched before it is clicked.</strong> When the pointer rests on a link, the
+					keyboard focuses it or a finger touches it, its document is prefetched (with
+					<code>x-rocx-navigate: preload</code>), so the click has nothing left to ask. A prefetch renders a
+					page on the server that may never be seen: a middleware that counts views should leave those out,
+					and an app whose pages are costly to render can turn prefetching off.
+				</li>
+				<li>
+					<strong>Leaving unsaved work can ask first.</strong> A component that holds unsaved work registers a
+					listener with <code>{"use_before_leave!"}</code>. It runs before each navigation away from the page:
+					a link, <code>{"navigate!"}</code>, a form's redirect, a change of the query, back and forward. It
+					is told where the visitor is going (<code>to</code>, <code>from</code>, and for back and forward how
+					far, <code>delta</code>), and may stop the navigation: the page and its address stay (back and
+					forward, which had already changed the address, put it back). It can hold the navigation while the
+					app asks its own question, and a "Leave without saving" button lets it go with
+					<code>{"leave.retry!(Bool.True)"}</code>, skipping the listeners (<code>{"Bool.False"}</code> asks
+					them again). A listener decides from what the page already has, not by asking the server, and goes
+					away with its component. A real page load (another site, a reload, the tab closed) can't be held
+					that way: while a listener would stop one, the browser asks the visitor in its own words. The
+					<a href={Paths.examples_tasks}>tasks example</a>'s task page does this.
+				</li>
+				<li>
+					<strong>Page scripts run on a load only.</strong> A navigation doesn't run a
+					<code>{"<script>"}</code> the new page renders. Script that sets itself up on <code>rocx:ready</code>
+					should do so again on <code>rocx:navigated</code>, an event on the document with the URL and how long
+					the navigation took (this site's inspectors do).
+				</li>
+				<li>
+					<strong>What the old page started stops with it.</strong> Its effects' cleanups run, its timers and
+					event streams stop, and its channels are left, though a channel the next page subscribes to as well
+					keeps its stream.
+				</li>
+			</ul>
+
+			<Heading id="written">What rocx writes</Heading>
+			<p>
+				<code>rocx build</code> turns the routes into Roc modules under <code>Generated/</code>. You never edit
+				them, but knowing what they are helps when you read the compiler's reports:
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Module</th><th>What it holds</th></tr></thead>
+					<tbody>
+						<tr><td><code>ShowcasePage.roc</code>, <code>MembersServer.roc</code>…</td><td>each route file, as a module named after its path</td></tr>
+						<tr><td><code>Paths.roc</code></td><td>a path for every page (<a href="#params">typed links</a>)</td></tr>
+						<tr><td><code>Api.roc</code></td><td>the app's contract: a function for each endpoint and channel, with its method, URL and types</td></tr>
+						<tr><td><code>Handlers.roc</code></td><td>the server's only: each endpoint bound to its handler</td></tr>
+						<tr><td><code>Routes.roc</code></td><td>the server's router: the answer to a request (<a href="#router">below</a>)</td></tr>
+						<tr><td><code>Root.roc</code></td><td>the pages as one component, in their layouts: what the server renders and the browser hydrates and navigates</td></tr>
+						<tr><td><code>App.roc</code></td><td>the server's program, which <code>main.roc</code> finishes with <code>App.program</code></td></tr>
+						<tr><td><code>Styles.roc</code></td><td>the app's stylesheet, from the components' scoped <code>{"<style>"}</code>s</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				Roc names a module after its file, and <code>+page</code> isn't a valid name, so each route file
+				becomes a module of its own, named after its path (<code>routes/showcase/+page.rocx</code> is
+				<code>ShowcasePage</code>). rocx keeps the lines where they were: it puts the module's first line on
+				the blank line after the imports (or, with no blank line, at the start of the first definition's
+				line). Line <var>N</var> of the module is line <var>N</var> of the route file, so the compiler's
+				reports point at your lines:
+			</p>
+			<Code title={Sources.route_page_generated.file} source={Sources.route_page_generated.rocx} />
+
+			<Heading id="router">The router</Heading>
+			<p>
+				<code>Generated/Routes.roc</code>'s <code>respond!</code> is the answer to a request. It splits the
+				path into parts and tries each route, the fixed paths before the params. At a match, it answers
+				with the page inside its layouts (for a browser's GET), the endpoint for the method, or a 405. Where
+				nothing matches, it answers with the error page:
+			</p>
+			<Code title={"${Sources.route_routes.file}, in part"} source={Sources.route_routes.rocx} numbers={Bool.False} />
+			<p>
+				<code>App.program</code> answers every request with it, behind the app's default middleware, and
+				the GETs the server makes while it renders a page go the same way. When a file names middleware, its
+				page and its endpoints are wrapped in <code>Middleware.run!</code>, and the handler is given what the
+				middleware passed on:
+			</p>
+			<Code title={"${Sources.route_members.file}, in part"} source={Sources.route_members.rocx} numbers={Bool.False} />
+
+			<Heading id="openapi">The OpenAPI document</Heading>
+			<p>
+				An app can serve an OpenAPI document (3.2) of its endpoints, for a client generator or for people
+				exploring the API. It lists each path and its params, each method with the doc comment above its
+				handler, and the JSON Schemas of what each endpoint is sent and answers. A schema is the handler's
+				type as the compiler has it: this site's <code>{"GET /api/shout/{word}"}</code> answers
+				<code>{"{ word : Str, shouted : Str, bytes : U64 }"}</code>, and its document says so. The endpoints
+				pages read are in it too, since a page's data is an endpoint like any other. A body a form can send
+				(a record of text, numbers, yes-or-no, choices and lists of them) is listed three ways:
+				<code>application/json</code>, <code>application/x-www-form-urlencoded</code> and
+				<code>multipart/form-data</code>. The form's schema is the same, except that a yes-or-no or a list
+				may be left out, as a form leaves out a box nobody ticked.
 			</p>
 			<h3>Turning it on</h3>
-			<p>It is off unless the app says so, with <code>openapi</code> in its <code>App.program</code>:</p>
-			<Code title="main.roc" source={"program = App.program({\n\tinit!: |started| Ok({ started }),\n\tmiddleware: Middlewares.default,\n\topenapi: Page(Swagger),\n})"} numbers={Bool.False} />
+			<p>It is off unless the app turns it on, with <code>openapi</code> in its <code>App.program</code>:</p>
+			<Code title="main.roc" source={"program = App.program({\n\tinit!: |started| Ok({ facts: started }),\n\tmiddleware: Middlewares.default,\n\topenapi: Page(Swagger),\n})"} numbers={Bool.False} />
 			<TableWrap>
 				<table>
 					<thead><tr><th><code>openapi:</code></th><th>The app serves</th></tr></thead>
 					<tbody>
 						<tr><td><code>Off</code>, or no <code>openapi</code></td><td>neither</td></tr>
-						<tr><td><code>Document</code></td><td><code>GET /openapi.json</code>: the document, for a client generator</td></tr>
+						<tr><td><code>Document</code></td><td><code>GET /openapi.json</code>: the document</td></tr>
 						<tr><td><code>Page(Swagger)</code>, <code>Page(Scalar)</code></td><td>that, and <code>GET /openapi.html</code>: the document in Swagger UI, or in Scalar</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 			<ul>
 				<li>
-					<strong>Behind the app's middleware</strong>, as every answer is: a guard that keeps a page
+					<strong>It is behind the app's middleware</strong>, as every answer is: a guard that keeps a page
 					from strangers keeps these from them too.
 				</li>
 				<li>
 					<strong>The page loads its viewer from jsDelivr</strong>, pinned to one version and checked
 					against its hash, and tells it not to call home: no validator for Swagger UI; no telemetry, fonts,
-					developer tools or agent for Scalar. Bundled instead, a viewer would add 2 to 5 MB to every app's
+					developer tools or agent for Scalar. Bundling a viewer instead would add 2 to 5 MB to every app's
 					server.
 				</li>
 				<li>
-					<strong>An app that writes its own <code>program</code></strong> puts
-					<code>OpenApi.middleware(Page(Swagger), Api.openapi)</code> at the end of its middleware chain,
-					as <code>App.program</code> does, or asks <code>OpenApi.respond</code> before its routes, as this
-					site's does (<a href="#middleware">below</a>).
+					<strong>An app that writes its own <code>program</code></strong>, instead of using
+					<code>App.program</code>, puts <code>OpenApi.middleware(Page(Swagger), Api.openapi)</code> at the end
+					of its middleware chain, as <code>App.program</code> does, or asks
+					<code>OpenApi.respond</code> before its routes.
 				</li>
 			</ul>
 			<p>
@@ -210,8 +471,8 @@ view! = |_|
 			</p>
 			<h3>Who makes it, and when</h3>
 			<p>
-				Neither platform: rocx writes Roc that asks for it, the compiler works it out, and the server only
-				sends it.
+				Neither platform makes it: rocx writes Roc that asks for it, the compiler works it out, and the
+				server only sends it.
 			</p>
 			<TableWrap>
 				<table>
@@ -223,17 +484,19 @@ view! = |_|
 							<td>
 								Writes Roc, and knows no types. <code>Generated/Api.roc</code> gets <code>openapi</code>: each
 								path, its params and its methods, with their comments, and for each endpoint a call that asks
-								<code>OpenApi</code> for the schemas of its body and its answer; and <code>tags</code>, every name
-								in the app's code that could be a tag. <code>Generated/Routes.roc</code> gets <code>/openapi.json</code>.
+								<code>OpenApi</code> for the schemas of its body and its answer. It also gets <code>tags</code>,
+								every name in the app's code that could be a tag. <code>Generated/App.roc</code> serves the
+								document, as <code>openapi</code> says.
 							</td>
 						</tr>
 						<tr>
 							<td><code>roc build</code>, the server's</td>
 							<td>the Roc compiler</td>
 							<td>
-								Infers each endpoint's types; writes, for each, a parser for the format <code>OpenApi.Schema</code>,
-								as it writes one for <code>Json</code> to read the endpoint's body; and, <code>openapi</code> being a
-								constant, works it out as it compiles. The server's binary holds the document, as text.
+								Infers each endpoint's types and writes, for each, a parser for the format
+								<code>OpenApi.Schema</code>, as it writes one for <code>Json</code> to read the endpoint's
+								body. Since <code>openapi</code> is a constant, the compiler works out its value as it
+								compiles: the server's binary holds the document as text.
 							</td>
 						</tr>
 						<tr>
@@ -246,22 +509,22 @@ view! = |_|
 			</TableWrap>
 			<p>
 				The browser's build (wasm) has none of it: its copy of <code>Api</code> is the same contract (each
-				endpoint's method, URL and types), and no document. What rocx writes for this site, in part:
+				endpoint's method, URL and types), without the document. What rocx writes for this site, in part:
 			</p>
 			<Code title={"${Sources.openapi_api.file}, in part"} source={Sources.openapi_api.rocx} numbers={Bool.False} />
 			<h3>A parser that writes</h3>
 			<p>
 				Roc has no reflection: no code can ask what a type is. But the parser the compiler writes for a type
-				isn't JSON's: it is one for any format, which it calls, shape by shape, to read each part (a record,
-				its next field, a string, a number), and it hands a record's format the names of its fields.
-				<code>OpenApi.Schema</code> is a format that reads nothing: each part it is asked to read, it writes
-				the schema of, as <code>Json</code> writes that part, and gives back a value nothing looks at.
-				<code>OpenApi.body</code> asks the compiler for the parser of what the endpoint is sent, for
-				<code>Schema</code>, and runs it:
+				isn't tied to JSON. It works with any format: it calls the format, shape by shape, to read each part
+				(a record, its next field, a string, a number), and it hands a record's format the names of its
+				fields. <code>OpenApi.Schema</code> is a format that reads nothing. For each part it is asked to
+				read, it writes that part's schema, as <code>Json</code> would write that part, and gives back a value
+				nothing looks at. <code>OpenApi.body</code> asks the compiler for the parser of what the endpoint is
+				sent, for <code>Schema</code>, and runs it:
 			</p>
 			<Code title={"${Sources.openapi_format.file}, in part"} source={Sources.openapi_format.rocx} numbers={Bool.False} />
 			<p>
-				So for <code>{"GET /api/shout/{word}"}</code>'s answer, <code>{"{ word : Str, shouted : Str, bytes : U64 }"}</code>,
+				So for the answer of <code>{"GET /api/shout/{word}"}</code>, <code>{"{ word : Str, shouted : Str, bytes : U64 }"}</code>,
 				the parser and <code>Schema</code> go:
 			</p>
 			<TableWrap>
@@ -277,11 +540,11 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				A tag union's parser is the one part that doesn't say what it has: it asks the format for a tag's
+				A tag union is the one shape whose parser doesn't say what it holds: it asks the format for a tag's
 				name, then reads that tag's payloads. So rocx gives the document <code>tags</code>, every name in the
-				app's code that could be one (its own, and its packages' and platforms'), and <code>Schema</code>
-				answers each in turn: a name that isn't one of the union's, the parser turns down; one that is, it
-				reads the payloads of, and <code>Schema</code> writes their schemas. <code>{"[Red, Rgb(U8, U8, U8)]"}</code>
+				app's code that could be a tag (its own, and its packages' and platforms'), and <code>Schema</code>
+				offers each in turn. The parser turns down a name that isn't one of the union's; for one that is, it
+				reads the payloads, and <code>Schema</code> writes their schemas. <code>{"[Red, Rgb(U8, U8, U8)]"}</code>
 				is a string, <code>"Red"</code>, or an object, <code>{"{ \"Rgb\": [r, g, b] }"}</code>, as <code>Json</code>
 				writes them.
 			</p>
@@ -295,197 +558,31 @@ view! = |_|
 				</li>
 				<li>
 					<strong>A type of your own</strong> (<code>{"Email := Str.{ parser_for : _ }"}</code>) is described as
-					<code>Json</code> reads it. Write its own parser for any format (<code>encoding.parse_str</code>), not
-					for JSON alone, and the document can describe it too.
+					<code>Json</code> reads it. Write its parser for any format (<code>encoding.parse_str</code>), not for
+					JSON alone, and the document can describe it too.
 				</li>
 			</ul>
-
-			<Heading id="middleware">Middleware: what runs, in what order</Heading>
-			<p>
-				Middleware is code that runs around an answer. It is given the request, the context so far and what
-				comes next (<code>next!</code>), and may answer itself (a guard: a redirect, a 401), pass the request
-				on with more context (who is asking), or change the answer that comes back (a header). A guard, a
-				session, headers, a log: one idea, and <code>a.then(b)</code> is <code>a</code>, then <code>b</code>.
-			</p>
-			<Code title={"${Sources.middleware_type.file}, in part"} source={Sources.middleware_type.rocx} numbers={Bool.False} />
-			<p>
-				Two places name middleware, and nothing else runs any. The app's default runs around every request,
-				in its <code>respond!</code>:
-			</p>
-			<Code title={Sources.route_main.file} source={Sources.route_main.rocx} numbers={Bool.False} />
-			<p>
-				A route file names its own, <code>middleware = …</code>, which runs after the default, around that
-				file's page or endpoints, and hands on the context they are given (an endpoint's handler reads it
-				as <code>context</code>: <code>{"get! = |{ context, .. }| …"}</code>). This site's:
-			</p>
-			<Code title={Sources.site_middlewares.file} source={Sources.site_middlewares.rocx} />
-			<Versus>
-				<Code title={"${Sources.members_page.file}, in part"} source={Sources.members_page.rocx} numbers={Bool.False} />
-				<Code title={Sources.members_server.file} source={Sources.members_server.rocx} numbers={Bool.False} />
-			</Versus>
-			<p>
-				So a request to <code>/members</code> goes through the app's default, then
-				<code>Middlewares.member</code>, then the page (for a browser) or <code>get!</code>; the answer goes
-				back out through them, gathering the default's headers. The page reads <code>GET /members</code> as
-				it renders, and the server answers that the same way, behind the same middleware.
-				<code>rocx routes</code> lists every route, the file that answers it, and what it runs behind:
-			</p>
-			<Code title="A terminal" source={Sources.route_list.rocx} numbers={Bool.False} plain />
-			<ul>
-				<li>
-					<strong>The context is typed.</strong> <code>member</code> is a
-					<code>{"Middleware({ facts : Str }, { facts : Str, member : Str })"}</code>, so the members' endpoint
-					reads <code>context.member</code>; one that read it without that middleware wouldn't compile. A
-					layout reads only what every page's context has (<code>{"{ facts, .. }"}</code>).
-				</li>
-				<li>
-					<strong>Each file names its own.</strong> A page's middleware doesn't guard the endpoints beside it,
-					or the pages below: <code>members/+server.roc</code> names <code>Middlewares.member</code> too.
-					What guards a route is in its file, and <code>rocx routes</code> shows them all, together.
-				</li>
-				<li>
-					<strong>Try it, with <code>just dev</code>.</strong> <a href={Paths.members}>/members</a> sends you
-					to join; join, and it greets you by the name you gave. A copy of this site as files has no server
-					to ask, so these pages aren't in it.
-				</li>
-			</ul>
-
-			<Heading id="router">The router, and the app</Heading>
-			<p>
-				<code>Generated/Routes.roc</code> has one function: the answer to a request. It takes the path
-				apart and tries each, the fixed before the params; there, the page for a browser's GET, in its
-				layouts, or the endpoint for the method, or a 405; and the error page where nothing is:
-			</p>
-			<Code title={"${Sources.route_routes.file}, in part"} source={Sources.route_routes.rocx} numbers={Bool.False} />
-			<p>
-				The app's server answers every request with it, behind its default middleware (<a href="#middleware">above</a>),
-				the GETs it makes as a page renders too. A file that names middleware has its page and its
-				endpoints wrapped in <code>Middleware.run!</code>, given what the middleware passes on:
-			</p>
-			<Code title={"${Sources.route_members.file}, in part"} source={Sources.route_members.rocx} numbers={Bool.False} />
-
-			<Heading id="navigating">Navigating, without a load</Heading>
-			<p>
-				A click on a link to another of the app's pages doesn't load it, as Solid Router's links don't: the
-				runtime already running in the page fetches the page's document, as the server answers a load
-				(behind its middleware, its reads answered as it renders, a redirect followed), or the file a static
-				build wrote, and the wasm, which holds every page, renders it from that document's answers and
-				<code>{"<NoHydration>"}</code> regions, asking for nothing else. The old page stays until the
-				document is in; then the address is pushed, the page is made, its <code>{"<head>"}</code>
-				reconciled with the document's (a stylesheet already there stays), the scroll put at the top (or
-				at the element the link's hash names), the focus at the start of the page, and the new title said
-				to a screen reader. Back and forward render their entry's page the same way, its scroll restored,
-				and a document fetched in the last ten seconds is used again. Every link on this site is one:
-				follow one and the page you leave isn't loaded again. An app changes nothing to have it.
-			</p>
-			<TableWrap>
-				<table>
-					<thead><tr><th>Write</th><th>Does</th></tr></thead>
-					<tbody>
-						<tr><td><code>{"<a href={Paths.blog_slug({ slug })}>"}</code></td><td>renders the page in place: a plain link, here, in Markdown, inside a <code>{"<NoHydration>"}</code></td></tr>
-						<tr><td><code>{"<a href={…} replace noscroll>"}</code></td><td>replaces the history entry instead of pushing one; keeps the scroll where it is</td></tr>
-						<tr><td><code>{"rel=\"external\""}</code>, <code>target</code>, <code>download</code>, a modifier key</td><td>the browser's, as on any page: a load, a new tab, a download</td></tr>
-						<tr><td><code>{"navigate!(Paths.blog_slug({ slug }))"}</code></td><td>in a handler: to that page, once the handler is done; <code>{"navigate_with!(to, { replace, scroll })"}</code> with Solid Router's options (<code>{"import pf.Router exposing [navigate!, navigate_with!]"}</code>)</td></tr>
-						<tr><td><code>{"Router.is_routing!({})"}</code></td><td>whether one is on its way, tracked: a progress bar's <code>{"class:on={…}"}</code></td></tr>
-						<tr><td><code>{"use_before_leave!(|leave| …)"}</code></td><td>in a component: asked before each navigation away, which it may stop (<code>{"leave.prevent!()"}</code>) and let go later (<code>{"leave.retry!(Bool.True)"}</code>); a load, the browser asks about while it would stop one (Solid Router's <code>useBeforeLeave</code>; <code>{"import pf.Router exposing [use_before_leave!]"}</code>)</td></tr>
-						<tr><td><code>{"Router.location!({})"}</code></td><td>where the page is, tracked: a hole that reads it follows each navigation</td></tr>
-						<tr><td><code>{"<A href={Paths.lists_id({ id })} end active_class=\"current\">"}</code></td><td>a link with Solid Router's active state: <code>aria-current="page"</code> and its class (<code>active</code> unless it says) while the page is at its path (<code>end</code>) or under it (<code>{"import pf.A"}</code>)</td></tr>
-						<tr><td><code>{"search = use_search_params!({})"}</code></td><td>the query: <code>{"search.get!(\"days\")"}</code> and <code>{"all!()"}</code> read it, tracked; <code>{"search.set!([(\"days\", \"30\")])"}</code>, in a handler, merges into it (<code>{"\"\""}</code> takes a name out) and changes it in place (<code>{"import pf.Router exposing [use_search_params!]"}</code>)</td></tr>
-						<tr><td><code>{"<Navigate href={Paths.sign_in} />"}</code></td><td>sends the visitor elsewhere as the page renders: a 303 from the server, a navigation that replaces the entry in the browser (<code>{"import pf.Navigate"}</code>)</td></tr>
-						<tr><td><code>{"<form action=\"/search\">"}</code></td><td>a GET form: a navigation to its URL with its fields as the query, in place</td></tr>
-						<tr><td><code>{"<html data-rocx-navigation=\"off\">"}</code></td><td>every link loads its page, as before</td></tr>
-						<tr><td><code>{"data-rocx-preload=\"off\""}</code>, <code>{"\"viewport\""}</code></td><td>on a link or above it (<code>{"<html>"}</code> for the app): never prefetch; prefetch as it comes into sight, as well as on hover, focus and touch</td></tr>
-						<tr><td><code>{"<html data-rocx-transitions>"}</code></td><td>each navigation a View Transition, the browser's cross-fade, where it has them and less motion isn't asked for; this site has it, with its bar and sidebar given a <code>view-transition-name</code> so they stay put while the page changes</td></tr>
-					</tbody>
-				</table>
-			</TableWrap>
-			<ul>
-				<li>
-					<strong>Layouts are kept.</strong> Below the root layout, each layout above the page, and the page,
-					is a level, made anew only when its file or its own params change: from one post to the next, the
-					blog's layout stays, its sidebar's scroll, an open menu and its signals with it, and only the page
-					is made. A level that read where it is once, in its body (<code>{"path = Router.location!({}).path"}</code>
-					at its top), would show where it was, so the runtime makes it anew on every navigation (a dev build
-					says so in the console): read it where it is used, in markup or a memo, and the level is kept. A
-					kept level's <code>{"<NoHydration>"}</code> parts are the next page's document's.
-				</li>
-				<li>
-					<strong>A change of the query alone is made in place.</strong> A link to <code>?days=30</code>,
-					<code>{"set!"}</code> or <code>{"navigate!(\"?days=30\")"}</code> fetches no document: the page and
-					its layouts stay, what read the query reads again (a read whose URL changed asks its endpoint, behind
-					that endpoint's middleware, its last value shown meanwhile), and Back goes to the last query. What
-					only the server renders (a <code>{"<NoHydration>"}</code>) doesn't follow it: the browser has no
-					code for it.
-				</li>
-				<li>
-					<strong>The server decides, as on a load.</strong> The document's request is a page's GET (with
-					<code>x-rocx-navigate: 1</code>, for a middleware that counts views to tell the two apart), so a
-					guard that refuses or redirects does so here too, and a redirect lands with its address. What
-					isn't a page of this app's (a plugin's page, a file, a path no page has), or isn't a document of
-					this build (a text 401, a crash, a new deploy's page: the bootstrap says the build's id), or
-					can't be fetched, the browser loads.
-				</li>
-				<li>
-					<strong>A link is fetched before it is clicked.</strong> One the pointer rests on, the keyboard
-					focuses or a finger touches is prefetched (its document, with <code>x-rocx-navigate: preload</code>),
-					so the click asks nothing more. A prefetch is a page rendered on the server, a view that may not
-					come: a middleware that counts views leaves those out, and an app whose pages are costly to render
-					turns it off.
-				</li>
-				<li>
-					<strong>Leaving unsaved work asks first.</strong> A component that holds it registers a listener
-					(<code>{"use_before_leave!"}</code>), run before each navigation away from the page: a link,
-					<code>{"navigate!"}</code>, a form's redirect, back and forward. It is told where the visitor is
-					going (<code>to</code>, <code>from</code>, and for back and forward how far, <code>delta</code>),
-					and may stop it: the page and its address stay (back and forward, whose address had changed, go
-					back where they were). It may keep the leave for the app's own question, whose "Leave without
-					saving" lets it go (<code>{"leave.retry!(Bool.True)"}</code>, past every listener;
-					<code>{"Bool.False"}</code> asks them again). It decides from what the page has, not from the
-					server, and goes with its component. A load (another site, a reload, the tab closed) the page
-					can't hold: while a listener would stop one, the browser asks, in its own words. The tasks
-					example's task page does it.
-				</li>
-				<li>
-					<strong>Page scripts run on a load.</strong> A <code>{"<script>"}</code> a page renders isn't run
-					again by a navigation: script that set itself up on <code>rocx:ready</code> does so again on
-					<code>rocx:navigated</code>, which the document says with the URL and how long it took (this
-					site's inspectors do).
-				</li>
-				<li>
-					<strong>What the old page started stops with it</strong>: its effects' cleanups run, its timers
-					and listens stop, its channels are left (a channel the next page subscribes to as well keeps its
-					stream).
-				</li>
-			</ul>
-
-			<Heading id="error">Where no page is</Heading>
-			<p>
-				<code>routes/+error.rocx</code> renders what a path nothing answers shows, in the layouts at the root,
-				for a browser, and the status is 404. It is also what a page shows when it fails and nothing in it
-				catches that: a read its endpoint refused with a 4xx keeps that status (<code>NotFound</code>, the
-				page's 404), and anything else is a 500. This site's lists the pages of the part of the docs the path is in (try <a href="/nowhere">/nowhere</a>, or <a href="/platform/nowhere">/platform/nowhere</a>):
-			</p>
-			<Code title={Sources.route_error.file} source={Sources.route_error.rocx} />
 
 			<Heading id="limits">Not yet</Heading>
 			<ul>
 				<li>
-					<strong>A static build writes the pages without params</strong> (<code>Paths.all</code>); one with
-					params would need a list of the ones to write.
+					<strong>No static pages with params.</strong> This site's static copy writes the pages without
+					params (<code>Paths.all</code>) and without middleware of their own. A page with params would need a
+					list of the values to write.
 				</li>
 				<li>
-					<strong>One error page</strong>, the app's, at the root of <code>routes/</code>; and layouts aren't
-					given the params.
+					<strong>One error page</strong>, the app's, at the root of <code>routes/</code>: <code>rocx build</code>
+					refuses a <code>+error.rocx</code> anywhere else.
 				</li>
 				<li>
-					<strong>No rest params</strong> (<code>[...path]</code>) or groups (<code>(marketing)</code>) yet,
+					<strong>No rest params</strong> (<code>[...path]</code>) or route groups (<code>(marketing)</code>),
 					and no middleware for a whole directory: each file names its own.
 				</li>
 				<li>
-					<strong>The OpenAPI document</strong> calls every field required, describes a type that holds
-					itself (a tree) only so deep, and has no <code>$ref</code>s; it is titled after the app's
-					directory. A tag union's tags come from the names in the code until Roc's parser says them, as it
-					says a record's fields.
+					<strong>The OpenAPI document</strong> calls every JSON field required, describes a type that holds
+					itself (a tree) only so many levels deep, and has no <code>$ref</code>s. Its title is the app's
+					directory's name. A tag union's tags come from the names in the app's code, until Roc's parsers say
+					which tags a union has, as they say a record's fields.
 				</li>
 			</ul>
 		</NoHydration>

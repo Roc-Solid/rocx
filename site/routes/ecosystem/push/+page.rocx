@@ -10,19 +10,19 @@ import ../../../Ui/TableWrap
 import ../../../Generated/Sources
 import ../../../Generated/Paths
 
-## The push package, a plugin: how Web Push goes, the package's example app file by file, `<PushButton>` and
-## its states, a notification and its options (live: the package's functions in the browser),
-## sending, the modules, and what works today and what waits on a proposal. Static but for the
-## notification demo: this site is files, and a push needs a server.
+## The push package, a plugin: the package's example app file by file, `<PushButton>` and its
+## states, a notification and its options (live: the package's functions in the browser), sending,
+## how Web Push goes, the modules, safety, and what works today and what waits on a proposal.
+## Static but for the notification demo: this site is files, and a push needs a server.
 meta = {
 	title: "Push",
 	description: "Web Push notifications for Roc Solid apps, as a plugin: a button that subscribes, a table that keeps each browser's subscription, and jobs that send. Sending waits on the server's host.",
 	toc: [
-		{ id: "how", label: "How it works" },
 		{ id: "example", label: "A first app" },
 		{ id: "button", label: "<PushButton>" },
 		{ id: "notification", label: "A notification" },
 		{ id: "sending", label: "Sending" },
+		{ id: "how", label: "How it works" },
 		{ id: "modules", label: "The modules" },
 		{ id: "safety", label: "Safety" },
 		{ id: "status", label: "Status" },
@@ -36,96 +36,76 @@ view! = |_|
 				kicker={[<>{"The ecosystem · "}</>, <code>packages/push</code>]}
 				title="Notifications that arrive with every tab closed"
 			>
-				Web Push lets a server send a notification to a browser that said yes, even when none of the
-				site's tabs is open. This package has each part, a plugin an app lists in one line: a button that
-				asks and subscribes, a table that keeps each browser's subscription, and a job that sends to it. One
-				piece is missing: the server's host can't yet do the encryption Web Push needs, so today every send fails and says why (see
-				<a href="#status">Status</a>).
+				Web Push lets a server send a notification to a browser that agreed to receive them, even when none
+				of the site's tabs is open. This package is a plugin with every part of it: a button that asks and
+				subscribes, a table that keeps each browser's subscription, and a job that sends.
 			</PageHero>
-
-			<Heading id="how">How it works</Heading>
-			<ol>
-				<li>
-					A click on <code>{"<PushButton>"}</code> asks the browser's permission. Browsers ask only during a
-					click, a key press or a tap.
-				</li>
-				<li>
-					The browser subscribes at its push service (Google's for Chrome, Mozilla's for Firefox, Apple's
-					for Safari, Microsoft's for Edge), with the server's public key. It gets a subscription: a URL at
-					that service, and two keys.
-				</li>
-				<li>The page posts the subscription to the app, which keeps it in a table: a row for each browser.</li>
-				<li>Later, the server calls <code>Push.notify!</code>, which queues a job for each of the user's subscriptions.</li>
-				<li>
-					The job encrypts the notification for that one browser (RFC 8291), signs a token that says which
-					server sent it (VAPID, RFC 8292), and posts both to the subscription's URL (RFC 8030).
-				</li>
-				<li>
-					The push service wakes the browser. The package's service worker shows the notification, and a
-					click on it opens the page it names.
-				</li>
-			</ol>
-			<p>The package comes in three parts:</p>
-			<ul>
-				<li>
-					<strong>Plain Roc</strong>, on no platform: the formats, the key derivation, the token, and what
-					each answer means. <code>roc test packages/push/main.roc</code> checks it against the RFCs' own
-					examples. The browser's half sees these too (<code>browser.roc</code>).
-				</li>
-				<li>
-					<strong>The plugin</strong>, <code>{"Push.plugin({})"}</code>: its endpoints, a table that keeps
-					subscriptions in the app's database (Postgres or SQLite), and a job that sends, which the
-					<a href={Paths.ecosystem_jobs}>jobs</a> plugin runs (packages/jobs, which the app lists too). It
-					uses the server platform, which the package names in its header
-					(<a href={"${Paths.platform_server}#plugins"}>plugins</a>).
-				</li>
-				<li>
-					<strong>The browser's part</strong>: <code>{"<PushButton>"}</code> (in <code>components/</code>,
-					which <code>rocx build</code> copies into the app), the page's script and the service worker (in
-					<code>static/</code>), which the plugin serves: the worker at the site's root, so its scope is the
-					whole site, and the script on every page.
-				</li>
-			</ul>
+			<p>
+				Use it for news a user wants even when they aren't looking at your site: a reply to their question,
+				an export that finished, an order that shipped. One piece is still missing. The server's host can't
+				yet do the encryption Web Push needs, so today every send fails and says why (see
+				<a href="#status">Status</a>). Everything else works and is tested.
+			</p>
 
 			<Heading id="example">A first app</Heading>
 			<p>
-				The package has a small app, <code>packages/push/example</code>: a page with the button and a button
-				that notifies everyone. Each file below is that app's. This site can't run it: the site is static
-				files, and Web Push needs a server.
+				The package has a small app, <code>packages/push/example</code>: a page with the subscribe button and
+				a button that notifies everyone. Each file below is that app's. This site can't run it, because the
+				site is static files and Web Push needs a server.
 			</p>
 			<p>
-				<strong>1. Keys.</strong> <code>node packages/push/vapid-keys.mjs</code> prints a key pair. Give the
-				server <code>VAPID_PUBLIC_KEY</code>, <code>VAPID_PRIVATE_KEY</code> and <code>VAPID_SUBJECT</code>
+				<strong>1. Keys.</strong> Web Push identifies your server by a key pair, called the VAPID keys.
+				<code>node packages/push/vapid-keys.mjs</code> prints one. Give the server
+				<code>VAPID_PUBLIC_KEY</code>, <code>VAPID_PRIVATE_KEY</code> and <code>VAPID_SUBJECT</code>
 				(<code>mailto:</code> and an address, or an <code>https:</code> URL) in its environment. The private
 				key never leaves the server. A browser that subscribed with one public key can only be sent to with
-				that pair. The plugin needs all three: without one, or with a pair that isn't one, the server doesn't
-				start, and says why.
+				that pair, so keep the keys once you have users. The plugin needs all three: if one is missing, or
+				the two keys don't belong together, the server doesn't start, and says why.
 			</p>
 			<p>
-				<strong>2. The plugin</strong>, in the app's header and its plugins, with the jobs plugin, which runs
-				its job:
+				<strong>2. The plugin.</strong> Name the package in the app's header and list its plugin, together
+				with the <a href={Paths.ecosystem_jobs}>jobs</a> plugin, which runs the job that sends:
 			</p>
 			<Code title={Sources.push_example_main.file} source={Sources.push_example_main.rocx} />
+			<p>That is all the server needs. The plugin brings:</p>
+			<ul>
+				<li>
+					three endpoints, behind the app's middleware: <code>GET /push/key</code> (the public key),
+					<code>POST /push/subscribe</code> and <code>POST /push/unsubscribe</code>;
+				</li>
+				<li>its table, <code>push_subscriptions</code>, in the app's database (Postgres or SQLite);</li>
+				<li>its job, <code>push.deliver</code>, which the jobs plugin's workers run;</li>
+				<li>
+					the service worker at <code>/push-sw.js</code>, and a script every page loads. Both are served before
+					the app's middleware, so a guard never blocks them.
+				</li>
+			</ul>
+			<p>Two options change the defaults:</p>
+			<ul>
+				<li>
+					<code>{"Push.plugin({ at: \"/notifications\" })"}</code> puts the endpoints under another path (give
+					the button the same path).
+				</li>
+				<li>
+					<code>{"Push.plugin({ owner: |context| context.member })"}</code> makes each subscription belong to the
+					signed-in user, read from the context your middleware hands on. Then <code>Push.notify!</code> can
+					send to that user's browsers. Without it, every subscription is a visitor's (<code>""</code>).
+				</li>
+			</ul>
 			<p>
-				That is all the server needs. The plugin answers <code>GET /push/key</code>, <code>POST
-				/push/subscribe</code> and <code>POST /push/unsubscribe</code> behind the app's middleware; makes its
-				table; runs <code>push.deliver</code> on the jobs plugin's workers; and serves the service worker at
-				<code>/push-sw.js</code> and the page's script, which every page loads, before the app's middleware,
-				so a guard never blocks them. <code>{"Push.plugin({ at: \"/notifications\" })"}</code> puts the
-				endpoints elsewhere; <code>{"Push.plugin({ owner: |context| context.member })"}</code> makes each
-				subscription the signed-in user's, as the app's middleware hands it on, where without it each is a
-				visitor's (<code>""</code>).
+				<strong>3. The page.</strong> The button, and a handler that asks an endpoint to notify everyone:
 			</p>
-			<p><strong>3. The page</strong>: the button, and a handler that asks an endpoint to notify everyone.</p>
 			<Code title={Sources.push_example_page.file} source={Sources.push_example_page.rocx} />
 			<Code title={Sources.push_example_announce.file} source={Sources.push_example_announce.rocx} />
 
 			<Heading id="button">{"<PushButton>"}</Heading>
 			<p>
 				A button that turns this browser's notifications on, and off again. A click calls the plugin's script
-				(<code>static/push.js</code>) with <a href={"${Paths.components}#effects"}><code>Browser.call!</code></a>.
-				The script asks permission, registers the service worker, subscribes with the server's key, and
-				posts the subscription. Turning notifications off unsubscribes, and tells the server.
+				(<code>static/push.js</code>) with <a href={"${Paths.components}#handlers"}><code>Browser.call!</code></a>.
+				The script asks the browser's permission, registers the service worker, subscribes with the server's
+				public key, and posts the subscription to the server. Turning notifications off unsubscribes and tells
+				the server. Browsers only show the permission prompt during a click, a key press or a tap, which is why
+				subscribing starts from a button.
 			</p>
 			<TableWrap>
 				<table>
@@ -134,17 +114,18 @@ view! = |_|
 						<tr>
 							<td><code>api : Str</code></td>
 							<td>
-								where the app's push endpoints are: with <code>"/push"</code>, <code>GET /push/key</code> (the
-								public key), <code>POST /push/subscribe</code> and <code>POST /push/unsubscribe</code>
+								where the plugin's endpoints are: with <code>"/push"</code>, <code>GET /push/key</code>,
+								<code>POST /push/subscribe</code> and <code>POST /push/unsubscribe</code>
 							</td>
 						</tr>
 					</tbody>
 				</table>
 			</TableWrap>
 			<p>
-				The script says how a click went in a <code>pushstate</code> event, which every
-				<code>{"<PushButton>"}</code> on the page hears. When the page wakes up, the script also says where
-				this browser stands. The button reads each state with the package's <code>PushState</code>:
+				<code>Browser.call!</code> can't return an answer, so the script reports how a click went with a
+				<code>pushstate</code> event, which every <code>{"<PushButton>"}</code> on the page hears. When the page
+				loads, the script also reports where this browser stands. The button turns each report into a
+				<code>PushState</code> and shows it:
 			</p>
 			<TableWrap>
 				<table>
@@ -154,7 +135,7 @@ view! = |_|
 			</TableWrap>
 			<p>
 				<code>aria-pressed</code> on the button says whether notifications are on, and a screen reader reads
-				the note when it changes (<code>aria-live</code>). On an iPhone or an iPad, a site has Web Push only
+				the note when it changes (<code>aria-live</code>). On an iPhone or an iPad, a site gets Web Push only
 				once it is added to the Home Screen and opened from there.
 			</p>
 			<details>
@@ -164,10 +145,9 @@ view! = |_|
 
 			<Heading id="notification">A notification</Heading>
 			<p>
-				A notification is a title, a body, the page a click opens (<code>url</code>) and a <code>tag</code>:
-				a newer notification with the same tag replaces an older one. Its options tell the push service how to
-				treat it. Change them below: the package's own functions, running in your browser, show what a server
-				would send.
+				A notification is a title, a body, the page a click opens (<code>url</code>) and a <code>tag</code>.
+				Its options tell the push service how to treat the message. Change them below: the package's own
+				functions, running in your browser, show what a server would send.
 			</p>
 		</NoHydration>
 		<Demo>
@@ -183,7 +163,7 @@ view! = |_|
 				<table>
 					<thead><tr><th>Field</th><th>Is</th></tr></thead>
 					<tbody>
-						<tr><td><code>title : Str</code></td><td>the notification's first line</td></tr>
+						<tr><td><code>title : Str</code></td><td>the notification's first line; empty: the site's host name</td></tr>
 						<tr><td><code>body : Str</code></td><td>the text under it</td></tr>
 						<tr><td><code>url : Str</code></td><td>the page a click opens, on this site only; empty: the front page</td></tr>
 						<tr><td><code>tag : Str</code></td><td>a newer notification with the same tag replaces this one, rather than piling up</td></tr>
@@ -192,7 +172,7 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				<code>{"Notification.new(title, body)"}</code> makes one with the rest empty, and
+				<code>{"Notification.new(title, body)"}</code> makes one with the other fields empty, and
 				<code>{"{ ..Notification.new(title, body), url: \"/orders/17\" }"}</code> sets more. Empty fields are
 				left out of the JSON.
 			</p>
@@ -203,19 +183,19 @@ view! = |_|
 						<tr>
 							<td><code>ttl : U64</code></td>
 							<td>
-								seconds the push service keeps the message for a browser that is offline: 0 is now or never,
-								and more than four weeks is sent as four weeks
+								how many seconds the push service keeps the message for a browser that is offline. 0 means now
+								or never; more than four weeks is sent as four weeks.
 							</td>
 						</tr>
 						<tr>
 							<td><code>urgency : [VeryLow, Low, Normal, High]</code></td>
-							<td>how soon it must arrive: a phone on battery may hold the low ones back</td>
+							<td>how soon it must arrive. A phone on battery may hold the low ones back.</td>
 						</tr>
 						<tr>
 							<td><code>topic : Str</code></td>
 							<td>
 								a newer message with the same topic replaces one still waiting, so only the latest status
-								arrives: 32 characters at most, of letters, digits, <code>-</code> and <code>_</code>
+								arrives. At most 32 characters, of letters, digits, <code>-</code> and <code>_</code>.
 							</td>
 						</tr>
 					</tbody>
@@ -229,21 +209,22 @@ view! = |_|
 
 			<Heading id="sending">Sending</Heading>
 			<p>
-				On the server, a job or an endpoint calls one of these. Each checks the
-				notification and its options, then queues a <code>push.deliver</code> job for each subscription, in
-				the caller's transaction when there is one, and answers how many.
+				On the server, a job or an endpoint calls <code>Push.notify!</code> (one user's browsers) or
+				<code>Push.broadcast!</code> (every browser). Each checks the notification and its options, then
+				queues a <code>push.deliver</code> job for each subscription and answers how many it queued. Inside a
+				transaction, the jobs are queued only if the transaction commits.
 			</p>
 			<Code title={Sources.push_send.file} source={Sources.push_send.rocx} />
-			<p>A job worker sends each message. The push service's answer says what happens next:</p>
+			<p>A jobs worker sends each message. The push service's answer decides what happens next:</p>
 			<TableWrap>
 				<table>
 					<thead><tr><th>The push service answers</th><th>The job</th></tr></thead>
 					<tbody>
 						<tr><td>201, or any 2xx</td><td>is done, and notes when it sent</td></tr>
 						<tr><td>404 or 410</td><td>deletes the subscription: the browser unsubscribed, or it expired</td></tr>
-						<tr><td>429 or 5xx, with <code>Retry-After</code></td><td>sends it again then, five times at most, if the message's TTL lasts</td></tr>
-						<tr><td>408, 429 or 5xx, or no answer</td><td>fails the attempt, and the worker tries again, waiting longer each time (five attempts)</td></tr>
-						<tr><td>400, 401, 403, 413, or anything else</td><td>logs it and notes it on the subscription: sending again wouldn't help</td></tr>
+						<tr><td>408, 429 or 5xx, with <code>Retry-After</code></td><td>sends it again at that time, five times at most, while the message's TTL lasts</td></tr>
+						<tr><td>408, 429 or 5xx without it, or no answer</td><td>fails the attempt; the worker tries again, waiting longer each time (five attempts)</td></tr>
+						<tr><td>400, 401, 403, 413, or anything else</td><td>logs it and notes it on the subscription; sending again wouldn't help</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
@@ -253,9 +234,53 @@ view! = |_|
 				settings shouldn't delete every subscription.
 			</p>
 
+			<Heading id="how">How it works</Heading>
+			<ol>
+				<li>
+					A click on <code>{"<PushButton>"}</code> asks the browser's permission.
+				</li>
+				<li>
+					The browser subscribes at its push service (Google's for Chrome, Mozilla's for Firefox, Apple's
+					for Safari, Microsoft's for Edge) with the server's public key. It gets a subscription: a URL at
+					that service, and two keys.
+				</li>
+				<li>The page posts the subscription to the app, which keeps it in a table, a row for each browser.</li>
+				<li>Later, the server calls <code>Push.notify!</code>, which queues a job for each of the user's subscriptions.</li>
+				<li>
+					The job encrypts the notification for that one browser (RFC 8291), signs a token that says which
+					server sent it (VAPID, RFC 8292), and posts both to the subscription's URL (RFC 8030).
+				</li>
+				<li>
+					The push service wakes the browser. The package's service worker shows the notification, and a
+					click on it opens the page it names.
+				</li>
+			</ol>
+			<p>The package has three parts:</p>
+			<ul>
+				<li>
+					<strong>Plain Roc</strong>, on no platform: the formats, the key derivation, the token, and what
+					each answer means. <code>roc test packages/push/main.roc</code> checks them against the RFCs' own
+					examples. The browser's half of an app can use these too (<code>browser.roc</code> lists them).
+				</li>
+				<li>
+					<strong>The plugin</strong>, <code>{"Push.plugin({})"}</code>, on the server platform, which the
+					package names in its header (<a href={"${Paths.platform_server}#plugins"}>plugins</a>): its endpoints,
+					its table, and the job that sends.
+				</li>
+				<li>
+					<strong>The browser's part</strong>: <code>{"<PushButton>"}</code> (in <code>components/</code>,
+					which <code>rocx build</code> copies into the app), and the page's script and the service worker
+					(in <code>static/</code>), which the plugin serves. The worker is served at the site's root, so its
+					scope is the whole site; the script is loaded by every page. When the push service replaces a
+					subscription, the worker tells the server, and the script sends the server the browser's
+					subscription again once a visit, in case it lost it.
+				</li>
+			</ul>
+
 			<Heading id="modules">The modules</Heading>
 			<p>
-				<strong>Plain Roc</strong>, on no platform, which both halves of an app see.
+				<strong>Plain Roc</strong>, on no platform, which both halves of an app can use. The full list of
+				functions is in <code>packages/push/README.md</code>.
 			</p>
 			<TableWrap>
 				<table>
@@ -265,35 +290,38 @@ view! = |_|
 						<tr><td><code>Notification</code></td><td>what the service worker shows: <code>new</code>, <code>to_json</code>, <code>data</code></td></tr>
 						<tr><td><code>Options</code></td><td>how a push service treats a message: <code>defaults</code>, <code>check</code> (the topic), <code>headers</code>, <code>remaining</code> (the TTL left for a retry)</td></tr>
 						<tr><td><code>Delivery</code></td><td><code>request</code> (the POST to a subscription's URL); <code>outcome</code> (what an answer means: <code>Delivered</code>, <code>Gone</code>, <code>RetryAfter(ms)</code>, <code>Retry(why)</code>, <code>Refused(why)</code>), <code>retry_after</code>, <code>http_date</code></td></tr>
-						<tr><td><code>Vapid</code></td><td>the server's token, RFC 8292: <code>Keys</code> and <code>from_text</code> (from the environment), <code>audience</code>, <code>claims</code> (12 hours), <code>signing_input</code>, <code>token</code>, <code>authorization</code></td></tr>
+						<tr><td><code>Vapid</code></td><td>the server's token, RFC 8292: <code>Keys</code> and <code>from_text</code> (from the environment), <code>audience</code>, <code>claims</code> (valid 12 hours), <code>signing_input</code>, <code>token</code>, <code>authorization</code></td></tr>
 						<tr><td><code>WebPush</code></td><td>the message's encryption, RFC 8291: <code>prepare</code> (everything before the AES), <code>body</code>, <code>max_data</code> (3993 bytes)</td></tr>
 						<tr><td><code>Ece</code></td><td>the <code>aes128gcm</code> content coding, RFC 8188: <code>header</code>, <code>parse_header</code>, <code>pad</code>, <code>unpad</code>, <code>keys</code>, <code>nonce</code></td></tr>
-						<tr><td>(crypto)</td><td>HMAC-SHA-256, HKDF-SHA-256 and base64url come from <a href={Paths.ecosystem_crypto}>the crypto package</a>, which push names in its header</td></tr>
-						<tr><td><code>PushState</code></td><td>where a browser stands, as the page's script says it: what <code>{"<PushButton>"}</code> shows</td></tr>
+						<tr><td><code>PushState</code></td><td>where a browser stands, as the page's script reports it: what <code>{"<PushButton>"}</code> shows</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 			<p>
+				HMAC-SHA-256, HKDF-SHA-256 and base64url come from <a href={Paths.ecosystem_crypto}>the crypto
+				package</a>, which push names in its own header: an app names <code>push</code> alone.
+			</p>
+			<p>
 				<strong>The server's part</strong>, on the server platform, with the table's migrations
-				(<code>migrations/</code>, Postgres's and SQLite's). Each function's <code>owner</code> is the app's id
-				for a user, as text, or <code>""</code> for a visitor.
+				(<code>migrations/</code>, one for Postgres and one for SQLite). Each function's <code>owner</code> is
+				the app's id for a user, as text, or <code>""</code> for a visitor.
 			</p>
 			<TableWrap>
 				<table>
 					<thead><tr><th>Module</th><th>What it does</th></tr></thead>
 					<tbody>
-						<tr><td><code>Push</code></td><td><code>plugin(setup)</code>, the plugin (<code>at</code>, <code>owner</code>); <code>subscribe!(body, owner)</code> and <code>unsubscribe!(endpoint, owner)</code>, for the endpoints; <code>notify!</code> and <code>broadcast!</code>; <code>public_key!</code> and <code>keys!</code> (from the environment); <code>deliver</code>, the job; <code>send!</code>, one attempt</td></tr>
-						<tr><td><code>PushStore</code></td><td>the <code>push_subscriptions</code> table: <code>save!</code> (a row for each endpoint), <code>remove!</code>, <code>find!</code>, <code>of_owner!</code>, <code>everyone!</code>, and what the job notes</td></tr>
+						<tr><td><code>Push</code></td><td><code>plugin(setup)</code>, the plugin (<code>at</code>, <code>owner</code>); <code>subscribe!(body, owner)</code> and <code>unsubscribe!(endpoint, owner)</code>, which its endpoints call; <code>notify!</code> and <code>broadcast!</code>; <code>public_key!</code> and <code>keys!</code> (from the environment); <code>deliver</code>, the job; <code>send!</code>, one attempt</td></tr>
+						<tr><td><code>PushStore</code></td><td>the <code>push_subscriptions</code> table: <code>save!</code> (a row for each endpoint), <code>remove!</code>, <code>remove_id!</code>, <code>find!</code>, <code>of_owner!</code>, <code>everyone!</code>, and <code>delivered!</code> and <code>refused!</code>, which the job calls</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
-			<p><strong>The browser's files</strong>, <code>static/</code>, which the plugin serves:</p>
+			<p><strong>The browser's files</strong>, in <code>static/</code>, which the plugin serves:</p>
 			<TableWrap>
 				<table>
 					<thead><tr><th>File</th><th>What it does</th></tr></thead>
 					<tbody>
-						<tr><td><code>push.js</code></td><td>the page's script, at <code>/rocx/plugins/push/push.js</code>, on every page: the <code>push.subscribe</code> and <code>push.unsubscribe</code> effects the button calls; once a visit, it sends the server the browser's subscription again. Under a base (<code>/rocx/</code>), every URL is under it.</td></tr>
-						<tr><td><code>push-sw.js</code></td><td>the service worker, at the site's root (<code>/push-sw.js</code>): shows a message's notification; a click focuses a tab at its URL, or opens one; when the push service replaces a subscription, it tells the server</td></tr>
+						<tr><td><code>push.js</code></td><td>the page's script, at <code>/rocx/plugins/push/push.js</code>, on every page: the <code>push.subscribe</code> and <code>push.unsubscribe</code> effects the button calls. Once a visit, it sends the server the browser's subscription again. On a site served under a base path (<code>/rocx/</code>), every URL it uses is under that path.</td></tr>
+						<tr><td><code>push-sw.js</code></td><td>the service worker, at the site's root (<code>/push-sw.js</code>). It shows a message's notification; a click focuses a tab already at its URL, or opens one. When the push service replaces a subscription, it tells the server.</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
@@ -302,12 +330,13 @@ view! = |_|
 			<ul>
 				<li>
 					The server sends a request to whatever URL a subscription names. So <code>Push.subscribe!</code>
-					takes only <code>https:</code> URLs at the browsers' push services. Under <code>--dev</code>, it also
-					takes one on this machine, for a stand-in push service.
+					accepts only <code>https:</code> URLs at the browsers' own push services. When the server runs with
+					<code>--dev</code> (as <code>rocx dev</code> starts it), it also accepts an <code>http:</code> URL on
+					this machine, for a stand-in push service.
 				</li>
 				<li>The private key never leaves the server. The page gets only the public key.</li>
 				<li>A click on a notification opens only this site's pages.</li>
-				<li>Messages are encrypted for the browser: the push service sees bytes.</li>
+				<li>Messages are encrypted for the browser: the push service sees only bytes.</li>
 			</ul>
 
 			<Heading id="status">Status</Heading>
@@ -319,30 +348,32 @@ view! = |_|
 					(up to the AES), the request's headers, and what each answer means.
 				</li>
 				<li>
-					The plugin, built into an app and run against SQLite, and Postgres when there is one, and a stand-in push service: it saves and
-					forgets subscriptions, queues a job for each, and handles every answer.
+					The plugin, built into the example app and run on SQLite, and on Postgres when one is available. It
+					saves and forgets subscriptions and queues a job for each; each job reads its subscription and then
+					fails, saying the host can't encrypt yet.
 				</li>
 				<li>
 					The button, the page's script and the service worker, tried in Chromium behind a guard that refuses
-					every script the app would answer: the plugin's come all the same, the worker's scope is the whole
-					site, and the button subscribes.
+					every script the app would serve: the plugin's files come through all the same, the worker's scope is
+					the whole site, and the button subscribes.
 				</li>
 			</ul>
-			<p>What waits on a proposal, in <code>packages/push/PROPOSALS.md</code>:</p>
+			<p>Not yet (each has a proposal in <code>packages/push/PROPOSALS.md</code>):</p>
 			<ul>
 				<li>
-					<strong>Sending.</strong> The server's host has no P-256 (the key agreement that encrypts a
-					message, and the signature on the VAPID token), and Web Push needs AES-128-GCM with a nonce it
-					derives. Until the host has them, every delivery fails and says so. The proposal sketches them on
-					<code>ring</code>, which the host already links, and the sketch passes the RFCs' examples.
+					<strong>Sending.</strong> The server's host has no P-256, which Web Push needs for the key agreement
+					that encrypts a message and for the signature on the VAPID token. It also needs AES-128-GCM with a
+					nonce it derives, which the host doesn't offer. Until the host has both, every delivery fails and says
+					so. The proposal sketches them on <code>ring</code>, which the host already links, and the sketch
+					passes the RFCs' examples.
 				</li>
 				<li>
-					<strong>Jobs that give up, or come back at a time.</strong> Today a refused message ends its job
-					as if it were sent, and a <code>Retry-After</code> queues a copy of the job for then.
+					<strong>Jobs that give up, or come back at a set time.</strong> Today a refused message ends its job
+					as if it had been sent, and a <code>Retry-After</code> queues a copy of the job for that time.
 				</li>
 				<li>
-					<strong><code>Browser.call!</code> with an answer.</strong> Until a call can answer, the script
-					tells the button how it went with a DOM event (<code>pushstate</code>).
+					<strong><code>Browser.call!</code> with an answer.</strong> Until a call can answer, the script tells
+					the button how it went with a DOM event (<code>pushstate</code>).
 				</li>
 			</ul>
 			<p>

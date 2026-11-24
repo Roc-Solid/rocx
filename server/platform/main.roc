@@ -51,9 +51,9 @@
 ## - A page's components are Solid-style (web/runtime.js hydrates the document in the browser). A
 ##   GET endpoint a component reads while the host renders the page (`Endpoint.get!`) is answered by
 ##   its route, in-process (`Host.fetch!`). The modules components are written with (`Html`, `Solid`,
-##   `Store`, `Loading`, `Errored`, `Context`, `Call`, `Router`, `Search`, `Leave`, `A`, `HttpStatusCode`, `Transition`,
-##   `Title`, `Browser`, `Submission`, `Submissions`), and HTTP's (`Server`, `Endpoint`,
-##   `Channel`, `Middleware`, `Events`, `OpenApi`), are the browser's platform's (web/platform),
+##   `Store`, `Repeat`, `Loading`, `Errored`, `Context`, `Call`, `Router`, `Search`, `Leave`, `A`,
+##   `HttpStatusCode`, `Transition`, `Title`, `Browser`, `Submission`, `Submissions`), and HTTP's
+##   (`Server`, `Endpoint`, `FormBody`, `Channel`, `Middleware`, `Events`, `OpenApi`), are the browser's platform's (web/platform),
 ##   copied here by the build, so the same code compiles on both.
 ##
 ## Each call is a coroutine on one of a few threads of Roc's own (D-027), which pauses while an
@@ -288,8 +288,9 @@ HostRequest : { method : Str, target : Str, headers : Str, body : List(U8), peer
 Feed : { run! : { send! : Str => Bool, sleep! : U64 => {} } => {} }
 
 ## The answer, as the host takes it (`Server.for_host`): its `kind` says which it sends, its `text`
-## (0), the page (1), the stream (2), its `bytes` (3) or the `upstream` the host fetches its body
-## from (4). The page is boxed for the host to run
+## (0), the page (1), the stream (2), its `bytes` (3), the `upstream` the host fetches its body
+## from (4), or a file the host serves from storage (5: `Stored`, its root and key in `upstream`). The
+## page is boxed for the host to run
 ## (`run_for_host!`): run, it renders the page's components, its holes kept by the host, as JSON
 ## (`Html.serialize!`). The boxes an answer doesn't send do nothing, and the host releases them.
 ## A plugin's early path (`Plugin.Early`) is answered before the app, under the flag it names.

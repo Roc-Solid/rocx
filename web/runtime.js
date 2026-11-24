@@ -75,7 +75,7 @@ class Computation {
 		/** Its requests' answers, by method, URL and body: a run again reads them. */
 		this.calls = new Map();
 		this.disposed = false;
-		/** Run untracked (a <For>'s row, a <Show>'s function child: Solid's mapArray and untrack,
+		/** Run untracked (a `.map`'s row, an `if`'s part: Solid's mapArray and untrack,
 		 * D-039): what it reads doesn't run it again; only a read that waits does, once it is in. */
 		this.untracked = false;
 		owner?.adopt(this);
@@ -543,8 +543,8 @@ const keysOf = (event) => [event.shiftKey, event.ctrlKey, event.altKey, event.me
 /** A CSS property as `element.animate` names it: `transform-origin` is `transformOrigin`. */
 const camel = (property) => property.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
 
-/** The scope an element's children are made in: an <svg>'s know they are SVG, so a <For>'s row or
- * a <Show>'s part made inside one later, in the browser, is SVG too. */
+/** The scope an element's children are made in: an <svg>'s know they are SVG, so a `.map`'s row or
+ * an `if`'s part made inside one later, in the browser, is SVG too. */
 const within = (node, scope) => (node.tag === "svg" && !scope.svg ? { ...scope, svg: true } : scope);
 
 /**
@@ -923,7 +923,7 @@ export class Runtime {
 		this.kept = new Map();
 		this.signals = new Map();
 		this.memos = new Map();
-		/** Each <For>'s rows, by key; its rows' indexes; and, unkeyed, its items by position. */
+		/** Each `.map`'s rows (a "for" node), by key; its rows' indexes; and, by position, its items. */
 		this.lists = new Map();
 		this.boundaries = new Map();
 		/** The browser's timers for Roc's (`Solid.set_timeout!`, `set_interval!`), by the id of the
@@ -966,7 +966,7 @@ export class Runtime {
 		 * actions, the form its submit sends) join it. */
 		this.transition = null;
 		/** Rows and parts on their way out, by their first comment: each stays, inert, until its
-		 * transitions are over. A <For> putting its rows in order passes over them. `leavingNodes`:
+		 * transitions are over. A `.map`'s rows put in order pass over them. `leavingNodes`:
 		 * the range each one's top nodes are in. */
 		this.leaving = new Map();
 		this.leavingNodes = new WeakMap();
@@ -991,7 +991,7 @@ export class Runtime {
 		this.dragged = new WeakMap();
 		this.pointerDrag = null;
 		this.files = new Map();
-		/** Letting go of what is inside a part that is leaving: its <For>s' rows stay with it. */
+		/** Letting go of what is inside a part that is leaving: its `.map`s' rows stay with it. */
 		this.keeping = false;
 		/** The computation or handler running now. */
 		this.current = null;
@@ -1038,11 +1038,12 @@ export class Runtime {
 		/** The page the runtime is on: where it listens for forms' submits. */
 		this.page = typeof document === "undefined" ? null : document;
 		/** Whoever wants to see what the runtime does, as it does it (the docs' inspector): an object
-		 * with any of `seeded`, `call`, `answer`, `fetch`, `fetched`, `listen`, `heard`, `patch`,
-		 * `row`, `show`, `frame`, `effect` (a call of the page's own function), `apply` (an effect's
-		 * apply), `submit`, `submitted`, `revalidate` (a submission's result reading the page's reads
-		 * again), `glide` (an element moving), and the hub's `subscribe`, `unsubscribe`, `connect`, `replaced`
-		 * and `dropped`. */
+		 * with any of `seeded`, `fetch`, `fetched`, `listen`, `unlisten`, `heard`, `patch`, `row`,
+		 * `show`, `remade` (a part made anew), `frame`, `transition`, `glide` (an element moving),
+		 * `effect` (a call of the page's own function), `apply` (an effect's apply), `submit`,
+		 * `submitted`, `revalidate` (a submission's result reading the page's reads again), `warn` (a
+		 * dev build's warning), the router's `navigate`, `navigated` and `leave`, and the hub's
+		 * `hello`, `subscribe`, `unsubscribe`, `connect`, `replaced` and `dropped`. */
 		this.observer = null;
 		/** In a dev build, where the read a component's body is making is (`Html.read_at!`), and the
 		 * places already warned of (`warnRead`). */
@@ -2947,7 +2948,7 @@ export class Runtime {
 
 	/**
 	 * A read of the location that won't follow it (`js_location`'s): in a component's body, or in a
-	 * part made once (an `if`'s part, a `<For>`'s row), it runs once. It is noted on the level it is
+	 * part made once (an `if`'s part, a `.map`'s row), it runs once. It is noted on the level it is
 	 * in, the keyed part around it (`scope.level`, which a route's keyed part is made with: `Root`'s
 	 * levels are D-053's `Html.switched`; an `if`'s part, D-070's, isn't one), or on the root (the root layout, the
 	 * document) when there is none. A level that read it so is made anew when the location changes,
@@ -3550,7 +3551,7 @@ export class Runtime {
 			this.ex.release(computation.runner);
 		}
 		this.drop(computation.made);
-		// What it shows (a <Show>'s part, a <For>'s rows) is its own, not its last run's.
+		// What it shows (an `if`'s part, a `.map`'s rows) is its own, not its last run's.
 		if (computation.part) this.dispose(computation.part);
 		if (computation.list) this.dropList(computation.list);
 		if (computation.kind === "memo") {
@@ -3828,7 +3829,7 @@ export class Runtime {
 		go();
 	}
 
-	// ---- <Show> and <For> ----
+	// ---- Parts (a hole's `if` and `match`, a "show" node) and rows (a `.map`'s, a "for" node) ----
 
 	/** A part of the markup, built (or found, hydrating) in `range`, owned by a computation of its own. */
 	part(nodes, scope, range, adopting) {
@@ -3886,7 +3887,7 @@ export class Runtime {
 	}
 
 	/**
-	 * A <For>'s rows, from what its list says now (`[{k, r}]`): a row whose key is still there is
+	 * A `.map`'s rows, from what its list says now (`[{k, r}]`): a row whose key is still there is
 	 * kept, and moved where it now goes (its index changing; its item, set as the list was read,
 	 * changing too); a new key gets a new row, made by its own computation; a key that is gone takes
 	 * its row and its item with it. A row owns the box it was made with.
@@ -3996,7 +3997,7 @@ export class Runtime {
 		else if (!this.keeping) removeRange(row.range);
 	}
 
-	/** A <For> goes: its rows, and its items. Its id stays: what made it still names it, and may
+	/** A `.map`'s rows go: its rows, and its items. Its id stays: what made it still names it, and may
 	 * build it again (an <Errored> trying again). */
 	dropList(list) {
 		for (const row of list.rows.values()) this.dropRow(list, row);

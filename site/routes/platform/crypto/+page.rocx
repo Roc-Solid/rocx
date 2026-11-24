@@ -7,7 +7,7 @@ import ../../../Ui/PageHero
 
 meta = {
 	title: "Crypto",
-	description: "The Roc Solid server platform's crypto: random bytes and AES-256-GCM from the host, with the crypto package's SHA-256, HMAC, HKDF, Base64 and Hex, for tokens, signed links and sealed secrets.",
+	description: "The Roc Solid server platform's crypto: secure random bytes and AES-256-GCM from the host, with the crypto package's SHA-256, HMAC, HKDF, Base64 and Hex, for tokens, signed links and sealed secrets.",
 	toc: [
 		{ id: "tokens", label: "Tokens, and their digests" },
 		{ id: "links", label: "Signed links" },
@@ -23,50 +23,53 @@ view! = |_|
 				eyebrow="The platform · crypto"
 				title="Secrets, and what to do with them"
 			>
-				With the secrets its <a href={Paths.platform_settings}>environment</a> gives it, an app signs links,
-				keeps the digest of a token rather than the token, and seals what it must keep secret in the
-				database. AES-GCM and random bytes are the host's; the rest of the crypto is Roc, checked against
-				published test vectors, in a package (<a href={Paths.ecosystem_crypto}><code>packages/crypto</code></a>).
+				Three things most apps need: tokens nobody can guess (and stored so a leaked table is useless),
+				links that can't be forged, and secrets stored encrypted. Secure random bytes and AES-GCM come
+				from the host. The rest of the crypto is plain Roc, checked against published test vectors, in
+				<a href={Paths.ecosystem_crypto}><code>packages/crypto</code></a>. The secrets themselves come from
+				the app's <a href={Paths.platform_settings}>environment</a>.
 			</PageHero>
 			<p>
-				The samples are from <code>server/test/app/Samples.roc</code>, which the platform's tests compile and
-				run. It names the crypto package beside the platform (<code>crypto: "../packages/crypto/main.roc"</code>)
-				and imports <code>crypto.Hmac</code> and the rest from it.
+				The samples are from <code>server/test/app/Samples.roc</code>, which the platform's tests compile
+				and run. It names the crypto package beside the platform in its header
+				(<code>crypto: "../packages/crypto/main.roc"</code>) and imports <code>crypto.Hmac</code> and the
+				rest from it.
 			</p>
 
 			<Heading id="tokens">Tokens, and their digests</Heading>
 			<Code title={"${Sources.platform_tokens.file}, in part"} source={Sources.platform_tokens.rocx} numbers={Bool.False} />
 			<p>
-				<code>Random.bytes!(count)</code> is the operating system's randomness (<code>ring</code>'s); if there is
-				none, the call crashes rather than make a key of anything less. A sign-in link's token is 32 of them;
-				the database keeps its SHA-256, so a copy of the table signs no one in.
+				<code>Random.bytes!(count)</code> is the operating system's secure randomness (through
+				<code>ring</code>). If the system has none to give, the call crashes rather than make a key from
+				anything weaker. A sign-in link's token is 32 random bytes. The database keeps only its SHA-256
+				digest, so a copy of the table signs no one in.
 			</p>
 
 			<Heading id="links">Signed links</Heading>
 			<Code title={"${Sources.platform_links.file}, in part"} source={Sources.platform_links.rocx} numbers={Bool.False} />
 			<p>
-				An app that signs links derives its link-signing key from its <code>APP_SECRET</code> with HKDF, for
-				that use alone, then signs what the link says with HMAC-SHA256. Checking it,
-				<code>Hmac.verify_sha256</code> compares in constant time, so how long it takes doesn't tell a forger how
-				much of a signature was right.
+				The app derives a key for signing links from its <code>APP_SECRET</code> with HKDF, so that key
+				serves this one purpose alone, then signs what the link says with HMAC-SHA256. To check a link,
+				<code>Hmac.verify_sha256</code> compares signatures in constant time, so how long it takes doesn't
+				tell a forger how much of a signature was right.
 			</p>
 
 			<Heading id="sealed">Sealed secrets</Heading>
 			<Code title={"${Sources.platform_sealed.file}, in part"} source={Sources.platform_sealed.rocx} numbers={Bool.False} />
 			<p>
 				<code>AesGcm.seal!(key, plaintext)</code> encrypts with AES-256-GCM under a 32-byte key
-				(<code>BadKey</code> otherwise) and a fresh random 12-byte nonce each time, and answers the nonce, the
-				ciphertext and the tag, one after the other. That is Web Crypto's output with the nonce in front, so
-				either opens what the other sealed. <code>AesGcm.open!</code> answers <code>Forged</code> for anything
-				changed, or sealed under another key.
+				(<code>BadKey</code> otherwise), with a fresh random 12-byte nonce each time. It returns the nonce,
+				the ciphertext and the 16-byte tag, one after another: Web Crypto's output with the nonce in front,
+				so either side can open what the other sealed. <code>AesGcm.open!</code> answers
+				<code>Forged</code> for anything changed, or sealed under another key.
 			</p>
 
 			<Heading id="modules">The modules</Heading>
 			<table>
 				<thead><tr><th>Module</th><th>What</th></tr></thead>
 				<tbody>
-					<tr><td><code>AesGcm</code></td><td><code>seal!</code>, <code>open!</code>: AES-256-GCM, the host's</td></tr>
-					<tr><td><code>Random</code></td><td><code>bytes!(count)</code>, <code>seed_u64!</code>: the operating system's</td></tr>
+					<tr><td><code>AesGcm</code></td><td><code>seal!</code>, <code>open!</code>: AES-256-GCM, by the host</td></tr>
+					<tr><td><code>Random</code></td><td><code>bytes!(count)</code>, <code>seed_u64!</code>: the operating system's randomness</td></tr>
 					<tr><td><code>crypto.Sha256</code></td><td><code>hash</code>: 32 bytes; <code>hex</code>: 64 hex digits</td></tr>
 					<tr><td><code>crypto.Hmac</code></td><td><code>sha256(key, message)</code>; <code>verify_sha256(key, message, signature)</code> and <code>equal</code>, in constant time</td></tr>
 					<tr><td><code>crypto.Hkdf</code></td><td><code>sha256(key, salt, info, length)</code> (RFC 5869), <code>TooLong</code> past 8160 bytes; <code>extract</code>, <code>expand</code></td></tr>
@@ -75,11 +78,11 @@ view! = |_|
 				</tbody>
 			</table>
 			<p>
-				<code>AesGcm</code> and <code>Random</code> are the platform's, the host's to do. The rest are
-				<a href={Paths.ecosystem_crypto}>the crypto package</a>'s: Roc with no effect, so they run anywhere, a page
-				in the browser and <code>expect</code>s included, checked against NIST's, RFC 4231's, RFC 4648's and RFC
-				5869's vectors; <code>Sha256</code> wraps Roc's builtin <code>Crypto.SHA256</code>. Decoding is strict: one
-				text, one value.
+				<code>AesGcm</code> and <code>Random</code> are the platform's, done by the host. The rest belong to
+				<a href={Paths.ecosystem_crypto}>the crypto package</a>: pure Roc with no effects, so they run
+				anywhere, including a page in the browser and <code>expect</code> tests. They are checked against
+				the test vectors of NIST, RFC 4231, RFC 4648 and RFC 5869; <code>Sha256</code> wraps Roc's builtin
+				<code>Crypto.SHA256</code>. Decoding is strict: each value has exactly one text that decodes to it.
 			</p>
 		</NoHydration>
 	</>

@@ -3470,7 +3470,7 @@ const probe = (member) =>
 	'<!doctype html><style class="on s">p > b { content: "&" }</style><a href="about:invalid#rocx-unsafe-url" rel="next">&lt;a &amp; b&gt;</a>' +
 	"</div>";
 
-test("pages of components: signals, memos, a keyed <For>, a <Show>, an <Errored> that catches, every kind of attribute, raw text and a doctype, as the browser's runtime renders them", { skip }, async () => {
+test("pages of components: signals, memos, a .map's rows, an if's part, an <Errored> that catches, every kind of attribute, raw text and a doctype, as the browser's runtime renders them", { skip }, async () => {
 	const shouted = carried("/probe/shout/hello", 200, '"HELLO"');
 	const refused = carried("/probe/member", 401, "members only");
 	assert.equal(

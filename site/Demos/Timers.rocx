@@ -92,7 +92,7 @@ Timers := [].{
 	<style>
 		.timers {
 			display: grid;
-			grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+			grid-template-columns: repeat(auto-fit, minmax(min(100%, max(14rem, calc((100% - var(--space-4)) / 2))), 1fr));
 			gap: var(--space-4);
 		}
 

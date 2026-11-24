@@ -71,7 +71,7 @@ qr! = |args| {
 			Ok({})
 		}
 		Err(TooLong) => {
-			Stderr.line!("rocx qr: a QR code here holds 106 bytes at most")?
+			Stderr.line!("rocx qr: a QR code here holds 2,331 bytes at most")?
 			Err(Exit(2))
 		}
 	}

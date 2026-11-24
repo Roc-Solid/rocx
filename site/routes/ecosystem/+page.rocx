@@ -10,15 +10,15 @@ import ../../Ui/FeatureGrid
 import ../../Ui/PageCards
 import ../../Ui/PageHero
 
-## The ecosystem's overview: what a Roc Solid package is, how an app uses one, and the packages
-## there are, as cards in the sidebar's groups.
+## The ecosystem's overview: what a Roc Solid package is, how an app uses one, what a plugin is,
+## and the packages there are, as cards in the sidebar's groups.
 meta = {
 	title: "The ecosystem",
-	description: "Packages for Roc Solid apps: plain Roc that the server, the browser and a test use alike, components that rocx build copies into the app, and plugins that add to the server. Nineteen so far: charts, crypto, files in S3, email, forms, Markdown, intl, an admin, audio, guards, jobs and cron, MCP, OpenTelemetry, PostHog, presence, Web Push, QR codes, testing and virtual lists.",
+	description: "Packages for Roc Solid apps: Roc modules and components you add to an app with one line in its header, and plugins that add routes, tables, jobs and scripts to the server. Twenty so far, among them charts, forms, intl, Markdown, jobs and cron, email, an admin, guards, storage, Web Push and OpenTelemetry.",
 	toc: [
 		{ id: "packages", label: "The packages" },
-		{ id: "halves", label: "A package's two halves" },
-		{ id: "use", label: "Using one" },
+		{ id: "halves", label: "What is in a package" },
+		{ id: "use", label: "Adding one to an app" },
 		{ id: "plugins", label: "Plugins" },
 	],
 }
@@ -28,24 +28,22 @@ view! = |_|
 		<NoHydration>
 			<PageHero
 				eyebrow="The ecosystem"
-				title="Packages: plain Roc, and components, for any Roc Solid app"
+				title="Packages: Roc modules and components for any Roc Solid app"
 				actions={[
 					<Button href={Paths.ecosystem_charts} primary>Charts</Button>,
 				]}
 			>
-				A Roc Solid package is a directory with two halves. One is plain Roc, on no platform, which the
-				server, the browser and a test all call alike. The other is components, <code>.rocx</code> files,
-				which <code>rocx build</code> copies into the app that names the package, so that each half of
-				the app compiles them on its own platform. A package may also be a plugin, which adds to the server
-				what only the server runs. There are nineteen so far, each with a page: charts, crypto, files in S3,
-				email, forms, Markdown, intl, an admin, audio, guards, jobs and cron, MCP, OpenTelemetry, PostHog,
-				presence, Web Push, QR codes, testing and virtual lists.
+				A package is a directory of Roc modules and, often, components, which you add to an app with one
+				line in its header. Reach for one when your app needs something the platforms leave out: charts,
+				form checks, translations, a job queue, email, an admin for your tables. Some packages are also
+				plugins, which add routes, tables, background work or scripts to the server. There are twenty so
+				far, each with a page here.
 			</PageHero>
 
 			<Heading id="packages">The packages</Heading>
 			<p>
-				By where they work, as the sidebar has them: in the page, on the server, and beside the app (tools,
-				and watching it run).
+				They are grouped by where they do their work: in the page, on the server, and beside the app
+				(tools, and watching the app run).
 			</p>
 			{...Nav.ecosystem_docs.groups.drop_if(|group| group.name == "").map(|group|
 				<>
@@ -54,53 +52,99 @@ view! = |_|
 				</>
 			)}
 
-			<Heading id="halves">A package's two halves</Heading>
+			<Heading id="halves">What is in a package</Heading>
+			<p>
+				A package lives in its own directory (the ones above are in the repository's <code>packages/</code>).
+				It can have two kinds of code, and many have both.
+			</p>
 			<FeatureGrid>
-				<Feature title="The arithmetic is a Roc package">
+				<Feature title="Roc modules">
 					<p>
-						<code>main.roc</code> is an ordinary Roc package, on no platform: it can't render or fetch,
-						so a page rendered once, a component in the browser and the server's code use the same
-						functions, and every one is an <code>expect</code> away from a test.
+						<code>main.roc</code> is an ordinary Roc package header that lists the package's modules. Most
+						packages name no platform: their code can't render or fetch anything, so the server, a component
+						in the browser and a test all call the same functions, and every function is an
+						<code>expect</code> away from a test. A package that needs the server (to send email, run jobs or
+						read the database) names the server platform instead.
 					</p>
 				</Feature>
-				<Feature title="The components are copied in">
+				<Feature title="Components">
 					<p>
-						A component imports the platform's <code>Html</code> and <code>Solid</code>. A Roc package
-						may name only the very platform its app names, and an app is two programs on two platforms.
-						So <code>rocx build</code> copies <code>components/*.rocx</code> into the app, where
-						<code>pf</code> means each half's own.
+						<code>components/*.rocx</code> are components, such as <code>{"<BarChart>"}</code>. A component
+						imports the platform's <code>Html</code> and <code>Solid</code>, and an app is two programs on
+						two platforms: the server's and the browser's. So instead of being compiled in the package,
+						the components are copied into the app by <code>rocx build</code>, and each half of the app
+						compiles them on its own platform.
 					</p>
 				</Feature>
 			</FeatureGrid>
-
-			<Heading id="use">Using one</Heading>
-			<p>Name the package in both of the app's headers, by its directory's name:</p>
-			<Code source={"app [...] { charts: \"../packages/charts/main.roc\", pf: platform \"…\" }"} numbers={Bool.False} />
 			<p>
-				Then <code>rocx build</code> writes each of its components to the app's
-				<code>Generated/charts/</code>, and in a <code>.rocx</code> file, <code>import charts.BarChart</code>
-				imports that copy. Its <code>{"<style>"}</code> goes into the app's stylesheet with the others, and the
-				compiler's reports point at the package's own file.
+				A package that names the server platform can still have modules the browser uses (the audio
+				package's <code>Audio.play!</code> is called from a click handler). It lists them in a second
+				header, <code>browser.roc</code>, which names the browser platform. The browser's half of the app
+				sees that header instead of <code>main.roc</code>, so it can import only those modules. If a page
+				imports one of the others, <code>rocx build</code> stops and says which import pulled it in.
+			</p>
+
+			<Heading id="use">Adding one to an app</Heading>
+			<p>
+				Name the package in the app's header, in <code>main.roc</code>, beside the platform. The name
+				before the colon is the one you import it by; use the package's directory name, as every app in the
+				repository does.
+			</p>
+			<Code title="main.roc" source={"app [program] { charts: \"../packages/charts/main.roc\", pf: platform \"../server/platform/main.roc\" }"} numbers={Bool.False} />
+			<p>
+				That one line is enough for both halves. When <code>rocx build</code> writes the browser's copy of
+				the app, it writes that copy's header from this one: the same packages, on the browser platform,
+				each through its <code>browser.roc</code> if it has one.
+			</p>
+			<p>
+				Then import what you need. A module is imported as in any Roc program
+				(<code>import charts.Format</code>). A component is imported the same way
+				(<code>import charts.BarChart</code>): <code>rocx build</code> has copied it to the app's
+				<code>Generated/charts/BarChart.roc</code>, and points the import at that copy. A component's
+				<code>{"<style>"}</code> goes into the app's stylesheet with the app's own, and the compiler's
+				errors point at the package's file, not at the copy. Here is the charts page's bar chart, from
+				<code>site/Demos/BarDemo.rocx</code>:
 			</p>
 			<Code source={Sources.charts_use.rocx} numbers={Bool.False} />
+			<p>
+				Each package's page shows its own header line, its first example and its limits. Its
+				<code>README.md</code>, in the package's directory, is the full reference.
+			</p>
 
 			<Heading id="plugins">Plugins</Heading>
 			<p>
-				A package whose modules use the server platform names it in its header, as an app does, and gives a
-				plugin: one value, made from options of its own, that the app lists in its program. The plugin
-				brings its routes, tables, background loops, paths for development, and files it serves (a script
-				every page loads, a service worker at the site's root); the server checks them all when it starts (<a href={"${Paths.platform_server}#plugins"}>plugins</a>). Modules the browser can
-				compile too are listed in a second header, <code>browser.roc</code>, which the browser's half sees
-				instead.
+				Some features need more than functions to call. A job queue needs a table and workers that run in
+				the background; a dev mailbox needs pages of its own; a sound player needs a script on every page.
+				A package gives you these as a <strong>plugin</strong>: one value, made from options, that you list
+				in your program's <code>plugins</code>.
 			</p>
+			<Code
+				title="main.roc, in part"
+				source={"import jobs.Job\nimport email.Email\n\nprogram = App.program({\n\tinit!,\n\tmiddleware: Middlewares.default,\n\tplugins: [Job.plugin({ jobs: App.jobs }), Email.plugin({})],\n})"}
+				numbers={Bool.False}
+			/>
+			<p>
+				A plugin can add routes (which run behind your middleware, so your guard applies to them), database
+				tables (applied before the app's own migrations), background loops, work to do when the server
+				starts, development pages (only under <code>--dev</code> or <code>--debug</code>), and files it serves, such as a script every page
+				loads or a service worker. It can also say what it needs: an environment variable, a database, or
+				another plugin. When the server starts it checks every plugin, and any problem (two routes at one
+				path, a missing variable, a plugin that needs one you didn't list) stops it with the whole list. The
+				<a href={"${Paths.platform_server}#plugins"}>server platform's page</a> covers what a plugin can
+				add and how to write one.
+			</p>
+			<p>The packages that are plugins, and what each one adds:</p>
 			<ul>
-				<li><a href={Paths.ecosystem_jobs}>Jobs and cron</a>: <code>{"Job.plugin({ jobs: App.jobs, crons })"}</code>, the queue's table, its workers and schedules.</li>
-				<li><a href={Paths.ecosystem_admin}>Admin</a>: the jobs page (<code>JobsPage</code>), on the jobs package, beside the tables admin.</li>
-				<li><a href={Paths.ecosystem_email}>Email</a>: <code>{"Email.plugin({})"}</code>, the dev mailbox under <code>--dev</code> and a look at the SMTP server.</li>
-				<li><a href={Paths.ecosystem_push}>Push</a>: <code>{"Push.plugin({})"}</code>, its endpoints, the subscriptions' table, the job that sends (on the jobs plugin), the service worker at the root and the page's script.</li>
-				<li><a href={Paths.ecosystem_audio}>Audio</a>: <code>{"AudioPlayer.plugin({})"}</code>, the player for <code>Audio.play!</code>, a script every page loads.</li>
-				<li><a href={Paths.ecosystem_vibrate}>Vibrate</a>: <code>{"Vibrator.plugin({})"}</code>, the script that passes <code>Vibrate.pattern!</code> to the browser's motor (a phone app needs none).</li>
-				<li><a href={Paths.ecosystem_posthog}>PostHog</a>: <code>{"PostHog.plugin({})"}</code>, errors sent to PostHog's error tracking, a page's script and where it sends them.</li>
+				<li><a href={Paths.ecosystem_jobs}>Jobs and cron</a>: <code>{"Job.plugin({ jobs: App.jobs, crons })"}</code> adds the queue's table, its workers and the schedules' loop.</li>
+				<li><a href={Paths.ecosystem_admin}>Admin</a>: <code>{"JobsPage.plugin({ guard })"}</code> adds the jobs page, which shows and manages the jobs plugin's queue. The tables admin is no plugin: you mount it on a route of your own.</li>
+				<li><a href={Paths.ecosystem_email}>Email</a>: <code>{"Email.plugin({})"}</code> adds the dev mailbox under <code>--dev</code>, and once the server has started, logs whether the SMTP server answers.</li>
+				<li><a href={Paths.ecosystem_push}>Push</a>: <code>{"Push.plugin({})"}</code> adds its endpoints, the subscriptions' table, the job that sends notifications (it needs the jobs plugin), the service worker and the page's script.</li>
+				<li><a href={Paths.ecosystem_storage}>Storage</a>: <code>{"Storage.plugin({})"}</code> answers the signed links of a bucket kept on the server's disk or in memory.</li>
+				<li><a href={Paths.ecosystem_guard}>Guard</a>: <code>{"FlagStore.plugin({})"}</code> keeps feature-flag overrides in a table, so they survive a restart. The rate limits and guards need no plugin.</li>
+				<li><a href={Paths.ecosystem_audio}>Audio</a>: <code>{"AudioPlayer.plugin({})"}</code> adds the player for <code>Audio.play!</code>, a script every page loads.</li>
+				<li><a href={Paths.ecosystem_vibrate}>Vibrate</a>: <code>{"Vibrator.plugin({})"}</code> adds the script that passes <code>Vibrate.pattern!</code> to the browser's vibration motor. An app on a phone needs none.</li>
+				<li><a href={Paths.ecosystem_posthog}>PostHog</a>: <code>{"PostHog.plugin({})"}</code> sends errors to PostHog's error tracking, and adds the page's script and the endpoint it reports to.</li>
 			</ul>
 		</NoHydration>
 	</>

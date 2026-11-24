@@ -9,12 +9,14 @@ import ../../../Generated/Paths
 ## player (`AudioPlayer.plugin`). The showcase's games play their sounds through it.
 meta = {
 	title: "Audio",
-	description: "packages/audio, a plugin for Roc Solid apps: sound files played from a handler, any the browser can, at a volume and a rate; the player is the plugin's script, which every page loads.",
+	description: "packages/audio plays sound files from a handler in a Roc Solid app: any file the browser can play, at a volume and a rate. It is a plugin, whose script is the player every page loads.",
 	toc: [
 		{ id: "install", label: "Installing it" },
 		{ id: "play", label: "Playing a sound" },
-		{ id: "player", label: "The player" },
+		{ id: "when", label: "When a sound plays" },
+		{ id: "player", label: "How the player works" },
 		{ id: "files", label: "Sound files" },
+		{ id: "limits", label: "Not yet" },
 	],
 }
 
@@ -25,47 +27,100 @@ view! = |_|
 				eyebrow="The ecosystem · audio"
 				title="A sound from a handler, in one line"
 			>
-				<code>{"Audio.play!(\"/sounds/eat.wav\")"}</code> plays any file the browser can, WAV, MP3 or Ogg, from
-				the site or anywhere else, nothing prepared in advance. The <a href={"${Paths.showcase}#sound"}>showcase's
-				games</a> play theirs this way.
+				<code>{"Audio.play!(\"/sounds/eat.wav\")"}</code> plays a sound file when someone clicks, presses a
+				key or wins a game. It plays any file the browser can (WAV, MP3, Ogg), from your site or any other
+				URL, with nothing to load in advance. The <a href={"${Paths.showcase}#sound"}>showcase's games</a>
+				play their sounds this way.
 			</PageHero>
 			<p>
-				Audio is a package, <code>packages/audio</code>, and a plugin (D-051). <code>Audio</code> is a module
-				both halves of an app compile, so a component that plays a sound type-checks on each; the plugin,
-				<code>AudioPlayer</code>, serves the player, a script every page loads
-				(<a href={"${Paths.platform_server}#plugins"}>plugins</a>). It was the platforms' own until plugins
-				could serve files: now an app that plays no sound ships no player.
+				The package has two parts. <code>Audio</code> is the module you call; both halves of an app compile
+				it, so a component that plays a sound type-checks on the server too. <code>AudioPlayer</code> is a
+				<a href={"${Paths.ecosystem}#plugins"}>plugin</a>: it serves the player, a small script every page
+				loads. An app that plays no sound doesn't list the plugin, and its pages load no player.
 			</p>
 
 			<Heading id="install">Installing it</Heading>
-			<p>The app names the package in its header and lists the plugin:</p>
+			<p>Name the package in your app's header, and list the plugin in your program:</p>
 			<Code title={"${Sources.audio_header.file}, its header"} source={Sources.audio_header.rocx} numbers={Bool.False} />
 			<Code title={"${Sources.audio_install.file}, in part"} source={Sources.audio_install.rocx} numbers={Bool.False} />
 
 			<Heading id="play">Playing a sound</Heading>
-			<Code title={Sources.audio_module.file} source={Sources.audio_module.rocx} />
+			<p>Import <code>audio.Audio</code> in any component, page or module, and call it from a handler:</p>
+			<Code
+				source={"import audio.Audio\n\n<button on:click={|| Audio.play!(\"/sounds/eat.wav\")}>Eat</button>\n<button on:click={|| Audio.play_with!(\"/sounds/pop.wav\", { volume: 0.5, rate: 2.0 })}>Pop</button>"}
+				numbers={Bool.False}
+			/>
 			<p>
-				A play is a <a href={"${Paths.components}#effects"}><code>Browser.call!</code></a>: it runs once the
-				handler is done and the page is patched with what it wrote, and once for a handler that waits for the
-				server and runs again. Only a handler plays; while computing, and on the server, it fails. Browsers keep
-				a page quiet until the reader has done something on it: until then, nothing plays.
+				<code>Audio.play!</code> plays a file at its own volume and speed. <code>Audio.play_with!</code> takes
+				a <code>volume</code> from 0 to 1 and a <code>rate</code>: 2.0 plays twice as fast, and an octave
+				higher, because the pitch moves with the speed. One short file can then be a whole scale of notes, as
+				the showcase's flock plays its birds. A path that begins with <code>/</code> is your site's; a whole URL
+				plays from anywhere. Here is the whole module:
 			</p>
+			<Code title={Sources.audio_module.file} source={Sources.audio_module.rocx} />
 
-			<Heading id="player">The player</Heading>
+			<Heading id="when">When a sound plays</Heading>
 			<p>
-				The plugin's script, at <code>/rocx/plugins/audio/audio.js</code>, which every page loads before
-				start.js. It registers the browser effect <code>audio.play</code> on <code>window.rocxEffects</code>,
-				and puts a sound's URL under the site's base with what the runtime gives every effect
-				(<code>{"{ under }"}</code>), so <code>/sounds/eat.wav</code> is <code>/rocx/sounds/eat.wav</code> on
-				a copy of the site served at <code>/rocx/</code>.
+				A play is a <a href={"${Paths.components}#handlers"}><code>Browser.call!</code></a>, a call to the
+				page's own JavaScript. So it follows the same rules:
+			</p>
+			<ul>
+				<li>
+					It runs once the handler is done and the page shows what the handler wrote. A handler that waits
+					for the server runs twice, but plays once.
+				</li>
+				<li>
+					Only a handler plays: an event's handler, a timer, or an effect's apply. Calling it while a hole,
+					a memo or a component's body is being computed is an error, and so is calling it on the server.
+				</li>
+				<li>
+					Browsers keep a page silent until the reader has clicked or typed on it. Until then nothing plays,
+					and that isn't reported as an error.
+				</li>
+				<li>
+					A file that can't be played is reported on the browser's console. So is a play when the app
+					doesn't list the plugin: "no effect is called audio.play: the audio plugin's script registers
+					it: is the audio plugin in the app's plugins?"
+				</li>
+			</ul>
+
+			<Heading id="player">How the player works</Heading>
+			<p>
+				The plugin serves its script at <code>/rocx/plugins/audio/audio.js</code>, and every page loads it
+				before <code>start.js</code>, so it is ready before the page wakes. It registers the browser effect
+				<code>audio.play</code> on <code>window.rocxEffects</code>, which is where
+				<code>Browser.call!</code> looks. For each play it makes an HTML <code>Audio</code> element, sets
+				its volume and rate (kept between 0 and 1, and between 1/16 and 16), and plays it. The browser
+				fetches a file the first time it plays it, and caches it.
+			</p>
+			<p>
+				A path that begins with <code>/</code> is put under the site's base by <code>under</code>, which
+				the runtime gives every effect. So <code>/sounds/eat.wav</code> becomes
+				<code>/rocx/sounds/eat.wav</code> when your site is served at <code>/rocx/</code>.
 			</p>
 			<Code title={Sources.audio_player.file} source={Sources.audio_player.rocx} />
+			<p>
+				An app on the Android host needs no script: the phone's own handler for <code>audio.play</code>
+				plays the file, fetched from your app's server, at the same volume and rate. The
+				<a href={Paths.examples_pomodoro}>pomodoro example</a> plays its chime this way.
+			</p>
 
 			<Heading id="files">Sound files</Heading>
 			<p>
-				The sounds are the app's own files, served as any other (<code>--static</code>): this site's are a few
-				KB each, chiptune notes made by a script (<code>site/sounds.mjs</code>), and the quiz example's are
-				made the same way. The package brings none.
+				The package brings no sounds. Your app serves its own, like any other static file
+				(<a href={"${Paths.platform_server}#running"}><code>--static</code></a>). This site's are a few KB
+				each: chiptune notes made by a script, <code>site/sounds.mjs</code>. The quiz and pomodoro examples
+				make theirs the same way.
+			</p>
+
+			<Heading id="limits">Not yet</Heading>
+			<ul>
+				<li>A sound can't be stopped, paused or looped once it starts.</li>
+				<li>A play answers nothing: your code can't tell when a sound ends, or whether it played.</li>
+				<li>There is no way to load a file ahead of its first play; the first play waits for the download.</li>
+			</ul>
+			<p>
+				The package's <code>README.md</code> (<code>packages/audio/</code>) has the full reference.
 			</p>
 		</NoHydration>
 	</>

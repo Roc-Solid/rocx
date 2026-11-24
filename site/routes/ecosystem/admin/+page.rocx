@@ -9,14 +9,15 @@ import ../../../Generated/Paths
 import ../../../Ui/PageHero
 import ../../../Ui/TableWrap
 
-## The admin package: what it is for, a first admin (code the site's server compiles), its pages as
-## the package renders them (from made-up tables, while this page renders), who may use it, its
-## filters, options and widgets, how it works, its modules, and what works today. All of it is static: the
-## browser runs nothing here.
+## The admin package: what it is for, installing it, a first admin (code the site's server
+## compiles), its pages as the package renders them (from made-up tables, while this page renders),
+## its URLs, filters, access, options and widgets, how it works, the jobs page, its modules, and what
+## it doesn't do yet. All of it is static: the browser runs nothing here.
 meta = {
 	title: "Admin",
-	description: "A Django-style admin for a Roc Solid app's tables, on Postgres or SQLite: each table's rows with a search, a filter in every column, sorting and pages, and a form for each row, read from Postgres's own catalog.",
+	description: "A Django-style admin for a Roc Solid app's tables, on Postgres or SQLite: each table's rows with a search, a filter in every column, sorting and pages, and a form for each row, read from the database's own catalog.",
 	toc: [
+		{ id: "install", label: "Installing it" },
 		{ id: "first", label: "A first admin" },
 		{ id: "looks", label: "What it looks like" },
 		{ id: "pages", label: "Its pages" },
@@ -27,7 +28,7 @@ meta = {
 		{ id: "how", label: "How it works" },
 		{ id: "jobs-page", label: "The jobs page" },
 		{ id: "modules", label: "The modules" },
-		{ id: "status", label: "Status" },
+		{ id: "limits", label: "Not yet" },
 	],
 }
 
@@ -38,63 +39,88 @@ view! = |_|
 				kicker={[<>{"The ecosystem · "}</>, <code>packages/admin</code>]}
 				title="An admin for your tables, read from the database itself"
 			>
-				Django's admin, for a Roc Solid app: a page for each table, its rows with a search, a filter in
-				every column, sorting and pages, a form for each row, and a way to add and delete rows. It reads the tables from
-				the database's own catalog (Postgres's, or SQLite's) when a page is asked for, so there is nothing to generate, and nothing to keep
-				in step with the schema. It is mounted by one route file, behind the app's own middleware; the
-				package's other page, the <a href={"#jobs-page"}>jobs page</a>, is a plugin.
+				A Django-style admin for your app's database. Each table gets a page of its rows, with a search,
+				a filter in every column, sorting and pages, and a form to add, change or delete a row. The admin
+				reads your tables from the database's own catalog (Postgres's or SQLite's) on each request, so
+				there is no code to generate and nothing to keep in step with your schema. Use it when you want to
+				see and fix your data without building pages for it.
 			</PageHero>
+			<p>
+				You mount it with one route file, behind your app's own middleware. The package also draws
+				the <a href={"#jobs-page"}>jobs page</a>, a plugin that shows the queue of
+				<a href={Paths.ecosystem_jobs}>packages/jobs</a>.
+			</p>
 
-			<Heading id="first">A first admin</Heading>
-			<p>Name the package in the app's header, by its directory's name, as this site names it:</p>
+			<Heading id="install">Installing it</Heading>
+			<p>
+				Name the package in your app's header (<code>main.roc</code>), by its directory's name. This is
+				how the docs site names it:
+			</p>
 			<Code title={Sources.admin_header.file} source={Sources.admin_header.rocx} numbers={Bool.False} />
 			<p>
-				Then a route file at the path the admin is to have answers every request there with
-				<code>AdminPage.respond!</code>. It names its middleware, which says who is asking
-				(<code>middleware = Middlewares.staff</code>), and the admin's options: only <code>mount</code> and
-				<code>access</code> are needed, and only a table's <code>name</code>.
+				The package names the server platform (for the jobs page), so its <code>pf</code> must be the same
+				platform file your app names. The admin runs only on the server: the browser's half of your app
+				never compiles it, since nothing in the browser imports a <code>+server.roc</code>.
 			</p>
+
+			<Heading id="first">A first admin</Heading>
+			<p>
+				Add a route file at the path the admin should have: <code>routes/admin/db/+server.roc</code> is
+				<code>/admin/db</code>. Its <code>respond!</code> hands every request to
+				<code>AdminPage.respond!</code>, with three more things:
+			</p>
+			<ul>
+				<li>
+					the context the route's <a href={"${Paths.routing}#middleware"}>middleware</a> handed on
+					(<code>middleware = Middlewares.staff</code> says who is asking);
+				</li>
+				<li>
+					the admin's options: only <code>mount</code> (the route's path) and <code>access</code> are
+					needed, and for each table only its <code>name</code>;
+				</li>
+				<li>the effects the admin runs on: <code>Db.all!</code>, <code>Db.run!</code>, <code>Random.bytes!</code> and <code>Db.backend!</code>.</li>
+			</ul>
 			<Code title={Sources.admin_route.file} source={Sources.admin_route.rocx} />
 			<p>
-				In an app, the three definitions are a route file's (<code>routes/admin/db/+server.roc</code>). Here
-				they are a module of this site, so the compiler checks them with the site's server; nothing answers
-				with them, since the site has no database.
+				In your app these definitions go in the route file. On this site they are a module, so the
+				compiler checks them with the site's server, but nothing answers with them: the docs site has no
+				database.
 			</p>
-			<Callout kind="note" title="Why the app hands it Db.all!">
+			<Callout kind="note" title="Why you hand it Db.all!">
 				<p>
-					A Roc package can't import a platform's modules: it may name a platform only if it is the app's own,
-					and a Roc Solid app is two programs on two platforms. So the app passes the effects the
-					admin runs on, the server platform's <code>Db.all!</code>, <code>Db.run!</code>,
-					<code>Random.bytes!</code> and <code>Db.backend!</code> (which says whether the app's database is
-					Postgres or SQLite, so the admin writes its statements for it), and the compiler checks that they fit. The browser's program never
-					compiles the admin: it doesn't import a <code>+server.roc</code>.
+					<code>AdminPage</code> uses no platform, so a page in either half of an app can import the
+					admin's modules (this page shows the admin's own pages that way, below). A module on no platform
+					can't call <code>Db</code>, so your route passes it the server platform's effects, and the compiler
+					checks that they fit. <code>Db.backend!</code> tells the admin whether your database is Postgres or
+					SQLite, so it writes its statements for that one.
 				</p>
 			</Callout>
 
 			<Heading id="looks">What it looks like</Heading>
 			<p>
-				These are the admin's pages as the package renders them, by its own <code>View</code>, while this page
-				renders: from a made-up catalog of two tables, <code>books</code> and <code>authors</code>, with the
-				options above. Nothing asks a database, and the frames are sandboxed, so their links and forms do
-				nothing here. They are drawn in the admin look, as the <a href={"${Paths.ecosystem_jobs}#page"}>jobs page</a>
-				is: the tables in a sidebar (across the top when the frame is narrow), a header with the page's
-				actions, panels, and light or dark as your system is.
+				These are the admin's pages as the package's own <code>View</code> renders them while this page
+				renders. They come from a made-up catalog of two tables, <code>books</code> and <code>authors</code>,
+				with the options above. Nothing asks a database, and the frames are sandboxed, so their links and
+				forms do nothing here. They are drawn in the admin look, the same as the
+				<a href={"${Paths.ecosystem_jobs}#page"}>jobs page</a>: the tables in a sidebar (across the top when the
+				frame is narrow), a header with the page's actions, panels, and light or dark to match your system.
 			</p>
 			<figure class="admin-preview">
 				<iframe class="list" title="The admin's list of books, as the package renders it" srcdoc={AdminPreview.list_page} sandbox="" loading="lazy"></iframe>
 				<figcaption>
-					A table's rows, filtered by <code>price</code> from 10: under each heading, a filter from its column's
-					type (a range of numbers, the text a title contains, the value a foreign key is, a select of the
-					check's three values for <code>state</code>), sent by Enter or the Filter button. A heading sorts by its
-					column, the search looks in <code>title</code> and <code>blurb</code>, and a foreign key links to its row.
+					A table's rows, filtered to a <code>price</code> of 10 or more. Under each heading is a filter
+					chosen from the column's type: a range for a number, the text a title contains, the value of a
+					foreign key, and a select of the check's three values for <code>state</code>. Enter or the Filter
+					button sends them. A heading sorts by its column, the search looks in <code>title</code> and
+					<code>blurb</code>, and a foreign key links to its row.
 				</figcaption>
 			</figure>
 			<figure class="admin-preview">
 				<iframe title="The admin's form for one book, as the package renders it" srcdoc={AdminPreview.row_page} sandbox="" loading="lazy"></iframe>
 				<figcaption>
-					A row's form, just saved: a select of authors for the foreign key, of the check's values for
-					<code>state</code>, a checkbox, a decimal's input, a moment in UTC, and a text area for text of several
-					lines. The key is shown, not written.
+					A row's form, just saved: a select of authors for the foreign key, a select of the check's values
+					for <code>state</code>, a checkbox, a decimal's input, a moment in UTC, and a text area for text of
+					several lines. The key is shown, not editable.
 				</figcaption>
 			</figure>
 			<details>
@@ -104,41 +130,43 @@ view! = |_|
 
 			<Heading id="pages">Its pages</Heading>
 			<p>
-				Every page is the admin's path and a query, so one route file is all it takes. A query names a table
-				and a column only among those the app lets it show.
+				Every page is the admin's path plus a query, which is why one route file is enough. A query can
+				name only the tables and columns the app lets the admin show.
 			</p>
 			<TableWrap>
 				<table>
 					<thead><tr><th>Query</th><th>Page</th></tr></thead>
 					<tbody>
-						<tr><td>(none)</td><td>the tables, each with about how many rows it has (Postgres's estimate), its comment, and a link to add a row</td></tr>
+						<tr><td>(none)</td><td>the tables, each with roughly how many rows it has (Postgres's estimate; SQLite gives none), its comment, and a link to add a row</td></tr>
 						<tr>
 							<td><code>?table=books</code></td>
 							<td>
-								its rows, 50 a page (<code>page=2</code>), counted and paged in Postgres; a search
+								its rows, 50 a page (<code>page=2</code>), counted and paged by the database; a search
 								(<code>q=cloud</code>), a filter in each column (<code>has.title=cloud</code>,
 								<code>from.price=10</code>, <code>f.state=draft</code>, <code>is.author_id=null</code>: see
-								<a href="#filters">Filters</a>), and a sort (<code>sort=title</code>, <code>sort=-price</code>)
+								<a href="#filters">Filters</a>), and a sort (<code>sort=title</code>, or
+								<code>sort=-price</code> for descending)
 							</td>
 						</tr>
-						<tr><td><code>?table=books&amp;k.id=21</code></td><td>a row's form: <code>k.</code> and a column for each column of its primary key, so a key of two columns works too</td></tr>
-						<tr><td><code>?table=books&amp;new</code></td><td>a new row's form, its constant defaults filled in (<code>true</code>, <code>'draft'</code>, <code>0</code>)</td></tr>
+						<tr><td><code>?table=books&amp;k.id=21</code></td><td>a row's form: <code>k.</code> plus a column for each column of its primary key, so a key of two columns works too</td></tr>
+						<tr><td><code>?table=books&amp;new</code></td><td>a new row's form, with its constant defaults filled in (<code>true</code>, <code>'draft'</code>, <code>0</code>)</td></tr>
 						<tr><td><code>?table=books&amp;k.id=21&amp;delete</code></td><td>the question before a row is deleted, and the button that deletes it</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 			<p>
-				A form sent adds, changes or deletes the row, then goes on to its page, which says so (Saved.). An
-				update writes only the columns that changed. When Postgres refuses (a price that isn't a number, an
-				author that books still name), the form comes back with what was sent and Postgres's reason. A table
-				without a primary key is listed, not opened.
+				Sending a form adds, changes or deletes the row, then takes you to the row's page, which says
+				Saved. An update writes only the columns that changed. When the database refuses (a price that
+				isn't a number, an author that books still name), the form comes back with what you sent and the
+				database's reason. A table without a primary key is listed, but its rows can't be opened.
 			</p>
 
 			<Heading id="filters">Filters</Heading>
 			<p>
-				Each column a list shows has a filter, in a row under the column headings, chosen from its type; a hidden
-				column never has one. Filtering a column the list shows tells a visitor nothing they can't see, so there
-				is no option for it: to filter by a column, list it.
+				Each column a list shows has a filter, in a row under the column headings, chosen from the
+				column's type. A hidden column never has one. There is no option to turn filters on or off:
+				filtering a column the list already shows reveals nothing a visitor can't see. To filter by a
+				column, list it.
 			</p>
 			<TableWrap>
 				<table>
@@ -149,24 +177,27 @@ view! = |_|
 						<tr><td><code>date</code>, <code>timestamp</code>, <code>timestamptz</code> (in UTC), <code>time</code></td><td>from, to, or both, inclusive, with the browser's pickers</td><td><code>from.published_at=2026-03-01T00:00</code></td></tr>
 						<tr><td><code>boolean</code></td><td>a select: any, yes, no</td><td><code>f.in_print=true</code></td></tr>
 						<tr><td>an enum, or a check that it is one of a few values</td><td>a select of its values</td><td><code>f.state=draft</code></td></tr>
-						<tr><td>a foreign key</td><td>the value it is</td><td><code>f.author_id=3</code></td></tr>
-						<tr><td>any of these, if it may be null</td><td>empty and not empty too: in its select, or a small select under its inputs</td><td><code>is.blurb=null</code>, <code>is.blurb=set</code></td></tr>
+						<tr><td>a foreign key</td><td>the value it equals</td><td><code>f.author_id=3</code></td></tr>
+						<tr><td>any of these, if it may be null</td><td>also empty and not empty: in its select, or in a small select under its inputs</td><td><code>is.blurb=null</code>, <code>is.blurb=set</code></td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 			<p>
-				The filters are one GET form, with no JavaScript: Enter in any of them sends it, or the Filter button
-				beside the search. It keeps the search and the sort and goes back to the first page, and the pages' links
-				and the sort keep the filters. A filter's value is checked in Roc before it reaches SQL (a number for a
-				number, <code>2026-03-14</code> for a date, one of an enum's labels), then a range's is cast to its
-				column's type (<code>{"\"price\" >= $3::numeric"}</code>). A value that isn't one is ignored, and its
-				filter says so (Ignored: not a number): the page is never an error.
+				The filters are one GET form, with no JavaScript. Enter in any of them sends it, and so does the
+				Filter button beside the search. Filtering keeps the search and the sort and goes back to the first
+				page; the page links and the sort keep the filters, and Clear filters drops them all.
+			</p>
+			<p>
+				Each filter's value is checked in Roc before it reaches SQL: a number for a number,
+				<code>2026-03-14</code> for a date, one of an enum's labels, and so on. A range's value is then cast
+				to its column's type (<code>{"\"price\" >= $3::numeric"}</code>). A value of the wrong kind is ignored,
+				and its filter says so (Ignored: not a number), so a bad query never turns the page into an error.
 			</p>
 
 			<Heading id="access">Who may use it</Heading>
 			<p>
-				The route's middleware runs first, as for any route: it can send a stranger to sign in. Then
-				<code>access</code> decides, from the context the middleware handed on:
+				The route's middleware runs first, as for any route, so it can send a stranger to sign in. Then
+				<code>access</code> decides from the context the middleware handed on:
 			</p>
 			<TableWrap>
 				<table>
@@ -179,126 +210,146 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				A form's POST must come from a page of the same site (its <code>Origin</code>) and send back the token its
-				page was given, which the admin keeps in a cookie (<code>rocx_admin_csrf</code>: for the admin's path
-				only, out of scripts' reach, never sent with another site's form). Anything else is refused with a 403
-				before a table is read.
+				A form's POST must come from a page of the same site (its <code>Origin</code> header) and send back
+				the token its page was given. The admin keeps that token in a cookie,
+				<code>rocx_admin_csrf</code>, which is sent only to the admin's path, can't be read by scripts
+				(<code>HttpOnly</code>), and isn't sent with another site's form (<code>SameSite=Lax</code>). Any
+				other POST is refused with a 403 before a table is read.
 			</p>
 
 			<Heading id="options">Options</Heading>
-			<p><code>Admin.Config(context)</code>, the admin:</p>
+			<p><code>Admin.Config(context)</code> configures the admin. Only <code>mount</code> and <code>access</code> are required.</p>
 			<TableWrap>
 				<table>
-					<thead><tr><th>Field</th><th>Is</th></tr></thead>
+					<thead><tr><th>Field</th><th>What it is</th></tr></thead>
 					<tbody>
 						<tr><td><code>mount : Str</code></td><td>the route's path</td></tr>
-						<tr><td><code>{"access : context -> [Edit, ReadOnly, Refused]"}</code></td><td>what someone may do, from the middleware's context</td></tr>
-						<tr><td><code>tables : List(Admin.Table)</code></td><td>the tables it shows, in order, with their options</td></tr>
-						<tr><td><code>include : [Listed, All]</code></td><td><code>Listed</code>, unless it says: only those; <code>All</code>: every other table of the schema too, with no options, but the platform's own (<code>rocx_…</code>)</td></tr>
-						<tr><td><code>schema : Str</code></td><td><code>"public"</code>, unless it says</td></tr>
-						<tr><td><code>title : Str</code></td><td>what its pages call it: <code>"Database"</code>, unless it says</td></tr>
-						<tr><td><code>{"back : { label : Str, href : Str }"}</code></td><td>a link back to the app's own pages, first in every page's sidebar (<code>{"{ label: \"Status admin\", href: \"/admin\" }"}</code>); none, unless it says</td></tr>
+						<tr><td><code>{"access : context -> [Edit, ReadOnly, Refused]"}</code></td><td>what someone may do, decided from the middleware's context</td></tr>
+						<tr><td><code>tables : List(Admin.Table)</code></td><td>the tables it shows, in order, with their options (none by default)</td></tr>
+						<tr><td><code>include : [Listed, All]</code></td><td><code>Listed</code> (the default) shows only those tables; <code>All</code> adds every other table of the schema, with default options, except the platform's own (<code>rocx_…</code>)</td></tr>
+						<tr><td><code>schema : Str</code></td><td>the Postgres schema: <code>"public"</code> by default (SQLite's is always <code>main</code>)</td></tr>
+						<tr><td><code>title : Str</code></td><td>what its pages call it: <code>"Database"</code> by default</td></tr>
+						<tr><td><code>{"back : { label : Str, href : Str }"}</code></td><td>a link back to the app's own pages, first in every page's sidebar (<code>{"{ label: \"Status admin\", href: \"/admin\" }"}</code>); none by default</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 			<p>
-				<code>Admin.Table</code>, a table's options. Columns are named as the table names them; a name it doesn't
-				have is ignored.
+				<code>Admin.Table</code> holds a table's options. Columns are named as the table names them; a name
+				the table doesn't have is ignored.
 			</p>
 			<TableWrap>
 				<table>
-					<thead><tr><th>Field</th><th>Unless it says</th><th>Is</th></tr></thead>
+					<thead><tr><th>Field</th><th>Default</th><th>What it is</th></tr></thead>
 					<tbody>
-						<tr><td><code>name : Str</code></td><td></td><td>the table</td></tr>
-						<tr><td><code>label : Str</code></td><td>its name, readable: <code>book_tags</code> is Book tags</td><td>what the pages call it</td></tr>
+						<tr><td><code>name : Str</code></td><td>(required)</td><td>the table</td></tr>
+						<tr><td><code>label : Str</code></td><td>its name, made readable: <code>book_tags</code> is Book tags</td><td>what the pages call it</td></tr>
 						<tr><td><code>list : List(Str)</code></td><td>its first seven columns</td><td>the columns its list of rows shows, each with a filter</td></tr>
 						<tr><td><code>search : List(Str)</code></td><td>no search box</td><td>where the search looks, for the text anywhere, in any case</td></tr>
-						<tr><td><code>ordering : List(Str)</code></td><td>its key, newest first</td><td>the list's order: <code>["-published_at", "title"]</code></td></tr>
-						<tr><td><code>read_only : List(Str)</code></td><td></td><td>shown on the form, never written</td></tr>
-						<tr><td><code>hidden : List(Str)</code></td><td></td><td>never read, shown or written: a password's hash</td></tr>
-						<tr><td><code>labels : List((Str, Str))</code></td><td>each column's name, readable</td><td><code>[("email", "Email address")]</code></td></tr>
-						<tr><td><code>title : Str</code></td><td>its first text column that isn't its key</td><td>the column that names a row: its page's heading, and its name in a foreign key's select</td></tr>
+						<tr><td><code>ordering : List(Str)</code></td><td>its key, newest first</td><td>the list's order; <code>-</code> for descending: <code>["-published_at", "title"]</code></td></tr>
+						<tr><td><code>read_only : List(Str)</code></td><td>none</td><td>columns shown on the form, never written</td></tr>
+						<tr><td><code>hidden : List(Str)</code></td><td>none</td><td>columns never read, shown or written, such as a password's hash</td></tr>
+						<tr><td><code>labels : List((Str, Str))</code></td><td>each column's name, made readable</td><td>what to call its columns: <code>[("email", "Email address")]</code></td></tr>
+						<tr><td><code>title : Str</code></td><td>its first text column that isn't its key</td><td>the column that names a row: the heading of its page, and its name in a foreign key's select</td></tr>
 						<tr><td><code>per_page : U64</code></td><td>50</td><td>rows a page</td></tr>
-						<tr><td><code>widgets : List((Str, Widget.Kind))</code></td><td>the column's type's</td><td><code>[("body", LongText)]</code></td></tr>
+						<tr><td><code>widgets : List((Str, Widget.Kind))</code></td><td>the column's type's</td><td>another input for a column: <code>[("body", LongText)]</code></td></tr>
 						<tr><td><code>create : Bool</code>, <code>delete : Bool</code></td><td>yes</td><td>whether rows may be added, or deleted, here</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 
 			<Heading id="widgets">Widgets</Heading>
-			<p>Each column's input is chosen from its type, as the catalog says it (a domain's, its base type's):</p>
+			<p>
+				A widget is the input a column gets on a row's form. The admin chooses it from the column's type,
+				as the catalog reports it (for a domain, its base type):
+			</p>
 			<TableWrap>
 				<table>
 					<thead><tr><th>Column</th><th>Widget</th></tr></thead>
 					<tbody>
 						<tr><td>a foreign key to a table the admin shows</td><td>a select of that table's rows, by their title (an input, when there are more than 200), and a link to the row</td></tr>
-						<tr><td>an enum; a check that it is one of a few values (<code>{"check (state in ('draft', 'published'))"}</code>)</td><td>a select of them</td></tr>
+						<tr><td>an enum, or a check that it is one of a few values (<code>{"check (state in ('draft', 'published'))"}</code>)</td><td>a select of them</td></tr>
 						<tr><td><code>boolean</code></td><td>a checkbox; a select of yes, no and null when it may be null</td></tr>
 						<tr><td><code>smallint</code>, <code>integer</code>, <code>bigint</code></td><td>a number</td></tr>
 						<tr><td><code>numeric</code>, <code>real</code>, <code>double precision</code></td><td>a decimal's input</td></tr>
 						<tr><td><code>date</code>, <code>timestamp</code>, <code>timestamptz</code>, <code>time</code></td><td>the browser's pickers; a <code>timestamptz</code> in UTC</td></tr>
 						<tr><td><code>json</code>, <code>jsonb</code></td><td>a text area, in a monospace font</td></tr>
-						<tr><td><code>text</code>, <code>varchar(n)</code>, <code>uuid</code> and the rest</td><td>an input (<code>maxlength</code> for a <code>varchar(n)</code>), or a text area for a value of several lines; Postgres reads what is typed as the column's type</td></tr>
+						<tr><td><code>text</code>, <code>varchar(n)</code>, <code>uuid</code> and the rest</td><td>an input (with <code>maxlength</code> for a <code>varchar(n)</code>), or a text area for a value of several lines; the database reads what is typed as the column's type</td></tr>
 						<tr><td>a generated column, <code>bytea</code></td><td>shown, never written</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 			<p>
-				An empty input is null for a column that may be null, an empty text for text that may not, and, in a new
-				row, the column's default for a column that has one.
+				An empty input means null for a column that may be null, and an empty text for a text column that
+				may not. In a new row, an empty input for a column with a default leaves the default to the
+				database. To give a column another widget, name it in the table's <code>widgets</code>; the
+				<a href="https://github.com/Roc-Solid/rocx/blob/master/packages/admin/README.md#widgets">README</a>
+				lists every <code>Widget.Kind</code>.
 			</p>
 
 			<Heading id="how">How it works</Heading>
 			<p>
-				For each request, the admin reads the schema from the database's catalog (Postgres's <code>pg_catalog</code>,
-				four small statements; or SQLite's <code>pragma_table_list</code>, <code>pragma_table_xinfo</code> and
-				<code>pragma_foreign_key_list</code>, with each table's checks read from its <code>create table</code>, a
-				column's declared type read as Postgres's name for it), and turns its answer into tables (<code>Catalog.read</code>): their columns and types, which
-				may be null, which have defaults, their primary keys, foreign keys, enums, and a check's values. A table
-				or a column a request names is looked up there, among those the app lets it show, and only the
-				catalog's names go into SQL, double-quoted. Every value is a parameter.
+				On each request, the admin reads the schema from the database's catalog and turns the answer into
+				tables (<code>Catalog.read</code>): their columns and types, which columns may be null or have
+				defaults, the primary keys, foreign keys, enums, and the values a check allows. On Postgres that is
+				four small statements over <code>pg_catalog</code>. On SQLite it reads
+				<code>pragma_table_list</code>, <code>pragma_table_xinfo</code> and
+				<code>pragma_foreign_key_list</code>, and takes each table's checks from its
+				<code>create table</code>. A SQLite column's declared type is read as Postgres would name it
+				(<code>integer</code> as <code>int8</code>, <code>boolean</code> as <code>bool</code>), so it gets the
+				same widget and filter.
+			</p>
+			<p>
+				A table or column that a request names is looked up in those tables, among the ones the app lets
+				the admin show. Only the catalog's names go into SQL, double-quoted, and every value is a
+				parameter:
 			</p>
 			<Code title={"${Sources.admin_ident.file}, in part"} source={Sources.admin_ident.rocx} numbers={Bool.False} />
 			<p>
-				So a list is two statements, built by <code>Sql</code>: how many rows there are, then the page's. These are
-				the ones for <code>{"?${AdminPreview.query}"}</code> in the admin above, as the package builds them while
-				this page renders:
+				A list is two statements, built by <code>Sql</code>: how many rows there are, then the page's rows.
+				These are the statements for <code>{"?${AdminPreview.query}"}</code> in the admin above, built by the
+				package while this page renders:
 			</p>
 			<Code title={"?${AdminPreview.query}"} source={AdminPreview.statements} plain numbers={Bool.False} />
 			<p>
-				Every statement answers with rows of one shape, each cell as text and whether it was null
+				Every statement answers with rows of one shape, each cell as text plus whether it was null
 				(<code>Catalog.Row</code>), so one <code>Db.all!</code> reads them all, whatever the table. A cell in a
-				list is cut short in Postgres (to 81 characters, so the page can tell it was cut), never a key's.
+				list is cut short by the database (to 81 characters, so the page can tell it was cut); a key never
+				is.
 			</p>
 			<p>
-				Pages are sent with <code>Content-Security-Policy: default-src 'none'</code> (no script, nothing loaded
-				from elsewhere, forms sent only here), <code>X-Frame-Options: DENY</code> and
+				Pages are sent with <code>Content-Security-Policy: default-src 'none'</code> (no script, nothing
+				loaded from elsewhere, forms sent only to this site), <code>X-Frame-Options: DENY</code> and
 				<code>Cache-Control: no-store</code>, and every value in them is escaped.
 			</p>
 
 			<Heading id="jobs-page">The jobs page</Heading>
 			<p>
-				The package draws the queue of <a href={Paths.ecosystem_jobs}>packages/jobs</a> too, as a plugin. The app
-				lists it with the guard its admin pages use, which has no default: a jobs page is never public because an
-				option was left out.
+				The package also draws the queue of <a href={Paths.ecosystem_jobs}>packages/jobs</a>, as a plugin.
+				You list it beside the jobs plugin, with a <code>guard</code>: the middleware that decides who may
+				see it, usually the one your admin pages use. <code>guard</code> has no default, so a jobs page is
+				never public because an option was left out.
 			</p>
 			<Code source={"plugins: [\n\tJob.plugin({ jobs: App.jobs }),\n\tJobsPage.plugin({ at: \"/admin/jobs\", guard: Middlewares.admin }),   # at: \"/admin/jobs\" unless it says\n]"} numbers={Bool.False} />
 			<p>
-				A request at <code>at</code> passes the app's middleware, then <code>guard</code>, then the page;
-				what the guard hands on isn't used. It needs the jobs plugin, and the server says so at start if it
-				isn't listed. <code>back</code> adds a link back to the app's own pages, first in its sidebar, as the
-				tables admin's option does (<code>{"JobsPage.plugin({ guard, back: { label: \"Status admin\", href: \"/admin\" } })"}</code>;
-				none, unless it says). An app that mounts the page itself answers a route with
-				<code>{"JobsPage.respond!(request, { mount, back })"}</code> (<code>back</code> may be left out). Both are drawn in one look with the tables
-				admin: <code>Look</code> has the rules every admin page shares and the helpers, and
-				<code>AdminHtml</code> builds the server's pages on them (<a href={"${Paths.ecosystem_jobs}#page"}>what
-				the page shows</a>).
+				A request at <code>at</code> passes the app's middleware, then <code>guard</code>, then the page; what
+				the guard hands on isn't used. The page needs the jobs plugin, and the server says so at start if it
+				isn't listed. <code>back</code> adds a link back to your app's pages, as the tables admin's option does
+				(<code>{"JobsPage.plugin({ guard, back: { label: \"Status admin\", href: \"/admin\" } })"}</code>). To
+				mount the page yourself, answer a route with <code>{"JobsPage.respond!(request, { mount })"}</code>
+				(<code>back</code> is optional there too). The jobs page's own section says
+				<a href={"${Paths.ecosystem_jobs}#page"}>what it shows and does</a>.
+			</p>
+			<p>
+				The tables admin, the jobs page and the dev mailbox of <a href={Paths.ecosystem_email}>packages/email</a>
+				share one look. <code>Look</code> has the rules every admin page shares and the helpers that draw
+				them, and <code>AdminHtml</code> builds the server's pages on them.
 			</p>
 
 			<Heading id="modules">The modules</Heading>
 			<p>
-				<code>AdminPage</code> is the one with effects, and they are the ones the app hands it. The rest is plain
-				Roc, on no platform: <code>roc test packages/admin/main.roc</code> runs their <code>expect</code>s.
+				<code>AdminPage</code> is the one module with effects, and they are the ones your route hands it.
+				<code>JobsPage</code> and <code>AdminHtml</code> run on the server platform. The rest is plain Roc,
+				on no platform: <code>roc test packages/admin/main.roc</code> runs their <code>expect</code>s.
 			</p>
 			<TableWrap>
 				<table>
@@ -306,51 +357,42 @@ view! = |_|
 					<tbody>
 						<tr><td><code>Admin</code></td><td>the options (<code>Config</code>, <code>Table</code>, <code>Access</code>), and what they mean for a table: <code>showing</code>, <code>listed</code>, <code>searchable</code>, <code>writable</code>, <code>title</code>, <code>ordering</code>, <code>widget</code></td></tr>
 						<tr><td><code>AdminPage</code></td><td><code>respond!(request, context, config, effects)</code>: the access check, the token, the catalog, then the page or the form</td></tr>
-						<tr><td><code>Catalog</code></td><td>the statements that read the schema, and <code>read</code>, their rows as tables</td></tr>
+						<tr><td><code>Catalog</code></td><td>the statements that read the schema, on Postgres or SQLite, and <code>read</code> (<code>read_sqlite</code>), their rows as tables</td></tr>
 						<tr><td><code>Sql</code></td><td><code>ident</code>, <code>contains</code> (a search's or a filter's pattern), the conditions a list's rows meet, and the statements: <code>rows</code>, <code>count</code>, <code>one</code>, <code>insert</code>, <code>update</code>, <code>delete</code>, <code>titles</code></td></tr>
 						<tr><td><code>Widget</code></td><td>a column's widget from its type (<code>of</code>), its input (<code>input</code>), what a form's text writes (<code>param</code>), whether it changed (<code>same</code>), a new row's value (<code>initial</code>)</td></tr>
-						<tr><td><code>Listing</code></td><td>a list's search, filters, sort and page from the query, and back (<code>read</code>, <code>params</code>, <code>conditions</code>, <code>order</code>, <code>key</code>), each column's filter (<code>kind</code>) and the check of its values (<code>check</code>)</td></tr>
+						<tr><td><code>Listing</code></td><td>a list's search, filters, sort and page, read from the query and written back (<code>read</code>, <code>params</code>, <code>conditions</code>, <code>order</code>, <code>key</code>); each column's filter (<code>kind</code>) and the check of its values (<code>check</code>)</td></tr>
 						<tr><td><code>Paging</code></td><td><code>of(total, size, asked)</code>, <code>offset</code>, <code>shows</code>, <code>links</code>: the first two pages, three each side of this one, the last two</td></tr>
-						<tr><td><code>View</code></td><td>each page's HTML: <code>index_page</code>, <code>list_page</code>, <code>row_page</code>, <code>delete_page</code>, <code>problem_page</code></td></tr>
-						<tr><td><code>Look</code></td><td>the admin look: the rules every admin page shares, part by part (<code>shared</code>), and its helpers (<code>side</code>, <code>header</code>, <code>panel</code>, <code>empty</code>, <code>icon</code>, <code>button_with</code>), light and dark; the tables admin's own rules for forms, filters and pages, its document, and the headers it is sent with</td></tr>
-						<tr><td><code>JobsPage</code></td><td>the jobs page: <code>{"plugin({ at, guard })"}</code>, or <code>{"respond!(request, { mount })"}</code> for an app that mounts it itself (server only)</td></tr>
-						<tr><td><code>AdminHtml</code></td><td>the server's admin pages (the jobs page's, the dev mailbox's), on <code>Look</code>: a page with its stream of changes, times, links (server only)</td></tr>
+						<tr><td><code>View</code></td><td>each page's HTML: <code>index_page</code>, <code>list_page</code>, <code>row_page</code>, <code>delete_page</code>, <code>problem_page</code>, and the sidebar (<code>side</code>)</td></tr>
+						<tr><td><code>Look</code></td><td>the admin look: the rules every admin page shares (<code>shared</code>) and its helpers (<code>side</code>, <code>header</code>, <code>panel</code>, <code>empty</code>, <code>icon</code>, <code>button_with</code>), light and dark; the tables admin's own rules, its document, and the headers it is sent with</td></tr>
 						<tr><td><code>Form</code></td><td>a query's or a form's fields, decoded, and links, encoded</td></tr>
+						<tr><td><code>JobsPage</code></td><td>the jobs page: <code>{"plugin({ at, guard, back })"}</code>, or <code>{"respond!(request, { mount, back })"}</code> for an app that mounts it itself (server only)</td></tr>
+						<tr><td><code>AdminHtml</code></td><td>the server's admin pages (the jobs page, the dev mailbox), on <code>Look</code>: a page with its stream of changes, times, links (server only)</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 
-			<Heading id="status">Status</Heading>
+			<Heading id="limits">Not yet</Heading>
 			<p>
-				Everything on this page works today, with the server platform as it is. The package's 172
-				<code>expect</code>s test its plain modules. The whole admin was tried end to end in a scratch app
-				against Postgres 18: an enum, a check, foreign keys, a key of two columns, generated and identity
-				columns, every page and form, and the refusals. That test isn't in the repository's suite yet, since
-				it needs a database.
+				Everything above works today, on Postgres and on SQLite. The server's tests drive the admin over
+				HTTP on both: its index, a new row's form, a row created, found by a search and a filter, changed
+				and deleted.
 			</p>
-			<p>A proposal would make it simpler:</p>
-			<ul>
-				<li>
-					<strong>Server-only modules in packages</strong>: <code>rocx build</code> would copy a package's
-					<code>server/</code> modules into the server's program only. Then <code>AdminPage</code> imports
-					<code>Db</code> and <code>Random</code> itself, and a route's <code>respond!</code> is
-					<code>AdminPage.respond!(request, context, admin)</code>, with no effects to hand it.
-				</li>
-			</ul>
-			<p>
-				One look in one place is done: the jobs page and its look moved into this package with the plugins
-				(D-034).
-			</p>
-			<p>Not yet:</p>
 			<ul>
 				<li>A list counts its rows (<code>count(*)</code>) and pages with <code>offset</code>: fine for thousands of rows, slow for millions.</li>
+				<li>A filter on the text a column contains reads every row (no index helps <code>{"ilike '%…%'"}</code>), as the search does.</li>
 				<li>A foreign key in a list shows its value, linked to its row, not the row's title; its filter takes a value.</li>
 				<li>A foreign key or a check over several columns gives no widget: each column is edited alone.</li>
 				<li>No actions on several rows at once, and no history of who changed what.</li>
+				<li>
+					Every route passes the effects. <code>AdminPage</code> could take <code>Db</code> itself, in a
+					server-only module, and a route would be <code>AdminPage.respond!(request, context, admin)</code>;
+					the package's <code>PROPOSALS.md</code> weighs it.
+				</li>
 			</ul>
 			<Note>
-				The package's README and its proposals are in <code>packages/admin/</code>; the pages above are its
-				<code>View</code>'s, and the code its own.
+				The <a href="https://github.com/Roc-Solid/rocx/tree/master/packages/admin">package's README</a> is
+				the full reference, and its proposals are beside it in <code>packages/admin/</code>. The pages above
+				are drawn by its <code>View</code>, and the code is its own.
 			</Note>
 		</NoHydration>
 	</>

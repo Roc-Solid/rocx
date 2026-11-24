@@ -73,7 +73,13 @@ ExampleApp := [].{
 			</p>
 
 			<Heading id="run">Run it</Heading>
-			<p>From the repository's root, with the toolchain set up (<code>just setup</code>): build it, check it and run its tests; its README says how to start it and look around.</p>
+			<p>
+				With the toolchain set up (<code>just setup</code>), start it from its own directory: it builds,
+				serves at <code>http://127.0.0.1:8080</code> and builds again when you save. Its README says what
+				to look at.
+			</p>
+			<Code source={"cd examples/${facts.name} && ../../bin/rocx dev"} numbers={Bool.False} plain />
+			<p>To build it, check it and run its tests, from the repository's root:</p>
 			<Code source={"just examples ${facts.name}"} numbers={Bool.False} plain />
 		</>
 	}

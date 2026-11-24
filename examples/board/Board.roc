@@ -39,7 +39,7 @@ Board := [].{
 	Summary : { slug : Str, name : Str, cards : I64 }
 
 	## A whole board, as `GET /b/<board>` answers it: who is asking (`me`), and the server's date
-	## (`today`: the browser has no clock yet), which says which cards are overdue.
+	## (`today`), which says which cards are overdue: the browser and the server agree on it.
 	Data : {
 		slug : Str,
 		name : Str,

@@ -26,7 +26,7 @@ Feed := [].{
 		(live!, set_live!) = create_signal!(Bool.False)
 		(fresh!, set_fresh!) = create_signal!(Bool.False)
 		channel = Api.channel_rooms_code({ code: code })
-		# The browser's copy of an endpoint is only its URL: what it carries is said here.
+		# What the channel carries, said here too (Generated/Api says it as well).
 		heard! : Channel.Event(Game.View) => {}
 		heard! = |event|
 			match event {

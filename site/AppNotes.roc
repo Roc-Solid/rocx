@@ -37,7 +37,7 @@ AppNotes := [].{
 			path: Paths.examples_tasks,
 			blurb: "Task lists: the one to read first",
 			summary: "A small team's task lists: lists, tasks with a due day and someone to do them, filters, and reordering. The one to read first: it does the usual things the plain way, and its comments say why each piece is where it is.",
-			shows: ["File routing, a middleware, and a database with typed rows", "Forms that work without JavaScript, checked as they are typed", "Optimistic actions: a change shows at once and is undone if refused", "Drag and drop, and rows that glide to their places"],
+			shows: ["File routing, a middleware, and a database with typed rows", "Forms that work without JavaScript, checked as they are typed", "Optimistic actions: a change shows at once and is undone if refused", "Drag and drop, rows that glide to their places, and a question before you leave unsaved changes"],
 			shots: [
 				{ file: "list", alt: "A task list with due badges, avatars, filters and the form that adds a task", caption: "A list, its filters, and the form under it", phone: Bool.False },
 				{ file: "lists", alt: "The front page on a phone: each list as a card with how far along it is", caption: "The lists, on a phone", phone: Bool.True },
@@ -49,8 +49,8 @@ AppNotes := [].{
 			kind: App,
 			path: Paths.examples_journal,
 			blurb: "Markdown posts in two languages",
-			summary: "A small publication in English and Polish: Markdown posts with typed frontmatter, compiled into the server, with a search that follows the typing and reactions kept in memory. No database.",
-			shows: ["Markdown collections from content/, typed", "Two languages with the intl package, and feeds", "Kv for state that needs no database"],
+			summary: "A small publication in English and Polish: Markdown posts with typed frontmatter, compiled into the server. The server renders the pages, and two small interactive parts run in the browser: a search that follows the typing, and reactions kept in memory. No database.",
+			shows: ["A typed Markdown collection from content/, checked as the app builds", "Two languages with packages/intl, Atom feeds and a sitemap", "Pages the server renders alone (<NoHydration>), with two parts that hydrate", "Kv and packages/guard: reactions, a rate limit, security headers", "A typed JSON API with its OpenAPI page"],
 			shots: [
 				{ file: "home", alt: "The journal's front page: the latest posts with their dates and tags", caption: "The front page", phone: Bool.False },
 				{ file: "post", alt: "A post on a phone, with its reactions under it", caption: "A post, on a phone", phone: Bool.True },
@@ -63,7 +63,7 @@ AppNotes := [].{
 			path: Paths.examples_board,
 			blurb: "A live kanban board, for several at once",
 			summary: "A live kanban board a small team works on at once: each sees the others' changes as they happen, and who is where.",
-			shows: ["Drag and drop with optimistic moves", "Channels: one stream per tab, changes published to everyone on the board", "Presence, and an edit lease kept in Kv"],
+			shows: ["Drag and drop, with a move shown before the server has it", "A channel: each change published to everyone on the board", "Presence, and an edit lease on each card kept in Kv", "Ranks that keep the order when two people move cards at once"],
 			shots: [
 				{ file: "board", alt: "A kanban board with four columns of cards and the people on it", caption: "The board", phone: Bool.False },
 				{ file: "card", alt: "A card open for editing, beside the board", caption: "A card, open", phone: Bool.False },
@@ -87,7 +87,7 @@ AppNotes := [].{
 			path: Paths.examples_uptime,
 			blurb: "An uptime monitor and its status page",
 			summary: "An uptime monitor and its public status page: jobs check each service on time, incidents open and close themselves, subscribers are emailed, and the page follows it all live.",
-			shows: ["Jobs and cron, email and OpenTelemetry metrics, as plugins", "The admin's tables over the app's database", "Charts, and a channel for the live page"],
+			shows: ["Jobs, cron and email as plugins", "OpenTelemetry metrics from a middleware", "The admin's tables over the app's database, and its jobs page", "Charts, and a channel for the live page"],
 			shots: [
 				{ file: "status", alt: "The status page: each service's state, its uptime and its last days", caption: "The status page", phone: Bool.False },
 				{ file: "monitor", alt: "A monitor's page: its response time charted, and its incidents", caption: "A monitor", phone: Bool.False },
@@ -99,7 +99,7 @@ AppNotes := [].{
 			path: Paths.examples_notes,
 			blurb: "Notes in Markdown, for people and AI agents",
 			summary: "Personal notes in Markdown that AI agents can use too: sign in by a mailed link, write with a live preview, tag, pin and search, and let an AI client read and write them over MCP.",
-			shows: ["Sign-in by a mailed link, and a signed session cookie", "Personal access tokens, kept as hashes", "An MCP server, a JSON API and its OpenAPI page", "Full-text search"],
+			shows: ["Sign-in by a mailed link, and a signed session cookie", "Personal access tokens, kept as hashes", "An MCP server whose tools are the JSON API's endpoints, and its OpenAPI page", "Full-text search, and Markdown with a live preview"],
 			shots: [
 				{ file: "notes", alt: "The notebook: notes with their tags, pinned ones first, and the tags down the side", caption: "The notebook", phone: Bool.False },
 				{ file: "edit", alt: "A note being written, its Markdown beside its live preview", caption: "Writing, with a live preview", phone: Bool.False },
@@ -110,7 +110,7 @@ AppNotes := [].{
 			kind: App,
 			path: Paths.examples_pomodoro,
 			blurb: "A focus timer, in a browser and on Android",
-			summary: "A Pomodoro timer: 25 minutes to focus, then 5 to rest, a ring that empties as the time goes, and a count of today's sessions. The same page runs in a browser and, unchanged, as an Android phone's own views (D-063), where the session's end plays its chime and buzzes the phone.",
+			summary: "A Pomodoro timer: 25 minutes to focus, then 5 to rest, a ring that empties as the time goes, and a count of today's sessions. The same page runs in a browser and, unchanged, as an Android phone's own views, where the end of a session plays a chime and buzzes the phone.",
 			shows: ["One page on the web and on Android, with rocx dev --android", "A timer kept by a deadline, not by counting ticks", "A sound and a buzz from a timer, plugins with a phone half", "SVG and percentage widths, drawn natively on the phone"],
 			shots: [
 				{ file: "timer", alt: "The timer at 25:00 in a ring, the Focus and Break tabs above it, and today's count below", caption: "The timer", phone: Bool.False },
@@ -155,7 +155,7 @@ AppNotes := [].{
 			path: Paths.examples_checkboxes,
 			blurb: "A million checkboxes, shared live",
 			summary: "A million checkboxes that everyone with the page open shares: a box checked in one tab shows in every other within a moment, and the page holds only the rows that show.",
-			shows: ["A virtual list (packages/virtual): <Repeat> and on:viewport", "State in the server's memory (Kv), with a compare-and-swap", "A channel: chunks that changed, latest first, and who is online", "A grid laid out by the list's width"],
+			shows: ["A virtual list (packages/virtual): <Repeat> and on:viewport", "State in the server's memory (Kv), with a compare-and-swap", "A channel that sends only the latest version of each chunk, and counts who is online", "A grid laid out by the list's width"],
 			shots: [
 				{ file: "grid", alt: "The grid: rows of checkboxes, some checked, each row's first box numbered, and the count of checked boxes and pages online above", caption: "The boxes", phone: Bool.False },
 				{ file: "far", alt: "Half a million boxes down: the rows there, rendered as the grid scrolled to them", caption: "Half a million boxes down", phone: Bool.False },

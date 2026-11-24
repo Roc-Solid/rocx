@@ -2,7 +2,7 @@ import pf.Middleware
 import pf.Server
 import Generated/Paths
 
-## The site's middleware. `default` runs around every request (`server.roc`); a route file names its
+## The site's middleware. `default` runs around every request (`main.roc`'s `App.program`); a route file names its
 ## own (`middleware = Middlewares.member`), which runs after it, around that route.
 Middlewares := [].{
 

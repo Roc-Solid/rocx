@@ -29,15 +29,18 @@ view! = |_| {
 			eyebrow="Members"
 			title={"Welcome, ${member}"}
 		>
-			This page is behind <code>Middlewares.member</code>, which read your <code>member</code> cookie
-			and handed on your name. The same middleware is in front of this path's endpoint, so a script
-			asking <code>GET {Paths.members}</code> for JSON gets the same answer, or a 401.
+			Only members see this page. Before it rendered, <code>Middlewares.member</code> read your
+			<code>member</code> cookie; without one, it would have sent you to join. The page then read its own
+			endpoint, <code>GET {Paths.members}</code>, which runs behind the same middleware and answered
+			with the name it handed on. A script that asks that endpoint for JSON gets the same answer, or a
+			401 without the cookie.
 		</PageHero>
 		<form method="post" action={Endpoint.url_of(Api.post_members_leave({}))}>
 			<Button submit>Leave</Button>
 		</form>
 		<Note>
-			Back to <a href={"${Paths.routing}#middleware"}>middleware</a>, on the routing page.
+			Leave forgets the cookie and takes you back to the joining page. How this works:
+			<a href={"${Paths.routing}#middleware"}>middleware</a>, on the routing page.
 		</Note>
 	</>
 }

@@ -6,17 +6,18 @@ import ../../../Generated/Paths
 import ../../../Ui/PageHero
 import ../../../Ui/TableWrap
 
-## The crypto package: installing it, a signed link as an app writes one, the modules, and what they
-## are checked against. Static: the sample is server/test/app/Samples.roc's, which the server's
-## tests run.
+## The crypto package: installing it, a signed link as an app writes one, the modules, what they
+## are checked against, and what isn't here. Static: the sample is server/test/app/Samples.roc's,
+## which the server's tests run.
 meta = {
 	title: "Crypto",
 	description: "The crypto package for Roc Solid apps: SHA-256, HMAC-SHA256, HKDF-SHA256, Base64 and hex, in plain Roc on no platform, each checked against its RFC's test vectors.",
 	toc: [
-		{ id: "install", label: "Installing" },
+		{ id: "install", label: "Installing it" },
 		{ id: "links", label: "A signed link" },
 		{ id: "modules", label: "The modules" },
-		{ id: "checked", label: "Checked against" },
+		{ id: "checked", label: "How it is tested" },
+		{ id: "limits", label: "What isn't here" },
 	],
 }
 
@@ -27,57 +28,74 @@ view! = |_|
 				kicker={[<>{"The ecosystem · "}</>, <code>packages/crypto</code>]}
 				title="Hashes, signatures and keys, in Roc"
 			>
-				SHA-256, HMAC, HKDF, Base64 and hex: what an app keeps a token's digest with, signs a link with, and
-				derives one key from another with. Plain Roc on no platform, so the server, a page in the browser and
-				an <code>expect</code> use the same code.
+				SHA-256, HMAC, HKDF, Base64 and hex. You use them to store a token as its digest, sign a link so
+				nobody can forge it, and derive separate keys from one secret. The package is plain Roc on no
+				platform, so the server, a page in the browser and an <code>expect</code> all run the same code.
 			</PageHero>
 
-			<Heading id="install">Installing</Heading>
+			<Heading id="install">Installing it</Heading>
+			<p>Name the package in your app's header, beside the platform:</p>
 			<Code
 				title="main.roc's header"
-				source={"app [program] { pf: platform \"../server/platform/main.roc\", crypto: \"../packages/crypto/main.roc\" }"}
+				source={"app [program] { crypto: \"../packages/crypto/main.roc\", pf: platform \"../server/platform/main.roc\" }"}
 				numbers={Bool.False}
 			/>
 			<p>
-				Then <code>import crypto.Hmac</code>, <code>import crypto.Base64</code> and so on, where they are used.
-				What needs the host stays on the server platform: <code>AesGcm</code> (encryption) and
-				<code>Random</code> (bytes from the operating system); see <a href={Paths.platform_crypto}>the platform's
-				crypto</a>.
+				Then import the modules where you use them: <code>import crypto.Hmac</code>,
+				<code>import crypto.Base64</code>, and so on. Encryption and random bytes need the operating
+				system, so they are the server platform's, not this package's: <code>AesGcm</code> and
+				<code>Random</code> (<a href={Paths.platform_crypto}>the platform's crypto page</a> shows them with
+				this package, for tokens and sealed secrets).
 			</p>
 
 			<Heading id="links">A signed link</Heading>
+			<p>
+				A link that carries who it is for and when it expires, signed so that changing either breaks it.
+				This is from the server platform's test app:
+			</p>
 			<Code title={"${Sources.platform_links.file}, in part"} source={Sources.platform_links.rocx} numbers={Bool.False} />
 			<p>
-				The link-signing key is derived from the app's <code>APP_SECRET</code> with HKDF, for that use alone;
-				what the link says is signed with HMAC-SHA256 and written in Base64's URL alphabet.
-				<code>Hmac.verify_sha256</code> compares in constant time, so how long it takes doesn't tell a forger
-				how much of a signature was right.
+				The key that signs links comes from the app's <code>APP_SECRET</code> through HKDF, with
+				<code>"links"</code> as its purpose, so this key signs links and nothing else. The link's text is
+				signed with HMAC-SHA256, and the signature is written in Base64's URL alphabet, which needs no
+				escaping in a URL. <code>Hmac.verify_sha256</code> compares signatures in constant time: how long
+				it takes doesn't tell a forger how much of a signature was right.
 			</p>
 
 			<Heading id="modules">The modules</Heading>
 			<TableWrap>
 				<table>
-					<thead><tr><th>Module</th><th>What</th></tr></thead>
+					<thead><tr><th>Module</th><th>What it has</th></tr></thead>
 					<tbody>
-						<tr><td><code>Sha256</code></td><td><code>hash</code>: 32 bytes; <code>hex</code>: 64 hex digits; <code>chunks</code>: the digest of pieces, without joining them</td></tr>
-						<tr><td><code>Hmac</code></td><td><code>sha256(key, message)</code>; <code>verify_sha256(key, message, signature)</code> and <code>equal</code>, in constant time</td></tr>
-						<tr><td><code>Hkdf</code></td><td><code>sha256(key, salt, info, length)</code>, <code>TooLong</code> past 8160 bytes; its two steps, <code>extract</code> and <code>expand</code></td></tr>
-						<tr><td><code>Base64</code></td><td><code>encode</code>, <code>decode</code>; <code>url_encode</code> (unpadded), <code>url_decode</code>; <code>encode_unpadded</code>, <code>url_encode_padded</code>; <code>lines</code> (MIME's 76-character lines)</td></tr>
+						<tr><td><code>Sha256</code></td><td><code>hash</code> (the 32-byte digest), <code>hex</code> (the digest as 64 lowercase hex digits), <code>chunks</code> (the digest of several pieces, without joining them first)</td></tr>
+						<tr><td><code>Hmac</code></td><td><code>sha256(key, message)</code>; <code>verify_sha256(key, message, signature)</code>; <code>equal</code>, a constant-time comparison of two byte lists</td></tr>
+						<tr><td><code>Hkdf</code></td><td><code>sha256(key, salt, info, length)</code>, which fails with <code>TooLong</code> past 8160 bytes; its two steps, <code>extract</code> and <code>expand</code></td></tr>
+						<tr><td><code>Base64</code></td><td><code>encode</code> and <code>decode</code> (standard alphabet, padded); <code>url_encode</code> (URL alphabet, unpadded) and <code>url_decode</code>; <code>encode_unpadded</code>, <code>url_encode_padded</code>; <code>lines</code> (76-character lines, as MIME wants)</td></tr>
 						<tr><td><code>Hex</code></td><td><code>encode</code> (lowercase), <code>decode</code> (either case)</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 			<p>
-				Decoding is strict, so one text means one value: only the alphabet asked for, no spaces or line
-				breaks, padding left out or exactly right, and the unused bits of the last character zero.
+				Decoding is strict, so each value has exactly one text: only the alphabet asked for, no spaces or
+				line breaks, padding either left out or exactly right, and the unused bits of the last character
+				zero. Anything else is an error (<code>InvalidBase64</code>, <code>InvalidHex</code>). The
+				package's <code>README.md</code> (<code>packages/crypto/</code>) lists every function's type.
 			</p>
 
-			<Heading id="checked">Checked against</Heading>
+			<Heading id="checked">How it is tested</Heading>
 			<p>
-				Each module's <code>expect</code>s hold it to its published vectors: NIST's SHA-256 examples, every test
-				case of RFC 4231 (HMAC), RFC 5869's SHA-256 cases (HKDF), and RFC 4648's (Base64, hex).
-				<code>Sha256</code> wraps Roc's builtin <code>Crypto.SHA256</code>. The server platform's tests also
-				check each against Node's <code>crypto</code>, from a running server.
+				Each module's <code>expect</code>s check it against published test vectors: NIST's SHA-256
+				examples, every test case of RFC 4231 (HMAC), RFC 5869's SHA-256 cases (HKDF), and RFC 4648's
+				(Base64 and hex). <code>Sha256</code> wraps Roc's builtin <code>Crypto.SHA256</code>. The server
+				platform's tests also compare each module with Node's <code>crypto</code>, through a running
+				server.
 			</p>
+
+			<Heading id="limits">What isn't here</Heading>
+			<ul>
+				<li>Encryption and random bytes: they are the server platform's <code>AesGcm</code> and <code>Random</code>.</li>
+				<li>Password hashing (bcrypt, scrypt, Argon2): not yet. SHA-256 and HKDF are too fast to protect passwords.</li>
+				<li>Public-key cryptography (ECDSA signatures, ECDH key exchange): not yet.</li>
+			</ul>
 		</NoHydration>
 	</>

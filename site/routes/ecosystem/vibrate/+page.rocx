@@ -26,49 +26,78 @@ view! = |_|
 				eyebrow="The ecosystem · vibrate"
 				title="A buzz from a handler"
 			>
-				<code>{"Vibrate.pattern!([300, 150, 300])"}</code> buzzes the phone twice: milliseconds on, off and on.
-				In Chrome on Android, and in an app on the <a href={Paths.examples_pomodoro}>Android host</a>, the same line.
+				<code>{"Vibrate.pattern!([300, 150, 300])"}</code> buzzes the phone twice: 300 ms on, 150 ms off,
+				300 ms on. The same line works in Chrome on Android and in an app on the
+				<a href={Paths.examples_pomodoro}>Android host</a>.
 			</PageHero>
 			<p>
-				Vibrate is a package, <code>packages/vibrate</code>, and a plugin. <code>Vibrate</code> is a module both
-				halves of an app compile; the plugin, <code>Vibrator</code>, serves the browser's half, a script every
-				page loads (<a href={"${Paths.platform_server}#plugins"}>plugins</a>). An Android app on the native host
-				(D-063) needs no script: the phone has a half of its own. The <a href={Paths.examples_pomodoro}>pomodoro
-				example</a> buzzes when a session ends.
+				Use this package when a phone should buzz in response to something: a timer that ran out, a message
+				that arrived, a tap that needs to be felt. You call <code>Vibrate.once!</code> or
+				<code>Vibrate.pattern!</code> from a handler, and the phone's motor runs. The
+				<a href={Paths.examples_pomodoro}>pomodoro example</a> buzzes this way when a session ends.
+			</p>
+			<p>
+				The package has two parts. <code>Vibrate</code> is a module that both halves of an app compile, so a
+				component that buzzes type-checks on the server and in the browser. <code>Vibrator</code> is a
+				<a href={"${Paths.platform_server}#plugins"}>plugin</a>: it serves a small script that every page
+				loads, and that script is what passes the buzz to the browser. An Android app on the native host
+				doesn't need the script, because the host runs the buzz itself.
 			</p>
 
 			<Heading id="install">Installing it</Heading>
-			<p>The app names the package in its header and lists the plugin:</p>
+			<p>Name the package in the app's header, and add the plugin to the app's plugins:</p>
 			<Code title={"${Sources.vibrate_header.file}, its header"} source={Sources.vibrate_header.rocx} numbers={Bool.False} />
 			<Code title={"${Sources.vibrate_install.file}, in part"} source={Sources.vibrate_install.rocx} numbers={Bool.False} />
+			<p>Then import <code>vibrate.Vibrate</code> in any page, component or module that buzzes.</p>
 
 			<Heading id="buzz">Buzzing</Heading>
+			<p>The whole module is two functions:</p>
 			<Code title={Sources.vibrate_module.file} source={Sources.vibrate_module.rocx} />
+			<ul>
+				<li>
+					<code>{"Vibrate.once!(400)"}</code> buzzes once, for 400 milliseconds.
+				</li>
+				<li>
+					<code>{"Vibrate.pattern!([200, 100, 200])"}</code> takes a list of durations in milliseconds,
+					alternating on and off, in the form <code>navigator.vibrate</code> takes. This one buzzes, rests and
+					buzzes again.
+				</li>
+			</ul>
 			<p>
-				A buzz is a <a href={"${Paths.components}#effects"}><code>Browser.call!</code></a>: it runs once the
-				handler is done and the screen is patched with what it wrote. Only a handler buzzes (an event's, an
-				effect's apply, a timer's); while computing, and on the server, it fails. The pomodoro's timer buzzes
-				from its interval's tick, beside its chime:
+				A step longer than 10 seconds is cut to 10 seconds, and only the first 32 steps play.
+			</p>
+			<p>
+				A buzz is a <a href={"${Paths.components}#handlers"}><code>Browser.call!</code></a> underneath, so it
+				follows the same rules. It runs after the handler finishes and the page shows what the handler
+				changed. Only a handler can buzz: an event's handler, an
+				<a href={"${Paths.components}#effects"}>effect's</a> <code>apply</code>, or a timer's callback. Calling
+				it while the page computes (in a hole, a memo or a component's body), or on the server, fails. The
+				pomodoro's timer buzzes from its interval's tick, beside its chime:
 			</p>
 			<Code title={"${Sources.vibrate_use.file}, in part"} source={Sources.vibrate_use.rocx} numbers={Bool.False} />
 
 			<Heading id="browser">In a browser</Heading>
 			<p>
-				The plugin's script, at <code>/rocx/plugins/vibrate/vibrate.js</code>, which every page loads before
-				start.js, registers the browser effect <code>vibrate.pattern</code> on <code>window.rocxEffects</code>
-				and passes the pattern to <code>navigator.vibrate</code>. Chrome on Android buzzes. A computer's browser,
-				Safari and Firefox have no motor they let a page use, and do nothing; that is no failure, and neither is
-				a page the reader hasn't touched yet, which a browser may keep still.
+				The plugin serves its script at <code>/rocx/plugins/vibrate/vibrate.js</code>. Every page loads it
+				before <code>start.js</code>, so it is ready before the page hydrates. The script registers a browser
+				effect named <code>vibrate.pattern</code> on <code>window.rocxEffects</code>, and that effect passes the
+				pattern to <code>navigator.vibrate</code>:
 			</p>
 			<Code title={Sources.vibrate_script.file} source={Sources.vibrate_script.rocx} />
+			<p>
+				Chrome on Android buzzes. Desktop browsers, Safari and Firefox don't let a page use a motor, so on
+				them a buzz does nothing, and nothing fails. A browser may also stay still until the reader has
+				touched the page; that isn't an error either.
+			</p>
 
 			<Heading id="phone">On a phone</Heading>
 			<p>
-				On Android's native host a plugin's <code>Browser.call!</code> goes to a native handler by its name.
-				The host has two: <code>audio.play</code> (<a href={Paths.ecosystem_audio}>audio</a>, a MediaPlayer
-				that fetches the sound from the app's server) and <code>vibrate.pattern</code>, Android's
-				<code>Vibrator</code> playing the pattern as a waveform. The app's manifest asks for
-				<code>android.permission.VIBRATE</code>, which Android grants at install.
+				On the native Android host, a plugin's <code>Browser.call!</code> goes to a native handler with the
+				same name, and no script is involved. The host has two such handlers: <code>audio.play</code>
+				(for <a href={Paths.ecosystem_audio}>audio</a>, a MediaPlayer that fetches the sound from the app's
+				server) and <code>vibrate.pattern</code>, which plays the pattern on Android's <code>Vibrator</code>
+				as a waveform. The app's manifest asks for <code>android.permission.VIBRATE</code>, which Android grants
+				at install, so the user sees no prompt.
 			</p>
 		</NoHydration>
 	</>

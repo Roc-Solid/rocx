@@ -9,8 +9,8 @@ import ../../../Generated/Paths
 import ../../../Generated/Sources
 
 ## The qr package: installing it, a live code that follows what is typed, its props, a code anywhere
-## else (SVG for the server, the terminal), how big codes get, and how it is made and tested. The
-## demo is the site's (site/Demos/QrDemo.rocx), hydrated.
+## else (SVG for the server, the terminal), how big codes get, how it is made and tested, and what
+## it doesn't do yet. The demo is the site's (site/Demos/QrDemo.rocx), hydrated.
 meta = {
 	title: "QR codes",
 	description: "The qr package for Roc Solid apps: QR codes made in plain Roc, a <QrCode> component that draws one as SVG and follows its text, and SVG or terminal text for anywhere else.",
@@ -21,6 +21,7 @@ meta = {
 		{ id: "anywhere", label: "Anywhere else" },
 		{ id: "sizes", label: "How big" },
 		{ id: "made", label: "How it is made" },
+		{ id: "limits", label: "Not yet" },
 	],
 }
 
@@ -34,63 +35,98 @@ view! = |_|
 				Text in, a code out, drawn as SVG. A page shows one with a component that follows its text; the server
 				draws one into an email; rocx prints one in the terminal. The same Roc runs in all three.
 			</PageHero>
+			<p>
+				Use this package when a phone should open something from a screen: a link to join a room, a
+				ticket, the address of a page. It makes the code itself, in Roc, with no JavaScript library and no
+				service to call. The encoder is plain Roc on no platform, so the browser, the server, rocx and a test
+				all run the same code.
+			</p>
 
 			<Heading id="install">Installing</Heading>
+			<p>Name the package in the app's header:</p>
 			<Code
 				title="main.roc's header"
 				source={"app [program] { pf: platform \"../server/platform/main.roc\", qr: \"../packages/qr/main.roc\" }"}
 				numbers={Bool.False}
 			/>
 			<p>
-				Then <code>import qr.QrCode</code> in a <code>.rocx</code> file, and <code>import qr.Qr</code> for the
-				code itself. <code>rocx build</code> copies the component into the app (<code>Generated/qr/</code>), as
-				it copies the charts.
+				Then, in a <code>.rocx</code> file, <code>import qr.QrCode</code> for the component and
+				<code>import qr.Qr</code> for the encoder and its drawing functions. The component is a
+				<code>.rocx</code> file in the package's <code>components/</code> folder. <code>rocx build</code>
+				copies it into the app, as <code>Generated/qr/QrCode.roc</code>, as it does for the
+				<a href={Paths.ecosystem_charts}>charts</a>, because a package can't import the platform's
+				<code>Html</code> for the server and the browser at once.
 			</p>
 
 			<Heading id="demo">A code that follows</Heading>
-			<p>Type, and pick how much of the code may be damaged and still read: the code follows both, and says what it came to.</p>
+			<p>
+				Type some text, and pick how much of the code may be damaged and still read. The code follows both,
+				and the line under the buttons says what it came to:
+			</p>
 		</NoHydration>
 		<Demo>
 			<div data-demo="qr"><QrDemo /></div>
 		</Demo>
 		<NoHydration>
 			<Code title={"${Sources.qr_use.file}, in part"} source={Sources.qr_use.rocx} numbers={Bool.False} />
+			<p>
+				The demo keeps the text and the level in two <a href={"${Paths.components}#primitives"}>signals</a>
+				and gives them to <code>{"<QrCode>"}</code>. The component encodes the code again whenever either
+				changes.
+			</p>
 
 			<Heading id="props">Its props</Heading>
 			<TableWrap>
 				<table>
-					<thead><tr><th>Prop</th><th>What</th></tr></thead>
+					<thead><tr><th>Prop</th><th>What it is</th></tr></thead>
 					<tbody>
-						<tr><td><code>text</code></td><td>What the code says: a URL, mostly. A getter, as every value prop is: the code follows it.</td></tr>
-						<tr><td><code>level</code></td><td><code>Low</code> (about 7% may be damaged), <code>Medium</code> (15%, unless it says), <code>Quartile</code> (25%) or <code>High</code> (30%): the more, the bigger the code</td></tr>
-						<tr><td><code>label</code></td><td>What it is, for screen readers; "QR code" unless it says</td></tr>
-						<tr><td><code>class</code></td><td>Classes for the <code>{"<svg>"}</code>, beside <code>qr-code</code></td></tr>
+						<tr><td><code>text</code></td><td>What the code says: usually a URL. Like every value prop of an effectful component, it is a <a href={"${Paths.components}#passing"}>getter</a>, so the code follows it as it changes.</td></tr>
+						<tr><td><code>level</code></td><td>How much damage the code survives: <code>Low</code> (about 7%), <code>Medium</code> (15%, the default), <code>Quartile</code> (25%) or <code>High</code> (30%). The higher the level, the bigger the code for the same text.</td></tr>
+						<tr><td><code>label</code></td><td>What the code is, for screen readers. <code>"QR code"</code> by default.</td></tr>
+						<tr><td><code>class</code></td><td>More classes for the <code>{"<svg>"}</code>, besides <code>qr-code</code>.</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 			<p>
-				It is an <code>{"<svg>"}</code> as wide as its box, square, black on white, with the quiet zone of four
-				modules around it that readers need: give its box a width. Its colours are CSS
-				(<code>.qr-light</code>, <code>.qr-dark</code>), but keep them dark on light: most readers read nothing
-				else. Text too long for a code shows an empty one whose label says so.
+				The component draws an <code>{"<svg>"}</code> that is square and fills the width of its box, so give the
+				box a width. It is black on white, with the four-module quiet zone around it that readers need. Its
+				colours are CSS (<code>.qr-light</code> and <code>.qr-dark</code>) and can be changed, but keep them dark
+				on light: most readers can't read anything else.
+			</p>
+			<p>
+				If the text is too long for any code at the chosen level, the component draws an empty code, and its
+				label says <code>"…: the text is too long for a QR code"</code>.
 			</p>
 
 			<Heading id="anywhere">Anywhere else</Heading>
 			<p>
-				<code>Qr.encode(text, level)</code> is the code: its side in modules, and its modules, dark or light, row
-				by row; or <code>Err(TooLong)</code>. Then draw it:
+				Outside a page, call the encoder yourself. <code>Qr.encode(text, level)</code> returns the code, or
+				<code>Err(TooLong)</code>. A code is a record: <code>size</code>, its side in modules, and
+				<code>dark</code>, its modules row by row, <code>Bool.True</code> for a dark one. Then draw it with
+				one of these:
 			</p>
 			<ul>
-				<li><code>Qr.svg(code)</code>: an SVG document, for an email's image or a file</li>
-				<li><code>Qr.path(code)</code> and <code>Qr.view_box(code)</code>: one path of every dark module, and its box, for markup of your own (what the component draws)</li>
-				<li><code>Qr.terminal(code)</code>: for a terminal, two rows of modules a line, black on white whatever the terminal's colours (what <code>rocx dev --android --lan</code> prints for a phone on Wi-Fi)</li>
-				<li><code>Qr.pbm(code)</code>, <code>Qr.is_dark(code, x, y)</code>: an image a module a pixel, and one module</li>
+				<li><code>Qr.svg(code)</code>: a whole SVG document, for an image in an email or a file</li>
+				<li><code>Qr.path(code)</code> and <code>Qr.view_box(code)</code>: every dark module as one SVG path, and the box around it, for markup of your own (this is what the component draws)</li>
+				<li><code>Qr.terminal(code)</code>: text for a terminal, two rows of modules per line, black on white whatever the terminal's colours</li>
+				<li><code>Qr.pbm(code)</code>: a PBM image, one pixel per module</li>
+				<li><code>Qr.is_dark(code, x, y)</code>: one module; <code>Qr.capacity(level)</code>: the most bytes a code holds at that level</li>
 			</ul>
+			<Code
+				title="A code for an email"
+				source={"match Qr.encode(\"https://example.com/tickets/17\", Medium) {\n\tOk(code) => Qr.svg(code)\n\tErr(TooLong) => \"\"\n}"}
+				numbers={Bool.False}
+			/>
+			<p>
+				rocx uses the terminal drawing itself. <code>rocx dev --android --lan</code> prints a code for a phone
+				on the same Wi-Fi to scan, and <code>{"rocx qr <text>"}</code> prints a code of any text.
+			</p>
 
 			<Heading id="sizes">How big</Heading>
 			<p>
-				A code grows by four modules a side a version, from 21 at version 1 to 177 at version 40, and the package
-				picks the smallest that holds the text's UTF-8 bytes at the level asked for. The most each level holds:
+				A QR code comes in 40 sizes, called versions. Version 1 is 21 modules a side, and each version adds 4,
+				up to 177 at version 40. The package picks the smallest version that holds the text's UTF-8 bytes at
+				the level you asked for. The most each level holds:
 			</p>
 			<TableWrap>
 				<table>
@@ -104,18 +140,39 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				A link to a page fits a small code: one of 60 bytes is version 4 at <code>Medium</code>, 33 modules a side.
-				Byte mode is the only one yet: digits alone, or upper-case letters, would fit smaller codes in their own
-				modes (the package's PROPOSALS.md).
+				A link to a page fits a small code: a 60-byte URL at <code>Medium</code> is version 4, 33 modules a side.
 			</p>
 
 			<Heading id="made">How it is made</Heading>
 			<p>
-				After the standard (ISO/IEC 18004) and Project Nayuki's reference encoder: the text's bytes, the
-				standard's Reed–Solomon error correction in blocks for each version and level, the finder, timing and
-				alignment patterns, version information from version 7, and of the eight masks the one the standard's
-				penalty rules score lowest. Its tests check the standard's numbers, and a reader (zbar) reads back a code
-				at every version and level, each as full as it can be: 160 codes, every one its text.
+				The encoder follows the standard (ISO/IEC 18004), step by step as Project Nayuki's reference encoder
+				takes them:
 			</p>
+			<ol>
+				<li>The text's bytes are encoded in byte mode, with the smallest version that holds them.</li>
+				<li>Reed–Solomon error correction is added, in the blocks the standard sets for each version and level.</li>
+				<li>The finder, timing and alignment patterns are placed, and version information from version 7 on.</li>
+				<li>Each of the eight masks is tried, and the one the standard's penalty rules score lowest is kept.</li>
+			</ol>
+			<p>
+				<code>roc test packages/qr/main.roc</code> checks the standard's numbers: format and version bits,
+				capacities, where alignment patterns go, and the error-correction generator. A second test,
+				<code>packages/qr/test/decode.sh</code>, has a real reader (zbar) read back a code at every version and
+				level, each filled to capacity: 160 codes, and every one reads back as its text.
+			</p>
+
+			<Heading id="limits">Not yet</Heading>
+			<ul>
+				<li>
+					Byte mode is the only mode. Digits alone, or upper-case letters and digits, would fit in smaller codes
+					in the standard's numeric and alphanumeric modes.
+				</li>
+				<li>
+					The level is the one you ask for. When the chosen version could hold the text at a higher level too,
+					the package doesn't raise it for you.
+				</li>
+				<li>No logo in the middle, and no Kanji mode, ECI, structured append or micro QR codes.</li>
+			</ul>
+			<p>Each is sketched in the package's <code>PROPOSALS.md</code>.</p>
 		</NoHydration>
 	</>

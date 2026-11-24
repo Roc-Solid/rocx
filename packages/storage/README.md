@@ -1,11 +1,14 @@
 # storage
 
-Files for Roc Solid apps (D-047), in a bucket whose URL says where: any S3 (rustfs or MinIO in
-development, R2, AWS or another in production), a directory beside the server, or the server's
-memory (for tests). Objects put, read whole or a range at a time, looked at, deleted; multipart
-uploads; signed URLs a browser uploads or downloads with; and an object of any size served as the
-answer to a request, sent by the server and never read into Roc. The code is the same on every
-backend: the URL picks it.
+Files for a Roc Solid app's server, kept in a bucket whose URL says where: any S3 (rustfs or MinIO
+in development; R2, AWS or another in production), a directory beside the server, or the server's
+memory (for tests). It puts, reads (whole or a range at a time), describes and deletes files; uploads
+large ones in parts; makes signed URLs a browser uploads or downloads with; and serves a file of any
+size as the answer to a request, without reading it into Roc. The URL picks the backend, and the
+code is the same for each.
+
+The user guide is the docs site's [Storage page](https://roc-solid.github.io/ecosystem/storage);
+this file is the reference.
 
 ```roc
 import pf.Env
@@ -15,48 +18,58 @@ bucket = Storage.from_url(Env.var!("STORAGE_URL") ?? "")?
 Storage.put!(bucket, "images/${id}", bytes, { content_type: "image/jpeg" })?
 ```
 
-## Installing
+## Installing it
 
-Name the package in the server's header, beside the platform. It names the server platform itself
-(the host keeps a directory's and memory's objects, and the plugin is a server's), so only an app on
-it names this package.
+Name the package in the server's header, beside the platform:
 
 ```roc
 app [program] { pf: platform "../server/platform/main.roc", storage: "../packages/storage/main.roc" }
 ```
 
-It uses `packages/crypto` (SHA-256 and HMAC, for S3's signatures and the app's signed URLs), which it
-names itself. For signed URLs on a directory or memory, list its plugin (below).
+The package names the server platform itself (the host keeps a directory's and memory's files, and
+the plugin is the server's), so only an app on the server platform can use it; the browser's half
+never imports it. It uses `packages/crypto` (SHA-256 and HMAC, for S3's signatures and the app's
+signed URLs), which it names itself.
+
+For signed URLs on a directory or memory bucket, also list its plugin:
+
+```roc
+program = App.program({
+	# …
+	plugins: [Storage.plugin({})],   # the bucket STORAGE_URL names; Storage.plugin({ env: "UPLOADS_URL" }) for another
+})
+```
 
 ## A bucket
 
 ```
-s3://KEY:SECRET@127.0.0.1:9000/uploads?region=us-east-1&style=path&tls=no
-s3://KEY:SECRET@<account>.r2.cloudflarestorage.com/uploads?region=auto
-s3://KEY:SECRET@s3.eu-west-1.amazonaws.com/uploads?region=eu-west-1
-file:data/uploads?secret=…
-memory:
+s3://KEY:SECRET@127.0.0.1:9000/uploads?region=us-east-1&style=path&tls=no   # rustfs or MinIO
+s3://KEY:SECRET@<account>.r2.cloudflarestorage.com/uploads?region=auto       # R2
+s3://KEY:SECRET@s3.eu-west-1.amazonaws.com/uploads?region=eu-west-1          # AWS
+file:data/uploads?secret=…                                                    # a directory
+memory:                                                                       # the server's memory
 ```
 
-- **S3.** The bucket is the URL's path. `region` is what the keys sign for (`us-east-1` unless given,
-  `auto` for R2). `style=path` puts the bucket in the path, as rustfs and MinIO want; without it the
-  bucket is in the host name (virtual-hosted, as AWS and R2 prefer). `tls=no` is plain `http`. A
-  character the URL would read otherwise is `%XX` (a `/` in the secret may stay). A parameter that
-  isn't one of the three (`stlye=path`) is refused. Each operation is a request to S3, signed here.
-- **A directory** (`file:<dir>`, from where the server starts; made when missing). An object's bytes
-  are a file at its key (`data/uploads/videos/41`), written to a file of its own first and moved into
-  its place, so a crash leaves the object as it was, never half of the new one. Its content type and
-  ETag are kept beside it, in `<dir>/.storage/`. It suits an app on one server, as SQLite does (D-045);
-  a volume keeps it in production.
-- **Memory** (`memory:`, or `memory:<name>` for a bucket of its own): the server's, gone when it stops.
-  For tests, which then need no S3.
+- **S3** (`s3://`). The URL's path is the bucket. `region` is the region the keys sign for
+  (`us-east-1` if not given, `auto` for R2). `style=path` puts the bucket in the path
+  (`HOST/BUCKET/KEY`), as rustfs and MinIO want; without it the bucket is in the host name
+  (`BUCKET.HOST/KEY`, virtual-hosted), as AWS and R2 prefer. `tls=no` uses plain `http`. Write a
+  character the URL would otherwise misread as `%XX` (a `/` in the secret may stay as it is). Any
+  other parameter is refused (`stlye=path` fails at once).
+- **A directory** (`file:<dir>`, relative to where the server starts; created if missing). A file's
+  bytes are a file at its key (`data/uploads/videos/41`). Each is written to a file of its own first
+  and then moved into place, so a crash leaves the old file, never half of the new one. Its content
+  type and ETag are kept beside it, in `<dir>/.storage/`. It suits an app on one server, as SQLite
+  does; in production, put it on a volume.
+- **Memory** (`memory:`, or `memory:<name>` for a separate bucket). Gone when the server stops. For
+  tests, which then need no S3.
 
-A directory's and memory's URL may give `secret`: what the app's signed URLs are made with, so they
-outlive a restart. Without it, the server draws one when it starts.
+A directory or memory URL may give `secret`, the key the app's signed URLs are made with, so they
+keep working after a restart. Without it, the server draws a random one when it first needs it.
 
-`Storage.from_url` reads the URL and asks nothing of the bucket yet; an empty one, or one that can't
-be read, is `StorageErr` saying why. An app keeps the URL in its environment and makes its bucket where
-it needs one:
+`Storage.from_url` reads the URL and asks nothing of the bucket. An empty URL, or one it can't read,
+is a `StorageErr` saying why. An app keeps the URL in its environment and makes its bucket where it
+needs one:
 
 ```roc
 ## The app's bucket: the one its STORAGE_URL names.
@@ -64,118 +77,131 @@ files! : {} => Try(Storage.Bucket, [StorageErr(Str)])
 files! = |{}| Storage.from_url(Env.var!("STORAGE_URL") ?? "")
 ```
 
-## What it does
+## API
 
-```roc
-Storage.put!(bucket, "images/${id}", bytes, { content_type: "image/jpeg" })?      # Try({}, [S3Err(…), StorageErr(Str)])
-cover = Storage.get!(bucket, "covers/${post}")?                                   # List(U8); NotFound
-piece = Storage.get_range!(bucket, "videos/${id}", { offset: 0, length: 4_194_304 })?   # { bytes, size }
-info = Storage.head!(bucket, "videos/${id}")?                                     # { size, content_type, etag }
-Storage.delete!(bucket, "images/${id}")?                                          # gone already: Ok
+Everything is in the `Storage` module. A key is a file's name in the bucket, `/`s included
+(`videos/41`); bytes are `List(U8)`.
 
-upload = Storage.start_upload!(bucket, "videos/${id}", { content_type: "video/mp4" })?
-etag = Storage.upload_part!(bucket, "videos/${id}", upload, 1, part)?             # on S3, 5 MiB or more, but the last
-Storage.finish_upload!(bucket, "videos/${id}", upload, [{ number: 1, etag }])?    # or abort_upload!(bucket, key, upload)
+| Function | Answers | Errors |
+|---|---|---|
+| `from_url(url)` | `Bucket` | `StorageErr` |
+| `put!(bucket, key, bytes, { content_type })` | `{}`; replaces what was there | `S3Err`, `StorageErr` |
+| `put_upload!(bucket, key, upload)` | `{}`; a file a form sent (`Server.file(request, "photo")`), its type the browser's (`application/octet-stream` if it gave none) | `S3Err`, `StorageErr` |
+| `get!(bucket, key)` | `List(U8)`, the whole file (on S3, 64 MiB at most: `StorageErr` beyond) | `NotFound`, `S3Err`, `StorageErr` |
+| `get_range!(bucket, key, { offset, length })` | `{ bytes, size }`: up to `length` bytes from `offset`, and the file's whole size | `NotFound`, `S3Err`, `StorageErr` |
+| `head!(bucket, key)` | `Info`: `{ size, content_type, etag }` (the ETag without quotes) | `NotFound`, `S3Err`, `StorageErr` |
+| `delete!(bucket, key)` | `{}`; a file that isn't there is `Ok` | `S3Err`, `StorageErr` |
+| `start_upload!(bucket, key, { content_type })` | the upload's id | `S3Err`, `StorageErr` |
+| `upload_part!(bucket, key, upload, number, bytes)` | the part's ETag; `number` is 1 to 10,000, and sending a number again replaces that part | `NotFound`, `S3Err`, `StorageErr` |
+| `finish_upload!(bucket, key, upload, [{ number, etag }, …])` | `{}`; the parts listed, in any order, joined by number; a part not listed is dropped | `NotFound`, `S3Err`, `StorageErr` |
+| `abort_upload!(bucket, key, upload)` | `{}`; the upload and its parts gone; one that isn't there is `Ok` | `S3Err`, `StorageErr` |
+| `signed_url!(bucket, key, { method, expires_s })` | a URL for that one request (`GET` or `PUT`), valid for 1 s to a week | `BadExpiry`, `StorageErr` |
+| `serve!(bucket, key, request, { content_type, cache_control })` | a `Server.Response` (below) | none: a 404 for a missing file |
+| `check!(bucket)` | `{}` if the bucket answers | `S3Err`, `StorageErr` |
+| `said(refusal)` | an `S3Err`'s refusal as a line: `403 SignatureDoesNotMatch: …` | |
+| `plugin({ env ?? "STORAGE_URL" })` | the plugin that answers signed URLs of a directory or memory bucket | |
 
-link = Storage.signed_url!(bucket, "videos/${id}", { method: "GET", expires_s: 3600 })?   # a week at most: BadExpiry
+Types: `Bucket` (`[S3(S3.Bucket), Kept({ root, secret })]`), `Refusal` (`{ status, code, message }`),
+`Info`, `Options` (the plugin's).
 
-Storage.serve!(bucket, "videos/${id}", request, { content_type: "video/mp4", cache_control: "private" })   # an answer
+### Details
 
-Storage.check!(bucket)?                                                           # does the bucket answer?
-```
-
-A key is an object's name in the bucket, `/`s and all (`videos/41`); bytes are `List(U8)`. A
-directory's or memory's key is segments between `/`s, none empty, `.` or `..`, and not starting with
-`.storage`: anything else is refused, so a key never reaches outside its directory.
-
-- **Errors.** `NotFound` is no such object, or no such upload. `S3Err({ status, code, message })` is
+- **Errors.** `NotFound` is no such file, or no such upload. `S3Err({ status, code, message })` is
   what S3's `<Error>` said: `AccessDenied`, `SignatureDoesNotMatch`, `InvalidAccessKeyId`,
-  `NoSuchBucket`, `EntityTooSmall`, `InvalidPart`, `InvalidRange`, … An answer to a HEAD has no body,
-  so its code is empty, and a 404 is `NotFound`. `StorageErr(why)` means S3 didn't answer (or answered
-  too late), a file couldn't be written, or the key isn't one. `Storage.said(refusal)` writes one as a
-  line. Each operation lists only the tags it can give.
-- **ETags.** A file put whole has its MD5 for an ETag, on every backend. A multipart object's is the
-  MD5 of its parts' MD5s and how many there are (`…-3`), as S3 makes one.
+  `NoSuchBucket`, `EntityTooSmall`, `InvalidPart`, `InvalidRange`, … An answer to a HEAD has no
+  body, so its code is empty, and a 404 to a HEAD is `NotFound` even when the bucket is what's
+  missing (`check!` tells them apart). `StorageErr(why)` means S3 didn't answer (or answered too
+  late), a file couldn't be written, or the key isn't one. A directory or memory bucket says in a
+  `StorageErr` what S3 would say in an `S3Err` (`InvalidPart: part 2 of … isn't one sent with that
+  ETag`).
+- **Keys on a directory or memory.** A key is segments between `/`s, none empty, `.` or `..`, and
+  the first not `.storage`. Anything else is refused, so a key never reaches outside its directory.
+- **ETags.** A file put whole has its MD5 for an ETag, on every backend. A multipart file's ETag is
+  the MD5 of its parts' MD5s and how many there are (`…-3`), as S3 makes one.
 - **Deleting twice is fine.** `delete!` and `abort_upload!` of what isn't there are `Ok`, so a
   cleanup may run again.
-- **Multipart.** ETags come without their quotes; `finish_upload!` takes the parts in any order, and
-  refuses one listed with an ETag that isn't the part's (`InvalidPart`). A part listed again replaces
-  it. On S3 a `CompleteMultipartUpload` that fails after S3 has answered 200 says so in its body, and
-  `finish_upload!` reads it as the error it is.
-- **A range past an object's end** is no bytes, with its size, on a directory or memory; S3 refuses
-  it (`InvalidRange`).
-- **`check!`**: S3, whether it answers with these keys for this bucket (it asks for an object that
-  isn't there, `rocx-storage-check`); a directory, whether it can be written; memory, always. Call it
-  from a health check, so a wrong URL shows before the first upload.
+- **Multipart.** ETags come without their quotes. `finish_upload!` refuses a part listed with an
+  ETag that isn't that part's (`InvalidPart`). On S3, every part but the last must be 5 MiB or more
+  (`EntityTooSmall` at `finish_upload!`), and a `CompleteMultipartUpload` that fails after S3 has
+  answered 200 says so in its body, which `finish_upload!` reads as the error it is.
+- **A range past a file's end** is no bytes, with the size, on a directory or memory; S3 refuses it
+  (`InvalidRange`). A `length` of 0 is no bytes and the size, everywhere.
+- **`check!`**: on S3, whether S3 answers with these keys for this bucket (it asks for a file that
+  isn't there, `rocx-storage-check`); on a directory, whether it can be written; on memory, always.
+  Call it from a health check, so a wrong URL shows before the first upload.
 
 ## Signed URLs
 
 `signed_url!(bucket, key, { method, expires_s })` is a link anyone holding it may use to make that
-request (`GET` or `PUT`) until it expires: 1 second to a week, `BadExpiry` otherwise.
+request until it expires: 1 second to a week (604,800 s), `BadExpiry` otherwise.
 
-- On **S3** it is a presigned URL, S3's own: only the host is signed, so a PUT may send any content
-  type, and the browser talks to S3 itself; the app's server never holds the bytes.
+- On **S3** it is S3's own presigned URL. Only the host is signed, so a PUT may send any content
+  type. The browser talks to S3 itself; the app's server never holds the bytes.
 - On **a directory or memory** it is the app's own, at its public URL (`Env.public_url!`):
-  `/__storage?method=PUT&key=…&expires=…&signature=…`, the signature an HMAC-SHA256 of the method, the
-  key and the expiry, with the bucket's secret. The storage plugin answers it, so list it in the app's
-  plugins:
+  `/__storage?method=PUT&key=…&expires=…&signature=…`. The signature is an HMAC-SHA256 of the
+  method, the key and the expiry, with the bucket's secret. The storage plugin answers it.
 
-```roc
-program = App.program({ …, plugins: [Storage.plugin({})] })   # the bucket STORAGE_URL names (env: "…" for another)
-```
+The plugin's route, `/__storage`, reads the bucket from its environment variable (`STORAGE_URL`, or
+the plugin's `env`). It checks the link's method (a HEAD may use a GET's link), the signature, and
+that the link hasn't expired. Then it serves the file (as `serve!` does, ranges included) or keeps
+the one the PUT sent, with the request's content type. A link it didn't make, or one that was
+changed, gets a 403, and so does one that has expired; a method other than GET, HEAD or PUT gets a
+405. A PUT is an ordinary request body, 16 MiB at most unless the server's `--max-body` says more:
+send a larger file in parts, from the server. For an S3 bucket the route has nothing to answer
+(404), since S3 answers its own links.
 
-The plugin's route checks the link's method (a HEAD may use a GET's), that it hasn't expired, and its
-signature, then serves the object (as `serve!` does, ranges and all) or keeps the one the PUT sent,
-with its content type; 403 for a link it didn't make, one changed, or one expired. A PUT is a
-request's body, 16 MiB at most (unless the server's `--max-body` says more): a larger file goes in parts, from the server. For an S3 bucket the
-route has nothing to answer (404): S3 answers its own links.
+## Serving a file
 
-## Serving an object
+`Storage.serve!` answers a request with a file of any size, never read into Roc.
 
-`Storage.serve!` answers a request with an object of any size, never read into Roc. From S3 it is a
-forward (the server platform's `Server.forward`): the server asks S3 for the object, signed for a GET
-(a HEAD for a HEAD), and streams its body to the client as it comes. From a directory or memory it is
-the object the server keeps (`Server.stored`), which it sends as it is. Either way the request's
-`Range` and `If-None-Match` (and to S3 `If-Range` and `If-Modified-Since` too) are asked as the
-request record has them: 200; 206 for a range; 416 for one past the end; 304 for a matching ETag; 404
-for an object that isn't there. An app may drop or change a range before it asks, to send the whole
-file, say:
+- From **S3** it is a forward (the server platform's `Server.forward`): the server asks S3 for the
+  file, signed for a GET (a HEAD for a HEAD), and streams the body to the client as it comes.
+- From **a directory or memory** it is the file the server keeps (`Server.stored`), which the host
+  sends as it is.
+
+Either way, the request's `Range` and `If-None-Match` headers (and, to S3, `If-Range` and
+`If-Modified-Since` too) are passed on as the request record has them. The answer is 200; 206 for a
+range; 416 for a range past the end; 304 for a matching ETag; 404 for a file that isn't there (and
+for an empty key). It carries the file's length, range, ETag and last modified time, plus
+`content_type` (the stored type, if empty) and `cache_control` (none, if empty). An app may change
+the headers before it asks; this sends the whole file, whatever range was asked for:
 
 ```roc
 whole = { ..request, headers: request.headers.drop_if(|header| header.name == "range") }
 Storage.serve!(bucket, key, whole, { content_type: "video/mp4", cache_control: "private" })
 ```
 
-With the answer come the object's length, range, ETag and last modified time, and `content_type`
-(the object's, if empty) and `cache_control` (none, if empty). An empty key is a 404: no object has
-one.
-
 ## How it works
 
-`Storage` reads the URL and hands each operation to its backend. For S3, `S3` signs each request with
-AWS Signature Version 4 (`SigV4`: its expects hold it to AWS's own worked examples and to botocore's
-signatures) and sends it with the server platform's `Http.send!`, exactly as it was signed, not
-following redirects. S3's flavour of SigV4: the path is encoded once and never normalised (`a//b` is a
-key of its own), and every request states its body's SHA-256, or `UNSIGNED-PAYLOAD`. `put!` signs its
-body's SHA-256, so S3 refuses it if anything changed on the way; a part goes as `UNSIGNED-PAYLOAD`, TLS
-keeping it whole. Requests wait 30 s, or 5 minutes for one carrying an object or a part.
+`Storage` reads the URL and hands each operation to its backend.
 
-For a directory or memory, the host keeps the objects (the server platform's `Blobs`, its files read
-and written on threads for blocking work, so a call waiting on one holds no Roc thread). A multipart
-upload keeps its parts under `.uploads/<upload>/`, joined in order at its end and then deleted.
+For S3, the `S3` module signs each request with AWS Signature Version 4 (`SigV4`, whose expects hold
+it to AWS's own worked examples and to botocore's signatures) and sends it with the server platform's
+`Http.send!`, exactly as signed and without following redirects. S3's flavour of SigV4 encodes the
+path once and never normalises it (`a//b` is a key of its own), and every request states its body's
+SHA-256, or `UNSIGNED-PAYLOAD`. `put!` signs its body's SHA-256, so S3 refuses it if anything changed
+on the way; a part goes as `UNSIGNED-PAYLOAD`, with TLS keeping it whole. A request waits 30 s for
+an answer, or 5 minutes for one that carries or reads a file.
+
+For a directory or memory, the host keeps the files (the server platform's `Blobs` module). It reads
+and writes them on its threads for blocking work, so a call waiting on a file holds no Roc thread. A
+multipart upload keeps its parts under `.uploads/<upload>/`, joins them in order at the end, and
+then deletes them.
 
 ## Testing
 
-`roc test packages/storage/main.roc` runs its expects: the URLs, S3's XML, SigV4 against AWS's
+`roc test packages/storage/main.roc` runs the expects: the URLs, S3's XML, SigV4 against AWS's
 examples, the app's signatures. `server/test/server.test.mjs` runs the rest on memory and on a
-directory always, and against a real S3 bucket when `STORAGE_URL` is set (rustfs in Docker, say, with
-a bucket made): keeping, reading, ranges, multipart, signed URLs by Node's fetch, serving with ranges
-and 304s, and S3's own refusals.
+directory always, and against a real S3 bucket when `STORAGE_URL` is set (rustfs in Docker, say,
+with a bucket made): keeping, reading, ranges, multipart, signed URLs fetched by Node, serving with
+ranges and 304s, and S3's own refusals.
 
 ## Limits, for now
 
-- Objects come into Roc whole (`serve!` sends one to a client without it).
-- No listing of a bucket's keys; S3's static keys only (no session tokens).
-- A directory is one server's: two servers don't share one (the platform runs one, D-045).
-- An upload from a browser comes through the server whole, 16 MiB at most (`--max-body`): for larger files, a signed
-  PUT to S3, or a multipart upload in parts.
+- Files come into Roc whole (`put!`, `get!`); `get_range!` reads a large one in pieces, and `serve!`
+  sends one to a client without Roc.
+- No listing of a bucket's keys, and no copying a file to another key.
+- S3's static keys only: no session tokens.
+- A directory belongs to one server: two servers can't share one.
+- An upload from a browser through the app's server arrives whole, 16 MiB at most (`--max-body`). For
+  larger files, use a signed PUT to S3, or a multipart upload.

@@ -355,7 +355,7 @@ Html :: [
 		}
 	}
 
-	## An animation the element plays as it comes with a `<For>`'s row or the part an `if` or `match` makes (D-070) (`In`,
+	## An animation the element plays as it comes with a `.map`'s row or the part an `if` or `match` makes (`In`,
 	## `transition:in={…}`), as it goes with one (`Out`, `transition:out={…}`), or both (`Both`,
 	## `transition={…}`); or as it moves (`Move`, `transition:move={…}`: only its pace counts). See
 	## `Transition`.
@@ -373,7 +373,7 @@ Html :: [
 	errored : (Str, (() => {}) -> Html), List(Html) -> Html
 	errored = |fallback, children| Errored(fallback, children)
 
-	## The part a hole's `if` or `match` makes (D-070), as Solid's `<Show>` and `<Switch>` make
+	## The part a hole's `if` or `match` makes, as Solid's `<Show>` and `<Switch>` make
 	## theirs: `case!` names the branch that holds (`Ok(name)`; `Err(None)`: none, the fallback), and a
 	## change of the name makes the part anew; `made!` makes the branch's part, as a component is made
 	## (where it is rendered, once, its reads untracked). A level of the page (D-040) is one too.
@@ -399,8 +399,8 @@ Html :: [
 	## with its key, as Solid 2.0's `<For>` keeps them. Roc's values have no identity, so the row says
 	## its key. The row's name reads its item now (rocx makes it a getter, as a match arm's names), and
 	## `.map_with_index(|todo, i| …)`'s index, which changes as rows move, too. `keyed` may read what
-	## changes. Each time the list is read again, every row is told its item may have changed, and its
-	## holes that read it run again (a value a node has already is no patch).
+	## changes. Each time the list is read again, a row is told its item changed only when it isn't `==`
+	## the one it had, and then its holes that read it run again (a value a node has already is no patch).
 	rows! : (() => List(a)), (a => k), ((() => a), (() => U64) => Html) => Html where [a.is_eq : a, a -> Bool]
 	rows! = |items!, keyed, make| {
 		rows_now! = |id| {
@@ -547,8 +547,8 @@ Html :: [
 	no_hydration = |children| NoHydration(children)
 
 	## Markup with nothing to run in it as HTML, as the server renders it: an email's HTML, or what
-	## an `expect` compares. A computation (a hole that reads a signal), an `if`'s part, a `<For>` or a
-	## component needs the runtime: here it is an error.
+	## an `expect` compares. A computation (a hole that reads a signal), an `if`'s part, a `.map`'s rows
+	## or a component needs the runtime: here it is an error.
 	to_str : Html -> Str
 	to_str = |node| static_str(node, Bool.False)
 
@@ -728,11 +728,11 @@ head_key = |element|
 		_ => ""
 	}
 
-## What an `if`'s or `match`'s part shows, and a fallback (a `<For>`'s, a `<Loading>`'s), for its JSON:
+## What an `if`'s or `match`'s part shows, and a fallback (a `<Loading>`'s), for its JSON:
 ## made when it shows, as a component is (`{"t":"c"}`): where it is rendered, once, its reads
 ## untracked, owned by its part, and made again each time it shows again. So a value prop in it is
 ## read then, not when the page was. Nothing to make for none (`Html.empty`, a fallback's default).
-## A `<For>`'s rows and an `if`'s or `match`'s part are made when they come too, by computations
+## A `.map`'s rows and an `if`'s or `match`'s part are made when they come too, by computations
 ## of their own (`"r"`, `"with"`).
 made! : Html => Str
 made! = |part| {
@@ -876,7 +876,7 @@ static_str = |node, quiet|
 		NoHydration(children) => marked("nohydration", static_nodes(children, Bool.True), quiet)
 		# Handlers on the document or the window: nothing on the page.
 		Listen(_, _) => ""
-		_ => crash "Html.to_str renders markup with nothing to run in it: a computation, an if's part, a <For> or a component needs the runtime"
+		_ => crash "Html.to_str renders markup with nothing to run in it: a computation, an if's part, a .map's rows or a component needs the runtime"
 	}
 
 ## `inner` between a part's comments (`<!--label-->…<!--/label-->`), or as it is when `quiet`.

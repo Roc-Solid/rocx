@@ -1093,7 +1093,7 @@ Transpile := [].{
 		}
 		first_on_line = Text.run_end(src, Text.line_start(src, pos), Transpile.is_space_or_tab) == pos
 		if (nc == '=' and Text.at(src, next + 1) != '=' and Text.at(src, next + 1) != '>' and first_on_line) or last == "for" {
-			return Err(Transpile.fail(cfg, "${word} is a prop of this component, which rocx reads through its getter (D-039): give this another name", pos))
+			return Err(Transpile.fail(cfg, "${word} is a prop of this component, which rocx reads through its getter: give this another name", pos))
 		}
 		in_record =
 			match open.last() {
@@ -1224,7 +1224,7 @@ Transpile := [].{
 				match Transpile.view_at(cfg, pos) {
 					Ok(view) =>
 						match view.props.find_first(|prop| Transpile.binds(params, prop)) {
-							Ok(prop) => return Err(Transpile.fail(cfg, "${prop} is a prop of this component, which rocx reads through its getter (D-039): give this parameter another name", pos))
+							Ok(prop) => return Err(Transpile.fail(cfg, "${prop} is a prop of this component, which rocx reads through its getter: give this parameter another name", pos))
 							Err(_) => {}
 						}
 					Err(_) => {}
@@ -2362,7 +2362,7 @@ Transpile := [].{
 			return Err(Transpile.fail(cfg, "spread a record by its name: {...rest} (a view's |{ kind, ..rest }|, or |props|)", pos))
 		}
 		if !getters {
-			return Err(Transpile.fail(cfg, "<${tag}> takes its props as they are written: {...${expr}} passes a component's getters on (D-052), to a component written in rocx (view!)", pos))
+			return Err(Transpile.fail(cfg, "<${tag}> takes its props as they are written: {...${expr}} passes a component's getters on, to a component written in rocx (view!)", pos))
 		}
 		fields =
 			match Transpile.view_at(cfg, pos) {
@@ -2965,12 +2965,12 @@ Transpile := [].{
 		root =
 			match Flow.root(src, found.body, inside) {
 				Ok(r) => r
-				Err(NoRoot) => return Err(Transpile.fail(cfg, "a list that changes is a row per key (D-071), and this row has no markup to say its key: make it an element or a component (a <li> around it, say), and ${way}", Text.skip_space(src, found.body.from)))
+				Err(NoRoot) => return Err(Transpile.fail(cfg, "a list that changes is a row per key, and this row has no markup to say its key: make it an element or a component (a <li> around it, say), and ${way}", Text.skip_space(src, found.body.from)))
 			}
 		key =
 			match root.key {
 				Key(k) => k
-				NoKey => return Err(Transpile.fail(cfg, "a list that changes is a row per key (D-071), as <For> was, since Roc's values have no identity: ${way}", root.at))
+				NoKey => return Err(Transpile.fail(cfg, "a list that changes is a row per key, kept as the list changes, and Roc's values have no identity: ${way}", root.at))
 			}
 		key_text = Text.trim(Text.cut(src, key.code.from, key.code.to))
 		by_position = index_name != "" and key_text == index_name

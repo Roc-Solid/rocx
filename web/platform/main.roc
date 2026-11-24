@@ -11,8 +11,9 @@
 ##
 ## The modules both platforms have are written here, and the server platform's build copies them:
 ## the components' (`Html`, `Solid`, `Store`, `Repeat`, `Transition`, `Loading`, `Errored`, `Context`,
-## `Call`, `Router`, `Search`, `Leave`, `A`, `Submission`, `Submissions`, `Title`, `HttpStatusCode`) and HTTP's (`Server`, `Endpoint`,
-## `Channel`, `Middleware`, `Events`, `OpenApi`). Roc compiles only what a program reaches, so what
+## `Call`, `Router`, `Search`, `Leave`, `A`, `Submission`, `Submissions`, `Title`, `HttpStatusCode`,
+## `Browser`) and HTTP's (`Server`, `Endpoint`, `FormBody`, `Channel`, `Middleware`, `Events`,
+## `OpenApi`). Roc compiles only what a program reaches, so what
 ## only the server uses (`Middleware`, `OpenApi`) costs the browser's wasm nothing. `Time` is the
 ## browser's own, under the server's names: the clock, for handlers, effects and timers.
 platform ""

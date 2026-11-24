@@ -9,8 +9,8 @@ import crypto.Hmac
 ## token in a cookie (`uptime_admin`, HttpOnly, 12 hours) whose session is kept in `Kv`, so a
 ## restart signs everyone out. Without `ADMIN_PASSWORD` set, nobody can sign in.
 ##
-## The server doesn't pass on the client's address, so wrong passwords can't be counted for each
-## client: ten tries a minute are allowed in all, then the form says to wait.
+## Wrong passwords are counted for all clients together, not each client's address (which the
+## server does give: `request.peer`): ten tries a minute in all, then the form says to wait.
 Session := [].{
 
 	## The cookie a session's token is kept in.

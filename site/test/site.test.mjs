@@ -625,6 +625,35 @@ test("the cheat sheet filters as you type", { skip }, async () => {
 	assert.equal(await rows(), all);
 });
 
+test("the syntax tour: one component with all of rocx's syntax adds, ticks and filters, its rows kept and its parts switched", { skip }, async () => {
+	const page = await open("/syntax");
+	const titles = () => page.eval("[...document.querySelectorAll('.tour .books li')].map((li) => li.textContent.trim())");
+	assert.deepEqual(await titles(), ["Dune", "Middlemarch", "The Left Hand of Darkness"]);
+	assert.match(await text(page, ".tour .count"), /^3 books, 1 read$/);
+	assert.match(await text(page, ".tour .next"), /Next up: Dune/);
+	// Enter adds a book: a new row, the others kept.
+	await page.eval("window.dune = document.querySelector('.tour .books li')");
+	await page.type(".tour .add input", "Persuasion");
+	await page.press("Enter");
+	await page.wait("document.querySelectorAll('.tour .books li').length === 4");
+	assert.equal(await page.eval("window.dune === document.querySelector('.tour .books li')"), true, "the first row kept");
+	assert.equal(await page.eval("document.querySelector('.tour .add input').value"), "", "the field emptied");
+	assert.equal(await page.eval("document.querySelectorAll('.tour .bars li').length"), 4, "a row per position for each book");
+	// Ticked, and filtered: the match's part follows the first book shown.
+	await page.click(".tour .books li:nth-child(2) input");
+	await page.wait("document.querySelector('.tour .count').textContent.trim() === '4 books, 2 read'");
+	await page.click(".tour .filters button:nth-child(2)");
+	await page.wait("document.querySelectorAll('.tour .books li').length === 2");
+	assert.match(await text(page, ".tour .next"), /Next up: The Left Hand of Darkness/);
+	assert.equal(await page.eval("document.querySelector('.tour .filters button:nth-child(2)').getAttribute('aria-pressed')"), "true");
+	// Nothing to show: the if's part. (A row that goes stays until its fade has played.)
+	await page.click(".tour .books li:nth-child(1) input");
+	await page.wait("document.querySelectorAll('.tour .books li').length === 1");
+	await page.click(".tour .books li:nth-child(1) input");
+	await page.wait("document.querySelector('.tour .empty') !== null && document.querySelectorAll('.tour .books li').length === 0");
+	assert.equal(await page.eval("document.querySelector('.tour .next')"), null);
+});
+
 test("the escape lab can't be broken", { skip }, async () => {
 	const page = await open("/safety");
 	const presets = await page.eval("[...document.querySelectorAll('.lab-presets button')].map((b) => b.textContent)");

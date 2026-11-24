@@ -103,7 +103,7 @@ Intl := { data : Locales.Data, catalog : Catalog, offset : I64 }.{
 	fixed : Intl, Dec, U64 -> Str
 	fixed = |intl, x, places| NumberFormat.format(intl.data.number, x, { min_fraction: places, max_fraction: places, grouping: Bool.True })
 
-	## A share as a percentage, to at most `places` fraction digits: 0.256 is `"25.6%"`, `"25,6 %"`.
+	## A share as a percentage, to at most `places` fraction digits: 0.256 is `"25.6%"`, `"25,6%"`.
 	percent : Intl, Dec, U64 -> Str
 	percent = |intl, x, places| NumberFormat.percent(intl.data.number, x, places)
 

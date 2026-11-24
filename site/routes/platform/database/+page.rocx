@@ -8,18 +8,18 @@ import ../../../Ui/PageHero
 
 meta = {
 	title: "The database",
-	description: "The Roc Solid server platform's database, Postgres, or SQLite or Turso in the server's process, as the app's program says: queries whose rows decode into the record you annotate, transactions that take jobs with them, migrations built into the app, notifications, queries checked by the database's own engine (rocx check --sql), and roc-pg, a client in Roc whose queries are checked when the app is built.",
+	description: "The Roc Solid server platform's database: Postgres, or SQLite or Turso inside the server's process, as the app's program says. Queries whose rows decode into the record you annotate, transactions that take jobs with them, migrations built into the executable, notifications, SQL checked by the database's own engine (rocx check --sql), and roc-pg, a client in Roc whose queries are checked when the app is built.",
 	toc: [
 		{ id: "choose", label: "Postgres or SQLite" },
-		{ id: "turso", label: "Turso" },
 		{ id: "query", label: "A query" },
 		{ id: "rows", label: "Rows, as records" },
 		{ id: "write", label: "Writing" },
 		{ id: "transactions", label: "Transactions" },
 		{ id: "migrations", label: "Migrations" },
-		{ id: "notify", label: "Notifications" },
 		{ id: "where", label: "Where it can be used" },
-		{ id: "checked", label: "Checked queries" },
+		{ id: "notify", label: "Notifications" },
+		{ id: "checked", label: "Checking queries: rocx check --sql" },
+		{ id: "turso", label: "Turso" },
 		{ id: "roc-pg", label: "roc-pg: queries checked at build" },
 		{ id: "limits", label: "Not yet" },
 	],
@@ -29,108 +29,77 @@ view! = |_|
 	<>
 		<NoHydration>
 			<PageHero
-				eyebrow="The platform · The database"
+				eyebrow="The platform · the database"
 				title="One database, and the types you say"
 			>
-				The server platform is opinionated: an app has one database, Postgres or SQLite (on SQLite's own
-				engine, or on Turso's), as its program says. <code>Db</code> runs a statement with its parameters and gives back the rows, decoded into the
-				record the caller annotated; a transaction keeps one connection for a call; migrations run once
-				each, when the server starts. The jobs queue and the actors' state live there too.
+				An app has one database: Postgres, or SQLite running inside the server's own process. The
+				<code>Db</code> module runs a statement with its parameters and gives back the rows, decoded into
+				the record type you annotate. Transactions keep one connection for a call, and migrations run once
+				each as the server starts. The actors' state and the jobs queue live in the same database.
 			</PageHero>
 
 			<Heading id="choose">Postgres or SQLite</Heading>
 			<p>
-				An app picks its database when it is made, in its program, and writes its SQL for it: nothing is
-				translated, and an app runs on one. <code>Postgres</code> is the default: it is at
-				<code>--database-url</code> (or <code>DATABASE_URL</code>), and without one the app has no database.
-				<code>Sqlite(path)</code> is a file in the server's own process, at <code>path</code> from where the
-				server starts, made (with its directory) when it is missing, so the app runs with nothing set and
-				nothing beside it.
+				An app picks its database in its program and writes its SQL for that database: nothing is
+				translated between the two.
 			</p>
+			<ul>
+				<li>
+					<strong><code>Postgres</code></strong> is the default. The server finds it at
+					<code>--database-url</code> (or <code>DATABASE_URL</code>); without one, the app has no database.
+					Choose it for data other programs share, or more data than one server's disk holds.
+				</li>
+				<li>
+					<strong><code>Sqlite(path)</code></strong> is a file inside the server's own process, at
+					<code>path</code> relative to where the server starts. The file (and its directory) is made when
+					missing, so the app runs with nothing to set up and nothing beside it. It suits an app on one
+					server, which is what the platform runs: every example app with a database uses it.
+				</li>
+				<li>
+					<strong><code>Turso(path)</code></strong> is SQLite's SQL on another engine, which lets
+					transactions write at the same time (<a href="#turso">below</a>).
+				</li>
+			</ul>
 			<Code
 				title="main.roc"
 				source={"program = App.program({\n\tinit!: |_started| Ok({}),\n\tmiddleware: Middlewares.default,\n\tdatabase: Sqlite(\"data/plate.db\"),\n})"}
 				numbers={Bool.False}
 			/>
 			<p>
-				<code>--database-url sqlite:/var/lib/plate.db</code> puts a SQLite app's file elsewhere (on a volume, a
-				test's own); a URL of the other kind stops the server as it starts, saying which the app wants.
-				SQLite suits an app on one server (the platform runs one), with no database to run beside it:
-				<code>examples/plate</code> is one. Postgres suits data other programs share, or more than a server's
-				disk holds.
+				<code>--database-url sqlite:/var/lib/plate.db</code> puts a SQLite app's file somewhere else (on a
+				volume, or a test's own file). A URL for the other kind of database stops the server as it starts,
+				saying which one the app wants.
 			</p>
 			<p>
-				A package says which it works with, in its plugin's needs: <code>Database</code> (either),
-				<code>Postgres</code> or <code>Sqlite</code>; one that needs the other stops the server as it starts,
-				saying so. A package with SQL for both asks <code>Db.backend!</code> which to run, and lists a migration
-				for each (<code>{"{ name: \"0001_jobs\", sql: lite, on: Sqlite }"}</code>): the jobs plugin does both.
-			</p>
-
-			<Heading id="turso">Turso: SQLite's SQL on another engine</Heading>
-			<p>
-				<code>Turso(path)</code> is <code>Sqlite(path)</code> with another engine under it:
-				<a href="https://github.com/tursodatabase/turso">Turso</a>, SQLite written again in Rust, in the
-				server's process. Its SQL is SQLite's and its file is in SQLite's format, so what this page says of
-				SQLite holds for it: the app's SQL, and a package's, a plugin's migrations and needs for SQLite.
-				<code>Db.backend!</code> answers <code>Sqlite</code> on both; <code>Db.engine!</code> tells them apart.
-			</p>
-			<Code
-				title="main.roc"
-				source={"program = App.program({\n\tinit!: |_started| Ok({}),\n\tmiddleware: Middlewares.default,\n\tdatabase: Turso(\"data/plate.db\"),\n})"}
-				numbers={Bool.False}
-			/>
-			<p>
-				The URL picks the engine: <code>--database-url turso:data/plate.db</code> runs a SQLite app on Turso,
-				and <code>sqlite:</code> a Turso app on SQLite, which is how to try one against the other.
-			</p>
-			<p>
-				What Turso adds is writes at once. Its file is in MVCC mode: a transaction (<code>Db.transaction!</code>)
-				begins <code>concurrent</code>, on a snapshot of its own, and writes beside the others; when two write
-				the same row, the one that commits second rolls back and its body runs again (up to a hundred times),
-				so keep what isn't the database's (a fetch, an email) out of a transaction. A write outside one (an
-				insert, an update) is its own concurrent transaction, tried again the same way; a schema change (a
-				migration) takes the file to itself. Two transactions that read rows and write different ones both
-				commit, where on SQLite the second would wait and see the first's.
-			</p>
-			<p>
-				Some things differ. In MVCC mode the file is Turso's alone: SQLite says so, and
-				<code>--database-url turso:data/plate.db?mvcc=off</code>, once, gives it back (that mode also keeps
-				Turso's writes taking turns, as SQLite's do). The server keeps a Turso file to itself while it runs (an
-				OS lock on it), so <code>sqlite3</code>, or a test's <code>node:sqlite</code>, opens it once the server
-				has stopped. Turso has no FTS5, so <code>examples/notes</code>' search and <code>examples/plate</code>'s need
-				SQLite, and no <code>order by</code> inside an aggregate (<code>json_group_array(value order by key)</code>,
-				which <code>examples/board</code> uses). And Turso is younger
-				than SQLite (0.8, before its 1.0): once it has checkpointed rows, deleting many of them slows what
-				follows badly until its next checkpoint (<code>pragma wal_checkpoint(truncate)</code> after such a
-				delete avoids it; <code>?mvcc=off</code> doesn't have it).
-			</p>
-			<p>
-				How they compare: <a href={Paths.examples_sqlite_vs_turso}>examples/sqlite-vs-turso</a> times the same
-				work on both, in Roc, in the server (writes, reads, scans, JSON, and eight callers at once), and its
-				page has the numbers.
+				A package says which databases it works with, in its <a href={"${Paths.platform_server}#plugins"}>plugin</a>'s
+				needs: <code>Database</code> (either), <code>Postgres</code> or <code>Sqlite</code>. An app whose
+				database doesn't match stops as it starts, saying so. A package with SQL for both asks
+				<code>Db.backend!</code> which to run, and lists a migration for each
+				(<code>{"{ name: \"0001_jobs\", sql: lite, on: Sqlite }"}</code>), as the jobs plugin does.
 			</p>
 
 			<Heading id="query">A query</Heading>
 			<p>
-				<code>Db.all!</code> runs a statement with its parameters and answers its rows. The type says what a
-				row is; the platform's tests' app:
+				<code>Db.all!</code> runs a statement with its parameters and returns its rows. The annotation says
+				what a row is. From the platform's test app:
 			</p>
 			<Code title={"${Sources.platform_notes.file}, in part"} source={Sources.platform_notes.rocx} numbers={Bool.False} />
 			<p>
-				A parameter is <code>Null</code>, <code>Text</code>, <code>Int</code> or <code>Bool</code>, named
-				<code>$1</code>, <code>$2</code>… in both. Postgres is sent each as text, which it reads as the type its
-				place wants (<code>$1</code> in <code>where id = $1</code> is a <code>bigint</code>); SQLite is given each
-				as it is (a <code>Bool</code> as 1 or 0), and a column of numbers takes text that is one. A statement is
-				never put together from strings: its values go as parameters.
+				Parameters are written <code>$1</code>, <code>$2</code>… on both databases, and each is a
+				<code>Db.Value</code>: <code>Null</code>, <code>Text</code>, <code>Int</code> or <code>Bool</code>.
+				Postgres receives each as text and reads it as the type its place wants (<code>$1</code> in
+				<code>where id = $1</code> becomes a <code>bigint</code>). SQLite receives each as it is (a
+				<code>Bool</code> as 1 or 0), and a number column accepts text that is a number. Never build a
+				statement from strings: pass values as parameters.
 			</p>
 			<p>
-				A list is one parameter with <code>Db.array</code>, on Postgres: an array, written as Postgres writes one in
-				text (<code>{"{\"work\",\"to do\",NULL}"}</code>), which it reads as the array its place wants, of text or
-				of numbers: <code>= any($1)</code>, <code>{"@> $1"}</code>, <code>$1::bigint[]</code>,
-				<code>unnest($1::text[])</code> (alone, <code>unnest($1)</code> can't tell which array, so it takes the
-				cast). Each text is quoted, so a comma, a brace or the word NULL in one stays text. SQLite has no
-				arrays: a list is JSON text there, read with <code>json_each</code>
-				(<code>where tag in (select value from json_each($1))</code>).
+				On Postgres, <code>Db.array</code> passes a list as one parameter: an array, written as Postgres
+				writes one in text (<code>{"{\"work\",\"to do\",NULL}"}</code>), which Postgres reads as the array
+				its place wants, of text or of numbers: <code>= any($1)</code>, <code>{"@> $1"}</code>,
+				<code>$1::bigint[]</code>, <code>unnest($1::text[])</code>. (Alone, <code>unnest($1)</code> can't
+				tell which array, so it needs the cast.) Each text is quoted, so a comma, a brace or the word NULL
+				inside one stays text. SQLite has no arrays: pass a list as JSON text and read it with
+				<code>json_each</code> (<code>where tag in (select value from json_each($1))</code>).
 			</p>
 			<Code
 				title="An array as a parameter"
@@ -140,117 +109,137 @@ view! = |_|
 
 			<Heading id="rows">Rows, as records</Heading>
 			<p>
-				The host reads each row's columns, as Postgres typed them, and hands Roc the rows as JSON;
-				<code>Json.parse</code> decodes each into the record the caller annotated, by column name. A row
-				that doesn't fit is <code>BadRow</code>, saying why.
+				The host reads each row's columns, as the database typed them, and hands Roc the rows as JSON.
+				<code>Db.all!</code> decodes each row into the record you annotated, matching fields to columns by
+				name. A row that doesn't fit is <code>BadRow</code>, saying why.
 			</p>
 			<ul>
 				<li>
-					<strong>Nulls are typed.</strong> A column that may be null is read as <code>Db.Nullable(a)</code>:
-					<code>Null</code> or <code>Some(a)</code>, matched like any tag union. The record says what may be
-					null, not the column's name or the table; a null in a column the record reads as a plain value is
-					<code>BadRow</code>, which names the column.
+					<strong>Nulls are typed.</strong> Read a column that may be null as <code>Db.Nullable(a)</code>:
+					<code>Null</code> or <code>Some(a)</code>, matched like any tag union. The record decides what may
+					be null. A null in a column the record reads as a plain value is <code>BadRow</code>, naming the
+					column.
 				</li>
 				<li>
-					<strong>What is read, from Postgres:</strong> booleans, integers, floats, text, <code>json</code> and
-					<code>jsonb</code>, <code>uuid</code>, timestamps and dates (as text). Anything else asks for a cast
-					(<code>::text</code>).
+					<strong>From Postgres:</strong> booleans, integers, floats, text, <code>json</code> and
+					<code>jsonb</code>, <code>uuid</code>, and timestamps and dates (as text). Any other type needs a
+					cast (<code>::text</code>).
 				</li>
 				<li>
-					<strong>From SQLite:</strong> each value as what it is (an integer or a real a number, text a
-					string), a column declared <code>boolean</code> as a <code>Bool</code> and one declared
-					<code>json</code> as its JSON. A boolean worked out in a statement (<code>exists (…)</code>) is 0 or 1,
-					an <code>I64</code>. SQLite has no time of its own: milliseconds in an integer are the advice.
+					<strong>From SQLite:</strong> each value as it is (an integer or a real as a number, text as a
+					string), a column declared <code>boolean</code> as a <code>Bool</code>, and one declared
+					<code>json</code> as its JSON. A boolean computed in a statement (<code>exists (…)</code>) is 0 or
+					1, an <code>I64</code>. SQLite has no time type: store milliseconds in an integer
+					(<code>Time.now_millis!</code>).
 				</li>
 			</ul>
 
 			<Heading id="write">Writing</Heading>
 			<p>
-				<code>Db.run!</code> runs a statement and answers how many rows it changed; <code>Db.script!</code> runs
-				statements with no parameters, one after another, in one transaction (or in the call's, if it has
-				one open).
+				<code>Db.run!</code> runs a statement and returns how many rows it changed. <code>Db.script!</code>
+				runs several statements with no parameters, one after another (separated by <code>;</code>), as one
+				transaction: if one fails, none stays.
 			</p>
 			<Code title={"${Sources.platform_insert.file}, in part"} source={Sources.platform_insert.rocx} numbers={Bool.False} />
 
 			<Heading id="transactions">Transactions</Heading>
 			<p>
-				<code>Db.transaction!</code> keeps one connection for the call: what its body writes, and the jobs it
+				<code>Db.transaction!</code> runs a function on one connection. What it writes, and the jobs it
 				queues, stay only if it returns <code>Ok</code>. An <code>Err</code>, a failing statement or a crash
-				rolls it all back, and a call that ends with a transaction still open has it rolled back.
-			</p>
-			<p>
-				On SQLite writes take turns, and reads go on beside them: a transaction holds the write lock from
-				its start, so every other write waits until it ends. Keep anything slow (a request to another
-				server, a wait) out of one; on Postgres it would hold only the rows it wrote.
+				rolls all of it back, and a call that ends with a transaction still open has it rolled back.
 			</p>
 			<Code title={"${Sources.platform_transaction.file}, in part"} source={Sources.platform_transaction.rocx} numbers={Bool.False} />
 			<p>
-				The body can <code>?</code> what <code>Db</code>, <code>Job</code> and the app itself return, with
-				nothing mapped from one to another: their errors are open unions (<code>Db.run!</code>'s is
+				Inside, you can use <code>?</code> on what <code>Db</code>, <code>Job</code> and your own code return,
+				with no error mapping. Their errors are open tag unions (<code>Db.run!</code>'s is
 				<code>[DbErr(Str), ..others]</code>, <code>Job.enqueue!</code>'s <code>[JobErr(Str), ..others]</code>),
-				so the transaction's error is every one of them (with an app's own <code>Err(Refused)</code>,
-				<code>[DbErr(Str), JobErr(Str), Refused]</code>), and the caller matches each case.
+				so the transaction's error is all of them together. With an app's own <code>Err(Refused)</code>, it
+				is <code>[DbErr(Str), JobErr(Str), Refused]</code>, and the caller matches each case.
 			</p>
 			<p>
 				A job queued in a transaction is a row in it, so it runs only if the transaction commits, and the
 				workers are woken when it does (<a href={Paths.ecosystem_jobs}>jobs</a>).
 			</p>
+			<Callout kind="note" title="Keep transactions short on SQLite">
+				<p>
+					On SQLite, reads go on beside a write, but writes take turns: a transaction holds the write lock
+					from its start, so every other write waits until it ends. Keep anything slow (a request to
+					another server, a wait) out of a transaction. On Postgres it would hold only the rows it wrote.
+				</p>
+			</Callout>
 
 			<Heading id="migrations">Migrations</Heading>
 			<p>
-				An app's migrations are in its executable: <code>program.migrations</code> lists them, each a name and
-				its SQL, which Roc reads from a <code>.sql</code> file when the app is compiled. When the server
-				starts, the platform's Roc applies them in the order listed, each once, each in a transaction,
-				recorded by name in <code>rocx_migrations</code>; two starting at once (a deploy's old server and its
-				new one) take turns (on Postgres an advisory lock, on SQLite its write lock). The platform's own tables (<code>rocx_actors</code>) come
-				first, then the plugins' (the jobs plugin's <code>rocx_jobs</code>, recorded as <code>jobs/0001_jobs</code>),
-				then the app's. One that fails stops the server, saying why.
+				An app's schema is a list of migrations, built into its executable. In an app that
+				<code>rocx build</code> builds, put each one in a <code>.sql</code> file in the app's
+				<code>migrations/</code> directory (<code>0001_tables.sql</code>, <code>0002_seed.sql</code>…):
+				the build embeds them, in the order of their names. A hand-written program lists them in
+				<code>program.migrations</code>, each a name and its SQL, imported from a file:
 			</p>
 			<Code title={"${Sources.platform_migrations.file}, in part"} source={Sources.platform_migrations.rocx} numbers={Bool.False} />
 			<Code title={Sources.platform_migration.file} source={Sources.platform_migration.rocx} numbers={Bool.False} plain={Bool.True} />
-
-			<Heading id="notify">Notifications</Heading>
 			<p>
-				<code>Db.notify!(channel, payload)</code> tells whoever listens to <code>channel</code>
-				(<code>Db.listen!</code>, then <code>Live.next!</code>): when the call's transaction commits, never if it
-				rolls back, or at once outside one. On Postgres it is <code>pg_notify</code>, which another process
-				that writes to the database can send too; on SQLite it is the server's own. It is how the job workers
-				sleep until a job is queued.
+				When the server starts, it applies each migration it hasn't applied yet, in order, each in a
+				transaction of its own, and records it by name in <code>rocx_migrations</code>. The platform's own
+				tables (<code>rocx_actors</code>, <code>rocx_actor_timers</code>) come first, then the plugins'
+				(the jobs plugin's <code>rocx_jobs</code>, recorded as <code>jobs/0001_jobs</code>), then the app's.
+				A migration that fails stops the server, saying why. If two servers start at once (a deploy's old
+				one and its new one), they take turns: on Postgres through an advisory lock, on SQLite through its
+				write lock.
 			</p>
 
 			<Heading id="where">Where it can be used</Heading>
 			<p>
 				Anywhere only the server runs: an endpoint, a middleware, a job, an actor, a stream. A component is
-				compiled for the browser too, so it reads its data from a database through a GET endpoint
-				(<code>Endpoint.get!</code>, answered in-process as the server renders the page): the handler runs
-				only on the server, so it may query, and the browser's copy has only the endpoint's method and URL
-				(<a href={"${Paths.calls}#user"}>who is asking</a>). A
-				statement takes a connection from a pool (16 to Postgres, 8 to SQLite's or Turso's file), and gives
-				it back; a transaction keeps one until it ends. Statements are prepared once per connection, and
-				kept. SQLite's and Turso's run on threads of their own, so a call waiting on one holds none of
-				Roc's.
+				compiled for the browser too, so it can't query the database itself. It reads its data through a
+				GET endpoint (<code>Endpoint.get!</code>), which the server answers in-process while it renders the
+				page. The handler runs only on the server, so it may query; the browser's copy has only the
+				endpoint's method and URL (<a href={"${Paths.calls}#user"}>who is asking</a>).
 			</p>
+			<ul>
+				<li>
+					<strong>Connections.</strong> A statement takes a connection from a pool (16 for Postgres, 8 for
+					SQLite's or Turso's file) and gives it back; a transaction keeps one until it ends. Statements are
+					prepared once per connection, and kept. SQLite's and Turso's calls run on threads of their own,
+					so a call waiting on one holds none of Roc's.
+				</li>
+				<li>
+					<strong>Postgres</strong> connections use TLS when the database offers it (or the URL's
+					<code>sslmode</code> asks for it), checked against the web's certificate authorities. In this
+					repository, <code>just db</code> runs a Postgres in Docker and prints its URL.
+				</li>
+				<li>
+					<strong>No database?</strong> A Postgres app started without a URL still runs; each query answers
+					that there is no database, and <code>Db.connected!</code> says so up front.
+				</li>
+				<li>
+					<strong>SQLite's file</strong> is in WAL mode, with its <code>-wal</code> and <code>-shm</code>
+					files beside it. To back it up, run <code>sqlite3 data/plate.db ".backup copy.db"</code>, or copy
+					the file while the server is stopped (Turso's only that way: the server holds it while it runs).
+				</li>
+			</ul>
+
+			<Heading id="notify">Notifications</Heading>
 			<p>
-				<code>just db</code> runs a Postgres in Docker and prints its URL; the server takes it as
-				<code>--database-url</code> or <code>DATABASE_URL</code>. With none, a query answers that there is no
-				database, and the server's other parts work. Connections use TLS when the database offers it (or the
-				URL's <code>sslmode</code> asks for it), checked against the web's certificate authorities. SQLite's
-				file is in WAL mode, with its <code>-wal</code> and <code>-shm</code> beside it; a backup is
-				<code>sqlite3 data/plate.db ".backup copy.db"</code>, or the file with the server stopped (Turso's
-				only so: the server holds it while it runs).
+				<code>Db.notify!(channel, payload)</code> tells whoever listens to <code>channel</code>: when the
+				call's transaction commits (never if it rolls back), or at once outside a transaction. A call
+				listens with <code>Db.listen!(channel)</code>, then hears each notification as a message on the
+				topic <code>{"db:<channel>"}</code> from <code>Live.next!</code>
+				(<a href={"${Paths.platform_live}#topics"}>topics</a>). On Postgres it is <code>pg_notify</code>, so
+				another process writing to the database can notify too; on SQLite it stays within the server. It is
+				how the job workers sleep until a job is queued.
 			</p>
 
-			<Heading id="checked">Checked queries</Heading>
+			<Heading id="checked">Checking queries: rocx check --sql</Heading>
 			<p>
-				<code>rocx check --sql</code> checks an app's SQL with the engine it runs on, and its rows with the
-				compiler (D-058). Each statement written as a string at a <code>Db.all!</code> or a
-				<code>Db.run!</code> is prepared, never run, on a scratch database the app's own server builds from
-				its migrations: a file it removes after, for SQLite and Turso, or, for Postgres, a database it
-				makes on the server <code>DATABASE_URL</code> names and drops after. It never migrates a database
-				nobody named for it; without <code>CREATEDB</code> it says to grant it, or to name one it may
-				migrate (<code>--sql-database URL</code>). The engine is the judge of the SQL: its grammar, its
-				functions, what Turso doesn't have yet. The compiler is the judge of the rows. Nothing in the app
-				changes, and <code>rocx dev</code> runs the check after each build.
+				<code>rocx check --sql</code> checks an app's SQL with the engine it runs on, and its row types with
+				the compiler, without running anything. Each statement written as a string literal at a
+				<code>Db.all!</code> or a <code>Db.run!</code> is prepared (never run) on a scratch database, which
+				the app's own server builds from its migrations. For SQLite and Turso that is a file it removes
+				afterwards; for Postgres, a database it makes on the server <code>DATABASE_URL</code> names and drops
+				afterwards. It never migrates a database nobody named for it: without the <code>CREATEDB</code>
+				privilege, it says to grant it, or to name a database it may migrate
+				(<code>--sql-database URL</code>). <code>rocx dev</code> runs the check after each build.
 			</p>
 			<Code
 				source={"$ rocx check --sql app\napp/Store.roc:29:15: SQLite refuses it: no such column: bodyy in select bodyy as body from notes at offset 7\napp/Store.roc:33:16: parameter $2 is given, and the statement doesn't use it\napp/Store.roc:50:10: `body` is read as an integer, and notes.body is a TEXT (text)\napp/Store.roc:58:10: `note` is read as a plain value, and notes.note may be null (it has no `not null`): read it as Db.Nullable(…)\napp/Store.roc:66:10: `title` isn't a column the statement returns (it returns id)\nrocx check --sql: 7 statements checked on SQLite (the rows of 5 against their records): 5 problems"}
@@ -259,60 +248,125 @@ view! = |_|
 			/>
 			<ul>
 				<li>
-					<strong>What it checks:</strong> the statement as the engine reads it (its syntax, its tables,
-					columns and functions, Postgres's types), and the parameters a call gives as a list, which must be
-					the statement's <code>$1</code> to <code>$n</code>, each used.
+					<strong>The SQL.</strong> The engine judges the statement as it reads it: its syntax, its tables,
+					columns and functions, Postgres's types, and what Turso doesn't support yet. The parameters a call
+					gives as a list must be exactly the statement's <code>$1</code> to <code>$n</code>, each used.
 				</li>
 				<li>
-					<strong>Rows:</strong> for a <code>Db.all!</code> whose rows are annotated (<code>rows : List(T)</code>,
-					or the result of the function the call is), the record against the statement's columns: a field
-					the statement doesn't return, a type its column's values can't decode into, and a plain field
-					over a column that may be null (it has no <code>not null</code>), which <code>Db.Nullable</code>
-					reads. rocx writes the type into a small app of its own, beside a copy of yours, and the compiler
-					reads it through its parser (<code>packages/dbcheck</code>), so an alias, a nominal type or a
-					package's type is read as the compiler has it.
+					<strong>The rows.</strong> For a <code>Db.all!</code> whose rows are annotated
+					(<code>rows : List(T)</code>, or the result of the function the call is in), it compares the record
+					with the statement's columns: a field the statement doesn't return, a type the column's values
+					can't decode into, and a plain field over a column that may be null (it has no
+					<code>not null</code>), which <code>Db.Nullable</code> should read. rocx writes the type into a
+					small app of its own, beside a copy of yours, and reads it through the compiler's parser
+					(<code>packages/dbcheck</code>), so an alias, a nominal type or a package's type is read as the
+					compiler has it.
 				</li>
 				<li>
-					<strong>What it can't:</strong> SQL put together (<code>{"\"select \${columns} from notes\""}</code>)
-					or passed in a variable, which it counts, and lists with <code>--verbose</code>; and a statement
-					on a table the app makes as it runs, not in a migration, which <code>Db.unchecked(sql)</code> marks.
+					<strong>What it can't check:</strong> SQL built from strings
+					(<code>{"\"select \${columns} from notes\""}</code>) or passed in a variable, which it counts and lists
+					with <code>--verbose</code>; and a statement on a table the app creates while it runs rather than
+					in a migration, which you mark with <code>Db.unchecked(sql)</code>.
 				</li>
 				<li>
-					<strong>Where it runs:</strong> by hand or in CI, and in <code>just examples</code> for each example.
-					<code>--engine turso</code> asks Turso about a SQLite app (or SQLite about a Turso app). Describing
-					takes milliseconds; the server's start and the migrations are most of a check.
+					<strong>Where to run it:</strong> by hand, in CI, and in <code>just examples</code> for each
+					example. <code>--engine turso</code> asks Turso about a SQLite app (or SQLite about a Turso app).
+					Describing a statement takes milliseconds; most of a check is the server starting and the
+					migrations.
 				</li>
 			</ul>
 
+			<Heading id="turso">Turso: SQLite's SQL on another engine</Heading>
+			<p>
+				<code>Turso(path)</code> is <code>Sqlite(path)</code> with another engine underneath:
+				<a href="https://github.com/tursodatabase/turso">Turso</a>, SQLite rewritten in Rust, also inside the
+				server's process. Its SQL is SQLite's and its file uses SQLite's format, so everything this page says
+				of SQLite holds for it too: the app's SQL, and a package's or a plugin's migrations and needs for
+				SQLite. <code>Db.backend!</code> answers <code>Sqlite</code> for both; <code>Db.engine!</code> tells
+				them apart.
+			</p>
+			<Code
+				title="main.roc"
+				source={"program = App.program({\n\tinit!: |_started| Ok({}),\n\tmiddleware: Middlewares.default,\n\tdatabase: Turso(\"data/plate.db\"),\n})"}
+				numbers={Bool.False}
+			/>
+			<p>
+				The URL picks the engine: <code>--database-url turso:data/plate.db</code> runs a SQLite app on
+				Turso, and <code>sqlite:</code> runs a Turso app on SQLite, which is how you try one against the
+				other.
+			</p>
+			<p>
+				<strong>What Turso adds: writes at the same time.</strong> Its file is in MVCC mode. A transaction
+				(<code>Db.transaction!</code>) begins <code>concurrent</code>, on a snapshot of its own, and writes
+				beside the others. When two write the same row, the one that commits second rolls back, and its
+				body runs again (up to a hundred times). So keep what isn't the database's (a fetch, an email) out
+				of a transaction. A write outside a transaction is its own concurrent transaction, retried the same
+				way; a schema change (a migration) takes the file to itself. Two transactions that read rows and
+				write different ones both commit, where on SQLite the second would wait for the first.
+			</p>
+			<p>What differs:</p>
+			<ul>
+				<li>
+					In MVCC mode the file is Turso's alone; SQLite refuses to open it.
+					<code>--database-url turso:data/plate.db?mvcc=off</code>, run once, gives it back (and in that mode
+					Turso's writes take turns, as SQLite's do).
+				</li>
+				<li>
+					The server keeps a Turso file to itself while it runs (an OS lock), so <code>sqlite3</code>, or a
+					test's <code>node:sqlite</code>, opens it only once the server has stopped.
+				</li>
+				<li>
+					Turso has no FTS5, so the full-text search in <code>examples/notes</code> and
+					<code>examples/plate</code> needs SQLite. It has no <code>order by</code> inside an aggregate either
+					(<code>json_group_array(value order by key)</code>, which <code>examples/board</code> uses).
+				</li>
+				<li>
+					Turso is younger than SQLite (0.8, before its 1.0). Once it has checkpointed rows, deleting many
+					of them slows what follows badly until its next checkpoint. Running
+					<code>pragma wal_checkpoint(truncate)</code> after such a delete avoids it; <code>?mvcc=off</code>
+					doesn't have the problem.
+				</li>
+			</ul>
+			<p>
+				<a href={Paths.examples_sqlite_vs_turso}>examples/sqlite-vs-turso</a> times the same work on both,
+				in Roc, in the server (writes, reads, scans, JSON, and eight callers at once), and its page has the
+				numbers.
+			</p>
+
 			<Heading id="roc-pg">roc-pg: queries checked at build</Heading>
 			<p>
-				For Postgres, <a href="https://github.com/niclas-ahden/roc-pg">roc-pg</a> is a client written in Roc. It
-				speaks Postgres's protocol over a socket the platform gives it (<code>Tcp</code>), logs in with the
-				platform's <code>Random</code>, and checks each query against a schema when the app is compiled: a
-				column that isn't there, a parameter of the wrong type, a column that may be null read as one that
-				can't, each fails the build. The platform's example (<code>server/examples/roc-pg</code>) uses the
-				same <code>schema.sql</code> as its migration, so what roc-pg checks against is what the server
-				applied.
+				For Postgres, <a href="https://github.com/niclas-ahden/roc-pg">roc-pg</a> is a client written in Roc.
+				It speaks Postgres's protocol over a socket the platform gives it (<code>Tcp</code>), signs in using
+				the platform's <code>Random</code>, and checks each query against a schema when the app is compiled:
+				a column that isn't there, a parameter of the wrong type, or a nullable column read as one that
+				can't be null each fails the build. The platform's example (<code>server/examples/roc-pg</code>)
+				uses the same <code>schema.sql</code> as its migration, so what roc-pg checks against is what the
+				server applied.
 			</p>
 			<Code title={"${Sources.platform_rocpg.file}, in part"} source={Sources.platform_rocpg.rocx} numbers={Bool.False} />
 			<p>
 				Use either, or both. <code>Db</code> has a pool, transactions that take jobs with them, and rows
-				decoded into the record you annotate; roc-pg has queries the compiler checks, and a connection per
-				use (it has no pool). Checking the example takes under a second from cold, and an optimized build
-				about six; the platform's tests build it and run it against Postgres.
+				decoded into the record you annotate, with <code>rocx check --sql</code> to check them. roc-pg has
+				queries the compiler checks, and a connection per use (no pool). Checking the example takes under a
+				second from cold, and an optimized build about six; the platform's tests build it and run it
+				against Postgres.
 			</p>
 
 			<Heading id="limits">Not yet</Heading>
 			<ul>
 				<li>
-					<strong>The check's blind spots:</strong> SQL put together or passed in a variable, a row whose
-					type isn't annotated where rocx can read it, a column from the outer side of a
-					<code>left join</code> (taken as its table says), and, on SQLite, an expression's type and nulls.
-					Those still show when the query runs (<code>BadRow</code>).
+					<strong>The check's blind spots:</strong> SQL built from strings or passed in a variable, a row
+					whose type isn't annotated where rocx can read it, a column from the outer side of a
+					<code>left join</code> (taken as its table says), and, on SQLite, an expression's type and
+					nullability. Those still show when the query runs (<code>BadRow</code>).
 				</li>
-				<li><strong>Parameters</strong> are four kinds and arrays of them; bytes aren't yet, and a row reads an array column through a cast (<code>array_to_json(tags)</code>).</li>
+				<li>
+					<strong>Parameters</strong> are four kinds (null, text, integer, boolean) and arrays of them: no
+					floats (pass a number as <code>Text</code>, which Postgres reads as the type its place wants) and
+					no bytes yet. A row reads an array column through a cast (<code>array_to_json(tags)</code>).
+				</li>
 				<li><strong>No cursors or streaming:</strong> a query's rows come back whole.</li>
-				<li><strong>SQLite</strong> is a file: no database in memory alone (the server's connections couldn't share it), and a blob is read through <code>hex(…)</code>.</li>
+				<li><strong>SQLite</strong> is a file: no in-memory database (the server's connections couldn't share it), and a blob is read through <code>hex(…)</code>.</li>
 				<li><strong>Turso</strong>'s sync to Turso's cloud and its own full-text search aren't used yet; in MVCC mode it has no <code>WITHOUT ROWID</code> tables and no <code>REINDEX</code>.</li>
 			</ul>
 		</NoHydration>

@@ -516,7 +516,7 @@ test("a hole's .map (D-071): a list that changes is its rows, by the root's key,
 	assert.match(line(`x = <ul>{...xs!().map(|x| <Row key={x.id} label={x.name} />)}</ul>`), /Html\.rows!\(\|\| xs!\(\), \|x\| x\.id, \|x!, _\| .*\{ label: x!\(\)\.name, \}/);
 	assert.equal(line(`x = <ul>{...names.map(|name| <li>{name}</li>)}</ul>`), `x = Html.element("ul", [], [Html.join(names.map(|name| Html.element("li", [], [Html.hole(name),]))),])`);
 	// Roc's values have no identity: a row says its key.
-	assert.throws(() => line(`x = <ul>{...xs!().map(|a| <li>{a}</li>)}</ul>`), /T\.rocx:1:27: a list that changes is a row per key \(D-071\)/);
+	assert.throws(() => line(`x = <ul>{...xs!().map(|a| <li>{a}</li>)}</ul>`), /T\.rocx:1:27: a list that changes is a row per key, kept as the list changes/);
 	assert.throws(() => line(`x = <ul>{...xs!().map_with_index(|a, i| <li key={a.id + i}>{a}</li>)}</ul>`), /a key made from the index is a row per position: write key=\{i\} alone/);
 	assert.throws(() => line(`import pf.For\nx = <For each!={xs!()} keyed={|a| a}>{|a!, _| <li />}</For>`), /<For> is gone \(D-071\)/);
 });

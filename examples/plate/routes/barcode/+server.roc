@@ -9,7 +9,7 @@ import ../../Query
 import ../../Store
 
 ## POST /barcode, from the barcode form: the food with that barcode, and on to its page. One the
-## diary has already is found in Postgres; any other is asked of Open Food Facts once, and kept as
+## diary has already is found in the database; any other is asked of Open Food Facts once, and kept as
 ## a food (source `off`). One Open Food Facts doesn't know, or can't give the energy of, is refused
 ## under the field (422), and the page offers to make it yourself.
 post! : { request : Server.Request, params : {}, context : {}, body : { barcode : Str } } => Try({}, Endpoint.Refusal)

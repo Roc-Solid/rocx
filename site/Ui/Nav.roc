@@ -23,7 +23,7 @@ Nav := [].{
 				name: "rocx",
 				pages: [
 					{ path: Paths.rocx, label: "Overview", blurb: "What rocx is, in one page" },
-					{ path: Paths.showcase, label: "Showcase", blurb: "A game, a flock and charts, run by Roc" },
+					{ path: Paths.showcase, label: "Showcase", blurb: "A game, a flock, sound and timers, run by Roc" },
 					{ path: Paths.syntax, label: "Syntax", blurb: "Markup wherever an expression can stand" },
 					{ path: Paths.routing, label: "Routing", blurb: "A page is a file: +page.rocx, +layout.rocx" },
 					{ path: Paths.components, label: "Components", blurb: "Signals, and pages that hydrate" },
@@ -113,7 +113,7 @@ Nav := [].{
 			{
 				name: "Tools",
 				pages: [
-					{ path: Paths.ecosystem_admin, label: "Admin", blurb: "A Django-style admin for your Postgres tables" },
+					{ path: Paths.ecosystem_admin, label: "Admin", blurb: "A Django-style admin for your database's tables" },
 					{ path: Paths.ecosystem_testing, label: "Testing", blurb: "Find things in a page by role, name and label, from Roc and Node" },
 					{ path: Paths.ecosystem_mcp, label: "MCP", blurb: "An app's tools, resources and prompts, for AI agents" },
 				],

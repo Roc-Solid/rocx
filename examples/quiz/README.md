@@ -1,175 +1,202 @@
 # Pinwheel: a live quiz for a room full of phones
 
-A whole Roc Solid app, small enough to read end to end. A host puts a room on a big screen; everyone
-in the room joins on their phone with its four-letter code; each question shows on the big screen
-with a clock while the phones show the choices; the quickest right answers score the most; after
-each answer the leaderboard turns; after the last, the podium.
+A whole Roc Solid app, small enough to read end to end. A host puts a room on a big screen, and
+everyone in the room joins on their phone with its four-letter code. Each question shows on the big
+screen with a clock while the phones show the choices. The quickest right answers score the most.
+After each answer the leaderboard turns, and after the last question comes the podium.
 
-## A tour
+Read it to learn how a Roc Solid app keeps shared state in an actor (one per room, with its own
+timers), pushes it to every screen over a channel, shows who is here with presence, and animates
+each phase with transitions. It also uses four packages: forms, charts, presence and audio.
 
-1. **The front page** (`/`): join a game with its code and a name, or host one. The join form is
-   checked as you type, and works without JavaScript too: it posts, and comes back with what was
-   wrong.
-2. **Host a game** (`/host`): the question sets, three seeded and any you made. *Open a room* makes
-   a room with a fresh code (`BKRT`) and goes to its screen.
-3. **The host's screen** (`/host/BKRT`), made for a projector: the code in huge letters, and who has
-   joined (avatars, and names; one whose phone went is shown as dropped). *Start the game*.
-4. **A question**: its number, a ring that empties as the clock runs (ticking out loud in the last
-   five seconds), the prompt, the four choices in their colours, and how many have answered. It
-   closes when the time is up, or as soon as everyone has answered, or when the host presses
-   *Close it now*.
-5. **The answer**: the right choice, how many took each (a bar chart whose bars rise), and the board:
-   first as it stood, then each row gliding to its new place as the points land. The next question
-   follows by itself (or *Go on now*).
-6. **The podium**: the first three rising in turn, then everyone. *Play it again* keeps the room and
-   its players, from nothing.
-7. **A phone** (`/play/BKRT`): someone who hasn't joined gives a name; then the lobby, each question
-   as four big buttons (a tap locks it in), *Right! +850* or *Not this time* after each, and where
-   they finished. The page beeps when it should (a mute button is at the top).
-8. **Make a set** (`/sets/new`): a title, a line about it, and the questions as plain text, a block
-   each (`*` marks the right choice), checked as you type, shown beside as they will play. Saved,
-   it is first on the host's page.
+## Run it
 
-Product calls: no accounts (a random visitor id in a cookie says who hosts and who plays); anyone may
-join until the podium (a latecomer starts from nothing); a right answer is worth 500 points and up
-to 500 more for speed, a wrong one or none nothing; a question closes early once everyone in the
-room has answered (one who dropped isn't waited for); the big screen is anyone's to watch, its
-buttons only the host's.
-
-## What it shows
-
-| Feature | Where |
-|---|---|
-| One actor per room (D-021): `Rooms` is the kind (D-068), the room's state taken one turn at a time; ten methods, each its own reply, asked and told on the method (`Rooms.join.ask!`, `Rooms.beat.tell!`); its own timers (`me.after!`, `Actor.cancel!`) closing each question and moving each reveal on | `Rooms.roc` (`name`, `initial`, its methods, `turned!`, `timed!`) |
-| The rules as pure functions, the time given: joining, starting, picking, closing, advancing, the views | `Game.roc` (41 `expect`s that play games on a clock they choose) |
-| Scoring as a pure, tested function; places with ties | `Score.roc` |
-| A crash in a turn is logged and the room carries on as it was | the platform's rule (D-021): `Rooms.ask!` turns the asker's error into `Refused` |
-| Channels (D-020): the room's view published after each turn that changes it; a check per subscriber (`channel!`), the room as it is now on each (re)connect (`on_open!`), what pages say (`receive!`: Start, Next, Again, a pick), and a tab that goes (`on_close!`) | `routes/rooms/[code]/+server.roc`, `Feed.rocx` (`Endpoint.subscribe!`, `Endpoint.say!`) |
-| packages/presence: who is in the room as presence's `Room` (join, leave with a grace, sweep), kept in the actor's state; `<AvatarStack>` with a status of the app's own (`dropped`) | `Rooms.roc` (`tab_joined`, `present`), `Ui/Lobby.rocx` |
-| Client timers kept honest: `set_interval!` counts down from the server's `left_ms`, `set_timeout!` marks the end, the interval stops itself with its `clear!`; both start again from each view | `Ui/Countdown.rocx` |
-| `set_timeout!` for timing a reveal: the board's points landing, the bars rising | `Ui/Board.rocx`, `Ui/Tally.rocx` |
-| `Audio.play!` (packages/audio, a plugin: `AudioPlayer.plugin({})` in `main.roc`) with sounds made by a script (a mallet and a reed, synthesized) | `sounds.mjs` → `static/sounds/`, `Sound.roc`; played from effects and timers in the two room pages |
-| Transitions: each phase an `if`'s part that flies, scales or fades in and out (`transition:in`, `transition:out`); names that grow into the lobby (`transition`); podium steps that grow up in turn (`Transition.grow(Bottom).delay(…)`) | `routes/host/[code]/+page.rocx`, `routes/play/[code]/+page.rocx`, `Ui/Lobby.rocx`, `Ui/Podium.rocx` |
-| `transition:move`: the leaderboard's rows gliding to their new places | `Ui/Board.rocx` |
-| packages/charts: how the room answered, as a `<BarChart>` | `Ui/Tally.rocx` |
-| packages/forms: one schema for a page and its endpoint (`LiveForm`, `<TextField>`, `<IssueSummary>`), a custom parser in `try_map`, refusals at their fields, plain posts that come back with a flash | `Draft.roc` + `routes/sets/`, `Joining.roc` + `routes/+page.rocx`, `routes/join/+server.roc`, `routes/play/[code]/` |
-| SQLite in the server's process (`database: Sqlite("data/quiz.db")`, D-045): migrations, idempotent seeds, a transaction, a `json` column | `main.roc`, `migrations/`, `Sets.roc` |
-| Configuration from the environment: the question's and the reveal's length | `Rooms.timing!` (`QUIZ_QUESTION_MS`, `QUIZ_REVEAL_MS`) |
-| A middleware that hands every route the visitor (a cookie), and refuses other sites' posts | `Visitor.roc` |
-| Pure `view` components (`Logo`, `Mark`, `Countdown.view`, `SoundSwitch`, `Masthead`) and effectful `view!` ones (`Board`, `Lobby`, `Podium`, `Tally`, the pages' `Asked`, `Revealed`, `Choosing`, `Playing`) | `Ui/`, the route files |
-| A route file's own components, and its `<style>` for the whole file; scoped `<style>`s per component; tokens in one stylesheet | `routes/host/[code]/+page.rocx`, `Ui/*.rocx`, `static/pinwheel.css` |
-| A big-screen layout (sizes from the viewport) and a phone one; `<Title>`; roles, labels, `aria-live` and `role="status"` | the two room pages |
-| Stories (`<story>`) for the components | `Ui/*.rocx` (`rocx build --dev`) |
-
-## Build and run it
-
-You need the repository's toolchain (`just setup`), and nothing else: the sets are a SQLite file,
-`data/quiz.db` from where the server starts (`--database-url sqlite:<path>` puts it elsewhere).
-From the repository's root, on port 18150:
+From the repository's root, after `just setup`:
 
 ```sh
-bin/rocx build examples/quiz --client examples/quiz/build/client  # bin/rocx: any repo script builds it
+cd examples/quiz && ../../bin/rocx dev
+```
+
+Open http://localhost:8080. `rocx dev` builds the app (the server and the browser's half), serves it
+under `--dev` along with the app's `static/` (the sounds and the stylesheet), and builds it again
+each time you save a file.
+
+Run it from the example's directory. The question sets are in SQLite:
+`database: Sqlite("data/quiz.db")` in `main.roc` is a path relative to where the server starts, so
+the file is `examples/quiz/data/quiz.db` (`*.db` is gitignored). The server makes the file and runs the
+migrations and seeds as it starts.
+
+Open a room, then join it from another browser or a private window. The tabs of one browser share
+their cookie, so they are one visitor.
+
+A question is open for 20 seconds and its answer shows for 7. To change that, set
+`QUIZ_QUESTION_MS` and `QUIZ_REVEAL_MS`: `QUIZ_QUESTION_MS=8000 QUIZ_REVEAL_MS=3000 ../../bin/rocx dev`.
+`node sounds.mjs` makes the sounds again.
+
+Under `rocx dev`, the components' stories are at http://localhost:8080/__rocx/stories.
+
+### Build it as it would ship
+
+`rocx dev` builds for development. To build the browser's wasm at its smallest and run the server on
+its own, from the repository's root (`just web-host` first, if the browser's host isn't built yet):
+
+```sh
+bin/rocx build examples/quiz --client examples/quiz/build/client
 .tools/roc-active build --target=wasm32 --opt=size \
   --output=examples/quiz/build/client/static/rocx/app.wasm examples/quiz/build/client/main.roc
 node server/build.mjs examples/quiz/main.roc examples/quiz/build/quiz
 cd examples/quiz && build/quiz --port 18150 --static build/client/static --static static
 ```
 
-Then http://localhost:18150. The server runs the migrations (and the seeds) as it starts, the first
-time making the file. Open a
-room, and join it from another browser (or a private window: a browser is one visitor). A question
-is open for 20 s and its answer shown for 7 s; `QUIZ_QUESTION_MS=8000 QUIZ_REVEAL_MS=3000` before
-the last command changes that. `node examples/quiz/sounds.mjs` makes the sounds again.
+Then open http://localhost:18150.
+
+## A tour
+
+1. **The front page** (`/`): join a game with its code and a name, or host one. The join form is
+   checked as you type. It works without JavaScript too: it posts, and comes back with what was
+   wrong.
+2. **Host a game** (`/host`): the question sets, three seeded and any you made. *Open a room* makes
+   a room with a fresh code (say `BKRT`) and goes to its screen.
+3. **The host's screen** (`/host/BKRT`), made for a projector: the code in huge letters, and who has
+   joined (avatars and names; someone whose phone went away shows as dropped). *Start the game*.
+4. **A question**: its number, a ring that empties as the clock runs (ticking out loud in the last
+   five seconds), the prompt, the four choices in their colours, and how many have answered. It
+   closes when the time is up, as soon as everyone has answered, or when the host presses
+   *Close it now*.
+5. **The answer**: the right choice, how many picked each (a bar chart whose bars rise), and the
+   leaderboard: first as it stood, then each row gliding to its new place as the points land. The
+   next question follows by itself, or at once with *Go on now*.
+6. **The podium**: the first three rising in turn, then everyone. *Play it again* keeps the room and
+   its players and starts the scores from zero.
+7. **A phone** (`/play/BKRT`): someone who hasn't joined gives a name. Then the lobby, each question
+   as four big buttons (a tap locks the answer in), *Right! +850* or *Not this time* after each, and
+   where they finished. The page plays sounds when it should; a mute button is at the top.
+8. **Make a set** (`/sets/new`): a title, a line about it, and the questions as plain text, one
+   block each (`*` marks the right choice). It is checked as you type and previewed beside, as it
+   will play. Saved, it is first on the host's page.
+
+## What it shows
+
+| Feature | Where to look |
+|---|---|
+| One actor per room, keyed by the room's code. `Rooms` is the actor's kind (its `name` and `initial` state); its ten methods each have their own reply, and are asked or told by name (`Rooms.join.ask!`, `Rooms.beat.tell!`). It takes one turn at a time, so two answers at once, the clock running out and the host pressing Next never trip over each other | `Rooms.roc` |
+| An actor's own timers: closing each question and moving each reveal on (`me.after!`, `Actor.cancel!`) | `Rooms.timed!` |
+| A crash in a turn: the platform logs it and the room keeps its state; the asker gets `ActorErr(why)`, which the channel answers as a 409 and a read as a vacant room | `routes/rooms/[code]/+server.roc` (`receive!`), `Rooms.look!` |
+| The rules as pure functions, given the time: joining, starting, picking, closing, advancing, the views | `Game.roc` (41 `expect`s that play games on a clock they choose) |
+| Scoring as a pure, tested function; places with ties | `Score.roc` |
+| A channel per room: the room's view published after each turn that changes it; a check for each subscriber (`channel!`); the room as it is now on each connect (`on_open!`); what pages say (`receive!`: Start, Next, Again, a pick); a tab that goes (`on_close!`) | `routes/rooms/[code]/+server.roc`, `Rooms.turned!` |
+| Following a room from a page: subscribe from an effect, keep the newest view, say things on the channel (`Endpoint.subscribe!`, `Endpoint.say!`) | `Feed.rocx` |
+| Presence (packages/presence): who is in the room, kept in the actor's state as presence's `Room` (join, leave after a grace period, sweep), and `<AvatarStack>` with a status of the app's own (`dropped`) | `Rooms.roc` (`tab_joined`, `present`), `Ui/Lobby.rocx` |
+| A countdown kept honest: each view sets a deadline by the phone's clock (`Time.now_millis!`); `set_interval!` shows what is left and stops itself at zero with its `clear!`; the effect's next run stops the old interval | `Ui/Countdown.rocx` |
+| `set_timeout!` to time a reveal: the leaderboard's points landing, the bars rising | `Ui/Board.rocx`, `Ui/Tally.rocx` |
+| Sounds through a plugin: `Audio.play!` (packages/audio, `AudioPlayer.plugin({})` in `main.roc`), with sounds made by a script (a mallet and a reed, synthesized) | `sounds.mjs` → `static/sounds/`, `Sound.roc`; played from effects and timers in the two room pages |
+| Transitions: each phase is its own `if` or `match` part that flies, scales or fades in and out (`transition:in`, `transition:out`); names that grow into the lobby (`transition`); podium steps that grow up in turn (`Transition.grow(Bottom).delay(…)`) | `routes/host/[code]/+page.rocx`, `routes/play/[code]/+page.rocx`, `Ui/Lobby.rocx`, `Ui/Podium.rocx` |
+| `transition:move`: the leaderboard's rows gliding to their new places | `Ui/Board.rocx` |
+| Charts (packages/charts): how the room answered, as a `<BarChart>` | `Ui/Tally.rocx` |
+| Forms (packages/forms): one schema for a page and its endpoint (`LiveForm`, `<TextField>`, `<IssueSummary>`), a custom parser in `try_map`, refusals shown at their fields, plain posts that come back with a flash | `Draft.roc` + `routes/sets/`, `Joining.roc` + `routes/+page.rocx` + `routes/join/+server.roc`, `routes/play/[code]/` |
+| SQLite in the server's process: migrations, seeds that can run twice, a transaction, a `json` column | `main.roc`, `migrations/`, `Sets.roc` |
+| Configuration from the environment: how long a question and a reveal last | `Rooms.timing!` (`QUIZ_QUESTION_MS`, `QUIZ_REVEAL_MS`) |
+| Middleware that refuses other sites' posts and hands every route the visitor (from a cookie) | `Visitor.roc` |
+| Pure `view` components (`Logo`, `Mark`, `Countdown.view`, `SoundSwitch`, `Masthead`) and effectful `view!` ones (`Board`, `Lobby`, `Podium`, `Tally`, and the pages' `Asked`, `Revealed`, `Choosing`, `Playing`) | `Ui/`, the route files |
+| A route file's own components, and a `<style>` for the whole file; scoped `<style>`s per component; colour tokens in one stylesheet | `routes/host/[code]/+page.rocx`, `Ui/*.rocx`, `static/pinwheel.css` |
+| A big-screen layout (sizes from the viewport) and a phone one; `<Title>`; roles, labels, `aria-live` and `role="status"` | the two room pages |
+| Stories (`<story>`) for the components, at `/__rocx/stories` in a dev build | `Ui/*.rocx` |
+
+## How a room works
+
+`Rooms.roc` is the room's actor. The rules are `Game.roc`'s, pure functions given the time; the
+actor only decides when to apply them. Every method's turn goes through `Rooms.turned!`:
+
+1. Presence is swept first, so a tab whose grace period ran out is gone before anything else is
+   decided.
+2. The method does its work: the room after it, and the reply.
+3. If the phase changed, the timer the old phase had is cancelled and one is set for the new phase's
+   deadline (`me.after!`). When it fires, it calls `close` or `advance` like any other caller.
+4. If the room changed, the room's view is published on its channel (`Api.channel_rooms_code`),
+   which every host's screen and every phone follows.
+
+Who is here lives in the actor's state too, as packages/presence's `Room`: each tab that subscribes
+to the channel joins (`opened`), each one that goes leaves (`closed`), and the channel's beats keep
+tabs fresh (`beat`). The app doesn't use presence's ready-made channel hooks (`PresenceServer`),
+because who is here is part of the game: a question closes early once everyone still in the room
+has answered.
+
+On the page, `Feed.follow!` starts from the view the server rendered with (`GET /rooms/:code`), then
+subscribes from an effect. On each connect and reconnect, the channel's `on_open!` sends the room as
+it is now, so a phone that slept catches up at once. Views carry a version, and a view older than
+the one shown is ignored.
+
+## Product calls
+
+- No accounts. A random visitor id in a cookie says who hosts and who plays.
+- Anyone may join until the podium. A latecomer starts from nothing.
+- A right answer is worth 500 points, and up to 500 more for speed. A wrong answer, or none, is
+  worth nothing.
+- A question closes early once everyone in the room has answered. A player who dropped isn't waited
+  for.
+- The server alone decides when a question closes. A phone counts down by its own clock from what
+  the server said is left, and stops taking answers at zero.
+- Anyone may watch the big screen; only the host sees its buttons.
 
 ## Test it
 
+From the repository's root:
+
 ```sh
-bin/rocx fmt --check examples/quiz
-bin/rocx check -- .tools/roc-active test examples/quiz/main.roc   # the expects: rules, scoring, components
-node --test 'examples/quiz/test/*.test.mjs'                    # over HTTP and channels, and in Chromium; a SQLite file each
+just examples quiz
 ```
 
-- **`expect`s** (about a hundred of the app's own): `Game.roc` plays games with a clock it chooses
-  (joining, starting, picking once and in time, closing early when everyone is in, the reveal's
-  tallies and points, advancing, Next, Again, versions, deadlines); `Score.roc` the points and the
-  places; `Codes.roc`, `Draft.roc` (the editor's text, both ways) and `Joining.roc` the forms; and
-  the components' helpers.
-- **`test/game.test.mjs`** builds the app, starts it on a SQLite file of its own with a 4 s question,
-  and plays it as the pages do: a whole game with a host and three players over the room's channel,
-  each question's tallies and points checked and the final scores against them; a question nobody
-  answers closing on the room's own timer; presence (a phone that goes shows as dropped, and comes
-  back); the join forms' refusals at their fields and a plain post's flash; the editor; seeding run
-  twice; the pages as the server renders them.
+That builds the app, type-checks both programs, lints it, checks its SQL against SQLite
+(`rocx check --sql`), runs the `expect`s and the node tests. To run the parts yourself:
+
+```sh
+bin/rocx fmt --check examples/quiz
+bin/rocx check examples/quiz   # build it, type-check both programs; problems at their .rocx lines
+bin/rocx check -- .tools/roc-active test examples/quiz/main.roc   # the expects: rules, scoring, components
+node --test 'examples/quiz/test/*.test.mjs'                      # over HTTP and channels, and in Chromium; a SQLite file each
+```
+
+- **`expect`s** (about a hundred): `Game.roc` plays games on a clock it chooses (joining, starting,
+  picking once and in time, closing early when everyone has answered, the reveal's tallies and
+  points, advancing, Next, Again, versions, deadlines); `Score.roc` checks the points and the
+  places; `Codes.roc`, `Draft.roc` (the editor's text, both ways) and `Joining.roc` check the forms;
+  and the components check their helpers.
+- **`test/game.test.mjs`** builds the app, starts it on a SQLite file of its own with a 4-second
+  question, and plays it as the pages do: a whole game with a host and three players over the
+  room's channel, each question's tallies and points checked, and the final scores; a question
+  nobody answers, closed by the room's own timer; presence (a phone that goes shows as dropped, and
+  comes back); the join forms' refusals at their fields and a plain post's flash; the editor;
+  seeding run twice; the pages as the server renders them.
 - **`test/browser.test.mjs`**, in Chromium (skipped without it), hydrating strictly: joining by code
   from the front page, the lobby, answering the first question with a tap, the reveal; then the
   host's screen as the host (its buttons, said on the channel from the page) and as anyone else (no
-  buttons), and the podium with the room's final scores.
+  buttons); and the podium with the room's final scores.
 
 ## What it asked of the platform
 
-Each gap this app met, and what it does about it:
+Pinwheel met several gaps while it was built. All are fixed in the platform or in rocx now, and the
+app uses the fixes:
 
-- **An actor can't name its channel through `Generated/Api`.** The channel's route file imports
-  `Rooms` (to ask the actor), and `Generated/Api` imports the route file, so `Rooms` importing `Api`
-  would be an import cycle, which Roc refuses. `Rooms.channel` names the channel by its URL instead
-  (`Endpoint.remote("CHANNEL", "/rooms/${code}")`), which is all `Endpoint.publish!` reads. A typed
-  name for a channel that a module below the routes could import would remove the duplication.
-  (Fixed in the platform since: `Generated/Api` is the app's contract and imports no route file
-  (D-037), so `Rooms` imports it and publishes on `Api.channel_rooms_code({ code })`, typed.)
-- **An endpoint's answer has no type in the browser's copy.** The host's screen read
-  `Endpoint.get!(Api.get_rooms_code(…))` and compared `seat.who == Host`; in the browser that made
-  `who`'s type `[Host]`, so a watcher's `"Watcher"` failed to parse ("Invalid JSON"), and only in the
-  browser, so the page hydrated into the error page. Both room pages say the type (`seat : Game.Seat`).
-  The platform does document it (for `use_submissions!`); a reported type at the read, or the same
-  types in both copies, would catch it at build. (Fixed in the platform since: the browser's copy of
-  `Api` has the same types as the server's, copied from each handler's annotation (D-037), so the
-  pages say no type. The host's list's sets, `Sets.Summary`, became `Draft.Summary`: `Sets` imports
-  `Db`, which the browser's copy can't compile, and `rocx build` said so at the route.)
-- **A value prop inside a `<Show>`'s children was read when the page first rendered**, not when the
-  part showed: the podium, written `<Podium players={current!().players} />` inside the finished
-  phase's `<Show>`, showed every score as it was in the lobby. The workaround was an accessor
-  (`players!`). (Fixed in the platform since, twice over: what a `<Show>` shows is made as it shows,
-  as Solid makes it, and a value prop is a getter, as Solid's are (D-039), read where the component
-  reads it, so the podium follows the scores while it shows. `Podium`, `Lobby` and `Board` take
-  plain props again (`players`, `rows`), and the browser test checks a score made after the page
-  rendered.)
-- **`<For>` and `<Show>` can't sit inside a pure function child** (a `<For>` row's, a `<Show>`'s
-  narrowed child): the platform's components are effectful calls, and those children are pure, so
-  the compiler says "This function is effectful, but a pure function is expected" about generated
-  code. Each such part is a small `view!` component of its own (`Asked`, `Revealed`, `Choosing`,
-  `Preview`), which the child renders. (Fixed in the platform since: a function child is effectful
-  now, so it may hold a `<For>` or a `<Show>`; the components stay, as they read well.)
-- **A route file's components don't see the route file's own definitions**: helpers they use are
-  defined in their own block (`Asked.answered`, `Revealed.taken`). (Fixed in rocx since: a route
-  file's components see its definitions, as its page does; the helpers stay, as they read well.)
-- **The browser had no clock.** The countdown counted down from the server's `left_ms` with
-  `set_interval!`, a tenth of a second a tick, so a phone whose timers stalled fell behind until the
-  next view. (Fixed in the platform since: `Time.now_millis!` reads the browser's clock, so each view
-  sets a deadline by the phone's clock and each tick shows what is left of it; the server alone
-  still decides when a question closes, presence's PROPOSALS.md, W2.)
-- **Channel hooks weren't told which stream** a subscription was on. A tab whose stream reconnected
-  (the same tab id) could be told `on_open!` for the new stream before `on_close!` for the old one,
-  so the room counted each tab's open streams and left presence only at zero. (Fixed in the platform
-  since: a tab has one stream, and a new one ends the old first, so a tab's hooks come in order; the
-  room joins and leaves a tab as it is told.)
-- **packages/presence's server glue was events, not channels.** The app uses presence's `Room`
-  (the logic) inside its own actor, fed by the room's channel's hooks, and its `<AvatarStack>`; the
-  channel's beat check (`x-rocx-channel: check`, with `x-rocx-tab`) is the heartbeat. (Presence
-  runs on channels since, its hooks `PresenceServer`'s; the room stays the actor's, as who is here
-  is part of the game.)
+- A module below the routes can publish on a route's channel: `Rooms` imports `Generated/Api` and
+  publishes on `Api.channel_rooms_code`, typed. `Generated/Api` is the app's contract and imports
+  no route file, so there is no import cycle (D-037 in DECISIONS.md).
+- The browser's copy of `Generated/Api` has the same types as the server's, so the pages don't
+  write an endpoint's answer type by hand.
+- A component's value props are getters, read where the component reads them, so `Podium`,
+  `Lobby` and `Board` take plain props (`players`, `rows`) and follow the scores while they show.
+- A route file's components see the route file's own definitions.
+- The browser has a clock (`Time.now_millis!`), so the countdown keeps a deadline instead of
+  counting ticks, and a phone whose timers stalled shows the right time on its next tick.
+- A tab has one channel stream, and a new one ends the old one first, so a tab's `on_open!` and
+  `on_close!` come in order and the room can join and leave a tab as it is told.
+
+Still worth knowing:
+
 - **A record's function field is called with parentheses**: `(room.say!)(Start)`, not
   `room.say!(Start)`, which Roc reads as a method call.
-- **Roc can't build a form of one field with the record builder** ("single-field record builder"):
-  `Joining.named` is `Joining.name.map(|typed| { name: typed })`.
-- **A compiler warning fails the test build**: `buildForTests` treats `roc build`'s exit code 2 (a
-  warning: a shadowed name) as a failure. The code has no warnings.
-- **`node --test examples/quiz/test/` doesn't run on Node 24**, which takes a directory as a module
-  to load; the glob (`'examples/quiz/test/*.test.mjs'`) does.
-- **Fixed: checking transitions in a Firefox-based browser headlessly was limited.** Driven over
-  WebDriver BiDi (a scratch script, then), Zen ran every animation the runtime starts (each phase's
-  in and out, the board's glides, with their keyframes and lengths), but a headless window's
-  document was hidden and its animation timeline barely moved (raising `layout.throttled_frame_rate`
-  helped a little), so its screenshots showed first frames. Headless Chromium doesn't play them
-  either. packages/testing now launches Gecko (`launchBrowser({ engine: "gecko" })`), and each tab
-  it goes to is the shown one (BiDi's `browsingContext.activate`): its document is visible, and its
-  transitions run in real time, sixty frames a second.
+- **Roc can't build a form of one field with the record builder** ("single-field record builder"),
+  so `Joining.named` is `Joining.name.map(|typed| { name: typed })`.
+- **A compiler warning fails the test build**: packages/testing's `buildForTests` treats a warning
+  (`roc build`'s exit code 2, a shadowed name, say) as a failure. The app's code has none.
+- **`node --test examples/quiz/test/` doesn't run on Node 24**, which loads a directory as a
+  module. The glob, `'examples/quiz/test/*.test.mjs'`, works.

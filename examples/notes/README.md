@@ -1,107 +1,161 @@
 # Notes
 
-Personal notes in Markdown, in Roc Solid, that AI agents can use too. Each person signs in with a
-link mailed to them, writes notes with a live preview, tags them, pins and archives them, and finds
-them again with full-text search. An AI client (Claude, an IDE, the MCP Inspector) searches, reads
-and writes the same notes over MCP, with a personal access token the person made for it. Each
-person sees only their own notes, whichever way they ask.
+Notes is a personal notebook in Markdown that AI agents can use too. You sign in with a link sent
+by email, write notes with a live preview, tag, pin and archive them, and find them again with
+full-text search. An AI client (Claude Code, an IDE, the MCP Inspector) can search, read and write
+the same notes over MCP, using a personal access token you make for it. Each person sees only their
+own notes, whichever way they ask.
 
-## A tour
+Read it to see how Roc Solid handles signing in without passwords, signed session cookies, access
+tokens, middleware for three kinds of caller (a browser, a script, an AI agent), an MCP server built
+from the app's own endpoints, a JSON API with an OpenAPI document, rate limits, full-text search in
+SQLite, and Markdown rendered both on the server and in the browser.
 
-1. Open the app and you are sent to sign in: type `ada@example.com` (the seeded person with notes)
-   or any address. A link is mailed; on a local run it lands in the dev mailbox,
-   http://127.0.0.1:18160/__rocx/mail. The link opens a page with a **Sign in** button, so a mail
-   scanner that follows links doesn't use yours up. A link works once, for 15 minutes. Someone new
-   starts with a note of welcome.
-2. The notebook: cards with the start of each note, pinned ones first, and your tags down the side
-   with their counts. A tag's link shows its notes; **Archive** shows the archived ones.
-3. Search from the box at the top: words (`rehearsals` finds "rehearsal"), `"an exact phrase"`,
-   `or`, `-without`, and `#tag` to look only at a tag's notes (`launch #meetings`). The results come
-   best first, archived notes too, with the words found highlighted.
-4. Open a note: its Markdown as it reads, its tags, and **Edit**, **Pin**, **Archive**. An archived
-   note can be restored, or deleted for good. Deleting takes two steps, so a slip loses nothing.
-5. **New note** or **Edit**: the title, tags (`work, ideas`) and Markdown, with a preview beside it,
-   rendered as you type. On a phone, Write and Preview are tabs.
-6. **Settings**: make a personal access token, read-only or not. It is shown once, with the command
-   that connects Claude Code to it. Revoke a token, see when each was last used, or sign out of
-   every browser at once.
-7. Connect an AI client with that token (below) and ask it about your notes: "what did I plan for
-   launch week?", "add 'buy rye flour' to my sourdough note", "capture this as a note".
-8. Turn JavaScript off: signing in, the editor (without its live preview), every button and the
-   search still work, as plain forms and links.
+## Run it
 
-## What it shows
+From the repository's root, once the toolchain is set up (`just setup`):
 
-| Feature | Where |
+```sh
+cd examples/notes
+../../bin/rocx dev
+```
+
+Open http://127.0.0.1:8080 and sign in as `ada@example.com` (the seeded person with notes). The
+sign-in link is in the dev mailbox, http://127.0.0.1:8080/__rocx/mail.
+
+`rocx dev` builds the app (the server and the browser's WebAssembly), serves it with the server's
+`--dev` flag, and builds and restarts it each time you save a file. Run it from the example's
+directory: the database is the file `data/notes.db`, relative to where the server starts
+(`database: Sqlite("data/notes.db")` in `main.roc`; `*.db` files are git-ignored). The server makes
+the file, its tables and the seed data as it starts. Under `--dev`, mail goes to the dev mailbox
+unless `SMTP_URL` is set.
+
+The full form is `rocx dev [dir] [--port N] [-- server options…]`. Options after `--` go to the
+server, for example `../../bin/rocx dev -- --database-url sqlite:/tmp/notes.db`.
+
+The app reads these settings from the environment:
+
+| Setting | What it is |
 |---|---|
-| Sign-in by a mailed link: the form, `Email.send!` (packages/email's plugin, D-035), the landing page and its button | `routes/sign-in/`, `routes/sign-in/link/`, `Account.send_link!`, `main.roc` (`Email.plugin`) |
-| A single-use token with a time to live, in `Kv` (D-028), kept by its hash; why `Kv` and not a table | `Account.roc` (its `##` comment, `use_link!` with `Kv.take!`), `Token.link` |
-| A session cookie signed with HMAC-SHA256 (packages/crypto), refused when forged, expired or signed out everywhere, with its `expect`s | `Session.roc`, `Account.session!`, `Account.signed_in!` |
-| Signing out, and out of every browser (a session epoch) | `routes/sign-out/`, `routes/settings/everywhere/`, `Store.sign_out_everywhere!` |
-| Middleware that puts the person into the context and guards pages, the API and MCP | `Middlewares.roc` (`signed_in`, `api`, `agent`), each route file's `middleware = …` |
-| Personal access tokens: made, shown once, kept as SHA-256 only, named, last use noted, read-only, revoked | `routes/settings/`, `Token.roc` (with its `expect`s), `Account.make_token!`, `Store.bearer!` |
-| An MCP server (packages/mcp) at `/mcp`: six tools with their hints, notes as resources, two prompts | `Agents.roc` |
-| MCP tools made of the JSON API's endpoints (`McpHttp.endpoint`, a tool's arguments filling an endpoint's `id` too) | `Agents.roc` (`server`) |
-| Bearer tokens turned into the person, so a token never reaches another's notes; read-only tokens refused for writes | `Middlewares.agent`, `Notebook.writer`, `Store.roc` (every query names the person) |
-| The JSON API, and its OpenAPI document with Scalar (`openapi: Page(Scalar)`) | `routes/api/`, `main.roc`, `/openapi.html` |
-| Rate limits (packages/guard): sign-in links for each address, MCP calls for each token | `Middlewares.mail_limit`, `Middlewares.agent_limit` |
-| Full-text search in SQLite: an FTS5 index kept in step by triggers, each word by its stem (porter), a search engine's syntax read in Roc (`Store.matching`), ranking with titles first (`bm25`), `snippet()`s of what a body reads as (`Note.plain`) | `migrations/0001_notes.sql`, `Store.search!`, `Store.matching`, `Note.plain`, `Note.query_of`, `Note.pieces` |
-| Matches highlighted as text, never as markup | `Note.pieces`, `Ui/NoteCard.rocx` (`snippet`) |
-| Markdown rendered by packages/markdown: on a note's page by the server alone (`<NoHydration>`), in the editor's preview by the browser as you type | `Ui/Prose.rocx`, `routes/notes/[id]/+page.rocx`, `Ui/Editor.rocx` |
-| One rule set for every write, whoever sends it (a page, a script, an agent) | `Note.roc` (rules, with `expect`s), `Notebook.roc` (operations) |
-| Appends that never overwrite each other (read and written in one transaction, which takes turns) | `Store.append!`, `Note.appended` |
-| Tags, pinning and archiving | `Notebook.tag!`, `pin!`, `archive!`; `routes/notes/[id]/+server.roc` |
-| Pages that read their own endpoint, typed for both halves | `Pages.roc`, each page's `Endpoint.get!` / `read!` |
-| A 404 for a note that isn't there or isn't yours (the same page, so ids tell nothing): the endpoint refuses both alike, and `Endpoint.get!` makes the page the app's error page | `routes/notes/[id]/+page.rocx`, `routes/+error.rocx` |
-| Forms without JavaScript, and the same forms sent by the page with it (`use_submission!`) | every `<form method="post">` |
-| Pure and effectful components: `view` for what only shows its props, `view!` for what keeps state or sets the status | `Ui/NoteCard.rocx`, `Ui/Topbar.rocx`, `Ui/Prose.rocx` (pure); `Ui/Editor.rocx` (effectful) |
-| Scoped styles and a look of its own (ink, paper, a highlighter), light and dark, narrow screens | each component's `<style>`; the tokens in `routes/+layout.rocx` |
-| Stories for the components (`rocx build --dev`, `/__rocx/stories`) | `<story>` in `Ui/*.rocx` |
-| SQLite in the server's process (`database: Sqlite("data/notes.db")`, D-045), by migrations, and an idempotent seed | `main.roc`, `migrations/` |
+| `DATABASE_URL` | Where the notes are, as `sqlite:<path>` (or `--database-url`). Unset, `data/notes.db` from where the server starts. |
+| `NOTES_SECRET` | What session cookies are signed with (through HKDF). Unset, a key is made at random when first needed and kept in memory, so a restart signs everyone out (the log says so). Make one with `openssl rand -base64 32`. |
+| `PUBLIC_URL` | The app's address (or `--public-url`), for the links in emails and the MCP address that Settings shows. Unset, the address the server listens on (`http://127.0.0.1:8080` above). |
+| `SMTP_URL` | A mail server (`smtp://user:password@smtp.example.com:587?tls=required`). Unset, mail goes to the dev mailbox. |
+| `NOTES_LINK_TTL_MS` | How long a sign-in link works, in milliseconds (900000: 15 minutes). |
+| `NOTES_MCP_PER_MINUTE` | MCP calls a minute for each token (120). |
 
-## Build and run
+Mail is sent from `Notes <notes@example.com>` (the `from` given to `Email.plugin` in `main.roc`).
 
-The toolchain once (`just setup`), and the platforms' hosts (`just test` builds both). Nothing else:
-the notes are a SQLite file, `data/notes.db` from where the server starts. From the repository's
-root:
+### Build it as it would ship
+
+`rocx dev` builds quickly, without optimizations. To build and start it as you would in production
+(from the repository's root):
 
 ```sh
 export NOTES_SECRET="$(openssl rand -base64 32)"   # signs the session cookies
 
+just web-host   # the browser's host, which the WebAssembly is linked with
 bin/rocx build examples/notes --client examples/notes/build/client
 .tools/roc-active build --target=wasm32 --opt=size --output=examples/notes/build/client/static/rocx/app.wasm examples/notes/build/client/main.roc
-node server/build.mjs examples/notes/main.roc examples/notes/build/server
-cd examples/notes && build/server --port 18160 --dev --static build/client/static
+node server/build.mjs examples/notes/main.roc examples/notes/build/server --opt=speed
+cd examples/notes && build/server --port 8080 --static build/client/static
 ```
 
-Open http://127.0.0.1:18160 and sign in as `ada@example.com`; the link is in the dev mailbox,
-http://127.0.0.1:18160/__rocx/mail (`--dev` serves it), and goes to where the server listens. The server makes the file, and migrates and
-seeds it, as it starts.
+Without `--dev`, the dev mailbox isn't served, so set `SMTP_URL` to receive the sign-in links (or add
+`--dev` to try it locally).
 
-| Setting | |
+## A tour
+
+1. Open the app and you are sent to sign in. Type `ada@example.com` (the seeded person with notes)
+   or any address. A link is mailed; on a local run it lands in the dev mailbox,
+   http://127.0.0.1:8080/__rocx/mail. The link opens a page with a **Sign in** button, so a mail
+   scanner that follows links doesn't use it up. A link works once, for 15 minutes. Someone new
+   starts with a welcome note.
+2. The notebook shows cards with the start of each note, pinned ones first, and your tags down the
+   side with their counts. A tag's link shows its notes; **Archive** shows the archived ones.
+3. Search from the box at the top. It takes words (`rehearsals` finds "rehearsal"),
+   `"an exact phrase"`, `or`, `-without`, and `#tag` to look only at a tag's notes
+   (`launch #meetings`). Results come best first, archived notes included, with the words found
+   highlighted.
+4. Open a note to see its Markdown rendered, its tags, and **Edit**, **Pin** and **Archive**. An
+   archived note can be restored, or deleted for good. Deleting takes these two steps, so a slip
+   loses nothing.
+5. **New note** or **Edit** has the title, the tags (`work, ideas`) and the Markdown, with a preview
+   beside it that renders as you type. On a phone, Write and Preview are tabs.
+6. **Settings** makes a personal access token, read-only or able to write. The token is shown once,
+   with the command that connects Claude Code to it. You can revoke a token, see when each was last
+   used, or sign out of every browser at once.
+7. Connect an AI client with that token ([below](#connect-an-ai-client)) and ask it about your
+   notes: "what did I plan for launch week?", "add 'buy rye flour' to my sourdough note", "capture
+   this as a note".
+8. Turn JavaScript off. Signing in, the editor (without its live preview), every button and the
+   search still work, as plain forms and links.
+
+## What it shows
+
+Where to look in the code for each Roc Solid feature the app uses.
+
+### Signing in and sessions
+
+| Feature | Where |
 |---|---|
-| `DATABASE_URL` | where the notes are, as `sqlite:<path>` (or `--database-url`); unset, `data/notes.db` from where the server starts |
-| `NOTES_SECRET` | what session cookies are signed with (through HKDF). Unset, a key is made at random when first needed and kept in memory, so a restart signs everyone out (the log says so) |
-| `PUBLIC_URL` | the app's address, for the links in email and the MCP address Settings shows (or `--public-url`; without either, where the server listens: `http://127.0.0.1:18160` as above) |
-| `SMTP_URL` | a mail server (`smtp://user:password@smtp.example.com:587?tls=required`); unset, mail goes to the dev mailbox |
-| `NOTES_LINK_TTL_MS` | how long a sign-in link works (900000: 15 minutes) |
-| `NOTES_MCP_PER_MINUTE` | MCP calls a minute for each token (120) |
+| Sign-in by a mailed link: the form, `Email.send!` (packages/email's plugin, listed in `main.roc`), and the landing page with its button. | `routes/sign-in/`, `routes/sign-in/link/`, `Account.send_link!`, `main.roc` |
+| A single-use link token with a time to live, kept by its hash in `Kv` (the server's key-value store). `Kv.take!` reads and forgets it in one step, so two clicks can't both sign in. The `##` comment at the top of `Account.roc` says why `Kv` and not a table. | `Account.roc` (`use_link!`), `Token.link` |
+| A session cookie signed with HMAC-SHA256 (packages/crypto), refused when forged, expired, or signed out everywhere, with `expect` tests. | `Session.roc`, `Account.session!`, `Account.signed_in!` |
+| Signing out, and signing out of every browser (a session epoch that the cookies carry). | `routes/sign-out/`, `routes/settings/everywhere/`, `Store.sign_out_everywhere!` |
+| Middleware that puts the person into the request's context and guards the pages (`signed_in`), the JSON API (`api`) and MCP (`agent`). A route file names its own with `middleware = …`. | `Middlewares.roc`, each route file |
 
-Mail is from `Notes <notes@example.com>` (`Email.plugin`'s `from`, in `main.roc`).
+### Tokens, the JSON API and MCP
+
+| Feature | Where |
+|---|---|
+| Personal access tokens: made, shown once, kept only as a SHA-256 hash, named, last use noted, read-only or not, revoked. | `routes/settings/`, `Token.roc` (with `expect`s), `Account.make_token!`, `Store.bearer!` |
+| A form whose body is read by its endpoint's types: the token form's checkbox "It may write too" is `write : Bool`, and a box left unticked is `Bool.False`. | `routes/settings/+server.roc`, `routes/settings/+page.rocx` |
+| An MCP server (packages/mcp) at `/mcp`: six tools with their hints, notes as resources, and two prompts. | `Agents.roc` |
+| MCP tools made from the JSON API's endpoints (`McpHttp.endpoint`). A tool's arguments fill the endpoint's path parameters too (`read_note`'s `id`), so an agent may do exactly what a script may, checked by the same code. | `Agents.roc` (`server`) |
+| The MCP server mounted in front of the routes, as a middleware in `main.roc` (`Agents.mount`). | `main.roc`, `Agents.roc` |
+| A bearer token turned into its person, so a token never reaches another person's notes. Read-only tokens are refused for writes. | `Middlewares.agent`, `Notebook.writer`, `Store.roc` (every query names the person) |
+| The JSON API, and its OpenAPI document with Scalar to read it (`openapi: Page(Scalar)`), at `/openapi.json` and `/openapi.html`. | `routes/api/`, `main.roc` |
+| Rate limits (packages/guard): sign-in links for each address, MCP calls for each token. | `Middlewares.mail_limit`, `Middlewares.agent_limit` |
+
+### Search and Markdown
+
+| Feature | Where |
+|---|---|
+| Full-text search in SQLite: an FTS5 index kept in step by triggers, each word matched by its stem (porter). A search engine's syntax is read in Roc (`Store.matching`). Titles rank first (`bm25`), and `snippet()` shows the matches in what the body reads as (`Note.plain`). | `migrations/0001_notes.sql`, `Store.search!`, `Store.matching`, `Note.plain`, `Note.query_of` |
+| Matches highlighted as text, never as markup, so nothing a note says is read as HTML. | `Note.pieces`, `NoteCard.snippet` in `Ui/NoteCard.rocx` |
+| Markdown rendered by packages/markdown: on a note's page by the server alone (inside `<NoHydration>`), and in the editor's preview by the browser as you type. | `Ui/Prose.rocx`, `routes/notes/[id]/+page.rocx`, `Ui/Editor.rocx` |
+
+### Notes, pages and components
+
+| Feature | Where |
+|---|---|
+| One rule set for a note's title, body and tags, whoever writes it (a page, a script, an agent), tested with `expect`s, and one module of operations that every way in calls. | `Note.roc`, `Notebook.roc` |
+| Appends that never overwrite each other: the note is read and written in one transaction, and SQLite's transactions take turns. | `Store.append!`, `Note.appended` |
+| Tags, pinning and archiving. | `Notebook.tag!`, `Notebook.pin!`, `Notebook.archive!`, `routes/notes/[id]/+server.roc` |
+| Pages that read their own endpoint (`Endpoint.get!`), with the types they answer with in one module, shared by the server and the browser. | `Pages.roc`, each `+page.rocx` |
+| A 404 for a note that doesn't exist or isn't yours. The endpoint refuses both alike, so ids tell nothing, and `Endpoint.get!` turns the refusal into the app's error page. | `routes/notes/[id]/+page.rocx`, `routes/+error.rocx` |
+| Forms that work without JavaScript, and that the page sends in place with it (`use_submission!`). | every `<form method="post">` |
+| Pure components (`view`) for what only shows its props; an effectful component (`view!`) for what keeps state, here the editor's draft and tabs (`create_signal!`). | `Ui/NoteCard.rocx`, `Ui/Topbar.rocx`, `Ui/Prose.rocx`, `Ui/Brand.rocx` (pure); `Ui/Editor.rocx` (effectful) |
+| Pure components tested in `expect`s with packages/testing's `Dom`. | `Ui/NoteCard.rocx`, `Ui/Topbar.rocx` |
+| Scoped styles and a look of its own (ink, paper, a highlighter), light and dark, narrow screens. | each component's `<style>`; the design tokens in `routes/+layout.rocx` |
+| Stories for the component catalog (`<story>`, shown at `/__rocx/stories` under `rocx dev`). | `Ui/*.rocx` |
+| SQLite in the server's process, built by migrations, with seed data that is safe to run again. | `main.roc`, `migrations/` |
 
 ## Connect an AI client
 
-Make a token in **Settings** (read and write, if the agent should change notes), then give it to
-the client. The token and everything else below are made up; use your own.
+Make a token in **Settings** (tick "It may write too" if the agent should change notes), then give
+it to the client. The token below is made up; use your own. The address is where the app runs:
+Settings shows it.
 
-**Claude Code**:
+**Claude Code:**
 
 ```sh
-claude mcp add --transport http acme-notes http://localhost:18160/mcp \
+claude mcp add --transport http acme-notes http://127.0.0.1:8080/mcp \
   --header "Authorization: Bearer acme_pat_q7Vd2LkM9xR4tB8nW1yZ5cH3jF6gP0sAeUoIiOuYtRe"
 ```
 
-Then, in Claude Code, `/mcp` lists `acme-notes` and its tools; ask "search my notes for launch".
+Then, in Claude Code, `/mcp` lists `acme-notes` and its tools. Ask "search my notes for launch".
 
 **A client that reads a JSON file** (Claude Code's `.mcp.json`, and others in the same shape):
 
@@ -110,20 +164,20 @@ Then, in Claude Code, `/mcp` lists `acme-notes` and its tools; ask "search my no
   "mcpServers": {
     "acme-notes": {
       "type": "http",
-      "url": "http://localhost:18160/mcp",
+      "url": "http://127.0.0.1:8080/mcp",
       "headers": { "Authorization": "Bearer acme_pat_q7Vd2LkM9xR4tB8nW1yZ5cH3jF6gP0sAeUoIiOuYtRe" }
     }
   }
 }
 ```
 
-**The MCP Inspector** (`npx @modelcontextprotocol/inspector`): Transport "Streamable HTTP", URL
-`http://localhost:18160/mcp`, and an `Authorization` header with `Bearer acme_pat_…`.
+**The MCP Inspector** (`npx @modelcontextprotocol/inspector`): choose the transport "Streamable
+HTTP", the URL `http://127.0.0.1:8080/mcp`, and an `Authorization` header with `Bearer acme_pat_…`.
 
 **By hand**, to see what a client sends:
 
 ```sh
-curl -s http://localhost:18160/mcp \
+curl -s http://127.0.0.1:8080/mcp \
   -H "Authorization: Bearer acme_pat_q7Vd2LkM9xR4tB8nW1yZ5cH3jF6gP0sAeUoIiOuYtRe" \
   -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_notes","arguments":{"query":"launch"}}}'
@@ -131,163 +185,136 @@ curl -s http://localhost:18160/mcp \
 
 What the server offers:
 
-| | |
+| Tool, resource or prompt | What it does |
 |---|---|
-| `search_notes { query }` (read-only) | words, `"phrases"`, `or`, `-without`, `#tag`; best first, archived notes too, the matches marked. `POST /api/search` |
-| `read_note { id }` (read-only) | a note whole. `GET /api/notes/<id>` |
-| `create_note { title, body, tags }` | a new note (`tags` may be `[]`). `POST /api/notes` |
-| `append_to_note { id, text }` | text added at the end, never overwriting. `POST /api/notes/<id>/append` |
-| `tag_note { id, tags }` | the note's tags, all of them. `PUT /api/notes/<id>/tags` |
-| `archive_note { id, archived }` | archived, or brought back. `PUT /api/notes/<id>/archived` |
-| `notes://index` | every note not archived, as a Markdown list |
-| `notes://note/{id}` | a note as Markdown |
-| `summarize_note { id }`, `capture { text, tags? }` | prompts: a note summarized and tags suggested; rough text made a note, added to a similar one if there is one |
+| `search_notes { query }` (read-only) | Words, `"phrases"`, `or`, `-without`, `#tag`; best first, archived notes too, the matches marked. Runs `POST /api/search`. |
+| `read_note { id }` (read-only) | A whole note. Runs `GET /api/notes/<id>`. |
+| `create_note { title, body, tags }` | A new note (`tags` may be `[]`). Runs `POST /api/notes`. |
+| `append_to_note { id, text }` | Text added at the end, never overwriting. Runs `POST /api/notes/<id>/append`. |
+| `tag_note { id, tags }` | Sets all of the note's tags. Runs `PUT /api/notes/<id>/tags`. |
+| `archive_note { id, archived }` | Archives a note, or brings it back. Runs `PUT /api/notes/<id>/archived`. |
+| `notes://index` | A resource: every note that isn't archived, as a Markdown list. |
+| `notes://note/{id}` | A resource: a note as Markdown. |
+| `summarize_note { id }`, `capture { text, tags? }` | Prompts: summarize a note and suggest tags; turn rough text into a note, or add it to a similar one if there is one. |
 
-A read-only token's writes are refused, as a tool error the model reads ("This token can only read").
-Nothing an agent can do deletes a note.
+A read-only token's writes are refused as a tool error that the model reads ("This token can only
+read"). No tool deletes a note.
 
 The same token works for the JSON API (`curl -H "Authorization: Bearer acme_pat_…"
-http://localhost:18160/api/me`); http://localhost:18160/openapi.html describes it.
+http://127.0.0.1:8080/api/me`), and http://127.0.0.1:8080/openapi.html describes it.
 
-## Test
+## Test it
 
 ```sh
-.tools/roc-active test examples/notes/main.roc   # the expects
-node --test 'examples/notes/test/*.test.mjs'      # a SQLite file each; the browser test needs Chromium
-just examples notes                               # both, after building and checking it
+just examples notes
 ```
 
-- **91 `expect`s** in the app's modules: `Session.roc` (a cookie signed and read back, expired,
-  forged by another key, with another id, a later time or a newer epoch, and malformed in five
-  ways), `Token.roc` (shapes, the hash being SHA-256's, the hint, names), `Note.roc` (titles,
-  bodies, tags, the search box's `#tags`, snippets' marks, dates, what a body reads as, appending),
+This builds the app, type-checks the server's and the browser's programs, lints it, checks its SQL
+(`rocx check --sql`), and runs the `expect`s and the node tests. For a quick type check alone, run
+`../../bin/rocx check` in `examples/notes` (exit 1 on an error, 2 on warnings).
+
+To run the parts by hand from the repository's root (each test file builds the app and starts its
+own server on its own SQLite file; the browser test needs Chromium):
+
+```sh
+bin/rocx build examples/notes
+bin/rocx check -- .tools/roc-active test examples/notes/main.roc   # the expects
+node --test 'examples/notes/test/*.test.mjs'
+```
+
+- **91 `expect`s** in the app's modules: `Session.roc` (a cookie signed and read back; expired;
+  forged with another key, another id, a later time or a newer epoch; malformed in five ways),
+  `Token.roc` (shapes, the hash being SHA-256's, the hint, names), `Note.roc` (titles, bodies, tags,
+  the search box's `#tags`, snippets' marks, dates, what a body reads as, appending),
   `Store.matching` (a search box's words as an FTS5 query), `Address.roc`, `Query.roc`,
   `Account.path_of` (never another site after signing in), the editor's word count, `NoteCard` and
   `Topbar` rendered and read with packages/testing's `Dom`, and `Mcp.problems(Agents.server)`.
-- **`test/http.test.mjs`** (14 tests): signed out, pages send you to sign in and the API and MCP
-  refuse; signing in through the mailed link (`waitForMail`, `links`), back where you were going,
-  someone new getting a welcome note; a link used again, a made-up one and one past its time
-  refused; signing out and out everywhere; the seed, run again adding nothing; a note through the
-  pages' forms without JavaScript and with the runtime (written, refused, edited, pinned, archived,
-  deleted); search (stemming, phrases, `-without`, `#tags`, highlighting, archived notes); the JSON
-  API with a token (every operation, ten appends at once, every refusal); tokens (kept only as a
-  hash, never listed, last use, read-only refused, shown once through a plain form's flash,
-  revoked); one person never reaching another's notes through a page, an endpoint, the API or a
-  token; the OpenAPI document; and the limit on sign-in mail.
-- **`test/mcp.test.mjs`** (10 tests): `initialize`, `tools/list` and its hints and schemas,
-  `tools/call` of every tool, refusals going back to the model, no token or a bad one or a cookie
-  alone refused (401), a read-only token's writes refused with nothing changed, another person's
-  notes out of reach of tools, resources and prompts, resources, prompts, and the limit on calls.
-- **`test/browser.test.mjs`** (3 tests, in Chromium): sign in with the mailed link, write a note
-  and see its preview rendered as it is typed, save it, and find it by searching, the word
-  highlighted; every page hydrating strictly, with no errors.
-- **`test/copies.test.mjs`** (4 tests): the modules copied from packages (below) are still theirs.
-
-The test files build the app once between them, each with a SQLite file and a server of its own.
+- **`test/http.test.mjs`** (14 tests):
+  - signed out, pages send you to sign in, and the API and MCP refuse;
+  - signing in through the mailed link (`waitForMail`, `links`), back where you were going, and
+    someone new getting a welcome note;
+  - a link used again, a made-up one, and one past its time, all refused;
+  - signing out, and signing out everywhere;
+  - the seed, which adds nothing when run again;
+  - a note through the pages' forms, without JavaScript and with the runtime (written, refused,
+    edited, pinned, archived, deleted);
+  - search (stemming, phrases, `-without`, `#tags`, highlighting, archived notes);
+  - the JSON API with a token (every operation, ten appends at once, every refusal);
+  - tokens (kept only as a hash, never listed, last use, read-only refused, shown once through a
+    plain form's flash, revoked);
+  - one person never reaching another's notes through a page, an endpoint, the API or a token;
+  - the OpenAPI document, and the limit on sign-in mail.
+- **`test/mcp.test.mjs`** (10 tests): `initialize`; `tools/list` with its hints and schemas;
+  `tools/call` of every tool; refusals going back to the model; no token, a bad one, or a cookie
+  alone refused (401); a read-only token's writes refused with nothing changed; another person's
+  notes out of reach of tools, resources and prompts; resources; prompts; and the limit on calls.
+- **`test/browser.test.mjs`** (3 tests, in Chromium): sign in with the mailed link; write a note and
+  see its preview render as it is typed, then save it; find it by searching, the word highlighted.
+  Every page hydrates with strict checks and no errors.
+- **`test/copies.test.mjs`** (1 test): `McpHttp.roc` is still packages/mcp's `server/McpHttp.roc`.
 
 Also tried by hand: the official MCP TypeScript SDK's v2 client (`@modelcontextprotocol/client`
-2.4.0), at the current protocol (2026-07-28) and in `auto`, listed the tools, searched, read the
-index and got a prompt; with a wrong token it got 401.
+2.4.0), at protocol version 2026-07-28 and in `auto`, listed the tools, searched, read the index and
+got a prompt. With a wrong token it got 401.
 
 ## Product calls
 
 - **No passwords, and no sign-up.** Anyone who can read an address's mail may sign in as it, and an
   address new to the app gets a notebook. The answer to "mail me a link" is the same whether the
   address has notes or not, so the form tells nobody who uses the app.
-- **A link is a page with a button**, not a sign-in by itself: mail scanners follow links.
+- **A link opens a page with a button**, rather than signing in by itself, because mail scanners
+  follow links.
 - **Links live in `Kv`** for 15 minutes, by their hash, and are taken once (`Kv.take!`). A restart
-  forgets those on their way, which only means asking again. Sessions are signed cookies (30 days);
-  the server keeps none, and "sign out everywhere" raises a number the cookies carry.
-- **Tokens start read-only** in the form: writing is the choice to make. A token's last use is
-  written at most once a minute, so a busy agent writes one row a minute, not one a call.
-- **An AI client needs a token**, even from the browser the person is signed in on: an agent acts
-  for you only with a token you made for it, and can revoke.
-- **Agents can't delete**, and nor can anyone delete a note that isn't archived.
-- **Search covers archived notes** (marked so); the lists don't. A note's id is a number, but a
-  note that isn't yours is answered exactly as one that doesn't exist.
-- **`tag_note` sets all of a note's tags**, as the API's `PUT` does: an agent reads the note first.
-- **Limits:** five sign-in links an hour to an address (then one each 12 minutes), and 120 MCP calls
-  a minute for each token (then two a second).
+  forgets the links on their way, which only means asking again. Sessions are signed cookies (30
+  days), so the server keeps none. "Sign out everywhere" raises a number that the cookies carry.
+- **Tokens start read-only** in the form: writing is the choice you make. A token's last use is
+  written at most once a minute, so a busy agent writes one row a minute, not one per call.
+- **An AI client needs a token**, even from the browser the person is signed in on. An agent acts
+  for you only with a token you made for it, and that you can revoke.
+- **Deleting takes two steps on the pages** (archive, then delete for good), and no MCP tool
+  deletes. The JSON API's `DELETE /api/notes/<id>` is the exception: with a token that may write
+  (or your session cookie), it deletes any of your notes, archived or not.
+- **Search covers archived notes** (marked as archived); the lists don't. A note's id is a number,
+  but a note that isn't yours is answered exactly as one that doesn't exist.
+- **`tag_note` sets all of a note's tags**, as the API's `PUT` does, so an agent reads the note
+  first.
+- **Limits:** five sign-in links an hour to an address (then one every 12 minutes), and 120 MCP calls
+  a minute for each token (then two a second). Sign-in links are limited by the address they are
+  mailed to, because the inbox is what needs protecting; MCP calls by the token.
 
 ## What it asked of the platform
 
-What the app met, and how it works around each. None needed a change outside the example.
+Writing the app turned up gaps in the platform and the packages. Most are fixed now (a form's
+unticked checkbox, the app's public address, a plain form's flash, guard's refusal of a plain form,
+404s from `Endpoint.get!`, typed submissions in the browser). These are still worth knowing:
 
-1. **Packages' server modules are copied in by hand.** packages/mcp's HTTP side (`McpHttp`) imports
-   the server platform, so `rocx build` doesn't copy it into an app, as its README says.
-   Workaround: the file copied verbatim, and `test/copies.test.mjs` failing when it drifts.
-   (packages/guard's middleware was copied too, until guard kept its state in `Kv` and named the
-   server platform itself: D-043. Now the header names it and `Middlewares.roc` imports
-   `guard.Guard`.)
-2. **The MCP server can't be a route** (packages/mcp's PROPOSALS.md, "`Api` imports only route files
-   with endpoints"): its tools are `Api`'s endpoints, and a route file can't import `Api`.
-   Workaround: `Agents.mount`, a middleware main.roc puts after the default one, which answers
-   `/mcp` behind its own middleware (`Middlewares.agent`, `agent_limit`). `rocx routes` doesn't list
-   `/mcp`. (Changed in the platform since, D-037: `Generated/Api` is the contract, and the tools run
-   `Generated/Handlers`' endpoints, which only what is outside the routes' imports may import.
-   `main.roc` is the documented place to mount MCP, so the mount stays; a route of `respond!` alone
-   could serve it too now.)
-3. **`McpHttp.endpoint` couldn't fill an endpoint's path from a tool's arguments**: `Api.get_api_notes_id({ id })`
-   needed its `id` when the tool was made. The workaround was `search_notes` and `create_note` as
-   endpoints whole, and the four tools that take an `id` as `McpHttp.tool`s that ran the endpoint for
-   that id (`Endpoint.run!(Handlers.get_api_notes_id({ id: id }), …)`). (Fixed in packages/mcp
-   since: `McpHttp.endpoint` takes the endpoint's function, `Handlers.get_api_notes_id`, and reads
-   the tool's arguments as its params and as its body, so each of the six tools is a line, and a
-   body field named as a param is a problem `Mcp.problems` reports.)
-4. **Every field of a tool's arguments is required** (packages/mcp's README), so an agent sends
+1. **A package's server modules are copied in by hand.** packages/mcp's HTTP side (`McpHttp`)
+   imports the server platform, so `rocx build` doesn't copy it into an app, as its README says. The
+   app keeps a word-for-word copy, and `test/copies.test.mjs` fails when it drifts.
+2. **The MCP server is mounted in `main.roc`, not as a route.** Its tools run the endpoints'
+   handlers (`Generated/Handlers`), which import every route file, so no module a route imports may
+   import them. `Agents.mount` is a middleware that `main.roc` puts after the default one; it answers
+   `/mcp` behind its own middleware (`Middlewares.agent`, then `agent_limit`). `rocx routes` doesn't
+   list `/mcp`.
+3. **Every field of a tool's arguments is required** (packages/mcp's README), so an agent sends
    `"tags": []` to `create_note`. The search box's `#tag` syntax keeps `search_notes` to one field.
-5. **Fixed: `Endpoint.get!` of a 404 made a 500 page** (examples/tasks met it too), so the note's
-   page and its editor read with `Endpoint.read!` and showed a `Ui/Missing.rocx` of their own. Now a
-   read its endpoint refuses with a 4xx makes the page that status, with the app's error page
-   (`routes/+error.rocx`); both read with `get!`, and `Ui/Missing.rocx` is gone.
-6. **`<Show>`'s function child must be pure**, so a `<Show>` inside it doesn't compile. The sign-in
-   link's page shows its form under `when!={link!(token).is_ok()}`, with plain children. (Fixed in
-   the platform since: a function child is effectful now, and may hold a `<Show>`.)
-7. **The browser's copy needs the types said** (D-030): each page's endpoint read and each
-   `use_submission!` was annotated, with the pages' data in `Pages.roc`. `roc check` of the browser's
-   program passed without them; its wasm build failed ("This decodes a record whose full set of
-   fields is not known"), so check with the build. (Fixed in the platform since: the browser's copy
-   of `Api` has the endpoints' types (D-037), so the submissions aren't annotated; the pages' reads,
-   top-level functions with a doc comment, keep theirs, and `Pages.roc` keeps the types the routes
-   answer with.)
-8. **The server doesn't pass on the client's address** (packages/guard's README), so `Guard.ip`
-   can't tell clients apart. Sign-in links are limited by the address they are mailed to (what needs
-   keeping safe is the inbox), and MCP calls by the token. (Fixed in the platform since:
-   `Server.Request` has `peer`, the connection's address, and `Guard.ip(Direct)` reads it, D-041.)
-9. **Fixed: guard's refusal of a plain form was a page of text**: the rate limit answers before the
-   endpoint, so a browser without JavaScript got "Too many requests" on a page of its own rather
-   than back on the form with a flash. Now guard refuses a plain form as an endpoint does: back to
-   its page with a flash of the 429 and when to try again, the address typed still in the form.
-10. **guard's CSP refuses the OpenAPI page**, which loads Scalar from jsDelivr: `Middlewares.security`
-    leaves `/openapi.html` out (as examples/journal does).
-11. **Fixed: the app's public address wasn't the platform's to know.** A link in email needs it, and
-    a request's `Host` is whatever the asker sends (a link to their site, mailed to you, would hand
-    them your token), so the app read `NOTES_ORIGIN`. Now it asks the server, `Env.public_url!`:
-    `PUBLIC_URL` (or `--public-url`), else where the server listens.
-12. **Fixed: a plain form's result travelled in the flash cookie**, so a token made without
-    JavaScript rode in `rocx-flash` to the page that shows it. The platform now keeps a flash in the
-    server's memory for a minute; the cookie holds a random id, and the page that shows the token
-    takes it, once. With the runtime it never leaves the answer.
-13. **Fixed: an unticked checkbox sends nothing**, so a form whose record had its field failed to
-    read, and the token's access was two radio buttons, one always ticked. A form's body is read by
-    its endpoint's types now (D-038): a box left unticked is `Bool.False`. The token's form has a box,
-    "It may write too", and the endpoint a `write : Bool`.
-14. **Fixed: `Db.Value` had no list** (D-016), so tags went as a JSON array, `array(select
-    jsonb_array_elements_text($1::jsonb))`. `Db.array` made a list one parameter (a Postgres array,
-    in text). On SQLite (D-045), which has no arrays, a note's tags are a column declared `json`:
-    written as `Text(Json.to_str(tags))`, read back as the list with no cast, and looked into with
-    `json_each` (`Store.tagged`, the sidebar's counts).
-15. **No modifier keys in key handlers**, so no Ctrl+S to save: the editor saves with its button.
-16. **Roc on the way**: `{ ttl_ms }` alone is a block, not a record (`{ ttl_ms: ttl_ms }`); a tag
-    isn't a function (`map_err(|why| BadRequest(why))`, not `map_err(BadRequest)`); a list's
-    `keep_if` takes a pure function, so a page reads its endpoint once before filtering.
-17. **Email moved into packages/email (D-035)** while the app was being written: it names the package,
-    imports `email.Email`, and lists `Email.plugin` in `main.roc`.
-18. **SQLite has no regular expressions, and no search engine's syntax** (the app moved from
-    Postgres to SQLite, D-045). What a body reads as (`plain`, Markdown's marks left out) was a
-    column Postgres generated with `regexp_replace`; now it is `Note.plain`, in Roc, which `Store`
-    writes with every body (so an append reads the body and writes it back, in a transaction that
-    takes turns), and the seed carries its own. `websearch_to_tsquery` is `Store.matching`, which
-    makes an FTS5 query of the words (`"launch" NOT "rehearsal"`). What differs: FTS5 keeps
-    stopwords, so every word asked for (`the`, `for`) must be in the note; a link's address isn't
-    searched, as `plain` leaves it out; and a snippet is one piece of about 24 words, not two.
+4. **guard's Content-Security-Policy refuses the OpenAPI page**, which loads Scalar from jsDelivr.
+   `Middlewares.security` leaves `/openapi.html` out.
+5. **Roc gotchas met on the way:**
+   - `{ ttl_ms }` alone is a block, not a record: write `{ ttl_ms: ttl_ms }`.
+   - A tag isn't a function: write `map_err(|why| BadRequest(why))`, not `map_err(BadRequest)`.
+   - A list's `keep_if` takes a pure function, so a page reads its endpoint once before filtering.
+6. **SQLite has no regular expressions, and no search engine's syntax.** The app moved from
+   Postgres to SQLite, and two things are now done in Roc:
+   - What a body reads as (`Note.plain`, the text without Markdown's marks) was a column Postgres
+     generated with `regexp_replace`. Now `Store` writes it with every body, so an append reads the
+     body and writes it back, in a transaction. The seed carries its own.
+   - Postgres's `websearch_to_tsquery` is `Store.matching`, which makes an FTS5 query of the words
+     (`"launch" NOT "rehearsal"`).
+
+   What differs from Postgres: FTS5 keeps stopwords, so every word asked for (`the`, `for`) must be
+   in the note; a link's address isn't searched, because `Note.plain` leaves it out; and a snippet
+   is one piece of about 24 words, not two.
+7. **Tags are a JSON column.** SQLite has no arrays, so a note's tags are a column declared `json`:
+   written as `Text(Json.to_str(tags))`, read back as a list, and searched with `json_each`
+   (`Store.tagged`, and the sidebar's counts).

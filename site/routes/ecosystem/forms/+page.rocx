@@ -14,24 +14,25 @@ import ../../../Ui/PageHero
 import ../../../Ui/TableWrap
 import ../../../Ui/Demo
 
-## The forms package: a form checked as it is typed (the page's one live demo), then the schema it
-## is checked with, what an endpoint answers with the same schema (rendered as the site is built,
-## by the package), the checks, the issues and their English, the regex engine, the components,
-## and what works today.
+## The forms package's page: a form checked as it is typed (the page's one live demo), how to
+## install it, the schema it is checked with, what an endpoint answers with the same schema
+## (rendered from the package as the site is built), the page's side, the checks, the issues and
+## their English, the regex engine, the components, and what isn't done yet.
 meta = {
 	title: "Forms",
 	description: "A form's rules written once in Roc: the browser checks what is typed as it is typed, and the endpoint reads what was posted into a typed record, or refuses it with the same issues.",
 	toc: [
+		{ id: "install", label: "Installing it" },
 		{ id: "try", label: "Try it" },
 		{ id: "schema", label: "One schema" },
 		{ id: "endpoint", label: "At the endpoint" },
 		{ id: "page", label: "In the page" },
 		{ id: "values", label: "Values and their checks" },
-		{ id: "forms", label: "Forms" },
+		{ id: "forms", label: "Putting fields together" },
 		{ id: "issues", label: "Issues" },
 		{ id: "regex", label: "Patterns" },
 		{ id: "components", label: "The components" },
-		{ id: "status", label: "Status" },
+		{ id: "status", label: "Not yet" },
 	],
 }
 
@@ -42,17 +43,30 @@ view! = |_|
 				kicker={[<>{"The ecosystem · "}</>, <code>packages/forms</code>]}
 				title="Forms: the rules written once, checked in the browser and at the endpoint"
 			>
-				Write a form's rules once, in Roc, much as zod does for TypeScript. The browser checks what is typed
-				as it is typed, and the endpoint the form posts to reads what was posted with the very same code,
-				into a typed record, or refuses it with the same issues. The rules go past what a type can say: lengths,
+				Write a form's rules once, in Roc, much as zod does for TypeScript. The browser checks each field
+				as it is typed, and the endpoint the form posts to runs the very same code: it reads the post into a
+				typed record, or refuses it with the same issues. The rules go past what a type can say: lengths,
 				patterns, email addresses, ranges, choices, days, and checks across fields.
 			</PageHero>
 
+			<Heading id="install">Installing it</Heading>
+			<p>
+				Name the package in your app's header, <code>main.roc</code>. <code>rocx build</code> gives the
+				browser's half of the app the same packages, so this is the only place you name it. Forms is not a
+				<a href={"${Paths.platform_server}#plugins"}>plugin</a>: there is nothing to add to
+				<code>App.program</code>.
+			</p>
+			<Code source={"app [program] { forms: \"../packages/forms/main.roc\", pf: platform \"…\" }"} numbers={Bool.False} />
+			<p>
+				Then <code>import forms.Form</code> wherever you write a schema, and
+				<code>import forms.LiveForm</code> and the field components in a <code>.rocx</code> file.
+			</p>
+
 			<Heading id="try">Try it</Heading>
 			<p>
-				Type in a field and leave it: if what you typed fails a check, the issue shows under the field, and
-				goes as soon as it passes. Send shows every issue at once, with a summary above the form that
-				links to each field; once there are none, it shows the record the form reads.
+				Type in a field, then leave it. If what you typed fails a check, the issue shows under the field,
+				and it goes as soon as the field passes. Send shows every issue at once, with a summary above the
+				form that links to each field. Once there are none, the demo shows the record the form reads.
 			</p>
 		</NoHydration>
 		<Demo>
@@ -66,30 +80,34 @@ view! = |_|
 
 			<Heading id="schema">One schema</Heading>
 			<p>
-				A form is built with Roc's record builder: each field under the name the form posts it as, with
-				its checks, in order. The record it reads into is the record's type: <code>age</code> is an
-				<code>I64</code>, <code>terms</code> a <code>Bool</code>. The two passwords are a form of their own
-				inside it, so the check across them runs whenever both can be read.
+				You build a form with Roc's record builder: each field under the name the form posts it as, with
+				its checks, in order. The record's type is what the form reads: here <code>age</code> is an
+				<code>I64</code> and <code>terms</code> a <code>Bool</code>. The two passwords are a small form of
+				their own inside it, so the check that compares them runs whenever both can be read, whatever is
+				wrong elsewhere.
 			</p>
 			<Code title={Sources.forms_schema.file} source={Sources.forms_schema.rocx} />
 			<p>
-				A check list is data, so the same schema also says what a browser's attributes and an OpenAPI
-				document would: <code>form.json_schema()</code> gives, as this site is built,
+				In an app, the schema is a module of its own, which the page and the endpoint both import. The
+				checks are data, so the same schema also tells a browser which attributes to put on each input, and
+				can describe the form as JSON Schema. <code>form.json_schema()</code> gives, as this site is built:
 			</p>
 			<Code source={pretty(FormsSignup.form.json_schema(), 2)} plain numbers={Bool.False} />
 
 			<Heading id="endpoint">At the endpoint</Heading>
 			<p>
-				An endpoint parses the form's body with the same schema, and refuses one that fails with a 422 and
-				the issues as JSON (<code>Issues.refusal</code>). Its <code>body</code> type is <code>{"{}"}</code>:
-				the endpoint takes no JSON, and the form parses the request's body itself.
+				An <a href={"${Paths.routing}#endpoints"}>endpoint</a> parses the form's body with the same schema.
+				When the body doesn't read, it refuses with a <code>422</code> and the issues as JSON
+				(<code>Issues.refusal</code>). Its <code>body</code> type is <code>{"{}"}</code>, so the platform
+				leaves the body alone and the form parses it. That way a box left unticked, which a browser doesn't
+				send at all, is the form's to judge.
 			</p>
 			<Code title={Sources.forms_endpoint.file} source={Sources.forms_endpoint.rocx} />
 			<p>
 				Sent the body <code>{bad_post}</code>, it answers (run as this site is built):
 			</p>
 			<Code source={answered!(bad_post)} plain numbers={Bool.False} />
-			<p>Read back with <code>Issues.from_problem</code>, as a page reads a refusal, they are:</p>
+			<p>Read back with <code>Issues.from_problem</code>, as a page reads a refusal, the issues are:</p>
 			<TableWrap>
 				<table id="forms-answer">
 					<thead><tr><th>Field</th><th>Code</th><th>Message</th></tr></thead>
@@ -104,8 +122,9 @@ view! = |_|
 
 			<Heading id="page">In the page</Heading>
 			<p>
-				<code>LiveForm</code> is the form's state in a component: what is typed in each field, which fields
-				were left, whether it was sent. The fields are the package's components, which take their
+				<code>LiveForm</code> holds a form's state in a component: what is typed in each field, which fields
+				you have left, and whether the form was sent. You make it once, as you make a
+				<a href={"${Paths.components}#primitives"}>signal</a>. The package's field components take their
 				attributes from the schema (<code>type="email"</code>, <code>required</code>,
 				<code>maxlength</code>, <code>min</code>) and say when they are invalid
 				(<code>aria-invalid</code>, <code>aria-describedby</code>). This site has no server to post to, so
@@ -113,28 +132,31 @@ view! = |_|
 			</p>
 			<Code title={Sources.forms_demo.file} source={Sources.forms_demo.rocx} />
 			<p>
-				An app's page posts it to its endpoint instead: <code>LiveForm.of!(Signup.form, Api.post_signup({"{}"}))</code>,
-				and <code>{"<form method=\"post\" action={live.url()} novalidate>"}</code>, with no
-				<code>on:submit</code>. It is sent with the runtime (the page stays, and shows the endpoint's
-				issues) or without it (the form posts, and the page comes back with what was typed and the issues,
-				from the flash: a <a href={"${Paths.calls}#forms"}>submission</a>).
+				An app's page posts the form to its endpoint instead. Make the live form with
+				<code>LiveForm.of!(Signup.form, Api.post_signup({"{}"}))</code>, and write
+				<code>{"<form method=\"post\" action={live.url()} novalidate>"}</code>, with no
+				<code>on:submit</code>. With the runtime, the form is sent in the background: the page stays and
+				shows the endpoint's issues at their fields. Without it, the browser posts the form, and the page
+				comes back with what was typed and the issues (a
+				<a href={"${Paths.calls}#forms"}>submission</a> read from the flash). Passwords are never written
+				back into the page.
 			</p>
 			<p>
 				An edit form starts filled in with the record as it is:
 				<code>{"LiveForm.filled!(TaskForm.editing, save, [(\"title\", task.title), (\"notes\", task.notes)])"}</code>.
-				Any form can start afresh, from a handler: <code>live.reset!()</code> types in again what it started
-				with and forgets every issue, its inputs staying where they are, focus too (Start again, in the
-				demo). An add form does once the endpoint has accepted what it sent:
+				Any form can start afresh from a handler: <code>live.reset!()</code> puts back what it started
+				with and forgets every issue. The inputs stay where they are, and so does focus (Start again, in
+				the demo). An add form resets once the endpoint has accepted what it sent:
 				<code>{"create_effect!(|| live.accepted!(), |accepted| if (accepted) live.reset!() else {})"}</code>.
+				<a href={Paths.examples_tasks}>examples/tasks</a> does both.
 			</p>
 
 			<Heading id="values">Values and their checks</Heading>
 			<p>
-				Each kind of value takes its checks, run in order, and says everything wrong with it, not only the
-				first thing. A text check other than <code>Required</code> passes an empty value, as a browser's
-				<code>minlength</code> and <code>pattern</code> do: <code>Value.text([Email])</code> takes
-				<code>""</code> or an address. A bad pattern in a top-level form stops the build: Roc computes a
-				top-level value as the app compiles.
+				Each kind of value takes a list of checks, run in order, and reports everything wrong with the
+				value, not only the first thing. A text check other than <code>Required</code> passes an empty
+				value, as a browser's <code>minlength</code> and <code>pattern</code> do:
+				<code>Value.text([Email])</code> takes <code>""</code> or an address.
 			</p>
 			<TableWrap>
 				<table>
@@ -152,7 +174,7 @@ view! = |_|
 								back into a page)
 							</td>
 						</tr>
-						<tr><td><code>Value.int(checks)</code></td><td><code>I64</code>: <code>42</code>, <code>-3</code>, <code>+7</code></td><td><code>Min(n)</code>, <code>Max(n)</code>, <code>Step(n)</code> (from the <code>Min</code>, or 0, as a browser's <code>step</code>)</td></tr>
+						<tr><td><code>Value.int(checks)</code></td><td><code>I64</code>: <code>42</code>, <code>-3</code>, <code>+7</code></td><td><code>Min(n)</code>, <code>Max(n)</code>, <code>Step(n)</code> (counted from the <code>Min</code>, or from 0, as a browser's <code>step</code> is)</td></tr>
 						<tr><td><code>Value.dec(checks)</code></td><td><code>Dec</code>: <code>2.5</code>, <code>.5</code>; no exponent</td><td><code>Min(x)</code>, <code>Max(x)</code>, <code>Step(x)</code></td></tr>
 						<tr><td><code>Value.checkbox(checks)</code></td><td><code>Bool</code>: sent or not</td><td><code>[Required]</code>: it must be ticked</td></tr>
 						<tr><td><code>Value.choice(options)</code></td><td>what the option stands for: <code>{"[(\"free\", Free), (\"pro\", Pro)]"}</code></td><td>one of them</td></tr>
@@ -161,12 +183,17 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				An empty number, choice or day is <code>Required</code>. Beyond the checks, <code>.check(ok, code)</code>
-				adds one of the app's own, and <code>.map</code> and <code>.try_map</code> make the value into another
-				(a <code>Username</code>, an <code>Isbn</code>), or an issue.
+				An empty number, choice or day fails as <code>Required</code>. For anything the checks don't
+				cover, <code>.check(ok, code)</code> adds a check of your own, and <code>.map</code> and
+				<code>.try_map</code> turn the value into another type (a <code>Username</code>, an
+				<code>Isbn</code>), or into an issue.
+			</p>
+			<p>
+				A bad pattern crashes where the value is made. Roc computes a top-level value while the app
+				compiles, so in a top-level form a typo in a pattern stops the build instead of reaching a user.
 			</p>
 
-			<Heading id="forms">Forms</Heading>
+			<Heading id="forms">Putting fields together</Heading>
 			<TableWrap>
 				<table>
 					<thead><tr><th>Function</th><th>What it does</th></tr></thead>
@@ -174,12 +201,12 @@ view! = |_|
 						<tr><td><code>Form.text(name, checks)</code>, <code>int</code>, <code>dec</code>, <code>checkbox</code>, <code>choice</code>, <code>date</code></td><td>the field posted as <code>name</code>, read as that kind of value</td></tr>
 						<tr><td><code>Form.field(name, value)</code></td><td>the same, for any <code>Value</code></td></tr>
 						<tr><td><code>Form.optional(name, value)</code></td><td><code>Err(Missing)</code> when left empty, otherwise read</td></tr>
-						<tr><td><code>Form.list(name, value, [MinItems(n), MaxItems(n)])</code></td><td>every value posted as <code>name</code> (boxes that share it); an item's issues at <code>name[i]</code></td></tr>
+						<tr><td><code>Form.list(name, value, [MinItems(n), MaxItems(n)])</code></td><td>every value posted as <code>name</code> (boxes that share a name); an item's issues at <code>name[i]</code></td></tr>
 						<tr><td><code>{"{ a: …, b: … }.Form"}</code></td><td>the record builder: every field read, all their issues kept</td></tr>
-						<tr><td><code>.check(ok, code)</code>, <code>.check_at(field, ok, code)</code></td><td>the app's own check, at the form's field, or at another: across fields</td></tr>
-						<tr><td><code>.map(f)</code>, <code>.try_map(f)</code>, <code>.message(text)</code></td><td>what was read, made into another; its issues with this message</td></tr>
+						<tr><td><code>.check(ok, code)</code>, <code>.check_at(field, ok, code)</code></td><td>a check of your own, its issue at the form's own field, or at another one: a check across fields</td></tr>
+						<tr><td><code>.map(f)</code>, <code>.try_map(f)</code>, <code>.message(text)</code></td><td>what was read, made into another value; its issues with this message</td></tr>
 						<tr><td><code>.parse(fields)</code>, <code>.parse_body(body)</code>, <code>.issues(fields)</code></td><td>the record, or every issue: from fields (as <code>Server.form_fields</code> reads them) or from a form's body</td></tr>
-						<tr><td><code>.attributes(name)</code>, <code>.json_schema()</code></td><td>what a browser's attributes say of a field; the form as a JSON Schema</td></tr>
+						<tr><td><code>.attributes(name)</code>, <code>.json_schema()</code></td><td>the attributes a browser checks a field by; the form as JSON Schema</td></tr>
 						<tr><td><code>.names()</code>, <code>.is_list(name)</code>, <code>.secrets()</code></td><td>its fields; whether one takes several values; the <code>Secret</code> ones</td></tr>
 					</tbody>
 				</table>
@@ -188,9 +215,10 @@ view! = |_|
 			<Heading id="issues">Issues</Heading>
 			<p>
 				An issue is <code>{"{ field : Str, code : Issues.Code, message : Str }"}</code>: where, what, and the
-				English for it. A code is a plain tag with what it needs said, so a translation matches on it, or
-				looks it up by its <code>key</code> and <code>params</code>. Each code, and its English, from the
-				package as this site is built:
+				English for it. A code is a plain tag that carries what its message needs, so a translation can
+				match on it, or look it up by its <code>key</code> and <code>params</code>
+				(<a href={Paths.ecosystem_intl}>intl</a> does). Each code, and its English, from the package as this
+				site is built:
 			</p>
 			<TableWrap>
 				<table id="forms-codes">
@@ -201,20 +229,22 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				<code>Issues.at(issues, field)</code> and <code>Issues.under</code> pick a field's out;
-				<code>Issues.refusal</code> is an endpoint's 422, and <code>Issues.from_problem</code> reads one back
-				from a submission's <code>error!()</code> or <code>Endpoint.send!</code>.
+				<code>Issues.at(issues, field)</code> picks out a field's issues, and <code>Issues.under</code> a
+				list's, its items' too. <code>Issues.refusal</code> is an endpoint's <code>422</code>, and
+				<code>Issues.from_problem</code> reads one back from a submission's <code>error!()</code> or
+				<code>Endpoint.send!</code>.
 			</p>
 
 			<Heading id="regex">Patterns</Heading>
 			<p>
-				Roc has no regular expressions, so the package has an engine in plain Roc. A pattern compiles once,
-				to a program, and a Pike VM runs it over the text, every way it could match at once, a step per
-				character: no pattern and no text can make it slow. So there are no backreferences and no
-				lookaround. The syntax is JavaScript's, so a pattern means the same in a <code>pattern</code>
-				attribute: characters and <code>.</code>, classes (<code>[a-z]</code>, <code>[^,]</code>,
-				<code>\d \w \s</code>), <code>^ $ \b</code>, groups, <code>|</code>, and <code>* + ? {"{m,n}"}</code>.
-				Matched as this site is built:
+				Roc has no regular expressions, so the package has an engine written in plain Roc. A pattern
+				compiles once, to a program. A Pike VM runs the program over the text, following every way the
+				pattern could match at once, one step per character, so no pattern and no text can make it slow.
+				The price is that there are no backreferences and no lookaround. The syntax is JavaScript's, so a
+				pattern means the same in an input's <code>pattern</code> attribute: characters and
+				<code>.</code>, classes (<code>[a-z]</code>, <code>[^,]</code>, <code>\d \w \s</code>),
+				<code>^ $ \b</code>, groups, <code>|</code>, and <code>* + ? {"{m,n}"}</code>. Matched as this site
+				is built:
 			</p>
 			<TableWrap>
 				<table id="forms-regex">
@@ -225,22 +255,22 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				The last is the classic trap: a backtracking engine (JavaScript's, say) tries each of the hundreds of
-				millions of ways to split those a's into groups before it says no. Here it is a step per character.
-				<code>Regex.compile</code> says what is wrong with a pattern, and where; <code>Regex.must</code>
-				crashes, which in a top-level value stops the build.
+				The last row is the classic trap. A backtracking engine (JavaScript's, say) tries each of the
+				hundreds of millions of ways to split those a's into groups before it says no. Here it is one step
+				per character. <code>Regex.compile</code> says what is wrong with a pattern, and where;
+				<code>Regex.must</code> crashes instead, which in a top-level value stops the build.
 			</p>
 
 			<Heading id="components">The components</Heading>
 			<p>
-				<code>rocx build</code> copies them into the app, as it copies the
-				<a href={Paths.ecosystem_charts}>charts</a>': <code>import forms.TextField</code> imports the copy.
+				<code>rocx build</code> copies the package's components into your app, as it copies the
+				<a href={Paths.ecosystem_charts}>charts</a>: <code>import forms.TextField</code> imports the copy.
 			</p>
 			<TableWrap>
 				<table>
 					<thead><tr><th>Component</th><th>Props</th></tr></thead>
 					<tbody>
-						<tr><td><code>{"<TextField>"}</code></td><td><code>live</code>, <code>name</code>, <code>label</code>; <code>hint</code>, <code>type</code> (when the checks don't give it: <code>tel</code>, <code>search</code>), <code>autocomplete</code></td></tr>
+						<tr><td><code>{"<TextField>"}</code></td><td><code>live</code>, <code>name</code>, <code>label</code>; <code>hint</code>, <code>type</code> (when the checks don't give one: <code>tel</code>, <code>search</code>), <code>autocomplete</code></td></tr>
 						<tr><td><code>{"<CheckboxField>"}</code></td><td><code>live</code>, <code>name</code>, <code>label</code></td></tr>
 						<tr><td><code>{"<IssueSummary>"}</code></td><td><code>live</code>, <code>title</code>: once the form is sent, its issues, each a link to its field; <code>labels</code>, the fields' labels by name, so a link says which field it is about (<code>Name: Fill this in</code>)</td></tr>
 					</tbody>
@@ -250,50 +280,51 @@ view! = |_|
 				<table>
 					<thead><tr><th>LiveForm</th><th>What it is</th></tr></thead>
 					<tbody>
-						<tr><td><code>LiveForm.of!(form, endpoint)</code></td><td>a form that posts to <code>endpoint</code> (<code>Router.use_submission!</code>): the endpoint's issues show at their fields</td></tr>
-						<tr><td><code>LiveForm.filled!(form, endpoint, values)</code></td><td>the same, starting with <code>values</code> typed in, field by field (<code>[("title", task.title)]</code>; a box ticked is <code>("done", "on")</code>)</td></tr>
+						<tr><td><code>LiveForm.of!(form, endpoint)</code></td><td>a form that posts to <code>endpoint</code> (through <code>Router.use_submission!</code>): the endpoint's issues show at their fields</td></tr>
+						<tr><td><code>LiveForm.filled!(form, endpoint, values)</code></td><td>the same, starting with <code>values</code> typed in, field by field (<code>[("title", task.title)]</code>; a ticked box is <code>("done", "on")</code>)</td></tr>
 						<tr><td><code>LiveForm.local!(form)</code>, <code>local_filled!(form, values)</code></td><td>a form that posts nowhere, checked as it is typed, for an <code>on:submit</code> handler to read</td></tr>
-						<tr><td><code>live.reset!()</code>, <code>accepted!()</code></td><td>from a handler, starts afresh where it is, issues forgotten; whether the endpoint accepted what was last sent</td></tr>
-						<tr><td><code>live.value!(name)</code>, <code>input!(name, value)</code>, <code>leave!(name)</code></td><td>what a field holds; from <code>on:input.value</code>; from <code>on:blur</code></td></tr>
+						<tr><td><code>live.reset!()</code>, <code>accepted!()</code></td><td>from a handler, start afresh where it is, issues forgotten; whether the endpoint accepted what was last sent</td></tr>
+						<tr><td><code>live.value!(name)</code>, <code>input!(name, value)</code>, <code>leave!(name)</code></td><td>what a field holds; for <code>on:input.value</code>; for <code>on:blur</code></td></tr>
 						<tr><td><code>live.issues!(name)</code>, <code>invalid!(name)</code>, <code>all_issues!()</code></td><td>the issues to show now: a field's once it is left, every field's once the form is sent</td></tr>
-						<tr><td><code>live.show_all!()</code>, <code>fields!()</code>, <code>url()</code></td><td>every issue from now on; what is typed, for <code>form.parse</code>; the form's <code>action</code></td></tr>
+						<tr><td><code>live.show_all!()</code>, <code>fields!()</code>, <code>url()</code></td><td>show every issue from now on; what is typed, for <code>form.parse</code>; the form's <code>action</code></td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 			<p>
-				Their colours come from <code>--form-invalid</code>, <code>--form-border</code>,
+				Their colours come from the custom properties <code>--form-invalid</code>, <code>--form-border</code>,
 				<code>--form-muted</code> and <code>--form-radius</code>; the demo sets them from this site's tokens.
+				The <a href="https://github.com/Roc-Solid/rocx/blob/master/packages/forms/README.md">package's
+				README</a> lists every function, and when each issue shows.
 			</p>
 
-			<Heading id="status">Status</Heading>
+			<Heading id="status">Not yet</Heading>
 			<p>
-				Works today, with no change to the platform: the package (<code>roc test packages/forms/main.roc</code>
-				runs its <code>expect</code>s), its components, and the endpoint glue above, which is plain Roc an app
-				writes in its route file. Each of these waits on a proposal in
-				<code>packages/forms/PROPOSALS.md</code>:
+				Everything above works today, with no change to the platform. <code>roc test
+				packages/forms/main.roc</code> runs the package's <code>expect</code>s. A few things wait on
+				proposals in <code>packages/forms/PROPOSALS.md</code>:
 			</p>
 			<ul>
 				<li>
-					A refusal with field issues of the platform's own. Today it is a 422 whose text is the issues'
-					JSON, which <code>Issues.from_problem</code> reads back.
+					A refusal with field issues of the platform's own. Today it is a <code>422</code> whose text is
+					the issues' JSON, which <code>Issues.from_problem</code> reads back.
 				</li>
 				<li>
-					The schema in <code>/openapi.json</code>: an endpoint whose <code>body</code> is <code>{"{}"}</code>
-					is documented as an empty object. <code>form.json_schema()</code> is ready for it.
+					The form's rules in <code>/openapi.json</code>. The document describes an endpoint whose
+					<code>body</code> is <code>{"{}"}</code> as taking an empty object; <code>form.json_schema()</code>
+					is ready to fill it in.
 				</li>
 				<li>
-					Holding a send back in the browser when the form has issues: today it always goes to the endpoint,
-					which refuses it with the same issues.
+					Holding a send back in the browser when the form has issues. Today it always goes to the
+					endpoint, which refuses it with the same issues.
 				</li>
 				<li>
-					Server-only modules in packages: none are needed yet. The endpoint glue (<code>post!</code> above)
-					is a few lines the app writes in its route file; with this proposal, the package could ship a
-					ready-made handler instead.
+					A ready-made endpoint handler. Today the glue is the few lines of <code>post!</code> above, in
+					your route file.
 				</li>
 			</ul>
 			<p>
-				And for now: a form's body only (<code>application/x-www-form-urlencoded</code>, not JSON or files);
-				decimals with a <code>.</code>; patterns with no flags or captures.
+				And for now: a URL-encoded form body only (not JSON, and not files); decimals written with a
+				<code>.</code>; patterns with no flags and no captures.
 			</p>
 			<details>
 				<summary>The demo: <code>{Sources.forms_demo_file.file}</code></summary>

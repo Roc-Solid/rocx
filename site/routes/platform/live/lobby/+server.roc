@@ -2,7 +2,7 @@ import pf.Server
 import pf.Endpoint
 import pf.Channel
 
-## The lobby, a channel (D-020): anyone may join, and every tab that has hears each wave as it is
+## The lobby, a channel: anyone may join, and every tab that has hears each wave as it is
 ## made. Its check lets everyone in; a tab is named by the first letters of its id.
 channel! : { request : Server.Request, params : {}, context : c } => Try(Channel({}, { hand : Str, from : Str }, [Wave(Str)]), Endpoint.Refusal)
 channel! = |_| Ok(Channel.allow({}))

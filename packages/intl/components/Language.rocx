@@ -10,7 +10,7 @@ import intl.Locales
 ## language, and nothing else is. `<Language label="Language" />` is the picker.
 ##
 ##     # the root layout: the store, given to everything inside
-##     store = Language.store!({ supported, catalog, tag: I18n.locale!({}), remember!: |_| {} })
+##     store = Language.store!({ supported, catalog, tag: Endpoint.get!(Api.get_locale({})), remember!: |_| {} })
 ##     { intl!, .. } = store
 ##     <html lang={intl!().tag()} dir={intl!().direction()}>
 ##         …<body><LanguageContext value={store}>{...children}</LanguageContext></body>

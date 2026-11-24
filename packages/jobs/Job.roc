@@ -71,7 +71,7 @@ Job := [].{
 
 	## A job that failed for good, as the plugin's `on_failed!` is given it: its kind, its id, how
 	## many times it was tried and why the last attempt failed (its `Err`, a crash, or "timed out
-	## after …"). Its row stays in `rocx_jobs`, failed, until it is run again (`run_now!`).
+	## after …"). Its row stays in `rocx_jobs`, failed, until it is tried again (`retry!`).
 	Failure : { kind : Str, id : I64, attempts : U64, error : Str }
 
 	## The jobs plugin: the queue's table (`jobs/0001_jobs`), the workers (`jobs.worker`, with a

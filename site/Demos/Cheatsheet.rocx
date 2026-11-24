@@ -9,8 +9,7 @@ Cheatsheet := [].{
 	rows : List(Row)
 	rows = [
 		{ write: "<tag attr=\"text\" other={expr}>…</tag>", means: "An element; {expr} must be a Str, and is escaped." },
-		{ write: "{expr}", means: "Text among children: a Str, escaped. In a component, it runs again when a signal it read changes, and patches its text." },
-		{ write: "{expr}", means: "Text, a number or markup, as the expression's type says." },
+		{ write: "{expr}", means: "Text (escaped), a number or markup, as the expression's type says. In a component, it runs again when a signal it read changes, and patches its node." },
 		{ write: "{...expr}", means: "A List(Html), joined: what .map makes." },
 		{ write: "checked?={bool}", means: "A boolean attribute, there when true." },
 		{ write: "required", means: "A boolean attribute that is always on." },

@@ -59,9 +59,10 @@ Planner := [].{
 	}
 
 	<style>
+		/* The days two by two: four side by side cram their plans. */
 		.week {
 			display: grid;
-			grid-template-columns: repeat(4, minmax(0, 1fr));
+			grid-template-columns: repeat(2, minmax(0, 1fr));
 			gap: var(--space-2);
 		}
 
@@ -101,10 +102,5 @@ Planner := [].{
 			font-size: var(--size-xs);
 		}
 
-		@media (max-width: 40rem) {
-			.week {
-				grid-template-columns: repeat(2, minmax(0, 1fr));
-			}
-		}
 	</style>
 }

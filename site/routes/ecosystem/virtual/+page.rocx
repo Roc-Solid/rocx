@@ -9,17 +9,19 @@ import ../../../Generated/Paths
 import ../../../Generated/Sources
 
 ## The virtual package: installing it, a live list of a hundred thousand rows (a thousand, a
-## million), its props, what the server renders, writing signals from what it measures, and its
-## limits. The demo is the site's (site/Demos/RowsDemo.rocx), hydrated.
+## million), its props, how it works (the box, the server, very tall lists), writing signals from
+## what it measures, and its limits. The demo is the site's (site/Demos/RowsDemo.rocx), hydrated.
 meta = {
 	title: "Virtual lists",
 	description: "The virtual package for Roc Solid apps: <VirtualList>, a list of any length that renders only the rows that show, made of the platform's <Repeat> and on:viewport.",
 	toc: [
-		{ id: "install", label: "Installing" },
+		{ id: "install", label: "Installing it" },
 		{ id: "demo", label: "A million rows" },
 		{ id: "props", label: "Its props" },
+		{ id: "box", label: "The scrolling box" },
 		{ id: "server", label: "On the server" },
-		{ id: "signals", label: "Writing from a measure" },
+		{ id: "signals", label: "Writing signals from on_view!" },
+		{ id: "tall", label: "Lists taller than a browser allows" },
 		{ id: "limits", label: "Limits" },
 	],
 }
@@ -31,82 +33,135 @@ view! = |_|
 				kicker={[<>{"The ecosystem · "}</>, <code>packages/virtual</code>]}
 				title="Lists of any length"
 			>
-				A thousand rows or a million cost the page the same: the rows in the box, and four more each side.
-				As it scrolls, rows that come into view are made and rows that leave go; the others stay as they
-				are.
+				A thousand rows or a million cost the page the same: only the rows inside the box are rendered, plus
+				four more on each side. As the box scrolls, rows that come into view are made and rows that leave
+				are dropped. The rows in between stay as they are.
 			</PageHero>
+			<p>
+				Use <code>{"<VirtualList>"}</code> when a list is too long to put on the page whole: a log, a table of
+				every order, a grid of a million checkboxes. Rendering ten thousand rows makes the browser lay out ten
+				thousand rows; a virtual list lays out the twenty or so that the reader can see. Every row must have
+				the same height, and the list must scroll inside a box of its own.
+			</p>
 
-			<Heading id="install">Installing</Heading>
+			<Heading id="install">Installing it</Heading>
+			<p>Name the package in the app's header:</p>
 			<Code
 				title="main.roc's header"
-				source={"app [program] { pf: platform \"../server/platform/main.roc\", virtual: \"../packages/virtual/main.roc\" }"}
+				source={"app [program] { pf: platform \"…/server/platform/main.roc\", virtual: \"…/packages/virtual/main.roc\" }"}
 				numbers={Bool.False}
 			/>
 			<p>
-				Then <code>import virtual.VirtualList</code> in a <code>.rocx</code> file. <code>rocx build</code> copies
-				the component into the app (<code>Generated/virtual/</code>), as it copies the charts. It is made of two
-				things the platform has, which any component may use too: <code>{"<Repeat>"}</code>, which renders a range
-				of rows by index, and <code>on:viewport</code>, which tells a handler what of an element shows (see
-				<a href={Paths.components}>components</a>).
+				Then <code>import virtual.VirtualList</code> in a <code>.rocx</code> file. The package isn't a plugin:
+				it adds nothing to the server. <code>rocx build</code> copies the component into the app
+				(<code>Generated/virtual/</code>), as it does for the <a href={Paths.ecosystem_charts}>charts</a>.
+			</p>
+			<p>
+				The component is built from two things the platform already has, which any component can use too.
+				<code>{"<Repeat>"}</code> renders a range of rows by index (see
+				<a href={"${Paths.components}#control"}><code>if</code>, <code>match</code> and <code>.map</code></a>).
+				<code>on:viewport</code> tells a handler which part of an element shows (see
+				<a href={"${Paths.components}#handlers"}>handlers</a>).
 			</p>
 
 			<Heading id="demo">A million rows</Heading>
-			<p>Each row is a number and its square. Pick how many, and scroll: the line above the list says which rows are on the page.</p>
+			<p>
+				Each row is a number and its square. Pick how many rows, then scroll: the line above the list says
+				which rows are on the page right now.
+			</p>
 		</NoHydration>
 		<Demo>
 			<div data-demo="virtual"><RowsDemo /></div>
 		</Demo>
 		<NoHydration>
+			<p>
+				The list takes its row as a function child: given a row's index, it returns the row's markup. The
+				demo's list, in part:
+			</p>
 			<Code title={"${Sources.virtual_use.file}, in part"} source={Sources.virtual_use.rocx} numbers={Bool.False} />
 
 			<Heading id="props">Its props</Heading>
 			<TableWrap>
 				<table>
-					<thead><tr><th>Prop</th><th>What</th></tr></thead>
+					<thead><tr><th>Prop</th><th>What it is</th></tr></thead>
 					<tbody>
-						<tr><td><code>count</code></td><td>How many rows. A getter, as every value prop is: the list follows it.</td></tr>
-						<tr><td><code>row_height</code></td><td>Each row's height, in pixels; every row is this high</td></tr>
-						<tr><td><code>overscan</code></td><td>Rows rendered beyond those that show, each side; 4 unless it says</td></tr>
-						<tr><td><code>first_height</code></td><td>The height it renders rows for before it is measured; 800 unless it says</td></tr>
-						<tr><td><code>class</code>, <code>label</code></td><td>The box's classes (beside <code>virtual-list</code>), and its <code>aria-label</code></td></tr>
-						<tr><td><code>on_view!</code></td><td>Hears each measure, an <code>Html.Viewport</code>: <code>top</code>, <code>left</code>, <code>width</code>, <code>height</code></td></tr>
-						<tr><td>the child</td><td><code>{"{|index| …}"}</code>: a row, given its index, run when the row is made</td></tr>
+						<tr><td><code>count</code></td><td>How many rows there are. Like every value prop of an effectful component, it is a <a href={"${Paths.components}#passing"}>getter</a>: when <code>{"count={rows!()}"}</code> changes, the list follows.</td></tr>
+						<tr><td><code>row_height</code></td><td>Each row's height, in pixels. Every row is this high.</td></tr>
+						<tr><td><code>overscan</code></td><td>How many rows to render beyond those that show, on each side, so a quick scroll shows rows instead of a gap. 4 unless you set it.</td></tr>
+						<tr><td><code>first_height</code></td><td>The box height, in pixels, to render rows for before the box is measured: on the server, and until the page hydrates. 800 unless you set it.</td></tr>
+						<tr><td><code>class</code></td><td>Classes for the box, added to <code>virtual-list</code>. Give the box its height here.</td></tr>
+						<tr><td><code>label</code></td><td>The box's <code>aria-label</code>. Left out when empty.</td></tr>
+						<tr><td><code>on_view!</code></td><td>Called with each measure of the box, an <code>Html.Viewport</code>: <code>top</code>, <code>left</code>, <code>width</code> and <code>height</code>, in pixels.</td></tr>
+						<tr><td>the child</td><td><code>{"{|index| …}"}</code>: a row, given its index from 0. It runs once, when the row is made, as an effectful component does.</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
+
+			<Heading id="box">The scrolling box</Heading>
 			<p>
-				The box is the component's own <code>{"<div>"}</code>, which scrolls: give it a height, by its class. One
-				with none grows as high as all its rows and doesn't scroll, and the list renders only its first 4,096
-				pixels of rows. Inside it, a <code>{"<div>"}</code> as high as every row together holds the rows that are
-				rendered, moved down to where they go. Browsers cap how high an element may be (Firefox at about 17.8
-				million pixels), so a list higher than 10 million is drawn scaled: each pixel the box scrolls moves
-				through more of the rows than one, and its last scroll shows the last row. The demo's million rows,
-				36 pixels each, are drawn that way.
+				The list is a <code>{"<div>"}</code> that scrolls (<code>overflow-y: auto</code>), so <strong>give it
+				a height</strong> through its class. Inside it, a second <code>{"<div>"}</code> is as tall as all the
+				rows together (<code>count × row_height</code> pixels). That tall element gives the scrollbar its full
+				length. The rendered rows sit inside it, moved down to where they belong.
+			</p>
+			<p>
+				A box with no height grows as tall as all its rows and never scrolls. Rendering every row would defeat
+				the point, so the list then renders only the rows in the first 4,096 pixels and leaves the rest blank.
 			</p>
 
 			<Heading id="server">On the server</Heading>
 			<p>
-				The server can't measure, so the list renders the rows its first <code>first_height</code> pixels would
-				show, and the browser renders the same ones as it hydrates. Then <code>on:viewport</code> measures the box,
-				and the rows that really show replace them. A page with a list on it has its first rows in its HTML.
+				The server can't measure the box, so it renders the rows that the first <code>first_height</code>
+				pixels would show. The browser renders the same rows as it hydrates, so the two agree. Then
+				<code>on:viewport</code> measures the box, and the rows that really show replace them. A page with a
+				virtual list on it therefore has its first rows in its HTML, before any wasm runs.
 			</p>
 
-			<Heading id="signals">Writing from a measure</Heading>
+			<Heading id="signals">Writing signals from on_view!</Heading>
 			<p>
-				<code>on_view!</code> hears every scroll, and a setter can't compare Roc values: every write runs what
-				reads the signal, a change or not. So write a signal from it only when what you take from the view
-				changes, as the demo does with the rows, and as the list does itself.
+				<code>on_view!</code> is called on every scroll, at most once per animation frame. A signal's setter
+				doesn't compare the new value with the old one: every write re-runs whatever reads the signal, whether
+				the value changed or not. So write a signal from <code>on_view!</code> only when the part of the view
+				you use has changed. The <a href={Paths.examples_checkboxes}>checkboxes example</a> lays out as many
+				boxes in a row as fit the list's width, and writes the number of columns only when it changes:
+			</p>
+			<Code
+				title="examples/checkboxes/routes/+page.rocx, in part"
+				source={"on_view!={|view| if (Grid.columns(view.width) != columns!()) set_columns!(Grid.columns(view.width)) else {}}"}
+				numbers={Bool.False}
+			/>
+			<p>
+				The list does the same inside: it writes its own view only when the range of rows to render changes,
+				so a scroll within one row writes nothing.
+			</p>
+
+			<Heading id="tall">Lists taller than a browser allows</Heading>
+			<p>
+				Browsers cap how tall an element may be: Firefox at about 17.8 million pixels, Chromium at about 33.5
+				million. The demo's million rows, 36 pixels each, are 36 million pixels. So a list taller than 10
+				million pixels is drawn scaled. Its inner <code>{"<div>"}</code> is 10 million pixels tall, and each
+				pixel the box scrolls moves through more than one pixel of rows, so scrolling to the end shows the
+				last row. The rows are placed so the one at the box's top is where it should be.
 			</p>
 
 			<Heading id="limits">Limits</Heading>
 			<ul>
-				<li>Every row is <code>row_height</code> high: rows of their own heights, measured as they show, aren't there yet.</li>
 				<li>
-					One column of rows. A grid lays its rows out itself:
-					<a href={Paths.examples_checkboxes}>Million</a>, a million checkboxes, fits as many to a row as the
-					list's width takes.
+					Not yet: rows of different heights. Every row is <code>row_height</code> high; rows measured as they
+					show aren't supported.
 				</li>
-				<li>A scaled list's scrollbar reaches within a few rows of any row, not one exact pixel of it.</li>
+				<li>
+					One column of rows. A grid lays out each row itself: the
+					<a href={Paths.examples_checkboxes}>checkboxes example</a> puts a <code>{"<Repeat>"}</code> of boxes
+					in each row, as many as fit the width <code>on_view!</code> reports.
+				</li>
+				<li>
+					In a scaled list, the scrollbar reaches to within a few rows of any row, not to one exact pixel.
+				</li>
 			</ul>
+			<p>
+				The package's <a href="https://github.com/Roc-Solid/rocx/tree/master/packages/virtual">README</a> has
+				the full reference, including <code>Rows</code>, the plain-Roc arithmetic behind the list.
+			</p>
 		</NoHydration>
 	</>

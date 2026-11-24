@@ -13,8 +13,8 @@ middleware = Middlewares.member
 
 meta = { title: "Board" }
 
-## Who is asking, and every board (`GET /`). Its type is said here: in the browser's copy of the
-## app, an endpoint has none.
+## Who is asking, and every board (`GET /`), its type said here too (the endpoint's own is in
+## Generated/Api).
 home! : {} => { me : Board.Person, boards : List(Board.Summary) }
 home! = |{}| Endpoint.get!(Api.get_root({}))
 

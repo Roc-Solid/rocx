@@ -10,7 +10,7 @@ middleware = Middlewares.visitor
 
 meta = {
 	title: "Join",
-	description: "Join the members, by a name: a form that posts to a typed endpoint.",
+	description: "Join the members with a name: a form that posts to a typed endpoint.",
 	toc: [],
 }
 
@@ -21,8 +21,9 @@ view! = |_|
 				eyebrow="Members"
 				title="Join"
 			>
-				Members see a page you don't, yet. Pick a name: the form posts it to an endpoint, which sets a
-				cookie and sends you on.
+				Members see a page you can't see yet. Pick a name: the form posts it to an endpoint,
+				<code>POST /members/join</code>, which sets a <code>member</code> cookie and sends you on to the
+				members' page. It is a plain HTML form, so it works without JavaScript too.
 			</PageHero>
 			<form class="join" method="post" action={Endpoint.url_of(Api.post_members_join({}))}>
 				<input type="text" name="name" placeholder="A name" aria-label="Your name" required />
