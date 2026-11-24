@@ -2564,41 +2564,16 @@ Routes := [].{
 		Ok({ indent: head.indent, define: head.define, name: Some(quoted.text), thunk: Bool.False, end: quoted.end })
 	}
 
-	## A kind of actor's definition at `start`: `^([ \t]*)([a-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*(\|\{\}\|\s*)?
-	## Actor\.define(?:_keyed)?\((?:\s*\{\s*name:\s*"([^"]+)")?`.
+	## A kind of actor's name at `start` (D-068: a kind is a type, with `name` and `initial`):
+	## `^([ \t]*)name[ \t]*=[ \t]*\|\{\}\|\s*"([^"]+)"`.
 	actor_at : List(U8), U64 -> Try({ indent : Str, define : Str, name : [Some(Str), None], thunk : Bool, end : U64 }, [NoMatch])
 	actor_at = |bytes, start| {
 		head = Routes.definition_head(bytes, start)?
-		thunked = Text.starts_with_at(bytes, "|{}|".to_utf8(), head.after)
-		at = if (thunked) Text.skip_space(bytes, head.after + 4) else head.after
-		call =
-			if Text.starts_with_at(bytes, "Actor.define(".to_utf8(), at) {
-				"Actor.define(".to_utf8()
-			} else if Text.starts_with_at(bytes, "Actor.define_keyed(".to_utf8(), at) {
-				"Actor.define_keyed(".to_utf8()
-			} else {
-				return Err(NoMatch)
-			}
-		opened = at + call.len()
-		brace = Text.skip_space(bytes, opened)
-		named =
-			if Text.at(bytes, brace) == '{' and brace < bytes.len() {
-				field = Text.skip_space(bytes, brace + 1)
-				if Text.starts_with_at(bytes, "name:".to_utf8(), field) {
-					match Routes.quoted_at(bytes, Text.skip_space(bytes, field + 5)) {
-						Ok(quoted) => Ok(quoted)
-						Err(_) => Err(NoMatch)
-					}
-				} else {
-					Err(NoMatch)
-				}
-			} else {
-				Err(NoMatch)
-			}
-		match named {
-			Ok(quoted) => Ok({ indent: head.indent, define: head.define, name: Some(quoted.text), thunk: thunked, end: quoted.end })
-			Err(_) => Ok({ indent: head.indent, define: head.define, name: None, thunk: thunked, end: opened })
+		if head.define != "name" or !Text.starts_with_at(bytes, "|{}|".to_utf8(), head.after) {
+			return Err(NoMatch)
 		}
+		quoted = Routes.quoted_at(bytes, Text.skip_space(bytes, head.after + 4))?
+		Ok({ indent: head.indent, define: head.define, name: Some(quoted.text), thunk: Bool.False, end: quoted.end })
 	}
 
 	## A method of a kind of actor at `start`: `^([ \t]*)([a-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*(\|\{\}\|\s*)?
@@ -2616,8 +2591,8 @@ Routes := [].{
 	}
 
 	## Every definition `at` finds in `source`, as JavaScript's `matchAll` finds them: each at a
-	## line's start, the next after the last one's end; with its line. With `actors`, a kind
-	## (`Actor.define`) or a method (`Actor.method`, `method`); without, a job.
+	## line's start, the next after the last one's end; with its line. With `actors`, a kind's name
+	## (`name = |{}| "…"`) or a method (`Actor.method`, `method`); without, a job.
 	matches_in : Str, Bool -> List({ indent : Str, define : Str, name : [Some(Str), None], thunk : Bool, line : U64, method : Bool })
 	matches_in = |source, actors| {
 		bytes = source.to_utf8()
@@ -2666,7 +2641,8 @@ Routes := [].{
 	}
 
 	## The methods of the kinds of actor the app under `dir` defines (`Actor.method`: what
-	## `program.actors` lists), and what is wrong with them and with its kinds (`Actor.define`).
+	## `program.actors` lists), and what is wrong with them and with its kinds' names (two kinds
+	## with one name).
 	actors_in! : Str, Table => { actors : List(Found), problems : List(Str) }
 	actors_in! = |dir, table| {
 		found = Routes.defined_in!(dir, table, Bool.True)
@@ -2725,18 +2701,15 @@ Routes := [].{
 									Err(_) => Bool.False
 								}
 							wanted = if (is_route) "" else "\t"
-							misnamed = actors and !each.method and each.name == None
-							if each.indent != wanted or misnamed {
+							# A kind is a type (D-068), which may be anywhere: only its name is checked, for two of one.
+							is_kind = actors and !each.method
+							if !is_kind and each.indent != wanted {
 								where_it_is = if (each.indent.is_empty()) "outside its module's block" else "inside a definition"
 								tab = if (is_route) "" else "\t"
 								name = Routes.or_empty(each.name)
 								said =
-									if actors and misnamed {
-										"the kind of actor `${each.define}` doesn't start with its name: define it as `${each.define} = Actor.define({ name: \"…\", initial })`, so rocx build can check it"
-									} else if actors and each.method {
-										"the method \"${each.define}\" is defined ${where_it_is}: define it at the top of `${type_name} := [].{ … }`, as `${tab}${each.define} = Actor.method(kind, \"…\", |{ me, context, state, input }| …)`, so Generated/App can name it (`${type_name}.${each.define}`)"
-									} else if actors {
-										"the kind of actor \"${name}\" is defined ${where_it_is}: define it at the top of `${type_name} := [].{ … }`, as `${tab}${each.define} = Actor.define({ … })`, so Generated/App can name it (`${type_name}.${each.define}`)"
+									if actors and each.method {
+										"the method \"${each.define}\" is defined ${where_it_is}: define it at the top of `${type_name} := [].{ … }`, as `${tab}${each.define} = Actor.method(\"…\", |{ me, context, state, input }| …)`, so Generated/App can name it (`${type_name}.${each.define}`)"
 									} else {
 										"the job \"${name}\" is defined ${where_it_is}: define it at the top of `${type_name} := [].{ … }`, as `${tab}${each.define} = Job.define(…)`, so Generated/App can name it (`${type_name}.${each.define}`)"
 									}
@@ -2748,7 +2721,7 @@ Routes := [].{
 										Err(_) => None
 									}
 								defined = { define: each.define, name: Routes.or_empty(each.name), module_path: mod_path, file, line: each.line, route: route_mod, thunk: each.thunk }
-								$state = if (actors and !each.method) { ..$state, kinds: $state.kinds.append(defined) } else { ..$state, found: $state.found.append(defined) }
+								$state = if (is_kind) { ..$state, kinds: $state.kinds.append(defined) } else { ..$state, found: $state.found.append(defined) }
 							}
 						}
 					}

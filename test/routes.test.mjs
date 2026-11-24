@@ -447,16 +447,16 @@ test("App: the program, with the jobs the app's modules define (found by rocx bu
 	}
 });
 
-test("App: the actors' methods the app's modules define (found by rocx build), each Actor.handler, a function of {} called; their kinds checked", () => {
+test("App: the actors' methods the app's modules define (found by rocx build), each Actor.handler, a function of {} called; their kinds' names checked (D-068)", () => {
 	const dir = mkdtempSync(join(tmpdir(), "rocx-actors-"));
 	const put = (path, text) => {
 		mkdirSync(dirname(join(dir, path)), { recursive: true });
 		writeFileSync(join(dir, path), text);
 	};
 	try {
-		put("Carts.roc", 'import pf.Actor\n\nCarts := [].{\n\tcart : Actor.Kind(Str, { items : List(Str) })\n\tcart = Actor.define({\n\t\tname: "cart",\n\t\tinitial: |_| { items: [] },\n\t})\n\n\tadd = Actor.method(cart, "add", |{ state, input, .. }| { state: { items: state.items.append(input) }, reply: state.items.len() })\n\n\tmirror = |{}| Actor.method(cart, "mirror", |{ state, .. }| { state, reply: state.items })\n}\n');
-		put("routes/rooms/+server.roc", 'import pf.Actor\n\nroom = Actor.define({ name: "room", initial: |_| 0 })\n\ncount = Actor.method(room, "count", |{ state, .. }| { state, reply: state })\n\nget! = |_| Ok(1)\n');
-		put("Generated/Copy.roc", 'Copy := [].{\n\tx = Actor.method(cart, "add", |{ state, .. }| { state, reply: 0 })\n}\n');
+		put("Carts.roc", 'import pf.Actor\n\nCarts := [].{\n\tname = |{}| "cart"\n\tinitial = |_| { items: [] }\n\n\tMethod(input, reply) : Actor.Method(Carts, {}, Str, { items : List(Str) }, input, reply)\n\n\tadd : Carts.Method(Str, U64)\n\tadd = Actor.method("add", |{ state, input, .. }| { state: { items: state.items.append(input) }, reply: state.items.len() })\n\n\tmirror = |{}| Actor.method("mirror", |{ state, .. }| { state, reply: state.items })\n}\n');
+		put("routes/rooms/+server.roc", 'import pf.Actor\n\ncount = Actor.method("count", |{ state, .. }| { state, reply: state })\n\nget! = |_| Ok(1)\n');
+		put("Generated/Copy.roc", 'Copy := [].{\n\tname = |{}| "cart"\n\tx = Actor.method("add", |{ state, .. }| { state, reply: 0 })\n}\n');
 		put("Jobs.roc", 'import jobs.Job\n\nJobs := [].{\n\tdaily = Job.define("daily", |_context, {}| Ok({}))\n}\n');
 		const table = routeTable(["rooms/+server.roc"]);
 		const { actors, problems } = actorsIn(dir, table);
@@ -466,7 +466,7 @@ test("App: the actors' methods the app's modules define (found by rocx build), e
 			[
 				["add", false, "Carts", "Carts.roc", 10],
 				["mirror", true, "Carts", "Carts.roc", 12],
-				["count", false, "Generated/RoomsServer", "routes/rooms/+server.roc", 5],
+				["count", false, "Generated/RoomsServer", "routes/rooms/+server.roc", 3],
 			],
 			"the methods, not the kinds",
 		);
@@ -475,14 +475,13 @@ test("App: the actors' methods the app's modules define (found by rocx build), e
 		assert.match(app, /^import jobs\.Job\nimport pf\.Actor\nimport Routes\nimport \.\.\/Carts as Carts\nimport \.\.\/Jobs as Jobs\nimport RoomsServer\n/m, "each module once, jobs' and actors' alike");
 		assert.match(app, /^\tjobs = \[Job\.handler\(Jobs\.daily\)\]$/m);
 		assert.match(app, /\t\tmigrations: \[\],\n\t\tactors: \[Actor\.handler\(Carts\.add\), Actor\.handler\(Carts\.mirror\(\{\}\)\), Actor\.handler\(RoomsServer\.count\)\],\n/);
-		// A kind or a method outside its module's block, a kind whose name isn't first, or two kinds with one name (one keyed, D-067): refused.
-		put("Loose.roc", 'import pf.Actor\n\nloose = Actor.define({ name: "loose", initial: |_| 0 })\n\nLoose := [].{\n\tunnamed = Actor.define({ initial: |_| 0, name: "unnamed" })\n\tpoke = Actor.method(unnamed, "poke", |{ state, .. }| { state, reply: {} })\n}\n\nstray = Actor.method(loose, "stray", |{ state, .. }| { state, reply: {} })\n');
-		put("Again.roc", 'Again := [].{\n\tagain = Actor.define_keyed({ name: "cart", initial: |_| 0 })\n}\n');
+		// A method outside its module's block, or two kinds with one name: refused. A kind is a type,
+		// which may be anywhere.
+		put("Loose.roc", 'import pf.Actor\n\nLoose := [].{\n\tname = |{}| "loose"\n\tinitial = |_| 0\n}\n\nstray = Actor.method("stray", |{ state, .. }| { state, reply: {} })\n');
+		put("Again.roc", 'Again := [].{\n\tname = |{}| "cart"\n\tinitial = |_| 0\n}\n');
 		assert.deepEqual(actorsIn(dir, table).problems, [
-			'Loose.roc:3: the kind of actor "loose" is defined outside its module\'s block: define it at the top of `Loose := [].{ … }`, as `\tloose = Actor.define({ … })`, so Generated/App can name it (`Loose.loose`)',
-			'Loose.roc:6: the kind of actor `unnamed` doesn\'t start with its name: define it as `unnamed = Actor.define({ name: "…", initial })`, so rocx build can check it',
-			'Loose.roc:10: the method "stray" is defined outside its module\'s block: define it at the top of `Loose := [].{ … }`, as `\tstray = Actor.method(kind, "…", |{ me, context, state, input }| …)`, so Generated/App can name it (`Loose.stray`)',
-			'Carts.roc:5: there is a kind of actor called "cart" already (Again.roc:2): the host finds an actor\'s kind by its name, and keeps its state under it, so give each its own',
+			'Loose.roc:8: the method "stray" is defined outside its module\'s block: define it at the top of `Loose := [].{ … }`, as `\tstray = Actor.method("…", |{ me, context, state, input }| …)`, so Generated/App can name it (`Loose.stray`)',
+			'Carts.roc:4: there is a kind of actor called "cart" already (Again.roc:2): the host finds an actor\'s kind by its name, and keeps its state under it, so give each its own',
 		]);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });

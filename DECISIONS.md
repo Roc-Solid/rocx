@@ -4102,3 +4102,49 @@ given the key typed, `initial` the number, a timer finding its actor by the key'
 database naming each by its `to_str`.
 
 **Reversible:** yes: every annotation loses its key again.
+
+**Since D-068:** a kind is a type with `name` and `initial`, and a key needs `to_str` and
+`from_quote` (`Actor.Keyed`), so `define` and `define_keyed` are gone.
+
+## D-068 A kind of actor is a type; a method is called on the method
+
+**Status.** Built (2026-11-24).
+
+**Context.** A kind was a value made by `Actor.define` or `Actor.define_keyed`, and its methods
+named it (`Actor.method(Rooms.room, "join", …)`): a module was a namespace holding the kind and its
+methods, and calls went through the module `Actor`: `Actor.ask!(Rooms.join, code, input)`. A timer
+to another kind's method compiled and crashed the turn at run time. Roc has no interfaces, but
+static dispatch and where aliases (named groups of method requirements, met by any type that has
+the methods) do the same work.
+
+**Options.**
+1. Keep kinds as values; name the key's requirement (`Actor.Keyed`).
+2. A kind is a type with `name` and `initial` (`Actor.Kind`, a where alias); `Method` and `Me`
+   nominal, with methods: `Rooms.join.ask!(code, input)`, `me.after!(ms, method, input)`.
+3. Methods generated from an actor module in `.rocx`: `Rooms.join!(code, input)`, no name strings.
+
+**Choice.** 2 (the user's).
+- `kind.Kind(key, state) : where [kind.name : {} -> Str, kind.initial : key -> state]`: the module's
+  type is the kind (`Rooms := [].{ name = |{}| "room"  initial = |_code| … }`); nothing declares
+  it. A where requirement is a function, hence `name = |{}| "room"`.
+- `key.Keyed : where [key.to_str : key -> Str, key.from_quote : Str -> Try(key, [BadQuotedBytes(Str)])]`:
+  `from_quote` is what reads a key back (`Str` has it, and no `from_str`), and lets a string literal
+  be a key, checked as the app is built. The numbers have none: a number key is a type of the app's
+  over one. A where alias constrains only its receiver, so a use says both
+  (`where [kind.Kind(key, state), key.Keyed]`).
+- `Actor.Method(kind, context, key, state, input, reply)`, nominal, with `ask!`, `tell!` and
+  `tell_after!` called on it; `Actor.method(name, run!)` takes no kind: its annotation says whose it
+  is (`Rooms.Method(Str, Game.Seat)`, the kind's alias), so a method needs one.
+- `Actor.Me(kind, key, state)`, nominal: `me.key()`, and `me.after!(ms, method, input)` takes only a
+  method of its own kind, a type error otherwise (D-066 crashed the turn).
+- `Actor.Turn(kind, context, key, state, input)`; `Actor.handler`, `Actor.cancel!` as before.
+- `rocx build` finds kinds by their name (`name = |{}| "…"`) for its check that each is its own; a
+  type may be anywhere, so their placement isn't checked.
+
+**Why.** The kind is the module, as it reads; a call reads as the method it calls; the compiler
+checks what a kind has (`Actor.Kind`), what a key has (`Actor.Keyed`), and that a timer calls its
+own kind. The names stay strings (`Actor.method("join", …)`): Roc can't give a value its binding's
+name, and option 3 would make every actor module `.rocx`. `name` and `initial` take those names in
+a kind's block, so a local of the same name shadows them.
+
+**Reversible:** yes: every kind becomes a value again and every call goes back through `Actor`.

@@ -21,7 +21,7 @@ Entry := [].{
 	join! : Visitor.Context, Str, Str => Try({}, Endpoint.Refusal)
 	join! = |context, code, name| {
 		me = Visitor.id!(context)
-		match Actor.ask!(Rooms.join, code, { visitor: me.visitor, name }) {
+		match Rooms.join.ask!(code, { visitor: me.visitor, name }) {
 			Ok(Joined(_)) => Err(Answer(Visitor.remembered(Server.redirect(Paths.play_code({ code: code })), me)))
 			Ok(Unjoined(why)) => Err(Issues.refusal([Entry.issue(why)]))
 			Err(ActorErr(_)) => Err(Status(503, "The room didn't answer. Try again."))
@@ -57,7 +57,7 @@ Entry := [].{
 					$tries = $tries + 1
 					candidate = Codes.from_bytes(Random.bytes!(8))
 					if Codes.parse(candidate).is_ok() {
-						match Actor.ask!(Rooms.open, candidate, opening) {
+						match Rooms.open.ask!(candidate, opening) {
 							Ok(Opened) => {
 								$code = candidate
 							}

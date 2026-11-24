@@ -700,45 +700,51 @@ The host answers the tab's stream itself, on the async side, holding no thread o
 Carts := [].{
     State : { items : List(Str) }
 
-    # The methods' type, once: the app's context (its init!'s), the key, the state.
-    Method(input, reply) : Actor.Method({}, Str, Carts.State, input, reply)
+    # The kind (D-068): its name (its actors' state is kept under it) and a new cart.
+    name = |{}| "cart"
+    initial = |_member| { items: [] }
 
-    cart : Actor.Kind(Str, Carts.State)
-    cart = Actor.define({ name: "cart", initial: |_member| { items: [] } })
+    # Its methods' type, once: the kind, the app's context (its init!'s), the key, the state.
+    Method(input, reply) : Actor.Method(Carts, {}, Str, Carts.State, input, reply)
 
     add : Carts.Method(Str, U64)
-    add = Actor.method(Carts.cart, "add", |{ state, input, .. }| { state: { items: state.items.append(input) }, reply: state.items.len() + 1 })
+    add = Actor.method("add", |{ state, input, .. }| { state: { items: state.items.append(input) }, reply: state.items.len() + 1 })
 
     clear : Carts.Method({}, {})
-    clear = Actor.method(Carts.cart, "clear", |{ .. }| { state: { items: [] }, reply: {} })
+    clear = Actor.method("clear", |{ .. }| { state: { items: [] }, reply: {} })
 }
 
-count = Actor.ask!(Carts.add, member, "a book")?        # waits for the reply: a U64
-Actor.tell!(Carts.clear, member, {})                    # doesn't
-timer = Actor.tell_after!(Carts.clear, member, 60_000, {})
+count = Carts.add.ask!(member, "a book")?        # waits for the reply: a U64
+Carts.clear.tell!(member, {})                    # doesn't
+timer = Carts.clear.tell_after!(member, 60_000, {})
 Actor.cancel!(timer)
 ```
 
-A key is text (`Actor.define`), or a type of the app's own (`Actor.define_keyed`, D-067): one with
-`to_str`, which names its actor (in the host, the log and the database: what it makes of a key is
-the key, for as long as the actor's state is kept), and `from_str`, which reads that back; the
-numbers have both. A turn is given the key as it is typed (`Actor.key_of(me)`), and so is
-`initial`, so an actor matches on its key rather than parsing it:
+A kind of actor is a type of the app's (D-068): one with `name`, unique in the app, and `initial`,
+the state of a new actor from its key (`Actor.Kind`, a where alias: nothing declares it, a type
+that has the two is one). Its methods are values, each called `Actor.method(name, run!)` and
+annotated with its kind's `Method`, which is what says whose it is, and called on the method:
+`ask!`, `tell!`, `tell_after!`.
+
+A key is any type with `to_str`, which names its actor (in the host, the log and the database:
+what it makes of a key is the key, for as long as the actor's state is kept), and `from_quote`,
+which reads that back (`Actor.Keyed`, D-067). `Str` has both; a type of the app's adds them, and
+`from_quote` also lets a string literal be a key, checked as the app is built. A turn is given the
+key as it is typed (`me.key()`), and so is `initial`, so an actor matches on its key rather than
+parsing it:
 
 ```roc
 Key := [YouTube, Instagram(Str)].{
     to_str = |key| match key { YouTube => "youtube"  Instagram(id) => "instagram:${id}" }
-    from_str = |text| …                                  # Try(Key, _): "youtube" back to YouTube
+    from_quote = |written| …                           # Try(Key, [BadQuotedBytes(Str)])
 }
 
-quota : Actor.Kind(Key, State)
-quota = Actor.define_keyed({ name: "quota", initial: |_key| fresh })
-
-Actor.ask!(Quota.reserve, Instagram(account), { units: 1, limit })   # a post's id here doesn't compile
+Quota.reserve.ask!(Instagram(account), { units: 1, limit })   # a post's id here doesn't compile
+Quota.reserve.ask!("youtube", { units: 1, limit })            # a literal, read when the app is built
 ```
 
-A module names its kind's methods' type once, as `Carts.Method` above: the app's context comes
-first, and an app knows its own. A package doesn't, so its alias keeps the context a parameter
+A kind names its methods' type once, as `Carts.Method` above: the app's context comes second, and
+an app knows its own. A package doesn't, so its alias keeps the context a parameter
 (`Method(context, input, reply)`), written `_` where it is used (`Otel.Method(_, …)`).
 
 An actor is a kind and a key, and nobody makes or ends one: a call to any key finds it as its last
@@ -754,11 +760,11 @@ table is its alone, and the tasks talk over channels (`tokio::sync::mpsc`, unbou
 `oneshot`). So what one sender sends an actor is taken in the order it was sent, and a hundred asks
 at once each see the state the one before left.
 
-A method is given the actor itself (`me`): its key (`Actor.key_of`), and its own timers
-(`Actor.after!(me, ms, method, input)`, a method of its own kind; a timer every so often is one
-that sets the next, a method that names itself being a function of `{}`). `rocx build` lists the
-methods an app's modules define (`Actor.method`, at the top of a module's block) in
-`program.actors`, and checks its kinds (`Actor.define`, `Actor.define_keyed`, there too, `name` first, each its own); two
+A method is given the actor itself (`me`): its key (`me.key()`), and its own timers
+(`me.after!(ms, method, input)`: a method of its own kind, another kind's doesn't compile; a timer
+every so often is one that sets the next, a method that names itself being a function of `{}`).
+`rocx build` lists the methods an app's modules define (`Actor.method`, at the top of a module's
+block) in `program.actors`, and checks its kinds' names (`name = |{}| "…"`), each its own; two
 methods of one kind with one name stop the server as it starts, and the host refuses a call to a
 kind not there. A call crosses to the host as the method's name and its input as JSON, and replies
 and state as JSON too: an input a method doesn't take (a caller built against an older kind, say),

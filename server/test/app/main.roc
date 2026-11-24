@@ -64,7 +64,7 @@ program = {
 	# The app's schema, in the executable: applied once each, in order, when the server starts.
 	migrations: [{ name: "0001_tables.sql", sql: tables }, { name: "0002_note_index.sql", sql: note_index }, { name: "0003_admin.sql", sql: admin_tables }],
 	# The actors' methods (`rocx build` lists them for an app it builds).
-	actors: [Actor.handler(counter_add), Actor.handler(counter_get), Actor.handler(counter_boom), Actor.handler(counter_nap), Actor.handler(mirror_relay), Actor.handler(mirror_itself), Actor.handler(mirror_cycle), Actor.handler(bouncer_back), Actor.handler(ticker_start), Actor.handler(ticker_tick({})), Actor.handler(ticker_stop), Actor.handler(ticker_ticks)],
+	actors: [Actor.handler(Counter.add), Actor.handler(Counter.get), Actor.handler(Counter.boom), Actor.handler(Counter.nap), Actor.handler(Mirror.relay), Actor.handler(Mirror.itself), Actor.handler(Mirror.cycle), Actor.handler(Bouncer.back), Actor.handler(Ticker.start), Actor.handler(Ticker.tick({})), Actor.handler(Ticker.stop), Actor.handler(Ticker.ticks)],
 	# The log's format: `ROCX_LOG` if it's set, or else pretty on a terminal and JSON elsewhere.
 	logs: { format: Auto },
 	# The plugins (`plugins`): their routes answer in `respond!` (`Plugin.respond!`), the platform
@@ -719,17 +719,17 @@ route! = |request, context| {
 		}
 
 		# ---- Actors ----
-		("POST", "/actors/boom") => answered_actor(Actor.ask!(counter_boom, run, {}))
-		("POST", "/actors/self") => answered_actor(Actor.ask!(mirror_itself, run, run))
-		("POST", "/actors/relay") => answered_actor(Actor.ask!(mirror_relay, run, run))
-		("POST", "/actors/cycle") => answered_actor(Actor.ask!(mirror_cycle, run, run))
+		("POST", "/actors/boom") => answered_actor(Counter.boom.ask!(run, {}))
+		("POST", "/actors/self") => answered_actor(Mirror.itself.ask!(run, run))
+		("POST", "/actors/relay") => answered_actor(Mirror.relay.ask!(run, run))
+		("POST", "/actors/cycle") => answered_actor(Mirror.cycle.ask!(run, run))
 		("POST", "/actors/tell") => {
-			Actor.tell!(counter_add, run, I64.from_str(param(request.query, "by")) ?? 1)
+			Counter.add.tell!(run, I64.from_str(param(request.query, "by")) ?? 1)
 			text(200, "told")
 		}
 		("POST", "/actors/later") => {
 			ms = U64.from_str(param(request.query, "ms")) ?? 100
-			timer = Actor.tell_after!(counter_add, run, ms, I64.from_str(param(request.query, "by")) ?? 1)
+			timer = Counter.add.tell_after!(run, ms, I64.from_str(param(request.query, "by")) ?? 1)
 			text(200, timer.to_str())
 		}
 		("POST", "/actors/cancel") => {
@@ -737,7 +737,7 @@ route! = |request, context| {
 			text(200, "cancelled")
 		}
 		# The counter's turn taking `ms` milliseconds (Postgres sleeps): what is sent meanwhile waits.
-		("POST", "/actors/nap") => answered_actor(Actor.ask!(counter_nap, run, I64.from_str(param(request.query, "ms")) ?? 100))
+		("POST", "/actors/nap") => answered_actor(Counter.nap.ask!(run, I64.from_str(param(request.query, "ms")) ?? 100))
 		# The timers kept for the counter called `run` (D-057).
 		("GET", "/actors/timers") => {
 			kept : Try(List({ timers : I64 }), [DbErr(Str), BadRow(Str)])
@@ -748,16 +748,16 @@ route! = |request, context| {
 				Err(BadRow(why)) => text(500, why)
 			}
 		}
-		("POST", "/actors/wrong") => answered_actor(Actor.ask!(stale_add, run, "to what?"))
-		("POST", "/actors/missing") => answered_actor(Actor.ask!(counter_reset, run, {}))
+		("POST", "/actors/wrong") => answered_actor(stale_add.ask!(run, "to what?"))
+		("POST", "/actors/missing") => answered_actor(counter_reset.ask!(run, {}))
 		("POST", "/actors/wrong-tell") => {
-			Actor.tell!(stale_add, run, "to what?")
+			stale_add.tell!(run, "to what?")
 			text(200, "told")
 		}
-		("POST", "/actors/ghost") => answered_actor(Actor.ask!(ghost_add, run, 1))
-		("POST", "/actors/tick/start") => answered_actor(Actor.ask!(ticker_start, run, U64.from_str(param(request.query, "ms")) ?? 20))
-		("POST", "/actors/tick/stop") => answered_actor(Actor.ask!(ticker_stop, run, {}))
-		("GET", "/actors/tick") => answered_actor(Actor.ask!(ticker_ticks, run, {}))
+		("POST", "/actors/ghost") => answered_actor(Ghost.add.ask!(run, 1))
+		("POST", "/actors/tick/start") => answered_actor(Ticker.start.ask!(run, U64.from_str(param(request.query, "ms")) ?? 20))
+		("POST", "/actors/tick/stop") => answered_actor(Ticker.stop.ask!(run, {}))
+		("GET", "/actors/tick") => answered_actor(Ticker.ticks.ask!(run, {}))
 		("POST", "/actors/poke") =>
 			# The counter's state, written to Postgres behind its back: an actor that is awake keeps
 			# the state it has; one let go reads this when it wakes.
@@ -768,9 +768,9 @@ route! = |request, context| {
 		("POST", path) if path.starts_with("/actors/count/") => {
 			by : I64
 			by = I64.from_str(param(request.query, "by")) ?? 1
-			answered_actor(Actor.ask!(counter_add, after(path, "/actors/count/"), by))
+			answered_actor(Counter.add.ask!(after(path, "/actors/count/"), by))
 		}
-		("GET", path) if path.starts_with("/actors/count/") => answered_actor(Actor.ask!(counter_get, after(path, "/actors/count/"), {}))
+		("GET", path) if path.starts_with("/actors/count/") => answered_actor(Counter.get.ask!(after(path, "/actors/count/"), {}))
 
 		# ---- Endpoint reads: a page reads GET endpoints as the server renders it (D-023) ----
 		("GET", "/reads") if !Server.wants_html(request) => Endpoint.respond!(reads_endpoint, request, {})
@@ -1503,71 +1503,85 @@ slow_job = Job.define_with(
 
 # ---- Actors ----
 
-## A count, one per key, that outlives requests and restarts.
-counter : Actor.Kind(Str, { count : I64 })
-counter = Actor.define({ name: "counter", initial: |_key| { count: 0 } })
+## A count, one per key, that outlives requests and restarts: a kind (D-068, a type with `name` and
+## `initial`) and its methods.
+Counter := [].{
+	name = |{}| "counter"
+	initial = |_key| { count: 0 }
 
-## Adds `input` to the count: the count after.
-counter_add : Actor.Method(_, Str, { count : I64 }, I64, I64)
-counter_add = Actor.method(counter, "add", |{ state, input, .. }| { state: { count: state.count + input }, reply: state.count + input })
+	## The type of its methods: the kind, the app's context (`--context-file`'s text), the key, the
+	## count; then each one's input and reply.
+	Method(input, reply) : Actor.Method(Counter, Str, Str, { count : I64 }, input, reply)
 
-## The count.
-counter_get : Actor.Method(_, Str, { count : I64 }, {}, I64)
-counter_get = Actor.method(counter, "get", |{ state, .. }| { state, reply: state.count })
+	## Crashes: the state stays as it was.
+	boom : Counter.Method({}, I64)
+	boom = Actor.method("boom", |{ state, .. }| if (state.count >= 0) crash "an actor that crashed" else { state, reply: 0 })
 
-## Crashes: the state stays as it was.
-counter_boom : Actor.Method(_, Str, { count : I64 }, {}, I64)
-counter_boom = Actor.method(counter, "boom", |{ state, .. }| if (state.count >= 0) crash "an actor that crashed" else { state, reply: 0 })
+	## A turn taking `input` milliseconds (Postgres sleeps).
+	nap : Counter.Method(I64, I64)
+	nap = Actor.method(
+		"nap",
+		|{ state, input, .. }| {
+			napped : Try(List({ one : I64 }), [DbErr(Str), BadRow(Str)])
+			napped = Db.all!("select 1::int8 as one from pg_sleep($1::float8 / 1000)", [Int(input)])
+			_ = napped
+			{ state, reply: state.count }
+		},
+	)
 
-## A turn taking `input` milliseconds (Postgres sleeps).
-counter_nap : Actor.Method(_, Str, { count : I64 }, I64, I64)
-counter_nap = Actor.method(
-	counter,
-	"nap",
-	|{ state, input, .. }| {
-		napped : Try(List({ one : I64 }), [DbErr(Str), BadRow(Str)])
-		napped = Db.all!("select 1::int8 as one from pg_sleep($1::float8 / 1000)", [Int(input)])
-		_ = napped
-		{ state, reply: state.count }
-	},
-)
+	## Adds `input` to the count: the count after.
+	add : Counter.Method(I64, I64)
+	add = Actor.method("add", |{ state, input, .. }| { state: { count: state.count + input }, reply: state.count + input })
+
+	## The count.
+	get : Counter.Method({}, I64)
+	get = Actor.method("get", |{ state, .. }| { state, reply: state.count })
+}
 
 ## The counter's `add` as a caller built against an older version of it would see it: the same kind
 ## and method, an input it doesn't take. Not in `program.actors`: the counter's `add` gets the call.
-stale_add : Actor.Method(_, Str, { count : I64 }, Str, I64)
-stale_add = Actor.method(counter, "add", |{ state, .. }| { state, reply: state.count })
+stale_add : Counter.Method(Str, I64)
+stale_add = Actor.method("add", |{ state, .. }| { state, reply: state.count })
 
 ## A method the counter doesn't have (a caller built against a newer version of it).
-counter_reset : Actor.Method(_, Str, { count : I64 }, {}, I64)
-counter_reset = Actor.method(counter, "reset", |{ .. }| { state: { count: 0 }, reply: 0 })
+counter_reset : Counter.Method({}, I64)
+counter_reset = Actor.method("reset", |{ .. }| { state: { count: 0 }, reply: 0 })
 
 ## A kind the app doesn't list: the host refuses a call to it.
-ghost : Actor.Kind(Str, {})
-ghost = Actor.define({ name: "ghost", initial: |_key| {} })
+Ghost := [].{
+	name = |{}| "ghost"
+	initial = |_key| {}
 
-ghost_add : Actor.Method(_, Str, {}, I64, I64)
-ghost_add = Actor.method(ghost, "add", |{ state, .. }| { state, reply: 0 })
+	add : Actor.Method(Ghost, Str, Str, {}, I64, I64)
+	add = Actor.method("add", |{ state, .. }| { state, reply: 0 })
+}
 
 ## Asks others: the counter of the same key (`relay`), itself (`itself`, which it can't), or the
 ## bouncer, which asks it back (`cycle`, which the bouncer can't).
-mirror : Actor.Kind(Str, {})
-mirror = Actor.define({ name: "mirror", initial: |_key| {} })
+Mirror := [].{
+	name = |{}| "mirror"
+	initial = |_key| {}
 
-mirror_relay : Actor.Method(_, Str, {}, Str, I64)
-mirror_relay = Actor.method(mirror, "relay", |{ state, input, .. }| { state, reply: asked(Actor.ask!(counter_get, input, {})) })
+	Method(input, reply) : Actor.Method(Mirror, Str, Str, {}, input, reply)
 
-mirror_itself : Actor.Method(_, Str, {}, Str, I64)
-mirror_itself = Actor.method(mirror, "itself", |{ state, input, .. }| { state, reply: asked(Actor.ask!(mirror_relay, input, input)) })
+	relay : Mirror.Method(Str, I64)
+	relay = Actor.method("relay", |{ state, input, .. }| { state, reply: asked(Counter.get.ask!(input, {})) })
 
-mirror_cycle : Actor.Method(_, Str, {}, Str, I64)
-mirror_cycle = Actor.method(mirror, "cycle", |{ state, input, .. }| { state, reply: asked(Actor.ask!(bouncer_back, input, input)) })
+	itself : Mirror.Method(Str, I64)
+	itself = Actor.method("itself", |{ state, input, .. }| { state, reply: asked(Mirror.relay.ask!(input, input)) })
+
+	cycle : Mirror.Method(Str, I64)
+	cycle = Actor.method("cycle", |{ state, input, .. }| { state, reply: asked(Bouncer.back.ask!(input, input)) })
+}
 
 ## Asks the mirror of the same key: asked by it, that waits forever, so it is refused.
-bouncer : Actor.Kind(Str, {})
-bouncer = Actor.define({ name: "bouncer", initial: |_key| {} })
+Bouncer := [].{
+	name = |{}| "bouncer"
+	initial = |_key| {}
 
-bouncer_back : Actor.Method(_, Str, {}, Str, I64)
-bouncer_back = Actor.method(bouncer, "back", |{ state, input, .. }| { state, reply: asked(Actor.ask!(mirror_relay, input, input)) })
+	back : Actor.Method(Bouncer, Str, Str, {}, Str, I64)
+	back = Actor.method("back", |{ state, input, .. }| { state, reply: asked(Mirror.relay.ask!(input, input)) })
+}
 
 ## What another actor answered; its refusal crashes the turn, which tells the asker why.
 asked : Try(I64, [ActorErr(Str)]) -> I64
@@ -1578,39 +1592,41 @@ asked = |answer|
 	}
 
 ## Counts its own ticks: `start` sets a timer for itself, and each tick sets the next
-## (`Actor.after!`) until `stop` cancels the one waiting (`Actor.cancel!`).
-ticker : Actor.Kind(Str, { ticks : I64, timer : U64, on : Bool })
-ticker = Actor.define({ name: "ticker", initial: |_key| { ticks: 0, timer: 0, on: Bool.False } })
+## (`me.after!`) until `stop` cancels the one waiting (`Actor.cancel!`).
+Ticker := [].{
+	name = |{}| "ticker"
+	initial = |_key| { ticks: 0, timer: 0, on: Bool.False }
 
-ticker_start : Actor.Method(_, Str, { ticks : I64, timer : U64, on : Bool }, U64, I64)
-ticker_start = Actor.method(ticker, "start", |{ me, state, input, .. }| { state: { ticks: state.ticks, timer: Actor.after!(me, input, ticker_tick({}), input), on: Bool.True }, reply: state.ticks })
+	Method(input, reply) : Actor.Method(Ticker, Str, Str, { ticks : I64, timer : U64, on : Bool }, input, reply)
 
-## A tick sets the next: a method that names itself, so a function of `{}`.
-ticker_tick : {} -> Actor.Method(_, Str, { ticks : I64, timer : U64, on : Bool }, U64, I64)
-ticker_tick = |{}|
-	Actor.method(
-		ticker,
-		"tick",
-		|{ me, state, input, .. }|
-			if (state.on) {
-				{ state: { ticks: state.ticks + 1, timer: Actor.after!(me, input, ticker_tick({}), input), on: Bool.True }, reply: state.ticks + 1 }
-			} else {
-				{ state, reply: state.ticks }
-			},
+	start : Ticker.Method(U64, I64)
+	start = Actor.method("start", |{ me, state, input, .. }| { state: { ticks: state.ticks, timer: me.after!(input, Ticker.tick({}), input), on: Bool.True }, reply: state.ticks })
+
+	## A tick sets the next: a method that names itself, so a function of `{}`.
+	tick : {} -> Ticker.Method(U64, I64)
+	tick = |{}|
+		Actor.method(
+			"tick",
+			|{ me, state, input, .. }|
+				if (state.on) {
+					{ state: { ticks: state.ticks + 1, timer: me.after!(input, Ticker.tick({}), input), on: Bool.True }, reply: state.ticks + 1 }
+				} else {
+					{ state, reply: state.ticks }
+				},
+		)
+
+	stop : Ticker.Method({}, I64)
+	stop = Actor.method(
+		"stop",
+		|{ state, .. }| {
+			Actor.cancel!(state.timer)
+			{ state: { ticks: state.ticks, timer: 0, on: Bool.False }, reply: state.ticks }
+		},
 	)
 
-ticker_stop : Actor.Method(_, Str, { ticks : I64, timer : U64, on : Bool }, {}, I64)
-ticker_stop = Actor.method(
-	ticker,
-	"stop",
-	|{ state, .. }| {
-		Actor.cancel!(state.timer)
-		{ state: { ticks: state.ticks, timer: 0, on: Bool.False }, reply: state.ticks }
-	},
-)
-
-ticker_ticks : Actor.Method(_, Str, { ticks : I64, timer : U64, on : Bool }, {}, I64)
-ticker_ticks = Actor.method(ticker, "ticks", |{ state, .. }| { state, reply: state.ticks })
+	ticks : Ticker.Method({}, I64)
+	ticks = Actor.method("ticks", |{ state, .. }| { state, reply: state.ticks })
+}
 
 # ---- Components the server renders, and the endpoints they read ----
 

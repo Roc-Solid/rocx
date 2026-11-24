@@ -76,7 +76,7 @@ development.
 
 **How it works.** Each instrument's sums are an actor's state (`Otel.meter`, keyed by the
 instrument's name). A measurement is a `tell!` of its `measured` method, so the request doesn't wait
-for it. The actor sets itself a timer (`Actor.after!`, calling its `exported`) and sends its sums
+for it. The actor sets itself a timer (`me.after!`, calling its `exported`) and sends its sums
 when it fires, as OTLP/HTTP JSON (`Otlp`). The
 sums are cumulative since the actor started, so a send that fails loses nothing: the next one has it
 all, and the failure is logged (`otel: the metrics couldn't be sent`). With a database, the

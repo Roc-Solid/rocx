@@ -6,7 +6,7 @@
 ## turns, and reads going on beside one; what is notified, heard once its transaction commits; a
 ## plugin's migrations for SQLite alone; an actor's state, kept; jobs (queued in a transaction or
 ## not, tried again, keyed, cancelled, moved, cut off past their time limit), cron, and the jobs page.
-app [program] { pf: platform "../../platform/main.roc", admin: "../../../packages/admin/main.roc", jobs: "../../../packages/jobs/main.roc" }
+app [program] { admin: "../../../packages/admin/main.roc", jobs: "../../../packages/jobs/main.roc", pf: platform "../../platform/main.roc" }
 
 import admin.Admin
 import admin.AdminPage
@@ -31,7 +31,7 @@ program = {
 	# A file beside where the server starts, unless --database-url says `sqlite:<path>`.
 	database: Sqlite("data/sqlite-test.db"),
 	migrations: [{ name: "0001_tables.sql", sql: tables }, { name: "0002_admin.sql", sql: admin_tables }],
-	actors: [Actor.handler(counter_add)],
+	actors: [Actor.handler(Counter.add)],
 	logs: { format: Auto },
 	plugins: plugins.map(Plugin.running),
 	routes: [],
@@ -42,13 +42,11 @@ program = {
 ## migration for each database (the server applies SQLite's) and one for any.
 plugins : List(Plugin.Value(Str, Str))
 plugins = [
-	Job.plugin(
-		{
-			jobs: [Job.handler(note_job), Job.handler(flaky_job), Job.handler(slow_job), Job.handler(tick_job)],
-			crons: [Cron.every("* * * * * *", tick_job, {})],
-			retry_ms: 20,
-		},
-	),
+	Job.plugin({
+		jobs: [Job.handler(note_job), Job.handler(flaky_job), Job.handler(slow_job), Job.handler(tick_job)],
+		crons: [Cron.every("* * * * * *", tick_job, {})],
+		retry_ms: 20,
+	}),
 	JobsPage.plugin({ at: "/admin/jobs", guard: Middleware.make(|request, context, next!| next!(request, context)), back: { label: "Tests", href: "/" } }),
 	{
 		name: "lite",
@@ -61,12 +59,15 @@ plugins = [
 	},
 ]
 
-counter : Actor.Kind(Str, { count : I64 })
-counter = Actor.define({ name: "counter", initial: |_key| { count: 0 } })
+## A count, one per key: a kind (D-068, a type with `name` and `initial`) and its one method.
+Counter := [].{
+	name = |{}| "counter"
+	initial = |_key| { count: 0 }
 
-## Adds `input` to the count: the count after.
-counter_add : Actor.Method(_, Str, { count : I64 }, I64, I64)
-counter_add = Actor.method(counter, "add", |{ state, input, .. }| { state: { count: state.count + input }, reply: state.count + input })
+	## Adds `input` to the count: the count after.
+	add : Actor.Method(Counter, Str, Str, { count : I64 }, I64, I64)
+	add = Actor.method("add", |{ state, input, .. }| { state: { count: state.count + input }, reply: state.count + input })
+}
 
 ## A plugin's route, or the app's.
 respond! : Server.Request, Str => Server.Response
@@ -161,7 +162,7 @@ route! = |request, context| {
 			outcome = Db.transaction!(
 				|{}| {
 					_ = Db.run!("insert into items (name) values ($1)", [Text(name)])?
-					if failing Err(DbErr("on purpose")) else Ok({})
+					if (failing) Err(DbErr("on purpose")) else Ok({})
 				},
 			)
 			match outcome {
@@ -186,7 +187,7 @@ route! = |request, context| {
 		("POST", "/bump") => {
 			pause = number(query, "ms")
 			# The counter `name` (hits unless it says), made at 0 when missing.
-			named = if param(query, "name").is_empty() "hits" else param(query, "name")
+			named = if (param(query, "name").is_empty()) "hits" else param(query, "name")
 			_ = Db.run!("insert into counters (name, value) values ($1, 0) on conflict (name) do nothing", [Text(named)])
 			bumped = Db.transaction!(
 				|{}| {
@@ -260,7 +261,7 @@ route! = |request, context| {
 						Db.transaction!(
 							|{}| {
 								_ = Db.notify!("pings", payload)?
-								if payload != "" crash "a crash in a transaction" else Ok({})
+								if (payload != "") crash "a crash in a transaction" else Ok({})
 							},
 						),
 					)
@@ -282,13 +283,13 @@ route! = |request, context| {
 
 		# ---- An actor's state, kept in the database ----
 		("POST", "/actors/add") =>
-			match Actor.ask!(counter_add, param(query, "key"), 1) {
+			match Counter.add.ask!(param(query, "key"), 1) {
 				Ok(count) => text(200, count.to_str())
 				Err(ActorErr(why)) => text(500, why)
 			}
 		# A timer (D-057): the counter told to add `by` in `ms` milliseconds; kept in the file.
 		("POST", "/actors/later") => {
-			timer = Actor.tell_after!(counter_add, param(query, "key"), number(query, "ms"), U64.to_i64_wrap(number(query, "by")))
+			timer = Counter.add.tell_after!(param(query, "key"), number(query, "ms"), U64.to_i64_wrap(number(query, "by")))
 			text(200, timer.to_str())
 		}
 		("POST", "/actors/cancel") => {
@@ -296,7 +297,7 @@ route! = |request, context| {
 			text(200, "cancelled")
 		}
 		("GET", "/actors/count") =>
-			match Actor.ask!(counter_add, param(query, "key"), 0) {
+			match Counter.add.ask!(param(query, "key"), 0) {
 				Ok(count) => text(200, count.to_str())
 				Err(ActorErr(why)) => text(500, why)
 			}
@@ -315,7 +316,7 @@ route! = |request, context| {
 			outcome = Db.transaction!(
 				|{}| {
 					Job.enqueue!(note_job, { said: said }, { when: Now })?
-					if failing Err(JobErr("on purpose")) else Ok({})
+					if (failing) Err(JobErr("on purpose")) else Ok({})
 				},
 			)
 			match outcome {

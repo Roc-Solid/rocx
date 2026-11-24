@@ -40,7 +40,7 @@ buttons only the host's.
 
 | Feature | Where |
 |---|---|
-| One actor per room (D-021): the room's state, one message at a time; typed `ask!` and `tell!`; its own timers (`Actor.after!`, `Actor.cancel!`) closing each question and moving each reveal on | `Rooms.roc` (`kind`, `turn!`, `timed!`) |
+| One actor per room (D-021): `Rooms` is the kind (D-068), the room's state taken one turn at a time; ten methods, each its own reply, asked and told on the method (`Rooms.join.ask!`, `Rooms.beat.tell!`); its own timers (`me.after!`, `Actor.cancel!`) closing each question and moving each reveal on | `Rooms.roc` (`name`, `initial`, its methods, `turned!`, `timed!`) |
 | The rules as pure functions, the time given: joining, starting, picking, closing, advancing, the views | `Game.roc` (41 `expect`s that play games on a clock they choose) |
 | Scoring as a pure, tested function; places with ties | `Score.roc` |
 | A crash in a turn is logged and the room carries on as it was | the platform's rule (D-021): `Rooms.ask!` turns the asker's error into `Refused` |

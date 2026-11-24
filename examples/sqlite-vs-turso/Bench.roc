@@ -548,17 +548,17 @@ together! : List(Workers.Task) => Try(U64, Str)
 together! = |messages| {
 	keys = messages.map_with_index(|_, n| "w${(n + 1).to_str()}")
 	for key in keys {
-		_ = Actor.ask!(Workers.ready, key, {}).map_err(|ActorErr(why)| "${key}: ${why}")?
+		_ = Workers.ready.ask!(key, {}).map_err(|ActorErr(why)| "${key}: ${why}")?
 		Kv.set!("bench:${key}", "", { ttl_ms: 0 })
 	}
 	started = Time.now_nanos!({})
 	var $n = 0
 	for message in messages {
-		Actor.tell!(Workers.work, keys.get($n) ?? "w1", message)
+		Workers.work.tell!(keys.get($n) ?? "w1", message)
 		$n = $n + 1
 	}
 	for key in keys {
-		_ = Actor.ask!(Workers.ready, key, {}).map_err(|ActorErr(why)| "${key}: ${why}")?
+		_ = Workers.ready.ask!(key, {}).map_err(|ActorErr(why)| "${key}: ${why}")?
 	}
 	took = Time.now_nanos!({}) - started
 	for key in keys {

@@ -3,7 +3,7 @@ import Host
 import Log
 import Setting
 
-## Actors' timers (`Actor.tell_after!`, `Actor.after!`), kept so a restart doesn't lose them
+## Actors' timers (a method's `tell_after!`, `me.after!`), kept so a restart doesn't lose them
 ## (D-057, Orleans' reminders): with a database, each is a row of `rocx_actor_timers` until the
 ## turn that handled its message has ended, and the platform's start sets again every row it finds.
 ## The host keeps the timers that are waiting (`actors.rs`), and, once a timer's turn has ended,

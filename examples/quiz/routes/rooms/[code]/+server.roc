@@ -22,7 +22,7 @@ channel! = |{ request, params, context }|
 		Vacant => Err(NotFound)
 		_ => {
 			if Endpoint.channel_asked(request) == "check" {
-				Actor.tell!(Rooms.beat, params.code, { visitor: context.visitor, tab: Server.header(request, "x-rocx-tab") ?? "" })
+				Rooms.beat.tell!(params.code, { visitor: context.visitor, tab: Server.header(request, "x-rocx-tab") ?? "" })
 			}
 			Ok(Channel.allow(context.visitor))
 		}
@@ -31,18 +31,18 @@ channel! = |{ request, params, context }|
 ## A tab subscribed (and each time it reconnects): it is in the room (a player's, for presence),
 ## and its first message is the room as it is now.
 on_open! = |{ params, who, tab, .. }|
-	match Actor.ask!(Rooms.opened, params.code, { visitor: who, tab }) {
+	match Rooms.opened.ask!(params.code, { visitor: who, tab }) {
 		Ok(seat) => [seat.view]
 		Err(ActorErr(_)) => []
 	}
 
 ## A tab's subscription ended: a player whose last tab it was drops, once the grace is up.
-on_close! = |{ params, who, tab, .. }| Actor.tell!(Rooms.closed, params.code, { visitor: who, tab })
+on_close! = |{ params, who, tab, .. }| Rooms.closed.tell!(params.code, { visitor: who, tab })
 
 ## What a page says: the host's Start, Next and Again, a player's answer. The room decides if they
 ## may; a refusal is a 409 with why.
 receive! = |{ params, who, said, .. }|
-	match Actor.ask!(Rooms.said, params.code, { visitor: who, said }) {
+	match Rooms.said.ask!(params.code, { visitor: who, said }) {
 		Ok(Heard) => Ok({})
 		Ok(Refused(why)) => Err(Conflict(why))
 		Err(ActorErr(why)) => Err(Conflict(why))

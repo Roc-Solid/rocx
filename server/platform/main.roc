@@ -594,7 +594,7 @@ actor_for_host! = |kind, key, loaded, kept, call, boxed| {
 			if program.actors.any(|actor| actor.kind == kind) {
 				Err("${kind} has no method called ${name}")
 			} else {
-				Err("no kind of actor is called ${kind}: the app defines none (`Actor.define`, and its methods: `Actor.method`)")
+				Err("no kind of actor is called ${kind}: the app has none (a type with `name` and `initial`, and its methods: `Actor.method`)")
 			}
 	}
 }

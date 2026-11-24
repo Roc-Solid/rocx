@@ -63,27 +63,30 @@ view! = |_|
 				</li>
 			</ul>
 			<p>
-				A key is text (<code>Actor.define</code>), or a type of the app's own
-				(<code>Actor.define_keyed</code>, D-067): one with <code>to_str</code>, which names its actor (in
-				the database too), and <code>from_str</code>, which reads that back; the numbers have both. A
-				turn is given the key as it is typed (<code>Actor.key_of(me)</code>), so an actor matches on its
-				key rather than parsing it, and a key of another kind's type doesn't compile. A module names its
-				kind's methods' type once (<code>{"Method(input, reply) : Actor.Method({}, Str, State, input, reply)"}</code>,
-				the app's context first), and writes <code>{"Method(Str, U64)"}</code> after.
+				A kind is a type of the app's (D-068): one with <code>name</code> and <code>initial</code>
+				(<code>Actor.Kind</code>, a where alias: a type that has the two is one). Its methods are values,
+				each <code>{"Actor.method(name, run!)"}</code> annotated with its kind's <code>Method</code>, which
+				is what says whose it is: the kind names that type once
+				(<code>{"Method(input, reply) : Actor.Method(Counter, Str, Str, State, input, reply)"}</code>: the
+				kind, the app's context, the key, the state) and writes <code>{"Counter.Method(I64, I64)"}</code>
+				after. A key is any type with <code>to_str</code>, which names its actor (in the database too),
+				and <code>from_quote</code>, which reads that back and lets a string literal be a key
+				(<code>Actor.Keyed</code>, D-067); <code>Str</code> has both. A turn is given the key as it is
+				typed (<code>me.key()</code>), so an actor matches on its key rather than parsing it, and a key
+				of another kind's type doesn't compile.
 			</p>
 			<p>
 				<code>rocx build</code> lists the methods an app's modules define (<code>Actor.method</code>, at the
-				top of a module's block; and checks its kinds, <code>Actor.define</code> and
-				<code>Actor.define_keyed</code>, there too, each
-				<code>name</code> first and its own), so the server can run an actor when nobody is waiting on it:
+				top of a module's block; and checks that its kinds' names, <code>{"name = |{}| \"…\""}</code>, are
+				each their own), so the server can run an actor when nobody is waiting on it:
 				a tell, a timer. Two methods of one kind with one name stop the server as it starts.
 			</p>
 
 			<Heading id="asking">Asking and telling</Heading>
 			<Code title={"${Sources.platform_ask.file}, in part"} source={Sources.platform_ask.rocx} numbers={Bool.False} />
 			<p>
-				<code>Actor.ask!(method, key, input)</code> waits for the reply, typed as the method says, or
-				<code>ActorErr</code> with why there is none. <code>Actor.tell!(method, key, input)</code> doesn't
+				<code>{"Counter.add.ask!(key, input)"}</code> waits for the reply, typed as the method says, or
+				<code>ActorErr</code> with why there is none. <code>{"Counter.add.tell!(key, input)"}</code> doesn't
 				wait: its turn comes after the ones before it, and its reply goes nowhere.
 			</p>
 			<Code title={"${Sources.platform_tell.file}, in part"} source={Sources.platform_tell.rocx} numbers={Bool.False} />
@@ -95,15 +98,15 @@ view! = |_|
 
 			<Heading id="timers">Timers</Heading>
 			<p>
-				A method is given the actor itself (<code>me</code>): its key (<code>Actor.key_of(me)</code>), and
-				its own timers. <code>Actor.after!(me, ms, method, input)</code> calls one of its kind's methods
-				later, and answers the timer, which <code>Actor.cancel!</code> stops. A timer every so often is one
+				A method is given the actor itself (<code>me</code>): its key (<code>me.key()</code>), and its
+				own timers. <code>{"me.after!(ms, method, input)"}</code> calls one of its kind's methods
+				later (another kind's doesn't compile), and answers the timer, which <code>Actor.cancel!</code> stops. A timer every so often is one
 				that sets the next (a method that names itself is a function of <code>{"{}"}</code>: a value can't
 				be defined in terms of itself):
 			</p>
 			<Code title={"${Sources.platform_ticker.file}, in part"} source={Sources.platform_ticker.rocx} numbers={Bool.False} />
 			<p>
-				<code>Actor.tell_after!(method, key, ms, input)</code> does the same from anywhere: a request, a
+				<code>{"Counter.add.tell_after!(key, ms, input)"}</code> does the same from anywhere: a request, a
 				job, another actor.
 			</p>
 			<p>
