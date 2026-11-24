@@ -1369,6 +1369,38 @@ test("the examples: an overview with a row for each app, and each app's page wit
 	for (const app of facts.examples) assert.ok(tasks.includes(`href="/examples/${app.name}"`), `the sidebar links ${app.name}`);
 });
 
+test("sqlite-vs-turso's results: a run count or the switch changes the table where the reader is, the page not taken back to the table's top (each input inside its label, in the bar that stays in sight)", { skip }, async () => {
+	const tab = await open("/examples/sqlite-vs-turso");
+	await tab.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+	// Down into the middle of the everyday table, its bar stuck below the site's.
+	await tab.eval(`(() => { window.series = document.querySelector('input[name="everyday-runs"]').closest('.series'); const table = window.series.querySelector('.view.n10'); scrollTo(0, scrollY + table.getBoundingClientRect().top + table.offsetHeight / 2 - innerHeight / 2); })()`);
+	const shown = () => tab.eval("[...window.series.querySelectorAll('.view')].filter((view) => getComputedStyle(view).display !== 'none').map((view) => [...view.classList].find((name) => /^n[0-9]+s?$/.test(name)))");
+	const at = await tab.eval("scrollY");
+	assert.ok(at > 500, `scrolled into the table: ${at}`);
+	assert.deepEqual(await shown(), ["n10"], "ten runs, the first counted");
+	// A click where the label is on the screen (tab.click would scroll it to the middle first).
+	const press = async (selector) => {
+		const { x, y } = await tab.eval(`(() => { const box = window.series.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: box.x + box.width / 2, y: box.y + box.height / 2 }; })()`);
+		await tab.clickAt(x, y);
+		await tab.eval("new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))");
+	};
+	for (const [selector, view, focused] of [
+		[".skip-label", "n10s", "skip"],
+		[".buttons .l3", "n3s", "p3"],
+		[".skip-label", "n3", "skip"],
+		[".buttons .l1", "n1", "p1"],
+		[".buttons .l10", "n10", "p10"],
+	]) {
+		await press(selector);
+		assert.deepEqual(await shown(), [view], `${selector}: its table`);
+		assert.equal(await tab.eval("scrollY"), at, `${selector}: the page where it was`);
+		assert.equal(await tab.eval(`document.activeElement.classList.contains(${JSON.stringify(focused)})`), true, `${selector}: its input focused, for the keyboard`);
+	}
+	assert.deepEqual(tab.errors, []);
+	assert.deepEqual(tab.console, []);
+	await tab.close();
+});
+
 test("the static build for GitHub Pages: files alone, under /rocx/, every page hydrates strictly as the browser's build renders it, and its demos work", { skip }, async () => {
 	// As example.github.io/rocx/ would serve it: the site's files under /rocx/, and nothing to answer a request.
 	const host = mkdtempSync(join(tmpdir(), "rocx-site-pages-"));

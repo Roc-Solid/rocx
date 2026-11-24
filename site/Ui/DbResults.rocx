@@ -78,22 +78,22 @@ DbResults := [].{
 
 	## A table of workloads under buttons picking how many runs in a row it shows, and a switch
 	## leaving out the first run (a cold start: files, caches and prepared statements not yet warm)
-	## from three or ten: radio buttons named `id` and the checkbox first (hidden, still reached by
-	## the keyboard), then their labels, in a bar that stays in sight below the site's top bar while
+	## from three or ten: radio buttons named `id` and the checkbox, each inside its label (hidden,
+	## still reached by the keyboard), in a bar that stays in sight below the site's top bar while
 	## the table is, then a table for each count, with the first run and, past one, without it. A
-	## checked one's label is lit and its table shown, by CSS alone (the inputs are the labels' and
-	## the tables' earlier siblings). The most runs is picked first, the first run counted.
+	## checked one's label is lit and its table shown, by CSS alone (`:has`). A click on a label
+	## focuses its input, which the browser scrolls to: in the bar, it is where the reader already
+	## is (an input above the bar took the page back to the table's top). The most runs is picked
+	## first, the first run counted.
 	series : Str, U64, List(DbBench.Workload) -> Html
 	series = |id, most, workloads| {
 		shown = DbResults.counts(most)
 		last = shown.last() ?? 1
 		<div class="series">
-			{...shown.map(|n| <input type="radio" class={"pick p${n.to_str()}"} name={"${id}-runs"} id={"${id}-runs-${n.to_str()}"} checked?={n == last} />)}
-			<input type="checkbox" class="skip" id={"${id}-skip"} />
 			<div class="picks">
 				<span class="picks-label">Runs in a row</span>
-				<div class="buttons">{...shown.map(|n| <label class={"l${n.to_str()}"} for={"${id}-runs-${n.to_str()}"}>{n.to_str()}</label>)}</div>
-				<label class="skip-label" for={"${id}-skip"}><span class="box" aria-hidden="true"></span>Leave out the first run</label>
+				<div class="buttons">{...shown.map(|n| <label class={"l${n.to_str()}"}><input type="radio" class={"pick p${n.to_str()}"} name={"${id}-runs"} checked?={n == last} />{n.to_str()}</label>)}</div>
+				<label class="skip-label"><input type="checkbox" class="skip" /><span class="box" aria-hidden="true"></span>Leave out the first run</label>
 			</div>
 			{...shown.map(|n| <div class={"view n${n.to_str()}"}>{=DbResults.table(workloads, n, Bool.False)}</div>)}
 			{...shown.drop_if(|n| n == 1).map(|n| <div class={"view n${n.to_str()}s"}>{=DbResults.table(workloads, n, Bool.True)}</div>)}
@@ -294,17 +294,17 @@ DbResults := [].{
 			opacity: 0.75;
 		}
 
-		/* The runs-in-a-row buttons: radio buttons, hidden but focusable, before everything else in
-		   the series; the checked one's label is lit and its table shows, the others' don't. */
+		/* The runs-in-a-row buttons: radio buttons, hidden but focusable, inside their labels in the
+		   bar; the checked one's label is lit and its table shows, the others' don't. */
 		.series .view {
 			display: none;
 		}
 
-		.series .p1:checked ~ .n1,
-		.series .p3:checked ~ .skip:not(:checked) ~ .n3,
-		.series .p10:checked ~ .skip:not(:checked) ~ .n10,
-		.series .p3:checked ~ .skip:checked ~ .n3s,
-		.series .p10:checked ~ .skip:checked ~ .n10s {
+		.series:has(.p1:checked) .n1,
+		.series:has(.p3:checked):has(.skip:not(:checked)) .n3,
+		.series:has(.p10:checked):has(.skip:not(:checked)) .n10,
+		.series:has(.p3:checked):has(.skip:checked) .n3s,
+		.series:has(.p10:checked):has(.skip:checked) .n10s {
 			display: block;
 		}
 
@@ -366,9 +366,7 @@ DbResults := [].{
 			border-color: var(--text-muted);
 		}
 
-		.series .p1:checked ~ .picks .l1,
-		.series .p3:checked ~ .picks .l3,
-		.series .p10:checked ~ .picks .l10 {
+		.buttons label:has(:checked) {
 			z-index: 2;
 			background: var(--accent-soft);
 			color: var(--text);
@@ -378,6 +376,7 @@ DbResults := [].{
 
 		/* The switch: a box that fills when it is on; dimmed for one run, which has no first to leave out. */
 		.skip-label {
+			position: relative;
 			display: inline-flex;
 			align-items: center;
 			gap: var(--space-2);
@@ -395,29 +394,27 @@ DbResults := [].{
 			border-radius: 3px;
 		}
 
-		.series .skip:checked ~ .picks .skip-label {
+		.skip-label:has(:checked) {
 			background: var(--accent-soft);
 			border-color: var(--accent);
 		}
 
-		.series .skip:checked ~ .picks .skip-label .box {
+		.skip-label:has(:checked) .box {
 			background: var(--accent);
 			border-color: var(--accent);
 			box-shadow: inset 0 0 0 2px var(--bg);
 		}
 
-		.series .p1:checked ~ .picks .skip-label {
+		.series:has(.p1:checked) .skip-label {
 			opacity: 0.45;
 		}
 
-		.series .skip:focus-visible ~ .picks .skip-label {
+		.skip-label:has(:focus-visible) {
 			outline: 2px solid var(--accent);
 			outline-offset: 2px;
 		}
 
-		.series .p1:focus-visible ~ .picks .l1,
-		.series .p3:focus-visible ~ .picks .l3,
-		.series .p10:focus-visible ~ .picks .l10 {
+		.buttons label:has(:focus-visible) {
 			z-index: 3;
 			outline: 2px solid var(--accent);
 			outline-offset: 2px;
