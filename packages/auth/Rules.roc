@@ -103,8 +103,9 @@ Rules := [].{
 	same_state = |kept, given| Hmac.equal(kept.to_utf8(), given.to_utf8())
 
 	## Where to send the browser to sign in at a provider: its authorization endpoint with the code
-	## flow's parameters, PKCE's challenge, and, for OpenID Connect, the nonce.
-	authorize : { authorize_url : Str, client_id : Str, redirect_uri : Str, scopes : List(Str), state : Str, verifier : Str, nonce : Str } -> Str
+	## flow's parameters, PKCE's challenge, and, for OpenID Connect, the nonce; then the provider's
+	## own (`params`: Google's `prompt=select_account`).
+	authorize : { authorize_url : Str, client_id : Str, redirect_uri : Str, scopes : List(Str), state : Str, verifier : Str, nonce : Str, params : List((Str, Str)) } -> Str
 	authorize = |asked|
 		Rules.url(
 			asked.authorize_url,
@@ -117,7 +118,7 @@ Rules := [].{
 				("code_challenge", Rules.challenge(asked.verifier)),
 				("code_challenge_method", "S256"),
 				("nonce", asked.nonce),
-			],
+			].concat(asked.params),
 		)
 
 	## Who signed in, as a provider says: their id there, their address if it is verified (else ""),
@@ -209,12 +210,13 @@ Rules := [].{
 	}
 
 	## Where a sign-in that failed sends the browser: the app's sign-in page with why
-	## (`?error=link|refused|provider|state` and, for `refused` and `provider`, `&reason=`), and
-	## where they were going.
-	failed : Str, Str, Str, Str -> Str
-	failed = |sign_in, code, reason, then| {
-		params = [("error", code)].concat(if (reason.is_empty()) [] else [("reason", reason)]).concat(if (then.is_empty() or then == "/") [] else [("then", then)])
-		Rules.url(sign_in, params)
+	## (`?error=link|refused|provider|state|unavailable` and, for `refused` and `provider`,
+	## `&reason=`), whose address it was when it is known (`&email=`: `admit!` turned it away), and
+	## where they were going (`&then=`).
+	failed : Str, { code : Str, reason : Str, email : Str, then : Str } -> Str
+	failed = |sign_in, why| {
+		given = [("error", why.code), ("reason", why.reason), ("email", why.email)].keep_if(|(_, value)| !value.is_empty())
+		Rules.url(sign_in, given.concat(if (why.then.is_empty() or why.then == "/") [] else [("then", why.then)]))
 	}
 }
 
@@ -263,8 +265,8 @@ expect Rules.query("token=abc", "then") == ""
 expect Rules.url("https://p/auth", [("a", "x y"), ("b", "/&=")]) == "https://p/auth?a=x%20y&b=%2F%26%3D"
 expect Rules.url("/sign-in?x=1", [("error", "link")]) == "/sign-in?x=1&error=link"
 expect Rules.url("/sign-in", []) == "/sign-in"
-expect Rules.failed("/sign-in", "link", "", "/") == "/sign-in?error=link"
-expect Rules.failed("/sign-in", "refused", "Not on the list", "/notes") == "/sign-in?error=refused&reason=Not%20on%20the%20list&then=%2Fnotes"
+expect Rules.failed("/sign-in", { code: "link", reason: "", email: "", then: "/" }) == "/sign-in?error=link"
+expect Rules.failed("/sign-in", { code: "refused", reason: "Not on the list", email: "a@b.c", then: "/notes" }) == "/sign-in?error=refused&reason=Not%20on%20the%20list&email=a%40b.c&then=%2Fnotes"
 
 # ---- state ----
 expect {
@@ -277,8 +279,8 @@ expect Rules.state_of("nonsense") == Err(BadState)
 expect Rules.same_state("abc", "abc") and !Rules.same_state("abc", "abd")
 expect {
 	random = Rules.token(List.repeat(1, 32))
-	url = Rules.authorize({ authorize_url: "https://p/authorize", client_id: "id", redirect_uri: "https://app/auth/p/callback", scopes: ["openid", "email"], state: random, verifier: "v", nonce: "n" })
-	url.starts_with("https://p/authorize?response_type=code&client_id=id&redirect_uri=https%3A%2F%2Fapp%2Fauth%2Fp%2Fcallback&scope=openid%20email&state=") and url.contains("&code_challenge=${Rules.challenge("v")}&code_challenge_method=S256&nonce=n")
+	url = Rules.authorize({ authorize_url: "https://p/authorize", client_id: "id", redirect_uri: "https://app/auth/p/callback", scopes: ["openid", "email"], state: random, verifier: "v", nonce: "n", params: [("prompt", "select_account")] })
+	url.starts_with("https://p/authorize?response_type=code&client_id=id&redirect_uri=https%3A%2F%2Fapp%2Fauth%2Fp%2Fcallback&scope=openid%20email&state=") and url.ends_with("&code_challenge=${Rules.challenge("v")}&code_challenge_method=S256&nonce=n&prompt=select_account")
 }
 
 # ---- ID tokens ----

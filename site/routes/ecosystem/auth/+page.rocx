@@ -123,6 +123,7 @@ view! = |_|
 						<tr><td><code>email : Str</code></td><td>their address, lower-cased; <code>""</code> when the provider has none it says is verified</td></tr>
 						<tr><td><code>name : Str</code></td><td>their name, or <code>""</code></td></tr>
 						<tr><td><code>user : [New, Known(Str)]</code></td><td>the user this identity signed in as before, even if its address has changed since</td></tr>
+						<tr><td><code>then : Str</code></td><td>where the sign-in goes after: an invite's page, say, which <code>admit!</code> may act on</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
@@ -191,7 +192,7 @@ view! = |_|
 					<thead><tr><th><code>error</code></th><th>Means</th></tr></thead>
 					<tbody>
 						<tr><td><code>link</code></td><td>the link has been used or has expired</td></tr>
-						<tr><td><code>refused</code></td><td><code>admit!</code> said no; <code>{"&reason="}</code> is what it said</td></tr>
+						<tr><td><code>refused</code></td><td><code>admit!</code> said no; <code>{"&reason="}</code> is what it said, <code>{"&email="}</code> the address it turned away</td></tr>
 						<tr><td><code>provider</code></td><td>the provider refused, couldn't be reached, or isn't set up; <code>{"&reason="}</code> says which</td></tr>
 						<tr><td><code>state</code></td><td>back from a provider too late, or in another browser</td></tr>
 						<tr><td><code>unavailable</code></td><td>the database couldn't take it just then</td></tr>

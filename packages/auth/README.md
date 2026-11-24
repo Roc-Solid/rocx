@@ -111,7 +111,7 @@ session cookie. `then` is a path of this site, or `home`: never another site.
 ## Who is signing in
 
 ```roc
-Auth.Identity : { provider : Str, subject : Str, email : Str, name : Str, user : [New, Known(Str)] }
+Auth.Identity : { provider : Str, subject : Str, email : Str, name : Str, user : [New, Known(Str)], then : Str }
 ```
 
 | Field | Is |
@@ -121,6 +121,7 @@ Auth.Identity : { provider : Str, subject : Str, email : Str, name : Str, user :
 | `email` | their address, lower-cased; `""` when the provider has none it says is verified |
 | `name` | their name, or `""` |
 | `user` | `Known(user)`: the app's user this identity signed in as before; `New` otherwise |
+| `then` | where the sign-in goes after (a path of this site): an invite's page, say, which `admit!` may act on |
 
 An identity that signed in before is `Known`, even if its address changed since. A new one is the
 app's to place: the user with that address, a new user, or a refusal (`Err("why")`, shown on the
@@ -158,6 +159,7 @@ Auth.Provider : {
     authorize_url : Str,
     token_url : Str,
     scopes : List(Str),
+    params : List((Str, Str)),                  # more for its authorization endpoint
     client_id_env : Str,                        # the environment variables with the client's id
     client_secret_env : Str,                    # and secret
 }
@@ -165,7 +167,7 @@ Auth.Provider : {
 
 | Provider | Environment | Redirect URI to register |
 | --- | --- | --- |
-| `Auth.google` | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | `<public URL>/auth/google/callback` |
+| `Auth.google` (asks which account: `prompt=select_account`) | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | `<public URL>/auth/google/callback` |
 | `Auth.github` | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | `<public URL>/auth/github/callback` |
 | `Auth.oidc({ name, label, issuer, authorize_url, token_url, client_id_env, client_secret_env })` | as given | `<public URL>/auth/<name>/callback` |
 
@@ -191,7 +193,7 @@ A sign-in that fails goes to the app's sign-in page with why, and where it was g
 | `?error=` | Means |
 | --- | --- |
 | `link` | the link has been used, has expired, or isn't one |
-| `refused` | `admit!` said no; `&reason=` is what it said |
+| `refused` | `admit!` said no; `&reason=` is what it said, `&email=` the address it turned away |
 | `provider` | the provider refused, couldn't be reached, or isn't set up; `&reason=` says which |
 | `state` | back from a provider without the state this browser kept: too late, or another browser |
 | `unavailable` | the database couldn't take it (on the log) |

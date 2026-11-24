@@ -224,7 +224,7 @@ for (const database of databases) {
 			const client = server.client();
 			const opened = await used(client, await mailedLink(client, "mallory@refused.example", "/private"));
 			assert.equal(opened.status, 303);
-			assert.equal(opened.location, "/sign-in?error=refused&reason=This%20address%20isn%27t%20allowed%20in.&then=%2Fprivate");
+			assert.equal(opened.location, "/sign-in?error=refused&reason=This%20address%20isn%27t%20allowed%20in.&email=mallory%40refused.example&then=%2Fprivate");
 			assert.ok(!client.cookies.has("session"));
 			assert.equal((await client.read("/me")).signed_in, false);
 		});
@@ -281,7 +281,7 @@ for (const database of databases) {
 			assert.equal((await again.read("/me")).user, me.user);
 			// An address the provider doesn't say is verified isn't taken: admit! has none to go on.
 			const unverified = await atProvider(server.client(), "test", { sub: "subject-2", email: "who@example.com", verified: false });
-			assert.match(unverified.location, /^\/sign-in\?error=refused&reason=test%20didn/);
+			assert.match(unverified.location, /^\/sign-in\?error=refused&reason=test%20didn[^&]*&then=%2Fprivate$/);
 		});
 
 		test("a GitHub-like provider: the code traded, then its API asked who signed in", async () => {

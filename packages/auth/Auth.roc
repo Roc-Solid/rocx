@@ -31,8 +31,9 @@ Auth := [].{
 	## Who is signing in, as the plugin hands them to `admit!`: the provider ("email" for a link or
 	## the dev sign-in), who they are there (the address, or the provider's own id for them), their
 	## address (lower-cased; "" when the provider has none it says is verified), their name (or ""),
-	## and the user this identity signed in as before (`Known`), if it has.
-	Identity : { provider : Str, subject : Str, email : Str, name : Str, user : [New, Known(Str)] }
+	## the user this identity signed in as before (`Known`), if it has, and where the sign-in goes
+	## after (`then`: an invite's page, say, which `admit!` may act on).
+	Identity : { provider : Str, subject : Str, email : Str, name : Str, user : [New, Known(Str)], then : Str }
 
 	## A signed-in session: the app's id for its user, the session's own id (for `revoke!`), and
 	## when it ends (milliseconds since 1970).
@@ -44,8 +45,9 @@ Auth := [].{
 	## A provider to sign in at: its name (its endpoints are `<at>/<name>` and
 	## `<at>/<name>/callback`, the redirect URI to register with it), the label for the app's
 	## button, how it says who signed in (`Oidc`: an ID token from one of these issuers; `GitHub`:
-	## its API at this URL), its endpoints, the scopes asked for, and the environment variables that
-	## hold the app's client id and secret there. `Auth.google`, `Auth.github` and `Auth.oidc` make
+	## its API at this URL), its endpoints, the scopes asked for, more parameters for its
+	## authorization endpoint (`params`), and the environment variables that hold the app's client
+	## id and secret there. `Auth.google`, `Auth.github` and `Auth.oidc` make
 	## one; a record update changes any part (`{ ..Auth.google, client_id_env: "ACME_GOOGLE_ID" }`).
 	Provider : {
 		name : Str,
@@ -54,6 +56,7 @@ Auth := [].{
 		authorize_url : Str,
 		token_url : Str,
 		scopes : List(Str),
+		params : List((Str, Str)),
 		client_id_env : Str,
 		client_secret_env : Str,
 	}
@@ -136,7 +139,8 @@ Auth := [].{
 	}
 
 	## Google (OpenID Connect): `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, from an OAuth client
-	## of the "Web application" kind whose redirect URI is `<public URL>/auth/google/callback`.
+	## of the "Web application" kind whose redirect URI is `<public URL>/auth/google/callback`. It
+	## asks which account (`prompt=select_account`), for someone signed in to several.
 	google : Auth.Provider
 	google = {
 		name: "google",
@@ -145,6 +149,7 @@ Auth := [].{
 		authorize_url: "https://accounts.google.com/o/oauth2/v2/auth",
 		token_url: "https://oauth2.googleapis.com/token",
 		scopes: ["openid", "email", "profile"],
+		params: [("prompt", "select_account")],
 		client_id_env: "GOOGLE_CLIENT_ID",
 		client_secret_env: "GOOGLE_CLIENT_SECRET",
 	}
@@ -160,6 +165,7 @@ Auth := [].{
 		authorize_url: "https://github.com/login/oauth/authorize",
 		token_url: "https://github.com/login/oauth/access_token",
 		scopes: ["read:user", "user:email"],
+		params: [],
 		client_id_env: "GITHUB_CLIENT_ID",
 		client_secret_env: "GITHUB_CLIENT_SECRET",
 	}
@@ -174,6 +180,7 @@ Auth := [].{
 		authorize_url: given.authorize_url,
 		token_url: given.token_url,
 		scopes: ["openid", "email", "profile"],
+		params: [],
 		client_id_env: given.client_id_env,
 		client_secret_env: given.client_secret_env,
 	}
@@ -420,7 +427,7 @@ signed_in! = |settings, admit!, who, then| {
 	started = Db.transaction!(
 		|{}| {
 			known = AuthStore.known!(who.provider, who.subject)?
-			user = admit!({ provider: who.provider, subject: who.subject, email: who.email, name: who.name, user: known }).map_err(|why| Refused(why))?
+			user = admit!({ provider: who.provider, subject: who.subject, email: who.email, name: who.name, user: known, then: Rules.path(then, settings.home) }).map_err(|why| Refused(why))?
 			AuthStore.linked!({ provider: who.provider, subject: who.subject, user: user, email: who.email, now: now })?
 			AuthStore.start!({ id: Rules.hash(token), user: user, now: now, expires: now + settings.session_ms })?
 			Ok(user)
@@ -428,7 +435,7 @@ signed_in! = |settings, admit!, who, then| {
 	)
 	match started {
 		Ok(_) => with_session(Server.redirect(Rules.path(then, settings.home)), settings, https!({}), token)
-		Err(Refused(why)) => Server.redirect(Rules.failed(settings.sign_in, "refused", why, then))
+		Err(Refused(why)) => Server.redirect(Rules.failed(settings.sign_in, { code: "refused", reason: why, email: who.email, then: then }))
 		Err(DbErr(why)) => unavailable!(settings, why)
 		Err(BadRow(why)) => unavailable!(settings, why)
 	}
@@ -438,7 +445,7 @@ signed_in! = |settings, admit!, who, then| {
 unavailable! : Auth.Settings, Str => Server.Response
 unavailable! = |settings, why| {
 	Log.error!("auth: a sign-in failed", { error: why })
-	Server.redirect(Rules.failed(settings.sign_in, "unavailable", "", ""))
+	Server.redirect(Rules.failed(settings.sign_in, { code: "unavailable", reason: "", email: "", then: "" }))
 }
 
 ## `<at>/link`: a mailed link used (its token in the query, or a form's field, as a page that asks
@@ -449,12 +456,12 @@ linked! = |settings, admit!, request| {
 	if Rules.is_token(token) {
 		match AuthStore.use_link!(Rules.hash(token), now!({})) {
 			Ok(Found(link)) => signed_in!(settings, admit!, { provider: "email", subject: link.email, email: link.email, name: "" }, link.return_to)
-			Ok(Missing) => Server.redirect(Rules.failed(settings.sign_in, "link", "", ""))
+			Ok(Missing) => Server.redirect(Rules.failed(settings.sign_in, { code: "link", reason: "", email: "", then: "" }))
 			Err(DbErr(why)) => unavailable!(settings, why)
 			Err(BadRow(why)) => unavailable!(settings, why)
 		}
 	} else {
-		Server.redirect(Rules.failed(settings.sign_in, "link", "", ""))
+		Server.redirect(Rules.failed(settings.sign_in, { code: "link", reason: "", email: "", then: "" }))
 	}
 }
 
@@ -467,7 +474,7 @@ dev! = |settings, admit!, request|
 		then = Rules.query(body, "then")
 		match Rules.address(Rules.query(body, "email")) {
 			Ok(email) => signed_in!(settings, admit!, { provider: "email", subject: email, email: email, name: "" }, then)
-			Err(NotAnAddress) => Server.redirect(Rules.failed(settings.sign_in, "refused", "That isn't an email address.", then))
+			Err(NotAnAddress) => Server.redirect(Rules.failed(settings.sign_in, { code: "refused", reason: "That isn't an email address.", email: "", then: then }))
 		}
 	} else {
 		Server.refused(404, "Not found")
@@ -492,14 +499,14 @@ away! = |settings, provider, request| {
 	then = Rules.path(Rules.query(request.query, "then"), settings.home)
 	client_id = (Env.var!(provider.client_id_env) ?? "").trim()
 	if client_id.is_empty() {
-		Server.redirect(Rules.failed(settings.sign_in, "provider", "Signing in with ${provider.label} isn't set up: ${provider.client_id_env} is empty.", then))
+		Server.redirect(Rules.failed(settings.sign_in, { code: "provider", reason: "Signing in with ${provider.label} isn't set up: ${provider.client_id_env} is empty.", email: "", then: then }))
 	} else {
 		https = https!({})
 		state = Rules.token(Random.bytes!(32))
 		verifier = Rules.token(Random.bytes!(32))
 		nonce = Rules.token(Random.bytes!(32))
 		kept = Rules.state_value({ provider: provider.name, state: state, verifier: verifier, nonce: nonce, then: then })
-		url = Rules.authorize({ authorize_url: provider.authorize_url, client_id: client_id, redirect_uri: callback!(settings, provider), scopes: provider.scopes, state: state, verifier: verifier, nonce: nonce })
+		url = Rules.authorize({ authorize_url: provider.authorize_url, client_id: client_id, redirect_uri: callback!(settings, provider), scopes: provider.scopes, state: state, verifier: verifier, nonce: nonce, params: provider.params })
 		Server.set_cookie(Server.redirect(url), state_cookie(https), kept, cookie_opts(https, 600_000))
 	}
 }
@@ -522,18 +529,18 @@ back! = |settings, admit!, provider, request| {
 				refused = Rules.query(request.query, "error")
 				if !refused.is_empty() {
 					described = Rules.query(request.query, "error_description")
-					Server.redirect(Rules.failed(settings.sign_in, "provider", if (described.is_empty()) refused else described, state.then))
+					Server.redirect(Rules.failed(settings.sign_in, { code: "provider", reason: if (described.is_empty()) refused else described, email: "", then: state.then }))
 				} else {
 					match who!(settings, provider, Rules.query(request.query, "code"), state) {
 						Ok(who) => signed_in!(settings, admit!, { provider: provider.name, subject: who.subject, email: who.email, name: who.name }, state.then)
 						Err(why) => {
 							Log.warn!("auth: a sign-in at a provider failed", { provider: provider.name, error: why })
-							Server.redirect(Rules.failed(settings.sign_in, "provider", why, state.then))
+							Server.redirect(Rules.failed(settings.sign_in, { code: "provider", reason: why, email: "", then: state.then }))
 						}
 					}
 				}
 			}
-			_ => Server.redirect(Rules.failed(settings.sign_in, "state", "", ""))
+			_ => Server.redirect(Rules.failed(settings.sign_in, { code: "state", reason: "", email: "", then: "" }))
 		}
 	Server.clear_cookie(answer, name, cookie_opts(https, 0))
 }
