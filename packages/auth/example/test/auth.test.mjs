@@ -19,6 +19,21 @@ import { buildForTests, links, startServer, testDatabase, testSqlite } from "../
 
 const example = join(dirname(fileURLToPath(import.meta.url)), "..");
 
+/** The route the tests add: an app's own way in (`Auth.sign_in!`), for the user the body names. */
+const asRoute = `import pf.Server
+import pf.Endpoint
+import auth.Auth
+
+## POST /test/as: signed in as \`user\`, as an app that checked a password of its own would sign
+## someone in. Written by packages/auth's tests into the app they build; the example has none.
+post! : { request : Server.Request, params : {}, context : {}, body : { user : Str } } => Try(Str, Endpoint.Refusal)
+post! = |{ body, .. }|
+	match Auth.sign_in!(Server.redirect("/private"), body.user) {
+		Ok(answer) => Err(Answer(answer))
+		Err(DbErr(why)) => Err(Status(503, why))
+	}
+`;
+
 const base64url = (text) => Buffer.from(text).toString("base64url");
 
 /**
@@ -90,6 +105,8 @@ function app(database, fake) {
 		.replace('database: Sqlite("data/auth.db")', `database: ${database === "sqlite" ? 'Sqlite("data/auth.db")' : "Postgres"}`);
 	assert.match(main, /name: "hub"/, "the stand-in's providers written");
 	writeFileSync(join(dir, "main.roc"), main);
+	mkdirSync(join(dir, "routes", "test", "as"), { recursive: true });
+	writeFileSync(join(dir, "routes", "test", "as", "+server.roc"), asRoute);
 	return dir;
 }
 
@@ -210,6 +227,15 @@ for (const database of databases) {
 			assert.equal(opened.location, "/sign-in?error=refused&reason=This%20address%20isn%27t%20allowed%20in.&then=%2Fprivate");
 			assert.ok(!client.cookies.has("session"));
 			assert.equal((await client.read("/me")).signed_in, false);
+		});
+
+		test("an app's own way in (Auth.sign_in!): a session for the user it names, which the middleware reads", async () => {
+			const client = server.client();
+			const signed = await client.json("/test/as", { user: "user-from-a-password" });
+			assert.equal(signed.status, 303, signed.text);
+			assert.equal(signed.location, "/private");
+			assert.deepEqual(await client.read("/private"), { user: "user-from-a-password" });
+			assert.equal((await client.read("/sessions")).length, 1);
 		});
 
 		test("signing out ends the session: its cookie gone, and the old cookie signs no one in", async () => {

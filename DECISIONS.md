@@ -4431,7 +4431,7 @@ three things Roc Solid needs next.
 - **Sessions in the database** (`auth_sessions`, the token's SHA-256; links in `auth_links`;
   identities in `auth_identities`), in one migration for SQLite and Postgres: times are
   milliseconds given by the package, so its statements are the same on both. A session lasts 30
-  days and is kept for as long again when used in its second half, so requests don't write. The
+  days (`session_ms`) and is kept for as long again when used in its second half, so requests don't write. The
   cookie is `HttpOnly`, `Lax`, and `Secure` and `__Host-` on HTTPS (the public URL).
 - **Middleware**: `Auth.required(add)` and `Auth.optional(add)`, each putting the session into the
   app's context through `add`; a signed-out page's GET goes to the sign-in page with `?then=`, the
@@ -4458,5 +4458,11 @@ layer first (no platform change): Random, Http, Env and the database are enough.
 **Costs.** One read of `auth_sessions` per request that names the middleware. A provider's ID
 token's signature isn't checked (the code flow doesn't need it; discovery and its keys are a
 proposal). Passwords wait for Argon2 in the host, passkeys for P-256 (PROPOSALS.md).
+
+**Moved onto it** (the user, 2026-11-24: every app that signs people in, the private app too): the
+options became `session_ms` and `link_ms` (milliseconds, as `timeout_ms` and `ttl_ms` are: plate's
+sessions last 90 days, uptime's 12 hours, notes' test link 3 s), and `admit!` optional (without it,
+only `Auth.sign_in!` starts sessions: an app's own password, a person picked). journal's reader and
+quiz's visitor stay cookies of their own: an anonymous id, no one signing in.
 
 **Reversible:** yes: a package; no app depended on it before.

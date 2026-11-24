@@ -59,31 +59,33 @@ Auth := [].{
 	}
 
 	## The plugin's options:
-	## - `admit!`: who gets in. Given who is signing in, the app's id for its user, or why not
-	##   (shown on the sign-in page). It runs inside the transaction that starts the session, so
-	##   what it writes (a new user's row, a job it queues) stays only if the sign-in does; keep
-	##   anything slow (a fetch) out of it.
+	## - `admit!`: who gets in by a link, a provider or the dev sign-in. Given who is signing in, the
+	##   app's id for its user, or why not (shown on the sign-in page). It runs inside the
+	##   transaction that starts the session, so what it writes (a new user's row, a job it queues)
+	##   stays only if the sign-in does; keep anything slow (a fetch) out of it. Without it, nobody
+	##   signs in those ways, and an app signs people in its own way (`sign_in!`: a password it
+	##   checks, a name picked).
 	## - `at`: where the plugin's endpoints are (`/auth`).
 	## - `sign_in`: the app's sign-in page, where a signed-out request (`required`) and a sign-in
 	##   that failed go (`/sign-in`).
 	## - `home`: where a sign-in goes when it wasn't going anywhere (`/`).
 	## - `providers`: where else one may sign in (none: links alone).
-	## - `session_days`: how long a session lasts (30); one used in its second half is kept for as
-	##   long again.
-	## - `link_minutes`: how long a mailed link is good for (15).
+	## - `session_ms`: how long a session lasts (30 days); one used in its second half is kept for
+	##   as long again.
+	## - `link_ms`: how long a mailed link is good for (15 minutes).
 	## - `link_page`: the app's page a mailed link opens (`/sign-in/link`), which shows whom it signs
 	##   in (`link_for!`) and posts its token to `<at>/link` from a button. A mail scanner that
 	##   follows every link in a message then can't use one up. "" (the default): the link goes
 	##   straight to `<at>/link`, and opening it signs in.
 	## - `cookie`: the session cookie's name (`session`, `__Host-session` on HTTPS).
 	Options := {
-		admit! : Auth.Identity => Try(Str, Str),
+		admit! : (Auth.Identity => Try(Str, Str)) ?? nobody!,
 		at : Str ?? "/auth",
 		sign_in : Str ?? "/sign-in",
 		home : Str ?? "/",
 		providers : List(Auth.Provider) ?? [],
-		session_days : U64 ?? 30,
-		link_minutes : U64 ?? 15,
+		session_ms : U64 ?? 2_592_000_000,
+		link_ms : U64 ?? 900_000,
 		link_page : Str ?? "",
 		cookie : Str ?? "session",
 	}
@@ -177,7 +179,7 @@ Auth := [].{
 	}
 
 	## A sign-in link for `email` that goes on to `then` (a path of this site, else `home`): the URL
-	## to mail them (to `link_page`, or to `<at>/link`), good once, for `link_minutes`. The app sends it, as it likes (packages/email,
+	## to mail them (to `link_page`, or to `<at>/link`), good once, for `link_ms`. The app sends it, as it likes (packages/email,
 	## from a job). `NotAnAddress` when `email` isn't one.
 	link! : Str, Str => Try(Str, [NotAnAddress, DbErr(Str), ..others])
 	link! = |given, then| {
@@ -331,12 +333,16 @@ settings_of = |options| {
 	at: if (options.at.ends_with("/")) options.at.drop_suffix("/") else options.at,
 	sign_in: options.sign_in,
 	home: options.home,
-	session_ms: (options.session_days * 86_400_000).to_i64_wrap(),
-	link_ms: (options.link_minutes * 60_000).to_i64_wrap(),
+	session_ms: options.session_ms.to_i64_wrap(),
+	link_ms: options.link_ms.to_i64_wrap(),
 	link_page: options.link_page,
 	cookie: options.cookie,
 	providers: options.providers.map(|provider| { name: provider.name, label: provider.label, client_id_env: provider.client_id_env }),
 }
+
+## `admit!` when the app gives none: nobody signs in by a link, a provider or the dev sign-in.
+nobody! : Auth.Identity => Try(Str, Str)
+nobody! = |_| Err("Signing in this way isn't open here.")
 
 ## The settings when the plugin isn't listed (or hasn't started): its options' defaults.
 defaults : Auth.Settings

@@ -57,17 +57,21 @@ that uses all of it, and its tests (`example/test`) run it on SQLite and on Post
 
 ```roc
 Auth.Options := {
-    admit! : Auth.Identity => Try(Str, Str),   # who gets in (required)
+    admit! : (Auth.Identity => Try(Str, Str)) ?? nobody!,  # who gets in by a link or a provider
     at : Str ?? "/auth",                       # where the plugin's endpoints are
     sign_in : Str ?? "/sign-in",               # the app's sign-in page
     home : Str ?? "/",                         # where a sign-in goes when it wasn't going anywhere
     providers : List(Auth.Provider) ?? [],     # where else one may sign in
-    session_days : U64 ?? 30,                  # how long a session lasts
-    link_minutes : U64 ?? 15,                  # how long a mailed link is good for
+    session_ms : U64 ?? 2_592_000_000,         # how long a session lasts (30 days)
+    link_ms : U64 ?? 900_000,                  # how long a mailed link is good for (15 minutes)
     link_page : Str ?? "",                     # the app's page a mailed link opens ("": /auth/link)
     cookie : Str ?? "session",                 # the session cookie's name
 }
 ```
+
+Without `admit!`, nobody signs in by a link, a provider or the dev sign-in: an app that checks a
+password of its own, or lets people pick who they are, starts sessions with `Auth.sign_in!` and
+uses the rest (the middleware, signing out, the sessions' table).
 
 `admit!` runs inside the transaction that starts the session, with the identity's row. What it
 writes (a new user's row, a welcome job it queues) stays only if the sign-in does. Keep anything
@@ -78,7 +82,7 @@ slow (a fetch) out of it. On Turso, a transaction that loses to another's write 
 
 **By a mailed link.** `Auth.link!(email, then)` keeps a link (its token's hash, the address, where it
 goes after, until when) and gives the URL to mail. The app sends it, as it likes. A link works once,
-for `link_minutes`.
+for `link_ms`.
 
 - With `link_page`, the URL opens the app's page, which shows whom it signs in
   (`Auth.link_for!(token)`, which doesn't use it) and posts the token to `/auth/link` from a button.
@@ -96,7 +100,11 @@ primary verified address).
 **Under `--dev`.** `POST /auth/dev` with an `email` signs that address in, as a link would. Without
 `--dev` there is no such endpoint. `Auth.dev_sign_in!` says whether it is open, for the page.
 
-Each way ends the same: the identity (`provider`, `subject`) is looked up, `admit!` is asked, the
+**The app's own way.** `Auth.sign_in!(answer, user)` starts a session for a user the app has
+decided on itself (a password it checked, a person picked from a list) and sets its cookie on
+`answer`.
+
+The first three ways end the same: the identity (`provider`, `subject`) is looked up, `admit!` is asked, the
 identity is recorded as the user's, a session starts, and the browser goes on to `then` with the
 session cookie. `then` is a path of this site, or `home`: never another site.
 

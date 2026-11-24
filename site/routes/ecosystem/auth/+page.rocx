@@ -86,7 +86,7 @@ view! = |_|
 			<p>
 				<strong>By a mailed link.</strong> <code>{"Auth.link!(email, then)"}</code> keeps the link in the
 				database (its token's hash, the address, where it goes after, until when) and gives you the URL. A
-				link works once, for 15 minutes (<code>link_minutes</code>). Your page posts its token to
+				link works once, for 15 minutes (<code>link_ms</code>). Your page posts its token to
 				<code>/auth/link</code>; without a <code>link_page</code>, the URL is <code>/auth/link</code> itself.
 			</p>
 			<p>
@@ -100,7 +100,12 @@ view! = |_|
 				it in at once, with no mail. Without <code>--dev</code> there is no such endpoint.
 			</p>
 			<p>
-				Each way ends the same: <code>admit!</code> is asked, a session starts, and the browser goes on to
+				<strong>Your own way.</strong> <code>{"Auth.sign_in!(answer, user)"}</code> starts a session for a user
+				you decided on yourself (a password you checked, a person picked from a list) and sets its cookie.
+				Without <code>admit!</code>, that is the only way in.
+			</p>
+			<p>
+				The other ways end the same: <code>admit!</code> is asked, a session starts, and the browser goes on to
 				where it was going with the session cookie. Where it goes is always a path of your site: a link
 				or a provider can't send anyone off to another one.
 			</p>
@@ -131,7 +136,7 @@ view! = |_|
 			<Heading id="sessions">Sessions and middleware</Heading>
 			<p>
 				A session is a random token in a cookie, and a row in the database that keeps only its SHA-256.
-				It lasts 30 days (<code>session_days</code>). One used in its second half is kept for as long again,
+				It lasts 30 days (<code>session_ms</code>). One used in its second half is kept for as long again,
 				so a request doesn't write to the database each time.
 			</p>
 			<ul>
