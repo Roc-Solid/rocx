@@ -109,9 +109,11 @@ Html :: [
 	list_of : (() => List(Html)) -> Html
 	list_of = |compute| ListOf(compute)
 
+	## Several, side by side: what a fragment (`<>…</>`) is, for plain Roc code.
 	join : List(Html) -> Html
 	join = |parts| Fragment(parts)
 
+	## Nothing: the empty fragment (`<></>`), for plain Roc code.
 	empty : {} -> Html
 	empty = |{}| Fragment([])
 

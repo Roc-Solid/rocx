@@ -116,6 +116,11 @@ When an item lands, delete its line here in the same commit.
   ×1.5 by the load average) and passes alone (about 740 ms). The load average lags a burst of
   builds. A sturdier check: the median of three rebuilds, or a ratio to a no-op rebuild measured in
   the same run.
+- **The channels "a tab has one stream" test flakes under load** (`server/test/server.test.mjs`):
+  it waits for the old stream's `channel closed` log event, then reads the log at once, and the
+  new stream's `channel opened` (the async writer's) can be later: `['channel opened', 'channel
+  closed']` against three (seen once in a full run with Postgres on 2026-11-24; passes alone). Wait
+  for the second `channel opened` too.
 - **`test/check-sql.test.mjs`'s Postgres test writes in the server test app's counts**
   ("42 statements checked on Postgres (the rows of 21 against their records): 6 problems"): a
   statement added to `server/test/app` fails it until the numbers are changed. Its problems' lines
