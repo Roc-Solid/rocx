@@ -52,8 +52,8 @@ view! = |_|
 				Every <code>.rocx</code> file imports the platform's <code>Html</code> module
 				(<code>import pf.Html</code>), because <code>rocx build</code> turns the markup into calls to it.
 				This page covers everything rocx accepts. The examples are real files in
-				<code>site/examples</code>, each shown with the Roc rocx wrote for it and what it rendered when
-				this page was built.
+				<code>site/examples</code>, each shown with what it rendered when this page was built; its
+				switch shows the Roc rocx wrote for it.
 			</PageHero>
 
 			<Heading id="tour">One small component</Heading>

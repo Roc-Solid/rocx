@@ -666,6 +666,19 @@ test("the syntax tour: a small component adds and ticks books, its rows kept by 
 	await page.wait("document.querySelector('.tour p')?.textContent.trim() === 'All read.'");
 });
 
+test("an example's card: the .rocx, and its switch shows the Roc rocx wrote in its place, with nothing hydrated", { skip }, async () => {
+	const page = await open("/syntax");
+	const shown = () => page.eval("[...document.querySelector('.example .sources').querySelectorAll('.rocx, .roc')].filter((part) => part.offsetParent !== null).map((part) => part.className.split(' ')[0])");
+	assert.deepEqual(await shown(), ["rocx", "rocx"], "the file's name and its .rocx");
+	assert.match(await text(page, ".example .sources > .rocx"), /view : \{ name : Str, link : Str \} -> Html[\s\S]*<p class="greeting">/);
+	await page.click(".example .swap");
+	assert.deepEqual(await shown(), ["roc", "roc"], "the Roc, under its title");
+	assert.match(await text(page, ".example .sources > .roc"), /Html\.element\(/);
+	await page.click(".example .swap");
+	assert.deepEqual(await shown(), ["rocx", "rocx"], "and back");
+	assert.equal(await page.eval("document.querySelectorAll('.example .swap input:checked').length"), 0, "the other examples' switches untouched");
+});
+
 test("the escape lab can't be broken", { skip }, async () => {
 	const page = await open("/safety");
 	const presets = await page.eval("[...document.querySelectorAll('.lab-presets button')].map((b) => b.textContent)");
