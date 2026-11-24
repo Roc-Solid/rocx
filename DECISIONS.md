@@ -3838,6 +3838,52 @@ stopping and starting.
 **Reversible:** yes. The ported scripts are in history, and basic-cli's API was a drop-in shape for
 most of rocx-cli.
 
+## D-063 iOS and Android apps: the same .rocx files, native views, no JS
+
+**Status.** Proposed (2026-11-23); the Android spike in master since 2026-11-24, as an experiment to
+iterate on (nothing of it runs unless asked for). The design, with its phases and the questions it
+waits on, is `spike/native-apps/DESIGN.md`. The web stays the primary target; this is background
+work. Built (2026-11-23, branch `nxy7/native-android`): `native/core` (the engine and the hosted
+functions: 63 since landing, master's D-040, D-053 and D-054 among them), `native/android` (JNI, a
+Kotlin applier, `build.sh`, no Gradle) and `native/mac`; `spike/native-apps/phone-hello` runs as
+native views on the emulator with typed calls to the server (`spike/native-apps/README.md`). The
+app's Roc is the fork's `arm64musl` archive linked by the NDK, so no fork change was needed. Native
+code was chosen; OTA is deferred (DESIGN.md, Later). An Expo-like dev mode followed: `rocx dev
+--android` and a dev client that loads each build's library (built by Roc's dev backend) in place
+of the last, about a second from a save to the phone, each reload a fresh start (the user's choice:
+no state kept), a failed build's error on a red screen, phones on Wi-Fi by a QR code (`--lan`,
+`packages/qr`) and the phone's log in the terminal over HTTP (README.md, Dev mode).
+
+**Context.** The user wants iOS and Android apps from an app's `.rocx` files, the way React Native
+gives them, with Lynx's approach (a web-like vocabulary and a CSS subset rendered as native views)
+and no JavaScript. Lynx itself can only be driven from JS (its Element PAPI is main-thread JS
+globals; no public native API; wasm only on Android, interpreted), so it was ruled out. A
+component's markup already reaches its host as JSON whose holes are boxes the host runs, with no
+DOM operation in `Host.roc`, so the Roc side carries over.
+
+**Proposal.**
+
+- The app compiled for a phone is the browser's app compiled for another target: `web/platform`
+  gains `arm64ios`, `arm64iossim` and `arm64android` targets, with the same hosted functions.
+- `native/core` (Rust, no platform code): a port of `runtime.js`'s engine, minus the DOM; a CSS
+  subset compiled and checked at build time; Taffy for block, flex and grid layout; batches of view
+  ops per flush. `native/ios` (objc2) and `native/android` (JNI and a small Kotlin applier) turn the
+  ops into native views and measure text.
+- HTML tags keep their meaning (a `<div>` is a view, a `<p>` a text view, an `<input>` a native
+  field, a same-app `<a>` pushes a screen). What a phone can't do is reported by the build, never
+  refused for the web.
+- One thread, as in a browser; the same server over HTTP with a cookie jar; every page in the
+  binary, a stack of screens, layouts kept.
+- Phase 0 needs no phone: the engine, linked with `web/test/app` compiled for the Mac, must match
+  Chromium's DOM after the same steps.
+
+**Costs.** Two reactive engines (JS and Rust) held together by a conformance suite; a CSS subset
+that can make a web page look off on a phone; three more fork targets; about two and a half to
+three months of background work to Plate on both phones.
+
+**Reversible:** yes. Everything is in `native/` and new platform targets; the web's code paths
+don't change.
+
 ## D-064 Every app's optimized server is built with boxy lowering (`--specialize=no`)
 
 **Status.** Built (2026-11-23). The user's decision: make D-040's workaround for the docs site the
@@ -4148,46 +4194,3 @@ name, and option 3 would make every actor module `.rocx`. `name` and `initial` t
 a kind's block, so a local of the same name shadows them.
 
 **Reversible:** yes: every kind becomes a value again and every call goes back through `Actor`.
-## D-063 iOS and Android apps: the same .rocx files, native views, no JS
-
-**Status.** Proposed (2026-11-23). The design, with its phases and the questions it waits on, is
-`spike/native-apps/DESIGN.md`. The web stays the primary target; this is background work.
-The Android spike is built (2026-11-23, branch `nxy7/native-android`, not merged): `native/core`
-(the engine and the 49 hosted functions), `native/android` (JNI, a Kotlin applier, `build.sh`, no
-Gradle) and `native/mac`; `spike/native-apps/phone-hello` runs as native views on the emulator
-with typed calls to the server (`spike/native-apps/README.md`). The app's Roc is the fork's
-`arm64musl` archive linked by the NDK, so no fork change was needed. Native code was chosen; OTA is
-deferred (DESIGN.md, Later). An Expo-like dev mode followed: `rocx dev --android` and a dev client
-that loads each build's library (built by Roc's dev backend) in place of the last, about a second
-from a save to the phone, with a failed build's error on a red screen (README.md, Dev mode).
-
-**Context.** The user wants iOS and Android apps from an app's `.rocx` files, the way React Native
-gives them, with Lynx's approach (a web-like vocabulary and a CSS subset rendered as native views)
-and no JavaScript. Lynx itself can only be driven from JS (its Element PAPI is main-thread JS
-globals; no public native API; wasm only on Android, interpreted), so it was ruled out. A
-component's markup already reaches its host as JSON whose holes are boxes the host runs, with no
-DOM operation in `Host.roc`, so the Roc side carries over.
-
-**Proposal.**
-
-- The app compiled for a phone is the browser's app compiled for another target: `web/platform`
-  gains `arm64ios`, `arm64iossim` and `arm64android` targets, with the same 49 hosted functions.
-- `native/core` (Rust, no platform code): a port of `runtime.js`'s engine, minus the DOM; a CSS
-  subset compiled and checked at build time; Taffy for block, flex and grid layout; batches of view
-  ops per flush. `native/ios` (objc2) and `native/android` (JNI and a small Kotlin applier) turn the
-  ops into native views and measure text.
-- HTML tags keep their meaning (a `<div>` is a view, a `<p>` a text view, an `<input>` a native
-  field, a same-app `<a>` pushes a screen). What a phone can't do is reported by the build, never
-  refused for the web.
-- One thread, as in a browser; the same server over HTTP with a cookie jar; every page in the
-  binary, a stack of screens, layouts kept.
-- Phase 0 needs no phone: the engine, linked with `web/test/app` compiled for the Mac, must match
-  Chromium's DOM after the same steps.
-
-**Costs.** Two reactive engines (JS and Rust) held together by a conformance suite; a CSS subset
-that can make a web page look off on a phone; three more fork targets; about two and a half to
-three months of background work to Plate on both phones.
-
-**Reversible:** yes. Everything is in `native/` and new platform targets; the web's code paths
-don't change.
-

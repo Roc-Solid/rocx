@@ -12,27 +12,14 @@ When an item lands, delete its line here in the same commit.
 
 ## Waiting on a decision by the user
 
-- **Client-side navigation (D-040, Proposed).** Twelve questions, each with a recommendation, are in
-  `spike/client-nav/DESIGN.md` §17. The plan (§15) after the answers:
-  1. Phase 1: same-app links and `Router.navigate!`, with the page's body made anew. This phase also
-     fixes URLs the runtime builds without `--base` (a computed `href` patched to `/x` while
-     hydrating).
-  2. The app's stylesheet as a file with its hash in its name, rather than inline in every page
-     (question 9).
-  3. Phase 2: kept layouts, the query changed in place (`use_search_params!`), `<A>`, `<Navigate>`
-     and GET forms.
-  4. Phase 3: prefetch and View Transitions.
-
-  D-039 gave route views getters, so question 4 (keep a page across a change of its params) no
-  longer costs a change to every page, whichever way it is answered.
 - **iOS and Android apps (D-063, Proposed).** Background work; the web stays primary. The Android
-  spike is built (branch `nxy7/native-android`): one screen as native views, typed calls to the
-  server, and a dev mode (`rocx dev --android`, about a second from a save to the phone)
-  (`spike/native-apps/README.md`). Next (§13): phase 0's conformance suite (the engine on
-  `web/test/app` against Chromium), freeing what a waiting run leaves behind, Taffy, CSS at build
-  time, HTTPS and cookies, navigation, `rocx build --android`, signals kept across a dev reload;
-  then Plate on Android, then iOS (a fork target for Xcode's link). Open questions: 3 and 9 in
-  DESIGN.md §15.
+  spike is in master, as an experiment: one screen as native views, typed calls to the server, and
+  a dev mode (`rocx dev --android [--lan]`, about a second from a save to the phone, each reload a
+  fresh start) (`spike/native-apps/README.md`). Next (§13): phase 0's conformance suite (the engine
+  on `web/test/app` against Chromium), freeing what a waiting run leaves behind, Taffy, CSS at build
+  time, HTTPS and cookies, navigation, `rocx build --android`; then Plate on Android, then iOS (a
+  fork target for Xcode's link). The fork's dev backend puts some `arm64mac` string literals where
+  Roc's refcounting misreads them (README.md's gaps, 12). Open questions: 3 and 9 in DESIGN.md §15.
 - **packages/markdown:** open questions 1, 2, 4 and 5 in its `PROPOSALS.md`:
   - trusted HTML;
   - `<Markdown>` server-only by default;

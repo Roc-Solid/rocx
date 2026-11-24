@@ -1,7 +1,9 @@
 # The Android spike (D-063): a `.rocx` screen as native Android views
 
 Built 2026-11-23 on branch `nxy7/native-android` (from `native-apps`), following
-[DESIGN.md](DESIGN.md). One screen, [phone-hello](phone-hello/), runs as real Android views on
+[DESIGN.md](DESIGN.md); in master since 2026-11-24, as an experiment to iterate on: nothing of it
+runs unless asked for (`rocx dev --android`, `native/android/build.sh`), and the web's code paths
+are the same. One screen, [phone-hello](phone-hello/), runs as real Android views on
 the emulator, with no JavaScript and no WebView, and talks to the app's rocx server with the same
 typed endpoint calls the browser makes (`Api`, D-037). The same `.rocx` runs unchanged in a
 browser.
@@ -18,7 +20,7 @@ spike/native-apps/phone-hello/routes/+page.rocx
 
 ## What it is
 
-- **`native/core`** (Rust, no Android code): web/platform's 49 hosted functions
+- **`native/core`** (Rust, no Android code): web/platform's 63 hosted functions
   (`src/hosted.rs`), and the reactive engine they drive, a port of `web/runtime.js` without the DOM
   (`src/engine.rs`): computations, signals, memos and their waits, `<Loading>`, `<Errored>`,
   `<Show>`, `<For>`, contexts, effects and render effects, cleanups, handlers that wait for the
@@ -137,7 +139,7 @@ The computer's address is `ipconfig getifaddr en0` (en1, en2; Linux's `hostname 
 
 - **The dev client** (`build.sh --dev-client`: `rocx-dev.apk`, `dev.rocx.devclient`, 808 KB) is the
   Kotlin shell with the host as `libhost.so` (`native/android-dev`: native/android's `dev` feature
-  and native/core's `dynamic` one), which exports the 49 hosted functions and Roc's memory
+  and native/core's `dynamic` one), which exports the 63 hosted functions and Roc's memory
   functions, and no app. Every 150 ms it asks the server for `/rocx/android/latest.json`; a new
   build's library is downloaded into the app's files and loaded in place of the last
   (`Rocx.reload`: `dlopen`, `roc_mount` and `roc_run` from `dlsym`).
@@ -258,9 +260,9 @@ All of it in [evidence/](evidence/), made by `evidence/run.sh` and `evidence/web
 - On the Mac (`native/mac`), against the same server: the screen before and after the GET, taps,
   typing, the POST and its refusal, "Ask again" (`refresh!` reads the server's clock again), and,
   with the server down, `<Errored>`'s fallback with the request's failure and "Again".
-- `web/runtime.js` is unchanged: `git diff $(git merge-base HEAD master) -- web/` shows only
-  `web/platform/main.roc`'s two new targets. The web platform's tests pass, 46 of 46
-  (`evidence/web-tests.txt`, through `/tmp/rocx-gate.sh`).
+- The spike changed nothing of the web's: `web/runtime.js` is untouched, and `web/platform/main.roc`
+  only gains its two targets. The web platform's tests passed, 46 of 46, when it was built
+  (`evidence/web-tests.txt`, through `/tmp/rocx-gate.sh`), and master's whole gate when it landed.
 - Beyond the screen, two of `web/test/app`'s pages built for the Mac and driven by `native/mac`
   behave as they do in the browser: `effects_app.roc` (an effect's runs and cleanups in order, an
   interval counting until its `<Show>` hides it, `Browser.call!` and the `listen!` stub failing
@@ -269,15 +271,26 @@ All of it in [evidence/](evidence/), made by `evidence/run.sh` and `evidence/web
 
 ## The hosted functions
 
-All 49 are there. 40 do what runtime.js's imports do: `keep!`, `signal_new!`, `signal_get!`,
+All 63 are there: 49 when the spike was built, and 14 that master's D-040, D-053 and D-054 brought,
+added when it landed (2026-11-24). 47 do what runtime.js's imports do: `keep!`, `signal_new!`, `signal_get!`,
 `signal_set!`, `memo_new!`, `memo_done!`, `memo_get!`, `refresh!`, `is_pending!`, `fail!`,
 `event_value!`, `boundary!`, `problem!`, `retry!`, `for_new!`, `row_index!`, `row_set!`,
 `row_get!`, `context_value!`, `context_find!`, `context_get!`, `location!` (the start path, `/`),
 `fetch!`, `timeout!`, `interval!`, `clear_timer!`, `now_millis!`, `now_nanos!`, `effect_new!`,
 `effect_options!`, `cleanup!`, `action!`, `submission!`, `submissions!`, `submission_clear!`,
-`submission_drop!`, `submit!`, `title!` (the activity's title), `untrack!`, `read_at!`. The screen
-uses about half of them; the others are ported but untested until phase 0's conformance suite runs
+`submission_drop!`, `submit!`, `title!` (the activity's title), `untrack!`, `read_at!`; stores and
+`<For compared>`'s (D-053: `memo_last!`, `row_last!`, `signal_latest!`, `tracking!`, and the
+`same` that `memo_done!` and `row_set!` take); the router actions' (D-054: `revalidate!` by URL, as
+an answer's `x-rocx-revalidate` too, `submission_retry!`, and `optimistic_set!`, whose writes a
+transition holds until the submissions sent with them are done). A keyed `<Show>` (`Html.switched`:
+a `<Switch>`, a route's level) is made anew when its case's name changes. The screen uses about
+half of them; the others are ported but untested until phase 0's conformance suite runs
 `web/test/app` on both engines.
+
+Navigation's (D-040) answer for the one page a phone shows: `app!` (the route table, let go of),
+`is_routing!` (false), `before_leave!`, `leave_prevent!` and `leave_retry!` (nothing: the page is
+never left), `navigate!` (logged once and ignored); and `head!` (a `<Meta>`, `<Link>` or `<Style>`:
+a phone has no `<head>`).
 
 Three answer what the browser's do: `request!` (none), `status!` (nothing), `flash!` (none).
 
@@ -294,7 +307,8 @@ it is the server's).
 ## CSS
 
 The design compiles CSS at build time; the spike reads the stylesheet the page carries (rocx's
-scoped `Generated/Styles`, in a `<style>`), after a phone user-agent sheet (h1–h6, p, lists,
+scoped `Generated/Styles`: a `<style>`, or, since D-040, a `<link>` to its file, which the host asks
+the server for, as a browser does, its first frame waiting for it), after a phone user-agent sheet (h1–h6, p, lists,
 strong, em, small, a). Selectors: type, class, id, `*`, `:root`, `:global()`, descendant and child.
 Properties: `display` (none; flex as a row or a column; the rest a column), `flex-direction`, `gap`,
 `padding`, `margin` (collapsed between a column's children), colours and backgrounds, `font-size`,
@@ -342,8 +356,9 @@ host's GPU.
 5. **The server over HTTP.** Plain `http://` only, a connection a request, no cookies (no sessions),
    no streaming (so no `listen!` or channels). Next: rustls with the platform's roots, keep-alive,
    a cookie jar in the app's files, server-sent events.
-6. **Pages.** One page at its start path; no navigation, links or back gestures (D-040's shape, §8);
-   page guards are ignored (the user's answer to question 4).
+6. **Pages.** One page at its start path; no navigation, links or back gestures (D-040's shape, §8;
+   `Router.navigate!` is logged and ignored); page guards are ignored (the user's answer to
+   question 4).
 7. **`rocx build --android`, and the dev mode's next steps.** `build.sh` is the spike's. The dev mode
    (above) reloads in about a second, on USB and Wi-Fi, each a fresh start; next: the server's
    restart off the reload's path, and the page's APK
@@ -355,3 +370,9 @@ host's GPU.
    Gboard or the applier isn't settled (a plain `EditText` app would tell).
 10. **Release.** A real key and signing, other ABIs (`x86_64` emulators), a launcher icon.
 11. **iOS**: the same `native/core`, an objc2 applier, and a fork target for Xcode's link.
+12. **The dev backend on the Mac.** Built with `--opt=dev` for `arm64mac`, the app crashed in
+    Roc's refcounting: a long string literal sat at an address that isn't a multiple of 8, Roc's
+    `incref` looked for its count in the word before the address rounded down, found a 1, and
+    wrote to read-only memory (seen after the rebase onto master). `--opt=speed` doesn't, nor
+    does the dev backend's `arm64musl` code on the phone (the dev mode's). `build.sh`'s Mac run
+    builds as the APK does; the fork's fix is the user's.

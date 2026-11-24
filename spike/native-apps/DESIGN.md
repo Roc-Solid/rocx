@@ -6,7 +6,7 @@
 > measurements and gaps are in [README.md](README.md); §13 says where it sits in the phases, and §16
 > where the build went otherwise than this design said, and why. An Expo-like dev mode followed
 > (`rocx dev --android`: a dev client that loads each build's library, about a second from a save
-> to the phone; README.md, Dev mode). Nothing is merged.
+> to the phone; README.md, Dev mode). In master since 2026-11-24, as an experiment (opt-in).
 
 > A design spike, 2026-11-23, on master at 56221d2. The web stays the
 > primary target; this is background work, and nothing in it may slow the web down or change what
@@ -94,7 +94,7 @@ What carries over unchanged:
 
 - **The app's code.** Pages, layouts, components, `Solid`, `<Show>`, `<For>`, `<Loading>`,
   `<Errored>`, contexts, memos, effects, `Endpoint.get!`/`read!`, actions and submissions: all of
-  it is Roc that talks to its host through `Host.roc`'s 49 hosted functions.
+  it is Roc that talks to its host through `Host.roc`'s hosted functions (63 in 2026-11).
 - **The markup.** `Html.serialize!` writes `{"t":"e","tag":…,"a":[…],"c":[…]}` for an element,
   `{"t":"x","r":id}` for a text hole, `{"t":"l"}` for a list, `{"t":"show"}`, `{"t":"c"}` for a
   component, and so on (`web/platform/Html.roc`, around line 296). Nothing in it is a DOM node.
@@ -126,7 +126,7 @@ What doesn't exist yet:
 The app compiled for a phone is the browser's app compiled for another target. `web/platform`
 gains targets the way `server/platform` has them: `targets/arm64ios/`, `targets/arm64iossim/`,
 `targets/arm64android/`, each holding the native host's library. `requires { main! }`, the
-exposed modules and the 49 hosted functions stay as they are; the phone's host implements them.
+exposed modules and the hosted functions stay as they are; the phone's host implements them.
 
 ### 4.2 Directories
 
