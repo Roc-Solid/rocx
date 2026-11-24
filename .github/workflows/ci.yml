@@ -11,9 +11,11 @@ on:
   pull_request:
   workflow_dispatch:
 
-# A pull request's newer push stops its older run; master's runs all finish.
+# A pull request's newer push stops its older run; master's runs all finish. Pull requests are
+# grouped by number: a push to one just merged reports master's ref, and it took the place of
+# master's own run waiting for a runner.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
