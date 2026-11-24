@@ -2717,6 +2717,10 @@ window.hydrated = true;
 			await tab.wait(`${card("Delta")}?.closest('.day').dataset.day === '${to}'`, 2000);
 			posted.at(-1).release();
 			await tab.wait("document.querySelector('.pending').textContent === '0 on their way'", 2000);
+			// Landed before it is taken back: the drag reads where the card is a round trip of the
+			// protocol before it presses it, and a card still gliding has gone on by then (on a slower
+			// machine it had: the press missed it, still over Monday, and no drag started).
+			await tab.wait("document.getAnimations().length === 0", 3000);
 		}
 		await tab.wait("document.getAnimations().length === 0", 3000);
 		assert.equal(await tab.eval("window.runtime.live()"), settled, "the rows that moved, and the reads read again, let go of");
