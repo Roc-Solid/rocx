@@ -248,12 +248,17 @@ test("a click on a link to one of the app's pages renders it in place: no load, 
 		assert.equal(await tab.eval("document.activeElement === document.body && !document.body.hasAttribute('tabindex')"), true, "the focus at <body>'s start, as after a load");
 		await tab.press("Tab");
 		assert.equal(await tab.eval("document.activeElement.className"), "skip", "the next Tab reaches the skip link");
+		// Each snapshot once page A has heard its channel's first word (`resync`, as it subscribes):
+		// one taken before would differ by when, as a slower machine's load did.
+		const settled = "document.querySelector('.a .heard')?.textContent === 'resync'";
+		await tab.wait(settled);
 		const navigated = await tab.eval(SNAPSHOT);
 		// The same page, loaded.
 		const loaded = await browser.page();
 		await loaded.beforeEachDocument(HEARD);
 		await loaded.goto(`${site.url}/a`);
 		await loaded.wait("window.ready", 5000);
+		await loaded.wait(settled);
 		assert.equal(navigated, await loaded.eval(SNAPSHOT), "the page a load renders, byte for byte outside the host's elements");
 		// And on: an item, then home, each its own.
 		await tab.click(".to-item");
@@ -742,10 +747,12 @@ test("View Transitions: a navigation is one only when the app asks (<html data-r
 	const site = await navSite();
 	try {
 		const tab = await open(site, "/");
-		await tab.eval("window.transitions = 0; const original = document.startViewTransition.bind(document); document.startViewTransition = (update) => (window.transitions++, original(update))");
-		// A transition playing covers the page: the next click once it is over.
+		await tab.eval("window.transitions = 0; window.playing = 0; const original = document.startViewTransition.bind(document); document.startViewTransition = (update) => { window.transitions++; window.playing++; const transition = original(update); const done = () => window.playing--; transition.finished.then(done, done); return transition; }");
+		// A transition playing covers the page: the next click once it is over (its `finished`; its
+		// animations start only after the new page is in, so none playing yet isn't enough: on a
+		// slower machine a click went to the transition's overlay).
 		const go = async (selector, check) => {
-			await tab.wait("document.getAnimations().length === 0");
+			await tab.wait("window.playing === 0 && document.getAnimations().length === 0");
 			await tab.click(selector);
 			await tab.wait(check);
 			return tab.eval("window.transitions");
