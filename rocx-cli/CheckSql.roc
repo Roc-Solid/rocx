@@ -8,7 +8,8 @@
 ## server as it is. Then rocx writes a check app beside a copy of the app (build/sql/check): a
 ## `DbCheck.Rows(T, Tags)` for each `Db.all!` whose row type it read, its string the statement's
 ## columns, which packages/dbcheck checks when `roc check` compiles it. Exits 1 when the engine
-## refuses a statement, a call's parameters don't match it, or a row doesn't fit its columns.
+## refuses a statement, a call's parameters don't match it, or a row doesn't fit its columns, and
+## when the check app doesn't compile (so no row would be checked), saying why.
 ##
 ## `rocx dev` runs it after each build with `--server` (the server it built, none built here) and
 ## `--quiet` (nothing said when there is nothing to check).
@@ -192,10 +193,11 @@ CheckSql := [].{
 	## The rows of `found` (the scan of the app at `app`) checked against `described` (what the
 	## server said of their statements): rocx writes the check app (build/sql/check/main.roc) beside
 	## a copy of the app's sources, and `roc check` compiles it, each `DbCheck.Rows` checked as it
-	## does; rocx reads what it said.
+	## does; rocx reads what it said. A check app that doesn't compile fails the check (`Sql.rows`'s
+	## `failed`): its rows weren't checked.
 	check_rows! : Str, List(Sql.Found), Value, Options => Try(Sql.Rows, [Failed(Str)])
 	check_rows! = |dir_path, found, described, options| {
-		made = Sql.check_app!(CheckSql.shown(options.cwd, dir_path), found, described, CheckSql.shown(options.cwd, options.rocx))
+		made = Sql.check_app!(CheckSql.shown(options.cwd, dir_path), found, described, Fs.relative(dir_path, Fs.join([options.rocx, "packages", "dbcheck", "main.roc"])))
 		if made.entries.is_empty() {
 			return Ok(Sql.no_rows)
 		}
@@ -213,7 +215,7 @@ CheckSql := [].{
 		_ = Fs.write!(Fs.join([check, "main.roc"]), made.text)
 		roc = Hosts.roc!(options.rocx)?
 		match Cmd.new(roc).args(["check", "main.roc"]).cwd(check).env("NO_COLOR", "1").output!() {
-			Ok(ran) => Ok(Sql.rows("${ran.stdout}${ran.stderr}", made.entries))
+			Ok(ran) => Ok(Sql.rows("${ran.stdout}${ran.stderr}", ran.code, CheckSql.shown(options.cwd, check), made.entries))
 			Err(CantStart(why)) => Err(Failed(why))
 		}
 	}

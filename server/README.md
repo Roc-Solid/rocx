@@ -206,7 +206,10 @@ function whose body the call is), rocx writes a check app beside a copy of the a
 (`build/sql/check`), a `DbCheck.Rows(T, Tags)` for each, its string the statement's columns, and
 `roc check` compiles it: `packages/dbcheck` reads `T`'s shape through its parser and refuses a field
 the statement doesn't return, a type the column's values can't decode into, or a plain field over
-a column that may be null, which rocx reports at the call. `--engine turso` checks a SQLite app on
+a column that may be null, which rocx reports at the call. A check app that doesn't compile for
+another reason (a module of the copy that doesn't, or rocx's own app wrong) fails the check, exit 1,
+saying where and what the compiler said, since its rows weren't all checked; so does a check whose
+server can't describe the statements. `--engine turso` checks a SQLite app on
 Turso (`sqlite` a Turso app on SQLite); `rocx dev` runs the check after each build, and `just
 examples` on every example. The examples' 133 literal statements and 80 rows check clean, in about
 a second an app.

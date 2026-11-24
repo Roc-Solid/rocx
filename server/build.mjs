@@ -54,15 +54,15 @@ export function roc() {
  * missing or older than one of them, a file they embed (anything in rocx-cli/ but the JavaScript),
  * the platform's modules or its host (built first, when its Rust changed): what the repo's scripts
  * and tests run. `ROCX_OPT` picks the optimization
- * (`speed` unless it says `dev`). Builds wait for one another (bin/.rocx-building), since the
- * tests run in several processes at once.
+ * (`speed` unless it says `dev`). Builds wait for one another (bin/.rocx-building), the CLI
+ * platform's host's too, since the tests run in several processes at once: in a fresh clone each
+ * would run cargo and copy its library while another's cargo was writing it.
  */
 export function rocxBinary() {
 	const out = join(root, "bin", "rocx");
 	const sources = join(root, "rocx-cli");
 	const platform = join(root, "cli", "platform");
 	const library = join(cliTargetsDir, nativeTarget(), "libhost.a");
-	buildCliHost();
 	const newest = () =>
 		Math.max(
 			...readdirSync(sources).filter((name) => !name.endsWith(".mjs")).map((name) => statSync(join(sources, name)).mtimeMs),
@@ -72,7 +72,7 @@ export function rocxBinary() {
 	// What it was built with (`dev` or `speed`), beside it: a dev build doesn't stand in for an optimized one.
 	const opt = process.env.ROCX_OPT === "dev" ? "dev" : "speed";
 	const stamp = join(root, "bin", ".rocx-opt");
-	const fresh = () => existsSync(out) && statSync(out).mtimeMs >= newest() && existsSync(stamp) && readFileSync(stamp, "utf8") === opt;
+	const fresh = () => !cliHostStale() && existsSync(out) && statSync(out).mtimeMs >= newest() && existsSync(stamp) && readFileSync(stamp, "utf8") === opt;
 	if (fresh()) return out;
 	const lock = join(root, "bin", ".rocx-building");
 	mkdirSync(dirname(lock), { recursive: true });
@@ -88,6 +88,7 @@ export function rocxBinary() {
 		}
 	}
 	try {
+		buildCliHost();
 		if (fresh()) return out;
 		const building = `${out}.building-${process.pid}`;
 		const result = spawnSync(roc(), ["build", `--opt=${opt}`, `--output=${building}`, join(sources, "main.roc")], { encoding: "utf8" });
@@ -180,13 +181,19 @@ export function buildHost({ target = nativeTarget() } = {}) {
  * Rust is newer than the library Roc links (cargo would do nothing, but takes a moment to say so,
  * and rocxBinary() is asked for often). */
 export function buildCliHost({ target = nativeTarget() } = {}) {
+	if (!cliHostStale({ target })) return;
 	const library = join(cliTargetsDir, target, "libhost.a");
-	const sources = [join(cliHostDir, "Cargo.toml"), join(cliHostDir, "Cargo.lock"), ...readdirSync(join(cliHostDir, "src")).map((name) => join(cliHostDir, "src", name))];
-	if (existsSync(library) && sources.every((source) => statSync(source).mtimeMs <= statSync(library).mtimeMs)) return;
 	buildRustHost(cliHostDir, cliTargetsDir, "librocx_cli_host.a", target);
 	// The library's time says when its sources were last built, even when cargo had nothing to do.
 	const now = new Date();
 	utimesSync(library, now, now);
+}
+
+/** Whether the CLI platform's host for `target` is missing or older than its Rust. */
+function cliHostStale({ target = nativeTarget() } = {}) {
+	const library = join(cliTargetsDir, target, "libhost.a");
+	const sources = [join(cliHostDir, "Cargo.toml"), join(cliHostDir, "Cargo.lock"), ...readdirSync(join(cliHostDir, "src")).map((name) => join(cliHostDir, "src", name))];
+	return !existsSync(library) || sources.some((source) => statSync(source).mtimeMs > statSync(library).mtimeMs);
 }
 
 /** A Rust host (`hostDir`, a staticlib named `library`) for `target`, built and copied into

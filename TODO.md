@@ -109,6 +109,17 @@ When an item lands, delete its line here in the same commit.
   ×1.5 by the load average) and passes alone (about 740 ms). The load average lags a burst of
   builds. A sturdier check: the median of three rebuilds, or a ratio to a no-op rebuild measured in
   the same run.
+- **`test/check-sql.test.mjs`'s Postgres test writes in the server test app's counts**
+  ("42 statements checked on Postgres (the rows of 21 against their records): 6 problems"): a
+  statement added to `server/test/app` fails it until the numbers are changed. Its problems' lines
+  are found by the calls' text already; the counts would need the scan's rules (literals, comments,
+  `Db.unchecked`) repeated in the test, or rocx's `--verbose` list of what it checked to count.
+- **The server platform's host is built without a lock** (`server/build.mjs`'s `buildHost`,
+  `rocx-cli/Hosts.roc`'s `server_host!`): cargo, then a copy into `server/platform/targets`. Tests
+  in several processes after a change to `server/host` (or in a fresh worktree) can each run cargo
+  and copy the library while another's cargo writes it, as the CLI platform's host did before it
+  was built holding `bin/.rocx-building`. Not seen failing yet; the same lock (one of its own, in
+  `server/platform/targets`) would close it.
 
 ## Housekeeping
 

@@ -597,7 +597,8 @@ Sql := [].{
 	## What is wrong with each literal statement, given what the engine said of each (`described`,
 	## the server's answer to `--describe-sql`: `{ engine, statements }`, in the order of
 	## `statements`): a line for each problem, `file:line:column: what`, and a last line that sums
-	## up (with `verbose`, the calls not checked listed before it). `ok` when there is no problem.
+	## up (with `verbose`, the calls not checked listed before it). `ok` when there is no problem,
+	## and the check app (`checked_rows`) compiled.
 	report : List(Found), Value, Rows, Bool -> { lines : List(Str), ok : Bool }
 	report = |found, described, checked_rows, verbose| {
 		engine = Sql.engine_name(Value.str(Value.field(described, "engine")))
@@ -638,28 +639,43 @@ Sql := [].{
 		said = if (wrong == 0) "no problems" else Sql.counted(wrong, "problem", "problems")
 		left = if ($unchecked.is_empty()) "" else ", ${Sql.counted($unchecked.len(), "call", "calls")} not checked (--verbose lists them)"
 		read = checked_rows.checked - checked_rows.skipped.len()
-		against = if (read == 0) "" else " (the rows of ${read.to_str()} against their records)"
+		failed = checked_rows.failed
+		against =
+			if !failed.is_empty() {
+				" (not every row checked: the check app didn't compile)"
+			} else if read == 0 {
+				""
+			} else {
+				" (the rows of ${read.to_str()} against their records)"
+			}
 		summary = if ($checked == 0) "rocx check --sql: no statements to check${left}" else "rocx check --sql: ${Sql.counted($checked, "statement", "statements")} checked on ${engine}${against}: ${said}${left}"
-		listed = if (verbose) $unchecked.concat(checked_rows.notes) else []
-		{ lines: $problems.concat(listed).append(summary), ok: wrong == 0 }
+		listed = if (verbose) $unchecked else []
+		# rocx's own app not compiling is an error, whatever the app's statements are: a check that
+		# can't run says so, and fails, so that no app's rows go unchecked unseen.
+		broken = failed.map(|why| "rocx check --sql: the check app didn't compile, so not every row was checked: ${why}")
+		{ lines: $problems.concat(broken).concat(listed).append(summary), ok: wrong == 0 and failed.is_empty() }
 	}
 
 	## What the check app said of the rows (`rows`): how many it checked, those it refused and why,
-	## those it couldn't check and why (each at its call), and what else stopped it.
-	Rows : { checked : U64, refused : List({ at : Str, said : Str }), skipped : List({ at : Str, said : Str }), notes : List(Str) }
+	## those it couldn't check and why (each at its call), and what stopped it compiling (`failed`),
+	## which leaves its rows unchecked.
+	Rows : { checked : U64, refused : List({ at : Str, said : Str }), skipped : List({ at : Str, said : Str }), failed : List(Str) }
 
 	## No rows checked.
 	no_rows : Rows
-	no_rows = { checked: 0, refused: [], skipped: [], notes: [] }
+	no_rows = { checked: 0, refused: [], skipped: [], failed: [] }
 
 	## The check app (D-058, `build/sql/check/main.roc` beside a copy of the app): the app's header
-	## (`dir`'s main.roc) with dbcheck (`rocx`'s) added, the imports of the modules each call is
-	## in, the names a tag union is tried with (`Tags`), and for each `Db.all!` whose row type the
-	## scan read and whose statement the engine described (`described`), a constant
-	## `DbCheck.Rows(T, Tags)` whose string is the description, which the compiler checks
-	## (`packages/dbcheck`). `entries`: the line of each constant's string, and its call.
+	## (`dir`'s main.roc) with dbcheck added (`dbcheck`: packages/dbcheck/main.roc's path from the
+	## app's directory, worked out from where both really are, since from two paths named from the
+	## working directory it can't be when the app's starts with more `..` than rocx's), the imports
+	## of the modules each call is in, the names a tag union is tried with (`Tags`), and for each
+	## `Db.all!` whose row type the scan read and whose statement the engine described
+	## (`described`), a constant `DbCheck.Rows(T, Tags)` whose string is the description, which the
+	## compiler checks (`packages/dbcheck`). `entries`: the line of each constant's string, and its
+	## call.
 	check_app! : Str, List(Found), Value, Str => { text : Str, entries : List({ line : U64, at : Str }) }
-	check_app! = |dir, found, described, rocx| {
+	check_app! = |dir, found, described, dbcheck| {
 		main_path = Fs.join([dir, "main.roc"])
 		check_path = Fs.join([dir, "build", "sql", "check", "main.roc"])
 		deps =
@@ -667,7 +683,6 @@ Sql := [].{
 				Ok(text) => Text.trim(text).drop_suffix(",")
 				Err(NotFound) => return { text: "", entries: [] }
 			}
-		dbcheck = Fs.relative(dir, Fs.join([rocx, "packages", "dbcheck", "main.roc"]))
 		shown = if (dbcheck.starts_with(".")) dbcheck else "./${dbcheck}"
 		header = Build.move_header("app [program] { ${deps}, dbcheck: ${Text.roc_string(shown)} }", main_path, check_path)
 		engine = Value.str(Value.field(described, "engine"))
@@ -822,48 +837,93 @@ Sql := [].{
 		last.split_on(".").last() ?? last
 	}
 
-	## What `roc check` said of the check app (`output`, its `entries`): each constant whose string
+	## What `roc check` said of the check app (`output`; `code`, its exit code; `check`, the check
+	## app's directory as the report names it; its `entries`): each constant whose string
 	## `DbCheck.Rows` refused, with what it said; each the compiler couldn't check (a type the app
-	## can't be named there), and a note when what stopped it was elsewhere (the app's own modules).
-	rows : Str, List({ line : U64, at : Str }) -> Rows
-	rows = |output, entries| {
+	## can't name there); and `failed`, what stopped the check app compiling, so that its rows
+	## weren't checked: an error that isn't a row's (in the check app, or in the copy of the app's
+	## modules beside it), its title and place and then what the compiler said, indented; or an
+	## exit that isn't `roc check`'s 0, 2 (warnings) or 1 with an error rocx read.
+	rows : Str, I32, Str, List({ line : U64, at : Str }) -> Rows
+	rows = |output, code, check, entries| {
 		var $refused = []
 		var $skipped = []
-		var $notes = []
+		var $failed = []
+		var $errors = 0
 		for said_of in ("\n${output}").split_on("\n── ") {
 			lines = said_of.split_on("\n")
 			title_line = (lines.first() ?? "").drop_prefix("── ")
 			if title_line.starts_with("✗") {
-				parts_of_title = title_line.split_on(" ").keep_if(|word| !word.is_empty())
-				place = parts_of_title.last() ?? ""
-				title = Str.join_with(parts_of_title.drop_first(1).keep_if(|word| !word.starts_with("─") and word != place), " ")
+				$errors = $errors + 1
+				said_words = title_line.split_on(" ").keep_if(|word| !word.is_empty() and !word.starts_with("─")).drop_first(1)
+				# The last word is where, unless the compiler said nowhere (a package it couldn't load).
+				last = said_words.last() ?? ""
+				place = if (last.contains(":")) last else ""
+				title = Str.join_with(if (place.is_empty()) said_words else said_words.drop_last(1), " ")
 				parts = place.split_on(":")
 				file = parts.first() ?? ""
 				line = U64.from_str(parts.get(1) ?? "") ?? 0
-				if file == "main.roc" {
-					match entries.find_first(|entry| line == entry.line or line + 1 == entry.line) {
-						Ok(entry) => {
-							said = Sql.returned(lines)
-							if said.is_empty() {
-								$skipped = $skipped.append({ at: entry.at, said: "the check couldn't name their type (${title})" })
-							} else {
-								$refused = $refused.append({ at: entry.at, said: said.drop_prefix("${entry.at}: ") })
-							}
-						}
-						Err(_) => {
-							$notes = $notes.append("rows not checked: the check app: ${title} at ${place}")
+				entry = if (file == "main.roc") entries.find_first(|each| line == each.line or line + 1 == each.line) else Err(NotFound)
+				match entry {
+					Ok(at) => {
+						said = Sql.returned(lines)
+						if said.is_empty() {
+							$skipped = $skipped.append({ at: at.at, said: "the check couldn't name their type (${title})" })
+						} else {
+							$refused = $refused.append({ at: at.at, said: Sql.without_place(said, at.at) })
 						}
 					}
-				} else {
-					$notes = $notes.append("rows not checked: ${place}: ${title}")
+					Err(_) => {
+						located = if (place.is_empty()) "" else " at ${check}/${place}"
+						$failed = $failed.append(Str.join_with(["${title}${located}"].concat(Sql.indented(lines.drop_first(1))), "\n"))
+					}
 				}
 			}
 		}
-		# Something elsewhere stopped the check: none of the rows were read.
-		if !$notes.is_empty() and $refused.is_empty() {
-			return { checked: entries.len(), refused: [], skipped: entries.map(|entry| { at: entry.at, said: "the check app didn't compile (--verbose says why)" }), notes: $notes }
+		if code != 0 and code != 1 and code != 2 {
+			$failed = $failed.append(Str.join_with(["roc check stopped (exit code ${code.to_str()})"].concat(Sql.indented(output.split_on("\n").take_last(20))), "\n"))
+		} else if code == 1 and $errors == 0 {
+			$failed = $failed.append(Str.join_with(["roc check failed, and said no error rocx could read"].concat(Sql.indented(output.split_on("\n").take_last(20))), "\n"))
 		}
-		{ checked: entries.len(), refused: $refused, skipped: $skipped, notes: $notes }
+		{ checked: entries.len(), refused: $refused, skipped: $skipped, failed: $failed }
+	}
+
+	## What DbCheck said of a row (`said`, the compiler's wrapped lines joined with a space) without
+	## the place it starts with (`place`, the call's) and the `: ` after it. The compiler wraps a long
+	## place too, at a `-` as well as a space, so a space in `said` where `place` has none is passed
+	## over; `said` as it is when it doesn't start with `place`.
+	without_place : Str, Str -> Str
+	without_place = |said, place| {
+		bytes = said.to_utf8()
+		want = "${place}:".to_utf8()
+		var $i = 0
+		var $j = 0
+		while $j < want.len() {
+			if $i >= bytes.len() {
+				return said
+			} else if Text.at(bytes, $i) == Text.at(want, $j) {
+				$i = $i + 1
+				$j = $j + 1
+			} else if Text.at(bytes, $i) == ' ' {
+				$i = $i + 1
+			} else {
+				return said
+			}
+		}
+		Text.trim_start(Text.rest(bytes, $i))
+	}
+
+	## A compiler's report's lines, two spaces in, without the blank lines it starts and ends with.
+	indented : List(Str) -> List(Str)
+	indented = |lines| {
+		var $kept = lines
+		while ($kept.first() ?? "x").trim().is_empty() and !$kept.is_empty() {
+			$kept = $kept.drop_first(1)
+		}
+		while ($kept.last() ?? "x").trim().is_empty() and !$kept.is_empty() {
+			$kept = $kept.drop_last(1)
+		}
+		$kept.map(|line| if (line.trim().is_empty()) "" else "  ${line}")
 	}
 
 	## The message a report quotes after "It returned this error message:", its lines joined.
@@ -890,13 +950,13 @@ Sql := [].{
 	rows_value : Rows -> Value
 	rows_value = |checked| {
 		pairs = |list| Array(list.map(|each| Object([{ key: "at", value: Text(each.at) }, { key: "said", value: Text(each.said) }])))
-		Object([{ key: "checked", value: Value.count(checked.checked) }, { key: "refused", value: pairs(checked.refused) }, { key: "skipped", value: pairs(checked.skipped) }, { key: "notes", value: Value.strs(checked.notes) }])
+		Object([{ key: "checked", value: Value.count(checked.checked) }, { key: "refused", value: pairs(checked.refused) }, { key: "skipped", value: pairs(checked.skipped) }, { key: "failed", value: Value.strs(checked.failed) }])
 	}
 
 	rows_of : Value -> Rows
 	rows_of = |value| {
 		pairs = |key| Value.items(Value.field(value, key)).map(|each| { at: Value.str(Value.field(each, "at")), said: Value.str(Value.field(each, "said")) })
-		{ checked: Value.int_or(Value.field(value, "checked"), 0).to_u64_wrap(), refused: pairs("refused"), skipped: pairs("skipped"), notes: Value.items(Value.field(value, "notes")).map(Value.str) }
+		{ checked: Value.int_or(Value.field(value, "checked"), 0).to_u64_wrap(), refused: pairs("refused"), skipped: pairs("skipped"), failed: Value.items(Value.field(value, "failed")).map(Value.str) }
 	}
 
 	## `n` things: `1 call`, `2 calls`.
@@ -1021,12 +1081,12 @@ Sql := [].{
 				Ok(Object([{ key: "found", value: Array(found.map(Sql.found_value)) }, { key: "statements", value: Value.strs(Sql.statements(found)) }]))
 			}
 			"sqlCheckApp" => {
-				made = Sql.check_app!(Value.str(arg(0)), Value.items(arg(1)).map(Sql.found_of), arg(2), Value.str(arg(3)))
+				made = Sql.check_app!(Value.str(arg(0)), Value.items(arg(1)).map(Sql.found_of), arg(2), Fs.relative(Value.str(arg(0)), Fs.join([Value.str(arg(3)), "packages", "dbcheck", "main.roc"])))
 				Ok(Object([{ key: "text", value: Text(made.text) }, { key: "entries", value: Array(made.entries.map(|entry| Object([{ key: "line", value: Value.count(entry.line) }, { key: "at", value: Text(entry.at) }]))) }]))
 			}
 			"sqlRows" => {
 				entries = Value.items(arg(1)).map(|entry| { line: Value.int_or(Value.field(entry, "line"), 0).to_u64_wrap(), at: Value.str(Value.field(entry, "at")) })
-				Ok(Sql.rows_value(Sql.rows(Value.str(arg(0)), entries)))
+				Ok(Sql.rows_value(Sql.rows(Value.str(arg(0)), Value.int_or(arg(2), 1).to_i32_wrap(), Value.str(arg(3)), entries)))
 			}
 			"sqlScanText" => Ok(Array(Sql.scan_text(Value.str(arg(0)), Value.str(arg(1))).map(Sql.found_value)))
 			"sqlReport" => {
@@ -1156,6 +1216,79 @@ expect {
 }
 
 # A module that names its own type qualified already needs itself imported all the same.
+# What roc check said of a check app: a row refused (DbCheck's words, after the error message line),
+# a row whose type it couldn't name, and an error that is no row's (the check app not compiling, in
+# a module of the copy here), its place from the check app's directory and the compiler's words;
+# one with no place (a package it couldn't load); a crash, an error said in no way rocx reads; and a
+# clean check, warnings only.
+expect {
+	entries = [{ line: 10, at: "S.roc:1:5" }, { line: 14, at: "S.roc:2:5" }]
+	output = Str.join_with(
+		[
+			"── ✗ invalid string ─────────── main.roc:10:6",
+			"",
+			"It returned this error message:",
+			"",
+			"    S.roc:1:5: `id` isn't a column the statement returns (it returns n)",
+			"",
+			"── ✗ unknown type ─────────── main.roc:13:20",
+			"",
+			"Nothing is named Person here.",
+			"",
+			"── ✗ type mismatch ─────────── Store.roc:7:11",
+			"",
+			"This number is being used where a non-number type is needed.",
+			"",
+			"broken = 1",
+			"         ^",
+			"",
+			"── ● unused variable ─────────── main.roc:3:2",
+			"",
+			"Variable x is defined here and then never used.",
+			"",
+			"── 3 errors and 1 warning ─────────── main.roc",
+			"",
+		],
+		"\n",
+	)
+	Sql.rows(output, 1, "app/build/sql/check", entries)
+		== {
+			checked: 2,
+			refused: [{ at: "S.roc:1:5", said: "`id` isn't a column the statement returns (it returns n)" }],
+			skipped: [{ at: "S.roc:2:5", said: "the check couldn't name their type (unknown type)" }],
+			failed: ["type mismatch at app/build/sql/check/Store.roc:7:11\n  This number is being used where a non-number type is needed.\n\n  broken = 1\n           ^"],
+		}
+}
+
+# A long place, wrapped by the compiler where a `-` is, dropped all the same.
+expect Sql.without_place("../far/rocx-sql -check-x/S.roc:1:5: `id` isn't a column", "../far/rocx-sql-check-x/S.roc:1:5") == "`id` isn't a column"
+expect Sql.without_place("S.roc:1:5: `id` isn't a column", "S.roc:1:5") == "`id` isn't a column"
+expect Sql.without_place("Elsewhere: `id`", "S.roc:1:5") == "Elsewhere: `id`"
+
+expect Sql.rows("── ✗ invalid package dependency ──────────\n\nCould not load the package at\nx/main.roc:\nFileNotFound.\n\n── 1 error and 0 warnings ───── main.roc\n", 1, "c", []).failed
+	== ["invalid package dependency\n  Could not load the package at\n  x/main.roc:\n  FileNotFound."]
+
+expect Sql.rows("thread 'main' panicked\n", 134, "c", [{ line: 10, at: "S.roc:1:5" }]).failed == ["roc check stopped (exit code 134)\n  thread 'main' panicked"]
+
+expect Sql.rows("Something went wrong.\n", 1, "c", []).failed == ["roc check failed, and said no error rocx could read\n  Something went wrong."]
+
+expect Sql.rows("── ● unused variable ─── main.roc:3:2\n\nVariable x is defined here and then never used.\n", 2, "c", [{ line: 10, at: "S.roc:1:5" }]) == { checked: 1, refused: [], skipped: [], failed: [] }
+
+# A check app that didn't compile: said before the summary, which says its rows weren't all
+# checked, and the check fails, though every statement is right.
+expect {
+	found = Sql.scan_text("S.roc", "rows : List({ id : I64 })\nrows = Db.all!(\"select 1 as id\", [])?\n")
+	described = Object([{ key: "engine", value: Text("sqlite") }, { key: "statements", value: Array([Object([{ key: "params", value: Array([]) }, { key: "columns", value: Array([]) }])]) }])
+	Sql.report(found, described, { checked: 1, refused: [], skipped: [], failed: ["type mismatch at c/main.roc:9:3\n  Why."] }, Bool.False)
+		== {
+			lines: [
+				"rocx check --sql: the check app didn't compile, so not every row was checked: type mismatch at c/main.roc:9:3\n  Why.",
+				"rocx check --sql: 1 statement checked on SQLite (not every row checked: the check app didn't compile): no problems",
+			],
+			ok: Bool.False,
+		}
+}
+
 expect {
 	text = "Store := [].{\n\tPerson : { id : Str }\n\n\tperson! = |{}| {\n\t\tfound : Try(List(Store.Person), [DbErr(Str)])\n\t\tfound = Db.all!(\"select id from people\", [])\n\t\tfound\n\t}\n}\n"
 	Sql.scan_text("app/Store.roc", text).map(|each| (each.row, each.qualified)) == [("Store.Person", Bool.True)]

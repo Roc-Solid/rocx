@@ -202,11 +202,11 @@ Hosts := [].{
 	## it when its Rust is newer than the library (server/build.mjs's buildCliHost).
 	cli_host! : Str, Str => Try({}, [Failed(Str)])
 	cli_host! = |rocx, target| {
-		host_dir = Fs.join([rocx, "cli", "host"])
-		library = Fs.join([rocx, "cli", "platform", "targets", target, "libhost.a"])
-		if Hosts.not_newer!(host_dir, File.modified!(library)) {
+		if Hosts.cli_host_fresh!(rocx, target) {
 			return Ok({})
 		}
+		host_dir = Fs.join([rocx, "cli", "host"])
+		library = Fs.join([rocx, "cli", "platform", "targets", target, "libhost.a"])
 		triple = Hosts.rust_target(target)
 		_ = Hosts.run!(Hosts.rust_env!(Cmd.new("cargo").args(["build", "--release", "--target", triple]).cwd(host_dir), rocx, target.ends_with("musl")), "cargo build --release --target ${triple}")?
 		Fs.make_dirs!(Fs.dirname(library))
@@ -222,14 +222,18 @@ Hosts := [].{
 		}
 	}
 
+	## Whether the CLI platform's host for `target` is there and newer than its Rust.
+	cli_host_fresh! : Str, Str => Bool
+	cli_host_fresh! = |rocx, target| Hosts.not_newer!(Fs.join([rocx, "cli", "host"]), File.modified!(Fs.join([rocx, "cli", "platform", "targets", target, "libhost.a"])))
+
 	## rocx itself (bin/rocx), built again from its Roc when it is older than rocx-cli/ (but its
 	## JavaScript), the CLI platform's modules or its host, or was built with another optimization
 	## (`ROCX_OPT`: `dev`, else `speed`), as server/build.mjs's rocxBinary does, and taking the same
-	## lock (bin/.rocx-building), since the tests build it in several processes at once: whether it
-	## was built.
+	## lock (bin/.rocx-building), since the tests build it in several processes at once; the host
+	## too is built holding it, or each would run cargo and copy its library while another's cargo
+	## was writing it: whether it was built.
 	rocx_binary! : Str, Str => Try(Bool, [Failed(Str)])
 	rocx_binary! = |rocx, target| {
-		Hosts.cli_host!(rocx, target)?
 		out = Fs.join([rocx, "bin", "rocx"])
 		opt = if (Env.var!("ROCX_OPT") == Ok("dev")) "dev" else "speed"
 		if Hosts.rocx_fresh!(rocx, target, opt) {
@@ -255,9 +259,20 @@ Hosts := [].{
 				}
 			}
 		}
-		built = Hosts.build_rocx!(rocx, out, opt)
+		built = Hosts.build_locked!(rocx, target, out, opt)
 		_ = File.delete!(lock)
-		built?
+		built
+	}
+
+	## Holding bin/.rocx-building: the CLI platform's host, then rocx, unless another process built
+	## it meanwhile.
+	build_locked! : Str, Str, Str, Str => Try(Bool, [Failed(Str)])
+	build_locked! = |rocx, target, out, opt| {
+		Hosts.cli_host!(rocx, target)?
+		if Hosts.rocx_fresh!(rocx, target, opt) {
+			return Ok(Bool.False)
+		}
+		Hosts.build_rocx!(rocx, out, opt)?
 		Ok(Bool.True)
 	}
 
@@ -293,6 +308,7 @@ Hosts := [].{
 		modules = Fs.entries!(Fs.join([rocx, "cli", "platform"])).keep_if(|name| name.ends_with(".roc")).map(|name| Fs.join([rocx, "cli", "platform", name]))
 		library = Fs.join([rocx, "cli", "platform", "targets", target, "libhost.a"])
 		built > 0
+			and Hosts.cli_host_fresh!(rocx, target)
 			and Fs.read_or_empty!(Fs.join([rocx, "bin", ".rocx-opt"])) == opt
 			and Hosts.all_older!(sources.concat(modules).append(library), built)
 	}

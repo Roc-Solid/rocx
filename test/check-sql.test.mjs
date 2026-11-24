@@ -8,8 +8,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, relative } from "node:path";
 import { hasRust, roc, root, rocxBinary } from "../server/build.mjs";
 
 let hasRoc = true;
@@ -94,6 +95,58 @@ test("rocx dev's check (rocx check --sql --server --quiet): the server it built,
 	const quiet = run([join("examples", "hello"), "--quiet"]);
 	assert.equal(quiet.status, 0, quiet.stderr);
 	assert.equal(quiet.stdout + quiet.stderr, "");
+});
+
+/** A SQLite app outside the repo (one the working directory doesn't hold), its Store module's
+ * `definitions` (lines) after a row of its own type read right, checked with test/sql-check's server (the first
+ * test built it), as rocx dev checks with the server it built: its directory as the check names it,
+ * the lines of its Store.roc, and what the check did. */
+function outside(definitions) {
+	const app = realpathSync(mkdtempSync(join(tmpdir(), "rocx-sql-check-")));
+	const platform = relative(app, join(root, "server", "platform", "main.roc"));
+	writeFileSync(join(app, "main.roc"), `app [program] { pf: platform ${JSON.stringify(platform)} }\n\nimport pf.Server\nimport Store\n\nprogram = {\n\tinit!: |_started| Ok({}),\n\trespond!: |_, _| Server.response(200, [], if (Store.ids!({}).is_ok()) "ok" else "failed"),\n\tdatabase: Sqlite("data/check.db"),\n\tmigrations: [],\n\tactors: [],\n\tlogs: { format: Auto },\n\tplugins: [],\n\troutes: [],\n}\n`);
+	const store = [
+		"import pf.Db",
+		"",
+		"Store := [].{",
+		"\t## A row of the module's own type: the check app imports the module, and compiles it.",
+		"\tRow : { id : I64 }",
+		"",
+		"\t## Right.",
+		"\tids! : {} => Try(List(Row), [DbErr(Str), BadRow(Str)])",
+		'\tids! = |{}| Db.all!("select id from notes", [])',
+		...definitions,
+		"}",
+		"",
+	];
+	writeFileSync(join(app, "Store.roc"), store.join("\n"));
+	const built = join(root, "test", "sql-check", "build", "sql", "server");
+	try {
+		return { shown: relative(root, app), store, ...check([app, "--server", built]) };
+	} finally {
+		rmSync(app, { recursive: true, force: true });
+	}
+}
+
+test("rocx check --sql: an app the working directory doesn't hold has its rows checked too (packages/dbcheck named from where both are)", { skip }, () => {
+	const titles = '\ttitles! = |{}| Db.all!("select id from notes", [])';
+	const { shown, store, status, out, err } = outside(["", "\t## Wrong: a field the statement doesn't return.", "\ttitles! : {} => Try(List({ title : Str }), [DbErr(Str), BadRow(Str)])", titles]);
+	assert.equal(status, 1, out + err);
+	assert.deepEqual(out.trimEnd().split("\n"), [
+		`${shown}/Store.roc:${store.indexOf(titles) + 1}:${titles.indexOf("Db.") + 1}: \`title\` isn't a column the statement returns (it returns id)`,
+		"rocx check --sql: 2 statements checked on SQLite (the rows of 2 against their records): 1 problem",
+	]);
+});
+
+test("rocx check --sql: a check app that doesn't compile fails the check, though every statement is right, saying where and what the compiler said; not every row was checked", { skip }, () => {
+	const { shown, store, status, out, err } = outside(["", "\t## Broken on purpose: the check app's copy of this module doesn't compile.", "\tbroken : Str", "\tbroken = 1"]);
+	assert.equal(status, 1, out + err);
+	const lines = out.trimEnd().split("\n");
+	// Where the compiler says it is: the number, in the check app's copy of Store.roc.
+	const line = store.indexOf("\tbroken = 1") + 1;
+	assert.equal(lines[0], `rocx check --sql: the check app didn't compile, so not every row was checked: type mismatch at ${shown}/build/sql/check/Store.roc:${line}:${"\tbroken = ".length + 1}`);
+	assert.ok(lines.includes("  broken = 1"), out);
+	assert.equal(lines.at(-1), "rocx check --sql: 1 statement checked on SQLite (not every row checked: the check app didn't compile): no problems");
 });
 
 test("rocx check --sql: an app with no SQL is fine, and builds nothing", { skip }, () => {

@@ -3726,7 +3726,11 @@ rocx check --sql: 38 statements checked on SQLite (the rows of 22 against their 
   the compile errors back and reports them at the calls. `Tags` holds the app's capitalized words,
   the names a tag union in a row is tried with.
 - **When.** `rocx check --sql` exits 1 on a finding, and `just examples` runs it for every
-  example. `rocx dev` runs it after each build in a process of its own, with the server it built
+  example. It exits 1 too when the check app doesn't compile for another reason than a row (an
+  error in it, or in the copy of the app's modules), saying where and what the compiler said, or
+  when `roc check` ends in a way rocx can't read: its rows weren't all checked. (Until 2026-11-24
+  that was a note `--verbose` listed, exit 0; when D-065 made `init!` required and the check app
+  had none, every app's rows went unchecked, and `just examples` passed.) `rocx dev` runs it after each build in a process of its own, with the server it built
   (`--server`, `--quiet`: an app with no SQL says nothing), and says what it finds while the server
   is served. `rocx build`, `roc check` and `roc build` don't change, and apps change nothing.
 - **What it found.**
