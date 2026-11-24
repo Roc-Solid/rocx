@@ -231,7 +231,8 @@ Hosts := [].{
 	## (`ROCX_OPT`: `dev`, else `speed`), as server/build.mjs's rocxBinary does, and taking the same
 	## lock (bin/.rocx-building), since the tests build it in several processes at once; the host
 	## too is built holding it, or each would run cargo and copy its library while another's cargo
-	## was writing it: whether it was built.
+	## was writing it: whether it was built. It says on stderr that it builds (a minute or so under
+	## --opt=speed) or waits, since `just dev` and every recipe wait on it before anything else.
 	rocx_binary! : Str, Str => Try(Bool, [Failed(Str)])
 	rocx_binary! = |rocx, target| {
 		out = Fs.join([rocx, "bin", "rocx"])
@@ -241,6 +242,7 @@ Hosts := [].{
 		}
 		lock = Fs.join([rocx, "bin", ".rocx-building"])
 		var $waiting = Bool.True
+		var $told = Bool.False
 		while $waiting {
 			match File.create_new!(lock, "${Env.pid!({}).to_str()}") {
 				Ok({}) => {
@@ -248,19 +250,38 @@ Hosts := [].{
 				}
 				Err(CantWrite(why)) => return Err(Failed("rocx: can't take bin/.rocx-building: ${why}"))
 				Err(Exists) => {
-					# Another process is building it: wait for it, and take a lock left by one that died.
-					if File.modified!(lock) > 0 and Time.now_ns!({}) - File.modified!(lock) > 10 * 60 * 1_000_000_000 {
+					# Another process is building it: wait for it. A lock whose process is gone (a build
+					# stopped with ^C) is taken at once; one with no pid in it (server/build.mjs makes a
+					# directory) after ten minutes.
+					holder = U32.from_str(Text.trim(Fs.read_or_empty!(lock))) ?? 0
+					if holder > 0 and !Env.alive!(holder) {
 						_ = File.delete!(lock)
+					} else if File.modified!(lock) > 0 and Time.now_ns!({}) - File.modified!(lock) > 10 * 60 * 1_000_000_000 {
+						_ = File.delete!(lock)
+					} else {
+						if !$told {
+							who = if (holder > 0) "process ${holder.to_str()}" else "another process"
+							_ = Stderr.line!("rocx: ${who} is building bin/rocx; waiting for it")
+							$told = Bool.True
+						}
+						Time.sleep!(200)
 					}
-					Time.sleep!(200)
 					if Hosts.rocx_fresh!(rocx, target, opt) {
 						return Ok(Bool.False)
 					}
 				}
 			}
 		}
+		started = Time.now_ms!({})
+		_ = Stderr.line!("rocx: building bin/rocx again, as its sources changed (--opt=${opt}: a minute or so)")
 		built = Hosts.build_locked!(rocx, target, out, opt)
 		_ = File.delete!(lock)
+		match built {
+			Ok(Bool.True) => {
+				_ = Stderr.line!("rocx: built bin/rocx in ${((Time.now_ms!({}) - started) // 1000).to_str()} s")
+			}
+			_ => {}
+		}
 		built
 	}
 

@@ -81,8 +81,9 @@ export function rocxBinary() {
 			mkdirSync(lock);
 			break;
 		} catch {
-			// Another process is building it: wait for it, and take a lock left by one that died.
-			if (Date.now() - statSync(lock, { throwIfNoEntry: false })?.mtimeMs > 10 * 60 * 1000) rmSync(lock, { recursive: true, force: true });
+			// Another process is building it: wait for it, and take a lock left by one that died: at
+			// once when rocx's (a file holding its pid) names a process that is gone, else after ten minutes.
+			if (Date.now() - statSync(lock, { throwIfNoEntry: false })?.mtimeMs > 10 * 60 * 1000 || deadHolder(lock)) rmSync(lock, { recursive: true, force: true });
 			Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
 			if (fresh()) return out;
 		}
@@ -100,6 +101,23 @@ export function rocxBinary() {
 		return out;
 	} finally {
 		rmSync(lock, { recursive: true, force: true });
+	}
+}
+
+/** Whether bin/.rocx-building is rocx's (a file with its pid) and that process is gone. */
+function deadHolder(lock) {
+	let pid;
+	try {
+		pid = Number.parseInt(readFileSync(lock, "utf8").trim(), 10);
+	} catch {
+		return false;
+	}
+	if (!(pid > 0)) return false;
+	try {
+		process.kill(pid, 0);
+		return false;
+	} catch (error) {
+		return error.code === "ESRCH";
 	}
 }
 

@@ -38,7 +38,8 @@ zig := if `zig version 2>/dev/null || true` == zig_version { "zig" } else { just
 # rocx itself: bin/rocx, built from its Roc (rocx-cli/*.roc, on the CLI platform in cli/) when that
 # changed, by rocx (`rocx self-build`, as server/build.mjs's rocxBinary does for the JavaScript);
 # by the shell when there is none yet, or it is one from before `self-build` (`just rocx-bootstrap`).
-rocx := `bin/rocx self-build 2>/dev/null || { just rocx-bootstrap >&2 && bin/rocx self-build; }`
+# What it says (building, a minute or so; waiting for another process's build) reaches the terminal.
+rocx := `{ test -x bin/rocx && bin/rocx self-build; } || { just rocx-bootstrap >&2 && bin/rocx self-build; }`
 
 default:
     @just --list
@@ -142,7 +143,7 @@ setup:
     .tools/roc-active version
     # rocx itself, bin/rocx, from its Roc (rocx-cli/) on the CLI platform (cli/): `rocx dev` for an
     # app, and every script here.
-    bin/rocx self-build 2>/dev/null || { just rocx-bootstrap && bin/rocx self-build; }
+    { test -x bin/rocx && bin/rocx self-build; } || { just rocx-bootstrap && bin/rocx self-build; }
 
 # The fork's compiler for Linux on arm64 (CI's runners), cross-compiled here by Zig from the fork's
 # commit (`roc_fork_commit`) as `just setup` builds this machine's, into

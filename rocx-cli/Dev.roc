@@ -42,11 +42,13 @@ Dev := [].{
 		check : [Run(Cmd), Nothing],
 	}
 
-	## Builds, serves and watches until a signal.
+	## Builds, serves and watches until a signal. The first build can take a while (a platform's host,
+	## the browser's wasm), so it says it has begun.
 	run! : Plan => Try({}, [Exit(I32)])
 	run! = |plan| {
 		var $server = Down
 		var $checking = Idle
+		_ = Stderr.line!("${plan.label}: building")
 		match (plan.build!)({}) {
 			Ok({}) => {
 				$server = Dev.start!(plan)
