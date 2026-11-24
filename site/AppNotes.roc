@@ -87,7 +87,7 @@ AppNotes := [].{
 			path: Paths.examples_uptime,
 			blurb: "An uptime monitor and its status page",
 			summary: "An uptime monitor and its public status page: jobs check each service on time, incidents open and close themselves, subscribers are emailed, and the page follows it all live.",
-			shows: ["Jobs, cron and email as plugins", "OpenTelemetry metrics from a middleware", "The admin's tables over the app's database, and its jobs page", "Charts, and a channel for the live page"],
+			shows: ["Jobs, cron and email as plugins", "OpenTelemetry metrics from a middleware", "The admin's tables over the app's database, and its jobs page, behind a password and packages/auth's sessions", "Charts, and a channel for the live page"],
 			shots: [
 				{ file: "status", alt: "The status page: each service's state, its uptime and its last days", caption: "The status page", phone: Bool.False },
 				{ file: "monitor", alt: "A monitor's page: its response time charted, and its incidents", caption: "A monitor", phone: Bool.False },

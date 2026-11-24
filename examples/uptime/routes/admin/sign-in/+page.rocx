@@ -8,12 +8,13 @@ import ../../../Words
 import ../../../Generated/Api
 
 ## The admin's sign-in: the password the server was started with (`ADMIN_PASSWORD`). The admin's
-## pages send a browser here, with where it was going (`?next=/admin/jobs`), and it goes on there.
-## A refusal is the submission's error, with the runtime or without it (a flash).
+## pages send a browser here (packages/auth's `Auth.required`), with where it was going
+## (`?then=/admin/jobs`), and it goes on there. A refusal is the submission's error, with the
+## runtime or without it (a flash).
 meta = { title: "Sign in · Status" }
 
 view! = |_| {
-	next = Words.query_value(Router.location!({}).query, "next")
+	then = Words.query_value(Router.location!({}).query, "then")
 	sign_in = Api.post_admin_sign_in({})
 	submission = use_submission!(sign_in)
 	<section class="sign-in">
@@ -22,7 +23,7 @@ view! = |_| {
 		<form method="post" action={Endpoint.url_of(sign_in)}>
 			<label for="password">Admin password</label>
 			<input id="password" name="password" type="password" required autocomplete="current-password" />
-			<input type="hidden" name="next" value={if (next.is_empty()) "/admin" else next} />
+			<input type="hidden" name="then" value={if (then.is_empty()) "/admin" else then} />
 			<button disabled?={submission.pending!()}>{if (submission.pending!()) "Signing in…" else "Sign in"}</button>
 			{match submission.error!() { Ok(problem) => <p class="problem" role="alert">{Server.explain(problem)}</p>, Err(_) => <></> }}
 		</form>

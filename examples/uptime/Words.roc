@@ -68,7 +68,7 @@ expect Words.day({ day: "2026-11-10", level: "none", uptime: "—" }) == "Nov 10
 expect Words.news({ name: "Payments API", what: "opened" }) == "Payments API is down: an incident is open."
 expect Words.news({ name: "Payments API", what: "up" }) == ""
 expect Words.query_value("token=abc&x=1", "token") == "abc"
-expect Words.query_value("?next=%2Fadmin%2Fjobs", "next") == "/admin/jobs"
+expect Words.query_value("?then=%2Fadmin%2Fjobs", "then") == "/admin/jobs"
 expect Words.query_value("x=1", "token") == ""
 expect Words.every(30) == "every 30 s"
 expect Words.every(300) == "every 5 min"

@@ -43,7 +43,7 @@ view! = |_| {
 				<a href="/admin/db">All tables</a>
 				<a href="/admin/jobs">Jobs</a>
 				<a href="/__rocx/mail">Mailbox (dev)</a>
-				<form method="post" action="/admin/sign-out"><button class="link">Sign out</button></form>
+				<form method="post" action="/auth/sign-out"><input type="hidden" name="then" value="/" /><button class="link">Sign out</button></form>
 			</nav>
 		</header>
 		<section aria-labelledby="monitors">

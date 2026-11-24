@@ -67,19 +67,29 @@ export async function fakeTarget() {
  * given the database itself, so that `db.enqueue` and `db.settleJobs` can wake its job workers. The
  * seeded example.com monitor is paused at once (its first check is a minute after the first start),
  * so no test asks the internet. The app's checks of itself ask where the server says it listens
- * (`Env.public_url!`). `{ app, db, stop() }`.
+ * (`Env.public_url!`). `{ app, db, restart(), stop() }`: `restart()` stops the server and starts it
+ * again on the same file (the new server, which `app` is then).
  */
 export async function start(built, target) {
 	const db = testSqlite();
-	const app = await startServer(built.server, {
-		statics: [...built.statics, join(dir, "static")],
-		database: db,
-		env: { ADMIN_PASSWORD: password, OTEL_EXPORTER_OTLP_ENDPOINT: target.url, OTEL_METRIC_EXPORT_INTERVAL: "1000", OTEL_SERVICE_NAME: "acme-status" },
-	});
+	const launch = () =>
+		startServer(built.server, {
+			statics: [...built.statics, join(dir, "static")],
+			database: db,
+			env: { ADMIN_PASSWORD: password, OTEL_EXPORTER_OTLP_ENDPOINT: target.url, OTEL_METRIC_EXPORT_INTERVAL: "1000", OTEL_SERVICE_NAME: "acme-status" },
+		});
+	let app = await launch();
 	await db.sql`update monitors set paused = true where url like 'https://%'`;
 	return {
-		app,
+		get app() {
+			return app;
+		},
 		db,
+		async restart() {
+			await app.stop();
+			app = await launch();
+			return app;
+		},
 		async stop() {
 			await app.stop();
 			await db.drop();
@@ -100,11 +110,11 @@ export async function check(db, id) {
 	return db.settleJobs();
 }
 
-/** Someone signed in to the admin: a client with the session's cookie. */
+/** Someone signed in to the admin: a client with the session's cookie (packages/auth's, `uptime_admin`). */
 export async function admin(app) {
 	const person = app.client();
 	await person.get("/admin/sign-in");
-	const signed = await person.post("/admin/sign-in", { password, next: "/admin" });
+	const signed = await person.post("/admin/sign-in", { password, then: "/admin" });
 	if (signed.status !== 303 || signed.location !== "/admin") throw new Error(`signing in: ${signed.status} ${signed.location}`);
 	return person;
 }

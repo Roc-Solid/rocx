@@ -8,8 +8,12 @@
 ## - packages/admin's jobs page shows that queue at /admin/jobs, behind the admin's sign-in.
 ## - packages/email sends the alerts: over SMTP with `SMTP_URL`, or else kept for the dev mailbox
 ##   (`/__rocx/mail` under `--dev`).
-app [program] { admin: "../../packages/admin/main.roc", charts: "../../packages/charts/main.roc", crypto: "../../packages/crypto/main.roc", email: "../../packages/email/main.roc", jobs: "../../packages/jobs/main.roc", otel: "../../packages/otel/main.roc", pf: platform "../../server/platform/main.roc", testing: "../../packages/testing/main.roc" }
+## - packages/auth keeps the admin's sessions (12 hours, in the `uptime_admin` cookie, their hashes
+##   in the database) and ends them at `POST /auth/sign-out`. It has no `admit!`, so nobody signs in
+##   by a link or a provider: Session.roc checks `ADMIN_PASSWORD` and starts a session itself.
+app [program] { admin: "../../packages/admin/main.roc", auth: "../../packages/auth/main.roc", charts: "../../packages/charts/main.roc", crypto: "../../packages/crypto/main.roc", email: "../../packages/email/main.roc", jobs: "../../packages/jobs/main.roc", otel: "../../packages/otel/main.roc", pf: platform "../../server/platform/main.roc", testing: "../../packages/testing/main.roc" }
 
+import auth.Auth
 import email.Email
 import jobs.Cron
 import jobs.Job
@@ -27,5 +31,6 @@ program = App.program({
 		Job.plugin({ jobs: App.jobs, crons: [Cron.every("*/10 * * * * *", Jobs.due, {}), Cron.every("0 3 * * *", Jobs.nightly, {})] }),
 		JobsPage.plugin({ at: "/admin/jobs", guard: Middlewares.admin, back: { label: "Status admin", href: "/admin" } }),
 		Email.plugin({ from: "Status <status@example.com>" }),
+		Auth.plugin({ sign_in: "/admin/sign-in", home: "/admin", cookie: "uptime_admin", session_ms: 12 * 60 * 60 * 1000 }),
 	],
 })

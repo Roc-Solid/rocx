@@ -8,8 +8,8 @@ it changes as checks come in, without a reload.
 
 Read it to see a whole small app in one place: jobs and cron (packages/jobs), email
 (packages/email), live updates over a channel, metrics (packages/otel), charts (packages/charts), an
-admin over the app's tables (packages/admin), and a SQLite database in the server's process, so it
-needs nothing else to run.
+admin over the app's tables (packages/admin) behind a password and sessions (packages/auth), and a
+SQLite database in the server's process, so it needs nothing else to run.
 
 ## Run it
 
@@ -36,7 +36,7 @@ The app reads these environment variables:
 
 | Variable | What it is |
 |---|---|
-| `ADMIN_PASSWORD` | The admin's password. Without it, nobody can sign in. |
+| `ADMIN_PASSWORD` | The admin's password. Without it, nobody can sign in. A session lasts 12 hours, and goes on while the admin uses it. |
 | `PUBLIC_URL` | Where the app is (`https://status.example.com`, or `--public-url`). It is used for the links in emails and for the checks the app makes of itself. Without it, the app uses the address the server listens on. |
 | `SMTP_URL` | Where alerts are sent (`smtp://user:password@host:587?tls=required`). Without it, they are kept for the dev mailbox. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | An OpenTelemetry collector for the metrics (`http://localhost:4318`). Without it, nothing is measured. |
@@ -140,7 +140,7 @@ Where to look in the code for each Roc Solid feature the app uses.
 
 | Feature | Where |
 |---|---|
-| The admin's sign-in: a password from the environment, a random session token kept in `Kv` (the server's key-value store) for 12 hours, an HttpOnly cookie, and a middleware that sends a stranger to sign in and back. Wrong passwords are limited to ten tries a minute (`Kv.increment!`). | `Session.roc`, `Middlewares.admin`, `routes/admin/` |
+| The admin's sign-in: a password from the environment, compared in constant time, then a session from packages/auth (`Auth.sign_in!`). The plugin is listed without `admit!`, so nobody signs in by a link or a provider. The session is a random token in the `uptime_admin` cookie (HttpOnly; `__Host-uptime_admin` and `Secure` when the public URL is HTTPS), kept as its hash in the database (`auth_sessions`) for 12 hours, and renewed while it is used. `Auth.required` sends a stranger to sign in (`?then=`) and back, and signing out is a form posting to the plugin's `/auth/sign-out`. Wrong passwords are limited to ten tries a minute (`Kv.increment!`). | `main.roc`, `Session.roc`, `Middlewares.admin`, `routes/admin/` |
 | packages/admin for the tables, behind the admin's middleware, with labels. The tables' `check` constraints refuse values that make no sense (named, like `monitors_url_check`), and the admin's form shows why. | `routes/admin/db/+server.roc`, `migrations/0001_uptime.sql` |
 | packages/otel: every request timed by route (`Otel.middleware`), a histogram of check latency by monitor and outcome, and a gauge of each monitor's up or down state. `Otel.roc` is copied from the package, as its README says, and a test checks the copy. | `Metrics.roc`, `Middlewares.roc`, `Otel.roc`, `test/copies.test.mjs` |
 | SQLite in the server's process (`database: Sqlite("data/uptime.db")`). Moments are milliseconds given from Roc and read as ISO 8601 with `strftime`; days with `date`. See [Moving from Postgres to SQLite](#moving-from-postgres-to-sqlite) for what SQLite lacks. | `main.roc`, `Store.roc`, `migrations/` |
@@ -190,7 +190,7 @@ node --test 'examples/uptime/test/*.test.mjs'
   (`Words.roc`), the alert emails (`Alerts.roc`), what counts as an email address
   (`routes/subscribe/+server.roc`), and the pure components (`StatePill`, `UptimeStrip`, `Banner`,
   `IncidentCard`).
-- **`test/http.test.mjs`** (10 tests) starts the server on its own SQLite file, with a fake target
+- **`test/http.test.mjs`** (11 tests) starts the server on its own SQLite file, with a fake target
   (an HTTP server that answers 200 or 500, as a test says) that is also a fake OpenTelemetry
   collector. It tests:
   - the status page and its JSON (the banner, the groups, the 90 days, the past incident);
@@ -198,8 +198,10 @@ node --test 'examples/uptime/test/*.test.mjs'
   - a monitor's page and JSON, and the 404s;
   - subscribing, as a plain form and as the runtime sends it, a wrong address, and the unsubscribe
     link;
-  - the admin's sign-in (a wrong password is refused and never sent back: no cookie, no `value`),
-    the admin's pages, packages/admin and the jobs page;
+  - the admin's sign-in (a wrong password is refused and never sent back: no cookie, no `value`;
+    a `then` off the site goes to `/admin`), the session's row in `auth_sessions` (the token's
+    hash, 12 hours), the admin's pages, packages/admin and the jobs page, and signing out at
+    `/auth/sign-out` (the row gone, the old cookie no good);
   - **up, down, up:** checks are queued with `enqueue()` and run with `settleJobs()` (on SQLite,
     these wake the server's job workers through the jobs plugin's `POST /__rocx/jobs/wake`). Two
     failures give "degraded", and the third opens the incident. The alert mail arrives
@@ -209,7 +211,8 @@ node --test 'examples/uptime/test/*.test.mjs'
   - an admin's update, and a "Resolved" update that closes the incident and sends mail;
   - "Check now" and "Pause";
   - the nightly roll-up, and that running it twice changes nothing;
-  - the metrics reaching the collector.
+  - the metrics reaching the collector;
+  - the admin's session outliving a restart of the server.
 - **`test/browser.test.mjs`** (2 tests) uses headless Chromium with strict hydration checks. It
   opens the status page, sends a monitor down and up again through its jobs, and sees the banner,
   the incident and the state pill change with no reload, along with the screen reader announcement.
@@ -236,9 +239,10 @@ node --test 'examples/uptime/test/*.test.mjs'
   doesn't tell anyone who else subscribed. There is no confirmation email: this is a demo, and the
   seeded subscriber shows the alerts.
 - **The unsubscribe link opens a page with a button**, because mail scanners open links.
-- **Admin sessions are kept in memory** (`Kv`, 12 hours), so a restart signs the admin out. That is
-  fine for one admin. There are no accounts and no Web Push (packages/push would be the next step for
-  subscribers who want it).
+- **One admin, one password.** The password comes from the environment, and its sessions are
+  packages/auth's: kept in the database for 12 hours (renewed while the admin works), so a restart or
+  a deploy doesn't sign the admin out. There are no accounts and no Web Push (packages/push would be
+  the next step for subscribers who want it).
 
 ## What it asked of the platform
 
@@ -272,6 +276,9 @@ worth knowing.
 
 Fixed since, and visible in the code:
 
+- The admin's sessions are packages/auth's (`Auth.sign_in!`, `Auth.required`, `/auth/sign-out`).
+  They were kept in `Kv`, in the server's memory, so every restart signed the admin out; now they
+  are rows in the database, kept as their token's hash.
 - packages/otel has `Metric.gauge` now, so `uptime.check.up` is a real gauge: 1 after a check that
   passed, 0 after one that failed.
 - `Env.public_url!` gives the app its own address (`--public-url`, `PUBLIC_URL`, or where the server

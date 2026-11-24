@@ -5,7 +5,7 @@
 // nightly roll-up, and the metrics a collector gets. No database server is needed.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { admin, build, check, fakeTarget, start, watch } from "./uptime.mjs";
+import { admin, build, check, fakeTarget, password, start, watch } from "./uptime.mjs";
 
 let target;
 let running;
@@ -129,28 +129,43 @@ test("the admin: sign-in required, a wrong password refused and never sent back,
 	const stranger = app.client();
 	const sent = await stranger.get("/admin");
 	assert.equal(sent.status, 303);
-	assert.equal(sent.location, "/admin/sign-in?next=%2Fadmin");
+	assert.equal(sent.location, "/admin/sign-in?then=%2Fadmin");
 	assert.equal((await stranger.request("/admin", { headers: { accept: "application/json" } })).status, 401);
 	assert.equal((await stranger.get("/admin/jobs")).status, 303);
 	assert.equal((await stranger.get("/admin/db")).status, 303);
 
-	await stranger.get("/admin/sign-in?next=%2Fadmin");
-	const wrong = await stranger.post("/admin/sign-in", { password: "hunter2", next: "/admin" });
+	await stranger.get("/admin/sign-in?then=%2Fadmin");
+	const wrong = await stranger.post("/admin/sign-in", { password: "hunter2", then: "/admin" });
 	assert.equal(wrong.status, 303);
-	assert.equal(wrong.location, "/admin/sign-in?next=%2Fadmin", "back to the form");
+	assert.equal(wrong.location, "/admin/sign-in?then=%2Fadmin", "back to the form");
 	assert.deepEqual([stranger.flash.status, stranger.flash.body], [401, "That isn't the admin password."]);
 	for (const cookie of wrong.headers.getSetCookie()) assert.doesNotMatch(cookie, /hunter2/, "no cookie holds the password");
+	assert.ok(!stranger.cookies.has("uptime_admin"), "no session for a wrong password");
 	const again = await wrong.follow();
 	assert.equal(again.dom.getByRole("alert").text, "That isn't the admin password.");
 	assert.equal(again.dom.getByLabelText("Admin password").attr("value"), null, "the password isn't filled in again");
 	assert.doesNotMatch(again.text, /hunter2/, "nor anywhere on the page");
+	// Where a sign-in goes after is a path of this site, never another site.
+	const elsewhere = app.client();
+	await elsewhere.get("/admin/sign-in");
+	assert.equal((await elsewhere.post("/admin/sign-in", { password, then: "//example.com/" })).location, "/admin");
 
 	const person = await admin(app);
+	// The session is packages/auth's: a random token in the `uptime_admin` cookie (HttpOnly, 12 hours),
+	// and a row of the admin's in `auth_sessions` holding its hash, not the token.
+	const token = person.cookies.get("uptime_admin");
+	assert.match(token, /^[A-Za-z0-9_-]{43}$/);
+	const [session] = await db.sql`select id, user_id, created_at, expires_at from auth_sessions where user_id = 'admin' order by created_at desc limit 1`;
+	assert.match(session.id, /^[A-Za-z0-9_-]{43}$/);
+	assert.notEqual(session.id, token);
+	assert.equal(Number(session.expires_at) - Number(session.created_at), 12 * 60 * 60 * 1000);
 	const page = await person.get("/admin");
 	assert.equal(page.status, 200);
 	page.dom.getByRole("heading", { level: 1, name: "Admin" });
 	page.dom.getByRole("button", { name: "Check Payments API now" });
 	page.dom.getByRole("button", { name: "Break it" });
+	page.dom.getByRole("button", { name: "Sign out" });
+	assert.match(page.text, /<form[^>]* method="post" action="\/auth\/sign-out"><input[^>]* type="hidden" name="then" value="\/">/, "signing out posts to packages/auth");
 	const data = await person.read("/admin");
 	assert.ok(data.monitors.some((monitor) => monitor.url === "/demo/flaky"));
 	const tables = await person.get("/admin/db?table=monitors");
@@ -163,9 +178,17 @@ test("the admin: sign-in required, a wrong password refused and never sent back,
 	// packages/admin's pages lead back to the app's own admin, first in their sidebars (`back`).
 	for (const html of [tables.text, jobs.text]) assert.match(html, /<nav class="side-nav" aria-label="[^"]+"><a class="back" href="\/admin">.*?<span class="label">Status admin<\/span><\/a>/);
 
-	const out = await person.post("/admin/sign-out", {});
+	// Signed out (the admin page's form): the session's row gone, its cookie cleared, and the old
+	// cookie signs nobody in.
+	const out = await person.post("/auth/sign-out", { then: "/" });
 	assert.equal(out.status, 303);
+	assert.equal(out.location, "/");
+	assert.ok(!person.cookies.has("uptime_admin"), "the cookie cleared");
+	assert.deepEqual(await db.sql`select id from auth_sessions where id = ${session.id}`, []);
 	assert.equal((await person.get("/admin")).status, 303);
+	const stale = app.client();
+	stale.cookies.set("uptime_admin", token);
+	assert.equal((await stale.get("/admin")).status, 303);
 });
 
 test("up, down three times, up: checks stored, an incident opened and closed, mailed, and the status page says so", async () => {
@@ -324,4 +347,13 @@ test("metrics reach the collector: the check latency histogram, and the up/down 
 	await until(() => up() === 0);
 	assert.equal(up(), 0, "its last value: 0 after a check that failed");
 	target.status = 200;
+});
+
+test("the admin's session outlives a restart: it is kept in the database, not in the server's memory", async () => {
+	const person = await admin(app);
+	app = await running.restart();
+	const returning = app.client();
+	returning.cookies.set("uptime_admin", person.cookies.get("uptime_admin"));
+	assert.equal((await returning.get("/admin")).status, 200);
+	assert.equal((await returning.get("/admin/jobs")).status, 200);
 });
