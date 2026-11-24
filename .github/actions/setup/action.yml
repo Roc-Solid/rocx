@@ -50,6 +50,8 @@ runs:
       shell: bash
       run: npx -y playwright@1.65.1 install --only-shell chromium firefox
 
+    # As `just db`'s: user and password rocx, which it asks for (SCRAM), as the tests expect (one
+    # signs in with a wrong password and wants the refusal).
     - name: Postgres
       if: inputs.postgres == 'true'
       shell: bash
@@ -57,9 +59,10 @@ runs:
         brew install postgresql@18
         bin="$(brew --prefix postgresql@18)/bin"
         data="$RUNNER_TEMP/postgres"
-        "$bin/initdb" -D "$data" -U rocx --auth=trust >/dev/null
+        echo rocx > "$RUNNER_TEMP/postgres-password"
+        "$bin/initdb" -D "$data" -U rocx --auth=scram-sha-256 --pwfile="$RUNNER_TEMP/postgres-password" >/dev/null
         "$bin/pg_ctl" -D "$data" -l "$RUNNER_TEMP/postgres.log" -o "-p 55432 -k $RUNNER_TEMP" start
-        "$bin/createdb" -h 127.0.0.1 -p 55432 -U rocx rocx
+        PGPASSWORD=rocx "$bin/createdb" -h 127.0.0.1 -p 55432 -U rocx rocx
         echo "DATABASE_URL=postgres://rocx:rocx@127.0.0.1:55432/rocx" >> "$GITHUB_ENV"
 
     - name: just setup

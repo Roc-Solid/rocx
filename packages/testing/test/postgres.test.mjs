@@ -60,5 +60,13 @@ test("postgres: a database of the test's own, its rows as JavaScript values, Pos
 test("postgres: a wrong password is Postgres's refusal, not a hang", { skip }, async () => {
 	const wrong = new URL(url);
 	wrong.password = "not-the-password";
-	await assert.rejects(connect(wrong.toString()), /Postgres refused: password authentication failed/);
+	// A connection that wrongly signs in is closed, or it would keep the test's process waiting (a
+	// Postgres that trusts every client signs in anyone: CI's did, and the run hung).
+	await assert.rejects(
+		connect(wrong.toString()).then(async (db) => {
+			await db.close();
+			return db;
+		}),
+		/Postgres refused: password authentication failed/,
+	);
 });
