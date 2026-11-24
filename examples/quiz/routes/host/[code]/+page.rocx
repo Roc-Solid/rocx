@@ -106,7 +106,7 @@ view! = |{ params }| {
 								<a class="other" href={Paths.host}>Pick another set</a>
 							</div>
 						} else {
-							Html.empty({})
+							<></>
 						}
 					}
 				</section>
@@ -140,7 +140,7 @@ Asked := [].{
 			</ul>
 			<div class="foot">
 				<p class="answered" aria-live="polite">{Asked.answered(asking!().answered, current!().players)}</p>
-				{=if (hosting) <button type="button" class="next" on:click={|| (room.say!)(Next)}>Close it now</button> else Html.empty({})}
+				{=if (hosting) <button type="button" class="next" on:click={|| (room.say!)(Next)}>Close it now</button> else <></>}
 			</div>
 		</section>
 
@@ -180,7 +180,7 @@ Revealed := [].{
 			</div>
 			<div class="foot">
 				<p class="next-up">{if (revealing!().last) "The podium is next" else "The next question is coming"}</p>
-				{=if (hosting) <button type="button" class="next" on:click={|| (room.say!)(Next)}>Go on now</button> else Html.empty({})}
+				{=if (hosting) <button type="button" class="next" on:click={|| (room.say!)(Next)}>Go on now</button> else <></>}
 			</div>
 		</section>
 

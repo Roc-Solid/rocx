@@ -22,7 +22,7 @@ view! = |{ params }|
 		<NoHydration>
 			{=match Posts.find(params.lang, params.slug) {
 				Ok(entry) => Article.around({ entry: entry })
-				Err(NotFound) => Html.empty({})
+				Err(NotFound) => <></>
 			}}
 		</NoHydration>
 	</>

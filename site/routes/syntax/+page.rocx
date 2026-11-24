@@ -60,7 +60,8 @@ view! = |_|
 			<p>
 				An element is written as in HTML. An attribute's value is a quoted string or a Roc expression in
 				braces, and so is text among an element's children. Values are <code>Str</code>s, and they are
-				escaped: a name with a <code>{"<"}</code> in it is text, never a tag. The two files have the same
+				escaped: a name with a <code>{"<"}</code> in it is text, never a tag. Elements side by side are a
+				fragment, <code>{"<>…</>"}</code>, so a page, layout or component needs no single root. The two files have the same
 				line numbers, which is why the compiler's reports point to the right place.
 			</p>
 			<Example source={Sources.hello} output={Hello.demo({})} live />
@@ -92,7 +93,8 @@ view! = |_|
 				A hole takes any Roc expression, so <code>if</code>, <code>match</code> and <code>.map</code>
 				need no special syntax. What the hole holds is said by how it opens: <code>{"{x}"}</code> is text,
 				<code>{"{=x}"}</code> one <code>Html</code> value, and <code>{"{...x}"}</code> a
-				<code>List(Html)</code>, joined. In a component, a list that changes is a <code>{"<For>"}</code>, whose
+				<code>List(Html)</code>, joined. A branch with nothing to show is the empty fragment:
+				<code>{"{=if (late) <p>Late</p> else <></>}"}</code>. In a component, a list that changes is a <code>{"<For>"}</code>, whose
 				rows move with their keys (see <a href={"${Paths.components}#control"}>Show and For</a>).
 			</p>
 			<Example source={Sources.lists} output={Lists.demo({})} live />
@@ -207,7 +209,7 @@ view! = |_|
 				<table>
 					<thead><tr><th>Written</th><th>Read as</th></tr></thead>
 					<tbody>
-						<tr><td><code>{"x = <b>hi</b>"}</code>, <code>{"f(<b/>)"}</code>, <code>{"[<i/>, <b/>]"}</code></td><td>markup: after <code>=</code>, <code>(</code>, <code>[</code>, <code>,</code></td></tr>
+						<tr><td><code>{"x = <b>hi</b>"}</code>, <code>{"f(<b/>)"}</code>, <code>{"[<i/>, <b/>]"}</code>, <code>{"Html ?? <></>"}</code></td><td>markup: after <code>=</code>, <code>(</code>, <code>[</code>, <code>,</code>, <code>??</code></td></tr>
 						<tr><td><code>{"|post| <li>…</li>"}</code>, <code>{"A => <b/>"}</code></td><td>markup: a lambda's body, a branch</td></tr>
 						<tr><td><code>{"if (a < b) <b/> else <i/>"}</code></td><td>a comparison in the condition, then markup after it and after <code>else</code></td></tr>
 						<tr><td>first on its line</td><td>markup: a block's last expression</td></tr>
@@ -222,7 +224,8 @@ view! = |_|
 				Markup is the platform's <code>Html</code>, in pages, layouts and components alike. A pure
 				component, <code>view</code>, is written <code>{"{ … } -> Html"}</code>; one that may make
 				signals is an effect, <code>view!</code>, written <code>{"{ … } => Html"}</code>. The empty markup is
-				<code>Html.empty({"{}"})</code> and the doctype <code>Html.doctype({"{}"})</code>.
+				<code>{"<></>"}</code> (<code>Html.empty({"{}"})</code> in plain Roc) and the doctype
+				<code>Html.doctype({"{}"})</code>. A prop's default may be markup too: <code>{"fallback : Html ?? <></>"}</code>.
 			</p>
 			<TableWrap>
 				<table class="api">

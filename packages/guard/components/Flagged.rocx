@@ -21,7 +21,7 @@ Flagged := [].{
 	flags_context : Context(Flags.Values)
 	flags_context = create_context([])
 
-	Props := { name : Str, fallback : Html ?? Html.empty({}), children : List(Html) }
+	Props := { name : Str, fallback : Html ?? <></>, children : List(Html) }
 
 	view! : Props => Html
 	view! = |props| {

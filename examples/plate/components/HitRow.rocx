@@ -24,7 +24,7 @@ HitRow := [].{
 			"recipe" => <span class="tag recipe">Recipe</span>
 			"mine" => <span class="tag mine">Yours</span>
 			"off" => <span class="tag">Packet</span>
-			_ => Html.empty({})
+			_ => <></>
 		}
 
 	<story name="A USDA food">

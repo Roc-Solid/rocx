@@ -18,7 +18,7 @@ Code := [].{
 		lines = if (props.plain) props.source.split_on("\n").map(|text| [{ kind: "", text }]) else Highlight.lines(props.source, if (props.markup) Markup else Code)
 		last = lines.len()
 		<figure class="code" class:numbered={props.numbers}>
-			{=if (props.title.is_empty()) Html.empty({}) else <figcaption>{props.title}</figcaption>}
+			{=if (props.title.is_empty()) <></> else <figcaption>{props.title}</figcaption>}
 			<pre style:--first={(if (props.first > 0) props.first - 1 else 0).to_str()}><code>{...lines.map_with_index(|line, index| row(line, index + 1 == last))}</code></pre>
 		</figure>
 	}
@@ -144,7 +144,7 @@ Code := [].{
 row : List(Highlight.Token), Bool -> Html
 
 ## One line on one line of source: a break between the span and the newline would be a space.
-row = |tokens, last| <><span class="line">{...tokens.map(token)}</span>{=if (last) Html.empty({}) else Html.text("\n")}</>
+row = |tokens, last| <><span class="line">{...tokens.map(token)}</span>{=if (last) <></> else Html.text("\n")}</>
 
 token : Highlight.Token -> Html
 token = |{ kind, text }| if (kind.is_empty()) Html.text(text) else <span class={"t-${kind}"}>{text}</span>

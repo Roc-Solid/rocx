@@ -13,7 +13,7 @@ PostCard := [].{
 	view : { post : Listing.Summary, lang : Str, marked : Str } -> Html
 	view = |{ post, lang, marked }| {
 		title = Search.pieces(post.title, marked).map(|piece| if (piece.hit) <mark>{piece.text}</mark> else Html.text(piece.text))
-		cover = if (post.cover.is_empty()) Html.empty({}) else <img class="cover" src={post.cover} alt="" loading="lazy" decoding="async" width="120" height="90" />
+		cover = if (post.cover.is_empty()) <></> else <img class="cover" src={post.cover} alt="" loading="lazy" decoding="async" width="120" height="90" />
 		<article class="card" class:covered={!post.cover.is_empty()}>
 			{=cover}
 			<div class="text">

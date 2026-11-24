@@ -10,7 +10,7 @@ import ../Generated/Sources
 Example := [].{
 	Props := {
 		source : Sources.Source,
-		output : Html ?? Html.empty({}),
+		output : Html ?? <></>,
 		live : Bool ?? Bool.False,
 		renders : Bool ?? Bool.True,
 	}
@@ -25,9 +25,9 @@ Example := [].{
 			{=if (renders)
 				<div class="result" class:alone={!live}>
 					<Code title={"${source.call} renders"} source={Html.to_str(output)} markup numbers={Bool.False} />
-					{=if (live) <div class="preview"><p class="label">Live</p>{=output}</div> else Html.empty({})}
+					{=if (live) <div class="preview"><p class="label">Live</p>{=output}</div> else <></>}
 				</div>
-			else Html.empty({})}
+			else <></>}
 		</div>
 
 	<style>

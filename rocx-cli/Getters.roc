@@ -17,8 +17,13 @@ Getters := [].{
 	## every field it has (`all`: what `{...rest}` passes on, D-052; empty when the type isn't known).
 	View : { from : U64, to : U64, props : List(Str), record : [Some(Str), None], fields : List(Str), all : List(Str) }
 
-	## Code written otherwise: the source from `from` to `to`, `text` instead (as many lines).
-	Swap : { from : U64, to : U64, text : Str }
+	## Code written otherwise: the source from `from` to `to`, `text` instead (as many lines). Its
+	## `defaults` are props' defaults copied into `text` as written (at byte `at`, the source's `from`
+	## to `to`), for rocx to read as code: markup in them (`fallback : Html ?? <></>`) made calls.
+	Swap : { from : U64, to : U64, text : Str, defaults : List(Default) }
+
+	## A prop's default in a swap's text: at byte `at`, the source from `from` to `to`.
+	Default : { at : U64, from : U64, to : U64 }
 
 	## What a file's components are: the views whose props are getters, the code written otherwise,
 	## the function components of the file's that take getters (their tags: `Answer` for
@@ -163,11 +168,13 @@ Getters := [].{
 
 	## A record type of props (`{ label : Str, max : U64 ?? 5, faces! : () => List(Face) }`, `open`
 	## its `{` and `close` its `}`), with each value prop a getter: `label : () => Str`,
-	## `max : (() => U64) ?? (|| 5)`. Its lines and comments kept. With the names of its fields.
-	getter_record : List(U8), U64, U64 -> { text : Str, names : List(Str) }
+	## `max : (() => U64) ?? (|| 5)`. Its lines and comments kept. With the names of its fields, and
+	## where its defaults are.
+	getter_record : List(U8), U64, U64 -> { text : Str, names : List(Str), defaults : List(Default) }
 	getter_record = |src, open, close| {
 		var $text = "{"
 		var $names = []
+		var $defaults = []
 		var $first = Bool.True
 		for seg in Getters.segments(src, open + 1, close) {
 			if !$first {
@@ -192,7 +199,9 @@ Getters := [].{
 					d0 = Text.run_end(src, defaulted + 2, |b| b == ' ' or b == '\t')
 					d_end = Getters.trim_back(src, d0, comment)
 					default = Text.cut(src, d0, d_end)
-					$text = $text.concat(Text.cut(src, seg.from, t0)).concat("(() => ${ty}) ?? (|| ${default})").concat(Text.cut(src, d_end, seg.to))
+					before = $text.concat(Text.cut(src, seg.from, t0)).concat("(() => ${ty}) ?? (|| ")
+					$defaults = $defaults.append({ at: before.to_utf8().len(), from: d0, to: d_end })
+					$text = before.concat("${default})").concat(Text.cut(src, d_end, seg.to))
 				} else {
 					$text = $text.concat(Text.cut(src, seg.from, t0)).concat(Getters.getter_type(ty)).concat(Text.cut(src, t_end, seg.to))
 				}
@@ -200,7 +209,7 @@ Getters := [].{
 				$text = $text.concat(Text.cut(src, seg.from, seg.to))
 			}
 		}
-		{ text: $text.concat("}"), names: $names }
+		{ text: $text.concat("}"), names: $names, defaults: $defaults }
 	}
 
 	## A view's pattern, `bar` and `close` its two `|`s: the names it binds its value props to, as
@@ -427,14 +436,15 @@ Getters := [].{
 						if Text.at(src, t0) == '{' {
 							close = Getters.matching(src, t0)
 							rewritten = Getters.getter_record(src, t0, close)
-							$swaps = $swaps.append({ from: t0, to: close + 1, text: rewritten.text })
+							$swaps = $swaps.append({ from: t0, to: close + 1, text: rewritten.text, defaults: rewritten.defaults })
 						} else if Text.is_upper(Text.at(src, t0)) {
 							t_end = Text.run_end(src, t0, |b| Getters.is_name_byte(b) or b == '.')
 							type_name = Text.cut(src, t0, t_end).split_on(".").last() ?? ""
 							match Getters.named_record(src, starts, block_at, indent, type_name) {
 								Some(rec) => {
 									if !$swaps.any(|s| s.from == rec.open) {
-										$swaps = $swaps.append({ from: rec.open, to: rec.close + 1, text: Getters.getter_record(src, rec.open, rec.close).text })
+										rewritten = Getters.getter_record(src, rec.open, rec.close)
+										$swaps = $swaps.append({ from: rec.open, to: rec.close + 1, text: rewritten.text, defaults: rewritten.defaults })
 									}
 								}
 								None => return Err(Problem({ reason: "${name}'s props are getters (D-039), so rocx writes their type: give it as a record here, or as `${type_name} := { … }` beside it", at: t0 }))
@@ -452,7 +462,7 @@ Getters := [].{
 									Some(_) => Getters.record_fields(src, starts, block_at, ls, indent, name).drop_if(|field| read.named.contains(field))
 									None => []
 								}
-							$swaps = $swaps.append({ from: bar, to: close + 1, text: read.text })
+							$swaps = $swaps.append({ from: bar, to: close + 1, text: read.text, defaults: [] })
 							to = Getters.definition_end(src, close + 1, indent.to_utf8().len())
 							$views = $views.append({ from: close + 1, to, props: read.props, record: read.record, fields: all.keep_if(Getters.is_value), all })
 						}
@@ -537,6 +547,12 @@ pattern_of = |text| {
 expect record_text("{ label : Str, max : U64 ?? 5, faces! : () => List(Face), children : List(Html) }") == "{ label : () => Str, max : (() => U64) ?? (|| 5), faces! : () => List(Face), children : List(Html) }"
 expect record_text("{\n\tformat : Dec -> Str, # how\n\tlabel : Str ?? \"\",\n}") == "{\n\tformat : () => (Dec -> Str), # how\n\tlabel : (() => Str) ?? (|| \"\"),\n}"
 expect record_text("{}") == "{}"
+expect {
+	# Where each default is in the text: rocx reads it as code there (markup in it, too).
+	bytes = "{ n : U64 ?? 5, f : Html ?? <></> }".to_utf8()
+	made = Getters.getter_record(bytes, 0, Getters.matching(bytes, 0))
+	made.defaults.map(|d| Text.cut(made.text.to_utf8(), d.at, d.at + (d.to - d.from))) == ["5", "<></>"]
+}
 expect pattern_of("|{ label, faces!, day: today, children, .. }|") == Ok({ text: "|{ label: label!, faces!, day: today!, children, .. }|", props: ["label", "today"], record: None, named: ["label", "faces!", "day", "children"] })
 expect pattern_of("|props|") == Ok({ text: "|props|", props: [], record: Some("props"), named: [] })
 expect pattern_of("|{}|") == Ok({ text: "|{}|", props: [], record: None, named: [] })

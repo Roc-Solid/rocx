@@ -40,7 +40,7 @@ Cheatsheet := [].{
 		{ write: "Endpoint.get!(Api.get_profile({ id }))", means: "A GET endpoint's answer as a plain value: the server answers it as it renders the page, which carries it to the browser." },
 		{ write: "<StatusPill status={s} />", means: "A component: StatusPill.view!({ status: || s }), run once, where it is rendered; its props are getters, read where it reads them." },
 		{ write: "<Card>children</Card>", means: "Children become a children : List(Html) prop." },
-		{ write: "<>…</>", means: "A fragment: its children, joined." },
+		{ write: "<>…</>", means: "A fragment: its children side by side, no element around them. <></> is nothing." },
 		{ write: "<!doctype html>", means: "The doctype." },
 		{ write: "{# a comment }", means: "A comment that never reaches the page." },
 		{ write: "<!-- a comment -->", means: "Also a comment that never reaches the page." },

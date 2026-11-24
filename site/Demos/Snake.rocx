@@ -807,7 +807,7 @@ step_ms = |step| "${(step.round_to_i64_try() ?? 150).to_str()}ms"
 message : Snake.Model -> Html
 message = |model|
 	match model.phase {
-		Playing => Html.empty({})
+		Playing => <></>
 		Ready =>
 			<div class="board-message">
 				<p class="board-title">Snake, in Roc</p>
@@ -830,7 +830,7 @@ message = |model|
 			<div class="board-message">
 				<p class="board-title">Game over</p>
 				<p class="board-score"><b>{model.score.to_str()}</b> {if (model.score == 1) "point" else "points"}</p>
-				{=if (model.score > 0 and model.score >= best(model)) <p class="board-best">Your best yet</p> else Html.empty({})}
+				{=if (model.score > 0 and model.score >= best(model)) <p class="board-best">Your best yet</p> else <></>}
 				<p class="board-cta">Click to play again</p>
 				<p class="board-hint"><kbd>Space</kbd> works too</p>
 			</div>

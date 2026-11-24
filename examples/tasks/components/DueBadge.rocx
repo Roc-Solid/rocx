@@ -14,7 +14,7 @@ DueBadge := [].{
 				<span class="due" class:overdue={soon.tone == Overdue} class:today={soon.tone == Today} class:soon={soon.tone == Soon}>
 					<time datetime={due}>{soon.label}</time>
 				</span>
-			Err(NoDue) => Html.empty({})
+			Err(NoDue) => <></>
 		}
 
 	<story name="Overdue">

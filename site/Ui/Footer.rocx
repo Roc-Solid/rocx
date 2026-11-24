@@ -19,7 +19,7 @@ Footer := [].{
 					A development build: the components run on Roc's dev backend, and the numbers are the ones
 					<code>just site</code> last measured.
 				</p>
-			else Html.empty({})}
+			else <></>}
 		</footer>
 
 	<story name="Measured">

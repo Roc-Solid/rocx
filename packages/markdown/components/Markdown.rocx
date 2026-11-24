@@ -125,7 +125,7 @@ language = |lang| if (lang.is_empty()) "" else "language-${lang}"
 
 ## One line of highlighted code, and its line ending unless it is the last.
 line : List(Markdown.Token), Bool -> Html
-line = |tokens, last| <>{...tokens.map(token)}{=if (last) Html.empty({}) else Html.text("\n")}</>
+line = |tokens, last| <>{...tokens.map(token)}{=if (last) <></> else Html.text("\n")}</>
 
 token : Markdown.Token -> Html
 token = |{ kind, text }| if (kind.is_empty()) Html.text(text) else <span class={"t-${kind}"}>{text}</span>
@@ -145,13 +145,13 @@ render_block = |block, props|
 		Table(table) => {
 			cell = |tag, index, content| Html.element(tag, [Html.optional("align", align(table.align.get(index) ?? Default))], inlines(content, props))
 			row = |tag, cells| <tr>{...cells.map_with_index(|content, index| cell(tag, index, content))}</tr>
-			body = if (table.rows.is_empty()) Html.empty({}) else <tbody>{...table.rows.map(|cells| row("td", cells))}</tbody>
+			body = if (table.rows.is_empty()) <></> else <tbody>{...table.rows.map(|cells| row("td", cells))}</tbody>
 			<table><thead>{=row("th", table.head)}</thead>{=body}</table>
 		}
 		Raw(html) =>
 			match props.raw {
 				Escape => <p>{html}</p>
-				Drop => Html.empty({})
+				Drop => <></>
 			}
 		Rule => <hr />
 		Footnotes(found) =>
@@ -210,7 +210,7 @@ render_inline = |inline, props|
 		Raw(html) =>
 			match props.raw {
 				Escape => Html.text(html)
-				Drop => Html.empty({})
+				Drop => <></>
 			}
 		Footnote(found) => (props.footnote)({ number: found.number, href: "#${Md.footnote_id(found.label)}", id: Md.footnote_ref_id(found.label, found.nth) })
 		Break => <br />

@@ -119,7 +119,7 @@ view! = |{ params }| {
 			</main>
 			<Archive shared={shared} />
 			<p class="news" role="status" aria-live="polite" class:shown={!news!().is_empty()}>{news!()}</p>
-			{=if (open!().is_empty()) Html.empty({}) else <CardPanel card={open!()} shared={shared} />}
+			{=if (open!().is_empty()) <></> else <CardPanel card={open!()} shared={shared} />}
 		</div>
 	</Errored>
 }

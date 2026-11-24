@@ -45,16 +45,16 @@ view! = |{ meta, children, .. }| {
 			</head>
 			<body>
 				<SkipLink />
-				{=if (story!()) Html.empty({}) else <Topbar sections={Nav.sections} current={at.get!(Nav.current_of)} landing={landing!()} />}
+				{=if (story!()) <></> else <Topbar sections={Nav.sections} current={at.get!(Nav.current_of)} landing={landing!()} />}
 				<Frame landing={landing!()}>
-					{=if (landing!()) Html.empty({}) else <Sidebar title={at.get!(|path| Nav.section_of(path).name)} groups={at.get!(|path| Nav.section_of(path).groups)} path={at.get!(|path| path)} />}
+					{=if (landing!()) <></> else <Sidebar title={at.get!(|path| Nav.section_of(path).name)} groups={at.get!(|path| Nav.section_of(path).groups)} path={at.get!(|path| path)} />}
 					<main id="content">
 						{...children}
-						{=if (story!()) Html.empty({}) else <Pager previous={at.get!(Nav.neighbours).previous} next={at.get!(Nav.neighbours).next} />}
+						{=if (story!()) <></> else <Pager previous={at.get!(Nav.neighbours).previous} next={at.get!(Nav.neighbours).next} />}
 					</main>
-					{=if (landing!() or meta.toc.is_empty()) Html.empty({}) else <Toc links={meta.toc} />}
+					{=if (landing!() or meta.toc.is_empty()) <></> else <Toc links={meta.toc} />}
 				</Frame>
-				{=if (story!()) Html.empty({}) else <Footer facts={facts} />}
+				{=if (story!()) <></> else <Footer facts={facts} />}
 			</body>
 		</html>
 	</>

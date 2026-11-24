@@ -28,6 +28,7 @@ test("elements, attributes, text and holes", () => {
 	assert.equal(roc(`x = <div />`), `x = Html.element("div", [], [])`);
 	assert.equal(roc(`x = <!doctype html>`), `x = Html.doctype({})`);
 	assert.equal(roc(`x = <><b>a</b></>`), `x = Html.join([Html.element("b", [], [Html.text("a"),]),])`);
+	assert.equal(roc(`x = <></>`), `x = Html.join([])`, "the empty fragment: nothing, as Html.empty({}) is");
 });
 
 test("components: imported modules' view!, others a local snake_case function's, run where they are rendered", () => {
@@ -76,6 +77,10 @@ test("< is markup only where an expression can start", () => {
 	assert.equal(roc(`x = if (a < b) <b/> else <i/>`), `x = if (a < b) Html.element("b", [], []) else Html.element("i", [], [])`);
 	assert.equal(roc(`x = match m { A => <b/>, B => [<i/>] }`), `x = match m { A => Html.element("b", [], []), B => [Html.element("i", [], [])] }`);
 	assert.equal(roc(`x = |p| <b/>`), `x = |p| Html.element("b", [], [])`);
+	assert.equal(roc(`Props := { fallback : Html ?? <></>, n : U64 }`), `Props := { fallback : Html ?? Html.join([]), n : U64 }`, "a default after ??");
+	assert.equal(roc(`x = found ?? <i/>`), `x = found ?? Html.element("i", [], [])`);
+	assert.equal(roc(`x = f? <b`), `x = f? <b`, "a lone ? ends a value");
+	assert.equal(roc(`x = a ?? |b| b`), `x = a ?? |b| b`);
 	assert.equal(roc(`x = {\n\tm = match a { B => 1 }\n\t<b/>\n}`), `x = {\n\tm = match a { B => 1 }\n\tHtml.element("b", [], [])\n}`, "first on its line, after a statement");
 	assert.equal(roc(`x = '<'`), `x = '<'`);
 	assert.equal(roc(`x = "<b>" # <i>`), `x = "<b>" # <i>`);
@@ -319,7 +324,7 @@ test("components: a hole or attribute that calls nothing named with ! is static"
 	// But not in a string, a character or a comment, and not `!=` or `!cond`.
 	assert.equal(reactive('x = <p title={"Go!"}>{if (a != b) "yes!" else "no"}{if (!done) \'!\' else \'.\'}</p>'), 'x = Html.element("p", [Html.attr("title", "Go!"),], [Html.text(if (a != b) "yes!" else "no"), Html.text(if (!done) \'!\' else \'.\'),])');
 	// A component in a hole is an effect; so is a provider. Handlers and keys are what they were.
-	assert.equal(reactive(`import Card\nx = <div>{=if (big) <Card /> else Html.empty({})}</div>`).split("\n")[1], `x = Html.element("div", [], [Html.html_of(|| if (big) Html.component(|| Card.view!({})) else Html.empty({})),])`);
+	assert.equal(reactive(`import Card\nx = <div>{=if (big) <Card /> else <></>}</div>`).split("\n")[1], `x = Html.element("div", [], [Html.html_of(|| if (big) Html.component(|| Card.view!({})) else Html.join([])),])`);
 	assert.equal(reactive(`x = <button on:click={go} key={id}>Go</button>`), `x = Html.element("button", [Html.on("click", go), Html.key(id),], [Html.text("Go"),])`);
 	// A prop named with ! is still an accessor; other props are values, as they were.
 	assert.equal(reactive(`x = <Heading text!={user.name} level={2} />`), `x = Html.component(|| heading!({ text!: || user.name, level: 2, }))`);
@@ -397,6 +402,8 @@ test("components: a component's value props are getters inside it (D-039): its t
 	const props = code(["Card := [].{", "\tProps := { title : Str, max : U64 ?? 5, pick! : Str => {}, children : List(Html) }", "", "\tview! : Props => Html", "\tview! = |{ title, max, pick!, children }| <div class={title}>{max.to_str()}{...children}</div>", "}"].join("\n")).split("\n");
 	assert.equal(props[1], "\tProps := { title : () => Str, max : (() => U64) ?? (|| 5), pick! : Str => {}, children : List(Html) }", "the block's Props: getters, a default as one");
 	assert.equal(props[4], `\tview! = |{ title: title!, max: max!, pick!, children }| Html.element("div", [Html.attr_of("class", || title!()),], [Html.text_of(|| max!().to_str()), Html.join(children),])`);
+	const markup = code(["Gate := [].{", "\tProps := { open : Bool, fallback : Html ?? <></>, note : Html ?? <em>{\"none\"}</em>, n : U64 ?? 1 }", "", "\tview! : Props => Html", "\tview! = |{ open, fallback, note, n }| <p>{=if (open) note else fallback}</p>", "}"].join("\n")).split("\n");
+	assert.equal(markup[1], `\tProps := { open : () => Bool, fallback : (() => Html) ?? (|| Html.join([])), note : (() => Html) ?? (|| Html.element("em", [], [Html.text("none"),])), n : (() => U64) ?? (|| 1) }`, "markup in a default, as anywhere");
 	const whole = code(["Chart := [].{", "\tview! : { label : Str, data! : () => List(U64) } => Html", "\tview! = |props| {", "\t\tdata! = props.data!", "\t\t<p>{props.label}</p>", "\t}", "}"].join("\n")).split("\n");
 	assert.equal(whole[3], "\t\tdata! = props.data!", "an accessor field as it is");
 	assert.equal(whole[4], `\t\tHtml.element("p", [], [Html.text_of(|| (props.label)()),])`, "a value field through its getter (in parentheses: `props.label()` would call a method)");
@@ -595,7 +602,7 @@ test("<NoHydration>: a handler, a key or a transition written inside is refused 
 		assert.fail("expected the source to be refused");
 	};
 	assert.deepEqual(refused("<button on:click={go!}>Go</button>"), { reason: "on:click is inside <NoHydration>, which the browser never hydrates, so this handler would never run: put <button> outside <NoHydration>", line: 6, column: 12 });
-	assert.match(refused("<p>{=if (open!()) <button on:click={go!}>Go</button> else Html.empty({})}</p>").reason, /^on:click is inside <NoHydration>/, "markup in a hole inside it too");
+	assert.match(refused("<p>{=if (open!()) <button on:click={go!}>Go</button> else <></>}</p>").reason, /^on:click is inside <NoHydration>/, "markup in a hole inside it too");
 	assert.match(refused("<li key={id}>x</li>").reason, /^key is inside <NoHydration>, which the browser never hydrates: nothing keeps <li> by it there/);
 	assert.match(refused("<p transition:in={Transition.fade}>x</p>").reason, /^transition:in is inside <NoHydration>, which the browser never hydrates, so nothing there comes or goes/);
 	assert.match(failureOf(() => transpile("import pf.Html\n\nview! = |{}| <NoHydration class=\"x\"><p /></NoHydration>\n", "T.rocx")), /<NoHydration> takes no attributes/);

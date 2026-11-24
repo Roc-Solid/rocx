@@ -102,9 +102,10 @@ Transpile := [].{
 	preformatted_elements : List(Str)
 	preformatted_elements = ["pre", "textarea"]
 
-	## Words after which an expression begins, so a `<` after them starts markup.
+	## Words after which an expression begins, so a `<` after them starts markup (and a `|`, a lambda).
+	## `??` too: a default is a value (`fallback : Html ?? <></>`), where a lone `?` (`x? < y`) ends one.
 	keywords_before_expression : List(Str)
-	keywords_before_expression = ["else", "return", "crash", "expect", "dbg", "in"]
+	keywords_before_expression = ["else", "return", "crash", "expect", "dbg", "in", "??"]
 
 	## A component's handlers: `on:event={handler!}` runs an effect; `on:event.value={…}` and the others
 	## give it what the event says (`.keys`: the key and the modifier keys held; `.point`: where the
@@ -1080,6 +1081,26 @@ Transpile := [].{
 		Ok(Read({ key: word, end, punned }))
 	}
 
+	## A swap's text (D-039's props type, or a view's pattern), its props' defaults read as code: markup
+	## in one (`fallback : Html ?? <></>`) made calls, as anywhere else.
+	swapped : Cfg, St, Getters.Swap -> Try({ st : St, out : Str }, [Rocx(RocxError), Crash(Str)])
+	swapped = |cfg, st0, swap| {
+		text = swap.text.to_utf8()
+		var $st = st0
+		var $out = ""
+		var $copied = 0
+		for default in swap.defaults {
+			if Text.slice(cfg.src, default.from, default.to).contains('<') {
+				# The source up to the default's end, read from its start: all of it, and no further.
+				read = Transpile.read_code({ ..cfg, src: Text.slice(cfg.src, 0, default.to) }, { ..$st, pos: default.from }, Bool.False)?
+				$out = $out.concat(Text.cut(text, $copied, default.at)).concat(read.out)
+				$st = read.st
+				$copied = default.at + (default.to - default.from)
+			}
+		}
+		Ok({ st: $st, out: $out.concat(Text.cut(text, $copied, text.len())) })
+	}
+
 	## Roc code, with any markup in it turned into calls; up to an unmatched `}` when inside a hole.
 	read_code : Cfg, St, Bool -> Try({ st : St, out : Str }, [Rocx(RocxError), Crash(Str)])
 	read_code = |cfg, st0, inside_braces| {
@@ -1126,9 +1147,10 @@ Transpile := [].{
 			}
 			if (c == '{' or c == '|') and cfg.swaps.any(|swap| swap.from == pos) {
 				# Written otherwise (D-039): a view's props type, made of getters, or its pattern.
-				swap = cfg.swaps.find_first(|each| each.from == pos) ?? { from: pos, to: pos + 1, text: "" }
-				$out = $out.concat(swap.text)
-				$st = { ..$st, pos: swap.to }
+				swap = cfg.swaps.find_first(|each| each.from == pos) ?? { from: pos, to: pos + 1, text: "", defaults: [] }
+				written = Transpile.swapped(cfg, $st, swap)?
+				$out = $out.concat(written.out)
+				$st = { ..written.st, pos: swap.to }
 				$last = if (c == '|') "|" else "}"
 			} else if c == '(' {
 				$parens = $parens.append($last == "if" or $last == "while")
@@ -1302,6 +1324,11 @@ Transpile := [].{
 				if spaced > 0 {
 					$out = $out.concat(Text.cut(src, pos, pos + spaced))
 					$st = { ..$st, pos: pos + spaced }
+				} else if c == '?' and Text.at(src, pos + 1) == '?' {
+					# `??` is one token: what follows it is a value, not a comparison after `x?`.
+					$out = $out.concat("??")
+					$st = { ..$st, pos: pos + 2 }
+					$last = "??"
 				} else {
 					character = Transpile.char_at(src, pos)
 					$out = $out.concat(character)

@@ -157,7 +157,7 @@ DbResults := [].{
 	cell : DbBench.Workload, DbResults.Stats, Dec -> Html
 	cell = |workload, it, fastest| {
 		share = if (it.avg == 0.0) 0.0 else fastest / it.avg * 100.0
-		spread = if (it.count > 1) <span class="spread">{DbResults.range(it.min, it.max)}</span> else Html.empty({})
+		spread = if (it.count > 1) <span class="spread">{DbResults.range(it.min, it.max)}</span> else <></>
 		<td class={if (it.avg == fastest) "num best" else "num"}>
 			<span class="rate">{it.rate}</span>
 			<svg class="bar" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden="true"><rect width="100" height="4" class="track" /><rect width={DbResults.tenths(share)} height="4" class="fill" /></svg>

@@ -12,7 +12,7 @@ Pagination := [].{
 		url = |number| if (number <= 1) Paths.lang({ lang: lang }) else Paths.lang_page_number({ lang, number: number.to_str() })
 		numbers = List.repeat(0, pages.to_u64()).map_with_index(|_, index| index + 1)
 		if pages <= 1 {
-			Html.empty({})
+			<></>
 		} else {
 			<nav class="pagination" aria-label={intl.t("pager.label", [])}>
 				{=if (page > 1) <a class="step" rel="prev" href={url(page - 1)}>← {intl.t("pager.newer", [])}</a> else <span class="step" aria-hidden="true"></span>}

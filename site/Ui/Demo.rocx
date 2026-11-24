@@ -35,11 +35,11 @@ Demo := [].{
 							<span class="shown">{"<Show> switched"}</span>
 						</p>
 					</NoHydration>
-				else Html.empty({})}
-				{=if (props.meter.is_empty()) Html.empty({}) else <NoHydration><p class="meter" data-perf={props.meter}>{props.idle}</p></NoHydration>}
+				else <></>}
+				{=if (props.meter.is_empty()) <></> else <NoHydration><p class="meter" data-perf={props.meter}>{props.idle}</p></NoHydration>}
 			</div>
 			{=if (props.inspect.is_empty())
-				Html.empty({})
+				<></>
 			else
 				<NoHydration>
 					<div class="inspector" data-inspect-signals={props.inspect}>

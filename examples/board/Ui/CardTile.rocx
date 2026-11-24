@@ -47,7 +47,7 @@ CardTile := [].{
 			<div class="meta">
 				{=CardTile.due(card!().due, Board.is_overdue(board!(), card!()))}
 				{=CardTile.progress(Board.progress(card!().checklist))}
-				{=if (card!().description.is_empty()) Html.empty({}) else <span class="has-notes" title="Has a description" role="img" aria-label="Has a description">≡</span>}
+				{=if (card!().description.is_empty()) <></> else <span class="has-notes" title="Has a description" role="img" aria-label="Has a description">≡</span>}
 				<span class="space"></span>
 				<Show when!={!viewers!().is_empty()}>
 					<AvatarStack faces!={viewers!} max={3} label={CardTile.viewing(viewers!())} />
@@ -62,7 +62,7 @@ CardTile := [].{
 	due : Str, Bool -> Html
 	due = |date, late|
 		if date.is_empty() {
-			Html.empty({})
+			<></>
 		} else {
 			<span class="due" class:overdue={late}>
 				<span aria-hidden="true">◷</span>
@@ -75,7 +75,7 @@ CardTile := [].{
 	progress : { done : U64, total : U64 } -> Html
 	progress = |{ done, total }|
 		if total == 0 {
-			Html.empty({})
+			<></>
 		} else {
 			<span class="progress" class:complete={done == total} style:--done={"${((done * 100) // total).to_str()}%"} title="Checklist">
 				<span aria-hidden="true">☑</span> {"${done.to_str()}/${total.to_str()}"}
@@ -92,7 +92,7 @@ CardTile := [].{
 	assignee = |people, id|
 		match Board.person(people, id) {
 			Ok(person) => <Avatar person={person} label={"Assigned to ${person.name}"} />
-			Err(NotFound) => Html.empty({})
+			Err(NotFound) => <></>
 		}
 
 	## Who is editing the card, unless it is you.
@@ -100,7 +100,7 @@ CardTile := [].{
 	editing = |board, card|
 		match Board.lease_of(board.leases, card) {
 			Ok(lease) if lease.person != board.me.id => <p class="editing"><span aria-hidden="true">✎</span> {lease.name} is editing</p>
-			_ => Html.empty({})
+			_ => <></>
 		}
 
 	<style>
