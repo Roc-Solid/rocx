@@ -1,205 +1,46 @@
 import pf.Html
 import pf.Solid exposing [create_memo!, create_signal!]
-import pf.Transition
 
-## All of rocx's syntax in one component: a reading list you can add to, tick off and filter. Each
-## comment says what the lines under it show; the syntax page goes through them one by one.
+## A reading list: type a title and press Enter, tick a book off.
 SyntaxTour := [].{
-	Book : { id : U64, title : Str, done : Bool }
-
-	Filter : [All, Unread, Read]
-
-	# An effectful component (`view!`): it runs once, and may make signals. Its value props are getters
-	# (`heading`), read where it reads them; `children` is the markup it was given.
-	view! : { heading : Str, children : List(Html) } => Html
-	view! = |{ heading, children }| {
-		# Signals: an accessor to read (`books!()`) and a setter. A memo: worked out again only when
-		# what it reads changes.
-		(books!, set_books!) = create_signal!(SyntaxTour.start)
+	view! : {} => Html
+	view! = |{}| {
+		book = |id, title| { id, title, done: Bool.False }
+		(books!, set_books!) = create_signal!([book(1, "Dune"), book(2, "Emma")])
 		(draft!, set_draft!) = create_signal!("")
-		(filter!, set_filter!) = create_signal!(All)
-		shown! = create_memo!(
-			|| {
-				wanted = filter!()
-				books!().keep_if(|book| SyntaxTour.keeps(wanted, book))
-			},
-		)
-		read! = create_memo!(|| books!().keep_if(|book| book.done).len())
+		left! = create_memo!(|| books!().count_if(|b| !b.done))
 
-		# Handlers are Roc functions with effects: they read and write signals.
 		add! = || {
-			title = draft!().trim()
-			if (title.is_empty()) {} else {
-				set_books!(books!().append({ id: books!().len() + 1, title, done: Bool.False }))
+			if !draft!().is_empty() {
+				set_books!(books!().append(book(books!().len() + 1, draft!())))
 				set_draft!("")
 			}
 		}
-		toggle! = |id| set_books!(books!().map(|book| if (book.id == id) { ..book, done: !book.done } else book))
-		clear! = || set_books!(books!().drop_if(|book| book.done))
+		tick! = |id|
+			set_books!(books!().map(|b| if (b.id == id) { ..b, done: !b.done } else b))
 
 		<section class="tour">
-			{# A comment in markup: rocx drops it. }
-			<!-- So does an HTML comment. -->
-			{# A handler on the whole document while this is on the page: Escape empties the field. }
-			<Document on:keydown.Escape={|| set_draft!("")} />
-			<h3>{heading}</h3>
-			{# The children, as given: a list hole. }
-			{...children}
-
-			{# Holes: text, numbers and markup, by the value's type; a string with an interpolation. }
-			<p class="count">{books!().len()} books, {"${read!().to_str()} read"}</p>
-
-			{# Attributes: static, computed, one with no value (required), a flag (?=), one left out when
-			  it is empty (??=), a class toggled (class:). Handlers: on:event, given what they ask for
-			  (.value) or waiting for a key (.Enter). }
-			<div class="add">
-				<input
-					type="text"
-					placeholder="Add a book"
-					aria-label="A book's title"
-					required
-					value={draft!()}
-					on:input.value={set_draft!}
-					on:keydown.Enter={add!}
-				/>
-				<button type="button" disabled?={draft!().trim().is_empty()} on:click={add!}>Add</button>
-			</div>
-			{# A list that never changes is made once, and needs no key. }
-			<div class="filters" role="group" aria-label="Show">
-				{...[All, Unread, Read].map(|kind|
-					<button type="button" class:on={filter!() == kind} aria-pressed={if (filter!() == kind) "true" else "false"} title??={if (filter!() == kind) "Showing these" else ""} on:click={|| set_filter!(kind)}>
-						{SyntaxTour.name(kind)}
-					</button>
-				)}
-			</div>
-
-			{# A list that changes: a row per key, kept and moved as the list changes. The row's name
-			  reads its book now; a row comes and goes with a transition. }
-			<ul class="books">
-				{...shown!().map(|book|
-					<li key={book.id} class:done={book.done} transition={Transition.fade.ms(160)}>
-						<label>
-							<input type="checkbox" checked?={book.done} on:change={|| toggle!(book.id)} />
-							{book.title}
-						</label>
+			<input
+				placeholder="Add a book"
+				value={draft!()}
+				on:input.value={set_draft!}
+				on:keydown.Enter={add!}
+			/>
+			<ul>
+				{...books!().map(|b|
+					<li key={b.id} class:done={b.done}>
+						<input type="checkbox" checked?={b.done} on:change={|| tick!(b.id)} />
+						{b.title}
 					</li>
 				)}
 			</ul>
-
-			{# An if in a hole: its branch is made once, and kept while it holds. No else needed. }
-			{if (shown!().is_empty()) <p class="empty">Nothing here.</p>}
-
-			{# A match: the arm that holds, kept while it does; its names read the newest value. }
-			{match shown!().first() {
-				Ok(first) => <p class="next">Next up: <Badge label={first.title} /></p>
-				Err(_) => <></>
-			}}
-
-			{# A component as a row's root: its key is the row's, not a prop. A handler that keeps the
-			  browser's default from happening (.prevent: the link doesn't jump). }
-			<p class="read">
-				{...books!().keep_if(|book| book.done).map(|book| <Badge key={book.id} label={book.title} />)}
-				<a href="#tour" on:click.prevent={clear!}>Clear the read ones</a>
-			</p>
-
-			{# A row per position (the key is the index), and a CSS variable from data (style:). }
-			<ol class="bars" aria-label="Title lengths">
-				{...books!().map_with_index(|book, i| <li key={i} style:--length={book.title.to_utf8().len().to_str()}><span>{i + 1}</span></li>)}
-			</ol>
-
-			{# Entities in text, and markup the browser never takes over: the server's alone. }
-			<NoHydration>
-				<p class="note">Filters &amp; ticks run in the browser; this line is the server's.</p>
-			</NoHydration>
+			{if (left!() == 0) <p>All read.</p> else <p>{left!()} to read</p>}
 		</section>
 	}
 
-	## The books to start with.
-	start : List(SyntaxTour.Book)
-	start = [
-		{ id: 1, title: "Dune", done: Bool.True },
-		{ id: 2, title: "Middlemarch", done: Bool.False },
-		{ id: 3, title: "The Left Hand of Darkness", done: Bool.False },
-	]
-
-	## Whether a filter shows a book.
-	keeps : SyntaxTour.Filter, SyntaxTour.Book -> Bool
-	keeps = |filter, book|
-		match filter {
-			All => Bool.True
-			Unread => !book.done
-			Read => book.done
-		}
-
-	## A filter's name, on its button.
-	name : SyntaxTour.Filter -> Str
-	name = |filter|
-		match filter {
-			All => "All"
-			Unread => "Unread"
-			Read => "Read"
-		}
-
-	# Styles scoped to this component: they reach its own elements only.
 	<style>
-		.tour {
-			display: grid;
-			gap: var(--space-3);
-		}
-
-		.add,
-		.filters {
-			display: flex;
-			flex-wrap: wrap;
-			gap: var(--space-2);
-		}
-
-		.filters .on {
-			outline: 2px solid var(--accent);
-		}
-
-		.books {
-			margin: 0;
-			padding: 0;
-			list-style: none;
-		}
-
-		.books .done {
-			color: var(--text-muted);
+		.done {
 			text-decoration: line-through;
 		}
-
-		.bars {
-			display: grid;
-			gap: var(--space-1);
-			margin: 0;
-			padding: 0;
-			list-style: none;
-		}
-
-		.bars li {
-			width: calc(var(--length) * 0.6rem);
-			max-width: 100%;
-			border-radius: var(--radius-sm);
-			background: var(--accent-soft, var(--bg-sunken));
-			font-size: var(--size-sm);
-		}
-
-		.note,
-		.empty {
-			color: var(--text-muted);
-		}
 	</style>
-
-	# A story: this component as the stories page (a dev build's /__rocx/stories) shows it.
-	<story name="A reading list">
-		<SyntaxTour heading="My reading list"><p>Books for the winter.</p></SyntaxTour>
-	</story>
-}
-
-## A pure component (`view`, no `!`): its props are values, it makes no signals, and it is called
-## where it is written.
-Badge := [].{
-	view : { label : Str } -> Html
-	view = |{ label }| <span class="badge">{label}</span>
 }

@@ -22,7 +22,7 @@ meta = {
 	title: "Syntax",
 	description: "Everything rocx accepts in markup: elements and fragments, holes and list holes, attributes and their forms, if, match and keyed .map rows, components and props, handlers, built-in tags, whitespace, comments and entities, scoped styles, stories, and where < starts markup.",
 	toc: [
-		{ id: "tour", label: "Everything in one component" },
+		{ id: "tour", label: "One small component" },
 		{ id: "at-a-glance", label: "At a glance" },
 		{ id: "elements", label: "Elements, text and fragments" },
 		{ id: "holes", label: "Holes" },
@@ -56,16 +56,14 @@ view! = |_|
 				this page was built.
 			</PageHero>
 
-			<Heading id="tour">Everything in one component</Heading>
+			<Heading id="tour">One small component</Heading>
 			<p>
-				This reading list uses nearly everything this page covers: signals and memos, handlers, holes
-				and attributes of most kinds, rows kept by key, an <code>if</code> and a <code>match</code> in
-				holes, a scoped style and a story. Each comment in its source names the construct under it, and
-				each section below explains one of them. Add a book, tick one off, or filter the list.
+				Signals, a memo, handlers, holes, rows kept by key, an <code>if</code> and a scoped style. The
+				sections below explain each. Type a title and press Enter, or tick a book off.
 			</p>
 		</NoHydration>
 		<Demo>
-			<div data-demo="tour"><SyntaxTour heading="My reading list"><p>Books for the winter.</p></SyntaxTour></div>
+			<div data-demo="tour"><SyntaxTour /></div>
 		</Demo>
 		<NoHydration>
 			<Code title={Sources.syntax_tour.file} source={Sources.syntax_tour.rocx} />
