@@ -75,7 +75,7 @@ jobs:
   test-server:
     name: just test-server
     runs-on: macos-latest
-    timeout-minutes: 90
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
