@@ -82,10 +82,13 @@ test("rocx dev: writes main.roc, serves the page and the endpoint, rebuilds on a
 		assert.equal(await (await fetch(`${url}/hello`)).json(), "Hello from the server");
 		assert.doesNotMatch(said, /rocx check --sql/, "an app with no SQL: its check (D-058) says nothing");
 
-		// The browser's half: the button counts.
+		// The browser's half: the button counts, once the page is hydrated (`rocx:ready`; a click
+		// before then lands on the server's markup alone, as it did on CI's first, colder run).
 		browser = await launch();
 		const tab = await browser.page();
+		await tab.beforeEachDocument(`document.addEventListener("rocx:ready", () => { window.__rocxReady = true; });`);
 		await tab.goto(url);
+		await tab.wait("window.__rocxReady", 30_000);
 		await tab.wait("document.querySelector('button')?.textContent === 'Clicked 0 times'");
 		await tab.click("button");
 		await tab.wait("document.querySelector('button').textContent === 'Clicked 1 times'");

@@ -367,8 +367,8 @@ examples := `git ls-files 'examples/*/main.roc' | xargs -n1 dirname | tr '\n' ' 
 # (`roc test`); and its node tests, examples/<name>/test/*.test.mjs, when
 # it has them (a glob: `node --test <dir>` doesn't find them on Node 24; helper modules there
 # don't end in .test.mjs). They need nothing for their database, all on SQLite (each test makes a
-# file of its own), and Chromium for their browser tests, which skip without it. Every example is
-# run, and those that
+# file of its own), and Chromium for their browser tests, which skip without it; the browser's host
+# first (`web-host`; `rocx check --sql` builds the server's). Every example is run, and those that
 # failed are named at the end.
 #
 # Not part of `just test`: each example's tests build its wasm and its server (about a minute for
@@ -376,7 +376,7 @@ examples := `git ls-files 'examples/*/main.roc' | xargs -n1 dirname | tr '\n' ' 
 # the quick half (`examples-check`: build, type-check both programs, lint), so a change to the
 # platform that breaks an example's code fails `just check`; run `just examples` before landing a
 # change to the platforms, the packages or an example, to see each app still work.
-examples *names:
+examples *names: web-host
     #!/usr/bin/env bash
     set -uo pipefail
     failed=()
@@ -398,6 +398,19 @@ examples *names:
         echo "Examples that failed: ${failed[*]}" >&2
         exit 1
     fi
+
+# The browser's host (web/host, Zig), which every app's wasm is linked with, as `rocx dev` and
+# site/build.mjs build it: web/platform/targets/wasm32/host.wasm, when it isn't there or its Zig is
+# newer (`just test`'s web tests build it again anyway).
+web-host:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    object=web/platform/targets/wasm32/host.wasm
+    if [ -f "$object" ] && [ ! web/host/host.zig -nt "$object" ] && [ ! web/host/roc_platform_abi.zig -nt "$object" ]; then
+        exit 0
+    fi
+    mkdir -p "$(dirname "$object")"
+    "{{ zig }}" build-obj web/host/host.zig -target wasm32-freestanding -O ReleaseSmall -fcompiler-rt -femit-bin="$object"
 
 # The quick half of `examples` (every one, or those named): rocx build with the browser's copy
 # (examples/<name>/build/client), both programs type-checked with reports at .rocx lines (the
