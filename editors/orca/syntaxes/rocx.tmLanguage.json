@@ -1,0 +1,251 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "rocx",
+	"scopeName": "source.rocx",
+	"fileTypes": ["rocx"],
+	"patterns": [{ "include": "#markup" }, { "include": "source.roc" }],
+	"repository": {
+		"markup": {
+			"comment": "Markup where Roc is: `<` starts it before a letter or `>`, unless a value is right before it (`a<b`). The transpiler's rule (README, Syntax) is stricter; `a <b` with a space is the one place this guesses wrong.",
+			"patterns": [
+				{ "include": "#html-comment" },
+				{ "include": "#doctype" },
+				{ "include": "#style-element" },
+				{ "include": "#script-element" },
+				{ "include": "#fragment-after-roc" },
+				{ "include": "#element-after-roc" }
+			]
+		},
+		"children": {
+			"comment": "Between an element's tags: text, holes, entities and markup. Every `<` before a letter is a tag here (a literal one is written `&lt;`).",
+			"patterns": [
+				{ "include": "#html-comment" },
+				{ "include": "#hole-comment" },
+				{ "include": "#hole" },
+				{ "include": "#entity" },
+				{ "include": "#style-element" },
+				{ "include": "#script-element" },
+				{ "include": "#fragment" },
+				{ "include": "#element" }
+			]
+		},
+		"element-after-roc": {
+			"begin": "(?<![A-Za-z0-9_)\\]}\"'!.])(<)([A-Za-z][A-Za-z0-9_.\\-]*)(?=[\\s/>]|$)",
+			"beginCaptures": {
+				"1": { "name": "punctuation.definition.tag.begin.rocx" },
+				"2": { "patterns": [{ "include": "#tag-name" }] }
+			},
+			"end": "(/>)|(</)(\\2)\\s*(>)",
+			"endCaptures": {
+				"1": { "name": "punctuation.definition.tag.end.rocx" },
+				"2": { "name": "punctuation.definition.tag.begin.rocx" },
+				"3": { "patterns": [{ "include": "#tag-name" }] },
+				"4": { "name": "punctuation.definition.tag.end.rocx" }
+			},
+			"patterns": [{ "include": "#element-body" }]
+		},
+		"element": {
+			"begin": "(<)([A-Za-z][A-Za-z0-9_.\\-]*)(?=[\\s/>]|$)",
+			"beginCaptures": {
+				"1": { "name": "punctuation.definition.tag.begin.rocx" },
+				"2": { "patterns": [{ "include": "#tag-name" }] }
+			},
+			"end": "(/>)|(</)(\\2)\\s*(>)",
+			"endCaptures": {
+				"1": { "name": "punctuation.definition.tag.end.rocx" },
+				"2": { "name": "punctuation.definition.tag.begin.rocx" },
+				"3": { "patterns": [{ "include": "#tag-name" }] },
+				"4": { "name": "punctuation.definition.tag.end.rocx" }
+			},
+			"patterns": [{ "include": "#element-body" }]
+		},
+		"element-body": {
+			"comment": "Attributes until the opening tag's `>`, then children until a closing tag, which the element's own `end` matches.",
+			"patterns": [
+				{
+					"begin": "(>)",
+					"beginCaptures": { "1": { "name": "punctuation.definition.tag.end.rocx" } },
+					"end": "(?=</)",
+					"patterns": [{ "include": "#children" }]
+				},
+				{ "include": "#attributes" }
+			]
+		},
+		"fragment-after-roc": {
+			"begin": "(?<![A-Za-z0-9_)\\]}\"'!.])(<)(>)",
+			"beginCaptures": {
+				"1": { "name": "punctuation.definition.tag.begin.rocx" },
+				"2": { "name": "punctuation.definition.tag.end.rocx" }
+			},
+			"end": "(</)(>)",
+			"endCaptures": {
+				"1": { "name": "punctuation.definition.tag.begin.rocx" },
+				"2": { "name": "punctuation.definition.tag.end.rocx" }
+			},
+			"patterns": [{ "include": "#children" }]
+		},
+		"fragment": {
+			"begin": "(<)(>)",
+			"beginCaptures": {
+				"1": { "name": "punctuation.definition.tag.begin.rocx" },
+				"2": { "name": "punctuation.definition.tag.end.rocx" }
+			},
+			"end": "(</)(>)",
+			"endCaptures": {
+				"1": { "name": "punctuation.definition.tag.begin.rocx" },
+				"2": { "name": "punctuation.definition.tag.end.rocx" }
+			},
+			"patterns": [{ "include": "#children" }]
+		},
+		"style-element": {
+			"comment": "A <style>: its text is CSS (a component's scoped styles, or a page's).",
+			"begin": "(?<![A-Za-z0-9_)\\]}\"'!.])(<)(style)(?=[\\s>])",
+			"beginCaptures": {
+				"1": { "name": "punctuation.definition.tag.begin.rocx" },
+				"2": { "name": "entity.name.tag.rocx" }
+			},
+			"end": "(</)(style)\\s*(>)",
+			"endCaptures": {
+				"1": { "name": "punctuation.definition.tag.begin.rocx" },
+				"2": { "name": "entity.name.tag.rocx" },
+				"3": { "name": "punctuation.definition.tag.end.rocx" }
+			},
+			"patterns": [
+				{
+					"begin": "(>)",
+					"beginCaptures": { "1": { "name": "punctuation.definition.tag.end.rocx" } },
+					"end": "(?=</style\\s*>)",
+					"contentName": "meta.embedded.block.css",
+					"patterns": [{ "include": "source.css" }]
+				},
+				{ "include": "#attributes" }
+			]
+		},
+		"script-element": {
+			"comment": "A <script>: its text as written.",
+			"begin": "(?<![A-Za-z0-9_)\\]}\"'!.])(<)(script)(?=[\\s>])",
+			"beginCaptures": {
+				"1": { "name": "punctuation.definition.tag.begin.rocx" },
+				"2": { "name": "entity.name.tag.rocx" }
+			},
+			"end": "(</)(script)\\s*(>)",
+			"endCaptures": {
+				"1": { "name": "punctuation.definition.tag.begin.rocx" },
+				"2": { "name": "entity.name.tag.rocx" },
+				"3": { "name": "punctuation.definition.tag.end.rocx" }
+			},
+			"patterns": [
+				{
+					"begin": "(>)",
+					"beginCaptures": { "1": { "name": "punctuation.definition.tag.end.rocx" } },
+					"end": "(?=</script\\s*>)",
+					"contentName": "meta.embedded.block.js"
+				},
+				{ "include": "#attributes" }
+			]
+		},
+		"tag-name": {
+			"patterns": [
+				{
+					"comment": "A component: <StatusPill>, <Ui.Button>.",
+					"match": "[A-Z][A-Za-z0-9_]*(?:\\.[A-Za-z0-9_]+)*|[a-z][A-Za-z0-9_]*(?:\\.[A-Za-z0-9_]+)+",
+					"name": "support.class.component.rocx"
+				},
+				{ "match": "[A-Za-z][A-Za-z0-9_\\-]*", "name": "entity.name.tag.rocx" }
+			]
+		},
+		"attributes": {
+			"patterns": [
+				{ "include": "#hole" },
+				{
+					"comment": "name=, class:active=, on:keydown.Mod+K=, style:--size=, text!=, checked?=, rel??=",
+					"match": "([A-Za-z_][A-Za-z0-9_\\-]*)(?:(:)([A-Za-z0-9_\\-.+]+))?(!)?\\s*(\\?\\??)?(=)",
+					"captures": {
+						"1": { "name": "entity.other.attribute-name.rocx" },
+						"2": { "name": "punctuation.separator.namespace.rocx" },
+						"3": { "name": "entity.other.attribute-name.localname.rocx" },
+						"4": { "name": "entity.other.attribute-name.rocx" },
+						"5": { "name": "keyword.operator.optional.rocx" },
+						"6": { "name": "punctuation.separator.key-value.rocx" }
+					}
+				},
+				{
+					"comment": "A bare attribute: required, keyed, end.",
+					"match": "([A-Za-z_][A-Za-z0-9_\\-]*)(?:(:)([A-Za-z0-9_\\-.+]+))?(!)?",
+					"captures": {
+						"1": { "name": "entity.other.attribute-name.rocx" },
+						"2": { "name": "punctuation.separator.namespace.rocx" },
+						"3": { "name": "entity.other.attribute-name.localname.rocx" },
+						"4": { "name": "entity.other.attribute-name.rocx" }
+					}
+				},
+				{
+					"name": "string.quoted.double.rocx",
+					"begin": "\"",
+					"beginCaptures": { "0": { "name": "punctuation.definition.string.begin.rocx" } },
+					"end": "\"",
+					"endCaptures": { "0": { "name": "punctuation.definition.string.end.rocx" } },
+					"patterns": [{ "include": "#entity" }]
+				},
+				{
+					"name": "string.quoted.single.rocx",
+					"begin": "'",
+					"beginCaptures": { "0": { "name": "punctuation.definition.string.begin.rocx" } },
+					"end": "'",
+					"endCaptures": { "0": { "name": "punctuation.definition.string.end.rocx" } },
+					"patterns": [{ "include": "#entity" }]
+				}
+			]
+		},
+		"hole": {
+			"comment": "{expr} (text), {=expr} (markup), {...expr} (a list of markup, or props passed on): Roc again, markup in it included.",
+			"begin": "(\\{)(=|\\.\\.\\.)?",
+			"beginCaptures": {
+				"1": { "name": "punctuation.section.embedded.begin.rocx" },
+				"2": { "name": "keyword.operator.hole.rocx" }
+			},
+			"end": "\\}",
+			"endCaptures": { "0": { "name": "punctuation.section.embedded.end.rocx" } },
+			"contentName": "meta.embedded.expression.rocx",
+			"patterns": [{ "include": "#roc" }]
+		},
+		"hole-comment": {
+			"name": "comment.block.rocx",
+			"begin": "\\{#",
+			"beginCaptures": { "0": { "name": "punctuation.definition.comment.begin.rocx" } },
+			"end": "\\}",
+			"endCaptures": { "0": { "name": "punctuation.definition.comment.end.rocx" } }
+		},
+		"roc": {
+			"comment": "Roc inside a hole: braces counted, so a block or a record doesn't end the hole.",
+			"patterns": [{ "include": "#braces" }, { "include": "#markup" }, { "include": "source.roc" }]
+		},
+		"braces": {
+			"begin": "\\{",
+			"beginCaptures": { "0": { "name": "punctuation.section.braces.roc" } },
+			"end": "\\}",
+			"endCaptures": { "0": { "name": "punctuation.section.braces.roc" } },
+			"patterns": [{ "include": "#roc" }]
+		},
+		"html-comment": {
+			"name": "comment.block.html.rocx",
+			"begin": "<!--",
+			"beginCaptures": { "0": { "name": "punctuation.definition.comment.begin.rocx" } },
+			"end": "-->",
+			"endCaptures": { "0": { "name": "punctuation.definition.comment.end.rocx" } }
+		},
+		"doctype": {
+			"match": "(<!)((?i:doctype))\\b([^>]*)(>)",
+			"captures": {
+				"1": { "name": "punctuation.definition.tag.begin.rocx" },
+				"2": { "name": "entity.name.tag.doctype.rocx" },
+				"3": { "name": "entity.other.attribute-name.rocx" },
+				"4": { "name": "punctuation.definition.tag.end.rocx" }
+			}
+		},
+		"entity": {
+			"match": "&(?:[A-Za-z][A-Za-z0-9]*|#[0-9]+|#[xX][0-9A-Fa-f]+);",
+			"name": "constant.character.entity.rocx"
+		}
+	}
+}

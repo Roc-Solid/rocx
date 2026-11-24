@@ -645,6 +645,13 @@ the compiler's reports are already at the right line; `check` rewrites `Page.roc
 markup moves only with the code around it, and the text of a `<pre>` or `<textarea>` never moves.
 `just fmt` formats this repository, and `just check` fails on a file that isn't formatted.
 
+**In an editor**: `editors/orca` is an [Orca](https://github.com/stablyai/orca) plugin that
+highlights `.rocx` files (Roc, markup, Roc again in holes, CSS in `<style>`) and `.roc` files:
+`orca plugin install editors/orca`. Its grammars are TextMate's, which VS Code and most editors
+read too (editors/orca/README.md). Errors come from `rocx check`, not from the editor: there is no
+language server yet. `just grammar-check` tokenizes every `.rocx` file and fails on one whose markup
+the grammar leaves open.
+
 ## The platform
 
 **The server** (`server/`): an app gives it a record (`respond!`, whose answer may be a page of

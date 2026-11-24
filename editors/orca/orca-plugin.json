@@ -1,0 +1,38 @@
+{
+  "manifestVersion": 2,
+  "id": "rocx-syntax",
+  "name": "Roc Solid (rocx and Roc)",
+  "version": "0.1.0",
+  "description": "Syntax highlighting for .rocx files (Roc with markup, CSS in <style>) and for .roc files.",
+  "license": "MIT AND UPL-1.0",
+  "engines": {
+    "orca": ">=1.4.246"
+  },
+  "execution": "data",
+  "contributes": {
+    "syntaxes": [
+      {
+        "id": "rocx",
+        "title": "rocx",
+        "scopeName": "source.rocx",
+        "path": "syntaxes/rocx.tmLanguage.json",
+        "configuration": "syntaxes/rocx.language-configuration.json",
+        "extensions": [".rocx"]
+      },
+      {
+        "id": "roc",
+        "title": "Roc",
+        "scopeName": "source.roc",
+        "path": "syntaxes/roc.tmLanguage.json",
+        "configuration": "syntaxes/roc.language-configuration.json",
+        "extensions": [".roc"]
+      },
+      {
+        "id": "rocx-css",
+        "title": "CSS (in rocx)",
+        "scopeName": "source.css",
+        "path": "syntaxes/css.tmLanguage.json"
+      }
+    ]
+  }
+}

@@ -9,10 +9,11 @@ import ../../Ui/TableWrap
 
 meta = {
 	title: "Tooling",
-	description: "rocx dev, build, check, lint, routes and fmt; compiler errors reported at your .rocx lines; setting up an app.",
+	description: "rocx dev, build, check, lint, routes and fmt; compiler errors reported at your .rocx lines; highlighting in an editor; setting up an app.",
 	toc: [
 		{ id: "commands", label: "Commands" },
 		{ id: "errors", label: "Errors at your lines" },
+		{ id: "editors", label: "In an editor" },
 		{ id: "stories", label: "Stories" },
 		{ id: "setup", label: "Setting up an app" },
 		{ id: "repository", label: "This repository" },
@@ -138,6 +139,19 @@ view! = |_|
 					a number into one by itself.
 				</p>
 			</Callout>
+
+			<Heading id="editors">In an editor</Heading>
+			<p>
+				The repository's <code>editors/orca</code> is a plugin for <a href="https://github.com/stablyai/orca">Orca</a>
+				that highlights <code>.rocx</code> files and <code>.roc</code> files: Roc by the official Roc grammar,
+				markup (an element's tag, a component's as a type, attributes like <code>class:active</code> and
+				<code>on:click.prevent</code>), the Roc in holes, markup in that Roc, and CSS in a
+				<code>{"<style>"}</code>. It runs nothing, so it installs without asking for access:
+				<code>orca plugin install editors/orca</code>. Its grammars are TextMate grammars, which VS Code and
+				most editors read too. The one guess it makes is whether a <code>{"<"}</code> starts markup: before a
+				letter, unless a value is right before it, so <code>{"a <b"}</code> (a space before and none after)
+				reads as markup. Errors stay with <code>rocx check</code>; there is no language server yet.
+			</p>
 
 			<Heading id="stories">Stories</Heading>
 			<p>

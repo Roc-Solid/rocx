@@ -265,6 +265,14 @@ check: (fmt "--check")
 fmt *args:
     ROC={{ roc }} {{ rocx }} fmt {{ args }} rocx-cli cli/platform site packages web/platform server/platform {{ examples }}
 
+# Checks the editor grammar (editors/orca, Orca's highlighting of .rocx and .roc files): every
+# .rocx file git tracks, tokenized by VS Code's TextMate engine, must end with its markup closed,
+# or the grammar took a `<` for markup that wasn't. The engine (vscode-textmate and
+# vscode-oniguruma, from npm) is installed once into .tools/grammar.
+grammar-check:
+    test -d .tools/grammar/node_modules/vscode-textmate || npm install --silent --no-save --no-package-lock --prefix .tools/grammar vscode-textmate@9 vscode-oniguruma@2
+    git ls-files -z '*.rocx' | xargs -0 node editors/check-grammar.cjs .tools/grammar/node_modules editors/orca/syntaxes
+
 # The example apps: each examples/<name>/main.roc that git tracks, by its directory. Only tracked
 # ones: an untracked directory under examples/ (a private repo of one's own, say) is never built,
 # formatted or tested.

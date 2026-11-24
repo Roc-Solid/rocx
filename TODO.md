@@ -113,6 +113,13 @@ When an item lands, delete its line here in the same commit.
   in Roc would need a way to run the wasm, or to drop the measured rendering times.
 - **Prebuilt, stripped platform bundles for every target** (`roc bundle`), so a newcomer needs only
   `roc` and `rocx`: no Node, Rust or Zig.
+- **Errors in an editor** (editors/orca highlights only; the user, 2026-11-24: `rocx check` is
+  enough for now): a one-line-a-problem output of `rocx check` (`file:line:col: message`) for VS
+  Code problem matchers and Vim's quickfix; then `rocx lsp`, running the check on save and sending
+  diagnostics; then hover and completion by `roc experimental-lsp` on the transpiled buffer (lines
+  map already, columns need a map from the transpiler). Orca has no language-server client.
+- **Other editors**: a VS Code extension can take editors/orca's TextMate grammars as they are; Zed
+  needs a tree-sitter grammar.
 - **The live docs site** (roc-solid.github.io) was last deployed on 2026-11-21. Everything since,
   the examples pages and D-036 to D-049 among it, isn't live. `just deploy-pages` waits for the
   user's go.
