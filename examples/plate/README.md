@@ -29,8 +29,9 @@ starts in, which is why you start `rocx dev` in `examples/plate`. `*.db` files a
 The first start makes the file and its tables, and seeds the foods. Set your profile on Goals (the
 time zone above all), then log your first meal. Two settings come from the environment:
 
-- `PLATE_PASSWORD=…`: the diary asks for it, once a browser, for 90 days. Set it whenever the
-  server can be reached from anywhere but your own machine.
+- `PLATE_PASSWORD=…`: the diary asks for it once a browser, which then stays signed in for 90 days,
+  and on while you keep using it. Set it whenever the server can be reached from anywhere but your
+  own machine.
 - `OFF_URL=…`: where Open Food Facts is asked (the tests point it at a stand-in). The real one
   otherwise.
 
@@ -138,7 +139,7 @@ Each row names a feature and the file to read for it. Paths are from `examples/p
 |---|---|
 | `Http.fetch!` to another service, its JSON read a field at a time (packages/mcp's `JsonValue`), and the result kept | [`OpenFoodFacts.roc`](OpenFoodFacts.roc), [`routes/barcode/+server.roc`](routes/barcode/+server.roc) |
 | A stand-in for that service in the tests, through `OFF_URL` | [`test/plate.test.mjs`](test/plate.test.mjs) |
-| A password, only when one is set (`PLATE_PASSWORD`). The middleware sends a browser without a session to sign in, and back to where it was going after. The session is a random token in a cookie, kept as its hash in the database for 90 days; wrong passwords are limited with a `Kv` counter | [`Session.roc`](Session.roc), [`Middlewares.roc`](Middlewares.roc), [`routes/sign-in/`](routes/sign-in) |
+| A password, only when one is set (`PLATE_PASSWORD`), compared in constant time; wrong ones are limited with a `Kv` counter. The session is packages/auth's (`Auth.sign_in!`; the plugin is listed without `admit!`, so nobody signs in by a link or a provider): a random token in the `plate_session` cookie (`__Host-plate_session` and `Secure` when the public URL is HTTPS), kept as its hash in the database (`auth_sessions`) for 90 days and renewed while it is used. The middleware lets everything through when the diary is open, and is `Auth.required` otherwise: a browser without a session goes to sign in, and back to where it was going after. Signing out is a form posting to the plugin's `/auth/sign-out` | [`main.roc`](main.roc), [`Session.roc`](Session.roc), [`Middlewares.roc`](Middlewares.roc), [`routes/sign-in/`](routes/sign-in), [`migrations/0003_auth_sessions.sql`](migrations/0003_auth_sessions.sql) |
 
 ## Test it
 
@@ -165,7 +166,9 @@ Over HTTP, they cover:
 - a food of your own (per 100 g, found first, its barcode taken);
 - a barcode asked of the stand-in once and kept, and one it doesn't know;
 - a recipe (its food, its serving, logged, changed);
-- goals (the targets, and a time zone refused), trends and weights, and the password.
+- goals (the targets, and a time zone refused), trends and weights, and the password: signing
+  in, the session's row in `auth_sessions` (the token's hash, 90 days), a session that outlives a
+  restart, and signing out at `/auth/sign-out`.
 
 In Chromium (skipped when there is none): a search that follows the typing, a food's preview as its
 amount is typed, logging it, and an entry taken off at once.
@@ -174,6 +177,9 @@ amount is typed, logging it, and an entry taken off at once.
 
 - **One diary, no accounts.** It is yours: on your machine it is open; anywhere else, set a
   password. Several people would each run their own.
+- **Sessions are packages/auth's.** The diary kept its own table of sessions (`sessions`) until
+  it moved onto the package; `migrations/0003_auth_sessions.sql` drops that table, so a browser
+  signed in before signs in once more, and nothing else in the diary changes.
 - **An entry keeps what it had.** Editing a food (or a recipe's ingredients) changes what you log
   next, never a past day.
 - **Energy and three macronutrients are tracked.** Fibre, sugars, saturated fat and sodium are on
@@ -214,4 +220,4 @@ instead. None of it needed a change to the platform.
     - A local or a lambda's argument can't share a name with a definition of its module (`grams`,
       `words`, `whole`, `sum`, `food`, `value`, `name`).
     - `Paths` has pages only, so a form posting to an endpoint that has no page names it with
-      `Endpoint.url_of(Api.post_sign_out({}))`.
+      `Endpoint.url_of(Api.post_api_entries_delete({}))`.

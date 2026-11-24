@@ -334,7 +334,7 @@ test("trends: each day of the range, an average day, and weights", { skip }, asy
 });
 
 test("with PLATE_PASSWORD set, the diary is for whoever signs in", { skip }, async () => {
-	const locked = await startServer(built.server, { statics: built.statics, database: db.url, env: { PLATE_PASSWORD: "open sesame" } });
+	let locked = await startServer(built.server, { statics: built.statics, database: db.url, env: { PLATE_PASSWORD: "open sesame" } });
 	try {
 		const person = locked.client();
 		const asked = await person.get("/trends?days=30");
@@ -344,22 +344,49 @@ test("with PLATE_PASSWORD set, the diary is for whoever signs in", { skip }, asy
 		await person.get("/sign-in");
 		await person.post("/sign-in", { password: "sesame", then: "/trends?days=30" });
 		assert.equal(person.flash.status, 422);
+		assert.ok(!person.cookies.has("plate_session"), "no session for a wrong password");
 		const signed = await person.post("/sign-in", { password: "open sesame", then: "/trends?days=30" });
 		assert.equal(signed.status, 303);
 		assert.equal(signed.location, "/trends?days=30");
 		assert.equal((await person.get("/trends?days=30")).status, 200);
-		// Its token's hash is kept, not the token.
-		const [session] = await db.sql`select token_hash from sessions`;
-		assert.match(session.token_hash, /^[0-9a-f]{64}$/);
+		// The session is packages/auth's: a random token in the `plate_session` cookie, for 90 days,
+		// and a row in `auth_sessions` that keeps the token's hash, not the token.
+		const token = person.cookies.get("plate_session");
+		assert.match(token, /^[A-Za-z0-9_-]{43}$/);
+		const [session] = await db.sql`select id, user_id, created_at, expires_at from auth_sessions order by created_at desc limit 1`;
+		assert.equal(session.user_id, "me");
+		assert.match(session.id, /^[A-Za-z0-9_-]{43}$/);
+		assert.notEqual(session.id, token);
+		assert.equal(Number(session.expires_at) - Number(session.created_at), 90 * 24 * 60 * 60 * 1000);
+		assert.match(signed.headers.getSetCookie().find((cookie) => cookie.startsWith("plate_session=")), /Max-Age=7776000.*HttpOnly.*SameSite=Lax/);
+		// Plate's own table of sessions is gone (0003_auth_sessions.sql).
+		assert.deepEqual(await db.sql`select name from sqlite_master where type = 'table' and name = 'sessions'`, []);
 		// A `then` off the site goes home.
 		const elsewhere = locked.client();
 		await elsewhere.get("/sign-in");
 		assert.equal((await elsewhere.post("/sign-in", { password: "open sesame", then: "//example.com/" })).location, "/");
-		// Signed out: back to signing in.
-		const goals = await person.get("/goals");
+		// The session outlives a restart: it is in the database.
+		await locked.stop();
+		locked = await startServer(built.server, { statics: built.statics, database: db.url, env: { PLATE_PASSWORD: "open sesame" } });
+		const back = locked.client();
+		back.cookies.set("plate_session", token);
+		assert.equal((await back.get("/trends?days=30")).status, 200);
+		// Signed out, from the goals page's button (a form posting to packages/auth's /auth/sign-out):
+		// back to signing in, the session's row gone, and its cookie signs nobody in.
+		const goals = await back.get("/goals");
 		goals.dom.getByRole("button", { name: "Sign out" });
-		await person.post("/sign-out", {});
-		assert.equal((await person.get("/")).status, 303);
+		assert.match(goals.text, /<form[^>]* method="post" action="\/auth\/sign-out"><input[^>]* type="hidden" name="then" value="\/sign-in">/);
+		const out = await back.post("/auth/sign-out", { then: "/sign-in" });
+		assert.equal(out.status, 303);
+		assert.equal(out.location, "/sign-in");
+		assert.ok(!back.cookies.has("plate_session"), "the cookie cleared");
+		assert.deepEqual(await db.sql`select id from auth_sessions where id = ${session.id}`, []);
+		assert.equal((await back.get("/")).status, 303);
+		const stale = locked.client();
+		stale.cookies.set("plate_session", token);
+		assert.equal((await stale.get("/")).status, 303);
+		// Signing out without a session (one that ran out, say) still lands on signing in.
+		assert.equal((await locked.client().post("/auth/sign-out", { then: "/sign-in" })).location, "/sign-in");
 	} finally {
 		await locked.stop();
 	}

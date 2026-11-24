@@ -78,7 +78,8 @@ Profile := [].{
 				The energy a day is the Mifflin–St Jeor estimate of the energy you use at rest, times a factor for how active you are, then less or more for your goal; never under 1,200 kcal. Protein, carbs and fat are 25%, 45% and 30% of it. It's an estimate: your weight over a few weeks says how right it is.
 			</p>
 			{if goals!().locked {
-				<form method="post" action={Endpoint.url_of(Api.post_sign_out({}))}>
+				<form method="post" action="/auth/sign-out">
+					<input type="hidden" name="then" value="/sign-in" />
 					<button class="button quiet" type="submit">Sign out</button>
 				</form>
 			}}

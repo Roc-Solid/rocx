@@ -124,7 +124,7 @@ AppNotes := [].{
 			path: Paths.examples_plate,
 			blurb: "A food diary for a phone",
 			summary: "A food diary for a phone: the USDA's 7,500 foods seeded into its database, packets looked up by barcode in Open Food Facts, recipes that log like foods, targets worked out from a profile, and trends charted.",
-			shows: ["A search that follows the typing, over full-text search", "Another service asked with Http.fetch!, and a stand-in for it in the tests", "Rules run on both sides: what an amount has, worked out as it is typed", "A phone-first layout, with tabs along the bottom"],
+			shows: ["A search that follows the typing, over full-text search", "Another service asked with Http.fetch!, and a stand-in for it in the tests", "Rules run on both sides: what an amount has, worked out as it is typed", "A phone-first layout, with tabs along the bottom", "A password only when one is set, with packages/auth's sessions (90 days)"],
 			shots: [
 				{ file: "diary", alt: "Today's diary on a phone: a ring of the energy eaten against the target, and the meals", caption: "Today, on a phone", phone: Bool.True },
 				{ file: "food", alt: "A food's page on a phone: the amount, what it has, and its nutrition facts", caption: "A food, its amount worked out as it is typed", phone: Bool.True },

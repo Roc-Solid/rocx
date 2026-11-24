@@ -2,6 +2,7 @@ import pf.Middleware
 import pf.Server
 import pf.Log
 import pf.Time
+import auth.Auth
 import Session
 
 ## What runs around every request (`main.roc` names `Middlewares.default`), before the page or the
@@ -13,28 +14,27 @@ Middlewares := [].{
 	default : Middleware({}, {})
 	default = Middleware.same_origin({}).then(Middlewares.gate).then(Middlewares.logged)
 
-	## When `PLATE_PASSWORD` is set: a browser asking for a page without a session is sent to sign
-	## in, and back after; anything else is refused (401). The sign-in page itself, and the
-	## runtime's files, are for anyone.
+	## When `PLATE_PASSWORD` is set, packages/auth's `Auth.required` (`signed_in`): a browser asking
+	## for a page without a session is sent to sign in (`/sign-in?then=…`), and back after; anything
+	## else is refused (401). The sign-in page, the auth plugin's endpoints (signing out) and the
+	## runtime's files are for anyone. Without a password, everything is.
 	gate : Middleware({}, {})
 	gate = Middleware.make(
 		|request, context, next!|
-			if Middlewares.is_public(request.path) or Session.open!({}) or Session.signed_in!(request) {
+			if Middlewares.is_public(request.path) or Session.open!({}) {
 				next!(request, context)
-			} else if Server.wants_html(request) and request.method == "GET" {
-				Server.redirect("/sign-in?then=${Server.encode_segment(Middlewares.here(request))}")
 			} else {
-				Server.refused(401, "Sign in first, at /sign-in.")
+				Middleware.run!(Middlewares.signed_in, request, context, next!)
 			},
 	)
 
+	## Someone signed in (a session of packages/auth's), or the way to sign in.
+	signed_in : Middleware({}, {})
+	signed_in = Auth.required(|context, _session| context)
+
 	## The paths anyone may ask for.
 	is_public : Str -> Bool
-	is_public = |path| path == "/sign-in" or path.starts_with("/rocx/") or path.starts_with("/__")
-
-	## Where a request asked for, its query too.
-	here : Server.Request -> Str
-	here = |request| if (request.query.is_empty()) request.path else "${request.path}?${request.query}"
+	is_public = |path| path == "/sign-in" or path.starts_with("/auth/") or path.starts_with("/rocx/") or path.starts_with("/__")
 
 	## Logs each answer: its method, path, status and time (`Log.info!`), and why, when it failed
 	## (`Log.error!`).
@@ -58,3 +58,5 @@ expect Middlewares.is_public("/sign-in")
 expect Middlewares.is_public("/rocx/start.js")
 expect !Middlewares.is_public("/")
 expect !Middlewares.is_public("/sign-in-elsewhere")
+expect Middlewares.is_public("/auth/sign-out")
+expect !Middlewares.is_public("/authors")
