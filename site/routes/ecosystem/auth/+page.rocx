@@ -1,0 +1,234 @@
+import pf.Html
+import ../../../Ui/Code
+import ../../../Ui/Heading
+import ../../../Ui/Note
+import ../../../Ui/PageHero
+import ../../../Ui/TableWrap
+import ../../../Generated/Sources
+import ../../../Generated/Paths
+
+## The auth package, a plugin: the package's example app file by file, how signing in goes (a mailed
+## link, a provider, the dev sign-in), who gets in, sessions and the middleware, the providers, what
+## a failed sign-in says, the tables, safety, and what comes next. Static: signing in needs a server.
+meta = {
+	title: "Auth",
+	description: "Sign-in for Roc Solid apps, as a plugin: by a mailed link or at Google, GitHub and any OpenID Connect provider; sessions kept as hashed tokens in the app's database; middleware that hands the signed-in user on. No pages: the app's own.",
+	toc: [
+		{ id: "example", label: "A first app" },
+		{ id: "how", label: "How signing in goes" },
+		{ id: "admit", label: "Who gets in" },
+		{ id: "sessions", label: "Sessions and middleware" },
+		{ id: "providers", label: "Providers" },
+		{ id: "failed", label: "When it fails" },
+		{ id: "tables", label: "The tables" },
+		{ id: "safety", label: "Safety" },
+		{ id: "status", label: "Status" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				kicker={[<>{"The ecosystem · "}</>, <code>packages/auth</code>]}
+				title="Sign-in you don't write yourself"
+			>
+				People sign in by a link mailed to their address, or at Google, GitHub or any OpenID Connect
+				provider. Sessions live in your app's database. Middleware hands the signed-in user to your
+				routes. The package is a plugin, and has no pages: your sign-in page is yours.
+			</PageHero>
+			<p>
+				Signing in is easy to write and easy to get wrong: tokens kept in plain text, links that work
+				twice, a redirect that sends people off to another site, OAuth without its state or PKCE. The
+				package does those parts. Your app keeps three: the pages, the email the link goes out in, and
+				<code>admit!</code>, which says who gets in and which of your users they are.
+			</p>
+
+			<Heading id="example">A first app</Heading>
+			<p>
+				The package has a small app, <code>packages/auth/example</code>, and each file below is that app's.
+				Its tests sign in every way, on SQLite and on Postgres, against a stand-in provider.
+			</p>
+			<p>
+				<strong>1. The plugin.</strong> Name the package in the app's header and list its plugin with your
+				<code>admit!</code>. The email plugin sends the links (with no SMTP server, they land in the
+				<a href={"${Paths.ecosystem_email}#mailbox"}>dev mailbox</a>).
+			</p>
+			<Code title={Sources.auth_example_main.file} source={Sources.auth_example_main.rocx} />
+			<p>
+				<strong>2. Who gets in.</strong> <code>admit!</code> is given who is signing in, and answers with your
+				id for their user, or why not. Here anyone gets in except addresses at <code>refused.example</code>, and
+				a new address gets a new row in the app's <code>users</code> table:
+			</p>
+			<Code title={Sources.auth_example_accounts.file} source={Sources.auth_example_accounts.rocx} />
+			<p>
+				<strong>3. The middleware.</strong> <code>Auth.required</code> for routes only signed-in people may
+				see, <code>Auth.optional</code> for routes anyone may. Each takes a function that puts the session
+				into the context your routes read:
+			</p>
+			<Code title={Sources.auth_example_middlewares.file} source={Sources.auth_example_middlewares.rocx} />
+			<p>
+				<strong>4. The sign-in page's endpoint.</strong> <code>Auth.link!</code> keeps a link and gives you
+				its URL, and you mail it as you like. The page's <code>GET</code> lists the providers that are set
+				up, for their buttons:
+			</p>
+			<Code title={Sources.auth_example_sign_in.file} source={Sources.auth_example_sign_in.rocx} />
+			<p>
+				<strong>5. The page a link opens.</strong> With <code>link_page</code>, a mailed link opens your page,
+				which shows whom it signs in and posts the link to the plugin from a button. Some mail services
+				open every link in a message to check it, and a link that signed in when opened would be used up
+				before its person clicked it.
+			</p>
+			<Code title={Sources.auth_example_link.file} source={Sources.auth_example_link.rocx} />
+			<Code title={Sources.auth_example_link_page.file} source={Sources.auth_example_link_page.rocx} />
+
+			<Heading id="how">How signing in goes</Heading>
+			<p>
+				<strong>By a mailed link.</strong> <code>{"Auth.link!(email, then)"}</code> keeps the link in the
+				database (its token's hash, the address, where it goes after, until when) and gives you the URL. A
+				link works once, for 15 minutes (<code>link_minutes</code>). Your page posts its token to
+				<code>/auth/link</code>; without a <code>link_page</code>, the URL is <code>/auth/link</code> itself.
+			</p>
+			<p>
+				<strong>At a provider.</strong> Your button links to <code>{"/auth/<provider>?then=…"}</code>. The
+				plugin keeps a state, a PKCE verifier and a nonce in a cookie for ten minutes and sends the browser
+				to the provider. Back at <code>{"/auth/<provider>/callback"}</code>, the state must be the one this
+				browser kept. The code is traded for who signed in: an ID token (OpenID Connect), or GitHub's API.
+			</p>
+			<p>
+				<strong>Under <code>--dev</code>.</strong> <code>POST /auth/dev</code> with any <code>email</code> signs
+				it in at once, with no mail. Without <code>--dev</code> there is no such endpoint.
+			</p>
+			<p>
+				Each way ends the same: <code>admit!</code> is asked, a session starts, and the browser goes on to
+				where it was going with the session cookie. Where it goes is always a path of your site: a link
+				or a provider can't send anyone off to another one.
+			</p>
+
+			<Heading id="admit">Who gets in</Heading>
+			<p>
+				<code>admit!</code> is given an <code>Auth.Identity</code>:
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Field</th><th>Is</th></tr></thead>
+					<tbody>
+						<tr><td><code>provider : Str</code></td><td><code>"email"</code> for a link or the dev sign-in, else the provider's name</td></tr>
+						<tr><td><code>subject : Str</code></td><td>who they are there: the address, or the provider's own id for them</td></tr>
+						<tr><td><code>email : Str</code></td><td>their address, lower-cased; <code>""</code> when the provider has none it says is verified</td></tr>
+						<tr><td><code>name : Str</code></td><td>their name, or <code>""</code></td></tr>
+						<tr><td><code>user : [New, Known(Str)]</code></td><td>the user this identity signed in as before, even if its address has changed since</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				It answers <code>Ok(user)</code>, your id for their user, or <code>Err(why)</code>, which the sign-in
+				page shows. It runs inside the transaction that starts the session, so a new user's row, or a
+				welcome email queued as a job, stays only if the sign-in does. Keep slow work, such as a request to
+				another server, out of it.
+			</p>
+
+			<Heading id="sessions">Sessions and middleware</Heading>
+			<p>
+				A session is a random token in a cookie, and a row in the database that keeps only its SHA-256.
+				It lasts 30 days (<code>session_days</code>). One used in its second half is kept for as long again,
+				so a request doesn't write to the database each time.
+			</p>
+			<ul>
+				<li>
+					<code>Auth.required</code> lets a signed-in request through. A signed-out page goes to your sign-in
+					page and comes back after (<code>?then=</code>); anything else gets a 401.
+				</li>
+				<li><code>Auth.optional</code> hands on <code>SignedIn(session)</code> or <code>SignedOut</code>.</li>
+				<li>
+					<code>Auth.sessions!</code> lists a user's sessions, <code>Auth.revoke!</code> ends one, and
+					<code>Auth.sign_out_everywhere!</code> ends them all.
+				</li>
+				<li>A form that posts to <code>/auth/sign-out</code> signs out.</li>
+			</ul>
+
+			<Heading id="providers">Providers</Heading>
+			<p>
+				Register an app with the provider, with the redirect URI below, and give the server its client id
+				and secret. The URI starts with the server's public URL (<code>PUBLIC_URL</code>). A provider whose
+				client id isn't set isn't offered: <code>Auth.providers!</code> leaves its button out.
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Provider</th><th>Needs</th></tr></thead>
+					<tbody>
+						<tr>
+							<td><code>Auth.google</code></td>
+							<td><code>GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code>; redirect URI <code>/auth/google/callback</code></td>
+						</tr>
+						<tr>
+							<td><code>Auth.github</code></td>
+							<td><code>GITHUB_CLIENT_ID</code>, <code>GITHUB_CLIENT_SECRET</code>; callback URL <code>/auth/github/callback</code></td>
+						</tr>
+						<tr>
+							<td><code>{"Auth.oidc({ name, label, issuer, authorize_url, token_url, client_id_env, client_secret_env })"}</code></td>
+							<td>any OpenID Connect provider; redirect URI <code>{"/auth/<name>/callback"}</code></td>
+						</tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				A record update changes any part of one: <code>{"{ ..Auth.google, client_id_env: \"ACME_GOOGLE_ID\" }"}</code>.
+			</p>
+
+			<Heading id="failed">When it fails</Heading>
+			<p>
+				A sign-in that fails goes to your sign-in page with <code>?error=</code>, and where it was going
+				(<code>{"&then="}</code>), for the page to say what happened:
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th><code>error</code></th><th>Means</th></tr></thead>
+					<tbody>
+						<tr><td><code>link</code></td><td>the link has been used or has expired</td></tr>
+						<tr><td><code>refused</code></td><td><code>admit!</code> said no; <code>{"&reason="}</code> is what it said</td></tr>
+						<tr><td><code>provider</code></td><td>the provider refused, couldn't be reached, or isn't set up; <code>{"&reason="}</code> says which</td></tr>
+						<tr><td><code>state</code></td><td>back from a provider too late, or in another browser</td></tr>
+						<tr><td><code>unavailable</code></td><td>the database couldn't take it just then</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+
+			<Heading id="tables">The tables</Heading>
+			<p>
+				The plugin's migration makes three tables, the same on SQLite and on Postgres:
+				<code>auth_sessions</code>, <code>auth_links</code> (links on their way) and
+				<code>auth_identities</code> (which of your users each identity signed in as). Your users stay in
+				your own table; the package knows them only by the id <code>admit!</code> gives.
+			</p>
+
+			<Heading id="safety">Safety</Heading>
+			<ul>
+				<li>Tokens are 32 random bytes, kept only as their SHA-256: a leaked table signs no one in.</li>
+				<li>A link is used and deleted in one statement, so two clicks can't both sign in.</li>
+				<li>
+					Cookies are <code>HttpOnly</code> and <code>SameSite=Lax</code>, and on HTTPS <code>Secure</code>
+					and <code>__Host-</code>, so no other site under your domain can set them.
+				</li>
+				<li>
+					OAuth's state is compared in constant time, PKCE binds the code to the browser that asked, and the
+					nonce binds the ID token to it. The ID token's issuer, audience and expiry are checked, and an
+					address counts only if the provider says it is verified.
+				</li>
+				<li>Links in mail use the server's public URL, never a request's <code>Host</code>.</li>
+			</ul>
+			<Note>
+				List <code>Middleware.same_origin</code> in your app's middleware, so a form on another site can't
+				post to yours, and put a <a href={Paths.ecosystem_guard}>rate limit</a> on your sign-in endpoint,
+				per address and per client, so nobody can mail an address a hundred links.
+			</Note>
+
+			<Heading id="status">Status</Heading>
+			<p>
+				Links, the link page, Google, GitHub, OpenID Connect, the dev sign-in, sessions and the middleware
+				are built and tested. Passwords come next: they need a slow hash (Argon2) that the server's host
+				will compute. Passkeys come later, as they need P-256 in the host too. The package's
+				<code>PROPOSALS.md</code> has both.
+			</p>
+		</NoHydration>
+	</>

@@ -102,6 +102,7 @@ Nav := [].{
 			{
 				name: "Server",
 				pages: [
+					{ path: Paths.ecosystem_auth, label: "Auth", blurb: "Sign-in by a mailed link or at Google, GitHub and OpenID Connect providers, and sessions: a plugin" },
 					{ path: Paths.ecosystem_jobs, label: "Jobs and cron", blurb: "Work that runs later, and again, on a schedule too: a plugin" },
 					{ path: Paths.ecosystem_email, label: "Email", blurb: "Email over SMTP, or a dev mailbox while you develop: a plugin" },
 					{ path: Paths.ecosystem_push, label: "Push", blurb: "Web Push notifications: a button that subscribes, and jobs that send: a plugin" },

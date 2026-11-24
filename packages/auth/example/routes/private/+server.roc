@@ -1,0 +1,9 @@
+import pf.Server
+import pf.Endpoint
+import ../../Middlewares
+
+middleware = Middlewares.signed_in
+
+## GET /private: for signed-in requests only (`Auth.required`): whose it is.
+get! : { request : Server.Request, params : {}, context : Middlewares.Me } => Try({ user : Str }, Endpoint.Refusal)
+get! = |{ context, .. }| Ok({ user: context.user })

@@ -355,12 +355,12 @@ test-web: server-host
     ROC={{ roc }} node --test --test-concurrency=1 'web/test/*.test.mjs' 'site/test/*.test.mjs'
 
 # `just test`'s third part: the server platform, and packages/testing's, packages/posthog's and
-# the guard and push examples' tests against an app each builds (DATABASE_URL for their Postgres),
+# the guard, push and auth examples' tests against an app each builds (DATABASE_URL for their Postgres),
 # its browser's half too (the web platform's host first: `test-web`'s tests build it, but this part
 # may run alone, as CI runs it).
 test-server: server-host web-host
     ROC={{ roc }} node --test 'server/test/*.test.mjs'
-    ROC={{ roc }} node --test 'packages/testing/test/*.test.mjs' 'packages/posthog/test/*.test.mjs' 'packages/guard/example/test/*.test.mjs' 'packages/push/example/test/*.test.mjs'
+    ROC={{ roc }} node --test 'packages/testing/test/*.test.mjs' 'packages/posthog/test/*.test.mjs' 'packages/guard/example/test/*.test.mjs' 'packages/push/example/test/*.test.mjs' 'packages/auth/example/test/*.test.mjs'
 
 # Type-checks the site, both programs, with reports pointed into .rocx files, and lints its markup:
 # the server's, and the browser's, built from the copy of the site in which a route file has no

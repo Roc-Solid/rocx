@@ -4397,3 +4397,66 @@ anew). Items must compare. `Host.row_set!`'s `same` is always computed (`==` per
 
 **Reversible:** yes: `<For>` can come back as a component over `Html.rows!`; the moved files would
 move back.
+
+
+## D-072 Sign-in as a package: packages/auth
+
+**Status.** Built (2026-11-24). The user chose its shape: sign-in by a mailed link and at providers
+(Google, GitHub, any OpenID Connect one) first, passwords next, passkeys later; the package keeps
+sessions, links and identities, the app keeps its users and says who gets in; no pages in the
+package (`rocx new` will have them).
+
+**Context.** Every app signed in its own way: the private app with Google's OpenID Connect, sessions
+kept by their token's hash and `__Host-` cookies; examples/notes with mailed links and a signed
+cookie; uptime and plate with a password from the environment; tasks, board and journal with a name
+in an unsigned cookie. Signing in is where a framework that gets an app to production fast has to
+be right by default, and the user asked for it, with `rocx new` and a one-command install, as the
+three things Roc Solid needs next.
+
+**Decision.**
+
+- **A plugin, `Auth.plugin({ admit!, providers, … })`**, whose endpoints (under `/auth`) each answer
+  with a redirect: `GET|POST /auth/link` (a mailed link, used once), `GET /auth/<provider>` and
+  `/auth/<provider>/callback`, `POST /auth/sign-out`, and `POST /auth/dev` under `--dev` only. A
+  sign-in that fails goes to the app's sign-in page with `?error=link|refused|provider|state|
+  unavailable` (and `&reason=`, `&then=`).
+- **No pages.** The app's sign-in page posts to `Auth.link!`'s endpoint of its own (the app mails the
+  URL, as it likes) and links to `/auth/<provider>` (`Auth.providers!` lists those set up). With
+  `link_page`, a mailed link opens the app's page, which shows whom it signs in (`Auth.link_for!`,
+  which doesn't use it) and posts the token from a button, so a mail scanner can't use links up.
+- **The app keeps its users.** `admit! : Auth.Identity => Try(Str, Str)` is given the provider, the
+  identity's subject there, its verified address, a name, and `Known(user)` when the identity signed
+  in before; it answers the app's id for the user, or why not. It runs in the transaction that
+  links the identity and starts the session, so what it writes stays only if the sign-in does.
+- **Sessions in the database** (`auth_sessions`, the token's SHA-256; links in `auth_links`;
+  identities in `auth_identities`), in one migration for SQLite and Postgres: times are
+  milliseconds given by the package, so its statements are the same on both. A session lasts 30
+  days and is kept for as long again when used in its second half, so requests don't write. The
+  cookie is `HttpOnly`, `Lax`, and `Secure` and `__Host-` on HTTPS (the public URL).
+- **Middleware**: `Auth.required(add)` and `Auth.optional(add)`, each putting the session into the
+  app's context through `add`; a signed-out page's GET goes to the sign-in page with `?then=`, the
+  rest is a 401. And `sign_in!`, `sign_out!`, `sign_out_everywhere!`, `sessions!`, `revoke!`,
+  `identities!`.
+- **OAuth**: the code flow with PKCE (S256), a state and a nonce kept in a ten-minute cookie; the ID
+  token read from the token endpoint's answer over TLS (Core 1.0, 3.1.3.7), its issuer, audience,
+  expiry and nonce checked, its address taken only when verified; GitHub's user and verified primary
+  address from its API. `Auth.google`, `Auth.github` and `Auth.oidc` make providers, record updates
+  change them; client ids and secrets come from the environment, and a provider without one isn't
+  offered.
+- **What is plain Roc is `Rules`**, with its `expect`s: where a sign-in may go after (a path of this
+  site only), tokens, hashes, cookies' names, addresses, the state cookie, PKCE (RFC 7636's own
+  example), an ID token's claims, GitHub's answers, when a session is renewed.
+- **packages/auth/example** signs in every way; its tests run it on SQLite and on Postgres against a
+  stand-in provider that checks the client's secret, the redirect URI and PKCE's verifier, and makes
+  the ID token (22 tests, in `just test-server`). The docs site's `/ecosystem/auth` shows its files.
+
+**Why.** The parts of signing in that are easy to get wrong (tokens kept in plain text, links that
+work twice, redirects off-site, OAuth without state or PKCE, sessions that never end) are the same
+in every app; the parts that differ (pages, the email's words, who gets in) are the app's. The app
+layer first (no platform change): Random, Http, Env and the database are enough.
+
+**Costs.** One read of `auth_sessions` per request that names the middleware. A provider's ID
+token's signature isn't checked (the code flow doesn't need it; discovery and its keys are a
+proposal). Passwords wait for Argon2 in the host, passkeys for P-256 (PROPOSALS.md).
+
+**Reversible:** yes: a package; no app depended on it before.

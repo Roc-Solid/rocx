@@ -136,6 +136,7 @@ view! = |_|
 			</p>
 			<p>The packages that are plugins, and what each one adds:</p>
 			<ul>
+				<li><a href={Paths.ecosystem_auth}>Auth</a>: <code>{"Auth.plugin({ admit! })"}</code> adds the endpoints a mailed link and a provider come back to, signing out, and the sessions' tables. Its middleware hands the signed-in user on.</li>
 				<li><a href={Paths.ecosystem_jobs}>Jobs and cron</a>: <code>{"Job.plugin({ jobs: App.jobs, crons })"}</code> adds the queue's table, its workers and the schedules' loop.</li>
 				<li><a href={Paths.ecosystem_admin}>Admin</a>: <code>{"JobsPage.plugin({ guard })"}</code> adds the jobs page, which shows and manages the jobs plugin's queue. The tables admin is no plugin: you mount it on a route of your own.</li>
 				<li><a href={Paths.ecosystem_email}>Email</a>: <code>{"Email.plugin({})"}</code> adds the dev mailbox under <code>--dev</code>, and once the server has started, logs whether the SMTP server answers.</li>
