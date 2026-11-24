@@ -449,7 +449,10 @@ test("many calls wait at once on two Roc threads: 2,000 requests that each wait 
 		const statuses = await atOnce(2000, () => two.get("/wait?ms=1000").then((response) => response.status));
 		const took = performance.now() - started;
 		assert.deepEqual(new Set(statuses), new Set([200]));
-		assert.ok(took < 1800, `2,000 waits of 1 s took ${Math.round(took)} ms on two threads`);
+		// Waited one after another, they would take 1,000 s; at once, about 1 s and the requests' own
+		// cost: 1.8 s, as many times over on a slower machine (ROCX_TIME_SCALE; CI's runner took 3.6 s).
+		const limit = 1800 * (Number(process.env.ROCX_TIME_SCALE) || 1);
+		assert.ok(took < limit, `2,000 waits of 1 s took ${Math.round(took)} ms on two threads (the limit ${limit} ms)`);
 		assert.equal(await until(async () => (await two.allocations()) === two.settled), true, "and nothing is left held");
 	} finally {
 		await two.stop();
@@ -1812,10 +1815,14 @@ async function httpServer(tls) {
 	};
 }
 
-/** A self-signed certificate, made with openssl (none if there's no openssl). */
+/** A self-signed certificate, made with openssl (none if there's no openssl): a server's, its
+ * extensions this config's alone. OpenSSL 3's `req -x509` would add its own config's, among them
+ * `CA:TRUE` (a CA's certificate, which rustls refuses as a server's before it asks who signed it);
+ * macOS's LibreSSL adds none. */
 function selfSigned() {
-	const [key, cert] = [join(dir, "tls-key.pem"), join(dir, "tls-cert.pem")];
-	const made = spawnSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", cert, "-days", "1", "-subj", "/CN=localhost", "-addext", "subjectAltName=IP:127.0.0.1"], { stdio: "ignore" });
+	const [key, cert, config] = [join(dir, "tls-key.pem"), join(dir, "tls-cert.pem"), join(dir, "tls.cnf")];
+	writeFileSync(config, "[req]\ndistinguished_name = dn\nx509_extensions = server\nprompt = no\n[dn]\nCN = localhost\n[server]\nsubjectAltName = IP:127.0.0.1\n");
+	const made = spawnSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", cert, "-days", "1", "-config", config], { stdio: "ignore" });
 	return made.status === 0 ? { key: readFileSync(key), cert: readFileSync(cert) } : null;
 }
 
