@@ -16,7 +16,7 @@ import pf.Watch
 import Build
 import Fs
 import Hosts
-import Qr
+import qr.Qr
 import Remap
 import Text
 
@@ -596,7 +596,7 @@ Dev := [].{
 		)
 		_ = Fs.write!(Fs.join([dir, "connect.html"]), page)
 		url = "${origin}/rocx/android/connect.html"
-		match Qr.encode(url) {
+		match Qr.encode(url, Medium) {
 			Ok(code) => {
 				_ = Stderr.line!("rocx dev --android: a phone on this Wi-Fi: scan this, or open ${url}")
 				_ = Stderr.line!(Qr.terminal(code))
@@ -646,15 +646,19 @@ Dev := [].{
 	}
 
 	## The dev client's APK, built (`native/android/build.sh --dev-client`, about a minute) when it
-	## is missing or older than what it is made from: native/'s sources and web/platform's header,
-	## whose fingerprint it carries. Whether it was built now.
+	## is missing, older than what it is made from (native/'s sources and web/platform's header), or
+	## built for another fingerprint (another compiler: `rocx-dev.fingerprint` beside it says which).
+	## Whether it was built now.
 	phone_client! : Phone, Str => Try(Bool, [Failed(Str)])
 	phone_client! = |phone, apk| {
 		made = File.modified!(apk)
 		native = Fs.join([phone.rocx, "native"])
 		sources = ["core/src", "android/src", "android/app", "android-dev/src"].map(|dir| Fs.join([native, dir]))
 		files = ["Cargo.toml", "Cargo.lock", "core/build.rs", "core/Cargo.toml", "android/Cargo.toml", "android/build.sh", "android-dev/Cargo.toml", "android-dev/build.rs"].map(|file| Fs.join([native, file])).concat([Fs.join([phone.rocx, "web", "platform", "main.roc"]), Fs.join([phone.rocx, "web", "platform", "Host.roc"])])
-		var $fresh = made > 0
+		# The platform the client was built for (its fingerprint), as this rocx dev noted it when it
+		# built the client: another compiler or header means another client.
+		noted = Fs.join([Fs.dirname(apk), "rocx-dev.fingerprint"])
+		var $fresh = made > 0 and Fs.read_or_empty!(noted) == phone.fingerprint
 		for dir in sources {
 			if !Hosts.not_newer!(dir, made) {
 				$fresh = Bool.False
@@ -670,7 +674,10 @@ Dev := [].{
 		}
 		_ = Stderr.line!("rocx dev --android: building the dev client (native/android/build.sh --dev-client, about a minute)")
 		match Cmd.new(Fs.join([native, "android", "build.sh"])).arg("--dev-client").merged!() {
-			Ok(ran) if ran.code == 0 => Ok(Bool.True)
+			Ok(ran) if ran.code == 0 => {
+				_ = Fs.write!(noted, phone.fingerprint)
+				Ok(Bool.True)
+			}
 			Ok(ran) => Err(Failed("the dev client didn't build:\n${Text.trim_end(ran.output)}"))
 			Err(CantStart(why)) => Err(Failed("the dev client didn't build: ${why}"))
 		}

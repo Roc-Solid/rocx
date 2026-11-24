@@ -1,4 +1,4 @@
-app [main!] { pf: platform "../cli/platform/main.roc" }
+app [main!] { pf: platform "../cli/platform/main.roc", qr: "../packages/qr/main.roc" }
 
 import pf.Stdin
 import pf.Stdout
@@ -21,7 +21,7 @@ import Dev
 import Site
 import Hosts
 import SiteDev
-import Qr
+import qr.Qr
 
 main! = |args| {
 	words = args
@@ -62,7 +62,7 @@ rocx_home! = |{}| {
 qr! = |args| {
 	pbm = args.contains("--pbm")
 	text = Str.join_with(args.keep_if(|arg| arg != "--pbm"), " ")
-	match Qr.encode(text) {
+	match Qr.encode(text, Medium) {
 		Ok(code) => {
 			Stdout.line!(if (pbm) Qr.pbm(code) else Qr.terminal(code))?
 			Ok({})

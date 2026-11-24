@@ -306,11 +306,13 @@ Hosts := [].{
 		built = File.modified!(Fs.join([rocx, "bin", "rocx"]))
 		sources = Fs.entries!(Fs.join([rocx, "rocx-cli"])).keep_if(|name| !name.ends_with(".mjs")).map(|name| Fs.join([rocx, "rocx-cli", name]))
 		modules = Fs.entries!(Fs.join([rocx, "cli", "platform"])).keep_if(|name| name.ends_with(".roc")).map(|name| Fs.join([rocx, "cli", "platform", name]))
+		# The packages rocx imports: qr (`rocx qr`, and rocx dev --android --lan's code).
+		packaged = Fs.entries!(Fs.join([rocx, "packages", "qr"])).keep_if(|name| name.ends_with(".roc")).map(|name| Fs.join([rocx, "packages", "qr", name]))
 		library = Fs.join([rocx, "cli", "platform", "targets", target, "libhost.a"])
 		built > 0
 			and Hosts.cli_host_fresh!(rocx, target)
 			and Fs.read_or_empty!(Fs.join([rocx, "bin", ".rocx-opt"])) == opt
-			and Hosts.all_older!(sources.concat(modules).append(library), built)
+			and Hosts.all_older!(sources.concat(modules).concat(packaged).append(library), built)
 	}
 
 	all_older! : List(Str), U64 => Bool

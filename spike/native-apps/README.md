@@ -110,8 +110,9 @@ bin/rocx dev spike/native-apps/phone-hello --port 8095 --android --lan    # and 
 
 `rocx dev --android` does what `rocx dev` does (builds the app, serves it, builds again on each
 save) and, with each build, builds the app's Roc for the phone too. At start it builds the dev
-client (`native/android/build.sh --dev-client`, about a minute) if it is missing or older than what
-it is made from (native/'s sources, web/platform's header). If `adb` sees the emulator or a phone
+client (`native/android/build.sh --dev-client`, about a minute) if it is missing, older than what
+it is made from (native/'s sources, web/platform's header), or built for another fingerprint (another
+Roc compiler; `rocx-dev.fingerprint` beside the APK notes the one it was built for). If `adb` sees the emulator or a phone
 on USB, it reverses the server's port to it, installs the dev client if it was built or isn't on
 the phone, opens it at `http://127.0.0.1:<port>`, and shows crashes from the phone's log (`adb
 logcat`'s `AndroidRuntime`, `DEBUG` and `libc`) in the terminal.
@@ -123,8 +124,8 @@ dev runs, at their level (`dbg` at Debug). Lines the server can't take yet (it r
 builds) wait for the next try, the last 2,000 at most.
 
 **Phones on Wi-Fi: `--lan`.** The server listens on this network (`--host 0.0.0.0`: the app, its
-dev pages and endpoints are open to it while rocx dev runs), and rocx dev prints a QR code (its own
-encoder, `rocx-cli/Qr.roc`; `rocx qr <text>` prints one) for its page,
+dev pages and endpoints are open to it while rocx dev runs), and rocx dev prints a QR code (the ecosystem's
+`packages/qr`, plain Roc, which pages use too; `rocx qr <text>` prints one) for its page,
 `http://<this computer>:<port>/rocx/android/connect.html`. The page opens the dev client at that
 address (its `rocx-dev://connect?origin=…` link, through Chrome's `intent:`), or, where the client
 isn't installed, downloads it (`rocx-dev.apk`, served beside the page, with Android's APK type).
@@ -155,7 +156,7 @@ The computer's address is `ipconfig getifaddr en0` (en1, en2; Linux's `hostname 
 - **Errors.** A build that fails shows the compiler's report, pointed into the `.rocx` file, on a red
   screen until the next build. A build for another platform (the fingerprint of web/platform's
   `main.roc` and `Host.roc` and the Roc compiler, made by `native/core/build.rs` and by `rocx dev`,
-  differs) says to rebuild the dev client. A build that crashes the dev client natively (its
+  differs) says to rebuild the dev client; rocx dev rebuilds it at its next start. A build that crashes the dev client natively (its
   library's code ends the process while it loads or mounts) is shown on the red screen at the next
   start instead of being loaded again.
 - **Store rules.** Loading downloaded native code is fine in a debug build; Google Play bans it in a
