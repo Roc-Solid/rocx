@@ -140,7 +140,7 @@ view! = |_|
 				<Feature title="Plugins" href={"${Paths.platform_server}#plugins"}>
 					<p>
 						A package can add routes, tables, background loops and files to an app in one line. Jobs and
-						cron are a plugin (<a href={Paths.ecosystem_jobs}>packages/jobs</a>), and so is email.
+						cron are a plugin (<code>packages/jobs</code>), and so is email.
 					</p>
 				</Feature>
 			</FeatureGrid>

@@ -150,6 +150,21 @@ async function navigatesLikeLoads(url, base = "") {
 	await tab.close();
 }
 
+/** The links written inside another link, which HTML doesn't allow: the browser closes the outer one
+ * at the inner one, and what follows spills out of it (a card's text out of the card). */
+function linksInLinks(html) {
+	const found = [];
+	let depth = 0;
+	for (const tag of html.replace(/<!--[\s\S]*?-->/g, "").matchAll(/<(\/?)a\b([^>]*)>/gi)) {
+		if (tag[1]) depth = Math.max(0, depth - 1);
+		else {
+			if (depth > 0) found.push(`<a${tag[2]}>`);
+			depth++;
+		}
+	}
+	return found;
+}
+
 test("every page renders, and hydrates strictly as the server left it, asking for nothing but app.wasm and what it loads", { skip }, async () => {
 	for (const route of ROUTES) {
 		// As a browser asks (accepting HTML): a path with a page and a get! (/calls, /members) answers
@@ -161,6 +176,8 @@ test("every page renders, and hydrates strictly as the server left it, asking fo
 		const head = html.slice(0, html.indexOf("</head>"));
 		assert.ok(head.includes(sheetLink()), `${route}: the app's stylesheet, linked in its head`);
 		assert.doesNotMatch(html, /<style>\/\* /, `${route}: and not inline`);
+		// A card that is a link (Feature, PageCards) can't hold one: the browser ends the card at it.
+		assert.deepEqual(linksInLinks(html), [], `${route}: no link inside a link`);
 		if (route === "/") {
 			// Roc Solid's front page is in no part of the docs: it has no sidebar.
 			assert.doesNotMatch(html, /<nav class="sidebar[ "]/, "the front page has no sidebar");

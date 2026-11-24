@@ -2,7 +2,8 @@ import pf.Html
 import Code
 
 ## A card: a title and what is inside it (a paragraph, a list, code). With `href` the whole card is a
-## link, which lights up when pointed at. A title with markup in it (code) is a `heading` instead.
+## link, which lights up when pointed at, so what is inside it holds no link (the browser would end
+## the card there). A title with markup in it (code) is a `heading` instead.
 Feature := [].{
 	Props := {
 		title : Str ?? "",
