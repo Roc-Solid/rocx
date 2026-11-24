@@ -197,6 +197,10 @@ When an item lands, delete its line here in the same commit.
   11 is done), `packages/mcp/PROPOSALS.md` #1, `packages/otel/PROPOSALS.md`,
   `packages/forms/PROPOSALS.md` ("Nothing here is built").
 - examples/tasks' cookie is still `acme-person` (the apps dropped "Acme").
+- **sqlite-vs-turso's sale workloads aren't measured yet:** `sale`, `sale-job`, `concurrent-sale`
+  and `concurrent-sale-job` (a sale in one transaction, with its receipt job and without) aren't in
+  `site/sqlite-vs-turso.json`, so the docs page doesn't show them. `just db-bench`, when the user
+  says, on a quiet machine.
 
 
 - **Old branches kept on purpose until about 2026-11-28:** `native-server`, `solid-signals` and

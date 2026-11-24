@@ -145,8 +145,8 @@ AppNotes := [].{
 			kind: Benchmark,
 			path: Paths.examples_sqlite_vs_turso,
 			blurb: "SQLite against Turso, timed in Roc",
-			summary: "One app timing the same database work on SQLite and on Turso: writes alone and in a transaction, reads by key and by an index, sums, JSON, a recursive query, eight callers at once on rows of their own, on one row, and reading beside writing; then a million orders fetched one and a hundred at a time, and joined to their customers. Each is timed in Roc, in the server, around the Db calls it makes. Its results are on this page.",
-			shows: ["The same SQL on two engines: --database-url picks one", "Turso's concurrent writes (MVCC): a transaction that loses to another runs again", "Eight actors as eight callers at once, and timing in Roc (Time.now_nanos!)", "A million rows, loaded by SQL from a count, fetched and joined"],
+			summary: "One app timing the same database work on SQLite and on Turso: writes alone and in a transaction, reads by key and by an index, sums, JSON, a recursive query, eight callers at once on rows of their own, on one row, and reading beside writing; a sale written to four tables in one transaction, with its job queued in it and without; then a million orders fetched one and a hundred at a time, and joined to their customers. Each is timed in Roc, in the server, around the Db calls it makes. Its results are on this page.",
+			shows: ["The same SQL on two engines: --database-url picks one", "Turso's concurrent writes (MVCC): a transaction that loses to another runs again", "A job queued in the same transaction as its sale: the outbox pattern", "Eight actors as eight callers at once, and timing in Roc (Time.now_nanos!)", "A million rows, loaded by SQL from a count, fetched and joined"],
 			shots: [],
 		},
 		{

@@ -1,6 +1,7 @@
 import pf.Actor
 import pf.Db
 import pf.Kv
+import Sales
 
 ## Eight actors, `w1` to `w8`, whose turns run at once: the concurrent workloads' writers and
 ## readers. An actor takes one turn at a time, but different actors run beside each other, each turn
@@ -36,12 +37,15 @@ Workers := [].{
 
 	## The work a worker is given: insert `count` events of its own, numbered from `from`; run
 	## `count` transactions that each read counter `counter` and write it back one more (each run of
-	## a transaction's body counted in `Kv`'s `bench:runs`); or read `count` items by their id, of the
-	## first `rows`, starting from `seed`.
+	## a transaction's body counted in `Kv`'s `bench:runs`); read `count` items by their id, of the
+	## first `rows`, starting from `seed`; or write `count` sales of its own customer (its number),
+	## numbered from `from`, each in a transaction (`Sales.sell!`), with its receipt job queued if
+	## `job`.
 	Task : [
 		Insert({ worker : I64, from : I64, count : I64 }),
 		Bump({ counter : I64, count : I64 }),
 		Read({ count : I64, rows : I64, seed : I64 }),
+		Sell({ worker : I64, from : I64, count : I64, job : Bool }),
 	]
 
 	work! : Workers.Task => Try({}, Str)
@@ -92,6 +96,14 @@ Workers := [].{
 						Err(DbErr(why)) => return Err("read: ${why}")
 						Err(BadRow(why)) => return Err("read: ${why}")
 					}
+				}
+				Ok({})
+			}
+			Sell({ worker, from, count, job }) => {
+				var $i = 0
+				while $i < count {
+					Sales.sell!(worker, from + $i, job)?
+					$i = $i + 1
 				}
 				Ok({})
 			}

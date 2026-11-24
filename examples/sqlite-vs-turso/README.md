@@ -5,7 +5,8 @@ Roc, on the server platform. One build runs on either engine; the server's `--da
 picks which. The docs site shows its numbers at `/examples/sqlite-vs-turso`.
 
 Read it to see an app made only of endpoints (no pages), a database chosen when the server starts,
-transactions, actors used as concurrent callers, and timing in Roc with `Time.now_nanos!`.
+transactions, a job queued in the same transaction as the rows it goes with, actors used as
+concurrent callers, and timing in Roc with `Time.now_nanos!`.
 
 | `--database-url` | Engine |
 |---|---|
@@ -78,9 +79,20 @@ items, and answers what each workload did and how long it took. The workloads:
   ran); and four readers beside four writers.
 - **After a checkpoint**, the reads again. On Turso's MVCC, rows not yet checkpointed live in an
   in-memory store of versions, which is slower to walk through an index than the database's pages.
+- **A sale in one transaction** (`Sales.roc`), as a shop's checkout writes one: the sale (its id
+  read back with `returning`), three lines, a payment and a ledger entry, four tables with foreign
+  keys to the sale. Four workloads: one caller (`sale`), the same with the sale's receipt job
+  queued in the same transaction (`sale-job`), and both with eight callers at once
+  (`concurrent-sale`, `concurrent-sale-job`). The job is a row of `rocx_jobs` in the transaction
+  (`Job.enqueue!`, packages/jobs), so the sale and its job are written together or not at all:
+  the outbox pattern, with the job queue as the outbox. Comparing each pair shows what the job
+  adds. The app's jobs plugin has no workers (`workers: 0` in `main.roc`), so the receipts stay
+  queued: the time is writing them, with no worker's writes running beside the workloads.
 
 Then the app checks what the workloads wrote: every counter at the value its transactions made it
-(no write lost), and every event and item there. A failure is a 500 that says which check failed.
+(no write lost), every event and item there, every sale with its three lines, its payment and its
+ledger entry, and one receipt queued for each sale written with one, naming a sale that is there. A
+failure is a 500 that says which check failed.
 
 **`POST /bench/big`** with `{"orders": n}` (1,000 to 5,000,000; the docs use a million) makes two
 tables afresh: `customers` (n / 100 rows) and `orders` (n rows, a hundred per customer, spread over
@@ -103,11 +115,12 @@ Each fetch and join checks that it read what it should.
 | A typed JSON body (`body : { size : U64 }`) and a typed answer (`Bench.Report`), turned into JSON by the platform. A failure is `Err(Status(500, why))`. | `routes/bench/+server.roc`, `Bench.roc` |
 | The database named in the program (`database: Sqlite("data/bench.db")`) and overridden at start with `--database-url`. `Db.engine!` says which engine the server opened. | `main.roc`, `engine!` in `Bench.roc` |
 | Timing in Roc with the server's monotonic clock (`Time.now_nanos!`). | `timed!` in `Bench.roc` |
-| Transactions (`Db.transaction!`). On Turso in MVCC mode, a transaction that loses to another's write runs its body again; the app counts the runs. | `insert_batch!` in `Bench.roc`, `Workers.work!` |
+| Transactions (`Db.transaction!`). On Turso in MVCC mode, a transaction that loses to another's write runs its body again; the app counts the runs. | `insert_batch!` in `Bench.roc`, `Workers.work!`, `Sales.sell!` |
+| A job queued in the transaction that writes its rows (`Job.enqueue!` inside `Db.transaction!`), with a job kind defined in the app (`Job.define`) and the jobs plugin listed with no workers. | `Sales.roc`, `main.roc` |
 | Actors as concurrent callers: eight actors (`Actor.method`), each turn a call of its own. They are told their work at once (`tell!`), then asked whether they are `ready` (`ask!`) to wait for them. A told actor's reply goes nowhere, so each leaves its outcome in `Kv`. | `Workers.roc`, `together!` in `Bench.roc` |
 | Several statements in one call (`Db.script!`). | `fresh!` in `Bench.roc` |
 | SQL on tables no migration makes, marked `Db.unchecked`, so `rocx check --sql` (which checks the app's SQL against a database built from its migrations) leaves it out. | the big run in `Bench.roc` |
-| The tables the workloads use, made by a migration, the same on every engine. | `migrations/0001_bench.sql` |
+| The tables the workloads use, made by migrations, the same on every engine. | `migrations/0001_bench.sql`, `migrations/0002_sales.sql` |
 
 ## The docs' numbers: `just db-bench`
 

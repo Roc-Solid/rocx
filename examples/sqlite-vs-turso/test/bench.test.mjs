@@ -3,8 +3,9 @@
 // a file of its own. Every workload answers, on the engine asked, with what it did; the
 // transactions' bodies ran at least once each (on Turso in MVCC mode a loser runs again, so where
 // eight write one counter they may run more), and exactly once each where writes take turns. What
-// the workloads wrote, and what the big run's fetches and joins read, is checked by the app itself
-// (a 500 says what was wrong). No database server is needed.
+// the workloads wrote (the sales and their receipt jobs among it), and what the big run's fetches
+// and joins read, is checked by the app itself (a 500 says what was wrong). No database server is
+// needed.
 //
 //   node --test 'examples/sqlite-vs-turso/test/*.test.mjs'
 import { test, before, after } from "node:test";
@@ -47,6 +48,10 @@ const workloads = [
 	"read-range-checkpointed",
 	"aggregate-checkpointed",
 	"scan-checkpointed",
+	"sale",
+	"sale-job",
+	"concurrent-sale",
+	"concurrent-sale-job",
 ];
 
 /** The big run's workloads, in its order. */
@@ -90,6 +95,14 @@ for (const { name, url, engine, mvcc } of engines) {
 			const shared = by["concurrent-one-row"];
 			if (mvcc) assert.ok(shared.runs >= shared.ops, `eight transactions on one row at once: each ran, a loser again (${shared.runs} runs, ${shared.ops} transactions)`);
 			else assert.equal(shared.runs, shared.ops, "writes take turns: each body ran once");
+			// A sale in one transaction, its receipt job queued in it or not: one caller's bodies run
+			// once each; eight callers' at least once (on Turso's MVCC a loser runs again). The app
+			// checks every sale has its lines, payment and ledger entry, and every receipt its sale.
+			for (const name of ["sale", "sale-job"]) assert.equal(by[name].runs, by[name].ops, `${name}: one caller, each body run once`);
+			for (const name of ["concurrent-sale", "concurrent-sale-job"]) {
+				if (mvcc) assert.ok(by[name].runs >= by[name].ops, `${name}: each body ran (${by[name].runs} runs, ${by[name].ops} sales)`);
+				else assert.equal(by[name].runs, by[name].ops, `${name}: writes take turns, each body ran once`);
+			}
 			// Again, on the same file: a run starts from fresh tables.
 			await posted(app, "/bench", { size: 1 });
 			// The big run, small: 2,000 orders of 20 customers, a hundred each; its fetches and joins

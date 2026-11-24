@@ -3,6 +3,7 @@ import pf.Db
 import pf.Kv
 import pf.Log
 import pf.Time
+import Sales
 import Workers
 
 ## The workloads, each timed in Roc around the `Db` calls it makes (`Time.now_nanos!`, the server's
@@ -17,7 +18,9 @@ import Workers
 ##   of their own, transactions on counters of their own, transactions on one counter, and readers
 ##   beside writers. The checkpoint shows what Turso's MVCC does with rows it hasn't yet written
 ##   into its pages (it keeps them in a store of versions in memory, slower to walk), and with
-##   rows it has.
+##   rows it has. Last, a sale in one transaction, four tables written (`Sales.sell!`), with its
+##   receipt job queued in the same transaction and without, one caller and eight at once: what
+##   writing a job atomically with an app's own rows costs (the outbox pattern).
 ## - `big!`, a million orders of ten thousand customers: loaded, checkpointed, then fetched one
 ##   and a hundred at a time (by key, and by an index), joined to their customers, and summed.
 ##
@@ -80,6 +83,24 @@ Bench := [].{
 		$done = $done.append(logged!(measured("read-range-checkpointed", "50 rows of a category by its index, after the checkpoint", 20 * size, 1, 0, timed!(|{}| read_ranges!(20 * size))?)))
 		$done = $done.append(logged!(measured("aggregate-checkpointed", "the group by, after the checkpoint", size.max(2) // 2, 1, 0, timed!(|{}| aggregates!(size.max(2) // 2))?)))
 		$done = $done.append(logged!(measured("scan-checkpointed", "a sum over every row, after the checkpoint", size.max(2) // 2, 1, 0, timed!(|{}| scans!(size.max(2) // 2))?)))
+
+		# ---- A sale in one transaction: four tables, then the same with its receipt job ----
+		sold = 10 * size
+		before_sale = runs!({})
+		took_sale = timed!(|{}| sell_each!(1, sold, Bool.False))?
+		$done = $done.append(logged!(measured("sale", "a sale in one transaction: its row, three lines, a payment, a ledger entry", sold, 1, runs!({}) - before_sale, took_sale)))
+		before_sale_job = runs!({})
+		took_sale_job = timed!(|{}| sell_each!(sold + 1, sold, Bool.True))?
+		$done = $done.append(logged!(measured("sale-job", "the sale, and its receipt job queued in the same transaction", sold, 1, runs!({}) - before_sale_job, took_sale_job)))
+		each = 2 * size
+		before_sales = runs!({})
+		took_sales = together!(eight(|w| Sell({ worker: w, from: 1, count: each, job: Bool.False })))?
+		$done = $done.append(logged!(measured("concurrent-sale", "a sale in one transaction, eight at once", 8 * each, 8, runs!({}) - before_sales, took_sales)))
+		before_sales_job = runs!({})
+		took_sales_job = together!(eight(|w| Sell({ worker: w, from: each + 1, count: each, job: Bool.True })))?
+		$done = $done.append(logged!(measured("concurrent-sale-job", "a sale and its receipt job in one transaction, eight at once", 8 * each, 8, runs!({}) - before_sales_job, took_sales_job)))
+		sales_checked!({ sales: 2 * sold + 16 * each, receipts: sold + 8 * each })?
+
 		version : List({ version : Str })
 		version = said(Db.all!("select sqlite_version() as version", []))?
 		Ok({
@@ -177,13 +198,13 @@ write! = |sql, params|
 		Err(DbErr(why)) => Err(why)
 	}
 
-## Empty tables, and the counters at 0: the shared one (0) and one for each worker (1 to 8). On
-## Turso, a checkpoint after the deletes: without one, rows deleted after Turso checkpointed them
-## slow every later statement down, a run after two or three on one file taking minutes, not
-## seconds (turso_core 0.8.4, D-049).
+## Empty tables (the sales' receipts gone from the job queue too), and the counters at 0: the
+## shared one (0) and one for each worker (1 to 8). On Turso, a checkpoint after the deletes:
+## without one, rows deleted after Turso checkpointed them slow every later statement down, a run
+## after two or three on one file taking minutes, not seconds (turso_core 0.8.4, D-049).
 fresh! : {} => Try({}, Str)
 fresh! = |{}| {
-	match Db.script!("delete from items; delete from events; delete from counters; insert into counters (id, value) values (0, 0), (1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (6, 0), (7, 0), (8, 0);") {
+	match Db.script!("delete from items; delete from events; delete from ledger; delete from payments; delete from sale_lines; delete from sales; delete from rocx_jobs where kind = 'receipt'; delete from counters; insert into counters (id, value) values (0, 0), (1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (6, 0), (7, 0), (8, 0);") {
 		Ok({}) => {}
 		Err(DbErr(why)) => return Err("fresh tables: ${why}")
 	}
@@ -238,6 +259,18 @@ insert_batch! = |rows| {
 		Ok({}) => Ok({})
 		Err(DbErr(why)) => Err("insert-batch: ${why}")
 	}
+}
+
+## `count` sales of customer 0, numbered from `from`, one after another, each its own transaction
+## (`Sales.sell!`), with its receipt job if `job`.
+sell_each! : I64, I64, Bool => Try({}, Str)
+sell_each! = |from, count, job| {
+	var $i = 0
+	while $i < count {
+		Sales.sell!(0, from + $i, job)?
+		$i = $i + 1
+	}
+	Ok({})
 }
 
 ## `count` items read by their id, all over the first `rows`.
@@ -596,6 +629,31 @@ checked! = |expected| {
 	got_items = items.get(0).map_ok(|row| row.n) ?? 0
 	if got_items != expected.rows {
 		return Err("check: ${got_items.to_str()} items, not ${expected.rows.to_str()}")
+	}
+	Ok({})
+}
+
+## What the sale workloads wrote, checked: `sales` sales, each with its three lines, its payment and
+## its ledger entry; `receipts` receipt jobs, queued, each naming a sale of its own that is there
+## (queued in the transaction that wrote it).
+sales_checked! : { sales : I64, receipts : I64 } => Try({}, Str)
+sales_checked! = |expected| {
+	counts : List({ sales : I64, lines : I64, payments : I64, ledger : I64 })
+	counts = said(Db.all!("select (select count(*) from sales) as sales, (select count(*) from sale_lines) as lines, (select count(*) from payments) as payments, (select count(*) from ledger) as ledger", []))?
+	got = counts.get(0) ?? { sales: 0, lines: 0, payments: 0, ledger: 0 }
+	if got != { sales: expected.sales, lines: 3 * expected.sales, payments: expected.sales, ledger: expected.sales } {
+		return Err("check: ${got.sales.to_str()} sales, ${got.lines.to_str()} lines, ${got.payments.to_str()} payments, ${got.ledger.to_str()} ledger entries; not ${expected.sales.to_str()} sales, three lines and one of each other a sale")
+	}
+	jobs : List({ queued : I64, sales : I64, missing : I64 })
+	jobs = said(
+		Db.all!(
+			"select count(*) as queued, count(distinct json_extract(input, '$.sale')) as sales, coalesce(sum(case when json_extract(input, '$.sale') in (select id from sales) then 0 else 1 end), 0) as missing from rocx_jobs where kind = 'receipt' and state = 'queued'",
+			[],
+		),
+	)?
+	receipts = jobs.get(0) ?? { queued: 0, sales: 0, missing: 0 }
+	if receipts != { queued: expected.receipts, sales: expected.receipts, missing: 0 } {
+		return Err("check: ${receipts.queued.to_str()} receipts queued for ${receipts.sales.to_str()} sales, ${receipts.missing.to_str()} of them not there; not ${expected.receipts.to_str()}, each its own sale's")
 	}
 	Ok({})
 }
