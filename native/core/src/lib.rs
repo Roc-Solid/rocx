@@ -92,24 +92,19 @@ pub fn start(platform: Box<dyn Platform>, origin: &str, path: &str) {
     pump();
 }
 
-/// A new build of the app (a dev client's, whose library `roc::set_entries` just named): the last
-/// build's engine let go of (its Roc values never released: their code may be gone, and this is
-/// dev's), what was typed in its fields kept, the new one started at `path`, mounted, the fields
-/// typed in again (`input` events, so the app's signals have them), and the whole screen sent.
+/// A new build of the app (a dev client's, whose library `roc::set_entries` just named), started
+/// afresh as a browser's reload starts a page: the last build's engine let go of (its Roc values
+/// never released: their code may be gone, and this is dev's), nothing of its state kept, the new
+/// one started at `path`, mounted, and the whole screen sent.
 #[cfg(feature = "dynamic")]
 pub fn restart(platform: Box<dyn Platform>, origin: &str, path: &str) {
     let _ = PLATFORM.set(platform);
-    let fields = if engine::started() { engine::fields() } else { Vec::new() };
     engine::reset();
     native::forget_shown();
     GENERATION.fetch_add(1, Ordering::Relaxed);
     INBOX.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clear();
     engine::init(origin.to_string(), path.to_string());
     engine::mount();
-    engine::flush();
-    for (key, value) in fields {
-        engine::restore_field(&key, &value);
-    }
     pump();
 }
 

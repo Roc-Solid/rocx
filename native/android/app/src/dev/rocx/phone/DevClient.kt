@@ -28,8 +28,8 @@ import java.net.URL
  * library the computer's `rocx dev` builds on each save and serves beside the app's server
  * (`/rocx/android/latest.json` names the latest build, `/rocx/android/<file>` is its library). A
  * thread asks for the latest build every 150 ms; a new one is downloaded into the app's
- * files and loaded in place of the last (`Rocx.reload`): the screen is mounted again, what was
- * typed in its fields typed in again, and its scroll kept. A build that failed shows its error on
+ * files and loaded in place of the last (`Rocx.reload`): the app starts afresh, as a browser's
+ * reload starts a page (no state kept), and its scroll is kept. A build that failed shows its error on
  * a red screen until the next one; so does one built for another platform (the fingerprints differ:
  * rebuild the dev client).
  *

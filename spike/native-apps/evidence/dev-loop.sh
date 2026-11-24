@@ -9,8 +9,8 @@
 # (its heading) and waits for the phone to show the new build, timed on the Mac from the file's
 # write to the dev client's "shown" line in rocx dev's output (logcat's, so a little late); then
 # saves a mistake and waits for the red screen; then the fix. The page is put back as it was.
-# Screenshots: dev-01-before.png, dev-02-reloaded.png (the new heading, the field's text kept,
-# the counter back at 0), dev-03-error.png, dev-04-fixed.png; timings in dev-loop.txt.
+# Screenshots: dev-01-before.png, dev-02-reloaded.png (the new heading, and a fresh start: the
+# counter back at 0, the field empty), dev-03-error.png, dev-04-fixed.png; timings in dev-loop.txt.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -66,7 +66,7 @@ tap Tap
 tap android.widget.EditText
 for _ in $(seq 1 30); do "$adb" shell dumpsys input_method | grep -q "mInputShown=true" && break; sleep 0.5; done
 sleep 1
-"$adb" shell input text "kept%sacross%sbuilds"
+"$adb" shell input text "typed%sbefore%sthe%sedit"
 "$adb" shell input keyevent KEYCODE_ESCAPE
 sleep 1
 shot dev-01-before

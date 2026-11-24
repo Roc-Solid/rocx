@@ -147,12 +147,13 @@ The computer's address is `ipconfig getifaddr en0` (en1, en2; Linux's `hostname 
   client's by name), served from `build/android/static` (one more `--static` directory). It is
   announced (`latest.json`) once the server built with it has started, so the phone's first reads
   find it up; the host's HTTP client also tries a refused connection again for up to 3 s.
-- **A reload** restarts the engine (the last build's Roc values are dropped, never released: their
-  code may be gone; answers and timers from it carry its generation and are ignored), mounts the new
-  build, types again what was typed in the fields (`input` events, so the app's signals have it),
-  and keeps the scroll. Load and mount take 3–13 ms. Signals reset otherwise: Roc values are laid out
-  by the code that made them, which the new build may have changed (Expo's Fast Refresh keeps
-  component state; this doesn't, yet).
+- **A reload** starts the app afresh, as `rocx dev`'s reload starts a page in the browser: the
+  engine restarts (the last build's Roc values are dropped, never released: their code may be gone;
+  answers and timers from it carry its generation and are ignored), the new build mounts, and only
+  the scroll is kept. Load and mount take 3–13 ms. No state is kept across a reload, by choice
+  (2026-11-24): Roc values are laid out by the code that made them, which the new build may have
+  changed, and a fresh start can't be wrong about that (Expo's Fast Refresh keeps component state;
+  this doesn't mean to).
 - **Errors.** A build that fails shows the compiler's report, pointed into the `.rocx` file, on a red
   screen until the next build. A build for another platform (the fingerprint of web/platform's
   `main.roc` and `Host.roc` and the Roc compiler, made by `native/core/build.rs` and by `rocx dev`,
@@ -162,21 +163,21 @@ The computer's address is `ipconfig getifaddr en0` (en1, en2; Linux's `hostname 
 - **Store rules.** Loading downloaded native code is fine in a debug build; Google Play bans it in a
   release, so this is the dev client's alone: an app's APK links its Roc in (`libapp.so`).
 
-Measured with `evidence/dev-loop.sh` (an edit of the page's heading, typed text in the field, then a
-mistake, then its fix), on the Mac's clock from the file's write to the client's "shown" line in
+Measured with `evidence/dev-loop.sh` (two taps and text typed in the field, an edit of the page's
+heading, then a mistake, then its fix), on the Mac's clock from the file's write to the client's "shown" line in
 `rocx dev`'s output:
 
 | | |
 |---|---|
-| A `.rocx` edit, on the phone | 0.77–1.3 s after the save (100 ms debounce, the build 0.2–0.7 s, the server's restart, the 150 ms poll, the download 7–14 ms, load and mount 3–13 ms) |
+| A `.rocx` edit, on the phone | 0.68–1.4 s after the save (100 ms debounce, the build 0.2–0.7 s, the server's restart, the 150 ms poll, the download 7–14 ms, load and mount 3–13 ms) |
 | A mistake, on the red screen | 0.39–0.46 s after the save |
-| What was typed | kept across builds, and in the app's signal (`Send` posts it) |
+| What was tapped and typed | gone after the reload: a fresh start, the counter at 0 and the field empty, as the browser's reload |
 | Over Wi-Fi (`--lan`, the build fetched from 192.168.0.4) | 1.0–1.4 s after the save (the download 93–136 ms; the "shown" line in the terminal up to 200 ms later, the log's batching) |
 
 ![](evidence/dev-02-reloaded.png) ![](evidence/dev-03-error.png)
 
-`dev-01-before.png`, `dev-02-reloaded.png` (the new heading, the field's text kept, the counter back
-at 0), `dev-03-error.png`, `dev-04-fixed.png`, `dev-05-crash-guard.png` (a library whose
+`dev-01-before.png` (two taps, text typed), `dev-02-reloaded.png` (the new heading, and a fresh
+start: the counter back at 0, the field empty), `dev-03-error.png`, `dev-04-fixed.png`, `dev-05-crash-guard.png` (a library whose
 `roc_mount` writes to address 0, served as a build, and the client after it), `dev-06-fingerprint.png`
 (the dev client uninstalled and a comment added to `Host.roc`: `rocx dev --android` installed and
 opened the client, which refused the build for another platform), `dev-07-connect.png` (a client
@@ -344,8 +345,8 @@ host's GPU.
 6. **Pages.** One page at its start path; no navigation, links or back gestures (D-040's shape, §8);
    page guards are ignored (the user's answer to question 4).
 7. **`rocx build --android`, and the dev mode's next steps.** `build.sh` is the spike's. The dev mode
-   (above) reloads in about a second, on USB and Wi-Fi; next: keeping signals across a reload
-   where their types didn't change, the server's restart off the reload's path, and the page's APK
+   (above) reloads in about a second, on USB and Wi-Fi, each a fresh start; next: the server's
+   restart off the reload's path, and the page's APK
    copied again when the dev client is rebuilt while rocx dev runs (it is copied at start).
 8. **Controls.** Images, `select`, SVG, `textarea` sizes, dark mode, accessibility roles, the
    keyboard's other keys (only Enter), `on:submit` from the keyboard.

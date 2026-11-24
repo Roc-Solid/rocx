@@ -1,16 +1,16 @@
-rocx dev --android, 2026-11-23 23:59, load average  6.84 7.91 9.82 
+rocx dev --android, 2026-11-24 09:41, load average  5.27 4.74 5.94 
 
-edit 1: on the phone 1225 ms after the save (rocx dev: built spike/native-apps/phone-hello in 0.42 s; dev: build app-1795474766128.so shown: 413 ms after rocx dev built it; fetched (1051 KB) in 14 ms, loaded and mounted in 13 ms)
-edit 2: on the phone 939 ms after the save (rocx dev: built spike/native-apps/phone-hello in 0.19 s; dev: build app-1795474768726.so shown: 394 ms after rocx dev built it; fetched (1051 KB) in 9 ms, loaded and mounted in 8 ms)
-edit 3: on the phone 1069 ms after the save (rocx dev: built spike/native-apps/phone-hello in 0.27 s; dev: build app-1795474771348.so shown: 375 ms after rocx dev built it; fetched (1051 KB) in 10 ms, loaded and mounted in 11 ms)
-a mistake: on the phone's red screen 390 ms after the save
-the fix: on the phone 768 ms after the save
+edit 1: on the phone 1392 ms after the save (rocx dev: built spike/native-apps/phone-hello in 0.72 s; {"time":"2026-11-24T08:41:44.313Z","level":"info","msg":"dev: build app-1795509703670.so from http://127.0.0.1:8095 shown: 155 ms after rocx dev built it; fetched (1051 KB) in 6 ms, loaded and mounted in 5 ms","from":"phone"})
+edit 2: on the phone 1083 ms after the save (rocx dev: built spike/native-apps/phone-hello in 0.21 s; {"time":"2026-11-24T08:41:46.924Z","level":"info","msg":"dev: build app-1795509706172.so from http://127.0.0.1:8095 shown: 264 ms after rocx dev built it; fetched (1051 KB) in 8 ms, loaded and mounted in 9 ms","from":"phone"})
+edit 3: on the phone 1063 ms after the save (rocx dev: built spike/native-apps/phone-hello in 0.20 s; {"time":"2026-11-24T08:41:49.536Z","level":"info","msg":"dev: build app-1795509708776.so from http://127.0.0.1:8095 shown: 244 ms after rocx dev built it; fetched (1051 KB) in 4 ms, loaded and mounted in 6 ms","from":"phone"})
+a mistake: on the phone's red screen 391 ms after the save
+the fix: on the phone 682 ms after the save
 text="Edited on the Mac, round 3"
 text="Tapped 0 times"
 text="Tap"
 text="Hello from the rocx server"
-text="Server clock: 1795474776171"
+text="Server clock: 1795509713322"
 text="Ask again"
-text="kept across builds"
+text="Say something"
 text="Send"
 text="Nothing sent yet"

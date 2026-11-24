@@ -320,13 +320,14 @@ name fails as the web's does, saying which plugin's native half it needs.
   `./gradlew`.
 - **`rocx dev --android` (built, README.md's Dev mode):** a dev client (the shell with the host as
   `libhost.so`, no app) loads each build's library from the dev server (`dlopen`) in place of the
-  last: about a second from a save to the phone, the fields' text kept, a failed build's error on
+  last: about a second from a save to the phone, a fresh start each time (as the browser's reload:
+  no state kept, by choice), a failed build's error on
   a red screen, the phone's log in rocx dev's terminal over HTTP. `--lan` serves phones on Wi-Fi:
   a QR code for a page that opens (or installs) the dev client at the computer's address. Debug
   builds only: Play bans downloaded native code in a release.
 - **`rocx dev --ios`:** the same on the simulator, which runs Mac code and loads a new library as
   the Android client does; a physical iPhone loads no downloaded code, so it reinstalls on save
-  (`xcrun devicectl`, around 10 s). Keeping signals across a reload is later on both.
+  (`xcrun devicectl`, around 10 s). A reload is a fresh start on both.
 - **Toolchains:** Xcode from Apple; the Android SDK and NDK and the Rust targets through Nix where
   they can be, as with the rest of the repo.
 - Signing, TestFlight and Play's internal track are phase 4.
