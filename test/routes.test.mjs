@@ -454,7 +454,7 @@ test("App: the actors' methods the app's modules define (found by rocx build), e
 		writeFileSync(join(dir, path), text);
 	};
 	try {
-		put("Carts.roc", 'import pf.Actor\n\nCarts := [].{\n\tcart : Actor.Kind({ items : List(Str) })\n\tcart = Actor.define({\n\t\tname: "cart",\n\t\tinitial: |_| { items: [] },\n\t})\n\n\tadd = Actor.method(cart, "add", |{ state, input, .. }| { state: { items: state.items.append(input) }, reply: state.items.len() })\n\n\tmirror = |{}| Actor.method(cart, "mirror", |{ state, .. }| { state, reply: state.items })\n}\n');
+		put("Carts.roc", 'import pf.Actor\n\nCarts := [].{\n\tcart : Actor.Kind(Str, { items : List(Str) })\n\tcart = Actor.define({\n\t\tname: "cart",\n\t\tinitial: |_| { items: [] },\n\t})\n\n\tadd = Actor.method(cart, "add", |{ state, input, .. }| { state: { items: state.items.append(input) }, reply: state.items.len() })\n\n\tmirror = |{}| Actor.method(cart, "mirror", |{ state, .. }| { state, reply: state.items })\n}\n');
 		put("routes/rooms/+server.roc", 'import pf.Actor\n\nroom = Actor.define({ name: "room", initial: |_| 0 })\n\ncount = Actor.method(room, "count", |{ state, .. }| { state, reply: state })\n\nget! = |_| Ok(1)\n');
 		put("Generated/Copy.roc", 'Copy := [].{\n\tx = Actor.method(cart, "add", |{ state, .. }| { state, reply: 0 })\n}\n');
 		put("Jobs.roc", 'import jobs.Job\n\nJobs := [].{\n\tdaily = Job.define("daily", |_context, {}| Ok({}))\n}\n');
@@ -475,9 +475,9 @@ test("App: the actors' methods the app's modules define (found by rocx build), e
 		assert.match(app, /^import jobs\.Job\nimport pf\.Actor\nimport Routes\nimport \.\.\/Carts as Carts\nimport \.\.\/Jobs as Jobs\nimport RoomsServer\n/m, "each module once, jobs' and actors' alike");
 		assert.match(app, /^\tjobs = \[Job\.handler\(Jobs\.daily\)\]$/m);
 		assert.match(app, /\t\tmigrations: \[\],\n\t\tactors: \[Actor\.handler\(Carts\.add\), Actor\.handler\(Carts\.mirror\(\{\}\)\), Actor\.handler\(RoomsServer\.count\)\],\n/);
-		// A kind or a method outside its module's block, a kind whose name isn't first, or two kinds with one name: refused.
+		// A kind or a method outside its module's block, a kind whose name isn't first, or two kinds with one name (one keyed, D-067): refused.
 		put("Loose.roc", 'import pf.Actor\n\nloose = Actor.define({ name: "loose", initial: |_| 0 })\n\nLoose := [].{\n\tunnamed = Actor.define({ initial: |_| 0, name: "unnamed" })\n\tpoke = Actor.method(unnamed, "poke", |{ state, .. }| { state, reply: {} })\n}\n\nstray = Actor.method(loose, "stray", |{ state, .. }| { state, reply: {} })\n');
-		put("Again.roc", 'Again := [].{\n\tagain = Actor.define({ name: "cart", initial: |_| 0 })\n}\n');
+		put("Again.roc", 'Again := [].{\n\tagain = Actor.define_keyed({ name: "cart", initial: |_| 0 })\n}\n');
 		assert.deepEqual(actorsIn(dir, table).problems, [
 			'Loose.roc:3: the kind of actor "loose" is defined outside its module\'s block: define it at the top of `Loose := [].{ … }`, as `\tloose = Actor.define({ … })`, so Generated/App can name it (`Loose.loose`)',
 			'Loose.roc:6: the kind of actor `unnamed` doesn\'t start with its name: define it as `unnamed = Actor.define({ name: "…", initial })`, so rocx build can check it',

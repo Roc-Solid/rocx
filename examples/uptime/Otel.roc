@@ -25,16 +25,21 @@ Otel := [].{
 	## shape of state it keeps: one kept before gauges (`rocx_otel_meter`) wouldn't read as this, so
 	## it is let be, and the sums start again. Its methods (`measured`, `exported`) are what `rocx
 	## build` lists in the app's `program.actors`.
-	meter : Actor.Kind(Points.State)
+	meter : Actor.Kind(Str, Points.State)
 	meter = Actor.define({ name: "rocx_otel_meter_2", initial: |_name| Points.empty })
 
+	## The type of the meter's methods: the app's context, which a package doesn't know (so it is
+	## the alias's parameter, `_` where it is used), the instrument's name, the sums, and each
+	## method's input and reply.
+	Method(context, input, reply) : Actor.Method(context, Str, Points.State, input, reply)
+
 	## Measurements to add to the sums.
-	measured : Actor.Method(_, Points.State, List(Metric.Measurement), {})
+	measured : Otel.Method(_, List(Metric.Measurement), {})
 	measured = Actor.method(Otel.meter, "measured", |{ me, state, input, .. }| { state: metered!(me, state, input, Bool.False), reply: {} })
 
 	## The time to send the sums has come (the meter's own timer, `scheduled!`). A function of `{}`:
 	## the timer it sets names it.
-	exported : {} -> Actor.Method(_, Points.State, {}, {})
+	exported : {} -> Otel.Method(_, {}, {})
 	exported = |{}| Actor.method(Otel.meter, "exported", |{ me, state, .. }| { state: metered!(me, state, [], Bool.True), reply: {} })
 
 	## A measurement of `instrument`, labelled with `attributes`: added to its sums (a gauge's: its
@@ -94,7 +99,7 @@ late_ms = 5_000
 
 ## A turn of the meter: `measurements` added; then, if it is time to (`export`), the sums sent and
 ## the next export scheduled, or one scheduled if none is (or the one that was went with a restart).
-metered! : Actor.Me(Points.State), Points.State, List(Metric.Measurement), Bool => Points.State
+metered! : Actor.Me(Str, Points.State), Points.State, List(Metric.Measurement), Bool => Points.State
 metered! = |me, state, measurements, export| {
 	now_ms = Time.now_millis!({})
 	started = if (state.start_nanos == 0) { ..state, start_nanos: Time.now_nanos!({}) } else state
@@ -121,7 +126,7 @@ metered! = |me, state, measurements, export| {
 }
 
 ## The next export in an interval: a timer to the meter itself.
-scheduled! : Actor.Me(Points.State), Config.Settings, Points.State, U64 => Points.State
+scheduled! : Actor.Me(Str, Points.State), Config.Settings, Points.State, U64 => Points.State
 scheduled! = |me, settings, state, now_ms| {
 	_ = Actor.after!(me, settings.interval_ms, Otel.exported({}), {})
 	{ ..state, due_ms: now_ms + settings.interval_ms }

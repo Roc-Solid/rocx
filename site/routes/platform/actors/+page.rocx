@@ -63,8 +63,18 @@ view! = |_|
 				</li>
 			</ul>
 			<p>
+				A key is text (<code>Actor.define</code>), or a type of the app's own
+				(<code>Actor.define_keyed</code>, D-067): one with <code>to_str</code>, which names its actor (in
+				the database too), and <code>from_str</code>, which reads that back; the numbers have both. A
+				turn is given the key as it is typed (<code>Actor.key_of(me)</code>), so an actor matches on its
+				key rather than parsing it, and a key of another kind's type doesn't compile. A module names its
+				kind's methods' type once (<code>{"Method(input, reply) : Actor.Method({}, Str, State, input, reply)"}</code>,
+				the app's context first), and writes <code>{"Method(Str, U64)"}</code> after.
+			</p>
+			<p>
 				<code>rocx build</code> lists the methods an app's modules define (<code>Actor.method</code>, at the
-				top of a module's block; and checks its kinds, <code>Actor.define</code>, there too, each
+				top of a module's block; and checks its kinds, <code>Actor.define</code> and
+				<code>Actor.define_keyed</code>, there too, each
 				<code>name</code> first and its own), so the server can run an actor when nobody is waiting on it:
 				a tell, a timer. Two methods of one kind with one name stop the server as it starts.
 			</p>

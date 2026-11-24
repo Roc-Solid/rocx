@@ -131,6 +131,18 @@ test("a job, an actor's turn, and a plugin's call, loop, start and check are eac
 	assert.equal(await until(async () => server.logged().includes("the check saw facts=yes")), true, "the plugin's check, logged");
 });
 
+test("typed keys (D-067): a slot of the app's own type and a number, each its own actor, the turn given the key as it is typed; the database names each by its to_str", { skip }, async () => {
+	assert.equal(await server.text("/visit?morning"), "the morning 1");
+	assert.equal(await server.text("/visit?morning"), "the morning 2", "the same actor again");
+	assert.equal(await server.text("/visit?evening:3"), "evening 3 1", "another key, another actor");
+	assert.equal((await server.get("/visit?noon")).status, 400, "its from_str reads no such slot");
+	assert.equal(await server.text("/later?evening:7"), "set");
+	assert.equal(await until(async () => (await server.text("/count?evening:7")) === "1"), true, "its own timer named it by its key's text, and the turn read it back");
+	assert.equal(await server.text("/tally?4"), "41", "initial is given the number");
+	assert.equal(await server.text("/tally?4"), "42");
+	assert.deepEqual((await server.text("/keys")).split("\n"), ["tally 4", "visits evening:3", "visits evening:7", "visits morning"]);
+});
+
 test("an actor init! asks is refused, saying why, and the server starts", { skip }, async () => {
 	assert.match(await server.text("/asked-in-init"), /^refused: .*the app's context isn't made yet: its init! is still running/);
 });

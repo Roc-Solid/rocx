@@ -4057,3 +4057,48 @@ timer row or a stored state written before keeps its kind's name: state reads as
 timer's old message, with no method name, is refused once and logged.
 
 **Reversible:** yes, every actor rewritten again.
+
+**Since D-067:** a kind has a key type, `Actor.Kind(key, state)`, `Actor.Method(context, key, state,
+input, reply)`: text with `define`, the app's own with `define_keyed`.
+
+## D-067 Actors' keys: a kind's own type
+
+**Status.** Built (2026-11-24).
+
+**Context.** An actor's key was text. A key with a shape was a string with a format, which the app
+made and then parsed back in its rules (a quota's `instagram:<account>`, read with
+`starts_with("instagram:")`), and any text was any kind's key: a post's id passed to the quota
+actor compiled. D-066's methods also made every method's annotation long, `Actor.Method(_, state,
+input, reply)`, and a key type would make it longer.
+
+**Options.**
+1. One `ActorId := Str` for every kind. Keeps text out, but a post's id still fits a quota.
+2. A key type a kind's own, as JSON in each call. Nominal types have no JSON of their own, so every
+   key type would write its codec.
+3. A key type a kind's own, named by its `to_str` and read back by its `from_str`.
+
+**Choice.** 3.
+- `Actor.Kind(key, state)`; `Actor.define({ name, initial })` is a kind keyed by text, as before;
+  `Actor.define_keyed({ name, initial })` one keyed by any type with `to_str` and `from_str` (a
+  nominal type of the app's; the numbers have both), the two kept in the kind. `Str` has `to_str`
+  but no `from_str`, hence the two.
+- What `to_str` makes of a key is the key, in the host, the log and the database (`rocx_actors`,
+  `rocx_actor_timers`): a key type that makes the text a kind used before keeps its actors' state.
+- A turn is given the key as it is typed: `Actor.key_of(me)`, and `initial`. `Me(key, state)`
+  keeps the text too, which `after!` names the actor by. A text the kind's `from_str` doesn't read
+  is an error, told to the asker.
+- `ask!`, `tell!` and `tell_after!` take the key as it is typed. `Actor.Method(context, key,
+  state, input, reply)`; `Actor.Turn(context, key, state, input)`.
+- A module names its kind's methods' type once, the app's context first:
+  `Method(input, reply) : Actor.Method({}, Str, State, input, reply)`. An alias can't hold `_`, so a
+  package, which doesn't know the app's context, keeps it a parameter (`Method(context, input,
+  reply)`, written `Otel.Method(_, …)`).
+- `rocx build` finds `Actor.define_keyed` as it finds `Actor.define`.
+
+**Why.** A key's shape is a type, matched rather than parsed, and a key of another kind's type
+doesn't compile; a method's annotation is its input and its reply. Tests (`server/test/context`):
+a kind keyed by a slot of the app's own type and one by a number, each key its own actor, the turn
+given the key typed, `initial` the number, a timer finding its actor by the key's text, and the
+database naming each by its `to_str`.
+
+**Reversible:** yes: every annotation loses its key again.

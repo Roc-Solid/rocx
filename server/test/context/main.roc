@@ -8,6 +8,7 @@
 app [program] { jobs: "../../../packages/jobs/main.roc", pf: platform "../../platform/main.roc" }
 
 import pf.Actor
+import pf.Db
 import pf.Events
 import pf.Kv
 import pf.Log
@@ -95,6 +96,30 @@ program = {
 					Err(why) => text(500, why)
 				}
 			# What the job, the plugin's start and its loop noted.
+			# Typed keys (D-067): a slot of the day (`Slot`, the app's own type), read from the query.
+			"/visit" => slotted!(request.query, |slot| Actor.ask!(visit, slot, {}))
+			"/count" => slotted!(request.query, |slot| Actor.ask!(count, slot, {}).map_ok(|n| n.to_str()))
+			"/later" => slotted!(request.query, |slot| Actor.ask!(later, slot, {}))
+			# A number for a key: its `initial` is given the number.
+			"/tally" =>
+				match U64.from_str(request.query) {
+					Ok(n) =>
+						match Actor.ask!(bump, n, {}) {
+							Ok(total) => text(200, total.to_str())
+							Err(ActorErr(why)) => text(500, why)
+						}
+					Err(_) => text(400, "not a number")
+				}
+			# How the database names the keyed actors: what each key's `to_str` made.
+			"/keys" => {
+				kept : Try(List({ kind : Str, key : Str }), [DbErr(Str), BadRow(Str)])
+				kept = Db.all!("select kind, key from rocx_actors where kind in ('visits', 'tally') order by kind, key", [])
+				match kept {
+					Ok(rows) => text(200, Str.join_with(rows.map(|row| "${row.kind} ${row.key}"), "\n"))
+					Err(DbErr(why)) => text(500, why)
+					Err(BadRow(why)) => text(500, why)
+				}
+			}
 			"/saw" => {
 				noted : Try(Str, [NotFound, BadValue(Str)])
 				noted = Kv.get!(request.query)
@@ -105,7 +130,7 @@ program = {
 	},
 	database: Sqlite("data/context.db"),
 	migrations: [],
-	actors: [Actor.handler(said)],
+	actors: [Actor.handler(said), Actor.handler(visit), Actor.handler(count), Actor.handler(later), Actor.handler(bump)],
 	logs: { format: Auto },
 	plugins: plugins.map(Plugin.running),
 	routes: [],
@@ -145,3 +170,78 @@ plugins = [
 
 text : U16, Str -> Server.Response
 text = |status, body| Server.response(status, [{ name: "content-type", value: "text/plain; charset=utf-8" }], body)
+
+## A slot of the day: a key of the app's own type (D-067). Its `to_str` names its actor (in the
+## database too), and its `from_str` reads that back.
+Slot := [Morning, Evening(U64)].{
+	to_str : Slot -> Str
+	to_str = |slot|
+		match slot {
+			Morning => "morning"
+			Evening(hour) => "evening:${hour.to_str()}"
+		}
+
+	from_str : Str -> Try(Slot, [NotASlot])
+	from_str = |written|
+		if written == "morning" {
+			Ok(Slot.Morning)
+		} else {
+			match written.split_first(":") {
+				Ok({ before, after }) if before == "evening" =>
+					match U64.from_str(after) {
+						Ok(hour) => Ok(Slot.Evening(hour))
+						Err(_) => Err(NotASlot)
+					}
+				_ => Err(NotASlot)
+			}
+		}
+}
+
+## Visits, one count a slot, keyed by `Slot`.
+visits : Actor.Kind(Slot, U64)
+visits = Actor.define_keyed({ name: "visits", initial: |_slot| 0 })
+
+## Counts a visit: the slot as the turn has it (typed: matched, not parsed), and the count.
+visit : Actor.Method(_, Slot, U64, {}, Str)
+visit = Actor.method(visits, "visit", |{ me, state, .. }| { state: state + 1, reply: "${described(Actor.key_of(me))} ${(state + 1).to_str()}" })
+
+## The count, unchanged.
+count : Actor.Method(_, Slot, U64, {}, U64)
+count = Actor.method(visits, "count", |{ state, .. }| { state, reply: state })
+
+## Counts a visit soon, through its own timer: `Actor.after!` names the actor by its key's text.
+later : Actor.Method(_, Slot, U64, {}, Str)
+later = Actor.method(
+	visits,
+	"later",
+	|{ me, state, .. }| {
+		_ = Actor.after!(me, 20, visit, {})
+		{ state, reply: "set" }
+	},
+)
+
+described : Slot -> Str
+described = |slot|
+	match slot {
+		Morning => "the morning"
+		Evening(hour) => "evening ${hour.to_str()}"
+	}
+
+## A tally keyed by a number, which starts at ten times its key (`initial` is given the number).
+tallies : Actor.Kind(U64, U64)
+tallies = Actor.define_keyed({ name: "tally", initial: |n| n * 10 })
+
+bump : Actor.Method(_, U64, U64, {}, U64)
+bump = Actor.method(tallies, "bump", |{ state, .. }| { state: state + 1, reply: state + 1 })
+
+## The slot the query names, asked of with `ask!`; a query that isn't one is a 400.
+slotted! : Str, (Slot => Try(Str, [ActorErr(Str)])) => Server.Response
+slotted! = |query, ask!|
+	match Slot.from_str(query) {
+		Ok(slot) =>
+			match ask!(slot) {
+				Ok(answer) => text(200, answer)
+				Err(ActorErr(why)) => text(500, why)
+			}
+		Err(NotASlot) => text(400, "not a slot: ${query}")
+	}

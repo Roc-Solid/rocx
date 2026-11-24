@@ -2565,16 +2565,20 @@ Routes := [].{
 	}
 
 	## A kind of actor's definition at `start`: `^([ \t]*)([a-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*(\|\{\}\|\s*)?
-	## Actor\.define\((?:\s*\{\s*name:\s*"([^"]+)")?`.
+	## Actor\.define(?:_keyed)?\((?:\s*\{\s*name:\s*"([^"]+)")?`.
 	actor_at : List(U8), U64 -> Try({ indent : Str, define : Str, name : [Some(Str), None], thunk : Bool, end : U64 }, [NoMatch])
 	actor_at = |bytes, start| {
 		head = Routes.definition_head(bytes, start)?
-		call = "Actor.define(".to_utf8()
 		thunked = Text.starts_with_at(bytes, "|{}|".to_utf8(), head.after)
 		at = if (thunked) Text.skip_space(bytes, head.after + 4) else head.after
-		if !Text.starts_with_at(bytes, call, at) {
-			return Err(NoMatch)
-		}
+		call =
+			if Text.starts_with_at(bytes, "Actor.define(".to_utf8(), at) {
+				"Actor.define(".to_utf8()
+			} else if Text.starts_with_at(bytes, "Actor.define_keyed(".to_utf8(), at) {
+				"Actor.define_keyed(".to_utf8()
+			} else {
+				return Err(NoMatch)
+			}
 		opened = at + call.len()
 		brace = Text.skip_space(bytes, opened)
 		named =

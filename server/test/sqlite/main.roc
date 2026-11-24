@@ -61,11 +61,11 @@ plugins = [
 	},
 ]
 
-counter : Actor.Kind({ count : I64 })
+counter : Actor.Kind(Str, { count : I64 })
 counter = Actor.define({ name: "counter", initial: |_key| { count: 0 } })
 
 ## Adds `input` to the count: the count after.
-counter_add : Actor.Method(_, { count : I64 }, I64, I64)
+counter_add : Actor.Method(_, Str, { count : I64 }, I64, I64)
 counter_add = Actor.method(counter, "add", |{ state, input, .. }| { state: { count: state.count + input }, reply: state.count + input })
 
 ## A plugin's route, or the app's.

@@ -1504,23 +1504,23 @@ slow_job = Job.define_with(
 # ---- Actors ----
 
 ## A count, one per key, that outlives requests and restarts.
-counter : Actor.Kind({ count : I64 })
+counter : Actor.Kind(Str, { count : I64 })
 counter = Actor.define({ name: "counter", initial: |_key| { count: 0 } })
 
 ## Adds `input` to the count: the count after.
-counter_add : Actor.Method(_, { count : I64 }, I64, I64)
+counter_add : Actor.Method(_, Str, { count : I64 }, I64, I64)
 counter_add = Actor.method(counter, "add", |{ state, input, .. }| { state: { count: state.count + input }, reply: state.count + input })
 
 ## The count.
-counter_get : Actor.Method(_, { count : I64 }, {}, I64)
+counter_get : Actor.Method(_, Str, { count : I64 }, {}, I64)
 counter_get = Actor.method(counter, "get", |{ state, .. }| { state, reply: state.count })
 
 ## Crashes: the state stays as it was.
-counter_boom : Actor.Method(_, { count : I64 }, {}, I64)
+counter_boom : Actor.Method(_, Str, { count : I64 }, {}, I64)
 counter_boom = Actor.method(counter, "boom", |{ state, .. }| if (state.count >= 0) crash "an actor that crashed" else { state, reply: 0 })
 
 ## A turn taking `input` milliseconds (Postgres sleeps).
-counter_nap : Actor.Method(_, { count : I64 }, I64, I64)
+counter_nap : Actor.Method(_, Str, { count : I64 }, I64, I64)
 counter_nap = Actor.method(
 	counter,
 	"nap",
@@ -1534,39 +1534,39 @@ counter_nap = Actor.method(
 
 ## The counter's `add` as a caller built against an older version of it would see it: the same kind
 ## and method, an input it doesn't take. Not in `program.actors`: the counter's `add` gets the call.
-stale_add : Actor.Method(_, { count : I64 }, Str, I64)
+stale_add : Actor.Method(_, Str, { count : I64 }, Str, I64)
 stale_add = Actor.method(counter, "add", |{ state, .. }| { state, reply: state.count })
 
 ## A method the counter doesn't have (a caller built against a newer version of it).
-counter_reset : Actor.Method(_, { count : I64 }, {}, I64)
+counter_reset : Actor.Method(_, Str, { count : I64 }, {}, I64)
 counter_reset = Actor.method(counter, "reset", |{ .. }| { state: { count: 0 }, reply: 0 })
 
 ## A kind the app doesn't list: the host refuses a call to it.
-ghost : Actor.Kind({})
+ghost : Actor.Kind(Str, {})
 ghost = Actor.define({ name: "ghost", initial: |_key| {} })
 
-ghost_add : Actor.Method(_, {}, I64, I64)
+ghost_add : Actor.Method(_, Str, {}, I64, I64)
 ghost_add = Actor.method(ghost, "add", |{ state, .. }| { state, reply: 0 })
 
 ## Asks others: the counter of the same key (`relay`), itself (`itself`, which it can't), or the
 ## bouncer, which asks it back (`cycle`, which the bouncer can't).
-mirror : Actor.Kind({})
+mirror : Actor.Kind(Str, {})
 mirror = Actor.define({ name: "mirror", initial: |_key| {} })
 
-mirror_relay : Actor.Method(_, {}, Str, I64)
+mirror_relay : Actor.Method(_, Str, {}, Str, I64)
 mirror_relay = Actor.method(mirror, "relay", |{ state, input, .. }| { state, reply: asked(Actor.ask!(counter_get, input, {})) })
 
-mirror_itself : Actor.Method(_, {}, Str, I64)
+mirror_itself : Actor.Method(_, Str, {}, Str, I64)
 mirror_itself = Actor.method(mirror, "itself", |{ state, input, .. }| { state, reply: asked(Actor.ask!(mirror_relay, input, input)) })
 
-mirror_cycle : Actor.Method(_, {}, Str, I64)
+mirror_cycle : Actor.Method(_, Str, {}, Str, I64)
 mirror_cycle = Actor.method(mirror, "cycle", |{ state, input, .. }| { state, reply: asked(Actor.ask!(bouncer_back, input, input)) })
 
 ## Asks the mirror of the same key: asked by it, that waits forever, so it is refused.
-bouncer : Actor.Kind({})
+bouncer : Actor.Kind(Str, {})
 bouncer = Actor.define({ name: "bouncer", initial: |_key| {} })
 
-bouncer_back : Actor.Method(_, {}, Str, I64)
+bouncer_back : Actor.Method(_, Str, {}, Str, I64)
 bouncer_back = Actor.method(bouncer, "back", |{ state, input, .. }| { state, reply: asked(Actor.ask!(mirror_relay, input, input)) })
 
 ## What another actor answered; its refusal crashes the turn, which tells the asker why.
@@ -1579,14 +1579,14 @@ asked = |answer|
 
 ## Counts its own ticks: `start` sets a timer for itself, and each tick sets the next
 ## (`Actor.after!`) until `stop` cancels the one waiting (`Actor.cancel!`).
-ticker : Actor.Kind({ ticks : I64, timer : U64, on : Bool })
+ticker : Actor.Kind(Str, { ticks : I64, timer : U64, on : Bool })
 ticker = Actor.define({ name: "ticker", initial: |_key| { ticks: 0, timer: 0, on: Bool.False } })
 
-ticker_start : Actor.Method(_, { ticks : I64, timer : U64, on : Bool }, U64, I64)
+ticker_start : Actor.Method(_, Str, { ticks : I64, timer : U64, on : Bool }, U64, I64)
 ticker_start = Actor.method(ticker, "start", |{ me, state, input, .. }| { state: { ticks: state.ticks, timer: Actor.after!(me, input, ticker_tick({}), input), on: Bool.True }, reply: state.ticks })
 
 ## A tick sets the next: a method that names itself, so a function of `{}`.
-ticker_tick : {} -> Actor.Method(_, { ticks : I64, timer : U64, on : Bool }, U64, I64)
+ticker_tick : {} -> Actor.Method(_, Str, { ticks : I64, timer : U64, on : Bool }, U64, I64)
 ticker_tick = |{}|
 	Actor.method(
 		ticker,
@@ -1599,7 +1599,7 @@ ticker_tick = |{}|
 			},
 	)
 
-ticker_stop : Actor.Method(_, { ticks : I64, timer : U64, on : Bool }, {}, I64)
+ticker_stop : Actor.Method(_, Str, { ticks : I64, timer : U64, on : Bool }, {}, I64)
 ticker_stop = Actor.method(
 	ticker,
 	"stop",
@@ -1609,7 +1609,7 @@ ticker_stop = Actor.method(
 	},
 )
 
-ticker_ticks : Actor.Method(_, { ticks : I64, timer : U64, on : Bool }, {}, I64)
+ticker_ticks : Actor.Method(_, Str, { ticks : I64, timer : U64, on : Bool }, {}, I64)
 ticker_ticks = Actor.method(ticker, "ticks", |{ state, .. }| { state, reply: state.ticks })
 
 # ---- Components the server renders, and the endpoints they read ----

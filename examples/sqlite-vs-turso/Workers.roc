@@ -11,16 +11,16 @@ import pf.Kv
 ## leaves that be.
 Workers := [].{
 
-	kind : Actor.Kind({})
+	kind : Actor.Kind(Str, {})
 	kind = Actor.define({ name: "bench-worker", initial: |_key| {} })
 
 	## Whether it is ready: its first turn reads its state, so it is asked this before the clock
 	## starts, and again after, to wait for the work it was given.
-	ready : Actor.Method(_, {}, {}, {})
+	ready : Actor.Method(_, Str, {}, {}, {})
 	ready = Actor.method(Workers.kind, "ready", |{ state, .. }| { state, reply: {} })
 
 	## Does `input`, and leaves how that went in `Kv`.
-	work : Actor.Method(_, {}, Workers.Task, {})
+	work : Actor.Method(_, Str, {}, Workers.Task, {})
 	work = Actor.method(
 		Workers.kind,
 		"work",
