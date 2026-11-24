@@ -64,8 +64,9 @@ Auth := [].{
 	## The plugin's options:
 	## - `admit!`: who gets in by a link, a provider or the dev sign-in. Given who is signing in, the
 	##   app's id for its user, or why not (shown on the sign-in page). It runs inside the
-	##   transaction that starts the session, so what it writes (a new user's row, a job it queues)
-	##   stays only if the sign-in does; keep anything slow (a fetch) out of it. Without it, nobody
+	##   transaction that starts the session: what it writes (a new user's row, a request to join a
+	##   waiting list, a job it queues) commits with the session, or with its refusal, and a
+	##   database error rolls all of it back. Keep anything slow (a fetch) out of it. Without it, nobody
 	##   signs in those ways, and an app signs people in its own way (`sign_in!`: a password it
 	##   checks, a name picked).
 	## - `at`: where the plugin's endpoints are (`/auth`).
@@ -419,7 +420,8 @@ kept! = |request, session, answer| {
 
 ## Signing in as `who` (at `provider`), going on to `then`: `admit!` asked, in a transaction with
 ## the identity's row and the session's, and the session's cookie on the answer; or the sign-in
-## page, with why not.
+## page, with why not. A refusal commits too: what `admit!` wrote as it turned them away (a waiting
+## list's row) stays.
 signed_in! : Auth.Settings, (Auth.Identity => Try(Str, Str)), { provider : Str, subject : Str, email : Str, name : Str }, Str => Server.Response
 signed_in! = |settings, admit!, who, then| {
 	token = Rules.token(Random.bytes!(32))
@@ -427,15 +429,19 @@ signed_in! = |settings, admit!, who, then| {
 	started = Db.transaction!(
 		|{}| {
 			known = AuthStore.known!(who.provider, who.subject)?
-			user = admit!({ provider: who.provider, subject: who.subject, email: who.email, name: who.name, user: known, then: Rules.path(then, settings.home) }).map_err(|why| Refused(why))?
-			AuthStore.linked!({ provider: who.provider, subject: who.subject, user: user, email: who.email, now: now })?
-			AuthStore.start!({ id: Rules.hash(token), user: user, now: now, expires: now + settings.session_ms })?
-			Ok(user)
+			match admit!({ provider: who.provider, subject: who.subject, email: who.email, name: who.name, user: known, then: Rules.path(then, settings.home) }) {
+				Ok(user) => {
+					AuthStore.linked!({ provider: who.provider, subject: who.subject, user: user, email: who.email, now: now })?
+					AuthStore.start!({ id: Rules.hash(token), user: user, now: now, expires: now + settings.session_ms })?
+					Ok(Admitted)
+				}
+				Err(why) => Ok(TurnedAway(why))
+			}
 		},
 	)
 	match started {
-		Ok(_) => with_session(Server.redirect(Rules.path(then, settings.home)), settings, https!({}), token)
-		Err(Refused(why)) => Server.redirect(Rules.failed(settings.sign_in, { code: "refused", reason: why, email: who.email, then: then }))
+		Ok(Admitted) => with_session(Server.redirect(Rules.path(then, settings.home)), settings, https!({}), token)
+		Ok(TurnedAway(why)) => Server.redirect(Rules.failed(settings.sign_in, { code: "refused", reason: why, email: who.email, then: then }))
 		Err(DbErr(why)) => unavailable!(settings, why)
 		Err(BadRow(why)) => unavailable!(settings, why)
 	}

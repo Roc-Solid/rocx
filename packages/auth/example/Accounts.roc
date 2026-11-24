@@ -11,12 +11,14 @@ Accounts := [].{
 	User : { id : Str, email : Str, name : Str }
 
 	## Who gets in: anyone with a verified address, but nobody at refused.example (the example's
-	## stand-in for an address an app turns away). An identity that signed in before is its user
+	## stand-in for an address an app turns away), whose attempt is written down (`turned_away`, as
+	## a waiting list would keep its requests). An identity that signed in before is its user
 	## again; a new one is the user with its address, or a new user. It runs inside the sign-in's
-	## transaction, so a new user's row stays only if the session starts.
+	## transaction, which commits what it wrote whether it lets them in or not.
 	admit! : Auth.Identity => Try(Str, Str)
 	admit! = |identity|
 		if identity.email.ends_with("@refused.example") {
+			_ = Db.run!("insert into turned_away (email, at) values ($1, $2)", [Text(identity.email), Int(Time.now_millis!({}).to_i64_wrap())])
 			Err("This address isn't allowed in.")
 		} else {
 			match identity.user {

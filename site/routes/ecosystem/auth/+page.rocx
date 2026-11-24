@@ -129,9 +129,10 @@ view! = |_|
 			</TableWrap>
 			<p>
 				It answers <code>Ok(user)</code>, your id for their user, or <code>Err(why)</code>, which the sign-in
-				page shows. It runs inside the transaction that starts the session, so a new user's row, or a
-				welcome email queued as a job, stays only if the sign-in does. Keep slow work, such as a request to
-				another server, out of it.
+				page shows. It runs inside the transaction that starts the session, so what it writes commits
+				with the session (a new user's row, a welcome email queued as a job) or with its refusal (a
+				request to join a waiting list). A database error rolls it all back. Keep slow work, such as a
+				request to another server, out of it.
 			</p>
 
 			<Heading id="sessions">Sessions and middleware</Heading>

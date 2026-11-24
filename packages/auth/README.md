@@ -74,9 +74,10 @@ password of its own, or lets people pick who they are, starts sessions with `Aut
 uses the rest (the middleware, signing out, the sessions' table).
 
 `admit!` runs inside the transaction that starts the session, with the identity's row. What it
-writes (a new user's row, a welcome job it queues) stays only if the sign-in does. Keep anything
-slow (a fetch) out of it. On Turso, a transaction that loses to another's write runs again, and
-`admit!` with it.
+writes commits with the session, or with its refusal: a new user's row and a welcome job it queues
+when it lets someone in, a waiting list's row when it turns them away for now. A database error rolls
+all of it back. Keep anything slow (a fetch) out of it. On Turso, a transaction that loses to
+another's write runs again, and `admit!` with it.
 
 ## Signing in
 

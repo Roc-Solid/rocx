@@ -227,6 +227,11 @@ for (const database of databases) {
 			assert.equal(opened.location, "/sign-in?error=refused&reason=This%20address%20isn%27t%20allowed%20in.&email=mallory%40refused.example&then=%2Fprivate");
 			assert.ok(!client.cookies.has("session"));
 			assert.equal((await client.read("/me")).signed_in, false);
+			// What admit! wrote as it turned them away stays.
+			assert.deepEqual(
+				(await db.query("select email from turned_away")).map((row) => row.email),
+				["mallory@refused.example"],
+			);
 		});
 
 		test("an app's own way in (Auth.sign_in!): a session for the user it names, which the middleware reads", async () => {

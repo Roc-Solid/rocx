@@ -4426,8 +4426,10 @@ three things Roc Solid needs next.
   which doesn't use it) and posts the token from a button, so a mail scanner can't use links up.
 - **The app keeps its users.** `admit! : Auth.Identity => Try(Str, Str)` is given the provider, the
   identity's subject there, its verified address, a name, and `Known(user)` when the identity signed
-  in before; it answers the app's id for the user, or why not. It runs in the transaction that
-  links the identity and starts the session, so what it writes stays only if the sign-in does.
+  in before, and where the sign-in goes after (`then`); it answers the app's id for the user, or
+  why not. It runs in the transaction that links the identity and starts the session: what it
+  writes commits with the session or with its refusal (the private app files an access request as
+  it turns someone away until an admin approves), and a database error rolls it all back.
 - **Sessions in the database** (`auth_sessions`, the token's SHA-256; links in `auth_links`;
   identities in `auth_identities`), in one migration for SQLite and Postgres: times are
   milliseconds given by the package, so its statements are the same on both. A session lasts 30
