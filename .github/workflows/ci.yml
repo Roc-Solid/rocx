@@ -1,7 +1,8 @@
 # The checks a change lands with (README, "Quick start"), on GitHub's macOS runners (Apple silicon):
 # the one machine the Roc fork's compiler is prebuilt for (`just setup` downloads it). Each its own
-# job, side by side: `just check`, `just test` (with Chromium, Firefox and a Postgres), `just
-# examples` and `just site`.
+# job, side by side: `just check` (then `just check-times`: how long checking takes, against the
+# last green master run), `just test` (with Chromium, Firefox and a Postgres), `just examples` and
+# `just site`.
 name: CI
 
 on:
@@ -30,10 +31,28 @@ jobs:
     name: just check
     runs-on: macos-latest
     timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read # the last green master run's check times
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       - run: just check
+      # How long checking each example and the site takes, in the job's summary, against the last
+      # green master run's (its artifact, which carries the master runs before it): a warning, not a
+      # failure, when one got slower.
+      - name: just check-times
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          last=$(gh run list --workflow ci.yml --branch master --event push --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [ -n "$last" ]; then gh run download "$last" --name check-times --dir "$RUNNER_TEMP/baseline" || true; fi
+          just check-times --baseline "$RUNNER_TEMP/baseline/check-times.json" --out check-times.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: check-times
+          path: check-times.json
+          retention-days: 90
 
   test:
     name: just test

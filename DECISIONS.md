@@ -4230,6 +4230,13 @@ with. A newcomer without the fork was in the same place: `just setup` stopped.
   `DATABASE_URL`), `just examples` (the browsers) and `just site`. `.github/actions/setup` is the
   toolchain: Node 24, just, Zig and the nightly cached by their pins, the hosts' crates cached
   (saved by master's runs), then `just setup`.
+- After `just check`, `just check-times` (test/check-times.mjs): each example's and the docs
+  site's `rocx build`, and `rocx check` of each of its programs with `--no-cache` (all of the work,
+  every run; a cached check is some 20 ms), the median of three. The job's summary has the table
+  against the last green master run's numbers (its `check-times` artifact, which carries the last
+  30 master runs' totals); a check slower by half and by 250 ms or more is a warning, not a failure
+  (runners vary from run to run). So checking that grows slow, as apps, the platforms and the
+  compiler change, is seen when it happens.
 
 **Why.** macOS on Apple silicon is the machine the binary is built on, so it runs on GitHub's
 runners as it is (built for macOS 15 and up), and nothing has to be cross-built; the fork's source

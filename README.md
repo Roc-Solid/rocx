@@ -757,6 +757,8 @@ or Playwright's Firefox (`web/test/browser.mjs`, `launchGecko`).
 CI (`.github/workflows/ci.yml`) runs `just check`, `just test` (with Chromium, Firefox and a
 Postgres), `just examples` and `just site`, each a job of its own, on every push to master and every
 pull request, on GitHub's macOS runners (Apple silicon), the one machine the fork's compiler is
-prebuilt for. A change to `roc_fork_commit` needs that compiler published first: `just
+prebuilt for. After `just check` it times checking (`just check-times`: each example's and the
+site's `rocx build` and `rocx check` of both programs, with no cache) into the job's summary,
+against the last green master run, and warns when a check got slower by half. A change to `roc_fork_commit` needs that compiler published first: `just
 publish-roc-fork` on the machine with the fork, then the SHA-256 it prints in
 `roc_fork_release_sha256`.

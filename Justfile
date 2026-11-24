@@ -319,6 +319,14 @@ check: (fmt "--check")
     for package in packages/*/server/main.roc; do {{ roc }} check "$package" || exit 1; done
     just examples-check
 
+# How long checking takes (test/check-times.mjs): each example app's and the docs site's `rocx
+# build`, and `rocx check` of each of its programs with no cache (all of the work, every time), the
+# median of three, as a table; `--baseline <file>` compares with an earlier run's `--out <file>`.
+# CI runs it after `just check`, against the last green master run's, and warns when a check got
+# slower by half (and by 250 ms or more), so checking that grows slow is seen.
+check-times *args:
+    ROC={{ roc }} node test/check-times.mjs {{ args }}
+
 # Formats the Roc of the site, the packages (packages/*), the platforms and the example apps
 # (`examples`, below) with roc fmt: each .rocx file's (its markup kept as written) and each
 # hand-written .roc file. `just fmt --check` only says which aren't formatted.
