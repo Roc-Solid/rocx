@@ -18,6 +18,7 @@ mod hosted;
 mod http;
 pub mod native;
 pub mod roc;
+pub mod svg;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -37,6 +38,12 @@ pub trait Platform: Send + Sync {
     /// On the main thread: one batch of ops (`native.rs`), applied to the native views.
     fn apply(&self, ops: &[u8]);
     fn log(&self, level: Level, text: &str);
+    /// On the main thread, once a handler is done: `Browser.call!(name, arg)`'s native half (a
+    /// plugin's: `audio.play`, `vibrate.pattern`), `arg` its JSON, `origin` the app's server (a
+    /// path in `arg` is the server's). Whether the phone has a handler by that name.
+    fn call(&self, _name: &str, _arg: &str, _origin: &str) -> bool {
+        false
+    }
 }
 
 static PLATFORM: OnceLock<Box<dyn Platform>> = OnceLock::new();
@@ -157,13 +164,18 @@ pub(crate) fn timer(id: u64, ms: u64, repeat: bool, stop: Arc<AtomicBool>) {
     });
 }
 
-/// `Browser.call!(name, arg)`, once the screen is patched: a native handler by that name. None yet
-/// (D-063's §10: audio, push, the camera's native halves come later).
-pub(crate) fn call_native(name: &str, _arg: &str) {
+/// `Browser.call!(name, arg)`, once the handler is done: the platform's native handler by that
+/// name (Android's: `audio.play`, `vibrate.pattern`; native/android/app's `Calls`). One it hasn't
+/// is logged, as the browser logs an effect no script registered.
+pub(crate) fn call_native(name: &str, arg: &str) {
+    let origin = engine::with(|engine| engine.origin.clone());
+    if PLATFORM.get().is_some_and(|platform| platform.call(name, arg, &origin)) {
+        return;
+    }
     let plugin = name.split_once('.').map(|(plugin, _)| plugin);
     let said = match plugin {
-        Some(plugin) => format!("the {plugin} plugin has no native half yet"),
-        None => "phones have no native handlers yet".to_string(),
+        Some(plugin) => format!("the {plugin} plugin has no native half on this platform"),
+        None => "this platform has no native handler by that name".to_string(),
     };
     log(Level::Error, &format!("rocx native: no native handler is called {name}: {said}"));
 }

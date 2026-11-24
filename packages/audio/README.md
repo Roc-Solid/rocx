@@ -56,3 +56,10 @@ A whole URL plays from anywhere.
 shipped the player. An app that plays sounds now names the package in its header, imports
 `audio.Audio` where it imported `pf.Audio`, and lists `AudioPlayer.plugin({})`. Its sound files and
 their paths stay as they were.
+
+## On a phone
+
+An app on D-063's Android host plays with no script: the host's native handler for `audio.play`
+(native/android/app's `Calls.kt`) is a MediaPlayer, which fetches a path from the app's server (as
+the browser's `under` puts it under the site) at the volume and rate given, its pitch moving with
+its speed. examples/pomodoro plays its chime this way.

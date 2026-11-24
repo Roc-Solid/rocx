@@ -20,6 +20,12 @@ When an item lands, delete its line here in the same commit.
   time, HTTPS and cookies, navigation, `rocx build --android`; then Plate on Android, then iOS (a
   fork target for Xcode's link). The fork's dev backend puts some `arm64mac` string literals where
   Roc's refcounting misreads them (README.md's gaps, 12). Open questions: 3 and 9 in DESIGN.md §15.
+  Since examples/pomodoro (2026-11-24) the phone draws SVG, takes percentage sizes and `:where()`
+  selectors, and has native halves for `audio.play` and `vibrate.pattern`. Its next gap, left for
+  later by the user: **an alert while the app is in the background** (a session that ends with
+  the screen off says nothing until the app is opened again): a time the system keeps
+  (AlarmManager, or a notification scheduled for the deadline), a native half the page asks for
+  when the timer starts and cancels when it stops.
 - **packages/markdown:** open questions 1, 2, 4 and 5 in its `PROPOSALS.md`:
   - trusted HTML;
   - `<Markdown>` server-only by default;

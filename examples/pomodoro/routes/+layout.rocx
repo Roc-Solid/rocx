@@ -1,0 +1,24 @@
+import pf.Html
+import ../Generated/Styles
+
+## The document around the page: every component's scoped styles (`Generated/Styles`, the page's
+## among them), and the page, with its title (`meta`, or the `<Title>` the page renders while the
+## timer runs). The styles are a `<link>` to their file, outside `<NoHydration>`: a phone renders
+## the document itself (it has no server render), and its host fetches the file the link names.
+view! = |{ meta, children, .. }|
+	<>
+		<!doctype html>
+		<html lang="en">
+			<head>
+				<meta charset="utf-8" />
+				<meta name="viewport" content="width=device-width, initial-scale=1" />
+				<title>{meta.title}</title>
+				<meta name="description" content="Pomodoro: a focus timer, 25 minutes on and 5 off, the same page in a browser and on an Android phone." />
+				<meta name="theme-color" content="#fbf6f0" />
+				{=Styles.style}
+			</head>
+			<body>
+				{...children}
+			</body>
+		</html>
+	</>

@@ -1,0 +1,8 @@
+# What rocx build writes: the generated modules (routes, paths, endpoints, styles, the program)
+# and the builds (the browser's copy, the wasm, the server, the phone's), and the pages' Roc.
+Generated/
+build/
+routes/**/*.roc
+!routes/**/+server.roc
+# The database rocx dev and a run make.
+data/

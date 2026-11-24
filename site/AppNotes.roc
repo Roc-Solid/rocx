@@ -106,6 +106,19 @@ AppNotes := [].{
 			],
 		},
 		{
+			name: "pomodoro",
+			kind: App,
+			path: Paths.examples_pomodoro,
+			blurb: "A focus timer, in a browser and on Android",
+			summary: "A Pomodoro timer: 25 minutes to focus, then 5 to rest, a ring that empties as the time goes, and a count of today's sessions. The same page runs in a browser and, unchanged, as an Android phone's own views (D-063), where the session's end plays its chime and buzzes the phone.",
+			shows: ["One page on the web and on Android, with rocx dev --android", "A timer kept by a deadline, not by counting ticks", "A sound and a buzz from a timer, plugins with a phone half", "SVG and percentage widths, drawn natively on the phone"],
+			shots: [
+				{ file: "timer", alt: "The timer at 25:00 in a ring, the Focus and Break tabs above it, and today's count below", caption: "The timer", phone: Bool.False },
+				{ file: "break", alt: "On a phone-sized browser: a break of 5 minutes after a focus session, the ring and buttons in green", caption: "A break, in a phone's browser", phone: Bool.True },
+				{ file: "android", alt: "The same page on Android's emulator, drawn as native views: the ring, the time, the buttons and the day's bar", caption: "The same page, as Android views", phone: Bool.True },
+			],
+		},
+		{
 			name: "plate",
 			kind: App,
 			path: Paths.examples_plate,

@@ -8,6 +8,8 @@
 //!   change is slow).
 //! - Answers and timers come on other threads; they wake the main thread through a pipe its
 //!   looper watches (`ALooper_addFd`), and the looper's callback runs `pump` there.
+//! - `Browser.call!`'s native half (a plugin's: `audio.play`, `vibrate.pattern`) is Kotlin's
+//!   `Rocx.call(name, arg, origin)`, on the main thread once a handler is done.
 //! - `log` goes to logcat, tagged `rocx`.
 
 use jni::JNIEnv;
@@ -71,6 +73,28 @@ impl Platform for Android {
                 let _ = env.exception_clear();
             }
             self.log(Level::Error, &format!("rocx native: the applier failed: {why}"));
+        }
+    }
+
+    fn call(&self, name: &str, arg: &str, origin: &str) -> bool {
+        let (Some(vm), Some(rocx)) = (VM.get(), ROCX.get()) else { return false };
+        let Ok(mut env) = vm.get_env() else { return false };
+        let called = (|| -> jni::errors::Result<bool> {
+            let class = JClass::from(env.new_local_ref(rocx.as_obj())?);
+            let (name, arg, origin) = (env.new_string(name)?, env.new_string(arg)?, env.new_string(origin)?);
+            let handled = env.call_static_method(&class, "call", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z", &[JValue::Object(&name), JValue::Object(&arg), JValue::Object(&origin)])?;
+            handled.z()
+        })();
+        match called {
+            Ok(handled) => handled,
+            Err(why) => {
+                if env.exception_check().unwrap_or(false) {
+                    let _ = env.exception_describe();
+                    let _ = env.exception_clear();
+                }
+                self.log(Level::Error, &format!("rocx native: the native handler {name} failed: {why}"));
+                true
+            }
         }
     }
 

@@ -86,6 +86,7 @@ just check   # type-check the site's two programs (reports at .rocx lines) and t
 | `packages/email` | email as a plugin (D-035): over SMTP (`SMTP_URL`, `MAIL_FROM`), or kept for the dev mailbox at `/__rocx/mail` under `--dev`; `Email.plugin({})`, `Email.send!`; see its README |
 | `packages/push` | Web Push as a plugin (D-051): `Push.plugin({})` brings its endpoints, the subscriptions' table, the job that sends (on the jobs plugin), the service worker at the site's root and the page's script; `<PushButton>`, `Push.notify!`; see its README |
 | `packages/audio` | sound files from a handler, as a plugin (D-051): `Audio.play!` in either half, and `AudioPlayer.plugin({})`, the player, a script every page loads; see its README |
+| `packages/vibrate` | the phone's vibration motor from a handler, as a plugin: `Vibrate.once!(ms)` and `Vibrate.pattern!([on, off, on…])` in either half, and `Vibrator.plugin({})`, the browser's half (`navigator.vibrate`); an Android app on the native host (D-063) buzzes with no script; see its README |
 | `packages/*` | the other packages: `admin` (a Django-style admin for Postgres tables, and the jobs page), `forms`, `guard` (rate limits, feature flags, request guards), `intl`, `markdown`, `mcp`, `otel` (OpenTelemetry metrics and logs), `presence`, `qr` (QR codes in plain Roc, and `<QrCode>`), `testing` and `virtual` (lists of any length that render only the rows that show); each has a README, a PROPOSALS.md of what it waits on, and a page on the docs site. A package whose modules use the server platform names it in its `main.roc`, with a `browser.roc` beside it for what the browser's half sees (D-033); mcp's and otel's server modules are a package of their own, `server/main.roc` |
 | `web/` | the browser's platform: the modules components are written with (`Html`, `Solid`, `Show`, `For`, …) and HTTP's (`Server`, requests and answers; `Endpoint`, `Channel`, `Events`, `Middleware`, `OpenApi`), which the server's platform has too; its Zig host, `runtime.js`; see `web/README.md` |
 | `server/` | the server's platform: native Roc in a Rust host (tokio, hyper, Postgres or SQLite, plugins, channels, actors, `Kv`), rendering pages of components; see `server/README.md` |
@@ -130,6 +131,10 @@ nothing else.
 - [`notes`](examples/notes): Notes, personal notes in Markdown that AI agents use over MCP:
   sign-in by a mailed link, a signed session cookie, personal access tokens kept as hashes,
   full-text search (SQLite's FTS5), a live preview, and a JSON API with its OpenAPI page.
+- [`pomodoro`](examples/pomodoro): Pomodoro, a focus timer, the same page in a browser and as an
+  Android phone's native views (`rocx dev --android`): a timer kept by a deadline, a ring in SVG,
+  a chime and a buzz from its end (packages/audio and packages/vibrate, each with a phone half), and
+  today's sessions in SQLite.
 - [`plate`](examples/plate): Plate, a food diary for a phone: the USDA's 7,500 foods seeded
   into its SQLite file, packets looked up by barcode in Open Food Facts, recipes that log like foods,
   targets worked out from a profile, trends charted, and a search that follows the typing.
@@ -278,6 +283,7 @@ In a component only:
 | `<li transition={Transition.fade}>` | an animation the element plays as its `<For>` row or `<Show>` part comes and goes (`transition:in`, `transition:out`: one way); one that goes stays until it has (`import pf.Transition`: `fade`, `fly`, `scale`, `grow`, `style`) |
 | `<li key={card!().id} transition:move={Transition.glide}>` | glides to where a change puts it (FLIP), and to its new size; one that leaves a place as one with the same `key` comes in another glides from there |
 | `Audio.play!("/sounds/eat.wav")` | in a handler: plays a sound file, any the browser can, once the handler is done (`Audio.play_with!(url, { volume, rate })`; packages/audio, a plugin: `import audio.Audio`, and `AudioPlayer.plugin({})` in the app's plugins) |
+| `Vibrate.pattern!([300, 150, 300])` | in a handler: buzzes the phone, milliseconds on, off, on…, once the handler is done (`Vibrate.once!(ms)`; packages/vibrate, a plugin: `import vibrate.Vibrate`, and `Vibrator.plugin({})` in the app's plugins); on Android's native host, the phone's own handler |
 | `Browser.call!("vibrate", { ms: 50 })` | in a handler: the page's own function `vibrate` (given to the runtime: `Runtime.load(wasm, { effects })`), with the argument as JSON, called once the handler is done and the page patched (`import pf.Browser`) |
 | `Browser.focus!("card-title")` | in a handler or an effect's apply (`on_settled!`): moves the keyboard's focus to the element with that id once the page is patched; nothing if there is none (`import pf.Browser`) |
 | `Time.now_millis!({})` | in a handler, an effect or a timer: the clock, the browser's in the browser (the server platform's names: `Time.now_nanos!` too); never while rendering, since markup made from it wouldn't hydrate (`import pf.Time`) |

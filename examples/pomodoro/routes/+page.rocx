@@ -1,0 +1,250 @@
+import pf.Html
+import pf.Endpoint
+import pf.Errored
+import pf.Loading
+import pf.Time
+import pf.Title
+import pf.Solid exposing [create_effect!, create_memo!, create_signal!]
+import pf.Solid
+import pf.Router exposing [use_action!]
+import audio.Audio
+import vibrate.Vibrate
+import ../Pomodoro
+import ../Generated/Api
+
+## The timer: 25 minutes to focus, then 5 to rest, a ring that empties as the time goes. The same
+## page runs in a browser and, unchanged, as an Android phone's native views (D-063).
+##
+## The clock is a moment, not a count of ticks: started, it runs until `now + left`
+## (`Pomodoro.Clock`), and an interval reads the time four times a second to show what is left. A
+## tab the browser slows down, or a phone that put the app to sleep, shows the right time again the
+## moment it ticks. At zero the session ends: a sound (packages/audio), a buzz on a phone
+## (packages/vibrate), a focus session recorded on the server (`POST /api/sessions`, which has
+## today's count read again), and the next session set up, waiting to be started.
+meta = { title: "Pomodoro" }
+
+view! = |_| {
+	(mode!, set_mode!) = create_signal!(Pomodoro.focus)
+	(left!, set_left!) = create_signal!(Pomodoro.length(Focus))
+	(clock!, set_clock!) = create_signal!(Pomodoro.paused)
+	today! = create_memo!(|| Endpoint.get!(Api.get_api_today({})))
+	record! = use_action!(Api.post_api_sessions({}))
+
+	# A session's end: told, recorded if it was a focus session, the next one set up.
+	ended! = || {
+		Audio.play!("/sounds/done.wav")
+		Vibrate.pattern!([300, 150, 300])
+		match mode!() {
+			Focus => record!({ minutes: Pomodoro.minutes(Focus) })
+			Break => {}
+		}
+		next = Pomodoro.next(mode!())
+		set_clock!(Paused)
+		set_mode!(next)
+		set_left!(Pomodoro.length(next))
+	}
+
+	# While the clock runs: what is left, four times a second, until there is none. The interval
+	# stops itself with the effect's cleanup, when the clock stops or starts again.
+	create_effect!(
+		|| clock!(),
+		|clock|
+			match clock {
+				Until(until) => {
+					_ = Solid.set_interval!(
+						250,
+						|| {
+							left = Pomodoro.left(until, Time.now_millis!({}))
+							set_left!(left)
+							if (left == 0) ended!() else {}
+						},
+					)
+					{}
+				}
+				Paused => {}
+			},
+	)
+
+	start! = || set_clock!(Until(Time.now_millis!({}) + left!()))
+	pause! = || {
+		match clock!() {
+			Until(until) => set_left!(Pomodoro.left(until, Time.now_millis!({})))
+			Paused => {}
+		}
+		set_clock!(Paused)
+	}
+	# A mode chosen (a tab, or skipping to the next): its whole length, waiting to be started.
+	choose! = |mode| {
+		set_clock!(Paused)
+		set_mode!(mode)
+		set_left!(Pomodoro.length(mode))
+	}
+	running! = || clock!() != Paused
+
+	<main class="pomodoro" class:resting={mode!() == Break}>
+		<Title>{if (running!()) "${Pomodoro.clock(left!())} · ${Pomodoro.name(mode!())}" else "Pomodoro"}</Title>
+		<h1>Pomodoro</h1>
+		<div class="modes" role="tablist">
+			<button class="mode" class:active={mode!() == Focus} role="tab" aria-selected={if (mode!() == Focus) "true" else "false"} on:click={|| choose!(Focus)}>Focus</button>
+			<button class="mode" class:active={mode!() == Break} role="tab" aria-selected={if (mode!() == Break) "true" else "false"} on:click={|| choose!(Break)}>Break</button>
+		</div>
+		<svg class="ring" viewBox="0 0 120 120" role="timer" aria-label={"${Pomodoro.clock(left!())} left"}>
+			<circle class="track" cx="60" cy="60" r="52" />
+			<circle class="sweep" cx="60" cy="60" r="52" pathLength="1000" transform="rotate(-90 60 60)" stroke-dasharray={"${Pomodoro.share(left!(), mode!()).to_str()} 1000"} />
+			<text class="time" x="60" y="66" text-anchor="middle">{Pomodoro.clock(left!())}</text>
+			<text class="label" x="60" y="84" text-anchor="middle">{Pomodoro.name(mode!())}</text>
+		</svg>
+		<div class="controls">
+			<button class="primary" on:click={|| if (running!()) pause!() else start!()}>{if (running!()) "Pause" else "Start"}</button>
+			<button on:click={|| choose!(mode!())}>Reset</button>
+			<button on:click={|| choose!(Pomodoro.next(mode!()))}>Skip</button>
+		</div>
+		<section class="today">
+			<Errored fallback={|problem, retry|
+				<div>
+					<p>Today's count can't be read: {problem}</p>
+					<button on:click={retry}>Again</button>
+				</div>
+			}>
+				<Loading fallback={<p>Counting today's sessions…</p>}>
+					<p class="count">{"${today!().done.to_str()} of ${today!().goal.to_str()} focus sessions today"}</p>
+					<div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax={today!().goal.to_str()} aria-valuenow={today!().done.to_str()}>
+						<div class="fill" style:width={Pomodoro.progress(today!())}></div>
+					</div>
+				</Loading>
+			</Errored>
+		</section>
+	</main>
+}
+
+<style>
+	:global(body) {
+		margin: 0;
+		background: #fbf6f0;
+		color: #2b2522;
+		font-family: system-ui, sans-serif;
+	}
+
+	.pomodoro {
+		--accent: #d9483b;
+		--soft: #f6dcd5;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 1.25rem;
+		max-width: 26rem;
+		margin: 0 auto;
+		padding: 1.5rem 1rem 2rem;
+	}
+
+	.resting {
+		--accent: #2f8f6b;
+		--soft: #d7eee3;
+	}
+
+	h1 {
+		margin: 0;
+		font-size: 1.5rem;
+		font-weight: 800;
+		color: var(--accent);
+	}
+
+	.modes {
+		display: flex;
+		gap: 0.5rem;
+		padding: 0.25rem;
+		border-radius: 999px;
+		background: var(--soft);
+	}
+
+	.mode {
+		padding: 0.4rem 1.1rem;
+		border: 0;
+		border-radius: 999px;
+		background: transparent;
+		color: #2b2522;
+		font-size: 1rem;
+		font-weight: 600;
+	}
+
+	.mode.active {
+		background: #ffffff;
+		color: var(--accent);
+	}
+
+	.ring {
+		width: 75%;
+		max-width: 18rem;
+	}
+
+	.track {
+		fill: none;
+		stroke: var(--soft);
+		stroke-width: 10;
+	}
+
+	.sweep {
+		fill: none;
+		stroke: var(--accent);
+		stroke-width: 10;
+		stroke-linecap: round;
+	}
+
+	.time {
+		fill: #2b2522;
+		font-size: 24px;
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.label {
+		fill: var(--accent);
+		font-size: 10px;
+		font-weight: 600;
+		text-transform: uppercase;
+	}
+
+	.controls {
+		display: flex;
+		gap: 0.75rem;
+		justify-content: center;
+	}
+
+	.controls button {
+		padding: 0.6rem 1.2rem;
+		border: 2px solid var(--accent);
+		border-radius: 999px;
+		background: #ffffff;
+		color: var(--accent);
+		font-size: 1rem;
+		font-weight: 700;
+	}
+
+	.controls .primary {
+		background: var(--accent);
+		color: #ffffff;
+		min-width: 7rem;
+	}
+
+	.today {
+		width: 100%;
+	}
+
+	.count {
+		margin: 0 0 0.5rem;
+		text-align: center;
+		color: #6b605a;
+	}
+
+	.bar {
+		height: 10px;
+		border-radius: 5px;
+		background: var(--soft);
+	}
+
+	.fill {
+		height: 10px;
+		border-radius: 5px;
+		background: var(--accent);
+	}
+</style>

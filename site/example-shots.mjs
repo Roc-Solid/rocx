@@ -10,7 +10,7 @@
 //   node site/example-shots.mjs tasks plate  those alone
 //
 // It needs Chromium; every app with a database is on SQLite (D-045), a file of its own each run.
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { buildForTests, launchBrowser, startServer, testDatabase, testSqlite, until } from "../packages/testing/index.mjs";
@@ -87,6 +87,28 @@ const scenes = {
 			await shoot(browser, app.url, "journal", "polish", "/pl", { phone: true });
 		} finally {
 			await app.stop();
+		}
+	},
+
+	async pomodoro(browser) {
+		const run = await plain("pomodoro");
+		try {
+			const me = run.app.client();
+			for (const _ of [1, 2, 3]) await me.json("/api/sessions", { minutes: 25 });
+			await shoot(browser, run.app.url, "pomodoro", "timer", "/");
+			await shoot(browser, run.app.url, "pomodoro", "break", "/", {
+				phone: true,
+				act: async (tab) => {
+					await (await tab.findByRole("tab", { name: "Break" })).click();
+					await until(async () => (await tab.page.eval(`document.querySelector('[role="timer"]').getAttribute("aria-label")`)) === "05:00 left", { what: "the break chosen" });
+				},
+			});
+			// The page on Android's emulator, taken by hand (examples/pomodoro/README.md): a phone isn't
+			// something this script can start.
+			copyFileSync(join(root, "examples", "pomodoro", "screens", "android.webp"), join(out, "pomodoro", "android.webp"));
+			console.log("pomodoro/android (phone, from examples/pomodoro/screens)");
+		} finally {
+			await run.stop();
 		}
 	},
 

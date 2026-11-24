@@ -26,9 +26,10 @@ import java.nio.ByteOrder
 
 /**
  * Applies a batch of the native host's ops (native/core/src/native.rs) to Android views: one call
- * a flush. Views are kept by the host's ids. A box is a LinearLayout (a column, or a row for
- * `display: flex`), text is a TextView, and buttons, fields and checkboxes are the platform's own.
- * Margins between a column's children collapse, as CSS's do.
+ * a flush. Views are kept by the host's ids. A box is a LinearLayout (`Box`: a column, or a row for
+ * `display: flex`, its children's sizes CSS's lengths or percentages), text is a TextView, an
+ * `<svg>` a `SvgView`, and buttons, fields and checkboxes are the platform's own. Margins between a
+ * column's children collapse, as CSS's do.
  */
 class Applier(val activity: Activity, private val screen: ViewGroup) {
     private val views = HashMap<Long, View>()
@@ -90,7 +91,7 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
     private fun create(id: Long, kind: String, tag: String) {
         val context = activity
         val view: View = when (kind) {
-            "box" -> LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+            "box" -> Box(context).apply { orientation = LinearLayout.VERTICAL }
             "text" -> TextView(context).apply {
                 setTextColor(Color.parseColor("#1b1b1f"))
                 setTextIsSelectable(false)
@@ -131,6 +132,7 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
                 }
             }
             "image" -> ImageView(context)
+            "svg" -> SvgView(context)
             else -> View(context)
         }
         view.tag = "rocx:$id:<$tag>"
@@ -164,6 +166,7 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
                 view.setText(value)
                 view.setSelection(value.length)
             }
+            "svg" -> if (view is SvgView) view.drawing(value)
             "placeholder" -> if (view is TextView) view.hint = value
             "disabled" -> view.isEnabled = value != "true"
             "checked" -> if (view is CheckBox) view.isChecked = value == "true"
@@ -207,13 +210,15 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
                 else -> Gravity.START
             }
             "textTransform" -> if (view is TextView) view.isAllCaps = value == "uppercase"
+            // `font-variant-numeric: tabular-nums`: digits all as wide, so a clock doesn't jiggle.
+            "tabular" -> if (view is TextView) view.fontFeatureSettings = if (value == "true") "tnum" else null
             "direction" -> if (view is LinearLayout) {
                 view.orientation = if (value == "row") LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
                 layoutChildren(view, id)
             }
-            "gap", "alignItems", "justify" -> if (view is LinearLayout) layoutChildren(view, id)
+            "gap", "alignItems", "justify", "flex" -> if (view is LinearLayout) layoutChildren(view, id)
             "opacity" -> view.alpha = value.toFloatOrNull() ?: 1f
-            "margin", "width", "height" -> (view.parent as? LinearLayout)?.let { parent ->
+            "margin", "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight" -> (view.parent as? LinearLayout)?.let { parent ->
                 parentId(parent)?.let { layoutChildren(parent, it) }
             }
         }
@@ -250,6 +255,8 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
             "flex-end", "end", "right" -> Gravity.END
             else -> Gravity.START
         } or if (!column && own["alignItems"] == "center") Gravity.CENTER_VERTICAL else 0
+        // A flex column whose `align-items` isn't `stretch`: its children as wide as what they hold.
+        val stretches = own["flex"] != "true" || own["alignItems"].let { it == null || it == "stretch" || it == "normal" }
         var below = 0
         for (at in 0 until parent.childCount) {
             val child = parent.getChildAt(at)
@@ -258,10 +265,17 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
             val style = childId?.let { styles[it] } ?: emptyMap<String, String>()
             val margin = sides(style["margin"])
             val shrinks = kind == "button" || kind == "checkbox" || kind == "image"
-            val width = style["width"]?.toFloatOrNull()?.let { px(it) }
-                ?: if (column && !shrinks) ViewGroup.LayoutParams.MATCH_PARENT else ViewGroup.LayoutParams.WRAP_CONTENT
-            val height = style["height"]?.toFloatOrNull()?.let { px(it) } ?: ViewGroup.LayoutParams.WRAP_CONTENT
-            val params = LinearLayout.LayoutParams(width, height)
+            val params = Box.Params(
+                size(style["width"]) ?: Box.Size.Auto(column && !shrinks && stretches),
+                size(style["height"]) ?: Box.Size.Auto(false),
+                size(style["minWidth"]),
+                size(style["maxWidth"]),
+                size(style["minHeight"]),
+                size(style["maxHeight"]),
+            )
+            // A minimum in dp holds for a view as wide as what it says, too.
+            (params.minWidth as? Box.Size.Dp)?.let { child.minimumWidth = it.px }
+            (params.minHeight as? Box.Size.Dp)?.let { child.minimumHeight = it.px }
             if (column) {
                 // Collapsed with the margin below the child before it.
                 val top = if (at == 0) margin[0] else maxOf(margin[0], below) - below + gap
@@ -272,6 +286,13 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
             }
             child.layoutParams = params
         }
+    }
+
+    /** A size the host sent (`style.width`…): dp, or a percentage (`50.00%`). */
+    private fun size(value: String?): Box.Size? {
+        if (value == null) return null
+        if (value.endsWith("%")) return value.removeSuffix("%").toFloatOrNull()?.let { Box.Size.Percent(it) }
+        return value.toFloatOrNull()?.let { Box.Size.Dp(px(it)) }
     }
 
     private fun destroy(id: Long) {

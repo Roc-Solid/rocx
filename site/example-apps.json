@@ -1,12 +1,12 @@
 {
-	"measured": "2026-11-23",
-	"commit": "c884f76",
-	"roc": "rocx-fork-9fcf362c0c",
+	"measured": "2026-11-24",
+	"commit": "a15fd49",
+	"roc": "rocx-fork-4674b5973d",
 	"machine": "Apple M5, 10 cores",
 	"runtime": {
-		"bytes": 241117,
-		"gzip": 71016,
-		"brotli": 59131
+		"bytes": 266020,
+		"gzip": 78039,
+		"brotli": 64557
 	},
 	"examples": [
 		{
@@ -14,7 +14,7 @@
 			"title": "Board",
 			"pages": 3,
 			"endpoints": 20,
-			"lines": 3555,
+			"lines": 3560,
 			"expects": 81,
 			"tests": 19,
 			"packages": [
@@ -79,7 +79,7 @@
 			"title": "Journal",
 			"pages": 7,
 			"endpoints": 4,
-			"lines": 2777,
+			"lines": 2780,
 			"expects": 80,
 			"tests": 21,
 			"packages": [
@@ -141,11 +141,30 @@
 			}
 		},
 		{
+			"name": "pomodoro",
+			"title": "Pomodoro",
+			"pages": 1,
+			"endpoints": 2,
+			"lines": 412,
+			"expects": 15,
+			"tests": 6,
+			"packages": [
+				"audio",
+				"vibrate"
+			],
+			"database": "SQLite",
+			"wasm": {
+				"bytes": 262934,
+				"gzip": 105443,
+				"brotli": 86561
+			}
+		},
+		{
 			"name": "quiz",
 			"title": "Pinwheel",
 			"pages": 5,
 			"endpoints": 7,
-			"lines": 3622,
+			"lines": 3655,
 			"expects": 92,
 			"tests": 8,
 			"packages": [
@@ -178,9 +197,9 @@
 			"title": "Tasks",
 			"pages": 4,
 			"endpoints": 10,
-			"lines": 2200,
+			"lines": 2261,
 			"expects": 49,
-			"tests": 17,
+			"tests": 18,
 			"packages": [
 				"forms",
 				"testing"
@@ -197,7 +216,7 @@
 			"title": "Status",
 			"pages": 6,
 			"endpoints": 15,
-			"lines": 3490,
+			"lines": 3498,
 			"expects": 100,
 			"tests": 13,
 			"packages": [

@@ -4,12 +4,13 @@
 //! view; one whose content is all inline (text, `span`, `strong`, `a`…) is one text view, its text
 //! collapsed as CSS's `white-space: normal` does; inline content beside blocks gets an anonymous
 //! text view, as CSS gives it an anonymous block; `button`, `input` and `textarea` are the
-//! platform's own. `head`, `style`, `script` and the like are nothing. The projection is compared
+//! platform's own; an `<svg>` is one view, drawn from the shapes svg.rs makes of it (its `svg`
+//! property, JSON). `head`, `style`, `script` and the like are nothing. The projection is compared
 //! with the last one sent (`render`), and the batch says only what changed:
 //!
 //! ```text
-//! 1 CREATE   id:u64 kind:str tag:str      a view (kind: box, text, button, input, textarea, checkbox, image)
-//! 2 SET      id:u64 key:str value:str     a property: text, value, placeholder, disabled, a style's (`style.padding`)
+//! 1 CREATE   id:u64 kind:str tag:str      a view (kind: box, text, button, input, textarea, checkbox, image, svg)
+//! 2 SET      id:u64 key:str value:str     a property: text, value, placeholder, disabled, svg, a style's (`style.padding`)
 //! 3 CHILDREN id:u64 count:u32 ids:u64…    a view's children, in order
 //! 4 DESTROY  id:u64                       a view that is gone
 //! 5 ROOT     id:u64                       the screen's root view
@@ -21,6 +22,7 @@
 
 use crate::css;
 use crate::dom::{Dom, Kind, NodeId};
+use crate::svg;
 use crate::engine::{self, Engine};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
@@ -87,7 +89,22 @@ pub fn project(engine: &mut Engine) -> (u64, HashMap<u64, View>, bool) {
     let mut projection = Projection { engine, sheet: &sheet, views: &mut views };
     let styles = css::Computed::root();
     let id = projection.block(root, &styles).unwrap_or(native_id(root));
+    canvas(&mut views, id);
     (id, views, loading)
+}
+
+/// The screen's background, as CSS paints the canvas: the `html` element's, or, with none, the
+/// `body`'s, under the whole screen (the root view, which fills it), not only under what the body
+/// holds.
+fn canvas(views: &mut HashMap<u64, View>, root: u64) {
+    let child = |views: &HashMap<u64, View>, of: u64, tag: &str| views.get(&of).and_then(|view| view.children.iter().copied().find(|child| views.get(child).is_some_and(|child| child.tag == tag)));
+    let html = if views.get(&root).is_some_and(|view| view.tag == "html") { Some(root) } else { child(views, root, "html") };
+    let Some(html) = html else { return };
+    let background = |id: Option<u64>| id.and_then(|id| views.get(&id)).and_then(|view| view.props.get("style.background")).cloned();
+    let Some(paint) = background(Some(html)).or_else(|| background(child(views, html, "body"))) else { return };
+    if let Some(view) = views.get_mut(&root) {
+        view.props.entry("style.background".into()).or_insert(paint);
+    }
 }
 
 /// Every `<style>`'s text in the document, and every stylesheet a `<link rel="stylesheet">` names
@@ -198,6 +215,24 @@ impl Projection<'_> {
                 props.insert("alt".into(), attr("alt").unwrap_or_default());
                 ("image", Vec::new())
             }
+            "svg" => {
+                let drawing = self.svg(node, &styles);
+                // Its size: the CSS's, else its attributes' (one given, the other from its viewBox's
+                // shape); with neither, the applier fills the width, the height from the viewBox.
+                let ratio = drawing.view_box.map(|[_, _, w, h]| h / w);
+                let size = |name: &str| self.engine.dom.attr(node, name).map(str::to_string).and_then(|value| css::length(&value, 16.0, 16.0).or_else(|| value.trim().parse::<f32>().ok()).map(|n| format!("{n:.1}")).or_else(|| css::percentage(&value).map(|p| format!("{p:.2}%"))));
+                let (width, height) = (size("width"), size("height"));
+                let number = |size: &Option<String>| size.as_ref().filter(|size| !size.ends_with('%')).and_then(|size| size.parse::<f32>().ok());
+                let height = height.or_else(|| Some(format!("{:.1}", number(&width)? * ratio?)));
+                let width = width.or_else(|| Some(format!("{:.1}", number(&height)? / ratio?)));
+                for (key, value) in [("style.width", width), ("style.height", height)] {
+                    if let Some(value) = value {
+                        props.entry(key.into()).or_insert(value);
+                    }
+                }
+                props.insert("svg".into(), drawing.json());
+                ("svg", Vec::new())
+            }
             _ if self.inline_only(node) && self.has_inline(node) => {
                 props.insert("text".into(), collapse(&self.inline_text(node)));
                 ("text", Vec::new())
@@ -209,6 +244,100 @@ impl Projection<'_> {
         }
         self.views.insert(id, View { kind, tag, props, children });
         Some(id)
+    }
+
+    /// An `<svg>`'s shapes, its CSS resolved (svg.rs).
+    fn svg(&mut self, node: NodeId, styles: &css::Computed) -> svg::Drawing {
+        let mut drawing = svg::Drawing::default();
+        drawing.view_box = self.dom().attr(node, "viewBox").and_then(svg::view_box);
+        let mut style = svg::Style::initial(styles.colour(), styles.font_size());
+        self.paint(node, styles, &mut style);
+        self.svg_children(node, svg::Matrix::IDENTITY, &style, styles, &mut drawing);
+        drawing
+    }
+
+    /// An SVG element's paint: its presentation attributes, then its CSS (rules, then `style`).
+    fn paint(&mut self, node: NodeId, styles: &css::Computed, style: &mut svg::Style) {
+        const PAINT: [&str; 14] = ["color", "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "stroke-dasharray", "stroke-dashoffset", "fill-opacity", "stroke-opacity", "font-size", "font-weight", "text-anchor", "opacity"];
+        let mut warned = Vec::new();
+        for from_css in [false, true] {
+            for name in PAINT {
+                let value = if from_css { styles.get(name).map(str::to_string) } else { self.dom().attr(node, name).map(str::to_string) };
+                let Some(value) = value else { continue };
+                if value.trim_start().starts_with("url(") {
+                    warned.push(format!("SVG paint `{name}: {value}` (gradients and patterns) isn't on phones yet: drawn as none"));
+                    style.set(name, "none", css::colour);
+                } else if name == "opacity" {
+                    // A group's opacity, multiplied into what it holds.
+                    if let Some(opacity) = svg::opacity(&value) {
+                        style.opacity *= opacity;
+                    }
+                } else {
+                    style.set(name, &value, css::colour);
+                }
+            }
+        }
+        for warning in warned {
+            self.engine.warn_once(&warning, &format!("rocx native: {warning}"));
+        }
+    }
+
+    fn svg_children(&mut self, node: NodeId, matrix: svg::Matrix, style: &svg::Style, styles: &css::Computed, drawing: &mut svg::Drawing) {
+        let children = self.dom().nodes[node].children.clone();
+        for child in children {
+            let Some(tag) = self.dom().tag(child).map(str::to_string) else { continue };
+            if matches!(tag.as_str(), "title" | "desc" | "metadata" | "style") {
+                continue;
+            }
+            let path = self.path(child);
+            let inline_style = self.inline_style(child);
+            let computed = self.sheet.compute(&path, styles, &inline_style);
+            if computed.hidden() {
+                continue;
+            }
+            let mut own = style.clone();
+            own.color = computed.colour();
+            self.paint(child, &computed, &mut own);
+            let attr = |name: &str| self.dom().attr(child, name).map(str::to_string);
+            let number = |name: &str| attr(name).and_then(|value| svg::numbers(&value).first().copied());
+            let at = |name: &str| number(name).unwrap_or(0.0);
+            let matrix = match attr("transform") {
+                Some(transform) => matrix.then(svg::transform(&transform)),
+                None => matrix,
+            };
+            let d = match tag.as_str() {
+                "g" | "a" | "svg" | "switch" => {
+                    let matrix = if tag == "svg" { matrix.then(svg::transform(&format!("translate({} {})", at("x"), at("y")))) } else { matrix };
+                    self.svg_children(child, matrix, &own, &computed, drawing);
+                    continue;
+                }
+                "path" => svg::path_data(&attr("d").unwrap_or_default()),
+                "rect" => svg::rect(at("x"), at("y"), at("width"), at("height"), number("rx"), number("ry")),
+                "circle" => svg::ellipse(at("cx"), at("cy"), at("r"), at("r")),
+                "ellipse" => svg::ellipse(at("cx"), at("cy"), at("rx"), at("ry")),
+                "line" => svg::line(at("x1"), at("y1"), at("x2"), at("y2")),
+                "polyline" => svg::poly(&attr("points").unwrap_or_default(), false),
+                "polygon" => svg::poly(&attr("points").unwrap_or_default(), true),
+                "text" => {
+                    let text = self.inline_text(child);
+                    let text = match computed.get("text-transform") {
+                        Some("uppercase") => text.to_uppercase(),
+                        Some("lowercase") => text.to_lowercase(),
+                        _ => text,
+                    };
+                    own.tabular = computed.get("font-variant-numeric").is_some_and(|numeric| numeric.contains("tabular-nums"));
+                    drawing.text(&text, at("x"), at("y"), matrix, &own);
+                    continue;
+                }
+                other => {
+                    let warning = format!("SVG <{other}> isn't on phones yet: left out");
+                    self.engine.warn_once(&warning, &format!("rocx native: {warning}"));
+                    continue;
+                }
+            };
+            // `pathLength`: the length a dash pattern is measured in, the applier scales it.
+            drawing.shape(&d, matrix, &own, number("pathLength"));
+        }
     }
 
     fn inline_style(&self, node: NodeId) -> Vec<(String, String)> {

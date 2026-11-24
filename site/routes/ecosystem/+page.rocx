@@ -99,6 +99,7 @@ view! = |_|
 				<li><a href={Paths.ecosystem_email}>Email</a>: <code>{"Email.plugin({})"}</code>, the dev mailbox under <code>--dev</code> and a look at the SMTP server.</li>
 				<li><a href={Paths.ecosystem_push}>Push</a>: <code>{"Push.plugin({})"}</code>, its endpoints, the subscriptions' table, the job that sends (on the jobs plugin), the service worker at the root and the page's script.</li>
 				<li><a href={Paths.ecosystem_audio}>Audio</a>: <code>{"AudioPlayer.plugin({})"}</code>, the player for <code>Audio.play!</code>, a script every page loads.</li>
+				<li><a href={Paths.ecosystem_vibrate}>Vibrate</a>: <code>{"Vibrator.plugin({})"}</code>, the script that passes <code>Vibrate.pattern!</code> to the browser's motor (a phone app needs none).</li>
 				<li><a href={Paths.ecosystem_posthog}>PostHog</a>: <code>{"PostHog.plugin({})"}</code>, errors sent to PostHog's error tracking, a page's script and where it sends them.</li>
 			</ul>
 		</NoHydration>

@@ -9,6 +9,8 @@
     android:versionName="0.1">
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="36" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- packages/vibrate's native half (Calls.kt): a normal permission, granted at install. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <application
         android:label="@LABEL@"
         android:hasCode="true"

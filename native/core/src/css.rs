@@ -8,8 +8,9 @@
 //! row or a column, the rest as a column), `flex-direction`, `gap`, `padding`, `margin`,
 //! `color`, `background(-color)` (a colour), `font-size`, `font-weight`, `font-style`,
 //! `text-align`, `text-transform`, `border-radius`, `border` (width and colour), `width`,
-//! `height`, `opacity`, `align-items`, `justify-content`, custom properties and `var()`. Lengths
-//! in px, rem, em and pt. `@media` with widths and `prefers-color-scheme`.
+//! `height` and their `min-`/`max-` (a length, or a percentage of the box they are in), `opacity`, `align-items`, `justify-content`, custom properties and `var()`. Lengths
+//! in px, rem, em and pt. `@media` with widths and `prefers-color-scheme`. An `<svg>`'s shapes take
+//! SVG's paint properties (`fill`, `stroke`…: svg.rs).
 //!
 //! What a phone can't do (yet) only warns, once, and is ignored: the user's answer to D-063's
 //! question 1. The design parses the CSS at build time instead; this is the spike's.
@@ -171,10 +172,11 @@ impl Sheet {
 }
 
 /// The properties the phone does (`font-family` and `box-sizing` as the phone's own: its system
-/// font, and borders inside a view's size).
-const KNOWN: [&str; 34] = [
+/// font, and borders inside a view's size). SVG's paint properties are an `<svg>`'s shapes' (svg.rs).
+const KNOWN: [&str; 49] = [
     "display", "flex-direction", "gap", "row-gap", "column-gap", "padding", "padding-top", "padding-right", "padding-bottom", "padding-left", "margin", "margin-top", "margin-right", "margin-bottom", "margin-left", "color", "background", "background-color", "font-size", "font-weight", "font-style",
-    "text-align", "text-transform", "border-radius", "border", "border-width", "border-color", "width", "height", "opacity", "align-items", "justify-content", "font-family", "box-sizing",
+    "text-align", "text-transform", "border-radius", "border", "border-width", "border-color", "width", "height", "min-width", "max-width", "min-height", "max-height", "opacity", "align-items", "justify-content", "font-family", "box-sizing",
+    "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "stroke-dasharray", "stroke-dashoffset", "fill-opacity", "stroke-opacity", "text-anchor", "font-variant-numeric",
 ];
 
 fn strip_comments(css: &str) -> String {
@@ -290,7 +292,32 @@ fn unwrap_global(text: &str) -> String {
 
 fn parse_compound(token: &str, specificity: &mut (u32, u32, u32)) -> Result<Compound, String> {
     let mut compound = Compound { tag: None, id: None, classes: Vec::new(), root: false };
-    let mut rest = token;
+    // `:where(…)` and `:is(…)` of one compound (rocx's scoped styles put the scope's class in a
+    // `:where()`: `.card :where(.rx-1a2b)`), merged into this one; `:where()`'s adds no specificity.
+    let mut token = token.to_string();
+    for (pseudo, counts) in [(":where(", false), (":is(", true)] {
+        while let Some(start) = token.find(pseudo) {
+            let inner_start = start + pseudo.len();
+            let Some(end) = token[inner_start..].find(')').map(|end| end + inner_start) else { return Err(pseudo.trim_end_matches('(').to_string()) };
+            let inner = token[inner_start..end].trim().to_string();
+            if inner.contains(',') || inner.contains(' ') || inner.contains('>') {
+                return Err(format!("{pseudo}…) of more than one compound"));
+            }
+            let mut inner_specificity = (0, 0, 0);
+            let found = parse_compound(&inner, &mut inner_specificity)?;
+            if counts {
+                specificity.0 += inner_specificity.0;
+                specificity.1 += inner_specificity.1;
+                specificity.2 += inner_specificity.2;
+            }
+            compound.tag = compound.tag.or(found.tag);
+            compound.id = compound.id.or(found.id);
+            compound.classes.extend(found.classes);
+            compound.root |= found.root;
+            token = format!("{}{}", &token[..start], &token[end + 1..]);
+        }
+    }
+    let mut rest = token.as_str();
     let name_end = rest.find(['.', '#', ':', '[']).unwrap_or(rest.len());
     let tag = &rest[..name_end];
     if !tag.is_empty() && tag != "*" {
@@ -357,7 +384,7 @@ pub struct Computed {
 }
 
 /// What a child inherits.
-const INHERITED: [&str; 7] = ["color", "font-weight", "font-style", "text-align", "text-transform", "line-height", "visibility"];
+const INHERITED: [&str; 8] = ["color", "font-weight", "font-style", "text-align", "text-transform", "line-height", "visibility", "font-variant-numeric"];
 
 impl Computed {
     pub fn root() -> Computed {
@@ -390,6 +417,20 @@ impl Computed {
             }
         }
         Computed { font_size, values, custom }
+    }
+
+    /// A property as the element's rules and `style` set it (or, for one CSS inherits, its parent's).
+    pub fn get(&self, name: &str) -> Option<&str> {
+        self.values.get(name).map(String::as_str)
+    }
+
+    pub fn font_size(&self) -> f32 {
+        self.font_size
+    }
+
+    /// The text's colour, as Android's `#AARRGGBB` (`currentColor` in an `<svg>`).
+    pub fn colour(&self) -> String {
+        self.values.get("color").and_then(|color| colour(color)).unwrap_or_else(|| "#ff1b1b1f".into())
     }
 
     pub fn hidden(&self) -> bool {
@@ -448,6 +489,9 @@ impl Computed {
         if let Some(transform) = self.values.get("text-transform") {
             props.insert("style.textTransform".into(), transform.clone());
         }
+        if self.values.get("font-variant-numeric").is_some_and(|numeric| numeric.contains("tabular-nums")) {
+            props.insert("style.tabular".into(), "true".into());
+        }
         props
     }
 
@@ -475,13 +519,22 @@ impl Computed {
         let display = self.values.get("display").map(String::as_str).unwrap_or("block");
         let row = matches!(display, "flex" | "inline-flex") && !self.values.get("flex-direction").is_some_and(|direction| direction.starts_with("column"));
         props.insert("style.direction".into(), if row { "row".into() } else { "column".into() });
+        if matches!(display, "flex" | "inline-flex") {
+            // A flex box's `align-items` sizes its children across it: anything but `stretch`
+            // makes a column's children as wide as what they hold (the applier's).
+            props.insert("style.flex".into(), "true".into());
+        }
         let gap = self.length("gap").or_else(|| self.length(if row { "column-gap" } else { "row-gap" }));
         if let Some(gap) = gap.filter(|_| matches!(display, "flex" | "inline-flex" | "grid" | "inline-grid")) {
             props.insert("style.gap".into(), format!("{gap:.1}"));
         }
-        for (css, prop) in [("width", "style.width"), ("height", "style.height")] {
+        // A length in dp, or a percentage of the box the view is in (the applier's `Box` makes it
+        // one once it knows that box's size).
+        for (css, prop) in [("width", "style.width"), ("height", "style.height"), ("min-width", "style.minWidth"), ("max-width", "style.maxWidth"), ("min-height", "style.minHeight"), ("max-height", "style.maxHeight")] {
             if let Some(size) = self.length(css) {
                 props.insert(prop.into(), format!("{size:.1}"));
+            } else if let Some(percent) = self.values.get(css).and_then(|value| percentage(value)) {
+                props.insert(prop.into(), format!("{percent:.2}%"));
             }
         }
         if let Some(opacity) = self.values.get("opacity").and_then(|opacity| opacity.parse::<f32>().ok()) {
@@ -531,8 +584,13 @@ fn matching_paren(text: &str, open: usize) -> usize {
     text.len()
 }
 
+/// A percentage (`50%`), as its number.
+pub(crate) fn percentage(value: &str) -> Option<f32> {
+    value.trim().strip_suffix('%')?.trim().parse::<f32>().ok().filter(|percent| percent.is_finite() && *percent >= 0.0)
+}
+
 /// A length in dp (CSS px): px, rem, em (of `em`), pt, and 0.
-fn length(value: &str, em: f32, rem: f32) -> Option<f32> {
+pub(crate) fn length(value: &str, em: f32, rem: f32) -> Option<f32> {
     let value = value.trim();
     if value == "0" {
         return Some(0.0);
@@ -542,7 +600,7 @@ fn length(value: &str, em: f32, rem: f32) -> Option<f32> {
 }
 
 /// A colour as Android's `#AARRGGBB`.
-fn colour(value: &str) -> Option<String> {
+pub(crate) fn colour(value: &str) -> Option<String> {
     let value = value.trim().to_ascii_lowercase();
     let named = match value.as_str() {
         "black" => Some("#000000"),
@@ -574,4 +632,33 @@ fn colour(value: &str) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn element(tag: &str, classes: &[&str]) -> Element {
+        Element { tag: tag.into(), id: String::new(), classes: classes.iter().map(|class| class.to_string()).collect() }
+    }
+
+    #[test]
+    fn scoped_selectors_match() {
+        let sheet = Sheet::of(".controls.rx-1 button:where(.rx-1) { color: #ff0000; } .controls.rx-1 .primary:where(.rx-1) { color: #00ff00; }");
+        assert!(sheet.warnings().is_empty(), "{:?}", sheet.warnings());
+        let path = [element("button", &["primary", "rx-1"]), element("div", &["controls", "rx-1"]), element("main", &[]), element("body", &[]), element("html", &[])];
+        let styles = sheet.compute(&path, &Computed::root(), &[]);
+        assert_eq!(styles.get("color"), Some("#00ff00"), "a class beats a tag, :where() adding nothing");
+        let other = [element("button", &["primary"]), element("div", &["controls", "rx-1"]), element("html", &[])];
+        assert_eq!(sheet.compute(&other, &Computed::root(), &[]).get("color"), None, "another component's button isn't in the scope");
+    }
+
+    #[test]
+    fn percentages_are_sent_as_they_are() {
+        let sheet = Sheet::of(".ring { width: 75%; max-width: 18rem; }");
+        let styles = sheet.compute(&[element("svg", &["ring"]), element("html", &[])], &Computed::root(), &[]);
+        let props = styles.props();
+        assert_eq!(props.get("style.width").map(String::as_str), Some("75.00%"));
+        assert_eq!(props.get("style.maxWidth").map(String::as_str), Some("288.0"));
+    }
 }

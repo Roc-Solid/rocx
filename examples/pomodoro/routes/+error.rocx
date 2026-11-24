@@ -1,0 +1,20 @@
+import pf.Html
+import ../Generated/Paths
+
+meta = { title: "Not here · Pomodoro" }
+
+## What a path nothing answers shows (404), and a failure nothing caught (500).
+view! = |{ status, problem }|
+	<main class="lost">
+		<h1>{if (status == 404) "Nothing here" else "Something went wrong"}</h1>
+		<p>{if (status == 404) "There is one page here: the timer." else problem}</p>
+		<a href={Paths.root}>To the timer</a>
+	</main>
+
+<style>
+	.lost {
+		max-width: 36rem;
+		margin: 4rem auto;
+		padding: 0 1.25rem;
+	}
+</style>

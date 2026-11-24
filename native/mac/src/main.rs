@@ -34,6 +34,10 @@ impl Platform for Mac {
             }
         }
     }
+    fn call(&self, name: &str, arg: &str, _origin: &str) -> bool {
+        println!("  call {name} {arg}");
+        true
+    }
     fn log(&self, level: Level, text: &str) {
         if level == Level::Warn {
             WARNINGS.lock().unwrap().push(text.to_string());

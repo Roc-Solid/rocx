@@ -48,6 +48,11 @@ spike/native-apps/phone-hello/routes/+page.rocx
   `<Loading>` and `<Errored>`, with "Ask again" (`refresh!`), and a field whose text a button sends
   to `POST /api/echo` with `Endpoint.send!(Api.post_api_echo({}), { text }, Call.fetch!)`, from a
   handler that waits for the answer, which is typed (`{ shout : Str, length : U64 }`, or a refusal).
+- **`examples/pomodoro`** (2026-11-24), the first example app made for both: a focus timer whose
+  page is a ring in SVG, buttons in a flex row and a bar of a percentage's width, and whose
+  session's end plays a sound and buzzes the phone (the native handlers, below). It brought SVG,
+  percentage sizes, `:where()` selectors and the phone's halves of `audio.play` and
+  `vibrate.pattern`. `bin/rocx dev examples/pomodoro --android`.
 
 ## Setting up
 
@@ -296,25 +301,52 @@ Three answer what the browser's do: `request!` (none), `status!` (nothing), `fla
 
 Stubs, each failing with why (the nearest `<Errored>` shows it, or a handler's failure is logged):
 `listen!`, `subscribe!`, `say!` and `resync!` ("… isn't on phones yet (D-063's spike)"), and
-`live_publish!`, which fails as the browser's does (the server's). `browser_call!` is queued as the
-browser's is, and then logged: no native handler is registered yet ("the audio plugin has no native
-half yet").
+`live_publish!`, which fails as the browser's does (the server's).
+
+`browser_call!` is queued as the browser's is, and once the handler is done goes to the phone's
+native handler by its name (`Platform::call`; Android's are Kotlin's, `Calls.kt`): `audio.play`
+(packages/audio's `Audio.play!`: a MediaPlayer, the sound fetched from the app's server when its URL
+is a path) and `vibrate.pattern` (packages/vibrate's `Vibrate.pattern!`: Android's `Vibrator`, the
+pattern as a waveform; the manifest asks for `VIBRATE`). A name with no handler is logged ("the push
+plugin has no native half on this platform"), as the browser logs an effect no script registered.
+The Mac runner prints each call (`call audio.play {…}`).
 
 In the markup, what isn't on phones yet is warned of once and ignored: `on:frame`,
 `on:viewport`, transitions, keys (`key=`), `<Document>`/`<Window>` handlers, `<NoHydration>` (empty:
-it is the server's).
+it is the server's, so a layout's `{=Styles.style}` belongs outside one: examples/pomodoro's).
+
+An `<svg>` is one view (kind `svg`), drawn by the applier's `SvgView` on a canvas from the shapes the
+host makes of it (native/core/src/svg.rs), sent as one property (`svg`, JSON) and sent again when
+any of it changes. The host does the work: `rect` (rounded too), `circle`, `ellipse`, `line`,
+`polyline` and `polygon` become paths; a path's data is made absolute and plain (`M`, `L`, `C`, `Q`,
+`Z`: `H`/`V` as lines, `S`/`T` with their control points reflected, arcs as cubic curves); `g`,
+`a` and nested `svg`s pass their `transform`s down as one matrix a shape; paint is resolved as SVG
+resolves it (a presentation attribute, the stylesheet's rules, the `style` attribute; inherited
+down the tree; `currentColor` the CSS `color`; a group's `opacity` multiplied in): `fill`,
+`stroke`, `stroke-width`, `-linecap`, `-linejoin`, `-dasharray`, `-dashoffset`, `fill-opacity`,
+`stroke-opacity`, and `pathLength`, whose units the applier scales the dashes by. `<text>` is drawn
+at its `x`/`y` with `text-anchor`, `font-size`, `font-weight`, `text-transform` and tabular digits.
+The `viewBox` is fitted and centred (`xMidYMid meet`); with no height of its own the view is as tall
+as the viewBox's shape at its width. Gradients and patterns (drawn as none), `<use>`, clipping,
+masks, `<image>` and `<foreignObject>` warn once and are left out.
 
 ## CSS
 
 The design compiles CSS at build time; the spike reads the stylesheet the page carries (rocx's
 scoped `Generated/Styles`: a `<style>`, or, since D-040, a `<link>` to its file, which the host asks
 the server for, as a browser does, its first frame waiting for it), after a phone user-agent sheet (h1–h6, p, lists,
-strong, em, small, a). Selectors: type, class, id, `*`, `:root`, `:global()`, descendant and child.
+strong, em, small, a). Selectors: type, class, id, `*`, `:root`, `:global()`, `:where()` and `:is()`
+of one compound (rocx's scoped styles put the scope's class in a `:where()`), descendant and child.
 Properties: `display` (none; flex as a row or a column; the rest a column), `flex-direction`, `gap`,
 `padding`, `margin` (collapsed between a column's children), colours and backgrounds, `font-size`,
-`font-weight`, `font-style`, `text-align`, `text-transform`, `border-radius`, `border`, `width`,
-`height`, `opacity`, `align-items`, `justify-content`, custom properties and `var()`; px, rem, em
-and pt; `@media` on width and colour scheme. Anything else (a property, a pseudo-class, an
+`font-weight`, `font-style`, `text-align`, `text-transform`, `font-variant-numeric: tabular-nums`,
+`border-radius`, `border`, `width`, `height` and their `min-`/`max-`, `opacity`, `align-items` (a
+flex column's other than `stretch` makes its children as wide as what they hold, as CSS's does),
+`justify-content`, custom properties and `var()`, and an `<svg>`'s paint (above); px, rem, em and pt,
+and percentages for the sizes (of the box's content, made a size once the box is measured:
+`Box.kt`, as androidx's percent layouts did; with nothing to be a percentage of, a height in the
+scrolling screen, the view's own size); `@media` on width and colour scheme. The `html`'s
+background, or else the `body`'s, fills the screen, as CSS paints the canvas. Anything else (a property, a pseudo-class, an
 at-rule) is warned of once, `rocx: CSS … isn't on phones yet: ignored`, in logcat and, at build
 time, by `build.sh` (`phone: …`), and never fails the build: the user's answer to question 1.
 
@@ -349,7 +381,7 @@ host's GPU.
    in its table.
 3. **Layout.** `LinearLayout`s, not Taffy: blocks stack, a flex box is a row, margins collapse
    between siblings only. Inline blocks don't share a line (the field and "Send" do in a browser,
-   not here), and grid, `%` lengths, positioning and wrapping aren't there. Taffy (the design's)
+   not here), and grid, positioning and wrapping aren't there (percentage sizes are, `Box.kt`). Taffy (the design's)
    is the next step for any second screen.
 4. **CSS at build time.** Parsed on the phone now; the design's build-time table (and `rocx check
    --android`) gives file and line to each warning.
@@ -363,7 +395,7 @@ host's GPU.
    (above) reloads in about a second, on USB and Wi-Fi, each a fresh start; next: the server's
    restart off the reload's path, and the page's APK
    copied again when the dev client is rebuilt while rocx dev runs (it is copied at start).
-8. **Controls.** Images, `select`, SVG, `textarea` sizes, dark mode, accessibility roles, the
+8. **Controls.** Images, `select`, `textarea` sizes, dark mode, accessibility roles, the
    keyboard's other keys (only Enter), `on:submit` from the keyboard.
 9. **Typing.** Once, `adb shell input text` typed while the keyboard was still starting gave a
    doubled first letter ("hhello"); with the keyboard up it never did. Whether that is adb and

@@ -1,0 +1,9 @@
+import pf.Html
+import ../../../AppNotes
+import ../../../Ui/ExampleApp
+
+## The pomodoro example app: what it is and shows, its screenshots (the browser's and Android's), and
+## what it is made of (site/AppNotes.roc, and the numbers `just example-apps` measures).
+meta = AppNotes.meta("pomodoro")
+
+view! = |_| <NoHydration><ExampleApp name="pomodoro" /></NoHydration>

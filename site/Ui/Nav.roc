@@ -96,6 +96,7 @@ Nav := [].{
 					{ path: Paths.ecosystem_qr, label: "QR codes", blurb: "QR codes made in plain Roc, drawn as SVG by a component that follows its text" },
 					{ path: Paths.ecosystem_presence, label: "Presence", blurb: "Who is here, who is typing, and live cursors" },
 					{ path: Paths.ecosystem_audio, label: "Audio", blurb: "Sound files from a handler, played by the plugin's script" },
+					{ path: Paths.ecosystem_vibrate, label: "Vibrate", blurb: "The phone's vibration motor from a handler, in a browser and on Android" },
 				],
 			},
 			{

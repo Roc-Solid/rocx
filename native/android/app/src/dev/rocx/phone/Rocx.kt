@@ -49,6 +49,15 @@ object Rocx {
         if (name == "click") say(Log.INFO, "tap on #$id: handled and the screen patched in ${"%.2f".format((System.nanoTime() - started) / 1e6)} ms")
     }
 
+    /**
+     * `Browser.call!(name, arg)`'s native half, once a handler is done (`Calls`): whether there is
+     * a handler by that name. `arg` is its JSON; `origin` the app's server, a path's.
+     */
+    @JvmStatic fun call(name: String, arg: String, origin: String): Boolean {
+        val activity = applier?.activity ?: return false
+        return Calls.call(activity, name, arg, origin)
+    }
+
     /** The applier the screen's ops go to (the activity's, while there is one). */
     var applier: Applier? = null
 
