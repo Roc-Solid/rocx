@@ -104,17 +104,35 @@ An Expo-like loop: save a `.rocx` file, and the phone shows the change in about 
 reinstall. Built 2026-11-23, after the spike, at the user's request.
 
 ```sh
-bin/rocx dev spike/native-apps/phone-hello --port 8095 --android
+bin/rocx dev spike/native-apps/phone-hello --port 8095 --android          # the emulator, or a phone on USB
+bin/rocx dev spike/native-apps/phone-hello --port 8095 --android --lan    # and phones on this Wi-Fi
 ```
 
 `rocx dev --android` does what `rocx dev` does (builds the app, serves it, builds again on each
-save) and, with each build, builds the app's Roc for the phone too. At start, if `adb` sees the
-emulator or a phone on USB, it reverses the server's port to it; builds the dev client
-(`native/android/build.sh --dev-client`, about a minute) if it is missing or older than what it is
-made from (native/'s sources, web/platform's header) and installs it if it was built or isn't on
-the phone; opens it at `http://127.0.0.1:<port>`; and shows the phone's log in the terminal (`adb
-logcat`, the `rocx` tag, from Debug up: Roc's `dbg` prints there as `D/rocx: dbg: …`). A phone on Wi-Fi: open the dev client, give it the computer's address,
-and run the server reachable (`-- --host 0.0.0.0`).
+save) and, with each build, builds the app's Roc for the phone too. At start it builds the dev
+client (`native/android/build.sh --dev-client`, about a minute) if it is missing or older than what
+it is made from (native/'s sources, web/platform's header). If `adb` sees the emulator or a phone
+on USB, it reverses the server's port to it, installs the dev client if it was built or isn't on
+the phone, opens it at `http://127.0.0.1:<port>`, and shows crashes from the phone's log (`adb
+logcat`'s `AndroidRuntime`, `DEBUG` and `libc`) in the terminal.
+
+**The phone's log comes over HTTP**, on Wi-Fi as on USB: the dev client sends its lines (the
+engine's, Roc's `dbg`, its own) to the dev server every 200 ms (`POST /__rocx/dev/log`, a JSON
+array; under `--dev` only), which logs them as its own with `from=phone`, so they show where rocx
+dev runs, at their level (`dbg` at Debug). Lines the server can't take yet (it restarts between
+builds) wait for the next try, the last 2,000 at most.
+
+**Phones on Wi-Fi: `--lan`.** The server listens on this network (`--host 0.0.0.0`: the app, its
+dev pages and endpoints are open to it while rocx dev runs), and rocx dev prints a QR code (its own
+encoder, `rocx-cli/Qr.roc`; `rocx qr <text>` prints one) for its page,
+`http://<this computer>:<port>/rocx/android/connect.html`. The page opens the dev client at that
+address (its `rocx-dev://connect?origin=…` link, through Chrome's `intent:`), or, where the client
+isn't installed, downloads it (`rocx-dev.apk`, served beside the page, with Android's APK type).
+Installing it that way passes Android's usual steps for an app from outside a store: Chrome's two
+warnings about the download (plain HTTP; an APK), leave for Chrome to install apps, and Play
+Protect's offer to scan it (choose "Install without scanning" to keep the build on the network).
+The computer's address is `ipconfig getifaddr en0` (en1, en2; Linux's `hostname -I`), or
+`$ROCX_LAN_IP`.
 
 - **The dev client** (`build.sh --dev-client`: `rocx-dev.apk`, `dev.rocx.devclient`, 808 KB) is the
   Kotlin shell with the host as `libhost.so` (`native/android-dev`: native/android's `dev` feature
@@ -152,6 +170,7 @@ mistake, then its fix), on the Mac's clock from the file's write to the client's
 | A `.rocx` edit, on the phone | 0.77–1.3 s after the save (100 ms debounce, the build 0.2–0.7 s, the server's restart, the 150 ms poll, the download 7–14 ms, load and mount 3–13 ms) |
 | A mistake, on the red screen | 0.39–0.46 s after the save |
 | What was typed | kept across builds, and in the app's signal (`Send` posts it) |
+| Over Wi-Fi (`--lan`, the build fetched from 192.168.0.4) | 1.0–1.4 s after the save (the download 93–136 ms; the "shown" line in the terminal up to 200 ms later, the log's batching) |
 
 ![](evidence/dev-02-reloaded.png) ![](evidence/dev-03-error.png)
 
@@ -160,8 +179,13 @@ at 0), `dev-03-error.png`, `dev-04-fixed.png`, `dev-05-crash-guard.png` (a libra
 `roc_mount` writes to address 0, served as a build, and the client after it), `dev-06-fingerprint.png`
 (the dev client uninstalled and a comment added to `Host.roc`: `rocx dev --android` installed and
 opened the client, which refused the build for another platform), `dev-07-connect.png` (a client
-with nothing saved: its connect screen, which loaded the build once given the address) and
-`dev-loop.txt`.
+with nothing saved: its connect screen, which loaded the build once given the address),
+`dev-08-connect-page.png` (rocx dev's page for phones on Wi-Fi, in the emulator's Chrome, at the
+Mac's Wi-Fi address), `dev-09-over-wifi.png` (the client after the page's link: an edit reloaded
+over Wi-Fi), `dev-10-install.png` (the dev client uninstalled, the page's link fell back to the APK,
+and Android's installer, after which the page's link opened it), `dev-lan.txt` (the QR code rocx dev
+printed, read back by zbar) and `dev-loop.txt`. The QR encoder was checked the same way for 1 to
+106 bytes (versions 1 to 6): zbar reads back every one.
 On the Mac, loading the app as a `.dylib` to test reloads there doesn't work yet: the Mach-O library
 writes to Roc's constant data (in `__DATA_CONST`, read-only once loaded), where the Android library
 doesn't; the loop is tested on the emulator instead.
@@ -319,9 +343,9 @@ host's GPU.
 6. **Pages.** One page at its start path; no navigation, links or back gestures (D-040's shape, §8);
    page guards are ignored (the user's answer to question 4).
 7. **`rocx build --android`, and the dev mode's next steps.** `build.sh` is the spike's. The dev mode
-   (above) reloads in about a second; next: keeping signals across a reload where their types
-   didn't change, a QR code for a phone on Wi-Fi, the server's restart off the reload's path, and
-   the dev client's log forwarded over HTTP (no `adb` needed).
+   (above) reloads in about a second, on USB and Wi-Fi; next: keeping signals across a reload
+   where their types didn't change, the server's restart off the reload's path, and the page's APK
+   copied again when the dev client is rebuilt while rocx dev runs (it is copied at start).
 8. **Controls.** Images, `select`, SVG, `textarea` sizes, dark mode, accessibility roles, the
    keyboard's other keys (only Enter), `on:submit` from the keyboard.
 9. **Typing.** Once, `adb shell input text` typed while the keyboard was still starting gave a

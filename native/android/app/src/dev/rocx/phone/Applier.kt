@@ -50,7 +50,7 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
         }
         batches++
         if (batches == 1) {
-            Log.i("rocx", "first batch: ${ops.size} bytes, ${views.size} views, applied in ${SystemClock.uptimeMillis() - started} ms, ${SystemClock.uptimeMillis() - Process.getStartUptimeMillis()} ms after the process started")
+            Rocx.say(Log.INFO, "first batch: ${ops.size} bytes, ${views.size} views, applied in ${SystemClock.uptimeMillis() - started} ms, ${SystemClock.uptimeMillis() - Process.getStartUptimeMillis()} ms after the process started")
         }
     }
 

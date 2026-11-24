@@ -16,6 +16,7 @@ import pf.Watch
 import Build
 import Fs
 import Hosts
+import Qr
 import Remap
 import Text
 
@@ -157,17 +158,18 @@ Dev := [].{
 
 	# ---- An app ----
 
-	## `rocx dev [dir] [--port 8080] [--android] [-- server options…]`: the app in `dir` (or here), a directory
+	## `rocx dev [dir] [--port 8080] [--android [--lan]] [-- server options…]`: the app in `dir` (or here), a directory
 	## with routes/ in it, built with the clone rocx is in (`rocx`): rocx build, the server's host
 	## when it changed, the server and the browser's wasm (when the app has pages), all from Roc's
 	## dev backend; served at http://localhost:8080 under --dev, with what follows `--` (and the
 	## environment: DATABASE_URL, PORT). An app without a main.roc gets one, the smallest program,
 	## which is the author's to change after. After each start the app's SQL is checked, as
 	## `rocx check --sql` checks it (D-058), and what that finds is said. With `--android`, each
-	## build is the phone's too, for the dev client (`phone!`, D-063's dev mode).
+	## build is the phone's too, for the dev client (`phone!`, D-063's dev mode); with `--lan`, the
+	## server is on this network too, for phones on its Wi-Fi (a QR code shows the way).
 	app! : List(Str), Str => Try({}, [Exit(I32)])
 	app! = |args, rocx| {
-		usage = "usage: rocx dev [dir] [--port 8080] [--android] [-- server options…]"
+		usage = "usage: rocx dev [dir] [--port 8080] [--android [--lan]] [-- server options…]"
 		var $own = []
 		var $passed = []
 		var $after = Bool.False
@@ -183,6 +185,7 @@ Dev := [].{
 		var $port = Env.var!("PORT") ?? "8080"
 		var $dirs = []
 		var $android = Bool.False
+		var $lan = Bool.False
 		var $i = 0
 		while $i < $own.len() {
 			arg = $own.get($i) ?? ""
@@ -191,6 +194,11 @@ Dev := [].{
 				$i = $i + 2
 			} else if arg == "--android" {
 				$android = Bool.True
+				$i = $i + 1
+			} else if arg == "--lan" {
+				# The server on this network, for phones on its Wi-Fi: the dev mode's alone.
+				$android = Bool.True
+				$lan = Bool.True
 				$i = $i + 1
 			} else if arg.starts_with("-") {
 				return Dev.fail!(usage)
@@ -241,9 +249,10 @@ Dev := [].{
 			}
 		statics = ["--static", Fs.join([client, "static"])].concat(if (File.exists!(app_static)) ["--static", app_static] else []).concat(phone_static)
 		match phone {
-			On(found) => Dev.phone_connect!(found, $port)
+			On(found) => Dev.phone_connect!(found, $port, $lan)
 			Off => {}
 		}
+		lan_host = if ($lan) ["--host", "0.0.0.0"] else []
 		Dev.run!({
 			label: "rocx dev",
 			base: dir,
@@ -251,7 +260,7 @@ Dev := [].{
 			skip: ["build", "dist", "Generated", "node_modules", "static"],
 			edited!: |path| Dev.app_edit!(path),
 			build!: |{}| Dev.build_app!({ dir, shown, main, client, server, tools, phone }),
-			serve: Cmd.new(server).args(["--port", $port, "--dev"].concat(statics).concat($passed)),
+			serve: Cmd.new(server).args(["--port", $port, "--dev"].concat(lan_host).concat(statics).concat($passed)),
 			started!: |{}|
 				match phone {
 					On(found) => Dev.phone_publish!(found)
@@ -497,31 +506,19 @@ Dev := [].{
 		{}
 	}
 
-	## The emulator, or a phone on USB, if adb sees one: the server's port reversed to it (so the dev
-	## client asks http://127.0.0.1:<port>), the dev client built if it is missing or older than
-	## what it is made from (`phone_client!`) and installed if it was, or isn't on the phone, then
-	## opened at the server; and the phone's log (logcat's `rocx` tag, `dbg` and up) shown here.
-	phone_connect! : Phone, Str => {}
-	phone_connect! = |phone, port| {
+	## The phones: the dev client built if it is missing or older than what it is made from
+	## (`phone_client!`). With `lan` (`--lan`, the server on this network), its page for phones on
+	## Wi-Fi (`phone_page!`), as a QR code here. And the emulator, or a phone on USB, if adb sees
+	## one: the server's port reversed to it (so the dev client asks http://127.0.0.1:<port>), the
+	## dev client installed if it was built or isn't there, opened at the server, and crashes in its
+	## log (logcat's) shown here. The dev client's own log comes over HTTP (`POST /__rocx/dev/log`,
+	## shown by the server `from=phone`), on Wi-Fi as on USB.
+	phone_connect! : Phone, Str, Bool => {}
+	phone_connect! = |phone, port, lan| {
 		say! = |line| {
 			_ = Stderr.line!("rocx dev --android: ${line}")
 			{}
 		}
-		devices =
-			match Cmd.new(phone.adb).args(["devices"]).output!() {
-				Ok(ran) => Text.lines(ran.stdout).keep_if(|line| line.ends_with("\tdevice"))
-				Err(_) => []
-			}
-		if devices.is_empty() {
-			say!("no emulator or phone on USB (adb devices): open the dev client on a phone and give it this computer's address, with the server on it (-- --host 0.0.0.0)")
-			return {}
-		}
-		_ = Cmd.new(phone.adb).args(["reverse", "tcp:${port}", "tcp:${port}"]).output!()
-		installed =
-			match Cmd.new(phone.adb).args(["shell", "pm", "path", "dev.rocx.devclient"]).output!() {
-				Ok(ran) => ran.stdout.contains("package:")
-				Err(_) => Bool.False
-			}
 		apk = Fs.join([phone.rocx, "native", "android", "build", "dev-client", "rocx-dev.apk"])
 		built = match Dev.phone_client!(phone, apk) {
 			Ok(fresh) => fresh
@@ -530,6 +527,26 @@ Dev := [].{
 				return {}
 			}
 		}
+		if lan {
+			Dev.phone_page!(phone, port, apk)
+		}
+		devices =
+			match Cmd.new(phone.adb).args(["devices"]).output!() {
+				Ok(ran) => Text.lines(ran.stdout).keep_if(|line| line.ends_with("\tdevice"))
+				Err(_) => []
+			}
+		if devices.is_empty() {
+			if !lan {
+				say!("no emulator or phone on USB (adb devices): for a phone on Wi-Fi, run with --lan and scan the QR code it shows")
+			}
+			return {}
+		}
+		_ = Cmd.new(phone.adb).args(["reverse", "tcp:${port}", "tcp:${port}"]).output!()
+		installed =
+			match Cmd.new(phone.adb).args(["shell", "pm", "path", "dev.rocx.devclient"]).output!() {
+				Ok(ran) => ran.stdout.contains("package:")
+				Err(_) => Bool.False
+			}
 		if built or !installed {
 			say!("installing the dev client")
 			_ = Cmd.new(phone.adb).args(["install", "-r", apk]).output!()
@@ -537,8 +554,95 @@ Dev := [].{
 		}
 		_ = Cmd.new(phone.adb).args(["shell", "am", "start", "-n", "dev.rocx.devclient/dev.rocx.phone.RocxActivity", "--es", "origin", "http://127.0.0.1:${port}"]).output!()
 		say!("the dev client is open at http://127.0.0.1:${port}; each build reloads it")
-		_ = Cmd.new(phone.adb).args(["logcat", "-T", "1", "-v", "tag", "rocx:D", "*:S"]).spawn!()
+		_ = Cmd.new(phone.adb).args(["logcat", "-T", "1", "-v", "tag", "AndroidRuntime:E", "DEBUG:F", "libc:F", "*:S"]).spawn!()
 		{}
+	}
+
+	## For a phone on Wi-Fi (`--lan`): the page it scans its way to (`/rocx/android/connect.html`,
+	## served with the build), which opens the dev client at this computer's address (its
+	## `rocx-dev://connect` link, through Chrome's `intent:`), or downloads it (`rocx-dev.apk`, beside
+	## the page) where it isn't installed; and the page's address as a QR code, here.
+	phone_page! : Phone, Str, Str => {}
+	phone_page! = |phone, port, apk| {
+		address = Dev.lan_address!({})
+		if address.is_empty() {
+			_ = Stderr.line!("rocx dev --android: no address on this network found (Wi-Fi off?); set ROCX_LAN_IP")
+			return {}
+		}
+		origin = "http://${address}:${port}"
+		dir = Fs.join([phone.served, "rocx", "android"])
+		if File.exists!(apk) {
+			_ = Hosts.copy_if_changed!(apk, Fs.join([dir, "rocx-dev.apk"]))
+			{}
+		}
+		app_name = Fs.basename(Fs.dirname(Fs.dirname(phone.work)))
+		link = "intent://connect?origin=${Dev.percent(origin)}#Intent;scheme=rocx-dev;package=dev.rocx.devclient;S.browser_fallback_url=${Dev.percent("${origin}/rocx/android/rocx-dev.apk")};end"
+		page = Str.join_with(
+			[
+				"<!doctype html>",
+				"<html lang=\"en\">",
+				"<meta charset=\"utf-8\">",
+				"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">",
+				"<title>rocx dev</title>",
+				"<style>body{font:17px/1.45 system-ui,sans-serif;margin:2rem 1.5rem;max-width:30rem;color:#1b1b1f}a{display:block;margin:1rem 0;padding:.9rem 1rem;border-radius:.7rem;background:#1b1b1f;color:#fff;text-align:center;text-decoration:none}a.second{background:#e7e7ec;color:#1b1b1f}small{color:#5d5d66}</style>",
+				"<h1>rocx dev</h1>",
+				"<p>${app_name}, served at ${origin}: each save on the computer shows here.</p>",
+				"<a href=\"${link}\">Open it in the rocx dev client</a>",
+				"<a class=\"second\" href=\"/rocx/android/rocx-dev.apk\">Install the dev client</a>",
+				"<p><small>Installing asks once for leave to install apps from this browser. The dev client is for development: it runs the builds rocx dev serves.</small></p>",
+				"",
+			],
+			"\n",
+		)
+		_ = Fs.write!(Fs.join([dir, "connect.html"]), page)
+		url = "${origin}/rocx/android/connect.html"
+		match Qr.encode(url) {
+			Ok(code) => {
+				_ = Stderr.line!("rocx dev --android: a phone on this Wi-Fi: scan this, or open ${url}")
+				_ = Stderr.line!(Qr.terminal(code))
+				{}
+			}
+			Err(TooLong) => {
+				_ = Stderr.line!("rocx dev --android: a phone on this Wi-Fi: open ${url}")
+				{}
+			}
+		}
+	}
+
+	## This computer's address on its network: $ROCX_LAN_IP, else the Wi-Fi's or Ethernet's (macOS's
+	## `ipconfig getifaddr`, Linux's `hostname -I`); "" with none.
+	lan_address! : {} => Str
+	lan_address! = |{}| {
+		match Env.var!("ROCX_LAN_IP") {
+			Ok(given) if !given.is_empty() => return given
+			_ => {}
+		}
+		for card in ["en0", "en1", "en2"] {
+			match Cmd.new("ipconfig").args(["getifaddr", card]).output!() {
+				Ok(ran) if ran.code == 0 and !Text.trim(ran.stdout).is_empty() => return Text.trim(ran.stdout)
+				_ => {}
+			}
+		}
+		match Cmd.new("hostname").args(["-I"]).output!() {
+			Ok(ran) if ran.code == 0 => Text.trim(ran.stdout).split_on(" ").first() ?? ""
+			_ => ""
+		}
+	}
+
+	## `text` for a URL's query: every byte but letters, digits and `-._~` as `%XX`.
+	percent : Str -> Str
+	percent = |text| {
+		var $out = []
+		for byte in text.to_utf8() {
+			plain = (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z') or (byte >= '0' and byte <= '9') or byte == '-' or byte == '.' or byte == '_' or byte == '~'
+			if plain {
+				$out = $out.append(byte)
+			} else {
+				hex = Text.hex(byte.to_u32())
+				$out = $out.concat("%${if (hex.to_utf8().len() == 1) "0" else ""}${hex}".to_utf8())
+			}
+		}
+		Str.from_utf8_lossy($out)
 	}
 
 	## The dev client's APK, built (`native/android/build.sh --dev-client`, about a minute) when it

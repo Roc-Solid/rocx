@@ -144,7 +144,12 @@ cp "$out/dex/classes.dex" "$stage/classes.dex"
 
 # ---- 6. The APK ----
 step "aapt2 + zipalign + apksigner"
-sed -e "s|@PACKAGE@|$package|" -e "s|@LABEL@|$label|" -e "s|@ORIGIN@|$origin|" "$here/app/AndroidManifest.xml" > "$out/AndroidManifest.xml"
+# The dev client opens from rocx dev's page (`rocx-dev://connect?origin=…`, `rocx dev --android --lan`).
+dev_link=""
+if [ -n "$dev_client" ]; then
+    dev_link='<intent-filter><action android:name="android.intent.action.VIEW" /><category android:name="android.intent.category.DEFAULT" /><category android:name="android.intent.category.BROWSABLE" /><data android:scheme="rocx-dev" android:host="connect" /></intent-filter>'
+fi
+sed -e "s|@PACKAGE@|$package|" -e "s|@LABEL@|$label|" -e "s|@ORIGIN@|$origin|" -e "s|@DEV_LINK@|$dev_link|" "$here/app/AndroidManifest.xml" > "$out/AndroidManifest.xml"
 "$build_tools/aapt2" link -o "$out/base.apk" -I "$android_jar" --manifest "$out/AndroidManifest.xml" >&2
 (cd "$stage" && zip -q -D "$out/base.apk" classes.dex && zip -q -D -0 "$out/base.apk" lib/arm64-v8a/*.so)
 "$build_tools/zipalign" -f -P 16 4 "$out/base.apk" "$out/aligned.apk"

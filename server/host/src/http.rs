@@ -260,6 +260,30 @@ fn full(status: StatusCode, content_type: &str, body: impl Into<Bytes>) -> Respo
     response
 }
 
+/// Under --dev, what a phone's dev client said (D-063's dev mode, `rocx dev --android`): its log,
+/// a JSON array of `{"level":"D"|"I"|"W"|"E","text":…}`, logged here with `from=phone`, so it shows
+/// where rocx dev runs, on Wi-Fi as on USB.
+async fn phone_log(request: Request<Incoming>, config: &Config) -> Response<Body> {
+    let body = match Limited::new(request.into_body(), config.max_body).collect().await {
+        Ok(collected) => collected.to_bytes(),
+        Err(_) => return full(StatusCode::PAYLOAD_TOO_LARGE, "text/plain", "too long"),
+    };
+    let Ok(serde_json::Value::Array(lines)) = serde_json::from_slice::<serde_json::Value>(&body) else {
+        return full(StatusCode::BAD_REQUEST, "text/plain", "a JSON array of {level, text}");
+    };
+    for line in lines {
+        let text = line.get("text").and_then(|text| text.as_str()).unwrap_or("");
+        let level = match line.get("level").and_then(|level| level.as_str()) {
+            Some("D") => crate::logging::Level::Debug,
+            Some("W") => crate::logging::Level::Warn,
+            Some("E") => crate::logging::Level::Error,
+            _ => crate::logging::Level::Info,
+        };
+        crate::logging::log(level, text, &[("from", "phone".into())]);
+    }
+    full(StatusCode::NO_CONTENT, "text/plain", "")
+}
+
 /// The address a connection came from, as `Server.Request`'s `peer` has it: the IP alone (no port),
 /// an IPv4 client of a dual-stack listener as IPv4 (`203.0.113.7`, not `::ffff:203.0.113.7`).
 fn peer_of(address: SocketAddr) -> String {
@@ -274,6 +298,9 @@ async fn answer(request: Request<Incoming>, config: Arc<Config>, peer: String) -
         let mut response = Response::new(StreamBody::new(futures_util::stream::pending::<Result<Frame<Bytes>, Infallible>>()).boxed());
         response.headers_mut().insert(CONTENT_TYPE, HeaderValue::from_static("text/event-stream"));
         return Ok(response);
+    }
+    if config.dev && path == "/__rocx/dev/log" && request.method() == hyper::Method::POST {
+        return Ok(phone_log(request, &config).await);
     }
     if config.dev && path == "/__reload.js" {
         let mut response = full(StatusCode::OK, "text/javascript", RELOAD_JS);
@@ -359,6 +386,8 @@ pub fn content_type(path: &Path) -> &'static str {
         Some("json") => "application/json",
         Some("png") => "image/png",
         Some("ico") => "image/x-icon",
+        // The dev client, which a phone installs from rocx dev's page (`rocx dev --android --lan`).
+        Some("apk") => "application/vnd.android.package-archive",
         Some("woff2") => "font/woff2",
         // Sound files, for `Audio.play!`.
         Some("wav") => "audio/wav",

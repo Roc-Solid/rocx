@@ -1,0 +1,20 @@
+rocx dev --android --lan, 2026-11-24: what it printed (its QR code read back by zbar) and the phone's log over HTTP
+
+rocx dev --android: a phone on this Wi-Fi: scan this, or open http://192.168.0.4:8095/rocx/android/connect.html
+rocx dev --android: installing the dev client
+rocx dev --android: the dev client is open at http://127.0.0.1:8095; each build reloads it
+rocx dev: built spike/native-apps/phone-hello in 1.41 s
+{"time":"2026-11-24T07:39:30.284Z","level":"info","msg":"rocx server: http://0.0.0.0:8095 (Roc, native)"}
+{"time":"2026-11-24T07:39:30.553Z","level":"info","msg":"first batch: 2975 bytes, 15 views, applied in 3 ms, 1784 ms after the process started","from":"phone"}
+
+The QR code, read back: http://192.168.0.4:8095/rocx/android/connect.html
+
+The phone's log, as the server logged it (from=phone):
+{"time":"2026-11-24T07:49:46.144Z","level":"info","msg":"first batch: 2974 bytes, 15 views, applied in 1 ms, 1720 ms after the process started","from":"phone"}
+{"time":"2026-11-24T07:49:46.144Z","level":"info","msg":"dev: build app-1795506584890.so from http://192.168.0.4:8095 shown: 582 ms after rocx dev built it; fetched (1051 KB) in 61 ms, loaded and mounted in 4 ms","from":"phone"}
+{"time":"2026-11-24T07:49:48.272Z","level":"info","msg":"first batch: 2974 bytes, 15 views, applied in 1 ms, 3830 ms after the process started","from":"phone"}
+{"time":"2026-11-24T07:49:48.272Z","level":"info","msg":"dev: build app-1795506587176.so from http://192.168.0.4:8095 shown: 526 ms after rocx dev built it; fetched (1051 KB) in 74 ms, loaded and mounted in 5 ms","from":"phone"}
+{"time":"2026-11-24T07:49:51.388Z","level":"info","msg":"first batch: 2974 bytes, 15 views, applied in 0 ms, 6893 ms after the process started","from":"phone"}
+{"time":"2026-11-24T07:49:51.388Z","level":"info","msg":"dev: build app-1795506590650.so from http://192.168.0.4:8095 shown: 116 ms after rocx dev built it; fetched (1051 KB) in 132 ms, loaded and mounted in 5 ms","from":"phone"}
+{"time":"2026-11-24T07:49:55.024Z","level":"info","msg":"first batch: 2975 bytes, 15 views, applied in 1 ms, 10519 ms after the process started","from":"phone"}
+{"time":"2026-11-24T07:49:55.024Z","level":"info","msg":"dev: build app-1795506593793.so from http://192.168.0.4:8095 shown: 597 ms after rocx dev built it; fetched (1051 KB) in 62 ms, loaded and mounted in 4 ms","from":"phone"}

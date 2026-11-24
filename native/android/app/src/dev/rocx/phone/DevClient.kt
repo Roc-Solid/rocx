@@ -214,7 +214,7 @@ class DevClient(private val activity: Activity, private val screen: ScrollView) 
         screen.post { screen.scrollTo(0, y) }
         val loaded = SystemClock.uptimeMillis() - started
         val age = if (built > 0) " ${System.currentTimeMillis() - built} ms after rocx dev built it;" else ""
-        Log.i("rocx", "dev: build ${file.name} shown:$age fetched (${size / 1024} KB) in $fetched ms, loaded and mounted in $loaded ms")
+        Rocx.say(Log.INFO, "dev: build ${file.name} from $origin shown:$age fetched (${size / 1024} KB) in $fetched ms, loaded and mounted in $loaded ms")
         show("Reloaded in ${fetched + loaded} ms")
         main.postDelayed({ if (status.text.startsWith("Reloaded")) show("") }, 1500)
         // The builds before: their libraries stay mapped while loaded, so their files can go.
@@ -222,7 +222,7 @@ class DevClient(private val activity: Activity, private val screen: ScrollView) 
     }
 
     private fun showError(title: String, text: String) {
-        Log.e("rocx", "dev: $title: $text")
+        Rocx.say(Log.ERROR, "dev: $title: $text")
         error.text = "$title\n\n$text\n\n(Tap to hide. The next build replaces it.)"
         errorBox.visibility = View.VISIBLE
         show("")

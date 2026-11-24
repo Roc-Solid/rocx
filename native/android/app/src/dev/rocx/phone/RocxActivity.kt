@@ -45,7 +45,7 @@ class RocxActivity : Activity() {
             }
             screen.setOnApplyWindowInsetsListener(null)
             setContentView(content)
-            client.begin(intent.getStringExtra("origin"))
+            client.begin(given(intent))
             return
         }
         setContentView(screen)
@@ -64,9 +64,13 @@ class RocxActivity : Activity() {
 
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
-        // rocx dev launching the client again, with its server.
-        intent.getStringExtra("origin")?.let { dev?.begin(it) }
+        // rocx dev launching the client again, or its page's link, with its server.
+        given(intent)?.let { dev?.begin(it) }
     }
+
+    /** The server an intent names: rocx dev's `origin` extra, or its page's `rocx-dev://connect?origin=…`. */
+    private fun given(intent: android.content.Intent): String? =
+        intent.getStringExtra("origin") ?: intent.data?.takeIf { it.scheme == "rocx-dev" }?.getQueryParameter("origin")
 
     override fun onDestroy() {
         dev?.stop()

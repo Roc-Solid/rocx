@@ -29,6 +29,14 @@ object Rocx {
     /** The dev client's: the platform it runs apps for, and its Roc compiler. */
     @JvmStatic external fun fingerprint(): String
 
+    /** The dev client's: a line of the log, to logcat and to the dev server (`rocx dev`'s terminal). */
+    @JvmStatic external fun log(priority: Int, text: String)
+
+    /** A line of the log (tag `rocx`): the dev client's goes to the dev server too. */
+    @JvmStatic fun say(priority: Int, text: String) {
+        if (dev) log(priority, text) else Log.println(priority, "rocx", text)
+    }
+
     @JvmStatic external fun send(id: Long, name: String, value: String)
 
     /**
@@ -38,7 +46,7 @@ object Rocx {
     @JvmStatic fun event(id: Long, name: String, value: String) {
         val started = System.nanoTime()
         send(id, name, value)
-        if (name == "click") Log.i("rocx", "tap on #$id: handled and the screen patched in ${"%.2f".format((System.nanoTime() - started) / 1e6)} ms")
+        if (name == "click") say(Log.INFO, "tap on #$id: handled and the screen patched in ${"%.2f".format((System.nanoTime() - started) / 1e6)} ms")
     }
 
     /** The applier the screen's ops go to (the activity's, while there is one). */

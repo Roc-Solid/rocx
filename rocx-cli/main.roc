@@ -21,6 +21,7 @@ import Dev
 import Site
 import Hosts
 import SiteDev
+import Qr
 
 main! = |args| {
 	words = args
@@ -38,13 +39,14 @@ main! = |args| {
 		Ok("site") if words.get(1) == Ok("prepare") => site_prepare!(words.drop_first(2))
 		Ok("site") if words.get(1) == Ok("dev") => SiteDev.run!(words.drop_first(2), rocx_home!({}))
 		Ok("self-build") => self_build!({})
+		Ok("qr") if words.len() >= 2 => qr!(words.drop_first(1))
 		Ok("fmt") if words.drop_first(1).any(|arg| arg != "--check") => fmt!(words.drop_first(1))
 		_ => usage!({})
 	}
 }
 
 usage! = |{}| {
-	Stderr.line!("usage: rocx dev [dir] [--port 8080] | rocx build <dir>… [--client <out>] [--dev] | rocx check -- <command>… | rocx check --sql [dir] [--engine sqlite|turso] [--verbose] [-- server options…] | rocx lint <dir>… | rocx routes <dir> | rocx fmt [--check] <path>…")?
+	Stderr.line!("usage: rocx dev [dir] [--port 8080] [--android [--lan]] | rocx build <dir>… [--client <out>] [--dev] | rocx check -- <command>… | rocx check --sql [dir] [--engine sqlite|turso] [--verbose] [-- server options…] | rocx lint <dir>… | rocx routes <dir> | rocx fmt [--check] <path>… | rocx qr <text>")?
 	Err(Exit(2))
 }
 
@@ -53,6 +55,23 @@ rocx_home! : {} => Str
 rocx_home! = |{}| {
 	path = Env.exe_path!({})
 	if (path.is_empty()) Fs.cwd!() else Fs.dirname(Fs.dirname(Fs.real!(path)))
+}
+
+## `rocx qr [--pbm] <text>`: `text` as a QR code in the terminal (what `rocx dev --android --lan`
+## prints), or as a PBM image (`--pbm`), for checking it with a reader.
+qr! = |args| {
+	pbm = args.contains("--pbm")
+	text = Str.join_with(args.keep_if(|arg| arg != "--pbm"), " ")
+	match Qr.encode(text) {
+		Ok(code) => {
+			Stdout.line!(if (pbm) Qr.pbm(code) else Qr.terminal(code))?
+			Ok({})
+		}
+		Err(TooLong) => {
+			Stderr.line!("rocx qr: a QR code here holds 106 bytes at most")?
+			Err(Exit(2))
+		}
+	}
 }
 
 ## `rocx self-build`, for the repo's Justfile: rocx itself (bin/rocx) built again when its Roc, the

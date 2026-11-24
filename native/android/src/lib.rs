@@ -82,8 +82,10 @@ impl Platform for Android {
             Level::Error => 6,
         };
         let tag = c"rocx";
-        let text = CString::new(text.replace('\0', " ")).unwrap_or_default();
-        unsafe { __android_log_write(priority, tag.as_ptr(), text.as_ptr()) };
+        let line = CString::new(text.replace('\0', " ")).unwrap_or_default();
+        unsafe { __android_log_write(priority, tag.as_ptr(), line.as_ptr()) };
+        #[cfg(feature = "dev")]
+        ship::line(level, text);
     }
 }
 
@@ -147,6 +149,7 @@ pub extern "system" fn Java_dev_rocx_phone_Rocx_start(mut env: JNIEnv, class: JC
 pub extern "system" fn Java_dev_rocx_phone_Rocx_reload<'local>(mut env: JNIEnv<'local>, class: JClass, library: JString, origin: JString, path: JString) -> JString<'local> {
     prepare(&mut env, &class);
     let (library, origin, path) = (text(&mut env, &library), text(&mut env, &origin), text(&mut env, &path));
+    ship::to(&origin);
     let said = match load(&library) {
         Ok((mount, run)) => {
             core::roc::set_entries(mount, run);
@@ -173,6 +176,131 @@ fn load(library: &str) -> Result<(usize, usize), String> {
         if found.is_null() { Err(format!("the app's library has no {}: is it an app on web/platform?", name.to_string_lossy())) } else { Ok(found as usize) }
     };
     Ok((find(c"roc_mount")?, find(c"roc_run")?))
+}
+
+/// `Rocx.log(level, text)`: a line of the Kotlin side's log (Android's priorities: 3 debug, 4
+/// info, 5 warn, 6 error), to logcat and, as the engine's, to the dev server.
+#[cfg(feature = "dev")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_rocx_phone_Rocx_log(mut env: JNIEnv, _class: JClass, priority: jint, said: JString) {
+    let said = text(&mut env, &said);
+    let level = match priority {
+        3 => Level::Debug,
+        5 => Level::Warn,
+        6 => Level::Error,
+        _ => Level::Info,
+    };
+    Android.log(level, &said);
+}
+
+/// The dev client's log, sent to the dev server it loads builds from (`POST /__rocx/dev/log`,
+/// which the server logs `from=phone`, so it shows where rocx dev runs, on Wi-Fi as on USB): the
+/// lines kept as they come (the last 2,000 at most), a batch every 200 ms, kept for the next try
+/// while the server can't be reached (a restart between builds), dropped if it refuses them (a
+/// server from before the endpoint).
+#[cfg(feature = "dev")]
+mod ship {
+    use rocx_native_core::Level;
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::sync::{Mutex, Once};
+    use std::time::Duration;
+
+    static LINES: Mutex<Vec<(Level, String)>> = Mutex::new(Vec::new());
+    static TO: Mutex<String> = Mutex::new(String::new());
+    static STARTED: Once = Once::new();
+    const KEPT: usize = 2000;
+
+    pub fn line(level: Level, text: &str) {
+        let mut lines = LINES.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if lines.len() >= KEPT {
+            lines.remove(0);
+        }
+        lines.push((level, text.to_string()));
+    }
+
+    /// Where the lines go (the server of the build just loaded), and the sending started.
+    pub fn to(origin: &str) {
+        *TO.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = origin.trim_end_matches('/').to_string();
+        STARTED.call_once(|| {
+            std::thread::spawn(send);
+        });
+    }
+
+    fn send() {
+        loop {
+            std::thread::sleep(Duration::from_millis(200));
+            let origin = TO.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
+            let batch = std::mem::take(&mut *LINES.lock().unwrap_or_else(|poisoned| poisoned.into_inner()));
+            if batch.is_empty() {
+                continue;
+            }
+            match post(&origin, &json(&batch)) {
+                Sent::Yes | Sent::Refused => {}
+                Sent::Unreachable => {
+                    let mut lines = LINES.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                    let newer = std::mem::replace(&mut *lines, batch);
+                    lines.extend(newer);
+                    let over = lines.len().saturating_sub(KEPT);
+                    lines.drain(..over);
+                }
+            }
+        }
+    }
+
+    enum Sent {
+        Yes,
+        Refused,
+        Unreachable,
+    }
+
+    fn post(origin: &str, body: &str) -> Sent {
+        let Some(rest) = origin.strip_prefix("http://") else { return Sent::Refused };
+        let authority = rest.split('/').next().unwrap_or(rest);
+        let address = if authority.contains(':') { authority.to_string() } else { format!("{authority}:80") };
+        let Ok(mut stream) = TcpStream::connect(&address) else { return Sent::Unreachable };
+        stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
+        let request = format!("POST /__rocx/dev/log HTTP/1.1\r\nhost: {authority}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}", body.len());
+        if stream.write_all(request.as_bytes()).is_err() {
+            return Sent::Unreachable;
+        }
+        let mut answer = [0u8; 12];
+        match stream.read_exact(&mut answer) {
+            Ok(()) if answer.starts_with(b"HTTP/1.1 2") || answer.starts_with(b"HTTP/1.0 2") => Sent::Yes,
+            Ok(()) => Sent::Refused,
+            Err(_) => Sent::Unreachable,
+        }
+    }
+
+    fn json(lines: &[(Level, String)]) -> String {
+        let mut out = String::from("[");
+        for (at, (level, text)) in lines.iter().enumerate() {
+            if at > 0 {
+                out.push(',');
+            }
+            let level = match level {
+                Level::Debug => "D",
+                Level::Info => "I",
+                Level::Warn => "W",
+                Level::Error => "E",
+            };
+            out.push_str(&format!("{{\"level\":\"{level}\",\"text\":\""));
+            for char in text.chars() {
+                match char {
+                    '"' => out.push_str("\\\""),
+                    '\\' => out.push_str("\\\\"),
+                    '\n' => out.push_str("\\n"),
+                    '\r' => out.push_str("\\r"),
+                    '\t' => out.push_str("\\t"),
+                    char if (char as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", char as u32)),
+                    char => out.push(char),
+                }
+            }
+            out.push_str("\"}");
+        }
+        out.push(']');
+        out
+    }
 }
 
 /// `Rocx.fingerprint()`: the platform this dev client runs apps for (core/build.rs), and the Roc
