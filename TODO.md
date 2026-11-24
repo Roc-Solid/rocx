@@ -52,6 +52,16 @@ When an item lands, delete its line here in the same commit.
 - **echo's benchmark again:** the examples page's numbers (8f7abc5) are of its server built
   specialized; since D-064 it ships boxy, so `just example-apps --bench` (a run on the user's go, on
   a quiet machine) would measure what ships.
+- **Found by the docs pass (2026-11-24), each a choice for the user:**
+  - **Names in hand-written Roc markup aren't checked.** `Html.element`, `Html.void` and
+    `Html.attr` take any `Str` as a tag or attribute name, and the server's renderer writes names
+    as they are (`server/host/src/signals.rs`, around 544–585), so Roc that builds markup by hand
+    can make `Html.attr("onclick", data)` or a `<script>`. `.rocx` files are safe (names come from
+    the file). Refuse or escape names that aren't plain tag and attribute names?
+  - **`Email.send!` with no `SMTP_URL` answers `Ok`, in production too,** and only keeps the
+    message (the docs now warn). Fail without `SMTP_URL` outside `--dev`?
+  - **Push can't send yet:** the host's Web Push functions answer "missing" (no P-256), so every
+    delivery job fails, saying so (`packages/push/Push.roc:87-92`; the docs say so).
 
 ## Framework work, decided but not built
 
@@ -170,6 +180,24 @@ When an item lands, delete its line here in the same commit.
   `server/platform/targets`) would close it.
 
 ## Housekeeping
+
+- **Bugs the docs pass found (2026-11-24):**
+  - examples/notes: `DELETE /api/notes/<id>` deletes a note that isn't archived; the archive-first
+    rule is only in the page's route (`routes/notes/[id]/+server.roc`), not in `Notebook.delete!`.
+    `http.test.mjs` archives first, so it doesn't see it.
+  - packages/posthog: `sent!` drops a batch that is `TooLarge` without a log line.
+  - packages/storage: directory and memory buckets keep multipart parts under `.uploads/`, and an
+    app's key starting with `.uploads` isn't refused.
+  - site/routes/members/join: the form doesn't use `use_submission!`, so a refusal (a blank name)
+    shows nothing.
+  - `--opt=speed`: is the three-step `Middleware.then` miscompile
+    (`test/compiler-bugs/middleware-skipped-opt-speed`) still there? journal's and plate's chains
+    have three steps.
+- **Stale proposals:** `packages/testing/PROPOSALS.md` (`src/routes.mjs`, `outbox.rs`, `<For>`; item
+  11 is done), `packages/mcp/PROPOSALS.md` #1, `packages/otel/PROPOSALS.md`,
+  `packages/forms/PROPOSALS.md` ("Nothing here is built").
+- examples/tasks' cookie is still `acme-person` (the apps dropped "Acme").
+
 
 - **Old branches kept on purpose until about 2026-11-28:** `native-server`, `solid-signals` and
   `refs/scrub-backup/native-server`. Delete them then, with the user's OK.
