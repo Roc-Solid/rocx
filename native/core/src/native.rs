@@ -74,9 +74,11 @@ pub fn forget_shown() {
     SHOWN.with(|shown| *shown.borrow_mut() = None);
 }
 
-/// The views the screen shows now (`project`), as the engine's document says.
-pub fn project(engine: &mut Engine) -> (u64, HashMap<u64, View>) {
-    let sheet = css::Sheet::of(&stylesheet(&engine.dom));
+/// The views the screen shows now (`project`), as the engine's document says; and whether a
+/// stylesheet a `<link>` names is still on its way.
+pub fn project(engine: &mut Engine) -> (u64, HashMap<u64, View>, bool) {
+    let (text, loading) = stylesheet(engine);
+    let sheet = css::Sheet::of(&text);
     for warning in sheet.warnings() {
         engine.warn_once(&warning, &format!("rocx native: {warning}"));
     }
@@ -85,26 +87,46 @@ pub fn project(engine: &mut Engine) -> (u64, HashMap<u64, View>) {
     let mut projection = Projection { engine, sheet: &sheet, views: &mut views };
     let styles = css::Computed::root();
     let id = projection.block(root, &styles).unwrap_or(native_id(root));
-    (id, views)
+    (id, views, loading)
 }
 
-/// Every `<style>`'s text in the document, in order.
-fn stylesheet(dom: &Dom) -> String {
+/// Every `<style>`'s text in the document, and every stylesheet a `<link rel="stylesheet">` names
+/// (the app's own is a file since D-040: `Styles.href`), in order; and whether one of those is
+/// still on its way (`Engine::sheet` asks the server for it).
+fn stylesheet(engine: &mut Engine) -> (String, bool) {
     let mut out = String::new();
-    let mut stack = vec![dom.root];
+    let mut loading = false;
+    let mut stack = vec![engine.dom.root];
     while let Some(node) = stack.pop() {
-        if dom.tag(node) == Some("style") {
-            for &child in &dom.nodes[node].children {
-                out.push_str(dom.text_of(child));
-                out.push('\n');
+        let dom = &engine.dom;
+        match dom.tag(node) {
+            Some("style") => {
+                for &child in &dom.nodes[node].children {
+                    out.push_str(dom.text_of(child));
+                    out.push('\n');
+                }
+                continue;
             }
-            continue;
+            Some("link") if dom.attr(node, "rel").is_some_and(|rel| rel.split_whitespace().any(|each| each.eq_ignore_ascii_case("stylesheet"))) => {
+                if let Some(href) = dom.attr(node, "href").map(str::to_string) {
+                    match engine.sheet(&href) {
+                        engine::Sheet::Loaded(text) => {
+                            out.push_str(&text);
+                            out.push('\n');
+                        }
+                        engine::Sheet::Loading => loading = true,
+                        engine::Sheet::Failed => {}
+                    }
+                }
+                continue;
+            }
+            _ => {}
         }
-        for &child in dom.nodes[node].children.iter().rev() {
+        for &child in engine.dom.nodes[node].children.iter().rev() {
             stack.push(child);
         }
     }
-    out
+    (out, loading)
 }
 
 struct Projection<'a> {
@@ -293,12 +315,18 @@ fn collapse(text: &str) -> String {
 
 /// The ops that bring the screen from what was sent last to what the document says now.
 pub fn render() -> Vec<u8> {
-    let (root, views, title) = engine::with(|engine| {
-        let (root, views) = project(engine);
-        (root, views, engine.title.clone())
+    let (root, views, title, loading) = engine::with(|engine| {
+        let (root, views, loading) = project(engine);
+        (root, views, engine.title.clone(), loading)
     });
     SHOWN.with(|shown| {
         let mut shown = shown.borrow_mut();
+        // Nothing shown yet and a stylesheet still on its way: the first frame waits for it, as a
+        // browser's does for one in the <head> (no flash of unstyled views). One that fails, or one
+        // a later frame names, doesn't hold the screen.
+        if shown.is_none() && loading {
+            return Vec::new();
+        }
         let mut ops = Ops::default();
         let empty = HashMap::new();
         let (old_root, old, old_title) = match shown.as_ref() {

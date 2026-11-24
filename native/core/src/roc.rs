@@ -170,8 +170,21 @@ pub fn given(text: &str) -> RocStr {
 /// A Str Roc gave a hosted function, copied, and let go of.
 pub fn taken(text: RocStr) -> String {
     let copy = text.as_str().to_owned();
-    unsafe { text.decref(&host()) };
+    if !in_read_only_data(&text) {
+        unsafe { text.decref(&host()) };
+    }
     copy
+}
+
+/// Whether a Str is a literal in the app's read-only data (its refcount 0: never let go of) that
+/// sits at an address no allocation would: what Roc allocates is word-aligned, a literal (the
+/// route table `Router.app!` is given, say) needn't be, and the glue's `decref` reads the refcount
+/// as an aligned word, which a debug build checks.
+fn in_read_only_data(text: &RocStr) -> bool {
+    let small = (text.length as isize) < 0;
+    let slice = !small && text.capacity_or_alloc_ptr & 1 != 0;
+    let allocation = if slice { text.capacity_or_alloc_ptr & !1 } else { text.bytes as usize };
+    !small && allocation != 0 && !allocation.is_multiple_of(std::mem::align_of::<usize>())
 }
 
 /// Lets go of a reference to a box Roc gave the host.

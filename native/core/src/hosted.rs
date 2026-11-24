@@ -1,4 +1,4 @@
-//! web/platform's hosted functions (`Host.roc`, 49 of them), as the phone does them: each is the
+//! web/platform's hosted functions (`Host.roc`, 63 of them), as the phone does them: each is the
 //! symbol the app's Roc calls (`roc_<name>`), with the glue's C signature
 //! (`roc_platform_abi.rs`), and does what web/runtime.js's `js_<name>` import does, through the
 //! engine. One that ends the running computation (a read that waits, a failure) lets go of what
@@ -50,8 +50,34 @@ pub extern "C" fn roc_memo_new(runner: Callable) -> u64 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn roc_memo_done(value: Callable) {
-    engine::memo_done(value)
+pub extern "C" fn roc_memo_done(value: Callable, same: bool) {
+    engine::memo_done(value, same)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_tracking() -> bool {
+    engine::tracking()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_memo_last(fallback: Callable) -> Callable {
+    engine::memo_last(fallback)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_signal_latest(id: u64) -> Callable {
+    match engine::signal_latest(id) {
+        Ok(value) => value,
+        Err(why) => fail(why),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_optimistic_set(id: u64, value: Callable) {
+    if let Err(value) = engine::optimistic_set(id, value) {
+        roc::release(value);
+        fail("an optimistic value is written in a handler, not while computing".into())
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -109,8 +135,13 @@ pub extern "C" fn roc_row_index(list: u64, key: RocStr) -> u64 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn roc_row_set(list: u64, key: RocStr, value: Callable) {
-    engine::row_set(list, taken(key), value)
+pub extern "C" fn roc_row_set(list: u64, key: RocStr, value: Callable, same: bool) {
+    engine::row_set(list, taken(key), value, same)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_row_last(list: u64, key: RocStr, fallback: Callable) -> Callable {
+    engine::row_last(list, taken(key), fallback)
 }
 
 #[unsafe(no_mangle)]
@@ -311,4 +342,60 @@ pub extern "C" fn roc_untrack(on: bool) {
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_read_at(place: RocStr) -> RocStr {
     given(&engine::read_at(taken(place)))
+}
+
+// ---- D-054's router actions ----
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_revalidate(keys: RocStr) {
+    if let Err(why) = engine::revalidate_keys(taken(keys)) {
+        fail(why)
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_submission_retry(key: RocStr, id: u64) {
+    engine::submission_retry(taken(key), id)
+}
+
+// ---- Navigation (D-040) and the page's <head> (D-054): a phone shows one page ----
+//
+// No links, history or back gesture yet (spike/native-apps/README.md, Pages): the route table is
+// let go of, nothing is ever routing or leaving, and a navigation is logged, once, and ignored.
+// A <Meta>, <Link> or <Style> has no <head> to go in.
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_app(build: RocStr, _dev: bool, routes: RocStr) {
+    taken(build);
+    taken(routes);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_navigate(to: RocStr, _replace: bool, _scroll: bool) {
+    let to = taken(to);
+    if let Err(why) = engine::navigate(to) {
+        fail(why)
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_is_routing() -> bool {
+    false
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_before_leave(listener: Callable) {
+    roc::release(listener)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_leave_prevent(_id: u64) {}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_leave_retry(_id: u64, _force: bool) {}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_head(key: RocStr, markup: RocStr) {
+    taken(key);
+    taken(markup);
 }

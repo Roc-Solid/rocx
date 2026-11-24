@@ -131,6 +131,8 @@ pub fn pump() {
     engine::flush();
     engine::send_requests();
     let ops = native::render();
+    // A stylesheet the render found named (`Engine::sheet`).
+    engine::send_requests();
     if !ops.is_empty()
         && let Some(platform) = PLATFORM.get()
     {

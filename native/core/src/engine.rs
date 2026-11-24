@@ -131,9 +131,12 @@ struct Comp {
     error: String,
     refreshing: bool,
     stale: bool,
+    /// Its run's value is the one it had (a store's selection, D-053): its readers aren't told.
+    same: bool,
     // A <Show>'s and a <For>'s.
     node: Option<Rc<Value>>,
-    holds: Option<bool>,
+    /// What its condition answered last (`true`, `false`, or a keyed one's case, `"#…"`).
+    holds: Option<String>,
     part: Option<u64>,
     list: Option<u64>,
     fallback_range: Option<Range>,
@@ -177,6 +180,7 @@ impl Comp {
             error: String::new(),
             refreshing: false,
             stale: false,
+            same: false,
             node: None,
             holds: None,
             part: None,
@@ -268,6 +272,12 @@ enum Write {
     Cleared(String),
     Dropped(String, u64),
     Submit { method: String, url: String, body: String, input: String },
+    /// `create_optimistic!`'s write (D-054): held by the transition the handler's writes open.
+    Optimistic(u64, Callable),
+    /// `Router.revalidate!` (D-054): the reads of a GET whose URL is one of these, read again.
+    Revalidate(Vec<String>),
+    /// `retry!` (D-054): a submission (its endpoint, its id or 0 for the latest) sent again.
+    Retried(String, u64),
 }
 
 #[derive(Clone, Copy)]
@@ -307,6 +317,33 @@ struct Submission {
     json: bool,
     status: u16,
     body: String,
+    /// What was sent, for `retry!`.
+    sent: Sent,
+    /// The transition it joined (optimistic writes, D-054): it ends once its submissions are done.
+    transition: Option<u64>,
+}
+
+#[derive(Clone, Default)]
+struct Sent {
+    method: String,
+    headers: Vec<(String, String)>,
+    body: String,
+}
+
+/// A handler's optimistic writes (`create_optimistic!`, D-054), held until the submissions sent with
+/// them are done, or, with none, until the flush is over (runtime.js's `openTransition`).
+#[derive(Default)]
+struct Transition {
+    pending: usize,
+    sent: bool,
+    signals: Vec<u64>,
+}
+
+/// A signal's optimistic writes, each with its transition, and its value before them (`hold`).
+/// While held, the signal shows the latest write.
+struct Held {
+    base: Callable,
+    writes: Vec<(Callable, u64)>,
 }
 
 #[derive(Default)]
@@ -319,13 +356,23 @@ struct Submissions {
 pub enum Asked {
     Read,
     Submission { key: String, id: u64 },
+    /// A stylesheet a `<link rel="stylesheet">` names (the app's, a file since D-040).
+    Sheet(String),
+}
+
+/// A linked stylesheet: on its way, in (its text), or not to be had.
+#[derive(Clone)]
+pub enum Sheet {
+    Loading,
+    Loaded(String),
+    Failed,
 }
 
 /// A submission's result reading the page's reads again: how many are left, and the submission.
 struct Revalidation {
     left: usize,
-    key: String,
-    id: u64,
+    /// The submission done once the reads are in; none for `Router.revalidate!`'s.
+    submission: Option<(String, u64)>,
     status: u16,
     body: String,
 }
@@ -374,6 +421,13 @@ pub struct Engine {
     actions: HashMap<String, u32>,
     submissions: HashMap<String, Submissions>,
     revalidations: HashMap<u64, Revalidation>,
+    /// The transition a handler's optimistic writes opened, open until the flush is over (a
+    /// submission sent meanwhile joins it); the transitions not over; each held signal's writes.
+    transition: Option<u64>,
+    transitions: HashMap<u64, Transition>,
+    held: HashMap<u64, Held>,
+    /// The stylesheets `<link>`s name, by their `href`.
+    sheets: HashMap<String, Sheet>,
     warned: HashSet<String>,
     /// A request to send: made in a run, sent once the engine is let go of (`send_requests`).
     outbox: Vec<(u64, String, String, Vec<(String, String)>, String)>,
@@ -442,6 +496,10 @@ pub fn init(origin: String, path: String) {
             actions: HashMap::new(),
             submissions: HashMap::new(),
             revalidations: HashMap::new(),
+            transition: None,
+            transitions: HashMap::new(),
+            held: HashMap::new(),
+            sheets: HashMap::new(),
             warned: HashSet::new(),
             outbox: Vec::new(),
         })
@@ -557,6 +615,20 @@ impl Engine {
     }
 
     /// Says something once (`warned`).
+    /// A stylesheet a `<link>` names: asked of the server the first time (as a browser fetches
+    /// one), its text once it is in.
+    pub fn sheet(&mut self, href: &str) -> Sheet {
+        if let Some(sheet) = self.sheets.get(href) {
+            return sheet.clone();
+        }
+        self.sheets.insert(href.to_string(), Sheet::Loading);
+        let request = self.id();
+        self.asked.insert(request, Asked::Sheet(href.to_string()));
+        let full = self.under(href);
+        self.outbox.push((request, "GET".into(), full, vec![("accept".into(), "text/css".into())], String::new()));
+        Sheet::Loading
+    }
+
     pub fn warn_once(&mut self, key: &str, message: &str) {
         if self.warned.insert(key.to_string()) {
             log(Level::Warn, message);
@@ -609,6 +681,23 @@ impl Engine {
     /// A URL the app gives, as the phone asks for it: a path is the server's.
     fn under(&self, url: &str) -> String {
         if url.starts_with('/') && !url.starts_with("//") { format!("{}{url}", self.origin.trim_end_matches('/')) } else { url.to_string() }
+    }
+
+    /// The open transition, if any, joined by a submission being sent: it waits for its answer.
+    fn join_transition(&mut self) -> Option<u64> {
+        let id = self.transition?;
+        let open = self.transitions.get_mut(&id)?;
+        open.pending += 1;
+        open.sent = true;
+        Some(id)
+    }
+
+    /// A submission's request, sent once the engine is let go of (`send`).
+    fn send(&mut self, key: &str, entry: u64, sent: Sent) {
+        let request = self.id();
+        self.asked.insert(request, Asked::Submission { key: key.to_string(), id: entry });
+        let full = self.under(key);
+        self.outbox.push((request, sent.method, full, sent.headers, sent.body));
     }
 
     fn submissions_changed(&mut self, key: &str) {
@@ -820,11 +909,17 @@ fn settle(id: u64, out: String) {
         CompKind::Memo => {
             let waiters = with(|engine| {
                 let comp = engine.comp(id)?;
+                // A store's selection whose part is the one it had, an answer it had (D-053), keeps
+                // quiet: its readers aren't told. It keeps the newest value all the same.
+                let quiet = comp.same && comp.state == MemoState::Ok && !comp.value.is_null();
+                comp.same = false;
                 let old = std::mem::replace(&mut comp.value, std::ptr::null_mut());
                 roc::release(old);
                 comp.value = std::mem::replace(&mut comp.next, std::ptr::null_mut());
                 comp.state = MemoState::Ok;
-                engine.schedule_observers(&Source::Memo(id));
+                if !quiet {
+                    engine.schedule_observers(&Source::Memo(id));
+                }
                 engine.waiters.remove(&Wait::Memo(id))
             });
             wake(waiters.unwrap_or_default());
@@ -846,7 +941,7 @@ fn settle(id: u64, out: String) {
                 apply_reaction(id);
             }
         }
-        CompKind::Show => settle_show(id, out == "true"),
+        CompKind::Show => settle_show(id, out),
         CompKind::For => {
             let entries: Vec<Value> = serde_json::from_str(&out).unwrap_or_default();
             settle_for(id, entries)
@@ -976,8 +1071,21 @@ fn drop_made(made: Made) {
             engine.release_kept(id);
         }
         for id in made.signals {
-            if let Some(value) = engine.signals.remove(&id) {
-                roc::release(value);
+            let value = engine.signals.remove(&id);
+            // Held (optimistic writes): it shows the latest write, so each write and its value
+            // before them are let go of instead.
+            match engine.held.remove(&id) {
+                Some(held) => {
+                    roc::release(held.base);
+                    for (write, _) in held.writes {
+                        roc::release(write);
+                    }
+                }
+                None => {
+                    if let Some(value) = value {
+                        roc::release(value);
+                    }
+                }
             }
         }
     });
@@ -1098,7 +1206,16 @@ pub fn flush() {
                     with(|engine| engine.handlers.remove(&id));
                 }
             }
-            None => break,
+            None => {
+                // The flush is over: a transition open since a handler's optimistic writes is
+                // closed, and ends now if no submission joined it (Solid 2.0 undoes an optimistic
+                // write outside a transition); the undo runs in this flush.
+                let unsent = with(|engine| engine.transition.take().filter(|id| engine.transitions.get(id).is_some_and(|transition| !transition.sent || transition.pending == 0)));
+                match unsent {
+                    Some(id) => end_transition(id),
+                    None => break,
+                }
+            }
         }
     }
     let calls = with(|engine| std::mem::take(&mut engine.calling));
@@ -1154,9 +1271,23 @@ fn refresh(memo: u64) {
 
 /// Writes a handler made, applied together once it is done (`apply`).
 fn apply(writes: Vec<Write>) {
+    // Optimistic writes (D-054) open a transition the submissions sent with them join.
+    if writes.iter().any(|write| matches!(write, Write::Optimistic(..))) {
+        with(|engine| {
+            let id = engine.id();
+            engine.transitions.insert(id, Transition::default());
+            engine.transition = Some(id);
+        });
+    }
     for write in writes {
         match write {
             Write::Signal(id, value) => with(|engine| {
+                // Held by a transition: the value under its optimistic writes, shown once they end.
+                if let Some(held) = engine.held.get_mut(&id) {
+                    let old = std::mem::replace(&mut held.base, value);
+                    roc::release(old);
+                    return;
+                }
                 // Its part went away while the handler ran: nothing reads it.
                 match engine.signals.get_mut(&id) {
                     Some(slot) => {
@@ -1167,6 +1298,9 @@ fn apply(writes: Vec<Write>) {
                     None => roc::release(value),
                 }
             }),
+            Write::Optimistic(id, value) => hold(id, value),
+            Write::Revalidate(keys) => revalidate(None, Some(keys), 0, String::new()),
+            Write::Retried(key, id) => retry_submission(&key, id),
             Write::Refresh(memo) => refresh(memo),
             Write::Retry(boundary) => errored_retry(boundary),
             Write::Effect(name, arg) => with(|engine| engine.calling.push((name, arg))),
@@ -1239,7 +1373,7 @@ fn go(id: u64) {
             let dropped = with(|engine| {
                 let writes = engine.handlers.get_mut(&id).map(|handler| std::mem::take(&mut handler.writes)).unwrap_or_default();
                 for write in writes {
-                    if let Write::Signal(_, value) = write {
+                    if let Write::Signal(_, value) | Write::Optimistic(_, value) = write {
                         roc::release(value);
                     }
                 }
@@ -1405,14 +1539,17 @@ fn part(nodes: &[Value], scope: &Scope, range: Range) -> u64 {
     owner
 }
 
-/// A <Show>: only a change of whether its condition holds switches what it shows (`settleShow`).
-fn settle_show(id: u64, holds: bool) {
+/// A <Show>: only a change of what its condition answers switches what it shows (`settleShow`):
+/// whether it holds, or, keyed (a `<Switch>`, a keyed `<Show>`, a route's level: `Html.switched`,
+/// D-053, D-040), its case's name (`"#…"`), a new one making it anew.
+fn settle_show(id: u64, answer: String) {
+    let holds = !matches!(answer.as_str(), "false" | "null" | "\"\"" | "0");
     let found = with(|engine| {
         let comp = engine.comp(id)?;
-        if comp.holds == Some(holds) {
+        if comp.holds.as_deref() == Some(answer.as_str()) {
             return None;
         }
-        comp.holds = Some(holds);
+        comp.holds = Some(answer);
         let Target::Range(range) = comp.target else { return None };
         Some((comp.part.take(), comp.node.clone()?, range, comp.scope.clone()))
     });
@@ -2054,6 +2191,20 @@ pub fn send_requests() {
 pub fn answered(id: u64, result: Result<(u16, Vec<(String, String)>, String), String>) {
     let asked = with(|engine| engine.asked.remove(&id));
     match asked {
+        Some(Asked::Sheet(href)) => with(|engine| {
+            let sheet = match result {
+                Ok((200, _, body)) => Sheet::Loaded(body),
+                Ok((status, _, _)) => {
+                    log(Level::Warn, &format!("rocx native: the stylesheet {href} wasn't had: {status}"));
+                    Sheet::Failed
+                }
+                Err(why) => {
+                    log(Level::Warn, &format!("rocx native: the stylesheet {href} wasn't had: {why}"));
+                    Sheet::Failed
+                }
+            };
+            engine.sheets.insert(href, sheet);
+        }),
         Some(Asked::Submission { key, id: entry }) => {
             match result {
                 Ok((status, headers, body)) => {
@@ -2061,7 +2212,10 @@ pub fn answered(id: u64, result: Result<(u16, Vec<(String, String)>, String), St
                         log(Level::Warn, "rocx native: a submission was answered with a redirect: pages aren't navigated on phones yet");
                     }
                     if status == 200 {
-                        revalidate(key, entry, status, body);
+                        // The reads the answer names (`x-rocx-revalidate`, `Router.revalidate!` in
+                        // the endpoint, D-054), or every one.
+                        let keys = headers.iter().find(|(name, _)| name.eq_ignore_ascii_case("x-rocx-revalidate")).and_then(|(_, value)| serde_json::from_str::<Vec<String>>(value).ok());
+                        revalidate(Some((key, entry)), keys, status, body);
                     } else {
                         submission_done(&key, entry, status, body);
                     }
@@ -2115,7 +2269,7 @@ pub fn submission(url: String, all: bool) -> String {
             return format!("{{\"cleared\":{},\"list\":[{}]}}", source.cleared, list.join(","));
         }
         if source.cleared {
-            return submission_json(&Submission { id: 0, state: "cleared", input: String::new(), json: false, status: 0, body: String::new() }, false);
+            return submission_json(&Submission { id: 0, state: "cleared", input: String::new(), json: false, status: 0, body: String::new(), sent: Sent::default(), transition: None }, false);
         }
         source.list.last().map(|entry| submission_json(entry, false)).unwrap_or_default()
     })
@@ -2192,42 +2346,87 @@ fn encode(text: &str) -> String {
 
 /// Sends a submission (`submit`): a new one in its endpoint's list, pending until it is answered.
 fn send_submission(key: &str, method: &str, mut headers: Vec<(String, String)>, body: &str, input: &str, json: bool) {
+    headers.push(("accept".into(), "application/json".into()));
+    headers.push(("x-rocx-submission".into(), "1".into()));
+    let sent = Sent { method: method.to_string(), headers, body: if method == "GET" || method == "HEAD" { String::new() } else { body.to_string() } };
     with(|engine| {
         let entry = engine.id();
+        let transition = engine.join_transition();
         let source = engine.submissions.entry(key.to_string()).or_default();
-        source.list.push(Submission { id: entry, state: "pending", input: input.to_string(), json, status: 0, body: String::new() });
+        source.list.push(Submission { id: entry, state: "pending", input: input.to_string(), json, status: 0, body: String::new(), sent: sent.clone(), transition });
         source.cleared = false;
         engine.submissions_changed(key);
-        headers.push(("accept".into(), "application/json".into()));
-        headers.push(("x-rocx-submission".into(), "1".into()));
-        let request = engine.id();
-        engine.asked.insert(request, Asked::Submission { key: key.to_string(), id: entry });
-        let full = engine.under(key);
-        engine.outbox.push((request, method.to_string(), full, headers, if method == "GET" || method == "HEAD" { String::new() } else { body.to_string() }));
+        engine.send(key, entry, sent);
+    });
+}
+
+/// Sends a submission again (`retry!`, D-054), by its id (0: the latest), with what it sent:
+/// pending again, its answer to come. One on its way, or forgotten, isn't.
+fn retry_submission(key: &str, id: u64) {
+    with(|engine| {
+        let transition = engine.transition;
+        let Some(source) = engine.submissions.get_mut(key) else { return };
+        let cleared = source.cleared;
+        let entry = if id == 0 { if cleared { None } else { source.list.last_mut() } } else { source.list.iter_mut().find(|entry| entry.id == id) };
+        let Some(entry) = entry else { return };
+        if entry.state == "pending" {
+            return;
+        }
+        entry.state = "pending";
+        entry.status = 0;
+        entry.body.clear();
+        let (entry, sent) = (entry.id, entry.sent.clone());
+        // Sent again inside a transition (an optimistic write in the same handler): it joins it.
+        if transition.is_some() {
+            let joined = engine.join_transition();
+            if let Some(found) = engine.submissions.get_mut(key).and_then(|source| source.list.iter_mut().find(|each| each.id == entry)) {
+                found.transition = joined;
+            }
+        }
+        engine.submissions_changed(key);
+        engine.send(key, entry, sent);
     });
 }
 
 fn submission_done(key: &str, id: u64, status: u16, body: String) {
-    with(|engine| {
-        let Some(source) = engine.submissions.get_mut(key) else { return };
-        if let Some(entry) = source.list.iter_mut().find(|entry| entry.id == id) {
-            entry.state = "done";
-            entry.status = status;
-            entry.body = body;
-            engine.submissions_changed(key);
-        }
+    let ended = with(|engine| {
+        let source = engine.submissions.get_mut(key)?;
+        let entry = source.list.iter_mut().find(|entry| entry.id == id)?;
+        entry.state = "done";
+        entry.status = status;
+        entry.body = body;
+        let transition = entry.transition.take();
+        engine.submissions_changed(key);
+        // The last of its transition's submissions: its optimistic writes are undone.
+        let transition = transition?;
+        let open = engine.transitions.get_mut(&transition)?;
+        open.pending = open.pending.saturating_sub(1);
+        (open.pending == 0 && engine.transition != Some(transition)).then_some(transition)
     });
+    if let Some(transition) = ended {
+        end_transition(transition);
+    }
 }
 
-/// Reads the page's reads again, then the submission is done (`revalidate`).
-fn revalidate(key: String, entry: u64, status: u16, body: String) {
+/// Reads the page's reads again (Solid Router revalidating after an action), then the submission,
+/// if any, is done: every computation that read a GET from the server asks it again, its last
+/// value shown meanwhile. With `keys` (`Router.revalidate!`'s, or an answer's
+/// `x-rocx-revalidate`, D-054), only the reads of a GET whose URL is one, or begins with one and a
+/// `/` or a `?` (`revalidate`).
+fn revalidate(submission: Option<(String, u64)>, keys: Option<Vec<String>>, status: u16, body: String) {
+    let named = |call: &str| {
+        let Some(rest) = call.strip_prefix("GET ") else { return false };
+        let Some(keys) = &keys else { return true };
+        let url = rest.split('\n').next().unwrap_or(rest);
+        keys.iter().any(|wanted| url == wanted || url.starts_with(&format!("{wanted}/")) || url.starts_with(&format!("{wanted}?")))
+    };
     let targets = with(|engine| {
-        let targets: Vec<u64> = engine.readers.iter().copied().filter(|id| engine.comps.get(id).is_some_and(|comp| !comp.disposed && comp.calls.keys().any(|key| key.starts_with("GET ")))).collect();
+        let targets: Vec<u64> = engine.readers.iter().copied().filter(|id| engine.comps.get(id).is_some_and(|comp| !comp.disposed && comp.calls.keys().any(|call| named(call)))).collect();
         if targets.is_empty() {
             return targets;
         }
         let at = engine.id();
-        engine.revalidations.insert(at, Revalidation { left: targets.len(), key: key.clone(), id: entry, status, body: body.clone() });
+        engine.revalidations.insert(at, Revalidation { left: targets.len(), submission: submission.clone(), status, body: body.clone() });
         for target in &targets {
             if let Some(comp) = engine.comp(*target) {
                 comp.revalidating.push(at);
@@ -2236,11 +2435,75 @@ fn revalidate(key: String, entry: u64, status: u16, body: String) {
         targets
     });
     if targets.is_empty() {
-        return submission_done(&key, entry, status, body);
+        if let Some((key, entry)) = submission {
+            submission_done(&key, entry, status, body);
+        }
+        return;
     }
     for target in targets {
         refresh(target);
     }
+}
+
+// ---- Optimistic values (`create_optimistic!`, D-054) ----
+
+/// An optimistic write: the signal shows it, held (with its value before any, `base`) until its
+/// transition ends; the latest held shows (`hold`).
+fn hold(signal: u64, value: Callable) {
+    with(|engine| {
+        let Some(transition) = engine.transition else {
+            roc::release(value);
+            return;
+        };
+        let Some(slot) = engine.signals.get_mut(&signal) else {
+            roc::release(value);
+            return;
+        };
+        let shown = std::mem::replace(slot, value);
+        match engine.held.get_mut(&signal) {
+            // `shown` is the latest write, still held.
+            Some(held) => held.writes.push((value, transition)),
+            None => {
+                engine.held.insert(signal, Held { base: shown, writes: vec![(value, transition)] });
+            }
+        }
+        if let Some(open) = engine.transitions.get_mut(&transition)
+            && !open.signals.contains(&signal)
+        {
+            open.signals.push(signal);
+        }
+        engine.schedule_observers(&Source::Signal(signal));
+    });
+}
+
+/// A transition is over: its writes are undone, each signal showing the latest still held, or its
+/// value before them (`endTransition`).
+fn end_transition(transition: u64) {
+    with(|engine| {
+        let Some(open) = engine.transitions.remove(&transition) else { return };
+        if engine.transition == Some(transition) {
+            engine.transition = None;
+        }
+        for signal in open.signals {
+            // Gone with its part: its writes were let go of then.
+            let Some(mut held) = engine.held.remove(&signal) else { continue };
+            let mut kept = Vec::new();
+            for (write, of) in held.writes.drain(..) {
+                if of == transition {
+                    roc::release(write);
+                } else {
+                    kept.push((write, of));
+                }
+            }
+            let shown = kept.last().map(|(write, _)| *write).unwrap_or(held.base);
+            engine.signals.insert(signal, shown);
+            if !kept.is_empty() {
+                held.writes = kept;
+                engine.held.insert(signal, held);
+            }
+            engine.schedule_observers(&Source::Signal(signal));
+        }
+    });
 }
 
 fn revalidated(id: u64) {
@@ -2258,7 +2521,9 @@ fn revalidated(id: u64) {
         done
     });
     for revalidation in done {
-        submission_done(&revalidation.key, revalidation.id, revalidation.status, revalidation.body);
+        if let Some((key, entry)) = revalidation.submission {
+            submission_done(&key, entry, revalidation.status, revalidation.body);
+        }
     }
 }
 
@@ -2406,17 +2671,110 @@ pub fn memo_new(runner: Callable) -> u64 {
     id
 }
 
-pub fn memo_done(value: Callable) {
+/// The running memo's new value; `same`: a store's selection whose part is what it was (D-053), so
+/// its readers aren't told.
+pub fn memo_done(value: Callable, same: bool) {
     with(|engine| {
         if let Some(Current::Comp(id)) = engine.current
             && let Some(comp) = engine.comps.get_mut(&id)
         {
             let old = std::mem::replace(&mut comp.next, value);
             roc::release(old);
+            comp.same = same;
             return;
         }
         roc::release(value);
     });
+}
+
+/// Whether the running computation tracks its reads, and so runs again when they change: a
+/// store's selection is made only then (`tracking!`, D-053).
+pub fn tracking() -> bool {
+    with(|engine| match engine.current {
+        Some(Current::Comp(id)) => engine.comps.get(&id).is_some_and(|comp| !comp.untracked && comp.kind != CompKind::Component && comp.making.as_ref().is_some_and(|making| making.untracked == 0)),
+        _ => false,
+    })
+}
+
+/// The running memo's value, for a store's selection to compare its new one with, or `fallback`
+/// when it has none yet (or failed) (`memo_last!`, D-053).
+pub fn memo_last(fallback: Callable) -> Callable {
+    with(|engine| {
+        let last = match engine.current {
+            Some(Current::Comp(id)) => engine.comps.get(&id).filter(|comp| comp.kind == CompKind::Memo && comp.state == MemoState::Ok && !comp.value.is_null()).map(|comp| comp.value),
+            _ => None,
+        };
+        match last {
+            Some(value) => {
+                roc::release(fallback);
+                roc::retain(value)
+            }
+            None => fallback,
+        }
+    })
+}
+
+/// A signal's value with the running handler's own write, not yet applied, if it made one: a
+/// store's setter starts from it, so two in one handler compose (`signal_latest!`, D-053).
+/// Untracked.
+pub fn signal_latest(id: u64) -> Result<Callable, String> {
+    with(|engine| {
+        let mut value = engine.signals.get(&id).copied().ok_or_else(|| "rocx: a signal was read after the part that made it went away".to_string())?;
+        if let Some(handler) = engine.handler() {
+            for write in handler.writes.iter().rev() {
+                if let Write::Signal(signal, written) = write
+                    && *signal == id
+                {
+                    value = *written;
+                    break;
+                }
+            }
+        }
+        Ok(roc::retain(value))
+    })
+}
+
+/// `create_optimistic!`'s write (D-054): applied with the handler's writes, held by their
+/// transition.
+pub fn optimistic_set(id: u64, value: Callable) -> Result<(), Callable> {
+    with(|engine| match engine.handler() {
+        Some(handler) => {
+            handler.writes.push(Write::Optimistic(id, value));
+            Ok(())
+        }
+        None => Err(value),
+    })
+}
+
+/// `Router.revalidate!` in a handler (D-054): the reads of those URLs read again once it is done.
+pub fn revalidate_keys(keys: String) -> Result<(), String> {
+    let keys: Vec<String> = serde_json::from_str(&keys).map_err(|why| format!("Router.revalidate!: {why}"))?;
+    with(|engine| match engine.handler() {
+        Some(handler) => {
+            handler.writes.push(Write::Revalidate(keys));
+            Ok(())
+        }
+        None => Err("Router.revalidate! reads again from a handler (an event, a timer, an effect's apply), not while computing".into()),
+    })
+}
+
+/// `Router.navigate!` (D-040), from a handler: a phone shows one page yet, so it is logged, once,
+/// and ignored.
+pub fn navigate(to: String) -> Result<(), String> {
+    with(|engine| {
+        if engine.handler().is_none() {
+            return Err(format!("Router.navigate!(\"{to}\") is a handler's: call it from an event, a timer or an effect's apply, not while computing"));
+        }
+        if engine.warned.insert("navigate".into()) {
+            log(Level::Warn, &format!("rocx native: Router.navigate!(\"{to}\"): pages aren't navigated on phones yet (one page): ignored"));
+        }
+        Ok(())
+    })
+}
+
+/// `retry!` (D-054): a submission sent again, once the handler is done.
+pub fn submission_retry(key: String, id: u64) {
+    later(Write::Retried(key, id));
 }
 
 pub fn memo_get(id: u64) -> Result<Callable, Abort> {
@@ -2510,7 +2868,9 @@ pub fn row_index(list: u64, key: String) -> u64 {
     })
 }
 
-pub fn row_set(list: u64, key: String, value: Callable) {
+/// A row's item; `same`: it is `==` the one the row had (`<For compared>`, D-053), so the row isn't
+/// told (it keeps the newest).
+pub fn row_set(list: u64, key: String, value: Callable, same: bool) {
     with(|engine| {
         let Some(items) = engine.lists.get_mut(&list).map(|list| &mut list.items) else {
             roc::release(value);
@@ -2520,10 +2880,24 @@ pub fn row_set(list: u64, key: String, value: Callable) {
             None => {}
             Some(old) => {
                 roc::release(old);
-                engine.schedule_observers(&Source::Item(list, key));
+                if !same {
+                    engine.schedule_observers(&Source::Item(list, key));
+                }
             }
         }
     });
+}
+
+/// A row's item, untracked, for a `<For compared>` to compare its new one with, or `fallback` for a
+/// new row (`row_last!`, D-053).
+pub fn row_last(list: u64, key: String, fallback: Callable) -> Callable {
+    with(|engine| match engine.lists.get(&list).and_then(|list| list.items.get(&key).copied()) {
+        Some(value) => {
+            roc::release(fallback);
+            roc::retain(value)
+        }
+        None => fallback,
+    })
 }
 
 pub fn row_get(list: u64, key: String) -> Result<Callable, String> {

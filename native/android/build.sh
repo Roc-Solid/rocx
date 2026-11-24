@@ -172,7 +172,10 @@ fi
 
 # ---- 7. What a phone ignores ----
 step "the app on the native host, on the Mac (what a phone ignores)"
-"$roc" build --target=arm64mac --opt=dev --output="$out/libapp-mac.a" "$out/client/main.roc" >/dev/null 2>&1 || [ $? -eq 2 ]
+# Built as the APK's is (`--opt`, speed by default): the dev backend's arm64mac code can put a long
+# string literal at an address that isn't a multiple of 8, where Roc's refcounting looks for its
+# count in the wrong word and writes to read-only memory (seen on rebasing onto D-040's routes).
+"$roc" build --target=arm64mac --opt="$opt" --output="$out/libapp-mac.a" "$out/client/main.roc" >/dev/null 2>&1 || [ $? -eq 2 ]
 (cd "$repo/native" && ROCX_APP_ARCHIVE="$out/libapp-mac.a" cargo build -q -p rocx-native-mac 2>/dev/null)
 "$repo/native/target/debug/rocx-native-mac" --origin http://127.0.0.1:9 2>&1 | grep '\[Warn\]' | sed 's/^\[Warn\] /build.sh: phone: /' >&2 || true
 
