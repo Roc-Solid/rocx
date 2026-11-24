@@ -37,8 +37,6 @@ view! = |_| {
 			<p>
 				<a class="button quiet" href={Query.link(Paths.foods_new, Query.of([("barcode", live.value!("barcode").trim()), ("day", day), ("meal", meal)]))}>Make the food yourself</a>
 			</p>
-		} else {
-			<></>
 		}}
 	</section>
 }

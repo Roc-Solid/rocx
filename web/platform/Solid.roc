@@ -124,7 +124,7 @@ Solid := [].{
 	## runs again when the answer changes. On the server it is false: the server renders final values.
 	##
 	##     <p class:stale={is_pending!(user!)}>{user!().name}</p>
-	##     {if is_pending!(|| (user!(), posts!())) { <p>Refreshing…</p> } else { <></> }}
+	##     {if is_pending!(|| (user!(), posts!())) { <p>Refreshing…</p> }}
 	is_pending! : (() => a) => Bool
 	is_pending! = |read!| {
 		probe! = || {

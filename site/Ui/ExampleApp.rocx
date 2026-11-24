@@ -59,7 +59,7 @@ ExampleApp := [].{
 				}
 			}
 
-			{if (facts.name == "echo") ExampleApp.bench(ExampleApps.bench) else <></>}
+			{if (facts.name == "echo") ExampleApp.bench(ExampleApps.bench)}
 
 			<Heading id="numbers">What it's made of</Heading>
 			<Stats stats={ExampleApp.stats(facts)} />

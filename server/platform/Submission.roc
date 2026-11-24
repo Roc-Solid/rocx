@@ -91,7 +91,7 @@ Submission(arg, result) :: { url : Str, form : List({ name : Str, value : Str })
 	## answer to come. One still on its way isn't sent twice; with none (or the flash: a plain form's,
 	## which the runtime never had), nothing.
 	##
-	##     {if submission.error!().is_ok() { <button on:click={|| submission.retry!()}>Try again</button> } else { <></> }}
+	##     {if submission.error!().is_ok() { <button on:click={|| submission.retry!()}>Try again</button> }}
 	retry! : Submission(arg, result) => {}
 	retry! = |submission| Host.submission_retry!(submission.url, 0)
 

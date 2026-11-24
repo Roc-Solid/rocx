@@ -51,8 +51,6 @@ Effects := [].{
 							beat!={|| set_beats!(beats!() + 1)}
 							note!={note!}
 						/>
-					} else {
-						<></>
 					}}
 				</body>
 			</html>

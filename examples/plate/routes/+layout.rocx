@@ -43,8 +43,6 @@ view! = |{ meta, children, .. }| {
 							</nav>
 						</header>
 					</>
-				} else {
-					<></>
 				}}
 				<main id="main" class:story={story}>{...children}</main>
 			</body>

@@ -36,14 +36,10 @@ Shortcuts := [].{
 			<button class="open" on:click={|| set_open!(!open!())}>Open</button>
 			{if open!() {
 				<Opened />
-			} else {
-				<></>
 			}}
 			<button class="listen" on:click={|| set_listening!(!listening!())}>Listen</button>
 			{if listening!() {
 				<Document on:keydown.Mod+K={|| hear!("Mod+K")} on:keydown.Escape={|| hear!("Escape")} on:keyup.key={|key| hear!("up ${key}")} />
-			} else {
-				<></>
 			}}
 			<p class="heard">{Str.join_with(heard!(), ", ")}</p>
 			<Window on:resize={|| set_resized!(resized!() + 1)} />

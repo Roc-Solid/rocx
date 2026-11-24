@@ -17,8 +17,9 @@ Flow := [].{
 	Piece : { from : U64, to : U64 }
 
 	## An `if`: each condition (`(…)` as written, or what is between `if` and a block's `{`) and its
-	## branch, and the last branch, `else`'s.
-	Chain : { branches : List({ condition : Flow.Piece, parens : Bool, body : Flow.Piece }), otherwise : Flow.Piece }
+	## branch, and the last branch, `else`'s; in a hole, an `if` may have none (`{if open!() { … }}`:
+	## nothing shows otherwise).
+	Chain : { branches : List({ condition : Flow.Piece, parens : Bool, body : Flow.Piece }), otherwise : [Else(Flow.Piece), NoElse] }
 
 	## A `match`: its value, and its arms, each a pattern, maybe a guard (`if …`), and a body.
 	Arms : { value : Flow.Piece, arms : List({ pattern : Flow.Piece, guard : [Guard(Flow.Piece), NoGuard], body : Flow.Piece }) }
@@ -232,7 +233,18 @@ Flow := [].{
 						Err(_) => return Err(NotFlow)
 					}
 			}
-		otherwise_index = Flow.first_at(toks, body_index, 0, |t| Flow.is_word(t, "else")) ?? return Err(NotFlow)
+		otherwise_index =
+			match Flow.first_at(toks, body_index, 0, |t| Flow.is_word(t, "else")) {
+				Ok(at) => at
+				Err(_) => {
+					# No `else`: the branch is the rest of the hole, and nothing shows otherwise.
+					body = { from: body_from, to }
+					if Flow.starts_with_word(src, body, "if") or Text.is_blank(Text.cut(src, condition.from, condition.to)) or Text.is_blank(Text.cut(src, body.from, body.to)) {
+						return Err(NotFlow)
+					}
+					return Ok({ branches: before.append({ condition, parens, body }), otherwise: NoElse })
+				}
+			}
 		else_at = (toks.get(otherwise_index) ?? first).at
 		body = { from: body_from, to: else_at }
 		# A branch that is an `if` of its own would take this `else` for its own: left as it is.
@@ -246,7 +258,7 @@ Flow := [].{
 		} else if Text.is_blank(Text.cut(src, else_at + 4, to)) {
 			Err(NotFlow)
 		} else {
-			Ok({ branches, otherwise: { from: else_at + 4, to } })
+			Ok({ branches, otherwise: Else({ from: else_at + 4, to }) })
 		}
 	}
 
@@ -443,7 +455,12 @@ expect {
 	src = "if (count!() > 3) <Timer /> else <></>".to_utf8()
 	spans = [{ from: 18, to: 27 }, { from: 33, to: 38 }]
 	match Flow.chain(src, 0, src.len(), spans) {
-		Ok(chain) => chain.branches.len() == 1 and Text.cut(src, (chain.branches.get(0) ?? { condition: { from: 0, to: 0 }, parens: Bool.False, body: { from: 0, to: 0 } }).condition.from, 17) == "(count!() > 3)" and Text.trim(Text.cut(src, chain.otherwise.from, chain.otherwise.to)) == "<></>"
+		Ok(chain) => chain.branches.len() == 1 and Text.cut(src, (chain.branches.get(0) ?? { condition: { from: 0, to: 0 }, parens: Bool.False, body: { from: 0, to: 0 } }).condition.from, 17) == "(count!() > 3)" and (
+			match chain.otherwise {
+				Else(piece) => Text.trim(Text.cut(src, piece.from, piece.to)) == "<></>"
+				NoElse => Bool.False
+			}
+		)
 		Err(_) => Bool.False
 	}
 }
@@ -451,7 +468,12 @@ expect {
 expect {
 	src = "if a!() and b { x } else if c!() { y } else { z }".to_utf8()
 	match Flow.chain(src, 0, src.len(), []) {
-		Ok(chain) => chain.branches.len() == 2 and chain.branches.map(|b| Text.trim(Text.cut(src, b.condition.from, b.condition.to))) == ["a!() and b", "c!()"] and chain.branches.map(|b| Text.trim(Text.cut(src, b.body.from, b.body.to))) == ["{ x }", "{ y }"] and Text.trim(Text.cut(src, chain.otherwise.from, chain.otherwise.to)) == "{ z }"
+		Ok(chain) => chain.branches.len() == 2 and chain.branches.map(|b| Text.trim(Text.cut(src, b.condition.from, b.condition.to))) == ["a!() and b", "c!()"] and chain.branches.map(|b| Text.trim(Text.cut(src, b.body.from, b.body.to))) == ["{ x }", "{ y }"] and (
+			match chain.otherwise {
+				Else(piece) => Text.trim(Text.cut(src, piece.from, piece.to)) == "{ z }"
+				NoElse => Bool.False
+			}
+		)
 		Err(_) => Bool.False
 	}
 }
@@ -465,6 +487,25 @@ expect {
 expect {
 	src = "if (a!()) if (b) x else y else z".to_utf8()
 	Flow.chain(src, 0, src.len(), []) == Err(NotFlow)
+}
+
+# No `else`, in a hole: the last branch is the rest, and nothing shows otherwise.
+expect {
+	src = "if open!() { <p>Open</p> }".to_utf8()
+	spans = [{ from: 13, to: 24 }]
+	match Flow.chain(src, 0, src.len(), spans) {
+		Ok(chain) => chain.otherwise == NoElse and chain.branches.map(|b| Text.trim(Text.cut(src, b.body.from, b.body.to))) == ["{ <p>Open</p> }"]
+		Err(_) => Bool.False
+	}
+}
+
+expect {
+	src = "if (a!()) <i /> else if (b!()) <u />".to_utf8()
+	spans = [{ from: 10, to: 15 }, { from: 31, to: 36 }]
+	match Flow.chain(src, 0, src.len(), spans) {
+		Ok(chain) => chain.otherwise == NoElse and chain.branches.len() == 2
+		Err(_) => Bool.False
+	}
 }
 
 expect {

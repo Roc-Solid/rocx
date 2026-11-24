@@ -63,8 +63,6 @@ view! = |_| {
 					</For>
 				</ul>
 			</section>
-		} else {
-			<></>
 		}}
 		<div class="groups">
 			<For each!={overview!().groups} keyed={|group| group.name}>

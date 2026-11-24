@@ -93,8 +93,6 @@ BarChart := [].{
 			{# Frames only while something moves: once the bars are where the data says, none. }
 			{if drawn!() != goal!() {
 				<span hidden on:frame.ms={|ms| set_drawn!(BarChart.glide(drawn!(), goal!(), ms))}></span>
-			} else {
-				<></>
 			}}
 		</figure>
 	}

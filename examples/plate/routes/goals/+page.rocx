@@ -81,8 +81,6 @@ Profile := [].{
 				<form method="post" action={Endpoint.url_of(Api.post_sign_out({}))}>
 					<button class="button quiet" type="submit">Sign out</button>
 				</form>
-			} else {
-				<></>
 			}}
 		</section>
 	}

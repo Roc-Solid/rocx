@@ -58,8 +58,6 @@ Todos := [].{
 				</span>
 				{if items!().any(|item| item.done) {
 					<button type="button" class="clear" on:click={|| set_items!(items!().drop_if(|item| item.done))}>Clear done</button>
-				} else {
-					<></>
 				}}
 			</footer>
 		</div>

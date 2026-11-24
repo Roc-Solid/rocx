@@ -137,8 +137,6 @@ Playing := [].{
 						<p class="hint">Watch the big screen: the host starts when everyone's here.</p>
 						<Lobby players={current!().players} max={8} />
 					</section>
-				} else {
-					<></>
 				}}
 				{match Feed.asking(current!()) {
 					Ok(asking) => <Choosing asking!={asking} total={current!().total} clock={clock} mine!={mine!} pick!={pick!} answered!={|| face!().answered} />
@@ -162,8 +160,6 @@ Playing := [].{
 						<Podium players={current!().players} me={me} />
 						<p class="hint">Thanks for playing. The host may start another round.</p>
 					</section>
-				} else {
-					<></>
 				}}
 			</div>
 		</div>

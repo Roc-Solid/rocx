@@ -52,8 +52,6 @@ view! = |{ meta, children, .. }| {
 							</Errored>
 						</header>
 					</>
-				} else {
-					<></>
 				}}
 				<div class="frame" class:story={story!()}>
 					{if !story!() {
@@ -75,8 +73,6 @@ view! = |{ meta, children, .. }| {
 							</Errored>
 							<a class="new" href={"${Paths.root}#new-list"}>+ New list</a>
 						</nav>
-					} else {
-						<></>
 					}}
 					<main id="main">{...children}</main>
 				</div>

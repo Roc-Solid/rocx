@@ -69,8 +69,6 @@ view! = |_| {
 								</ul>
 								<h2 class="group">Others</h2>
 							</>
-						} else {
-							<></>
 						}}
 						<ul class="cards" aria-label="Notes">
 							<For each!={unpinned(home!({}))} keyed={|note| note.id}>

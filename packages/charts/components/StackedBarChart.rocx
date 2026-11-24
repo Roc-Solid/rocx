@@ -111,8 +111,6 @@ StackedBarChart := [].{
 			{# Frames only while something moves: once the columns are where the data says, none. }
 			{if drawn!() != goal!() {
 				<span hidden on:frame.ms={|ms| set_drawn!(StackedBarChart.glide(drawn!(), goal!(), ms, parts))}></span>
-			} else {
-				<></>
 			}}
 		</figure>
 	}

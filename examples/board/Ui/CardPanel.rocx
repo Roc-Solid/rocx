@@ -250,8 +250,6 @@ Editor := [].{
 				<h2 id="panel-title">{card!().title}</h2>
 				{if locked!() {
 					<p class="lock" role="status"><span aria-hidden="true">✎</span> {editor!()} is editing this card. You can read it; it opens for you once they close it.</p>
-				} else {
-					<></>
 				}}
 			</header>
 

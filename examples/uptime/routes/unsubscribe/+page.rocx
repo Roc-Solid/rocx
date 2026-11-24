@@ -26,8 +26,6 @@ view! = |_| {
 					<button disabled?={submission.pending!()}>Unsubscribe</button>
 				</form>
 			</>
-		} else {
-			<></>
 		}}
 		{match submission.result!() { Ok(email) => <p class="done" role="status">{"Done: ${email} won't get any more alerts."}</p>, Err(_) => <></> }}
 		{match submission.error!() { Ok(problem) => <p class="problem" role="alert">{Server.explain(problem)}</p>, Err(_) => <></> }}

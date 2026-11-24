@@ -66,8 +66,6 @@ view! = |{ params }| {
 					<h1>There's no room {code}</h1>
 					<p>It may have been a different code. <a href={Paths.host}>Open a new room</a></p>
 				</section>
-			} else {
-				<></>
 			}}
 			{if Feed.in_lobby(current!()) {
 				<section class="phase lobby" aria-labelledby="lobby-title" transition:in={Transition.fly({ x: 0, y: 40 }).ms(450)} transition:out={Transition.fade.ms(200)}>
@@ -89,8 +87,6 @@ view! = |{ params }| {
 						}
 					}
 				</section>
-			} else {
-				<></>
 			}}
 			{match Feed.asking(current!()) {
 				Ok(asking) => <Asked asking!={asking} current!={current!} clock={clock} room={room} hosting={hosting} />
@@ -115,8 +111,6 @@ view! = |{ params }| {
 						}
 					}
 				</section>
-			} else {
-				<></>
 			}}
 		</div>
 	</main>
@@ -147,7 +141,7 @@ Asked := [].{
 			</ul>
 			<div class="foot">
 				<p class="answered" aria-live="polite">{Asked.answered(asking!().answered, current!().players)}</p>
-				{if (hosting) <button type="button" class="next" on:click={|| (room.say!)(Next)}>Close it now</button> else <></>}
+				{if (hosting) <button type="button" class="next" on:click={|| (room.say!)(Next)}>Close it now</button>}
 			</div>
 		</section>
 
@@ -187,7 +181,7 @@ Revealed := [].{
 			</div>
 			<div class="foot">
 				<p class="next-up">{if (revealing!().last) "The podium is next" else "The next question is coming"}</p>
-				{if (hosting) <button type="button" class="next" on:click={|| (room.say!)(Next)}>Go on now</button> else <></>}
+				{if (hosting) <button type="button" class="next" on:click={|| (room.say!)(Next)}>Go on now</button>}
 			</div>
 		</section>
 

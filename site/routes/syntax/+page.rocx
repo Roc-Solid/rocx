@@ -92,8 +92,9 @@ view! = |_|
 			<p>
 				A hole takes any Roc expression, so <code>if</code>, <code>match</code> and <code>.map</code>
 				need no special syntax. <code>{"{x}"}</code> shows what <code>x</code> is: text (escaped), a number,
-				or markup; <code>{"{...x}"}</code> a <code>List(Html)</code>, joined. A branch with nothing to show
-				is the empty fragment: <code>{"{if (late) <p>Late</p> else <></>}"}</code>. In a component, an
+				or markup; <code>{"{...x}"}</code> a <code>List(Html)</code>, joined. An <code>if</code> in a hole
+				needs no <code>else</code>: <code>{"{if (late) <p>Late</p>}"}</code> shows nothing otherwise (rocx
+				gives it the empty fragment, <code>{"<></>"}</code>, which is how to write nothing elsewhere). In a component, an
 				<code>if</code> or <code>match</code> whose condition changes keeps the part its branch made until
 				another branch holds, and a list that changes is a <code>{"<For>"}</code>, whose rows move with their
 				keys (see <a href={"${Paths.components}#control"}>if, match and For</a>).

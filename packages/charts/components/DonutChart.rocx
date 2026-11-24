@@ -118,8 +118,6 @@ DonutChart := [].{
 			{# Frames only while something moves: once the slices are where the data says, none. }
 			{if drawn!().slices != goal!() {
 				<span hidden on:frame.ms={|ms| set_drawn!(DonutChart.glide(drawn!(), goal!(), ms))}></span>
-			} else {
-				<></>
 			}}
 		</figure>
 	}

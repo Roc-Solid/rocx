@@ -22,13 +22,9 @@ Titles := [].{
 				<body>
 					{if outer!() {
 						<Title>{count!().to_str()} &amp; counting</Title>
-					} else {
-						<></>
 					}}
 					{if inner!() {
 						<p class="inner"><Title>Inner <b>{count!().to_str()}</b></Title>inner</p>
-					} else {
-						<></>
 					}}
 					<button class="more" on:click={|| set_count!(count!() + 1)}>More</button>
 					<button class="toggle-outer" on:click={|| set_outer!(!outer!())}>Outer</button>

@@ -19,8 +19,6 @@ TypingIndicator := [].{
 					<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
 					<span class="said">{say(names!())}</span>
 				</>
-			} else {
-				<></>
 			}}
 		</p>
 

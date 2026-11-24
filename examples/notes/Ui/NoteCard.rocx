@@ -17,8 +17,8 @@ NoteCard := [].{
 			<p class="snippet">{...NoteCard.snippet(note.snippet)}</p>
 			<footer>
 				<time datetime={note.updated}>{Note.day(note.updated)}</time>
-				{if (note.pinned) <span class="badge pin">Pinned</span> else <></>}
-				{if (note.archived) <span class="badge">Archived</span> else <></>}
+				{if (note.pinned) <span class="badge pin">Pinned</span>}
+				{if (note.archived) <span class="badge">Archived</span>}
 				<ul class="tags" aria-label="Tags">
 					{...note.tags.map(|tag| <li><a href={"/?tag=${Server.encode_segment(tag)}"}>{"#${tag}"}</a></li>)}
 				</ul>

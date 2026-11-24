@@ -28,8 +28,6 @@ IssueSummary := [].{
 					</For>
 				</ul>
 			</div>
-		} else {
-			<></>
 		}}</>
 
 	## An issue as a link says it: its field's label first, when `labels` has one (a list item's,

@@ -57,8 +57,6 @@ Timers := [].{
 			<button class="toggle" on:click={|| set_shown!(!shown!())}>Toggle</button>
 			{if shown!() {
 				<Ticker tick!={|| set_ticks!(ticks!() + 1)} />
-			} else {
-				<></>
 			}}
 			<p class="ticks">{ticks!().to_str()}</p>
 			<button class="start" on:click={start!}>Start</button>

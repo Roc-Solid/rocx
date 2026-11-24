@@ -46,7 +46,7 @@ view! = |_| {
 		<button class="save" on:click={|| set_saved!(draft!())}>Save</button>
 		<button class="go" on:click={|| navigate!(Paths.a)}>To A</button>
 		<button class="strict" on:click={|| set_strict!(!strict!())}>Strict</button>
-		{if (strict!()) <Strict /> else <></>}
+		{if (strict!()) <Strict />}
 		{match leaving!() {
 			Ok(leave) =>
 				<div class="dialog" role="dialog">

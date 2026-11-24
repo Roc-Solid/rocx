@@ -477,6 +477,16 @@ test("components: a pure one (`view`, no `!`) is called where it is written, as 
 	assert.deepEqual(viewsDefined("Card := [].{\n\tPart := [Head].{\n\t\tview = |_| y\n\t}\n\n\tview = |_| x\n}\n"), { Card: "view", Part: "view" }, "each its own");
 });
 
+test("a hole's if with no else (D-070): nothing shows otherwise, an empty fragment rocx adds; each branch a hole, so text or markup; static when the condition reads nothing that changes; lines stay lines", () => {
+	const reactive = (source) => transpile(source, "T.rocx").replace(/\n\n# rocx: generated from[^\n]*\n$/, "");
+	assert.equal(reactive(`x = <div>{if open!() { <p>Open</p> }}</div>`), `x = Html.element("div", [], [Html.branched(|| Ok(if (open!() ) "0" else "1"), || if (open!() ) Html.hole({ Html.element("p", [], [Html.text("Open"),]) }) else Html.empty({})),])`);
+	assert.equal(reactive(`x = <div>{if (ready) <i />}</div>`), `x = Html.element("div", [], [(if (ready) Html.hole( Html.element("i", [], [])) else Html.empty({})),])`, "static");
+	assert.equal(reactive(`x = <p>{if busy!() { "Saving…" }}</p>`), `x = Html.element("p", [], [Html.branched(|| Ok(if (busy!() ) "0" else "1"), || if (busy!() ) Html.hole({ "Saving…" }) else Html.empty({})),])`, "text");
+	assert.equal(reactive(`x = <div>{if (a!()) <i /> else if (b!()) <u />}</div>`), `x = Html.element("div", [], [Html.branched(|| Ok(if (a!()) "0" else if (b!()) "1" else "2"), || if (a!()) Html.hole( Html.element("i", [], []) ) else if (b!()) Html.hole( Html.element("u", [], [])) else Html.empty({})),])`, "else if, and no else");
+	const lines = "x = <div>{if open!() {\n\t<p>Open</p>\n}}</div>";
+	assert.equal(reactive(lines).split("\n").length, 3);
+});
+
 test("<Show>, <Switch> and <Match> are gone (D-070): writing one says what to write instead; a component of the app's own by that name is the app's", () => {
 	for (const tag of ["Show", "Switch", "Match"]) {
 		assert.throws(() => transpile(`x = <div><${tag} when!={a!()}><p>hi</p></${tag}></div>`, "T.rocx"), (error) => error instanceof RocxError && error.message.includes(`<${tag}> is gone (D-070): write a hole's if or match`), tag);

@@ -35,13 +35,9 @@ Channels := [].{
 							<Feed name="first" org!={org!} />
 							{if second!() {
 								<Feed name="second" org!={org!} />
-							} else {
-								<></>
 							}}
 							<Feed name="beta" org!={|| "beta"} />
 						</>
-					} else {
-						<></>
 					}}
 				</body>
 			</html>

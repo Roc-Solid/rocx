@@ -4241,6 +4241,10 @@ value, and numbers shown as they are).
   keeps the arm while the card changes, and the card the arm reads is the newest. Read once the arm
   no longer holds (never, as the runtime makes the arm again first), a name is `Html.unmatched!`, a
   failure. A guard is the case's too.
+- **No `else` needed.** An `if` in a hole may leave its `else` out (`{if open!() { <Panel /> }}`,
+  `{if (a) <x /> else if (b) <y />}`): rocx gives it `Html.empty({})`, each branch being a hole, so it
+  fits whatever the branches show (the user, 2026-11-24, after the move left 120 `} else { <></> }`s).
+  Only a hole's own `if`: one inside its code is Roc's, which needs one.
 - **Text alone stays a text hole.** An `if` or `match` whose every branch is a string literal
   (`{if (pending!()) "Saving…" else "Save"}`) is a text hole, patched, as before; so is one whose
   conditions read nothing that changes (run once).

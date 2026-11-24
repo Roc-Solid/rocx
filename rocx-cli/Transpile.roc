@@ -2673,8 +2673,9 @@ Transpile := [].{
 		if kind.name == "text" and trimmed.starts_with("|") {
 			return Ok({ st: st1, parts: [Fn(expr)] })
 		}
-		# An `if` or a `match` that reads what changes: its branch's part (D-070).
-		if kind.name != "list" and st1.effects > st0.effects {
+		# An `if` or a `match` that reads what changes: its branch's part (D-070); an `if` with no `else`,
+		# its empty one.
+		if kind.name != "list" and (st1.effects > st0.effects or Flow.starts_with_word(src, { from: code_at, to: inner.st.pos }, "if")) {
 			spans = inner.st.spans.keep_if(|span| span.from >= code_at and span.to <= inner.st.pos).map(|span| { from: span.from, to: span.to })
 			flowed = Transpile.read_flow(cfg, Transpile.opened({ ..marked, pos: code_at }, Bool.False), start + 1 + kind.skip, inner.st.pos, spans)?
 			match flowed {
@@ -2783,11 +2784,18 @@ Transpile := [].{
 	read_chain = |cfg, st0, from, to, chain, spans| {
 		src = cfg.src
 		# Text in each branch (`"refreshing"`, `"settled"`): a text hole, patched, as before.
-		if chain.branches.map(|branch| branch.body).append(chain.otherwise).all(|piece| Transpile.is_text_literal(src, piece)) {
+		literal =
+			match chain.otherwise {
+				Else(piece) => chain.branches.map(|branch| branch.body).append(piece).all(|each| Transpile.is_text_literal(src, each))
+				NoElse => Bool.False
+			}
+		if literal {
 			return Ok(Plain)
 		}
 		var $st = st0
 		var $reads = Bool.False
+		# Whether the conditions go on one line, for the part's case (a comment in one doesn't).
+		var $cased = Bool.True
 		var $case = ""
 		var $made = ""
 		var $at = from
@@ -2797,24 +2805,45 @@ Transpile := [].{
 			$st = read.st
 			$reads = $reads or read.reads
 			condition = if (branch.parens) read.out else "(${read.out})"
-			$case =
-				match Transpile.one_line(condition) {
-					Ok(line) => $case.concat("if ${line} \"${$index.to_str()}\" else ")
-					Err(_) => return Ok(Plain)
+			match Transpile.one_line(condition) {
+				Ok(line) => {
+					$case = $case.concat("if ${line} \"${$index.to_str()}\" else ")
 				}
+				Err(_) => {
+					$cased = Bool.False
+				}
+			}
 			body = Transpile.read_branch(cfg, $st, branch.body, spans)?
 			$st = body.st
 			$made = $made.concat(Transpile.newlines_in(src, $at, branch.condition.from)).concat("if ${condition} ").concat(Transpile.newlines_in(src, branch.condition.to, branch.body.from)).concat(body.out).concat(" else ")
 			$at = branch.body.to
 			$index = $index + 1
 		}
-		if !$reads {
-			return Ok(Plain)
+		match chain.otherwise {
+			Else(piece) => {
+				# Run once, or not on one line: the hole as it is written.
+				if !$reads or !$cased {
+					return Ok(Plain)
+				}
+				last = Transpile.read_branch(cfg, $st, piece, spans)?
+				made = $made.concat(Transpile.newlines_in(src, $at, piece.from)).concat(last.out).concat(Transpile.newlines_in(src, piece.to, to))
+				case = $case.concat("\"${$index.to_str()}\"")
+				Ok(Flowed({ st: last.st, out: "Html.branched(|| Ok(${case}), || ${made})" }))
+			}
+			NoElse => {
+				# No `else`, in a hole: nothing shows otherwise. Each branch is a hole, so an empty one fits
+				# whatever the branches show.
+				made = $made.concat("Html.empty({})").concat(Transpile.newlines_in(src, $at, to))
+				if !$reads {
+					Ok(Flowed({ st: $st, out: "(${made})" }))
+				} else if !$cased {
+					Ok(Flowed({ st: $st, out: "Html.hole_of(|| ${made})" }))
+				} else {
+					case = $case.concat("\"${$index.to_str()}\"")
+					Ok(Flowed({ st: $st, out: "Html.branched(|| Ok(${case}), || ${made})" }))
+				}
+			}
 		}
-		last = Transpile.read_branch(cfg, $st, chain.otherwise, spans)?
-		made = $made.concat(Transpile.newlines_in(src, $at, chain.otherwise.from)).concat(last.out).concat(Transpile.newlines_in(src, chain.otherwise.to, to))
-		case = $case.concat("\"${$index.to_str()}\"")
-		Ok(Flowed({ st: last.st, out: "Html.branched(|| Ok(${case}), || ${made})" }))
 	}
 
 	read_arms : Cfg, St, U64, U64, Flow.Arms, List(Flow.Piece) -> Try([Flowed({ st : St, out : Str }), Plain], [Rocx(RocxError), Crash(Str)])

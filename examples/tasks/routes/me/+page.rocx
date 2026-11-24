@@ -43,8 +43,6 @@ view! = |_| {
 				<button type="submit" class="primary">That's me</button>
 				{if !team!().me.is_empty() {
 					<button type="submit" name="person" value="" formnovalidate>I'd rather not say</button>
-				} else {
-					<></>
 				}}
 			</div>
 		</form>

@@ -213,7 +213,8 @@ same components natively; this one hydrates them.
   keeps the arm while the card changes, and reads the newest (`card!()`, a getter that matches the
   value again; read after the arm stopped holding, `Html.unmatched!`, a failure). A part whose case
   read nothing that changes is static: the server writes it without comments, and hydrating adopts
-  it as it is. Text in every branch (`{if (busy!()) "Saving…" else "Save"}`) stays a text hole. A
+  it as it is. Text in every branch (`{if (busy!()) "Saving…" else "Save"}`) stays a text hole. An
+  `if` in a hole needs no `else` (`{if open!() { <Panel /> }}`): rocx gives it `Html.empty({})`. A
   part made anew for each value is a `<For>` over a list of none or one, keyed by the value. The
   node is `"show"` with `"b"` (`"r"` answers the case's name, `"#…"`, or `false`; `"with"` makes
   it): the node a level is too (D-040, `Html.switched`), but an `if`'s part is no level, and the run

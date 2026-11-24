@@ -45,8 +45,6 @@ view! = |_| {
 					</For>
 				</ul>
 			</section>
-		} else {
-			<></>
 		}}
 		<form class="new" method="post" action={Endpoint.url_of(Api.post_join({}))}>
 			<h2>Someone new</h2>

@@ -70,8 +70,6 @@ Editor := [].{
 			}}
 			{if live.sent!() and !live.all_issues!().is_empty() {
 				<p class="problem" role="alert">That didn't save: fix what's marked below, then save again.</p>
-			} else {
-				<></>
 			}}
 			<form class="edit" method="post" action={live.url()} novalidate>
 				<TextField live={live} name="title" label="Title" autocomplete="off" />

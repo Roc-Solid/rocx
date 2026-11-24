@@ -40,8 +40,6 @@ Pending := [].{
 			<button class="upstream-toggle" on:click={|| set_upstream!(!upstream!())}>Upstream</button>
 			{if upstream!() {
 				<Upstream />
-			} else {
-				<></>
 			}}
 		</div>
 	}

@@ -33,8 +33,6 @@ Sparkline := [].{
 			{# Frames only while the line moves. }
 			{if drawn!() != data!() {
 				<g on:frame.ms={|ms| set_drawn!(Sparkline.glide(drawn!(), data!(), ms))}></g>
-			} else {
-				<></>
 			}}
 		</svg>
 	}

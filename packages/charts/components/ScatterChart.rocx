@@ -102,8 +102,6 @@ ScatterChart := [].{
 			{# Frames only while something moves: once the dots are where the data says, none. }
 			{if drawn!() != goal!() {
 				<span hidden on:frame.ms={|ms| set_drawn!(ScatterChart.glide(drawn!(), goal!(), ms))}></span>
-			} else {
-				<></>
 			}}
 		</figure>
 	}

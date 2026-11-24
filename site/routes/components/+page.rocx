@@ -667,7 +667,7 @@ view! = |_|
 						<strong>An <code>if</code> in a hole</strong> (D-070, Solid's <code>{"<Show>"}</code>), whose
 						condition reads what changes, is the part its branch makes: made when the branch holds, and
 						made anew only when another branch does, not each time what the condition read changes, so
-						<code>{"{if (count!() > 3) <Timer /> else <></>}"}</code> keeps its timer, and its signals, as the
+						<code>{"{if (count!() > 3) <Timer />}"}</code> keeps its timer, and its signals, as the
 						count goes on. Each branch is a hole of its own, so what it reads itself still follows; text in
 						every branch is a text hole, patched.
 					</li>

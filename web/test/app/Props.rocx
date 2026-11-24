@@ -27,8 +27,6 @@ Props := [].{
 			<p class="getter"><Getter label!={word!()} /></p>
 			{if !word!().is_empty() {
 				<p class="shown"><Shows label={word!()} /></p>
-			} else {
-				<></>
 			}}
 			<Detail label={word!()} />
 			<p class="passed"><Passes label={word!()} kind="passing" /></p>

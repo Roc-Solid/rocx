@@ -50,8 +50,6 @@ CardTile := [].{
 				<span class="space"></span>
 				{if !viewers!().is_empty() {
 					<AvatarStack faces!={viewers!} max={3} label={CardTile.viewing(viewers!())} />
-				} else {
-					<></>
 				}}
 				{CardTile.assignee(board!().people, card!().assignee)}
 			</div>

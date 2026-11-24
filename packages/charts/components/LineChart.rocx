@@ -96,8 +96,6 @@ LineChart := [].{
 			{# Frames only while something moves: once the line and the axis are where the data says, none. }
 			{if drawn!() != goal!() {
 				<span hidden on:frame.ms={|ms| set_drawn!(LineChart.glide(drawn!(), goal!(), ms))}></span>
-			} else {
-				<></>
 			}}
 		</figure>
 	}

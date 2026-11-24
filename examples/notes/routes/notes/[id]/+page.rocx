@@ -41,8 +41,8 @@ Shown := [].{
 						<p class="meta">
 							<span>Edited <time datetime={first.note.updated}>{Note.day(first.note.updated)}</time></span>
 							<span>Written <time datetime={first.note.created}>{Note.day(first.note.created)}</time></span>
-							{if (opened!({}).note.pinned) <span class="badge pin">Pinned</span> else <></>}
-							{if (opened!({}).note.archived) <span class="badge">Archived</span> else <></>}
+							{if (opened!({}).note.pinned) <span class="badge pin">Pinned</span>}
+							{if (opened!({}).note.archived) <span class="badge">Archived</span>}
 						</p>
 						<ul class="tags" aria-label="Tags">
 							{...first.note.tags.map(|tag| <li><a href={"/?tag=${Server.encode_segment(tag)}"}>{"#${tag}"}</a></li>)}
@@ -54,8 +54,6 @@ Shown := [].{
 									<input type="hidden" name="action" value={if (opened!({}).note.pinned) "unpin" else "pin"} />
 									<button type="submit" disabled?={acting.pending!()}>{if (opened!({}).note.pinned) "Unpin" else "Pin"}</button>
 								</form>
-							} else {
-								<></>
 							}}
 							<form method="post" action={action}>
 								<input type="hidden" name="action" value={if (opened!({}).note.archived) "restore" else "archive"} />
@@ -66,8 +64,6 @@ Shown := [].{
 									<input type="hidden" name="action" value="delete" />
 									<button type="submit" class="danger" disabled?={acting.pending!()}>Delete for good</button>
 								</form>
-							} else {
-								<></>
 							}}
 						</div>
 						{match acting.error!() {

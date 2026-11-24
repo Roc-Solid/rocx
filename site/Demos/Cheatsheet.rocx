@@ -67,7 +67,7 @@ Cheatsheet := [].{
 			</div>
 			<p class="cheatsheet-count">
 				{shown!().len().to_str()} of {rows.len().to_str()}
-				{if (shown!().is_empty()) <b>— nothing matches “{query!()}”</b> else <></>}
+				{if (shown!().is_empty()) <b>— nothing matches “{query!()}”</b>}
 			</p>
 		</div>
 	}

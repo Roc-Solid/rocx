@@ -21,8 +21,6 @@ RawText := [].{
 						<style>.later { color: blue }</style>
 						<script>window.later = 1</script>
 					</>
-				} else {
-					<></>
 				}}
 			</section>
 		</>

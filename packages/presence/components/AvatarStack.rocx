@@ -38,8 +38,6 @@ AvatarStack := [].{
 				<span class="avatar more" role="img" aria-label={"and ${split!().more.to_str()} more"} title={more_names(faces!(), split!().shown.len())}>
 					+{split!().more.to_str()}
 				</span>
-			} else {
-				<></>
 			}}
 		</div>
 	}
