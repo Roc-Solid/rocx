@@ -25,6 +25,7 @@ fn stamp(meta: &std::fs::Metadata) -> (u64, u128) {
 
 impl Tree {
     /// Whether the path is one this tree leaves out: hidden, or in a directory it skips.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))] // FSEvents' alone: Linux polls
     fn skipped(&self, path: &Path) -> bool {
         let Ok(rest) = path.strip_prefix(&self.root) else { return true };
         let parts: Vec<_> = rest.components().map(|part| part.as_os_str().to_string_lossy().into_owned()).collect();
@@ -68,6 +69,7 @@ impl Tree {
     }
 
     /// One path the system named, looked at again.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))] // FSEvents' alone: Linux polls
     fn check(&mut self, path: &Path, changed: &mut Vec<PathBuf>) {
         if self.skipped(path) {
             return;

@@ -1,8 +1,8 @@
-# The checks a change lands with (README, "Quick start"), on GitHub's macOS runners (Apple silicon):
-# the one machine the Roc fork's compiler is prebuilt for (`just setup` downloads it). Four jobs,
-# side by side: `just check` (then `just check-times`: how long checking takes, against the last
-# green master run) and `just site`; `just test` as two (`test-rocx` and `test-web`, with Chromium
-# and Firefox; `test-server`, with a Postgres too); and `just examples`.
+# The checks a change lands with (README, "Quick start"), on GitHub's Linux runners on arm64
+# (ubuntu-24.04-arm), with the Roc fork's compiler prebuilt for them (`just setup` downloads it).
+# Five jobs, side by side: `just check` (then `just check-times`: how long checking takes, against
+# the last green master run); `just site`; `just test` as two (`test-rocx` and `test-web`, with
+# Chromium and Firefox; `test-server`, with a Postgres too); and `just examples`.
 name: CI
 
 on:
@@ -22,8 +22,6 @@ permissions:
   contents: read
 
 env:
-  HOMEBREW_NO_AUTO_UPDATE: "1"
-  HOMEBREW_NO_INSTALL_CLEANUP: "1"
   # The runners are slower than the machines the tests' time limits are measured on (a VM, its
   # Roc caches cold): the tests that measure time (site/test's dev rebuild, web/test/navigation's
   # waits and hover rest, web/test/platform's channel reconnects, server/test's 2,000 waits) allow
@@ -31,13 +29,10 @@ env:
   ROCX_TIME_SCALE: "3"
 
 jobs:
-  # `just check` and `just site` in one job (5 and 9 minutes; still shorter than the tests'), so a
-  # run asks for four macOS runners, not the five a free organization may have at once (GitHub has
-  # left a fifth job unstarted for want of macOS capacity).
   check:
-    name: just check, just site
-    runs-on: macos-latest
-    timeout-minutes: 90
+    name: just check
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
     permissions:
       contents: read
       actions: read # the last green master run's check times
@@ -60,16 +55,23 @@ jobs:
           name: check-times
           path: check-times.json
           retention-days: 90
-      - if: ${{ !cancelled() }}
-        run: just site
+
+  site:
+    name: just site
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - run: just site
 
   # `just test` in two jobs side by side: its first two parts (the transpiler, the expects, the web
   # platform and the site in browsers), each a step that runs even when the one before failed, and
   # its third (the server platform and the packages' apps, on a Postgres).
   test:
     name: just test-rocx, test-web
-    runs-on: macos-latest
-    timeout-minutes: 120
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
@@ -81,20 +83,34 @@ jobs:
 
   test-server:
     name: just test-server
-    runs-on: macos-latest
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 45
+    # As `just db`'s: Postgres 18, user and password rocx, which it asks for (SCRAM), as the tests
+    # expect (one signs in with a wrong password and wants the refusal).
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: rocx
+          POSTGRES_PASSWORD: rocx
+          POSTGRES_DB: rocx
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U rocx" --health-interval 2s --health-timeout 5s --health-retries 30
+    env:
+      DATABASE_URL: postgres://rocx:rocx@127.0.0.1:55432/rocx
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
         with:
           browsers: "true"
-          postgres: "true"
       - run: just test-server
 
   examples:
     name: just examples
-    runs-on: macos-latest
-    timeout-minutes: 120
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup

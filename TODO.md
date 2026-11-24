@@ -122,12 +122,9 @@ When an item lands, delete its line here in the same commit.
 
 - **`rocx new`:** not built (`rocx --help` has `dev`, `build`, `check`, `lint`, `routes`, `fmt`).
   examples/tasks was written to be its template, and D-045 adds the database question above.
-- **rocx on Linux** (D-062): the CLI platform's musl targets are named and `just rocx-bootstrap`
-  builds for them, but neither has run; its watching polls there (inotify is the next step).
-- **CI on Linux** (D-069): CI runs on macOS runners alone, the one machine the fork's compiler is
-  prebuilt for. Linux's runners are quicker to start and have Docker for Postgres, but need the
-  fork built for Linux (its build.zig cross-compiles: `zig build build-release
-  -Dtarget=x86_64-linux-musl`), published beside the macOS one, and rocx working on Linux (above).
+- **rocx on Linux** (D-062, D-069): on arm64 it runs (CI's), its watching polls (inotify is the next
+  step). x86_64 has no prebuilt fork compiler yet (`just roc-fork-linux` builds arm64's; its build.zig
+  cross-compiles `-Dtarget=x86_64-linux-musl` the same way).
 - **What is still Node** (D-062): the tests, `just site`'s full build (it measures the wasm with
   `web/runtime.js` and prerenders through the server), and the measuring scripts. A static site
   in Roc would need a way to run the wasm, or to drop the measured rendering times.

@@ -63,7 +63,8 @@ The first run writes `main.roc` at the app's root, beside `routes/`, and builds 
 Zig 0.17.1 and Rust ≥1.85 from your system (e.g. Nix), or `just setup` downloads them. Roc is a
 fork of the pinned nightly with the compiler fixes rocx needs, which `just setup` builds into
 .tools/ from the fork, or, without the fork, downloads prebuilt from this repository's release of
-it (macOS on Apple silicon only, so far; the Justfile says why); never the `roc` on your PATH.
+it (for macOS on Apple silicon and Linux on arm64; the Justfile says why); never the `roc` on your
+PATH.
 
 ```sh
 just setup   # the Roc fork rocx builds with, the pinned nightly, Zig and Rust if need be, into .tools/; then bin/rocx
@@ -758,11 +759,12 @@ or Playwright's cached one; without it they are skipped. packages/testing's (and
 example's) drive Gecko too when there is one, headless over WebDriver BiDi: `$GECKO`, Zen, Firefox,
 or Playwright's Firefox (`web/test/browser.mjs`, `launchGecko`).
 
-CI (`.github/workflows/ci.yml`) runs `just check` and `just site`, `just test` (as two jobs: `just
+CI (`.github/workflows/ci.yml`) runs `just check`, `just site`, `just test` (as two jobs: `just
 test-rocx` and `just test-web`, with Chromium and Firefox; `just test-server`, with a Postgres too)
-and `just examples`, four jobs side by side, on every push to master and every pull request, on GitHub's macOS runners (Apple silicon), the one machine the fork's compiler is
-prebuilt for. After `just check` it times checking (`just check-times`: each example's and the
-site's `rocx build` and `rocx check` of both programs, with no cache) into the job's summary,
-against the last green master run, and warns when a check got slower by half. A change to `roc_fork_commit` needs that compiler published first: `just
-publish-roc-fork` on the machine with the fork, then the SHA-256 it prints in
-`roc_fork_release_sha256`.
+and `just examples`, five jobs side by side, on every push to master and every pull request, on
+GitHub's Linux runners on arm64, with the fork's compiler prebuilt for them. After `just check` it
+times checking (`just check-times`: each example's and the site's `rocx build` and `rocx check` of
+both programs, with no cache) into the job's summary, against the last green master run, and warns
+when a check got slower by half. A change to `roc_fork_commit` needs its compilers published first,
+on the machine with the fork: `just setup` (this Mac's), `just roc-fork-linux` (Linux's, cross-built
+by Zig), `just publish-roc-fork`, then the SHA-256s it prints in `roc_fork_sha256_<platform>`.

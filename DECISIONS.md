@@ -4195,9 +4195,10 @@ a kind's block, so a local of the same name shadows them.
 
 **Reversible:** yes: every kind becomes a value again and every call goes back through `Actor`.
 
-## D-069 CI on GitHub's macOS runners, with the fork's compiler published as a binary
+## D-069 CI on GitHub's Linux arm64 runners, with the fork's compiler published as binaries
 
-**Status.** Built (2026-11-24).
+**Status.** Built (2026-11-24): on macOS runners first, the same day on Linux arm64 ones (the
+user's).
 
 **Context.** The repository is public and in an organization of its own, so GitHub Actions is free
 for it, but nothing ran there: every build needs the Roc fork's compiler (`roc_fork_commit`), and
@@ -4212,27 +4213,31 @@ with. A newcomer without the fork was in the same place: `just setup` stopped.
    token. Pushes the fork's source.
 3. The fork's compiler as a binary in a private repository's release, downloaded with a token.
    Pull requests from forks get no secrets, so no CI.
-4. The binary as a public release of this repository; no token.
+4. The binaries as a public release of this repository; no token.
 
-**Choice.** 4 (the user's).
-- `just publish-roc-fork`, on the machine with the fork: the binary `just setup` built
-  (`.tools/roc-fork/<commit>/bin/roc`, macOS on Apple silicon), as `bin/roc` in an xz tarball
-  (44 MB; the binary is 276 MB), uploaded as release `roc-fork-<the commit's first 10>`, a
-  pre-release. Nothing is uploaded if its strings hold the home directory or a private word (as
-  whole words: Apple's and Microsoft's API names have one inside theirs); a release that is
-  there already isn't replaced. It prints the tarball's SHA-256.
-- `roc_fork_release_sha256` in the Justfile pins it. `just setup` builds from the fork where it has
-  the commit, as before; elsewhere, on macOS on Apple silicon, it downloads the release, checks the
-  SHA-256 and unpacks it in place of the build. A pin bump publishes first.
+**Choice.** 4 (the user's), and Linux arm64 runners (the user's, after a first day on macOS ones).
+- `just publish-roc-fork`, on the machine with the fork: the compilers built there, this Mac's
+  (`just setup`, `.tools/roc-fork/<commit>/`) and Linux's on arm64 (`just roc-fork-linux`: the
+  fork's commit cross-compiled by Zig, `zig build build-release -Dtarget=aarch64-linux-musl`, a
+  static binary, into `.tools/roc-fork/<commit>-linux_arm64/`), each `bin/roc` in an xz tarball
+  (44 MB; the binaries are some 275 MB), assets of release `roc-fork-<the commit's first 10>`, a
+  pre-release. Nothing is uploaded if a binary's strings hold the home directory or a private
+  word (as whole words: Apple's and Microsoft's API names have one inside theirs); an asset the
+  release has is kept, one it lacks added. It prints each tarball's SHA-256.
+- `roc_fork_sha256_macos_apple_silicon` and `roc_fork_sha256_linux_arm64` in the Justfile pin
+  them. `just setup` builds from the fork where it has the commit, as before; elsewhere, on either
+  of those, it downloads the release's asset for it, checks the SHA-256 and unpacks it in place of
+  the build. A pin bump publishes first.
 - `.github/workflows/ci.yml`: on every push to master and every pull request (a newer push stops a
-  pull request's older run), four jobs side by side on `macos-latest`: `just check` then `just
-  site`; `just test` as two, its three parts being recipes of their own (`test-rocx` then
-  `test-web`, each step run even when the one before failed; `test-server` beside them), with
-  Chromium's headless shell and Firefox from Playwright, and for `test-server` a Postgres from
-  Homebrew as `DATABASE_URL`; and `just examples` (the browsers). Five macOS jobs at once is a free
-  organization's most, and GitHub left a fifth unstarted for want of capacity once, hence four. `.github/actions/setup` is the
-  toolchain: Node 24, just, Zig and the nightly cached by their pins, the hosts' crates cached
-  (saved by master's runs), then `just setup`.
+  pull request's older run; pull requests grouped by number), five jobs side by side on
+  `ubuntu-24.04-arm`: `just check` (then `just check-times`, below); `just site`; `just test` as
+  two, its three parts being recipes of their own (`test-rocx` then `test-web`, each step run even
+  when the one before failed; `test-server` beside them, with a Postgres 18 service as `just db`
+  has it, user and password rocx, as `DATABASE_URL`); and `just examples`. The browsers are
+  Playwright's Chromium headless shell and Firefox, with the system's libraries they need.
+  `.github/actions/setup` is the toolchain: Node 24, just, Rust with the musl target, Zig and the
+  nightly cached by their pins, the hosts' crates cached (saved by master's runs), then `just
+  setup`.
 - After `just check`, `just check-times` (test/check-times.mjs): each example's and the docs
   site's `rocx build`, and `rocx check` of each of its programs with `--no-cache` (all of the work,
   every run; a cached check is some 20 ms), the median of three. The job's summary has the table
@@ -4240,11 +4245,16 @@ with. A newcomer without the fork was in the same place: `just setup` stopped.
   30 master runs' totals); a check slower by half and by 250 ms or more is a warning, not a failure
   (runners vary from run to run). So checking that grows slow, as apps, the platforms and the
   compiler change, is seen when it happens.
+- The tests see what a laptop shows, whatever the machine says: web/test/browser.mjs launches
+  Chromium with `--force-prefers-no-reduced-motion` and `--hide-scrollbars` (and, on Linux,
+  `--no-sandbox`, as Playwright does), Gecko with the same as prefs. Tests that measure time allow
+  `ROCX_TIME_SCALE` times as much (CI's runners: 3).
 
-**Why.** macOS on Apple silicon is the machine the binary is built on, so it runs on GitHub's
-runners as it is (built for macOS 15 and up), and nothing has to be cross-built; the fork's source
-stays private while anyone can build and test the repository. Linux runners need the fork built for
-Linux and rocx working there (TODO.md).
+**Why.** Linux arm64 runners are free for public repositories, start at once, and run twenty jobs
+at a time; GitHub's macOS arm64 ones left jobs unstarted twice on the first day for want of
+capacity, and five at once is a free organization's most. rocx's Linux targets (`arm64musl`) were
+in place; the fork's compiler is one static binary Zig cross-builds on the Mac that has the fork.
+The fork's source stays private while anyone can build and test the repository.
 
 **Reversible:** yes: delete the workflow and the releases; `just setup` falls back to the fork.
 

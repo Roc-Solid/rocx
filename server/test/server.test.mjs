@@ -857,7 +857,7 @@ test("a port in use: the server says so and exits, having started nothing (no jo
 	await new Promise((resolve) => setTimeout(resolve, 300));
 	assert.equal(code, 1, logged);
 	const said = logged.trimEnd().split("\n").map((line) => JSON.parse(line));
-	assert.ok(said.some((event) => has(event, { level: "error", msg: "rocx server: can't start", error: /^127\.0\.0\.1:\d+: Address already in use/ })), logged);
+	assert.ok(said.some((event) => has(event, { level: "error", msg: "rocx server: can't start", error: /^127\.0\.0\.1:\d+: Address (already )?in use/ })), logged); // macOS's words, then Linux's
 	assert.doesNotMatch(logged, /panicked|Tokio|error connecting/, logged);
 	assert.equal(await text("/"), "Hello from Roc, natively.", "the server on that port goes on");
 });
@@ -3209,8 +3209,11 @@ test("channels: a subscriber behind its channel's backlog hears resync (and on_o
 		const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
 		let text_ = "";
 		while (!text_.includes("welcome")) text_ += (await reader.read()).value;
-		// 2000 of 4 KB each, published while the stream isn't read: far more than its backlog and buffers.
-		assert.equal(await text(`/news/flood?org=acme&count=2000&size=4000${latest ? "&latest=yes" : ""}`, { method: "POST" }), "flooded");
+		// 2000 of 4 KB each, published while the stream isn't read: far more than its backlog and
+		// buffers. Latest-wins ones 16 KB each: Linux's sockets on loopback grow to some MB, and with
+		// 4 KB 1,245 of 2,000 came, few enough replaced (the ordered ones, as big, fell behind twice).
+		const size = latest ? 16000 : 4000;
+		assert.equal(await text(`/news/flood?org=acme&count=2000&size=${size}${latest ? "&latest=yes" : ""}`, { method: "POST" }), "flooded");
 		// Read until the last comes (the stream beats meanwhile, so it is never quiet for long).
 		const last = /"n":2000[,}].*\n\n/;
 		const deadline = Date.now() + 10_000;

@@ -1,15 +1,13 @@
-# The toolchain for a CI job, on macOS (Apple silicon): Node, just, `just setup` (Zig and the
-# pinned nightly, cached; the Roc fork's compiler, which `just setup` downloads prebuilt from this
-# repository's release of it; bin/rocx), the Rust hosts' dependencies (cached), and, when a job asks
-# for them, Chromium and Firefox for the browser tests and a Postgres (DATABASE_URL).
+# The toolchain for a CI job, on Linux (arm64, GitHub's ubuntu-24.04-arm): Node, just, Rust with
+# the musl target the hosts are built for, `just setup` (Zig and the pinned nightly, cached; the Roc
+# fork's compiler, which `just setup` downloads prebuilt from this repository's release of it;
+# bin/rocx), the Rust hosts' dependencies (cached), and, when a job asks for them, Chromium and
+# Firefox for the browser tests. A job's Postgres is a service of its own (ci.yml).
 name: Toolchain
-description: Node, just, the pinned toolchain (just setup), and browsers or Postgres when asked for
+description: Node, just, Rust, the pinned toolchain (just setup), and browsers when asked for
 inputs:
   browsers:
     description: Chromium's headless shell and Firefox, where web/test/browser.mjs finds them
-    default: "false"
-  postgres:
-    description: A Postgres of the job's own, its URL in DATABASE_URL
     default: "false"
 runs:
   using: composite
@@ -20,14 +18,21 @@ runs:
 
     - name: just
       shell: bash
-      run: brew install just
+      run: |
+        curl -fsSL https://just.systems/install.sh | bash -s -- --tag 1.59.0 --to "$HOME/.local/bin"
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+    # Rust for the hosts (server/host, cli/host), built for musl: what Roc links on Linux.
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: aarch64-unknown-linux-musl
 
     # Zig, the nightly and the glue spec, by the versions the Justfile pins (the fork's compiler is
     # downloaded each time: as quick as a cache, from the same place).
     - name: Pins
       id: pins
       shell: bash
-      run: echo "key=$(grep -E '^(roc_nightly|roc_commit|zig_version) :=' Justfile | shasum -a 256 | cut -c1-16)" >> "$GITHUB_OUTPUT"
+      run: echo "key=$(grep -E '^(roc_nightly|roc_commit|zig_version) :=' Justfile | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
     - uses: actions/cache@v6
       with:
         path: |
@@ -48,22 +53,7 @@ runs:
     - name: Browsers
       if: inputs.browsers == 'true'
       shell: bash
-      run: npx -y playwright@1.65.1 install --only-shell chromium firefox
-
-    # As `just db`'s: user and password rocx, which it asks for (SCRAM), as the tests expect (one
-    # signs in with a wrong password and wants the refusal).
-    - name: Postgres
-      if: inputs.postgres == 'true'
-      shell: bash
-      run: |
-        brew install postgresql@18
-        bin="$(brew --prefix postgresql@18)/bin"
-        data="$RUNNER_TEMP/postgres"
-        echo rocx > "$RUNNER_TEMP/postgres-password"
-        "$bin/initdb" -D "$data" -U rocx --auth=scram-sha-256 --pwfile="$RUNNER_TEMP/postgres-password" >/dev/null
-        "$bin/pg_ctl" -D "$data" -l "$RUNNER_TEMP/postgres.log" -o "-p 55432 -k $RUNNER_TEMP" start
-        PGPASSWORD=rocx "$bin/createdb" -h 127.0.0.1 -p 55432 -U rocx rocx
-        echo "DATABASE_URL=postgres://rocx:rocx@127.0.0.1:55432/rocx" >> "$GITHUB_ENV"
+      run: npx -y playwright@1.65.1 install --with-deps --only-shell chromium firefox
 
     - name: just setup
       shell: bash

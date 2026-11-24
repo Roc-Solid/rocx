@@ -31,10 +31,12 @@ export function findChrome() {
  * laptop's: motion as a page gets it with nothing asked for (macOS's Reduce motion is on on GitHub's
  * runners, and on some people's; a test that wants less asks for it, `Emulation.setEmulatedMedia`),
  * and scrollbars that take no room (a Mac with a mouse, and the runners, show classic ones, 15 px
- * wide, which a box's width then loses). */
+ * wide, which a box's width then loses). On Linux, without Chromium's sandbox, as Playwright runs
+ * it: Ubuntu 24.04 keeps the namespaces it needs from users, and a container's root may not have it. */
 export async function launch(binary = findChrome()) {
 	const profile = mkdtempSync(join(tmpdir(), "rocx-chrome-"));
-	const child = spawn(binary, ["--headless", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run", "--force-prefers-no-reduced-motion", "--hide-scrollbars", "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
+	const linux = process.platform === "linux" ? ["--no-sandbox"] : [];
+	const child = spawn(binary, ["--headless", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run", "--force-prefers-no-reduced-motion", "--hide-scrollbars", ...linux, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
 	const endpoint = await new Promise((resolve, reject) => {
 		let seen = "";
 		child.stderr.on("data", (chunk) => {
