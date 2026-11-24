@@ -46,7 +46,12 @@ if (!skip) {
 	run(roc, ["build", "--target=wasm32", "--opt=size", `--output=${join(out, "nav.wasm")}`, join(out, "nav-client", "main.roc")]);
 }
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+/** A machine slower than the ones these are measured on says so by ROCX_TIME_SCALE (CI sets 3):
+ * the waits here, and the runtime's rest before a hover prefetches (`Runtime.REST`, 65 ms, in
+ * HEARD), grow by as much, so the DevTools protocol's round trips (a pointer moved, then moved on;
+ * moved, then pressed) still fit inside a rest, and a prefetch's request inside a wait. */
+const SCALE = Number(process.env.ROCX_TIME_SCALE) || 1;
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms * SCALE));
 
 /** The build's id, as rocx build wrote it in Root: every document's bootstrap says it. */
 const BUILD = skip ? "" : /^\tbuild = "([0-9a-f]{8})"$/m.exec(readFileSync(join(here, "nav", "Generated", "Root.roc"), "utf8"))[1];
@@ -177,7 +182,11 @@ const HEARD = `
 		"nav.item": ({ id }) => window.heard.push("item " + id),
 		"nav.leave": ({ who, to, from, delta, before }) => window.heard.push("leave " + who + " " + to + " from " + from + (delta ? " " + delta : "") + (before ? " after one stopped it" : "")),
 	};
-	document.addEventListener("rocx:ready", (event) => { window.ready = event.detail; });
+	document.addEventListener("rocx:ready", (event) => {
+		window.ready = event.detail;
+		const runtime = event.detail.runtime.constructor;
+		if (${SCALE} !== 1 && !runtime.scaled) (runtime.REST *= ${SCALE}), (runtime.scaled = true);
+	});
 	document.addEventListener("rocx:navigate", (event) => { window.left = window.scrollY; window.heard.push("navigate " + new URL(event.detail.url).pathname + new URL(event.detail.url).search); });
 	document.addEventListener("rocx:navigated", (event) => window.heard.push("navigated " + new URL(event.detail.url).pathname + new URL(event.detail.url).search));
 `;
@@ -712,6 +721,9 @@ test("prefetch: data-rocx-preload=\"off\" on a link, or on <html> for the app, n
 		await hover(tab, ".to-item");
 		await sleep(150);
 		assert.deepEqual(site.documents(), [], "off for the app");
+		// The pointer off the links, where scrolling brings none under it: back at the top, a link
+		// it still rested on would be hovered again, and prefetched now that it may be.
+		await hover(tab, ".home h1");
 		await tab.eval("document.documentElement.removeAttribute('data-rocx-preload')");
 		await tab.eval("document.querySelector('.to-seen').scrollIntoView()");
 		await tab.wait("window.ready.runtime.pages.has(location.origin + '/items/5')");
