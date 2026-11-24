@@ -1,7 +1,7 @@
 import pf.Server
 import pf.Endpoint
+import auth.Auth
 import ../../Board
-import ../../Middlewares
 import ../../Store
 
 ## GET /join: everyone who has joined, the joining page's quick picks.
@@ -13,11 +13,13 @@ get! = |_|
 		Err(BadRow(why)) => Err(Store.refused!(BadRow(why)))
 	}
 
-## POST /join, from the joining page (`name`, `color`, and `then`, where to go after): the cookie
-## that says who you are, for a year, and on to `then`. A name someone has already is theirs: you
-## are them now, in the colour you picked.
+## POST /join, from the joining page (`name`, `color`, and `then`, where to go after): you are that
+## person now, and on to `then`. A name someone has already is theirs: you are them now, in the
+## colour you picked. Who you are is a session (packages/auth): `Auth.sign_in!` starts one for the
+## person and sets its cookie, `board_session`, which holds a random token (the person's id stays on
+## the server). The session you had is ended first (`Auth.sign_out!`), so a browser has one.
 post! : { request : Server.Request, params : {}, context : {}, body : { name : Str, color : Str, then : Str } } => Try(Str, Endpoint.Refusal)
-post! = |{ body, .. }|
+post! = |{ request, body, .. }|
 	match Board.person_name_of(body.name) {
 		Err(why) => Err(BadRequest(why))
 		Ok(name) =>
@@ -25,10 +27,11 @@ post! = |{ body, .. }|
 				Err(BadRequest("Pick one of the colours."))
 			} else {
 				match Store.join!(name, body.color) {
-					Ok(me) => {
-						kept = { ..Server.cookie_defaults, max_age_s: 365 * 86_400 }
-						Err(Answer(Server.set_cookie(Server.redirect(Board.after_join(body.then)), Middlewares.cookie, me.id, kept)))
-					}
+					Ok(me) =>
+						match Auth.sign_in!(Auth.sign_out!(request, Server.redirect(Board.after_join(body.then))), me.id) {
+							Ok(answer) => Err(Answer(answer))
+							Err(DbErr(why)) => Err(Store.refused!(DbErr(why)))
+						}
 					Err(problem) => Err(Store.refused!(problem))
 				}
 			}

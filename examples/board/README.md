@@ -28,7 +28,7 @@ seeds it as it starts. To put it elsewhere, pass a server option after `--`:
 another port.
 
 To be two people at once, open the board in a second browser, or in a private window. The tabs of
-one browser share their cookies, so they are the same person.
+one browser share their cookies, and so their session, so they are the same person.
 
 `BOARD_LEASE_TTL_MS` sets how long an edit lease lasts without being renewed (30000 ms by default;
 the tests make it short): `BOARD_LEASE_TTL_MS=5000 ../../bin/rocx dev`.
@@ -50,7 +50,8 @@ Then open http://localhost:18120. `node server/build.mjs … --opt=speed` builds
 ## A tour
 
 1. Open the app and it asks who you are. Pick Ada, Bo or Cyd (the seeded team), or type a new name
-   and pick a colour. Your choice is kept in a cookie; there are no passwords.
+   and pick a colour. Your choice is kept as a session on the server (packages/auth), and its
+   cookie holds a random token; there are no passwords.
 2. The front page lists the boards. "Acme Rocket Launch" is seeded with four columns and ten cards.
    Make another board with the form below the list.
 3. On a board, drag a card to another column, or up and down its own. A mouse works, and so does a
@@ -88,7 +89,7 @@ Then open http://localhost:18120. `node server/build.mjs … --opt=speed` builds
 | Fractional ranks: a move writes one row, and two cards dropped into one gap at once each get a rank of their own (below) | `Rank.roc`, `Board.rank_for`, `Store.move!` |
 | The rules both halves share: the order cards show in, where a move puts a card, a move applied to the page's copy, validation | `Board.roc` |
 | Middleware: same-origin checks and security headers on every request, a member check, and a rate limit on writes (packages/guard) | `Middlewares.roc` (`default`, `member`, `writer`); each route file's `middleware = …` |
-| Who you are: a name and a colour in a cookie | `routes/join/`, `Middlewares.member` |
+| Who you are: a name and a colour, kept as a session by packages/auth's plugin with no `admit!` (nobody signs in by a link or a provider). Joining starts it (`Auth.sign_in!`), `Auth.required` reads it and sends a page asked for without one to join, and a channel's check reads it from the stream's cookies | `main.roc` (`Auth.plugin`), `routes/join/+server.roc`, `Middlewares.member` |
 | SQLite in the server's process: migrations, transactions that take turns, a `json` column, every query in one module | `main.roc`, `migrations/`, `Store.roc` |
 | A seed that can run twice: three people and a board that looks lived in | `migrations/0002_seed.sql` |
 | Forms that work without JavaScript: each has `method="post"` and an `action`; with JavaScript, the page sends it (`on:submit` with an action, or `use_submission!`) and stays | every `<form>` |
@@ -194,7 +195,8 @@ node --test 'examples/board/test/*.test.mjs'       # a SQLite file each; the bro
   ending in `0`; fifty cards put at a column's top, at its end, or always second, staying in order
   and short; a move applied twice being the same as once; nudges up and down; validation.
 - `test/http.test.mjs` talks to the server as a browser does, with JavaScript and without: joining
-  (and never being sent to another site after), the seeded board (running the seed again adds
+  (and never being sent to another site after; its session's cookie a token, not an id, and
+  joining as someone else ending the session before), the seeded board (running the seed again adds
   nothing), moves and their ranks, ten moves into one gap at once, refused moves, the edit lease
   (taken, refused to someone else, renewed, released, running out, and a late take after a release
   taking nothing), the channel (members hear each change, a visitor is refused), labels, the
@@ -218,7 +220,9 @@ one `DataTransfer` carried through them. In Chromium it is the browser's own dra
 ## Product calls
 
 - No passwords. Picking a name makes you that person, in the colour you picked, even if someone has
-  the name already. Everyone who has joined may use every board.
+  the name already. Everyone who has joined may use every board. Who you picked is still a session
+  kept on the server (packages/auth), so the cookie holds a random token, not an id anyone could
+  change by hand. It lasts a year, and joining as someone else ends it.
 - The edit lease belongs to a person, not a tab: Ada in two tabs can edit in both. It covers the
   card's details, not where the card is, so moving a card someone is editing is allowed.
 - A browser without JavaScript never holds a lease. It may change a card unless someone else is

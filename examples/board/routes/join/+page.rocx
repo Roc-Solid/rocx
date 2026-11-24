@@ -7,9 +7,9 @@ import ../../Board
 import ../../Generated/Api
 import ../../Ui/Avatar
 
-## Who you are: a name and a colour, kept in a cookie (no passwords). Pick someone who has joined
-## already, or type a new name. A plain form: it works before the page's JavaScript has loaded, and
-## without it. `?then=` says where to go after.
+## Who you are: a name and a colour, kept as a session (packages/auth; no passwords). Pick someone
+## who has joined already, or type a new name. A plain form: it works before the page's JavaScript
+## has loaded, and without it. `?then=` says where to go after.
 meta = { title: "Join · Board" }
 
 ## Everyone who has joined (`GET /join`). Its type is said here: in the browser's copy of the app,

@@ -47,11 +47,16 @@ export async function started({ env = {} } = {}) {
 	};
 }
 
-/** A client who is someone: their cookie set as joining would set it (`/join`). */
+/**
+ * A client who is someone: joined as them (`POST /join`, their name and the colour they have, so
+ * nothing about them changes), which starts their session (packages/auth) and sets its cookie,
+ * `board_session`.
+ */
 export async function as(app, db, name) {
-	const [person] = await db.sql`select cast(id as text) as id from people where name = ${name}`;
+	const [person] = await db.sql`select color from people where name = ${name}`;
 	const client = app.client();
-	client.cookies.set("acme_board_person", person.id);
+	const joined = await client.post("/join", { name, color: person.color, then: "/" });
+	if (joined.status !== 303 || !client.cookies.has("board_session")) throw new Error(`${name} couldn't join: ${joined.status}`);
 	return client;
 }
 

@@ -65,19 +65,21 @@ async function pressAlt(tab, key) {
 }
 
 describe(`Board in two browsers (Ada's: ${engine})`, { skip: noDatabase || noChrome }, () => {
-	let running, seeded, browsers, people, open, ada, bo;
+	let running, seeded, browsers, sessions, open, ada, bo;
 	before(async () => {
 		running = await started();
 		seeded = await ids(running.db);
-		people = Object.fromEntries((await running.db.sql`select name, cast(id as text) as id from people`).map((row) => [row.name, row.id]));
+		// Each person's session, started as joining starts it: the token their browser's cookie holds.
+		sessions = {};
+		for (const name of ["Ada", "Bo", "Cyd"]) sessions[name] = (await as(running.app, running.db, name)).cookies.get("board_session");
 		browsers = [await launchBrowser({ engine }), await launchBrowser()];
-		open = async (browser, person) => {
-			const tab = await browser.open(`${running.app.url}/b/launch`, { cookies: [["acme_board_person", person]], script: GLIDES + HOLD });
+		open = async (browser, session) => {
+			const tab = await browser.open(`${running.app.url}/b/launch`, { cookies: [["board_session", session]], script: GLIDES + HOLD });
 			// Live: subscribed to the board's channel, and in its presence room.
 			await tab.page.wait("document.querySelector('.live.on')", 5000);
 			return tab;
 		};
-		[ada, bo] = [await open(browsers[0], people.Ada), await open(browsers[1], people.Bo)];
+		[ada, bo] = [await open(browsers[0], sessions.Ada), await open(browsers[1], sessions.Bo)];
 	});
 	after(async () => {
 		for (const browser of browsers ?? []) await browser?.close();
@@ -250,7 +252,7 @@ describe(`Board in two browsers (Ada's: ${engine})`, { skip: noDatabase || noChr
 
 		// Cyd, in a browser of their own, opens it too: Bo's tile now says both, the same stack.
 		browsers.push(await launchBrowser());
-		const cyd = await open(browsers[2], people.Cyd);
+		const cyd = await open(browsers[2], sessions.Cyd);
 		await (await cyd.getByRole("link", { name: title })).click();
 		await cyd.findByRole("heading", { level: 2, name: title });
 		await bo.findByRole("group", { name: "Ada and Cyd have this card open" }, { ms: 5000 });

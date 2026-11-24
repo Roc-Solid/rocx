@@ -40,7 +40,7 @@ Store := [].{
 
 	# ---- People ----
 
-	## Someone, by id (the cookie the middleware reads).
+	## Someone, by id (a session's user, which the middleware reads).
 	person! : Str => Try(Board.Person, Store.Problem)
 	person! = |id|
 		if I64.from_str(id).is_err() {

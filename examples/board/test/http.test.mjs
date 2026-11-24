@@ -3,6 +3,7 @@
 // channel, the rate limit on writes, and the forms.
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { until } from "../../../packages/testing/index.mjs";
@@ -34,11 +35,26 @@ describe("Board over HTTP", { skip: noDatabase }, () => {
 		const board = await visitor.read("/b/launch");
 		assert.equal(board.me.name, "Dee");
 		assert.equal(board.me.color, "#0b7285");
+		// Who joined is a session (packages/auth): the cookie holds a random token, whose SHA-256 the
+		// sessions' table keeps with the person's id. A cookie that holds an id is nobody.
+		const token = visitor.cookies.get("board_session");
+		assert.match(token, /^[A-Za-z0-9_-]{43}$/);
+		assert.deepEqual(await db.sql`select user_id from auth_sessions where id = ${createHash("sha256").update(token).digest("base64url")}`, [{ user_id: board.me.id }]);
+		const forger = app.client();
+		forger.cookies.set("board_session", board.me.id);
+		assert.equal((await forger.get("/b/launch")).location, "/join?then=%2Fb%2Flaunch");
 
 		// The same name, whatever its case, is the same person, in the colour picked last.
 		const again = app.client();
 		await again.post("/join", { name: "dee", color: "#e67700", then: "/" });
 		assert.deepEqual(await again.read("/b/launch").then((data) => [data.me.id, data.me.name, data.me.color]), [board.me.id, "Dee", "#e67700"]);
+
+		// Joining as someone else ends the session you had: its token is nobody's now.
+		await visitor.post("/join", { name: "Ada", color: "#c2255c", then: "/" });
+		assert.equal((await visitor.read("/b/launch")).me.name, "Ada");
+		const stale = app.client();
+		stale.cookies.set("board_session", token);
+		assert.equal((await stale.json("/b/launch/columns", { name: "Stale" })).status, 401);
 
 		// Only this site's paths, and only the colours there are.
 		assert.equal((await app.client().post("/join", { name: "Eve", color: "#0b7285", then: "//elsewhere.example/" })).location, "/");
@@ -46,7 +62,7 @@ describe("Board over HTTP", { skip: noDatabase }, () => {
 		await refused.get("/join");
 		assert.equal((await refused.post("/join", { name: "Eve", color: "red", then: "/" })).status, 303);
 		assert.deepEqual([refused.flash.status, refused.flash.body], [400, "Pick one of the colours."]);
-		assert.equal(refused.cookies.has("acme_board_person"), false);
+		assert.equal(refused.cookies.has("board_session"), false);
 	});
 
 	test("the seeded board: three people, four columns, ten cards, and running the seed again adds nothing", async () => {
