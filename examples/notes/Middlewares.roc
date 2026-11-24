@@ -1,9 +1,10 @@
 import pf.Env
 import pf.Middleware
 import pf.Server
+import auth.Auth
 import guard.RateLimit
 import guard.Security
-import mcp.Auth
+import mcp.Auth as McpAuth
 import Account
 import Address
 import guard.Guard
@@ -13,9 +14,11 @@ import Store
 ## the one for its own route (`middleware = Middlewares.signed_in`), which runs inside it. There are
 ## three ways in, each handing on who is asking (`Me`):
 ##
-## - `signed_in`, for pages: the session cookie, or a browser is sent to sign in;
-## - `api`, for the JSON API under /api: a personal access token, or the session cookie;
+## - `signed_in`, for pages: a session (packages/auth's), or a browser is sent to sign in;
+## - `api`, for the JSON API under /api: a personal access token, or the session;
 ## - `agent`, for MCP (Agents.roc mounts it at /mcp): a personal access token, nothing else.
+##
+## packages/mcp's `Auth` (`McpAuth` here) reads a bearer token; packages/auth's `Auth` is sign-in.
 Middlewares := [].{
 
 	## Who is asking, as a signed-in route is handed it: the person, and how they came. `token` is
@@ -42,29 +45,39 @@ Middlewares := [].{
 			},
 	)
 
-	## Pages: someone signed in (the session cookie). A browser asking for a page is sent to sign in,
-	## and back here after; anything else is refused (401).
+	## Pages: someone signed in (packages/auth's `Auth.required`, which keeps a session in use going).
+	## A browser asking for a page is sent to sign in, and back here after; anything else is refused
+	## (401). Then the session's person, which a session whose person isn't there ends.
 	signed_in : Middleware({}, Middlewares.Me)
-	signed_in = Middleware.make(
-		|request, {}, next!|
-			match Account.session!(request) {
-				Ok(person) => next!(request, { person, token: "", read_only: Bool.False })
-				Err(SignedOut) =>
+	signed_in = Auth.required(|{}, session| session).then(Middlewares.person)
+
+	## The person a session signs in, handed on as `Me`. A session whose person isn't there is ended,
+	## and the request is answered as a signed-out one.
+	person : Middleware(Auth.Session, Middlewares.Me)
+	person = Middleware.make(
+		|request, session, next!|
+			match Store.person!(session.user) {
+				Ok(found) => next!(request, { person: found, token: "", read_only: Bool.False })
+				Err(NotFound) =>
 					if Server.wants_html(request) and request.method == "GET" {
-						Server.redirect("/sign-in?then=${Server.encode_segment(Middlewares.here(request))}")
+						Auth.sign_out!(request, Server.redirect("/sign-in"))
 					} else {
-						Server.refused(401, "Sign in first, at /sign-in.")
+						Auth.sign_out!(request, Server.refused(401, "Sign in first."))
 					}
+				Err(problem) => {
+					_ = Store.refused!(problem)
+					Server.refused(500, "Your notes couldn't be read just now; try again.")
+				}
 			},
 	)
 
 	## The JSON API: a personal access token (`Authorization: Bearer acme_pat_…`), or the session
-	## cookie (the API is the app's own too). Neither: 401, saying how to send one. A token that
-	## isn't good is refused, rather than passed over for the cookie.
+	## (the API is the app's own too). Neither: 401, saying how to send one. A token that isn't good
+	## is refused, rather than passed over for the session.
 	api : Middleware({}, Middlewares.Me)
 	api = Middleware.make(
 		|request, {}, next!|
-			match Auth.bearer(request.headers) {
+			match McpAuth.bearer(request.headers) {
 				Ok(token) =>
 					match Account.bearer!(token) {
 						Ok(found) => next!(request, found)
@@ -72,7 +85,7 @@ Middlewares := [].{
 					}
 				Err(NoToken) =>
 					match Account.session!(request) {
-						Ok(person) => next!(request, { person, token: "", read_only: Bool.False })
+						Ok(found) => next!(request, { person: found, token: "", read_only: Bool.False })
 						Err(SignedOut) => unauthorized
 					}
 			},
@@ -83,7 +96,7 @@ Middlewares := [].{
 	agent : Middleware({}, Middlewares.Me)
 	agent = Middleware.make(
 		|request, {}, next!|
-			match Auth.bearer(request.headers) {
+			match McpAuth.bearer(request.headers) {
 				Ok(token) =>
 					match Account.bearer!(token) {
 						Ok(found) => next!(request, found)
@@ -129,10 +142,6 @@ Middlewares := [].{
 			}
 		Address.of(given) ?? ""
 	}
-
-	## The path and query a request asked for: where signing in comes back to.
-	here : Server.Request -> Str
-	here = |request| if (request.query.is_empty()) request.path else "${request.path}?${request.query}"
 }
 
 ## Not signed in, or a token that isn't good: 401, and how to send one.

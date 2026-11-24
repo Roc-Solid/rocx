@@ -9,11 +9,28 @@ import ../../Ui/Brand
 
 ## Signing in: an address, and a link mailed to it. No passwords. A plain form, so it works before
 ## the page's JavaScript has loaded, and without it; with it, the page stays and says where the link
-## went.
+## went. A sign-in that didn't work comes back here (packages/auth's `?error=`), and the page says
+## why.
 meta = { title: "Sign in · Notes" }
 
+## What the page says when a sign-in came back with `?error=` (packages/auth's codes): a link used
+## or expired (`link`), an address turned away (`refused`, with the reason given), or the database
+## unable to take it just then (`unavailable`, and anything else). `""` when nothing went wrong.
+problem_of : Str -> Str
+problem_of = |query| {
+	reason = Query.value(query, "reason")
+	match Query.value(query, "error") {
+		"" => ""
+		"link" => "That sign-in link has been used, or it has expired. Ask for another below."
+		"refused" => if (reason.is_empty()) "That address can't sign in here." else reason
+		_ => "Signing in didn't work just now. Try again in a minute."
+	}
+}
+
 view! = |_| {
-	then = Query.value(Router.location!({}).query, "then")
+	query = Router.location!({}).query
+	then = Query.value(query, "then")
+	failed = problem_of(query)
 	sending = use_submission!(Api.post_sign_in({}))
 	<main id="main" class="sign-in">
 		<div class="card">
@@ -29,6 +46,9 @@ view! = |_| {
 					<form method="post" action={Endpoint.url_of(Api.post_sign_in({}))}>
 						<h1>Sign in</h1>
 						<p class="lead">Your notes, in Markdown, searchable, and yours alone. We'll email you a link: no password to remember.</p>
+						{if !failed.is_empty() {
+							<p class="problem" role="alert">{failed}</p>
+						}}
 						<input type="hidden" name="then" value={then} />
 						<label for="email">Email address</label>
 						<input id="email" name="email" type="email" required autocomplete="email" placeholder="you@example.com" value={sending.field!("email")} />

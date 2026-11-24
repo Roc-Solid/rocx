@@ -2,13 +2,14 @@ import pf.Html
 import pf.Endpoint
 import pf.Router
 import pf.Server
-import pf.Router exposing [use_submission!]
 import ../../../Query
 import ../../../Generated/Api
 import ../../../Ui/Brand
 
 ## Where a sign-in link lands: who it signs in, and a button that does. Following the link signs
-## nobody in by itself, so a mail scanner that opens links doesn't use yours up; the button posts it.
+## nobody in by itself, so a mail scanner that opens links doesn't use yours up; the button posts it
+## to packages/auth's /auth/link (a plain form: the plugin signs in and sends the browser on, or
+## back to /sign-in saying why not).
 meta = { title: "Sign in · Notes" }
 
 ## Who the link signs in, or why it doesn't (used, or expired: 410).
@@ -17,20 +18,15 @@ link! = |token| Endpoint.read!(Api.get_sign_in_link({}).with_query("token=${Serv
 
 view! = |_| {
 	token = Query.value(Router.location!({}).query, "token")
-	using = use_submission!(Api.post_sign_in_link({}))
 	<main id="main" class="link">
 		<div class="card">
 			<p class="brand">{Brand.view({})}</p>
 			{if link!(token).is_ok() {
-				<form method="post" action={Endpoint.url_of(Api.post_sign_in_link({}))}>
+				<form method="post" action="/auth/link">
 					<h1>Almost there</h1>
 					<p>Sign in as <strong>{link!(token).map_ok(|found| found.email) ?? ""}</strong>?</p>
 					<input type="hidden" name="token" value={token} />
-					<button type="submit" class="primary" disabled?={using.pending!()}>Sign in</button>
-					{match using.error!() {
-						Ok(problem) => <p class="problem" role="alert">{Server.explain(problem)}</p>
-						Err(_) => <></>
-					}}
+					<button type="submit" class="primary">Sign in</button>
 				</form>
 			} else {
 				

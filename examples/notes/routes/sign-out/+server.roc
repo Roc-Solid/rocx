@@ -1,7 +1,8 @@
 import pf.Server
 import pf.Endpoint
-import ../../Account
+import auth.Auth
 
-## Signs out: the session cookie goes, and on to the sign-in page.
+## Signs out: the session ended (packages/auth's `Auth.sign_out!`), its cookie gone, and on to the
+## sign-in page.
 post! : { request : Server.Request, params : {}, context : {}, body : {} } => Try(Str, Endpoint.Refusal)
-post! = |_| Err(Answer(Account.signed_out(Server.redirect("/sign-in"))))
+post! = |{ request, .. }| Err(Answer(Auth.sign_out!(request, Server.redirect("/sign-in"))))

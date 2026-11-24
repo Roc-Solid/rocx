@@ -99,7 +99,7 @@ AppNotes := [].{
 			path: Paths.examples_notes,
 			blurb: "Notes in Markdown, for people and AI agents",
 			summary: "Personal notes in Markdown that AI agents can use too: sign in by a mailed link, write with a live preview, tag, pin and search, and let an AI client read and write them over MCP.",
-			shows: ["Sign-in by a mailed link, and a signed session cookie", "Personal access tokens, kept as hashes", "An MCP server whose tools are the JSON API's endpoints, and its OpenAPI page", "Full-text search, and Markdown with a live preview"],
+			shows: ["Sign-in by a mailed link, with packages/auth's plugin", "Personal access tokens, kept as hashes", "An MCP server whose tools are the JSON API's endpoints, and its OpenAPI page", "Full-text search, and Markdown with a live preview"],
 			shots: [
 				{ file: "notes", alt: "The notebook: notes with their tags, pinned ones first, and the tags down the side", caption: "The notebook", phone: Bool.False },
 				{ file: "edit", alt: "A note being written, its Markdown beside its live preview", caption: "Writing, with a live preview", phone: Bool.False },

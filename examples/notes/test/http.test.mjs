@@ -1,21 +1,27 @@
 // Notes over HTTP, as a browser without JavaScript, as the page's runtime, and as a script with a
-// token ask it: signing in by the mailed link (once, and not after it expires), sessions, the seed,
+// token ask it: signing in by the mailed link (packages/auth's plugin: once, and not after it
+// expires), sessions, the seed,
 // notes through the pages' forms and the JSON API, search, tokens (shown once, kept as a hash,
 // read-only, revoked), one person never reaching another's notes, and the limit on sign-in mail.
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { bearer, dir, mailedLink, makeToken, noDatabase, noteIds, signIn, started } from "./app.mjs";
+import { bearer, dir, mailedLink, makeToken, noDatabase, noteIds, sessionCookie, signIn, started, tokenOf } from "./app.mjs";
 
 const sha256 = (text) => createHash("sha256").update(text).digest("hex");
+
+/** How packages/auth keeps a link's or a session's token: its SHA-256, in Base64 for URLs. */
+const kept = (token) => createHash("sha256").update(token).digest("base64url");
+
+/** Where the plugin sends a link that doesn't sign in: the sign-in page, saying why. */
+const linkRefused = "/sign-in?error=link";
 
 describe("Notes over HTTP", { skip: noDatabase }, () => {
 	let running, app, db, ada, bo;
 	before(async () => {
-		// A link lasts 3 s here, rather than 15 minutes, so a test can wait for one to expire.
-		running = await started({ env: { NOTES_LINK_TTL_MS: "3000" } });
+		running = await started();
 		({ app, db } = running);
 		ada = await signIn(app, "ada@example.com");
 		bo = await signIn(app, "bo@example.com");
@@ -31,9 +37,9 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 		assert.equal(api.status, 401);
 		assert.match(api.headers.get("www-authenticate"), /^Bearer/);
 		assert.equal((await visitor.json("/mcp", { jsonrpc: "2.0", id: 1, method: "tools/list" })).status, 401);
-		// A cookie the server didn't sign is no session.
+		// A cookie the server didn't make is no session, however much it looks like one.
 		const forger = app.client();
-		forger.cookies.set("acme_notes_session", "1.0.9999999999999.c2lnbmVk");
+		forger.cookies.set(sessionCookie, randomBytes(32).toString("base64url"));
 		assert.equal((await forger.get("/")).status, 303);
 	});
 
@@ -55,15 +61,16 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 		const landing = await visitor.get(link);
 		assert.equal(landing.status, 200);
 		landing.dom.getByText("cyd@example.com");
-		assert.equal(visitor.cookies.has("acme_notes_session"), false);
+		assert.equal(visitor.cookies.has(sessionCookie), false);
 
-		// The button does, and goes on to where the person was going.
-		const token = new URL(link, "http://x").searchParams.get("token");
-		const used = await visitor.post("/sign-in/link", { token });
+		// The button does (a plain form, posting to packages/auth's /auth/link), and goes on to where
+		// the person was going.
+		const token = tokenOf(link);
+		const used = await visitor.post("/auth/link", { token });
 		assert.equal(used.status, 303);
 		assert.equal(used.location, "/settings");
 		const cookie = used.headers.get("set-cookie");
-		for (const part of ["acme_notes_session=", "Max-Age=2592000", "HttpOnly", "SameSite=Lax"]) assert.ok(cookie.includes(part), cookie);
+		for (const part of [`${sessionCookie}=`, "Max-Age=2592000", "HttpOnly", "SameSite=Lax"]) assert.ok(cookie.includes(part), cookie);
 		const settings = await visitor.read("/settings");
 		assert.equal(settings.email, "cyd@example.com");
 
@@ -71,7 +78,11 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 		const home = await visitor.read("/");
 		assert.deepEqual(home.notes.map((note) => note.title), ["Welcome to Notes"]);
 
-		// Nothing in the server keeps the token itself: Kv has its hash.
+		// The database keeps no token itself: the session's row has its hash, and the link, used, is gone.
+		const session = visitor.cookies.get(sessionCookie);
+		const sessions = (await db.sql`select id from auth_sessions`).map((row) => row.id);
+		assert.ok(sessions.includes(kept(session)) && !sessions.includes(session));
+		assert.equal((await db.sql`select count(*) as n from auth_links where email = 'cyd@example.com'`)[0].n, 0);
 		assert.equal((await db.sql`select count(*) as n from people where email = 'cyd@example.com'`)[0].n, 1);
 	});
 
@@ -81,35 +92,60 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 		await first.get("/sign-in");
 		await first.post("/sign-in", { email: "dee@example.com", then: "/" });
 		const link = await mailedLink(app, "dee@example.com", before);
-		const token = new URL(link, "http://x").searchParams.get("token");
-		assert.equal((await first.post("/sign-in/link", { token })).status, 303);
+		const token = tokenOf(link);
+		assert.equal((await first.post("/auth/link", { token })).status, 303);
 
 		const again = app.client();
 		const page = await again.get(link);
 		page.dom.getByRole("heading", { name: "This link has expired" });
-		const reused = await again.post("/sign-in/link", { token });
+		// The page's endpoint says so (410), and the plugin sends the button's post back to the
+		// sign-in page, which says why.
+		assert.equal((await again.json(`/sign-in/link?token=${token}`, undefined, "GET")).status, 410);
+		const reused = await again.post("/auth/link", { token });
 		assert.equal(reused.status, 303);
-		assert.deepEqual([again.flash.status, again.flash.body], [410, "This sign-in link has been used, or it has expired. Ask for another."]);
-		assert.equal(again.cookies.has("acme_notes_session"), false);
-		// With the runtime, the refusal comes back as it is.
-		assert.equal((await again.submit("/sign-in/link", { token })).status, 410);
+		assert.equal(reused.location, linkRefused);
+		assert.equal(again.cookies.has(sessionCookie), false);
+		assert.equal((await reused.follow()).dom.getByRole("alert").text, "That sign-in link has been used, or it has expired. Ask for another below.");
 		// A token never mailed, or not a token at all.
-		assert.equal((await again.submit("/sign-in/link", { token: "x".repeat(43) })).status, 410);
-		assert.equal((await again.submit("/sign-in/link", { token: "" })).status, 410);
+		for (const made of ["x".repeat(43), ""]) {
+			const refused = await again.post("/auth/link", { token: made });
+			assert.deepEqual([refused.status, refused.location], [303, linkRefused], made);
+		}
+		assert.equal(again.cookies.has(sessionCookie), false);
 	});
 
-	test("a link expires: after its time (3 s here) it signs nobody in", async () => {
+	test("a link expires: past its time it signs nobody in", async () => {
 		const before = (await app.mail()).length;
 		const late = app.client();
 		await late.get("/sign-in");
 		await late.post("/sign-in", { email: "eve@example.com", then: "/" });
 		const link = await mailedLink(app, "eve@example.com", before);
 		assert.equal((await late.read(`/sign-in/link${link.slice(link.indexOf("?"))}`)).email, "eve@example.com");
-		await new Promise((resolve) => setTimeout(resolve, 3200));
+		// Its time up: aged in the database, rather than waited out (a link lasts 15 minutes).
+		await db.query("update auth_links set expires_at = 0 where id = ?", [kept(tokenOf(link))]);
 		(await late.get(link)).dom.getByRole("heading", { name: "This link has expired" });
-		const used = await late.submit("/sign-in/link", { token: new URL(link, "http://x").searchParams.get("token") });
-		assert.equal(used.status, 410);
-		assert.equal(late.cookies.has("acme_notes_session"), false);
+		const used = await late.post("/auth/link", { token: tokenOf(link) });
+		assert.deepEqual([used.status, used.location], [303, linkRefused]);
+		assert.equal(late.cookies.has(sessionCookie), false);
+	});
+
+	test("a sign-in that didn't work comes back to the sign-in page, which says why", async () => {
+		const visitor = app.client();
+		const said = async (query) => (await visitor.get(`/sign-in?${query}`)).dom.getByRole("alert").text;
+		assert.equal(await said("error=link"), "That sign-in link has been used, or it has expired. Ask for another below.");
+		assert.equal(await said("error=refused&reason=Not%20this%20one."), "Not this one.");
+		assert.equal(await said("error=unavailable"), "Signing in didn't work just now. Try again in a minute.");
+		assert.equal((await visitor.get("/sign-in")).dom.queryByRole("alert"), null);
+
+		// A session whose person isn't there is ended, and the browser sent to sign in.
+		const token = randomBytes(32).toString("base64url");
+		await db.query("insert into auth_sessions (id, user_id, created_at, expires_at) values (?, ?, ?, ?)", [kept(token), "99999999", Date.now(), Date.now() + 3_600_000]);
+		const orphan = app.client();
+		orphan.cookies.set(sessionCookie, token);
+		const page = await orphan.get("/");
+		assert.deepEqual([page.status, page.location], [303, "/sign-in"]);
+		assert.equal(orphan.cookies.has(sessionCookie), false);
+		assert.equal((await db.sql`select count(*) as n from auth_sessions where id = ${kept(token)}`)[0].n, 0);
 	});
 
 	test("an address that isn't one is refused, and nothing is mailed", async () => {
@@ -129,7 +165,7 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 		const out = await here.post("/sign-out", {});
 		assert.equal(out.status, 303);
 		assert.equal(out.location, "/sign-in");
-		assert.equal(here.cookies.has("acme_notes_session"), false);
+		assert.equal(here.cookies.has(sessionCookie), false);
 		assert.equal((await there.get("/")).status, 200, "signing out here leaves the other browser signed in");
 
 		const elsewhere = await signIn(app, "fay@example.com");

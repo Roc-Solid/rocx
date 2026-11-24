@@ -1,7 +1,8 @@
 // What the notes tests share: the app, built once (node --test runs the files at once, and two
 // builds of one app at once would write the same files); a server of a test file's own, on a
-// SQLite file of its own (no database server is needed); and the ways in: signing in through the mailed link, as a person does, and
-// personal access tokens, as an AI client uses them.
+// SQLite file of its own (no database server is needed); and the ways in: signing in through the
+// mailed link (packages/auth's plugin), as a person does, and personal access tokens, as an AI
+// client uses them.
 import assert from "node:assert/strict";
 import { mkdirSync, rmSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -38,7 +39,7 @@ export async function built() {
 export async function started({ env = {} } = {}) {
 	const { server, statics } = await built();
 	const db = testSqlite();
-	const app = await startServer(server, { statics, database: db.url, env: { NOTES_SECRET: "a secret for the tests, and only them", PUBLIC_URL: "http://notes.example", ...env } });
+	const app = await startServer(server, { statics, database: db.url, env: { PUBLIC_URL: "http://notes.example", ...env } });
 	return {
 		app,
 		db,
@@ -59,7 +60,18 @@ export async function mailedLink(app, email, after = 0) {
 	return url.pathname + url.search;
 }
 
-/** A client signed in as `email`, the way a person signs in: the form, the mail, the link, the button. */
+/** The session cookie's name (packages/auth's, as main.roc names it). */
+export const sessionCookie = "notes_session";
+
+/** The token in a mailed link's path. */
+export function tokenOf(link) {
+	return new URL(link, "http://x").searchParams.get("token");
+}
+
+/**
+ * A client signed in as `email`, the way a person signs in: the form, the mail, the link, the
+ * button (a plain form, posting the token to packages/auth's /auth/link).
+ */
 export async function signIn(app, email) {
 	const person = app.client();
 	const before = (await app.mail()).length;
@@ -67,9 +79,9 @@ export async function signIn(app, email) {
 	assert.equal((await person.post("/sign-in", { email, then: "/" })).status, 303);
 	const link = await mailedLink(app, email, before);
 	assert.equal((await person.get(link)).status, 200);
-	const used = await person.post("/sign-in/link", { token: new URL(link, "http://x").searchParams.get("token") });
+	const used = await person.post("/auth/link", { token: tokenOf(link) });
 	assert.equal(used.status, 303, used.text);
-	assert.ok(person.cookies.has("acme_notes_session"));
+	assert.ok(person.cookies.has(sessionCookie));
 	return person;
 }
 

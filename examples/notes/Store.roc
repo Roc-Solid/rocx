@@ -16,8 +16,8 @@ import Token
 ## (`Time.now_millis!`), and read as ISO 8601, UTC. A note's tags are a JSON list.
 Store := [].{
 
-	## Someone who signs in: their id, their address, and their session epoch (Session.roc).
-	Person : { id : Str, email : Str, epoch : U64 }
+	## Someone who signs in: their id (what packages/auth's sessions keep), and their address.
+	Person : { id : Str, email : Str }
 
 	## What a query can fail with: no such row, or the database's own error.
 	Problem : [NotFound, DbErr(Str), BadRow(Str)]
@@ -40,11 +40,11 @@ Store := [].{
 
 	# ---- People ----
 
-	## Someone, by id (what a session cookie says).
+	## Someone, by id (what a session holds).
 	person! : Str => Try(Store.Person, Store.Problem)
 	person! = |id| {
 		found : Try(List(Store.Person), [DbErr(Str), BadRow(Str)])
-		found = Db.all!("select cast(id as text) as id, email, session_epoch as epoch from people where id = $1", [Text(numbered(id)?)])
+		found = Db.all!("select cast(id as text) as id, email from people where id = $1", [Text(numbered(id)?)])
 		first(found?)
 	}
 
@@ -54,7 +54,7 @@ Store := [].{
 	person_for! = |email| {
 		made : Try(List(Store.Person), [DbErr(Str), BadRow(Str)])
 		made = Db.all!(
-			"insert into people (email) values ($1) on conflict (lower(email)) do nothing returning cast(id as text) as id, email, session_epoch as epoch",
+			"insert into people (email) values ($1) on conflict (lower(email)) do nothing returning cast(id as text) as id, email",
 			[Text(email)],
 		)
 		match made? {
@@ -64,19 +64,10 @@ Store := [].{
 			}
 			_ => {
 				found : Try(List(Store.Person), [DbErr(Str), BadRow(Str)])
-				found = Db.all!("select cast(id as text) as id, email, session_epoch as epoch from people where lower(email) = lower($1)", [Text(email)])
+				found = Db.all!("select cast(id as text) as id, email from people where lower(email) = lower($1)", [Text(email)])
 				first(found?)
 			}
 		}
-	}
-
-	## Every session of someone's refused from now on: their epoch goes up, and the cookies signed
-	## with the old one no longer pass (Session.roc). The new epoch.
-	sign_out_everywhere! : Str => Try(U64, Store.Problem)
-	sign_out_everywhere! = |person| {
-		raised : Try(List({ epoch : U64 }), [DbErr(Str), BadRow(Str)])
-		raised = Db.all!("update people set session_epoch = session_epoch + 1 where id = $1 returning session_epoch as epoch", [Text(numbered(person)?)])
-		first(raised?).map_ok(|row| row.epoch)
 	}
 
 	# ---- Notes ----
@@ -271,12 +262,12 @@ Store := [].{
 	bearer! : Str => Try({ person : Store.Person, token : Str, read_only : Bool }, Store.Problem)
 	bearer! = |hash| {
 		_ = Db.run!("update tokens set last_used_at = $2 where hash = $1 and (last_used_at is null or last_used_at < $2 - 60000)", [Text(hash), Int(now!({}))])?
-		rows : Try(List({ id : Str, email : Str, epoch : U64, token : Str, read_only : Bool }), [DbErr(Str), BadRow(Str)])
+		rows : Try(List({ id : Str, email : Str, token : Str, read_only : Bool }), [DbErr(Str), BadRow(Str)])
 		rows = Db.all!(
-			"select cast(p.id as text) as id, p.email, p.session_epoch as epoch, cast(t.id as text) as token, t.read_only from tokens t join people p on p.id = t.person_id where t.hash = $1",
+			"select cast(p.id as text) as id, p.email, cast(t.id as text) as token, t.read_only from tokens t join people p on p.id = t.person_id where t.hash = $1",
 			[Text(hash)],
 		)
-		first(rows?).map_ok(|row| { person: { id: row.id, email: row.email, epoch: row.epoch }, token: row.token, read_only: row.read_only })
+		first(rows?).map_ok(|row| { person: { id: row.id, email: row.email }, token: row.token, read_only: row.read_only })
 	}
 }
 

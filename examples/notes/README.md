@@ -6,7 +6,7 @@ full-text search. An AI client (Claude Code, an IDE, the MCP Inspector) can sear
 the same notes over MCP, using a personal access token you make for it. Each person sees only their
 own notes, whichever way they ask.
 
-Read it to see how Roc Solid handles signing in without passwords, signed session cookies, access
+Read it to see how Roc Solid handles signing in without passwords (packages/auth's plugin), access
 tokens, middleware for three kinds of caller (a browser, a script, an AI agent), an MCP server built
 from the app's own endpoints, a JSON API with an OpenAPI document, rate limits, full-text search in
 SQLite, and Markdown rendered both on the server and in the browser.
@@ -38,10 +38,8 @@ The app reads these settings from the environment:
 | Setting | What it is |
 |---|---|
 | `DATABASE_URL` | Where the notes are, as `sqlite:<path>` (or `--database-url`). Unset, `data/notes.db` from where the server starts. |
-| `NOTES_SECRET` | What session cookies are signed with (through HKDF). Unset, a key is made at random when first needed and kept in memory, so a restart signs everyone out (the log says so). Make one with `openssl rand -base64 32`. |
-| `PUBLIC_URL` | The app's address (or `--public-url`), for the links in emails and the MCP address that Settings shows. Unset, the address the server listens on (`http://127.0.0.1:8080` above). |
+| `PUBLIC_URL` | The app's address (or `--public-url`), for the links in emails and the MCP address that Settings shows. Unset, the address the server listens on (`http://127.0.0.1:8080` above). On `https://`, the session cookie is `Secure` and named `__Host-notes_session`. |
 | `SMTP_URL` | A mail server (`smtp://user:password@smtp.example.com:587?tls=required`). Unset, mail goes to the dev mailbox. |
-| `NOTES_LINK_TTL_MS` | How long a sign-in link works, in milliseconds (900000: 15 minutes). |
 | `NOTES_MCP_PER_MINUTE` | MCP calls a minute for each token (120). |
 
 Mail is sent from `Notes <notes@example.com>` (the `from` given to `Email.plugin` in `main.roc`).
@@ -52,8 +50,6 @@ Mail is sent from `Notes <notes@example.com>` (the `from` given to `Email.plugin
 (from the repository's root):
 
 ```sh
-export NOTES_SECRET="$(openssl rand -base64 32)"   # signs the session cookies
-
 just web-host   # the browser's host, which the WebAssembly is linked with
 bin/rocx build examples/notes --client examples/notes/build/client
 .tools/roc-active build --target=wasm32 --opt=size --output=examples/notes/build/client/static/rocx/app.wasm examples/notes/build/client/main.roc
@@ -69,8 +65,9 @@ Without `--dev`, the dev mailbox isn't served, so set `SMTP_URL` to receive the 
 1. Open the app and you are sent to sign in. Type `ada@example.com` (the seeded person with notes)
    or any address. A link is mailed; on a local run it lands in the dev mailbox,
    http://127.0.0.1:8080/__rocx/mail. The link opens a page with a **Sign in** button, so a mail
-   scanner that follows links doesn't use it up. A link works once, for 15 minutes. Someone new
-   starts with a welcome note.
+   scanner that follows links doesn't use it up. A link works once, for 15 minutes; one used
+   already, or too late, brings you back to sign in, saying so. Someone new starts with a welcome
+   note.
 2. The notebook shows cards with the start of each note, pinned ones first, and your tags down the
    side with their counts. A tag's link shows its notes; **Archive** shows the archived ones.
 3. Search from the box at the top. It takes words (`rehearsals` finds "rehearsal"),
@@ -99,10 +96,12 @@ Where to look in the code for each Roc Solid feature the app uses.
 
 | Feature | Where |
 |---|---|
-| Sign-in by a mailed link: the form, `Email.send!` (packages/email's plugin, listed in `main.roc`), and the landing page with its button. | `routes/sign-in/`, `routes/sign-in/link/`, `Account.send_link!`, `main.roc` |
-| A single-use link token with a time to live, kept by its hash in `Kv` (the server's key-value store). `Kv.take!` reads and forgets it in one step, so two clicks can't both sign in. The `##` comment at the top of `Account.roc` says why `Kv` and not a table. | `Account.roc` (`use_link!`), `Token.link` |
-| A session cookie signed with HMAC-SHA256 (packages/crypto), refused when forged, expired, or signed out everywhere, with `expect` tests. | `Session.roc`, `Account.session!`, `Account.signed_in!` |
-| Signing out, and signing out of every browser (a session epoch that the cookies carry). | `routes/sign-out/`, `routes/settings/everywhere/`, `Store.sign_out_everywhere!` |
+| Sign-in as packages/auth's plugin, listed in `main.roc` with the app's `admit!`: anyone with a mailed link gets in, as the person with that address or someone new (with a notebook of their own). | `main.roc`, `Account.admit!`, `Store.person_for!` |
+| A sign-in link made by the plugin (`Auth.link!`: kept by its hash, good once, for 15 minutes) and mailed in the app's own words (`Email.send!`, packages/email's plugin). | `routes/sign-in/`, `Account.send_link!` |
+| The page a link opens: whom it signs in (`Auth.link_for!`, which doesn't use the link), and a plain form whose button posts the token to the plugin's `/auth/link`. A mail scanner that follows links doesn't use yours up. | `routes/sign-in/link/` |
+| A sign-in that didn't work comes back to the sign-in page with `?error=` (a link used or expired, an address turned away), and the page says why. | `routes/sign-in/+page.rocx` (`problem_of`) |
+| Sessions kept by the plugin: a random token in the `notes_session` cookie, its hash in the database, for 30 days, kept going while in use. | `Middlewares.signed_in` (`Auth.required`), `Account.session!` |
+| Signing out, and signing out of every browser (every session of yours ended). | `routes/sign-out/` (`Auth.sign_out!`), `routes/settings/everywhere/` (`Auth.sign_out_everywhere!`) |
 | Middleware that puts the person into the request's context and guards the pages (`signed_in`), the JSON API (`api`) and MCP (`agent`). A route file names its own with `middleware = …`. | `Middlewares.roc`, each route file |
 
 ### Tokens, the JSON API and MCP
@@ -222,18 +221,19 @@ bin/rocx check -- .tools/roc-active test examples/notes/main.roc   # the expects
 node --test 'examples/notes/test/*.test.mjs'
 ```
 
-- **91 `expect`s** in the app's modules: `Session.roc` (a cookie signed and read back; expired;
-  forged with another key, another id, a later time or a newer epoch; malformed in five ways),
-  `Token.roc` (shapes, the hash being SHA-256's, the hint, names), `Note.roc` (titles, bodies, tags,
-  the search box's `#tags`, snippets' marks, dates, what a body reads as, appending),
-  `Store.matching` (a search box's words as an FTS5 query), `Address.roc`, `Query.roc`,
-  `Account.path_of` (never another site after signing in), the editor's word count, `NoteCard` and
-  `Topbar` rendered and read with packages/testing's `Dom`, and `Mcp.problems(Agents.server)`.
-- **`test/http.test.mjs`** (14 tests):
+- **76 `expect`s** in the app's modules: `Token.roc` (shapes, the hash being SHA-256's, the hint,
+  names), `Note.roc` (titles, bodies, tags, the search box's `#tags`, snippets' marks, dates, what a
+  body reads as, appending), `Store.matching` (a search box's words as an FTS5 query),
+  `Address.roc`, `Query.roc`, the editor's word count, `NoteCard` and `Topbar` rendered and read
+  with packages/testing's `Dom`, and `Mcp.problems(Agents.server)`. packages/auth has its own, for
+  its tokens, cookies and where a sign-in may go after.
+- **`test/http.test.mjs`** (15 tests):
   - signed out, pages send you to sign in, and the API and MCP refuse;
   - signing in through the mailed link (`waitForMail`, `links`), back where you were going, and
-    someone new getting a welcome note;
-  - a link used again, a made-up one, and one past its time, all refused;
+    someone new getting a welcome note; the database keeping only the tokens' hashes;
+  - a link used again, a made-up one, and one past its time (aged in the database), all sent back
+    to the sign-in page;
+  - the sign-in page saying why a sign-in didn't work, and a session whose person is gone ended;
   - signing out, and signing out everywhere;
   - the seed, which adds nothing when run again;
   - a note through the pages' forms, without JavaScript and with the runtime (written, refused,
@@ -264,9 +264,11 @@ got a prompt. With a wrong token it got 401.
   address has notes or not, so the form tells nobody who uses the app.
 - **A link opens a page with a button**, rather than signing in by itself, because mail scanners
   follow links.
-- **Links live in `Kv`** for 15 minutes, by their hash, and are taken once (`Kv.take!`). A restart
-  forgets the links on their way, which only means asking again. Sessions are signed cookies (30
-  days), so the server keeps none. "Sign out everywhere" raises a number that the cookies carry.
+- **Links and sessions are packages/auth's**, in the app's database, each by its token's hash: a
+  link for 15 minutes, used once (in one statement, so two clicks can't both sign in); a session for
+  30 days, kept going while in use. "Sign out everywhere" ends every session of yours. The `people`
+  table's `session_epoch` column is from before, when the app signed its own cookies; nothing uses
+  it now.
 - **Tokens start read-only** in the form: writing is the choice you make. A token's last use is
   written at most once a minute, so a busy agent writes one row a minute, not one per call.
 - **An AI client needs a token**, even from the browser the person is signed in on. An agent acts
@@ -302,6 +304,8 @@ unticked checkbox, the app's public address, a plain form's flash, guard's refus
    `Middlewares.security` leaves `/openapi.html` out.
 5. **Roc gotchas met on the way:**
    - `{ ttl_ms }` alone is a block, not a record: write `{ ttl_ms: ttl_ms }`.
+   - packages/auth and packages/mcp each have a module named `Auth`. `Middlewares.roc` needs both,
+     so it imports one under another name: `import mcp.Auth as McpAuth`.
    - A tag isn't a function: write `map_err(|why| BadRequest(why))`, not `map_err(BadRequest)`.
    - A list's `keep_if` takes a pure function, so a page reads its endpoint once before filtering.
 6. **SQLite has no regular expressions, and no search engine's syntax.** The app moved from

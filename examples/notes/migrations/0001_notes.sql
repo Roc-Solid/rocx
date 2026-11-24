@@ -6,8 +6,8 @@
 create table people (
 	id integer primary key,
 	email text not null check (length(email) between 3 and 254),
-	-- Raised by "sign out everywhere": a session cookie carries the number it was signed with, and
-	-- one with an older number is refused (Session.roc).
+	-- No longer used: "sign out everywhere" raised it when notes signed its own session cookies.
+	-- Sessions are packages/auth's now (its auth_sessions table), and it ends them itself.
 	session_epoch integer not null default 0,
 	created_at integer not null default (cast(unixepoch('subsec') * 1000 as integer))
 );
