@@ -8,6 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { hasRust, roc, root, rocxBinary } from "../server/build.mjs";
 
@@ -53,18 +54,33 @@ test("rocx check --sql --engine turso: a SQLite app's statements on Turso, which
 	assert.equal(lines.at(-1), "rocx check --sql: 7 statements checked on Turso (the rows of 5 against their records): 5 problems, 2 calls not checked (--verbose lists them)");
 });
 
+/** Where rocx reports each call in `file` (from the repo) whose text starts with `call`:
+ * `file:line:column`, the column the call's, a tab one column. Found by its text, so the file's
+ * lines can move; `offset` puts them in the file's order, the report's. */
+function callsAt(file, call) {
+	const text = readFileSync(join(root, file), "utf8");
+	const found = [];
+	for (let offset = text.indexOf(call); offset !== -1; offset = text.indexOf(call, offset + 1)) {
+		const before = text.slice(0, offset);
+		found.push({ offset, at: `${file}:${before.split("\n").length}:${offset - before.lastIndexOf("\n")}` });
+	}
+	assert.ok(found.length > 0, `no ${call} in ${file}`);
+	return found;
+}
+
 test("rocx check --sql on Postgres: the server's test app, on a scratch database made beside DATABASE_URL, finds exactly the statements its tests make fail on purpose; its other rows fit", { skip: skipDb }, () => {
 	const { status, out, err } = check([join("server", "test", "app")], { DATABASE_URL: process.env.DATABASE_URL, FIXTURE_KEY: "set" });
 	assert.equal(status, 1, out + err);
-	assert.deepEqual(out.trimEnd().split("\n"), [
-		"server/test/app/main.roc:125:11: Postgres refuses it: 42725: function unnest(unknown) is not unique",
-		"server/test/app/main.roc:374:12: `maybe` isn't a column the statement returns (it returns maybe?)",
-		'server/test/app/main.roc:407:10: Postgres refuses it: 42P01: relation "nowhere" does not exist',
-		'server/test/app/main.roc:455:10: Postgres refuses it: 42P01: relation "nowhere" does not exist',
-		'server/test/app/main.roc:523:11: Postgres refuses it: 42P01: relation "nowhere" does not exist',
-		'server/test/app/main.roc:527:17: Postgres refuses it: 42P01: relation "nowhere" does not exist',
-		"rocx check --sql: 42 statements checked on Postgres (the rows of 21 against their records): 6 problems",
-	]);
+	const app = "server/test/app/main.roc";
+	const wrong = (call, said) => callsAt(app, call).map(({ offset, at }) => ({ offset, line: `${at}: ${said}` }));
+	const problems = [
+		...wrong('Db.all!("select x from unnest($1) as x"', "Postgres refuses it: 42725: function unnest(unknown) is not unique"),
+		...wrong('Db.all!("select null::text as \\"maybe?\\""', "`maybe` isn't a column the statement returns (it returns maybe?)"),
+		...wrong('Db.run!("insert into nowhere values (1)"', 'Postgres refuses it: 42P01: relation "nowhere" does not exist'),
+	]
+		.sort((a, b) => a.offset - b.offset)
+		.map(({ line }) => line);
+	assert.deepEqual(out.trimEnd().split("\n"), [...problems, "rocx check --sql: 42 statements checked on Postgres (the rows of 21 against their records): 6 problems"]);
 });
 
 test("rocx dev's check (rocx check --sql --server --quiet): the server it built, none built again; what is wrong said the same; an app with no SQL says nothing", { skip }, () => {

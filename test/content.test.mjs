@@ -38,6 +38,7 @@ import Generated/Content/Posts
 import Generated/Content/Notes
 
 program = {
+	init!: |_started| Ok({}),
 	respond!: |_, _| Server.response(200, [], Str.join_with(Posts.all.map(|post| post.data.title), ", ")),
 	database: Postgres,
 	migrations: [],

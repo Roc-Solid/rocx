@@ -730,6 +730,7 @@ Sql := [].{
 		after = [
 			"",
 			"program = {",
+			"\tinit!: |_started| Ok({}),",
 			"\trespond!: |_, _| Server.response(200, [], Str.join_with([${used}], \"\\n\")),",
 			"\tdatabase: Sqlite(\"check.db\"),",
 			"\tmigrations: [],",
