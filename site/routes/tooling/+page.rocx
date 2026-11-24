@@ -76,7 +76,8 @@ view! = |_|
 						Checks the app in the directory (or here) from its sources: builds it as <code>rocx dev</code>
 						does, then type-checks its server's program and, with pages, its browser's, every problem said
 						at its <code>.rocx</code> line, so a check never reads what an older build left behind. Exits 1 on
-						an error, 2 on warnings alone.
+						an error, 2 on warnings alone, rocx's own among them: a match arm's value given to a component that
+						reads it once, as it runs (see <a href={"${Paths.components}#control"}>if, match and For</a>).
 					</p>
 				</div>
 				<div class="command">

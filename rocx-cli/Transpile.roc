@@ -29,7 +29,18 @@ Transpile := [].{
 	## What a file is, transpiled: its code; how many `<NoHydration>`s it has; its <style>s, scoped (a
 	## component's, or the file's when `component` is `None`); its stories (`<story>` in a component's
 	## block).
-	Module : { code : Str, regions : U64, styles : List({ css : Str, line : U64, component : [Some(Str), None] }), stories : List({ component : Str, name : Str, def : Str, line : U64 }), warnings : List(RocxError) }
+	##
+	## For D-070's check across files (`Build.held_once`): `once`, the props a component's body reads
+	## once, as it runs (its tag's, the first read of each); `handed`, a match arm's names given to a
+	## component's value props, where the arm stays while its value changes.
+	Module : { code : Str, regions : U64, styles : List({ css : Str, line : U64, component : [Some(Str), None] }), stories : List({ component : Str, name : Str, def : Str, line : U64 }), warnings : List(RocxError), once : List(Once), handed : List(Handed) }
+
+	## A prop a component's body reads once (D-052's read, D-070's check): the component's tag, the
+	## prop, where.
+	Once : { component : Str, prop : Str, line : U64, column : U64 }
+
+	## A match arm's name (`data`) given to a component's value prop (`<PostsView data={data} />`).
+	Handed : { tag : Str, prop : Str, name : Str, line : U64, column : U64 }
 
 	## What a transpiler knows of the file, which doesn't change as it reads.
 	Cfg : {
@@ -51,6 +62,8 @@ Transpile := [].{
 		swaps : List(Getters.Swap),
 		fns : List(Str),
 		plain_fns : List(Str),
+		# The names of the match arms around (D-070): getters, their arm kept while their value changes.
+		arms : List(Str),
 	}
 
 	## Where a transpiler is in the file, and what it has found so far.
@@ -70,6 +83,10 @@ Transpile := [].{
 		# Where a lambda starts that is known to be an effect's (a handler's, a function child's).
 		effectful_at : List(U64),
 		warnings : List({ reason : Str, at : U64 }),
+		# A component's body's reads of its props, made once (by its tag), and match arms' names given to
+		# components' props (`Module`'s `once` and `handed`).
+		once : List({ component : Str, prop : Str, at : U64 }),
+		handed : List({ tag : Str, prop : Str, name : Str, at : U64 }),
 	}
 
 	## A closure being read, for a prop's reads (D-039). An effectful one (a hole's, an attribute's, a
@@ -568,7 +585,7 @@ Transpile := [].{
 		src = source.to_utf8()
 		file_name = Transpile.last_part(file)
 		module_path = if (opts.module_path == "") (if (file_name.ends_with(".rocx")) file_name.drop_suffix(".rocx") else file_name) else opts.module_path
-		base = { src, file, module_path, client: opts.client, dev: opts.dev, scopes, modules: [], packaged: [], contexts: [], pure: [], getters: [], swaps: [], fns: [], plain_fns: [] }
+		base = { src, file, module_path, client: opts.client, dev: opts.dev, scopes, modules: [], packaged: [], contexts: [], pure: [], getters: [], swaps: [], fns: [], plain_fns: [], arms: [] }
 		starts = Transpile.line_starts(src)
 		# Markup is components, written with the platform's Html (both platforms have it): there is no
 		# other (the html package, which rendered static pages, is gone).
@@ -680,7 +697,7 @@ Transpile := [].{
 
 	## A transpiler at the start of the file.
 	fresh : St
-	fresh = { pos: 0, styles: [], stories: [], preformatted: 0, spans: [], effects: 0, regions: 0, in_region: 0, closed: [], next_block: 0, frames: [], effectful_at: [], warnings: [] }
+	fresh = { pos: 0, styles: [], stories: [], preformatted: 0, spans: [], effects: 0, regions: 0, in_region: 0, closed: [], next_block: 0, frames: [], effectful_at: [], warnings: [], once: [], handed: [] }
 
 	## Items of a Roc list or record, separated by commas, with newlines where the source had them.
 	render_items : List(Part) -> Str
@@ -939,6 +956,17 @@ Transpile := [].{
 		"Html.read_at!(${Text.roc_string(place)}, ${accessor})"
 	}
 
+	## A prop read in a component's body (no closure around it, and not in a match arm's code) is one
+	## it makes once, as it runs: noted by the component's tag, the first read of each prop, for D-070's
+	## check across files (`Build.held_once`).
+	read_once : Cfg, St, Try(Getters.View, [NotFound]), Str, U64, Bool -> St
+	read_once = |cfg, st, in_view, key, at, in_body|
+		match in_view {
+			Ok(view) if in_body and cfg.arms.is_empty() and view.component != "" and !key.contains(".") and !st.once.any(|o| o.component == view.component and o.prop == key) =>
+				{ ..st, once: st.once.append({ component: view.component, prop: key, at }) }
+			_ => st
+		}
+
 	## A closure closed (D-039): its frame let go of. A pure root whose run read props reads them where
 	## it is made: what was written from `out_at` on (`it`) becomes `(|label| it)(label!())`. Made in a
 	## component's body (the lambda at `at`), those reads are the body's, said where in a dev build
@@ -953,7 +981,9 @@ Transpile := [].{
 					bound = Str.join_with(frame.names.map(|key| Transpile.lent_name(key, frame.level)), ", ")
 					in_body = cfg.dev and st1.frames.is_empty() and cfg.getters.any(|v| v.from <= at and at < v.to)
 					reads = Str.join_with(frame.names.map(|key| if (in_body) Transpile.read_at(cfg, at, Transpile.getter_of(key)) else Transpile.getter_call(key)), ", ")
-					{ st: { ..st1, effects: st1.effects + 1 }, out: "${Text.cut(bytes, 0, out_at)}(|${bound}| ${Text.rest(bytes, out_at)})(${reads})" }
+					view = Transpile.view_at(cfg, at)
+					st2 = frame.names.fold(st1, |so_far, key| Transpile.read_once(cfg, so_far, view, key, at, st1.frames.is_empty()))
+					{ st: { ..st2, effects: st2.effects + 1 }, out: "${Text.cut(bytes, 0, out_at)}(|${bound}| ${Text.rest(bytes, out_at)})(${reads})" }
 				} else {
 					{ st: st1, out }
 				}
@@ -1286,7 +1316,7 @@ Transpile := [].{
 							given = Transpile.read_prop($st, prop.key)
 							text = if (in_body) Transpile.read_at(cfg, pos, Transpile.getter_of(prop.key)) else given.text
 							$out = $out.concat(if (prop.punned) "${word}: ${text}" else text)
-							$st = { ..given.st, pos: prop.end }
+							$st = { ..Transpile.read_once(cfg, given.st, in_view, prop.key, pos, $st.frames.is_empty()), pos: prop.end }
 							$last = ")"
 						}
 						NotRead => {
@@ -1296,7 +1326,12 @@ Transpile := [].{
 							if word.ends_with("!") {
 								$st = { ..$st, effects: $st.effects + 1 }
 							}
-							if in_body and word.ends_with("!") and Text.at(src, end) == '(' and Text.at(src, end + 1) == ')' and (pos == 0 or Text.at(src, pos - 1) != '.') {
+							called = word.ends_with("!") and Text.at(src, end) == '(' and Text.at(src, end + 1) == ')' and (pos == 0 or Text.at(src, pos - 1) != '.')
+							if called {
+								# An accessor (an accessor prop: `found!`) called in the body: read once.
+								$st = Transpile.read_once(cfg, $st, in_view, word, pos, $st.frames.is_empty())
+							}
+							if in_body and called {
 								# An accessor called (`count!()`), the body's.
 								$out = $out.concat(Transpile.read_at(cfg, pos, word))
 								$st = { ..$st, pos: end + 2 }
@@ -2292,6 +2327,22 @@ Transpile := [].{
 						if component and computed and !name.ends_with("!") and !Text.trim_start(expr).starts_with("|") and !Transpile.is_accessor_name(Text.trim(expr)) {
 							$reads_props = Bool.True
 						}
+						# A match arm's name given to a component's value prop, or as its accessor prop
+						# (`found!={found}`): D-070's check across files.
+						if component and !cfg.arms.is_empty() {
+							code = Text.trim(Text.cut(src, vpos + 1, inner.st.pos))
+							given =
+								if name.ends_with("!") {
+									if (cfg.arms.contains(code.drop_suffix("!"))) [code.drop_suffix("!")] else []
+								} else if getters and Getters.is_value(name) {
+									Flow.used_in(code, cfg.arms)
+								} else {
+									[]
+								}
+							for arm_name in given {
+								$st = { ..$st, handed: $st.handed.append({ tag, prop: name, name: arm_name, at: name_start }) }
+							}
+						}
 						attr =
 							if component {
 								# An accessor named through a prop (`left!={clock.left!}`, `clock` a getter now: D-039) is
@@ -2888,9 +2939,9 @@ Transpile := [].{
 			view =
 				match Transpile.view_at(cfg, arm.body.from) {
 					Ok(outer) => { ..outer, from: arm.body.from, to: arm.body.to, props: outer.props.keep_if(|prop| !names.contains(prop)).concat(names) }
-					Err(_) => { from: arm.body.from, to: arm.body.to, props: names, record: None, fields: [], all: [] }
+					Err(_) => { from: arm.body.from, to: arm.body.to, props: names, record: None, fields: [], all: [], component: "" }
 				}
-			body = Transpile.read_branch({ ..cfg, getters: cfg.getters.append(view) }, $st, arm.body, spans)?
+			body = Transpile.read_branch({ ..cfg, getters: cfg.getters.append(view), arms: cfg.arms.concat(names) }, $st, arm.body, spans)?
 			$st = body.st
 			used = names.keep_if(|name| body.out.contains("${name}!"))
 			irrefutable = Text.trim(Flow.keeping(pattern_text, [])) == "_" and guard == ""
@@ -3286,7 +3337,9 @@ Transpile := [].{
 		name = Transpile.last_part(file)
 		code = "${Text.cut(body_bytes, 0, $end)}\n\n${Transpile.marker} ${name}: edit that file, not this one. Line N here is line N there.\n"
 		warnings = first.st.warnings.map(|w| { reason: w.reason, file, line: Text.line_of(cfg1.src, w.at), column: Text.column(cfg1.src, w.at) })
-		Ok({ code, regions: second.st.regions, styles: styles.map(|s| { css: s.css, line: s.line, component: s.component }), stories: first.st.stories, warnings })
+		once = first.st.once.map(|o| { component: o.component, prop: o.prop, line: Text.line_of(cfg1.src, o.at), column: Text.column(cfg1.src, o.at) })
+		handed = first.st.handed.map(|h| { tag: h.tag, prop: h.prop, name: h.name, line: Text.line_of(cfg1.src, h.at), column: Text.column(cfg1.src, h.at) })
+		Ok({ code, regions: second.st.regions, styles: styles.map(|s| { css: s.css, line: s.line, component: s.component }), stories: first.st.stories, warnings, once, handed })
 	}
 
 	## Where a .rocx file's markup is, for rocx fmt: each markup expression its Roc has, those in holes too

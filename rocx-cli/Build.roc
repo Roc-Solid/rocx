@@ -61,6 +61,10 @@ Build := [].{
 		var $styles = []
 		var $stories = []
 		var $contexts = []
+		# D-070's check across files (`held_once`): what components' bodies read once, and match arms'
+		# names given to components, each with its file.
+		var $once = []
+		var $handed = []
 		pkgs = Build.component_packages!(dir)
 		var $views = []
 		output = |path| {
@@ -152,6 +156,8 @@ Build := [].{
 						for warning in made.warnings {
 							$said = $said.append(Build.rocx_warning!(path, warning))
 						}
+						$once = $once.concat(made.once.map(|o| { component: o.component, prop: o.prop, line: o.line, column: o.column, file }))
+						$handed = $handed.concat(made.handed.map(|h| { tag: h.tag, prop: h.prop, name: h.name, line: h.line, column: h.column, file, path }))
 						$codes = $codes.append(made.code)
 						file_in_app = Fs.relative(dir, path)
 						$styles = $styles.concat(made.styles.map(|style| { file: file_in_app, line: style.line, component: style.component, css: style.css }))
@@ -190,6 +196,8 @@ Build := [].{
 							for warning in made.warnings {
 								$said = $said.append(Build.rocx_warning!(path, warning))
 							}
+							$once = $once.concat(made.once.map(|o| { component: o.component, prop: o.prop, line: o.line, column: o.column, file }))
+							$handed = $handed.concat(made.handed.map(|h| { tag: h.tag, prop: h.prop, name: h.name, line: h.line, column: h.column, file, path }))
 							$codes = $codes.append(made.code)
 							file_in_app = Fs.relative(dir, path)
 							$styles = $styles.concat(made.styles.map(|style| { file: file_in_app, line: style.line, component: style.component, css: style.css }))
@@ -242,6 +250,7 @@ Build := [].{
 						}
 						Err(Crash(message)) => return Err(Problem(message))
 						Ok(made) => {
+							$once = $once.concat(made.once.map(|o| { component: o.component, prop: o.prop, line: o.line, column: o.column, file: Fs.relative(cwd, path) }))
 							$codes = $codes.append(made.code)
 							file_in_app = Fs.relative(dir, path)
 							$styles = $styles.concat(made.styles.map(|style| { file: file_in_app, line: style.line, component: style.component, css: style.css }))
@@ -253,6 +262,9 @@ Build := [].{
 					}
 				}
 			}
+		}
+		for warning in Build.held_once($handed, $once) {
+			$said = $said.append(Build.rocx_warning!(warning.path, warning.said))
 		}
 		if $failed {
 			return Ok({ failed: $failed, written: $written, said: $said })
@@ -625,6 +637,21 @@ Build := [].{
 		line = Text.lines(Fs.read_or_empty!(path)).get(warning.line - 1) ?? ""
 		"⚠ ${warning.file}:${warning.line.to_str()}:${warning.column.to_str()}: ${warning.reason}\n    ${line}\n    ${" ".repeat(warning.column - 1)}^"
 	}
+
+	## D-070: a match arm stays while its value changes, its names getters (`Ok(data) => <PostsView
+	## data={data} />`). A component given one, whose body reads that prop once, as it runs (`{ now, .. }
+	## = data`), never shows the new value: before D-070 the arm was made anew for each, and such a
+	## component was written for that. Each such call, a warning at its prop.
+	held_once : List({ tag : Str, prop : Str, name : Str, line : U64, column : U64, file : Str, path : Str }), List({ component : Str, prop : Str, line : U64, column : U64, file : Str }) -> List({ path : Str, said : { reason : Str, file : Str, line : U64, column : U64 } })
+	held_once = |handed, once|
+		handed.keep_oks(
+			|h| {
+				tag = h.tag.split_on(".").last() ?? h.tag
+				read = once.find_first(|o| o.component == tag and o.prop == h.prop)?
+				reason = "${h.name} is this match arm's value, which changes while the arm stays (D-070), and ${tag} reads ${h.prop} once, as it runs (${read.file}:${read.line.to_str()}:${read.column.to_str()}), so it won't show the new one: read ${h.prop} where ${tag} uses it (untrack!(|| …) if one read is meant), or, for a part made anew for each value, a <For> over [${h.name}] keyed by it"
+				Ok({ path: h.path, said: { reason, file: h.file, line: h.line, column: h.column } })
+			},
+		)
 
 	## `list` with `key` set to `value` (replacing what it had).
 	put : List({ key : Str, value : Str }), Str, Str -> List({ key : Str, value : Str })

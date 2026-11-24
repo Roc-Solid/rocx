@@ -321,7 +321,9 @@ Dev := [].{
 		}
 		client_main = Fs.join([client, "main.roc"])
 		programs = [main].concat(if (File.exists!(client_main)) [client_main] else [])
-		var $code = 0
+		# rocx build's own warnings (`⚠ file:line:col: …`, D-070's arm values read once) count as the
+		# compiler's do: 2.
+		var $code = if (said.any(|line| line.starts_with("⚠"))) 2 else 0
 		for program in programs {
 			match Commands.checked!(tools.roc, ["check", program]) {
 				Ok(ran) => {

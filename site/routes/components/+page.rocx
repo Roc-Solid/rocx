@@ -677,7 +677,10 @@ view! = |_|
 						does. An arm's names read the newest value where the arm reads them (rocx makes them getters),
 						so <code>{"Ok(card) => <Editor card={card} />"}</code> keeps the editor as the card changes. A part
 						made anew for each value, Solid's keyed <code>{"<Show>"}</code>, is a <code>{"<For>"}</code> over a
-						list of none or one, keyed by the value.
+						list of none or one, keyed by the value. A component given an arm's name whose body reads that prop
+						once, as it runs (<code>{"shown = card"}</code>), keeps what it read then: rocx build warns at the
+						arm (and <code>rocx check</code> exits 2), saying to read it where it is used, to say the one read
+						is meant (<code>{"untrack!(|| card)"}</code>), or to key the part by it.
 					</li>
 					<li>
 						<strong>A part is made when it shows</strong>, as Solid makes it: what an
@@ -713,7 +716,7 @@ view! = |_|
 					One that goes stays where it was, inert, until its animation is over, and then the runtime takes it
 					away. The browser plays them, so they cost Roc nothing per frame.
 				</p>
-				<Code title="rocx" source={"import pf.Transition\n\n<For each!={todos!()} keyed={|todo| todo.id}>\n\t{|todo!, _| <li transition={Transition.fade}>{todo!().text}</li>}\n</For>\n\n<Show when!={open!()}>\n\t<div class=\"panel\"\n\t\ttransition:in={Transition.fly({ x: 0.0, y: -8.0 })}\n\t\ttransition:out={Transition.fade.ms(120)}\n\t>…</div>\n</Show>"} numbers={Bool.False} />
+				<Code title="rocx" source={"import pf.Transition\n\n<For each!={todos!()} keyed={|todo| todo.id}>\n\t{|todo!, _| <li transition={Transition.fade}>{todo!().text}</li>}\n</For>\n\n{if open!() {\n\t<div class=\"panel\"\n\t\ttransition:in={Transition.fly({ x: 0.0, y: -8.0 })}\n\t\ttransition:out={Transition.fade.ms(120)}\n\t>…</div>\n}}"} numbers={Bool.False} />
 				<ul>
 					<li>
 						<strong><code>{"transition={…}"}</code></strong> plays both ways, <code>{"transition:in={…}"}</code>
@@ -932,7 +935,7 @@ view! = |_|
 				is done, as Solid's transitions do), so it reads as <code>posts!()</code> does, and is there for code
 				written as Solid's is.
 			</p>
-			<Code source={"import pf.Solid exposing [create_signal!, create_memo!, refresh!, is_pending!]\n\n(page!, set_page!) = create_signal!(1.U64)\nposts! = create_memo!(|| Endpoint.get!(Endpoint.with_query(Api.get_posts({}), \"page=\${page!().to_str()}\")))\n\n<Loading fallback={<p>Loading…</p>}>\n\t<ul class:stale={is_pending!(posts!)}>\n\t\t<For each!={posts!()} keyed={|post| post.id}>\n\t\t\t{|post!, _| <li>{post!().title}</li>}\n\t\t</For>\n\t</ul>\n</Loading>\n<button on:click={|| refresh!(posts!)}>Refresh</button>\n<button on:click={|| set_page!(page!() + 1)}>Next page</button>\n<Show when!={is_pending!(posts!)}><p>Updating…</p></Show>"} numbers={Bool.False} />
+			<Code source={"import pf.Solid exposing [create_signal!, create_memo!, refresh!, is_pending!]\n\n(page!, set_page!) = create_signal!(1.U64)\nposts! = create_memo!(|| Endpoint.get!(Endpoint.with_query(Api.get_posts({}), \"page=\${page!().to_str()}\")))\n\n<Loading fallback={<p>Loading…</p>}>\n\t<ul class:stale={is_pending!(posts!)}>\n\t\t<For each!={posts!()} keyed={|post| post.id}>\n\t\t\t{|post!, _| <li>{post!().title}</li>}\n\t\t</For>\n\t</ul>\n</Loading>\n<button on:click={|| refresh!(posts!)}>Refresh</button>\n<button on:click={|| set_page!(page!() + 1)}>Next page</button>\n{if is_pending!(posts!) <p>Updating…</p>}"} numbers={Bool.False} />
 			<ul>
 				<li>
 					<strong>True</strong> while a memo the accessor reads has a value and waits for a new one, from

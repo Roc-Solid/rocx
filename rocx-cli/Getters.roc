@@ -14,8 +14,10 @@ Getters := [].{
 	## `label!()`), or the name of a record of them: the whole record (`|props|`), or the rest of it
 	## (`|{ kind, ..rest }|`, D-052), whose value fields are read as `(props.label)()`; those value
 	## fields (empty when the type isn't known: then every field but a `!` one and `children`), and
-	## every field it has (`all`: what `{...rest}` passes on, D-052; empty when the type isn't known).
-	View : { from : U64, to : U64, props : List(Str), record : [Some(Str), None], fields : List(Str), all : List(Str) }
+	## every field it has (`all`: what `{...rest}` passes on, D-052; empty when the type isn't known);
+	## and the component's tag (`PostsView` for its block's `view!`, `Answer` for `answer!`; "" for a
+	## page's view).
+	View : { from : U64, to : U64, props : List(Str), record : [Some(Str), None], fields : List(Str), all : List(Str), component : Str }
 
 	## Code written otherwise: the source from `from` to `to`, `text` instead (as many lines). Its
 	## `defaults` are props' defaults copied into `text` as written (at byte `at`, the source's `from`
@@ -464,7 +466,16 @@ Getters := [].{
 								}
 							$swaps = $swaps.append({ from: bar, to: close + 1, text: read.text, defaults: [] })
 							to = Getters.definition_end(src, close + 1, indent.to_utf8().len())
-							$views = $views.append({ from: close + 1, to, props: read.props, record: read.record, fields: all.keep_if(Getters.is_value), all })
+							component =
+								if is_view {
+									match block {
+										Some(b) => b.name
+										None => ""
+									}
+								} else {
+									tag
+								}
+							$views = $views.append({ from: close + 1, to, props: read.props, record: read.record, fields: all.keep_if(Getters.is_value), all, component })
 						}
 					}
 				}

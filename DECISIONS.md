@@ -4305,7 +4305,20 @@ value, and numbers shown as they are).
 - **What a test counts.** The browser host holds the last run's answer until the next; its live
   count leaves that out, since an `if`'s part answers markup, which needs the heap.
 - **Keyed parts.** `<Show keyed>` made its part anew for each value; a `<For>` over a list of none
-  or one, keyed by the value, does that (`keyed={|card| Str.inspect(card)}`).
+  or one, keyed by the value, does that (`keyed={|card| card}`: a key is its `Str.inspect`).
+- **A value read once, checked.** Before, `{=match}` made its arm anew for each value, and
+  components were written for that: `{ now, .. } = data` in a body read the arm's value once. With
+  the arm kept, such a component keeps the first value, and nothing failed: only a dev build's
+  read-once warning (D-052), in the browser, said so. rocx build now checks it across files: each
+  component's body's reads of its props made once (no closure around them, outside an arm), by its
+  tag, and each arm's name given to a component's value prop (or as an accessor prop,
+  `found!={found}`); a match of the two is a warning at the call, which `rocx check` counts (exit
+  2). `untrack!(|| data)` says the one read is meant. It found five: the private app's board, post
+  and cover (made anew for each answer: a `<For>` keyed by the answer, the reads `untrack!`ed; the
+  cover reads its saved one where it shows it), examples/board's card editor (another card opened
+  kept the first card's editor, its lease and its saves: now a panel for each card opened, a
+  `<For>` keyed by it) and examples/plate's food form (its starting values, read once on purpose:
+  `untrack!`).
 - **`<Show>`, `<Switch>`, `<Match>`.** Gone from both platforms; writing one is an error that says
   what to write. Every use in the repository moved: a `<Show>` an `if`, its fallback the `else`; one
   with a function child a `match` (`Ok(v) => …, Err(_) => fallback`), its accessor the arm's name.

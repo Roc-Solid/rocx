@@ -30,8 +30,8 @@ view! = |_| {
 }
 `;
 
-/** An app in a directory of its own: the page given, and the smallest program. */
-function app(page) {
+/** An app in a directory of its own: the page given (and `more` files), and the smallest program. */
+function app(page, more = {}) {
 	const dir = realpathSync(mkdtempSync(join(tmpdir(), "rocx-check-app-")));
 	const platform = relative(dir, realpathSync(join(repo, "server", "platform", "main.roc")));
 	const files = {
@@ -46,6 +46,7 @@ program = App.program({
 })
 `,
 		"routes/+page.rocx": page,
+		...more,
 	};
 	for (const [path, content] of Object.entries(files)) {
 		mkdirSync(dirname(join(dir, path)), { recursive: true });
@@ -104,6 +105,55 @@ test("rocx check <dir>: warnings alone exit 2; a directory with no routes/ is no
 		const none = check(join(dir, "routes"));
 		assert.equal(none.code, 2);
 		assert.match(none.said, /has no routes\//);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+// D-070: a match arm stays while its value changes. A component given the arm's value whose body
+// reads it once never shows the new one (before D-070 the arm was made anew for each).
+const PANEL = `import pf.Html
+import pf.Solid exposing [untrack!]
+
+Panel := [].{
+	view! : { item : Str } => Html
+	view! = |{ item }| {
+		shown = item
+		<p>{shown}</p>
+	}
+}
+`;
+
+const PICKING = `import pf.Html
+import pf.Solid exposing [create_signal!]
+import ../Panel
+
+view! = |_| {
+	(picked!, set_picked!) = create_signal!(Picked("one"))
+	<main>
+		{match picked!() {
+			Picked(item) => <Panel item={item} />
+			Nothing => <p>Nothing</p>
+		}}
+		<button on:click={|| set_picked!(Picked("two"))}>Two</button>
+		<button on:click={|| set_picked!(Nothing)}>None</button>
+	</main>
+}
+`;
+
+test("rocx check <dir>: a match arm's value given to a component that reads it once is a warning at the call (exit 2); untrack! says one read is meant", { skip }, () => {
+	const dir = app(PICKING, { "Panel.rocx": PANEL });
+	try {
+		const ran = check(dir);
+		assert.equal(ran.code, 2, ran.said);
+		assert.match(ran.said, /⚠ [^\n]*routes\/\+page\.rocx:9:\d+: item is this match arm's value, which changes while the arm stays \(D-070\), and Panel reads item once, as it runs \([^)]*Panel\.rocx:7:\d+\)/);
+		writeFileSync(join(dir, "Panel.rocx"), PANEL.replace("shown = item", "shown = untrack!(|| item)"));
+		const meant = check(dir);
+		assert.equal(meant.code, 0, meant.said);
+		// Read where it is used: it follows.
+		writeFileSync(join(dir, "Panel.rocx"), PANEL.replace("import pf.Solid exposing [untrack!]\n", "").replace("\t\tshown = item\n\t\t<p>{shown}</p>", "\t\t<p>{item}</p>"));
+		const follows = check(dir);
+		assert.equal(follows.code, 0, follows.said);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

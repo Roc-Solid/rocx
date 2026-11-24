@@ -5,7 +5,7 @@ import pf.Endpoint
 import pf.For
 import pf.Server
 import pf.Time
-import pf.Solid exposing [create_effect!, create_signal!, on_cleanup!, on_settled!, set_interval!]
+import pf.Solid exposing [create_effect!, create_signal!, on_cleanup!, on_settled!, set_interval!, untrack!]
 import pf.Router exposing [use_action!, use_submissions!]
 import Shared
 import ../Board
@@ -120,7 +120,8 @@ Editor := [].{
 	view! : { found! : () => Board.Card, shared : Shared.State } => Html
 	view! = |{ found!, shared }| {
 		{ board, board!, move!, set_open!, .. } = shared
-		id = found!().id
+		# Its card's: the page makes a panel for each card opened, so the id read once is meant.
+		id = untrack!(|| found!().id)
 		at = { board: board, card: id }
 		# Each change, sent without waiting, and every one of them on its way, each typed by its
 		# endpoint's contract (Generated/Api).

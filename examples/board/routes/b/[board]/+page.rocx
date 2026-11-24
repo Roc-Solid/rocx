@@ -119,7 +119,10 @@ view! = |{ params }| {
 			</main>
 			<Archive shared={shared} />
 			<p class="news" role="status" aria-live="polite" class:shown={!news!().is_empty()}>{news!()}</p>
-			{if (open!().is_empty()) <></> else <CardPanel card={open!()} shared={shared} />}
+			{# A panel for each card opened (its lease, its actions, its typing the card's): a <For> keyed by it. }
+			<For each!={if (open!().is_empty()) [] else [open!()]} keyed={|card| card}>
+				{|card!, _| <CardPanel card={card!()} shared={shared} />}
+			</For>
 		</div>
 	</Errored>
 }

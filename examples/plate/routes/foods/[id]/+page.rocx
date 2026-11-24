@@ -1,5 +1,5 @@
 import pf.Html
-import pf.Solid exposing [create_memo!]
+import pf.Solid exposing [create_memo!, untrack!]
 import pf.Endpoint
 import pf.Router
 import pf.Server
@@ -39,9 +39,11 @@ FoodPage := [].{
 		food! = || pick!().food
 		asked_day = Query.value(location.query, "day")
 		asked_meal = Query.value(location.query, "meal")
-		day = if (asked_day.is_empty()) pick!().today else asked_day
-		meal = if (asked_meal.is_empty()) pick!().meal else asked_meal
-		first = if (food!().portions.is_empty()) ("100", "g") else ("1", "0")
+		# Where the form starts: the food as it was first read (one read, meant), not as it is read again.
+		start = untrack!(|| pick!())
+		day = if (asked_day.is_empty()) start.today else asked_day
+		meal = if (asked_meal.is_empty()) start.meal else asked_meal
+		first = if (start.food.portions.is_empty()) ("100", "g") else ("1", "0")
 		live = LiveForm.filled!(PlateForm.amount, Api.post_foods_id({ id: id }), [("amount", first.0), ("unit", first.1), ("meal", meal), ("day", day)])
 		grams! = || Plate.grams_of(Dec.from_str(live.value!("amount").trim()) ?? 0.0, live.value!("unit"), food!().portions)
 		eaten! = || Plate.scaled(food!().per100, grams!())

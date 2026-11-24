@@ -213,6 +213,32 @@ describe(`Board in two browsers (Ada's: ${engine})`, { skip: noDatabase || noChr
 		}
 	});
 
+	test("Ada opens a card, then another from the board: the panel is the second's, its lease and its save too (D-070: a panel for each card opened)", async () => {
+		const [first, second] = ["Weather go/no-go checklist", "Fix the fuel gauge rounding"];
+		const editing = (title) => `document.querySelector('[data-card="${seeded.cards[title]}"] .editing')`;
+		await (await ada.getByRole("link", { name: first })).click();
+		await ada.findByRole("heading", { level: 2, name: first });
+		await bo.page.wait(`${editing(first)}?.textContent.includes("Ada is editing")`, 5000);
+
+		// The second, straight from the board, the first still open.
+		await (await ada.getByRole("link", { name: second })).click();
+		await ada.findByRole("heading", { level: 2, name: second }, { ms: 5000 });
+		assert.equal(await ada.page.eval("document.getElementById('card-title').value"), second);
+		await bo.page.wait(`${editing(second)}?.textContent.includes("Ada is editing") && !${editing(first)}`, 5000);
+
+		// What she saves is the second's.
+		await (await ada.getByLabelText("Description")).fill("Round to the nearest tenth.");
+		await (await ada.getByRole("button", { name: "Save" })).click();
+		const description = async (title) => (await running.db.sql`select description from cards where id = ${seeded.cards[title]}`)[0].description;
+		for (let tries = 0; tries < 50 && (await description(second)) !== "Round to the nearest tenth."; tries++) await new Promise((done) => setTimeout(done, 100));
+		assert.equal(await description(second), "Round to the nearest tenth.");
+		assert.notEqual(await description(first), "Round to the nearest tenth.");
+
+		await (await ada.getByRole("button", { name: "Done" })).click();
+		await ada.page.wait("!document.querySelector('.panel')", 5000);
+		await bo.page.wait(`!${editing(second)}`, 5000);
+	});
+
 	test("Cyd opens the card Ada has open: on Bo's board the tile's stack is kept, its label patched (D-039)", async () => {
 		const title = "Telemetry dashboard";
 		const card = seeded.cards[title];
