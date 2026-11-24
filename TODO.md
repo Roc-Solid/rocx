@@ -41,6 +41,13 @@ When an item lands, delete its line here in the same commit.
 
 ## Framework work, decided but not built
 
+- **Wasm splitting: parked until after Roc 0.1** (the user, 2026-11-24). A page downloads only its
+  own code: route levels as entries, chunks by the set of pages that reach them, at most four files a
+  page, the browser's build boxy. Re-measured on a1cd824 (`spike/wasm-split/REPORT.md`, the
+  2026-11-24 section): the median page's first load 174 KB brotli against 310 today, but data stays
+  in main (72 KB) until the fork keeps relocations through the final link. To pick up: the fork's
+  `--keep-temp` fix and kept relocations, then rocx's build step, manifest, loader and render check
+  (a decision, D-068 or the next free number).
 - **The rest of Solid 2.0 and Solid Router's actions:** see `web/README.md`, "Not yet".
 - **D-052's dev warning has blind spots:** a reactive read inside a helper call that takes
   arguments, and one at the top of a `<For>` row or a function child, aren't marked, so they don't

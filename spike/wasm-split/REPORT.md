@@ -1,3 +1,55 @@
+# PARKED AGAIN (2026-11-24, the user: "until after Roc 0.1 release"): re-measured on master a1cd824
+
+The user resumed splitting on 2026-11-24 ("as apps grow it's not feasible to ship the whole app")
+and decided: per page first, built as one graph splitter (route levels as entries, a chunk for each
+set of pages that reach the same code, small chunks merged, at most four files a page), finer
+(`<Lazy>` boundaries) later; the browser's build boxy (`--specialize=no`) for now. A re-measure on
+that day's master then parked it until after Roc 0.1.
+
+**Where it is:** `split2/` (its scripts; `fix.mjs` has the order they run in at its top) and
+`split2/results/` (each page's first load, merged and exact; the merged chunks; the edges the render
+check found). The builds and split outputs were in /tmp/rocx-split-2 (volatile: rebuild with
+`split2/build.sh`).
+
+**Numbers (KB brotli, docs site, 53 pages):** the whole wasm 296.6 specialized, 309.9 boxy (boxy
+costs 4.5% now). Split, functions only: main 164.9 (code 86.4, **data 71.7**, glue 6.7); a page's
+first load (main and at most three chunks, chunks under 2 KB merged) 164.9 at least, 174.1 median,
+247.9 at most (/ecosystem/charts; /components 221.0, /showcase 216.3). Exact chunks: median 165.4,
+but up to 39 files a page. All files 358.8 (16% over one wasm). Checked: every output validates
+(binaryen, V8); with every chunk, all 53 pages render byte for byte as the unsplit build; with only
+its own chunks no page's render reaches another chunk (rendering only: not handlers, effects or
+navigation).
+
+**What changed since Nov 21:**
+- The final link now makes 68 unnamed functions, and drops and reorders data (413 KB in the object,
+  213 KB in the module): "object offset + one base" holds for the first 47 KB only; `locate.mjs`
+  finds segments by content (89% placed).
+- `--keep-temp` still loses `roc_app_unsealed_wasm32.o` at 4674b5973d (rocBuildWasmLlvm skips its
+  delete but never calls reportKeptTempDir); worked around with a private ROC_CACHE_DIR and a copy
+  taken during the build. `--replace-dep`'s OLD is now a path.
+- `roc_tail_driver` is no longer a dispatcher (4.9 KB). The native-callable dispatcher is the door
+  instead: it calls through table slots written as constants, so the graph missed 37 functions; the
+  render check (render each page with only its chunks, add each late call to the graph, again until
+  none) found them.
+- A function with a `v128` in its signature can't be a JS placeholder (V8 throws before it runs):
+  it needs a stub in wasm, or stays in main.
+- 330 functions (~23 KB br) nothing is known to reach stay in main; 226 are reached only from data
+  the link dropped (probably dead, kept by the table).
+
+**Why data matters:** it is every page's text and constants (pages' descriptions, the route table,
+the sidebar, benchmark tables, samples); in main, the first load grows with the whole app. Moving it
+needs exact references, which the final link discards.
+
+**To pick up, in order:** (1) the fork: the `--keep-temp` wasm32 fix, then the linker keeping the
+relocations it resolves (like `wasm-ld --emit-relocs`, in src/cli/wasm_link.zig), which gives an
+exact graph and makes moving data safe (main ~115–120 KB), and optionally dropping table entries
+only dropped data reaches; (2) rocx: the split as a build step, the manifest in the route table, a
+page's chunks fetched with its document (D-040 §18's pageCode), the render check in the build, a
+late chunk suspending and running again (as a pending answer does), `v128` functions kept in main;
+(3) moving data; (4) `<Lazy>`. Write it up as a decision first (D-068, or the next free number).
+
+---
+
 # PARKED (2026-11-21, the user's call): wasm splitting by page
 
 Nothing landed. The design and a working loader are kept here as the starting point.
