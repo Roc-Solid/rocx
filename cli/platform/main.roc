@@ -1,13 +1,14 @@
 ## The command-line platform rocx is built on (`bin/rocx`): its output and input, the environment,
-## files, commands run to their end or beside it, directory trees watched, and the signals it is
-## sent. Whatever happens while a program waits (a file changed, a child ended, a signal) is an
-## event, and `Events.next!` waits for the next one: a program that watches is one plain loop.
+## files, commands run to their end or beside it, directory trees watched, the signals it is sent,
+## and GETs of a server on this machine. Whatever happens while a program waits (a file changed, a
+## child ended, a signal) is an event, and `Events.next!` waits for the next one: a program that
+## watches is one plain loop.
 ## The host is Rust (../host), on the C library alone.
 platform ""
 	requires {
 		main! : List(Str) => Try({}, [Exit(I32), ..])
 	}
-	exposes [Child, Cmd, Env, Events, File, Stderr, Stdin, Stdout, Time, Watch]
+	exposes [Child, Cmd, Env, Events, File, Http, Stderr, Stdin, Stdout, Time, Watch]
 	packages {}
 	provides {
 		"roc_main": main_for_host!,
@@ -22,6 +23,8 @@ platform ""
 		"roc_host_exe_path": Host.exe_path!,
 		"roc_host_exec": Host.exec!,
 		"roc_host_exists": Host.exists!,
+		"roc_host_free_port": Host.free_port!,
+		"roc_host_http_get": Host.http_get!,
 		"roc_host_is_dir": Host.is_dir!,
 		"roc_host_kill": Host.kill!,
 		"roc_host_list": Host.list!,
@@ -40,6 +43,7 @@ platform ""
 		"roc_host_stdin": Host.stdin!,
 		"roc_host_watch": Host.watch!,
 		"roc_host_write": Host.write!,
+		"roc_host_write_bytes": Host.write_bytes!,
 		"roc_host_write_file": Host.write_file!,
 	}
 	targets: {
@@ -56,6 +60,7 @@ import Env
 import Events
 import File
 import Host
+import Http
 import Stderr
 import Stdin
 import Stdout

@@ -47,6 +47,9 @@ Host := [].{
 	## Writes the file, its directory made first.
 	write_file! : Str, Str => Try({}, Str)
 
+	## Writes the file's bytes, its directory made first.
+	write_bytes! : Str, List(U8) => Try({}, Str)
+
 	## Makes the file with this text, only if nothing is there (`O_EXCL`): `True` when it made it,
 	## `False` when something was there already.
 	create_new! : Str, Str => Try(Bool, Str)
@@ -76,9 +79,10 @@ Host := [].{
 	## signal ended it.
 	run! : Str, List(Str), Str, List(Str), Str, U8 => Try({ code : I32, out : Str, err : Str }, Str)
 
-	## Starts a program (no shell) beside this one, with this one's stdin, stdout and stderr: its
-	## id, for `kill!`. Its end is an event (`next!`).
-	spawn! : Str, List(Str), Str, List(Str) => Try(U64, Str)
+	## Starts a program (no shell) beside this one, with this one's stdin, stdout and stderr, or
+	## with its stdout and stderr written to the file `log` names (made, or emptied, first; "" for
+	## this one's): its id, for `kill!`. Its end is an event (`next!`).
+	spawn! : Str, List(Str), Str, List(Str), Str => Try(U64, Str)
 
 	## Replaces this program with another (no shell; in a directory, "" for this one's; environment
 	## variables added): children still running are sent SIGTERM first, and waited for (up to ten
@@ -92,6 +96,16 @@ Host := [].{
 	## `skip`: each file whose size or modification time changes, that appears or that goes is
 	## reported (`next!`), once, however many times the system says so.
 	watch! : Str, List(Str) => Try({}, Str)
+
+	## A GET of `url` (`http://host:port/path`, plain HTTP: a server on this machine), with these
+	## headers (`name: value`) besides `Host`, and `Connection: close`: its status, its
+	## `Content-Type` ("" without one) and its body, whole (a chunked one put together). Waits up to
+	## a minute for each read; an error is why it couldn't ask or read the answer.
+	http_get! : Str, List(Str) => Try({ status : U16, content_type : Str, body : List(U8) }, Str)
+
+	## A TCP port on 127.0.0.1 nothing listens on, as the system picks one: for a server this
+	## program starts (another program could take it first, which is rare).
+	free_port! : {} => Try(U16, Str)
 
 	## Waits for the next event, or `timeout_ms` (0: forever): kind 0, the time ran out; 1, files
 	## changed (`paths`, absolute); 2, a child ended (`child`, its exit `code`); 3, a signal came

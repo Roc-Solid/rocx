@@ -9,7 +9,7 @@ import ../../Ui/TableWrap
 
 meta = {
 	title: "Tooling",
-	description: "The rocx command: dev, build, check (an app, a command's reports, its SQL), lint, routes, fmt and qr; compiler errors reported at your .rocx lines; editor support; stories; building an app by hand for production.",
+	description: "The rocx command: dev, build (and a static copy), check (an app, a command's reports, its SQL), lint, routes, fmt and qr; compiler errors reported at your .rocx lines; editor support; stories; building an app by hand for production.",
 	toc: [
 		{ id: "commands", label: "Commands" },
 		{ id: "errors", label: "Errors at your lines" },
@@ -97,6 +97,36 @@ view! = |_|
 							fail far from it.
 						</p>
 						<p><code>--dev</code> also builds the <a href="#stories">stories</a> and their catalog.</p>
+					</div>
+				</div>
+				<div class="command" id="static">
+					<p class="command-usage">rocx build {"<dir>"}<span>--static {"<out>"}</span><span>--base /path/</span><span>--route {"<path>"}</span><span>--built {"<build>"}</span><span>-- {"<server options>"}</span></p>
+					<div>
+						<p>
+							Writes the app as static files into <code>{"<out>"}</code>, for a host with no server:
+							GitHub Pages, a CDN, any folder a web server serves. It builds the app for production,
+							starts its server on a free port, and asks it for every page: <code>/</code>, each page
+							whose path has no params, and every page those link to. Each page becomes
+							<code>{"<path>/index.html"}</code>. Beside them go <code>404.html</code> (what a path
+							nothing answers shows), the app's <code>static/</code>, and <code>rocx/</code> with the
+							runtime and the wasm. A page carries the answers to the reads it made while it rendered,
+							so its data is there without a server. This site is built this way.
+						</p>
+						<p>
+							<code>--base</code> puts every URL under a path, for a site served there
+							(<code>example.github.io/docs/</code> is <code>--base /docs/</code>). <code>--route</code>
+							asks for a path no page links to: a page with params (<code>/blog/hello</code>), or an
+							endpoint's answer, written as a file (<code>/feed.xml</code>). <code>--built</code> uses a
+							build you made (its <code>server</code> and <code>client/static</code>) instead of building
+							one. The copy is made beside <code>{"<out>"}</code> and replaces it only once it is
+							complete; <code>{"<out>"}</code> must be empty, or an earlier copy.
+						</p>
+						<p>
+							What only a server can answer isn't in the copy, and the build lists it: a method that
+							writes (<code>post!</code>), events and channels, a page whose route has middleware of
+							its own (it answers each request as it comes), a page with params that no link or
+							<code>--route</code> reached, and a link to a path that answered an error.
+						</p>
 					</div>
 				</div>
 				<div class="command">

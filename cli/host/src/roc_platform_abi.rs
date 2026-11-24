@@ -1245,6 +1245,35 @@ const _: () = assert!(core::mem::size_of::<AnonStruct4789a1b2f954e45c>() == 28, 
 #[cfg(target_pointer_width = "32")]
 const _: () = assert!(core::mem::align_of::<AnonStruct4789a1b2f954e45c>() == 4, "AnonStruct4789a1b2f954e45c alignment mismatch");
 
+/// Element type for __AnonStruct_d1699bdaa9628d69
+#[cfg(target_pointer_width = "32")]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct AnonStructD1699bdaa9628d69 {
+    pub body: RocListWith<u8, false>,
+    pub content_type: RocStr,
+    pub status: u16,
+}
+
+/// Element type for __AnonStruct_d1699bdaa9628d69
+#[cfg(not(target_pointer_width = "32"))]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct AnonStructD1699bdaa9628d69 {
+    pub body: RocListWith<u8, false>,
+    pub content_type: RocStr,
+    pub status: u16,
+}
+
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::size_of::<AnonStructD1699bdaa9628d69>() == 56, "AnonStructD1699bdaa9628d69 size mismatch");
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::align_of::<AnonStructD1699bdaa9628d69>() == 8, "AnonStructD1699bdaa9628d69 alignment mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::size_of::<AnonStructD1699bdaa9628d69>() == 28, "AnonStructD1699bdaa9628d69 size mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::align_of::<AnonStructD1699bdaa9628d69>() == 4, "AnonStructD1699bdaa9628d69 alignment mismatch");
+
 /// Element type for __AnonStruct_40c3f27e6ea250c6
 #[cfg(target_pointer_width = "32")]
 #[repr(C)]
@@ -2002,6 +2031,260 @@ const _: () = assert!(core::mem::align_of::<HostSpawnResult>() == 8, "HostSpawnR
 #[cfg(target_pointer_width = "32")]
 const _: () = assert!(core::mem::offset_of!(HostSpawnResult, tag) == 12, "HostSpawnResult tag offset mismatch");
 
+/// Tag discriminant for Try.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostHttpGetResultTag {
+    Err = 0,
+    Ok = 1,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub union HostHttpGetResultPayload {
+    pub err: core::mem::ManuallyDrop<RocStr>,
+    pub ok: core::mem::ManuallyDrop<AnonStructD1699bdaa9628d69>,
+}
+
+#[cfg(target_pointer_width = "32")]
+#[repr(align(4))]
+#[derive(Clone, Copy)]
+pub struct HostHttpGetResultPayloadAlignment;
+
+/// Tag union: Try
+#[cfg(target_pointer_width = "32")]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostHttpGetResult {
+    pub _payload_alignment: [HostHttpGetResultPayloadAlignment; 0],
+    pub payload: [u8; 28],
+    pub tag: HostHttpGetResultTag,
+}
+
+/// Tag union: Try
+#[cfg(not(target_pointer_width = "32"))]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostHttpGetResult {
+    pub payload: HostHttpGetResultPayload,
+    pub tag: HostHttpGetResultTag,
+}
+
+impl HostHttpGetResult {
+    /// Borrow the `Err` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostHttpGetResultTag::Err` and the payload must still be initialized.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn borrow_payload_err_unchecked(&self) -> &RocStr {
+        unsafe { &*(self.payload.as_ptr() as *const RocStr) }
+    }
+
+    /// Borrow the `Err` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostHttpGetResultTag::Err` and the payload must still be initialized.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn borrow_payload_err_unchecked(&self) -> &RocStr {
+        unsafe { &*(&self.payload.err as *const core::mem::ManuallyDrop<RocStr> as *const RocStr) }
+    }
+
+    /// Move the `Err` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostHttpGetResultTag::Err`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn take_payload_err_unchecked(&mut self) -> RocStr {
+        unsafe { core::ptr::read(self.payload.as_ptr() as *const RocStr) }
+    }
+
+    /// Move the `Err` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostHttpGetResultTag::Err`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn take_payload_err_unchecked(&mut self) -> RocStr {
+        unsafe { core::mem::ManuallyDrop::take(&mut self.payload.err) }
+    }
+
+    /// Borrow the `Ok` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostHttpGetResultTag::Ok` and the payload must still be initialized.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn borrow_payload_ok_unchecked(&self) -> &AnonStructD1699bdaa9628d69 {
+        unsafe { &*(self.payload.as_ptr() as *const AnonStructD1699bdaa9628d69) }
+    }
+
+    /// Borrow the `Ok` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostHttpGetResultTag::Ok` and the payload must still be initialized.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn borrow_payload_ok_unchecked(&self) -> &AnonStructD1699bdaa9628d69 {
+        unsafe { &*(&self.payload.ok as *const core::mem::ManuallyDrop<AnonStructD1699bdaa9628d69> as *const AnonStructD1699bdaa9628d69) }
+    }
+
+    /// Move the `Ok` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostHttpGetResultTag::Ok`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn take_payload_ok_unchecked(&mut self) -> AnonStructD1699bdaa9628d69 {
+        unsafe { core::ptr::read(self.payload.as_ptr() as *const AnonStructD1699bdaa9628d69) }
+    }
+
+    /// Move the `Ok` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostHttpGetResultTag::Ok`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn take_payload_ok_unchecked(&mut self) -> AnonStructD1699bdaa9628d69 {
+        unsafe { core::mem::ManuallyDrop::take(&mut self.payload.ok) }
+    }
+
+}
+
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::size_of::<HostHttpGetResult>() == 64, "HostHttpGetResult size mismatch");
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::align_of::<HostHttpGetResult>() == 8, "HostHttpGetResult alignment mismatch");
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::offset_of!(HostHttpGetResult, tag) == 56, "HostHttpGetResult tag offset mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::size_of::<HostHttpGetResult>() == 32, "HostHttpGetResult size mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::align_of::<HostHttpGetResult>() == 4, "HostHttpGetResult alignment mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::offset_of!(HostHttpGetResult, tag) == 28, "HostHttpGetResult tag offset mismatch");
+
+/// Tag discriminant for Try.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostFreePortResultTag {
+    Err = 0,
+    Ok = 1,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub union HostFreePortResultPayload {
+    pub err: core::mem::ManuallyDrop<RocStr>,
+    pub ok: core::mem::ManuallyDrop<u16>,
+}
+
+#[cfg(target_pointer_width = "32")]
+#[repr(align(4))]
+#[derive(Clone, Copy)]
+pub struct HostFreePortResultPayloadAlignment;
+
+/// Tag union: Try
+#[cfg(target_pointer_width = "32")]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostFreePortResult {
+    pub _payload_alignment: [HostFreePortResultPayloadAlignment; 0],
+    pub payload: [u8; 12],
+    pub tag: HostFreePortResultTag,
+}
+
+/// Tag union: Try
+#[cfg(not(target_pointer_width = "32"))]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostFreePortResult {
+    pub payload: HostFreePortResultPayload,
+    pub tag: HostFreePortResultTag,
+}
+
+impl HostFreePortResult {
+    /// Borrow the `Err` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostFreePortResultTag::Err` and the payload must still be initialized.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn borrow_payload_err_unchecked(&self) -> &RocStr {
+        unsafe { &*(self.payload.as_ptr() as *const RocStr) }
+    }
+
+    /// Borrow the `Err` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostFreePortResultTag::Err` and the payload must still be initialized.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn borrow_payload_err_unchecked(&self) -> &RocStr {
+        unsafe { &*(&self.payload.err as *const core::mem::ManuallyDrop<RocStr> as *const RocStr) }
+    }
+
+    /// Move the `Err` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostFreePortResultTag::Err`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn take_payload_err_unchecked(&mut self) -> RocStr {
+        unsafe { core::ptr::read(self.payload.as_ptr() as *const RocStr) }
+    }
+
+    /// Move the `Err` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostFreePortResultTag::Err`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn take_payload_err_unchecked(&mut self) -> RocStr {
+        unsafe { core::mem::ManuallyDrop::take(&mut self.payload.err) }
+    }
+
+    /// Borrow the `Ok` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostFreePortResultTag::Ok` and the payload must still be initialized.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn borrow_payload_ok_unchecked(&self) -> &u16 {
+        unsafe { &*(self.payload.as_ptr() as *const u16) }
+    }
+
+    /// Borrow the `Ok` payload without creating another owner.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostFreePortResultTag::Ok` and the payload must still be initialized.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn borrow_payload_ok_unchecked(&self) -> &u16 {
+        unsafe { &*(&self.payload.ok as *const core::mem::ManuallyDrop<u16> as *const u16) }
+    }
+
+    /// Move the `Ok` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostFreePortResultTag::Ok`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn take_payload_ok_unchecked(&mut self) -> u16 {
+        unsafe { core::ptr::read(self.payload.as_ptr() as *const u16) }
+    }
+
+    /// Move the `Ok` payload out of one owned tag-union shell.
+    ///
+    /// # Safety
+    /// `self.tag` must be `HostFreePortResultTag::Ok`. After this call, `self` is logically uninitialized and must not be read or destroyed.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub unsafe fn take_payload_ok_unchecked(&mut self) -> u16 {
+        unsafe { core::mem::ManuallyDrop::take(&mut self.payload.ok) }
+    }
+
+}
+
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::size_of::<HostFreePortResult>() == 32, "HostFreePortResult size mismatch");
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::align_of::<HostFreePortResult>() == 8, "HostFreePortResult alignment mismatch");
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::offset_of!(HostFreePortResult, tag) == 24, "HostFreePortResult tag offset mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::size_of::<HostFreePortResult>() == 16, "HostFreePortResult size mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::align_of::<HostFreePortResult>() == 4, "HostFreePortResult alignment mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::offset_of!(HostFreePortResult, tag) == 12, "HostFreePortResult tag offset mismatch");
+
 /// Return type record for Host.next!
 /// Fields ordered by compiler-emitted ABI offsets.
 #[cfg(target_pointer_width = "32")]
@@ -2101,6 +2384,16 @@ pub struct HostExecArgs {
 #[derive(Clone, Copy)]
 pub struct HostExistsArgs {
     pub arg0: RocStr,
+}
+
+/// Arguments for Host.http_get!
+/// Roc signature: Str, List(Str) => Try({ body : List(U8), content_type : Str, status : U16 }, Str)
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostHttpGetArgs {
+    pub arg0: RocStr,
+    pub arg1: RocList<RocStr>,
 }
 
 /// Arguments for Host.is_dir!
@@ -2210,7 +2503,7 @@ pub struct HostSleepArgs {
 }
 
 /// Arguments for Host.spawn!
-/// Roc signature: Str, List(Str), Str, List(Str) => Try(U64, Str)
+/// Roc signature: Str, List(Str), Str, List(Str), Str => Try(U64, Str)
 /// Refcounted fields are owned by the hosted function.
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -2219,6 +2512,7 @@ pub struct HostSpawnArgs {
     pub arg1: RocList<RocStr>,
     pub arg2: RocStr,
     pub arg3: RocList<RocStr>,
+    pub arg4: RocStr,
 }
 
 /// Arguments for Host.watch!
@@ -2241,6 +2535,16 @@ pub struct HostWriteArgs {
     pub arg1: RocStr,
 }
 
+/// Arguments for Host.write_bytes!
+/// Roc signature: Str, List(U8) => Try({}, Str)
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostWriteBytesArgs {
+    pub arg0: RocStr,
+    pub arg1: RocListWith<u8, false>,
+}
+
 /// Arguments for Host.write_file!
 /// Roc signature: Str, Str => Try({}, Str)
 /// Refcounted fields are owned by the hosted function.
@@ -2256,6 +2560,7 @@ pub struct HostWriteFileArgs {
 pub type HostDeleteResult = HostCopyResult;
 pub type HostDeleteResultPayload = HostCopyResultPayload;
 pub type HostDeleteResultTag = HostCopyResultTag;
+pub type HostHttpGetOk = AnonStructD1699bdaa9628d69;
 pub type HostMakeDirsResult = HostCopyResult;
 pub type HostMakeDirsResultPayload = HostCopyResultPayload;
 pub type HostMakeDirsResultTag = HostCopyResultTag;
@@ -2270,6 +2575,9 @@ pub type HostRunOk = AnonStruct4789a1b2f954e45c;
 pub type HostWatchResult = HostCopyResult;
 pub type HostWatchResultPayload = HostCopyResultPayload;
 pub type HostWatchResultTag = HostCopyResultTag;
+pub type HostWriteBytesResult = HostCopyResult;
+pub type HostWriteBytesResultPayload = HostCopyResultPayload;
+pub type HostWriteBytesResultTag = HostCopyResultTag;
 pub type HostWriteFileResult = HostCopyResult;
 pub type HostWriteFileResultPayload = HostCopyResultPayload;
 pub type HostWriteFileResultTag = HostCopyResultTag;
@@ -2583,6 +2891,129 @@ unsafe impl RocRelease<HostSpawnResult> for HostSpawnResultRelease {
     }
 }
 
+impl HostHttpGetResult {
+    /// Recursively decrement Roc-owned payloads.
+    ///
+    /// # Safety
+    /// `self` must own one live Roc reference for each refcounted payload.
+    pub unsafe fn decref(self, roc_host: &RocHost) {
+        let mut value = self;
+        let _ = roc_host;
+        match value.tag {
+            HostHttpGetResultTag::Err => {
+                let payload = unsafe { value.take_payload_err_unchecked() };
+                unsafe { payload.decref(roc_host); }
+            },
+            HostHttpGetResultTag::Ok => {
+                let payload = unsafe { value.take_payload_ok_unchecked() };
+                unsafe { payload.decref(roc_host); }
+            },
+        }
+    }
+
+    /// Increment Roc-owned payloads.
+    ///
+    /// # Safety
+    /// `self` must point at live Roc allocations. The retained references must
+    /// be balanced by later decrefs.
+    pub unsafe fn incref(self, amount: isize) {
+        let value = self;
+        let _ = amount;
+        match value.tag {
+            HostHttpGetResultTag::Err => {
+                let payload = unsafe { core::ptr::read(value.borrow_payload_err_unchecked()) };
+                unsafe { payload.incref(amount); }
+            },
+            HostHttpGetResultTag::Ok => {
+                let payload = unsafe { core::ptr::read(value.borrow_payload_ok_unchecked()) };
+                unsafe { payload.incref(amount); }
+            },
+        }
+    }
+}
+
+pub struct HostHttpGetResultRelease;
+
+unsafe impl RocRelease<HostHttpGetResult> for HostHttpGetResultRelease {
+    unsafe fn release(value: HostHttpGetResult, roc_host: &RocHost) {
+        unsafe { value.decref(roc_host); }
+    }
+}
+
+impl AnonStructD1699bdaa9628d69 {
+    /// Recursively decrement Roc-owned fields.
+    ///
+    /// # Safety
+    /// `self` must own one live Roc reference for each refcounted field.
+    pub unsafe fn decref(self, roc_host: &RocHost) {
+        let value = self;
+        unsafe { value.body.decref(roc_host); }
+        unsafe { value.content_type.decref(roc_host); }
+    }
+
+    /// Increment Roc-owned fields.
+    ///
+    /// # Safety
+    /// `self` must point at live Roc allocations. The retained references must
+    /// be balanced by later decrefs.
+    pub unsafe fn incref(self, amount: isize) {
+        let value = self;
+        unsafe { value.body.incref(amount); }
+        unsafe { value.content_type.incref(amount); }
+    }
+}
+
+pub struct AnonStructD1699bdaa9628d69Release;
+
+unsafe impl RocRelease<AnonStructD1699bdaa9628d69> for AnonStructD1699bdaa9628d69Release {
+    unsafe fn release(value: AnonStructD1699bdaa9628d69, roc_host: &RocHost) {
+        unsafe { value.decref(roc_host); }
+    }
+}
+
+impl HostFreePortResult {
+    /// Recursively decrement Roc-owned payloads.
+    ///
+    /// # Safety
+    /// `self` must own one live Roc reference for each refcounted payload.
+    pub unsafe fn decref(self, roc_host: &RocHost) {
+        let mut value = self;
+        let _ = roc_host;
+        match value.tag {
+            HostFreePortResultTag::Err => {
+                let payload = unsafe { value.take_payload_err_unchecked() };
+                unsafe { payload.decref(roc_host); }
+            },
+            HostFreePortResultTag::Ok => {},
+        }
+    }
+
+    /// Increment Roc-owned payloads.
+    ///
+    /// # Safety
+    /// `self` must point at live Roc allocations. The retained references must
+    /// be balanced by later decrefs.
+    pub unsafe fn incref(self, amount: isize) {
+        let value = self;
+        let _ = amount;
+        match value.tag {
+            HostFreePortResultTag::Err => {
+                let payload = unsafe { core::ptr::read(value.borrow_payload_err_unchecked()) };
+                unsafe { payload.incref(amount); }
+            },
+            HostFreePortResultTag::Ok => {},
+        }
+    }
+}
+
+pub struct HostFreePortResultRelease;
+
+unsafe impl RocRelease<HostFreePortResult> for HostFreePortResultRelease {
+    unsafe fn release(value: HostFreePortResult, roc_host: &RocHost) {
+        unsafe { value.decref(roc_host); }
+    }
+}
+
 impl AnonStruct40c3f27e6ea250c6 {
     /// Recursively decrement Roc-owned fields.
     ///
@@ -2730,6 +3161,11 @@ unsafe extern "C" {
     /// The result is owned by Roc: return exactly one owned reference.
     pub fn roc_host_env_var(arg0: RocStr) -> RocStr;
 
+    /// Hosted symbol for Host.exe_path!
+    /// Roc signature: {} => Str
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_exe_path() -> RocStr;
+
     /// Hosted symbol for Host.exec!
     /// Roc signature: Str, List(Str), Str, List(Str) => Str
     /// Owned arguments. Release each exactly once before returning, unless it is
@@ -2741,17 +3177,26 @@ unsafe extern "C" {
     /// The result is owned by Roc: return exactly one owned reference.
     pub fn roc_host_exec(arg0: RocStr, arg1: RocList<RocStr>, arg2: RocStr, arg3: RocList<RocStr>) -> RocStr;
 
-    /// Hosted symbol for Host.exe_path!
-    /// Roc signature: {} => Str
-    /// The result is owned by Roc: return exactly one owned reference.
-    pub fn roc_host_exe_path() -> RocStr;
-
     /// Hosted symbol for Host.exists!
     /// Roc signature: Str => Bool
     /// Owned arguments. Release each exactly once before returning, unless it is
     /// moved into storage or into the result:
     ///     unsafe { arg0.decref(roc_host); }
     pub fn roc_host_exists(arg0: RocStr) -> bool;
+
+    /// Hosted symbol for Host.free_port!
+    /// Roc signature: {} => Try(U16, Str)
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_free_port() -> HostFreePortResult;
+
+    /// Hosted symbol for Host.http_get!
+    /// Roc signature: Str, List(Str) => Try({ body : List(U8), content_type : Str, status : U16 }, Str)
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    ///     unsafe { decref_list_of_str(arg1, roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_http_get(arg0: RocStr, arg1: RocList<RocStr>) -> HostHttpGetResult;
 
     /// Hosted symbol for Host.is_dir!
     /// Roc signature: Str => Bool
@@ -2846,15 +3291,16 @@ unsafe extern "C" {
     pub fn roc_host_sleep(arg0: u64);
 
     /// Hosted symbol for Host.spawn!
-    /// Roc signature: Str, List(Str), Str, List(Str) => Try(U64, Str)
+    /// Roc signature: Str, List(Str), Str, List(Str), Str => Try(U64, Str)
     /// Owned arguments. Release each exactly once before returning, unless it is
     /// moved into storage or into the result:
     ///     unsafe { arg0.decref(roc_host); }
     ///     unsafe { decref_list_of_str(arg1, roc_host); }
     ///     unsafe { arg2.decref(roc_host); }
     ///     unsafe { decref_list_of_str(arg3, roc_host); }
+    ///     unsafe { arg4.decref(roc_host); }
     /// The result is owned by Roc: return exactly one owned reference.
-    pub fn roc_host_spawn(arg0: RocStr, arg1: RocList<RocStr>, arg2: RocStr, arg3: RocList<RocStr>) -> HostSpawnResult;
+    pub fn roc_host_spawn(arg0: RocStr, arg1: RocList<RocStr>, arg2: RocStr, arg3: RocList<RocStr>, arg4: RocStr) -> HostSpawnResult;
 
     /// Hosted symbol for Host.stdin!
     /// Roc signature: {} => Str
@@ -2876,6 +3322,15 @@ unsafe extern "C" {
     /// moved into storage or into the result:
     ///     unsafe { arg1.decref(roc_host); }
     pub fn roc_host_write(arg0: u8, arg1: RocStr);
+
+    /// Hosted symbol for Host.write_bytes!
+    /// Roc signature: Str, List(U8) => Try({}, Str)
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    ///     unsafe { arg1.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_write_bytes(arg0: RocStr, arg1: RocListWith<u8, false>) -> HostCopyResult;
 
     /// Hosted symbol for Host.write_file!
     /// Roc signature: Str, Str => Try({}, Str)

@@ -1,0 +1,8 @@
+import pf.Html
+
+## A post: the front page links to one.
+view! = |{ params }| {
+	<main>
+		<h1>Post {params.slug}</h1>
+	</main>
+}

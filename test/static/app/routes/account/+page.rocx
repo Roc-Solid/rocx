@@ -1,0 +1,12 @@
+import pf.Html
+import pf.Middleware
+
+## The account: behind middleware of its own, which would answer each request as it comes (who is
+## asking?), so the copy has none of it, and no link is followed to it (a note says so).
+middleware = Middleware.make(|request, context, next!| next!(request, context))
+
+view! = |_| {
+	<main>
+		<h1>Account</h1>
+	</main>
+}

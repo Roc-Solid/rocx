@@ -33,7 +33,7 @@
 //   5. facts: what the wasm weighs, how long rendering a page takes in it; for the pages, in
 //      site/build/context.txt, which the server is started with
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { brotliCompressSync, constants, gzipSync } from "node:zlib";
@@ -387,13 +387,6 @@ async function buildUnlocked({ log, compare, dev }) {
 /** The file a route is written to in dist/. */
 export const pageFile = (route) => (route === "/" ? "index.html" : `${route.slice(1)}/index.html`);
 
-/** Copies what pages load besides themselves into `dir`: the site's files, and start.js, runtime.js
- * and app.wasm, side by side in rocx/. */
-export function assets(dir) {
-	cpSync(join(site, "static"), dir, { recursive: true });
-	cpSync(clientStatic, dir, { recursive: true });
-}
-
 /**
  * What the static site's demos ask for besides pages, answered by the server as the site is built
  * and written as files: the words the shout's buttons send (`site/Demos/Shout.rocx`), and the
@@ -403,53 +396,29 @@ export function assets(dir) {
 export const STATIC_GETS = ["/api/shout/rocx", "/api/shout/hello", "/api/shout/static", "/openapi.json", "/openapi.html"];
 
 /** A page as the server answered it, for a copy served under `base` (`/rocx/`): an attribute's URL
- * that begins with `/` (a link, a script, a stylesheet) begins with the base instead. */
+ * that begins with `/` (a link, a script, a stylesheet) begins with the base instead, as
+ * `rocx build --static` writes it (rocx-cli/Static.roc's `under_base`). */
 export function underBase(html, base) {
 	return base === "/" ? html : html.replace(/(\s(?:href|src|action)=")\/(?!\/)/g, `$1${base}`);
 }
 
 /**
- * Every page, as the site's server answers it, what the demos ask for (`STATIC_GETS`), the plugins'
- * files (D-050: each at its URL, `rocx/plugins/<plugin>/…` or at the root, as the server answers
- * them; pages load the scripts among them, their URLs under the base as start.js's are), and what
- * they load, into `dir`: a static site. With `base` (`/rocx/`), for a host that serves it under that
- * path (a GitHub Pages project site: `example.github.io/rocx/`).
+ * The site as files in `dir`, by `rocx build --static` (D-073) from this build (site/build, made by
+ * `build`): every page as the site's server answers it, what the demos ask for (`STATIC_GETS`), the
+ * plugins' files and what the pages load. With `base` (`/rocx/`), for a host that serves it under
+ * that path (a GitHub Pages project site: `example.github.io/rocx/`). Resolves to what rocx said of
+ * the copy, a line each.
  */
 export async function prerender(dir, { base = "/" } = {}) {
-	if (!base.startsWith("/") || !base.endsWith("/")) throw new Error(`a base begins and ends with /: ${base}`);
 	// site/dist is what `just deploy-pages` publishes: only `just site` writes it, from its own
 	// build, never a dev build's (`just dev`, `site/build.mjs --dev`).
 	if (resolve(dir) === resolve(dist) && !/^dev=no$/m.test(existsSync(context) ? readFileSync(context, "utf8") : "")) {
 		throw new Error(`rocx site: site/build is a dev build (${relative(root, context)} doesn't say dev=no), and site/dist is published: only \`just site\` writes it`);
 	}
-	// --debug: the server lists the plugins' files (`/__rocx/plugin-files`), for the copy.
-	const running = await startServer({}, ["--debug"]);
-	try {
-		rmSync(dir, { recursive: true, force: true });
-		for (const { url } of await (await fetch(`${running.url}/__rocx/plugin-files`)).json()) {
-			const answered = await fetch(`${running.url}${url}`);
-			if (!answered.ok) throw new Error(`GET ${url}: ${answered.status} ${await answered.text()}`);
-			const path = join(dir, url.slice(1));
-			mkdirSync(dirname(path), { recursive: true });
-			writeFileSync(path, Buffer.from(await answered.arrayBuffer()));
-		}
-		for (const route of [...ROUTES, "/404"]) {
-			const path = join(dir, route === "/404" ? "404.html" : pageFile(route));
-			mkdirSync(dirname(path), { recursive: true });
-			const page = await fetch(`${running.url}${route}`, { headers: { accept: "text/html" } });
-			writeFileSync(path, underBase(await page.text(), base));
-		}
-		for (const route of STATIC_GETS) {
-			const answered = await fetch(`${running.url}${route}`);
-			if (!answered.ok) throw new Error(`GET ${route}: ${answered.status} ${await answered.text()}`);
-			const path = join(dir, route.slice(1));
-			mkdirSync(dirname(path), { recursive: true });
-			writeFileSync(path, await answered.text());
-		}
-	} finally {
-		await running.stop();
-	}
-	assets(dir);
+	const routes = STATIC_GETS.flatMap((route) => ["--route", route]);
+	const ran = spawnSync(rocxBinary(), ["build", site, "--static", dir, "--base", base, "--built", out, ...routes, "--", "--context-file", context], { cwd: root, encoding: "utf8" });
+	if (ran.status !== 0) throw new Error(`rocx build --static failed (${ran.status}):\n${ran.stderr}${ran.stdout}`);
+	return ran.stderr.trimEnd().split("\n");
 }
 
 async function main() {
@@ -458,9 +427,9 @@ async function main() {
 	await exclusive("just site", async () => {
 		const facts = await build({ compare: true });
 		const built = readFileSync(appWasm);
-		await prerender(dist, { base });
+		const said = await prerender(dist, { base });
 		if (!readFileSync(join(dist, "rocx", "app.wasm")).equals(built)) throw new Error("rocx site: site/dist/rocx/app.wasm isn't the wasm this build made: something else wrote site/build meanwhile");
-		console.error(`rocx site: ${ROUTES.length} pages in ${relative(process.cwd(), dist)}${base === "/" ? "" : `, for ${base}`}`);
+		for (const line of said) console.error(line);
 		console.error(facts);
 	});
 }

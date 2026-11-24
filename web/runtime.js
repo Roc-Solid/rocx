@@ -2804,11 +2804,13 @@ export class Runtime {
 	}
 
 	/** A path the browser shows, the site's base taken off: under `/rocx/`, `/rocx/syntax` is
-	 * `/syntax` and `/rocx` is `/`; a path not under it stays as it is. */
+	 * `/syntax` and `/rocx` is `/`; a path not under it stays as it is. A static copy's page is its
+	 * directory's index.html (`rocx build --static`, D-073), and a host may show it by that name:
+	 * `/syntax/index.html` is `/syntax/`, `/index.html` is `/`. */
 	unbased(path) {
 		const base = this.base.slice(0, -1);
-		if (!base || (path !== base && !path.startsWith(this.base))) return path;
-		return path.slice(base.length) || "/";
+		const under = !base || (path !== base && !path.startsWith(this.base)) ? path : path.slice(base.length) || "/";
+		return under.endsWith("/index.html") ? under.slice(0, -"index.html".length) : under;
 	}
 
 	/**

@@ -5,15 +5,17 @@ need this README only to work on rocx. Apps never use this platform: they run on
 platform (`server/`) and the browser platform (`web/`).
 
 It is a platform for programs that work on files and run other programs, and that may watch a
-directory tree while a server they started runs beside them, which is what `rocx dev` does (D-062).
+directory tree while a server they started runs beside them, which is what `rocx dev` does (D-062),
+or ask that server for its pages, which is what `rocx build --static` does (D-073).
 `cli/platform` is its Roc; `cli/host` is its host, in Rust, using nothing but the C library.
 
 | Module | What |
 |---|---|
 | `Stdout`, `Stderr`, `Stdin` | `line!` and `write!`, each a `Try`, so a caller's `?` reads as on other platforms; `Stdin.read_to_end!`, all of stdin |
 | `Env` | `cwd!`, `var!`, `exe_path!`, `pid!`, `alive!` (whether a process is running) |
-| `File` | `exists!`, `is_dir!`, `modified!` (nanoseconds), `read!`, `write!` (its directory made first), `create_new!` (only if nothing is there: a lock), `rename!`, `real_path!`, `make_dirs!`, `list!` (sorted), `delete!` and `copy!` (a file or a tree) |
-| `Cmd` | a command built up (`args`, `cwd`, `env`, `stdin`), run without a shell: to its end with stdout and stderr apart (`output!`), in one pipe in the order written (`merged!`) or on this program's own output (`status!`); started beside this program (`spawn!`); or run in its place (`exec!`) |
+| `File` | `exists!`, `is_dir!`, `modified!` (nanoseconds), `read!`, `write!` (its directory made first), `write_bytes!`, `create_new!` (only if nothing is there: a lock), `rename!`, `real_path!`, `make_dirs!`, `list!` (sorted), `delete!` and `copy!` (a file or a tree) |
+| `Cmd` | a command built up (`args`, `cwd`, `env`, `stdin`, `log`), run without a shell: to its end with stdout and stderr apart (`output!`), in one pipe in the order written (`merged!`) or on this program's own output (`status!`); started beside this program (`spawn!`, its output in the `log` file if it has one); or run in its place (`exec!`) |
+| `Http` | `get!(url, headers)`: a GET over plain HTTP/1.1 of a server on this machine (`rocx build --static` asks the app's server for its pages, D-073): its status, `Content-Type` and body (a chunked one put together); `free_port!`, a port nothing listens on |
 | `Child` | a command started beside: `terminate!` (SIGTERM), `kill!` (SIGKILL), `id` |
 | `Watch` | `dir!(dir, skip)`: watches a tree, but for hidden entries and the directories named in `skip` |
 | `Events` | `next!(ms)`: the next event, `Changed(paths)`, `Exited(child, code)` (128 plus the signal's number when a signal ended it), `Signal(Hangup / Interrupt / Terminate)`, or `Timeout` after `ms` (0 waits for as long as it takes) |
@@ -49,5 +51,6 @@ first hosted function that returns each, so `lib.rs` gives them aliases in one p
 
 - Linux: the musl targets are named and `just rocx-bootstrap` builds for them, but nobody has tried
   them yet. Watching there polls (inotify is the next step).
-- Output is text: a command's bytes that aren't UTF-8 are replaced, and there is no `File` call
-  for bytes.
+- Output is text: a command's bytes that aren't UTF-8 are replaced, and `File` reads text only
+  (it writes bytes: `write_bytes!`).
+- `Http` is for a server on this machine: no TLS, no redirects followed, one connection a request.

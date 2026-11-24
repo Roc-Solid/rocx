@@ -21,6 +21,7 @@ import Dev
 import Site
 import Hosts
 import SiteDev
+import Static
 import qr.Qr
 
 main! = |args| {
@@ -37,6 +38,7 @@ main! = |args| {
 		}
 		Ok("lint") if words.len() > 1 => exit_with(Commands.lint!(words.drop_first(1)))
 		Ok("routes") if words.len() == 2 => routes!(words.get(1) ?? ".")
+		Ok("build") if words.contains("--static") => Static.run!(words.drop_first(1), rocx_home!({}))
 		Ok("build") => build!(words.drop_first(1))
 		Ok("dev") => Dev.app!(words.drop_first(1), rocx_home!({}))
 		Ok("site") if words.get(1) == Ok("prepare") => site_prepare!(words.drop_first(2))
@@ -49,7 +51,7 @@ main! = |args| {
 }
 
 usage! = |{}| {
-	Stderr.line!("usage: rocx dev [dir] [--port 8080] [--android [--lan]] | rocx build <dir>… [--client <out>] [--dev] | rocx check [dir] | rocx check -- <command>… | rocx check --sql [dir] [--engine sqlite|turso] [--verbose] [-- server options…] | rocx lint <dir>… | rocx routes <dir> | rocx fmt [--check] <path>… | rocx qr <text>")?
+	Stderr.line!("usage: rocx dev [dir] [--port 8080] [--android [--lan]] | rocx build <dir>… [--client <out>] [--dev] | rocx build <dir> --static <out> [--base /path/] [--route <path>]… [--built <build>] [-- server options…] | rocx check [dir] | rocx check -- <command>… | rocx check --sql [dir] [--engine sqlite|turso] [--verbose] [-- server options…] | rocx lint <dir>… | rocx routes <dir> | rocx fmt [--check] <path>… | rocx qr <text>")?
 	Err(Exit(2))
 }
 

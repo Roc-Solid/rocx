@@ -245,10 +245,11 @@ function buildRustHost(hostDir, targetsDir, library, target) {
 
 /** The unit tests of a host module that uses only Rust's standard library (`kv.rs`), compiled on
  * their own (`rustc --test` into `out`) and run: the host's crate defines `main` for Roc, so `cargo
- * test` can't run them. Its status and what it printed. */
-export function hostUnitTests(module, out) {
-	const edition = /^edition = "(\d+)"/m.exec(readFileSync(join(hostDir, "Cargo.toml"), "utf8"))?.[1] ?? "2024";
-	run("rustc", ["--edition", edition, "--test", join(hostDir, "src", module), "-o", out], { env: rustEnv() });
+ * test` can't run them. The server's host's, or another's (`host`: cli/host). Its status and what it
+ * printed. */
+export function hostUnitTests(module, out, host = hostDir) {
+	const edition = /^edition = "(\d+)"/m.exec(readFileSync(join(host, "Cargo.toml"), "utf8"))?.[1] ?? "2024";
+	run("rustc", ["--edition", edition, "--test", join(host, "src", module), "-o", out], { env: rustEnv() });
 	return spawnSync(out, [], { encoding: "utf8" });
 }
 

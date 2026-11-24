@@ -1,0 +1,9 @@
+import pf.Html
+
+## A page every link to it reaches.
+view! = |_| {
+	<main>
+		<h1>About</h1>
+		<a href="/">Home</a>
+	</main>
+}

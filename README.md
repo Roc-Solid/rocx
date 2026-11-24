@@ -543,6 +543,16 @@ stylesheet. Build the wasm beside them
 serve the directory with the server's `--static <out>/static`. A page's `/rocx/start.js` loads the
 other files. `rocx dev` does all of this for you.
 
+With `--static <out>`, `rocx build <dir>` writes the app as static files, for a host with no server
+(GitHub Pages, a CDN): it builds the app for production, starts its server on a free port, and asks
+it for `/`, each page whose path has no params and every page those link to, each written as
+`<path>/index.html`, then `404.html`, the plugins' files, `static/` and `rocx/` (D-073). A page carries
+the answers to the reads it made while rendering. `--base /docs/` puts every URL under a path;
+`--route <path>` asks for one no page links to (a page with params, `/feed.xml`); `--built <build>`
+uses a build already made. What only a server answers (methods that write, events, channels, a page
+with middleware of its own) isn't in the copy, and the build lists it. The docs site is built this
+way.
+
 The browser's copy keeps each endpoint's method, URL and types but not its handler, and each route
 file without its middleware. If a page or component reaches a module that imports what only the
 server has (`pf.Db`, directly or through another module), the build warns at that import: the

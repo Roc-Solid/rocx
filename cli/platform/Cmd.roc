@@ -2,16 +2,17 @@ import Child
 import Host
 
 ## A command: a program (no shell: its arguments go to it as they are), the directory it runs in,
-## environment variables added to this program's, and its input. Made with `Cmd.new`, then run to
+## environment variables added to this program's, its input, and (started beside) where its output
+## goes. Made with `Cmd.new`, then run to
 ## its end (`output!`, `merged!`, `status!`) or started beside this program (`spawn!`).
 ##
 ## ```roc
 ## ran = Cmd.new("roc").args(["fmt", "--stdin"]).stdin(code).output!()?
 ## code = Cmd.new("cargo").args(["build", "--release"]).cwd("server/host").status!()?
 ## ```
-Cmd := { program : Str, arguments : List(Str), dir : Str, vars : List(Str), input : Str }.{
+Cmd := { program : Str, arguments : List(Str), dir : Str, vars : List(Str), input : Str, log : Str }.{
 	new : Str -> Cmd
-	new = |program| { program: program, arguments: [], dir: "", vars: [], input: "" }
+	new = |program| { program: program, arguments: [], dir: "", vars: [], input: "", log: "" }
 
 	args : Cmd, List(Str) -> Cmd
 	args = |cmd, more| { ..cmd, arguments: cmd.arguments.concat(more) }
@@ -30,6 +31,11 @@ Cmd := { program : Str, arguments : List(Str), dir : Str, vars : List(Str), inpu
 	## Its input (to its end; nothing by default). Not for `spawn!`, whose input is this program's.
 	stdin : Cmd, Str -> Cmd
 	stdin = |cmd, text| { ..cmd, input: text }
+
+	## For `spawn!`: its stdout and stderr written to this file (made, or emptied, first) instead of
+	## this program's, to read if it fails (a server started for a while, say).
+	log : Cmd, Str -> Cmd
+	log = |cmd, path| { ..cmd, log: path }
 
 	## Run to its end: its exit code (128 plus the signal's number when a signal ended it), and what
 	## it wrote to stdout and to stderr. `CantStart` when it couldn't be started at all.
@@ -56,11 +62,11 @@ Cmd := { program : Str, arguments : List(Str), dir : Str, vars : List(Str), inpu
 			Err(why) => Err(CantStart("${cmd.program}: ${why}"))
 		}
 
-	## Started beside this program, with its stdin, stdout and stderr: `Events.next!` says when it
-	## ends (`Exited`).
+	## Started beside this program, with its stdin, stdout and stderr (its output in the `log` file,
+	## if it has one): `Events.next!` says when it ends (`Exited`).
 	spawn! : Cmd => Try(Child, [CantStart(Str)])
 	spawn! = |cmd|
-		match Host.spawn!(cmd.program, cmd.arguments, cmd.dir, cmd.vars) {
+		match Host.spawn!(cmd.program, cmd.arguments, cmd.dir, cmd.vars, cmd.log) {
 			Ok(n) => {
 				child : Child
 				child = { id: n }

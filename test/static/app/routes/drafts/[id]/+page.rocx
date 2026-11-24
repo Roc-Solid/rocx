@@ -1,0 +1,8 @@
+import pf.Html
+
+## A draft: nothing links to one and nothing names one, so the copy has none (a note says so).
+view! = |{ params }| {
+	<main>
+		<h1>Draft {params.id}</h1>
+	</main>
+}

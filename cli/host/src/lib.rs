@@ -10,6 +10,7 @@
 #[allow(unsafe_op_in_unsafe_fn)]
 mod abi;
 mod events;
+mod http;
 mod watch;
 
 use abi::{RocHost, RocList, RocStr};
@@ -343,6 +344,47 @@ pub extern "C" fn roc_host_write_file(path: RocStr, data: RocStr) -> UnitResult 
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn roc_host_write_bytes(path: RocStr, data: abi::RocListWith<u8, false>) -> UnitResult {
+    let path = taken(path);
+    let bytes = data.as_slice().to_vec();
+    unsafe { data.decref(&host()) };
+    let path = std::path::Path::new(&path);
+    unit_result((|| {
+        if let Some(dir) = path.parent().filter(|dir| !dir.as_os_str().is_empty()) {
+            std::fs::create_dir_all(dir)?;
+        }
+        std::fs::write(path, bytes)
+    })()
+    .map_err(|error| error.to_string()))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_http_get(url: RocStr, headers: RocList<RocStr>) -> abi::HostHttpGetResult {
+    let (url, headers) = (taken(url), taken_list(headers));
+    match http::get(&url, &headers) {
+        Ok(answer) => abi::HostHttpGetResult {
+            payload: abi::HostHttpGetResultPayload {
+                ok: ManuallyDrop::new(abi::AnonStructD1699bdaa9628d69 {
+                    body: unsafe { abi::RocListWith::from_slice(&answer.body, &host()) },
+                    content_type: roc_str(&answer.content_type),
+                    status: answer.status,
+                }),
+            },
+            tag: abi::HostHttpGetResultTag::Ok,
+        },
+        Err(why) => abi::HostHttpGetResult { payload: abi::HostHttpGetResultPayload { err: ManuallyDrop::new(roc_str(&why)) }, tag: abi::HostHttpGetResultTag::Err },
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_free_port() -> abi::HostFreePortResult {
+    match std::net::TcpListener::bind(("127.0.0.1", 0)).and_then(|listener| listener.local_addr()) {
+        Ok(address) => abi::HostFreePortResult { payload: abi::HostFreePortResultPayload { ok: ManuallyDrop::new(address.port()) }, tag: abi::HostFreePortResultTag::Ok },
+        Err(error) => abi::HostFreePortResult { payload: abi::HostFreePortResultPayload { err: ManuallyDrop::new(roc_str(&error.to_string())) }, tag: abi::HostFreePortResultTag::Err },
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn roc_host_rename(from: RocStr, to: RocStr) -> UnitResult {
     let (from, to) = (taken(from), taken(to));
     unit_result(std::fs::rename(from, to).map_err(|error| error.to_string()))
@@ -419,10 +461,23 @@ fn feed(child: &mut std::process::Child, input: String) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn roc_host_spawn(program: RocStr, args: RocList<RocStr>, cwd: RocStr, vars: RocList<RocStr>) -> abi::HostSpawnResult {
+pub extern "C" fn roc_host_spawn(program: RocStr, args: RocList<RocStr>, cwd: RocStr, vars: RocList<RocStr>, log: RocStr) -> abi::HostSpawnResult {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-    let (program, args, cwd, vars) = (taken(program), taken_list(args), taken(cwd), taken_list(vars));
-    match command(&program, &args, &cwd, &vars).spawn() {
+    let (program, args, cwd, vars, log) = (taken(program), taken_list(args), taken(cwd), taken_list(vars), taken(log));
+    let mut command = command(&program, &args, &cwd, &vars);
+    if !log.is_empty() {
+        // Its stdout and stderr in one file, in the order it wrote them.
+        let opened = std::fs::File::create(&log).and_then(|file| Ok((file.try_clone()?, file)));
+        match opened {
+            Ok((out, err)) => {
+                command.stdout(out).stderr(err);
+            }
+            Err(error) => {
+                return abi::HostSpawnResult { payload: abi::HostSpawnResultPayload { err: ManuallyDrop::new(roc_str(&format!("{log}: {error}"))) }, tag: abi::HostSpawnResultTag::Err };
+            }
+        }
+    }
+    match command.spawn() {
         Ok(mut child) => {
             let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             children().lock().unwrap().insert(id, child.id());

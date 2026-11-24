@@ -137,6 +137,12 @@ view! = |_|
 			<p>
 				The platform's test app, built this way, runs all of its tests in a container against a Postgres.
 			</p>
+			<p>
+				An app whose pages need no server once they are rendered (docs, a blog, a landing page) can be
+				deployed as files instead: <code>rocx build app --static dist</code> writes every page, its data
+				and what it loads, for GitHub Pages or a CDN (<a href={"${Paths.tooling}#static"}>a static
+				copy</a>).
+			</p>
 
 			<Heading id="layers">What is Rust, what is Roc</Heading>
 			<p>

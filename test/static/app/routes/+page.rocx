@@ -1,0 +1,22 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+
+## The front page: a counter, and links the static copy follows (or doesn't: another site's, and
+## one to a path nothing answers).
+view! = |_| {
+	(count!, set_count!) = create_signal!(0.I64)
+	<main>
+		<h1>Static</h1>
+		<button on:click={|| set_count!(count!() + 1)}>
+			Clicked {count!().to_str()} times
+		</button>
+		<nav>
+			<a href="/about">About</a>
+			<a href="/account">Account</a>
+			<a href="/blog/first-post?from=home#top">First post</a>
+			<a href="/api/hello">Hello, as JSON</a>
+			<a href="/gone">Gone</a>
+			<a href="https://www.roc-lang.org">Roc</a>
+		</nav>
+	</main>
+}

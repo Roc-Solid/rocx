@@ -4468,3 +4468,70 @@ only `Auth.sign_in!` starts sessions: an app's own password, a person picked). j
 quiz's visitor stay cookies of their own: an anonymous id, no one signing in.
 
 **Reversible:** yes: a package; no app depended on it before.
+
+
+## D-073 A static copy of an app: `rocx build --static`
+
+**Status.** Built (2026-11-24). The user asked for js-framework-benchmark entries, like Joy's; an
+entry is a folder of files the benchmark's server serves, so rocx needed to write an app as files,
+and the user asked whether that was SSG ("maybe we should tackle SSG"). They chose the order (SSG
+first, the benchmark on top of it), that it is part of the `rocx` CLI, and that the CLI platform
+gets a small HTTP client for it (over the app's server writing files itself, or `curl`).
+
+**Context.** The docs site was already a static copy, by site/build.mjs's `prerender` (Node): it
+started the site's server, asked it for each page in its route list (`ROUTES`: no params, no
+middleware of its own) and for a hand-made list of GETs (`STATIC_GETS`), wrote each page as
+`<path>/index.html`, put its URLs under a base (`underBase`), and copied what the pages load. That
+was the site's own; any other app wanting a static host would have copied it.
+
+**Decision.**
+
+- **`rocx build <dir> --static <out> [--base /path/] [--route <path>]… [--built <build>] [-- server
+  options…]`** (rocx-cli/Static.roc). rocx builds the app as for production into
+  `<dir>/build/static` (rocx build without stories, the browser's copy in `client/`; the server
+  from Roc's dev backend, since it only renders the pages here; the browser's wasm `--opt=size
+  --specialize=yes`, as the docs site's is), starts the server on a free port (`--debug`, for the
+  plugins' files; its output in `static-server.log`, shown only when the copy fails), and asks it
+  for `/`, each page whose path has no params, each `--route`, and every page those link to
+  (`<a href>` on this site; no other site, no query or fragment, nothing under `/rocx/` or
+  `/__rocx/`), as a browser asks (`accept: text/html,*/*;q=0.8`).
+- **What is written.** An HTML answer at `<path>/index.html`, its `href`, `src` and `action` URLs
+  under `--base` (the rule `underBase` had); a path whose last part has a dot (`/openapi.html`,
+  `/feed.xml`) at its path; any other answer (an endpoint's JSON) at its path, as it is. Then
+  `404.html` (what `/404` answers), the plugins' files (`/__rocx/plugin-files`), and the
+  directories the server serves files from (the app's `static/`, then `rocx/`: start.js, the
+  runtime, the wasm, the stylesheet). A page carries the answers to the GETs it read while it
+  rendered (as before), so its data is there with no server.
+- **What isn't, said.** A link to a path that answers an error is a note (a page or `--route` that
+  does fails the build); a page whose route file names its own middleware is neither asked for nor
+  followed (it answers each request as it comes: who is asking?); and the build lists what only a
+  server answers (methods that write, events, channels, `respond!`) and each page with params that
+  nothing reached, with the `--route` that would write one.
+- **Safe to run again.** The copy is made in `<out>.building` and replaces `<out>` only when
+  complete; a failure leaves the copy before. `<out>` must not hold the app or the current
+  directory, and must be empty or an earlier copy (it has an `index.html`).
+- **`--built <build>`** skips the build: `<build>/server` and `<build>/client/static` are used as
+  they are. site/build.mjs's `prerender` is now this, with `--built site/build`, the site's
+  `STATIC_GETS` as `--route`s, and `-- --context-file …`; `ROUTES` stays for the site's tests.
+- **The CLI platform** (cli/) gets `Http.get!` (plain HTTP/1.1 over `std::net`, no crate: a server
+  on this machine; a chunked body put together; unit tests in cli/host/src/http.rs, run by
+  test/static.test.mjs), `Http.free_port!`, `File.write_bytes!`, and `Cmd.log` (a spawned command's
+  output into a file).
+- **The runtime** reads a path ending in `/index.html` as its directory (`unbased`): a static host
+  may show a page by its file's name (the benchmark opens `<entry>/index.html`), and the page
+  should hydrate as the page at its directory.
+- **test/static.test.mjs**: test/static/app (links, a page with params reached and one named by
+  `--route`, one nothing reaches, a GET and a POST endpoint, a page behind middleware, `static/`)
+  copied under `/base/`, served as plain files and opened in Chromium at directories and at
+  `index.html`s (strict hydration, a click, navigation in place); the refusals; a server that
+  won't start.
+
+**Why.** A static copy is a build output, and rocx already has what it needs: the route table, the
+browser's copy, the builds and a server to start (`rocx dev`, `rocx check --sql`). The platforms are
+untouched but for the runtime's one line; apps need nothing new.
+
+**Costs.** One more effect module on the CLI platform. A page with params needs a link or a
+`--route`; no hybrid (some pages files, the rest served) and no incremental rebuild. A static
+copy's links are followed only from `<a href>`: a URL a component builds at run time isn't asked for.
+
+**Reversible:** yes: the site's prerender can go back to Node; nothing else depends on it.

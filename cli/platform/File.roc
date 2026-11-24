@@ -25,6 +25,14 @@ File := [].{
 			Err(why) => Err(CantWrite("${path}: ${why}"))
 		}
 
+	## Writes bytes (an image, a wasm module), its directory made first.
+	write_bytes! : Str, List(U8) => Try({}, [CantWrite(Str)])
+	write_bytes! = |path, bytes|
+		match Host.write_bytes!(path, bytes) {
+			Ok({}) => Ok({})
+			Err(why) => Err(CantWrite("${path}: ${why}"))
+		}
+
 	rename! : Str, Str => Try({}, [CantRename(Str)])
 	rename! = |from, to|
 		match Host.rename!(from, to) {
