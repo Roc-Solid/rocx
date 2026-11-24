@@ -1,0 +1,50 @@
+import pf.Html
+import pf.Solid exposing [create_memo!]
+import qr.Qr
+
+## A QR code for `text`, as an SVG image as wide as its box (give the box a width), black on white
+## with its quiet zone, which readers need. Its props are getters (D-039): it follows `text` and
+## `level` as they change. `level` is how much of the code may be damaged and still read (`Medium`
+## unless it says: about 15%). `label` says what it is, for screen readers ("QR code" unless it
+## says). Text too long for a code (`Qr.capacity`) shows an empty code whose label says so.
+##
+## ```rocx
+## <QrCode text={"https://example.com/join/${room!()}"} label="Join the room" class="join-code" />
+## ```
+QrCode := [].{
+	Props := {
+		text : Str,
+		level : Qr.Level ?? Medium,
+		label : Str ?? "QR code",
+		class : Str ?? "",
+	}
+
+	view! : QrCode.Props => Html
+	view! = |{ text, level, label, class }| {
+		code! = create_memo!(|| Qr.encode(text, level))
+		drawn! = || code!() ?? { size: 0, dark: [] }
+		said! = ||
+			match code!() {
+				Ok(_) => label
+				Err(TooLong) => "${label}: the text is too long for a QR code"
+			}
+		<svg class={"qr-code ${class}"} viewBox={Qr.view_box(drawn!())} role="img" aria-label={said!()} shape-rendering="crispEdges">
+			<rect class="qr-light" width="100%" height="100%" />
+			<path class="qr-dark" d={Qr.path(drawn!())} />
+		</svg>
+	}
+
+	<style>
+		.qr-code {
+			display: block;
+			width: 100%;
+			height: auto;
+		}
+		.qr-light {
+			fill: #fff;
+		}
+		.qr-dark {
+			fill: #000;
+		}
+	</style>
+}
