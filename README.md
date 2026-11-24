@@ -168,8 +168,8 @@ else installed.
   and cron, incidents that open and close themselves, email alerts, metrics, the admin's tables, and
   a page that follows it all live over a channel.
 - [`notes`](examples/notes): Notes, personal notes in Markdown that AI agents use over MCP. Sign-in
-  by a mailed link, a signed session cookie, personal access tokens kept as hashes, full-text
-  search, a live preview, and a JSON API with its OpenAPI page.
+  by a mailed link (packages/auth), personal access tokens kept as hashes, full-text search, a live
+  preview, and a JSON API with its OpenAPI page.
 - [`pomodoro`](examples/pomodoro): Pomodoro, a focus timer. The same page runs in a browser and as
   an Android phone's native views (`rocx dev --android`), with a chime and a buzz when a session
   ends.
