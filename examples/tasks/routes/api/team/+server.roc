@@ -11,7 +11,7 @@ get! : { request : Server.Request, params : {}, context : Middlewares.Context } 
 get! = |{ context, .. }| {
 	people = Store.people!({}).map_err(Store.refusal)?
 	lists = Store.lists!({}).map_err(Store.refusal)?
-	# A cookie naming nobody on the team (someone who has left) is nobody.
+	# A session naming nobody on the team (someone who has left) is nobody.
 	me = if (people.any(|person| person.id == context.me)) context.me else ""
 	Ok({ me, people, lists })
 }

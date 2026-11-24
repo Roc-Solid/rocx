@@ -3,10 +3,10 @@
 -- (rocx build embeds them; the server records each in rocx_migrations). A day is its date as text
 -- (`2026-11-24`), which sorts as days do; a moment is milliseconds since the epoch.
 
--- The people on the team. There is no sign-in: you say which of them you are (/me), and a cookie
--- keeps it.
+-- The people on the team. There is no sign-in: you say which of them you are (/me), and a session
+-- keeps it (packages/auth's table, auth_sessions).
 create table people (
-	id text primary key, -- a short handle, which the cookie holds: 'avery'
+	id text primary key, -- a short handle, the session's user: 'avery'
 	name text not null
 );
 

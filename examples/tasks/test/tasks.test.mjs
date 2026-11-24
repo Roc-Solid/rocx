@@ -7,6 +7,7 @@
 //   node --test 'examples/tasks/test/*.test.mjs'
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildForTests, startServer, testSqlite, launchBrowser, until, repo } from "../../../packages/testing/index.mjs";
@@ -49,6 +50,11 @@ async function addTask(person, id, fields) {
 	assert.equal(added.status, 303);
 	const [row] = await db.sql`select cast(id as text) as id from tasks where list_id = ${Number(id)} and title = ${fields.title}`;
 	return row.id;
+}
+
+/** How packages/auth keeps a session's token: its SHA-256, base64url. */
+function hashOf(token) {
+	return createHash("sha256").update(token).digest("base64url");
 }
 
 /** The titles on the list `id`, in its order, as its page shows them: each task's box is named by its title. */
@@ -244,25 +250,45 @@ test("a task's page edits everything about it, and shows a refusal's issues unde
 	assert.equal(runtime.headers.get("x-rocx-redirect"), `/lists/${id}`);
 });
 
-test("who are you: a cookie, your name at the top, your tasks under Mine, and new tasks yours", { skip }, async () => {
+test("who are you: a session, your name at the top, your tasks under Mine, and new tasks yours", { skip }, async () => {
 	const person = app.client();
 	await person.get("/me");
 	const chosen = await person.post("/me", { person: "avery" });
 	assert.equal(chosen.status, 303);
-	assert.equal(person.cookies.get("acme-person"), "avery");
+	// The cookie holds a random token; who it is stays on the server, as the session's user
+	// (packages/auth keeps the token's SHA-256).
+	const token = person.cookies.get("tasks_session");
+	assert.match(token, /^[A-Za-z0-9_-]{43}$/);
+	assert.deepEqual(await db.sql`select user_id from auth_sessions where id = ${hashOf(token)}`, [{ user_id: "avery" }]);
 	const home = await chosen.follow();
 	home.dom.getByRole("heading", { level: 1, name: "Hello, Avery" });
 	home.dom.getByRole("link", { name: "Avery Stone Avery" });
 	assert.deepEqual(await titles(person, "1", "?show=mine"), ["Write the launch announcement"]);
 	const list = await person.get("/lists/2");
 	assert.equal(list.dom.getByRole("option", { name: "Avery Stone" }).attr("selected"), "");
-	// Someone not on the team is refused; "I'd rather not say" forgets you.
+	// A cookie that names someone is nobody: only a session's token says who you are.
+	const forger = app.client();
+	forger.cookies.set("tasks_session", "avery");
+	forger.cookies.set("acme-person", "avery");
+	(await forger.get("/")).dom.getByRole("heading", { level: 1, name: "Your team's lists" });
+	// Picking someone else ends the session you had: its token is nobody's now.
+	await person.get("/me");
+	await person.post("/me", { person: "jun" });
+	assert.notEqual(person.cookies.get("tasks_session"), token);
+	(await person.get("/")).dom.getByRole("heading", { level: 1, name: "Hello, Jun" });
+	const stale = app.client();
+	stale.cookies.set("tasks_session", token);
+	(await stale.get("/")).dom.getByRole("heading", { level: 1, name: "Your team's lists" });
+	// Someone not on the team is refused, and you stay who you were; "I'd rather not say" forgets you.
 	await person.get("/me");
 	const refused = await person.post("/me", { person: "zed" });
 	assert.equal(person.flash.status, 400);
 	(await refused.follow()).dom.getByText("Pick someone on the team.");
+	(await person.get("/")).dom.getByRole("heading", { level: 1, name: "Hello, Jun" });
+	const kept = person.cookies.get("tasks_session");
 	await person.post("/me", { person: "" });
-	assert.equal(person.cookies.get("acme-person"), undefined);
+	assert.equal(person.cookies.get("tasks_session"), undefined);
+	assert.deepEqual(await db.sql`select user_id from auth_sessions where id = ${hashOf(kept)}`, []);
 });
 
 test("the middleware logs every answer, and refuses a change from another site", { skip }, async () => {

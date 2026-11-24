@@ -28,7 +28,7 @@ Store := [].{
 	}
 
 	## An endpoint's refusal for a problem: a 404, or a 500 that says why (which the middleware
-	## logs: `Middlewares.identify`).
+	## logs: `Middlewares.logged`).
 	refusal : Problem -> Endpoint.Refusal
 	refusal = |problem|
 		match problem {

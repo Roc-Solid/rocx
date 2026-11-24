@@ -3,7 +3,7 @@
 A small team's task lists, built with Roc Solid. Each list has tasks. A task has a title and notes,
 maybe a day it is due and someone to do it, and is done or not. You add, edit, tick off, reorder
 and delete tasks, filter a list (all, open, done, mine), and see how many are still open. There is
-no sign-in: you say who you are, and a cookie remembers it.
+no sign-in: you say who you are, and a session remembers it (packages/auth).
 
 Read this example first. It does the usual things the plain way, and the comments in its code say
 why each piece is where it is.
@@ -89,8 +89,9 @@ Each row names a feature and the file to read for it. Paths are from `examples/t
 
 | Feature | Where |
 |---|---|
-| A middleware around every request. `Middleware.same_origin` refuses a change sent from another site's page; `identify` puts who you are, from a cookie, into every handler's `context`, and logs each answer (`Log.info!`, or `Log.error!` with why for a 5xx) | [`Middlewares.roc`](Middlewares.roc), named in [`main.roc`](main.roc) |
-| A cookie set and cleared by an endpoint, then a redirect | [`routes/me/+server.roc`](routes/me/+server.roc) |
+| A middleware around every request. `Middleware.same_origin` refuses a change sent from another site's page; `identify` puts who you are, from your session (`Auth.optional`), into every handler's `context`; `logged` logs each answer (`Log.info!`, or `Log.error!` with why for a 5xx) | [`Middlewares.roc`](Middlewares.roc), named in [`main.roc`](main.roc) |
+| A plugin: packages/auth keeps sessions in the app's database, its cookie `tasks_session`. With no `admit!`, nobody signs in by a link or a provider; the app starts sessions itself | [`main.roc`](main.roc) (`Auth.plugin`) |
+| A session started and ended by an endpoint (`Auth.sign_in!` for the person picked, `Auth.sign_out!`), then a redirect | [`routes/me/+server.roc`](routes/me/+server.roc) |
 | SQLite in the server's process, with migrations and a seed that is safe to run twice | [`main.roc`](main.roc), [`migrations/0001_tables.sql`](migrations/0001_tables.sql), [`migrations/0002_seed.sql`](migrations/0002_seed.sql) |
 | Queries: `Db.all!` into typed rows, `Db.run!`, a transaction, and `Db.Nullable` for optional columns | [`Store.roc`](Store.roc) (`Row`, `task_of`, `move!`) |
 | One endpoint for a plain form and the runtime, answering each in its way: `Endpoint.posted_by` tells them apart (a redirect for a form, JSON for the runtime) | [`routes/api/tasks/delete/+server.roc`](routes/api/tasks/delete/+server.roc) |
@@ -139,7 +140,9 @@ Over HTTP, they cover:
 - the pages, and every form, posted both as a browser without JavaScript posts it and as the
   runtime sends it;
 - the endpoints as JSON, and what lands in the database (nulls included);
-- the cookie, the middleware's log, and its refusal of another site's post;
+- who you are: a session whose cookie is a token, not a name (a cookie naming someone is nobody),
+  ended when you pick someone else or forget yourself;
+- the middleware's log, and its refusal of another site's post;
 - 404s, and the seed run twice.
 
 In Chromium (skipped when there is none), they cover:
@@ -158,7 +161,9 @@ moving before they click.
 ## Product calls
 
 - **Identity is a picker, not a sign-in.** You say who you are, and anyone may say they are anyone.
-  The `notes` example signs people in.
+  The `notes` example signs people in. Who you picked is still a session kept on the server
+  (packages/auth), so the cookie holds a random token, not a name anyone could change by hand. It
+  lasts a year, and picking someone else ends it.
 - **A filter is an address** (`?show=open`), not a toggle in the page. It can be shared and
   reloaded, and works without JavaScript. The counts beside each filter are of the whole list.
 - **New tasks go to you**, once the app knows who you are. Pick "Nobody yet" to leave one
