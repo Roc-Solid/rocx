@@ -27,6 +27,9 @@ env:
   # waits and hover rest, web/test/platform's channel reconnects, server/test's 2,000 waits) allow
   # that much more.
   ROCX_TIME_SCALE: "3"
+  # A step still running after this many minutes says what it is running: each process, its state
+  # and what it waits in (a hang, seen at once in the log instead of a job's limit with nothing).
+  ROCX_HANG_MINUTES: "20"
 
 jobs:
   check:
@@ -77,9 +80,9 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           browsers: "true"
-      - run: just test-rocx
+      - run: .github/watch.sh just test-rocx
       - if: ${{ !cancelled() }}
-        run: just test-web
+        run: .github/watch.sh just test-web
 
   test-server:
     name: just test-server
@@ -105,7 +108,7 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           browsers: "true"
-      - run: just test-server
+      - run: .github/watch.sh just test-server
 
   examples:
     name: just examples
@@ -116,4 +119,4 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           browsers: "true"
-      - run: just examples
+      - run: .github/watch.sh just examples

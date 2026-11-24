@@ -346,8 +346,16 @@ export async function launchGecko(binary = findGecko()) {
 			else resolve(message.result);
 		} else if (message.type === "event") for (const listener of listeners) listener(message);
 	};
+	// Gone (the browser quit, or crashed): what waits for an answer fails, rather than waiting for ever.
+	let gone = null;
+	socket.onclose = () => {
+		gone = new Error(`gecko's connection closed${child.exitCode !== null ? ` (it exited, ${child.exitCode})` : ""}`);
+		for (const { reject } of waiting.values()) reject(gone);
+		waiting.clear();
+	};
 	const send = (method, params = {}) =>
 		new Promise((resolve, reject) => {
+			if (gone) return reject(gone);
 			const id = ++next;
 			waiting.set(id, { resolve, reject });
 			socket.send(JSON.stringify({ id, method, params }));
@@ -357,7 +365,13 @@ export async function launchGecko(binary = findGecko()) {
 	let first = (await send("browsingContext.getTree", { maxDepth: 0 })).contexts[0]?.context;
 	return {
 		async page() {
-			const context = first ?? (await send("browsingContext.create", { type: "tab" })).context;
+			// Each page after the first in a window of its own (a profile's windows share its cookies as
+			// its tabs do): on Linux, headless, a new tab never became active (asked for in front, it
+			// never came; made behind, `goto`'s activate never answered), and a window's tab is. A tab
+			// where windows can't be opened (Zen: "openWindow() not supported").
+			const context =
+				first ??
+				(await send("browsingContext.create", { type: "window" }).catch(() => send("browsingContext.create", { type: "tab" }))).context;
 			first = null;
 			return new GeckoPage(send, context, listeners);
 		},
