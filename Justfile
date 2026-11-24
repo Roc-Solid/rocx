@@ -265,13 +265,34 @@ check: (fmt "--check")
 fmt *args:
     ROC={{ roc }} {{ rocx }} fmt {{ args }} rocx-cli cli/platform site packages web/platform server/platform {{ examples }}
 
-# Checks the editor grammar (editors/orca, Orca's highlighting of .rocx and .roc files): every
-# .rocx file git tracks, tokenized by VS Code's TextMate engine, must end with its markup closed,
-# or the grammar took a `<` for markup that wasn't. The engine (vscode-textmate and
+# Checks the editor support (editors/): every .rocx file git tracks, tokenized by VS Code's
+# TextMate engine with the grammar in editors/grammars, must end with its markup closed, or the
+# grammar took a `<` for markup that wasn't; then the VS Code extension's tests (its reading of
+# rocx's reports, its tasks against a stand-in for VS Code). The engine (vscode-textmate and
 # vscode-oniguruma, from npm) is installed once into .tools/grammar.
 grammar-check:
     test -d .tools/grammar/node_modules/vscode-textmate || npm install --silent --no-save --no-package-lock --prefix .tools/grammar vscode-textmate@9 vscode-oniguruma@2
-    git ls-files -z '*.rocx' | xargs -0 node editors/check-grammar.cjs .tools/grammar/node_modules editors/orca/syntaxes
+    git ls-files -z '*.rocx' | xargs -0 node editors/check-grammar.cjs .tools/grammar/node_modules editors/grammars
+    node --test 'editors/vscode/test/*.test.mjs'
+
+# The VS Code extension (editors/vscode, with the rocx grammar from editors/grammars), packaged
+# into editors/build/rocx-<version>.vsix by vsce (from npm) and installed into VS Code (`code` on
+# the PATH), for every workspace. Again after a pull, to update it.
+vscode-extension:
+    rm -rf editors/build/vscode && mkdir -p editors/build/vscode/syntaxes
+    cp editors/vscode/package.json editors/vscode/extension.js editors/vscode/reports.js editors/vscode/README.md editors/build/vscode/
+    cp editors/grammars/rocx.tmLanguage.json editors/grammars/rocx.language-configuration.json editors/build/vscode/syntaxes/
+    cd editors/build/vscode && npx --yes @vscode/vsce@3 package --no-dependencies --skip-license --out ../rocx.vsix
+    code --install-extension editors/build/rocx.vsix --force
+
+# The Orca plugin (editors/orca, with every grammar from editors/grammars: Orca colours only what a
+# plugin ships), put together in editors/build/orca and installed into Orca. Again after a pull.
+orca-plugin:
+    rm -rf editors/build/orca && mkdir -p editors/build/orca/syntaxes
+    cp editors/orca/orca-plugin.json editors/orca/README.md editors/build/orca/
+    cp editors/grammars/* editors/build/orca/syntaxes/
+    orca plugin validate editors/build/orca
+    orca plugin install "$PWD/editors/build/orca"
 
 # The example apps: each examples/<name>/main.roc that git tracks, by its directory. Only tracked
 # ones: an untracked directory under examples/ (a private repo of one's own, say) is never built,

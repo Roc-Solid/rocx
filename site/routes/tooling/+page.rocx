@@ -142,15 +142,26 @@ view! = |_|
 
 			<Heading id="editors">In an editor</Heading>
 			<p>
-				The repository's <code>editors/orca</code> is a plugin for <a href="https://github.com/stablyai/orca">Orca</a>
-				that highlights <code>.rocx</code> files and <code>.roc</code> files: Roc by the official Roc grammar,
-				markup (an element's tag, a component's as a type, attributes like <code>class:active</code> and
-				<code>on:click.prevent</code>), the Roc in holes, markup in that Roc, and CSS in a
-				<code>{"<style>"}</code>. It runs nothing, so it installs without asking for access:
-				<code>orca plugin install editors/orca</code>. Its grammars are TextMate grammars, which VS Code and
-				most editors read too. The one guess it makes is whether a <code>{"<"}</code> starts markup: before a
-				letter, unless a value is right before it, so <code>{"a <b"}</code> (a space before and none after)
-				reads as markup. Errors stay with <code>rocx check</code>; there is no language server yet.
+				The repository's <code>editors/</code> has one grammar for <code>.rocx</code> files, which colours
+				Roc by the official Roc grammar, markup (an element's tag, a component's as a type, attributes
+				like <code>class:active</code> and <code>on:click.prevent</code>), the Roc in holes, markup in that
+				Roc, and CSS in a <code>{"<style>"}</code>. The one guess it makes is whether a <code>{"<"}</code>
+				starts markup: before a letter, unless a value is right before it, so <code>{"a <b"}</code> (a space
+				before and none after) reads as markup.
+			</p>
+			<p>
+				<strong>VS Code</strong>: <code>just vscode-extension</code> installs the extension, for every
+				workspace. Besides the highlighting, it has a task type: <em>Run Task… → rocx</em> lists
+				<code>dev</code> for each app in the workspace, which runs <code>rocx dev</code> in a terminal of its
+				own, and on each build what the compiler and rocx report shows at its <code>.rocx</code> line, as
+				<code>rocx check</code> would print it. A task of one's own runs any command the same way
+				(<code>{"{ \"type\": \"rocx\", \"command\": \"just check\" }"}</code>). There is no language
+				server yet: what the editor shows is what the build says.
+			</p>
+			<p>
+				<strong>Orca</strong>: <code>just orca-plugin</code> installs a plugin that highlights
+				<code>.rocx</code> and <code>.roc</code> files. It runs nothing, so it installs without asking for
+				access; errors stay with <code>rocx check</code>, since Orca has no way for a plugin to show them.
 			</p>
 
 			<Heading id="stories">Stories</Heading>

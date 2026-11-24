@@ -5,8 +5,11 @@ editor. It is an Orca plugin of content only (TextMate grammars, nothing runs), 
 without asking for any access:
 
 ```sh
-orca plugin install editors/orca      # from the repository's root; `orca plugin update` after a pull
+just orca-plugin      # from the repository's root, again after a pull
 ```
+
+The recipe puts the plugin together in `editors/build/orca` (this directory's manifest, and the
+grammars from `editors/grammars`, into `syntaxes/`) and installs it from there.
 
 ## What it colours
 
@@ -31,16 +34,16 @@ colours wrong (as markup, until a `</b>`). Nothing in this repository writes it 
 (vscode-textmate, installed once into `.tools/grammar`) and fails on any whose markup is still open
 at its end: what a wrong guess about `<` leaves behind.
 
-## Files
+## Files (in `editors/grammars`)
 
 | File | From |
 |---|---|
-| `syntaxes/rocx.tmLanguage.json` | this repository (MIT) |
-| `syntaxes/rocx.language-configuration.json` | this repository (MIT), after the Roc one |
-| `syntaxes/roc.tmLanguage.json` | [roc-lang/roc-vscode](https://github.com/roc-lang/roc-vscode) 0.1.0, as it is (UPL-1.0, `syntaxes/LICENSE-roc.txt`) |
-| `syntaxes/roc.language-configuration.json` | roc-lang/roc-vscode 0.1.0, its surrounding pairs written as Orca reads them (UPL-1.0) |
-| `syntaxes/css.tmLanguage.json` | [microsoft/vscode-css](https://github.com/microsoft/vscode-css) at c216f77, as converted by Shiki (MIT, `syntaxes/LICENSE-css.txt`) |
+| `rocx.tmLanguage.json` | this repository (MIT) |
+| `rocx.language-configuration.json` | this repository (MIT), after the Roc one |
+| `roc.tmLanguage.json` | [roc-lang/roc-vscode](https://github.com/roc-lang/roc-vscode) 0.1.0, as it is (UPL-1.0, `LICENSE-roc.txt`) |
+| `roc.language-configuration.json` | roc-lang/roc-vscode 0.1.0, its surrounding pairs written as Orca reads them (UPL-1.0) |
+| `css.tmLanguage.json` | [microsoft/vscode-css](https://github.com/microsoft/vscode-css) at c216f77, as converted by Shiki (MIT, `LICENSE-css.txt`) |
 
 Orca colours only grammars a plugin ships (an include of a scope from elsewhere stays plain), which
-is why the Roc and CSS grammars are copies here. The grammars are TextMate's, so an extension for VS
-Code or another editor that reads TextMate grammars can take the same files.
+is why the plugin carries the Roc and CSS grammars too. The VS Code extension (`editors/vscode`)
+takes the rocx grammar alone: VS Code has CSS, and Roc comes from the Roc extension.

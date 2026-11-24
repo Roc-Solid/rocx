@@ -1,4 +1,4 @@
-// `just grammar-check`: tokenizes .rocx files with the editor grammar (editors/orca/syntaxes) by VS
+// `just grammar-check`: tokenizes .rocx files with the editor grammar (editors/grammars) by VS
 // Code's TextMate engine, and fails on any whose markup is still open at its end, which is what a
 // wrong guess about `<` (markup or less-than) leaves behind.
 //

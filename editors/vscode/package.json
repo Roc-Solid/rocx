@@ -1,0 +1,84 @@
+{
+	"name": "rocx",
+	"displayName": "Roc Solid (rocx)",
+	"description": "Highlighting for .rocx files (Roc with markup, CSS in <style>), and rocx dev's errors as problems at your .rocx lines.",
+	"version": "0.1.0",
+	"publisher": "roc-solid",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/Roc-Solid/rocx",
+		"directory": "editors/vscode"
+	},
+	"homepage": "https://roc-solid.github.io/tooling#editors",
+	"engines": {
+		"vscode": "^1.91.0"
+	},
+	"categories": ["Programming Languages", "Linters"],
+	"keywords": ["roc", "rocx", "roc solid", "solid"],
+	"extensionDependencies": ["roclang.roc"],
+	"main": "./extension.js",
+	"files": ["extension.js", "reports.js", "syntaxes/**", "README.md"],
+	"activationEvents": ["onTaskType:rocx", "onLanguage:rocx", "workspaceContains:**/*.rocx"],
+	"capabilities": {
+		"untrustedWorkspaces": {
+			"supported": "limited",
+			"description": "In restricted mode only highlighting works: the rocx tasks run the workspace's rocx, which builds and runs its code.",
+			"restrictedConfigurations": ["rocx.path"]
+		},
+		"virtualWorkspaces": false
+	},
+	"contributes": {
+		"languages": [
+			{
+				"id": "rocx",
+				"aliases": ["rocx", "Roc Solid"],
+				"extensions": [".rocx"],
+				"configuration": "./syntaxes/rocx.language-configuration.json"
+			}
+		],
+		"grammars": [
+			{
+				"language": "rocx",
+				"scopeName": "source.rocx",
+				"path": "./syntaxes/rocx.tmLanguage.json",
+				"embeddedLanguages": {
+					"meta.embedded.expression.rocx": "roc",
+					"meta.embedded.block.css": "css",
+					"meta.embedded.block.js": "javascript"
+				}
+			}
+		],
+		"taskDefinitions": [
+			{
+				"type": "rocx",
+				"properties": {
+					"dir": {
+						"type": "string",
+						"description": "The app's directory (the one with routes/ in it), relative to the workspace folder: the task runs `rocx dev <dir>`."
+					},
+					"args": {
+						"type": "array",
+						"items": { "type": "string" },
+						"description": "More arguments for `rocx dev` (`--port`, `8081`; after `--`, the server's own)."
+					},
+					"command": {
+						"type": "string",
+						"description": "A command line to run instead of `rocx dev` (`just dev`, `just check`), in the workspace folder; what rocx and the compiler report through it becomes problems too."
+					}
+				}
+			}
+		],
+		"configuration": {
+			"title": "Roc Solid (rocx)",
+			"properties": {
+				"rocx.path": {
+					"type": "string",
+					"default": "",
+					"scope": "machine-overridable",
+					"markdownDescription": "Path to the `rocx` executable (`~` is expanded). Empty: `bin/rocx` in the workspace folder when there is one (the rocx repository's own), else `rocx` from `PATH`."
+				}
+			}
+		}
+	}
+}

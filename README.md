@@ -645,12 +645,14 @@ the compiler's reports are already at the right line; `check` rewrites `Page.roc
 markup moves only with the code around it, and the text of a `<pre>` or `<textarea>` never moves.
 `just fmt` formats this repository, and `just check` fails on a file that isn't formatted.
 
-**In an editor**: `editors/orca` is an [Orca](https://github.com/stablyai/orca) plugin that
-highlights `.rocx` files (Roc, markup, Roc again in holes, CSS in `<style>`) and `.roc` files:
-`orca plugin install editors/orca`. Its grammars are TextMate's, which VS Code and most editors
-read too (editors/orca/README.md). Errors come from `rocx check`, not from the editor: there is no
-language server yet. `just grammar-check` tokenizes every `.rocx` file and fails on one whose markup
-the grammar leaves open.
+**In an editor** (`editors/`, its README): one TextMate grammar for `.rocx` files (Roc, markup,
+Roc again in holes, CSS in `<style>`), in `editors/grammars`, which two packages take.
+`just vscode-extension` installs the VS Code extension: the highlighting, and a `rocx` task type
+(`dev <dir>` for each app in the workspace, or any command, `just dev`) whose output becomes problems
+at their `.rocx` lines on each build. There is no language server yet: what the editor shows is
+what the build says. `just orca-plugin` installs the [Orca](https://github.com/stablyai/orca)
+plugin, which highlights `.rocx` and `.roc` files. `just grammar-check` tokenizes every `.rocx` file
+and fails on one whose markup the grammar leaves open, then runs the extension's tests.
 
 ## The platform
 

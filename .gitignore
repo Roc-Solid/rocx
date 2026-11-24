@@ -60,3 +60,6 @@ web/test/nav/Generated/
 # The native host's builds (D-063's spike): cargo's, and an app's APK and what it is made from
 native/target/
 native/android/build/
+
+# The editor packages, put together by `just vscode-extension` and `just orca-plugin`
+editors/build/
