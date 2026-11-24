@@ -14,7 +14,7 @@ browser, in three parts.
   in the browser, the components, compiled to WebAssembly (`web/`).
 - **The ecosystem**: packages of plain Roc, components and plugins that any app can use, in
   `packages/`: charts, forms, Markdown, intl, an admin, guards, jobs and cron, email, MCP, presence,
-  Web Push, OpenTelemetry, storage (S3, files, memory), crypto, testing and virtual lists.
+  Web Push, OpenTelemetry, storage (S3, files, memory), crypto, QR codes, testing and virtual lists.
 
 Pages are components, after Solid 2.0: a component runs once and makes signals; each hole in its
 markup that calls something named with `!` (a signal, a memo) is a computation that runs again when
@@ -86,7 +86,7 @@ just check   # type-check the site's two programs (reports at .rocx lines) and t
 | `packages/email` | email as a plugin (D-035): over SMTP (`SMTP_URL`, `MAIL_FROM`), or kept for the dev mailbox at `/__rocx/mail` under `--dev`; `Email.plugin({})`, `Email.send!`; see its README |
 | `packages/push` | Web Push as a plugin (D-051): `Push.plugin({})` brings its endpoints, the subscriptions' table, the job that sends (on the jobs plugin), the service worker at the site's root and the page's script; `<PushButton>`, `Push.notify!`; see its README |
 | `packages/audio` | sound files from a handler, as a plugin (D-051): `Audio.play!` in either half, and `AudioPlayer.plugin({})`, the player, a script every page loads; see its README |
-| `packages/*` | the other packages: `admin` (a Django-style admin for Postgres tables, and the jobs page), `forms`, `guard` (rate limits, feature flags, request guards), `intl`, `markdown`, `mcp`, `otel` (OpenTelemetry metrics and logs), `presence`, `testing` and `virtual` (lists of any length that render only the rows that show); each has a README, a PROPOSALS.md of what it waits on, and a page on the docs site. A package whose modules use the server platform names it in its `main.roc`, with a `browser.roc` beside it for what the browser's half sees (D-033); mcp's and otel's server modules are a package of their own, `server/main.roc` |
+| `packages/*` | the other packages: `admin` (a Django-style admin for Postgres tables, and the jobs page), `forms`, `guard` (rate limits, feature flags, request guards), `intl`, `markdown`, `mcp`, `otel` (OpenTelemetry metrics and logs), `presence`, `qr` (QR codes in plain Roc, and `<QrCode>`), `testing` and `virtual` (lists of any length that render only the rows that show); each has a README, a PROPOSALS.md of what it waits on, and a page on the docs site. A package whose modules use the server platform names it in its `main.roc`, with a `browser.roc` beside it for what the browser's half sees (D-033); mcp's and otel's server modules are a package of their own, `server/main.roc` |
 | `web/` | the browser's platform: the modules components are written with (`Html`, `Solid`, `Show`, `For`, …) and HTTP's (`Server`, requests and answers; `Endpoint`, `Channel`, `Events`, `Middleware`, `OpenApi`), which the server's platform has too; its Zig host, `runtime.js`; see `web/README.md` |
 | `server/` | the server's platform: native Roc in a Rust host (tokio, hyper, Postgres or SQLite, plugins, channels, actors, `Kv`), rendering pages of components; see `server/README.md` |
 | `site/` | the docs site: pages in `routes/`, the demos on them in `Demos/`, its program in `main.roc`, real examples in `examples/` |

@@ -1,0 +1,121 @@
+import pf.Html
+import ../../../Demos/QrDemo
+import ../../../Ui/Code
+import ../../../Ui/Demo
+import ../../../Ui/Heading
+import ../../../Ui/PageHero
+import ../../../Ui/TableWrap
+import ../../../Generated/Paths
+import ../../../Generated/Sources
+
+## The qr package: installing it, a live code that follows what is typed, its props, a code anywhere
+## else (SVG for the server, the terminal), how big codes get, and how it is made and tested. The
+## demo is the site's (site/Demos/QrDemo.rocx), hydrated.
+meta = {
+	title: "QR codes",
+	description: "The qr package for Roc Solid apps: QR codes made in plain Roc, a <QrCode> component that draws one as SVG and follows its text, and SVG or terminal text for anywhere else.",
+	toc: [
+		{ id: "install", label: "Installing" },
+		{ id: "demo", label: "A code that follows" },
+		{ id: "props", label: "Its props" },
+		{ id: "anywhere", label: "Anywhere else" },
+		{ id: "sizes", label: "How big" },
+		{ id: "made", label: "How it is made" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				kicker={[<>{"The ecosystem · "}</>, <code>packages/qr</code>]}
+				title="QR codes, in plain Roc"
+			>
+				Text in, a code out, drawn as SVG. A page shows one with a component that follows its text; the server
+				draws one into an email; rocx prints one in the terminal. The same Roc runs in all three.
+			</PageHero>
+
+			<Heading id="install">Installing</Heading>
+			<Code
+				title="main.roc's header"
+				source={"app [program] { pf: platform \"../server/platform/main.roc\", qr: \"../packages/qr/main.roc\" }"}
+				numbers={Bool.False}
+			/>
+			<p>
+				Then <code>import qr.QrCode</code> in a <code>.rocx</code> file, and <code>import qr.Qr</code> for the
+				code itself. <code>rocx build</code> copies the component into the app (<code>Generated/qr/</code>), as
+				it copies the charts.
+			</p>
+
+			<Heading id="demo">A code that follows</Heading>
+			<p>Type, and pick how much of the code may be damaged and still read: the code follows both, and says what it came to.</p>
+		</NoHydration>
+		<Demo>
+			<div data-demo="qr"><QrDemo /></div>
+		</Demo>
+		<NoHydration>
+			<Code title={"${Sources.qr_use.file}, in part"} source={Sources.qr_use.rocx} numbers={Bool.False} />
+
+			<Heading id="props">Its props</Heading>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Prop</th><th>What</th></tr></thead>
+					<tbody>
+						<tr><td><code>text</code></td><td>What the code says: a URL, mostly. A getter, as every value prop is: the code follows it.</td></tr>
+						<tr><td><code>level</code></td><td><code>Low</code> (about 7% may be damaged), <code>Medium</code> (15%, unless it says), <code>Quartile</code> (25%) or <code>High</code> (30%): the more, the bigger the code</td></tr>
+						<tr><td><code>label</code></td><td>What it is, for screen readers; "QR code" unless it says</td></tr>
+						<tr><td><code>class</code></td><td>Classes for the <code>{"<svg>"}</code>, beside <code>qr-code</code></td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				It is an <code>{"<svg>"}</code> as wide as its box, square, black on white, with the quiet zone of four
+				modules around it that readers need: give its box a width. Its colours are CSS
+				(<code>.qr-light</code>, <code>.qr-dark</code>), but keep them dark on light: most readers read nothing
+				else. Text too long for a code shows an empty one whose label says so.
+			</p>
+
+			<Heading id="anywhere">Anywhere else</Heading>
+			<p>
+				<code>Qr.encode(text, level)</code> is the code: its side in modules, and its modules, dark or light, row
+				by row; or <code>Err(TooLong)</code>. Then draw it:
+			</p>
+			<ul>
+				<li><code>Qr.svg(code)</code>: an SVG document, for an email's image or a file</li>
+				<li><code>Qr.path(code)</code> and <code>Qr.view_box(code)</code>: one path of every dark module, and its box, for markup of your own (what the component draws)</li>
+				<li><code>Qr.terminal(code)</code>: for a terminal, two rows of modules a line, black on white whatever the terminal's colours (what <code>rocx dev --android --lan</code> prints for a phone on Wi-Fi)</li>
+				<li><code>Qr.pbm(code)</code>, <code>Qr.is_dark(code, x, y)</code>: an image a module a pixel, and one module</li>
+			</ul>
+
+			<Heading id="sizes">How big</Heading>
+			<p>
+				A code grows by four modules a side a version, from 21 at version 1 to 177 at version 40, and the package
+				picks the smallest that holds the text's UTF-8 bytes at the level asked for. The most each level holds:
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Level</th><th>Survives</th><th>Version 1 holds</th><th>Version 40 holds</th></tr></thead>
+					<tbody>
+						<tr><td><code>Low</code></td><td>about 7% damaged</td><td>17 bytes</td><td>2,953 bytes</td></tr>
+						<tr><td><code>Medium</code></td><td>15%</td><td>14 bytes</td><td>2,331 bytes</td></tr>
+						<tr><td><code>Quartile</code></td><td>25%</td><td>11 bytes</td><td>1,663 bytes</td></tr>
+						<tr><td><code>High</code></td><td>30%</td><td>7 bytes</td><td>1,273 bytes</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				A link to a page fits a small code: one of 60 bytes is version 4 at <code>Medium</code>, 33 modules a side.
+				Byte mode is the only one yet: digits alone, or upper-case letters, would fit smaller codes in their own
+				modes (the package's PROPOSALS.md).
+			</p>
+
+			<Heading id="made">How it is made</Heading>
+			<p>
+				After the standard (ISO/IEC 18004) and Project Nayuki's reference encoder: the text's bytes, the
+				standard's Reed–Solomon error correction in blocks for each version and level, the finder, timing and
+				alignment patterns, version information from version 7, and of the eight masks the one the standard's
+				penalty rules score lowest. Its tests check the standard's numbers, and a reader (zbar) reads back a code
+				at every version and level, each as full as it can be: 160 codes, every one its text.
+			</p>
+		</NoHydration>
+	</>

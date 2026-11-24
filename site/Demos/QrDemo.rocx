@@ -1,0 +1,103 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+import qr.Qr
+import qr.QrCode
+
+## A QR code, for the docs (/ecosystem/qr): what is typed, at the level picked, drawn by <QrCode> as
+## either changes; and what that came to, worked out with the package's own functions: the code's
+## version, its side in modules, and how many of the bytes it holds the text takes.
+QrDemo := [].{
+	view! : {} => Html
+	view! = |{}| {
+		(text!, set_text!) = create_signal!("https://roc-solid.github.io/ecosystem/qr")
+		(level!, set_level!) = create_signal!(QrDemo.first_level)
+		<div class="qr-demo">
+			<div class="qr-demo-controls">
+				<label class="qr-demo-text">
+					Text
+					<input type="text" value={text!()} on:input.value={set_text!} spellcheck="false" />
+				</label>
+				<div class="qr-demo-levels" role="group" aria-label="Error correction">
+					<button type="button" class="low" aria-pressed={QrDemo.pressed(level!() == Low)} on:click={|| set_level!(Low)}>Low · 7%</button>
+					<button type="button" class="medium" aria-pressed={QrDemo.pressed(level!() == Medium)} on:click={|| set_level!(Medium)}>Medium · 15%</button>
+					<button type="button" class="quartile" aria-pressed={QrDemo.pressed(level!() == Quartile)} on:click={|| set_level!(Quartile)}>Quartile · 25%</button>
+					<button type="button" class="high" aria-pressed={QrDemo.pressed(level!() == High)} on:click={|| set_level!(High)}>High · 30%</button>
+				</div>
+				<output class="qr-demo-said">{QrDemo.said(text!(), level!())}</output>
+			</div>
+			<div class="qr-demo-code">
+				<QrCode text={text!()} level={level!()} label="A QR code of the text" />
+			</div>
+		</div>
+	}
+
+	first_level : Qr.Level
+	first_level = Medium
+
+	pressed : Bool -> Str
+	pressed = |is_on| if (is_on) "true" else "false"
+
+	## What the text came to: its version and size, and its bytes of all the version holds.
+	said : Str, Qr.Level -> Str
+	said = |text, level| {
+		bytes = text.to_utf8().len()
+		match Qr.version_for(bytes, level) {
+			Ok(version) => {
+				side = (17 + 4 * version).to_str()
+				"Version ${version.to_str()}: ${side} × ${side} modules, the text ${bytes.to_str()} of the ${Qr.bytes_held(version, level).to_str()} bytes it holds"
+			}
+			Err(TooLong) => "${bytes.to_str()} bytes: more than a code holds at this level (${Qr.capacity(level).to_str()})"
+		}
+	}
+
+	<style>
+		.qr-demo {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) 14rem;
+			gap: 1.25rem;
+			align-items: start;
+		}
+
+		.qr-demo-controls {
+			display: grid;
+			gap: 0.75rem;
+		}
+
+		.qr-demo-text {
+			display: grid;
+			gap: 0.375rem;
+		}
+
+		.qr-demo-levels {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.375rem;
+		}
+
+		.qr-demo-levels button[aria-pressed="true"] {
+			background: var(--accent);
+			color: var(--accent-text);
+		}
+
+		.qr-demo-said {
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+			font-variant-numeric: tabular-nums;
+		}
+
+		.qr-demo-code {
+			border-radius: var(--radius-sm);
+			overflow: hidden;
+		}
+
+		@media (max-width: 40rem) {
+			.qr-demo {
+				grid-template-columns: minmax(0, 1fr);
+			}
+
+			.qr-demo-code {
+				max-width: 14rem;
+			}
+		}
+	</style>
+}

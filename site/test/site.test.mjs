@@ -1187,6 +1187,35 @@ test("presence: the room in the browser joins, types and leaves at a press, Auto
 	assert.deepEqual(page.errors, []);
 });
 
+test("QR codes: the demo's code follows what is typed and the level picked, says its version and size, and an empty code says the text is too long", { skip }, async () => {
+	const page = await open("/ecosystem/qr");
+	const demo = "[data-demo=qr]";
+	const said = () => page.eval(`document.querySelector("${demo} .qr-demo-said").textContent`);
+	const svg = (attribute) => page.eval(`document.querySelector("${demo} svg.qr-code").getAttribute(${JSON.stringify(attribute)})`);
+	const path = () => page.eval(`document.querySelector("${demo} path.qr-dark").getAttribute("d")`);
+	const type = (text) => page.eval(`(() => { const input = document.querySelector("${demo} input"); input.value = ${JSON.stringify(text)}; input.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+
+	assert.equal(await said(), "Version 3: 29 × 29 modules, the text 40 of the 42 bytes it holds", "the page's address, at Medium");
+	assert.equal(await svg("viewBox"), "0 0 37 37", "the code and its quiet zone");
+	assert.equal(await svg("role"), "img");
+	const first = await path();
+	assert.match(first, /^M4 4h7v1h-7z/, "the top left finder's first row, after the quiet zone");
+	await type("hi");
+	await page.wait(`document.querySelector("${demo} svg.qr-code").getAttribute("viewBox") === "0 0 29 29"`);
+	assert.equal(await said(), "Version 1: 21 × 21 modules, the text 2 of the 14 bytes it holds");
+	assert.notEqual(await path(), first, "a new code");
+	await page.click(`${demo} .high`);
+	await page.wait(`document.querySelector("${demo} .qr-demo-said").textContent.includes("of the 7 bytes")`);
+	assert.equal(await page.eval(`document.querySelector("${demo} .high").getAttribute("aria-pressed")`), "true");
+	await type("x".repeat(1300));
+	await page.wait(`document.querySelector("${demo} path.qr-dark").getAttribute("d") === ""`);
+	assert.equal(await said(), "1300 bytes: more than a code holds at this level (1273)");
+	assert.equal(await svg("aria-label"), "A QR code of the text: the text is too long for a QR code");
+	await page.click(`${demo} .low`);
+	await page.wait(`document.querySelector("${demo} .qr-demo-said").textContent.startsWith("Version 26")`);
+	assert.equal(await svg("viewBox"), "0 0 129 129", "1,300 bytes at Low: version 26, 121 modules a side");
+});
+
 test("virtual lists: the demo renders only the rows that show, of a hundred thousand or a million, measured once it hydrates and again as it scrolls; the count's buttons change the list", { skip }, async () => {
 	const page = await open("/ecosystem/virtual");
 	const demo = "[data-demo=virtual]";

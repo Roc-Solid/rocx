@@ -93,6 +93,7 @@ Nav := [].{
 					{ path: Paths.ecosystem_markdown, label: "Markdown", blurb: "CommonMark in Roc, a <Markdown> component, and typed frontmatter" },
 					{ path: Paths.ecosystem_intl, label: "Intl", blurb: "Numbers, dates and translated messages, as each locale writes them" },
 					{ path: Paths.ecosystem_virtual, label: "Virtual lists", blurb: "Lists of any length that render only the rows that show" },
+					{ path: Paths.ecosystem_qr, label: "QR codes", blurb: "QR codes made in plain Roc, drawn as SVG by a component that follows its text" },
 					{ path: Paths.ecosystem_presence, label: "Presence", blurb: "Who is here, who is typing, and live cursors" },
 					{ path: Paths.ecosystem_audio, label: "Audio", blurb: "Sound files from a handler, played by the plugin's script" },
 				],
