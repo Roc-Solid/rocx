@@ -28,9 +28,9 @@ const SLOWER = 1.5;
 const AT_LEAST_MS = 250;
 const HISTORY = 30;
 const COLUMNS = [
-	["build", "rocx build"],
-	["server", "check: server"],
-	["client", "check: browser"],
+	["build", "rocx build (ms)"],
+	["server", "check: server (ms)"],
+	["client", "check: browser (ms)"],
 ];
 
 const args = process.argv.slice(2);
@@ -102,14 +102,14 @@ const cell = (name, key) => {
 	return `${now} (${change > 0 ? "+" : ""}${change}%)`;
 };
 const lines = [
-	`### Checking times (ms; the median of ${RUNS}, no cache)`,
+	`### Checking times (milliseconds, the median of ${RUNS}; no cache: all of the work)`,
 	"",
 	baseline ? `Against master's ${baseline.commit} (${baseline.date.slice(0, 10)}). ` + `Slower by half and by ${AT_LEAST_MS} ms or more is a warning.` : "No earlier run to compare with.",
 	"",
 	`| app | ${COLUMNS.map(([, title]) => title).join(" | ")} |`,
 	`|---|${COLUMNS.map(() => "--:").join("|")}|`,
 	...names.map((name) => `| ${name} | ${COLUMNS.map(([key]) => cell(name, key)).join(" | ")} |`),
-	`| **all** | **${run.total}**${baseline ? ` (was ${baseline.total})` : ""} | | |`,
+	`| **all** | **${run.total} ms**${baseline ? ` (was ${baseline.total})` : ""} | | |`,
 ];
 const history = [...(baseline?.history ?? []), { commit: run.commit, date: run.date, total: run.total }].slice(-HISTORY);
 if (history.length > 1) lines.push("", `All of it, the last ${history.length} master runs to this one: ${history.map((each) => each.total).join(", ")} ms.`);

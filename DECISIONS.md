@@ -4225,9 +4225,12 @@ with. A newcomer without the fork was in the same place: `just setup` stopped.
   the commit, as before; elsewhere, on macOS on Apple silicon, it downloads the release, checks the
   SHA-256 and unpacks it in place of the build. A pin bump publishes first.
 - `.github/workflows/ci.yml`: on every push to master and every pull request (a newer push stops a
-  pull request's older run), four jobs side by side on `macos-latest`: `just check`, `just test`
-  (Chromium's headless shell and Firefox from Playwright, a Postgres from Homebrew as
-  `DATABASE_URL`), `just examples` (the browsers) and `just site`. `.github/actions/setup` is the
+  pull request's older run), five jobs side by side on `macos-latest`: `just check`; `just test` as
+  two, its three parts being recipes of their own (`test-rocx` then `test-web`, each step run even
+  when the one before failed; `test-server`, the longest, beside them), with Chromium's headless
+  shell and Firefox from Playwright, and for `test-server` a Postgres from Homebrew as
+  `DATABASE_URL`; `just examples` (the browsers); and `just site`. Five is the most macOS jobs a
+  free organization runs at once. `.github/actions/setup` is the
   toolchain: Node 24, just, Zig and the nightly cached by their pins, the hosts' crates cached
   (saved by master's runs), then `just setup`.
 - After `just check`, `just check-times` (test/check-times.mjs): each example's and the docs

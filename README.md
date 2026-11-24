@@ -754,9 +754,9 @@ or Playwright's cached one; without it they are skipped. packages/testing's (and
 example's) drive Gecko too when there is one, headless over WebDriver BiDi: `$GECKO`, Zen, Firefox,
 or Playwright's Firefox (`web/test/browser.mjs`, `launchGecko`).
 
-CI (`.github/workflows/ci.yml`) runs `just check`, `just test` (with Chromium, Firefox and a
-Postgres), `just examples` and `just site`, each a job of its own, on every push to master and every
-pull request, on GitHub's macOS runners (Apple silicon), the one machine the fork's compiler is
+CI (`.github/workflows/ci.yml`) runs `just check`, `just test` (as two jobs: `just test-rocx` and
+`just test-web`, with Chromium and Firefox; `just test-server`, with a Postgres too), `just examples`
+and `just site`, each a job of its own, on every push to master and every pull request, on GitHub's macOS runners (Apple silicon), the one machine the fork's compiler is
 prebuilt for. After `just check` it times checking (`just check-times`: each example's and the
 site's `rocx build` and `rocx check` of both programs, with no cache) into the job's summary,
 against the last green master run, and warns when a check got slower by half. A change to `roc_fork_commit` needs that compiler published first: `just

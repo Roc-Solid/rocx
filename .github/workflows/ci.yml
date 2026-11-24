@@ -1,8 +1,8 @@
 # The checks a change lands with (README, "Quick start"), on GitHub's macOS runners (Apple silicon):
 # the one machine the Roc fork's compiler is prebuilt for (`just setup` downloads it). Each its own
 # job, side by side: `just check` (then `just check-times`: how long checking takes, against the
-# last green master run), `just test` (with Chromium, Firefox and a Postgres), `just examples` and
-# `just site`.
+# last green master run), `just test` as two (`test-rocx` and `test-web`, with Chromium and Firefox;
+# `test-server`, with a Postgres too), `just examples` and `just site`.
 name: CI
 
 on:
@@ -54,8 +54,11 @@ jobs:
           path: check-times.json
           retention-days: 90
 
+  # `just test` in two jobs side by side: its first two parts (the transpiler, the expects, the web
+  # platform and the site in browsers), each a step that runs even when the one before failed, and
+  # its third (the server platform and the packages' apps, on a Postgres).
   test:
-    name: just test
+    name: just test-rocx, test-web
     runs-on: macos-latest
     timeout-minutes: 120
     steps:
@@ -63,8 +66,21 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           browsers: "true"
+      - run: just test-rocx
+      - if: ${{ !cancelled() }}
+        run: just test-web
+
+  test-server:
+    name: just test-server
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+        with:
+          browsers: "true"
           postgres: "true"
-      - run: just test
+      - run: just test-server
 
   examples:
     name: just examples

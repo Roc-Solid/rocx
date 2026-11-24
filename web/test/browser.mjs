@@ -163,15 +163,13 @@ class Page {
 	 */
 	async drag(from, over, { drop = true } = {}) {
 		await this.send("Input.setInterceptDrags", { enabled: true });
-		// An element still gliding (a move's, D-031) is pressed once it is still: its middle is read
-		// a round trip of the protocol before the press, by which time a moving one has gone on (a
-		// slower machine's press missed it, and no drag started).
-		if (typeof from === "string") await this.wait(`document.querySelector(${JSON.stringify(from)})?.getAnimations().length === 0`, 5000);
 		const start = typeof from === "string" ? await this.center(from) : from;
 		const intercepted = this.once("Input.dragIntercepted");
 		await this.send("Input.dispatchMouseEvent", { type: "mousePressed", x: start.x, y: start.y, button: "left", buttons: 1, clickCount: 1 });
 		await this.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: start.x + 12, y: start.y + 12, button: "left", buttons: 1 });
-		const { data } = await intercepted;
+		const { data } = await intercepted.catch((error) => {
+			throw new Error(`${error.message}: no drag started from ${typeof from === "string" ? from : "the point"} at ${Math.round(start.x)},${Math.round(start.y)}`);
+		});
 		let at = start;
 		for (const target of [].concat(over)) {
 			at = typeof target === "string" ? await this.center(target) : target;

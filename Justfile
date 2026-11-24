@@ -293,14 +293,28 @@ deploy-pages: site
 # the server's host is). One file at a time: the web platform's tests and the site's both build its
 # host. The browser tests need Chromium (see web/test/browser.mjs); the server platform's Postgres,
 # jobs, cron and actors tests, and packages/testing's and packages/posthog's database tests,
-# DATABASE_URL (`just db`).
-test:
+# DATABASE_URL (`just db`). In three parts, in this order, each a recipe of its own (CI runs the
+# server's as a job of its own).
+test: test-rocx test-web test-server
+
+# `just test`'s first part: the transpiler and the routes (test/), and every Roc module's expects:
+# rocx's own, the site's (which imports the platform's modules, the pages and their components, the
+# highlighter) and every package's.
+test-rocx:
     ROC={{ roc }} node --test 'test/*.test.mjs'
     {{ roc }} test rocx-cli/main.roc
     {{ rocx }} site prepare
     {{ roc }} test site/main.roc
     for package in packages/*/main.roc; do echo "$package"; {{ roc }} test "$package" || exit 1; done
+
+# `just test`'s second part: the web platform in Node and Chromium, and the site in a browser,
+# served by the native server. One file at a time: both build the web platform's host.
+test-web:
     ROC={{ roc }} node --test --test-concurrency=1 'web/test/*.test.mjs' 'site/test/*.test.mjs'
+
+# `just test`'s third part: the server platform, and packages/testing's, packages/posthog's and
+# the guard and push examples' tests against an app each builds (DATABASE_URL for their Postgres).
+test-server:
     ROC={{ roc }} node --test 'server/test/*.test.mjs'
     ROC={{ roc }} node --test 'packages/testing/test/*.test.mjs' 'packages/posthog/test/*.test.mjs' 'packages/guard/example/test/*.test.mjs' 'packages/push/example/test/*.test.mjs'
 
