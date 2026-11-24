@@ -335,13 +335,25 @@ Html :: [
 
 	## The element's name on the page (`key={card.id}`): where one with a key goes and another with the
 	## same key comes, in one change of the page, it is the same element, moved, and with
-	## `transition:move` it glides from the one's place to the other's.
-	key : Str -> Attr
-	key = |id| Key(id)
+	## `transition:move` it glides from the one's place to the other's. Any value (`key_text`): on a
+	## `.map` row's root, it is the row's key too (D-071).
+	key : a -> Attr
+	key = |id| Key(Html.key_text(id))
 
-	## The same, computed (`key={card!().id}` in a `<For>`'s row, whose item is an accessor).
-	key_of : (() => Str) -> Attr
-	key_of = |compute| KeyOf(compute)
+	## The same, computed (`key={card.id}` in a `.map`'s row, whose name is a getter).
+	key_of : (() => a) -> Attr
+	key_of = |compute| KeyOf(|| Html.key_text(compute()))
+
+	## A key as text: a string as it is, any other value as `Str.inspect` writes it (`7`, `Done`).
+	key_text : a -> Str
+	key_text = |id| {
+		inspected = Str.inspect(id)
+		if inspected.starts_with("\"") and inspected.ends_with("\"") and inspected != "\"" {
+			inspected.drop_prefix("\"").drop_suffix("\"")
+		} else {
+			inspected
+		}
+	}
 
 	## An animation the element plays as it comes with a `<For>`'s row or the part an `if` or `match` makes (D-070) (`In`,
 	## `transition:in={…}`), as it goes with one (`Out`, `transition:out={…}`), or both (`Both`,
@@ -374,10 +386,86 @@ Html :: [
 	branched : (() => Try(Str, [None])), (() => Html) -> Html
 	branched = |case!, made!| Branched(case!, made!)
 
-	## Rows, by key (`<For>`): `rows!`, given the list's id, says which rows there are now, and
-	## how to make each; the runtime keeps a row while its key is there, and moves it.
+	## Rows, by key (`rows!`, `rows_at!`): `rows!`, given the list's id, says which rows there are
+	## now, and how to make each; the runtime keeps a row while its key is there, and moves it.
 	each : (U64 => List({ key : Str, row : () => Html })), Html -> Html
-	each = |rows!, fallback| Each(rows!, fallback)
+	each = |made!, fallback| Each(made!, fallback)
+
+	## What rocx writes for a hole's `.map` whose list reads what changes (D-071):
+	##
+	##     {...todos!().map(|todo| <li key={todo.id}>{todo.text}</li>)}
+	##
+	## is a row per key (the row's root's `key`), made once, moved as the list changes, and dropped
+	## with its key, as Solid 2.0's `<For>` keeps them. Roc's values have no identity, so the row says
+	## its key. The row's name reads its item now (rocx makes it a getter, as a match arm's names), and
+	## `.map_with_index(|todo, i| …)`'s index, which changes as rows move, too. `keyed` may read what
+	## changes. Each time the list is read again, every row is told its item may have changed, and its
+	## holes that read it run again (a value a node has already is no patch).
+	rows! : (() => List(a)), (a => k), ((() => a), (() => U64) => Html) => Html where [a.is_eq : a, a -> Bool]
+	rows! = |items!, keyed, make| {
+		rows_now! = |id| {
+			items = items!()
+			var $inspected = List.with_capacity(items.len())
+			for item in items {
+				$inspected = $inspected.append(Html.key_text(keyed(item)))
+			}
+			keys = Html.row_keys($inspected)
+			var $rows = List.with_capacity(items.len())
+			var $index = 0.U64
+			for item in items {
+				row_key = keys.get($index) ?? $index.to_str()
+				$rows = $rows.append(Html.row!(id, row_key, item, |item!| make(item!, || Host.row_index!(id, row_key))))
+				$index = $index + 1
+			}
+			$rows
+		}
+		Each(rows_now!, Html.empty({}))
+	}
+
+	## A `.map_with_index` whose row's key is its index (`key={i}`, D-071): a row per position (Solid's
+	## old `<Index>`), its name reading the item there now; its index, the position's, a value.
+	rows_at! : (() => List(a)), ((() => a), U64 => Html) => Html where [a.is_eq : a, a -> Bool]
+	rows_at! = |items!, make| {
+		rows_now! = |id| {
+			var $rows = []
+			var $index = 0.U64
+			for item in items!() {
+				at = $index
+				$rows = $rows.append(Html.row!(id, at.to_str(), item, |item!| make(item!, at)))
+				$index = $index + 1
+			}
+			$rows
+		}
+		Each(rows_now!, Html.empty({}))
+	}
+
+	## A row: its item kept by the host under its key (so the row's name reads the item there now),
+	## and how to make the row.
+	row! : U64, Str, a, ((() => a) => Html) => { key : Str, row : () => Html } where [a.is_eq : a, a -> Bool]
+	row! = |id, row_key, item, make| {
+		boxed = Box.box(|| item)
+		last = Box.unbox(Host.row_last!(id, row_key, boxed))
+		Host.row_set!(id, row_key, boxed, last() == item)
+		item! = || {
+			current = Box.unbox(Host.row_get!(id, row_key))
+			current()
+		}
+		{ key: row_key, row: || make(item!) }
+	}
+
+	## The keys, each once: the second of two equal keys is another row (`#1`), and so on. How many of
+	## each came before is a `Dict`'s, so a list of ten thousand rows takes ten thousand lookups.
+	row_keys : List(Str) -> List(Str)
+	row_keys = |keys| {
+		var $seen = Dict.empty()
+		var $out = List.with_capacity(keys.len())
+		for one in keys {
+			count = $seen.get(one) ?? 0.U64
+			$seen = $seen.insert(one, count + 1)
+			$out = $out.append(if (count == 0) one else "${one}#${count.to_str()}")
+		}
+		$out
+	}
 
 	## A component, as Solid runs one: where it is rendered, once, its reads not tracked. rocx writes
 	## a component's call (`<Picks />`) inside one, so what it reads from a context is what is above
@@ -502,11 +590,11 @@ Html :: [
 			# never empty, so truthy), and the runtime makes the part anew when it changes.
 			Switched(case!, made, fallback) => "{\"t\":\"show\",\"r\":${keep!(|| case_json!(case!))},\"with\":${keep!(|| serialize!(made()))},\"fallback\":${made!(fallback)}}"
 			Branched(case!, made) => "{\"t\":\"show\",\"b\":1,\"r\":${keep!(|| case_json!(case!))},\"with\":${keep!(|| serialize!(made()))},\"fallback\":{\"t\":\"f\",\"c\":[]}}"
-			Each(rows!, fallback) => {
+			Each(made_rows!, fallback) => {
 				id = Host.for_new!({})
 				listed! = || {
 					var $out = []
-					for entry in rows!(id) {
+					for entry in made_rows!(id) {
 						row = entry.row
 						$out = $out.append("{\"k\":${json_str(entry.key)},\"r\":${keep!(|| serialize!(row()))}}")
 					}
@@ -1077,3 +1165,5 @@ expect head_key(Void("meta", [Value("property", "og:title"), Value("content", "x
 expect head_key(Void("meta", [Value("name", "theme-color"), Value("media", "(prefers-color-scheme: dark)")])) == "meta name=theme-color media=(prefers-color-scheme: dark)"
 expect head_key(Void("meta", [Flag("charset", Bool.True)])) == "meta charset"
 expect head_key(Void("link", [Value("rel", "canonical")])) == ""
+
+expect Html.row_keys(["a", "b", "a", "a"]) == ["a", "b", "a#1", "a#2"]

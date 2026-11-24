@@ -1,4 +1,5 @@
 import pf.Html
+import pf.Solid exposing [untrack!]
 import pf.Endpoint
 import pf.Server
 import pf.Router exposing [use_submission!]
@@ -10,9 +11,11 @@ import ../Generated/Api
 UpdateForm := [].{
 	view! : { incident : I64 } => Html
 	view! = |{ incident }| {
-		post = Api.post_admin_incidents_id({ id: incident.to_str() })
+		# Its incident's: a row per incident id, so the id read once is meant.
+		id = untrack!(|| incident.to_str())
+		post = Api.post_admin_incidents_id({ id: id })
 		submission = use_submission!(post)
-		field = "update-${incident.to_str()}"
+		field = "update-${id}"
 		<form class="update" method="post" action={Endpoint.url_of(post)}>
 			<div class="row">
 				<label for={"${field}-state"}>Stage</label>

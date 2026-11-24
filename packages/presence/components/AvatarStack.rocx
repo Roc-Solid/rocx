@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_memo!]
-import pf.For
 import pf.Transition
 import presence.Stack
 
@@ -21,19 +20,18 @@ AvatarStack := [].{
 	view! = |{ faces!, max, label }| {
 		split! = create_memo!(|| Stack.split(faces!(), max))
 		<div class="avatar-stack" role="group" aria-label={if (label.is_empty()) Stack.label(faces!()) else label}>
-			<For each!={split!().shown} keyed={|face| face.key}>
-				{|face!, _|
-					<span
-						class={"avatar status-${if (face!().status.is_empty()) "none" else face!().status}"}
-						role="img"
-						aria-label={if (face!().status.is_empty()) face!().name else "${face!().name} (${face!().status})"}
-						title={face!().name}
-						style:--avatar-color={Stack.color_of(face!())}
-						transition={Transition.scale(0.5).plus(Transition.fade)}
-					>
-						{if (face!().image.is_empty()) <span class="initials" aria-hidden="true">{Stack.initials(face!().name)}</span> else <img src={face!().image} alt="" />}
-					</span>}
-			</For>
+			{...split!().shown.map(|face|
+				<span key={face.key}
+					class={"avatar status-${if (face.status.is_empty()) "none" else face.status}"}
+					role="img"
+					aria-label={if (face.status.is_empty()) face.name else "${face.name} (${face.status})"}
+					title={face.name}
+					style:--avatar-color={Stack.color_of(face)}
+					transition={Transition.scale(0.5).plus(Transition.fade)}
+				>
+					{if (face.image.is_empty()) <span class="initials" aria-hidden="true">{Stack.initials(face.name)}</span> else <img src={face.image} alt="" />}
+				</span>
+			)}
 			{if split!().more > 0 {
 				<span class="avatar more" role="img" aria-label={"and ${split!().more.to_str()} more"} title={more_names(faces!(), split!().shown.len())}>
 					+{split!().more.to_str()}

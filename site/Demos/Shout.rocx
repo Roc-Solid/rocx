@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Call
-import pf.For
 import pf.Solid exposing [create_signal!]
 import pf.Endpoint
 import pf.Server as Http
@@ -30,9 +29,9 @@ Shout := [].{
 			}
 		}
 		<div class="echo shout">
-			<For each!={words} keyed={|word| word}>
-				{|word!, _| <button type="button" on:click={|| shout!(word!())}>{"Shout “${word!()}”"}</button>}
-			</For>
+			{...words.map(|word|
+				<button key={word} type="button" on:click={|| shout!(word)}>{"Shout “${word}”"}</button>
+			)}
 			<output class="echo-answer" class:failed={failed(answer!())}>{said(answer!())}</output>
 		</div>
 	}

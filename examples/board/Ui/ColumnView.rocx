@@ -1,7 +1,6 @@
 import pf.Html
-import pf.For
 import pf.Endpoint
-import pf.Solid exposing [create_signal!]
+import pf.Solid exposing [create_signal!, untrack!]
 import pf.Router exposing [use_action!]
 import CardTile
 import Shared
@@ -17,7 +16,8 @@ ColumnView := [].{
 	view! : { column! : () => Board.Column, shared : Shared.State } => Html
 	view! = |{ column!, shared }| {
 		{ board, board!, dragging!, set_dragging!, over!, set_over!, move!, adding!, add!, .. } = shared
-		id = column!().id
+		# Its column's: a row per column id, so the id read once is meant.
+		id = untrack!(|| column!().id)
 		cards! = || Board.column_cards(board!().cards, id)
 		# A card dropped here: where the drag last was over, if that was in this column, or else at
 		# its end. A drop that changes nothing (a card put back where it was) sends nothing.
@@ -66,12 +66,12 @@ ColumnView := [].{
 				{ColumnView.rename_form(renames!(), { board, id, column!, name!, typed_name!, renamed! })}
 			</header>
 			<ol class="cards" aria-labelledby={"column-${id}"}>
-				<For each!={cards!()} keyed={|card| card.id}>
-					{|card!, _| <CardTile card!={card!()} shared={shared} />}
-				</For>
-				<For each!={adding!().keep_if(|each| each.column == id)} keyed={|each| each.title}>
-					{|each!, _| <li class="adding" aria-busy="true">{each!().title}</li>}
-				</For>
+				{...cards!().map(|card|
+					<CardTile key={card.id} card!={card} shared={shared} />
+				)}
+				{...adding!().keep_if(|each| each.column == id).map(|each|
+					<li key={each.title} class="adding" aria-busy="true">{each.title}</li>
+				)}
 				<li class="end" class:above={dragging!() != "" and over!() == { column: id, before: "" }} aria-hidden="true" on:dragenter={|| set_over!({ column: id, before: "" })}></li>
 			</ol>
 			<form class="add" method="post" action={Endpoint.url_of(Api.post_b_board_cards({ board: board }))} on:submit={add_card!}>

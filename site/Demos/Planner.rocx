@@ -3,7 +3,6 @@ import pf.Solid exposing [create_memo!, create_signal!, is_pending!]
 import pf.Router exposing [use_action!, use_submissions!]
 import pf.Endpoint
 import pf.Server
-import pf.For
 import PlannerDay
 import ../Generated/Api
 
@@ -45,19 +44,17 @@ Planner := [].{
 		board = { plans!, dragging!, set_dragging!, over!, set_over!, move! }
 		<div class="planner">
 			<div class="week" class:stale={is_pending!(plans!)}>
-				<For each!={PlannerDay.days} keyed={|day| day.id}>
-					{|day!, _| <PlannerDay day={day!()} board={board} />}
-				</For>
+				{...PlannerDay.days.map(|day|
+					<PlannerDay key={day.id} day={day} board={board} />
+				)}
 			</div>
 			<p class="status" class:saving={moves.pending!()}>{Planner.status(moves.all!().keep_if(|sent| sent.pending).len())}</p>
-			<For each!={moves.all!().keep_if(|sent| sent.error.is_ok())} keyed={|sent| sent.id}>
-				{|sent!, _|
-					<p class="refused">
-						<span>{Planner.why(sent!().error)}</span>
-						<button type="button" on:click={|| moves.clear!(sent!().id)}>Dismiss</button>
-					</p>
-				}
-			</For>
+			{...moves.all!().keep_if(|sent| sent.error.is_ok()).map(|sent|
+				<p key={sent.id} class="refused">
+					<span>{Planner.why(sent.error)}</span>
+					<button type="button" on:click={|| moves.clear!(sent.id)}>Dismiss</button>
+				</p>
+			)}
 		</div>
 	}
 

@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_signal!]
-import pf.For
 import guard.RateLimit
 
 ## A login form's limit, 5 a minute, run in the browser by the package's own `RateLimit.check`, with
@@ -48,14 +47,12 @@ GuardPlayground := [].{
 			</div>
 			<p class="clock">Second <output>{(now!() // 1000).to_str()}</output> · 5 a minute</p>
 			<ol class="answers" aria-live="polite">
-				<For each!={said!()} keyed={|each| each.id}>
-					{|each!, _|
-						<li class:refused={!each!().allowed}>
-							<span class="at">{"Second ${each!().second.to_str()}"}</span>
-							<span>{each!().text}</span>
-						</li>
-					}
-				</For>
+				{...said!().map(|each|
+					<li key={each.id} class:refused={!each.allowed}>
+						<span class="at">{"Second ${each.second.to_str()}"}</span>
+						<span>{each.text}</span>
+					</li>
+				)}
 			</ol>
 		</div>
 	}

@@ -62,8 +62,12 @@ Transpile := [].{
 		swaps : List(Getters.Swap),
 		fns : List(Str),
 		plain_fns : List(Str),
-		# The names of the match arms around (D-070): getters, their arm kept while their value changes.
+		# The names of the match arms and `.map` rows around (D-070, D-071): getters, their part kept
+		# while their value changes.
 		arms : List(Str),
+		# Where the `key` of the `.map` row being read is (D-071): the row's key, which can't change
+		# while the row is there (another key is another row), so an element's is written once.
+		row_key : [At(U64), Nowhere],
 	}
 
 	## Where a transpiler is in the file, and what it has found so far.
@@ -585,7 +589,7 @@ Transpile := [].{
 		src = source.to_utf8()
 		file_name = Transpile.last_part(file)
 		module_path = if (opts.module_path == "") (if (file_name.ends_with(".rocx")) file_name.drop_suffix(".rocx") else file_name) else opts.module_path
-		base = { src, file, module_path, client: opts.client, dev: opts.dev, scopes, modules: [], packaged: [], contexts: [], pure: [], getters: [], swaps: [], fns: [], plain_fns: [], arms: [] }
+		base = { src, file, module_path, client: opts.client, dev: opts.dev, scopes, modules: [], packaged: [], contexts: [], pure: [], getters: [], swaps: [], fns: [], plain_fns: [], arms: [], row_key: Nowhere }
 		starts = Transpile.line_starts(src)
 		# Markup is components, written with the platform's Html (both platforms have it): there is no
 		# other (the html package, which rendered static pages, is gone).
@@ -1820,6 +1824,10 @@ Transpile := [].{
 		if component and gone {
 			return Err(Transpile.fail(cfg, "<${name}> is gone (D-070): write a hole's if or match, which makes only the branch that holds and keeps it while it does: {if (ready!()) <p>Ready</p> else <p>Waiting</p>}, {match card!() { Ok(card) => <Card card={card} />, Err(_) => <></> }}", start))
 		}
+		# D-071: `<For>` is gone too; a hole's `.map` is what it was.
+		if component and name == "For" and (cfg.packaged.contains(name) or (!cfg.modules.contains(name) and !cfg.fns.contains(name) and !cfg.plain_fns.contains(name))) {
+			return Err(Transpile.fail(cfg, "<For> is gone (D-071): write a hole's .map, a row per key, kept as the list changes: {...todos!().map(|todo| <li key={todo.id}>{todo.title}</li>)}; for a row per position, .map_with_index(|name, i| <li key={i}>{name}</li>)", start))
+		}
 		provider = component and Transpile.lookup(cfg.contexts, name) != None
 		pure = component and cfg.pure.contains(name)
 		own_fn = component and !cfg.modules.contains(name)
@@ -1846,7 +1854,7 @@ Transpile := [].{
 			return Transpile.read_provider(cfg, st1, name, attrs, start)
 		}
 		if component {
-			# A function child (Solid's `<For>`): `view_with`, given the function as `children`.
+			# A function child (`<Errored fallback>`'s, a component's own): `view_with`, given the function as `children`.
 			var $fields = attrs
 			var $suffix = ""
 			var $st = st1
@@ -1873,63 +1881,6 @@ Transpile := [].{
 					$fields = $fields.concat(inside.parts)
 				}
 			}
-			# How a <For> keeps its rows. Roc's values have no identity, so it says: a key function
-			# (`keyed={|todo| todo.id}`, `view_with_keyed`) or positions (`keyed={Bool.False}`, `view_with_unkeyed`).
-			keys = "say how <For> keeps its rows: keyed={|item| item.id} (a row per key), or keyed={Bool.False} (a row per position); Roc's values have no identity to key them by"
-			keyed_at = $fields.find_first_index(
-				|field|
-					match field {
-						Item(text) => text.starts_with("keyed: ")
-						_ => Bool.False
-					},
-			)
-			match keyed_at {
-				Ok(at) => {
-					value =
-						match $fields.get(at) {
-							Ok(Item(text)) => Text.trim(text.drop_prefix("keyed: "))
-							_ => ""
-						}
-					without = $fields.take_first(at).concat($fields.drop_first(at + 1))
-					if value == "Bool.False" or value == "false" {
-						$suffix = $suffix.concat("_unkeyed")
-						$fields = without
-					} else if value == "Bool.True" or value == "true" {
-						return Err(Transpile.fail(cfg, keys, start))
-					} else {
-						$suffix = $suffix.concat("_keyed")
-					}
-				}
-				Err(_) => {
-					if name == "For" and $suffix == "_with" {
-						return Err(Transpile.fail(cfg, keys, start))
-					}
-				}
-			}
-			# `<For … compared>` (D-053): a row told its item changed only when it isn't `==` the one it had.
-			compared_at = $fields.find_first_index(
-				|field|
-					match field {
-						Item(text) => text.starts_with("compared: ")
-						_ => Bool.False
-					},
-			)
-			match compared_at {
-				Ok(at) if name == "For" and packaged => {
-					value =
-						match $fields.get(at) {
-							Ok(Item(text)) => Text.trim(text.drop_prefix("compared: "))
-							_ => ""
-						}
-					if value == "Bool.True" or value == "true" {
-						$suffix = $suffix.concat("_compared")
-					} else if !(value == "Bool.False" or value == "false") {
-						return Err(Transpile.fail(cfg, "<For>'s compared is a flag: write compared (a row told its item changed only when it isn't == the one it had) or leave it out", start))
-					}
-					$fields = $fields.take_first(at).concat($fields.drop_first(at + 1))
-				}
-				_ => {}
-			}
 			# A component may make signals, as in Solid: it is an effect. A pure one (`view`, no `!`) can't.
 			effect = if (pure) "" else "!"
 			callee = if (cfg.modules.contains(name)) "${name}.view${$suffix}${effect}" else "${Transpile.snake_case(name)}${$suffix}${effect}"
@@ -1949,7 +1900,7 @@ Transpile := [].{
 				}
 			# A component runs where it is rendered, and once, as in Solid, so it sees the contexts
 			# provided above that place: its call is put off (`Html.component`), and its value props are
-			# getters, read where it reads them (D-039). A platform's (`<For>`, `<Loading>`…) is markup, made
+			# getters, read where it reads them (D-039). A platform's (`<Loading>`, `<Errored>`…) is markup, made
 			# now, and so is a pure one's: given a value read from what changes, that call is a hole of
 			# its own, made anew when the value changes. So is a function of this file's that the file
 			# also calls, which keeps values.
@@ -2236,7 +2187,16 @@ Transpile := [].{
 				if component and !Transpile.is_prop_name(name) {
 					return Err(oops("a component's props are Roc field names: ${name}"))
 				}
-				if Text.at(src, eq) != '=' or eq >= src.len() {
+				# `key` on a component is a `.map` row's key (D-071), when the component is the row's root:
+				# rocx's, never a prop (elsewhere it says nothing, as on a list that doesn't change).
+				row_key = component and name == "key"
+				if row_key and !(Text.at(src, eq) == '=' and Text.at(src, eq + 1) == '{') {
+					return Err(oops("key on a component takes {…}: the key of the .map row it is the root of (D-071)"))
+				}
+				if row_key {
+					# Passed over: the row's key is read where its rows are (`read_rows`).
+					$st = { ..$st, pos: Getters.matching(src, eq + 1) + 1 }
+				} else if Text.at(src, eq) != '=' or eq >= src.len() {
 					if flag {
 						return Err(oops("${name}?= needs {a Bool}"))
 					}
@@ -2355,6 +2315,9 @@ Transpile := [].{
 							} else if drag {
 								fn_name = if (name == "drag:data") "drag_data" else "drag_image"
 								Ok(if (computed) "Html.${fn_name}_of(|| ${expr})" else "Html.${fn_name}(${expr})")
+							} else if name == "key" and cfg.row_key == At(name_start) {
+								# The row's own key, on its root: read once, as the row is made (D-071).
+								Ok("Html.key(${expr})")
 							} else if computed or handler or name == "key" {
 								Transpile.reactive_attribute(cfg, name, expr, flag, optional, name_start, computed)
 							} else if flag {
@@ -2727,6 +2690,14 @@ Transpile := [].{
 		if kind.name == "text" and trimmed.starts_with("|") {
 			return Ok({ st: st1, parts: [Fn(expr)] })
 		}
+		# A list whose `.map` reads a list that changes: its rows, kept by key (D-071).
+		if kind.name == "list" and st1.effects > st0.effects {
+			listed = inner.st.spans.keep_if(|span| span.from >= code_at and span.to <= inner.st.pos).map(|span| { from: span.from, to: span.to })
+			match Transpile.read_rows(cfg, Transpile.opened({ ..marked, pos: code_at }, Bool.False), code_at, inner.st.pos, listed)? {
+				Rowed(done) => return Ok({ st: { ..done.st, pos: inner.st.pos + 1, frames: done.st.frames.drop_last(1) }, parts: [Item(done.out)] })
+				Plain => {}
+			}
+		}
 		# An `if` or a `match` that reads what changes: its branch's part (D-070); an `if` with no `else`,
 		# its empty one.
 		if kind.name != "list" and (st1.effects > st0.effects or Flow.starts_with_word(src, { from: code_at, to: inner.st.pos }, "if")) {
@@ -2962,6 +2933,110 @@ Transpile := [].{
 		made = $made.concat(Transpile.newlines_in(src, $at, to)).concat(" }")
 		case = "match ${value} { ${Str.join_with($cases, ", ")} }"
 		Ok(Flowed({ st: $st, out: "Html.branched(|| Ok(${case}), || ${made})" }))
+	}
+
+	## D-071: a hole's `.map` whose list reads what changes (`{...todos!().map(|todo| <li
+	## key={todo.id}>…</li>)}`) is its rows, kept as Solid 2.0's `<For>` keeps them: `Html.rows!`, a
+	## row per key, or, keyed by the index (`.map_with_index(|name, i| <li key={i}>…`), `Html.rows_at!`,
+	## a row per position. Roc's values have no identity, so the row's root says its key. The row's
+	## name and its index's are getters, as a match arm's are (D-070): a row stays while its item
+	## changes, and reads the newest. `Plain` for any other hole, and for a `.map` whose list reads
+	## nothing that changes (made once, as before).
+	read_rows : Cfg, St, U64, U64, List(Flow.Piece) -> Try([Rowed({ st : St, out : Str }), Plain], [Rocx(RocxError), Crash(Str)])
+	read_rows = |cfg, st0, from, to, spans| {
+		src = cfg.src
+		found =
+			match Flow.mapped(src, from, to, spans) {
+				Ok(mapped) => mapped
+				Err(NotMapped) => return Ok(Plain)
+			}
+		list = Transpile.read_piece(cfg, st0, found.list)?
+		# Inside a <NoHydration>, nothing is kept: the list as it is.
+		if !list.reads or st0.in_region > 0 {
+			return Ok(Plain)
+		}
+		index_name =
+			match found.index {
+				Index(name) => name
+				NoIndex => ""
+			}
+		inside = spans.keep_if(|span| span.from >= found.body.from and span.to <= found.body.to)
+		way = "give the row's root its key, as in <li key={${found.item}.id}> (where the row is an if, each branch's), or, for a row per position, write .map_with_index(|${found.item}, i| …) and key={i}"
+		root =
+			match Flow.root(src, found.body, inside) {
+				Ok(r) => r
+				Err(NoRoot) => return Err(Transpile.fail(cfg, "a list that changes is a row per key (D-071), and this row has no markup to say its key: make it an element or a component (a <li> around it, say), and ${way}", Text.skip_space(src, found.body.from)))
+			}
+		key =
+			match root.key {
+				Key(k) => k
+				NoKey => return Err(Transpile.fail(cfg, "a list that changes is a row per key (D-071), as <For> was, since Roc's values have no identity: ${way}", root.at))
+			}
+		key_text = Text.trim(Text.cut(src, key.code.from, key.code.to))
+		by_position = index_name != "" and key_text == index_name
+		if !by_position and index_name != "" and !Flow.used_in(key_text, [index_name]).is_empty() {
+			return Err(Transpile.fail(cfg, "a key made from the index is a row per position: write key={${index_name}} alone", key.name_at))
+		}
+		# The row's names, getters: its item's, and, in a row per key, its index's, which changes as the row
+		# moves (a row per position's is its position: a value).
+		names = [found.item].concat(if (index_name == "" or by_position) [] else [index_name])
+		# The key, the row's item a value in it (`|todo| todo.id`).
+		keyed = Transpile.read_piece(cfg, list.st, key.code)?
+		key_line =
+			match Transpile.one_line(keyed.out) {
+				Ok(line) => line
+				Err(_) => return Err(Transpile.fail(cfg, "a row's key is one line", key.name_at))
+			}
+		# The row, its names getters (a component's key is passed over where it is read: the row's).
+		view =
+			match Transpile.view_at(cfg, found.body.from) {
+				Ok(outer) => { ..outer, from: found.body.from, to: found.body.to, props: outer.props.keep_if(|prop| !names.contains(prop)).concat(names) }
+				Err(_) => { from: found.body.from, to: found.body.to, props: names, record: None, fields: [], all: [], component: "" }
+			}
+		body = Transpile.read_piece({ ..cfg, getters: cfg.getters.append(view), arms: cfg.arms.concat(names), row_key: At(key.name_at) }, keyed.st, found.body)?
+		# A name the row doesn't read (`_`, `_item`, or one never read: its getter not called) is `_`.
+		param = |name| if (name == "" or name.starts_with("_") or !Transpile.calls(body.out, "${name}!")) "_" else "${name}!"
+		item_param = param(found.item)
+		index_param =
+			if by_position {
+				if (index_name.starts_with("_") or !Transpile.calls(body.out, index_name)) "_" else index_name
+			} else {
+				param(index_name)
+			}
+		head =
+			if by_position {
+				"Html.rows_at!(|| ${list.out}, |${item_param}, ${index_param}|"
+			} else {
+				"Html.rows!(|| ${list.out}, |${found.item}| ${key_line}, |${item_param}, ${index_param}|"
+			}
+		out = head.concat(Transpile.newlines_in(src, found.list.to, found.body.from)).concat(" ").concat(body.out).concat(Transpile.newlines_in(src, found.body.to, to)).concat(")")
+		Ok(Rowed({ st: body.st, out }))
+	}
+
+	## Whether `code` calls `name` (`todo!`) or reads it (`i`), in a string's interpolation too: the name,
+	## not part of another (`my_todo!`, `index`) nor a field (`.todo!`).
+	calls : Str, Str -> Bool
+	calls = |code, name| {
+		bytes = code.to_utf8()
+		word = name.to_utf8()
+		var $at = 0
+		var $found = Bool.False
+		while !$found and $at < bytes.len() {
+			match Text.index_of(bytes, word, $at) {
+				Ok(i) => {
+					before = if (i == 0) ' ' else Text.at(bytes, i - 1)
+					after = Text.at(bytes, i + word.len())
+					if !(Text.is_alnum(before) or before == '_' or before == '.') and !(i + word.len() < bytes.len() and (Text.is_alnum(after) or after == '_')) {
+						$found = Bool.True
+					}
+					$at = i + 1
+				}
+				Err(_) => {
+					$at = bytes.len()
+				}
+			}
+		}
+		$found
 	}
 
 	## A <script> or <style> body: static, as written, its lines kept as lines.

@@ -2,7 +2,6 @@ import pf.Html
 import pf.Endpoint
 import pf.Router exposing [use_before_leave!]
 import pf.Solid exposing [create_signal!]
-import pf.For
 import pf.Title
 import forms.LiveForm
 import forms.TextField
@@ -127,9 +126,9 @@ Field := [].{
 			<label for={LiveForm.field_id(name)}>{label}</label>
 			{...children}
 			<ul id={"field-${name}-issues"} class="issues" aria-live="polite">
-				<For each!={live.issues!(name)} keyed={|issue| issue.message}>
-					{|issue!, _| <li>{issue!().message}</li>}
-				</For>
+				{...live.issues!(name).map(|issue|
+					<li key={issue.message}>{issue.message}</li>
+				)}
 			</ul>
 		</div>
 }

@@ -1,6 +1,6 @@
 import pf.Html
+import pf.Solid exposing [untrack!]
 import pf.Endpoint
-import pf.For
 import pf.Router exposing [use_action!]
 import Shared
 import ../Board
@@ -17,9 +17,9 @@ Archive := [].{
 		<details class="archive" class:empty={archived!().is_empty()}>
 			<summary>Archived cards <span class="count">{archived!().len().to_str()}</span></summary>
 			<ul>
-				<For each!={archived!()} keyed={|card| card.id}>
-					{|card!, _| <Archived card!={card!()} board={board} />}
-				</For>
+				{...archived!().map(|card|
+					<Archived key={card.id} card!={card} board={board} />
+				)}
 			</ul>
 		</details>
 	}
@@ -62,7 +62,8 @@ Archived := [].{
 
 	view! : { card! : () => Board.Card, board : Str } => Html
 	view! = |{ card!, board }| {
-		at = { board: board, card: card!().id }
+		# Its card's: a row per card id, so the id read once is meant.
+		at = { board: board, card: untrack!(|| card!().id) }
 		restore! = use_action!(Api.post_b_board_cards_card_archive(at))
 		delete! = use_action!(Api.post_b_board_cards_card_delete(at))
 		<li class="archived">

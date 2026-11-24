@@ -1,5 +1,4 @@
 import pf.Html
-import pf.For
 import forms.IssueSummary
 import forms.LiveForm
 import forms.TextField
@@ -48,9 +47,9 @@ view! = |_| {
 						on:blur={|| live.leave!("questions")}
 					>{live.value!("questions")}</textarea>
 					<ul id="questions-issues" class="issues" aria-live="polite">
-						<For each!={live.issues!("questions")} keyed={|issue| issue.message}>
-							{|issue!, _| <li>{issue!().message}</li>}
-						</For>
+						{...live.issues!("questions").map(|issue|
+							<li key={issue.message}>{issue.message}</li>
+						)}
 					</ul>
 				</div>
 				<button type="submit" disabled?={live.pending!()}>Save the set</button>
@@ -79,13 +78,12 @@ Preview := [].{
 	view! : { questions! : () => List({ prompt : Str, choices : List(Str), answer : U64 }) } => Html
 	view! = |{ questions! }|
 		<ol class="questions">
-			<For each!={questions!()} keyed={Bool.False}>
-				{|asked!, _|
-					<li>
-						<p class="prompt">{asked!().prompt}</p>
-						<ul class="choices">{...asked!().choices.map_with_index(|choice, at| <li class={if (at == asked!().answer) "right" else ""}><Mark index={at} /> <span>{choice}</span></li>)}</ul>
-					</li>}
-			</For>
+			{...questions!().map_with_index(|asked, i|
+				<li key={i}>
+					<p class="prompt">{asked.prompt}</p>
+					<ul class="choices">{...asked!().choices.map_with_index(|choice, at| <li key={at} class={if (at == asked.answer) "right" else ""}><Mark index={at} /> <span>{choice}</span></li>)}</ul>
+				</li>
+			)}
 		</ol>
 }
 

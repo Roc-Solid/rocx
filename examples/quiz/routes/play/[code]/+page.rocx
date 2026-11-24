@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Endpoint
-import pf.For
 import pf.Title
 import pf.Transition
 import pf.Solid exposing [create_effect!, create_memo!, create_signal!]
@@ -265,21 +264,20 @@ Choosing := [].{
 			</div>
 			<h1 id="question-title" class="prompt">{asking!().prompt}</h1>
 			<div class="choices" role="group" aria-labelledby="question-title">
-				<For each!={asking!().choices} keyed={Bool.False}>
-					{|choice!, index|
-						<button
-							type="button"
-							class={"choice blade-${(index % 4 + 1).to_str()}"}
-							class:chosen={mine!() == Ok(index)}
-							class:faded={mine!().is_ok() and mine!() != Ok(index)}
-							aria-pressed={if (mine!() == Ok(index)) "true" else "false"}
-							disabled?={mine!().is_ok() or (clock.over!)()}
-							on:click={|| pick!(asking!().index, index)}
-						>
-							<Mark index={index} />
-							<span>{choice!()}</span>
-						</button>}
-				</For>
+				{...asking!().choices.map_with_index(|choice, index|
+					<button key={index}
+						type="button"
+						class={"choice blade-${(index % 4 + 1).to_str()}"}
+						class:chosen={mine!() == Ok(index)}
+						class:faded={mine!().is_ok() and mine!() != Ok(index)}
+						aria-pressed={if (mine!() == Ok(index)) "true" else "false"}
+						disabled?={mine!().is_ok() or (clock.over!)()}
+						on:click={|| pick!(asking!().index, index)}
+					>
+						<Mark index={index} />
+						<span>{choice}</span>
+					</button>
+				)}
 			</div>
 			<p class="status" role="status">{Playing.status(mine!(), (clock.over!)(), answered!())}</p>
 		</section>

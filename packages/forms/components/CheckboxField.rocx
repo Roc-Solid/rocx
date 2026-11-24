@@ -1,5 +1,4 @@
 import pf.Html
-import pf.For
 import LiveForm
 
 ## A box to tick for a field of a `LiveForm` (`Form.checkbox`), its label beside it and its issues
@@ -28,9 +27,9 @@ CheckboxField := [].{
 				{label}
 			</label>
 			<ul id={said} class="issues" aria-live="polite">
-				<For each!={live.issues!(name)} keyed={|issue| issue.message}>
-					{|issue!, _| <li>{issue!().message}</li>}
-				</For>
+				{...live.issues!(name).map(|issue|
+					<li key={issue.message}>{issue.message}</li>
+				)}
 			</ul>
 		</div>
 	}

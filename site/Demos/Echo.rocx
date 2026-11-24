@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_memo!, create_signal!]
-import pf.For
 import pf.Loading
 import pf.Errored
 import pf.Endpoint
@@ -27,17 +26,16 @@ Echo := [].{
 		answers! = create_memo!(|| said_to!(messages))
 		said! = create_memo!(|| answer_to(answers!(), draft!()))
 		<form class="echo" on:submit={|| {}}>
-			<For each!={messages} keyed={|message| message}>
-				{|message!, _|
-					<button
-						type="button"
-						aria-pressed={if (message!() == draft!()) "true" else "false"}
-						on:click={|| set_draft!(message!())}
-					>
-						{message!()}
-					</button>
-				}
-			</For>
+			{...messages.map(|message|
+				<button
+					key={message}
+					type="button"
+					aria-pressed={if (message == draft!()) "true" else "false"}
+					on:click={|| set_draft!(message)}
+				>
+					{message}
+				</button>
+			)}
 			<Errored fallback={|problem, retry|
 				<output class="echo-answer failed">
 					{problem} <button type="button" on:click={retry}>Again</button>

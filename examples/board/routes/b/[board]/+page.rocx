@@ -2,7 +2,6 @@ import pf.Html
 import pf.Channel
 import pf.Endpoint
 import pf.Errored
-import pf.For
 import pf.HttpStatusCode
 import pf.Title
 import pf.Solid exposing [create_effect!, create_memo!, create_signal!, is_pending!, refresh!]
@@ -112,17 +111,17 @@ view! = |{ params }| {
 				</div>
 			</header>
 			<main id="board" class="board" class:stale={is_pending!(board!)} class:dragging={dragging!() != ""}>
-				<For each!={Board.columns_in_order(board!().columns)} keyed={|column| column.id}>
-					{|column!, _| <ColumnView column!={column!()} shared={shared} />}
-				</For>
+				{...Board.columns_in_order(board!().columns).map(|column|
+					<ColumnView key={column.id} column!={column} shared={shared} />
+				)}
 				<AddColumn board={board} />
 			</main>
 			<Archive shared={shared} />
 			<p class="news" role="status" aria-live="polite" class:shown={!news!().is_empty()}>{news!()}</p>
-			{# A panel for each card opened (its lease, its actions, its typing the card's): a <For> keyed by it. }
-			<For each!={if (open!().is_empty()) [] else [open!()]} keyed={|card| card}>
-				{|card!, _| <CardPanel card={card!()} shared={shared} />}
-			</For>
+			{# A panel for each card opened (its lease, its actions, its typing the card's): a row keyed by it. }
+			{...(if (open!().is_empty()) [] else [open!()]).map(|card|
+				<CardPanel key={card} card={card} shared={shared} />
+			)}
 		</div>
 	</Errored>
 }

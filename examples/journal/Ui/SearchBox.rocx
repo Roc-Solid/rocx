@@ -2,7 +2,6 @@ import pf.Html
 import pf.Solid exposing [create_memo!, create_signal!]
 import pf.Endpoint
 import pf.Router
-import pf.For
 import ../I18n
 import ../Search
 import ../Generated/Api
@@ -38,9 +37,9 @@ SearchBox := [].{
 			</form>
 			<p class="count" role="status">{said!()}</p>
 			<ol class="results">
-				<For each!={found!()} keyed={|post| post.url}>
-					{|post!, _| <li>{<PostCard post={post!()} lang={lang} marked={query!()} />}</li>}
-				</For>
+				{...found!().map(|post|
+					<li key={post.url}>{<PostCard post={post} lang={lang} marked={query!()} />}</li>
+				)}
 			</ol>
 		</div>
 	}

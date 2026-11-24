@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Endpoint
-import pf.For
 import pf.Server
 import pf.Router exposing [use_submission!]
 import ../../Middlewares
@@ -54,22 +53,20 @@ view! = |_| {
 								<tr><th scope="col">Name</th><th scope="col">Access</th><th scope="col">Made</th><th scope="col">Last used</th><th scope="col"><span class="visually-hidden">Revoke</span></th></tr>
 							</thead>
 							<tbody>
-								<For each!={settings!({}).tokens} keyed={|token| token.id}>
-									{|token!, _|
-										<tr>
-											<th scope="row">{token!().name} <span class="hint">{"…${token!().hint}"}</span></th>
-											<td>{if (token!().read_only) "Read only" else "Read and write"}</td>
-											<td>{Note.day(token!().created)}</td>
-											<td>{if (token!().last_used.is_empty()) "Never" else Note.day(token!().last_used)}</td>
-											<td>
-												<form method="post" action={Endpoint.url_of(Api.post_settings_revoke({}))}>
-													<input type="hidden" name="id" value={token!().id} />
-													<button type="submit" class="danger" disabled?={revoking.pending!()} aria-label={"Revoke ${token!().name}"}>Revoke</button>
-												</form>
-											</td>
-										</tr>
-									}
-								</For>
+								{...settings!({}).tokens.map(|token|
+									<tr key={token.id}>
+										<th scope="row">{token.name} <span class="hint">{"…${token.hint}"}</span></th>
+										<td>{if (token.read_only) "Read only" else "Read and write"}</td>
+										<td>{Note.day(token.created)}</td>
+										<td>{if (token.last_used.is_empty()) "Never" else Note.day(token.last_used)}</td>
+										<td>
+											<form method="post" action={Endpoint.url_of(Api.post_settings_revoke({}))}>
+												<input type="hidden" name="id" value={token.id} />
+												<button type="submit" class="danger" disabled?={revoking.pending!()} aria-label={"Revoke ${token.name}"}>Revoke</button>
+											</form>
+										</td>
+									</tr>
+								)}
 							</tbody>
 						</table>
 					</div>

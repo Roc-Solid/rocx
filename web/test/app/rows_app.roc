@@ -1,4 +1,4 @@
-## A long `<For>`, plain and compared, for the tests (D-053): what one changed item, and every item
+## A long `.map`, its rows compared (D-053, D-071), for the tests: what one changed item, and every item
 ## changed, runs.
 app [main!] { pf: platform "../../platform/main.roc" }
 

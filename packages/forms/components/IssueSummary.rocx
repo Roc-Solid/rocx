@@ -1,5 +1,4 @@
 import pf.Html
-import pf.For
 import LiveForm
 
 ## Once a `LiveForm` has been sent and has issues, a list of them above it, each a link to its
@@ -20,12 +19,12 @@ IssueSummary := [].{
 			<div class="issue-summary" role="alert">
 				<p class="title">{title}</p>
 				<ul>
-					<For each!={live.all_issues!().keep_if(|issue| issue.field.is_empty())} keyed={|issue| issue.message}>
-						{|issue!, _| <li>{issue!().message}</li>}
-					</For>
-					<For each!={live.all_issues!().drop_if(|issue| issue.field.is_empty())} keyed={|issue| "${issue.field}: ${issue.message}"}>
-						{|issue!, _| <li><a href={"#${LiveForm.field_id(issue!().field)}"}>{IssueSummary.said(issue!(), labels)}</a></li>}
-					</For>
+					{...live.all_issues!().keep_if(|issue| issue.field.is_empty()).map(|issue|
+						<li key={issue.message}>{issue.message}</li>
+					)}
+					{...live.all_issues!().drop_if(|issue| issue.field.is_empty()).map(|issue|
+						<li key={"${issue.field}: ${issue.message}"}><a href={"#${LiveForm.field_id(issue.field)}"}>{IssueSummary.said(issue, labels)}</a></li>
+					)}
 				</ul>
 			</div>
 		}}</>

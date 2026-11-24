@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_signal!]
-import pf.For
 import charts.Format
 import charts.Sparkline
 import Random
@@ -18,18 +17,17 @@ SparkDemo := [].{
 		(look!, set_look!) = create_signal!(Shuffle.first)
 		<Shuffle roll!={|| set_day!(SparkDemo.day(day!().seed))} look!={look!} set_look!={set_look!}>
 			<div class="tiles">
-				<For each!={day!().tiles} keyed={|tile| tile.name}>
-					{|tile!, _|
-						<div class="tile">
-							<span class="name">{tile!().name}</span>
-							<span class="now">{Format.short(tile!().values.last() ?? 0.0)}</span>
-							<span class="change" class:down={SparkDemo.change(tile!().values) < 0.0}>
-								{if (SparkDemo.change(tile!().values) < 0.0) "▼ " else "▲ "}
-								{Format.percent(Dec.abs(SparkDemo.change(tile!().values)), 0)}
-							</span>
-							<Sparkline data!={tile!().values} label!={"${tile!().name}, ${SparkDemo.trend(tile!().values)} over the day"} />
-						</div>}
-				</For>
+				{...day!().tiles.map(|tile|
+					<div key={tile.name} class="tile">
+						<span class="name">{tile.name}</span>
+						<span class="now">{Format.short(tile.values.last() ?? 0.0)}</span>
+						<span class="change" class:down={SparkDemo.change(tile.values) < 0.0}>
+							{if (SparkDemo.change(tile.values) < 0.0) "▼ " else "▲ "}
+							{Format.percent(Dec.abs(SparkDemo.change(tile.values)), 0)}
+						</span>
+						<Sparkline data!={tile.values} label!={"${tile.name}, ${SparkDemo.trend(tile.values)} over the day"} />
+					</div>
+				)}
 			</div>
 		</Shuffle>
 	}

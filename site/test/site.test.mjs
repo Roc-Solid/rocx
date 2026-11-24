@@ -206,7 +206,7 @@ test("the sidebar's groups: each part's pages under its headings, every page of 
 	const groups = (page) => {
 		const sidebar = /<nav class="sidebar[ "][\s\S]*?<\/nav>/.exec(page)[0];
 		return [...sidebar.matchAll(/<div class="group[ "][\s\S]*?<\/ul>/g)].map(([group]) => ({
-			name: /<p class="title[ "][^>]*>([^<]*)</.exec(group)?.[1] ?? "",
+			name: /<p class="title[ "][^>]*>(?:<!--[^>]*-->)*([^<]*)</.exec(group)?.[1] ?? "",
 			pages: [...group.matchAll(/href="([^"]+)"/g)].map(([, href]) => href),
 		}));
 	};

@@ -24,6 +24,15 @@ Flow := [].{
 	## A `match`: its value, and its arms, each a pattern, maybe a guard (`if …`), and a body.
 	Arms : { value : Flow.Piece, arms : List({ pattern : Flow.Piece, guard : [Guard(Flow.Piece), NoGuard], body : Flow.Piece }) }
 
+	## D-071: a hole's `.map`, the last call of its code (`todos!().map(|todo| <li key={todo.id}>…</li>)`):
+	## the list before it, the row's names (its item's, and with `.map_with_index` its index's), the
+	## row's code, and where `.map` is.
+	Mapped : { list : Flow.Piece, item : Str, index : [Index(Str), NoIndex], body : Flow.Piece, at : U64 }
+
+	## A row's key (D-071): the markup whose tag has it (where it starts; whether it is a component), and
+	## its `key={…}`: where the attribute's name is and its code.
+	Root : { at : U64, component : Bool, key : [Key({ name_at : U64, code : Flow.Piece }), NoKey] }
+
 	## A name a pattern binds, where it is (`from`, `to`), and how it is written: plainly (`x`), as a
 	## record's punned field (`{ x }`), as a list's rest (`..x`) or after `as` (`as x`, `as` at `as_at`).
 	Binding : { name : Str, from : U64, to : U64, form : [Plain, Punned, Rest, As(U64)] }
@@ -341,6 +350,124 @@ Flow := [].{
 		Ok({ value, arms: $arms })
 	}
 
+	## The `.map` (or `.map_with_index`) the code from `from` up to `to` ends in, if it does (D-071):
+	## `list.map(|name| row)`, the call last, nothing after its `)`; its lambda's names plain (no `!`).
+	mapped : List(U8), U64, U64, List(Flow.Piece) -> Try(Flow.Mapped, [NotMapped])
+	mapped = |src, from, to, spans| {
+		toks = Flow.tokens(src, from, to, spans)
+		none = { kind: Comma, at: 0, depth: 9 }
+		var $found = Err(NotMapped)
+		var $i = 0
+		while $i + 1 < toks.len() {
+			t = toks.get($i) ?? none
+			next = toks.get($i + 1) ?? none
+			word_len = if (Flow.is_word(t, "map")) 3 else if (Flow.is_word(t, "map_with_index")) 14 else 0
+			if word_len > 0 and t.depth == 0 and t.at > from and Text.at(src, t.at - 1) == '.' and next.kind == Open('(') and next.at == t.at + word_len {
+				$found = Ok($i)
+			}
+			$i = $i + 1
+		}
+		at = $found ?? return Err(NotMapped)
+		word = toks.get(at) ?? none
+		with_index = Flow.is_word(word, "map_with_index")
+		open = toks.get(at + 1) ?? none
+		close = toks.get(Flow.closing(toks, at + 1) ?? return Err(NotMapped)) ?? none
+		list = { from, to: word.at - 1 }
+		if !Text.is_blank(Text.cut(src, close.at + 1, to)) or Text.is_blank(Text.cut(src, list.from, list.to)) {
+			return Err(NotMapped)
+		}
+		bar = Text.skip_space(src, open.at + 1)
+		if Text.at(src, bar) != '|' {
+			return Err(NotMapped)
+		}
+		bar_end = Text.index_of_byte(src, '|', bar + 1) ?? return Err(NotMapped)
+		names = Text.cut(src, bar + 1, bar_end).split_on(",").map(Text.trim)
+		plain = |name| !name.is_empty() and (Text.is_lower(Text.at(name.to_utf8(), 0)) or Text.at(name.to_utf8(), 0) == '_') and name.to_utf8().all(|c| Text.is_alnum(c) or c == '_')
+		if bar_end >= close.at or !names.all(plain) or names.len() != (if (with_index) 2 else 1) {
+			return Err(NotMapped)
+		}
+		item = names.get(0) ?? ""
+		index = if (with_index) Index(names.get(1) ?? "") else NoIndex
+		Ok({ list, item, index, body: { from: bar_end + 1, to: close.at }, at: word.at })
+	}
+
+	## A row's key (D-071): the first `key={…}` on its outermost markup's tags, in order (the row's root,
+	## `<li key={todo.id}>`; or, where the row is an `if`, each branch's, `<a key={c.id}>` and `<button
+	## key={c.id}>`). With none, where its first markup starts (`NoKey`); with no markup, `NoRoot`.
+	root : List(U8), Flow.Piece, List(Flow.Piece) -> Try(Flow.Root, [NoRoot])
+	root = |src, body, spans| {
+		outer = spans.keep_if(|span| span.from >= body.from and span.to <= body.to and !spans.any(|other| other.from < span.from and span.to <= other.to and other.from >= body.from))
+		first = outer.first() ?? return Err(NoRoot)
+		var $found = Err(NotFound)
+		for span in outer {
+			if $found == Err(NotFound) and Text.at(src, span.from) == '<' {
+				match Flow.tag_key(src, span) {
+					Key(k) => {
+						$found = Ok({ at: span.from, component: Text.is_upper(Text.at(src, span.from + 1)), key: Key(k) })
+					}
+					NoKey => {}
+				}
+			}
+		}
+		match $found {
+			Ok(r) => Ok(r)
+			Err(_) => Ok({ at: first.from, component: Text.is_upper(Text.at(src, first.from + 1)), key: NoKey })
+		}
+	}
+
+	## The `key={…}` of the tag that opens the markup `span`, if it has one.
+	tag_key : List(U8), Flow.Piece -> [Key({ name_at : U64, code : Flow.Piece }), NoKey]
+	tag_key = |src, span| {
+		name_end = Text.run_end(src, span.from + 1, |c| Text.is_alnum(c) or c == '_' or c == '.' or c == '-')
+		var $i = name_end
+		var $key = NoKey
+		while $i < span.to and Text.at(src, $i) != '>' and !(Text.at(src, $i) == '/' and Text.at(src, $i + 1) == '>') {
+			c = Text.at(src, $i)
+			if c == '{' {
+				$i = Flow.braces_end(src, $i, span.to)
+			} else if c == '"' {
+				$i = Flow.string_end(src, $i, span.to)
+			} else if Text.is_letter(c) and !Flow.is_word_part(Text.at(src, $i - 1)) {
+				word_end = Text.run_end(src, $i, |b| Text.is_alnum(b) or b == '_' or b == ':' or b == '-' or b == '!' or b == '?')
+				if Text.cut(src, $i, word_end) == "key" and Text.at(src, word_end) == '=' and Text.at(src, word_end + 1) == '{' {
+					close = Flow.braces_end(src, word_end + 1, span.to)
+					$key = Key({ name_at: $i, code: { from: word_end + 2, to: close - 1 } })
+				}
+				$i = word_end
+			} else {
+				$i = $i + 1
+			}
+		}
+		$key
+	}
+
+	## Where the braces opened at `at` (`{`) close: past their `}`, strings read through.
+	braces_end : List(U8), U64, U64 -> U64
+	braces_end = |src, at, to| {
+		var $depth = 0
+		var $i = at
+		var $end = to
+		var $going = Bool.True
+		while $going and $i < to {
+			c = Text.at(src, $i)
+			if c == '"' {
+				$i = Flow.string_end(src, $i, to)
+			} else {
+				if c == '{' {
+					$depth = $depth + 1
+				} else if c == '}' {
+					$depth = $depth - 1
+					if $depth == 0 {
+						$end = $i + 1
+						$going = Bool.False
+					}
+				}
+				$i = $i + 1
+			}
+		}
+		$end
+	}
+
 	## The names a pattern binds, from its source `pattern` (a tag's payload `Ok(user)`, a record's
 	## fields `{ name, age: years }`, a list's items and rest `[first, ..rest]`, `as total`); not a
 	## tag, a record's label, `_` or a name starting with `_`, nor what is in a string.
@@ -542,3 +669,34 @@ expect Flow.keeping("Ok({ name, age: years })", ["years"]) == "Ok({ name: _, age
 expect Flow.keeping("[first, ..rest]", ["first"]) == "[first, ..]"
 expect Flow.keeping("Point(x, _y) as p", ["x"]) == "Point(x, _y)"
 expect Flow.used_in("years > 17 and name.len() > 0", ["name", "years", "age"]) == ["years", "name"]
+
+# D-071: a hole's `.map`, its list, names and row; its row's root and key.
+expect {
+	src = "todos!().keep_if(|t| t.open).map(|todo| <li key={todo.id}>{todo.title}</li>)".to_utf8()
+	spans = [{ from: 40, to: 75 }]
+	match Flow.mapped(src, 0, src.len(), spans) {
+		Ok(found) => {
+			list_ok = Text.cut(src, found.list.from, found.list.to) == "todos!().keep_if(|t| t.open)"
+			row_ok = Text.trim(Text.cut(src, found.body.from, found.body.to)) == "<li key={todo.id}>{todo.title}</li>"
+			root_ok =
+				match Flow.root(src, found.body, spans) {
+					Ok({ component, key: Key({ code, .. }), .. }) => !component and Text.cut(src, code.from, code.to) == "todo.id"
+					_ => Bool.False
+				}
+			list_ok and row_ok and found.item == "todo" and found.index == NoIndex and root_ok
+		}
+		Err(_) => Bool.False
+	}
+}
+
+expect {
+	src = "names!().map_with_index(|name, i| <Row key={i} name={name} />)".to_utf8()
+	match Flow.mapped(src, 0, src.len(), [{ from: 34, to: 61 }]) {
+		Ok(found) => found.item == "name" and found.index == Index("i")
+		Err(_) => Bool.False
+	}
+}
+
+# Not a `.map` last: something after it, or a lambda with a `!` name.
+expect Flow.mapped("xs!().map(|x| x).len()".to_utf8(), 0, 22, []) == Err(NotMapped)
+expect Flow.mapped("xs!().map(|x!| x)".to_utf8(), 0, 17, []) == Err(NotMapped)

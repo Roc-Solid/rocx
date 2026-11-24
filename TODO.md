@@ -72,7 +72,7 @@ When an item lands, delete its line here in the same commit.
   (a decision, D-068 or the next free number).
 - **The rest of Solid 2.0 and Solid Router's actions:** see `web/README.md`, "Not yet".
 - **D-052's dev warning has blind spots:** a reactive read inside a helper call that takes
-  arguments, and one at the top of a `<For>` row or a function child, aren't marked, so they don't
+  arguments, and one at the top of a `.map`'s row or a function child, aren't marked, so they don't
   warn. The proposal: wrap any `!` call with arguments too, closing the extra `)` through the
   transpiler's open-bracket stack, and mark function children's top level as view bodies are.
 - **An effect's `error` handler can't pass the error on** to the nearest `<Errored>` (D-052's

@@ -1,5 +1,4 @@
 import pf.Html
-import pf.For
 import LiveForm
 
 ## A field of a `LiveForm` to type in: its label, its input, and its issues under it. The input
@@ -46,9 +45,9 @@ TextField := [].{
 				on:blur={|| live.leave!(name)}
 			/>
 			<ul id={said} class="issues" aria-live="polite">
-				<For each!={live.issues!(name)} keyed={|issue| issue.message}>
-					{|issue!, _| <li>{issue!().message}</li>}
-				</For>
+				{...live.issues!(name).map(|issue|
+					<li key={issue.message}>{issue.message}</li>
+				)}
 			</ul>
 		</div>
 	}

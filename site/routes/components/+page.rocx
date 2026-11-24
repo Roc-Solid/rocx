@@ -36,7 +36,7 @@ meta = {
 		{ id: "forms", label: "Forms and submissions" },
 		{ id: "actions", label: "Actions and optimistic values" },
 		{ id: "title", label: "The document's title" },
-		{ id: "control", label: "if, match and For" },
+		{ id: "control", label: "if, match and .map" },
 		{ id: "transitions", label: "Transitions" },
 		{ id: "contexts", label: "Contexts" },
 		{ id: "tree", label: "One page, one tree" },
@@ -215,7 +215,7 @@ view! = |_|
 				on its own. Solid's is a proxy that sees which field a read touches. Roc has no proxies, so a read
 				here <em>selects</em> a part, and is tracked by what it selected:
 			</p>
-			<Code title="rocx" source={"import pf.Solid exposing [create_store!]\n\n(todos, set_todos!) = create_store!({ items: [], filter: All })\n\n<p>{Filter.name(todos.get!(|s| s.filter))}</p>\n<For each!={todos.get!(|s| s.items)} keyed={|todo| todo.id} compared>\n\t{|todo!, _| <li class:done={todo!().done}>{todo!().title}</li>}\n</For>\n<button on:click={|| set_todos!(|s| { ..s, filter: Done })}>Done</button>"} numbers={Bool.False} />
+			<Code title="rocx" source={"import pf.Solid exposing [create_store!]\n\n(todos, set_todos!) = create_store!({ items: [], filter: All })\n\n<p>{Filter.name(todos.get!(|s| s.filter))}</p>\n<ul>{...todos.get!(|s| s.items).map(|todo| <li key={todo.id} class:done={todo.done}>{todo.title}</li>)}</ul>\n<button on:click={|| set_todos!(|s| { ..s, filter: Done })}>Done</button>"} numbers={Bool.False} />
 			<ul>
 				<li>
 					<strong>A part runs again only when it changes.</strong> A write computes each part that is read
@@ -228,8 +228,8 @@ view! = |_|
 					update is the draft. Two in one handler compose, the second given what the first made.
 				</li>
 				<li>
-					<strong>Per item:</strong> a <code>{"<For compared>"}</code> tells a row its item changed only when it
-					isn't <code>==</code> the one it had, so toggling one todo of a thousand runs that row's holes alone.
+					<strong>Per item:</strong> a <code>.map</code>'s row is told its item changed only when it isn't
+					<code>==</code> the one it had, so toggling one todo of a thousand runs that row's holes alone.
 				</li>
 				<li>
 					<strong><code>Store.of(board!)</code></strong> reads any accessor by parts: an endpoint's answer, a
@@ -629,7 +629,7 @@ view! = |_|
 				replaces it. Hydrating keeps the server's elements, so a stylesheet isn't loaded twice.
 			</p>
 
-			<Heading id="control">if, match and For</Heading>
+			<Heading id="control">if, match and .map</Heading>
 			<p>
 				Solid 2.0's control flow: a part made once, then switched, moved or dropped, never compared.
 				Below, the same picks twice, a row per id on the left and a row per position on the right. Click,
@@ -651,17 +651,23 @@ view! = |_|
 				<Code title={"${Sources.signals_picks_control.file}, in part"} source={Sources.signals_picks_control.rocx} numbers={Bool.False} />
 				<ul>
 					<li>
-						<strong><code>{"<For keyed={|pick| pick.id}>"}</code></strong>, Solid 2.0's key function: a row
-						per key, made once, moved with its key and dropped with it. The item and the index are
-						accessors, since both may change: an edit that keeps the id keeps the row, and the focus in it.
+						<strong>A <code>.map</code> in a hole</strong> (D-071, Solid 2.0's <code>{"<For>"}</code>),
+						<code>{"{...picks!().map(|pick| <li key={pick.id}>{pick.name}</li>)}"}</code>, whose list reads
+						what changes, is a row per key, its root's <code>key</code>: made once, moved with its key and
+						dropped with it. The row's name reads its item now (rocx makes it a getter, as a match arm's
+						names), and so does <code>.map_with_index</code>'s index, as the row moves: an edit that keeps
+						the id keeps the row, and the focus in it. A row is told its item changed only when it
+						isn't <code>==</code> the one it had, so an item can't hold a function or markup.
 					</li>
 					<li>
-						<strong><code>{"<For keyed={Bool.False}>"}</code></strong>: a row per position (Solid's old
-						<code>Index</code>), given an accessor of the item there, and its index.
+						<strong><code>{".map_with_index(|pick, i| <li key={i}>…)"}</code></strong>: a row per position
+						(Solid's old <code>Index</code>), its name reading the item there, its index its position.
 					</li>
 					<li>
-						<strong>No <code>keyed</code></strong> is refused, at its line, saying which to write: Solid's
-						default, a row per object, has nothing to go by in Roc.
+						<strong>No <code>key</code></strong> is refused, at its line, saying what to write: Solid's
+						default, a row per object, has nothing to go by in Roc. A row that is an <code>if</code> keys each
+						branch; a component's <code>key</code> is the row's, never a prop. A list that reads nothing that
+						changes is made once, and needs none.
 					</li>
 					<li>
 						<strong>An <code>if</code> in a hole</strong> (D-070, Solid's <code>{"<Show>"}</code>), whose
@@ -676,15 +682,15 @@ view! = |_|
 						<code>{"<Show>"}</code> narrowing a <code>Try</code>: the part of the arm that holds, kept while it
 						does. An arm's names read the newest value where the arm reads them (rocx makes them getters),
 						so <code>{"Ok(card) => <Editor card={card} />"}</code> keeps the editor as the card changes. A part
-						made anew for each value, Solid's keyed <code>{"<Show>"}</code>, is a <code>{"<For>"}</code> over a
-						list of none or one, keyed by the value. A component given an arm's name whose body reads that prop
+						made anew for each value, Solid's keyed <code>{"<Show>"}</code>, is a <code>.map</code> over a
+						list of one, keyed by the value: <code>{"{...[card].map(|one| <Editor key={one} card={one} />)}"}</code>. A component given an arm's name whose body reads that prop
 						once, as it runs (<code>{"shown = card"}</code>), keeps what it read then: rocx build warns at the
 						arm (and <code>rocx check</code> exits 2), saying to read it where it is used, to say the one read
 						is meant (<code>{"untrack!(|| card)"}</code>), or to key the part by it.
 					</li>
 					<li>
 						<strong>A part is made when it shows</strong>, as Solid makes it: what an
-						<code>if</code> or <code>match</code> shows, and a <code>{"<For>"}</code>'s fallback, each once, as a
+						<code>if</code> or <code>match</code> shows, each once, as a
 						component is, and again each time it shows again; a row when it comes. So its holes are made
 						then, and a value prop inside, <code>{"<Podium players={game!().players} />"}</code>, a getter, is
 						read where the component reads it, as the part shows and while it does.
@@ -697,9 +703,8 @@ view! = |_|
 						renders a million rows as the twenty that show.
 					</li>
 					<li>
-						<strong>A function child</strong>, a <code>{"<For>"}</code>'s row, is effectful, as a component
-						is: it runs where its part is made, so it may hold another <code>{"<For>"}</code> or an
-						<code>if</code>, or be plain markup. Like a component, it
+						<strong>A row</strong> is effectful, as a component is: it runs where its part is made, so it
+						may hold another <code>.map</code> or an <code>if</code>, or be plain markup. Like a component, it
 						runs once, untracked (Solid's <code>mapArray</code>): what it reads at its top is read once, and its
 						holes, and the props it gives its components, follow the item.
 					</li>
@@ -716,7 +721,7 @@ view! = |_|
 					One that goes stays where it was, inert, until its animation is over, and then the runtime takes it
 					away. The browser plays them, so they cost Roc nothing per frame.
 				</p>
-				<Code title="rocx" source={"import pf.Transition\n\n<For each!={todos!()} keyed={|todo| todo.id}>\n\t{|todo!, _| <li transition={Transition.fade}>{todo!().text}</li>}\n</For>\n\n{if open!() {\n\t<div class=\"panel\"\n\t\ttransition:in={Transition.fly({ x: 0.0, y: -8.0 })}\n\t\ttransition:out={Transition.fade.ms(120)}\n\t>…</div>\n}}"} numbers={Bool.False} />
+				<Code title="rocx" source={"import pf.Transition\n\n{...todos!().map(|todo|\n\t<li key={todo.id} transition={Transition.fade}>{todo.text}</li>\n)}\n\n{if open!() {\n\t<div class=\"panel\"\n\t\ttransition:in={Transition.fly({ x: 0.0, y: -8.0 })}\n\t\ttransition:out={Transition.fade.ms(120)}\n\t>…</div>\n}}"} numbers={Bool.False} />
 				<ul>
 					<li>
 						<strong><code>{"transition={…}"}</code></strong> plays both ways, <code>{"transition:in={…}"}</code>
@@ -732,7 +737,7 @@ view! = |_|
 						<code>.plus(…)</code> plays two at once.
 					</li>
 					<li>
-						<strong>They play when a <code>{"<For>"}</code>'s row or an <code>if</code>'s part comes or
+						<strong>They play when a <code>.map</code>'s row or an <code>if</code>'s part comes or
 						goes</strong>, and only that row's or part's own elements play theirs, as Svelte's are local: a
 						list inside a part that goes stays as it is until the part has gone. Nothing plays as the page
 						wakes up.
@@ -817,7 +822,7 @@ view! = |_|
 			<Demo inspect="tally">
 				<div data-demo="tally" data-flash="yes"><Tally /></div>
 				<NoHydration>
-					<Note>A component of its own, reading the same store as the picks in <a href="#control">if, match and For</a>.</Note>
+					<Note>A component of its own, reading the same store as the picks in <a href="#control">if, match and .map</a>.</Note>
 				</NoHydration>
 			</Demo>
 		</PicksContext>
@@ -935,7 +940,7 @@ view! = |_|
 				is done, as Solid's transitions do), so it reads as <code>posts!()</code> does, and is there for code
 				written as Solid's is.
 			</p>
-			<Code source={"import pf.Solid exposing [create_signal!, create_memo!, refresh!, is_pending!]\n\n(page!, set_page!) = create_signal!(1.U64)\nposts! = create_memo!(|| Endpoint.get!(Endpoint.with_query(Api.get_posts({}), \"page=\${page!().to_str()}\")))\n\n<Loading fallback={<p>Loading…</p>}>\n\t<ul class:stale={is_pending!(posts!)}>\n\t\t<For each!={posts!()} keyed={|post| post.id}>\n\t\t\t{|post!, _| <li>{post!().title}</li>}\n\t\t</For>\n\t</ul>\n</Loading>\n<button on:click={|| refresh!(posts!)}>Refresh</button>\n<button on:click={|| set_page!(page!() + 1)}>Next page</button>\n{if is_pending!(posts!) <p>Updating…</p>}"} numbers={Bool.False} />
+			<Code source={"import pf.Solid exposing [create_signal!, create_memo!, refresh!, is_pending!]\n\n(page!, set_page!) = create_signal!(1.U64)\nposts! = create_memo!(|| Endpoint.get!(Endpoint.with_query(Api.get_posts({}), \"page=\${page!().to_str()}\")))\n\n<Loading fallback={<p>Loading…</p>}>\n\t<ul class:stale={is_pending!(posts!)}>\n\t\t{...posts!().map(|post| <li key={post.id}>{post.title}</li>)}\n\t</ul>\n</Loading>\n<button on:click={|| refresh!(posts!)}>Refresh</button>\n<button on:click={|| set_page!(page!() + 1)}>Next page</button>\n{if (is_pending!(posts!)) <p>Updating…</p>}"} numbers={Bool.False} />
 			<ul>
 				<li>
 					<strong>True</strong> while a memo the accessor reads has a value and waits for a new one, from
@@ -1017,10 +1022,10 @@ view! = |_|
 						<tr><td><code>{"state.user.name"}</code></td><td><code>{"state.get!(|s| s.user.name)"}</code></td></tr>
 						<tr><td><code>{"setState((s) => { s.filter = \"done\" })"}</code></td><td><code>{"set_state!(|s| { ..s, filter: Done })"}</code></td></tr>
 						<tr><td><code>{"<Show when={…} fallback={…}>"}</code></td><td><code>{"{if … { … } else { … }}"}</code></td></tr>
-						<tr><td><code>{"<Show when={…} keyed>{(v) => …}</Show>"}</code></td><td><code>{"<For>"}</code> over a list of none or one, keyed by the value</td></tr>
+						<tr><td><code>{"<Show when={…} keyed>{(v) => …}</Show>"}</code></td><td>a <code>.map</code> over a list of one, keyed by the value</td></tr>
 						<tr><td><code>{"<Switch fallback={…}><Match when={…}>…</Match></Switch>"}</code></td><td><code>{"{match … { … => …, _ => … }}"}</code></td></tr>
-						<tr><td><code>{"<For each={…} keyed={(t) => t.id}>"}</code></td><td><code>{"<For each!={…} keyed={|t| t.id}>"}</code></td></tr>
-						<tr><td><code>{"<For each={…} keyed={false}>"}</code></td><td><code>{"<For each!={…} keyed={Bool.False}>"}</code></td></tr>
+						<tr><td><code>{"<For each={…} keyed={(t) => t.id}>"}</code></td><td><code>{"{...ts!().map(|t| <li key={t.id}>…</li>)}"}</code></td></tr>
+						<tr><td><code>{"<For each={…} keyed={false}>"}</code></td><td><code>{"{...ts!().map_with_index(|t, i| <li key={i}>…</li>)}"}</code></td></tr>
 						<tr><td><code>{"<TransitionGroup>"}</code>, from <code>solid-transition-group</code></td><td><code>{"transition={Transition.fade}"}</code> on the element, as Svelte writes it</td></tr>
 						<tr><td><code>{"const PicksContext = createContext()"}</code></td><td><code>{"picks_context = create_context()"}</code></td></tr>
 						<tr><td><code>{"<PicksContext value={store}>"}</code></td><td>the same</td></tr>
@@ -1049,8 +1054,9 @@ view! = |_|
 					reads as <code>props.text</code> does (<a href="#passing">passing them on</a>).
 				</li>
 				<li>
-					<strong><code>{"<For>"}</code> says how it keys its rows.</strong> Solid's default, a row per
-					object, needs identity, which Roc's values don't have: <code>keyed</code> is required.
+					<strong>A row says its key.</strong> Solid's <code>{"<For>"}</code> keys a row by its object,
+					which needs identity, which Roc's values don't have: a <code>.map</code>'s row has
+					<code>key={"{…}"}</code>.
 				</li>
 				<li>
 					<strong>A <code>match</code> narrows a <code>Try</code></strong>, Roc's way of saying a value may
@@ -1133,12 +1139,12 @@ view! = |_|
 						<li>A page as one tree, hydrated whole; <code>{"<NoHydration>"}</code> for what stays the server's</li>
 						<li>A signal goes with the part that made it</li>
 						<li>Roc's <code>if</code> and <code>match</code> in a hole, as <code>{"<Show>"}</code> and <code>{"<Switch>"}</code>: the part kept while its branch holds, an arm's names following the value</li>
-						<li>Stores: <code>create_store!</code>, each part tracked by its value; <code>{"<For compared>"}</code></li>
-						<li><code>{"<For>"}</code>, by key and by position; <code>{"<Repeat>"}</code>, by index</li>
+						<li>Stores: <code>create_store!</code>, each part tracked by its value; rows told only when their item changed</li>
+						<li>A hole's <code>.map</code>, by key and by position (Solid's <code>{"<For>"}</code>); <code>{"<Repeat>"}</code>, by index</li>
 						<li>What of an element shows, as it scrolls and changes size: <code>on:viewport</code>; virtual lists, as a package</li>
 						<li><code>{"<Loading>"}</code>, <code>{"<Errored>"}</code>, trying again</li>
 						<li>Handlers that wait for the server; keys; frames</li>
-						<li>Transitions in and out, on a <code>{"<For>"}</code>'s rows and an <code>if</code>'s or <code>match</code>'s parts</li>
+						<li>Transitions in and out, on a <code>.map</code>'s rows and an <code>if</code>'s or <code>match</code>'s parts</li>
 						<li>Timers: <code>set_interval!</code>, <code>set_timeout!</code>, cleared by their <code>clear!</code> or with their part</li>
 						<li>Sound files, from a handler: <code>Audio.play!</code> (packages/audio); and the page's own functions, or a plugin's: <code>Browser.call!</code></li>
 						<li>Effects, split as Solid 2.0's; render effects; an effect's error handler; <code>on_cleanup!</code>, <code>on_settled!</code></li>

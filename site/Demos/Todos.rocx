@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_signal!]
-import pf.For
 
 ## A to-do list: a form, rows that come and go (each kept by its id: moved, never rewritten),
 ## checkboxes, a key, and filters. Its state is four signals; each hole reads the ones it needs.
@@ -37,17 +36,15 @@ Todos := [].{
 				<button type="submit" disabled?={draft!().trim().is_empty()}>Add</button>
 			</form>
 			<ul>
-				<For each!={shown(items!(), filter!())} keyed={|item| item.id}>
-					{|item!, _|
-						<li class:done={item!().done}>
-							<label>
-								<input type="checkbox" checked?={item!().done} on:change.checked={|done| tick!(item!().id, done)} />
-								{item!().text}
-							</label>
-							<button type="button" class="remove" aria-label={"Remove ${item!().text}"} on:click={|| remove!(item!().id)}>×</button>
-						</li>
-					}
-				</For>
+				{...shown(items!(), filter!()).map(|item|
+					<li key={item.id} class:done={item.done}>
+						<label>
+							<input type="checkbox" checked?={item.done} on:change.checked={|done| tick!(item.id, done)} />
+							{item.text}
+						</label>
+						<button type="button" class="remove" aria-label={"Remove ${item.text}"} on:click={|| remove!(item.id)}>×</button>
+					</li>
+				)}
 			</ul>
 			<footer>
 				<span class="left">{left(items!())}</span>

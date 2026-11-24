@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Solid exposing [create_signal!]
 import audio.Audio
-import pf.For
 import Random
 
 ## A flock of Roc birds: say how many (type it, or ±1, ±5), and the newest come or go. Every
@@ -67,9 +66,9 @@ Birds := [].{
 			{# Time flows only while there are birds: an empty arena has no frame handler, so no frames. }
 			{if wanted!() > 0 {
 				<div class="arena" on:frame.ms={|ms| send!(Frame(ms))}>
-					<For each!={flock!().birds} keyed={|b| b.id.to_str()}>
-						{|bird!, _| <span class="bird" class:left={bird!().vx < 0.0} style:--x={css(bird!().x)} style:--y={css(bird!().y)}></span>}
-					</For>
+					{...flock!().birds.map(|bird|
+						<span key={bird.id.to_str()} class="bird" class:left={bird.vx < 0.0} style:--x={css(bird.x)} style:--y={css(bird.y)}></span>
+					)}
 				</div>
 			} else {
 				<div class="arena"><p class="arena-empty">Empty sky. Press +1 to let a bird in.</p></div>

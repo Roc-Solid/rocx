@@ -7,7 +7,7 @@ import Host
 ##     (todos, set_todos!) = create_store!({ items: [], filter: All })
 ##
 ##     <p>{Filter.name(todos.get!(|s| s.filter))}</p>
-##     <For each!={todos.get!(|s| s.items)} keyed={|todo| todo.id}>{|todo!, _| <li>{todo!().title}</li>}</For>
+##     <ul>{...todos.get!(|s| s.items).map(|todo| <li key={todo.id}>{todo.title}</li>)}</ul>
 ##     <button on:click={|| set_todos!(|s| { ..s, filter: Done })}>Done</button>
 ##
 ## A click on Done runs the filter's hole again, and nothing else: the list's selection is computed

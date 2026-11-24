@@ -639,7 +639,7 @@ Build := [].{
 	}
 
 	## D-070: a match arm stays while its value changes, its names getters (`Ok(data) => <PostsView
-	## data={data} />`). A component given one, whose body reads that prop once, as it runs (`{ now, .. }
+	## data={data} />`); so does a `.map` row while its item does (D-071). A component given one, whose body reads that prop once, as it runs (`{ now, .. }
 	## = data`), never shows the new value: before D-070 the arm was made anew for each, and such a
 	## component was written for that. Each such call, a warning at its prop.
 	held_once : List({ tag : Str, prop : Str, name : Str, line : U64, column : U64, file : Str, path : Str }), List({ component : Str, prop : Str, line : U64, column : U64, file : Str }) -> List({ path : Str, said : { reason : Str, file : Str, line : U64, column : U64 } })
@@ -648,7 +648,7 @@ Build := [].{
 			|h| {
 				tag = h.tag.split_on(".").last() ?? h.tag
 				read = once.find_first(|o| o.component == tag and o.prop == h.prop)?
-				reason = "${h.name} is this match arm's value, which changes while the arm stays (D-070), and ${tag} reads ${h.prop} once, as it runs (${read.file}:${read.line.to_str()}:${read.column.to_str()}), so it won't show the new one: read ${h.prop} where ${tag} uses it (untrack!(|| …) if one read is meant), or, for a part made anew for each value, a <For> over [${h.name}] keyed by it"
+				reason = "${h.name} changes while the part showing it stays (a match arm's value, D-070, or a .map row's item, D-071), and ${tag} reads ${h.prop} once, as it runs (${read.file}:${read.line.to_str()}:${read.column.to_str()}), so it won't show the new one: read ${h.prop} where ${tag} uses it (untrack!(|| …) if one read is meant), or, for a part made anew for each value, a row keyed by it: {...[${h.name}].map(|one| <${tag} key={one} …/>)}"
 				Ok({ path: h.path, said: { reason, file: h.file, line: h.line, column: h.column } })
 			},
 		)

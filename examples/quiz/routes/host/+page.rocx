@@ -1,5 +1,4 @@
 import pf.Html
-import pf.For
 import pf.Router
 import pf.Endpoint
 import ../../Generated/Api
@@ -23,18 +22,17 @@ view! = |_| {
 				<p>Pick a set. Its room opens on this screen: put it somewhere everyone can see it.</p>
 			</header>
 			<ul class="sets">
-				<For each!={sets} keyed={|set| set.id}>
-					{|set!, _|
-						<li class="set" class:made={set!().id.to_str() == made}>
-							<h2>{set!().title}</h2>
-							<p class="blurb">{set!().blurb}</p>
-							<p class="count">{if (set!().questions == 1) "1 question" else "${set!().questions.to_str()} questions"}</p>
-							<form method="post" action={Endpoint.url_of(Api.post_rooms({}))}>
-								<input type="hidden" name="set" value={set!().id.to_str()} />
-								<button type="submit" aria-label={"Open a room for ${set!().title}"}>Open a room</button>
-							</form>
-						</li>}
-				</For>
+				{...sets.map(|set|
+					<li key={set.id} class="set" class:made={set.id.to_str() == made}>
+						<h2>{set.title}</h2>
+						<p class="blurb">{set.blurb}</p>
+						<p class="count">{if (set.questions == 1) "1 question" else "${set.questions.to_str()} questions"}</p>
+						<form method="post" action={Endpoint.url_of(Api.post_rooms({}))}>
+							<input type="hidden" name="set" value={set.id.to_str()} />
+							<button type="submit" aria-label={"Open a room for ${set.title}"}>Open a room</button>
+						</form>
+					</li>
+				)}
 			</ul>
 			<p class="more">Want your own questions? <a href={Paths.sets_new}>Write a set</a>: it takes a minute.</p>
 		</main>

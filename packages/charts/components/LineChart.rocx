@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_memo!, create_signal!, untrack!]
-import pf.For
 import charts.Ease
 import charts.Format
 import charts.Path
@@ -70,13 +69,12 @@ LineChart := [].{
 		<figure class="line-chart">
 			<svg viewBox="0 0 640 320" role="img" aria-label={label}>
 				<g class="ticks" aria-hidden="true">
-					<For each!={LineChart.ticks(goal!().domain)} keyed={|tick| Format.num(tick, 9)}>
-						{|tick!, _|
-							<g class:out={LineChart.outside(drawn!().domain, tick!())}>
-								<line x1={Format.coord(left)} x2={Format.coord(right)} y1={Format.coord(y!().at(tick!()))} y2={Format.coord(y!().at(tick!()))} />
-								<text x={Format.coord(left - 8.0)} y={Format.coord(y!().at(tick!()))} dy="0.32em">{format(tick!())}</text>
-							</g>}
-					</For>
+					{...LineChart.ticks(goal!().domain).map(|tick|
+						<g key={Format.num(tick, 9)} class:out={LineChart.outside(drawn!().domain, tick)}>
+							<line x1={Format.coord(left)} x2={Format.coord(right)} y1={Format.coord(y!().at(tick))} y2={Format.coord(y!().at(tick))} />
+							<text x={Format.coord(left - 8.0)} y={Format.coord(y!().at(tick))} dy="0.32em">{format(tick)}</text>
+						</g>
+					)}
 				</g>
 				<path class="area" d={if (smooth) Path.smooth_area(points!(), bottom) else Path.area(points!(), bottom)} />
 				<path class="line" d={if (smooth) Path.smooth(points!()) else Path.line(points!())} />
@@ -89,9 +87,9 @@ LineChart := [].{
 			{# A column for each point, which the pointer finds it by: laid out by CSS, not Roc, so a
 			 chart whose values change every frame doesn't move them. }
 			<div class="columns" style:--gaps={Dec.max(data!().len().to_dec() - 1.0, 1.0).to_str()} on:pointerleave={|| set_hover!(Err(None))}>
-				<For each!={data!()} keyed={Bool.False}>
-					{|_, i| <span on:pointerenter={|| set_hover!(Ok(i))}></span>}
-				</For>
+				{...data!().map_with_index(|item, i|
+					<span key={i} on:pointerenter={|| set_hover!(Ok(i))}></span>
+				)}
 			</div>
 			{# Frames only while something moves: once the line and the axis are where the data says, none. }
 			{if drawn!() != goal!() {

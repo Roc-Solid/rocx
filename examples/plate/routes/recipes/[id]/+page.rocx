@@ -3,7 +3,6 @@ import pf.Solid exposing [create_memo!, create_signal!, is_pending!]
 import pf.Router exposing [use_submissions!]
 import pf.Endpoint
 import pf.Server
-import pf.For
 import pf.Title
 import pf.HttpStatusCode
 import pf.Transition
@@ -79,21 +78,19 @@ Kitchen := [].{
 				<h2 id="ingredients">Ingredients</h2>
 				{if !ingredients!().is_empty() {
 					<ul class="rows">
-						<For each!={ingredients!()} keyed={|each| each.id}>
-							{|each!, _|
-								<li transition:in={Transition.fade}>
-									<a class="name" href={Links.food(each!().food, { day: "", meal: "" })}>{each!().name}</a>
-									<span class="grams">{Plate.grams_label(each!().grams)}</span>
-									<span class="kcal">{"${Plate.whole(each!().nutrients.kcal)} kcal"}</span>
-									<form method="post" action={remove}>
-										<input type="hidden" name="id" value={each!().id} />
-										<button class="remove" type="submit" aria-label={"Take out ${each!().name}"}>
-											<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
-										</button>
-									</form>
-								</li>
-							}
-						</For>
+						{...ingredients!().map(|each|
+							<li key={each.id} transition:in={Transition.fade}>
+								<a class="name" href={Links.food(each.food, { day: "", meal: "" })}>{each.name}</a>
+								<span class="grams">{Plate.grams_label(each.grams)}</span>
+								<span class="kcal">{"${Plate.whole(each.nutrients.kcal)} kcal"}</span>
+								<form method="post" action={remove}>
+									<input type="hidden" name="id" value={each.id} />
+									<button class="remove" type="submit" aria-label={"Take out ${each.name}"}>
+										<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+									</button>
+								</form>
+							</li>
+						)}
 					</ul>
 				} else {
 					<p class="quiet">Nothing in it yet: search below for what goes in.</p>
@@ -107,22 +104,20 @@ Kitchen := [].{
 					<button class="button quiet" type="submit">Search</button>
 				</form>
 				<ul class="rows found" aria-label="Foods found">
-					<For each!={kitchen!().hits} keyed={|hit| hit.id}>
-						{|hit!, _|
-							<li>
-								<form class="pick" method="post" action={add}>
-									<input type="hidden" name="food" value={hit!().id} />
-									<span class="name">
-										{Plate.full_name(hit!().name, hit!().brand)}
-										<span class="quiet">{"${Plate.whole(hit!().kcal)} kcal / 100 g"}</span>
-									</span>
-									<input class="grams-input" name="grams" value="100" inputmode="decimal" aria-label={"Grams of ${hit!().name}"} />
-									<span class="unit">g</span>
-									<button class="button quiet" type="submit">Add</button>
-								</form>
-							</li>
-						}
-					</For>
+					{...kitchen!().hits.map(|hit|
+						<li key={hit.id}>
+							<form class="pick" method="post" action={add}>
+								<input type="hidden" name="food" value={hit.id} />
+								<span class="name">
+									{Plate.full_name(hit.name, hit.brand)}
+									<span class="quiet">{"${Plate.whole(hit.kcal)} kcal / 100 g"}</span>
+								</span>
+								<input class="grams-input" name="grams" value="100" inputmode="decimal" aria-label={"Grams of ${hit.name}"} />
+								<span class="unit">g</span>
+								<button class="button quiet" type="submit">Add</button>
+							</form>
+						</li>
+					)}
 				</ul>
 			</section>
 			<section class="card" aria-labelledby="about">

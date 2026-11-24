@@ -51,7 +51,7 @@
 ## - A page's components are Solid-style (web/runtime.js hydrates the document in the browser). A
 ##   GET endpoint a component reads while the host renders the page (`Endpoint.get!`) is answered by
 ##   its route, in-process (`Host.fetch!`). The modules components are written with (`Html`, `Solid`,
-##   `Store`, `For`, `Loading`, `Errored`, `Context`, `Call`, `Router`, `Search`, `Leave`, `A`, `HttpStatusCode`, `Transition`,
+##   `Store`, `Loading`, `Errored`, `Context`, `Call`, `Router`, `Search`, `Leave`, `A`, `HttpStatusCode`, `Transition`,
 ##   `Title`, `Browser`, `Submission`, `Submissions`), and HTTP's (`Server`, `Endpoint`,
 ##   `Channel`, `Middleware`, `Events`, `OpenApi`), are the browser's platform's (web/platform),
 ##   copied here by the build, so the same code compiles on both.
@@ -74,7 +74,7 @@ platform ""
 			routes : List({ method : Str, path : Str, file : Str }),
 		}
 	}
-	exposes [A, Actor, AesGcm, Blobs, Browser, Call, Channel, Context, Db, Endpoint, Env, Errored, Events, For, Html, Http, HttpResponse, HttpStatusCode, Kv, Leave, Live, Loading, Log, Middleware, Navigate, OpenApi, Plugin, Random, Repeat, Router, Search, Server, Solid, Store, Submission, Submissions, Tcp, Time, Title, Transition]
+	exposes [A, Actor, AesGcm, Blobs, Browser, Call, Channel, Context, Db, Endpoint, Env, Errored, Events, Html, Http, HttpResponse, HttpStatusCode, Kv, Leave, Live, Loading, Log, Middleware, Navigate, OpenApi, Plugin, Random, Repeat, Router, Search, Server, Solid, Store, Submission, Submissions, Tcp, Time, Title, Transition]
 	packages {}
 	provides {
 		"roc_actor": actor_for_host!,
@@ -243,7 +243,6 @@ import Endpoint
 import Env
 import Errored
 import Events
-import For
 import Repeat
 import Host
 import Html

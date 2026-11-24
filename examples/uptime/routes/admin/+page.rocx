@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Channel
 import pf.Endpoint
-import pf.For
 import pf.Title
 import pf.Solid exposing [create_effect!, create_memo!, refresh!]
 import pf.Router exposing [use_submission!]
@@ -61,9 +60,9 @@ view! = |_| {
 						</tr>
 					</thead>
 					<tbody>
-						<For each!={admin!().monitors} keyed={|monitor| monitor.id}>
-							{|monitor!, _| <AdminRow monitor!={monitor!()} />}
-						</For>
+						{...admin!().monitors.map(|monitor|
+							<AdminRow key={monitor.id} monitor!={monitor} />
+						)}
 					</tbody>
 				</table>
 			</div>
@@ -72,13 +71,12 @@ view! = |_| {
 			<h2 id="open">Open incidents</h2>
 			<p class="quiet" hidden?={!admin!().incidents.is_empty()}>None. Incidents open on their own after a monitor fails enough checks in a row.</p>
 			<ul class="incidents">
-				<For each!={admin!().incidents} keyed={|incident| incident.id}>
-					{|incident!, _|
-						<li>
-							{<IncidentCard incident={incident!()} link={Bool.True} />}
-							<UpdateForm incident={incident!().id} />
-						</li>}
-				</For>
+				{...admin!().incidents.map(|incident|
+					<li key={incident.id}>
+						{<IncidentCard incident={incident} link={Bool.True} />}
+						<UpdateForm incident={incident.id} />
+					</li>
+				)}
 			</ul>
 		</section>
 		<section aria-labelledby="demo" class="demo">

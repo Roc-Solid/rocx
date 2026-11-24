@@ -3,7 +3,6 @@ import pf.Solid exposing [create_memo!]
 import pf.Router exposing [use_action!, use_submissions!]
 import pf.Endpoint
 import pf.Server
-import pf.For
 import ../I18n
 import ../Reaction
 import ../Generated/Api
@@ -34,42 +33,38 @@ ReactionBar := [].{
 			},
 		)
 		# Shown once the server's counts are in: a post that isn't there has none, and nothing shows.
-		# The child gets an accessor of the counts (`tally!`), and holds a <For> of its own.
+		# The arm's `tally` reads the newest counts, and its rows are a .map of their own.
 		<>{match shown!() {
 			Ok(tally) =>
 				<section class="reactions" aria-labelledby="reactions-title">
 					<h2 class="title" id="reactions-title">{intl.t("react.lead", [])}</h2>
 					<ul class="kinds" aria-label={intl.t("react.label", [])}>
-						<For each!={Reaction.kinds} keyed={|kind| kind.id}>
-							{|kind!, _|
-								<li>
-									<form method="post" action={Endpoint.url_of(sender)}>
-										<input type="hidden" name="kind" value={kind!().id} />
-										<input type="hidden" name="on" value={if (Reaction.given(tally, kind!().id)) "false" else "true"} />
-										<button
-											type="submit"
-											class="kind"
-											class:mine={Reaction.given(tally, kind!().id)}
-											aria-pressed={if (Reaction.given(tally, kind!().id)) "true" else "false"}
-											on:click.prevent={|| toggle!({ kind: kind!().id, on: if (Reaction.given(tally, kind!().id)) "false" else "true" })}
-										>
-											<span class="emoji" aria-hidden="true">{kind!().emoji}</span>
-											<span class="label">{intl.t("react.${kind!().id}", [])}</span>
-											<span class="count">{intl.int(Reaction.count_of(tally, kind!().id))}</span>
-										</button>
-									</form>
-								</li>
-							}
-						</For>
+						{...Reaction.kinds.map(|kind|
+							<li key={kind.id}>
+								<form method="post" action={Endpoint.url_of(sender)}>
+									<input type="hidden" name="kind" value={kind.id} />
+									<input type="hidden" name="on" value={if (Reaction.given(tally, kind.id)) "false" else "true"} />
+									<button
+										type="submit"
+										class="kind"
+										class:mine={Reaction.given(tally, kind.id)}
+										aria-pressed={if (Reaction.given(tally, kind.id)) "true" else "false"}
+										on:click.prevent={|| toggle!({ kind: kind.id, on: if (Reaction.given(tally, kind.id)) "false" else "true" })}
+									>
+										<span class="emoji" aria-hidden="true">{kind.emoji}</span>
+										<span class="label">{intl.t("react.${kind.id}", [])}</span>
+										<span class="count">{intl.int(Reaction.count_of(tally, kind.id))}</span>
+									</button>
+								</form>
+							</li>
+						)}
 					</ul>
-					<For each!={toggles.all!().keep_if(|sent| sent.error.is_ok())} keyed={|sent| sent.id}>
-						{|sent!, _|
-							<p class="refused" role="alert">
-								<span>{ReactionBar.why(lang, sent!().error)}</span>
-								<button type="button" class="dismiss" on:click={|| toggles.clear!(sent!().id)}>{intl.t("react.dismiss", [])}</button>
-							</p>
-						}
-					</For>
+					{...toggles.all!().keep_if(|sent| sent.error.is_ok()).map(|sent|
+						<p key={sent.id} class="refused" role="alert">
+							<span>{ReactionBar.why(lang, sent.error)}</span>
+							<button type="button" class="dismiss" on:click={|| toggles.clear!(sent.id)}>{intl.t("react.dismiss", [])}</button>
+						</p>
+					)}
 				</section>
 			Err(_) => <></>
 		}}</>

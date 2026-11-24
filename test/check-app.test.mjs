@@ -146,7 +146,7 @@ test("rocx check <dir>: a match arm's value given to a component that reads it o
 	try {
 		const ran = check(dir);
 		assert.equal(ran.code, 2, ran.said);
-		assert.match(ran.said, /⚠ [^\n]*routes\/\+page\.rocx:9:\d+: item is this match arm's value, which changes while the arm stays \(D-070\), and Panel reads item once, as it runs \([^)]*Panel\.rocx:7:\d+\)/);
+		assert.match(ran.said, /⚠ [^\n]*routes\/\+page\.rocx:9:\d+: item changes while the part showing it stays \(a match arm's value, D-070, or a \.map row's item, D-071\), and Panel reads item once, as it runs \([^)]*Panel\.rocx:7:\d+\)/);
 		writeFileSync(join(dir, "Panel.rocx"), PANEL.replace("shown = item", "shown = untrack!(|| item)"));
 		const meant = check(dir);
 		assert.equal(meant.code, 0, meant.said);

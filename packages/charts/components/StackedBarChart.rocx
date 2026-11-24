@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_memo!, create_signal!, untrack!]
-import pf.For
 import pf.Transition
 import charts.Band
 import charts.Ease
@@ -58,54 +57,51 @@ StackedBarChart := [].{
 		}
 		<figure class="stacked-chart">
 			<ul class="legend" aria-hidden="true">
-				<For each!={props.series} keyed={Bool.False}>
-					{|name!, i| <li data-slot={(i % colors).to_str()}><span class="swatch"></span>{name!()}</li>}
-				</For>
+				{...props.series.map_with_index(|name, i|
+					<li key={i} data-slot={(i % colors).to_str()}><span class="swatch"></span>{name}</li>
+				)}
 			</ul>
 			<svg viewBox="0 0 640 320" role="group" aria-label={props.label}>
 				<g class="ticks" aria-hidden="true">
-					<For each!={StackedBarChart.ticks(goal!())} keyed={|tick| Format.num(tick, 9)}>
-						{|tick!, _|
-							<g class:out={StackedBarChart.outside(drawn!().domain, tick!())}>
-								<line x1={Format.coord(left)} x2={Format.coord(right)} y1={Format.coord(y!().at(tick!()))} y2={Format.coord(y!().at(tick!()))} />
-								<text x={Format.coord(left - 8.0)} y={Format.coord(y!().at(tick!()))} dy="0.32em">{format(tick!())}</text>
-							</g>}
-					</For>
+					{...StackedBarChart.ticks(goal!()).map(|tick|
+						<g key={Format.num(tick, 9)} class:out={StackedBarChart.outside(drawn!().domain, tick)}>
+							<line x1={Format.coord(left)} x2={Format.coord(right)} y1={Format.coord(y!().at(tick))} y2={Format.coord(y!().at(tick))} />
+							<text x={Format.coord(left - 8.0)} y={Format.coord(y!().at(tick))} dy="0.32em">{format(tick)}</text>
+						</g>
+					)}
 				</g>
 				{# Each part of each column: kept by its column's key and its place in the column. }
-				<For each!={StackedBarChart.pieces(rows!(), parts)} keyed={|piece| "${piece.key}|${piece.part.to_str()}"}>
-					{|piece!, _|
-						<rect
-							class="part"
-							class:active={hover!() == Ok(piece!().key)}
-							data-slot={(piece!().part % colors).to_str()}
-							x={Format.coord(x!().at(placed!(piece!().key).slot))}
-							y={Format.coord(part_top!(piece!().key, piece!().part))}
-							width={Format.coord(x!().width())}
-							height={Format.coord(Dec.max(part_height!(piece!().key, piece!().part), 0.0))}
-							transition:out={Transition.grow(Bottom).plus(Transition.fade)}
-						/>}
-				</For>
+				{...StackedBarChart.pieces(rows!(), parts).map(|piece|
+					<rect key={"${piece.key}|${piece.part.to_str()}"}
+						class="part"
+						class:active={hover!() == Ok(piece.key)}
+						data-slot={(piece.part % colors).to_str()}
+						x={Format.coord(x!().at(placed!(piece.key).slot))}
+						y={Format.coord(part_top!(piece.key, piece.part))}
+						width={Format.coord(x!().width())}
+						height={Format.coord(Dec.max(part_height!(piece.key, piece.part), 0.0))}
+						transition:out={Transition.grow(Bottom).plus(Transition.fade)}
+					/>
+				)}
 				{# Each column: what the pointer and Tab find it by, its total and its label. }
-				<For each!={rows!()} keyed={|row| row.key}>
-					{|row!, _|
-						<g
-							class="column"
-							class:active={hover!() == Ok(row!().key)}
-							role="img"
-							tabindex="0"
-							aria-label={said!(row!())}
-							on:pointerenter={|| set_hover!(Ok(row!().key))}
-							on:pointerleave={|| set_hover!(Err(None))}
-							on:focus={|| set_hover!(Ok(row!().key))}
-							on:blur={|| set_hover!(Err(None))}
-							transition:out={Transition.fade}
-						>
-							<rect class="hit" x={Format.coord(x!().at(placed!(row!().key).slot))} y={Format.coord(top)} width={Format.coord(x!().width())} height={Format.coord(bottom - top)} />
-							<text class="total" x={Format.coord(x!().center(placed!(row!().key).slot))} y={Format.coord(y!().at(total!(row!().key)) - 8.0)}>{format(total!(row!().key))}</text>
-							<text class="label" x={Format.coord(x!().center(placed!(row!().key).slot))} y={Format.coord(bottom + 20.0)}>{row!().column.label}</text>
-						</g>}
-				</For>
+				{...rows!().map(|row|
+					<g key={row.key}
+						class="column"
+						class:active={hover!() == Ok(row.key)}
+						role="img"
+						tabindex="0"
+						aria-label={said!(row)}
+						on:pointerenter={|| set_hover!(Ok(row.key))}
+						on:pointerleave={|| set_hover!(Err(None))}
+						on:focus={|| set_hover!(Ok(row.key))}
+						on:blur={|| set_hover!(Err(None))}
+						transition:out={Transition.fade}
+					>
+						<rect class="hit" x={Format.coord(x!().at(placed!(row.key).slot))} y={Format.coord(top)} width={Format.coord(x!().width())} height={Format.coord(bottom - top)} />
+						<text class="total" x={Format.coord(x!().center(placed!(row.key).slot))} y={Format.coord(y!().at(total!(row.key)) - 8.0)}>{format(total!(row.key))}</text>
+						<text class="label" x={Format.coord(x!().center(placed!(row.key).slot))} y={Format.coord(bottom + 20.0)}>{row.column.label}</text>
+					</g>
+				)}
 				<line class="axis" x1={Format.coord(left)} x2={Format.coord(right)} y1={Format.coord(bottom)} y2={Format.coord(bottom)} />
 			</svg>
 			{# Frames only while something moves: once the columns are where the data says, none. }

@@ -35,7 +35,6 @@ import pf.Tcp
 import pf.Time
 import pf.Html
 import pf.Solid
-import pf.For
 import pf.Errored
 import pf.Loading
 import pf.HttpStatusCode
@@ -1817,7 +1816,7 @@ members_only = Middleware.make(
 missing : Context({ name : Str })
 missing = Context.required("Probe.missing")
 
-## Signals, memos, an endpoint read, a keyed <For>, an if's part, an <Errored> that catches, and
+## Signals, memos, an endpoint read, a `.map`'s rows (D-071), an if's part, an <Errored> that catches, and
 ## attributes of each kind.
 probe! : {} => Html
 probe! = |{}| {
@@ -1836,12 +1835,8 @@ probe! = |{}| {
 				"ul",
 				[],
 				[
-					For.view_with_keyed!({
-						each!: || names!(),
-						keyed: |name| name,
-						fallback: Html.text("none"),
-						children: |name!, index!| Html.element("li", [], [Html.text_of(|| "${index!().to_str()} ${name!()}")]),
-					}),
+					# What a hole's `.map` writes (D-071): a row per key.
+					Html.rows!(|| names!(), |name| name, |name!, index!| Html.element("li", [], [Html.text_of(|| "${index!().to_str()} ${name!()}")])),
 				],
 			),
 			# What a hole's if writes (D-070): the part its branch makes, the else its other branch.
@@ -2040,7 +2035,7 @@ rcdata! = |{}| {
 }
 
 ## A page with a `<NoHydration>`, which the browser never hydrates: static markup between its
-## markers, with none inside (a hole, an `if`'s part, a `<For>`, an `<Errored>` that failed, a component,
+## markers, with none inside (a hole, an `if`'s part, a `.map`'s rows, an `<Errored>` that failed, a component,
 ## one inside another); the GET it reads isn't recorded for the page, the same one read outside it
 ## is.
 region! : {} => Html
@@ -2063,12 +2058,7 @@ region! = |{}| {
 							"ul",
 							[],
 							[
-								For.view_with_keyed!({
-									each!: || names!(),
-									keyed: |name| name,
-									fallback: Html.text("none"),
-									children: |name!, _index!| Html.element("li", [], [Html.text_of(|| name!())]),
-								}),
+								Html.rows!(|| names!(), |name| name, |name!, _| Html.element("li", [], [Html.text_of(|| name!())])),
 							],
 						),
 						Errored.view!({

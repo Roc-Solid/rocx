@@ -2,7 +2,6 @@ import pf.Html
 import pf.Solid exposing [create_memo!, create_signal!, is_pending!]
 import pf.Endpoint
 import pf.Router
-import pf.For
 import pf.Title
 import ../../Plate
 import ../../Query
@@ -62,9 +61,7 @@ view! = |_| {
 				<>
 					<h2 class="count">{Found.count(found!())}</h2>
 					<ul class="card list" aria-label="Foods found">
-						<For each!={found!().hits} keyed={|hit| hit.id}>
-							{|hit!, _| HitRow.view({ hit: hit!(), href: Links.food(hit!().id, where!()) })}
-						</For>
+						{...found!().hits.map(|hit| <HitRow key={hit.id} hit={hit} href={Links.food(hit.id, where!())} />)}
 					</ul>
 				</>
 			} else {
@@ -82,9 +79,7 @@ Recent := [].{
 			<>
 				<h2 class="count">Lately</h2>
 				<ul class="card list" aria-label="Foods added lately">
-					<For each!={found!().recent} keyed={|hit| hit.id}>
-						{|hit!, _| HitRow.view({ hit: hit!(), href: Links.food(hit!().id, { day: found!().day, meal: found!().meal }) })}
-					</For>
+					{...found!().recent.map(|hit| <HitRow key={hit.id} hit={hit} href={Links.food(hit.id, { day: found!().day, meal: found!().meal })} />)}
 				</ul>
 			</>
 		} else {

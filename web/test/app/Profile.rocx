@@ -2,7 +2,6 @@ import pf.Html
 import pf.Solid exposing [create_signal!, create_memo!, refresh!]
 import pf.Loading
 import pf.Errored
-import pf.For
 import pf.Context
 import Api
 import Picks
@@ -49,9 +48,9 @@ Profile := [].{
 							</p>
 						}>
 							<ul>
-								<For each!={posts!()} keyed={|post| post.title}>
-									{|post!, _| <li>{post!().title}</li>}
-								</For>
+								{...posts!().map(|post|
+									<li key={post.title}>{post.title}</li>
+								)}
 							</ul>
 						</Errored>
 					</section>
@@ -62,9 +61,9 @@ Profile := [].{
 							</p>
 						}>
 							<ul>
-								<For each!={friends!()} keyed={|friend| friend}>
-									{|friend!, _| <li>{friend!()}</li>}
-								</For>
+								{...friends!().map(|friend|
+									<li key={friend}>{friend}</li>
+								)}
 							</ul>
 						</Errored>
 					</section>

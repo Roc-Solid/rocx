@@ -3,7 +3,6 @@ import pf.Solid exposing [create_memo!]
 import pf.Router exposing [use_submission!]
 import pf.Endpoint
 import pf.Server
-import pf.For
 import ../../Tasks
 import ../../Generated/Api
 import ../../components/Avatar
@@ -25,15 +24,13 @@ view! = |_| {
 		<form method="post" action={Endpoint.url_of(choose)}>
 			<fieldset>
 				<legend>The team</legend>
-				<For each!={team!().people} keyed={|person| person.id}>
-					{|person!, _|
-						<label class="person">
-							<input type="radio" name="person" value={person!().id} checked?={team!().me == person!().id} required />
-							{Avatar.view({ name: person!().name })}
-							<span>{person!().name}</span>
-						</label>
-					}
-				</For>
+				{...team!().people.map(|person|
+					<label key={person.id} class="person">
+						<input type="radio" name="person" value={person.id} checked?={team!().me == person.id} required />
+						{Avatar.view({ name: person.name })}
+						<span>{person.name}</span>
+					</label>
+				)}
 			</fieldset>
 			{match sent.error!() {
 				Ok(problem) => <p class="problem" role="alert">{Server.explain(problem)}</p>

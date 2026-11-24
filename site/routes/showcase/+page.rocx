@@ -85,9 +85,9 @@ view! = |_|
 				</Feature>
 				<Feature title="Rows that stay, so little changes">
 					<p>
-						Birds are <code>{"<For>"}</code> rows keyed by id: a bird keeps its element, and its move is
+						Birds are a <code>.map</code>'s rows keyed by id: a bird keeps its element, and its move is
 						two custom properties, which the stylesheet turns into a translation. The snake's segments are
-						rows by position (<code>{"keyed={Bool.False}"}</code>): when it moves, each takes the cell of
+						rows by position (<code>{".map_with_index(|cell, i| … key={i})"}</code>): when it moves, each takes the cell of
 						the one ahead, and a transition as long as a step slides it there.
 					</p>
 				</Feature>

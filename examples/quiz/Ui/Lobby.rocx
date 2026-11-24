@@ -1,5 +1,4 @@
 import pf.Html
-import pf.For
 import pf.Transition
 import presence.AvatarStack
 import presence.Stack
@@ -15,13 +14,12 @@ Lobby := [].{
 			<AvatarStack faces!={Lobby.faces(players)} max={max} />
 			<p class="count" aria-live="polite">{Lobby.label(players)}</p>
 			<ul class="names" aria-label="Players">
-				<For each!={players} keyed={|player| player.id}>
-					{|player!, index!|
-						<li class={"name blade-${(index!() % 4 + 1).to_str()}"} class:gone={!player!().here} transition={Transition.scale(0.6).ms(260)}>
-							{player!().name}
-							{if (player!().here) "" else " · dropped"}
-						</li>}
-				</For>
+				{...players.map_with_index(|player, index|
+					<li key={player.id} class={"name blade-${(index % 4 + 1).to_str()}"} class:gone={!player.here} transition={Transition.scale(0.6).ms(260)}>
+						{player.name}
+						{if (player.here) "" else " · dropped"}
+					</li>
+				)}
 			</ul>
 		</div>
 

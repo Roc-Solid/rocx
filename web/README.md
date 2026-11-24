@@ -33,7 +33,7 @@ same components natively; this one hydrates them.
   JavaScript function, or a plugin's script's, from a handler; sound files are packages/audio's,
   D-051), `Store` (a store's `get!`, a part of it tracked by its value; `of`, any accessor read by
   parts),
-  `Show` (keyed too), `Switch` and `Match`, `For`, `Loading`, `Errored`, `Context`, `Call` (`fetch!`, `listen!`), `Router` (`location!`: the page's path and query, tracked; `navigate!` and `navigate_with!`: to
+  `Loading`, `Errored`, `Context`, `Call` (`fetch!`, `listen!`), `Router` (`location!`: the page's path and query, tracked; `navigate!` and `navigate_with!`: to
   another page, in place, from a handler; `is_routing!`: whether a navigation is on its way;
   `use_search_params!`: the query, `Search`'s `get!`, `all!`, `set!` and `set_with!`, D-040;
   `use_before_leave!`: a listener asked before each navigation away, D-040, given a `Leave`: its
@@ -127,8 +127,8 @@ same components natively; this one hydrates them.
   a function of the state, Solid 2.0's draft setter: `set_todos!(|s| { ..s, filter: Done })`; it
   starts from the running handler's own write if it made one (`Host.signal_latest!`), so two in one
   handler compose. `Store.of(accessor)` reads any accessor by parts (an endpoint's answer, a memo,
-  a prop's getter), with no setter. A store's list given to a `<For compared>` patches only the
-  rows whose item changed. A selection is its reader run's, made anew when the reader runs again;
+  a prop's getter), with no setter. A store's list in a hole's `.map` patches only the rows whose
+  item changed. A selection is its reader run's, made anew when the reader runs again;
   `runtime.stats.selections` counts the runs of selections (the tests read it).
 - **A read made once, said in a dev build** (D-052, Solid 2.0's dev warning, STRICT_READ_UNTRACKED).
   A component's body runs once, so a read there doesn't follow what it read. A dev build (`rocx
@@ -170,33 +170,32 @@ same components natively; this one hydrates them.
 - **Components run where they are rendered:** rocx writes `<Picks />` as
   `Html.component(|| Picks.view!({}))`, and the runtime runs it as it builds that place, once, its
   reads untracked, so it sees the contexts provided above it. A signal belongs to the run that made
-  it, and is let go of with it: an `if`'s branch switching, a row going. A `<For>`'s row is an
-  effectful function run the same way, as its part is made (D-036), so it may hold another `<For>`
+  it, and is let go of with it: an `if`'s branch switching, a row going. A `.map`'s row is an
+  effectful function run the same way, as its part is made (D-036), so it may hold another `.map`
   or an `if`, owned by the row; and, as a component, once and
   untracked (Solid's `mapArray` and `untrack`, D-039): a change of what one read at its top doesn't
   make it anew (a read that waits runs it again once its value is in). Its holes, and the getters it
   gives its components, follow the item.
-- **A `<For>`'s items.** Each time its list is read again, every row's item is set again
-  (`Host.row_set!`), and, since the host can't compare Roc values, every row is told: the holes that
-  read the item run again (a value a node has already is no patch). `compared` (D-053) compares in
-  Roc instead: `<For each!={…} keyed={…} compared>` hands each item with whether it is `==` the one
-  the row had (`Host.row_last!`), and only a row whose item changed is told, so one changed item in
-  a thousand runs one row's holes (3 runs where 2,001 ran; measured in D-053). Its items must
-  compare, as a store's parts do; a list of records holding functions or markup can't be compared,
-  so it is a flag, not the default. Keys are made unique (`#1`, `#2` for a key seen before) with a
+- **A `.map`'s rows** (D-071: a hole's `{...list!().map(|item| <li key={item.id}>…</li>)}` is
+  `Html.rows!`, its key the row's root's; `.map_with_index(|item, i| … key={i})` is `Html.rows_at!`, a
+  row per position). Each time its list is read again, every row's item is set again
+  (`Host.row_set!`) with whether it is `==` the one the row had (`Host.row_last!`, D-053's
+  `compared`, every list's now), and only a row whose item changed is told, so one changed item in a
+  thousand runs one row's holes (3 runs where 2,001 ran). Its items must compare, as a store's parts
+  do: a list of records holding functions or markup is no list of rows. Keys are made unique (`#1`, `#2` for a key seen before) with a
   `Dict` of how many of each came before: a count over every key seen made ten thousand rows take
   fifty million comparisons (1.9 s a change; 66 ms since).
-- **`<Repeat>`** (Solid 2.0's) is a `<For>` with no list behind it: `count!` rows from `from!`
-  (0 unless it says), each keyed by its index (`Html.each`, the same node a `<For>` is, so the server
+- **`<Repeat>`** (Solid 2.0's) is a `.map`'s rows with no list behind them: `count!` rows from `from!`
+  (0 unless it says), each keyed by its index (`Html.each`, the same node a `.map`'s rows are, so the server
   renders it and hydrating adopts it as one). When the range moves, only the rows that come into it
   are made and only those that leave it go; the child is given its index, which doesn't change, so a
   kept row has nothing to re-run. It is what a virtual list renders the rows that show with
   (packages/virtual).
-- **Parts are made as they show**, as Solid makes them. A fallback (a `<For>`'s, a `<Loading>`'s)
+- **Parts are made as they show**, as Solid makes them. A fallback (a `<Loading>`'s)
   is serialized as a component node
   (`{"t":"c"}`, `Html.serialize!`'s `made!`): its box is run where the part is rendered, once, its
   reads untracked, owned by the part, and again each time the part shows again. So the holes inside
-  aren't kept until then. A `<For>`'s row (`"r"`) and an `if`'s or `match`'s part (`"with"`) are made
+  aren't kept until then. A `.map`'s row (`"r"`) and an `if`'s or `match`'s part (`"with"`) are made
   as they come too, by computations of their own, run untracked as above (D-039): a value prop read
   there (`<PlannerDay day={day!()} />` in a row) is a getter the component reads, so the row is kept.
 - **A hole's `if` and `match`** (D-070, Solid's `<Show>` and `<Switch>` without the components).
@@ -215,7 +214,7 @@ same components natively; this one hydrates them.
   read nothing that changes is static: the server writes it without comments, and hydrating adopts
   it as it is. Text in every branch (`{if (busy!()) "Saving…" else "Save"}`) stays a text hole. An
   `if` in a hole needs no `else` (`{if open!() { <Panel /> }}`): rocx gives it `Html.empty({})`. A
-  part made anew for each value is a `<For>` over a list of none or one, keyed by the value. The
+  part made anew for each value is a `.map` over a list of one, keyed by the value. The
   node is `"show"` with `"b"` (`"r"` answers the case's name, `"#…"`, or `false`; `"with"` makes
   it): the node a level is too (D-040, `Html.switched`), but an `if`'s part is no level, and the run
   that picks its branch reads the condition again without it counting as a read made once.
@@ -243,7 +242,7 @@ same components natively; this one hydrates them.
   in rocx alone (a `view!`): the platform's take their own types, and a pure one values. Not getters: a prop
   named as an effect (`label!={word!()}`, an accessor, `|| word!()`, which the child types and calls
   itself), `children` (markup, whose holes are already live), and the props of the platform's own
-  components (`<For>`, `<Loading>`…). A pure component's (`view`) props are values, its call made where
+  components (`<Loading>`, `<Errored>`…). A pure component's (`view`) props are values, its call made where
   it is written; given one read from what changes, the call is a hole of its own
   (`Html.html_of(|| Heading.view({…}))`), made anew when it changes. That is a choice (D-053): patched
   in place, as Solid patches a component, it would take getters read in its holes, which a pure
@@ -472,7 +471,7 @@ same components natively; this one hydrates them.
     in order. One the browser builds where the server rendered none (a
     an `if` switching to a part that has one) is empty, with a warning.
   - **What may go inside:** anything the server can render. Elements, text, holes (computed ones run
-    once), pure and `view!` components (run once, never hydrated, as Solid's), an `if`'s and a `match`'s parts, `<For>`,
+    once), pure and `view!` components (run once, never hydrated, as Solid's), an `if`'s and a `match`'s parts, a `.map`'s rows,
     `<Loading>`, `<Errored>` and endpoint reads all render as they would, once. Nothing
     there changes afterwards, and nothing in it runs in the browser. So rocx refuses a handler
     (`on:…`), a `key` or a transition written inside, at its line, and the server refuses to render
@@ -682,12 +681,12 @@ same components natively; this one hydrates them.
   the viewport. `on:visibilitychange.visible` (`Html.on_visible`, an `.checked`'s handler) gives
   whether the page shows (`document.visibilityState` isn't `hidden`).
 - **Transitions** (`transition`, `transition:in`, `transition:out`, a `Transition` from
-  `Transition.roc`): a `<For>`'s new row, or an `if`'s new part, plays its own elements'
-  transitions in once the flush that made it is on the page (none the first time a `<For>` or a
+  `Transition.roc`): a `.map`'s new row, or an `if`'s new part, plays its own elements'
+  transitions in once the flush that made it is on the page (none the first time a `.map` or an
   `if` settles: those come with the page). A row whose key is gone, or a part switched away,
   stays where it was, inert and `aria-hidden`, its computations disposed at once, while its own
   elements' transitions out play (`element.animate`, backwards, holding the hidden style); then it
-  is removed. A `<For>` putting its rows in order passes over the rows leaving; `<For>`s inside a part
+  is removed. A `.map` putting its rows in order passes over the rows leaving; `.map`s inside a part
   that is leaving keep their rows until it goes. With `prefers-reduced-motion: reduce`, nothing
   plays.
 - **Moves** (D-031; `transition:move`, `key`): an element with a move transition is measured
@@ -728,8 +727,8 @@ same components natively; this one hydrates them.
 
 The test app (`test/app`, in rocx) is built several ways: the profile (`Profile.rocx`: five
 answers, one spinner, regions that fail on their own, a rename that waits for the server) from the
-dev backend and optimized; the picks (`<For>` by key and by position, an `if` and a `match`); the nested
-(`Nested.rocx`: a `<For>` in a `<For>`'s row and in a `match` arm); the scroller
+dev backend and optimized; the picks (a `.map` by key and by position, an `if` and a `match`); the nested
+(`Nested.rocx`: a `.map` in a `.map`'s row and in a `match` arm); the scroller
 (`Scroller.rocx`: ten thousand rows in a box, `<Repeat>` rendering those `on:viewport` says show,
 rendered on the server, hydrated, then scrolled and made taller, the rows still in range kept); the fades (`Fades.rocx`:
 rows and a part with transitions, a computed one, a list inside the part); the echo (`Echo.rocx`: a
@@ -754,15 +753,15 @@ body, `latest!`, a component given constants beside one given what changes, and,
 from a copy, the warning of a read in a body, once for two runs of its place; `RenderEffects.rocx`:
 an effect, a render effect and an effect with an error handler noting their applies, mounted); and
 D-070's (`Control.rocx`: an `if` with an `else`, a `match` on a `Try` and one on a mode's kind, and a
-`<For>` of one row keyed by the value, each part with a counter of its own, rendered as the server
+`.map` of one row keyed by the value, each part with a counter of its own, rendered as the server
 would from four queries and hydrated strictly: an equal value keeps every part, a renamed card keeps
 the `if`'s and the `match`'s parts (the arm's name following) and makes the keyed row anew, a `match`
 changes part when another arm holds); stores (`Stores.rocx`: a filter, a count and a list
-of todos in one store, each part a hole of its own, a `<For compared>` of the list, two writes in one
+of todos in one store, each part a hole of its own, a `.map` of the list, two writes in one
 handler, a handler reading it, `Store.of` over a memo, and a grid of four hundred selections of one
 store: which holes each write patches, how many selections it runs, and nothing left allocated); and
-a thousand rows twice (`Rows.rocx`: a plain `<For>` and a compared one, one item changed and every
-item: runs, patches and allocations).
+a thousand rows (`Rows.rocx`: a `.map`, one item changed and every item: runs, patches and
+allocations).
 In Chromium, against a scripted server (a scripted `/rocx/live` too): what shows while answers come, what a click
 patches, failures and retries, rows kept and moved, rows and parts that stay until their
 transitions are over (and none with less motion asked for), hydration without a request, a tampered document's `<body>` rendered again (and strictly, a throw), the
@@ -851,7 +850,7 @@ fetching the document; `<Navigate>` replacing its entry; a GET form navigating i
   row, a changed item runs all of the row's holes; a row that wants finer reads its item by parts
   (`Store.of(todo!).get!(|t| t.done)`).
 - **The dev warning sees calls of accessors** in a component's body (`count!()`, a prop's getter):
-  one a helper makes (`total!(items)`) isn't said, nor one at a `<For>`'s row's top (made once too).
+  one a helper makes (`total!(items)`) isn't said, nor one at a `.map`'s row's top (made once too).
 - **The rest of Solid Router's actions and Solid 2.0's optimistic values:** `createOptimisticStore`
   (D-053's stores have no optimistic kind yet); `.with` binds a form's fields (`Endpoint.with_fields`), and an action's
   values are bound by a closure; a revalidate key is a URL or a URL's beginning, not a query's name

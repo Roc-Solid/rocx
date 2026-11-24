@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Solid exposing [create_signal!]
 import audio.Audio
-import pf.For
 import Random
 
 ## Snake. Arrow keys or WASD steer, Space pauses, M mutes. Four levels: Easy, Medium and Hard each
@@ -77,17 +76,15 @@ Snake := [].{
 			</div>
 			<div class="snake-levels" role="group" aria-label="Level">
 				<small>Level</small>
-				<For each!={levels} keyed={Bool.False}>
-					{|level!, _|
-						<button
-							type="button"
-							aria-pressed={if (game!().level == level!()) "true" else "false"}
-							on:click={|| send!(Pick(level!()))}
-						>
-							{level_name(level!())}
-						</button>
-					}
-				</For>
+				{...levels.map_with_index(|level, i|
+					<button key={i}
+						type="button"
+						aria-pressed={if (game!().level == level) "true" else "false"}
+						on:click={|| send!(Pick(level))}
+					>
+						{level_name(level)}
+					</button>
+				)}
 			</div>
 			<div
 				class="board"
@@ -102,21 +99,19 @@ Snake := [].{
 				{# A row per place along the snake: when it moves, each slides into the cell of the one ahead
 				   of it (a CSS transition as long as a step), and eating adds a row at the tail. }
 				<div class="board-snake" style:--n={game!().body.len().to_str()}>
-					<For each!={game!().body} keyed={Bool.False}>
-						{|part!, index|
-							<i
-								class={part_class(index == 0, game!().heading)}
-								style:--x={part!().x.to_str()}
-								style:--y={part!().y.to_str()}
-								style:--i={index.to_str()}
-							></i>
-						}
-					</For>
+					{...game!().body.map_with_index(|part, index|
+						<i key={index}
+							class={part_class(index == 0, game!().heading)}
+							style:--x={part.x.to_str()}
+							style:--y={part.y.to_str()}
+							style:--i={index.to_str()}
+						></i>
+					)}
 				</div>
 				{# The food, keyed by where it is: a new place is a new element, which pops in. }
-				<For each!={[game!().food]} keyed={|cell| "${cell.x.to_str()},${cell.y.to_str()}"}>
-					{|cell!, _| <i class="food" style:--x={cell!().x.to_str()} style:--y={cell!().y.to_str()}></i>}
-				</For>
+				{...[game!().food].map(|cell|
+					<i key={"${cell.x.to_str()},${cell.y.to_str()}"} class="food" style:--x={cell.x.to_str()} style:--y={cell.y.to_str()}></i>
+				)}
 				{if (game!().phase != Playing) <>{message(game!())}</>}
 			</div>
 			<div class="pad" aria-label="Steer">

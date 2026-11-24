@@ -1,5 +1,4 @@
 import pf.Html
-import pf.For
 import pf.Transition
 
 ## A day of the planner (`Planner.rocx`): its plans, each dragged to another day or moved with its
@@ -47,16 +46,15 @@ PlannerDay := [].{
 		<section class="day" data-day={day.id} class:over={over!() == day.id} on:dragenter={|| set_over!(day.id)} on:dragleave={|| if (over!() == day.id) set_over!("") else {}} on:drop={dropped!}>
 			<h4>{day.name}</h4>
 			<ul>
-				<For each!={here!()} keyed={|plan| plan.id} fallback={<li class="free">Free</li>}>
-					{|plan!, _|
-						<li class="plan" key={plan!().id} draggable="true" class:dragged={dragging!() == plan!().id} transition:move={Transition.glide.ms(320)} on:dragstart={|| set_dragging!(plan!().id)} on:dragend={|| set_dragging!("")}>
-							<span class="title">{plan!().title}</span>
-							<select aria-label={"Move ${plan!().title} to another day"} on:change.value={|to| move!({ plan: plan!().id, day: to })}>
-								{...PlannerDay.days.map(|other| <option value={other.id} selected?={other.id == plan!().day}>{other.name}</option>)}
-							</select>
-						</li>
-					}
-				</For>
+				{...here!().map(|plan|
+					<li class="plan" key={plan.id} draggable="true" class:dragged={dragging!() == plan.id} transition:move={Transition.glide.ms(320)} on:dragstart={|| set_dragging!(plan.id)} on:dragend={|| set_dragging!("")}>
+						<span class="title">{plan.title}</span>
+						<select aria-label={"Move ${plan.title} to another day"} on:change.value={|to| move!({ plan: plan.id, day: to })}>
+							{...PlannerDay.days.map(|other| <option value={other.id} selected?={other.id == plan.day}>{other.name}</option>)}
+						</select>
+					</li>
+				)}
+				{if (here!().is_empty()) <li class="free">Free</li>}
 			</ul>
 		</section>
 	}

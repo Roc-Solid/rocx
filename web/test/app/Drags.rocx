@@ -1,5 +1,4 @@
 import pf.Html
-import pf.For
 import pf.Solid exposing [create_signal!]
 
 ## Drags by touch, a pen and a mouse (D-055), for the tests (`drags_app.roc`): a card that starts
@@ -44,9 +43,9 @@ Drags := [].{
 					{Str.join_with(items!().map(|item| "${item.type}=${item.value}"), " | ")}
 				</div>
 				<ul class="zone files" style="width: 140px; height: 80px; margin: 0; background: #eef" on:drop.files={|dropped| set_files!(dropped)}>
-					<For each!={files!()} keyed={|file| file.url}>
-						{|file!, _| <li class="file" data-url={file!().url}>{"${file!().name} ${file!().type} ${file!().size.to_str()}"}</li>}
-					</For>
+					{...files!().map(|file|
+						<li key={file.url} class="file" data-url={file.url}>{"${file.name} ${file.type} ${file.size.to_str()}"}</li>
+					)}
 				</ul>
 			</div>
 			<div class="area" style="width: 200px; height: 100px; background: #ffe" on:pointermove.point={set_point!}>

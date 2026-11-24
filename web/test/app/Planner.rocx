@@ -3,7 +3,6 @@ import pf.Solid exposing [create_signal!, create_memo!, is_pending!]
 import pf.Router exposing [use_action!, use_submissions!]
 import pf.Endpoint
 import pf.Server
-import pf.For
 import pf.Errored
 import pf.Transition
 
@@ -61,19 +60,19 @@ Planner := [].{
 			<Errored fallback={|problem, _| <p class="problem">{problem}</p>}>
 				<div class="days" class:stale={is_pending!(cards!)}>
 					<ul class="day" data-day="mon" class:over={over!() == "mon"} on:dragenter={|| set_over!("mon")} on:dragleave={|| set_over!("")} on:drop={|| dropped!("mon")}>
-						<For each!={on_day!("mon")} keyed={|card| card.id}>
-							{|card!, _| <li class="card" key={card!().id} draggable="true" class:dragged={dragging!() == card!().id} transition:move={Transition.glide.ms(600)} on:dragstart={|| set_dragging!(card!().id)} on:dragend={|| set_dragging!("")}>{card!().title}</li>}
-						</For>
+						{...on_day!("mon").map(|card|
+							<li class="card" key={card.id} draggable="true" class:dragged={dragging!() == card.id} transition:move={Transition.glide.ms(600)} on:dragstart={|| set_dragging!(card.id)} on:dragend={|| set_dragging!("")}>{card.title}</li>
+						)}
 					</ul>
 					<ul class="day" data-day="tue" class:over={over!() == "tue"} on:dragenter={|| set_over!("tue")} on:dragleave={|| set_over!("")} on:drop={|| dropped!("tue")}>
-						<For each!={on_day!("tue")} keyed={|card| card.id}>
-							{|card!, _| <li class="card" key={card!().id} draggable="true" class:dragged={dragging!() == card!().id} transition:move={Transition.glide.ms(600)} on:dragstart={|| set_dragging!(card!().id)} on:dragend={|| set_dragging!("")}>{card!().title}</li>}
-						</For>
+						{...on_day!("tue").map(|card|
+							<li class="card" key={card.id} draggable="true" class:dragged={dragging!() == card.id} transition:move={Transition.glide.ms(600)} on:dragstart={|| set_dragging!(card.id)} on:dragend={|| set_dragging!("")}>{card.title}</li>
+						)}
 					</ul>
 					<ul class="day" data-day="wed" class:over={over!() == "wed"} on:dragenter={|| set_over!("wed")} on:dragleave={|| set_over!("")} on:drop={|| dropped!("wed")}>
-						<For each!={on_day!("wed")} keyed={|card| card.id}>
-							{|card!, _| <li class="card" key={card!().id} draggable="true" class:dragged={dragging!() == card!().id} transition:move={Transition.glide.ms(600)} on:dragstart={|| set_dragging!(card!().id)} on:dragend={|| set_dragging!("")}>{card!().title}</li>}
-						</For>
+						{...on_day!("wed").map(|card|
+							<li class="card" key={card.id} draggable="true" class:dragged={dragging!() == card.id} transition:move={Transition.glide.ms(600)} on:dragstart={|| set_dragging!(card.id)} on:dragend={|| set_dragging!("")}>{card.title}</li>
+						)}
 					</ul>
 				</div>
 			</Errored>
@@ -81,14 +80,12 @@ Planner := [].{
 				<li>Nothing goes here</li>
 			</ul>
 			<p class="pending">{moves.all!().keep_if(|sent| sent.pending).len().to_str()} on their way</p>
-			<For each!={moves.all!().keep_if(|sent| sent.error.is_ok())} keyed={|sent| sent.id}>
-				{|sent!, _|
-					<p class="refused">
-						<span class="why">{Planner.explained(sent!().error)}</span>
-						<button class="dismiss" type="button" on:click={|| moves.clear!(sent!().id)}>Dismiss</button>
-					</p>
-				}
-			</For>
+			{...moves.all!().keep_if(|sent| sent.error.is_ok()).map(|sent|
+				<p key={sent.id} class="refused">
+					<span class="why">{Planner.explained(sent.error)}</span>
+					<button class="dismiss" type="button" on:click={|| moves.clear!(sent.id)}>Dismiss</button>
+				</p>
+			)}
 			<a class="elsewhere" href="/elsewhere" on:click.prevent={|| set_note!("the page's")}>Elsewhere</a>
 			<p class="note">{note!()}</p>
 		</main>

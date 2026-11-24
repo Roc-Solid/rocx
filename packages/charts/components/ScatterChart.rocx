@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_memo!, create_signal!, untrack!]
-import pf.For
 import pf.Transition
 import charts.Ease
 import charts.Format
@@ -53,39 +52,36 @@ ScatterChart := [].{
 		<figure class="scatter-chart">
 			<svg viewBox="0 0 640 320" role="group" aria-label={label}>
 				<g class="ticks" aria-hidden="true">
-					<For each!={Ticks.between(goal!().up.0, goal!().up.1, tick_count)} keyed={|tick| Format.num(tick, 9)}>
-						{|tick!, _|
-							<g class:out={ScatterChart.outside(drawn!().up, tick!())}>
-								<line x1={Format.coord(left)} x2={Format.coord(right)} y1={Format.coord(y!().at(tick!()))} y2={Format.coord(y!().at(tick!()))} />
-								<text class="up" x={Format.coord(left - 8.0)} y={Format.coord(y!().at(tick!()))} dy="0.32em">{format_y(tick!())}</text>
-							</g>}
-					</For>
-					<For each!={Ticks.between(goal!().across.0, goal!().across.1, tick_count)} keyed={|tick| Format.num(tick, 9)}>
-						{|tick!, _|
-							<g class:out={ScatterChart.outside(drawn!().across, tick!())}>
-								<line x1={Format.coord(x!().at(tick!()))} x2={Format.coord(x!().at(tick!()))} y1={Format.coord(top)} y2={Format.coord(bottom)} />
-								<text class="across" x={Format.coord(x!().at(tick!()))} y={Format.coord(bottom + 20.0)}>{format_x(tick!())}</text>
-							</g>}
-					</For>
+					{...Ticks.between(goal!().up.0, goal!().up.1, tick_count).map(|tick|
+						<g key={Format.num(tick, 9)} class:out={ScatterChart.outside(drawn!().up, tick)}>
+							<line x1={Format.coord(left)} x2={Format.coord(right)} y1={Format.coord(y!().at(tick))} y2={Format.coord(y!().at(tick))} />
+							<text class="up" x={Format.coord(left - 8.0)} y={Format.coord(y!().at(tick))} dy="0.32em">{format_y(tick)}</text>
+						</g>
+					)}
+					{...Ticks.between(goal!().across.0, goal!().across.1, tick_count).map(|tick|
+						<g key={Format.num(tick, 9)} class:out={ScatterChart.outside(drawn!().across, tick)}>
+							<line x1={Format.coord(x!().at(tick))} x2={Format.coord(x!().at(tick))} y1={Format.coord(top)} y2={Format.coord(bottom)} />
+							<text class="across" x={Format.coord(x!().at(tick))} y={Format.coord(bottom + 20.0)}>{format_x(tick)}</text>
+						</g>
+					)}
 				</g>
-				<For each!={rows!()} keyed={|row| row.key}>
-					{|row!, _|
-						<circle
-							class="dot"
-							class:active={hover!() == Ok(row!().key)}
-							cx={Format.coord(dot_x!(row!().key))}
-							cy={Format.coord(dot_y!(row!().key))}
-							r="6"
-							role="img"
-							tabindex="0"
-							aria-label={said!(row!().dot)}
-							on:pointerenter={|| set_hover!(Ok(row!().key))}
-							on:pointerleave={|| set_hover!(Err(None))}
-							on:focus={|| set_hover!(Ok(row!().key))}
-							on:blur={|| set_hover!(Err(None))}
-							transition={Transition.scale(0.0)}
-						/>}
-				</For>
+				{...rows!().map(|row|
+					<circle key={row.key}
+						class="dot"
+						class:active={hover!() == Ok(row.key)}
+						cx={Format.coord(dot_x!(row.key))}
+						cy={Format.coord(dot_y!(row.key))}
+						r="6"
+						role="img"
+						tabindex="0"
+						aria-label={said!(row.dot)}
+						on:pointerenter={|| set_hover!(Ok(row.key))}
+						on:pointerleave={|| set_hover!(Err(None))}
+						on:focus={|| set_hover!(Ok(row.key))}
+						on:blur={|| set_hover!(Err(None))}
+						transition={Transition.scale(0.0)}
+					/>
+				)}
 				<text
 					class="spot"
 					class:shown={hover!() != Err(None)}

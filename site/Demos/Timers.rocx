@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_signal!, set_interval!, set_timeout!]
-import pf.For
 import Clock
 
 ## The browser's timers, from Roc. `set_interval!` and `set_timeout!` run a handler later, and
@@ -69,9 +68,9 @@ Timers := [].{
 				<p class="timer-note">{waiting_note(search!(), query!())}</p>
 				<p class="timer-note">{counted(keys!(), "key")}, {counted(searches!(), "search")}</p>
 				<ul class="timer-birds">
-					<For each!={matches(query!())} keyed={|bird| bird}>
-						{|bird!, _| <li>{bird!()}</li>}
-					</For>
+					{...matches(query!()).map(|bird|
+						<li key={bird}>{bird}</li>
+					)}
 				</ul>
 			</section>
 			<section class="timer">

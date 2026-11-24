@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Call
 import pf.Solid exposing [create_signal!]
-import pf.For
 import pf.Endpoint
 import pf.Server as Http
 import ../Generated/Api
@@ -44,9 +43,9 @@ Count := [].{
 				<output class={"echo-answer stream ${kind(state!())}"}>{status(state!(), heard!().len())}</output>
 			</form>
 			<ol class="counted" aria-live="polite">
-				<For each!={heard!()} keyed={|counted| counted.count.to_str()}>
-					{|counted!, _| <li>{counted!().count.to_str()} of {counted!().of.to_str()}: squared, {counted!().square.to_str()}</li>}
-				</For>
+				{...heard!().map(|counted|
+					<li key={counted.count.to_str()}>{counted.count.to_str()} of {counted.of.to_str()}: squared, {counted.square.to_str()}</li>
+				)}
 			</ol>
 		</div>
 	}

@@ -1,8 +1,7 @@
 import pf.Html
 import pf.Solid exposing [create_memo!, create_signal!]
-import pf.For
 
-## The syntax at a glance, filtered as you type: a <For> whose rows come and go as the query
+## The syntax at a glance, filtered as you type: a .map whose rows come and go as the query
 ## changes, each kept by what it says.
 Cheatsheet := [].{
 	Row : { write : Str, means : Str }
@@ -33,7 +32,7 @@ Cheatsheet := [].{
 		{ write: "total! = create_memo!(|| …)", means: "A value computed from signals once per change, for everything that reads it." },
 		{ write: "{if ready!() { … } else { … }}", means: "The branch that holds, kept while it does; made anew when another one does." },
 		{ write: "{match card!() { Ok(card) => …, Err(_) => … }}", means: "The arm that holds, kept while it does; its names read the newest value." },
-		{ write: "<For each!={…} keyed={|row| row.id}>", means: "A row per key, kept and moved as the list changes; keyed={Bool.False} keeps rows by position." },
+		{ write: "{...rows!().map(|row| <li key={row.id}>…</li>)}", means: "A row per key, kept and moved as the list changes; .map_with_index(|row, i| <li key={i}>…) keeps rows by position." },
 		{ write: "<Loading fallback={…}>", means: "What shows while an answer from the server is on its way." },
 		{ write: "<Errored fallback={|problem, retry| …}>", means: "What shows when something inside failed, and a way to try again." },
 		{ write: "get! = |{ params, context, .. }| Ok(…)", means: "In a route's +server.roc: its GET endpoint, given its path's params and what its middleware handed on." },
@@ -59,9 +58,9 @@ Cheatsheet := [].{
 				<table>
 					<thead><tr><th>Write</th><th>Means</th></tr></thead>
 					<tbody>
-						<For each!={shown!()} keyed={|row| row.write}>
-							{|row!, _| <tr><td><code>{row!().write}</code></td><td>{row!().means}</td></tr>}
-						</For>
+						{...shown!().map(|row|
+							<tr key={row.write}><td><code>{row.write}</code></td><td>{row.means}</td></tr>
+						)}
 					</tbody>
 				</table>
 			</div>

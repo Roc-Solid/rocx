@@ -2,7 +2,6 @@ import pf.Html
 import pf.Browser
 import pf.Call
 import pf.Endpoint
-import pf.For
 import pf.Server
 import pf.Time
 import pf.Solid exposing [create_effect!, create_signal!, on_cleanup!, on_settled!, set_interval!, untrack!]
@@ -266,7 +265,7 @@ Editor := [].{
 							<label for="card-assignee">Assignee</label>
 							<select id="card-assignee" name="assignee" on:change.value={|value| set_assignee!(Ok(value))}>
 								<option value="" selected?={fields!().assignee.is_empty()}>No one</option>
-								{...board!().people.map(|person| <option value={person.id} selected?={person.id == fields!().assignee}>{person.name}</option>)}
+								{...board!().people.map(|person| <option key={person.id} value={person.id} selected?={person.id == fields!().assignee}>{person.name}</option>)}
 							</select>
 						</div>
 						<div>
@@ -283,17 +282,15 @@ Editor := [].{
 				<section class="labels" aria-labelledby="labels-title">
 					<h3 id="labels-title">Labels</h3>
 					<ul>
-						<For each!={Board.labels} keyed={|label| label.key}>
-							{|label!, _|
-								<li>
-									<form method="post" action={Endpoint.url_of(Api.post_b_board_cards_card_labels(at))} on:submit={|| set_label!({ label: label!().key, on: if (card!().labels.contains(label!().key)) "false" else "true" })}>
-										<input type="hidden" name="label" value={label!().key} />
-										<input type="hidden" name="on" value={if (card!().labels.contains(label!().key)) "false" else "true"} />
-										<button type="submit" class="label-toggle" data-label={label!().key} aria-pressed={if (card!().labels.contains(label!().key)) "true" else "false"}>{label!().name}</button>
-									</form>
-								</li>
-							}
-						</For>
+						{...Board.labels.map(|label|
+							<li key={label.key}>
+								<form method="post" action={Endpoint.url_of(Api.post_b_board_cards_card_labels(at))} on:submit={|| set_label!({ label: label.key, on: if (card!().labels.contains(label.key)) "false" else "true" })}>
+									<input type="hidden" name="label" value={label.key} />
+									<input type="hidden" name="on" value={if (card!().labels.contains(label.key)) "false" else "true"} />
+									<button type="submit" class="label-toggle" data-label={label.key} aria-pressed={if (card!().labels.contains(label.key)) "true" else "false"}>{label.name}</button>
+								</form>
+							</li>
+						)}
 					</ul>
 				</section>
 
@@ -301,27 +298,25 @@ Editor := [].{
 					<h3 id="checklist-title">Checklist <span class="tally">{Editor.tally(Board.progress(card!().checklist))}</span></h3>
 					<progress max={Editor.at_least_one(Board.progress(card!().checklist).total)} value={Board.progress(card!().checklist).done.to_str()} aria-labelledby="checklist-title"></progress>
 					<ul>
-						<For each!={card!().checklist} keyed={|item| item.id}>
-							{|item!, _|
-								<li class:done={item!().done}>
-									<form method="post" action={Endpoint.url_of(Api.post_b_board_cards_card_checklist_tick(at))} on:submit={|| tick!({ item: item!().id, done: if (item!().done) "false" else "true" })}>
-										<input type="hidden" name="item" value={item!().id} />
-										<input type="hidden" name="done" value={if (item!().done) "false" else "true"} />
-										<button type="submit" class="tick" role="checkbox" aria-checked={if (item!().done) "true" else "false"}>
-											<span class="box" aria-hidden="true"></span>
-											<span class="text">{item!().text}</span>
-										</button>
-									</form>
-									<form method="post" action={Endpoint.url_of(Api.post_b_board_cards_card_checklist_delete(at))} on:submit={|| delete_item!({ item: item!().id })}>
-										<input type="hidden" name="item" value={item!().id} />
-										<button type="submit" class="remove" aria-label={"Remove “${item!().text}”"}>✕</button>
-									</form>
-								</li>
-							}
-						</For>
-						<For each!={additions.pending_inputs!()} keyed={|each| each.text}>
-							{|each!, _| <li class="adding" aria-busy="true"><span class="text">{each!().text}</span></li>}
-						</For>
+						{...card!().checklist.map(|item|
+							<li key={item.id} class:done={item.done}>
+								<form method="post" action={Endpoint.url_of(Api.post_b_board_cards_card_checklist_tick(at))} on:submit={|| tick!({ item: item.id, done: if (item.done) "false" else "true" })}>
+									<input type="hidden" name="item" value={item.id} />
+									<input type="hidden" name="done" value={if (item.done) "false" else "true"} />
+									<button type="submit" class="tick" role="checkbox" aria-checked={if (item.done) "true" else "false"}>
+										<span class="box" aria-hidden="true"></span>
+										<span class="text">{item.text}</span>
+									</button>
+								</form>
+								<form method="post" action={Endpoint.url_of(Api.post_b_board_cards_card_checklist_delete(at))} on:submit={|| delete_item!({ item: item.id })}>
+									<input type="hidden" name="item" value={item.id} />
+									<button type="submit" class="remove" aria-label={"Remove “${item.text}”"}>✕</button>
+								</form>
+							</li>
+						)}
+						{...additions.pending_inputs!().map(|each|
+							<li key={each.text} class="adding" aria-busy="true"><span class="text">{each.text}</span></li>
+						)}
 					</ul>
 					<form class="add-line" method="post" action={Endpoint.url_of(Api.post_b_board_cards_card_checklist(at))} on:submit={add_line!}>
 						<label class="hidden" for="new-line">New checklist line</label>
@@ -345,7 +340,7 @@ Editor := [].{
 					<label for="card-column">To the end of</label>
 					<div class="pick">
 						<select id="card-column" name="column" on:change.value={|value| set_to!(Ok(value))}>
-							{...Board.columns_in_order(board!().columns).map(|column| <option value={column.id} selected?={column.id == to_column!()}>{column.name}</option>)}
+							{...Board.columns_in_order(board!().columns).map(|column| <option key={column.id} value={column.id} selected?={column.id == to_column!()}>{column.name}</option>)}
 						</select>
 						<button type="submit">Move</button>
 					</div>

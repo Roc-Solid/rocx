@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_signal!]
-import pf.For
 import pf.Transition
 
 ## Glides across boxes that scroll, for the tests (`glides_app.roc`): two lists side by side, each
@@ -28,20 +27,20 @@ Glides := [].{
 			<button class="narrow" on:click={into_narrow!}>Into the narrow list</button>
 			<div style="display: flex; gap: 40px; align-items: flex-start">
 				<ul class="list a" style="overflow: auto; height: 100px; width: 120px; margin: 0; padding: 0; list-style: none">
-					<For each!={items!().keep_if(|item| item.list == "a")} keyed={|item| item.id}>
-						{|item!, _| <li class="item" key={item!().id} transition:move={Transition.glide.ms(600)} style="height: 30px">{item!().id}</li>}
-					</For>
+					{...items!().keep_if(|item| item.list == "a").map(|item|
+						<li class="item" key={item.id} transition:move={Transition.glide.ms(600)} style="height: 30px">{item.id}</li>
+					)}
 				</ul>
 				<ul class="list b" style="overflow: auto; height: 100px; width: 120px; margin: 0; padding: 0; list-style: none">
-					<For each!={items!().keep_if(|item| item.list == "b")} keyed={|item| item.id}>
-						{|item!, _| <li class="item" key={item!().id} transition:move={Transition.glide.ms(600)} style="height: 30px">{item!().id}</li>}
-					</For>
+					{...items!().keep_if(|item| item.list == "b").map(|item|
+						<li class="item" key={item.id} transition:move={Transition.glide.ms(600)} style="height: 30px">{item.id}</li>
+					)}
 				</ul>
 				<div style="transform: translateZ(0)">
 					<ul class="list c" style="overflow: auto; overflow-anchor: none; height: 100px; width: 80px; margin: 0; padding: 0; list-style: none">
-						<For each!={narrow!()} keyed={|item| item.id}>
-							{|item!, _| <li class="item" key={item!().id} transition:move={Transition.glide.ms(600)} style="height: 30px">{item!().id}</li>}
-						</For>
+						{...narrow!().map(|item|
+							<li class="item" key={item.id} transition:move={Transition.glide.ms(600)} style="height: 30px">{item.id}</li>
+						)}
 					</ul>
 				</div>
 			</div>

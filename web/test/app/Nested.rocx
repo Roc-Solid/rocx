@@ -1,8 +1,7 @@
 import pf.Html
 import pf.Solid exposing [create_signal!]
-import pf.For
 
-## Control flow inside control flow: a <For> in a <For>'s row, and a <For> in a match
+## Control flow inside control flow: a .map in a .map's row, and a .map in a match
 ## arm. Their children are effectful, as a component's view! is, so they may hold control flow of
 ## their own; the innermost ones here are plain markup, which they may be too.
 Nested := [].{
@@ -17,26 +16,24 @@ Nested := [].{
 			<button class="add" on:click={add!}>Add</button>
 			<button class="swap" on:click={swap!}>Swap</button>
 			<ul class="shelves">
-				<For each!={shelves!()} keyed={|shelf| shelf.id}>
-					{|shelf!, _|
-						<li>
-							<h3>{shelf!().name}</h3>
-							<ol>
-								<For each!={shelf!().items} keyed={Bool.False}>
-									{|item!, index| <li>{index.to_str()}: {item!()}</li>}
-								</For>
-							</ol>
-						</li>
-					}
-				</For>
+				{...shelves!().map(|shelf|
+					<li key={shelf.id}>
+						<h3>{shelf.name}</h3>
+						<ol>
+							{...shelf!().items.map_with_index(|item, index|
+								<li key={index}>{index.to_str()}: {item}</li>
+							)}
+						</ol>
+					</li>
+				)}
 			</ul>
 			{match shelves!().first() {
 				Ok(first) =>
 					<p class="first">
 						First: {first.name}
-						<For each!={first.items} keyed={Bool.False}>
-							{|item!, _| <span class="item">{item!()}</span>}
-						</For>
+						{...first.items.map_with_index(|item, i|
+							<span key={i} class="item">{item}</span>
+						)}
 					</p>
 				Err(_) => <></>
 			}}

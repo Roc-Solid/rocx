@@ -294,9 +294,9 @@ Host := [].{
 	problem! : {} => Str
 	retry! : U64 => {}
 
-	## A `<For>`'s rows: its id; a row's index; and a row's item, by its key (`same`, a `<For
-	## compared>`'s item equal to what it was, means nothing here: a list is read once); the row's item,
-	## or `fallback` for a new row.
+	## A `.map`'s rows (`Html.rows!`, D-071): its id; a row's index; and a row's item, by its key
+	## (`same`, the item equal to what it was, means nothing here: a list is read once); the row's
+	## item, or `fallback` for a new row.
 	for_new! : {} => U64
 	row_index! : U64, Str => U64
 	row_set! : U64, Str, Box(() -> a), Bool => {}

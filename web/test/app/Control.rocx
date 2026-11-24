@@ -1,12 +1,11 @@
 import pf.Html
-import pf.For
 import pf.Router
 import pf.Solid exposing [create_signal!]
 
 ## D-070's control flow, for the tests (`control_app.roc`): a hole's `if` (`else if` too) and
 ## `match`, each the part its branch makes, made again only when another branch holds; a match
 ## arm's names read through getters, so the arm stays while its value changes; and a part made anew
-## for each value, a `<For>` of one row keyed by it. Each part holds a counter of its own, so a part
+## for each value, a `.map` of one row keyed by it. Each part holds a counter of its own, so a part
 ## that is kept keeps its count, and one made anew starts at 0 again. The page's query sets where
 ## it starts (`?card=2&mode=11`), so the server renders, and the browser hydrates, each case.
 Control := [].{
@@ -29,7 +28,7 @@ Control := [].{
 				Ok(shown) => <Counter part="narrowed" label={shown.name} />
 				Err(_) => <></>
 			}}
-			<For each!={Control.listed(card!())} keyed={|shown| Str.inspect(shown)}>{|shown!, _| <Counter part="keyed" label={shown!().name} />}</For>
+			{...Control.listed(card!()).map(|shown| <Counter key={Str.inspect(shown)} part="keyed" label={shown.name} />)}
 			{match Control.kind(mode!()) {
 				Zero => <Counter part="zero" label="zero" />
 				Small(said) => <Counter part="small" label={said} />
@@ -39,7 +38,7 @@ Control := [].{
 		</div>
 	}
 
-	## The card as a list of none or one: a `<For>` keyed by its value makes its row anew for each.
+	## The card as a list of none or one: a `.map` keyed by its value makes its row anew for each.
 	listed : Try(Control.Card, [None]) -> List(Control.Card)
 	listed = |card|
 		match card {

@@ -1,5 +1,4 @@
 import pf.Html
-import pf.For
 import pf.Transition
 import pf.Solid exposing [create_memo!]
 import ../Game
@@ -16,29 +15,27 @@ Podium := [].{
 		ranked! = create_memo!(|| Score.ranked(players.map(|player| { id: player.id, name: player.name, score: player.score })))
 		<section class="podium" aria-label="Podium">
 			<ol class="steps">
-				<For each!={Podium.steps(ranked!())} keyed={|row| row.id}>
-					{|row!, _|
-						<li
-							class={"step ${row!().slot}"}
-							class:me={row!().id == me}
-							transition:in={Transition.grow(Bottom).ms(550).delay(Podium.delay(row!().slot))}
-						>
-							<span class="who">{row!().name}</span>
-							<span class="score">{row!().score.to_str()}</span>
-							<span class="block" aria-hidden="true">{row!().place.to_str()}</span>
-							<span class="visually-hidden">{"${Score.ordinal(row!().place)} place"}</span>
-						</li>}
-				</For>
+				{...Podium.steps(ranked!()).map(|row|
+					<li key={row.id}
+						class={"step ${row.slot}"}
+						class:me={row.id == me}
+						transition:in={Transition.grow(Bottom).ms(550).delay(Podium.delay(row.slot))}
+					>
+						<span class="who">{row.name}</span>
+						<span class="score">{row.score.to_str()}</span>
+						<span class="block" aria-hidden="true">{row.place.to_str()}</span>
+						<span class="visually-hidden">{"${Score.ordinal(row.place)} place"}</span>
+					</li>
+				)}
 			</ol>
 			<ol class="rest" aria-label="Everyone else">
-				<For each!={ranked!().drop_first(3)} keyed={|row| row.id}>
-					{|row!, _|
-						<li class:me={row!().id == me}>
-							<span>{Score.ordinal(row!().place)}</span>
-							<span>{row!().name}</span>
-							<span class="score">{row!().score.to_str()}</span>
-						</li>}
-				</For>
+				{...ranked!().drop_first(3).map(|row|
+					<li key={row.id} class:me={row.id == me}>
+						<span>{Score.ordinal(row.place)}</span>
+						<span>{row.name}</span>
+						<span class="score">{row.score.to_str()}</span>
+					</li>
+				)}
 			</ol>
 		</section>
 	}

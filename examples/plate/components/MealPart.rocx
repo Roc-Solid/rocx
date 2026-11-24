@@ -1,5 +1,4 @@
 import pf.Html
-import pf.For
 import pf.Transition
 import ../Plate
 import ../Query
@@ -22,27 +21,25 @@ MealPart := [].{
 			</header>
 			{if !entries!().is_empty() {
 				<ul class="entries">
-					<For each!={entries!()} keyed={|entry| entry.id}>
-						{|entry!, _|
-							<li class="entry" transition:in={Transition.fade} transition:out={Transition.fade}>
-								<div class="what">
-									{if !entry!().food.is_empty() {
-										<a class="name" href={Query.link(Paths.foods_id({ id: entry!().food }), Query.of([("day", day), ("meal", id)]))}>{entry!().name}</a>
-									} else {
-										<span class="name">{entry!().name}</span>
-									}}
-									<span class="amount">{if (entry!().amount.ends_with(" g")) entry!().amount else "${entry!().amount} · ${Plate.grams_label(entry!().grams)}"}</span>
-								</div>
-								<span class="entry-kcal">{Plate.whole(entry!().kcal)}</span>
-								<form method="post" action={remove}>
-									<input type="hidden" name="id" value={entry!().id} />
-									<button class="remove" type="submit" aria-label={"Remove ${entry!().name}"}>
-										<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
-									</button>
-								</form>
-							</li>
-						}
-					</For>
+					{...entries!().map(|entry|
+						<li key={entry.id} class="entry" transition:in={Transition.fade} transition:out={Transition.fade}>
+							<div class="what">
+								{if !entry.food.is_empty() {
+									<a class="name" href={Query.link(Paths.foods_id({ id: entry.food }), Query.of([("day", day), ("meal", id)]))}>{entry.name}</a>
+								} else {
+									<span class="name">{entry.name}</span>
+								}}
+								<span class="amount">{if (entry.amount.ends_with(" g")) entry.amount else "${entry.amount} · ${Plate.grams_label(entry.grams)}"}</span>
+							</div>
+							<span class="entry-kcal">{Plate.whole(entry.kcal)}</span>
+							<form method="post" action={remove}>
+								<input type="hidden" name="id" value={entry.id} />
+								<button class="remove" type="submit" aria-label={"Remove ${entry.name}"}>
+									<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+								</button>
+							</form>
+						</li>
+					)}
 				</ul>
 			}}
 			<a class="add" href={Query.link(Paths.add, Query.of([("day", day), ("meal", id)]))}>

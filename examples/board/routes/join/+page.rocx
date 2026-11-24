@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Endpoint
-import pf.For
 import pf.Server
 import pf.Router exposing [use_submission!]
 import pf.Router
@@ -28,21 +27,19 @@ view! = |_| {
 			<section class="quick" aria-labelledby="quick-title">
 				<h2 id="quick-title">Continue as</h2>
 				<ul>
-					<For each!={people!({})} keyed={|person| person.id}>
-						{|person!, _|
-							<li>
-								<form method="post" action={Endpoint.url_of(Api.post_join({}))}>
-									<input type="hidden" name="name" value={person!().name} />
-									<input type="hidden" name="color" value={person!().color} />
-									<input type="hidden" name="then" value={then} />
-									<button type="submit" class="person">
-										{Avatar.view({ person: person!(), label: "" })}
-										{person!().name}
-									</button>
-								</form>
-							</li>
-						}
-					</For>
+					{...people!({}).map(|person|
+						<li key={person.id}>
+							<form method="post" action={Endpoint.url_of(Api.post_join({}))}>
+								<input type="hidden" name="name" value={person.name} />
+								<input type="hidden" name="color" value={person.color} />
+								<input type="hidden" name="then" value={then} />
+								<button type="submit" class="person">
+									{Avatar.view({ person: person, label: "" })}
+									{person.name}
+								</button>
+							</form>
+						</li>
+					)}
 				</ul>
 			</section>
 		}}

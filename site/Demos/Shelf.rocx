@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Endpoint
 import pf.Solid exposing [create_memo!, use_context!]
-import pf.For
 import pf.Loading
 import Bag
 import ../Generated/Api
@@ -24,17 +23,15 @@ Shelf := [].{
 		<div class="shelf">
 			<Loading fallback={<p class="shelf-note">Fetching the shelf…</p>}>
 				<ul>
-					<For each!={shelved!()} keyed={|thing| thing.name}>
-						{|thing!, _|
-							<li class:taken={taken!(thing!())}>
-								<span class="shelf-name">{thing!().name}</span>
-								<span class="shelf-price">{thing!().price.to_str()} €</span>
-								<button type="button" on:click={|| put!(thing!())} disabled?={taken!(thing!())}>
-									{if (taken!(thing!())) "In the bag" else "Put in the bag"}
-								</button>
-							</li>
-						}
-					</For>
+					{...shelved!().map(|thing|
+						<li key={thing.name} class:taken={taken!(thing)}>
+							<span class="shelf-name">{thing.name}</span>
+							<span class="shelf-price">{thing.price.to_str()} €</span>
+							<button type="button" on:click={|| put!(thing)} disabled?={taken!(thing)}>
+								{if (taken!(thing)) "In the bag" else "Put in the bag"}
+							</button>
+						</li>
+					)}
 				</ul>
 			</Loading>
 		</div>

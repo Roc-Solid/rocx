@@ -40,7 +40,7 @@ CardTile := [].{
 			on:dragenter={entered!}
 		>
 			<ul class="labels" aria-label="Labels">
-				{...card!().labels.map(|key| <li class="chip" data-label={key}>{Board.label_name(key)}</li>)}
+				{...card!().labels.map(|key| <li key={key} class="chip" data-label={key}>{Board.label_name(key)}</li>)}
 			</ul>
 			<a class="open" href={"?card=${card!().id}"} draggable="false" noscroll>{card!().title}</a>
 			<div class="meta">

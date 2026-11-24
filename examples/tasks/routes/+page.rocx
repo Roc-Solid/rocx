@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Solid exposing [create_memo!]
 import pf.Endpoint
-import pf.For
 import forms.LiveForm
 import forms.TextField
 import ../Tasks
@@ -28,17 +27,15 @@ view! = |_| {
 			</p>
 		</section>
 		<ul class="cards" aria-label="Lists">
-			<For each!={team!().lists} keyed={|list| list.id}>
-				{|list!, _|
-					<li>
-						<a class="card" href={Paths.lists_id({ id: list!().id })}>
-							<span class="name">{list!().name}</span>
-							<span class="counts">{Home.counts(list!())}</span>
-							<span class="bar" style:--done={Home.percent(list!())} aria-hidden="true"><span></span></span>
-						</a>
-					</li>
-				}
-			</For>
+			{...team!().lists.map(|list|
+				<li key={list.id}>
+					<a class="card" href={Paths.lists_id({ id: list.id })}>
+						<span class="name">{list.name}</span>
+						<span class="counts">{Home.counts(list)}</span>
+						<span class="bar" style:--done={Home.percent(list)} aria-hidden="true"><span></span></span>
+					</a>
+				</li>
+			)}
 		</ul>
 		<section class="new" id="new-list" aria-labelledby="new-list-title">
 			<h2 id="new-list-title">New list</h2>
@@ -50,9 +47,9 @@ view! = |_| {
 		<section class="team" aria-labelledby="team-title">
 			<h2 id="team-title">The team</h2>
 			<ul>
-				<For each!={team!().people} keyed={|person| person.id}>
-					{|person!, _| <li>{Avatar.view({ name: person!().name })} {person!().name}</li>}
-				</For>
+				{...team!().people.map(|person|
+					<li key={person.id}>{Avatar.view({ name: person.name })} {person.name}</li>
+				)}
 			</ul>
 		</section>
 	</>

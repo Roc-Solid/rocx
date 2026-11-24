@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_memo!, create_signal!, untrack!]
-import pf.For
 import pf.Transition
 import charts.Ease
 import charts.Format
@@ -71,27 +70,26 @@ DonutChart := [].{
 			}
 		<figure class="donut-chart">
 			<svg viewBox="0 0 320 320" role="group" aria-label={props.label}>
-				<For each!={keys!()} keyed={|key| key}>
-					{|key!, _|
-						<path
-							class="slice"
-							class:active={hover!() == Ok(key!())}
-							data-slot={slot!(key!())}
-							d={DonutChart.path(arcs!(), key!(), Dec.max(outer - props.thickness, 0.0))}
-							role="img"
-							tabindex="0"
-							aria-label={
-								match row_of!(key!()) {
-									Ok(row) => said!(row)
-									Err(_) => key!()
-								}
+				{...keys!().map(|key|
+					<path key={key}
+						class="slice"
+						class:active={hover!() == Ok(key)}
+						data-slot={slot!(key)}
+						d={DonutChart.path(arcs!(), key, Dec.max(outer - props.thickness, 0.0))}
+						role="img"
+						tabindex="0"
+						aria-label={
+							match row_of!(key) {
+								Ok(row) => said!(row)
+								Err(_) => key
 							}
-							on:pointerenter={|| set_hover!(Ok(key!()))}
-							on:pointerleave={|| set_hover!(Err(None))}
-							on:focus={|| set_hover!(Ok(key!()))}
-							on:blur={|| set_hover!(Err(None))}
-						/>}
-				</For>
+						}
+						on:pointerenter={|| set_hover!(Ok(key))}
+						on:pointerleave={|| set_hover!(Err(None))}
+						on:focus={|| set_hover!(Ok(key))}
+						on:blur={|| set_hover!(Err(None))}
+					/>
+				)}
 				{# The middle, when the ring leaves room for it: a pie has none. }
 				<g class="middle" class:gone={props.thickness > 90.0} aria-hidden="true">
 					<text class="big" x="160" y="160">{big!()}</text>
@@ -99,21 +97,20 @@ DonutChart := [].{
 				</g>
 			</svg>
 			<ul class="legend" aria-hidden="true">
-				<For each!={rows!()} keyed={|row| row.key}>
-					{|row!, _|
-						<li
-							class:active={hover!() == Ok(row!().key)}
-							data-slot={slot!(row!().key)}
-							on:pointerenter={|| set_hover!(Ok(row!().key))}
-							on:pointerleave={|| set_hover!(Err(None))}
-							transition={Transition.fade}
-						>
-							<span class="swatch"></span>
-							<span class="name">{row!().slice.label}</span>
-							<span class="amount">{format(row!().slice.value)}</span>
-							<span class="share">{share!(Dec.max(row!().slice.value, 0.0))}</span>
-						</li>}
-				</For>
+				{...rows!().map(|row|
+					<li key={row.key}
+						class:active={hover!() == Ok(row.key)}
+						data-slot={slot!(row.key)}
+						on:pointerenter={|| set_hover!(Ok(row.key))}
+						on:pointerleave={|| set_hover!(Err(None))}
+						transition={Transition.fade}
+					>
+						<span class="swatch"></span>
+						<span class="name">{row.slice.label}</span>
+						<span class="amount">{format(row.slice.value)}</span>
+						<span class="share">{share!(Dec.max(row.slice.value, 0.0))}</span>
+					</li>
+				)}
 			</ul>
 			{# Frames only while something moves: once the slices are where the data says, none. }
 			{if drawn!().slices != goal!() {

@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Solid exposing [create_signal!, use_context!]
 import pf.Context
-import pf.For
 import intl.Intl
 import intl.Catalog
 import intl.Locales
@@ -49,9 +48,9 @@ Language := [].{
 	view! = |{ label }| {
 		{ intl!, choose!, supported } = use_context!(language_context)
 		<select class="language" aria-label={label} on:input.value={choose!}>
-			<For each!={supported} keyed={|data| data.tag}>
-				{|data!, _| <option value={data!().tag} lang={data!().tag} selected?={data!().tag == intl!().tag()}>{data!().name}</option>}
-			</For>
+			{...supported.map(|data|
+				<option key={data.tag} value={data.tag} lang={data.tag} selected?={data.tag == intl!().tag()}>{data.name}</option>
+			)}
 		</select>
 	}
 

@@ -22,7 +22,7 @@ Submissions(arg, result) :: { url : Str, form : List({ name : Str, value : Str }
 
 	## A submission as it is now, Solid's fields: whether it is on its way (`pending`), what it sent,
 	## as the endpoint reads it (`input`), and the endpoint's result or refusal; its `id`, unique on
-	## the page, keys it (`<For keyed={|move| move.id}>`) and forgets it (`clear!`).
+	## the page, keys it (`{...moves.map(|move| <li key={move.id}>…)}`) and forgets it (`clear!`).
 	Sent(arg, result) : { id : U64, pending : Bool, input : Try(arg, [NoInput]), result : Try(result, [NoResult]), error : Try(Server.Problem, [NoError]) }
 
 	## The submissions to the endpoint at `url`, whose arg a form's fields are read as by `form` (the

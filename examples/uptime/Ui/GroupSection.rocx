@@ -1,5 +1,4 @@
 import pf.Html
-import pf.For
 import ../Report
 import MonitorCard
 
@@ -11,9 +10,9 @@ GroupSection := [].{
 		<section class="group">
 			<h2>{group!().name}</h2>
 			<ul class="monitors">
-				<For each!={group!().monitors} keyed={|monitor| monitor.id}>
-					{|monitor!, _| <MonitorCard monitor!={monitor!()} />}
-				</For>
+				{...group!().monitors.map(|monitor|
+					<MonitorCard key={monitor.id} monitor!={monitor} />
+				)}
 			</ul>
 		</section>
 

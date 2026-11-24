@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_signal!]
-import pf.For
 import pf.Transition
 
 ## Transitions, for the tests: a list whose rows fade in and out, the same list with none, and an
@@ -23,21 +22,21 @@ Fades := [].{
 			<button class="toggle" on:click={|| set_open!(!open!())}>Toggle</button>
 			<button class="quick" on:click={|| set_slow!(Bool.False)}>Quick</button>
 			<ul class="faded">
-				<For each!={items!()} keyed={|item| item}>
-					{|item!, _| <li transition={Transition.fade.ms(300)}>{item!()}</li>}
-				</For>
+				{...items!().map(|item|
+					<li key={item} transition={Transition.fade.ms(300)}>{item}</li>
+				)}
 			</ul>
 			<ul class="plain">
-				<For each!={items!()} keyed={|item| item}>
-					{|item!, _| <li>{item!()}</li>}
-				</For>
+				{...items!().map(|item|
+					<li key={item}>{item}</li>
+				)}
 			</ul>
 			{if open!() {
 				<div class="panel" transition:in={Transition.fly({ x: 0.0, y: 8.0 })} transition:out={if (slow!()) Transition.fly({ x: 0.0, y: 8.0 }).ms(300) else Transition.fade.ms(30)}>
 					<ul class="inner">
-						<For each!={items!()} keyed={|item| item}>
-							{|item!, _| <li transition:out={Transition.scale(0.5).ms(2000)}>{item!()}</li>}
-						</For>
+						{...items!().map(|item|
+							<li key={item} transition:out={Transition.scale(0.5).ms(2000)}>{item}</li>
+						)}
 					</ul>
 				</div>
 			} else {

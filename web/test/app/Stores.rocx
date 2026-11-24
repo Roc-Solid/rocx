@@ -1,11 +1,10 @@
-import pf.For
 import pf.Html
 import pf.Repeat
 import pf.Solid exposing [create_signal!, create_memo!, create_store!]
 import pf.Store
 
 ## D-053's stores, for the tests (`stores_app.roc`): one store of a filter, a count and a list of
-## todos, each part read by its own hole (a selection), a `<For>` of the items, writes from
+## todos, each part read by its own hole (a selection), a `.map` of the items, writes from
 ## handlers (two in one, composing), a handler reading the store, `Store.of` over a memo, and a
 ## grid of many selections of one store, one cell written at a time.
 Stores := [].{
@@ -36,9 +35,9 @@ Stores := [].{
 			<p class="seen">{seen!().to_str()}</p>
 			<p class="tens">{tens.get!(|n| n // 10).to_str()}</p>
 			<ul>
-				<For each!={todos.get!(|s| s.items)} keyed={|todo| todo.id} compared>
-					{|todo!, _| <li class:done={todo!().done}>{todo!().title}</li>}
-				</For>
+				{...todos.get!(|s| s.items).map(|todo|
+					<li key={todo.id} class:done={todo.done}>{todo.title}</li>
+				)}
 			</ul>
 			<div class="grid">
 				<Repeat count!={400}>{|at| <i>{grid.get!(|g| g.cells.get(at) ?? 0).to_str()}</i>}</Repeat>

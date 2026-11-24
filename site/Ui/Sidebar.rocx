@@ -9,11 +9,11 @@ Sidebar := [].{
 	view! = |{ title, groups, path }|
 		<nav class="sidebar" aria-label={"${title}: its pages"}>
 			{...groups.map(|group|
-				<div class="group">
+				<div class="group" key={group.name}>
 					{if (group.name == "") <></> else <p class="title">{group.name}</p>}
 					<ul>
 						{...group.pages.map(|page|
-							<li>
+							<li key={page.path}>
 								<a href={page.path} class:current={page.path == path} aria-current??={if (page.path == path) "page" else ""}>
 									<span class="label">{page.label}</span>
 									<span class="blurb">{page.blurb}</span>

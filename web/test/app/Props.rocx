@@ -1,12 +1,11 @@
 import pf.Html
-import pf.For
 import pf.Solid exposing [create_signal!, create_effect!]
 
 ## Props, for the tests (`props_app.roc`): a value prop read from a signal (D-039: a getter), given to
 ## an effectful component in a hole, outside one and inside an `if`; the same signal as an accessor
 ## prop; a component that reads its prop in its body, in a pure lambda, in an effect and in a handler;
 ## one that passes the rest of its props on (`{...rest}`, D-052);
-## and a `<For>` whose rows are made once (untracked). Then what an `if` shows, and fallbacks, made
+## and a `.map` whose rows are made once (untracked). Then what an `if` shows, and fallbacks, made
 ## when they show, with value props in them. And a property of an element's style from data,
 ## computed (`style:color`), and one whose value would load something, dropped.
 Props := [].{
@@ -31,12 +30,12 @@ Props := [].{
 			<Detail label={word!()} />
 			<p class="passed"><Passes label={word!()} kind="passing" /></p>
 			<ul class="rows">
-				<For each!={items!()} keyed={|item| item.id}>
-					{|item!, _| {
-						first = item!().name
-						<li data-id={item!().id}><Shows label={item!().name} /> <span class="first">{first}</span></li>
-					}}
-				</For>
+				{...items!().map(|item|
+					{
+						first = item.name
+						<li key={item.id} data-id={item.id}><Shows label={item.name} /> <span class="first">{first}</span></li>
+					}
+				)}
 			</ul>
 			<p class="toggled">
 				{if open!() {
@@ -47,9 +46,8 @@ Props := [].{
 			</p>
 			<p class="painted" style:color={if (word!() == "one") "rgb(200, 0, 0)" else "rgb(0, 0, 200)"} style:background-image={"url(/x.png)"}>Painted</p>
 			<p class="listed">
-				<For each!={entries!()} keyed={Bool.False} fallback={<Shows label={"none, ${word!()}"} />}>
-					{|entry!, _| <span class="item">{entry!()}</span>}
-				</For>
+				{...entries!().map_with_index(|entry, i| <span key={i} class="item">{entry}</span>)}
+				{if (entries!().is_empty()) <Shows label={"none, ${word!()}"} />}
 			</p>
 		</div>
 	}

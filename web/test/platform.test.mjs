@@ -466,7 +466,7 @@ test("props: a value prop is a getter (D-039): the component is made once and ke
 	assert.ok(html.includes(`<p class="passed"><span class="passing">${label("one")}</span></p>`), "props passed on ({...rest}, D-052); a class given a constant, static");
 	assert.match(html, /<p class="painted" style="color: rgb\(200, 0, 0\)">Painted<\/p>/, "a style property from data, its url() dropped");
 	assert.ok(html.includes(`<p class="toggled"><!--show-->${label("no one")}<!--/show--></p>`), "a <Show>'s fallback, made as it shows");
-	assert.ok(html.includes(`<p class="listed"><!--for--><!--fallback-->${label("none, one")}<!--/fallback--><!--/for--></p>`), "a <For>'s fallback, made as it shows");
+	assert.ok(html.includes(`<p class="listed"><!--for--><!--fallback--><!--/fallback--><!--/for--> <!--show-->${label("none, one")}<!--/show--></p>`), "a .map's empty state, an if beside its rows, made as it shows");
 	const dir = mkdtempSync(join(tmpdir(), "rocx-props-"));
 	cpSync(join(web, "runtime.js"), join(dir, "runtime.js"));
 	writeFileSync(join(dir, "props.wasm"), wasm);
@@ -790,7 +790,7 @@ test("stores (D-053): a store's parts, each read by its own hole, run again only
 	}
 });
 
-test("<For compared> (D-053): a list read again tells only the rows whose item isn't == the one they had, so one changed item of a thousand runs one row's holes, with fewer allocations; with every item changed it runs what a plain <For> runs, and allocates no more", { skip }, async () => {
+test("a .map's rows (D-071), compared as D-053's <For compared> was: a list read again tells only the rows whose item isn't == the one they had, so one changed item of a thousand runs one row's holes; with every item changed, every row's", { skip }, async () => {
 	const { tab, site } = await hydrated("rows");
 	try {
 		assert.deepEqual(tab.console, [], "hydrated strictly");
@@ -799,19 +799,15 @@ test("<For compared> (D-053): a list read again tells only the rows whose item i
 			for (let i = 0; i < 5; i++) steps.push(await tab.eval(`window.step(${JSON.stringify(selector)})`));
 			return { ...steps[4], ms: steps.map((step) => step.ms).sort((a, b) => a - b)[2] };
 		};
-		const plainOne = await median("button.plain-one");
-		const comparedOne = await median("button.compared-one");
-		const plainAll = await median("button.plain-all");
-		const comparedAll = await median("button.compared-all");
-		assert.deepEqual([plainOne.runs, plainOne.patched.length], [2001, 1], "a plain <For>: every row's two holes run again, one patch");
-		assert.equal(comparedOne.runs, 3, "compared: the list, and the changed row's two holes");
-		assert.equal(comparedOne.patched.length, 1);
-		assert.ok(comparedOne.allocations < plainOne.allocations, `fewer allocations: ${comparedOne.allocations} against ${plainOne.allocations}`);
-		assert.equal(comparedAll.runs, plainAll.runs, "every item changed: every row runs, as in a plain one");
-		assert.equal(comparedAll.patched.length, 1000);
-		assert.ok(comparedAll.allocations <= plainAll.allocations, `and allocates no more: ${comparedAll.allocations} against ${plainAll.allocations}`);
-		for (const step of [plainOne, comparedOne, plainAll, comparedAll]) assert.equal(step.live, 0);
-		console.log(`<For> of 1,000, a dev build (median of 5): one changed ${plainOne.ms.toFixed(1)} ms plain, ${comparedOne.ms.toFixed(1)} ms compared; all changed ${plainAll.ms.toFixed(1)} ms plain, ${comparedAll.ms.toFixed(1)} ms compared`);
+		const one = await median("button.one");
+		const all = await median("button.all");
+		assert.equal(one.runs, 3, "the list, and the changed row's two holes");
+		assert.equal(one.patched.length, 1);
+		assert.equal(all.runs, 2001, "every item changed: the list, and every row's two holes");
+		assert.equal(all.patched.length, 1000);
+		assert.ok(one.allocations < all.allocations, `fewer allocations for one: ${one.allocations} against ${all.allocations}`);
+		for (const step of [one, all]) assert.equal(step.live, 0);
+		console.log(`.map of 1,000, a dev build (median of 5): one changed ${one.ms.toFixed(1)} ms, all changed ${all.ms.toFixed(1)} ms`);
 		assert.deepEqual(tab.errors, []);
 	} finally {
 		await site.close();

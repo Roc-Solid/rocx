@@ -1,5 +1,4 @@
 import pf.Html
-import pf.For
 import pf.Transition
 import pf.Solid exposing [create_memo!, create_signal!, set_timeout!]
 import ../Game
@@ -20,21 +19,20 @@ Board := [].{
 		_land = set_timeout!(Board.pause, || set_landed!(Bool.True))
 		placed! = create_memo!(|| Board.placed(rows, landed!()).take_first(limit))
 		<ol class="board" aria-label="Leaderboard">
-			<For each!={placed!()} keyed={|row| row.id}>
-				{|row!, _|
-					<li
-						key={"board-${row!().id}"}
-						class:me={row!().id == me}
-						class:gone={!row!().here}
-						transition:move={Transition.glide.ms(700).easing("cubic-bezier(0.3, 1.25, 0.5, 1)")}
-						transition={Transition.fly({ x: 0, y: 16 })}
-					>
-						<span class="place">{Score.ordinal(row!().place)}</span>
-						<span class="name">{row!().name}{if (row!().here) "" else " (dropped)"}</span>
-						<span class="gained" class:none={row!().gained == 0}>{if (row!().gained == 0) "+0" else "+${row!().gained.to_str()}"}</span>
-						<span class="score">{row!().shown.to_str()}</span>
-					</li>}
-			</For>
+			{...placed!().map(|row|
+				<li
+					key={"board-${row.id}"}
+					class:me={row.id == me}
+					class:gone={!row.here}
+					transition:move={Transition.glide.ms(700).easing("cubic-bezier(0.3, 1.25, 0.5, 1)")}
+					transition={Transition.fly({ x: 0, y: 16 })}
+				>
+					<span class="place">{Score.ordinal(row.place)}</span>
+					<span class="name">{row.name}{if (row.here) "" else " (dropped)"}</span>
+					<span class="gained" class:none={row.gained == 0}>{if (row.gained == 0) "+0" else "+${row.gained.to_str()}"}</span>
+					<span class="score">{row.shown.to_str()}</span>
+				</li>
+			)}
 		</ol>
 	}
 

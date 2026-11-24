@@ -1,5 +1,4 @@
 import pf.Html
-import pf.For
 import pf.Endpoint
 import pf.Solid exposing [create_effect!, create_signal!]
 import ../Generated/Api
@@ -57,15 +56,15 @@ Room := [].{
 		<div class="room">
 			<p class="state" aria-live="polite">{state!()}</p>
 			<p class="hands">
-				<For each!={["👋", "🎉", "🙌"]} keyed={|hand| hand}>
-					{|hand!, _| <button type="button" class="wave" on:click={|| Endpoint.say!(lobby, Wave(hand!()))}>{hand!()}</button>}
-				</For>
+				{...["👋", "🎉", "🙌"].map(|hand|
+					<button key={hand} type="button" class="wave" on:click={|| Endpoint.say!(lobby, Wave(hand))}>{hand}</button>
+				)}
 				<button type="button" class="leave" on:click={leave!}>Leave</button>
 			</p>
 			<ol class="waves">
-				<For each!={waves!()} keyed={|wave| wave}>
-					{|wave!, _| <li>{wave!()}</li>}
-				</For>
+				{...waves!().map(|wave|
+					<li key={wave}>{wave}</li>
+				)}
 			</ol>
 		</div>
 	}

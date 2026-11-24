@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Solid exposing [create_memo!]
 import pf.Endpoint
-import pf.For
 import forms.LiveForm
 import forms.TextField
 import ../../Plate
@@ -22,16 +21,14 @@ view! = |_| {
 		<h1>Recipes</h1>
 		{if !recipes!().is_empty() {
 			<ul class="cards" aria-label="Recipes">
-				<For each!={recipes!()} keyed={|recipe| recipe.id}>
-					{|recipe!, _|
-						<li>
-							<a class="card recipe" href={Paths.recipes_id({ id: recipe!().id })}>
-								<span class="name">{recipe!().name}</span>
-								<span class="quiet">{Cards.about(recipe!())}</span>
-							</a>
-						</li>
-					}
-				</For>
+				{...recipes!().map(|recipe|
+					<li key={recipe.id}>
+						<a class="card recipe" href={Paths.recipes_id({ id: recipe.id })}>
+							<span class="name">{recipe.name}</span>
+							<span class="quiet">{Cards.about(recipe)}</span>
+						</a>
+					</li>
+				)}
 			</ul>
 		} else {
 			<p class="quiet">No recipes yet. Make one below: name it, then add what goes into it.</p>

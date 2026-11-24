@@ -2,7 +2,6 @@ import pf.Html
 import pf.Solid exposing [create_memo!]
 import pf.Endpoint
 import pf.Router
-import pf.For
 import pf.Errored
 import pf.A
 import ../Tasks
@@ -59,16 +58,14 @@ view! = |{ meta, children, .. }| {
 							<h2>Lists</h2>
 							<Errored fallback={|_, _| <p class="quiet">The lists can't be read just now.</p>}>
 								<ul>
-									<For each!={team!().lists} keyed={|list| list.id}>
-										{|list!, _|
-											<li>
-												<A href={Paths.lists_id({ id: list!().id })}>
-													<span class="name">{list!().name}</span>
-													<span class="open" aria-label={"${list!().open.to_str()} open"}>{list!().open.to_str()}</span>
-												</A>
-											</li>
-										}
-									</For>
+									{...team!().lists.map(|list|
+										<li key={list.id}>
+											<A href={Paths.lists_id({ id: list.id })}>
+												<span class="name">{list.name}</span>
+												<span class="open" aria-label={"${list.open.to_str()} open"}>{list.open.to_str()}</span>
+											</A>
+										</li>
+									)}
 								</ul>
 							</Errored>
 							<a class="new" href={"${Paths.root}#new-list"}>+ New list</a>

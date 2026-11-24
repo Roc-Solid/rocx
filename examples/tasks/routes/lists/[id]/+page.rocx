@@ -3,7 +3,6 @@ import pf.Solid exposing [create_memo!, create_signal!, is_pending!, refresh!]
 import pf.Router exposing [use_action!, use_submissions!]
 import pf.Endpoint
 import pf.Server
-import pf.For
 import pf.Title
 import ../../../Tasks
 import ../../../Generated/Api
@@ -134,9 +133,8 @@ Board := [].{
 				Err(_) => <></>
 			}}
 			<ul class="tasks" class:stale={stale!()} aria-label="Tasks">
-				<For each!={shown!()} keyed={|task| task.id} fallback={<li class="empty">{Board.empty(filter, sheet!().me)}</li>}>
-					{|task!, _| <TaskRow task!={task!()} board={board} />}
-				</For>
+				{...shown!().map(|task| <TaskRow key={task.id} task!={task} board={board} />)}
+				{if (shown!().is_empty()) <li class="empty">{Board.empty(filter, sheet!().me)}</li>}
 			</ul>
 			<AddTask list={list} people={sheet!().people} me={sheet!().me} />
 		</section>

@@ -31,7 +31,7 @@ AddTask := [].{
 				<label for="field-assignee">For</label>
 				<select id="field-assignee" name="assignee" on:change.value={|picked| live.input!("assignee", picked)}>
 					<option value="">Nobody yet</option>
-					{...people.map(|person| <option value={person.id} selected?={assignee!() == person.id}>{person.name}</option>)}
+					{...people.map(|person| <option key={person.id} value={person.id} selected?={assignee!() == person.id}>{person.name}</option>)}
 				</select>
 			</div>
 			<button type="submit" disabled?={live.pending!()}>{if (live.pending!()) "Adding…" else "Add"}</button>

@@ -4336,3 +4336,54 @@ changes: the part stays, its hole runs.
 
 **Reversible:** partly: the hole and the `if`/`match` compilation can go back to D-053's components;
 the moved files would move back.
+
+## D-071 A hole's `.map` as a list's rows; `<For>` gone
+
+**Status.** Built (2026-11-24).
+
+**Context.** D-070 made a hole's `if` and `match` what `<Show>` and `<Switch>` were. A list was
+still a component: `<For each!={todos!()} keyed={|todo| todo.id}>{|todo!, _| <li>{todo!().title}</li>}</For>`,
+an accessor to call in every row. Roc's own `.map` was there too, `{...todos!().map(|todo| …)}`,
+and was the worse of the two: a list that changed made every row anew (focus, typing, a
+component's signals lost). The user asked whether `.map` could be what `<For>` was, as `if` became
+`<Show>`, and chose (2026-11-24): a row with no key is refused, as a `<For>` without `keyed` was;
+`<For>` goes.
+
+**Decision.**
+- **`{...list.map(|item| row)}`** whose list reads what changes is `Html.rows!(|| list, |item| key,
+  |item!, _| row)`: a row per key, made once, moved with its key and dropped with it, as `<For
+  keyed>` kept them. Its key is the row's root's `key={…}` (`<li key={todo.id}>`), any value (a
+  string as it is, any other as `Str.inspect` writes it; an element's `key` takes any value too now). A row that is an `if` keys each branch;
+  the first `key` on the row's outermost markup is the row's. A component's `key` is the row's, never
+  a prop.
+- **`.map_with_index(|item, i| … key={i})`** is `Html.rows_at!`: a row per position, as `keyed={Bool.False}`
+  was, its index its position (a value; a getter would make a condition on it a switched part, which
+  the server writes static and the browser, building it, wouldn't). A key made from the index
+  otherwise is refused.
+- **The row's names are getters**, as a match arm's are (D-070): the row reads its item now, and, in
+  a row per key, its index, which changes as rows move. A row is effectful, as a `<For>`'s child was, so it may hold a
+  component, an `if` or another `.map`. D-070's check across files counts a row's names as an arm's:
+  one given to a component that reads it once is a warning.
+- **Compared, always.** A row is told its item changed only when it isn't `==` the one it had
+  (D-053's `compared`, a flag before): one changed item of a thousand runs one row's holes. Items must
+  compare, as a store's parts do; every list in the repository and the private app does. A list of
+  functions or markup is no list of rows (map it to the data first).
+- **No key** is refused at the row, saying what to write. A list that reads nothing that changes is
+  made once, as before, and needs none; nor does one inside a `<NoHydration>`, which is the server's.
+- **`<For>`** is gone from both platforms (`For.roc`); writing one is an error that says what to write.
+  Its fallback is an `if` beside the rows (`{if (todos!().is_empty()) <li>None</li>}`).
+
+**Moved.** Every `<For>` in the repository (examples, site, packages, the web tests) by a converter;
+`{...x!().map(…)}` holes whose list changes got keys (board's assignees and labels, notes' tags,
+plate's portions, quiz's choices, tasks' assignees, the docs' sidebar); rows reading their id once,
+each keyed by that id, say so (`untrack!`, board's column and archived card, uptime's admin row and
+update form). The private app: its `<For>`s, D-070's keyed parts as `.map`s of one, and two lists.
+
+**Why.** Roc's own way to make a list, and the one that keeps its rows: what a user writes first is
+the right thing. One way to write a row.
+
+**Costs.** A key on every row of a list that changes, where `.map` needed none (and made every row
+anew). Items must compare. `Host.row_set!`'s `same` is always computed (`==` per row per change).
+
+**Reversible:** yes: `<For>` can come back as a component over `Html.rows!`; the moved files would
+move back.

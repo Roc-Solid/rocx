@@ -129,7 +129,7 @@ test("every file is components: a page's markup has handlers and keys too; Html 
 	assert.equal(roc(`x = <button on:click={save!}>Save</button>`), `x = Html.element("button", [Html.on("click", save!),], [Html.text("Save"),])`);
 	assert.equal(roc(`x = <li key={item.id}>{item.text}</li>`), `x = Html.element("li", [Html.key(item.id),], [Html.hole(item.text),])`);
 	assert.equal(roc(`x = <Pill on={a} />`), `x = Html.component(|| pill!({ on: a, }))`, "a component's prop may be called on");
-	assert.equal(roc(`x = <Row key={k} />`), `x = Html.component(|| row!({ key: k, }))`, "a component's key is a prop like any other");
+	assert.equal(roc(`x = <Row key={k} />`), `x = Html.component(|| row!({}))`, "a component's key is a .map row's (D-071), never a prop");
 	// There is no other Html: the html package, which rendered static pages, is gone.
 	assert.deepEqual(failure("import html.Html\n\nview! = |_| <p>Hi</p>"), {
 		reason: "import html.Html: markup is components, written with the platform's Html, which the server renders and the browser hydrates: import pf.Html",
@@ -269,7 +269,7 @@ test("rocx check: a report at a component given a record's fields gets a hint, w
 test("components: holes and attributes are computations, handlers effects", () => {
 	const reactive = (source) => transpile(source, "T.rocx").replace(/\n\n# rocx: generated from[^\n]*\n$/, "");
 	assert.equal(reactive(`x = <p title="Hi" class:on={a.get!()}>Hi {name.get!()}</p>`), `x = Html.element("p", [Html.attr("title", "Hi"), Html.class_of("on", || a.get!()),], [Html.text("Hi "), Html.hole_of(|| Html.hole(name.get!())),])`);
-	assert.equal(reactive(`x = <ul>{...items.get!().map(|i| <li>{i}</li>)}</ul>`), `x = Html.element("ul", [], [Html.list_of(|| items.get!().map(|i| Html.element("li", [], [Html.hole(i),]))),])`, "inside, `{i}` reads nothing that changes");
+	assert.equal(reactive(`x = <ul>{...items.get!().map(|i| <li key={i}>{i}</li>)}</ul>`), `x = Html.element("ul", [], [Html.rows!(|| items.get!(), |i| i, |i!, _|  Html.element("li", [Html.key(i!()),], [Html.hole_of(|| Html.hole(i!())),])),])`, "its rows (D-071): `{i}` reads the row's item now");
 	assert.equal(reactive(`x = <button on:click={|| n.set!(1)} disabled?={busy.get!()}>Go</button>`), `x = Html.element("button", [Html.on("click", || n.set!(1)), Html.flag_of("disabled", || busy.get!()),], [Html.text("Go"),])`);
 	assert.equal(reactive(`x = <input on:input.value={|v| draft.set!(v)} value={draft.get!()} />`), `x = Html.void("input", [Html.on_value("input", |v| draft.set!(v)), Html.attr_of("value", || draft.get!()),])`);
 	// Frames, keys' names, custom properties and optional attributes.
@@ -283,16 +283,11 @@ test("components: holes and attributes are computations, handlers effects", () =
 	assert.equal(more(`x = <div on:viewport={seen!}></div>`), `x = Html.element("div", [Html.on_viewport(seen!),], [])`);
 	assert.equal(more(`x = <p style:color={b!()} style:-webkit-line-clamp={n}></p>`), `x = Html.element("p", [Html.style_of("color", || b!()), Html.style_var("-webkit-line-clamp", n),], [])`, "a property of the style, computed or not");
 	assert.throws(() => more(`x = <p style:col0r={b}></p>`), /a style property's name is letters and dashes \(style:color=\{…\}\), or a custom property's/);
-	// Solid's control flow: a function child calls `view_with!`; `keyed={Bool.False}` the unkeyed one.
+	// A component's function child calls `view_with!`.
 	const lines = (source) => reactive(source).split("\n").slice(1).join("\n");
-	assert.equal(lines(`import pf.For\nx = <For each!={posts!()} keyed={|post| post.id} fallback={<p>None</p>}>{|post!, i!| <li>{post!().title}</li>}</For>`), `x = For.view_with_keyed!({ each!: || posts!(), keyed: |post| post.id, fallback: Html.element("p", [], [Html.text("None"),]), children: |post!, i!| Html.element("li", [], [Html.hole_of(|| Html.hole(post!().title)),]), })`);
-	assert.equal(lines(`import pf.For\nx = <For each!={names!()} keyed={Bool.False}>{|name!, i| <li>{name!()}</li>}</For>`), `x = For.view_with_unkeyed!({ each!: || names!(), children: |name!, i| Html.element("li", [], [Html.hole_of(|| Html.hole(name!())),]), })`);
 	assert.equal(lines(`import pf.Loading\nx = <Loading fallback={<p>Wait</p>}><p>Some</p></Loading>`), `x = Loading.view!({ fallback: Html.element("p", [], [Html.text("Wait"),]), children: [Html.element("p", [], [Html.text("Some"),]),], })`);
 	assert.throws(() => reactive(`x = <ul>{|a| a}</ul>`), /a function child is a component's/);
-	assert.throws(() => reactive(`import pf.For\nx = <For each!={xs!()} keyed={Bool.False}>{|a!, i| a}<li></li></For>`), /function child must be its only child/);
-	// Roc's values have no identity: a <For> says how it keeps its rows.
-	assert.throws(() => reactive(`import pf.For\nx = <For each!={xs!()}>{|a, i!| a}</For>`), /say how <For> keeps its rows: keyed=\{\|item\| item\.id\}/);
-	assert.throws(() => reactive(`import pf.For\nx = <For each!={xs!()} keyed={Bool.True}>{|a, i!| a}</For>`), /say how <For> keeps its rows/);
+	assert.throws(() => reactive(`import pf.Loading\nx = <Loading fallback={<p />}>{|a!, i| a}<li></li></Loading>`), /function child must be its only child/);
 	// A prop named as an effect is an accessor, as Solid makes a prop a getter: an expression is
 	// wrapped in one; an accessor's name or a lambda is passed as it is; other props are values.
 	// (A component's call is put off, to run where it is rendered: `Html.component`.)
@@ -513,12 +508,17 @@ test("a hole's if and match (D-070): one that reads what changes is the part its
 	assert.match(reactive(lines).split("\n")[1], /^\tOk\(\{ name: _, age: years \}\) if {2}years > 17 {2}=> /, "the arm's pattern on its line, indented as written, binding only what its guard reads");
 });
 
-test("<For compared> (D-053): a flag that picks the view comparing each row's item with ==", () => {
-	const line = (source) => transpileModule(`import pf.For\n${source}`, "Page.rocx", { module: "Page" }).code.split("\n")[1];
-	assert.equal(line(`x = <For each!={xs!()} keyed={|x| x.id} compared>{|x!, _| <p>{x!().name}</p>}</For>`), `x = For.view_with_keyed_compared!({ each!: || xs!(), keyed: |x| x.id, children: |x!, _| Html.element("p", [], [Html.hole_of(|| Html.hole(x!().name)),]), })`);
-	assert.equal(line(`x = <For each!={xs!()} keyed={Bool.False} compared>{|x!, i| <p>{x!()}</p>}</For>`), `x = For.view_with_unkeyed_compared!({ each!: || xs!(), children: |x!, i| Html.element("p", [], [Html.hole_of(|| Html.hole(x!())),]), })`);
-	assert.equal(line(`x = <For each!={xs!()} keyed={|x| x.id} compared={Bool.False}>{|x!, _| <p />}</For>`), `x = For.view_with_keyed!({ each!: || xs!(), keyed: |x| x.id, children: |x!, _| Html.element("p", [], []), })`);
-	assert.throws(() => line(`x = <For each!={xs!()} keyed={|x| x.id} compared={|x| x.id}>{|x!, _| <p />}</For>`), /<For>'s compared is a flag/);
+test("a hole's .map (D-071): a list that changes is its rows, by the root's key, its names getters; by position with .map_with_index and key={i}; a list that doesn't change is made once, as before", () => {
+	const line = (source) => transpile(source, "T.rocx").split("\n")[0];
+	assert.equal(line(`x = <ul>{...posts!().map(|post| <li key={post.id}>{post.title}</li>)}</ul>`), `x = Html.element("ul", [], [Html.rows!(|| posts!(), |post| post.id, |post!, _|  Html.element("li", [Html.key(post!().id),], [Html.hole_of(|| Html.hole(post!().title)),])),])`);
+	assert.equal(line(`x = <ul>{...names!().map_with_index(|name, i| <li key={i}>{i.to_str()} {name}</li>)}</ul>`), `x = Html.element("ul", [], [Html.rows_at!(|| names!(), |name!, i|  Html.element("li", [Html.key(i),], [Html.hole(i.to_str()), Html.text(" "), Html.hole_of(|| Html.hole(name!())),])),])`);
+	// A component's key is the row's, never a prop.
+	assert.match(line(`x = <ul>{...xs!().map(|x| <Row key={x.id} label={x.name} />)}</ul>`), /Html\.rows!\(\|\| xs!\(\), \|x\| x\.id, \|x!, _\| .*\{ label: x!\(\)\.name, \}/);
+	assert.equal(line(`x = <ul>{...names.map(|name| <li>{name}</li>)}</ul>`), `x = Html.element("ul", [], [Html.join(names.map(|name| Html.element("li", [], [Html.hole(name),]))),])`);
+	// Roc's values have no identity: a row says its key.
+	assert.throws(() => line(`x = <ul>{...xs!().map(|a| <li>{a}</li>)}</ul>`), /T\.rocx:1:27: a list that changes is a row per key \(D-071\)/);
+	assert.throws(() => line(`x = <ul>{...xs!().map_with_index(|a, i| <li key={a.id + i}>{a}</li>)}</ul>`), /a key made from the index is a row per position: write key=\{i\} alone/);
+	assert.throws(() => line(`import pf.For\nx = <For each!={xs!()} keyed={|a| a}>{|a!, _| <li />}</For>`), /<For> is gone \(D-071\)/);
 });
 
 test("<NoHydration>: what is inside renders on the server only; the browser's copy has none of it, nor an import only it used", () => {

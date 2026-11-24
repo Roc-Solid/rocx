@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Endpoint
-import pf.For
 import pf.Router
 import pf.Server
 import pf.Title
@@ -37,16 +36,14 @@ view! = |_| {
 				<h2 id="tags-title">Tags</h2>
 				{if !home!({}).tags.is_empty() {
 					<ul class="tags" aria-labelledby="tags-title">
-						<For each!={home!({}).tags} keyed={|tagged| tagged.name}>
-							{|tagged!, _|
-								<li>
-									<a href={"/?tag=${Server.encode_segment(tagged!().name)}"} aria-current??={if (home!({}).tag == tagged!().name) "page" else ""}>
-										<span>{"#${tagged!().name}"}</span>
-										<span class="count">{tagged!().count.to_str()}</span>
-									</a>
-								</li>
-							}
-						</For>
+						{...home!({}).tags.map(|tagged|
+							<li key={tagged.name}>
+								<a href={"/?tag=${Server.encode_segment(tagged.name)}"} aria-current??={if (home!({}).tag == tagged.name) "page" else ""}>
+									<span>{"#${tagged.name}"}</span>
+									<span class="count">{tagged.count.to_str()}</span>
+								</a>
+							</li>
+						)}
 					</ul>
 				} else {
 					<p class="none">No tags yet. Give a note one in its editor.</p>
@@ -63,17 +60,17 @@ view! = |_| {
 							<>
 								<h2 class="group">Pinned</h2>
 								<ul class="cards" aria-label="Pinned notes">
-									<For each!={home!({}).notes.keep_if(|note| note.pinned)} keyed={|note| note.id}>
-										{|note!, _| <li>{NoteCard.view({ note: note!() })}</li>}
-									</For>
+									{...home!({}).notes.keep_if(|note| note.pinned).map(|note|
+										<li key={note.id}>{NoteCard.view({ note: note })}</li>
+									)}
 								</ul>
 								<h2 class="group">Others</h2>
 							</>
 						}}
 						<ul class="cards" aria-label="Notes">
-							<For each!={unpinned(home!({}))} keyed={|note| note.id}>
-								{|note!, _| <li>{NoteCard.view({ note: note!() })}</li>}
-							</For>
+							{...unpinned(home!({})).map(|note|
+								<li key={note.id}>{NoteCard.view({ note: note })}</li>
+							)}
 						</ul>
 					</>
 				} else {

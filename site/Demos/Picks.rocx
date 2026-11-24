@@ -1,9 +1,8 @@
 import pf.Html
 import pf.Solid exposing [create_signal!, use_context!]
 import pf.Context
-import pf.For
 
-## Picks you can reverse, add to, shout and clear: Solid's <For>, by key and
+## Picks you can reverse, add to, shout and clear: a .map's rows (Solid's <For>), by key and
 ## by position, and an if and a match. The picks are a store: what is under a
 ## <PicksContext> reads and writes the same ones (the docs' tally does).
 Picks := [].{
@@ -51,19 +50,12 @@ Picks := [].{
 			<div class="picks-lists">
 				{# A row per id: kept while its id is there, moved with it. }
 				<ol class="keyed" aria-label="By key">
-					<For
-						each!={picks!()}
-						keyed={|pick| pick.id}
-						fallback={<li class="none">None</li>}
-					>
-						{|pick!, index!| <li>{index!().to_str()}: {pick!().name}</li>}
-					</For>
+					{...picks!().map_with_index(|pick, index| <li key={pick.id}>{index.to_str()}: {pick.name}</li>)}
+					{if (picks!().is_empty()) <li class="none">None</li>}
 				</ol>
 				{# A row per place: the pick in it changes. }
 				<ol class="unkeyed" aria-label="By position">
-					<For each!={picks!()} keyed={Bool.False}>
-						{|pick!, index| <li>{index.to_str()}: {pick!().name}</li>}
-					</For>
+					{...picks!().map_with_index(|pick, index| <li key={index}>{index.to_str()}: {pick.name}</li>)}
 				</ol>
 			</div>
 			<div class="picks-shows">

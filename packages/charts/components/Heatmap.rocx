@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_memo!, create_signal!]
-import pf.For
 import charts.Format
 
 ## A grid of cells, a row for each of `rows` and a column for each of `columns`, each cell coloured
@@ -39,21 +38,20 @@ Heatmap := [].{
 		step = U64.max((columns.len() + 7) // 8, 1)
 		<figure class="heatmap">
 			<svg viewBox="0 0 640 260" role="img" aria-label={label} on:pointerleave={|| set_hover!(Err(None))}>
-				<For each!={rows} keyed={Bool.False}>
-					{|row!, r| <text class="row" x={Format.coord(left - 8.0)} y={Format.coord(top + height * (r.to_dec() + 0.5))} dy="0.32em">{row!()}</text>}
-				</For>
-				<For each!={cells} keyed={Bool.False}>
-					{|cell!, _|
-						<rect
-							class="cell"
-							x={Format.coord(left + width * cell!().1.to_dec())}
-							y={Format.coord(top + height * cell!().0.to_dec())}
-							width={Format.coord(width)}
-							height={Format.coord(height)}
-							style:--strength={strength!(cell!().0, cell!().1)}
-							on:pointerenter={|| set_hover!(Ok(cell!()))}
-						/>}
-				</For>
+				{...rows.map_with_index(|row, r|
+					<text key={r} class="row" x={Format.coord(left - 8.0)} y={Format.coord(top + height * (r.to_dec() + 0.5))} dy="0.32em">{row}</text>
+				)}
+				{...cells.map_with_index(|cell, i|
+					<rect key={i}
+						class="cell"
+						x={Format.coord(left + width * cell.1.to_dec())}
+						y={Format.coord(top + height * cell.0.to_dec())}
+						width={Format.coord(width)}
+						height={Format.coord(height)}
+						style:--strength={strength!(cell.0, cell.1)}
+						on:pointerenter={|| set_hover!(Ok(cell))}
+					/>
+				)}
 				<rect
 					class="pointed"
 					class:shown={hover!() != Err(None)}
@@ -62,12 +60,11 @@ Heatmap := [].{
 					width={Format.coord(width)}
 					height={Format.coord(height)}
 				/>
-				<For each!={columns} keyed={Bool.False}>
-					{|column!, c|
-						<text class="column" x={Format.coord(left + width * (c.to_dec() + 0.5))} y={Format.coord(bottom + 18.0)}>
-							{if (c % step == 0) column!() else ""}
-						</text>}
-				</For>
+				{...columns.map_with_index(|column, c|
+					<text key={c} class="column" x={Format.coord(left + width * (c.to_dec() + 0.5))} y={Format.coord(bottom + 18.0)}>
+						{if (c % step == 0) column else ""}
+					</text>
+				)}
 			</svg>
 			<figcaption aria-hidden="true">
 				<span class="scale">

@@ -67,7 +67,7 @@ FoodPage := [].{
 					<div class="field">
 						<label for="field-unit">Of</label>
 						<select id="field-unit" name="unit" on:change.value={|picked| live.input!("unit", picked)}>
-							{...food!().portions.map_with_index(|portion, index| <option value={index.to_str()} selected?={live.value!("unit") == index.to_str()}>{"${portion.label} (${Plate.grams_label(portion.grams)})"}</option>)}
+							{...food!().portions.map_with_index(|portion, index| <option key={index} value={index.to_str()} selected?={live.value!("unit") == index.to_str()}>{"${portion.label} (${Plate.grams_label(portion.grams)})"}</option>)}
 							<option value="g" selected?={live.value!("unit") == "g"}>grams</option>
 						</select>
 					</div>

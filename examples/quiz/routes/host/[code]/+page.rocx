@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Endpoint
-import pf.For
 import pf.Title
 import pf.Transition
 import pf.Solid exposing [create_effect!, create_signal!]
@@ -131,13 +130,12 @@ Asked := [].{
 			</div>
 			<h1 id="asking-title" class="prompt">{asking!().prompt}</h1>
 			<ul class="choices">
-				<For each!={asking!().choices} keyed={Bool.False}>
-					{|choice!, index|
-						<li class={"choice blade-${(index % 4 + 1).to_str()}"}>
-							<Mark index={index} />
-							<span>{choice!()}</span>
-						</li>}
-				</For>
+				{...asking!().choices.map_with_index(|choice, index|
+					<li key={index} class={"choice blade-${(index % 4 + 1).to_str()}"}>
+						<Mark index={index} />
+						<span>{choice}</span>
+					</li>
+				)}
 			</ul>
 			<div class="foot">
 				<p class="answered" aria-live="polite">{Asked.answered(asking!().answered, current!().players)}</p>
@@ -163,14 +161,13 @@ Revealed := [].{
 			<div class="split">
 				<div class="answer">
 					<ul class="choices revealed">
-						<For each!={revealing!().choices} keyed={Bool.False}>
-							{|choice!, index|
-								<li class={"choice blade-${(index % 4 + 1).to_str()}"} class:right={index == revealing!().answer} class:wrong={index != revealing!().answer}>
-									<Mark index={index} />
-									<span>{choice!()}</span>
-									<b class="took">{Revealed.taken(revealing!().tallies.get(index) ?? 0)}</b>
-								</li>}
-						</For>
+						{...revealing!().choices.map_with_index(|choice, index|
+							<li key={index} class={"choice blade-${(index % 4 + 1).to_str()}"} class:right={index == revealing!().answer} class:wrong={index != revealing!().answer}>
+								<Mark index={index} />
+								<span>{choice}</span>
+								<b class="took">{Revealed.taken(revealing!().tallies.get(index) ?? 0)}</b>
+							</li>
+						)}
 					</ul>
 					<Tally revealing!={revealing!} />
 				</div>
