@@ -1,0 +1,65 @@
+# The checks a change lands with (README, "Quick start"), on GitHub's macOS runners (Apple silicon):
+# the one machine the Roc fork's compiler is prebuilt for (`just setup` downloads it). Each its own
+# job, side by side: `just check`, `just test` (with Chromium, Firefox and a Postgres), `just
+# examples` and `just site`.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+# A pull request's newer push stops its older run; master's runs all finish.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: "1"
+  HOMEBREW_NO_INSTALL_CLEANUP: "1"
+
+jobs:
+  check:
+    name: just check
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - run: just check
+
+  test:
+    name: just test
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+        with:
+          browsers: "true"
+          postgres: "true"
+      - run: just test
+
+  examples:
+    name: just examples
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+        with:
+          browsers: "true"
+      - run: just examples
+
+  site:
+    name: just site
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - run: just site

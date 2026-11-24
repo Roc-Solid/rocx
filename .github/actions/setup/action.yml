@@ -1,0 +1,67 @@
+# The toolchain for a CI job, on macOS (Apple silicon): Node, just, `just setup` (Zig and the
+# pinned nightly, cached; the Roc fork's compiler, which `just setup` downloads prebuilt from this
+# repository's release of it; bin/rocx), the Rust hosts' dependencies (cached), and, when a job asks
+# for them, Chromium and Firefox for the browser tests and a Postgres (DATABASE_URL).
+name: Toolchain
+description: Node, just, the pinned toolchain (just setup), and browsers or Postgres when asked for
+inputs:
+  browsers:
+    description: Chromium's headless shell and Firefox, where web/test/browser.mjs finds them
+    default: "false"
+  postgres:
+    description: A Postgres of the job's own, its URL in DATABASE_URL
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 24
+
+    - name: just
+      shell: bash
+      run: brew install just
+
+    # Zig, the nightly and the glue spec, by the versions the Justfile pins (the fork's compiler is
+    # downloaded each time: as quick as a cache, from the same place).
+    - name: Pins
+      id: pins
+      shell: bash
+      run: echo "key=$(grep -E '^(roc_nightly|roc_commit|zig_version) :=' Justfile | shasum -a 256 | cut -c1-16)" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@v6
+      with:
+        path: |
+          .tools/zig
+          .tools/roc
+          .tools/glue
+        key: tools-${{ runner.os }}-${{ runner.arch }}-${{ steps.pins.outputs.key }}
+
+    # The hosts' crates (server/host, cli/host): every job shares one cache, saved by master's runs.
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: |
+          server/host -> target
+          cli/host -> target
+        shared-key: hosts
+        save-if: ${{ github.ref == 'refs/heads/master' }}
+
+    - name: Browsers
+      if: inputs.browsers == 'true'
+      shell: bash
+      run: npx -y playwright@1.65.1 install --only-shell chromium firefox
+
+    - name: Postgres
+      if: inputs.postgres == 'true'
+      shell: bash
+      run: |
+        brew install postgresql@18
+        bin="$(brew --prefix postgresql@18)/bin"
+        data="$RUNNER_TEMP/postgres"
+        "$bin/initdb" -D "$data" -U rocx --auth=trust >/dev/null
+        "$bin/pg_ctl" -D "$data" -l "$RUNNER_TEMP/postgres.log" -o "-p 55432 -k $RUNNER_TEMP" start
+        "$bin/createdb" -h 127.0.0.1 -p 55432 -U rocx rocx
+        echo "DATABASE_URL=postgres://rocx:rocx@127.0.0.1:55432/rocx" >> "$GITHUB_ENV"
+
+    - name: just setup
+      shell: bash
+      run: just setup

@@ -114,7 +114,9 @@ When an item lands, delete its line here in the same commit.
   type-check (examples/uptime names `JobErr` instead).
 - **Fixes prepared on the fork wait for the user to open them as PRs** (boxy, `List.map` reuse,
   and the slot lifetimes of branch `rocx-fixes-2`, 0eb36c9c3b and 4674b5973d; its Try commits are
-  upstream's). Nothing is pushed from here.
+  upstream's). Nothing is pushed from here. Its compiler is, as a binary (D-069): a release of this
+  repository per pin, for CI and `just setup` without the fork, so a pin bump runs `just
+  publish-roc-fork` and puts the SHA-256 it prints in the Justfile before it lands.
 
 ## Tooling and distribution
 
@@ -122,6 +124,10 @@ When an item lands, delete its line here in the same commit.
   examples/tasks was written to be its template, and D-045 adds the database question above.
 - **rocx on Linux** (D-062): the CLI platform's musl targets are named and `just rocx-bootstrap`
   builds for them, but neither has run; its watching polls there (inotify is the next step).
+- **CI on Linux** (D-069): CI runs on macOS runners alone, the one machine the fork's compiler is
+  prebuilt for. Linux's runners are quicker to start and have Docker for Postgres, but need the
+  fork built for Linux (its build.zig cross-compiles: `zig build build-release
+  -Dtarget=x86_64-linux-musl`), published beside the macOS one, and rocx working on Linux (above).
 - **What is still Node** (D-062): the tests, `just site`'s full build (it measures the wasm with
   `web/runtime.js` and prerenders through the server), and the measuring scripts. A static site
   in Roc would need a way to run the wasm, or to drop the measured rendering times.

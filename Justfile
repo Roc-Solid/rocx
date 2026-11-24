@@ -21,6 +21,11 @@ rust_version := "1.100.0"
 # shows which the nightly still has. The nightly stays in .tools/roc/.
 roc_fork := env_var_or_default("ROC_FORK", env_var("HOME") + "/roc-fork")
 roc_fork_commit := "4674b5973d4cea3875c2d33c6a63c95ff1d26843"
+# Where there is no fork to build it from (CI's machine, a newcomer's), `just setup` downloads the
+# fork's compiler prebuilt instead: a release of this repository, roc-fork-<the commit's first 10>,
+# with the binary alone (not the fork's source), for macOS on Apple silicon, the only one so far.
+# `just publish-roc-fork` uploads it and prints the SHA-256 it is checked against.
+roc_fork_release_sha256 := "1753ae2a7b0810b1ff063dd4b15be1e2800d2b48af29545c32b4cf63b954b563"
 
 # Variables are worked out when a recipe uses them: `just setup` needs no compiler yet.
 set lazy
@@ -38,7 +43,8 @@ default:
 
 # The toolchain, into .tools/: Zig and Rust, unless the system's (on PATH, e.g. from Nix) will do;
 # the pinned Roc nightly and the glue spec for `just glue`; then the Roc fork rocx builds with
-# (`roc_fork_commit`), built and linked as .tools/roc-active; then bin/rocx.
+# (`roc_fork_commit`), built (or, without the fork, downloaded prebuilt) and linked as
+# .tools/roc-active; then bin/rocx.
 setup:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -95,14 +101,29 @@ setup:
     fi
     rm -rf .tools/download
     commit={{ roc_fork_commit }}
+    if [ ! -x ".tools/roc-fork/$commit/bin/roc" ] && ! git -C "{{ roc_fork }}" cat-file -e "$commit^{commit}" 2>/dev/null; then
+        # No fork here: its compiler prebuilt, from this repository's release of it.
+        if [ "$roc_os" != macos_apple_silicon ]; then
+            echo "rocx builds with a fork of Roc: no commit $commit in {{ roc_fork }} (ROC_FORK), and it is prebuilt only for macOS on Apple silicon" >&2
+            exit 1
+        fi
+        mkdir -p .tools/download/roc-fork
+        release="roc-fork-${commit:0:10}"
+        if ! curl -fsSL -o .tools/download/roc-fork.tar.xz "https://github.com/Roc-Solid/rocx/releases/download/$release/$release-$roc_os.tar.xz"; then
+            echo "No release $release of the fork's compiler to download: \`just publish-roc-fork\` on a machine with the fork publishes it." >&2
+            exit 1
+        fi
+        echo "{{ roc_fork_release_sha256 }}  .tools/download/roc-fork.tar.xz" | shasum -a 256 -c -
+        tar -xJf .tools/download/roc-fork.tar.xz -C .tools/download/roc-fork
+        rm -rf ".tools/roc-fork/$commit"
+        mkdir -p .tools/roc-fork
+        mv .tools/download/roc-fork ".tools/roc-fork/$commit"
+        rm -rf .tools/download
+    fi
     if [ ! -x ".tools/roc-fork/$commit/bin/roc" ]; then
         # The fork's compiler, from a clone that shares the fork's objects (its checkouts are left
         # as they are), built as the nightlies are: 10 to 20 minutes, and the network once, for Zig
         # to fetch LLVM.
-        if ! git -C "{{ roc_fork }}" cat-file -e "$commit^{commit}" 2>/dev/null; then
-            echo "rocx builds with a fork of Roc: no commit $commit in {{ roc_fork }} (ROC_FORK)" >&2
-            exit 1
-        fi
         rm -rf .tools/roc-fork/src
         mkdir -p .tools/roc-fork
         git clone -q --shared --no-checkout "{{ roc_fork }}" .tools/roc-fork/src
@@ -115,6 +136,45 @@ setup:
     # rocx itself, bin/rocx, from its Roc (rocx-cli/) on the CLI platform (cli/): `rocx dev` for an
     # app, and every script here.
     bin/rocx self-build 2>/dev/null || { just rocx-bootstrap && bin/rocx self-build; }
+
+# Publishes the fork's compiler that `just setup` built here (.tools/roc-fork/<roc_fork_commit>/,
+# macOS on Apple silicon) as a release of this repository, roc-fork-<the commit's first 10>, for
+# `just setup` where there is no fork (CI's machine, a newcomer's): the binary alone, never the
+# fork's source. Nothing is uploaded if the binary holds this machine's home directory or a word of
+# .git/info/private-words (as whole words: Apple's and Microsoft's API names have some inside
+# theirs), and a release that is there already isn't replaced: its SHA-256 is pinned. Once per pin;
+# then put the SHA-256 it prints in roc_fork_release_sha256.
+publish-roc-fork:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    commit={{ roc_fork_commit }}
+    release="roc-fork-${commit:0:10}"
+    asset="$release-macos_apple_silicon.tar.xz"
+    binary=".tools/roc-fork/$commit/bin/roc"
+    if [ "$(uname -sm)" != "Darwin arm64" ] || [ ! -x "$binary" ]; then
+        echo "Not published: no $binary built for macOS on Apple silicon here (just setup builds it from the fork)." >&2
+        exit 1
+    fi
+    if gh release view "$release" --repo Roc-Solid/rocx >/dev/null 2>&1; then
+        echo "Not published: Roc-Solid/rocx has a release $release already." >&2
+        exit 1
+    fi
+    words="$(git rev-parse --git-common-dir)/info/private-words"
+    strings=$(mktemp)
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$strings" "$tmp"' EXIT
+    LC_ALL=C strings -a "$binary" > "$strings"
+    if LC_ALL=C grep -qF "${HOME:?}" "$strings" || { [ -s "$words" ] && LC_ALL=C grep -qiwE -f "$words" "$strings"; }; then
+        echo "Not published: $binary holds what must stay private (its home directory, or a private word)." >&2
+        exit 1
+    fi
+    tar -C ".tools/roc-fork/$commit" -cf - bin/roc | xz -T0 -6 > "$tmp/$asset"
+    sha=$(shasum -a 256 "$tmp/$asset" | cut -d' ' -f1)
+    gh release create "$release" "$tmp/$asset" --repo Roc-Solid/rocx --prerelease \
+        --title "Roc compiler: rocx's fork at ${commit:0:10} (macOS, Apple silicon)" \
+        --notes "The Roc compiler rocx builds with, prebuilt for macOS on Apple silicon: Roc's {{ roc_nightly }} with the compiler fixes rocx needs until they are upstream, at the fork's commit $commit. \`just setup\` downloads it where there is no fork to build it from (CI's machine, a newcomer's), and checks it against the Justfile's roc_fork_release_sha256 ($sha). The binary alone: the fork's source isn't published."
+    echo "Published $release. In the Justfile:"
+    echo "roc_fork_release_sha256 := \"$sha\""
 
 # Each Roc compiler bug rocx has met (test/compiler-bugs/*/repro.sh), with the pinned nightly and
 # with the fork rocx builds with: what the fork fixes, and, with a newer nightly, what it still needs.

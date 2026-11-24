@@ -4195,6 +4195,49 @@ a kind's block, so a local of the same name shadows them.
 
 **Reversible:** yes: every kind becomes a value again and every call goes back through `Actor`.
 
+## D-069 CI on GitHub's macOS runners, with the fork's compiler published as a binary
+
+**Status.** Built (2026-11-24).
+
+**Context.** The repository is public and in an organization of its own, so GitHub Actions is free
+for it, but nothing ran there: every build needs the Roc fork's compiler (`roc_fork_commit`), and
+the fork's fixes are kept private until they are upstream, so a runner had no compiler to build
+with. A newcomer without the fork was in the same place: `just setup` stopped.
+
+**Options.**
+1. A self-hosted runner on the machine with the fork. No upload, but every push runs the full gate
+   there, and GitHub advises against self-hosted runners on public repositories (a pull request's
+   code runs on the machine).
+2. The fork pushed to a private repository, built in CI (10 to 20 minutes, cached per pin), with a
+   token. Pushes the fork's source.
+3. The fork's compiler as a binary in a private repository's release, downloaded with a token.
+   Pull requests from forks get no secrets, so no CI.
+4. The binary as a public release of this repository; no token.
+
+**Choice.** 4 (the user's).
+- `just publish-roc-fork`, on the machine with the fork: the binary `just setup` built
+  (`.tools/roc-fork/<commit>/bin/roc`, macOS on Apple silicon), as `bin/roc` in an xz tarball
+  (44 MB; the binary is 276 MB), uploaded as release `roc-fork-<the commit's first 10>`, a
+  pre-release. Nothing is uploaded if its strings hold the home directory or a private word (as
+  whole words: Apple's and Microsoft's API names have one inside theirs); a release that is
+  there already isn't replaced. It prints the tarball's SHA-256.
+- `roc_fork_release_sha256` in the Justfile pins it. `just setup` builds from the fork where it has
+  the commit, as before; elsewhere, on macOS on Apple silicon, it downloads the release, checks the
+  SHA-256 and unpacks it in place of the build. A pin bump publishes first.
+- `.github/workflows/ci.yml`: on every push to master and every pull request (a newer push stops a
+  pull request's older run), four jobs side by side on `macos-latest`: `just check`, `just test`
+  (Chromium's headless shell and Firefox from Playwright, a Postgres from Homebrew as
+  `DATABASE_URL`), `just examples` (the browsers) and `just site`. `.github/actions/setup` is the
+  toolchain: Node 24, just, Zig and the nightly cached by their pins, the hosts' crates cached
+  (saved by master's runs), then `just setup`.
+
+**Why.** macOS on Apple silicon is the machine the binary is built on, so it runs on GitHub's
+runners as it is (built for macOS 15 and up), and nothing has to be cross-built; the fork's source
+stays private while anyone can build and test the repository. Linux runners need the fork built for
+Linux and rocx working there (TODO.md).
+
+**Reversible:** yes: delete the workflow and the releases; `just setup` falls back to the fork.
+
 ## D-070 One hole, and a hole's own `if` and `match` as control flow
 
 **Status.** Built (2026-11-24).
