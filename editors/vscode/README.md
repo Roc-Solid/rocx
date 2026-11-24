@@ -22,8 +22,10 @@ markup.
 
 There is no language server yet. What the editor shows is what the build says, as it says it.
 
-**Terminal → Run Task… → rocx** lists `dev <dir>` for each app in the workspace (each directory
-with `routes/` in it). Running one runs `rocx dev <dir>` in a terminal of its own. Each time a save
+**Terminal → Run Task… → rocx** lists `dev <dir>` and `check <dir>` for each app in the workspace
+(each directory with `routes/` in it). `check` runs `rocx check <dir>` once: the app built from its
+sources and both of its programs type-checked, its problems kept after it ends. `dev` runs
+`rocx dev <dir>` in a terminal of its own. Each time a save
 builds the app again, its problems show at their lines, and in the Problems panel:
 
 - the compiler's errors and warnings, as rocx points them into `.rocx` files;

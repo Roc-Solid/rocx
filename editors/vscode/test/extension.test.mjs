@@ -180,8 +180,11 @@ test("a rocx dev task for each app in the folder: each directory with routes/ in
 		tasks.map((task) => [task.name, task.definition.dir, task.isBackground]),
 		[
 			["dev .", ".", true],
+			["check .", ".", false],
 			["dev examples/hello", "examples/hello", true],
+			["check examples/hello", "examples/hello", false],
 			["dev site", "site", true],
+			["check site", "site", false],
 		],
 	);
 	// A task from tasks.json, a command of one's own.
@@ -275,6 +278,29 @@ test("a command of one's own: problems as they come, kept after it ends", async 
 	assert.equal(run.closed, 3);
 	const problems = collections.find((collection) => collection.name === "rocx: check").files;
 	assert.equal(problems.get(path.join(dir, "app", "routes", "+page.rocx")).length, 2);
+	fs.rmSync(dir, { recursive: true });
+});
+
+test("a check task: rocx check <dir> once, its problems kept after it ends", async () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rocx-vscode-"));
+	const fake = path.join(dir, "fake-rocx.mjs");
+	fs.writeFileSync(fake, `#!/usr/bin/env node
+process.stdout.write("args: " + process.argv.slice(2).join(" ") + "\\n");
+process.stdout.write(${JSON.stringify(devFailed)});
+process.exit(1);
+`);
+	fs.chmodSync(fake, 0o755);
+	settings.path = fake;
+	workspace = folderAt(dir);
+	const task = provider.resolveTask(new vscode.Task({ type: "rocx", dir: "app", check: true }, workspace, "check app", "rocx"));
+	assert.equal(task.isBackground, false);
+	const run = await start(task);
+	await until("the check to end", () => run.closed !== null);
+	assert.equal(run.closed, 1);
+	assert.match(run.output, /args: check app/);
+	const problems = collections.find((collection) => collection.name === "rocx: check app").files;
+	assert.equal(problems.get(path.join(dir, "app", "routes", "+page.rocx")).length, 2);
+	settings.path = "";
 	fs.rmSync(dir, { recursive: true });
 });
 

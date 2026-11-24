@@ -11,9 +11,11 @@ import pf.Env
 import pf.Events
 import pf.File
 import pf.Stderr
+import pf.Stdout
 import pf.Time
 import pf.Watch
 import Build
+import Commands
 import Fs
 import Hosts
 import qr.Qr
@@ -268,6 +270,82 @@ Dev := [].{
 				},
 			check: Run(Cmd.new(Fs.join([rocx, "bin", "rocx"])).args(["check", "--sql", dir, "--server", server, "--quiet", "--"].concat($passed))),
 		})
+	}
+
+	## `rocx check [dir]`: the app in `dir` (or here) checked from its sources, so a check never reads
+	## what an older build left: `rocx build` as `rocx dev` builds it (Generated/, and the browser's copy
+	## in build/client, a dev build's: its stories too), its problems said at their lines; then the
+	## compiler `rocx dev` builds with type-checks the server's program (main.roc) and, for an app of
+	## pages, the browser's (build/client/main.roc), every report pointed into the .rocx files. Exit 1
+	## on an error (rocx build's or the compiler's), 2 on warnings alone, 0 when all is well.
+	check_app! : List(Str), Str => Try({}, [Exit(I32)])
+	check_app! = |args, rocx| {
+		given = args.first() ?? "."
+		dir =
+			match File.real_path!(given) {
+				Ok(real) => real
+				Err(_) => return Dev.fail!("rocx check: no directory ${given}")
+			}
+		shown = {
+			way = Fs.relative(Fs.cwd!(), dir)
+			if (way.is_empty()) "." else way
+		}
+		if !File.is_dir!(Fs.join([dir, "routes"])) {
+			return Dev.fail!("rocx check: ${shown} has no routes/: an app is a directory with routes/ in it (rocx check -- <command> checks with a command of your own)")
+		}
+		main = Fs.join([dir, "main.roc"])
+		if !File.exists!(main) {
+			return Dev.fail!("rocx check: ${shown} has no main.roc (rocx dev writes the smallest one)")
+		}
+		tools =
+			match Dev.tools!(rocx) {
+				Ok(found) => found
+				Err(Failed(message)) => return Dev.fail!(message)
+			}
+		client = Fs.join([dir, "build", "client"])
+		built =
+			match Build.build!([dir], { client: Some(client), cwd: Fs.cwd!(), dev: Bool.True, rocx: tools.rocx }) {
+				Ok(done) => done
+				Err(Problem(message)) => {
+					_ = Stdout.line!("Error: ${message}")
+					return Err(Exit(1))
+				}
+			}
+		said = built.said.keep_if(|line| !Dev.files_written(line))
+		if !said.is_empty() {
+			_ = Stdout.line!(Str.join_with(said, "\n"))
+		}
+		if !built.ok {
+			_ = Stderr.line!("rocx check: ${shown}: rocx build failed")
+			return Err(Exit(1))
+		}
+		client_main = Fs.join([client, "main.roc"])
+		programs = [main].concat(if (File.exists!(client_main)) [client_main] else [])
+		var $code = 0
+		for program in programs {
+			match Commands.checked!(tools.roc, ["check", program]) {
+				Ok(ran) => {
+					text = Text.trim_end(ran.said)
+					if !text.is_empty() {
+						_ = Stdout.line!(text)
+					}
+					$code =
+						if ran.code == 0 {
+							$code
+						} else if ran.code == 2 {
+							if ($code == 0) 2 else $code
+						} else {
+							1
+						}
+				}
+				Err(CantStart(why)) => return Dev.fail!("rocx check: ${why}")
+			}
+		}
+		if $code == 0 {
+			Ok({})
+		} else {
+			Err(Exit($code))
+		}
 	}
 
 	fail! : Str => Try(a, [Exit(I32)])

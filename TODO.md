@@ -134,9 +134,8 @@ When an item lands, delete its line here in the same commit.
 - **Prebuilt, stripped platform bundles for every target** (`roc bundle`), so a newcomer needs only
   `roc` and `rocx`: no Node, Rust or Zig.
 - **Errors in an editor, beyond a build's** (the user, 2026-11-24: `rocx check` is enough for now;
-  the VS Code extension shows a `rocx dev` task's on each build): `rocx lsp`, checking on save
-  without serving (an app has no `rocx check <dir>` yet: `rocx check -- roc check main.roc` needs the
-  compiler named), for every editor with a language-server client; then hover and completion by
+  the VS Code extension shows a `rocx dev` task's on each build, and a `rocx check` task's): `rocx
+  lsp`, running `rocx check <dir>` on save, for every editor with a language-server client; then hover and completion by
   `roc experimental-lsp` on the transpiled buffer (lines map already, columns need a map from the
   transpiler). Orca has no language-server client.
 - **Zed**: needs a tree-sitter grammar for rocx, over faldor20/tree-sitter-roc (Zed's Roc

@@ -57,6 +57,10 @@
 						"type": "string",
 						"description": "The app's directory (the one with routes/ in it), relative to the workspace folder: the task runs `rocx dev <dir>`."
 					},
+					"check": {
+						"type": "boolean",
+						"description": "Run `rocx check <dir>` once instead of `rocx dev`: rocx build, then the app's server and browser programs type-checked, from its sources."
+					},
 					"args": {
 						"type": "array",
 						"items": { "type": "string" },

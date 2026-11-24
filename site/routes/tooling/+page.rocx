@@ -71,6 +71,15 @@ view! = |_|
 					</div>
 				</div>
 				<div class="command">
+					<p class="command-usage">rocx check {"[dir]"}</p>
+					<p>
+						Checks the app in the directory (or here) from its sources: builds it as <code>rocx dev</code>
+						does, then type-checks its server's program and, with pages, its browser's, every problem said
+						at its <code>.rocx</code> line, so a check never reads what an older build left behind. Exits 1 on
+						an error, 2 on warnings alone.
+					</p>
+				</div>
+				<div class="command">
 					<p class="command-usage">rocx check -- {"<command>"}</p>
 					<p>
 						Runs a command (<code>roc check</code>, <code>roc build</code>) with its reports pointed into
@@ -210,7 +219,7 @@ view! = |_|
 			<Code title={Sources.client_app.file} source={Sources.client_app.rocx} />
 			<Code
 				title="Justfile"
-				source={"build:\n\t# The browser platform's host, a Zig object the wasm links with (once; site/build.mjs does the same)\n\tzig build-obj rocx/web/host/host.zig -target wasm32-freestanding -O ReleaseSmall -fcompiler-rt -femit-bin=rocx/web/platform/targets/wasm32/host.wasm\n\trocx/bin/rocx build app --client build/client\n\troc build --target=wasm32 --opt=size --specialize=yes --output=build/client/static/rocx/app.wasm build/client/main.roc\n\tnode rocx/server/build.mjs app/main.roc build/server --opt=speed\n\nserve:\n\tbuild/server --port 8080 --static build/client/static\n\ncheck:\n\trocx/bin/rocx lint app\n\trocx/bin/rocx check -- roc check app/main.roc"}
+				source={"build:\n\t# The browser platform's host, a Zig object the wasm links with (once; site/build.mjs does the same)\n\tzig build-obj rocx/web/host/host.zig -target wasm32-freestanding -O ReleaseSmall -fcompiler-rt -femit-bin=rocx/web/platform/targets/wasm32/host.wasm\n\trocx/bin/rocx build app --client build/client\n\troc build --target=wasm32 --opt=size --specialize=yes --output=build/client/static/rocx/app.wasm build/client/main.roc\n\tnode rocx/server/build.mjs app/main.roc build/server --opt=speed\n\nserve:\n\tbuild/server --port 8080 --static build/client/static\n\ncheck:\n\trocx/bin/rocx lint app\n\trocx/bin/rocx check app"}
 				numbers={Bool.False}
 				plain
 			/>

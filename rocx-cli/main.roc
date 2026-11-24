@@ -28,6 +28,9 @@ main! = |args| {
 	match words.first() {
 		Ok("internal") => internal!({})
 		Ok("check") if words.get(1) == Ok("--sql") => CheckSql.run!(words.drop_first(2), rocx_home!({}))
+		# `rocx check [dir]`: an app, checked from its sources; `rocx check -- <command>`, a command's
+		# reports pointed into .rocx files.
+		Ok("check") if words.len() == 1 or (words.len() == 2 and words.get(1) != Ok("--")) => Dev.check_app!(words.drop_first(1), rocx_home!({}))
 		Ok("check") => {
 			given = words.drop_first(1)
 			exit_with(Commands.check!(if (given.first() == Ok("--")) given.drop_first(1) else given))
@@ -46,7 +49,7 @@ main! = |args| {
 }
 
 usage! = |{}| {
-	Stderr.line!("usage: rocx dev [dir] [--port 8080] [--android [--lan]] | rocx build <dir>… [--client <out>] [--dev] | rocx check -- <command>… | rocx check --sql [dir] [--engine sqlite|turso] [--verbose] [-- server options…] | rocx lint <dir>… | rocx routes <dir> | rocx fmt [--check] <path>… | rocx qr <text>")?
+	Stderr.line!("usage: rocx dev [dir] [--port 8080] [--android [--lan]] | rocx build <dir>… [--client <out>] [--dev] | rocx check [dir] | rocx check -- <command>… | rocx check --sql [dir] [--engine sqlite|turso] [--verbose] [-- server options…] | rocx lint <dir>… | rocx routes <dir> | rocx fmt [--check] <path>… | rocx qr <text>")?
 	Err(Exit(2))
 }
 

@@ -1,6 +1,6 @@
 // Roc Solid's VS Code extension. Highlighting is all package.json's (the grammar in syntaxes/);
-// this is the `rocx` task type: `rocx dev <app>` for each app in the workspace (a directory with
-// routes/ in it), or any command line (`just dev`), run in a terminal of its own whose output is
+// this is the `rocx` task type: `rocx dev <app>` and `rocx check <app>` for each app in the workspace
+// (a directory with routes/ in it), or any command line (`just dev`), run in a terminal of its own whose output is
 // read (reports.js) into problems at their .rocx lines, again on each build. No language server:
 // what the editor shows is what the build says.
 const vscode = require("vscode");
@@ -36,7 +36,7 @@ function activate(context) {
 
 function deactivate() {}
 
-// `rocx dev <dir>` for each app in each workspace folder.
+// `rocx dev <dir>` and `rocx check <dir>` for each app in each workspace folder.
 async function provideTasks() {
 	const tasks = [];
 	for (const folder of vscode.workspace.workspaceFolders ?? []) {
@@ -48,7 +48,7 @@ async function provideTasks() {
 			const at = ("/" + relative).indexOf("/routes/");
 			if (at >= 0) apps.add(at === 0 ? "." : relative.slice(0, at - 1));
 		}
-		for (const dir of [...apps].sort()) tasks.push(taskFor(folder, { type: TYPE, dir }));
+		for (const dir of [...apps].sort()) tasks.push(taskFor(folder, { type: TYPE, dir }), taskFor(folder, { type: TYPE, dir, check: true }));
 	}
 	return tasks;
 }
@@ -61,7 +61,7 @@ function resolveTask(task) {
 }
 
 function taskFor(folder, definition, name) {
-	const label = name ?? (definition.command ? definition.command : `dev ${definition.dir}`);
+	const label = name ?? (definition.command ? definition.command : `${definition.check ? "check" : "dev"} ${definition.dir}`);
 	const task = new vscode.Task(
 		definition,
 		folder,
@@ -69,7 +69,7 @@ function taskFor(folder, definition, name) {
 		TYPE,
 		new vscode.CustomExecution(async (resolved) => new Run(folder, resolved, label)),
 	);
-	task.isBackground = !definition.command;
+	task.isBackground = !definition.command && !definition.check;
 	task.presentationOptions = { reveal: vscode.TaskRevealKind.Always, panel: vscode.TaskPanelKind.Dedicated, clear: true };
 	return task;
 }
@@ -107,8 +107,8 @@ class Run {
 		this.problems.clear();
 		this.reports = new Reports();
 		// While rocx dev builds, the problems shown are the last build's, replaced when it ends; a
-		// command's (`just check`) show as they come.
-		this.building = !this.definition.command;
+		// command's (`just check`, `rocx check`) show as they come.
+		this.building = !this.definition.command && !this.definition.check;
 		running.add(this);
 
 		const env = { ...process.env, NO_COLOR: "1" };
@@ -118,7 +118,7 @@ class Run {
 			this.child = childProcess.spawn(this.definition.command, { cwd, env, shell: true, detached: true, stdio: ["ignore", "pipe", "pipe"] });
 		} else {
 			const rocx = rocxPath(this.folder);
-			const args = ["dev", this.definition.dir, ...(this.definition.args ?? [])];
+			const args = [this.definition.check ? "check" : "dev", this.definition.dir, ...(this.definition.args ?? [])];
 			shown = [rocx, ...args].join(" ");
 			this.child = childProcess.spawn(rocx, args, { cwd, env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
 		}

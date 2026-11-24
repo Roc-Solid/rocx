@@ -1779,7 +1779,10 @@ Transpile := [].{
 		# this file's that the file also calls (values then, and the call a hole).
 		packaged = component and cfg.packaged.contains(name)
 		# D-070: `<Show>`, `<Switch>` and `<Match>` are gone; a hole's `if` and `match` are what they were.
-		if component and ["Show", "Switch", "Match"].contains(name) and !cfg.modules.contains(name) and !cfg.fns.contains(name) and !cfg.plain_fns.contains(name) {
+		# The platform's (an old `import pf.Show`) or none: the app's own module or function by that name
+		# is the app's.
+		gone = ["Show", "Switch", "Match"].contains(name) and (cfg.packaged.contains(name) or (!cfg.modules.contains(name) and !cfg.fns.contains(name) and !cfg.plain_fns.contains(name)))
+		if component and gone {
 			return Err(Transpile.fail(cfg, "<${name}> is gone (D-070): write a hole's if or match, which makes only the branch that holds and keeps it while it does: {if (ready!()) <p>Ready</p> else <p>Waiting</p>}, {match card!() { Ok(card) => <Card card={card} />, Err(_) => <></> }}", start))
 		}
 		provider = component and Transpile.lookup(cfg.contexts, name) != None

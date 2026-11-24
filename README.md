@@ -622,6 +622,10 @@ rocx build <dir>…        # each .rocx under the directories becomes the .roc b
                          # alone: none, said); a warning where it reaches a module that imports
                          # what only the server has (pf.Db)
   --dev                  # and the stories (`<story>`): their catalog at /__rocx/stories
+rocx check [dir]         # the app (here, or in dir) checked from its sources: rocx build as rocx dev
+                         # builds it, then the compiler on its server's program and its browser's,
+                         # every problem at its .rocx line, never what an older build left; exit 1
+                         # on an error, 2 on warnings alone
 rocx check -- <command>  # run a command, its reports pointed into .rocx files
 rocx check --sql [dir]   # the app's SQL checked by its own database engine, and its rows by the
                          # compiler (D-058): each literal statement at a Db.all!/Db.run! prepared on

@@ -236,7 +236,7 @@ test("components: a record spread on a component passes its fields on as they ar
 	const read = code(["Button := [].{", "\tview! : { kind : Str, label : Str } => Html", "\tview! = |{ kind, ..rest }| <p>{rest.label} {kind}</p>", "}"]);
 	assert.equal(read[2], `\tview! = |{ kind: kind!, ..rest }| Html.element("p", [], [Html.hole_of(|| Html.hole((rest.label)())), Html.text(" "), Html.hole_of(|| Html.hole(kind!())),])`, "a field of the rest read through its getter, as a whole record's is");
 	assert.throws(() => code(["import Base", "Button := [].{", "\tview! = |{ kind, ..rest }| <Base {...rest} {...kind} />", "}"]), /two records whose fields rocx doesn't know/);
-	assert.throws(() => code(["import pf.Show", "Button := [].{", "\tview! = |{ kind, ..rest }| <Show {...rest} />", "}"]), /<Show> takes its props as they are written/);
+	assert.throws(() => code(["import pf.Loading", "Button := [].{", "\tview! = |{ kind, ..rest }| <Loading {...rest} />", "}"]), /<Loading> takes its props as they are written/);
 	assert.throws(() => code(["import Base", "x = <Base {...make(1)} />"]), /spread a record by its name/);
 	assert.throws(() => code(["x = <div {...attrs} />"]), /unexpected "\{" in <div>/, "an element takes no spread");
 });
@@ -287,8 +287,7 @@ test("components: holes and attributes are computations, handlers effects", () =
 	const lines = (source) => reactive(source).split("\n").slice(1).join("\n");
 	assert.equal(lines(`import pf.For\nx = <For each!={posts!()} keyed={|post| post.id} fallback={<p>None</p>}>{|post!, i!| <li>{post!().title}</li>}</For>`), `x = For.view_with_keyed!({ each!: || posts!(), keyed: |post| post.id, fallback: Html.element("p", [], [Html.text("None"),]), children: |post!, i!| Html.element("li", [], [Html.hole_of(|| Html.hole(post!().title)),]), })`);
 	assert.equal(lines(`import pf.For\nx = <For each!={names!()} keyed={Bool.False}>{|name!, i| <li>{name!()}</li>}</For>`), `x = For.view_with_unkeyed!({ each!: || names!(), children: |name!, i| Html.element("li", [], [Html.hole_of(|| Html.hole(name!())),]), })`);
-	assert.equal(lines(`import pf.Show\nx = <Show when!={n!() > 0}><p>Some</p></Show>`), `x = Show.view!({ when!: || n!() > 0, children: [Html.element("p", [], [Html.text("Some"),]),], })`);
-	assert.equal(lines(`import pf.Show\nx = <Show when!={xs!().first()}>{|first!| <p>{first!()}</p>}</Show>`), `x = Show.view_with!({ when!: || xs!().first(), children: |first!| Html.element("p", [], [Html.hole_of(|| Html.hole(first!())),]), })`);
+	assert.equal(lines(`import pf.Loading\nx = <Loading fallback={<p>Wait</p>}><p>Some</p></Loading>`), `x = Loading.view!({ fallback: Html.element("p", [], [Html.text("Wait"),]), children: [Html.element("p", [], [Html.text("Some"),]),], })`);
 	assert.throws(() => reactive(`x = <ul>{|a| a}</ul>`), /a function child is a component's/);
 	assert.throws(() => reactive(`import pf.For\nx = <For each!={xs!()} keyed={Bool.False}>{|a!, i| a}<li></li></For>`), /function child must be its only child/);
 	// Roc's values have no identity: a <For> says how it keeps its rows.
@@ -369,8 +368,8 @@ test("components: a doctype, and <script> and <style> in markup, are the platfor
 test("components: one runs where it is rendered; a context is named, and provided by its own tag", () => {
 	const reactive = (source, options = {}) => transpileModule(source, "Picks.rocx", { module: "Picks", ...options }).code.replace(/\n\n# rocx: generated from[^\n]*\n$/, "");
 	// A component's call is put off: it runs where it is rendered, so it sees the contexts above
-	// that place, as in Solid. A platform's component (`import pf.Show`) is markup, made now.
-	assert.equal(reactive(`import pf.Show\nimport Tally\nx = <Show when!={a!()}><Tally /></Show>`).split("\n")[2], `x = Show.view!({ when!: || a!(), children: [Html.component(|| Tally.view!({})),], })`);
+	// that place, as in Solid. A platform's component (`import pf.Loading`) is markup, made now.
+	assert.equal(reactive(`import pf.Loading\nimport Tally\nx = <Loading fallback={<p />}><Tally /></Loading>`).split("\n")[2], `x = Loading.view!({ fallback: Html.element("p", [], []), children: [Html.component(|| Tally.view!({})),], })`);
 	// A context is named after its module and definition, with a default or none.
 	const defined = reactive(`import pf.Context\n\tpicks_context = create_context()\n\ttheme = create_context("light")`).split("\n");
 	assert.equal(defined[1], `\tpicks_context = Context.required("Picks.picks_context")`);
@@ -470,7 +469,7 @@ test("components: a pure one (`view`, no `!`) is called where it is written, as 
 	assert.equal(reactive(`Card := [].{\n\tview = |{ title }| <h2>{title}</h2>\n}\nx = <Card title="T" />`).split("\n")[3], `x = Card.view({ title: "T", })`, "this file's own");
 	assert.equal(reactive(`card = |{ title }| <h2>{title}</h2>\nx = <p><Card title="T" /></p>`).split("\n")[1], `x = Html.element("p", [], [card({ title: "T", }),])`, "a function of this file's, defined with no !");
 	assert.equal(reactive(`stats! = |{ n }| <p>{n}</p>\nx = <Stats n={1} />`).split("\n")[1], `x = Html.component(|| stats!({ n: || 1, }))`, "one defined with ! is put off, given getters");
-	assert.equal(reactive(`import pf.Show\nx = <Show when!={a!()}><p /></Show>`, { views: { Show: "view" } }).split("\n")[1], `x = Show.view!({ when!: || a!(), children: [Html.element("p", [], []),], })`, "a platform's is the platform's");
+	assert.equal(reactive(`import pf.Loading\nx = <Loading fallback={<p />}><p /></Loading>`, { views: { Loading: "view" } }).split("\n")[1], `x = Loading.view!({ fallback: Html.element("p", [], []), children: [Html.element("p", [], []),], })`, "a platform's is the platform's");
 	assert.deepEqual(viewsDefined("Heading := [].{\n\tview : { id : Str } -> Html\n\tview = |_| x\n}\n\nCounter := [].{\n\tview! = |_| x\n\tview_with = 1\n}\n\nOther := [].{\n\tx = 1\n}\n"), { Heading: "view", Counter: "view!" });
 	// A type nested above the view: the view is the outer block's.
 	assert.deepEqual(viewsDefined("Icon := [].{\n\tName := [Check, Cross].{\n\t\tis_eq : Name, Name -> Bool\n\t\tis_eq = |a, b| a == b\n\t}\n\n\tview! : { name : Name } => Html\n\tview! = |_| x\n}\n"), { Icon: "view!" });
@@ -492,6 +491,7 @@ test("<Show>, <Switch> and <Match> are gone (D-070): writing one says what to wr
 		assert.throws(() => transpile(`x = <div><${tag} when!={a!()}><p>hi</p></${tag}></div>`, "T.rocx"), (error) => error instanceof RocxError && error.message.includes(`<${tag}> is gone (D-070): write a hole's if or match`), tag);
 	}
 	assert.match(transpile(`import Show\nx = <Show when={a} />`, "T.rocx"), /Show\.view!\(/, "an imported module\'s");
+	assert.throws(() => transpile(`import pf.Show\nx = <div><Show when!={a!()}><p>hi</p></Show></div>`, "T.rocx"), (error) => error instanceof RocxError && error.message.includes("<Show> is gone (D-070)"), "the platform's, imported before D-070");
 });
 
 test("a hole's if and match (D-070): one that reads what changes is the part its branch makes, each branch a hole of its own; a match arm's names are getters; text in every branch, or a condition that reads nothing that changes, is a hole as before; lines stay lines", () => {

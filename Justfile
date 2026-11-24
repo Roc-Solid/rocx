@@ -436,20 +436,16 @@ web-host:
     mkdir -p "$(dirname "$object")"
     "{{ zig }}" build-obj web/host/host.zig -target wasm32-freestanding -O ReleaseSmall -fcompiler-rt -femit-bin="$object"
 
-# The quick half of `examples` (every one, or those named): rocx build with the browser's copy
-# (examples/<name>/build/client), both programs type-checked with reports at .rocx lines (the
-# browser's when the build wrote one), and rocx lint. No wasm, no server, no tests.
+# The quick half of `examples` (every one, or those named): `rocx check` (rocx build with the
+# browser's copy in examples/<name>/build/client, then both programs type-checked with reports at
+# .rocx lines, the browser's when the build wrote one) and rocx lint. No wasm, no server, no tests.
 examples-check *names:
     #!/usr/bin/env bash
     set -euo pipefail
     for dir in {{ if names == "" { examples } else { names } }}; do
         dir="examples/${dir#examples/}"
-        client="$dir/build/client"
-        ROC={{ roc }} {{ rocx }} build "$dir" --client "$client"
-        {{ rocx }} check -- {{ roc }} check "$dir/main.roc"
-        if [ -f "$client/main.roc" ]; then
-            {{ rocx }} check -- {{ roc }} check "$client/main.roc"
-        fi
+        # rocx build, then the compiler on the server's program and the browser's, from the sources.
+        {{ rocx }} check "$dir"
         {{ rocx }} lint "$dir"
     done
 
