@@ -199,8 +199,8 @@ test("every page renders, and hydrates strictly as the server left it, asking fo
 	assert.doesNotMatch(notFound, /class="pager-(previous|next)"/, "and offers no next page, being none of them");
 });
 
-// A part's sidebar is its pages in groups, each under its heading (site/Ui/Nav.roc): the platform's
-// and the ecosystem's in several, rocx's and the examples' in one named after the part.
+// A part's sidebar is its pages in groups, each under its heading (site/Ui/Nav.roc): the platform's,
+// the ecosystem's and the examples' in several, rocx's in one named after the part.
 test("the sidebar's groups: each part's pages under its headings, every page of the part in one, the pager going on from one group to the next, and the ecosystem's overview carding its packages by the same groups", { skip }, async () => {
 	const html = async (route) => (await fetch(`${site.url}${route}`, { headers: { accept: "text/html" } })).text();
 	const groups = (page) => {
@@ -220,9 +220,14 @@ test("the sidebar's groups: each part's pages under its headings, every page of 
 	assert.deepEqual(ecosystem.map((group) => group.name), ["", "Pages", "Server", "Tools", "Monitoring"], "the overview under no heading, then the packages by where they work");
 	assert.deepEqual(ecosystem[0].pages, ["/ecosystem"]);
 	assert.deepEqual(groups(await html("/syntax")).map((group) => group.name), ["rocx"]);
-	assert.deepEqual(groups(await html("/examples")).map((group) => group.name), ["Examples"]);
+	const examples = groups(await html("/examples"));
+	assert.deepEqual(examples, [
+		{ name: "Start", pages: ["/examples", "/examples/hello"] },
+		{ name: "Apps", pages: ["/examples/tasks", "/examples/journal", "/examples/board", "/examples/quiz", "/examples/uptime", "/examples/notes", "/examples/plate"] },
+		{ name: "Benchmarks", pages: ["/examples/echo", "/examples/sqlite-vs-turso", "/examples/checkboxes"] },
+	]);
 	// Each page of a part is in its sidebar once, and the sidebar names no page that isn't there.
-	for (const [home, part] of [["/platform", platform], ["/ecosystem", ecosystem]]) {
+	for (const [home, part] of [["/platform", platform], ["/ecosystem", ecosystem], ["/examples", examples]]) {
 		const listed = part.flatMap((group) => group.pages);
 		assert.deepEqual([...listed].sort(), ROUTES.filter((route) => route === home || route.startsWith(`${home}/`)).sort(), `${home}: every page in one group`);
 	}
@@ -230,6 +235,7 @@ test("the sidebar's groups: each part's pages under its headings, every page of 
 	assert.match(await html("/platform/live"), /<a class="next[ "][^>]*href="\/platform\/database"/);
 	assert.match(await html("/platform/kv"), /<a class="next[ "][^>]*href="\/platform\/settings"/);
 	assert.match(await html("/ecosystem"), /<a class="next[ "][^>]*href="\/ecosystem\/charts"/);
+	assert.match(await html("/examples/plate"), /<a class="next[ "][^>]*href="\/examples\/echo"/);
 	// The ecosystem's overview: a heading for each group of packages, its cards under it.
 	const overview = await html("/ecosystem");
 	assert.deepEqual([...overview.matchAll(/<h3[^>]*>([^<]*)<\/h3>\s*<ul class="page-cards[ "]/g)].map(([, name]) => name), ["Pages", "Server", "Tools", "Monitoring"]);

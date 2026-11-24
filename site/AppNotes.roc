@@ -14,12 +14,17 @@ AppNotes := [].{
 	## caption), and whether it is a phone's (narrow, so it's shown beside another).
 	Shot : { file : Str, alt : Str, caption : Str, phone : Bool }
 
-	About : { name : Str, path : Str, blurb : Str, summary : Str, shows : List(Str), shots : List(Shot) }
+	## Where its page is in the sidebar: under Start (the first app to read), Apps, or Benchmarks
+	## (apps made to be measured).
+	Kind : [Start, App, Benchmark]
+
+	About : { name : Str, kind : Kind, path : Str, blurb : Str, summary : Str, shows : List(Str), shots : List(Shot) }
 
 	all : List(About)
 	all = [
 		{
 			name: "hello",
+			kind: Start,
 			path: Paths.examples_hello,
 			blurb: "A page, a counter and an endpoint",
 			summary: "The app Getting started makes: a page with a button that counts its clicks, and an endpoint. Its main.roc is the one rocx dev writes for an app that has none.",
@@ -28,6 +33,7 @@ AppNotes := [].{
 		},
 		{
 			name: "tasks",
+			kind: App,
 			path: Paths.examples_tasks,
 			blurb: "Task lists: the one to read first",
 			summary: "A small team's task lists: lists, tasks with a due day and someone to do them, filters, and reordering. The one to read first: it does the usual things the plain way, and its comments say why each piece is where it is.",
@@ -39,23 +45,8 @@ AppNotes := [].{
 			],
 		},
 		{
-			name: "echo",
-			path: Paths.examples_echo,
-			blurb: "Two endpoints, to measure the server",
-			summary: "The smallest app on the server platform: two endpoints, through a middleware that only passes a request on. POST /echo answers with the JSON string it was sent; POST /echo/json reads an order that nests into a record of its type and writes it back. It has no browser half. It is there to measure the server itself, and what reading and writing JSON adds.",
-			shows: ["Everything a request goes through, and nothing more", "A body read into a typed record that nests, and written back", "The server's benchmark, on each endpoint"],
-			shots: [],
-		},
-		{
-			name: "sqlite-vs-turso",
-			path: Paths.examples_sqlite_vs_turso,
-			blurb: "SQLite against Turso, timed in Roc",
-			summary: "One app timing the same database work on SQLite and on Turso: writes alone and in a transaction, reads by key and by an index, sums, JSON, a recursive query, eight callers at once on rows of their own, on one row, and reading beside writing; then a million orders fetched one and a hundred at a time, and joined to their customers. Each is timed in Roc, in the server, around the Db calls it makes. Its results are on this page.",
-			shows: ["The same SQL on two engines: --database-url picks one", "Turso's concurrent writes (MVCC): a transaction that loses to another runs again", "Eight actors as eight callers at once, and timing in Roc (Time.now_nanos!)", "A million rows, loaded by SQL from a count, fetched and joined"],
-			shots: [],
-		},
-		{
 			name: "journal",
+			kind: App,
 			path: Paths.examples_journal,
 			blurb: "Markdown posts in two languages",
 			summary: "A small publication in English and Polish: Markdown posts with typed frontmatter, compiled into the server, with a search that follows the typing and reactions kept in memory. No database.",
@@ -68,6 +59,7 @@ AppNotes := [].{
 		},
 		{
 			name: "board",
+			kind: App,
 			path: Paths.examples_board,
 			blurb: "A live kanban board, for several at once",
 			summary: "A live kanban board a small team works on at once: each sees the others' changes as they happen, and who is where.",
@@ -79,6 +71,7 @@ AppNotes := [].{
 		},
 		{
 			name: "quiz",
+			kind: App,
 			path: Paths.examples_quiz,
 			blurb: "A live quiz for a room full of phones",
 			summary: "A live quiz for a room full of phones. The host puts a room on a big screen, everyone joins with its code, the quickest right answers score most, and the leaderboard turns after each question.",
@@ -90,6 +83,7 @@ AppNotes := [].{
 		},
 		{
 			name: "uptime",
+			kind: App,
 			path: Paths.examples_uptime,
 			blurb: "An uptime monitor and its status page",
 			summary: "An uptime monitor and its public status page: jobs check each service on time, incidents open and close themselves, subscribers are emailed, and the page follows it all live.",
@@ -101,6 +95,7 @@ AppNotes := [].{
 		},
 		{
 			name: "notes",
+			kind: App,
 			path: Paths.examples_notes,
 			blurb: "Notes in Markdown, for people and AI agents",
 			summary: "Personal notes in Markdown that AI agents can use too: sign in by a mailed link, write with a live preview, tag, pin and search, and let an AI client read and write them over MCP.",
@@ -112,6 +107,7 @@ AppNotes := [].{
 		},
 		{
 			name: "plate",
+			kind: App,
 			path: Paths.examples_plate,
 			blurb: "A food diary for a phone",
 			summary: "A food diary for a phone: the USDA's 7,500 foods seeded into its database, packets looked up by barcode in Open Food Facts, recipes that log like foods, targets worked out from a profile, and trends charted.",
@@ -123,7 +119,26 @@ AppNotes := [].{
 			],
 		},
 		{
+			name: "echo",
+			kind: Benchmark,
+			path: Paths.examples_echo,
+			blurb: "Two endpoints, to measure the server",
+			summary: "The smallest app on the server platform: two endpoints, through a middleware that only passes a request on. POST /echo answers with the JSON string it was sent; POST /echo/json reads an order that nests into a record of its type and writes it back. It has no browser half. It is there to measure the server itself, and what reading and writing JSON adds.",
+			shows: ["Everything a request goes through, and nothing more", "A body read into a typed record that nests, and written back", "The server's benchmark, on each endpoint"],
+			shots: [],
+		},
+		{
+			name: "sqlite-vs-turso",
+			kind: Benchmark,
+			path: Paths.examples_sqlite_vs_turso,
+			blurb: "SQLite against Turso, timed in Roc",
+			summary: "One app timing the same database work on SQLite and on Turso: writes alone and in a transaction, reads by key and by an index, sums, JSON, a recursive query, eight callers at once on rows of their own, on one row, and reading beside writing; then a million orders fetched one and a hundred at a time, and joined to their customers. Each is timed in Roc, in the server, around the Db calls it makes. Its results are on this page.",
+			shows: ["The same SQL on two engines: --database-url picks one", "Turso's concurrent writes (MVCC): a transaction that loses to another runs again", "Eight actors as eight callers at once, and timing in Roc (Time.now_nanos!)", "A million rows, loaded by SQL from a count, fetched and joined"],
+			shots: [],
+		},
+		{
 			name: "checkboxes",
+			kind: Benchmark,
 			path: Paths.examples_checkboxes,
 			blurb: "A million checkboxes, shared live",
 			summary: "A million checkboxes that everyone with the page open shares: a box checked in one tab shows in every other within a moment, and the page holds only the rows that show.",
@@ -154,9 +169,17 @@ AppNotes := [].{
 		noted.concat(ExampleApps.all.drop_if(|example| AppNotes.about(example.name).is_ok()))
 	}
 
-	## The sidebar's pages: the overview, then a page for each app.
-	pages : List({ path : Str, label : Str, blurb : Str })
-	pages = [{ path: Paths.examples, label: "All the examples", blurb: "What each is, and what it weighs" }].concat(AppNotes.all.map(|each| { path: each.path, label: AppNotes.title(each.name), blurb: each.blurb }))
+	## The sidebar's groups: Start (the overview, then the first app to read), Apps, and Benchmarks,
+	## each app's page in the group its `kind` names, in this list's order.
+	groups : List({ name : Str, pages : List({ path : Str, label : Str, blurb : Str }) })
+	groups = {
+		of = |kind| AppNotes.all.keep_if(|each| each.kind == kind).map(|each| { path: each.path, label: AppNotes.title(each.name), blurb: each.blurb })
+		[
+			{ name: "Start", pages: [{ path: Paths.examples, label: "All the examples", blurb: "What each is, and what it weighs" }].concat(of(Start)) },
+			{ name: "Apps", pages: of(App) },
+			{ name: "Benchmarks", pages: of(Benchmark) },
+		]
+	}
 
 	## An app's page's `meta`: its title, its summary, and what's on it.
 	meta : Str -> { title : Str, description : Str, toc : List({ id : Str, label : Str }) }
@@ -179,7 +202,7 @@ AppNotes := [].{
 expect AppNotes.about("tasks").is_ok()
 expect AppNotes.about("nowhere") == Err(NoNotes)
 expect AppNotes.shown.len() == ExampleApps.all.len()
-expect AppNotes.pages.len() == AppNotes.all.len() + 1
+expect AppNotes.groups.join_map(|group| group.pages).len() == AppNotes.all.len() + 1
 expect AppNotes.meta("echo").toc.any(|entry| entry.id == "bench")
 expect !AppNotes.meta("tasks").toc.any(|entry| entry.id == "bench")
 expect AppNotes.meta("sqlite-vs-turso").toc.any(|entry| entry.id == "results")

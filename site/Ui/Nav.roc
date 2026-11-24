@@ -126,13 +126,13 @@ Nav := [].{
 		],
 	}
 
-	## The examples: whole apps in the repository's examples/, an overview and a page for each
-	## (`AppNotes`, which lists them).
+	## The examples: whole apps in the repository's examples/, an overview and a page for each, in
+	## groups (`AppNotes`, which lists them): where to start, the apps, and the benchmarks.
 	examples_docs : Section
 	examples_docs = {
 		name: "Examples",
 		home: Paths.examples,
-		groups: [{ name: "Examples", pages: AppNotes.pages }],
+		groups: AppNotes.groups,
 	}
 
 	sections : List(Section)
