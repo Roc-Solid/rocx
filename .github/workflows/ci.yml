@@ -21,6 +21,9 @@ permissions:
 env:
   HOMEBREW_NO_AUTO_UPDATE: "1"
   HOMEBREW_NO_INSTALL_CLEANUP: "1"
+  # The runners are slower than the machines the tests' time limits are measured on (a VM, its
+  # Roc caches cold): site/test's dev rebuild limit, ×3.
+  ROCX_TIME_SCALE: "3"
 
 jobs:
   check:

@@ -6,7 +6,7 @@
 // shows: its page has the same methods (`goto`, `eval`, `wait`, `click`, `type`, `press`, `drag`, `touchDrag`,
 // `screenshot`, and those packages/testing uses), but no `send` of the DevTools protocol.
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 
@@ -27,10 +27,12 @@ export function findChrome() {
 }
 
 /** Chromium, headless, with a profile of its own: its tabs share that profile's cookies, so a test
- * of two people (two sessions at once) launches it twice. */
+ * of two people (two sessions at once) launches it twice. Motion as a page gets it with nothing
+ * asked for, whatever the machine's setting (macOS's Reduce motion is on on GitHub's runners, and
+ * on some people's): a test that wants less asks for it (`Emulation.setEmulatedMedia`). */
 export async function launch(binary = findChrome()) {
 	const profile = mkdtempSync(join(tmpdir(), "rocx-chrome-"));
-	const child = spawn(binary, ["--headless", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run", "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
+	const child = spawn(binary, ["--headless", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run", "--force-prefers-no-reduced-motion", "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
 	const endpoint = await new Promise((resolve, reject) => {
 		let seen = "";
 		child.stderr.on("data", (chunk) => {
@@ -305,10 +307,12 @@ export function findGecko() {
 
 /**
  * Gecko, headless, in a profile of its own, driven over WebDriver BiDi (Node's WebSocket, no
- * geckodriver). Its first page is the tab it opens with, the others new tabs.
+ * geckodriver). Its first page is the tab it opens with, the others new tabs. Motion as with nothing
+ * asked for, whatever the machine's setting, as `launch`'s.
  */
 export async function launchGecko(binary = findGecko()) {
 	const profile = mkdtempSync(join(tmpdir(), "rocx-gecko-"));
+	writeFileSync(join(profile, "user.js"), 'user_pref("ui.prefersReducedMotion", 0);\n');
 	const child = spawn(binary, ["--headless", "--no-remote", "--profile", profile, "--remote-debugging-port=0", "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
 	const endpoint = await new Promise((resolve, reject) => {
 		let seen = "";

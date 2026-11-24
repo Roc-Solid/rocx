@@ -1596,15 +1596,18 @@ test("the dev build (`just dev`) rebuilds fast, and every page still wakes up an
 	// busy machine gets half as much again: 2 s × 1.5 × load / cores. Below two thirds of a core's
 	// load each, a quiet machine, the limit stays two seconds, so a rebuild that got slower still
 	// fails there; retrying, or comparing with another build, would hide it on a quiet one as well.
-	// (The build blocks this process, so the load can't be read while it runs.)
+	// (The build blocks this process, so the load can't be read while it runs.) A machine slower
+	// than the ones this is measured on says so by ROCX_TIME_SCALE, which multiplies the limit: CI
+	// sets it (.github/workflows/ci.yml; its runners' Roc caches start cold, in a VM: 4.4 s there).
 	const cores = cpus().length;
 	const busy = () => loadavg()[0] / cores;
 	const busyBefore = busy();
 	const started = performance.now();
 	const facts = await build({ dev: true, log: () => {} });
 	const took = performance.now() - started;
-	const limit = 2000 * Math.max(1, 1.5 * busyBefore, 1.5 * busy());
-	t.diagnostic(`a dev rebuild took ${Math.round(took)} ms; load average ${loadavg()[0].toFixed(1)} on ${cores} cores; the limit ${Math.round(limit)} ms`);
+	const scale = Number(process.env.ROCX_TIME_SCALE) || 1;
+	const limit = 2000 * scale * Math.max(1, 1.5 * busyBefore, 1.5 * busy());
+	t.diagnostic(`a dev rebuild took ${Math.round(took)} ms; load average ${loadavg()[0].toFixed(1)} on ${cores} cores; the limit ${Math.round(limit)} ms${scale === 1 ? "" : ` (ROCX_TIME_SCALE=${scale})`}`);
 	assert.ok(took < limit, `a rebuild while editing takes well under two seconds (${Math.round(limit)} ms on a machine this busy): it took ${Math.round(took)} ms`);
 	assert.match(facts, /^dev=yes$/m);
 

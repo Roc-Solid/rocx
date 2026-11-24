@@ -201,6 +201,9 @@ const kept = (tab) => tab.eval("window.mark === 'kept'");
 const SNAPSHOT = `(() => {
 	const copy = document.documentElement.cloneNode(true);
 	for (const host of copy.querySelectorAll("[data-rocx]")) host.remove();
+	// Page A's timer (every 30 ms) counts while it runs: its count says when this was taken, not
+	// what was rendered (a slower machine's navigated page had ticked once more than its load).
+	for (const ticks of copy.querySelectorAll(".ticks")) ticks.textContent = "";
 	const walker = document.createTreeWalker(copy, NodeFilter.SHOW_COMMENT);
 	const gone = [];
 	for (let node = walker.nextNode(); node; node = walker.nextNode()) if (node.data === "x" || node.data === "/x") gone.push(node);

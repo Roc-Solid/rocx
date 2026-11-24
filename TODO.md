@@ -155,7 +155,7 @@ When an item lands, delete its line here in the same commit.
   fails on most full runs while other builds run (2,015–3,600 ms against a limit of 2 s, scaled
   ×1.5 by the load average) and passes alone (about 740 ms). The load average lags a burst of
   builds. A sturdier check: the median of three rebuilds, or a ratio to a no-op rebuild measured in
-  the same run.
+  the same run. CI's slower runners multiply its limit by `ROCX_TIME_SCALE` (3, D-069).
 - **The channels "a tab has one stream" test flakes under load** (`server/test/server.test.mjs`):
   it waits for the old stream's `channel closed` log event, then reads the log at once, and the
   new stream's `channel opened` (the async writer's) can be later: `['channel opened', 'channel
