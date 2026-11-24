@@ -1,0 +1,56 @@
+import pf.Html
+import ../../../Ui/Heading
+import ../../../Ui/Code
+import ../../../Generated/Sources
+import ../../../Generated/Paths
+import ../../../Ui/PageHero
+
+meta = {
+	title: "Settings",
+	description: "The Roc Solid server platform's settings: the environment (Env.var!, Env.public_url!), read alike in a request, a job or a schedule, the app's context made once from it, and Env.dev! for what only a developer's machine should do.",
+	toc: [
+		{ id: "env", label: "Settings: Env" },
+		{ id: "dev", label: "Only while developing" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				eyebrow="The platform · settings"
+				title="Settings from the environment"
+			>
+				An app's secrets and what differs from one machine to the next come from its environment. What only
+				a developer's machine should do asks whether the server was started to develop. What an app does
+				with its secrets, signing links and sealing what it keeps, is <a href={Paths.platform_crypto}>crypto</a>.
+			</PageHero>
+
+			<Heading id="env">Settings: Env</Heading>
+			<Code title={"${Sources.platform_settings.file}, in part"} source={Sources.platform_settings.rocx} numbers={Bool.False} />
+			<p>
+				<code>Env.public_url!({"{}"})</code> is where the app is, for a link in an email or another server's
+				callback: <code>--public-url</code> or <code>PUBLIC_URL</code> when the server was started with one
+				(the proxy in front of it, <code>https://status.example.com</code>), else where it listens, with the
+				port it bound (<code>--port 0</code>'s too). Never a request's <code>Host</code>, which whoever asks
+				writes. <code>Env.var!(name)</code> reads the server's environment: <code>Ok</code>, or <code>NotFound</code>.
+				It reads alike in a request, a job or a schedule, so a secret is where the code that needs it is
+				(twelve-factor; Phoenix's <code>runtime.exs</code>). What is read once belongs in the app's
+				context: its <code>init!</code> reads it when the server starts (given the context file,
+				<code>--context-file</code>), and every request, job and actor is given what it made. The platform's own settings stay
+				its flags, or their variables: <code>DATABASE_URL</code>. A package's are the app's to read, or its
+				plugin's: <code>STORAGE_URL</code> for <a href={Paths.ecosystem_storage}>the storage package</a>,
+				<code>SMTP_URL</code> and <code>MAIL_FROM</code> for <a href={Paths.ecosystem_email}>email</a>.
+			</p>
+
+			<Heading id="dev">Only while developing</Heading>
+			<p>
+				<code>Env.dev!({"{}"})</code> says whether the server was started with <code>--dev</code>, as
+				<code>just dev</code> starts it: for what only a developer's machine should do, like signing in as
+				anyone above. Under <code>--dev</code> the server also reloads pages when it restarts, shows a crash's
+				reason, and shows the email it kept rather than sent, at <code>/__rocx/mail</code>
+				(<a href={"${Paths.ecosystem_email}#mailbox"}>the dev mailbox</a>, with the email plugin).
+			</p>
+
+		</NoHydration>
+	</>

@@ -99,6 +99,6 @@ view! = |_|
 			<Code title={Sources.demo_counter.file} source={Sources.demo_counter.rocx} />
 
 			<Heading id="pages">rocx's pages</Heading>
-			<PageCards pages={Nav.rocx_docs.pages.drop_if(|page| page.path == Paths.rocx)} />
+			<PageCards pages={Nav.pages_of(Nav.rocx_docs).drop_if(|page| page.path == Paths.rocx)} />
 		</NoHydration>
 	</>

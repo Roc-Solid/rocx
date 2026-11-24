@@ -59,7 +59,7 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				Each is kept in the server's memory (<a href={"${Paths.platform_live}#kv"}>Kv</a>, the newest 1,000), and
+				Each is kept in the server's memory (<a href={Paths.platform_kv}>Kv</a>, the newest 1,000), and
 				a background loop sends what there is every ten seconds, and once more as the server stops, as
 				<code>$exception</code> events to PostHog's batch endpoint. A request never waits on PostHog. A 5xx answer
 				says its route's pattern (<code>/posts/[id]</code>), its method, its status and its text; the

@@ -6,11 +6,9 @@ import ../../../Generated/Paths
 import ../../../Ui/PageHero
 
 meta = {
-	title: "Settings and crypto",
-	description: "The Roc Solid server platform's settings and crypto: the environment (Env, Env.dev!, Env.public_url!), random bytes and AES-256-GCM, with the crypto package's SHA-256, HMAC, HKDF, Base64 and Hex, for tokens, signed links and sealed secrets.",
+	title: "Crypto",
+	description: "The Roc Solid server platform's crypto: random bytes and AES-256-GCM from the host, with the crypto package's SHA-256, HMAC, HKDF, Base64 and Hex, for tokens, signed links and sealed secrets.",
 	toc: [
-		{ id: "env", label: "Settings: Env" },
-		{ id: "dev", label: "Only while developing" },
 		{ id: "tokens", label: "Tokens, and their digests" },
 		{ id: "links", label: "Signed links" },
 		{ id: "sealed", label: "Sealed secrets" },
@@ -22,44 +20,18 @@ view! = |_|
 	<>
 		<NoHydration>
 			<PageHero
-				eyebrow="The platform · settings and crypto"
-				title="Secrets from the environment, and what to do with them"
+				eyebrow="The platform · crypto"
+				title="Secrets, and what to do with them"
 			>
-				An app's secrets and what differs from one machine to the next come from its environment. With them
-				it signs links, keeps the digest of a token rather than the token, and seals what it must keep
-				secret in the database. AES-GCM and random bytes are the host's; the rest of the crypto is Roc,
-				checked against published test vectors, in a package (<a href={Paths.ecosystem_crypto}><code>packages/crypto</code></a>).
+				With the secrets its <a href={Paths.platform_settings}>environment</a> gives it, an app signs links,
+				keeps the digest of a token rather than the token, and seals what it must keep secret in the
+				database. AES-GCM and random bytes are the host's; the rest of the crypto is Roc, checked against
+				published test vectors, in a package (<a href={Paths.ecosystem_crypto}><code>packages/crypto</code></a>).
 			</PageHero>
 			<p>
 				The samples are from <code>server/test/app/Samples.roc</code>, which the platform's tests compile and
 				run. It names the crypto package beside the platform (<code>crypto: "../packages/crypto/main.roc"</code>)
 				and imports <code>crypto.Hmac</code> and the rest from it.
-			</p>
-
-			<Heading id="env">Settings: Env</Heading>
-			<Code title={"${Sources.platform_settings.file}, in part"} source={Sources.platform_settings.rocx} numbers={Bool.False} />
-			<p>
-				<code>Env.public_url!({"{}"})</code> is where the app is, for a link in an email or another server's
-				callback: <code>--public-url</code> or <code>PUBLIC_URL</code> when the server was started with one
-				(the proxy in front of it, <code>https://status.example.com</code>), else where it listens, with the
-				port it bound (<code>--port 0</code>'s too). Never a request's <code>Host</code>, which whoever asks
-				writes. <code>Env.var!(name)</code> reads the server's environment: <code>Ok</code>, or <code>NotFound</code>.
-				It reads alike in a request, a job or a schedule, so a secret is where the code that needs it is
-				(twelve-factor; Phoenix's <code>runtime.exs</code>). What is read once belongs in the app's
-				context: its <code>init!</code> reads it when the server starts (given the context file,
-				<code>--context-file</code>), and every request, job and actor is given what it made. The platform's own settings stay
-				its flags, or their variables: <code>DATABASE_URL</code>. A package's are the app's to read, or its
-				plugin's: <code>STORAGE_URL</code> for <a href={Paths.ecosystem_storage}>the storage package</a>,
-				<code>SMTP_URL</code> and <code>MAIL_FROM</code> for <a href={Paths.ecosystem_email}>email</a>.
-			</p>
-
-			<Heading id="dev">Only while developing</Heading>
-			<p>
-				<code>Env.dev!({"{}"})</code> says whether the server was started with <code>--dev</code>, as
-				<code>just dev</code> starts it: for what only a developer's machine should do, like signing in as
-				anyone above. Under <code>--dev</code> the server also reloads pages when it restarts, shows a crash's
-				reason, and shows the email it kept rather than sent, at <code>/__rocx/mail</code>
-				(<a href={"${Paths.ecosystem_email}#mailbox"}>the dev mailbox</a>, with the email plugin).
 			</p>
 
 			<Heading id="tokens">Tokens, and their digests</Heading>

@@ -47,7 +47,7 @@ view! = |{ meta, children, .. }| {
 				<SkipLink />
 				{=if (story!()) Html.empty({}) else <Topbar sections={Nav.sections} current={at.get!(Nav.current_of)} landing={landing!()} />}
 				<Frame landing={landing!()}>
-					{=if (landing!()) Html.empty({}) else <Sidebar title={at.get!(|path| Nav.section_of(path).name)} pages={at.get!(|path| Nav.section_of(path).pages)} path={at.get!(|path| path)} />}
+					{=if (landing!()) Html.empty({}) else <Sidebar title={at.get!(|path| Nav.section_of(path).name)} groups={at.get!(|path| Nav.section_of(path).groups)} path={at.get!(|path| path)} />}
 					<main id="content">
 						{...children}
 						{=if (story!()) Html.empty({}) else <Pager previous={at.get!(Nav.neighbours).previous} next={at.get!(Nav.neighbours).next} />}

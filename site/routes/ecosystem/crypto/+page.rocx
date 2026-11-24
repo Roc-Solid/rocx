@@ -41,7 +41,7 @@ view! = |_|
 			<p>
 				Then <code>import crypto.Hmac</code>, <code>import crypto.Base64</code> and so on, where they are used.
 				What needs the host stays on the server platform: <code>AesGcm</code> (encryption) and
-				<code>Random</code> (bytes from the operating system); see <a href={Paths.platform_secrets}>settings and
+				<code>Random</code> (bytes from the operating system); see <a href={Paths.platform_crypto}>the platform's
 				crypto</a>.
 			</p>
 

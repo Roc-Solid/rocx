@@ -11,7 +11,7 @@ import ../../Ui/PageCards
 import ../../Ui/PageHero
 
 ## The ecosystem's overview: what a Roc Solid package is, how an app uses one, and the packages
-## there are, as cards.
+## there are, as cards in the sidebar's groups.
 meta = {
 	title: "The ecosystem",
 	description: "Packages for Roc Solid apps: plain Roc that the server, the browser and a test use alike, components that rocx build copies into the app, and plugins that add to the server. Eighteen so far: charts, crypto, files in S3, email, forms, Markdown, intl, an admin, audio, guards, jobs and cron, MCP, OpenTelemetry, PostHog, presence, Web Push, testing and virtual lists.",
@@ -43,7 +43,16 @@ view! = |_|
 			</PageHero>
 
 			<Heading id="packages">The packages</Heading>
-			<PageCards pages={Nav.ecosystem_docs.pages.drop_if(|page| page.path == Paths.ecosystem)} />
+			<p>
+				By where they work, as the sidebar has them: in the page, on the server, and beside the app (tools,
+				and watching it run).
+			</p>
+			{...Nav.ecosystem_docs.groups.drop_if(|group| group.name == "").map(|group|
+				<>
+					<h3>{group.name}</h3>
+					<PageCards pages={group.pages} />
+				</>
+			)}
 
 			<Heading id="halves">A package's two halves</Heading>
 			<FeatureGrid>

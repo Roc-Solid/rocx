@@ -76,7 +76,7 @@ SiteSources := [].{
 		Lines("endpoint_handlers", "site/Generated/Handlers.roc", ShoutHandlers),
 		Whole("demo_shout", "site/Demos/Shout.rocx"),
 		Whole("demo_count", "site/Demos/Count.rocx"),
-		Pick("route_nav", "site/Ui/Nav.roc", ["import ../Generated/Paths", "rocx_docs : Section", "rocx_docs = {", "name: \"rocx\",", "home: Paths.rocx,", "pages: [", "{ path: Paths.rocx", "{ path: Paths.showcase", "{ path: Paths.syntax", "],"]),
+		Pick("route_nav", "site/Ui/Nav.roc", ["import ../Generated/Paths", "Page : {", "Group : {", "Section : {", "platform_docs : Section", "platform_docs = {", "name: \"Platform\",", "home: Paths.platform_,", "groups: [", "{", "name: \"Overview\",", "pages: [", "{ path: Paths.platform_,", "{ path: Paths.platform_server", "],", "},", "{", "name: \"State\",", "pages: [", "{ path: Paths.platform_database", "{ path: Paths.platform_actors", "{ path: Paths.platform_kv", "],", "},"]),
 		Whole("route_error", "site/routes/+error.rocx"),
 		Whole("route_fixture_page", "test/e2e/routes/routes/blog/[slug]/+page.rocx"),
 		FixturePaths,

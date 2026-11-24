@@ -133,7 +133,7 @@ view! = |_|
 				<em>Maybe slg should be slug?</em>).
 			</p>
 			<Code title={"What rocx writes for that app: ${Sources.route_fixture_paths.file}"} source={Sources.route_fixture_paths.rocx} numbers={Bool.False} />
-			<p>This site's sidebar is a list of them:</p>
+			<p>This site's sidebar is made of them, each part's pages in groups under a heading:</p>
 			<Code title={"${Sources.route_nav.file}, in part"} source={Sources.route_nav.rocx} numbers={Bool.False} />
 
 			<Heading id="endpoints">Endpoints: +server.roc</Heading>

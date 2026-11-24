@@ -21,7 +21,7 @@ view! = |{ status, problem }| {
 		<PageHero eyebrow={status.to_str()} heading={if (status == 404) [<>{"Nothing at "}</>, <code>{path}</code>] else [<>This page failed</>]}>
 			{if (status == 404) "No page has that address." else problem} These are the pages of the {here.name} docs:
 		</PageHero>
-		<PageCards pages={here.pages} />
+		<PageCards pages={Nav.pages_of(here)} />
 		<p>
 			Or another part: {...others.map_with_index(|section, i| <>{if (i == 0) "" else ", "}<a href={section.home}>the {section.name} docs</a></>)},
 			or the <a href={Paths.root}>front page</a>.

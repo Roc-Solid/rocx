@@ -90,10 +90,10 @@ view! = |_|
 						and passed on as they come; cookies with every attribute.
 					</p>
 				</Feature>
-				<Feature title="Settings and crypto" href={Paths.platform_secrets}>
+				<Feature title="Live and channels" href={Paths.platform_live}>
 					<p>
-						The environment, a dev server's own paths, random bytes and AES-GCM, and the crypto package an
-						app signs with: SHA-256, HMAC, HKDF.
+						Rooms, topics and channels: who is here, what was said, and live data for pages, checked, over one
+						stream a tab.
 					</p>
 				</Feature>
 				<Feature title="The database" href={Paths.platform_database}>
@@ -103,16 +103,34 @@ view! = |_|
 						checked at build.
 					</p>
 				</Feature>
+				<Feature title="Actors" href={Paths.platform_actors}>
+					<p>
+						State that handles one message at a time, in order, with typed asks, tells and timers, kept in the
+						database so it outlives a restart.
+					</p>
+				</Feature>
+				<Feature title="Values in memory" href={Paths.platform_kv}>
+					<p>
+						<code>Kv</code>: typed values by key, with a time to live and atomic counts, claims and takes, for
+						rate limits, caches and one-time tokens.
+					</p>
+				</Feature>
+				<Feature title="Settings" href={Paths.platform_settings}>
+					<p>
+						The environment, read alike in a request, a job or a schedule, the app's context made from it
+						once, and what only a dev server does.
+					</p>
+				</Feature>
+				<Feature title="Crypto" href={Paths.platform_crypto}>
+					<p>
+						Random bytes and AES-GCM from the host, and the crypto package an app signs with: SHA-256, HMAC,
+						HKDF.
+					</p>
+				</Feature>
 				<Feature title="Plugins" href={"${Paths.platform_server}#plugins"}>
 					<p>
 						What a package adds to an app in one line: routes, tables, background loops, pages for
 						development. Jobs and cron are one (<a href={Paths.ecosystem_jobs}>packages/jobs</a>).
-					</p>
-				</Feature>
-				<Feature title="Live and actors" href={Paths.platform_live}>
-					<p>
-						Topics, rooms and channels (who is here, what was said, live data for pages), values in memory
-						with a time to live (<code>Kv</code>), and actors: state one message at a time, kept in the database.
 					</p>
 				</Feature>
 			</FeatureGrid>
